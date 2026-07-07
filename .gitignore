@@ -1,0 +1,29 @@
+# --- 비밀값 / 환경 ---
+.env
+*.local
+
+# --- PHP ---
+/vendor/
+composer.lock
+
+# --- Python (matcher-ai, 나중) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- 에이전트 수집 결과물 ---
+/data/
+vulninv-*.json
+vulninv-*.txt
+
+# --- OMC / 로컬 상태 ---
+.omc/
+
+# --- OS / 에디터 ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
