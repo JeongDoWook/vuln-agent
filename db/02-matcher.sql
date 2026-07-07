@@ -1,0 +1,54 @@
+-- vuln-agent 매처(2단계) 스키마 : CVE / KEV / 영향패키지 / 판정결과
+-- 최초 기동 시 01-schema.sql 다음에 자동 적용된다(파일명 순).
+SET NAMES utf8mb4;
+
+-- ── CVE 기본 정보 (NVD/OSV 미러에서 채움. 지금은 시드) ──────────────────
+CREATE TABLE IF NOT EXISTS cves (
+  cve_id    VARCHAR(32) NOT NULL,
+  summary   TEXT NULL,
+  cvss      DECIMAL(3,1) NULL,       -- CVSS v3 기본점수
+  published DATE NULL,
+  PRIMARY KEY (cve_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── CISA KEV (실제 악용된 취약점 목록) — 우선순위 가중의 핵심 ───────────
+CREATE TABLE IF NOT EXISTS kev_catalog (
+  cve_id     VARCHAR(32) NOT NULL,
+  date_added DATE NULL,
+  note       VARCHAR(255) NULL,
+  PRIMARY KEY (cve_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── CVE ↔ 영향 패키지 (package_name 은 pkg.name 또는 source_pkg 와 대조) ──
+CREATE TABLE IF NOT EXISTS cve_affected_packages (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  cve_id        VARCHAR(32) NOT NULL,
+  ecosystem     VARCHAR(32) NULL,     -- rpm | deb | generic
+  package_name  VARCHAR(255) NOT NULL,
+  fixed_version VARCHAR(128) NULL,    -- 이 버전 이상이면 패치됨(참고용)
+  PRIMARY KEY (id),
+  KEY idx_cap_pkg (package_name),
+  KEY idx_cap_cve (cve_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── 매처 판정 결과 : 스캔×CVE×패키지 1행. 노출/로드/KEV/등급/근거 ──────
+CREATE TABLE IF NOT EXISTS findings (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  scan_id           BIGINT UNSIGNED NOT NULL,
+  cve_id            VARCHAR(32) NOT NULL,
+  package_name      VARCHAR(255) NOT NULL,
+  installed_version VARCHAR(255) NULL,
+  loaded            TINYINT(1) NOT NULL DEFAULT 0,  -- 프로세스가 로드했나
+  exposed           TINYINT(1) NOT NULL DEFAULT 0,  -- 로드 + 외부노출(EXTERNAL)
+  exposure_scope    VARCHAR(16) NULL,               -- 가장 위험한 노출 범위
+  in_kev            TINYINT(1) NOT NULL DEFAULT 0,
+  cvss              DECIMAL(3,1) NULL,
+  severity          VARCHAR(12) NOT NULL,           -- CRITICAL|HIGH|MEDIUM|LOW
+  rationale         VARCHAR(512) NULL,              -- 왜 이 등급인지(설명가능성)
+  matched_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_find (scan_id, cve_id, package_name),
+  KEY idx_find_scan (scan_id),
+  KEY idx_find_sev (severity),
+  CONSTRAINT fk_find_scan FOREIGN KEY (scan_id) REFERENCES scans(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -12,6 +12,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 $cfg = require __DIR__ . '/../src/config.php';
 require __DIR__ . '/../src/db.php';
+require __DIR__ . '/../src/matcher.php';
 
 function respond_fail(int $code, string $msg): void {
     http_response_code($code);
@@ -181,6 +182,14 @@ try {
     respond_fail(500, 'db error: ' . $e->getMessage());
 }
 
+// 저장 성공 → 즉시 매칭(우선순위 산출). 실패해도 수집 자체는 성공으로 응답.
+$findings = null;
+try {
+    $findings = vg_match_scan($pdo, $scanId);
+} catch (Throwable $e) {
+    $findings = ['error' => $e->getMessage()];
+}
+
 echo json_encode([
     'ok'        => true,
     'host_id'   => $hostId,
@@ -188,4 +197,5 @@ echo json_encode([
     'fqdn'      => $fqdn,
     'packages'  => $pkgCount,
     'exposures' => $expCount,
+    'findings'  => $findings,
 ], JSON_UNESCAPED_UNICODE);
