@@ -139,7 +139,7 @@ vg_header('피드 커넥터', 'connectors');
 
   <div class="card" style="max-width:560px;">
     <strong><?= $edit ? '커넥터 편집' : '커넥터 추가' ?></strong>
-    <form method="post" style="margin-top:.6rem;">
+    <form id="connForm" method="post" style="margin-top:.6rem;">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="save">
       <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
@@ -170,9 +170,32 @@ vg_header('피드 커넥터', 'connectors');
         <input type="checkbox" name="enabled" value="1" <?= ($edit['enabled'] ?? 0) ? 'checked' : '' ?> style="width:auto;"> 활성(enabled)
       </label>
       <button type="submit"><?= $edit ? '저장' : '추가' ?></button>
+      <button type="button" class="btn-sm" style="width:100%;margin-top:.5rem;background:#30363d;" onclick="vgPreview()">API 미리보기 (10건)</button>
       <?php if ($edit): ?><div class="sub" style="margin-top:.6rem;text-align:center;"><a href="/connectors.php">+ 새 커넥터</a></div><?php endif; ?>
     </form>
+    <pre id="vgPrev" style="display:none;max-height:340px;overflow:auto;background:#0d1017;border:1px solid #30363d;border-radius:8px;padding:.7rem;font-size:.72rem;line-height:1.4;margin-top:.7rem;white-space:pre-wrap;word-break:break-all;"></pre>
   </div>
+
+  <script>
+  function vgPreview() {
+    var f = document.getElementById('connForm');
+    var out = document.getElementById('vgPrev');
+    var qs = new URLSearchParams({
+      type: f.connector_type.value, url: f.url.value,
+      api_key: f.api_key.value, ecosystem: f.ecosystem.value, days: f.days.value
+    });
+    out.style.display = 'block';
+    out.textContent = '조회 중…';
+    fetch('/feed_preview.php?' + qs.toString())
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { out.textContent = '오류: ' + (j.error || '알 수 없음'); return; }
+        var head = '총 ' + (j.count != null ? j.count : '?') + '건' + (j.note ? ' · ' + j.note : '') + ' (아래는 최대 10건)\n\n';
+        out.textContent = head + JSON.stringify(j.sample, null, 2);
+      })
+      .catch(function (e) { out.textContent = '요청 실패: ' + e; });
+  }
+  </script>
 
   <div class="card">
     <strong>최근 수집 이력</strong>

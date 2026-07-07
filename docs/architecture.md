@@ -77,7 +77,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 ```mermaid
 flowchart LR
     subgraph UI["웹 (admin)"]
-        CFG["connectors.php<br/>설정·스케줄·지금실행"]
+        CFG["connectors.php<br/>설정·스케줄·지금실행·미리보기"]
     end
     subgraph Sched["scheduler 사이드카"]
         TICK["매 1분<br/>due 커넥터 조회"]
@@ -98,6 +98,7 @@ flowchart LR
     CVE --> MAT
     TICK -->|실행 후| MAT
     CFG -->|지금 실행| MAT
+    CFG -.->|미리보기 10건<br/>feed_preview.php| KEV
 
     style KEV fill:#238636,color:#fff
     style MAT fill:#a371f7,color:#fff
@@ -129,25 +130,31 @@ flowchart TB
         S1["mysql_root_password"]
         S2["mysql_password"]
         S3["ingest_token"]
+        S4["admin_password"]
     end
 
     subgraph Stack["실행 컨테이너"]
         WC["web · php:8.3-apache"]
+        SCH["scheduler · php-cli<br/>(피드 주기 실행)"]
         DC[("db · mysql:8.0")]
     end
 
     R1 --> F0 & FC & FD
     R2 --> F0 & FC & FP
     F0 --> Stack
-    S2 --> WC
-    S3 --> WC
-    S1 --> DC
-    S2 --> DC
+    S2 & S3 & S4 --> WC
+    S2 & S3 & S4 --> SCH
+    S1 & S2 --> DC
     WC -->|"vulnagent 내부망"| DC
+    SCH --> DC
 
     style WC fill:#238636,color:#fff
+    style SCH fill:#a371f7,color:#fff
     style DC fill:#1f6feb,color:#fff
 ```
+
+> web·scheduler 는 같은 이미지(`vulnagent-app`)를 공유하고, 환경/시크릿은 compose 앵커
+> (`x-app-env`/`x-app-secrets`)로 DRY 하게 재사용한다.
 
 | | dev | prod |
 |---|---|---|
@@ -235,6 +242,61 @@ erDiagram
         string status
         int items_upserted
     }
+    advisories {
+        bigint id PK
+        string source
+        string title
+        string url UK
+        date published
+        string cve_ids
+    }
+    users {
+        bigint id PK
+        string username UK
+        string password_hash
+        string role
+    }
 ```
 
-*(cves / kev_catalog / cve_affected_packages / findings 는 2단계 매처, feed_* 는 4단계 피드 커넥터에서 도입)*
+*(cves / kev_catalog / cve_affected_packages / findings 는 2단계 매처, feed_* 는 4a 피드 커넥터,
+advisories 는 4b KISA 국내공지, users 는 3단계 인증에서 도입. advisories 는 CVE 와 느슨한 연계
+(제목의 CVE best-effort)라 FK 없음)*
+
+---
+
+## 6. 웹 화면 구성 (사이트맵 · 인증)
+
+```mermaid
+flowchart TD
+    LOGIN["/login.php<br/>세션 로그인 · CSRF"]
+    LOGIN -->|인증 성공| DASH
+
+    subgraph Auth["로그인 필요"]
+        DASH["/ 대시보드<br/>호스트별 최신스캔 · 심각도 KPI"]
+        FIND["/findings.php<br/>취약점 우선순위 · 노출근거"]
+        ADV["/advisories.php<br/>국내 보안공지(KISA)"]
+    end
+
+    subgraph AdminOnly["admin 전용"]
+        CONN["/connectors.php<br/>피드 커넥터 · 미리보기"]
+        USERS["/users.php<br/>계정 관리"]
+    end
+
+    DASH --> FIND
+    DASH -.-> ADV
+    DASH -.-> CONN & USERS
+
+    subgraph API["인증: 공유 토큰(에이전트)"]
+        ING["/ingest.php<br/>수집 수신"]
+        REM["/rematch.php<br/>재매칭"]
+    end
+
+    style LOGIN fill:#1f6feb,color:#fff
+    style CONN fill:#db6d28,color:#fff
+    style USERS fill:#db6d28,color:#fff
+    style ING fill:#238636,color:#fff
+```
+
+- **세션 인증**(users 테이블) : 대시보드·취약점·국내공지. admin 은 피드·사용자 추가.
+- **토큰 인증**(공유 시크릿) : 에이전트가 쓰는 `ingest.php`/`rematch.php` — 사람 로그인과 분리.
+- 역할: `admin`(관리) / `viewer`(조회). 최초 admin 은 `secrets/admin_password` 로 부트스트랩.
