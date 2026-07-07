@@ -62,24 +62,54 @@ check_file() {
   fi
 }
 
-# --- init : 템플릿 → 실제 env 파일 생성 -------------------------------------
+# 강한 랜덤값 1줄 생성 (openssl 없으면 대체)
+#   주의: Windows 에선 개행이 \r\n 이라 \r 까지 제거해야 함(안 그러면 비번/토큰에 CR 혼입).
+#   또한 base64 의 +,/,= 는 URL/헤더에서 성가시므로 영숫자만 남긴다.
+gen_secret() {
+  local raw
+  if command -v openssl >/dev/null 2>&1; then
+    raw="$(openssl rand -base64 32)"
+  else
+    raw="$(head -c 24 /dev/urandom | base64)"
+  fi
+  printf '%s' "$raw" | tr -d '\r\n' | tr -dc 'A-Za-z0-9' | head -c 32
+}
+
+# --- init : env 파일 + secrets txt 생성 -------------------------------------
 run_init() {
   say "${CYAN}== 초기 설정 ==${NC}"
   local ok=1
+
+  # 1) env 파일 (비밀값 없음)
   for env in dev prod; do
     local tpl=".env.${env}.template" dst=".env.${env}"
     if [ -f "$dst" ]; then
       say "  ${BLUE}→${NC} 존재: $dst (유지)"
     elif [ -f "$tpl" ]; then
       cp "$tpl" "$dst"
-      say "  ${GREEN}✓${NC} 생성: $dst  ${YELLOW}(비밀값을 반드시 수정하세요)${NC}"
+      say "  ${GREEN}✓${NC} 생성: $dst"
     else
       say "  ${RED}✗${NC} 템플릿 없음: $tpl"; ok=0
     fi
   done
+
+  # 2) secrets txt (강한 랜덤값 자동 생성, 있으면 유지)
+  mkdir -p secrets
+  for name in mysql_root_password mysql_password ingest_token; do
+    local f="secrets/${name}.txt"
+    if [ -s "$f" ]; then
+      say "  ${BLUE}→${NC} 존재: $f (유지)"
+    else
+      gen_secret > "$f"
+      chmod 600 "$f" 2>/dev/null || true
+      say "  ${GREEN}✓${NC} 생성: $f  ${YELLOW}(랜덤 비밀값)${NC}"
+    fi
+  done
+
   echo ""
   if [ "$ok" = 1 ]; then
     say "${GREEN}완료.${NC} 다음: ${CYAN}$0 dev up -d --build${NC}"
+    say "  에이전트 전송 토큰(--token) 값:  ${CYAN}cat secrets/ingest_token.txt${NC}"
   fi
 }
 
@@ -102,6 +132,9 @@ run_doctor() {
   done
   for f in .env.dev .env.prod; do
     if [ -f "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음 (init 실행 필요)"; fi
+  done
+  for f in secrets/mysql_root_password.txt secrets/mysql_password.txt secrets/ingest_token.txt; do
+    if [ -s "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음/빈값 (init 실행 필요)"; fi
   done
   echo ""
   if [ "$issues" -eq 0 ]; then
