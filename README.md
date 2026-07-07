@@ -76,10 +76,21 @@ compose_runner.sh   실행 러너
 - [x] 0. Docker 구성 (compose dev/prod + Dockerfile + Docker Secrets)
 - [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
 - [x] 2. 매처 (외부노출 + 로드됨 + KEV = CRITICAL) · findings.php · 아키텍처 다이어그램
-- [ ] 3. 웹 (로그인 → 대시보드 → 스캔/취약점) + CVE 실피드(NVD/OSV/KEV) 동기화
-- [ ] 4. 국내 특화(KISA) + AI 조치안 생성
+- [x] 3. 웹 (로그인 → 대시보드 → 취약점 · 사용자관리)
+- [x] 4a. CVE 피드 커넥터 (CISA KEV 실데이터 · OSV · NVD) + 스케줄러 사이드카
+- [ ] 4b. 국내 특화(KISA) + AI 조치안 생성 (Python)
 
-취약점 우선순위 화면: <http://localhost:8080/findings.php>
+- 취약점 우선순위: <http://localhost:8080/findings.php>
+- 피드 커넥터(admin): <http://localhost:8080/connectors.php>
+
+### 피드 커넥터
+
+외부 CVE 소스를 UI에서 설정·스케줄·수집한다 (admin → "피드").
+
+- **CISA KEV** (기본 활성): 실제 악용 취약점 카탈로그 JSON, 무인증. 매일 자동 수집.
+- **OSV.dev** / **NVD 2.0**: 필요 시 활성. API URL·키·주기를 UI에서 설정.
+- 스케줄러 사이드카(`scheduler` 컨테이너)가 1분마다 due 커넥터를 실행하고, 수집 후 전체 스캔을 재매칭.
+- 수동 실행: 커넥터 행의 "지금 실행", 또는 `docker compose exec web php bin/sync.php <id>`.
 
 ## 테스트
 

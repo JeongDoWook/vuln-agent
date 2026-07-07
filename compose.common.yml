@@ -23,3 +23,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  scheduler:
+    restart: unless-stopped
+    pids_limit: 128
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
