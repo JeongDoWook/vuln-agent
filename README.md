@@ -81,6 +81,17 @@ compose_runner.sh   실행 러너
 
 취약점 우선순위 화면: <http://localhost:8080/findings.php>
 
+## 테스트
+
+스택이 떠 있는 상태에서 API~웹 로그인까지 자동 검증:
+
+```bash
+./tests/smoke.sh            # 기본 http://localhost:8080
+```
+
+수집→저장→매칭(CRITICAL/HIGH 산출), 토큰 인증, 로그인 흐름을 curl 로 점검한다.
+(브라우저 E2E는 나중에 Playwright 로 추가 예정)
+
 ## 라이선스
 
 MIT — [`LICENSE`](LICENSE)
