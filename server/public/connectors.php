@@ -33,9 +33,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (($_POST['api_key'] ?? '') !== '')   { $conn['api_key']   = trim((string) $_POST['api_key']); }
                 if (($_POST['ecosystem'] ?? '') !== '') { $conn['ecosystem'] = trim((string) $_POST['ecosystem']); }
                 if (($_POST['days'] ?? '') !== '')      { $conn['days']      = (int) $_POST['days']; }
-                $mode = ($_POST['schedule_mode'] ?? 'manual') === 'interval' ? 'interval' : 'manual';
+                $mode = (string) ($_POST['schedule_mode'] ?? 'manual');
+                if (!in_array($mode, ['interval', 'daily', 'cron', 'manual'], true)) { $mode = 'manual'; }
                 $sched = ['mode' => $mode];
-                if ($mode === 'interval') { $sched['interval_minutes'] = max(1, (int) ($_POST['interval_minutes'] ?? 1440)); }
+                if ($mode === 'interval') {
+                    $sched['interval_minutes'] = max(1, (int) ($_POST['interval_minutes'] ?? 1440));
+                } elseif ($mode === 'daily') {
+                    $t = (string) ($_POST['schedule_time'] ?? '');
+                    $sched['time'] = preg_match('/^\d{1,2}:\d{2}$/', $t) ? $t : '03:00';
+                } elseif ($mode === 'cron') {
+                    $expr = trim((string) ($_POST['schedule_cron'] ?? ''));
+                    if ($expr === '' || count(preg_split('/\s+/', $expr)) !== 5) {
+                        throw new RuntimeException('cron 은 5필드(분 시 일 월 요일)로 입력하세요. 예: 0 3 * * *');
+                    }
+                    $sched['expr'] = $expr;
+                }
                 $enabled = isset($_POST['enabled']) ? 1 : 0;
 
                 if ($id > 0) {
@@ -104,7 +116,12 @@ vg_header('피드 커넥터', 'connectors');
       <tbody>
       <?php foreach ($connectors as $c):
         $sc = json_decode((string) $c['schedule_json'], true) ?: [];
-        $schedLabel = ($sc['mode'] ?? 'manual') === 'interval' ? ('매 ' . (int) ($sc['interval_minutes'] ?? 0) . '분') : '수동';
+        switch ($sc['mode'] ?? 'manual') {
+            case 'interval': $schedLabel = '매 ' . (int) ($sc['interval_minutes'] ?? 0) . '분'; break;
+            case 'daily':    $schedLabel = '매일 ' . ($sc['time'] ?? '?'); break;
+            case 'cron':     $schedLabel = 'cron: ' . ($sc['expr'] ?? '?'); break;
+            default:         $schedLabel = '수동';
+        }
       ?>
         <tr>
           <td><strong><?= vg_h($c['name']) ?></strong></td>
@@ -161,11 +178,16 @@ vg_header('피드 커넥터', 'connectors');
       <input type="text" name="days" value="<?= vg_h((string) ($econn['days'] ?? '')) ?>" placeholder="7">
       <label>스케줄</label>
       <select name="schedule_mode" style="width:100%;padding:.5rem;background:#0f1115;border:1px solid #30363d;border-radius:8px;color:#e6e6e6;">
-        <option value="manual"   <?= ($esched['mode'] ?? 'manual')==='manual'?'selected':'' ?>>수동 (직접 실행)</option>
-        <option value="interval" <?= ($esched['mode'] ?? '')==='interval'?'selected':'' ?>>주기 실행</option>
+        <?php $sm = $esched['mode'] ?? 'manual'; foreach (['manual'=>'수동 (직접 실행)','interval'=>'주기 실행(N분)','daily'=>'매일 지정 시각','cron'=>'cron 표현식'] as $mv=>$ml): ?>
+          <option value="<?= $mv ?>" <?= $sm===$mv?'selected':'' ?>><?= $ml ?></option>
+        <?php endforeach; ?>
       </select>
-      <label>주기(분) — 주기 실행 시</label>
+      <label>주기(분) — "주기 실행" 시</label>
       <input type="text" name="interval_minutes" value="<?= vg_h((string) ($esched['interval_minutes'] ?? '1440')) ?>">
+      <label>시각 HH:MM — "매일 지정 시각" 시</label>
+      <input type="text" name="schedule_time" value="<?= vg_h((string) ($esched['time'] ?? '03:00')) ?>" placeholder="03:00">
+      <label>cron (분 시 일 월 요일) — "cron 표현식" 시</label>
+      <input type="text" name="schedule_cron" value="<?= vg_h((string) ($esched['expr'] ?? '')) ?>" placeholder="0 3 * * *  (매일 03:00)">
       <label style="display:flex;align-items:center;gap:.5rem;margin-top:1rem;">
         <input type="checkbox" name="enabled" value="1" <?= ($edit['enabled'] ?? 0) ? 'checked' : '' ?> style="width:auto;"> 활성(enabled)
       </label>
