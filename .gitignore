@@ -5,6 +5,9 @@
 .env.prod
 *.local
 
+# Docker Secrets: 실제 비밀값 txt 는 커밋 금지. secrets/README.md 만 커밋.
+secrets/*.txt
+
 # --- PHP ---
 /vendor/
 composer.lock
