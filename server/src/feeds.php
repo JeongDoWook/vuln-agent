@@ -170,42 +170,64 @@ final class VgOsvConnector implements VgFeedConnector {
     }
 }
 
-// NVD 2.0 — 최근 N일 공개 CVE → cves (CVSS 포함).
+// NVD 2.0 — 최근 N일 공개 CVE → cves (CVSS 포함). 증분 수집(전체 미러 아님).
+//   기간 내 결과를 startIndex 로 끝까지 페이지네이션(무음 절단 방지, rate limit 준수).
 final class VgNvdConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
         $base = $conn['url'] ?? 'https://services.nvd.nist.gov/rest/json/cves/2.0';
-        $days = (int) ($conn['days'] ?? 7);
+        $days = max(1, (int) ($conn['days'] ?? 7));
         $key  = trim((string) ($conn['api_key'] ?? ''));
+        $headers = $key !== '' ? ['apiKey: ' . $key] : [];
         $end   = gmdate('Y-m-d\TH:i:s.000');
         $start = gmdate('Y-m-d\TH:i:s.000', time() - $days * 86400);
-        $url = $base . '?pubStartDate=' . rawurlencode($start) . '&pubEndDate=' . rawurlencode($end) . '&resultsPerPage=200';
-        $headers = $key !== '' ? ['apiKey: ' . $key] : [];
-        $r = vg_http_json('GET', $url, null, $headers, 90);
-        if ($r['code'] !== 200 || !isset($r['json']['vulnerabilities'])) {
-            throw new RuntimeException("NVD fetch 실패 (HTTP {$r['code']}) {$r['error']}");
-        }
-        $up = 0;
-        $pdo->beginTransaction();
-        foreach ($r['json']['vulnerabilities'] as $item) {
-            $c = $item['cve'] ?? [];
-            $id = $c['id'] ?? '';
-            if ($id === '') { continue; }
-            $desc = '';
-            foreach ($c['descriptions'] ?? [] as $d) { if (($d['lang'] ?? '') === 'en') { $desc = $d['value']; break; } }
-            $cvss = null;
-            $metrics = $c['metrics'] ?? [];
-            foreach (['cvssMetricV31', 'cvssMetricV30', 'cvssMetricV2'] as $mk) {
-                if (!empty($metrics[$mk][0]['cvssData']['baseScore'])) {
-                    $cvss = (float) $metrics[$mk][0]['cvssData']['baseScore'];
-                    break;
-                }
+
+        $perPage = 2000;              // NVD 최대
+        $startIndex = 0; $total = 0; $fetched = 0; $up = 0;
+        do {
+            $qs = http_build_query([
+                'pubStartDate'   => $start,
+                'pubEndDate'     => $end,
+                'resultsPerPage' => $perPage,
+                'startIndex'     => $startIndex,
+            ]);
+            $r = vg_http_json('GET', "$base?$qs", null, $headers, 120);
+            if ($r['code'] !== 200 || !isset($r['json']['vulnerabilities'])) {
+                throw new RuntimeException("NVD fetch 실패 (HTTP {$r['code']}) {$r['error']}");
             }
-            $pub = !empty($c['published']) ? substr($c['published'], 0, 10) : null;
-            vg_upsert_cve($pdo, $id, mb_substr($desc, 0, 2000), $cvss, $pub);
-            $up++;
+            $total = (int) ($r['json']['totalResults'] ?? 0);
+            $pdo->beginTransaction();
+            foreach ($r['json']['vulnerabilities'] as $item) {
+                if ($this->upsertItem($pdo, $item)) { $up++; }
+                $fetched++;
+            }
+            $pdo->commit();
+            $startIndex += $perPage;
+            if ($startIndex < $total) {
+                sleep($key !== '' ? 1 : 6);   // rate limit (키 없으면 5req/30s)
+            }
+        } while ($startIndex < $total);
+
+        return ['fetched' => $fetched, 'upserted' => $up];
+    }
+
+    private function upsertItem(PDO $pdo, array $item): bool {
+        $c = $item['cve'] ?? [];
+        $id = $c['id'] ?? '';
+        if ($id === '') { return false; }
+        $desc = '';
+        foreach ($c['descriptions'] ?? [] as $d) {
+            if (($d['lang'] ?? '') === 'en') { $desc = (string) $d['value']; break; }
         }
-        $pdo->commit();
-        return ['fetched' => count($r['json']['vulnerabilities']), 'upserted' => $up];
+        $cvss = null;
+        foreach (['cvssMetricV31', 'cvssMetricV30', 'cvssMetricV2'] as $mk) {
+            if (!empty($c['metrics'][$mk][0]['cvssData']['baseScore'])) {
+                $cvss = (float) $c['metrics'][$mk][0]['cvssData']['baseScore'];
+                break;
+            }
+        }
+        $pub = !empty($c['published']) ? substr((string) $c['published'], 0, 10) : null;
+        vg_upsert_cve($pdo, $id, mb_substr($desc, 0, 2000), $cvss, $pub);
+        return true;
     }
 }
 
@@ -303,6 +325,68 @@ function vg_feed_run(PDO $pdo, int $connectorId, string $triggerBy = 'schedule')
         $pdo->prepare('UPDATE feed_connectors SET last_status=?, last_message=?, next_run_at=? WHERE id=?')
             ->execute(['error', $msg, vg_schedule_next($schedule), $connectorId]);
         return ['ok' => false, 'error' => $msg];
+    }
+}
+
+/**
+ * 미리보기: 소스에서 최대 10건을 가져와 그대로 보여준다(저장 안 함).
+ *   커넥터 설정 전에 URL/응답 형태를 눈으로 확인하는 용도.
+ */
+function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
+    $limit = 10;
+    switch ($type) {
+        case 'kev':
+            $r = vg_http_json('GET', $conn['url'] ?? '');
+            if ($r['code'] !== 200 || !isset($r['json']['vulnerabilities'])) {
+                return ['ok' => false, 'error' => "HTTP {$r['code']} {$r['error']}"];
+            }
+            $all = $r['json']['vulnerabilities'];
+            return ['ok' => true, 'count' => count($all), 'sample' => array_slice($all, 0, $limit)];
+
+        case 'nvd':
+            $base = $conn['url'] ?? 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+            $days = max(1, (int) ($conn['days'] ?? 7));
+            $qs = http_build_query([
+                'pubStartDate'   => gmdate('Y-m-d\TH:i:s.000', time() - $days * 86400),
+                'pubEndDate'     => gmdate('Y-m-d\TH:i:s.000'),
+                'resultsPerPage' => $limit,
+            ]);
+            $h = !empty($conn['api_key']) ? ['apiKey: ' . $conn['api_key']] : [];
+            $r = vg_http_json('GET', "$base?$qs", null, $h, 60);
+            if ($r['code'] !== 200 || !isset($r['json']['vulnerabilities'])) {
+                return ['ok' => false, 'error' => "HTTP {$r['code']} {$r['error']}"];
+            }
+            return ['ok' => true, 'count' => (int) ($r['json']['totalResults'] ?? 0), 'sample' => $r['json']['vulnerabilities']];
+
+        case 'kisa':
+            $r = vg_http_raw('GET', $conn['url'] ?? '');
+            $xml = $r['code'] === 200 ? @simplexml_load_string($r['body']) : false;
+            if ($xml === false || !isset($xml->channel->item)) {
+                return ['ok' => false, 'error' => "RSS 파싱 실패 (HTTP {$r['code']})"];
+            }
+            $out = []; $n = 0;
+            foreach ($xml->channel->item as $it) {
+                if ($n++ >= $limit) { break; }
+                $out[] = ['title' => (string) $it->title, 'link' => (string) $it->link, 'pubDate' => (string) $it->pubDate];
+            }
+            return ['ok' => true, 'count' => count($xml->channel->item), 'sample' => $out];
+
+        case 'osv':
+            $pkg = $pdo->query('SELECT name, version FROM packages ORDER BY id DESC LIMIT 1')->fetch();
+            if (!$pkg) {
+                return ['ok' => false, 'error' => '수집된 패키지가 없어 미리보기 불가(에이전트 먼저 실행).'];
+            }
+            $q = ['package' => ['ecosystem' => $conn['ecosystem'] ?? 'Rocky Linux', 'name' => $pkg['name']]];
+            if (!empty($pkg['version'])) { $q['version'] = $pkg['version']; }
+            $r = vg_http_json('POST', $conn['url'] ?? 'https://api.osv.dev/v1/query', $q, [], 60);
+            if ($r['code'] !== 200) {
+                return ['ok' => false, 'error' => "HTTP {$r['code']} {$r['error']}"];
+            }
+            $vulns = $r['json']['vulns'] ?? [];
+            return ['ok' => true, 'count' => count($vulns), 'note' => "패키지 '{$pkg['name']}' 조회", 'sample' => array_slice($vulns, 0, $limit)];
+
+        default:
+            return ['ok' => false, 'error' => "미리보기 미지원 타입: $type"];
     }
 }
 
