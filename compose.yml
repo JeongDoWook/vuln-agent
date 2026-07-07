@@ -51,13 +51,15 @@ services:
       DB_HOST: db
       DB_NAME: ${MYSQL_DATABASE}
       DB_USER: ${MYSQL_USER}
-      # 앱 DB 비번 · 수신 토큰도 시크릿 파일로 주입
+      # 앱 DB 비번 · 수신 토큰 · 최초 admin 비번도 시크릿 파일로 주입
       DB_PASS_FILE: /run/secrets/mysql_password
       INGEST_TOKEN_FILE: /run/secrets/ingest_token
+      ADMIN_PASSWORD_FILE: /run/secrets/admin_password
       TZ: Asia/Seoul
     secrets:
       - mysql_password
       - ingest_token
+      - admin_password
     networks:
       - vulnagent
 
@@ -69,6 +71,8 @@ secrets:
     file: ./secrets/mysql_password.txt
   ingest_token:
     file: ./secrets/ingest_token.txt
+  admin_password:
+    file: ./secrets/admin_password.txt
 
 networks:
   vulnagent:

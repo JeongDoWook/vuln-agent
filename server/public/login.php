@@ -1,0 +1,49 @@
+<?php
+declare(strict_types=1);
+
+require __DIR__ . '/../src/auth.php';
+require __DIR__ . '/../src/view.php';
+
+$err = null;
+try {
+    $pdo = vg_pdo();
+    vg_bootstrap_admin($pdo);   // 최초 접근 시 admin 생성
+} catch (Throwable $e) {
+    $err = 'DB 연결 오류: ' . $e->getMessage();
+}
+
+// 이미 로그인 → 대시보드
+if (vg_current_user()) {
+    header('Location: /');
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $err === null) {
+    if (!vg_csrf_check($_POST['csrf'] ?? null)) {
+        $err = '세션이 만료되었습니다. 다시 시도하세요.';
+    } else {
+        $u = trim((string) ($_POST['username'] ?? ''));
+        $p = (string) ($_POST['password'] ?? '');
+        if (vg_login($pdo, $u, $p)) {
+            header('Location: /');
+            exit;
+        }
+        $err = '아이디 또는 비밀번호가 올바르지 않습니다.';
+    }
+}
+
+vg_header('로그인');
+?>
+  <form class="card" method="post" action="/login.php">
+    <h1 style="text-align:center;">🛡️ vuln-agent</h1>
+    <div class="sub" style="text-align:center;">로그인이 필요합니다</div>
+    <?php if ($err): ?><div class="err"><?= vg_h($err) ?></div><?php endif; ?>
+    <input type="hidden" name="csrf" value="<?= vg_h(vg_csrf_token()) ?>">
+    <label for="username">아이디</label>
+    <input type="text" id="username" name="username" autofocus autocomplete="username" required>
+    <label for="password">비밀번호</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required>
+    <button type="submit">로그인</button>
+  </form>
+<?php
+vg_footer();

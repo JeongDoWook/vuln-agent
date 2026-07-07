@@ -95,7 +95,7 @@ run_init() {
 
   # 2) secrets txt (강한 랜덤값 자동 생성, 있으면 유지)
   mkdir -p secrets
-  for name in mysql_root_password mysql_password ingest_token; do
+  for name in mysql_root_password mysql_password ingest_token admin_password; do
     local f="secrets/${name}.txt"
     if [ -s "$f" ]; then
       say "  ${BLUE}→${NC} 존재: $f (유지)"
@@ -133,7 +133,7 @@ run_doctor() {
   for f in .env.dev .env.prod; do
     if [ -f "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음 (init 실행 필요)"; fi
   done
-  for f in secrets/mysql_root_password.txt secrets/mysql_password.txt secrets/ingest_token.txt; do
+  for f in secrets/mysql_root_password.txt secrets/mysql_password.txt secrets/ingest_token.txt secrets/admin_password.txt; do
     if [ -s "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음/빈값 (init 실행 필요)"; fi
   done
   echo ""
