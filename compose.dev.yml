@@ -1,0 +1,23 @@
+# =============================================================================
+# vuln-agent · Compose Dev (개발 환경)
+# =============================================================================
+# 특징:
+#   - 소스 라이브 마운트(./server) → PHP 수정 즉시 반영, 재빌드 불필요
+#   - DB 포트도 호스트에 노출 → 개발 중 DB 직접 접속/디버깅 가능
+#   - 웹 포트 노출 → http://localhost:${WEB_PORT}
+# 실행:  ./compose_runner.sh dev up -d --build
+# =============================================================================
+
+services:
+  db:
+    container_name: vulnagent-db-dev
+    ports:
+      - "${DB_PORT:-3307}:3306"
+
+  web:
+    container_name: vulnagent-web-dev
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      # 소스를 그대로 마운트 (docroot 는 이미지의 /var/www/html/public)
+      - ./server:/var/www/html

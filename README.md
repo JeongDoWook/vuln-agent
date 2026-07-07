@@ -15,15 +15,45 @@ docs/     기획안 · 설명글
 
 데이터 흐름: **에이전트(JSON) ─POST→ `ingest.php` → MySQL → 웹 현황**
 
-## 빠른 시작 (Docker)
+## 빠른 시작 (Docker · 러너 스크립트)
+
+모든 것은 컨테이너로 동작한다(로컬 PHP/MySQL 불필요). 환경은 **dev / prod** 두 가지.
 
 ```bash
-cp .env.example .env          # 값(비밀번호·토큰) 수정
-docker compose up -d --build  # PHP(Apache) + MySQL 8 기동
+./compose_runner.sh init            # .env.dev / .env.prod 생성(템플릿 복사) → 비밀값 수정
+./compose_runner.sh doctor          # 사전 점검
+./compose_runner.sh dev  up -d --build   # 개발 환경 기동
+./compose_runner.sh dev  down            # 중지
+./compose_runner.sh dev  logs -f         # 로그
 ```
+
+운영 서버(리눅스)에서는 `dev` 대신 `prod`:
+
+```bash
+./compose_runner.sh init                 # .env.prod 의 비밀값을 강한 값으로 교체
+./compose_runner.sh prod up -d --build
+```
+
+| | dev | prod |
+|---|---|---|
+| 소스 | `./server` 라이브 마운트(즉시 반영) | 이미지에 구움(배포=재빌드) |
+| DB 포트 | 호스트에 노출(3307) | **미노출**(내부 네트워크만) |
+| 환경변수 | `.env.dev` | `.env.prod` |
+| 프로젝트명 | `vulnagent-dev` | `vulnagent` |
 
 - 현황 페이지: <http://localhost:8080>
 - 수신 API: `POST http://localhost:8080/ingest.php` (헤더 `X-Agent-Token`)
+
+### 파일 구조 (compose)
+
+```
+compose.yml         서비스 정의 (db=MySQL, web=PHP/Apache)
+compose.common.yml  공통 런타임 (restart, 로깅, pids_limit)
+compose.dev.yml     개발 override
+compose.prod.yml    운영 override
+.env.{dev,prod}.template   → init 이 .env.{dev,prod} 로 복사(커밋 제외)
+compose_runner.sh   실행 러너
+```
 
 ## 에이전트 실행 & 전송
 

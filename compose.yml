@@ -1,0 +1,54 @@
+# =============================================================================
+# vuln-agent · Compose Base (서비스 정의)
+# =============================================================================
+# 모든 환경 공통의 서비스 골격. 단독 실행용이 아니라
+# compose.common.yml + compose.{dev,prod}.yml 과 겹쳐서 사용한다.
+#   실행:  ./compose_runner.sh dev up -d   /   ./compose_runner.sh prod up -d
+# 환경별로 다른 것(container_name, ports, 소스 마운트)은 override 파일에서 정의.
+# =============================================================================
+
+services:
+  # --- MySQL: 수집 데이터 저장소 -------------------------------------------
+  db:
+    image: mysql:${MYSQL_VERSION:-8.0}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Seoul
+    volumes:
+      - db_data:/var/lib/mysql
+      # 최초 기동 시 스키마 자동 적용
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - vulnagent
+
+  # --- PHP(Apache): 수신 API + 현황/대시보드 -------------------------------
+  web:
+    build: ./server
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASS: ${MYSQL_PASSWORD}
+      INGEST_TOKEN: ${INGEST_TOKEN}
+      TZ: Asia/Seoul
+    networks:
+      - vulnagent
+
+networks:
+  vulnagent:
+
+volumes:
+  db_data:
