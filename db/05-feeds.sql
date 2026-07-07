@@ -45,8 +45,8 @@ VALUES
    JSON_OBJECT('url','https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json'),
    JSON_OBJECT('mode','interval','interval_minutes',1440), 1, 'never'),
   ('OSV.dev', 'osv',
-   JSON_OBJECT('url','https://api.osv.dev/v1/query','ecosystem','Rocky Linux'),
-   JSON_OBJECT('mode','manual'), 0, 'never'),
+   JSON_OBJECT('url','https://api.osv.dev/v1/querybatch'),
+   JSON_OBJECT('mode','interval','interval_minutes',360), 1, 'never'),
   ('NVD 2.0', 'nvd',
    JSON_OBJECT('url','https://services.nvd.nist.gov/rest/json/cves/2.0','api_key','','days',7),
    JSON_OBJECT('mode','manual'), 0, 'never')

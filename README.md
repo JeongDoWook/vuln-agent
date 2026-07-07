@@ -89,7 +89,8 @@ compose_runner.sh   실행 러너
 외부 CVE 소스를 UI에서 설정·스케줄·수집한다 (admin → "피드").
 
 - **CISA KEV** (기본 활성): 실제 악용 취약점 카탈로그 JSON, 무인증. 매일 자동 수집.
-- **OSV.dev** / **NVD 2.0**: 필요 시 활성. API URL·키·주기를 UI에서 설정. (NVD 실동작 검증됨)
+- **OSV.dev** (기본 활성): 수집된 **모든 패키지**를 OSV querybatch 로 조회(배포판별 ecosystem 자동, deb 는 소스패키지·설치버전 기준) → `cve_affected_packages` 를 실제로 채워 매처가 전 패키지를 검사. 시드 3개가 아니라 서버의 실제 취약점 전체를 발굴.
+- **NVD 2.0**: 필요 시 활성. 최근 N일 CVE(CVSS 포함) 증분. API 키·주기 UI 설정.
 - **KISA 보안공지** (기본 활성): 보호나라 RSS 수집 → 국내공지 페이지. 해외 도구가 안 하는 국내 특화.
 - 스케줄러 사이드카(`scheduler` 컨테이너)가 1분마다 due 커넥터를 실행하고, 수집 후 전체 스캔을 재매칭.
 - 수동 실행: 커넥터 행의 "지금 실행", 또는 `docker compose exec web php bin/sync.php <id>`.
