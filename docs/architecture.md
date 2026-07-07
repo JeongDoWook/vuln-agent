@@ -69,7 +69,46 @@ flowchart TD
 
 ---
 
-## 3. 배포 구성 (dev / prod)
+## 3. CVE 피드 커넥터 (외부 소스 수집)
+
+claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를 설정·스케줄하면
+스케줄러가 주기적으로 당겨와 매처가 재계산한다.
+
+```mermaid
+flowchart LR
+    subgraph UI["웹 (admin)"]
+        CFG["connectors.php<br/>설정·스케줄·지금실행"]
+    end
+    subgraph Sched["scheduler 사이드카"]
+        TICK["매 1분<br/>due 커넥터 조회"]
+    end
+    subgraph Sources["외부 소스"]
+        KEV["CISA KEV json"]
+        OSV["OSV.dev API"]
+        NVD["NVD 2.0 API"]
+    end
+    DBc[("feed_connectors<br/>feed_collection_logs")]
+    CVE[("cves · kev_catalog<br/>cve_affected_packages")]
+    MAT["매처 재계산"]
+
+    CFG -->|저장| DBc
+    TICK -->|enabled & next_run<=now| DBc
+    TICK --> KEV & OSV & NVD
+    KEV & OSV & NVD -->|upsert| CVE
+    CVE --> MAT
+    TICK -->|실행 후| MAT
+    CFG -->|지금 실행| MAT
+
+    style KEV fill:#238636,color:#fff
+    style MAT fill:#a371f7,color:#fff
+```
+
+커넥터 = `{type(kev/osv/nvd), connection(url·key·ecosystem), schedule(manual/interval), enabled}`.
+수집 이력·상태는 `feed_collection_logs` 에 남고 커넥터 행에 마지막 상태로 표시된다.
+
+---
+
+## 4. 배포 구성 (dev / prod)
 
 ```mermaid
 flowchart TB
@@ -119,7 +158,7 @@ flowchart TB
 
 ---
 
-## 4. 데이터 모델 (ERD)
+## 5. 데이터 모델 (ERD)
 
 ```mermaid
 erDiagram
@@ -130,6 +169,7 @@ erDiagram
     cves  ||--o{ cve_affected_packages : "영향 패키지"
     cves  ||--o{ findings : "취약점"
     cves  ||--o| kev_catalog : "KEV 등재"
+    feed_connectors ||--o{ feed_collection_logs : "수집 이력"
 
     hosts {
         bigint id PK
@@ -181,6 +221,20 @@ erDiagram
         string package_name
         string fixed_version
     }
+    feed_connectors {
+        bigint id PK
+        string connector_type
+        json connection_json
+        json schedule_json
+        bool enabled
+        datetime next_run_at
+    }
+    feed_collection_logs {
+        bigint id PK
+        bigint connector_id FK
+        string status
+        int items_upserted
+    }
 ```
 
-*(cves / kev_catalog / cve_affected_packages / findings 는 2단계 매처에서 도입)*
+*(cves / kev_catalog / cve_affected_packages / findings 는 2단계 매처, feed_* 는 4단계 피드 커넥터에서 도입)*

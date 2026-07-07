@@ -21,3 +21,7 @@ services:
     ports:
       - "${WEB_PORT:-8080}:80"
     # 운영: 소스 마운트 없음 (volumes 정의 없음) → 이미지 코드 사용.
+
+  scheduler:
+    container_name: vulnagent-scheduler
+    # 운영: 소스 마운트 없음 → 이미지에 구워진 bin/scheduler.php 사용.
