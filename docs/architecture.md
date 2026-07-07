@@ -104,7 +104,9 @@ flowchart LR
     style MAT fill:#a371f7,color:#fff
 ```
 
-커넥터 = `{type(kev/osv/nvd), connection(url·key·ecosystem), schedule(manual/interval), enabled}`.
+커넥터 = `{type(kev/osv/nvd/kisa), connection(url·key·ecosystem), schedule, enabled}`.
+스케줄은 **manual / interval(N분) / daily(HH:MM) / cron(5필드 표현식)** 지원 — UI에서 지정하면
+스케줄러 사이드카가 매 tick(60s) 판정해 그 시각에 수집·재매칭한다(Quartz 유사, 중앙 실행).
 수집 이력·상태는 `feed_collection_logs` 에 남고 커넥터 행에 마지막 상태로 표시된다.
 
 ---
