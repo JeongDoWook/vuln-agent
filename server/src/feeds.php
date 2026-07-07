@@ -141,36 +141,74 @@ final class VgKevConnector implements VgFeedConnector {
     }
 }
 
-// OSV.dev — 현재 수집된(최신 스캔) 패키지별로 조회 → cves + affected.
+// 배포판(os_id + version) → OSV ecosystem 문자열. 미지원이면 null.
+function vg_osv_ecosystem(?string $osId, ?string $osVer): ?string {
+    $osId = strtolower(trim((string) $osId));
+    $ver  = trim((string) $osVer);
+    preg_match('/^\d+(\.\d+)?/', $ver, $m);
+    $major = isset($m[0]) ? (int) $m[0] : 0;
+    switch ($osId) {
+        case 'debian':               return $major ? "Debian:$major" : null;
+        case 'ubuntu':               return $ver !== '' ? "Ubuntu:$ver" : null;
+        case 'rocky': case 'rockylinux': return $major ? "Rocky Linux:$major" : null;
+        case 'almalinux':            return $major ? "AlmaLinux:$major" : null;
+        case 'rhel': case 'redhat':  return $major ? "Red Hat:$major" : null;
+        default:                     return null;
+    }
+}
+
+// OSV.dev — 최신 스캔의 실제 패키지를 querybatch 로 조회해 취약 패키지 발굴.
+//   배포판별 ecosystem 자동 판정, deb/ubuntu 는 source_pkg 로 조회, 설치버전으로 필터.
+//   결과(CVE↔패키지)를 cve_affected_packages 에 채워 매처가 전 패키지를 검사하게 함.
 final class VgOsvConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
-        $url = $conn['url'] ?? 'https://api.osv.dev/v1/query';
-        $eco = $conn['ecosystem'] ?? 'Rocky Linux';
-        // 최신 스캔들의 distinct (name, version)
-        $rows = $pdo->query(
-            'SELECT DISTINCT p.name, p.version
-             FROM packages p
-             JOIN (SELECT host_id, MAX(id) mid FROM scans GROUP BY host_id) t ON t.mid = p.scan_id
-             LIMIT 300'
+        $url = $conn['url'] ?? 'https://api.osv.dev/v1/querybatch';
+        if (substr($url, -6) === '/query') { $url .= 'batch'; } // 단건 URL 이 와도 batch 로
+        $ecoOverride = trim((string) ($conn['ecosystem'] ?? ''));
+
+        $scans = $pdo->query(
+            'SELECT s.id, s.os_id, s.os_version
+             FROM scans s JOIN (SELECT host_id, MAX(id) mid FROM scans GROUP BY host_id) t ON t.mid = s.id'
         )->fetchAll();
+
         $fetched = 0; $up = 0;
-        foreach ($rows as $p) {
-            $q = ['package' => ['ecosystem' => $eco, 'name' => $p['name']]];
-            if (!empty($p['version'])) { $q['version'] = $p['version']; }
-            $r = vg_http_json('POST', $url, $q, [], 60);
-            if ($r['code'] !== 200 || !isset($r['json']['vulns'])) { continue; }
-            foreach ($r['json']['vulns'] as $v) {
-                $id = $v['id'] ?? '';
-                // OSV id 가 CVE 가 아니면 aliases 에서 CVE 추출
-                if (strpos($id, 'CVE-') !== 0) {
-                    foreach ($v['aliases'] ?? [] as $al) { if (strpos($al, 'CVE-') === 0) { $id = $al; break; } }
-                }
-                if (strpos($id, 'CVE-') !== 0) { continue; }
-                vg_upsert_cve($pdo, $id, mb_substr((string) ($v['summary'] ?? ($v['details'] ?? '')), 0, 2000), null, null);
-                vg_upsert_affected($pdo, $id, $eco, $p['name'], null);
-                $up++;
+        foreach ($scans as $sc) {
+            $eco = $ecoOverride !== '' ? $ecoOverride : vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
+            if ($eco === null || $eco === '') { continue; } // 미지원 배포판 스킵
+            $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
+
+            $pk = $pdo->prepare('SELECT name, source_pkg, version FROM packages WHERE scan_id = ?');
+            $pk->execute([(int) $sc['id']]);
+
+            // 쿼리 목록(중복 제거). deb/ubuntu 는 source_pkg 로 조회.
+            $queries = []; $seen = [];
+            foreach ($pk->fetchAll() as $p) {
+                $key = $isDeb ? ($p['source_pkg'] ?: $p['name']) : $p['name'];
+                $ver = (string) $p['version'];
+                if ($key === '' || $ver === '') { continue; }
+                $dk = $key . '|' . $ver;
+                if (isset($seen[$dk])) { continue; }
+                $seen[$dk] = true;
+                $queries[] = ['key' => $key, 'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
             }
-            $fetched++;
+
+            foreach (array_chunk($queries, 100) as $chunk) {
+                $payload = ['queries' => array_map(static function ($x) { return $x['q']; }, $chunk)];
+                $r = vg_http_json('POST', $url, $payload, [], 90);
+                $fetched += count($chunk);
+                if ($r['code'] !== 200 || !isset($r['json']['results'])) { continue; }
+                foreach ($r['json']['results'] as $i => $res) {
+                    $key = $chunk[$i]['key'] ?? '';
+                    foreach ($res['vulns'] ?? [] as $v) {
+                        // querybatch 는 id 만 반환 → id 에서 CVE 추출(DEBIAN-CVE-…/CVE-… 커버)
+                        if (!preg_match('/CVE-\d{4}-\d+/i', (string) ($v['id'] ?? ''), $m)) { continue; }
+                        $cve = strtoupper($m[0]);
+                        vg_upsert_cve($pdo, $cve, null, null, null);
+                        vg_upsert_affected($pdo, $cve, $eco, $key, null);
+                        $up++;
+                    }
+                }
+            }
         }
         return ['fetched' => $fetched, 'upserted' => $up];
     }
@@ -445,18 +483,30 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
             return ['ok' => true, 'count' => count($xml->channel->item), 'sample' => $out];
 
         case 'osv':
-            $pkg = $pdo->query('SELECT name, version FROM packages ORDER BY id DESC LIMIT 1')->fetch();
-            if (!$pkg) {
-                return ['ok' => false, 'error' => '수집된 패키지가 없어 미리보기 불가(에이전트 먼저 실행).'];
+            $sc = $pdo->query(
+                'SELECT s.id, s.os_id, s.os_version FROM scans s
+                 JOIN (SELECT host_id, MAX(id) mid FROM scans GROUP BY host_id) t ON t.mid = s.id
+                 ORDER BY s.id DESC LIMIT 1'
+            )->fetch();
+            if (!$sc) {
+                return ['ok' => false, 'error' => '수집된 스캔이 없어 미리보기 불가(에이전트 먼저 실행).'];
             }
-            $q = ['package' => ['ecosystem' => $conn['ecosystem'] ?? 'Rocky Linux', 'name' => $pkg['name']]];
-            if (!empty($pkg['version'])) { $q['version'] = $pkg['version']; }
-            $r = vg_http_json('POST', $conn['url'] ?? 'https://api.osv.dev/v1/query', $q, [], 60);
+            $eco = trim((string) ($conn['ecosystem'] ?? '')) ?: vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
+            if (!$eco) {
+                return ['ok' => false, 'error' => "OSV ecosystem 판정 불가(os_id={$sc['os_id']}). 커넥터에 ecosystem 지정."];
+            }
+            $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
+            $pk = $pdo->prepare('SELECT name, source_pkg, version FROM packages WHERE scan_id=? LIMIT 1');
+            $pk->execute([(int) $sc['id']]);
+            $pkg = $pk->fetch();
+            $key = $isDeb ? ($pkg['source_pkg'] ?: $pkg['name']) : $pkg['name'];
+            $single = 'https://api.osv.dev/v1/query';
+            $r = vg_http_json('POST', $single, ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => (string) $pkg['version']], [], 60);
             if ($r['code'] !== 200) {
                 return ['ok' => false, 'error' => "HTTP {$r['code']} {$r['error']}"];
             }
             $vulns = $r['json']['vulns'] ?? [];
-            return ['ok' => true, 'count' => count($vulns), 'note' => "패키지 '{$pkg['name']}' 조회", 'sample' => array_slice($vulns, 0, $limit)];
+            return ['ok' => true, 'count' => count($vulns), 'note' => "ecosystem={$eco}, '{$key}'@{$pkg['version']} 조회", 'sample' => array_slice($vulns, 0, $limit)];
 
         default:
             return ['ok' => false, 'error' => "미리보기 미지원 타입: $type"];
