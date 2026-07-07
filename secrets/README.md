@@ -10,6 +10,7 @@ DB 비밀번호·수신 토큰을 담는 **Docker Secrets** 디렉토리.
 | `mysql_root_password.txt` | MySQL root 비밀번호 |
 | `mysql_password.txt`      | 앱 DB 유저(`vulnagent`) 비밀번호 |
 | `ingest_token.txt`        | 에이전트↔서버 공유 인증 토큰 (에이전트 `--token` 값) |
+| `admin_password.txt`      | 웹 최초 관리자(admin) 비밀번호 (users 비었을 때 부트스트랩) |
 
 ## 생성
 
