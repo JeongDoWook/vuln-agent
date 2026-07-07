@@ -11,7 +11,10 @@ require_once __DIR__ . '/config.php';   // vg_env / vg_secret 정의
 require_once __DIR__ . '/db.php';       // vg_pdo
 
 if (session_status() === PHP_SESSION_NONE) {
-    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
+    // HTTPS(또는 리버스프록시 X-Forwarded-Proto)면 Secure 쿠키
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+          || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'secure' => $https]);
     session_start();
 }
 

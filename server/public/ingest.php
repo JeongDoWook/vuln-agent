@@ -179,7 +179,9 @@ try {
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    respond_fail(500, 'db error: ' . $e->getMessage());
+    // 내부 오류 상세는 서버 로그로만. 클라이언트에는 일반 메시지(정보노출 방지).
+    error_log('[ingest] ' . $e->getMessage());
+    respond_fail(500, 'internal error');
 }
 
 // 저장 성공 → 즉시 매칭(우선순위 산출). 실패해도 수집 자체는 성공으로 응답.
