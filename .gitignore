@@ -1,5 +1,8 @@
 # --- 비밀값 / 환경 ---
+# 실제 env 파일은 커밋 금지. *.template 만 커밋한다.
 .env
+.env.dev
+.env.prod
 *.local
 
 # --- PHP ---

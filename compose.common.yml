@@ -1,0 +1,25 @@
+# =============================================================================
+# vuln-agent · Compose Common (공통 런타임)
+# =============================================================================
+# dev/prod 모두에 적용되는 운영 설정: 재시작 정책, 로그 로테이션, 프로세스 제한.
+# 서비스 "정의"는 compose.yml, 환경별 차이는 compose.{dev,prod}.yml.
+# =============================================================================
+
+services:
+  db:
+    restart: unless-stopped
+    pids_limit: 512
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    restart: unless-stopped
+    pids_limit: 256
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
