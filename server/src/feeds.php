@@ -23,6 +23,9 @@ function vg_http_json(string $method, string $url, $body = null, array $headers 
         CURLOPT_CONNECTTIMEOUT => 20,
         CURLOPT_CUSTOMREQUEST  => $method,
         CURLOPT_USERAGENT      => 'vuln-agent-feed/1.0',
+        // SSRF/LFI 방어: http/https 만 허용(file://·gopher:// 등 차단), 리다이렉트도 동일 제한
+        CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
     ];
     if ($body !== null) {
         $opt[CURLOPT_POSTFIELDS] = is_string($body) ? $body : json_encode($body);
@@ -48,6 +51,9 @@ function vg_http_raw(string $method, string $url, array $headers = [], int $time
         CURLOPT_CONNECTTIMEOUT => 20,
         CURLOPT_CUSTOMREQUEST  => $method,
         CURLOPT_USERAGENT      => 'vuln-agent-feed/1.0',
+        // SSRF/LFI 방어: http/https 만 허용(file://·gopher:// 등 차단), 리다이렉트도 동일 제한
+        CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         CURLOPT_HTTPHEADER     => $headers,
     ]);
     $raw  = curl_exec($ch);
@@ -241,7 +247,7 @@ final class VgKisaConnector implements VgFeedConnector {
         if ($r['code'] !== 200 || $r['body'] === '') {
             throw new RuntimeException("KISA RSS fetch 실패 (HTTP {$r['code']}) {$r['error']}");
         }
-        $xml = @simplexml_load_string($r['body']);
+        $xml = @simplexml_load_string($r['body'], 'SimpleXMLElement', LIBXML_NONET);
         if ($xml === false || !isset($xml->channel->item)) {
             throw new RuntimeException('KISA RSS 파싱 실패(형식 오류)');
         }
@@ -360,7 +366,7 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
 
         case 'kisa':
             $r = vg_http_raw('GET', $conn['url'] ?? '');
-            $xml = $r['code'] === 200 ? @simplexml_load_string($r['body']) : false;
+            $xml = $r['code'] === 200 ? @simplexml_load_string($r['body'], 'SimpleXMLElement', LIBXML_NONET) : false;
             if ($xml === false || !isset($xml->channel->item)) {
                 return ['ok' => false, 'error' => "RSS 파싱 실패 (HTTP {$r['code']})"];
             }

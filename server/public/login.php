@@ -22,12 +22,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $err === null) {
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
         $err = '세션이 만료되었습니다. 다시 시도하세요.';
     } else {
+        // 브루트포스 완화: 실패가 누적될수록 지연(최대 5초)
+        $fails = (int) ($_SESSION['login_fails'] ?? 0);
+        if ($fails > 0) {
+            sleep(min($fails, 5));
+        }
         $u = trim((string) ($_POST['username'] ?? ''));
         $p = (string) ($_POST['password'] ?? '');
         if (vg_login($pdo, $u, $p)) {
+            unset($_SESSION['login_fails']);
             header('Location: /');
             exit;
         }
+        $_SESSION['login_fails'] = $fails + 1;
         $err = '아이디 또는 비밀번호가 올바르지 않습니다.';
     }
 }
