@@ -18,7 +18,7 @@ try {
     // 호스트별 최신 스캔
     $rows = $pdo->query(
         'SELECT s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
-                h.fqdn, h.os_id, h.os_version
+                h.id AS host_id, h.fqdn, h.os_id, h.os_version
          FROM scans s
          JOIN (SELECT host_id, MAX(id) AS mid FROM scans GROUP BY host_id) t ON t.mid = s.id
          JOIN hosts h ON h.id = s.host_id
@@ -68,7 +68,7 @@ vg_header('대시보드', 'dashboard');
         <tbody>
         <?php foreach ($rows as $r): $sc = $sevByScan[(int)$r['scan_id']] ?? []; ?>
           <tr>
-            <td><strong><?= vg_h($r['fqdn']) ?></strong></td>
+            <td><strong><a href="/host.php?id=<?= (int) $r['host_id'] ?>"><?= vg_h($r['fqdn']) ?></a></strong></td>
             <td><?= vg_h($r['os_id']) ?> <?= vg_h($r['os_version']) ?></td>
             <td><?= (int) $r['package_count'] ?></td>
             <td><?= (int) $r['exposure_count'] ?></td>

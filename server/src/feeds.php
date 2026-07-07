@@ -100,14 +100,19 @@ function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url
 }
 
 function vg_upsert_affected(PDO $pdo, string $cve, ?string $eco, string $pkg, ?string $fixed): void {
-    // (cve, package_name) 중복 방지: 존재하면 skip
     $chk = $pdo->prepare('SELECT id FROM cve_affected_packages WHERE cve_id=? AND package_name=? LIMIT 1');
     $chk->execute([$cve, $pkg]);
-    if ($chk->fetchColumn()) {
+    $id = $chk->fetchColumn();
+    if ($id) {
+        // 존재하면 fixed_version 을 채워 넣는다(이전 batch 수집엔 없었음)
+        if ($fixed !== null && $fixed !== '') {
+            $pdo->prepare('UPDATE cve_affected_packages SET fixed_version=?, ecosystem=COALESCE(ecosystem,?) WHERE id=?')
+                ->execute([$fixed, $eco, (int) $id]);
+        }
         return;
     }
-    $st = $pdo->prepare('INSERT INTO cve_affected_packages (cve_id, ecosystem, package_name, fixed_version) VALUES (?,?,?,?)');
-    $st->execute([$cve, $eco, $pkg, $fixed]);
+    $pdo->prepare('INSERT INTO cve_affected_packages (cve_id, ecosystem, package_name, fixed_version) VALUES (?,?,?,?)')
+        ->execute([$cve, $eco, $pkg, $fixed]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -157,13 +162,36 @@ function vg_osv_ecosystem(?string $osId, ?string $osVer): ?string {
     }
 }
 
-// OSV.dev — 최신 스캔의 실제 패키지를 querybatch 로 조회해 취약 패키지 발굴.
-//   배포판별 ecosystem 자동 판정, deb/ubuntu 는 source_pkg 로 조회, 설치버전으로 필터.
-//   결과(CVE↔패키지)를 cve_affected_packages 에 채워 매처가 전 패키지를 검사하게 함.
+// OSV vuln 에서 CVE ID 추출 (id → aliases 순)
+function vg_osv_cve(array $vuln): ?string {
+    if (preg_match('/CVE-\d{4}-\d+/i', (string) ($vuln['id'] ?? ''), $m)) { return strtoupper($m[0]); }
+    foreach ($vuln['aliases'] ?? [] as $al) {
+        if (preg_match('/CVE-\d{4}-\d+/i', (string) $al, $m)) { return strtoupper($m[0]); }
+    }
+    return null;
+}
+
+// OSV vuln 에서 해당 패키지의 "고쳐진 버전"(조치안) 추출 — 마지막 fixed 이벤트.
+function vg_osv_fixed(array $vuln, string $key): ?string {
+    $fixed = null;
+    foreach ($vuln['affected'] ?? [] as $aff) {
+        if (($aff['package']['name'] ?? '') !== $key) { continue; }
+        foreach ($aff['ranges'] ?? [] as $rng) {
+            foreach ($rng['events'] ?? [] as $ev) {
+                if (!empty($ev['fixed'])) { $fixed = (string) $ev['fixed']; }
+            }
+        }
+    }
+    return $fixed;
+}
+
+// OSV.dev — 최신 스캔의 실제 패키지를 단건 /v1/query 로 조회해 취약 패키지 발굴 + 조치안.
+//   배포판별 ecosystem 자동, deb/ubuntu 는 source_pkg 로 조회, 설치버전으로 필터.
+//   단건 응답엔 summary·aliases·affected.ranges(고쳐진 버전) 가 있어 조치안까지 확보.
 final class VgOsvConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
-        $url = $conn['url'] ?? 'https://api.osv.dev/v1/querybatch';
-        if (substr($url, -6) === '/query') { $url .= 'batch'; } // 단건 URL 이 와도 batch 로
+        $url = $conn['url'] ?? 'https://api.osv.dev/v1/query';
+        if (substr($url, -5) === 'batch') { $url = substr($url, 0, -5); } // querybatch → query
         $ecoOverride = trim((string) ($conn['ecosystem'] ?? ''));
 
         $scans = $pdo->query(
@@ -171,7 +199,7 @@ final class VgOsvConnector implements VgFeedConnector {
              FROM scans s JOIN (SELECT host_id, MAX(id) mid FROM scans GROUP BY host_id) t ON t.mid = s.id'
         )->fetchAll();
 
-        $fetched = 0; $up = 0;
+        $fetched = 0; $up = 0; $seen = [];
         foreach ($scans as $sc) {
             $eco = $ecoOverride !== '' ? $ecoOverride : vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
             if ($eco === null || $eco === '') { continue; } // 미지원 배포판 스킵
@@ -179,34 +207,24 @@ final class VgOsvConnector implements VgFeedConnector {
 
             $pk = $pdo->prepare('SELECT name, source_pkg, version FROM packages WHERE scan_id = ?');
             $pk->execute([(int) $sc['id']]);
-
-            // 쿼리 목록(중복 제거). deb/ubuntu 는 source_pkg 로 조회.
-            $queries = []; $seen = [];
             foreach ($pk->fetchAll() as $p) {
                 $key = $isDeb ? ($p['source_pkg'] ?: $p['name']) : $p['name'];
                 $ver = (string) $p['version'];
                 if ($key === '' || $ver === '') { continue; }
-                $dk = $key . '|' . $ver;
-                if (isset($seen[$dk])) { continue; }
+                $dk = $eco . '|' . $key . '|' . $ver;
+                if (isset($seen[$dk])) { continue; } // 배포판·패키지·버전 조합 1회만
                 $seen[$dk] = true;
-                $queries[] = ['key' => $key, 'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
-            }
 
-            foreach (array_chunk($queries, 100) as $chunk) {
-                $payload = ['queries' => array_map(static function ($x) { return $x['q']; }, $chunk)];
-                $r = vg_http_json('POST', $url, $payload, [], 90);
-                $fetched += count($chunk);
-                if ($r['code'] !== 200 || !isset($r['json']['results'])) { continue; }
-                foreach ($r['json']['results'] as $i => $res) {
-                    $key = $chunk[$i]['key'] ?? '';
-                    foreach ($res['vulns'] ?? [] as $v) {
-                        // querybatch 는 id 만 반환 → id 에서 CVE 추출(DEBIAN-CVE-…/CVE-… 커버)
-                        if (!preg_match('/CVE-\d{4}-\d+/i', (string) ($v['id'] ?? ''), $m)) { continue; }
-                        $cve = strtoupper($m[0]);
-                        vg_upsert_cve($pdo, $cve, null, null, null);
-                        vg_upsert_affected($pdo, $cve, $eco, $key, null);
-                        $up++;
-                    }
+                $r = vg_http_json('POST', $url, ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver], [], 30);
+                $fetched++;
+                if ($r['code'] !== 200 || !isset($r['json']['vulns'])) { continue; }
+                foreach ($r['json']['vulns'] as $v) {
+                    $cve = vg_osv_cve($v);
+                    if ($cve === null) { continue; }
+                    $summary = (string) ($v['summary'] ?? ($v['details'] ?? ''));
+                    vg_upsert_cve($pdo, $cve, $summary !== '' ? mb_substr($summary, 0, 2000) : null, null, null);
+                    vg_upsert_affected($pdo, $cve, $eco, $key, vg_osv_fixed($v, $key));
+                    $up++;
                 }
             }
         }

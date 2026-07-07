@@ -80,9 +80,12 @@ compose_runner.sh   실행 러너
 - [x] 4a. CVE 피드 커넥터 (CISA KEV 실데이터 · OSV · NVD) + 스케줄러 사이드카
 - [x] 4b. 국내 특화 — KISA 보안공지 커넥터 + 국내공지 페이지
 
-- 취약점 우선순위: <http://localhost:8080/findings.php>
+- 취약점 우선순위(+조치안): <http://localhost:8080/findings.php>
+- 호스트 상세(노출·취약점 한눈에): 대시보드에서 서버명 클릭 → `host.php`
 - 피드 커넥터(admin): <http://localhost:8080/connectors.php>
 - 국내 보안공지: <http://localhost:8080/advisories.php>
+
+각 취약점에는 **조치안**("어느 버전 이상으로 업데이트")이 함께 표시된다(OSV 의 fixed 버전).
 
 ### 피드 커넥터
 
