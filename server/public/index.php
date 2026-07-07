@@ -79,7 +79,7 @@ function h(?string $s): string {
       <thead>
         <tr>
           <th>호스트</th><th>OS</th><th>에이전트</th>
-          <th>패키지</th><th>노출</th><th>수집시각</th><th>수신시각</th>
+          <th>패키지</th><th>노출</th><th>수집시각</th><th>우선순위</th>
         </tr>
       </thead>
       <tbody>
@@ -91,7 +91,7 @@ function h(?string $s): string {
           <td><?= (int) $r['package_count'] ?></td>
           <td><?= (int) $r['exposure_count'] ?></td>
           <td><?= h($r['collected_at']) ?></td>
-          <td><?= h($r['received_at']) ?></td>
+          <td><a href="/findings.php?scan_id=<?= (int) $r['scan_id'] ?>">취약점 →</a></td>
         </tr>
       <?php endforeach; ?>
       </tbody>
