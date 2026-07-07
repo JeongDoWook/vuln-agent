@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "hostname_fqdn": "web01.example.com",
+    "collected_at": "2026-07-07T10:15:30+09:00",
+    "agent_version": "2.1",
+    "elapsed_seconds": "6"
+  },
+  "vuln_mapping": {
+    "distro_id": "rocky",
+    "distro_version": "9.3",
+    "cpe_name": "cpe:/o:rocky:rocky:9::baseos",
+    "package_family": "rpm"
+  },
+  "system": {
+    "kernel_release": "5.14.0-362.el9.x86_64",
+    "kernel": "Linux web01 5.14.0-362.el9.x86_64 #1 SMP x86_64 GNU/Linux"
+  },
+  "pkg": {
+    "manager": "rpm",
+    "count": "3",
+    "list": "openssl\t1:3.0.7-25.el9_3\tx86_64\topenssl-3.0.7-25.el9_3.src.rpm\tRocky Enterprise Software Foundation\nglibc\t0:2.34-83.el9_3.7\tx86_64\tglibc-2.34-83.el9_3.7.src.rpm\tRocky Enterprise Software Foundation\nnginx\t1:1.20.1-14.el9_2\tx86_64\tnginx-1.20.1-14.el9_2.src.rpm\tRocky Enterprise Software Foundation"
+  },
+  "exposure": {
+    "correlation": "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\n1201|nginx|tcp|0.0.0.0|443|EXTERNAL|nginx|openssl,glibc\n1201|nginx|tcp|0.0.0.0|80|EXTERNAL|nginx|openssl,glibc\n980|sshd|tcp|0.0.0.0|22|EXTERNAL|openssh-server|openssl,glibc\n1450|mysqld|tcp|127.0.0.1|3306|LOCAL|mysql-server|glibc"
+  }
+}
