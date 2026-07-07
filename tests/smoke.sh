@@ -74,6 +74,8 @@ assert_eq "$code" "200" "사용자 페이지 200(admin)"
 
 body=$(curl -s -b "$JAR" "$BASE/connectors.php")
 assert_contains "$body" "CISA KEV" "피드 커넥터 페이지(기본 커넥터 노출)"
+code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
+assert_eq "$code" "200" "국내 보안공지 페이지 200"
 
 # 잘못된 비번
 JAR2="$(mktemp)"; csrf2=$(curl -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)

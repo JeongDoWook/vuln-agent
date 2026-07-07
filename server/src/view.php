@@ -69,6 +69,7 @@ function vg_header(string $title, string $active = ''): void {
     <span class="brand">🛡️ vuln-agent</span>
     <a class="link <?= $active==='dashboard'?'active':'' ?>" href="/">대시보드</a>
     <a class="link <?= $active==='findings'?'active':'' ?>" href="/findings.php">취약점</a>
+    <a class="link <?= $active==='advisories'?'active':'' ?>" href="/advisories.php">국내공지</a>
     <?php if (($user['role'] ?? '') === 'admin'): ?>
       <a class="link <?= $active==='connectors'?'active':'' ?>" href="/connectors.php">피드</a>
       <a class="link <?= $active==='users'?'active':'' ?>" href="/users.php">사용자</a>

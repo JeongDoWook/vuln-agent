@@ -38,6 +38,25 @@ function vg_http_json(string $method, string $url, $body = null, array $headers 
     return ['code' => $code, 'json' => is_array($decoded) ? $decoded : null, 'error' => $err];
 }
 
+// raw 응답 (XML/RSS 등 non-JSON 소스용)
+function vg_http_raw(string $method, string $url, array $headers = [], int $timeout = 60): array {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT        => $timeout,
+        CURLOPT_CONNECTTIMEOUT => 20,
+        CURLOPT_CUSTOMREQUEST  => $method,
+        CURLOPT_USERAGENT      => 'vuln-agent-feed/1.0',
+        CURLOPT_HTTPHEADER     => $headers,
+    ]);
+    $raw  = curl_exec($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    return ['code' => $code, 'body' => is_string($raw) ? $raw : '', 'error' => $err];
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // upsert 헬퍼 (수집 결과 저장)
 // ─────────────────────────────────────────────────────────────────────────
@@ -58,6 +77,20 @@ function vg_upsert_kev(PDO $pdo, string $id, ?string $dateAdded, ?string $note):
          ON DUPLICATE KEY UPDATE date_added = VALUES(date_added), note = VALUES(note)'
     );
     $st->execute([$id, $dateAdded ?: null, $note]);
+}
+
+// 국내 보안공지(KISA 등) upsert. url 기준 dedup. 신규면 true.
+function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url, ?string $published, ?string $cveIds): bool {
+    $chk = $pdo->prepare('SELECT id FROM advisories WHERE url = ? LIMIT 1');
+    $chk->execute([$url]);
+    if ($chk->fetchColumn()) {
+        $pdo->prepare('UPDATE advisories SET title=?, published=?, cve_ids=? WHERE url=?')
+            ->execute([$title, $published, $cveIds, $url]);
+        return false;
+    }
+    $pdo->prepare('INSERT INTO advisories (source, title, url, published, cve_ids) VALUES (?,?,?,?,?)')
+        ->execute([$source, $title, $url, $published, $cveIds]);
+    return true;
 }
 
 function vg_upsert_affected(PDO $pdo, string $cve, ?string $eco, string $pkg, ?string $fixed): void {
@@ -176,11 +209,51 @@ final class VgNvdConnector implements VgFeedConnector {
     }
 }
 
+// KISA(보호나라) 국내 보안공지 RSS — 해외 도구가 안 하는 국내 특화.
+//   RSS 는 title/link/pubDate 만 제공(CVE 없음) → 공지 자체를 advisories 로 수집.
+//   제목에 CVE 가 있으면 best-effort 로 추출해 findings 에 국내공지 배지로 연계.
+final class VgKisaConnector implements VgFeedConnector {
+    public function run(PDO $pdo, array $conn): array {
+        $url = $conn['url'] ?? 'https://www.boho.or.kr/kr/rss.do?bbsId=B0000133';
+        $r = vg_http_raw('GET', $url);
+        if ($r['code'] !== 200 || $r['body'] === '') {
+            throw new RuntimeException("KISA RSS fetch 실패 (HTTP {$r['code']}) {$r['error']}");
+        }
+        $xml = @simplexml_load_string($r['body']);
+        if ($xml === false || !isset($xml->channel->item)) {
+            throw new RuntimeException('KISA RSS 파싱 실패(형식 오류)');
+        }
+        $items = $xml->channel->item;
+        $up = 0;
+        foreach ($items as $it) {
+            $title = trim((string) $it->title);
+            $link  = trim((string) $it->link);
+            if ($title === '' || $link === '') { continue; }
+            $pub = null;
+            if (!empty($it->pubDate)) {
+                $ts = strtotime((string) $it->pubDate);
+                if ($ts !== false) { $pub = date('Y-m-d', $ts); }
+            }
+            preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $title, $m);
+            $cveIds = $m[0] ? implode(',', array_map('strtoupper', array_unique($m[0]))) : null;
+            if (vg_upsert_advisory($pdo, 'kisa', mb_substr($title, 0, 500), $link, $pub, $cveIds)) {
+                $up++;
+            }
+            // 제목에 CVE 가 있으면 cves 에도 등록(국내공지 근거 확보)
+            foreach ($m[0] as $cve) {
+                vg_upsert_cve($pdo, strtoupper($cve), null, null, null);
+            }
+        }
+        return ['fetched' => count($items), 'upserted' => $up];
+    }
+}
+
 function vg_feed_make(string $type): VgFeedConnector {
     switch ($type) {
         case 'kev': return new VgKevConnector();
         case 'osv': return new VgOsvConnector();
         case 'nvd': return new VgNvdConnector();
+        case 'kisa': return new VgKisaConnector();
         default: throw new InvalidArgumentException("알 수 없는 커넥터 타입: $type");
     }
 }
