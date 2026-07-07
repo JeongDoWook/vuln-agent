@@ -73,11 +73,13 @@ compose_runner.sh   실행 러너
 
 ## 상태
 
-- [x] 0. Docker 구성 (compose + Dockerfile)
+- [x] 0. Docker 구성 (compose dev/prod + Dockerfile + Docker Secrets)
 - [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
-- [ ] 2. CVE 미러 + 매처 (외부노출 + 로드됨 + KEV = CRITICAL)
-- [ ] 3. 웹 대시보드 (우선순위 · 노출 근거)
+- [x] 2. 매처 (외부노출 + 로드됨 + KEV = CRITICAL) · findings.php · 아키텍처 다이어그램
+- [ ] 3. 웹 (로그인 → 대시보드 → 스캔/취약점) + CVE 실피드(NVD/OSV/KEV) 동기화
 - [ ] 4. 국내 특화(KISA) + AI 조치안 생성
+
+취약점 우선순위 화면: <http://localhost:8080/findings.php>
 
 ## 라이선스
 
