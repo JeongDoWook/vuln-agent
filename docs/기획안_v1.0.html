@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>프로젝트 기획안 v1.0 — 자율 보안 에이전트</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0a1016;
+    --panel:#0f1720;
+    --panel-2:#131e29;
+    --line:#22303d;
+    --line-soft:#1a2732;
+    --text:#c9d6e0;
+    --text-dim:#7c8b99;
+    --text-bright:#eef4f9;
+    --scan:#4ade80;
+    --alert:#ff5d5d;
+    --warn:#ffb454;
+    --accent:#38bdf8;
+    --violet:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:
+      radial-gradient(900px 500px at 88% -8%, rgba(56,189,248,.10), transparent 60%),
+      radial-gradient(700px 480px at 5% 12%, rgba(167,139,250,.08), transparent 55%),
+      var(--ink);
+    color:var(--text);
+    font-family:'IBM Plex Sans KR',system-ui,sans-serif;
+    line-height:1.7;font-weight:300;-webkit-font-smoothing:antialiased;
+    padding:0 20px 120px;
+  }
+  .wrap{max-width:860px;margin:0 auto}
+
+  header{padding:64px 0 40px;border-bottom:1px solid var(--line);position:relative}
+  .kicker{
+    font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--accent);
+    display:flex;align-items:center;gap:10px;margin-bottom:22px;
+  }
+  .kicker .dot{
+    width:7px;height:7px;border-radius:50%;background:var(--scan);
+    animation:pulse 2.4s infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(74,222,128,.55)}
+    70%{box-shadow:0 0 0 9px rgba(74,222,128,0)}
+    100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}
+  }
+  h1{font-weight:700;font-size:clamp(30px,5.4vw,50px);line-height:1.12;
+    color:var(--text-bright);letter-spacing:-.02em}
+  h1 .hl{color:var(--scan)}
+  .lede{margin-top:20px;font-size:clamp(15px,2.1vw,18px);color:var(--text-dim);
+    max-width:64ch;font-weight:300}
+  .meta{margin-top:28px;display:flex;flex-wrap:wrap;gap:10px}
+  .chip{
+    font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.03em;
+    padding:6px 11px;border:1px solid var(--line);border-radius:999px;
+    color:var(--text-dim);background:rgba(255,255,255,.015);
+  }
+  .chip b{color:var(--text-bright);font-weight:500}
+
+  section{padding:48px 0;border-bottom:1px solid var(--line-soft)}
+  .sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:24px}
+  .sec-no{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--accent);
+    font-weight:500;padding-top:4px;flex:none}
+  h2{font-size:clamp(20px,3vw,26px);font-weight:600;color:var(--text-bright);
+    letter-spacing:-.01em;line-height:1.25}
+  h2 + .sub{color:var(--text-dim);font-size:14px;margin-top:6px}
+  h3.mini{font-size:14px;font-weight:600;color:var(--text-bright);margin:20px 0 8px;
+    font-family:'JetBrains Mono',monospace;letter-spacing:.01em}
+  p{margin:0 0 14px}
+  p.body{color:var(--text)}
+  strong{color:var(--text-bright);font-weight:600}
+  em{color:var(--text);font-style:normal;border-bottom:1px dotted var(--text-dim)}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(56,189,248,.3)}
+  a:hover{border-bottom-color:var(--accent)}
+
+  ul.clean{list-style:none;margin:6px 0 14px}
+  ul.clean li{position:relative;padding-left:22px;margin-bottom:9px;color:var(--text)}
+  ul.clean li::before{content:"›";position:absolute;left:2px;top:0;color:var(--accent);
+    font-family:'JetBrains Mono',monospace;font-weight:700}
+
+  .tbl{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:8px 0 6px}
+  .tbl-row{display:grid;grid-template-columns:1.1fr 1.4fr 1.6fr;border-bottom:1px solid var(--line-soft)}
+  .tbl-row:last-child{border-bottom:none}
+  .tbl-row > div{padding:13px 16px;font-size:13.5px}
+  .tbl-row.head > div{background:var(--panel);font-family:'JetBrains Mono',monospace;
+    font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-dim);font-weight:500}
+  .tbl-row .k{color:var(--text-dim);border-right:1px solid var(--line-soft)}
+  .tbl-row .old{color:var(--text-dim);border-right:1px solid var(--line-soft)}
+  .tbl-row .new{color:var(--text-bright)}
+  .tbl-row.head .new{color:var(--scan)}
+
+  .pipe{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:6px 4px;margin:6px 0;overflow:hidden}
+  .stage{display:grid;grid-template-columns:170px 1fr;gap:14px;align-items:center;
+    padding:14px 18px;position:relative}
+  .stage:not(:last-child)::after{content:"";position:absolute;left:37px;bottom:-1px;
+    width:1px;height:16px;background:var(--line)}
+  .stage .name{font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:500;
+    display:flex;align-items:center;gap:9px}
+  .stage .name i{width:9px;height:9px;border-radius:2px;flex:none;transform:rotate(45deg)}
+  .stage .desc{color:var(--text-dim);font-size:13px}
+  .stage .desc code{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent);
+    background:rgba(56,189,248,.08);padding:1px 6px;border-radius:4px}
+  .c-scan i{background:var(--scan)} .c-scan .name{color:var(--scan)}
+  .c-accent i{background:var(--accent)} .c-accent .name{color:var(--accent)}
+  .c-violet i{background:var(--violet)} .c-violet .name{color:var(--violet)}
+  .c-warn i{background:var(--warn)} .c-warn .name{color:var(--warn)}
+  .c-text i{background:var(--text)} .c-text .name{color:var(--text-bright)}
+
+  .flow{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px;margin:14px 0;overflow-x:auto}
+  .flow pre{font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.75;
+    color:var(--text-dim);white-space:pre}
+  .flow pre b{color:var(--scan);font-weight:500}
+  .flow pre u{color:var(--accent);text-decoration:none}
+
+  .note{background:rgba(56,189,248,.05);border:1px solid rgba(56,189,248,.25);
+    border-radius:10px;padding:16px 18px;margin:14px 0;font-size:14px}
+  .note.warn{background:rgba(255,180,84,.05);border-color:rgba(255,180,84,.3)}
+  .note.warn .lbl{color:var(--warn)}
+  .note.good{background:rgba(74,222,128,.05);border-color:rgba(74,222,128,.3)}
+  .note.good .lbl{color:var(--scan)}
+  .note.alert{background:rgba(255,93,93,.05);border-color:rgba(255,93,93,.3)}
+  .note.alert .lbl{color:var(--alert)}
+  .note .lbl{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--accent);display:block;margin-bottom:6px;font-weight:700}
+
+  .routes{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:8px 0}
+  .route{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 18px 16px}
+  .route.rec{border-color:rgba(74,222,128,.4)}
+  .route h3{font-size:14px;font-weight:600;color:var(--text-bright);margin-bottom:4px;
+    display:flex;align-items:center;gap:8px}
+  .route .flag{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+    letter-spacing:.05em;padding:2px 7px;border-radius:5px}
+  .route.rec .flag{color:var(--scan);background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.35)}
+  .route.safe .flag{color:var(--accent);background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.35)}
+  .route p{font-size:13px;color:var(--text-dim);margin:8px 0 0}
+
+  .build{display:grid;gap:14px;margin:8px 0}
+  .bstage{
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:18px 20px;position:relative;overflow:hidden;
+  }
+  .bstage::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+  .bstage.s1::before{background:var(--scan)}
+  .bstage.s2::before{background:var(--violet)}
+  .bstage.s3::before{background:var(--warn)}
+  .bstage .btop{display:flex;align-items:center;justify-content:space-between;
+    gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .bstage .bname{font-size:15px;font-weight:600;color:var(--text-bright);
+    display:flex;align-items:center;gap:10px}
+  .bstage .bnum{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;
+    width:26px;height:26px;border-radius:7px;display:grid;place-items:center;flex:none}
+  .bstage.s1 .bnum{color:var(--scan);background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.35)}
+  .bstage.s2 .bnum{color:var(--violet);background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.35)}
+  .bstage.s3 .bnum{color:var(--warn);background:rgba(255,180,84,.1);border:1px solid rgba(255,180,84,.35)}
+  .bstage .bmark{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;
+    letter-spacing:.04em;padding:4px 9px;border-radius:6px;white-space:nowrap}
+  .bstage.s1 .bmark{color:var(--scan);background:rgba(74,222,128,.08)}
+  .bstage.s2 .bmark{color:var(--violet);background:rgba(167,139,250,.08)}
+  .bstage.s3 .bmark{color:var(--warn);background:rgba(255,180,84,.08)}
+  .bstage ul{list-style:none;margin:0}
+  .bstage li{position:relative;padding-left:20px;margin-bottom:7px;font-size:13.5px;color:var(--text)}
+  .bstage li:last-child{margin-bottom:0}
+  .bstage li::before{content:"·";position:absolute;left:6px;top:-1px;
+    color:var(--text-dim);font-weight:700}
+  .bstage .out{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);
+    font-size:12.5px;color:var(--text-dim)}
+  .bstage .out b{color:var(--text-bright);font-weight:500}
+
+  /* ranked differentiators */
+  .rank{display:grid;gap:11px;margin:10px 0 4px}
+  .ritem{display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start;
+    padding:15px 17px;background:var(--panel);border:1px solid var(--line-soft);border-radius:11px}
+  .ritem.top{border-color:rgba(74,222,128,.4);background:rgba(74,222,128,.03)}
+  .ritem .rk{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700;
+    color:var(--accent);line-height:1.3}
+  .ritem.top .rk{color:var(--scan)}
+  .ritem .rh{font-size:14.5px;font-weight:600;color:var(--text-bright);margin-bottom:3px;
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .ritem .star{font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;
+    letter-spacing:.05em;color:var(--scan);background:rgba(74,222,128,.1);
+    border:1px solid rgba(74,222,128,.35);padding:2px 7px;border-radius:5px}
+  .ritem .rb{font-size:13px;color:var(--text-dim)}
+  .ritem .rb b{color:var(--text);font-weight:500}
+
+  .check li{list-style:none;position:relative;padding-left:30px;margin-bottom:11px;color:var(--text)}
+  .check li::before{content:"";position:absolute;left:0;top:3px;width:16px;height:16px;
+    border:1.5px solid var(--line);border-radius:4px;background:var(--panel)}
+  .check li::after{content:"";position:absolute;left:5px;top:6px;width:5px;height:9px;
+    border:solid var(--text-dim);border-width:0 2px 2px 0;transform:rotate(45deg);opacity:.35}
+  ul.check{list-style:none}
+
+  .res{display:grid;gap:10px;margin:6px 0}
+  .res-item{display:grid;grid-template-columns:180px 1fr;gap:16px;align-items:start;
+    padding:13px 16px;background:var(--panel);border:1px solid var(--line-soft);border-radius:10px}
+  .res-item .rn{font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--scan);font-weight:500}
+  .res-item .rd{font-size:13px;color:var(--text-dim)}
+
+  .next{counter-reset:step;list-style:none;margin-top:8px}
+  .next li{counter-increment:step;position:relative;padding:14px 16px 14px 56px;
+    background:var(--panel);border:1px solid var(--line-soft);border-radius:10px;
+    margin-bottom:10px;color:var(--text);font-size:14px}
+  .next li::before{content:counter(step,decimal-leading-zero);position:absolute;left:16px;
+    top:50%;transform:translateY(-50%);font-family:'JetBrains Mono',monospace;
+    font-size:14px;font-weight:700;color:var(--accent)}
+  .next li b{color:var(--text-bright)}
+
+  footer{padding:40px 0 0;color:var(--text-dim);font-size:12.5px;
+    font-family:'JetBrains Mono',monospace;text-align:center}
+
+  @media(max-width:640px){
+    .tbl-row{grid-template-columns:1fr}
+    .tbl-row .k,.tbl-row .old{border-right:none;border-bottom:1px solid var(--line-soft)}
+    .tbl-row.head{display:none}
+    .stage{grid-template-columns:1fr;gap:4px}
+    .stage:not(:last-child)::after{display:none}
+    .routes{grid-template-columns:1fr}
+    .res-item{grid-template-columns:1fr;gap:4px}
+    .next li{padding-left:50px}
+  }
+  @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="kicker"><span class="dot"></span> 2026 오픈소스 개발자대회 · 기획안 v1.0</div>
+    <h1>취약점을 스스로 조사하고<br>고치는 <span class="hl">자율 보안 에이전트</span></h1>
+    <p class="lede">단순 스캐너가 아니다. 검증된 스캐너를 도구로 불러 쓰고, 그 위에서 실제 환경의 맥락으로 위험을 판단해, 조치안까지 만들어 스스로 검증한 뒤 사람 말로 설명한다.</p>
+    <div class="meta">
+      <span class="chip">과제유형 <b>자유과제 / 보안·안전</b></span>
+      <span class="chip">스택 <b>Python</b></span>
+      <span class="chip">#AI에이전트</span>
+      <span class="chip">#SCA</span>
+      <span class="chip">#취약점대응</span>
+    </div>
+  </header>
+
+  <!-- 01 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">01</span>
+      <div><h2>왜 이 주제인가</h2><div class="sub">개발 배경 및 목적</div></div>
+    </div>
+    <p class="body">오픈소스 의존성이 폭증하면서, 내 PC·서버에 깔린 소프트웨어에 어떤 알려진 취약점(CVE)이 숨어 있는지 개인·중소기업이 파악하기 어렵다.</p>
+    <p class="body">기존 스캐너를 돌리면 문제가 하나 더 생긴다. 취약점이 수백 개씩 쏟아지는데 그중 상당수가 <em>오탐</em>이다. 담당자는 "이건 진짜인가, 이미 고쳐진 건가"를 손으로 걸러야 하고, 경고가 너무 많아 결국 아무도 안 보게 된다.</p>
+    <p class="body">그래서 필요한 건 "더 많은 경고"가 아니라 <strong>믿을 수 있는 소수의 판단</strong>이다. 이 판단·조치·검증 과정을 에이전트가 자율적으로 수행하게 하는 것이 목표다.</p>
+  </section>
+
+  <!-- 02 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">02</span>
+      <div><h2>핵심 전략</h2><div class="sub">매칭은 검증된 도구에, 차별점은 그 위 레이어에</div></div>
+    </div>
+    <div class="note alert"><span class="lbl">피해야 할 함정</span>
+      "백포트·오탐을 잘 잡는 매칭을 직접 만들어 차별화"는 위험하다. <strong>Trivy·Grype·OpenSCAP는 이미</strong> 각 배포판 보안 피드(Red Hat OVAL, Ubuntu USN, Debian Tracker)로 백포트를 인식해 오탐을 억제한다. 이건 성숙한 도구의 기본기이지 신선한 기능이 아니며, 직접 만들면 오히려 오탐이 더 많을 수 있다.</div>
+    <div class="note good"><span class="lbl">결정</span>
+      OS 패키지 매칭 자체는 <strong>검증된 스캐너를 도구로 호출</strong>해 그 정확도를 그대로 상속받는다. 우리의 기여는 그 결과를 더 똑똑하게 쓰는 <strong>상위 레이어</strong>에 둔다. 이는 기획안의 "스캐너를 도구로 재활용" 원칙과 정확히 일치한다.</div>
+  </section>
+
+  <!-- 03 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">03</span>
+      <div><h2>기존 도구와의 차별점</h2><div class="sub">혁신성 — 심사 핵심 포인트</div></div>
+    </div>
+    <div class="tbl">
+      <div class="tbl-row head"><div class="k">구분</div><div class="old">기존 스캐너</div><div class="new">우리 에이전트</div></div>
+      <div class="tbl-row"><div class="k">동작</div><div class="old">규칙대로 스캔 후 목록</div><div class="new">스스로 조사·판단·조치·재검증</div></div>
+      <div class="tbl-row"><div class="k">데이터 소스</div><div class="old">단일/소수 DB</div><div class="new">NVD + OSV + 국내 KISA 교차검증</div></div>
+      <div class="tbl-row"><div class="k">우선순위</div><div class="old">CVSS 점수 나열</div><div class="new">런타임 노출 + EPSS + KEV 맥락 추론</div></div>
+      <div class="tbl-row"><div class="k">조치</div><div class="old">(일부) 업그레이드 제안</div><div class="new">조치안 생성 + 충돌 시뮬레이션 자기검증</div></div>
+      <div class="tbl-row"><div class="k">결과물</div><div class="old">기술적 리포트</div><div class="new">자연어 설명(왜·어떻게·무엇이 깨질지)</div></div>
+    </div>
+
+    <h3 class="mini">// 진짜 차별점 (강한 순서)</h3>
+    <div class="rank">
+      <div class="ritem top">
+        <div class="rk">①</div>
+        <div>
+          <div class="rh">런타임 노출 상관 <span class="star">최우선</span></div>
+          <div class="rb">기존 스캐너는 아티팩트만 본다. 우리 에이전트는 <b>열린 포트·실행 서비스·프로세스를 이미 수집</b>한다. "openssl이 취약하다"가 아니라 "그걸 쓰는 nginx가 443으로 외부에 떠 있다"까지 말해 우선순위를 가른다. 추가 개발 거의 없음.</div>
+        </div>
+      </div>
+      <div class="ritem">
+        <div class="rk">②</div>
+        <div>
+          <div class="rh">EPSS + CISA KEV 결합</div>
+          <div class="rb">점수 나열 대신 <b>실제 악용 확률(EPSS)</b> + <b>실제 악용된 목록(KEV)</b>을 결합한다. "CVSS 9.8이나 악용확률 0.1%" vs "CVSS 6.5이나 현재 공격 중"을 구분. 둘 다 무료.</div>
+        </div>
+      </div>
+      <div class="ritem">
+        <div class="rk">③</div>
+        <div>
+          <div class="rh">설명가능한 오탐 억제 → VEX</div>
+          <div class="rb">오탐을 숨기지 않고 <b>왜 안전한지 근거</b>(릴리스 번호·changelog CVE 라인·적용된 보안권고)를 제시하고, 기계가 읽는 <b>VEX</b> 문서로 산출한다.</div>
+        </div>
+      </div>
+      <div class="ritem">
+        <div class="rk">④</div>
+        <div>
+          <div class="rh">경량 상주 에이전트 + 시계열</div>
+          <div class="rb">CI/1회성이 아니라 <b>매일 상주 수집</b>. "어제 안전 → 오늘 신규 CVE로 취약"을 추적하고 여러 서버를 한눈에 본다. 에이전트는 이미 초경량(메모리 7MB, 최저 우선순위).</div>
+        </div>
+      </div>
+      <div class="ritem">
+        <div class="rk">⑤</div>
+        <div>
+          <div class="rh">KISA 국내 연동</div>
+          <div class="rb">해외 도구가 하지 않는 국내 보안공지 매칭. <b>신선함 + 사회적 기여</b> 포인트.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">04</span>
+      <div><h2>시스템 구성</h2><div class="sub">에이전트 파이프라인</div></div>
+    </div>
+    <div class="pipe">
+      <div class="stage c-scan"><div class="name"><i></i>수집 에이전트</div>
+        <div class="desc">설치 SW·패키지 + 열린 포트·서비스 수집 → <code>SBOM(CycloneDX)</code></div></div>
+      <div class="stage c-accent"><div class="name"><i></i>조사 (도구 호출)</div>
+        <div class="desc">중앙 CVE 미러(NVD·OSV·KISA)와 대조, 매칭은 <code>Trivy·Grype</code> 재활용</div></div>
+      <div class="stage c-violet"><div class="name"><i></i>판단</div>
+        <div class="desc">런타임 노출 + <code>EPSS</code> + <code>KEV</code>로 위험 우선순위 추론</div></div>
+      <div class="stage c-warn"><div class="name"><i></i>조치</div>
+        <div class="desc">패치·업그레이드안 생성 → 의존성 충돌 시뮬레이션 → 실패 시 재조사 루프</div></div>
+      <div class="stage c-text"><div class="name"><i></i>리포트</div>
+        <div class="desc">자연어 대응 가이드 + SBOM + <code>VEX</code> 산출</div></div>
+    </div>
+
+    <h3 class="mini">// 데이터 흐름 (확정안)</h3>
+    <div class="flow"><pre>[각 서버]                        [중앙 서버 · Docker]
+<b>쉘 에이전트</b> ─매일 1회 / 델타─▶ <u>수신 API</u> ──▶ 인벤토리 DB
+(수집)          JSON POST                        │
+                                                 ▼
+                        로컬 CVE 미러(NVD·OSV·KISA)와 매칭
+                        + 런타임 노출 상관 + EPSS/KEV 가중
+                                                 │
+                                                 ▼
+                             <b>웹 대시보드</b> (우선순위·변화·VEX)</pre></div>
+
+    <div class="note"><span class="lbl">설계 원칙</span>
+      기존 오픈소스 스캐너를 "에이전트가 호출하는 도구"로 재활용한다. 스캐너를 새로 만들지 않고, 그 위에서 자율 판단하는 레이어가 우리의 기여다.</div>
+  </section>
+
+  <!-- 05 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">05</span>
+      <div><h2>최적화</h2><div class="sub">서버에 무리 안 가고, 대규모에서도 안 터지게</div></div>
+    </div>
+    <div class="res">
+      <div class="res-item"><div class="rn">중앙 CVE 미러</div><div class="rd">NVD·OSV·KISA를 중앙이 하루 1회 당겨 로컬 DB로 보관. 매칭은 로컬끼리 → 빠르고, <strong>에이전트는 인터넷 불필요</strong>(폐쇄망에서 쓸 수 있음).</div></div>
+      <div class="res-item"><div class="rn">델타 수집</div><div class="rd">첫 1회만 전체 전송, 이후엔 변경된 패키지만 전송 → 대역폭·DB 쓰기 부하 급감.</div></div>
+      <div class="res-item"><div class="rn">증분 매칭</div><div class="rd">패키지명 인덱스 + (변경 패키지 ∪ 신규 CVE)만 재매칭 → 서버 수천 대여도 안 터짐.</div></div>
+      <div class="res-item"><div class="rn">조회 시점 매칭</div><div class="rd">수집은 저장만, 매칭은 조회 때. 과거 수집분도 오늘 신규 CVE로 다시 판정됨.</div></div>
+      <div class="res-item"><div class="rn">에이전트 자원</div><div class="rd">nice/ionice 최저 우선순위 + 명령별 타임아웃 + 출력 상한 → 피크 메모리 약 7MB.</div></div>
+    </div>
+  </section>
+
+  <!-- 06 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">06</span>
+      <div><h2>개발 순서</h2><div class="sub">전부 다 하되, 항상 "돌아가는 상태"를 유지하며 쌓는다</div></div>
+    </div>
+    <div class="build">
+      <div class="bstage s1">
+        <div class="btop"><div class="bname"><span class="bnum">1</span>뼈대 · 스캔 &amp; 판단</div>
+          <span class="bmark">최소 완성선</span></div>
+        <ul>
+          <li>패키지 정보 + 런타임(포트·서비스) 수집 → SBOM 생성</li>
+          <li>스캐너(Trivy/OSV) 도구 호출로 CVE 매칭</li>
+          <li>런타임 노출 + EPSS/KEV로 우선순위 매겨 자연어로 정리</li>
+        </ul>
+        <div class="out">→ <b>에이전트가 스캔하고 판단해 사람 말로 알려준다.</b> 이것만 돼도 시연 가능한 완성작.</div>
+      </div>
+      <div class="bstage s2">
+        <div class="btop"><div class="bname"><span class="bnum">2</span>국내 특화 · 차별화 무기</div>
+          <span class="bmark">해외 도구가 못 하는 것</span></div>
+        <ul>
+          <li>KISA 보호나라 공식 RSS로 국내 보안공지 수집 (크롤링보다 안전)</li>
+          <li>NVD/OSV 결과와 매칭해 "국내에서도 이슈된 취약점" 표시</li>
+        </ul>
+        <div class="out">→ <b>국내 특화 = 신선함 + 사회적 기여</b> 포인트 확보.</div>
+      </div>
+      <div class="bstage s3">
+        <div class="btop"><div class="bname"><span class="bnum">3</span>조치 &amp; 검증 · 야심 파트</div>
+          <span class="bmark">여유되면 / 안 되면 로드맵</span></div>
+        <ul>
+          <li>취약점별 조치안(업그레이드·패치) 자동 생성</li>
+          <li>의존성 충돌 시뮬레이션으로 자기검증 → 실패 시 재조사 루프</li>
+        </ul>
+        <div class="out">→ 완성되면 결과물이 한 단계 더 강해짐. 미완이어도 <b>최소선(1단계)은 이미 확보</b>됨.</div>
+      </div>
+    </div>
+    <div class="note warn"><span class="lbl">핵심 전략</span>
+      한꺼번에 병렬로 만들면 터진다. 순서대로 쌓아 각 단계가 끝날 때마다 돌아가는 상태를 유지하면, 시간이 부족해도 발표할 결과물이 항상 남는다.</div>
+  </section>
+
+  <!-- 07 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">07</span>
+      <div><h2>KISA 데이터 연동</h2><div class="sub">크롤링보다 RSS 우선</div></div>
+    </div>
+    <p class="body">KISA는 공식 API를 주지 않지만, 보호나라가 공식 RSS 서비스(보안공지·공지사항)를 제공한다. 이 편이 크롤링보다 훨씬 유리하다.</p>
+    <ul class="clean">
+      <li><strong>1순위 · RSS</strong> — 공식 제공이라 이용약관 리스크 없음, HTML 파싱 깨질 걱정 없음, 보고서에 "KISA 공식 RSS 활용"으로 당당히 기재.</li>
+      <li><strong>2순위 · 공지 페이지 파싱</strong> — RSS에 없는 상세만 보완적으로. robots.txt·이용약관 확인, 과도한 요청 자제.</li>
+      <li><strong>출처 명시(필수)</strong> — 규정 제8조 5·6항. "KISA 보호나라 공개 데이터" 출처를 결과보고서에 명확히 기재.</li>
+    </ul>
+  </section>
+
+  <!-- 08 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">08</span>
+      <div><h2>AI 모델 활용 방식</h2><div class="sub">운영규정 제9조 대응</div></div>
+    </div>
+    <div class="note good"><span class="lbl">현재 단계 판단</span>
+      1~2단계(수집·매칭·표시)에는 <strong>AI 모델이 필요 없다</strong>. CVE 매칭은 DB 조회이지 추론이 아니다. AI(자연어 조치안)는 3단계에서만 등장하므로, <strong>지금은 경로 선택을 미루고 뼈대부터 만든다.</strong></div>
+    <div class="routes">
+      <div class="route safe">
+        <h3>경로 B <span class="flag">안전 · 3단계용</span></h3>
+        <p>자연어 조치안 생성을 LLaMA·Gemma·Qwen 등 <strong>로컬 오픈웨이트 모델</strong>로 처리 → 규정 최소기준 무조건 충족. 추론 코드엔 OSI 인증 라이선스 적용.</p>
+      </div>
+      <div class="route rec">
+        <h3>보조 도구 <span class="flag">문제 없음</span></h3>
+        <p>코드 작성·디버깅에 Claude·GPT 활용은 규정상 자유. 결과보고서 [붙임2] 4번에 활용 범위 한 줄 기재로 끝. (동작 원리 이해는 필수 — 미흡 시 감점)</p>
+      </div>
+    </div>
+    <div class="note warn"><span class="lbl">주의</span>
+      기존 기획안의 "경로 A(MCP 프레이밍으로 상용 API 허용)"는 규정을 낙관적으로 해석한 것이다. 조문은 "단순 연결 제한, 연동 생태계 구축은 예외"이므로, <strong>핵심 판단·조치는 경로 B(로컬 모델)를 기본</strong>으로 두는 편이 리스크가 적다.</div>
+  </section>
+
+  <!-- 09 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">09</span>
+      <div><h2>라이선스 체크리스트</h2><div class="sub">운영규정 제8조 · 제10조</div></div>
+    </div>
+    <ul class="check">
+      <li>직접 작성 코드 전체에 OSI 인증 라이선스 적용 (MIT 또는 Apache 2.0 권장)</li>
+      <li>활용한 모든 오픈소스 라이브러리 → 결과보고서 [붙임1] SBOM에 출처·버전·라이선스 명시</li>
+      <li>KISA 등 외부 데이터 출처 명시</li>
+      <li>GitHub 공개 저장소 게시, 수상 시 5년간 Public 유지</li>
+      <li>(오픈웨이트 모델 사용 시) 모델 라이선스·이용약관 제한조항 사전 확인</li>
+    </ul>
+  </section>
+
+  <!-- 10 -->
+  <section>
+    <div class="sec-head"><span class="sec-no">10</span>
+      <div><h2>활용 가능한 무료 리소스</h2><div class="sub">전부 무료 · 오픈</div></div>
+    </div>
+    <div class="res">
+      <div class="res-item"><div class="rn">NVD API 2.0</div><div class="rd">미국 정부 취약점 DB, 25만+ CVE, 무료·키 없이 기본 조회.</div></div>
+      <div class="res-item"><div class="rn">OSV.dev</div><div class="rd">구글 운영, 30+ 소스 통합, 사용량 제한 없음, Apache 2.0.</div></div>
+      <div class="res-item"><div class="rn">Trivy / Grype</div><div class="rd">배포판 보안 피드 기반 스캐너 → 매칭 정확도를 도구로 상속.</div></div>
+      <div class="res-item"><div class="rn">OSV-Scanner / CVE-bin-tool</div><div class="rd">SBOM(CycloneDX) 입출력 → 에이전트 도구로 재활용.</div></div>
+      <div class="res-item"><div class="rn">EPSS (FIRST.org)</div><div class="rd">CVE별 실제 악용 확률. 우선순위 가중에 사용, 무료.</div></div>
+      <div class="res-item"><div class="rn">CISA KEV</div><div class="rd">실제 악용이 확인된 취약점 카탈로그, 무료 공개.</div></div>
+      <div class="res-item"><div class="rn">KISA 보호나라 RSS</div><div class="rd">국내 보안공지·공지사항 공식 피드. 크롤링 대신 우선 활용.</div></div>
+    </div>
+  </section>
+
+  <!-- 11 -->
+  <section style="border-bottom:none">
+    <div class="sec-head"><span class="sec-no">11</span>
+      <div><h2>다음에 결정할 것</h2><div class="sub">이것만 정하면 개발 착수</div></div>
+    </div>
+    <ol class="next">
+      <li><b>팀명 확정</b> — 상장에 찍히므로 특수문자 제외, 심플하게 (파수 / 가온 / 넥서스 등)</li>
+      <li><b>스택 확정</b> — SBOM·스캐너 생태계가 풍부한 <b>Python</b>이 유력</li>
+      <li><b>1단계 착수</b> — 수집→매칭→우선순위 프로토타입부터 돌려보기</li>
+      <li><b>구축</b> — 전송 기능 + 수신 엔드포인트(PHP) + DB 스키마, Docker로 웹·백엔드 통합</li>
+    </ol>
+  </section>
+
+  <footer>2026 오픈소스 개발자대회 · 기획 · v1.0 · Python · 자율 보안 에이전트</footer>
+
+</div>
+</body>
+</html>

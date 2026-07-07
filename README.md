@@ -1,2 +1,54 @@
 # vuln-agent
+
 런타임 노출 맥락으로 오탐을 줄이는 자율 취약점 진단 에이전트 (2026 오픈소스 개발자대회)
+
+> 프로젝트 전체 맥락·전략·로드맵은 [`CONTEXT.md`](CONTEXT.md) 참고.
+
+## 구성
+
+```
+agent/    수집 에이전트 (Bash) — 서버에서 패키지·런타임 노출 정보를 수집
+server/   PHP 중앙 서버 — 수신 API(ingest) + 현황 페이지, 매처(예정)
+db/       MySQL 스키마 (컨테이너 최초 기동 시 자동 적용)
+docs/     기획안 · 설명글
+```
+
+데이터 흐름: **에이전트(JSON) ─POST→ `ingest.php` → MySQL → 웹 현황**
+
+## 빠른 시작 (Docker)
+
+```bash
+cp .env.example .env          # 값(비밀번호·토큰) 수정
+docker compose up -d --build  # PHP(Apache) + MySQL 8 기동
+```
+
+- 현황 페이지: <http://localhost:8080>
+- 수신 API: `POST http://localhost:8080/ingest.php` (헤더 `X-Agent-Token`)
+
+## 에이전트 실행 & 전송
+
+수집 대상 서버(Linux)에서:
+
+```bash
+# 로컬 저장만
+./agent/vuln-inventory-agent.sh
+
+# 수집 후 중앙 서버로 전송 (파일 저장도 유지)
+./agent/vuln-inventory-agent.sh \
+    --send http://중앙서버:8080/ingest.php \
+    --token .env의_INGEST_TOKEN값
+```
+
+전송하려면 대상 서버에 `jq`(JSON 출력)와 `curl`이 필요합니다.
+
+## 상태
+
+- [x] 0. Docker 구성 (compose + Dockerfile)
+- [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
+- [ ] 2. CVE 미러 + 매처 (외부노출 + 로드됨 + KEV = CRITICAL)
+- [ ] 3. 웹 대시보드 (우선순위 · 노출 근거)
+- [ ] 4. 국내 특화(KISA) + AI 조치안 생성
+
+## 라이선스
+
+MIT — [`LICENSE`](LICENSE)
