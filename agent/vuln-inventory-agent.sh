@@ -151,6 +151,40 @@ collect_exposure() {
   done
 }
 
+# collect_processes : 실행 중인 "모든" 프로세스 + 소속 패키지 + 로드한 라이브러리 패키지
+#   리스닝 소켓이 없어도(포트 미개방) 실행 중이면 잡는다 →
+#   "설치만 vs 실행중 vs 사용중(라이브러리 로드)"을 정밀 구분하기 위한 원천 데이터.
+#   .so 를 로드한 프로세스만(=실제 사용자 프로그램, 커널스레드 제외). 조회 결과 캐시 → 가볍다.
+#   출력: pid|comm|user|exe_pkg|loaded_pkgs(,)
+collect_processes() {
+  local PKGMGR="none"
+  command -v dpkg-query >/dev/null 2>&1 && PKGMGR="dpkg"
+  command -v rpm        >/dev/null 2>&1 && PKGMGR="rpm"
+  declare -A LIBPKG2
+  _f2p2() {
+    local f="$1" rp p=""
+    [ -z "$f" ] && { echo ""; return; }
+    rp=$(realpath "$f" 2>/dev/null); [ -z "$rp" ] && rp="$f"
+    if [ -n "${LIBPKG2[$rp]+x}" ]; then echo "${LIBPKG2[$rp]}"; return; fi
+    case "$PKGMGR" in
+      dpkg) p=$(dpkg -S "$rp" 2>/dev/null | cut -d: -f1 | head -1) ;;
+      rpm)  p=$(rpm -qf "$rp" 2>/dev/null | grep -v 'not owned' | head -1) ;;
+    esac
+    LIBPKG2[$rp]="$p"; echo "$p"
+  }
+  local pid comm user exe exepkg loaded
+  for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    grep -ql '\.so' /proc/$pid/maps 2>/dev/null || continue   # 실제 프로그램만
+    comm=$(cat /proc/$pid/comm 2>/dev/null)
+    user=$(stat -c '%U' /proc/$pid 2>/dev/null)
+    exe=$(realpath /proc/$pid/exe 2>/dev/null)
+    exepkg=$(_f2p2 "$exe"); [ -z "$exepkg" ] && exepkg="UNPACKAGED"
+    loaded=$(awk '/\.so/{print $6}' /proc/$pid/maps 2>/dev/null | sort -u | while read -r lib; do
+               _f2p2 "$lib"; done | grep -v '^$' | sort -u | paste -sd, -)
+    echo "${pid}|${comm}|${user}|${exepkg}|${loaded}"
+  done
+}
+
 # ==================================================================
 # 1) 메타 / 시스템 식별 + 취약점 매핑 힌트
 # ==================================================================
@@ -331,6 +365,14 @@ cap services processes 'ps aux --sort=-%mem 2>/dev/null | head -n 60'
 # 헤더만 있고 데이터 없으면(2줄 미만) 제거
 [ "$(wc -l < "$TMP/exposure__correlation.txt" 2>/dev/null || echo 0)" -ge 2 ] \
   || rm -f "$TMP/exposure__correlation.txt"
+
+# 10-c) 실행 프로세스 인벤토리 (실행중/사용중 구분용) — 포트 없어도 잡음
+{
+  echo "pid|comm|user|exe_pkg|loaded_pkgs"
+  collect_processes
+} > "$TMP/runtime__processes.txt" 2>/dev/null || true
+[ "$(wc -l < "$TMP/runtime__processes.txt" 2>/dev/null || echo 0)" -ge 2 ] \
+  || rm -f "$TMP/runtime__processes.txt"
 
 # ==================================================================
 # 11) 리포지토리 설정

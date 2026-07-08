@@ -16,6 +16,16 @@ function vg_sev_color(string $sev): string {
     return $m[$sev] ?? '#6e7681';
 }
 
+// 런타임 상태 라벨/색상 (EXTERNAL/LISTENING/RUNNING/LOADED/INSTALLED)
+function vg_status_label(?string $s): string {
+    $m = ['EXTERNAL' => '외부노출', 'LISTENING' => '로컬리스닝', 'RUNNING' => '실행중', 'LOADED' => '사용중', 'INSTALLED' => '설치만'];
+    return $m[$s ?? ''] ?? (string) $s;
+}
+function vg_status_color(?string $s): string {
+    $m = ['EXTERNAL' => '#da3633', 'LISTENING' => '#db6d28', 'RUNNING' => '#9e6a03', 'LOADED' => '#8250df', 'INSTALLED' => '#6e7681'];
+    return $m[$s ?? ''] ?? '#6e7681';
+}
+
 function vg_header(string $title, string $active = ''): void {
     $user = function_exists('vg_current_user') ? vg_current_user() : null;
     ?>

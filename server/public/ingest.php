@@ -96,6 +96,20 @@ if (!empty($exp['correlation'])) {
 }
 $expCount = count($expRows);
 
+// ── 실행 프로세스 파싱 (pipe, 첫 줄 헤더) — 실행중/사용중 구분용 ──
+$procRows = [];
+$rt = $data['runtime'] ?? [];
+if (!empty($rt['processes'])) {
+    foreach (preg_split('/\r?\n/', (string) $rt['processes']) as $line) {
+        if ($line === '') { continue; }
+        if (strncmp($line, 'pid|comm|user', 13) === 0) { continue; } // 헤더
+        $f = explode('|', $line);
+        if (count($f) < 5) { continue; }
+        $procRows[] = $f; // pid, comm, user, exe_pkg, loaded_pkgs
+    }
+}
+$procCount = count($procRows);
+
 // ── 저장 (트랜잭션) ──────────────────────────────────────────
 try {
     $pdo = vg_pdo();
@@ -174,6 +188,21 @@ try {
         }
     }
 
+    // 실행 프로세스 벌크
+    if ($procCount > 0) {
+        $ins = $pdo->prepare(
+            'INSERT INTO processes (scan_id, pid, comm, username, exe_pkg, loaded_pkgs)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($procRows as $f) {
+            $ins->execute([
+                $scanId,
+                ($f[0] !== '' ? (int) $f[0] : null),
+                $f[1], $f[2], $f[3], $f[4],
+            ]);
+        }
+    }
+
     $pdo->commit();
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) {
@@ -199,5 +228,6 @@ echo json_encode([
     'fqdn'      => $fqdn,
     'packages'  => $pkgCount,
     'exposures' => $expCount,
+    'processes' => $procCount,
     'findings'  => $findings,
 ], JSON_UNESCAPED_UNICODE);
