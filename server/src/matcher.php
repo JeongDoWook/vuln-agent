@@ -21,25 +21,33 @@ if (!function_exists('vg_scope_rank')) {
         }
     }
 
-    // 등급 + 근거 계산 (레벨: 설치1 / 로드2 / 외부노출3, KEV 시 +1, 최대 CRITICAL)
-    function vg_severity(bool $loaded, ?string $scope, bool $exposed, bool $inKev, ?array $load, string $pkg): array {
-        $level = 1;
-        if ($exposed) {
-            $level = 3;
-            $base = sprintf('외부노출(%s:%d 가 %s 로드)', $load['proc'] ?? '?', $load['port'] ?? 0, $pkg);
-        } elseif ($loaded) {
-            $level = 2;
-            $base = sprintf('로드됨·내부(%s, scope=%s)', $load['proc'] ?? '?', $scope ?? '-');
+    // 런타임 상태 판정 + 등급 + 근거.
+    //   상태 강도: EXTERNAL(외부노출) > LISTENING(로컬리스닝) > RUNNING(실행중) > LOADED(사용중) > INSTALLED(설치만)
+    //   레벨: 설치1 / 실행·로드·로컬리스닝2 / 외부노출3, KEV 시 +1(최대 CRITICAL).
+    //   반환: [status, severity, rationale]
+    function vg_classify(?array $le, bool $running, bool $procLoaded, bool $inKev, string $pkg): array {
+        if ($le && ($le['scope'] ?? '') === 'EXTERNAL') {
+            $status = 'EXTERNAL'; $level = 3;
+            $base = sprintf('외부노출(%s:%d 가 %s 사용)', $le['proc'] ?? '?', $le['port'] ?? 0, $pkg);
+        } elseif ($le) {
+            $status = 'LISTENING'; $level = 2;
+            $base = sprintf('로컬 리스닝(%s:%d, scope=%s)', $le['proc'] ?? '?', $le['port'] ?? 0, $le['scope'] ?? '-');
+        } elseif ($running) {
+            $status = 'RUNNING'; $level = 2;
+            $base = '실행 중(포트 미개방)';
+        } elseif ($procLoaded) {
+            $status = 'LOADED'; $level = 2;
+            $base = '사용 중(실행 프로세스가 라이브러리 로드)';
         } else {
-            $base = '설치만 됨(로드 프로세스 없음)';
+            $status = 'INSTALLED'; $level = 1;
+            $base = '설치만 됨(실행/로드 프로세스 없음)';
         }
         if ($inKev && $level < 4) {
             $level++;
         }
-        $map = [1 => 'LOW', 2 => 'MEDIUM', 3 => 'HIGH', 4 => 'CRITICAL'];
-        $sev = $map[$level];
+        $sev = [1 => 'LOW', 2 => 'MEDIUM', 3 => 'HIGH', 4 => 'CRITICAL'][$level];
         $why = $base . ($inKev ? ' · CISA KEV 등재' : '') . ' → ' . $sev;
-        return [$sev, $why];
+        return [$status, $sev, $why];
     }
 
     /**
@@ -74,6 +82,22 @@ if (!function_exists('vg_scope_rank')) {
             }
         }
 
+        // 실행 프로세스 → 실행중(exe_pkg) / 사용중(loaded_pkgs) 패키지 집합
+        $procRunning = []; $procLoaded = [];
+        $stmt = $pdo->prepare('SELECT exe_pkg, loaded_pkgs FROM processes WHERE scan_id = ?');
+        $stmt->execute([$scanId]);
+        foreach ($stmt->fetchAll() as $pr) {
+            if (!empty($pr['exe_pkg']) && $pr['exe_pkg'] !== 'UNPACKAGED') {
+                $procRunning[$pr['exe_pkg']] = true;
+            }
+            if (!empty($pr['loaded_pkgs'])) {
+                foreach (explode(',', (string) $pr['loaded_pkgs']) as $n) {
+                    $n = trim($n);
+                    if ($n !== '') { $procLoaded[$n] = true; }
+                }
+            }
+        }
+
         // KEV 집합
         $kev = [];
         foreach ($pdo->query('SELECT cve_id FROM kev_catalog')->fetchAll() as $r) {
@@ -102,12 +126,12 @@ if (!function_exists('vg_scope_rank')) {
         $ins = $pdo->prepare(
             'INSERT INTO findings
                (scan_id, cve_id, package_name, installed_version, loaded, exposed,
-                exposure_scope, in_kev, cvss, severity, rationale)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                exposure_scope, runtime_status, in_kev, cvss, severity, rationale)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE
                installed_version=VALUES(installed_version), loaded=VALUES(loaded),
                exposed=VALUES(exposed), exposure_scope=VALUES(exposure_scope),
-               in_kev=VALUES(in_kev), cvss=VALUES(cvss),
+               runtime_status=VALUES(runtime_status), in_kev=VALUES(in_kev), cvss=VALUES(cvss),
                severity=VALUES(severity), rationale=VALUES(rationale)'
         );
 
@@ -128,11 +152,13 @@ if (!function_exists('vg_scope_rank')) {
                 continue;
             }
 
-            // 로드 상태
-            $load    = $loadMap[$p['name']] ?? ($loadMap[$p['source_pkg']] ?? null);
-            $loaded  = $load !== null;
-            $scope   = $load['scope'] ?? null;
-            $exposed = $loaded && $scope === 'EXTERNAL';
+            // 런타임 상태 신호 (exposures=포트, processes=실행/로드)
+            $le      = $loadMap[$p['name']] ?? ($loadMap[$p['source_pkg']] ?? null);
+            $running = isset($procRunning[$p['name']]) || ($p['source_pkg'] && isset($procRunning[$p['source_pkg']]));
+            $pLoaded = isset($procLoaded[$p['name']]) || ($p['source_pkg'] && isset($procLoaded[$p['source_pkg']]));
+            $exposed = $le !== null && ($le['scope'] ?? '') === 'EXTERNAL';
+            $loaded  = $le !== null || $pLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
+            $scope   = $le['scope'] ?? null;
 
             foreach ($cands as $cveId => $cvss) {
                 $key = $cveId . '|' . $p['name'];
@@ -140,12 +166,12 @@ if (!function_exists('vg_scope_rank')) {
                 $seen[$key] = true;
 
                 $inKev = isset($kev[$cveId]);
-                [$sev, $why] = vg_severity($loaded, $scope, $exposed, $inKev, $load, $p['name']);
+                [$status, $sev, $why] = vg_classify($le, $running, $pLoaded, $inKev, $p['name']);
                 $counts[$sev]++;
 
                 $ins->execute([
                     $scanId, $cveId, $p['name'], $p['version'],
-                    $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $inKev ? 1 : 0,
+                    $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $status, $inKev ? 1 : 0,
                     $cvss, $sev, $why,
                 ]);
             }

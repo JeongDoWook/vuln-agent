@@ -62,12 +62,13 @@ vg_header('취약점', 'findings');
   <div class="card">
     <table>
       <thead><tr>
-        <th>등급</th><th>CVE</th><th>패키지</th><th>버전</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>근거 (왜 위험한가)</th><th>조치</th>
+        <th>등급</th><th>상태</th><th>CVE</th><th>패키지</th><th>버전</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>근거 (왜 위험한가)</th><th>조치</th>
       </tr></thead>
       <tbody>
       <?php foreach ($rows as $r): ?>
         <tr>
           <td><span class="badge" style="background:<?= vg_sev_color($r['severity']) ?>;"><?= vg_h($r['severity']) ?></span></td>
+          <td><span class="badge" style="background:<?= vg_status_color($r['runtime_status']) ?>;"><?= vg_h(vg_status_label($r['runtime_status'])) ?></span></td>
           <td><strong><?= vg_h($r['cve_id']) ?></strong>
             <?php if ($r['summary']): ?><div class="why"><?= vg_h(mb_strimwidth((string) $r['summary'], 0, 72, '…')) ?></div><?php endif; ?>
           </td>
