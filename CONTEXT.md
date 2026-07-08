@@ -41,9 +41,10 @@ OS 패키지 ↔ CVE 매칭 자체는 Trivy·Grype·OpenSCAP 등 검증된 스�
 | 영역 | 스택 | 시점 |
 |---|---|---|
 | 수집 에이전트 | **Bash 쉘 스크립트** | 완성됨 |
-| 웹 + 백엔드 + 매처 | **PHP** | 지금 개발 |
-| DB | **MySQL** | 지금 개발 |
-| 인프라 | **Docker + docker-compose** (PHP + MySQL) | 지금 개발 |
+| 웹 + 백엔드 + 매처 | **PHP** | 완성됨(핵심) |
+| DB | **MySQL** | 완성됨(핵심) |
+| 인프라 | **Docker + docker-compose** (PHP + MySQL) | 완성됨 |
+| HTTPS 배포 | **Caddy 리버스 프록시** (Let's Encrypt DNS-01, 현재 자체서명) | 완성됨 |
 | AI 문서 생성 | **Python** (오픈웨이트 로컬 모델) | 나중(마지막) |
 
 > AI 모델은 3~4단계에서만 등장. 1~2단계(수집·매칭·표시)엔 AI 불필요(DB 조회지 추론 아님).
@@ -70,8 +71,11 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 - 그 외: 커널 CPU취약점 완화상태, 컨테이너 이미지, 언어패키지(pip/npm), 보안설정 등
 
 ### `agent/install-agent.sh` — 배포 설치기
-각 대상 서버에서 `sudo ./install-agent.sh --server http://중앙:8080/ingest.php --token X --schedule hourly`.
-systemd-timer(우선)/cron 으로 주기 수집 등록. 토큰은 `/etc/vuln-agent/agent.env`(600) 로 관리.
+각 대상 서버에서 `sudo ./install-agent.sh --server https://중앙:8080/ingest.php --token X --schedule hourly`.
+systemd-timer(우선)/cron 으로 주기 수집(기본 매시간) 등록 + 즉시 1회 실행(통신 확인). 토큰은
+`/etc/vuln-agent/agent.env`(600) 로 관리(ps 노출 방지). 컨테이너가 떠 있는 호스트에서도 다른
+mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토리(`collect_processes`) — 컨테이너
+오버레이 경로의 `dpkg -S` 전수조사로 멈추는 문제를 회피.
 
 ---
 
@@ -82,15 +86,17 @@ vuln-agent/
 ├── CONTEXT.md  README.md  CLAUDE.md(개발원칙)
 ├── compose.yml  compose.common/dev/prod.yml  compose_runner.sh   # dev/prod 도커
 ├── .env.{dev,prod}.template   secrets/(*.txt gitignore)          # 설정·비밀값
+├── caddy/        # HTTPS 리버스 프록시(운영 전용): Dockerfile·Caddyfile·entrypoint.sh
 ├── agent/
 │   ├── vuln-inventory-agent.sh   # 수집(패키지·노출·실행프로세스), --send 전송
-│   └── install-agent.sh          # 각 서버 배포·스케줄(systemd/cron)
+│   └── install-agent.sh          # 각 서버 배포·스케줄(systemd-timer/cron)
 ├── server/
 │   ├── Dockerfile
-│   ├── public/   # ingest·rematch·feed_preview(API) + login/index/host/findings/advisories/connectors/users(웹)
-│   ├── src/      # config·db·auth·view·matcher·feeds
-│   └── bin/      # scheduler.php(사이드카)·sync.php
-├── db/           # 01~08 *.sql (초기화 시 자동 적용)
+│   ├── public/   # ingest·rematch·feed_preview(API) + login/index/host/findings/cve/advisories/connectors/users/activity(웹)
+│   ├── src/      # config·db·auth·view·matcher·feeds·audit(감사로그·소프트삭제)
+│   └── bin/      # scheduler.php(사이드카)·sync.php·enrich_osv.php
+├── db/           # 01~09 *.sql (초기화 시 자동 적용, tb_ 접두사+감사4컬럼)
+│   └── _migrations/   # 기존 프로덕션 볼륨용 수동 1회 마이그레이션
 └── docs/         # 아키텍처·기획안·설명글·프로세스
 ```
 
@@ -99,15 +105,17 @@ vuln-agent/
 ## 6. 데이터 흐름 (확정)
 
 ```
-[각 서버]                          [중앙 서버 · Docker]
-쉘 에이전트 ── 매일 1회 / 델타 ──▶ PHP 수신 API ──▶ MySQL
-(수집)          JSON POST                            │
-                                                     ▼
-                          로컬 CVE 미러(NVD·OSV·KISA)와 매칭
-                          + 런타임 노출 상관 + EPSS/KEV 가중
-                                                     │
-                                                     ▼
-                              PHP 웹 대시보드 (우선순위·변화·VEX)
+[원격 대상 서버]                    [중앙 서버 · Docker]
+쉘 에이전트 ── 매시간(systemd-timer) ──▶ Caddy(HTTPS:8080) ──▶ ingest.php ──▶ MySQL(tb_*)
+(수집, install-agent.sh 로 배포)     JSON POST                              │
+                                                                           ▼
+[중앙 서버 자신(로컬 에이전트)] ─▶ web:8081(루프백 평문) ──────────────────┘
+                                                                           │
+                                                     로컬 CVE 미러(NVD·OSV·KISA)와 매칭
+                                                     + 런타임 노출 상관 + EPSS/KEV 가중
+                                                                           │
+                                                                           ▼
+                                              PHP 웹 대시보드 (우선순위·변화·VEX·감사로그)
 ```
 
 ---
@@ -133,7 +141,7 @@ vuln-agent/
 
 ---
 
-## 8. 개발 현황 (2026-07 기준 — 핵심 파이프라인 완성)
+## 8. 개발 현황 (2026-07 기준 — 핵심 파이프라인 + HTTPS/감사 완성)
 
 - [x] **0. Docker** — compose dev/prod + Dockerfile + Docker Secrets(txt) + 러너
 - [x] **1. 수집→전송→저장** — 에이전트 `--send` POST + `ingest.php` 수신 + DB
@@ -144,7 +152,17 @@ vuln-agent/
 - [x] **정밀 런타임 수집** — 실행 프로세스 전체(실행중/사용중) + 노출(포트) → 상태 5단계 구분
 - [x] **OSV 자동 매칭** — 수집 전 패키지를 OSV 조회(배포판 ecosystem, 소스패키지·버전필터) → 취약점 전체 발굴 + 조치안(fixed_version)
 - [x] **EPSS/KEV** — 악용확률 + 악용목록으로 우선순위·정렬
-- [x] **배포 설치기** — `agent/install-agent.sh` (systemd-timer/cron, 각 서버 주기 수집)
+- [x] **배포 설치기** — `agent/install-agent.sh` (systemd-timer 우선/cron 폴백, 매시간 자동 수집)
+- [x] **HTTPS 배포** — `caddy/` 리버스 프록시가 TLS 종료(Let's Encrypt DNS-01, 현재 자체서명).
+      접속 `https://ost-server.duckdns.org:8080`. web·db 는 내부망/루프백(`127.0.0.1:8081`)만 노출.
+- [x] **웹 대개편** — 페이지네이션(`vg_page_nav`) · 검색/필터(`vg_toolbar`, findings/advisories)
+      · CVE 상세 `cve.php` · 공통 렌더(`vg_table`) · 긴 텍스트 말줄임(`vg_trunc`)
+- [x] **DB 대개편** — 전 테이블 `tb_` 접두사 통일 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
+      · 소프트삭제(`vg_soft_delete()`: users/feed_connectors/advisories/hosts/scans, findings 등 재계산
+      캐시는 예외) · 활동 감사로그 `tb_activity_log`(`vg_log_activity()` — 로그인·커넥터저장/삭제/실행·
+      사용자추가/삭제·ingest 수신을 기록) + 조회 화면 `activity.php`(admin 전용, scope 필터·페이지네이션).
+      마이그레이션: `db/01~09`(신규 볼륨) + `db/_migrations/2026-07-tb-audit.sql`(기존 프로덕션 볼륨
+      in-place, 1회성).
 - [ ] 대시보드 "다음 수집 예정", 시계열/추이, 알림, Python AI(제외)
 
 > 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·KEV/EPSS·설명가능성).
