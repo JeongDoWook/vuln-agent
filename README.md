@@ -71,6 +71,27 @@ compose_runner.sh   실행 러너
 
 전송하려면 대상 서버에 `jq`(JSON 출력)와 `curl`이 필요합니다.
 
+### 배포 — 각 서버에 에이전트 설치 + 주기 수집
+
+**방식: 에이전트-사이드 push** (각 서버가 로컬 스케줄로 수집 → 중앙으로 POST).
+중앙이 각 호스트로 들어갈 필요 없음(아웃바운드만). 표준적인 에이전트 모델.
+
+대상 서버(Linux)에서 한 번:
+
+```bash
+sudo ./agent/install-agent.sh \
+     --server http://중앙서버IP:8080/ingest.php \
+     --token  <중앙의 secrets/ingest_token.txt 값> \
+     --schedule hourly          # 또는 daily, '*:0/30'(30분마다, systemd)
+```
+
+설치 내용:
+- 에이전트를 `/opt/vuln-agent/` 에 배치, 토큰은 `/etc/vuln-agent/agent.env`(600) 로만 보관(`ps` 노출 방지)
+- **systemd-timer**(우선) 또는 **cron**(폴백)으로 주기 수집 등록 + 즉시 1회 실행(통신 확인)
+- 제거: `sudo ./agent/install-agent.sh --uninstall`
+
+네트워크 요건: 대상 서버 → 중앙서버 `WEB_PORT`(기본 8080) **아웃바운드 HTTP** 하나면 됨.
+
 ## 상태
 
 - [x] 0. Docker 구성 (compose dev/prod + Dockerfile + Docker Secrets)
