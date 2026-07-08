@@ -60,16 +60,18 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 **수집 항목(취약점 매핑에 중요한 것 위주):**
 - `pkg` — 전체 패키지 목록. **NEVRA(릴리스번호 포함) + 소스패키지명 + 벤더**.
   (릴리스번호·소스패키지가 백포트 인식/오탐 감소의 핵심)
-- `exposure` — **런타임 노출 상관 데이터** (차별점 ①). 리스닝 소켓마다 한 줄:
-  `pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs`
+- `exposure` — **런타임 노출 상관** (차별점 ①). 리스닝 소켓마다: `pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs`
   - `scope` = EXTERNAL(0.0.0.0/::) / LOCAL(127.0.0.1) / BOUND(특정IP)
-  - `loaded_pkgs` = 그 프로세스가 메모리에 로드한 .so들의 소속 패키지 (쉼표구분)
+- `runtime.processes` — **실행 중인 모든 프로세스**(포트 없어도): `pid|comm|user|exe_pkg|loaded_pkgs`
+  - 리스닝만이 아니라 "실행중/사용중"까지 잡아 상태를 정밀 구분(→ §7)
 - `updates` — 미적용 보안업데이트 + 이미 적용된 보안권고(오탐 감소용)
 - `net` / `services` — 포트, 실행 서비스/프로세스
 - `system` — OS/커널/CPE (어떤 OVAL로 대조할지 힌트)
 - 그 외: 커널 CPU취약점 완화상태, 컨테이너 이미지, 언어패키지(pip/npm), 보안설정 등
 
-### `agent/exposure-collect.sh` — 노출 상관 모듈 (참고용, 이미 위 에이전트에 통합됨)
+### `agent/install-agent.sh` — 배포 설치기
+각 대상 서버에서 `sudo ./install-agent.sh --server http://중앙:8080/ingest.php --token X --schedule hourly`.
+systemd-timer(우선)/cron 으로 주기 수집 등록. 토큰은 `/etc/vuln-agent/agent.env`(600) 로 관리.
 
 ---
 
@@ -77,19 +79,19 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 
 ```
 vuln-agent/
-├── CONTEXT.md              # 이 파일
-├── README.md
-├── docker-compose.yml      # PHP + MySQL
-├── agent/                  # 수집 에이전트 (쉘) — 이미 있음
-│   ├── vuln-inventory-agent.sh
-│   └── exposure-collect.sh
-├── server/                 # PHP 웹 + 백엔드 + 매처
-│   ├── public/             # 웹 루트 (수신 엔드포인트, 대시보드)
-│   ├── src/                # 매처·DB 로직
-│   └── ...
-├── db/                     # schema.sql (컨테이너 최초 기동 시 자동 적용)
-├── matcher-ai/             # Python (나중 · AI 문서 생성) — 지금은 비움
-└── docs/                   # 기획안, 설명글
+├── CONTEXT.md  README.md  CLAUDE.md(개발원칙)
+├── compose.yml  compose.common/dev/prod.yml  compose_runner.sh   # dev/prod 도커
+├── .env.{dev,prod}.template   secrets/(*.txt gitignore)          # 설정·비밀값
+├── agent/
+│   ├── vuln-inventory-agent.sh   # 수집(패키지·노출·실행프로세스), --send 전송
+│   └── install-agent.sh          # 각 서버 배포·스케줄(systemd/cron)
+├── server/
+│   ├── Dockerfile
+│   ├── public/   # ingest·rematch·feed_preview(API) + login/index/host/findings/advisories/connectors/users(웹)
+│   ├── src/      # config·db·auth·view·matcher·feeds
+│   └── bin/      # scheduler.php(사이드카)·sync.php
+├── db/           # 01~08 *.sql (초기화 시 자동 적용)
+└── docs/         # 아키텍처·기획안·설명글·프로세스
 ```
 
 ---
@@ -110,28 +112,40 @@ vuln-agent/
 
 ---
 
-## 7. 매처 핵심 규칙 (2단계에서 구현)
+## 7. 매처 핵심 규칙 (구현됨)
 
-수집한 `pkg` + `exposure`를 CVE와 조인해 우선순위를 매긴다.
+수집한 `packages` + `exposures`(포트) + `processes`(실행/로드)를 CVE와 조인해
+각 취약점의 **런타임 상태**를 5단계로 판정하고 우선순위를 매긴다.
 
-- CVE가 패키지 P에 영향 **AND** 어떤 프로세스가 P를 `loaded_pkgs`에 로드
-  **AND** 그 소켓 `scope=EXTERNAL` → **노출 확정, 우선순위↑**
-- 위에 더해 **KEV 등재** → **CRITICAL**
-- 취약하지만 **어떤 프로세스도 로드 안 함** 또는 **scope=LOCAL** → 우선순위↓
-- 이미 적용된 보안권고/백포트로 패치됨 → **해당 없음(VEX로 근거 기록)**
+| 상태 | 조건 | 레벨 |
+|---|---|---|
+| `EXTERNAL` 외부노출 | 외부(0.0.0.0) 오픈 포트로 노출 + 사용 | 3 (HIGH) |
+| `LISTENING` 로컬리스닝 | 리스닝하지만 127.0.0.1만 | 2 (MEDIUM) |
+| `RUNNING` 실행중 | 실행 중이나 포트 미개방 | 2 (MEDIUM) |
+| `LOADED` 사용중 | 실행 프로세스가 라이브러리 로드 | 2 (MEDIUM) |
+| `INSTALLED` 설치만 | 아무 프로세스도 안 씀 | 1 (LOW) |
 
-즉 "설치=취약"으로 전부 올리는 기존 도구와 달리, **실제 노출·로드 여부로 걸러낸다.**
+- **KEV 등재** 시 한 단계 상향 → 외부노출 + KEV = **CRITICAL**.
+- **EPSS**(악용확률) · CVSS 는 같은 등급 내 정렬에 사용.
+- 백포트 오탐: OSV 버전필터(배포판 전체버전으로 대조)가 이미 걸러냄(설치 버전에 실제 영향 주는 것만).
+
+즉 "설치=취약"으로 전부 올리지 않고, **실제 노출·실행·사용 여부로 우선순위를 가른다.**
 
 ---
 
-## 8. 개발 순서 (항상 "돌아가는 상태" 유지하며 단계별로)
+## 8. 개발 현황 (2026-07 기준 — 핵심 파이프라인 완성)
 
-- **0. 준비** — 저장소·폴더·Docker(compose + Dockerfile). ← 지금
-- **1. 수집→전송→저장** [최소 완성선] — 에이전트 POST 전송 + PHP 수신 + DB 스키마.
-  "에이전트 돌리면 중앙 DB에 쌓인다"까지.
-- **2. CVE 미러 + 매처** — NVD/OSV 로컬 미러, 위 7번 규칙으로 매칭·우선순위.
-- **3. 웹 대시보드** — 호스트별 취약점, 우선순위 정렬, 노출 근거 표시.
-- **4. 국내특화 + AI** — KISA RSS 연동, Python AI 조치안/문서 생성.
+- [x] **0. Docker** — compose dev/prod + Dockerfile + Docker Secrets(txt) + 러너
+- [x] **1. 수집→전송→저장** — 에이전트 `--send` POST + `ingest.php` 수신 + DB
+- [x] **2. 매처** — 노출 맥락 우선순위(외부노출+로드+KEV=CRITICAL), findings + 아키텍처 다이어그램
+- [x] **3. 웹** — 로그인(users 세션) → 대시보드 → 호스트 상세 → 취약점(+조치·EPSS·상태) · 사용자관리
+- [x] **4a. CVE 피드 커넥터** — 커넥터 5종(KEV/OSV/NVD/KISA/EPSS), UI 설정·미리보기·cron 스케줄, 스케줄러 사이드카
+- [x] **4b. 국내특화** — KISA 보안공지 수집·표시
+- [x] **정밀 런타임 수집** — 실행 프로세스 전체(실행중/사용중) + 노출(포트) → 상태 5단계 구분
+- [x] **OSV 자동 매칭** — 수집 전 패키지를 OSV 조회(배포판 ecosystem, 소스패키지·버전필터) → 취약점 전체 발굴 + 조치안(fixed_version)
+- [x] **EPSS/KEV** — 악용확률 + 악용목록으로 우선순위·정렬
+- [x] **배포 설치기** — `agent/install-agent.sh` (systemd-timer/cron, 각 서버 주기 수집)
+- [ ] 대시보드 "다음 수집 예정", 시계열/추이, 알림, Python AI(제외)
 
-> 원칙: 한 번에 다 만들지 않는다. 각 단계 끝나면 돌아가는 상태로 커밋.
-> 각 작업 끝날 때마다 `git commit`.
+> 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·KEV/EPSS·설명가능성).
+> Python AI 문서생성은 범위에서 제외됨.

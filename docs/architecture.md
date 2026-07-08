@@ -46,26 +46,28 @@ flowchart LR
 
 ## 2. 매처 판정 로직 — "실제로 위험한가"
 
-설치되었다고 전부 올리지 않는다. **노출·로드 여부 + KEV** 로 우선순위를 가른다.
+설치되었다고 전부 올리지 않는다. **런타임 상태(노출·실행·사용) + KEV** 로 우선순위를 가른다.
+exposures(포트) + processes(실행/로드) 를 합쳐 5단계 상태를 판정한다.
 
 ```mermaid
 flowchart TD
-    START["패키지 P 에 영향을 주는 CVE 발견"] --> LOADED{"P 를 로드한<br/>프로세스가 있나?<br/>(loaded_pkgs/exe_pkg)"}
-    LOADED -->|아니오| INSTALLED["설치만 됨<br/>→ LOW<br/>(VEX: 미로드)"]
-    LOADED -->|예| EXT{"그 프로세스 소켓이<br/>scope = EXTERNAL?"}
-    EXT -->|아니오| LOCAL["로드됨·내부만<br/>→ MEDIUM"]
-    EXT -->|예| KEV{"CVE 가<br/>CISA KEV 등재?"}
-    KEV -->|아니오| HIGH["외부노출 + 로드됨<br/>→ HIGH"]
-    KEV -->|예| CRIT["외부노출 + 로드됨 + KEV<br/>→ CRITICAL"]
+    START["패키지 P 에 영향을 주는 CVE"] --> EXT{"외부(0.0.0.0)<br/>오픈 포트로 노출?"}
+    EXT -->|예| KEV{"CVE 가 KEV 등재?"}
+    KEV -->|예| CRIT["외부노출 + KEV<br/>→ CRITICAL"]
+    KEV -->|아니오| HIGH["외부노출<br/>→ HIGH"]
+    EXT -->|아니오| USE{"리스닝(로컬)·<br/>실행중·라이브러리 로드<br/>중 하나라도?"}
+    USE -->|예| MED["로컬리스닝/실행중/사용중<br/>→ MEDIUM"]
+    USE -->|아니오| INS["설치만 됨<br/>→ LOW"]
 
     style CRIT fill:#da3633,color:#fff
     style HIGH fill:#db6d28,color:#fff
-    style LOCAL fill:#9e6a03,color:#fff
-    style INSTALLED fill:#6e7681,color:#fff
+    style MED fill:#9e6a03,color:#fff
+    style INS fill:#6e7681,color:#fff
 ```
 
-> 보안 권고로 이미 백포트 패치된 경우 → 해당 없음(VEX 근거 기록). 각 판정에는
-> "왜 이 등급인가"의 근거(노출 소켓·로드 라이브러리·KEV 여부)가 함께 남는다.
+> 상태: EXTERNAL > LISTENING > RUNNING > LOADED > INSTALLED. KEV 시 한 단계 상향,
+> EPSS·CVSS 는 같은 등급 내 정렬. 각 판정에 근거(어떤 프로세스·포트·라이브러리)가 남는다.
+> 백포트 오탐은 OSV 버전필터(배포판 전체버전 대조)가 이미 제거.
 
 ---
 
@@ -173,7 +175,8 @@ flowchart TB
 erDiagram
     hosts ||--o{ scans : "수집 이력"
     scans ||--o{ packages : "설치 패키지"
-    scans ||--o{ exposures : "런타임 노출"
+    scans ||--o{ exposures : "노출 소켓(포트)"
+    scans ||--o{ processes : "실행 프로세스"
     scans ||--o{ findings : "매처 판정"
     cves  ||--o{ cve_affected_packages : "영향 패키지"
     cves  ||--o{ findings : "취약점"
@@ -208,12 +211,19 @@ erDiagram
         string exe_pkg
         text loaded_pkgs
     }
+    processes {
+        bigint id PK
+        bigint scan_id FK
+        string comm
+        string exe_pkg
+        text loaded_pkgs
+    }
     findings {
         bigint id PK
         bigint scan_id FK
         string cve_id FK
         string severity
-        bool exposed
+        string runtime_status
         bool in_kev
     }
     cves {
