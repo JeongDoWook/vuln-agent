@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+ini_set('memory_limit', '512M'); // 대량 피드(OSV/EPSS) 처리 여유
+
 /**
  * sync.php — 커넥터 1건을 즉시 실행(수동). 사용: php sync.php <connector_id>
  *   실행 후 전체 스캔 재매칭.
