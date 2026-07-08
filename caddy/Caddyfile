@@ -5,11 +5,14 @@
 ost-server.duckdns.org {
 	encode gzip
 
-	# DuckDNS TXT 레코드로 도메인 소유 증명 → 인증서 자동 발급/갱신.
-	# 토큰은 docker secret(/run/secrets/duckdns_token) → entrypoint 가 env 로 노출.
-	tls {
-		dns duckdns {env.DUCKDNS_TOKEN}
-	}
+	# [현재] 자체서명(Caddy 내부 CA). 토큰/도메인소유 불필요, 즉시 HTTPS(브라우저 경고 뜸).
+	tls internal
+
+	# [정식으로 전환 시] 위 한 줄을 지우고 아래 블록으로 교체.
+	#   단, 이 도메인을 소유한 DuckDNS 계정의 토큰이 secrets/duckdns_token.txt 에 있어야 함.
+	# tls {
+	# 	dns duckdns {env.DUCKDNS_TOKEN}
+	# }
 
 	reverse_proxy web:80 {
 		# 뒷단 PHP 가 원 프로토콜/호스트를 알도록 표준 헤더 전달.
