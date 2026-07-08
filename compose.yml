@@ -19,14 +19,12 @@ x-app-env: &app-env
   TZ: Asia/Seoul
 
 x-app-secrets: &app-secrets
-  # mode 0444: 호스트 파일은 0600 유지, 컨테이너 안에서만 읽기 허용
-  # (Apache 는 www-data 로 돌아 root 소유 0600 시크릿을 못 읽던 문제 해결)
-  - source: mysql_password
-    mode: 0444
-  - source: ingest_token
-    mode: 0444
-  - source: admin_password
-    mode: 0444
+  # 주의: Apache 는 www-data(uid33)로 돌고, non-swarm compose 는 시크릿을 호스트 권한
+  # 그대로 마운트한다. 따라서 www-data 가 읽으려면 secrets/*.txt 가 0644 여야 한다
+  # (compose_runner.sh init 이 0644 로 생성). compose 의 mode 지정은 swarm 전용이라 무시됨.
+  - mysql_password
+  - ingest_token
+  - admin_password
 
 services:
   # --- MySQL: 수집 데이터 저장소 -------------------------------------------

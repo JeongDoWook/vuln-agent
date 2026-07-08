@@ -101,7 +101,10 @@ run_init() {
       say "  ${BLUE}→${NC} 존재: $f (유지)"
     else
       gen_secret > "$f"
-      chmod 600 "$f" 2>/dev/null || true
+      # 0644: 컨테이너의 www-data(Apache)가 읽어야 함. non-swarm compose 는 시크릿을
+      #       호스트 권한대로 마운트하므로 world-read 가 아니면 www-data 가 못 읽는다.
+      #       (내부 단일관리 서버 전제. git 에는 안 올라가고 네트워크 노출도 없음)
+      chmod 644 "$f" 2>/dev/null || true
       say "  ${GREEN}✓${NC} 생성: $f  ${YELLOW}(랜덤 비밀값)${NC}"
     fi
   done
