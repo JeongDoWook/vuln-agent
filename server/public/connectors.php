@@ -112,15 +112,21 @@ vg_header('피드 커넥터', 'connectors');
 
   <div class="card">
     <table>
-      <thead><tr><th>이름</th><th>타입</th><th>스케줄</th><th>활성</th><th>마지막 실행</th><th>상태</th><th>작업</th></tr></thead>
+      <thead><tr><th>이름</th><th>타입</th><th>스케줄</th><th>활성</th><th>마지막 실행</th><th>다음 실행</th><th>상태</th><th>작업</th></tr></thead>
       <tbody>
       <?php foreach ($connectors as $c):
         $sc = json_decode((string) $c['schedule_json'], true) ?: [];
-        switch ($sc['mode'] ?? 'manual') {
+        $mode = $sc['mode'] ?? 'manual';
+        switch ($mode) {
             case 'interval': $schedLabel = '매 ' . (int) ($sc['interval_minutes'] ?? 0) . '분'; break;
             case 'daily':    $schedLabel = '매일 ' . ($sc['time'] ?? '?'); break;
             case 'cron':     $schedLabel = 'cron: ' . ($sc['expr'] ?? '?'); break;
             default:         $schedLabel = '수동';
+        }
+        // 다음 실행: 활성+예약된 커넥터만. 저장값 우선, 없으면 즉석 계산.
+        $nextRun = '–';
+        if ($c['enabled'] && $mode !== 'manual') {
+            $nextRun = $c['next_run_at'] ?: vg_schedule_next($sc);
         }
       ?>
         <tr>
@@ -134,6 +140,7 @@ vg_header('피드 커넥터', 'connectors');
             </form>
           </td>
           <td class="why"><?= vg_h($c['last_run_at'] ?? '–') ?></td>
+          <td class="why"><?= vg_h($nextRun ?: '–') ?></td>
           <td><span class="badge" style="background:<?= $statusColor[$c['last_status']] ?? '#6e7681' ?>;"><?= vg_h($c['last_status'] ?? 'never') ?></span>
             <?php if ($c['last_message']): ?><div class="why" title="<?= vg_h($c['last_message']) ?>"><?= vg_h(mb_strimwidth((string) $c['last_message'], 0, 40, '…')) ?></div><?php endif; ?>
           </td>
