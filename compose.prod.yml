@@ -19,7 +19,11 @@ services:
 
   web:
     container_name: vulnagent-web
-    # 운영: 호스트로 직접 노출하지 않는다. 앞단 caddy 가 프록시(내부 web:80).
+    # 외부는 앞단 caddy(HTTPS)만 통과 → web 은 네트워크에 노출 안 함.
+    # 단, 같은 호스트의 로컬 에이전트가 평문으로 ingest 하도록 loopback 전용 포트만 노출.
+    #   127.0.0.1 바인딩이라 외부/네트워크에서는 접근 불가(서버 자신에서만).
+    ports:
+      - "127.0.0.1:8081:80"
     #   소스 마운트 없음 → 이미지 코드 사용.
 
   scheduler:
