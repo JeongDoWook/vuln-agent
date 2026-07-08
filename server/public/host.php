@@ -94,7 +94,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
             <td><?= vg_h($e['proc']) ?></td>
             <td><?= vg_h($e['proto']) ?>/<?= (int) $e['port'] ?></td>
             <td><?= vg_h($e['exe_pkg']) ?></td>
-            <td class="why"><?= vg_h(mb_strimwidth((string) $e['loaded_pkgs'], 0, 60, '…')) ?></td>
+            <td class="why"><?= vg_trunc($e['loaded_pkgs'], 60) ?></td>
           </tr>
         <?php endforeach; ?>
         </tbody>
@@ -113,7 +113,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
             <td><?= vg_h($pr['comm']) ?></td>
             <td class="why"><?= vg_h($pr['username']) ?></td>
             <td><?= vg_h($pr['exe_pkg']) ?></td>
-            <td class="why"><?= vg_h(mb_strimwidth((string) $pr['loaded_pkgs'], 0, 60, '…')) ?></td>
+            <td class="why"><?= vg_trunc($pr['loaded_pkgs'], 60) ?></td>
           </tr>
         <?php endforeach; ?>
         </tbody>
@@ -131,10 +131,10 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
           <tr>
             <td><span class="badge" style="background:<?= vg_sev_color($f['severity']) ?>;"><?= vg_h($f['severity']) ?></span></td>
             <td><span class="badge" style="background:<?= vg_status_color($f['runtime_status']) ?>;"><?= vg_h(vg_status_label($f['runtime_status'])) ?></span></td>
-            <td><strong><?= vg_h($f['cve_id']) ?></strong></td>
+            <td><strong><a href="/cve.php?cve=<?= urlencode($f['cve_id']) ?>"><?= vg_h($f['cve_id']) ?></a></strong></td>
             <td><?= $f['epss'] !== null ? vg_h(number_format((float) $f['epss'] * 100, 1)) . '%' : '-' ?></td>
             <td><?= vg_h($f['package_name']) ?> <span class="why"><?= vg_h($f['installed_version']) ?></span></td>
-            <td class="why"><?= vg_h($f['rationale']) ?></td>
+            <td class="why"><?= vg_trunc($f['rationale']) ?></td>
             <td class="why"><?= !empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '패치 확인' ?></td>
           </tr>
         <?php endforeach; ?>

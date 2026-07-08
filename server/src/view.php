@@ -26,6 +26,80 @@ function vg_status_color(?string $s): string {
     return $m[$s ?? ''] ?? '#6e7681';
 }
 
+// 긴 텍스트 말줄임 + 툴팁(title 에 원문). 안 잘리면 그냥 이스케이프만.
+function vg_trunc(?string $text, int $len = 72): string {
+    $text = (string) $text;
+    $cut = mb_strimwidth($text, 0, $len, '…');
+    if ($cut === $text) {
+        return vg_h($text);
+    }
+    return '<span class="trunc" title="' . vg_h($text) . '">' . vg_h($cut) . '</span>';
+}
+
+// 현재 $_GET 에 $overrides 를 병합한 쿼리스트링(?a=1&b=2). 값이 null/빈문자면 해당 키 제거.
+function vg_qs(array $overrides = []): string {
+    $params = $_GET;
+    foreach ($overrides as $k => $v) {
+        if ($v === null || $v === '') {
+            unset($params[$k]);
+        } else {
+            $params[$k] = $v;
+        }
+    }
+    $parts = [];
+    foreach ($params as $k => $v) {
+        if ($v === null || $v === '' || is_array($v)) { // 배열값(?a[]=)은 무시
+            continue;
+        }
+        $parts[] = urlencode((string) $k) . '=' . urlencode((string) $v);
+    }
+    return '?' . implode('&', $parts);
+}
+
+// 페이지네이션 링크 출력. total<=perPage 면 아무것도 출력하지 않음.
+function vg_page_nav(int $total, int $perPage, int $page): void {
+    if ($total <= $perPage) {
+        return;
+    }
+    $totalPages = (int) ceil($total / $perPage);
+    if ($page < 1) { $page = 1; }
+    if ($page > $totalPages) { $page = $totalPages; }
+
+    // 표시할 페이지 번호: 처음, 현재 ±2, 끝
+    $show = [1, $totalPages];
+    for ($p = $page - 2; $p <= $page + 2; $p++) {
+        if ($p >= 1 && $p <= $totalPages) { $show[] = $p; }
+    }
+    $show = array_values(array_unique($show));
+    sort($show);
+
+    echo '<div class="pager">';
+    if ($page > 1) {
+        echo '<a href="' . vg_h(vg_qs(['page' => $page - 1])) . '">‹ 이전</a>';
+    } else {
+        echo '<span class="muted">‹ 이전</span>';
+    }
+    $prev = 0;
+    foreach ($show as $p) {
+        if ($prev !== 0 && $p - $prev > 1) {
+            echo '<span class="muted">…</span>';
+        }
+        if ($p === $page) {
+            echo '<span class="cur">' . $p . '</span>';
+        } else {
+            echo '<a href="' . vg_h(vg_qs(['page' => $p])) . '">' . $p . '</a>';
+        }
+        $prev = $p;
+    }
+    if ($page < $totalPages) {
+        echo '<a href="' . vg_h(vg_qs(['page' => $page + 1])) . '">다음 ›</a>';
+    } else {
+        echo '<span class="muted">다음 ›</span>';
+    }
+    echo '<span class="muted">· 총 ' . number_format($total) . '건 · ' . $page . '/' . $totalPages . '페이지</span>';
+    echo '</div>';
+}
+
 function vg_header(string $title, string $active = ''): void {
     $user = function_exists('vg_current_user') ? vg_current_user() : null;
     ?>
@@ -71,6 +145,15 @@ function vg_header(string $title, string $active = ''): void {
   button { margin-top:1.1rem; width:100%; padding:.6rem; background:#238636; color:#fff; border:none; border-radius:8px; font-size:.95rem; font-weight:600; cursor:pointer; }
   button:hover { background:#2ea043; }
   .btn-sm { width:auto; margin:0; padding:.35rem .8rem; font-size:.82rem; }
+  .trunc { display:inline-block; max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
+  tbody tr:hover { background:#1c2029; }
+  .toolbar { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:1rem; }
+  input[type=search],select { padding:.45rem .6rem; background:#0f1115; border:1px solid #30363d; border-radius:8px; color:#e6e6e6; font-size:.85rem; }
+  .pager { display:flex; gap:.3rem; justify-content:center; align-items:center; flex-wrap:wrap; margin-top:1rem; }
+  .pager a,.pager span { padding:.3rem .6rem; border-radius:7px; font-size:.82rem; border:1px solid #262b36; color:#adbac7; }
+  .pager a:hover { background:#1c2029; text-decoration:none; }
+  .pager .cur { background:#1f6feb; color:#fff; border-color:#1f6feb; }
+  .pager .muted { border:none; color:#6e7681; }
 </style>
 </head>
 <body>
