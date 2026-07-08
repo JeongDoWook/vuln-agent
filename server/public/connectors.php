@@ -10,6 +10,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/feeds.php';
 require __DIR__ . '/../src/matcher.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
 vg_require_login();
 vg_require_admin();
 
@@ -51,19 +52,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $enabled = isset($_POST['enabled']) ? 1 : 0;
 
                 if ($id > 0) {
-                    $st = $pdo->prepare('UPDATE feed_connectors SET name=?, connector_type=?, connection_json=?, schedule_json=?, enabled=? WHERE id=?');
+                    $st = $pdo->prepare('UPDATE tb_feed_connectors SET name=?, connector_type=?, connection_json=?, schedule_json=?, enabled=? WHERE id=?');
                     $st->execute([$name, $type, json_encode($conn), json_encode($sched), $enabled, $id]);
                     $msg = "커넥터 '$name' 수정됨.";
                 } else {
-                    $st = $pdo->prepare('INSERT INTO feed_connectors (name, connector_type, connection_json, schedule_json, enabled, last_status) VALUES (?,?,?,?,?,?)');
+                    $st = $pdo->prepare('INSERT INTO tb_feed_connectors (name, connector_type, connection_json, schedule_json, enabled, last_status) VALUES (?,?,?,?,?,?)');
                     $st->execute([$name, $type, json_encode($conn), json_encode($sched), $enabled, 'never']);
+                    $id = (int) $pdo->lastInsertId();
                     $msg = "커넥터 '$name' 추가됨.";
                 }
+                vg_log_activity($pdo, 'CONNECTOR', $id, 'connector_save', "커넥터 '$name' 저장", ['type' => $type, 'enabled' => $enabled]);
             } elseif ($action === 'run') {
                 $id = (int) ($_POST['id'] ?? 0);
                 $r = vg_feed_run($pdo, $id, 'manual');
                 if (!empty($r['ok'])) {
-                    foreach (array_map('intval', $pdo->query('SELECT id FROM scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
+                    foreach (array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
                         vg_match_scan($pdo, $sid);
                     }
                     $msg = "실행 완료: {$r['upserted']} 건 수집 · 재매칭됨.";
@@ -72,11 +75,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } elseif ($action === 'toggle') {
                 $id = (int) ($_POST['id'] ?? 0);
-                $pdo->prepare('UPDATE feed_connectors SET enabled = 1 - enabled WHERE id = ?')->execute([$id]);
+                $pdo->prepare('UPDATE tb_feed_connectors SET enabled = 1 - enabled WHERE id = ?')->execute([$id]);
+                vg_log_activity($pdo, 'CONNECTOR', $id, 'connector_toggle', '활성 상태 변경');
                 $msg = '활성 상태 변경됨.';
             } elseif ($action === 'delete') {
                 $id = (int) ($_POST['id'] ?? 0);
-                $pdo->prepare('DELETE FROM feed_connectors WHERE id = ?')->execute([$id]);
+                vg_soft_delete($pdo, 'tb_feed_connectors', $id);
+                vg_log_activity($pdo, 'CONNECTOR', $id, 'connector_delete', '커넥터 삭제');
                 $msg = '커넥터 삭제됨.';
             }
         } catch (Throwable $e) {
@@ -85,9 +90,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$connectors = $pdo->query('SELECT * FROM feed_connectors ORDER BY id')->fetchAll();
+$connectors = $pdo->query('SELECT * FROM tb_feed_connectors WHERE is_deleted = 0 ORDER BY id')->fetchAll();
 $logs = $pdo->query(
-    'SELECT l.*, c.name FROM feed_collection_logs l JOIN feed_connectors c ON c.id = l.connector_id
+    'SELECT l.*, c.name FROM tb_feed_collection_logs l JOIN tb_feed_connectors c ON c.id = l.connector_id
      ORDER BY l.started_at DESC LIMIT 15'
 )->fetchAll();
 $csrf = vg_csrf_token();
@@ -110,56 +115,55 @@ vg_header('피드 커넥터', 'connectors');
   <?php if ($msg): ?><div class="err" style="background:#12261a;border-color:#238636;color:#7ee787;"><?= vg_h($msg) ?></div><?php endif; ?>
   <?php if ($err): ?><div class="err"><?= vg_h($err) ?></div><?php endif; ?>
 
-  <div class="card">
-    <table>
-      <thead><tr><th>이름</th><th>타입</th><th>스케줄</th><th>활성</th><th>마지막 실행</th><th>다음 실행</th><th>상태</th><th>작업</th></tr></thead>
-      <tbody>
-      <?php foreach ($connectors as $c):
-        $sc = json_decode((string) $c['schedule_json'], true) ?: [];
-        $mode = $sc['mode'] ?? 'manual';
-        switch ($mode) {
-            case 'interval': $schedLabel = '매 ' . (int) ($sc['interval_minutes'] ?? 0) . '분'; break;
-            case 'daily':    $schedLabel = '매일 ' . ($sc['time'] ?? '?'); break;
-            case 'cron':     $schedLabel = 'cron: ' . ($sc['expr'] ?? '?'); break;
-            default:         $schedLabel = '수동';
-        }
-        // 다음 실행: 활성+예약된 커넥터만. 저장값 우선, 없으면 즉석 계산.
-        $nextRun = '–';
-        if ($c['enabled'] && $mode !== 'manual') {
-            $nextRun = $c['next_run_at'] ?: vg_schedule_next($sc);
-        }
-      ?>
-        <tr>
-          <td><strong><?= vg_h($c['name']) ?></strong></td>
-          <td><span class="pill"><?= vg_h($c['connector_type']) ?></span></td>
-          <td class="why"><?= vg_h($schedLabel) ?></td>
-          <td>
-            <form method="post" style="margin:0;display:inline;">
-              <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
-              <button class="btn-sm" style="background:<?= $c['enabled'] ? '#238636' : '#30363d' ?>;"><?= $c['enabled'] ? 'ON' : 'OFF' ?></button>
-            </form>
-          </td>
-          <td class="why"><?= vg_h($c['last_run_at'] ?? '–') ?></td>
-          <td class="why"><?= vg_h($nextRun ?: '–') ?></td>
-          <td><span class="badge" style="background:<?= $statusColor[$c['last_status']] ?? '#6e7681' ?>;"><?= vg_h($c['last_status'] ?? 'never') ?></span>
-            <?php if ($c['last_message']): ?><div class="why" title="<?= vg_h($c['last_message']) ?>"><?= vg_h(mb_strimwidth((string) $c['last_message'], 0, 40, '…')) ?></div><?php endif; ?>
-          </td>
-          <td style="white-space:nowrap;">
-            <form method="post" style="margin:0;display:inline;">
-              <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
-              <button class="btn-sm" style="background:#1f6feb;">지금 실행</button>
-            </form>
-            <a class="btn-sm" style="display:inline-block;background:#30363d;color:#fff;border-radius:8px;" href="?edit=<?= (int) $c['id'] ?>">편집</a>
-            <form method="post" style="margin:0;display:inline;" onsubmit="return confirm('삭제할까요?');">
-              <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
-              <button class="btn-sm" style="background:#6e2830;">삭제</button>
-            </form>
-          </td>
-        </tr>
-      <?php endforeach; ?>
-      </tbody>
-    </table>
-  </div>
+  <?php
+  // 표시용 부가값(스케줄 라벨/다음 실행) 을 미리 계산해 각 행에 얹는다.
+  foreach ($connectors as &$c) {
+      $sc = json_decode((string) $c['schedule_json'], true) ?: [];
+      $mode = $sc['mode'] ?? 'manual';
+      switch ($mode) {
+          case 'interval': $c['_sched_label'] = '매 ' . (int) ($sc['interval_minutes'] ?? 0) . '분'; break;
+          case 'daily':    $c['_sched_label'] = '매일 ' . ($sc['time'] ?? '?'); break;
+          case 'cron':     $c['_sched_label'] = 'cron: ' . ($sc['expr'] ?? '?'); break;
+          default:         $c['_sched_label'] = '수동';
+      }
+      $c['_next_run'] = ($c['enabled'] && $mode !== 'manual') ? ($c['next_run_at'] ?: vg_schedule_next($sc)) : '–';
+  }
+  unset($c);
+
+  vg_table(
+      [
+          ['label' => '이름'], ['label' => '타입'], ['label' => '스케줄'], ['label' => '활성'],
+          ['label' => '마지막 실행'], ['label' => '다음 실행'], ['label' => '상태'], ['label' => '작업'],
+      ],
+      $connectors,
+      [
+          'empty' => '등록된 커넥터가 없습니다.',
+          'cell' => [
+              0 => fn($c) => '<strong>' . vg_h($c['name']) . '</strong>',
+              1 => fn($c) => '<span class="pill">' . vg_h($c['connector_type']) . '</span>',
+              2 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
+              3 => fn($c) => '<form method="post" style="margin:0;display:inline;">'
+                  . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['id'] . '">'
+                  . '<button class="btn-sm" style="background:' . ($c['enabled'] ? '#238636' : '#30363d') . ';">' . ($c['enabled'] ? 'ON' : 'OFF') . '</button></form>',
+              4 => fn($c) => '<span class="why">' . vg_h($c['last_run_at'] ?? '–') . '</span>',
+              5 => fn($c) => '<span class="why">' . vg_h($c['_next_run'] ?: '–') . '</span>',
+              6 => function ($c) {
+                  global $statusColor;
+                  $html = '<span class="badge" style="background:' . ($statusColor[$c['last_status']] ?? '#6e7681') . ';">' . vg_h($c['last_status'] ?? 'never') . '</span>';
+                  if ($c['last_message']) {
+                      $html .= '<div class="why" title="' . vg_h($c['last_message']) . '">' . vg_h(mb_strimwidth((string) $c['last_message'], 0, 40, '…')) . '</div>';
+                  }
+                  return $html;
+              },
+              7 => fn($c) => '<div style="white-space:nowrap;">'
+                  . '<form method="post" style="margin:0;display:inline;"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . (int) $c['id'] . '"><button class="btn-sm" style="background:#1f6feb;">지금 실행</button></form> '
+                  . '<a class="btn-sm" style="display:inline-block;background:#30363d;color:#fff;border-radius:8px;" href="?edit=' . (int) $c['id'] . '">편집</a> '
+                  . '<form method="post" style="margin:0;display:inline;" onsubmit="return confirm(\'삭제할까요?\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int) $c['id'] . '"><button class="btn-sm" style="background:#6e2830;">삭제</button></form>'
+                  . '</div>',
+          ],
+      ]
+  );
+  ?>
 
   <div class="card" style="max-width:560px;">
     <strong><?= $edit ? '커넥터 편집' : '커넥터 추가' ?></strong>
@@ -228,21 +232,31 @@ vg_header('피드 커넥터', 'connectors');
 
   <div class="card">
     <strong>최근 수집 이력</strong>
-    <table style="margin-top:.6rem;">
-      <thead><tr><th>커넥터</th><th>트리거</th><th>상태</th><th>수집/저장</th><th>메시지</th><th>시각</th></tr></thead>
-      <tbody>
-      <?php if (!$logs): ?><tr><td colspan="6" class="why">아직 실행 이력이 없습니다.</td></tr><?php endif; ?>
-      <?php foreach ($logs as $l): ?>
-        <tr>
-          <td><?= vg_h($l['name']) ?></td>
-          <td class="why"><?= vg_h($l['trigger_by']) ?></td>
-          <td><span class="badge" style="background:<?= $statusColor[$l['status']] ?? '#6e7681' ?>;"><?= vg_h($l['status']) ?></span></td>
-          <td class="why"><?= $l['items_fetched'] !== null ? (int) $l['items_fetched'] . ' / ' . (int) $l['items_upserted'] : '–' ?></td>
-          <td class="why"><?= vg_h(mb_strimwidth((string) ($l['message'] ?? ''), 0, 50, '…')) ?></td>
-          <td class="why"><?= vg_h($l['started_at']) ?></td>
-        </tr>
-      <?php endforeach; ?>
-      </tbody>
-    </table>
+    <div style="margin-top:.6rem;">
+    <?php
+    vg_table(
+        [
+            ['label' => '커넥터', 'key' => 'name'],
+            ['label' => '트리거'],
+            ['label' => '상태'],
+            ['label' => '수집/저장'],
+            ['label' => '메시지'],
+            ['label' => '시각'],
+        ],
+        $logs,
+        [
+            'card' => false,
+            'empty' => '아직 실행 이력이 없습니다.',
+            'cell' => [
+                1 => fn($l) => '<span class="why">' . vg_h($l['trigger_by']) . '</span>',
+                2 => fn($l) => '<span class="badge" style="background:' . ($statusColor[$l['status']] ?? '#6e7681') . ';">' . vg_h($l['status']) . '</span>',
+                3 => fn($l) => '<span class="why">' . ($l['items_fetched'] !== null ? (int) $l['items_fetched'] . ' / ' . (int) $l['items_upserted'] : '–') . '</span>',
+                4 => fn($l) => '<span class="why">' . vg_h(mb_strimwidth((string) ($l['message'] ?? ''), 0, 50, '…')) . '</span>',
+                5 => fn($l) => '<span class="why">' . vg_h($l['started_at']) . '</span>',
+            ],
+        ]
+    );
+    ?>
+    </div>
   </div>
 <?php vg_footer();

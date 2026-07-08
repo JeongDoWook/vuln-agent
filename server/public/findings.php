@@ -29,15 +29,15 @@ try {
     if (isset($_GET['scan_id'])) {
         $scanId = (int) $_GET['scan_id'];
     } else {
-        $scanId = (int) ($pdo->query('SELECT id FROM scans ORDER BY received_at DESC LIMIT 1')->fetchColumn() ?: 0);
+        $scanId = (int) ($pdo->query('SELECT id FROM tb_scans ORDER BY received_at DESC LIMIT 1')->fetchColumn() ?: 0);
     }
     if ($scanId > 0) {
-        $stmt = $pdo->prepare('SELECT s.*, h.fqdn FROM scans s JOIN hosts h ON h.id = s.host_id WHERE s.id = ?');
+        $stmt = $pdo->prepare('SELECT s.*, h.fqdn FROM tb_scans s JOIN tb_hosts h ON h.id = s.host_id WHERE s.id = ?');
         $stmt->execute([$scanId]);
         $scan = $stmt->fetch() ?: null;
 
         // KPI 는 필터 무관 전체 스캔 기준
-        $stmt = $pdo->prepare('SELECT severity, COUNT(*) c FROM findings WHERE scan_id = ? GROUP BY severity');
+        $stmt = $pdo->prepare('SELECT severity, COUNT(*) c FROM tb_findings WHERE scan_id = ? GROUP BY severity');
         $stmt->execute([$scanId]);
         foreach ($stmt->fetchAll() as $r) { if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; } }
 
@@ -58,7 +58,7 @@ try {
             $params[] = $st;
         }
 
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM findings f WHERE $where");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_findings f WHERE $where");
         $stmt->execute($params);
         $total = (int) $stmt->fetchColumn();
 
@@ -67,10 +67,10 @@ try {
 
         $stmt = $pdo->prepare(
             "SELECT f.*, c.summary, c.epss,
-                (SELECT a.fixed_version FROM cve_affected_packages a
+                (SELECT a.fixed_version FROM tb_cve_affected_packages a
                  WHERE a.cve_id = f.cve_id AND a.package_name = f.package_name
                    AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
-             FROM findings f LEFT JOIN cves c ON c.cve_id = f.cve_id
+             FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
              WHERE $where
              ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC
              LIMIT $perPage OFFSET $offset"
@@ -103,56 +103,53 @@ vg_header('취약점', 'findings');
     <?php endforeach; ?>
   </div>
 
-  <form class="toolbar" method="get">
-    <?php if ($scan): ?><input type="hidden" name="scan_id" value="<?= (int) $scan['id'] ?>"><?php endif; ?>
-    <input type="search" name="q" placeholder="CVE 또는 패키지명 검색" value="<?= vg_h($q) ?>">
-    <select name="sev">
-      <option value="">전체 등급</option>
-      <?php foreach ($sevOptions as $s): ?>
-        <option value="<?= $s ?>" <?= $sev === $s ? 'selected' : '' ?>><?= $s ?></option>
-      <?php endforeach; ?>
-    </select>
-    <select name="st">
-      <option value="">전체 상태</option>
-      <?php foreach ($stOptions as $s): ?>
-        <option value="<?= $s ?>" <?= $st === $s ? 'selected' : '' ?>><?= vg_h(vg_status_label($s)) ?></option>
-      <?php endforeach; ?>
-    </select>
-    <button type="submit" class="btn-sm"><?= '검색' ?></button>
-    <?php if ($q !== '' || $sev !== '' || $st !== ''): ?>
-      <a class="btn-sm" href="<?= vg_h(vg_qs(['q' => null, 'sev' => null, 'st' => null, 'page' => null])) ?>">초기화</a>
-    <?php endif; ?>
-  </form>
+  <?php
+  vg_toolbar([
+      ['type' => 'hidden', 'name' => 'scan_id', 'value' => $scan ? (string) $scan['id'] : ''],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
+      ['type' => 'select', 'name' => 'sev', 'empty_label' => '전체 등급', 'selected' => $sev,
+          'options' => array_combine($sevOptions, $sevOptions)],
+      ['type' => 'select', 'name' => 'st', 'empty_label' => '전체 상태', 'selected' => $st,
+          'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
+  ]);
+  ?>
 
-  <?php if (!$rows): ?>
-    <div class="card"><div class="empty">조건에 맞는 판정 결과가 없습니다.</div></div>
-  <?php else: ?>
-  <div class="card">
-    <table>
-      <thead><tr>
-        <th>등급</th><th>상태</th><th>CVE</th><th>패키지</th><th>버전</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>근거 (왜 위험한가)</th><th>조치</th>
-      </tr></thead>
-      <tbody>
-      <?php foreach ($rows as $r): ?>
-        <tr>
-          <td><span class="badge" style="background:<?= vg_sev_color($r['severity']) ?>;"><?= vg_h($r['severity']) ?></span></td>
-          <td><span class="badge" style="background:<?= vg_status_color($r['runtime_status']) ?>;"><?= vg_h(vg_status_label($r['runtime_status'])) ?></span></td>
-          <td><strong><a href="/cve.php?cve=<?= urlencode($r['cve_id']) ?>"><?= vg_h($r['cve_id']) ?></a></strong>
-            <?php if ($r['summary']): ?><div class="why"><?= vg_trunc($r['summary']) ?></div><?php endif; ?>
-          </td>
-          <td><?= vg_h($r['package_name']) ?></td>
-          <td><code><?= vg_h($r['installed_version']) ?></code></td>
-          <td><?= $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '-' ?></td>
-          <td><?= $r['epss'] !== null ? vg_h(number_format((float) $r['epss'] * 100, 1)) . '%' : '-' ?></td>
-          <td><?= $r['in_kev'] ? '✔' : '' ?></td>
-          <td class="why"><?= vg_trunc($r['rationale']) ?></td>
-          <td class="why"><?= !empty($r['fixed_version']) ? '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>' : '패치 확인' ?></td>
-        </tr>
-      <?php endforeach; ?>
-      </tbody>
-    </table>
-  </div>
-  <?php vg_page_nav($total, VG_PER_PAGE, $page); ?>
-  <?php endif; ?>
+  <?php
+  vg_table(
+      [
+          ['label' => '등급', 'key' => 'severity'],
+          ['label' => '상태', 'key' => 'runtime_status'],
+          ['label' => 'CVE'],
+          ['label' => '패키지', 'key' => 'package_name'],
+          ['label' => '버전'],
+          ['label' => 'CVSS'],
+          ['label' => 'EPSS'],
+          ['label' => 'KEV'],
+          ['label' => '근거 (왜 위험한가)'],
+          ['label' => '조치'],
+      ],
+      $rows,
+      [
+          'empty' => '조건에 맞는 판정 결과가 없습니다.',
+          'cell' => [
+              'severity'       => fn($r) => '<span class="badge" style="background:' . vg_sev_color($r['severity']) . ';">' . vg_h($r['severity']) . '</span>',
+              'runtime_status' => fn($r) => '<span class="badge" style="background:' . vg_status_color($r['runtime_status']) . ';">' . vg_h(vg_status_label($r['runtime_status'])) . '</span>',
+              2 => function ($r) {
+                  $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a></strong>';
+                  if ($r['summary']) { $html .= '<div class="why">' . vg_trunc($r['summary']) . '</div>'; }
+                  return $html;
+              },
+              'package_name' => fn($r) => vg_h($r['package_name']),
+              4 => fn($r) => '<code>' . vg_h($r['installed_version']) . '</code>',
+              5 => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '-',
+              6 => fn($r) => $r['epss'] !== null ? vg_h(number_format((float) $r['epss'] * 100, 1)) . '%' : '-',
+              7 => fn($r) => $r['in_kev'] ? '✔' : '',
+              8 => fn($r) => '<span class="why">' . vg_trunc($r['rationale']) . '</span>',
+              9 => fn($r) => !empty($r['fixed_version']) ? '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>',
+          ],
+      ]
+  );
+  if ($rows) { vg_page_nav($total, VG_PER_PAGE, $page); }
+  ?>
 <?php endif; ?>
 <?php vg_footer();

@@ -27,4 +27,8 @@ try {
 } catch (Throwable $e) {
     $res = ['ok' => false, 'error' => $e->getMessage()];
 }
+// 통일 에러 포맷: 실패 응답에 code/ts 부가.
+if (empty($res['ok'])) {
+    $res += ['code' => 'preview_error', 'ts' => date('c')];
+}
 echo json_encode($res, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);

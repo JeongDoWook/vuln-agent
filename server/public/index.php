@@ -13,15 +13,16 @@ vg_require_login();
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0]; $hostCount = 0;
 try {
     $pdo = vg_pdo();
-    $hostCount = (int) $pdo->query('SELECT COUNT(*) FROM hosts')->fetchColumn();
+    $hostCount = (int) $pdo->query('SELECT COUNT(*) FROM tb_hosts WHERE is_deleted = 0')->fetchColumn();
 
     // 호스트별 최신 스캔
     $rows = $pdo->query(
         'SELECT s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
                 h.id AS host_id, h.fqdn, h.os_id, h.os_version
-         FROM scans s
-         JOIN (SELECT host_id, MAX(id) AS mid FROM scans GROUP BY host_id) t ON t.mid = s.id
-         JOIN hosts h ON h.id = s.host_id
+         FROM tb_scans s
+         JOIN (SELECT host_id, MAX(id) AS mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id
+         JOIN tb_hosts h ON h.id = s.host_id
+         WHERE h.is_deleted = 0
          ORDER BY s.collected_at DESC'
     )->fetchAll();
 
@@ -31,7 +32,7 @@ try {
         $ids = [];
         foreach ($rows as $r) { $ids[] = (int) $r['scan_id']; }
         $in  = implode(',', array_fill(0, count($ids), '?'));
-        $st  = $pdo->prepare("SELECT scan_id, severity, COUNT(*) c FROM findings WHERE scan_id IN ($in) GROUP BY scan_id, severity");
+        $st  = $pdo->prepare("SELECT scan_id, severity, COUNT(*) c FROM tb_findings WHERE scan_id IN ($in) GROUP BY scan_id, severity");
         $st->execute($ids);
         foreach ($st->fetchAll() as $f) {
             $sevByScan[(int) $f['scan_id']][$f['severity']] = (int) $f['c'];
@@ -57,34 +58,41 @@ vg_header('대시보드', 'dashboard');
     <?php endforeach; ?>
   </div>
 
-  <div class="card">
-    <?php if (!$rows): ?>
-      <div class="empty">아직 수집된 스캔이 없습니다. 에이전트를 <code>--send</code> 로 실행하세요.</div>
-    <?php else: ?>
-      <table>
-        <thead><tr>
-          <th>호스트</th><th>OS</th><th>패키지</th><th>노출</th><th>심각도</th><th>수집시각</th><th></th>
-        </tr></thead>
-        <tbody>
-        <?php foreach ($rows as $r): $sc = $sevByScan[(int)$r['scan_id']] ?? []; ?>
-          <tr>
-            <td><strong><a href="/host.php?id=<?= (int) $r['host_id'] ?>"><?= vg_h($r['fqdn']) ?></a></strong></td>
-            <td><?= vg_h($r['os_id']) ?> <?= vg_h($r['os_version']) ?></td>
-            <td><?= (int) $r['package_count'] ?></td>
-            <td><?= (int) $r['exposure_count'] ?></td>
-            <td>
-              <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): if (!empty($sc[$s])): ?>
-                <span class="badge" style="background:<?= vg_sev_color($s) ?>;" title="<?= $s ?>"><?= (int) $sc[$s] ?></span>
-              <?php endif; endforeach; ?>
-              <?php if (!$sc): ?><span class="why">–</span><?php endif; ?>
-            </td>
-            <td class="why"><?= vg_h($r['collected_at']) ?></td>
-            <td><a href="/findings.php?scan_id=<?= (int) $r['scan_id'] ?>">취약점 →</a></td>
-          </tr>
-        <?php endforeach; ?>
-        </tbody>
-      </table>
-    <?php endif; ?>
-  </div>
+  <?php
+  vg_table(
+      [
+          ['label' => '호스트'],
+          ['label' => 'OS'],
+          ['label' => '패키지'],
+          ['label' => '노출'],
+          ['label' => '심각도'],
+          ['label' => '수집시각'],
+          ['label' => ''],
+      ],
+      $rows,
+      [
+          'empty' => '아직 수집된 스캔이 없습니다. 에이전트를 --send 로 실행하세요.',
+          'cell' => [
+              0 => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a></strong>',
+              1 => fn($r) => vg_h($r['os_id']) . ' ' . vg_h($r['os_version']),
+              2 => fn($r) => vg_h((string) (int) $r['package_count']),
+              3 => fn($r) => vg_h((string) (int) $r['exposure_count']),
+              4 => function ($r) use ($sevByScan) {
+                  $sc = $sevByScan[(int) $r['scan_id']] ?? [];
+                  if (!$sc) { return '<span class="why">–</span>'; }
+                  $html = '';
+                  foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s) {
+                      if (!empty($sc[$s])) {
+                          $html .= '<span class="badge" style="background:' . vg_sev_color($s) . ';" title="' . $s . '">' . (int) $sc[$s] . '</span>';
+                      }
+                  }
+                  return $html;
+              },
+              5 => fn($r) => '<span class="why">' . vg_h($r['collected_at']) . '</span>',
+              6 => fn($r) => '<a href="/findings.php?scan_id=' . (int) $r['scan_id'] . '">취약점 →</a>',
+          ],
+      ]
+  );
+  ?>
 <?php endif; ?>
 <?php vg_footer();

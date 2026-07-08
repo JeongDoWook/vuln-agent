@@ -22,7 +22,7 @@ $r = vg_feed_run($pdo, $id, 'manual');
 fwrite(STDOUT, json_encode($r, JSON_UNESCAPED_UNICODE) . "\n");
 
 if (!empty($r['ok'])) {
-    foreach (array_map('intval', $pdo->query('SELECT id FROM scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
+    foreach (array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
         vg_match_scan($pdo, $sid);
     }
     fwrite(STDOUT, "재매칭 완료\n");

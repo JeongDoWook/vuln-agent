@@ -9,6 +9,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/audit.php';   // vg_log_activity
 
 // ─────────────────────────────────────────────────────────────────────────
 // HTTP (curl)
@@ -78,7 +79,7 @@ function vg_http_raw(string $method, string $url, array $headers = [], int $time
 // ─────────────────────────────────────────────────────────────────────────
 function vg_upsert_cve(PDO $pdo, string $id, ?string $summary, ?float $cvss, ?string $published): void {
     $st = $pdo->prepare(
-        'INSERT INTO cves (cve_id, summary, cvss, published) VALUES (?,?,?,?)
+        'INSERT INTO tb_cves (cve_id, summary, cvss, published) VALUES (?,?,?,?)
          ON DUPLICATE KEY UPDATE
            summary   = COALESCE(VALUES(summary), summary),
            cvss      = COALESCE(VALUES(cvss), cvss),
@@ -89,7 +90,7 @@ function vg_upsert_cve(PDO $pdo, string $id, ?string $summary, ?float $cvss, ?st
 
 function vg_upsert_kev(PDO $pdo, string $id, ?string $dateAdded, ?string $note): void {
     $st = $pdo->prepare(
-        'INSERT INTO kev_catalog (cve_id, date_added, note) VALUES (?,?,?)
+        'INSERT INTO tb_kev_catalog (cve_id, date_added, note) VALUES (?,?,?)
          ON DUPLICATE KEY UPDATE date_added = VALUES(date_added), note = VALUES(note)'
     );
     $st->execute([$id, $dateAdded ?: null, $note]);
@@ -97,31 +98,31 @@ function vg_upsert_kev(PDO $pdo, string $id, ?string $dateAdded, ?string $note):
 
 // 국내 보안공지(KISA 등) upsert. url 기준 dedup. 신규면 true.
 function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url, ?string $published, ?string $cveIds): bool {
-    $chk = $pdo->prepare('SELECT id FROM advisories WHERE url = ? LIMIT 1');
+    $chk = $pdo->prepare('SELECT id FROM tb_advisories WHERE url = ? LIMIT 1');
     $chk->execute([$url]);
     if ($chk->fetchColumn()) {
-        $pdo->prepare('UPDATE advisories SET title=?, published=?, cve_ids=? WHERE url=?')
+        $pdo->prepare('UPDATE tb_advisories SET title=?, published=?, cve_ids=? WHERE url=?')
             ->execute([$title, $published, $cveIds, $url]);
         return false;
     }
-    $pdo->prepare('INSERT INTO advisories (source, title, url, published, cve_ids) VALUES (?,?,?,?,?)')
+    $pdo->prepare('INSERT INTO tb_advisories (source, title, url, published, cve_ids) VALUES (?,?,?,?,?)')
         ->execute([$source, $title, $url, $published, $cveIds]);
     return true;
 }
 
 function vg_upsert_affected(PDO $pdo, string $cve, ?string $eco, string $pkg, ?string $fixed): void {
-    $chk = $pdo->prepare('SELECT id FROM cve_affected_packages WHERE cve_id=? AND package_name=? LIMIT 1');
+    $chk = $pdo->prepare('SELECT id FROM tb_cve_affected_packages WHERE cve_id=? AND package_name=? LIMIT 1');
     $chk->execute([$cve, $pkg]);
     $id = $chk->fetchColumn();
     if ($id) {
         // 존재하면 fixed_version 을 채워 넣는다(이전 batch 수집엔 없었음)
         if ($fixed !== null && $fixed !== '') {
-            $pdo->prepare('UPDATE cve_affected_packages SET fixed_version=?, ecosystem=COALESCE(ecosystem,?) WHERE id=?')
+            $pdo->prepare('UPDATE tb_cve_affected_packages SET fixed_version=?, ecosystem=COALESCE(ecosystem,?) WHERE id=?')
                 ->execute([$fixed, $eco, (int) $id]);
         }
         return;
     }
-    $pdo->prepare('INSERT INTO cve_affected_packages (cve_id, ecosystem, package_name, fixed_version) VALUES (?,?,?,?)')
+    $pdo->prepare('INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version) VALUES (?,?,?,?)')
         ->execute([$cve, $eco, $pkg, $fixed]);
 }
 
@@ -208,7 +209,7 @@ final class VgOsvConnector implements VgFeedConnector {
 
         $scans = $pdo->query(
             'SELECT s.id, s.os_id, s.os_version
-             FROM scans s JOIN (SELECT host_id, MAX(id) mid FROM scans GROUP BY host_id) t ON t.mid = s.id'
+             FROM tb_scans s JOIN (SELECT host_id, MAX(id) mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id'
         )->fetchAll();
 
         $fetched = 0; $up = 0; $seen = [];
@@ -217,7 +218,7 @@ final class VgOsvConnector implements VgFeedConnector {
             if ($eco === null || $eco === '') { continue; } // 미지원 배포판 스킵
             $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
 
-            $pk = $pdo->prepare('SELECT name, source_pkg, version FROM packages WHERE scan_id = ?');
+            $pk = $pdo->prepare('SELECT name, source_pkg, version FROM tb_packages WHERE scan_id = ?');
             $pk->execute([(int) $sc['id']]);
 
             // 쿼리 목록(배포판·패키지·버전 중복 제거). deb/ubuntu 는 source_pkg 로 조회.
@@ -370,13 +371,13 @@ final class VgEpssConnector implements VgFeedConnector {
         }
         // 우리가 보유한 CVE 만 갱신(전체 34만건 삽입 안 함)
         $have = [];
-        foreach ($pdo->query('SELECT cve_id FROM cves')->fetchAll(PDO::FETCH_COLUMN) as $c) {
+        foreach ($pdo->query('SELECT cve_id FROM tb_cves')->fetchAll(PDO::FETCH_COLUMN) as $c) {
             $have[strtoupper((string) $c)] = true;
         }
         if (!$have) {
             return ['fetched' => 0, 'upserted' => 0];
         }
-        $upd = $pdo->prepare('UPDATE cves SET epss = ?, epss_percentile = ? WHERE cve_id = ?');
+        $upd = $pdo->prepare('UPDATE tb_cves SET epss = ?, epss_percentile = ? WHERE cve_id = ?');
         $fetched = 0; $up = 0;
         $pdo->beginTransaction();
         foreach (explode("\n", $txt) as $line) {
@@ -488,35 +489,41 @@ function vg_schedule_next(array $schedule, ?int $fromTs = null): ?string {
 
 /** 커넥터 1건 실행: 로그(running→success/error) + 커넥터 상태/다음실행 갱신. */
 function vg_feed_run(PDO $pdo, int $connectorId, string $triggerBy = 'schedule'): array {
-    $st = $pdo->prepare('SELECT * FROM feed_connectors WHERE id = ?');
+    $st = $pdo->prepare('SELECT * FROM tb_feed_connectors WHERE id = ? AND is_deleted = 0');
     $st->execute([$connectorId]);
     $c = $st->fetch();
     if (!$c) {
         throw new RuntimeException("커넥터 없음: $connectorId");
     }
+    // 스케줄러가 돌리면 SYSTEM, 사람이 누르면 USER 로 감사 기록.
+    $actor = $triggerBy === 'schedule' ? 'SYSTEM' : 'USER';
     $conn     = json_decode((string) $c['connection_json'], true) ?: [];
     $schedule = json_decode((string) $c['schedule_json'], true) ?: [];
 
-    $lg = $pdo->prepare('INSERT INTO feed_collection_logs (connector_id, trigger_by, status) VALUES (?,?,?)');
+    $lg = $pdo->prepare('INSERT INTO tb_feed_collection_logs (connector_id, trigger_by, status) VALUES (?,?,?)');
     $lg->execute([$connectorId, $triggerBy, 'running']);
     $logId = (int) $pdo->lastInsertId();
-    $pdo->prepare('UPDATE feed_connectors SET last_status=?, last_run_at=NOW() WHERE id=?')->execute(['running', $connectorId]);
+    $pdo->prepare('UPDATE tb_feed_connectors SET last_status=?, last_run_at=NOW() WHERE id=?')->execute(['running', $connectorId]);
 
     try {
         $res = vg_feed_make((string) $c['connector_type'])->run($pdo, $conn);
         $msg = "fetched={$res['fetched']} upserted={$res['upserted']}";
-        $pdo->prepare('UPDATE feed_collection_logs SET status=?, finished_at=NOW(), items_fetched=?, items_upserted=?, message=? WHERE id=?')
+        $pdo->prepare('UPDATE tb_feed_collection_logs SET status=?, finished_at=NOW(), items_fetched=?, items_upserted=?, message=? WHERE id=?')
             ->execute(['success', $res['fetched'], $res['upserted'], $msg, $logId]);
-        $pdo->prepare('UPDATE feed_connectors SET last_status=?, last_message=?, next_run_at=? WHERE id=?')
+        $pdo->prepare('UPDATE tb_feed_connectors SET last_status=?, last_message=?, next_run_at=? WHERE id=?')
             ->execute(['success', $msg, vg_schedule_next($schedule), $connectorId]);
+        vg_log_activity($pdo, 'CONNECTOR', $connectorId, 'feed_run', "수집 {$res['upserted']}건",
+            ['fetched' => $res['fetched'], 'upserted' => $res['upserted'], 'status' => 'success'], null, $actor);
         return ['ok' => true] + $res;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
         $msg = mb_substr($e->getMessage(), 0, 480);
-        $pdo->prepare('UPDATE feed_collection_logs SET status=?, finished_at=NOW(), message=? WHERE id=?')
+        $pdo->prepare('UPDATE tb_feed_collection_logs SET status=?, finished_at=NOW(), message=? WHERE id=?')
             ->execute(['error', $msg, $logId]);
-        $pdo->prepare('UPDATE feed_connectors SET last_status=?, last_message=?, next_run_at=? WHERE id=?')
+        $pdo->prepare('UPDATE tb_feed_connectors SET last_status=?, last_message=?, next_run_at=? WHERE id=?')
             ->execute(['error', $msg, vg_schedule_next($schedule), $connectorId]);
+        vg_log_activity($pdo, 'CONNECTOR', $connectorId, 'feed_run', "수집 실패: $msg",
+            ['status' => 'error'], null, $actor);
         return ['ok' => false, 'error' => $msg];
     }
 }
@@ -566,8 +573,8 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
 
         case 'osv':
             $sc = $pdo->query(
-                'SELECT s.id, s.os_id, s.os_version FROM scans s
-                 JOIN (SELECT host_id, MAX(id) mid FROM scans GROUP BY host_id) t ON t.mid = s.id
+                'SELECT s.id, s.os_id, s.os_version FROM tb_scans s
+                 JOIN (SELECT host_id, MAX(id) mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id
                  ORDER BY s.id DESC LIMIT 1'
             )->fetch();
             if (!$sc) {
@@ -578,7 +585,7 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
                 return ['ok' => false, 'error' => "OSV ecosystem 판정 불가(os_id={$sc['os_id']}). 커넥터에 ecosystem 지정."];
             }
             $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
-            $pk = $pdo->prepare('SELECT name, source_pkg, version FROM packages WHERE scan_id=? LIMIT 1');
+            $pk = $pdo->prepare('SELECT name, source_pkg, version FROM tb_packages WHERE scan_id=? LIMIT 1');
             $pk->execute([(int) $sc['id']]);
             $pkg = $pk->fetch();
             $key = $isDeb ? ($pkg['source_pkg'] ?: $pkg['name']) : $pkg['name'];
@@ -597,7 +604,7 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
 
 /** 스케줄러가 돌릴 대상: enabled=1 이고 스케줄(interval/daily/cron) 상 지금이 due. */
 function vg_feed_due(PDO $pdo): array {
-    $rows = $pdo->query('SELECT id, schedule_json, last_run_at FROM feed_connectors WHERE enabled = 1')->fetchAll();
+    $rows = $pdo->query('SELECT id, schedule_json, last_run_at FROM tb_feed_connectors WHERE enabled = 1 AND is_deleted = 0')->fetchAll();
     $due = [];
     foreach ($rows as $r) {
         $sch = json_decode((string) $r['schedule_json'], true) ?: [];

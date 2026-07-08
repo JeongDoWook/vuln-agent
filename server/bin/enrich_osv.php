@@ -26,8 +26,8 @@ $SINGLE    = 'https://api.osv.dev/v1/query';
 $needFix = [];
 $rows = $pdo->query(
     'SELECT DISTINCT a.package_name
-       FROM cve_affected_packages a
-       JOIN findings f ON f.package_name = a.package_name
+       FROM tb_cve_affected_packages a
+       JOIN tb_findings f ON f.package_name = a.package_name
       WHERE a.fixed_version IS NULL'
 )->fetchAll(PDO::FETCH_COLUMN);
 foreach ($rows as $k) { $needFix[$k] = true; }
@@ -41,7 +41,7 @@ fwrite(STDOUT, '[' . date('c') . '] 보강 대상 패키지 ' . count($needFix) 
 // 호스트별 최신 스캔에서 (ecosystem, key, version) 을 만들어 조회.
 $scans = $pdo->query(
     'SELECT s.id, s.os_id, s.os_version
-       FROM scans s JOIN (SELECT host_id, MAX(id) mid FROM scans GROUP BY host_id) t ON t.mid = s.id'
+       FROM tb_scans s JOIN (SELECT host_id, MAX(id) mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id'
 )->fetchAll();
 
 $queried = 0; $filled = 0; $skipped = 0; $seen = [];
@@ -50,7 +50,7 @@ foreach ($scans as $sc) {
     if ($eco === null || $eco === '') { continue; }
     $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
 
-    $pk = $pdo->prepare('SELECT name, source_pkg, version FROM packages WHERE scan_id = ?');
+    $pk = $pdo->prepare('SELECT name, source_pkg, version FROM tb_packages WHERE scan_id = ?');
     $pk->execute([(int) $sc['id']]);
     foreach ($pk->fetchAll() as $p) {
         $key = $isDeb ? ($p['source_pkg'] ?: $p['name']) : $p['name'];   // 연결 커넥터와 동일한 키 규칙
