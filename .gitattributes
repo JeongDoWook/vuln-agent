@@ -10,3 +10,4 @@
 *.yml  text eol=lf
 *.cnf  text eol=lf
 Dockerfile text eol=lf
+Caddyfile  text eol=lf

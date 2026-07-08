@@ -109,6 +109,16 @@ run_init() {
     fi
   done
 
+  # DuckDNS 토큰(운영 HTTPS용) — 랜덤 아님. 실제 토큰을 사용자가 직접 넣어야 함.
+  local df="secrets/duckdns_token.txt"
+  if [ -s "$df" ]; then
+    say "  ${BLUE}→${NC} 존재: $df (유지)"
+  else
+    : > "$df"; chmod 644 "$df" 2>/dev/null || true
+    say "  ${YELLOW}⚠${NC} 생성(빈값): $df — HTTPS(prod) 쓰려면 DuckDNS 토큰 입력 필요:"
+    say "      ${CYAN}printf %s 'DuckDNS-토큰' > $df${NC}"
+  fi
+
   echo ""
   if [ "$ok" = 1 ]; then
     say "${GREEN}완료.${NC} 다음: ${CYAN}$0 dev up -d --build${NC}"
@@ -139,6 +149,7 @@ run_doctor() {
   for f in secrets/mysql_root_password.txt secrets/mysql_password.txt secrets/ingest_token.txt secrets/admin_password.txt; do
     if [ -s "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음/빈값 (init 실행 필요)"; fi
   done
+  if [ -s secrets/duckdns_token.txt ]; then say "  ${GREEN}✓${NC} secrets/duckdns_token.txt"; else say "  ${YELLOW}⚠${NC} secrets/duckdns_token.txt 없음/빈값 (운영 HTTPS 쓰려면 DuckDNS 토큰 입력)"; fi
   echo ""
   if [ "$issues" -eq 0 ]; then
     say "${GREEN}점검 통과.${NC}"

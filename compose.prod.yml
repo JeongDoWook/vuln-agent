@@ -4,7 +4,8 @@
 # 특징:
 #   - 소스 마운트 없음 → 이미지에 구워진(COPY) 코드로 동작. 배포 = 재빌드.
 #   - DB 포트 미노출 → 컨테이너 내부 네트워크(vulnagent)로만 접근. 공격면 축소.
-#   - 웹 포트만 노출. 실제 서비스는 앞단 리버스 프록시(nginx 등) 뒤에 두는 걸 권장.
+#   - 앞단 Caddy 리버스 프록시가 TLS(HTTPS) 종료 → web 은 내부(80)로만.
+#     외부 8080 포워딩을 재사용(https://ost-server.duckdns.org:8080), 새 포트 개방 불필요.
 # 실행:  ./compose_runner.sh prod up -d --build
 # =============================================================================
 
@@ -18,10 +19,39 @@ services:
 
   web:
     container_name: vulnagent-web
-    ports:
-      - "${WEB_PORT:-8080}:80"
-    # 운영: 소스 마운트 없음 (volumes 정의 없음) → 이미지 코드 사용.
+    # 운영: 호스트로 직접 노출하지 않는다. 앞단 caddy 가 프록시(내부 web:80).
+    #   소스 마운트 없음 → 이미지 코드 사용.
 
   scheduler:
     container_name: vulnagent-scheduler
     # 운영: 소스 마운트 없음 → 이미지에 구워진 bin/scheduler.php 사용.
+
+  # --- Caddy: HTTPS 종료 리버스 프록시 -------------------------------------
+  #   Let's Encrypt 인증서를 DuckDNS DNS-01 로 발급(인바운드 80/443 불필요).
+  #   호스트 ${WEB_PORT}(기존 8080 포워딩) → 컨테이너 443(TLS) → 내부 web:80.
+  caddy:
+    container_name: vulnagent-caddy
+    build: ./caddy
+    image: vulnagent-caddy:latest
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "${WEB_PORT:-8080}:443"
+    environment:
+      TZ: Asia/Seoul
+    secrets:
+      - duckdns_token
+    volumes:
+      - caddy_data:/data      # 발급 인증서 영속화(재시작해도 재발급 안 함)
+      - caddy_config:/config
+    networks:
+      - vulnagent
+
+secrets:
+  duckdns_token:
+    file: ./secrets/duckdns_token.txt
+
+volumes:
+  caddy_data:
+  caddy_config:

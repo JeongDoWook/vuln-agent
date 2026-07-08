@@ -1,0 +1,18 @@
+# Caddy 리버스 프록시 — vuln-agent 앞단 TLS 종료.
+#   Let's Encrypt 인증서를 DuckDNS DNS-01 챌린지로 발급 → 인바운드 80/443 불필요.
+#   Caddy 가 https 를 받아 내부 web:80(Apache/PHP) 으로 프록시한다.
+
+ost-server.duckdns.org {
+	encode gzip
+
+	# DuckDNS TXT 레코드로 도메인 소유 증명 → 인증서 자동 발급/갱신.
+	# 토큰은 docker secret(/run/secrets/duckdns_token) → entrypoint 가 env 로 노출.
+	tls {
+		dns duckdns {env.DUCKDNS_TOKEN}
+	}
+
+	reverse_proxy web:80 {
+		# 뒷단 PHP 가 원 프로토콜/호스트를 알도록 표준 헤더 전달.
+		header_up X-Forwarded-Proto https
+	}
+}
