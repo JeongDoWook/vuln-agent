@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>섀도우 AI DLP 설정</title>
+<style>
+  body {
+    background: #0d1017; color: #c9d1d9; font-family: "Malgun Gothic", -apple-system, sans-serif;
+    max-width: 480px; margin: 24px auto; padding: 0 16px;
+  }
+  h1 { font-size: 18px; }
+  section {
+    background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  h2 { font-size: 13px; color: #8b949e; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .vg-checkbox, .vg-radio { display: block; font-size: 13px; margin-bottom: 8px; cursor: pointer; }
+  input[type="text"] {
+    width: 100%; box-sizing: border-box; background: #0d1017; color: #c9d1d9;
+    border: 1px solid #30363d; border-radius: 4px; padding: 6px 8px; font-size: 13px;
+  }
+  #save-btn {
+    background: #e5484d; color: #fff; border: none; border-radius: 4px;
+    padding: 8px 16px; font-size: 13px; cursor: pointer;
+  }
+  #save-btn:hover { background: #c93a3f; }
+  #save-status { margin-left: 10px; font-size: 12px; color: #3fb950; }
+</style>
+</head>
+<body>
+  <h1>섀도우 AI DLP 설정</h1>
+
+  <section>
+    <h2>탐지 카테고리</h2>
+    <div id="category-list"></div>
+  </section>
+
+  <section>
+    <h2>로그 모드</h2>
+    <label class="vg-radio"><input type="radio" name="logMode" value="violations-only" /> 위반 건만 저장 (마스킹된 매칭값)</label>
+    <label class="vg-radio"><input type="radio" name="logMode" value="full-prompt" /> 전체 프롬프트 저장 (감사용, 원문 보관)</label>
+  </section>
+
+  <section>
+    <h2>Webhook URL (선택)</h2>
+    <input type="text" id="webhook-url" placeholder="https://example.com/webhook" />
+  </section>
+
+  <button id="save-btn">저장</button>
+  <span id="save-status"></span>
+
+  <script src="detectors.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

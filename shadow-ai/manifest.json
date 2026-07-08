@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "섀도우 AI DLP (PoC)",
+  "version": "0.1.0",
+  "description": "AI 챗봇 입력창에 붙여넣는 민감정보를 탐지·기록하는 브라우저단 DLP 데모",
+  "permissions": ["storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["detectors.js", "content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
