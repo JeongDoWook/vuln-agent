@@ -37,12 +37,12 @@ try {
 
         // 상위 취약점(CRITICAL/HIGH) + 조치
         $st = $pdo->prepare(
-            "SELECT f.severity, f.cve_id, f.package_name, f.installed_version, f.rationale,
+            "SELECT f.severity, f.cve_id, f.package_name, f.installed_version, f.rationale, c.epss,
                 (SELECT a.fixed_version FROM cve_affected_packages a
                  WHERE a.cve_id=f.cve_id AND a.package_name=f.package_name AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
-             FROM findings f
+             FROM findings f LEFT JOIN cves c ON c.cve_id = f.cve_id
              WHERE f.scan_id = ? AND f.severity IN ('CRITICAL','HIGH')
-             ORDER BY FIELD(f.severity,'CRITICAL','HIGH'), f.cve_id"
+             ORDER BY FIELD(f.severity,'CRITICAL','HIGH'), c.epss DESC, f.cve_id"
         );
         $st->execute([$sid]);
         $findings = $st->fetchAll();
@@ -100,13 +100,14 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
       <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>">전체 취약점 보기 →</a></span>
       <table style="margin-top:.6rem;">
-        <thead><tr><th>등급</th><th>CVE</th><th>패키지</th><th>근거</th><th>조치</th></tr></thead>
+        <thead><tr><th>등급</th><th>CVE</th><th>EPSS</th><th>패키지</th><th>근거</th><th>조치</th></tr></thead>
         <tbody>
         <?php if (!$findings): ?><tr><td colspan="5" class="why">CRITICAL·HIGH 없음(외부노출된 취약점이 없음).</td></tr><?php endif; ?>
         <?php foreach ($findings as $f): ?>
           <tr>
             <td><span class="badge" style="background:<?= vg_sev_color($f['severity']) ?>;"><?= vg_h($f['severity']) ?></span></td>
             <td><strong><?= vg_h($f['cve_id']) ?></strong></td>
+            <td><?= $f['epss'] !== null ? vg_h(number_format((float) $f['epss'] * 100, 1)) . '%' : '-' ?></td>
             <td><?= vg_h($f['package_name']) ?> <span class="why"><?= vg_h($f['installed_version']) ?></span></td>
             <td class="why"><?= vg_h($f['rationale']) ?></td>
             <td class="why"><?= !empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '패치 확인' ?></td>

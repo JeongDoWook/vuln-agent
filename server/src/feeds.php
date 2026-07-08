@@ -332,12 +332,52 @@ final class VgKisaConnector implements VgFeedConnector {
     }
 }
 
+// FIRST EPSS — CVE별 악용확률(0~1) + 백분위. gzip CSV 를 받아 보유 CVE 만 갱신.
+final class VgEpssConnector implements VgFeedConnector {
+    public function run(PDO $pdo, array $conn): array {
+        $url = $conn['url'] ?? 'https://epss.cyentia.com/epss_scores-current.csv.gz';
+        $r = vg_http_raw('GET', $url, [], 120);
+        if ($r['code'] !== 200 || $r['body'] === '') {
+            throw new RuntimeException("EPSS fetch 실패 (HTTP {$r['code']}) {$r['error']}");
+        }
+        $txt = @gzdecode($r['body']);
+        if ($txt === false) {
+            throw new RuntimeException('EPSS gzip 해제 실패');
+        }
+        // 우리가 보유한 CVE 만 갱신(전체 34만건 삽입 안 함)
+        $have = [];
+        foreach ($pdo->query('SELECT cve_id FROM cves')->fetchAll(PDO::FETCH_COLUMN) as $c) {
+            $have[strtoupper((string) $c)] = true;
+        }
+        if (!$have) {
+            return ['fetched' => 0, 'upserted' => 0];
+        }
+        $upd = $pdo->prepare('UPDATE cves SET epss = ?, epss_percentile = ? WHERE cve_id = ?');
+        $fetched = 0; $up = 0;
+        $pdo->beginTransaction();
+        foreach (explode("\n", $txt) as $line) {
+            if ($line === '' || $line[0] === '#') { continue; }
+            if (strncmp($line, 'cve,', 4) === 0) { continue; } // 헤더
+            $f = explode(',', $line);
+            if (count($f) < 3) { continue; }
+            $fetched++;
+            $cve = strtoupper($f[0]);
+            if (!isset($have[$cve])) { continue; }
+            $upd->execute([(float) $f[1], (float) $f[2], $cve]);
+            $up++;
+        }
+        $pdo->commit();
+        return ['fetched' => $fetched, 'upserted' => $up];
+    }
+}
+
 function vg_feed_make(string $type): VgFeedConnector {
     switch ($type) {
-        case 'kev': return new VgKevConnector();
-        case 'osv': return new VgOsvConnector();
-        case 'nvd': return new VgNvdConnector();
+        case 'kev':  return new VgKevConnector();
+        case 'osv':  return new VgOsvConnector();
+        case 'nvd':  return new VgNvdConnector();
         case 'kisa': return new VgKisaConnector();
+        case 'epss': return new VgEpssConnector();
         default: throw new InvalidArgumentException("알 수 없는 커넥터 타입: $type");
     }
 }

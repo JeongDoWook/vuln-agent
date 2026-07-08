@@ -91,13 +91,24 @@ if (!function_exists('vg_scope_rank')) {
             $affected[$r['package_name']][$r['cve_id']] = $r['cvss'];
         }
 
-        // 재계산: 기존 findings 삭제 후 재삽입
+        // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
+        // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) { $pdo->beginTransaction(); }
+        try {
+
+        // 기존 findings 삭제 후 재삽입. INSERT 는 멱등(동시성 대비).
         $pdo->prepare('DELETE FROM findings WHERE scan_id = ?')->execute([$scanId]);
         $ins = $pdo->prepare(
             'INSERT INTO findings
                (scan_id, cve_id, package_name, installed_version, loaded, exposed,
                 exposure_scope, in_kev, cvss, severity, rationale)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             ON DUPLICATE KEY UPDATE
+               installed_version=VALUES(installed_version), loaded=VALUES(loaded),
+               exposed=VALUES(exposed), exposure_scope=VALUES(exposure_scope),
+               in_kev=VALUES(in_kev), cvss=VALUES(cvss),
+               severity=VALUES(severity), rationale=VALUES(rationale)'
         );
 
         $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0];
@@ -139,6 +150,12 @@ if (!function_exists('vg_scope_rank')) {
                 ]);
             }
         }
-        return $counts;
+
+            if ($ownTx) { $pdo->commit(); }
+            return $counts;
+        } catch (Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) { $pdo->rollBack(); }
+            throw $e;
+        }
     }
 }

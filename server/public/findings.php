@@ -24,13 +24,13 @@ try {
         $scan = $st->fetch() ?: null;
 
         $st = $pdo->prepare(
-            "SELECT f.*, c.summary,
+            "SELECT f.*, c.summary, c.epss,
                 (SELECT a.fixed_version FROM cve_affected_packages a
                  WHERE a.cve_id = f.cve_id AND a.package_name = f.package_name
                    AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
              FROM findings f LEFT JOIN cves c ON c.cve_id = f.cve_id
              WHERE f.scan_id = ?
-             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), f.cvss DESC"
+             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC"
         );
         $st->execute([$scanId]);
         $rows = $st->fetchAll();
@@ -62,7 +62,7 @@ vg_header('취약점', 'findings');
   <div class="card">
     <table>
       <thead><tr>
-        <th>등급</th><th>CVE</th><th>패키지</th><th>버전</th><th>CVSS</th><th>KEV</th><th>근거 (왜 위험한가)</th><th>조치</th>
+        <th>등급</th><th>CVE</th><th>패키지</th><th>버전</th><th>CVSS</th><th>EPSS</th><th>KEV</th><th>근거 (왜 위험한가)</th><th>조치</th>
       </tr></thead>
       <tbody>
       <?php foreach ($rows as $r): ?>
@@ -74,6 +74,7 @@ vg_header('취약점', 'findings');
           <td><?= vg_h($r['package_name']) ?></td>
           <td><code><?= vg_h($r['installed_version']) ?></code></td>
           <td><?= $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '-' ?></td>
+          <td><?= $r['epss'] !== null ? vg_h(number_format((float) $r['epss'] * 100, 1)) . '%' : '-' ?></td>
           <td><?= $r['in_kev'] ? '✔' : '' ?></td>
           <td class="why"><?= vg_h($r['rationale']) ?></td>
           <td class="why"><?= !empty($r['fixed_version']) ? '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>' : '패치 확인' ?></td>

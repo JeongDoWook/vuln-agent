@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id    = (int) ($_POST['id'] ?? 0);
                 $name  = trim((string) ($_POST['name'] ?? ''));
                 $type  = (string) ($_POST['connector_type'] ?? '');
-                if ($name === '' || !in_array($type, ['kev','osv','nvd','kisa'], true)) {
+                if ($name === '' || !in_array($type, ['kev','osv','nvd','kisa','epss'], true)) {
                     throw new RuntimeException('이름과 커넥터 타입을 확인하세요.');
                 }
                 $conn = ['url' => trim((string) ($_POST['url'] ?? ''))];
@@ -164,7 +164,7 @@ vg_header('피드 커넥터', 'connectors');
       <input type="text" name="name" value="<?= vg_h($edit['name'] ?? '') ?>" required>
       <label>커넥터 타입</label>
       <select name="connector_type" style="width:100%;padding:.5rem;background:#0f1115;border:1px solid #30363d;border-radius:8px;color:#e6e6e6;">
-        <?php foreach (['kev'=>'CISA KEV','osv'=>'OSV.dev','nvd'=>'NVD 2.0','kisa'=>'KISA 보안공지'] as $tv=>$tl): ?>
+        <?php foreach (['kev'=>'CISA KEV','osv'=>'OSV.dev','nvd'=>'NVD 2.0','kisa'=>'KISA 보안공지','epss'=>'FIRST EPSS'] as $tv=>$tl): ?>
           <option value="<?= $tv ?>" <?= ($edit['connector_type'] ?? 'kev')===$tv?'selected':'' ?>><?= $tl ?></option>
         <?php endforeach; ?>
       </select>
