@@ -19,9 +19,14 @@ x-app-env: &app-env
   TZ: Asia/Seoul
 
 x-app-secrets: &app-secrets
-  - mysql_password
-  - ingest_token
-  - admin_password
+  # mode 0444: 호스트 파일은 0600 유지, 컨테이너 안에서만 읽기 허용
+  # (Apache 는 www-data 로 돌아 root 소유 0600 시크릿을 못 읽던 문제 해결)
+  - source: mysql_password
+    mode: 0444
+  - source: ingest_token
+    mode: 0444
+  - source: admin_password
+    mode: 0444
 
 services:
   # --- MySQL: 수집 데이터 저장소 -------------------------------------------
