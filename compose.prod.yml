@@ -12,7 +12,11 @@
 services:
   db:
     container_name: vulnagent-db
-    # 운영: DB 포트를 호스트로 노출하지 않는다 (ports 정의 없음).
+    # DB 는 네트워크에 노출하지 않되, 관리도구(HeidiSQL 등)를 SSH 터널로 붙일 수 있도록
+    # loopback 전용 포트만 노출한다. 127.0.0.1 바인딩이라 외부에서는 접근 불가(서버 자신만).
+    #   접속:  PC 에서  ssh -L 3307:localhost:3306 master  후  HeidiSQL → 127.0.0.1:3307
+    ports:
+      - "127.0.0.1:3306:3306"
     volumes:
       # my.cnf 튜닝/보안 설정은 운영에서만 적용 (리눅스 → 권한 정상)
       - ./config/mysql/my.cnf:/etc/mysql/conf.d/zz-vulnagent.cnf:ro
