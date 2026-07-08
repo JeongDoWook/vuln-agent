@@ -13,7 +13,8 @@ require_once __DIR__ . '/db.php';
 // ─────────────────────────────────────────────────────────────────────────
 // HTTP (curl)
 // ─────────────────────────────────────────────────────────────────────────
-function vg_http_json(string $method, string $url, $body = null, array $headers = [], int $timeout = 90): array {
+// $maxBytes>0 이면 응답이 그 크기를 넘는 순간 전송을 중단한다(OSV 커널 등 거대 응답 OOM 방어).
+function vg_http_json(string $method, string $url, $body = null, array $headers = [], int $timeout = 90, int $maxBytes = 0): array {
     $ch = curl_init($url);
     $hdr = array_merge(['Accept: application/json'], $headers);
     $opt = [
@@ -31,12 +32,21 @@ function vg_http_json(string $method, string $url, $body = null, array $headers 
         $opt[CURLOPT_POSTFIELDS] = is_string($body) ? $body : json_encode($body);
         $hdr[] = 'Content-Type: application/json';
     }
+    if ($maxBytes > 0) {
+        $opt[CURLOPT_NOPROGRESS]       = false;
+        $opt[CURLOPT_PROGRESSFUNCTION] = static function ($ch, $dltotal, $dlnow) use ($maxBytes) {
+            return ($dlnow > $maxBytes || $dltotal > $maxBytes) ? 1 : 0; // 넘으면 중단
+        };
+    }
     $opt[CURLOPT_HTTPHEADER] = $hdr;
     curl_setopt_array($ch, $opt);
     $raw  = curl_exec($ch);
     $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
     curl_close($ch);
+    if ($raw === false && $maxBytes > 0 && $code === 0) {
+        return ['code' => 0, 'json' => null, 'error' => "응답이 상한({$maxBytes}B) 초과로 건너뜀"];
+    }
     $decoded = is_string($raw) ? json_decode($raw, true) : null;
     return ['code' => $code, 'json' => is_array($decoded) ? $decoded : null, 'error' => $err];
 }
