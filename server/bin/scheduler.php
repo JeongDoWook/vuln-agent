@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+ini_set('memory_limit', '512M'); // 대량 피드(OSV/EPSS) 처리 여유
+
 /**
  * scheduler.php — 예약된(enabled + due) 피드 커넥터를 실행한다.
  *   스케줄러 사이드카 컨테이너가 1분마다 호출(compose.yml).

@@ -190,8 +190,10 @@ function vg_osv_fixed(array $vuln, string $key): ?string {
 //   단건 응답엔 summary·aliases·affected.ranges(고쳐진 버전) 가 있어 조치안까지 확보.
 final class VgOsvConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
-        $url = $conn['url'] ?? 'https://api.osv.dev/v1/query';
-        if (substr($url, -5) === 'batch') { $url = substr($url, 0, -5); } // querybatch → query
+        // querybatch: 응답이 {results:[{vulns:[{id}]}]} 로 작아 수백~수천 패키지도 메모리 안전.
+        // (단건 query 는 커널 등 거대한 응답에서 OOM. fixed_version 은 batch 미제공 → null)
+        $url = $conn['url'] ?? 'https://api.osv.dev/v1/querybatch';
+        if (substr($url, -6) === '/query') { $url .= 'batch'; }
         $ecoOverride = trim((string) ($conn['ecosystem'] ?? ''));
 
         $scans = $pdo->query(
@@ -207,25 +209,37 @@ final class VgOsvConnector implements VgFeedConnector {
 
             $pk = $pdo->prepare('SELECT name, source_pkg, version FROM packages WHERE scan_id = ?');
             $pk->execute([(int) $sc['id']]);
+
+            // 쿼리 목록(배포판·패키지·버전 중복 제거). deb/ubuntu 는 source_pkg 로 조회.
+            $queries = [];
             foreach ($pk->fetchAll() as $p) {
                 $key = $isDeb ? ($p['source_pkg'] ?: $p['name']) : $p['name'];
                 $ver = (string) $p['version'];
                 if ($key === '' || $ver === '') { continue; }
                 $dk = $eco . '|' . $key . '|' . $ver;
-                if (isset($seen[$dk])) { continue; } // 배포판·패키지·버전 조합 1회만
+                if (isset($seen[$dk])) { continue; }
                 $seen[$dk] = true;
+                $queries[] = ['key' => $key, 'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
+            }
 
-                $r = vg_http_json('POST', $url, ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver], [], 30);
-                $fetched++;
-                if ($r['code'] !== 200 || !isset($r['json']['vulns'])) { continue; }
-                foreach ($r['json']['vulns'] as $v) {
-                    $cve = vg_osv_cve($v);
-                    if ($cve === null) { continue; }
-                    $summary = (string) ($v['summary'] ?? ($v['details'] ?? ''));
-                    vg_upsert_cve($pdo, $cve, $summary !== '' ? mb_substr($summary, 0, 2000) : null, null, null);
-                    vg_upsert_affected($pdo, $cve, $eco, $key, vg_osv_fixed($v, $key));
-                    $up++;
+            foreach (array_chunk($queries, 100) as $chunk) {
+                $payload = ['queries' => array_map(static function ($x) { return $x['q']; }, $chunk)];
+                $r = vg_http_json('POST', $url, $payload, [], 90);
+                $fetched += count($chunk);
+                if ($r['code'] === 200 && isset($r['json']['results'])) {
+                    foreach ($r['json']['results'] as $i => $res) {
+                        $key = $chunk[$i]['key'] ?? '';
+                        foreach ($res['vulns'] ?? [] as $v) {
+                            // batch 는 id 만 반환 → id 에서 CVE 추출(DEBIAN-CVE-…/UBUNTU-CVE-…/CVE-…)
+                            if (!preg_match('/CVE-\d{4}-\d+/i', (string) ($v['id'] ?? ''), $m)) { continue; }
+                            $cve = strtoupper($m[0]);
+                            vg_upsert_cve($pdo, $cve, null, null, null);
+                            vg_upsert_affected($pdo, $cve, $eco, $key, null);
+                            $up++;
+                        }
+                    }
                 }
+                unset($r); // 응답 메모리 즉시 해제
             }
         }
         return ['fetched' => $fetched, 'upserted' => $up];
