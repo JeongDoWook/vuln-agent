@@ -177,8 +177,15 @@ collect_processes() {
     esac
     LIBPKG2[$rp]="$p"; echo "$p"
   }
-  local pid comm user exe exepkg loaded
+  local pid comm user exe exepkg loaded pns
+  # 컨테이너(쿠버네티스/도커) 프로세스는 다른 mount namespace → 호스트 자신만 인벤토리한다.
+  #   (컨테이너 라이브러리는 오버레이 경로라 dpkg -S 가 매번 DB 전체스캔 = 수백~수천회로 멈춤.
+  #    컨테이너는 각자 에이전트가 스캔해야 함.) + 안전장치: 오래 걸리면 중단.
+  local HOST_NS start; HOST_NS=$(readlink /proc/self/ns/mnt 2>/dev/null); start=$SECONDS
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    [ $((SECONDS - start)) -gt 90 ] && break
+    pns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)
+    [ -n "$pns" ] && [ "$pns" != "$HOST_NS" ] && continue      # 다른 ns(컨테이너) 제외
     grep -ql '\.so' /proc/$pid/maps 2>/dev/null || continue   # 실제 프로그램만
     comm=$(cat /proc/$pid/comm 2>/dev/null)
     user=$(stat -c '%U' /proc/$pid 2>/dev/null)
