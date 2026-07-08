@@ -100,6 +100,109 @@ function vg_page_nav(int $total, int $perPage, int $page): void {
     echo '</div>';
 }
 
+/**
+ * 카드+테이블 렌더 (DRY — 각 페이지가 반복하던 <div class="card"><table>… 마크업 통합).
+ *   $headers: [['label'=>'등급','align'=>'left'|'right'|'center','width'=>'80px','key'=>'severity'], ...]
+ *     'key' 는 콜백이 없을 때 $row[key] 를 자동 이스케이프해서 출력하는 데 쓰인다(없으면 빈칸).
+ *   $opts['cell']: 컬럼 인덱스(0,1,2…) 또는 header 의 'key' → function($row): string.
+ *     콜백 반환값은 이미 이스케이프된 HTML 이라는 규약(콜백 안에서 vg_h 책임).
+ *   $opts['empty']: 빈 목록 메시지. $opts['card']: 카드 래핑 여부(기본 true). $opts['class']: <table> 에 추가할 클래스.
+ */
+function vg_table(array $headers, array $rows, array $opts = []): void {
+    $card  = $opts['card'] ?? true;
+    $class = $opts['class'] ?? '';
+    $cell  = $opts['cell'] ?? [];
+    $empty = $opts['empty'] ?? '데이터가 없습니다.';
+
+    if ($card) { echo '<div class="card">'; }
+
+    if (!$rows) {
+        echo '<div class="empty">' . vg_h($empty) . '</div>';
+        if ($card) { echo '</div>'; }
+        return;
+    }
+
+    echo '<table' . ($class !== '' ? ' class="' . vg_h($class) . '"' : '') . '>';
+    echo '<thead><tr>';
+    foreach ($headers as $h) {
+        $label = is_array($h) ? (string) ($h['label'] ?? '') : (string) $h;
+        $align = is_array($h) ? ($h['align'] ?? null) : null;
+        $width = is_array($h) ? ($h['width'] ?? null) : null;
+        $style = '';
+        if ($align && $align !== 'left') { $style .= 'text-align:' . $align . ';'; }
+        if ($width) { $style .= 'width:' . $width . ';'; }
+        echo '<th' . ($style !== '' ? ' style="' . vg_h($style) . '"' : '') . '>' . vg_h($label) . '</th>';
+    }
+    echo '</tr></thead><tbody>';
+    foreach ($rows as $row) {
+        echo '<tr>';
+        foreach (array_values($headers) as $i => $h) {
+            $key   = is_array($h) ? ($h['key'] ?? null) : null;
+            $align = is_array($h) ? ($h['align'] ?? null) : null;
+            $cb    = $cell[$i] ?? ($key !== null ? ($cell[$key] ?? null) : null);
+            if ($cb) {
+                $html = $cb($row);
+            } elseif ($key !== null) {
+                $html = vg_h((string) ($row[$key] ?? ''));
+            } else {
+                $html = '';
+            }
+            $style = ($align && $align !== 'left') ? ' style="text-align:' . vg_h($align) . ';"' : '';
+            echo '<td' . $style . '>' . $html . '</td>';
+        }
+        echo '</tr>';
+    }
+    echo '</tbody></table>';
+    if ($card) { echo '</div>'; }
+}
+
+/**
+ * GET 검색/필터 툴바(class="toolbar"). 값이 있으면 제출버튼 옆에 초기화 링크 자동 표시.
+ *   $fields 각 항목: ['type'=>'search'|'select'|'hidden', 'name'=>, 'value'=>, 'placeholder'=>,
+ *                     'options'=>['값'=>'라벨'], 'selected'=>, 'empty_label'=>'전체']
+ */
+function vg_toolbar(array $fields, array $opts = []): void {
+    $resetOverrides = ['page' => null];
+    $hasValue = false;
+
+    echo '<form class="toolbar" method="get">';
+    foreach ($fields as $f) {
+        $type = $f['type'] ?? 'search';
+        $name = (string) ($f['name'] ?? '');
+        $value = (string) ($f['value'] ?? '');
+
+        if ($type === 'hidden') {
+            echo '<input type="hidden" name="' . vg_h($name) . '" value="' . vg_h($value) . '">';
+            continue;
+        }
+
+        if ($type === 'search') {
+            $ph = (string) ($f['placeholder'] ?? '');
+            echo '<input type="search" name="' . vg_h($name) . '" placeholder="' . vg_h($ph) . '" value="' . vg_h($value) . '">';
+            if ($value !== '') { $hasValue = true; }
+            $resetOverrides[$name] = null;
+        } elseif ($type === 'select') {
+            $options  = $f['options'] ?? [];
+            $selected = (string) ($f['selected'] ?? '');
+            $emptyLabel = (string) ($f['empty_label'] ?? '전체');
+            echo '<select name="' . vg_h($name) . '">';
+            echo '<option value="">' . vg_h($emptyLabel) . '</option>';
+            foreach ($options as $val => $label) {
+                $val = (string) $val;
+                echo '<option value="' . vg_h($val) . '"' . ($selected === $val ? ' selected' : '') . '>' . vg_h((string) $label) . '</option>';
+            }
+            echo '</select>';
+            if ($selected !== '') { $hasValue = true; }
+            $resetOverrides[$name] = null;
+        }
+    }
+    echo '<button type="submit" class="btn-sm">검색</button>';
+    if ($hasValue) {
+        echo '<a class="btn-sm" href="' . vg_h(vg_qs($resetOverrides)) . '">초기화</a>';
+    }
+    echo '</form>';
+}
+
 function vg_header(string $title, string $active = ''): void {
     $user = function_exists('vg_current_user') ? vg_current_user() : null;
     ?>
@@ -134,6 +237,7 @@ function vg_header(string $title, string $active = ''): void {
   th { color:#8b93a1; font-weight:600; font-size:.74rem; text-transform:uppercase; letter-spacing:.04em; }
   tr:last-child td { border-bottom:none; }
   .badge { display:inline-block; padding:.12rem .55rem; border-radius:999px; font-size:.72rem; font-weight:700; color:#fff; }
+  .badge.outline { background:transparent; border:1px solid currentColor; color:inherit; font-weight:600; }
   .pill { display:inline-block; padding:.1rem .5rem; border-radius:999px; background:#1f6feb22; color:#58a6ff; font-size:.76rem; }
   .why { color:#adbac7; font-size:.82rem; }
   .empty { color:#8b93a1; padding:2rem 0; text-align:center; }
@@ -154,6 +258,9 @@ function vg_header(string $title, string $active = ''): void {
   .pager a:hover { background:#1c2029; text-decoration:none; }
   .pager .cur { background:#1f6feb; color:#fff; border-color:#1f6feb; }
   .pager .muted { border:none; color:#6e7681; }
+  .card strong { color:#e6e6e6; }
+  .kpi.big:hover, .card:hover { border-color:#30363d; }
+  a.kpi:hover { filter:brightness(1.08); }
 </style>
 </head>
 <body>
@@ -166,6 +273,7 @@ function vg_header(string $title, string $active = ''): void {
     <?php if (($user['role'] ?? '') === 'admin'): ?>
       <a class="link <?= $active==='connectors'?'active':'' ?>" href="/connectors.php">피드</a>
       <a class="link <?= $active==='users'?'active':'' ?>" href="/users.php">사용자</a>
+      <a class="link <?= $active==='activity'?'active':'' ?>" href="/activity.php">감사로그</a>
     <?php endif; ?>
     <span class="spacer"></span>
     <span class="who"><?= vg_h($user['username']) ?> (<?= vg_h($user['role']) ?>)</span>

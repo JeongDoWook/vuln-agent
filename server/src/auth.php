@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';   // vg_env / vg_secret 정의
 require_once __DIR__ . '/db.php';       // vg_pdo
+require_once __DIR__ . '/audit.php';    // vg_log_activity
 
 if (session_status() === PHP_SESSION_NONE) {
     // HTTPS(또는 리버스프록시 X-Forwarded-Proto)면 Secure 쿠키
@@ -20,7 +21,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 // users 비어있으면 admin 부트스트랩 (secrets/admin_password → 없으면 'admin')
 function vg_bootstrap_admin(PDO $pdo): void {
-    $n = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+    $n = (int) $pdo->query('SELECT COUNT(*) FROM tb_users')->fetchColumn();
     if ($n > 0) {
         return;
     }
@@ -28,12 +29,12 @@ function vg_bootstrap_admin(PDO $pdo): void {
     if ($pw === '') {
         $pw = 'admin'; // dev 대비 최후 기본값
     }
-    $st = $pdo->prepare('INSERT INTO users (username, password_hash, role) VALUES (?,?,?)');
+    $st = $pdo->prepare('INSERT INTO tb_users (username, password_hash, role) VALUES (?,?,?)');
     $st->execute(['admin', password_hash($pw, PASSWORD_DEFAULT), 'admin']);
 }
 
 function vg_login(PDO $pdo, string $user, string $pass): bool {
-    $st = $pdo->prepare('SELECT id, username, password_hash, role FROM users WHERE username = ?');
+    $st = $pdo->prepare('SELECT id, username, password_hash, role FROM tb_users WHERE username = ? AND is_deleted = 0');
     $st->execute([$user]);
     $row = $st->fetch();
     if (!$row || !password_verify($pass, $row['password_hash'])) {
@@ -43,7 +44,9 @@ function vg_login(PDO $pdo, string $user, string $pass): bool {
     $_SESSION['uid']   = (int) $row['id'];
     $_SESSION['uname'] = $row['username'];
     $_SESSION['role']  = $row['role'];
-    $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = ?')->execute([(int) $row['id']]);
+    $pdo->prepare('UPDATE tb_users SET last_login = NOW() WHERE id = ?')->execute([(int) $row['id']]);
+    // 로그인 성공 감사로그(누가·언제·어디서).
+    vg_log_activity($pdo, 'USER', (int) $row['id'], 'login', null, null, (int) $row['id'], 'USER', $_SERVER['REMOTE_ADDR'] ?? null);
     return true;
 }
 

@@ -13,15 +13,17 @@ header('Content-Type: application/json; charset=utf-8');
 $cfg = require __DIR__ . '/../src/config.php';
 require __DIR__ . '/../src/db.php';
 require __DIR__ . '/../src/matcher.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 
-function respond_fail(int $code, string $msg): void {
-    http_response_code($code);
-    echo json_encode(['ok' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
+// 통일 에러 포맷: {ok:false,error,code,ts(ISO8601)}
+function respond_fail(int $httpCode, string $msg, string $code): void {
+    http_response_code($httpCode);
+    echo json_encode(['ok' => false, 'error' => $msg, 'code' => $code, 'ts' => date('c')], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
-    respond_fail(405, 'POST only');
+    respond_fail(405, 'POST only', 'method_not_allowed');
 }
 
 // ── 인증 : 공유 토큰 상수시간 비교 ─────────────────────────────
@@ -33,17 +35,17 @@ if ($provided === '' && !empty($_SERVER['HTTP_AUTHORIZATION'])) {
     }
 }
 if ($expected === '' || !hash_equals($expected, (string) $provided)) {
-    respond_fail(401, 'unauthorized');
+    respond_fail(401, 'unauthorized', 'unauthorized');
 }
 
 // ── 본문 파싱 ─────────────────────────────────────────────────
 $raw = file_get_contents('php://input');
 if ($raw === false || $raw === '') {
-    respond_fail(400, 'empty body');
+    respond_fail(400, 'empty body', 'empty_body');
 }
 $data = json_decode($raw, true);
 if (!is_array($data)) {
-    respond_fail(400, 'invalid json');
+    respond_fail(400, 'invalid json', 'invalid_json');
 }
 
 $meta = $data['meta']         ?? [];
@@ -117,7 +119,7 @@ try {
 
     // 호스트 upsert (fqdn 유니크). LAST_INSERT_ID 트릭으로 기존 id 회수.
     $stmt = $pdo->prepare(
-        'INSERT INTO hosts (fqdn, hostname, os_id, os_version, first_seen, last_seen)
+        'INSERT INTO tb_hosts (fqdn, hostname, os_id, os_version, first_seen, last_seen)
          VALUES (:fqdn, :hn, :osid, :osver, NOW(), NOW())
          ON DUPLICATE KEY UPDATE
             hostname   = VALUES(hostname),
@@ -136,7 +138,7 @@ try {
 
     // 스캔 1행
     $stmt = $pdo->prepare(
-        'INSERT INTO scans
+        'INSERT INTO tb_scans
             (host_id, collected_at, agent_version, elapsed_seconds,
              os_id, os_version, kernel, cpe, package_family,
              package_count, exposure_count, raw_json)
@@ -162,7 +164,7 @@ try {
     // 패키지 벌크
     if ($pkgCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO packages (scan_id, manager, name, version, arch, source_pkg, vendor)
+            'INSERT INTO tb_packages (scan_id, manager, name, version, arch, source_pkg, vendor)
              VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
         foreach ($pkgRows as $r) {
@@ -173,7 +175,7 @@ try {
     // 노출 벌크
     if ($expCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO exposures
+            'INSERT INTO tb_exposures
                 (scan_id, pid, proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
@@ -191,7 +193,7 @@ try {
     // 실행 프로세스 벌크
     if ($procCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO processes (scan_id, pid, comm, username, exe_pkg, loaded_pkgs)
+            'INSERT INTO tb_processes (scan_id, pid, comm, username, exe_pkg, loaded_pkgs)
              VALUES (?, ?, ?, ?, ?, ?)'
         );
         foreach ($procRows as $f) {
@@ -210,8 +212,12 @@ try {
     }
     // 내부 오류 상세는 서버 로그로만. 클라이언트에는 일반 메시지(정보노출 방지).
     error_log('[ingest] ' . $e->getMessage());
-    respond_fail(500, 'internal error');
+    respond_fail(500, 'internal error', 'internal_error');
 }
+
+// 스캔 수신 감사로그(에이전트발 → SYSTEM).
+vg_log_activity($pdo, 'HOST', $hostId, 'ingest', '스캔 수신',
+    ['packages' => $pkgCount, 'exposures' => $expCount, 'processes' => $procCount], null, 'SYSTEM');
 
 // 저장 성공 → 즉시 매칭(우선순위 산출). 실패해도 수집 자체는 성공으로 응답.
 $findings = null;

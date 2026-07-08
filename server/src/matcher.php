@@ -55,12 +55,12 @@ if (!function_exists('vg_scope_rank')) {
      */
     function vg_match_scan(PDO $pdo, int $scanId): array {
         // 패키지
-        $stmt = $pdo->prepare('SELECT name, source_pkg, version FROM packages WHERE scan_id = ?');
+        $stmt = $pdo->prepare('SELECT name, source_pkg, version FROM tb_packages WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         $packages = $stmt->fetchAll();
 
         // 노출 → 패키지별 최악(worst) 로드 상태 맵
-        $stmt = $pdo->prepare('SELECT proc, port, scope, exe_pkg, loaded_pkgs FROM exposures WHERE scan_id = ?');
+        $stmt = $pdo->prepare('SELECT proc, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         $loadMap = []; // pkgName => ['rank','scope','proc','port']
         foreach ($stmt->fetchAll() as $e) {
@@ -84,7 +84,7 @@ if (!function_exists('vg_scope_rank')) {
 
         // 실행 프로세스 → 실행중(exe_pkg) / 사용중(loaded_pkgs) 패키지 집합
         $procRunning = []; $procLoaded = [];
-        $stmt = $pdo->prepare('SELECT exe_pkg, loaded_pkgs FROM processes WHERE scan_id = ?');
+        $stmt = $pdo->prepare('SELECT exe_pkg, loaded_pkgs FROM tb_processes WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         foreach ($stmt->fetchAll() as $pr) {
             if (!empty($pr['exe_pkg']) && $pr['exe_pkg'] !== 'UNPACKAGED') {
@@ -100,7 +100,7 @@ if (!function_exists('vg_scope_rank')) {
 
         // KEV 집합
         $kev = [];
-        foreach ($pdo->query('SELECT cve_id FROM kev_catalog')->fetchAll() as $r) {
+        foreach ($pdo->query('SELECT cve_id FROM tb_kev_catalog')->fetchAll() as $r) {
             $kev[$r['cve_id']] = true;
         }
 
@@ -108,8 +108,8 @@ if (!function_exists('vg_scope_rank')) {
         $affected = [];
         $capStmt = $pdo->query(
             'SELECT a.cve_id, a.package_name, c.cvss
-             FROM cve_affected_packages a
-             LEFT JOIN cves c ON c.cve_id = a.cve_id'
+             FROM tb_cve_affected_packages a
+             LEFT JOIN tb_cves c ON c.cve_id = a.cve_id'
         );
         foreach ($capStmt->fetchAll() as $r) {
             $affected[$r['package_name']][$r['cve_id']] = $r['cvss'];
@@ -122,9 +122,9 @@ if (!function_exists('vg_scope_rank')) {
         try {
 
         // 기존 findings 삭제 후 재삽입. INSERT 는 멱등(동시성 대비).
-        $pdo->prepare('DELETE FROM findings WHERE scan_id = ?')->execute([$scanId]);
+        $pdo->prepare('DELETE FROM tb_findings WHERE scan_id = ?')->execute([$scanId]);
         $ins = $pdo->prepare(
-            'INSERT INTO findings
+            'INSERT INTO tb_findings
                (scan_id, cve_id, package_name, installed_version, loaded, exposed,
                 exposure_scope, runtime_status, in_kev, cvss, severity, rationale)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)

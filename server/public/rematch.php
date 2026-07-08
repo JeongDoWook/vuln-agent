@@ -17,7 +17,7 @@ $expected = (string) ($cfg['ingest_token'] ?? '');
 $provided = $_SERVER['HTTP_X_AGENT_TOKEN'] ?? ($_GET['token'] ?? '');
 if ($expected === '' || !hash_equals($expected, (string) $provided)) {
     http_response_code(401);
-    echo json_encode(['ok' => false, 'error' => 'unauthorized'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => false, 'error' => 'unauthorized', 'code' => 'unauthorized', 'ts' => date('c')], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -26,7 +26,7 @@ try {
     if (isset($_GET['scan_id'])) {
         $ids = [(int) $_GET['scan_id']];
     } else {
-        $ids = array_map('intval', $pdo->query('SELECT id FROM scans ORDER BY id')->fetchAll(PDO::FETCH_COLUMN));
+        $ids = array_map('intval', $pdo->query('SELECT id FROM tb_scans ORDER BY id')->fetchAll(PDO::FETCH_COLUMN));
     }
     $result = [];
     foreach ($ids as $id) {
@@ -35,5 +35,5 @@ try {
     echo json_encode(['ok' => true, 'matched_scans' => count($ids), 'counts' => $result], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => false, 'error' => $e->getMessage(), 'code' => 'internal_error', 'ts' => date('c')], JSON_UNESCAPED_UNICODE);
 }
