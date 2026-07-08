@@ -72,11 +72,16 @@ renice -n 19 -p $$        >/dev/null 2>&1 || true
 have ionice && ionice -c3 -p $$ >/dev/null 2>&1 || true
 
 # ---------- 중복 실행 방지 (cron 겹침 대비) ----------
+#   주의: 예전엔 `{ exec 9>…; } 2>/dev/null` 로 열고 flock 했는데, sudo 등 일부 환경에서
+#   fd 9 가 안 열린 채 flock 이 "9: Bad file descriptor" 로 실패 → 오탐으로
+#   "이미 실행 중"으로 종료됐다. → 열기 성공을 확인하고, 못 열면 락 없이 진행(중단 X).
 LOCK="/tmp/.vuln-inventory-agent.lock"
-{ exec 9>"$LOCK"; } 2>/dev/null || true
-if have flock && ! flock -n 9; then
-  echo ">> 이미 실행 중입니다. 종료합니다." >&2
-  exit 0
+if have flock; then
+  if exec 9>"$LOCK"; then
+    flock -n 9 || { echo ">> 이미 실행 중입니다. 종료합니다." >&2; exit 0; }
+  else
+    echo ">> 락 파일 열기 실패($LOCK) — 락 없이 진행합니다." >&2
+  fi
 fi
 
 # ---------- 준비 ----------
