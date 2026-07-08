@@ -7,13 +7,14 @@
 ## 구성
 
 ```
-agent/    수집 에이전트 (Bash) — 서버에서 패키지·런타임 노출 정보를 수집
-server/   PHP 중앙 서버 — 수신 API(ingest) + 현황 페이지, 매처(예정)
-db/       MySQL 스키마 (컨테이너 최초 기동 시 자동 적용)
-docs/     기획안 · 설명글
+agent/    수집 에이전트 (Bash) — 패키지·런타임 노출 정보 수집 + install-agent.sh(systemd-timer/cron 자동 배포)
+server/   PHP 중앙 서버 — 수신 API(ingest) + 웹(대시보드·취약점·CVE상세·감사로그) + 매처
+caddy/    HTTPS 리버스 프록시 (운영 전용, Let's Encrypt DNS-01)
+db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼 (컨테이너 최초 기동 시 자동 적용)
+docs/     아키텍처 · 기획안 · 설명글 · 프로세스
 ```
 
-데이터 흐름: **에이전트(JSON) ─POST→ `ingest.php` → MySQL → 웹 현황**
+데이터 흐름: **에이전트(JSON) ─POST(HTTPS)→ `ingest.php` → MySQL(`tb_*`) → 웹 현황**
 
 ## 빠른 시작 (Docker · 러너 스크립트)
 
@@ -27,7 +28,8 @@ docs/     기획안 · 설명글
 ./compose_runner.sh dev  logs -f         # 로그
 ```
 
-운영 서버(리눅스)에서는 `dev` 대신 `prod`:
+운영 서버(리눅스)에서는 `dev` 대신 `prod`. 앞단에 **Caddy 가 자동으로 HTTPS 를 붙인다**
+(Let's Encrypt DuckDNS DNS-01, 현재는 자체서명 — 상세: [`caddy/README.md`](caddy/README.md)):
 
 ```bash
 ./compose_runner.sh init                 # .env.prod 의 비밀값을 강한 값으로 교체
@@ -38,11 +40,14 @@ docs/     기획안 · 설명글
 |---|---|---|
 | 소스 | `./server` 라이브 마운트(즉시 반영) | 이미지에 구움(배포=재빌드) |
 | DB 포트 | 호스트에 노출(3307) | **미노출**(내부 네트워크만) |
+| 웹 접속 | 평문 `http://localhost:8080` | **HTTPS** `https://ost-server.duckdns.org:8080` (Caddy) |
 | 환경변수 | `.env.dev` | `.env.prod` |
 | 프로젝트명 | `vulnagent-dev` | `vulnagent` |
 
-- 현황 페이지: <http://localhost:8080>
-- 수신 API: `POST http://localhost:8080/ingest.php` (헤더 `X-Agent-Token`)
+- 현황 페이지(dev): <http://localhost:8080>
+- 현황 페이지(prod): <https://ost-server.duckdns.org:8080> (자체서명 인증서 → 브라우저 경고 뜸)
+- 수신 API: `POST .../ingest.php` (헤더 `X-Agent-Token`). prod 는 web 이 외부에 직접 노출되지
+  않고, 중앙서버 자신을 스캔하는 로컬 에이전트만 루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
 
 ### 파일 구조 (compose)
 
@@ -50,7 +55,7 @@ docs/     기획안 · 설명글
 compose.yml         서비스 정의 (db=MySQL, web=PHP/Apache)
 compose.common.yml  공통 런타임 (restart, 로깅, pids_limit)
 compose.dev.yml     개발 override
-compose.prod.yml    운영 override
+compose.prod.yml    운영 override (+ caddy: HTTPS 리버스 프록시)
 .env.{dev,prod}.template   → init 이 .env.{dev,prod} 로 복사(커밋 제외)
 compose_runner.sh   실행 러너
 ```
@@ -65,7 +70,7 @@ compose_runner.sh   실행 러너
 
 # 수집 후 중앙 서버로 전송 (파일 저장도 유지)
 ./agent/vuln-inventory-agent.sh \
-    --send http://중앙서버:8080/ingest.php \
+    --send https://중앙서버:8080/ingest.php \
     --token .env의_INGEST_TOKEN값
 ```
 
@@ -80,33 +85,50 @@ compose_runner.sh   실행 러너
 
 ```bash
 sudo ./agent/install-agent.sh \
-     --server http://중앙서버IP:8080/ingest.php \
+     --server https://ost-server.duckdns.org:8080/ingest.php \
      --token  <중앙의 secrets/ingest_token.txt 값> \
      --schedule hourly          # 또는 daily, '*:0/30'(30분마다, systemd)
 ```
 
 설치 내용:
 - 에이전트를 `/opt/vuln-agent/` 에 배치, 토큰은 `/etc/vuln-agent/agent.env`(600) 로만 보관(`ps` 노출 방지)
-- **systemd-timer**(우선) 또는 **cron**(폴백)으로 주기 수집 등록 + 즉시 1회 실행(통신 확인)
+- **systemd-timer**(우선) 또는 **cron**(폴백)으로 주기 수집 등록(기본 매시간) + 즉시 1회 실행(통신 확인)
+- 컨테이너가 떠 있는 호스트에서도 다른 mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토리
+  — 컨테이너 오버레이 경로를 `dpkg -S`/`rpm -qf` 로 전수조사하다 멈추는 문제를 회피
 - 제거: `sudo ./agent/install-agent.sh --uninstall`
 
-네트워크 요건: 대상 서버 → 중앙서버 `WEB_PORT`(기본 8080) **아웃바운드 HTTP** 하나면 됨.
+네트워크 요건: 대상 서버 → 중앙서버 `WEB_PORT`(기본 8080) **아웃바운드 HTTPS** 하나면 됨
+(운영은 Caddy 가 앞단에서 TLS 를 받는다). 중앙 서버 자신을 스캔하는 로컬 에이전트만
+루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
 
 ## 상태
 
 - [x] 0. Docker 구성 (compose dev/prod + Dockerfile + Docker Secrets)
 - [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
 - [x] 2. 매처 (외부노출 + 로드됨 + KEV = CRITICAL) · findings.php · 아키텍처 다이어그램
-- [x] 3. 웹 (로그인 → 대시보드 → 취약점 · 사용자관리)
-- [x] 4a. CVE 피드 커넥터 (CISA KEV 실데이터 · OSV · NVD) + 스케줄러 사이드카
+- [x] 3. 웹 (로그인 → 대시보드 → 호스트상세 → 취약점 → CVE상세 · 사용자관리) + 검색/필터·페이지네이션
+- [x] 4a. CVE 피드 커넥터 (CISA KEV 실데이터 · OSV · NVD · EPSS) + 스케줄러 사이드카
 - [x] 4b. 국내 특화 — KISA 보안공지 커넥터 + 국내공지 페이지
+- [x] HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)
+- [x] 에이전트 자동 배포 — install-agent.sh (systemd-timer 우선/cron 폴백, 매시간)
+- [x] DB 전면 개편 — 전 테이블 `tb_` 접두사 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
+      + 소프트삭제 + 활동 감사로그(`tb_activity_log` + `activity.php` 조회 화면)
 
-- 취약점 우선순위(+조치안): <http://localhost:8080/findings.php>
+- 취약점 우선순위(+조치안): `/findings.php`
+- CVE 상세(영향패키지·발견 위치): `/cve.php?cve=CVE-XXXX-XXXXX`
 - 호스트 상세(노출·취약점 한눈에): 대시보드에서 서버명 클릭 → `host.php`
-- 피드 커넥터(admin): <http://localhost:8080/connectors.php>
-- 국내 보안공지: <http://localhost:8080/advisories.php>
+- 피드 커넥터(admin): `/connectors.php`
+- 국내 보안공지: `/advisories.php`
+- 감사로그(admin): `/activity.php`
 
 각 취약점에는 **조치안**("어느 버전 이상으로 업데이트")이 함께 표시된다(OSV 의 fixed 버전).
+
+### 감사 로그
+
+로그인·커넥터 저장/토글/삭제·사용자 추가/삭제·ingest 수신이 `tb_activity_log` 에 자동
+기록된다(`server/src/audit.php` 의 `vg_log_activity()`). `/activity.php`(admin 전용)에서
+범위(scope) 필터 + 페이지네이션으로 조회한다. 삭제는 하드 DELETE 대신 `vg_soft_delete()`
+로 `is_deleted/deleted_at` 를 세운다(대상: users/feed_connectors/advisories/hosts/scans).
 
 ### 런타임 상태 구분 (오탐 감소의 핵심)
 
