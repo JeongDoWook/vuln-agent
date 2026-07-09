@@ -299,9 +299,11 @@ function vg_toolbar(array $fields): void {
 }
 
 /**
- * 사이드바 메뉴(SSOT). 대분류(섹션 라벨) → 중분류(링크) 2단.
+ * 사이드바 메뉴(라벨 SSOT). 대분류(섹션 라벨) → 중분류(링크) 2단.
  *   섹션 라벨이 '' 이면 라벨 없이 링크만 렌더한다(대시보드처럼 단독 항목).
  *   각 링크의 'perm' 은 vg_can() 메뉴코드, 'key' 는 vg_header($active) 와 맞춘다.
+ *   'perm' 은 vg_menus() 의 코드와 반드시 일치해야 한다 — 어긋나면 사이드바에 보이는데
+ *   눌러보면 403 나는 링크가 생긴다. 단, findings 처럼 코드 하나가 링크 둘을 열 수 있다.
  */
 function vg_nav_sections(): array {
     return [
