@@ -27,6 +27,10 @@ vulninv-*.txt
 # --- OMC / 로컬 상태 ---
 .omc/
 
+# --- wt 파이프라인: git worktree 작업 영역 (브랜치별 체크아웃) ---
+# 각 worktree 는 별도 브랜치 체크아웃 + .pipe/ 산출물. main 에는 커밋하지 않는다.
+/wt/
+
 # --- OS / 에디터 ---
 .DS_Store
 Thumbs.db
