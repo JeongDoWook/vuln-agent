@@ -179,7 +179,7 @@ flowchart TB
 
 | | dev | prod |
 |---|---|---|
-| 소스 | `./server` 라이브 마운트 | 이미지에 구움(배포=재빌드) |
+| 소스 | `./server` 라이브 마운트 | `../server` 읽기전용 마운트(PHP 는 배포=`git pull`, 무중단) |
 | DB 포트 | 노출(3307) | 미노출(내부망만) |
 | 웹 접속 | `http://localhost:8080` (평문) | `https://ost-server.duckdns.org:8080` (Caddy, 현재 자체서명) |
 | my.cnf | 미적용(기본값) | 적용(charset/보안 튜닝) |
@@ -334,8 +334,10 @@ flowchart TD
         DASH["/ 대시보드<br/>호스트별 최신스캔 · 심각도 KPI"]
         HOST["/host.php<br/>호스트 상세 · 노출·프로세스·취약점"]
         FIND["/findings.php<br/>취약점 우선순위 · 검색/필터 · 페이지네이션"]
+        CVES["/cves.php<br/>CVE 목록 · 검색 · 심각도/KEV/연도 필터 · CVSS/EPSS 정렬"]
         CVE["/cve.php<br/>CVE 상세 · 영향패키지 · 발견 위치"]
-        ADV["/advisories.php<br/>국내 보안공지(KISA) · 검색 · 페이지네이션"]
+        ADV["/advisories.php<br/>국내 보안공지(KISA) 목록 · 검색 · 페이지네이션"]
+        ADVD["/advisory.php<br/>공지 상세 · 본문 · 관련 CVE · 원문 링크"]
     end
 
     subgraph AdminOnly["admin 전용"]

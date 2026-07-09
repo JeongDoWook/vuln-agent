@@ -8,7 +8,7 @@
 
 ```
 agent/    수집 에이전트 (Bash) — 패키지·런타임 노출 정보 수집 + install-agent.sh(systemd-timer/cron 자동 배포)
-server/   PHP 중앙 서버 — 수신 API(ingest) + 웹(대시보드·취약점·CVE상세·감사로그) + 매처
+server/   PHP 중앙 서버 — 수신 API(ingest) + 웹(대시보드·취약점·CVE목록/상세·국내공지목록/상세·감사로그) + 매처
 deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·config
 db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼 (컨테이너 최초 기동 시 자동 적용)
 docs/     아키텍처 · 기획안 · 설명글 · 프로세스
@@ -39,9 +39,18 @@ cd deploy
 ./compose_runner.sh prod up -d --build
 ```
 
+이후 업데이트는 `deploy/update.sh` 한 줄이면 된다. **바뀐 파일을 보고 스스로 갈라진다** —
+`server/` 아래 PHP 만 바뀌었으면 `git pull` 로 끝(무중단, 소스가 읽기전용으로 마운트돼 있고
+opcache 가 2초마다 파일 갱신을 확인한다). `Dockerfile`·`compose*.yml`·`caddy/`·`config/` 가
+바뀔 때만 재빌드하고, `db/*.sql` 변경은 자동 적용하지 않고 경고만 한다(마이그레이션은 수동).
+
+```bash
+bash deploy/update.sh
+```
+
 | | dev | prod |
 |---|---|---|
-| 소스 | `./server` 라이브 마운트(즉시 반영) | 이미지에 구움(배포=재빌드) |
+| 소스 | `./server` 라이브 마운트(즉시 반영) | `../server` 읽기전용 마운트(PHP 는 배포=`git pull`, 무중단) |
 | DB 포트 | 호스트에 노출(3307) | **미노출**(내부 네트워크만) |
 | 웹 접속 | 평문 `http://localhost:8080` | **HTTPS** `https://ost-server.duckdns.org:8080` (Caddy) |
 | 환경변수 | `.env.dev` | `.env.prod` |
@@ -126,10 +135,12 @@ sudo ./agent/install-agent.sh \
       + 소프트삭제 + 활동 감사로그(`tb_activity_log` + `activity.php` 조회 화면)
 
 - 취약점 우선순위(+조치안): `/findings.php`
+- CVE 목록(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬): `/cves.php`
 - CVE 상세(영향패키지·발견 위치): `/cve.php?cve=CVE-XXXX-XXXXX`
 - 호스트 상세(노출·취약점 한눈에): 대시보드에서 서버명 클릭 → `host.php`
 - 피드 커넥터(admin): `/connectors.php`
-- 국내 보안공지: `/advisories.php`
+- 국내 보안공지 목록: `/advisories.php` (제목 클릭 → 상세)
+- 국내 보안공지 상세(본문·관련 CVE·원문 링크): `/advisory.php?id=N`
 - 감사로그(admin): `/activity.php`
 
 각 취약점에는 **조치안**("어느 버전 이상으로 업데이트")이 함께 표시된다(OSV 의 fixed 버전).
@@ -163,11 +174,13 @@ sudo ./agent/install-agent.sh \
 
 - **CISA KEV** (기본 활성): 실제 악용 취약점 카탈로그 JSON, 무인증. 매일 자동 수집.
 - **OSV.dev** (기본 활성): 수집된 **모든 패키지**를 OSV querybatch 로 조회(배포판별 ecosystem 자동, deb 는 소스패키지·설치버전 기준) → `cve_affected_packages` 를 실제로 채워 매처가 전 패키지를 검사. 시드 3개가 아니라 서버의 실제 취약점 전체를 발굴.
-- **NVD 2.0**: 필요 시 활성. 최근 N일 CVE(CVSS 포함) 증분. API 키·주기 UI 설정.
+- **NVD 2.0**: 전체 CVE(약 36만건, CVSS·설명 포함). 주기 수집은 **수정일(lastMod) 기준** 증분이라 뒤늦게 CVSS 가 붙는 CVE 도 따라잡는다(120일 상한). 전체 이력은 `bin/backfill_nvd.php` 로 1회 백필(멱등, `--start-index` 재개). API 키는 DB(`connection_json.api_key`)에만 두고 코드·저장소엔 없다. `/cves.php` 에서 목록 조회.
 - **FIRST EPSS** (기본 활성): CVE별 악용확률(0~1)을 매일 갱신 → KEV(이미 악용됨) + EPSS(악용 가능성)로 우선순위/정렬. findings·호스트 상세에 EPSS % 표시.
-- **KISA 보안공지** (기본 활성): 보호나라 RSS 수집 → 국내공지 페이지. 해외 도구가 안 하는 국내 특화.
-- 스케줄러 사이드카(`scheduler` 컨테이너)가 1분마다 due 커넥터를 실행하고, 수집 후 전체 스캔을 재매칭.
+- **KISA 보안공지** (기본 활성): 보호나라 RSS 수집 → 국내공지 페이지. 해외 도구가 안 하는 국내 특화. 신규 공지는 **상세 본문까지 수집**해 `/advisory.php` 에서 그대로 보여준다(과거분은 `bin/backfill_kisa_content.php` 로 1회 채움).
+- 스케줄러 사이드카(`scheduler` 컨테이너)가 1분마다 due 커넥터를 실행하고, 수집 후 전체 스캔을 재매칭. 중단돼 `running` 으로 굳은 실행도 정리한다.
 - 수동 실행: 커넥터 행의 "지금 실행", 또는 `docker compose exec web php bin/sync.php <id>`.
+
+**bin 스크립트(1회성 유지보수)**: `backfill_nvd.php`(NVD 전체 백필) · `backfill_kisa.php`(국내공지 과거 이력) · `backfill_kisa_content.php`(공지 본문) · `rebuild_advisory_cveids.php`(cve_ids 재계산) · `enrich_osv.php` · `sync.php`(커넥터 수동 실행).
 
 ## 테스트
 
