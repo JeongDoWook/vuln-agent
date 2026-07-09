@@ -18,7 +18,7 @@
 #   ./deploy/wt.sh add feat/cve-list          # wt/cve-list 생성 (origin/main 기점)
 #   ./deploy/wt.sh add fix/foo origin/main    # 기점 명시
 #   ./deploy/wt.sh list                       # 워크트리 + 할당 포트
-#   ./deploy/wt.sh rm cve-list                # 스택 내리고 워크트리 제거
+#   ./deploy/wt.sh rm cve-list                # 스택 내리고 워크트리 + 병합된 브랜치 제거
 # =============================================================================
 set -euo pipefail
 
@@ -64,7 +64,7 @@ usage() {
   echo ""
   say "  ${GREEN}add${NC} <브랜치> [기점]   wt/<이름> 워크트리 생성 (기점 기본 origin/main)"
   say "  ${GREEN}list${NC}                  워크트리 + 할당 포트"
-  say "  ${GREEN}rm${NC} <이름>             dev 스택 내리고 워크트리 제거"
+  say "  ${GREEN}rm${NC} <이름>             dev 스택 내리고 워크트리 + 병합된 브랜치 제거"
   echo ""
   say "예: ${CYAN}./deploy/wt.sh add feat/cve-list${NC}  →  wt/cve-list"
 }
@@ -146,11 +146,55 @@ cmd_list() {
 }
 
 # --- rm ---------------------------------------------------------------------
+# 워크트리를 지워도 브랜치는 남아 목록이 계속 불어난다. PR 이 병합됐으면 로컬·원격 모두 정리한다.
+#
+# 병합 판정은 "브랜치 tip 이 origin/main 의 조상인가". merge 커밋 방식(이 저장소의 기본)에선
+# 정확하다. squash·rebase 병합은 tip 이 조상이 아니라 '미병합' 으로 잡히는데, 그때는 지우지
+# 않고 남긴다 — 안 지워서 손해볼 건 브랜치 하나지만 잘못 지우면 커밋이 날아간다.
+branch_cleanup() {
+  local branch="$1" sha="$2"
+  case "$branch" in
+    ''|HEAD)      say "  ${YELLOW}⚠${NC} detached HEAD — 브랜치 정리 생략"; return 0 ;;
+    main|master)  say "  ${YELLOW}⚠${NC} '$branch' 는 지우지 않습니다"; return 0 ;;
+  esac
+
+  if ! git -C "$MAIN_ROOT" fetch origin --quiet; then
+    say "  ${YELLOW}⚠${NC} fetch 실패 — 병합 여부를 못 믿어 브랜치 '$branch' 유지"
+    return 0
+  fi
+
+  if ! git -C "$MAIN_ROOT" merge-base --is-ancestor "$sha" origin/main; then
+    say "  ${YELLOW}⚠${NC} '$branch' 가 origin/main 에 안 보입니다 — 브랜치 유지"
+    say "     병합했는데도 이 메시지가 뜨면 squash·rebase 병합입니다."
+    say "     확인 후 직접: ${CYAN}git branch -D $branch && git push origin --delete $branch${NC}"
+    return 0
+  fi
+
+  if git -C "$MAIN_ROOT" branch -d "$branch" >/dev/null 2>&1; then
+    say "  ${GREEN}✓${NC} 로컬 브랜치 삭제: $branch"
+  else
+    say "  ${YELLOW}⚠${NC} 로컬 브랜치 삭제 실패: $branch"
+  fi
+
+  if [ -z "$(git -C "$MAIN_ROOT" ls-remote --heads origin "$branch")" ]; then
+    say "  ${BLUE}→${NC} 원격엔 이미 없음: origin/$branch"
+  elif git -C "$MAIN_ROOT" push --quiet origin --delete "$branch"; then
+    say "  ${GREEN}✓${NC} 원격 브랜치 삭제: origin/$branch"
+  else
+    say "  ${YELLOW}⚠${NC} 원격 브랜치 삭제 실패: origin/$branch"
+  fi
+}
+
 cmd_rm() {
   local name="${1:-}"
   [ -n "$name" ] || { usage; exit 1; }
   local dir="$WT_ROOT/$name"
   [ -d "$dir" ] || die "없습니다: $dir"
+
+  # 워크트리가 사라지면 어떤 브랜치였는지 알 수 없다 → 지우기 전에 붙잡아 둔다.
+  local branch sha
+  branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
+  sha="$(git -C "$dir" rev-parse HEAD)"
 
   # 커밋 안 된 변경이 있으면 멈춘다(추적 파일 기준. secrets/data 는 원래 untracked).
   if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
@@ -176,7 +220,9 @@ cmd_rm() {
 
   # secrets/·data/ 는 untracked 라 --force 없이는 remove 가 거부한다.
   git -C "$MAIN_ROOT" worktree remove --force "$dir"
-  say "${GREEN}✓${NC} 제거: wt/$name  ${YELLOW}(브랜치는 남아있습니다)${NC}"
+  say "${GREEN}✓${NC} 제거: wt/$name"
+
+  branch_cleanup "$branch" "$sha"
 }
 
 case "${1:-}" in
