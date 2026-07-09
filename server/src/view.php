@@ -179,8 +179,9 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
             } else {
                 $html = '';
             }
+            $nowrap = is_array($h) && !empty($h['nowrap']);
             $style = ($align && $align !== 'left') ? ' style="text-align:' . vg_h($align) . ';"' : '';
-            echo '<td' . $style . '>' . $html . '</td>';
+            echo '<td' . ($nowrap ? ' class="nowrap"' : '') . $style . '>' . $html . '</td>';
         }
         echo '</tr>';
     }
@@ -249,7 +250,7 @@ function vg_header(string $title, string $active = ''): void {
   * { box-sizing: border-box; }
   body { font-family: system-ui,-apple-system,"Segoe UI",sans-serif; margin:0; background:#0f1115; color:#e6e6e6; }
   a { color:#58a6ff; text-decoration:none; } a:hover { text-decoration:underline; }
-  nav { display:flex; align-items:center; gap:1.1rem; padding:.8rem 1.5rem; background:#171a21; border-bottom:1px solid #262b36; position:sticky; top:0; z-index:10; }
+  nav { display:flex; align-items:center; gap:1.1rem; padding:.8rem 1.5rem; background:#171a21; border-bottom:1px solid #262b36; position:sticky; top:0; z-index:10; flex-wrap:wrap; row-gap:.4rem; }
   nav .brand { font-weight:700; font-size:1rem; margin-right:.5rem; color:#e6e6e6; }
   nav a.brand:hover { text-decoration:none; opacity:.8; }
   nav a.link { color:#adbac7; font-size:.9rem; padding:.2rem 0; }
@@ -267,7 +268,10 @@ function vg_header(string $title, string $active = ''): void {
   .card { background:#171a21; border:1px solid #262b36; border-radius:12px; padding:1.1rem 1.4rem; overflow-x:auto; margin-bottom:1.2rem; }
   table { width:100%; border-collapse:collapse; font-size:.93rem; }
   th,td { text-align:left; padding:.7rem .9rem; border-bottom:1px solid #262b36; vertical-align:top; }
-  th { color:#8b93a1; font-weight:600; font-size:.74rem; text-transform:uppercase; letter-spacing:.04em; }
+  th { color:#8b93a1; font-weight:600; font-size:.74rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
+  td.nowrap { white-space:nowrap; }
+  td code { white-space:nowrap; }
+  .badge, .pill { white-space:nowrap; }
   tr:last-child td { border-bottom:none; }
   .badge { display:inline-block; padding:.12rem .55rem; border-radius:999px; font-size:.72rem; font-weight:700; color:#fff; }
   .badge.outline { background:transparent; border:1px solid currentColor; color:inherit; font-weight:600; }

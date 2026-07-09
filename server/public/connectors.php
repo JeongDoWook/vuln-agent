@@ -132,7 +132,7 @@ vg_header('피드 커넥터', 'connectors');
   vg_table(
       [
           ['label' => '이름'], ['label' => '타입'], ['label' => '스케줄'], ['label' => '활성'],
-          ['label' => '마지막 실행'], ['label' => '다음 실행'], ['label' => '상태'], ['label' => '작업'],
+          ['label' => '마지막 실행', 'nowrap' => true], ['label' => '다음 실행', 'nowrap' => true], ['label' => '상태'], ['label' => '작업'],
       ],
       $connectors,
       [
@@ -240,7 +240,7 @@ vg_header('피드 커넥터', 'connectors');
             ['label' => '상태'],
             ['label' => '수집/저장'],
             ['label' => '메시지'],
-            ['label' => '시각'],
+            ['label' => '시각', 'nowrap' => true],
         ],
         $logs,
         [
