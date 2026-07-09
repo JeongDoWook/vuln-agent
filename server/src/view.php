@@ -236,6 +236,52 @@ function vg_toolbar(array $fields, array $opts = []): void {
     echo '</form>';
 }
 
+/**
+ * 사이드바 메뉴(SSOT). 대분류(섹션 라벨) → 중분류(링크) 2단.
+ *   섹션 라벨이 '' 이면 라벨 없이 링크만 렌더한다(대시보드처럼 단독 항목).
+ *   각 링크의 'perm' 은 vg_can() 메뉴코드, 'key' 는 vg_header($active) 와 맞춘다.
+ */
+function vg_nav_sections(): array {
+    return [
+        '' => [
+            ['perm' => 'dashboard', 'href' => '/', 'label' => '대시보드', 'key' => 'dashboard'],
+        ],
+        '취약점' => [
+            ['perm' => 'findings',   'href' => '/findings.php',   'label' => '취약점 현황',   'key' => 'findings'],
+            ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE 목록',      'key' => 'cves'],
+            ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '국내 보안공지', 'key' => 'advisories'],
+        ],
+        '자산' => [
+            ['perm' => 'assets', 'href' => '/assets.php', 'label' => '자산 관리', 'key' => 'assets'],
+        ],
+        '수집' => [
+            ['perm' => 'connectors', 'href' => '/connectors.php', 'label' => '피드 커넥터', 'key' => 'connectors'],
+        ],
+        '시스템' => [
+            ['perm' => 'users',       'href' => '/users.php',       'label' => '사용자',    'key' => 'users'],
+            ['perm' => 'permissions', 'href' => '/permissions.php', 'label' => '권한 설정', 'key' => 'permissions'],
+            ['perm' => 'activity',    'href' => '/activity.php',    'label' => '감사 로그', 'key' => 'activity'],
+        ],
+    ];
+}
+
+// 사이드바 렌더. 권한 없는 링크는 빼고, 링크가 하나도 안 남은 섹션은 라벨째 숨긴다.
+function vg_nav(string $active): void {
+    foreach (vg_nav_sections() as $section => $links) {
+        $visible = array_filter($links, fn($l) => vg_can($l['perm']));
+        if (!$visible) {
+            continue;
+        }
+        if ($section !== '') {
+            echo '<div class="grp">' . vg_h($section) . '</div>';
+        }
+        foreach ($visible as $l) {
+            $cls = 'link' . ($active === $l['key'] ? ' active' : '');
+            echo '<a class="' . $cls . '" href="' . vg_h($l['href']) . '">' . vg_h($l['label']) . '</a>';
+        }
+    }
+}
+
 function vg_header(string $title, string $active = ''): void {
     $user = function_exists('vg_current_user') ? vg_current_user() : null;
     ?>
@@ -248,16 +294,36 @@ function vg_header(string $title, string $active = ''): void {
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
-  body { font-family: system-ui,-apple-system,"Segoe UI",sans-serif; margin:0; background:#0f1115; color:#e6e6e6; }
+  body { font-family: system-ui,-apple-system,"Segoe UI",sans-serif; margin:0; background:#0f1115; color:#e6e6e6; display:flex; min-height:100vh; }
   a { color:#58a6ff; text-decoration:none; } a:hover { text-decoration:underline; }
-  nav { display:flex; align-items:center; gap:1.1rem; padding:.8rem 1.5rem; background:#171a21; border-bottom:1px solid #262b36; position:sticky; top:0; z-index:10; flex-wrap:wrap; row-gap:.4rem; }
-  nav .brand { font-weight:700; font-size:1rem; margin-right:.5rem; color:#e6e6e6; }
-  nav a.brand:hover { text-decoration:none; opacity:.8; }
-  nav a.link { color:#adbac7; font-size:.9rem; padding:.2rem 0; }
-  nav a.link.active { color:#fff; border-bottom:2px solid #1f6feb; }
-  nav .spacer { flex:1; }
-  nav .who { color:#8b93a1; font-size:.82rem; }
-  main { padding:1.8rem 1.2rem; max-width:min(1920px, 98vw); margin:0 auto; }
+  /* 좌측 사이드바: 대분류(.grp) → 중분류(a.link) 2단 */
+  .side { flex:0 0 232px; width:232px; height:100vh; position:sticky; top:0; overflow-y:auto;
+          display:flex; flex-direction:column; background:#171a21; border-right:1px solid #262b36; }
+  .side .brand { display:block; font-weight:700; font-size:1rem; color:#e6e6e6; padding:1rem 1.15rem;
+                 border-bottom:1px solid #262b36; white-space:nowrap; }
+  .side a.brand:hover { text-decoration:none; opacity:.85; }
+  .side .menu { flex:1; padding:.6rem .55rem 1rem; }
+  .side .grp { color:#6e7681; font-size:.68rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
+               padding:.95rem .6rem .3rem; }
+  .side a.link { display:block; padding:.48rem .6rem; margin-bottom:.1rem; border-radius:8px;
+                 color:#adbac7; font-size:.88rem; }
+  .side a.link:hover { background:#1c2029; color:#e6e6e6; text-decoration:none; }
+  .side a.link.active { background:#1f6feb26; color:#fff; font-weight:600; box-shadow:inset 3px 0 0 #1f6feb; }
+  .side .foot { border-top:1px solid #262b36; padding:.85rem 1.15rem; }
+  .side .who { display:block; color:#8b93a1; font-size:.8rem; margin-bottom:.45rem; }
+  .side .foot a { color:#adbac7; font-size:.82rem; margin-right:.7rem; }
+  /* min-width:0 이 없으면 넓은 표가 사이드바를 밀어낸다(flex 자식 기본 min-width:auto) */
+  .app { flex:1; min-width:0; }
+  main { padding:1.8rem 1.6rem; max-width:1760px; margin:0 auto; }
+  /* 좁은 화면: 사이드바를 상단 가로 메뉴로 되돌린다 */
+  @media (max-width:860px) {
+    body { display:block; }
+    .side { position:static; width:auto; height:auto; flex:none; border-right:none; border-bottom:1px solid #262b36; }
+    .side .menu { display:flex; flex-wrap:wrap; gap:.15rem; padding:.5rem .6rem; }
+    .side .grp { display:none; }
+    .side a.link.active { box-shadow:none; }
+    main { padding:1.4rem 1rem; }
+  }
   h1 { font-size:1.3rem; margin:0 0 .3rem; }
   .sub { color:#8b93a1; font-size:.85rem; margin-bottom:1.3rem; }
   .cards { display:flex; gap:.7rem; margin-bottom:1.3rem; flex-wrap:wrap; }
@@ -307,43 +373,21 @@ function vg_header(string $title, string $active = ''): void {
 </head>
 <body>
 <?php if ($user !== null): ?>
-  <nav>
+  <aside class="side">
     <?php if (vg_can('dashboard')): ?>
       <a class="brand" href="/" title="대시보드로 이동">🛡️ vuln-agent</a>
     <?php else: ?>
       <span class="brand">🛡️ vuln-agent</span>
     <?php endif; ?>
-    <?php if (vg_can('dashboard')): ?>
-      <a class="link <?= $active==='dashboard'?'active':'' ?>" href="/">대시보드</a>
-    <?php endif; ?>
-    <?php if (vg_can('assets')): ?>
-      <a class="link <?= $active==='assets'?'active':'' ?>" href="/assets.php">자산관리</a>
-    <?php endif; ?>
-    <?php if (vg_can('findings')): ?>
-      <a class="link <?= $active==='findings'?'active':'' ?>" href="/findings.php">취약점</a>
-      <a class="link <?= $active==='cves'?'active':'' ?>" href="/cves.php">CVE</a>
-    <?php endif; ?>
-    <?php if (vg_can('advisories')): ?>
-      <a class="link <?= $active==='advisories'?'active':'' ?>" href="/advisories.php">국내공지</a>
-    <?php endif; ?>
-    <?php if (vg_can('connectors')): ?>
-      <a class="link <?= $active==='connectors'?'active':'' ?>" href="/connectors.php">피드</a>
-    <?php endif; ?>
-    <?php if (vg_can('users')): ?>
-      <a class="link <?= $active==='users'?'active':'' ?>" href="/users.php">사용자</a>
-    <?php endif; ?>
-    <?php if (vg_can('activity')): ?>
-      <a class="link <?= $active==='activity'?'active':'' ?>" href="/activity.php">감사로그</a>
-    <?php endif; ?>
-    <?php if (vg_can('permissions')): ?>
-      <a class="link <?= $active==='permissions'?'active':'' ?>" href="/permissions.php">권한설정</a>
-    <?php endif; ?>
-    <span class="spacer"></span>
-    <span class="who"><?= vg_h($user['username']) ?> (<?= vg_h(vg_role_label(vg_role())) ?>)</span>
-    <a class="link <?= $active==='profile'?'active':'' ?>" href="/profile.php">내 프로필</a>
-    <a class="link" href="/logout.php">로그아웃</a>
-  </nav>
+    <nav class="menu"><?php vg_nav($active); ?></nav>
+    <div class="foot">
+      <span class="who"><?= vg_h($user['username']) ?> (<?= vg_h(vg_role_label(vg_role())) ?>)</span>
+      <a href="/profile.php"<?= $active==='profile' ? ' style="color:#fff;font-weight:600;"' : '' ?>>내 프로필</a>
+      <a href="/logout.php">로그아웃</a>
+    </div>
+  </aside>
 <?php endif; ?>
+<div class="app">
 <main>
 <?php
 }
@@ -351,6 +395,7 @@ function vg_header(string $title, string $active = ''): void {
 function vg_footer(): void {
     ?>
 </main>
+</div>
 </body>
 </html>
 <?php
