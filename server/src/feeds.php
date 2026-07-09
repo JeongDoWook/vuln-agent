@@ -379,62 +379,99 @@ final class VgOsvConnector implements VgFeedConnector {
 
 // NVD 2.0 — 최근 N일 공개 CVE → cves (CVSS 포함). 증분 수집(전체 미러 아님).
 //   기간 내 결과를 startIndex 로 끝까지 페이지네이션(무음 절단 방지, rate limit 준수).
-final class VgNvdConnector implements VgFeedConnector {
-    public function run(PDO $pdo, array $conn): array {
-        $base = $conn['url'] ?? 'https://services.nvd.nist.gov/rest/json/cves/2.0';
-        $days = max(1, (int) ($conn['days'] ?? 7));
-        $key  = trim((string) ($conn['api_key'] ?? ''));
-        $headers = $key !== '' ? ['apiKey: ' . $key] : [];
-        $end   = gmdate('Y-m-d\TH:i:s.000');
-        $start = gmdate('Y-m-d\TH:i:s.000', time() - $days * 86400);
+// ── NVD 2.0 공통 루틴 — 주기 수집(커넥터)과 전체 백필(bin/backfill_nvd.php)이 함께 쓴다 ──
+//
+// [페이지 크기] NVD 최대는 2000 이지만 쓰지 않는다. 실측(2026-07-09, API 키 사용):
+//     perPage=500  → 2.2MB  43초
+//     perPage=1000 → 4.0MB  62초
+//     perPage=2000 → 8.4MB 156초   ← 기존 타임아웃 120초를 넘겨 죽는다
+//   NVD 는 키가 있어도 50~60KB/s 밖에 주지 않는다. 병목은 rate limit 이 아니라 대역폭이라
+//   페이지를 키워도 총 시간은 같다. 타임아웃 위험만 커지므로 500 으로 잡는다.
+const VG_NVD_PER_PAGE   = 500;
+const VG_NVD_TIMEOUT    = 300;    // 초. 느린 응답(50KB/s)에 여유를 둔다.
+const VG_NVD_MAX_WINDOW = 120;    // NVD 가 허용하는 최대 날짜 범위(일). 넘으면 404.
 
-        $perPage = 2000;              // NVD 최대
-        $startIndex = 0; $total = 0; $fetched = 0; $up = 0;
-        do {
-            $qs = http_build_query([
-                'pubStartDate'   => $start,
-                'pubEndDate'     => $end,
-                'resultsPerPage' => $perPage,
-                'startIndex'     => $startIndex,
-            ]);
-            $r = vg_http_json('GET', "$base?$qs", null, $headers, 120);
-            if ($r['code'] !== 200 || !isset($r['json']['vulnerabilities'])) {
-                throw new RuntimeException("NVD fetch 실패 (HTTP {$r['code']}) {$r['error']}");
-            }
-            $total = (int) ($r['json']['totalResults'] ?? 0);
-            $pdo->beginTransaction();
-            foreach ($r['json']['vulnerabilities'] as $item) {
-                if ($this->upsertItem($pdo, $item)) { $up++; }
-                $fetched++;
-            }
-            $pdo->commit();
-            $startIndex += $perPage;
-            if ($startIndex < $total) {
-                sleep($key !== '' ? 1 : 6);   // rate limit (키 없으면 5req/30s)
-            }
-        } while ($startIndex < $total);
+/** NVD 응답 1건을 tb_cves 로 upsert. @return bool 실제로 처리했는지 */
+function vg_nvd_upsert_item(PDO $pdo, array $item): bool {
+    $c  = $item['cve'] ?? [];
+    $id = $c['id'] ?? '';
+    if ($id === '') { return false; }
 
-        return ['fetched' => $fetched, 'upserted' => $up];
+    $desc = '';
+    foreach ($c['descriptions'] ?? [] as $d) {
+        if (($d['lang'] ?? '') === 'en') { $desc = (string) $d['value']; break; }
     }
+    $cvss = null;
+    foreach (['cvssMetricV31', 'cvssMetricV30', 'cvssMetricV2'] as $mk) {
+        if (!empty($c['metrics'][$mk][0]['cvssData']['baseScore'])) {
+            $cvss = (float) $c['metrics'][$mk][0]['cvssData']['baseScore'];
+            break;
+        }
+    }
+    $pub = !empty($c['published']) ? substr((string) $c['published'], 0, 10) : null;
+    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, 2000), $cvss, $pub);
+    return true;
+}
 
-    private function upsertItem(PDO $pdo, array $item): bool {
-        $c = $item['cve'] ?? [];
-        $id = $c['id'] ?? '';
-        if ($id === '') { return false; }
-        $desc = '';
-        foreach ($c['descriptions'] ?? [] as $d) {
-            if (($d['lang'] ?? '') === 'en') { $desc = (string) $d['value']; break; }
+/**
+ * NVD 2.0 페이지 순회 + upsert.
+ *   $dateParams 가 비면 날짜 필터 없이 전체(36만건)를 훑는다 → 초기 백필.
+ *   NVD 는 날짜가 없어도 startIndex 로 끝까지 페이징된다(실측: startIndex=360000 → HTTP 200).
+ *   그래서 초기 백필에 120일 창을 순회할 필요가 없다.
+ *   $onPage(startIndex, total, fetched) 로 진행 상황을 흘려보낸다(백필 로그용).
+ * @return array{fetched:int,upserted:int,total:int}
+ */
+function vg_nvd_sync(PDO $pdo, array $conn, array $dateParams = [], int $startIndex = 0, ?callable $onPage = null): array {
+    $base    = $conn['url'] ?? 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+    $key     = trim((string) ($conn['api_key'] ?? ''));
+    $headers = $key !== '' ? ['apiKey: ' . $key] : [];
+
+    $total = 0; $fetched = 0; $up = 0;
+    do {
+        $qs = http_build_query($dateParams + [
+            'resultsPerPage' => VG_NVD_PER_PAGE,
+            'startIndex'     => $startIndex,
+        ]);
+        $r = vg_http_json('GET', "$base?$qs", null, $headers, VG_NVD_TIMEOUT);
+        if ($r['code'] !== 200 || !isset($r['json']['vulnerabilities'])) {
+            throw new RuntimeException("NVD fetch 실패 (HTTP {$r['code']}) startIndex=$startIndex {$r['error']}");
         }
-        $cvss = null;
-        foreach (['cvssMetricV31', 'cvssMetricV30', 'cvssMetricV2'] as $mk) {
-            if (!empty($c['metrics'][$mk][0]['cvssData']['baseScore'])) {
-                $cvss = (float) $c['metrics'][$mk][0]['cvssData']['baseScore'];
-                break;
-            }
+        $total = (int) ($r['json']['totalResults'] ?? 0);
+
+        $pdo->beginTransaction();
+        foreach ($r['json']['vulnerabilities'] as $item) {
+            if (vg_nvd_upsert_item($pdo, $item)) { $up++; }
+            $fetched++;
         }
-        $pub = !empty($c['published']) ? substr((string) $c['published'], 0, 10) : null;
-        vg_upsert_cve($pdo, $id, mb_substr($desc, 0, 2000), $cvss, $pub);
-        return true;
+        $pdo->commit();
+        unset($r);   // 페이지(약 4MB)를 즉시 해제 → 36만건을 훑어도 메모리 사용량은 일정하다
+
+        $startIndex += VG_NVD_PER_PAGE;
+        // 콜백이 false 를 돌려주면 중단(백필의 --max-pages 시험용). 재개는 startIndex 로 한다.
+        if ($onPage !== null && $onPage($startIndex, $total, $fetched) === false) { break; }
+        if ($startIndex < $total) {
+            sleep($key !== '' ? 1 : 6);   // rate limit (키 없으면 30초당 5요청)
+        }
+    } while ($startIndex < $total);
+
+    return ['fetched' => $fetched, 'upserted' => $up, 'total' => $total];
+}
+
+final class VgNvdConnector implements VgFeedConnector {
+    /**
+     * 주기 수집은 "수정된 CVE"(lastMod) 기준이다.
+     *   발행일(pubStartDate) 기준이면 예전에 발행됐다가 뒤늦게 CVSS·설명이 붙은 CVE 를
+     *   영원히 놓친다. 실측(2026-07-09): 최근 7일 발행 1,311건 vs 수정 4,580건.
+     *   NVD 는 lastModStartDate/lastModEndDate 를 둘 다 요구하고 범위는 120일까지만 허용한다.
+     * 전체 이력은 bin/backfill_nvd.php 로 1회 채운다(주기 수집이 할 일이 아니다).
+     */
+    public function run(PDO $pdo, array $conn): array {
+        $days = min(VG_NVD_MAX_WINDOW, max(1, (int) ($conn['days'] ?? 7)));
+        $res  = vg_nvd_sync($pdo, $conn, [
+            'lastModStartDate' => gmdate('Y-m-d\TH:i:s.000', time() - $days * 86400),
+            'lastModEndDate'   => gmdate('Y-m-d\TH:i:s.000'),
+        ]);
+        return ['fetched' => $res['fetched'], 'upserted' => $res['upserted']];
     }
 }
 
