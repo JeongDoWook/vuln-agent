@@ -58,7 +58,7 @@ services:
 
 secrets:
   duckdns_token:
-    file: ./secrets/duckdns_token.txt
+    file: ../secrets/duckdns_token.txt
 
 volumes:
   caddy_data:

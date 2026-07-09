@@ -9,7 +9,7 @@
 ```
 agent/    수집 에이전트 (Bash) — 패키지·런타임 노출 정보 수집 + install-agent.sh(systemd-timer/cron 자동 배포)
 server/   PHP 중앙 서버 — 수신 API(ingest) + 웹(대시보드·취약점·CVE상세·감사로그) + 매처
-caddy/    HTTPS 리버스 프록시 (운영 전용, Let's Encrypt DNS-01)
+deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·config
 db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼 (컨테이너 최초 기동 시 자동 적용)
 docs/     아키텍처 · 기획안 · 설명글 · 프로세스
 ```
@@ -19,8 +19,10 @@ docs/     아키텍처 · 기획안 · 설명글 · 프로세스
 ## 빠른 시작 (Docker · 러너 스크립트)
 
 모든 것은 컨테이너로 동작한다(로컬 PHP/MySQL 불필요). 환경은 **dev / prod** 두 가지.
+러너·compose 파일은 모두 `deploy/` 에 있다(`cd deploy` 후 실행).
 
 ```bash
+cd deploy
 ./compose_runner.sh init            # .env.dev / .env.prod 생성(템플릿 복사) → 비밀값 수정
 ./compose_runner.sh doctor          # 사전 점검
 ./compose_runner.sh dev  up -d --build   # 개발 환경 기동
@@ -29,9 +31,10 @@ docs/     아키텍처 · 기획안 · 설명글 · 프로세스
 ```
 
 운영 서버(리눅스)에서는 `dev` 대신 `prod`. 앞단에 **Caddy 가 자동으로 HTTPS 를 붙인다**
-(Let's Encrypt DuckDNS DNS-01, 현재는 자체서명 — 상세: [`caddy/README.md`](caddy/README.md)):
+(Let's Encrypt DuckDNS DNS-01, 현재는 자체서명 — 상세: [`deploy/caddy/README.md`](deploy/caddy/README.md)):
 
 ```bash
+cd deploy
 ./compose_runner.sh init                 # .env.prod 의 비밀값을 강한 값으로 교체
 ./compose_runner.sh prod up -d --build
 ```
@@ -49,16 +52,19 @@ docs/     아키텍처 · 기획안 · 설명글 · 프로세스
 - 수신 API: `POST .../ingest.php` (헤더 `X-Agent-Token`). prod 는 web 이 외부에 직접 노출되지
   않고, 중앙서버 자신을 스캔하는 로컬 에이전트만 루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
 
-### 파일 구조 (compose)
+### 파일 구조 (compose · 모두 `deploy/` 하위)
 
 ```
-compose.yml         서비스 정의 (db=MySQL, web=PHP/Apache)
-compose.common.yml  공통 런타임 (restart, 로깅, pids_limit)
-compose.dev.yml     개발 override
-compose.prod.yml    운영 override (+ caddy: HTTPS 리버스 프록시)
-.env.{dev,prod}.template   → init 이 .env.{dev,prod} 로 복사(커밋 제외)
-compose_runner.sh   실행 러너
+deploy/compose.yml         서비스 정의 (db=MySQL, web=PHP/Apache)
+deploy/compose.common.yml  공통 런타임 (restart, 로깅, pids_limit)
+deploy/compose.dev.yml     개발 override
+deploy/compose.prod.yml    운영 override (+ caddy: HTTPS 리버스 프록시)
+deploy/.env.{dev,prod}.template   → init 이 .env.{dev,prod} 로 복사(커밋 제외)
+deploy/compose_runner.sh   실행 러너
+deploy/caddy/ deploy/config/   caddy 이미지 · MySQL my.cnf
 ```
+
+compose 경로 기준: `../server`·`../db`·`../secrets`·`../data` 는 저장소 루트, `./caddy`·`./config` 는 `deploy/` 내부.
 
 ## 에이전트 실행 & 전송
 

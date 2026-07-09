@@ -84,9 +84,12 @@ mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토�
 ```
 vuln-agent/
 ├── CONTEXT.md  README.md  CLAUDE.md(개발원칙)
-├── compose.yml  compose.common/dev/prod.yml  compose_runner.sh   # dev/prod 도커
-├── .env.{dev,prod}.template   secrets/(*.txt gitignore)          # 설정·비밀값
-├── caddy/        # HTTPS 리버스 프록시(운영 전용): Dockerfile·Caddyfile·entrypoint.sh
+├── deploy/       # 배포 인프라 (compose·러너·caddy·config)
+│   ├── compose.yml  compose.common/dev/prod.yml  compose_runner.sh   # dev/prod 도커
+│   ├── update.sh  .env.{dev,prod}.template                           # 운영 업데이트·설정 템플릿
+│   ├── caddy/     # HTTPS 리버스 프록시(운영 전용): Dockerfile·Caddyfile·entrypoint.sh
+│   └── config/mysql/my.cnf   # 운영 MySQL 튜닝
+├── secrets/(*.txt gitignore)   data/(mysql, gitignore)              # 비밀값·DB 데이터 (루트 유지)
 ├── agent/
 │   ├── vuln-inventory-agent.sh   # 수집(패키지·노출·실행프로세스), --send 전송
 │   └── install-agent.sh          # 각 서버 배포·스케줄(systemd-timer/cron)

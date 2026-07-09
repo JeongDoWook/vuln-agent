@@ -14,8 +14,8 @@ DB 비밀번호·수신 토큰을 담는 **Docker Secrets** 디렉토리.
 
 ## 생성
 
-`./compose_runner.sh init` 이 위 파일들을 **강한 랜덤값으로 자동 생성**한다(이미 있으면 유지).
-수동 생성 예:
+`deploy/compose_runner.sh init` (러너는 `deploy/` 에 있음)이 위 파일들을 이 `secrets/`(루트 유지)에
+**강한 랜덤값으로 자동 생성**한다(이미 있으면 유지). 수동 생성 예(저장소 루트에서):
 
 ```bash
 openssl rand -base64 24 | tr -d '\n' > secrets/mysql_root_password.txt
