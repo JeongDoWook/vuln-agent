@@ -8,9 +8,8 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-vg_require_login();
+vg_require_menu('findings');
 
-const VG_PER_PAGE = 50;
 $sevOptions = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 $stOptions  = ['EXTERNAL', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
 
@@ -62,7 +61,7 @@ try {
         $stmt->execute($params);
         $total = (int) $stmt->fetchColumn();
 
-        $perPage = VG_PER_PAGE;
+        $perPage = vg_perpage();
         $offset = ($page - 1) * $perPage;
 
         $stmt = $pdo->prepare(
@@ -149,7 +148,7 @@ vg_header('취약점', 'findings');
           ],
       ]
   );
-  if ($rows) { vg_page_nav($total, VG_PER_PAGE, $page); }
+  if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 <?php endif; ?>
 <?php vg_footer();

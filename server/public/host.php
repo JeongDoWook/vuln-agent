@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-vg_require_login();
+vg_require_menu('findings');
 
 $err = null; $host = null; $scan = null; $exposures = []; $processes = []; $findings = [];
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
