@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS tb_users (
   id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   username      VARCHAR(64)  NOT NULL,
   password_hash VARCHAR(255) NOT NULL,   -- password_hash() (bcrypt)
-  role          VARCHAR(16)  NOT NULL DEFAULT 'viewer',  -- admin | viewer
+  role          VARCHAR(16)  NOT NULL DEFAULT 'user',  -- 역할 3값: admin(관리자) | operator(운영자) | user(사용자). 레거시 viewer 는 코드에서 user 취급.
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_login    DATETIME NULL,
   updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

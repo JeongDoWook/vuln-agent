@@ -322,8 +322,37 @@ final class VgNvdConnector implements VgFeedConnector {
 //   RSS 는 title/link/pubDate 만 제공(CVE 없음) → 공지 자체를 advisories 로 수집.
 //   제목에 CVE 가 있으면 best-effort 로 추출해 findings 에 국내공지 배지로 연계.
 final class VgKisaConnector implements VgFeedConnector {
+    // 보호나라(boho.or.kr) RSS 는 bbsId 별로 게시판이 나뉘고 카테고리당 최근 10건만 준다.
+    // 취약점/보안공지 성격의 카테고리만 골라 순회하면 단일 피드보다 수집량이 늘어난다.
+    // (보고서/가이드 B0000127, 공지사항 B0000132 등 일반 게시판은 취약점과 무관해 제외)
+    private const DEFAULT_FEEDS = [
+        'https://www.boho.or.kr/kr/rss.do?bbsId=B0000133' => 'KISA-보안공지',
+        'https://www.boho.or.kr/kr/rss.do?bbsId=B0000302' => 'KISA-취약점정보',
+        'https://www.boho.or.kr/kr/rss.do?bbsId=B0000342' => 'KISA-경보단계',
+    ];
+
     public function run(PDO $pdo, array $conn): array {
-        $url = $conn['url'] ?? 'https://www.boho.or.kr/kr/rss.do?bbsId=B0000133';
+        // 기존 커넥터 레코드(connection_json.url 단일값) 하위호환. 없으면 기본 목록 순회.
+        $feeds = isset($conn['url']) ? [$conn['url'] => 'kisa'] : self::DEFAULT_FEEDS;
+
+        $fetched = 0; $up = 0; $ok = 0;
+        foreach ($feeds as $url => $source) {
+            try {
+                [$f, $u] = $this->fetchOne($pdo, $url, $source);
+                $fetched += $f; $up += $u; $ok++;
+            } catch (Throwable $e) {
+                // 카테고리 하나가 죽어도 나머지는 계속 수집(SSRF 방어는 vg_http_raw 가 담당).
+                error_log("[kisa_feed] $source ($url) 스킵: " . $e->getMessage());
+            }
+        }
+        if ($ok === 0) {
+            throw new RuntimeException('KISA RSS 전체 소스 수집 실패');
+        }
+        return ['fetched' => $fetched, 'upserted' => $up];
+    }
+
+    /** @return array{0:int,1:int} [fetched, upserted] */
+    private function fetchOne(PDO $pdo, string $url, string $source): array {
         $r = vg_http_raw('GET', $url);
         if ($r['code'] !== 200 || $r['body'] === '') {
             throw new RuntimeException("KISA RSS fetch 실패 (HTTP {$r['code']}) {$r['error']}");
@@ -345,7 +374,7 @@ final class VgKisaConnector implements VgFeedConnector {
             }
             preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $title, $m);
             $cveIds = $m[0] ? implode(',', array_map('strtoupper', array_unique($m[0]))) : null;
-            if (vg_upsert_advisory($pdo, 'kisa', mb_substr($title, 0, 500), $link, $pub, $cveIds)) {
+            if (vg_upsert_advisory($pdo, $source, mb_substr($title, 0, 500), $link, $pub, $cveIds)) {
                 $up++;
             }
             // 제목에 CVE 가 있으면 cves 에도 등록(국내공지 근거 확보)
@@ -353,7 +382,7 @@ final class VgKisaConnector implements VgFeedConnector {
                 vg_upsert_cve($pdo, strtoupper($cve), null, null, null);
             }
         }
-        return ['fetched' => count($items), 'upserted' => $up];
+        return [count($items), $up];
     }
 }
 

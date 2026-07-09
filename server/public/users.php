@@ -8,19 +8,22 @@ declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
-vg_require_login();
-vg_require_admin();
+vg_require_menu('users');
 
 $pdo = vg_pdo();
 $msg = null; $err = null;
 
+// 저장 가능한 역할 3값(화이트리스트).
+const VG_ROLES = ['user', 'operator', 'admin'];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $me = vg_current_user();
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
         $err = '세션이 만료되었습니다. 다시 시도하세요.';
     } elseif (($_POST['action'] ?? '') === 'add') {
         $u = trim((string) ($_POST['username'] ?? ''));
         $p = (string) ($_POST['password'] ?? '');
-        $role = ($_POST['role'] ?? 'viewer') === 'admin' ? 'admin' : 'viewer';
+        $role = in_array($_POST['role'] ?? '', VG_ROLES, true) ? (string) $_POST['role'] : 'user';
         if ($u === '' || strlen($p) < 4) {
             $err = '아이디와 4자 이상 비밀번호를 입력하세요.';
         } else {
@@ -33,9 +36,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $err = '추가 실패(중복 아이디?): ' . $e->getMessage();
             }
         }
+    } elseif (($_POST['action'] ?? '') === 'role') {
+        $id = (int) ($_POST['id'] ?? 0);
+        $role = in_array($_POST['role'] ?? '', VG_ROLES, true) ? (string) $_POST['role'] : '';
+        if ($id === (int) ($me['id'] ?? 0)) {
+            $err = '자기 자신의 역할은 변경할 수 없습니다.';
+        } elseif ($role === '') {
+            $err = '유효하지 않은 역할입니다.';
+        } else {
+            $pdo->prepare('UPDATE tb_users SET role = ? WHERE id = ?')->execute([$role, $id]);
+            vg_log_activity($pdo, 'USER', $id, 'user_role', '역할 변경', ['role' => $role]);
+            $msg = '역할이 변경되었습니다.';
+        }
+    } elseif (($_POST['action'] ?? '') === 'reset') {
+        $id = (int) ($_POST['id'] ?? 0);
+        $p  = (string) ($_POST['password'] ?? '');
+        if (strlen($p) < 8) {
+            $err = '초기화 비밀번호는 8자 이상이어야 합니다.';
+        } else {
+            $pdo->prepare('UPDATE tb_users SET password_hash = ? WHERE id = ?')
+                ->execute([password_hash($p, PASSWORD_DEFAULT), $id]);
+            vg_log_activity($pdo, 'USER', $id, 'user_pw_reset', '비밀번호 초기화');
+            $msg = '비밀번호가 초기화되었습니다.';
+        }
     } elseif (($_POST['action'] ?? '') === 'delete') {
         $id = (int) ($_POST['id'] ?? 0);
-        $me = vg_current_user();
         if ($id === (int) ($me['id'] ?? 0)) {
             $err = '자기 자신은 삭제할 수 없습니다.';
         } else {
@@ -46,18 +71,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+$me = vg_current_user();
+
 $users = $pdo->query('SELECT id, username, role, created_at, last_login FROM tb_users WHERE is_deleted = 0 ORDER BY id')->fetchAll();
 $csrf = vg_csrf_token();
 
 vg_header('사용자', 'users');
 ?>
   <h1>사용자 관리</h1>
-  <div class="sub">admin 전용 · 계정 추가/삭제</div>
+  <div class="sub">admin 전용 · 계정 추가 · 역할 변경 · 비번 초기화 · 삭제</div>
 
   <?php if ($msg): ?><div class="err" style="background:#12261a;border-color:#238636;color:#7ee787;"><?= vg_h($msg) ?></div><?php endif; ?>
   <?php if ($err): ?><div class="err"><?= vg_h($err) ?></div><?php endif; ?>
 
   <?php
+  $meId = (int) ($me['id'] ?? 0);
+  // 역할 변경 select 옵션(공용).
+  $roleOptions = function (string $cur): string {
+      $labels = ['user' => '사용자', 'operator' => '운영자', 'admin' => '관리자'];
+      $out = '';
+      foreach ($labels as $v => $l) {
+          $out .= '<option value="' . $v . '"' . ($cur === $v ? ' selected' : '') . '>' . $l . '</option>';
+      }
+      return $out;
+  };
+  $selCss = 'padding:.3rem;background:#0f1115;border:1px solid #30363d;border-radius:6px;color:#e6e6e6;font-size:.8rem;';
+
   vg_table(
       [
           ['label' => 'ID'],
@@ -65,21 +104,50 @@ vg_header('사용자', 'users');
           ['label' => '역할'],
           ['label' => '생성'],
           ['label' => '마지막 로그인'],
-          ['label' => ''],
+          ['label' => '작업'],
       ],
       $users,
       [
           'cell' => [
               0 => fn($u) => vg_h((string) $u['id']),
               1 => fn($u) => '<strong>' . vg_h($u['username']) . '</strong>',
-              2 => fn($u) => '<span class="pill">' . vg_h($u['role']) . '</span>',
+              2 => fn($u) => '<span class="pill">' . vg_h(vg_role_label($u['role'])) . '</span>',
               3 => fn($u) => '<span class="why">' . vg_h($u['created_at']) . '</span>',
               4 => fn($u) => '<span class="why">' . vg_h($u['last_login'] ?? '–') . '</span>',
-              5 => fn($u) => '<form method="post" style="margin:0;" onsubmit="return confirm(\'삭제할까요?\');">'
-                  . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
-                  . '<input type="hidden" name="action" value="delete">'
-                  . '<input type="hidden" name="id" value="' . (int) $u['id'] . '">'
-                  . '<button class="btn-sm" style="background:#6e2830;">삭제</button></form>',
+              5 => function ($u) use ($csrf, $meId, $roleOptions, $selCss) {
+                  $id = (int) $u['id'];
+                  // 정규화된 현재 역할(레거시 viewer→user).
+                  $cur = $u['role'] === 'viewer' ? 'user' : (string) $u['role'];
+                  $html = '<div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;">';
+                  // 역할 변경(자기 자신 제외 — 자기 역할강등 방지).
+                  if ($id !== $meId) {
+                      $html .= '<form method="post" style="margin:0;display:inline-flex;gap:.2rem;">'
+                          . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
+                          . '<input type="hidden" name="action" value="role">'
+                          . '<input type="hidden" name="id" value="' . $id . '">'
+                          . '<select name="role" style="' . $selCss . '">' . $roleOptions($cur) . '</select>'
+                          . '<button class="btn-sm" style="background:#30363d;">역할</button></form>';
+                  } else {
+                      $html .= '<span class="why">(본인)</span>';
+                  }
+                  // 비번 초기화.
+                  $html .= '<form method="post" style="margin:0;display:inline-flex;gap:.2rem;" onsubmit="return confirm(\'비밀번호를 초기화할까요?\');">'
+                      . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
+                      . '<input type="hidden" name="action" value="reset">'
+                      . '<input type="hidden" name="id" value="' . $id . '">'
+                      . '<input type="password" name="password" placeholder="새 비번(8자+)" style="' . $selCss . 'width:120px;">'
+                      . '<button class="btn-sm" style="background:#9e6a03;">초기화</button></form>';
+                  // 삭제(자기 자신 제외).
+                  if ($id !== $meId) {
+                      $html .= '<form method="post" style="margin:0;" onsubmit="return confirm(\'삭제할까요?\');">'
+                          . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
+                          . '<input type="hidden" name="action" value="delete">'
+                          . '<input type="hidden" name="id" value="' . $id . '">'
+                          . '<button class="btn-sm" style="background:#6e2830;">삭제</button></form>';
+                  }
+                  $html .= '</div>';
+                  return $html;
+              },
           ],
       ]
   );
@@ -96,8 +164,9 @@ vg_header('사용자', 'users');
       <input type="password" name="password" required>
       <label>역할</label>
       <select name="role" style="width:100%;padding:.5rem;background:#0f1115;border:1px solid #30363d;border-radius:8px;color:#e6e6e6;">
-        <option value="viewer">viewer (조회)</option>
-        <option value="admin">admin (관리)</option>
+        <option value="user">사용자 (조회)</option>
+        <option value="operator">운영자 (피드)</option>
+        <option value="admin">관리자 (전체)</option>
       </select>
       <button type="submit">추가</button>
     </form>
