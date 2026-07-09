@@ -148,6 +148,77 @@ function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url
     return 'new';
 }
 
+/**
+ * KISA 상세페이지 HTML 에서 본문 평문을 뽑는다. 실패 시 null.
+ * 외부 HTML 을 그대로 저장하면 XSS 표면이 되므로 태그를 걷어내고 평문만 남긴다.
+ * 다만 블록 경계는 줄바꿈으로 보존해 개요/설명/해결방안 구분이 살아 있게 한다.
+ */
+function vg_kisa_parse_content(string $html): ?string {
+    $doc = new DOMDocument();
+    libxml_use_internal_errors(true);
+    $ok = $doc->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+    libxml_clear_errors();
+    if (!$ok) { return null; }
+
+    $node = (new DOMXPath($doc))->query('//div[contains(@class,"content_html")]');
+    if ($node === false || $node->length === 0) { return null; }
+
+    $inner = '';
+    foreach ($node->item(0)->childNodes as $child) {
+        $inner .= $doc->saveHTML($child);
+    }
+    $inner = preg_replace('#<(br|/p|/div|/li|/tr|/h[1-6]|/table)\b[^>]*>#i', "\n", $inner);
+    $text = html_entity_decode(strip_tags((string) $inner), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $text = preg_replace('/[ \t\x{00A0}]+/u', ' ', $text);
+    $text = preg_replace('/ *\n */u', "\n", $text);
+    $text = trim(preg_replace('/\n{3,}/', "\n\n", $text));
+
+    return $text === '' ? null : mb_substr($text, 0, 60000);
+}
+
+/**
+ * 공지 1건의 본문을 채운다. 이미 채워져 있으면 요청 없이 false.
+ * 본문에만 등장하는 CVE 를 흡수해 cve_ids 를 보강한다(제목에 없는 경우가 흔하다).
+ * @return bool 실제로 본문을 새로 저장했는지
+ */
+function vg_advisory_fill_content(PDO $pdo, string $url): bool {
+    $url = vg_kisa_canon_url($url);
+    $st = $pdo->prepare('SELECT id, cve_ids, content FROM tb_advisories WHERE url = ? AND is_deleted = 0 LIMIT 1');
+    $st->execute([$url]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row || ($row['content'] !== null && $row['content'] !== '')) {
+        return false;
+    }
+
+    $r = vg_http_raw('GET', $url, [], 30);
+    if ($r['code'] !== 200 || $r['body'] === '') {
+        throw new RuntimeException("KISA 상세 fetch 실패 (HTTP {$r['code']}) $url");
+    }
+    $text = vg_kisa_parse_content($r['body']);
+    if ($text === null) {
+        throw new RuntimeException("KISA 본문 파싱 실패 $url");
+    }
+
+    $id = (int) $row['id'];
+    $pdo->prepare('UPDATE tb_advisories SET content=?, content_fetched_at=NOW() WHERE id=?')
+        ->execute([$text, $id]);
+
+    preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $text, $m);
+    if ($m[0]) {
+        $cur    = array_filter(array_map('trim', explode(',', (string) $row['cve_ids'])));
+        $merged = array_unique(array_merge($cur, array_map('strtoupper', $m[0])));
+        sort($merged);
+        $joined = mb_substr(implode(',', $merged), 0, 500);
+        if ($joined !== (string) $row['cve_ids']) {
+            $pdo->prepare('UPDATE tb_advisories SET cve_ids=? WHERE id=?')->execute([$joined, $id]);
+        }
+        foreach ($merged as $cve) {
+            vg_upsert_cve($pdo, $cve, null, null, null);
+        }
+    }
+    return true;
+}
+
 function vg_upsert_affected(PDO $pdo, string $cve, ?string $eco, string $pkg, ?string $fixed): void {
     $chk = $pdo->prepare('SELECT id FROM tb_cve_affected_packages WHERE cve_id=? AND package_name=? LIMIT 1');
     $chk->execute([$cve, $pkg]);
@@ -419,6 +490,12 @@ final class VgKisaConnector implements VgFeedConnector {
             // 제목에 CVE 가 있으면 cves 에도 등록(국내공지 근거 확보)
             foreach ($m[0] as $cve) {
                 vg_upsert_cve($pdo, strtoupper($cve), null, null, null);
+            }
+            // 본문 수집(미수집 건만 1회 요청). 상세 1건이 실패해도 목록 수집은 계속한다.
+            try {
+                vg_advisory_fill_content($pdo, $link);
+            } catch (Throwable $e) {
+                error_log('[kisa_feed] 본문 스킵: ' . $e->getMessage());
             }
         }
         return [count($items), $up];
