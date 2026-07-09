@@ -102,8 +102,8 @@ vg_header('사용자', 'users');
           ['label' => 'ID'],
           ['label' => '아이디'],
           ['label' => '역할'],
-          ['label' => '생성'],
-          ['label' => '마지막 로그인'],
+          ['label' => '생성', 'nowrap' => true],
+          ['label' => '마지막 로그인', 'nowrap' => true],
           ['label' => '작업'],
       ],
       $users,
@@ -118,10 +118,10 @@ vg_header('사용자', 'users');
                   $id = (int) $u['id'];
                   // 정규화된 현재 역할(레거시 viewer→user).
                   $cur = $u['role'] === 'viewer' ? 'user' : (string) $u['role'];
-                  $html = '<div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;">';
+                  $html = '<div class="actions">';
                   // 역할 변경(자기 자신 제외 — 자기 역할강등 방지).
                   if ($id !== $meId) {
-                      $html .= '<form method="post" style="margin:0;display:inline-flex;gap:.2rem;">'
+                      $html .= '<form method="post">'
                           . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                           . '<input type="hidden" name="action" value="role">'
                           . '<input type="hidden" name="id" value="' . $id . '">'
@@ -131,7 +131,7 @@ vg_header('사용자', 'users');
                       $html .= '<span class="why">(본인)</span>';
                   }
                   // 비번 초기화.
-                  $html .= '<form method="post" style="margin:0;display:inline-flex;gap:.2rem;" onsubmit="return confirm(\'비밀번호를 초기화할까요?\');">'
+                  $html .= '<form method="post" onsubmit="return confirm(\'비밀번호를 초기화할까요?\');">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="reset">'
                       . '<input type="hidden" name="id" value="' . $id . '">'
@@ -139,7 +139,7 @@ vg_header('사용자', 'users');
                       . '<button class="btn-sm" style="background:#9e6a03;">초기화</button></form>';
                   // 삭제(자기 자신 제외).
                   if ($id !== $meId) {
-                      $html .= '<form method="post" style="margin:0;" onsubmit="return confirm(\'삭제할까요?\');">'
+                      $html .= '<form method="post" onsubmit="return confirm(\'삭제할까요?\');">'
                           . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                           . '<input type="hidden" name="action" value="delete">'
                           . '<input type="hidden" name="id" value="' . $id . '">'

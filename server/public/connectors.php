@@ -132,7 +132,7 @@ vg_header('피드 커넥터', 'connectors');
   vg_table(
       [
           ['label' => '이름'], ['label' => '타입'], ['label' => '스케줄'], ['label' => '활성'],
-          ['label' => '마지막 실행'], ['label' => '다음 실행'], ['label' => '상태'], ['label' => '작업'],
+          ['label' => '마지막 실행', 'nowrap' => true], ['label' => '다음 실행', 'nowrap' => true], ['label' => '상태'], ['label' => '작업'],
       ],
       $connectors,
       [
@@ -154,10 +154,10 @@ vg_header('피드 커넥터', 'connectors');
                   }
                   return $html;
               },
-              7 => fn($c) => '<div style="white-space:nowrap;">'
-                  . '<form method="post" style="margin:0;display:inline;"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . (int) $c['id'] . '"><button class="btn-sm" style="background:#1f6feb;">지금 실행</button></form> '
-                  . '<a class="btn-sm" style="display:inline-block;background:#30363d;color:#fff;border-radius:8px;" href="?edit=' . (int) $c['id'] . '">편집</a> '
-                  . '<form method="post" style="margin:0;display:inline;" onsubmit="return confirm(\'삭제할까요?\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int) $c['id'] . '"><button class="btn-sm" style="background:#6e2830;">삭제</button></form>'
+              7 => fn($c) => '<div class="actions">'
+                  . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . (int) $c['id'] . '"><button class="btn-sm" style="background:#1f6feb;">지금 실행</button></form>'
+                  . '<a class="btn-sm" style="background:#30363d;color:#fff;" href="?edit=' . (int) $c['id'] . '">편집</a>'
+                  . '<form method="post" onsubmit="return confirm(\'삭제할까요?\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int) $c['id'] . '"><button class="btn-sm" style="background:#6e2830;">삭제</button></form>'
                   . '</div>',
           ],
       ]
@@ -240,7 +240,7 @@ vg_header('피드 커넥터', 'connectors');
             ['label' => '상태'],
             ['label' => '수집/저장'],
             ['label' => '메시지'],
-            ['label' => '시각'],
+            ['label' => '시각', 'nowrap' => true],
         ],
         $logs,
         [

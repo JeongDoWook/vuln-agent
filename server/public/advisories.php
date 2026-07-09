@@ -64,7 +64,7 @@ vg_header('국내 보안공지', 'advisories');
   $emptyMsg = $q !== '' ? '조건에 맞는 공지가 없습니다.' : '아직 수집된 공지가 없습니다. 피드에서 KISA 보안공지 커넥터를 실행하세요.';
   vg_table(
       [
-          ['label' => '발행일'],
+          ['label' => '발행일', 'nowrap' => true],
           ['label' => '제목'],
           ['label' => '관련 CVE'],
       ],

@@ -105,7 +105,7 @@ vg_header($cveId !== '' ? $cveId : 'CVE', 'findings');
             ['label' => '상태', 'key' => 'runtime_status'],
             ['label' => '패키지', 'key' => 'package_name'],
             ['label' => '설치 버전'],
-            ['label' => '수집일'],
+            ['label' => '수집일', 'nowrap' => true],
         ],
         $locations,
         [

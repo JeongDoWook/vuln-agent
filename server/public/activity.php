@@ -65,7 +65,7 @@ vg_header('감사로그', 'activity');
   <?php
   vg_table(
       [
-          ['label' => '시각'],
+          ['label' => '시각', 'nowrap' => true],
           ['label' => '범위'],
           ['label' => '행위'],
           ['label' => '주체'],
