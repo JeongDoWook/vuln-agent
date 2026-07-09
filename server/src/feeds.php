@@ -11,6 +11,16 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';   // vg_log_activity
 
+/**
+ * 긴 텍스트(설명·본문) 저장 상한(글자 수). 폭주한 응답으로부터 DB 를 지키는 안전장치일 뿐,
+ * 정상 데이터를 자르기 위한 값이 아니다.
+ *
+ * 실제로 이 상한을 2000 으로 두는 바람에 NVD 설명 2,817건이 문장 중간에서 잘렸다.
+ * 저장 컬럼은 MEDIUMTEXT(16MB) 이므로 6만 글자는 넉넉히 들어간다.
+ * (TEXT 는 65,535 "바이트" 라 한글이 섞이면 글자 수가 훨씬 줄어든다 — 그래서 MEDIUMTEXT.)
+ */
+const VG_TEXT_MAX = 60000;
+
 // ─────────────────────────────────────────────────────────────────────────
 // HTTP (curl)
 // ─────────────────────────────────────────────────────────────────────────
@@ -203,7 +213,7 @@ function vg_kisa_parse_content(string $html): ?string {
     $text = preg_replace('/ *\n */u', "\n", $text);
     $text = trim(preg_replace('/\n{3,}/', "\n\n", $text));
 
-    return $text === '' ? null : mb_substr($text, 0, 60000);
+    return $text === '' ? null : mb_substr($text, 0, VG_TEXT_MAX);
 }
 
 /**
@@ -302,8 +312,8 @@ final class VgKevConnector implements VgFeedConnector {
             $id = $v['cveID'] ?? '';
             if ($id === '') { continue; }
             $note = trim(($v['vendorProject'] ?? '') . ' ' . ($v['product'] ?? '') . ' — ' . ($v['vulnerabilityName'] ?? ''));
-            vg_upsert_kev($pdo, $id, $v['dateAdded'] ?? null, mb_substr($note, 0, 250));
-            vg_upsert_cve($pdo, $id, mb_substr((string) ($v['shortDescription'] ?? ''), 0, 2000), null, null);
+            vg_upsert_kev($pdo, $id, $v['dateAdded'] ?? null, mb_substr($note, 0, VG_TEXT_MAX));
+            vg_upsert_cve($pdo, $id, mb_substr((string) ($v['shortDescription'] ?? ''), 0, VG_TEXT_MAX), null, null);
             $up++;
         }
         $pdo->commit();
@@ -444,7 +454,7 @@ function vg_nvd_upsert_item(PDO $pdo, array $item): bool {
         }
     }
     $pub = !empty($c['published']) ? substr((string) $c['published'], 0, 10) : null;
-    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, 2000), $cvss, $pub);
+    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, VG_TEXT_MAX), $cvss, $pub);
     return true;
 }
 

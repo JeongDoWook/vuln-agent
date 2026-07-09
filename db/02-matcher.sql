@@ -6,7 +6,7 @@ SET NAMES utf8mb4;
 -- ── CVE 기본 정보 (NVD/OSV 미러에서 채움. 지금은 시드) ──────────────────
 CREATE TABLE IF NOT EXISTS tb_cves (
   cve_id    VARCHAR(32) NOT NULL,
-  summary   TEXT NULL,
+  summary   MEDIUMTEXT NULL,
   cvss      DECIMAL(3,1) NULL,       -- CVSS v3 기본점수
   published DATE NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS tb_cves (
 CREATE TABLE IF NOT EXISTS tb_kev_catalog (
   cve_id     VARCHAR(32) NOT NULL,
   date_added DATE NULL,
-  note       VARCHAR(255) NULL,
+  note       TEXT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   is_deleted TINYINT(1) NOT NULL DEFAULT 0,
