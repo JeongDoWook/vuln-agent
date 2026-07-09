@@ -250,7 +250,10 @@ function vg_advisory_fill_content(PDO $pdo, string $url): bool {
         $cur    = array_filter(array_map('trim', explode(',', (string) $row['cve_ids'])), 'vg_is_cve_id');
         $merged = array_unique(array_merge($cur, $found));
         sort($merged);
-        $joined = mb_substr(implode(',', $merged), 0, 500);
+        // 절단하지 않는다. 과거 varchar(512) 시절 mb_substr(...,500) 이 마지막 ID 를 한가운데서
+        // 잘라 "CVE-2" 같은 조각을 남겼고(운영 114건), 패치데이 공지는 CVE 263개 중 36개만 남았다.
+        // 컬럼은 TEXT 로 넓혔다(db/_migrations/2026-07-advisories-cveids-text.sql).
+        $joined = implode(',', $merged);
         if ($joined !== (string) $row['cve_ids']) {
             $pdo->prepare('UPDATE tb_advisories SET cve_ids=? WHERE id=?')->execute([$joined, $id]);
         }
