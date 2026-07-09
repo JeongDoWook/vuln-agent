@@ -2,7 +2,8 @@
 # vuln-agent · Compose Prod (운영 환경 · 리눅스 서버)
 # =============================================================================
 # 특징:
-#   - 소스 마운트 없음 → 이미지에 구워진(COPY) 코드로 동작. 배포 = 재빌드.
+#   - 소스를 읽기전용으로 마운트 → PHP 만 바뀌면 git pull 로 끝(재빌드·다운타임 없음).
+#     Dockerfile·compose·caddy 가 바뀔 때만 재빌드. 판단은 deploy/update.sh 가 한다.
 #   - DB 포트 미노출 → 컨테이너 내부 네트워크(vulnagent)로만 접근. 공격면 축소.
 #   - 앞단 Caddy 리버스 프록시가 TLS(HTTPS) 종료 → web 은 내부(80)로만.
 #     외부 8080 포워딩을 재사용(https://ost-server.duckdns.org:8080), 새 포트 개방 불필요.
@@ -28,11 +29,18 @@ services:
     #   127.0.0.1 바인딩이라 외부/네트워크에서는 접근 불가(서버 자신에서만).
     ports:
       - "127.0.0.1:8081:80"
-    #   소스 마운트 없음 → 이미지 코드 사용.
+    volumes:
+      # 소스를 읽기전용으로 마운트 → PHP 만 바뀐 배포는 git pull 로 끝난다(재빌드·다운타임 없음).
+      #   opcache.validate_timestamps=1, revalidate_freq=2 라 덮어쓰면 2초 안에 새 코드가 로드된다.
+      #   ro: 코드가 자기 디렉토리에 쓰는 일이 없고(확인됨), 웹셸이 코드를 덮어쓰는 것도 막는다.
+      #   이미지의 COPY 는 그대로 둔다 — 마운트 없이 띄워도 동작하는 안전망.
+      - ../server:/var/www/html:ro
 
   scheduler:
     container_name: vulnagent-scheduler
-    # 운영: 소스 마운트 없음 → 이미지에 구워진 bin/scheduler.php 사용.
+    volumes:
+      # web 과 같은 이유. scheduler 는 매 분 php 를 새로 띄우므로 다음 주기부터 새 코드를 쓴다.
+      - ../server:/var/www/html:ro
 
   # --- Caddy: HTTPS 종료 리버스 프록시 -------------------------------------
   #   Let's Encrypt 인증서를 DuckDNS DNS-01 로 발급(인바운드 80/443 불필요).
