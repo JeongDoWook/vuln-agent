@@ -40,7 +40,9 @@ services:
       - mysql_root_password
       - mysql_password
     volumes:
-      - db_data:/var/lib/mysql
+      # DB_DATA 미설정=named volume(db_data, dev/Windows). 절대경로면 서버 바인드마운트(prod).
+      #   운영은 .env.prod 에 DB_DATA=/data/vulnagent/mysql 로 서버 디스크에 영속(down -v 에도 안전).
+      - ${DB_DATA:-db_data}:/var/lib/mysql
       - ./db:/docker-entrypoint-initdb.d:ro
       # my.cnf 는 운영 전용(compose.prod.yml) — Windows dev 는 기본값 사용
     healthcheck:
