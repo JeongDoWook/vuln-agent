@@ -96,18 +96,51 @@ function vg_upsert_kev(PDO $pdo, string $id, ?string $dateAdded, ?string $note):
     $st->execute([$id, $dateAdded ?: null, $note]);
 }
 
-// 국내 보안공지(KISA 등) upsert. url 기준 dedup. 신규면 true.
-function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url, ?string $published, ?string $cveIds): bool {
-    $chk = $pdo->prepare('SELECT id FROM tb_advisories WHERE url = ? LIMIT 1');
+// 보호나라 공지 URL 정규화. 같은 공지라도 유입 경로마다 쿼리스트링이 달라진다.
+//   RSS  : view.do?searchCnd=&bbsId=..&searchWrd=&menuNo=..&pageIndex=1&categoryCode=&nttId=72127
+//   목록N: view.do?searchCnd=&bbsId=..&searchWrd=&menuNo=..&pageIndex=5&categoryCode=&nttId=72127
+// pageIndex 가 섞여 있으면 url 기준 dedup 이 깨져 같은 공지가 페이지 수만큼 중복된다.
+// 실제 식별자는 nttId 뿐. 조회에 필요한 bbsId/menuNo 만 남기고 나머지는 버린다.
+function vg_kisa_canon_url(string $url): string {
+    $p = parse_url($url);
+    if (!isset($p['host'], $p['path']) || stripos($p['host'], 'boho.or.kr') === false) {
+        return $url;  // 보호나라 URL 이 아니면 손대지 않는다
+    }
+    parse_str($p['query'] ?? '', $q);
+    if (empty($q['nttId'])) {
+        return $url;  // nttId 없으면 정규화 불가(원본 유지)
+    }
+    $keep = [];
+    foreach (['bbsId', 'menuNo', 'nttId'] as $k) {
+        if (!empty($q[$k])) { $keep[$k] = $q[$k]; }
+    }
+    return 'https://' . $p['host'] . $p['path'] . '?' . http_build_query($keep);
+}
+
+// 국내 보안공지(KISA 등) upsert. 정규화한 url 기준 dedup.
+//   KISA 는 수정일을 노출하지 않으므로(RSS·목록·상세 모두 등록일 하나뿐) 저장된 값과
+//   비교해 실제로 달라졌을 때만 UPDATE 한다. 그래야 updated_at 이 "변경을 관측한 시각"이
+//   되고, 백필을 몇 번 돌려도 멱등하다.
+//   반환: 'new' | 'updated' | 'unchanged'
+function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url, ?string $published, ?string $cveIds): string {
+    $url = vg_kisa_canon_url($url);
+    $chk = $pdo->prepare('SELECT id, title, published, cve_ids FROM tb_advisories WHERE url = ? LIMIT 1');
     $chk->execute([$url]);
-    if ($chk->fetchColumn()) {
-        $pdo->prepare('UPDATE tb_advisories SET title=?, published=?, cve_ids=? WHERE url=?')
-            ->execute([$title, $published, $cveIds, $url]);
-        return false;
+    $cur = $chk->fetch(PDO::FETCH_ASSOC);
+    if ($cur) {
+        $same = $cur['title'] === $title
+             && (string) $cur['published'] === (string) $published
+             && (string) $cur['cve_ids'] === (string) $cveIds;
+        if ($same) {
+            return 'unchanged';
+        }
+        $pdo->prepare('UPDATE tb_advisories SET title=?, published=?, cve_ids=? WHERE id=?')
+            ->execute([$title, $published, $cveIds, (int) $cur['id']]);
+        return 'updated';
     }
     $pdo->prepare('INSERT INTO tb_advisories (source, title, url, published, cve_ids) VALUES (?,?,?,?,?)')
         ->execute([$source, $title, $url, $published, $cveIds]);
-    return true;
+    return 'new';
 }
 
 function vg_upsert_affected(PDO $pdo, string $cve, ?string $eco, string $pkg, ?string $fixed): void {
@@ -374,7 +407,8 @@ final class VgKisaConnector implements VgFeedConnector {
             }
             preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $title, $m);
             $cveIds = $m[0] ? implode(',', array_map('strtoupper', array_unique($m[0]))) : null;
-            if (vg_upsert_advisory($pdo, $source, mb_substr($title, 0, 500), $link, $pub, $cveIds)) {
+            // 신규·수정만 upserted 로 집계(unchanged 는 제외).
+            if (vg_upsert_advisory($pdo, $source, mb_substr($title, 0, 500), $link, $pub, $cveIds) !== 'unchanged') {
                 $up++;
             }
             // 제목에 CVE 가 있으면 cves 에도 등록(국내공지 근거 확보)
