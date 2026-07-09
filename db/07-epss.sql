@@ -8,6 +8,13 @@ ALTER TABLE tb_cves
   ADD COLUMN epss            DECIMAL(6,5) NULL AFTER cvss,
   ADD COLUMN epss_percentile DECIMAL(6,5) NULL AFTER epss;
 
+-- CVE 목록(cves.php) 정렬/필터용. is_deleted 선두 복합 인덱스라야
+-- "필터 후 정렬"이 filesort 없이 끝난다. NVD 전체 백필(20만+) 대비.
+ALTER TABLE tb_cves
+  ADD INDEX idx_cves_pub  (is_deleted, published),
+  ADD INDEX idx_cves_cvss (is_deleted, cvss),
+  ADD INDEX idx_cves_epss (is_deleted, epss);
+
 -- EPSS 커넥터 (기본 활성, 매일) — gzip CSV 다운로드해 보유 CVE 의 epss 갱신
 INSERT INTO tb_feed_connectors (name, connector_type, connection_json, schedule_json, enabled, last_status)
 VALUES

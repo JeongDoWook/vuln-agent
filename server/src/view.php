@@ -291,6 +291,7 @@ function vg_header(string $title, string $active = ''): void {
     <?php endif; ?>
     <?php if (vg_can('findings')): ?>
       <a class="link <?= $active==='findings'?'active':'' ?>" href="/findings.php">취약점</a>
+      <a class="link <?= $active==='cves'?'active':'' ?>" href="/cves.php">CVE</a>
     <?php endif; ?>
     <?php if (vg_can('advisories')): ?>
       <a class="link <?= $active==='advisories'?'active':'' ?>" href="/advisories.php">국내공지</a>
