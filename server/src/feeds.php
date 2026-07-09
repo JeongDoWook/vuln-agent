@@ -183,23 +183,34 @@ function vg_kisa_parse_content(string $html): ?string {
  */
 function vg_advisory_fill_content(PDO $pdo, string $url): bool {
     $url = vg_kisa_canon_url($url);
-    $st = $pdo->prepare('SELECT id, cve_ids, content FROM tb_advisories WHERE url = ? AND is_deleted = 0 LIMIT 1');
+    $st = $pdo->prepare('SELECT id, cve_ids, content_fetched_at FROM tb_advisories WHERE url = ? AND is_deleted = 0 LIMIT 1');
     $st->execute([$url]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$row || ($row['content'] !== null && $row['content'] !== '')) {
+    // "이미 시도했는가"는 content 가 아니라 content_fetched_at 이 판단한다. 본문 텍스트가
+    // 없는 공지도 있어서(아래) content='' 로 남는데, content 로 판단하면 매 수집마다 재시도한다.
+    if (!$row || $row['content_fetched_at'] !== null) {
         return false;
     }
 
+    $id = (int) $row['id'];
+
+    // HTTP 실패는 일시적일 수 있다 → 표시를 남기지 않고 예외. 다음 수집 때 재시도한다.
     $r = vg_http_raw('GET', $url, [], 30);
     if ($r['code'] !== 200 || $r['body'] === '') {
         throw new RuntimeException("KISA 상세 fetch 실패 (HTTP {$r['code']}) $url");
     }
+
     $text = vg_kisa_parse_content($r['body']);
     if ($text === null) {
-        throw new RuntimeException("KISA 본문 파싱 실패 $url");
+        // 본문 텍스트가 없는 공지가 실제로 있다(전체의 0.3%).
+        //   - 보안공지 일부: content_html 안이 이미지뿐이라 추출 텍스트가 &nbsp; 한 글자
+        //   - 경보단계: 게시글 본문 영역 자체가 없고 제목이 내용의 전부
+        // 다시 긁어도 결과가 같으므로 시도 시각만 남겨 무한 재시도를 막는다.
+        $pdo->prepare("UPDATE tb_advisories SET content='', content_fetched_at=NOW() WHERE id=?")
+            ->execute([$id]);
+        return false;
     }
 
-    $id = (int) $row['id'];
     $pdo->prepare('UPDATE tb_advisories SET content=?, content_fetched_at=NOW() WHERE id=?')
         ->execute([$text, $id]);
 

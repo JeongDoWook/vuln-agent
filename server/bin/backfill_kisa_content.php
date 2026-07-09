@@ -26,8 +26,10 @@ $sleepUs  = (isset($opts['sleep-ms']) ? max(0, (int) $opts['sleep-ms']) : 300) *
 
 $pdo = vg_pdo();
 
+// 기준은 content 가 아니라 content_fetched_at. 본문 텍스트가 없는 공지(이미지 전용·경보단계)는
+// content='' 로 저장되므로, content IS NULL 로 고르면 매 실행마다 걔들을 다시 긁는다.
 $sql = 'SELECT id, url FROM tb_advisories
-        WHERE is_deleted = 0 AND content IS NULL AND url LIKE "%boho.or.kr%"
+        WHERE is_deleted = 0 AND content_fetched_at IS NULL AND url LIKE "%boho.or.kr%"
         ORDER BY published DESC, id DESC';
 if ($limit > 0) { $sql .= ' LIMIT ' . $limit; }
 

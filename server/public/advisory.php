@@ -63,6 +63,11 @@ vg_header($adv ? (string) $adv['title'] : '국내 보안공지', 'advisories');
     <strong>본문</strong>
     <?php if (!empty($adv['content'])): ?>
       <p class="why" style="margin:.6rem 0 0;white-space:pre-wrap;line-height:1.7;"><?= vg_h($adv['content']) ?></p>
+    <?php elseif (!empty($adv['content_fetched_at'])): ?>
+      <?php // 수집은 했지만 본문 텍스트가 없는 공지(이미지 전용·경보단계). 재수집해도 같다. ?>
+      <p class="why" style="margin:.6rem 0 0;">
+        이 공지는 본문이 이미지나 표로만 되어 있어 옮겨올 텍스트가 없습니다. 아래 원문에서 확인하세요.
+      </p>
     <?php else: ?>
       <p class="why" style="margin:.6rem 0 0;">
         본문이 아직 수집되지 않았습니다. 아래 원문 링크로 확인하세요.
