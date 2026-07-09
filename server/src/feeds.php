@@ -11,6 +11,16 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';   // vg_log_activity
 
+/**
+ * 긴 텍스트(설명·본문) 저장 상한(글자 수). 폭주한 응답으로부터 DB 를 지키는 안전장치일 뿐,
+ * 정상 데이터를 자르기 위한 값이 아니다.
+ *
+ * 실제로 이 상한을 2000 으로 두는 바람에 NVD 설명 2,817건이 문장 중간에서 잘렸다.
+ * 저장 컬럼은 MEDIUMTEXT(16MB) 이므로 6만 글자는 넉넉히 들어간다.
+ * (TEXT 는 65,535 "바이트" 라 한글이 섞이면 글자 수가 훨씬 줄어든다 — 그래서 MEDIUMTEXT.)
+ */
+const VG_TEXT_MAX = 60000;
+
 // ─────────────────────────────────────────────────────────────────────────
 // HTTP (curl)
 // ─────────────────────────────────────────────────────────────────────────
@@ -77,7 +87,37 @@ function vg_http_raw(string $method, string $url, array $headers = [], int $time
 // ─────────────────────────────────────────────────────────────────────────
 // upsert 헬퍼 (수집 결과 저장)
 // ─────────────────────────────────────────────────────────────────────────
+/**
+ * CVE-ID 형식 검증. 공지 본문·제목에서 정규식으로 긁은 값에는 원문 오탈자가 섞인다
+ * (실제로 CVE-0215-8451, CVE-2016-03246 이 tb_cves 에 들어갔다).
+ *   - 연도는 1999 ~ 내년.
+ *   - 일련번호는 4자리면 선행 0 허용(CVE-2014-0160 = Heartbleed), 5자리 이상이면 금지.
+ */
+function vg_is_cve_id(string $id): bool {
+    if (!preg_match('/^CVE-([0-9]{4})-([0-9]{4}|[1-9][0-9]{4,6})$/', $id, $m)) {
+        return false;
+    }
+    $year = (int) $m[1];
+    return $year >= 1999 && $year <= (int) gmdate('Y') + 1;
+}
+
+/** 텍스트에서 유효한 CVE-ID 만 뽑는다(대문자·중복제거·정렬). 오탈자는 버린다. */
+function vg_extract_cve_ids(string $text): array {
+    preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $text, $m);
+    $ids = array_values(array_unique(array_filter(
+        array_map('strtoupper', $m[0]),
+        'vg_is_cve_id'
+    )));
+    sort($ids);
+    return $ids;
+}
+
+// tb_cves 로 들어가는 유일한 통로. 여기서 막으면 모든 커넥터·백필이 함께 보호된다.
 function vg_upsert_cve(PDO $pdo, string $id, ?string $summary, ?float $cvss, ?string $published): void {
+    if (!vg_is_cve_id($id)) {
+        error_log("[cve] 잘못된 CVE-ID 무시: $id");
+        return;
+    }
     $st = $pdo->prepare(
         'INSERT INTO tb_cves (cve_id, summary, cvss, published) VALUES (?,?,?,?)
          ON DUPLICATE KEY UPDATE
@@ -173,7 +213,7 @@ function vg_kisa_parse_content(string $html): ?string {
     $text = preg_replace('/ *\n */u', "\n", $text);
     $text = trim(preg_replace('/\n{3,}/', "\n\n", $text));
 
-    return $text === '' ? null : mb_substr($text, 0, 60000);
+    return $text === '' ? null : mb_substr($text, 0, VG_TEXT_MAX);
 }
 
 /**
@@ -214,12 +254,16 @@ function vg_advisory_fill_content(PDO $pdo, string $url): bool {
     $pdo->prepare('UPDATE tb_advisories SET content=?, content_fetched_at=NOW() WHERE id=?')
         ->execute([$text, $id]);
 
-    preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $text, $m);
-    if ($m[0]) {
-        $cur    = array_filter(array_map('trim', explode(',', (string) $row['cve_ids'])));
-        $merged = array_unique(array_merge($cur, array_map('strtoupper', $m[0])));
+    $found = vg_extract_cve_ids($text);
+    if ($found) {
+        // 기존 값에도 과거의 오탈자가 남아 있을 수 있으므로 함께 거른다.
+        $cur    = array_filter(array_map('trim', explode(',', (string) $row['cve_ids'])), 'vg_is_cve_id');
+        $merged = array_unique(array_merge($cur, $found));
         sort($merged);
-        $joined = mb_substr(implode(',', $merged), 0, 500);
+        // 절단하지 않는다. 과거 varchar(512) 시절 mb_substr(...,500) 이 마지막 ID 를 한가운데서
+        // 잘라 "CVE-2" 같은 조각을 남겼고(운영 114건), 패치데이 공지는 CVE 263개 중 36개만 남았다.
+        // 컬럼은 TEXT 로 넓혔다(db/_migrations/2026-07-advisories-cveids-text.sql).
+        $joined = implode(',', $merged);
         if ($joined !== (string) $row['cve_ids']) {
             $pdo->prepare('UPDATE tb_advisories SET cve_ids=? WHERE id=?')->execute([$joined, $id]);
         }
@@ -268,8 +312,8 @@ final class VgKevConnector implements VgFeedConnector {
             $id = $v['cveID'] ?? '';
             if ($id === '') { continue; }
             $note = trim(($v['vendorProject'] ?? '') . ' ' . ($v['product'] ?? '') . ' — ' . ($v['vulnerabilityName'] ?? ''));
-            vg_upsert_kev($pdo, $id, $v['dateAdded'] ?? null, mb_substr($note, 0, 250));
-            vg_upsert_cve($pdo, $id, mb_substr((string) ($v['shortDescription'] ?? ''), 0, 2000), null, null);
+            vg_upsert_kev($pdo, $id, $v['dateAdded'] ?? null, mb_substr($note, 0, VG_TEXT_MAX));
+            vg_upsert_cve($pdo, $id, mb_substr((string) ($v['shortDescription'] ?? ''), 0, VG_TEXT_MAX), null, null);
             $up++;
         }
         $pdo->commit();
@@ -389,6 +433,7 @@ final class VgOsvConnector implements VgFeedConnector {
 //   페이지를 키워도 총 시간은 같다. 타임아웃 위험만 커지므로 500 으로 잡는다.
 const VG_NVD_PER_PAGE   = 500;
 const VG_NVD_TIMEOUT    = 300;    // 초. 느린 응답(50KB/s)에 여유를 둔다.
+const VG_NVD_MAX_RETRY  = 5;      // 일시적 오류(HTTP/2 스트림 끊김·5xx·타임아웃) 재시도 횟수
 const VG_NVD_MAX_WINDOW = 120;    // NVD 가 허용하는 최대 날짜 범위(일). 넘으면 404.
 
 /** NVD 응답 1건을 tb_cves 로 upsert. @return bool 실제로 처리했는지 */
@@ -409,8 +454,41 @@ function vg_nvd_upsert_item(PDO $pdo, array $item): bool {
         }
     }
     $pub = !empty($c['published']) ? substr((string) $c['published'], 0, 10) : null;
-    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, 2000), $cvss, $pub);
+    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, VG_TEXT_MAX), $cvss, $pub);
     return true;
+}
+
+/**
+ * NVD 페이지 1건을 가져온다. 일시적 오류는 지수 백오프로 재시도한다.
+ *
+ * 실제로 겪은 실패(2026-07-09, 24워커 병렬 백필):
+ *   "NVD fetch 실패 (HTTP 200) HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR"
+ *   → 응답이 중간에 끊겨 code=200 인데 JSON 이 없다. 그래서 code 만 보면 안 된다.
+ *
+ * 영구 오류(잘못된 API 키·잘못된 파라미터)는 재시도해도 같으므로 즉시 포기한다.
+ * NVD 는 키가 틀리면 404 + "message: Invalid apiKey." 를, 범위가 120일을 넘으면 404 를 준다.
+ */
+function vg_nvd_fetch_page(string $url, array $headers, int $startIndex): array {
+    $delay = 1;
+    $last  = null;
+    for ($try = 1; $try <= VG_NVD_MAX_RETRY; $try++) {
+        $r = vg_http_json('GET', $url, null, $headers, VG_NVD_TIMEOUT);
+        if ($r['code'] === 200 && isset($r['json']['vulnerabilities'])) {
+            return $r;
+        }
+        $last = $r;
+        if (in_array($r['code'], [400, 401, 403, 404], true)) {
+            throw new RuntimeException("NVD fetch 실패 (HTTP {$r['code']}) startIndex=$startIndex {$r['error']} — 재시도 안 함(영구 오류)");
+        }
+        if ($try < VG_NVD_MAX_RETRY) {
+            error_log("[nvd] startIndex=$startIndex 재시도 $try/" . VG_NVD_MAX_RETRY . " ({$delay}초 뒤): HTTP {$r['code']} {$r['error']}");
+            sleep($delay);
+            $delay *= 2;   // 1 → 2 → 4 → 8
+        }
+    }
+    throw new RuntimeException(
+        "NVD fetch 실패 (HTTP {$last['code']}) startIndex=$startIndex {$last['error']} — " . VG_NVD_MAX_RETRY . '회 재시도 후 포기'
+    );
 }
 
 /**
@@ -432,10 +510,7 @@ function vg_nvd_sync(PDO $pdo, array $conn, array $dateParams = [], int $startIn
             'resultsPerPage' => VG_NVD_PER_PAGE,
             'startIndex'     => $startIndex,
         ]);
-        $r = vg_http_json('GET', "$base?$qs", null, $headers, VG_NVD_TIMEOUT);
-        if ($r['code'] !== 200 || !isset($r['json']['vulnerabilities'])) {
-            throw new RuntimeException("NVD fetch 실패 (HTTP {$r['code']}) startIndex=$startIndex {$r['error']}");
-        }
+        $r = vg_nvd_fetch_page("$base?$qs", $headers, $startIndex);
         $total = (int) ($r['json']['totalResults'] ?? 0);
 
         $pdo->beginTransaction();
@@ -529,15 +604,15 @@ final class VgKisaConnector implements VgFeedConnector {
                 $ts = strtotime((string) $it->pubDate);
                 if ($ts !== false) { $pub = date('Y-m-d', $ts); }
             }
-            preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $title, $m);
-            $cveIds = $m[0] ? implode(',', array_map('strtoupper', array_unique($m[0]))) : null;
+            $titleCves = vg_extract_cve_ids($title);
+            $cveIds    = $titleCves ? implode(',', $titleCves) : null;
             // 신규·수정만 upserted 로 집계(unchanged 는 제외). 제목 정규화는 upsert 가 담당.
             if (vg_upsert_advisory($pdo, $source, $title, $link, $pub, $cveIds) !== 'unchanged') {
                 $up++;
             }
             // 제목에 CVE 가 있으면 cves 에도 등록(국내공지 근거 확보)
-            foreach ($m[0] as $cve) {
-                vg_upsert_cve($pdo, strtoupper($cve), null, null, null);
+            foreach ($titleCves as $cve) {
+                vg_upsert_cve($pdo, $cve, null, null, null);
             }
             // 본문 수집(미수집 건만 1회 요청). 상세 1건이 실패해도 목록 수집은 계속한다.
             try {
