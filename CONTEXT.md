@@ -96,10 +96,10 @@ vuln-agent/
 │   └── install-agent.sh          # 각 서버 배포·스케줄(systemd-timer/cron)
 ├── server/
 │   ├── Dockerfile
-│   ├── public/   # ingest·rematch·feed_preview(API) + login/index/host/findings/cve/advisories/connectors/users/activity(웹)
+│   ├── public/   # ingest·rematch·feed_preview(API) + login/index/host/findings/cve/cves/advisories/advisory/connectors/users/activity(웹)
 │   ├── src/      # config·db·auth·view·matcher·feeds·audit(감사로그·소프트삭제)
-│   └── bin/      # scheduler.php(사이드카)·sync.php·enrich_osv.php
-├── db/           # 01~09 *.sql (초기화 시 자동 적용, tb_ 접두사+감사4컬럼)
+│   └── bin/      # scheduler.php(사이드카)·sync.php·enrich_osv.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
+├── db/           # 01~11 *.sql (초기화 시 자동 적용, tb_ 접두사+감사4컬럼)
 │   └── _migrations/   # 기존 프로덕션 볼륨용 수동 1회 마이그레이션
 └── docs/         # 아키텍처·기획안·설명글·프로세스
 ```
@@ -152,21 +152,25 @@ vuln-agent/
 - [x] **2. 매처** — 노출 맥락 우선순위(외부노출+로드+KEV=CRITICAL), findings + 아키텍처 다이어그램
 - [x] **3. 웹** — 로그인(users 세션) → 대시보드 → 호스트 상세 → 취약점(+조치·EPSS·상태) · 사용자관리
 - [x] **4a. CVE 피드 커넥터** — 커넥터 5종(KEV/OSV/NVD/KISA/EPSS), UI 설정·미리보기·cron 스케줄, 스케줄러 사이드카
-- [x] **4b. 국내특화** — KISA 보안공지 수집·표시
+- [x] **4b. 국내특화** — KISA 보안공지 수집·표시(상세 본문까지) + 공지 상세 페이지 `advisory.php`
+- [x] **NVD 전체 데이터** — tb_cves 약 36만건. 주기 수집을 수정일(lastMod) 기준으로 전환(뒤늦게 CVSS 붙는 CVE 추적, 120일 상한).
+      전체 백필 `bin/backfill_nvd.php`(멱등·재개, 병렬 워커로 가속). CVE 목록 페이지 `cves.php`(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬).
+      API 키는 DB 저장(코드·저장소에 없음). 일시 오류 재시도·CVE-ID 형식 검증·긴 텍스트 컬럼 확장(summary MEDIUMTEXT, cve_ids/note TEXT).
 - [x] **정밀 런타임 수집** — 실행 프로세스 전체(실행중/사용중) + 노출(포트) → 상태 5단계 구분
 - [x] **OSV 자동 매칭** — 수집 전 패키지를 OSV 조회(배포판 ecosystem, 소스패키지·버전필터) → 취약점 전체 발굴 + 조치안(fixed_version)
 - [x] **EPSS/KEV** — 악용확률 + 악용목록으로 우선순위·정렬
 - [x] **배포 설치기** — `agent/install-agent.sh` (systemd-timer 우선/cron 폴백, 매시간 자동 수집)
 - [x] **HTTPS 배포** — `caddy/` 리버스 프록시가 TLS 종료(Let's Encrypt DNS-01, 현재 자체서명).
       접속 `https://ost-server.duckdns.org:8080`. web·db 는 내부망/루프백(`127.0.0.1:8081`)만 노출.
-- [x] **웹 대개편** — 페이지네이션(`vg_page_nav`) · 검색/필터(`vg_toolbar`, findings/advisories)
-      · CVE 상세 `cve.php` · 공통 렌더(`vg_table`) · 긴 텍스트 말줄임(`vg_trunc`)
+- [x] **무중단 배포** — prod 가 `../server` 를 읽기전용 마운트. PHP 만 바뀌면 `deploy/update.sh`(=`git pull`)로 끝(opcache 가 2초 내 반영).
+      Dockerfile·compose·caddy 변경 시에만 재빌드. 서버 디렉토리는 `/apps/vulnagent/{app,bin,etc,logs,data,backups}` 로 통합.
+- [x] **웹 대개편** — 페이지네이션(`vg_page_nav`) · 검색/필터(`vg_toolbar`, findings/advisories/cves)
+      · CVE 목록 `cves.php` · CVE 상세 `cve.php` · 공지 상세 `advisory.php` · 공통 렌더(`vg_table`) · 긴 텍스트 말줄임(`vg_trunc`)
 - [x] **DB 대개편** — 전 테이블 `tb_` 접두사 통일 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
       · 소프트삭제(`vg_soft_delete()`: users/feed_connectors/advisories/hosts/scans, findings 등 재계산
       캐시는 예외) · 활동 감사로그 `tb_activity_log`(`vg_log_activity()` — 로그인·커넥터저장/삭제/실행·
       사용자추가/삭제·ingest 수신을 기록) + 조회 화면 `activity.php`(admin 전용, scope 필터·페이지네이션).
-      마이그레이션: `db/01~09`(신규 볼륨) + `db/_migrations/2026-07-tb-audit.sql`(기존 프로덕션 볼륨
-      in-place, 1회성).
+      마이그레이션: `db/01~11`(신규 볼륨) + `db/_migrations/*.sql`(기존 프로덕션 볼륨 in-place, 1회성).
 - [ ] 대시보드 "다음 수집 예정", 시계열/추이, 알림, Python AI(제외)
 
 > 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·KEV/EPSS·설명가능성).
