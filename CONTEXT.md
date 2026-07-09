@@ -72,8 +72,9 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 
 ### `agent/install-agent.sh` — 배포 설치기
 각 대상 서버에서 `sudo ./install-agent.sh --server https://중앙:8080/ingest.php --token X --schedule hourly`.
-systemd-timer(우선)/cron 으로 주기 수집(기본 매시간) 등록 + 즉시 1회 실행(통신 확인). 토큰은
-`/etc/vuln-agent/agent.env`(600) 로 관리(ps 노출 방지). 컨테이너가 떠 있는 호스트에서도 다른
+systemd-timer(우선)/cron 으로 주기 수집(기본 매시간) 등록 + 즉시 1회 실행(통신 확인). 설치물은
+`--prefix`(기본 `/opt/vuln-agent`) 아래 `bin`/`etc`/`logs` 로 모이고, 토큰은
+`<prefix>/etc/agent.env`(600) 로 관리(ps 노출 방지). 컨테이너가 떠 있는 호스트에서도 다른
 mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토리(`collect_processes`) — 컨테이너
 오버레이 경로의 `dpkg -S` 전수조사로 멈추는 문제를 회피.
 
