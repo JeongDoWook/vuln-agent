@@ -54,8 +54,10 @@ if ($onlyBoard !== null && !isset(KISA_BOARDS[$onlyBoard])) {
 
 /**
  * 목록 페이지 1장에서 공지 행을 뽑는다.
- * 행 구조: <td class="sbj tal"><a href="/kr/bbs/view.do?...nttId=N">제목</a></td> ... <td class="date">YYYY-MM-DD</td>
- * @return list<array{title:string,url:string,published:?string}>
+ *   보안공지 : <td class="date">2026-06-03</td>
+ *   취약점정보: <td class="date" data-label="심각도 :">..</td> ... <td class="date" data-label="게시일 :">2026-02-27</td>
+ * 게시판마다 class="date" td 가 여러 개이고 속성도 붙는다. 날짜 형태인 td 만 게시일로 본다.
+ * @return list<array{title:string,url:string,published:string}>
  */
 function kisa_parse_rows(string $html): array {
     $out = [];
@@ -66,16 +68,16 @@ function kisa_parse_rows(string $html): array {
         if (!preg_match('#<a\s+href="([^"]*view\.do[^"]*)"[^>]*>(.*?)</a>#s', $row, $a)) {
             continue;  // 헤더 행 등
         }
-        if (!preg_match('#<td class="date">\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*</td>#', $row, $d)) {
-            continue;
+        if (!preg_match('#<td[^>]*class="date"[^>]*>\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*</td>#', $row, $d)) {
+            continue;  // 게시일 td 없음
         }
-        $href  = html_entity_decode($a[1], ENT_QUOTES, 'UTF-8');
-        $title = trim(html_entity_decode(strip_tags($a[2]), ENT_QUOTES, 'UTF-8'));
-        $title = trim(preg_replace('/\s+/u', ' ', $title));
+        // 제목 정규화(엔티티·공백·길이)는 vg_upsert_advisory 가 한다. 여기선 태그만 벗긴다.
+        $title = trim(strip_tags($a[2]));
         if ($title === '') {
             continue;
         }
-        // href 는 상대경로. vg_kisa_canon_url 은 절대 URL 만 정규화하므로 여기서 붙인다.
+        // href 는 상대경로에 &amp; 가 섞여 있다. vg_kisa_canon_url 은 절대 URL 만 정규화한다.
+        $href = html_entity_decode($a[1], ENT_QUOTES, 'UTF-8');
         $out[] = [
             'title'     => $title,
             'url'       => (strncmp($href, 'http', 4) === 0) ? $href : KISA_BASE . $href,
@@ -136,9 +138,7 @@ foreach ($boards as $bbsId => $b) {
         foreach ($rows as $row) {
             preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $row['title'], $m);
             $cveIds = $m[0] ? implode(',', array_map('strtoupper', array_unique($m[0]))) : null;
-            $res = vg_upsert_advisory(
-                $pdo, $b['source'], mb_substr($row['title'], 0, 500), $row['url'], $row['published'], $cveIds
-            );
+            $res = vg_upsert_advisory($pdo, $b['source'], $row['title'], $row['url'], $row['published'], $cveIds);
             $stat[$res]++;
             foreach ($m[0] as $cve) {
                 vg_upsert_cve($pdo, strtoupper($cve), null, null, null);

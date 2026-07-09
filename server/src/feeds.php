@@ -121,9 +121,14 @@ function vg_kisa_canon_url(string $url): string {
 //   KISA 는 수정일을 노출하지 않으므로(RSS·목록·상세 모두 등록일 하나뿐) 저장된 값과
 //   비교해 실제로 달라졌을 때만 UPDATE 한다. 그래야 updated_at 이 "변경을 관측한 시각"이
 //   되고, 백필을 몇 번 돌려도 멱등하다.
+//   제목 정규화(엔티티 해제·공백 압축·길이 제한)를 여기서 한다. RSS 는 제목에 &#39; 같은
+//   엔티티를 그대로 주고 목록 페이지는 해제된 문자를 준다. 경로마다 다르게 다듬으면
+//   같은 공지가 수집 주기마다 '수정'으로 뒤집힌다.
 //   반환: 'new' | 'updated' | 'unchanged'
 function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url, ?string $published, ?string $cveIds): string {
-    $url = vg_kisa_canon_url($url);
+    $url   = vg_kisa_canon_url($url);
+    $title = html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $title = mb_substr(trim(preg_replace('/\s+/u', ' ', $title)), 0, 500);
     $chk = $pdo->prepare('SELECT id, title, published, cve_ids FROM tb_advisories WHERE url = ? LIMIT 1');
     $chk->execute([$url]);
     $cur = $chk->fetch(PDO::FETCH_ASSOC);
@@ -407,8 +412,8 @@ final class VgKisaConnector implements VgFeedConnector {
             }
             preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $title, $m);
             $cveIds = $m[0] ? implode(',', array_map('strtoupper', array_unique($m[0]))) : null;
-            // 신규·수정만 upserted 로 집계(unchanged 는 제외).
-            if (vg_upsert_advisory($pdo, $source, mb_substr($title, 0, 500), $link, $pub, $cveIds) !== 'unchanged') {
+            // 신규·수정만 upserted 로 집계(unchanged 는 제외). 제목 정규화는 upsert 가 담당.
+            if (vg_upsert_advisory($pdo, $source, $title, $link, $pub, $cveIds) !== 'unchanged') {
                 $up++;
             }
             // 제목에 CVE 가 있으면 cves 에도 등록(국내공지 근거 확보)
