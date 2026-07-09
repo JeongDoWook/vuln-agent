@@ -41,13 +41,13 @@
 3. 이미 있는 헬퍼로 되나? (DRY)
 4. 한 책임만 지는가, 기존 코드 수정 없이 확장되나? (SOLID)
 
-## 작업 파이프라인 (wt 스킬)
-기능·수정 작업은 `/wt` 로 시작한다. git worktree 브랜치에 격리해 진행한다.
-- 흐름: `/wt`(요구분석·난이도) → `/wt-setup`(worktree+브랜치 생성) → `/wt-spec`(3관점 분석·Gate1) → `/wt-impl`(구현·`php -l`) → `/wt-qa`(3관점 리뷰·점수·AC·스모크·Gate2) → `/wt-push`(PR·Gate3) → `/wt-done`(정리).
-- 상세: `.claude/skills/README.md`. 스킬은 이 프로젝트 전용(전역·타 프로젝트 무영향).
+## 작업 파이프라인
+기능·수정 작업은 main 에서 브랜치를 따서 진행하고 PR 로 병합한다.
+- 흐름: `git switch -c <브랜치>` → 구현 → 검증 게이트 → 커밋 → push → PR.
+- 브랜치 이름은 `feat/`·`fix/`·`chore/` 접두사를 쓴다.
 
 ## 가드레일 (강제)
-- **main 직접 commit/push 금지** — 항상 worktree 브랜치 경유 후 PR 로 병합. (`.claude/hooks/block-main-push.sh` 가 차단)
+- **main 직접 commit/push 금지** — 항상 작업 브랜치 경유 후 PR 로 병합. (`.claude/hooks/block-main-push.sh` 가 차단)
 - **검증 게이트**: `php -l` + `bash -n` + `tests/smoke.sh` 통과 전 커밋/PR 금지. 상태 보고 시 실행한 검증 명령·결과를 증거로 첨부.
 - `--no-verify` 등 hook 우회 명령 금지. `.env`/`secrets/*.txt` 커밋 금지.
 - 관련 없는 파일 수정·요청 범위 초과 리팩터 금지. 읽지 않은 코드 기반 추정 금지.
