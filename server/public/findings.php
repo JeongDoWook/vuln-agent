@@ -3,7 +3,10 @@ declare(strict_types=1);
 
 /**
  * findings.php — 매처 판정 결과(우선순위 취약점). 로그인 필요.
- *   ?scan_id=N, 없으면 최신 스캔. 검색(q)/등급(sev)/상태(st) 필터 + 페이지네이션.
+ *   기본  : 전 호스트의 "각 호스트 최신 스캔" 을 통합해서 보여준다(호스트 컬럼 표시).
+ *   ?host=N     : 그 호스트의 최신 스캔만.
+ *   ?scan_id=N  : 특정 스캔 하나만(대시보드·호스트 상세에서 넘어오는 링크). 이때만 부제에 scan# 표시.
+ *   검색(q)/등급(sev)/상태(st) 필터 + 페이지네이션.
  */
 
 require __DIR__ . '/../src/auth.php';
@@ -13,7 +16,8 @@ vg_require_menu('findings');
 $sevOptions = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 $stOptions  = ['EXTERNAL', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
 
-$err = null; $scan = null; $rows = []; $total = 0;
+$err = null; $scan = null; $rows = []; $total = 0; $perPage = vg_perpage();
+$scanIds = []; $hostOptions = [];
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 
 $q   = trim((string) ($_GET['q'] ?? ''));
@@ -21,28 +25,49 @@ $sev = (string) ($_GET['sev'] ?? '');
 $st  = (string) ($_GET['st'] ?? '');
 if (!in_array($sev, $sevOptions, true)) { $sev = ''; }
 if (!in_array($st, $stOptions, true)) { $st = ''; }
-$page = max(1, (int) ($_GET['page'] ?? 1));
+$page   = max(1, (int) ($_GET['page'] ?? 1));
+$hostId = (int) ($_GET['host'] ?? 0);
+$scanId = (int) ($_GET['scan_id'] ?? 0);
 
 try {
     $pdo = vg_pdo();
-    if (isset($_GET['scan_id'])) {
-        $scanId = (int) $_GET['scan_id'];
-    } else {
-        $scanId = (int) ($pdo->query('SELECT id FROM tb_scans ORDER BY received_at DESC LIMIT 1')->fetchColumn() ?: 0);
-    }
+
+    // 호스트별 최신 스캔 (삭제된 호스트 제외) — 통합 뷰의 대상 스캔 집합.
+    $hosts = $pdo->query(
+        'SELECT h.id AS host_id, h.fqdn, MAX(s.id) AS scan_id
+           FROM tb_hosts h JOIN tb_scans s ON s.host_id = h.id
+          WHERE h.is_deleted = 0
+          GROUP BY h.id, h.fqdn
+          ORDER BY h.fqdn'
+    )->fetchAll();
+    foreach ($hosts as $h) { $hostOptions[(int) $h['host_id']] = (string) $h['fqdn']; }
+
     if ($scanId > 0) {
-        $stmt = $pdo->prepare('SELECT s.*, h.fqdn FROM tb_scans s JOIN tb_hosts h ON h.id = s.host_id WHERE s.id = ?');
+        // 단일 스캔 모드 — 어느 호스트의 어느 시점인지 부제에 명시해야 한다.
+        $stmt = $pdo->prepare(
+            'SELECT s.id, s.collected_at, h.fqdn FROM tb_scans s JOIN tb_hosts h ON h.id = s.host_id WHERE s.id = ?'
+        );
         $stmt->execute([$scanId]);
         $scan = $stmt->fetch() ?: null;
+        if ($scan) { $scanIds = [(int) $scan['id']]; }
+    } else {
+        if (!isset($hostOptions[$hostId])) { $hostId = 0; }   // 없는 호스트면 전체로
+        foreach ($hosts as $h) {
+            if ($hostId === 0 || (int) $h['host_id'] === $hostId) { $scanIds[] = (int) $h['scan_id']; }
+        }
+    }
 
-        // KPI 는 필터 무관 전체 스캔 기준
-        $stmt = $pdo->prepare('SELECT severity, COUNT(*) c FROM tb_findings WHERE scan_id = ? GROUP BY severity');
-        $stmt->execute([$scanId]);
+    if ($scanIds) {
+        $in = implode(',', array_fill(0, count($scanIds), '?'));
+
+        // KPI 는 필터 무관 — 대상 스캔 전체 기준
+        $stmt = $pdo->prepare("SELECT severity, COUNT(*) c FROM tb_findings WHERE scan_id IN ($in) GROUP BY severity");
+        $stmt->execute($scanIds);
         foreach ($stmt->fetchAll() as $r) { if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; } }
 
         // 필터 WHERE 조립 (COUNT 와 목록 쿼리에 동일하게 사용)
-        $where = 'f.scan_id = ?';
-        $params = [$scanId];
+        $where  = "f.scan_id IN ($in)";
+        $params = $scanIds;
         if ($q !== '') {
             $where .= ' AND (f.cve_id LIKE ? OR f.package_name LIKE ?)';
             $params[] = '%' . $q . '%';
@@ -61,17 +86,19 @@ try {
         $stmt->execute($params);
         $total = (int) $stmt->fetchColumn();
 
-        $perPage = vg_perpage();
         $offset = ($page - 1) * $perPage;
 
         $stmt = $pdo->prepare(
-            "SELECT f.*, c.summary, c.epss,
+            "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss,
                 (SELECT a.fixed_version FROM tb_cve_affected_packages a
                  WHERE a.cve_id = f.cve_id AND a.package_name = f.package_name
                    AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
-             FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
+             FROM tb_findings f
+             JOIN tb_scans s ON s.id = f.scan_id
+             JOIN tb_hosts h ON h.id = s.host_id
+             LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
              WHERE $where
-             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC
+             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC, h.fqdn
              LIMIT $perPage OFFSET $offset"
         );
         $stmt->execute($params);
@@ -87,6 +114,14 @@ vg_header('취약점', 'findings');
   <div class="sub">
     <?php if ($scan): ?>
       호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['id'] ?> · <?= vg_h($scan['collected_at']) ?>
+      · <a href="/findings.php">전체 호스트 보기 →</a>
+    <?php elseif ($scanId > 0): ?>
+      스캔 #<?= $scanId ?> 을(를) 찾을 수 없습니다. · <a href="/findings.php">전체 호스트 보기 →</a>
+    <?php elseif ($hostId > 0): ?>
+      호스트 <strong><?= vg_h($hostOptions[$hostId]) ?></strong> · 최신 스캔 기준
+      · <a href="/findings.php">전체 호스트 보기 →</a>
+    <?php elseif ($hostOptions): ?>
+      전체 호스트 <?= count($hostOptions) ?>대 · 각 호스트의 최신 스캔 기준
     <?php else: ?>스캔 없음<?php endif; ?>
   </div>
 
@@ -103,48 +138,55 @@ vg_header('취약점', 'findings');
   </div>
 
   <?php
-  vg_toolbar([
-      ['type' => 'hidden', 'name' => 'scan_id', 'value' => $scan ? (string) $scan['id'] : ''],
+  // 단일 스캔 모드에선 scan_id 를 유지하고, 통합 모드에선 호스트 선택 드롭다운을 준다.
+  $toolbar = $scan
+      ? [['type' => 'hidden', 'name' => 'scan_id', 'value' => (string) $scan['id']]]
+      : [['type' => 'select', 'name' => 'host', 'empty_label' => '전체 호스트',
+          'selected' => $hostId > 0 ? (string) $hostId : '', 'options' => $hostOptions]];
+  vg_toolbar(array_merge($toolbar, [
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'sev', 'empty_label' => '전체 등급', 'selected' => $sev,
           'options' => array_combine($sevOptions, $sevOptions)],
       ['type' => 'select', 'name' => 'st', 'empty_label' => '전체 상태', 'selected' => $st,
           'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
-  ]);
-  ?>
+  ]));
 
-  <?php
+  // 호스트 컬럼은 통합 모드에서만. 단일 스캔 모드는 부제가 이미 호스트를 밝힌다.
+  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn']];
+  $headers = array_merge($headers, [
+      ['label' => '등급', 'key' => 'severity'],
+      ['label' => '상태', 'key' => 'runtime_status'],
+      ['label' => 'CVE', 'key' => 'cve_id'],
+      ['label' => '패키지', 'key' => 'package_name'],
+      ['label' => '버전', 'key' => 'installed_version'],
+      ['label' => 'CVSS', 'key' => 'cvss'],
+      ['label' => 'EPSS', 'key' => 'epss'],
+      ['label' => 'KEV', 'key' => 'in_kev'],
+      ['label' => '근거 (왜 위험한가)', 'key' => 'rationale'],
+      ['label' => '조치', 'key' => 'fix'],
+  ]);
+
   vg_table(
-      [
-          ['label' => '등급', 'key' => 'severity'],
-          ['label' => '상태', 'key' => 'runtime_status'],
-          ['label' => 'CVE'],
-          ['label' => '패키지', 'key' => 'package_name'],
-          ['label' => '버전'],
-          ['label' => 'CVSS'],
-          ['label' => 'EPSS'],
-          ['label' => 'KEV'],
-          ['label' => '근거 (왜 위험한가)'],
-          ['label' => '조치'],
-      ],
+      $headers,
       $rows,
       [
           'empty' => '조건에 맞는 판정 결과가 없습니다.',
           'cell' => [
+              'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
               'severity'       => fn($r) => '<span class="badge" style="background:' . vg_sev_color($r['severity']) . ';">' . vg_h($r['severity']) . '</span>',
               'runtime_status' => fn($r) => '<span class="badge" style="background:' . vg_status_color($r['runtime_status']) . ';">' . vg_h(vg_status_label($r['runtime_status'])) . '</span>',
-              2 => function ($r) {
+              'cve_id' => function ($r) {
                   $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a></strong>';
                   if ($r['summary']) { $html .= '<div class="why">' . vg_trunc($r['summary']) . '</div>'; }
                   return $html;
               },
-              'package_name' => fn($r) => vg_h($r['package_name']),
-              4 => fn($r) => '<code>' . vg_h($r['installed_version']) . '</code>',
-              5 => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '-',
-              6 => fn($r) => $r['epss'] !== null ? vg_h(number_format((float) $r['epss'] * 100, 1)) . '%' : '-',
-              7 => fn($r) => $r['in_kev'] ? '✔' : '',
-              8 => fn($r) => '<span class="why">' . vg_trunc($r['rationale']) . '</span>',
-              9 => fn($r) => !empty($r['fixed_version']) ? '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>',
+              'package_name'      => fn($r) => vg_h($r['package_name']),
+              'installed_version' => fn($r) => '<code>' . vg_h($r['installed_version']) . '</code>',
+              'cvss'      => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '-',
+              'epss'      => fn($r) => $r['epss'] !== null ? vg_h(number_format((float) $r['epss'] * 100, 1)) . '%' : '-',
+              'in_kev'    => fn($r) => $r['in_kev'] ? '✔' : '',
+              'rationale' => fn($r) => '<span class="why">' . vg_trunc($r['rationale']) . '</span>',
+              'fix'       => fn($r) => !empty($r['fixed_version']) ? '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>',
           ],
       ]
   );

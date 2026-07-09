@@ -11,11 +11,12 @@ require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
 $err = null; $host = null; $scan = null; $exposures = []; $processes = []; $findings = [];
+$scans = []; $sevByScan = [];
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 try {
     $pdo = vg_pdo();
     $hostId = (int) ($_GET['id'] ?? 0);
-    $st = $pdo->prepare('SELECT * FROM tb_hosts WHERE id = ?');
+    $st = $pdo->prepare('SELECT * FROM tb_hosts WHERE id = ? AND is_deleted = 0');
     $st->execute([$hostId]);
     $host = $st->fetch() ?: null;
 
@@ -51,6 +52,23 @@ try {
         );
         $st->execute([$sid]);
         $findings = $st->fetchAll();
+
+        // 스캔 이력(최근 20회) + 회차별 심각도 카운트
+        $st = $pdo->prepare(
+            'SELECT id, collected_at, received_at, package_count, exposure_count, agent_version
+               FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 20'
+        );
+        $st->execute([$hostId]);
+        $scans = $st->fetchAll();
+
+        $ids = [];
+        foreach ($scans as $s) { $ids[] = (int) $s['id']; }
+        if ($ids) {
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare("SELECT scan_id, severity, COUNT(*) c FROM tb_findings WHERE scan_id IN ($in) GROUP BY scan_id, severity");
+            $st->execute($ids);
+            foreach ($st->fetchAll() as $f) { $sevByScan[(int) $f['scan_id']][$f['severity']] = (int) $f['c']; }
+        }
     }
 } catch (Throwable $e) {
     $err = $e->getMessage();
@@ -68,6 +86,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
   <h1>🖥️ <?= vg_h($host['fqdn']) ?></h1>
   <div class="sub">
     <a href="/">← 대시보드</a> ·
+    <?php if (vg_can('assets')): ?><a href="/assets.php">자산관리</a> · <?php endif; ?>
     <?= vg_h($host['os_id']) ?> <?= vg_h($host['os_version']) ?>
     <?php if ($scan): ?> · 최신 수집 <?= vg_h($scan['collected_at']) ?> · 패키지 <?= (int) $scan['package_count'] ?>개<?php endif; ?>
   </div>
@@ -163,6 +182,49 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
                   4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>',
                   5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
                   6 => fn($f) => !empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>',
+              ],
+          ]
+      );
+      ?>
+      </div>
+    </div>
+
+    <div class="card" id="scans">
+      <strong>스캔 이력</strong> <span class="why">— 최근 20회. 회차를 눌러 그 시점의 취약점을 본다</span>
+      <div style="margin-top:.6rem;">
+      <?php
+      vg_table(
+          [
+              ['label' => '스캔', 'key' => 'id'],
+              ['label' => '수집시각', 'key' => 'collected_at'],
+              ['label' => '수신시각', 'key' => 'received_at'],
+              ['label' => '패키지', 'key' => 'package_count', 'align' => 'right'],
+              ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right'],
+              ['label' => '에이전트', 'key' => 'agent_version'],
+              ['label' => '심각도', 'key' => 'sev'],
+          ],
+          $scans,
+          [
+              'card' => false,
+              'empty' => '스캔 이력이 없습니다.',
+              'cell' => [
+                  'id'             => fn($s) => '<a href="/findings.php?scan_id=' . (int) $s['id'] . '">#' . (int) $s['id'] . '</a>',
+                  'collected_at'   => fn($s) => vg_h($s['collected_at']),
+                  'received_at'    => fn($s) => '<span class="why">' . vg_h($s['received_at']) . '</span>',
+                  'package_count'  => fn($s) => number_format((int) $s['package_count']),
+                  'exposure_count' => fn($s) => number_format((int) $s['exposure_count']),
+                  'agent_version'  => fn($s) => $s['agent_version'] ? '<code>' . vg_h($s['agent_version']) . '</code>' : '<span class="why">–</span>',
+                  'sev' => function ($s) use ($sevByScan) {
+                      $sc = $sevByScan[(int) $s['id']] ?? [];
+                      if (!$sc) { return '<span class="why">–</span>'; }
+                      $html = '';
+                      foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $lv) {
+                          if (!empty($sc[$lv])) {
+                              $html .= '<span class="badge" style="background:' . vg_sev_color($lv) . ';" title="' . $lv . '">' . (int) $sc[$lv] . '</span> ';
+                          }
+                      }
+                      return $html;
+                  },
               ],
           ]
       );

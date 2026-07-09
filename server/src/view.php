@@ -56,32 +56,45 @@ function vg_qs(array $overrides = []): string {
     return '?' . implode('&', $parts);
 }
 
-// 페이지당 표시 개수. ?per_page= 를 화이트리스트(25/50/100)로 검증해 반환. 잘못된 값이면 $default.
-function vg_perpage(int $default = 50): int {
-    $allowed = [25, 50, 100];
+// 페이지당 표시 개수 선택지(SSOT). vg_perpage / vg_perpage_select 가 공유한다.
+const VG_PERPAGE_OPTIONS = [10, 20, 40, 60, 100];
+const VG_PERPAGE_DEFAULT = 10;
+
+// 페이지당 표시 개수. ?per_page= 를 화이트리스트로 검증해 반환. 잘못된 값이면 $default.
+function vg_perpage(int $default = VG_PERPAGE_DEFAULT): int {
     $v = (int) ($_GET['per_page'] ?? $default);
-    return in_array($v, $allowed, true) ? $v : $default;
+    return in_array($v, VG_PERPAGE_OPTIONS, true) ? $v : $default;
 }
 
 // "페이지당 N개" 셀렉트. onchange 시 현재 쿼리스트링 유지한 채 per_page 변경 + page=1 로 이동.
 function vg_perpage_select(): void {
     $current = vg_perpage();
     echo '<select onchange="location.href=this.value" aria-label="페이지당 표시 개수">';
-    foreach ([25, 50, 100] as $n) {
+    foreach (VG_PERPAGE_OPTIONS as $n) {
         $url = vg_qs(['per_page' => $n, 'page' => 1]);
         echo '<option value="' . vg_h($url) . '"' . ($current === $n ? ' selected' : '') . '>' . $n . '개씩 보기</option>';
     }
     echo '</select>';
 }
 
-// 페이지네이션 링크 출력. total<=perPage 면 아무것도 출력하지 않음.
+/**
+ * 페이지네이션 출력. 한 페이지에 다 들어가도 "N개씩 보기" 셀렉트는 남긴다
+ * (큰 값을 고른 뒤 되돌릴 UI가 사라지지 않게). 최소 선택지 이하면 아예 생략.
+ */
 function vg_page_nav(int $total, int $perPage, int $page): void {
-    if ($total <= $perPage) {
+    $totalPages = max(1, (int) ceil($total / $perPage));
+    if ($totalPages === 1 && $total <= VG_PERPAGE_OPTIONS[0]) {
         return;
     }
-    $totalPages = (int) ceil($total / $perPage);
     if ($page < 1) { $page = 1; }
     if ($page > $totalPages) { $page = $totalPages; }
+
+    if ($totalPages === 1) {   // 페이지 링크는 필요없고 개수 셀렉트만
+        echo '<div class="pager"><span class="muted">· 총 ' . number_format($total) . '건</span>';
+        vg_perpage_select();
+        echo '</div>';
+        return;
+    }
 
     // 표시할 페이지 번호: 처음, 현재 ±2, 끝
     $show = [1, $totalPages];
@@ -237,7 +250,8 @@ function vg_header(string $title, string $active = ''): void {
   body { font-family: system-ui,-apple-system,"Segoe UI",sans-serif; margin:0; background:#0f1115; color:#e6e6e6; }
   a { color:#58a6ff; text-decoration:none; } a:hover { text-decoration:underline; }
   nav { display:flex; align-items:center; gap:1.1rem; padding:.8rem 1.5rem; background:#171a21; border-bottom:1px solid #262b36; position:sticky; top:0; z-index:10; }
-  nav .brand { font-weight:700; font-size:1rem; margin-right:.5rem; }
+  nav .brand { font-weight:700; font-size:1rem; margin-right:.5rem; color:#e6e6e6; }
+  nav a.brand:hover { text-decoration:none; opacity:.8; }
   nav a.link { color:#adbac7; font-size:.9rem; padding:.2rem 0; }
   nav a.link.active { color:#fff; border-bottom:2px solid #1f6feb; }
   nav .spacer { flex:1; }
@@ -285,9 +299,16 @@ function vg_header(string $title, string $active = ''): void {
 <body>
 <?php if ($user !== null): ?>
   <nav>
-    <span class="brand">🛡️ vuln-agent</span>
+    <?php if (vg_can('dashboard')): ?>
+      <a class="brand" href="/" title="대시보드로 이동">🛡️ vuln-agent</a>
+    <?php else: ?>
+      <span class="brand">🛡️ vuln-agent</span>
+    <?php endif; ?>
     <?php if (vg_can('dashboard')): ?>
       <a class="link <?= $active==='dashboard'?'active':'' ?>" href="/">대시보드</a>
+    <?php endif; ?>
+    <?php if (vg_can('assets')): ?>
+      <a class="link <?= $active==='assets'?'active':'' ?>" href="/assets.php">자산관리</a>
     <?php endif; ?>
     <?php if (vg_can('findings')): ?>
       <a class="link <?= $active==='findings'?'active':'' ?>" href="/findings.php">취약점</a>
