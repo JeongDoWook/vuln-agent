@@ -298,18 +298,51 @@ function vg_toolbar(array $fields): void {
     echo '</form>';
 }
 
-/** 네비 메뉴: 코드 → 경로. 라벨은 vg_menus() 가 SSOT(cves 만 여기서 보탠다). */
-const VG_NAV = [
-    'dashboard'   => '/',
-    'assets'      => '/assets.php',
-    'findings'    => '/findings.php',
-    'cves'        => '/cves.php',
-    'advisories'  => '/advisories.php',
-    'connectors'  => '/connectors.php',
-    'users'       => '/users.php',
-    'activity'    => '/activity.php',
-    'permissions' => '/permissions.php',
-];
+/**
+ * 사이드바 메뉴(SSOT). 대분류(섹션 라벨) → 중분류(링크) 2단.
+ *   섹션 라벨이 '' 이면 라벨 없이 링크만 렌더한다(대시보드처럼 단독 항목).
+ *   각 링크의 'perm' 은 vg_can() 메뉴코드, 'key' 는 vg_header($active) 와 맞춘다.
+ */
+function vg_nav_sections(): array {
+    return [
+        '' => [
+            ['perm' => 'dashboard', 'href' => '/', 'label' => '대시보드', 'key' => 'dashboard'],
+        ],
+        '취약점' => [
+            ['perm' => 'findings',   'href' => '/findings.php',   'label' => '취약점 현황',   'key' => 'findings'],
+            ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE 목록',      'key' => 'cves'],
+            ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '국내 보안공지', 'key' => 'advisories'],
+        ],
+        '자산' => [
+            ['perm' => 'assets', 'href' => '/assets.php', 'label' => '자산 관리', 'key' => 'assets'],
+        ],
+        '수집' => [
+            ['perm' => 'connectors', 'href' => '/connectors.php', 'label' => '피드 커넥터', 'key' => 'connectors'],
+        ],
+        '시스템' => [
+            ['perm' => 'users',       'href' => '/users.php',       'label' => '사용자',    'key' => 'users'],
+            ['perm' => 'permissions', 'href' => '/permissions.php', 'label' => '권한 설정', 'key' => 'permissions'],
+            ['perm' => 'activity',    'href' => '/activity.php',    'label' => '감사 로그', 'key' => 'activity'],
+        ],
+    ];
+}
+
+// 사이드바 렌더. 권한 없는 링크는 빼고, 링크가 하나도 안 남은 섹션은 라벨째 숨긴다.
+function vg_nav(string $active): void {
+    foreach (vg_nav_sections() as $section => $links) {
+        $visible = array_filter($links, fn($l) => vg_can($l['perm']));
+        if (!$visible) {
+            continue;
+        }
+        if ($section !== '') {
+            echo '<div class="grp">' . vg_h($section) . '</div>';
+        }
+        foreach ($visible as $l) {
+            $cls = 'link' . ($active === $l['key'] ? ' active' : '');
+            echo '<a class="' . $cls . '" href="' . vg_h($l['href']) . '">' . vg_h($l['label']) . '</a>';
+        }
+    }
+}
 
 function vg_header(string $title, string $active = ''): void {
     $user = function_exists('vg_current_user') ? vg_current_user() : null;
@@ -325,26 +358,21 @@ function vg_header(string $title, string $active = ''): void {
 </head>
 <body>
 <?php if ($user !== null): ?>
-  <nav>
+  <aside class="side">
     <?php if (vg_can('dashboard')): ?>
       <a class="brand" href="/" title="대시보드로 이동">🛡️ vuln-agent</a>
     <?php else: ?>
       <span class="brand">🛡️ vuln-agent</span>
     <?php endif; ?>
-    <?php
-    $labels = vg_menus() + ['cves' => 'CVE'];
-    foreach (VG_NAV as $code => $path):
-        // CVE 목록은 별도 메뉴권한 없이 취약점 권한을 함께 쓴다(cves.php 와 같은 규칙).
-        if (!vg_can($code === 'cves' ? 'findings' : $code)) { continue; }
-        ?>
-      <a class="link <?= $active === $code ? 'active' : '' ?>" href="<?= vg_h($path) ?>"><?= vg_h($labels[$code]) ?></a>
-    <?php endforeach; ?>
-    <span class="spacer"></span>
-    <span class="who"><?= vg_h($user['username']) ?> (<?= vg_h(vg_role_label(vg_role())) ?>)</span>
-    <a class="link <?= $active === 'profile' ? 'active' : '' ?>" href="/profile.php">내 프로필</a>
-    <a class="link" href="/logout.php">로그아웃</a>
-  </nav>
+    <nav class="menu"><?php vg_nav($active); ?></nav>
+    <div class="foot">
+      <span class="who"><?= vg_h($user['username']) ?> (<?= vg_h(vg_role_label(vg_role())) ?>)</span>
+      <a href="/profile.php"<?= $active === 'profile' ? ' class="active"' : '' ?>>내 프로필</a>
+      <a href="/logout.php">로그아웃</a>
+    </div>
+  </aside>
 <?php endif; ?>
+<div class="app">
 <main>
 <?php
 }
@@ -352,6 +380,7 @@ function vg_header(string $title, string $active = ''): void {
 function vg_footer(): void {
     ?>
 </main>
+</div>
 </body>
 </html>
 <?php
