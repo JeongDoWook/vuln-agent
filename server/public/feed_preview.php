@@ -11,8 +11,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/feeds.php';
-vg_require_login();
-vg_require_admin();
+vg_require_menu('connectors');   // 미리보기: 피드 메뉴 권한
 
 $type = (string) ($_GET['type'] ?? $_POST['type'] ?? '');
 $conn = [
