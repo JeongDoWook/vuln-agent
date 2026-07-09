@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-vg_require_login();
+vg_require_menu('findings');
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = [];
 try {
