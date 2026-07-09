@@ -97,7 +97,8 @@ sudo ./agent/install-agent.sh \
 ```
 
 설치 내용:
-- 에이전트를 `/opt/vuln-agent/` 에 배치, 토큰은 `/etc/vuln-agent/agent.env`(600) 로만 보관(`ps` 노출 방지)
+- 설치물을 `--prefix`(기본 `/opt/vuln-agent`) 한 곳에 배치 — `<prefix>/bin`(실행), `<prefix>/etc/agent.env`(600, 토큰), `<prefix>/logs`(수집 결과).
+  토큰은 env 로만 전달해 `ps` 노출을 막는다. 운영 서버는 `--prefix /apps/vulnagent` 로 설치.
 - **systemd-timer**(우선) 또는 **cron**(폴백)으로 주기 수집 등록(기본 매시간) + 즉시 1회 실행(통신 확인)
 - 컨테이너가 떠 있는 호스트에서도 다른 mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토리
   — 컨테이너 오버레이 경로를 `dpkg -S`/`rpm -qf` 로 전수조사하다 멈추는 문제를 회피
