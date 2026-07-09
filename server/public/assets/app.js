@@ -103,6 +103,20 @@
     if (e.target.matches('select[data-nav]')) { startProgress(); }
   });
 
+  // 필터 셀렉트: 고르는 즉시 폼 제출. requestSubmit() 은 submit 이벤트를 쏘므로
+  // 위의 제출 핸들러가 진행바·검색버튼 스피너를 그대로 붙여준다(form.submit() 은 안 쏜다).
+  // 폼에 page 필드가 없으니 제출하면 자연히 1페이지로 돌아간다.
+  document.addEventListener('change', function (e) {
+    var sel = e.target.closest('select[data-autosubmit]');
+    if (!sel || !sel.form) { return; }
+    if (sel.form.requestSubmit) {
+      sel.form.requestSubmit();
+    } else {
+      startProgress();      // 구형 브라우저 폴백 — submit 이벤트가 안 나므로 직접 켠다
+      sel.form.submit();
+    }
+  });
+
   // 뒤로가기(bfcache)로 복귀하면 멈춰있던 스피너를 되돌린다.
   window.addEventListener('pageshow', function (e) {
     if (!e.persisted) { return; }
