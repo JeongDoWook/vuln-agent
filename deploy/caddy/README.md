@@ -16,12 +16,12 @@ vuln-agent 웹을 **HTTPS**로 감싸는 앞단 프록시. Let's Encrypt 인증�
 - `entrypoint.sh` — docker secret 의 토큰을 `DUCKDNS_TOKEN` env 로 노출 후 Caddy 실행
 
 ## 배포 (서버에서)
-1. **DuckDNS 토큰 입력** (랜덤 아님, 본인 DuckDNS 계정 토큰):
+1. **DuckDNS 토큰 입력** (랜덤 아님, 본인 DuckDNS 계정 토큰) — `deploy/` 에서 실행:
    ```bash
-   printf %s 'DuckDNS-토큰' > secrets/duckdns_token.txt
+   printf %s 'DuckDNS-토큰' > ../secrets/duckdns_token.txt
    ```
    토큰은 https://www.duckdns.org 로그인 후 상단 "token" 값.
-2. 기동/갱신:
+2. 기동/갱신 (`deploy/` 에서):
    ```bash
    ./compose_runner.sh prod up -d --build
    ```

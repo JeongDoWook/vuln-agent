@@ -43,7 +43,7 @@ services:
       # DB_DATA 미설정=named volume(db_data, dev/Windows). 절대경로면 서버 바인드마운트(prod).
       #   운영은 .env.prod 에 DB_DATA=/data/vulnagent/mysql 로 서버 디스크에 영속(down -v 에도 안전).
       - ${DB_DATA:-db_data}:/var/lib/mysql
-      - ./db:/docker-entrypoint-initdb.d:ro
+      - ../db:/docker-entrypoint-initdb.d:ro
       # my.cnf 는 운영 전용(compose.prod.yml) — Windows dev 는 기본값 사용
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$(cat /run/secrets/mysql_root_password)\" --silent"]
@@ -56,7 +56,7 @@ services:
 
   # --- PHP(Apache): 수신 API + 대시보드 ------------------------------------
   web:
-    build: ./server
+    build: ../server
     image: vulnagent-app:latest
     depends_on:
       db:
@@ -68,7 +68,7 @@ services:
 
   # --- 스케줄러: 예약된 피드 커넥터를 주기 실행(사이드카) -------------------
   scheduler:
-    build: ./server
+    build: ../server
     image: vulnagent-app:latest
     depends_on:
       db:
@@ -82,13 +82,13 @@ services:
 # --- Docker Secrets: 비밀값을 txt 파일에서 로드 -----------------------------
 secrets:
   mysql_root_password:
-    file: ./secrets/mysql_root_password.txt
+    file: ../secrets/mysql_root_password.txt
   mysql_password:
-    file: ./secrets/mysql_password.txt
+    file: ../secrets/mysql_password.txt
   ingest_token:
-    file: ./secrets/ingest_token.txt
+    file: ../secrets/ingest_token.txt
   admin_password:
-    file: ./secrets/admin_password.txt
+    file: ../secrets/admin_password.txt
 
 networks:
   vulnagent:

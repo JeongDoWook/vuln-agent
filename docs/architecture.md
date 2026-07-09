@@ -175,7 +175,7 @@ flowchart TB
 
 > web·scheduler 는 같은 이미지(`vulnagent-app`)를 공유하고, 환경/시크릿은 compose 앵커
 > (`x-app-env`/`x-app-secrets`)로 DRY 하게 재사용한다. dev 는 caddy 없이 `web` 을 `${WEB_PORT:-8080}`
-> 으로 평문 직접 노출한다(§ Caddy README 참고: `caddy/README.md`).
+> 으로 평문 직접 노출한다(§ Caddy README 참고: `deploy/caddy/README.md`).
 
 | | dev | prod |
 |---|---|---|

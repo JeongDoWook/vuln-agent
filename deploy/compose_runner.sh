@@ -94,9 +94,9 @@ run_init() {
   done
 
   # 2) secrets txt (강한 랜덤값 자동 생성, 있으면 유지)
-  mkdir -p secrets
+  mkdir -p ../secrets
   for name in mysql_root_password mysql_password ingest_token admin_password; do
-    local f="secrets/${name}.txt"
+    local f="../secrets/${name}.txt"
     if [ -s "$f" ]; then
       say "  ${BLUE}→${NC} 존재: $f (유지)"
     else
@@ -110,7 +110,7 @@ run_init() {
   done
 
   # DuckDNS 토큰(운영 HTTPS용) — 랜덤 아님. 실제 토큰을 사용자가 직접 넣어야 함.
-  local df="secrets/duckdns_token.txt"
+  local df="../secrets/duckdns_token.txt"
   if [ -s "$df" ]; then
     say "  ${BLUE}→${NC} 존재: $df (유지)"
   else
@@ -122,7 +122,7 @@ run_init() {
   echo ""
   if [ "$ok" = 1 ]; then
     say "${GREEN}완료.${NC} 다음: ${CYAN}$0 dev up -d --build${NC}"
-    say "  에이전트 전송 토큰(--token) 값:  ${CYAN}cat secrets/ingest_token.txt${NC}"
+    say "  에이전트 전송 토큰(--token) 값:  ${CYAN}cat ../secrets/ingest_token.txt${NC}"
   fi
 }
 
@@ -146,10 +146,10 @@ run_doctor() {
   for f in .env.dev .env.prod; do
     if [ -f "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음 (init 실행 필요)"; fi
   done
-  for f in secrets/mysql_root_password.txt secrets/mysql_password.txt secrets/ingest_token.txt secrets/admin_password.txt; do
+  for f in ../secrets/mysql_root_password.txt ../secrets/mysql_password.txt ../secrets/ingest_token.txt ../secrets/admin_password.txt; do
     if [ -s "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음/빈값 (init 실행 필요)"; fi
   done
-  if [ -s secrets/duckdns_token.txt ]; then say "  ${GREEN}✓${NC} secrets/duckdns_token.txt"; else say "  ${YELLOW}⚠${NC} secrets/duckdns_token.txt 없음/빈값 (운영 HTTPS 쓰려면 DuckDNS 토큰 입력)"; fi
+  if [ -s ../secrets/duckdns_token.txt ]; then say "  ${GREEN}✓${NC} ../secrets/duckdns_token.txt"; else say "  ${YELLOW}⚠${NC} ../secrets/duckdns_token.txt 없음/빈값 (운영 HTTPS 쓰려면 DuckDNS 토큰 입력)"; fi
   echo ""
   if [ "$issues" -eq 0 ]; then
     say "${GREEN}점검 통과.${NC}"
