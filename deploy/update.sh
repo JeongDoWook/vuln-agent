@@ -76,7 +76,9 @@ if [ "$NEED_BUILD" = 1 ]; then
 else
   echo "  PHP 만 변경 → 재시작 없음. opcache 가 2초 안에 새 코드를 로드합니다."
   # 오래 도는 프로세스(백필 워커 등)는 이미 옛 코드를 메모리에 올렸다. 있으면 알려준다.
-  RUNNING=$(docker exec vulnagent-web sh -c "ps -eo args | grep -c '^php /var/www/html/bin/'" 2>/dev/null || echo 0)
+  #   grep -c 는 매치 0건이면 exit 1 이라 "|| echo 0" 이 같이 실행돼 "0\n0" 이 나온다.
+  #   grep 안에서 "|| true" 로 삼키고 숫자만 남긴다.
+  RUNNING=$(docker exec vulnagent-web sh -c "ps -eo args | grep -c '^php /var/www/html/bin/' || true" 2>/dev/null | tr -dc '0-9')
   if [ "${RUNNING:-0}" -gt 0 ]; then
     printf "  ${Y}참고:${N} 실행 중인 bin 스크립트 %s개는 옛 코드로 계속 돕니다.\n" "$RUNNING"
   fi
