@@ -7,12 +7,17 @@
 ## 구성
 
 ```
-agent/    수집 에이전트 (Bash) — 패키지·런타임 노출 정보 수집 + install-agent.sh(systemd-timer/cron 자동 배포)
+agent/    수집 에이전트 (Bash) — 패키지·런타임 노출 정보 수집 + install-agent.sh(systemd-timer/cron 자동 배포). 설치·운영은 agent/README.md
 server/   PHP 중앙 서버 — 수신 API(ingest) + 웹(대시보드·취약점·CVE목록/상세·국내공지목록/상세·감사로그) + 매처
 deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·config
 db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼 (컨테이너 최초 기동 시 자동 적용)
-docs/     아키텍처 · 기획안 · 설명글 · 프로세스
+docs/     아키텍처 · 기획안 · 설명글 · 프로세스 · 피드소스-역할(커넥터 5종)
 ```
+
+**꼭 볼 문서**
+- [`agent/README.md`](agent/README.md) — 에이전트 설치·운영. 설치 한 번이면 systemd 타이머가 매시간 자동 재실행(계속 켜둘 필요 없음), 전송 URL 주의점.
+- [`docs/피드소스-역할.md`](docs/피드소스-역할.md) — NVD/OSV·EPSS·KEV·KISA 각 커넥터가 무슨 질문에 답하는지.
+- [`docs/architecture.md`](docs/architecture.md) — 시스템 구조·매처 규칙·배포 방식.
 
 데이터 흐름: **에이전트(JSON) ─POST(HTTPS)→ `ingest.php` → MySQL(`tb_*`) → 웹 현황**
 
