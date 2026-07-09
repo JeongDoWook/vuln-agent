@@ -21,6 +21,24 @@ require_once __DIR__ . '/audit.php';   // vg_log_activity
  */
 const VG_TEXT_MAX = 60000;
 
+// 커넥터 기본 소스 URL. 커넥터 레코드의 url 이 비어 있으면 이 값을 쓴다(run/미리보기 공용).
+const VG_KEV_URL  = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
+const VG_OSV_URL  = 'https://api.osv.dev/v1/querybatch';
+const VG_NVD_URL  = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+const VG_EPSS_URL = 'https://epss.cyentia.com/epss_scores-current.csv.gz';
+
+/**
+ * 커넥터 URL 을 고른다. 빈 값이면 기본 URL.
+ *
+ * `$conn['url'] ?? $default` 는 안 된다. connectors.php 의 저장 폼이 url 키를 항상 넣기
+ * 때문에(빈 문자열 포함) `??` 가 절대 발동하지 않는다 — URL 을 비워둔 KISA/EPSS 커넥터가
+ * 빈 문자열을 curl 에 넘겨 HTTP 0 으로 죽던 원인.
+ */
+function vg_conn_url(array $conn, string $default): string {
+    $u = trim((string) ($conn['url'] ?? ''));
+    return $u !== '' ? $u : $default;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // HTTP (curl)
 // ─────────────────────────────────────────────────────────────────────────
@@ -300,7 +318,7 @@ interface VgFeedConnector {
 // CISA KEV — 실제 악용 취약점 카탈로그(JSON, 무인증). kev_catalog + cves.
 final class VgKevConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
-        $url = $conn['url'] ?? 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
+        $url = vg_conn_url($conn, VG_KEV_URL);
         $r = vg_http_json('GET', $url);
         if ($r['code'] !== 200 || !isset($r['json']['vulnerabilities'])) {
             throw new RuntimeException("KEV fetch 실패 (HTTP {$r['code']}) {$r['error']}");
@@ -360,6 +378,34 @@ function vg_osv_fixed(array $vuln, string $key): ?string {
     return $fixed;
 }
 
+/** 커넥터에 /v1/query 가 저장돼 있어도 batch 엔드포인트로 보정한다(run·미리보기 공용). */
+function vg_osv_batch_url(array $conn): string {
+    $url = vg_conn_url($conn, VG_OSV_URL);
+    return substr($url, -6) === '/query' ? $url . 'batch' : $url;
+}
+
+/**
+ * 스캔 1건의 패키지를 OSV querybatch 질의 목록으로 바꾼다(패키지·버전 중복 제거).
+ * deb/ubuntu 는 바이너리 패키지가 아니라 source_pkg 로 조회해야 매칭된다.
+ *
+ * @return list<array{key:string,q:array}>
+ */
+function vg_osv_queries(PDO $pdo, int $scanId, string $eco): array {
+    $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
+    $pk = $pdo->prepare('SELECT name, source_pkg, version FROM tb_packages WHERE scan_id = ?');
+    $pk->execute([$scanId]);
+
+    $out = []; $seen = [];
+    foreach ($pk->fetchAll() as $p) {
+        $key = $isDeb ? ($p['source_pkg'] ?: $p['name']) : $p['name'];
+        $ver = (string) $p['version'];
+        if ($key === '' || $ver === '' || isset($seen["$key|$ver"])) { continue; }
+        $seen["$key|$ver"] = true;
+        $out[] = ['key' => $key, 'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
+    }
+    return $out;
+}
+
 // OSV.dev — 최신 스캔의 실제 패키지를 단건 /v1/query 로 조회해 취약 패키지 발굴 + 조치안.
 //   배포판별 ecosystem 자동, deb/ubuntu 는 source_pkg 로 조회, 설치버전으로 필터.
 //   단건 응답엔 summary·aliases·affected.ranges(고쳐진 버전) 가 있어 조치안까지 확보.
@@ -367,8 +413,7 @@ final class VgOsvConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
         // querybatch: 응답이 {results:[{vulns:[{id}]}]} 로 작아 수백~수천 패키지도 메모리 안전.
         // (단건 query 는 커널 등 거대한 응답에서 OOM. fixed_version 은 batch 미제공 → null)
-        $url = $conn['url'] ?? 'https://api.osv.dev/v1/querybatch';
-        if (substr($url, -6) === '/query') { $url .= 'batch'; }
+        $url = vg_osv_batch_url($conn);
         $ecoOverride = trim((string) ($conn['ecosystem'] ?? ''));
 
         $scans = $pdo->query(
@@ -380,21 +425,14 @@ final class VgOsvConnector implements VgFeedConnector {
         foreach ($scans as $sc) {
             $eco = $ecoOverride !== '' ? $ecoOverride : vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
             if ($eco === null || $eco === '') { continue; } // 미지원 배포판 스킵
-            $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
 
-            $pk = $pdo->prepare('SELECT name, source_pkg, version FROM tb_packages WHERE scan_id = ?');
-            $pk->execute([(int) $sc['id']]);
-
-            // 쿼리 목록(배포판·패키지·버전 중복 제거). deb/ubuntu 는 source_pkg 로 조회.
+            // 스캔 간 중복 조회 방지(호스트가 달라도 같은 배포판·패키지·버전이면 한 번만).
             $queries = [];
-            foreach ($pk->fetchAll() as $p) {
-                $key = $isDeb ? ($p['source_pkg'] ?: $p['name']) : $p['name'];
-                $ver = (string) $p['version'];
-                if ($key === '' || $ver === '') { continue; }
-                $dk = $eco . '|' . $key . '|' . $ver;
+            foreach (vg_osv_queries($pdo, (int) $sc['id'], $eco) as $q) {
+                $dk = $eco . '|' . $q['key'] . '|' . $q['q']['version'];
                 if (isset($seen[$dk])) { continue; }
                 $seen[$dk] = true;
-                $queries[] = ['key' => $key, 'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
+                $queries[] = $q;
             }
 
             foreach (array_chunk($queries, 100) as $chunk) {
@@ -500,7 +538,7 @@ function vg_nvd_fetch_page(string $url, array $headers, int $startIndex): array 
  * @return array{fetched:int,upserted:int,total:int}
  */
 function vg_nvd_sync(PDO $pdo, array $conn, array $dateParams = [], int $startIndex = 0, ?callable $onPage = null): array {
-    $base    = $conn['url'] ?? 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+    $base    = vg_conn_url($conn, VG_NVD_URL);
     $key     = trim((string) ($conn['api_key'] ?? ''));
     $headers = $key !== '' ? ['apiKey: ' . $key] : [];
 
@@ -557,15 +595,16 @@ final class VgKisaConnector implements VgFeedConnector {
     // 보호나라(boho.or.kr) RSS 는 bbsId 별로 게시판이 나뉘고 카테고리당 최근 10건만 준다.
     // 취약점/보안공지 성격의 카테고리만 골라 순회하면 단일 피드보다 수집량이 늘어난다.
     // (보고서/가이드 B0000127, 공지사항 B0000132 등 일반 게시판은 취약점과 무관해 제외)
-    private const DEFAULT_FEEDS = [
+    public const DEFAULT_FEEDS = [
         'https://www.boho.or.kr/kr/rss.do?bbsId=B0000133' => 'KISA-보안공지',
         'https://www.boho.or.kr/kr/rss.do?bbsId=B0000302' => 'KISA-취약점정보',
         'https://www.boho.or.kr/kr/rss.do?bbsId=B0000342' => 'KISA-경보단계',
     ];
 
     public function run(PDO $pdo, array $conn): array {
-        // 기존 커넥터 레코드(connection_json.url 단일값) 하위호환. 없으면 기본 목록 순회.
-        $feeds = isset($conn['url']) ? [$conn['url'] => 'kisa'] : self::DEFAULT_FEEDS;
+        // 기존 커넥터 레코드(connection_json.url 단일값) 하위호환. 비었으면 기본 목록 순회.
+        $url   = trim((string) ($conn['url'] ?? ''));
+        $feeds = $url !== '' ? [$url => 'kisa'] : self::DEFAULT_FEEDS;
 
         $fetched = 0; $up = 0; $ok = 0;
         foreach ($feeds as $url => $source) {
@@ -625,18 +664,23 @@ final class VgKisaConnector implements VgFeedConnector {
     }
 }
 
+/** EPSS gzip CSV 를 받아 평문으로 돌려준다(run·미리보기 공용). */
+function vg_epss_fetch(string $url): string {
+    $r = vg_http_raw('GET', $url, [], 120);
+    if ($r['code'] !== 200 || $r['body'] === '') {
+        throw new RuntimeException("EPSS fetch 실패 (HTTP {$r['code']}) {$r['error']}");
+    }
+    $txt = @gzdecode($r['body']);
+    if ($txt === false) {
+        throw new RuntimeException('EPSS gzip 해제 실패');
+    }
+    return $txt;
+}
+
 // FIRST EPSS — CVE별 악용확률(0~1) + 백분위. gzip CSV 를 받아 보유 CVE 만 갱신.
 final class VgEpssConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
-        $url = $conn['url'] ?? 'https://epss.cyentia.com/epss_scores-current.csv.gz';
-        $r = vg_http_raw('GET', $url, [], 120);
-        if ($r['code'] !== 200 || $r['body'] === '') {
-            throw new RuntimeException("EPSS fetch 실패 (HTTP {$r['code']}) {$r['error']}");
-        }
-        $txt = @gzdecode($r['body']);
-        if ($txt === false) {
-            throw new RuntimeException('EPSS gzip 해제 실패');
-        }
+        $txt = vg_epss_fetch(vg_conn_url($conn, VG_EPSS_URL));
         // 우리가 보유한 CVE 만 갱신(전체 34만건 삽입 안 함)
         $have = [];
         foreach ($pdo->query('SELECT cve_id FROM tb_cves')->fetchAll(PDO::FETCH_COLUMN) as $c) {
@@ -804,7 +848,7 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
     $limit = 10;
     switch ($type) {
         case 'kev':
-            $r = vg_http_json('GET', $conn['url'] ?? '');
+            $r = vg_http_json('GET', vg_conn_url($conn, VG_KEV_URL));
             if ($r['code'] !== 200 || !isset($r['json']['vulnerabilities'])) {
                 return ['ok' => false, 'error' => "HTTP {$r['code']} {$r['error']}"];
             }
@@ -812,7 +856,7 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
             return ['ok' => true, 'count' => count($all), 'sample' => array_slice($all, 0, $limit)];
 
         case 'nvd':
-            $base = $conn['url'] ?? 'https://services.nvd.nist.gov/rest/json/cves/2.0';
+            $base = vg_conn_url($conn, VG_NVD_URL);
             $days = max(1, (int) ($conn['days'] ?? 7));
             $qs = http_build_query([
                 'pubStartDate'   => gmdate('Y-m-d\TH:i:s.000', time() - $days * 86400),
@@ -827,17 +871,19 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
             return ['ok' => true, 'count' => (int) ($r['json']['totalResults'] ?? 0), 'sample' => $r['json']['vulnerabilities']];
 
         case 'kisa':
-            $r = vg_http_raw('GET', $conn['url'] ?? '');
+            // URL 을 비워두면 run() 과 같은 기본 피드 목록의 첫 카테고리를 미리 본다.
+            $url = vg_conn_url($conn, array_key_first(VgKisaConnector::DEFAULT_FEEDS));
+            $r = vg_http_raw('GET', $url);
             $xml = $r['code'] === 200 ? @simplexml_load_string($r['body'], 'SimpleXMLElement', LIBXML_NONET) : false;
             if ($xml === false || !isset($xml->channel->item)) {
-                return ['ok' => false, 'error' => "RSS 파싱 실패 (HTTP {$r['code']})"];
+                return ['ok' => false, 'error' => "RSS 파싱 실패 (HTTP {$r['code']}) {$r['error']}"];
             }
             $out = []; $n = 0;
             foreach ($xml->channel->item as $it) {
                 if ($n++ >= $limit) { break; }
                 $out[] = ['title' => (string) $it->title, 'link' => (string) $it->link, 'pubDate' => (string) $it->pubDate];
             }
-            return ['ok' => true, 'count' => count($xml->channel->item), 'sample' => $out];
+            return ['ok' => true, 'count' => count($xml->channel->item), 'note' => $url, 'sample' => $out];
 
         case 'osv':
             $sc = $pdo->query(
@@ -852,18 +898,43 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
             if (!$eco) {
                 return ['ok' => false, 'error' => "OSV ecosystem 판정 불가(os_id={$sc['os_id']}). 커넥터에 ecosystem 지정."];
             }
-            $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
-            $pk = $pdo->prepare('SELECT name, source_pkg, version FROM tb_packages WHERE scan_id=? LIMIT 1');
-            $pk->execute([(int) $sc['id']]);
-            $pkg = $pk->fetch();
-            $key = $isDeb ? ($pkg['source_pkg'] ?: $pkg['name']) : $pkg['name'];
-            $single = 'https://api.osv.dev/v1/query';
-            $r = vg_http_json('POST', $single, ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => (string) $pkg['version']], [], 60);
-            if ($r['code'] !== 200) {
+            // 패키지 1건만 단건 조회하면 대개 취약점이 없어 항상 "0건" 으로 보였다.
+            // run() 과 같은 querybatch 로 최신 스캔의 앞쪽 100개를 실제로 조회한다.
+            $queries = array_slice(vg_osv_queries($pdo, (int) $sc['id'], $eco), 0, 100);
+            if (!$queries) {
+                return ['ok' => false, 'error' => "최신 스캔(id={$sc['id']})에 패키지가 없어 미리보기 불가."];
+            }
+            $r = vg_http_json('POST', vg_osv_batch_url($conn),
+                ['queries' => array_column($queries, 'q')], [], 90);
+            if ($r['code'] !== 200 || !isset($r['json']['results'])) {
                 return ['ok' => false, 'error' => "HTTP {$r['code']} {$r['error']}"];
             }
-            $vulns = $r['json']['vulns'] ?? [];
-            return ['ok' => true, 'count' => count($vulns), 'note' => "ecosystem={$eco}, '{$key}'@{$pkg['version']} 조회", 'sample' => array_slice($vulns, 0, $limit)];
+            $hits = [];
+            foreach ($r['json']['results'] as $i => $res) {
+                if (empty($res['vulns'])) { continue; }
+                $hits[] = [
+                    'package' => $queries[$i]['key'],
+                    'version' => $queries[$i]['q']['version'],
+                    'vulns'   => array_column($res['vulns'], 'id'),
+                ];
+            }
+            $note = sprintf('ecosystem=%s, 패키지 %d개 조회 → 취약 %d개', $eco, count($queries), count($hits));
+            return ['ok' => true, 'count' => count($hits), 'note' => $note, 'sample' => array_slice($hits, 0, $limit)];
+
+        case 'epss':
+            // 34만 행 CSV 라 앞쪽 10행만 보여준다(점수 내림차순 정렬본이라 상위권이 나온다).
+            $txt = vg_epss_fetch(vg_conn_url($conn, VG_EPSS_URL));
+            $out = []; $rows = 0;
+            foreach (explode("\n", $txt) as $line) {
+                if ($line === '' || $line[0] === '#' || strncmp($line, 'cve,', 4) === 0) { continue; }
+                $f = explode(',', $line);
+                if (count($f) < 3) { continue; }
+                $rows++;
+                if (count($out) < $limit) {
+                    $out[] = ['cve' => strtoupper($f[0]), 'epss' => (float) $f[1], 'percentile' => (float) $f[2]];
+                }
+            }
+            return ['ok' => true, 'count' => $rows, 'note' => '보유 중인 CVE 만 갱신된다(전체 삽입 안 함)', 'sample' => $out];
 
         default:
             return ['ok' => false, 'error' => "미리보기 미지원 타입: $type"];
