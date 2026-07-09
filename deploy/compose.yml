@@ -57,7 +57,7 @@ services:
   # --- PHP(Apache): 수신 API + 대시보드 ------------------------------------
   web:
     build: ../server
-    image: vulnagent-app:latest
+    image: vulnagent-app:${APP_TAG:-latest}
     depends_on:
       db:
         condition: service_healthy
@@ -69,7 +69,7 @@ services:
   # --- 스케줄러: 예약된 피드 커넥터를 주기 실행(사이드카) -------------------
   scheduler:
     build: ../server
-    image: vulnagent-app:latest
+    image: vulnagent-app:${APP_TAG:-latest}
     depends_on:
       db:
         condition: service_healthy
