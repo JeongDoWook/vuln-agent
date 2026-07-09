@@ -13,6 +13,13 @@ require __DIR__ . '/../src/feeds.php';
 require __DIR__ . '/../src/matcher.php';
 
 $pdo = vg_pdo();
+
+// 죽은 실행이 'running' 으로 굳어 있으면 정리한다(UI 가 영원히 실행중으로 보인다).
+$reaped = vg_feed_reap_stale($pdo);
+if ($reaped > 0) {
+    fwrite(STDOUT, '[' . date('c') . "] 중단된 실행 {$reaped}건 정리\n");
+}
+
 $due = vg_feed_due($pdo);
 if (!$due) {
     fwrite(STDOUT, '[' . date('c') . "] due 커넥터 없음\n");
