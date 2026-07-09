@@ -870,6 +870,38 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
     }
 }
 
+/**
+ * 중단된 실행 정리. vg_feed_run 은 try/catch 로 성공·실패 모두 로그를 닫지만,
+ * PHP 가 통째로 죽으면(치명적 오류·CPU 시간 초과·컨테이너 재기동) catch 가 돌지 않아
+ * 로그가 'running' 으로 영구히 굳는다. 실측: OSV 로그 1건이 27시간째 running 이었다.
+ *
+ * 시작 후 $hours 시간이 지난 running 을 실패로 마감한다. 정상 수집은 길어야 10분대라
+ * 기본 6시간이면 진행 중인 실행을 잘못 죽일 위험이 없다.
+ *
+ * @return int 정리한 로그 수
+ */
+function vg_feed_reap_stale(PDO $pdo, int $hours = 6): int {
+    $hours = max(1, $hours);   // SQL 에 직접 넣으므로 정수로 못박는다
+    $msg   = "중단된 실행으로 판단해 정리(시작 후 {$hours}시간 초과)";
+
+    $st = $pdo->prepare(
+        "UPDATE tb_feed_collection_logs
+            SET status = 'error', finished_at = NOW(), message = ?
+          WHERE status = 'running' AND started_at < NOW() - INTERVAL $hours HOUR"
+    );
+    $st->execute([$msg]);
+    $n = $st->rowCount();
+
+    if ($n > 0) {
+        $pdo->prepare(
+            "UPDATE tb_feed_connectors
+                SET last_status = 'error', last_message = ?
+              WHERE last_status = 'running' AND last_run_at < NOW() - INTERVAL $hours HOUR"
+        )->execute([$msg]);
+    }
+    return $n;
+}
+
 /** 스케줄러가 돌릴 대상: enabled=1 이고 스케줄(interval/daily/cron) 상 지금이 due. */
 function vg_feed_due(PDO $pdo): array {
     $rows = $pdo->query('SELECT id, schedule_json, last_run_at FROM tb_feed_connectors WHERE enabled = 1 AND is_deleted = 0')->fetchAll();

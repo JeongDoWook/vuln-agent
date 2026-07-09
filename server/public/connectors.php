@@ -63,6 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 vg_log_activity($pdo, 'CONNECTOR', $id, 'connector_save', "커넥터 '$name' 저장", ['type' => $type, 'enabled' => $enabled]);
             } elseif ($action === 'run') {
                 $id = (int) ($_POST['id'] ?? 0);
+                // 수동 실행은 apache 요청 안에서 동기로 돈다. NVD lastMod 수집은 실측 432초가
+                // 걸린다(4,632건). max_execution_time=30 을 넘겨도 리눅스에서는 CPU 시간만
+                // 세기에 네트워크 대기가 빠져 우연히 통과할 뿐이다. 파싱·upsert 가 무거워져
+                // CPU 30초를 넘기면 그 순간 죽고, catch 가 안 돌아 로그가 'running' 으로 굳는다.
+                set_time_limit(0);
+                ignore_user_abort(true);   // 브라우저를 닫아도 수집은 끝까지 마친다
                 $r = vg_feed_run($pdo, $id, 'manual');
                 if (!empty($r['ok'])) {
                     foreach (array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
