@@ -2,28 +2,81 @@
 declare(strict_types=1);
 
 /**
- * view.php — 공통 레이아웃(헤더/네비/푸터) + 다크 테마 CSS.
+ * view.php — 공통 레이아웃(헤더/네비/푸터) + 렌더 헬퍼.
  *   vg_h() 이스케이프, vg_header($title,$active) 로 시작, vg_footer() 로 끝.
+ *   스타일·스크립트는 public/assets/app.{css,js} 가 소유한다. 여기에 색상을 하드코딩하지 않는다.
  */
 
 function vg_h(?string $s): string {
     return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 }
 
-// 심각도 색상 (findings 공용)
-function vg_sev_color(string $sev): string {
-    $m = ['CRITICAL' => '#da3633', 'HIGH' => '#db6d28', 'MEDIUM' => '#9e6a03', 'LOW' => '#6e7681'];
-    return $m[$sev] ?? '#6e7681';
+/** 정적 파일 URL + 캐시버스팅(mtime). 파일이 없으면 경로만 돌려준다. */
+function vg_asset(string $path): string {
+    $file = __DIR__ . '/../public' . $path;
+    $v = is_file($file) ? (string) filemtime($file) : '';
+    return vg_h($path . ($v !== '' ? '?v=' . $v : ''));
 }
 
-// 런타임 상태 라벨/색상 (EXTERNAL/LISTENING/RUNNING/LOADED/INSTALLED)
+/* --- 톤 어휘 --------------------------------------------------------------
+ * 색은 CSS 의 .tone-* 이 정한다. PHP 는 "어떤 톤인가" 만 고른다.
+ * 뱃지를 쓰는 모든 화면(심각도·런타임상태·피드상태·노출범위·자산상태)이 이 어휘를 공유한다. */
+
+const VG_TONE_SEV = ['CRITICAL' => 'crit', 'HIGH' => 'high', 'MEDIUM' => 'med', 'LOW' => 'low'];
+
+/** 임의의 라벨을 톤 뱃지로. $label 은 여기서 이스케이프한다. */
+function vg_badge(string $label, string $tone = 'muted', string $title = ''): string {
+    return '<span class="badge tone-' . vg_h($tone) . '"'
+        . ($title !== '' ? ' title="' . vg_h($title) . '"' : '')
+        . '>' . vg_h($label) . '</span>';
+}
+
+/** 심각도(CRITICAL/HIGH/MEDIUM/LOW) 뱃지. */
+function vg_sev_badge(string $sev): string {
+    return vg_badge($sev, vg_sev_tone($sev));
+}
+
+/** 심각도 → 톤 클래스명. KPI 카드도 같은 톤을 쓴다. */
+function vg_sev_tone(string $sev): string {
+    return VG_TONE_SEV[$sev] ?? 'muted';
+}
+
+/**
+ * 심각도별 건수 뱃지 묶음. 0건인 등급은 생략하고, 전부 0이면 '–'.
+ *   $href 를 주면 각 뱃지를 링크로 만든다(자산관리: 등급별 취약점 목록으로).
+ *   대시보드 · 자산관리 · 호스트 스캔이력이 공유한다.
+ */
+function vg_sev_counts(array $counts, ?callable $href = null): string {
+    $out = [];
+    foreach (VG_TONE_SEV as $sev => $tone) {
+        $n = (int) ($counts[$sev] ?? 0);
+        if ($n === 0) {
+            continue;
+        }
+        $attr = 'class="badge tone-' . $tone . '" title="' . vg_h($sev) . '"';
+        $out[] = $href !== null
+            ? '<a ' . $attr . ' href="' . vg_h($href($sev)) . '">' . $n . '</a>'
+            : '<span ' . $attr . '>' . $n . '</span>';
+    }
+    return $out ? implode(' ', $out) : '<span class="why">–</span>';
+}
+
+// 런타임 상태(EXTERNAL/LISTENING/RUNNING/LOADED/INSTALLED)
 function vg_status_label(?string $s): string {
     $m = ['EXTERNAL' => '외부노출', 'LISTENING' => '로컬리스닝', 'RUNNING' => '실행중', 'LOADED' => '사용중', 'INSTALLED' => '설치만'];
     return $m[$s ?? ''] ?? (string) $s;
 }
-function vg_status_color(?string $s): string {
-    $m = ['EXTERNAL' => '#da3633', 'LISTENING' => '#db6d28', 'RUNNING' => '#9e6a03', 'LOADED' => '#8250df', 'INSTALLED' => '#6e7681'];
-    return $m[$s ?? ''] ?? '#6e7681';
+function vg_status_badge(?string $s): string {
+    $tone = ['EXTERNAL' => 'crit', 'LISTENING' => 'high', 'RUNNING' => 'med', 'LOADED' => 'purple', 'INSTALLED' => 'muted'];
+    return vg_badge(vg_status_label($s), $tone[$s ?? ''] ?? 'muted');
+}
+
+/** 성공/오류 알림. $msg 가 null·빈문자면 아무것도 출력하지 않는다. */
+function vg_alert(?string $msg, string $type = 'err'): void {
+    if ($msg === null || $msg === '') {
+        return;
+    }
+    echo '<div class="alert alert--' . ($type === 'ok' ? 'ok' : 'err') . '">' . vg_h($msg) . '</div>';
 }
 
 // 긴 텍스트 말줄임 + 툴팁(title 에 원문). 안 잘리면 그냥 이스케이프만.
@@ -67,9 +120,10 @@ function vg_perpage(int $default = VG_PERPAGE_DEFAULT): int {
 }
 
 // "페이지당 N개" 셀렉트. onchange 시 현재 쿼리스트링 유지한 채 per_page 변경 + page=1 로 이동.
+//   data-nav 는 app.js 가 이동 시작을 알아채 상단 진행바를 띄우는 표식이다.
 function vg_perpage_select(): void {
     $current = vg_perpage();
-    echo '<select onchange="location.href=this.value" aria-label="페이지당 표시 개수">';
+    echo '<select data-nav onchange="location.href=this.value" aria-label="페이지당 표시 개수">';
     foreach (VG_PERPAGE_OPTIONS as $n) {
         $url = vg_qs(['per_page' => $n, 'page' => 1]);
         echo '<option value="' . vg_h($url) . '"' . ($current === $n ? ' selected' : '') . '>' . $n . '개씩 보기</option>';
@@ -193,12 +247,20 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
  * GET 검색/필터 툴바(class="toolbar"). 값이 있으면 제출버튼 옆에 초기화 링크 자동 표시.
  *   $fields 각 항목: ['type'=>'search'|'select'|'hidden', 'name'=>, 'value'=>, 'placeholder'=>,
  *                     'options'=>['값'=>'라벨'], 'selected'=>, 'empty_label'=>'전체']
+ *   per_page 는 이 폼의 입력이 아니므로 hidden 으로 실어 보낸다 —
+ *   안 그러면 "100개씩 보기" 상태에서 검색할 때마다 기본값으로 돌아간다.
  */
-function vg_toolbar(array $fields, array $opts = []): void {
+function vg_toolbar(array $fields): void {
     $resetOverrides = ['page' => null];
     $hasValue = false;
 
     echo '<form class="toolbar" method="get">';
+
+    $perPage = vg_perpage();
+    if ($perPage !== VG_PERPAGE_DEFAULT) {
+        echo '<input type="hidden" name="per_page" value="' . $perPage . '">';
+    }
+
     foreach ($fields as $f) {
         $type = $f['type'] ?? 'search';
         $name = (string) ($f['name'] ?? '');
@@ -229,9 +291,9 @@ function vg_toolbar(array $fields, array $opts = []): void {
             $resetOverrides[$name] = null;
         }
     }
-    echo '<button type="submit" class="btn-sm">검색</button>';
+    echo '<button type="submit" class="btn btn--sm btn--primary" data-loading="검색 중…">검색</button>';
     if ($hasValue) {
-        echo '<a class="btn-sm" href="' . vg_h(vg_qs($resetOverrides)) . '">초기화</a>';
+        echo '<a class="btn btn--sm btn--ghost" href="' . vg_h(vg_qs($resetOverrides)) . '">초기화</a>';
     }
     echo '</form>';
 }
@@ -291,85 +353,8 @@ function vg_header(string $title, string $active = ''): void {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= vg_h($title) ?> · vuln-agent</title>
-<style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui,-apple-system,"Segoe UI",sans-serif; margin:0; background:#0f1115; color:#e6e6e6; display:flex; min-height:100vh; }
-  a { color:#58a6ff; text-decoration:none; } a:hover { text-decoration:underline; }
-  /* 좌측 사이드바: 대분류(.grp) → 중분류(a.link) 2단 */
-  .side { flex:0 0 232px; width:232px; height:100vh; position:sticky; top:0; overflow-y:auto;
-          display:flex; flex-direction:column; background:#171a21; border-right:1px solid #262b36; }
-  .side .brand { display:block; font-weight:700; font-size:1rem; color:#e6e6e6; padding:1rem 1.15rem;
-                 border-bottom:1px solid #262b36; white-space:nowrap; }
-  .side a.brand:hover { text-decoration:none; opacity:.85; }
-  .side .menu { flex:1; padding:.6rem .55rem 1rem; }
-  .side .grp { color:#6e7681; font-size:.68rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
-               padding:.95rem .6rem .3rem; }
-  .side a.link { display:block; padding:.48rem .6rem; margin-bottom:.1rem; border-radius:8px;
-                 color:#adbac7; font-size:.88rem; }
-  .side a.link:hover { background:#1c2029; color:#e6e6e6; text-decoration:none; }
-  .side a.link.active { background:#1f6feb26; color:#fff; font-weight:600; box-shadow:inset 3px 0 0 #1f6feb; }
-  .side .foot { border-top:1px solid #262b36; padding:.85rem 1.15rem; }
-  .side .who { display:block; color:#8b93a1; font-size:.8rem; margin-bottom:.45rem; }
-  .side .foot a { color:#adbac7; font-size:.82rem; margin-right:.7rem; }
-  /* min-width:0 이 없으면 넓은 표가 사이드바를 밀어낸다(flex 자식 기본 min-width:auto) */
-  .app { flex:1; min-width:0; }
-  main { padding:1.8rem 1.6rem; max-width:1760px; margin:0 auto; }
-  /* 좁은 화면: 사이드바를 상단 가로 메뉴로 되돌린다 */
-  @media (max-width:860px) {
-    body { display:block; }
-    .side { position:static; width:auto; height:auto; flex:none; border-right:none; border-bottom:1px solid #262b36; }
-    .side .menu { display:flex; flex-wrap:wrap; gap:.15rem; padding:.5rem .6rem; }
-    .side .grp { display:none; }
-    .side a.link.active { box-shadow:none; }
-    main { padding:1.4rem 1rem; }
-  }
-  h1 { font-size:1.3rem; margin:0 0 .3rem; }
-  .sub { color:#8b93a1; font-size:.85rem; margin-bottom:1.3rem; }
-  .cards { display:flex; gap:.7rem; margin-bottom:1.3rem; flex-wrap:wrap; }
-  .kpi { border-radius:10px; padding:.7rem 1.2rem; min-width:100px; }
-  .kpi.big { background:#171a21; border:1px solid #262b36; }
-  .kpi b { font-size:1.5rem; display:block; line-height:1.2; }
-  .kpi span { font-size:.74rem; opacity:.85; }
-  .card { background:#171a21; border:1px solid #262b36; border-radius:12px; padding:1.1rem 1.4rem; overflow-x:auto; margin-bottom:1.2rem; }
-  table { width:100%; border-collapse:collapse; font-size:.93rem; }
-  th,td { text-align:left; padding:.7rem .9rem; border-bottom:1px solid #262b36; vertical-align:top; }
-  th { color:#8b93a1; font-weight:600; font-size:.74rem; text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
-  td.nowrap { white-space:nowrap; }
-  td code { white-space:nowrap; }
-  .badge, .pill { white-space:nowrap; }
-  tr:last-child td { border-bottom:none; }
-  .badge { display:inline-block; padding:.12rem .55rem; border-radius:999px; font-size:.72rem; font-weight:700; color:#fff; }
-  .badge.outline { background:transparent; border:1px solid currentColor; color:inherit; font-weight:600; }
-  .pill { display:inline-block; padding:.1rem .5rem; border-radius:999px; background:#1f6feb22; color:#58a6ff; font-size:.76rem; }
-  .why { color:#adbac7; font-size:.82rem; }
-  .empty { color:#8b93a1; padding:2rem 0; text-align:center; }
-  .err { background:#3b1418; border:1px solid #6e2830; color:#ffb3ba; padding:.8rem 1rem; border-radius:10px; margin-bottom:1rem; }
-  code { background:#262b36; padding:.1rem .4rem; border-radius:6px; font-size:.85em; }
-  form.card { max-width:360px; margin:3rem auto; }
-  label { display:block; font-size:.82rem; color:#adbac7; margin:.8rem 0 .3rem; }
-  input[type=text],input[type=password] { width:100%; padding:.55rem .65rem; background:#0f1115; border:1px solid #30363d; border-radius:8px; color:#e6e6e6; font-size:.95rem; }
-  button { margin-top:1.1rem; width:100%; padding:.6rem; background:#238636; color:#fff; border:none; border-radius:8px; font-size:.95rem; font-weight:600; cursor:pointer; }
-  button:hover { background:#2ea043; }
-  .btn-sm { width:auto; margin:0; padding:.35rem .8rem; font-size:.82rem; }
-  .trunc { display:inline-block; max-width:min(46vw, 820px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
-  tbody tr:hover { background:#1c2029; }
-  .toolbar { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:1rem; }
-  input[type=search],select { padding:.45rem .6rem; background:#0f1115; border:1px solid #30363d; border-radius:8px; color:#e6e6e6; font-size:.85rem; }
-  .pager { display:flex; gap:.3rem; justify-content:center; align-items:center; flex-wrap:wrap; margin-top:1rem; }
-  .pager a,.pager span { padding:.3rem .6rem; border-radius:7px; font-size:.82rem; border:1px solid #262b36; color:#adbac7; }
-  .pager a:hover { background:#1c2029; text-decoration:none; }
-  .pager .cur { background:#1f6feb; color:#fff; border-color:#1f6feb; }
-  .pager .muted { border:none; color:#6e7681; }
-  .card strong { color:#e6e6e6; }
-  .kpi.big:hover, .card:hover { border-color:#30363d; }
-  a.kpi:hover { filter:brightness(1.08); }
-  /* 작업(액션) 열: 버튼·링크·인풋 높이/간격 정렬 (connectors·users) */
-  .actions { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
-  .actions form { margin:0; display:inline-flex; gap:.25rem; align-items:center; }
-  .btn-sm { display:inline-flex; align-items:center; justify-content:center; height:1.9rem; line-height:1; border-radius:8px; }
-  .actions input[type=password], .actions select { height:1.9rem; }
-</style>
+<link rel="stylesheet" href="<?= vg_asset('/assets/app.css') ?>">
+<script src="<?= vg_asset('/assets/app.js') ?>" defer></script>
 </head>
 <body>
 <?php if ($user !== null): ?>
@@ -382,7 +367,7 @@ function vg_header(string $title, string $active = ''): void {
     <nav class="menu"><?php vg_nav($active); ?></nav>
     <div class="foot">
       <span class="who"><?= vg_h($user['username']) ?> (<?= vg_h(vg_role_label(vg_role())) ?>)</span>
-      <a href="/profile.php"<?= $active==='profile' ? ' style="color:#fff;font-weight:600;"' : '' ?>>내 프로필</a>
+      <a href="/profile.php"<?= $active === 'profile' ? ' class="active"' : '' ?>>내 프로필</a>
       <a href="/logout.php">로그아웃</a>
     </div>
   </aside>

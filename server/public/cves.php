@@ -34,6 +34,7 @@ $kev  = (string) ($_GET['kev'] ?? '');
 $year = (string) ($_GET['year'] ?? '');
 $sort = (string) ($_GET['sort'] ?? '');
 $page = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = vg_perpage();
 
 if (!isset(VG_CVE_SORTS[$sort])) { $sort = 'published'; }
 if (!isset(VG_SEV_RANGES[$sev])) { $sev = ''; }
@@ -78,8 +79,7 @@ try {
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
 
-    $perPage = vg_perpage();
-    $offset  = ($page - 1) * $perPage;
+    $offset = ($page - 1) * $perPage;
 
     // MySQL 은 DESC 정렬에서 NULL 을 뒤로 보낸다 → 점수 미수집 CVE 가 상단을 차지하지 않는다.
     // "$col IS NULL" 을 앞에 붙이면 그 표현식 때문에 인덱스 순서가 깨져 filesort 가 된다.
@@ -111,14 +111,14 @@ function vg_cvss_sev(?string $cvss): string {
 
 vg_header('CVE 목록', 'cves');
 ?>
-  <h1>CVE 목록 <span style="font-size:.8rem;color:#8b93a1;">(<?= number_format($total) ?>건)</span></h1>
+  <h1>CVE 목록 <span class="hint">(<?= number_format($total) ?>건)</span></h1>
   <div class="sub">
     <a href="/connectors.php">피드 커넥터</a>(kev/osv/nvd/epss)가 수집한 CVE.
     KEV 는 실제 악용이 확인된 취약점, EPSS 는 향후 30일 내 악용 확률입니다.
   </div>
 
 <?php if ($err !== null): ?>
-  <div class="err"><strong>오류</strong> · <?= vg_h($err) ?></div>
+  <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php vg_toolbar([
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE-ID 또는 요약 검색', 'value' => $q],
@@ -152,15 +152,14 @@ vg_header('CVE 목록', 'cves');
               0 => function ($r) {
                   $html = '<a href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">' . vg_h((string) $r['cve_id']) . '</a>';
                   if (!empty($r['is_kev'])) {
-                      $html .= ' <span class="badge" style="background:#da3633;">KEV</span>';
+                      $html .= ' ' . vg_badge('KEV', 'crit');
                   }
                   return $html;
               },
               1 => function ($r) {
                   $sev = vg_cvss_sev($r['cvss'] === null ? null : (string) $r['cvss']);
                   if ($sev === '') { return '<span class="why">–</span>'; }
-                  $up = strtoupper($sev);   // vg_sev_color 는 대문자 키를 받는다
-                  return '<span class="badge" style="background:' . vg_h(vg_sev_color($up)) . ';">' . vg_h($up) . '</span>';
+                  return vg_sev_badge(strtoupper($sev));   // 톤 매핑은 대문자 키를 받는다
               },
               2 => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '<span class="why">–</span>',
               3 => fn($r) => $r['epss'] !== null

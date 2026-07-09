@@ -104,15 +104,15 @@ if (isset($_GET['edit'])) {
 $econn = $edit ? (json_decode((string) $edit['connection_json'], true) ?: []) : [];
 $esched = $edit ? (json_decode((string) $edit['schedule_json'], true) ?: []) : [];
 
-$statusColor = ['success'=>'#238636','error'=>'#da3633','running'=>'#9e6a03','never'=>'#6e7681'];
+// 수집 상태 → 뱃지 톤(색은 CSS 가 결정).
+$statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'never' => 'muted'];
 
 vg_header('피드 커넥터', 'connectors');
 ?>
   <h1>CVE 피드 커넥터</h1>
   <div class="sub">외부 취약점 소스(CISA KEV · OSV · NVD)를 설정·스케줄·수집. 결과는 매처가 자동 재계산.</div>
 
-  <?php if ($msg): ?><div class="err" style="background:#12261a;border-color:#238636;color:#7ee787;"><?= vg_h($msg) ?></div><?php endif; ?>
-  <?php if ($err): ?><div class="err"><?= vg_h($err) ?></div><?php endif; ?>
+  <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <?php
   // 표시용 부가값(스케줄 라벨/다음 실행) 을 미리 계산해 각 행에 얹는다.
@@ -141,39 +141,42 @@ vg_header('피드 커넥터', 'connectors');
               0 => fn($c) => '<strong>' . vg_h($c['name']) . '</strong>',
               1 => fn($c) => '<span class="pill">' . vg_h($c['connector_type']) . '</span>',
               2 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
-              3 => fn($c) => '<form method="post" style="margin:0;display:inline;">'
+              3 => fn($c) => '<form method="post">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['id'] . '">'
-                  . '<button class="btn-sm" style="background:' . ($c['enabled'] ? '#238636' : '#30363d') . ';">' . ($c['enabled'] ? 'ON' : 'OFF') . '</button></form>',
+                  . '<button class="btn btn--sm ' . ($c['enabled'] ? 'btn--ok' : 'btn--ghost') . '">' . ($c['enabled'] ? 'ON' : 'OFF') . '</button></form>',
               4 => fn($c) => '<span class="why">' . vg_h($c['last_run_at'] ?? '–') . '</span>',
               5 => fn($c) => '<span class="why">' . vg_h($c['_next_run'] ?: '–') . '</span>',
-              6 => function ($c) {
-                  global $statusColor;
-                  $html = '<span class="badge" style="background:' . ($statusColor[$c['last_status']] ?? '#6e7681') . ';">' . vg_h($c['last_status'] ?? 'never') . '</span>';
+              6 => function ($c) use ($statusTone) {
+                  $status = (string) ($c['last_status'] ?? 'never');
+                  $html = vg_badge($status, $statusTone[$status] ?? 'muted');
                   if ($c['last_message']) {
                       $html .= '<div class="why" title="' . vg_h($c['last_message']) . '">' . vg_h(mb_strimwidth((string) $c['last_message'], 0, 40, '…')) . '</div>';
                   }
                   return $html;
               },
+              // "지금 실행" 은 외부 수집 + 전 스캔 재매칭이라 수십 초 걸린다 → 스피너 + 이중제출 차단(app.js).
               7 => fn($c) => '<div class="actions">'
-                  . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . (int) $c['id'] . '"><button class="btn-sm" style="background:#1f6feb;">지금 실행</button></form>'
-                  . '<a class="btn-sm" style="background:#30363d;color:#fff;" href="?edit=' . (int) $c['id'] . '">편집</a>'
-                  . '<form method="post" onsubmit="return confirm(\'삭제할까요?\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int) $c['id'] . '"><button class="btn-sm" style="background:#6e2830;">삭제</button></form>'
+                  . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . (int) $c['id'] . '">'
+                  . '<button class="btn btn--sm btn--primary" data-loading="수집 중…">지금 실행</button></form>'
+                  . '<a class="btn btn--sm btn--ghost" href="?edit=' . (int) $c['id'] . '">편집</a>'
+                  . '<form method="post" onsubmit="return confirm(\'삭제할까요?\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int) $c['id'] . '">'
+                  . '<button class="btn btn--sm btn--danger">삭제</button></form>'
                   . '</div>',
           ],
       ]
   );
   ?>
 
-  <div class="card" style="max-width:560px;">
+  <div class="card card--narrow">
     <strong><?= $edit ? '커넥터 편집' : '커넥터 추가' ?></strong>
-    <form id="connForm" method="post" style="margin-top:.6rem;">
+    <form id="connForm" method="post" class="card__body">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="save">
       <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
       <label>이름</label>
       <input type="text" name="name" value="<?= vg_h($edit['name'] ?? '') ?>" required>
       <label>커넥터 타입</label>
-      <select name="connector_type" style="width:100%;padding:.5rem;background:#0f1115;border:1px solid #30363d;border-radius:8px;color:#e6e6e6;">
+      <select name="connector_type">
         <?php foreach (['kev'=>'CISA KEV','osv'=>'OSV.dev','nvd'=>'NVD 2.0','kisa'=>'KISA 보안공지','epss'=>'FIRST EPSS'] as $tv=>$tl): ?>
           <option value="<?= $tv ?>" <?= ($edit['connector_type'] ?? 'kev')===$tv?'selected':'' ?>><?= $tl ?></option>
         <?php endforeach; ?>
@@ -187,7 +190,7 @@ vg_header('피드 커넥터', 'connectors');
       <label>최근 N일 (NVD용)</label>
       <input type="text" name="days" value="<?= vg_h((string) ($econn['days'] ?? '')) ?>" placeholder="7">
       <label>스케줄</label>
-      <select name="schedule_mode" style="width:100%;padding:.5rem;background:#0f1115;border:1px solid #30363d;border-radius:8px;color:#e6e6e6;">
+      <select name="schedule_mode">
         <?php $sm = $esched['mode'] ?? 'manual'; foreach (['manual'=>'수동 (직접 실행)','interval'=>'주기 실행(N분)','daily'=>'매일 지정 시각','cron'=>'cron 표현식'] as $mv=>$ml): ?>
           <option value="<?= $mv ?>" <?= $sm===$mv?'selected':'' ?>><?= $ml ?></option>
         <?php endforeach; ?>
@@ -198,26 +201,29 @@ vg_header('피드 커넥터', 'connectors');
       <input type="text" name="schedule_time" value="<?= vg_h((string) ($esched['time'] ?? '03:00')) ?>" placeholder="03:00">
       <label>cron (분 시 일 월 요일) — "cron 표현식" 시</label>
       <input type="text" name="schedule_cron" value="<?= vg_h((string) ($esched['expr'] ?? '')) ?>" placeholder="0 3 * * *  (매일 03:00)">
-      <label style="display:flex;align-items:center;gap:.5rem;margin-top:1rem;">
-        <input type="checkbox" name="enabled" value="1" <?= ($edit['enabled'] ?? 0) ? 'checked' : '' ?> style="width:auto;"> 활성(enabled)
+      <label class="inline">
+        <input type="checkbox" name="enabled" value="1" <?= ($edit['enabled'] ?? 0) ? 'checked' : '' ?>> 활성(enabled)
       </label>
-      <button type="submit"><?= $edit ? '저장' : '추가' ?></button>
-      <button type="button" class="btn-sm" style="width:100%;margin-top:.5rem;background:#30363d;" onclick="vgPreview()">API 미리보기 (10건)</button>
-      <?php if ($edit): ?><div class="sub" style="margin-top:.6rem;text-align:center;"><a href="/connectors.php">+ 새 커넥터</a></div><?php endif; ?>
+      <button type="submit" class="btn btn--ok btn--block"><?= $edit ? '저장' : '추가' ?></button>
+      <button type="button" id="vgPrevBtn" class="btn btn--ghost btn--block" data-loading="조회 중…" onclick="vgPreview(this)">API 미리보기 (10건)</button>
+      <?php if ($edit): ?><div class="sub card__body center"><a href="/connectors.php">+ 새 커넥터</a></div><?php endif; ?>
     </form>
-    <pre id="vgPrev" style="display:none;max-height:340px;overflow:auto;background:#0d1017;border:1px solid #30363d;border-radius:8px;padding:.7rem;font-size:.72rem;line-height:1.4;margin-top:.7rem;white-space:pre-wrap;word-break:break-all;"></pre>
+    <pre id="vgPrev" class="out" hidden></pre>
   </div>
 
   <script>
-  function vgPreview() {
+  // 외부 소스를 직접 치는 요청이라 수 초 걸린다 → 버튼 스피너 + 상단 진행바(vgLoading).
+  function vgPreview(btn) {
     var f = document.getElementById('connForm');
     var out = document.getElementById('vgPrev');
     var qs = new URLSearchParams({
       type: f.connector_type.value, url: f.url.value,
       api_key: f.api_key.value, ecosystem: f.ecosystem.value, days: f.days.value
     });
-    out.style.display = 'block';
+    out.hidden = false;
+    out.classList.add('is-loading');
     out.textContent = '조회 중…';
+    vgLoading(btn, true);
     fetch('/feed_preview.php?' + qs.toString())
       .then(function (r) { return r.json(); })
       .then(function (j) {
@@ -225,13 +231,17 @@ vg_header('피드 커넥터', 'connectors');
         var head = '총 ' + (j.count != null ? j.count : '?') + '건' + (j.note ? ' · ' + j.note : '') + ' (아래는 최대 10건)\n\n';
         out.textContent = head + JSON.stringify(j.sample, null, 2);
       })
-      .catch(function (e) { out.textContent = '요청 실패: ' + e; });
+      .catch(function (e) { out.textContent = '요청 실패: ' + e; })
+      .finally(function () {
+        out.classList.remove('is-loading');
+        vgLoading(btn, false);
+      });
   }
   </script>
 
   <div class="card">
     <strong>최근 수집 이력</strong>
-    <div style="margin-top:.6rem;">
+    <div class="card__body">
     <?php
     vg_table(
         [
@@ -248,7 +258,7 @@ vg_header('피드 커넥터', 'connectors');
             'empty' => '아직 실행 이력이 없습니다.',
             'cell' => [
                 1 => fn($l) => '<span class="why">' . vg_h($l['trigger_by']) . '</span>',
-                2 => fn($l) => '<span class="badge" style="background:' . ($statusColor[$l['status']] ?? '#6e7681') . ';">' . vg_h($l['status']) . '</span>',
+                2 => fn($l) => vg_badge((string) $l['status'], $statusTone[$l['status']] ?? 'muted'),
                 3 => fn($l) => '<span class="why">' . ($l['items_fetched'] !== null ? (int) $l['items_fetched'] . ' / ' . (int) $l['items_upserted'] : '–') . '</span>',
                 4 => fn($l) => '<span class="why">' . vg_h(mb_strimwidth((string) ($l['message'] ?? ''), 0, 50, '…')) . '</span>',
                 5 => fn($l) => '<span class="why">' . vg_h($l['started_at']) . '</span>',

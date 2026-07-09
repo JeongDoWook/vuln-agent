@@ -49,12 +49,12 @@ vg_header('대시보드', 'dashboard');
   <div class="sub">호스트별 최신 스캔 기준 요약 · 런타임 노출 맥락으로 우선순위화</div>
 
 <?php if ($err !== null): ?>
-  <div class="err"><strong>DB 오류</strong> · <?= vg_h($err) ?></div>
+  <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
   <div class="cards">
     <div class="kpi big"><b><?= $hostCount ?></b><span>호스트</span></div>
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
-      <div class="kpi" style="background:<?= vg_sev_color($s) ?>;color:#fff;"><b><?= (int) $totals[$s] ?></b><span><?= $s ?></span></div>
+      <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $totals[$s] ?></b><span><?= $s ?></span></div>
     <?php endforeach; ?>
   </div>
 
@@ -77,17 +77,7 @@ vg_header('대시보드', 'dashboard');
               1 => fn($r) => vg_h($r['os_id']) . ' ' . vg_h($r['os_version']),
               2 => fn($r) => vg_h((string) (int) $r['package_count']),
               3 => fn($r) => vg_h((string) (int) $r['exposure_count']),
-              4 => function ($r) use ($sevByScan) {
-                  $sc = $sevByScan[(int) $r['scan_id']] ?? [];
-                  if (!$sc) { return '<span class="why">–</span>'; }
-                  $html = '';
-                  foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s) {
-                      if (!empty($sc[$s])) {
-                          $html .= '<span class="badge" style="background:' . vg_sev_color($s) . ';" title="' . $s . '">' . (int) $sc[$s] . '</span>';
-                      }
-                  }
-                  return $html;
-              },
+              4 => fn($r) => vg_sev_counts($sevByScan[(int) $r['scan_id']] ?? []),
               5 => fn($r) => '<span class="why">' . vg_h($r['collected_at']) . '</span>',
               6 => fn($r) => '<a href="/findings.php?scan_id=' . (int) $r['scan_id'] . '">취약점 →</a>',
           ],
