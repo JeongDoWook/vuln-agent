@@ -1,0 +1,55 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * profile.php — 내 프로필 (로그인 사용자 모두).
+ *   현재 사용자명·역할 표시 + 본인 비밀번호 변경.
+ */
+
+require __DIR__ . '/../src/auth.php';
+require __DIR__ . '/../src/view.php';
+vg_require_login();
+
+$pdo = vg_pdo();
+$me  = vg_current_user();
+$msg = null; $err = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!vg_csrf_check($_POST['csrf'] ?? null)) {
+        $err = '세션이 만료되었습니다. 다시 시도하세요.';
+    } else {
+        $cur  = (string) ($_POST['current'] ?? '');
+        $new  = (string) ($_POST['new'] ?? '');
+        $conf = (string) ($_POST['confirm'] ?? '');
+        if ($new !== $conf) {
+            $err = '새 비밀번호가 일치하지 않습니다.';
+        } else {
+            $err = vg_change_own_password($pdo, (int) $me['id'], $cur, $new);
+            if ($err === null) {
+                $msg = '비밀번호가 변경되었습니다.';
+            }
+        }
+    }
+}
+
+$csrf = vg_csrf_token();
+
+vg_header('내 프로필', 'profile');
+?>
+  <h1>내 프로필</h1>
+  <div class="sub"><strong><?= vg_h($me['username']) ?></strong> · <?= vg_h(vg_role_label(vg_role())) ?></div>
+
+  <form class="card" method="post" style="max-width:360px;margin:0;">
+    <strong>비밀번호 변경</strong>
+    <?php if ($msg): ?><div class="err" style="background:#12261a;border-color:#238636;color:#7ee787;margin-top:.8rem;"><?= vg_h($msg) ?></div><?php endif; ?>
+    <?php if ($err): ?><div class="err" style="margin-top:.8rem;"><?= vg_h($err) ?></div><?php endif; ?>
+    <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+    <label for="current">현재 비밀번호</label>
+    <input type="password" id="current" name="current" autocomplete="current-password" required>
+    <label for="new">새 비밀번호 (8자 이상)</label>
+    <input type="password" id="new" name="new" autocomplete="new-password" required>
+    <label for="confirm">새 비밀번호 확인</label>
+    <input type="password" id="confirm" name="confirm" autocomplete="new-password" required>
+    <button type="submit">변경</button>
+  </form>
+<?php vg_footer();

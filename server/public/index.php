@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-vg_require_login();
+vg_require_menu('dashboard');
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0]; $hostCount = 0;
 try {

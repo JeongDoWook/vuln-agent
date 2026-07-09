@@ -25,6 +25,6 @@ CREATE TABLE IF NOT EXISTS tb_advisories (
 INSERT INTO tb_feed_connectors (name, connector_type, connection_json, schedule_json, enabled, last_status)
 VALUES
   ('KISA 보안공지', 'kisa',
-   JSON_OBJECT('url','https://www.boho.or.kr/kr/rss.do?bbsId=B0000133'),
+   JSON_OBJECT(),  -- url 비움 → 커넥터가 보호나라 다중 카테고리(보안공지·취약점정보·경보단계) 순회 수집
    JSON_OBJECT('mode','interval','interval_minutes',720), 1, 'never')
 ON DUPLICATE KEY UPDATE name = name;

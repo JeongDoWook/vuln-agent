@@ -11,8 +11,7 @@ require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/feeds.php';
 require __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
-vg_require_login();
-vg_require_admin();
+vg_require_menu('connectors');   // 피드 커넥터: 설정형 권한
 
 $pdo = vg_pdo();
 $msg = null; $err = null;

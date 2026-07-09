@@ -56,6 +56,24 @@ function vg_qs(array $overrides = []): string {
     return '?' . implode('&', $parts);
 }
 
+// 페이지당 표시 개수. ?per_page= 를 화이트리스트(25/50/100)로 검증해 반환. 잘못된 값이면 $default.
+function vg_perpage(int $default = 50): int {
+    $allowed = [25, 50, 100];
+    $v = (int) ($_GET['per_page'] ?? $default);
+    return in_array($v, $allowed, true) ? $v : $default;
+}
+
+// "페이지당 N개" 셀렉트. onchange 시 현재 쿼리스트링 유지한 채 per_page 변경 + page=1 로 이동.
+function vg_perpage_select(): void {
+    $current = vg_perpage();
+    echo '<select onchange="location.href=this.value" aria-label="페이지당 표시 개수">';
+    foreach ([25, 50, 100] as $n) {
+        $url = vg_qs(['per_page' => $n, 'page' => 1]);
+        echo '<option value="' . vg_h($url) . '"' . ($current === $n ? ' selected' : '') . '>' . $n . '개씩 보기</option>';
+    }
+    echo '</select>';
+}
+
 // 페이지네이션 링크 출력. total<=perPage 면 아무것도 출력하지 않음.
 function vg_page_nav(int $total, int $perPage, int $page): void {
     if ($total <= $perPage) {
@@ -97,6 +115,7 @@ function vg_page_nav(int $total, int $perPage, int $page): void {
         echo '<span class="muted">다음 ›</span>';
     }
     echo '<span class="muted">· 총 ' . number_format($total) . '건 · ' . $page . '/' . $totalPages . '페이지</span>';
+    vg_perpage_select();
     echo '</div>';
 }
 
@@ -223,17 +242,17 @@ function vg_header(string $title, string $active = ''): void {
   nav a.link.active { color:#fff; border-bottom:2px solid #1f6feb; }
   nav .spacer { flex:1; }
   nav .who { color:#8b93a1; font-size:.82rem; }
-  main { padding:1.8rem 1.5rem; max-width:1150px; margin:0 auto; }
+  main { padding:1.8rem 1.5rem; max-width:min(1480px, 96vw); margin:0 auto; }
   h1 { font-size:1.3rem; margin:0 0 .3rem; }
   .sub { color:#8b93a1; font-size:.85rem; margin-bottom:1.3rem; }
   .cards { display:flex; gap:.7rem; margin-bottom:1.3rem; flex-wrap:wrap; }
-  .kpi { border-radius:10px; padding:.6rem 1rem; min-width:92px; }
+  .kpi { border-radius:10px; padding:.7rem 1.2rem; min-width:100px; }
   .kpi.big { background:#171a21; border:1px solid #262b36; }
   .kpi b { font-size:1.5rem; display:block; line-height:1.2; }
   .kpi span { font-size:.74rem; opacity:.85; }
-  .card { background:#171a21; border:1px solid #262b36; border-radius:12px; padding:1rem 1.25rem; overflow-x:auto; margin-bottom:1.2rem; }
-  table { width:100%; border-collapse:collapse; font-size:.87rem; }
-  th,td { text-align:left; padding:.55rem .6rem; border-bottom:1px solid #262b36; vertical-align:top; }
+  .card { background:#171a21; border:1px solid #262b36; border-radius:12px; padding:1.1rem 1.4rem; overflow-x:auto; margin-bottom:1.2rem; }
+  table { width:100%; border-collapse:collapse; font-size:.93rem; }
+  th,td { text-align:left; padding:.7rem .9rem; border-bottom:1px solid #262b36; vertical-align:top; }
   th { color:#8b93a1; font-weight:600; font-size:.74rem; text-transform:uppercase; letter-spacing:.04em; }
   tr:last-child td { border-bottom:none; }
   .badge { display:inline-block; padding:.12rem .55rem; border-radius:999px; font-size:.72rem; font-weight:700; color:#fff; }
@@ -249,7 +268,7 @@ function vg_header(string $title, string $active = ''): void {
   button { margin-top:1.1rem; width:100%; padding:.6rem; background:#238636; color:#fff; border:none; border-radius:8px; font-size:.95rem; font-weight:600; cursor:pointer; }
   button:hover { background:#2ea043; }
   .btn-sm { width:auto; margin:0; padding:.35rem .8rem; font-size:.82rem; }
-  .trunc { display:inline-block; max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
+  .trunc { display:inline-block; max-width:440px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
   tbody tr:hover { background:#1c2029; }
   .toolbar { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:1rem; }
   input[type=search],select { padding:.45rem .6rem; background:#0f1115; border:1px solid #30363d; border-radius:8px; color:#e6e6e6; font-size:.85rem; }
@@ -267,16 +286,30 @@ function vg_header(string $title, string $active = ''): void {
 <?php if ($user !== null): ?>
   <nav>
     <span class="brand">🛡️ vuln-agent</span>
-    <a class="link <?= $active==='dashboard'?'active':'' ?>" href="/">대시보드</a>
-    <a class="link <?= $active==='findings'?'active':'' ?>" href="/findings.php">취약점</a>
-    <a class="link <?= $active==='advisories'?'active':'' ?>" href="/advisories.php">국내공지</a>
-    <?php if (($user['role'] ?? '') === 'admin'): ?>
+    <?php if (vg_can('dashboard')): ?>
+      <a class="link <?= $active==='dashboard'?'active':'' ?>" href="/">대시보드</a>
+    <?php endif; ?>
+    <?php if (vg_can('findings')): ?>
+      <a class="link <?= $active==='findings'?'active':'' ?>" href="/findings.php">취약점</a>
+    <?php endif; ?>
+    <?php if (vg_can('advisories')): ?>
+      <a class="link <?= $active==='advisories'?'active':'' ?>" href="/advisories.php">국내공지</a>
+    <?php endif; ?>
+    <?php if (vg_can('connectors')): ?>
       <a class="link <?= $active==='connectors'?'active':'' ?>" href="/connectors.php">피드</a>
+    <?php endif; ?>
+    <?php if (vg_can('users')): ?>
       <a class="link <?= $active==='users'?'active':'' ?>" href="/users.php">사용자</a>
+    <?php endif; ?>
+    <?php if (vg_can('activity')): ?>
       <a class="link <?= $active==='activity'?'active':'' ?>" href="/activity.php">감사로그</a>
     <?php endif; ?>
+    <?php if (vg_can('permissions')): ?>
+      <a class="link <?= $active==='permissions'?'active':'' ?>" href="/permissions.php">권한설정</a>
+    <?php endif; ?>
     <span class="spacer"></span>
-    <span class="who"><?= vg_h($user['username']) ?> (<?= vg_h($user['role']) ?>)</span>
+    <span class="who"><?= vg_h($user['username']) ?> (<?= vg_h(vg_role_label(vg_role())) ?>)</span>
+    <a class="link <?= $active==='profile'?'active':'' ?>" href="/profile.php">내 프로필</a>
     <a class="link" href="/logout.php">로그아웃</a>
   </nav>
 <?php endif; ?>

@@ -9,9 +9,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-vg_require_login();
-
-const VG_PER_PAGE = 50;
+vg_require_menu('advisories');
 
 $err = null; $rows = []; $total = 0;
 $q = trim((string) ($_GET['q'] ?? ''));
@@ -32,7 +30,7 @@ try {
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
 
-    $perPage = VG_PER_PAGE;
+    $perPage = vg_perpage();
     $offset = ($page - 1) * $perPage;
 
     $stmt = $pdo->prepare(
@@ -87,7 +85,7 @@ vg_header('국내 보안공지', 'advisories');
           ],
       ]
   );
-  if ($rows) { vg_page_nav($total, VG_PER_PAGE, $page); }
+  if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 <?php endif; ?>
 <?php vg_footer();
