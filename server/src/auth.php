@@ -108,17 +108,22 @@ function vg_role_label(string $role): string {
 
 // --- 설정형 메뉴 접근권한 (tb_role_permissions 기반) ---
 
-// 메뉴코드→한글라벨 SSOT. nav/권한설정 화면이 공유한다.
+/**
+ * 메뉴코드→한글라벨. 권한설정 화면(permissions.php)의 행 라벨 SSOT.
+ *   사이드바 라벨은 vg_nav_sections() 가 따로 갖는다 — 코드 하나가 링크 둘을 여는
+ *   경우(findings → 취약점 현황 + CVE 목록)가 있어 1:1 로 못 묶기 때문이다.
+ *   그래서 여기 라벨은 "그 코드를 체크하면 열리는 메뉴들"을 그대로 적는다.
+ */
 function vg_menus(): array {
     return [
         'dashboard'   => '대시보드',
-        'assets'      => '자산관리',
-        'findings'    => '취약점',
-        'advisories'  => '국내공지',
-        'connectors'  => '피드',
+        'assets'      => '자산 관리',
+        'findings'    => '취약점 현황 · CVE 목록',
+        'advisories'  => '국내 보안공지',
+        'connectors'  => '피드 커넥터',
         'users'       => '사용자',
-        'activity'    => '감사로그',
-        'permissions' => '권한설정',
+        'activity'    => '감사 로그',
+        'permissions' => '권한 설정',
     ];
 }
 

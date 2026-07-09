@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS tb_advisories (
   title      VARCHAR(512) NOT NULL,
   url        VARCHAR(768) NOT NULL,
   published  DATE NULL,
-  cve_ids    VARCHAR(512) NULL,                       -- 제목+본문에서 추출한 CVE(쉼표)
+  cve_ids    TEXT NULL,                               -- 제목+본문에서 추출한 CVE(쉼표). 패치데이 공지는 263개까지 나온다
   content    MEDIUMTEXT NULL,                         -- 본문 평문(태그 제거). NULL=미수집
   content_fetched_at DATETIME NULL,                   -- 본문 수집 시각
   fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
