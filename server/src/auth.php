@@ -112,6 +112,7 @@ function vg_role_label(string $role): string {
 function vg_menus(): array {
     return [
         'dashboard'   => '대시보드',
+        'assets'      => '자산관리',
         'findings'    => '취약점',
         'advisories'  => '국내공지',
         'connectors'  => '피드',
