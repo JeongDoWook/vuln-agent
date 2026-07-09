@@ -167,7 +167,7 @@ vg_header('CVE 목록', 'cves');
                   ? vg_h(number_format((float) $r['epss'] * 100, 1)) . '%'
                   : '<span class="why">–</span>',
               4 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
-              5 => fn($r) => !empty($r['summary']) ? vg_trunc($r['summary'], 90) : '<span class="why">–</span>',
+              5 => fn($r) => !empty($r['summary']) ? vg_trunc($r['summary'], 110) : '<span class="why">–</span>',
           ],
       ]
   );

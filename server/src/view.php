@@ -257,7 +257,7 @@ function vg_header(string $title, string $active = ''): void {
   nav a.link.active { color:#fff; border-bottom:2px solid #1f6feb; }
   nav .spacer { flex:1; }
   nav .who { color:#8b93a1; font-size:.82rem; }
-  main { padding:1.8rem 1.5rem; max-width:min(1480px, 96vw); margin:0 auto; }
+  main { padding:1.8rem 1.2rem; max-width:min(1920px, 98vw); margin:0 auto; }
   h1 { font-size:1.3rem; margin:0 0 .3rem; }
   .sub { color:#8b93a1; font-size:.85rem; margin-bottom:1.3rem; }
   .cards { display:flex; gap:.7rem; margin-bottom:1.3rem; flex-wrap:wrap; }
@@ -286,7 +286,7 @@ function vg_header(string $title, string $active = ''): void {
   button { margin-top:1.1rem; width:100%; padding:.6rem; background:#238636; color:#fff; border:none; border-radius:8px; font-size:.95rem; font-weight:600; cursor:pointer; }
   button:hover { background:#2ea043; }
   .btn-sm { width:auto; margin:0; padding:.35rem .8rem; font-size:.82rem; }
-  .trunc { display:inline-block; max-width:440px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
+  .trunc { display:inline-block; max-width:min(46vw, 820px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
   tbody tr:hover { background:#1c2029; }
   .toolbar { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin-bottom:1rem; }
   input[type=search],select { padding:.45rem .6rem; background:#0f1115; border:1px solid #30363d; border-radius:8px; color:#e6e6e6; font-size:.85rem; }
