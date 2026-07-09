@@ -298,6 +298,11 @@ function vg_header(string $title, string $active = ''): void {
   .card strong { color:#e6e6e6; }
   .kpi.big:hover, .card:hover { border-color:#30363d; }
   a.kpi:hover { filter:brightness(1.08); }
+  /* 작업(액션) 열: 버튼·링크·인풋 높이/간격 정렬 (connectors·users) */
+  .actions { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
+  .actions form { margin:0; display:inline-flex; gap:.25rem; align-items:center; }
+  .btn-sm { display:inline-flex; align-items:center; justify-content:center; height:1.9rem; line-height:1; border-radius:8px; }
+  .actions input[type=password], .actions select { height:1.9rem; }
 </style>
 </head>
 <body>
