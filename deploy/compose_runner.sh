@@ -32,6 +32,17 @@ say() { printf "%b\n" "$1"; }
 BASE_FILE="compose.yml"
 COMMON_FILE="compose.common.yml"
 
+# --- 워크트리 감지 -----------------------------------------------------------
+# 이 스크립트가 wt/<이름>/deploy/ 안에 있으면 그 워크트리 전용 dev 스택으로 띄운다.
+#   프로젝트명·컨테이너명·이미지태그에 -<이름> 접미사를 붙여 메인 dev 스택과 격리.
+#   (compose 의 상대경로 ../server, ../db, ../secrets 는 이미 이 트리를 가리킨다)
+TREE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+WT_NAME=""
+if [ "$(basename "$(dirname "$TREE_ROOT")")" = "wt" ]; then
+  WT_NAME="$(basename "$TREE_ROOT")"
+fi
+WT_SUFFIX="${WT_NAME:+-$WT_NAME}"
+
 show_help() {
   say "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   say "${CYAN}  vuln-agent · Compose Runner${NC}"
@@ -173,8 +184,19 @@ ENV="$1"; shift
 case "$ENV" in
   dev|development)
     ENV_FILE="compose.dev.yml"; ENV_VAR_FILE=".env.dev"
-    PROJECT="vulnagent-dev";    ENV_DISPLAY="Development" ;;
+    PROJECT="vulnagent-dev${WT_SUFFIX}"
+    ENV_DISPLAY="Development${WT_NAME:+ · wt/$WT_NAME}"
+    # compose 파일이 참조하는 이름들. 워크트리가 아니면 접미사가 비어 기존 이름 그대로다.
+    export DB_CONTAINER="vulnagent-db-dev${WT_SUFFIX}"
+    export WEB_CONTAINER="vulnagent-web-dev${WT_SUFFIX}"
+    export SCHEDULER_CONTAINER="vulnagent-scheduler-dev${WT_SUFFIX}"
+    export APP_TAG="${WT_NAME:-latest}" ;;
   prod|production)
+    # 워크트리에서 운영 스택을 건드리는 건 사고다. 메인 트리에서만 허용.
+    if [ -n "$WT_NAME" ]; then
+      say "${RED}오류: 워크트리(wt/$WT_NAME)에서는 prod 를 띄울 수 없습니다.${NC}"
+      say "메인 트리에서 실행하세요."; exit 1
+    fi
     ENV_FILE="compose.prod.yml"; ENV_VAR_FILE=".env.prod"
     PROJECT="vulnagent";         ENV_DISPLAY="Production" ;;
   *)

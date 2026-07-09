@@ -47,6 +47,10 @@ cd deploy
 | 환경변수 | `.env.dev` | `.env.prod` |
 | 프로젝트명 | `vulnagent-dev` | `vulnagent` |
 
+`wt/<이름>/` 워크트리에서 dev 를 띄우면 프로젝트명·컨테이너명·이미지태그에 `-<이름>` 이 붙고
+포트도 따로 잡히므로, 메인 dev 스택(8080)과 나란히 돌릴 수 있다. 워크트리 만들기는
+`./deploy/wt.sh add feat/무엇` — 자세한 규칙은 [CLAUDE.md](CLAUDE.md#작업-파이프라인) 참고.
+
 - 현황 페이지(dev): <http://localhost:8080>
 - 현황 페이지(prod): <https://ost-server.duckdns.org:8080> (자체서명 인증서 → 브라우저 경고 뜸)
 - 수신 API: `POST .../ingest.php` (헤더 `X-Agent-Token`). prod 는 web 이 외부에 직접 노출되지

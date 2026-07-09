@@ -31,6 +31,7 @@
 - 비밀값은 코드/커밋 금지 → Docker Secrets(`secrets/*.txt`, gitignore).
 - 커밋 메시지·주석·UI 는 한글. 각 단계는 "돌아가는 상태"로 커밋.
 - 스키마 변경 후 dev 볼륨 유지하려면 `docker compose -p vulnagent-dev exec -T db sh -c 'mysql...' < db/0X.sql` 로 수동 적용(initdb 는 빈 볼륨만 실행).
+  워크트리에선 프로젝트명이 `vulnagent-dev-<워크트리이름>` 이다.
 - Windows git-bash 에서 컨테이너에 절대경로 전달 시 `MSYS_NO_PATHCONV=1` 접두.
 - 변경 후 `./tests/smoke.sh` 로 회귀 확인. PHP 는 `php -l`, 쉘은 `bash -n`.
 
@@ -42,9 +43,25 @@
 4. 한 책임만 지는가, 기존 코드 수정 없이 확장되나? (SOLID)
 
 ## 작업 파이프라인
-기능·수정 작업은 main 에서 브랜치를 따서 진행하고 PR 로 병합한다.
-- 흐름: `git switch -c <브랜치>` → 구현 → 검증 게이트 → 커밋 → push → PR.
-- 브랜치 이름은 `feat/`·`fix/`·`chore/` 접두사를 쓴다.
+기능·수정 작업은 **`wt/<이름>/` 워크트리에서** 진행하고 PR 로 병합한다.
+
+```bash
+./deploy/wt.sh add feat/무엇       # wt/무엇 생성(origin/main 기점) + secrets/.env 복사 + 빈 포트 할당
+cd wt/무엇
+./deploy/compose_runner.sh dev up -d --build   # 이 워크트리 전용 스택
+./tests/smoke.sh http://localhost:<할당된포트>
+# 구현 → 검증 게이트 → 커밋 → push → PR
+./deploy/wt.sh rm 무엇             # 병합 후 정리(스택 down -v + 워크트리 제거)
+```
+
+- **메인 트리(`vuln-agent/`)에서 직접 작업하지 않는다.** 메인 트리는 `main` 에 두고 pull 용으로만 쓴다.
+- 왜: 워크트리는 폴더마다 HEAD 를 따로 갖는다. 한 트리를 여러 세션이 공유하면 A 가 브랜치를 갈아탈 때
+  B 의 커밋이 엉뚱한 브랜치에 얹히고 push 가 빈 push 가 된다(실제로 발생). git 은 같은 브랜치를
+  두 워크트리에 체크아웃하는 걸 거부하므로 워크트리를 쓰면 이 사고가 구조적으로 불가능하다.
+- 브랜치 이름은 `feat/`·`fix/`·`chore/` 접두사. 워크트리 폴더명은 브랜치의 마지막 조각.
+- 워크트리에서 `git push` 하면 pre-push 훅의 스모크는 기본값(8080=메인 스택)을 친다.
+  자기 스택으로 검사하려면 `VG_SMOKE_BASE=http://localhost:<포트> git push`.
+- 워크트리에서 `prod` 는 띄울 수 없다(compose_runner.sh 가 거부). 운영은 메인 트리에서만.
 
 ## 가드레일 (강제)
 - **main 직접 commit/push 금지** — 항상 작업 브랜치 경유 후 PR 로 병합. (`.claude/hooks/block-main-push.sh` 가 차단)
