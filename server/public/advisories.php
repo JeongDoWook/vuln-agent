@@ -21,7 +21,9 @@ try {
     $where = 'is_deleted = 0';
     $params = [];
     if ($q !== '') {
-        $where .= ' AND (title LIKE ? OR cve_ids LIKE ?)';
+        // 본문까지 검색 대상(수집된 건에 한함). 2천여 행이라 LIKE 스캔으로 충분.
+        $where .= ' AND (title LIKE ? OR cve_ids LIKE ? OR content LIKE ?)';
+        $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
     }
@@ -34,7 +36,8 @@ try {
     $offset = ($page - 1) * $perPage;
 
     $stmt = $pdo->prepare(
-        "SELECT source, title, url, published, cve_ids FROM tb_advisories
+        "SELECT id, source, title, url, published, cve_ids
+         FROM tb_advisories
          WHERE $where
          ORDER BY published DESC, id DESC
          LIMIT $perPage OFFSET $offset"
@@ -48,7 +51,7 @@ try {
 vg_header('국내 보안공지', 'advisories');
 ?>
   <h1>🇰🇷 국내 보안공지 <span style="font-size:.8rem;color:#8b93a1;">(KISA 보호나라)</span></h1>
-  <div class="sub">해외 스캐너가 다루지 않는 국내 보안공지. <a href="/connectors.php">피드 커넥터</a>(kisa)가 주기 수집.</div>
+  <div class="sub">해외 스캐너가 다루지 않는 국내 보안공지. <a href="/connectors.php">피드 커넥터</a>(kisa)가 본문까지 주기 수집. 제목을 누르면 상세를 봅니다.</div>
 
 <?php if ($err !== null): ?>
   <div class="err"><strong>오류</strong> · <?= vg_h($err) ?></div>
@@ -64,14 +67,14 @@ vg_header('국내 보안공지', 'advisories');
           ['label' => '발행일'],
           ['label' => '제목'],
           ['label' => '관련 CVE'],
-          ['label' => ''],
       ],
       $rows,
       [
           'empty' => $emptyMsg,
           'cell' => [
               0 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
-              1 => fn($r) => vg_trunc($r['title']),
+              // 제목을 누르면 상세로. 원문은 상세 안의 [원문 열기] 버튼에서 연다.
+              1 => fn($r) => '<a href="/advisory.php?id=' . (int) $r['id'] . '">' . vg_trunc($r['title']) . '</a>',
               2 => function ($r) {
                   if (empty($r['cve_ids'])) { return '<span class="why">–</span>'; }
                   $html = '';
@@ -81,7 +84,6 @@ vg_header('국내 보안공지', 'advisories');
                   }
                   return $html;
               },
-              3 => fn($r) => '<a href="' . vg_h($r['url']) . '" target="_blank" rel="noopener">원문 →</a>',
           ],
       ]
   );
