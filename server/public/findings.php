@@ -110,7 +110,7 @@ try {
 
 vg_header('취약점', 'findings');
 ?>
-  <h1>취약점 우선순위 <span style="font-size:.8rem;color:#8b93a1;">(매처 결과)</span></h1>
+  <h1>취약점 우선순위 <span class="hint">(매처 결과)</span></h1>
   <div class="sub">
     <?php if ($scan): ?>
       호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['id'] ?> · <?= vg_h($scan['collected_at']) ?>
@@ -126,12 +126,12 @@ vg_header('취약점', 'findings');
   </div>
 
 <?php if ($err !== null): ?>
-  <div class="err"><strong>오류</strong> · <?= vg_h($err) ?></div>
+  <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <div class="cards">
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
       <a href="<?= vg_h(vg_qs(['sev' => $sev === $s ? '' : $s, 'page' => 1])) ?>"
-         class="kpi" style="background:<?= vg_sev_color($s) ?>;color:#fff;<?= $sev === $s ? 'outline:2px solid #fff;' : '' ?>">
+         class="kpi tone-<?= vg_sev_tone($s) ?><?= $sev === $s ? ' is-selected' : '' ?>">
         <b><?= (int) $counts[$s] ?></b><span><?= $s ?></span>
       </a>
     <?php endforeach; ?>
@@ -173,8 +173,8 @@ vg_header('취약점', 'findings');
           'empty' => '조건에 맞는 판정 결과가 없습니다.',
           'cell' => [
               'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
-              'severity'       => fn($r) => '<span class="badge" style="background:' . vg_sev_color($r['severity']) . ';">' . vg_h($r['severity']) . '</span>',
-              'runtime_status' => fn($r) => '<span class="badge" style="background:' . vg_status_color($r['runtime_status']) . ';">' . vg_h(vg_status_label($r['runtime_status'])) . '</span>',
+              'severity'       => fn($r) => vg_sev_badge((string) $r['severity']),
+              'runtime_status' => fn($r) => vg_status_badge($r['runtime_status']),
               'cve_id' => function ($r) {
                   $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a></strong>';
                   if ($r['summary']) { $html .= '<div class="why">' . vg_trunc($r['summary']) . '</div>'; }

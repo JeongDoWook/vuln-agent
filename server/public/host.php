@@ -74,12 +74,13 @@ try {
     $err = $e->getMessage();
 }
 
-$scopeColor = ['EXTERNAL'=>'#da3633','BOUND'=>'#9e6a03','LOCAL'=>'#6e7681'];
+// 노출 범위 → 뱃지 톤(색은 CSS 가 결정).
+$scopeTone = ['EXTERNAL' => 'crit', 'BOUND' => 'med', 'LOCAL' => 'muted'];
 
 vg_header($host['fqdn'] ?? '호스트', 'dashboard');
 ?>
 <?php if ($err !== null): ?>
-  <div class="err"><strong>오류</strong> · <?= vg_h($err) ?></div>
+  <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif (!$host): ?>
   <div class="card"><div class="empty">호스트를 찾을 수 없습니다. <a href="/">← 대시보드</a></div></div>
 <?php else: ?>
@@ -96,14 +97,14 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
   <?php else: ?>
     <div class="cards">
       <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
-        <div class="kpi" style="background:<?= vg_sev_color($s) ?>;color:#fff;"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
+        <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
       <?php endforeach; ?>
       <div class="kpi big"><b><?= count($exposures) ?></b><span>노출 소켓</span></div>
     </div>
 
     <div class="card">
       <strong>런타임 노출</strong> <span class="why">— 어떤 프로세스가 무슨 포트를 열고 어떤 라이브러리를 로드했나</span>
-      <div style="margin-top:.6rem;">
+      <div class="card__body">
       <?php
       vg_table(
           [
@@ -118,7 +119,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               'card' => false,
               'empty' => '리스닝 소켓 없음(외부 노출면 없음).',
               'cell' => [
-                  0 => fn($e) => '<span class="badge" style="background:' . ($scopeColor[$e['scope']] ?? '#6e7681') . ';">' . vg_h($e['scope']) . '</span>',
+                  0 => fn($e) => vg_badge((string) $e['scope'], $scopeTone[$e['scope']] ?? 'muted'),
                   2 => fn($e) => vg_h($e['proto']) . '/' . (int) $e['port'],
                   4 => fn($e) => '<span class="why">' . vg_trunc($e['loaded_pkgs'], 60) . '</span>',
               ],
@@ -130,7 +131,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
 
     <div class="card">
       <strong>실행 프로세스</strong> <span class="why">— 실행 중인 프로그램과 소속 패키지(=실행중), 로드한 라이브러리(=사용중)</span>
-      <div style="margin-top:.6rem;">
+      <div class="card__body">
       <?php
       vg_table(
           [
@@ -158,7 +159,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
     <div class="card">
       <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
       <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>">전체 취약점 보기 →</a></span>
-      <div style="margin-top:.6rem;">
+      <div class="card__body">
       <?php
       vg_table(
           [
@@ -175,8 +176,8 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               'card' => false,
               'empty' => 'CRITICAL·HIGH 없음(외부노출된 취약점이 없음).',
               'cell' => [
-                  'severity'       => fn($f) => '<span class="badge" style="background:' . vg_sev_color($f['severity']) . ';">' . vg_h($f['severity']) . '</span>',
-                  'runtime_status' => fn($f) => '<span class="badge" style="background:' . vg_status_color($f['runtime_status']) . ';">' . vg_h(vg_status_label($f['runtime_status'])) . '</span>',
+                  'severity'       => fn($f) => vg_sev_badge((string) $f['severity']),
+                  'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
                   2 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>',
                   3 => fn($f) => $f['epss'] !== null ? vg_h(number_format((float) $f['epss'] * 100, 1)) . '%' : '-',
                   4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>',
@@ -191,7 +192,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
 
     <div class="card" id="scans">
       <strong>스캔 이력</strong> <span class="why">— 최근 20회. 회차를 눌러 그 시점의 취약점을 본다</span>
-      <div style="margin-top:.6rem;">
+      <div class="card__body">
       <?php
       vg_table(
           [
@@ -214,17 +215,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
                   'package_count'  => fn($s) => number_format((int) $s['package_count']),
                   'exposure_count' => fn($s) => number_format((int) $s['exposure_count']),
                   'agent_version'  => fn($s) => $s['agent_version'] ? '<code>' . vg_h($s['agent_version']) . '</code>' : '<span class="why">–</span>',
-                  'sev' => function ($s) use ($sevByScan) {
-                      $sc = $sevByScan[(int) $s['id']] ?? [];
-                      if (!$sc) { return '<span class="why">–</span>'; }
-                      $html = '';
-                      foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $lv) {
-                          if (!empty($sc[$lv])) {
-                              $html .= '<span class="badge" style="background:' . vg_sev_color($lv) . ';" title="' . $lv . '">' . (int) $sc[$lv] . '</span> ';
-                          }
-                      }
-                      return $html;
-                  },
+                  'sev' => fn($s) => vg_sev_counts($sevByScan[(int) $s['id']] ?? []),
               ],
           ]
       );

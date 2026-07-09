@@ -42,15 +42,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $err === null) {
 vg_header('로그인');
 ?>
   <form class="card" method="post" action="/login.php">
-    <h1 style="text-align:center;">🛡️ vuln-agent</h1>
-    <div class="sub" style="text-align:center;">로그인이 필요합니다</div>
-    <?php if ($err): ?><div class="err"><?= vg_h($err) ?></div><?php endif; ?>
+    <h1>🛡️ vuln-agent</h1>
+    <div class="sub">로그인이 필요합니다</div>
+    <?php vg_alert($err); ?>
     <input type="hidden" name="csrf" value="<?= vg_h(vg_csrf_token()) ?>">
     <label for="username">아이디</label>
     <input type="text" id="username" name="username" autofocus autocomplete="username" required>
     <label for="password">비밀번호</label>
     <input type="password" id="password" name="password" autocomplete="current-password" required>
-    <button type="submit">로그인</button>
+    <?php // 로그인 실패가 누적되면 서버가 최대 5초 지연시킨다 → 스피너로 "멈춘 게 아님" 을 보여준다. ?>
+    <button type="submit" class="btn btn--ok btn--block" data-loading="확인 중…">로그인</button>
   </form>
 <?php
 vg_footer();

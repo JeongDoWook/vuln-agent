@@ -39,17 +39,18 @@ vg_header('내 프로필', 'profile');
   <h1>내 프로필</h1>
   <div class="sub"><strong><?= vg_h($me['username']) ?></strong> · <?= vg_h(vg_role_label(vg_role())) ?></div>
 
-  <form class="card" method="post" style="max-width:360px;margin:0;">
+  <div class="card card--sm">
     <strong>비밀번호 변경</strong>
-    <?php if ($msg): ?><div class="err" style="background:#12261a;border-color:#238636;color:#7ee787;margin-top:.8rem;"><?= vg_h($msg) ?></div><?php endif; ?>
-    <?php if ($err): ?><div class="err" style="margin-top:.8rem;"><?= vg_h($err) ?></div><?php endif; ?>
-    <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-    <label for="current">현재 비밀번호</label>
-    <input type="password" id="current" name="current" autocomplete="current-password" required>
-    <label for="new">새 비밀번호 (8자 이상)</label>
-    <input type="password" id="new" name="new" autocomplete="new-password" required>
-    <label for="confirm">새 비밀번호 확인</label>
-    <input type="password" id="confirm" name="confirm" autocomplete="new-password" required>
-    <button type="submit">변경</button>
-  </form>
+    <form method="post" class="card__body">
+      <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+      <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+      <label for="current">현재 비밀번호</label>
+      <input type="password" id="current" name="current" autocomplete="current-password" required>
+      <label for="new">새 비밀번호 (8자 이상)</label>
+      <input type="password" id="new" name="new" autocomplete="new-password" required>
+      <label for="confirm">새 비밀번호 확인</label>
+      <input type="password" id="confirm" name="confirm" autocomplete="new-password" required>
+      <button type="submit" class="btn btn--ok btn--block">변경</button>
+    </form>
+  </div>
 <?php vg_footer();

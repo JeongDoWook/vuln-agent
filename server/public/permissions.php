@@ -58,28 +58,26 @@ vg_header('권한설정', 'permissions');
   <h1>역할별 메뉴 접근권한</h1>
   <div class="sub">admin 전용 · 운영자·사용자가 접근할 수 있는 메뉴를 체크로 설정 · 관리자는 항상 전체 허용</div>
 
-  <?php if ($msg): ?><div class="err" style="background:#12261a;border-color:#238636;color:#7ee787;"><?= vg_h($msg) ?></div><?php endif; ?>
-  <?php if ($err): ?><div class="err"><?= vg_h($err) ?></div><?php endif; ?>
+  <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <form method="post">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
     <div class="card">
-      <table>
+      <table class="matrix">
         <thead><tr>
           <th>메뉴</th>
-          <th style="text-align:center;width:120px;">관리자</th>
-          <th style="text-align:center;width:120px;">운영자</th>
-          <th style="text-align:center;width:120px;">사용자</th>
+          <th class="col-role">관리자</th>
+          <th class="col-role">운영자</th>
+          <th class="col-role">사용자</th>
         </tr></thead>
         <tbody>
         <?php foreach ($menus as $code => $label): ?>
           <tr>
             <td><strong><?= vg_h($label) ?></strong> <code><?= vg_h($code) ?></code></td>
-            <td style="text-align:center;" title="관리자는 항상 전체 허용"><span class="pill">✔ 항상</span></td>
+            <td title="관리자는 항상 전체 허용"><span class="pill">✔ 항상</span></td>
             <?php foreach (VG_PERM_ROLES as $role): ?>
-              <td style="text-align:center;">
+              <td>
                 <input type="checkbox" name="perm[<?= vg_h($role) ?>][<?= vg_h($code) ?>]" value="1"
-                       style="width:auto;margin:0;cursor:pointer;transform:scale(1.3);"
                        <?= !empty($cur[$role][$code]) ? 'checked' : '' ?>>
               </td>
             <?php endforeach; ?>
@@ -88,10 +86,10 @@ vg_header('권한설정', 'permissions');
         </tbody>
       </table>
     </div>
-    <div style="max-width:200px;"><button type="submit">저장</button></div>
+    <button type="submit" class="btn btn--ok" data-loading="저장 중…">저장</button>
   </form>
 
-  <div class="sub" style="margin-top:.5rem;">
+  <div class="sub card__body">
     · <strong>권한설정</strong> 메뉴 자체는 관리자 전용이라 목록에서 제외됩니다.<br>
     · 관리자 계정은 어떤 설정과 무관하게 모든 메뉴에 접근합니다(잠금방지).
   </div>

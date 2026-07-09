@@ -14,6 +14,7 @@ vg_require_menu('advisories');
 $err = null; $rows = []; $total = 0;
 $q = trim((string) ($_GET['q'] ?? ''));
 $page = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = vg_perpage();
 
 try {
     $pdo = vg_pdo();
@@ -32,7 +33,6 @@ try {
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
 
-    $perPage = vg_perpage();
     $offset = ($page - 1) * $perPage;
 
     $stmt = $pdo->prepare(
@@ -50,11 +50,11 @@ try {
 
 vg_header('국내 보안공지', 'advisories');
 ?>
-  <h1>🇰🇷 국내 보안공지 <span style="font-size:.8rem;color:#8b93a1;">(KISA 보호나라)</span></h1>
+  <h1>🇰🇷 국내 보안공지 <span class="hint">(KISA 보호나라)</span></h1>
   <div class="sub">해외 스캐너가 다루지 않는 국내 보안공지. <a href="/connectors.php">피드 커넥터</a>(kisa)가 본문까지 주기 수집. 제목을 누르면 상세를 봅니다.</div>
 
 <?php if ($err !== null): ?>
-  <div class="err"><strong>오류</strong> · <?= vg_h($err) ?></div>
+  <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php vg_toolbar([
       ['type' => 'search', 'name' => 'q', 'placeholder' => '제목 또는 CVE 검색', 'value' => $q],

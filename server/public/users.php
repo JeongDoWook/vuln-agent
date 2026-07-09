@@ -81,8 +81,7 @@ vg_header('사용자', 'users');
   <h1>사용자 관리</h1>
   <div class="sub">admin 전용 · 계정 추가 · 역할 변경 · 비번 초기화 · 삭제</div>
 
-  <?php if ($msg): ?><div class="err" style="background:#12261a;border-color:#238636;color:#7ee787;"><?= vg_h($msg) ?></div><?php endif; ?>
-  <?php if ($err): ?><div class="err"><?= vg_h($err) ?></div><?php endif; ?>
+  <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <?php
   $meId = (int) ($me['id'] ?? 0);
@@ -95,7 +94,6 @@ vg_header('사용자', 'users');
       }
       return $out;
   };
-  $selCss = 'padding:.3rem;background:#0f1115;border:1px solid #30363d;border-radius:6px;color:#e6e6e6;font-size:.8rem;';
 
   vg_table(
       [
@@ -114,7 +112,7 @@ vg_header('사용자', 'users');
               2 => fn($u) => '<span class="pill">' . vg_h(vg_role_label($u['role'])) . '</span>',
               3 => fn($u) => '<span class="why">' . vg_h($u['created_at']) . '</span>',
               4 => fn($u) => '<span class="why">' . vg_h($u['last_login'] ?? '–') . '</span>',
-              5 => function ($u) use ($csrf, $meId, $roleOptions, $selCss) {
+              5 => function ($u) use ($csrf, $meId, $roleOptions) {
                   $id = (int) $u['id'];
                   // 정규화된 현재 역할(레거시 viewer→user).
                   $cur = $u['role'] === 'viewer' ? 'user' : (string) $u['role'];
@@ -125,8 +123,8 @@ vg_header('사용자', 'users');
                           . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                           . '<input type="hidden" name="action" value="role">'
                           . '<input type="hidden" name="id" value="' . $id . '">'
-                          . '<select name="role" style="' . $selCss . '">' . $roleOptions($cur) . '</select>'
-                          . '<button class="btn-sm" style="background:#30363d;">역할</button></form>';
+                          . '<select name="role">' . $roleOptions($cur) . '</select>'
+                          . '<button class="btn btn--sm btn--ghost">역할</button></form>';
                   } else {
                       $html .= '<span class="why">(본인)</span>';
                   }
@@ -135,15 +133,15 @@ vg_header('사용자', 'users');
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="reset">'
                       . '<input type="hidden" name="id" value="' . $id . '">'
-                      . '<input type="password" name="password" placeholder="새 비번(8자+)" style="' . $selCss . 'width:120px;">'
-                      . '<button class="btn-sm" style="background:#9e6a03;">초기화</button></form>';
+                      . '<input type="password" name="password" placeholder="새 비번(8자+)">'
+                      . '<button class="btn btn--sm btn--warn">초기화</button></form>';
                   // 삭제(자기 자신 제외).
                   if ($id !== $meId) {
                       $html .= '<form method="post" onsubmit="return confirm(\'삭제할까요?\');">'
                           . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                           . '<input type="hidden" name="action" value="delete">'
                           . '<input type="hidden" name="id" value="' . $id . '">'
-                          . '<button class="btn-sm" style="background:#6e2830;">삭제</button></form>';
+                          . '<button class="btn btn--sm btn--danger">삭제</button></form>';
                   }
                   $html .= '</div>';
                   return $html;
@@ -153,9 +151,9 @@ vg_header('사용자', 'users');
   );
   ?>
 
-  <div class="card" style="max-width:520px;">
+  <div class="card card--narrow">
     <strong>사용자 추가</strong>
-    <form method="post" style="margin-top:.6rem;">
+    <form method="post" class="card__body">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="add">
       <label>아이디</label>
@@ -163,12 +161,12 @@ vg_header('사용자', 'users');
       <label>비밀번호 (4자 이상)</label>
       <input type="password" name="password" required>
       <label>역할</label>
-      <select name="role" style="width:100%;padding:.5rem;background:#0f1115;border:1px solid #30363d;border-radius:8px;color:#e6e6e6;">
+      <select name="role">
         <option value="user">사용자 (조회)</option>
         <option value="operator">운영자 (피드)</option>
         <option value="admin">관리자 (전체)</option>
       </select>
-      <button type="submit">추가</button>
+      <button type="submit" class="btn btn--ok btn--block">추가</button>
     </form>
   </div>
 <?php vg_footer();

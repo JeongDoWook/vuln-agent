@@ -13,6 +13,7 @@ vg_require_menu('activity');
 $err = null; $rows = []; $total = 0; $scopes = [];
 $scope = trim((string) ($_GET['scope'] ?? ''));
 $page = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = vg_perpage();
 
 try {
     $pdo = vg_pdo();
@@ -33,7 +34,6 @@ try {
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
 
-    $perPage = vg_perpage();
     $offset = ($page - 1) * $perPage;
 
     $stmt = $pdo->prepare(
@@ -55,7 +55,7 @@ vg_header('감사로그', 'activity');
   <div class="sub">admin 전용 · 사용자/시스템 행위 기록(최신순)</div>
 
 <?php if ($err !== null): ?>
-  <div class="err"><strong>오류</strong> · <?= vg_h($err) ?></div>
+  <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php vg_toolbar([
       ['type' => 'select', 'name' => 'scope', 'empty_label' => '전체 범위', 'selected' => $scope,
@@ -84,7 +84,7 @@ vg_header('감사로그', 'activity');
               5 => function ($r) {
                   $html = $r['message'] ? vg_trunc((string) $r['message']) : '<span class="why">–</span>';
                   if (!empty($r['data'])) {
-                      $html .= ' <span class="why trunc" style="max-width:280px;" title="' . vg_h((string) $r['data']) . '">[data]</span>';
+                      $html .= ' <span class="why trunc trunc--sm" title="' . vg_h((string) $r['data']) . '">[data]</span>';
                   }
                   return $html;
               },

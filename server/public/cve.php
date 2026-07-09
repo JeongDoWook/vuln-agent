@@ -54,11 +54,11 @@ vg_header($cveId !== '' ? $cveId : 'CVE', 'findings');
   <div class="sub"><a href="/findings.php">← 취약점</a></div>
 
 <?php if ($err !== null): ?>
-  <div class="err"><strong>오류</strong> · <?= vg_h($err) ?></div>
+  <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <h1>
     <?= vg_h($cveId) ?>
-    <?php if ($kev): ?><span class="badge" style="background:#da3633;">KEV</span><?php endif; ?>
+    <?php if ($kev): ?><?= vg_badge('KEV', 'crit') ?><?php endif; ?>
   </h1>
   <div class="sub">
     CVSS <?= $cve && $cve['cvss'] !== null ? vg_h((string) $cve['cvss']) : '-' ?> ·
@@ -68,12 +68,12 @@ vg_header($cveId !== '' ? $cveId : 'CVE', 'findings');
 
   <div class="card">
     <strong>요약</strong>
-    <p class="why" style="margin:.6rem 0 0;white-space:pre-wrap;"><?= $cve && $cve['summary'] ? vg_h($cve['summary']) : '해당 없음' ?></p>
+    <p class="why prose"><?= $cve && $cve['summary'] ? vg_h($cve['summary']) : '해당 없음' ?></p>
   </div>
 
   <div class="card">
     <strong>영향 패키지</strong>
-    <div style="margin-top:.6rem;">
+    <div class="card__body">
     <?php
     vg_table(
         [
@@ -96,7 +96,7 @@ vg_header($cveId !== '' ? $cveId : 'CVE', 'findings');
 
   <div class="card">
     <strong>이 CVE가 발견된 위치</strong> <span class="why">— 호스트별 최신 스캔 기준</span>
-    <div style="margin-top:.6rem;">
+    <div class="card__body">
     <?php
     vg_table(
         [
@@ -113,8 +113,8 @@ vg_header($cveId !== '' ? $cveId : 'CVE', 'findings');
             'empty' => '해당 없음',
             'cell' => [
                 0 => fn($l) => '<a href="/host.php?id=' . (int) $l['host_id'] . '">' . vg_h($l['fqdn']) . '</a>',
-                'severity'       => fn($l) => '<span class="badge" style="background:' . vg_sev_color($l['severity']) . ';">' . vg_h($l['severity']) . '</span>',
-                'runtime_status' => fn($l) => '<span class="badge" style="background:' . vg_status_color($l['runtime_status']) . ';">' . vg_h(vg_status_label($l['runtime_status'])) . '</span>',
+                'severity'       => fn($l) => vg_sev_badge((string) $l['severity']),
+                'runtime_status' => fn($l) => vg_status_badge($l['runtime_status']),
                 4 => fn($l) => '<code>' . vg_h($l['installed_version']) . '</code>',
                 5 => fn($l) => '<span class="why">' . vg_h($l['collected_at']) . '</span>',
             ],
