@@ -280,7 +280,8 @@ function vg_toolbar(array $fields): void {
             $options  = $f['options'] ?? [];
             $selected = (string) ($f['selected'] ?? '');
             $emptyLabel = (string) ($f['empty_label'] ?? '전체');
-            echo '<select name="' . vg_h($name) . '">';
+            // data-autosubmit: 고르는 즉시 폼 제출(app.js). JS 가 없으면 검색 버튼이 그대로 동작한다.
+            echo '<select name="' . vg_h($name) . '" data-autosubmit>';
             echo '<option value="">' . vg_h($emptyLabel) . '</option>';
             foreach ($options as $val => $label) {
                 $val = (string) $val;
