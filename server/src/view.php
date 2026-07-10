@@ -71,6 +71,28 @@ function vg_status_badge(?string $s): string {
     return vg_badge(vg_status_label($s), $tone[$s ?? ''] ?? 'muted');
 }
 
+/**
+ * EPSS 셀 — 악용확률과 백분위를 함께.
+ *
+ * 확률만 보면 크기 감이 안 온다. EPSS 는 절대다수가 1% 미만이라 "2.7%" 도 실은 상위권이다.
+ * FIRST 가 같이 주는 백분위(epss_percentile)를 "상위 N%" 로 뒤집어 붙여 맥락을 준다.
+ *   epss=0.02719, percentile=0.97281  →  "2.7% 상위 2.7%"
+ * 값이 없으면(1999년대 CVE 등 FIRST 가 점수를 안 매기는 건) 대시.
+ */
+function vg_epss_cell($epss, $percentile = null): string {
+    if ($epss === null || $epss === '') {
+        return '<span class="why">–</span>';
+    }
+    $out = vg_h(number_format((float) $epss * 100, 1)) . '%';
+    if ($percentile !== null && $percentile !== '') {
+        $top = (1.0 - (float) $percentile) * 100;
+        if ($top < 0.01) { $top = 0.01; }   // percentile=1.0 이 "상위 0%" 로 보이지 않게
+        $dec = $top < 1 ? 2 : ($top < 10 ? 1 : 0);
+        $out .= ' <span class="why">상위 ' . vg_h(number_format($top, $dec)) . '%</span>';
+    }
+    return $out;
+}
+
 /** 성공/오류 알림. $msg 가 null·빈문자면 아무것도 출력하지 않는다. */
 function vg_alert(?string $msg, string $type = 'err'): void {
     if ($msg === null || $msg === '') {

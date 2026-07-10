@@ -86,7 +86,7 @@ try {
     // cve_id 타이브레이크는 공짜다(InnoDB 보조 인덱스가 PK 를 품고 있어 역방향 스캔으로 처리).
     $col = VG_CVE_SORTS[$sort]['col'];
     $stmt = $pdo->prepare(
-        "SELECT c.cve_id, c.summary, c.cvss, c.epss, c.published,
+        "SELECT c.cve_id, c.summary, c.cvss, c.epss, c.epss_percentile, c.published,
                 (k.cve_id IS NOT NULL) AS is_kev
          $from
          WHERE $where
@@ -141,7 +141,7 @@ vg_header('CVE 목록', 'cves');
           ['label' => 'CVE', 'width' => '11rem'],
           ['label' => '심각도', 'width' => '6rem'],
           ['label' => 'CVSS', 'align' => 'right', 'width' => '4rem'],
-          ['label' => 'EPSS', 'align' => 'right', 'width' => '5rem'],
+          ['label' => 'EPSS', 'align' => 'right', 'width' => '9rem'],
           ['label' => '공개일', 'width' => '7rem'],
           ['label' => '요약'],
       ],
@@ -162,9 +162,7 @@ vg_header('CVE 목록', 'cves');
                   return vg_sev_badge(strtoupper($sev));   // 톤 매핑은 대문자 키를 받는다
               },
               2 => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '<span class="why">–</span>',
-              3 => fn($r) => $r['epss'] !== null
-                  ? vg_h(number_format((float) $r['epss'] * 100, 1)) . '%'
-                  : '<span class="why">–</span>',
+              3 => fn($r) => vg_epss_cell($r['epss'], $r['epss_percentile']),
               4 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
               5 => fn($r) => !empty($r['summary']) ? vg_trunc($r['summary'], 110) : '<span class="why">–</span>',
           ],

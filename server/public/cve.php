@@ -62,7 +62,7 @@ vg_header($cveId !== '' ? $cveId : 'CVE', 'findings');
   </h1>
   <div class="sub">
     CVSS <?= $cve && $cve['cvss'] !== null ? vg_h((string) $cve['cvss']) : '-' ?> ·
-    EPSS <?= $cve && $cve['epss'] !== null ? vg_h(number_format((float) $cve['epss'] * 100, 1)) . '%' : '-' ?> ·
+    EPSS <?= $cve ? vg_epss_cell($cve['epss'], $cve['epss_percentile']) : '-' ?> ·
     공개일 <?= $cve && $cve['published'] !== null ? vg_h((string) $cve['published']) : '-' ?>
   </div>
 
