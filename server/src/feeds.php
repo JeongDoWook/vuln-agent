@@ -183,6 +183,16 @@ function vg_kisa_canon_url(string $url): string {
 //   엔티티를 그대로 주고 목록 페이지는 해제된 문자를 준다. 경로마다 다르게 다듬으면
 //   같은 공지가 수집 주기마다 '수정'으로 뒤집힌다.
 //   반환: 'new' | 'updated' | 'unchanged'
+/**
+ * 두 cve_ids 문자열의 합집합(정렬·중복제거·형식검증).
+ *   양쪽 모두 vg_extract_cve_ids 를 통과시키므로 예전에 잘려 저장된 조각("CVE-2")이나
+ *   오탈자(CVE-0215-8451)는 여기서 함께 걸러진다.
+ */
+function vg_merge_cve_ids(?string $a, ?string $b): ?string {
+    $ids = vg_extract_cve_ids((string) $a . "\n" . (string) $b);
+    return $ids ? implode(',', $ids) : null;
+}
+
 function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url, ?string $published, ?string $cveIds): string {
     $url   = vg_kisa_canon_url($url);
     $title = html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -191,6 +201,13 @@ function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url
     $chk->execute([$url]);
     $cur = $chk->fetch(PDO::FETCH_ASSOC);
     if ($cur) {
+        // cve_ids 는 덮어쓰지 않고 합친다.
+        //   호출자(RSS 커넥터·목록 백필)는 "제목"만 보고 CVE 를 뽑는다. 본문에서 찾은 CVE 는
+        //   DB 에만 있다(vg_advisory_fill_content 가 채운다). 덮어쓰면 본문 유래 CVE 가 날아가고,
+        //   content_fetched_at 이 이미 찍혀 있어 fill_content 가 다시 채워주지도 않는다.
+        //   실제로 백필 재실행이 공지 1,742건의 cve_ids 를 지웠다.
+        //   전량 재계산(축소 포함)은 bin/rebuild_advisory_cveids.php 가 직접 UPDATE 로 한다.
+        $cveIds = vg_merge_cve_ids($cur['cve_ids'] ?? null, $cveIds);
         $same = $cur['title'] === $title
              && (string) $cur['published'] === (string) $published
              && (string) $cur['cve_ids'] === (string) $cveIds;

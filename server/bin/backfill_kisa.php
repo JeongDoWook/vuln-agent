@@ -136,12 +136,14 @@ foreach ($boards as $bbsId => $b) {
 
         $pdo->beginTransaction();
         foreach ($rows as $row) {
-            preg_match_all('/CVE-[0-9]{4}-[0-9]{4,}/i', $row['title'], $m);
-            $cveIds = $m[0] ? implode(',', array_map('strtoupper', array_unique($m[0]))) : null;
+            // 공용 헬퍼로 통일(정렬·중복제거·형식검증). 목록엔 제목뿐이라 본문 유래 CVE 는
+            // 알 수 없지만, vg_upsert_advisory 가 기존 값과 합쳐주므로 지워지지 않는다.
+            $ids    = vg_extract_cve_ids($row['title']);
+            $cveIds = $ids ? implode(',', $ids) : null;
             $res = vg_upsert_advisory($pdo, $b['source'], $row['title'], $row['url'], $row['published'], $cveIds);
             $stat[$res]++;
-            foreach ($m[0] as $cve) {
-                vg_upsert_cve($pdo, strtoupper($cve), null, null, null);
+            foreach ($ids as $cve) {
+                vg_upsert_cve($pdo, $cve, null, null, null);
             }
         }
         $pdo->commit();
