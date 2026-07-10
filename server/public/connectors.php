@@ -84,6 +84,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // CPU 30초를 넘기면 그 순간 죽고, catch 가 안 돌아 로그가 'running' 으로 굳는다.
                 set_time_limit(0);
                 ignore_user_abort(true);   // 브라우저를 닫아도 수집은 끝까지 마친다
+                // CLI 셋(bin/sync.php · scheduler.php · enrich_osv.php)은 512M 을 쓰는데 웹만
+                // 기본 256M 이었다. 같은 수집을 부르는 경로이니 한도도 같아야 한다.
+                //
+                // 실측(2026-07-10): 가장 무거운 EPSS 도 운영 규모(CVE 40만)에서 피크 74MB 다
+                // — 보유 CVE 해시 34MB + CSV 평문 10MB + explode 배열 28MB. 지금은 256M 으로도
+                // 넉넉하다. 터진 적은 없고, 호스트가 늘어 USN 캐시가 커질 때 UI 경로만 먼저
+                // 죽는 함정을 막아두는 것이다(죽으면 로그가 'running' 으로 굳는다).
+                ini_set('memory_limit', '512M');
                 $r = vg_feed_run($pdo, $id, 'manual');
                 if (!empty($r['ok'])) {
                     foreach (array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
