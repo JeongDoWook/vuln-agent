@@ -75,6 +75,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         vg_match_scan($pdo, $sid);
                     }
                     $msg = "실행 완료: {$r['upserted']} 건 수집 · 재매칭됨.";
+                    // OSV 면 조치안(fixed_version)까지 이어서 보강한다(findings 를 읽으므로 재매칭 뒤에).
+                    if (vg_feed_has_type($pdo, [$id], 'osv')) {
+                        $s = vg_osv_enrich_fixed($pdo);
+                        $msg .= " 조치안 {$s['filled']}건 보강.";
+                    }
                 } else {
                     $err = "실행 실패: {$r['error']}";
                 }

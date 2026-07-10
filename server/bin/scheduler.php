@@ -26,15 +26,23 @@ if (!$due) {
     exit(0);
 }
 
-$ok = 0;
+$ok = 0; $okIds = [];
 foreach ($due as $id) {
     $r = vg_feed_run($pdo, $id, 'schedule');
     fwrite(STDOUT, '[' . date('c') . "] connector #$id → " . ($r['ok'] ? "ok ({$r['upserted']} upserted)" : "error: {$r['error']}") . "\n");
-    if (!empty($r['ok'])) { $ok++; }
+    if (!empty($r['ok'])) { $ok++; $okIds[] = $id; }
 }
 
 if ($ok > 0) {
     $scans = array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN));
     foreach ($scans as $sid) { vg_match_scan($pdo, $sid); }
     fwrite(STDOUT, '[' . date('c') . "] 재매칭 완료 (" . count($scans) . " 스캔)\n");
+
+    // OSV 를 수집했으면 조치안(fixed_version)을 이어서 보강한다.
+    //   querybatch 응답엔 fixed 가 없어 findings 의 '조치' 칸이 비어버린다.
+    //   findings 를 읽으므로 반드시 재매칭 뒤에 부른다.
+    if (vg_feed_has_type($pdo, $okIds, 'osv')) {
+        $s = vg_osv_enrich_fixed($pdo);
+        fwrite(STDOUT, '[' . date('c') . "] OSV 조치안 보강 — 대상 {$s['targets']}종 · 조회 {$s['queried']} · 채움 {$s['filled']} · 건너뜀 {$s['skipped']}\n");
+    }
 }
