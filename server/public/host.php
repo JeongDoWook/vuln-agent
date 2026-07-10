@@ -43,7 +43,7 @@ try {
 
         // 상위 취약점(CRITICAL/HIGH) + 조치
         $st = $pdo->prepare(
-            "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale, c.epss,
+            "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale, c.epss, c.epss_percentile,
                 (SELECT a.fixed_version FROM tb_cve_affected_packages a
                  WHERE a.cve_id=f.cve_id AND a.package_name=f.package_name AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
              FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
@@ -179,7 +179,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
                   'severity'       => fn($f) => vg_sev_badge((string) $f['severity']),
                   'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
                   2 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>',
-                  3 => fn($f) => $f['epss'] !== null ? vg_h(number_format((float) $f['epss'] * 100, 1)) . '%' : '-',
+                  3 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
                   4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>',
                   5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
                   6 => fn($f) => !empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>',

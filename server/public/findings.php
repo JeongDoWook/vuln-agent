@@ -89,7 +89,7 @@ try {
         $offset = ($page - 1) * $perPage;
 
         $stmt = $pdo->prepare(
-            "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss,
+            "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss, c.epss_percentile,
                 (SELECT a.fixed_version FROM tb_cve_affected_packages a
                  WHERE a.cve_id = f.cve_id AND a.package_name = f.package_name
                    AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
@@ -183,7 +183,7 @@ vg_header('취약점', 'findings');
               'package_name'      => fn($r) => vg_h($r['package_name']),
               'installed_version' => fn($r) => '<code>' . vg_h($r['installed_version']) . '</code>',
               'cvss'      => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '-',
-              'epss'      => fn($r) => $r['epss'] !== null ? vg_h(number_format((float) $r['epss'] * 100, 1)) . '%' : '-',
+              'epss'      => fn($r) => vg_epss_cell($r['epss'], $r['epss_percentile']),
               'in_kev'    => fn($r) => $r['in_kev'] ? '✔' : '',
               'rationale' => fn($r) => '<span class="why">' . vg_trunc($r['rationale']) . '</span>',
               'fix'       => fn($r) => !empty($r['fixed_version']) ? '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>',
