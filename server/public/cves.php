@@ -31,6 +31,7 @@ $err = null; $rows = []; $total = 0;
 $q    = trim((string) ($_GET['q'] ?? ''));
 $sev  = (string) ($_GET['sev'] ?? '');
 $kev  = (string) ($_GET['kev'] ?? '');
+$eTop = (string) ($_GET['epss'] ?? '');   // 상위 N% (탭)
 $year = (string) ($_GET['year'] ?? '');
 $sort = (string) ($_GET['sort'] ?? '');
 $page = max(1, (int) ($_GET['page'] ?? 1));
@@ -39,7 +40,11 @@ $perPage = vg_perpage();
 if (!isset(VG_CVE_SORTS[$sort])) { $sort = 'published'; }
 if (!isset(VG_SEV_RANGES[$sev])) { $sev = ''; }
 if ($kev !== '1') { $kev = ''; }
+if (!in_array($eTop, ['1', '5', '10'], true)) { $eTop = ''; }
 if (!preg_match('/^(19|20)\d{2}$/', $year)) { $year = ''; }
+
+// EPSS 탭은 점수순으로 보는 게 기본. 사용자가 정렬을 고르면 그 선택이 이긴다.
+if ($eTop !== '' && !isset($_GET['sort'])) { $sort = 'epss'; }
 
 $years = [];
 for ($y = (int) date('Y'); $y >= 1999; $y--) { $years[(string) $y] = $y . '년'; }
@@ -67,6 +72,11 @@ try {
     }
     if ($kev === '1') {
         $where .= ' AND k.cve_id IS NOT NULL';
+    }
+    if ($eTop !== '') {
+        // percentile 0.99 = 상위 1%. FIRST 가 주는 백분위를 그대로 임계값으로 쓴다.
+        $where .= ' AND c.epss_percentile >= ?';
+        $params[] = 1 - ((float) $eTop / 100);
     }
     if ($year !== '') {
         // BETWEEN 범위 조건이라야 published 인덱스를 탄다(YEAR() 함수는 못 탐).
@@ -115,17 +125,32 @@ vg_header('CVE 목록', 'cves');
   <div class="sub">
     <a href="/connectors.php">피드 커넥터</a>(kev/osv/nvd/epss)가 수집한 CVE.
     KEV 는 실제 악용이 확인된 취약점, EPSS 는 향후 30일 내 악용 확률입니다.
+    패키지별로 보려면 <a href="/packages.php">영향 패키지</a>.
   </div>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
+  <?php
+  // 탭 = 자주 쓰는 필터 프리셋. KEV 셀렉트를 대체한다(같은 필터에 컨트롤이 둘이면 헷갈린다).
+  $tabs = [
+      ['전체',         vg_qs(['kev' => null, 'epss' => null, 'page' => null]),                        $kev === '' && $eTop === ''],
+      ['KEV 만',       vg_qs(['kev' => '1',  'epss' => null, 'page' => null]),                        $kev === '1'],
+      ['EPSS 상위 1%', vg_qs(['epss' => '1', 'kev' => null, 'sort' => 'epss', 'page' => null]),       $eTop !== ''],
+  ];
+  echo '<div class="tabs">';
+  foreach ($tabs as [$label, $href, $on]) {
+      echo '<a class="pill' . ($on ? ' pill--on' : '') . '" href="/cves.php' . $href . '">' . vg_h($label) . '</a>';
+  }
+  echo '</div>';
+  ?>
   <?php vg_toolbar([
+      // 탭 선택은 폼 밖에 있다 → 히든으로 실어야 검색·정렬 후에도 탭이 유지된다.
+      ['type' => 'hidden', 'name' => 'kev',  'value' => $kev],
+      ['type' => 'hidden', 'name' => 'epss', 'value' => $eTop],
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE-ID 또는 요약 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'sev', 'selected' => $sev, 'empty_label' => '심각도 전체',
        'options' => ['critical' => 'CRITICAL', 'high' => 'HIGH', 'medium' => 'MEDIUM', 'low' => 'LOW']],
-      ['type' => 'select', 'name' => 'kev', 'selected' => $kev, 'empty_label' => 'KEV 전체',
-       'options' => ['1' => 'KEV 만']],
       ['type' => 'select', 'name' => 'year', 'selected' => $year, 'empty_label' => '연도 전체',
        'options' => $years],
       // 기본값(공개일순)은 빈 값 옵션으로 표현 — 같은 항목이 두 번 뜨지 않게 한다.
@@ -134,7 +159,7 @@ vg_header('CVE 목록', 'cves');
   ]); ?>
 
   <?php
-  $hasFilter = $q !== '' || $sev !== '' || $kev !== '' || $year !== '';
+  $hasFilter = $q !== '' || $sev !== '' || $kev !== '' || $eTop !== '' || $year !== '';
   $emptyMsg = $hasFilter ? '조건에 맞는 CVE가 없습니다.' : '아직 수집된 CVE가 없습니다. 피드 커넥터를 실행하세요.';
   vg_table(
       [
