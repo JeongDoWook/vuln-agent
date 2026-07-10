@@ -50,13 +50,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $enabled = isset($_POST['enabled']) ? 1 : 0;
 
+                // 저장 즉시 next_run_at 을 새 스케줄로 다시 계산한다.
+                //   이 컬럼은 표시 전용 캐시인데 vg_feed_run() 안에서만 갱신됐다. 그래서 스케줄을
+                //   바꿔도 다음 실행이 한 번 돌기 전까지 화면에 옛 시각이 남았다(05:00 → 12:11 로
+                //   고쳐도 "다음 실행 05:00"). 실제 due 판정은 vg_feed_due() 가 schedule_json 과
+                //   last_run_at 로 매번 새로 하므로 실행 시각 자체는 원래 정상이었다.
+                //   interval 은 "마지막 실행 + N분" 이라야 due 판정과 같은 값이 나온다.
+                $lastRun = null;
                 if ($id > 0) {
-                    $st = $pdo->prepare('UPDATE tb_feed_connectors SET name=?, connector_type=?, connection_json=?, schedule_json=?, enabled=? WHERE id=?');
-                    $st->execute([$name, $type, json_encode($conn), json_encode($sched), $enabled, $id]);
+                    $q = $pdo->prepare('SELECT last_run_at FROM tb_feed_connectors WHERE id=?');
+                    $q->execute([$id]);
+                    $lastRun = $q->fetchColumn() ?: null;
+                }
+                $from = ($mode === 'interval' && $lastRun !== null) ? strtotime((string) $lastRun) : time();
+                $next = ($enabled && $mode !== 'manual') ? vg_schedule_next($sched, $from) : null;
+
+                if ($id > 0) {
+                    $st = $pdo->prepare('UPDATE tb_feed_connectors SET name=?, connector_type=?, connection_json=?, schedule_json=?, enabled=?, next_run_at=? WHERE id=?');
+                    $st->execute([$name, $type, json_encode($conn), json_encode($sched), $enabled, $next, $id]);
                     $msg = "커넥터 '$name' 수정됨.";
                 } else {
-                    $st = $pdo->prepare('INSERT INTO tb_feed_connectors (name, connector_type, connection_json, schedule_json, enabled, last_status) VALUES (?,?,?,?,?,?)');
-                    $st->execute([$name, $type, json_encode($conn), json_encode($sched), $enabled, 'never']);
+                    $st = $pdo->prepare('INSERT INTO tb_feed_connectors (name, connector_type, connection_json, schedule_json, enabled, last_status, next_run_at) VALUES (?,?,?,?,?,?,?)');
+                    $st->execute([$name, $type, json_encode($conn), json_encode($sched), $enabled, 'never', $next]);
                     $id = (int) $pdo->lastInsertId();
                     $msg = "커넥터 '$name' 추가됨.";
                 }
