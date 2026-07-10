@@ -364,11 +364,19 @@ function vg_osv_cve(array $vuln): ?string {
     return null;
 }
 
-// OSV vuln 에서 해당 패키지의 "고쳐진 버전"(조치안) 추출 — 마지막 fixed 이벤트.
-function vg_osv_fixed(array $vuln, string $key): ?string {
+/**
+ * OSV vuln 에서 해당 패키지의 "고쳐진 버전"(조치안) 추출 — 마지막 fixed 이벤트.
+ *
+ * $eco 를 주면 그 배포판의 affected 만 본다. 한 레코드가 여러 릴리스를 담기 때문이다
+ * (USN-7786-1 은 14.04~24.04 의 openssl 을 한꺼번에 나열한다). 패키지명만으로 고르면
+ * 24.04 호스트에 20.04 의 fixed 버전을 붙일 수 있다.
+ * OSV 의 ecosystem 은 'Ubuntu:24.04:LTS' 처럼 접미사가 붙어 접두 일치로 비교한다.
+ */
+function vg_osv_fixed(array $vuln, string $key, ?string $eco = null): ?string {
     $fixed = null;
     foreach ($vuln['affected'] ?? [] as $aff) {
         if (($aff['package']['name'] ?? '') !== $key) { continue; }
+        if ($eco !== null && strpos((string) ($aff['package']['ecosystem'] ?? ''), $eco) !== 0) { continue; }
         foreach ($aff['ranges'] ?? [] as $rng) {
             foreach ($rng['events'] ?? [] as $ev) {
                 if (!empty($ev['fixed'])) { $fixed = (string) $ev['fixed']; }
@@ -376,6 +384,30 @@ function vg_osv_fixed(array $vuln, string $key): ?string {
         }
     }
     return $fixed;
+}
+
+/**
+ * 보안공지 레코드(USN-*, DSA-* …)가 묶고 있는 CVE 목록.
+ *   querybatch 는 id 만 준다. USN 은 id 에 CVE 가 없어 그대로 버리면 취약점을 놓친다:
+ *   실측(Ubuntu:24.04, 4개 패키지) CVE 105건 저장 → USN 을 펼치면 133건(+27%).
+ *   OSV 의 per-CVE 레코드(UBUNTU-CVE-*)가 불완전한 탓이다. 예: CVE-2025-5745 는
+ *   per-CVE 레코드에 Ubuntu:25.04 만 있는데, USN-7634-1 은 24.04 glibc 를 고친다.
+ *
+ *   USN 의 CVE 목록은 USN 전체 기준이라 일부는 다른 릴리스·다른 패키지 몫일 수 있다.
+ *   그래도 조치는 동일하다(그 fixed 버전으로 올리면 전부 해결) → 커버리지를 택했다.
+ * @return list<string> 대문자 CVE ID
+ */
+function vg_osv_advisory_cves(array $doc): array {
+    $out = [];
+    foreach (array_merge($doc['upstream'] ?? [], $doc['aliases'] ?? []) as $ref) {
+        if (preg_match('/CVE-\d{4}-\d+/i', (string) $ref, $m)) { $out[strtoupper($m[0])] = true; }
+    }
+    return array_keys($out);
+}
+
+/** 단건 조회 URL(/v1/vulns/<id>). 커넥터 URL 이 무엇이든 같은 호스트를 쓴다. */
+function vg_osv_vuln_url(string $id): string {
+    return 'https://api.osv.dev/v1/vulns/' . rawurlencode($id);
 }
 
 /** 커넥터에 /v1/query 가 저장돼 있어도 batch 엔드포인트로 보정한다(run·미리보기 공용). */
@@ -443,12 +475,18 @@ final class VgOsvConnector implements VgFeedConnector {
                     foreach ($r['json']['results'] as $i => $res) {
                         $key = $chunk[$i]['key'] ?? '';
                         foreach ($res['vulns'] ?? [] as $v) {
+                            $id = (string) ($v['id'] ?? '');
+                            if ($id === '') { continue; }
                             // batch 는 id 만 반환 → id 에서 CVE 추출(DEBIAN-CVE-…/UBUNTU-CVE-…/CVE-…)
-                            if (!preg_match('/CVE-\d{4}-\d+/i', (string) ($v['id'] ?? ''), $m)) { continue; }
-                            $cve = strtoupper($m[0]);
-                            vg_upsert_cve($pdo, $cve, null, null, null);
-                            vg_upsert_affected($pdo, $cve, $eco, $key, null);
-                            $up++;
+                            if (preg_match('/CVE-\d{4}-\d+/i', $id, $m)) {
+                                vg_upsert_cve($pdo, strtoupper($m[0]), null, null, null);
+                                vg_upsert_affected($pdo, strtoupper($m[0]), $eco, $key, null);
+                                $up++;
+                                continue;
+                            }
+                            // id 에 CVE 가 없는 보안공지(USN-*, DSA-* …). 버리면 취약점을 놓친다
+                            // (vg_osv_advisory_cves 주석 참고) → 단건 조회로 CVE 목록을 펼친다.
+                            $up += $this->expandAdvisory($pdo, $id, $eco, $key);
                         }
                     }
                 }
@@ -457,6 +495,103 @@ final class VgOsvConnector implements VgFeedConnector {
         }
         return ['fetched' => $fetched, 'upserted' => $up];
     }
+
+    /**
+     * 보안공지 1건을 펼쳐 CVE 를 등록한다. 같은 공지가 여러 패키지에서 나오므로 문서를 캐시한다.
+     * 공지 레코드엔 우리 배포판의 fixed 버전이 들어 있어 조치안까지 여기서 확보된다.
+     * @return int upsert 한 CVE 수
+     */
+    private function expandAdvisory(PDO $pdo, string $id, string $eco, string $key): int {
+        if (!array_key_exists($id, $this->advCache)) {
+            $r = vg_http_json('GET', vg_osv_vuln_url($id), null, [], 30, 4 * 1024 * 1024);
+            // 실패해도 수집 전체를 접지 않는다. 다음 실행에서 다시 시도한다.
+            $this->advCache[$id] = ($r['code'] === 200 && is_array($r['json'] ?? null)) ? $r['json'] : null;
+        }
+        $doc = $this->advCache[$id];
+        if ($doc === null) { return 0; }
+
+        $fixed = vg_osv_fixed($doc, $key, $eco);
+        $n = 0;
+        foreach (vg_osv_advisory_cves($doc) as $cve) {
+            vg_upsert_cve($pdo, $cve, null, null, null);
+            vg_upsert_affected($pdo, $cve, $eco, $key, $fixed);
+            $n++;
+        }
+        return $n;
+    }
+
+    /** @var array<string, array|null> 보안공지 문서 캐시(같은 USN 이 여러 패키지에 걸린다) */
+    private array $advCache = [];
+}
+
+/**
+ * OSV 조치안(fixed_version) 지연 보강.
+ *   querybatch 응답엔 fixed 가 없다. 보안공지(USN)로 들어온 CVE 는 커넥터가 조치안까지 채우지만,
+ *   per-CVE 레코드(UBUNTU-CVE-*)로 들어온 CVE 는 여전히 비어 있다. 여기서 "실제로 findings 에
+ *   뜬 취약 패키지"(소수)만 골라 단건 /v1/query 로 조회해 채운다.
+ *   커널 등 거대 응답은 바이트 상한으로 건너뛴다(OOM 방지).
+ *
+ *   findings 를 읽으므로 반드시 재매칭 뒤에 부른다.
+ *   fixed 가 이미 있으면 대상에서 빠지므로 몇 번을 돌려도 멱등하다.
+ *
+ * @param callable|null $log 진행 로그(문자열 1줄). CLI 에서만 쓴다.
+ * @return array{targets:int,queried:int,filled:int,skipped:int}
+ */
+function vg_osv_enrich_fixed(PDO $pdo, ?callable $log = null): array {
+    $maxBytes = 6 * 1024 * 1024;
+    $single   = 'https://api.osv.dev/v1/query';
+    $stat     = ['targets' => 0, 'queried' => 0, 'filled' => 0, 'skipped' => 0];
+
+    // 보강 대상: findings 에 실제로 뜬 패키지 중 조치 버전이 아직 빈 것.
+    $needFix = [];
+    foreach ($pdo->query(
+        'SELECT DISTINCT a.package_name
+           FROM tb_cve_affected_packages a
+           JOIN tb_findings f ON f.package_name = a.package_name
+          WHERE a.fixed_version IS NULL'
+    )->fetchAll(PDO::FETCH_COLUMN) as $k) {
+        $needFix[$k] = true;
+    }
+    $stat['targets'] = count($needFix);
+    if (!$needFix) { return $stat; }
+
+    $scans = $pdo->query(
+        'SELECT s.id, s.os_id, s.os_version
+           FROM tb_scans s JOIN (SELECT host_id, MAX(id) mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id'
+    )->fetchAll();
+
+    $seen = [];
+    foreach ($scans as $sc) {
+        $eco = vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
+        if ($eco === null || $eco === '') { continue; }
+
+        foreach (vg_osv_queries($pdo, (int) $sc['id'], $eco) as $q) {
+            $key = $q['key'];
+            $ver = $q['q']['version'];
+            if (!isset($needFix[$key])) { continue; }
+            $dk = "$eco|$key|$ver";
+            if (isset($seen[$dk])) { continue; }
+            $seen[$dk] = true;
+
+            $r = vg_http_json('POST', $single, $q['q'], [], 90, $maxBytes);
+            $stat['queried']++;
+            if ($r['code'] !== 200 || !isset($r['json']['vulns'])) {
+                $stat['skipped']++;
+                if ($log) { $log("  - {$eco} {$key}@{$ver}: 건너뜀 ({$r['error']})"); }
+                unset($r);
+                continue;
+            }
+            foreach ($r['json']['vulns'] as $v) {
+                $cve   = vg_osv_cve($v);
+                $fixed = vg_osv_fixed($v, $key, $eco);
+                if ($cve === null || $fixed === null) { continue; }
+                vg_upsert_affected($pdo, $cve, $eco, $key, $fixed);   // fixed 채움(기존 행 UPDATE)
+                $stat['filled']++;
+            }
+            unset($r); // 응답 즉시 해제
+        }
+    }
+    return $stat;
 }
 
 // NVD 2.0 — 최근 N일 공개 CVE → cves (CVSS 포함). 증분 수집(전체 미러 아님).
@@ -797,6 +932,15 @@ function vg_schedule_next(array $schedule, ?int $fromTs = null): ?string {
         default: // manual
             return null;
     }
+}
+
+/** 주어진 커넥터 id 중에 해당 타입이 있는가. 수집 후 후처리를 걸지 결정할 때 쓴다. */
+function vg_feed_has_type(PDO $pdo, array $ids, string $type): bool {
+    if (!$ids) { return false; }
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $st = $pdo->prepare("SELECT 1 FROM tb_feed_connectors WHERE connector_type = ? AND id IN ($in) LIMIT 1");
+    $st->execute(array_merge([$type], array_map('intval', $ids)));
+    return (bool) $st->fetchColumn();
 }
 
 /** 커넥터 1건 실행: 로그(running→success/error) + 커넥터 상태/다음실행 갱신. */

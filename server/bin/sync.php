@@ -26,5 +26,11 @@ if (!empty($r['ok'])) {
         vg_match_scan($pdo, $sid);
     }
     fwrite(STDOUT, "재매칭 완료\n");
+
+    // OSV 면 조치안(fixed_version)까지 이어서 보강한다. findings 를 읽으므로 재매칭 뒤에.
+    if (vg_feed_has_type($pdo, [$id], 'osv')) {
+        $s = vg_osv_enrich_fixed($pdo);
+        fwrite(STDOUT, "OSV 조치안 보강 — 대상 {$s['targets']}종 · 조회 {$s['queried']} · 채움 {$s['filled']} · 건너뜀 {$s['skipped']}\n");
+    }
 }
 exit(empty($r['ok']) ? 1 : 0);
