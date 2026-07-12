@@ -115,6 +115,15 @@ if (!function_exists('vg_scope_rank')) {
             $affected[$r['package_name']][$r['cve_id']] = $r['cvss'];
         }
 
+        // 백포트 근거: 패키지 changelog 에 명시된 CVE(=그 빌드에 이미 수정됨).
+        //   package_name => [cve_id => evidence(changelog 줄)]
+        $backport = [];
+        $bpStmt = $pdo->prepare('SELECT package_name, cve_id, evidence FROM tb_pkg_changelog_cves WHERE scan_id = ?');
+        $bpStmt->execute([$scanId]);
+        foreach ($bpStmt->fetchAll() as $r) {
+            $backport[$r['package_name']][$r['cve_id']] = $r['evidence'];
+        }
+
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
         $ownTx = !$pdo->inTransaction();
@@ -135,7 +144,18 @@ if (!function_exists('vg_scope_rank')) {
                severity=VALUES(severity), rationale=VALUES(rationale)'
         );
 
-        $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0];
+        // 억제(백포트)된 건은 tb_findings 가 아니라 여기로 — 위험 집계에서 자동 제외.
+        $pdo->prepare('DELETE FROM tb_suppressed_findings WHERE scan_id = ?')->execute([$scanId]);
+        $insSupp = $pdo->prepare(
+            'INSERT INTO tb_suppressed_findings
+               (scan_id, cve_id, package_name, installed_version, in_kev, cvss, base_severity, suppress_reason)
+             VALUES (?,?,?,?,?,?,?,?)
+             ON DUPLICATE KEY UPDATE
+               installed_version=VALUES(installed_version), in_kev=VALUES(in_kev), cvss=VALUES(cvss),
+               base_severity=VALUES(base_severity), suppress_reason=VALUES(suppress_reason)'
+        );
+
+        $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0, 'SUPPRESSED' => 0];
         $seen = [];
 
         foreach ($packages as $p) {
@@ -167,8 +187,23 @@ if (!function_exists('vg_scope_rank')) {
 
                 $inKev = isset($kev[$cveId]);
                 [$status, $sev, $why] = vg_classify($le, $running, $pLoaded, $inKev, $p['name']);
-                $counts[$sev]++;
 
+                // 백포트 억제: 이 빌드의 changelog 에 해당 CVE 수정 기록이 있으면
+                //   버전이 낮아 보여도 이미 패치된 것 → 실제 위험에서 제외(오탐 제거).
+                $bpEv = $backport[$p['name']][$cveId]
+                    ?? ($p['source_pkg'] ? ($backport[$p['source_pkg']][$cveId] ?? null) : null);
+                if ($bpEv !== null) {
+                    $reason = $p['name'] . ' changelog 에 ' . $cveId . ' 수정 기록(백포트) → 버전이 낮아 보여도 패치됨';
+                    if (is_string($bpEv) && $bpEv !== '') { $reason .= ' · ' . $bpEv; }
+                    $insSupp->execute([
+                        $scanId, $cveId, $p['name'], $p['version'],
+                        $inKev ? 1 : 0, $cvss, $sev, $reason,
+                    ]);
+                    $counts['SUPPRESSED']++;
+                    continue;
+                }
+
+                $counts[$sev]++;
                 $ins->execute([
                     $scanId, $cveId, $p['name'], $p['version'],
                     $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $status, $inKev ? 1 : 0,
