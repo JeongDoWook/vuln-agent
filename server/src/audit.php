@@ -24,6 +24,7 @@ function vg_soft_delete(PDO $pdo, string $table, int $id): void {
         'tb_advisories'      => true,
         'tb_hosts'           => true,
         'tb_scans'           => true,
+        'tb_api_tokens'      => true,
     ];
     if (empty($allowed[$table])) {
         throw new InvalidArgumentException("soft-delete 불가 테이블: $table");

@@ -349,6 +349,7 @@ function vg_nav_sections(): array {
         '시스템' => [
             ['perm' => 'users',       'href' => '/users.php',       'label' => '사용자',    'key' => 'users'],
             ['perm' => 'permissions', 'href' => '/permissions.php', 'label' => '권한 설정', 'key' => 'permissions'],
+            ['perm' => 'apitokens',   'href' => '/api-tokens.php',  'label' => 'API 토큰',  'key' => 'apitokens'],
             ['perm' => 'activity',    'href' => '/activity.php',    'label' => '감사 로그', 'key' => 'activity'],
         ],
     ];
