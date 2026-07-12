@@ -61,10 +61,19 @@ is_root() { [ "$(id -u)" -eq 0 ]; }
 if [ "$DO_LIMIT" = 1 ] && [ -z "${_RELAUNCHED:-}" ] && is_root && have systemd-run; then
   export _RELAUNCHED=1
   echo ">> cgroup 리밋 적용(CPU=$CPU_QUOTA, MEM=$MEM_MAX) 후 재실행" >&2
+  # 재실행 커맨드에 옵션을 그대로 실어야 한다. 예전엔 ${OUT:+…} ${DO_CHANGELOG:+} 만 붙여
+  # --no-changelog·--send·--token 이 유실됐고, 특히 `--limit --send URL` 이면 전송이 통째로
+  # 사라졌다(${DO_CHANGELOG:+} 는 항상 빈 문자열). 파싱된 값으로 인자를 배열로 재구성한다.
+  # (--limit 은 다시 넘기지 않는다 — _RELAUNCHED 가드로 재진입이 막히고, 스코프는 이미 적용됨.)
+  relaunch_args=(--timeout "$CMD_TIMEOUT")
+  [ -n "$OUT" ]                && relaunch_args+=(-o "$OUT")
+  [ "$DO_CHANGELOG" = 0 ]      && relaunch_args+=(--no-changelog)
+  [ -n "$SEND_URL" ]           && relaunch_args+=(--send "$SEND_URL")
+  [ -n "$SEND_TOKEN" ]         && relaunch_args+=(--token "$SEND_TOKEN")
   exec systemd-run --scope --quiet \
       -p "CPUQuota=$CPU_QUOTA" -p "MemoryMax=$MEM_MAX" \
       -p CPUWeight=10 -p IOWeight=10 \
-      "$0" ${OUT:+-o "$OUT"} ${DO_CHANGELOG:+} --timeout "$CMD_TIMEOUT"
+      "$0" "${relaunch_args[@]}"
 fi
 
 # ---------- 자원 우선순위 최저로: 다른 프로세스에 항상 양보 ----------
