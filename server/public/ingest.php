@@ -13,6 +13,7 @@ header('Content-Type: application/json; charset=utf-8');
 $cfg = require __DIR__ . '/../src/config.php';
 require __DIR__ . '/../src/db.php';
 require __DIR__ . '/../src/matcher.php';
+require __DIR__ . '/../src/cce.php';          // vg_evaluate_cce (보안설정 점검)
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 
 // 통일 에러 포맷: {ok:false,error,code,ts(ISO8601)}
@@ -227,6 +228,14 @@ try {
     $findings = ['error' => $e->getMessage()];
 }
 
+// 보안설정 점검(CCE) — 이미 수신한 security/users 섹션으로 판정. 실패해도 수집은 성공.
+$cce = null;
+try {
+    $cce = vg_evaluate_cce($pdo, $scanId, $data);
+} catch (Throwable $e) {
+    $cce = ['error' => $e->getMessage()];
+}
+
 echo json_encode([
     'ok'        => true,
     'host_id'   => $hostId,
@@ -236,4 +245,5 @@ echo json_encode([
     'exposures' => $expCount,
     'processes' => $procCount,
     'findings'  => $findings,
+    'cce'       => $cce,
 ], JSON_UNESCAPED_UNICODE);
