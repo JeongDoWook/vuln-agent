@@ -5,14 +5,13 @@
 ost-server.duckdns.org {
 	encode gzip
 
-	# [현재] 자체서명(Caddy 내부 CA). 토큰/도메인소유 불필요, 즉시 HTTPS(브라우저 경고 뜸).
-	tls internal
-
-	# [정식으로 전환 시] 위 한 줄을 지우고 아래 블록으로 교체.
-	#   단, 이 도메인을 소유한 DuckDNS 계정의 토큰이 secrets/duckdns_token.txt 에 있어야 함.
-	# tls {
-	# 	dns duckdns {env.DUCKDNS_TOKEN}
-	# }
+	# 정식 인증서: Let's Encrypt(무료) 를 DuckDNS DNS-01 챌린지로 발급 → 모든 클라이언트가 신뢰.
+	#   이 도메인을 소유한 DuckDNS 계정 토큰이 secrets/duckdns_token.txt 에 있어야 한다(entrypoint 가
+	#   DUCKDNS_TOKEN 으로 노출). 발급 실패로 문제가 생기면 이 블록을 `tls internal` 한 줄로 되돌리고
+	#   caddy 를 재빌드하면 즉시 자체서명으로 복귀한다.
+	tls {
+		dns duckdns {env.DUCKDNS_TOKEN}
+	}
 
 	reverse_proxy web:80 {
 		# 뒷단 PHP 가 원 프로토콜/호스트를 알도록 표준 헤더 전달.
