@@ -71,10 +71,13 @@ EOF
 chmod 600 "$ETC/agent.env"
 
 # 3) 실행 래퍼 — env 로드 후 수집(에이전트가 SEND_URL/SEND_TOKEN 을 읽어 전송)
+#   changelog 수집은 백포트 오탐 제거(서버가 "이미 패치됨"을 증명)의 근거라 켜둔다.
+#   과거엔 --no-changelog 로 껐지만, 에이전트에 명령별 timeout·바이트 상한이 있어
+#   느린 changelog 로부터 보호되고 실측 비용도 수 초라 부담이 없다.
 cat > "$RUN" <<EOF
 #!/usr/bin/env bash
 set -a; . $ETC/agent.env; set +a
-exec $BIN/vuln-inventory-agent.sh --no-changelog -o $LOG/last.json
+exec $BIN/vuln-inventory-agent.sh -o $LOG/last.json
 EOF
 chmod 0755 "$RUN"
 
