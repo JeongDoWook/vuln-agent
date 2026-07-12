@@ -11,6 +11,7 @@ require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
 $err = null; $host = null; $scan = null; $exposures = []; $processes = []; $findings = [];
+$cce = []; $cceFail = 0;
 $scans = []; $sevByScan = [];
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 try {
@@ -40,6 +41,16 @@ try {
         $st = $pdo->prepare('SELECT severity, COUNT(*) c FROM tb_findings WHERE scan_id = ? GROUP BY severity');
         $st->execute([$sid]);
         foreach ($st->fetchAll() as $r) { if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; } }
+
+        // 보안설정 점검(CCE) — FAIL 먼저, 위험도순. NA/PASS 는 뒤로.
+        $st = $pdo->prepare(
+            "SELECT code, title, result, severity, evidence, rationale
+               FROM tb_cce_findings WHERE scan_id = ?
+              ORDER BY FIELD(result,'FAIL','NA','PASS'), FIELD(severity,'HIGH','MEDIUM','LOW'), code"
+        );
+        $st->execute([$sid]);
+        $cce = $st->fetchAll();
+        foreach ($cce as $c) { if ($c['result'] === 'FAIL') { $cceFail++; } }
 
         // 상위 취약점(CRITICAL/HIGH) + 조치
         $st = $pdo->prepare(
@@ -100,6 +111,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
         <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
       <?php endforeach; ?>
       <div class="kpi big"><b><?= count($exposures) ?></b><span>노출 소켓</span></div>
+      <div class="kpi tone-<?= $cceFail > 0 ? 'high' : 'low' ?>"><b><?= (int) $cceFail ?></b><span>설정 취약</span></div>
     </div>
 
     <div class="card">
@@ -149,6 +161,41 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
                   0 => fn($pr) => '<span class="why">' . (int) $pr['pid'] . '</span>',
                   2 => fn($pr) => '<span class="why">' . vg_h($pr['username']) . '</span>',
                   4 => fn($pr) => '<span class="why">' . vg_trunc($pr['loaded_pkgs'], 60) . '</span>',
+              ],
+          ]
+      );
+      ?>
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>보안 설정 점검 (CCE)</strong>
+      <span class="why">— 취약한 버전(CVE)이 아니라 잘못된 설정을 본다. NA 는 수집 못한 항목(비-root 실행 등)</span>
+      <div class="card__body">
+      <?php
+      // 결과 → 톤: FAIL 은 위험도색, PASS 는 low(초록), NA 는 muted.
+      $cceBadge = function (array $r): string {
+          $tone = $r['result'] === 'FAIL' ? vg_sev_tone($r['severity'])
+                : ($r['result'] === 'PASS' ? 'low' : 'muted');
+          return vg_badge($r['result'], $tone);
+      };
+      vg_table(
+          [
+              ['label' => '결과', 'key' => 'result'],
+              ['label' => '점검 항목', 'key' => 'title'],
+              ['label' => '코드', 'key' => 'code'],
+              ['label' => '근거'],
+              ['label' => '사유'],
+          ],
+          $cce,
+          [
+              'card' => false,
+              'empty' => 'CCE 점검 데이터 없음(구버전 에이전트 또는 security/users 미수집).',
+              'cell' => [
+                  'result' => $cceBadge,
+                  'code'   => fn($r) => '<code>' . vg_h($r['code']) . '</code>',
+                  3 => fn($r) => '<span class="why">' . vg_trunc($r['evidence'], 40) . '</span>',
+                  4 => fn($r) => '<span class="why">' . vg_trunc($r['rationale']) . '</span>',
               ],
           ]
       );
