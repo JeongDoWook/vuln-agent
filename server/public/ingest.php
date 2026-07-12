@@ -113,6 +113,27 @@ if (!empty($rt['processes'])) {
 }
 $procCount = count($procRows);
 
+// ── changelog CVE 파싱 — 패키지별 changelog 에 나온 CVE(백포트 근거) ──
+//   에이전트가 --no-changelog 로 돌면 이 섹션이 비어 clogCount=0 → 무해(억제 없음).
+$clogRows = [];
+$clog = $data['changelog'] ?? [];
+if (is_array($clog)) {
+    foreach ($clog as $pkgName => $text) {
+        $pkgName = trim((string) $pkgName);
+        if ($pkgName === '' || !is_string($text) || $text === '') { continue; }
+        foreach (preg_split('/\r?\n/', $text) as $line) {
+            if (!preg_match_all('/CVE-\d{4}-\d{4,}/i', $line, $m)) { continue; }
+            foreach (array_unique($m[0]) as $cve) {
+                $cve = strtoupper($cve);
+                $k = $pkgName . '|' . $cve;
+                if (isset($clogRows[$k])) { continue; }   // (패키지,CVE)당 첫 근거 줄만
+                $clogRows[$k] = [$pkgName, $cve, mb_strimwidth(trim($line), 0, 255, '')];
+            }
+        }
+    }
+}
+$clogCount = count($clogRows);
+
 // ── 저장 (트랜잭션) ──────────────────────────────────────────
 try {
     $pdo = vg_pdo();
@@ -203,6 +224,17 @@ try {
                 ($f[0] !== '' ? (int) $f[0] : null),
                 $f[1], $f[2], $f[3], $f[4],
             ]);
+        }
+    }
+
+    // changelog CVE 벌크 (백포트 근거 — 매처가 억제 판정에 사용)
+    if ($clogCount > 0) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_pkg_changelog_cves (scan_id, package_name, cve_id, evidence)
+             VALUES (?, ?, ?, ?)'
+        );
+        foreach ($clogRows as $r) {
+            $ins->execute([$scanId, $r[0], $r[1], $r[2]]);
         }
     }
 

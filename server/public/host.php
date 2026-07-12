@@ -11,7 +11,7 @@ require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
 $err = null; $host = null; $scan = null; $exposures = []; $processes = []; $findings = [];
-$cce = []; $cceFail = 0;
+$cce = []; $cceFail = 0; $suppressed = [];
 $scans = []; $sevByScan = [];
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 try {
@@ -64,6 +64,15 @@ try {
         $st->execute([$sid]);
         $findings = $st->fetchAll();
 
+        // 백포트로 억제된 취약점 (오탐 제거의 근거를 투명하게 보여줌)
+        $st = $pdo->prepare(
+            "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason
+               FROM tb_suppressed_findings WHERE scan_id = ?
+              ORDER BY FIELD(base_severity,'CRITICAL','HIGH','MEDIUM','LOW'), cve_id"
+        );
+        $st->execute([$sid]);
+        $suppressed = $st->fetchAll();
+
         // 스캔 이력(최근 20회) + 회차별 심각도 카운트
         $st = $pdo->prepare(
             'SELECT id, collected_at, received_at, package_count, exposure_count, agent_version
@@ -112,6 +121,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       <?php endforeach; ?>
       <div class="kpi big"><b><?= count($exposures) ?></b><span>노출 소켓</span></div>
       <div class="kpi tone-<?= $cceFail > 0 ? 'high' : 'low' ?>"><b><?= (int) $cceFail ?></b><span>설정 취약</span></div>
+      <?php if ($suppressed): ?><div class="kpi tone-muted"><b><?= count($suppressed) ?></b><span>백포트 억제</span></div><?php endif; ?>
     </div>
 
     <div class="card">
@@ -202,6 +212,37 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       ?>
       </div>
     </div>
+
+    <?php if ($suppressed): ?>
+    <div class="card">
+      <strong>백포트로 억제된 취약점</strong>
+      <span class="why">— 버전상 취약해 보였으나 배포판 changelog에 수정 기록(백포트)이 있어 실제 위험에서 제외한 건. 오탐 제거의 근거</span>
+      <div class="card__body">
+      <?php
+      vg_table(
+          [
+              ['label' => '원래등급', 'key' => 'base_severity'],
+              ['label' => 'CVE'],
+              ['label' => '패키지'],
+              ['label' => '억제 근거'],
+          ],
+          $suppressed,
+          [
+              'card' => false,
+              'empty' => '억제된 취약점 없음.',
+              'cell' => [
+                  'base_severity' => fn($r) => vg_sev_badge((string) $r['base_severity'])
+                      . ((int) $r['in_kev'] === 1 ? ' ' . vg_badge('KEV', 'crit') : ''),
+                  1 => fn($r) => '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a></strong>',
+                  2 => fn($r) => vg_h($r['package_name']) . ' <span class="why">' . vg_h($r['installed_version']) . '</span>',
+                  3 => fn($r) => '<span class="why">' . vg_trunc($r['suppress_reason'], 90) . '</span>',
+              ],
+          ]
+      );
+      ?>
+      </div>
+    </div>
+    <?php endif; ?>
 
     <div class="card">
       <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
