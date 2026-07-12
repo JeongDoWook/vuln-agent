@@ -63,10 +63,16 @@ if printf '%s\n' "$CHANGED" | grep -qE "$INFRA_RE"; then
   printf '%s\n' "$CHANGED" | grep -E "$INFRA_RE" | sed 's/^/    /'
 fi
 if printf '%s\n' "$CHANGED" | grep -qE "$DB_RE"; then
-  printf "  ${Y}DB 스키마/마이그레이션 변경 감지 — 자동 적용하지 않습니다:${N}\n"
+  echo "  DB 변경 감지:"
   printf '%s\n' "$CHANGED" | grep -E "$DB_RE" | sed 's/^/    /'
-  printf "  ${Y}필요하면 직접 적용:${N}\n"
-  printf "    docker exec -i vulnagent-db sh -c 'mysql -uroot -p\$(cat /run/secrets/mysql_root_password) vulnagent' < db/_migrations/<파일>\n"
+  # db/migrations/ 는 아래 [5/5]에서 러너가 자동 적용한다.
+  # db/_migrations/(레거시)·최상위 db/*.sql(빈 볼륨 initdb 전용)은 자동 적용 대상이 아니다.
+  if printf '%s\n' "$CHANGED" | grep -qE '^db/migrations/'; then
+    echo "  → db/migrations/ 는 [5/5]에서 자동 적용됩니다."
+  fi
+  if printf '%s\n' "$CHANGED" | grep -qE '^db/(_migrations/|[0-9])'; then
+    printf "  ${Y}참고: db/_migrations/ 또는 최상위 db/*.sql 변경은 자동 적용되지 않습니다(수동 판단).${N}\n"
+  fi
 fi
 
 say "[4/5] 반영"
@@ -99,6 +105,9 @@ for _ in $(seq 1 20); do
   sleep 2
 done
 docker ps --format '  {{.Names}}\t{{.Status}}' | grep vulnagent
+
+# DB 마이그레이션: db/migrations/ 중 아직 안 든 것 자동 적용(멱등).
+bash deploy/migrate.sh vulnagent-db
 
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:8081/ || echo 000)
 if [ "$code" = "302" ] || [ "$code" = "200" ]; then

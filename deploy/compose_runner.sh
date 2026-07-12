@@ -198,7 +198,8 @@ case "$ENV" in
       say "메인 트리에서 실행하세요."; exit 1
     fi
     ENV_FILE="compose.prod.yml"; ENV_VAR_FILE=".env.prod"
-    PROJECT="vulnagent";         ENV_DISPLAY="Production" ;;
+    PROJECT="vulnagent";         ENV_DISPLAY="Production"
+    export DB_CONTAINER="vulnagent-db" ;;
   *)
     say "${RED}오류: 알 수 없는 환경 '$ENV'${NC}"
     say "사용 가능: ${GREEN}dev${NC}, ${GREEN}prod${NC}"; echo ""; show_help; exit 1 ;;
@@ -224,4 +225,13 @@ say "  실행 : ${GREEN}docker compose ... $*${NC}"
 say "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-exec "${COMPOSE[@]}" "$@"
+# `up` 이면 기동 후 DB 마이그레이션을 이어서 적용한다(fresh 볼륨의 증분 스키마 반영).
+#   그 외 명령(down/logs/ps…)은 그대로 exec. migrate 는 DB healthy 를 스스로 기다린다.
+if [ "${1:-}" = "up" ]; then
+  "${COMPOSE[@]}" "$@"
+  say ""
+  say "${CYAN}== DB 마이그레이션 ==${NC}"
+  bash "$SCRIPT_DIR/migrate.sh" "$DB_CONTAINER"
+else
+  exec "${COMPOSE[@]}" "$@"
+fi
