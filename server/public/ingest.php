@@ -29,12 +29,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 
 // ── 인증 : 공유 토큰 상수시간 비교 ─────────────────────────────
 $expected = (string) ($cfg['ingest_token'] ?? '');
-$provided = $_SERVER['HTTP_X_AGENT_TOKEN'] ?? '';
-if ($provided === '' && !empty($_SERVER['HTTP_AUTHORIZATION'])) {
-    if (preg_match('/Bearer\s+(.+)/i', $_SERVER['HTTP_AUTHORIZATION'], $m)) {
-        $provided = trim($m[1]);
-    }
-}
+$provided = vg_auth_token('X-Agent-Token');   // 커스텀 헤더 우선, 없으면 Authorization: Bearer
 if ($expected === '' || !hash_equals($expected, (string) $provided)) {
     respond_fail(401, 'unauthorized', 'unauthorized');
 }
