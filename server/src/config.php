@@ -24,6 +24,35 @@ if (!function_exists('vg_secret')) {
     }
 }
 
+// 요청 헤더 1건 조회(대소문자 무시). Apache(mod_php)는 Authorization 헤더를 $_SERVER 에
+// 안 실어주므로 getallheaders() 로 폴백한다. rewrite 를 거친 경우의 REDIRECT_ 접두도 본다.
+if (!function_exists('vg_request_header')) {
+    function vg_request_header(string $name): string {
+        $key = 'HTTP_' . strtoupper(str_replace('-', '_', $name));
+        foreach ([$key, 'REDIRECT_' . $key] as $k) {
+            if (!empty($_SERVER[$k])) { return (string) $_SERVER[$k]; }
+        }
+        if (function_exists('getallheaders')) {
+            foreach (getallheaders() as $hk => $hv) {
+                if (strcasecmp($hk, $name) === 0 && $hv !== '') { return (string) $hv; }
+            }
+        }
+        return '';
+    }
+}
+
+// 인증 토큰 추출: 지정한 커스텀 헤더(X-API-Token 등) 우선, 없으면 Authorization: Bearer.
+//   Bearer 는 Apache 가 $_SERVER 에서 떨어뜨리므로 vg_request_header 의 getallheaders 폴백에 의존한다.
+if (!function_exists('vg_auth_token')) {
+    function vg_auth_token(string $customHeader): string {
+        $t = trim(vg_request_header($customHeader));
+        if ($t !== '') { return $t; }
+        $auth = vg_request_header('Authorization');
+        if ($auth !== '' && preg_match('/Bearer\s+(.+)/i', $auth, $m)) { return trim($m[1]); }
+        return '';
+    }
+}
+
 // 설정 배열 반환 (docker-compose 의 environment / secrets 로 주입됨)
 return [
     'db_host'      => vg_env('DB_HOST', 'db'),

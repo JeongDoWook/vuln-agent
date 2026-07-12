@@ -17,6 +17,7 @@ declare(strict_types=1);
  *     curl -H "X-API-Token: <토큰>" "https://…/export.php?format=json&min_epss=0.5"
  */
 
+require __DIR__ . '/../src/config.php';   // vg_auth_token (요청 헤더 파싱 헬퍼)
 require __DIR__ . '/../src/db.php';
 require __DIR__ . '/../src/apitoken.php';
 
@@ -36,12 +37,7 @@ if (!in_array($_SERVER['REQUEST_METHOD'] ?? '', ['GET', 'HEAD'], true)) {
 
 // ── 인증: 웹에서 발급한 읽기 토큰(DB, SHA-256 대조) ───────────
 //   토큰은 api-tokens.php 에서 발급/폐기한다. 폐기(soft-delete)된 토큰은 즉시 거부된다.
-$provided = $_SERVER['HTTP_X_API_TOKEN'] ?? '';
-if ($provided === '' && !empty($_SERVER['HTTP_AUTHORIZATION'])) {
-    if (preg_match('/Bearer\s+(.+)/i', (string) $_SERVER['HTTP_AUTHORIZATION'], $m)) {
-        $provided = trim($m[1]);
-    }
-}
+$provided = vg_auth_token('X-API-Token');   // 커스텀 헤더 우선, 없으면 Authorization: Bearer
 try {
     if (vg_api_token_verify(vg_pdo(), (string) $provided) === null) {
         vg_export_fail(401, 'unauthorized', 'unauthorized');
