@@ -53,35 +53,67 @@ flowchart LR
 ## 2. 매처 판정 로직 — "실제로 위험한가"
 
 설치되었다고 전부 올리지 않는다. **런타임 상태(노출·실행·사용) + KEV** 로 우선순위를 가른다.
-exposures(포트) + processes(실행/로드) 를 합쳐 5단계 상태를 판정한다.
+exposures(포트) + processes(실행/로드) 를 합쳐 6단계 상태를 판정한다(`vg_classify`).
 
 ```mermaid
 flowchart TD
-    START["패키지 P 에 영향을 주는 CVE"] --> BP{"이 빌드의 changelog 에<br/>그 CVE 수정 기록이 있나?"}
-    BP -->|예| SUP["백포트로 이미 패치됨<br/>→ tb_suppressed_findings<br/>(위험 집계 제외 · 근거 표시)"]
-    BP -->|아니오| EXT{"외부(0.0.0.0)<br/>오픈 포트로 노출?"}
-    EXT -->|예| KEV{"CVE 가 KEV 등재?"}
+    START["패키지 P 에 영향을 주는 CVE"] --> FIX{"이미 패치됐다는 근거가 있나?<br/>changelog · errata · debsecan"}
+    FIX -->|예| STALE{"그래도 옛 코드가 도는가?<br/>옛 .so 로드 중 · 커널 재부팅 전"}
+    STALE -->|예| KEEP["억제하지 않는다<br/>→ 조치: 프로세스 재시작 / 재부팅"]
+    STALE -->|아니오| SUP["백포트로 이미 패치됨<br/>→ tb_suppressed_findings<br/>(위험 집계 제외 · 근거 표시)"]
+    FIX -->|아니오| KEEP
+    KEEP --> EXT{"외부(0.0.0.0)<br/>오픈 포트로 노출?"}
+    EXT -->|예| FW{"방화벽이 그 포트를<br/>막고 있나?"}
+    FW -->|아니오| KEV{"CVE 가 KEV 등재?"}
     KEV -->|예| CRIT["외부노출 + KEV<br/>→ CRITICAL"]
     KEV -->|아니오| HIGH["외부노출<br/>→ HIGH"]
+    FW -->|예| FLT["방화벽차단(FILTERED)<br/>→ MEDIUM"]
     EXT -->|아니오| USE{"리스닝(로컬)·<br/>실행중·라이브러리 로드<br/>중 하나라도?"}
     USE -->|예| MED["로컬리스닝/실행중/사용중<br/>→ MEDIUM"]
     USE -->|아니오| INS["설치만 됨<br/>→ LOW"]
 
     style SUP fill:#1f6feb,color:#fff
+    style KEEP fill:#8250df,color:#fff
     style CRIT fill:#da3633,color:#fff
     style HIGH fill:#db6d28,color:#fff
+    style FLT fill:#9e6a03,color:#fff
     style MED fill:#9e6a03,color:#fff
     style INS fill:#6e7681,color:#fff
 ```
 
-> 상태: EXTERNAL > LISTENING > RUNNING > LOADED > INSTALLED. KEV 시 한 단계 상향,
+> 상태: EXTERNAL > FILTERED ≈ LISTENING > RUNNING > LOADED > INSTALLED. KEV 시 한 단계 상향,
 > EPSS·CVSS 는 같은 등급 내 정렬. 각 판정에 근거(어떤 프로세스·포트·라이브러리)가 남는다.
+> **FILTERED** — 전체 인터페이스에 바인딩됐지만 방화벽(firewalld/ufw)이 그 포트를 막아 외부에서
+> 못 닿는 경우다. 이 판정이 없으면 방화벽 뒤의 내부 서비스가 **전부 HIGH/CRITICAL 로 뜬다**(오탐).
 
-**백포트 억제(첫 관문).** 배포판은 버전을 안 올리고 패치만 이식하므로 버전 비교만으로는 오탐이 난다.
-1차로 OSV 버전필터(배포판 전체버전 대조)가 걸러내고, 통과한 건도 에이전트가 보낸 패키지
-changelog(`tb_pkg_changelog_cves`)에 해당 CVE 수정 기록이 있으면 `tb_findings` 대신
-`tb_suppressed_findings` 로 보낸다 — **기존 위험 집계·화면을 하나도 안 건드리고 오탐만 빠진다.**
-억제한 건은 숨기지 않고 호스트 상세에서 근거(changelog 원문 일부)와 함께 보여준다(설명가능성).
+**오탐 억제는 4겹이다.** 배포판은 버전을 안 올리고 패치만 이식하므로 버전 비교만으로는 오탐이 난다.
+
+| 겹 | 근거 테이블 | 판정 | 커버리지 |
+|---|---|---|---|
+| ① OSV 버전필터 | `tb_cve_affected_packages` | 배포판 전체버전 대조 → 영향 없으면 제거 | 전체 |
+| ② changelog | `tb_pkg_changelog_cves` | 그 CVE 수정 기록이 있으면 억제 | 핵심 13개 패키지(하드코딩) |
+| ③ errata | `tb_applied_errata` | 벤더가 "이 빌드에서 고쳤다"고 확인 → 억제 | **시스템 전체** |
+| ④ debsecan | `tb_debsecan` | "아직 남은 CVE" 목록에 **없으면** 고쳐진 것 → 억제 | 데비안 전용 |
+
+억제된 건은 `tb_findings` 가 아니라 `tb_suppressed_findings` 로 간다 — **기존 위험 집계·화면을
+하나도 안 건드리고 오탐만 빠진다.** 숨기지 않고 호스트 상세에서 근거와 함께 보여준다(설명가능성).
+
+> debsecan 은 방향이 반대(있는 게 아니라 **없는** 게 근거)라 안전장치를 두 겹 뒀다 —
+> `os_id=debian` 일 때만 쓰고(우분투는 OSV 의 USN 경로로 커버), **목록이 비면 억제하지 않는다**
+> (수집 실패와 "취약점 0"을 구분할 수 없어, 믿었다간 전부 억제해 버린다).
+
+**억제를 취소하는 두 신호 — "패치됨"이 곧 "안전함"은 아니다.**
+
+- **재시작 필요**(`tb_stale_libs`): 패치됐지만 프로세스가 옛 `.so` 를 메모리에 물고 있으면 그
+  프로세스는 여전히 옛 코드를 실행 중이다 → 억제하지 않고 근거(프로세스 → 라이브러리 경로)를 남긴다.
+- **커널 재부팅 필요**(`tb_scans.kernel_reboot_needed`): 커널을 패치해도 재부팅 전엔 옛 커널이
+  돈다 → 억제하지 않는다. 조치는 프로세스 재시작이 아니라 **재부팅**이라고 안내한다.
+
+이 두 신호가 없으면 "설치 버전이 패치됨"만 보고 억제해 **미탐**이 된다.
+
+**미지원 배포판.** Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 0건이 된다.
+조용히 "취약점 없음"으로 보이면 더 위험하므로 `vg_distro_unsupported`(`src/distro.php`)가 판정해
+ingest 응답과 취약점 화면에 경고를 띄운다(자체 피드가 따로 필요하다는 뜻).
 
 **보안설정 점검(CCE)** 은 별도 경로다. 같은 수집물의 `security`/`users` 섹션을 `src/cce.php` 가
 판정해 `tb_cce_findings`(PASS/FAIL/NA)에 저장한다 — CVE 가 아니라 **설정**(SSH root 로그인,
@@ -221,9 +253,15 @@ erDiagram
     tb_scans ||--o{ tb_exposures : "노출 소켓(포트)"
     tb_scans ||--o{ tb_processes : "실행 프로세스"
     tb_scans ||--o{ tb_findings : "매처 판정"
-    tb_scans ||--o{ tb_pkg_changelog_cves : "백포트 근거(changelog)"
-    tb_scans ||--o{ tb_suppressed_findings : "백포트로 억제된 건"
+    tb_scans ||--o{ tb_containers : "컨테이너 인벤토리"
+    tb_containers ||--o{ tb_packages : "컨테이너 내부 패키지(container_id)"
+    tb_scans ||--o{ tb_pkg_changelog_cves : "억제 근거② changelog"
+    tb_scans ||--o{ tb_applied_errata : "억제 근거③ 벤더 권고"
+    tb_scans ||--o{ tb_debsecan : "억제 근거④ 데비안 트래커(역방향)"
+    tb_scans ||--o{ tb_stale_libs : "억제 취소 — 재시작 필요"
+    tb_scans ||--o{ tb_suppressed_findings : "억제된 건"
     tb_scans ||--o{ tb_cce_findings : "보안설정 점검"
+    tb_hosts ||--o{ tb_pkg_changes : "패키지 변화 이력"
     tb_cves  ||--o{ tb_cve_affected_packages : "영향 패키지"
     tb_cves  ||--o{ tb_findings : "취약점"
     tb_cves  ||--o| tb_kev_catalog : "KEV 등재"
@@ -248,9 +286,50 @@ erDiagram
     tb_packages {
         bigint id PK
         bigint scan_id FK
+        bigint container_id "호스트는 0, 컨테이너는 양수"
+        string manager "dpkg rpm apk pip npm"
         string name
         string version
         string source_pkg
+        string origin "출처 - 서드파티 판정"
+    }
+    tb_containers {
+        bigint id PK
+        bigint scan_id FK
+        string cid
+        string image
+        string os_id
+        string manager "dpkg apk rpm"
+        int pkg_count
+    }
+    tb_stale_libs {
+        bigint id PK
+        bigint scan_id FK
+        string comm "옛 so 를 문 프로세스"
+        string package_name
+        string lib_path
+    }
+    tb_applied_errata {
+        bigint id PK
+        bigint scan_id FK
+        string package_name
+        string cve_id
+        string evidence "권고가 지목한 설치 NEVRA"
+    }
+    tb_debsecan {
+        bigint id PK
+        bigint scan_id FK
+        string cve_id
+        string package_name
+    }
+    tb_pkg_changes {
+        bigint id PK
+        bigint host_id FK
+        bigint scan_id FK
+        string package_name
+        string change_type "installed removed upgraded downgraded"
+        string old_version
+        string new_version
     }
     tb_exposures {
         bigint id PK
@@ -375,9 +454,13 @@ erDiagram
 
 *(tb_cves / tb_kev_catalog / tb_cve_affected_packages / tb_findings 는 2단계 매처, tb_feed_* 는
 4a 피드 커넥터(connector_type: kev/osv/nvd/kisa/epss), tb_advisories 는 4b KISA 국내공지,
-tb_users 는 3단계 인증, tb_activity_log 는 감사 추적, tb_pkg_changelog_cves/tb_suppressed_findings 는
-백포트 억제, tb_cce_findings 는 보안설정 점검, tb_role_permissions 는 설정형 RBAC,
-tb_api_tokens 는 Export API 에서 도입. 스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh).*
+tb_users 는 3단계 인증, tb_activity_log 는 감사 추적, tb_cce_findings 는 보안설정 점검,
+tb_role_permissions 는 설정형 RBAC, tb_api_tokens 는 Export API 에서 도입.
+**억제 계열**(§2): 근거는 tb_pkg_changelog_cves(②)·tb_applied_errata(③)·tb_debsecan(④),
+억제 결과는 tb_suppressed_findings, **억제를 취소**하는 신호가 tb_stale_libs(재시작 필요).
+tb_containers 는 컨테이너 인벤토리이고 컨테이너 내부 패키지는 tb_packages 에 `container_id>0` 으로
+같이 들어간다(호스트는 0). tb_pkg_changes 는 패키지 변화 이력.
+스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh).*
 *모든 테이블에 감사 4컬럼(`created_at`/`updated_at`/`is_deleted`/`deleted_at`)이 통일되어 있다
 (다이어그램엔 `is_deleted` 만 표기, 나머지 생략). 삭제는 하드삭제 대신 `vg_soft_delete()` 로
 `is_deleted=1` 표시(대상: tb_users/tb_feed_connectors/tb_advisories/tb_hosts/tb_scans —
