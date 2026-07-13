@@ -332,6 +332,13 @@ if (!function_exists('vg_scope_rank')) {
             $cands = [];   // cve => ['cvss'=>, 'fixed'=>, 'cmpver'=>]
             foreach ([[$p['name'], $p['version']], [$p['source_pkg'], $p['source_version'] ?: $p['version']]] as [$key, $cmpVer]) {
                 if (!$key || !isset($affected[$key])) { continue; }
+                // 커널 CVE 는 **커널 코드가 든 바이너리**에만 해당한다.
+                //   커널 소스(linux/kernel) 하나에서 헤더·빌드도구·메타패키지가 20개 넘게 나오는데,
+                //   source_pkg 가 같다는 이유로 커널 CVE 전량이 거기에도 매달렸다.
+                //   실측(raspberrypi5-00): linux 소스 패키지 21개 × CVE 369건 = LOW 7,925건이 오탐.
+                if (vg_is_os_manager($mgr) && vg_is_kernel_source($key) && !vg_is_kernel_code_pkg((string) $p['name'])) {
+                    continue;
+                }
                 foreach ($affected[$key] as $row) {
                     // 생태계 필터 — 남의 배포판/생태계 행이 이름만 같다고 붙던 것을 막는다.
                     //   OS 패키지는 배포판 행만, 언어 패키지는 자기 생태계(PyPI 등) 행만 받는다.
@@ -363,7 +370,7 @@ if (!function_exists('vg_scope_rank')) {
             //   (버전 비교는 그 컨테이너의 패키지 버전으로 하는 것이라 컨테이너에도 유효하다.)
             // 커널: 패치했어도 **재부팅 전까지는 옛 커널이 돈다** → 억제하면 미탐이다.
             //   (라이브러리의 "재시작 필요"와 같은 문제. 조치는 프로세스 재시작이 아니라 재부팅.)
-            $isKernelPkg = $ctr === null && preg_match('/^(kernel|kernel-core|kernel-modules|linux-image-|linux-headers-)/', (string) $p['name']) === 1;
+            $isKernelPkg = $ctr === null && vg_is_kernel_code_pkg((string) $p['name']);
             $kernelPending = $isKernelPkg && (int) ($scan['kernel_reboot_needed'] ?? 0) === 1;
 
             // 서드파티 저장소(PPA·Docker·NodeSource) 패키지 / 수동 .deb 설치는 배포판 트래커에

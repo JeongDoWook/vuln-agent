@@ -144,6 +144,30 @@ $kernelNone = vg_ingest_parse_kernel('rpm', '', '');
 $eq('설치 커널 후보 없음 → latest 빈값', $kernelNone['latest'], '');
 $eq('설치 커널 후보 없음 → 재부팅 판정 안 함', $kernelNone['reboot_needed'], 0);
 
+// 커널 flavor — 한 호스트에 기종이 다른 커널이 여러 개 깔린다(라즈베리파이 실측).
+//   전부를 한 줄로 세우면 **안 쓰는 기종(v8)의 커널이 최신으로 뽑혀** 재부팅 필요가 잘못 붙었다.
+//   비교는 실행 중인 커널과 **같은 flavor** 안에서만 해야 한다.
+$rpiInstalled = "linux-image-6.12.75+rpt-rpi-2712\t1:6.12.75-1+rpt1\n"
+              . "linux-image-6.12.75+rpt-rpi-v8\t1:6.12.75-1+rpt1\n"
+              . "linux-image-6.18.34+rpt-rpi-2712\t1:6.18.34-1+rpt1\n"
+              . "linux-image-6.18.34+rpt-rpi-v8\t1:6.18.34-1+rpt1";
+$rpiCur = vg_ingest_parse_kernel('dpkg', '6.18.34+rpt-rpi-2712', $rpiInstalled);
+$eq('라즈베리: 같은 flavor 최신이 곧 실행 커널 → 재부팅 불필요', $rpiCur['reboot_needed'], 0);
+$eq('라즈베리: latest 는 같은 flavor(2712) 에서 고른다',           $rpiCur['latest'], '6.18.34+rpt-rpi-2712');
+
+$rpiOld = vg_ingest_parse_kernel('dpkg', '6.12.75+rpt-rpi-2712', $rpiInstalled);
+$eq('라즈베리: 같은 flavor 에 더 새 커널이 있으면 재부팅 필요', $rpiOld['reboot_needed'], 1);
+$eq('라즈베리: 그때의 latest 도 같은 flavor',                    $rpiOld['latest'], '6.18.34+rpt-rpi-2712');
+
+// 실행 중 커널의 flavor 가 설치 목록에 아예 없으면(그 커널만 제거된 경우) 전체를 본다 —
+//   여기서 비교를 포기하면 진짜 재부팅 필요를 놓친다(미탐).
+$rpiGone = vg_ingest_parse_kernel('dpkg', '6.1.0-18-amd64', $rpiInstalled);
+$eq('실행 flavor 가 설치 목록에 없으면 전체 비교로 폴백', $rpiGone['reboot_needed'], 1);
+
+$eq('flavor(dpkg) — 마지막 - 뒤', vg_kernel_flavor('6.18.34+rpt-rpi-2712', 'dpkg'), '2712');
+$eq('flavor(dpkg) — 데비안 표준', vg_kernel_flavor('6.1.0-18-amd64', 'dpkg'), 'amd64');
+$eq('flavor(rpm) — 아키만',       vg_kernel_flavor('5.14.0-503.11.1.el9_5.x86_64', 'rpm'), 'x86_64');
+
 // ── 내용 해시 ──────────────────────────────────────────────────────────────
 $commonArgs = static fn(array $pkgRows, array $expRows) => vg_ingest_content_hash(
     $pkgRows, 'rpm', [], $expRows, [], [], [], [],

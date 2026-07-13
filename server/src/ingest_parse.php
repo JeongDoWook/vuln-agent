@@ -249,8 +249,22 @@ function vg_ingest_parse_kernel(string $manager, string $runningKernel, string $
     if ($kernelCands) {
         // 문자열 비교로는 틀린다(5.14.0-687 vs 5.14.0-70) — 배포판 규칙으로 최신을 고른다.
         $mgrForKernel = $manager === 'rpm' ? 'rpm' : 'dpkg';
-        $kernelLatest = $kernelCands[0];
-        foreach ($kernelCands as $k) {
+
+        // **같은 flavor 끼리만 비교한다.** 한 호스트에 기종·아키가 다른 커널이 여러 개 깔린다
+        //   (라즈베리파이: rpi-2712 = Pi5, rpi-v8 = 그 외). 전부를 한 줄로 세우면 **안 쓰는 기종의
+        //   커널이 "더 최신"으로 뽑혀** 실행 중 커널이 낡은 것처럼 보이고, 재부팅 필요가 잘못 붙는다
+        //   (실측: 실행 6.18.34+rpt-rpi-2712 인데 설치된 6.18.34+rpt-rpi-v8 을 최신으로 골랐다).
+        //   같은 flavor 후보가 하나도 없으면(그 커널이 제거된 경우) 옛 방식대로 전체를 본다 — 여기서
+        //   비교를 포기하면 진짜 재부팅 필요를 놓친다(미탐).
+        $runFlavor  = vg_kernel_flavor($runningKernel, $mgrForKernel);
+        $sameFlavor = $runFlavor === '' ? [] : array_values(array_filter(
+            $kernelCands,
+            static fn(string $k): bool => vg_kernel_flavor($k, $mgrForKernel) === $runFlavor
+        ));
+        $pool = $sameFlavor ?: $kernelCands;
+
+        $kernelLatest = $pool[0];
+        foreach ($pool as $k) {
             if (vg_ver_cmp($k, $kernelLatest, $mgrForKernel) > 0) { $kernelLatest = $k; }
         }
         if ($runningKernel !== '' && vg_ver_cmp($runningKernel, $kernelLatest, $mgrForKernel) < 0) {
@@ -258,6 +272,21 @@ function vg_ingest_parse_kernel(string $manager, string $runningKernel, string $
         }
     }
     return ['running' => $runningKernel, 'latest' => $kernelLatest, 'reboot_needed' => $kernelReboot];
+}
+
+/**
+ * 커널 릴리스에서 flavor(기종·아키)를 뽑는다. 버전 비교는 **같은 flavor 안에서만** 뜻이 있다.
+ *   dpkg : 마지막 '-' 뒤   6.1.0-18-amd64 → amd64 · 6.18.34+rpt-rpi-2712 → 2712 · …-rpi-v8 → v8
+ *   rpm  : 마지막 '.' 뒤   5.14.0-503.11.1.el9_5.x86_64 → x86_64
+ *          (rpm 은 마이너 릴리스가 el9_4/el9_5 로 문자열에 박히므로 아키만 flavor 로 본다.)
+ */
+function vg_kernel_flavor(string $release, string $manager): string
+{
+    $r = trim($release);
+    if ($r === '') { return ''; }
+    $sep = $manager === 'rpm' ? '.' : '-';
+    $pos = strrpos($r, $sep);
+    return $pos === false ? '' : substr($r, $pos + 1);
 }
 
 // ── 내용 해시 — "바뀔 때만 스냅샷" 판정에 쓰는 정규화 해시 ────────────────
