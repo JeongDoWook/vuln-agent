@@ -56,6 +56,37 @@ done
 have()    { command -v "$1" >/dev/null 2>&1; }
 is_root() { [ "$(id -u)" -eq 0 ]; }
 
+# ---------- 파일 → 소속 패키지 (조회 캐시) ----------
+# 노출·프로세스·재시작필요 세 곳에서 쓴다. 예전엔 함수마다 복사본(_file_to_pkg/_f2p2)이
+# 따로 있었는데, 세 번째 사용처가 생겨 하나로 합쳤다(캐시도 공유되어 조회가 줄어든다).
+PKGMGR="none"
+have dpkg-query && PKGMGR="dpkg"
+have rpm        && PKGMGR="rpm"
+declare -A LIBPKG
+file_to_pkg() {
+  local f="$1" rp p=""
+  [ -z "$f" ] && { echo ""; return; }
+  rp=$(realpath "$f" 2>/dev/null); [ -z "$rp" ] && rp="$f"   # 삭제된 파일은 realpath 실패 → 원 경로
+  if [ -n "${LIBPKG[$rp]+x}" ]; then echo "${LIBPKG[$rp]}"; return; fi
+  case "$PKGMGR" in
+    dpkg)
+      p=$(dpkg -S "$rp" 2>/dev/null | cut -d: -f1 | head -1)
+      # usr-merge: /lib 는 /usr/lib 심볼릭 링크인데 **dpkg DB 는 옛 경로(/lib/…)로 기록**한다.
+      #   프로세스 maps 는 실경로(/usr/lib/…)로 보이므로 그대로 조회하면 못 찾는다
+      #   (실측: libexpat1 → dpkg DB 는 /lib/x86_64-linux-gnu/libexpat.so.1.8.10).
+      #   이걸 놓치면 로드된 라이브러리가 통째로 누락돼 런타임 노출 판정이 헐거워진다.
+      if [ -z "$p" ]; then
+        case "$rp" in
+          /usr/lib/*|/usr/bin/*|/usr/sbin/*) p=$(dpkg -S "${rp#/usr}" 2>/dev/null | cut -d: -f1 | head -1) ;;
+          /lib/*|/bin/*|/sbin/*)             p=$(dpkg -S "/usr$rp"    2>/dev/null | cut -d: -f1 | head -1) ;;
+        esac
+      fi
+      ;;
+    rpm)  p=$(rpm -qf "$rp" 2>/dev/null | grep -v 'not owned' | head -1) ;;
+  esac
+  LIBPKG[$rp]="$p"; echo "$p"
+}
+
 # root 가 아니어도 실패시키지 않는다 — 읽기 전용이라 OS/커널/패키지 같은 핵심 재료는 그대로
 # 모인다. 다만 아래 항목이 빠져 결과가 부분적이 되므로 경고한다(누가 돌렸는지는 meta.running_as
 # 로 페이로드에도 실려 중앙이 판단할 수 있다). 정상 설치 경로는 root 타이머라 여기 안 걸린다.
@@ -180,21 +211,6 @@ fw_port_allowed() {
 #   리스닝 소켓의 PID만 대상 + lib→패키지 조회 캐시 → 가볍다.
 #   출력: pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs(,)
 collect_exposure() {
-  local PKGMGR="none"
-  command -v dpkg-query >/dev/null 2>&1 && PKGMGR="dpkg"
-  command -v rpm        >/dev/null 2>&1 && PKGMGR="rpm"
-  declare -A LIBPKG
-  _file_to_pkg() {
-    local f="$1" rp p=""
-    [ -z "$f" ] && { echo ""; return; }
-    rp=$(realpath "$f" 2>/dev/null); [ -z "$rp" ] && rp="$f"
-    if [ -n "${LIBPKG[$rp]+x}" ]; then echo "${LIBPKG[$rp]}"; return; fi
-    case "$PKGMGR" in
-      dpkg) p=$(dpkg -S "$rp" 2>/dev/null | cut -d: -f1 | head -1) ;;
-      rpm)  p=$(rpm -qf "$rp" 2>/dev/null | grep -v 'not owned' | head -1) ;;
-    esac
-    LIBPKG[$rp]="$p"; echo "$p"
-  }
   local rows pids
   rows=$(ss -tulpnH 2>/dev/null)
   if [ -n "$rows" ]; then
@@ -207,9 +223,9 @@ collect_exposure() {
   for pid in $pids; do
     comm=$(cat /proc/$pid/comm 2>/dev/null)
     exe=$(realpath /proc/$pid/exe 2>/dev/null)
-    exepkg=$(_file_to_pkg "$exe"); [ -z "$exepkg" ] && exepkg="UNPACKAGED"
+    exepkg=$(file_to_pkg "$exe"); [ -z "$exepkg" ] && exepkg="UNPACKAGED"
     loaded=$(awk '/\.so/{print $6}' /proc/$pid/maps 2>/dev/null | sort -u | while read -r lib; do
-               _file_to_pkg "$lib"; done | grep -v '^$' | sort -u | paste -sd, -)
+               file_to_pkg "$lib"; done | grep -v '^$' | sort -u | paste -sd, -)
     socks=$(echo "$rows" | grep "pid=$pid," | awk '{print $1"|"$5}')
     [ -z "$socks" ] && socks="proc||"
     while IFS='|' read -r proto addr; do
@@ -235,22 +251,28 @@ collect_exposure() {
 #   "설치만 vs 실행중 vs 사용중(라이브러리 로드)"을 정밀 구분하기 위한 원천 데이터.
 #   .so 를 로드한 프로세스만(=실제 사용자 프로그램, 커널스레드 제외). 조회 결과 캐시 → 가볍다.
 #   출력: pid|comm|user|exe_pkg|loaded_pkgs(,)
+# collect_stale : 삭제된 라이브러리를 아직 메모리에 물고 있는 프로세스 (재시작 필요)
+#   패키지를 업데이트하면 옛 .so 는 unlink 되고(=maps 에 "(deleted)") 새 파일이 깔린다.
+#   하지만 이미 뜬 프로세스는 **옛 코드를 계속 실행**한다. 그래서 "패치됨"으로 보이지만
+#   실제로는 여전히 취약하다 — 오탐이 아니라 **미탐**이라 더 위험하다.
+#   출력: pid|comm|pkg|lib
+collect_stale() {
+  local pid comm f pkg pns HOST_NS
+  HOST_NS=$(readlink /proc/self/ns/mnt 2>/dev/null)
+  for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    pns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)
+    [ -n "$pns" ] && [ "$pns" != "$HOST_NS" ] && continue   # 컨테이너 제외(호스트 자신만)
+    grep -q '(deleted)' /proc/$pid/maps 2>/dev/null || continue
+    comm=$(cat /proc/$pid/comm 2>/dev/null)
+    awk 'NF>=6 && $6 ~ /\.so/ && /\(deleted\)$/ {print $6}' /proc/$pid/maps 2>/dev/null \
+      | sort -u | while read -r f; do
+          pkg=$(file_to_pkg "$f"); [ -z "$pkg" ] && continue
+          echo "${pid}|${comm}|${pkg}|${f}"
+        done
+  done
+}
+
 collect_processes() {
-  local PKGMGR="none"
-  command -v dpkg-query >/dev/null 2>&1 && PKGMGR="dpkg"
-  command -v rpm        >/dev/null 2>&1 && PKGMGR="rpm"
-  declare -A LIBPKG2
-  _f2p2() {
-    local f="$1" rp p=""
-    [ -z "$f" ] && { echo ""; return; }
-    rp=$(realpath "$f" 2>/dev/null); [ -z "$rp" ] && rp="$f"
-    if [ -n "${LIBPKG2[$rp]+x}" ]; then echo "${LIBPKG2[$rp]}"; return; fi
-    case "$PKGMGR" in
-      dpkg) p=$(dpkg -S "$rp" 2>/dev/null | cut -d: -f1 | head -1) ;;
-      rpm)  p=$(rpm -qf "$rp" 2>/dev/null | grep -v 'not owned' | head -1) ;;
-    esac
-    LIBPKG2[$rp]="$p"; echo "$p"
-  }
   local pid comm user exe exepkg loaded pns
   # 컨테이너(쿠버네티스/도커) 프로세스는 다른 mount namespace → 호스트 자신만 인벤토리한다.
   #   (컨테이너 라이브러리는 오버레이 경로라 dpkg -S 가 매번 DB 전체스캔 = 수백~수천회로 멈춤.
@@ -264,9 +286,9 @@ collect_processes() {
     comm=$(cat /proc/$pid/comm 2>/dev/null)
     user=$(stat -c '%U' /proc/$pid 2>/dev/null)
     exe=$(realpath /proc/$pid/exe 2>/dev/null)
-    exepkg=$(_f2p2 "$exe"); [ -z "$exepkg" ] && exepkg="UNPACKAGED"
+    exepkg=$(file_to_pkg "$exe"); [ -z "$exepkg" ] && exepkg="UNPACKAGED"
     loaded=$(awk '/\.so/{print $6}' /proc/$pid/maps 2>/dev/null | sort -u | while read -r lib; do
-               _f2p2 "$lib"; done | grep -v '^$' | sort -u | paste -sd, -)
+               file_to_pkg "$lib"; done | grep -v '^$' | sort -u | paste -sd, -)
     echo "${pid}|${comm}|${user}|${exepkg}|${loaded}"
   done
 }
@@ -473,6 +495,14 @@ put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
 } > "$TMP/runtime__processes.txt" 2>/dev/null || true
 [ "$(wc -l < "$TMP/runtime__processes.txt" 2>/dev/null || echo 0)" -ge 2 ] \
   || rm -f "$TMP/runtime__processes.txt"
+
+# 재시작 필요 — 업데이트로 교체된 옛 라이브러리를 아직 물고 있는 프로세스
+{
+  echo "pid|comm|pkg|lib"
+  collect_stale
+} > "$TMP/runtime__stale.txt" 2>/dev/null || true
+[ "$(wc -l < "$TMP/runtime__stale.txt" 2>/dev/null || echo 0)" -ge 2 ] \
+  || rm -f "$TMP/runtime__stale.txt"
 
 # ==================================================================
 # 11) 리포지토리 설정

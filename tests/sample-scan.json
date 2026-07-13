@@ -23,6 +23,10 @@
   "updates": {
     "errata_cves": "CVE-2023-22809 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64\nRLSA-2023:0136 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64"
   },
+  "runtime": {
+    "processes": "pid|comm|user|exe_pkg|loaded_pkgs\n1201|nginx|root|nginx|openssl,glibc,curl\n980|sshd|root|openssh-server|openssl,glibc",
+    "stale": "pid|comm|pkg|lib\n1201|nginx|curl|/usr/lib64/libcurl.so.4.7.0"
+  },
   "exposure": {
     "correlation": "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\n1201|nginx|tcp|0.0.0.0|443|EXTERNAL|nginx|openssl,glibc\n1201|nginx|tcp|0.0.0.0|80|EXTERNAL|nginx|openssl,glibc\n980|sshd|tcp|0.0.0.0|22|EXTERNAL|openssh-server|openssl,glibc\n1450|mysqld|tcp|127.0.0.1|3306|LOCAL|mysql-server|glibc\n1600|redis-server|tcp|0.0.0.0|6379|FILTERED|redis|glibc"
   }

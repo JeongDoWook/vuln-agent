@@ -48,9 +48,11 @@ med=$(printf '%s' "$resp" | grep -oE '"MEDIUM":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${med:-0}" -ge 1 ]; then ok "MEDIUM ≥ 1 (redis 방화벽 차단 → 외부노출 아님) = $med"; else no "MEDIUM 미검출"; fi
 if [ "${high:-0}" -eq 2 ]; then ok "HIGH 는 2 유지 (redis 가 HIGH 로 새지 않음)"; else no "HIGH 가 $high (방화벽 차단이 반영 안 됨?)"; fi
 
-# 억제 2건: curl(설치 ≥ 조치 버전) + sudo(벤더 권고가 이 빌드에서 고침 = 백포트).
+# 억제: sudo(벤더 권고가 이 빌드에서 고침 = 백포트).
+#   curl 은 설치 ≥ 조치라 원래 억제 대상이지만, nginx 가 옛 libcurl 을 물고 있어(재시작 필요)
+#   억제되지 않고 취약으로 남아야 한다 — 이게 미탐 방지의 핵심이다.
 supp=$(printf '%s' "$resp" | grep -oE '"SUPPRESSED":[0-9]+' | grep -oE '[0-9]+$')
-if [ "${supp:-0}" -ge 2 ]; then ok "억제 ≥ 2 (curl 버전 + sudo errata) = $supp"; else no "억제 부족 (=${supp:-0})"; fi
+if [ "${supp:-0}" -ge 1 ]; then ok "억제 ≥ 1 (sudo errata) = $supp"; else no "억제 부족 (=${supp:-0})"; fi
 
 # --- 재매칭 -----------------------------------------------------------------
 printf "\n[rematch]\n"
@@ -86,6 +88,8 @@ code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
 assert_eq "$code" "200" "국내 보안공지 페이지 200"
 body=$(curl -s -b "$JAR" "$BASE/host.php?id=1")
 assert_contains "$body" "런타임 노출" "호스트 상세 페이지(노출·취약점)"
+# curl 은 조치 버전 이상이지만 nginx 가 옛 libcurl 을 물고 있다 → 억제 대신 "재시작 필요"로 남는다.
+assert_contains "$body" "재시작 필요" "재시작 필요 근거 노출(패치됐지만 옛 라이브러리 사용 중)"
 
 # 잘못된 비번
 JAR2="$(mktemp)"; csrf2=$(curl -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)

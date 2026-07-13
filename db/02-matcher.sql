@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS tb_findings (
   exposed           TINYINT(1) NOT NULL DEFAULT 0,  -- 로드 + 외부노출(EXTERNAL)
   exposure_scope    VARCHAR(16) NULL,               -- 가장 위험한 노출 범위
   in_kev            TINYINT(1) NOT NULL DEFAULT 0,
+  needs_restart     TINYINT(1) NOT NULL DEFAULT 0,   -- 패치됐지만 프로세스가 옛 .so 사용 중(재시작 필요)
   cvss              DECIMAL(3,1) NULL,
   severity          VARCHAR(12) NOT NULL,           -- CRITICAL|HIGH|MEDIUM|LOW
   rationale         VARCHAR(512) NULL,              -- 왜 이 등급인지(설명가능성)
