@@ -65,6 +65,9 @@ assert_contains "$resp" '"langpkgs":4' "언어 패키지 4건 저장(pip/npm)"
 # 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
 assert_contains "$resp" '"containers":2'   "컨테이너 2개 저장(alpine/debian)"
 assert_contains "$resp" '"ctr_packages":3' "컨테이너 내부 패키지 3건 저장"
+# 컨테이너 런타임 증거 — 이게 없으면 컨테이너 취약점은 근거가 "설치만 됨" 뿐이라 전부 LOW 로 깔린다.
+assert_contains "$resp" '"ctr_processes":2' "컨테이너 프로세스 2건 저장"
+assert_contains "$resp" '"ctr_exposures":1' "컨테이너 노출 1건 저장(api:8443 EXTERNAL)"
 crit=$(printf '%s' "$resp" | grep -oE '"CRITICAL":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${crit:-0}" -ge 1 ]; then ok "CRITICAL ≥ 1 (glibc KEV+외부) = $crit"; else no "CRITICAL 미검출"; fi
 high=$(printf '%s' "$resp" | grep -oE '"HIGH":[0-9]+' | grep -oE '[0-9]+$')
@@ -184,6 +187,8 @@ assert_contains "$body" "재부팅 필요" "커널 재부팅 필요 뱃지(설�
 assert_contains "$body" "재부팅</span>" "조치가 '재부팅' (프로세스 재시작으로는 안 고쳐진다)"
 body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=runtime")
 assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(노출·프로세스)"
+# 컨테이너의 프로세스·포트는 호스트 것과 섞이면 안 된다 — 어느 쪽인지 표에 드러나야 한다.
+assert_contains "$body" "컨테이너 api" "런타임 탭이 컨테이너 출처를 구분해 표시"
 # redis 는 0.0.0.0:6379 지만 방화벽이 막는다 → EXTERNAL 이 아니라 FILTERED 로 분류돼야 한다.
 body=$(curl -s -b "$JAR" "$BASE/findings.php?st=FILTERED")
 assert_contains "$body" "redis" "방화벽 차단(FILTERED) 분류 — redis 가 외부노출로 새지 않음"

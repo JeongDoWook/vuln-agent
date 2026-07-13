@@ -248,8 +248,27 @@ foreach (preg_split('/\r?\n/', (string) ($ctr['packages'] ?? '')) as $line) {
     if (count($f) < 4 || trim($f[0]) === '' || trim($f[2]) === '' || trim($f[3]) === '') { continue; }
     $ctrPkgRows[] = $f;     // cid, manager, name, version, source
 }
-$ctrCount    = count($ctrRows);
-$ctrPkgCount = count($ctrPkgRows);
+// 컨테이너 런타임 증거 — 이게 없으면 컨테이너 취약점은 근거가 "설치만 됨" 뿐이라 전부 LOW 다.
+//   processes: cid|pid|comm|user|exe_pkg|loaded_pkgs
+//   exposure:  cid|pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs
+$ctrProcRows = [];
+foreach (preg_split('/\r?\n/', (string) ($ctr['processes'] ?? '')) as $line) {
+    if ($line === '' || strncmp($line, 'cid|pid|comm', 12) === 0) { continue; }
+    $f = explode('|', $line);
+    if (count($f) < 6 || trim($f[0]) === '' || trim($f[1]) === '') { continue; }
+    $ctrProcRows[] = $f;
+}
+$ctrExpRows = [];
+foreach (preg_split('/\r?\n/', (string) ($ctr['exposure'] ?? '')) as $line) {
+    if ($line === '' || strncmp($line, 'cid|pid|proc', 12) === 0) { continue; }
+    $f = explode('|', $line);
+    if (count($f) < 9 || trim($f[0]) === '' || trim($f[5]) === '') { continue; }
+    $ctrExpRows[] = $f;
+}
+$ctrCount     = count($ctrRows);
+$ctrPkgCount  = count($ctrPkgRows);
+$ctrProcCount = count($ctrProcRows);
+$ctrExpCount  = count($ctrExpRows);
 
 // ── 커널: 실행 중인 커널 vs 설치된 최신 커널 ─────────────────────
 //   커널을 패치해도 **재부팅 전까지는 옛 커널이 돈다.** 설치 버전만 보면 "패치됨"이라
@@ -302,6 +321,12 @@ foreach ($staleRows as $r) { $hashParts[] = "s|{$r[2]}|{$r[3]}"; }
 // 컨테이너 내부 패키지도 인벤토리다 — 여기가 바뀌면 새 스냅샷을 찍어야 한다.
 foreach ($ctrPkgRows as $r) { $hashParts[] = "c|{$r[0]}|{$r[1]}|{$r[2]}|{$r[3]}"; }
 foreach ($ctrRows as $r)    { $hashParts[] = "C|{$r[0]}|{$r[2]}|{$r[3]}|{$r[4]}"; }   // cid|image|os
+// 컨테이너가 새 포트를 열면 그것도 변화다 — 호스트 노출과 같은 규칙(pid 는 제외).
+//   이걸 빼면 컨테이너가 인터넷에 노출돼도 패키지가 그대로인 한 스냅샷이 안 찍혀,
+//   등급을 올릴 근거가 DB 에 영영 안 들어온다(실측: 노출 행이 하나도 저장되지 않았다).
+foreach ($ctrExpRows as $f) {   // cid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs (pid 제외)
+    $hashParts[] = 'CE|' . $f[0] . '|' . implode('|', array_slice($f, 2, 7));
+}
 // 커널 상태(실행/설치/재부팅필요)가 바뀌면 새 스냅샷을 찍어야 한다 — 재부팅이 곧 변화다.
 $hashParts[] = 'k|' . $runningKernel . '|' . $kernelLatest . '|' . $kernelReboot;
 $hashParts[] = 'o|' . ($vm['distro_id'] ?? '') . '|' . ($vm['distro_version'] ?? '')
@@ -433,6 +458,40 @@ try {
             $ins->execute([
                 $scanId, $ctrIds[$cidKey], $r[1], $r[2], $r[3],
                 (($r[4] ?? '') !== '' ? $r[4] : null),
+            ]);
+        }
+    }
+
+    // 컨테이너 런타임 증거 — 호스트와 같은 테이블에 container_id 를 달아 넣는다(0 = 호스트).
+    //   이게 있어야 매처가 컨테이너 패키지에도 "로드됨/외부노출" 을 적용해 등급을 매길 수 있다.
+    if ($ctrProcCount > 0) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_processes (scan_id, container_id, pid, comm, username, exe_pkg, loaded_pkgs)
+             VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($ctrProcRows as $f) {
+            if (!isset($ctrIds[$f[0]])) { continue; }   // 목록에 없는 컨테이너 것은 버린다
+            $ins->execute([
+                $scanId, $ctrIds[$f[0]],
+                ($f[1] !== '' ? (int) $f[1] : null),
+                $f[2], $f[3], $f[4], $f[5],
+            ]);
+        }
+    }
+    if ($ctrExpCount > 0) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_exposures
+                (scan_id, container_id, pid, proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($ctrExpRows as $f) {
+            if (!isset($ctrIds[$f[0]])) { continue; }
+            $ins->execute([
+                $scanId, $ctrIds[$f[0]],
+                ($f[1] !== '' ? (int) $f[1] : null),
+                $f[2], $f[3], $f[4],
+                ($f[5] !== '' ? (int) $f[5] : null),
+                $f[6], $f[7], $f[8],
             ]);
         }
     }
@@ -611,6 +670,8 @@ echo json_encode([
     'warning'       => vg_distro_unsupported($vm['distro_id'] ?? null, $vm['distro_version'] ?? null),
     'containers'    => $ctrCount,
     'ctr_packages'  => $ctrPkgCount,
+    'ctr_processes' => $ctrProcCount,
+    'ctr_exposures' => $ctrExpCount,
     // 직전 수집과 내용이 같으면 새 스냅샷을 만들지 않는다(changed=false). 바뀐 패키지 수도 알려준다.
     'changed'     => !$unchanged,
     'pkg_changes' => $chgCount,

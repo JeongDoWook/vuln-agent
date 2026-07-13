@@ -47,7 +47,9 @@
   },
   "containers": {
     "list": "cid|name|image|os_id|os_version|manager|pkg_count\napi|api|myco/api:1.4|alpine|3.19.1|apk|2\nlegacy|legacy|debian:12|debian|12|dpkg|1",
-    "packages": "cid|manager|name|version|source\napi|apk|openssl|3.1.4-r2|openssl\napi|apk|busybox|1.36.1-r15|busybox\nlegacy|dpkg|curl|7.88.1-10+deb12u5|curl"
+    "packages": "cid|manager|name|version|source\napi|apk|openssl|3.1.4-r2|openssl\napi|apk|busybox|1.36.1-r15|busybox\nlegacy|dpkg|curl|7.88.1-10+deb12u5|curl",
+    "processes": "cid|pid|comm|user|exe_pkg|loaded_pkgs\napi|2100|nginx|root|nginx|openssl,busybox\nlegacy|2200|cron|root|cron|",
+    "exposure": "cid|pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\napi|2100|nginx|tcp|0.0.0.0|8443|EXTERNAL|nginx|openssl,busybox"
   },
   "langpkg": {
     "pip": "requests==2.19.1\nurllib3==2.0.7",
