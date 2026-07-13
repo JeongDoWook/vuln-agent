@@ -151,19 +151,18 @@ vg_header('취약점', 'findings');
           'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
   ]));
 
-  // 호스트 컬럼은 통합 모드에서만. 단일 스캔 모드는 부제가 이미 호스트를 밝힌다.
+  // 컬럼 11개는 가로 스크롤을 만들어서, 정작 제일 중요한 "조치" 가 화면 밖으로 밀려났었다.
+  // 값을 버리는 게 아니라 관련된 것끼리 한 칸에 쌓는다(패키지+버전, CVSS+EPSS+KEV).
+  // 호스트 컬럼은 통합 모드에서만 — 단일 스캔 모드는 부제가 이미 호스트를 밝힌다.
   $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn']];
   $headers = array_merge($headers, [
-      ['label' => '등급', 'key' => 'severity'],
-      ['label' => '상태', 'key' => 'runtime_status'],
-      ['label' => 'CVE', 'key' => 'cve_id'],
-      ['label' => '패키지', 'key' => 'package_name'],
-      ['label' => '버전', 'key' => 'installed_version'],
-      ['label' => 'CVSS', 'key' => 'cvss'],
-      ['label' => 'EPSS', 'key' => 'epss'],
-      ['label' => 'KEV', 'key' => 'in_kev'],
+      ['label' => '등급',  'key' => 'severity',       'width' => '6rem',  'nowrap' => true],
+      ['label' => '상태',  'key' => 'runtime_status', 'width' => '7rem',  'nowrap' => true],
+      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '13rem', 'nowrap' => true],
+      ['label' => '패키지', 'key' => 'package_name',  'width' => '13rem'],
+      ['label' => '위험도', 'key' => 'risk',          'width' => '7rem',  'nowrap' => true],
       ['label' => '근거 (왜 위험한가)', 'key' => 'rationale'],
-      ['label' => '조치', 'key' => 'fix'],
+      ['label' => '조치',  'key' => 'fix',            'width' => '11rem'],
   ]);
 
   vg_table(
@@ -180,18 +179,36 @@ vg_header('취약점', 'findings');
               'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
               'severity'       => fn($r) => vg_sev_badge((string) $r['severity']),
               'runtime_status' => fn($r) => vg_status_badge($r['runtime_status']),
+              // CVE — 링크 + KEV 뱃지(별도 컬럼이던 '✔' 를 여기로).
+              // CVE 요약(summary)은 뺐다. 근거와 나란히 두면 긴 텍스트 컬럼이 둘이라
+              // 표가 화면을 넘겨서 정작 제일 중요한 '조치' 가 밖으로 밀려난다.
+              // 요약은 일반적인 CVE 설명이라 상세 페이지에 있고, 근거는 이 제품만의 판정 이유다.
+              // 마우스를 올리면 title 로 요약을 볼 수 있게만 남긴다.
               'cve_id' => function ($r) {
-                  $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a></strong>';
-                  if ($r['summary']) { $html .= '<div class="why">' . vg_trunc($r['summary']) . '</div>'; }
+                  $t = $r['summary'] ? ' title="' . vg_h($r['summary']) . '"' : '';
+                  $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '"' . $t . '>'
+                        . vg_h($r['cve_id']) . '</a></strong>';
+                  if ($r['in_kev']) { $html .= ' ' . vg_badge('KEV', 'crit', '악용이 확인된 취약점 — CISA KEV 등재'); }
                   return $html;
               },
-              'package_name'      => fn($r) => vg_h($r['package_name']),
-              'installed_version' => fn($r) => '<code>' . vg_h($r['installed_version']) . '</code>',
-              'cvss'      => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '-',
-              'epss'      => fn($r) => vg_epss_cell($r['epss'], $r['epss_percentile']),
-              'in_kev'    => fn($r) => $r['in_kev'] ? '✔' : '',
-              'rationale' => fn($r) => '<span class="why">' . vg_trunc($r['rationale']) . '</span>',
-              'fix'       => fn($r) => !empty($r['fixed_version']) ? '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>',
+              // 패키지 — 이름 + 설치 버전(아래줄)
+              'package_name' => fn($r) => vg_h($r['package_name'])
+                  . '<div class="why"><code>' . vg_h($r['installed_version']) . '</code></div>',
+              // 위험도 — CVSS(얼마나 심한가) + EPSS(실제로 악용될 확률). 다른 걸 재므로 같이 본다.
+              //   백분위("상위 N%")는 여기선 뺀다 — 좁은 칸에서 4줄로 접힌다. 상세 페이지에 있다.
+              'risk' => function ($r) {
+                  $cvss = $r['cvss'] !== null
+                      ? 'CVSS <strong>' . vg_h((string) $r['cvss']) . '</strong>'
+                      : '<span class="why">CVSS –</span>';
+                  $epss = $r['epss'] !== null && $r['epss'] !== ''
+                      ? 'EPSS ' . vg_h(number_format((float) $r['epss'] * 100, 1)) . '%'
+                      : 'EPSS –';
+                  return $cvss . '<div class="why">' . $epss . '</div>';
+              },
+              'rationale' => fn($r) => '<span class="why">' . vg_trunc($r['rationale'], 80) . '</span>',
+              'fix'       => fn($r) => !empty($r['fixed_version'])
+                  ? '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>'
+                  : '<span class="why">패치 확인</span>',
           ],
       ]
   );
