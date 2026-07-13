@@ -21,7 +21,9 @@ INSERT INTO tb_cves (cve_id, summary, cvss, published) VALUES
   ('CVE-2024-2004', 'curl: 비활성 프로토콜의 기본 설정이 잘못 적용됨', 5.5, '2024-03-27'),
   ('CVE-2023-5678', 'OpenSSL DH 키 생성 시 과도한 지연 — DoS', 5.3, '2023-11-06'),
   -- 컨테이너 데모: 알파인 컨테이너(api) 안의 openssl. 호스트가 아니라 컨테이너 배포판 기준으로 매칭된다.
-  ('CVE-2024-0727', 'OpenSSL PKCS12 NULL 역참조 — DoS', 5.5, '2024-01-26')
+  ('CVE-2024-0727', 'OpenSSL PKCS12 NULL 역참조 — DoS', 5.5, '2024-01-26'),
+  -- 커널 데모: 패치는 설치됐지만 재부팅 전이라 옛 커널이 실행 중 → 억제하면 미탐.
+  ('CVE-2024-26581', 'Linux 커널 netfilter nft_set_rbtree — 권한상승', 7.8, '2024-02-20')
 ON DUPLICATE KEY UPDATE summary=VALUES(summary), cvss=VALUES(cvss), published=VALUES(published);
 
 -- CISA KEV: 실제 악용 목록 (Looney Tunables 는 KEV 등재)
@@ -56,5 +58,8 @@ INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_ver
   ('CVE-2024-0727', 'Alpine:v3.19', 'openssl',  '3.1.4-r5'),
   -- 서드파티 데모(web02): nginx 를 nginx.org 저장소에서 설치(origin=nginx).
   -- 배포판 조치안(1.22.1-9+deb12u1)과 버전 체계가 달라 자동 판정이 불가하다 → 억제하지 않는다.
-  ('CVE-2021-23017','Debian:12',    'nginx',    '1.22.1-9+deb12u1')
+  ('CVE-2021-23017','Debian:12',    'nginx',    '1.22.1-9+deb12u1'),
+  -- 커널: 설치 버전 = 조치 버전이라 "이미 패치됨"으로 억제될 건이다.
+  -- 하지만 실행 중인 커널은 5.14.0-427(옛 것) → 재부팅 전까지 여전히 취약하다.
+  ('CVE-2024-26581','Rocky Linux:9', 'kernel',  '5.14.0-503.11.1.el9_5')
 ON DUPLICATE KEY UPDATE ecosystem=VALUES(ecosystem), fixed_version=VALUES(fixed_version);

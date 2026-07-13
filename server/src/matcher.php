@@ -65,7 +65,9 @@ if (!function_exists('vg_scope_rank')) {
      */
     function vg_match_scan(PDO $pdo, int $scanId): array {
         // 이 스캔의 배포판 → 생태계. 수집(feeds)이 'Ubuntu:24.04' 로 태깅한 것과 같은 기준.
-        $sc = $pdo->prepare('SELECT os_id, os_version, package_family FROM tb_scans WHERE id = ?');
+        $sc = $pdo->prepare('SELECT os_id, os_version, package_family,
+                                    running_kernel, kernel_latest, kernel_reboot_needed
+                               FROM tb_scans WHERE id = ?');
         $sc->execute([$scanId]);
         $scan = $sc->fetch() ?: [];
         $hostEco = vg_osv_ecosystem($scan['os_id'] ?? null, $scan['os_version'] ?? null);
@@ -285,6 +287,11 @@ if (!function_exists('vg_scope_rank')) {
             // 억제 근거(changelog·errata·debsecan)는 전부 **호스트** 상태다. 컨테이너 CVE 를
             //   호스트 근거로 억제하면 실제 취약점을 숨기는 미탐이 된다 → 컨테이너는 제외한다.
             //   (버전 비교는 그 컨테이너의 패키지 버전으로 하는 것이라 컨테이너에도 유효하다.)
+            // 커널: 패치했어도 **재부팅 전까지는 옛 커널이 돈다** → 억제하면 미탐이다.
+            //   (라이브러리의 "재시작 필요"와 같은 문제. 조치는 프로세스 재시작이 아니라 재부팅.)
+            $isKernelPkg = $ctr === null && preg_match('/^(kernel|kernel-core|kernel-modules|linux-image-|linux-headers-)/', (string) $p['name']) === 1;
+            $kernelPending = $isKernelPkg && (int) ($scan['kernel_reboot_needed'] ?? 0) === 1;
+
             // 서드파티 저장소(PPA·Docker·NodeSource) 패키지 / 수동 .deb 설치는 배포판 트래커에
             //   아예 없다. 배포판 기준 억제(debsecan·errata·changelog)는 "트래커에 없으면 이미
             //   수정됨"으로 보므로, 그대로 두면 진짜 취약점을 숨긴다(미탐) → 억제하지 않는다.
@@ -322,6 +329,14 @@ if (!function_exists('vg_scope_rank')) {
                 if ($staleEv !== null) {
                     $why .= ' · 재시작 필요(패치됐지만 옛 라이브러리 사용 중: ' . $staleEv . ')';
                 }
+                // 커널이 패치됐지만 재부팅 전이면, 설치 버전으로 억제하면 안 된다(옛 커널이 실행 중).
+                if ($kernelPending) {
+                    $canSuppress = false;
+                    $why .= sprintf(' · 재부팅 필요(설치 %s / 실행 중 %s — 패치된 커널이 아직 안 올라옴)',
+                                    (string) ($scan['kernel_latest'] ?? '?'),
+                                    (string) ($scan['running_kernel'] ?? '?'));
+                }
+
                 // 서드파티 패키지는 배포판 조치안과 버전 체계가 달라 "설치 ≥ 조치" 비교도 못 믿는다.
                 //   억제하지 않고 근거에 출처를 남겨, 사람이 판단할 수 있게 한다.
                 if (!$isDistroPkg) {
@@ -393,7 +408,7 @@ if (!function_exists('vg_scope_rank')) {
                 $ins->execute([
                     $scanId, $ctrId, $cveId, $p['name'], $p['version'],
                     $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $status, $inKev ? 1 : 0,
-                    $staleEv !== null ? 1 : 0, $cvss, $sev, $why,
+                    ($staleEv !== null || $kernelPending) ? 1 : 0, $cvss, $sev, $why,
                 ]);
             }
         }
