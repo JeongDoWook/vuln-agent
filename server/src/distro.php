@@ -133,6 +133,25 @@ if (!function_exists('vg_pkg_ecosystem')) {
     }
 
     /**
+     * 데비안 VERSION_ID → 릴리스 코드명. 보안 트래커는 코드명으로 데이터를 준다.
+     *   에이전트는 /etc/os-release 의 VERSION_ID(11·12·13…)를 보내므로 여기서 옮긴다.
+     *   모르는 버전이면 빈 문자열 → 호출자는 억제를 하지 않는다(모르면 안 지운다).
+     */
+    function vg_debian_codename(?string $osVersion): string
+    {
+        $v = trim((string) $osVersion);
+        if ($v === '') { return ''; }
+        $major = explode('.', $v)[0];
+        return [
+            '10' => 'buster',
+            '11' => 'bullseye',
+            '12' => 'bookworm',
+            '13' => 'trixie',
+            '14' => 'forky',
+        ][$major] ?? '';
+    }
+
+    /**
      * 커널 소스 패키지인가(데비안 `linux` / RHEL `kernel`).
      *   이 소스에서 나온 CVE 는 **커널 코드**의 취약점이다 — 같은 소스로 빌드됐다는 이유만으로
      *   헤더·빌드도구·메타패키지에까지 매달면 안 된다(vg_is_kernel_code_pkg 와 짝).

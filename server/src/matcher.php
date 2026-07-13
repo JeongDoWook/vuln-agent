@@ -11,6 +11,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/vercmp.php';   // vg_ver_cmp — dpkg/rpm 버전 비교
 require_once __DIR__ . '/distro.php';   // vg_osv_ecosystem — 수집과 동일 기준
+require_once __DIR__ . '/debtracker.php';   // vg_debtracker_evidence — 데비안 백포트 판정(중앙)
 
 if (!function_exists('vg_scope_rank')) {
     // 노출 범위 위험도 (클수록 위험)
@@ -193,7 +194,7 @@ if (!function_exists('vg_scope_rank')) {
      * 전부 이 스캔의 **호스트** 상태다 — 컨테이너 CVE 를 호스트 근거로 억제하면 실제 취약점을
      * 숨기는 미탐이 되므로, 컨테이너 배제는 호출부(vg_match_scan)의 책임으로 남겨둔다.
      */
-    function vg_load_suppression_evidence(PDO $pdo, int $scanId, ?string $osId): array {
+    function vg_load_suppression_evidence(PDO $pdo, int $scanId, ?string $osId, ?string $osVersion = null): array {
         // 백포트 근거: 패키지 changelog 에 명시된 CVE(=그 빌드에 이미 수정됨).
         //   package_name => [cve_id => evidence(changelog 줄)]
         $backport = [];
@@ -228,6 +229,15 @@ if (!function_exists('vg_scope_rank')) {
         $dsStmt->execute([$scanId]);
         foreach ($dsStmt->fetchAll() as $r) {
             $debsecan[$r['package_name']][$r['cve_id']] = true;
+        }
+
+        // 에이전트가 debsecan 을 안 보냈으면(=대상 서버에 안 깔림) **중앙이 직접 판정**한다.
+        //   에이전트는 사실만 모으고 판정 지식은 중앙이 갖는 게 정석이다 — 폐쇄망 서버엔
+        //   apt 설치조차 못 한다. 중앙은 debsecan 이 받아 쓰는 바로 그 릴리스 데이터를
+        //   피드로 미러링해 두고(tb_debian_tracker), 같은 규칙으로 같은 결과를 만든다.
+        //   트래커가 아직 수집 전이면 빈 배열 → 아래 useDebsecan 이 꺼져 억제하지 않는다.
+        if ($debsecan === [] && strtolower((string) $osId) === 'debian') {
+            $debsecan = vg_debtracker_evidence($pdo, $scanId, vg_debian_codename($osVersion));
         }
         $useDebsecan = $debsecan !== [] && strtolower((string) $osId) === 'debian';
 
@@ -268,7 +278,7 @@ if (!function_exists('vg_scope_rank')) {
         $kev      = $catalog['kev'];
         $affected = $catalog['affected'];
 
-        $sup         = vg_load_suppression_evidence($pdo, $scanId, $scan['os_id'] ?? null);
+        $sup         = vg_load_suppression_evidence($pdo, $scanId, $scan['os_id'] ?? null, $scan['os_version'] ?? null);
         $backport    = $sup['backport'];
         $stale       = $sup['stale'];
         $debsecan    = $sup['debsecan'];
