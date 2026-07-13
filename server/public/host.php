@@ -28,7 +28,7 @@ try {
     }
     if ($scan) {
         $sid = (int) $scan['id'];
-        $st = $pdo->prepare('SELECT proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ? ORDER BY FIELD(scope,\'EXTERNAL\',\'BOUND\',\'LOCAL\',\'-\'), port');
+        $st = $pdo->prepare('SELECT proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ? ORDER BY FIELD(scope,\'EXTERNAL\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), port');
         $st->execute([$sid]);
         $exposures = $st->fetchAll();
 
@@ -95,7 +95,8 @@ try {
 }
 
 // 노출 범위 → 뱃지 톤(색은 CSS 가 결정).
-$scopeTone = ['EXTERNAL' => 'crit', 'BOUND' => 'med', 'LOCAL' => 'muted'];
+//   FILTERED = 전체 인터페이스에 떠 있지만 방화벽이 막아 외부에서 못 닿는 포트.
+$scopeTone = ['EXTERNAL' => 'crit', 'BOUND' => 'med', 'FILTERED' => 'muted', 'LOCAL' => 'muted'];
 
 vg_header($host['fqdn'] ?? '호스트', 'dashboard');
 ?>

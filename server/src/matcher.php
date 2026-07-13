@@ -18,6 +18,9 @@ if (!function_exists('vg_scope_rank')) {
         switch ($s) {
             case 'EXTERNAL': return 3;
             case 'BOUND':    return 2;
+            // FILTERED: 전체 인터페이스에 떠 있지만 방화벽이 그 포트를 막아 외부에서 못 닿는다.
+            //   (에이전트가 firewalld/ufw 의 허용 포트와 대조해 판정) → LOCAL 과 같은 무게.
+            case 'FILTERED':
             case 'LOCAL':    return 1;
             default:         return 0;
         }
@@ -31,6 +34,11 @@ if (!function_exists('vg_scope_rank')) {
         if ($le && ($le['scope'] ?? '') === 'EXTERNAL') {
             $status = 'EXTERNAL'; $level = 3;
             $base = sprintf('외부노출(%s:%d 가 %s 사용)', $le['proc'] ?? '?', $le['port'] ?? 0, $pkg);
+        } elseif ($le && ($le['scope'] ?? '') === 'FILTERED') {
+            // 전체 인터페이스 바인딩이지만 방화벽이 막고 있다 → 외부노출 아님.
+            //   이 판정이 없으면 방화벽 뒤의 내부 서비스가 전부 HIGH/CRITICAL 로 뜬다(오탐).
+            $status = 'FILTERED'; $level = 2;
+            $base = sprintf('방화벽 차단(%s:%d — 리스닝이지만 외부 도달 불가)', $le['proc'] ?? '?', $le['port'] ?? 0);
         } elseif ($le) {
             $status = 'LISTENING'; $level = 2;
             $base = sprintf('로컬 리스닝(%s:%d, scope=%s)', $le['proc'] ?? '?', $le['port'] ?? 0, $le['scope'] ?? '-');
