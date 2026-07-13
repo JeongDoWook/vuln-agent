@@ -687,11 +687,42 @@ cap users interactive  'getent passwd | awk -F: "\$3>=1000 && \$7!~/nologin|fals
 cap users sudo_group   'getent group sudo wheel 2>/dev/null'
 cap users logged_in    'who'
 cap users last_logins  'last -n 20 2>/dev/null'
+# sshd -T 는 "실제 적용값"이라 권위 있지만, 호스트키가 없거나 설정 오류가 있으면 실패한다.
+#   그때 config 폴백이 없으면 SSH 점검이 통째로 "판정 불가"가 된다 → **둘 다 수집**한다.
+#   (서버는 effective 를 먼저 보고, 없으면 config 로 판정한다.)
 if is_root; then
-  cap users sshd_effective 'sshd -T 2>/dev/null | grep -E "permitrootlogin|passwordauthentication|pubkeyauthentication|x11forwarding|ciphers|macs"'
-else
-  cap users sshd_config 'grep -iE "^(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication)" /etc/ssh/sshd_config 2>/dev/null'
+  cap users sshd_effective 'sshd -T 2>/dev/null | grep -E "permitrootlogin|passwordauthentication|pubkeyauthentication|permitemptypasswords|maxauthtries|x11forwarding|logingracetime|clientaliveinterval|clientalivecountmax|ciphers|macs"'
 fi
+cap users sshd_config 'grep -iE "^\s*(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|MaxAuthTries|X11Forwarding|LoginGraceTime|ClientAlive)" /etc/ssh/sshd_config 2>/dev/null'
+
+# ── KISA 「주요정보통신기반시설 기술적 취약점 분석·평가 가이드」 점검용 수집 ──
+#   CCE 는 CVE 처럼 받아올 피드가 없다(MITRE/NIST CCE 사전은 2013년경 갱신 중단, KISA·금보원
+#   가이드는 PDF/HWP 문서 배포). 그래서 가이드 항목을 코드로 옮기고, 판정에 필요한 원자료를
+#   여기서 모은다. 전부 읽기 전용이고 stat/grep 수준이라 가볍다.
+#   find 기반 항목(U-06 소유자 없는 파일, U-13 SUID 전수, U-15 world-writable)은 전체 파일시스템을
+#   훑어야 해서 넣지 않았다 — 이 에이전트의 "서버에 무리 주지 않는다" 원칙과 충돌한다.
+cap security file_perms '
+  stat -c "%a %U %G %n" /etc/passwd /etc/shadow /etc/group /etc/gshadow /etc/hosts \
+    /etc/services /etc/crontab /etc/inetd.conf /etc/xinetd.conf /etc/rsyslog.conf /etc/syslog.conf \
+    2>/dev/null'
+cap security login_defs 'grep -E "^\s*(PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE|UMASK)" /etc/login.defs 2>/dev/null'
+cap security pam_rules  'cat /etc/security/pwquality.conf 2>/dev/null | grep -vE "^\s*#|^\s*$";
+                         grep -hE "pam_(pwquality|cracklib|faillock|tally2|wheel)" /etc/pam.d/* 2>/dev/null'
+cap security tmout      'grep -hE "^\s*(export\s+)?TMOUT" /etc/profile /etc/bash.bashrc /etc/bashrc /etc/profile.d/*.sh 2>/dev/null'
+cap security root_path  'grep -hE "^\s*(export\s+)?PATH=" /root/.bash_profile /root/.bashrc /root/.profile /etc/profile 2>/dev/null'
+# "위반 없음"과 "수집 실패"는 다르다. cap 은 출력이 비면 섹션 파일을 지우므로, 없을 때
+# NONE 을 찍지 않으면 정상인 호스트가 중앙에서 "판정 불가(NA)"로 보인다.
+cap security rhosts     'ls -l /etc/hosts.equiv /root/.rhosts /home/*/.rhosts 2>/dev/null | grep . || echo NONE'
+cap security tcp_wrapper 'cat /etc/hosts.allow /etc/hosts.deny 2>/dev/null | grep -vE "^\s*#|^\s*$"'
+cap security legacy_services '
+  systemctl list-unit-files --state=enabled --no-legend 2>/dev/null | awk "{print \$1}";
+  ls /etc/xinetd.d/ 2>/dev/null;
+  grep -vE "^\s*#|^\s*$" /etc/inetd.conf 2>/dev/null'
+# 빈 패스워드 계정 — /etc/shadow 는 root 만 읽는다. **읽을 수 있을 때만** NONE 을 찍는다:
+# 못 읽는데 NONE 을 찍으면 "빈 패스워드 없음(정상)"으로 오판해 진짜 위험을 숨긴다.
+cap security empty_passwords '[ -r /etc/shadow ] && { awk -F: "(\$2 == \"\") { print \$1 }" /etc/shadow | grep . || echo NONE; }'
+cap security passwd_shadowed 'awk -F: "(\$2 != \"x\" && \$2 != \"*\") { print \$1 }" /etc/passwd 2>/dev/null | grep . || echo NONE'
+cap security duplicate_uid   'getent passwd | awk -F: "{ print \$3 }" | sort | uniq -d | grep . || echo NONE'
 cap scheduled crontab_system 'cat /etc/crontab 2>/dev/null; cat /etc/cron.d/* 2>/dev/null'
 cap scheduled cron_users 'for u in $(cut -d: -f1 /etc/passwd); do o=$(crontab -l -u "$u" 2>/dev/null); [ -n "$o" ] && { echo "== $u =="; echo "$o"; }; done'
 have systemctl && cap scheduled timers 'systemctl list-timers --all --no-pager --no-legend 2>/dev/null'
