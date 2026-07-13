@@ -1,7 +1,9 @@
 # CONTEXT.md — 프로젝트 맥락 (Claude Code 최우선 참고)
 
 > 이 파일은 개발을 이어받는 사람(및 Claude Code)이 **가장 먼저 읽는** 요약이다.
-> 세부 기획은 `docs/기획안_v1.0.html`, 쉬운 설명은 `docs/설명글.md` 참고.
+> 쉬운 설명은 `docs/설명글.md`, 전체 프로세스는 `docs/프로세스_v1.0.html` 참고.
+> `docs/기획안_v1.0.html` 은 **착수 시점 기획 스냅샷**이라 현재 구현과 다른 부분이 있다
+> (특히 Python AI 단계는 범위에서 빠졌다). 현행 기준은 이 파일과 `docs/architecture.md`.
 
 ---
 
@@ -102,10 +104,9 @@ vuln-agent/
 │   ├── public/   # ingest·rematch·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
 │   │             #   packages/advisories/advisory/assets/connectors/users/permissions/api-tokens/activity/profile(웹)
 │   ├── src/      # config·db·auth(RBAC)·view·matcher(+백포트억제)·feeds·cce·apitoken·audit(감사로그·소프트삭제)
-│   └── bin/      # scheduler.php(사이드카)·sync.php·enrich_osv.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
+│   └── bin/      # scheduler.php(사이드카)·sync.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
 ├── db/           # 01~13 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
-│   ├── migrations/    # NNNN_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
-│   └── _migrations/   # (역사) 과거에 손으로 적용한 1회성 마이그레이션. 러너가 건드리지 않는다
+│   └── migrations/    # NNNN_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
 ├── docs/         # 아키텍처·기획안·설명글·프로세스·피드소스-역할·export-api
 └── shadow-ai/    # (사이드 PoC) 섀도우 AI DLP 크롬 확장 — 본 파이프라인과 독립
 ```
@@ -197,7 +198,7 @@ vuln-agent/
       또는 `Authorization: Bearer`(Apache 가 스트립해도 우회). 상세: `docs/export-api.md`.
 - [x] **스키마 마이그레이션 자동화** — `deploy/migrate.sh` 가 `db/migrations/NNNN_*.sql` 중 미적용분만
       순서대로 적용하고 `tb_schema_migrations` 에 기록(`up`·`update.sh` 가 자동 호출, 수동 apply 불필요).
-      최상위 `db/01~13*.sql` 은 빈 볼륨 initdb 전용, `db/_migrations/` 는 역사 기록.
+      최상위 `db/01~13*.sql` 은 빈 볼륨 initdb 전용이라 기존 볼륨엔 안 들어간다 → 증분은 `migrations/` 로.
 - [x] **UI** — 좌측 사이드바(대분류/중분류) · CVE 목록 탭(전체/KEV/EPSS 상위) · 영향 패키지 목록 `packages.php`
       · EPSS 백분위 병기 · 필터 즉시 적용.
 - [ ] 대시보드 "다음 수집 예정", 알림

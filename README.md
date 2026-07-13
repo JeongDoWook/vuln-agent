@@ -224,7 +224,13 @@ API: `POST /ingest.php`(에이전트 수집 수신) · `POST /rematch.php`(재�
 - 스케줄러 사이드카(`scheduler` 컨테이너)가 1분마다 due 커넥터를 실행하고, 수집 후 전체 스캔을 재매칭. 중단돼 `running` 으로 굳은 실행도 정리한다.
 - 수동 실행: 커넥터 행의 "지금 실행", 또는 `docker compose exec web php bin/sync.php <id>`.
 
-**bin 스크립트(1회성 유지보수)**: `backfill_nvd.php`(NVD 전체 백필) · `backfill_kisa.php`(국내공지 과거 이력) · `backfill_kisa_content.php`(공지 본문) · `rebuild_advisory_cveids.php`(cve_ids 재계산) · `enrich_osv.php` · `sync.php`(커넥터 수동 실행).
+**bin 스크립트(1회성 유지보수 — 웹 UI 로는 못 하는 일만 남겼다)**: `backfill_nvd.php`(NVD 전체 백필)
+· `backfill_kisa.php`(국내공지 과거 이력) · `backfill_kisa_content.php`(공지 본문) ·
+`rebuild_advisory_cveids.php`(cve_ids 재계산) · `sync.php`(커넥터 수동 실행).
+
+> 백필이 왜 필요한가: KISA RSS 는 **피드당 최신 10건**(3종 = 30건)만 준다. 주기 수집으로는
+> 과거 공지를 영원히 못 가져오므로 과거 이력은 `backfill_kisa.php` 로만 채울 수 있다.
+> NVD 도 주기 수집은 수정일 기준 증분이라 전체 36만 건은 `backfill_nvd.php` 로 1회 채운다.
 
 ## 테스트
 

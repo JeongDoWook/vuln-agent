@@ -12,7 +12,7 @@ secrets/*.txt
 /vendor/
 composer.lock
 
-# --- Python (matcher-ai, 나중) ---
+# --- Python ---
 __pycache__/
 *.py[cod]
 .venv/

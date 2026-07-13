@@ -204,8 +204,8 @@ flowchart TB
 **스키마 적용**은 `deploy/migrate.sh` 가 맡는다 — `db/migrations/NNNN_*.sql` 중 아직 안 든 것만
 번호순으로 db 컨테이너에 파이프하고 `tb_schema_migrations(filename, applied_at)` 에 기록한다.
 `compose_runner.sh up` 과 `update.sh` 가 자동 호출하므로 수동 apply 가 필요 없다. 최상위
-`db/*.sql` 은 **빈 볼륨 initdb 전용**이고, `db/_migrations/` 는 과거 수동 적용분(역사 기록,
-재실행 시 깨지는 것이 있어 러너 대상에서 제외).
+`db/*.sql` 은 **빈 볼륨 initdb 전용**이라 기존 볼륨엔 적용되지 않는다 — 증분 변경은 전부
+`db/migrations/` 에 둔다.
 
 ---
 

@@ -12,7 +12,7 @@ declare(strict_types=1);
  *   네트워크를 쓰지 않는다. 이미 DB 에 있는 content/title 만 다시 읽어 계산하므로
  *   보호나라에 부담이 없고 몇 초면 끝난다. 몇 번을 돌려도 멱등하다.
  *
- *   선행 조건: db/_migrations/2026-07-advisories-cveids-text.sql (컬럼 TEXT 확장)
+ *   선행 조건: tb_advisories.cve_ids 가 TEXT 여야 한다(db/06-advisories.sql).
  *
  *   사용:
  *     php bin/rebuild_advisory_cveids.php            # 실제 적용

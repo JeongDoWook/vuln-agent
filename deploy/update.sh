@@ -66,12 +66,13 @@ if printf '%s\n' "$CHANGED" | grep -qE "$DB_RE"; then
   echo "  DB 변경 감지:"
   printf '%s\n' "$CHANGED" | grep -E "$DB_RE" | sed 's/^/    /'
   # db/migrations/ 는 아래 [5/5]에서 러너가 자동 적용한다.
-  # db/_migrations/(레거시)·최상위 db/*.sql(빈 볼륨 initdb 전용)은 자동 적용 대상이 아니다.
+  # 최상위 db/*.sql 은 빈 볼륨 initdb 전용이라 기존 볼륨엔 안 들어간다.
   if printf '%s\n' "$CHANGED" | grep -qE '^db/migrations/'; then
     echo "  → db/migrations/ 는 [5/5]에서 자동 적용됩니다."
   fi
-  if printf '%s\n' "$CHANGED" | grep -qE '^db/(_migrations/|[0-9])'; then
-    printf "  ${Y}참고: db/_migrations/ 또는 최상위 db/*.sql 변경은 자동 적용되지 않습니다(수동 판단).${N}\n"
+  if printf '%s\n' "$CHANGED" | grep -qE '^db/[0-9]'; then
+    printf "  ${Y}참고: 최상위 db/*.sql 변경은 자동 적용되지 않습니다(빈 볼륨 initdb 전용).${N}\n"
+    printf "  ${Y}      기존 볼륨에 반영하려면 db/migrations/ 에 파일을 추가하세요.${N}\n"
   fi
 fi
 

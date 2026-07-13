@@ -6,9 +6,8 @@
 #   추적: tb_schema_migrations(filename, applied_at). 파일명 기준 멱등.
 #   적용: db 컨테이너 안의 mysql 로 파일을 파이프(수동 apply 와 동일 경로).
 #
-#   왜 db/migrations/ 만 보나: db/_migrations/ 10개는 과거에 수동 적용됐고 일부는
-#   재실행 시 에러난다(ADD INDEX 등). 러너가 관리하는 신규 폴더를 분리해 과거 것을
-#   다시 돌리지 않는다. db/*.sql(최상위)은 빈 볼륨 initdb 전용(러너 대상 아님).
+#   왜 db/migrations/ 만 보나: db/*.sql(최상위)은 빈 볼륨 initdb 전용이라 러너 대상이
+#   아니다. 기존 볼륨에 반영할 증분 변경은 전부 db/migrations/ 에 둔다.
 #
 #   호출: compose_runner.sh 가 `up` 뒤에, update.sh 가 배포 뒤에 자동 실행.
 #   수동: bash deploy/migrate.sh [db컨테이너명]   (기본 vulnagent-db)

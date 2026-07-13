@@ -95,11 +95,6 @@ function vg_require_role(string ...$roles): void {
     }
 }
 
-// admin 전용(하위호환). 내부는 vg_require_role('admin') 로 위임.
-function vg_require_admin(): void {
-    vg_require_role('admin');
-}
-
 // 역할 한글 라벨. viewer 는 user 와 동일 취급.
 function vg_role_label(string $role): string {
     $m = ['admin' => '관리자', 'operator' => '운영자', 'user' => '사용자', 'viewer' => '사용자'];
