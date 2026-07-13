@@ -194,9 +194,9 @@
   인바운드 80/443 개방 없이 기존 <code class="i">8080</code> 포워딩 재사용.
   <b>② 각 대상 서버</b> (에이전트 설치 + 시간마다 자동 수집)
   <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
-    sudo ./agent/install-agent.sh \<br>
-    &nbsp;&nbsp;--server https://ost-server.duckdns.org:8080/ingest.php \<br>
-    &nbsp;&nbsp;--token &lt;ingest_token&gt; --schedule hourly
+    sudo bash install-agent.sh<br>
+    &nbsp;&nbsp;중앙 서버 주소 → https://ost-server.duckdns.org:8080/ingest.php<br>
+    &nbsp;&nbsp;전송 토큰 → &lt;ingest_token&gt; · 수집 주기 → hourly
   </div>
   systemd-timer(우선)/cron(폴백)으로 자동 등록. 중앙 서버 자신을 스캔하는 로컬 에이전트는
   루프백 평문 포트(<code class="i">127.0.0.1:8081</code>)로 직접 전송(외부에서는 접근 불가).

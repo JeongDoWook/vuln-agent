@@ -56,6 +56,17 @@ done
 have()    { command -v "$1" >/dev/null 2>&1; }
 is_root() { [ "$(id -u)" -eq 0 ]; }
 
+# root 가 아니어도 실패시키지 않는다 — 읽기 전용이라 OS/커널/패키지 같은 핵심 재료는 그대로
+# 모인다. 다만 아래 항목이 빠져 결과가 부분적이 되므로 경고한다(누가 돌렸는지는 meta.running_as
+# 로 페이로드에도 실려 중앙이 판단할 수 있다). 정상 설치 경로는 root 타이머라 여기 안 걸린다.
+is_root || cat >&2 <<EOF
+>> [경고] root 가 아닙니다. 다음이 수집되지 않아 결과가 부분적입니다:
+   - 리스닝 포트를 연 프로세스(ss -tulpn) → 외부노출 판정 근거 누락
+   - 다른 사용자 프로세스가 로드한 라이브러리(/proc/PID/maps)
+   - 하드웨어 정보(dmidecode)
+   전체 수집: sudo bash $0
+EOF
+
 # ---------- (옵션) cgroup 스코프로 재실행: CPU/메모리 하드 리밋 ----------
 # root + systemd-run 이 있을 때만. 없으면 아래 nice/ionice 로 대체됨.
 if [ "$DO_LIMIT" = 1 ] && [ -z "${_RELAUNCHED:-}" ] && is_root && have systemd-run; then
