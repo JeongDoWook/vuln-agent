@@ -90,12 +90,14 @@ try {
 
         $stmt = $pdo->prepare(
             "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss, c.epss_percentile,
+                    ctr.cid AS container_cid, ctr.image AS container_image,
                 (SELECT a.fixed_version FROM tb_cve_affected_packages a
                  WHERE a.cve_id = f.cve_id AND a.package_name = f.package_name
                    AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
              FROM tb_findings f
              JOIN tb_scans s ON s.id = f.scan_id
              JOIN tb_hosts h ON h.id = s.host_id
+             LEFT JOIN tb_containers ctr ON ctr.id = f.container_id
              LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
              WHERE $where
              ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC, h.fqdn
@@ -185,7 +187,12 @@ vg_header('취약점', 'findings');
                   if ($r['summary']) { $html .= '<div class="why">' . vg_trunc($r['summary']) . '</div>'; }
                   return $html;
               },
-              'package_name'      => fn($r) => vg_h($r['package_name']),
+              // 컨테이너 안의 취약점은 호스트 것과 조치 방법이 다르다(이미지 재빌드) → 구분해 보여준다.
+              'package_name'      => fn($r) => vg_h($r['package_name'])
+                  . (!empty($r['container_cid'])
+                     ? ' ' . vg_badge('컨테이너 ' . $r['container_cid'], 'med')
+                       . ' <span class="why">' . vg_h((string) $r['container_image']) . '</span>'
+                     : ''),
               'installed_version' => fn($r) => '<code>' . vg_h($r['installed_version']) . '</code>',
               'cvss'      => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '-',
               'epss'      => fn($r) => vg_epss_cell($r['epss'], $r['epss_percentile']),

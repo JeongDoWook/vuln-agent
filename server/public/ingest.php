@@ -220,6 +220,27 @@ foreach (preg_split('/\r?\n/', (string) ($upd['debsecan'] ?? '')) as $line) {
 $debsecanRows  = array_values($debsecanRows);
 $debsecanCount = count($debsecanRows);
 
+// ── 컨테이너 파싱 (내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역) ──
+//   list:     cid|name|image|os_id|os_version|manager|pkg_count
+//   packages: cid|manager|name|version|source
+$ctr = $data['containers'] ?? [];
+$ctrRows = [];
+foreach (preg_split('/\r?\n/', (string) ($ctr['list'] ?? '')) as $line) {
+    if ($line === '' || strncmp($line, 'cid|name|image', 14) === 0) { continue; }
+    $f = explode('|', $line);
+    if (count($f) < 7 || trim($f[0]) === '') { continue; }
+    $ctrRows[$f[0]] = $f;   // cid 로 유일
+}
+$ctrPkgRows = [];
+foreach (preg_split('/\r?\n/', (string) ($ctr['packages'] ?? '')) as $line) {
+    if ($line === '' || strncmp($line, 'cid|manager|name', 16) === 0) { continue; }
+    $f = explode('|', $line);
+    if (count($f) < 4 || trim($f[0]) === '' || trim($f[2]) === '' || trim($f[3]) === '') { continue; }
+    $ctrPkgRows[] = $f;     // cid, manager, name, version, source
+}
+$ctrCount    = count($ctrRows);
+$ctrPkgCount = count($ctrPkgRows);
+
 // ── 내용 해시 — "바뀔 때만 스냅샷" 판정 ────────────────────────
 //   수집 내용이 직전과 같으면 새 스캔을 만들지 않는다(대부분의 수집이 여기 해당한다).
 //   **PID 는 넣지 않는다** — 재부팅·프로세스 재시작마다 바뀌어서, 넣으면 매번 "변경됨"이 되어
@@ -231,6 +252,9 @@ foreach ($expRows as $f)  {   // pid($f[0]) 제외: proc|proto|bind|port|scope|e
     $hashParts[] = 'e|' . implode('|', array_slice($f, 1, 7));
 }
 foreach ($staleRows as $r) { $hashParts[] = "s|{$r[2]}|{$r[3]}"; }
+// 컨테이너 내부 패키지도 인벤토리다 — 여기가 바뀌면 새 스냅샷을 찍어야 한다.
+foreach ($ctrPkgRows as $r) { $hashParts[] = "c|{$r[0]}|{$r[1]}|{$r[2]}|{$r[3]}"; }
+foreach ($ctrRows as $r)    { $hashParts[] = "C|{$r[0]}|{$r[2]}|{$r[3]}|{$r[4]}"; }   // cid|image|os
 $hashParts[] = 'o|' . ($vm['distro_id'] ?? '') . '|' . ($vm['distro_version'] ?? '')
              . '|' . ($sys['kernel_release'] ?? ($sys['kernel'] ?? ''));
 sort($hashParts);
@@ -314,6 +338,40 @@ try {
         );
         foreach ($pkgRows as $r) {
             $ins->execute([$scanId, $manager, $r[0], $r[1], $r[2], $r[3], $r[4], $r[5]]);
+        }
+    }
+
+    // 컨테이너 + 그 안의 패키지.
+    //   컨테이너는 호스트와 OS 가 다를 수 있어(호스트 Rocky + 컨테이너 Debian) os 를 따로 갖는다.
+    //   패키지는 같은 tb_packages 에 container_id 를 달아 넣는다(0 = 호스트).
+    $ctrIds = [];   // cid => tb_containers.id
+    if ($ctrCount > 0) {
+        $insC = $pdo->prepare(
+            'INSERT INTO tb_containers (scan_id, cid, name, image, os_id, os_version, manager, pkg_count)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($ctrRows as $cid => $f) {
+            $insC->execute([
+                $scanId, $cid,
+                ($f[1] !== '' ? $f[1] : null), ($f[2] !== '' ? $f[2] : null),
+                ($f[3] !== '' ? $f[3] : null), ($f[4] !== '' ? $f[4] : null),
+                ($f[5] !== '' ? $f[5] : null), (int) $f[6],
+            ]);
+            $ctrIds[$cid] = (int) $pdo->lastInsertId();
+        }
+    }
+    if ($ctrPkgCount > 0) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_packages (scan_id, container_id, manager, name, version, source_pkg)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($ctrPkgRows as $r) {
+            $cidKey = $r[0];
+            if (!isset($ctrIds[$cidKey])) { continue; }   // 목록에 없는 컨테이너의 패키지는 버린다
+            $ins->execute([
+                $scanId, $ctrIds[$cidKey], $r[1], $r[2], $r[3],
+                (($r[4] ?? '') !== '' ? $r[4] : null),
+            ]);
         }
     }
 
@@ -407,7 +465,9 @@ try {
     // 패키지 변경 이력 — 직전 스냅샷과 무엇이 달라졌나(설치/제거/업그레이드/다운그레이드).
     //   첫 수집(직전 스냅샷 없음)은 전부 "설치"로 기록하지 않는다 — 의미 없는 폭증만 만든다.
     if ($prev !== null) {
-        $q = $pdo->prepare('SELECT manager, name, version FROM tb_packages WHERE scan_id = ?');
+        // 호스트 패키지만 비교한다(container_id=0). 컨테이너 것까지 섞으면 컨테이너 패키지가
+        // 전부 "제거됨"으로 잘못 기록된다 — $curPkgs 에는 호스트·언어 패키지만 담기기 때문이다.
+        $q = $pdo->prepare('SELECT manager, name, version FROM tb_packages WHERE scan_id = ? AND container_id = 0');
         $q->execute([(int) $prev['id']]);
         $prevPkgs = [];
         foreach ($q->fetchAll() as $r) {
@@ -484,6 +544,8 @@ echo json_encode([
     'packages'  => $pkgCount,
     'langpkgs'  => $langCount,
     'debsecan'  => $debsecanCount,
+    'containers'    => $ctrCount,
+    'ctr_packages'  => $ctrPkgCount,
     // 직전 수집과 내용이 같으면 새 스냅샷을 만들지 않는다(changed=false). 바뀐 패키지 수도 알려준다.
     'changed'     => !$unchanged,
     'pkg_changes' => $chgCount,

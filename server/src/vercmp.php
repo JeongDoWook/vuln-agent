@@ -173,6 +173,8 @@ function vg_ver_cmp(string $a, string $b, string $manager): int
         case 'npm':
         case 'gem':
         case 'composer': return vg_lang_cmp($a, $b);
+        // apk(알파인)는 "1.2.3-r0" 처럼 upstream-revision 꼴이라 dpkg 규칙이 그대로 맞는다
+        // (r0 < r1, 틸드·숫자 처리도 동일). 별도 비교기를 만들 이유가 없다.
         default:         return vg_deb_cmp($a, $b);
     }
 }

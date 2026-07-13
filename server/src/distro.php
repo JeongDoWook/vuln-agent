@@ -27,11 +27,11 @@ if (!function_exists('vg_pkg_ecosystem')) {
         }
     }
 
-    /** OS 패키지 매니저인가(rpm/dpkg). 아니면 언어 패키지. */
+    /** OS 패키지 매니저인가(rpm/dpkg/apk). 아니면 언어 패키지. apk 는 알파인 컨테이너에서 흔하다. */
     function vg_is_os_manager(string $manager): bool
     {
         $m = strtolower($manager);
-        return $m === 'rpm' || $m === 'dpkg';
+        return $m === 'rpm' || $m === 'dpkg' || $m === 'apk';
     }
 }
 
@@ -78,6 +78,9 @@ if (!function_exists('vg_osv_ecosystem')) {
         switch ($osId) {
             case 'debian':               return $major ? "Debian:$major" : null;
             case 'ubuntu':               return $ver !== '' ? "Ubuntu:$ver" : null;
+            // 알파인은 컨테이너에서 흔하다. OSV 표기는 'Alpine:v3.19' (마이너까지, v 접두).
+            case 'alpine':
+                return preg_match('/^(\d+\.\d+)/', $ver, $mm) ? "Alpine:v{$mm[1]}" : null;
             case 'rocky': case 'rockylinux': return $major ? "Rocky Linux:$major" : null;
             case 'almalinux':            return $major ? "AlmaLinux:$major" : null;
             case 'rhel': case 'redhat':  return $major ? "Red Hat:$major" : null;

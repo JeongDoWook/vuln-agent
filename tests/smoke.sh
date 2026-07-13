@@ -41,6 +41,9 @@ assert_contains "$resp" '"packages":6' "패키지 6건 저장"
 assert_contains "$resp" '"exposures":5' "노출 5건 저장"
 # 언어 패키지(pip 2 + npm 2) — 예전엔 수집만 하고 서버가 버렸다.
 assert_contains "$resp" '"langpkgs":4' "언어 패키지 4건 저장(pip/npm)"
+# 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
+assert_contains "$resp" '"containers":2'   "컨테이너 2개 저장(alpine/debian)"
+assert_contains "$resp" '"ctr_packages":3' "컨테이너 내부 패키지 3건 저장"
 crit=$(printf '%s' "$resp" | grep -oE '"CRITICAL":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${crit:-0}" -ge 1 ]; then ok "CRITICAL ≥ 1 (glibc KEV+외부) = $crit"; else no "CRITICAL 미검출"; fi
 high=$(printf '%s' "$resp" | grep -oE '"HIGH":[0-9]+' | grep -oE '[0-9]+$')

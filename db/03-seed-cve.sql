@@ -19,7 +19,9 @@ INSERT INTO tb_cves (cve_id, summary, cvss, published) VALUES
   ('CVE-2023-32681', 'python-requests: 리다이렉트 시 Proxy-Authorization 헤더 유출', 6.1, '2023-05-26'),
   -- 데비안 데모(web02): debsecan 이 지목한 CVE 는 남고, 지목하지 않은 CVE 는 백포트로 억제된다.
   ('CVE-2024-2004', 'curl: 비활성 프로토콜의 기본 설정이 잘못 적용됨', 5.5, '2024-03-27'),
-  ('CVE-2023-5678', 'OpenSSL DH 키 생성 시 과도한 지연 — DoS', 5.3, '2023-11-06')
+  ('CVE-2023-5678', 'OpenSSL DH 키 생성 시 과도한 지연 — DoS', 5.3, '2023-11-06'),
+  -- 컨테이너 데모: 알파인 컨테이너(api) 안의 openssl. 호스트가 아니라 컨테이너 배포판 기준으로 매칭된다.
+  ('CVE-2024-0727', 'OpenSSL PKCS12 NULL 역참조 — DoS', 5.5, '2024-01-26')
 ON DUPLICATE KEY UPDATE summary=VALUES(summary), cvss=VALUES(cvss), published=VALUES(published);
 
 -- CISA KEV: 실제 악용 목록 (Looney Tunables 는 KEV 등재)
@@ -48,5 +50,8 @@ INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_ver
   --   curl    : debsecan 이 지목 → 진짜 취약(finding 유지)
   --   openssl : debsecan 이 지목하지 않음 → 데비안이 백포트로 이미 고침(억제)
   ('CVE-2024-2004', 'Debian:12',    'curl',     '7.88.1-10+deb12u7'),
-  ('CVE-2023-5678', 'Debian:12',    'openssl',  '3.0.11-1~deb12u3')
+  ('CVE-2023-5678', 'Debian:12',    'openssl',  '3.0.11-1~deb12u3'),
+  -- 알파인 컨테이너(api)의 openssl 3.1.4-r2 < 조치 3.1.4-r5 → 취약.
+  -- 호스트(Rocky)의 openssl 과는 생태계가 달라 서로 섞이지 않는다.
+  ('CVE-2024-0727', 'Alpine:v3.19', 'openssl',  '3.1.4-r5')
 ON DUPLICATE KEY UPDATE ecosystem=VALUES(ecosystem), fixed_version=VALUES(fixed_version);

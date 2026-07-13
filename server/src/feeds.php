@@ -430,7 +430,7 @@ function vg_osv_queries(PDO $pdo, int $scanId, string $eco): array {
     $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
     // OS 패키지만. 언어 패키지는 vg_osv_lang_queries 가 자기 생태계로 따로 조회한다.
     $pk = $pdo->prepare("SELECT name, source_pkg, version FROM tb_packages
-                         WHERE scan_id = ? AND manager IN ('rpm','dpkg')");
+                         WHERE scan_id = ? AND container_id = 0 AND manager IN ('rpm','dpkg')");
     $pk->execute([$scanId]);
 
     $out = []; $seen = [];
@@ -453,7 +453,7 @@ function vg_osv_queries(PDO $pdo, int $scanId, string $eco): array {
  */
 function vg_osv_lang_queries(PDO $pdo, int $scanId): array {
     $pk = $pdo->prepare("SELECT manager, name, version FROM tb_packages
-                         WHERE scan_id = ? AND manager NOT IN ('rpm','dpkg')");
+                         WHERE scan_id = ? AND container_id = 0 AND manager NOT IN ('rpm','dpkg')");
     $pk->execute([$scanId]);
 
     $out = []; $seen = [];
@@ -462,6 +462,35 @@ function vg_osv_lang_queries(PDO $pdo, int $scanId): array {
         $key = (string) $p['name'];
         $ver = (string) $p['version'];
         if ($eco === null || $key === '' || $ver === '' || isset($seen["$eco|$key|$ver"])) { continue; }
+        $seen["$eco|$key|$ver"] = true;
+        $out[] = ['key' => $key, 'eco' => $eco,
+                  'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
+    }
+    return $out;
+}
+
+/**
+ * 컨테이너 **내부** 패키지 → OSV 질의. 생태계는 그 컨테이너의 배포판이다(호스트와 다를 수 있다).
+ * deb 계열은 호스트와 마찬가지로 source_pkg 로 조회해야 매칭된다.
+ *
+ * @return list<array{key:string,eco:string,q:array}>
+ */
+function vg_osv_container_queries(PDO $pdo, int $scanId): array {
+    $st = $pdo->prepare(
+        'SELECT c.os_id, c.os_version, p.manager, p.name, p.source_pkg, p.version
+           FROM tb_packages p JOIN tb_containers c ON c.id = p.container_id
+          WHERE p.scan_id = ? AND p.container_id > 0'
+    );
+    $st->execute([$scanId]);
+
+    $out = []; $seen = [];
+    foreach ($st->fetchAll() as $p) {
+        $eco = vg_osv_ecosystem($p['os_id'], $p['os_version']);
+        if ($eco === null) { continue; }                     // OSV 미지원 배포판 → 조회 불가
+        $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
+        $key = $isDeb ? (($p['source_pkg'] ?: $p['name'])) : (string) $p['name'];
+        $ver = (string) $p['version'];
+        if ($key === '' || $ver === '' || isset($seen["$eco|$key|$ver"])) { continue; }
         $seen["$eco|$key|$ver"] = true;
         $out[] = ['key' => $key, 'eco' => $eco,
                   'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
@@ -490,7 +519,8 @@ final class VgOsvConnector implements VgFeedConnector {
 
             // OS 패키지(배포판 생태계) + 언어 패키지(PyPI/npm/RubyGems/Packagist).
             //   배포판이 미지원(eco=null)이어도 언어 패키지는 조회할 수 있다.
-            $cand = vg_osv_lang_queries($pdo, (int) $sc['id']);
+            $cand = array_merge(vg_osv_lang_queries($pdo, (int) $sc['id']),
+                            vg_osv_container_queries($pdo, (int) $sc['id']));   // 컨테이너 내부 패키지도 자기 배포판으로 조회
             if ($eco !== null && $eco !== '') {
                 $cand = array_merge(vg_osv_queries($pdo, (int) $sc['id'], $eco), $cand);
             }
@@ -603,7 +633,8 @@ function vg_osv_enrich_fixed(PDO $pdo, ?callable $log = null): array {
         $eco = vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
 
         // OS 패키지 + 언어 패키지 둘 다 보강한다(생태계는 질의마다 다르다).
-        $cand = vg_osv_lang_queries($pdo, (int) $sc['id']);
+        $cand = array_merge(vg_osv_lang_queries($pdo, (int) $sc['id']),
+                            vg_osv_container_queries($pdo, (int) $sc['id']));   // 컨테이너 내부 패키지도 자기 배포판으로 조회
         if ($eco !== null && $eco !== '') {
             $cand = array_merge(vg_osv_queries($pdo, (int) $sc['id'], $eco), $cand);
         }
