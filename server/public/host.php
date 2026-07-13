@@ -122,7 +122,8 @@ try {
         } else { // scans
             $total = $scanTotal;
             $st = $pdo->prepare(
-                "SELECT id, collected_at, received_at, package_count, exposure_count, agent_version
+                "SELECT id, collected_at, received_at, package_count, exposure_count, agent_version,
+                        elapsed_seconds, peak_rss_mb, cpu_seconds
                    FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT $perPage OFFSET $offset"
             );
             $st->execute([$hostId]);
@@ -376,6 +377,8 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               ['label' => '수신시각', 'key' => 'received_at'],
               ['label' => '패키지', 'key' => 'package_count', 'align' => 'right'],
               ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right'],
+              ['label' => '메모리', 'key' => 'peak_rss_mb', 'align' => 'right'],
+              ['label' => 'CPU', 'key' => 'cpu_seconds', 'align' => 'right'],
               ['label' => '에이전트', 'key' => 'agent_version'],
               ['label' => '심각도', 'key' => 'sev'],
           ],
@@ -389,6 +392,8 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
                   'received_at'    => fn($s) => '<span class="why">' . vg_h($s['received_at']) . '</span>',
                   'package_count'  => fn($s) => number_format((int) $s['package_count']),
                   'exposure_count' => fn($s) => number_format((int) $s['exposure_count']),
+                  'peak_rss_mb'    => fn($s) => vg_resource_mem($s['peak_rss_mb']),
+                  'cpu_seconds'    => fn($s) => vg_resource_cpu($s['cpu_seconds']),
                   'agent_version'  => fn($s) => $s['agent_version'] ? '<code>' . vg_h($s['agent_version']) . '</code>' : '<span class="why">–</span>',
                   'sev' => fn($s) => vg_sev_counts($sevByScan[(int) $s['id']] ?? []),
               ],

@@ -37,6 +37,8 @@ DO_LIMIT=0                            # cgroup 리밋 사용 여부
 OUT=""
 SEND_URL="${SEND_URL:-}"             # --send : 중앙 수신 API(ingest.php) URL
 SEND_TOKEN="${SEND_TOKEN:-}"         # --token: 서버와 공유하는 인증 토큰
+PAGESIZE="$(getconf PAGESIZE 2>/dev/null || echo 4096)"
+CLK_TCK="$(getconf CLK_TCK 2>/dev/null || echo 100)"
 
 # ---------- 인자 파싱 ----------
 while [ $# -gt 0 ]; do
@@ -55,6 +57,60 @@ done
 
 have()    { command -v "$1" >/dev/null 2>&1; }
 is_root() { [ "$(id -u)" -eq 0 ]; }
+
+# ---------- 자기계측: 이 실행이 쓴 피크 메모리·CPU 를 잰다 (담당자 안심용) ----------
+#   1순위: 자기 cgroup(memory.peak·cpu.stat) — 커널이 트리 전체를 공짜로 집계한다.
+#          측정 오버헤드가 0 이라, 정상 배포 경로(systemd 서비스 / --limit scope)에선
+#          "재느라 부담을 준다"는 역설이 없다. cgroup 이 이 실행 전용일 때만 신뢰한다
+#          (경로에 vuln-agent 또는 .scope — cron 은 공유 cgroup 이라 과대집계되므로 제외).
+#   2순위: cgroup 을 못 쓰면(cron·수동·cgroup v1) 초경량 샘플러로 폴백한다.
+SELF_CG=""; SAMPLER_PID=""
+measure_start() {
+  local path
+  path="$(sed -n 's/^0::\(.*\)$/\1/p' /proc/self/cgroup 2>/dev/null | head -1)"
+  case "$path" in
+    */vuln-agent*|*.scope)
+      [ -r "/sys/fs/cgroup${path}/memory.peak" ] && SELF_CG="/sys/fs/cgroup${path}" ;;
+  esac
+  [ -n "$SELF_CG" ] && return                         # cgroup 으로 잴 수 있으면 샘플러 불필요
+  # 폴백 샘플러: 0.5초마다 프로세스 트리 RSS 합의 최댓값을 파일에 기록(overwrite).
+  #   awk 로 /proc/*/stat 를 한 번 스캔 → ppid 로 자손 모아 rss(pages) 합산. jq·dpkg 피크 포착.
+  local parent=$$
+  ( peak=0
+    while kill -0 "$parent" 2>/dev/null; do
+      rss="$(awk -v root="$parent" -v pg="$PAGESIZE" '
+        { pid=$1; rest=$0; sub(/^[0-9]+ \(.*\) /,"",rest); split(rest,f," ")
+          ppid[pid]=f[2]; rssp[pid]=f[22] }
+        END { d[root]=1; c=1
+              while(c){ c=0; for(p in ppid) if(!(p in d)&&(ppid[p] in d)){ d[p]=1; c=1 } }
+              t=0; for(p in d) t+=rssp[p]*pg; printf "%d", t/1024 }' /proc/[0-9]*/stat 2>/dev/null)"
+      [ -n "$rss" ] && [ "$rss" -gt "$peak" ] 2>/dev/null && { peak="$rss"; echo "$peak" > "$TMP/_peak_kb"; }
+      sleep 0.5
+    done ) &
+  SAMPLER_PID=$!
+}
+# measure_finish → PEAK_RSS_MB, CPU_SECONDS 를 채운다(못 재면 빈 문자열).
+measure_finish() {
+  PEAK_RSS_MB=""; CPU_SECONDS=""
+  if [ -n "$SELF_CG" ]; then
+    local pb uu
+    pb="$(cat "$SELF_CG/memory.peak" 2>/dev/null)"
+    [ -n "$pb" ] && PEAK_RSS_MB="$(awk -v b="$pb" 'BEGIN{printf "%.1f", b/1048576}')"
+    uu="$(awk '/^usage_usec/{print $2}' "$SELF_CG/cpu.stat" 2>/dev/null)"
+    [ -n "$uu" ] && CPU_SECONDS="$(awk -v u="$uu" 'BEGIN{printf "%.2f", u/1000000}')"
+  else
+    [ -n "$SAMPLER_PID" ] && { kill "$SAMPLER_PID" 2>/dev/null; wait "$SAMPLER_PID" 2>/dev/null; }
+    local pk line rest
+    pk="$(cat "$TMP/_peak_kb" 2>/dev/null)"
+    [ -n "$pk" ] && PEAK_RSS_MB="$(awk -v k="$pk" 'BEGIN{printf "%.1f", k/1024}')"
+    # CPU: 자신 + 이미 회수한 자식 (utime+stime+cutime+cstime)
+    line="$(cat /proc/self/stat 2>/dev/null)"; rest="${line#*) }"
+    # shellcheck disable=SC2086
+    set -- $rest
+    CPU_SECONDS="$(awk -v j="$(( ${12:-0} + ${13:-0} + ${14:-0} + ${15:-0} ))" -v t="$CLK_TCK" \
+                    'BEGIN{printf "%.2f", j/t}')"
+  fi
+}
 
 # ---------- 파일 → 소속 패키지 (조회 캐시) ----------
 # 노출·프로세스·재시작필요 세 곳에서 쓴다. 예전엔 함수마다 복사본(_file_to_pkg/_f2p2)이
@@ -142,6 +198,7 @@ OUT="${OUT:-/tmp/vulninv-${HOSTNAME_SHORT}-${STAMP}.json}"
 TMP="$(mktemp -d /tmp/vulninv.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 START_TS=$SECONDS
+measure_start   # 자기계측 시작(cgroup 우선, 없으면 샘플러) — 수집 전체 구간을 덮는다
 
 echo ">> 수집 시작: $HOSTNAME_SHORT ($(date -Is)) / timeout=${CMD_TIMEOUT}s" >&2
 
@@ -656,6 +713,11 @@ cap filesystem fstab  'cat /etc/fstab'
 # ==================================================================
 ELAPSED=$(( SECONDS - START_TS ))
 put meta elapsed_seconds "$ELAPSED"
+
+# 자기계측 마감 — 피크 메모리·CPU 를 meta 에 싣는다(중앙이 자산 화면에 표시).
+measure_finish
+[ -n "$PEAK_RSS_MB" ] && put meta peak_rss_mb "$PEAK_RSS_MB"
+[ -n "$CPU_SECONDS" ] && put meta cpu_seconds "$CPU_SECONDS"
 
 if have jq; then
   # 각 섹션을 한 줄 JSON 으로 인코딩 후 최종 reduce (O(n), 저부하)

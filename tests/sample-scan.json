@@ -3,7 +3,9 @@
     "hostname_fqdn": "web01.example.com",
     "collected_at": "2026-07-07T10:15:30+09:00",
     "agent_version": "2.1",
-    "elapsed_seconds": "6"
+    "elapsed_seconds": "6",
+    "peak_rss_mb": "58.4",
+    "cpu_seconds": "3.20"
   },
   "vuln_mapping": {
     "distro_id": "rocky",
