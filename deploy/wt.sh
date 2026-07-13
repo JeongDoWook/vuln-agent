@@ -128,7 +128,7 @@ cmd_add() {
   echo ""
   say "${GREEN}완료.${NC} 다음:"
   say "  ${CYAN}cd wt/$name${NC}"
-  say "  ${CYAN}./deploy/compose_runner.sh dev up -d --build${NC}   # 이 워크트리 전용 스택"
+  say "  ${CYAN}./deploy/compose_runner.sh dev up -d${NC}   # 이 워크트리 전용 스택(dev 이미지 공유)"
   say "  ${CYAN}./tests/smoke.sh http://localhost:$web${NC}"
 }
 
