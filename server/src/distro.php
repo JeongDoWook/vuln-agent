@@ -131,6 +131,38 @@ if (!function_exists('vg_pkg_ecosystem')) {
         $m = strtolower($manager);
         return $m === 'rpm' || $m === 'dpkg' || $m === 'apk';
     }
+
+    /**
+     * 커널 소스 패키지인가(데비안 `linux` / RHEL `kernel`).
+     *   이 소스에서 나온 CVE 는 **커널 코드**의 취약점이다 — 같은 소스로 빌드됐다는 이유만으로
+     *   헤더·빌드도구·메타패키지에까지 매달면 안 된다(vg_is_kernel_code_pkg 와 짝).
+     */
+    function vg_is_kernel_source(?string $src): bool
+    {
+        $s = strtolower(trim((string) $src));
+        return $s === 'linux' || $s === 'kernel' || $s === 'kernel-uek';
+    }
+
+    /**
+     * 실제 커널 코드를 담은 바이너리 패키지인가.
+     *
+     * 커널 소스 하나에서 바이너리가 20개 넘게 나온다. 그중 취약한 코드가 들어 있는 건
+     * **커널 이미지뿐**이고, 나머지는 컴파일용 헤더(`linux-headers-*`, `linux-libc-dev`)·
+     * 빌드스크립트(`linux-kbuild-*`)·의존성 메타(`linux-base-*`)라 실행되지 않는다.
+     *
+     * 실측(raspberrypi5-00): `source_pkg = linux` 인 패키지가 21개였고, 커널 CVE 369건이
+     * 전부에 곱해져 **LOW 7,925건**이 됐다. 실제 커널 이미지는 그중 6개뿐이다.
+     * 억제(증거 기반)가 아니라 **매칭 범위 교정**이다 — 헤더엔 취약 코드가 없으므로 미탐이 아니다.
+     */
+    function vg_is_kernel_code_pkg(string $name): bool
+    {
+        $n = strtolower($name);
+        return str_starts_with($n, 'linux-image-')       // dpkg: 커널 이미지(+ 이미지 메타)
+            || $n === 'kernel'                            // rpm
+            || str_starts_with($n, 'kernel-core')
+            || str_starts_with($n, 'kernel-modules')
+            || str_starts_with($n, 'kernel-uek');
+    }
 }
 
 if (!function_exists('vg_eco_matches')) {
