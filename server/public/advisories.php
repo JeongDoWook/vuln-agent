@@ -61,26 +61,49 @@ vg_header('국내 보안공지', 'advisories');
   ]); ?>
 
   <?php
-  $emptyMsg = $q !== '' ? '조건에 맞는 공지가 없습니다.' : '아직 수집된 공지가 없습니다. 피드에서 KISA 보안공지 커넥터를 실행하세요.';
   vg_table(
       [
-          ['label' => '발행일', 'nowrap' => true],
+          ['label' => '발행일', 'nowrap' => true, 'width' => '8rem'],
           ['label' => '제목'],
-          ['label' => '관련 CVE'],
+          ['label' => '관련 CVE', 'width' => '26rem'],
       ],
       $rows,
       [
-          'empty' => $emptyMsg,
+          'empty' => $q !== ''
+              ? [
+                  'icon'  => '🔍',
+                  'title' => '조건에 맞는 공지가 없습니다.',
+                  'hint'  => '제목·CVE·본문을 모두 검색합니다. 다른 검색어를 써 보세요.',
+                  'cta'   => ['href' => '/advisories.php', 'label' => '검색 초기화'],
+              ]
+              : [
+                  'icon'  => '🇰🇷',
+                  'title' => '아직 수집된 공지가 없습니다.',
+                  'hint'  => 'KISA 보안공지 커넥터를 실행하면 여기에 쌓입니다.',
+                  'cta'   => ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'],
+              ],
           'cell' => [
               0 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
               // 제목을 누르면 상세로. 원문은 상세 안의 [원문 열기] 버튼에서 연다.
               1 => fn($r) => '<a href="/advisory.php?id=' . (int) $r['id'] . '">' . vg_trunc($r['title']) . '</a>',
+              // CVE 를 수십 개 달고 오는 공지가 있다(예: 월간 브라우저 패치).
+              // 전부 알약으로 깔면 행이 터지므로 앞 4개만 보이고 나머지는 "+N" 으로 접는다.
               2 => function ($r) {
                   if (empty($r['cve_ids'])) { return '<span class="why">–</span>'; }
+                  $ids = array_values(array_filter(array_map('trim', explode(',', (string) $r['cve_ids']))));
+                  if (!$ids) { return '<span class="why">–</span>'; }
+
+                  $shown = array_slice($ids, 0, 4);
+                  $rest  = count($ids) - count($shown);
+
                   $html = '';
-                  foreach (explode(',', (string) $r['cve_ids']) as $cv) {
-                      $cv = trim($cv);
-                      $html .= '<a class="pill" href="/cve.php?cve=' . urlencode($cv) . '">' . vg_h($cv) . '</a>';
+                  foreach ($shown as $cv) {
+                      $html .= '<a class="pill" href="/cve.php?cve=' . urlencode($cv) . '">' . vg_h($cv) . '</a> ';
+                  }
+                  if ($rest > 0) {
+                      // 나머지는 상세에서 전부 본다. title 로 원문 목록을 남겨 둔다.
+                      $html .= '<a class="pill" href="/advisory.php?id=' . (int) $r['id'] . '"'
+                             . ' title="' . vg_h(implode(', ', array_slice($ids, 4))) . '">+' . $rest . '</a>';
                   }
                   return $html;
               },
