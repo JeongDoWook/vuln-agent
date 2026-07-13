@@ -167,8 +167,10 @@ vg_header('자산관리', 'assets');
     <strong>에이전트 설치</strong>
     <span class="why">— 자산은 에이전트가 수집을 보내면 자동 등록된다. 중앙에서 대상 서버로 접속하지 않는다(아웃바운드 push).</span>
     <div class="card__body">
-      <div class="why">대상 서버(Linux)에 <code>agent/</code> 폴더를 복사하고 한 번 실행. 인자 없이 실행하면 주소·토큰·주기를 물어본다.</div>
-      <pre class="code">sudo bash install-agent.sh
+      <div class="why">대상 서버(Linux)의 <code>/opt/vuln-agent/</code> 에 스크립트 2개를 두고 한 번 실행. 인자 없이 실행하면 주소·토큰·주기를 물어본다.</div>
+      <pre class="code">sudo mkdir -p /opt/vuln-agent && sudo cp ~/agent/*.sh /opt/vuln-agent/
+cd /opt/vuln-agent
+sudo bash install-agent.sh
   중앙 서버 주소 (예: ost-server.duckdns.org:8080): <?= vg_h($ingest) ?>
 
   전송 토큰 (입력은 화면에 보이지 않습니다): ********

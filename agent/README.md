@@ -84,9 +84,41 @@ sudo ./install-agent.sh
 **chown 은 필요 없다.** `sudo` 로 실행하면 설치기가 `/opt/vuln-agent/**` 를 root 소유로
 새로 만들고, 토큰 파일(`etc/agent.env`)은 `600` 으로 잠근다.
 
-주의는 반대 방향이다 — **아무나 쓸 수 있는 위치(`/tmp`, 웹 루트, 그룹 쓰기 가능 폴더)에 둔
-스크립트를 sudo 로 실행하지 말 것.** 다른 사용자가 그 파일을 고쳐두면 root 로 실행된다.
-`/root` 나 본인 홈에 두고 실행한다.
+### 스크립트를 어디에 두고 실행하나 — `/opt/vuln-agent`
+
+**스크립트 2개를 `/opt/vuln-agent/` 에 두고 거기서 실행한다.** 설치기가 설치물을 두는 곳과
+같은 경로라 **외울 경로가 하나뿐**이다.
+
+```bash
+scp -r agent/ 대상서버:~/                    # 1) 홈으로 전송 (scp 는 root 로 못 붙는 경우가 많다)
+ssh 대상서버
+sudo mkdir -p /opt/vuln-agent                # 2) 제자리로 (root 소유가 된다)
+sudo cp ~/agent/*.sh /opt/vuln-agent/
+rm -rf ~/agent                               # 3) 홈의 원본은 정리
+
+cd /opt/vuln-agent                           # 4) 설치
+sudo bash install-agent.sh
+```
+
+설치가 끝나면 원본과 설치물이 한 지붕 아래 모인다:
+
+```
+/opt/vuln-agent/
+├── install-agent.sh          ← 원본. 재설치·주기변경·제거를 여기서 한다
+├── vuln-inventory-agent.sh   ← 원본
+├── bin/    설치기가 복사한 실행 파일(실제로 도는 것)
+├── etc/    agent.env (토큰, 600)
+└── logs/   last.json
+```
+
+**왜 아무 데나 두면 안 되나.** `sudo bash install-agent.sh` 는 그 파일의 내용을 root 로
+실행한다. 다른 계정이 파일을 바꿔칠 수 있는 곳에 두면 남의 코드가 root 로 도는 셈이다.
+`/opt` 는 root 소유(`755`)라 안전하다. **`/tmp`, 웹 루트(`/var/www`), 여러 계정이 공유하는
+배포 폴더는 피한다.** 3번에서 홈의 원본을 지우는 것도 같은 이유다 — sudo 로 실행할 파일이
+root 소유 폴더 한 곳에만 남는다.
+
+재설치·주기 변경도 같은 경로에서 하면 된다(설치기는 멱등하다). 다른 경로에 설치하려면
+`--prefix` 를 쓴다(운영 서버는 `/apps/vulnagent`).
 
 ## 주의점
 
@@ -124,10 +156,12 @@ cat <prefix>/logs/last.json              # 최근 수집 결과(로컬 사본)
 ## 제거
 
 ```bash
+cd /opt/vuln-agent
 sudo bash install-agent.sh --uninstall [--prefix 설치경로]
 ```
 
-타이머·유닛·cron 항목과 설치 디렉토리를 제거한다.
+타이머·유닛·cron 항목과 `bin`/`etc`/`logs` 를 지운다. **원본 스크립트 2개는 남는다**(재설치가
+쉬우라고). 흔적까지 지우려면 `sudo rm -rf /opt/vuln-agent`.
 
 ## 무엇을 수집하나
 
