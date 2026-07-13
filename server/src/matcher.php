@@ -30,7 +30,10 @@ if (!function_exists('vg_scope_rank')) {
     //   상태 강도: EXTERNAL(외부노출) > LISTENING(로컬리스닝) > RUNNING(실행중) > LOADED(사용중) > INSTALLED(설치만)
     //   레벨: 설치1 / 실행·로드·로컬리스닝2 / 외부노출3, KEV 시 +1(최대 CRITICAL).
     //   반환: [status, severity, rationale]
-    function vg_classify(?array $le, bool $running, bool $procLoaded, bool $inKev, string $pkg): array {
+    //   $pkgLoaded: 이 패키지가 "리스닝 중이 아닌" 실행 프로세스에 라이브러리로 로드됐는가(패키지 1개 기준 bool).
+    //     호출부의 procLoadedPkgs(컨테이너별 로드 패키지 집합, 배열)와 이름이 겹치지 않도록 구분한다 —
+    //     예전엔 둘 다 $procLoaded 라 배열/bool 이 이름만 보고 헷갈렸다.
+    function vg_classify(?array $le, bool $running, bool $pkgLoaded, bool $inKev, string $pkg): array {
         if ($le && ($le['scope'] ?? '') === 'EXTERNAL') {
             $status = 'EXTERNAL'; $level = 3;
             $base = sprintf('외부노출(%s:%d 가 %s 사용)', $le['proc'] ?? '?', $le['port'] ?? 0, $pkg);
@@ -45,7 +48,7 @@ if (!function_exists('vg_scope_rank')) {
         } elseif ($running) {
             $status = 'RUNNING'; $level = 2;
             $base = '실행 중(포트 미개방)';
-        } elseif ($procLoaded) {
+        } elseif ($pkgLoaded) {
             $status = 'LOADED'; $level = 2;
             $base = '사용 중(실행 프로세스가 라이브러리 로드)';
         } else {
@@ -61,9 +64,12 @@ if (!function_exists('vg_scope_rank')) {
     }
 
     /**
-     * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
+     * 스캔이 수집한 원시 신호를 배열로 읽어온다: 스캔 메타(OS/커널) · 컨테이너 ·
+     * 패키지 · 노출(exposures→로드맵) · 실행 프로세스. 전부 읽기 전용(side-effect 없음).
+     *   loadMap/procRunningPkgs/procLoadedPkgs 는 **컨테이너별로 갈린다**(container_id, 0=호스트).
+     *   한 덩어리로 합치면 호스트 신호가 컨테이너로 새어(혹은 그 반대로) 오판한다.
      */
-    function vg_match_scan(PDO $pdo, int $scanId): array {
+    function vg_load_scan_signals(PDO $pdo, int $scanId): array {
         // 이 스캔의 배포판 → 생태계. 수집(feeds)이 'Ubuntu:24.04' 로 태깅한 것과 같은 기준.
         $sc = $pdo->prepare('SELECT os_id, os_version, package_family,
                                     running_kernel, kernel_latest, kernel_reboot_needed
@@ -119,23 +125,42 @@ if (!function_exists('vg_scope_rank')) {
             }
         }
 
-        // 실행 프로세스 → 실행중(exe_pkg) / 사용중(loaded_pkgs) 패키지 집합 (컨테이너별)
-        $procRunning = []; $procLoaded = [];
+        // 실행 프로세스 → 실행중(exe_pkg) / 사용중(loaded_pkgs) 패키지 집합 (컨테이너별).
+        //   procRunningPkgs/procLoadedPkgs 는 "컨테이너별" 집합(ctrId => 패키지명 => true)이다.
+        //   개별 패키지가 여기 속하는지는 호출부에서 isset() 으로 조회해 패키지별 bool 을 만든다 —
+        //   vg_classify() 의 패키지별 bool 파라미터($pkgLoaded)와 이름이 겹치지 않도록 Pkgs 접미사로 구분한다.
+        $procRunningPkgs = []; $procLoadedPkgs = [];
         $stmt = $pdo->prepare('SELECT container_id, exe_pkg, loaded_pkgs FROM tb_processes WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         foreach ($stmt->fetchAll() as $pr) {
             $c = (int) $pr['container_id'];
             if (!empty($pr['exe_pkg']) && $pr['exe_pkg'] !== 'UNPACKAGED') {
-                $procRunning[$c][$pr['exe_pkg']] = true;
+                $procRunningPkgs[$c][$pr['exe_pkg']] = true;
             }
             if (!empty($pr['loaded_pkgs'])) {
                 foreach (explode(',', (string) $pr['loaded_pkgs']) as $n) {
                     $n = trim($n);
-                    if ($n !== '') { $procLoaded[$c][$n] = true; }
+                    if ($n !== '') { $procLoadedPkgs[$c][$n] = true; }
                 }
             }
         }
 
+        return [
+            'scan'            => $scan,
+            'hostEco'         => $hostEco,
+            'family'          => $family,
+            'ctrs'            => $ctrs,
+            'packages'        => $packages,
+            'loadMap'         => $loadMap,
+            'procRunningPkgs' => $procRunningPkgs,
+            'procLoadedPkgs'  => $procLoadedPkgs,
+        ];
+    }
+
+    /**
+     * CVE 카탈로그(스캔과 무관, 전역): KEV 등재 집합 + 영향 패키지 인덱스.
+     */
+    function vg_load_cve_catalog(PDO $pdo): array {
         // KEV 집합
         $kev = [];
         foreach ($pdo->query('SELECT cve_id FROM tb_kev_catalog')->fetchAll() as $r) {
@@ -160,6 +185,15 @@ if (!function_exists('vg_scope_rank')) {
             ];
         }
 
+        return ['kev' => $kev, 'affected' => $affected];
+    }
+
+    /**
+     * 오탐 억제 근거(②changelog·③errata·④debsecan) + 억제취소 신호(재시작 필요) 를 모은다.
+     * 전부 이 스캔의 **호스트** 상태다 — 컨테이너 CVE 를 호스트 근거로 억제하면 실제 취약점을
+     * 숨기는 미탐이 되므로, 컨테이너 배제는 호출부(vg_match_scan)의 책임으로 남겨둔다.
+     */
+    function vg_load_suppression_evidence(PDO $pdo, int $scanId, ?string $osId): array {
         // 백포트 근거: 패키지 changelog 에 명시된 CVE(=그 빌드에 이미 수정됨).
         //   package_name => [cve_id => evidence(changelog 줄)]
         $backport = [];
@@ -195,7 +229,7 @@ if (!function_exists('vg_scope_rank')) {
         foreach ($dsStmt->fetchAll() as $r) {
             $debsecan[$r['package_name']][$r['cve_id']] = true;
         }
-        $useDebsecan = $debsecan !== [] && strtolower((string) ($scan['os_id'] ?? '')) === 'debian';
+        $useDebsecan = $debsecan !== [] && strtolower((string) $osId) === 'debian';
 
         // 적용된 벤더 권고(errata) 근거: 벤더가 "이 CVE 는 이 설치 빌드에서 고쳤다"고 확인한 것.
         //   changelog(핵심 13개 패키지 하드코딩)와 달리 시스템 전체를 덮는다.
@@ -206,6 +240,40 @@ if (!function_exists('vg_scope_rank')) {
         foreach ($erStmt->fetchAll() as $r) {
             $errata[$r['package_name']][$r['cve_id']] = $r['evidence'];
         }
+
+        return [
+            'backport'    => $backport,
+            'stale'       => $stale,
+            'debsecan'    => $debsecan,
+            'useDebsecan' => $useDebsecan,
+            'errata'      => $errata,
+        ];
+    }
+
+    /**
+     * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
+     */
+    function vg_match_scan(PDO $pdo, int $scanId): array {
+        $sig = vg_load_scan_signals($pdo, $scanId);
+        $scan            = $sig['scan'];
+        $hostEco         = $sig['hostEco'];
+        $family          = $sig['family'];
+        $ctrs            = $sig['ctrs'];
+        $packages        = $sig['packages'];
+        $loadMap         = $sig['loadMap'];
+        $procRunningPkgs = $sig['procRunningPkgs'];
+        $procLoadedPkgs  = $sig['procLoadedPkgs'];
+
+        $catalog  = vg_load_cve_catalog($pdo);
+        $kev      = $catalog['kev'];
+        $affected = $catalog['affected'];
+
+        $sup         = vg_load_suppression_evidence($pdo, $scanId, $scan['os_id'] ?? null);
+        $backport    = $sup['backport'];
+        $stale       = $sup['stale'];
+        $debsecan    = $sup['debsecan'];
+        $useDebsecan = $sup['useDebsecan'];
+        $errata      = $sup['errata'];
 
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
@@ -312,12 +380,12 @@ if (!function_exists('vg_scope_rank')) {
             //   새지 않는다(호스트 nginx 의 외부노출이 컨테이너 openssl 로 넘어가면 오탐).
             //   에이전트가 컨테이너 런타임을 못 보낸 경우엔 맵이 비어 예전처럼 INSTALLED(LOW) 로
             //   떨어진다 — 옛 에이전트와도 호환된다.
-            $le      = $loadMap[$ctrId][$p['name']] ?? ($loadMap[$ctrId][$p['source_pkg']] ?? null);
-            $running = isset($procRunning[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procRunning[$ctrId][$p['source_pkg']]));
-            $pLoaded = isset($procLoaded[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procLoaded[$ctrId][$p['source_pkg']]));
-            $exposed = $le !== null && ($le['scope'] ?? '') === 'EXTERNAL';
-            $loaded  = $le !== null || $pLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
-            $scope   = $le['scope'] ?? null;
+            $le        = $loadMap[$ctrId][$p['name']] ?? ($loadMap[$ctrId][$p['source_pkg']] ?? null);
+            $running   = isset($procRunningPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procRunningPkgs[$ctrId][$p['source_pkg']]));
+            $pkgLoaded = isset($procLoadedPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procLoadedPkgs[$ctrId][$p['source_pkg']]));
+            $exposed   = $le !== null && ($le['scope'] ?? '') === 'EXTERNAL';
+            $loaded    = $le !== null || $pkgLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
+            $scope     = $le['scope'] ?? null;
 
             foreach ($cands as $cveId => $cand) {
                 $cvss = $cand['cvss'];
@@ -327,7 +395,7 @@ if (!function_exists('vg_scope_rank')) {
                 $seen[$key] = true;
 
                 $inKev = isset($kev[$cveId]);
-                [$status, $sev, $why] = vg_classify($le, $running, $pLoaded, $inKev, $p['name']);
+                [$status, $sev, $why] = vg_classify($le, $running, $pkgLoaded, $inKev, $p['name']);
 
                 // 옛 라이브러리가 메모리에 상주하면 "패치됨"이라도 억제하지 않는다(재시작 전까지 취약).
                 $canSuppress = ($staleEv === null);
