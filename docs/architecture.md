@@ -246,6 +246,8 @@ flowchart TB
 
 ## 5. 데이터 모델 (ERD)
 
+> 아래는 **관계도**다. 테이블별 전체 컬럼·책임·정규화 현황은 `docs/데이터베이스.md` 참고.
+
 ```mermaid
 erDiagram
     tb_hosts ||--o{ tb_scans : "수집 이력"
