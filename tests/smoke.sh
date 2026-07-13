@@ -48,7 +48,8 @@ if [ "${high:-0}" -ge 2 ]; then ok "HIGH ≥ 2 (openssl/nginx 외부) = $high"; 
 # 방화벽 차단 포트(redis 0.0.0.0:6379, scope=FILTERED)는 외부노출이 아니다 → HIGH 가 아니라 MEDIUM.
 med=$(printf '%s' "$resp" | grep -oE '"MEDIUM":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${med:-0}" -ge 1 ]; then ok "MEDIUM ≥ 1 (redis 방화벽 차단 → 외부노출 아님) = $med"; else no "MEDIUM 미검출"; fi
-if [ "${high:-0}" -eq 2 ]; then ok "HIGH 는 2 유지 (redis 가 HIGH 로 새지 않음)"; else no "HIGH 가 $high (방화벽 차단이 반영 안 됨?)"; fi
+# (예전엔 "HIGH == 2" 로 못박았는데, 피드가 동기화된 DB 에선 HIGH 가 수십 개라 무조건 깨진다.
+#  등급 총량이 아니라 **redis 가 FILTERED 로 분류됐는지**를 직접 본다 — 데이터 양과 무관하게 성립.)
 
 # 억제: sudo(벤더 권고가 이 빌드에서 고침 = 백포트).
 #   curl 은 설치 ≥ 조치라 원래 억제 대상이지만, nginx 가 옛 libcurl 을 물고 있어(재시작 필요)
@@ -94,6 +95,9 @@ assert_contains "$body" "최고 위험도" "호스트 상세(자산 식별 히�
 assert_contains "$body" "재시작 필요" "재시작 필요 근거 노출(패치됐지만 옛 라이브러리 사용 중)"
 body=$(curl -s -b "$JAR" "$BASE/host.php?id=1&tab=runtime")
 assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(노출·프로세스)"
+# redis 는 0.0.0.0:6379 지만 방화벽이 막는다 → EXTERNAL 이 아니라 FILTERED 로 분류돼야 한다.
+body=$(curl -s -b "$JAR" "$BASE/findings.php?st=FILTERED")
+assert_contains "$body" "redis" "방화벽 차단(FILTERED) 분류 — redis 가 외부노출로 새지 않음"
 
 # 잘못된 비번
 JAR2="$(mktemp)"; csrf2=$(curl -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)
