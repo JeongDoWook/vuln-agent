@@ -9,6 +9,8 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/vercmp.php';   // vg_ver_cmp — dpkg/rpm 버전 비교
+require_once __DIR__ . '/distro.php';   // vg_osv_ecosystem — 수집과 동일 기준
 
 if (!function_exists('vg_scope_rank')) {
     // 노출 범위 위험도 (클수록 위험)
@@ -54,8 +56,15 @@ if (!function_exists('vg_scope_rank')) {
      * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
      */
     function vg_match_scan(PDO $pdo, int $scanId): array {
+        // 이 스캔의 배포판 → 생태계. 수집(feeds)이 'Ubuntu:24.04' 로 태깅한 것과 같은 기준.
+        $sc = $pdo->prepare('SELECT os_id, os_version, package_family FROM tb_scans WHERE id = ?');
+        $sc->execute([$scanId]);
+        $scan = $sc->fetch() ?: [];
+        $hostEco = vg_osv_ecosystem($scan['os_id'] ?? null, $scan['os_version'] ?? null);
+        $family  = (string) ($scan['package_family'] ?? '');
+
         // 패키지
-        $stmt = $pdo->prepare('SELECT name, source_pkg, version FROM tb_packages WHERE scan_id = ?');
+        $stmt = $pdo->prepare('SELECT manager, name, source_pkg, version, source_version FROM tb_packages WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         $packages = $stmt->fetchAll();
 
@@ -104,15 +113,22 @@ if (!function_exists('vg_scope_rank')) {
             $kev[$r['cve_id']] = true;
         }
 
-        // 영향 패키지 인덱스: package_name => [cve_id => cvss]
+        // 영향 패키지 인덱스: package_name => [ {cve, eco, fixed, cvss} … ]
+        //   ecosystem/fixed_version 을 함께 읽는다. 예전엔 이름만 보고 CVE 를 매달아
+        //   (1) 다른 배포판의 행이 붙고 (2) 이미 상위 버전인데도 취약으로 떴다.
         $affected = [];
         $capStmt = $pdo->query(
-            'SELECT a.cve_id, a.package_name, c.cvss
+            'SELECT a.cve_id, a.package_name, a.ecosystem, a.fixed_version, c.cvss
              FROM tb_cve_affected_packages a
              LEFT JOIN tb_cves c ON c.cve_id = a.cve_id'
         );
         foreach ($capStmt->fetchAll() as $r) {
-            $affected[$r['package_name']][$r['cve_id']] = $r['cvss'];
+            $affected[$r['package_name']][] = [
+                'cve'   => $r['cve_id'],
+                'eco'   => $r['ecosystem'],
+                'fixed' => $r['fixed_version'],
+                'cvss'  => $r['cvss'],
+            ];
         }
 
         // 백포트 근거: 패키지 changelog 에 명시된 CVE(=그 빌드에 이미 수정됨).
@@ -159,12 +175,24 @@ if (!function_exists('vg_scope_rank')) {
         $seen = [];
 
         foreach ($packages as $p) {
-            // pkg.name 또는 source_pkg 로 후보 CVE 수집
-            $cands = [];
-            foreach ([$p['name'], $p['source_pkg']] as $key) {
-                if ($key && isset($affected[$key])) {
-                    foreach ($affected[$key] as $cve => $cvss) {
-                        $cands[$cve] = $cvss;
+            $mgr = (string) ($p['manager'] ?? 'dpkg');
+
+            // pkg.name 또는 source_pkg 로 후보 CVE 수집.
+            //   비교 버전은 매칭된 키에 맞춘다 — OSV 의 deb 조치안은 **소스 버전** 기준이라
+            //   source_pkg 로 매칭됐으면 source_version 과 비교해야 한다(binNMU: 1.2.3-4+b1).
+            $cands = [];   // cve => ['cvss'=>, 'fixed'=>, 'cmpver'=>]
+            foreach ([[$p['name'], $p['version']], [$p['source_pkg'], $p['source_version'] ?: $p['version']]] as [$key, $cmpVer]) {
+                if (!$key || !isset($affected[$key])) { continue; }
+                foreach ($affected[$key] as $row) {
+                    // 생태계 필터 — 남의 배포판 행이 이름만 같다고 붙던 것을 막는다.
+                    if (!vg_eco_matches($row['eco'] ?? null, $hostEco, $family)) { continue; }
+
+                    // 조치안을 설치 버전과 직접 비교해도 되는 행인지(=배포판 EVR 인지) 표시.
+                    $fixed = vg_eco_is_distro($row['eco'] ?? null) ? $row['fixed'] : null;
+
+                    $cve = $row['cve'];
+                    if (!isset($cands[$cve]) || ($cands[$cve]['fixed'] === null && $fixed !== null)) {
+                        $cands[$cve] = ['cvss' => $row['cvss'], 'fixed' => $fixed, 'cmpver' => (string) $cmpVer];
                     }
                 }
             }
@@ -180,13 +208,29 @@ if (!function_exists('vg_scope_rank')) {
             $loaded  = $le !== null || $pLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
             $scope   = $le['scope'] ?? null;
 
-            foreach ($cands as $cveId => $cvss) {
+            foreach ($cands as $cveId => $cand) {
+                $cvss = $cand['cvss'];
                 $key = $cveId . '|' . $p['name'];
                 if (isset($seen[$key])) { continue; }
                 $seen[$key] = true;
 
                 $inKev = isset($kev[$cveId]);
                 [$status, $sev, $why] = vg_classify($le, $running, $pLoaded, $inKev, $p['name']);
+
+                // 버전 억제: 설치 버전이 조치 버전 이상이면 이미 패치된 것.
+                //   배포판 규칙(epoch·릴리스·틸드)대로 비교한다 — vg_ver_cmp.
+                //   fixed 가 비어 있으면(피드가 조치안을 안 준 경우) 판단하지 않고 남긴다.
+                $fixed = $cand['fixed'];
+                if ($fixed !== null && $fixed !== '' && $cand['cmpver'] !== ''
+                    && vg_ver_cmp($cand['cmpver'], (string) $fixed, $mgr) >= 0) {
+                    $insSupp->execute([
+                        $scanId, $cveId, $p['name'], $p['version'],
+                        $inKev ? 1 : 0, $cvss, $sev,
+                        sprintf('설치 %s ≥ 조치 %s → 이미 패치됨', $cand['cmpver'], $fixed),
+                    ]);
+                    $counts['SUPPRESSED']++;
+                    continue;
+                }
 
                 // 백포트 억제: 이 빌드의 changelog 에 해당 CVE 수정 기록이 있으면
                 //   버전이 낮아 보여도 이미 패치된 것 → 실제 위험에서 제외(오탐 제거).

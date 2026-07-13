@@ -72,10 +72,15 @@ if (!empty($pkg['list'])) {
         if ($name === '') { continue; }
         if ($manager === 'rpm') {
             // name \t epoch:version-release \t arch \t sourcerpm \t vendor
-            $pkgRows[] = [$name, $f[1] ?? '', $f[2] ?? '', $f[3] ?? '', $f[4] ?? ''];
+            $pkgRows[] = [$name, $f[1] ?? '', $f[2] ?? '', $f[3] ?? '', '', $f[4] ?? ''];
         } else {
             // dpkg: name \t version \t arch \t source_pkg \t source_version \t status
-            $pkgRows[] = [$name, $f[1] ?? '', $f[2] ?? '', $f[3] ?? '', ''];
+            //   상태가 'ii'(설치됨)가 아닌 행은 버린다. 'rc' 는 **제거됐고 설정만 남은** 패키지라
+            //   실제로 설치돼 있지 않다 — 예전엔 이것도 설치로 저장해 없는 패키지의 CVE 가 떴다.
+            $st = trim($f[5] ?? '');
+            if ($st !== '' && substr($st, 1, 1) !== 'i') { continue; }
+            // source_version 은 OSV 의 deb 조치안(소스 버전 기준)과 비교하는 데 쓴다.
+            $pkgRows[] = [$name, $f[1] ?? '', $f[2] ?? '', $f[3] ?? '', $f[4] ?? '', ''];
         }
     }
 }
@@ -181,11 +186,11 @@ try {
     // 패키지 벌크
     if ($pkgCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_packages (scan_id, manager, name, version, arch, source_pkg, vendor)
-             VALUES (?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO tb_packages (scan_id, manager, name, version, arch, source_pkg, source_version, vendor)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         );
         foreach ($pkgRows as $r) {
-            $ins->execute([$scanId, $manager, $r[0], $r[1], $r[2], $r[3], $r[4]]);
+            $ins->execute([$scanId, $manager, $r[0], $r[1], $r[2], $r[3], $r[4], $r[5]]);
         }
     }
 
