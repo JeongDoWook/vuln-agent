@@ -75,7 +75,7 @@ assert_contains "$resp" '"exposures":5' "노출 5건 저장"
 # 언어 패키지(pip 2 + npm 2) — 예전엔 수집만 하고 서버가 버렸다.
 assert_contains "$resp" '"langpkgs":4' "언어 패키지 4건 저장(pip/npm)"
 # 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
-assert_contains "$resp" '"containers":2'   "컨테이너 2개 저장(alpine/debian)"
+assert_contains "$resp" '"containers":3'   "컨테이너 3개 저장(alpine/debian + 패키지DB 없는 이미지)"
 assert_contains "$resp" '"ctr_packages":3' "컨테이너 내부 패키지 3건 저장"
 # 컨테이너 런타임 증거 — 이게 없으면 컨테이너 취약점은 근거가 "설치만 됨" 뿐이라 전부 LOW 로 깔린다.
 assert_contains "$resp" '"ctr_processes":2' "컨테이너 프로세스 2건 저장"
@@ -209,6 +209,12 @@ assert_contains "$body" "redis" "방화벽 차단(FILTERED) 분류 — redis 가
 # 미지원 배포판 호스트가 있으면 취약점 화면 상단에 경고가 떠야 한다("0건 = 판정 불가").
 body=$(curl -s -b "$JAR" "$BASE/findings.php")
 assert_contains "$body" "판정 불가" "취약점 화면에 미지원 배포판 경고 노출"
+# **패키지 DB 가 없는 컨테이너**(Calico 같은 이미지)도 0건이 나온다 — rhel 은 피드 지원 배포판이라
+#   미지원 경고에 안 걸린다. 이걸 침묵하면 "안전함"으로 읽힌다(운영 실측 9개).
+assert_contains "$body" "컨테이너 nodb" "패키지 DB 없는 컨테이너도 '판정 불가'로 경고"
+assert_contains "$body" "패키지 DB 가 없는 이미지" "판정 불가 사유가 '패키지 DB 없음'으로 구분됨"
+body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
+assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에도 패키지DB 없는 컨테이너 경고"
 
 # 잘못된 비번
 JAR2="$(mktemp)"; csrf2=$(curl -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)
