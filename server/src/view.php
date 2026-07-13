@@ -210,6 +210,53 @@ function vg_sev_donut(array $counts, int $size = 132): void {
     echo '</div>';
 }
 
+/**
+ * 모달 — 자주 안 쓰는 폼(추가·발급·설치안내)을 화면에 펼쳐두지 않고 버튼 뒤에 숨긴다.
+ *
+ * 네이티브 <dialog> 를 쓴다. showModal() 이 포커스 가둠·ESC 닫기·backdrop 을 다 해주므로
+ * 라이브러리도, 직접 만든 포커스 트랩도 필요 없다(KISS).
+ *   vg_modal_btn('addUser', '+ 사용자 추가');      ← 여는 버튼
+ *   vg_modal_open('addUser', '사용자 추가');       ← <dialog> 시작
+ *     … 폼 내용 …
+ *   vg_modal_close();                              ← </dialog>
+ *
+ * 주의: 모달 안의 폼은 서버로 POST 하는 평범한 폼이다. JS 가 죽어도 내용은 DOM 에 있고,
+ *       열기 버튼만 안 먹는다 — 그래서 열기 버튼은 <button> 이지 <a> 가 아니다.
+ */
+function vg_modal_btn(string $target, string $label, string $class = 'btn btn--primary'): void {
+    echo '<button type="button" class="' . vg_h($class) . '" data-modal="' . vg_h($target) . '">'
+        . vg_h($label) . '</button>';
+}
+
+/**
+ * $open=true 면 페이지가 뜨자마자 이 모달을 연다. 모달 안의 폼이 서버 검증에 걸리면
+ * 페이지가 다시 그려지며 모달이 닫혀 버린다 — 사용자는 뭐가 틀렸는지 못 보고 입력도 잃는다.
+ *
+ * <dialog open> 속성을 쓰지 않는 건, 그건 backdrop 없는 인라인 표시라서 "모달" 이 아니기 때문이다.
+ * data-modal-autoopen 을 달아 app.js 가 showModal() 을 부르게 한다.
+ */
+function vg_modal_open(string $id, string $title, string $class = '', bool $open = false): void {
+    echo '<dialog class="modal ' . vg_h($class) . '" id="' . vg_h($id) . '"'
+        . ($open ? ' data-modal-autoopen' : '') . '>'
+        . '<div class="modal__head">'
+        . '<strong>' . vg_h($title) . '</strong>'
+        . '<button type="button" class="modal__x" data-modal-close aria-label="닫기">✕</button>'
+        . '</div>'
+        . '<div class="modal__body">';
+}
+
+function vg_modal_close(): void {
+    echo '</div></dialog>';
+}
+
+/**
+ * 도움말 툴팁. 본문에 늘어놓으면 화면이 무거워지는 부연설명을 아이콘 뒤로 보낸다.
+ * 네이티브 title 을 쓴다 — 스크린리더도 읽고, JS 도 필요 없다.
+ */
+function vg_help(string $text): string {
+    return '<span class="help" title="' . vg_h($text) . '" tabindex="0" role="note">?</span>';
+}
+
 /** 성공/오류 알림. $msg 가 null·빈문자면 아무것도 출력하지 않는다. */
 function vg_alert(?string $msg, string $type = 'err'): void {
     if ($msg === null || $msg === '') {

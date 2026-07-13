@@ -127,7 +127,14 @@ $ingest = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'local
 $csrf = vg_csrf_token();
 vg_header('자산관리', 'assets');
 ?>
-  <h1>자산관리</h1>
+  <?php
+  // 상태 판정 기준은 본문에 늘어놓지 않고 툴팁으로 — 한 번 읽으면 그만인 정보다.
+  $stateHelp = sprintf(
+      '정상 = %d시간 이내 수집 · 지연 = %d시간~%d일 · 오프라인 = %d일 초과 · 수집없음 = 등록만 되고 스캔이 아직 없음',
+      VG_STALE_MIN / 60, VG_STALE_MIN / 60, VG_OFFLINE_MIN / 1440, VG_OFFLINE_MIN / 1440
+  );
+  ?>
+  <h1>자산관리 <?= vg_help($stateHelp) ?></h1>
   <div class="sub">에이전트가 등록한 호스트 · 최신 수집 상태와 취약점 요약</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err !== null ? '오류 · ' . $err : null); ?>
@@ -146,6 +153,10 @@ vg_header('자산관리', 'assets');
         <b><?= number_format($stateCounts[$key]) ?></b><span><?= vg_h($label) ?></span>
       </a>
     <?php endforeach; ?>
+  </div>
+
+  <div class="toolbar">
+    <?php vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost'); ?>
   </div>
 
   <?php
@@ -211,27 +222,30 @@ vg_header('자산관리', 'assets');
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 
-  <div class="card">
-    <strong>에이전트 설치</strong>
-    <span class="why">— 자산은 에이전트가 수집을 보내면 자동 등록된다. 중앙에서 대상 서버로 접속하지 않는다(아웃바운드 push).</span>
-    <div class="card__body">
-      <div class="why">대상 서버(Linux)의 <code>/opt/vuln-agent/</code> 에 스크립트 2개를 두고 한 번 실행. 인자 없이 실행하면 주소·토큰·주기를 물어본다.</div>
-      <pre class="code">sudo mkdir -p /opt/vuln-agent && sudo cp ~/agent/*.sh /opt/vuln-agent/
+  <?php
+  /* 설치 안내는 자산을 처음 붙일 때 한 번 보는 것이다. 목록 아래 늘 펼쳐두면
+   * 매일 보는 화면이 그만큼 길어진다 → 버튼 뒤 모달로. */
+  vg_modal_open('agentInstall', '에이전트 설치', 'modal--wide');
+  ?>
+    <div class="why">자산은 에이전트가 수집을 보내면 <strong>자동 등록</strong>됩니다.
+      중앙에서 대상 서버로 접속하지 않습니다(아웃바운드 push).</div>
+
+    <div class="why mt">대상 서버(Linux)의 <code>/opt/vuln-agent/</code> 에 스크립트 2개를 두고 한 번 실행합니다.
+      인자 없이 실행하면 주소·토큰·주기를 물어봅니다.</div>
+
+    <pre class="code">sudo mkdir -p /opt/vuln-agent &amp;&amp; sudo cp ~/agent/*.sh /opt/vuln-agent/
 cd /opt/vuln-agent
 sudo bash install-agent.sh
   중앙 서버 주소 (예: ost-server.duckdns.org:8080): <?= vg_h($ingest) ?>
 
   전송 토큰 (입력은 화면에 보이지 않습니다): ********
   수집 주기 [hourly] (daily / '*:0/30'=30분마다):</pre>
-      <div class="why">
-        · 수집 엔드포인트: <code><?= vg_h($ingest) ?></code> — 대상 서버 → 중앙 아웃바운드 1개면 충분<br>
-        · <code>sudo</code> 만 있으면 된다. <code>chmod</code>/<code>chown</code> 은 필요 없다(<code>bash &lt;파일&gt;</code> 로 실행하므로)<br>
-        · 토큰은 보안상 화면에 표시하지 않는다. 중앙 서버의 <code>secrets/ingest_token.txt</code> 에서 확인<br>
-        · 제거: <code>sudo bash install-agent.sh --uninstall</code><br>
-        · 상태 <?= vg_badge('정상', 'ok') ?> = <?= VG_STALE_MIN / 60 ?>시간 이내 수집,
-          <?= vg_badge('지연', 'high') ?> = <?= VG_STALE_MIN / 60 ?>시간~<?= VG_OFFLINE_MIN / 1440 ?>일,
-          <?= vg_badge('오프라인', 'crit') ?> = <?= VG_OFFLINE_MIN / 1440 ?>일 초과
-      </div>
-    </div>
-  </div>
+
+    <ul class="hint-list why">
+      <li>수집 엔드포인트: <code class="selectable"><?= vg_h($ingest) ?></code> — 대상 서버 → 중앙 아웃바운드 1개면 충분합니다.</li>
+      <li><code>sudo</code> 만 있으면 됩니다. <code>chmod</code>/<code>chown</code> 은 필요 없습니다(<code>bash &lt;파일&gt;</code> 로 실행하므로).</li>
+      <li>토큰은 보안상 화면에 표시하지 않습니다. 중앙 서버의 <code>secrets/ingest_token.txt</code> 에서 확인하세요.</li>
+      <li>제거: <code>sudo bash install-agent.sh --uninstall</code></li>
+    </ul>
+  <?php vg_modal_close(); ?>
 <?php vg_footer();
