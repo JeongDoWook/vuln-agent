@@ -3,7 +3,9 @@
     "hostname_fqdn": "web02.example.com",
     "collected_at": "2026-07-13T11:00:00+09:00",
     "agent_version": "2.1",
-    "elapsed_seconds": "5"
+    "elapsed_seconds": "5",
+    "peak_rss_mb": "41.7",
+    "cpu_seconds": "2.05"
   },
   "vuln_mapping": {
     "distro_id": "debian",

@@ -153,6 +153,20 @@ function vg_asset_state($ageMin): string {
 }
 
 /**
+ * 에이전트 자기계측 셀 — 실행당 리소스 발자국(담당자 안심용).
+ *   피크 메모리는 프로세스 트리 전체 최댓값, CPU 는 자식 포함 실제 점유(벽시계 아님).
+ *   값이 없으면(구버전 에이전트·측정 불가) 대시. 옛 스캔은 컬럼이 비어 있는 게 정상이다.
+ */
+function vg_resource_mem($mb): string {
+    if ($mb === null || $mb === '') { return '<span class="why">–</span>'; }
+    return number_format((float) $mb, 0) . '<span class="why">MB</span>';
+}
+function vg_resource_cpu($sec): string {
+    if ($sec === null || $sec === '') { return '<span class="why">–</span>'; }
+    return vg_h(number_format((float) $sec, 1)) . '<span class="why">s</span>';
+}
+
+/**
  * EPSS 셀 — 악용확률과 백분위를 함께.
  *
  * 확률만 보면 크기 감이 안 온다. EPSS 는 절대다수가 1% 미만이라 "2.7%" 도 실은 상위권이다.

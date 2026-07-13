@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS tb_scans (
   collected_at    DATETIME NULL,
   agent_version   VARCHAR(32)  NULL,
   elapsed_seconds INT NULL,
+  peak_rss_mb     DECIMAL(8,1) NULL,   -- 자기계측: 실행당 피크 메모리(트리 전체)
+  cpu_seconds     DECIMAL(8,2) NULL,   -- 자기계측: 실행당 CPU 시간(자식 포함)
   os_id           VARCHAR(64)  NULL,
   os_version      VARCHAR(64)  NULL,
   kernel          VARCHAR(255) NULL,

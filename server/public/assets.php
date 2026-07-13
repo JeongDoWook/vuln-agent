@@ -96,6 +96,7 @@ try {
     $st = $pdo->prepare(
         "SELECT h.id, h.fqdn, h.os_id, h.os_version, h.first_seen,
                 s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
+                s.peak_rss_mb, s.cpu_seconds,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
                 (SELECT COUNT(*) FROM tb_scans x WHERE x.host_id = h.id) AS scan_count
            $fromSql
@@ -171,6 +172,7 @@ vg_header('자산관리', 'assets');
       ['label' => '상태', 'key' => 'state'],
       ['label' => 'OS', 'key' => 'os'],
       ['label' => '에이전트', 'key' => 'agent_version'],
+      ['label' => '리소스', 'key' => 'resource', 'align' => 'right'],
       ['label' => '패키지', 'key' => 'package_count', 'align' => 'right'],
       ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right'],
       ['label' => '심각도', 'key' => 'sev'],
@@ -201,6 +203,9 @@ vg_header('자산관리', 'assets');
               'state' => fn($r) => vg_asset_state($r['age_min']),
               'os'            => fn($r) => vg_h(trim($r['os_id'] . ' ' . $r['os_version'])) ?: '<span class="why">–</span>',
               'agent_version' => fn($r) => $r['agent_version'] ? '<code>' . vg_h($r['agent_version']) . '</code>' : '<span class="why">–</span>',
+              'resource' => fn($r) => $r['scan_id'] !== null
+                  ? vg_resource_mem($r['peak_rss_mb']) . ' <span class="why">·</span> ' . vg_resource_cpu($r['cpu_seconds'])
+                  : '<span class="why">–</span>',
               'package_count' => fn($r) => $r['scan_id'] !== null ? number_format((int) $r['package_count']) : '<span class="why">–</span>',
               'exposure_count'=> fn($r) => $r['scan_id'] !== null ? number_format((int) $r['exposure_count']) : '<span class="why">–</span>',
               // 뱃지를 누르면 그 호스트·등급의 취약점 목록으로.

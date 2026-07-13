@@ -345,29 +345,34 @@ try {
     if ($unchanged) {
         $scanId = (int) $prev['id'];
         $pdo->prepare(
-            'UPDATE tb_scans SET collected_at = :ca, agent_version = :av, elapsed_seconds = :el WHERE id = :id'
+            'UPDATE tb_scans SET collected_at = :ca, agent_version = :av, elapsed_seconds = :el,
+                                 peak_rss_mb = :pk, cpu_seconds = :cpu WHERE id = :id'
         )->execute([
             ':ca' => $collectedAt,
             ':av' => ($meta['agent_version'] ?? '') ?: null,
             ':el' => isset($meta['elapsed_seconds']) ? (int) $meta['elapsed_seconds'] : null,
+            ':pk' => isset($meta['peak_rss_mb']) ? (float) $meta['peak_rss_mb'] : null,
+            ':cpu' => isset($meta['cpu_seconds']) ? (float) $meta['cpu_seconds'] : null,
             ':id' => $scanId,
         ]);
     } else {
     // 스캔 1행
     $stmt = $pdo->prepare(
         'INSERT INTO tb_scans
-            (host_id, collected_at, agent_version, elapsed_seconds,
+            (host_id, collected_at, agent_version, elapsed_seconds, peak_rss_mb, cpu_seconds,
              os_id, os_version, kernel, running_kernel, kernel_latest, kernel_reboot_needed,
              cpe, package_family, content_hash,
              package_count, exposure_count, raw_json)
          VALUES
-            (:h, :ca, :av, :el, :osid, :osver, :kern, :rk, :kl, :krn, :cpe, :fam, :hash, :pc, :ec, :raw)'
+            (:h, :ca, :av, :el, :pk, :cpu, :osid, :osver, :kern, :rk, :kl, :krn, :cpe, :fam, :hash, :pc, :ec, :raw)'
     );
     $stmt->execute([
         ':h'     => $hostId,
         ':ca'    => $collectedAt,
         ':av'    => ($meta['agent_version'] ?? '') ?: null,
         ':el'    => isset($meta['elapsed_seconds']) ? (int) $meta['elapsed_seconds'] : null,
+        ':pk'    => isset($meta['peak_rss_mb']) ? (float) $meta['peak_rss_mb'] : null,
+        ':cpu'   => isset($meta['cpu_seconds']) ? (float) $meta['cpu_seconds'] : null,
         ':osid'  => ($vm['distro_id'] ?? '') ?: null,
         ':osver' => ($vm['distro_version'] ?? '') ?: null,
         ':kern'  => ($sys['kernel_release'] ?? ($sys['kernel'] ?? '')) ?: null,
