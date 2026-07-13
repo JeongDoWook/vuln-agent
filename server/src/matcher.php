@@ -93,11 +93,14 @@ if (!function_exists('vg_scope_rank')) {
         $stmt->execute([$scanId]);
         $packages = $stmt->fetchAll();
 
-        // 노출 → 패키지별 최악(worst) 로드 상태 맵
-        $stmt = $pdo->prepare('SELECT proc, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ?');
+        // 노출 → 패키지별 최악(worst) 로드 상태 맵.
+        //   **컨테이너별로 따로 담는다**(container_id, 0=호스트). 한 덩어리로 합치면 호스트 nginx 의
+        //   외부노출이 컨테이너 openssl 로 새어 EXTERNAL 로 오판한다(오탐).
+        $stmt = $pdo->prepare('SELECT container_id, proc, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ?');
         $stmt->execute([$scanId]);
-        $loadMap = []; // pkgName => ['rank','scope','proc','port']
+        $loadMap = []; // ctrId => pkgName => ['rank','scope','proc','port']
         foreach ($stmt->fetchAll() as $e) {
+            $c = (int) $e['container_id'];
             $names = [];
             if (!empty($e['exe_pkg']) && $e['exe_pkg'] !== 'UNPACKAGED') {
                 $names[] = $e['exe_pkg'];
@@ -110,24 +113,25 @@ if (!function_exists('vg_scope_rank')) {
             }
             $rank = vg_scope_rank($e['scope']);
             foreach (array_unique($names) as $n) {
-                if (!isset($loadMap[$n]) || $rank > $loadMap[$n]['rank']) {
-                    $loadMap[$n] = ['rank' => $rank, 'scope' => $e['scope'], 'proc' => $e['proc'], 'port' => (int) $e['port']];
+                if (!isset($loadMap[$c][$n]) || $rank > $loadMap[$c][$n]['rank']) {
+                    $loadMap[$c][$n] = ['rank' => $rank, 'scope' => $e['scope'], 'proc' => $e['proc'], 'port' => (int) $e['port']];
                 }
             }
         }
 
-        // 실행 프로세스 → 실행중(exe_pkg) / 사용중(loaded_pkgs) 패키지 집합
+        // 실행 프로세스 → 실행중(exe_pkg) / 사용중(loaded_pkgs) 패키지 집합 (컨테이너별)
         $procRunning = []; $procLoaded = [];
-        $stmt = $pdo->prepare('SELECT exe_pkg, loaded_pkgs FROM tb_processes WHERE scan_id = ?');
+        $stmt = $pdo->prepare('SELECT container_id, exe_pkg, loaded_pkgs FROM tb_processes WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         foreach ($stmt->fetchAll() as $pr) {
+            $c = (int) $pr['container_id'];
             if (!empty($pr['exe_pkg']) && $pr['exe_pkg'] !== 'UNPACKAGED') {
-                $procRunning[$pr['exe_pkg']] = true;
+                $procRunning[$c][$pr['exe_pkg']] = true;
             }
             if (!empty($pr['loaded_pkgs'])) {
                 foreach (explode(',', (string) $pr['loaded_pkgs']) as $n) {
                     $n = trim($n);
-                    if ($n !== '') { $procLoaded[$n] = true; }
+                    if ($n !== '') { $procLoaded[$c][$n] = true; }
                 }
             }
         }
@@ -304,12 +308,13 @@ if (!function_exists('vg_scope_rank')) {
             $hostEvidenceOk = ($ctr === null) && $isDistroPkg;
 
             // 런타임 상태 신호 (exposures=포트, processes=실행/로드).
-            //   **컨테이너 패키지에는 적용하지 않는다.** 이 신호는 호스트 프로세스에서 모은 것이라,
-            //   그대로 쓰면 컨테이너의 openssl 이 호스트 nginx 의 외부노출을 물려받아 EXTERNAL 로
-            //   오판한다(오탐). 컨테이너 내부 프로세스는 수집 대상이 아니므로 INSTALLED 로 둔다.
-            $le      = $ctr !== null ? null : ($loadMap[$p['name']] ?? ($loadMap[$p['source_pkg']] ?? null));
-            $running = $ctr === null && (isset($procRunning[$p['name']]) || ($p['source_pkg'] && isset($procRunning[$p['source_pkg']])));
-            $pLoaded = $ctr === null && (isset($procLoaded[$p['name']]) || ($p['source_pkg'] && isset($procLoaded[$p['source_pkg']])));
+            //   **자기 것만 본다** — 맵이 container_id 로 갈려 있어 호스트 신호가 컨테이너로
+            //   새지 않는다(호스트 nginx 의 외부노출이 컨테이너 openssl 로 넘어가면 오탐).
+            //   에이전트가 컨테이너 런타임을 못 보낸 경우엔 맵이 비어 예전처럼 INSTALLED(LOW) 로
+            //   떨어진다 — 옛 에이전트와도 호환된다.
+            $le      = $loadMap[$ctrId][$p['name']] ?? ($loadMap[$ctrId][$p['source_pkg']] ?? null);
+            $running = isset($procRunning[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procRunning[$ctrId][$p['source_pkg']]));
+            $pLoaded = isset($procLoaded[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procLoaded[$ctrId][$p['source_pkg']]));
             $exposed = $le !== null && ($le['scope'] ?? '') === 'EXTERNAL';
             $loaded  = $le !== null || $pLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
             $scope   = $le['scope'] ?? null;

@@ -108,15 +108,22 @@ try {
         } elseif ($tab === 'runtime') {
             // 노출은 보통 소량이라 전부 보여주고, 프로세스는 많을 수 있어 페이지네이션한다
             // (이 탭의 ?page= 는 프로세스 표에 적용된다).
-            $st = $pdo->prepare('SELECT proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ?
-                                  ORDER BY FIELD(scope,\'EXTERNAL\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), port');
+            // 컨테이너 안의 프로세스·포트도 여기 함께 있다(container_id > 0).
+            //   출처를 표시하지 않으면 컨테이너의 nginx 가 호스트의 nginx 처럼 보인다 → "위치" 열.
+            $st = $pdo->prepare('SELECT e.proc, e.proto, e.bind_addr, e.port, e.scope, e.exe_pkg, e.loaded_pkgs,
+                                        IFNULL(c.cid, \'\') AS ctr
+                                   FROM tb_exposures e LEFT JOIN tb_containers c ON c.id = e.container_id
+                                  WHERE e.scan_id = ?
+                                  ORDER BY FIELD(e.scope,\'EXTERNAL\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), e.port');
             $st->execute([$sid]);
             $exposures = $st->fetchAll();
 
             $total = $pdo->prepare('SELECT COUNT(*) FROM tb_processes WHERE scan_id = ?');
             $total->execute([$sid]); $total = (int) $total->fetchColumn();
-            $st = $pdo->prepare("SELECT pid, comm, username, exe_pkg, loaded_pkgs FROM tb_processes
-                                  WHERE scan_id = ? ORDER BY comm LIMIT $perPage OFFSET $offset");
+            $st = $pdo->prepare("SELECT p.pid, p.comm, p.username, p.exe_pkg, p.loaded_pkgs,
+                                        IFNULL(c.cid, '') AS ctr
+                                   FROM tb_processes p LEFT JOIN tb_containers c ON c.id = p.container_id
+                                  WHERE p.scan_id = ? ORDER BY p.comm LIMIT $perPage OFFSET $offset");
             $st->execute([$sid]);
             $rows = $st->fetchAll();
         } elseif ($tab === 'cce') {
@@ -283,6 +290,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       vg_table(
           [
               ['label' => '범위'],
+              ['label' => '위치'],
               ['label' => '프로세스', 'key' => 'proc'],
               ['label' => '포트'],
               ['label' => '실행패키지', 'key' => 'exe_pkg'],
@@ -294,8 +302,11 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               'empty' => '리스닝 소켓 없음(외부 노출면 없음).',
               'cell' => [
                   0 => fn($e) => vg_badge((string) $e['scope'], $scopeTone[$e['scope']] ?? 'muted'),
-                  2 => fn($e) => vg_h($e['proto']) . '/' . (int) $e['port'],
-                  4 => fn($e) => '<span class="why">' . vg_trunc($e['loaded_pkgs'], 60) . '</span>',
+                  1 => fn($e) => $e['ctr'] !== ''
+                        ? '<span class="why">컨테이너 ' . vg_h($e['ctr']) . '</span>'
+                        : '<span class="why">호스트</span>',
+                  3 => fn($e) => vg_h($e['proto']) . '/' . (int) $e['port'],
+                  5 => fn($e) => '<span class="why">' . vg_trunc($e['loaded_pkgs'], 60) . '</span>',
               ],
           ]
       );
@@ -310,6 +321,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       vg_table(
           [
               ['label' => 'PID'],
+              ['label' => '위치'],
               ['label' => '프로세스', 'key' => 'comm'],
               ['label' => '사용자'],
               ['label' => '실행 패키지', 'key' => 'exe_pkg'],
@@ -321,8 +333,11 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               'empty' => '실행 프로세스 데이터 없음(구버전 에이전트로 수집됨).',
               'cell' => [
                   0 => fn($pr) => '<span class="why">' . (int) $pr['pid'] . '</span>',
-                  2 => fn($pr) => '<span class="why">' . vg_h($pr['username']) . '</span>',
-                  4 => fn($pr) => '<span class="why">' . vg_trunc($pr['loaded_pkgs'], 60) . '</span>',
+                  1 => fn($pr) => $pr['ctr'] !== ''
+                        ? '<span class="why">컨테이너 ' . vg_h($pr['ctr']) . '</span>'
+                        : '<span class="why">호스트</span>',
+                  3 => fn($pr) => '<span class="why">' . vg_h($pr['username']) . '</span>',
+                  5 => fn($pr) => '<span class="why">' . vg_trunc($pr['loaded_pkgs'], 60) . '</span>',
               ],
           ]
       );

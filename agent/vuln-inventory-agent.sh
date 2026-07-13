@@ -512,6 +512,183 @@ collect_containers() {
     [ -n "$pkgs" ] && { printf '%s\n' "$pkgs"; cnt=$(printf '%s\n' "$pkgs" | grep -c '^'); }
     printf '%s|%s|%s|%s|%s|%s|%s\n' "$cid" "$name" "$image" "$osid" "$osver" "$mgr" "$cnt" \
       >> "$TMP/containers__list.txt"
+
+    # 런타임 증거 수집(collect_container_runtime)이 컨테이너를 다시 찾아 헤매지 않도록
+    # 여기서 알아낸 것을 남긴다. `__` 가 없는 이름이라 전송 섹션으로 잡히지 않는다.
+    [ -n "$mgr" ] && printf '%s|%s|%s|%s\n' "$cid" "$pid" "$root" "$mgr" >> "$TMP/.ctrmap"
+  done
+}
+
+# ctr_pkgmap : 컨테이너 안의 "파일 → 패키지" 맵 (컨테이너당 한 번만 만든다)
+#   호스트처럼 파일마다 `dpkg -S` 를 부르면 안 된다 — 컨테이너 파일은 오버레이 경로라
+#   호출마다 DB 전체스캔이 되어 수백 번이면 에이전트가 멈춘다. (호스트 프로세스 수집이
+#   컨테이너를 통째로 건너뛰는 이유가 바로 이것이다 — collect_processes 주석 참고.)
+ctr_pkgmap() {   # $1=root $2=manager  → "경로|패키지"
+  local root="$1" f pkg
+  case "$2" in
+    dpkg)
+      if ls "$root"/var/lib/dpkg/info/*.list >/dev/null 2>&1; then
+        for f in "$root"/var/lib/dpkg/info/*.list; do
+          pkg=$(basename "$f" .list); pkg=${pkg%%:*}          # libc6:amd64 → libc6
+          awk -v p="$pkg" 'NF{print $0"|"p}' "$f" 2>/dev/null
+        done
+      else
+        # distroless 는 info/ 가 없다. 파일 목록은 status.d/<패키지>.md5sums 가 들고 있다
+        # (해시 + 공백 + 경로, 선행 "/" 없음).
+        for f in "$root"/var/lib/dpkg/status.d/*.md5sums; do
+          [ -f "$f" ] || continue
+          pkg=$(basename "$f" .md5sums)
+          awk -v p="$pkg" 'NF>=2{ $1=""; sub(/^[ \t]+/,""); print "/"$0"|"p }' "$f" 2>/dev/null
+        done
+      fi ;;
+    apk)
+      # P:패키지 / F:디렉터리 / R:파일 (R 은 직전 F 에 대한 상대경로)
+      awk 'BEGIN{RS="";FS="\n"}{ p=""; d=""
+             for(i=1;i<=NF;i++){
+               if($i ~ /^P:/)      { p=substr($i,3) }
+               else if($i ~ /^F:/) { d=substr($i,3) }
+               else if($i ~ /^R:/ && p!="") { print "/"d"/"substr($i,3)"|"p }
+             }}' "$root/lib/apk/db/installed" 2>/dev/null ;;
+    rpm)
+      # 파일 목록은 rpm DB 안에만 있다 → 한 번에 덤프. 컨테이너 자기 rpm 을 먼저 쓴다
+      # (호스트 rpm 이 없거나 컨테이너의 sqlite DB 를 못 읽는 경우가 있다).
+      #   `%{=NAME}` 의 `=` 는 **스칼라 강제**다. 이게 없으면 rpm 이 NAME 도 배열로 보고
+      #   "array iterator used with different sized arrays" 로 죽는다(실측).
+      #   출력이 "패키지|경로" 순이라 뒤집어서 "경로|패키지" 로 맞춘다.
+      if [ -x "$root/usr/bin/rpm" ] || [ -x "$root/bin/rpm" ]; then
+        timeout "$CMD_TIMEOUT" chroot "$root" rpm -qa --qf '[%{=NAME}|%{FILENAMES}\n]' 2>/dev/null
+      elif have rpm; then
+        timeout "$CMD_TIMEOUT" rpm --root="$root" -qa --qf '[%{=NAME}|%{FILENAMES}\n]' 2>/dev/null
+      fi | awk -F'|' 'NF>=2 && $2 ~ /^\//{print $2"|"$1}' ;;
+  esac
+}
+
+# collect_container_runtime : 컨테이너 **안**의 프로세스·리스닝 포트
+#   왜 필요한가 — 매처는 "설치만 됨" 이면 LOW 로 깐다. 컨테이너는 런타임 증거가 없어서
+#   **아무리 위험해도 전부 LOW** 였다(KEV 라도 MEDIUM). 인터넷에 노출된 컨테이너의 취약한
+#   openssl 이 LOW 로 묻힌다는 뜻이라, 오탐이 아니라 과소평가 = 사실상 미탐이다.
+#   호스트 신호를 그대로 물려주면 반대로 오탐이 되므로(호스트 nginx 의 노출이 컨테이너
+#   openssl 로 샌다), 컨테이너 것은 컨테이너 안에서 따로 모은다.
+#
+#   출력 두 종류를 한 번에 쓴다(프로세스는 stdout, 노출은 파일):
+#     stdout : cid|pid|comm|user|exe_pkg|loaded_pkgs
+#     파일   : $TMP/containers__exposure.txt  (cid|pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs)
+collect_container_runtime() {
+  is_root || return 0
+  [ -f "$TMP/.ctrmap" ] || return 0
+  local cid cpid root mgr pidns pid map paths ports comm user uid exe start
+  start=$SECONDS
+
+  while IFS='|' read -r cid cpid root mgr; do
+    [ $((SECONDS - start)) -gt 120 ] && break        # 안전장치 — 컨테이너가 많아도 스캔을 끝낸다
+    [ -d "$root" ] || continue
+    pidns=$(readlink "/proc/$cpid/ns/pid" 2>/dev/null) || continue
+    [ -z "$pidns" ] && continue
+
+    map="$TMP/.pkgmap.$cid"
+    ctr_pkgmap "$root" "$mgr" > "$map" 2>/dev/null
+    [ -s "$map" ] || { rm -f "$map"; continue; }     # 파일맵을 못 만들면 이 컨테이너는 건너뛴다
+
+    # 이 컨테이너의 프로세스들(같은 PID namespace) → "pid|E|exe" + "pid|L|라이브러리"
+    paths="$TMP/.paths.$cid"; : > "$paths"
+    for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+      [ "$(readlink "/proc/$pid/ns/pid" 2>/dev/null)" = "$pidns" ] || continue
+      exe=$(readlink "/proc/$pid/exe" 2>/dev/null); exe=${exe% (deleted)}
+      [ -z "$exe" ] && continue                      # 커널 스레드
+      printf '%s|E|%s\n' "$pid" "$exe" >> "$paths"
+      awk -v p="$pid" 'NF>=6 && $6 ~ /\.so/ { print p"|L|"$6 }' "/proc/$pid/maps" 2>/dev/null \
+        | sort -u >> "$paths"
+    done
+    [ -s "$paths" ] || { rm -f "$map" "$paths"; continue; }
+
+    # 경로 → 패키지 (맵 한 번 읽고 전부 해결. 파일마다 조회하면 느려서 못 쓴다)
+    #   usr-merge: /usr/lib 와 /lib 는 같은 곳인데 DB 표기가 갈린다 → 양쪽을 같은 키로 정규화.
+    awk -F'|' -v cid="$cid" '
+      function norm(p) { sub(/^\/usr\//, "/", p); return p }
+      NR==FNR { k=norm($1); if (!(k in M)) M[k]=$2; next }
+      {
+        pid=$1; kind=$2; pk=M[norm($3)]
+        if (kind == "E") { ORDER[++n]=pid; EXE[pid]=(pk != "" ? pk : "UNPACKAGED") }
+        else if (pk != "" && !((pid SUBSEP pk) in SEEN)) {
+          SEEN[pid SUBSEP pk]=1; L[pid]=L[pid] (L[pid]=="" ? "" : ",") pk
+        }
+      }
+      END { for (i=1; i<=n; i++) { p=ORDER[i]; print cid"|"p"|"EXE[p]"|"L[p] } }
+    ' "$map" "$paths" > "$TMP/.pkgs.$cid"
+
+    # 프로세스 인벤토리 — 사용자 이름은 **컨테이너의 /etc/passwd** 로 푼다
+    # (호스트 이름으로 풀면 uid 가 같아도 다른 사람이 된다).
+    while IFS='|' read -r _ pid exe_pkg loaded; do
+      comm=$(cat "/proc/$pid/comm" 2>/dev/null)
+      uid=$(awk '/^Uid:/{print $2; exit}' "/proc/$pid/status" 2>/dev/null)
+      user=$(awk -F: -v u="$uid" '$3==u{print $1; exit}' "$root/etc/passwd" 2>/dev/null)
+      [ -z "$user" ] && user="uid:$uid"
+      printf '%s|%s|%s|%s|%s|%s\n' "$cid" "$pid" "$comm" "$user" "$exe_pkg" "$loaded"
+    done < "$TMP/.pkgs.$cid"
+
+    ctr_exposure "$cid" "$cpid" "$pidns" "$TMP/.pkgs.$cid" >> "$TMP/containers__exposure.txt"
+    rm -f "$map" "$paths" "$TMP/.pkgs.$cid"
+  done < "$TMP/.ctrmap"
+}
+
+# ctr_exposure : 컨테이너가 **실제로 듣고 있는** 포트 + 그 포트를 연 프로세스의 패키지
+#   컨테이너의 network namespace 소켓은 /proc/<그 컨테이너의 pid>/net/tcp 에 보인다.
+#   scope 판정(과대평가 금지):
+#     호스트로 게시(-p)됐고 방화벽이 그 포트를 열어둠 → EXTERNAL
+#     게시됐지만 방화벽이 막음                        → FILTERED
+#     게시 안 됨(도커 내부망에서만 닿음)              → LOCAL
+#   게시 정보가 없는 런타임(k8s 등)은 LOCAL 로 둔다 — 모르면서 EXTERNAL 이라 하지 않는다.
+ctr_exposure() {   # $1=cid $2=대표pid $3=pidns $4=pkgs파일
+  local cid="$1" cpid="$2" pidns="$3" pkgfile="$4"
+  local pub socks pid inode line bind port proto scope hostport comm exe_pkg loaded
+
+  pub=""
+  if have docker; then
+    pub=$(timeout "$CMD_TIMEOUT" docker port "$cid" 2>/dev/null)   # "80/tcp -> 0.0.0.0:8080"
+  fi
+
+  # 리스닝 소켓(st=0A) → "inode|bind|port|proto"
+  #   strtonum() 은 gawk 전용이라 쓸 수 없다(대상 서버는 mawk/busybox awk 일 수 있다) → 직접 변환.
+  #   IPv4 주소는 리틀엔디언 hex 다: "0100007F" = 127.0.0.1.
+  socks=$(for f in tcp tcp6; do
+            awk -v pr="$f" '
+              function hx(s,  i,c,n) { n=0; s=toupper(s)
+                for (i=1; i<=length(s); i++) { c=index("0123456789ABCDEF", substr(s,i,1))-1; n=n*16+c }
+                return n }
+              function ip4(h) { return hx(substr(h,7,2)) "." hx(substr(h,5,2)) "." \
+                                       hx(substr(h,3,2)) "." hx(substr(h,1,2)) }
+              NR>1 && $4=="0A" {
+                split($2, a, ":")
+                bind = (length(a[1]) == 8) ? ip4(a[1]) : (a[1] ~ /^0+$/ ? "::" : "::" )
+                print $10"|"bind"|"hx(a[2])"|"pr
+              }' "/proc/$cpid/net/$f" 2>/dev/null
+          done)
+  [ -z "$socks" ] && return 0
+
+  # 소켓 inode → pid (그 컨테이너의 프로세스들만 뒤진다)
+  for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    [ "$(readlink "/proc/$pid/ns/pid" 2>/dev/null)" = "$pidns" ] || continue
+    for inode in $(ls -l "/proc/$pid/fd" 2>/dev/null | sed -n 's/.*socket:\[\([0-9]*\)\].*/\1/p'); do
+      line=$(printf '%s\n' "$socks" | awk -F'|' -v i="$inode" '$1==i{print; exit}')
+      [ -z "$line" ] && continue
+      bind=$(printf '%s' "$line" | cut -d'|' -f2)
+      port=$(printf '%s' "$line" | cut -d'|' -f3)
+      proto=$(printf '%s' "$line" | cut -d'|' -f4)
+
+      # 호스트로 게시된 포트인가 → 게시됐으면 호스트 방화벽까지 본다
+      scope="LOCAL"
+      hostport=$(printf '%s\n' "$pub" | awk -v p="$port" -F' -> ' \
+                   '$1 ~ "^"p"/" { n=split($2, a, ":"); print a[n]; exit }')
+      if [ -n "$hostport" ]; then
+        if fw_port_allowed "$hostport"; then scope="EXTERNAL"; else scope="FILTERED"; fi
+      fi
+
+      comm=$(cat "/proc/$pid/comm" 2>/dev/null)
+      exe_pkg=$(awk -F'|' -v p="$pid" '$2==p{print $3; exit}' "$pkgfile" 2>/dev/null)
+      loaded=$(awk -F'|' -v p="$pid" '$2==p{print $4; exit}' "$pkgfile" 2>/dev/null)
+      printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+        "$cid" "$pid" "$comm" "$proto" "$bind" "$port" "$scope" "$exe_pkg" "$loaded"
+    done
   done
 }
 
@@ -787,6 +964,18 @@ echo "cid|name|image|os_id|os_version|manager|pkg_count" > "$TMP/containers__lis
 # 컨테이너가 없으면(헤더뿐) 두 섹션 모두 지운다
 [ "$(wc -l < "$TMP/containers__list.txt" 2>/dev/null || echo 0)" -ge 2 ] \
   || rm -f "$TMP/containers__list.txt" "$TMP/containers__packages.txt"
+
+# 컨테이너 런타임 증거(프로세스·리스닝 포트) — 이게 없으면 컨테이너 취약점은 전부 LOW 로 깔린다.
+#   ctr_exposure 가 노출 파일에 직접 append 하므로 헤더를 먼저 써 둔다.
+echo "cid|pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs" > "$TMP/containers__exposure.txt"
+{
+  echo "cid|pid|comm|user|exe_pkg|loaded_pkgs"
+  collect_container_runtime
+} > "$TMP/containers__processes.txt" 2>/dev/null || true
+for f in containers__processes containers__exposure; do
+  [ "$(wc -l < "$TMP/$f.txt" 2>/dev/null || echo 0)" -ge 2 ] || rm -f "$TMP/$f.txt"
+done
+rm -f "$TMP/.ctrmap"
 
 # ==================================================================
 # 11) 리포지토리 설정
