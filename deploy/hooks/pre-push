@@ -50,7 +50,6 @@ MAIN_ROOT="$ROOT"
 [ -n "$WT_NAME" ] && MAIN_ROOT="$(cd "$ROOT/../.." && pwd)"
 WEB=${VG_WEB_CONTAINER:-vulnagent-web-dev}
 
-STACK_TREE=$(cat "$MAIN_ROOT/deploy/.dev-stack-tree" 2>/dev/null || true)
 # 포트는 **메인 트리의 .env.dev** 에만 있다(스택 속성 — compose_runner 도 이것만 쓴다).
 WEB_PORT=$(sed -n 's/^WEB_PORT=\([0-9]\+\).*/\1/p' "$MAIN_ROOT/deploy/.env.dev" 2>/dev/null | head -1)
 BASE=${VG_SMOKE_BASE:-http://localhost:${WEB_PORT:-8080}}

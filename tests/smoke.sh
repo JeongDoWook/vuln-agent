@@ -35,8 +35,9 @@ printf "${CYAN}== vuln-agent smoke test @ %s ==${NC}\n" "$BASE"
 #   내 코드가 아니라 **남의 코드를 검사하고 초록불**을 준다 — 실제로 그렇게 "59 통과" 를 받았고,
 #   마운트를 직접 확인하고서야 거짓인 걸 알았다.
 #   pre-push 훅은 이미 이 대조를 한다. 수동 실행에도 같은 보호를 준다.
-#   VG_SMOKE_ANY=1 로 끌 수 있다(운영 스택 등 다른 대상을 일부러 칠 때).
-if [ "${VG_SMOKE_ANY:-0}" != "1" ] && command -v docker >/dev/null 2>&1; then
+#   일부러 다른 대상을 칠 때는 끈다: VG_SMOKE_ANY=1, 또는 VG_SMOKE_BASE 로 대상을 명시했을 때
+#   (그건 "이 스택이 아닌 걸 안다"는 뜻이다 — 훅도 그때는 대조를 건너뛴다).
+if [ "${VG_SMOKE_ANY:-0}" != "1" ] && [ -z "${VG_SMOKE_BASE:-}" ] && command -v docker >/dev/null 2>&1; then
   stack_src=$(docker inspect "${VG_WEB_CONTAINER:-vulnagent-web-dev}" \
     --format '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
   if [ -n "$stack_src" ]; then

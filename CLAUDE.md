@@ -129,10 +129,11 @@ cd wt/무엇
   B 의 커밋이 엉뚱한 브랜치에 얹히고 push 가 빈 push 가 된다(실제로 발생). git 은 같은 브랜치를
   두 워크트리에 체크아웃하는 걸 거부하므로 워크트리를 쓰면 이 사고가 구조적으로 불가능하다.
 - 브랜치 이름은 `feat/`·`fix/`·`chore/` 접두사. 워크트리 폴더명은 브랜치의 마지막 조각.
-- pre-push 훅은 **dev 스택이 이 트리를 서빙 중일 때만** 스모크한다(`deploy/.dev-stack-tree` 대조).
+- pre-push 훅은 **dev 스택이 이 트리를 서빙 중일 때만** 스모크한다(docker 의 마운트 경로로 대조).
   다른 트리를 서빙 중이면 **건너뛴다** — 남의 코드를 검사해 초록불을 주는 건 거짓이다.
+  `tests/smoke.sh` 도 같은 대조를 하고, 어긋나면 **중단**한다(exit 2).
   내 트리로 가져오려면 이 트리에서 `./deploy/compose_runner.sh dev up -d`.
-  대상을 직접 지정하려면 `VG_SMOKE_BASE=http://localhost:8080 git push`(대조를 건너뛴다).
+  대상을 직접 지정하려면 `VG_SMOKE_BASE=http://localhost:8080 git push`(훅의 대조를 건너뛴다).
 - 워크트리에서 `prod` 는 띄울 수 없다(compose_runner.sh 가 거부). 운영은 메인 트리에서만.
 
 ## 가드레일 (강제)
