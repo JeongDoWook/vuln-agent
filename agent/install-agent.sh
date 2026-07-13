@@ -28,8 +28,9 @@
 #   설치물을 깔기 **전에** 전송이 실제로 되는지 확인한다. 안 되면 고칠 수 있는 건 고치고,
 #   못 고치면 아무것도 설치하지 않고 중단한다 — "설치는 됐는데 전송만 조용히 안 되는" 상태를
 #   만들지 않기 위해서다(실제로 그렇게 당했다).
-#     1) jq·curl 없으면 패키지 관리자로 설치. 실패하면 중단.
-#        (jq 가 없으면 에이전트가 JSON 대신 텍스트를 뱉고 전송을 통째로 건너뛴다.)
+#     1) 필수 도구 확인. **아무것도 설치하지 않는다** — 에이전트는 대상 서버에 요구사항을 두지
+#        않는다(awk 로 JSON 을 만든다. jq 는 있으면 쓰는 빠른 경로일 뿐).
+#        HTTPS 전송 수단(curl 또는 wget)만 있으면 된다.
 #     2) 스크립트 옆의 caddy-root.crt(또는 --ca-file)를 신뢰 저장소에 등록.
 #        중앙 Caddy 가 자체서명(tls internal)이라 없으면 TLS 검증이 실패한다.
 #     3) 중앙에 GET 을 한 번 던져 본다. 못 붙으면 중앙의 내부 IP 를 묻고(--host-ip)
@@ -120,25 +121,21 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 여기서 막히면 아무것도 설치하지 않고 중단한다. 설치를 마친 뒤에 전송만 실패하면
 # "타이머는 도는데 자산은 안 올라오는" 조용한 실패가 되고, 원인은 사람이 찾아야 한다.
 
-# 1) 의존 명령 — jq 가 없으면 에이전트가 JSON 대신 텍스트를 만들고 전송을 통째로 건너뛴다.
-vg_pkg_install() {
-  if   command -v apt-get >/dev/null 2>&1; then apt-get update -qq && apt-get install -y -qq "$1"
-  elif command -v dnf     >/dev/null 2>&1; then dnf install -y -q "$1"
-  elif command -v yum     >/dev/null 2>&1; then yum install -y -q "$1"
-  elif command -v zypper  >/dev/null 2>&1; then zypper -nq install "$1"
-  elif command -v apk     >/dev/null 2>&1; then apk add --quiet "$1"
-  else return 1
-  fi
-}
-for dep in curl jq; do
-  if command -v "$dep" >/dev/null 2>&1; then continue; fi
-  echo ">> $dep 없음 → 설치 시도"
-  vg_pkg_install "$dep" >/dev/null 2>&1 || true
-  if ! command -v "$dep" >/dev/null 2>&1; then
-    echo ">> [중단] $dep 를 설치하지 못했습니다. 직접 설치한 뒤 다시 실행하세요." >&2
-    exit 1
-  fi
-done
+# 1) 의존 명령 — **대상 서버에 아무것도 설치하지 않는다.**
+#    예전엔 jq 가 없으면 apt 로 깔았다. 틀렸다 — 현장 폐쇄망 서버엔 apt 자체가 없고,
+#    남의 서버에 패키지를 심는 건 승인 사안이다. 이제 에이전트가 JSON 을 awk 로 조립하므로
+#    jq 는 "있으면 빠른 경로" 일 뿐이다(awk 는 POSIX 필수 — busybox 에도 있다).
+#    남은 필수는 전송 수단 하나뿐: HTTPS 를 순수 셸로는 못 하니 curl 또는 wget 이 있어야 한다.
+if ! command -v awk >/dev/null 2>&1; then
+  echo ">> [중단] awk 가 없습니다(POSIX 필수 명령인데도). JSON 을 만들 수 없습니다." >&2
+  exit 1
+fi
+if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+  echo ">> [중단] curl·wget 이 모두 없습니다. HTTPS 전송 수단이 필요합니다." >&2
+  echo "   설치기는 대상 서버에 아무것도 설치하지 않습니다 — 둘 중 하나를 준비한 뒤 다시 실행하세요." >&2
+  exit 1
+fi
+command -v jq >/dev/null 2>&1 || echo ">> jq 없음 → awk 로 JSON 을 만듭니다(정상 동작, 설치 불필요)."
 
 # 2) 루트 CA — 중앙 Caddy 는 자체서명(tls internal)이라 대상이 발급자를 모른다.
 #    스크립트 옆에 caddy-root.crt 를 같이 복사해 두면(scp 한 번에) 여기서 알아서 등록한다.
@@ -160,11 +157,24 @@ fi
 
 # 3) 연결 확인 — GET 은 405(POST 전용)가 정상. 코드가 뭐로 오든 "붙었다"는 뜻이다.
 SRV_HOST="${SERVER#*://}"; SRV_HOST="${SRV_HOST%%/*}"; SRV_HOST="${SRV_HOST%%:*}"
-vg_probe() { curl -s -o /dev/null -m 8 -w '%{http_code}' "$SERVER" 2>/dev/null | grep -v '^000$' || true; }
+vg_probe() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -s -o /dev/null -m 8 -w '%{http_code}' "$SERVER" 2>/dev/null | grep -v '^000$' || true
+  else
+    # wget 만 있는 시스템 — 응답 헤더에서 상태코드를 뽑는다.
+    wget -q -O /dev/null --timeout=8 --server-response "$SERVER" 2>&1 \
+      | awk '/^  HTTP\//{code=$2} END{if (code) print code}' || true
+  fi
+}
 
 CODE="$(vg_probe)"
 if [ -z "$CODE" ]; then
-  RC=0; curl -s -o /dev/null -m 8 "$SERVER" >/dev/null 2>&1 || RC=$?
+  RC=0
+  if command -v curl >/dev/null 2>&1; then
+    curl -s -o /dev/null -m 8 "$SERVER" >/dev/null 2>&1 || RC=$?
+  else
+    wget -q -O /dev/null --timeout=8 "$SERVER" >/dev/null 2>&1 || RC=$?
+  fi
   if [ "$RC" = 60 ] || [ "$RC" = 35 ] || [ "$RC" = 77 ]; then
     echo ">> [중단] TLS 인증서를 검증하지 못했습니다 — 중앙 Caddy 는 자체서명입니다." >&2
     echo "   중앙에서 루트 CA 를 꺼내 이 스크립트 옆(caddy-root.crt)에 두고 다시 실행하세요:" >&2

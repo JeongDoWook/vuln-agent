@@ -89,6 +89,16 @@ else
   no "ingest_parse 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/ingest_parse_test.php)"
 fi
 
+# --- 에이전트 JSON 빌더 -------------------------------------------------------
+# 에이전트는 대상 서버에 아무것도 요구하지 않는다 → jq 없이 awk 로 JSON 을 만든다.
+# 이스케이프를 한 글자라도 틀리면 중앙이 파싱에 실패해 전송이 통째로 죽는다. jq 출력과 대조한다.
+printf "\n[에이전트 JSON]\n"
+if bash "$ROOT/tests/agent_json_test.sh" >/dev/null 2>&1; then
+  ok "awk JSON 빌더 = jq 출력 (jq 없이도 동일)"
+else
+  no "awk JSON 빌더  (자세히: bash tests/agent_json_test.sh)"
+fi
+
 # --- distro 단위 테스트 -------------------------------------------------------
 # 패키지 출처·커널 판정(server/src/distro.php). 판정 하나가 findings 수천 건을 좌우한다 —
 # 커널 소스에서 나온 헤더·메타패키지 21개에 커널 CVE 369건이 곱해져 LOW 7,925건이 뜬 적이 있다.
