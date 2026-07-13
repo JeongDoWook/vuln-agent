@@ -1,0 +1,26 @@
+{
+  "meta": {
+    "hostname_fqdn": "web02.example.com",
+    "collected_at": "2026-07-13T11:00:00+09:00",
+    "agent_version": "2.1",
+    "elapsed_seconds": "5"
+  },
+  "vuln_mapping": {
+    "distro_id": "debian",
+    "distro_version": "12",
+    "cpe_name": "cpe:/o:debian:debian_linux:12",
+    "package_family": "deb"
+  },
+  "system": {
+    "kernel_release": "6.1.0-18-amd64",
+    "kernel": "Linux web02 6.1.0-18-amd64 #1 SMP x86_64 GNU/Linux"
+  },
+  "pkg": {
+    "manager": "dpkg",
+    "count": "2",
+    "list": "curl\t7.88.1-10+deb12u5\tamd64\tcurl\t7.88.1-10+deb12u5\tii\nopenssl\t3.0.11-1~deb12u2\tamd64\topenssl\t3.0.11-1~deb12u2\tii"
+  },
+  "updates": {
+    "debsecan": "CVE-2024-2004 curl"
+  }
+}

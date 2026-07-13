@@ -386,8 +386,13 @@ elif have yum; then
 elif have apt-get; then
   cap updates available 'apt list --upgradable 2>/dev/null'
   cap updates security  'apt list --upgradable 2>/dev/null | grep -i security'
-  # debsecan: Debian 보안 트래커 기반으로 현재 버전에 영향 주는 CVE 목록 (있으면)
-  have debsecan && cap updates debsecan 'debsecan --format detail 2>/dev/null | head -n 200'
+  # debsecan: 데비안 보안 트래커가 **이 호스트의 설치 버전에 실제로 해당한다고 판정한** CVE 목록.
+  #   백포트가 이미 반영된 권위 있는 판정이라, 중앙이 "여기 없는 deb CVE = 백포트로 수정됨"으로
+  #   억제할 수 있다(RHEL 의 errata 에 대응하는 데비안판).
+  #   --format simple 은 "CVE-2026-13595 bsdutils" 처럼 한 줄에 CVE·패키지만 준다.
+  #   예전엔 --format detail 을 head -200 으로 잘랐는데, **목록이 잘리면 중앙이 "취약하지 않다"고
+  #   오판해 미탐이 난다.** 잘리지 않는 형식으로 전량을 보낸다(수백 줄이라 가볍다).
+  have debsecan && cap updates debsecan 'debsecan --format simple 2>/dev/null'
 fi
 
 # 재부팅 필요 여부 (실행 커널 vs 설치 커널)

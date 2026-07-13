@@ -160,6 +160,22 @@ if (!function_exists('vg_scope_rank')) {
             }
         }
 
+        // debsecan(데비안 보안 트래커) 판정: "이 설치 버전에 아직 해당하는 CVE" 목록.
+        //   errata 와 방향이 반대다 — errata 는 고쳐진 것을, debsecan 은 남아 있는 것을 준다.
+        //   따라서 **여기 없는 deb CVE 는 백포트로 이미 수정된 것**(오탐)이라 억제한다.
+        //   안전장치 두 겹:
+        //     (1) os_id=debian 일 때만. debsecan 은 데비안 전용이라 우분투에서 돌리면 부정확하고,
+        //         잘못 믿으면 미탐이 된다(우분투는 OSV 의 USN 경로로 이미 커버된다).
+        //     (2) 목록이 비어 있으면(수집 실패·미설치) 억제하지 않는다 — 실패와 "취약점 0"을
+        //         구분할 수 없어서, 믿었다가는 전부 억제해 버린다.
+        $debsecan = [];
+        $dsStmt = $pdo->prepare('SELECT cve_id, package_name FROM tb_debsecan WHERE scan_id = ?');
+        $dsStmt->execute([$scanId]);
+        foreach ($dsStmt->fetchAll() as $r) {
+            $debsecan[$r['package_name']][$r['cve_id']] = true;
+        }
+        $useDebsecan = $debsecan !== [] && strtolower((string) ($scan['os_id'] ?? '')) === 'debian';
+
         // 적용된 벤더 권고(errata) 근거: 벤더가 "이 CVE 는 이 설치 빌드에서 고쳤다"고 확인한 것.
         //   changelog(핵심 13개 패키지 하드코딩)와 달리 시스템 전체를 덮는다.
         //   package_name => [cve_id => evidence(설치 NEVRA)]
@@ -274,6 +290,20 @@ if (!function_exists('vg_scope_rank')) {
                         $scanId, $cveId, $p['name'], $p['version'],
                         $inKev ? 1 : 0, $cvss, $sev,
                         sprintf('설치 %s ≥ 조치 %s → 이미 패치됨', $cand['cmpver'], $fixed),
+                    ]);
+                    $counts['SUPPRESSED']++;
+                    continue;
+                }
+
+                // debsecan 억제: 데비안 트래커가 이 패키지의 이 CVE 를 "아직 취약"으로 보지 않았다면
+                //   백포트로 이미 고쳐진 것이다(트래커는 데비안 패치 상태를 반영한다).
+                if ($canSuppress && $useDebsecan && vg_is_os_manager($mgr)
+                    && !isset($debsecan[$p['name']][$cveId])) {
+                    $insSupp->execute([
+                        $scanId, $cveId, $p['name'], $p['version'],
+                        $inKev ? 1 : 0, $cvss, $sev,
+                        '데비안 보안 트래커(debsecan)가 ' . $p['name'] . ' 의 ' . $cveId
+                        . ' 를 해당 없음으로 판정 → 백포트로 이미 수정됨',
                     ]);
                     $counts['SUPPRESSED']++;
                     continue;
