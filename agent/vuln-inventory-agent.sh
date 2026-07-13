@@ -1107,11 +1107,18 @@ if [ -n "$SEND_URL" ]; then
     echo ">> 전송 생략: curl 이 없습니다." >&2
   else
     echo ">> 전송 시작 → $SEND_URL" >&2
+    # 토큰을 curl 명령행 인자(-H "...")로 주면 수집 도는 동안 /proc/<pid>/cmdline 이나 ps 로
+    # 로컬에서 평문 노출된다. 헤더 파일(600, $TMP 아래 — 스크립트 EXIT trap 이 통째로 지움)로 넘긴다.
+    HDR_FILE="$TMP/_agent_token_header.txt"
+    if [ -n "$SEND_TOKEN" ]; then
+      : > "$HDR_FILE"; chmod 600 "$HDR_FILE"
+      printf 'X-Agent-Token: %s\r\n' "$SEND_TOKEN" > "$HDR_FILE"
+    fi
     HTTP_CODE=$(curl -sS -m 30 \
       -o "$TMP/_ingest_resp.json" -w '%{http_code}' \
       -X POST "$SEND_URL" \
       -H 'Content-Type: application/json' \
-      ${SEND_TOKEN:+-H "X-Agent-Token: $SEND_TOKEN"} \
+      ${SEND_TOKEN:+-H @"$HDR_FILE"} \
       --data-binary @"$OUT" 2>"$TMP/_ingest_err.txt") || HTTP_CODE="000"
     if [ "$HTTP_CODE" = "200" ]; then
       echo ">> 전송 성공(HTTP 200): $(cat "$TMP/_ingest_resp.json" 2>/dev/null)" >&2

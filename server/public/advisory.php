@@ -86,13 +86,23 @@ vg_header($adv ? (string) $adv['title'] : '국내 보안공지', 'advisories');
     <?php endif; ?>
   </div>
 
+  <?php
+  // url 은 KISA RSS/operator 피드에서 온 외부 입력이다. vg_h() 는 HTML 이스케이프만 할 뿐
+  // javascript:/data: 같은 스킴은 막지 못하므로, http/https 스킴일 때만 링크로 낸다.
+  $advUrl = (string) $adv['url'];
+  $advUrlSafe = preg_match('#^https?://#i', $advUrl) === 1;
+  ?>
   <div class="card">
     <strong>원문</strong>
     <div class="why card__body">
       보호나라 원문 페이지입니다. 첨부파일·표 서식은 원문에서만 볼 수 있습니다.
     </div>
     <div class="actions card__body">
-      <a class="btn btn--sm btn--ghost" href="<?= vg_h($adv['url']) ?>" target="_blank" rel="noopener noreferrer">원문 열기 ↗</a>
+      <?php if ($advUrlSafe): ?>
+        <a class="btn btn--sm btn--ghost" href="<?= vg_h($advUrl) ?>" target="_blank" rel="noopener noreferrer">원문 열기 ↗</a>
+      <?php else: ?>
+        <span class="why">원문 링크가 안전하지 않은 형식이라 표시하지 않습니다.</span>
+      <?php endif; ?>
       <?php if (!empty($adv['content_fetched_at'])): ?>
         <span class="why">본문 수집 <?= vg_h((string) $adv['content_fetched_at']) ?></span>
       <?php endif; ?>

@@ -19,7 +19,9 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// users 비어있으면 admin 부트스트랩 (secrets/admin_password → 없으면 'admin')
+// users 비어있으면 admin 부트스트랩 (secrets/admin_password 필요 — 없으면 계정을 만들지 않는다).
+//   예전엔 시크릿이 없을 때 비번 'admin' 으로 조용히 계정을 열었다. compose.yml 은 항상
+//   ADMIN_PASSWORD_FILE 을 주입하므로(dev·prod 공통) 정상 경로엔 영향 없다.
 function vg_bootstrap_admin(PDO $pdo): void {
     $n = (int) $pdo->query('SELECT COUNT(*) FROM tb_users')->fetchColumn();
     if ($n > 0) {
@@ -27,7 +29,8 @@ function vg_bootstrap_admin(PDO $pdo): void {
     }
     $pw = (string) vg_secret('ADMIN_PASSWORD', '');
     if ($pw === '') {
-        $pw = 'admin'; // dev 대비 최후 기본값
+        error_log('[auth] ADMIN_PASSWORD 시크릿이 없어 admin 부트스트랩을 거부했습니다.');
+        return;
     }
     $st = $pdo->prepare('INSERT INTO tb_users (username, password_hash, role) VALUES (?,?,?)');
     $st->execute(['admin', password_hash($pw, PASSWORD_DEFAULT), 'admin']);
