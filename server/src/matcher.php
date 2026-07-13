@@ -71,8 +71,22 @@ if (!function_exists('vg_scope_rank')) {
         $hostEco = vg_osv_ecosystem($scan['os_id'] ?? null, $scan['os_version'] ?? null);
         $family  = (string) ($scan['package_family'] ?? '');
 
-        // 패키지
-        $stmt = $pdo->prepare('SELECT manager, name, source_pkg, version, source_version FROM tb_packages WHERE scan_id = ?');
+        // 컨테이너 — 호스트와 OS 가 다를 수 있다(호스트 Rocky + 컨테이너 Debian).
+        //   그래서 컨테이너 패키지의 생태계는 **그 컨테이너의 OS** 로 판정해야 한다.
+        $ctrs = [];   // container_id => ['eco'=>, 'family'=>, 'cid'=>]
+        $cs = $pdo->prepare('SELECT id, cid, os_id, os_version, manager FROM tb_containers WHERE scan_id = ?');
+        $cs->execute([$scanId]);
+        foreach ($cs->fetchAll() as $c) {
+            $mgr = (string) ($c['manager'] ?? '');
+            $ctrs[(int) $c['id']] = [
+                'cid'    => (string) $c['cid'],
+                'eco'    => vg_osv_ecosystem($c['os_id'], $c['os_version']),
+                'family' => $mgr === 'dpkg' ? 'deb' : ($mgr === 'rpm' ? 'rpm' : $mgr),
+            ];
+        }
+
+        // 패키지 (호스트: container_id=0, 컨테이너: >0)
+        $stmt = $pdo->prepare('SELECT container_id, manager, name, source_pkg, version, source_version FROM tb_packages WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         $packages = $stmt->fetchAll();
 
@@ -196,9 +210,9 @@ if (!function_exists('vg_scope_rank')) {
         $pdo->prepare('DELETE FROM tb_findings WHERE scan_id = ?')->execute([$scanId]);
         $ins = $pdo->prepare(
             'INSERT INTO tb_findings
-               (scan_id, cve_id, package_name, installed_version, loaded, exposed,
+               (scan_id, container_id, cve_id, package_name, installed_version, loaded, exposed,
                 exposure_scope, runtime_status, in_kev, needs_restart, cvss, severity, rationale)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE
                installed_version=VALUES(installed_version), loaded=VALUES(loaded),
                exposed=VALUES(exposed), exposure_scope=VALUES(exposure_scope),
@@ -222,10 +236,18 @@ if (!function_exists('vg_scope_rank')) {
         $seen = [];
 
         foreach ($packages as $p) {
-            $mgr = (string) ($p['manager'] ?? 'dpkg');
+            $mgr   = (string) ($p['manager'] ?? 'dpkg');
+            $ctrId = (int) ($p['container_id'] ?? 0);
+            $ctr   = $ctrId > 0 ? ($ctrs[$ctrId] ?? null) : null;
+
             // 이 패키지가 속한 생태계 — OS 패키지는 배포판, 언어 패키지는 PyPI/npm/RubyGems/Packagist.
             //   섞이면 이름만 같은 엉뚱한 CVE 가 붙는다(OS 의 curl vs npm 의 curl).
-            $pkgEco = vg_pkg_ecosystem($mgr, $hostEco);
+            //   컨테이너 패키지는 **그 컨테이너의 배포판** 기준이다(호스트와 다를 수 있다).
+            $baseEco = $ctr !== null ? $ctr['eco'] : $hostEco;
+            $pkgFam  = $ctr !== null ? $ctr['family'] : $family;
+            $pkgEco  = vg_pkg_ecosystem($mgr, $baseEco);
+            // 컨테이너 배포판이 OSV 미지원이면 판단 근거가 없다 → 매칭하지 않는다(추측 금지).
+            if ($ctr !== null && $baseEco === null) { continue; }
 
             // pkg.name 또는 source_pkg 로 후보 CVE 수집.
             //   비교 버전은 매칭된 키에 맞춘다 — OSV 의 deb 조치안은 **소스 버전** 기준이라
@@ -236,7 +258,7 @@ if (!function_exists('vg_scope_rank')) {
                 foreach ($affected[$key] as $row) {
                     // 생태계 필터 — 남의 배포판/생태계 행이 이름만 같다고 붙던 것을 막는다.
                     //   OS 패키지는 배포판 행만, 언어 패키지는 자기 생태계(PyPI 등) 행만 받는다.
-                    if (!vg_eco_matches($row['eco'] ?? null, $pkgEco, $family)) { continue; }
+                    if (!vg_eco_matches($row['eco'] ?? null, $pkgEco, $pkgFam)) { continue; }
                     // 언어 패키지는 'rpm'/'deb' 계열 표기 행과 무관하다(계열 토큰은 OS 전용).
                     if (!vg_is_os_manager($mgr) && !vg_eco_is_distro($row['eco'] ?? null)) { continue; }
 
@@ -255,19 +277,30 @@ if (!function_exists('vg_scope_rank')) {
 
             // 재시작 필요 — 이 패키지의 옛 라이브러리를 물고 있는 프로세스가 있나.
             //   있으면 어떤 억제 근거가 있어도 억제하지 않는다(그 프로세스는 여전히 취약).
-            $staleEv = $stale[$p['name']] ?? ($p['source_pkg'] ? ($stale[$p['source_pkg']] ?? null) : null);
+            //   컨테이너 패키지엔 적용하지 않는다(호스트 프로세스 기준 신호라서).
+            $staleEv = $ctr !== null ? null
+                : ($stale[$p['name']] ?? ($p['source_pkg'] ? ($stale[$p['source_pkg']] ?? null) : null));
 
-            // 런타임 상태 신호 (exposures=포트, processes=실행/로드)
-            $le      = $loadMap[$p['name']] ?? ($loadMap[$p['source_pkg']] ?? null);
-            $running = isset($procRunning[$p['name']]) || ($p['source_pkg'] && isset($procRunning[$p['source_pkg']]));
-            $pLoaded = isset($procLoaded[$p['name']]) || ($p['source_pkg'] && isset($procLoaded[$p['source_pkg']]));
+            // 억제 근거(changelog·errata·debsecan)는 전부 **호스트** 상태다. 컨테이너 CVE 를
+            //   호스트 근거로 억제하면 실제 취약점을 숨기는 미탐이 된다 → 컨테이너는 제외한다.
+            //   (버전 비교는 그 컨테이너의 패키지 버전으로 하는 것이라 컨테이너에도 유효하다.)
+            $hostEvidenceOk = ($ctr === null);
+
+            // 런타임 상태 신호 (exposures=포트, processes=실행/로드).
+            //   **컨테이너 패키지에는 적용하지 않는다.** 이 신호는 호스트 프로세스에서 모은 것이라,
+            //   그대로 쓰면 컨테이너의 openssl 이 호스트 nginx 의 외부노출을 물려받아 EXTERNAL 로
+            //   오판한다(오탐). 컨테이너 내부 프로세스는 수집 대상이 아니므로 INSTALLED 로 둔다.
+            $le      = $ctr !== null ? null : ($loadMap[$p['name']] ?? ($loadMap[$p['source_pkg']] ?? null));
+            $running = $ctr === null && (isset($procRunning[$p['name']]) || ($p['source_pkg'] && isset($procRunning[$p['source_pkg']])));
+            $pLoaded = $ctr === null && (isset($procLoaded[$p['name']]) || ($p['source_pkg'] && isset($procLoaded[$p['source_pkg']])));
             $exposed = $le !== null && ($le['scope'] ?? '') === 'EXTERNAL';
             $loaded  = $le !== null || $pLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
             $scope   = $le['scope'] ?? null;
 
             foreach ($cands as $cveId => $cand) {
                 $cvss = $cand['cvss'];
-                $key = $cveId . '|' . $p['name'];
+                // 컨테이너별로 따로 센다 — 호스트의 openssl 과 컨테이너의 openssl 은 별개 취약점이다.
+                $key = $ctrId . '|' . $cveId . '|' . $p['name'];
                 if (isset($seen[$key])) { continue; }
                 $seen[$key] = true;
 
@@ -297,7 +330,7 @@ if (!function_exists('vg_scope_rank')) {
 
                 // debsecan 억제: 데비안 트래커가 이 패키지의 이 CVE 를 "아직 취약"으로 보지 않았다면
                 //   백포트로 이미 고쳐진 것이다(트래커는 데비안 패치 상태를 반영한다).
-                if ($canSuppress && $useDebsecan && vg_is_os_manager($mgr)
+                if ($canSuppress && $hostEvidenceOk && $useDebsecan && vg_is_os_manager($mgr)
                     && !isset($debsecan[$p['name']][$cveId])) {
                     $insSupp->execute([
                         $scanId, $cveId, $p['name'], $p['version'],
@@ -313,7 +346,7 @@ if (!function_exists('vg_scope_rank')) {
                 //   버전이 낮아 보여도(백포트) 이미 패치된 것 → 실제 위험에서 제외.
                 $erEv = $errata[$p['name']][$cveId]
                     ?? ($p['source_pkg'] ? ($errata[$p['source_pkg']][$cveId] ?? null) : null);
-                if ($canSuppress && $erEv !== null) {
+                if ($canSuppress && $hostEvidenceOk && $erEv !== null) {
                     $reason = $p['name'] . ' 에 적용된 벤더 보안권고가 ' . $cveId . ' 를 고침(백포트) → 이미 패치됨';
                     if (is_string($erEv) && $erEv !== '') { $reason .= ' · ' . $erEv; }
                     $insSupp->execute([
@@ -328,7 +361,7 @@ if (!function_exists('vg_scope_rank')) {
                 //   버전이 낮아 보여도 이미 패치된 것 → 실제 위험에서 제외(오탐 제거).
                 $bpEv = $backport[$p['name']][$cveId]
                     ?? ($p['source_pkg'] ? ($backport[$p['source_pkg']][$cveId] ?? null) : null);
-                if ($canSuppress && $bpEv !== null) {
+                if ($canSuppress && $hostEvidenceOk && $bpEv !== null) {
                     $reason = $p['name'] . ' changelog 에 ' . $cveId . ' 수정 기록(백포트) → 버전이 낮아 보여도 패치됨';
                     if (is_string($bpEv) && $bpEv !== '') { $reason .= ' · ' . $bpEv; }
                     $insSupp->execute([
@@ -341,7 +374,7 @@ if (!function_exists('vg_scope_rank')) {
 
                 $counts[$sev]++;
                 $ins->execute([
-                    $scanId, $cveId, $p['name'], $p['version'],
+                    $scanId, $ctrId, $cveId, $p['name'], $p['version'],
                     $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $status, $inKev ? 1 : 0,
                     $staleEv !== null ? 1 : 0, $cvss, $sev, $why,
                 ]);

@@ -90,12 +90,14 @@ try {
 
         $stmt = $pdo->prepare(
             "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss, c.epss_percentile,
+                    ctr.cid AS container_cid, ctr.image AS container_image,
                 (SELECT a.fixed_version FROM tb_cve_affected_packages a
                  WHERE a.cve_id = f.cve_id AND a.package_name = f.package_name
                    AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
              FROM tb_findings f
              JOIN tb_scans s ON s.id = f.scan_id
              JOIN tb_hosts h ON h.id = s.host_id
+             LEFT JOIN tb_containers ctr ON ctr.id = f.container_id
              LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
              WHERE $where
              ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC, h.fqdn
@@ -191,9 +193,14 @@ vg_header('취약점', 'findings');
                   if ($r['in_kev']) { $html .= ' ' . vg_badge('KEV', 'crit', '악용이 확인된 취약점 — CISA KEV 등재'); }
                   return $html;
               },
-              // 패키지 — 이름 + 설치 버전(아래줄)
+              // 패키지 — 이름 + 설치 버전(아래줄).
+              //   컨테이너 안의 취약점은 호스트 것과 조치 방법이 다르다(이미지 재빌드) → 구분해 보여준다.
+              //   이미지는 버전 옆에 붙인다(칸을 새로 만들면 표가 다시 가로로 넘친다).
               'package_name' => fn($r) => vg_h($r['package_name'])
-                  . '<div class="why"><code>' . vg_h($r['installed_version']) . '</code></div>',
+                  . (!empty($r['container_cid']) ? ' ' . vg_badge('컨테이너 ' . $r['container_cid'], 'med') : '')
+                  . '<div class="why"><code>' . vg_h($r['installed_version']) . '</code>'
+                  . (!empty($r['container_image']) ? ' · ' . vg_h((string) $r['container_image']) : '')
+                  . '</div>',
               // 위험도 — CVSS(얼마나 심한가) + EPSS(실제로 악용될 확률). 다른 걸 재므로 같이 본다.
               //   백분위("상위 N%")는 여기선 뺀다 — 좁은 칸에서 4줄로 접힌다. 상세 페이지에 있다.
               'risk' => function ($r) {

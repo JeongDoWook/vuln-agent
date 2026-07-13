@@ -251,6 +251,94 @@ collect_exposure() {
 #   "설치만 vs 실행중 vs 사용중(라이브러리 로드)"을 정밀 구분하기 위한 원천 데이터.
 #   .so 를 로드한 프로세스만(=실제 사용자 프로그램, 커널스레드 제외). 조회 결과 캐시 → 가볍다.
 #   출력: pid|comm|user|exe_pkg|loaded_pkgs(,)
+# collect_containers : 컨테이너 **내부** 패키지 인벤토리
+#   컨테이너 프로세스는 다른 mount namespace 라 호스트 스캔에서 제외해 왔다(그게 맞다 —
+#   오버레이 경로를 dpkg -S 로 훑으면 멈춘다). 그래서 컨테이너 안 패키지는 통째로 미탐이었다.
+#   여기서는 컨테이너 rootfs(/proc/<pid>/root)를 직접 읽어 패키지 DB 를 파싱한다.
+#     · docker CLI 에 의존하지 않는다 → podman/containerd 도 잡힌다(이름·이미지만 CLI 로 보강).
+#     · dpkg·apk 는 텍스트 DB 라 어디서든 파싱된다. rpm 은 바이너리라 호스트에 rpm 이 있을 때만.
+#     · distroless/scratch 처럼 패키지 DB 가 없는 이미지는 건너뛴다(수집할 게 없다).
+#   os-release 는 **source 하지 않고 grep 으로 읽는다** — 컨테이너 안 파일을 셸로 실행하면
+#   컨테이너가 호스트 root 코드를 실행시킬 수 있다.
+#   패키지는 stdout 으로, 컨테이너 목록은 $TMP/containers__list.txt 로 나간다(한 번만 순회).
+collect_containers() {
+  is_root || return 0
+  local HOST_NS pid ns root cid name image osid osver mgr pkgs cnt line MAP
+  HOST_NS=$(readlink /proc/self/ns/mnt 2>/dev/null)
+  declare -A NSSEEN
+
+  # pid → 이름·이미지 매핑(있으면). 없으면 namespace 번호로 식별한다.
+  MAP=""
+  if have docker; then
+    MAP=$(timeout "$CMD_TIMEOUT" docker ps -q 2>/dev/null \
+          | xargs -r timeout "$CMD_TIMEOUT" docker inspect -f '{{.State.Pid}}|{{.Name}}|{{.Config.Image}}' 2>/dev/null)
+  fi
+  if [ -z "$MAP" ] && have podman; then
+    MAP=$(timeout "$CMD_TIMEOUT" podman ps --format '{{.Pid}}|{{.Names}}|{{.Image}}' 2>/dev/null)
+  fi
+
+  for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    ns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)
+    [ -z "$ns" ] && continue
+    [ "$ns" = "$HOST_NS" ] && continue                 # 호스트 자신
+    [ -n "${NSSEEN[$ns]+x}" ] && continue              # 같은 컨테이너의 다른 프로세스
+    NSSEEN[$ns]=1
+    root="/proc/$pid/root"
+    [ -r "$root/etc/os-release" ] || continue          # 패키지 DB 가 없는 이미지(distroless 등)
+
+    osid=$(grep -m1 '^ID='         "$root/etc/os-release" 2>/dev/null | cut -d= -f2- | tr -d '"')
+    osver=$(grep -m1 '^VERSION_ID=' "$root/etc/os-release" 2>/dev/null | cut -d= -f2- | tr -d '"')
+
+    line=$(printf '%s\n' "$MAP" | grep "^${pid}|" | head -1)
+    if [ -n "$line" ]; then
+      name=$(printf '%s' "$line" | cut -d'|' -f2 | sed 's|^/||')
+      image=$(printf '%s' "$line" | cut -d'|' -f3)
+      cid="$name"
+    else
+      name=""; image=""; cid="ns-$(printf '%s' "$ns" | tr -dc '0-9')"
+    fi
+
+    pkgs=""; mgr=""
+    if [ -f "$root/var/lib/dpkg/status" ]; then
+      mgr="dpkg"
+      # 레코드는 빈 줄로 구분. "Status: ... installed" 인 것만(제거됐고 설정만 남은 rc 는 제외).
+      pkgs=$(awk -v cid="$cid" 'BEGIN{RS="";FS="\n"}{
+               p="";v="";s="";ok=0
+               for(i=1;i<=NF;i++){
+                 if($i ~ /^Package: /)      { p=substr($i,10) }
+                 else if($i ~ /^Version: /) { v=substr($i,10) }
+                 else if($i ~ /^Source: /)  { s=substr($i,9); sub(/ .*/,"",s) }
+                 else if($i ~ /^Status: .*installed$/) { ok=1 }
+               }
+               if(ok && p!="" && v!="") print cid"|dpkg|"p"|"v"|"s
+             }' "$root/var/lib/dpkg/status" 2>/dev/null)
+    elif [ -f "$root/lib/apk/db/installed" ]; then
+      mgr="apk"
+      # P:이름 / V:버전 / o:origin(소스패키지), 레코드는 빈 줄 구분
+      pkgs=$(awk -v cid="$cid" 'BEGIN{RS="";FS="\n"}{
+               p="";v="";o=""
+               for(i=1;i<=NF;i++){
+                 if($i ~ /^P:/)      { p=substr($i,3) }
+                 else if($i ~ /^V:/) { v=substr($i,3) }
+                 else if($i ~ /^o:/) { o=substr($i,3) }
+               }
+               if(p!="" && v!="") print cid"|apk|"p"|"v"|"o
+             }' "$root/lib/apk/db/installed" 2>/dev/null)
+    elif [ -d "$root/var/lib/rpm" ] && have rpm; then
+      mgr="rpm"
+      # rpm DB 는 바이너리라 호스트 rpm 으로 읽는다. 호스트에 rpm 이 없으면 이 컨테이너는 건너뛴다
+      # (조용히 빠뜨리지 않도록 목록에는 manager 를 비워 남긴다).
+      pkgs=$(timeout "$CMD_TIMEOUT" rpm --root="$root" -qa \
+               --qf "${cid}|rpm|%{NAME}|%{EPOCH}:%{VERSION}-%{RELEASE}|%{SOURCERPM}\n" 2>/dev/null)
+    fi
+
+    cnt=0
+    [ -n "$pkgs" ] && { printf '%s\n' "$pkgs"; cnt=$(printf '%s\n' "$pkgs" | grep -c '^'); }
+    printf '%s|%s|%s|%s|%s|%s|%s\n' "$cid" "$name" "$image" "$osid" "$osver" "$mgr" "$cnt" \
+      >> "$TMP/containers__list.txt"
+  done
+}
+
 # collect_stale : 삭제된 라이브러리를 아직 메모리에 물고 있는 프로세스 (재시작 필요)
 #   패키지를 업데이트하면 옛 .so 는 unlink 되고(=maps 에 "(deleted)") 새 파일이 깔린다.
 #   하지만 이미 뜬 프로세스는 **옛 코드를 계속 실행**한다. 그래서 "패치됨"으로 보이지만
@@ -508,6 +596,17 @@ put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
 } > "$TMP/runtime__stale.txt" 2>/dev/null || true
 [ "$(wc -l < "$TMP/runtime__stale.txt" 2>/dev/null || echo 0)" -ge 2 ] \
   || rm -f "$TMP/runtime__stale.txt"
+
+# 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
+#   목록(list)은 함수가 직접 append 하므로 헤더를 먼저 써 둔다. 패키지는 함수의 stdout.
+echo "cid|name|image|os_id|os_version|manager|pkg_count" > "$TMP/containers__list.txt"
+{
+  echo "cid|manager|name|version|source"
+  collect_containers
+} > "$TMP/containers__packages.txt" 2>/dev/null || true
+# 컨테이너가 없으면(헤더뿐) 두 섹션 모두 지운다
+[ "$(wc -l < "$TMP/containers__list.txt" 2>/dev/null || echo 0)" -ge 2 ] \
+  || rm -f "$TMP/containers__list.txt" "$TMP/containers__packages.txt"
 
 # ==================================================================
 # 11) 리포지토리 설정
