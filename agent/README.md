@@ -124,7 +124,7 @@ cat <prefix>/logs/last.json              # 최근 수집 결과(로컬 사본)
 ## 제거
 
 ```bash
-sudo ./install-agent.sh --uninstall [--prefix 설치경로]
+sudo bash install-agent.sh --uninstall [--prefix 설치경로]
 ```
 
 타이머·유닛·cron 항목과 설치 디렉토리를 제거한다.

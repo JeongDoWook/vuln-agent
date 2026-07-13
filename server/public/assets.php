@@ -167,15 +167,17 @@ vg_header('자산관리', 'assets');
     <strong>에이전트 설치</strong>
     <span class="why">— 자산은 에이전트가 수집을 보내면 자동 등록된다. 중앙에서 대상 서버로 접속하지 않는다(아웃바운드 push).</span>
     <div class="card__body">
-      <div class="why">대상 서버(Linux)에서 한 번 실행 — <code>--schedule</code> 은 <code>hourly</code>/<code>daily</code> 등.</div>
-      <pre class="code">sudo ./agent/install-agent.sh \
-     --server <?= vg_h($ingest) ?> \
-     --token  &lt;중앙의 secrets/ingest_token.txt 값&gt; \
-     --schedule hourly</pre>
+      <div class="why">대상 서버(Linux)에 <code>agent/</code> 폴더를 복사하고 한 번 실행. 인자 없이 실행하면 주소·토큰·주기를 물어본다.</div>
+      <pre class="code">sudo bash install-agent.sh
+  중앙 서버 주소 (예: ost-server.duckdns.org:8080): <?= vg_h($ingest) ?>
+
+  전송 토큰 (입력은 화면에 보이지 않습니다): ********
+  수집 주기 [hourly] (daily / '*:0/30'=30분마다):</pre>
       <div class="why">
         · 수집 엔드포인트: <code><?= vg_h($ingest) ?></code> — 대상 서버 → 중앙 아웃바운드 1개면 충분<br>
+        · <code>sudo</code> 만 있으면 된다. <code>chmod</code>/<code>chown</code> 은 필요 없다(<code>bash &lt;파일&gt;</code> 로 실행하므로)<br>
         · 토큰은 보안상 화면에 표시하지 않는다. 중앙 서버의 <code>secrets/ingest_token.txt</code> 에서 확인<br>
-        · 제거: <code>sudo ./agent/install-agent.sh --uninstall</code><br>
+        · 제거: <code>sudo bash install-agent.sh --uninstall</code><br>
         · 상태 <?= vg_badge('정상', 'ok') ?> = <?= VG_STALE_MIN / 60 ?>시간 이내 수집,
           <?= vg_badge('지연', 'high') ?> = <?= VG_STALE_MIN / 60 ?>시간~<?= VG_OFFLINE_MIN / 1440 ?>일,
           <?= vg_badge('오프라인', 'crit') ?> = <?= VG_OFFLINE_MIN / 1440 ?>일 초과

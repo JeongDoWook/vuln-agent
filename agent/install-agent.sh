@@ -7,12 +7,15 @@
 #   토큰은 <prefix>/etc/agent.env(600) 에 두고 env 로 전달 → ps 에 노출 안 됨.
 #
 # 사용:
-#   sudo ./install-agent.sh                       # 서버 주소·토큰·주기를 물어본다(대화형)
-#   sudo ./install-agent.sh --server http://중앙서버:8080/ingest.php --token 토큰
-#   sudo ./install-agent.sh --server ... --token ... --schedule daily
-#   sudo ./install-agent.sh --server ... --token ... --schedule '*:0/30'   # 30분마다
-#   sudo ./install-agent.sh --server ... --token ... --prefix /apps/vulnagent
-#   sudo ./install-agent.sh --uninstall [--prefix 설치경로]
+#   sudo bash install-agent.sh                    # 서버 주소·토큰·주기를 물어본다(대화형)
+#   sudo bash install-agent.sh --server http://중앙서버:8080/ingest.php --token 토큰
+#   sudo bash install-agent.sh --server ... --token ... --schedule daily
+#   sudo bash install-agent.sh --server ... --token ... --schedule '*:0/30'   # 30분마다
+#   sudo bash install-agent.sh --server ... --token ... --prefix /apps/vulnagent
+#   sudo bash install-agent.sh --uninstall [--prefix 설치경로]
+#
+#   sudo 만 있으면 된다 — chmod/chown 불필요(`bash <파일>` 로 실행하므로 실행권한이 필요없고,
+#   설치물은 root 가 만드니 자동으로 root 소유가 된다).
 #
 # 설치물은 --prefix(기본 /opt/vuln-agent) 한 곳에 모인다:
 #   <prefix>/bin/{vuln-inventory-agent.sh,run.sh}   실행 파일
