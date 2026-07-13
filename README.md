@@ -33,7 +33,7 @@ shadow-ai/  (사이드 PoC) 섀도우 AI DLP 크롬 확장 — AI 챗봇 입력�
 cd deploy
 ./compose_runner.sh init            # .env.dev / .env.prod 생성(템플릿 복사) → 비밀값 수정
 ./compose_runner.sh doctor          # 사전 점검
-./compose_runner.sh dev  up -d --build   # 개발 환경 기동
+./compose_runner.sh dev  up -d           # 개발 환경 기동(소스 라이브 마운트 → 재빌드 불필요, Dockerfile 바뀔 때만 --build)
 ./compose_runner.sh dev  down            # 중지
 ./compose_runner.sh dev  logs -f         # 로그
 ```
