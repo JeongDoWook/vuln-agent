@@ -36,6 +36,16 @@ SECRET_FILES=(mysql_root_password mysql_password ingest_token admin_password duc
 
 # (포트 탐색기는 없앴다 — dev 스택이 저장소에 하나뿐이라 워크트리끼리 포트가 겹칠 일이 없다.)
 
+# dev 스택이 지금 **어느 트리의 server/ 를 마운트하고 있나**(안 떠 있으면 빈 문자열).
+#   파일 표식을 두지 않는다 — 옛 러너로 스택을 옮기면 갱신되지 않아 낡은 값이 남는다.
+#   진실은 컨테이너의 마운트뿐이다. (tests/smoke.sh·pre-push 도 같은 방식으로 대조한다.)
+dev_stack_src() {
+  docker inspect vulnagent-web-dev \
+    --format '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true
+}
+# 윈도는 역슬래시로 주므로 비교 전에 정규화한다.
+norm_path() { printf '%s' "$1" | tr '\\' '/' | tr 'A-Z' 'a-z' | sed 's:/*$::'; }
+
 usage() {
   say "${CYAN}vuln-agent · wt${NC}"
   echo ""
@@ -103,10 +113,10 @@ cmd_list() {
   git -C "$MAIN_ROOT" worktree list
   echo ""
   # dev 스택은 하나뿐이다 — 중요한 건 "포트"가 아니라 **지금 어느 트리를 서빙 중인가** 다.
-  local mark="$MAIN_ROOT/deploy/.dev-stack-tree" tree=""
-  [ -f "$mark" ] && tree="$(cat "$mark" 2>/dev/null)"
+  #   윈도 경로의 역슬래시를 그대로 출력하면 say(echo -e)가 \v 를 이스케이프로 먹는다 → 슬래시로.
+  local tree; tree="$(dev_stack_src | tr '\\' '/')"
   if [ -n "$tree" ]; then
-    say "${CYAN}dev 스택(vulnagent-dev)이 서빙 중인 트리${NC}: $tree"
+    say "${CYAN}dev 스택(vulnagent-dev)이 서빙 중${NC}: $tree"
   else
     say "${CYAN}dev 스택${NC}: 내려가 있음(또는 옛 러너로 띄움). 작업 트리에서 ${GREEN}dev up -d${NC}."
   fi
@@ -174,14 +184,13 @@ cmd_rm() {
   #   남의 세션 DB 까지 날아간다. 절대 -v 를 붙이지 않는다.
   #   지울 워크트리를 스택이 서빙 중일 때만 내린다(마운트 원본이 사라지면 500 만 뜬다).
   #   다른 트리를 서빙 중이면 손대지 않는다.
-  local mark="$MAIN_ROOT/deploy/.dev-stack-tree"
-  if [ -f "$mark" ] && [ "$(cat "$mark" 2>/dev/null)" = "$dir" ]; then
+  local mine; mine="$( (cd "$dir" && pwd -W 2>/dev/null) || printf '%s' "$dir" )/server"
+  if [ "$(norm_path "$(dev_stack_src)")" = "$(norm_path "$mine")" ]; then
     say "${BLUE}→${NC} dev 스택이 이 워크트리를 서빙 중 → 내립니다(볼륨은 보존)..."
     ( cd "$dir/deploy" \
       && docker compose --env-file "$MAIN_ROOT/deploy/.env.dev" -p vulnagent-dev \
            -f compose.yml -f compose.common.yml -f compose.dev.yml down \
     ) || say "  ${YELLOW}⚠${NC} 스택 중지 실패(이미 내려갔을 수 있음)"
-    rm -f "$mark"
     say "  ${YELLOW}!${NC} 다음 작업 트리에서 ${CYAN}./deploy/compose_runner.sh dev up -d${NC} 로 다시 올리세요."
   fi
 

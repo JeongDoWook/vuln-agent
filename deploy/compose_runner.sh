@@ -65,10 +65,11 @@ fi
 MAIN_ROOT="$TREE_ROOT"
 [ -n "$WT_NAME" ] && MAIN_ROOT="$(cd "$TREE_ROOT/../.." && pwd)"
 
-# 지금 dev 스택이 **어느 트리를 서빙 중인지** 적어 두는 표식.
-#   스택이 하나뿐이라 포트만으로는 "내 코드가 도는 스택"인지 알 수 없다. 표식이 없으면
-#   pre-push 가 남의 트리를 서빙하는 스택을 스모크해 초록불을 준다 — 거짓이다.
-DEV_STACK_MARK="$MAIN_ROOT/deploy/.dev-stack-tree"
+# 지금 dev 스택이 **어느 트리를 서빙 중인지** 알고 싶으면 docker 에 묻는다(표식 파일을 두지 않는다):
+#   docker inspect vulnagent-web-dev --format '{{range .Mounts}}…{{end}}'
+#   표식 파일은 옛 러너로 스택을 옮기면 갱신되지 않아 낡은 채로 남고, 그걸 믿으면 pre-push 가
+#   남의 코드를 검사하고 초록불을 준다(실측). 진실은 컨테이너의 마운트뿐이다.
+#   → tests/smoke.sh 와 deploy/hooks/pre-push, deploy/wt.sh 가 모두 그렇게 대조한다.
 
 show_help() {
   say "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -296,16 +297,9 @@ echo ""
 #   그 외 명령(down/logs/ps…)은 그대로 exec. migrate 는 DB healthy 를 스스로 기다린다.
 if [ "${1:-}" = "up" ]; then
   "${COMPOSE[@]}" "$@"
-  # dev 스택이 지금부터 **이 트리**를 서빙한다 — pre-push 가 이걸 보고 자기 코드가 도는지 판단한다.
-  if [ "$PROJECT" = "vulnagent-dev" ]; then
-    printf '%s\n' "$TREE_ROOT" > "$DEV_STACK_MARK"
-  fi
   say ""
   say "${CYAN}== DB 마이그레이션 ==${NC}"
   bash "$SCRIPT_DIR/migrate.sh" "$DB_CONTAINER"
 else
-  if [ "${1:-}" = "down" ] && [ "$PROJECT" = "vulnagent-dev" ]; then
-    rm -f "$DEV_STACK_MARK"        # 내려간 스택이 뭘 서빙했는지는 더 이상 의미가 없다
-  fi
   exec "${COMPOSE[@]}" "$@"
 fi

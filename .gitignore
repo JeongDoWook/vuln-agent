@@ -38,5 +38,3 @@ Thumbs.db
 .vscode/
 *.log
 
-# dev 스택이 어느 트리를 서빙 중인지 적어두는 표식(compose_runner 가 씀)
-deploy/.dev-stack-tree
