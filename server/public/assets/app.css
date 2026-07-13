@@ -373,6 +373,61 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .subtabs .n { margin-left: .35rem; font-size: .82em; color: var(--muted); font-weight: 700; }
 .subtabs a.on .n { color: var(--accent-2); }
 
+/* --- 도넛 (심각도 분포) --------------------------------------------------
+ * 순수 SVG. 색은 톤 변수를 그대로 참조하므로 팔레트를 바꾸면 도넛도 따라 바뀐다. */
+.donut { position: relative; display: inline-grid; place-items: center; }
+.donut svg { transform: rotate(-90deg); }   /* 12시 방향에서 시작 */
+.donut__track { stroke: var(--sunken); }
+.donut__arc { transition: stroke-width .12s ease-out; }
+.donut__arc:hover { stroke-width: 5.5; }
+.donut__arc.tone-crit { stroke: var(--crit); }
+.donut__arc.tone-high { stroke: var(--high); }
+.donut__arc.tone-med  { stroke: var(--med); }
+.donut__arc.tone-low  { stroke: var(--low); }
+
+.donut__mid { position: absolute; text-align: center; line-height: 1.15; }
+.donut__mid b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.donut__mid span { font-size: .7rem; color: var(--muted); }
+
+/* 대시보드 상단: 도넛 + 급한 일 목록을 나란히 */
+.split { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+@media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+
+/* 도넛 옆 범례 */
+.legend { display: grid; gap: .3rem; font-size: .84rem; margin-top: .9rem; }
+.legend div { display: flex; align-items: center; gap: .5rem; }
+.legend i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.legend .n { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.legend .tone-crit { background: var(--crit); }
+.legend .tone-high { background: var(--high); }
+.legend .tone-med  { background: var(--med); }
+.legend .tone-low  { background: var(--low); }
+
+/* --- 감사로그 타임라인 ----------------------------------------------------
+ * 표의 한 행이던 것을 시간축 위의 사건으로. data(JSON)는 title 툴팁에 숨어 있어
+ * 사실상 못 봤다 — <details> 로 펼쳐 보이게 한다(JS 없이). */
+.tl { list-style: none; margin: 0; padding: 0; }
+.tl__day {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg);
+  padding: .5rem 0 .4rem;
+  font-size: .78rem; font-weight: 700; color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: .2rem;
+}
+.tl__item { display: grid; grid-template-columns: 4.6rem 1fr; gap: .9rem; padding: .55rem 0; border-bottom: 1px solid var(--line); }
+.tl__item:last-child { border-bottom: none; }
+.tl__time { color: var(--muted-2); font-size: .8rem; font-variant-numeric: tabular-nums; padding-top: .15rem; }
+.tl__body { min-width: 0; }
+.tl__head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.tl__msg { margin-top: .25rem; color: var(--text-2); font-size: .88rem; }
+.tl__who { color: var(--muted); font-size: .8rem; }
+
+.tl details { margin-top: .4rem; }
+.tl summary { cursor: pointer; font-size: .78rem; color: var(--muted); width: fit-content; }
+.tl summary:hover { color: var(--accent-2); }
+.tl details[open] summary { margin-bottom: .35rem; }
+
 /* --- 상세 2단 레이아웃 (본문 + 고정 메트릭 사이드바) ----------------------
  * CVE 상세처럼 "읽는 본문" 과 "항상 보여야 할 수치" 가 같이 있는 화면용.
  * 수치를 위에 눕히면 스크롤하는 순간 사라진다 — 옆에 붙여 sticky 로 띄운다. */
