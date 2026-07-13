@@ -37,6 +37,19 @@ if ! "$ROOT/tests/ui_lint.sh"; then
   fail=$((fail+1))
 fi
 
+# --- vercmp 단위 테스트 -----------------------------------------------------
+# 버전 비교는 매처 오탐의 1순위다(같은 패키지인데 이미 고친 버전을 취약하다고 부르는 것).
+# 기대값을 dpkg/rpm 실측으로 뽑아 둔 테스트라 회귀를 정확히 잡는데, 예전엔 아무도 안 불러서
+# server/src/vercmp.php 를 고쳐도 조용히 지나갔다 — 스모크에 묶는다.
+# php 8.3 컨테이너로 돈다: 호스트 php 는 7.2 라 8.x 문법을 오탐한다(pre-push 와 같은 이유).
+printf "\n[vercmp]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/vercmp_test.php >/dev/null 2>&1; then
+  ok "vercmp 단위 테스트"
+else
+  no "vercmp 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/vercmp_test.php)"
+fi
+
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
