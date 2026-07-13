@@ -444,6 +444,14 @@ function vg_header(string $title, string $active = ''): void {
 <title><?= vg_h($title) ?> · vuln-agent</title>
 <link rel="stylesheet" href="<?= vg_asset('/assets/app.css') ?>">
 <script src="<?= vg_asset('/assets/app.js') ?>" defer></script>
+<?php
+// 페이지 전용 JS: 공용 app.js 뒤에, 이 페이지와 같은 이름의 assets/js/<페이지>.js 가 있으면
+//   자동으로 붙는다(예: connectors.php → assets/js/connectors.js). 없으면 아무것도 안 붙는다.
+//   공용 동작은 app.js 가, 한 화면에서만 쓰는 동작은 동일명 파일이 갖는다.
+$pageJs = basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''), '.php');
+if ($pageJs !== '' && is_file(__DIR__ . "/../public/assets/js/{$pageJs}.js")): ?>
+<script src="<?= vg_asset("/assets/js/{$pageJs}.js") ?>" defer></script>
+<?php endif; ?>
 </head>
 <body>
 <?php if ($user !== null): ?>
