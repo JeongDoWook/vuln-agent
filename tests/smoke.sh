@@ -70,6 +70,21 @@ if [ "${dlow:-0}" -ge 1 ]; then ok "curl 은 취약 유지 (debsecan 이 지목)
 dsupp=$(printf '%s' "$resp" | grep -oE '"SUPPRESSED":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백포트) = $dsupp"; else no "억제 안 됨 (=${dsupp:-0})"; fi
 
+# --- 바뀔 때만 스냅샷 --------------------------------------------------------
+#   같은 내용을 다시 보내면 새 스캔을 만들지 않는다(수집시각만 갱신). 패키지가 바뀌면 새 스냅샷 +
+#   변경이력. 매시간 수집이 대부분 "직전과 동일"이라 이게 없으면 데이터가 무한히 불어난다.
+printf "\n[변경 추적]\n"
+resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
+assert_contains "$resp" '"changed":false' "동일 내용 재전송 → 새 스냅샷 안 만듦"
+
+UPG="$(mktemp)"; sed 's/0:2.34-60.el9_2.3/0:2.34-83.el9_3.7/' "$SAMPLE" > "$UPG"
+resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$UPG")
+assert_contains "$resp" '"changed":true'  "glibc 업그레이드 → 새 스냅샷"
+assert_contains "$resp" '"pkg_changes":1' "패키지 변경 1건 기록"
+rm -f "$UPG"
+# 되돌려 놓는다(뒤의 검사들이 원래 샘플 기준이라 상태를 원복해야 한다).
+curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE" >/dev/null
+
 # --- 재매칭 -----------------------------------------------------------------
 printf "\n[rematch]\n"
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=WRONG")

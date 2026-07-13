@@ -220,6 +220,23 @@ foreach (preg_split('/\r?\n/', (string) ($upd['debsecan'] ?? '')) as $line) {
 $debsecanRows  = array_values($debsecanRows);
 $debsecanCount = count($debsecanRows);
 
+// ── 내용 해시 — "바뀔 때만 스냅샷" 판정 ────────────────────────
+//   수집 내용이 직전과 같으면 새 스캔을 만들지 않는다(대부분의 수집이 여기 해당한다).
+//   **PID 는 넣지 않는다** — 재부팅·프로세스 재시작마다 바뀌어서, 넣으면 매번 "변경됨"이 되어
+//   스냅샷을 매번 찍게 된다. 의미 있는 인벤토리(패키지·언어패키지·OS/커널·노출 포트·재시작필요)만 본다.
+$hashParts = [];
+foreach ($pkgRows as $r)  { $hashParts[] = "p|$manager|{$r[0]}|{$r[1]}"; }
+foreach ($langRows as $r) { $hashParts[] = "l|{$r[0]}|{$r[1]}|{$r[2]}"; }
+foreach ($expRows as $f)  {   // pid($f[0]) 제외: proc|proto|bind|port|scope|exe_pkg|loaded_pkgs
+    $hashParts[] = 'e|' . implode('|', array_slice($f, 1, 7));
+}
+foreach ($staleRows as $r) { $hashParts[] = "s|{$r[2]}|{$r[3]}"; }
+$hashParts[] = 'o|' . ($vm['distro_id'] ?? '') . '|' . ($vm['distro_version'] ?? '')
+             . '|' . ($sys['kernel_release'] ?? ($sys['kernel'] ?? ''));
+sort($hashParts);
+$contentHash = hash('sha256', implode("\n", $hashParts));
+$chgCount = 0;   // 이번에 기록한 패키지 변경 건수
+
 // ── 저장 (트랜잭션) ──────────────────────────────────────────
 try {
     $pdo = vg_pdo();
@@ -244,14 +261,33 @@ try {
     ]);
     $hostId = (int) $pdo->lastInsertId();
 
+    // 직전 스캔과 내용이 같으면 새 스냅샷을 만들지 않는다 — 수집시각만 갱신한다.
+    //   호스트 생존 신호는 tb_hosts.last_seen 이 위에서 이미 갱신했으므로 잃는 정보가 없다.
+    //   그 결과 스캔 목록 자체가 "변경 시점" 목록이 된다(changes.php 의 비교도 더 정확해진다).
+    $q = $pdo->prepare('SELECT id, content_hash FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 1');
+    $q->execute([$hostId]);
+    $prev = $q->fetch() ?: null;
+    $unchanged = $prev !== null && (string) $prev['content_hash'] === $contentHash;
+
+    if ($unchanged) {
+        $scanId = (int) $prev['id'];
+        $pdo->prepare(
+            'UPDATE tb_scans SET collected_at = :ca, agent_version = :av, elapsed_seconds = :el WHERE id = :id'
+        )->execute([
+            ':ca' => $collectedAt,
+            ':av' => ($meta['agent_version'] ?? '') ?: null,
+            ':el' => isset($meta['elapsed_seconds']) ? (int) $meta['elapsed_seconds'] : null,
+            ':id' => $scanId,
+        ]);
+    } else {
     // 스캔 1행
     $stmt = $pdo->prepare(
         'INSERT INTO tb_scans
             (host_id, collected_at, agent_version, elapsed_seconds,
-             os_id, os_version, kernel, cpe, package_family,
+             os_id, os_version, kernel, cpe, package_family, content_hash,
              package_count, exposure_count, raw_json)
          VALUES
-            (:h, :ca, :av, :el, :osid, :osver, :kern, :cpe, :fam, :pc, :ec, :raw)'
+            (:h, :ca, :av, :el, :osid, :osver, :kern, :cpe, :fam, :hash, :pc, :ec, :raw)'
     );
     $stmt->execute([
         ':h'     => $hostId,
@@ -263,6 +299,7 @@ try {
         ':kern'  => ($sys['kernel_release'] ?? ($sys['kernel'] ?? '')) ?: null,
         ':cpe'   => ($vm['cpe_name'] ?? '') ?: null,
         ':fam'   => ($vm['package_family'] ?? '') ?: null,
+        ':hash'  => $contentHash,
         ':pc'    => $pkgCount,
         ':ec'    => $expCount,
         ':raw'   => $raw,
@@ -367,6 +404,48 @@ try {
         }
     }
 
+    // 패키지 변경 이력 — 직전 스냅샷과 무엇이 달라졌나(설치/제거/업그레이드/다운그레이드).
+    //   첫 수집(직전 스냅샷 없음)은 전부 "설치"로 기록하지 않는다 — 의미 없는 폭증만 만든다.
+    if ($prev !== null) {
+        $q = $pdo->prepare('SELECT manager, name, version FROM tb_packages WHERE scan_id = ?');
+        $q->execute([(int) $prev['id']]);
+        $prevPkgs = [];
+        foreach ($q->fetchAll() as $r) {
+            $prevPkgs[$r['manager'] . '|' . $r['name']] = (string) $r['version'];
+        }
+        $curPkgs = [];
+        foreach ($pkgRows as $r)  { $curPkgs[$manager . '|' . $r[0]] = (string) $r[1]; }
+        foreach ($langRows as $r) { $curPkgs[$r[0] . '|' . $r[1]]    = (string) $r[2]; }
+
+        $insChg = $pdo->prepare(
+            'INSERT INTO tb_pkg_changes (host_id, scan_id, manager, package_name, change_type, old_version, new_version)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE change_type=VALUES(change_type),
+               old_version=VALUES(old_version), new_version=VALUES(new_version)'
+        );
+        $emit = static function (string $key, string $type, ?string $old, ?string $new)
+                use ($insChg, $hostId, $scanId, &$chgCount): void {
+            [$mgr, $name] = explode('|', $key, 2);
+            $insChg->execute([$hostId, $scanId, $mgr, $name, $type, $old, $new]);
+            $chgCount++;
+        };
+        foreach ($curPkgs as $k => $v) {
+            if (!isset($prevPkgs[$k])) {
+                $emit($k, 'installed', null, $v);
+            } elseif ($prevPkgs[$k] !== $v) {
+                [$mgr] = explode('|', $k, 2);
+                // 배포판 규칙으로 비교해야 승강을 정확히 가른다(1:1.1 > 2.0 같은 epoch 사례).
+                $up = vg_ver_cmp($v, $prevPkgs[$k], $mgr) >= 0;
+                $emit($k, $up ? 'upgraded' : 'downgraded', $prevPkgs[$k], $v);
+            }
+        }
+        foreach ($prevPkgs as $k => $v) {
+            if (!isset($curPkgs[$k])) { $emit($k, 'removed', $v, null); }
+        }
+    }
+
+    }   // ← 변경 있음(새 스냅샷) 분기 끝
+
     $pdo->commit();
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) {
@@ -405,6 +484,9 @@ echo json_encode([
     'packages'  => $pkgCount,
     'langpkgs'  => $langCount,
     'debsecan'  => $debsecanCount,
+    // 직전 수집과 내용이 같으면 새 스냅샷을 만들지 않는다(changed=false). 바뀐 패키지 수도 알려준다.
+    'changed'     => !$unchanged,
+    'pkg_changes' => $chgCount,
     'exposures' => $expCount,
     'processes' => $procCount,
     'findings'  => $findings,
