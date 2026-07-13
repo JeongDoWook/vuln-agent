@@ -100,6 +100,17 @@ else
   no "distro 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/distro_test.php)"
 fi
 
+# --- debtracker 단위 테스트 ---------------------------------------------------
+# 데비안 보안 트래커 파서·판정(백포트 억제 근거). 느슨하면 오탐이 남고, 빡빡하면 진짜 취약점을
+# "고쳐졌다"고 지운다(미탐). 규칙을 debsecan 원본과 대조해 옮겼으므로 회귀를 여기서 막는다.
+printf "\n[debtracker]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/debtracker_test.php >/dev/null 2>&1; then
+  ok "debtracker 단위 테스트 (데비안 백포트 판정)"
+else
+  no "debtracker 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/debtracker_test.php)"
+fi
+
 # --- schedule 단위 테스트 -----------------------------------------------------
 # feeds.php 의 cron 파싱·스케줄 계산(vg_cron_*/vg_schedule_*)을 server/src/schedule.php 로
 # 뽑아냈다 — 피드 실행과 무관한 순수 시간 계산이라 SRP 상 분리. ingest_parse 처럼 서버 없이

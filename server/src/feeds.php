@@ -15,6 +15,7 @@ declare(strict_types=1);
  *     feeds/nvd.php    — VgNvdConnector + vg_nvd_sync(백필 공용)
  *     feeds/kisa.php   — VgKisaConnector + KISA RSS/URL/HTML 파싱(공지 저장/본문 로직은 advisory.php)
  *     feeds/epss.php   — VgEpssConnector + vg_epss_fetch
+ *     feeds/debtracker.php — VgDebtrackerConnector + 데비안 보안 트래커(백포트 오탐 억제 근거)
  *
  *   새 피드 추가: feeds/<type>.php 에 VgFeedConnector 구현 + 여기 require 한 줄 +
  *   vg_feed_make() 한 줄. run/preview 는 같은 클래스가 갖는다(미리보기가 실제 수집과
@@ -45,6 +46,7 @@ require_once __DIR__ . '/feeds/osv.php';
 require_once __DIR__ . '/feeds/nvd.php';
 require_once __DIR__ . '/feeds/kisa.php';
 require_once __DIR__ . '/feeds/epss.php';
+require_once __DIR__ . '/feeds/debtracker.php';
 
 function vg_feed_make(string $type): VgFeedConnector {
     switch ($type) {
@@ -53,6 +55,7 @@ function vg_feed_make(string $type): VgFeedConnector {
         case 'nvd':  return new VgNvdConnector();
         case 'kisa': return new VgKisaConnector();
         case 'epss': return new VgEpssConnector();
+        case 'debtracker': return new VgDebtrackerConnector();
         default: throw new InvalidArgumentException("알 수 없는 커넥터 타입: $type");
     }
 }
