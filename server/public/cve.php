@@ -18,7 +18,7 @@ require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = [];
-$locTotal = 0; $page = max(1, (int) ($_GET['page'] ?? 1)); $perPage = vg_perpage();
+$locTotal = 0; $assetTotal = 0; $page = max(1, (int) ($_GET['page'] ?? 1)); $perPage = vg_perpage();
 
 $tab = (string) ($_GET['tab'] ?? 'overview');
 if (!in_array($tab, ['overview', 'affected', 'locations'], true)) { $tab = 'overview'; }
@@ -43,11 +43,14 @@ try {
         $stmt->execute([$cveId]);
         $affected = $stmt->fetchAll();
 
-        // 호스트별 최신 스캔 기준으로 이 CVE 가 발견된 위치(호스트 수만큼 늘어 페이지네이션)
+        // 호스트별 최신 스캔 기준으로 이 CVE 가 발견된 위치.
+        //   한 자산에서 여러 건이 나온다: 같은 CVE 가 여러 패키지에 걸리고(curl·libcurl4t64 처럼
+        //   같은 소스의 바이너리들), 컨테이너 안에서도 따로 잡힌다.
         $locSql =
             "FROM tb_findings f
              JOIN tb_scans s ON s.id = f.scan_id
              JOIN tb_hosts h ON h.id = s.host_id
+             LEFT JOIN tb_containers c ON c.id = f.container_id
              JOIN " . vg_latest_scan_subq() . " latest
                ON latest.host_id = s.host_id AND latest.mid = s.id
              WHERE f.cve_id = ?";
@@ -55,11 +58,19 @@ try {
         $stmt->execute([$cveId]);
         $locTotal = (int) $stmt->fetchColumn();
 
+        // **영향 자산은 발견 건수가 아니라 호스트 수다.** COUNT(*) 를 "N대"로 찍으면
+        //   서버 1대인데 "4대"가 된다(패키지 2종 × CVE 2건 = 4행이었을 뿐 — 실측).
+        //   위험 범위를 부풀려 보여주는 셈이라, 중복 없는 호스트로 센다.
+        $stmt = $pdo->prepare("SELECT COUNT(DISTINCT h.id) $locSql");
+        $stmt->execute([$cveId]);
+        $assetTotal = (int) $stmt->fetchColumn();
+
         $offset = ($page - 1) * $perPage;
         $stmt = $pdo->prepare(
-            "SELECT h.id AS host_id, h.fqdn, f.severity, f.runtime_status, f.package_name, f.installed_version, s.collected_at
+            "SELECT h.id AS host_id, h.fqdn, IFNULL(c.cid, '') AS ctr,
+                    f.severity, f.runtime_status, f.package_name, f.installed_version, s.collected_at
              $locSql
-             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), h.fqdn
+             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), h.fqdn, c.cid
              LIMIT $perPage OFFSET $offset"
         );
         $stmt->execute([$cveId]);
@@ -199,6 +210,7 @@ vg_subtabs([
         vg_table(
             [
                 ['label' => '호스트'],
+                ['label' => '위치'],
                 ['label' => '등급', 'key' => 'severity', 'width' => '6rem'],
                 ['label' => '상태', 'key' => 'runtime_status', 'width' => '7rem'],
                 ['label' => '패키지', 'key' => 'package_name'],
@@ -216,10 +228,14 @@ vg_subtabs([
                 'row_class' => fn($l) => vg_sev_row((string) $l['severity']),
                 'cell' => [
                     0 => fn($l) => '<a href="/host.php?id=' . (int) $l['host_id'] . '">' . vg_h($l['fqdn']) . '</a>',
+                    // 같은 호스트가 여러 줄로 반복되는 이유를 밝힌다 — 호스트냐 그 안의 컨테이너냐.
+                    1 => fn($l) => $l['ctr'] !== ''
+                          ? '<span class="why">컨테이너 ' . vg_h($l['ctr']) . '</span>'
+                          : '<span class="why">호스트</span>',
                     'severity'       => fn($l) => vg_sev_badge((string) $l['severity']),
                     'runtime_status' => fn($l) => vg_status_badge($l['runtime_status']),
-                    4 => fn($l) => '<code>' . vg_h($l['installed_version']) . '</code>',
-                    5 => fn($l) => '<span class="why">' . vg_h($l['collected_at']) . '</span>',
+                    5 => fn($l) => '<code>' . vg_h($l['installed_version']) . '</code>',
+                    6 => fn($l) => '<span class="why">' . vg_h($l['collected_at']) . '</span>',
                 ],
             ]
         );
@@ -256,7 +272,11 @@ vg_subtabs([
           <dd><?= $cve && $cve['published'] ? vg_h((string) $cve['published']) : '<span class="why">–</span>' ?></dd>
 
           <dt>영향 자산</dt>
-          <dd><?= number_format($locTotal) ?>대</dd>
+          <dd><?= number_format($assetTotal) ?>대
+            <?php if ($locTotal > $assetTotal): ?>
+              <span class="why">(발견 <?= number_format($locTotal) ?>건 — 패키지·컨테이너별)</span>
+            <?php endif; ?>
+          </dd>
         </dl>
       </div>
     </div>
