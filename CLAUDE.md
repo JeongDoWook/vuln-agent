@@ -47,6 +47,8 @@
   연번(`0001`…)은 쓰지 않는다 — 동시에 작업하는 브랜치들이 같은 다음 번호를 집어 충돌한다
   (실제로 `0003` 과 `0014` 가 각각 두 개씩 생겼다). 타임스탬프는 조율 없이도 안 겹친다.
   기존 연번 파일은 그대로 둔다(사전순이라 옛 것이 먼저 돈다).
+  **집행자는 `deploy/hooks/pre-push`** — 이 브랜치가 `db/migrations/` 에 **새로 만든** 파일의 이름이
+  14자리 타임스탬프가 아니면 push 를 막는다(origin/main 에 이미 있는 파일은 안 본다).
 - Windows git-bash 에서 컨테이너에 절대경로 전달 시 `MSYS_NO_PATHCONV=1` 접두.
 - **파일은 책임대로 놓는다** — 새 파일을 만들기 전에 어디 속하는지 먼저 정한다.
   - `server/public/` — HTTP 로 노출되는 페이지·엔드포인트(`findings.php`, `ingest.php` …). 여기 둔 건 곧 URL 이다.
@@ -110,7 +112,7 @@ cd wt/무엇
 
 ## 가드레일 (강제)
 - **main 직접 commit/push 금지** — 항상 작업 브랜치 경유 후 PR 로 병합. (`.claude/hooks/block-main-push.sh` 가 차단)
-- **검증 게이트**: `php -l` + `bash -n` + `tests/smoke.sh` 통과 전 커밋/PR 금지. 상태 보고 시 실행한 검증 명령·결과를 증거로 첨부.
+- **검증 게이트**: `php -l` + `bash -n` + 마이그레이션 파일명 + `tests/smoke.sh` 통과 전 커밋/PR 금지. 상태 보고 시 실행한 검증 명령·결과를 증거로 첨부.
   집행자는 `deploy/hooks/pre-push` — **저장소가 들고 있다**(`core.hooksPath=deploy/hooks`,
   `compose_runner.sh init` 이 설치). 예전엔 `.git/hooks/` 에 있어서 git 이 추적하지 않았고,
   **새로 clone 하면 게이트가 아예 없었다.** 걸려 있는지는 `compose_runner.sh doctor` 로 확인한다.
