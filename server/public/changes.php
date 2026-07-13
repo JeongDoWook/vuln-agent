@@ -180,6 +180,7 @@ vg_header('변화 추적', 'changes');
       $paged,
       [
           'empty' => $type !== '' || $hostId ? '조건에 맞는 변화가 없습니다.' : '아직 비교할 변화가 없습니다(호스트마다 스캔이 2회 이상 쌓이면 표시).',
+          'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
           'cell' => [
               0 => fn($r) => vg_badge(VG_CHANGE_TYPES[$r['type']], vg_change_tone($r['type'])),
               1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',

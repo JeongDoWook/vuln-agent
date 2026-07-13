@@ -120,6 +120,7 @@ vg_header($cveId !== '' ? $cveId : 'CVE', 'findings');
         [
             'card' => false,
             'empty' => '해당 없음',
+            'row_class' => fn($l) => vg_sev_row((string) $l['severity']),
             'cell' => [
                 0 => fn($l) => '<a href="/host.php?id=' . (int) $l['host_id'] . '">' . vg_h($l['fqdn']) . '</a>',
                 'severity'       => fn($l) => vg_sev_badge((string) $l['severity']),

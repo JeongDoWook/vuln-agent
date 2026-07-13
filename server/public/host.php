@@ -175,38 +175,28 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
     if ($suppressedCount > 0) { $tabDefs['suppressed'] = ['label' => '억제', 'n' => $suppressedCount]; }
     $tabDefs['scans'] = ['label' => '스캔 이력', 'n' => $scanTotal];
 ?>
-  <div class="hero hero--<?= $heroTone ?>">
-    <div class="hero__id">
-      <h1>🖥️ <?= vg_h($host['fqdn']) ?></h1>
-      <div class="hero__meta">
-        <span><?= vg_h(trim($host['os_id'] . ' ' . $host['os_version'])) ?: 'OS 미상' ?></span>
-        · <?= vg_asset_state($scanAge) ?>
-        · 최신 수집 <?= vg_h($scan['collected_at']) ?>
-        · 패키지 <?= number_format((int) $scan['package_count']) ?>개
-        · <a href="/">대시보드</a>
-        <?php if (vg_can('assets')): ?> · <a href="/assets.php">자산관리</a><?php endif; ?>
-      </div>
-    </div>
-    <div class="hero__risk">
-      <span class="badge tone-<?= $heroTone ?> badge--lg"><?= $worst ?? '양호' ?></span>
-      <span class="cap">최고 위험도</span>
-    </div>
-  </div>
+  <?php
+  $meta = [
+      vg_h(trim($host['os_id'] . ' ' . $host['os_version'])) ?: 'OS 미상',
+      vg_asset_state($scanAge),
+      '최신 수집 ' . vg_h($scan['collected_at']),
+      '패키지 ' . number_format((int) $scan['package_count']) . '개',
+      '<a href="/">대시보드</a>',
+  ];
+  if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
+  vg_hero('🖥️ ' . vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone);
+  ?>
 
   <div class="cards">
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
       <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
     <?php endforeach; ?>
     <div class="kpi big"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
-    <div class="kpi tone-<?= $cceFail > 0 ? 'high' : 'low' ?>"><b><?= (int) $cceFail ?></b><span>설정 취약</span></div>
+    <div class="kpi tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>"><b><?= (int) $cceFail ?></b><span>설정 취약</span></div>
     <?php if ($suppressedCount > 0): ?><div class="kpi tone-muted"><b><?= number_format($suppressedCount) ?></b><span>백포트 억제</span></div><?php endif; ?>
   </div>
 
-  <nav class="subtabs">
-    <?php foreach ($tabDefs as $key => $def): ?>
-      <a class="<?= $tab === $key ? 'on' : '' ?>" href="<?= vg_h(vg_qs(['tab' => $key, 'page' => null])) ?>"><?= vg_h($def['label']) ?><?php if ($def['n'] !== null): ?><span class="n"><?= number_format((int) $def['n']) ?></span><?php endif; ?></a>
-    <?php endforeach; ?>
-  </nav>
+  <?php vg_subtabs($tabDefs, $tab); ?>
 
   <?php if ($tab === 'vuln'): ?>
     <div class="card">
@@ -228,6 +218,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
           [
               'card' => false,
               'empty' => 'CRITICAL·HIGH 없음(외부노출된 취약점이 없음).',
+              'row_class' => fn($f) => vg_sev_row((string) $f['severity']),
               'cell' => [
                   'severity'       => fn($f) => vg_sev_badge((string) $f['severity']),
                   'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
@@ -358,6 +349,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
           [
               'card' => false,
               'empty' => '억제된 취약점 없음.',
+              'row_class' => fn($r) => vg_sev_row((string) $r['base_severity']),
               'cell' => [
                   'base_severity' => fn($r) => vg_sev_badge((string) $r['base_severity'])
                       . ((int) $r['in_kev'] === 1 ? ' ' . vg_badge('KEV', 'crit') : ''),
