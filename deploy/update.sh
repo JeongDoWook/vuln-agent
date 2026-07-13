@@ -10,7 +10,8 @@
 #                             소스가 읽기전용으로 마운트돼 있고, opcache 가 2초마다
 #                             파일 mtime 을 다시 확인하기 때문이다.
 #   Dockerfile/compose/caddy → 이미지 재빌드 + 컨테이너 재생성(다운타임 수십 초).
-#   db/*.sql                → 자동 적용하지 않는다. 경고만 하고 사람이 판단한다.
+#   db/migrations/          → 코드 반영 **전에** 자동 적용(스키마가 코드보다 먼저 와야 안전).
+#   최상위 db/*.sql         → 자동 적용하지 않는다(빈 볼륨 initdb 전용). 경고만 한다.
 #
 # .env.prod / secrets/*.txt 는 gitignore 라 pull 로 덮이지 않는다.
 # =============================================================================
@@ -24,7 +25,7 @@ say() { printf "\n${C}== %s${N}\n" "$*"; }
 INFRA_RE='^(server/Dockerfile|deploy/(compose[^/]*\.yml|compose_runner\.sh|caddy/|config/))'
 DB_RE='^db/'
 
-say "[1/5] 사전 점검"
+say "[1/6] 사전 점검"
 if [ -n "$(git status --porcelain)" ]; then
   printf "${R}저장소가 깨끗하지 않습니다. 운영 서버에서 직접 수정하지 마세요.${N}\n"
   git status --short
@@ -39,7 +40,7 @@ else
   printf "  ${Y}소스 마운트: 없음${N} → 이번엔 재빌드가 필요합니다(마운트를 붙이는 배포)\n"
 fi
 
-say "[2/5] 최신 코드 받기"
+say "[2/6] 최신 코드 받기"
 OLD=$(git rev-parse HEAD)
 git fetch --prune origin
 git merge --ff-only origin/main
@@ -54,7 +55,7 @@ echo "  $(git rev-parse --short "$OLD") → $(git rev-parse --short "$NEW")"
 CHANGED=$(git diff --name-only "$OLD" "$NEW" || true)
 echo "  변경 파일 $(printf '%s' "$CHANGED" | grep -c . || true)개"
 
-say "[3/5] 무엇을 해야 하나"
+say "[3/6] 무엇을 해야 하나"
 NEED_BUILD=0
 [ "$MOUNTED" = "yes" ] || NEED_BUILD=1
 if printf '%s\n' "$CHANGED" | grep -qE "$INFRA_RE"; then
@@ -65,10 +66,10 @@ fi
 if printf '%s\n' "$CHANGED" | grep -qE "$DB_RE"; then
   echo "  DB 변경 감지:"
   printf '%s\n' "$CHANGED" | grep -E "$DB_RE" | sed 's/^/    /'
-  # db/migrations/ 는 아래 [5/5]에서 러너가 자동 적용한다.
+  # db/migrations/ 는 [4/6]에서 **코드 반영보다 먼저** 자동 적용한다.
   # 최상위 db/*.sql 은 빈 볼륨 initdb 전용이라 기존 볼륨엔 안 들어간다.
   if printf '%s\n' "$CHANGED" | grep -qE '^db/migrations/'; then
-    echo "  → db/migrations/ 는 [5/5]에서 자동 적용됩니다."
+    echo "  → db/migrations/ 는 [4/6]에서 자동 적용됩니다(코드 반영보다 먼저)."
   fi
   if printf '%s\n' "$CHANGED" | grep -qE '^db/[0-9]'; then
     printf "  ${Y}참고: 최상위 db/*.sql 변경은 자동 적용되지 않습니다(빈 볼륨 initdb 전용).${N}\n"
@@ -76,7 +77,20 @@ if printf '%s\n' "$CHANGED" | grep -qE "$DB_RE"; then
   fi
 fi
 
-say "[4/5] 반영"
+say "[4/6] DB 마이그레이션 (코드 반영보다 **먼저**)"
+# 왜 먼저인가: [2/6] 의 git merge 로 새 PHP 코드는 **이미 디스크에 있다**. 소스가 라이브
+# 마운트라 opcache 가 2초 안에 새 코드를 로드한다. 스키마를 뒤에 올리면 그 사이(healthy
+# 대기까지 하면 수십 초) 들어온 수집이 "Unknown column …" 으로 500 이 난다 — 실제로 겪었다.
+# 반대로 스키마를 먼저 올리는 건 안전하다: 컬럼 추가·인덱스 확장은 옛 코드에 무해하다.
+MIGRATED=0
+if docker inspect vulnagent-db --format '{{.State.Status}}' 2>/dev/null | grep -q running; then
+  bash deploy/migrate.sh vulnagent-db
+  MIGRATED=1
+else
+  echo "  DB 컨테이너가 아직 없음 → 반영 후에 적용합니다."
+fi
+
+say "[5/6] 반영"
 if [ "$NEED_BUILD" = 1 ]; then
   echo "  재빌드 + 재생성 (다운타임 수십 초)"
   bash deploy/compose_runner.sh prod up -d --build
@@ -92,7 +106,7 @@ else
   sleep 3
 fi
 
-say "[5/5] 검증"
+say "[6/6] 검증"
 DB_SRC=$(docker inspect vulnagent-db \
   --format '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Source}}{{end}}{{end}}')
 if [ "$DB_SRC" != "/apps/vulnagent/data/mysql" ]; then
@@ -107,8 +121,10 @@ for _ in $(seq 1 20); do
 done
 docker ps --format '  {{.Names}}\t{{.Status}}' | grep vulnagent
 
-# DB 마이그레이션: db/migrations/ 중 아직 안 든 것 자동 적용(멱등).
-bash deploy/migrate.sh vulnagent-db
+# DB 컨테이너가 없어서 [4/6] 에서 못 돌린 경우(최초 기동)만 여기서 적용한다.
+if [ "$MIGRATED" != 1 ]; then
+  bash deploy/migrate.sh vulnagent-db
+fi
 
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:8081/ || echo 000)
 if [ "$code" = "302" ] || [ "$code" = "200" ]; then
