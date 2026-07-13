@@ -596,7 +596,7 @@ ctr_pkgmap() {   # $1=root $2=manager  → "경로|패키지"
 collect_container_runtime() {
   is_root || return 0
   [ -f "$TMP/.ctrmap" ] || return 0
-  local cid cpid root mgr pidns pid map paths ports comm user uid exe start
+  local cid cpid root mgr pidns pid map paths pkgs slug ports comm user uid exe start
   start=$SECONDS
 
   while IFS='|' read -r cid cpid root mgr; do
@@ -605,12 +605,16 @@ collect_container_runtime() {
     pidns=$(readlink "/proc/$cpid/ns/pid" 2>/dev/null) || continue
     [ -z "$pidns" ] && continue
 
-    map="$TMP/.pkgmap.$cid"
+    # **cid 를 파일명으로 쓰지 않는다.** k8s 컨테이너의 cid 는 "파드/컨테이너" 라 슬래시가 들어간다
+    #   → "$TMP/.pkgmap.etcd-x/etcd" 는 없는 디렉터리를 가리켜 리다이렉트가 실패하고, 그 컨테이너의
+    #   런타임 증거가 통째로 사라진다(운영 실측: 40건 → 13건, k8s 19개가 전부 빠졌다).
+    slug=$(printf '%s' "$cid" | tr -c 'A-Za-z0-9._-' '_')
+    map="$TMP/.pkgmap.$slug"
     ctr_pkgmap "$root" "$mgr" > "$map" 2>/dev/null
     [ -s "$map" ] || { rm -f "$map"; continue; }     # 파일맵을 못 만들면 이 컨테이너는 건너뛴다
 
     # 이 컨테이너의 프로세스들(같은 PID namespace) → "pid|E|exe" + "pid|L|라이브러리"
-    paths="$TMP/.paths.$cid"; : > "$paths"
+    paths="$TMP/.paths.$slug"; : > "$paths"
     for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
       [ "$(readlink "/proc/$pid/ns/pid" 2>/dev/null)" = "$pidns" ] || continue
       exe=$(readlink "/proc/$pid/exe" 2>/dev/null); exe=${exe% (deleted)}
@@ -634,7 +638,8 @@ collect_container_runtime() {
         }
       }
       END { for (i=1; i<=n; i++) { p=ORDER[i]; print cid"|"p"|"EXE[p]"|"L[p] } }
-    ' "$map" "$paths" > "$TMP/.pkgs.$cid"
+    ' "$map" "$paths" > "$TMP/.pkgs.$slug"
+    pkgs="$TMP/.pkgs.$slug"
 
     # 프로세스 인벤토리 — 사용자 이름은 **컨테이너의 /etc/passwd** 로 푼다
     # (호스트 이름으로 풀면 uid 가 같아도 다른 사람이 된다).
@@ -644,10 +649,10 @@ collect_container_runtime() {
       user=$(awk -F: -v u="$uid" '$3==u{print $1; exit}' "$root/etc/passwd" 2>/dev/null)
       [ -z "$user" ] && user="uid:$uid"
       printf '%s|%s|%s|%s|%s|%s\n' "$cid" "$pid" "$comm" "$user" "$exe_pkg" "$loaded"
-    done < "$TMP/.pkgs.$cid"
+    done < "$pkgs"
 
-    ctr_exposure "$cid" "$cpid" "$pidns" "$TMP/.pkgs.$cid" >> "$TMP/containers__exposure.txt"
-    rm -f "$map" "$paths" "$TMP/.pkgs.$cid"
+    ctr_exposure "$cid" "$cpid" "$pidns" "$pkgs" >> "$TMP/containers__exposure.txt"
+    rm -f "$map" "$paths" "$pkgs"
   done < "$TMP/.ctrmap"
 }
 
