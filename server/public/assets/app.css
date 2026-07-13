@@ -236,6 +236,48 @@ a.kpi.is-selected { outline: 2px solid #fff; outline-offset: 1px; }
 .kpi.tone-med  { background: var(--med); }
 .kpi.tone-low  { background: var(--low); }
 
+/* --- 자산 상세: 히어로(식별 + 최고 위험도) + 섹션 탭 ---------------------- */
+.hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line-2);   /* 왼쪽 띠 색으로 최고 위험도를 표시 */
+  border-radius: var(--r-lg);
+  padding: 1.15rem 1.4rem;
+  margin-bottom: 1.2rem;
+}
+.hero--crit { border-left-color: var(--crit); }
+.hero--high { border-left-color: var(--high); }
+.hero--med  { border-left-color: var(--med); }
+.hero--low  { border-left-color: var(--low); }
+.hero--ok   { border-left-color: var(--ok); }
+.hero__id { flex: 1 1 320px; min-width: 0; }
+.hero__id h1 { margin: 0 0 .4rem; }
+.hero__meta { color: var(--muted); font-size: .85rem; display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; }
+.hero__risk { flex: none; text-align: center; }
+.hero__risk .cap { display: block; margin-top: .4rem; font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+
+/* 큰 뱃지 — 히어로의 위험도 표시용(톤 색은 .badge.tone-* 이 그대로 결정) */
+.badge--lg { font-size: 1rem; padding: .35rem 1.1rem; }
+
+/* 섹션 탭(호스트 상세). cves.php 의 필터 프리셋(.tabs/.pill)과 달리 밑줄형 주요 내비. */
+.subtabs { display: flex; flex-wrap: wrap; gap: .1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.3rem; }
+.subtabs a {
+  padding: .55rem .95rem;
+  color: var(--text-2);
+  font-size: .9rem;
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.subtabs a:hover { color: var(--text); text-decoration: none; }
+.subtabs a.on { color: #fff; border-bottom-color: var(--accent); }
+.subtabs .n { margin-left: .35rem; font-size: .82em; color: var(--muted); font-weight: 700; }
+.subtabs a.on .n { color: var(--accent-2); }
+
 /* --- 표 ------------------------------------------------------------------ */
 table { width: 100%; border-collapse: collapse; font-size: .93rem; }
 th, td { text-align: left; padding: .7rem .9rem; border-bottom: 1px solid var(--line); vertical-align: top; }

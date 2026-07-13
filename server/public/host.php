@@ -2,18 +2,23 @@
 declare(strict_types=1);
 
 /**
- * host.php — 호스트 상세 (로그인 필요).
- *   ?id=<host_id> 의 최신 스캔: 요약 KPI + 런타임 노출 + 우선순위 취약점(조치 포함).
+ * host.php — 호스트 상세(자산 상세). 로그인 필요.
+ *   ?id=<host_id> 의 최신 스캔을 하나의 자산 화면으로 보여준다.
+ *   상단: 자산 식별 + 최고 위험도 히어로 + KPI.
+ *   그 아래 섹션 탭(취약점 / 런타임 / 보안설정 / 억제 / 스캔이력) — 각 탭이 자기 데이터를
+ *   서버 페이지네이션한다. ?tab= 이 활성 탭, ?page= 는 그 활성 탭에만 적용된다.
  */
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
-$err = null; $host = null; $scan = null; $exposures = []; $processes = []; $findings = [];
-$cce = []; $cceFail = 0; $suppressed = [];
-$scans = []; $sevByScan = [];
+$err = null; $host = null; $scan = null; $scanAge = null;
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
+$exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
+$tab = 'vuln'; $page = 1; $perPage = vg_perpage(); $total = 0;
+$rows = []; $exposures = []; $sevByScan = [];
+
 try {
     $pdo = vg_pdo();
     $hostId = (int) ($_GET['id'] ?? 0);
@@ -22,75 +27,115 @@ try {
     $host = $st->fetch() ?: null;
 
     if ($host) {
-        $st = $pdo->prepare('SELECT * FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 1');
+        $st = $pdo->prepare('SELECT *, TIMESTAMPDIFF(MINUTE, collected_at, NOW()) AS age_min
+                               FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 1');
         $st->execute([$hostId]);
         $scan = $st->fetch() ?: null;
     }
+
     if ($scan) {
         $sid = (int) $scan['id'];
-        $st = $pdo->prepare('SELECT proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ? ORDER BY FIELD(scope,\'EXTERNAL\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), port');
-        $st->execute([$sid]);
-        $exposures = $st->fetchAll();
+        $scanAge = $scan['age_min'];
 
-        // 실행 프로세스 (실행중/사용중)
-        $st = $pdo->prepare('SELECT pid, comm, username, exe_pkg, loaded_pkgs FROM tb_processes WHERE scan_id = ? ORDER BY comm LIMIT 200');
-        $st->execute([$sid]);
-        $processes = $st->fetchAll();
-
-        // 심각도 카운트
+        // --- 히어로/KPI 집계 (탭과 무관한 값싼 COUNT) ---
         $st = $pdo->prepare('SELECT severity, COUNT(*) c FROM tb_findings WHERE scan_id = ? GROUP BY severity');
         $st->execute([$sid]);
         foreach ($st->fetchAll() as $r) { if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; } }
 
-        // 보안설정 점검(CCE) — FAIL 먼저, 위험도순. NA/PASS 는 뒤로.
-        $st = $pdo->prepare(
-            "SELECT code, title, result, severity, evidence, rationale
-               FROM tb_cce_findings WHERE scan_id = ?
-              ORDER BY FIELD(result,'FAIL','NA','PASS'), FIELD(severity,'HIGH','MEDIUM','LOW'), code"
-        );
-        $st->execute([$sid]);
-        $cce = $st->fetchAll();
-        foreach ($cce as $c) { if ($c['result'] === 'FAIL') { $cceFail++; } }
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_exposures WHERE scan_id = ?');
+        $st->execute([$sid]); $exposureCount = (int) $st->fetchColumn();
 
-        // 상위 취약점(CRITICAL/HIGH) + 조치.
-        //   재시작 필요 건은 등급과 무관하게 함께 보여준다 — 노출도가 낮아 MEDIUM 으로 떨어지기
-        //   쉬운데, 정작 "패치했으니 안전하다"고 착각하는 바로 그 항목이라 숨기면 안 된다.
-        $st = $pdo->prepare(
-            "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
-                    f.needs_restart, c.epss, c.epss_percentile,
-                (SELECT a.fixed_version FROM tb_cve_affected_packages a
-                 WHERE a.cve_id=f.cve_id AND a.package_name=f.package_name AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
-             FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
-             WHERE f.scan_id = ? AND (f.severity IN ('CRITICAL','HIGH') OR f.needs_restart = 1)
-             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id"
-        );
-        $st->execute([$sid]);
-        $findings = $st->fetchAll();
+        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_findings WHERE scan_id = ? AND result = 'FAIL'");
+        $st->execute([$sid]); $cceFail = (int) $st->fetchColumn();
 
-        // 백포트로 억제된 취약점 (오탐 제거의 근거를 투명하게 보여줌)
-        $st = $pdo->prepare(
-            "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason
-               FROM tb_suppressed_findings WHERE scan_id = ?
-              ORDER BY FIELD(base_severity,'CRITICAL','HIGH','MEDIUM','LOW'), cve_id"
-        );
-        $st->execute([$sid]);
-        $suppressed = $st->fetchAll();
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_suppressed_findings WHERE scan_id = ?');
+        $st->execute([$sid]); $suppressedCount = (int) $st->fetchColumn();
 
-        // 스캔 이력(최근 20회) + 회차별 심각도 카운트
-        $st = $pdo->prepare(
-            'SELECT id, collected_at, received_at, package_count, exposure_count, agent_version
-               FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 20'
-        );
-        $st->execute([$hostId]);
-        $scans = $st->fetchAll();
+        // 우선순위 취약점 = CRITICAL·HIGH + 재시작 필요(등급이 낮아도 숨기지 않는다).
+        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_findings
+                              WHERE scan_id = ? AND (severity IN ('CRITICAL','HIGH') OR needs_restart = 1)");
+        $st->execute([$sid]); $vulnTotal = (int) $st->fetchColumn();
 
-        $ids = [];
-        foreach ($scans as $s) { $ids[] = (int) $s['id']; }
-        if ($ids) {
-            $in = implode(',', array_fill(0, count($ids), '?'));
-            $st = $pdo->prepare("SELECT scan_id, severity, COUNT(*) c FROM tb_findings WHERE scan_id IN ($in) GROUP BY scan_id, severity");
-            $st->execute($ids);
-            foreach ($st->fetchAll() as $f) { $sevByScan[(int) $f['scan_id']][$f['severity']] = (int) $f['c']; }
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_scans WHERE host_id = ?');
+        $st->execute([$hostId]); $scanTotal = (int) $st->fetchColumn();
+
+        // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
+        $validTabs = ['vuln', 'runtime', 'cce'];
+        if ($suppressedCount > 0) { $validTabs[] = 'suppressed'; }
+        $validTabs[] = 'scans';
+        $tab = (string) ($_GET['tab'] ?? 'vuln');
+        if (!in_array($tab, $validTabs, true)) { $tab = 'vuln'; }
+
+        $page   = max(1, (int) ($_GET['page'] ?? 1));
+        $offset = ($page - 1) * $perPage;
+
+        // --- 활성 탭 데이터만 조회(+페이지네이션) ---
+        if ($tab === 'vuln') {
+            $total = $vulnTotal;
+            $st = $pdo->prepare(
+                "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
+                        f.needs_restart, c.epss, c.epss_percentile,
+                    (SELECT a.fixed_version FROM tb_cve_affected_packages a
+                     WHERE a.cve_id=f.cve_id AND a.package_name=f.package_name AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
+                 FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
+                 WHERE f.scan_id = ? AND (f.severity IN ('CRITICAL','HIGH') OR f.needs_restart = 1)
+                 ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
+                 LIMIT $perPage OFFSET $offset"
+            );
+            $st->execute([$sid]);
+            $rows = $st->fetchAll();
+        } elseif ($tab === 'runtime') {
+            // 노출은 보통 소량이라 전부 보여주고, 프로세스는 많을 수 있어 페이지네이션한다
+            // (이 탭의 ?page= 는 프로세스 표에 적용된다).
+            $st = $pdo->prepare('SELECT proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ?
+                                  ORDER BY FIELD(scope,\'EXTERNAL\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), port');
+            $st->execute([$sid]);
+            $exposures = $st->fetchAll();
+
+            $total = $pdo->prepare('SELECT COUNT(*) FROM tb_processes WHERE scan_id = ?');
+            $total->execute([$sid]); $total = (int) $total->fetchColumn();
+            $st = $pdo->prepare("SELECT pid, comm, username, exe_pkg, loaded_pkgs FROM tb_processes
+                                  WHERE scan_id = ? ORDER BY comm LIMIT $perPage OFFSET $offset");
+            $st->execute([$sid]);
+            $rows = $st->fetchAll();
+        } elseif ($tab === 'cce') {
+            $st = $pdo->prepare('SELECT COUNT(*) FROM tb_cce_findings WHERE scan_id = ?');
+            $st->execute([$sid]); $total = (int) $st->fetchColumn();
+            $st = $pdo->prepare(
+                "SELECT code, title, result, severity, evidence, rationale
+                   FROM tb_cce_findings WHERE scan_id = ?
+                  ORDER BY FIELD(result,'FAIL','NA','PASS'), FIELD(severity,'HIGH','MEDIUM','LOW'), code
+                  LIMIT $perPage OFFSET $offset"
+            );
+            $st->execute([$sid]);
+            $rows = $st->fetchAll();
+        } elseif ($tab === 'suppressed') {
+            $total = $suppressedCount;
+            $st = $pdo->prepare(
+                "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason
+                   FROM tb_suppressed_findings WHERE scan_id = ?
+                  ORDER BY FIELD(base_severity,'CRITICAL','HIGH','MEDIUM','LOW'), cve_id
+                  LIMIT $perPage OFFSET $offset"
+            );
+            $st->execute([$sid]);
+            $rows = $st->fetchAll();
+        } else { // scans
+            $total = $scanTotal;
+            $st = $pdo->prepare(
+                "SELECT id, collected_at, received_at, package_count, exposure_count, agent_version
+                   FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT $perPage OFFSET $offset"
+            );
+            $st->execute([$hostId]);
+            $rows = $st->fetchAll();
+
+            $ids = [];
+            foreach ($rows as $s) { $ids[] = (int) $s['id']; }
+            if ($ids) {
+                $in = implode(',', array_fill(0, count($ids), '?'));
+                $st = $pdo->prepare("SELECT scan_id, severity, COUNT(*) c FROM tb_findings WHERE scan_id IN ($in) GROUP BY scan_id, severity");
+                $st->execute($ids);
+                foreach ($st->fetchAll() as $f) { $sevByScan[(int) $f['scan_id']][$f['severity']] = (int) $f['c']; }
+            }
         }
     }
 } catch (Throwable $e) {
@@ -107,27 +152,103 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
   <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif (!$host): ?>
   <div class="card"><div class="empty">호스트를 찾을 수 없습니다. <a href="/">← 대시보드</a></div></div>
-<?php else: ?>
+<?php elseif (!$scan): ?>
   <h1>🖥️ <?= vg_h($host['fqdn']) ?></h1>
   <div class="sub">
     <a href="/">← 대시보드</a> ·
     <?php if (vg_can('assets')): ?><a href="/assets.php">자산관리</a> · <?php endif; ?>
-    <?= vg_h($host['os_id']) ?> <?= vg_h($host['os_version']) ?>
-    <?php if ($scan): ?> · 최신 수집 <?= vg_h($scan['collected_at']) ?> · 패키지 <?= (int) $scan['package_count'] ?>개<?php endif; ?>
+    <?= vg_h(trim($host['os_id'] . ' ' . $host['os_version'])) ?>
+  </div>
+  <div class="card"><div class="empty">아직 수집된 스캔이 없습니다.</div></div>
+<?php else:
+    // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
+    $worst = null;
+    foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s) { if ($counts[$s] > 0) { $worst = $s; break; } }
+    $heroTone = $worst ? vg_sev_tone($worst) : 'ok';
+
+    // 탭 정의(배열 순서 = 표시 순서). n 은 라벨 옆 숫자(null 이면 숨김).
+    $tabDefs = [
+        'vuln'    => ['label' => '취약점',    'n' => $vulnTotal],
+        'runtime' => ['label' => '런타임',    'n' => null],
+        'cce'     => ['label' => '보안 설정', 'n' => $cceFail],
+    ];
+    if ($suppressedCount > 0) { $tabDefs['suppressed'] = ['label' => '억제', 'n' => $suppressedCount]; }
+    $tabDefs['scans'] = ['label' => '스캔 이력', 'n' => $scanTotal];
+?>
+  <div class="hero hero--<?= $heroTone ?>">
+    <div class="hero__id">
+      <h1>🖥️ <?= vg_h($host['fqdn']) ?></h1>
+      <div class="hero__meta">
+        <span><?= vg_h(trim($host['os_id'] . ' ' . $host['os_version'])) ?: 'OS 미상' ?></span>
+        · <?= vg_asset_state($scanAge) ?>
+        · 최신 수집 <?= vg_h($scan['collected_at']) ?>
+        · 패키지 <?= number_format((int) $scan['package_count']) ?>개
+        · <a href="/">대시보드</a>
+        <?php if (vg_can('assets')): ?> · <a href="/assets.php">자산관리</a><?php endif; ?>
+      </div>
+    </div>
+    <div class="hero__risk">
+      <span class="badge tone-<?= $heroTone ?> badge--lg"><?= $worst ?? '양호' ?></span>
+      <span class="cap">최고 위험도</span>
+    </div>
   </div>
 
-  <?php if (!$scan): ?>
-    <div class="card"><div class="empty">아직 수집된 스캔이 없습니다.</div></div>
-  <?php else: ?>
-    <div class="cards">
-      <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
-        <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
-      <?php endforeach; ?>
-      <div class="kpi big"><b><?= count($exposures) ?></b><span>노출 소켓</span></div>
-      <div class="kpi tone-<?= $cceFail > 0 ? 'high' : 'low' ?>"><b><?= (int) $cceFail ?></b><span>설정 취약</span></div>
-      <?php if ($suppressed): ?><div class="kpi tone-muted"><b><?= count($suppressed) ?></b><span>백포트 억제</span></div><?php endif; ?>
-    </div>
+  <div class="cards">
+    <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
+      <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
+    <?php endforeach; ?>
+    <div class="kpi big"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
+    <div class="kpi tone-<?= $cceFail > 0 ? 'high' : 'low' ?>"><b><?= (int) $cceFail ?></b><span>설정 취약</span></div>
+    <?php if ($suppressedCount > 0): ?><div class="kpi tone-muted"><b><?= number_format($suppressedCount) ?></b><span>백포트 억제</span></div><?php endif; ?>
+  </div>
 
+  <nav class="subtabs">
+    <?php foreach ($tabDefs as $key => $def): ?>
+      <a class="<?= $tab === $key ? 'on' : '' ?>" href="<?= vg_h(vg_qs(['tab' => $key, 'page' => null])) ?>"><?= vg_h($def['label']) ?><?php if ($def['n'] !== null): ?><span class="n"><?= number_format((int) $def['n']) ?></span><?php endif; ?></a>
+    <?php endforeach; ?>
+  </nav>
+
+  <?php if ($tab === 'vuln'): ?>
+    <div class="card">
+      <strong>우선순위 취약점 (CRITICAL·HIGH + 재시작 필요)</strong>
+      <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>">전체 취약점 보기 →</a></span>
+      <div class="card__body">
+      <?php
+      vg_table(
+          [
+              ['label' => '등급', 'key' => 'severity'],
+              ['label' => '상태', 'key' => 'runtime_status'],
+              ['label' => 'CVE'],
+              ['label' => 'EPSS'],
+              ['label' => '패키지'],
+              ['label' => '근거'],
+              ['label' => '조치'],
+          ],
+          $rows,
+          [
+              'card' => false,
+              'empty' => 'CRITICAL·HIGH 없음(외부노출된 취약점이 없음).',
+              'cell' => [
+                  'severity'       => fn($f) => vg_sev_badge((string) $f['severity']),
+                  'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
+                  2 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>',
+                  3 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
+                  4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>'
+                                 . (!empty($f['needs_restart']) ? ' ' . vg_badge('재시작 필요', 'high') : ''),
+                  5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
+                  // 재시작 필요면 조치는 "업그레이드"가 아니라 "프로세스 재시작"이다(이미 패치돼 있다).
+                  6 => fn($f) => !empty($f['needs_restart'])
+                                 ? '<span class="pill">프로세스 재시작</span>'
+                                 : (!empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>'),
+              ],
+          ]
+      );
+      ?>
+      </div>
+    </div>
+    <?php vg_page_nav($total, $perPage, $page); ?>
+
+  <?php elseif ($tab === 'runtime'): ?>
     <div class="card">
       <strong>런타임 노출</strong> <span class="why">— 어떤 프로세스가 무슨 포트를 열고 어떤 라이브러리를 로드했나</span>
       <div class="card__body">
@@ -167,7 +288,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               ['label' => '실행 패키지', 'key' => 'exe_pkg'],
               ['label' => '로드한 패키지'],
           ],
-          $processes,
+          $rows,
           [
               'card' => false,
               'empty' => '실행 프로세스 데이터 없음(구버전 에이전트로 수집됨).',
@@ -181,7 +302,9 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       ?>
       </div>
     </div>
+    <?php vg_page_nav($total, $perPage, $page); ?>
 
+  <?php elseif ($tab === 'cce'): ?>
     <div class="card">
       <strong>보안 설정 점검 (CCE)</strong>
       <span class="why">— 취약한 버전(CVE)이 아니라 잘못된 설정을 본다. NA 는 수집 못한 항목(비-root 실행 등)</span>
@@ -201,7 +324,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               ['label' => '근거'],
               ['label' => '사유'],
           ],
-          $cce,
+          $rows,
           [
               'card' => false,
               'empty' => 'CCE 점검 데이터 없음(구버전 에이전트 또는 security/users 미수집).',
@@ -216,8 +339,9 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       ?>
       </div>
     </div>
+    <?php vg_page_nav($total, $perPage, $page); ?>
 
-    <?php if ($suppressed): ?>
+  <?php elseif ($tab === 'suppressed'): ?>
     <div class="card">
       <strong>백포트로 억제된 취약점</strong>
       <span class="why">— 버전상 취약해 보였으나 배포판 changelog에 수정 기록(백포트)이 있어 실제 위험에서 제외한 건. 오탐 제거의 근거</span>
@@ -230,7 +354,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               ['label' => '패키지'],
               ['label' => '억제 근거'],
           ],
-          $suppressed,
+          $rows,
           [
               'card' => false,
               'empty' => '억제된 취약점 없음.',
@@ -246,48 +370,11 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       ?>
       </div>
     </div>
-    <?php endif; ?>
+    <?php vg_page_nav($total, $perPage, $page); ?>
 
+  <?php else: /* scans */ ?>
     <div class="card">
-      <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
-      <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>">전체 취약점 보기 →</a></span>
-      <div class="card__body">
-      <?php
-      vg_table(
-          [
-              ['label' => '등급', 'key' => 'severity'],
-              ['label' => '상태', 'key' => 'runtime_status'],
-              ['label' => 'CVE'],
-              ['label' => 'EPSS'],
-              ['label' => '패키지'],
-              ['label' => '근거'],
-              ['label' => '조치'],
-          ],
-          $findings,
-          [
-              'card' => false,
-              'empty' => 'CRITICAL·HIGH 없음(외부노출된 취약점이 없음).',
-              'cell' => [
-                  'severity'       => fn($f) => vg_sev_badge((string) $f['severity']),
-                  'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
-                  2 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>',
-                  3 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
-                  4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>'
-                                 . (!empty($f['needs_restart']) ? ' ' . vg_badge('재시작 필요', 'high') : ''),
-                  5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
-                  // 재시작 필요면 조치는 "업그레이드"가 아니라 "프로세스 재시작"이다(이미 패치돼 있다).
-                  6 => fn($f) => !empty($f['needs_restart'])
-                                 ? '<span class="pill">프로세스 재시작</span>'
-                                 : (!empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>'),
-              ],
-          ]
-      );
-      ?>
-      </div>
-    </div>
-
-    <div class="card" id="scans">
-      <strong>스캔 이력</strong> <span class="why">— 최근 20회. 회차를 눌러 그 시점의 취약점을 본다</span>
+      <strong>스캔 이력</strong> <span class="why">— 회차를 눌러 그 시점의 취약점을 본다</span>
       <div class="card__body">
       <?php
       vg_table(
@@ -300,7 +387,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               ['label' => '에이전트', 'key' => 'agent_version'],
               ['label' => '심각도', 'key' => 'sev'],
           ],
-          $scans,
+          $rows,
           [
               'card' => false,
               'empty' => '스캔 이력이 없습니다.',
@@ -318,6 +405,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       ?>
       </div>
     </div>
+    <?php vg_page_nav($total, $perPage, $page); ?>
   <?php endif; ?>
 <?php endif; ?>
 <?php vg_footer();
