@@ -87,8 +87,8 @@ assert_contains "$resp" '"exposures":5' "노출 5건 저장"
 # 언어 패키지(pip 2 + npm 2) — 예전엔 수집만 하고 서버가 버렸다.
 assert_contains "$resp" '"langpkgs":4' "언어 패키지 4건 저장(pip/npm)"
 # 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
-assert_contains "$resp" '"containers":4'   "컨테이너 4개 저장(alpine/debian/패키지DB없음/Go)"
-assert_contains "$resp" '"ctr_packages":4' "컨테이너 내부 패키지 4건 저장(apk/dpkg + Go 모듈)"
+assert_contains "$resp" '"containers":5'   "컨테이너 5개 저장(apk/dpkg/DB없음/Go/업스트림)"
+assert_contains "$resp" '"ctr_packages":5' "컨테이너 내부 패키지 5건(apk/dpkg + Go + 업스트림 nginx)"
 # 컨테이너 런타임 증거 — 이게 없으면 컨테이너 취약점은 근거가 "설치만 됨" 뿐이라 전부 LOW 로 깔린다.
 assert_contains "$resp" '"ctr_processes":2' "컨테이너 프로세스 2건 저장"
 assert_contains "$resp" '"ctr_exposures":1' "컨테이너 노출 1건 저장(api:8443 EXTERNAL)"
@@ -133,7 +133,16 @@ if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백�
 # 서드파티 저장소(nginx.org) 패키지는 배포판 기준으로 판정할 수 없다 → 억제하지 않고 남긴다.
 #   버전만 보면 "설치 1.24.0 ≥ 조치 1.22.1" 이라 억제될 뻔했고, debsecan 목록에도 없어
 #   "백포트로 수정됨" 으로도 억제될 뻔했다. 둘 다 미탐이다.
-if [ "${dsupp:-0}" -eq 1 ]; then ok "서드파티 nginx 는 억제되지 않음 (억제는 openssl 1건뿐)"; else no "서드파티 nginx 가 억제됨 (억제 ${dsupp}건 — 미탐!)"; fi
+#   **억제 건수로 판정하지 않는다** — 그건 DB 에 실제 피드 데이터가 들어오면 바로 깨진다
+#   (dev DB 가 공용이 된 뒤 실측으로 깨졌다: 기대 1건 vs 실제 72건).
+#   억제 목록에 nginx 가 있는지를 직접 본다. 그게 이 테스트가 진짜 지키려는 것이다.
+WEB02_ID=$(curl -s -b "$JAR" "$BASE/assets.php?q=web02" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
+supbody=$(curl -s -b "$JAR" "$BASE/host.php?id=${WEB02_ID:-0}&tab=suppressed")
+if printf '%s' "$supbody" | grep -q 'nginx'; then
+  no "서드파티 nginx 가 억제됨 — 미탐!"
+else
+  ok "서드파티 nginx 는 억제되지 않음(억제 목록에 없음)"
+fi
 
 # --- 바뀔 때만 스냅샷 --------------------------------------------------------
 #   같은 내용을 다시 보내면 새 스캔을 만들지 않는다(수집시각만 갱신). 패키지가 바뀌면 새 스냅샷 +
@@ -229,6 +238,10 @@ assert_contains "$body" "컨테이너 nodb" "패키지 DB 없는 컨테이너도
 #   (LOW 라 목록 1페이지엔 안 뜬다 → 검색으로 집어서 확인한다.)
 gobody=$(curl -s -b "$JAR" "$BASE/findings.php?q=golang.org%2Fx%2Fnet")
 assert_contains "$gobody" "CVE-2023-45288" "컨테이너의 Go 의존성 취약점이 매칭됨(golang.org/x/net v0.20.0)"
+# 패키지 DB 도 Go 도 없는 이미지(whisker=nginx) — 바이너리에서 뽑은 버전을 OSV 의 Bitnami
+#   생태계로 매칭한다. 이게 죽으면 그 컨테이너는 다시 "판정 불가"로 돌아간다.
+upbody=$(curl -s -b "$JAR" "$BASE/cve.php?cve=CVE-2023-44487&tab=locations")
+assert_contains "$upbody" "upsvc" "업스트림 바이너리(nginx 1.24.0) 취약점이 그 컨테이너에 매칭됨"
 assert_contains "$body" "패키지 DB 가 없는 이미지" "판정 불가 사유가 '패키지 DB 없음'으로 구분됨"
 body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에도 패키지DB 없는 컨테이너 경고"

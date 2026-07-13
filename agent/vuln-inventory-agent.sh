@@ -405,9 +405,37 @@ ctr_go_deps() {   # $1=대표pid $2=cid
   done | sort -u
 }
 
+# ctr_upstream_bins : 패키지 DB 도 Go 도 없는 이미지에서 **업스트림 데몬의 버전**을 뽑는다.
+#   → "cid|upstream|앱|버전|"  (서버가 OSV 의 Bitnami 생태계로 조회한다)
+#
+#   범용 탐지는 하지 않는다(KISS). 바이너리마다 버전을 박는 방식이 제각각이라 범용 규칙은
+#   오탐만 만든다. **실제로 만난 것만** 넣는다. 지금은 nginx 하나다(calico whisker).
+#   nginx 는 "nginx/1.28.2" 를 그대로 박아 둔다.
+ctr_upstream_bins() {   # $1=대표pid $2=cid
+  local pid="$1" cid="$2" pidns p exe base ver seen=""
+  pidns=$(readlink "/proc/$pid/ns/pid" 2>/dev/null)
+  [ -z "$pidns" ] && return 0
+  for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    [ "$(readlink "/proc/$p/ns/pid" 2>/dev/null)" = "$pidns" ] || continue
+    exe=$(readlink "/proc/$p/exe" 2>/dev/null); exe=${exe% (deleted)}
+    [ -z "$exe" ] && continue
+    base=$(basename "$exe")
+    case "$seen" in *"|$base|"*) continue ;; esac
+    seen="$seen|$base|"
+    [ -r "/proc/$p/root$exe" ] || continue
+    case "$base" in
+      nginx)
+        ver=$(timeout "$CMD_TIMEOUT" grep -aoP 'nginx/\d+\.\d+\.\d+' "/proc/$p/root$exe" 2>/dev/null \
+              | head -1 | cut -d/ -f2)
+        [ -n "$ver" ] && printf '%s|upstream|nginx|%s|\n' "$cid" "$ver"
+        ;;
+    esac
+  done | sort -u
+}
+
 collect_containers() {
   is_root || return 0
-  local HOST_PIDNS pid key pidns root cid name image osid osver mgr pkgs gopkgs cnt line MAP KEYMAP p n i k osrel f
+  local HOST_PIDNS pid key pidns root cid name image osid osver mgr pkgs gopkgs binpkgs cnt line MAP KEYMAP p n i k osrel f
   HOST_PIDNS=$(readlink /proc/self/ns/pid 2>/dev/null)
   declare -A SEEN
 
@@ -566,6 +594,21 @@ collect_containers() {
       pkgs="${pkgs:+$pkgs
 }$gopkgs"
       [ -z "$mgr" ] && mgr="go"     # 배포판 DB 가 없던 컨테이너는 이제 go 로 판정된다
+    fi
+
+    # 패키지 DB 도 Go 도 없는 마지막 부류 — **업스트림 데몬을 그냥 얹은 이미지**.
+    #   실측: calico 의 whisker 는 nginx 1.28.2(C 바이너리)를 담고 있는데, rpm/dpkg DB 가 없고
+    #   Go 도 아니라 여태 "판정 불가"였다. 바이너리에 버전 문자열이 박혀 있으니 그걸 뽑는다.
+    #   OSV 의 **Bitnami 생태계**가 업스트림 앱(nginx 등)을 커버한다 — 1.28.2 로 물으면
+    #   BIT-nginx-2025-53859 가 나온다(API 로 확인).
+    #   DB 가 있는 컨테이너에는 하지 않는다 — 거기선 패키지 매니저가 이미 정확한 답을 준다.
+    if [ -z "$mgr" ]; then
+      binpkgs=$(ctr_upstream_bins "$pid" "$cid")
+      if [ -n "$binpkgs" ]; then
+        pkgs="${pkgs:+$pkgs
+}$binpkgs"
+        mgr="upstream"
+      fi
     fi
 
     cnt=0

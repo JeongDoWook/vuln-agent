@@ -83,6 +83,9 @@ if (!function_exists('vg_pkg_ecosystem')) {
             case 'composer': return 'Packagist';
             // Go 바이너리에서 뽑은 의존 모듈(buildinfo). OSV 의 Go 생태계로 그대로 조회된다.
             case 'go':       return 'Go';
+            // 패키지 DB 도 Go 도 없는 이미지에서 바이너리 버전을 뽑아낸 것(nginx 등).
+            //   OSV 의 Bitnami 생태계가 업스트림 앱을 커버한다(BIT-nginx-… 는 CVE 를 alias 로 단다).
+            case 'upstream': return 'Bitnami';
             default:         return $hostEco;   // rpm / dpkg → 배포판
         }
     }
