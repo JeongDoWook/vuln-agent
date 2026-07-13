@@ -45,6 +45,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 vg_agent_token_revoke($pdo, $id);
                 vg_log_activity($pdo, 'AGENT_TOKEN', $id, 'agent_token_revoke', '에이전트 토큰 폐기');
                 $msg = '토큰을 폐기했습니다. 즉시 무효가 됩니다.';
+            } elseif ($action === 'delete') {
+                $id = (int) ($_POST['id'] ?? 0);
+                vg_agent_token_delete($pdo, $id);   // 폐기된 것만 지워진다(아니면 예외)
+                vg_log_activity($pdo, 'AGENT_TOKEN', $id, 'agent_token_delete', '에이전트 토큰 삭제(목록에서 제거)');
+                $msg = '폐기된 토큰을 목록에서 지웠습니다. 이력은 활동 로그에 남습니다.';
             }
         } catch (Throwable $e) {
             $err = $e->getMessage();
@@ -133,8 +138,13 @@ vg_header('에이전트 토큰', 'agenttokens');
                   ? '<span class="why">' . vg_h((string) $t['last_seen_at']) . '</span>'
                   : '<span class="why">미수신</span>',
               5 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
+              // 활성이면 [폐기], 폐기된 것이면 [삭제] — 폐기·재발급을 반복해 쌓인 죽은 행을 치운다.
               6 => fn($t) => (int) $t['is_revoked'] === 1
-                  ? ''
+                  ? '<form method="post" onsubmit="return confirm(\'이 토큰을 목록에서 지울까요? 이미 폐기되어 무효인 토큰입니다.\');">'
+                      . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
+                      . '<input type="hidden" name="action" value="delete">'
+                      . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'
+                      . '<button class="btn btn--sm">삭제</button></form>'
                   : '<form method="post" onsubmit="return confirm(\'이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.\');">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="revoke">'

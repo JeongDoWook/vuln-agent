@@ -75,3 +75,20 @@ function vg_agent_token_verify(PDO $pdo, string $provided): ?array {
 function vg_agent_token_revoke(PDO $pdo, int $id): void {
     $pdo->prepare('UPDATE tb_agent_tokens SET is_revoked = 1 WHERE id = ?')->execute([$id]);
 }
+
+/**
+ * 목록에서 삭제(soft). **폐기된 토큰만** 지울 수 있다 — 활성 토큰은 폐기가 먼저다.
+ *   폐기/재발급을 반복하면 죽은 행이 목록에 계속 쌓이는데, 지울 방법이 없었다.
+ *   공용 vg_soft_delete() 는 조건(is_revoked=1)을 못 실어 별도 조회가 필요해진다.
+ *   여기선 UPDATE 한 방에 조건을 넣어 검사와 삭제를 원자적으로 처리한다.
+ */
+function vg_agent_token_delete(PDO $pdo, int $id): void {
+    $st = $pdo->prepare(
+        'UPDATE tb_agent_tokens SET is_deleted = 1, deleted_at = NOW()
+          WHERE id = ? AND is_revoked = 1 AND is_deleted = 0'
+    );
+    $st->execute([$id]);
+    if ($st->rowCount() === 0) {
+        throw new RuntimeException('폐기된 토큰만 삭제할 수 있습니다. 활성 토큰은 먼저 폐기하세요.');
+    }
+}
