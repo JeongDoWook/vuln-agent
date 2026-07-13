@@ -7,11 +7,15 @@
 #   토큰은 <prefix>/etc/agent.env(600) 에 두고 env 로 전달 → ps 에 노출 안 됨.
 #
 # 사용:
-#   sudo ./install-agent.sh --server http://중앙서버:8080/ingest.php --token 토큰
-#   sudo ./install-agent.sh --server ... --token ... --schedule daily
-#   sudo ./install-agent.sh --server ... --token ... --schedule '*:0/30'   # 30분마다
-#   sudo ./install-agent.sh --server ... --token ... --prefix /apps/vulnagent
-#   sudo ./install-agent.sh --uninstall [--prefix 설치경로]
+#   sudo bash install-agent.sh                    # 서버 주소·토큰·주기를 물어본다(대화형)
+#   sudo bash install-agent.sh --server http://중앙서버:8080/ingest.php --token 토큰
+#   sudo bash install-agent.sh --server ... --token ... --schedule daily
+#   sudo bash install-agent.sh --server ... --token ... --schedule '*:0/30'   # 30분마다
+#   sudo bash install-agent.sh --server ... --token ... --prefix /apps/vulnagent
+#   sudo bash install-agent.sh --uninstall [--prefix 설치경로]
+#
+#   sudo 만 있으면 된다 — chmod/chown 불필요(`bash <파일>` 로 실행하므로 실행권한이 필요없고,
+#   설치물은 root 가 만드니 자동으로 root 소유가 된다).
 #
 # 설치물은 --prefix(기본 /opt/vuln-agent) 한 곳에 모인다:
 #   <prefix>/bin/{vuln-inventory-agent.sh,run.sh}   실행 파일
@@ -20,7 +24,8 @@
 # =============================================================================
 set -euo pipefail
 
-SERVER=""; TOKEN=""; SCHEDULE="hourly"; UNINSTALL=0; PREFIX=/opt/vuln-agent
+SERVER=""; TOKEN=""; SCHEDULE=""; UNINSTALL=0; PREFIX=/opt/vuln-agent
+ORIG_ARGS="$*"   # root 안내 메시지에 원래 인자를 그대로 되돌려주기 위해 보관
 while [ $# -gt 0 ]; do
   case "$1" in
     --server)    SERVER="$2"; shift 2 ;;
@@ -33,7 +38,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ "$(id -u)" -eq 0 ] || { echo "root 로 실행하세요 (sudo)"; exit 1; }
+# root 강제 — /opt 설치, systemd 유닛 작성, cron 등록은 root 아니면 애초에 불가능.
+# 실행권한(chmod +x)이 없어도 되도록 `bash <파일>` 형태를 안내한다.
+if [ "$(id -u)" -ne 0 ]; then
+  echo "root 권한이 필요합니다. 이렇게 실행하세요:" >&2
+  echo "    sudo bash $0${ORIG_ARGS:+ $ORIG_ARGS}" >&2
+  exit 1
+fi
 
 case "$PREFIX" in /*) ;; *) echo "--prefix 는 절대경로여야 합니다: $PREFIX" >&2; exit 1 ;; esac
 BIN="$PREFIX/bin"
@@ -55,7 +66,32 @@ if [ "$UNINSTALL" = 1 ]; then
   exit 0
 fi
 
-[ -n "$SERVER" ] && [ -n "$TOKEN" ] || { echo "필수: --server, --token"; exit 1; }
+# 인자를 안 줬으면 물어본다. 터미널이 아니면(파이프·자동화) 예전처럼 인자 필수.
+if [ -z "$SERVER" ] || [ -z "$TOKEN" ]; then
+  [ -t 0 ] || { echo "필수: --server, --token (터미널이 아니라 물어볼 수 없습니다)" >&2; exit 1; }
+  echo "== vuln-agent 설치 =="
+  while [ -z "$SERVER" ]; do
+    printf '중앙 서버 주소 (예: ost-server.duckdns.org:8080): '
+    read -r SERVER
+  done
+  while [ -z "$TOKEN" ]; do
+    printf '전송 토큰 (입력은 화면에 보이지 않습니다): '
+    read -rs TOKEN; echo
+  done
+  printf '수집 주기 [%s] (daily / '"'"'*:0/30'"'"'=30분마다): ' "${SCHEDULE:-hourly}"
+  read -r _ans; [ -n "$_ans" ] && SCHEDULE="$_ans"
+fi
+SCHEDULE="${SCHEDULE:-hourly}"
+
+# 주소 보정 — 도메인만 넣어도 되게 스킴과 /ingest.php 를 채운다(이미 있으면 그대로).
+case "$SERVER" in http://*|https://*) ;; *) SERVER="https://$SERVER" ;; esac
+case "$SERVER" in
+  */ingest.php) ;;
+  */)  SERVER="${SERVER}ingest.php" ;;
+  *)   SERVER="$SERVER/ingest.php" ;;
+esac
+echo ">> 전송 대상: $SERVER"
+
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 1) 파일 배치

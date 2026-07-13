@@ -11,7 +11,8 @@ agent/    수집 에이전트 (Bash) — 패키지·런타임 노출·백포트 
 server/   PHP 중앙 서버 — 수신 API(ingest)·Export API + 웹(대시보드·취약점·변화추적·CVE·자산·국내공지·시스템) + 매처
 deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·migrate.sh(스키마 자동 적용)·wt.sh
 db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼. 최상위 *.sql 은 빈 볼륨 초기화용, 증분 변경은 migrations/
-docs/     아키텍처 · 기획안 · 설명글 · 프로세스 · 피드소스-역할(커넥터 5종) · export-api
+docs/     아키텍처 · 기획안 · 설명글 · 피드소스-역할(커넥터 5종) · export-api
+          (전체 프로세스 소개는 웹으로 서빙 — server/public/process.html → /process.html)
 shadow-ai/  (사이드 PoC) 섀도우 AI DLP 크롬 확장 — AI 챗봇 입력창의 민감정보 탐지. 본 파이프라인과 독립
 ```
 
@@ -109,10 +110,20 @@ compose 경로 기준: `../server`·`../db`·`../secrets`·`../data` 는 저장�
 **방식: 에이전트-사이드 push** (각 서버가 로컬 스케줄로 수집 → 중앙으로 POST).
 중앙이 각 호스트로 들어갈 필요 없음(아웃바운드만). 표준적인 에이전트 모델.
 
-대상 서버(Linux)에서 한 번:
+대상 서버(Linux)에 `agent/` 를 복사하고 한 번 실행하면 끝. **인자 없이 실행하면 물어본다.**
 
 ```bash
-sudo ./agent/install-agent.sh \
+sudo bash install-agent.sh
+#   중앙 서버 주소 (예: ost-server.duckdns.org:8080):   ← 도메인만 넣어도 됨(스킴·/ingest.php 자동)
+#   전송 토큰 (입력은 화면에 보이지 않습니다):          ← 중앙의 secrets/ingest_token.txt 값
+#   수집 주기 [hourly] (daily / '*:0/30'=30분마다):     ← Enter 치면 hourly
+```
+
+`sudo` 만 있으면 되고 `chmod`/`chown` 은 필요 없다(자세한 이유는 [`agent/README.md`](agent/README.md)).
+자동화(Ansible 등)로 무인 설치할 땐 인자로 넘긴다 — TTY 가 아니면 물어보지 않는다:
+
+```bash
+sudo bash install-agent.sh \
      --server https://ost-server.duckdns.org:8080/ingest.php \
      --token  <중앙의 secrets/ingest_token.txt 값> \
      --schedule hourly          # 또는 daily, '*:0/30'(30분마다, systemd)
@@ -124,7 +135,7 @@ sudo ./agent/install-agent.sh \
 - **systemd-timer**(우선) 또는 **cron**(폴백)으로 주기 수집 등록(기본 매시간) + 즉시 1회 실행(통신 확인)
 - 컨테이너가 떠 있는 호스트에서도 다른 mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토리
   — 컨테이너 오버레이 경로를 `dpkg -S`/`rpm -qf` 로 전수조사하다 멈추는 문제를 회피
-- 제거: `sudo ./agent/install-agent.sh --uninstall`
+- 제거: `sudo bash install-agent.sh --uninstall`
 
 네트워크 요건: 대상 서버 → 중앙서버 `WEB_PORT`(기본 8080) **아웃바운드 HTTPS** 하나면 됨
 (운영은 Caddy 가 앞단에서 TLS 를 받는다). 중앙 서버 자신을 스캔하는 로컬 에이전트만

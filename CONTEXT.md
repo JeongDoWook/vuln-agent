@@ -1,9 +1,10 @@
 # CONTEXT.md — 프로젝트 맥락 (Claude Code 최우선 참고)
 
 > 이 파일은 개발을 이어받는 사람(및 Claude Code)이 **가장 먼저 읽는** 요약이다.
-> 쉬운 설명은 `docs/설명글.md`, 전체 프로세스는 `docs/프로세스_v1.0.html`,
-> 대회용 기획 문서는 `docs/기획안_v1.0.html` (셋 다 현행 구현 기준으로 갱신됨).
-> 구조·규칙의 최종 기준은 이 파일과 `docs/architecture.md`.
+> 쉬운 설명은 `docs/설명글.md`, 대회용 기획 문서는 `docs/기획안_v1.0.html`
+> (둘 다 현행 구현 기준으로 갱신됨). 구조·규칙의 최종 기준은 이 파일과 `docs/architecture.md`.
+> 전체 프로세스 소개 페이지는 웹으로 서빙된다 — `server/public/process.html` → `/process.html`
+> (사본을 두지 않는다. 예전에 `docs/` 에도 같은 파일이 있었는데 두 벌이 어긋났다).
 
 ---
 
@@ -79,7 +80,8 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 - 그 외: 커널 CPU취약점 완화상태, 컨테이너 이미지, 언어패키지(pip/npm), 보안설정 등
 
 ### `agent/install-agent.sh` — 배포 설치기
-각 대상 서버에서 `sudo ./install-agent.sh --server https://중앙:8080/ingest.php --token X --schedule hourly`.
+각 대상 서버에서 `sudo bash install-agent.sh` — 인자 없이 실행하면 서버 주소·토큰·주기를 물어본다
+(TTY 아니면 종전대로 `--server/--token` 인자 필수. 도메인만 넣어도 스킴·`/ingest.php` 자동 보정).
 systemd-timer(우선)/cron 으로 주기 수집(기본 매시간) 등록 + 즉시 1회 실행(통신 확인). 설치물은
 `--prefix`(기본 `/opt/vuln-agent`) 아래 `bin`/`etc`/`logs` 로 모이고, 토큰은
 `<prefix>/etc/agent.env`(600) 로 관리(ps 노출 방지). 컨테이너가 떠 있는 호스트에서도 다른
@@ -106,11 +108,12 @@ vuln-agent/
 │   ├── Dockerfile
 │   ├── public/   # ingest·rematch·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
 │   │             #   packages/advisories/advisory/assets/connectors/users/permissions/api-tokens/activity/profile(웹)
+│   │             #   process.html — 프로세스 소개(로그인 불필요, /process.html 로 공유)
 │   ├── src/      # config·db·auth(RBAC)·view·matcher(+백포트억제)·feeds·cce·apitoken·audit(감사로그·소프트삭제)
 │   └── bin/      # scheduler.php(사이드카)·sync.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
 ├── db/           # 01~13 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
 │   └── migrations/    # NNNN_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
-├── docs/         # 아키텍처·기획안·설명글·프로세스·피드소스-역할·export-api
+├── docs/         # 아키텍처·기획안·설명글·피드소스-역할·export-api
 └── shadow-ai/    # (사이드 PoC) 섀도우 AI DLP 크롬 확장 — 본 파이프라인과 독립
 ```
 
