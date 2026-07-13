@@ -18,7 +18,7 @@
 
 ## 설치
 
-`agent/` 폴더(스크립트 2개)를 대상 서버에 복사하고, **인자 없이 실행하면 물어본다.**
+스크립트 2개 + **중앙 루트 CA(`caddy-root.crt`)** 를 대상 서버에 복사하고, **인자 없이 실행하면 물어본다.**
 
 ```bash
 sudo bash install-agent.sh
@@ -27,12 +27,33 @@ sudo bash install-agent.sh
 ```
 == vuln-agent 설치 ==
 중앙 서버 주소 (예: ost-server.duckdns.org:8080): ost-server.duckdns.org:8080
-전송 토큰 (입력은 화면에 보이지 않습니다): ********      ← 중앙의 secrets/ingest_token.txt 값
+전송 토큰 (입력은 화면에 보이지 않습니다): ********      ← 중앙에서 이 호스트용으로 발급한 개별 토큰
 수집 주기 [hourly] (daily / '*:0/30'=30분마다): ⏎        ← Enter 치면 hourly
 ```
 
 - 주소는 **도메인만 넣어도 된다.** `https://` 와 `/ingest.php` 는 자동으로 붙는다.
 - 토큰은 화면·셸 히스토리에 남지 않는다(입력 숨김).
+
+### 선행 검사 — 설치기가 알아서 한다
+
+설치기는 파일을 깔기 **전에** 전송이 실제로 되는지 확인하고, 막히면 **아무것도 설치하지 않고
+중단**한다. 예전엔 이 셋을 사람이 미리 손봐야 했고, 안 하면 "타이머는 도는데 자산은 안 올라오는"
+조용한 실패가 됐다.
+
+| 검사 | 자동 처리 | 수동 지정 |
+|---|---|---|
+| `jq`·`curl` 없음 | 패키지 관리자로 설치(apt/dnf/yum/apk/zypper). 실패하면 중단 | — |
+| 중앙이 **자체서명**(Caddy `tls internal`) | 스크립트 옆의 `caddy-root.crt` 를 신뢰 저장소에 등록 | `--ca-file PATH` |
+| 도메인이 **공인 IP** 로 풀려 내부망에서 못 붙음(헤어핀 NAT) | 중앙의 내부 IP 를 묻고 `/etc/hosts` 에 이름을 묶음 | `--host-ip 10.3.142.200` |
+
+루트 CA 는 중앙에서 이렇게 꺼낸다(한 번 꺼내 두고 모든 대상에 재사용):
+
+```bash
+sudo docker cp vulnagent-caddy:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+```
+
+이름을 IP 로 바꿔 붙는 건 **안 된다** — Caddy 가 SNI 로 사이트를 고르므로 도메인이어야 하고,
+그래서 IP 를 바꾸는 게 아니라 `/etc/hosts` 로 **이름이 가리키는 곳**을 바꾼다.
 
 자동화(Ansible 등)로 무인 설치할 땐 인자로 넘긴다 — 예전 방식 그대로다:
 
@@ -90,13 +111,13 @@ sudo ./install-agent.sh
 같은 경로라 **외울 경로가 하나뿐**이다.
 
 ```bash
-scp -r agent/ 대상서버:~/                    # 1) 홈으로 전송 (scp 는 root 로 못 붙는 경우가 많다)
+scp -r agent/ caddy-root.crt 대상서버:~/      # 1) 홈으로 전송 (scp 는 root 로 못 붙는 경우가 많다)
 ssh 대상서버
 sudo mkdir -p /opt/vuln-agent                # 2) 제자리로 (root 소유가 된다)
-sudo cp ~/agent/*.sh /opt/vuln-agent/
-rm -rf ~/agent                               # 3) 홈의 원본은 정리
+sudo cp ~/agent/*.sh ~/caddy-root.crt /opt/vuln-agent/
+rm -rf ~/agent ~/caddy-root.crt              # 3) 홈의 원본은 정리
 
-cd /opt/vuln-agent                           # 4) 설치
+cd /opt/vuln-agent                           # 4) 설치 (CA 는 옆에 있으니 알아서 등록된다)
 sudo bash install-agent.sh
 ```
 
@@ -127,13 +148,17 @@ root 소유 폴더 한 곳에만 남는다.
    토큰이 셸 히스토리에도 남지 않는다. `--token` 인자로 넘긴 경우엔 명령이 히스토리에
    남으니, 신경 쓰이면 설치 후 히스토리를 지운다.
 
-2. **전송 URL(--server)은 대상 서버가 실제로 닿는 주소여야 한다.**
-   - 중앙 서버 자신에 설치하면 loopback(`http://127.0.0.1:8081/ingest.php`)이 가장 단순.
-   - **다른 서버**에서 보낼 때는 중앙의 Caddy(HTTPS, 8080)를 거친다. Caddy 가
-     `tls internal`(자체서명) + SNI 도메인을 쓰므로, IP 직접 접속은 실패한다.
-     `https://ost-server.duckdns.org:8080/ingest.php` 처럼 **도메인**으로 보내야 하고,
-     그 도메인이 대상 서버에서 중앙 IP 로 풀려야 한다(필요하면 `/etc/hosts` 매핑).
-     자체서명이라 에이전트가 인증서 검증을 건너뛰어야 할 수 있다.
+2. **전송 URL(--server)은 대상 서버가 실제로 닿는 주소여야 한다.** 서버마다 다르다.
+
+   | 대상 | 넣을 주소 | 왜 |
+   |---|---|---|
+   | 중앙 서버 자신 | `http://127.0.0.1:8081/ingest.php` | 웹 컨테이너 직결(loopback 전용 포트). Caddy·TLS 를 통째로 건너뛴다 |
+   | 같은 내부망의 다른 서버 | `ost-server.duckdns.org:8080` | Caddy(HTTPS)를 거친다. 도메인이 공인 IP 로 풀리면 설치기가 `/etc/hosts` 로 내부 IP 에 묶는다 |
+   | 진짜 외부 서버 | `ost-server.duckdns.org:8080` | 밖에서는 공인 IP 가 정답 |
+
+   중앙 자신에 loopback 을 쓰는 이유: 도메인은 **공인 IP(라우터)** 로 풀리는데, 내부에서 자기
+   라우터로 되돌아 들어가는 건(헤어핀 NAT) 대개 막혀 있다. `Connection refused` 가 그것이다.
+   IP 로 직접 8080 을 치는 것도 안 된다 — Caddy 가 **SNI 로 사이트를 고르므로** 이름이어야 한다.
 
 3. **HTTP 405/401 은 정상 신호다.** `ingest.php` 는 POST 전용이라 GET 으로 열면 405,
    토큰이 틀리면 401 이 온다. 설치기의 "즉시 1회" 전송이 성공(2xx)했는지로 판단한다.

@@ -1170,12 +1170,17 @@ echo "----------------------------------------" >&2
 # 전송: 중앙 수신 API(ingest.php)로 JSON POST  (--send URL --token TOK)
 #   - 파일 저장은 위에서 이미 끝남. 전송은 순수 추가 동작(옵션).
 #   - jq 없이 텍스트로 저장된 경우엔 서버가 파싱 못 하므로 전송 생략.
+#   - 전송을 요청받았는데 못 보냈으면 **종료코드 1**. 예전엔 조용히 0 으로 끝나서,
+#     타이머는 매시간 초록불인데 중앙엔 자산이 영영 안 올라오는 상태를 아무도 몰랐다.
 # ==================================================================
+SEND_FAILED=0
 if [ -n "$SEND_URL" ]; then
   if [ "${OUTPUT_IS_JSON:-0}" != 1 ]; then
     echo ">> 전송 생략: jq 미설치로 JSON 이 아님(텍스트 출력은 서버가 파싱 못 함)." >&2
+    SEND_FAILED=1
   elif ! have curl; then
     echo ">> 전송 생략: curl 이 없습니다." >&2
+    SEND_FAILED=1
   else
     echo ">> 전송 시작 → $SEND_URL" >&2
     # 토큰을 curl 명령행 인자(-H "...")로 주면 수집 도는 동안 /proc/<pid>/cmdline 이나 ps 로
@@ -1195,6 +1200,9 @@ if [ -n "$SEND_URL" ]; then
       echo ">> 전송 성공(HTTP 200): $(cat "$TMP/_ingest_resp.json" 2>/dev/null)" >&2
     else
       echo ">> 전송 실패(HTTP $HTTP_CODE): $(cat "$TMP/_ingest_resp.json" 2>/dev/null)$(cat "$TMP/_ingest_err.txt" 2>/dev/null)" >&2
+      SEND_FAILED=1
     fi
   fi
 fi
+
+exit "$SEND_FAILED"
