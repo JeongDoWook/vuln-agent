@@ -29,6 +29,32 @@ ADMPW="$(cat "$ROOT/secrets/admin_password.txt")"
 
 printf "${CYAN}== vuln-agent smoke test @ %s ==${NC}\n" "$BASE"
 
+# --- 이 스택이 **내 트리**를 서빙 중인가 -------------------------------------
+# dev 스택은 저장소에 하나뿐이라(compose_runner 가 프로젝트명을 vulnagent-dev 로 고정),
+#   다른 세션이 `dev up -d` 를 하면 스택이 그 트리로 **옮겨간다**. 그걸 모르고 스모크를 돌리면
+#   내 코드가 아니라 **남의 코드를 검사하고 초록불**을 준다 — 실제로 그렇게 "59 통과" 를 받았고,
+#   마운트를 직접 확인하고서야 거짓인 걸 알았다.
+#   pre-push 훅은 이미 이 대조를 한다. 수동 실행에도 같은 보호를 준다.
+#   VG_SMOKE_ANY=1 로 끌 수 있다(운영 스택 등 다른 대상을 일부러 칠 때).
+if [ "${VG_SMOKE_ANY:-0}" != "1" ] && command -v docker >/dev/null 2>&1; then
+  stack_src=$(docker inspect "${VG_WEB_CONTAINER:-vulnagent-web-dev}" \
+    --format '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
+  if [ -n "$stack_src" ]; then
+    # 윈도는 역슬래시로 준다 → 슬래시·소문자로 정규화해 비교한다.
+    norm() { printf '%s' "$1" | tr '\\' '/' | tr 'A-Z' 'a-z' | sed 's:/*$::'; }
+    mine="$( (cd "$ROOT" && pwd -W 2>/dev/null) || printf '%s' "$ROOT" )/server"
+    if [ "$(norm "$stack_src")" != "$(norm "$mine")" ]; then
+      printf "${RED}✗ dev 스택이 이 트리를 서빙하고 있지 않습니다 — 스모크를 중단합니다.${NC}\n" >&2
+      printf "    이 트리 : %s\n" "$mine" >&2
+      printf "    스택    : %s\n" "$stack_src" >&2
+      printf "    가져오려면: ./deploy/compose_runner.sh dev up -d\n" >&2
+      printf "    (남의 트리를 검사해 초록불을 주면 그게 거짓이다. 일부러 다른 대상을 칠 때만 VG_SMOKE_ANY=1)\n" >&2
+      exit 2
+    fi
+  fi
+fi
+
+
 # --- UI 정적 검사 -----------------------------------------------------------
 # 서버를 치기 전에 먼저 돈다(죽은 CSS 클래스·인라인 style·조용히 잘리는 목록).
 # 여기서 걸리면 화면은 200 을 주면서도 스타일이 안 입혀지거나 데이터가 잘려 나간다 —
