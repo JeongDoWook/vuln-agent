@@ -134,10 +134,12 @@ assert_contains "$resp" 'ALAS' "ingest 응답에 미지원 경고(자체 ALAS �
 
 # --- 재매칭 -----------------------------------------------------------------
 printf "\n[rematch]\n"
-code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=WRONG")
+code=$(curl -s -o /dev/null -w '%{http_code}' -H "X-Agent-Token: WRONG" "$BASE/rematch.php")
 assert_eq "$code" "401" "잘못된 토큰 → 401"
-resp=$(curl -s "$BASE/rematch.php?token=$TOKEN")
-assert_contains "$resp" '"ok":true' "재매칭 성공"
+code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=$TOKEN")
+assert_eq "$code" "401" "?token= 쿼리는 더 이상 인증 안 됨(헤더만 허용) → 401"
+resp=$(curl -s -H "X-Agent-Token: $TOKEN" "$BASE/rematch.php")
+assert_contains "$resp" '"ok":true' "재매칭 성공(헤더 인증)"
 
 # --- 웹 인증 흐름 -----------------------------------------------------------
 printf "\n[web auth]\n"
