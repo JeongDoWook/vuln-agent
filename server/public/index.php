@@ -12,21 +12,60 @@ vg_require_menu('dashboard');
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
+$kevCount = 0; $overdueCount = 0; $urgent = [];
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = vg_perpage();
 try {
     $pdo = vg_pdo();
     $hostCount = (int) $pdo->query('SELECT COUNT(*) FROM tb_hosts WHERE is_deleted = 0')->fetchColumn();
 
+    // 전 호스트의 "최신 스캔" 집합 — KPI·도넛·급한목록이 모두 이 기준을 쓴다.
+    $latestScans =
+        "SELECT MAX(s.id) FROM tb_scans s JOIN tb_hosts h ON h.id = s.host_id
+          WHERE h.is_deleted = 0 GROUP BY s.host_id";
+
     // KPI 는 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
     $totalsRows = $pdo->query(
         "SELECT f.severity, COUNT(*) c FROM tb_findings f
-          WHERE f.scan_id IN (
-              SELECT MAX(s.id) FROM tb_scans s JOIN tb_hosts h ON h.id = s.host_id
-               WHERE h.is_deleted = 0 GROUP BY s.host_id)
+          WHERE f.scan_id IN ($latestScans)
           GROUP BY f.severity"
     )->fetchAll();
     foreach ($totalsRows as $f) { if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; } }
+
+    /* "지금 급한 것" — 대시보드에 없던, 정작 제일 필요한 답.
+     *
+     * 급함의 정의(순서대로):
+     *   1) KEV 패치 기한이 지났다      — CISA 가 정한 기한. 유일하게 "언제까지" 가 있는 신호다.
+     *   2) 악용이 확인됐고(KEV) 외부에 노출돼 있다
+     *   3) 그 외 등급순
+     * due_date 는 KEV 커넥터가 최근에야 받아오기 시작한 값이라 NULL 일 수 있다 — NULL 은 "기한 없음".
+     */
+    $urgent = $pdo->query(
+        "SELECT f.cve_id, f.severity, f.package_name, f.runtime_status, f.in_kev,
+                h.id AS host_id, h.fqdn, k.due_date,
+                DATEDIFF(CURDATE(), k.due_date) AS days_over
+           FROM tb_findings f
+           JOIN tb_scans s ON s.id = f.scan_id
+           JOIN tb_hosts h ON h.id = s.host_id
+           LEFT JOIN tb_kev_catalog k ON k.cve_id = f.cve_id AND k.is_deleted = 0
+          WHERE f.scan_id IN ($latestScans)
+            AND (f.in_kev = 1 OR f.runtime_status = 'EXTERNAL')
+          ORDER BY (k.due_date IS NOT NULL AND k.due_date < CURDATE()) DESC,
+                   (f.in_kev = 1 AND f.runtime_status = 'EXTERNAL') DESC,
+                   FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),
+                   k.due_date
+          LIMIT 6"
+    )->fetchAll();
+
+    // KEV 노출 건수 · 패치 기한 초과 건수(KPI)
+    $kevCount = (int) $pdo->query(
+        "SELECT COUNT(*) FROM tb_findings f WHERE f.scan_id IN ($latestScans) AND f.in_kev = 1"
+    )->fetchColumn();
+    $overdueCount = (int) $pdo->query(
+        "SELECT COUNT(*) FROM tb_findings f
+           JOIN tb_kev_catalog k ON k.cve_id = f.cve_id AND k.is_deleted = 0
+          WHERE f.scan_id IN ($latestScans) AND k.due_date IS NOT NULL AND k.due_date < CURDATE()"
+    )->fetchColumn();
 
     // 목록 대상 = 최신 스캔이 있는 비삭제 호스트 수(페이지네이션 총건).
     $total = (int) $pdo->query(
@@ -72,26 +111,111 @@ vg_header('대시보드', 'dashboard');
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
   <div class="cards">
-    <div class="kpi big"><b><?= $hostCount ?></b><span>호스트</span></div>
+    <div class="kpi big"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
-      <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $totals[$s] ?></b><span><?= $s ?></span></div>
+      <a class="kpi tone-<?= vg_sev_tone($s) ?>" href="/findings.php?sev=<?= $s ?>">
+        <b><?= (int) $totals[$s] ?></b><span><?= $s ?></span>
+      </a>
     <?php endforeach; ?>
+    <div class="kpi tone-<?= $kevCount > 0 ? 'crit' : 'ok' ?>">
+      <b><?= number_format($kevCount) ?></b><span>KEV 악용확인</span>
+    </div>
+    <div class="kpi tone-<?= $overdueCount > 0 ? 'crit' : 'ok' ?>">
+      <b><?= number_format($overdueCount) ?></b><span>패치기한 초과</span>
+    </div>
   </div>
 
+  <div class="split">
+    <div class="card">
+      <strong>심각도 분포</strong>
+      <div class="card__body center">
+        <?php vg_sev_donut($totals); ?>
+        <div class="legend">
+          <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
+            <div>
+              <i class="tone-<?= vg_sev_tone($s) ?>"></i>
+              <span><?= $s ?></span>
+              <span class="n"><?= number_format((int) $totals[$s]) ?></span>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>지금 급한 것</strong>
+      <span class="why">— 패치 기한이 지났거나, 악용이 확인됐는데 외부에 노출된 것부터</span>
+      <div class="card__body">
+      <?php
+      vg_table(
+          [
+              ['label' => '등급', 'key' => 'severity', 'width' => '6rem', 'nowrap' => true],
+              ['label' => 'CVE', 'width' => '13rem', 'nowrap' => true],
+              ['label' => '호스트'],
+              ['label' => '패키지'],
+              ['label' => '왜 급한가', 'width' => '15rem'],
+          ],
+          $urgent,
+          [
+              'card'  => false,
+              'empty' => [
+                  'icon'  => '✅',
+                  'title' => '급한 항목이 없습니다.',
+                  'hint'  => '악용이 확인됐거나 외부에 노출된 취약점이 없습니다.',
+              ],
+              'row_class' => fn($u) => vg_sev_row((string) $u['severity']),
+              'cell' => [
+                  'severity' => fn($u) => vg_sev_badge((string) $u['severity']),
+                  1 => function ($u) {
+                      $html = '<strong><a href="/cve.php?cve=' . urlencode((string) $u['cve_id']) . '">'
+                            . vg_h((string) $u['cve_id']) . '</a></strong>';
+                      if ($u['in_kev']) { $html .= ' ' . vg_badge('KEV', 'crit'); }
+                      return $html;
+                  },
+                  2 => fn($u) => '<a href="/host.php?id=' . (int) $u['host_id'] . '">' . vg_h((string) $u['fqdn']) . '</a>',
+                  3 => fn($u) => vg_h((string) $u['package_name']),
+                  // "왜 급한가" — 기한 초과가 최우선, 그다음이 악용확인+외부노출.
+                  4 => function ($u) {
+                      $over = $u['days_over'] !== null ? (int) $u['days_over'] : null;
+                      if ($over !== null && $over > 0) {
+                          return vg_badge('기한 ' . number_format($over) . '일 초과', 'crit')
+                               . '<div class="why">기한 ' . vg_h((string) $u['due_date']) . '</div>';
+                      }
+                      if ($u['in_kev'] && $u['runtime_status'] === 'EXTERNAL') {
+                          return vg_badge('악용확인 + 외부노출', 'crit');
+                      }
+                      return vg_status_badge($u['runtime_status']);
+                  },
+              ],
+          ]
+      );
+      ?>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>호스트별 현황</strong> <span class="why">— 각 호스트의 최신 스캔 기준</span>
+    <div class="card__body">
   <?php
   vg_table(
       [
           ['label' => '호스트'],
           ['label' => 'OS'],
-          ['label' => '패키지'],
-          ['label' => '노출'],
+          ['label' => '패키지', 'align' => 'right'],
+          ['label' => '노출', 'align' => 'right'],
           ['label' => '심각도'],
-          ['label' => '수집시각'],
+          ['label' => '수집시각', 'nowrap' => true],
           ['label' => ''],
       ],
       $rows,
       [
-          'empty' => '아직 수집된 스캔이 없습니다. 에이전트를 --send 로 실행하세요.',
+          'card'  => false,
+          'empty' => [
+              'icon'  => '🖥️',
+              'title' => '아직 수집된 스캔이 없습니다.',
+              'hint'  => '에이전트를 --send 로 실행하면 여기에 나타납니다.',
+          ],
           'cell' => [
               0 => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a></strong>',
               1 => fn($r) => vg_h($r['os_id']) . ' ' . vg_h($r['os_version']),
@@ -105,5 +229,7 @@ vg_header('대시보드', 'dashboard');
   );
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
+    </div>
+  </div>
 <?php endif; ?>
 <?php vg_footer();
