@@ -428,7 +428,9 @@ function vg_osv_batch_url(array $conn): string {
  */
 function vg_osv_queries(PDO $pdo, int $scanId, string $eco): array {
     $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
-    $pk = $pdo->prepare('SELECT name, source_pkg, version FROM tb_packages WHERE scan_id = ?');
+    // OS 패키지만. 언어 패키지는 vg_osv_lang_queries 가 자기 생태계로 따로 조회한다.
+    $pk = $pdo->prepare("SELECT name, source_pkg, version FROM tb_packages
+                         WHERE scan_id = ? AND manager IN ('rpm','dpkg')");
     $pk->execute([$scanId]);
 
     $out = []; $seen = [];
@@ -437,7 +439,32 @@ function vg_osv_queries(PDO $pdo, int $scanId, string $eco): array {
         $ver = (string) $p['version'];
         if ($key === '' || $ver === '' || isset($seen["$key|$ver"])) { continue; }
         $seen["$key|$ver"] = true;
-        $out[] = ['key' => $key, 'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
+        $out[] = ['key' => $key, 'eco' => $eco,
+                  'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
+    }
+    return $out;
+}
+
+/**
+ * 언어 패키지(pip/npm/gem/composer) → OSV 질의. 배포판과 무관하게 자기 생태계로 조회한다.
+ * 에이전트는 예전부터 이걸 수집해 보냈는데 서버가 버려서 언어 패키지 CVE 가 전부 미탐이었다.
+ *
+ * @return list<array{key:string,eco:string,q:array}>
+ */
+function vg_osv_lang_queries(PDO $pdo, int $scanId): array {
+    $pk = $pdo->prepare("SELECT manager, name, version FROM tb_packages
+                         WHERE scan_id = ? AND manager NOT IN ('rpm','dpkg')");
+    $pk->execute([$scanId]);
+
+    $out = []; $seen = [];
+    foreach ($pk->fetchAll() as $p) {
+        $eco = vg_pkg_ecosystem((string) $p['manager'], null);
+        $key = (string) $p['name'];
+        $ver = (string) $p['version'];
+        if ($eco === null || $key === '' || $ver === '' || isset($seen["$eco|$key|$ver"])) { continue; }
+        $seen["$eco|$key|$ver"] = true;
+        $out[] = ['key' => $key, 'eco' => $eco,
+                  'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
     }
     return $out;
 }
@@ -460,12 +487,18 @@ final class VgOsvConnector implements VgFeedConnector {
         $fetched = 0; $up = 0; $seen = [];
         foreach ($scans as $sc) {
             $eco = $ecoOverride !== '' ? $ecoOverride : vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
-            if ($eco === null || $eco === '') { continue; } // 미지원 배포판 스킵
 
-            // 스캔 간 중복 조회 방지(호스트가 달라도 같은 배포판·패키지·버전이면 한 번만).
+            // OS 패키지(배포판 생태계) + 언어 패키지(PyPI/npm/RubyGems/Packagist).
+            //   배포판이 미지원(eco=null)이어도 언어 패키지는 조회할 수 있다.
+            $cand = vg_osv_lang_queries($pdo, (int) $sc['id']);
+            if ($eco !== null && $eco !== '') {
+                $cand = array_merge(vg_osv_queries($pdo, (int) $sc['id'], $eco), $cand);
+            }
+
+            // 스캔 간 중복 조회 방지(호스트가 달라도 같은 생태계·패키지·버전이면 한 번만).
             $queries = [];
-            foreach (vg_osv_queries($pdo, (int) $sc['id'], $eco) as $q) {
-                $dk = $eco . '|' . $q['key'] . '|' . $q['q']['version'];
+            foreach ($cand as $q) {
+                $dk = $q['eco'] . '|' . $q['key'] . '|' . $q['q']['version'];
                 if (isset($seen[$dk])) { continue; }
                 $seen[$dk] = true;
                 $queries[] = $q;
@@ -477,20 +510,21 @@ final class VgOsvConnector implements VgFeedConnector {
                 $fetched += count($chunk);
                 if ($r['code'] === 200 && isset($r['json']['results'])) {
                     foreach ($r['json']['results'] as $i => $res) {
-                        $key = $chunk[$i]['key'] ?? '';
+                        $key    = $chunk[$i]['key'] ?? '';
+                        $qEco   = $chunk[$i]['eco'] ?? $eco;   // 질의마다 생태계가 다르다(배포판/PyPI/npm…)
                         foreach ($res['vulns'] ?? [] as $v) {
                             $id = (string) ($v['id'] ?? '');
                             if ($id === '') { continue; }
                             // batch 는 id 만 반환 → id 에서 CVE 추출(DEBIAN-CVE-…/UBUNTU-CVE-…/CVE-…)
                             if (preg_match('/CVE-\d{4}-\d+/i', $id, $m)) {
                                 vg_upsert_cve($pdo, strtoupper($m[0]), null, null, null);
-                                vg_upsert_affected($pdo, strtoupper($m[0]), $eco, $key, null);
+                                vg_upsert_affected($pdo, strtoupper($m[0]), $qEco, $key, null);
                                 $up++;
                                 continue;
                             }
-                            // id 에 CVE 가 없는 보안공지(USN-*, DSA-* …). 버리면 취약점을 놓친다
+                            // id 에 CVE 가 없는 보안공지(USN-*, DSA-*, GHSA-* …). 버리면 취약점을 놓친다
                             // (vg_osv_advisory_cves 주석 참고) → 단건 조회로 CVE 목록을 펼친다.
-                            $up += $this->expandAdvisory($pdo, $id, $eco, $key);
+                            $up += $this->expandAdvisory($pdo, $id, (string) $qEco, $key);
                         }
                     }
                 }
@@ -567,13 +601,19 @@ function vg_osv_enrich_fixed(PDO $pdo, ?callable $log = null): array {
     $seen = [];
     foreach ($scans as $sc) {
         $eco = vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
-        if ($eco === null || $eco === '') { continue; }
 
-        foreach (vg_osv_queries($pdo, (int) $sc['id'], $eco) as $q) {
-            $key = $q['key'];
-            $ver = $q['q']['version'];
+        // OS 패키지 + 언어 패키지 둘 다 보강한다(생태계는 질의마다 다르다).
+        $cand = vg_osv_lang_queries($pdo, (int) $sc['id']);
+        if ($eco !== null && $eco !== '') {
+            $cand = array_merge(vg_osv_queries($pdo, (int) $sc['id'], $eco), $cand);
+        }
+
+        foreach ($cand as $q) {
+            $key  = $q['key'];
+            $qEco = (string) $q['eco'];
+            $ver  = $q['q']['version'];
             if (!isset($needFix[$key])) { continue; }
-            $dk = "$eco|$key|$ver";
+            $dk = "$qEco|$key|$ver";
             if (isset($seen[$dk])) { continue; }
             $seen[$dk] = true;
 
@@ -581,15 +621,15 @@ function vg_osv_enrich_fixed(PDO $pdo, ?callable $log = null): array {
             $stat['queried']++;
             if ($r['code'] !== 200 || !isset($r['json']['vulns'])) {
                 $stat['skipped']++;
-                if ($log) { $log("  - {$eco} {$key}@{$ver}: 건너뜀 ({$r['error']})"); }
+                if ($log) { $log("  - {$qEco} {$key}@{$ver}: 건너뜀 ({$r['error']})"); }
                 unset($r);
                 continue;
             }
             foreach ($r['json']['vulns'] as $v) {
                 $cve   = vg_osv_cve($v);
-                $fixed = vg_osv_fixed($v, $key, $eco);
+                $fixed = vg_osv_fixed($v, $key, $qEco);
                 if ($cve === null || $fixed === null) { continue; }
-                vg_upsert_affected($pdo, $cve, $eco, $key, $fixed);   // fixed 채움(기존 행 UPDATE)
+                vg_upsert_affected($pdo, $cve, $qEco, $key, $fixed);   // fixed 채움(기존 행 UPDATE)
                 $stat['filled']++;
             }
             unset($r); // 응답 즉시 해제

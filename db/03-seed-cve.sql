@@ -15,7 +15,8 @@ INSERT INTO tb_cves (cve_id, summary, cvss, published) VALUES
   ('CVE-2021-23017', 'nginx resolver off-by-one 힙 쓰기 — 원격 코드실행 가능', 7.7, '2021-05-25'),
   ('CVE-2023-38545', 'curl SOCKS5 힙 버퍼 오버플로우 — 원격 코드실행 가능', 9.8, '2023-10-11'),
   ('CVE-2023-22809', 'sudo sudoedit 임의 파일 편집 — 권한상승', 7.8, '2023-01-18'),
-  ('CVE-2023-28425', 'redis MSETNX 명령 처리 중 단언 실패 — DoS', 5.5, '2023-03-20')
+  ('CVE-2023-28425', 'redis MSETNX 명령 처리 중 단언 실패 — DoS', 5.5, '2023-03-20'),
+  ('CVE-2023-32681', 'python-requests: 리다이렉트 시 Proxy-Authorization 헤더 유출', 6.1, '2023-05-26')
 ON DUPLICATE KEY UPDATE summary=VALUES(summary), cvss=VALUES(cvss), published=VALUES(published);
 
 -- CISA KEV: 실제 악용 목록 (Looney Tunables 는 KEV 등재)
@@ -36,5 +37,8 @@ INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_ver
   ('CVE-2023-22809','Rocky Linux:9', 'sudo',    '1.9.5p2-13.el9_4'),
   -- redis 는 0.0.0.0:6379 로 떠 있지만 방화벽이 막는다(scope=FILTERED) → 외부노출 아님.
   -- 방화벽을 안 보면 EXTERNAL 로 오판해 HIGH 가 된다. 실제로는 MEDIUM.
-  ('CVE-2023-28425','Rocky Linux:9', 'redis',   '6.2.11-1.el9')
+  ('CVE-2023-28425','Rocky Linux:9', 'redis',   '6.2.11-1.el9'),
+  -- 언어 패키지(PyPI). OS 패키지와 생태계가 달라 섞이지 않는다.
+  -- 조치안은 semver/PEP440 이라 EVR 비교기가 아니라 version_compare 로 비교한다.
+  ('CVE-2023-32681','PyPI',          'requests', '2.31.0')
 ON DUPLICATE KEY UPDATE ecosystem=VALUES(ecosystem), fixed_version=VALUES(fixed_version);

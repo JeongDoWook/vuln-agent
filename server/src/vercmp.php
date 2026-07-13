@@ -149,10 +149,30 @@ function vg_rpm_cmp(string $a, string $b): int
 }
 
 /**
- * 패키지 매니저에 맞는 버전 비교. $manager: 'rpm' | 'dpkg'(그 외는 dpkg 규칙).
+ * 언어 패키지(PyPI/npm/RubyGems/Packagist) 버전 비교.
+ *
+ * 배포판 규칙(epoch·릴리스번호)이 없고 semver/PEP440 이다. PHP version_compare 가
+ * 프리릴리스 순서(dev < alpha < beta < RC < 정식 < pl)를 처리하므로 그대로 쓴다.
+ * EVR 비교기를 여기 쓰면 안 된다 — '1.0.0-rc1' 의 '-rc1' 을 데비안 리비전으로 읽어
+ * 정식 릴리스보다 **최신**으로 판단해 버린다(취약한데 패치됨으로 오억제 = 미탐).
+ */
+function vg_lang_cmp(string $a, string $b): int
+{
+    return version_compare(trim($a), trim($b));   // -1 / 0 / 1
+}
+
+/**
+ * 패키지 매니저에 맞는 버전 비교. $manager: 'rpm' | 'dpkg' | 'pip'|'npm'|'gem'|'composer'.
  * 반환 -1(a<b) / 0(같음) / 1(a>b).
  */
 function vg_ver_cmp(string $a, string $b, string $manager): int
 {
-    return $manager === 'rpm' ? vg_rpm_cmp($a, $b) : vg_deb_cmp($a, $b);
+    switch (strtolower($manager)) {
+        case 'rpm':      return vg_rpm_cmp($a, $b);
+        case 'pip':
+        case 'npm':
+        case 'gem':
+        case 'composer': return vg_lang_cmp($a, $b);
+        default:         return vg_deb_cmp($a, $b);
+    }
 }
