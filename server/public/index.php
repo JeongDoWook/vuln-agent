@@ -10,9 +10,12 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('dashboard');
 
+// "지금 급한 것" 에 보여줄 최대 건수. 나머지는 취약점 현황으로 넘긴다.
+const VG_URGENT_TOP = 6;
+
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
-$kevCount = 0; $overdueCount = 0; $urgent = [];
+$kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0;
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = vg_perpage();
 try {
@@ -54,8 +57,16 @@ try {
                    (f.in_kev = 1 AND f.runtime_status = 'EXTERNAL') DESC,
                    FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),
                    k.due_date
-          LIMIT 6"
+          LIMIT " . VG_URGENT_TOP
     )->fetchAll();
+
+    // 급한 항목의 전체 건수 — 상위 N개만 보여주면서 "몇 건 중 몇 건인지" 를 말하지 않으면
+    // 화면이 "이게 전부" 라고 거짓말을 한다. 나머지는 취약점 현황에서 본다.
+    $urgentTotal = (int) $pdo->query(
+        "SELECT COUNT(*) FROM tb_findings f
+          WHERE f.scan_id IN ($latestScans)
+            AND (f.in_kev = 1 OR f.runtime_status = 'EXTERNAL')"
+    )->fetchColumn();
 
     // KEV 노출 건수 · 패치 기한 초과 건수(KPI)
     $kevCount = (int) $pdo->query(
@@ -111,7 +122,7 @@ vg_header('대시보드', 'dashboard');
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
   <div class="cards">
-    <div class="kpi big"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>
+    <div class="kpi"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
       <a class="kpi tone-<?= vg_sev_tone($s) ?>" href="/findings.php?sev=<?= $s ?>">
         <b><?= (int) $totals[$s] ?></b><span><?= $s ?></span>
@@ -145,6 +156,10 @@ vg_header('대시보드', 'dashboard');
     <div class="card">
       <strong>지금 급한 것</strong>
       <span class="why">— 패치 기한이 지났거나, 악용이 확인됐는데 외부에 노출된 것부터</span>
+      <?php if ($urgentTotal > count($urgent)): ?>
+        <span class="why">· 총 <?= number_format($urgentTotal) ?>건 중 상위 <?= count($urgent) ?>건 ·
+          <a href="/findings.php?st=EXTERNAL">전체 보기 →</a></span>
+      <?php endif; ?>
       <div class="card__body">
       <?php
       vg_table(

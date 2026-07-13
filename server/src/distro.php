@@ -8,6 +8,39 @@ declare(strict_types=1);
  * 수집 때 'Ubuntu:24.04' 로 저장한 행을, 매칭 때 다른 규칙으로 읽으면 어긋난다.
  */
 
+if (!function_exists('vg_distro_unsupported')) {
+    /**
+     * 이 배포판을 CVE 피드(OSV)가 지원하지 않는가?
+     *
+     * 지원하지 않으면 매칭 후보 자체가 없어 **취약점이 0건으로 뜬다.** 운영자는 "안전하다"고
+     * 읽는다 — 침묵하는 미탐이다. 그래서 화면에 명시적으로 알려야 한다.
+     *
+     * OSV 공식 생태계 목록(osv-vulnerabilities.storage.googleapis.com/ecosystems.txt) 기준
+     * OS 배포판: AlmaLinux · Alpine · Azure Linux · Chainguard · Debian · Mageia · Red Hat ·
+     * Rocky Linux · SUSE · openSUSE · Ubuntu · Wolfi.
+     * **Amazon Linux · Oracle Linux · CentOS 는 목록에 없다**(2026-07 확인. Amazon Linux 로
+     * 질의하면 OSV 가 INVALID_ARGUMENT 를 돌려준다).
+     *
+     * @return string|null 미지원이면 사람이 읽을 사유, 지원하면 null
+     */
+    function vg_distro_unsupported(?string $osId, ?string $osVer): ?string
+    {
+        $id = strtolower(trim((string) $osId));
+        if ($id === '') { return null; }                 // 배포판 자체를 모름 → 별도로 다룬다
+        if (vg_osv_ecosystem($osId, $osVer) !== null) { return null; }
+
+        // 이름을 아는 미지원 배포판은 구체적으로 알려준다(자체 피드가 따로 있다).
+        $known = [
+            'amzn'   => 'Amazon Linux — OSV 미지원(자체 ALAS 피드 필요)',
+            'ol'     => 'Oracle Linux — OSV 미지원(자체 ELSA 피드 필요)',
+            'centos' => 'CentOS — OSV 미지원',
+        ];
+        if (isset($known[$id])) { return $known[$id]; }
+
+        return sprintf('%s %s — CVE 피드(OSV)가 지원하지 않는 배포판', $osId, (string) $osVer);
+    }
+}
+
 if (!function_exists('vg_pkg_ecosystem')) {
     /**
      * 이 패키지가 속한 생태계 — 패키지 매니저로 정한다.
@@ -24,6 +57,41 @@ if (!function_exists('vg_pkg_ecosystem')) {
             case 'gem':      return 'RubyGems';
             case 'composer': return 'Packagist';
             default:         return $hostEco;   // rpm / dpkg → 배포판
+        }
+    }
+
+    /**
+     * 이 패키지가 **배포판 저장소** 것인가? (서드파티 PPA/Docker/NodeSource·수동설치가 아닌가)
+     *
+     * 왜 필요한가: 배포판 기준 억제(debsecan·errata·changelog)는 "배포판 트래커에 없으면
+     * 이미 수정됨"으로 본다. 서드파티 패키지는 애초에 트래커에 없으므로, 그대로 두면
+     * **진짜 취약점을 숨기는 미탐**이 된다.
+     *
+     * 판정은 apt 의 Origin 라벨(o=Debian / o=Docker / o=LP-PPA-…)로 한다. URL 로 보면
+     * 사내 미러(mirror.company.com)가 서드파티로 오판된다.
+     *
+     * **정보가 없으면(구 에이전트, origin=null) 배포판으로 간주한다.** 그러지 않으면 아직
+     * 업데이트 안 된 호스트의 억제가 통째로 사라져 오탐이 폭증한다.
+     */
+    function vg_is_distro_pkg(?string $origin, ?string $osId): bool
+    {
+        $o = trim((string) $origin);
+        if ($o === '') { return true; }                 // 정보 없음 → 종전대로(억제 유지)
+        $ou = strtoupper($o);
+        if ($ou === 'UNKNOWN') { return true; }         // 매핑 실패 → 판단 보류(억제 유지)
+        if ($ou === 'LOCAL')   { return false; }        // 어느 저장소에도 없음 = 수동 .deb 설치
+
+        $os = strtolower((string) $osId);
+        // dpkg: 라벨이 배포판 것인가. rpm: VENDOR 문자열에 배포판 벤더명이 들어 있는가.
+        switch ($os) {
+            case 'debian':    return stripos($o, 'Debian') !== false;
+            case 'ubuntu':    return stripos($o, 'Ubuntu') !== false;
+            case 'rocky':     return stripos($o, 'Rocky')  !== false;
+            case 'almalinux': return stripos($o, 'AlmaLinux') !== false;
+            case 'rhel':
+            case 'redhat':    return stripos($o, 'Red Hat') !== false;
+            case 'alpine':    return stripos($o, 'Alpine') !== false;
+            default:          return true;              // 모르는 배포판 → 판단 보류
         }
     }
 

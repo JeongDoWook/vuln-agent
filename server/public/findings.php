@@ -11,7 +11,10 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
 vg_require_menu('findings');
+
+$unsupHosts = [];   // CVE 피드 미지원 배포판 호스트 — 0건이 "안전"이 아니라 "판정 불가"다
 
 $sevOptions = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 $stOptions  = ['EXTERNAL', 'FILTERED', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
@@ -34,13 +37,18 @@ try {
 
     // 호스트별 최신 스캔 (삭제된 호스트 제외) — 통합 뷰의 대상 스캔 집합.
     $hosts = $pdo->query(
-        'SELECT h.id AS host_id, h.fqdn, MAX(s.id) AS scan_id
+        'SELECT h.id AS host_id, h.fqdn, h.os_id, h.os_version, MAX(s.id) AS scan_id
            FROM tb_hosts h JOIN tb_scans s ON s.host_id = h.id
           WHERE h.is_deleted = 0
-          GROUP BY h.id, h.fqdn
+          GROUP BY h.id, h.fqdn, h.os_id, h.os_version
           ORDER BY h.fqdn'
     )->fetchAll();
-    foreach ($hosts as $h) { $hostOptions[(int) $h['host_id']] = (string) $h['fqdn']; }
+    foreach ($hosts as $h) {
+        $hostOptions[(int) $h['host_id']] = (string) $h['fqdn'];
+        // 피드가 지원하지 않는 배포판은 매칭 후보가 없어 0건으로 뜬다 → 목록에 모아 경고한다.
+        $reason = vg_distro_unsupported($h['os_id'] ?? null, $h['os_version'] ?? null);
+        if ($reason !== null) { $unsupHosts[] = $h['fqdn'] . ' (' . $reason . ')'; }
+    }
 
     if ($scanId > 0) {
         // 단일 스캔 모드 — 어느 호스트의 어느 시점인지 부제에 명시해야 한다.
@@ -130,6 +138,16 @@ vg_header('취약점', 'findings');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
+  <?php if ($unsupHosts): ?>
+    <div class="alert alert--err">
+      <strong>일부 호스트는 취약점 매칭이 수행되지 않습니다</strong> — CVE 피드(OSV)가 지원하지 않는
+      배포판입니다. 이 호스트들의 취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.
+      <ul class="hint-list">
+        <?php foreach ($unsupHosts as $line): ?><li><?= vg_h($line) ?></li><?php endforeach; ?>
+      </ul>
+    </div>
+  <?php endif; ?>
+
   <div class="cards">
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
       <a href="<?= vg_h(vg_qs(['sev' => $sev === $s ? '' : $s, 'page' => 1])) ?>"

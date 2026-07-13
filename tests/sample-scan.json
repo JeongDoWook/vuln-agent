@@ -19,11 +19,31 @@
   },
   "pkg": {
     "manager": "rpm",
-    "count": "6",
-    "list": "openssl\t1:3.0.7-24.el9\tx86_64\topenssl-3.0.7-24.el9.src.rpm\tRocky Enterprise Software Foundation\nglibc\t0:2.34-60.el9_2.3\tx86_64\tglibc-2.34-60.el9_2.3.src.rpm\tRocky Enterprise Software Foundation\nnginx\t1:1.20.1-14.el9_2\tx86_64\tnginx-1.20.1-14.el9_2.src.rpm\tRocky Enterprise Software Foundation\ncurl\t0:7.76.1-26.el9_3.2\tx86_64\tcurl-7.76.1-26.el9_3.2.src.rpm\tRocky Enterprise Software Foundation\nsudo\t0:1.9.5p2-10.el9_3\tx86_64\tsudo-1.9.5p2-10.el9_3.src.rpm\tRocky Enterprise Software Foundation\nredis\t0:6.2.7-1.el9\tx86_64\tredis-6.2.7-1.el9.src.rpm\tRocky Enterprise Software Foundation"
+    "count": "7",
+    "list": "openssl\t1:3.0.7-24.el9\tx86_64\topenssl-3.0.7-24.el9.src.rpm\tRocky Enterprise Software Foundation\nglibc\t0:2.34-60.el9_2.3\tx86_64\tglibc-2.34-60.el9_2.3.src.rpm\tRocky Enterprise Software Foundation\nnginx\t1:1.20.1-14.el9_2\tx86_64\tnginx-1.20.1-14.el9_2.src.rpm\tRocky Enterprise Software Foundation\ncurl\t0:7.76.1-26.el9_3.2\tx86_64\tcurl-7.76.1-26.el9_3.2.src.rpm\tRocky Enterprise Software Foundation\nsudo\t0:1.9.5p2-10.el9_3\tx86_64\tsudo-1.9.5p2-10.el9_3.src.rpm\tRocky Enterprise Software Foundation\nredis\t0:6.2.7-1.el9\tx86_64\tredis-6.2.7-1.el9.src.rpm\tRocky Enterprise Software Foundation\nkernel\t0:5.14.0-503.11.1.el9_5\tx86_64\tkernel-5.14.0-503.11.1.el9_5.src.rpm\tRocky Enterprise Software Foundation"
   },
   "updates": {
-    "errata_cves": "CVE-2023-22809 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64\nRLSA-2023:0136 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64"
+    "errata_cves": "CVE-2023-22809 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64\nRLSA-2023:0136 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64",
+    "running_kernel": "5.14.0-427.13.1.el9_4.x86_64",
+    "installed_kernels": "kernel-5.14.0-503.11.1.el9_5.x86_64"
+  },
+  "users": {
+    "accounts": "root\t0\t/bin/bash\ndeploy\t1000\t/bin/bash",
+    "sshd_effective": "permitrootlogin no\npasswordauthentication no\npermitemptypasswords no\nmaxauthtries 6\nx11forwarding yes\nlogingracetime 30\nclientaliveinterval 300"
+  },
+  "security": {
+    "selinux": "Enforcing",
+    "file_perms": "644 root root /etc/passwd\n640 root shadow /etc/shadow\n644 root root /etc/hosts\n644 root root /etc/services\n600 root root /etc/crontab",
+    "login_defs": "PASS_MAX_DAYS\t99999\nPASS_MIN_DAYS\t0\nPASS_MIN_LEN\t8",
+    "pam_rules": "password requisite pam_pwquality.so retry=3\nauth required pam_faillock.so deny=5",
+    "tmout": "TMOUT=600",
+    "root_path": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin\"",
+    "rhosts": "NONE",
+    "legacy_services": "sshd.service\ncrond.service",
+    "passwd_shadowed": "NONE",
+    "duplicate_uid": "NONE",
+    "empty_passwords": "NONE",
+    "firewalld": "public (active)\n  services: ssh"
   },
   "containers": {
     "list": "cid|name|image|os_id|os_version|manager|pkg_count\napi|api|myco/api:1.4|alpine|3.19.1|apk|2\nlegacy|legacy|debian:12|debian|12|dpkg|1",

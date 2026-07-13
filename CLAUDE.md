@@ -36,6 +36,12 @@
   워크트리에선 프로젝트명이 `vulnagent-dev-<워크트리이름>` 이다.
 - Windows git-bash 에서 컨테이너에 절대경로 전달 시 `MSYS_NO_PATHCONV=1` 접두.
 - 변경 후 `./tests/smoke.sh` 로 회귀 확인. PHP 는 `php -l`, 쉘은 `bash -n`.
+- **dev 에 `--build` 를 붙이지 않는다.** dev 는 `../server` 를 바인드 마운트하므로 PHP 변경은
+  즉시 반영된다. 이미지는 모든 워크트리가 `vulnagent-app:dev` 태그 하나를 공유한다.
+  `--build` 는 **`server/Dockerfile` 을 바꾼 브랜치에서만** 쓴다.
+  (예전엔 워크트리마다 이미지를 따로 구워 504MB 태그가 47개까지 쌓였다.)
+- 작업이 끝난 워크트리는 `./deploy/wt.sh rm <이름>` 으로 정리한다 — 스택을 계속 띄워두면
+  포트·메모리를 먹는다.
 
 ## 리뷰 체크
 바꾸기 전에 자문한다:
@@ -50,7 +56,7 @@
 ```bash
 ./deploy/wt.sh add feat/무엇       # wt/무엇 생성(origin/main 기점) + secrets/.env 복사 + 빈 포트 할당
 cd wt/무엇
-./deploy/compose_runner.sh dev up -d --build   # 이 워크트리 전용 스택
+./deploy/compose_runner.sh dev up -d   # 이 워크트리 전용 스택
 ./tests/smoke.sh http://localhost:<할당된포트>
 # 구현 → 검증 게이트 → 커밋 → push → PR
 ./deploy/wt.sh rm 무엇             # 병합 후 정리(스택 down -v + 워크트리 제거)

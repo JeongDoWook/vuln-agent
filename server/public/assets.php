@@ -19,9 +19,27 @@ vg_require_menu('assets');
 $canDelete = vg_has_role('admin', 'operator');
 
 $err = null; $msg = null; $rows = []; $total = 0; $sevByScan = [];
-$q    = trim((string) ($_GET['q'] ?? ''));
-$page = max(1, (int) ($_GET['page'] ?? 1));
+$stateCounts = ['ok' => 0, 'stale' => 0, 'offline' => 0, 'none' => 0];
+$q     = trim((string) ($_GET['q'] ?? ''));
+$state = trim((string) ($_GET['state'] ?? ''));
+$page  = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = vg_perpage();
+
+// 수집 상태 어휘. vg_asset_state() 가 뱃지를 그리는 기준(VG_STALE_MIN/VG_OFFLINE_MIN)과 같아야 한다.
+const VG_ASSET_STATES = ['ok' => '정상', 'stale' => '지연', 'offline' => '오프라인', 'none' => '수집없음'];
+if (!isset(VG_ASSET_STATES[$state])) { $state = ''; }
+
+/* 호스트 한 대의 수집 상태를 SQL 안에서 판정하는 식.
+ * 목록 필터·KPI 집계가 같은 식을 써야 "지연 3대" 를 눌렀을 때 3대가 나온다. */
+$stateExpr =
+    "CASE WHEN s.id IS NULL THEN 'none'
+          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > " . VG_OFFLINE_MIN . " THEN 'offline'
+          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > " . VG_STALE_MIN . " THEN 'stale'
+          ELSE 'ok' END";
+
+// 호스트 + 최신 스캔. LEFT JOIN 이라 등록만 되고 아직 수집이 없는 호스트도 남는다.
+$fromSql = 'FROM tb_hosts h
+            LEFT JOIN tb_scans s ON s.id = (SELECT MAX(id) FROM tb_scans WHERE host_id = h.id)';
 
 $pdo = vg_pdo();
 
@@ -50,28 +68,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 try {
+    // KPI — 검색어·상태 필터와 무관하게 전체 기준(필터를 걸어도 전체 그림은 유지된다).
+    $kpi = $pdo->query("SELECT $stateExpr AS st, COUNT(*) c $fromSql WHERE h.is_deleted = 0 GROUP BY st")->fetchAll();
+    foreach ($kpi as $k) {
+        if (isset($stateCounts[$k['st']])) { $stateCounts[$k['st']] = (int) $k['c']; }
+    }
+
     $where  = 'h.is_deleted = 0';
     $params = [];
     if ($q !== '') {
         $where .= ' AND h.fqdn LIKE ?';
         $params[] = '%' . $q . '%';
     }
+    if ($state !== '') {
+        // KPI 와 같은 식을 쓴다 — 다른 식을 쓰면 "지연 3대" 를 눌렀는데 2대가 나오는 일이 생긴다.
+        $where .= " AND $stateExpr = ?";
+        $params[] = $state;
+    }
 
-    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_hosts h WHERE $where");
+    // COUNT 도 목록과 같은 FROM 을 써야 한다. 상태 필터가 최신 스캔(s)을 참조하기 때문이다.
+    $st = $pdo->prepare("SELECT COUNT(*) $fromSql WHERE $where");
     $st->execute($params);
     $total = (int) $st->fetchColumn();
 
     $offset = ($page - 1) * $perPage;
 
-    // 호스트 + 최신 스캔(LEFT JOIN — 등록만 되고 아직 수집이 없는 호스트도 보여준다)
     $st = $pdo->prepare(
         "SELECT h.id, h.fqdn, h.os_id, h.os_version, h.first_seen,
                 s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
                 s.peak_rss_mb, s.cpu_seconds,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
                 (SELECT COUNT(*) FROM tb_scans x WHERE x.host_id = h.id) AS scan_count
-           FROM tb_hosts h
-           LEFT JOIN tb_scans s ON s.id = (SELECT MAX(id) FROM tb_scans WHERE host_id = h.id)
+           $fromSql
           WHERE $where
           ORDER BY h.fqdn
           LIMIT $perPage OFFSET $offset"
@@ -100,14 +128,43 @@ $ingest = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'local
 $csrf = vg_csrf_token();
 vg_header('자산관리', 'assets');
 ?>
-  <h1>자산관리</h1>
-  <div class="sub">에이전트가 등록한 호스트 · 최신 수집 상태와 취약점 요약 · 총 <?= number_format($total) ?>대</div>
+  <?php
+  // 상태 판정 기준은 본문에 늘어놓지 않고 툴팁으로 — 한 번 읽으면 그만인 정보다.
+  $stateHelp = sprintf(
+      '정상 = %d시간 이내 수집 · 지연 = %d시간~%d일 · 오프라인 = %d일 초과 · 수집없음 = 등록만 되고 스캔이 아직 없음',
+      VG_STALE_MIN / 60, VG_STALE_MIN / 60, VG_OFFLINE_MIN / 1440, VG_OFFLINE_MIN / 1440
+  );
+  ?>
+  <h1>자산관리 <?= vg_help($stateHelp) ?></h1>
+  <div class="sub">에이전트가 등록한 호스트 · 최신 수집 상태와 취약점 요약</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err !== null ? '오류 · ' . $err : null); ?>
 
   <?php
+  /* 수집 상태 KPI. 눌러서 그 상태만 거른다 — 예전엔 오프라인 자산을 찾으려면
+   * 목록을 눈으로 훑는 수밖에 없었다. 이미 선택된 걸 다시 누르면 필터가 풀린다. */
+  $stateTone = ['ok' => 'ok', 'stale' => 'high', 'offline' => 'crit', 'none' => 'muted'];
+  $totalHosts = array_sum($stateCounts);
+  ?>
+  <div class="cards">
+    <div class="kpi"><b><?= number_format($totalHosts) ?></b><span>전체 자산</span></div>
+    <?php foreach (VG_ASSET_STATES as $key => $label): ?>
+      <a class="kpi tone-<?= vg_h($stateTone[$key]) ?><?= $state === $key ? ' is-selected' : '' ?>"
+         href="<?= vg_h(vg_qs(['state' => $state === $key ? '' : $key, 'page' => 1])) ?>">
+        <b><?= number_format($stateCounts[$key]) ?></b><span><?= vg_h($label) ?></span>
+      </a>
+    <?php endforeach; ?>
+  </div>
+
+  <div class="toolbar">
+    <?php vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost'); ?>
+  </div>
+
+  <?php
   vg_toolbar([
       ['type' => 'search', 'name' => 'q', 'placeholder' => '호스트명 검색', 'value' => $q],
+      ['type' => 'select', 'name' => 'state', 'empty_label' => '전체 상태',
+       'selected' => $state, 'options' => VG_ASSET_STATES],
   ]);
 
   $headers = [
@@ -128,7 +185,19 @@ vg_header('자산관리', 'assets');
       $headers,
       $rows,
       [
-          'empty' => $q !== '' ? '검색 결과가 없습니다.' : '등록된 자산이 없습니다. 아래 안내대로 에이전트를 설치하세요.',
+          // 빈 이유가 셋이라 메시지도 셋 — "필터 때문에 빈 것" 과 "자산이 없는 것" 은 다른 상황이다.
+          'empty' => ($q !== '' || $state !== '')
+              ? [
+                  'icon'  => '🔍',
+                  'title' => '조건에 맞는 자산이 없습니다.',
+                  'hint'  => '검색어나 상태 필터를 바꿔 보세요.',
+                  'cta'   => ['href' => '/assets.php', 'label' => '필터 초기화'],
+              ]
+              : [
+                  'icon'  => '🖥️',
+                  'title' => '등록된 자산이 없습니다.',
+                  'hint'  => '자산은 에이전트가 수집을 보내면 자동 등록됩니다. 아래 설치 안내를 따르세요.',
+              ],
           'cell' => [
               'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['id'] . '">' . vg_h($r['fqdn']) . '</a></strong>',
               'state' => fn($r) => vg_asset_state($r['age_min']),
@@ -158,27 +227,30 @@ vg_header('자산관리', 'assets');
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 
-  <div class="card">
-    <strong>에이전트 설치</strong>
-    <span class="why">— 자산은 에이전트가 수집을 보내면 자동 등록된다. 중앙에서 대상 서버로 접속하지 않는다(아웃바운드 push).</span>
-    <div class="card__body">
-      <div class="why">대상 서버(Linux)의 <code>/opt/vuln-agent/</code> 에 스크립트 2개를 두고 한 번 실행. 인자 없이 실행하면 주소·토큰·주기를 물어본다.</div>
-      <pre class="code">sudo mkdir -p /opt/vuln-agent && sudo cp ~/agent/*.sh /opt/vuln-agent/
+  <?php
+  /* 설치 안내는 자산을 처음 붙일 때 한 번 보는 것이다. 목록 아래 늘 펼쳐두면
+   * 매일 보는 화면이 그만큼 길어진다 → 버튼 뒤 모달로. */
+  vg_modal_open('agentInstall', '에이전트 설치', 'modal--wide');
+  ?>
+    <div class="why">자산은 에이전트가 수집을 보내면 <strong>자동 등록</strong>됩니다.
+      중앙에서 대상 서버로 접속하지 않습니다(아웃바운드 push).</div>
+
+    <div class="why mt">대상 서버(Linux)의 <code>/opt/vuln-agent/</code> 에 스크립트 2개를 두고 한 번 실행합니다.
+      인자 없이 실행하면 주소·토큰·주기를 물어봅니다.</div>
+
+    <pre class="code">sudo mkdir -p /opt/vuln-agent &amp;&amp; sudo cp ~/agent/*.sh /opt/vuln-agent/
 cd /opt/vuln-agent
 sudo bash install-agent.sh
   중앙 서버 주소 (예: ost-server.duckdns.org:8080): <?= vg_h($ingest) ?>
 
   전송 토큰 (입력은 화면에 보이지 않습니다): ********
   수집 주기 [hourly] (daily / '*:0/30'=30분마다):</pre>
-      <div class="why">
-        · 수집 엔드포인트: <code><?= vg_h($ingest) ?></code> — 대상 서버 → 중앙 아웃바운드 1개면 충분<br>
-        · <code>sudo</code> 만 있으면 된다. <code>chmod</code>/<code>chown</code> 은 필요 없다(<code>bash &lt;파일&gt;</code> 로 실행하므로)<br>
-        · 토큰은 보안상 화면에 표시하지 않는다. 중앙 서버의 <code>secrets/ingest_token.txt</code> 에서 확인<br>
-        · 제거: <code>sudo bash install-agent.sh --uninstall</code><br>
-        · 상태 <?= vg_badge('정상', 'ok') ?> = <?= VG_STALE_MIN / 60 ?>시간 이내 수집,
-          <?= vg_badge('지연', 'high') ?> = <?= VG_STALE_MIN / 60 ?>시간~<?= VG_OFFLINE_MIN / 1440 ?>일,
-          <?= vg_badge('오프라인', 'crit') ?> = <?= VG_OFFLINE_MIN / 1440 ?>일 초과
-      </div>
-    </div>
-  </div>
+
+    <ul class="hint-list why">
+      <li>수집 엔드포인트: <code class="selectable"><?= vg_h($ingest) ?></code> — 대상 서버 → 중앙 아웃바운드 1개면 충분합니다.</li>
+      <li><code>sudo</code> 만 있으면 됩니다. <code>chmod</code>/<code>chown</code> 은 필요 없습니다(<code>bash &lt;파일&gt;</code> 로 실행하므로).</li>
+      <li>토큰은 보안상 화면에 표시하지 않습니다. 중앙 서버의 <code>secrets/ingest_token.txt</code> 에서 확인하세요.</li>
+      <li>제거: <code>sudo bash install-agent.sh --uninstall</code></li>
+    </ul>
+  <?php vg_modal_close(); ?>
 <?php vg_footer();

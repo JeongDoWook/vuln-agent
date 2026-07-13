@@ -308,6 +308,49 @@ collect_exposure() {
 #   "설치만 vs 실행중 vs 사용중(라이브러리 로드)"을 정밀 구분하기 위한 원천 데이터.
 #   .so 를 로드한 프로세스만(=실제 사용자 프로그램, 커널스레드 제외). 조회 결과 캐시 → 가볍다.
 #   출력: pid|comm|user|exe_pkg|loaded_pkgs(,)
+# collect_pkg_origins : 패키지 출처(Origin 라벨) — 서드파티 저장소 패키지를 가려낸다.
+#   rpm 은 VENDOR 를 주는데 dpkg 는 안 준다. 이게 없으면 중앙이 서드파티(PPA·Docker·NodeSource)
+#   패키지를 배포판 기준(debsecan/errata)으로 "이미 수정됨" 처리해 **진짜 취약점을 숨긴다**(미탐).
+#   URL 이 아니라 **라벨**(o=Debian / o=Docker / o=LP-PPA-…)로 판정한다 — URL 로 보면 사내
+#   미러(mirror.company.com)가 서드파티로 오판된다.
+#   출력: 패키지<TAB>라벨   (LOCAL = 어느 저장소에도 없음 = 수동 .deb 설치, UNKNOWN = 매핑 실패)
+collect_pkg_origins() {
+  have apt-cache || return 0
+  {
+    timeout "$CMD_TIMEOUT" apt-cache policy 2>/dev/null
+    echo "@@@SPLIT@@@"
+    timeout "$CMD_TIMEOUT" apt-cache policy $(dpkg-query -W -f='${Package}\n' 2>/dev/null) 2>/dev/null
+  } | awk '
+    BEGIN { phase = 1 }
+    /^@@@SPLIT@@@$/ { phase = 2; next }
+    phase == 1 {
+      # " 500 http://deb.debian.org/debian bookworm/main amd64 Packages"
+      if ($1 ~ /^[0-9]+$/ && $2 ~ /^(http|https|ftp|file|copy|cdrom)/) { lastkey = $2 " " $3 " " $4; next }
+      # "     release v=12.15,o=Debian,a=oldstable,…"
+      if ($1 == "release" && lastkey != "") {
+        o = ""
+        if (match($0, /o=[^,]+/)) { o = substr($0, RSTART + 2, RLENGTH - 2) }
+        if (o != "") { repo[lastkey] = o }
+        lastkey = ""
+      }
+      next
+    }
+    phase == 2 {
+      if ($0 ~ /^[^ \t]/)   { pkg = $0; sub(/:$/, "", pkg); star = 0; next }
+      if ($0 ~ /^ \*\*\*/)  { star = 1; next }     # 설치된 버전 줄
+      if (star == 1 && $1 ~ /^[0-9]+$/) {
+        if ($2 ~ /^(http|https|ftp|file)/) {
+          k = $2 " " $3 " " $4
+          print pkg "\t" ((k in repo) ? repo[k] : "UNKNOWN")
+          star = 0
+        } else if ($2 ~ /dpkg\/status/) {
+          print pkg "\tLOCAL"
+          star = 0
+        }
+      }
+    }'
+}
+
 # collect_containers : 컨테이너 **내부** 패키지 인벤토리
 #   컨테이너 프로세스는 다른 mount namespace 라 호스트 스캔에서 제외해 왔다(그게 맞다 —
 #   오버레이 경로를 dpkg -S 로 훑으면 멈춘다). 그래서 컨테이너 안 패키지는 통째로 미탐이었다.
@@ -654,6 +697,10 @@ put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
 [ "$(wc -l < "$TMP/runtime__stale.txt" 2>/dev/null || echo 0)" -ge 2 ] \
   || rm -f "$TMP/runtime__stale.txt"
 
+# 패키지 출처(Origin 라벨) — 서드파티 저장소 패키지 식별(cap 은 서브셸이라 함수를 못 본다)
+collect_pkg_origins > "$TMP/pkg__origins.txt" 2>/dev/null || true
+[ -s "$TMP/pkg__origins.txt" ] || rm -f "$TMP/pkg__origins.txt"
+
 # 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
 #   목록(list)은 함수가 직접 append 하므로 헤더를 먼저 써 둔다. 패키지는 함수의 stdout.
 echo "cid|name|image|os_id|os_version|manager|pkg_count" > "$TMP/containers__list.txt"
@@ -697,11 +744,42 @@ cap users interactive  'getent passwd | awk -F: "\$3>=1000 && \$7!~/nologin|fals
 cap users sudo_group   'getent group sudo wheel 2>/dev/null'
 cap users logged_in    'who'
 cap users last_logins  'last -n 20 2>/dev/null'
+# sshd -T 는 "실제 적용값"이라 권위 있지만, 호스트키가 없거나 설정 오류가 있으면 실패한다.
+#   그때 config 폴백이 없으면 SSH 점검이 통째로 "판정 불가"가 된다 → **둘 다 수집**한다.
+#   (서버는 effective 를 먼저 보고, 없으면 config 로 판정한다.)
 if is_root; then
-  cap users sshd_effective 'sshd -T 2>/dev/null | grep -E "permitrootlogin|passwordauthentication|pubkeyauthentication|x11forwarding|ciphers|macs"'
-else
-  cap users sshd_config 'grep -iE "^(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication)" /etc/ssh/sshd_config 2>/dev/null'
+  cap users sshd_effective 'sshd -T 2>/dev/null | grep -E "permitrootlogin|passwordauthentication|pubkeyauthentication|permitemptypasswords|maxauthtries|x11forwarding|logingracetime|clientaliveinterval|clientalivecountmax|ciphers|macs"'
 fi
+cap users sshd_config 'grep -iE "^\s*(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|MaxAuthTries|X11Forwarding|LoginGraceTime|ClientAlive)" /etc/ssh/sshd_config 2>/dev/null'
+
+# ── KISA 「주요정보통신기반시설 기술적 취약점 분석·평가 가이드」 점검용 수집 ──
+#   CCE 는 CVE 처럼 받아올 피드가 없다(MITRE/NIST CCE 사전은 2013년경 갱신 중단, KISA·금보원
+#   가이드는 PDF/HWP 문서 배포). 그래서 가이드 항목을 코드로 옮기고, 판정에 필요한 원자료를
+#   여기서 모은다. 전부 읽기 전용이고 stat/grep 수준이라 가볍다.
+#   find 기반 항목(U-06 소유자 없는 파일, U-13 SUID 전수, U-15 world-writable)은 전체 파일시스템을
+#   훑어야 해서 넣지 않았다 — 이 에이전트의 "서버에 무리 주지 않는다" 원칙과 충돌한다.
+cap security file_perms '
+  stat -c "%a %U %G %n" /etc/passwd /etc/shadow /etc/group /etc/gshadow /etc/hosts \
+    /etc/services /etc/crontab /etc/inetd.conf /etc/xinetd.conf /etc/rsyslog.conf /etc/syslog.conf \
+    2>/dev/null'
+cap security login_defs 'grep -E "^\s*(PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE|UMASK)" /etc/login.defs 2>/dev/null'
+cap security pam_rules  'cat /etc/security/pwquality.conf 2>/dev/null | grep -vE "^\s*#|^\s*$";
+                         grep -hE "pam_(pwquality|cracklib|faillock|tally2|wheel)" /etc/pam.d/* 2>/dev/null'
+cap security tmout      'grep -hE "^\s*(export\s+)?TMOUT" /etc/profile /etc/bash.bashrc /etc/bashrc /etc/profile.d/*.sh 2>/dev/null'
+cap security root_path  'grep -hE "^\s*(export\s+)?PATH=" /root/.bash_profile /root/.bashrc /root/.profile /etc/profile 2>/dev/null'
+# "위반 없음"과 "수집 실패"는 다르다. cap 은 출력이 비면 섹션 파일을 지우므로, 없을 때
+# NONE 을 찍지 않으면 정상인 호스트가 중앙에서 "판정 불가(NA)"로 보인다.
+cap security rhosts     'ls -l /etc/hosts.equiv /root/.rhosts /home/*/.rhosts 2>/dev/null | grep . || echo NONE'
+cap security tcp_wrapper 'cat /etc/hosts.allow /etc/hosts.deny 2>/dev/null | grep -vE "^\s*#|^\s*$"'
+cap security legacy_services '
+  systemctl list-unit-files --state=enabled --no-legend 2>/dev/null | awk "{print \$1}";
+  ls /etc/xinetd.d/ 2>/dev/null;
+  grep -vE "^\s*#|^\s*$" /etc/inetd.conf 2>/dev/null'
+# 빈 패스워드 계정 — /etc/shadow 는 root 만 읽는다. **읽을 수 있을 때만** NONE 을 찍는다:
+# 못 읽는데 NONE 을 찍으면 "빈 패스워드 없음(정상)"으로 오판해 진짜 위험을 숨긴다.
+cap security empty_passwords '[ -r /etc/shadow ] && { awk -F: "(\$2 == \"\") { print \$1 }" /etc/shadow | grep . || echo NONE; }'
+cap security passwd_shadowed 'awk -F: "(\$2 != \"x\" && \$2 != \"*\") { print \$1 }" /etc/passwd 2>/dev/null | grep . || echo NONE'
+cap security duplicate_uid   'getent passwd | awk -F: "{ print \$3 }" | sort | uniq -d | grep . || echo NONE'
 cap scheduled crontab_system 'cat /etc/crontab 2>/dev/null; cat /etc/cron.d/* 2>/dev/null'
 cap scheduled cron_users 'for u in $(cut -d: -f1 /etc/passwd); do o=$(crontab -l -u "$u" 2>/dev/null); [ -n "$o" ] && { echo "== $u =="; echo "$o"; }; done'
 have systemctl && cap scheduled timers 'systemctl list-timers --all --no-pager --no-legend 2>/dev/null'

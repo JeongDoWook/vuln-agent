@@ -20,7 +20,8 @@
   "pkg": {
     "manager": "dpkg",
     "count": "2",
-    "list": "curl\t7.88.1-10+deb12u5\tamd64\tcurl\t7.88.1-10+deb12u5\tii\nopenssl\t3.0.11-1~deb12u2\tamd64\topenssl\t3.0.11-1~deb12u2\tii"
+    "list": "curl\t7.88.1-10+deb12u5\tamd64\tcurl\t7.88.1-10+deb12u5\tii\nopenssl\t3.0.11-1~deb12u2\tamd64\topenssl\t3.0.11-1~deb12u2\tii\nnginx\t1.24.0-2~bookworm\tamd64\tnginx\t1.24.0-2~bookworm\tii",
+    "origins": "curl\tDebian\nopenssl\tDebian\nnginx\tnginx"
   },
   "updates": {
     "debsecan": "CVE-2024-2004 curl"

@@ -14,7 +14,7 @@
 # [사용법]
 #   ./compose_runner.sh init             # .env.dev/.env.prod 생성(템플릿 복사)
 #   ./compose_runner.sh doctor           # 사전 점검
-#   ./compose_runner.sh dev  up -d --build   # 개발 환경 기동
+#   ./compose_runner.sh dev  up -d           # 개발 환경 기동(이미지는 재사용, Dockerfile 바뀔 때만 --build)
 #   ./compose_runner.sh dev  down            # 개발 환경 중지
 #   ./compose_runner.sh dev  logs -f         # 로그
 #   ./compose_runner.sh prod up -d --build   # 운영 환경 기동
@@ -60,7 +60,7 @@ show_help() {
   echo ""
   say "${YELLOW}예시:${NC}"
   say "  $0 ${GREEN}init${NC}"
-  say "  $0 ${GREEN}dev${NC} up -d --build"
+  say "  $0 ${GREEN}dev${NC} up -d"
   say "  $0 ${GREEN}dev${NC} down"
   say "  $0 ${GREEN}prod${NC} up -d --build"
   say "  $0 ${GREEN}prod${NC} logs -f web"
@@ -132,7 +132,7 @@ run_init() {
 
   echo ""
   if [ "$ok" = 1 ]; then
-    say "${GREEN}완료.${NC} 다음: ${CYAN}$0 dev up -d --build${NC}"
+    say "${GREEN}완료.${NC} 다음: ${CYAN}$0 dev up -d${NC}"
     say "  에이전트 전송 토큰(--token) 값:  ${CYAN}cat ../secrets/ingest_token.txt${NC}"
   fi
 }
@@ -190,7 +190,12 @@ case "$ENV" in
     export DB_CONTAINER="vulnagent-db-dev${WT_SUFFIX}"
     export WEB_CONTAINER="vulnagent-web-dev${WT_SUFFIX}"
     export SCHEDULER_CONTAINER="vulnagent-scheduler-dev${WT_SUFFIX}"
-    export APP_TAG="${WT_NAME:-latest}" ;;
+    # dev 이미지는 **모든 워크트리가 공유한다**(태그 고정).
+    #   dev 는 ../server 를 바인드 마운트하므로 이미지 안의 코드는 어차피 덮인다 —
+    #   워크트리마다 이미지를 따로 구울 이유가 없다. 예전엔 APP_TAG=워크트리명이라
+    #   워크트리를 팔 때마다 504MB 이미지가 새로 생겼다(실측: 태그 47개).
+    #   Dockerfile(server/Dockerfile)을 바꾼 브랜치에서만 `--build` 를 붙이면 된다.
+    export APP_TAG="dev" ;;
   prod|production)
     # 워크트리에서 운영 스택을 건드리는 건 사고다. 메인 트리에서만 허용.
     if [ -n "$WT_NAME" ]; then

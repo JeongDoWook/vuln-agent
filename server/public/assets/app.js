@@ -117,6 +117,50 @@
     }
   });
 
+  // --- 모달 ---------------------------------------------------------------
+  // 네이티브 <dialog>. showModal() 이 포커스 가둠·ESC 닫기·backdrop 을 해주므로
+  // 여기서는 열고 닫기만 한다. 폼 자체는 평범한 POST 폼이라 JS 가 죽어도 서버는 동작한다.
+  document.addEventListener('click', function (e) {
+    var open = e.target.closest('[data-modal]');
+    if (open) {
+      var dlg = document.getElementById(open.getAttribute('data-modal'));
+      if (dlg && typeof dlg.showModal === 'function') {
+        e.preventDefault();
+        dlg.showModal();
+      }
+      return;
+    }
+
+    var close = e.target.closest('[data-modal-close]');
+    if (close) {
+      e.preventDefault();
+      var owner = close.closest('dialog');
+      if (owner) { owner.close(); }
+      return;
+    }
+
+    // backdrop 클릭으로 닫기. <dialog> 자체가 이벤트 대상이면 바깥을 누른 것이다
+    // (내용은 .modal__head/.modal__body 가 받는다).
+    if (e.target.tagName === 'DIALOG') { e.target.close(); }
+  });
+
+  // 모달이 열리면 첫 입력에 커서를 둔다 — 열자마자 바로 타이핑할 수 있게.
+  document.addEventListener('click', function (e) {
+    var open = e.target.closest('[data-modal]');
+    if (!open) { return; }
+    var dlg = document.getElementById(open.getAttribute('data-modal'));
+    if (!dlg) { return; }
+    var first = dlg.querySelector('input:not([type=hidden]):not([disabled]), select, textarea');
+    if (first) { first.focus(); }
+  });
+
+  // 서버가 "이 모달을 다시 열어라" 고 표시한 경우(폼 검증 실패 등) — 뜨자마자 연다.
+  // <dialog open> 속성은 backdrop 없는 인라인 표시라 모달이 아니다. showModal() 로 열어야 한다.
+  document.addEventListener('DOMContentLoaded', function () {
+    var auto = document.querySelector('dialog[data-modal-autoopen]');
+    if (auto && typeof auto.showModal === 'function' && !auto.open) { auto.showModal(); }
+  });
+
   // 뒤로가기(bfcache)로 복귀하면 멈춰있던 스피너를 되돌린다.
   window.addEventListener('pageshow', function (e) {
     if (!e.persisted) { return; }

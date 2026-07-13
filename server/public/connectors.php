@@ -125,21 +125,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $connectors = $pdo->query('SELECT * FROM tb_feed_connectors WHERE is_deleted = 0 ORDER BY id')->fetchAll();
 
-// 실행 로그 페이지네이션 — 이전엔 LIMIT 15 로 잘라놓고 "더 있다" 는 표시가 없어서,
-// 16번째부터의 실패 기록을 화면에서 볼 방법이 아예 없었다.
-$perPage = vg_perpage();
-$page    = max(1, (int) ($_GET['page'] ?? 1));
-$logTotal = (int) $pdo->query('SELECT COUNT(*) FROM tb_feed_collection_logs')->fetchColumn();
-$offset  = ($page - 1) * $perPage;
+/* 수집 이력.
+ * 전엔 전 커넥터의 로그를 목록 아래 한 표에 쏟아 놨는데, 정작 "이 커넥터가 왜 실패했나" 를
+ * 보려면 남의 로그 사이에서 눈으로 골라야 했다. 커넥터마다 [이력] 버튼 → 그 커넥터 로그만.
+ *   · 모달엔 최근 VG_LOG_PEEK 건. 그보다 많으면 "전체 이력" 링크로 넘긴다.
+ *   · ?conn=N 이면 그 커넥터의 전체 이력을 페이지네이션해서 아래에 편다.
+ */
+const VG_LOG_PEEK = 8;
 
-$logs = $pdo->query(
-    "SELECT l.*, c.name FROM tb_feed_collection_logs l JOIN tb_feed_connectors c ON c.id = l.connector_id
-      ORDER BY l.started_at DESC
-      LIMIT $perPage OFFSET $offset"
-)->fetchAll();
+$perPage  = vg_perpage();
+$page     = max(1, (int) ($_GET['page'] ?? 1));
+$connFilter = (int) ($_GET['conn'] ?? 0);
+
+$peek = $pdo->prepare(
+    'SELECT status, trigger_by, items_fetched, items_upserted, message, started_at
+       FROM tb_feed_collection_logs WHERE connector_id = ?
+      ORDER BY started_at DESC LIMIT ' . VG_LOG_PEEK
+);
+$cnt = $pdo->prepare('SELECT COUNT(*) FROM tb_feed_collection_logs WHERE connector_id = ?');
+
+$logsByConn = []; $logCountByConn = [];
+foreach ($connectors as $c) {
+    $id = (int) $c['id'];
+    $peek->execute([$id]);
+    $logsByConn[$id] = $peek->fetchAll();
+    $cnt->execute([$id]);
+    $logCountByConn[$id] = (int) $cnt->fetchColumn();
+}
+
+// ?conn=N — 그 커넥터의 전체 이력(페이지네이션)
+$logs = []; $logTotal = 0; $connName = '';
+if ($connFilter > 0) {
+    foreach ($connectors as $c) { if ((int) $c['id'] === $connFilter) { $connName = (string) $c['name']; } }
+    $logTotal = $logCountByConn[$connFilter] ?? 0;
+    $offset   = ($page - 1) * $perPage;
+    $st = $pdo->prepare(
+        "SELECT status, trigger_by, items_fetched, items_upserted, message, started_at
+           FROM tb_feed_collection_logs WHERE connector_id = ?
+          ORDER BY started_at DESC
+          LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute([$connFilter]);
+    $logs = $st->fetchAll();
+}
+
 $csrf = vg_csrf_token();
 
-// 편집 대상
+// 편집 대상 — ?edit=N 이면 추가/편집 모달을 그 값으로 채워 자동으로 연다.
 $edit = null;
 if (isset($_GET['edit'])) {
     foreach ($connectors as $c) { if ((int) $c['id'] === (int) $_GET['edit']) { $edit = $c; } }
@@ -156,6 +188,11 @@ vg_header('피드 커넥터', 'connectors');
   <div class="sub">외부 취약점 소스(CISA KEV · OSV · NVD)를 설정·스케줄·수집. 결과는 매처가 자동 재계산.</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+
+  <div class="toolbar">
+    <?php // 모달 id 는 connModal — 폼 자체의 id(connForm)와 겹치면 미리보기 JS 가 폼 대신 dialog 를 잡는다.
+    vg_modal_btn('connModal', '+ 커넥터 추가'); ?>
+  </div>
 
   <?php
   // 표시용 부가값(스케줄 라벨/다음 실행) 을 미리 계산해 각 행에 얹는다.
@@ -179,7 +216,11 @@ vg_header('피드 커넥터', 'connectors');
       ],
       $connectors,
       [
-          'empty' => '등록된 커넥터가 없습니다.',
+          'empty' => [
+              'icon'  => '🔌',
+              'title' => '등록된 커넥터가 없습니다.',
+              'hint'  => '아래 폼에서 피드(CISA KEV · OSV · NVD · KISA · EPSS)를 추가하세요.',
+          ],
           'cell' => [
               0 => fn($c) => '<strong>' . vg_h($c['name']) . '</strong>',
               1 => fn($c) => '<span class="pill">' . vg_h($c['connector_type']) . '</span>',
@@ -198,21 +239,31 @@ vg_header('피드 커넥터', 'connectors');
                   return $html;
               },
               // "지금 실행" 은 외부 수집 + 전 스캔 재매칭이라 수십 초 걸린다 → 스피너 + 이중제출 차단(app.js).
-              7 => fn($c) => '<div class="actions">'
-                  . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . (int) $c['id'] . '">'
-                  . '<button class="btn btn--sm btn--primary" data-loading="수집 중…">지금 실행</button></form>'
-                  . '<a class="btn btn--sm btn--ghost" href="?edit=' . (int) $c['id'] . '">편집</a>'
-                  . '<form method="post" onsubmit="return confirm(\'삭제할까요?\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . (int) $c['id'] . '">'
-                  . '<button class="btn btn--sm btn--danger">삭제</button></form>'
-                  . '</div>',
+              7 => function ($c) use ($csrf, $logCountByConn) {
+                  $id = (int) $c['id'];
+                  $n  = $logCountByConn[$id] ?? 0;
+                  return '<div class="actions">'
+                      . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . $id . '">'
+                      . '<button class="btn btn--sm btn--primary" data-loading="수집 중…">지금 실행</button></form>'
+                      // 이력은 그 커넥터 것만 모달로 — 전엔 전 커넥터 로그가 한 표에 섞여 있었다.
+                      . '<button type="button" class="btn btn--sm btn--ghost" data-modal="log' . $id . '">'
+                      . '이력 <span class="why">' . number_format($n) . '</span></button>'
+                      . '<a class="btn btn--sm btn--ghost" href="?edit=' . $id . '">편집</a>'
+                      . '<form method="post" onsubmit="return confirm(\'삭제할까요?\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
+                      . '<button class="btn btn--sm btn--danger">삭제</button></form>'
+                      . '</div>';
+              },
           ],
       ]
   );
   ?>
 
-  <div class="card card--narrow">
-    <strong><?= $edit ? '커넥터 편집' : '커넥터 추가' ?></strong>
-    <form id="connForm" method="post" class="card__body">
+  <?php
+  // 추가·편집 폼은 목록 아래 늘 펼쳐두던 것 → 버튼 뒤 모달로.
+  // ?edit=N 으로 들어오면(행의 [편집]) 값이 채워진 채 자동으로 열린다.
+  vg_modal_open('connModal', $edit ? '커넥터 편집' : '커넥터 추가', '', $edit !== null);
+  ?>
+    <form id="connForm" method="post">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="save">
       <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
@@ -249,10 +300,12 @@ vg_header('피드 커넥터', 'connectors');
       </label>
       <button type="submit" class="btn btn--ok btn--block"><?= $edit ? '저장' : '추가' ?></button>
       <button type="button" id="vgPrevBtn" class="btn btn--ghost btn--block" data-loading="조회 중…" onclick="vgPreview(this)">API 미리보기 (10건)</button>
-      <?php if ($edit): ?><div class="sub card__body center"><a href="/connectors.php">+ 새 커넥터</a></div><?php endif; ?>
+      <?php if ($edit): ?>
+        <div class="sub center"><a href="/connectors.php">+ 새 커넥터로 비우기</a></div>
+      <?php endif; ?>
     </form>
     <pre id="vgPrev" class="out" hidden></pre>
-  </div>
+  <?php vg_modal_close(); ?>
 
   <script>
   // 외부 소스를 직접 치는 요청이라 수 초 걸린다 → 버튼 스피너 + 상단 진행바(vgLoading).
@@ -282,34 +335,62 @@ vg_header('피드 커넥터', 'connectors');
   }
   </script>
 
-  <div class="card">
-    <strong>수집 이력</strong> <span class="why">— 총 <?= number_format($logTotal) ?>건</span>
-    <div class="card__body">
-    <?php
-    vg_table(
-        [
-            ['label' => '커넥터', 'key' => 'name'],
-            ['label' => '트리거'],
-            ['label' => '상태'],
-            ['label' => '수집/저장'],
-            ['label' => '메시지'],
-            ['label' => '시각', 'nowrap' => true],
-        ],
-        $logs,
-        [
-            'card' => false,
-            'empty' => '아직 실행 이력이 없습니다.',
-            'cell' => [
-                1 => fn($l) => '<span class="why">' . vg_h($l['trigger_by']) . '</span>',
-                2 => fn($l) => vg_badge((string) $l['status'], $statusTone[$l['status']] ?? 'muted'),
-                3 => fn($l) => '<span class="why">' . ($l['items_fetched'] !== null ? (int) $l['items_fetched'] . ' / ' . (int) $l['items_upserted'] : '–') . '</span>',
-                4 => fn($l) => '<span class="why">' . vg_h(mb_strimwidth((string) ($l['message'] ?? ''), 0, 50, '…')) . '</span>',
-                5 => fn($l) => '<span class="why">' . vg_h($l['started_at']) . '</span>',
-            ],
-        ]
-    );
-    vg_page_nav($logTotal, $perPage, $page);
-    ?>
+  <?php
+  /* 수집 이력 표 — 커넥터 하나에 대한 것. 모달(최근 8건)과 ?conn=N 전체보기가 공유한다. */
+  $logHeaders = [
+      ['label' => '상태',      'width' => '7rem',  'nowrap' => true],
+      ['label' => '트리거',    'width' => '7rem'],
+      ['label' => '수집/저장', 'width' => '9rem'],
+      ['label' => '메시지'],
+      ['label' => '시각',      'width' => '11rem', 'nowrap' => true],
+  ];
+  $logCells = [
+      0 => fn($l) => vg_badge((string) $l['status'], $statusTone[$l['status']] ?? 'muted'),
+      1 => fn($l) => '<span class="why">' . vg_h((string) $l['trigger_by']) . '</span>',
+      2 => fn($l) => '<span class="why">' . ($l['items_fetched'] !== null
+              ? number_format((int) $l['items_fetched']) . ' / ' . number_format((int) $l['items_upserted'])
+              : '–') . '</span>',
+      // 실패 메시지가 이 표의 존재 이유다 — 잘라내되 title 로 원문을 남긴다.
+      3 => fn($l) => '<span class="why">' . vg_trunc((string) ($l['message'] ?? ''), 60) . '</span>',
+      4 => fn($l) => '<span class="why">' . vg_h((string) $l['started_at']) . '</span>',
+  ];
+  $logEmpty = [
+      'icon'  => '🕘',
+      'title' => '아직 실행 이력이 없습니다.',
+      'hint'  => '[지금 실행]을 누르거나 스케줄이 돌면 여기에 쌓입니다.',
+  ];
+  ?>
+
+  <?php if ($connFilter > 0 && $connName !== ''): ?>
+    <div class="card">
+      <strong><?= vg_h($connName) ?> · 수집 이력</strong>
+      <span class="why">— 총 <?= number_format($logTotal) ?>건 · <a href="/connectors.php">커넥터 목록으로</a></span>
+      <div class="card__body">
+        <?php
+        vg_table($logHeaders, $logs, ['card' => false, 'empty' => $logEmpty, 'cell' => $logCells]);
+        vg_page_nav($logTotal, $perPage, $page);
+        ?>
+      </div>
     </div>
-  </div>
+  <?php endif; ?>
+
+  <?php
+  /* 커넥터마다 이력 모달. 전엔 전 커넥터 로그를 목록 아래 한 표에 쏟아놔서,
+   * "이 커넥터가 왜 실패했나" 를 보려면 남의 로그 사이에서 눈으로 골라야 했다. */
+  foreach ($connectors as $c):
+      $cid = (int) $c['id'];
+      $n   = $logCountByConn[$cid] ?? 0;
+      vg_modal_open('log' . $cid, $c['name'] . ' · 수집 이력', 'modal--wide');
+  ?>
+      <?php if ($n > VG_LOG_PEEK): ?>
+        <div class="sub">총 <?= number_format($n) ?>건 중 최근 <?= VG_LOG_PEEK ?>건 ·
+          <a href="?conn=<?= $cid ?>">전체 이력 보기 →</a></div>
+      <?php elseif ($n > 0): ?>
+        <div class="sub">총 <?= number_format($n) ?>건</div>
+      <?php endif; ?>
+      <?php vg_table($logHeaders, $logsByConn[$cid] ?? [], ['card' => false, 'empty' => $logEmpty, 'cell' => $logCells]); ?>
+  <?php
+      vg_modal_close();
+  endforeach;
+  ?>
 <?php vg_footer();

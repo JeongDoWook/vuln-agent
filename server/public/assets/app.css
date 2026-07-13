@@ -289,7 +289,21 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
 .card strong { color: var(--text); }
 .card--narrow { max-width: 560px; }
 .card--sm { max-width: 380px; }
+/* 방금 발급된 토큰처럼 "이번 한 번만 보여주는" 카드 — 테두리로 시선을 끈다 */
+.card--accent { border-color: var(--accent); }
+.card--accent:hover { border-color: var(--accent); }
 .card__body { margin-top: .6rem; }
+
+/* 여백 유틸 — PHP 에 style="margin-top:…" 을 쓰지 않기 위한 최소한의 유틸.
+ * 색·레이아웃은 CSS 가 소유한다는 규칙을 지키되, 클래스를 남발하지 않도록 둘만 둔다. */
+.mt    { margin-top: .8rem; }
+.mt-lg { margin-top: 1.2rem; }
+
+/* 전체 선택되게 — 토큰처럼 통째로 복사해야 하는 값 */
+.selectable { user-select: all; }
+
+/* 카드 안 설명용 목록(왜 0건인가 등). 기본 ul 은 들여쓰기가 과하다. */
+.hint-list { margin: .4rem 0 0; padding-left: 1.1rem; }
 
 /* --- KPI -----------------------------------------------------------------
  * 틴트 배경 + 큰 발광 숫자. 이전엔 원색 면에 흰 글자였는데, 팔레트를 밝히면서
@@ -344,11 +358,13 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
   padding: 1.15rem 1.4rem;
   margin-bottom: 1.2rem;
 }
-.hero--crit { border-left-color: var(--crit); }
-.hero--high { border-left-color: var(--high); }
-.hero--med  { border-left-color: var(--med); }
-.hero--low  { border-left-color: var(--low); }
-.hero--ok   { border-left-color: var(--ok); }
+.hero--crit  { border-left-color: var(--crit); }
+.hero--high  { border-left-color: var(--high); }
+.hero--med   { border-left-color: var(--med); }
+.hero--low   { border-left-color: var(--low); }
+.hero--ok    { border-left-color: var(--ok); }
+.hero--info  { border-left-color: var(--accent); }
+.hero--muted { border-left-color: var(--muted-2); }
 .hero__id { flex: 1 1 320px; min-width: 0; }
 .hero__id h1 { margin: 0 0 .4rem; }
 .hero__meta { color: var(--muted); font-size: .85rem; display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; }
@@ -432,6 +448,9 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
  * CVE 상세처럼 "읽는 본문" 과 "항상 보여야 할 수치" 가 같이 있는 화면용.
  * 수치를 위에 눕히면 스크롤하는 순간 사라진다 — 옆에 붙여 sticky 로 띄운다. */
 .detail { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 1.2rem; align-items: start; }
+/* min-width:0 이 없으면 넓은 표가 사이드바를 밀어낸다 — 그리드 자식의 기본 min-width 는
+ * auto 라서 내용보다 작아지지 않는다(레이아웃 .app 이 겪은 것과 같은 함정). */
+.detail__main { min-width: 0; }
 .detail__side { position: sticky; top: 1rem; }
 
 @media (max-width: 1100px) {
@@ -596,6 +615,76 @@ a.pill:hover { text-decoration: none; background: rgb(31 111 235 / .25); }
 .tabs .pill { padding: .25rem .8rem; font-size: .84rem; }
 .pill--on { background: var(--accent); color: #fff; }
 a.pill--on:hover { background: var(--accent); }
+
+/* --- 모달 (네이티브 <dialog>) --------------------------------------------
+ * 자주 안 쓰는 폼(추가·발급·설치안내)을 화면에 펼쳐두지 않고 버튼 뒤에 숨긴다.
+ * showModal() 이 포커스 가둠·ESC·backdrop 을 다 해주므로 JS 는 열고 닫기만 한다. */
+.modal {
+  width: min(560px, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.modal--wide { width: min(880px, calc(100vw - 2rem)); }
+
+.modal::backdrop { background: rgb(0 0 0 / .6); }
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .9rem 1.2rem;
+  border-bottom: 1px solid var(--line);
+}
+.modal__head strong { font-size: 1rem; }
+
+.modal__x {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: .3rem .45rem;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+}
+.modal__x:hover { background: var(--surface-2); color: var(--text); }
+
+/* 본문만 스크롤 — 머리글은 붙어 있게 */
+.modal__body {
+  padding: 1rem 1.2rem 1.3rem;
+  overflow-y: auto;
+  max-height: calc(100vh - 8rem);
+}
+/* 모달 안의 폼은 카드가 아니다 — form.card 의 가운데 정렬·여백을 물려받지 않게 */
+.modal__body form { margin: 0; max-width: none; }
+.modal__body .card { margin-bottom: 0; }
+.modal__body > .btn--block { margin-top: 1.1rem; }
+
+/* --- 도움말 툴팁 ----------------------------------------------------------
+ * 본문에 늘어놓으면 화면이 무거워지는 부연설명을 아이콘 뒤로. 네이티브 title 을 쓴다. */
+.help {
+  display: inline-grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-left: .25rem;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface-2);
+  font-size: .66rem;
+  font-weight: 700;
+  cursor: help;
+  vertical-align: middle;
+}
+.help:hover, .help:focus-visible { color: var(--accent-2); border-color: var(--accent); }
 
 /* --- 알림 ---------------------------------------------------------------- */
 .alert {

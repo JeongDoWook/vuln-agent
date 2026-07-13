@@ -129,7 +129,7 @@ vg_subtabs([
                 <dd class="<?= $p['danger'] ? 'is-danger' : '' ?>"><?= vg_h($p['value']) ?></dd>
               <?php endforeach; ?>
             </dl>
-            <div class="why" style="margin-top:.8rem"><code><?= vg_h((string) $vecRaw) ?></code></div>
+            <div class="why mt"><code><?= vg_h((string) $vecRaw) ?></code></div>
           </div>
         </div>
       <?php elseif (!empty($vecRaw)): ?>
@@ -239,12 +239,12 @@ vg_subtabs([
           <div class="meter meter--<?= vg_h($tone) ?>">
             <i style="width:<?= (int) round(min(10.0, max(0.0, (float) $cvss)) * 10) ?>%"></i>
           </div>
-          <div class="why" style="margin-top:.4rem">CVSS 기본점수</div>
+          <div class="why">CVSS 기본점수</div>
         <?php else: ?>
           <div class="why">CVSS 점수 없음</div>
         <?php endif; ?>
 
-        <dl class="kv" style="margin-top:1.1rem">
+        <dl class="kv mt-lg">
           <dt>EPSS</dt>
           <dd><?= $cve ? vg_epss_cell($cve['epss'] ?? null, $cve['epss_percentile'] ?? null) : '<span class="why">–</span>' ?></dd>
 
