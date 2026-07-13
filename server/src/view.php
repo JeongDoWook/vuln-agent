@@ -71,6 +71,20 @@ function vg_status_badge(?string $s): string {
     return vg_badge(vg_status_label($s), $tone[$s ?? ''] ?? 'muted');
 }
 
+/* 수집 상태 판정 기준(분). 에이전트 기본 스케줄이 매시간이라 3시간까지는 정상으로 본다.
+ *   자산관리 목록(assets.php)과 호스트 상세(host.php) 히어로가 공유한다. */
+const VG_STALE_MIN   = 180;        // 3시간 초과 → 지연
+const VG_OFFLINE_MIN = 10080;      // 7일 초과 → 오프라인
+
+/** 최신 수집 경과시간(분)으로 수집 상태 뱃지. 스캔이 없으면(null) '수집없음'. */
+function vg_asset_state($ageMin): string {
+    if ($ageMin === null) { return vg_badge('수집없음', 'muted'); }
+    $m = (int) $ageMin;
+    if ($m > VG_OFFLINE_MIN) { return vg_badge('오프라인', 'crit'); }
+    if ($m > VG_STALE_MIN)   { return vg_badge('지연', 'high'); }
+    return vg_badge('정상', 'ok');
+}
+
 /**
  * EPSS 셀 — 악용확률과 백분위를 함께.
  *

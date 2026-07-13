@@ -10,24 +10,45 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('dashboard');
 
-$err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0]; $hostCount = 0;
+$err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
+$hostCount = 0; $total = 0; $sevByScan = [];
+$page = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = vg_perpage();
 try {
     $pdo = vg_pdo();
     $hostCount = (int) $pdo->query('SELECT COUNT(*) FROM tb_hosts WHERE is_deleted = 0')->fetchColumn();
 
-    // 호스트별 최신 스캔
+    // KPI 는 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
+    $totalsRows = $pdo->query(
+        "SELECT f.severity, COUNT(*) c FROM tb_findings f
+          WHERE f.scan_id IN (
+              SELECT MAX(s.id) FROM tb_scans s JOIN tb_hosts h ON h.id = s.host_id
+               WHERE h.is_deleted = 0 GROUP BY s.host_id)
+          GROUP BY f.severity"
+    )->fetchAll();
+    foreach ($totalsRows as $f) { if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; } }
+
+    // 목록 대상 = 최신 스캔이 있는 비삭제 호스트 수(페이지네이션 총건).
+    $total = (int) $pdo->query(
+        'SELECT COUNT(*) FROM tb_hosts h WHERE h.is_deleted = 0
+          AND EXISTS (SELECT 1 FROM tb_scans s WHERE s.host_id = h.id)'
+    )->fetchColumn();
+
+    $offset = ($page - 1) * $perPage;
+
+    // 호스트별 최신 스캔(한 페이지)
     $rows = $pdo->query(
-        'SELECT s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
+        "SELECT s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
                 h.id AS host_id, h.fqdn, h.os_id, h.os_version
          FROM tb_scans s
          JOIN (SELECT host_id, MAX(id) AS mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id
          JOIN tb_hosts h ON h.id = s.host_id
          WHERE h.is_deleted = 0
-         ORDER BY s.collected_at DESC'
+         ORDER BY s.collected_at DESC
+         LIMIT $perPage OFFSET $offset"
     )->fetchAll();
 
-    // 최신 스캔들의 심각도 카운트
-    $sevByScan = [];
+    // 이 페이지 최신 스캔들의 심각도 카운트
     if ($rows) {
         $ids = [];
         foreach ($rows as $r) { $ids[] = (int) $r['scan_id']; }
@@ -36,7 +57,6 @@ try {
         $st->execute($ids);
         foreach ($st->fetchAll() as $f) {
             $sevByScan[(int) $f['scan_id']][$f['severity']] = (int) $f['c'];
-            if (isset($totals[$f['severity']])) { $totals[$f['severity']] += (int) $f['c']; }
         }
     }
 } catch (Throwable $e) {
@@ -83,6 +103,7 @@ vg_header('대시보드', 'dashboard');
           ],
       ]
   );
+  if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 <?php endif; ?>
 <?php vg_footer();
