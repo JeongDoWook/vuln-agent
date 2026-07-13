@@ -5,7 +5,7 @@
 #   - 소스 라이브 마운트(./server) → PHP 수정 즉시 반영, 재빌드 불필요
 #   - DB 포트도 호스트에 노출 → 개발 중 DB 직접 접속/디버깅 가능
 #   - 웹 포트 노출 → http://localhost:${WEB_PORT}
-# 실행:  ./compose_runner.sh dev up -d --build
+# 실행:  ./compose_runner.sh dev up -d
 #
 # 컨테이너명은 변수로 둔다 — wt/ 워크트리에서 띄우면 compose_runner.sh 가
 # 워크트리 이름을 접미사로 붙여 메인 dev 스택과 이름이 겹치지 않게 한다.
