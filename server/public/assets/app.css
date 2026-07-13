@@ -27,15 +27,58 @@
   --accent:    #1f6feb;
   --accent-2:  #58a6ff;
 
-  /* 톤 (심각도·상태 공용 어휘) */
-  --crit:      #da3633;
-  --high:      #db6d28;
-  --med:       #9e6a03;
-  --low:       #6e7681;
-  --ok:        #238636;
-  --ok-hover:  #2ea043;
-  --danger:    #6e2830;
+  /* 톤 (심각도·상태 공용 어휘)
+   *
+   * 톤마다 4종 세트를 준다. 한 톤을 쓰는 모든 자리(뱃지·KPI·행 강조·게이지)가
+   * 같은 어휘를 공유해야 색이 어긋나지 않는다.
+   *   --X     : 진한 원색   — KPI 카드·게이지 채움처럼 "면"으로 칠하는 자리
+   *   --X-fg  : 밝은 글자색 — 어두운 배경 위 텍스트/뱃지 라벨 (WCAG 대비 확보)
+   *   --X-bg  : 옅은 틴트   — 뱃지·행 배경
+   *   --X-bd  : 테두리      — 뱃지 윤곽
+   *
+   * 이전 팔레트는 med(#9e6a03)가 탁한 겨자색, low(#6e7681)가 무채색 회색이라
+   * 어두운 배경에서 죽었다. med 는 앰버로 띄우고, low 는 회청색으로 돌려
+   * "낮음"이 무채색(=정보 없음)처럼 보이지 않게 한다. */
+  --crit:      #e5484d;
+  --crit-fg:   #ff9592;
+  --crit-bg:   rgb(229 72 77 / .16);
+  --crit-bd:   rgb(229 72 77 / .45);
+
+  --high:      #f0883e;
+  --high-fg:   #ffb77c;
+  --high-bg:   rgb(240 136 62 / .15);
+  --high-bd:   rgb(240 136 62 / .42);
+
+  --med:       #e3b341;
+  --med-fg:    #ffd866;
+  --med-bg:    rgb(227 179 65 / .14);
+  --med-bd:    rgb(227 179 65 / .40);
+
+  --low:       #6e8fb5;
+  --low-fg:    #a6c8e8;
+  --low-bg:    rgb(110 143 181 / .16);
+  --low-bd:    rgb(110 143 181 / .42);
+
+  --ok:        #2ea043;
+  --ok-fg:     #7ee787;
+  --ok-bg:     rgb(46 160 67 / .15);
+  --ok-bd:     rgb(46 160 67 / .42);
+  --ok-hover:  #3fb950;
+
   --purple:    #8250df;
+  --purple-fg: #d2a8ff;
+  --purple-bg: rgb(130 80 223 / .16);
+  --purple-bd: rgb(130 80 223 / .45);
+
+  --info-fg:   #79c0ff;
+  --info-bg:   rgb(31 111 235 / .16);
+  --info-bd:   rgb(31 111 235 / .45);
+
+  --muted-fg:  #adbac7;
+  --muted-bg:  rgb(139 147 161 / .14);
+  --muted-bd:  rgb(139 147 161 / .35);
+
+  --danger:    #6e2830;
 
   /* 형태 */
   --r-lg: 12px;
@@ -45,6 +88,7 @@
 
   --ring: 0 0 0 3px rgb(31 111 235 / .35);
   --shadow: 0 1px 2px rgb(0 0 0 / .3);
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / .4);
 
   --ctl-h: 1.9rem;   /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
 }
@@ -150,29 +194,56 @@ body { display: flex; min-height: 100vh; }
   white-space: nowrap;
 }
 .side a.brand:hover { text-decoration: none; opacity: .85; }
-.side .menu { flex: 1; padding: .6rem .55rem 1rem; }
+.side .menu { flex: 1; padding: .5rem .55rem 1rem; }
+
+/* 대분류(.grp) — 이전엔 uppercase + letter-spacing 으로만 구분했는데,
+ * 한글엔 uppercase 가 아무 효과가 없어서 결국 "작고 흐린 회색 글자" 로만 남았다
+ * (중분류와 안 갈라지던 원인). 구분선 + 명도 + 여백으로 위계를 만든다. */
 .side .grp {
-  color: var(--muted-2);
-  font-size: .68rem;
+  color: var(--muted);
+  font-size: .73rem;
   font-weight: 700;
-  letter-spacing: .09em;
-  text-transform: uppercase;
-  padding: .95rem .6rem .3rem;
+  padding: .5rem .6rem .35rem;
+  margin-top: .85rem;
+  border-top: 1px solid var(--line);
 }
+.side .grp:first-child { margin-top: .2rem; border-top: none; }
+
+/* 중분류(a.link) — 대분류 아래로 한 단 들여쓰고, 왼쪽 가이드선으로 소속을 보인다 */
 .side a.link {
   display: block;
-  padding: .48rem .6rem;
-  margin-bottom: .1rem;
-  border-radius: var(--r-sm);
+  position: relative;
+  padding: .46rem .6rem .46rem 1.05rem;
+  margin-left: .3rem;
+  border-left: 1px solid var(--line);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
   color: var(--text-2);
   font-size: .88rem;
 }
-.side a.link:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.side a.link:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-left-color: var(--line-2);
+  text-decoration: none;
+}
 .side a.link.active {
   background: rgb(31 111 235 / .15);
   color: #fff;
   font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--accent);
+  border-left: 2px solid var(--accent);
+  padding-left: calc(1.05rem - 1px);
+}
+
+/* 대분류가 없는 단독 항목(대시보드)은 들여쓰기·가이드선 없이 최상위로 */
+.side .menu > a.link:first-child {
+  margin-left: 0;
+  padding-left: .6rem;
+  border-left: none;
+  border-radius: var(--r-sm);
+}
+.side .menu > a.link:first-child.active {
+  padding-left: calc(.6rem - 3px);
+  border-left: 3px solid var(--accent);
 }
 .side .foot { border-top: 1px solid var(--line); padding: .85rem 1.15rem; }
 .side .who { display: block; color: var(--muted); font-size: .8rem; margin-bottom: .45rem; }
@@ -220,21 +291,45 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
 .card--sm { max-width: 380px; }
 .card__body { margin-top: .6rem; }
 
-/* --- KPI ----------------------------------------------------------------- */
+/* --- KPI -----------------------------------------------------------------
+ * 틴트 배경 + 큰 발광 숫자. 이전엔 원색 면에 흰 글자였는데, 팔레트를 밝히면서
+ * 앰버(med)·회청(low) 위의 흰 글자는 대비가 무너진다. 숫자 자체를 톤 색으로
+ * 크게 띄우면 대비도 잡히고 뱃지와 같은 색 어휘를 쓰게 된다. */
 .cards { display: flex; gap: .7rem; margin-bottom: 1.3rem; flex-wrap: wrap; }
-.kpi { border-radius: var(--r-md); padding: .7rem 1.2rem; min-width: 100px; color: #fff; }
-.kpi b { font-size: 1.5rem; display: block; line-height: 1.2; }
-.kpi span { font-size: .74rem; opacity: .85; }
-.kpi.big { background: var(--surface); border: 1px solid var(--line); color: var(--text); }
-.kpi.big:hover { border-color: var(--line-2); }
-a.kpi { transition: filter .12s ease-out; }
-a.kpi:hover { filter: brightness(1.08); text-decoration: none; }
-a.kpi.is-selected { outline: 2px solid #fff; outline-offset: 1px; }
+.kpi {
+  flex: 0 0 auto;          /* 늘리지 않는다 — 늘리면 값 하나에 카드가 화면을 가로지른다 */
+  min-width: 116px;
+  padding: .75rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+}
+.kpi b {
+  font-size: 1.75rem;
+  font-weight: 700;
+  display: block;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;   /* 숫자 폭 고정 — 값이 바뀌어도 안 흔들린다 */
+}
+.kpi span {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: .02em;
+}
+a.kpi { transition: border-color .12s ease-out, background .12s ease-out; }
+a.kpi:hover { text-decoration: none; border-color: var(--line-2); filter: brightness(1.12); }
+a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 
-.kpi.tone-crit { background: var(--crit); }
-.kpi.tone-high { background: var(--high); }
-.kpi.tone-med  { background: var(--med); }
-.kpi.tone-low  { background: var(--low); }
+.kpi.tone-crit { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
+.kpi.tone-high { background: var(--high-bg); border-color: var(--high-bd); color: var(--high-fg); }
+.kpi.tone-med  { background: var(--med-bg);  border-color: var(--med-bd);  color: var(--med-fg); }
+.kpi.tone-low  { background: var(--low-bg);  border-color: var(--low-bd);  color: var(--low-fg); }
+.kpi.tone-ok   { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
+.kpi.tone-muted{ background: var(--muted-bg);border-color: var(--muted-bd);color: var(--muted-fg); }
+/* 숫자는 톤 색으로, 라벨은 항상 차분하게 — 라벨까지 물들면 다시 균일해진다 */
+.kpi[class*="tone-"] b { color: inherit; }
 
 /* --- 자산 상세: 히어로(식별 + 최고 위험도) + 섹션 탭 ---------------------- */
 .hero {
@@ -291,9 +386,35 @@ th {
 }
 td.nowrap, td code { white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: var(--surface-2); }
 
+/* 행 심각도 강조 — 표를 훑을 때 눈이 "위험한 줄" 부터 잡게 한다.
+ * 왼쪽 3px 띠로 등급을 알리고, CRITICAL·HIGH 만 배경까지 아주 옅게 물들인다.
+ * (전 등급을 물들이면 다시 균일해져서 강조가 사라진다 — 위쪽 둘만 칠하는 게 핵심)
+ * 띠 두께만큼 첫 칸 padding 을 줄여 열이 밀리지 않게 한다. */
+tbody tr[class*="sev-"] td:first-child {
+  border-left: 3px solid transparent;
+  padding-left: calc(.9rem - 3px);
+}
+tbody tr.sev-crit td:first-child { border-left-color: var(--crit); }
+tbody tr.sev-high td:first-child { border-left-color: var(--high); }
+tbody tr.sev-med  td:first-child { border-left-color: var(--med); }
+tbody tr.sev-low  td:first-child { border-left-color: var(--low); }
+
+tbody tr.sev-crit { background: rgb(229 72 77 / .06); }
+tbody tr.sev-high { background: rgb(240 136 62 / .05); }
+
+/* hover 는 등급 배경보다 우선 — 어느 행에 커서가 있는지가 항상 먼저 읽혀야 한다 */
+tbody tr:hover,
+tbody tr.sev-crit:hover,
+tbody tr.sev-high:hover { background: var(--surface-2); }
+
+/* --- 빈 상태 -------------------------------------------------------------
+ * "데이터가 없습니다" 한 줄은 막다른 길이다. 왜 비었는지와 다음에 뭘 할지를 준다. */
 .empty { color: var(--muted); padding: 2rem 0; text-align: center; }
+.empty__icon { font-size: 1.9rem; opacity: .45; display: block; margin-bottom: .6rem; }
+.empty__title { color: var(--text-2); font-weight: 600; font-size: .95rem; display: block; }
+.empty__hint { display: block; margin-top: .35rem; font-size: .84rem; color: var(--muted-2); }
+.empty .btn { margin-top: .9rem; }
 .why { color: var(--text-2); font-size: .82rem; }
 .trunc {
   display: inline-block;
@@ -331,29 +452,40 @@ pre.out {
 }
 .prose { margin: .6rem 0 0; white-space: pre-wrap; line-height: 1.7; }
 
-/* --- 뱃지 / 알약 --------------------------------------------------------- */
+/* --- 뱃지 / 알약 ---------------------------------------------------------
+ * 뱃지는 "틴트" 형(옅은 배경 + 밝은 글자 + 테두리). 어두운 배경에서 솔리드 면보다
+ * 훨씬 잘 읽히고, 표에 뱃지가 수십 개 깔려도 시끄럽지 않다.
+ *   예외는 CRITICAL — 유일하게 채운 면으로 칠해 "이것만은 지금 본다" 를 만든다.
+ *   면으로 칠하는 자리(KPI 카드)는 --X 원색을 그대로 쓴다(아래 KPI 절). */
 .badge, .pill { white-space: nowrap; }
 .badge {
   display: inline-block;
-  padding: .12rem .55rem;
+  padding: .1rem .5rem;
+  border: 1px solid var(--muted-bd);
   border-radius: 999px;
   font-size: .72rem;
   font-weight: 700;
-  color: #fff;
-  background: var(--muted-2);
+  line-height: 1.45;
+  color: var(--muted-fg);
+  background: var(--muted-bg);
 }
-a.badge:hover { text-decoration: none; filter: brightness(1.12); }
+a.badge:hover { text-decoration: none; filter: brightness(1.18); }
 
-.badge.tone-crit   { background: var(--crit); }
-.badge.tone-high   { background: var(--high); }
-.badge.tone-med    { background: var(--med); }
-.badge.tone-low,
-.badge.tone-muted  { background: var(--muted-2); }
-.badge.tone-ok     { background: var(--ok); }
-.badge.tone-warn   { background: var(--med); }
-.badge.tone-danger { background: var(--crit); }
-.badge.tone-purple { background: var(--purple); }
-.badge.tone-info   { background: var(--accent); }
+/* CRITICAL 만 솔리드 — 표 안에서 유일하게 "면"으로 튄다 */
+.badge.tone-crit {
+  color: #fff;
+  background: var(--crit);
+  border-color: var(--crit);
+}
+.badge.tone-high   { color: var(--high-fg);   background: var(--high-bg);   border-color: var(--high-bd); }
+.badge.tone-med,
+.badge.tone-warn   { color: var(--med-fg);    background: var(--med-bg);    border-color: var(--med-bd); }
+.badge.tone-low    { color: var(--low-fg);    background: var(--low-bg);    border-color: var(--low-bd); }
+.badge.tone-muted  { color: var(--muted-fg);  background: var(--muted-bg);  border-color: var(--muted-bd); }
+.badge.tone-ok     { color: var(--ok-fg);     background: var(--ok-bg);     border-color: var(--ok-bd); }
+.badge.tone-danger { color: #fff;             background: var(--crit);      border-color: var(--crit); }
+.badge.tone-purple { color: var(--purple-fg); background: var(--purple-bg); border-color: var(--purple-bd); }
+.badge.tone-info   { color: var(--info-fg);   background: var(--info-bg);   border-color: var(--info-bd); }
 
 .pill {
   display: inline-block;

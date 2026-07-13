@@ -173,6 +173,8 @@ vg_header('CVE 목록', 'cves');
       $rows,
       [
           'empty' => $emptyMsg,
+          // 이 표엔 severity 컬럼이 없다 — CVSS 점수에서 등급을 파생시킨다(vg_cvss_sev 는 소문자를 준다).
+          'row_class' => fn($r) => vg_sev_row(strtoupper(vg_cvss_sev($r['cvss'] === null ? null : (string) $r['cvss']))),
           'cell' => [
               0 => function ($r) {
                   $html = '<a href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">' . vg_h((string) $r['cve_id']) . '</a>';

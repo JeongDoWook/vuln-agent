@@ -42,6 +42,18 @@ function vg_sev_tone(string $sev): string {
 }
 
 /**
+ * 표의 <tr> 심각도 클래스. CSS 가 왼쪽 띠(+상위 등급은 옅은 배경)로 칠한다.
+ * vg_table 의 'row_class' 에 심각도를 뽑아 넘긴다:
+ *     'row_class' => fn($r) => vg_sev_row((string) $r['severity'])
+ * 심각도가 어느 컬럼에 있는지는 표마다 다르고(base_severity), CVSS 에서 파생시키는
+ * 표(cves.php)도 있어서, 컬럼명을 추측하지 않고 호출부가 문자열로 건네게 한다.
+ * 어휘에 없는 값이면 빈 문자열 — 클래스 없는 평범한 행이 된다.
+ */
+function vg_sev_row(?string $sev): string {
+    return isset(VG_TONE_SEV[(string) $sev]) ? 'sev-' . VG_TONE_SEV[(string) $sev] : '';
+}
+
+/**
  * 심각도별 건수 뱃지 묶음. 0건인 등급은 생략하고, 전부 0이면 '–'.
  *   $href 를 주면 각 뱃지를 링크로 만든다(자산관리: 등급별 취약점 목록으로).
  *   대시보드 · 자산관리 · 호스트 스캔이력이 공유한다.
@@ -113,6 +125,72 @@ function vg_alert(?string $msg, string $type = 'err'): void {
         return;
     }
     echo '<div class="alert alert--' . ($type === 'ok' ? 'ok' : 'err') . '">' . vg_h($msg) . '</div>';
+}
+
+/**
+ * 빈 상태. "데이터가 없습니다" 한 줄은 막다른 길이라, 왜 비었는지와 다음 행동을 준다.
+ *   문자열을 주면 기존처럼 한 줄만 출력(하위호환 — 대부분의 vg_table 호출이 이 형태).
+ *   배열을 주면 아이콘·제목·힌트·행동버튼까지: ['icon'=>'🔍','title'=>…,'hint'=>…,'cta'=>['href'=>…,'label'=>…]]
+ */
+function vg_empty($spec): void {
+    if (!is_array($spec)) {
+        echo '<div class="empty">' . vg_h((string) $spec) . '</div>';
+        return;
+    }
+    echo '<div class="empty">';
+    if (!empty($spec['icon'])) {
+        echo '<span class="empty__icon" aria-hidden="true">' . vg_h((string) $spec['icon']) . '</span>';
+    }
+    echo '<span class="empty__title">' . vg_h((string) ($spec['title'] ?? '데이터가 없습니다.')) . '</span>';
+    if (!empty($spec['hint'])) {
+        echo '<span class="empty__hint">' . vg_h((string) $spec['hint']) . '</span>';
+    }
+    if (!empty($spec['cta']['href'])) {
+        echo '<a class="btn btn--sm btn--primary" href="' . vg_h((string) $spec['cta']['href']) . '">'
+            . vg_h((string) ($spec['cta']['label'] ?? '이동')) . '</a>';
+    }
+    echo '</div>';
+}
+
+/**
+ * 상세 페이지 히어로 — "무엇을 보고 있나(좌) + 얼마나 위험한가(우)".
+ * 왼쪽 띠 색이 위험도다. host.php 가 인라인으로 갖고 있던 것을 공용으로 뺐다.
+ *   $title·$meta 는 이미 이스케이프된 HTML (호출부가 vg_h 책임 — 링크·뱃지를 섞어 넣어야 해서).
+ *   $riskLabel 이 null 이면 위험도 칸 없이 식별부만.
+ *   $riskTone 은 톤 어휘(crit/high/med/low/ok/muted). 라벨과 톤을 분리한 건 "양호" 처럼
+ *   심각도 어휘에 없는 라벨을 써야 할 때가 있기 때문이다(vg_sev_tone 은 그걸 muted 로 떨군다).
+ */
+function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, string $riskTone = 'ok', string $riskCap = '최고 위험도'): void {
+    echo '<div class="hero hero--' . vg_h($riskLabel !== null ? $riskTone : 'ok') . '">';
+    echo '<div class="hero__id"><h1>' . $title . '</h1>';
+    if ($meta) {
+        echo '<div class="hero__meta">' . implode(' <span class="why">·</span> ', $meta) . '</div>';
+    }
+    echo '</div>';
+    if ($riskLabel !== null) {
+        echo '<div class="hero__risk"><span class="badge tone-' . vg_h($riskTone) . ' badge--lg">' . vg_h($riskLabel) . '</span>'
+            . '<span class="cap">' . vg_h($riskCap) . '</span></div>';
+    }
+    echo '</div>';
+}
+
+/**
+ * 섹션 탭(밑줄형). 첫 화면에 다 쏟지 않고 갈래로 나눠 담는 자리.
+ *   $tabs: ['vuln' => ['label'=>'취약점', 'n'=>12], 'runtime' => ['label'=>'런타임', 'n'=>null], …]
+ *   'n' 이 null 이 아니면 라벨 옆에 건수를 붙인다. 탭 전환은 ?tab= + page 초기화.
+ */
+function vg_subtabs(array $tabs, string $active): void {
+    echo '<nav class="subtabs">';
+    foreach ($tabs as $key => $def) {
+        $cls = $active === (string) $key ? ' class="on"' : '';
+        echo '<a' . $cls . ' href="' . vg_h(vg_qs(['tab' => $key, 'page' => null])) . '">'
+            . vg_h((string) ($def['label'] ?? $key));
+        if (($def['n'] ?? null) !== null) {
+            echo '<span class="n">' . number_format((int) $def['n']) . '</span>';
+        }
+        echo '</a>';
+    }
+    echo '</nav>';
 }
 
 // 긴 텍스트 말줄임 + 툴팁(title 에 원문). 안 잘리면 그냥 이스케이프만.
@@ -228,18 +306,22 @@ function vg_page_nav(int $total, int $perPage, int $page): void {
  *     'key' 는 콜백이 없을 때 $row[key] 를 자동 이스케이프해서 출력하는 데 쓰인다(없으면 빈칸).
  *   $opts['cell']: 컬럼 인덱스(0,1,2…) 또는 header 의 'key' → function($row): string.
  *     콜백 반환값은 이미 이스케이프된 HTML 이라는 규약(콜백 안에서 vg_h 책임).
- *   $opts['empty']: 빈 목록 메시지. $opts['card']: 카드 래핑 여부(기본 true). $opts['class']: <table> 에 추가할 클래스.
+ *   $opts['empty']: 빈 목록 메시지(문자열) 또는 vg_empty() 의 배열 스펙.
+ *   $opts['row_class']: function($row): string — <tr> 에 붙일 클래스.
+ *     심각도 행 강조는 vg_sev_row() 를 그대로 넘기면 된다: 'row_class' => 'vg_sev_row'.
+ *   $opts['card']: 카드 래핑 여부(기본 true). $opts['class']: <table> 에 추가할 클래스.
  */
 function vg_table(array $headers, array $rows, array $opts = []): void {
-    $card  = $opts['card'] ?? true;
-    $class = $opts['class'] ?? '';
-    $cell  = $opts['cell'] ?? [];
-    $empty = $opts['empty'] ?? '데이터가 없습니다.';
+    $card     = $opts['card'] ?? true;
+    $class    = $opts['class'] ?? '';
+    $cell     = $opts['cell'] ?? [];
+    $empty    = $opts['empty'] ?? '데이터가 없습니다.';
+    $rowClass = $opts['row_class'] ?? null;
 
     if ($card) { echo '<div class="card">'; }
 
     if (!$rows) {
-        echo '<div class="empty">' . vg_h($empty) . '</div>';
+        vg_empty($empty);
         if ($card) { echo '</div>'; }
         return;
     }
@@ -257,7 +339,8 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
     }
     echo '</tr></thead><tbody>';
     foreach ($rows as $row) {
-        echo '<tr>';
+        $rc = $rowClass !== null ? (string) $rowClass($row) : '';
+        echo $rc !== '' ? '<tr class="' . vg_h($rc) . '">' : '<tr>';
         foreach (array_values($headers) as $i => $h) {
             $key   = is_array($h) ? ($h['key'] ?? null) : null;
             $align = is_array($h) ? ($h['align'] ?? null) : null;

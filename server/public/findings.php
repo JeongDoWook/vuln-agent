@@ -170,7 +170,12 @@ vg_header('취약점', 'findings');
       $headers,
       $rows,
       [
-          'empty' => '조건에 맞는 판정 결과가 없습니다.',
+          'empty' => [
+              'icon'  => '🔍',
+              'title' => '조건에 맞는 판정 결과가 없습니다.',
+              'hint'  => '검색어·등급·상태 필터를 넓혀 보세요.',
+          ],
+          'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
           'cell' => [
               'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
               'severity'       => fn($r) => vg_sev_badge((string) $r['severity']),
