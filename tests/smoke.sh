@@ -62,6 +62,18 @@ else
   no "ingest_parse 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/ingest_parse_test.php)"
 fi
 
+# --- schedule 단위 테스트 -----------------------------------------------------
+# feeds.php 의 cron 파싱·스케줄 계산(vg_cron_*/vg_schedule_*)을 server/src/schedule.php 로
+# 뽑아냈다 — 피드 실행과 무관한 순수 시간 계산이라 SRP 상 분리. ingest_parse 처럼 서버 없이
+# 도는 정적 검사라 스모크 앞단에 묶는다.
+printf "\n[schedule]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/schedule_test.php >/dev/null 2>&1; then
+  ok "schedule 단위 테스트"
+else
+  no "schedule 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/schedule_test.php)"
+fi
+
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
