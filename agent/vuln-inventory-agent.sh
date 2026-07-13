@@ -363,11 +363,12 @@ collect_pkg_origins() {
 #   패키지는 stdout 으로, 컨테이너 목록은 $TMP/containers__list.txt 로 나간다(한 번만 순회).
 collect_containers() {
   is_root || return 0
-  local HOST_NS pid ns root cid name image osid osver mgr pkgs cnt line MAP
+  local HOST_NS HOST_PIDNS pid ns pidns root cid name image osid osver mgr pkgs cnt line MAP NSMAP p n i mns
   HOST_NS=$(readlink /proc/self/ns/mnt 2>/dev/null)
+  HOST_PIDNS=$(readlink /proc/self/ns/pid 2>/dev/null)
   declare -A NSSEEN
 
-  # pid → 이름·이미지 매핑(있으면). 없으면 namespace 번호로 식별한다.
+  # pid → 이름·이미지 매핑(있으면).
   MAP=""
   if have docker; then
     MAP=$(timeout "$CMD_TIMEOUT" docker ps -q 2>/dev/null \
@@ -377,10 +378,36 @@ collect_containers() {
     MAP=$(timeout "$CMD_TIMEOUT" podman ps --format '{{.Pid}}|{{.Names}}|{{.Image}}' 2>/dev/null)
   fi
 
+  # docker 가 주는 pid 는 컨테이너의 **메인 프로세스(PID 1)** 다. 그런데 아래 /proc 순회에서 그
+  # 컨테이너를 대표하게 되는 pid 는 먼저 만나는 **아무 자식**일 수 있다. pid 로 맞추면 매칭이
+  # 빗나가 이름이 통째로 비었다(운영 실측: 32개 중 1개만 이름이 붙었다).
+  # → 메인 pid 의 mount namespace 를 키로 바꿔 둔다. 같은 컨테이너면 자식도 같은 ns 다.
+  NSMAP=""
+  if [ -n "$MAP" ]; then
+    while IFS='|' read -r p n i; do
+      [ -z "$p" ] && continue
+      mns=$(readlink "/proc/$p/ns/mnt" 2>/dev/null)
+      [ -z "$mns" ] && continue
+      NSMAP="${NSMAP}${mns}|${n#/}|${i}
+"
+    done <<< "$MAP"
+  fi
+
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
     ns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)
     [ -z "$ns" ] && continue
     [ "$ns" = "$HOST_NS" ] && continue                 # 호스트 자신
+
+    # **mount namespace 가 다르다고 컨테이너가 아니다.** systemd 의 PrivateTmp/ProtectSystem
+    # 서비스도 별도 mount namespace 를 갖는다. 이걸 컨테이너로 오인하면 호스트 rootfs 를 그대로
+    # 다시 읽어 **호스트 패키지·CVE 가 통째로 복제된다** — 운영 실측에서 그런 서비스 9개가
+    # 각각 호스트와 똑같은 패키지 801개를 물고 와 CVE 15,957건(1,773×9)이 LOW 로 부풀었다.
+    # 진짜 컨테이너는 **PID namespace 도 따로 갖는다**(docker/podman 기본) → 그것으로 가른다.
+    #   한계: `--pid=host` 로 띄운 컨테이너는 여기서 걸러진다. 드물고, 그걸 살리자고 systemd
+    #   서비스를 전부 컨테이너로 세는 쪽이 훨씬 나쁘다.
+    pidns=$(readlink /proc/$pid/ns/pid 2>/dev/null)
+    if [ -z "$pidns" ] || [ "$pidns" = "$HOST_PIDNS" ]; then continue; fi
+
     [ -n "${NSSEEN[$ns]+x}" ] && continue              # 같은 컨테이너의 다른 프로세스
     NSSEEN[$ns]=1
     root="/proc/$pid/root"
@@ -389,9 +416,9 @@ collect_containers() {
     osid=$(grep -m1 '^ID='         "$root/etc/os-release" 2>/dev/null | cut -d= -f2- | tr -d '"')
     osver=$(grep -m1 '^VERSION_ID=' "$root/etc/os-release" 2>/dev/null | cut -d= -f2- | tr -d '"')
 
-    line=$(printf '%s\n' "$MAP" | grep "^${pid}|" | head -1)
+    line=$(printf '%s\n' "$NSMAP" | awk -F'|' -v k="$ns" '$1 == k { print; exit }')
     if [ -n "$line" ]; then
-      name=$(printf '%s' "$line" | cut -d'|' -f2 | sed 's|^/||')
+      name=$(printf '%s' "$line" | cut -d'|' -f2)
       image=$(printf '%s' "$line" | cut -d'|' -f3)
       cid="$name"
     else
