@@ -51,15 +51,24 @@ BASE_FILE="compose.yml"
 COMMON_FILE="compose.common.yml"
 
 # --- 워크트리 감지 -----------------------------------------------------------
-# 이 스크립트가 wt/<이름>/deploy/ 안에 있으면 그 워크트리 전용 dev 스택으로 띄운다.
-#   프로젝트명·컨테이너명·이미지태그에 -<이름> 접미사를 붙여 메인 dev 스택과 격리.
-#   (compose 의 상대경로 ../server, ../db, ../secrets 는 이미 이 트리를 가리킨다)
+# **dev 스택은 온 저장소에 하나뿐이다.** 워크트리마다 따로 띄우지 않는다.
+#   compose 가 마운트하는 ../server 는 "compose 파일이 있는 그 트리"의 소스라, 컨테이너 하나는
+#   한 트리만 서빙한다. 그래서 워크트리에서 `dev up -d` 를 하면 스택이 **새로 생기는 게 아니라
+#   그 트리로 옮겨간다**(같은 프로젝트명 → docker 가 컨테이너 3개를 재생성하며 마운트를 갈아끼움).
+#   예전엔 프로젝트명에 -<워크트리> 접미사를 붙여 스택이 워크트리 수만큼 쌓였다.
 TREE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WT_NAME=""
 if [ "$(basename "$(dirname "$TREE_ROOT")")" = "wt" ]; then
   WT_NAME="$(basename "$TREE_ROOT")"
 fi
-WT_SUFFIX="${WT_NAME:+-$WT_NAME}"
+# 메인 트리 = 워크트리면 두 단계 위(main/wt/<이름> → main), 아니면 자기 자신.
+MAIN_ROOT="$TREE_ROOT"
+[ -n "$WT_NAME" ] && MAIN_ROOT="$(cd "$TREE_ROOT/../.." && pwd)"
+
+# 지금 dev 스택이 **어느 트리를 서빙 중인지** 적어 두는 표식.
+#   스택이 하나뿐이라 포트만으로는 "내 코드가 도는 스택"인지 알 수 없다. 표식이 없으면
+#   pre-push 가 남의 트리를 서빙하는 스택을 스모크해 초록불을 준다 — 거짓이다.
+DEV_STACK_MARK="$MAIN_ROOT/deploy/.dev-stack-tree"
 
 show_help() {
   say "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -224,13 +233,25 @@ esac
 ENV="$1"; shift
 case "$ENV" in
   dev|development)
-    ENV_FILE="compose.dev.yml"; ENV_VAR_FILE=".env.dev"
-    PROJECT="vulnagent-dev${WT_SUFFIX}"
-    ENV_DISPLAY="Development${WT_NAME:+ · wt/$WT_NAME}"
-    # compose 파일이 참조하는 이름들. 워크트리가 아니면 접미사가 비어 기존 이름 그대로다.
-    export DB_CONTAINER="vulnagent-db-dev${WT_SUFFIX}"
-    export WEB_CONTAINER="vulnagent-web-dev${WT_SUFFIX}"
-    export SCHEDULER_CONTAINER="vulnagent-scheduler-dev${WT_SUFFIX}"
+    ENV_FILE="compose.dev.yml"
+    # **메인 트리의 .env.dev 를 쓴다**(워크트리 것이 아니라). 포트·DB 는 트리 속성이 아니라
+    #   스택 속성이다 — 스택이 하나뿐인데 트리마다 포트가 다르면 스모크가 엉뚱한 포트를 친다
+    #   (실측: 옛 wt.sh 가 워크트리에 8101 을 박아둬 8080 을 치던 스모크가 46개 실패).
+    ENV_VAR_FILE="$MAIN_ROOT/deploy/.env.dev"
+    # 프로젝트명·컨테이너명에 워크트리 접미사를 붙이지 않는다 → 스택은 언제나 이 하나다.
+    PROJECT="vulnagent-dev"
+    ENV_DISPLAY="Development${WT_NAME:+ · wt/$WT_NAME 를 서빙}"
+    export DB_CONTAINER="vulnagent-db-dev"
+    export WEB_CONTAINER="vulnagent-web-dev"
+    export SCHEDULER_CONTAINER="vulnagent-scheduler-dev"
+    # dev DB 는 **메인 트리의 data/mysql 하나**를 모든 트리가 같이 쓴다.
+    #   .env.dev 의 `DB_DATA=../data/mysql` 은 **상대경로**라 compose 파일이 있는 트리 기준으로
+    #   풀린다 — 워크트리에서 올리면 wt/<이름>/data/mysql 을 파서 DB 가 통째로 바뀐다.
+    #   그래서 여기서 **메인 트리 절대경로로 고정**한다(쉘 환경변수가 --env-file 값보다 우선).
+    #   named volume 이 아니라 바인드마운트인 이유: 기존 dev 데이터(수백 MB)를 그대로 쓰고,
+    #   디스크에서 눈으로 확인·백업할 수 있다.
+    #   pwd -W 는 git-bash 에서 윈도 경로(C:/…)를 준다. 리눅스면 실패하니 pwd 로 떨어진다.
+    export DB_DATA="$( (cd "$MAIN_ROOT" && pwd -W 2>/dev/null) || printf '%s' "$MAIN_ROOT" )/data/mysql"
     # dev 이미지는 **모든 워크트리가 공유한다**(태그 고정).
     #   dev 는 ../server 를 바인드 마운트하므로 이미지 안의 코드는 어차피 덮인다 —
     #   워크트리마다 이미지를 따로 구울 이유가 없다. 예전엔 APP_TAG=워크트리명이라
@@ -275,9 +296,16 @@ echo ""
 #   그 외 명령(down/logs/ps…)은 그대로 exec. migrate 는 DB healthy 를 스스로 기다린다.
 if [ "${1:-}" = "up" ]; then
   "${COMPOSE[@]}" "$@"
+  # dev 스택이 지금부터 **이 트리**를 서빙한다 — pre-push 가 이걸 보고 자기 코드가 도는지 판단한다.
+  if [ "$PROJECT" = "vulnagent-dev" ]; then
+    printf '%s\n' "$TREE_ROOT" > "$DEV_STACK_MARK"
+  fi
   say ""
   say "${CYAN}== DB 마이그레이션 ==${NC}"
   bash "$SCRIPT_DIR/migrate.sh" "$DB_CONTAINER"
 else
+  if [ "${1:-}" = "down" ] && [ "$PROJECT" = "vulnagent-dev" ]; then
+    rm -f "$DEV_STACK_MARK"        # 내려간 스택이 뭘 서빙했는지는 더 이상 의미가 없다
+  fi
   exec "${COMPOSE[@]}" "$@"
 fi

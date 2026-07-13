@@ -69,16 +69,34 @@
   즉시 반영된다. 이미지는 모든 워크트리가 `vulnagent-app:dev` 태그 하나를 공유한다.
   `--build` 는 **`server/Dockerfile` 을 바꾼 브랜치에서만** 쓴다.
   (예전엔 워크트리마다 이미지를 따로 구워 504MB 태그가 47개까지 쌓였다.)
-- 작업이 끝난 워크트리는 `./deploy/wt.sh rm <이름>` 으로 정리한다 — 스택을 계속 띄워두면
-  포트·메모리를 먹는다.
+- **dev 스택은 저장소에 하나뿐이다. 워크트리마다 새로 띄우지 않는다.**
+  프로젝트명이 `vulnagent-dev` 로 고정(`compose_runner.sh`)이라, 워크트리에서 `dev up -d` 를 하면
+  스택이 **새로 생기는 게 아니라 그 트리로 옮겨간다**(컨테이너 3개를 재생성하며 마운트를 갈아끼움).
+  왜 옮기는 방식일 수밖에 없나: `compose.dev.yml` 이 마운트하는 `../server` 는 **compose 파일이
+  있는 그 트리**의 소스다. 컨테이너 하나는 한 트리만 서빙한다 — 그래서 "여러 트리가 한 스택을
+  동시에 공유" 는 불가능하다.
+- **포트·DB 는 트리 속성이 아니라 스택 속성이다.** `compose_runner` 는 dev 에서
+  **메인 트리의 `deploy/.env.dev`** 만 읽고(포트 8080), DB 는 **메인 트리의 `data/mysql`**
+  절대경로로 고정 바인드한다. 워크트리에 `.env.dev` 사본을 두지 않는다 —
+  `DB_DATA=../data/mysql` 은 상대경로라 워크트리에서 올리면 `wt/<이름>/data/mysql` 을 파서
+  DB 가 통째로 바뀌고, 사본의 옛 포트(8101)로 스모크가 엉뚱한 데를 쳐서 46개가 터진 적이 있다.
+- **그래서 스택은 서버 코드를 건드릴 때만 올린다.** 워크트리를 팠다고 반사적으로 `up -d` 하지 않는다.
+  - `agent/**`·`docs/**`·`*.md` 만 바꿨다 → **스택 불필요.** `bash -n` + 실제 컨테이너 e2e 로 검증한다
+    (스택을 띄워도 검사되는 게 없다).
+  - `server/**`·`db/**`·`tests/**` 를 바꿨다 → `dev up -d` 로 **스택을 이 트리로 가져온 뒤** 스모크.
+- **pre-push 는 "스택이 내 트리를 서빙 중일 때"만 스모크한다.** 스택이 하나라 "떠 있다" 는 것만으로는
+  내 코드가 도는지 알 수 없다 — `compose_runner` 가 `up` 할 때 서빙 트리를 `deploy/.dev-stack-tree`
+  에 적고, 훅이 그걸 대조한다. 다른 트리를 서빙 중이면 **스모크를 건너뛴다**(남의 코드를 검사해
+  초록불을 주면 그게 거짓이다). 내 트리로 가져오려면 그 트리에서 `dev up -d`.
+- **DB 가 공용이라는 뜻**: 어느 브랜치에서 돌린 마이그레이션이 그대로 남는다. 다른 브랜치로 옮겨
+  `up -d` 하면 `migrate.sh` 가 미적용분만 더 얹는다. 옛 브랜치 코드가 새 컬럼을 모를 수는 있어도
+  깨지진 않는다(컬럼이 남아 있는 건 무해).
+- **dev DB 초기화는 `down -v` 로 안 된다.** 바인드마운트라서 compose 가 `-v` 로 안 지운다.
+  비우려면 `dev down` → `rm -rf data/mysql` → `dev up -d`. (메인 트리의 `data/mysql` 하나뿐이다.)
 - **`git pull` 뒤에는 스택을 다시 올린다(`dev up -d`).** dev 는 `../server` 를 라이브 마운트하므로
   pull 하는 순간 **코드는 컨테이너 안에서 즉시 바뀌지만 DB 스키마는 안 따라온다.** 남이 머지한
   마이그레이션이 있으면 새 코드가 없는 컬럼을 찾아 500 이 난다(`Unknown column …`).
   `up -d` 가 `migrate.sh` 를 불러 미적용분만 적용한다 — 컨테이너는 그대로 두므로 싸다.
-- **dev DB 초기화는 `down -v` 로 안 된다.** 메인 dev 의 DB 는 named volume 이 아니라
-  `.env.dev` 의 `DB_DATA=../data/mysql` **바인드마운트**라서 compose 가 `-v` 로 안 지운다.
-  비우려면 `dev down` → `rm -rf data/mysql` → `dev up -d`.
-  (워크트리 스택은 named volume 이라 이 문제가 없다 — `wt.sh rm` 이 볼륨째 지운다.)
 
 ## 리뷰 체크
 바꾸기 전에 자문한다:
@@ -91,12 +109,16 @@
 기능·수정 작업은 **`wt/<이름>/` 워크트리에서** 진행하고 PR 로 병합한다.
 
 ```bash
-./deploy/wt.sh add feat/무엇       # wt/무엇 생성(origin/main 기점) + secrets/.env 복사 + 빈 포트 할당
+./deploy/wt.sh add feat/무엇       # wt/무엇 생성(origin/main 기점) + secrets/.env 복사
 cd wt/무엇
-./deploy/compose_runner.sh dev up -d   # 이 워크트리 전용 스택
-./tests/smoke.sh http://localhost:<할당된포트>
+
+# 스택은 **server/·db/·tests/ 를 건드릴 때만** 올린다.
+#   agent/·docs/·*.md 만 고친다면 이 두 줄을 건너뛴다(스택을 띄워도 검사되는 게 없다).
+./deploy/compose_runner.sh dev up -d   # 하나뿐인 dev 스택을 **이 트리로 가져온다**(새로 안 생김)
+./tests/smoke.sh http://localhost:8080
+
 # 구현 → 검증 게이트 → 커밋 → push → PR
-./deploy/wt.sh rm 무엇             # 병합 후 정리(스택 down -v + 워크트리 제거)
+./deploy/wt.sh rm 무엇             # 워크트리 제거(스택은 공용이라 -v 로 안 지운다)
 ```
 
 - **메인 트리(`vuln-agent/`)에서 직접 작업하지 않는다.** 메인 트리는 `main` 에 두고 pull 용으로만 쓴다.
@@ -104,10 +126,10 @@ cd wt/무엇
   B 의 커밋이 엉뚱한 브랜치에 얹히고 push 가 빈 push 가 된다(실제로 발생). git 은 같은 브랜치를
   두 워크트리에 체크아웃하는 걸 거부하므로 워크트리를 쓰면 이 사고가 구조적으로 불가능하다.
 - 브랜치 이름은 `feat/`·`fix/`·`chore/` 접두사. 워크트리 폴더명은 브랜치의 마지막 조각.
-- pre-push 훅은 **이 트리의 `deploy/.env.dev` 에서 `WEB_PORT` 를 읽어 자기 스택**을 친다.
-  자기 스택이 안 떠 있으면 스모크를 **건너뛴다**(다른 스택으로 대신 검사하지 않는다 —
-  그건 남의 코드를 검사해 초록불을 주는 셈이라 거짓이 된다).
-  대상을 직접 지정하려면 `VG_SMOKE_BASE=http://localhost:<포트> git push`.
+- pre-push 훅은 **dev 스택이 이 트리를 서빙 중일 때만** 스모크한다(`deploy/.dev-stack-tree` 대조).
+  다른 트리를 서빙 중이면 **건너뛴다** — 남의 코드를 검사해 초록불을 주는 건 거짓이다.
+  내 트리로 가져오려면 이 트리에서 `./deploy/compose_runner.sh dev up -d`.
+  대상을 직접 지정하려면 `VG_SMOKE_BASE=http://localhost:8080 git push`(대조를 건너뛴다).
 - 워크트리에서 `prod` 는 띄울 수 없다(compose_runner.sh 가 거부). 운영은 메인 트리에서만.
 
 ## 가드레일 (강제)

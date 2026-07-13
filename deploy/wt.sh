@@ -34,30 +34,7 @@ WT_ROOT="$MAIN_ROOT/wt"
 
 SECRET_FILES=(mysql_root_password mysql_password ingest_token admin_password duckdns_token)
 
-# 포트 후보가 이미 열려있거나 다른 워크트리가 선점했으면 false.
-port_free() {
-  local port="$1" key="$2"
-  if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
-    exec 3>&- 3<&- 2>/dev/null || true
-    return 1                                    # 누가 리스닝 중
-  fi
-  # 메인 트리 + 다른 워크트리의 .env.dev 가 이미 선점했는지
-  local f
-  for f in "$MAIN_ROOT/deploy/.env.dev" "$WT_ROOT"/*/deploy/.env.dev; do
-    [ -f "$f" ] || continue
-    grep -qE "^${key}=${port}[[:space:]]*$" "$f" && return 1
-  done
-  return 0
-}
-
-pick_port() {
-  local start="$1" key="$2" p="$1"
-  while [ "$p" -lt $((start + 100)) ]; do
-    if port_free "$p" "$key"; then printf '%s' "$p"; return 0; fi
-    p=$((p + 1))
-  done
-  die "$key 로 쓸 빈 포트를 $start~$((start+100)) 에서 못 찾았습니다."
-}
+# (포트 탐색기는 없앴다 — dev 스택이 저장소에 하나뿐이라 워크트리끼리 포트가 겹칠 일이 없다.)
 
 usage() {
   say "${CYAN}vuln-agent · wt${NC}"
@@ -106,24 +83,12 @@ cmd_add() {
     say "  ${GREEN}✓${NC} secrets ${copied}개 복사"
   fi
 
-  # .env.dev: 메인 것을 복사(없으면 템플릿), 포트만 이 워크트리 전용으로 교체.
-  local src="$MAIN_ROOT/deploy/.env.dev"
-  [ -f "$src" ] || src="$MAIN_ROOT/deploy/.env.dev.template"
-  [ -f "$src" ] || die "deploy/.env.dev(.template) 이 없습니다."
-  cp "$src" "$dir/deploy/.env.dev"
-
-  local web db
-  web="$(pick_port 8090 WEB_PORT)"
-  db="$(pick_port 3317 DB_PORT)"
-  # 기존 줄이 있으면 치환, 없으면 추가.
-  #   DB_DATA 는 named volume(db_data)으로 되돌린다 — 메인 dev 는 ../data/mysql 바인드마운트라
-  #   워크트리가 그대로 쓰면 워크트리 폴더에 MySQL 데이터가 쌓여 remove 가 지저분해진다.
-  #   named volume 은 프로젝트 스코프라 워크트리마다 별개고 `down -v` 로 깔끔히 지워진다.
-  sed -i -E "s|^WEB_PORT=.*$|WEB_PORT=$web|; s|^DB_PORT=.*$|DB_PORT=$db|; s|^DB_DATA=.*$|DB_DATA=db_data|" "$dir/deploy/.env.dev"
-  grep -qE '^WEB_PORT=' "$dir/deploy/.env.dev" || echo "WEB_PORT=$web" >> "$dir/deploy/.env.dev"
-  grep -qE '^DB_PORT='  "$dir/deploy/.env.dev" || echo "DB_PORT=$db"  >> "$dir/deploy/.env.dev"
-  grep -qE '^DB_DATA='  "$dir/deploy/.env.dev" || echo "DB_DATA=db_data" >> "$dir/deploy/.env.dev"
-  say "  ${GREEN}✓${NC} 포트 할당: web ${CYAN}$web${NC} · db $db  (DB 는 전용 named volume)"
+  # .env.dev 는 **복사하지 않는다.** dev 스택은 하나뿐이고, 포트·DB 는 트리 속성이 아니라
+  #   스택 속성이라 compose_runner 가 **메인 트리의 .env.dev** 만 읽는다. 워크트리에 사본을
+  #   두면 "여기 값을 고치면 반영되겠지" 하는 착각만 만든다(실제로 옛 사본의 포트 8101 때문에
+  #   스모크가 엉뚱한 포트를 쳐서 46개가 터졌다).
+  [ -f "$MAIN_ROOT/deploy/.env.dev" ] || die "메인 트리에 deploy/.env.dev 가 없습니다. 먼저 init 하세요."
+  say "  ${GREEN}✓${NC} dev 설정은 메인 트리의 .env.dev 를 공유(포트 8080 · DB 공용)"
 
   echo ""
   say "${GREEN}완료.${NC} 다음:"
@@ -136,13 +101,14 @@ cmd_add() {
 cmd_list() {
   git -C "$MAIN_ROOT" worktree list
   echo ""
-  say "${CYAN}워크트리별 포트${NC}"
-  local f name
-  for f in "$WT_ROOT"/*/deploy/.env.dev; do
-    [ -f "$f" ] || continue
-    name="$(basename "$(dirname "$(dirname "$f")")")"
-    say "  $name  →  web $(grep -E '^WEB_PORT=' "$f" | cut -d= -f2) · db $(grep -E '^DB_PORT=' "$f" | cut -d= -f2)"
-  done
+  # dev 스택은 하나뿐이다 — 중요한 건 "포트"가 아니라 **지금 어느 트리를 서빙 중인가** 다.
+  local mark="$MAIN_ROOT/deploy/.dev-stack-tree" tree=""
+  [ -f "$mark" ] && tree="$(cat "$mark" 2>/dev/null)"
+  if [ -n "$tree" ]; then
+    say "${CYAN}dev 스택(vulnagent-dev)이 서빙 중인 트리${NC}: $tree"
+  else
+    say "${CYAN}dev 스택${NC}: 내려가 있음(또는 옛 러너로 띄움). 작업 트리에서 ${GREEN}dev up -d${NC}."
+  fi
 }
 
 # --- rm ---------------------------------------------------------------------
@@ -203,19 +169,19 @@ cmd_rm() {
     die "커밋하거나 되돌린 뒤 다시 실행하세요."
   fi
 
-  # 스택을 내릴 때 워크트리의 compose_runner.sh 를 부르면 안 된다.
-  #   그 워크트리는 옛 커밋 기점일 수 있고, 옛 러너는 프로젝트명이 vulnagent-dev 로 고정이라
-  #   메인 dev 스택을 내려버린다(실제로 겪음). 프로젝트명을 여기서 명시해 docker compose 를 직접 부른다.
-  local project="vulnagent-dev-$name"
-  case "$project" in
-    vulnagent-dev|vulnagent) die "안전장치: 프로젝트명이 '$project' 로 계산됨 — 중단합니다." ;;
-  esac
-  if [ -f "$dir/deploy/.env.dev" ]; then
-    say "${BLUE}→${NC} dev 스택($project) 내리는 중..."
+  # dev 스택은 저장소에 하나뿐이고 **DB 볼륨도 공용**이다 → 여기서 `down -v` 를 하면
+  #   남의 세션 DB 까지 날아간다. 절대 -v 를 붙이지 않는다.
+  #   지울 워크트리를 스택이 서빙 중일 때만 내린다(마운트 원본이 사라지면 500 만 뜬다).
+  #   다른 트리를 서빙 중이면 손대지 않는다.
+  local mark="$MAIN_ROOT/deploy/.dev-stack-tree"
+  if [ -f "$mark" ] && [ "$(cat "$mark" 2>/dev/null)" = "$dir" ]; then
+    say "${BLUE}→${NC} dev 스택이 이 워크트리를 서빙 중 → 내립니다(볼륨은 보존)..."
     ( cd "$dir/deploy" \
-      && docker compose --env-file .env.dev -p "$project" \
-           -f compose.yml -f compose.common.yml -f compose.dev.yml down -v \
+      && docker compose --env-file "$MAIN_ROOT/deploy/.env.dev" -p vulnagent-dev \
+           -f compose.yml -f compose.common.yml -f compose.dev.yml down \
     ) || say "  ${YELLOW}⚠${NC} 스택 중지 실패(이미 내려갔을 수 있음)"
+    rm -f "$mark"
+    say "  ${YELLOW}!${NC} 다음 작업 트리에서 ${CYAN}./deploy/compose_runner.sh dev up -d${NC} 로 다시 올리세요."
   fi
 
   # secrets/·data/ 는 untracked 라 --force 없이는 remove 가 거부한다.
