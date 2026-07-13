@@ -176,6 +176,8 @@ function vg_ver_cmp(string $a, string $b, string $manager): int
         // Go 모듈 버전은 "v1.2.3" 처럼 v 가 붙는다. OSV 의 조치안은 "1.2.3" 으로 온다 —
         // 둘을 그대로 비교하면 v 때문에 어긋난다. 앞의 v 만 떼고 semver 로 비교한다.
         case 'go':       return vg_lang_cmp(ltrim($a, 'vV'), ltrim($b, 'vV'));
+        // 업스트림 앱 버전(바이너리에서 뽑은 nginx 1.28.2 등) — 배포판 리비전이 없는 순수 semver.
+        case 'upstream': return vg_lang_cmp($a, $b);
         // apk(알파인)는 "1.2.3-r0" 처럼 upstream-revision 꼴이라 dpkg 규칙이 그대로 맞는다
         // (r0 < r1, 틸드·숫자 처리도 동일). 별도 비교기를 만들 이유가 없다.
         default:         return vg_deb_cmp($a, $b);
