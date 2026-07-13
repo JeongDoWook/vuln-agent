@@ -27,6 +27,41 @@ if (!function_exists('vg_pkg_ecosystem')) {
         }
     }
 
+    /**
+     * 이 패키지가 **배포판 저장소** 것인가? (서드파티 PPA/Docker/NodeSource·수동설치가 아닌가)
+     *
+     * 왜 필요한가: 배포판 기준 억제(debsecan·errata·changelog)는 "배포판 트래커에 없으면
+     * 이미 수정됨"으로 본다. 서드파티 패키지는 애초에 트래커에 없으므로, 그대로 두면
+     * **진짜 취약점을 숨기는 미탐**이 된다.
+     *
+     * 판정은 apt 의 Origin 라벨(o=Debian / o=Docker / o=LP-PPA-…)로 한다. URL 로 보면
+     * 사내 미러(mirror.company.com)가 서드파티로 오판된다.
+     *
+     * **정보가 없으면(구 에이전트, origin=null) 배포판으로 간주한다.** 그러지 않으면 아직
+     * 업데이트 안 된 호스트의 억제가 통째로 사라져 오탐이 폭증한다.
+     */
+    function vg_is_distro_pkg(?string $origin, ?string $osId): bool
+    {
+        $o = trim((string) $origin);
+        if ($o === '') { return true; }                 // 정보 없음 → 종전대로(억제 유지)
+        $ou = strtoupper($o);
+        if ($ou === 'UNKNOWN') { return true; }         // 매핑 실패 → 판단 보류(억제 유지)
+        if ($ou === 'LOCAL')   { return false; }        // 어느 저장소에도 없음 = 수동 .deb 설치
+
+        $os = strtolower((string) $osId);
+        // dpkg: 라벨이 배포판 것인가. rpm: VENDOR 문자열에 배포판 벤더명이 들어 있는가.
+        switch ($os) {
+            case 'debian':    return stripos($o, 'Debian') !== false;
+            case 'ubuntu':    return stripos($o, 'Ubuntu') !== false;
+            case 'rocky':     return stripos($o, 'Rocky')  !== false;
+            case 'almalinux': return stripos($o, 'AlmaLinux') !== false;
+            case 'rhel':
+            case 'redhat':    return stripos($o, 'Red Hat') !== false;
+            case 'alpine':    return stripos($o, 'Alpine') !== false;
+            default:          return true;              // 모르는 배포판 → 판단 보류
+        }
+    }
+
     /** OS 패키지 매니저인가(rpm/dpkg/apk). 아니면 언어 패키지. apk 는 알파인 컨테이너에서 흔하다. */
     function vg_is_os_manager(string $manager): bool
     {

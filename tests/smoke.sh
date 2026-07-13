@@ -72,6 +72,10 @@ dlow=$(printf '%s' "$resp" | grep -oE '"LOW":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${dlow:-0}" -ge 1 ]; then ok "curl 은 취약 유지 (debsecan 이 지목) = $dlow"; else no "curl 이 사라짐(과잉 억제?)"; fi
 dsupp=$(printf '%s' "$resp" | grep -oE '"SUPPRESSED":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백포트) = $dsupp"; else no "억제 안 됨 (=${dsupp:-0})"; fi
+# 서드파티 저장소(nginx.org) 패키지는 배포판 기준으로 판정할 수 없다 → 억제하지 않고 남긴다.
+#   버전만 보면 "설치 1.24.0 ≥ 조치 1.22.1" 이라 억제될 뻔했고, debsecan 목록에도 없어
+#   "백포트로 수정됨" 으로도 억제될 뻔했다. 둘 다 미탐이다.
+if [ "${dsupp:-0}" -eq 1 ]; then ok "서드파티 nginx 는 억제되지 않음 (억제는 openssl 1건뿐)"; else no "서드파티 nginx 가 억제됨 (억제 ${dsupp}건 — 미탐!)"; fi
 
 # --- 바뀔 때만 스냅샷 --------------------------------------------------------
 #   같은 내용을 다시 보내면 새 스캔을 만들지 않는다(수집시각만 갱신). 패키지가 바뀌면 새 스냅샷 +
