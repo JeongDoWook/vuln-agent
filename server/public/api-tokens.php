@@ -73,10 +73,10 @@ vg_header('API 토큰', 'apitokens');
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <?php if ($newToken !== null): ?>
-    <div class="card" style="border-color:var(--accent)">
+    <div class="card card--accent">
       <div class="card__body">
         <strong>발급된 토큰 (한 번만 표시됨)</strong>
-        <pre class="out" style="user-select:all"><?= vg_h($newToken) ?></pre>
+        <pre class="out selectable"><?= vg_h($newToken) ?></pre>
         <div class="why">이 값은 저장되지 않습니다. 지금 복사해 외부 시스템 설정에 넣으세요. 잃어버리면 새로 발급해야 합니다.</div>
       </div>
     </div>

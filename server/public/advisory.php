@@ -41,16 +41,26 @@ vg_header($adv ? (string) $adv['title'] : '국내 보안공지', 'advisories');
   <?php vg_alert('오류 · ' . $err); ?>
   <div class="sub"><a href="/advisories.php">← 공지 목록으로</a></div>
 <?php else: ?>
-  <div class="sub"><a href="/advisories.php">← 국내 보안공지</a></div>
-  <h1><?= vg_h($adv['title']) ?></h1>
-  <div class="sub">
-    <?= vg_h((string) $adv['source']) ?> ·
-    발행일 <?= vg_h($adv['published'] ?? '–') ?>
-  </div>
+  <?php
+  // 다른 상세 페이지(호스트·CVE)와 같은 히어로 패턴. 관련 CVE 수가 이 공지의 무게다.
+  $meta = [
+      vg_h((string) $adv['source']),
+      '발행일 ' . vg_h($adv['published'] ?? '–'),
+      '<a href="/advisories.php">국내 보안공지</a>',
+  ];
+  vg_hero(
+      vg_h((string) $adv['title']),
+      $meta,
+      $cves ? 'CVE ' . count($cves) . '건' : 'CVE 없음',
+      $cves ? 'info' : 'muted',
+      '관련 취약점'
+  );
+  ?>
 
   <?php if ($cves): ?>
   <div class="card">
     <strong>관련 CVE</strong>
+    <span class="why">— 누르면 그 CVE 의 상세와 영향받는 자산을 봅니다</span>
     <div class="card__body">
       <?php foreach ($cves as $cv): ?>
         <a class="pill" href="/cve.php?cve=<?= urlencode($cv) ?>"><?= vg_h($cv) ?></a>

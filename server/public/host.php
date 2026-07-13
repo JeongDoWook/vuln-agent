@@ -209,7 +209,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
   if ($unsup) {
       echo '<div class="alert alert--err"><strong>취약점 매칭이 수행되지 않습니다</strong> — '
          . '아래 대상은 CVE 피드(OSV)가 지원하지 않는 배포판입니다. '
-         . '취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.<ul style="margin:.4rem 0 0 1rem;">';
+         . '취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.<ul class="hint-list">';
       foreach ($unsup as $line) { echo '<li>' . vg_h($line) . '</li>'; }
       echo '</ul></div>';
   }
@@ -219,7 +219,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
       <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
     <?php endforeach; ?>
-    <div class="kpi big"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
+    <div class="kpi"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
     <div class="kpi tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>"><b><?= (int) $cceFail ?></b><span>설정 취약</span></div>
     <?php if ($suppressedCount > 0): ?><div class="kpi tone-muted"><b><?= number_format($suppressedCount) ?></b><span>백포트 억제</span></div><?php endif; ?>
   </div>
