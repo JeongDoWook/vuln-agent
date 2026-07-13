@@ -1,0 +1,166 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * agent-tokens.php — 에이전트별 개별 수집 토큰 발급/폐기 (admin·operator).
+ *   각 토큰은 발급 시 정한 호스트(fqdn)에 묶여, 그 호스트의 스캔만 갱신할 수 있다.
+ *   공유 토큰과 달리 침해된 대상이 남의 fqdn 을 위조하는 것을 ingest.php 가 막는다.
+ *   발급 시 원문을 1회만 보여준다(DB 엔 해시만 저장). 폐기는 is_revoked → 즉시 무효.
+ */
+
+require __DIR__ . '/../src/auth.php';
+require __DIR__ . '/../src/view.php';
+require __DIR__ . '/../src/agenttoken.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
+vg_require_menu('agenttokens');               // admin·operator
+
+$pdo = vg_pdo();
+$msg = null; $err = null; $newToken = null;
+
+// 발급 실패 시 모달을 다시 열고 입력값을 되살린다.
+$issueFailed = false; $issueFqdn = ''; $issueLabel = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!vg_csrf_check($_POST['csrf'] ?? null)) {
+        $err = '세션이 만료되었습니다.';
+    } else {
+        $action = $_POST['action'] ?? '';
+        $me = vg_current_user();
+        try {
+            if ($action === 'create') {
+                $fqdn  = trim((string) ($_POST['fqdn'] ?? ''));
+                $label = trim((string) ($_POST['label'] ?? ''));
+                if ($fqdn === '')  { throw new RuntimeException('바인딩할 호스트(fqdn)를 입력하세요.'); }
+                if ($label === '') { $label = $fqdn . ' 수집 에이전트'; }   // 비우면 호스트명으로 기본값
+                $r = vg_agent_token_issue($pdo, mb_substr($fqdn, 0, 255), mb_substr($label, 0, 100), $me['id'] ?? null);
+                $newToken = $r['token'];   // 이 화면에서만 노출. 저장 안 함.
+                vg_log_activity($pdo, 'AGENT_TOKEN', null, 'agent_token_issue',
+                    "에이전트 토큰 발급: {$fqdn}",
+                    ['fqdn' => $fqdn, 'prefix' => $r['prefix'], 'auto_revoked' => $r['revoked']]);
+                $msg = $r['revoked'] > 0
+                    ? "토큰이 발급되었습니다. 같은 호스트의 기존 활성 토큰 {$r['revoked']}개는 자동 폐기되었습니다. 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다."
+                    : "토큰이 발급되었습니다. 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다.";
+            } elseif ($action === 'revoke') {
+                $id = (int) ($_POST['id'] ?? 0);
+                vg_agent_token_revoke($pdo, $id);
+                vg_log_activity($pdo, 'AGENT_TOKEN', $id, 'agent_token_revoke', '에이전트 토큰 폐기');
+                $msg = '토큰을 폐기했습니다. 즉시 무효가 됩니다.';
+            }
+        } catch (Throwable $e) {
+            $err = $e->getMessage();
+            if ($action === 'create') {
+                $issueFailed = true;
+                $issueFqdn   = trim((string) ($_POST['fqdn'] ?? ''));
+                $issueLabel  = trim((string) ($_POST['label'] ?? ''));
+            }
+        }
+    }
+}
+
+$csrf = vg_csrf_token();
+
+// 목록 페이지네이션.
+$perPage = vg_perpage();
+$page    = max(1, (int) ($_GET['page'] ?? 1));
+$total   = (int) $pdo->query('SELECT COUNT(*) FROM tb_agent_tokens WHERE is_deleted = 0')->fetchColumn();
+$offset  = ($page - 1) * $perPage;
+
+$tokens = $pdo->query(
+    "SELECT t.id, t.host_fqdn, t.label, t.token_prefix, t.last_seen_at, t.is_revoked, t.created_at,
+            u.username AS created_by
+       FROM tb_agent_tokens t
+       LEFT JOIN tb_users u ON u.id = t.created_by
+      WHERE t.is_deleted = 0
+      ORDER BY t.id DESC
+      LIMIT $perPage OFFSET $offset"
+)->fetchAll();
+
+// 발급 폼 prefill — 자산관리 등에서 ?fqdn=web01.example.com 로 넘어올 수 있게.
+if ($issueFqdn === '') { $issueFqdn = trim((string) ($_GET['fqdn'] ?? '')); }
+
+vg_header('에이전트 토큰', 'agenttokens');
+?>
+  <h1>에이전트 토큰 <span class="hint">(<?= number_format($total) ?>개)</span></h1>
+  <div class="sub">
+    각 수집 에이전트에 발급하는 <strong>호스트 전용 토큰</strong>입니다. 발급 시 정한 호스트(fqdn)의
+    스캔만 갱신할 수 있어, 침해된 대상 1대가 다른 호스트를 위조하는 것을 막습니다.
+    설치 시 <code>install-agent.sh --token &lt;토큰&gt;</code> 로 넣습니다.
+  </div>
+
+  <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+
+  <?php if ($newToken !== null): ?>
+    <div class="card card--accent">
+      <div class="card__body">
+        <strong>발급된 토큰 (한 번만 표시됨)</strong>
+        <pre class="out selectable"><?= vg_h($newToken) ?></pre>
+        <div class="why">이 값은 저장되지 않습니다. 지금 복사해 대상 서버의
+          <code>install-agent.sh --token &lt;토큰&gt;</code> 로 설치하세요. 잃어버리면 새로 발급해야 합니다.</div>
+      </div>
+    </div>
+  <?php endif; ?>
+
+  <div class="toolbar">
+    <?php vg_modal_btn('issueToken', '+ 토큰 발급'); ?>
+  </div>
+
+  <?php
+  vg_table(
+      [
+          ['label' => '호스트(fqdn)'],
+          ['label' => '용도'],
+          ['label' => '토큰(앞자리)', 'width' => '12rem'],
+          ['label' => '상태', 'width' => '6rem'],
+          ['label' => '마지막 수신', 'width' => '11rem'],
+          ['label' => '발급일', 'width' => '11rem'],
+          ['label' => '', 'width' => '5rem'],
+      ],
+      $tokens,
+      [
+          'empty' => [
+              'icon'  => '🔑',
+              'title' => '발급된 에이전트 토큰이 없습니다.',
+              'hint'  => '각 대상 서버마다 호스트 전용 토큰을 발급해 설치하세요. 위에서 발급합니다.',
+          ],
+          'cell'  => [
+              0 => fn($t) => '<code>' . vg_h((string) $t['host_fqdn']) . '</code>',
+              1 => fn($t) => vg_h((string) $t['label']),
+              2 => fn($t) => '<code>' . vg_h((string) $t['token_prefix']) . '…</code>',
+              3 => fn($t) => (int) $t['is_revoked'] === 1
+                  ? '<span class="why">폐기됨</span>'
+                  : '<strong>활성</strong>',
+              4 => fn($t) => $t['last_seen_at']
+                  ? '<span class="why">' . vg_h((string) $t['last_seen_at']) . '</span>'
+                  : '<span class="why">미수신</span>',
+              5 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
+              6 => fn($t) => (int) $t['is_revoked'] === 1
+                  ? ''
+                  : '<form method="post" onsubmit="return confirm(\'이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.\');">'
+                      . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
+                      . '<input type="hidden" name="action" value="revoke">'
+                      . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'
+                      . '<button class="btn btn--sm btn--danger">폐기</button></form>',
+          ],
+      ]
+  );
+  vg_page_nav($total, $perPage, $page);
+
+  // 발급 폼은 가끔 쓰는 것 — 버튼 뒤 모달로. 실패하면 다시 연다.
+  vg_modal_open('issueToken', '에이전트 토큰 발급', '', $issueFailed);
+  ?>
+    <form method="post">
+      <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+      <input type="hidden" name="action" value="create">
+      <label>호스트 (fqdn)</label>
+      <input type="text" name="fqdn" value="<?= vg_h($issueFqdn) ?>"
+             placeholder="예: web01.example.com" maxlength="255" required autocomplete="off">
+      <div class="why">이 토큰은 <strong>이 호스트의 스캔만</strong> 갱신할 수 있습니다.
+        같은 호스트에 활성 토큰이 이미 있으면 자동 폐기되고 새로 발급됩니다.</div>
+      <label>용도 (선택)</label>
+      <input type="text" name="label" value="<?= vg_h($issueLabel) ?>"
+             placeholder="비우면 호스트명으로 자동 지정" maxlength="100" autocomplete="off">
+      <div class="why">발급된 토큰 원문은 <strong>이 화면에서 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
+      <button type="submit" class="btn btn--ok btn--block" data-loading="발급 중…">발급</button>
+    </form>
+  <?php vg_modal_close(); ?>
+<?php vg_footer();

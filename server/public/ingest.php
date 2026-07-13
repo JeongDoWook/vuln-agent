@@ -15,6 +15,7 @@ require __DIR__ . '/../src/db.php';
 require __DIR__ . '/../src/matcher.php';
 require __DIR__ . '/../src/cce.php';          // vg_evaluate_cce (보안설정 점검)
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
+require_once __DIR__ . '/../src/agenttoken.php';  // vg_agent_token_verify (호스트 바인딩)
 
 // 통일 에러 포맷: {ok:false,error,code,ts(ISO8601)}
 function respond_fail(int $httpCode, string $msg, string $code): void {
@@ -27,11 +28,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     respond_fail(405, 'POST only', 'method_not_allowed');
 }
 
-// ── 인증 : 공유 토큰 상수시간 비교 ─────────────────────────────
-$expected = (string) ($cfg['ingest_token'] ?? '');
-$provided = vg_auth_token('X-Agent-Token');   // 커스텀 헤더 우선, 없으면 Authorization: Bearer
-if ($expected === '' || !hash_equals($expected, (string) $provided)) {
-    respond_fail(401, 'unauthorized', 'unauthorized');
+// ── 인증 : 개별 토큰(호스트 바인딩) 우선, 없으면 공유 토큰(하위호환) ──────────
+//   1) 개별 토큰이면 그 토큰에 묶인 fqdn 만 갱신할 수 있다 → 본문 fqdn 이 다르면 아래에서 403.
+//   2) 개별 토큰이 아니면 공유 토큰(cfg['ingest_token'])을 상수시간 비교로 받는다(기존 배포 이행용).
+//      공유 토큰은 deprecated — 본문 fqdn 을 그대로 믿으므로 위조에 취약하다. 수신마다 경고를 남긴다.
+$provided  = vg_auth_token('X-Agent-Token');   // 커스텀 헤더 우선, 없으면 Authorization: Bearer
+$pdoAuth   = vg_pdo();
+$boundFqdn = null;      // 개별 토큰이면 강제할 fqdn
+$sharedTok = false;     // 공유 토큰(하위호환)으로 인증됐나
+
+$agentTok = vg_agent_token_verify($pdoAuth, (string) $provided);
+if ($agentTok !== null) {
+    $boundFqdn = $agentTok['fqdn'];
+} else {
+    $expected = (string) ($cfg['ingest_token'] ?? '');
+    if ($expected !== '' && $provided !== '' && hash_equals($expected, (string) $provided)) {
+        $sharedTok = true;
+    } else {
+        respond_fail(401, 'unauthorized', 'unauthorized');
+    }
 }
 
 // ── 본문 파싱 ─────────────────────────────────────────────────
@@ -52,6 +67,23 @@ $exp  = $data['exposure']     ?? [];
 $upd  = $data['updates']      ?? [];
 
 $fqdn = trim((string) ($meta['hostname_fqdn'] ?? '')) ?: 'unknown';
+
+// ── 호스트 바인딩 강제 ───────────────────────────────────────
+//   개별 토큰: 바인딩된 fqdn 만 갱신 가능. 본문이 다른 호스트를 주장하면 스푸핑 → 거부(403) + 감사.
+//   공유 토큰: 본문 fqdn 을 그대로 쓰되(하위호환), 이행 추적용 경고를 남긴다.
+if ($boundFqdn !== null) {
+    if ($fqdn !== 'unknown' && $fqdn !== $boundFqdn) {
+        vg_log_activity($pdoAuth, 'HOST', null, 'ingest_spoof_blocked',
+            "토큰 바인딩 위반: 토큰은 [{$boundFqdn}] 에 묶였는데 본문은 [{$fqdn}] 주장 → 거부",
+            ['bound' => $boundFqdn, 'claimed' => $fqdn], null, 'SYSTEM');
+        respond_fail(403, 'token is bound to a different host', 'host_binding_violation');
+    }
+    $fqdn = $boundFqdn;   // 본문이 비었거나 일치 → 바인딩 값으로 강제.
+} elseif ($sharedTok) {
+    vg_log_activity($pdoAuth, 'HOST', null, 'ingest_shared_token',
+        "공유 토큰으로 수신(개별 토큰 이행 권장): {$fqdn}",
+        ['fqdn' => $fqdn], null, 'SYSTEM');
+}
 
 // collected_at (ISO-8601) → MySQL DATETIME
 $collectedAt = null;

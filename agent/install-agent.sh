@@ -6,6 +6,11 @@
 #   systemd 있으면 systemd-timer, 없으면 cron 으로 등록.
 #   토큰은 <prefix>/etc/agent.env(600) 에 두고 env 로 전달 → ps 에 노출 안 됨.
 #
+# 토큰:
+#   중앙 서버의 "에이전트 토큰" 화면에서 이 호스트(fqdn)용 개별 토큰을 발급받아 넣는다.
+#   개별 토큰은 발급 시 정한 호스트만 갱신할 수 있어, 대상 1대가 침해돼도 다른 호스트를
+#   위조하지 못한다. (구버전 공유 토큰도 당분간 받지만 deprecated — 개별 토큰으로 이행 권장.)
+#
 # 사용:
 #   sudo bash install-agent.sh                    # 서버 주소·토큰·주기를 물어본다(대화형)
 #   sudo bash install-agent.sh --server http://중앙서버:8080/ingest.php --token 토큰

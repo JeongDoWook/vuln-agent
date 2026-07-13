@@ -526,11 +526,17 @@ flowchart TD
 - **세션 인증**(`tb_users`) : 웹 화면 전부. 역할은 **`admin` / `operator` / `user`** 3단계.
 - **설정형 RBAC**: `admin` 은 코드에서 항상 전체 허용(잠금 방지)이라 권한 행을 두지 않는다.
   `operator`·`user` 는 **역할 × 메뉴코드**(dashboard/findings/advisories/assets/connectors/
-  users/permissions/apitokens/activity) 허용 여부를 `tb_role_permissions` 에 두고 `/permissions.php`
+  users/permissions/agenttokens/apitokens/activity) 허용 여부를 `tb_role_permissions` 에 두고 `/permissions.php`
   에서 켜고 끈다. 각 페이지 가드는 `vg_require_menu('<메뉴코드>')` 하나로 통일.
   기본 시드 — operator: 대시보드/취약점/공지/자산/피드 허용, 시스템 불가. user: 대시보드/취약점/공지만.
 - **토큰 인증**(사람 로그인과 분리):
-  - 에이전트 → `ingest.php`/`rematch.php` : 공유 시크릿 `X-Agent-Token`(`secrets/ingest_token.txt`).
+  - 에이전트 → `ingest.php` : **호스트별 개별 토큰**(`X-Agent-Token`). `/agent-tokens.php` 에서
+    호스트(fqdn)마다 발급하고, 토큰은 발급 시 정한 fqdn 만 갱신할 수 있다 — `ingest.php` 가
+    바인딩을 강제해, 본문이 다른 호스트를 주장하면 **403 으로 거부**(침해된 대상 1대가 남의
+    스캔을 위조·덮어쓰는 것을 차단). DB 엔 SHA-256 해시만 저장(원문 1회 표시), 폐기는 `is_revoked`.
+    활성 토큰은 호스트당 하나(재발급 시 기존분 자동 폐기). **하위호환**: 구버전 공유 토큰
+    (`secrets/ingest_token.txt`)도 당분간 받되(본문 fqdn 사용) deprecated — 수신 시 감사 로그에 경고.
+  - 에이전트 → `rematch.php` : 공유 시크릿 `X-Agent-Token`(`secrets/ingest_token.txt`).
   - 외부 시스템 → `export.php` : 웹에서 발급하는 **읽기 전용** API 토큰(`X-API-Token`, 또는
     `Authorization: Bearer`). DB 엔 SHA-256 해시만 저장(원문은 발급 시 1회 표시), 폐기는 소프트삭제.
 - 최초 admin 은 `secrets/admin_password` 로 부트스트랩.
