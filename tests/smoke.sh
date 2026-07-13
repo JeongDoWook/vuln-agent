@@ -141,14 +141,25 @@ body=$(curl -s -b "$JAR" "$BASE/connectors.php")
 assert_contains "$body" "CISA KEV" "피드 커넥터 페이지(기본 커넥터 노출)"
 code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
 assert_eq "$code" "200" "국내 보안공지 페이지 200"
-body=$(curl -s -b "$JAR" "$BASE/host.php?id=1")
+# 호스트 id 를 하드코딩(=1)하면 빈 볼륨에서만 통과한다. 스택·DB 를 재사용하면 auto_increment 가
+# 밀려(삭제·재등록) id 가 6,7,11 처럼 바뀌고, 그때부터 아래 검사가 전부 "호스트 없음" 을 본다.
+# 자산 목록에서 web01 의 실제 id 를 찾아 쓴다 — 데이터가 어디서 시작하든 무관하게.
+WEB01_ID=$(curl -s -b "$JAR" "$BASE/assets.php?q=web01" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
+if [ -n "$WEB01_ID" ]; then
+  ok "web01 호스트 id 확인 (=$WEB01_ID)"
+else
+  no "web01 호스트를 자산 목록에서 못 찾음"
+  WEB01_ID=1
+fi
+
+body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "최고 위험도" "호스트 상세(자산 식별 히어로 + 섹션 탭)"
 # curl 은 조치 버전 이상이지만 nginx 가 옛 libcurl 을 물고 있다 → 억제 대신 "재시작 필요"로 남는다(기본=취약점 탭).
 assert_contains "$body" "재시작 필요" "재시작 필요 근거 노출(패치됐지만 옛 라이브러리 사용 중)"
 # 커널은 패치가 설치돼도 재부팅 전까지 옛 커널이 돈다 → 억제하지 않고 "재부팅"을 조치로 제시한다.
 assert_contains "$body" "재부팅 필요" "커널 재부팅 필요 뱃지(설치 -503 / 실행 -427)"
 assert_contains "$body" "재부팅</span>" "조치가 '재부팅' (프로세스 재시작으로는 안 고쳐진다)"
-body=$(curl -s -b "$JAR" "$BASE/host.php?id=1&tab=runtime")
+body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=runtime")
 assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(노출·프로세스)"
 # redis 는 0.0.0.0:6379 지만 방화벽이 막는다 → EXTERNAL 이 아니라 FILTERED 로 분류돼야 한다.
 body=$(curl -s -b "$JAR" "$BASE/findings.php?st=FILTERED")

@@ -616,6 +616,76 @@ a.pill:hover { text-decoration: none; background: rgb(31 111 235 / .25); }
 .pill--on { background: var(--accent); color: #fff; }
 a.pill--on:hover { background: var(--accent); }
 
+/* --- 모달 (네이티브 <dialog>) --------------------------------------------
+ * 자주 안 쓰는 폼(추가·발급·설치안내)을 화면에 펼쳐두지 않고 버튼 뒤에 숨긴다.
+ * showModal() 이 포커스 가둠·ESC·backdrop 을 다 해주므로 JS 는 열고 닫기만 한다. */
+.modal {
+  width: min(560px, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.modal--wide { width: min(880px, calc(100vw - 2rem)); }
+
+.modal::backdrop { background: rgb(0 0 0 / .6); }
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .9rem 1.2rem;
+  border-bottom: 1px solid var(--line);
+}
+.modal__head strong { font-size: 1rem; }
+
+.modal__x {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: .3rem .45rem;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+}
+.modal__x:hover { background: var(--surface-2); color: var(--text); }
+
+/* 본문만 스크롤 — 머리글은 붙어 있게 */
+.modal__body {
+  padding: 1rem 1.2rem 1.3rem;
+  overflow-y: auto;
+  max-height: calc(100vh - 8rem);
+}
+/* 모달 안의 폼은 카드가 아니다 — form.card 의 가운데 정렬·여백을 물려받지 않게 */
+.modal__body form { margin: 0; max-width: none; }
+.modal__body .card { margin-bottom: 0; }
+.modal__body > .btn--block { margin-top: 1.1rem; }
+
+/* --- 도움말 툴팁 ----------------------------------------------------------
+ * 본문에 늘어놓으면 화면이 무거워지는 부연설명을 아이콘 뒤로. 네이티브 title 을 쓴다. */
+.help {
+  display: inline-grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-left: .25rem;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  color: var(--muted);
+  background: var(--surface-2);
+  font-size: .66rem;
+  font-weight: 700;
+  cursor: help;
+  vertical-align: middle;
+}
+.help:hover, .help:focus-visible { color: var(--accent-2); border-color: var(--accent); }
+
 /* --- 알림 ---------------------------------------------------------------- */
 .alert {
   padding: .8rem 1rem;

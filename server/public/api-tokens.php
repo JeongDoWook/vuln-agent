@@ -16,6 +16,9 @@ vg_require_menu('apitokens');                 // admin 전용(코드에서 admin
 $pdo = vg_pdo();
 $msg = null; $err = null; $newToken = null;
 
+// 발급 실패 시 모달을 다시 열고 입력한 용도를 되살린다.
+$issueFailed = false; $issueLabel = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
         $err = '세션이 만료되었습니다.';
@@ -41,6 +44,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } catch (Throwable $e) {
             $err = $e->getMessage();
+            if ($action === 'create') {
+                $issueFailed = true;
+                $issueLabel  = trim((string) ($_POST['label'] ?? ''));
+            }
         }
     }
 }
@@ -82,13 +89,8 @@ vg_header('API 토큰', 'apitokens');
     </div>
   <?php endif; ?>
 
-  <div class="card">
-    <form method="post" class="toolbar">
-      <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-      <input type="hidden" name="action" value="create">
-      <input type="text" name="label" placeholder="토큰 용도 (예: AI 보고서 생성기)" maxlength="100" required>
-      <button type="submit" class="btn btn--primary">토큰 발급</button>
-    </form>
+  <div class="toolbar">
+    <?php vg_modal_btn('issueToken', '+ 토큰 발급'); ?>
   </div>
 
   <?php
@@ -125,5 +127,18 @@ vg_header('API 토큰', 'apitokens');
       ]
   );
   vg_page_nav($total, $perPage, $page);
+
+  // 발급 폼은 가끔 쓰는 것 — 목록 위에 늘 펼쳐둘 이유가 없다. 실패하면 다시 연다.
+  vg_modal_open('issueToken', 'API 토큰 발급', '', $issueFailed);
   ?>
+    <form method="post">
+      <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+      <input type="hidden" name="action" value="create">
+      <label>토큰 용도</label>
+      <input type="text" name="label" value="<?= vg_h($issueLabel) ?>"
+             placeholder="예: AI 보고서 생성기" maxlength="100" required autocomplete="off">
+      <div class="why">발급된 토큰 원문은 <strong>이 화면에서 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
+      <button type="submit" class="btn btn--ok btn--block" data-loading="발급 중…">발급</button>
+    </form>
+  <?php vg_modal_close(); ?>
 <?php vg_footer();

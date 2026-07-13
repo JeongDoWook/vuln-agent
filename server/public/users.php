@@ -13,6 +13,11 @@ vg_require_menu('users');
 $pdo = vg_pdo();
 $msg = null; $err = null;
 
+/* 추가 모달을 다시 열어야 하는지 + 입력값 되살리기.
+ * 추가에 실패했는데 모달이 닫혀 버리면 사용자는 뭐가 틀렸는지 못 보고 입력도 잃는다.
+ * 비밀번호는 되살리지 않는다(폼에 평문으로 다시 심지 않는다). */
+$addFailed = false; $addUsername = ''; $addRole = 'user';
+
 // 저장 가능한 역할 3값(화이트리스트).
 const VG_ROLES = ['user', 'operator', 'admin'];
 
@@ -35,6 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (Throwable $e) {
                 $err = '추가 실패(중복 아이디?): ' . $e->getMessage();
             }
+        }
+        if ($err !== null) {
+            $addFailed = true; $addUsername = $u; $addRole = $role;
         }
     } elseif (($_POST['action'] ?? '') === 'role') {
         $id = (int) ($_POST['id'] ?? 0);
@@ -92,6 +100,10 @@ vg_header('사용자', 'users');
   <div class="sub">admin 전용 · 계정 추가 · 역할 변경 · 비번 초기화 · 삭제</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+
+  <div class="toolbar">
+    <?php vg_modal_btn('addUser', '+ 사용자 추가'); ?>
+  </div>
 
   <?php
   $meId = (int) ($me['id'] ?? 0);
@@ -162,22 +174,25 @@ vg_header('사용자', 'users');
   vg_page_nav($total, $perPage, $page);
   ?>
 
-  <div class="card card--narrow">
-    <strong>사용자 추가</strong>
-    <form method="post" class="card__body">
+  <?php
+  // 추가 폼은 자주 쓰는 게 아니라 목록 아래 펼쳐둘 이유가 없다 → 버튼 뒤 모달로.
+  // 추가에 실패했으면(중복 아이디·짧은 비번) 다시 열어 준다 — 안 그러면 뭐가 틀렸는지 못 보고 입력도 잃는다.
+  vg_modal_open('addUser', '사용자 추가', '', $addFailed);
+  ?>
+    <form method="post">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="add">
       <label>아이디</label>
-      <input type="text" name="username" required>
-      <label>비밀번호 (4자 이상)</label>
-      <input type="password" name="password" required>
+      <input type="text" name="username" value="<?= vg_h($addUsername) ?>" required autocomplete="off">
+      <label>비밀번호 <span class="why">(4자 이상)</span></label>
+      <input type="password" name="password" required autocomplete="new-password">
       <label>역할</label>
       <select name="role">
-        <option value="user">사용자 (조회)</option>
-        <option value="operator">운영자 (피드)</option>
-        <option value="admin">관리자 (전체)</option>
+        <option value="user"<?= $addRole === 'user' ? ' selected' : '' ?>>사용자 (조회)</option>
+        <option value="operator"<?= $addRole === 'operator' ? ' selected' : '' ?>>운영자 (피드)</option>
+        <option value="admin"<?= $addRole === 'admin' ? ' selected' : '' ?>>관리자 (전체)</option>
       </select>
       <button type="submit" class="btn btn--ok btn--block">추가</button>
     </form>
-  </div>
+  <?php vg_modal_close(); ?>
 <?php vg_footer();
