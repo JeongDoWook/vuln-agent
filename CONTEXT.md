@@ -1,7 +1,10 @@
 # CONTEXT.md — 프로젝트 맥락 (Claude Code 최우선 참고)
 
 > 이 파일은 개발을 이어받는 사람(및 Claude Code)이 **가장 먼저 읽는** 요약이다.
-> 세부 기획은 `docs/기획안_v1.0.html`, 쉬운 설명은 `docs/설명글.md` 참고.
+> 쉬운 설명은 `docs/설명글.md`, 대회용 기획 문서는 `docs/기획안_v1.0.html`
+> (둘 다 현행 구현 기준으로 갱신됨). 구조·규칙의 최종 기준은 이 파일과 `docs/architecture.md`.
+> 전체 프로세스 소개 페이지는 웹으로 서빙된다 — `server/public/process.html` → `/process.html`
+> (사본을 두지 않는다. 예전에 `docs/` 에도 같은 파일이 있었는데 두 벌이 어긋났다).
 
 ---
 
@@ -21,17 +24,20 @@ CVE와 매칭한다. 단순 스캐너와 다른 점은 **"이 취약점이 이 �
 ## 2. 핵심 전략 (가장 중요 — 여기서 방향이 갈린다)
 
 **매칭 정확도로 경쟁하지 않는다.**
-OS 패키지 ↔ CVE 매칭 자체는 Trivy·Grype·OpenSCAP 등 검증된 스캐너가 이미
-배포판 보안 피드로 백포트까지 인식해 잘한다. 직접 만들면 오히려 오탐이 는다.
+"이 패키지 버전에 이 CVE 가 영향을 주는가"는 이미 잘 정리된 데이터(OSV·NVD·KEV·EPSS)가 있다.
+직접 규칙을 짜면 오히려 오탐이 는다.
 
-→ **매칭은 검증된 도구를 호출해 상속받고, 우리 기여는 그 위 레이어에 둔다.**
+→ **매칭 판정은 검증된 피드(OSV API 직접 조회)에서 상속받고, 우리 기여는 그 위 레이어에 둔다.**
+   (Trivy·Grype 같은 스캐너 바이너리를 호출하는 방식은 검토했으나 채택하지 않았다 — OSV 를
+   직접 조회하는 편이 배포판 ecosystem·소스패키지 단위로 다루기 단순했다.)
 
 ### 우리의 차별점 (강한 순서)
 1. **런타임 노출 상관** ★최우선 — "취약 라이브러리 → 그걸 로드한 프로세스 →
    그 프로세스가 연 외부 포트"를 이어서 판단. 설치만 된 것과 실제 노출된 것을 구분.
 2. **EPSS + CISA KEV** — 실제 악용 확률/악용된 목록으로 우선순위. CVSS만 안 봄.
-3. **설명가능한 오탐 억제 → VEX** — 왜 안전/위험한지 근거 제시.
-4. **경량 상주 에이전트 + 시계열** — 매일 수집, 변화 추적, 함대 대시보드.
+3. **설명가능한 오탐 억제** — 백포트 changelog 를 근거로 억제하고, **왜 안전한지 근거를 화면에
+   남긴다**(숨기지 않는다). VEX 문서 산출은 하지 않기로 했다 — 소비할 곳이 없다(YAGNI).
+4. **경량 상주 에이전트 + 시계열** — 매시간 수집, 변화 추적(`changes.php`), 함대 대시보드.
 5. **KISA 국내 연동** — 해외 도구가 안 하는 국내 보안공지 매칭.
 
 ---
@@ -45,9 +51,10 @@ OS 패키지 ↔ CVE 매칭 자체는 Trivy·Grype·OpenSCAP 등 검증된 스�
 | DB | **MySQL** | 완성됨(핵심) |
 | 인프라 | **Docker + docker-compose** (PHP + MySQL) | 완성됨 |
 | HTTPS 배포 | **Caddy 리버스 프록시** (Let's Encrypt DNS-01, 현재 자체서명) | 완성됨 |
-| AI 문서 생성 | **Python** (오픈웨이트 로컬 모델) | 나중(마지막) |
+| AI 문서 생성 | **Python** (오픈웨이트 로컬 모델) | **범위 제외** — 결과는 `GET /export.php`(JSON/XML)로 넘긴다 |
 
-> AI 모델은 3~4단계에서만 등장. 1~2단계(수집·매칭·표시)엔 AI 불필요(DB 조회지 추론 아님).
+> 1~2단계(수집·매칭·표시)엔 AI 불필요(DB 조회지 추론 아님). AI 보고서 생성기는 본체에 넣지 않고
+> **Export API 로 분리**해 외부 시스템이 가져가게 했다(경계가 깨끗하고, 본체가 AI 에 묶이지 않는다).
 > 상용 API(Claude/GPT)는 코드 작성 보조로만 사용 → 규정상 자유, 보고서에 기재.
 
 ---
@@ -66,6 +73,8 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 - `runtime.processes` — **실행 중인 모든 프로세스**(포트 없어도): `pid|comm|user|exe_pkg|loaded_pkgs`
   - 리스닝만이 아니라 "실행중/사용중"까지 잡아 상태를 정밀 구분(→ §7)
 - `updates` — 미적용 보안업데이트 + 이미 적용된 보안권고(오탐 감소용)
+- `changelog` — 패키지 changelog 의 **CVE 수정 기록**(백포트 억제의 근거 → §7). 기본 수집,
+  가장 무거운 단계라 `--no-changelog` 로 끌 수 있고 `--limit` 로 cgroup CPU/메모리 상한을 건다
 - `net` / `services` — 포트, 실행 서비스/프로세스
 - `system` — OS/커널/CPE (어떤 OVAL로 대조할지 힌트)
 - 그 외: 커널 CPU취약점 완화상태, 컨테이너 이미지, 언어패키지(pip/npm), 보안설정 등
@@ -97,12 +106,15 @@ vuln-agent/
 │   └── install-agent.sh          # 각 서버 배포·스케줄(systemd-timer/cron)
 ├── server/
 │   ├── Dockerfile
-│   ├── public/   # ingest·rematch·feed_preview(API) + login/index/host/findings/cve/cves/advisories/advisory/connectors/users/activity(웹)
-│   ├── src/      # config·db·auth·view·matcher·feeds·audit(감사로그·소프트삭제)
-│   └── bin/      # scheduler.php(사이드카)·sync.php·enrich_osv.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
-├── db/           # 01~11 *.sql (초기화 시 자동 적용, tb_ 접두사+감사4컬럼)
-│   └── _migrations/   # 기존 프로덕션 볼륨용 수동 1회 마이그레이션
-└── docs/         # 아키텍처·기획안·설명글·프로세스
+│   ├── public/   # ingest·rematch·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
+│   │             #   packages/advisories/advisory/assets/connectors/users/permissions/api-tokens/activity/profile(웹)
+│   │             #   process.html — 프로세스 소개(로그인 불필요, /process.html 로 공유)
+│   ├── src/      # config·db·auth(RBAC)·view·matcher(+백포트억제)·feeds·cce·apitoken·audit(감사로그·소프트삭제)
+│   └── bin/      # scheduler.php(사이드카)·sync.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
+├── db/           # 01~13 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
+│   └── migrations/    # NNNN_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
+├── docs/         # 아키텍처·기획안·설명글·피드소스-역할·export-api
+└── shadow-ai/    # (사이드 PoC) 섀도우 AI DLP 크롬 확장 — 본 파이프라인과 독립
 ```
 
 ---
@@ -120,7 +132,7 @@ vuln-agent/
                                                      + 런타임 노출 상관 + EPSS/KEV 가중
                                                                            │
                                                                            ▼
-                                              PHP 웹 대시보드 (우선순위·변화·VEX·감사로그)
+                                          PHP 웹 대시보드 (우선순위·변화추적·억제근거·감사로그)
 ```
 
 ---
@@ -140,13 +152,19 @@ vuln-agent/
 
 - **KEV 등재** 시 한 단계 상향 → 외부노출 + KEV = **CRITICAL**.
 - **EPSS**(악용확률) · CVSS 는 같은 등급 내 정렬에 사용.
-- 백포트 오탐: OSV 버전필터(배포판 전체버전으로 대조)가 이미 걸러냄(설치 버전에 실제 영향 주는 것만).
+- **백포트 억제**(2단): ① OSV 버전필터(배포판 전체버전 대조)로 1차 제거 → ② 그걸 통과한 건도
+  패키지 **changelog 에 그 CVE 수정 기록이 있으면** finding 으로 올리지 않고 `tb_suppressed_findings`
+  로 분리한다. 위험 집계·화면은 그대로 두고 오탐만 빠지며, 억제 근거는 호스트 상세에 노출된다.
 
 즉 "설치=취약"으로 전부 올리지 않고, **실제 노출·실행·사용 여부로 우선순위를 가른다.**
 
+**보안설정 점검(CCE)** 은 같은 수집물을 다른 눈으로 본다 — CVE(취약한 버전)가 아니라 잘못된 설정
+(SSH root 로그인·패스워드 인증·UID 0 계정·SELinux/AppArmor·방화벽)을 `src/cce.php` 가 판정해
+`tb_cce_findings` 에 저장한다. 신규 수집은 없다.
+
 ---
 
-## 8. 개발 현황 (2026-07 기준 — 핵심 파이프라인 + HTTPS/감사 완성)
+## 8. 개발 현황 (2026-07 기준 — 파이프라인·HTTPS·감사 + 오탐억제/CCE/변화추적/Export 완성)
 
 - [x] **0. Docker** — compose dev/prod + Dockerfile + Docker Secrets(txt) + 러너
 - [x] **1. 수집→전송→저장** — 에이전트 `--send` POST + `ingest.php` 수신 + DB
@@ -170,9 +188,27 @@ vuln-agent/
 - [x] **DB 대개편** — 전 테이블 `tb_` 접두사 통일 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
       · 소프트삭제(`vg_soft_delete()`: users/feed_connectors/advisories/hosts/scans, findings 등 재계산
       캐시는 예외) · 활동 감사로그 `tb_activity_log`(`vg_log_activity()` — 로그인·커넥터저장/삭제/실행·
-      사용자추가/삭제·ingest 수신을 기록) + 조회 화면 `activity.php`(admin 전용, scope 필터·페이지네이션).
-      마이그레이션: `db/01~11`(신규 볼륨) + `db/_migrations/*.sql`(기존 프로덕션 볼륨 in-place, 1회성).
-- [ ] 대시보드 "다음 수집 예정", 시계열/추이, 알림, Python AI(제외)
+      사용자추가/삭제·ingest 수신을 기록) + 조회 화면 `activity.php`(scope 필터·페이지네이션).
+- [x] **백포트 억제(차별점 ③ 설명가능한 오탐 억제)** — 에이전트 changelog 의 CVE 수정 기록으로
+      "버전은 낮아도 이미 패치됨"을 증명해 finding 을 `tb_suppressed_findings` 로 분리(위험 집계에서 자동 제외).
+      숨기지 않고 근거와 함께 호스트 상세에 표시. 스케줄 수집에서 changelog 가 기본값.
+- [x] **보안설정 점검(CCE)** — 이미 수집한 sshd·계정·MAC·방화벽 값을 `src/cce.php` 가 판정 → `tb_cce_findings`,
+      호스트 상세에 PASS/FAIL/NA. 신규 수집 없음(수집물 재활용).
+- [x] **변화 추적(차별점 ④ 시계열)** — `changes.php`: 최근 2개 스캔을 대조해 신규/해결/등급상승·하락.
+      새 테이블 없이 `tb_findings` 만 비교((cve_id, package_name) 기준).
+- [x] **자산 관리 + 설정형 RBAC** — `assets.php`(호스트 자산·소프트삭제) · 역할 3단계(admin/operator/user) ·
+      역할×메뉴 권한을 `permissions.php` 에서 설정(`tb_role_permissions`, 가드는 `vg_require_menu()`).
+      admin 은 코드에서 항상 전체 허용(잠금 방지).
+- [x] **Export API** — `GET /export.php`(JSON/XML, 호스트·심각도·KEV·EPSS 필터). 전용 읽기 토큰을
+      `api-tokens.php` 에서 발급(DB 엔 SHA-256 해시만, 원문은 1회 표시). 인증 헤더 `X-API-Token`
+      또는 `Authorization: Bearer`(Apache 가 스트립해도 우회). 상세: `docs/export-api.md`.
+- [x] **스키마 마이그레이션 자동화** — `deploy/migrate.sh` 가 `db/migrations/NNNN_*.sql` 중 미적용분만
+      순서대로 적용하고 `tb_schema_migrations` 에 기록(`up`·`update.sh` 가 자동 호출, 수동 apply 불필요).
+      최상위 `db/01~13*.sql` 은 빈 볼륨 initdb 전용이라 기존 볼륨엔 안 들어간다 → 증분은 `migrations/` 로.
+- [x] **UI** — 좌측 사이드바(대분류/중분류) · CVE 목록 탭(전체/KEV/EPSS 상위) · 영향 패키지 목록 `packages.php`
+      · EPSS 백분위 병기 · 필터 즉시 적용.
+- [ ] 대시보드 "다음 수집 예정", 알림
 
-> 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·KEV/EPSS·설명가능성).
-> Python AI 문서생성은 범위에서 제외됨.
+> 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·백포트 억제·KEV/EPSS·설명가능성).
+> Python AI 문서생성은 본체 범위에서 제외 — Export API 로 결과만 넘긴다.
+> `shadow-ai/`(섀도우 AI DLP 크롬 확장)는 같은 저장소의 **사이드 PoC** 로, 위 파이프라인과 무관하게 독립 동작한다.
