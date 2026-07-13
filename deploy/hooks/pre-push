@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# pre-push — CLAUDE.md 검증 게이트 (php -l + bash -n + tests/smoke.sh)
+# pre-push — CLAUDE.md 검증 게이트 (php -l + bash -n + 마이그레이션 파일명 + tests/smoke.sh)
 # =============================================================================
 # 설치: git config core.hooksPath deploy/hooks   (compose_runner.sh init 이 해준다)
 #   전에는 .git/hooks/pre-push 에 손으로 넣어 뒀는데, .git 은 git 이 추적하지 않는다.
@@ -102,10 +102,31 @@ php_lint() {  # stdin ← 파일 내용
 }
 
 # --- 파일별 검사 -------------------------------------------------------------
-n_php=0 n_sh=0
+n_php=0 n_sh=0 n_mig=0
 while IFS=$'\t' read -r sha path; do
   [ -n "${path:-}" ] || continue
   case $path in
+    db/migrations/*.sql)
+      # 파일명은 타임스탬프여야 한다(db/migrations/README.md).
+      # 연번은 "다음 번호가 뭔지" 를 모두가 합의해야 성립하는데, 동시에 뜬 브랜치들은
+      # 각자 origin/main 을 보고 같은 번호를 집는다 — 실제로 두 번 터졌다(0003·0014 가 각각 두 개).
+      # 규칙은 CLAUDE.md 에 있었지만 집행자가 없어서, 다음 사람이 관성으로 0021 을 이어 쓰기
+      # 딱 좋은 상태였다. 여기서 막는다.
+      #
+      # **origin/main 에 이미 있는 파일은 검사하지 않는다.** 기존 연번 파일(0001…0020)은 그대로 두고
+      # (사전순이라 옛 것이 먼저 돈다), 이 브랜치가 새로 만든 것만 본다. 신규 브랜치라 base 를 못 찾아
+      # 전량 목록이 들어와도 옛 파일이 걸리지 않는 건 이 조건 덕이다.
+      if ! git cat-file -e "origin/main:$path" 2>/dev/null; then
+        if [[ ${path##*/} =~ ^[0-9]{14}_.+\.sql$ ]]; then
+          n_mig=$((n_mig + 1))
+        else
+          echo "✗ 마이그레이션 파일명이 타임스탬프가 아님  $path" >&2
+          echo "    연번(0001…)은 동시 브랜치끼리 같은 번호를 집어 충돌한다." >&2
+          echo "    이렇게 바꾼다:  git mv \"$path\" db/migrations/\$(date +%Y%m%d%H%M%S)_이름.sql" >&2
+          fail=1
+        fi
+      fi
+      ;;
     *.php)
       if out=$(git show "$sha:$path" | php_lint 2>&1); then
         n_php=$((n_php + 1))
@@ -127,7 +148,7 @@ while IFS=$'\t' read -r sha path; do
   esac
 done <<< "$pairs"
 
-echo "pre-push: php -l ${n_php}개 통과, bash -n ${n_sh}개 통과"
+echo "pre-push: php -l ${n_php}개 통과, bash -n ${n_sh}개 통과, 신규 마이그레이션 ${n_mig}개 파일명 통과"
 
 if [ "$fail" -ne 0 ]; then
   echo "" >&2
