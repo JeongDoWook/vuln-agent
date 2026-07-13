@@ -15,12 +15,20 @@ const VG_URGENT_TOP = 6;
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
-$kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0;
+$kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = vg_perpage();
 try {
     $pdo = vg_pdo();
     $hostCount = (int) $pdo->query('SELECT COUNT(*) FROM tb_hosts WHERE is_deleted = 0')->fetchColumn();
+
+    // 다음 수집 예정 — enabled·비manual 커넥터 중 next_run_at 이 가장 이른 하나.
+    //   manual 커넥터는 next_run_at 이 NULL 이라 자연히 제외된다(connectors.php 가 그렇게 저장).
+    $nextFeed = $pdo->query(
+        "SELECT name, connector_type, next_run_at FROM tb_feed_connectors
+          WHERE enabled = 1 AND is_deleted = 0 AND next_run_at IS NOT NULL
+          ORDER BY next_run_at ASC LIMIT 1"
+    )->fetch() ?: null;
 
     // 전 호스트의 "최신 스캔" 집합 — KPI·도넛·급한목록이 모두 이 기준을 쓴다.
     $latestScans =
@@ -117,6 +125,17 @@ vg_header('대시보드', 'dashboard');
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
+  <?php if ($nextFeed !== null):
+    $secs = strtotime((string) $nextFeed['next_run_at']) - time();
+    $rel  = $secs <= 0 ? '곧'
+          : ($secs < 3600 ? (int) round($secs / 60) . '분 후'
+          : ($secs < 86400 ? (int) round($secs / 3600) . '시간 후'
+          : (int) round($secs / 86400) . '일 후'));
+  ?>
+  <div class="sub">다음 수집 예정 · <strong><?= vg_h((string) $nextFeed['next_run_at']) ?></strong>
+    <span class="why"><?= vg_h($rel) ?> · <?= vg_h($nextFeed['name']) ?> (<?= vg_h(strtoupper((string) $nextFeed['connector_type'])) ?>)</span></div>
+  <?php endif; ?>
+
   <div class="cards">
     <div class="kpi"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
