@@ -140,6 +140,16 @@ if (!function_exists('vg_scope_rank')) {
             $backport[$r['package_name']][$r['cve_id']] = $r['evidence'];
         }
 
+        // 적용된 벤더 권고(errata) 근거: 벤더가 "이 CVE 는 이 설치 빌드에서 고쳤다"고 확인한 것.
+        //   changelog(핵심 13개 패키지 하드코딩)와 달리 시스템 전체를 덮는다.
+        //   package_name => [cve_id => evidence(설치 NEVRA)]
+        $errata = [];
+        $erStmt = $pdo->prepare('SELECT package_name, cve_id, evidence FROM tb_applied_errata WHERE scan_id = ?');
+        $erStmt->execute([$scanId]);
+        foreach ($erStmt->fetchAll() as $r) {
+            $errata[$r['package_name']][$r['cve_id']] = $r['evidence'];
+        }
+
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
         $ownTx = !$pdo->inTransaction();
@@ -227,6 +237,21 @@ if (!function_exists('vg_scope_rank')) {
                         $scanId, $cveId, $p['name'], $p['version'],
                         $inKev ? 1 : 0, $cvss, $sev,
                         sprintf('설치 %s ≥ 조치 %s → 이미 패치됨', $cand['cmpver'], $fixed),
+                    ]);
+                    $counts['SUPPRESSED']++;
+                    continue;
+                }
+
+                // errata 억제: 벤더 보안권고가 이 설치 빌드에서 해당 CVE 를 고쳤다고 확인해 준 경우.
+                //   버전이 낮아 보여도(백포트) 이미 패치된 것 → 실제 위험에서 제외.
+                $erEv = $errata[$p['name']][$cveId]
+                    ?? ($p['source_pkg'] ? ($errata[$p['source_pkg']][$cveId] ?? null) : null);
+                if ($erEv !== null) {
+                    $reason = $p['name'] . ' 에 적용된 벤더 보안권고가 ' . $cveId . ' 를 고침(백포트) → 이미 패치됨';
+                    if (is_string($erEv) && $erEv !== '') { $reason .= ' · ' . $erEv; }
+                    $insSupp->execute([
+                        $scanId, $cveId, $p['name'], $p['version'],
+                        $inKev ? 1 : 0, $cvss, $sev, $reason,
                     ]);
                     $counts['SUPPRESSED']++;
                     continue;

@@ -293,13 +293,20 @@ fi
 # 4) 패치 상태 + 이미 적용된 보안 권고(errata) ★ 오탐 감소 핵심
 #    네트워크는 캐시만 사용(-C) → 서버/네트워크 부하 최소화
 # ==================================================================
+#    --with-cve 가 핵심이다. 그냥 `updateinfo list installed` 는 권고 ID 만 준다
+#    (RLSA-2023:0340 …) → CVE 를 모르니 억제에 못 쓴다. --with-cve 를 붙이면
+#    "CVE-2022-3715  Moderate/Sec.  bash-5.1.8-6.el9_1.x86_64" 처럼 CVE↔설치 NEVRA 가 나온다.
+#    = "이 CVE 는 이 빌드에서 이미 고쳐졌다"는 벤더 확인서. changelog(13개 하드코딩)와 달리
+#    시스템 전체를 덮는다.
 if have dnf; then
   cap updates available            'dnf -q -C check-update 2>/dev/null'
   cap updates advisories_pending   'dnf -q -C updateinfo list security 2>/dev/null'
   cap updates advisories_installed 'dnf -q -C updateinfo list installed 2>/dev/null'
+  cap updates errata_cves          'dnf -q -C updateinfo list installed --with-cve 2>/dev/null'
 elif have yum; then
   cap updates available            'yum -q -C check-update 2>/dev/null'
   cap updates advisories_pending   'yum -q -C updateinfo list security 2>/dev/null'
+  cap updates errata_cves          'yum -q -C updateinfo list installed --with-cve 2>/dev/null'
 elif have apt-get; then
   cap updates available 'apt list --upgradable 2>/dev/null'
   cap updates security  'apt list --upgradable 2>/dev/null | grep -i security'
