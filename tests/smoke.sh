@@ -87,8 +87,8 @@ assert_contains "$resp" '"exposures":5' "노출 5건 저장"
 # 언어 패키지(pip 2 + npm 2) — 예전엔 수집만 하고 서버가 버렸다.
 assert_contains "$resp" '"langpkgs":4' "언어 패키지 4건 저장(pip/npm)"
 # 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
-assert_contains "$resp" '"containers":3'   "컨테이너 3개 저장(alpine/debian + 패키지DB 없는 이미지)"
-assert_contains "$resp" '"ctr_packages":3' "컨테이너 내부 패키지 3건 저장"
+assert_contains "$resp" '"containers":4'   "컨테이너 4개 저장(alpine/debian/패키지DB없음/Go)"
+assert_contains "$resp" '"ctr_packages":4' "컨테이너 내부 패키지 4건 저장(apk/dpkg + Go 모듈)"
 # 컨테이너 런타임 증거 — 이게 없으면 컨테이너 취약점은 근거가 "설치만 됨" 뿐이라 전부 LOW 로 깔린다.
 assert_contains "$resp" '"ctr_processes":2' "컨테이너 프로세스 2건 저장"
 assert_contains "$resp" '"ctr_exposures":1' "컨테이너 노출 1건 저장(api:8443 EXTERNAL)"
@@ -224,6 +224,11 @@ assert_contains "$body" "판정 불가" "취약점 화면에 미지원 배포판
 # **패키지 DB 가 없는 컨테이너**(Calico 같은 이미지)도 0건이 나온다 — rhel 은 피드 지원 배포판이라
 #   미지원 경고에 안 걸린다. 이걸 침묵하면 "안전함"으로 읽힌다(운영 실측 9개).
 assert_contains "$body" "컨테이너 nodb" "패키지 DB 없는 컨테이너도 '판정 불가'로 경고"
+# Go 바이너리에서 뽑은 의존 모듈이 **Go 생태계로** 매칭돼야 한다. 배포판 생태계로 물으면
+#   조회가 통째로 빗나가 미탐이 된다(kube-apiserver 는 dpkg 4개 vs Go 의존 248개다).
+#   (LOW 라 목록 1페이지엔 안 뜬다 → 검색으로 집어서 확인한다.)
+gobody=$(curl -s -b "$JAR" "$BASE/findings.php?q=golang.org%2Fx%2Fnet")
+assert_contains "$gobody" "CVE-2023-45288" "컨테이너의 Go 의존성 취약점이 매칭됨(golang.org/x/net v0.20.0)"
 assert_contains "$body" "패키지 DB 가 없는 이미지" "판정 불가 사유가 '패키지 DB 없음'으로 구분됨"
 body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에도 패키지DB 없는 컨테이너 경고"
