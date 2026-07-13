@@ -17,8 +17,11 @@
   },
   "pkg": {
     "manager": "rpm",
-    "count": "4",
-    "list": "openssl\t1:3.0.7-24.el9\tx86_64\topenssl-3.0.7-24.el9.src.rpm\tRocky Enterprise Software Foundation\nglibc\t0:2.34-60.el9_2.3\tx86_64\tglibc-2.34-60.el9_2.3.src.rpm\tRocky Enterprise Software Foundation\nnginx\t1:1.20.1-14.el9_2\tx86_64\tnginx-1.20.1-14.el9_2.src.rpm\tRocky Enterprise Software Foundation\ncurl\t0:7.76.1-26.el9_3.2\tx86_64\tcurl-7.76.1-26.el9_3.2.src.rpm\tRocky Enterprise Software Foundation"
+    "count": "5",
+    "list": "openssl\t1:3.0.7-24.el9\tx86_64\topenssl-3.0.7-24.el9.src.rpm\tRocky Enterprise Software Foundation\nglibc\t0:2.34-60.el9_2.3\tx86_64\tglibc-2.34-60.el9_2.3.src.rpm\tRocky Enterprise Software Foundation\nnginx\t1:1.20.1-14.el9_2\tx86_64\tnginx-1.20.1-14.el9_2.src.rpm\tRocky Enterprise Software Foundation\ncurl\t0:7.76.1-26.el9_3.2\tx86_64\tcurl-7.76.1-26.el9_3.2.src.rpm\tRocky Enterprise Software Foundation\nsudo\t0:1.9.5p2-10.el9_3\tx86_64\tsudo-1.9.5p2-10.el9_3.src.rpm\tRocky Enterprise Software Foundation"
+  },
+  "updates": {
+    "errata_cves": "CVE-2023-22809 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64\nRLSA-2023:0136 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64"
   },
   "exposure": {
     "correlation": "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\n1201|nginx|tcp|0.0.0.0|443|EXTERNAL|nginx|openssl,glibc\n1201|nginx|tcp|0.0.0.0|80|EXTERNAL|nginx|openssl,glibc\n980|sshd|tcp|0.0.0.0|22|EXTERNAL|openssh-server|openssl,glibc\n1450|mysqld|tcp|127.0.0.1|3306|LOCAL|mysql-server|glibc"

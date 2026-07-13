@@ -49,6 +49,7 @@ $vm   = $data['vuln_mapping'] ?? [];
 $sys  = $data['system']       ?? [];
 $pkg  = $data['pkg']          ?? [];
 $exp  = $data['exposure']     ?? [];
+$upd  = $data['updates']      ?? [];
 
 $fqdn = trim((string) ($meta['hostname_fqdn'] ?? '')) ?: 'unknown';
 
@@ -133,6 +134,30 @@ if (is_array($clog)) {
     }
 }
 $clogCount = count($clogRows);
+
+// ── errata CVE 파싱 — 이미 적용된 벤더 보안권고가 고친 CVE (백포트 근거, 시스템 전체) ──
+//   `dnf updateinfo list installed --with-cve` 형식:
+//     "CVE-2022-3715  Moderate/Sec.  bash-5.1.8-6.el9_1.x86_64"
+//   같은 목록에 권고 ID 줄(RLSA-2023:0340 …)도 섞여 오지만 CVE 줄만 취한다.
+//   NEVRA 에서 패키지명만 뽑는다: 뒤의 .arch 를 떼고 -version-release 둘을 떼면 name.
+$errataRows = [];
+$errataText = (string) ($upd['errata_cves'] ?? '');
+foreach (preg_split('/\r?\n/', $errataText) as $line) {
+    if (!preg_match('/^\s*(CVE-\d{4}-\d{4,})\s+\S+\s+(\S+)\s*$/i', $line, $m)) { continue; }
+    $cve   = strtoupper($m[1]);
+    $nevra = $m[2];
+    $base  = preg_replace('/\.(x86_64|i686|aarch64|noarch|ppc64le|s390x)$/', '', $nevra);
+    // name-version-release → 뒤에서 두 조각(version, release)을 떼면 name
+    $parts = explode('-', (string) $base);
+    if (count($parts) < 3) { continue; }
+    array_pop($parts); array_pop($parts);
+    $pkgName = implode('-', $parts);
+    if ($pkgName === '') { continue; }
+    $k = $pkgName . '|' . $cve;
+    if (isset($errataRows[$k])) { continue; }
+    $errataRows[$k] = [$pkgName, $cve, mb_strimwidth(trim($nevra), 0, 255, '')];
+}
+$errataCount = count($errataRows);
 
 // ── 저장 (트랜잭션) ──────────────────────────────────────────
 try {
@@ -234,6 +259,17 @@ try {
              VALUES (?, ?, ?, ?)'
         );
         foreach ($clogRows as $r) {
+            $ins->execute([$scanId, $r[0], $r[1], $r[2]]);
+        }
+    }
+
+    // errata CVE 벌크 (벤더가 "이 빌드에서 고쳤다"고 확인한 CVE — 매처가 억제 판정에 사용)
+    if ($errataCount > 0) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_applied_errata (scan_id, package_name, cve_id, evidence)
+             VALUES (?, ?, ?, ?)'
+        );
+        foreach ($errataRows as $r) {
             $ins->execute([$scanId, $r[0], $r[1], $r[2]]);
         }
     }

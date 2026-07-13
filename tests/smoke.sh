@@ -37,15 +37,15 @@ assert_eq "$code" "401" "잘못된 토큰 → 401"
 
 resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"ok":true' "정상 토큰 → ok:true"
-assert_contains "$resp" '"packages":4' "패키지 4건 저장"
+assert_contains "$resp" '"packages":5' "패키지 5건 저장"
 assert_contains "$resp" '"exposures":4' "노출 4건 저장"
 crit=$(printf '%s' "$resp" | grep -oE '"CRITICAL":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${crit:-0}" -ge 1 ]; then ok "CRITICAL ≥ 1 (glibc KEV+외부) = $crit"; else no "CRITICAL 미검출"; fi
 high=$(printf '%s' "$resp" | grep -oE '"HIGH":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${high:-0}" -ge 2 ]; then ok "HIGH ≥ 2 (openssl/nginx 외부) = $high"; else no "HIGH 부족 (=$high)"; fi
-# 버전 비교: curl 은 조치 버전과 같아 "이미 패치됨"으로 억제돼야 한다(오탐 제거).
+# 억제 2건: curl(설치 ≥ 조치 버전) + sudo(벤더 권고가 이 빌드에서 고침 = 백포트).
 supp=$(printf '%s' "$resp" | grep -oE '"SUPPRESSED":[0-9]+' | grep -oE '[0-9]+$')
-if [ "${supp:-0}" -ge 1 ]; then ok "억제 ≥ 1 (curl 이미 패치됨) = $supp"; else no "억제 미동작 (=${supp:-0})"; fi
+if [ "${supp:-0}" -ge 2 ]; then ok "억제 ≥ 2 (curl 버전 + sudo errata) = $supp"; else no "억제 부족 (=${supp:-0})"; fi
 
 # --- 재매칭 -----------------------------------------------------------------
 printf "\n[rematch]\n"
