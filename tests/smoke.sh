@@ -57,6 +57,19 @@ if [ "${med:-0}" -ge 1 ]; then ok "MEDIUM ≥ 1 (redis 방화벽 차단 → 외�
 supp=$(printf '%s' "$resp" | grep -oE '"SUPPRESSED":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${supp:-0}" -ge 1 ]; then ok "억제 ≥ 1 (sudo errata) = $supp"; else no "억제 부족 (=${supp:-0})"; fi
 
+# --- 데비안 호스트: debsecan 기반 백포트 억제 --------------------------------
+#   web02(Debian 12)의 curl·openssl 은 둘 다 조치 버전보다 낮아 "버전만 보면" 취약하다.
+#   debsecan(데비안 보안 트래커)이 curl 만 지목했다 → openssl 은 백포트로 이미 고쳐진 것(억제).
+printf "\n[debsecan · 데비안 백포트 억제]\n"
+resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
+  --data-binary @"$ROOT/tests/sample-scan-debian.json")
+assert_contains "$resp" '"ok":true' "데비안 호스트 수집 → ok:true"
+assert_contains "$resp" '"debsecan":1' "debsecan 판정 1건 저장"
+dlow=$(printf '%s' "$resp" | grep -oE '"LOW":[0-9]+' | grep -oE '[0-9]+$')
+if [ "${dlow:-0}" -ge 1 ]; then ok "curl 은 취약 유지 (debsecan 이 지목) = $dlow"; else no "curl 이 사라짐(과잉 억제?)"; fi
+dsupp=$(printf '%s' "$resp" | grep -oE '"SUPPRESSED":[0-9]+' | grep -oE '[0-9]+$')
+if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백포트) = $dsupp"; else no "억제 안 됨 (=${dsupp:-0})"; fi
+
 # --- 재매칭 -----------------------------------------------------------------
 printf "\n[rematch]\n"
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=WRONG")

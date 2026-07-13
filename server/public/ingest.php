@@ -207,6 +207,19 @@ foreach (preg_split('/\r?\n/', $errataText) as $line) {
 }
 $errataCount = count($errataRows);
 
+// ── debsecan 파싱 — 데비안 보안 트래커가 "아직 취약하다"고 판정한 CVE (데비안 전용) ──
+//   형식: "CVE-2026-13595 bsdutils" (debsecan --format simple)
+//   errata 와 방향이 반대다: errata 는 고쳐진 CVE, debsecan 은 남아 있는 CVE 를 준다.
+//   → 매처는 "여기 없는 deb CVE = 백포트로 이미 수정됨"으로 억제한다.
+$debsecanRows = [];
+foreach (preg_split('/\r?\n/', (string) ($upd['debsecan'] ?? '')) as $line) {
+    if (!preg_match('/^\s*(CVE-\d{4}-\d{4,})\s+(\S+)\s*$/i', $line, $m)) { continue; }
+    $k = strtoupper($m[1]) . '|' . $m[2];
+    $debsecanRows[$k] = [strtoupper($m[1]), mb_strimwidth($m[2], 0, 255, '')];
+}
+$debsecanRows  = array_values($debsecanRows);
+$debsecanCount = count($debsecanRows);
+
 // ── 저장 (트랜잭션) ──────────────────────────────────────────
 try {
     $pdo = vg_pdo();
@@ -333,6 +346,16 @@ try {
         }
     }
 
+    // debsecan 벌크 (데비안 트래커가 "아직 취약"이라 본 CVE — 매처가 나머지를 억제하는 근거)
+    if ($debsecanCount > 0) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_debsecan (scan_id, cve_id, package_name) VALUES (?, ?, ?)'
+        );
+        foreach ($debsecanRows as $r) {
+            $ins->execute([$scanId, $r[0], $r[1]]);
+        }
+    }
+
     // errata CVE 벌크 (벤더가 "이 빌드에서 고쳤다"고 확인한 CVE — 매처가 억제 판정에 사용)
     if ($errataCount > 0) {
         $ins = $pdo->prepare(
@@ -381,6 +404,7 @@ echo json_encode([
     'fqdn'      => $fqdn,
     'packages'  => $pkgCount,
     'langpkgs'  => $langCount,
+    'debsecan'  => $debsecanCount,
     'exposures' => $expCount,
     'processes' => $procCount,
     'findings'  => $findings,

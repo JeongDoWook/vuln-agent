@@ -16,7 +16,10 @@ INSERT INTO tb_cves (cve_id, summary, cvss, published) VALUES
   ('CVE-2023-38545', 'curl SOCKS5 힙 버퍼 오버플로우 — 원격 코드실행 가능', 9.8, '2023-10-11'),
   ('CVE-2023-22809', 'sudo sudoedit 임의 파일 편집 — 권한상승', 7.8, '2023-01-18'),
   ('CVE-2023-28425', 'redis MSETNX 명령 처리 중 단언 실패 — DoS', 5.5, '2023-03-20'),
-  ('CVE-2023-32681', 'python-requests: 리다이렉트 시 Proxy-Authorization 헤더 유출', 6.1, '2023-05-26')
+  ('CVE-2023-32681', 'python-requests: 리다이렉트 시 Proxy-Authorization 헤더 유출', 6.1, '2023-05-26'),
+  -- 데비안 데모(web02): debsecan 이 지목한 CVE 는 남고, 지목하지 않은 CVE 는 백포트로 억제된다.
+  ('CVE-2024-2004', 'curl: 비활성 프로토콜의 기본 설정이 잘못 적용됨', 5.5, '2024-03-27'),
+  ('CVE-2023-5678', 'OpenSSL DH 키 생성 시 과도한 지연 — DoS', 5.3, '2023-11-06')
 ON DUPLICATE KEY UPDATE summary=VALUES(summary), cvss=VALUES(cvss), published=VALUES(published);
 
 -- CISA KEV: 실제 악용 목록 (Looney Tunables 는 KEV 등재)
@@ -40,5 +43,10 @@ INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_ver
   ('CVE-2023-28425','Rocky Linux:9', 'redis',   '6.2.11-1.el9'),
   -- 언어 패키지(PyPI). OS 패키지와 생태계가 달라 섞이지 않는다.
   -- 조치안은 semver/PEP440 이라 EVR 비교기가 아니라 version_compare 로 비교한다.
-  ('CVE-2023-32681','PyPI',          'requests', '2.31.0')
+  ('CVE-2023-32681','PyPI',          'requests', '2.31.0'),
+  -- 데비안 호스트(web02). 둘 다 설치 버전보다 조치 버전이 높아 "버전만 보면" 취약하다.
+  --   curl    : debsecan 이 지목 → 진짜 취약(finding 유지)
+  --   openssl : debsecan 이 지목하지 않음 → 데비안이 백포트로 이미 고침(억제)
+  ('CVE-2024-2004', 'Debian:12',    'curl',     '7.88.1-10+deb12u7'),
+  ('CVE-2023-5678', 'Debian:12',    'openssl',  '3.0.11-1~deb12u3')
 ON DUPLICATE KEY UPDATE ecosystem=VALUES(ecosystem), fixed_version=VALUES(fixed_version);
