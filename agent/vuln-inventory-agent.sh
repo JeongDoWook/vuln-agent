@@ -361,12 +361,27 @@ collect_pkg_origins() {
 #   os-release 는 **source 하지 않고 grep 으로 읽는다** — 컨테이너 안 파일을 셸로 실행하면
 #   컨테이너가 호스트 root 코드를 실행시킬 수 있다.
 #   패키지는 stdout 으로, 컨테이너 목록은 $TMP/containers__list.txt 로 나간다(한 번만 순회).
+# 그 pid 가 속한 컨테이너의 키. **cgroup 경로에 런타임이 박아 둔 컨테이너 ID**(64자리 hex)를 쓴다:
+#   …/docker-<id>.scope, …/cri-containerd-<id>.scope, /docker/<id> …
+# mount namespace 를 키로 쓰면 안 된다 — 컨테이너 **안에서** systemd 가 도는 이미지(centos7 등)는
+# 그 안의 PrivateTmp 서비스가 또 자기 mount ns 를 파서, 한 컨테이너가 여러 개로 갈라져 중복 집계된다
+# (실측: `web` 컨테이너 하나가 이름 붙은 것 + ns 로 갈라진 것, 2건으로 잡혔다).
+# cgroup 컨테이너 ID 는 그 컨테이너의 **모든** 프로세스가 똑같이 갖는다.
+ctr_key() {
+  local k
+  # `head -1` 이 필수다. cgroup 한 줄에 ID 가 **두 번** 박히는 경우가 있다(컨테이너 안에서 systemd 가
+  # 도는 centos7 이미지: `/docker/<id>/docker/<id>`). `grep -m1 -o` 는 첫 "줄"까지라 매칭을 둘 다
+  # 뱉고, 그러면 키가 개행 섞인 두 줄이 되어 이름 매칭이 통째로 빗나간다.
+  k=$(grep -oE '[0-9a-f]{64}' "/proc/$1/cgroup" 2>/dev/null | head -1 | cut -c1-12)
+  [ -z "$k" ] && k=$(readlink "/proc/$1/ns/mnt" 2>/dev/null)   # ID 를 못 찾는 런타임 대비
+  printf '%s' "$k"
+}
+
 collect_containers() {
   is_root || return 0
-  local HOST_NS HOST_PIDNS pid ns pidns root cid name image osid osver mgr pkgs cnt line MAP NSMAP p n i mns
-  HOST_NS=$(readlink /proc/self/ns/mnt 2>/dev/null)
+  local HOST_PIDNS pid key pidns root cid name image osid osver mgr pkgs cnt line MAP KEYMAP p n i k osrel f
   HOST_PIDNS=$(readlink /proc/self/ns/pid 2>/dev/null)
-  declare -A NSSEEN
+  declare -A SEEN
 
   # pid → 이름·이미지 매핑(있으면).
   MAP=""
@@ -381,23 +396,19 @@ collect_containers() {
   # docker 가 주는 pid 는 컨테이너의 **메인 프로세스(PID 1)** 다. 그런데 아래 /proc 순회에서 그
   # 컨테이너를 대표하게 되는 pid 는 먼저 만나는 **아무 자식**일 수 있다. pid 로 맞추면 매칭이
   # 빗나가 이름이 통째로 비었다(운영 실측: 32개 중 1개만 이름이 붙었다).
-  # → 메인 pid 의 mount namespace 를 키로 바꿔 둔다. 같은 컨테이너면 자식도 같은 ns 다.
-  NSMAP=""
+  # → 컨테이너 키로 바꿔 둔다. 같은 컨테이너면 자식도 같은 키다.
+  KEYMAP=""
   if [ -n "$MAP" ]; then
     while IFS='|' read -r p n i; do
       [ -z "$p" ] && continue
-      mns=$(readlink "/proc/$p/ns/mnt" 2>/dev/null)
-      [ -z "$mns" ] && continue
-      NSMAP="${NSMAP}${mns}|${n#/}|${i}
+      k=$(ctr_key "$p")
+      [ -z "$k" ] && continue
+      KEYMAP="${KEYMAP}${k}|${n#/}|${i}
 "
     done <<< "$MAP"
   fi
 
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
-    ns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)
-    [ -z "$ns" ] && continue
-    [ "$ns" = "$HOST_NS" ] && continue                 # 호스트 자신
-
     # **mount namespace 가 다르다고 컨테이너가 아니다.** systemd 의 PrivateTmp/ProtectSystem
     # 서비스도 별도 mount namespace 를 갖는다. 이걸 컨테이너로 오인하면 호스트 rootfs 를 그대로
     # 다시 읽어 **호스트 패키지·CVE 가 통째로 복제된다** — 운영 실측에서 그런 서비스 9개가
@@ -408,21 +419,31 @@ collect_containers() {
     pidns=$(readlink /proc/$pid/ns/pid 2>/dev/null)
     if [ -z "$pidns" ] || [ "$pidns" = "$HOST_PIDNS" ]; then continue; fi
 
-    [ -n "${NSSEEN[$ns]+x}" ] && continue              # 같은 컨테이너의 다른 프로세스
-    NSSEEN[$ns]=1
+    key=$(ctr_key "$pid")
+    [ -z "$key" ] && continue
+    [ -n "${SEEN[$key]+x}" ] && continue               # 같은 컨테이너의 다른 프로세스
+    SEEN[$key]=1
     root="/proc/$pid/root"
-    [ -r "$root/etc/os-release" ] || continue          # 패키지 DB 가 없는 이미지(distroless 등)
+    # 배포판은 /etc/os-release 가 /usr/lib/os-release 의 심볼릭 링크지만 **distroless 는 링크를 안 만든다**
+    # (gcr.io/distroless, 즉 k8s 의 etcd/kube-* 가 여기 해당). /etc 만 보면 통째로 건너뛰어 미탐이 된다.
+    osrel=""
+    for f in "$root/etc/os-release" "$root/usr/lib/os-release"; do
+      [ -r "$f" ] && { osrel="$f"; break; }
+    done
+    [ -n "$osrel" ] || continue                        # OS 를 모르면 CVE 생태계도 못 정한다
 
-    osid=$(grep -m1 '^ID='         "$root/etc/os-release" 2>/dev/null | cut -d= -f2- | tr -d '"')
-    osver=$(grep -m1 '^VERSION_ID=' "$root/etc/os-release" 2>/dev/null | cut -d= -f2- | tr -d '"')
+    osid=$(grep -m1 '^ID='         "$osrel" 2>/dev/null | cut -d= -f2- | tr -d '"')
+    osver=$(grep -m1 '^VERSION_ID=' "$osrel" 2>/dev/null | cut -d= -f2- | tr -d '"')
 
-    line=$(printf '%s\n' "$NSMAP" | awk -F'|' -v k="$ns" '$1 == k { print; exit }')
+    line=$(printf '%s\n' "$KEYMAP" | awk -F'|' -v k="$key" '$1 == k { print; exit }')
     if [ -n "$line" ]; then
       name=$(printf '%s' "$line" | cut -d'|' -f2)
       image=$(printf '%s' "$line" | cut -d'|' -f3)
       cid="$name"
     else
-      name=""; image=""; cid="ns-$(printf '%s' "$ns" | tr -dc '0-9')"
+      # docker 가 모르는 컨테이너(containerd/CRI = 쿠버네티스, podman …).
+      # 키가 곧 컨테이너 ID 다 — `crictl inspect <id>` 로 바로 조회된다.
+      name=""; image=""; cid="$key"
     fi
 
     pkgs=""; mgr=""
@@ -439,6 +460,23 @@ collect_containers() {
                }
                if(ok && p!="" && v!="") print cid"|dpkg|"p"|"v"|"s
              }' "$root/var/lib/dpkg/status" 2>/dev/null)
+    elif [ -d "$root/var/lib/dpkg/status.d" ]; then
+      # distroless(gcr.io/distroless — 쿠버네티스 etcd/kube-* 가 이걸 쓴다)는 status 하나 대신
+      # status.d/<패키지> 로 쪼갠다. **Status: 필드가 없다** — 파일이 있다는 것 자체가 설치됐다는 뜻.
+      # 같은 디렉터리의 <패키지>.md5sums 는 체크섬 목록이라 건너뛴다.
+      # 파일 하나 = 패키지 하나. 이어붙여 한 번에 읽지 않는다 — 이 파일들은 끝에 빈 줄이 없어서
+      # cat 으로 붙이면 두 스탠자가 한 레코드로 뭉친다(뒤엣것이 앞엣것을 덮어써 패키지가 사라진다).
+      mgr="dpkg"
+      pkgs=$(for f in "$root"/var/lib/dpkg/status.d/*; do
+               case "$f" in *.md5sums) continue ;; esac
+               [ -f "$f" ] || continue
+               awk -v cid="$cid" '
+                 /^Package: / { p=substr($0,10) }
+                 /^Version: / { v=substr($0,10) }
+                 /^Source: /  { s=substr($0,9); sub(/ .*/,"",s) }
+                 END { if(p!="" && v!="") print cid"|dpkg|"p"|"v"|"s }
+               ' "$f" 2>/dev/null
+             done)
     elif [ -f "$root/lib/apk/db/installed" ]; then
       mgr="apk"
       # P:이름 / V:버전 / o:origin(소스패키지), 레코드는 빈 줄 구분
