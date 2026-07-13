@@ -410,6 +410,24 @@ collect_containers() {
     done <<< "$MAP"
   fi
 
+  # 쿠버네티스(containerd/CRI) 컨테이너는 docker 가 모른다 → crictl 로 이름을 붙인다.
+  #   **docker 와 배타가 아니라 덧붙인다**: 한 호스트에 dockerd 와 containerd 가 같이 사는 게
+  #   보통이다(운영 실측: docker 컨테이너 1개 + k8s 컨테이너 22개).
+  #   crictl 은 **컨테이너 ID 를 직접 준다** — 그게 곧 우리 키(cgroup ID 앞 12자)라 pid 조회가 없다.
+  #   이름은 파드까지 붙여 구분한다(같은 컨테이너 이름이 파드마다 또 있다).
+  #   이미지는 .image.image 가 sha256 다이제스트라 사람이 못 읽는다 → userSpecifiedImage 를 쓴다.
+  #   jq 가 없으면 건너뛴다(이름 없이 ID 로만 잡힌다 — 지금까지의 동작).
+  if have crictl && have jq; then
+    while IFS='|' read -r k n i; do
+      [ -z "$k" ] && continue
+      KEYMAP="${KEYMAP}${k}|${n#/}|${i}
+"
+    done <<< "$(timeout "$CMD_TIMEOUT" crictl ps -o json 2>/dev/null \
+                | jq -r '.containers[]? |
+                    "\(.id[0:12])|\(.labels["io.kubernetes.pod.name"] // "")/\(.metadata.name)|\(.image.userSpecifiedImage // .image.image)"' \
+                  2>/dev/null)"
+  fi
+
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
     # **mount namespace 가 다르다고 컨테이너가 아니다.** systemd 의 PrivateTmp/ProtectSystem
     # 서비스도 별도 mount namespace 를 갖는다. 이걸 컨테이너로 오인하면 호스트 rootfs 를 그대로
