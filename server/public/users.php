@@ -73,12 +73,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $me = vg_current_user();
 
-$users = $pdo->query('SELECT id, username, role, created_at, last_login FROM tb_users WHERE is_deleted = 0 ORDER BY id')->fetchAll();
+// 목록 페이지네이션 — 계정이 쌓이면 한 화면에 다 쏟지 않는다.
+$perPage = vg_perpage();
+$page    = max(1, (int) ($_GET['page'] ?? 1));
+$total   = (int) $pdo->query('SELECT COUNT(*) FROM tb_users WHERE is_deleted = 0')->fetchColumn();
+$offset  = ($page - 1) * $perPage;
+
+$users = $pdo->query(
+    "SELECT id, username, role, created_at, last_login
+       FROM tb_users WHERE is_deleted = 0 ORDER BY id
+      LIMIT $perPage OFFSET $offset"
+)->fetchAll();
 $csrf = vg_csrf_token();
 
 vg_header('사용자', 'users');
 ?>
-  <h1>사용자 관리</h1>
+  <h1>사용자 관리 <span class="hint">(<?= number_format($total) ?>명)</span></h1>
   <div class="sub">admin 전용 · 계정 추가 · 역할 변경 · 비번 초기화 · 삭제</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
@@ -149,6 +159,7 @@ vg_header('사용자', 'users');
           ],
       ]
   );
+  vg_page_nav($total, $perPage, $page);
   ?>
 
   <div class="card card--narrow">

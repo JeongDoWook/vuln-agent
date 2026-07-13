@@ -124,9 +124,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $connectors = $pdo->query('SELECT * FROM tb_feed_connectors WHERE is_deleted = 0 ORDER BY id')->fetchAll();
+
+// 실행 로그 페이지네이션 — 이전엔 LIMIT 15 로 잘라놓고 "더 있다" 는 표시가 없어서,
+// 16번째부터의 실패 기록을 화면에서 볼 방법이 아예 없었다.
+$perPage = vg_perpage();
+$page    = max(1, (int) ($_GET['page'] ?? 1));
+$logTotal = (int) $pdo->query('SELECT COUNT(*) FROM tb_feed_collection_logs')->fetchColumn();
+$offset  = ($page - 1) * $perPage;
+
 $logs = $pdo->query(
-    'SELECT l.*, c.name FROM tb_feed_collection_logs l JOIN tb_feed_connectors c ON c.id = l.connector_id
-     ORDER BY l.started_at DESC LIMIT 15'
+    "SELECT l.*, c.name FROM tb_feed_collection_logs l JOIN tb_feed_connectors c ON c.id = l.connector_id
+      ORDER BY l.started_at DESC
+      LIMIT $perPage OFFSET $offset"
 )->fetchAll();
 $csrf = vg_csrf_token();
 
@@ -274,7 +283,7 @@ vg_header('피드 커넥터', 'connectors');
   </script>
 
   <div class="card">
-    <strong>최근 수집 이력</strong>
+    <strong>수집 이력</strong> <span class="why">— 총 <?= number_format($logTotal) ?>건</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -299,6 +308,7 @@ vg_header('피드 커넥터', 'connectors');
             ],
         ]
     );
+    vg_page_nav($logTotal, $perPage, $page);
     ?>
     </div>
   </div>
