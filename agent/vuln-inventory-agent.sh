@@ -214,6 +214,63 @@ cap() {
 # put <category> <key> <string>  : 계산된 값을 직접 기록
 put() { printf '%s' "$3" > "$TMP/${1}__${2}.txt"; }
 
+# ---------- JSON 조립 (jq 없이도 돈다) ----------
+# 에이전트는 **대상 서버에 아무것도 요구하지 않는다.** 예전엔 jq 가 없으면 텍스트를 뱉고 전송을
+# 통째로 건너뛰어서(=조용한 실패), 설치기가 대신 apt 로 jq 를 깔았다. 둘 다 틀렸다 —
+# 현장 폐쇄망 서버엔 apt 자체가 없고, 남의 서버에 패키지를 심는 건 승인 사안이다.
+# awk 는 POSIX 필수라 busybox 에도 있다. jq 가 있으면 더 빠르니 그쪽을 쓰고, 없으면 이걸로 만든다.
+#
+# 이스케이프를 gsub 으로 하지 않는 이유: awk 구현마다 치환문자열의 역슬래시 처리가 갈린다
+# (\\ 가 하나로 줄기도, 둘로 남기도 한다). 문자 단위로 이어붙이면 그 해석이 개입하지 않는다.
+vg_json_escape_file() {
+  awk '
+    # 제어문자(0x00~0x1f)는 JSON 에 날것으로 못 넣는다 → jq 와 **똑같이** 이스케이프한다.
+    #   awk 엔 ord() 가 없으므로 문자→코드 표를 만들어 둔다.
+    BEGIN { for (i = 0; i < 32; i++) { ord[sprintf("%c", i)] = i } }
+    {
+      s = $0; out = ""; n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if      (c == "\\") { out = out "\\\\" }
+        else if (c == "\"") { out = out "\\\"" }
+        else if (c == "\t") { out = out "\\t"  }
+        else if (c == "\r") { out = out "\\r"  }
+        else if (c == "\b") { out = out "\\b"  }
+        else if (c == "\f") { out = out "\\f"  }
+        else if (c in ord)  { out = out sprintf("\\u%04x", ord[c]) }
+        else                { out = out c }        # UTF-8 은 그대로 통과(jq 도 날것으로 낸다)
+      }
+      lines[++cnt] = out
+    }
+    END {
+      while (cnt > 0 && lines[cnt] == "") { cnt-- }        # 끝의 빈 줄 제거(jq 의 sub("\n+$";"") 와 동일)
+      for (i = 1; i <= cnt; i++) { printf "%s%s", (i > 1 ? "\\n" : ""), lines[i] }
+    }
+  ' "$1"
+}
+
+# $TMP/<섹션>__<키>.txt 들을 {"섹션":{"키":"값"}} 으로 조립한다.
+#   파일명이 `섹션__키` 라 glob 정렬이 곧 섹션별 묶음이 된다(같은 섹션이 연속).
+vg_json_build() {
+  local f base c k prev='' first_key=1
+  printf '{'
+  for f in "$TMP"/*.txt; do
+    [ -e "$f" ] || continue
+    base="$(basename "$f" .txt)"
+    c="${base%%__*}"; k="${base#*__}"
+    if [ "$c" != "$prev" ]; then
+      [ -n "$prev" ] && printf '},'
+      printf '"%s":{' "$c"
+      prev="$c"; first_key=1
+    fi
+    [ "$first_key" = 1 ] || printf ','
+    printf '"%s":"%s"' "$k" "$(vg_json_escape_file "$f")"
+    first_key=0
+  done
+  [ -n "$prev" ] && printf '}'
+  printf '}\n'
+}
+
 # ---------- 방화벽: 허용 포트 집합 (노출 판정 보정) ----------
 # 0.0.0.0 바인딩이라도 방화벽이 그 포트를 막고 있으면 외부 노출이 아니다.
 # 판정 원칙: **확신이 있을 때만 강등한다.** 방화벽 종류를 모르거나 파싱이 애매하면
@@ -1176,7 +1233,9 @@ measure_finish
 [ -n "$PEAK_RSS_MB" ] && put meta peak_rss_mb "$PEAK_RSS_MB"
 [ -n "$CPU_SECONDS" ] && put meta cpu_seconds "$CPU_SECONDS"
 
-if have jq; then
+# jq 가 있으면 그것으로(빠르다), 없으면 awk 로 만든다. **어느 쪽이든 결과 JSON 은 같다** —
+#   VG_FORCE_AWK=1 로 awk 경로를 강제해 두 결과를 대조할 수 있다(tests/agent_json_test.sh).
+if have jq && [ "${VG_FORCE_AWK:-0}" != 1 ]; then
   # 각 섹션을 한 줄 JSON 으로 인코딩 후 최종 reduce (O(n), 저부하)
   for f in "$TMP"/*.txt; do
     [ -e "$f" ] || continue
@@ -1187,18 +1246,14 @@ if have jq; then
   jq -s 'reduce .[] as $x ({}; .[$x.c][$x.k] = $x.v)' "$TMP/_flat.jsonl" > "$OUT"
   OUTPUT_IS_JSON=1
   echo ">> JSON 저장 완료: $OUT" >&2
+elif have awk; then
+  vg_json_build > "$OUT"
+  OUTPUT_IS_JSON=1
+  echo ">> JSON 저장 완료(awk — jq 없이): $OUT" >&2
 else
+  # awk 조차 없는 시스템(사실상 없다). 조용히 넘어가지 않고 실패로 끝낸다.
   OUTPUT_IS_JSON=0
-  OUT="${OUT%.json}.txt"
-  {
-    for f in "$TMP"/*.txt; do
-      [ -e "$f" ] || continue
-      base="$(basename "$f" .txt)"
-      echo "===== [${base%%__*}] ${base#*__} ====="
-      cat "$f"; echo
-    done
-  } > "$OUT"
-  echo ">> jq 미설치 → 텍스트 저장 완료: $OUT" >&2
+  echo ">> [실패] jq·awk 가 모두 없어 JSON 을 만들 수 없습니다." >&2
 fi
 
 # ---------- 요약 ----------
@@ -1219,10 +1274,25 @@ echo "----------------------------------------" >&2
 SEND_FAILED=0
 if [ -n "$SEND_URL" ]; then
   if [ "${OUTPUT_IS_JSON:-0}" != 1 ]; then
-    echo ">> 전송 생략: jq 미설치로 JSON 이 아님(텍스트 출력은 서버가 파싱 못 함)." >&2
+    echo ">> 전송 생략: JSON 을 만들지 못했습니다(jq·awk 둘 다 없음)." >&2
     SEND_FAILED=1
+  elif ! have curl && have wget; then
+    # curl 이 없는 시스템을 위한 폴백. HTTPS 를 순수 셸로 할 수는 없으므로 둘 중 하나는 필요하다.
+    #   주의: wget 은 헤더를 **파일로** 받지 못한다 → 토큰이 잠깐 ps 에 보인다(curl 경로엔 없는 위험).
+    #   그래서 curl 이 있으면 언제나 curl 을 쓴다.
+    echo ">> 전송 시작(wget) → $SEND_URL" >&2
+    HTTP_CODE=$(wget -q -O "$TMP/_ingest_resp.json" --server-response \
+      --header='Content-Type: application/json' \
+      ${SEND_TOKEN:+--header="X-Agent-Token: $SEND_TOKEN"} \
+      --post-file="$OUT" "$SEND_URL" 2>&1 | awk '/^  HTTP\//{code=$2} END{print (code ? code : "000")}')
+    if [ "$HTTP_CODE" = "200" ]; then
+      echo ">> 전송 성공(HTTP 200): $(cat "$TMP/_ingest_resp.json" 2>/dev/null)" >&2
+    else
+      echo ">> 전송 실패(HTTP $HTTP_CODE)" >&2
+      SEND_FAILED=1
+    fi
   elif ! have curl; then
-    echo ">> 전송 생략: curl 이 없습니다." >&2
+    echo ">> 전송 생략: curl·wget 이 모두 없습니다." >&2
     SEND_FAILED=1
   else
     echo ">> 전송 시작 → $SEND_URL" >&2

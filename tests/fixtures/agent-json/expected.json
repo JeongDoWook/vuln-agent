@@ -1,0 +1,1 @@
+{"meta":{"hostname_fqdn":"raspberrypi5-00"},"pkg":{"list":"openssl 3.0.15-1~deb12u1\ncurl 8.5.0-1"},"sys":{"trailing":"trailing newlines","tricky":"he said \"hi\" \\ then left\ttabbed\n2nd line","unicode":"한글 · 유니코드 ✓\n제어문자:\u0001\u0002 끝"}}
