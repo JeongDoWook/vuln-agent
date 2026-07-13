@@ -41,6 +41,61 @@ function vg_sev_tone(string $sev): string {
     return VG_TONE_SEV[$sev] ?? 'muted';
 }
 
+/* CVSS 기본점수 → 심각도 구간(NVD v3 기준). cves.php 에만 있었는데 cve.php 도 쓰게 돼 공용으로. */
+const VG_SEV_RANGES = [
+    'critical' => [9.0, 10.0],
+    'high'     => [7.0, 8.9],
+    'medium'   => [4.0, 6.9],
+    'low'      => [0.1, 3.9],
+];
+
+/** CVSS 점수 → 심각도 라벨(소문자). 점수가 없으면 빈 문자열. */
+function vg_cvss_sev(?string $cvss): string {
+    if ($cvss === null || $cvss === '') { return ''; }
+    $v = (float) $cvss;
+    foreach (VG_SEV_RANGES as $name => [$lo, $hi]) {
+        if ($v >= $lo && $v <= $hi) { return $name; }
+    }
+    return '';
+}
+
+/* CVSS v3 벡터 해독표. 점수 하나로는 "원격인지 로컬인지, 인증이 필요한지" 를 알 수 없다.
+ * 벡터가 그걸 말한다 — 같은 9.8 이라도 AV:N/PR:N 이면 인터넷에서 무인증 공격이 가능하다는 뜻.
+ * 축약키만 담는다(v2 벡터는 키가 달라 해독 안 되고, 그대로 원문만 보여준다). */
+const VG_CVSS_METRICS = [
+    'AV' => ['label' => '공격 경로',   'v' => ['N' => '네트워크', 'A' => '인접 네트워크', 'L' => '로컬', 'P' => '물리']],
+    'AC' => ['label' => '공격 복잡도', 'v' => ['L' => '낮음', 'H' => '높음']],
+    'PR' => ['label' => '필요 권한',   'v' => ['N' => '불필요', 'L' => '일반 사용자', 'H' => '관리자']],
+    'UI' => ['label' => '사용자 개입', 'v' => ['N' => '불필요', 'R' => '필요']],
+    'S'  => ['label' => '범위 변경',   'v' => ['U' => '없음', 'C' => '있음']],
+    'C'  => ['label' => '기밀성 영향', 'v' => ['H' => '높음', 'L' => '낮음', 'N' => '없음']],
+    'I'  => ['label' => '무결성 영향', 'v' => ['H' => '높음', 'L' => '낮음', 'N' => '없음']],
+    'A'  => ['label' => '가용성 영향', 'v' => ['H' => '높음', 'L' => '낮음', 'N' => '없음']],
+];
+
+/**
+ * CVSS 벡터 문자열 → [['label'=>'공격 경로','value'=>'네트워크','danger'=>true], …]
+ * 해독 못하는 키(v2 벡터 등)는 건너뛴다 — 빈 배열이면 호출부가 원문만 보여준다.
+ * 'danger' 는 "공격자에게 유리한 값"(원격·무인증·개입불필요·영향높음) — UI 가 붉게 강조한다.
+ */
+function vg_cvss_vector_parts(?string $vector): array {
+    if ($vector === null || $vector === '') { return []; }
+    $worst = ['AV' => 'N', 'AC' => 'L', 'PR' => 'N', 'UI' => 'N', 'S' => 'C', 'C' => 'H', 'I' => 'H', 'A' => 'H'];
+    $out = [];
+    foreach (explode('/', $vector) as $part) {
+        $kv = explode(':', $part, 2);
+        if (count($kv) !== 2) { continue; }
+        [$k, $v] = $kv;
+        if (!isset(VG_CVSS_METRICS[$k]['v'][$v])) { continue; }   // CVSS:3.1 접두나 v2 키는 여기서 걸러진다
+        $out[] = [
+            'label'  => VG_CVSS_METRICS[$k]['label'],
+            'value'  => VG_CVSS_METRICS[$k]['v'][$v],
+            'danger' => ($worst[$k] ?? null) === $v,
+        ];
+    }
+    return $out;
+}
+
 /**
  * 표의 <tr> 심각도 클래스. CSS 가 왼쪽 띠(+상위 등급은 옅은 배경)로 칠한다.
  * vg_table 의 'row_class' 에 심각도를 뽑아 넘긴다:

@@ -132,27 +132,48 @@ function vg_extract_cve_ids(string $text): array {
 }
 
 // tb_cves 로 들어가는 유일한 통로. 여기서 막으면 모든 커넥터·백필이 함께 보호된다.
-function vg_upsert_cve(PDO $pdo, string $id, ?string $summary, ?float $cvss, ?string $published): void {
+/**
+ * $vector·$cwe 는 NVD 만 준다(KEV·OSV·KISA 는 null 을 넘긴다). COALESCE 라 null 은
+ * 기존 값을 덮지 않는다 — 어느 피드가 먼저/나중에 돌든 채워진 값이 지워지지 않는다.
+ */
+function vg_upsert_cve(
+    PDO $pdo, string $id, ?string $summary, ?float $cvss, ?string $published,
+    ?string $vector = null, ?string $cwe = null
+): void {
     if (!vg_is_cve_id($id)) {
         error_log("[cve] 잘못된 CVE-ID 무시: $id");
         return;
     }
     $st = $pdo->prepare(
-        'INSERT INTO tb_cves (cve_id, summary, cvss, published) VALUES (?,?,?,?)
+        'INSERT INTO tb_cves (cve_id, summary, cvss, published, cvss_vector, cwe) VALUES (?,?,?,?,?,?)
          ON DUPLICATE KEY UPDATE
-           summary   = COALESCE(VALUES(summary), summary),
-           cvss      = COALESCE(VALUES(cvss), cvss),
-           published = COALESCE(VALUES(published), published)'
+           summary     = COALESCE(VALUES(summary), summary),
+           cvss        = COALESCE(VALUES(cvss), cvss),
+           published   = COALESCE(VALUES(published), published),
+           cvss_vector = COALESCE(VALUES(cvss_vector), cvss_vector),
+           cwe         = COALESCE(VALUES(cwe), cwe)'
     );
-    $st->execute([$id, $summary, $cvss, $published]);
+    $st->execute([$id, $summary, $cvss, $published, $vector, $cwe]);
 }
 
-function vg_upsert_kev(PDO $pdo, string $id, ?string $dateAdded, ?string $note): void {
+/**
+ * $dueDate 는 CISA 가 정한 연방기관 패치 기한, $ransomware 는 랜섬웨어 악용 확인 여부.
+ * 둘 다 KEV 피드에 원래 들어있는데 그동안 버리고 있었다 — "언제까지 고쳐야 하나" 를
+ * 말해주는 유일한 신호라 CVSS 점수보다 실용적이다.
+ */
+function vg_upsert_kev(
+    PDO $pdo, string $id, ?string $dateAdded, ?string $note,
+    ?string $dueDate = null, bool $ransomware = false
+): void {
     $st = $pdo->prepare(
-        'INSERT INTO tb_kev_catalog (cve_id, date_added, note) VALUES (?,?,?)
-         ON DUPLICATE KEY UPDATE date_added = VALUES(date_added), note = VALUES(note)'
+        'INSERT INTO tb_kev_catalog (cve_id, date_added, note, due_date, ransomware) VALUES (?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE
+           date_added = VALUES(date_added),
+           note       = VALUES(note),
+           due_date   = VALUES(due_date),
+           ransomware = VALUES(ransomware)'
     );
-    $st->execute([$id, $dateAdded ?: null, $note]);
+    $st->execute([$id, $dateAdded ?: null, $note, $dueDate ?: null, $ransomware ? 1 : 0]);
 }
 
 // 보호나라 공지 URL 정규화. 같은 공지라도 유입 경로마다 쿼리스트링이 달라진다.
@@ -348,7 +369,10 @@ final class VgKevConnector implements VgFeedConnector {
             $id = $v['cveID'] ?? '';
             if ($id === '') { continue; }
             $note = trim(($v['vendorProject'] ?? '') . ' ' . ($v['product'] ?? '') . ' — ' . ($v['vulnerabilityName'] ?? ''));
-            vg_upsert_kev($pdo, $id, $v['dateAdded'] ?? null, mb_substr($note, 0, VG_TEXT_MAX));
+            // knownRansomwareCampaignUse 는 "Known" / "Unknown" 문자열로 온다(불리언이 아니다).
+            $ransom = strcasecmp((string) ($v['knownRansomwareCampaignUse'] ?? ''), 'Known') === 0;
+            vg_upsert_kev($pdo, $id, $v['dateAdded'] ?? null, mb_substr($note, 0, VG_TEXT_MAX),
+                $v['dueDate'] ?? null, $ransom);
             vg_upsert_cve($pdo, $id, mb_substr((string) ($v['shortDescription'] ?? ''), 0, VG_TEXT_MAX), null, null);
             $up++;
         }
@@ -694,15 +718,29 @@ function vg_nvd_upsert_item(PDO $pdo, array $item): bool {
     foreach ($c['descriptions'] ?? [] as $d) {
         if (($d['lang'] ?? '') === 'en') { $desc = (string) $d['value']; break; }
     }
-    $cvss = null;
+    // 점수와 벡터는 같은 metric 에서 함께 꺼낸다 — v3.1 점수에 v2 벡터를 붙이면 거짓말이 된다.
+    $cvss = null; $vector = null;
     foreach (['cvssMetricV31', 'cvssMetricV30', 'cvssMetricV2'] as $mk) {
-        if (!empty($c['metrics'][$mk][0]['cvssData']['baseScore'])) {
-            $cvss = (float) $c['metrics'][$mk][0]['cvssData']['baseScore'];
+        $d = $c['metrics'][$mk][0]['cvssData'] ?? null;
+        if (!empty($d['baseScore'])) {
+            $cvss   = (float) $d['baseScore'];
+            $vector = !empty($d['vectorString']) ? (string) $d['vectorString'] : null;
             break;
         }
     }
+
+    // CWE — NVD 는 여러 개를 줄 수 있지만 대표 하나만 쓴다(상세 화면에 유형 한 줄 띄우는 용도).
+    //   'NVD-CWE-noinfo' 같은 자리표시자는 진짜 유형이 아니므로 거른다.
+    $cwe = null;
+    foreach ($c['weaknesses'] ?? [] as $w) {
+        foreach ($w['description'] ?? [] as $d) {
+            $v = (string) ($d['value'] ?? '');
+            if (preg_match('/^CWE-\d+$/', $v)) { $cwe = $v; break 2; }
+        }
+    }
+
     $pub = !empty($c['published']) ? substr((string) $c['published'], 0, 10) : null;
-    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, VG_TEXT_MAX), $cvss, $pub);
+    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, VG_TEXT_MAX), $cvss, $pub, $vector, $cwe);
     return true;
 }
 

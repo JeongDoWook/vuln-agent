@@ -11,13 +11,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
-// CVSS 기본점수 → 심각도 구간(NVD v3 기준)
-const VG_SEV_RANGES = [
-    'critical' => [9.0, 10.0],
-    'high'     => [7.0, 8.9],
-    'medium'   => [4.0, 6.9],
-    'low'      => [0.1, 3.9],
-];
+// VG_SEV_RANGES · vg_cvss_sev() 는 view.php 로 옮겼다 — cve.php 도 같은 구간을 쓴다.
 
 // 정렬 화이트리스트. 사용자 입력을 SQL 에 직접 넣지 않는다.
 const VG_CVE_SORTS = [
@@ -107,16 +101,6 @@ try {
     $rows = $stmt->fetchAll();
 } catch (Throwable $e) {
     $err = $e->getMessage();
-}
-
-/** CVSS 점수를 심각도 라벨로. 점수가 없으면 '–'. */
-function vg_cvss_sev(?string $cvss): string {
-    if ($cvss === null || $cvss === '') { return ''; }
-    $v = (float) $cvss;
-    foreach (VG_SEV_RANGES as $name => [$lo, $hi]) {
-        if ($v >= $lo && $v <= $hi) { return $name; }
-    }
-    return '';
 }
 
 vg_header('CVE 목록', 'cves');
