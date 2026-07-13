@@ -23,6 +23,24 @@ CREATE TABLE IF NOT EXISTS tb_advisories (
   INDEX idx_advisories_is_deleted (is_deleted)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- CVE 정규화 정션(1NF) — tb_advisories.cve_ids CSV 는 그대로 두고(호환), 이 테이블을
+--   CVE→공지 역조회·인덱스 조회용 정본으로 쓴다. 빈 볼륨은 이 파일(initdb),
+--   기존 볼륨은 db/migrations/20260713192700_advisory_cves.sql.
+CREATE TABLE IF NOT EXISTS tb_advisory_cves (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  advisory_id BIGINT UNSIGNED NOT NULL,
+  cve_id      VARCHAR(32) NOT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  is_deleted  TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at  DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_advisory_cve (advisory_id, cve_id),
+  INDEX idx_advisory_cves_cve (cve_id),
+  INDEX idx_advisory_cves_is_deleted (is_deleted),
+  CONSTRAINT fk_advisory_cves_advisory FOREIGN KEY (advisory_id) REFERENCES tb_advisories(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- KISA 보안공지 커넥터 (활성, 12시간 주기)
 INSERT INTO tb_feed_connectors (name, connector_type, connection_json, schedule_json, enabled, last_status)
 VALUES

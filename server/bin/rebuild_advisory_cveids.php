@@ -11,6 +11,7 @@ declare(strict_types=1);
  *
  *   네트워크를 쓰지 않는다. 이미 DB 에 있는 content/title 만 다시 읽어 계산하므로
  *   보호나라에 부담이 없고 몇 초면 끝난다. 몇 번을 돌려도 멱등하다.
+ *   cve_ids 가 바뀐 행은 tb_advisory_cves 정션도 함께 동기화한다(vg_sync_advisory_cves).
  *
  *   선행 조건: tb_advisories.cve_ids 가 TEXT 여야 한다(db/06-advisories.sql).
  *
@@ -54,6 +55,7 @@ foreach ($rows as $r) {
         fwrite(STDOUT, sprintf("  id=%-6s %d개 → %d개\n", $r['id'], $oldN, $newN));
     } else {
         $upd->execute([$new, (int) $r['id']]);
+        vg_sync_advisory_cves($pdo, (int) $r['id'], $ids);
         foreach ($ids as $cve) { vg_upsert_cve($pdo, $cve, null, null, null); }
     }
 }

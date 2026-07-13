@@ -23,7 +23,11 @@ try {
     $params = [];
     if ($q !== '') {
         // 본문까지 검색 대상(수집된 건에 한함). 2천여 행이라 LIKE 스캔으로 충분.
-        $where .= ' AND (title LIKE ? OR cve_ids LIKE ? OR content LIKE ?)';
+        // CVE 검색은 cve_ids CSV 대신 정규화된 junction(tb_advisory_cves)을 본다.
+        $where .= ' AND (title LIKE ? OR content LIKE ? OR EXISTS (
+            SELECT 1 FROM tb_advisory_cves ac
+             WHERE ac.advisory_id = tb_advisories.id AND ac.is_deleted = 0 AND ac.cve_id LIKE ?
+        ))';
         $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
@@ -36,7 +40,7 @@ try {
     $offset = ($page - 1) * $perPage;
 
     $stmt = $pdo->prepare(
-        "SELECT id, source, title, url, published, cve_ids
+        "SELECT id, source, title, url, published
          FROM tb_advisories
          WHERE $where
          ORDER BY published DESC, id DESC
@@ -44,6 +48,25 @@ try {
     );
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
+
+    // 관련 CVE 는 정션에서 배치 조회(N+1 방지) — advisory_id 로 묶어 각 행에 붙인다.
+    if ($rows) {
+        $ids = array_column($rows, 'id');
+        $in  = implode(',', array_fill(0, count($ids), '?'));
+        $cst = $pdo->prepare(
+            "SELECT advisory_id, cve_id FROM tb_advisory_cves
+             WHERE advisory_id IN ($in) AND is_deleted = 0 ORDER BY cve_id"
+        );
+        $cst->execute($ids);
+        $byAdvisory = [];
+        foreach ($cst->fetchAll(PDO::FETCH_ASSOC) as $c) {
+            $byAdvisory[(int) $c['advisory_id']][] = $c['cve_id'];
+        }
+        foreach ($rows as &$row) {
+            $row['cve_id_list'] = $byAdvisory[(int) $row['id']] ?? [];
+        }
+        unset($row);
+    }
 } catch (Throwable $e) {
     $err = $e->getMessage();
 }
@@ -89,8 +112,7 @@ vg_header('국내 보안공지', 'advisories');
               // CVE 를 수십 개 달고 오는 공지가 있다(예: 월간 브라우저 패치).
               // 전부 알약으로 깔면 행이 터지므로 앞 4개만 보이고 나머지는 "+N" 으로 접는다.
               2 => function ($r) {
-                  if (empty($r['cve_ids'])) { return '<span class="why">–</span>'; }
-                  $ids = array_values(array_filter(array_map('trim', explode(',', (string) $r['cve_ids']))));
+                  $ids = $r['cve_id_list'] ?? [];
                   if (!$ids) { return '<span class="why">–</span>'; }
 
                   $shown = array_slice($ids, 0, 4);
