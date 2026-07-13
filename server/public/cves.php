@@ -11,7 +11,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
-// VG_SEV_RANGES · vg_cvss_sev() 는 view.php 로 옮겼다 — cve.php 도 같은 구간을 쓴다.
+// VG_SEV_RANGES · vg_cvss_sev() 는 format.php 에 있다 — cve.php 도 같은 구간을 쓴다.
 
 // 정렬 화이트리스트. 사용자 입력을 SQL 에 직접 넣지 않는다.
 const VG_CVE_SORTS = [

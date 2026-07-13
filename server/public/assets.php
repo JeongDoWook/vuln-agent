@@ -13,7 +13,7 @@ require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
 vg_require_menu('assets');
 
-// 수집 지연 판정 기준(VG_STALE_MIN/VG_OFFLINE_MIN)과 vg_asset_state() 는 view.php 에 있다
+// 수집 지연 판정 기준(VG_STALE_MIN/VG_OFFLINE_MIN)과 vg_asset_state() 는 format.php 에 있다
 // (호스트 상세 히어로와 공유).
 
 $canDelete = vg_has_role('admin', 'operator');
