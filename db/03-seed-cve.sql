@@ -53,5 +53,8 @@ INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_ver
   ('CVE-2023-5678', 'Debian:12',    'openssl',  '3.0.11-1~deb12u3'),
   -- 알파인 컨테이너(api)의 openssl 3.1.4-r2 < 조치 3.1.4-r5 → 취약.
   -- 호스트(Rocky)의 openssl 과는 생태계가 달라 서로 섞이지 않는다.
-  ('CVE-2024-0727', 'Alpine:v3.19', 'openssl',  '3.1.4-r5')
+  ('CVE-2024-0727', 'Alpine:v3.19', 'openssl',  '3.1.4-r5'),
+  -- 서드파티 데모(web02): nginx 를 nginx.org 저장소에서 설치(origin=nginx).
+  -- 배포판 조치안(1.22.1-9+deb12u1)과 버전 체계가 달라 자동 판정이 불가하다 → 억제하지 않는다.
+  ('CVE-2021-23017','Debian:12',    'nginx',    '1.22.1-9+deb12u1')
 ON DUPLICATE KEY UPDATE ecosystem=VALUES(ecosystem), fixed_version=VALUES(fixed_version);

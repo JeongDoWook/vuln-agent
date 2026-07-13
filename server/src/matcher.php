@@ -80,13 +80,14 @@ if (!function_exists('vg_scope_rank')) {
             $mgr = (string) ($c['manager'] ?? '');
             $ctrs[(int) $c['id']] = [
                 'cid'    => (string) $c['cid'],
+                'os'     => (string) ($c['os_id'] ?? ''),   // 출처 판정에 쓴다(배포판이 호스트와 다름)
                 'eco'    => vg_osv_ecosystem($c['os_id'], $c['os_version']),
                 'family' => $mgr === 'dpkg' ? 'deb' : ($mgr === 'rpm' ? 'rpm' : $mgr),
             ];
         }
 
         // 패키지 (호스트: container_id=0, 컨테이너: >0)
-        $stmt = $pdo->prepare('SELECT container_id, manager, name, source_pkg, version, source_version FROM tb_packages WHERE scan_id = ?');
+        $stmt = $pdo->prepare('SELECT container_id, manager, name, source_pkg, version, source_version, origin FROM tb_packages WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         $packages = $stmt->fetchAll();
 
@@ -284,7 +285,16 @@ if (!function_exists('vg_scope_rank')) {
             // 억제 근거(changelog·errata·debsecan)는 전부 **호스트** 상태다. 컨테이너 CVE 를
             //   호스트 근거로 억제하면 실제 취약점을 숨기는 미탐이 된다 → 컨테이너는 제외한다.
             //   (버전 비교는 그 컨테이너의 패키지 버전으로 하는 것이라 컨테이너에도 유효하다.)
-            $hostEvidenceOk = ($ctr === null);
+            // 서드파티 저장소(PPA·Docker·NodeSource) 패키지 / 수동 .deb 설치는 배포판 트래커에
+            //   아예 없다. 배포판 기준 억제(debsecan·errata·changelog)는 "트래커에 없으면 이미
+            //   수정됨"으로 보므로, 그대로 두면 진짜 취약점을 숨긴다(미탐) → 억제하지 않는다.
+            //   버전 억제도 막는다: 배포판 조치안(EVR)과 서드파티 버전은 체계가 다르다
+            //   (예: docker-ce-cli 5:27.0.3-1~debian.12 vs 배포판 EVR).
+            $osForOrigin = $ctr !== null ? ($ctr['os'] ?: null) : ($scan['os_id'] ?? null);
+            $isDistroPkg = !vg_is_os_manager($mgr)      // 언어 패키지는 이 판정과 무관
+                || vg_is_distro_pkg($p['origin'] ?? null, $osForOrigin);
+
+            $hostEvidenceOk = ($ctr === null) && $isDistroPkg;
 
             // 런타임 상태 신호 (exposures=포트, processes=실행/로드).
             //   **컨테이너 패키지에는 적용하지 않는다.** 이 신호는 호스트 프로세스에서 모은 것이라,
@@ -311,6 +321,13 @@ if (!function_exists('vg_scope_rank')) {
                 $canSuppress = ($staleEv === null);
                 if ($staleEv !== null) {
                     $why .= ' · 재시작 필요(패치됐지만 옛 라이브러리 사용 중: ' . $staleEv . ')';
+                }
+                // 서드파티 패키지는 배포판 조치안과 버전 체계가 달라 "설치 ≥ 조치" 비교도 못 믿는다.
+                //   억제하지 않고 근거에 출처를 남겨, 사람이 판단할 수 있게 한다.
+                if (!$isDistroPkg) {
+                    $canSuppress = false;
+                    $why .= sprintf(' · 서드파티 저장소(%s) 패키지 — 배포판 조치안과 버전 체계가 달라 자동 판정 불가',
+                                    (string) ($p['origin'] ?? '출처 미상'));
                 }
 
                 // 버전 억제: 설치 버전이 조치 버전 이상이면 이미 패치된 것.

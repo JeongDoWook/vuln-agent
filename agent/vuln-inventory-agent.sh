@@ -251,6 +251,49 @@ collect_exposure() {
 #   "설치만 vs 실행중 vs 사용중(라이브러리 로드)"을 정밀 구분하기 위한 원천 데이터.
 #   .so 를 로드한 프로세스만(=실제 사용자 프로그램, 커널스레드 제외). 조회 결과 캐시 → 가볍다.
 #   출력: pid|comm|user|exe_pkg|loaded_pkgs(,)
+# collect_pkg_origins : 패키지 출처(Origin 라벨) — 서드파티 저장소 패키지를 가려낸다.
+#   rpm 은 VENDOR 를 주는데 dpkg 는 안 준다. 이게 없으면 중앙이 서드파티(PPA·Docker·NodeSource)
+#   패키지를 배포판 기준(debsecan/errata)으로 "이미 수정됨" 처리해 **진짜 취약점을 숨긴다**(미탐).
+#   URL 이 아니라 **라벨**(o=Debian / o=Docker / o=LP-PPA-…)로 판정한다 — URL 로 보면 사내
+#   미러(mirror.company.com)가 서드파티로 오판된다.
+#   출력: 패키지<TAB>라벨   (LOCAL = 어느 저장소에도 없음 = 수동 .deb 설치, UNKNOWN = 매핑 실패)
+collect_pkg_origins() {
+  have apt-cache || return 0
+  {
+    timeout "$CMD_TIMEOUT" apt-cache policy 2>/dev/null
+    echo "@@@SPLIT@@@"
+    timeout "$CMD_TIMEOUT" apt-cache policy $(dpkg-query -W -f='${Package}\n' 2>/dev/null) 2>/dev/null
+  } | awk '
+    BEGIN { phase = 1 }
+    /^@@@SPLIT@@@$/ { phase = 2; next }
+    phase == 1 {
+      # " 500 http://deb.debian.org/debian bookworm/main amd64 Packages"
+      if ($1 ~ /^[0-9]+$/ && $2 ~ /^(http|https|ftp|file|copy|cdrom)/) { lastkey = $2 " " $3 " " $4; next }
+      # "     release v=12.15,o=Debian,a=oldstable,…"
+      if ($1 == "release" && lastkey != "") {
+        o = ""
+        if (match($0, /o=[^,]+/)) { o = substr($0, RSTART + 2, RLENGTH - 2) }
+        if (o != "") { repo[lastkey] = o }
+        lastkey = ""
+      }
+      next
+    }
+    phase == 2 {
+      if ($0 ~ /^[^ \t]/)   { pkg = $0; sub(/:$/, "", pkg); star = 0; next }
+      if ($0 ~ /^ \*\*\*/)  { star = 1; next }     # 설치된 버전 줄
+      if (star == 1 && $1 ~ /^[0-9]+$/) {
+        if ($2 ~ /^(http|https|ftp|file)/) {
+          k = $2 " " $3 " " $4
+          print pkg "\t" ((k in repo) ? repo[k] : "UNKNOWN")
+          star = 0
+        } else if ($2 ~ /dpkg\/status/) {
+          print pkg "\tLOCAL"
+          star = 0
+        }
+      }
+    }'
+}
+
 # collect_containers : 컨테이너 **내부** 패키지 인벤토리
 #   컨테이너 프로세스는 다른 mount namespace 라 호스트 스캔에서 제외해 왔다(그게 맞다 —
 #   오버레이 경로를 dpkg -S 로 훑으면 멈춘다). 그래서 컨테이너 안 패키지는 통째로 미탐이었다.
@@ -596,6 +639,10 @@ put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
 } > "$TMP/runtime__stale.txt" 2>/dev/null || true
 [ "$(wc -l < "$TMP/runtime__stale.txt" 2>/dev/null || echo 0)" -ge 2 ] \
   || rm -f "$TMP/runtime__stale.txt"
+
+# 패키지 출처(Origin 라벨) — 서드파티 저장소 패키지 식별(cap 은 서브셸이라 함수를 못 본다)
+collect_pkg_origins > "$TMP/pkg__origins.txt" 2>/dev/null || true
+[ -s "$TMP/pkg__origins.txt" ] || rm -f "$TMP/pkg__origins.txt"
 
 # 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
 #   목록(list)은 함수가 직접 append 하므로 헤더를 먼저 써 둔다. 패키지는 함수의 stdout.

@@ -87,6 +87,16 @@ if (!empty($pkg['list'])) {
 }
 $pkgCount = count($pkgRows);
 
+// ── 패키지 출처(Origin 라벨) — 서드파티 저장소 식별 ──
+//   형식: "docker-ce-cli\tDocker" / "curl\tDebian" / "foo\tLOCAL"(수동 .deb)
+//   rpm 은 VENDOR 를 이미 보내므로 그걸 출처로 쓴다(아래 저장부).
+$originMap = [];
+foreach (preg_split('/\r?\n/', (string) ($pkg['origins'] ?? '')) as $line) {
+    $f = explode("\t", trim($line));
+    if (count($f) < 2 || $f[0] === '' || $f[1] === '') { continue; }
+    $originMap[$f[0]] = mb_strimwidth($f[1], 0, 128, '');
+}
+
 // ── 언어 패키지 파싱 (pip/npm/gem/composer) ────────────────────
 //   에이전트가 수집해 보내는데 지금까지 서버가 버리고 있었다 → 언어 패키지 CVE 가 전부 미탐.
 //   OSV 는 PyPI/npm/RubyGems/Packagist 생태계를 그대로 지원한다.
@@ -333,11 +343,15 @@ try {
     // 패키지 벌크
     if ($pkgCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_packages (scan_id, manager, name, version, arch, source_pkg, source_version, vendor)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO tb_packages (scan_id, manager, name, version, arch, source_pkg, source_version, vendor, origin)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         foreach ($pkgRows as $r) {
-            $ins->execute([$scanId, $manager, $r[0], $r[1], $r[2], $r[3], $r[4], $r[5]]);
+            // 출처: dpkg 는 apt Origin 라벨, rpm 은 VENDOR($r[5]).
+            $origin = $manager === 'rpm'
+                ? (($r[5] ?? '') !== '' ? $r[5] : null)
+                : ($originMap[$r[0]] ?? null);
+            $ins->execute([$scanId, $manager, $r[0], $r[1], $r[2], $r[3], $r[4], $r[5], $origin]);
         }
     }
 
