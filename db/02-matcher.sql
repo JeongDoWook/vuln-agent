@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS tb_kev_catalog (
 CREATE TABLE IF NOT EXISTS tb_cve_affected_packages (
   id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   cve_id        VARCHAR(32) NOT NULL,
-  ecosystem     VARCHAR(32) NULL,     -- rpm | deb | generic
+  ecosystem     VARCHAR(32) NOT NULL DEFAULT '',  -- rpm | deb | generic (자연키의 일부)
   package_name  VARCHAR(255) NOT NULL,
   fixed_version VARCHAR(128) NULL,    -- 이 버전 이상이면 패치됨(참고용)
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS tb_cve_affected_packages (
   is_deleted    TINYINT(1) NOT NULL DEFAULT 0,
   deleted_at    DATETIME NULL,
   PRIMARY KEY (id),
+  -- 자연키. 같은 패키지라도 배포판(ecosystem)마다 조치버전이 달라 ecosystem 을 키에 포함한다.
+  UNIQUE KEY uq_cap (cve_id, package_name, ecosystem),
   KEY idx_cap_pkg (package_name),
   KEY idx_cap_cve (cve_id),
   INDEX idx_cve_affected_packages_is_deleted (is_deleted)
@@ -71,6 +73,7 @@ CREATE TABLE IF NOT EXISTS tb_findings (
   UNIQUE KEY uq_find (scan_id, cve_id, package_name),
   KEY idx_find_scan (scan_id),
   KEY idx_find_sev (severity),
+  KEY idx_find_cve (cve_id),
   INDEX idx_findings_is_deleted (is_deleted),
   CONSTRAINT fk_find_scan FOREIGN KEY (scan_id) REFERENCES tb_scans(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
