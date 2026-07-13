@@ -92,6 +92,15 @@ rm -f "$UPG"
 # 되돌려 놓는다(뒤의 검사들이 원래 샘플 기준이라 상태를 원복해야 한다).
 curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE" >/dev/null
 
+# --- 피드 미지원 배포판: 0건이 "안전"이 아니라 "판정 불가" -------------------
+#   Amazon Linux 는 OSV 생태계 목록에 없다(질의하면 INVALID_ARGUMENT). 매칭 후보가 아예 없어
+#   취약점이 0건으로 뜨는데, 운영자가 "안전하다"고 읽으면 침묵하는 미탐이 된다 → 명시적으로 알린다.
+printf "\n[미지원 배포판 경고]\n"
+resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
+  --data-binary @"$ROOT/tests/sample-scan-amzn.json")
+assert_contains "$resp" '"ok":true' "Amazon Linux 호스트 수집 → ok:true"
+assert_contains "$resp" 'ALAS' "ingest 응답에 미지원 경고(자체 ALAS 피드 필요)"
+
 # --- 재매칭 -----------------------------------------------------------------
 printf "\n[rematch]\n"
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=WRONG")
@@ -133,6 +142,9 @@ assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(�
 # redis 는 0.0.0.0:6379 지만 방화벽이 막는다 → EXTERNAL 이 아니라 FILTERED 로 분류돼야 한다.
 body=$(curl -s -b "$JAR" "$BASE/findings.php?st=FILTERED")
 assert_contains "$body" "redis" "방화벽 차단(FILTERED) 분류 — redis 가 외부노출로 새지 않음"
+# 미지원 배포판 호스트가 있으면 취약점 화면 상단에 경고가 떠야 한다("0건 = 판정 불가").
+body=$(curl -s -b "$JAR" "$BASE/findings.php")
+assert_contains "$body" "판정 불가" "취약점 화면에 미지원 배포판 경고 노출"
 
 # 잘못된 비번
 JAR2="$(mktemp)"; csrf2=$(curl -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)

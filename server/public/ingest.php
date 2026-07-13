@@ -558,6 +558,9 @@ echo json_encode([
     'packages'  => $pkgCount,
     'langpkgs'  => $langCount,
     'debsecan'  => $debsecanCount,
+    // 피드 미지원 배포판이면 매칭이 0건이다 — 에이전트 로그에서 바로 보이도록 응답에 싣는다.
+    //   (matcher.php 가 distro.php 를 로드하므로 vg_distro_unsupported 를 여기서 쓸 수 있다.)
+    'warning'       => vg_distro_unsupported($vm['distro_id'] ?? null, $vm['distro_version'] ?? null),
     'containers'    => $ctrCount,
     'ctr_packages'  => $ctrPkgCount,
     // 직전 수집과 내용이 같으면 새 스냅샷을 만들지 않는다(changed=false). 바뀐 패키지 수도 알려준다.
