@@ -30,10 +30,14 @@
 ## 프로젝트 규약
 - 비밀값은 코드/커밋 금지 → Docker Secrets(`secrets/*.txt`, gitignore).
 - 커밋 메시지·주석·UI 는 한글. 각 단계는 "돌아가는 상태"로 커밋.
-- 스키마 변경은 `db/migrations/NNNN_이름.sql` 에 파일 하나만 추가한다 — `deploy/migrate.sh` 가
+- 스키마 변경은 `db/migrations/` 에 파일 하나만 추가한다 — `deploy/migrate.sh` 가
   미적용분만 자동 적용(`compose_runner.sh up`·`update.sh` 가 호출). 수동 apply 금지, 멱등하게 작성.
   최상위 `db/*.sql` 은 빈 볼륨 initdb 전용이라 기존 볼륨엔 안 들어간다.
   워크트리에선 프로젝트명이 `vulnagent-dev-<워크트리이름>` 이다.
+- **마이그레이션 파일명은 타임스탬프**: `$(date +%Y%m%d%H%M%S)_이름.sql`.
+  연번(`0001`…)은 쓰지 않는다 — 동시에 작업하는 브랜치들이 같은 다음 번호를 집어 충돌한다
+  (실제로 `0003` 과 `0014` 가 각각 두 개씩 생겼다). 타임스탬프는 조율 없이도 안 겹친다.
+  기존 연번 파일은 그대로 둔다(사전순이라 옛 것이 먼저 돈다).
 - Windows git-bash 에서 컨테이너에 절대경로 전달 시 `MSYS_NO_PATHCONV=1` 접두.
 - 변경 후 `./tests/smoke.sh` 로 회귀 확인. PHP 는 `php -l`, 쉘은 `bash -n`.
 - **dev 에 `--build` 를 붙이지 않는다.** dev 는 `../server` 를 바인드 마운트하므로 PHP 변경은
