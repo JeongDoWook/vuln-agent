@@ -207,6 +207,9 @@ if (!function_exists('vg_scope_rank')) {
 
         foreach ($packages as $p) {
             $mgr = (string) ($p['manager'] ?? 'dpkg');
+            // 이 패키지가 속한 생태계 — OS 패키지는 배포판, 언어 패키지는 PyPI/npm/RubyGems/Packagist.
+            //   섞이면 이름만 같은 엉뚱한 CVE 가 붙는다(OS 의 curl vs npm 의 curl).
+            $pkgEco = vg_pkg_ecosystem($mgr, $hostEco);
 
             // pkg.name 또는 source_pkg 로 후보 CVE 수집.
             //   비교 버전은 매칭된 키에 맞춘다 — OSV 의 deb 조치안은 **소스 버전** 기준이라
@@ -215,8 +218,11 @@ if (!function_exists('vg_scope_rank')) {
             foreach ([[$p['name'], $p['version']], [$p['source_pkg'], $p['source_version'] ?: $p['version']]] as [$key, $cmpVer]) {
                 if (!$key || !isset($affected[$key])) { continue; }
                 foreach ($affected[$key] as $row) {
-                    // 생태계 필터 — 남의 배포판 행이 이름만 같다고 붙던 것을 막는다.
-                    if (!vg_eco_matches($row['eco'] ?? null, $hostEco, $family)) { continue; }
+                    // 생태계 필터 — 남의 배포판/생태계 행이 이름만 같다고 붙던 것을 막는다.
+                    //   OS 패키지는 배포판 행만, 언어 패키지는 자기 생태계(PyPI 등) 행만 받는다.
+                    if (!vg_eco_matches($row['eco'] ?? null, $pkgEco, $family)) { continue; }
+                    // 언어 패키지는 'rpm'/'deb' 계열 표기 행과 무관하다(계열 토큰은 OS 전용).
+                    if (!vg_is_os_manager($mgr) && !vg_eco_is_distro($row['eco'] ?? null)) { continue; }
 
                     // 조치안을 설치 버전과 직접 비교해도 되는 행인지(=배포판 EVR 인지) 표시.
                     $fixed = vg_eco_is_distro($row['eco'] ?? null) ? $row['fixed'] : null;

@@ -87,6 +87,39 @@ if (!empty($pkg['list'])) {
 }
 $pkgCount = count($pkgRows);
 
+// ── 언어 패키지 파싱 (pip/npm/gem/composer) ────────────────────
+//   에이전트가 수집해 보내는데 지금까지 서버가 버리고 있었다 → 언어 패키지 CVE 가 전부 미탐.
+//   OSV 는 PyPI/npm/RubyGems/Packagist 생태계를 그대로 지원한다.
+//   실제 출력 형식(컨테이너에서 확인):
+//     pip      : "requests==2.31.0"                       (pip3 list --format=freeze)
+//     npm      : "+-- corepack@0.34.6" / "`-- npm@10.8.2" (npm ls -g --depth=0, 트리)
+//     gem      : "abbrev (default: 0.1.1)" / "rails (7.0.4, 6.1.7)"
+//     composer : "psr/log 3.0.2 설명"
+$langRows = [];
+$addLang = static function (string $mgr, string $name, string $ver) use (&$langRows): void {
+    $name = trim($name); $ver = trim($ver);
+    if ($name === '' || $ver === '') { return; }
+    $langRows["$mgr|$name"] = [$mgr, mb_strimwidth($name, 0, 255, ''), mb_strimwidth($ver, 0, 255, '')];
+};
+$lang = $data['langpkg'] ?? [];
+foreach (preg_split('/\r?\n/', (string) ($lang['pip'] ?? '')) as $line) {
+    if (preg_match('/^([A-Za-z0-9._-]+)==(\S+)$/', trim($line), $m)) { $addLang('pip', $m[1], $m[2]); }
+}
+foreach (preg_split('/\r?\n/', (string) ($lang['npm_global'] ?? '')) as $line) {
+    // 트리 장식(├──, └──, +--, `--)을 걷어내고 name@version. 스코프 패키지는 @scope/name@1.2.3.
+    $t = trim(preg_replace('/^[\s|`+\x{2500}-\x{257F}-]+/u', '', $line) ?? '');
+    if (preg_match('/^(@?[^@\s]+(?:\/[^@\s]+)?)@(\S+)$/', $t, $m)) { $addLang('npm', $m[1], $m[2]); }
+}
+foreach (preg_split('/\r?\n/', (string) ($lang['gem'] ?? '')) as $line) {
+    // "rails (7.0.4, 6.1.7)" → 첫 버전만. "abbrev (default: 0.1.1)" 의 default: 도 제거.
+    if (preg_match('/^(\S+)\s+\((?:default:\s*)?([^,)]+)/', trim($line), $m)) { $addLang('gem', $m[1], $m[2]); }
+}
+foreach (preg_split('/\r?\n/', (string) ($lang['composer'] ?? '')) as $line) {
+    if (preg_match('#^(\S+/\S+)\s+(\S+)#', trim($line), $m)) { $addLang('composer', $m[1], $m[2]); }
+}
+$langRows  = array_values($langRows);
+$langCount = count($langRows);
+
 // ── 노출 상관 파싱 (pipe 구분, 첫 줄은 헤더) ─────────────────
 $expRows = [];
 if (!empty($exp['correlation'])) {
@@ -234,6 +267,17 @@ try {
         }
     }
 
+    // 언어 패키지 벌크 — 같은 tb_packages 에 manager=pip|npm|gem|composer 로 넣는다.
+    //   매처가 manager 로 생태계(PyPI/npm/…)를 정해 OS 패키지와 섞이지 않게 매칭한다.
+    if ($langCount > 0) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_packages (scan_id, manager, name, version) VALUES (?, ?, ?, ?)'
+        );
+        foreach ($langRows as $r) {
+            $ins->execute([$scanId, $r[0], $r[1], $r[2]]);
+        }
+    }
+
     // 노출 벌크
     if ($expCount > 0) {
         $ins = $pdo->prepare(
@@ -336,6 +380,7 @@ echo json_encode([
     'scan_id'   => $scanId,
     'fqdn'      => $fqdn,
     'packages'  => $pkgCount,
+    'langpkgs'  => $langCount,
     'exposures' => $expCount,
     'processes' => $procCount,
     'findings'  => $findings,

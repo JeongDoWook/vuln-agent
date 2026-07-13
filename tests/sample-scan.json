@@ -23,6 +23,10 @@
   "updates": {
     "errata_cves": "CVE-2023-22809 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64\nRLSA-2023:0136 Important/Sec. sudo-1.9.5p2-10.el9_3.x86_64"
   },
+  "langpkg": {
+    "pip": "requests==2.19.1\nurllib3==2.0.7",
+    "npm_global": "/usr/local/lib\n+-- corepack@0.34.6\n`-- npm@10.8.2"
+  },
   "runtime": {
     "processes": "pid|comm|user|exe_pkg|loaded_pkgs\n1201|nginx|root|nginx|openssl,glibc,curl\n980|sshd|root|openssh-server|openssl,glibc",
     "stale": "pid|comm|pkg|lib\n1201|nginx|curl|/usr/lib64/libcurl.so.4.7.0"

@@ -39,6 +39,8 @@ resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-bina
 assert_contains "$resp" '"ok":true' "정상 토큰 → ok:true"
 assert_contains "$resp" '"packages":6' "패키지 6건 저장"
 assert_contains "$resp" '"exposures":5' "노출 5건 저장"
+# 언어 패키지(pip 2 + npm 2) — 예전엔 수집만 하고 서버가 버렸다.
+assert_contains "$resp" '"langpkgs":4' "언어 패키지 4건 저장(pip/npm)"
 crit=$(printf '%s' "$resp" | grep -oE '"CRITICAL":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${crit:-0}" -ge 1 ]; then ok "CRITICAL ≥ 1 (glibc KEV+외부) = $crit"; else no "CRITICAL 미검출"; fi
 high=$(printf '%s' "$resp" | grep -oE '"HIGH":[0-9]+' | grep -oE '[0-9]+$')

@@ -67,6 +67,18 @@ $run('rpm-evr', [
     ['1.0-1',                   '1.0-1.1',                -1],
 ], static fn(string $a, string $b): int => vg_ver_cmp($a, $b, 'rpm'));
 
+// 언어 패키지(semver/PEP440). 기대값은 실제 npm semver 라이브러리에서 뽑았다:
+//   node -e 'require("semver").compare(a,b)'
+$run('lang', [
+    ['2.19.1',       '2.31.0',        -1],   // requests: 취약 → 조치
+    ['1.0.0-rc1',    '1.0.0',         -1],   // 프리릴리스는 정식보다 이전
+    ['2.0.0',        '10.0.0',        -1],   // 숫자 비교(문자열이면 반대)
+    ['1.2.3',        '1.2.3',          0],
+    ['4.17.20',      '4.17.21',       -1],
+    ['1.0.0-beta.2', '1.0.0-beta.11', -1],
+    ['1.0.1',        '1.0.0',          1],
+], static fn(string $a, string $b): int => vg_ver_cmp($a, $b, 'npm'));
+
 if ($fail === 0) {
     echo "vercmp: 전체 통과\n";
     exit(0);

@@ -8,6 +8,33 @@ declare(strict_types=1);
  * 수집 때 'Ubuntu:24.04' 로 저장한 행을, 매칭 때 다른 규칙으로 읽으면 어긋난다.
  */
 
+if (!function_exists('vg_pkg_ecosystem')) {
+    /**
+     * 이 패키지가 속한 생태계 — 패키지 매니저로 정한다.
+     *   rpm/dpkg → 호스트 배포판('Rocky Linux:9')
+     *   pip/npm/gem/composer → 언어 생태계(OSV 표기)
+     * 언어 패키지를 배포판 생태계로 조회하면 안 되고(그 반대도), 섞이면 이름만 같은
+     * 엉뚱한 CVE 가 붙는다(예: OS 의 curl 과 npm 의 curl).
+     */
+    function vg_pkg_ecosystem(string $manager, ?string $hostEco): ?string
+    {
+        switch (strtolower($manager)) {
+            case 'pip':      return 'PyPI';
+            case 'npm':      return 'npm';
+            case 'gem':      return 'RubyGems';
+            case 'composer': return 'Packagist';
+            default:         return $hostEco;   // rpm / dpkg → 배포판
+        }
+    }
+
+    /** OS 패키지 매니저인가(rpm/dpkg). 아니면 언어 패키지. */
+    function vg_is_os_manager(string $manager): bool
+    {
+        $m = strtolower($manager);
+        return $m === 'rpm' || $m === 'dpkg';
+    }
+}
+
 if (!function_exists('vg_eco_matches')) {
     /**
      * tb_cve_affected_packages.ecosystem 은 두 표기가 섞여 있다:
