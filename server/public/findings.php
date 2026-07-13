@@ -37,10 +37,10 @@ try {
 
     // 호스트별 최신 스캔 (삭제된 호스트 제외) — 통합 뷰의 대상 스캔 집합.
     $hosts = $pdo->query(
-        'SELECT h.id AS host_id, h.fqdn, h.os_id, h.os_version, MAX(s.id) AS scan_id
-           FROM tb_hosts h JOIN tb_scans s ON s.host_id = h.id
+        'SELECT h.id AS host_id, h.fqdn, h.os_id, h.os_version, t.mid AS scan_id
+           FROM tb_hosts h
+           JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.id
           WHERE h.is_deleted = 0
-          GROUP BY h.id, h.fqdn, h.os_id, h.os_version
           ORDER BY h.fqdn'
     )->fetchAll();
     foreach ($hosts as $h) {
@@ -99,9 +99,7 @@ try {
         $stmt = $pdo->prepare(
             "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss, c.epss_percentile,
                     ctr.cid AS container_cid, ctr.image AS container_image,
-                (SELECT a.fixed_version FROM tb_cve_affected_packages a
-                 WHERE a.cve_id = f.cve_id AND a.package_name = f.package_name
-                   AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
+                " . VG_FIXED_VERSION_SUBQ . "
              FROM tb_findings f
              JOIN tb_scans s ON s.id = f.scan_id
              JOIN tb_hosts h ON h.id = s.host_id

@@ -86,7 +86,7 @@ try {
                            s.package_count, s.agent_version, h.fqdn, h.hostname
                       FROM tb_scans s
                       JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-                      JOIN (SELECT host_id, MAX(id) mid FROM tb_scans WHERE is_deleted = 0 GROUP BY host_id) t
+                      JOIN ' . vg_latest_scan_subq() . ' t
                         ON t.mid = s.id
                      WHERE s.is_deleted = 0';
         $scanParams = [];
@@ -132,9 +132,7 @@ try {
         $sql = "SELECT f.scan_id, f.cve_id, f.package_name, f.installed_version,
                        f.loaded, f.exposed, f.exposure_scope, f.in_kev, f.cvss, f.severity, f.rationale,
                        c.summary, c.epss, c.epss_percentile,
-                       (SELECT a.fixed_version FROM tb_cve_affected_packages a
-                         WHERE a.cve_id = f.cve_id AND a.package_name = f.package_name
-                           AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
+                       " . VG_FIXED_VERSION_SUBQ . "
                   FROM tb_findings f
                   LEFT JOIN tb_cves c ON c.cve_id = f.cve_id AND c.is_deleted = 0
                  WHERE $where

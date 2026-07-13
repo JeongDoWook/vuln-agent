@@ -534,7 +534,7 @@ final class VgOsvConnector implements VgFeedConnector {
 
         $scans = $pdo->query(
             'SELECT s.id, s.os_id, s.os_version
-             FROM tb_scans s JOIN (SELECT host_id, MAX(id) mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id'
+             FROM tb_scans s JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.id'
         )->fetchAll();
 
         $fetched = 0; $up = 0; $seen = [];
@@ -649,7 +649,7 @@ function vg_osv_enrich_fixed(PDO $pdo, ?callable $log = null): array {
 
     $scans = $pdo->query(
         'SELECT s.id, s.os_id, s.os_version
-           FROM tb_scans s JOIN (SELECT host_id, MAX(id) mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id'
+           FROM tb_scans s JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.id'
     )->fetchAll();
 
     $seen = [];
@@ -1145,7 +1145,7 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
         case 'osv':
             $sc = $pdo->query(
                 'SELECT s.id, s.os_id, s.os_version FROM tb_scans s
-                 JOIN (SELECT host_id, MAX(id) mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id
+                 JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.id
                  ORDER BY s.id DESC LIMIT 1'
             )->fetch();
             if (!$sc) {
