@@ -21,8 +21,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."   # 저장소 루트
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 say() { printf "\n${C}== %s${N}\n" "$*"; }
 
-# 재빌드가 필요한 경로. 이 목록 밖의 server/ 변경은 PHP 로 간주한다.
-INFRA_RE='^(server/Dockerfile|deploy/(compose[^/]*\.yml|compose_runner\.sh|caddy/|config/))'
+# 반영 방법은 셋으로 갈린다 — 뭉뚱그리면 쉘 스크립트 한 줄 고치고도 운영이 재빌드된다.
+#   1) 재빌드(--build)  : **이미지 안에 들어가는 것**만. Dockerfile, caddy(build: ./caddy).
+#   2) 재생성(up -d)    : compose 정의·바인드마운트되는 설정. 이미지는 그대로, 컨테이너만 다시.
+#                         (deploy/config/mysql/my.cnf 는 `./config/...:ro` 로 마운트된다 → 빌드 불필요)
+#   3) 아무것도 안 함   : PHP(소스는 ../server 라이브 마운트 → opcache 가 2초 안에 로드),
+#                         그리고 **deploy/compose_runner.sh**(쉘 래퍼라 이미지·컨테이너와 무관).
+#                         예전엔 이게 재빌드 목록에 있어서, 러너 한 줄 고친 배포가 수십 초 다운타임을 먹었다.
+BUILD_RE='^(server/Dockerfile|deploy/caddy/)'
+RECREATE_RE='^deploy/(compose[^/]*\.yml|config/)'
 DB_RE='^db/'
 
 say "[1/6] 사전 점검"
@@ -57,11 +64,18 @@ echo "  변경 파일 $(printf '%s' "$CHANGED" | grep -c . || true)개"
 
 say "[3/6] 무엇을 해야 하나"
 NEED_BUILD=0
+NEED_RECREATE=0
+# 소스 마운트가 없으면 코드가 이미지 안에 있다 → 새 코드를 넣으려면 굽는 수밖에 없다.
 [ "$MOUNTED" = "yes" ] || NEED_BUILD=1
-if printf '%s\n' "$CHANGED" | grep -qE "$INFRA_RE"; then
+if printf '%s\n' "$CHANGED" | grep -qE "$BUILD_RE"; then
   NEED_BUILD=1
-  echo "  인프라 변경 감지:"
-  printf '%s\n' "$CHANGED" | grep -E "$INFRA_RE" | sed 's/^/    /'
+  echo "  이미지 변경 감지(재빌드 필요):"
+  printf '%s\n' "$CHANGED" | grep -E "$BUILD_RE" | sed 's/^/    /'
+fi
+if printf '%s\n' "$CHANGED" | grep -qE "$RECREATE_RE"; then
+  NEED_RECREATE=1
+  echo "  compose/설정 변경 감지(재생성만, 빌드는 불필요):"
+  printf '%s\n' "$CHANGED" | grep -E "$RECREATE_RE" | sed 's/^/    /'
 fi
 if printf '%s\n' "$CHANGED" | grep -qE "$DB_RE"; then
   echo "  DB 변경 감지:"
@@ -94,6 +108,9 @@ say "[5/6] 반영"
 if [ "$NEED_BUILD" = 1 ]; then
   echo "  재빌드 + 재생성 (다운타임 수십 초)"
   bash deploy/compose_runner.sh prod up -d --build
+elif [ "$NEED_RECREATE" = 1 ]; then
+  echo "  재생성만 (이미지는 그대로 — 바뀐 서비스만 몇 초 내려갔다 올라온다)"
+  bash deploy/compose_runner.sh prod up -d
 else
   echo "  PHP 만 변경 → 재시작 없음. opcache 가 2초 안에 새 코드를 로드합니다."
   # 오래 도는 프로세스(백필 워커 등)는 이미 옛 코드를 메모리에 올렸다. 있으면 알려준다.

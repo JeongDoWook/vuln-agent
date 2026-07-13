@@ -93,8 +93,9 @@ cmd_add() {
   echo ""
   say "${GREEN}완료.${NC} 다음:"
   say "  ${CYAN}cd wt/$name${NC}"
-  say "  ${CYAN}./deploy/compose_runner.sh dev up -d${NC}   # 이 워크트리 전용 스택(dev 이미지 공유)"
-  say "  ${CYAN}./tests/smoke.sh http://localhost:$web${NC}"
+  say "  server/·db/·tests/ 를 건드릴 때만 스택을 이 트리로 가져온다:"
+  say "  ${CYAN}./deploy/compose_runner.sh dev up -d${NC}   # 스택은 하나뿐 — 새로 안 생기고 옮겨온다"
+  say "  ${CYAN}./tests/smoke.sh http://localhost:8080${NC}"
 }
 
 # --- list -------------------------------------------------------------------
