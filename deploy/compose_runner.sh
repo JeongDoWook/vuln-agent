@@ -19,6 +19,24 @@
 #   ./compose_runner.sh dev  logs -f         # 로그
 #   ./compose_runner.sh prod up -d --build   # 운영 환경 기동
 #   ./compose_runner.sh prod ps              # 상태
+#
+# [git pull 뒤에는 `dev up -d` 를 한 번 더]
+#   dev 는 ../server 를 라이브 마운트하므로 pull 하는 순간 코드는 컨테이너 안에서 즉시 바뀐다.
+#   그런데 DB 스키마는 안 따라온다 — 남이 머지한 마이그레이션이 있으면 새 코드가 없는 컬럼을
+#   찾아 500 이 난다(Unknown column …). `up -d` 가 migrate.sh 를 불러 미적용분만 적용한다.
+#   (컨테이너는 그대로 재사용하므로 싸다. 재빌드도 필요 없다.)
+#
+# [dev DB 를 비우려면 — `down -v` 는 듣지 않는다]
+#   dev 의 DB 는 named volume 이 아니라 .env.dev 의 DB_DATA(=../data/mysql) **바인드마운트**다.
+#   compose 는 named volume 만 -v 로 지우므로, `down -v` 를 해도 데이터가 그대로 남는다
+#   (안 쓰이는 vulnagent-dev_db_data 볼륨이 남아 있어 더 헷갈린다).
+#       ./compose_runner.sh dev down
+#       rm -rf ../data/mysql                 # ← 실제 DB 는 여기다
+#       ./compose_runner.sh dev up -d        # initdb + 마이그레이션이 처음부터 돈다
+#
+#   왜 신경 써야 하나: pre-push 훅의 스모크가 기본값으로 8080(메인 dev 스택)을 친다.
+#   메인 dev DB 를 오래 쓰면 실제 피드가 시드 데이터를 덮어 스모크가 깨지고, 코드가 멀쩡해도
+#   아무 브랜치나 push 가 막힌다(2026-07-13 실제 발생 — 깨끗한 볼륨에선 43/43 통과).
 # =============================================================================
 set -euo pipefail
 
