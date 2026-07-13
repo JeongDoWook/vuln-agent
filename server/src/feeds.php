@@ -24,6 +24,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';   // vg_log_activity
 require_once __DIR__ . '/distro.php';  // vg_osv_ecosystem (매처와 공유)
+require_once __DIR__ . '/schedule.php'; // vg_cron_*/vg_schedule_* — 스케줄 계산(순수 함수)
 
 // 공용 계층(커넥터들이 의존) — 커넥터 클래스보다 먼저 로드한다.
 require_once __DIR__ . '/feeds/http.php';
@@ -57,84 +58,8 @@ function vg_feed_make(string $type): VgFeedConnector {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// 실행 + 스케줄
+// 실행 (cron/스케줄 계산은 schedule.php 로 분리 — vg_cron_*/vg_schedule_*)
 // ─────────────────────────────────────────────────────────────────────────
-// cron 필드 한 개 매칭 (*, 숫자, a-b 범위, */n 스텝, 콤마 목록 지원)
-function vg_cron_field_match(string $field, int $val, int $min, int $max): bool {
-    foreach (explode(',', $field) as $part) {
-        $step = 1;
-        if (strpos($part, '/') !== false) {
-            [$part, $s] = explode('/', $part, 2);
-            $step = max(1, (int) $s);
-        }
-        if ($part === '*' || $part === '') { $lo = $min; $hi = $max; }
-        elseif (strpos($part, '-') !== false) { [$a, $b] = explode('-', $part, 2); $lo = (int) $a; $hi = (int) $b; }
-        else { $lo = $hi = (int) $part; }
-        for ($i = $lo; $i <= $hi; $i += $step) {
-            if ($i === $val) { return true; }
-        }
-    }
-    return false;
-}
-
-// 표준 5필드 cron(분 시 일 월 요일)이 주어진 시각과 일치하는가. 요일 0=일요일(7도 일요일).
-function vg_cron_match(string $expr, int $ts): bool {
-    $f = preg_split('/\s+/', trim($expr));
-    if (count($f) !== 5) { return false; }
-    $dow = (int) date('w', $ts);
-    return vg_cron_field_match($f[0], (int) date('i', $ts), 0, 59)
-        && vg_cron_field_match($f[1], (int) date('G', $ts), 0, 23)
-        && vg_cron_field_match($f[2], (int) date('j', $ts), 1, 31)
-        && vg_cron_field_match($f[3], (int) date('n', $ts), 1, 12)
-        && (vg_cron_field_match($f[4], $dow, 0, 6) || ($dow === 0 && vg_cron_field_match($f[4], 7, 0, 7)));
-}
-
-// 지금 실행 대상인가 (스케줄러가 매 tick 마다 판정). last_run 기준 중복 방지.
-function vg_schedule_due(array $schedule, ?string $lastRun, ?int $now = null): bool {
-    $now = $now ?? time();
-    $lastTs = $lastRun ? strtotime($lastRun) : null;
-    switch ($schedule['mode'] ?? 'manual') {
-        case 'interval':
-            $min = max(1, (int) ($schedule['interval_minutes'] ?? 1440));
-            return $lastTs === null || ($now - $lastTs) >= $min * 60;
-        case 'daily':
-            [$h, $m] = array_map('intval', array_pad(explode(':', (string) ($schedule['time'] ?? '03:00')), 2, 0));
-            $sched = strtotime(date('Y-m-d', $now) . sprintf(' %02d:%02d:00', $h, $m));
-            return $now >= $sched && ($lastTs === null || $lastTs < $sched);
-        case 'cron':
-            $expr = (string) ($schedule['expr'] ?? '');
-            if ($expr === '' || !vg_cron_match($expr, $now)) { return false; }
-            return $lastTs === null || $lastTs < $now - ($now % 60); // 같은 분 중복 방지
-        default: // manual
-            return false;
-    }
-}
-
-// 다음 실행 예정 시각(표시용).
-function vg_schedule_next(array $schedule, ?int $fromTs = null): ?string {
-    $fromTs = $fromTs ?? time();
-    switch ($schedule['mode'] ?? 'manual') {
-        case 'interval':
-            $min = max(1, (int) ($schedule['interval_minutes'] ?? 1440));
-            return date('Y-m-d H:i:s', $fromTs + $min * 60);
-        case 'daily':
-            [$h, $m] = array_map('intval', array_pad(explode(':', (string) ($schedule['time'] ?? '03:00')), 2, 0));
-            $next = strtotime(date('Y-m-d', $fromTs) . sprintf(' %02d:%02d:00', $h, $m));
-            if ($next <= $fromTs) { $next += 86400; }
-            return date('Y-m-d H:i:s', $next);
-        case 'cron':
-            $expr = (string) ($schedule['expr'] ?? '');
-            if ($expr === '') { return null; }
-            $t = $fromTs - ($fromTs % 60) + 60;
-            for ($i = 0; $i < 527040; $i++) { // 최대 366일 앞으로 스캔
-                if (vg_cron_match($expr, $t)) { return date('Y-m-d H:i:s', $t); }
-                $t += 60;
-            }
-            return null;
-        default: // manual
-            return null;
-    }
-}
 
 /** 주어진 커넥터 id 중에 해당 타입이 있는가. 수집 후 후처리를 걸지 결정할 때 쓴다. */
 function vg_feed_has_type(PDO $pdo, array $ids, string $type): bool {
