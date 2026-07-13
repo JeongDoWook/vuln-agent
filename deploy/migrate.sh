@@ -20,6 +20,22 @@ MIG_DIR="db/migrations"
 
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 
+# --- 동시 실행 방지 ---------------------------------------------------------
+# 같은 DB 를 두 프로세스가 동시에 마이그레이션하면 깨진다(실제로 발생했다):
+#   둘 다 SELECT 로 "미적용"을 확인 → 둘 다 파일을 실행 → 한쪽이 INSERT 에서
+#   "Duplicate entry ... for key PRIMARY" 로 죽는다. set -e 라 배포가 거기서 멈춘다.
+# 파일 락으로 직렬화한다. 락은 **DB 컨테이너별**이라 워크트리 스택끼리는 서로 막지 않는다.
+LOCK_FILE="${TMPDIR:-/tmp}/vg-migrate-${DB_CONTAINER}.lock"
+if command -v flock >/dev/null 2>&1 && exec 9>"$LOCK_FILE" 2>/dev/null; then
+  if ! flock -w 300 9; then
+    printf "${R}마이그레이션 중단: 다른 프로세스가 '%s' 를 마이그레이션 중(5분 대기 초과)${N}\n" \
+      "$DB_CONTAINER" >&2
+    exit 1
+  fi
+else
+  printf "${Y}⚠ flock 을 쓸 수 없어 동시 실행 보호 없이 진행합니다${N}\n" >&2
+fi
+
 # --- DB 컨테이너 준비 대기 (healthcheck 있으면 healthy, 없으면 running) ------
 ok=0
 for _ in $(seq 1 30); do
@@ -55,8 +71,11 @@ for f in "$MIG_DIR"/*.sql; do
   done_row="$(db_mysql -N -B -e "SELECT 1 FROM tb_schema_migrations WHERE filename='$name' LIMIT 1")"
   if [ -n "$done_row" ]; then skipped=$((skipped + 1)); continue; fi
   printf "  ${C}적용${N}: %s\n" "$name"
-  db_mysql < "$f"                                              # 파일 실행
-  db_mysql -e "INSERT INTO tb_schema_migrations (filename) VALUES ('$name')"   # 성공 후 기록
+  db_mysql < "$f"                                              # 파일 실행(실패하면 set -e 로 중단 → 기록 안 함)
+  # INSERT IGNORE: 락이 없는 환경에서 경쟁이 나더라도 여기서 죽지 않는다.
+  #   마이그레이션 파일은 멱등하게 쓰기로 돼 있으므로(db/migrations/README.md) 두 번 실행돼도
+  #   스키마는 안전하다. 죽어서 배포를 멈추는 것보다 낫다.
+  db_mysql -e "INSERT IGNORE INTO tb_schema_migrations (filename) VALUES ('$name')"
   applied=$((applied + 1))
 done
 
