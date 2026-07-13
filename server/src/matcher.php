@@ -321,8 +321,10 @@ if (!function_exists('vg_scope_rank')) {
             $baseEco = $ctr !== null ? $ctr['eco'] : $hostEco;
             $pkgFam  = $ctr !== null ? $ctr['family'] : $family;
             $pkgEco  = vg_pkg_ecosystem($mgr, $baseEco);
-            // 컨테이너 배포판이 OSV 미지원이면 판단 근거가 없다 → 매칭하지 않는다(추측 금지).
-            if ($ctr !== null && $baseEco === null) { continue; }
+            // 컨테이너 배포판이 OSV 미지원이면 **배포판 패키지는** 판단 근거가 없다 → 매칭 안 한다(추측 금지).
+            //   단 언어 패키지(Go/PyPI/npm…)는 배포판과 무관하다. 여기서 같이 버리면,
+            //   배포판이 미지원이라는 이유로 Go 의존성 취약점을 통째로 놓친다(미탐).
+            if ($ctr !== null && $baseEco === null && vg_is_os_manager($mgr)) { continue; }
 
             // pkg.name 또는 source_pkg 로 후보 CVE 수집.
             //   비교 버전은 매칭된 키에 맞춘다 — OSV 의 deb 조치안은 **소스 버전** 기준이라

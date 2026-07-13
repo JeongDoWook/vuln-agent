@@ -144,7 +144,16 @@ function vg_osv_container_queries(PDO $pdo, int $scanId): array {
 
     $out = []; $seen = [];
     foreach ($st->fetchAll() as $p) {
-        $eco = vg_osv_ecosystem($p['os_id'], $p['os_version']);
+        // 컨테이너 안에도 **언어 패키지**가 있다(Go 바이너리에서 뽑은 의존 모듈 등).
+        //   그건 컨테이너 배포판이 아니라 자기 생태계(Go/PyPI/npm…)로 물어야 한다.
+        //   배포판으로 물으면 이름만 같은 엉뚱한 CVE 가 붙거나(오탐), 배포판이 OSV 미지원이면
+        //   조회 자체를 건너뛰어 통째로 미탐이 된다 — Calico 컨테이너가 정확히 그 경우였다.
+        $mgr = (string) $p['manager'];
+        if (vg_is_os_manager($mgr)) {
+            $eco = vg_osv_ecosystem($p['os_id'], $p['os_version']);
+        } else {
+            $eco = vg_pkg_ecosystem($mgr, null);
+        }
         if ($eco === null) { continue; }                     // OSV 미지원 배포판 → 조회 불가
         $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
         $key = $isDeb ? (($p['source_pkg'] ?: $p['name'])) : (string) $p['name'];

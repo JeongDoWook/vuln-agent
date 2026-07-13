@@ -81,6 +81,8 @@ if (!function_exists('vg_pkg_ecosystem')) {
             case 'npm':      return 'npm';
             case 'gem':      return 'RubyGems';
             case 'composer': return 'Packagist';
+            // Go 바이너리에서 뽑은 의존 모듈(buildinfo). OSV 의 Go 생태계로 그대로 조회된다.
+            case 'go':       return 'Go';
             default:         return $hostEco;   // rpm / dpkg → 배포판
         }
     }
