@@ -111,6 +111,7 @@ function vg_menus(): array {
         'advisories'  => '국내 보안공지',
         'connectors'  => '피드 커넥터',
         'users'       => '사용자',
+        'agenttokens' => '에이전트 토큰',
         'activity'    => '감사 로그',
         'permissions' => '권한 설정',
     ];

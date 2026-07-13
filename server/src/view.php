@@ -596,10 +596,11 @@ function vg_nav_sections(): array {
             ['perm' => 'connectors', 'href' => '/connectors.php', 'label' => '피드 커넥터', 'key' => 'connectors'],
         ],
         '시스템' => [
-            ['perm' => 'users',       'href' => '/users.php',       'label' => '사용자',    'key' => 'users'],
-            ['perm' => 'permissions', 'href' => '/permissions.php', 'label' => '권한 설정', 'key' => 'permissions'],
-            ['perm' => 'apitokens',   'href' => '/api-tokens.php',  'label' => 'API 토큰',  'key' => 'apitokens'],
-            ['perm' => 'activity',    'href' => '/activity.php',    'label' => '감사 로그', 'key' => 'activity'],
+            ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',      'key' => 'users'],
+            ['perm' => 'permissions', 'href' => '/permissions.php',  'label' => '권한 설정',   'key' => 'permissions'],
+            ['perm' => 'agenttokens', 'href' => '/agent-tokens.php', 'label' => '에이전트 토큰', 'key' => 'agenttokens'],
+            ['perm' => 'apitokens',   'href' => '/api-tokens.php',   'label' => 'API 토큰',    'key' => 'apitokens'],
+            ['perm' => 'activity',    'href' => '/activity.php',     'label' => '감사 로그',   'key' => 'activity'],
         ],
     ];
 }

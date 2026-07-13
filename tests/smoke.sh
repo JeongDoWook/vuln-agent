@@ -205,6 +205,35 @@ body=$(curl -s -b "$JAR2" -c "$JAR2" --data-urlencode "csrf=$csrf2" \
 assert_contains "$body" "올바르지 않습니다" "틀린 비밀번호 → 로그인 거부"
 rm -f "$JAR2"
 
+# --- 에이전트 토큰: 호스트 바인딩 & 스푸핑 차단 (PR-4 보안) ------------------
+#   개별 토큰은 발급 시 정한 fqdn 만 갱신할 수 있다. 침해된 대상 1대가 그 토큰으로 다른 호스트를
+#   위조해 스캔을 덮어쓰는 것을 ingest.php 가 403 으로 막는지 회귀로 고정한다(HIGH-2).
+printf "\n[에이전트 토큰 · 호스트 바인딩]\n"
+# 로그인 세션($JAR)으로 web01 에 바인딩된 개별 토큰 발급 → 원문(vgt_...)을 1회 표시에서 추출.
+ATCSRF=$(curl -s -b "$JAR" "$BASE/agent-tokens.php" | grep -oE 'name="csrf" value="[a-f0-9]+"' | grep -oE '[a-f0-9]{32}' | head -1)
+issued=$(curl -s -b "$JAR" -X POST "$BASE/agent-tokens.php" \
+  --data-urlencode "csrf=$ATCSRF" --data-urlencode "action=create" \
+  --data-urlencode "fqdn=web01.example.com" --data-urlencode "label=smoke")
+AGTOK=$(printf '%s' "$issued" | grep -oE 'vgt_[0-9a-f]{40}' | head -1)
+if [ -n "$AGTOK" ]; then ok "개별 토큰 발급 + 원문 1회 표시"; else no "개별 토큰 발급 실패"; fi
+# 목록엔 prefix(앞자리)만 — 원문 전체는 저장/표시되지 않아야 한다(DB 엔 해시만).
+listed=$(curl -s -b "$JAR" "$BASE/agent-tokens.php")
+if [ -n "$AGTOK" ] && printf '%s' "$listed" | grep -q "$AGTOK"; then
+  no "목록에 토큰 원문 노출(해시만 저장돼야 함)"
+else
+  ok "목록엔 원문 없음(DB 엔 해시만 저장)"
+fi
+# (a) 바인딩된 호스트(web01)로 수신 → 200 ok, 저장 호스트가 바인딩 fqdn.
+resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $AGTOK" --data-binary @"$SAMPLE")
+assert_contains "$resp" '"ok":true' "(a) 개별 토큰 + 바인딩 호스트 → ok:true"
+assert_contains "$resp" '"fqdn":"web01.example.com"' "(a) 저장 호스트가 바인딩 fqdn"
+# (b) 같은 토큰으로 다른 호스트(evil)를 주장 → 403 거부. 스푸핑 차단의 핵심 회귀.
+SPOOF="$(mktemp)"; sed 's/web01\.example\.com/evil.example.com/g' "$SAMPLE" > "$SPOOF"
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
+  -H "X-Agent-Token: $AGTOK" --data-binary @"$SPOOF")
+assert_eq "$code" "403" "(b) 같은 토큰으로 다른 호스트 위조 → 403 (스푸핑 차단)"
+rm -f "$SPOOF"
+
 # --- 요약 -------------------------------------------------------------------
 printf "\n${CYAN}== 결과: ${GREEN}%d 통과${NC}, ${RED}%d 실패${NC} ==\n" "$pass" "$fail"
 [ "$fail" -eq 0 ]
