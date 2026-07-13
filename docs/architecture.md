@@ -57,7 +57,9 @@ exposures(포트) + processes(실행/로드) 를 합쳐 5단계 상태를 판정
 
 ```mermaid
 flowchart TD
-    START["패키지 P 에 영향을 주는 CVE"] --> EXT{"외부(0.0.0.0)<br/>오픈 포트로 노출?"}
+    START["패키지 P 에 영향을 주는 CVE"] --> BP{"이 빌드의 changelog 에<br/>그 CVE 수정 기록이 있나?"}
+    BP -->|예| SUP["백포트로 이미 패치됨<br/>→ tb_suppressed_findings<br/>(위험 집계 제외 · 근거 표시)"]
+    BP -->|아니오| EXT{"외부(0.0.0.0)<br/>오픈 포트로 노출?"}
     EXT -->|예| KEV{"CVE 가 KEV 등재?"}
     KEV -->|예| CRIT["외부노출 + KEV<br/>→ CRITICAL"]
     KEV -->|아니오| HIGH["외부노출<br/>→ HIGH"]
@@ -65,6 +67,7 @@ flowchart TD
     USE -->|예| MED["로컬리스닝/실행중/사용중<br/>→ MEDIUM"]
     USE -->|아니오| INS["설치만 됨<br/>→ LOW"]
 
+    style SUP fill:#1f6feb,color:#fff
     style CRIT fill:#da3633,color:#fff
     style HIGH fill:#db6d28,color:#fff
     style MED fill:#9e6a03,color:#fff
@@ -73,7 +76,16 @@ flowchart TD
 
 > 상태: EXTERNAL > LISTENING > RUNNING > LOADED > INSTALLED. KEV 시 한 단계 상향,
 > EPSS·CVSS 는 같은 등급 내 정렬. 각 판정에 근거(어떤 프로세스·포트·라이브러리)가 남는다.
-> 백포트 오탐은 OSV 버전필터(배포판 전체버전 대조)가 이미 제거.
+
+**백포트 억제(첫 관문).** 배포판은 버전을 안 올리고 패치만 이식하므로 버전 비교만으로는 오탐이 난다.
+1차로 OSV 버전필터(배포판 전체버전 대조)가 걸러내고, 통과한 건도 에이전트가 보낸 패키지
+changelog(`tb_pkg_changelog_cves`)에 해당 CVE 수정 기록이 있으면 `tb_findings` 대신
+`tb_suppressed_findings` 로 보낸다 — **기존 위험 집계·화면을 하나도 안 건드리고 오탐만 빠진다.**
+억제한 건은 숨기지 않고 호스트 상세에서 근거(changelog 원문 일부)와 함께 보여준다(설명가능성).
+
+**보안설정 점검(CCE)** 은 별도 경로다. 같은 수집물의 `security`/`users` 섹션을 `src/cce.php` 가
+판정해 `tb_cce_findings`(PASS/FAIL/NA)에 저장한다 — CVE 가 아니라 **설정**(SSH root 로그인,
+패스워드 인증, UID 0 계정, SELinux/AppArmor, 방화벽)을 본다. 신규 수집은 하지 않는다.
 
 ---
 
@@ -189,6 +201,12 @@ flowchart TB
 **매시간** 자동 수집·전송한다. 중앙 서버 자신을 스캔하는 로컬 에이전트만 루프백(`8081`)
 평문 경로를 쓰고, 그 외 원격 서버 에이전트는 모두 Caddy 의 HTTPS 엔드포인트로 전송한다.
 
+**스키마 적용**은 `deploy/migrate.sh` 가 맡는다 — `db/migrations/NNNN_*.sql` 중 아직 안 든 것만
+번호순으로 db 컨테이너에 파이프하고 `tb_schema_migrations(filename, applied_at)` 에 기록한다.
+`compose_runner.sh up` 과 `update.sh` 가 자동 호출하므로 수동 apply 가 필요 없다. 최상위
+`db/*.sql` 은 **빈 볼륨 initdb 전용**이고, `db/_migrations/` 는 과거 수동 적용분(역사 기록,
+재실행 시 깨지는 것이 있어 러너 대상에서 제외).
+
 ---
 
 ## 5. 데이터 모델 (ERD)
@@ -200,11 +218,15 @@ erDiagram
     tb_scans ||--o{ tb_exposures : "노출 소켓(포트)"
     tb_scans ||--o{ tb_processes : "실행 프로세스"
     tb_scans ||--o{ tb_findings : "매처 판정"
+    tb_scans ||--o{ tb_pkg_changelog_cves : "백포트 근거(changelog)"
+    tb_scans ||--o{ tb_suppressed_findings : "백포트로 억제된 건"
+    tb_scans ||--o{ tb_cce_findings : "보안설정 점검"
     tb_cves  ||--o{ tb_cve_affected_packages : "영향 패키지"
     tb_cves  ||--o{ tb_findings : "취약점"
     tb_cves  ||--o| tb_kev_catalog : "KEV 등재"
     tb_feed_connectors ||--o{ tb_feed_collection_logs : "수집 이력"
     tb_users ||--o{ tb_activity_log : "행위 기록(느슨한 연계)"
+    tb_users ||--o{ tb_api_tokens : "발급(Export API)"
 
     tb_hosts {
         bigint id PK
@@ -250,6 +272,29 @@ erDiagram
         string severity
         string runtime_status
         bool in_kev
+    }
+    tb_pkg_changelog_cves {
+        bigint id PK
+        bigint scan_id FK
+        string package_name
+        string cve_id
+        string evidence
+    }
+    tb_suppressed_findings {
+        bigint id PK
+        bigint scan_id FK
+        string cve_id
+        string package_name
+        string base_severity
+        string suppress_reason
+    }
+    tb_cce_findings {
+        bigint id PK
+        bigint scan_id FK
+        string code
+        string result
+        string severity
+        string rationale
     }
     tb_cves {
         string cve_id PK
@@ -299,6 +344,20 @@ erDiagram
         string role
         bool is_deleted
     }
+    tb_role_permissions {
+        int id PK
+        string role
+        string menu_code
+        bool allowed
+    }
+    tb_api_tokens {
+        bigint id PK
+        string label
+        string token_hash UK
+        string token_prefix
+        datetime last_used_at
+        bool is_deleted
+    }
     tb_activity_log {
         bigint id PK
         bigint user_id
@@ -313,7 +372,9 @@ erDiagram
 
 *(tb_cves / tb_kev_catalog / tb_cve_affected_packages / tb_findings 는 2단계 매처, tb_feed_* 는
 4a 피드 커넥터(connector_type: kev/osv/nvd/kisa/epss), tb_advisories 는 4b KISA 국내공지,
-tb_users 는 3단계 인증, tb_activity_log 는 감사 추적에서 도입.*
+tb_users 는 3단계 인증, tb_activity_log 는 감사 추적, tb_pkg_changelog_cves/tb_suppressed_findings 는
+백포트 억제, tb_cce_findings 는 보안설정 점검, tb_role_permissions 는 설정형 RBAC,
+tb_api_tokens 는 Export API 에서 도입. 스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh).*
 *모든 테이블에 감사 4컬럼(`created_at`/`updated_at`/`is_deleted`/`deleted_at`)이 통일되어 있다
 (다이어그램엔 `is_deleted` 만 표기, 나머지 생략). 삭제는 하드삭제 대신 `vg_soft_delete()` 로
 `is_deleted=1` 표시(대상: tb_users/tb_feed_connectors/tb_advisories/tb_hosts/tb_scans —
@@ -325,49 +386,70 @@ tb_findings 등 재계산 캐시성 테이블은 소프트삭제 대상에서 �
 
 ## 6. 웹 화면 구성 (사이트맵 · 인증)
 
+좌측 사이드바가 대분류(대시보드/취약점/자산/피드/시스템)로 묶고, **역할×메뉴 권한**에서 허용된
+링크만 렌더한다(링크가 하나도 안 남은 섹션은 라벨째 숨김).
+
 ```mermaid
 flowchart TD
     LOGIN["/login.php<br/>세션 로그인 · CSRF"]
     LOGIN -->|인증 성공| DASH
 
-    subgraph Auth["로그인 필요"]
-        DASH["/ 대시보드<br/>호스트별 최신스캔 · 심각도 KPI"]
-        HOST["/host.php<br/>호스트 상세 · 노출·프로세스·취약점"]
-        FIND["/findings.php<br/>취약점 우선순위 · 검색/필터 · 페이지네이션"]
-        CVES["/cves.php<br/>CVE 목록 · 검색 · 심각도/KEV/연도 필터 · CVSS/EPSS 정렬"]
+    DASH["/ 대시보드<br/>호스트별 최신스캔 · 심각도 KPI"]
+    HOST["/host.php<br/>호스트 상세 · 노출·프로세스·취약점<br/>+ CCE 점검 · 백포트 억제 내역"]
+
+    subgraph Vuln["취약점 (perm: findings / advisories)"]
+        FIND["/findings.php<br/>취약점 우선순위 · 검색/필터"]
+        CHG["/changes.php<br/>변화 추적 · 신규/해결/등급변경"]
+        CVES["/cves.php<br/>CVE 목록 · 탭(전체/KEV/EPSS 상위)"]
         CVE["/cve.php<br/>CVE 상세 · 영향패키지 · 발견 위치"]
-        ADV["/advisories.php<br/>국내 보안공지(KISA) 목록 · 검색 · 페이지네이션"]
-        ADVD["/advisory.php<br/>공지 상세 · 본문 · 관련 CVE · 원문 링크"]
+        PKG["/packages.php<br/>영향 패키지 × 배포판"]
+        ADV["/advisories.php · /advisory.php<br/>국내 보안공지(KISA) 목록·상세"]
     end
 
-    subgraph AdminOnly["admin 전용"]
-        CONN["/connectors.php<br/>피드 커넥터 · 미리보기"]
+    subgraph Asset["자산 (perm: assets)"]
+        ASSETS["/assets.php<br/>호스트 자산 관리 · 소프트삭제"]
+    end
+
+    subgraph Feed["피드 (perm: connectors)"]
+        CONN["/connectors.php<br/>피드 커넥터 · 스케줄 · 미리보기"]
+    end
+
+    subgraph Sys["시스템 (perm: users/permissions/apitokens/activity — 기본 admin 전용)"]
         USERS["/users.php<br/>계정 관리"]
-        ACT["/activity.php<br/>감사로그 · scope 필터 · 페이지네이션"]
+        PERM["/permissions.php<br/>역할×메뉴 권한 설정"]
+        TOK["/api-tokens.php<br/>Export API 토큰 발급·폐기"]
+        ACT["/activity.php<br/>감사로그 · scope 필터"]
     end
 
     DASH --> HOST --> FIND --> CVE
-    DASH -.-> ADV
-    DASH -.-> CONN & USERS & ACT
+    DASH -.-> Vuln & Asset & Feed & Sys
 
-    subgraph API["인증: 공유 토큰(에이전트)"]
-        ING["/ingest.php<br/>수집 수신"]
-        REM["/rematch.php<br/>재매칭"]
+    subgraph API["인증: 토큰(사람 로그인과 분리)"]
+        ING["/ingest.php<br/>수집 수신 · X-Agent-Token"]
+        REM["/rematch.php<br/>재매칭 · X-Agent-Token"]
+        EXP["/export.php<br/>결과 내보내기 JSON/XML · X-API-Token"]
     end
 
     style LOGIN fill:#1f6feb,color:#fff
-    style CONN fill:#db6d28,color:#fff
-    style USERS fill:#db6d28,color:#fff
-    style ACT fill:#db6d28,color:#fff
+    style PERM fill:#db6d28,color:#fff
+    style TOK fill:#db6d28,color:#fff
     style ING fill:#238636,color:#fff
+    style EXP fill:#238636,color:#fff
 ```
 
-- **세션 인증**(users 테이블) : 대시보드·호스트상세·취약점·CVE상세·국내공지. admin 은 피드·사용자·감사로그.
-- **토큰 인증**(공유 시크릿) : 에이전트가 쓰는 `ingest.php`/`rematch.php` — 사람 로그인과 분리.
-- 역할: `admin`(관리) / `viewer`(조회). 최초 admin 은 `secrets/admin_password` 로 부트스트랩.
-  admin 전용 페이지는 `vg_require_admin()` 으로 통일 가드.
+- **세션 인증**(`tb_users`) : 웹 화면 전부. 역할은 **`admin` / `operator` / `user`** 3단계.
+- **설정형 RBAC**: `admin` 은 코드에서 항상 전체 허용(잠금 방지)이라 권한 행을 두지 않는다.
+  `operator`·`user` 는 **역할 × 메뉴코드**(dashboard/findings/advisories/assets/connectors/
+  users/permissions/apitokens/activity) 허용 여부를 `tb_role_permissions` 에 두고 `/permissions.php`
+  에서 켜고 끈다. 각 페이지 가드는 `vg_require_menu('<메뉴코드>')` 하나로 통일.
+  기본 시드 — operator: 대시보드/취약점/공지/자산/피드 허용, 시스템 불가. user: 대시보드/취약점/공지만.
+- **토큰 인증**(사람 로그인과 분리):
+  - 에이전트 → `ingest.php`/`rematch.php` : 공유 시크릿 `X-Agent-Token`(`secrets/ingest_token.txt`).
+  - 외부 시스템 → `export.php` : 웹에서 발급하는 **읽기 전용** API 토큰(`X-API-Token`, 또는
+    `Authorization: Bearer`). DB 엔 SHA-256 해시만 저장(원문은 발급 시 1회 표시), 폐기는 소프트삭제.
+- 최초 admin 은 `secrets/admin_password` 로 부트스트랩.
 - **감사 로깅**: 로그인·커넥터 저장/토글/삭제·사용자 추가/삭제·ingest 수신이 `tb_activity_log` 에
   자동 기록된다(`server/src/audit.php` 의 `vg_log_activity()`, 각 페이지가 require 해서 호출).
-  `/activity.php`(admin 전용)에서 scope 필터 + 페이지네이션으로 조회한다.
+  `/activity.php` 에서 scope 필터 + 페이지네이션으로 조회한다.
 - **소프트 삭제**: `vg_soft_delete()` 가 하드 DELETE 대신 `is_deleted/deleted_at` 를 세운다.
   화이트리스트 대상: `tb_users`/`tb_feed_connectors`/`tb_advisories`/`tb_hosts`/`tb_scans`.

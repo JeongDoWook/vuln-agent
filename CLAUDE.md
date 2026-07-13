@@ -7,7 +7,7 @@
 
 ### YAGNI (You Aren't Gonna Need It)
 - **지금 필요한 것만** 만든다. "나중에 쓸지도 몰라서" 만들지 않는다.
-- 커넥터/피드는 4종(kev/osv/nvd/kisa)이 실제 대상. 가상의 소스를 위한 추상화는 실제 요구가 생길 때 추가.
+- 커넥터/피드는 5종(kev/osv/nvd/kisa/epss)이 실제 대상. 가상의 소스를 위한 추상화는 실제 요구가 생길 때 추가.
 - 설정 옵션·파라미터·확장점은 **실제 사용처가 있을 때만** 추가한다.
 
 ### KISS (Keep It Simple, Stupid)
@@ -30,7 +30,9 @@
 ## 프로젝트 규약
 - 비밀값은 코드/커밋 금지 → Docker Secrets(`secrets/*.txt`, gitignore).
 - 커밋 메시지·주석·UI 는 한글. 각 단계는 "돌아가는 상태"로 커밋.
-- 스키마 변경 후 dev 볼륨 유지하려면 `docker compose -p vulnagent-dev exec -T db sh -c 'mysql...' < db/0X.sql` 로 수동 적용(initdb 는 빈 볼륨만 실행).
+- 스키마 변경은 `db/migrations/NNNN_이름.sql` 에 파일 하나만 추가한다 — `deploy/migrate.sh` 가
+  미적용분만 자동 적용(`compose_runner.sh up`·`update.sh` 가 호출). 수동 apply 금지, 멱등하게 작성.
+  최상위 `db/*.sql` 은 빈 볼륨 initdb 전용이라 기존 볼륨엔 안 들어간다.
   워크트리에선 프로젝트명이 `vulnagent-dev-<워크트리이름>` 이다.
 - Windows git-bash 에서 컨테이너에 절대경로 전달 시 `MSYS_NO_PATHCONV=1` 접두.
 - 변경 후 `./tests/smoke.sh` 로 회귀 확인. PHP 는 `php -l`, 쉘은 `bash -n`.

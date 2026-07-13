@@ -82,6 +82,23 @@ sudo ./install-agent.sh --uninstall [--prefix 설치경로]
 
 호스트 자신의 인벤토리만 수집한다(컨테이너 등 다른 mount namespace 는 건너뛴다).
 OS/커널/CPE, 설치 패키지(dpkg/rpm), 실행 중 프로세스와 리스닝 포트(외부노출 판정),
-언어 패키지 등. 이 원자료가 중앙에서 CVE 미러(NVD·OSV·KISA)와 매칭되고, 런타임
-노출·EPSS·KEV 가중이 얹혀 최종 우선순위가 된다. 피드 소스별 역할은
+보안설정(sshd·계정·SELinux/AppArmor·방화벽 → 서버가 CCE 점검), 언어 패키지 등.
+이 원자료가 중앙에서 CVE 미러(NVD·OSV·KISA)와 매칭되고, 런타임 노출·EPSS·KEV 가중이
+얹혀 최종 우선순위가 된다. 피드 소스별 역할은
 [`docs/피드소스-역할.md`](../docs/피드소스-역할.md) 참고.
+
+**패키지 changelog(백포트 근거)** 도 기본으로 수집한다 — `rpm -q --changelog` / dpkg changelog
+에서 **CVE 줄만** 뽑는다. 중앙 매처가 "버전은 낮아 보여도 이 빌드엔 이미 그 CVE 수정이
+들어갔다"를 증명해 오탐을 억제하는 데 쓴다.
+
+## 실행 옵션
+
+| 옵션 | 뜻 |
+|---|---|
+| `--send URL` / `--token TOK` | 수집 후 중앙(`ingest.php`)으로 POST (파일 저장도 유지) |
+| `-o, --output PATH` | 결과 파일 경로 |
+| `--limit` | cgroup 으로 CPU/메모리 상한(기본 CPU 25% · 메모리 300M). sudo 필요 |
+| `--no-changelog` | changelog 수집 생략 — **가장 무거운 단계**. 대신 백포트 억제가 약해진다 |
+
+부하가 걱정되면 `--limit` 을 쓴다(끄는 것보다 낫다). 에이전트 자체가 이미 `nice 19` ·
+`ionice idle` · 명령별 timeout 으로 동작해 피크 메모리가 수 MB 수준이다.

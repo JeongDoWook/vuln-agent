@@ -7,17 +7,19 @@
 ## 구성
 
 ```
-agent/    수집 에이전트 (Bash) — 패키지·런타임 노출 정보 수집 + install-agent.sh(systemd-timer/cron 자동 배포). 설치·운영은 agent/README.md
-server/   PHP 중앙 서버 — 수신 API(ingest) + 웹(대시보드·취약점·CVE목록/상세·국내공지목록/상세·감사로그) + 매처
-deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·config
-db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼 (컨테이너 최초 기동 시 자동 적용)
-docs/     아키텍처 · 기획안 · 설명글 · 프로세스 · 피드소스-역할(커넥터 5종)
+agent/    수집 에이전트 (Bash) — 패키지·런타임 노출·백포트 changelog 수집 + install-agent.sh(systemd-timer/cron 자동 배포). 설치·운영은 agent/README.md
+server/   PHP 중앙 서버 — 수신 API(ingest)·Export API + 웹(대시보드·취약점·변화추적·CVE·자산·국내공지·시스템) + 매처
+deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·migrate.sh(스키마 자동 적용)·wt.sh
+db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼. 최상위 *.sql 은 빈 볼륨 초기화용, 증분 변경은 migrations/
+docs/     아키텍처 · 기획안 · 설명글 · 프로세스 · 피드소스-역할(커넥터 5종) · export-api
+shadow-ai/  (사이드 PoC) 섀도우 AI DLP 크롬 확장 — AI 챗봇 입력창의 민감정보 탐지. 본 파이프라인과 독립
 ```
 
 **꼭 볼 문서**
 - [`agent/README.md`](agent/README.md) — 에이전트 설치·운영. 설치 한 번이면 systemd 타이머가 매시간 자동 재실행(계속 켜둘 필요 없음), 전송 URL 주의점.
 - [`docs/피드소스-역할.md`](docs/피드소스-역할.md) — NVD/OSV·EPSS·KEV·KISA 각 커넥터가 무슨 질문에 답하는지.
 - [`docs/architecture.md`](docs/architecture.md) — 시스템 구조·매처 규칙·배포 방식.
+- [`docs/export-api.md`](docs/export-api.md) — 스캔 결과 내보내기 API(JSON/XML)·API 토큰 발급.
 
 데이터 흐름: **에이전트(JSON) ─POST(HTTPS)→ `ingest.php` → MySQL(`tb_*`) → 웹 현황**
 
@@ -47,7 +49,9 @@ cd deploy
 이후 업데이트는 `deploy/update.sh` 한 줄이면 된다. **바뀐 파일을 보고 스스로 갈라진다** —
 `server/` 아래 PHP 만 바뀌었으면 `git pull` 로 끝(무중단, 소스가 읽기전용으로 마운트돼 있고
 opcache 가 2초마다 파일 갱신을 확인한다). `Dockerfile`·`compose*.yml`·`caddy/`·`config/` 가
-바뀔 때만 재빌드하고, `db/*.sql` 변경은 자동 적용하지 않고 경고만 한다(마이그레이션은 수동).
+바뀔 때만 재빌드한다. **스키마 변경은 `deploy/migrate.sh` 가 자동 적용한다** — `db/migrations/`
+의 `NNNN_*.sql` 중 아직 안 든 것만 번호순으로 돌리고 `tb_schema_migrations` 에 기록하므로,
+스키마를 바꾸려면 파일 하나만 추가하면 된다(`up` 과 `update.sh` 가 자동 호출).
 
 ```bash
 bash deploy/update.sh
@@ -138,15 +142,26 @@ sudo ./agent/install-agent.sh \
 - [x] 에이전트 자동 배포 — install-agent.sh (systemd-timer 우선/cron 폴백, 매시간)
 - [x] DB 전면 개편 — 전 테이블 `tb_` 접두사 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
       + 소프트삭제 + 활동 감사로그(`tb_activity_log` + `activity.php` 조회 화면)
+- [x] 백포트 오탐 억제 — 패키지 changelog 의 CVE 수정 기록으로 "버전은 낮아도 이미 패치됨"을 증명(아래 참고)
+- [x] 보안설정 점검(CCE) — 이미 수집한 sshd·계정·MAC·방화벽 설정을 판정해 호스트 상세에 표시
+- [x] 변화 추적 — 최근 2개 스캔 대비 신규/해결/등급변경 (`changes.php`)
+- [x] 자산 관리 · 설정형 RBAC — 호스트 자산 화면 + 역할(admin/operator/user)×메뉴 권한을 UI 에서 설정
+- [x] Export API — 스캔 결과 JSON/XML 내보내기 + 웹에서 발급하는 API 토큰
+- [x] 스키마 마이그레이션 자동화 — `deploy/migrate.sh` + `db/migrations/`
+- [ ] 대시보드 "다음 수집 예정", 알림
 
-- 취약점 우선순위(+조치안): `/findings.php`
-- CVE 목록(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬): `/cves.php`
-- CVE 상세(영향패키지·발견 위치): `/cve.php?cve=CVE-XXXX-XXXXX`
-- 호스트 상세(노출·취약점 한눈에): 대시보드에서 서버명 클릭 → `host.php`
-- 피드 커넥터(admin): `/connectors.php`
-- 국내 보안공지 목록: `/advisories.php` (제목 클릭 → 상세)
-- 국내 보안공지 상세(본문·관련 CVE·원문 링크): `/advisory.php?id=N`
-- 감사로그(admin): `/activity.php`
+**웹 화면** (좌측 사이드바 · 역할별 권한으로 노출)
+
+| 대분류 | 화면 |
+|---|---|
+| 대시보드 | `/` 호스트별 최신 스캔·심각도 KPI → 서버명 클릭 시 호스트 상세 `host.php`(노출·프로세스·취약점·CCE·억제 내역) |
+| 취약점 | `/findings.php` 우선순위(+조치안) · `/changes.php` 변화 추적 · `/cves.php` CVE 목록 · `/packages.php` 영향 패키지 · `/advisories.php`·`/advisory.php` 국내 보안공지 |
+| 자산 | `/assets.php` 호스트 자산 관리 |
+| 피드 | `/connectors.php` 피드 커넥터(설정·스케줄·미리보기·지금 실행) |
+| 시스템 | `/users.php` 사용자 · `/permissions.php` 권한 설정 · `/api-tokens.php` API 토큰 · `/activity.php` 감사 로그 |
+
+API: `POST /ingest.php`(에이전트 수집 수신) · `POST /rematch.php`(재매칭) · `GET /export.php`
+(결과 내보내기 — 상세: [`docs/export-api.md`](docs/export-api.md)).
 
 각 취약점에는 **조치안**("어느 버전 이상으로 업데이트")이 함께 표시된다(OSV 의 fixed 버전).
 
@@ -171,7 +186,31 @@ sudo ./agent/install-agent.sh \
 | `설치만` | 설치만, 아무도 안 씀 | 하 |
 
 "설치=취약"으로 전부 올리지 않고 **실제 노출·실행·사용 여부로 우선순위를 가른다.**
-백포트 오탐은 OSV 버전필터(배포판 전체버전으로 대조)가 이미 걸러낸다.
+
+### 백포트 오탐 억제 (버전은 낮아도 이미 패치됨)
+
+배포판은 버전 번호를 그대로 두고 보안 패치만 이식(백포트)한다. 버전만 보는 스캐너는 이걸
+"취약"으로 잘못 잡는다. 1차로 OSV 버전필터(배포판 전체버전으로 대조)가 걸러내고, 그걸
+통과한 건은 **패키지 changelog** 로 한 번 더 검증한다.
+
+- 에이전트가 `rpm -q --changelog` / dpkg changelog 에서 **CVE 줄만** 뽑아 함께 보낸다
+  (기본 수집. 가장 무거운 단계라 `--no-changelog` 로 끌 수 있다).
+- 매처가 "이 빌드의 changelog 에 그 CVE 수정 기록이 있으면" 취약점으로 올리지 않고
+  `tb_suppressed_findings` 로 **분리**한다 → 위험 집계·화면은 그대로 두고 오탐만 사라진다.
+- 억제한 건은 숨기지 않고 **호스트 상세에 근거와 함께** 보여준다(설명가능성).
+
+### 보안설정 점검 (CCE)
+
+"취약한 버전"(CVE)이 아니라 **"잘못된 설정"** 을 본다. 새로 수집하지 않고 에이전트가 이미
+보내온 `security`/`users` 섹션을 서버(`src/cce.php`)가 판정해 `tb_cce_findings` 에 저장하고
+호스트 상세에 PASS/FAIL/NA 로 표시한다. 항목: SSH root 로그인 차단 · SSH 패스워드 인증 제한
+· root 외 UID 0 계정 금지 · 강제접근제어(SELinux/AppArmor) 활성 · 호스트 방화벽 정책 존재.
+
+### 권한 (설정형 RBAC)
+
+역할은 **admin / operator / user** 3단계. `admin` 은 코드에서 항상 전체 허용(잠금 방지)이고,
+`operator`·`user` 는 **역할 × 메뉴** 허용 여부를 `/permissions.php` 에서 켜고 끈다
+(`tb_role_permissions`). 각 페이지는 `vg_require_menu('<메뉴코드>')` 하나로 가드한다.
 
 ### 피드 커넥터
 
