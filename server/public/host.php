@@ -16,6 +16,11 @@ vg_require_menu('findings');
 
 $err = null; $host = null; $scan = null; $scanAge = null;
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
+
+// 재시작이 필요한 finding 중 **커널**인가 — 커널은 프로세스 재시작이 아니라 재부팅이 답이다.
+function vg_needs_reboot(array $f): bool {
+    return preg_match('/^(kernel|linux-image-|linux-headers-)/', (string) ($f['package_name'] ?? '')) === 1;
+}
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
 $tab = 'vuln'; $page = 1; $perPage = vg_perpage(); $total = 0;
@@ -252,12 +257,15 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
                   'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
                   2 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>',
                   3 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
+                  // 커널은 재부팅해야 새 코드가 올라온다 — 프로세스 재시작으로는 안 고쳐진다.
                   4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>'
-                                 . (!empty($f['needs_restart']) ? ' ' . vg_badge('재시작 필요', 'high') : ''),
+                                 . (!empty($f['needs_restart'])
+                                    ? ' ' . vg_badge(vg_needs_reboot($f) ? '재부팅 필요' : '재시작 필요', 'high')
+                                    : ''),
                   5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
-                  // 재시작 필요면 조치는 "업그레이드"가 아니라 "프로세스 재시작"이다(이미 패치돼 있다).
+                  // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
                   6 => fn($f) => !empty($f['needs_restart'])
-                                 ? '<span class="pill">프로세스 재시작</span>'
+                                 ? '<span class="pill">' . (vg_needs_reboot($f) ? '재부팅' : '프로세스 재시작') . '</span>'
                                  : (!empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>'),
               ],
           ]

@@ -251,6 +251,43 @@ foreach (preg_split('/\r?\n/', (string) ($ctr['packages'] ?? '')) as $line) {
 $ctrCount    = count($ctrRows);
 $ctrPkgCount = count($ctrPkgRows);
 
+// ── 커널: 실행 중인 커널 vs 설치된 최신 커널 ─────────────────────
+//   커널을 패치해도 **재부팅 전까지는 옛 커널이 돈다.** 설치 버전만 보면 "패치됨"이라
+//   커널 CVE 가 억제되는데 실제로는 취약하다(미탐). 에이전트는 예전부터 이 둘을 보냈는데
+//   서버가 버리고 있었다.
+//   형식(실측):
+//     rpm  : uname -r "5.14.0-687.24.1.el9_8.x86_64" / rpm -q kernel-core
+//            "kernel-core-5.14.0-687.24.1.el9_8.x86_64"
+//     dpkg : uname -r "6.1.0-18-amd64" / "linux-image-6.1.0-18-amd64\t6.1.76-1"
+$runningKernel = trim((string) ($upd['running_kernel'] ?? ''));
+$kernelLatest  = '';
+$kernelReboot  = 0;
+$kernelCands   = [];
+foreach (preg_split('/\r?\n/', (string) ($upd['installed_kernels'] ?? '')) as $line) {
+    $line = trim($line);
+    if ($line === '' || stripos($line, 'not installed') !== false) { continue; }
+    if ($manager === 'rpm') {
+        // "kernel-core-5.14.0-687.24.1.el9_8.x86_64" → 버전 부분만
+        if (preg_match('/^kernel(?:-core)?-(\d.+)$/', $line, $m)) { $kernelCands[] = $m[1]; }
+    } else {
+        // "linux-image-6.1.0-18-amd64\t6.1.76-1" → ABI 이름(= uname -r 과 같은 형식)
+        $f = preg_split('/\s+/', $line);
+        if (isset($f[0]) && preg_match('/^linux-image-(\d.+)$/', $f[0], $m)) { $kernelCands[] = $m[1]; }
+    }
+}
+if ($kernelCands) {
+    // 문자열 비교로는 틀린다(5.14.0-687 vs 5.14.0-70). 배포판 규칙으로 최신을 고른다.
+    $mgrForKernel = $manager === 'rpm' ? 'rpm' : 'dpkg';
+    $kernelLatest = $kernelCands[0];
+    foreach ($kernelCands as $k) {
+        if (vg_ver_cmp($k, $kernelLatest, $mgrForKernel) > 0) { $kernelLatest = $k; }
+    }
+    // 실행 커널이 설치된 최신 커널보다 낮으면 = 패치했지만 아직 재부팅 안 함
+    if ($runningKernel !== '' && vg_ver_cmp($runningKernel, $kernelLatest, $mgrForKernel) < 0) {
+        $kernelReboot = 1;
+    }
+}
+
 // ── 내용 해시 — "바뀔 때만 스냅샷" 판정 ────────────────────────
 //   수집 내용이 직전과 같으면 새 스캔을 만들지 않는다(대부분의 수집이 여기 해당한다).
 //   **PID 는 넣지 않는다** — 재부팅·프로세스 재시작마다 바뀌어서, 넣으면 매번 "변경됨"이 되어
@@ -265,6 +302,8 @@ foreach ($staleRows as $r) { $hashParts[] = "s|{$r[2]}|{$r[3]}"; }
 // 컨테이너 내부 패키지도 인벤토리다 — 여기가 바뀌면 새 스냅샷을 찍어야 한다.
 foreach ($ctrPkgRows as $r) { $hashParts[] = "c|{$r[0]}|{$r[1]}|{$r[2]}|{$r[3]}"; }
 foreach ($ctrRows as $r)    { $hashParts[] = "C|{$r[0]}|{$r[2]}|{$r[3]}|{$r[4]}"; }   // cid|image|os
+// 커널 상태(실행/설치/재부팅필요)가 바뀌면 새 스냅샷을 찍어야 한다 — 재부팅이 곧 변화다.
+$hashParts[] = 'k|' . $runningKernel . '|' . $kernelLatest . '|' . $kernelReboot;
 $hashParts[] = 'o|' . ($vm['distro_id'] ?? '') . '|' . ($vm['distro_version'] ?? '')
              . '|' . ($sys['kernel_release'] ?? ($sys['kernel'] ?? ''));
 sort($hashParts);
@@ -318,10 +357,11 @@ try {
     $stmt = $pdo->prepare(
         'INSERT INTO tb_scans
             (host_id, collected_at, agent_version, elapsed_seconds,
-             os_id, os_version, kernel, cpe, package_family, content_hash,
+             os_id, os_version, kernel, running_kernel, kernel_latest, kernel_reboot_needed,
+             cpe, package_family, content_hash,
              package_count, exposure_count, raw_json)
          VALUES
-            (:h, :ca, :av, :el, :osid, :osver, :kern, :cpe, :fam, :hash, :pc, :ec, :raw)'
+            (:h, :ca, :av, :el, :osid, :osver, :kern, :rk, :kl, :krn, :cpe, :fam, :hash, :pc, :ec, :raw)'
     );
     $stmt->execute([
         ':h'     => $hostId,
@@ -331,6 +371,9 @@ try {
         ':osid'  => ($vm['distro_id'] ?? '') ?: null,
         ':osver' => ($vm['distro_version'] ?? '') ?: null,
         ':kern'  => ($sys['kernel_release'] ?? ($sys['kernel'] ?? '')) ?: null,
+        ':rk'    => $runningKernel ?: null,
+        ':kl'    => $kernelLatest ?: null,
+        ':krn'   => $kernelReboot,
         ':cpe'   => ($vm['cpe_name'] ?? '') ?: null,
         ':fam'   => ($vm['package_family'] ?? '') ?: null,
         ':hash'  => $contentHash,

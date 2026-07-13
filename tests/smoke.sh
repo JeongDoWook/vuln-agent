@@ -45,7 +45,7 @@ assert_eq "$code" "401" "잘못된 토큰 → 401"
 
 resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"ok":true' "정상 토큰 → ok:true"
-assert_contains "$resp" '"packages":6' "패키지 6건 저장"
+assert_contains "$resp" '"packages":7' "패키지 7건 저장"
 assert_contains "$resp" '"exposures":5' "노출 5건 저장"
 # 언어 패키지(pip 2 + npm 2) — 예전엔 수집만 하고 서버가 버렸다.
 assert_contains "$resp" '"langpkgs":4' "언어 패키지 4건 저장(pip/npm)"
@@ -145,6 +145,9 @@ body=$(curl -s -b "$JAR" "$BASE/host.php?id=1")
 assert_contains "$body" "최고 위험도" "호스트 상세(자산 식별 히어로 + 섹션 탭)"
 # curl 은 조치 버전 이상이지만 nginx 가 옛 libcurl 을 물고 있다 → 억제 대신 "재시작 필요"로 남는다(기본=취약점 탭).
 assert_contains "$body" "재시작 필요" "재시작 필요 근거 노출(패치됐지만 옛 라이브러리 사용 중)"
+# 커널은 패치가 설치돼도 재부팅 전까지 옛 커널이 돈다 → 억제하지 않고 "재부팅"을 조치로 제시한다.
+assert_contains "$body" "재부팅 필요" "커널 재부팅 필요 뱃지(설치 -503 / 실행 -427)"
+assert_contains "$body" "재부팅</span>" "조치가 '재부팅' (프로세스 재시작으로는 안 고쳐진다)"
 body=$(curl -s -b "$JAR" "$BASE/host.php?id=1&tab=runtime")
 assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(노출·프로세스)"
 # redis 는 0.0.0.0:6379 지만 방화벽이 막는다 → EXTERNAL 이 아니라 FILTERED 로 분류돼야 한다.
