@@ -60,6 +60,7 @@
   <div style="margin-top:.7rem">
     <span class="tag">Bash 에이전트</span><span class="tag">PHP + MySQL</span>
     <span class="tag">Docker</span><span class="tag">HTTPS(Caddy)</span><span class="tag">OSV · KEV · EPSS · NVD · KISA</span>
+    <span class="tag">백포트 억제(2단)</span><span class="tag">CCE 설정점검</span><span class="tag">Export API</span>
   </div>
 </header>
 
@@ -78,7 +79,7 @@
   <div class="arrow">→</div>
   <div class="step"><span class="k">③ 저장</span><h4>중앙 DB</h4><p>hosts·scans·packages·exposures·processes 로 <b>구분 저장</b></p></div>
   <div class="arrow">→</div>
-  <div class="step p"><span class="k">④ 매핑</span><h4>CVE 조인</h4><p>OSV 로 전 패키지 취약점 발굴(버전필터=백포트 제거) + KEV·EPSS·NVD 보강</p></div>
+  <div class="step p"><span class="k">④ 매핑</span><h4>CVE 조인</h4><p>OSV 로 전 패키지 취약점 발굴 + KEV·EPSS·NVD 보강. 백포트는 버전필터+changelog 2단 검증으로 억제(§4)</p></div>
   <div class="arrow">→</div>
   <div class="step o"><span class="k">⑤ 우선순위</span><h4>매처</h4><p>런타임 상태 5단계 + KEV/EPSS 로 심각도 판정·정렬</p></div>
   <div class="arrow">→</div>
@@ -130,11 +131,51 @@
   nginx 로 <b>외부노출</b>된 서버에선 <span class="badge b-crit">CRITICAL</span>,
   포트 없는 서버에선 <span class="badge b-low">LOW/MEDIUM</span> 으로 갈린다.
   <b>KEV</b>(이미 악용됨) · <b>EPSS</b>(악용확률)로 실제 악용성까지 반영.
-  백포트 오탐은 <b>OSV 버전필터</b>가 제거(설치 버전에 실제 영향 주는 것만).
+  백포트 오탐은 <b>버전필터 + changelog 검증</b> 2단으로 억제한다(자세히는 §4).
 </div>
 
-<!-- 4. CVE 피드 커넥터 -->
-<h2><span class="n">4</span>CVE 피드 커넥터 (5종)</h2>
+<!-- 4. 백포트 오탐 억제 -->
+<h2><span class="n">4</span>백포트 오탐 억제 (2단) — 매처의 첫 관문</h2>
+<p class="lead">배포판은 버전 번호를 그대로 두고 보안 패치만 이식(백포트)한다. 버전만 보는 스캐너는
+이를 “취약”으로 잘못 잡는다. 매처는 finding 을 만들기 전에 두 단계로 이를 걸러낸다.</p>
+<div class="pipe">
+  <div class="step"><span class="k">1단</span><h4>OSV 버전필터</h4><p>배포판 전체버전(NEVRA)으로 대조해 설치 버전에 실제 영향 없는 건을 1차 제거</p></div>
+  <div class="arrow">→</div>
+  <div class="step p"><span class="k">2단</span><h4>changelog 검증</h4><p>통과한 건도 에이전트가 보낸 패키지 changelog 에 <b>그 CVE 수정 기록</b>이 있으면 취약점으로 올리지 않음</p></div>
+  <div class="arrow">→</div>
+  <div class="step o"><span class="k">분리</span><h4>tb_suppressed_findings</h4><p>위험 집계·화면에서는 빠지되, 숨기지 않고 <b>근거와 함께 호스트 상세에 표시</b>(설명가능성)</p></div>
+</div>
+<div class="note">
+  에이전트는 <code class="i">rpm -q --changelog</code> / dpkg changelog 에서 <b>CVE 줄만</b> 뽑아 함께 보낸다 —
+  스케줄 수집에서 <b>기본 수집</b>(가장 무거운 단계라 <code class="i">--no-changelog</code> 로 끌 수 있음).
+  기존 위험 집계·화면 로직은 그대로 두고 오탐만 갈라내는 구조라 부작용이 없다.
+</div>
+
+<!-- 5. 보안설정 점검(CCE) -->
+<h2><span class="n">5</span>보안설정 점검 (CCE)</h2>
+<p class="lead">CVE(취약한 버전)가 아니라 <b>잘못된 설정</b>을 본다. 새로 수집하지 않고 에이전트가 이미 보낸
+<code class="i">security</code>/<code class="i">users</code> 섹션을 <code class="i">src/cce.php</code> 가 판정해
+<code class="i">tb_cce_findings</code> 에 저장하고 호스트 상세에 PASS/FAIL/NA 로 표시한다.</p>
+<div class="card">
+<table>
+  <thead><tr><th>점검 항목</th><th>판정 기준</th></tr></thead>
+  <tbody>
+    <tr><td>SSH root 로그인 차단</td><td>sshd_config <code class="i">PermitRootLogin</code></td></tr>
+    <tr><td>SSH 패스워드 인증 제한</td><td>sshd_config <code class="i">PasswordAuthentication</code></td></tr>
+    <tr><td>root 외 UID 0 계정 금지</td><td><code class="i">/etc/passwd</code> UID 0 계정 수</td></tr>
+    <tr><td>강제접근제어(SELinux/AppArmor) 활성</td><td>MAC 활성 상태</td></tr>
+    <tr><td>호스트 방화벽 정책 존재</td><td>firewalld/iptables/nftables 규칙</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="lead" style="font-size:.85rem;">
+  5개 항목 각각 <span class="badge" style="background:var(--green)">PASS</span>
+  / <span class="badge" style="background:var(--crit)">FAIL</span>
+  / <span class="badge" style="background:var(--low)">N/A</span> 로 판정한다. 신규 수집 없이 기존 수집물을 재활용한다.
+</p>
+
+<!-- 6. CVE 피드 커넥터 -->
+<h2><span class="n">6</span>CVE 피드 커넥터 (5종)</h2>
 <p class="lead">외부 취약점 소스를 UI 에서 설정·미리보기·스케줄(cron/매일/주기)하면 스케줄러가 당겨와 매처가 재계산한다.
 매칭 자체는 검증된 소스에서 상속하고, 우리 기여는 그 위 레이어(상태·KEV/EPSS·설명가능성)에 둔다.</p>
 <div class="card">
@@ -150,8 +191,14 @@
 </table>
 </div>
 
-<!-- 5. 데이터 모델 -->
-<h2><span class="n">5</span>데이터 모델</h2>
+<!-- 7. 변화 추적 -->
+<h2><span class="n">7</span>변화 추적</h2>
+<p class="lead"><code class="i">/changes.php</code> 가 최근 2개 스캔의 <code class="i">tb_findings</code> 를
+<code class="i">(cve_id, package_name)</code> 기준으로 대조해 <b>신규 발생 · 해결됨 · 등급 상승/하락</b>을 보여준다.
+새 테이블 없이 기존 findings 비교만으로 동작한다.</p>
+
+<!-- 8. 데이터 모델 -->
+<h2><span class="n">8</span>데이터 모델</h2>
 <div class="grid2">
   <div class="card">
     <b>수집 데이터</b>
@@ -176,14 +223,24 @@
       <li><code class="i">tb_activity_log</code> — 감사로그(로그인·CRUD·ingest 기록)</li>
     </ul>
   </div>
+  <div class="card">
+    <b>오탐억제 · 설정점검 · 권한</b>
+    <ul class="tight">
+      <li><code class="i">tb_pkg_changelog_cves</code> — changelog 의 CVE 수정 기록(백포트 근거)</li>
+      <li><code class="i">tb_suppressed_findings</code> — 백포트로 억제된 finding(근거 포함)</li>
+      <li><code class="i">tb_cce_findings</code> — 보안설정 점검 결과(PASS/FAIL/NA)</li>
+      <li><code class="i">tb_role_permissions</code> — 역할×메뉴 허용 여부(설정형 RBAC)</li>
+      <li><code class="i">tb_api_tokens</code> — Export API 토큰(SHA-256 해시만 저장)</li>
+    </ul>
+  </div>
 </div>
 <p class="lead" style="font-size:.85rem;margin-top:.6rem;">
   전 테이블 <code class="i">tb_</code> 접두사 통일 + 감사 4컬럼(<code class="i">created_at/updated_at/is_deleted/deleted_at</code>).
   삭제는 하드삭제 대신 소프트삭제(<code class="i">is_deleted=1</code>, findings 등 재계산 캐시 테이블은 예외).
 </p>
 
-<!-- 6. 배포 -->
-<h2><span class="n">6</span>배포 (agent-side push, HTTPS)</h2>
+<!-- 9. 배포 -->
+<h2><span class="n">9</span>배포 (agent-side push, HTTPS)</h2>
 <p class="lead">중앙이 각 호스트로 들어갈 필요 없이, 각 서버가 로컬 스케줄로 수집해 <b>아웃바운드 HTTPS</b> 하나로 전송. (표준 에이전트 모델)</p>
 <div class="card">
   <b>① 중앙 서버</b> (내부 서버, Docker + Caddy)
@@ -204,21 +261,42 @@
   <div style="color:var(--muted);font-size:.85rem;margin-top:.5rem">네트워크 요건: 대상 서버 → 중앙 8080 아웃바운드만. 토큰은 <code class="i">&lt;prefix&gt;/etc/agent.env</code>(600).</div>
 </div>
 
-<!-- 7. 웹 화면 -->
-<h2><span class="n">7</span>웹 화면</h2>
+<!-- 10. Export API -->
+<h2><span class="n">10</span>Export API</h2>
+<p class="lead">외부 시스템(예: AI 보고서 생성기)이 스캔 결과를 가져갈 수 있도록 읽기 전용 API 를 둔다.
+본체는 AI 에 묶이지 않고 결과만 넘긴다.</p>
+<div class="card">
+  <code class="i">GET /export.php</code> — JSON/XML, 호스트·심각도·KEV·EPSS 필터 지원<br>
+  인증 헤더: <code class="i">X-API-Token</code> 또는 <code class="i">Authorization: Bearer</code>(Apache 가 헤더를 스트립해도 서버가 우회 처리)<br>
+  토큰은 <code class="i">/api-tokens.php</code> 에서 발급(웹 로그인 계정과 별도) — DB 엔 SHA-256 해시만 저장, 원문은 발급 시 1회만 표시.
+  <div style="color:var(--muted);font-size:.85rem;margin-top:.5rem">상세: <code class="i">docs/export-api.md</code></div>
+</div>
+
+<!-- 11. 권한 -->
+<h2><span class="n">11</span>권한 (설정형 RBAC)</h2>
+<p class="lead">역할은 <b>admin / operator / user</b> 3단계. <code class="i">admin</code> 은 코드에서 항상 전체 허용(잠금 방지)이고,
+<code class="i">operator</code>·<code class="i">user</code> 는 <b>역할 × 메뉴</b> 허용 여부를 <code class="i">/permissions.php</code> 에서 켜고 끈다
+(<code class="i">tb_role_permissions</code>). 각 페이지는 <code class="i">vg_require_menu('메뉴코드')</code> 하나로 가드한다.</p>
+
+<!-- 12. 웹 화면 -->
+<h2><span class="n">12</span>웹 화면</h2>
 <div class="card">
 <table>
   <thead><tr><th>화면</th><th>내용</th><th>접근</th></tr></thead>
   <tbody>
     <tr><td>로그인</td><td>세션 인증(users, bcrypt·CSRF)</td><td>-</td></tr>
     <tr><td>대시보드</td><td>호스트별 최신 스캔 + 심각도 KPI</td><td>로그인</td></tr>
-    <tr><td>호스트 상세</td><td>런타임 노출·실행 프로세스·우선순위 취약점(조치·상태)</td><td>로그인</td></tr>
+    <tr><td>호스트 상세</td><td>노출·실행 프로세스·우선순위 취약점(조치·상태) + CCE 점검 + 백포트 억제 내역</td><td>로그인</td></tr>
     <tr><td>취약점</td><td>등급·상태·CVE·EPSS·KEV·근거·조치, 검색/필터+페이지네이션</td><td>로그인</td></tr>
+    <tr><td>변화 추적</td><td>최근 2개 스캔 대조 — 신규/해결/등급변경</td><td>로그인</td></tr>
     <tr><td>CVE 상세</td><td>요약·영향 패키지·조치버전·이 CVE 가 발견된 호스트 목록</td><td>로그인</td></tr>
-    <tr><td>국내공지</td><td>KISA 보안공지 목록, 검색+페이지네이션</td><td>로그인</td></tr>
-    <tr><td>피드 커넥터</td><td>소스 설정·미리보기·스케줄·실행·이력</td><td>admin</td></tr>
-    <tr><td>사용자</td><td>계정 관리</td><td>admin</td></tr>
-    <tr><td>감사로그</td><td>행위 기록(로그인·CRUD·ingest), 범위 필터+페이지네이션</td><td>admin</td></tr>
+    <tr><td>국내공지</td><td>KISA 보안공지 목록/상세, 검색+페이지네이션</td><td>로그인</td></tr>
+    <tr><td>자산 관리</td><td>호스트 자산 관리(소프트삭제)</td><td>로그인(assets 권한)</td></tr>
+    <tr><td>피드 커넥터</td><td>소스 설정·미리보기·스케줄·실행·이력</td><td>admin(기본, RBAC 설정 가능)</td></tr>
+    <tr><td>사용자</td><td>계정 관리</td><td>admin(기본)</td></tr>
+    <tr><td>권한 설정</td><td>역할×메뉴 허용 여부 설정</td><td>admin(기본)</td></tr>
+    <tr><td>API 토큰</td><td>Export API 토큰 발급·폐기</td><td>admin(기본)</td></tr>
+    <tr><td>감사로그</td><td>행위 기록(로그인·CRUD·ingest), 범위 필터+페이지네이션</td><td>admin(기본)</td></tr>
   </tbody>
 </table>
 </div>
@@ -227,18 +305,23 @@
   자동 기록되고(<code class="i">vg_log_activity()</code>), <code class="i">activity.php</code>(admin 전용)에서 조회한다.
 </p>
 
-<!-- 8. 현황 -->
-<h2><span class="n">8</span>구현 현황</h2>
+<!-- 13. 현황 -->
+<h2><span class="n">13</span>구현 현황</h2>
 <div class="card">
   <ul class="tight">
     <li><span class="ok">✓</span> Docker(dev/prod·secrets) · 수집→전송→저장 파이프라인</li>
     <li><span class="ok">✓</span> 정밀 런타임 수집(실행중/사용중/포트 구분) · 매처 5단계 상태 판정</li>
     <li><span class="ok">✓</span> OSV 자동 매칭(전 패키지·버전필터·조치버전) · KEV/EPSS 우선순위</li>
-    <li><span class="ok">✓</span> 웹(로그인·대시보드·호스트상세·취약점·CVE상세·국내공지·커넥터·사용자·감사로그) · 검색/필터·페이지네이션</li>
-    <li><span class="ok">✓</span> 피드 커넥터 5종 · cron 스케줄 · 배포 설치기(systemd-timer/cron)</li>
+    <li><span class="ok">✓</span> 백포트 오탐 억제(2단: 버전필터 + changelog 검증) → tb_suppressed_findings, 호스트 상세에 근거 표시</li>
+    <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·MAC·방화벽 5항목 PASS/FAIL/NA(신규 수집 없음)</li>
+    <li><span class="ok">✓</span> 변화 추적(changes.php) — 최근 2개 스캔 대비 신규/해결/등급변경</li>
+    <li><span class="ok">✓</span> 웹(로그인·대시보드·호스트상세·취약점·변화추적·CVE상세·국내공지·자산·커넥터·사용자·권한·API토큰·감사로그) · 검색/필터·페이지네이션</li>
+    <li><span class="ok">✓</span> 피드 커넥터 5종 · cron 스케줄(스케줄러 사이드카 1분마다 확인) · 배포 설치기(systemd-timer/cron, 매시간)</li>
     <li><span class="ok">✓</span> HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)</li>
+    <li><span class="ok">✓</span> Export API(JSON/XML) · 웹에서 발급하는 읽기전용 API 토큰(X-API-Token)</li>
+    <li><span class="ok">✓</span> 설정형 RBAC(admin/operator/user × 메뉴) · 자산 관리(assets.php)</li>
     <li><span class="ok">✓</span> DB 전면 개편 — tb_ 접두사 통일 + 감사 4컬럼 + 소프트삭제 + 활동 감사로그(tb_activity_log · activity.php)</li>
-    <li style="color:var(--muted)">◦ (예정) 대시보드 “다음 수집 예정” · 시계열/추이 · 알림</li>
+    <li style="color:var(--muted)">◦ (예정) 대시보드 “다음 수집 예정” · 알림</li>
   </ul>
 </div>
 

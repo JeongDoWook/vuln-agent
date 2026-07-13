@@ -22,7 +22,7 @@ flowchart LR
         DB[("MySQL<br/>tb_hosts·tb_scans·tb_packages·tb_exposures")]
         MAT["매처 (PHP)<br/>exposure + pkg × CVE"]
         CVE[("CVE 미러<br/>NVD·OSV·KEV·EPSS·KISA")]
-        WEB["웹 대시보드<br/>우선순위·노출근거·VEX·감사로그"]
+        WEB["웹 대시보드<br/>우선순위·노출근거·억제근거·감사로그"]
     end
 
     A1 -->|"매시간(systemd-timer)<br/>JSON POST"| CADDY

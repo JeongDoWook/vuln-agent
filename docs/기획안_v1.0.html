@@ -153,6 +153,7 @@
   .bstage.s1::before{background:var(--scan)}
   .bstage.s2::before{background:var(--violet)}
   .bstage.s3::before{background:var(--warn)}
+  .bstage.s4::before{background:var(--accent)}
   .bstage .btop{display:flex;align-items:center;justify-content:space-between;
     gap:12px;margin-bottom:12px;flex-wrap:wrap}
   .bstage .bname{font-size:15px;font-weight:600;color:var(--text-bright);
@@ -162,11 +163,13 @@
   .bstage.s1 .bnum{color:var(--scan);background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.35)}
   .bstage.s2 .bnum{color:var(--violet);background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.35)}
   .bstage.s3 .bnum{color:var(--warn);background:rgba(255,180,84,.1);border:1px solid rgba(255,180,84,.35)}
+  .bstage.s4 .bnum{color:var(--accent);background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.35)}
   .bstage .bmark{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;
     letter-spacing:.04em;padding:4px 9px;border-radius:6px;white-space:nowrap}
   .bstage.s1 .bmark{color:var(--scan);background:rgba(74,222,128,.08)}
   .bstage.s2 .bmark{color:var(--violet);background:rgba(167,139,250,.08)}
   .bstage.s3 .bmark{color:var(--warn);background:rgba(255,180,84,.08)}
+  .bstage.s4 .bmark{color:var(--accent);background:rgba(56,189,248,.08)}
   .bstage ul{list-style:none;margin:0}
   .bstage li{position:relative;padding-left:20px;margin-bottom:7px;font-size:13.5px;color:var(--text)}
   .bstage li:last-child{margin-bottom:0}
@@ -235,11 +238,11 @@
 
   <header>
     <div class="kicker"><span class="dot"></span> 2026 오픈소스 개발자대회 · 기획안 v1.0</div>
-    <h1>취약점을 스스로 조사하고<br>고치는 <span class="hl">자율 보안 에이전트</span></h1>
-    <p class="lede">단순 스캐너가 아니다. 검증된 스캐너를 도구로 불러 쓰고, 그 위에서 실제 환경의 맥락으로 위험을 판단해, 조치안까지 만들어 스스로 검증한 뒤 사람 말로 설명한다.</p>
+    <h1>취약점을 스스로 조사하고<br>판단하는 <span class="hl">자율 보안 에이전트</span></h1>
+    <p class="lede">단순 스캐너가 아니다. 검증된 공개 CVE 피드(OSV·NVD·KEV·EPSS·KISA)를 직접 조회해 매칭하고, 그 위에서 실제 서버의 런타임 노출 맥락으로 위험을 판단해, 조치안과 판단 근거까지 화면에 남긴다.</p>
     <div class="meta">
       <span class="chip">과제유형 <b>자유과제 / 보안·안전</b></span>
-      <span class="chip">스택 <b>Python</b></span>
+      <span class="chip">스택 <b>Bash 에이전트 · PHP · MySQL</b></span>
       <span class="chip">#AI에이전트</span>
       <span class="chip">#SCA</span>
       <span class="chip">#취약점대응</span>
@@ -253,7 +256,7 @@
     </div>
     <p class="body">오픈소스 의존성이 폭증하면서, 내 PC·서버에 깔린 소프트웨어에 어떤 알려진 취약점(CVE)이 숨어 있는지 개인·중소기업이 파악하기 어렵다.</p>
     <p class="body">기존 스캐너를 돌리면 문제가 하나 더 생긴다. 취약점이 수백 개씩 쏟아지는데 그중 상당수가 <em>오탐</em>이다. 담당자는 "이건 진짜인가, 이미 고쳐진 건가"를 손으로 걸러야 하고, 경고가 너무 많아 결국 아무도 안 보게 된다.</p>
-    <p class="body">그래서 필요한 건 "더 많은 경고"가 아니라 <strong>믿을 수 있는 소수의 판단</strong>이다. 이 판단·조치·검증 과정을 에이전트가 자율적으로 수행하게 하는 것이 목표다.</p>
+    <p class="body">그래서 필요한 건 "더 많은 경고"가 아니라 <strong>믿을 수 있는 소수의 판단</strong>이다. 이 판단·조치 과정을 에이전트가 자율적으로 수행하고, 그 근거를 화면에 남기게 하는 것이 목표다.</p>
   </section>
 
   <!-- 02 -->
@@ -263,8 +266,8 @@
     </div>
     <div class="note alert"><span class="lbl">피해야 할 함정</span>
       "백포트·오탐을 잘 잡는 매칭을 직접 만들어 차별화"는 위험하다. <strong>Trivy·Grype·OpenSCAP는 이미</strong> 각 배포판 보안 피드(Red Hat OVAL, Ubuntu USN, Debian Tracker)로 백포트를 인식해 오탐을 억제한다. 이건 성숙한 도구의 기본기이지 신선한 기능이 아니며, 직접 만들면 오히려 오탐이 더 많을 수 있다.</div>
-    <div class="note good"><span class="lbl">결정</span>
-      OS 패키지 매칭 자체는 <strong>검증된 스캐너를 도구로 호출</strong>해 그 정확도를 그대로 상속받는다. 우리의 기여는 그 결과를 더 똑똑하게 쓰는 <strong>상위 레이어</strong>에 둔다. 이는 기획안의 "스캐너를 도구로 재활용" 원칙과 정확히 일치한다.</div>
+    <div class="note good"><span class="lbl">결정 (구현 결과)</span>
+      OS 패키지 취약점 매칭은 <strong>OSV.dev API 를 직접 조회</strong>해 검증된 공개 데이터에서 그 정확도를 상속받는다 — 당초 검토했던 Trivy·Grype 같은 스캐너 바이너리 호출 대신, API 직접 조회가 Docker 배포 구조에 더 단순했다(KISS). 오탐 억제는 <strong>OSV 버전필터 + 패키지 changelog 대조</strong>로 직접 구현해, 우리의 기여를 그 위 레이어(런타임 노출 상관·백포트 근거·KEV/EPSS 우선순위)에 둔다.</div>
   </section>
 
   <!-- 03 -->
@@ -274,11 +277,11 @@
     </div>
     <div class="tbl">
       <div class="tbl-row head"><div class="k">구분</div><div class="old">기존 스캐너</div><div class="new">우리 에이전트</div></div>
-      <div class="tbl-row"><div class="k">동작</div><div class="old">규칙대로 스캔 후 목록</div><div class="new">스스로 조사·판단·조치·재검증</div></div>
-      <div class="tbl-row"><div class="k">데이터 소스</div><div class="old">단일/소수 DB</div><div class="new">NVD + OSV + 국내 KISA 교차검증</div></div>
+      <div class="tbl-row"><div class="k">동작</div><div class="old">규칙대로 스캔 후 목록</div><div class="new">스스로 수집·매칭·판단해 근거와 함께 표시</div></div>
+      <div class="tbl-row"><div class="k">데이터 소스</div><div class="old">단일/소수 DB</div><div class="new">NVD + OSV + KEV + EPSS + 국내 KISA (5종 커넥터)</div></div>
       <div class="tbl-row"><div class="k">우선순위</div><div class="old">CVSS 점수 나열</div><div class="new">런타임 노출 + EPSS + KEV 맥락 추론</div></div>
-      <div class="tbl-row"><div class="k">조치</div><div class="old">(일부) 업그레이드 제안</div><div class="new">조치안 생성 + 충돌 시뮬레이션 자기검증</div></div>
-      <div class="tbl-row"><div class="k">결과물</div><div class="old">기술적 리포트</div><div class="new">자연어 설명(왜·어떻게·무엇이 깨질지)</div></div>
+      <div class="tbl-row"><div class="k">조치</div><div class="old">(일부) 업그레이드 제안</div><div class="new">조치안 표시(OSV 수정버전 기준)</div></div>
+      <div class="tbl-row"><div class="k">결과물</div><div class="old">기술적 리포트</div><div class="new">웹 대시보드(근거·변화추적) + Export API(JSON/XML)</div></div>
     </div>
 
     <h3 class="mini">// 진짜 차별점 (강한 순서)</h3>
@@ -300,22 +303,22 @@
       <div class="ritem">
         <div class="rk">③</div>
         <div>
-          <div class="rh">설명가능한 오탐 억제 → VEX</div>
-          <div class="rb">오탐을 숨기지 않고 <b>왜 안전한지 근거</b>(릴리스 번호·changelog CVE 라인·적용된 보안권고)를 제시하고, 기계가 읽는 <b>VEX</b> 문서로 산출한다.</div>
+          <div class="rh">설명가능한 오탐 억제(백포트)</div>
+          <div class="rb">오탐을 숨기지 않고 <b>왜 안전한지 근거</b>를 제시한다. OSV 버전필터로 1차로 거르고, 통과한 건도 패키지 <b>changelog 의 CVE 수정 기록</b>이 있으면 <code>tb_suppressed_findings</code> 로 분리한다 — 위험 집계는 그대로 두고 오탐만 빠지며, 억제 근거는 호스트 상세 화면에 그대로 노출된다.</div>
         </div>
       </div>
       <div class="ritem">
         <div class="rk">④</div>
         <div>
           <div class="rh">경량 상주 에이전트 + 시계열</div>
-          <div class="rb">CI/1회성이 아니라 <b>매일 상주 수집</b>. "어제 안전 → 오늘 신규 CVE로 취약"을 추적하고 여러 서버를 한눈에 본다. 에이전트는 이미 초경량(메모리 7MB, 최저 우선순위).</div>
+          <div class="rb">CI/1회성이 아니라 <b>매시간 상주 수집</b>(systemd-timer, 설치 후 계속 켜둘 필요 없음). "어제 안전 → 오늘 신규 CVE로 취약"을 최근 2개 스캔 대조로 추적하고 여러 서버를 한눈에 본다. 에이전트는 초경량(피크 메모리 약 7MB, 최저 우선순위).</div>
         </div>
       </div>
       <div class="ritem">
         <div class="rk">⑤</div>
         <div>
           <div class="rh">KISA 국내 연동</div>
-          <div class="rb">해외 도구가 하지 않는 국내 보안공지 매칭. <b>신선함 + 사회적 기여</b> 포인트.</div>
+          <div class="rb">해외 도구가 하지 않는 국내 보안공지 매칭. 보호나라 공식 RSS 3종을 수집하고 신규 공지는 <b>상세 본문까지</b> 저장해 그대로 보여준다. <b>신선함 + 사회적 기여</b> 포인트.</div>
         </div>
       </div>
     </div>
@@ -328,30 +331,30 @@
     </div>
     <div class="pipe">
       <div class="stage c-scan"><div class="name"><i></i>수집 에이전트</div>
-        <div class="desc">설치 SW·패키지 + 열린 포트·서비스 수집 → <code>SBOM(CycloneDX)</code></div></div>
-      <div class="stage c-accent"><div class="name"><i></i>조사 (도구 호출)</div>
-        <div class="desc">중앙 CVE 미러(NVD·OSV·KISA)와 대조, 매칭은 <code>Trivy·Grype</code> 재활용</div></div>
+        <div class="desc">패키지(NEVRA·소스패키지·벤더) + 런타임 노출(리스닝 포트)·실행 프로세스·changelog·보안설정 수집</div></div>
+      <div class="stage c-accent"><div class="name"><i></i>매칭 (API 직접 조회)</div>
+        <div class="desc">CVE 피드 5종(<code>NVD·OSV·KEV·EPSS·KISA</code>)과 직접 대조, <code>OSV</code> 는 배포판 ecosystem 자동 판별</div></div>
       <div class="stage c-violet"><div class="name"><i></i>판단</div>
-        <div class="desc">런타임 노출 + <code>EPSS</code> + <code>KEV</code>로 위험 우선순위 추론</div></div>
+        <div class="desc">백포트 억제 → 런타임 노출 5단계 + <code>EPSS</code>·<code>KEV</code>로 위험 우선순위 추론</div></div>
       <div class="stage c-warn"><div class="name"><i></i>조치</div>
-        <div class="desc">패치·업그레이드안 생성 → 의존성 충돌 시뮬레이션 → 실패 시 재조사 루프</div></div>
-      <div class="stage c-text"><div class="name"><i></i>리포트</div>
-        <div class="desc">자연어 대응 가이드 + SBOM + <code>VEX</code> 산출</div></div>
+        <div class="desc">OSV 수정버전(<code>fixed_version</code>) 기준 업그레이드안 표시</div></div>
+      <div class="stage c-text"><div class="name"><i></i>표시</div>
+        <div class="desc">웹 대시보드(우선순위·변화추적·감사로그) + <code>Export API</code>(JSON/XML)</div></div>
     </div>
 
-    <h3 class="mini">// 데이터 흐름 (확정안)</h3>
-    <div class="flow"><pre>[각 서버]                        [중앙 서버 · Docker]
-<b>쉘 에이전트</b> ─매일 1회 / 델타─▶ <u>수신 API</u> ──▶ 인벤토리 DB
-(수집)          JSON POST                        │
-                                                 ▼
-                        로컬 CVE 미러(NVD·OSV·KISA)와 매칭
-                        + 런타임 노출 상관 + EPSS/KEV 가중
-                                                 │
-                                                 ▼
-                             <b>웹 대시보드</b> (우선순위·변화·VEX)</pre></div>
+    <h3 class="mini">// 데이터 흐름 (구현 결과)</h3>
+    <div class="flow"><pre>[각 서버]                          [중앙 서버 · Docker]
+<b>쉘 에이전트</b> ─매시간(systemd-timer)─▶ <u>수신 API(HTTPS)</u> ──▶ MySQL
+(패키지·노출·프로세스·changelog)   JSON POST                       │
+                                                                 ▼
+                          CVE 피드(NVD·OSV·KEV·EPSS·KISA)와 매칭
+                          + 런타임 노출 상관 + 백포트 억제 + EPSS/KEV 가중
+                                                                 │
+                                                                 ▼
+                              <b>웹 대시보드</b> (우선순위·변화추적·조치안·감사로그)</pre></div>
 
     <div class="note"><span class="lbl">설계 원칙</span>
-      기존 오픈소스 스캐너를 "에이전트가 호출하는 도구"로 재활용한다. 스캐너를 새로 만들지 않고, 그 위에서 자율 판단하는 레이어가 우리의 기여다.</div>
+      스캐너를 새로 만들지 않는다. OSV·NVD·KEV·EPSS·KISA 등 검증된 공개 CVE 피드를 API 로 직접 조회해 매칭 정확도를 상속받고, 그 위에서 자율 판단(런타임 노출·백포트 억제)하는 레이어가 우리의 기여다.</div>
   </section>
 
   <!-- 05 -->
@@ -360,51 +363,63 @@
       <div><h2>최적화</h2><div class="sub">서버에 무리 안 가고, 대규모에서도 안 터지게</div></div>
     </div>
     <div class="res">
-      <div class="res-item"><div class="rn">중앙 CVE 미러</div><div class="rd">NVD·OSV·KISA를 중앙이 하루 1회 당겨 로컬 DB로 보관. 매칭은 로컬끼리 → 빠르고, <strong>에이전트는 인터넷 불필요</strong>(폐쇄망에서 쓸 수 있음).</div></div>
-      <div class="res-item"><div class="rn">델타 수집</div><div class="rd">첫 1회만 전체 전송, 이후엔 변경된 패키지만 전송 → 대역폭·DB 쓰기 부하 급감.</div></div>
-      <div class="res-item"><div class="rn">증분 매칭</div><div class="rd">패키지명 인덱스 + (변경 패키지 ∪ 신규 CVE)만 재매칭 → 서버 수천 대여도 안 터짐.</div></div>
-      <div class="res-item"><div class="rn">조회 시점 매칭</div><div class="rd">수집은 저장만, 매칭은 조회 때. 과거 수집분도 오늘 신규 CVE로 다시 판정됨.</div></div>
-      <div class="res-item"><div class="rn">에이전트 자원</div><div class="rd">nice/ionice 최저 우선순위 + 명령별 타임아웃 + 출력 상한 → 피크 메모리 약 7MB.</div></div>
+      <div class="res-item"><div class="rn">피드 스케줄러 사이드카</div><div class="rd">CVE 피드 5종을 중앙이 로컬 DB(<code>tb_cves</code> 등)로 당겨와 보관. 매칭은 로컬끼리 → 빠르고, <strong>대상 서버 에이전트는 CVE 소스에 직접 접속할 필요 없음</strong>. 스케줄러가 1분마다 due 커넥터만 실행하고 수집 후 전체 스캔을 재매칭한다.</div></div>
+      <div class="res-item"><div class="rn">백포트 억제 2단계</div><div class="rd">OSV 버전필터로 먼저 걸러내고, 그걸 통과한 소수 건만 changelog 대조(가장 무거운 단계)로 넘긴다 → 불필요한 changelog 파싱을 줄인다. 수집 단계에서 <code>--no-changelog</code>로도 끌 수 있다.</div></div>
+      <div class="res-item"><div class="rn">무중단 배포</div><div class="rd">운영은 <code>../server</code>를 읽기전용 마운트. PHP 만 바뀌면 <code>git pull</code> 한 줄로 반영(opcache 가 2초 내 갱신), Dockerfile·compose·caddy 변경 시에만 재빌드.</div></div>
+      <div class="res-item"><div class="rn">스키마 마이그레이션 자동화</div><div class="rd"><code>db/migrations/NNNN_*.sql</code> 중 미적용분만 번호순 자동 적용 → 스키마 변경이 파일 하나 추가로 끝난다.</div></div>
+      <div class="res-item"><div class="rn">에이전트 자원</div><div class="rd">nice 19 / ionice idle 최저 우선순위 + 명령별 타임아웃 → 피크 메모리 약 7MB.</div></div>
     </div>
+    <div class="note warn"><span class="lbl">간소화 결정 (YAGNI)</span>
+      당초 검토했던 <strong>델타 수집·증분 매칭·조회 시점 매칭</strong>은 만들지 않았다. 매 수집 전량 전송 + ingest 시 매칭(및 피드 수집 후 전체 재매칭)만으로도 충분히 단순하고 빨라 실제 병목이 되지 않았다.</div>
   </section>
 
   <!-- 06 -->
   <section>
     <div class="sec-head"><span class="sec-no">06</span>
-      <div><h2>개발 순서</h2><div class="sub">전부 다 하되, 항상 "돌아가는 상태"를 유지하며 쌓는다</div></div>
+      <div><h2>개발 순서</h2><div class="sub">전부 다 하되, 항상 "돌아가는 상태"를 유지하며 쌓았다 — 완료 현황</div></div>
     </div>
     <div class="build">
       <div class="bstage s1">
-        <div class="btop"><div class="bname"><span class="bnum">1</span>뼈대 · 스캔 &amp; 판단</div>
-          <span class="bmark">최소 완성선</span></div>
+        <div class="btop"><div class="bname"><span class="bnum">1</span>뼈대 · 수집 &amp; 판단</div>
+          <span class="bmark">완료</span></div>
         <ul>
-          <li>패키지 정보 + 런타임(포트·서비스) 수집 → SBOM 생성</li>
-          <li>스캐너(Trivy/OSV) 도구 호출로 CVE 매칭</li>
-          <li>런타임 노출 + EPSS/KEV로 우선순위 매겨 자연어로 정리</li>
+          <li>패키지(NEVRA·소스패키지·벤더) + 런타임(리스닝 포트·실행 프로세스) 수집</li>
+          <li>OSV.dev API 직접 조회로 CVE 매칭(스캐너 도구 호출 대신 API 직접 조회로 단순화)</li>
+          <li>런타임 노출 + EPSS/KEV로 우선순위 매겨 웹 대시보드에 표시</li>
         </ul>
-        <div class="out">→ <b>에이전트가 스캔하고 판단해 사람 말로 알려준다.</b> 이것만 돼도 시연 가능한 완성작.</div>
+        <div class="out">→ <b>완료.</b> 에이전트가 매시간 스스로 수집·판단해 근거와 함께 웹에 보여준다.</div>
       </div>
       <div class="bstage s2">
         <div class="btop"><div class="bname"><span class="bnum">2</span>국내 특화 · 차별화 무기</div>
-          <span class="bmark">해외 도구가 못 하는 것</span></div>
+          <span class="bmark">완료</span></div>
         <ul>
-          <li>KISA 보호나라 공식 RSS로 국내 보안공지 수집 (크롤링보다 안전)</li>
-          <li>NVD/OSV 결과와 매칭해 "국내에서도 이슈된 취약점" 표시</li>
+          <li>KISA 보호나라 공식 RSS 3종으로 국내 보안공지 수집 (크롤링보다 안전)</li>
+          <li>NVD/OSV 결과와 매칭해 공지의 CVE 연결, 신규 공지는 상세 본문까지 수집</li>
         </ul>
-        <div class="out">→ <b>국내 특화 = 신선함 + 사회적 기여</b> 포인트 확보.</div>
+        <div class="out">→ <b>완료.</b> 국내 특화 = 신선함 + 사회적 기여 포인트 확보(국내공지 목록·상세 페이지).</div>
       </div>
       <div class="bstage s3">
-        <div class="btop"><div class="bname"><span class="bnum">3</span>조치 &amp; 검증 · 야심 파트</div>
-          <span class="bmark">여유되면 / 안 되면 로드맵</span></div>
+        <div class="btop"><div class="bname"><span class="bnum">3</span>조치 · 야심 파트</div>
+          <span class="bmark">부분 완료</span></div>
         <ul>
-          <li>취약점별 조치안(업그레이드·패치) 자동 생성</li>
-          <li>의존성 충돌 시뮬레이션으로 자기검증 → 실패 시 재조사 루프</li>
+          <li>취약점별 조치안(OSV 의 fixed_version 기준 업그레이드 버전) 표시 — 완료</li>
+          <li>의존성 충돌 시뮬레이션 자기검증 — 만들지 않기로 결정(YAGNI, 정적 조치안 제시로 충분)</li>
         </ul>
-        <div class="out">→ 완성되면 결과물이 한 단계 더 강해짐. 미완이어도 <b>최소선(1단계)은 이미 확보</b>됨.</div>
+        <div class="out">→ 조치안 제시까지 완료. 자기검증 루프는 범위에서 제외했다.</div>
+      </div>
+      <div class="bstage s4">
+        <div class="btop"><div class="bname"><span class="bnum">4</span>당초 계획에 없던 추가 구현</div>
+          <span class="bmark">완료</span></div>
+        <ul>
+          <li>백포트 오탐 억제(changelog 근거) · 보안설정 점검(CCE) · 변화 추적</li>
+          <li>자산 관리 + 설정형 RBAC(역할×메뉴 권한) · 감사로그 + 소프트삭제</li>
+          <li>Export API(JSON/XML) + API 토큰 발급 · HTTPS 배포(Caddy) · 스키마 마이그레이션 자동화</li>
+        </ul>
+        <div class="out">→ 매칭 정확도로 경쟁하지 않기로 한 대신, 이 위 레이어를 계획보다 두껍게 쌓았다.</div>
       </div>
     </div>
     <div class="note warn"><span class="lbl">핵심 전략</span>
-      한꺼번에 병렬로 만들면 터진다. 순서대로 쌓아 각 단계가 끝날 때마다 돌아가는 상태를 유지하면, 시간이 부족해도 발표할 결과물이 항상 남는다.</div>
+      한꺼번에 병렬로 만들면 터진다. 순서대로 쌓아 각 단계가 끝날 때마다 돌아가는 상태를 유지했고, 그 결과 1~2단계뿐 아니라 3단계 상당 부분과 계획에 없던 기능까지 확보했다.</div>
   </section>
 
   <!-- 07 -->
@@ -418,6 +433,8 @@
       <li><strong>2순위 · 공지 페이지 파싱</strong> — RSS에 없는 상세만 보완적으로. robots.txt·이용약관 확인, 과도한 요청 자제.</li>
       <li><strong>출처 명시(필수)</strong> — 규정 제8조 5·6항. "KISA 보호나라 공개 데이터" 출처를 결과보고서에 명확히 기재.</li>
     </ul>
+    <div class="note good"><span class="lbl">구현 결과</span>
+      3종 RSS 를 스케줄러가 주기 수집하고, 신규 공지는 상세 본문까지 저장해 <code>/advisory.php</code> 에서 그대로 보여준다. RSS 는 피드당 최신 10건만 주므로 과거 이력은 1회성 백필 스크립트(<code>bin/backfill_kisa.php</code>·<code>backfill_kisa_content.php</code>)로 채웠다.</div>
   </section>
 
   <!-- 08 -->
@@ -425,20 +442,20 @@
     <div class="sec-head"><span class="sec-no">08</span>
       <div><h2>AI 모델 활용 방식</h2><div class="sub">운영규정 제9조 대응</div></div>
     </div>
-    <div class="note good"><span class="lbl">현재 단계 판단</span>
-      1~2단계(수집·매칭·표시)에는 <strong>AI 모델이 필요 없다</strong>. CVE 매칭은 DB 조회이지 추론이 아니다. AI(자연어 조치안)는 3단계에서만 등장하므로, <strong>지금은 경로 선택을 미루고 뼈대부터 만든다.</strong></div>
+    <div class="note good"><span class="lbl">최종 결정 (구현 결과)</span>
+      1~3단계(수집·매칭·판단·조치안 표시)는 전부 규칙/DB 조회로 처리되며 <strong>AI 모델이 전혀 필요 없다</strong>. 조치안도 OSV 의 <code>fixed_version</code> 을 그대로 보여주는 구조적 표시일 뿐, 자연어 생성이 아니다.</div>
     <div class="routes">
-      <div class="route safe">
-        <h3>경로 B <span class="flag">안전 · 3단계용</span></h3>
-        <p>자연어 조치안 생성을 LLaMA·Gemma·Qwen 등 <strong>로컬 오픈웨이트 모델</strong>로 처리 → 규정 최소기준 무조건 충족. 추론 코드엔 OSI 인증 라이선스 적용.</p>
-      </div>
       <div class="route rec">
+        <h3>AI 리포트 생성 <span class="flag">본체에서 제외</span></h3>
+        <p>당초 검토했던 로컬 오픈웨이트 모델(LLaMA·Gemma·Qwen) 기반 자연어 리포트 생성기는 <strong>만들지 않았다</strong>. 대신 <code>GET /export.php</code>(JSON/XML)로 스캔 결과를 내보내, 필요하면 외부 시스템이 가져가 자체적으로 리포트를 만들도록 경계를 나눴다 — 본체가 AI 런타임에 묶이지 않는다.</p>
+      </div>
+      <div class="route safe">
         <h3>보조 도구 <span class="flag">문제 없음</span></h3>
         <p>코드 작성·디버깅에 Claude·GPT 활용은 규정상 자유. 결과보고서 [붙임2] 4번에 활용 범위 한 줄 기재로 끝. (동작 원리 이해는 필수 — 미흡 시 감점)</p>
       </div>
     </div>
-    <div class="note warn"><span class="lbl">주의</span>
-      기존 기획안의 "경로 A(MCP 프레이밍으로 상용 API 허용)"는 규정을 낙관적으로 해석한 것이다. 조문은 "단순 연결 제한, 연동 생태계 구축은 예외"이므로, <strong>핵심 판단·조치는 경로 B(로컬 모델)를 기본</strong>으로 두는 편이 리스크가 적다.</div>
+    <div class="note good"><span class="lbl">결과</span>
+      규정 리스크를 원천 차단하는 가장 보수적인 선택 — 판단·조치 로직에 AI 모델을 아예 넣지 않았다. AI 는 코드 작성 보조로만 썼고, 그 사실을 결과보고서에 기재한다.</div>
   </section>
 
   <!-- 09 -->
@@ -451,7 +468,6 @@
       <li>활용한 모든 오픈소스 라이브러리 → 결과보고서 [붙임1] SBOM에 출처·버전·라이선스 명시</li>
       <li>KISA 등 외부 데이터 출처 명시</li>
       <li>GitHub 공개 저장소 게시, 수상 시 5년간 Public 유지</li>
-      <li>(오픈웨이트 모델 사용 시) 모델 라이선스·이용약관 제한조항 사전 확인</li>
     </ul>
   </section>
 
@@ -461,30 +477,30 @@
       <div><h2>활용 가능한 무료 리소스</h2><div class="sub">전부 무료 · 오픈</div></div>
     </div>
     <div class="res">
-      <div class="res-item"><div class="rn">NVD API 2.0</div><div class="rd">미국 정부 취약점 DB, 25만+ CVE, 무료·키 없이 기본 조회.</div></div>
-      <div class="res-item"><div class="rn">OSV.dev</div><div class="rd">구글 운영, 30+ 소스 통합, 사용량 제한 없음, Apache 2.0.</div></div>
-      <div class="res-item"><div class="rn">Trivy / Grype</div><div class="rd">배포판 보안 피드 기반 스캐너 → 매칭 정확도를 도구로 상속.</div></div>
-      <div class="res-item"><div class="rn">OSV-Scanner / CVE-bin-tool</div><div class="rd">SBOM(CycloneDX) 입출력 → 에이전트 도구로 재활용.</div></div>
+      <div class="res-item"><div class="rn">NVD API 2.0</div><div class="rd">미국 정부 취약점 DB, 약 36만+ CVE. 수정일(lastMod) 기준 증분 수집 + 1회 전체 백필로 <code>tb_cves</code> 를 채웠다.</div></div>
+      <div class="res-item"><div class="rn">OSV.dev</div><div class="rd">구글 운영, 사용량 제한 없음, Apache 2.0. <code>querybatch</code> 로 배포판 ecosystem 을 자동 판별해 수집된 전 패키지를 직접 조회한다(스캐너 바이너리 대신 API 직접 호출).</div></div>
       <div class="res-item"><div class="rn">EPSS (FIRST.org)</div><div class="rd">CVE별 실제 악용 확률. 우선순위 가중에 사용, 무료.</div></div>
       <div class="res-item"><div class="rn">CISA KEV</div><div class="rd">실제 악용이 확인된 취약점 카탈로그, 무료 공개.</div></div>
-      <div class="res-item"><div class="rn">KISA 보호나라 RSS</div><div class="rd">국내 보안공지·공지사항 공식 피드. 크롤링 대신 우선 활용.</div></div>
+      <div class="res-item"><div class="rn">KISA 보호나라 RSS</div><div class="rd">국내 보안공지·공지사항 공식 피드 3종. 신규 공지는 상세 본문까지 수집한다.</div></div>
     </div>
+    <div class="note"><span class="lbl">채택하지 않은 후보</span>
+      Trivy·Grype·OpenSCAP·OSV-Scanner·CVE-bin-tool 은 검토했으나 쓰지 않았다 — 매칭을 OSV API 직접 조회로 단순화하면서 스캐너 바이너리 호출 자체가 필요 없어졌다(KISS).</div>
   </section>
 
   <!-- 11 -->
   <section style="border-bottom:none">
     <div class="sec-head"><span class="sec-no">11</span>
-      <div><h2>다음에 결정할 것</h2><div class="sub">이것만 정하면 개발 착수</div></div>
+      <div><h2>확정된 것</h2><div class="sub">개발을 마친 지금 시점 — 당초 기획 대비 달라진 점</div></div>
     </div>
     <ol class="next">
-      <li><b>팀명 확정</b> — 상장에 찍히므로 특수문자 제외, 심플하게 (파수 / 가온 / 넥서스 등)</li>
-      <li><b>스택 확정</b> — SBOM·스캐너 생태계가 풍부한 <b>Python</b>이 유력</li>
-      <li><b>1단계 착수</b> — 수집→매칭→우선순위 프로토타입부터 돌려보기</li>
-      <li><b>구축</b> — 전송 기능 + 수신 엔드포인트(PHP) + DB 스키마, Docker로 웹·백엔드 통합</li>
+      <li><b>스택 확정</b> — Bash 수집 에이전트 + PHP/MySQL 중앙 서버(Docker). 당초 검토했던 Python 은 채택하지 않았다.</li>
+      <li><b>매칭 방식 확정</b> — Trivy/Grype 같은 스캐너 도구 호출 대신 OSV.dev API 를 직접 조회하는 방식으로 단순화(KISS).</li>
+      <li><b>AI 활용 범위 확정</b> — 판단·조치 로직엔 AI 모델을 넣지 않고 코드 작성 보조로만 사용. 리포트 생성은 Export API 로 경계 밖으로 분리.</li>
+      <li><b>배포 확정</b> — Docker Compose(dev/prod) + Caddy(HTTPS) + <code>agent/install-agent.sh</code>(systemd-timer 자동 배포, 매시간).</li>
     </ol>
   </section>
 
-  <footer>2026 오픈소스 개발자대회 · 기획 · v1.0 · Python · 자율 보안 에이전트</footer>
+  <footer>2026 오픈소스 개발자대회 · 기획 · v1.0 · Bash·PHP·MySQL · 자율 보안 에이전트</footer>
 
 </div>
 </body>

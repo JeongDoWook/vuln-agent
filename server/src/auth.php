@@ -86,15 +86,6 @@ function vg_has_role(string ...$roles): bool {
     return in_array(vg_role(), $roles, true);
 }
 
-// 현재 role 이 허용 역할이 아니면 403 종료.
-function vg_require_role(string ...$roles): void {
-    if (!vg_current_user() || !vg_has_role(...$roles)) {
-        http_response_code(403);
-        echo 'forbidden';
-        exit;
-    }
-}
-
 // 역할 한글 라벨. viewer 는 user 와 동일 취급.
 function vg_role_label(string $role): string {
     $m = ['admin' => '관리자', 'operator' => '운영자', 'user' => '사용자', 'viewer' => '사용자'];
