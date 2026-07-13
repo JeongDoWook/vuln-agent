@@ -8,6 +8,10 @@
 # CRLF 로 체크아웃되면 `bad interpreter: /usr/bin/env bash^M` 으로 훅이 통째로 죽는다.
 deploy/hooks/* text eol=lf
 
+# 에이전트 JSON 빌더 테스트의 픽스처 — **바이트 단위로 비교**하는 정답 파일이다.
+# CRLF 로 체크아웃되면 개행이 \r\n 이 되어 기대값이 통째로 어긋난다(테스트가 거짓으로 깨진다).
+tests/fixtures/agent-json/** text eol=lf
+
 # 서버측 텍스트도 LF 로 통일 (컨테이너=리눅스)
 *.php  text eol=lf
 *.sql  text eol=lf
