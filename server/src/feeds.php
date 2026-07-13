@@ -332,19 +332,17 @@ function vg_advisory_fill_content(PDO $pdo, string $url): bool {
 }
 
 function vg_upsert_affected(PDO $pdo, string $cve, ?string $eco, string $pkg, ?string $fixed): void {
-    $chk = $pdo->prepare('SELECT id FROM tb_cve_affected_packages WHERE cve_id=? AND package_name=? LIMIT 1');
-    $chk->execute([$cve, $pkg]);
-    $id = $chk->fetchColumn();
-    if ($id) {
-        // 존재하면 fixed_version 을 채워 넣는다(이전 batch 수집엔 없었음)
-        if ($fixed !== null && $fixed !== '') {
-            $pdo->prepare('UPDATE tb_cve_affected_packages SET fixed_version=?, ecosystem=COALESCE(ecosystem,?) WHERE id=?')
-                ->execute([$fixed, $eco, (int) $id]);
-        }
-        return;
-    }
-    $pdo->prepare('INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version) VALUES (?,?,?,?)')
-        ->execute([$cve, $eco, $pkg, $fixed]);
+    // 자연키는 (cve_id, package_name, ecosystem) — UNIQUE uq_cap. 같은 패키지라도 배포판마다
+    //   조치버전이 달라 ecosystem 을 키에 포함해야 서로 덮어쓰지 않는다(예: nginx 가 Rocky 와
+    //   Debian 에서 각기 다른 fixed_version). ecosystem NULL 은 키에서 '' 로 정규화한다.
+    // fixed_version 은 새 값이 있을 때만 갱신한다(빈 값이면 기존 조치버전을 지우지 않는다).
+    $ecoKey = (string) ($eco ?? '');
+    $fixedVal = ($fixed !== null && $fixed !== '') ? $fixed : null;
+    $pdo->prepare(
+        'INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+         VALUES (?,?,?,?)
+         ON DUPLICATE KEY UPDATE fixed_version = COALESCE(VALUES(fixed_version), fixed_version)'
+    )->execute([$cve, $ecoKey, $pkg, $fixedVal]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
