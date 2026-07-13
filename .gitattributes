@@ -4,6 +4,10 @@
 # 쉘 스크립트는 리눅스 대상에서 실행 → LF 고정 (CRLF면 실행 오류)
 *.sh   text eol=lf
 
+# git 훅은 확장자가 없다(pre-push). 위 *.sh 규칙에 안 걸리므로 따로 못박는다 —
+# CRLF 로 체크아웃되면 `bad interpreter: /usr/bin/env bash^M` 으로 훅이 통째로 죽는다.
+deploy/hooks/* text eol=lf
+
 # 서버측 텍스트도 LF 로 통일 (컨테이너=리눅스)
 *.php  text eol=lf
 *.sql  text eol=lf
