@@ -105,12 +105,12 @@ compose 경로 기준: `../server`·`../db`·`../secrets`·`../data` 는 저장�
 **방식: 에이전트-사이드 push** (각 서버가 로컬 스케줄로 수집 → 중앙으로 POST).
 중앙이 각 호스트로 들어갈 필요 없음(아웃바운드만). 표준적인 에이전트 모델.
 
-대상 서버(Linux)의 **`/usr/local/src/vuln-agent/`** 에 `agent/` 의 스크립트 2개를 두고 한 번
+대상 서버(Linux)의 **`/opt/vuln-agent/`** 에 `agent/` 의 스크립트 2개를 두고 한 번
 실행하면 끝. **인자 없이 실행하면 물어본다.**
 
 ```bash
-sudo mkdir -p /usr/local/src/vuln-agent && sudo cp ~/agent/*.sh /usr/local/src/vuln-agent/
-cd /usr/local/src/vuln-agent
+sudo mkdir -p /opt/vuln-agent && sudo cp ~/agent/*.sh /opt/vuln-agent/
+cd /opt/vuln-agent
 sudo bash install-agent.sh
 #   중앙 서버 주소 (예: ost-server.duckdns.org:8080):   ← 도메인만 넣어도 됨(스킴·/ingest.php 자동)
 #   전송 토큰 (입력은 화면에 보이지 않습니다):          ← 중앙의 secrets/ingest_token.txt 값
