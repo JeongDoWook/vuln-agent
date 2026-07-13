@@ -489,12 +489,23 @@ collect_containers() {
                }
                if(p!="" && v!="") print cid"|apk|"p"|"v"|"o
              }' "$root/lib/apk/db/installed" 2>/dev/null)
-    elif [ -d "$root/var/lib/rpm" ] && have rpm; then
-      mgr="rpm"
-      # rpm DB 는 바이너리라 호스트 rpm 으로 읽는다. 호스트에 rpm 이 없으면 이 컨테이너는 건너뛴다
-      # (조용히 빠뜨리지 않도록 목록에는 manager 를 비워 남긴다).
-      pkgs=$(timeout "$CMD_TIMEOUT" rpm --root="$root" -qa \
-               --qf "${cid}|rpm|%{NAME}|%{EPOCH}:%{VERSION}-%{RELEASE}|%{SOURCERPM}\n" 2>/dev/null)
+    elif [ -d "$root/var/lib/rpm" ]; then
+      # rpm DB 는 바이너리라 읽으려면 rpm 이 필요하다. 두 가지를 순서대로 시도한다.
+      # 1) 호스트 rpm 으로 --root 읽기.
+      if have rpm; then
+        pkgs=$(timeout "$CMD_TIMEOUT" rpm --root="$root" -qa \
+                 --qf "${cid}|rpm|%{NAME}|%{EPOCH}:%{VERSION}-%{RELEASE}|%{SOURCERPM}\n" 2>/dev/null)
+      fi
+      # 2) 안 되면 **컨테이너 자기 rpm** 을 chroot 로 돌린다. 두 경우를 한꺼번에 푼다:
+      #    - 호스트에 rpm 이 아예 없다(데비안/우분투 호스트 + rhel 컨테이너 — 운영 실측 10개가 여기).
+      #    - 호스트 rpm 이 옛 BDB 만 알아서 컨테이너의 sqlite DB(rpm 4.16+, rhel9/ol9)를 못 읽는다.
+      #    컨테이너 rootfs 안의 rpm 은 그 DB 형식을 정확히 안다.
+      if [ -z "$pkgs" ] && { [ -x "$root/usr/bin/rpm" ] || [ -x "$root/bin/rpm" ]; }; then
+        pkgs=$(timeout "$CMD_TIMEOUT" chroot "$root" rpm -qa \
+                 --qf "${cid}|rpm|%{NAME}|%{EPOCH}:%{VERSION}-%{RELEASE}|%{SOURCERPM}\n" 2>/dev/null)
+      fi
+      # 둘 다 실패하면 manager 를 비워 남긴다 — 패키지 0개를 "깨끗함"으로 오독하면 그게 미탐이다.
+      [ -n "$pkgs" ] && mgr="rpm"
     fi
 
     cnt=0
