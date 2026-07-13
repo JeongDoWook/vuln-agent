@@ -248,7 +248,9 @@ fw_detect() {
 # fw_port_allowed <포트> <proto> — 방화벽이 이 포트를 외부에 열어두었나?
 #   방화벽을 판정할 수 없으면(FW_KIND=none) 0(허용)을 돌려 강등을 막는다.
 fw_port_allowed() {
-  local p="$1" proto="$2" e pp lo hi
+  # proto 는 기본 tcp. set -u 라 "$2" 를 그냥 쓰면, 호출부가 인자를 빠뜨렸을 때
+  # 이 함수가 **에이전트 전체를 죽인다**(실제로 그렇게 죽었다). 기본값으로 그 사고를 막는다.
+  local p="$1" proto="${2:-tcp}" e pp lo hi
   [ "$FW_KIND" = "none" ] && return 0
   for e in $FW_ALLOW; do
     pp="${e#*/}"
@@ -675,12 +677,15 @@ ctr_exposure() {   # $1=cid $2=대표pid $3=pidns $4=pkgs파일
       port=$(printf '%s' "$line" | cut -d'|' -f3)
       proto=$(printf '%s' "$line" | cut -d'|' -f4)
 
-      # 호스트로 게시된 포트인가 → 게시됐으면 호스트 방화벽까지 본다
+      # 호스트로 게시된 포트인가 → 게시됐으면 호스트 방화벽까지 본다.
+      #   fw_port_allowed 는 **<포트> <proto> 두 인자**를 받는다. 하나만 넘기면 set -u 가
+      #   "$2: unbound variable" 로 **에이전트를 통째로 죽인다**(운영에서 실제로 죽었다).
+      #   /proc/net 의 proto 는 tcp/tcp6 인데 방화벽 규칙은 tcp 로 적히므로 6 을 떼고 넘긴다.
       scope="LOCAL"
       hostport=$(printf '%s\n' "$pub" | awk -v p="$port" -F' -> ' \
                    '$1 ~ "^"p"/" { n=split($2, a, ":"); print a[n]; exit }')
       if [ -n "$hostport" ]; then
-        if fw_port_allowed "$hostport"; then scope="EXTERNAL"; else scope="FILTERED"; fi
+        if fw_port_allowed "$hostport" "${proto%6}"; then scope="EXTERNAL"; else scope="FILTERED"; fi
       fi
 
       comm=$(cat "/proc/$pid/comm" 2>/dev/null)
@@ -971,7 +976,10 @@ echo "cid|pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs" > "$TMP/containers
 {
   echo "cid|pid|comm|user|exe_pkg|loaded_pkgs"
   collect_container_runtime
-} > "$TMP/containers__processes.txt" 2>/dev/null || true
+#   stderr 를 /dev/null 로 보내지 않는다 — 여기서 죽었을 때 에러가 통째로 묻힌다.
+#   실제로 fw_port_allowed 인자 하나를 빠뜨려 set -u 가 에이전트를 죽였는데, 화면엔 아무것도
+#   안 나와 "수집 시작" 만 찍히고 조용히 끝났다. 원인을 찾는 데 추적(bash -x)까지 동원해야 했다.
+} > "$TMP/containers__processes.txt" || true
 for f in containers__processes containers__exposure; do
   [ "$(wc -l < "$TMP/$f.txt" 2>/dev/null || echo 0)" -ge 2 ] || rm -f "$TMP/$f.txt"
 done
