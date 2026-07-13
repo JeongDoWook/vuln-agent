@@ -42,6 +42,30 @@ function vg_merge_cve_ids(?string $a, ?string $b): ?string {
     return $ids ? implode(',', $ids) : null;
 }
 
+/**
+ * tb_advisories.cve_ids(CSV, 정본)를 tb_advisory_cves 정션에 동기화한다(멱등).
+ *   $cveIds 는 이미 검증된 배열(vg_extract_cve_ids 출력)이어야 한다.
+ *   신규는 INSERT..ON DUPLICATE KEY 로 되살리고(과거 soft-delete 복구),
+ *   목록에서 빠진 건 soft-delete 한다 — rebuild_advisory_cveids.php 가 오탈자를
+ *   정리해 개수가 줄어드는 경우까지 junction 이 따라가야 하기 때문이다.
+ */
+function vg_sync_advisory_cves(PDO $pdo, int $advisoryId, array $cveIds): void {
+    if ($cveIds) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_advisory_cves (advisory_id, cve_id) VALUES (?,?)
+             ON DUPLICATE KEY UPDATE is_deleted = 0, deleted_at = NULL'
+        );
+        foreach ($cveIds as $cve) {
+            $ins->execute([$advisoryId, $cve]);
+        }
+    }
+    $placeholders = $cveIds ? implode(',', array_fill(0, count($cveIds), '?')) : '';
+    $sql = 'UPDATE tb_advisory_cves SET is_deleted = 1, deleted_at = NOW()
+             WHERE advisory_id = ? AND is_deleted = 0'
+         . ($placeholders !== '' ? " AND cve_id NOT IN ($placeholders)" : '');
+    $pdo->prepare($sql)->execute($cveIds ? array_merge([$advisoryId], $cveIds) : [$advisoryId]);
+}
+
 // 국내 보안공지(KISA 등) upsert. 정규화한 url 기준 dedup.
 //   KISA 는 수정일을 노출하지 않으므로(RSS·목록·상세 모두 등록일 하나뿐) 저장된 값과
 //   비교해 실제로 달라졌을 때만 UPDATE 한다. 그래야 updated_at 이 "변경을 관측한 시각"이
@@ -65,6 +89,10 @@ function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url
         //   실제로 백필 재실행이 공지 1,742건의 cve_ids 를 지웠다.
         //   전량 재계산(축소 포함)은 bin/rebuild_advisory_cveids.php 가 직접 UPDATE 로 한다.
         $cveIds = vg_merge_cve_ids($cur['cve_ids'] ?? null, $cveIds);
+        $id = (int) $cur['id'];
+        // junction 은 cve_ids 가 실제로 바뀌었는지와 무관하게 항상 최신 CSV 를 반영한다
+        // (제목/발행일만 바뀐 경우에도 junction 이 CSV 와 어긋나지 않게).
+        vg_sync_advisory_cves($pdo, $id, vg_extract_cve_ids((string) $cveIds));
         $same = $cur['title'] === $title
              && (string) $cur['published'] === (string) $published
              && (string) $cur['cve_ids'] === (string) $cveIds;
@@ -72,11 +100,12 @@ function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url
             return 'unchanged';
         }
         $pdo->prepare('UPDATE tb_advisories SET title=?, published=?, cve_ids=? WHERE id=?')
-            ->execute([$title, $published, $cveIds, (int) $cur['id']]);
+            ->execute([$title, $published, $cveIds, $id]);
         return 'updated';
     }
     $pdo->prepare('INSERT INTO tb_advisories (source, title, url, published, cve_ids) VALUES (?,?,?,?,?)')
         ->execute([$source, $title, $url, $published, $cveIds]);
+    vg_sync_advisory_cves($pdo, (int) $pdo->lastInsertId(), vg_extract_cve_ids((string) $cveIds));
     return 'new';
 }
 
@@ -159,6 +188,7 @@ function vg_advisory_fill_content(PDO $pdo, string $url): bool {
         if ($joined !== (string) $row['cve_ids']) {
             $pdo->prepare('UPDATE tb_advisories SET cve_ids=? WHERE id=?')->execute([$joined, $id]);
         }
+        vg_sync_advisory_cves($pdo, $id, $merged);
         foreach ($merged as $cve) {
             vg_upsert_cve($pdo, $cve, null, null, null);
         }
