@@ -48,8 +48,8 @@ try {
             "FROM tb_findings f
              JOIN tb_scans s ON s.id = f.scan_id
              JOIN tb_hosts h ON h.id = s.host_id
-             JOIN (SELECT host_id, MAX(id) AS max_id FROM tb_scans GROUP BY host_id) latest
-               ON latest.host_id = s.host_id AND latest.max_id = s.id
+             JOIN " . vg_latest_scan_subq() . " latest
+               ON latest.host_id = s.host_id AND latest.mid = s.id
              WHERE f.cve_id = ?";
         $stmt = $pdo->prepare("SELECT COUNT(*) $locSql");
         $stmt->execute([$cveId]);

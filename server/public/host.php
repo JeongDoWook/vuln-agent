@@ -96,8 +96,7 @@ try {
             $st = $pdo->prepare(
                 "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
                         f.needs_restart, c.epss, c.epss_percentile,
-                    (SELECT a.fixed_version FROM tb_cve_affected_packages a
-                     WHERE a.cve_id=f.cve_id AND a.package_name=f.package_name AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
+                    " . VG_FIXED_VERSION_SUBQ . "
                  FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
                  WHERE f.scan_id = ? AND (f.severity IN ('CRITICAL','HIGH') OR f.needs_restart = 1)
                  ORDER BY f.needs_restart DESC,
@@ -153,12 +152,7 @@ try {
 
             $ids = [];
             foreach ($rows as $s) { $ids[] = (int) $s['id']; }
-            if ($ids) {
-                $in = implode(',', array_fill(0, count($ids), '?'));
-                $st = $pdo->prepare("SELECT scan_id, severity, COUNT(*) c FROM tb_findings WHERE scan_id IN ($in) GROUP BY scan_id, severity");
-                $st->execute($ids);
-                foreach ($st->fetchAll() as $f) { $sevByScan[(int) $f['scan_id']][$f['severity']] = (int) $f['c']; }
-            }
+            $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
         }
     }
 } catch (Throwable $e) {

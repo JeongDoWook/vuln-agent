@@ -24,8 +24,9 @@ try {
 
     // 전 호스트의 "최신 스캔" 집합 — KPI·도넛·급한목록이 모두 이 기준을 쓴다.
     $latestScans =
-        "SELECT MAX(s.id) FROM tb_scans s JOIN tb_hosts h ON h.id = s.host_id
-          WHERE h.is_deleted = 0 GROUP BY s.host_id";
+        "SELECT t.mid FROM " . vg_latest_scan_subq() . " t
+          JOIN tb_hosts h ON h.id = t.host_id
+         WHERE h.is_deleted = 0";
 
     // KPI 는 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
     $totalsRows = $pdo->query(
@@ -91,7 +92,7 @@ try {
         "SELECT s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
                 h.id AS host_id, h.fqdn, h.os_id, h.os_version
          FROM tb_scans s
-         JOIN (SELECT host_id, MAX(id) AS mid FROM tb_scans GROUP BY host_id) t ON t.mid = s.id
+         JOIN " . vg_latest_scan_subq() . " t ON t.mid = s.id
          JOIN tb_hosts h ON h.id = s.host_id
          WHERE h.is_deleted = 0
          ORDER BY s.collected_at DESC
@@ -102,12 +103,7 @@ try {
     if ($rows) {
         $ids = [];
         foreach ($rows as $r) { $ids[] = (int) $r['scan_id']; }
-        $in  = implode(',', array_fill(0, count($ids), '?'));
-        $st  = $pdo->prepare("SELECT scan_id, severity, COUNT(*) c FROM tb_findings WHERE scan_id IN ($in) GROUP BY scan_id, severity");
-        $st->execute($ids);
-        foreach ($st->fetchAll() as $f) {
-            $sevByScan[(int) $f['scan_id']][$f['severity']] = (int) $f['c'];
-        }
+        $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
     }
 } catch (Throwable $e) {
     $err = $e->getMessage();

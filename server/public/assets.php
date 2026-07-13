@@ -39,7 +39,8 @@ $stateExpr =
 
 // 호스트 + 최신 스캔. LEFT JOIN 이라 등록만 되고 아직 수집이 없는 호스트도 남는다.
 $fromSql = 'FROM tb_hosts h
-            LEFT JOIN tb_scans s ON s.id = (SELECT MAX(id) FROM tb_scans WHERE host_id = h.id)';
+            LEFT JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.id
+            LEFT JOIN tb_scans s ON s.id = t.mid';
 
 $pdo = vg_pdo();
 
@@ -110,12 +111,7 @@ try {
     // 이 페이지에 보이는 최신 스캔들의 심각도 카운트
     $ids = [];
     foreach ($rows as $r) { if ($r['scan_id'] !== null) { $ids[] = (int) $r['scan_id']; } }
-    if ($ids) {
-        $in = implode(',', array_fill(0, count($ids), '?'));
-        $st = $pdo->prepare("SELECT scan_id, severity, COUNT(*) c FROM tb_findings WHERE scan_id IN ($in) GROUP BY scan_id, severity");
-        $st->execute($ids);
-        foreach ($st->fetchAll() as $f) { $sevByScan[(int) $f['scan_id']][$f['severity']] = (int) $f['c']; }
-    }
+    $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
 } catch (Throwable $e) {
     $err = $e->getMessage();
 }
