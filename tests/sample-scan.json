@@ -33,8 +33,8 @@
   },
   "security": {
     "selinux": "Enforcing",
-    "file_perms": "644 root root /etc/passwd\n640 root shadow /etc/shadow\n644 root root /etc/hosts\n644 root root /etc/services\n600 root root /etc/crontab",
-    "login_defs": "PASS_MAX_DAYS\t99999\nPASS_MIN_DAYS\t0\nPASS_MIN_LEN\t8",
+    "file_perms": "644 root root /etc/passwd\n640 root shadow /etc/shadow\n644 root root /etc/hosts\n644 root root /etc/services\n600 root root /etc/crontab\n644 root root /etc/group\n640 root shadow /etc/gshadow\n600 root root /etc/xinetd.conf\n640 root root /etc/rsyslog.conf",
+    "login_defs": "PASS_MAX_DAYS\t99999\nPASS_MIN_DAYS\t0\nPASS_MIN_LEN\t8\nUMASK\t022",
     "pam_rules": "password requisite pam_pwquality.so retry=3\nauth required pam_faillock.so deny=5",
     "tmout": "TMOUT=600",
     "root_path": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin\"",

@@ -193,6 +193,11 @@ if (!function_exists('vg_sshd_val')) {
             ['/etc/hosts',    'CCE-FILE-HOSTS',    '/etc/hosts 소유자·권한 (U-09)',    '600', 'LOW'],
             ['/etc/services', 'CCE-FILE-SERVICES', '/etc/services 소유자·권한 (U-12)', '644', 'LOW'],
             ['/etc/crontab',  'CCE-FILE-CRONTAB',  '/etc/crontab 소유자·권한',         '640', 'MEDIUM'],
+            ['/etc/group',    'CCE-FILE-GROUP',    '/etc/group 소유자·권한',           '644', 'MEDIUM'],
+            ['/etc/gshadow',  'CCE-FILE-GSHADOW',  '/etc/gshadow 소유자·권한',         '400', 'HIGH'],
+            // 아래 둘은 없는 서버가 많다(xinetd 미사용, syslog→rsyslog). 없으면 NA 로 남는다.
+            ['/etc/xinetd.conf', 'CCE-FILE-XINETD', '/etc/xinetd.conf 소유자·권한 (U-10)', '600', 'MEDIUM'],
+            ['/etc/rsyslog.conf','CCE-FILE-SYSLOG', '/etc/rsyslog.conf 소유자·권한 (U-11)', '640', 'LOW'],
         ];
         foreach ($fileRules as [$path, $code, $title, $maxMode, $sev]) {
             if (!isset($perms[$path])) {
@@ -235,6 +240,27 @@ if (!function_exists('vg_sshd_val')) {
             $out[] = [$code, $title, $fail ? 'FAIL' : 'PASS', $sev, $key . ' ' . $v,
                 $fail ? $advice : '권고 기준을 만족.'];
         }
+
+        // ── UMASK (U-56) ──
+        //   022 보다 느슨하면(예: 002, 000) 새로 만든 파일이 그룹/타인에게 쓰기 허용된다.
+        if (!isset($defs['UMASK'])) {
+            $out[] = ['CCE-UMASK', '기본 UMASK 설정 (U-56)', 'NA', 'MEDIUM', null,
+                '/etc/login.defs 에서 UMASK 를 찾지 못함.'];
+        } else {
+            $um = $defs['UMASK'];
+            // 8진수 문자열. 022 보다 작은 값(=더 느슨)이면 FAIL.
+            $fail = octdec($um) < octdec('022');
+            $out[] = ['CCE-UMASK', '기본 UMASK 설정 (U-56)', $fail ? 'FAIL' : 'PASS', 'MEDIUM',
+                'UMASK ' . $um,
+                $fail ? 'UMASK 가 느슨해 새 파일이 그룹/타인에게 열린다 → 022 이상 권고.'
+                      : 'UMASK 022 이상 — 기준 만족.'];
+        }
+
+        // ── 판정하지 않는 수집값(이유를 남긴다) ──
+        //   tcp_wrapper(hosts.allow/deny): 요즘 배포판은 sshd 등에서 libwrap 을 뺐다. 접근 제한은
+        //     방화벽이 담당하고 그건 CCE-SEC-FW 로 이미 점검한다. 여기서 또 FAIL 을 내면
+        //     방화벽을 제대로 쓰는 서버까지 전부 지적돼 노이즈만 는다 → 증거로만 보관한다.
+        //   fips: KISA U-XX 항목이 아니다(암호모듈 검증 필요 환경에서만 의미). 정보로만 보관.
 
         // ── 패스워드 복잡도·계정 잠금 (U-02, U-03) ──
         $pam = (string) ($sec['pam_rules'] ?? '');

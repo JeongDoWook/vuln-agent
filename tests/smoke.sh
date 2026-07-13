@@ -74,7 +74,7 @@ ccePass=$(printf '%s' "$resp" | grep -oE '"cce":\{"PASS":[0-9]+' | grep -oE '[0-
 cceFail=$(printf '%s' "$resp" | grep -oE '"FAIL":[0-9]+' | tail -1 | grep -oE '[0-9]+$')
 cceNa=$(printf '%s' "$resp"   | grep -oE '"NA":[0-9]+'   | tail -1 | grep -oE '[0-9]+$')
 cceTotal=$(( ${ccePass:-0} + ${cceFail:-0} + ${cceNa:-0} ))
-if [ "$cceTotal" -ge 27 ]; then ok "CCE 27개 항목 판정 (총 $cceTotal)"; else no "CCE 항목 부족 (=$cceTotal)"; fi
+if [ "$cceTotal" -ge 32 ]; then ok "CCE 32개 항목 판정 (총 $cceTotal)"; else no "CCE 항목 부족 (=$cceTotal)"; fi
 if [ "${cceNa:-1}" -eq 0 ]; then ok "CCE NA 0 (수집값이 있으면 전부 판정)"; else no "CCE NA=$cceNa (정상을 판정불가로 표시?)"; fi
 if [ "${cceFail:-0}" -ge 5 ]; then ok "CCE FAIL 검출 (shadow 640·hosts 644·MaxAuthTries 6 등) = $cceFail"; else no "CCE FAIL 미검출 (=${cceFail:-0})"; fi
 
