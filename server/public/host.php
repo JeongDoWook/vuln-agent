@@ -44,11 +44,15 @@ try {
         $sid = (int) $scan['id'];
         $scanAge = $scan['age_min'];
 
-        // CVE 피드가 지원하지 않는 배포판의 컨테이너 — 이것들도 매칭이 0건이라 알려야 한다.
-        $st = $pdo->prepare('SELECT cid, os_id, os_version FROM tb_containers WHERE scan_id = ?');
+        // 취약점 0건이 "판정 불가"인 컨테이너 — 피드 미지원 배포판 + **패키지 DB 없는 이미지**.
+        //   후자는 rhel 처럼 피드가 지원하는 배포판이라 미지원 경고에 안 걸린다 → 따로 잡아야 한다.
+        $st = $pdo->prepare('SELECT cid, os_id, os_version, manager, pkg_count FROM tb_containers WHERE scan_id = ?');
         $st->execute([$sid]);
         foreach ($st->fetchAll() as $c) {
-            $reason = vg_distro_unsupported($c['os_id'] ?? null, $c['os_version'] ?? null);
+            $reason = vg_container_unjudgeable(
+                $c['os_id'] ?? null, $c['os_version'] ?? null,
+                $c['manager'] ?? null, (int) ($c['pkg_count'] ?? 0)
+            );
             if ($reason !== null) {
                 $unsupContainers[] = ['cid' => (string) $c['cid'], 'reason' => $reason];
             }
@@ -220,7 +224,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
   }
   if ($unsup) {
       echo '<div class="alert alert--err"><strong>취약점 매칭이 수행되지 않습니다</strong> — '
-         . '아래 대상은 CVE 피드(OSV)가 지원하지 않는 배포판입니다. '
+         . '아래 대상은 피드가 모르는 배포판이거나, 패키지 DB 가 없어 무엇이 깔렸는지 알 수 없습니다. '
          . '취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.<ul class="hint-list">';
       foreach ($unsup as $line) { echo '<li>' . vg_h($line) . '</li>'; }
       echo '</ul></div>';

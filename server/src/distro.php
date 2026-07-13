@@ -41,6 +41,31 @@ if (!function_exists('vg_distro_unsupported')) {
     }
 }
 
+if (!function_exists('vg_container_unjudgeable')) {
+    /**
+     * 이 컨테이너의 취약점 0건이 "안전"이 아니라 "판정 불가"인가 — 그 사유.
+     *
+     * 두 가지 이유로 0건이 나온다. 둘 다 침묵하면 운영자는 "안전하다"고 읽는다.
+     *   1) 피드가 모르는 배포판(Oracle Linux 등) → 매칭 후보 자체가 없다.
+     *   2) **패키지 DB 가 없는 이미지** → 무엇이 깔렸는지 알 수 없다.
+     *      운영 실측: Calico(Tigera) 이미지 9개가 여기 해당한다. RHEL 기반인데 rpm DB 를
+     *      지우고 빌드해서 /var/lib/rpm 이 아예 없다. rhel 은 OSV **지원** 배포판이라
+     *      1)번 경고에도 안 걸려, 지금까지 CVE 0건으로 조용히 지나갔다.
+     *
+     * @param  string|null $mgr       에이전트가 읽어낸 패키지 매니저(못 읽었으면 빈 값)
+     * @param  int         $pkgCount  수집된 패키지 수
+     * @return string|null 판정 가능하면 null
+     */
+    function vg_container_unjudgeable(?string $osId, ?string $osVer, ?string $mgr, int $pkgCount): ?string
+    {
+        if (trim((string) $mgr) === '' || $pkgCount === 0) {
+            return '패키지 DB 가 없는 이미지 — 무엇이 깔렸는지 알 수 없어 판정 불가'
+                 . ' (rpm/dpkg DB 를 지우고 빌드한 이미지. 이미지 제공처의 SBOM 이 필요하다)';
+        }
+        return vg_distro_unsupported($osId, $osVer);
+    }
+}
+
 if (!function_exists('vg_pkg_ecosystem')) {
     /**
      * 이 패키지가 속한 생태계 — 패키지 매니저로 정한다.

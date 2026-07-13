@@ -14,7 +14,7 @@ require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
 vg_require_menu('findings');
 
-$unsupHosts = [];   // CVE 피드 미지원 배포판 호스트 — 0건이 "안전"이 아니라 "판정 불가"다
+$unsupHosts = [];   // 취약점 0건이 "안전"이 아니라 "판정 불가"인 대상(호스트 + 컨테이너)
 
 $sevOptions = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 $stOptions  = ['EXTERNAL', 'FILTERED', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
@@ -48,6 +48,27 @@ try {
         // 피드가 지원하지 않는 배포판은 매칭 후보가 없어 0건으로 뜬다 → 목록에 모아 경고한다.
         $reason = vg_distro_unsupported($h['os_id'] ?? null, $h['os_version'] ?? null);
         if ($reason !== null) { $unsupHosts[] = $h['fqdn'] . ' (' . $reason . ')'; }
+    }
+
+    // 컨테이너도 같은 이유로 0건이 된다 — 특히 **패키지 DB 가 없는 이미지**(Calico 등)는
+    //   rhel 로 잡혀 "미지원 배포판" 경고에도 안 걸린 채 조용히 0건으로 지나갔다(운영 실측 9개).
+    $ctrs = $pdo->query(
+        'SELECT h.fqdn, c.cid, c.os_id, c.os_version, c.manager, c.pkg_count
+           FROM tb_containers c
+           JOIN tb_scans s ON s.id = c.scan_id
+           JOIN tb_hosts h ON h.id = s.host_id
+           JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.id
+          WHERE h.is_deleted = 0
+          ORDER BY h.fqdn, c.cid'
+    )->fetchAll();
+    foreach ($ctrs as $c) {
+        $reason = vg_container_unjudgeable(
+            $c['os_id'] ?? null, $c['os_version'] ?? null,
+            $c['manager'] ?? null, (int) ($c['pkg_count'] ?? 0)
+        );
+        if ($reason !== null) {
+            $unsupHosts[] = $c['fqdn'] . ' · 컨테이너 ' . $c['cid'] . ' (' . $reason . ')';
+        }
     }
 
     if ($scanId > 0) {
@@ -138,8 +159,9 @@ vg_header('취약점', 'findings');
 <?php else: ?>
   <?php if ($unsupHosts): ?>
     <div class="alert alert--err">
-      <strong>일부 호스트는 취약점 매칭이 수행되지 않습니다</strong> — CVE 피드(OSV)가 지원하지 않는
-      배포판입니다. 이 호스트들의 취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.
+      <strong>일부 대상은 취약점 매칭이 수행되지 않습니다</strong> — 피드가 모르는 배포판이거나,
+      패키지 DB 가 없어 무엇이 깔렸는지 알 수 없습니다.
+      이 대상들의 취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.
       <ul class="hint-list">
         <?php foreach ($unsupHosts as $line): ?><li><?= vg_h($line) ?></li><?php endforeach; ?>
       </ul>
