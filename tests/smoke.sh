@@ -90,9 +90,11 @@ assert_contains "$body" "CISA KEV" "피드 커넥터 페이지(기본 커넥터 
 code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
 assert_eq "$code" "200" "국내 보안공지 페이지 200"
 body=$(curl -s -b "$JAR" "$BASE/host.php?id=1")
-assert_contains "$body" "런타임 노출" "호스트 상세 페이지(노출·취약점)"
-# curl 은 조치 버전 이상이지만 nginx 가 옛 libcurl 을 물고 있다 → 억제 대신 "재시작 필요"로 남는다.
+assert_contains "$body" "최고 위험도" "호스트 상세(자산 식별 히어로 + 섹션 탭)"
+# curl 은 조치 버전 이상이지만 nginx 가 옛 libcurl 을 물고 있다 → 억제 대신 "재시작 필요"로 남는다(기본=취약점 탭).
 assert_contains "$body" "재시작 필요" "재시작 필요 근거 노출(패치됐지만 옛 라이브러리 사용 중)"
+body=$(curl -s -b "$JAR" "$BASE/host.php?id=1&tab=runtime")
+assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(노출·프로세스)"
 # redis 는 0.0.0.0:6379 지만 방화벽이 막는다 → EXTERNAL 이 아니라 FILTERED 로 분류돼야 한다.
 body=$(curl -s -b "$JAR" "$BASE/findings.php?st=FILTERED")
 assert_contains "$body" "redis" "방화벽 차단(FILTERED) 분류 — redis 가 외부노출로 새지 않음"

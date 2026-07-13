@@ -11,6 +11,7 @@ require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = [];
+$locTotal = 0; $page = max(1, (int) ($_GET['page'] ?? 1)); $perPage = vg_perpage();
 try {
     $raw = (string) ($_GET['cve'] ?? '');
     if (!preg_match('/^CVE-\d{4}-\d+$/i', $raw)) {
@@ -31,16 +32,24 @@ try {
         $stmt->execute([$cveId]);
         $affected = $stmt->fetchAll();
 
-        // 호스트별 최신 스캔 기준으로 이 CVE 가 발견된 위치
-        $stmt = $pdo->prepare(
-            "SELECT h.id AS host_id, h.fqdn, f.severity, f.runtime_status, f.package_name, f.installed_version, s.collected_at
-             FROM tb_findings f
+        // 호스트별 최신 스캔 기준으로 이 CVE 가 발견된 위치(호스트 수만큼 늘어 페이지네이션)
+        $locSql =
+            "FROM tb_findings f
              JOIN tb_scans s ON s.id = f.scan_id
              JOIN tb_hosts h ON h.id = s.host_id
              JOIN (SELECT host_id, MAX(id) AS max_id FROM tb_scans GROUP BY host_id) latest
                ON latest.host_id = s.host_id AND latest.max_id = s.id
-             WHERE f.cve_id = ?
-             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), h.fqdn"
+             WHERE f.cve_id = ?";
+        $stmt = $pdo->prepare("SELECT COUNT(*) $locSql");
+        $stmt->execute([$cveId]);
+        $locTotal = (int) $stmt->fetchColumn();
+
+        $offset = ($page - 1) * $perPage;
+        $stmt = $pdo->prepare(
+            "SELECT h.id AS host_id, h.fqdn, f.severity, f.runtime_status, f.package_name, f.installed_version, s.collected_at
+             $locSql
+             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), h.fqdn
+             LIMIT $perPage OFFSET $offset"
         );
         $stmt->execute([$cveId]);
         $locations = $stmt->fetchAll();
@@ -120,6 +129,7 @@ vg_header($cveId !== '' ? $cveId : 'CVE', 'findings');
             ],
         ]
     );
+    if ($locations) { vg_page_nav($locTotal, $perPage, $page); }
     ?>
     </div>
   </div>

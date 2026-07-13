@@ -13,9 +13,8 @@ require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
 vg_require_menu('assets');
 
-// 수집 지연 판정 기준(분). 에이전트 기본 스케줄이 매시간이라 3시간까지는 정상으로 본다.
-const VG_STALE_MIN   = 180;        // 3시간 초과 → 지연
-const VG_OFFLINE_MIN = 10080;      // 7일 초과 → 오프라인
+// 수집 지연 판정 기준(VG_STALE_MIN/VG_OFFLINE_MIN)과 vg_asset_state() 는 view.php 에 있다
+// (호스트 상세 히어로와 공유).
 
 $canDelete = vg_has_role('admin', 'operator');
 
@@ -92,15 +91,6 @@ try {
     $err = $e->getMessage();
 }
 
-// 수집 상태 배지 — 최신 수집 경과시간(분)으로 판정. 스캔이 없으면 null.
-function vg_asset_state($ageMin): string {
-    if ($ageMin === null) { return vg_badge('수집없음', 'muted'); }
-    $m = (int) $ageMin;
-    if ($m > VG_OFFLINE_MIN) { return vg_badge('오프라인', 'crit'); }
-    if ($m > VG_STALE_MIN)   { return vg_badge('지연', 'high'); }
-    return vg_badge('정상', 'ok');
-}
-
 // 에이전트가 POST 할 수집 엔드포인트(현재 접속 주소 기준).
 $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
@@ -151,7 +141,7 @@ vg_header('자산관리', 'assets');
               ),
               'collected_at' => fn($r) => $r['collected_at'] ? '<span class="why">' . vg_h($r['collected_at']) . '</span>' : '<span class="why">–</span>',
               'scan_count'   => fn($r) => (int) $r['scan_count'] > 0
-                  ? '<a href="/host.php?id=' . (int) $r['id'] . '#scans">' . number_format((int) $r['scan_count']) . '회</a>'
+                  ? '<a href="/host.php?id=' . (int) $r['id'] . '&tab=scans">' . number_format((int) $r['scan_count']) . '회</a>'
                   : '<span class="why">0회</span>',
               'act' => fn($r) => '<form method="post" class="actions" onsubmit="return confirm(\'' . vg_h($r['fqdn']) . ' 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.\');">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
