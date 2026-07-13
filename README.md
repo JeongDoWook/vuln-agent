@@ -51,8 +51,10 @@ cd deploy
 `server/` 아래 PHP 만 바뀌었으면 `git pull` 로 끝(무중단, 소스가 읽기전용으로 마운트돼 있고
 opcache 가 2초마다 파일 갱신을 확인한다). `Dockerfile`·`compose*.yml`·`caddy/`·`config/` 가
 바뀔 때만 재빌드한다. **스키마 변경은 `deploy/migrate.sh` 가 자동 적용한다** — `db/migrations/`
-의 `NNNN_*.sql` 중 아직 안 든 것만 번호순으로 돌리고 `tb_schema_migrations` 에 기록하므로,
+의 `*.sql` 중 아직 안 든 것만 파일명 사전순으로 돌리고 `tb_schema_migrations` 에 기록하므로,
 스키마를 바꾸려면 파일 하나만 추가하면 된다(`up` 과 `update.sh` 가 자동 호출).
+파일명은 **타임스탬프**로 짓는다(`$(date +%Y%m%d%H%M%S)_이름.sql`) — 연번은 동시에 작업하는
+브랜치들이 같은 번호를 집어 충돌한다.
 
 ```bash
 bash deploy/update.sh

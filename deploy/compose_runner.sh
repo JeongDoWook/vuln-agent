@@ -148,6 +148,20 @@ run_init() {
     say "      ${CYAN}printf %s 'DuckDNS-토큰' > $df${NC}"
   fi
 
+  # 3) 검증 게이트(pre-push) 설치 — core.hooksPath 를 저장소 안 deploy/hooks 로 돌린다.
+  #    전에는 .git/hooks/pre-push 에 손으로 넣어 뒀는데, .git 은 git 이 추적하지 않는다.
+  #    즉 새로 clone 하면 CLAUDE.md 가 "강제" 라고 적은 게이트가 아예 없었다.
+  #    (core.hooksPath 는 .git/config 에 들어가므로 모든 워크트리가 함께 쓴다 — 한 번만 하면 된다.)
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    local cur; cur="$(git config --get core.hooksPath 2>/dev/null || true)"
+    if [ "$cur" = "deploy/hooks" ]; then
+      say "  ${BLUE}→${NC} 존재: 검증 게이트(core.hooksPath=deploy/hooks)"
+    else
+      git config core.hooksPath deploy/hooks
+      say "  ${GREEN}✓${NC} 설치: 검증 게이트 ${CYAN}core.hooksPath=deploy/hooks${NC}  (pre-push: php -l · bash -n · smoke)"
+    fi
+  fi
+
   echo ""
   if [ "$ok" = 1 ]; then
     say "${GREEN}완료.${NC} 다음: ${CYAN}$0 dev up -d${NC}"
@@ -179,6 +193,15 @@ run_doctor() {
     if [ -s "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음/빈값 (init 실행 필요)"; fi
   done
   if [ -s ../secrets/duckdns_token.txt ]; then say "  ${GREEN}✓${NC} ../secrets/duckdns_token.txt"; else say "  ${YELLOW}⚠${NC} ../secrets/duckdns_token.txt 없음/빈값 (운영 HTTPS 쓰려면 DuckDNS 토큰 입력)"; fi
+
+  # 검증 게이트가 실제로 걸려 있나. CLAUDE.md 는 "강제" 라고 하지만, 설치가 안 됐으면
+  # 조용히 없는 상태가 된다 — 있다고 믿는 게 제일 위험하다.
+  if [ "$(git config --get core.hooksPath 2>/dev/null || true)" = "deploy/hooks" ] && [ -x hooks/pre-push ]; then
+    say "  ${GREEN}✓${NC} 검증 게이트 (pre-push: php -l · bash -n · smoke)"
+  else
+    say "  ${YELLOW}⚠${NC} 검증 게이트 미설치 — ${CYAN}$0 init${NC} 실행 (지금은 lint·smoke 없이 push 된다)"
+  fi
+
   echo ""
   if [ "$issues" -eq 0 ]; then
     say "${GREEN}점검 통과.${NC}"

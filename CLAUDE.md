@@ -53,9 +53,7 @@
 - **dev DB 초기화는 `down -v` 로 안 된다.** 메인 dev 의 DB 는 named volume 이 아니라
   `.env.dev` 의 `DB_DATA=../data/mysql` **바인드마운트**라서 compose 가 `-v` 로 안 지운다.
   비우려면 `dev down` → `rm -rf data/mysql` → `dev up -d`.
-  중요한 이유: **pre-push 훅의 스모크가 기본값으로 8080(메인 dev 스택)을 친다.** 메인 dev 스택이
-  낡으면(위 두 경우 다) 코드가 멀쩡해도 스모크가 깨져 **아무 브랜치나 push 가 막힌다.**
-  (워크트리 스택은 named volume 이라 이 문제가 없다.)
+  (워크트리 스택은 named volume 이라 이 문제가 없다 — `wt.sh rm` 이 볼륨째 지운다.)
 
 ## 리뷰 체크
 바꾸기 전에 자문한다:
@@ -81,13 +79,18 @@ cd wt/무엇
   B 의 커밋이 엉뚱한 브랜치에 얹히고 push 가 빈 push 가 된다(실제로 발생). git 은 같은 브랜치를
   두 워크트리에 체크아웃하는 걸 거부하므로 워크트리를 쓰면 이 사고가 구조적으로 불가능하다.
 - 브랜치 이름은 `feat/`·`fix/`·`chore/` 접두사. 워크트리 폴더명은 브랜치의 마지막 조각.
-- 워크트리에서 `git push` 하면 pre-push 훅의 스모크는 기본값(8080=메인 스택)을 친다.
-  자기 스택으로 검사하려면 `VG_SMOKE_BASE=http://localhost:<포트> git push`.
+- pre-push 훅은 **이 트리의 `deploy/.env.dev` 에서 `WEB_PORT` 를 읽어 자기 스택**을 친다.
+  자기 스택이 안 떠 있으면 스모크를 **건너뛴다**(다른 스택으로 대신 검사하지 않는다 —
+  그건 남의 코드를 검사해 초록불을 주는 셈이라 거짓이 된다).
+  대상을 직접 지정하려면 `VG_SMOKE_BASE=http://localhost:<포트> git push`.
 - 워크트리에서 `prod` 는 띄울 수 없다(compose_runner.sh 가 거부). 운영은 메인 트리에서만.
 
 ## 가드레일 (강제)
 - **main 직접 commit/push 금지** — 항상 작업 브랜치 경유 후 PR 로 병합. (`.claude/hooks/block-main-push.sh` 가 차단)
 - **검증 게이트**: `php -l` + `bash -n` + `tests/smoke.sh` 통과 전 커밋/PR 금지. 상태 보고 시 실행한 검증 명령·결과를 증거로 첨부.
+  집행자는 `deploy/hooks/pre-push` — **저장소가 들고 있다**(`core.hooksPath=deploy/hooks`,
+  `compose_runner.sh init` 이 설치). 예전엔 `.git/hooks/` 에 있어서 git 이 추적하지 않았고,
+  **새로 clone 하면 게이트가 아예 없었다.** 걸려 있는지는 `compose_runner.sh doctor` 로 확인한다.
 - `--no-verify` 등 hook 우회 명령 금지. `.env`/`secrets/*.txt` 커밋 금지.
 - 관련 없는 파일 수정·요청 범위 초과 리팩터 금지. 읽지 않은 코드 기반 추정 금지.
 

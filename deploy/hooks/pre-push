@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pre-push — CLAUDE.md 검증 게이트 (php -l + bash -n + tests/smoke.sh)
+# =============================================================================
+# 설치: git config core.hooksPath deploy/hooks   (compose_runner.sh init 이 해준다)
+#   전에는 .git/hooks/pre-push 에 손으로 넣어 뒀는데, .git 은 git 이 추적하지 않는다.
+#   즉 새로 clone 하면 게이트가 **아예 없었다** — 규칙은 CLAUDE.md 에 "강제" 라고 적혀
+#   있는데 집행자가 그 PC 에만 있었다. 그래서 저장소 안으로 옮긴다.
+#
+# 왜 이렇게 짰는가:
+#   - lint 는 컨테이너 php:8.3 으로 한다. 호스트 php 는 7.2 라 8.x 문법을 오탐한다.
+#   - 파일 경로가 아니라 stdin 으로 넣는다. 컨테이너는 자기 트리의 server/ 를 마운트하므로,
+#     경로로 lint 하면 남의 파일을 검사할 수 있다. stdin 이면 어떤 컨테이너를 쓰든 안전하다.
+#   - 작업트리가 아니라 push 될 커밋의 내용(git show <sha>:<file>)을 검사한다.
+#     커밋되지 않은 수정은 push 되지 않으므로 게이트 대상이 아니다.
+#   - **스모크는 "이 트리를 서빙하는 스택" 만 친다.** 예전엔 8080 을 하드코딩했는데,
+#     8080 은 메인 트리 코드를 서빙한다 — 워크트리에서 push 하면 내 브랜치가 아니라
+#     남의 코드를 검사하고 있었다(실제로 다른 세션이 픽스처를 바꾸자 엉뚱하게 막혔다).
+#     이제 이 트리의 deploy/.env.dev 에서 WEB_PORT 를 읽어 자기 스택을 친다.
+#     자기 스택이 안 떠 있으면 **다른 스택으로 대체하지 않고 건너뛴다** — 남의 코드를
+#     검사해 초록불을 주느니 검사를 안 하는 편이 정직하다.
+#
+# 우회(정말 필요할 때만):
+#   VG_SKIP_SMOKE=1 git push    스모크만 건너뜀
+#   VG_SKIP_HOOK=1  git push    전체 건너뜀
+#   VG_SMOKE_BASE=http://localhost:PORT git push   대상 스택 직접 지정
+# =============================================================================
+set -uo pipefail
+
+if [ "${VG_SKIP_HOOK:-0}" = "1" ]; then
+  echo "pre-push: VG_SKIP_HOOK=1 — 검증 건너뜀" >&2
+  exit 0
+fi
+
+ZERO=0000000000000000000000000000000000000000
+fail=0
+
+ROOT=$(git rev-parse --show-toplevel)
+
+# --- 이 트리 전용 스택을 찾는다 ----------------------------------------------
+# compose_runner.sh 와 같은 규칙: wt/<이름>/ 안이면 컨테이너·프로젝트에 -<이름> 접미사.
+WT_NAME=""
+if [ "$(basename "$(dirname "$ROOT")")" = "wt" ]; then
+  WT_NAME="$(basename "$ROOT")"
+fi
+WEB=${VG_WEB_CONTAINER:-vulnagent-web-dev${WT_NAME:+-$WT_NAME}}
+
+# 포트는 이 트리의 .env.dev 에 박혀 있다(wt.sh 가 워크트리마다 빈 포트를 골라 넣는다).
+WEB_PORT=$(sed -n 's/^WEB_PORT=\([0-9]\+\).*/\1/p' "$ROOT/deploy/.env.dev" 2>/dev/null | head -1)
+BASE=${VG_SMOKE_BASE:-http://localhost:${WEB_PORT:-8080}}
+
+# --- push 대상 커밋이 건드린 파일 수집: "<sha>\t<path>" -----------------------
+pairs=$(
+  while read -r _lref lsha _rref rsha; do
+    [ "$lsha" = "$ZERO" ] && continue                    # 브랜치 삭제 push
+    if [ "$rsha" = "$ZERO" ]; then                       # 신규 브랜치
+      base=$(git merge-base "$lsha" origin/main 2>/dev/null) || base=
+    else
+      base=$rsha
+    fi
+    if [ -n "$base" ]; then
+      git diff --name-only --diff-filter=ACMR "$base" "$lsha" --
+    else
+      git ls-tree -r --name-only "$lsha"                 # base 못 찾으면 전량
+    fi | sed "s|^|$lsha\t|"
+  done | sort -u
+)
+
+if [ -z "$pairs" ]; then
+  echo "pre-push: 검사할 변경 파일 없음 — 통과"
+  exit 0
+fi
+
+# --- PHP lint 백엔드 선택 ----------------------------------------------------
+# stdin 으로 넣으므로 어떤 php:8.3 이든 결과가 같다 → 내 컨테이너가 없으면 아무 것이나,
+# 그것도 없으면 일회용 컨테이너, 마지막으로 호스트 php.
+php_backend=none
+lint_container=""
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx -- "$WEB"; then
+  php_backend=container; lint_container="$WEB"
+elif other=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -m1 '^vulnagent-web-dev'); then
+  php_backend=container; lint_container="$other"
+elif docker info >/dev/null 2>&1; then
+  php_backend=docker_run
+elif command -v php >/dev/null 2>&1; then
+  php_backend=host
+fi
+
+case $php_backend in
+  container)  echo "pre-push: PHP lint = 컨테이너 $lint_container (8.3)" ;;
+  docker_run) echo "pre-push: PHP lint = docker run php:8.3-cli (일회용)" ;;
+  host)       echo "pre-push: ⚠ 컨테이너·docker 없음 → 호스트 php $(php -r 'echo PHP_VERSION;' 2>/dev/null) 로 lint (8.x 문법 오탐 가능)" >&2 ;;
+  none)       echo "pre-push: ✗ php 를 찾을 수 없어 lint 불가 — dev 스택을 올리거나 php 를 설치하세요" >&2; exit 1 ;;
+esac
+
+php_lint() {  # stdin ← 파일 내용
+  case $php_backend in
+    container)  docker exec -i -- "$lint_container" php -l ;;
+    docker_run) docker run --rm -i php:8.3-cli php -l ;;
+    *)          php -l ;;
+  esac
+}
+
+# --- 파일별 검사 -------------------------------------------------------------
+n_php=0 n_sh=0
+while IFS=$'\t' read -r sha path; do
+  [ -n "${path:-}" ] || continue
+  case $path in
+    *.php)
+      if out=$(git show "$sha:$path" | php_lint 2>&1); then
+        n_php=$((n_php + 1))
+      else
+        echo "✗ php -l  $path" >&2
+        printf '%s\n' "$out" | sed 's/^/    /' >&2
+        fail=1
+      fi
+      ;;
+    *.sh|*/hooks/pre-push)
+      if out=$(git show "$sha:$path" | bash -n 2>&1); then
+        n_sh=$((n_sh + 1))
+      else
+        echo "✗ bash -n  $path" >&2
+        printf '%s\n' "$out" | sed 's/^/    /' >&2
+        fail=1
+      fi
+      ;;
+  esac
+done <<< "$pairs"
+
+echo "pre-push: php -l ${n_php}개 통과, bash -n ${n_sh}개 통과"
+
+if [ "$fail" -ne 0 ]; then
+  echo "" >&2
+  echo "pre-push: ✗ lint 실패 — push 중단" >&2
+  exit 1
+fi
+
+# --- 스모크 (이 트리를 서빙하는 스택이 떠 있을 때만) --------------------------
+if [ "${VG_SKIP_SMOKE:-0}" = "1" ]; then
+  echo "pre-push: VG_SKIP_SMOKE=1 — 스모크 건너뜀" >&2
+elif [ ! -x tests/smoke.sh ]; then
+  echo "pre-push: ⚠ tests/smoke.sh 없음(또는 비실행) — 스모크 건너뜀" >&2
+elif ! curl -fsS -o /dev/null --max-time 3 "$BASE/" 2>/dev/null; then
+  echo "pre-push: ⚠ 이 트리의 dev 스택이 응답하지 않습니다($BASE) — 스모크 건너뜀." >&2
+  echo "           올리려면: ./deploy/compose_runner.sh dev up -d" >&2
+  echo "           (다른 스택으로 대신 검사하지 않습니다 — 그건 남의 코드를 검사하는 것이라" >&2
+  echo "            초록불이 거짓이 됩니다.)" >&2
+else
+  echo "pre-push: 스모크 실행 ($BASE${WT_NAME:+ · wt/$WT_NAME})"
+  if ! ./tests/smoke.sh "$BASE"; then
+    echo "pre-push: ✗ 스모크 실패 — push 중단" >&2
+    exit 1
+  fi
+fi
+
+echo "pre-push: ✓ 게이트 통과"
+exit 0
