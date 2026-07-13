@@ -50,6 +50,18 @@ else
   no "vercmp 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/vercmp_test.php)"
 fi
 
+# --- ingest_parse 단위 테스트 -------------------------------------------------
+# ingest.php 의 순수 변환(패키지/노출/컨테이너/changelog 파싱, 내용해시, 패키지 diff)을
+# server/src/ingest_parse.php 로 뽑아냈다. 예전엔 이 파싱 로직에 단위테스트가 0개였다 —
+# vercmp 처럼 서버 없이 도는 정적 검사라 스모크 앞단에 묶는다.
+printf "\n[ingest_parse]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/ingest_parse_test.php >/dev/null 2>&1; then
+  ok "ingest_parse 단위 테스트"
+else
+  no "ingest_parse 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/ingest_parse_test.php)"
+fi
+
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
