@@ -41,21 +41,142 @@ function vg_conn_url(array $conn, string $default): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// SSRF 방어
+// ─────────────────────────────────────────────────────────────────────────
+/**
+ * 차단 대역(사설·루프백·링크로컬·예약). IPv4-mapped IPv6(::ffff:a.b.c.d)는
+ * vg_ssrf_ip_blocked() 가 내부 IPv4 로 벗겨내고 검사하므로 여기 따로 안 둔다.
+ */
+const VG_SSRF_BLOCKED_CIDRS = [
+    '0.0.0.0/8', '10.0.0.0/8', '127.0.0.0/8', '169.254.0.0/16',   // 169.254.169.254 = 클라우드 메타데이터
+    '172.16.0.0/12', '192.168.0.0/16',
+    '::1/128', 'fc00::/7', 'fe80::/10',
+];
+
+/** $ip 가 $cidr(예: '10.0.0.0/8') 안에 있는지. inet_pton 바이트 비교라 IPv4/IPv6 겸용. */
+function vg_ip_in_cidr(string $ip, string $cidr): bool {
+    [$subnet, $bits] = explode('/', $cidr);
+    $bits   = (int) $bits;
+    $ipBin  = @inet_pton($ip);
+    $subBin = @inet_pton($subnet);
+    if ($ipBin === false || $subBin === false || strlen($ipBin) !== strlen($subBin)) {
+        return false; // 주소 체계(v4/v6) 불일치 → 이 CIDR 은 대상이 아님
+    }
+    $bytes = intdiv($bits, 8);
+    if ($bytes > 0 && substr($ipBin, 0, $bytes) !== substr($subBin, 0, $bytes)) {
+        return false;
+    }
+    $remBits = $bits % 8;
+    if ($remBits === 0) { return true; }
+    $mask = chr((0xFF << (8 - $remBits)) & 0xFF);
+    return (substr($ipBin, $bytes, 1) & $mask) === (substr($subBin, $bytes, 1) & $mask);
+}
+
+function vg_ssrf_ip_blocked(string $ip): bool {
+    // IPv4-mapped IPv6(::ffff:a.b.c.d)는 위 CIDR 목록이 IPv6 로 안 봐서 그냥 통과한다 → 벗겨서 재검사.
+    if (stripos($ip, '::ffff:') === 0) {
+        $mapped = substr($ip, 7);
+        if (filter_var($mapped, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $ip = $mapped;
+        }
+    }
+    foreach (VG_SSRF_BLOCKED_CIDRS as $cidr) {
+        if (vg_ip_in_cidr($ip, $cidr)) { return true; }
+    }
+    return false;
+}
+
+/** 호스트명을 A/AAAA 로 resolve. 이미 IP 리터럴이면 그대로 돌려준다. */
+function vg_ssrf_resolve_ips(string $host): array {
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        return [$host];
+    }
+    $ips = [];
+    foreach (@dns_get_record($host, DNS_A + DNS_AAAA) ?: [] as $rec) {
+        if (isset($rec['ip']))   { $ips[] = $rec['ip']; }
+        if (isset($rec['ipv6'])) { $ips[] = $rec['ipv6']; }
+    }
+    if (!$ips) {
+        // dns_get_record 가 막힌 환경(일부 컨테이너·방화벽) 대비 폴백. A 레코드만 준다.
+        $v4 = @gethostbyname($host);
+        if ($v4 !== $host && filter_var($v4, FILTER_VALIDATE_IP)) { $ips[] = $v4; }
+    }
+    return $ips;
+}
+
+/**
+ * 커넥터 URL 은 사용자 입력이다(connectors.php 가 operator 권한으로 저장하고, feed_preview.php
+ * 가 응답을 호출자에게 그대로 반사한다). CURLOPT_PROTOCOLS 는 스킴(http/https)만 막을 뿐 목적지
+ * IP 는 안 거르므로, 요청 직전 호스트를 DNS resolve 해 사설·루프백·링크로컬·예약 대역
+ * (169.254.169.254 클라우드 메타데이터 포함)이면 막는다.
+ * vg_http_follow() 가 최초 URL 과 리다이렉트 목적지마다 이걸 부른다.
+ */
+function vg_ssrf_guard_url(string $url): void {
+    $p      = parse_url($url);
+    $scheme = strtolower((string) ($p['scheme'] ?? ''));
+    // parse_url 은 IPv6 host 를 'http://[::1]/' 처럼 대괄호를 안 벗기고 돌려준다(PHP 8.3 실측).
+    // 대괄호가 남으면 filter_var(FILTER_VALIDATE_IP)·DNS resolve 가 전부 실패해 "resolve 불가"로
+    // 걸러지긴 하지만(fail-closed) 공개 IPv6 리터럴까지 엉뚱한 사유로 막히므로 여기서 벗긴다.
+    $host = trim((string) ($p['host'] ?? ''), '[]');
+    if (!in_array($scheme, ['http', 'https'], true) || $host === '') {
+        throw new RuntimeException("SSRF 방어: 잘못된 URL ($url)");
+    }
+    $ips = vg_ssrf_resolve_ips($host);
+    if (!$ips) {
+        throw new RuntimeException("SSRF 방어: 호스트를 resolve 할 수 없음 ($host)");
+    }
+    foreach ($ips as $ip) {
+        if (vg_ssrf_ip_blocked($ip)) {
+            throw new RuntimeException("SSRF 방어: 차단된 대상 IP ($host → $ip)");
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // HTTP (curl)
 // ─────────────────────────────────────────────────────────────────────────
+/**
+ * SSRF 를 막으면서 리다이렉트를 따라간다.
+ *   CURLOPT_FOLLOWLOCATION 을 켜두면 curl 이 재검사 없이 302 로 내부 IP 까지 가버린다.
+ *   그렇다고 리다이렉트 자체를 끌 수도 없다 — EPSS 는 실제로 epss.cyentia.com 이
+ *   epss.empiricalsecurity.com 으로 301 리다이렉트한다(2026-07-13 실측, 다른 4개 피드는 무리다이렉트).
+ *   그래서 FOLLOWLOCATION 은 끄고 여기서 홉마다 vg_ssrf_guard_url 로 재검사하며 최대 5홉을 따라간다.
+ * @return array{code:int,body:string,error:string}
+ */
+function vg_http_follow(string $url, array $curlOpts, int $maxRedirects = 5): array {
+    vg_ssrf_guard_url($url);
+    for ($hop = 0; ; $hop++) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, $curlOpts);
+        $raw  = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err  = curl_error($ch);
+        $next = curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+        curl_close($ch);
+
+        if (in_array($code, [301, 302, 303, 307, 308], true) && $next) {
+            if ($hop >= $maxRedirects) {
+                return ['code' => 0, 'body' => '', 'error' => 'SSRF 방어: 리다이렉트 한도 초과'];
+            }
+            vg_ssrf_guard_url($next);
+            $url = $next;
+            continue;
+        }
+        return ['code' => $code, 'body' => is_string($raw) ? $raw : '', 'error' => $err];
+    }
+}
+
 // $maxBytes>0 이면 응답이 그 크기를 넘는 순간 전송을 중단한다(OSV 커널 등 거대 응답 OOM 방어).
 function vg_http_json(string $method, string $url, $body = null, array $headers = [], int $timeout = 90, int $maxBytes = 0): array {
-    $ch = curl_init($url);
     $hdr = array_merge(['Accept: application/json'], $headers);
     $opt = [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT        => $timeout,
-        CURLOPT_CONNECTTIMEOUT => 20,
-        CURLOPT_CUSTOMREQUEST  => $method,
-        CURLOPT_USERAGENT      => 'vuln-agent-feed/1.0',
-        // SSRF/LFI 방어: http/https 만 허용(file://·gopher:// 등 차단), 리다이렉트도 동일 제한
-        CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_RETURNTRANSFER  => true,
+        CURLOPT_FOLLOWLOCATION  => false,  // vg_http_follow 가 SSRF 재검사하며 직접 따라간다
+        CURLOPT_TIMEOUT         => $timeout,
+        CURLOPT_CONNECTTIMEOUT  => 20,
+        CURLOPT_CUSTOMREQUEST   => $method,
+        CURLOPT_USERAGENT       => 'vuln-agent-feed/1.0',
+        CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,   // file://·gopher:// 등 차단
         CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
     ];
     if ($body !== null) {
@@ -69,38 +190,27 @@ function vg_http_json(string $method, string $url, $body = null, array $headers 
         };
     }
     $opt[CURLOPT_HTTPHEADER] = $hdr;
-    curl_setopt_array($ch, $opt);
-    $raw  = curl_exec($ch);
-    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err  = curl_error($ch);
-    curl_close($ch);
-    if ($raw === false && $maxBytes > 0 && $code === 0) {
-        return ['code' => 0, 'json' => null, 'error' => "응답이 상한({$maxBytes}B) 초과로 건너뜀"];
+    $r = vg_http_follow($url, $opt);
+    if ($maxBytes > 0 && $r['code'] === 0) {
+        return ['code' => 0, 'json' => null, 'error' => $r['error'] !== '' ? $r['error'] : "응답이 상한({$maxBytes}B) 초과로 건너뜀"];
     }
-    $decoded = is_string($raw) ? json_decode($raw, true) : null;
-    return ['code' => $code, 'json' => is_array($decoded) ? $decoded : null, 'error' => $err];
+    $decoded = $r['body'] !== '' ? json_decode($r['body'], true) : null;
+    return ['code' => $r['code'], 'json' => is_array($decoded) ? $decoded : null, 'error' => $r['error']];
 }
 
 // raw 응답 (XML/RSS 등 non-JSON 소스용)
 function vg_http_raw(string $method, string $url, array $headers = [], int $timeout = 60): array {
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT        => $timeout,
-        CURLOPT_CONNECTTIMEOUT => 20,
-        CURLOPT_CUSTOMREQUEST  => $method,
-        CURLOPT_USERAGENT      => 'vuln-agent-feed/1.0',
-        // SSRF/LFI 방어: http/https 만 허용(file://·gopher:// 등 차단), 리다이렉트도 동일 제한
-        CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
-        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
-        CURLOPT_HTTPHEADER     => $headers,
+    return vg_http_follow($url, [
+        CURLOPT_RETURNTRANSFER   => true,
+        CURLOPT_FOLLOWLOCATION   => false,  // vg_http_follow 가 SSRF 재검사하며 직접 따라간다
+        CURLOPT_TIMEOUT          => $timeout,
+        CURLOPT_CONNECTTIMEOUT   => 20,
+        CURLOPT_CUSTOMREQUEST    => $method,
+        CURLOPT_USERAGENT        => 'vuln-agent-feed/1.0',
+        CURLOPT_PROTOCOLS        => CURLPROTO_HTTP | CURLPROTO_HTTPS,   // file://·gopher:// 등 차단
+        CURLOPT_REDIR_PROTOCOLS  => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_HTTPHEADER       => $headers,
     ]);
-    $raw  = curl_exec($ch);
-    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err  = curl_error($ch);
-    curl_close($ch);
-    return ['code' => $code, 'body' => is_string($raw) ? $raw : '', 'error' => $err];
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -858,7 +968,7 @@ final class VgKisaConnector implements VgFeedConnector {
                 [$f, $u] = $this->fetchOne($pdo, $url, $source);
                 $fetched += $f; $up += $u; $ok++;
             } catch (Throwable $e) {
-                // 카테고리 하나가 죽어도 나머지는 계속 수집(SSRF 방어는 vg_http_raw 가 담당).
+                // 카테고리 하나가 죽어도 나머지는 계속 수집한다(SSRF 방어는 vg_http_raw→vg_http_follow→vg_ssrf_guard_url 이 담당).
                 error_log("[kisa_feed] $source ($url) 스킵: " . $e->getMessage());
             }
         }
