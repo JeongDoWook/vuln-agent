@@ -114,6 +114,21 @@ if (!empty($rt['processes'])) {
 }
 $procCount = count($procRows);
 
+// ── 재시작 필요 파싱 (pipe, 첫 줄 헤더) ──
+//   업데이트로 교체된 옛 라이브러리를 아직 물고 있는 프로세스. 패키지는 패치됐어도
+//   그 프로세스는 여전히 옛 코드를 실행한다 → 매처가 "이미 패치됨" 억제를 막는 근거.
+$staleRows = [];
+if (!empty($rt['stale'])) {
+    foreach (preg_split('/\r?\n/', (string) $rt['stale']) as $line) {
+        if ($line === '') { continue; }
+        if (strncmp($line, 'pid|comm|pkg', 12) === 0) { continue; } // 헤더
+        $f = explode('|', $line);
+        if (count($f) < 4 || trim($f[2]) === '') { continue; }
+        $staleRows[] = $f; // pid, comm, pkg, lib
+    }
+}
+$staleCount = count($staleRows);
+
 // ── changelog CVE 파싱 — 패키지별 changelog 에 나온 CVE(백포트 근거) ──
 //   에이전트가 --no-changelog 로 돌면 이 섹션이 비어 clogCount=0 → 무해(억제 없음).
 $clogRows = [];
@@ -260,6 +275,17 @@ try {
         );
         foreach ($clogRows as $r) {
             $ins->execute([$scanId, $r[0], $r[1], $r[2]]);
+        }
+    }
+
+    // 재시작 필요 벌크 (옛 라이브러리 상주 — 매처가 억제를 막는 근거로 사용)
+    if ($staleCount > 0) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_stale_libs (scan_id, pid, comm, package_name, lib_path)
+             VALUES (?, ?, ?, ?, ?)'
+        );
+        foreach ($staleRows as $r) {
+            $ins->execute([$scanId, (int) $r[0], $r[1], $r[2], mb_strimwidth((string) $r[3], 0, 512, '')]);
         }
     }
 

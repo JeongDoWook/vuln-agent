@@ -148,6 +148,18 @@ if (!function_exists('vg_scope_rank')) {
             $backport[$r['package_name']][$r['cve_id']] = $r['evidence'];
         }
 
+        // 재시작 필요: 패치됐지만 프로세스가 옛 라이브러리(.so)를 메모리에 물고 있는 패키지.
+        //   package_name => 근거(lib 경로). 이게 있으면 "이미 패치됨" 억제를 하면 안 된다 —
+        //   그 프로세스는 여전히 옛(취약한) 코드를 실행 중이기 때문이다.
+        $stale = [];
+        $slStmt = $pdo->prepare('SELECT package_name, comm, lib_path FROM tb_stale_libs WHERE scan_id = ?');
+        $slStmt->execute([$scanId]);
+        foreach ($slStmt->fetchAll() as $r) {
+            if (!isset($stale[$r['package_name']])) {
+                $stale[$r['package_name']] = trim(($r['comm'] ?? '') . ' → ' . ($r['lib_path'] ?? ''));
+            }
+        }
+
         // 적용된 벤더 권고(errata) 근거: 벤더가 "이 CVE 는 이 설치 빌드에서 고쳤다"고 확인한 것.
         //   changelog(핵심 13개 패키지 하드코딩)와 달리 시스템 전체를 덮는다.
         //   package_name => [cve_id => evidence(설치 NEVRA)]
@@ -169,12 +181,13 @@ if (!function_exists('vg_scope_rank')) {
         $ins = $pdo->prepare(
             'INSERT INTO tb_findings
                (scan_id, cve_id, package_name, installed_version, loaded, exposed,
-                exposure_scope, runtime_status, in_kev, cvss, severity, rationale)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                exposure_scope, runtime_status, in_kev, needs_restart, cvss, severity, rationale)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE
                installed_version=VALUES(installed_version), loaded=VALUES(loaded),
                exposed=VALUES(exposed), exposure_scope=VALUES(exposure_scope),
-               runtime_status=VALUES(runtime_status), in_kev=VALUES(in_kev), cvss=VALUES(cvss),
+               runtime_status=VALUES(runtime_status), in_kev=VALUES(in_kev),
+               needs_restart=VALUES(needs_restart), cvss=VALUES(cvss),
                severity=VALUES(severity), rationale=VALUES(rationale)'
         );
 
@@ -218,6 +231,10 @@ if (!function_exists('vg_scope_rank')) {
                 continue;
             }
 
+            // 재시작 필요 — 이 패키지의 옛 라이브러리를 물고 있는 프로세스가 있나.
+            //   있으면 어떤 억제 근거가 있어도 억제하지 않는다(그 프로세스는 여전히 취약).
+            $staleEv = $stale[$p['name']] ?? ($p['source_pkg'] ? ($stale[$p['source_pkg']] ?? null) : null);
+
             // 런타임 상태 신호 (exposures=포트, processes=실행/로드)
             $le      = $loadMap[$p['name']] ?? ($loadMap[$p['source_pkg']] ?? null);
             $running = isset($procRunning[$p['name']]) || ($p['source_pkg'] && isset($procRunning[$p['source_pkg']]));
@@ -235,11 +252,17 @@ if (!function_exists('vg_scope_rank')) {
                 $inKev = isset($kev[$cveId]);
                 [$status, $sev, $why] = vg_classify($le, $running, $pLoaded, $inKev, $p['name']);
 
+                // 옛 라이브러리가 메모리에 상주하면 "패치됨"이라도 억제하지 않는다(재시작 전까지 취약).
+                $canSuppress = ($staleEv === null);
+                if ($staleEv !== null) {
+                    $why .= ' · 재시작 필요(패치됐지만 옛 라이브러리 사용 중: ' . $staleEv . ')';
+                }
+
                 // 버전 억제: 설치 버전이 조치 버전 이상이면 이미 패치된 것.
                 //   배포판 규칙(epoch·릴리스·틸드)대로 비교한다 — vg_ver_cmp.
                 //   fixed 가 비어 있으면(피드가 조치안을 안 준 경우) 판단하지 않고 남긴다.
                 $fixed = $cand['fixed'];
-                if ($fixed !== null && $fixed !== '' && $cand['cmpver'] !== ''
+                if ($canSuppress && $fixed !== null && $fixed !== '' && $cand['cmpver'] !== ''
                     && vg_ver_cmp($cand['cmpver'], (string) $fixed, $mgr) >= 0) {
                     $insSupp->execute([
                         $scanId, $cveId, $p['name'], $p['version'],
@@ -254,7 +277,7 @@ if (!function_exists('vg_scope_rank')) {
                 //   버전이 낮아 보여도(백포트) 이미 패치된 것 → 실제 위험에서 제외.
                 $erEv = $errata[$p['name']][$cveId]
                     ?? ($p['source_pkg'] ? ($errata[$p['source_pkg']][$cveId] ?? null) : null);
-                if ($erEv !== null) {
+                if ($canSuppress && $erEv !== null) {
                     $reason = $p['name'] . ' 에 적용된 벤더 보안권고가 ' . $cveId . ' 를 고침(백포트) → 이미 패치됨';
                     if (is_string($erEv) && $erEv !== '') { $reason .= ' · ' . $erEv; }
                     $insSupp->execute([
@@ -269,7 +292,7 @@ if (!function_exists('vg_scope_rank')) {
                 //   버전이 낮아 보여도 이미 패치된 것 → 실제 위험에서 제외(오탐 제거).
                 $bpEv = $backport[$p['name']][$cveId]
                     ?? ($p['source_pkg'] ? ($backport[$p['source_pkg']][$cveId] ?? null) : null);
-                if ($bpEv !== null) {
+                if ($canSuppress && $bpEv !== null) {
                     $reason = $p['name'] . ' changelog 에 ' . $cveId . ' 수정 기록(백포트) → 버전이 낮아 보여도 패치됨';
                     if (is_string($bpEv) && $bpEv !== '') { $reason .= ' · ' . $bpEv; }
                     $insSupp->execute([
@@ -284,7 +307,7 @@ if (!function_exists('vg_scope_rank')) {
                 $ins->execute([
                     $scanId, $cveId, $p['name'], $p['version'],
                     $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $status, $inKev ? 1 : 0,
-                    $cvss, $sev, $why,
+                    $staleEv !== null ? 1 : 0, $cvss, $sev, $why,
                 ]);
             }
         }

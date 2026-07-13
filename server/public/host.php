@@ -52,14 +52,17 @@ try {
         $cce = $st->fetchAll();
         foreach ($cce as $c) { if ($c['result'] === 'FAIL') { $cceFail++; } }
 
-        // 상위 취약점(CRITICAL/HIGH) + 조치
+        // 상위 취약점(CRITICAL/HIGH) + 조치.
+        //   재시작 필요 건은 등급과 무관하게 함께 보여준다 — 노출도가 낮아 MEDIUM 으로 떨어지기
+        //   쉬운데, 정작 "패치했으니 안전하다"고 착각하는 바로 그 항목이라 숨기면 안 된다.
         $st = $pdo->prepare(
-            "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale, c.epss, c.epss_percentile,
+            "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
+                    f.needs_restart, c.epss, c.epss_percentile,
                 (SELECT a.fixed_version FROM tb_cve_affected_packages a
                  WHERE a.cve_id=f.cve_id AND a.package_name=f.package_name AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
              FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
-             WHERE f.scan_id = ? AND f.severity IN ('CRITICAL','HIGH')
-             ORDER BY FIELD(f.severity,'CRITICAL','HIGH'), c.epss DESC, f.cve_id"
+             WHERE f.scan_id = ? AND (f.severity IN ('CRITICAL','HIGH') OR f.needs_restart = 1)
+             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id"
         );
         $st->execute([$sid]);
         $findings = $st->fetchAll();
@@ -269,9 +272,13 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
                   'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
                   2 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>',
                   3 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
-                  4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>',
+                  4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>'
+                                 . (!empty($f['needs_restart']) ? ' ' . vg_badge('재시작 필요', 'high') : ''),
                   5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
-                  6 => fn($f) => !empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>',
+                  // 재시작 필요면 조치는 "업그레이드"가 아니라 "프로세스 재시작"이다(이미 패치돼 있다).
+                  6 => fn($f) => !empty($f['needs_restart'])
+                                 ? '<span class="pill">프로세스 재시작</span>'
+                                 : (!empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>'),
               ],
           ]
       );
