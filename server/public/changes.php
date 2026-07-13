@@ -38,24 +38,44 @@ $baselineHosts = [];   // 스캔이 1개뿐이라 비교 불가(첫 수집)
 $hostId = (int) ($_GET['host'] ?? 0);
 $type   = (string) ($_GET['type'] ?? '');
 $page   = max(1, (int) ($_GET['page'] ?? 1));
+$perPage = vg_perpage();
 if (!isset(VG_CHANGE_TYPES[$type])) { $type = ''; }
 
-$pkgChanges = [];
+// 취약점 변화 / 패키지 변경 — 두 목록을 세로로 쌓지 않고 탭으로 가른다.
+//   ?page= 는 활성 탭에만 적용된다(페이저가 하나만 살아 있게).
+$tab = (string) ($_GET['tab'] ?? 'vuln');
+if (!in_array($tab, ['vuln', 'pkg'], true)) { $tab = 'vuln'; }
+
+$pkgChanges = []; $pkgTotal = 0;
 
 try {
     $pdo = vg_pdo();
 
-    // 패키지 변경 이력 — 최근 것부터. 호스트 필터를 공유한다.
-    $sql = "SELECT c.host_id, h.fqdn, c.manager, c.package_name, c.change_type,
-                   c.old_version, c.new_version, s.collected_at AS `when`
-              FROM tb_pkg_changes c
-              JOIN tb_hosts h ON h.id = c.host_id AND h.is_deleted = 0
-              JOIN tb_scans s ON s.id = c.scan_id
-             WHERE c.is_deleted = 0" . ($hostId ? ' AND c.host_id = ?' : '') . '
-             ORDER BY c.id DESC LIMIT 200';
-    $st = $pdo->prepare($sql);
-    $st->execute($hostId ? [$hostId] : []);
-    $pkgChanges = $st->fetchAll(PDO::FETCH_ASSOC);
+    /* 패키지 변경 이력. 예전엔 LIMIT 200 으로 잘라놓고 "더 있다" 는 표시가 없어서
+     * 201번째부터의 변경은 화면에서 볼 방법이 아예 없었다 — 제대로 페이지네이션한다.
+     * 호스트 필터는 취약점 변화 목록과 공유한다. */
+    $pkgFrom = 'FROM tb_pkg_changes c
+                JOIN tb_hosts h ON h.id = c.host_id AND h.is_deleted = 0
+                JOIN tb_scans s ON s.id = c.scan_id
+               WHERE c.is_deleted = 0' . ($hostId ? ' AND c.host_id = ?' : '');
+    $pkgParams = $hostId ? [$hostId] : [];
+
+    $st = $pdo->prepare("SELECT COUNT(*) $pkgFrom");
+    $st->execute($pkgParams);
+    $pkgTotal = (int) $st->fetchColumn();
+
+    if ($tab === 'pkg') {
+        $pkgOffset = ($page - 1) * $perPage;
+        $st = $pdo->prepare(
+            "SELECT c.host_id, h.fqdn, c.manager, c.package_name, c.change_type,
+                    c.old_version, c.new_version, s.collected_at AS `when`
+             $pkgFrom
+             ORDER BY c.id DESC
+             LIMIT $perPage OFFSET $pkgOffset"
+        );
+        $st->execute($pkgParams);
+        $pkgChanges = $st->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     // 호스트별 스캔을 최신순으로. PHP 에서 앞의 2개(최신·직전)만 취한다.
     $rows = $pdo->query(
@@ -164,97 +184,129 @@ vg_header('변화 추적', 'changes');
   <div class="sub">지난 수집 대비 <strong>새로 생긴 / 해결된 / 등급이 바뀐</strong> 취약점. 무엇이 달라졌는지 한눈에 본다.</div>
 
 <?php if ($err !== null): ?>
-  <div class="err"><strong>오류</strong> · <?= vg_h($err) ?></div>
+  <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
 
-  <div class="cards" style="display:flex;gap:.7rem;flex-wrap:wrap;margin:1rem 0;">
-    <?php foreach (['new' => '신규', 'up' => '등급 상승', 'down' => '등급 하락', 'resolved' => '해결'] as $k => $lbl): ?>
-      <div class="card" style="flex:1;min-width:8rem;text-align:center;">
-        <div style="font-size:1.6rem;font-weight:700;"><?= (int) $summary[$k] ?></div>
-        <div class="why"><?= vg_h($lbl) ?></div>
-      </div>
+  <?php
+  /* 요약 KPI. 예전엔 .card 를 인라인 style 로 KPI 처럼 꾸며 썼는데(디자인 규칙 위반),
+   * 이제 .kpi 를 그대로 쓴다 — 눌러서 그 변화유형만 거를 수 있게 링크로. */
+  $changeTone = ['new' => 'crit', 'up' => 'high', 'down' => 'low', 'resolved' => 'ok'];
+  ?>
+  <div class="cards">
+    <?php foreach (VG_CHANGE_TYPES as $k => $lbl): ?>
+      <a class="kpi tone-<?= vg_h($changeTone[$k]) ?><?= $type === $k ? ' is-selected' : '' ?>"
+         href="<?= vg_h(vg_qs(['type' => $type === $k ? '' : $k, 'tab' => 'vuln', 'page' => 1])) ?>">
+        <b><?= (int) $summary[$k] ?></b><span><?= vg_h($lbl) ?></span>
+      </a>
     <?php endforeach; ?>
   </div>
 
-  <?php vg_toolbar([
-      ['type' => 'select', 'name' => 'host', 'selected' => (string) ($hostId ?: ''), 'empty_label' => '전체 호스트',
-       'options' => $hostOptions],
-      ['type' => 'select', 'name' => 'type', 'selected' => $type, 'empty_label' => '전체 변화',
-       'options' => VG_CHANGE_TYPES],
-  ]); ?>
-
   <?php
-  if ($baselineHosts) {
-      echo '<div class="sub" style="margin:.4rem 0 1rem;">기준선(첫 수집이라 비교 대상 없음): '
-         . vg_h(implode(', ', $baselineHosts)) . '</div>';
+  $total = count($changes);
+  vg_subtabs([
+      'vuln' => ['label' => '취약점 변화',   'n' => $total],
+      'pkg'  => ['label' => '패키지 변경',   'n' => $pkgTotal],
+  ], $tab);
+
+  // 변화유형 필터는 취약점 변화 탭에만 뜻이 있다 — 패키지 변경엔 그 어휘가 없다.
+  $filters = [
+      ['type' => 'select', 'name' => 'host', 'selected' => (string) ($hostId ?: ''),
+       'empty_label' => '전체 호스트', 'options' => $hostOptions],
+  ];
+  if ($tab === 'vuln') {
+      $filters[] = ['type' => 'select', 'name' => 'type', 'selected' => $type,
+                    'empty_label' => '전체 변화', 'options' => VG_CHANGE_TYPES];
   }
+  $filters[] = ['type' => 'hidden', 'name' => 'tab', 'value' => $tab];
+  vg_toolbar($filters);
 
-  $perPage = vg_perpage();
-  $total   = count($changes);
-  $paged   = array_slice($changes, ($page - 1) * $perPage, $perPage);
-
-  vg_table(
-      [
-          ['label' => '변화', 'width' => '6rem'],
-          ['label' => '호스트'],
-          ['label' => 'CVE', 'width' => '11rem'],
-          ['label' => '패키지'],
-          ['label' => '등급', 'width' => '9rem'],
-          ['label' => '수집 시각', 'width' => '11rem'],
-      ],
-      $paged,
-      [
-          'empty' => $type !== '' || $hostId ? '조건에 맞는 변화가 없습니다.' : '아직 비교할 변화가 없습니다(호스트마다 스캔이 2회 이상 쌓이면 표시).',
-          'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
-          'cell' => [
-              0 => fn($r) => vg_badge(VG_CHANGE_TYPES[$r['type']], vg_change_tone($r['type'])),
-              1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
-              2 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
-                            . ($r['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
-              3 => fn($r) => vg_h($r['package_name']),
-              4 => function ($r) {
-                  $sev = vg_sev_badge((string) $r['severity']);
-                  if ($r['from_sev']) {
-                      $sev = '<span class="why">' . vg_h($r['from_sev']) . ' →</span> ' . $sev;
-                  }
-                  if ($r['exposed']) { $sev .= ' ' . vg_badge('외부노출', 'high'); }
-                  return $sev;
-              },
-              5 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
-          ],
-      ]
-  );
-  if ($paged) { vg_page_nav($total, $perPage, $page); }
+  if ($baselineHosts) {
+      echo '<div class="sub">기준선(첫 수집이라 비교 대상 없음): ' . vg_h(implode(', ', $baselineHosts)) . '</div>';
+  }
   ?>
 
-  <h2 style="margin-top:2rem;">패키지 변경 이력</h2>
-  <div class="sub">언제 무엇이 <strong>설치·제거·업그레이드</strong>됐는지. 수집 내용이 직전과 같으면
-    스냅샷을 새로 찍지 않으므로, 여기 남는 건 실제로 달라진 것뿐이다.</div>
-  <?php
-  vg_table(
-      [
-          ['label' => '변화', 'width' => '7rem'],
-          ['label' => '호스트'],
-          ['label' => '패키지'],
-          ['label' => '버전'],
-          ['label' => '시각', 'width' => '11rem'],
-      ],
-      $pkgChanges,
-      [
-          'empty' => '아직 패키지 변경이 없습니다(첫 수집 이후 달라진 것이 생기면 표시).',
-          'cell' => [
-              0 => fn($r) => vg_badge(VG_PKG_CHANGE_TYPES[$r['change_type']] ?? $r['change_type'],
-                                      vg_pkgchg_tone((string) $r['change_type'])),
-              1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
-              2 => fn($r) => vg_h($r['package_name'])
-                            . ' <span class="why">' . vg_h((string) $r['manager']) . '</span>',
-              3 => fn($r) => $r['old_version'] !== null && $r['new_version'] !== null
-                            ? '<span class="why">' . vg_h($r['old_version']) . ' →</span> ' . vg_h($r['new_version'])
-                            : vg_h((string) ($r['new_version'] ?? $r['old_version'])),
-              4 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
-          ],
-      ]
-  );
-  ?>
+  <?php if ($tab === 'vuln'): ?>
+    <?php
+    $paged = array_slice($changes, ($page - 1) * $perPage, $perPage);
+    vg_table(
+        [
+            ['label' => '변화', 'width' => '7rem', 'nowrap' => true],
+            ['label' => '호스트'],
+            ['label' => 'CVE', 'width' => '12rem', 'nowrap' => true],
+            ['label' => '패키지'],
+            ['label' => '등급', 'width' => '13rem'],
+            ['label' => '수집 시각', 'width' => '11rem', 'nowrap' => true],
+        ],
+        $paged,
+        [
+            'empty' => ($type !== '' || $hostId)
+                ? [
+                    'icon'  => '🔍',
+                    'title' => '조건에 맞는 변화가 없습니다.',
+                    'hint'  => '호스트나 변화유형 필터를 바꿔 보세요.',
+                    'cta'   => ['href' => '/changes.php', 'label' => '필터 초기화'],
+                ]
+                : [
+                    'icon'  => '📉',
+                    'title' => '아직 비교할 변화가 없습니다.',
+                    'hint'  => '호스트마다 스캔이 2회 이상 쌓여야 직전과 비교할 수 있습니다.',
+                ],
+            'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
+            'cell' => [
+                0 => fn($r) => vg_badge(VG_CHANGE_TYPES[$r['type']], vg_change_tone($r['type'])),
+                1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
+                2 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
+                              . ($r['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
+                3 => fn($r) => vg_h($r['package_name']),
+                4 => function ($r) {
+                    $sev = vg_sev_badge((string) $r['severity']);
+                    if ($r['from_sev']) {
+                        $sev = '<span class="why">' . vg_h($r['from_sev']) . ' →</span> ' . $sev;
+                    }
+                    if ($r['exposed']) { $sev .= ' ' . vg_badge('외부노출', 'high'); }
+                    return $sev;
+                },
+                5 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
+            ],
+        ]
+    );
+    if ($paged) { vg_page_nav($total, $perPage, $page); }
+    ?>
+
+  <?php else: ?>
+    <div class="sub">언제 무엇이 <strong>설치·제거·업그레이드</strong>됐는지. 수집 내용이 직전과 같으면
+      스냅샷을 새로 찍지 않으므로, 여기 남는 건 실제로 달라진 것뿐입니다.</div>
+    <?php
+    vg_table(
+        [
+            ['label' => '변화', 'width' => '8rem', 'nowrap' => true],
+            ['label' => '호스트'],
+            ['label' => '패키지'],
+            ['label' => '버전'],
+            ['label' => '시각', 'width' => '11rem', 'nowrap' => true],
+        ],
+        $pkgChanges,
+        [
+            'empty' => [
+                'icon'  => '📦',
+                'title' => '아직 패키지 변경이 없습니다.',
+                'hint'  => '첫 수집 이후 실제로 달라진 것이 생기면 여기에 남습니다.',
+            ],
+            'cell' => [
+                0 => fn($r) => vg_badge(VG_PKG_CHANGE_TYPES[$r['change_type']] ?? $r['change_type'],
+                                        vg_pkgchg_tone((string) $r['change_type'])),
+                1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
+                2 => fn($r) => vg_h($r['package_name'])
+                              . ' <span class="why">' . vg_h((string) $r['manager']) . '</span>',
+                3 => fn($r) => $r['old_version'] !== null && $r['new_version'] !== null
+                              ? '<span class="why">' . vg_h($r['old_version']) . ' →</span> ' . vg_h($r['new_version'])
+                              : vg_h((string) ($r['new_version'] ?? $r['old_version'])),
+                4 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
+            ],
+        ]
+    );
+    if ($pkgChanges) { vg_page_nav($pkgTotal, $perPage, $page); }
+    ?>
+  <?php endif; ?>
 <?php endif; ?>
 <?php vg_footer();
