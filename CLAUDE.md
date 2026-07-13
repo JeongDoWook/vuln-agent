@@ -3,6 +3,15 @@
 이 파일은 이 저장소에서 코드를 작성/수정하는 모든 작업에 **강제 적용**된다.
 새 기능·리팩터·리뷰 전에 항상 아래 원칙에 비추어 판단한다.
 
+## 먼저 읽을 것
+이 파일은 **규칙**만 담는다. 이 프로젝트가 무엇이고 어떻게 얽혀 있는지는 여기 없다.
+코드를 건드리기 전에 순서대로 읽는다 — 세션마다 자동으로 로드되는 건 이 파일뿐이라,
+아래를 안 읽으면 구조를 처음부터 다시 추측하게 된다.
+
+1. `CONTEXT.md` — 프로젝트 맥락·핵심 전략·현재 단계. **가장 먼저.**
+2. `docs/architecture.md` — 구조·규칙의 최종 기준.
+3. 화면 흐름이 궁금하면 `server/public/process.html`(웹으로 `/process.html`).
+
 ## 핵심 원칙
 
 ### YAGNI (You Aren't Gonna Need It)
@@ -39,7 +48,21 @@
   (실제로 `0003` 과 `0014` 가 각각 두 개씩 생겼다). 타임스탬프는 조율 없이도 안 겹친다.
   기존 연번 파일은 그대로 둔다(사전순이라 옛 것이 먼저 돈다).
 - Windows git-bash 에서 컨테이너에 절대경로 전달 시 `MSYS_NO_PATHCONV=1` 접두.
-- 변경 후 `./tests/smoke.sh` 로 회귀 확인. PHP 는 `php -l`, 쉘은 `bash -n`.
+- **파일은 책임대로 놓는다** — 새 파일을 만들기 전에 어디 속하는지 먼저 정한다.
+  - `server/public/` — HTTP 로 노출되는 페이지·엔드포인트(`findings.php`, `ingest.php` …). 여기 둔 건 곧 URL 이다.
+  - `server/src/` — 공용 라이브러리(`db.php`, `matcher.php`, `vercmp.php` …). 직접 URL 로 열리지 않는다.
+  - `server/bin/` — CLI 로만 도는 것(`sync.php`, `scheduler.php`, `backfill_*.php`). 웹에서 부르지 않는다.
+  - `db/migrations/` — 스키마 변경. `tests/` — 검증. `agent/` — 대상 서버에 설치되는 에이전트.
+- **색·레이아웃은 `server/public/assets/app.css` 가 소유한다.** PHP 안에 `style="…"` 을 쓰지 않는다
+  (폭 계산 `width:N%` 만 예외 — 게이지·미터). 클래스를 쓸 거면 app.css 에 정의가 **있는지 확인**한다 —
+  예전에 `changes.php` 가 `.err` 로 오류를 감쌌는데 app.css 에 `.err` 가 없어서, 오류가 스타일 없는
+  맨텍스트로 뜨는데도 아무도 못 알아챘다. `tests/ui_lint.sh` 가 이 둘을 기계로 잡는다.
+- 변경 후 `./tests/smoke.sh <BASE>` 로 회귀 확인. PHP 는 `php -l`, 쉘은 `bash -n`.
+  smoke 는 curl 만 치는 게 아니라 앞단에서 **`tests/ui_lint.sh`(죽은 CSS 클래스·인라인 style·잘리는 목록)와
+  `tests/vercmp_test.php`(버전 비교 — 매처 오탐 1순위)** 를 먼저 돌린다. 이 둘은 서버 없이도 도는 정적/단위
+  검사라, `server/src/vercmp.php` 나 화면을 건드렸다면 여기서 걸린다.
+  vercmp 만 따로 돌리려면(호스트 php 는 7.2 라 8.x 문법을 오탐한다 — 컨테이너로 돌린다):
+  `MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/w" -w /w php:8.3-cli php tests/vercmp_test.php`
 - **dev 에 `--build` 를 붙이지 않는다.** dev 는 `../server` 를 바인드 마운트하므로 PHP 변경은
   즉시 반영된다. 이미지는 모든 워크트리가 `vulnagent-app:dev` 태그 하나를 공유한다.
   `--build` 는 **`server/Dockerfile` 을 바꾼 브랜치에서만** 쓴다.
