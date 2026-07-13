@@ -179,7 +179,11 @@ vg_header('피드 커넥터', 'connectors');
       ],
       $connectors,
       [
-          'empty' => '등록된 커넥터가 없습니다.',
+          'empty' => [
+              'icon'  => '🔌',
+              'title' => '등록된 커넥터가 없습니다.',
+              'hint'  => '아래 폼에서 피드(CISA KEV · OSV · NVD · KISA · EPSS)를 추가하세요.',
+          ],
           'cell' => [
               0 => fn($c) => '<strong>' . vg_h($c['name']) . '</strong>',
               1 => fn($c) => '<span class="pill">' . vg_h($c['connector_type']) . '</span>',
@@ -298,7 +302,11 @@ vg_header('피드 커넥터', 'connectors');
         $logs,
         [
             'card' => false,
-            'empty' => '아직 실행 이력이 없습니다.',
+            'empty' => [
+                'icon'  => '🕘',
+                'title' => '아직 실행 이력이 없습니다.',
+                'hint'  => '커넥터의 [지금 실행]을 누르거나, 스케줄이 돌면 여기에 쌓입니다.',
+            ],
             'cell' => [
                 1 => fn($l) => '<span class="why">' . vg_h($l['trigger_by']) . '</span>',
                 2 => fn($l) => vg_badge((string) $l['status'], $statusTone[$l['status']] ?? 'muted'),
