@@ -29,6 +29,14 @@ ADMPW="$(cat "$ROOT/secrets/admin_password.txt")"
 
 printf "${CYAN}== vuln-agent smoke test @ %s ==${NC}\n" "$BASE"
 
+# --- UI 정적 검사 -----------------------------------------------------------
+# 서버를 치기 전에 먼저 돈다(죽은 CSS 클래스·인라인 style·조용히 잘리는 목록).
+# 여기서 걸리면 화면은 200 을 주면서도 스타일이 안 입혀지거나 데이터가 잘려 나간다 —
+# curl 로는 절대 안 잡히는 종류라 정적으로 본다.
+if ! "$ROOT/tests/ui_lint.sh"; then
+  fail=$((fail+1))
+fi
+
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \

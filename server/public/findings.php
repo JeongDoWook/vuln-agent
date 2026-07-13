@@ -142,7 +142,7 @@ vg_header('취약점', 'findings');
     <div class="alert alert--err">
       <strong>일부 호스트는 취약점 매칭이 수행되지 않습니다</strong> — CVE 피드(OSV)가 지원하지 않는
       배포판입니다. 이 호스트들의 취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.
-      <ul style="margin:.4rem 0 0 1rem;">
+      <ul class="hint-list">
         <?php foreach ($unsupHosts as $line): ?><li><?= vg_h($line) ?></li><?php endforeach; ?>
       </ul>
     </div>

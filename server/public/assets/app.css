@@ -289,7 +289,21 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
 .card strong { color: var(--text); }
 .card--narrow { max-width: 560px; }
 .card--sm { max-width: 380px; }
+/* 방금 발급된 토큰처럼 "이번 한 번만 보여주는" 카드 — 테두리로 시선을 끈다 */
+.card--accent { border-color: var(--accent); }
+.card--accent:hover { border-color: var(--accent); }
 .card__body { margin-top: .6rem; }
+
+/* 여백 유틸 — PHP 에 style="margin-top:…" 을 쓰지 않기 위한 최소한의 유틸.
+ * 색·레이아웃은 CSS 가 소유한다는 규칙을 지키되, 클래스를 남발하지 않도록 둘만 둔다. */
+.mt    { margin-top: .8rem; }
+.mt-lg { margin-top: 1.2rem; }
+
+/* 전체 선택되게 — 토큰처럼 통째로 복사해야 하는 값 */
+.selectable { user-select: all; }
+
+/* 카드 안 설명용 목록(왜 0건인가 등). 기본 ul 은 들여쓰기가 과하다. */
+.hint-list { margin: .4rem 0 0; padding-left: 1.1rem; }
 
 /* --- KPI -----------------------------------------------------------------
  * 틴트 배경 + 큰 발광 숫자. 이전엔 원색 면에 흰 글자였는데, 팔레트를 밝히면서
@@ -344,11 +358,13 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
   padding: 1.15rem 1.4rem;
   margin-bottom: 1.2rem;
 }
-.hero--crit { border-left-color: var(--crit); }
-.hero--high { border-left-color: var(--high); }
-.hero--med  { border-left-color: var(--med); }
-.hero--low  { border-left-color: var(--low); }
-.hero--ok   { border-left-color: var(--ok); }
+.hero--crit  { border-left-color: var(--crit); }
+.hero--high  { border-left-color: var(--high); }
+.hero--med   { border-left-color: var(--med); }
+.hero--low   { border-left-color: var(--low); }
+.hero--ok    { border-left-color: var(--ok); }
+.hero--info  { border-left-color: var(--accent); }
+.hero--muted { border-left-color: var(--muted-2); }
 .hero__id { flex: 1 1 320px; min-width: 0; }
 .hero__id h1 { margin: 0 0 .4rem; }
 .hero__meta { color: var(--muted); font-size: .85rem; display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; }
@@ -432,6 +448,9 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
  * CVE 상세처럼 "읽는 본문" 과 "항상 보여야 할 수치" 가 같이 있는 화면용.
  * 수치를 위에 눕히면 스크롤하는 순간 사라진다 — 옆에 붙여 sticky 로 띄운다. */
 .detail { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 1.2rem; align-items: start; }
+/* min-width:0 이 없으면 넓은 표가 사이드바를 밀어낸다 — 그리드 자식의 기본 min-width 는
+ * auto 라서 내용보다 작아지지 않는다(레이아웃 .app 이 겪은 것과 같은 함정). */
+.detail__main { min-width: 0; }
 .detail__side { position: sticky; top: 1rem; }
 
 @media (max-width: 1100px) {
