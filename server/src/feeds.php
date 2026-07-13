@@ -13,7 +13,7 @@ declare(strict_types=1);
  *     feeds/kev.php    — VgKevConnector
  *     feeds/osv.php    — VgOsvConnector + vg_osv_* + vg_osv_enrich_fixed
  *     feeds/nvd.php    — VgNvdConnector + vg_nvd_sync(백필 공용)
- *     feeds/kisa.php   — VgKisaConnector + 공지 저장/본문(vg_upsert_advisory 등)
+ *     feeds/kisa.php   — VgKisaConnector + KISA RSS/URL/HTML 파싱(공지 저장/본문 로직은 advisory.php)
  *     feeds/epss.php   — VgEpssConnector + vg_epss_fetch
  *
  *   새 피드 추가: feeds/<type>.php 에 VgFeedConnector 구현 + 여기 require 한 줄 +
