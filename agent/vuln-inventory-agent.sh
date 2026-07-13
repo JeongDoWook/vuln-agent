@@ -126,6 +126,55 @@ cap() {
 # put <category> <key> <string>  : 계산된 값을 직접 기록
 put() { printf '%s' "$3" > "$TMP/${1}__${2}.txt"; }
 
+# ---------- 방화벽: 허용 포트 집합 (노출 판정 보정) ----------
+# 0.0.0.0 바인딩이라도 방화벽이 그 포트를 막고 있으면 외부 노출이 아니다.
+# 판정 원칙: **확신이 있을 때만 강등한다.** 방화벽 종류를 모르거나 파싱이 애매하면
+# 허용으로 간주해 EXTERNAL 을 유지한다 — 여기서 틀리면 진짜 노출을 놓친다(미탐).
+#   firewalld: 모든 zone 의 ports + services 를 합집합으로(인터페이스별 zone 을 놓치면
+#              허용된 포트를 차단으로 오판하므로, 넓게 잡는 쪽이 안전하다).
+#   ufw:       ALLOW/LIMIT 규칙의 포트. DENY/REJECT 는 허용 아님.
+#   그 외(iptables/nft 직접 운용): 판정하지 않는다(규칙 해석이 어렵고 오판 비용이 크다).
+FW_KIND="none"; FW_ALLOW=""
+fw_detect() {
+  if have firewall-cmd && firewall-cmd --state >/dev/null 2>&1; then
+    FW_KIND="firewalld"
+    local zones ports svcs s
+    zones=$(timeout "$CMD_TIMEOUT" firewall-cmd --list-all-zones 2>/dev/null)
+    ports=$(echo "$zones" | awk '/^[[:space:]]*ports:/{ $1=""; print }')
+    svcs=$(echo "$zones"  | awk '/^[[:space:]]*services:/{ $1=""; print }' | tr ' ' '\n' | sort -u)
+    for s in $svcs; do
+      [ -z "$s" ] && continue
+      # 서비스명(ssh, http …)은 포트로 풀어야 비교할 수 있다: "ports: 22/tcp"
+      ports="$ports $(timeout "$CMD_TIMEOUT" firewall-cmd --info-service="$s" 2>/dev/null \
+                      | awk '/^[[:space:]]*ports:/{ $1=""; print }')"
+    done
+    FW_ALLOW=$(echo "$ports" | tr ' ' '\n' | grep -E '^[0-9]+(-[0-9]+)?/(tcp|udp)$' | sort -u | paste -sd' ' -)
+  elif have ufw && ufw status 2>/dev/null | head -n1 | grep -qi 'status: active'; then
+    FW_KIND="ufw"
+    # "22/tcp   ALLOW   Anywhere" / "80/tcp (v6)  ALLOW  Anywhere (v6)" / "6000:6007/tcp ..."
+    FW_ALLOW=$(ufw status 2>/dev/null | grep -E 'ALLOW|LIMIT' | awk '{print $1}' \
+               | grep -E '^[0-9]+(:[0-9]+)?(/(tcp|udp))?$' | sort -u | paste -sd' ' -)
+  fi
+}
+
+# fw_port_allowed <포트> <proto> — 방화벽이 이 포트를 외부에 열어두었나?
+#   방화벽을 판정할 수 없으면(FW_KIND=none) 0(허용)을 돌려 강등을 막는다.
+fw_port_allowed() {
+  local p="$1" proto="$2" e pp lo hi
+  [ "$FW_KIND" = "none" ] && return 0
+  for e in $FW_ALLOW; do
+    pp="${e#*/}"
+    if [ "$pp" = "$e" ]; then pp="$proto"; else e="${e%%/*}"; fi   # 프로토콜 생략 = 양쪽 다
+    [ "$pp" != "$proto" ] && continue
+    case "$e" in
+      *-*|*:*) lo="${e%%[-:]*}"; hi="${e##*[-:]}" ;;
+      *)       lo="$e"; hi="$e" ;;
+    esac
+    [ "$p" -ge "$lo" ] 2>/dev/null && [ "$p" -le "$hi" ] 2>/dev/null && return 0
+  done
+  return 1
+}
+
 # collect_exposure : 런타임 노출 상관 데이터 수집 (차별점 ①)
 #   "취약 라이브러리 → 로드한 프로세스 → 외부 포트" 사슬을 잇는 원천 데이터.
 #   리스닝 소켓의 PID만 대상 + lib→패키지 조회 캐시 → 가볍다.
@@ -171,6 +220,11 @@ collect_exposure() {
         "")                        scope="-"        ;;
         *)                         scope="BOUND"    ;;
       esac
+      # 전체 인터페이스에 떠 있어도 방화벽이 그 포트를 막으면 외부 도달 불가 → FILTERED.
+      #   이게 없으면 "방화벽 뒤의 내부 서비스"가 전부 외부노출(HIGH/CRITICAL)로 뜬다.
+      if [ "$scope" = "EXTERNAL" ] && ! fw_port_allowed "$port" "$proto"; then
+        scope="FILTERED"
+      fi
       echo "${pid}|${comm}|${proto}|${bind}|${port}|${scope}|${exepkg}|${loaded}"
     done <<< "$socks"
   done
@@ -376,6 +430,11 @@ cap products docker   'docker --version 2>/dev/null'
 # ==================================================================
 cap kernel modules 'lsmod'
 cap kernel cmdline 'cat /proc/cmdline'
+# 커널 라이브패치 — 실행 커널 버전만 보면 취약해 보여도 라이브패치로 이미 막힌 CVE 가 있다.
+#   지금은 근거로 수집만 한다(억제엔 안 쓴다). kpatch list 는 CVE 를 주지 않아 CVE 매핑이
+#   없고, 잘못 억제하면 미탐이 되기 때문이다. 매핑 근거(kpatch-patch 패키지 changelog)를
+#   확보한 뒤 억제로 넘긴다.
+cap kernel livepatch 'kpatch list 2>/dev/null; canonical-livepatch status 2>/dev/null; ls /sys/kernel/livepatch/ 2>/dev/null'
 cap net interfaces 'ip -o addr 2>/dev/null || ifconfig -a'
 cap net routes     'ip route 2>/dev/null || route -n'
 cap net listening  'ss -tulpnH 2>/dev/null || netstat -tulpn 2>/dev/null'
@@ -397,6 +456,8 @@ cap services processes 'ps aux --sort=-%mem 2>/dev/null | head -n 60'
 # 10-b) 런타임 노출 상관 (차별점 ①) — 취약 라이브러리↔프로세스↔외부 포트
 #   cap 는 서브셸(bash -c)이라 함수를 못 봄 → 직접 실행해 결과 파일로 기록
 # ==================================================================
+fw_detect   # 방화벽 허용 포트 집합 — collect_exposure 의 scope 판정에 쓴다
+put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
 {
   echo "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs"
   collect_exposure

@@ -14,7 +14,7 @@ require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
 $sevOptions = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-$stOptions  = ['EXTERNAL', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
+$stOptions  = ['EXTERNAL', 'FILTERED', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
 
 $err = null; $scan = null; $rows = []; $total = 0; $perPage = vg_perpage();
 $scanIds = []; $hostOptions = [];

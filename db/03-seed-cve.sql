@@ -14,7 +14,8 @@ INSERT INTO tb_cves (cve_id, summary, cvss, published) VALUES
   ('CVE-2023-0286', 'OpenSSL X.400 address type confusion (X.509 GeneralName) — DoS/메모리', 7.4, '2023-02-08'),
   ('CVE-2021-23017', 'nginx resolver off-by-one 힙 쓰기 — 원격 코드실행 가능', 7.7, '2021-05-25'),
   ('CVE-2023-38545', 'curl SOCKS5 힙 버퍼 오버플로우 — 원격 코드실행 가능', 9.8, '2023-10-11'),
-  ('CVE-2023-22809', 'sudo sudoedit 임의 파일 편집 — 권한상승', 7.8, '2023-01-18')
+  ('CVE-2023-22809', 'sudo sudoedit 임의 파일 편집 — 권한상승', 7.8, '2023-01-18'),
+  ('CVE-2023-28425', 'redis MSETNX 명령 처리 중 단언 실패 — DoS', 5.5, '2023-03-20')
 ON DUPLICATE KEY UPDATE summary=VALUES(summary), cvss=VALUES(cvss), published=VALUES(published);
 
 -- CISA KEV: 실제 악용 목록 (Looney Tunables 는 KEV 등재)
@@ -32,5 +33,8 @@ INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_ver
   ('CVE-2023-38545','Rocky Linux:9', 'curl',    '7.76.1-26.el9_3.2'),
   -- sudo 는 피드가 조치 버전을 더 높게(-13) 말하지만, 벤더 권고(RLSA-2023:0136)가 설치된
   -- -10 빌드에서 이미 고쳤다. 버전만 보면 취약(오탐) → errata 근거로 억제되는 케이스.
-  ('CVE-2023-22809','Rocky Linux:9', 'sudo',    '1.9.5p2-13.el9_4')
+  ('CVE-2023-22809','Rocky Linux:9', 'sudo',    '1.9.5p2-13.el9_4'),
+  -- redis 는 0.0.0.0:6379 로 떠 있지만 방화벽이 막는다(scope=FILTERED) → 외부노출 아님.
+  -- 방화벽을 안 보면 EXTERNAL 로 오판해 HIGH 가 된다. 실제로는 MEDIUM.
+  ('CVE-2023-28425','Rocky Linux:9', 'redis',   '6.2.11-1.el9')
 ON DUPLICATE KEY UPDATE ecosystem=VALUES(ecosystem), fixed_version=VALUES(fixed_version);
