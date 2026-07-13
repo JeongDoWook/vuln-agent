@@ -62,7 +62,10 @@ CVE와 매칭한다. 단순 스캐너와 다른 점은 **"이 취약점이 이 �
 ## 4. 이미 만들어진 것 (재사용)
 
 ### `agent/vuln-inventory-agent.sh` (v2.1) — 수집 에이전트, 동작 검증 완료
-읽기 전용. 서버에 무리 안 감(nice 19 / ionice idle / 명령별 timeout / 피크 메모리 ~7MB).
+읽기 전용. 서버에 무리 안 감(nice 19 / ionice idle / 명령별 timeout).
+**피크 메모리는 실측 61.6MB**(Debian 12 · 91패키지 — 마지막에 jq 로 전 섹션을 한 번에 조립하는
+단계가 1등 요인이라 페이로드 크기에 비례한다). 수치·외삽·재측정법은
+`docs/에이전트-리소스-프로파일.md`, 실측기는 `tests/agent-bench.sh`.
 jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자동 감지.
 
 **수집 항목(취약점 매핑에 중요한 것 위주):**
@@ -75,18 +78,26 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 - `updates` — 미적용 보안업데이트 + 이미 적용된 보안권고(오탐 감소용)
 - `changelog` — 패키지 changelog 의 **CVE 수정 기록**(백포트 억제의 근거 → §7). 기본 수집,
   가장 무거운 단계라 `--no-changelog` 로 끌 수 있고 `--limit` 로 cgroup CPU/메모리 상한을 건다
+- `containers` — **컨테이너 내부 패키지 인벤토리**(`collect_containers`). 실행 중 컨테이너의
+  rootfs 를 직접 읽는다(docker CLI 비의존 → podman/containerd 도 잡힘). 호스트 패키지와는
+  `container_id` 로 구분 저장. 호스트 스캔에서 통째로 빠지던 미탐 영역이었다.
+- `errata` / `debsecan` — **오탐 억제 근거**(→ §7). 벤더가 "이 빌드에서 고쳤다"고 확인한
+  권고 목록, 데비안 보안 트래커의 "이 버전에 아직 남은 CVE" 목록.
+- **재시작·재부팅 필요** — 패치됐지만 프로세스가 옛 `.so` 를 물고 있거나(stale), 커널이
+  패치됐지만 재부팅 전인 상태. **억제를 막는** 신호다(→ §7).
 - `net` / `services` — 포트, 실행 서비스/프로세스
 - `system` — OS/커널/CPE (어떤 OVAL로 대조할지 힌트)
-- 그 외: 커널 CPU취약점 완화상태, 컨테이너 이미지, 언어패키지(pip/npm), 보안설정 등
+- 그 외: 커널 CPU취약점 완화상태, 언어패키지(pip/npm), 보안설정 등
 
 ### `agent/install-agent.sh` — 배포 설치기
 각 대상 서버에서 `sudo bash install-agent.sh` — 인자 없이 실행하면 서버 주소·토큰·주기를 물어본다
 (TTY 아니면 종전대로 `--server/--token` 인자 필수. 도메인만 넣어도 스킴·`/ingest.php` 자동 보정).
 systemd-timer(우선)/cron 으로 주기 수집(기본 매시간) 등록 + 즉시 1회 실행(통신 확인). 설치물은
 `--prefix`(기본 `/opt/vuln-agent`) 아래 `bin`/`etc`/`logs` 로 모이고, 토큰은
-`<prefix>/etc/agent.env`(600) 로 관리(ps 노출 방지). 컨테이너가 떠 있는 호스트에서도 다른
-mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토리(`collect_processes`) — 컨테이너
-오버레이 경로의 `dpkg -S` 전수조사로 멈추는 문제를 회피.
+`<prefix>/etc/agent.env`(600) 로 관리(ps 노출 방지). **프로세스** 인벤토리(`collect_processes`)는
+다른 mount namespace(컨테이너)를 건너뛰고 호스트 자신만 본다 — 컨테이너 오버레이 경로의 `dpkg -S`
+전수조사로 멈추는 문제를 회피. (컨테이너를 안 보는 게 아니다 — **패키지**는 `collect_containers`
+가 rootfs 를 직접 읽어 따로 수집한다.)
 
 ---
 
@@ -111,9 +122,13 @@ vuln-agent/
 │   │             #   process.html — 프로세스 소개(로그인 불필요, /process.html 로 공유)
 │   ├── src/      # config·db·auth(RBAC)·view·matcher(+백포트억제)·feeds·cce·apitoken·audit(감사로그·소프트삭제)
 │   └── bin/      # scheduler.php(사이드카)·sync.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
-├── db/           # 01~13 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
-│   └── migrations/    # NNNN_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
-├── docs/         # 아키텍처·기획안·설명글·피드소스-역할·export-api
+├── db/           # 01~18 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
+│   └── migrations/    # YYYYMMDDHHMMSS_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
+│                      #   연번(0001…)은 금지 — 동시 브랜치가 같은 번호를 집는다. pre-push 가 막는다.
+│                      #   기존 0001~0020 은 그대로 둔다(사전순이라 옛 것이 먼저 돈다).
+├── tests/        # smoke.sh(E2E) · ui_lint.sh(죽은 CSS·인라인 style) · vercmp_test.php(버전비교 단위)
+│                 #   · agent-bench.sh(에이전트 리소스 실측)
+├── docs/         # 아키텍처·기획안·설명글·피드소스-역할·export-api·에이전트-리소스-프로파일
 └── shadow-ai/    # (사이드 PoC) 섀도우 AI DLP 크롬 확장 — 본 파이프라인과 독립
 ```
 
@@ -140,11 +155,12 @@ vuln-agent/
 ## 7. 매처 핵심 규칙 (구현됨)
 
 수집한 `packages` + `exposures`(포트) + `processes`(실행/로드)를 CVE와 조인해
-각 취약점의 **런타임 상태**를 5단계로 판정하고 우선순위를 매긴다.
+각 취약점의 **런타임 상태**를 6단계로 판정하고 우선순위를 매긴다(`vg_classify`).
 
 | 상태 | 조건 | 레벨 |
 |---|---|---|
 | `EXTERNAL` 외부노출 | 외부(0.0.0.0) 오픈 포트로 노출 + 사용 | 3 (HIGH) |
+| `FILTERED` 방화벽차단 | 전체 인터페이스에 떠 있지만 **방화벽이 그 포트를 막아 외부에서 못 닿음** | 2 (MEDIUM) |
 | `LISTENING` 로컬리스닝 | 리스닝하지만 127.0.0.1만 | 2 (MEDIUM) |
 | `RUNNING` 실행중 | 실행 중이나 포트 미개방 | 2 (MEDIUM) |
 | `LOADED` 사용중 | 실행 프로세스가 라이브러리 로드 | 2 (MEDIUM) |
@@ -152,9 +168,33 @@ vuln-agent/
 
 - **KEV 등재** 시 한 단계 상향 → 외부노출 + KEV = **CRITICAL**.
 - **EPSS**(악용확률) · CVSS 는 같은 등급 내 정렬에 사용.
-- **백포트 억제**(2단): ① OSV 버전필터(배포판 전체버전 대조)로 1차 제거 → ② 그걸 통과한 건도
-  패키지 **changelog 에 그 CVE 수정 기록이 있으면** finding 으로 올리지 않고 `tb_suppressed_findings`
-  로 분리한다. 위험 집계·화면은 그대로 두고 오탐만 빠지며, 억제 근거는 호스트 상세에 노출된다.
+- `FILTERED` 가 없으면 방화벽 뒤의 내부 서비스가 **전부 HIGH/CRITICAL 로 뜬다**(오탐).
+  에이전트가 firewalld/ufw 허용 포트와 대조해 판정한다.
+
+**오탐 억제는 4겹이다.** 통과 못 한 건은 finding 이 아니라 `tb_suppressed_findings` 로 분리된다
+— 위험 집계·화면은 그대로 두고 오탐만 빠지며, **근거는 호스트 상세에 그대로 노출된다**(숨기지 않는다).
+
+| 겹 | 근거 | 판정 |
+|---|---|---|
+| ① OSV 버전필터 | 배포판 전체버전 대조 | 영향 없는 버전이면 제거 |
+| ② changelog | 패키지 changelog 의 CVE 수정 기록 | 있으면 억제 (핵심 13개 패키지) |
+| ③ errata | 벤더가 "이 설치 빌드에서 고쳤다"고 확인한 권고 | 있으면 억제 (**시스템 전체** 커버) |
+| ④ debsecan | 데비안 보안 트래커의 "아직 남은 CVE" 목록 | **없으면** 백포트로 고쳐진 것 → 억제 |
+
+> debsecan 은 방향이 반대라 안전장치를 두 겹 뒀다 — `os_id=debian` 일 때만 쓰고(우분투는 OSV 의
+> USN 경로로 이미 커버), **목록이 비면 억제하지 않는다**(수집 실패와 "취약점 0"을 구분할 수 없어
+> 믿었다간 전부 억제해 버린다).
+
+**억제를 취소하는 두 신호** — "패치됨"이 곧 "안전함"이 아닌 경우다. 이게 없으면 미탐이 된다.
+
+- **재시작 필요**(`tb_stale_libs`): 패치됐지만 프로세스가 옛 `.so` 를 메모리에 물고 있다 →
+  그 프로세스는 **여전히 옛 코드를 실행 중**이므로 억제하지 않는다. 조치는 프로세스 재시작.
+- **커널 재부팅 필요**: 커널을 패치해도 재부팅 전엔 옛 커널이 돈다 → 억제하지 않는다.
+  조치는 **재부팅**(프로세스 재시작으로는 안 고쳐진다).
+
+**미지원 배포판**(Amazon Linux · Oracle Linux · CentOS)은 피드가 안 덮어 매칭이 0건이 된다.
+조용히 "취약점 없음"으로 보이면 위험하므로 `vg_distro_unsupported`(`src/distro.php`)가 판정해
+ingest 응답과 취약점 화면에 **경고로 띄운다**.
 
 즉 "설치=취약"으로 전부 올리지 않고, **실제 노출·실행·사용 여부로 우선순위를 가른다.**
 
@@ -202,9 +242,25 @@ vuln-agent/
 - [x] **Export API** — `GET /export.php`(JSON/XML, 호스트·심각도·KEV·EPSS 필터). 전용 읽기 토큰을
       `api-tokens.php` 에서 발급(DB 엔 SHA-256 해시만, 원문은 1회 표시). 인증 헤더 `X-API-Token`
       또는 `Authorization: Bearer`(Apache 가 스트립해도 우회). 상세: `docs/export-api.md`.
-- [x] **스키마 마이그레이션 자동화** — `deploy/migrate.sh` 가 `db/migrations/NNNN_*.sql` 중 미적용분만
-      순서대로 적용하고 `tb_schema_migrations` 에 기록(`up`·`update.sh` 가 자동 호출, 수동 apply 불필요).
-      최상위 `db/01~13*.sql` 은 빈 볼륨 initdb 전용이라 기존 볼륨엔 안 들어간다 → 증분은 `migrations/` 로.
+- [x] **컨테이너 스캔** — `collect_containers` 가 실행 중 컨테이너의 rootfs 를 읽어 **내부 패키지**를
+      수집(`tb_containers`, `tb_packages.container_id`). docker CLI 비의존(podman/containerd 도 잡힘).
+      호스트 스캔에서 통째로 빠지던 미탐 영역이었다. 호스트 상세·취약점 목록에서 컨테이너별로 본다.
+- [x] **재시작·재부팅 필요 판정** — "패치됐지만 아직 안 안전한" 상태를 잡는다.
+      옛 `.so` 를 물고 있는 프로세스(`tb_stale_libs`)와 재부팅 전 커널은 **억제하지 않고** 근거와 함께
+      올린다(조치: 프로세스 재시작 / 재부팅). 이 판정이 없으면 "패치됨=안전"으로 착각해 미탐이 난다.
+- [x] **억제 근거 확장(errata·debsecan)** — changelog(핵심 13개)만으로는 좁아서, 벤더 권고
+      `tb_applied_errata`(시스템 전체)와 데비안 보안 트래커 `tb_debsecan`(역방향 판정)을 더했다 → 억제 4겹(§7).
+- [x] **방화벽 차단(FILTERED) 분류** — 전체 인터페이스에 떠 있어도 방화벽이 막고 있으면 외부노출이 아니다.
+      이 판정이 없으면 방화벽 뒤 내부 서비스가 전부 HIGH/CRITICAL 로 뜬다(오탐).
+- [x] **미지원 배포판 경고** — Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭 0건이 된다.
+      조용히 "취약점 없음"으로 보이지 않도록 `src/distro.php` 가 판정해 ingest 응답·화면에 경고.
+- [x] **패키지 출처 판정** — dpkg 는 vendor 를 안 주므로 apt 라벨(`o=Debian`/`o=Docker`/`o=LP-PPA-…`)로
+      서드파티(PPA·Docker·NodeSource)를 가려낸다(URL 로 보면 사내 미러가 서드파티로 오분류된다).
+- [x] **스키마 마이그레이션 자동화** — `deploy/migrate.sh` 가 `db/migrations/*.sql` 중 미적용분만
+      **파일명 사전순**으로 적용하고 `tb_schema_migrations` 에 기록(`up`·`update.sh` 가 자동 호출, 수동 apply 불필요).
+      파일명은 **타임스탬프**(`YYYYMMDDHHMMSS_이름.sql`) — 연번은 동시 브랜치가 같은 번호를 집어 충돌한다
+      (실제로 `0003`·`0014` 가 각각 두 개 생겼다). `deploy/hooks/pre-push` 가 신규 연번 파일을 막는다.
+      최상위 `db/01~18*.sql` 은 빈 볼륨 initdb 전용이라 기존 볼륨엔 안 들어간다 → 증분은 `migrations/` 로.
 - [x] **UI** — 좌측 사이드바(대분류/중분류) · CVE 목록 탭(전체/KEV/EPSS 상위) · 영향 패키지 목록 `packages.php`
       · EPSS 백분위 병기 · 필터 즉시 적용.
 - [ ] 대시보드 "다음 수집 예정", 알림
