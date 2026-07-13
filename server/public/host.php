@@ -11,9 +11,11 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
 vg_require_menu('findings');
 
 $err = null; $host = null; $scan = null; $scanAge = null;
+$unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
 $tab = 'vuln'; $page = 1; $perPage = vg_perpage(); $total = 0;
@@ -36,6 +38,16 @@ try {
     if ($scan) {
         $sid = (int) $scan['id'];
         $scanAge = $scan['age_min'];
+
+        // CVE 피드가 지원하지 않는 배포판의 컨테이너 — 이것들도 매칭이 0건이라 알려야 한다.
+        $st = $pdo->prepare('SELECT cid, os_id, os_version FROM tb_containers WHERE scan_id = ?');
+        $st->execute([$sid]);
+        foreach ($st->fetchAll() as $c) {
+            $reason = vg_distro_unsupported($c['os_id'] ?? null, $c['os_version'] ?? null);
+            if ($reason !== null) {
+                $unsupContainers[] = ['cid' => (string) $c['cid'], 'reason' => $reason];
+            }
+        }
 
         // --- 히어로/KPI 집계 (탭과 무관한 값싼 COUNT) ---
         $st = $pdo->prepare('SELECT severity, COUNT(*) c FROM tb_findings WHERE scan_id = ? GROUP BY severity');
@@ -185,6 +197,22 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
   ];
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
   vg_hero('🖥️ ' . vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone);
+
+  // CVE 피드가 지원하지 않는 배포판이면 매칭 후보가 아예 없어 **취약점이 0건으로 뜬다.**
+  //   운영자는 "안전하다"고 읽는다 — 침묵하는 미탐이라 반드시 화면에 알린다.
+  $unsup = [];
+  $u = vg_distro_unsupported($host['os_id'] ?? null, $host['os_version'] ?? null);
+  if ($u !== null) { $unsup[] = '이 호스트 — ' . $u; }
+  foreach ($unsupContainers as $c) {
+      $unsup[] = '컨테이너 ' . $c['cid'] . ' — ' . $c['reason'];
+  }
+  if ($unsup) {
+      echo '<div class="alert alert--err"><strong>취약점 매칭이 수행되지 않습니다</strong> — '
+         . '아래 대상은 CVE 피드(OSV)가 지원하지 않는 배포판입니다. '
+         . '취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.<ul style="margin:.4rem 0 0 1rem;">';
+      foreach ($unsup as $line) { echo '<li>' . vg_h($line) . '</li>'; }
+      echo '</ul></div>';
+  }
   ?>
 
   <div class="cards">

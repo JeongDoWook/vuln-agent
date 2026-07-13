@@ -1,0 +1,22 @@
+{
+  "meta": {
+    "hostname_fqdn": "web03.example.com",
+    "collected_at": "2026-07-13T12:00:00+09:00",
+    "agent_version": "2.1",
+    "elapsed_seconds": "4"
+  },
+  "vuln_mapping": {
+    "distro_id": "amzn",
+    "distro_version": "2023",
+    "cpe_name": "cpe:/o:amazon:amazon_linux:2023",
+    "package_family": "rpm"
+  },
+  "system": {
+    "kernel_release": "6.1.79-99.167.amzn2023.x86_64"
+  },
+  "pkg": {
+    "manager": "rpm",
+    "count": "2",
+    "list": "openssl\t1:3.0.8-1.amzn2023.0.10\tx86_64\topenssl-3.0.8-1.amzn2023.0.10.src.rpm\tAmazon Linux\ncurl\t0:8.5.0-1.amzn2023.0.2\tx86_64\tcurl-8.5.0-1.amzn2023.0.2.src.rpm\tAmazon Linux"
+  }
+}
