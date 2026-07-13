@@ -17,6 +17,17 @@ vg_require_menu('findings');
 const VG_SEV_RANK = ['LOW' => 1, 'MEDIUM' => 2, 'HIGH' => 3, 'CRITICAL' => 4];
 // 변화유형: 정렬·필터·배지에 공유
 const VG_CHANGE_TYPES = ['new' => '신규', 'up' => '등급 상승', 'down' => '등급 하락', 'resolved' => '해결'];
+// 패키지 변경유형(tb_pkg_changes.change_type)
+const VG_PKG_CHANGE_TYPES = [
+    'installed'   => '설치',
+    'removed'     => '제거',
+    'upgraded'    => '업그레이드',
+    'downgraded'  => '다운그레이드',
+];
+// 다운그레이드는 되돌아간 것이라 눈에 띄어야 한다(취약 버전으로 회귀했을 수 있다).
+function vg_pkgchg_tone(string $t): string {
+    return ['upgraded' => 'ok', 'installed' => 'med', 'removed' => 'muted', 'downgraded' => 'high'][$t] ?? 'muted';
+}
 
 $err = null;
 $changes = [];
@@ -29,8 +40,22 @@ $type   = (string) ($_GET['type'] ?? '');
 $page   = max(1, (int) ($_GET['page'] ?? 1));
 if (!isset(VG_CHANGE_TYPES[$type])) { $type = ''; }
 
+$pkgChanges = [];
+
 try {
     $pdo = vg_pdo();
+
+    // 패키지 변경 이력 — 최근 것부터. 호스트 필터를 공유한다.
+    $sql = "SELECT c.host_id, h.fqdn, c.manager, c.package_name, c.change_type,
+                   c.old_version, c.new_version, s.collected_at AS `when`
+              FROM tb_pkg_changes c
+              JOIN tb_hosts h ON h.id = c.host_id AND h.is_deleted = 0
+              JOIN tb_scans s ON s.id = c.scan_id
+             WHERE c.is_deleted = 0" . ($hostId ? ' AND c.host_id = ?' : '') . '
+             ORDER BY c.id DESC LIMIT 200';
+    $st = $pdo->prepare($sql);
+    $st->execute($hostId ? [$hostId] : []);
+    $pkgChanges = $st->fetchAll(PDO::FETCH_ASSOC);
 
     // 호스트별 스캔을 최신순으로. PHP 에서 앞의 2개(최신·직전)만 취한다.
     $rows = $pdo->query(
@@ -200,6 +225,36 @@ vg_header('변화 추적', 'changes');
       ]
   );
   if ($paged) { vg_page_nav($total, $perPage, $page); }
+  ?>
+
+  <h2 style="margin-top:2rem;">패키지 변경 이력</h2>
+  <div class="sub">언제 무엇이 <strong>설치·제거·업그레이드</strong>됐는지. 수집 내용이 직전과 같으면
+    스냅샷을 새로 찍지 않으므로, 여기 남는 건 실제로 달라진 것뿐이다.</div>
+  <?php
+  vg_table(
+      [
+          ['label' => '변화', 'width' => '7rem'],
+          ['label' => '호스트'],
+          ['label' => '패키지'],
+          ['label' => '버전'],
+          ['label' => '시각', 'width' => '11rem'],
+      ],
+      $pkgChanges,
+      [
+          'empty' => '아직 패키지 변경이 없습니다(첫 수집 이후 달라진 것이 생기면 표시).',
+          'cell' => [
+              0 => fn($r) => vg_badge(VG_PKG_CHANGE_TYPES[$r['change_type']] ?? $r['change_type'],
+                                      vg_pkgchg_tone((string) $r['change_type'])),
+              1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
+              2 => fn($r) => vg_h($r['package_name'])
+                            . ' <span class="why">' . vg_h((string) $r['manager']) . '</span>',
+              3 => fn($r) => $r['old_version'] !== null && $r['new_version'] !== null
+                            ? '<span class="why">' . vg_h($r['old_version']) . ' →</span> ' . vg_h($r['new_version'])
+                            : vg_h((string) ($r['new_version'] ?? $r['old_version'])),
+              4 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
+          ],
+      ]
+  );
   ?>
 <?php endif; ?>
 <?php vg_footer();
