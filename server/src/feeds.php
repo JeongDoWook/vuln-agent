@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';   // vg_log_activity
+require_once __DIR__ . '/distro.php';  // vg_osv_ecosystem (매처와 공유)
 
 /**
  * 긴 텍스트(설명·본문) 저장 상한(글자 수). 폭주한 응답으로부터 DB 를 지키는 안전장치일 뿐,
@@ -356,21 +357,7 @@ final class VgKevConnector implements VgFeedConnector {
     }
 }
 
-// 배포판(os_id + version) → OSV ecosystem 문자열. 미지원이면 null.
-function vg_osv_ecosystem(?string $osId, ?string $osVer): ?string {
-    $osId = strtolower(trim((string) $osId));
-    $ver  = trim((string) $osVer);
-    preg_match('/^\d+(\.\d+)?/', $ver, $m);
-    $major = isset($m[0]) ? (int) $m[0] : 0;
-    switch ($osId) {
-        case 'debian':               return $major ? "Debian:$major" : null;
-        case 'ubuntu':               return $ver !== '' ? "Ubuntu:$ver" : null;
-        case 'rocky': case 'rockylinux': return $major ? "Rocky Linux:$major" : null;
-        case 'almalinux':            return $major ? "AlmaLinux:$major" : null;
-        case 'rhel': case 'redhat':  return $major ? "Red Hat:$major" : null;
-        default:                     return null;
-    }
-}
+// vg_osv_ecosystem() 은 src/distro.php 로 옮겼다 — 매처도 같은 기준으로 읽어야 하기 때문.
 
 // OSV vuln 에서 CVE ID 추출 (id → aliases 순)
 function vg_osv_cve(array $vuln): ?string {

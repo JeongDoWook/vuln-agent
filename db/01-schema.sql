@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS tb_packages (
   version    VARCHAR(255) NULL,        -- 전체 EVR / dpkg 버전 (릴리스번호 포함)
   arch       VARCHAR(32)  NULL,
   source_pkg VARCHAR(255) NULL,        -- 소스패키지 (백포트 인식 → 오탐 감소)
+  source_version VARCHAR(255) NULL,    -- deb 소스 버전 (OSV 의 deb 조치안이 소스 기준이라 비교에 필요)
   vendor     VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
