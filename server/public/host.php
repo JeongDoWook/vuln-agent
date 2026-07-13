@@ -88,6 +88,10 @@ try {
 
         // --- 활성 탭 데이터만 조회(+페이지네이션) ---
         if ($tab === 'vuln') {
+            // 재시작/재부팅 필요 건을 맨 위로 정렬한다. 이건 등급이 아니라 "놓치기 쉬움"의 문제다:
+            //   노출도가 낮아 LOW 로 떨어지는 경우가 많은데, 정작 패치했다고 안심하는 바로 그
+            //   항목이다. 등급순으로만 정렬하면 CVE 가 많은 호스트에선 페이지 뒤로 밀려 안 보인다
+            //   (실측: 메인 DB 에서 커널 재부팅 건이 2페이지로 밀려 화면에서 사라졌다).
             $total = $vulnTotal;
             $st = $pdo->prepare(
                 "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
@@ -96,7 +100,8 @@ try {
                      WHERE a.cve_id=f.cve_id AND a.package_name=f.package_name AND a.fixed_version IS NOT NULL LIMIT 1) AS fixed_version
                  FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
                  WHERE f.scan_id = ? AND (f.severity IN ('CRITICAL','HIGH') OR f.needs_restart = 1)
-                 ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
+                 ORDER BY f.needs_restart DESC,
+                          FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
                  LIMIT $perPage OFFSET $offset"
             );
             $st->execute([$sid]);
