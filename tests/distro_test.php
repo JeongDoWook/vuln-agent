@@ -30,9 +30,14 @@ $eq('출처 없음',          vg_is_kernel_source(null),         false);
 //   실측(raspberrypi5-00): source_pkg=linux 인 패키지 21개 중 커널 이미지는 6개뿐이었다.
 //   나머지는 헤더·빌드스크립트·메타 → 커널 CVE 와 무관한데 369건씩 달려 있었다.
 $eq('커널 이미지',        vg_is_kernel_code_pkg('linux-image-6.18.34+rpt-rpi-2712'), true);
-$eq('커널 이미지 메타',   vg_is_kernel_code_pkg('linux-image-rpi-2712'),             true);
+$eq('데비안 표준 이미지', vg_is_kernel_code_pkg('linux-image-6.1.0-18-amd64'),       true);
 $eq('rpm 커널',           vg_is_kernel_code_pkg('kernel'),                           true);
 $eq('rpm kernel-core',    vg_is_kernel_code_pkg('kernel-core'),                      true);
+
+// 버전 없는 linux-image-* 는 진짜 이미지를 끌어오는 **의존성 메타**라 커널 코드가 없다.
+//   실측(raspberrypi5-00): linux-image-rpi-2712 · linux-image-rpi-v8 에 CVE 738건이 붙어 있었다.
+$eq('이미지 메타(기종)',  vg_is_kernel_code_pkg('linux-image-rpi-2712'),             false);
+$eq('이미지 메타(아키)',  vg_is_kernel_code_pkg('linux-image-amd64'),                false);
 
 $eq('헤더는 코드가 아니다',      vg_is_kernel_code_pkg('linux-headers-6.18.34+rpt-rpi-v8'), false);
 $eq('헤더 메타도 아니다',        vg_is_kernel_code_pkg('linux-headers-rpi-2712'),           false);
