@@ -157,7 +157,10 @@ if (!function_exists('vg_pkg_ecosystem')) {
     function vg_is_kernel_code_pkg(string $name): bool
     {
         $n = strtolower($name);
-        return str_starts_with($n, 'linux-image-')       // dpkg: 커널 이미지(+ 이미지 메타)
+        // dpkg: **버전이 이름에 박힌 것만** 진짜 이미지다 — linux-image-6.18.34+rpt-rpi-2712.
+        //   버전 없는 linux-image-rpi-2712 / linux-image-amd64 는 진짜 이미지를 끌어오는
+        //   의존성 메타패키지라 커널 코드가 없다(실측: 이 둘에 CVE 738건이 붙어 있었다).
+        return preg_match('/^linux-image-\d/', $n) === 1
             || $n === 'kernel'                            // rpm
             || str_starts_with($n, 'kernel-core')
             || str_starts_with($n, 'kernel-modules')
