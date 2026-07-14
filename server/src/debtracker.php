@@ -64,40 +64,9 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): ar
     }
     if (!$relOf) { return []; }
 
-    // 2) 필요한 릴리스의 트래커 행만 읽는다.
-    //    **릴리스별로 한 번만 읽는다(정적 캐시).** 재매칭은 한 프로세스에서 스캔을 전부 도는데,
-    //    스캔마다 12만 행을 다시 읽어 30초 제한에 걸렸다(실측: rematch.php 가 통째로 죽었다).
-    //    데이터는 피드 수집 때만 바뀌므로 요청 수명 동안 캐시해도 안전하다.
-    static $cache = [];
-
-    $byRelPkg = [];
-    $missing  = [];
-    foreach (array_unique($relOf) as $code) {
-        if (isset($cache[$code])) { $byRelPkg[$code] = $cache[$code]; } else { $missing[] = $code; }
-    }
-
-    if ($missing) {
-        $in = implode(',', array_fill(0, count($missing), '?'));
-        $st = $pdo->prepare(
-            "SELECT release_codename, pkg_name, is_binary, cve_id, fixed_version, other_versions
-               FROM tb_debian_tracker WHERE release_codename IN ($in) AND is_deleted = 0"
-        );
-        $st->execute($missing);
-        foreach ($missing as $code) { $cache[$code] = []; }
-        foreach ($st->fetchAll() as $r) {
-            $cache[(string) $r['release_codename']][(string) $r['pkg_name']][] = [
-                'pkg'       => (string) $r['pkg_name'],
-                'is_binary' => (int) $r['is_binary'],
-                'cve'       => (string) $r['cve_id'],
-                'fixed'     => (string) ($r['fixed_version'] ?? ''),
-                'others'    => (string) ($r['other_versions'] ?? ''),
-            ];
-        }
-        foreach ($missing as $code) { $byRelPkg[$code] = $cache[$code]; }
-    }
-    if (!array_filter($byRelPkg)) { return []; }
-
-    // 3) 각 대상의 dpkg 패키지를 그 대상의 릴리스 데이터와 대조.
+    // 2) 이 스캔의 dpkg 패키지를 먼저 읽는다 — 트래커는 **그 패키지들 것만** 조회한다.
+    //    예전엔 릴리스 전량(코드명당 6만 행)을 배열에 올렸다. RHEL OVAL 까지 들어오자 매처가
+    //    메모리 512MB 를 넘겨 운영에서 죽었다. 스캔 하나가 보는 패키지는 수백 개뿐이다.
     $ids = array_keys($relOf);
     $inC = implode(',', array_fill(0, count($ids), '?'));
     $ps  = $pdo->prepare(
@@ -106,9 +75,44 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): ar
           WHERE scan_id = ? AND manager = 'dpkg' AND container_id IN ($inC)"
     );
     $ps->execute(array_merge([$scanId], $ids));
+    $pkgs = $ps->fetchAll();
+    if (!$pkgs) { return []; }
 
+    // 조회할 이름 — 바이너리와 소스 둘 다(트래커 행은 둘 중 하나로 키가 잡힌다).
+    $names = [];
+    foreach ($pkgs as $p) {
+        $names[(string) $p['name']] = true;
+        if (!empty($p['source_pkg'])) { $names[(string) $p['source_pkg']] = true; }
+    }
+    $names = array_keys($names);
+
+    $byRelPkg = [];
+    foreach (array_unique($relOf) as $code) {
+        $byRelPkg[$code] = [];
+        foreach (array_chunk($names, 500) as $chunk) {
+            $inN = implode(',', array_fill(0, count($chunk), '?'));
+            $st  = $pdo->prepare(
+                "SELECT pkg_name, is_binary, cve_id, fixed_version, other_versions
+                   FROM tb_debian_tracker
+                  WHERE is_deleted = 0 AND release_codename = ? AND pkg_name IN ($inN)"
+            );
+            $st->execute(array_merge([$code], $chunk));
+            foreach ($st->fetchAll() as $r) {
+                $byRelPkg[$code][(string) $r['pkg_name']][] = [
+                    'pkg'       => (string) $r['pkg_name'],
+                    'is_binary' => (int) $r['is_binary'],
+                    'cve'       => (string) $r['cve_id'],
+                    'fixed'     => (string) ($r['fixed_version'] ?? ''),
+                    'others'    => (string) ($r['other_versions'] ?? ''),
+                ];
+            }
+        }
+    }
+    if (!array_filter($byRelPkg)) { return []; }
+
+    // 3) 각 대상의 패키지를 그 대상의 릴리스 데이터와 대조.
     $out = [];
-    foreach ($ps->fetchAll() as $p) {
+    foreach ($pkgs as $p) {
         $ctrId = (int) $p['container_id'];
         $rows  = $byRelPkg[$relOf[$ctrId] ?? ''] ?? null;
         if (!$rows) { continue; }

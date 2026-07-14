@@ -160,42 +160,63 @@ if (!function_exists('vg_scope_rank')) {
     }
 
     /**
-     * CVE 카탈로그(스캔과 무관, 전역): KEV 등재 집합 + 영향 패키지 인덱스.
+     * CVE 카탈로그: KEV 등재 집합 + **이 스캔에 실제로 있는 패키지**의 영향 인덱스.
+     *
+     * 예전엔 tb_cve_affected_packages 를 통째로 읽었다. RHEL OVAL 이 들어오며 그 표가 50만 행이
+     * 되자 두 번 터졌다 — 스캔마다 다시 읽어 30초 실행제한(재매칭 사망), 그리고 전부 배열에 올려
+     * 512MB 메모리 초과(운영에서 실제로 죽었다). 스캔 하나가 보는 패키지는 수백 개뿐인데
+     * 수십만 행을 들고 있을 이유가 없다.
+     *
+     * 그래서 **필요한 패키지 이름만** 질의하고, 이름 단위로 캐시한다(재매칭은 같은 패키지를
+     * 스캔마다 다시 보므로 캐시 적중률이 높다). KEV 는 작아서 통째로 캐시한다.
      */
-    function vg_load_cve_catalog(PDO $pdo): array {
-        // **한 프로세스에서 한 번만 읽는다(정적 캐시).** 카탈로그는 스캔과 무관한 전역 데이터인데
-        //   재매칭(rematch.php)은 스캔을 전부 돌며 스캔마다 이걸 다시 읽었다. RHEL OVAL 이
-        //   들어오며 영향 패키지가 23만 행으로 커지자 30초 실행제한에 걸려 재매칭이 통째로 죽었다.
-        //   피드 수집 중에는 이 함수를 부르지 않으므로(수집 후 재매칭) 요청 수명 캐시는 안전하다.
-        static $catalog = null;
-        if ($catalog !== null) { return $catalog; }
+    function vg_load_cve_catalog(PDO $pdo, array $pkgNames): array {
+        static $kev = null;
+        static $cache = [];        // 패키지명 => 행들 (없으면 빈 배열 — "조회했지만 없음"도 캐시)
 
-        // KEV 집합
-        $kev = [];
-        foreach ($pdo->query('SELECT cve_id FROM tb_kev_catalog')->fetchAll() as $r) {
-            $kev[$r['cve_id']] = true;
+        if ($kev === null) {
+            $kev = [];
+            foreach ($pdo->query('SELECT cve_id FROM tb_kev_catalog')->fetchAll() as $r) {
+                $kev[$r['cve_id']] = true;
+            }
         }
+
+        $need = [];
+        foreach ($pkgNames as $n) {
+            $n = (string) $n;
+            if ($n !== '' && !array_key_exists($n, $cache)) { $need[$n] = true; }
+        }
+        $need = array_keys($need);
 
         // 영향 패키지 인덱스: package_name => [ {cve, eco, fixed, cvss} … ]
         //   ecosystem/fixed_version 을 함께 읽는다. 예전엔 이름만 보고 CVE 를 매달아
         //   (1) 다른 배포판의 행이 붙고 (2) 이미 상위 버전인데도 취약으로 떴다.
-        $affected = [];
-        $capStmt = $pdo->query(
-            'SELECT a.cve_id, a.package_name, a.ecosystem, a.fixed_version, c.cvss
-             FROM tb_cve_affected_packages a
-             LEFT JOIN tb_cves c ON c.cve_id = a.cve_id'
-        );
-        foreach ($capStmt->fetchAll() as $r) {
-            $affected[$r['package_name']][] = [
-                'cve'   => $r['cve_id'],
-                'eco'   => $r['ecosystem'],
-                'fixed' => $r['fixed_version'],
-                'cvss'  => $r['cvss'],
-            ];
+        foreach (array_chunk($need, 500) as $chunk) {
+            foreach ($chunk as $n) { $cache[$n] = []; }   // 결과 없음도 기록(재질의 방지)
+            $in = implode(',', array_fill(0, count($chunk), '?'));
+            $st = $pdo->prepare(
+                "SELECT a.cve_id, a.package_name, a.ecosystem, a.fixed_version, c.cvss
+                   FROM tb_cve_affected_packages a
+                   LEFT JOIN tb_cves c ON c.cve_id = a.cve_id
+                  WHERE a.package_name IN ($in)"
+            );
+            $st->execute($chunk);
+            foreach ($st->fetchAll() as $r) {
+                $cache[$r['package_name']][] = [
+                    'cve'   => $r['cve_id'],
+                    'eco'   => $r['ecosystem'],
+                    'fixed' => $r['fixed_version'],
+                    'cvss'  => $r['cvss'],
+                ];
+            }
         }
 
-        $catalog = ['kev' => $kev, 'affected' => $affected];
-        return $catalog;
+        $affected = [];
+        foreach ($pkgNames as $n) {
+            $n = (string) $n;
+            if ($n !== '' && !empty($cache[$n])) { $affected[$n] = $cache[$n]; }
+        }
+        return ['kev' => $kev, 'affected' => $affected];
     }
 
     /**
@@ -302,7 +323,14 @@ if (!function_exists('vg_scope_rank')) {
         $procRunningPkgs = $sig['procRunningPkgs'];
         $procLoadedPkgs  = $sig['procLoadedPkgs'];
 
-        $catalog  = vg_load_cve_catalog($pdo);
+        // 카탈로그는 **이 스캔이 실제로 가진 패키지**만 읽는다(이름 + 소스패키지 둘 다 조회한다).
+        //   전부 읽으면 RHEL OVAL 이 들어온 뒤 50만 행이라 메모리가 터진다(운영에서 실제로 죽었다).
+        $pkgNames = [];
+        foreach ($packages as $pp) {
+            $pkgNames[(string) $pp['name']] = true;
+            if (!empty($pp['source_pkg'])) { $pkgNames[(string) $pp['source_pkg']] = true; }
+        }
+        $catalog  = vg_load_cve_catalog($pdo, array_keys($pkgNames));
         $kev      = $catalog['kev'];
         $affected = $catalog['affected'];
 
