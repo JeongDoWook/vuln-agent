@@ -99,6 +99,17 @@ else
   no "awk JSON 빌더  (자세히: bash tests/agent_json_test.sh)"
 fi
 
+# --- ssg 단위 테스트 ----------------------------------------------------------
+# 보안설정 점검(CCE)을 검증된 룰셋(SCAP Security Guide)에 묶는다. 매핑에 오타가 나면 조용히
+# "자체 기준" 으로 떨어져 근거가 사라진다. 파서도 Jinja 섞인 실제 형식으로 고정한다.
+printf "\n[ssg]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/ssg_test.php >/dev/null 2>&1; then
+  ok "ssg 단위 테스트 (룰 파싱 · CIS/NIST 매핑)"
+else
+  no "ssg 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/ssg_test.php)"
+fi
+
 # --- rhunfixed 단위 테스트 ----------------------------------------------------
 # Red Hat 미수정 CVE(조치 불가) 판정. 컴포넌트 매핑이나 릴리스 매칭이 틀리면 조용히 미탐이 된다
 # (바이너리 이름으로 물으면 API 가 0건을 주고, "Linux 1" 이 "Linux 10" 에 걸리면 남의 상태를 쓴다).
