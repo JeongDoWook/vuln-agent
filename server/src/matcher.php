@@ -224,22 +224,34 @@ if (!function_exists('vg_scope_rank')) {
         //         잘못 믿으면 미탐이 된다(우분투는 OSV 의 USN 경로로 이미 커버된다).
         //     (2) 목록이 비어 있으면(수집 실패·미설치) 억제하지 않는다 — 실패와 "취약점 0"을
         //         구분할 수 없어서, 믿었다가는 전부 억제해 버린다.
-        $debsecan = [];
+        //   맵은 **판정 대상별**로 갈린다: container_id => [패키지 => [cve => true]] (호스트는 0).
+        //   호스트의 debsecan 을 컨테이너에 적용하면 미탐이므로 섞이지 않게 키로 분리한다.
+        $agentDs = [];
         $dsStmt = $pdo->prepare('SELECT cve_id, package_name FROM tb_debsecan WHERE scan_id = ?');
         $dsStmt->execute([$scanId]);
         foreach ($dsStmt->fetchAll() as $r) {
-            $debsecan[$r['package_name']][$r['cve_id']] = true;
+            $agentDs[$r['package_name']][$r['cve_id']] = true;
         }
 
-        // 에이전트가 debsecan 을 안 보냈으면(=대상 서버에 안 깔림) **중앙이 직접 판정**한다.
-        //   에이전트는 사실만 모으고 판정 지식은 중앙이 갖는 게 정석이다 — 폐쇄망 서버엔
-        //   apt 설치조차 못 한다. 중앙은 debsecan 이 받아 쓰는 바로 그 릴리스 데이터를
-        //   피드로 미러링해 두고(tb_debian_tracker), 같은 규칙으로 같은 결과를 만든다.
-        //   트래커가 아직 수집 전이면 빈 배열 → 아래 useDebsecan 이 꺼져 억제하지 않는다.
-        if ($debsecan === [] && strtolower((string) $osId) === 'debian') {
-            $debsecan = vg_debtracker_evidence($pdo, $scanId, vg_debian_codename($osVersion));
+        // 중앙 판정(tb_debian_tracker) — 에이전트는 사실만 모으고 판정 지식은 중앙이 갖는다.
+        //   호스트뿐 아니라 **데비안 컨테이너**도 여기서 판정한다. 예전의 "컨테이너는 억제 금지"
+        //   규칙은 근거를 **호스트에서 수집**하던 시절 것이다(호스트 상태가 컨테이너로 새면 미탐).
+        //   트래커는 호스트 상태가 아니라 "그 릴리스의 사실" 이고, 컨테이너는 자기 릴리스 데이터로
+        //   자기 패키지 버전을 대조한다 → 샐 경로가 없다. 컨테이너 오탐이 그대로 방치돼 있었다.
+        $debsecan = vg_debtracker_evidence(
+            $pdo, $scanId,
+            strtolower((string) $osId) === 'debian' ? vg_debian_codename($osVersion) : ''
+        );
+        // 에이전트가 debsecan 을 보냈으면 호스트는 그 실측을 우선한다(현장 상태 그대로).
+        if ($agentDs !== [] && strtolower((string) $osId) === 'debian') {
+            $debsecan[0] = $agentDs;
         }
-        $useDebsecan = $debsecan !== [] && strtolower((string) $osId) === 'debian';
+        // 대상별로 켠다 — 목록이 비어 있으면(수집 실패·트래커 미수집) 그 대상은 억제하지 않는다.
+        //   실패와 "취약점 0" 을 구분할 수 없어서, 믿었다가는 전부 억제해 버린다.
+        $useDebsecan = [];
+        foreach ($debsecan as $ctrId => $map) {
+            $useDebsecan[(int) $ctrId] = $map !== [];
+        }
 
         // 적용된 벤더 권고(errata) 근거: 벤더가 "이 CVE 는 이 설치 빌드에서 고쳤다"고 확인한 것.
         //   changelog(핵심 13개 패키지 하드코딩)와 달리 시스템 전체를 덮는다.
@@ -489,15 +501,20 @@ if (!function_exists('vg_scope_rank')) {
                     continue;
                 }
 
-                // debsecan 억제: 데비안 트래커가 이 패키지의 이 CVE 를 "아직 취약"으로 보지 않았다면
+                // 데비안 보안 트래커 억제: 트래커가 이 패키지의 이 CVE 를 "아직 취약"으로 보지 않았다면
                 //   백포트로 이미 고쳐진 것이다(트래커는 데비안 패치 상태를 반영한다).
-                if ($canSuppress && $hostEvidenceOk && $useDebsecan && vg_is_os_manager($mgr)
-                    && !isset($debsecan[$p['name']][$cveId])) {
+                //   **컨테이너에도 적용된다** — 맵이 대상별로 갈려 있어(자기 릴리스 · 자기 패키지)
+                //   호스트 상태가 컨테이너로 새지 않는다. hostEvidenceOk 가 아니라 isDistroPkg 로
+                //   거른다: 서드파티 저장소 패키지는 트래커 관할이 아니므로 여전히 억제하지 않는다.
+                if ($canSuppress && $isDistroPkg && vg_is_os_manager($mgr)
+                    && ($useDebsecan[$ctrId] ?? false)
+                    && !isset($debsecan[$ctrId][$p['name']][$cveId])) {
                     $insSupp->execute([
                         $scanId, $cveId, $p['name'], $p['version'],
                         $inKev ? 1 : 0, $cvss, $sev,
-                        '데비안 보안 트래커(debsecan)가 ' . $p['name'] . ' 의 ' . $cveId
-                        . ' 를 해당 없음으로 판정 → 백포트로 이미 수정됨',
+                        '데비안 보안 트래커가 ' . $p['name'] . ' 의 ' . $cveId
+                        . ' 를 해당 없음으로 판정 → 백포트로 이미 수정됨'
+                        . ($ctr !== null ? ' (컨테이너 ' . (string) $ctr['cid'] . ')' : ''),
                     ]);
                     $counts['SUPPRESSED']++;
                     continue;
