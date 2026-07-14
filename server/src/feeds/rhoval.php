@@ -29,6 +29,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/http.php';
+require_once __DIR__ . '/upsert.php';   // vg_is_cve_id
 require_once __DIR__ . '/../vendorerrata.php';   // 판정 규칙(매처와 공유)
 
 const VG_RHOVAL_SOURCES = [
@@ -201,33 +202,55 @@ final class VgRhovalConnector implements VgFeedConnector {
                 $rows     = vg_rhoval_parse($src['uri']);
                 $fetched += count($rows);
 
-                // 벤더·릴리스 단위 통째 교체 — 철회된 권고가 남아 있으면 잘못 억제한다(미탐).
+                // 24만 행을 한 트랜잭션에 넣었더니 **운영에서 Lock wait timeout** 이 났다 —
+                //   락을 수 분간 쥐고 있는 동안 스케줄러(재매칭·다른 피드)와 부딪혔다.
+                //   그래서 (1) 여러 행을 한 INSERT 로 묶고 (2) 배치마다 커밋해 락을 짧게 쥔다.
+                //   중간에 죽으면 권고가 일부만 남는데, 그건 "억제를 덜 함"(오탐이 남을 뿐)이라
+                //   안전한 방향이다 — 다음 수집이 다시 통째로 교체한다.
                 $pdo->beginTransaction();
                 $pdo->prepare('DELETE FROM tb_vendor_errata WHERE vendor = ? AND release_major = ?')
                     ->execute([$vendor, $major]);
+                $pdo->commit();
 
-                $ins = $pdo->prepare(
-                    'INSERT INTO tb_vendor_errata (vendor, release_major, pkg_name, cve_id, fixed_evr, advisory, severity)
-                     VALUES (?,?,?,?,?,?,?)
-                     ON DUPLICATE KEY UPDATE advisory = VALUES(advisory), severity = VALUES(severity)'
-                );
                 $maxFix = [];   // "패키지|CVE" => 가장 높은 조치 EVR (카탈로그에 넣을 값)
-                foreach ($rows as $r) {
-                    $ins->execute([
+                $batch  = [];
+                $flush  = static function (array $b) use ($pdo): void {
+                    if (!$b) { return; }
+                    $ph  = implode(',', array_fill(0, count($b), '(?,?,?,?,?,?,?)'));
+                    $st  = $pdo->prepare(
+                        "INSERT INTO tb_vendor_errata
+                           (vendor, release_major, pkg_name, cve_id, fixed_evr, advisory, severity)
+                         VALUES $ph
+                         ON DUPLICATE KEY UPDATE advisory = VALUES(advisory), severity = VALUES(severity)"
+                    );
+                    $st->execute(array_merge(...$b));
+                };
+
+                $pdo->beginTransaction();
+                foreach ($rows as $i => $r) {
+                    $batch[] = [
                         $vendor, $major,
                         mb_substr($r['pkg'], 0, 255),
                         mb_substr($r['cve'], 0, 32),
                         mb_substr($r['evr'], 0, 128),
                         mb_substr($r['advisory'], 0, 64),
                         mb_substr($r['severity'], 0, 16),
-                    ]);
+                    ];
                     $upserted++;
 
                     $k = $r['pkg'] . '|' . $r['cve'];
                     if (!isset($maxFix[$k]) || vg_ver_cmp($r['evr'], $maxFix[$k], 'rpm') > 0) {
                         $maxFix[$k] = $r['evr'];
                     }
+
+                    if (count($batch) >= 500) {
+                        $flush($batch);
+                        $batch = [];
+                        if (($i % 10000) < 500) { $pdo->commit(); $pdo->beginTransaction(); }
+                    }
                 }
+                $flush($batch);
+                $pdo->commit();
 
                 // **취약 후보도 여기서 나온다.** RHEL 계열은 OSV 에 조치안이 없어(실측: UBI9 스캔의
                 //   findings 가 0 이었다) OVAL 이 유일한 소스다. 그래서 카탈로그(tb_cves +
@@ -239,12 +262,41 @@ final class VgRhovalConnector implements VgFeedConnector {
                 //   낮은 EVR 을 넣으면 다른 스트림에서 "이미 패치됨" 으로 잘못 억제한다(미탐).
                 //   높은 쪽은 보수적이다 — 억제를 덜 할 뿐이고, 정밀한 스트림 판정은
                 //   tb_vendor_errata 를 보는 vg_vendor_errata_evidence 가 따로 한다.
-                $eco = $vendor === 'almalinux' ? "AlmaLinux:$major" : "Red Hat:$major";
+                //   카탈로그도 배치로 넣는다(행마다 upsert 하면 8만 번 왕복 + 락 유지 시간이 길다).
+                $eco    = $vendor === 'almalinux' ? "AlmaLinux:$major" : "Red Hat:$major";
+                $cveB   = [];
+                $affB   = [];
+                $flushC = static function (array $cveB, array $affB) use ($pdo): void {
+                    if ($cveB) {
+                        // 상세(요약·CVSS)는 NVD 가 채운다 — 여기선 CVE 존재만 보장한다(INSERT IGNORE).
+                        $ph = implode(',', array_fill(0, count($cveB), '(?)'));
+                        $pdo->prepare("INSERT IGNORE INTO tb_cves (cve_id) VALUES $ph")->execute($cveB);
+                    }
+                    if ($affB) {
+                        $ph = implode(',', array_fill(0, count($affB), '(?,?,?,?)'));
+                        $pdo->prepare(
+                            "INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+                             VALUES $ph
+                             ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
+                        )->execute(array_merge(...$affB));
+                    }
+                };
+
+                $pdo->beginTransaction();
+                $n = 0;
                 foreach ($maxFix as $k => $evr) {
                     [$pkg, $cve] = explode('|', $k, 2);
-                    vg_upsert_cve($pdo, $cve, null, null, null);   // 상세(요약·CVSS)는 NVD 가 채운다
-                    vg_upsert_affected($pdo, $cve, $eco, mb_substr($pkg, 0, 255), mb_substr($evr, 0, 128));
+                    if (!vg_is_cve_id($cve)) { continue; }
+                    $cveB[] = $cve;
+                    $affB[] = [$cve, $eco, mb_substr($pkg, 0, 255), mb_substr($evr, 0, 128)];
+
+                    if (++$n % 500 === 0) {
+                        $flushC($cveB, $affB);
+                        $cveB = []; $affB = [];
+                        if ($n % 10000 === 0) { $pdo->commit(); $pdo->beginTransaction(); }
+                    }
                 }
+                $flushC($cveB, $affB);
                 $pdo->commit();
             } finally {
                 @unlink($src['path']);
