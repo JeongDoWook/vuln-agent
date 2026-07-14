@@ -65,25 +65,37 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): ar
     if (!$relOf) { return []; }
 
     // 2) 필요한 릴리스의 트래커 행만 읽는다.
-    $codes = array_values(array_unique($relOf));
-    $in    = implode(',', array_fill(0, count($codes), '?'));
-    $st    = $pdo->prepare(
-        "SELECT release_codename, pkg_name, is_binary, cve_id, fixed_version, other_versions
-           FROM tb_debian_tracker WHERE release_codename IN ($in) AND is_deleted = 0"
-    );
-    $st->execute($codes);
+    //    **릴리스별로 한 번만 읽는다(정적 캐시).** 재매칭은 한 프로세스에서 스캔을 전부 도는데,
+    //    스캔마다 12만 행을 다시 읽어 30초 제한에 걸렸다(실측: rematch.php 가 통째로 죽었다).
+    //    데이터는 피드 수집 때만 바뀌므로 요청 수명 동안 캐시해도 안전하다.
+    static $cache = [];
 
-    $byRelPkg = [];   // 코드명 => 패키지 => 행들
-    foreach ($st->fetchAll() as $r) {
-        $byRelPkg[(string) $r['release_codename']][(string) $r['pkg_name']][] = [
-            'pkg'       => (string) $r['pkg_name'],
-            'is_binary' => (int) $r['is_binary'],
-            'cve'       => (string) $r['cve_id'],
-            'fixed'     => (string) ($r['fixed_version'] ?? ''),
-            'others'    => (string) ($r['other_versions'] ?? ''),
-        ];
+    $byRelPkg = [];
+    $missing  = [];
+    foreach (array_unique($relOf) as $code) {
+        if (isset($cache[$code])) { $byRelPkg[$code] = $cache[$code]; } else { $missing[] = $code; }
     }
-    if (!$byRelPkg) { return []; }
+
+    if ($missing) {
+        $in = implode(',', array_fill(0, count($missing), '?'));
+        $st = $pdo->prepare(
+            "SELECT release_codename, pkg_name, is_binary, cve_id, fixed_version, other_versions
+               FROM tb_debian_tracker WHERE release_codename IN ($in) AND is_deleted = 0"
+        );
+        $st->execute($missing);
+        foreach ($missing as $code) { $cache[$code] = []; }
+        foreach ($st->fetchAll() as $r) {
+            $cache[(string) $r['release_codename']][(string) $r['pkg_name']][] = [
+                'pkg'       => (string) $r['pkg_name'],
+                'is_binary' => (int) $r['is_binary'],
+                'cve'       => (string) $r['cve_id'],
+                'fixed'     => (string) ($r['fixed_version'] ?? ''),
+                'others'    => (string) ($r['other_versions'] ?? ''),
+            ];
+        }
+        foreach ($missing as $code) { $byRelPkg[$code] = $cache[$code]; }
+    }
+    if (!array_filter($byRelPkg)) { return []; }
 
     // 3) 각 대상의 dpkg 패키지를 그 대상의 릴리스 데이터와 대조.
     $ids = array_keys($relOf);

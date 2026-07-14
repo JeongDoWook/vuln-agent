@@ -121,6 +121,17 @@ else
   no "debtracker 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/debtracker_test.php)"
 fi
 
+# --- rhoval 단위 테스트 -------------------------------------------------------
+# RHEL 계열 OVAL 파서·백포트 판정. 같은 (패키지,CVE)가 마이너 스트림마다 다른 EVR 로 고쳐지는데
+# (el9_2 · el9_4), 스트림을 잘못 고르면 오탐(안 지움) 또는 미탐(잘못 지움)이 난다.
+printf "\n[rhoval]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/rhoval_test.php >/dev/null 2>&1; then
+  ok "rhoval 단위 테스트 (OVAL 파싱·스트림 판정)"
+else
+  no "rhoval 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/rhoval_test.php)"
+fi
+
 # --- schedule 단위 테스트 -----------------------------------------------------
 # feeds.php 의 cron 파싱·스케줄 계산(vg_cron_*/vg_schedule_*)을 server/src/schedule.php 로
 # 뽑아냈다 — 피드 실행과 무관한 순수 시간 계산이라 SRP 상 분리. ingest_parse 처럼 서버 없이
