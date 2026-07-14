@@ -26,8 +26,11 @@ $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $q   = trim((string) ($_GET['q'] ?? ''));
 $sev = (string) ($_GET['sev'] ?? '');
 $st  = (string) ($_GET['st'] ?? '');
+$fx  = (string) ($_GET['fx'] ?? '');
 if (!in_array($sev, $sevOptions, true)) { $sev = ''; }
 if (!in_array($st, $stOptions, true)) { $st = ''; }
+// 조치 가능성: '' 전체 / action 조치 가능 / nofix 조치 불가(벤더가 수정본을 안 냈다)
+if (!in_array($fx, ['action', 'nofix'], true)) { $fx = ''; }
 $page   = max(1, (int) ($_GET['page'] ?? 1));
 $hostId = (int) ($_GET['host'] ?? 0);
 $scanId = (int) ($_GET['scan_id'] ?? 0);
@@ -110,6 +113,11 @@ try {
             $where .= ' AND f.runtime_status = ?';
             $params[] = $st;
         }
+        // 조치 가능성 필터 — 벤더가 수정본을 안 낸 CVE(no_fix)는 "지금 할 수 있는 일이 없는" 것이다.
+        //   기본은 전부 보여주되 **조치 가능한 것을 위로 올린다**(아래 ORDER BY).
+        //   섞어서 등급순으로만 세우면 조치 불가 수백 건이 고칠 수 있는 몇 건을 덮어버린다.
+        if ($fx === 'action') { $where .= ' AND f.no_fix = 0'; }
+        if ($fx === 'nofix')  { $where .= ' AND f.no_fix = 1'; }
 
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_findings f WHERE $where");
         $stmt->execute($params);
@@ -127,7 +135,7 @@ try {
              LEFT JOIN tb_containers ctr ON ctr.id = f.container_id
              LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
              WHERE $where
-             ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC, h.fqdn
+             ORDER BY f.no_fix ASC, FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC, h.fqdn
              LIMIT $perPage OFFSET $offset"
         );
         $stmt->execute($params);
@@ -189,6 +197,9 @@ vg_header('취약점', 'findings');
           'options' => array_combine($sevOptions, $sevOptions)],
       ['type' => 'select', 'name' => 'st', 'empty_label' => '전체 상태', 'selected' => $st,
           'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
+      // 조치 가능성 — 벤더가 수정본을 안 낸 CVE 를 걸러 보거나, 그것만 모아 볼 수 있다.
+      ['type' => 'select', 'name' => 'fx', 'empty_label' => '전체(조치 가능성)', 'selected' => $fx,
+          'options' => ['action' => '조치 가능', 'nofix' => '조치 불가(벤더 미수정)']],
   ]));
 
   // 컬럼 11개는 가로 스크롤을 만들어서, 정작 제일 중요한 "조치" 가 화면 밖으로 밀려났었다.
@@ -229,6 +240,11 @@ vg_header('취약점', 'findings');
                   $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '"' . $t . '>'
                         . vg_h($r['cve_id']) . '</a></strong>';
                   if ($r['in_kev']) { $html .= ' ' . vg_badge('KEV', 'crit', '악용이 확인된 취약점 — CISA KEV 등재'); }
+                  // 벤더가 수정본을 내지 않은 CVE — 패치로는 못 고친다(완화·격리·제거가 답).
+                  if (!empty($r['no_fix'])) {
+                      $html .= ' ' . vg_badge('조치 불가', 'info',
+                          '벤더가 수정본을 내지 않았다(미수정·수정 보류·수정 안 함) — 패치가 존재하지 않는다');
+                  }
                   return $html;
               },
               // 패키지 — 이름 + 설치 버전(아래줄).

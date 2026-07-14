@@ -299,6 +299,10 @@ if (!function_exists('vg_scope_rank')) {
         //   데이터가 없으면 빈 배열 → 억제하지 않는다.
         $vendorErrata = vg_vendor_errata_evidence($pdo, $scanId, $osId, $osVersion);
 
+        // 벤더가 **아직 안 고친** CVE(조치 불가). OVAL 엔 수정본(RHSA)만 있어 이 경로가 없으면
+        //   그 CVE 들이 통째로 안 보인다(미탐). 실측 UBI8: Trivy 523건 중 514건이 이것이었다.
+        $unfixed = vg_vendor_unfixed_candidates($pdo, $scanId, $osId, $osVersion);
+
         return [
             'backport'     => $backport,
             'stale'        => $stale,
@@ -306,6 +310,7 @@ if (!function_exists('vg_scope_rank')) {
             'useDebsecan'  => $useDebsecan,
             'errata'       => $errata,
             'vendorErrata' => $vendorErrata,
+            'unfixed'      => $unfixed,
         ];
     }
 
@@ -341,6 +346,7 @@ if (!function_exists('vg_scope_rank')) {
         $useDebsecan = $sup['useDebsecan'];
         $errata       = $sup['errata'];
         $vendorErrata = $sup['vendorErrata'];
+        $unfixed      = $sup['unfixed'];
 
         // 구동 커널(uname -r) — 커널 CVE 는 **지금 도는 커널**에만 해당한다.
         //   그 커널의 패키지가 실제로 설치 목록에 있을 때만 "나머지는 안 돈다"고 판단한다.
@@ -368,13 +374,13 @@ if (!function_exists('vg_scope_rank')) {
         $ins = $pdo->prepare(
             'INSERT INTO tb_findings
                (scan_id, container_id, cve_id, package_name, installed_version, loaded, exposed,
-                exposure_scope, runtime_status, in_kev, needs_restart, cvss, severity, rationale)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                exposure_scope, runtime_status, in_kev, needs_restart, no_fix, cvss, severity, rationale)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE
                installed_version=VALUES(installed_version), loaded=VALUES(loaded),
                exposed=VALUES(exposed), exposure_scope=VALUES(exposure_scope),
                runtime_status=VALUES(runtime_status), in_kev=VALUES(in_kev),
-               needs_restart=VALUES(needs_restart), cvss=VALUES(cvss),
+               needs_restart=VALUES(needs_restart), no_fix=VALUES(no_fix), cvss=VALUES(cvss),
                severity=VALUES(severity), rationale=VALUES(rationale)'
         );
 
@@ -389,7 +395,8 @@ if (!function_exists('vg_scope_rank')) {
                base_severity=VALUES(base_severity), suppress_reason=VALUES(suppress_reason)'
         );
 
-        $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0, 'SUPPRESSED' => 0];
+        // NOFIX 는 등급이 아니라 **별도 축**이다(조치 불가). CRITICAL~LOW 와 겹쳐서 센다.
+        $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0, 'SUPPRESSED' => 0, 'NOFIX' => 0];
         $seen = [];
 
         foreach ($packages as $p) {
@@ -437,6 +444,21 @@ if (!function_exists('vg_scope_rank')) {
                     }
                 }
             }
+
+            // 벤더가 **아직 안 고친** CVE — 수정본이 없어 조치할 수 없다(OVAL 엔 RHSA=수정본만 있다).
+            //   실측(UBI8): Trivy 523건 중 514건이 이것이었다. 이건 오탐이 아니라 미탐이었다.
+            //   조치안이 없으므로 버전 비교 억제가 걸리지 않고, no_fix 로 표시해 화면에서
+            //   "지금 고칠 수 있는 것" 과 분리한다 — 섞으면 조치 불가 500건이 고칠 수 있는 9건을 덮는다.
+            foreach ($unfixed[$ctrId][$p['name']] ?? [] as $cve => $info) {
+                if (isset($cands[$cve])) { continue; }               // 수정본이 있으면 그쪽이 우선
+                $cands[$cve] = [
+                    'cvss'   => $info['cvss'],
+                    'fixed'  => null,
+                    'cmpver' => (string) $p['version'],
+                    'no_fix' => (string) $info['state'],
+                ];
+            }
+
             if (!$cands) {
                 continue;
             }
@@ -609,11 +631,20 @@ if (!function_exists('vg_scope_rank')) {
                     continue;
                 }
 
+                // 조치 불가(벤더가 아직 안 고침) — 등급은 그대로 두되 별도 축으로 표시한다.
+                //   덜 위험해서가 아니라 **지금 할 수 있는 일이 없다**는 뜻이다(완화·격리가 답).
+                $noFix = (string) ($cand['no_fix'] ?? '');
+                if ($noFix !== '') {
+                    $why .= ' · 벤더 미수정(' . $noFix . ') — 조치 불가(수정본 없음)';
+                    $counts['NOFIX']++;
+                }
+
                 $counts[$sev]++;
                 $ins->execute([
                     $scanId, $ctrId, $cveId, $p['name'], $p['version'],
                     $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $status, $inKev ? 1 : 0,
-                    ($staleEv !== null || $kernelPending) ? 1 : 0, $cvss, $sev, $why,
+                    ($staleEv !== null || $kernelPending) ? 1 : 0, $noFix !== '' ? 1 : 0,
+                    $cvss, $sev, $why,
                 ]);
             }
         }

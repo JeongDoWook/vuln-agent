@@ -48,6 +48,7 @@ require_once __DIR__ . '/feeds/kisa.php';
 require_once __DIR__ . '/feeds/epss.php';
 require_once __DIR__ . '/feeds/debtracker.php';
 require_once __DIR__ . '/feeds/rhoval.php';
+require_once __DIR__ . '/feeds/rhunfixed.php';
 
 function vg_feed_make(string $type): VgFeedConnector {
     switch ($type) {
@@ -58,6 +59,7 @@ function vg_feed_make(string $type): VgFeedConnector {
         case 'epss': return new VgEpssConnector();
         case 'debtracker': return new VgDebtrackerConnector();
         case 'rhoval': return new VgRhovalConnector();
+        case 'rhunfixed': return new VgRhunfixedConnector();
         default: throw new InvalidArgumentException("알 수 없는 커넥터 타입: $type");
     }
 }
