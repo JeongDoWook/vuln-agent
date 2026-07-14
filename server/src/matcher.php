@@ -13,6 +13,7 @@ require_once __DIR__ . '/vercmp.php';   // vg_ver_cmp — dpkg/rpm 버전 비교
 require_once __DIR__ . '/distro.php';   // vg_osv_ecosystem — 수집과 동일 기준
 require_once __DIR__ . '/debtracker.php';   // vg_debtracker_evidence — 데비안 백포트 판정(중앙)
 require_once __DIR__ . '/vendorerrata.php'; // vg_vendor_errata_evidence — RHEL 계열 백포트 판정(중앙)
+require_once __DIR__ . '/ubuntuoval.php';   // vg_ubuntu_evidence — 우분투 벤더 판정(중앙)
 require_once __DIR__ . '/kernelcve.php';    // vg_kernel_fixed_set — 커널은 업스트림(kernel.org)이 판정한다
 
 if (!function_exists('vg_scope_rank')) {
@@ -277,6 +278,21 @@ if (!function_exists('vg_scope_rank')) {
         if ($agentDs !== [] && strtolower((string) $osId) === 'debian') {
             $debsecan[0] = $agentDs;
         }
+        $trackerLabel = [];
+        foreach ($debsecan as $ctrId => $map) { $trackerLabel[(int) $ctrId] = '데비안 보안 트래커'; }
+
+        // 우분투도 같은 축을 갖는다(tb_ubuntu_oval). 데비안엔 트래커, RHEL 엔 OVAL 이 있는데
+        //   우분투만 벤더 판정이 없어 백포트 오탐이 그대로 남았다(실측 deskmini: 억제 765건 —
+        //   비슷한 규모의 데비안 호스트는 4,135건). 맵 모양이 같아 같은 억제 경로를 탄다.
+        //   대상(호스트·컨테이너)이 겹치지 않는다 — 한 대상의 OS 는 하나다.
+        foreach (vg_ubuntu_evidence(
+            $pdo, $scanId,
+            strtolower((string) $osId) === 'ubuntu' ? vg_ubuntu_codename($osVersion) : ''
+        ) as $ctrId => $map) {
+            $debsecan[(int) $ctrId]     = $map;
+            $trackerLabel[(int) $ctrId] = '우분투 보안 OVAL';
+        }
+
         // 대상별로 켠다 — 목록이 비어 있으면(수집 실패·트래커 미수집) 그 대상은 억제하지 않는다.
         //   실패와 "취약점 0" 을 구분할 수 없어서, 믿었다가는 전부 억제해 버린다.
         $useDebsecan = [];
@@ -309,6 +325,7 @@ if (!function_exists('vg_scope_rank')) {
             'stale'        => $stale,
             'debsecan'     => $debsecan,
             'useDebsecan'  => $useDebsecan,
+            'trackerLabel' => $trackerLabel,
             'errata'       => $errata,
             'vendorErrata' => $vendorErrata,
             'unfixed'      => $unfixed,
@@ -345,6 +362,7 @@ if (!function_exists('vg_scope_rank')) {
         $stale       = $sup['stale'];
         $debsecan    = $sup['debsecan'];
         $useDebsecan = $sup['useDebsecan'];
+        $trackerLabel = $sup['trackerLabel'];
         $errata       = $sup['errata'];
         $vendorErrata = $sup['vendorErrata'];
         $unfixed      = $sup['unfixed'];
@@ -598,8 +616,8 @@ if (!function_exists('vg_scope_rank')) {
                     continue;
                 }
 
-                // 데비안 보안 트래커 억제: 트래커가 이 패키지의 이 CVE 를 "아직 취약"으로 보지 않았다면
-                //   백포트로 이미 고쳐진 것이다(트래커는 데비안 패치 상태를 반영한다).
+                // 배포판 벤더 억제(데비안 보안 트래커 · 우분투 보안 OVAL): 벤더가 이 패키지의 이 CVE 를
+                //   "아직 취약"으로 보지 않았다면 백포트로 이미 고쳐진 것이다(벤더의 패치 상태가 근거다).
                 //   **컨테이너에도 적용된다** — 맵이 대상별로 갈려 있어(자기 릴리스 · 자기 패키지)
                 //   호스트 상태가 컨테이너로 새지 않는다. hostEvidenceOk 가 아니라 isDistroPkg 로
                 //   거른다: 서드파티 저장소 패키지는 트래커 관할이 아니므로 여전히 억제하지 않는다.
@@ -609,7 +627,7 @@ if (!function_exists('vg_scope_rank')) {
                     $insSupp->execute([
                         $scanId, $cveId, $p['name'], $p['version'],
                         $inKev ? 1 : 0, $cvss, $sev,
-                        '데비안 보안 트래커가 ' . $p['name'] . ' 의 ' . $cveId
+                        ($trackerLabel[$ctrId] ?? '배포판 보안 트래커') . '가 ' . $p['name'] . ' 의 ' . $cveId
                         . ' 를 해당 없음으로 판정 → 백포트로 이미 수정됨'
                         . ($ctr !== null ? ' (컨테이너 ' . (string) $ctr['cid'] . ')' : ''),
                     ]);
@@ -671,7 +689,7 @@ if (!function_exists('vg_scope_rank')) {
                 //   — HIGH 87건 중 지금 apt 로 고칠 수 있는 건 8건뿐인데, 화면엔 다 섞여 있었다.
                 //   값이 0(수정본 없음)일 때만 붙인다. 에이전트 debsecan 경로는 값이 true 라 해당 없음.
                 if ($noFix === '' && ($debsecan[$ctrId][$p['name']][$cveId] ?? null) === 0) {
-                    $noFix = '데비안 수정본 미배포';
+                    $noFix = ($trackerLabel[$ctrId] ?? '배포판') . ': 수정본 미배포';
                 }
 
                 if ($noFix !== '') {
