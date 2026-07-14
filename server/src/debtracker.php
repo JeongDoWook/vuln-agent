@@ -38,23 +38,44 @@ function vg_debtracker_is_vulnerable(array $row, string $binName, string $binVer
 }
 
 /**
- * 이 스캔의 호스트 패키지에 트래커를 적용해 "아직 취약" 맵을 만든다.
- *   반환: 바이너리패키지명 => [cve_id => true] — 에이전트 debsecan(tb_debsecan)과 **같은 모양**이라
- *   매처의 기존 억제 경로를 그대로 태운다(누가 계산했는지만 다르다).
+ * 이 스캔의 **호스트와 데비안 컨테이너**에 트래커를 적용해 "아직 취약" 맵을 만든다.
+ *   반환: container_id => [바이너리패키지명 => [cve_id => true]]   (호스트는 0)
+ *   에이전트 debsecan(tb_debsecan)과 같은 모양이라 매처의 기존 억제 경로를 그대로 탄다.
+ *
+ * **컨테이너에도 적용하는 이유**: 예전 규칙은 "컨테이너를 호스트 근거로 억제하지 말 것" 이었다.
+ *   그건 근거(debsecan·errata)를 **호스트에서 수집**하던 시절의 이야기다 — 호스트의 상태를
+ *   컨테이너에 적용하면 실제 취약점을 숨긴다(미탐). 지금 트래커는 호스트 상태가 아니라
+ *   **"그 배포판 릴리스의 사실"** 이고, 컨테이너의 os_id/os_version 으로 그 컨테이너의
+ *   릴리스 데이터를 골라 그 안의 패키지 버전과 대조한다 → 호스트가 새는 경로가 없다.
+ *
  *   트래커 데이터가 없으면 빈 배열 → 매처는 억제하지 않는다(수집 실패와 "취약점 0"은 구분 불가).
  */
-function vg_debtracker_evidence(PDO $pdo, int $scanId, string $codename): array {
-    if ($codename === '') { return []; }
+function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): array {
+    // 1) 판정 대상별 릴리스 코드명 — 호스트(0) + 데비안 컨테이너.
+    $relOf = [];
+    if ($hostCodename !== '') { $relOf[0] = $hostCodename; }
 
-    $st = $pdo->prepare(
-        'SELECT pkg_name, is_binary, cve_id, fixed_version, other_versions
-           FROM tb_debian_tracker WHERE release_codename = ? AND is_deleted = 0'
+    $cs = $pdo->prepare('SELECT id, os_id, os_version FROM tb_containers WHERE scan_id = ?');
+    $cs->execute([$scanId]);
+    foreach ($cs->fetchAll() as $c) {
+        if (strtolower((string) $c['os_id']) !== 'debian') { continue; }   // 우분투는 OSV 경로가 덮는다
+        $code = vg_debian_codename((string) $c['os_version']);
+        if ($code !== '') { $relOf[(int) $c['id']] = $code; }
+    }
+    if (!$relOf) { return []; }
+
+    // 2) 필요한 릴리스의 트래커 행만 읽는다.
+    $codes = array_values(array_unique($relOf));
+    $in    = implode(',', array_fill(0, count($codes), '?'));
+    $st    = $pdo->prepare(
+        "SELECT release_codename, pkg_name, is_binary, cve_id, fixed_version, other_versions
+           FROM tb_debian_tracker WHERE release_codename IN ($in) AND is_deleted = 0"
     );
-    $st->execute([$codename]);
+    $st->execute($codes);
 
-    $byPkg = [];
+    $byRelPkg = [];   // 코드명 => 패키지 => 행들
     foreach ($st->fetchAll() as $r) {
-        $byPkg[$r['pkg_name']][] = [
+        $byRelPkg[(string) $r['release_codename']][(string) $r['pkg_name']][] = [
             'pkg'       => (string) $r['pkg_name'],
             'is_binary' => (int) $r['is_binary'],
             'cve'       => (string) $r['cve_id'],
@@ -62,27 +83,33 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $codename): array 
             'others'    => (string) ($r['other_versions'] ?? ''),
         ];
     }
-    if (!$byPkg) { return []; }
+    if (!$byRelPkg) { return []; }
 
-    // 호스트(container_id=0)의 dpkg 패키지만 본다 — 컨테이너를 호스트 근거로 판정하면 미탐이다.
-    $ps = $pdo->prepare(
-        "SELECT name, source_pkg, version, source_version
+    // 3) 각 대상의 dpkg 패키지를 그 대상의 릴리스 데이터와 대조.
+    $ids = array_keys($relOf);
+    $inC = implode(',', array_fill(0, count($ids), '?'));
+    $ps  = $pdo->prepare(
+        "SELECT container_id, name, source_pkg, version, source_version
            FROM tb_packages
-          WHERE scan_id = ? AND container_id = 0 AND manager = 'dpkg'"
+          WHERE scan_id = ? AND manager = 'dpkg' AND container_id IN ($inC)"
     );
-    $ps->execute([$scanId]);
+    $ps->execute(array_merge([$scanId], $ids));
 
     $out = [];
     foreach ($ps->fetchAll() as $p) {
+        $ctrId = (int) $p['container_id'];
+        $rows  = $byRelPkg[$relOf[$ctrId] ?? ''] ?? null;
+        if (!$rows) { continue; }
+
         $bin    = (string) $p['name'];
         $binVer = (string) $p['version'];
         $src    = (string) ($p['source_pkg'] ?: $p['name']);
         $srcVer = (string) ($p['source_version'] ?: $p['version']);
 
         foreach (array_unique([$bin, $src]) as $key) {
-            foreach ($byPkg[$key] ?? [] as $row) {
+            foreach ($rows[$key] ?? [] as $row) {
                 if (vg_debtracker_is_vulnerable($row, $bin, $binVer, $src, $srcVer)) {
-                    $out[$bin][$row['cve']] = true;
+                    $out[$ctrId][$bin][$row['cve']] = true;
                 }
             }
         }
