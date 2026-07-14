@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-ini_set('memory_limit', '512M'); // 대량 피드(OSV/EPSS) 처리 여유
+ini_set('memory_limit', '1024M'); // 대량 피드 처리 여유(Oracle OVAL 은 236MB XML & 49만 행 — 512M 로는 죽는다)
 
 /**
  * sync.php — 커넥터 1건을 즉시 실행(수동). 사용: php sync.php <connector_id>

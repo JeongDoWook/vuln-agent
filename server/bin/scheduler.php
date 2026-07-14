@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-ini_set('memory_limit', '512M'); // 대량 피드(OSV/EPSS) 처리 여유
+ini_set('memory_limit', '1024M'); // 대량 피드 처리 여유(Oracle OVAL 은 236MB XML & 49만 행 — 512M 로는 죽는다)
 
 /**
  * scheduler.php — 예약된(enabled + due) 피드 커넥터를 실행한다.

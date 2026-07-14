@@ -9,7 +9,12 @@ declare(strict_types=1);
  * 소스:
  *   redhat    https://security.access.redhat.com/data/oval/v2/RHEL{N}/rhel-{N}.oval.xml.bz2  (bz2 전용)
  *   almalinux https://security.almalinux.org/oval/org.almalinux.alsa-{N}.xml                  (평문)
+ *   oracle    https://linux.oracle.com/security/oval/com.oracle.elsa-all.xml.bz2              (전 릴리스 한 파일)
  *   Rocky 는 OSV(Rocky Linux:N)가 조치 버전을 이미 준다 → 중복 수집하지 않는다.
+ *
+ * Oracle Linux 는 **OSV 에 아예 없다** → 이 OVAL 이 유일한 판정 소스다(억제 + 취약 후보 둘 다).
+ *   실측(deskmini): ol 9.7 컨테이너의 패키지 117개에 findings 가 0 이었다 — 통째로 미탐이었다.
+ *   전 릴리스가 한 파일이라 정의의 <platform>Oracle Linux 9</platform> 로 릴리스를 갈라야 한다.
  *
  * OVAL 구조(실물 대조: rhel-9.oval.xml, 압축 해제 25MB):
  *   <definition>  <reference source="RHSA" ref_id="RHSA-2024:1234"/>
@@ -35,7 +40,16 @@ require_once __DIR__ . '/../vendorerrata.php';   // 판정 규칙(매처와 공�
 const VG_RHOVAL_SOURCES = [
     'redhat'    => 'https://security.access.redhat.com/data/oval/v2/RHEL{N}/rhel-{N}.oval.xml.bz2',
     'almalinux' => 'https://security.almalinux.org/oval/org.almalinux.alsa-{N}.xml',
+    // Oracle 은 **전 릴리스가 한 파일**이다(11MB bz2 → 236MB XML, 정의 9,272개).
+    //   그래서 정의의 <platform>Oracle Linux 9</platform> 로 릴리스를 갈라야 한다 —
+    //   안 가르면 OL8 의 조치 EVR(el8_10)로 OL9 를 판정하게 된다.
+    'oracle'    => 'https://linux.oracle.com/security/oval/com.oracle.elsa-all.xml.bz2',
 ];
+
+/** 이 벤더의 OVAL 파일이 여러 릴리스를 한꺼번에 담는가(→ platform 으로 걸러야 한다). */
+function vg_rhoval_is_combined(string $vendor): bool {
+    return $vendor === 'oracle';
+}
 
 /** OVAL 을 받아 임시파일로 저장하고, XMLReader 가 열 수 있는 경로(bz2 면 스트림 래퍼)를 준다. */
 function vg_rhoval_fetch(string $url): array {
@@ -57,19 +71,27 @@ function vg_rhoval_fetch(string $url): array {
 
 /**
  * OVAL → 권고 행 목록. 네트워크·DB 없이 도는 순수 함수(경로만 받는다 → 픽스처로 단위 테스트).
- * @return list<array{pkg:string,cve:string,evr:string,advisory:string,severity:string}>
+ *
+ * $onlyMajor 를 주면 **그 릴리스의 정의만** 붙잡는다(Oracle 처럼 전 릴리스가 한 파일인 경우).
+ *   전부 메모리에 이고 가면 죽는다 — 실측: Oracle 파일(236MB XML)에서 PHP 512MB 를 넘겨 사망.
+ *   OVAL 은 정의 → 테스트 → 오브젝트 → 상태 순이라, 남긴 정의가 참조하는 것만 이어서 담으면 된다.
+ *
+ * @return list<array{pkg:string,cve:string,evr:string,advisory:string,severity:string,majors:list<string>}>
  */
-function vg_rhoval_parse(string $uri): array {
+function vg_rhoval_parse(string $uri, string $onlyMajor = ''): array {
     $doc = new DOMDocument();
     $rd  = new XMLReader();
     if (!@$rd->open($uri)) {
         throw new RuntimeException("OVAL 열기 실패: $uri");
     }
 
-    $defs    = [];   // [ [cves[], testRefs[], advisory, severity] … ]
+    $defs    = [];   // [ [cves[], testRefs[], advisory, severity, majors[]] … ]
     $tests   = [];   // testId  => ['obj' => objId, 'ste' => steId]
     $objects = [];   // objId   => 패키지명
     $states  = [];   // steId   => 조치 EVR ('less than' 인 것만)
+    $needTst = [];   // 남긴 정의가 참조하는 테스트 id (필터가 있을 때만 채운다)
+    $needObj = [];
+    $needSte = [];
 
     while ($rd->read()) {
         if ($rd->nodeType !== XMLReader::ELEMENT) { continue; }
@@ -83,17 +105,35 @@ function vg_rhoval_parse(string $uri): array {
                         $src = strtoupper($ref->getAttribute('source'));
                         $rid = $ref->getAttribute('ref_id');
                         if ($src === 'CVE')  { $cves[] = $rid; }
-                        if ($src === 'RHSA' && $adv === '') { $adv = $rid; }   // 알마도 이 source 를 쓴다
+                        // 권고 ID: RHSA(레드햇·알마) · ELSA(오라클)
+                        if (($src === 'RHSA' || $src === 'ELSA') && $adv === '') { $adv = $rid; }
                     }
                     $sevNode = $node->getElementsByTagNameNS('*', 'severity')->item(0);
                     if ($sevNode !== null) { $sev = trim($sevNode->textContent); }
+
+                    // 릴리스 귀속 — <platform>Oracle Linux 9</platform> / <platform>Red Hat … 9</platform>.
+                    //   한 파일에 여러 릴리스가 섞인 소스(Oracle)에서 이걸 안 보면 OL8 의 조치 EVR 로
+                    //   OL9 를 판정한다. 릴리스별 파일(Red Hat·Alma)에선 그냥 비어 있어도 무해하다.
+                    $majors = [];
+                    foreach ($node->getElementsByTagNameNS('*', 'platform') as $pf) {
+                        if (preg_match('/(\d+)/', $pf->textContent, $pm) === 1) { $majors[$pm[1]] = true; }
+                    }
 
                     $refs = [];
                     foreach ($node->getElementsByTagNameNS('*', 'criterion') as $cr) {
                         $t = $cr->getAttribute('test_ref');
                         if ($t !== '') { $refs[] = $t; }
                     }
-                    if ($cves && $refs) { $defs[] = [$cves, $refs, $adv, $sev]; }
+                    // 대상 릴리스가 아니면 여기서 버린다(그 정의가 참조하는 테스트도 안 담는다).
+                    //   isset 으로 본다 — PHP 는 '9' 같은 숫자 문자열 키를 **정수로 캐스팅**하므로
+                    //   in_array('9', array_keys($majors), true) 는 항상 false 다(실측: 전 행이 사라졌다).
+                    if ($onlyMajor !== '' && !isset($majors[$onlyMajor])) {
+                        $cves = [];
+                    }
+                    if ($cves && $refs) {
+                        $defs[] = [$cves, $refs, $adv, $sev, array_map('strval', array_keys($majors))];
+                        foreach ($refs as $t) { $needTst[$t] = true; }
+                    }
                 }
                 $rd->next();   // 자식은 이미 읽었다
                 break;
@@ -104,8 +144,13 @@ function vg_rhoval_parse(string $uri): array {
                     $id  = $node->getAttribute('id');
                     $o   = $node->getElementsByTagNameNS('*', 'object')->item(0);
                     $s   = $node->getElementsByTagNameNS('*', 'state')->item(0);
-                    if ($id !== '' && $o instanceof DOMElement && $s instanceof DOMElement) {
-                        $tests[$id] = ['obj' => $o->getAttribute('object_ref'), 'ste' => $s->getAttribute('state_ref')];
+                    if ($id !== '' && ($onlyMajor === '' || isset($needTst[$id]))
+                        && $o instanceof DOMElement && $s instanceof DOMElement) {
+                        $obj = $o->getAttribute('object_ref');
+                        $ste = $s->getAttribute('state_ref');
+                        $tests[$id]    = ['obj' => $obj, 'ste' => $ste];
+                        $needObj[$obj] = true;
+                        $needSte[$ste] = true;
                     }
                 }
                 $rd->next();
@@ -116,7 +161,9 @@ function vg_rhoval_parse(string $uri): array {
                 if ($node instanceof DOMElement) {
                     $id = $node->getAttribute('id');
                     $nm = $node->getElementsByTagNameNS('*', 'name')->item(0);
-                    if ($id !== '' && $nm !== null) { $objects[$id] = trim($nm->textContent); }
+                    if ($id !== '' && ($onlyMajor === '' || isset($needObj[$id])) && $nm !== null) {
+                        $objects[$id] = trim($nm->textContent);
+                    }
                 }
                 $rd->next();
                 break;
@@ -127,7 +174,8 @@ function vg_rhoval_parse(string $uri): array {
                     $id  = $node->getAttribute('id');
                     $evr = $node->getElementsByTagNameNS('*', 'evr')->item(0);
                     // 'less than' 인 EVR 만 조치안이다. arch·서명 검사 상태는 버린다.
-                    if ($id !== '' && $evr instanceof DOMElement
+                    if ($id !== '' && ($onlyMajor === '' || isset($needSte[$id]))
+                        && $evr instanceof DOMElement
                         && strtolower($evr->getAttribute('operation')) === 'less than') {
                         $states[$id] = trim($evr->textContent);
                     }
@@ -138,10 +186,10 @@ function vg_rhoval_parse(string $uri): array {
     }
     $rd->close();
 
-    // 정의 × 테스트 → (패키지, 조치 EVR, CVE) 로 펼친다.
+    // 정의 × 테스트 → (패키지, 조치 EVR, CVE) 로 펼친다. majors 는 그 정의가 적용되는 릴리스다.
     $rows = [];
     $seen = [];
-    foreach ($defs as [$cves, $refs, $adv, $sev]) {
+    foreach ($defs as [$cves, $refs, $adv, $sev, $majors]) {
         foreach ($refs as $t) {
             $test = $tests[$t] ?? null;
             if ($test === null) { continue; }
@@ -149,11 +197,31 @@ function vg_rhoval_parse(string $uri): array {
             $evr = $states[$test['ste']] ?? '';        // 조치안이 없는 테스트(플랫폼·아키)는 여기서 걸러진다
             if ($pkg === '' || $evr === '') { continue; }
 
+            // **별도 제품 계보의 EVR 은 조치안이 아니다** — Oracle 이 같은 파일에 섞어 낸다.
+            //   · Ksplice 사용자공간: glibc 2:2.28-151.0.1.ksplice2.el8   (epoch 2, 실측 10,528행)
+            //   · FIPS 검증 빌드   : gnutls 10:3.6.16-8.el8_9.3_fips      (epoch 10)
+            //   일반 설치본은 epoch 0 이라, 이걸 조치안으로 쓰면 **정상 최신 시스템이 통째로 취약**해진다
+            //   (epoch 가 우선하므로 0:… < 2:… < 10:…). 실측 oraclelinux:8 — glibc·gnutls 계열이
+            //   전부 오탐으로 남았다. Trivy 도 같은 이유로 제외한다.
+            if (stripos($evr, 'ksplice') !== false || stripos($evr, '_fips') !== false) { continue; }
+
+            // 한 권고가 여러 릴리스를 함께 다루면(ELSA-2023-12788 은 OL8·OL9) 그 안에 el8·el9 EVR 이
+            //   섞여 있다. 릴리스 필터를 켰으면 **그 릴리스의 EVR 만** 남긴다 — 안 그러면 OL8 행에
+            //   el9 EVR(11.3.1)이 들어가 설치본(8.5.0)이 영원히 "미조치" 가 된다(실측: libgcc 오탐).
+            //   릴리스 태그는 두 모양이다: `-24.el8_10` 과 모듈러의 `-7.module+el8.10.0+…`.
+            //   `\.el8` 로만 보면 모듈러 패키지(python39·nodejs …)를 통째로 버린다(실측 22만→7.5만행).
+            if ($onlyMajor !== '' && preg_match('/el' . preg_quote($onlyMajor, '/') . '([._+]|$)/', $evr) !== 1) {
+                continue;
+            }
+
             foreach ($cves as $cve) {
                 $k = "$pkg|$cve|$evr";
                 if (isset($seen[$k])) { continue; }
                 $seen[$k] = true;
-                $rows[] = ['pkg' => $pkg, 'cve' => $cve, 'evr' => $evr, 'advisory' => $adv, 'severity' => $sev];
+                $rows[] = [
+                    'pkg' => $pkg, 'cve' => $cve, 'evr' => $evr,
+                    'advisory' => $adv, 'severity' => $sev, 'majors' => $majors,
+                ];
             }
         }
     }
@@ -199,7 +267,13 @@ final class VgRhovalConnector implements VgFeedConnector {
             $src = vg_rhoval_fetch(str_replace('{N}', $major, $tpl));
 
             try {
-                $rows     = vg_rhoval_parse($src['uri']);
+                // 한 파일에 여러 릴리스가 섞인 소스(Oracle)는 **이 릴리스 것만** 파싱한다.
+                //   안 거르면 (1) OL8 의 조치 EVR 이 OL9 행으로 들어가 판정이 틀어지고,
+                //   (2) 전 릴리스를 메모리에 이고 가다 죽는다(실측: 512MB 초과).
+                $rows = vg_rhoval_parse($src['uri'], vg_rhoval_is_combined($vendor) ? $major : '');
+                if (vg_rhoval_is_combined($vendor) && !$rows) {
+                    throw new RuntimeException("$vendor OVAL 에 릴리스 $major 정의가 없다(플랫폼 표기 변경?)");
+                }
                 $fetched += count($rows);
 
                 // 24만 행을 한 트랜잭션에 넣었더니 **운영에서 Lock wait timeout** 이 났다 —
@@ -263,7 +337,8 @@ final class VgRhovalConnector implements VgFeedConnector {
                 //   높은 쪽은 보수적이다 — 억제를 덜 할 뿐이고, 정밀한 스트림 판정은
                 //   tb_vendor_errata 를 보는 vg_vendor_errata_evidence 가 따로 한다.
                 //   카탈로그도 배치로 넣는다(행마다 upsert 하면 8만 번 왕복 + 락 유지 시간이 길다).
-                $eco    = $vendor === 'almalinux' ? "AlmaLinux:$major" : "Red Hat:$major";
+                $eco    = ['almalinux' => "AlmaLinux:$major", 'oracle' => "Oracle Linux:$major"][$vendor]
+                          ?? "Red Hat:$major";
                 $cveB   = [];
                 $affB   = [];
                 $flushC = static function (array $cveB, array $affB) use ($pdo): void {

@@ -30,9 +30,9 @@ if (!function_exists('vg_distro_unsupported')) {
         if (vg_osv_ecosystem($osId, $osVer) !== null) { return null; }
 
         // 이름을 아는 미지원 배포판은 구체적으로 알려준다(자체 피드가 따로 있다).
+        // Oracle Linux 는 여기 없다 — ELSA OVAL 을 직접 받아 판정한다(rhoval 커넥터).
         $known = [
             'amzn'   => 'Amazon Linux — OSV 미지원(자체 ALAS 피드 필요)',
-            'ol'     => 'Oracle Linux — OSV 미지원(자체 ELSA 피드 필요)',
             'centos' => 'CentOS — OSV 미지원',
         ];
         if (isset($known[$id])) { return $known[$id]; }
@@ -259,6 +259,10 @@ if (!function_exists('vg_osv_ecosystem')) {
             case 'rocky': case 'rockylinux': return $major ? "Rocky Linux:$major" : null;
             case 'almalinux':            return $major ? "AlmaLinux:$major" : null;
             case 'rhel': case 'redhat':  return $major ? "Red Hat:$major" : null;
+            // Oracle Linux 는 OSV 에 없다. 우리가 ELSA OVAL 을 직접 받아 이 표기로 카탈로그에 넣는다
+            //   (rhoval 커넥터). 이 매핑이 없으면 매처가 "생태계 미지원" 으로 보고 컨테이너 패키지를
+            //   통째로 건너뛴다 — 실측(deskmini): ol 9.7 컨테이너 117개 패키지에 findings 0 이었다.
+            case 'ol': case 'oraclelinux': return $major ? "Oracle Linux:$major" : null;
             default:                     return null;
         }
     }

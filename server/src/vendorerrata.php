@@ -26,6 +26,10 @@ function vg_errata_vendor(?string $osId): ?string
         case 'redhat':
         case 'centos':    return 'redhat';      // UBI·CentOS Stream 도 RHEL 패키지다
         case 'almalinux': return 'almalinux';
+        // Oracle Linux 는 OSV 에 아예 없다 → ELSA OVAL 이 **유일한** 판정 소스다.
+        //   (실측 deskmini: ol 9.7 컨테이너의 패키지 117개에 findings 가 0 이었다 — 통째로 미탐)
+        case 'ol':
+        case 'oraclelinux': return 'oracle';
         // rocky 는 OSV(Rocky Linux:N)가 조치 버전을 이미 준다 → 중복 수집하지 않는다.
         default:          return null;
     }
