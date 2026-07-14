@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Oracle Linux ELSA OVAL 축소판. 진짜 파일은 **전 릴리스가 한 파일**이라(OL5~OL10),
+  정의의 <platform> 으로 릴리스를 갈라야 한다. 안 가르면 OL8 의 조치 EVR(el8_10)로
+  OL9 를 판정하게 된다 — 그건 억제 오작동이고 곧 미탐이다.
+-->
+<oval_definitions xmlns="http://oval.mitre.org/XMLSchema/oval-definitions-5"
+                  xmlns:red-def="http://oval.mitre.org/XMLSchema/oval-definitions-5#linux">
+  <definitions>
+    <definition class="patch" id="oval:com.oracle.elsa:def:20245962" version="1">
+      <metadata>
+        <title>ELSA-2024-5962:  openssl security update (IMPORTANT)</title>
+        <affected family="unix">
+          <platform>Oracle Linux 8</platform>
+        </affected>
+        <reference ref_id="ELSA-2024-5962" ref_url="https://linux.oracle.com/errata/ELSA-2024-5962.html" source="elsa"/>
+        <reference ref_id="CVE-2024-1111" ref_url="https://linux.oracle.com/cve/CVE-2024-1111.html" source="CVE"/>
+        <severity>IMPORTANT</severity>
+      </metadata>
+      <criteria operator="AND">
+        <criterion comment="openssl is earlier than 0:3.0.7-24.el8_10" test_ref="oval:com.oracle.elsa:tst:8001"/>
+        <criterion comment="openssl is earlier than 2:3.0.7-24.0.1.ksplice2.el8" test_ref="oval:com.oracle.elsa:tst:8002"/>
+        <criterion comment="openssl is earlier than 10:3.0.7-24.el8_9_fips" test_ref="oval:com.oracle.elsa:tst:8003"/>
+        <!-- 이 권고가 OL9 EVR 도 함께 담고 있다(Oracle 은 실제로 이렇게 낸다 — ELSA-2023-12788).
+             OL8 행에 el9 EVR 이 섞이면 설치본(el8)이 영원히 미조치가 된다. -->
+        <criterion comment="openssl is earlier than 0:11.3.1-4.el9" test_ref="oval:com.oracle.elsa:tst:8004"/>
+        <!-- 모듈러 패키지 — 릴리스 태그가 `+el8.10.0` 이다(`.el8` 이 아니다). 이것도 OL8 조치안이다. -->
+        <criterion comment="python39 is earlier than 0:3.9.19-7.module+el8.10.0+90000+abcd" test_ref="oval:com.oracle.elsa:tst:8005"/>
+      </criteria>
+    </definition>
+
+    <definition class="patch" id="oval:com.oracle.elsa:def:20245963" version="1">
+      <metadata>
+        <title>ELSA-2024-5963:  openssl security update (IMPORTANT)</title>
+        <affected family="unix">
+          <platform>Oracle Linux 9</platform>
+        </affected>
+        <reference ref_id="ELSA-2024-5963" ref_url="https://linux.oracle.com/errata/ELSA-2024-5963.html" source="elsa"/>
+        <reference ref_id="CVE-2024-1111" ref_url="https://linux.oracle.com/cve/CVE-2024-1111.html" source="CVE"/>
+        <severity>IMPORTANT</severity>
+      </metadata>
+      <criteria operator="AND">
+        <criterion comment="openssl is earlier than 0:3.0.7-27.el9_5" test_ref="oval:com.oracle.elsa:tst:9001"/>
+      </criteria>
+    </definition>
+  </definitions>
+
+  <tests>
+    <red-def:rpminfo_test check="at least one" comment="openssl is earlier than 0:3.0.7-24.el8_10"
+                          id="oval:com.oracle.elsa:tst:8001" version="1">
+      <red-def:object object_ref="oval:com.oracle.elsa:obj:1"/>
+      <red-def:state state_ref="oval:com.oracle.elsa:ste:8001"/>
+    </red-def:rpminfo_test>
+
+    <!-- Ksplice 전용 권고 — 별도 제품이고 EVR 계보가 다르다(epoch 2). 조치안으로 쓰면
+         정상 최신 시스템이 통째로 취약해진다(설치 0:… < 조치 2:… — epoch 가 우선). -->
+    <red-def:rpminfo_test check="at least one" comment="openssl is earlier than 2:3.0.7-24.0.1.ksplice2.el8"
+                          id="oval:com.oracle.elsa:tst:8002" version="1">
+      <red-def:object object_ref="oval:com.oracle.elsa:obj:1"/>
+      <red-def:state state_ref="oval:com.oracle.elsa:ste:8002"/>
+    </red-def:rpminfo_test>
+
+    <!-- FIPS 검증 빌드 — epoch 10. 일반 설치본(epoch 0)의 조치안이 아니다. -->
+    <red-def:rpminfo_test check="at least one" comment="openssl is earlier than 10:3.0.7-24.el8_9_fips"
+                          id="oval:com.oracle.elsa:tst:8003" version="1">
+      <red-def:object object_ref="oval:com.oracle.elsa:obj:1"/>
+      <red-def:state state_ref="oval:com.oracle.elsa:ste:8003"/>
+    </red-def:rpminfo_test>
+
+    <!-- 같은 권고에 섞인 OL9 EVR — OL8 판정에 쓰면 안 된다. -->
+    <red-def:rpminfo_test check="at least one" comment="openssl is earlier than 0:11.3.1-4.el9"
+                          id="oval:com.oracle.elsa:tst:8004" version="1">
+      <red-def:object object_ref="oval:com.oracle.elsa:obj:1"/>
+      <red-def:state state_ref="oval:com.oracle.elsa:ste:8004"/>
+    </red-def:rpminfo_test>
+
+    <red-def:rpminfo_test check="at least one" comment="python39 is earlier than 0:3.9.19-7.module+el8.10.0+90000+abcd"
+                          id="oval:com.oracle.elsa:tst:8005" version="1">
+      <red-def:object object_ref="oval:com.oracle.elsa:obj:2"/>
+      <red-def:state state_ref="oval:com.oracle.elsa:ste:8005"/>
+    </red-def:rpminfo_test>
+    <red-def:rpminfo_test check="at least one" comment="openssl is earlier than 0:3.0.7-27.el9_5"
+                          id="oval:com.oracle.elsa:tst:9001" version="1">
+      <red-def:object object_ref="oval:com.oracle.elsa:obj:1"/>
+      <red-def:state state_ref="oval:com.oracle.elsa:ste:9001"/>
+    </red-def:rpminfo_test>
+  </tests>
+
+  <objects>
+    <red-def:rpminfo_object id="oval:com.oracle.elsa:obj:1" version="1">
+      <red-def:name>openssl</red-def:name>
+    </red-def:rpminfo_object>
+    <red-def:rpminfo_object id="oval:com.oracle.elsa:obj:2" version="1">
+      <red-def:name>python39</red-def:name>
+    </red-def:rpminfo_object>
+  </objects>
+
+  <states>
+    <red-def:rpminfo_state id="oval:com.oracle.elsa:ste:8001" version="1">
+      <red-def:evr datatype="evr_string" operation="less than">0:3.0.7-24.el8_10</red-def:evr>
+    </red-def:rpminfo_state>
+    <red-def:rpminfo_state id="oval:com.oracle.elsa:ste:8002" version="1">
+      <red-def:evr datatype="evr_string" operation="less than">2:3.0.7-24.0.1.ksplice2.el8</red-def:evr>
+    </red-def:rpminfo_state>
+    <red-def:rpminfo_state id="oval:com.oracle.elsa:ste:8003" version="1">
+      <red-def:evr datatype="evr_string" operation="less than">10:3.0.7-24.el8_9_fips</red-def:evr>
+    </red-def:rpminfo_state>
+    <red-def:rpminfo_state id="oval:com.oracle.elsa:ste:8004" version="1">
+      <red-def:evr datatype="evr_string" operation="less than">0:11.3.1-4.el9</red-def:evr>
+    </red-def:rpminfo_state>
+    <red-def:rpminfo_state id="oval:com.oracle.elsa:ste:8005" version="1">
+      <red-def:evr datatype="evr_string" operation="less than">0:3.9.19-7.module+el8.10.0+90000+abcd</red-def:evr>
+    </red-def:rpminfo_state>
+    <red-def:rpminfo_state id="oval:com.oracle.elsa:ste:9001" version="1">
+      <red-def:evr datatype="evr_string" operation="less than">0:3.0.7-27.el9_5</red-def:evr>
+    </red-def:rpminfo_state>
+  </states>
+</oval_definitions>
