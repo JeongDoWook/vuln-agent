@@ -99,6 +99,17 @@ else
   no "awk JSON 빌더  (자세히: bash tests/agent_json_test.sh)"
 fi
 
+# --- rhunfixed 단위 테스트 ----------------------------------------------------
+# Red Hat 미수정 CVE(조치 불가) 판정. 컴포넌트 매핑이나 릴리스 매칭이 틀리면 조용히 미탐이 된다
+# (바이너리 이름으로 물으면 API 가 0건을 주고, "Linux 1" 이 "Linux 10" 에 걸리면 남의 상태를 쓴다).
+printf "\n[rhunfixed]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/rhunfixed_test.php >/dev/null 2>&1; then
+  ok "rhunfixed 단위 테스트 (컴포넌트·릴리스 판정)"
+else
+  no "rhunfixed 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/rhunfixed_test.php)"
+fi
+
 # --- rpmdb 단위 테스트 --------------------------------------------------------
 # 컨테이너의 rpm DB 를 중앙이 파싱한다 — 컨테이너에 rpm 바이너리가 없고 호스트에도 rpm 이 없으면
 # 이 경로 말고는 그 패키지를 볼 방법이 아예 없다. 파서가 틀리면 통째로 사라진다(미탐).

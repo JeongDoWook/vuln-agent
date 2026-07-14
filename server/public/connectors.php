@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id    = (int) ($_POST['id'] ?? 0);
                 $name  = trim((string) ($_POST['name'] ?? ''));
                 $type  = (string) ($_POST['connector_type'] ?? '');
-                if ($name === '' || !in_array($type, ['kev','osv','nvd','kisa','epss','debtracker','rhoval'], true)) {
+                if ($name === '' || !in_array($type, ['kev','osv','nvd','kisa','epss','debtracker','rhoval','rhunfixed'], true)) {
                     throw new RuntimeException('이름과 커넥터 타입을 확인하세요.');
                 }
                 $conn = ['url' => trim((string) ($_POST['url'] ?? ''))];
@@ -271,7 +271,7 @@ vg_header('피드 커넥터', 'connectors');
       <input type="text" name="name" value="<?= vg_h($edit['name'] ?? '') ?>" required>
       <label>커넥터 타입</label>
       <select name="connector_type">
-        <?php foreach (['kev'=>'CISA KEV','osv'=>'OSV.dev','nvd'=>'NVD 2.0','kisa'=>'KISA 보안공지','epss'=>'FIRST EPSS','debtracker'=>'데비안 보안 트래커','rhoval'=>'RHEL 계열 벤더 권고(OVAL)'] as $tv=>$tl): ?>
+        <?php foreach (['kev'=>'CISA KEV','osv'=>'OSV.dev','nvd'=>'NVD 2.0','kisa'=>'KISA 보안공지','epss'=>'FIRST EPSS','debtracker'=>'데비안 보안 트래커','rhoval'=>'RHEL 계열 벤더 권고(OVAL)','rhunfixed'=>'Red Hat 미수정 CVE(조치 불가)'] as $tv=>$tl): ?>
           <option value="<?= $tv ?>" <?= ($edit['connector_type'] ?? 'kev')===$tv?'selected':'' ?>><?= $tl ?></option>
         <?php endforeach; ?>
       </select>
