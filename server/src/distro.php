@@ -133,6 +133,29 @@ if (!function_exists('vg_pkg_ecosystem')) {
     }
 
     /**
+     * 이 커널 패키지가 **지금 실행 중인 그 커널**인가(uname -r 과 대조).
+     *
+     * 한 호스트에 커널 이미지가 여러 개 깔린다 — 옛 커널(롤백용), 다른 기종용(라즈베리 v8/2712).
+     * 그중 **실제로 실행되는 건 하나**뿐이고, 나머지는 부팅해야 활성화된다. 커널 CVE 를 설치된
+     * 이미지 전부에 매달면 같은 목록이 4번 중복된다(실측: LOW 2,808건 = 702 × 4).
+     * 업계 표준(Vuls 등)도 커널은 uname 으로 구동 버전을 잡아 그것만 판정한다.
+     *
+     *   dpkg : 패키지 이름에 버전이 박힌다 → linux-image-6.18.34+rpt-rpi-2712 == "linux-image-" + uname -r
+     *   rpm  : 이름은 kernel/kernel-core 뿐이고 버전이 따로다 → uname -r 이 설치 버전으로 시작하는가
+     *          (uname 엔 아키가 붙는다: 5.14.0-503.el9.x86_64 ← 버전 5.14.0-503.el9)
+     */
+    function vg_is_running_kernel_pkg(string $name, string $version, ?string $running): bool
+    {
+        $r = trim((string) $running);
+        if ($r === '' || !vg_is_kernel_code_pkg($name)) { return false; }
+
+        if (strcasecmp($name, 'linux-image-' . $r) === 0) { return true; }          // dpkg
+
+        $v = trim($version);
+        return $v !== '' && strncasecmp($r, $v, strlen($v)) === 0;                   // rpm
+    }
+
+    /**
      * 데비안 VERSION_ID → 릴리스 코드명. 보안 트래커는 코드명으로 데이터를 준다.
      *   에이전트는 /etc/os-release 의 VERSION_ID(11·12·13…)를 보내므로 여기서 옮긴다.
      *   모르는 버전이면 빈 문자열 → 호출자는 억제를 하지 않는다(모르면 안 지운다).

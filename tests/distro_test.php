@@ -45,6 +45,20 @@ $eq('libc-dev 는 헤더',          vg_is_kernel_code_pkg('linux-libc-dev'),    
 $eq('kbuild 는 빌드스크립트',    vg_is_kernel_code_pkg('linux-kbuild-6.18.34+rpt'),         false);
 $eq('base 는 메타패키지',        vg_is_kernel_code_pkg('linux-base-rpi-v8'),                false);
 
+// ── 구동 커널 판정 — 커널 CVE 는 uname 으로 잡은 그 커널에만 해당한다 ──────
+//   실측(raspberrypi5-00): 커널 이미지 4개(옛 커널·다른 기종 포함)에 같은 CVE 702건이
+//   각각 달려 LOW 2,808건이 됐다. 실제 도는 건 하나뿐이다.
+$run = '6.18.34+rpt-rpi-2712';
+$eq('dpkg: 구동 커널 이미지', vg_is_running_kernel_pkg('linux-image-6.18.34+rpt-rpi-2712', '1:6.18.34-1+rpt1', $run), true);
+$eq('dpkg: 다른 기종(v8) 커널', vg_is_running_kernel_pkg('linux-image-6.18.34+rpt-rpi-v8', '1:6.18.34-1+rpt1', $run), false);
+$eq('dpkg: 옛 커널',           vg_is_running_kernel_pkg('linux-image-6.12.75+rpt-rpi-2712', '1:6.12.75-1+rpt1', $run), false);
+$eq('커널이 아닌 패키지',      vg_is_running_kernel_pkg('openssl', '3.0.15-1', $run), false);
+$eq('uname 을 모르면 판단 보류', vg_is_running_kernel_pkg('linux-image-6.18.34+rpt-rpi-2712', '1:6.18.34-1+rpt1', ''), false);
+
+// rpm 은 이름에 버전이 없다(kernel-core) → uname 이 설치 버전으로 시작하는지로 본다.
+$eq('rpm: 구동 커널',   vg_is_running_kernel_pkg('kernel-core', '5.14.0-503.11.1.el9_5', '5.14.0-503.11.1.el9_5.x86_64'), true);
+$eq('rpm: 옛 커널',     vg_is_running_kernel_pkg('kernel-core', '5.14.0-427.13.1.el9_4', '5.14.0-503.11.1.el9_5.x86_64'), false);
+
 // ── 출처(origin) 판정 — 회귀 방지(서드파티를 배포판으로 오인하면 미탐) ─────
 $eq('데비안 라벨',        vg_is_distro_pkg('Debian', 'debian'),                  true);
 $eq('라즈베리 재빌드',    vg_is_distro_pkg('Raspberry Pi Foundation', 'debian'), false);

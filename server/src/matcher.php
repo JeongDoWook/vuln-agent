@@ -285,6 +285,21 @@ if (!function_exists('vg_scope_rank')) {
         $useDebsecan = $sup['useDebsecan'];
         $errata      = $sup['errata'];
 
+        // 구동 커널(uname -r) — 커널 CVE 는 **지금 도는 커널**에만 해당한다.
+        //   그 커널의 패키지가 실제로 설치 목록에 있을 때만 "나머지는 안 돈다"고 판단한다.
+        //   (없으면 판단 보류 → 아무것도 억제하지 않는다. 잘못 억제하면 커널 CVE 가 통째로 사라진다.)
+        $runningKernel        = (string) ($scan['running_kernel'] ?? '');
+        $runningKernelPresent = false;
+        if ($runningKernel !== '') {
+            foreach ($packages as $rp) {
+                if ((int) ($rp['container_id'] ?? 0) !== 0) { continue; }   // 호스트 패키지만
+                if (vg_is_running_kernel_pkg((string) $rp['name'], (string) $rp['version'], $runningKernel)) {
+                    $runningKernelPresent = true;
+                    break;
+                }
+            }
+        }
+
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
         $ownTx = !$pdo->inTransaction();
@@ -383,6 +398,14 @@ if (!function_exists('vg_scope_rank')) {
             $isKernelPkg = $ctr === null && vg_is_kernel_code_pkg((string) $p['name']);
             $kernelPending = $isKernelPkg && (int) ($scan['kernel_reboot_needed'] ?? 0) === 1;
 
+            // 실행 중이 아닌 커널 이미지 — 부팅해야 활성화된다. 커널 CVE 를 설치된 이미지 전부에
+            //   매달면 같은 목록이 몇 번씩 중복된다(실측 raspberrypi5-00: 702건 × 이미지 4개 = 2,808).
+            //   업계 표준(Vuls 등)대로 uname 으로 잡은 **구동 커널**만 판정한다.
+            //   단, 실행 중인 커널의 패키지가 목록에 없으면(그 커널만 제거된 드문 경우) 아무것도
+            //   억제하지 않는다 — 그러면 커널 CVE 가 통째로 사라져 미탐이 된다.
+            $kernelNotRunning = $isKernelPkg && $runningKernelPresent
+                && !vg_is_running_kernel_pkg((string) $p['name'], (string) $p['version'], $runningKernel);
+
             // 서드파티 저장소(PPA·Docker·NodeSource) 패키지 / 수동 .deb 설치는 배포판 트래커에
             //   아예 없다. 배포판 기준 억제(debsecan·errata·changelog)는 "트래커에 없으면 이미
             //   수정됨"으로 보므로, 그대로 두면 진짜 취약점을 숨긴다(미탐) → 억제하지 않는다.
@@ -415,6 +438,20 @@ if (!function_exists('vg_scope_rank')) {
 
                 $inKev = isset($kev[$cveId]);
                 [$status, $sev, $why] = vg_classify($le, $running, $pkgLoaded, $inKev, $p['name']);
+
+                // 실행 중이 아닌 커널: 그 코드는 지금 돌지 않는다 → 억제(근거는 남긴다).
+                //   조치는 "패치"가 아니라 "그 커널로 부팅하지 않기"이고, 실제로 부팅하면
+                //   그때 실행 커널이 바뀌어 다음 수집에서 정상적으로 취약점으로 잡힌다.
+                if ($kernelNotRunning) {
+                    $insSupp->execute([
+                        $scanId, $cveId, $p['name'], $p['version'],
+                        $inKev ? 1 : 0, $cvss, $sev,
+                        sprintf('실행 중이 아닌 커널(설치만 됨) — 지금 도는 커널은 %s 다. 부팅해야 활성화된다',
+                                (string) ($scan['running_kernel'] ?? '?')),
+                    ]);
+                    $counts['SUPPRESSED']++;
+                    continue;
+                }
 
                 // 옛 라이브러리가 메모리에 상주하면 "패치됨"이라도 억제하지 않는다(재시작 전까지 취약).
                 $canSuppress = ($staleEv === null);
