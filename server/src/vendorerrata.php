@@ -97,44 +97,9 @@ function vg_vendor_errata_evidence(PDO $pdo, int $scanId, ?string $hostOsId, ?st
     }
     if (!$targets) { return []; }
 
-    // 2) 필요한 (벤더, 메이저) 의 권고만 읽는다.
-    //    **키별로 한 번만 읽는다(정적 캐시).** 재매칭은 한 프로세스에서 스캔을 전부 도는데,
-    //    스캔마다 24만 행을 다시 읽으면 30초 실행제한에 걸린다(데비안 트래커에서 실제로 겪었다).
-    static $cache = [];
-
-    $byKey   = [];
-    $missing = [];
-    foreach (array_unique(array_map(static fn($t) => $t[0] . '|' . $t[1], $targets)) as $key) {
-        if (isset($cache[$key])) { $byKey[$key] = $cache[$key]; } else { $missing[] = $key; }
-    }
-
-    if ($missing) {
-        $where = [];
-        $args  = [];
-        foreach ($missing as $key) {
-            [$v, $m] = explode('|', $key, 2);
-            $where[] = '(vendor = ? AND release_major = ?)';
-            $args[]  = $v;
-            $args[]  = $m;
-        }
-        $st = $pdo->prepare(
-            'SELECT vendor, release_major, pkg_name, cve_id, fixed_evr, advisory
-               FROM tb_vendor_errata
-              WHERE is_deleted = 0 AND (' . implode(' OR ', $where) . ')'
-        );
-        $st->execute($args);
-        foreach ($missing as $key) { $cache[$key] = []; }
-        foreach ($st->fetchAll() as $r) {
-            $cache[$r['vendor'] . '|' . $r['release_major']][$r['pkg_name']][$r['cve_id']][] = [
-                'evr'      => (string) $r['fixed_evr'],
-                'advisory' => (string) ($r['advisory'] ?? ''),
-            ];
-        }
-        foreach ($missing as $key) { $byKey[$key] = $cache[$key]; }
-    }
-    if (!array_filter($byKey)) { return []; }
-
-    // 3) 각 대상의 rpm 패키지를 그 대상의 권고와 대조.
+    // 2) 이 스캔의 rpm 패키지를 먼저 읽는다 — 권고는 **그 패키지들 것만** 조회한다.
+    //    예전엔 (벤더, 메이저) 전량을 배열에 올렸다. RHEL 8·9 를 함께 받으니 50만 행이 되어
+    //    운영에서 메모리 512MB 를 넘겨 죽었다. 스캔 하나가 보는 rpm 은 수백 개뿐이다.
     $ids = array_keys($targets);
     $in  = implode(',', array_fill(0, count($ids), '?'));
     $ps  = $pdo->prepare(
@@ -143,9 +108,39 @@ function vg_vendor_errata_evidence(PDO $pdo, int $scanId, ?string $hostOsId, ?st
           WHERE scan_id = ? AND manager = 'rpm' AND container_id IN ($in)"
     );
     $ps->execute(array_merge([$scanId], $ids));
+    $pkgs = $ps->fetchAll();
+    if (!$pkgs) { return []; }
 
+    $names = [];
+    foreach ($pkgs as $p) { $names[(string) $p['name']] = true; }
+    $names = array_keys($names);
+
+    // 3) 대상(벤더·메이저)별로, 설치된 패키지 이름에 해당하는 권고만 읽는다.
+    $byKey = [];
+    foreach (array_unique(array_map(static fn($t) => $t[0] . '|' . $t[1], $targets)) as $key) {
+        [$v, $m] = explode('|', $key, 2);
+        $byKey[$key] = [];
+        foreach (array_chunk($names, 500) as $chunk) {
+            $inN = implode(',', array_fill(0, count($chunk), '?'));
+            $st  = $pdo->prepare(
+                "SELECT pkg_name, cve_id, fixed_evr, advisory
+                   FROM tb_vendor_errata
+                  WHERE is_deleted = 0 AND vendor = ? AND release_major = ? AND pkg_name IN ($inN)"
+            );
+            $st->execute(array_merge([$v, $m], $chunk));
+            foreach ($st->fetchAll() as $r) {
+                $byKey[$key][$r['pkg_name']][$r['cve_id']][] = [
+                    'evr'      => (string) $r['fixed_evr'],
+                    'advisory' => (string) ($r['advisory'] ?? ''),
+                ];
+            }
+        }
+    }
+    if (!array_filter($byKey)) { return []; }
+
+    // 4) 각 대상의 rpm 패키지를 그 대상의 권고와 대조.
     $out = [];
-    foreach ($ps->fetchAll() as $p) {
+    foreach ($pkgs as $p) {
         $ctrId = (int) $p['container_id'];
         [$vendor, $rel] = $targets[$ctrId] ?? [null, null];
         if ($vendor === null) { continue; }
