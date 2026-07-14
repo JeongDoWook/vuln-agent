@@ -12,6 +12,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/vercmp.php';   // vg_ver_cmp — dpkg/rpm 버전 비교
 require_once __DIR__ . '/distro.php';   // vg_osv_ecosystem — 수집과 동일 기준
 require_once __DIR__ . '/debtracker.php';   // vg_debtracker_evidence — 데비안 백포트 판정(중앙)
+require_once __DIR__ . '/vendorerrata.php'; // vg_vendor_errata_evidence — RHEL 계열 백포트 판정(중앙)
 
 if (!function_exists('vg_scope_rank')) {
     // 노출 범위 위험도 (클수록 위험)
@@ -162,6 +163,13 @@ if (!function_exists('vg_scope_rank')) {
      * CVE 카탈로그(스캔과 무관, 전역): KEV 등재 집합 + 영향 패키지 인덱스.
      */
     function vg_load_cve_catalog(PDO $pdo): array {
+        // **한 프로세스에서 한 번만 읽는다(정적 캐시).** 카탈로그는 스캔과 무관한 전역 데이터인데
+        //   재매칭(rematch.php)은 스캔을 전부 돌며 스캔마다 이걸 다시 읽었다. RHEL OVAL 이
+        //   들어오며 영향 패키지가 23만 행으로 커지자 30초 실행제한에 걸려 재매칭이 통째로 죽었다.
+        //   피드 수집 중에는 이 함수를 부르지 않으므로(수집 후 재매칭) 요청 수명 캐시는 안전하다.
+        static $catalog = null;
+        if ($catalog !== null) { return $catalog; }
+
         // KEV 집합
         $kev = [];
         foreach ($pdo->query('SELECT cve_id FROM tb_kev_catalog')->fetchAll() as $r) {
@@ -186,7 +194,8 @@ if (!function_exists('vg_scope_rank')) {
             ];
         }
 
-        return ['kev' => $kev, 'affected' => $affected];
+        $catalog = ['kev' => $kev, 'affected' => $affected];
+        return $catalog;
     }
 
     /**
@@ -263,12 +272,19 @@ if (!function_exists('vg_scope_rank')) {
             $errata[$r['package_name']][$r['cve_id']] = $r['evidence'];
         }
 
+        // 중앙이 받은 벤더 권고(OVAL) — RHEL 계열의 백포트 판정. 데비안 트래커의 rpm 판이다.
+        //   에이전트의 dnf updateinfo(위 tb_applied_errata)와 달리 대상 서버에서 아무것도 긁지 않고,
+        //   **컨테이너까지** 판정한다(자기 벤더·자기 메이저 릴리스의 권고와 대조).
+        //   데이터가 없으면 빈 배열 → 억제하지 않는다.
+        $vendorErrata = vg_vendor_errata_evidence($pdo, $scanId, $osId, $osVersion);
+
         return [
-            'backport'    => $backport,
-            'stale'       => $stale,
-            'debsecan'    => $debsecan,
-            'useDebsecan' => $useDebsecan,
-            'errata'      => $errata,
+            'backport'     => $backport,
+            'stale'        => $stale,
+            'debsecan'     => $debsecan,
+            'useDebsecan'  => $useDebsecan,
+            'errata'       => $errata,
+            'vendorErrata' => $vendorErrata,
         ];
     }
 
@@ -295,7 +311,8 @@ if (!function_exists('vg_scope_rank')) {
         $stale       = $sup['stale'];
         $debsecan    = $sup['debsecan'];
         $useDebsecan = $sup['useDebsecan'];
-        $errata      = $sup['errata'];
+        $errata       = $sup['errata'];
+        $vendorErrata = $sup['vendorErrata'];
 
         // 구동 커널(uname -r) — 커널 CVE 는 **지금 도는 커널**에만 해당한다.
         //   그 커널의 패키지가 실제로 설치 목록에 있을 때만 "나머지는 안 돈다"고 판단한다.
@@ -515,6 +532,20 @@ if (!function_exists('vg_scope_rank')) {
                         '데비안 보안 트래커가 ' . $p['name'] . ' 의 ' . $cveId
                         . ' 를 해당 없음으로 판정 → 백포트로 이미 수정됨'
                         . ($ctr !== null ? ' (컨테이너 ' . (string) $ctr['cid'] . ')' : ''),
+                    ]);
+                    $counts['SUPPRESSED']++;
+                    continue;
+                }
+
+                // 중앙 벤더권고(OVAL) 억제: RHEL 계열의 백포트 판정. 데비안 트래커의 rpm 판이다.
+                //   대상별로 갈린 맵이라(자기 벤더·자기 메이저) 컨테이너에도 안전하게 적용된다.
+                //   설치 EVR ≥ 조치 EVR 이면 이미 패치된 것 — 백포트라 업스트림 버전만 보면 낮아 보인다.
+                $veEv = $vendorErrata[$ctrId][$p['name']][$cveId] ?? null;
+                if ($canSuppress && $isDistroPkg && $veEv !== null) {
+                    $insSupp->execute([
+                        $scanId, $cveId, $p['name'], $p['version'],
+                        $inKev ? 1 : 0, $cvss, $sev,
+                        $p['name'] . ' — ' . $veEv,
                     ]);
                     $counts['SUPPRESSED']++;
                     continue;
