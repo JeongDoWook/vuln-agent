@@ -174,6 +174,17 @@ else
   no "rhoval 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/rhoval_test.php)"
 fi
 
+# --- ubuntuoval 단위 테스트 ---------------------------------------------------
+# 우분투 OVAL 한 파일이 억제(조치 EVR)와 조치 불가(state 없는 테스트)를 동시에 만든다.
+# state 없는 테스트를 버리면 "아직 수정본 없음" 이 통째로 미탐이 된다 — 그걸 고정한다.
+printf "\n[ubuntuoval]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/ubuntuoval_test.php >/dev/null 2>&1; then
+  ok "ubuntuoval 단위 테스트 (조치 EVR · 미수정 CVE · 코드명)"
+else
+  no "ubuntuoval 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/ubuntuoval_test.php)"
+fi
+
 # --- kernelcve 단위 테스트 ----------------------------------------------------
 # 커널은 배포판이 아니라 업스트림(kernel.org CNA)이 판정한다. 스트림(6.1.y·6.18.y)을 잘못 고르면
 # 다른 스트림의 수정본을 내 것으로 읽어 진짜 커널 취약점을 조용히 지운다(미탐).

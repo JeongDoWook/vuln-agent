@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<oval_definitions xmlns="http://oval.mitre.org/XMLSchema/oval-definitions-5"
+                  xmlns:oval="http://oval.mitre.org/XMLSchema/oval-common-5"
+                  xmlns:linux-def="http://oval.mitre.org/XMLSchema/oval-definitions-5#linux"
+                  xmlns:unix-def="http://oval.mitre.org/XMLSchema/oval-definitions-5#unix">
+  <definitions>
+    <!-- 플랫폼 검사(inventory) — 취약점이 아니다. 이게 행으로 들어오면 오탐 폭탄이다. -->
+    <definition class="inventory" id="oval:com.ubuntu.noble:def:100" version="1">
+      <metadata><title>Check that Ubuntu 24.04 LTS (noble) is installed.</title></metadata>
+      <criteria>
+        <criterion test_ref="oval:com.ubuntu.noble:tst:100" comment="The host is running Ubuntu noble" />
+      </criteria>
+    </definition>
+
+    <!-- 고쳐진 CVE — 테스트에 state 가 있다(그 EVR 미만이면 취약). -->
+    <definition class="vulnerability" id="oval:com.ubuntu.noble:def:200" version="1">
+      <metadata>
+        <title>CVE-2024-56406 on Ubuntu 24.04 LTS (noble) - medium</title>
+        <reference source="CVE" ref_id="CVE-2024-56406" ref_url="https://www.cve.org/CVERecord?id=CVE-2024-56406" />
+        <advisory>
+          <severity>Medium</severity>
+        </advisory>
+      </metadata>
+      <criteria>
+        <extend_definition definition_ref="oval:com.ubuntu.noble:def:100" comment="Ubuntu 24.04 LTS is installed." applicability_check="true" />
+        <criteria operator="OR">
+          <criterion test_ref="oval:com.ubuntu.noble:tst:200" comment="perl package in noble was vulnerable but has been fixed (note: '5.38.2-3.2ubuntu0.1')." />
+        </criteria>
+      </criteria>
+    </definition>
+
+    <!-- 아직 안 고친 CVE — 테스트에 state 가 없다(패키지가 있으면 취약 = 조치 불가). -->
+    <definition class="vulnerability" id="oval:com.ubuntu.noble:def:300" version="1">
+      <metadata>
+        <title>CVE-2024-99999 on Ubuntu 24.04 LTS (noble) - low</title>
+        <reference source="CVE" ref_id="CVE-2024-99999" ref_url="https://www.cve.org/CVERecord?id=CVE-2024-99999" />
+        <advisory>
+          <severity>Low</severity>
+        </advisory>
+      </metadata>
+      <criteria>
+        <criterion test_ref="oval:com.ubuntu.noble:tst:300" comment="shadow package in noble is affected and needs fixing." />
+      </criteria>
+    </definition>
+
+    <!-- 커널 uname 검사가 섞인 정의 — dpkg 가 아닌 테스트는 무시해야 한다. -->
+    <definition class="vulnerability" id="oval:com.ubuntu.noble:def:400" version="1">
+      <metadata>
+        <title>CVE-2024-11111 on Ubuntu 24.04 LTS (noble) - high</title>
+        <reference source="CVE" ref_id="CVE-2024-11111" ref_url="https://www.cve.org/CVERecord?id=CVE-2024-11111" />
+        <advisory>
+          <severity>High</severity>
+        </advisory>
+      </metadata>
+      <criteria>
+        <criterion test_ref="oval:com.ubuntu.noble:tst:400" comment="Regex match for kernel linux" />
+      </criteria>
+    </definition>
+  </definitions>
+
+  <tests>
+    <unix-def:family_test id="oval:com.ubuntu.noble:tst:100" version="1" comment="The host is part of the unix family." check="at least one">
+      <unix-def:object object_ref="oval:com.ubuntu.noble:obj:100" />
+    </unix-def:family_test>
+
+    <linux-def:dpkginfo_test id="oval:com.ubuntu.noble:tst:200" version="1" check_existence="at_least_one_exists" check="at least one"
+                             comment="Does the 'perl' package exist and is the version less than '5.38.2-3.2ubuntu0.1'?">
+      <linux-def:object object_ref="oval:com.ubuntu.noble:obj:200" />
+      <linux-def:state state_ref="oval:com.ubuntu.noble:ste:200" />
+    </linux-def:dpkginfo_test>
+
+    <linux-def:dpkginfo_test id="oval:com.ubuntu.noble:tst:300" version="1" check_existence="at_least_one_exists" check="at least one"
+                             comment="Does the 'shadow' package exist?">
+      <linux-def:object object_ref="oval:com.ubuntu.noble:obj:300" />
+    </linux-def:dpkginfo_test>
+
+    <unix-def:uname_test id="oval:com.ubuntu.noble:tst:400" version="1" check="at least one" comment="Regex match for kernel linux">
+      <unix-def:object object_ref="oval:com.ubuntu.noble:obj:400" />
+      <unix-def:state state_ref="oval:com.ubuntu.noble:ste:400" />
+    </unix-def:uname_test>
+  </tests>
+
+  <objects>
+    <linux-def:dpkginfo_object id="oval:com.ubuntu.noble:obj:200" version="1" comment="The 'perl' package binaries">
+      <linux-def:name var_ref="oval:com.ubuntu.noble:var:200" var_check="at least one" />
+    </linux-def:dpkginfo_object>
+    <linux-def:dpkginfo_object id="oval:com.ubuntu.noble:obj:300" version="1" comment="The 'shadow' package binaries">
+      <linux-def:name var_ref="oval:com.ubuntu.noble:var:300" var_check="at least one" />
+    </linux-def:dpkginfo_object>
+    <unix-def:uname_object id="oval:com.ubuntu.noble:obj:400" version="1" />
+  </objects>
+
+  <states>
+    <linux-def:dpkginfo_state id="oval:com.ubuntu.noble:ste:200" version="1" comment="The package version is less than '5.38.2-3.2ubuntu0.1'">
+      <linux-def:evr datatype="debian_evr_string" operation="less than">0:5.38.2-3.2ubuntu0.1</linux-def:evr>
+    </linux-def:dpkginfo_state>
+    <unix-def:uname_state id="oval:com.ubuntu.noble:ste:400" version="1" comment="Regex match for kernel linux">
+      <unix-def:os_release operation="pattern match">6.8.0-\d+(-generic)</unix-def:os_release>
+    </unix-def:uname_state>
+  </states>
+
+  <variables>
+    <constant_variable id="oval:com.ubuntu.noble:var:200" version="1" datatype="string" comment="'perl' package binaries">
+      <value>perl</value>
+      <value>perl-base</value>
+      <value>libperl5.38t64</value>
+    </constant_variable>
+    <constant_variable id="oval:com.ubuntu.noble:var:300" version="1" datatype="string" comment="'shadow' package binaries">
+      <value>login</value>
+      <value>passwd</value>
+    </constant_variable>
+  </variables>
+</oval_definitions>
