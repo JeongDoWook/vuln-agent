@@ -82,15 +82,24 @@ function vg_debtracker_parse(string $raw): array {
     return $rows;
 }
 
-/** 수집할 릴리스 — 설정에 없으면 **수집된 데비안 호스트**에서 뽑는다(호스트가 없으면 기본 2종). */
+/**
+ * 수집할 릴리스 — 설정에 없으면 **수집된 데비안 호스트와 컨테이너**에서 뽑는다.
+ *
+ * 컨테이너를 빠뜨렸다가 실제로 당했다: 호스트는 데비안 13(trixie)인데 그 위에서 도는
+ * 컨테이너는 데비안 12(bookworm) 였다. trixie 만 받아오니 컨테이너엔 억제 근거가 하나도
+ * 없었고, 컨테이너 오탐 850건이 그대로 남았다(억제 0건). 판정 대상이 곧 수집 대상이다.
+ */
 function vg_debtracker_releases(PDO $pdo, array $conn): array {
     $cfg = array_values(array_filter(array_map('strval', (array) ($conn['releases'] ?? []))));
     if ($cfg) { return $cfg; }
 
-    $rel = [];
+    $rel  = [];
     $rows = $pdo->query(
         "SELECT DISTINCT os_version FROM tb_scans
-          WHERE LOWER(os_id) = 'debian' AND os_version IS NOT NULL AND is_deleted = 0"
+          WHERE LOWER(os_id) = 'debian' AND os_version IS NOT NULL AND is_deleted = 0
+         UNION
+         SELECT DISTINCT os_version FROM tb_containers
+          WHERE LOWER(os_id) = 'debian' AND os_version IS NOT NULL"
     )->fetchAll(PDO::FETCH_COLUMN);
     foreach ($rows as $v) {
         $c = vg_debian_codename((string) $v);
