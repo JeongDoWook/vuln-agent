@@ -30,7 +30,8 @@ $fx  = (string) ($_GET['fx'] ?? '');
 if (!in_array($sev, $sevOptions, true)) { $sev = ''; }
 if (!in_array($st, $stOptions, true)) { $st = ''; }
 // 조치 가능성: '' 전체 / action 조치 가능 / nofix 조치 불가(벤더가 수정본을 안 냈다)
-if (!in_array($fx, ['action', 'nofix'], true)) { $fx = ''; }
+//              / restart 재시작·재부팅만 하면 됨(패치는 이미 됐다 — 자산 상세에서 넘어온다)
+if (!in_array($fx, ['action', 'nofix', 'restart'], true)) { $fx = ''; }
 $page   = max(1, (int) ($_GET['page'] ?? 1));
 $hostId = (int) ($_GET['host'] ?? 0);
 $scanId = (int) ($_GET['scan_id'] ?? 0);
@@ -116,8 +117,10 @@ try {
         // 조치 가능성 필터 — 벤더가 수정본을 안 낸 CVE(no_fix)는 "지금 할 수 있는 일이 없는" 것이다.
         //   기본은 전부 보여주되 **조치 가능한 것을 위로 올린다**(아래 ORDER BY).
         //   섞어서 등급순으로만 세우면 조치 불가 수백 건이 고칠 수 있는 몇 건을 덮어버린다.
-        if ($fx === 'action') { $where .= ' AND f.no_fix = 0'; }
-        if ($fx === 'nofix')  { $where .= ' AND f.no_fix = 1'; }
+        if ($fx === 'action')  { $where .= ' AND f.no_fix = 0'; }
+        if ($fx === 'nofix')   { $where .= ' AND f.no_fix = 1'; }
+        // 재시작·재부팅만 하면 되는 것 — 자산 상세의 "전체 보기" 가 여기로 온다.
+        if ($fx === 'restart') { $where .= ' AND f.needs_restart = 1'; }
 
         $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_findings f WHERE $where");
         $stmt->execute($params);
@@ -199,7 +202,8 @@ vg_header('취약점', 'findings');
           'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
       // 조치 가능성 — 벤더가 수정본을 안 낸 CVE 를 걸러 보거나, 그것만 모아 볼 수 있다.
       ['type' => 'select', 'name' => 'fx', 'empty_label' => '전체(조치 가능성)', 'selected' => $fx,
-          'options' => ['action' => '조치 가능', 'nofix' => '조치 불가(벤더 미수정)']],
+          'options' => ['action' => '조치 가능', 'nofix' => '조치 불가(벤더 미수정)',
+                        'restart' => '재시작·재부팅만 하면 됨']],
   ]));
 
   // 컬럼 11개는 가로 스크롤을 만들어서, 정작 제일 중요한 "조치" 가 화면 밖으로 밀려났었다.

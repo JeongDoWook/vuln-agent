@@ -17,12 +17,16 @@ vg_require_menu('findings');
 $err = null; $host = null; $scan = null; $scanAge = null;
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 
+// 재시작·재부팅 표에 보여줄 최대 건수. 나머지는 취약점 현황(fx=restart)으로 넘긴다.
+const VG_RESTART_TOP = 10;
+
 // 재시작이 필요한 finding 중 **커널**인가 — 커널은 프로세스 재시작이 아니라 재부팅이 답이다.
 function vg_needs_reboot(array $f): bool {
     return preg_match('/^(kernel|linux-image-|linux-headers-)/', (string) ($f['package_name'] ?? '')) === 1;
 }
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
+$critHighTotal = 0; $restartTotal = 0; $restartRows = [];
 $tab = 'vuln'; $page = 1; $perPage = vg_perpage(); $total = 0;
 $rows = []; $exposures = []; $sevByScan = [];
 
@@ -73,9 +77,17 @@ try {
         $st->execute([$sid]); $suppressedCount = (int) $st->fetchColumn();
 
         // 우선순위 취약점 = CRITICAL·HIGH + 재시작 필요(등급이 낮아도 숨기지 않는다).
+        //   탭 배지는 둘의 합, 화면은 두 표로 나눠 보여준다(아래 vuln 탭 주석 참고).
         $st = $pdo->prepare("SELECT COUNT(*) FROM tb_findings
                               WHERE scan_id = ? AND (severity IN ('CRITICAL','HIGH') OR needs_restart = 1)");
         $st->execute([$sid]); $vulnTotal = (int) $st->fetchColumn();
+
+        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_findings
+                              WHERE scan_id = ? AND severity IN ('CRITICAL','HIGH')");
+        $st->execute([$sid]); $critHighTotal = (int) $st->fetchColumn();
+
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_findings WHERE scan_id = ? AND needs_restart = 1');
+        $st->execute([$sid]); $restartTotal = (int) $st->fetchColumn();
 
         $st = $pdo->prepare('SELECT COUNT(*) FROM tb_scans WHERE host_id = ?');
         $st->execute([$hostId]); $scanTotal = (int) $st->fetchColumn();
@@ -92,23 +104,36 @@ try {
 
         // --- 활성 탭 데이터만 조회(+페이지네이션) ---
         if ($tab === 'vuln') {
-            // 재시작/재부팅 필요 건을 맨 위로 정렬한다. 이건 등급이 아니라 "놓치기 쉬움"의 문제다:
-            //   노출도가 낮아 LOW 로 떨어지는 경우가 많은데, 정작 패치했다고 안심하는 바로 그
-            //   항목이다. 등급순으로만 정렬하면 CVE 가 많은 호스트에선 페이지 뒤로 밀려 안 보인다
-            //   (실측: 메인 DB 에서 커널 재부팅 건이 2페이지로 밀려 화면에서 사라졌다).
-            $total = $vulnTotal;
+            /* 성격이 다른 두 부류를 한 목록에 섞고 페이지를 나누면, 어느 한쪽은 반드시 뒤로 밀린다.
+             *   - 등급순으로 정렬했더니: 커널 재부팅 건(등급이 낮다)이 2페이지로 밀려 사라졌다.
+             *   - 그래서 needs_restart 를 맨 위로 올렸더니: 이번엔 **CRITICAL 이 안 보였다**
+             *     (실측: web01 은 재시작 필요 건이 앞을 다 채워 CRITICAL 2건이 44페이지 뒤로 갔다).
+             * 정렬로는 못 푼다 — 표를 둘로 나눈다. 각자 자기 기준으로 정렬하고, 둘 다 첫 화면에 있다.
+             *   표1(주 목록·페이지네이션): CRITICAL·HIGH — 등급 → EPSS 순
+             *   표2(상위 N건 + 전체보기):  재시작·재부팅 필요 — 등급이 낮아도 놓치면 안 되는 부류
+             *                              (이미 패치됐는데 옛 코드가 상주해 "패치됨"으로 사라진다)
+             */
+            $sel = "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
+                           f.needs_restart, c.epss, c.epss_percentile,
+                       " . VG_FIXED_VERSION_SUBQ . "
+                      FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id";
+
+            $total = $critHighTotal;
             $st = $pdo->prepare(
-                "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
-                        f.needs_restart, c.epss, c.epss_percentile,
-                    " . VG_FIXED_VERSION_SUBQ . "
-                 FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
-                 WHERE f.scan_id = ? AND (f.severity IN ('CRITICAL','HIGH') OR f.needs_restart = 1)
-                 ORDER BY f.needs_restart DESC,
-                          FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
+                "$sel WHERE f.scan_id = ? AND f.severity IN ('CRITICAL','HIGH')
+                 ORDER BY FIELD(f.severity,'CRITICAL','HIGH'), c.epss DESC, f.cve_id
                  LIMIT $perPage OFFSET $offset"
             );
             $st->execute([$sid]);
             $rows = $st->fetchAll();
+
+            $st = $pdo->prepare(
+                "$sel WHERE f.scan_id = ? AND f.needs_restart = 1
+                 ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
+                 LIMIT " . VG_RESTART_TOP
+            );
+            $st->execute([$sid]);
+            $restartRows = $st->fetchAll();
         } elseif ($tab === 'runtime') {
             // 노출은 보통 소량이라 전부 보여주고, 프로세스는 많을 수 있어 페이지네이션한다
             // (이 탭의 ?page= 는 프로세스 표에 적용된다).
@@ -247,49 +272,76 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
 
   <?php vg_subtabs($tabDefs, $tab); ?>
 
-  <?php if ($tab === 'vuln'): ?>
+  <?php if ($tab === 'vuln'):
+    // 두 표(CRITICAL·HIGH / 재시작·재부팅)는 열 구성이 같다 — 스펙을 한 번만 만들어 나눠 쓴다.
+    $vulnHeaders = [
+        ['label' => '등급', 'key' => 'severity'],
+        ['label' => '상태', 'key' => 'runtime_status'],
+        ['label' => 'CVE'],
+        ['label' => 'EPSS'],
+        ['label' => '패키지'],
+        ['label' => '근거'],
+        ['label' => '조치'],
+    ];
+    $vulnCells = [
+        'severity'       => fn($f) => vg_sev_badge((string) $f['severity']),
+        'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
+        2 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>',
+        3 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
+        // 커널은 재부팅해야 새 코드가 올라온다 — 프로세스 재시작으로는 안 고쳐진다.
+        4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>'
+                       . (!empty($f['needs_restart'])
+                          ? ' ' . vg_badge(vg_needs_reboot($f) ? '재부팅 필요' : '재시작 필요', 'high')
+                          : ''),
+        5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
+        // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
+        6 => fn($f) => !empty($f['needs_restart'])
+                       ? '<span class="pill">' . (vg_needs_reboot($f) ? '재부팅' : '프로세스 재시작') . '</span>'
+                       : (!empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>'),
+    ];
+    $vulnOpts = [
+        'card'      => false,
+        'row_class' => fn($f) => vg_sev_row((string) $f['severity']),
+        'cell'      => $vulnCells,
+    ];
+  ?>
     <div class="card">
-      <strong>우선순위 취약점 (CRITICAL·HIGH + 재시작 필요)</strong>
+      <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
       <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>">전체 취약점 보기 →</a></span>
       <div class="card__body">
       <?php
-      vg_table(
-          [
-              ['label' => '등급', 'key' => 'severity'],
-              ['label' => '상태', 'key' => 'runtime_status'],
-              ['label' => 'CVE'],
-              ['label' => 'EPSS'],
-              ['label' => '패키지'],
-              ['label' => '근거'],
-              ['label' => '조치'],
+      vg_table($vulnHeaders, $rows, $vulnOpts + [
+          'empty' => [
+              'icon'  => '✅',
+              'title' => 'CRITICAL·HIGH 가 없습니다.',
+              'hint'  => '아래의 재시작·재부팅 필요 항목은 등급이 낮아도 확인하세요.',
           ],
-          $rows,
-          [
-              'card' => false,
-              'empty' => 'CRITICAL·HIGH 없음(외부노출된 취약점이 없음).',
-              'row_class' => fn($f) => vg_sev_row((string) $f['severity']),
-              'cell' => [
-                  'severity'       => fn($f) => vg_sev_badge((string) $f['severity']),
-                  'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
-                  2 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>',
-                  3 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
-                  // 커널은 재부팅해야 새 코드가 올라온다 — 프로세스 재시작으로는 안 고쳐진다.
-                  4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>'
-                                 . (!empty($f['needs_restart'])
-                                    ? ' ' . vg_badge(vg_needs_reboot($f) ? '재부팅 필요' : '재시작 필요', 'high')
-                                    : ''),
-                  5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
-                  // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
-                  6 => fn($f) => !empty($f['needs_restart'])
-                                 ? '<span class="pill">' . (vg_needs_reboot($f) ? '재부팅' : '프로세스 재시작') . '</span>'
-                                 : (!empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>'),
-              ],
-          ]
-      );
+      ]);
       ?>
       </div>
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
+
+    <div class="card mt-lg">
+      <strong>재시작·재부팅 필요 <span class="hint">(<?= number_format($restartTotal) ?>건)</span></strong>
+      <span class="why">— 패치는 됐지만 옛 코드가 아직 돌고 있다. 등급이 낮게 잡혀도 놓치면 안 되는 부류다
+        <?php if ($restartTotal > count($restartRows)): ?>
+          · 상위 <?= count($restartRows) ?>건 ·
+          <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>&amp;fx=restart">전체 보기 →</a>
+        <?php endif; ?>
+      </span>
+      <div class="card__body">
+      <?php
+      vg_table($vulnHeaders, $restartRows, $vulnOpts + [
+          'empty' => [
+              'icon'  => '✅',
+              'title' => '재시작·재부팅이 필요한 항목이 없습니다.',
+              'hint'  => '패치된 라이브러리를 옛 프로세스가 물고 있는 경우가 없습니다.',
+          ],
+      ]);
+      ?>
+      </div>
+    </div>
 
   <?php elseif ($tab === 'runtime'): ?>
     <div class="card">
