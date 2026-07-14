@@ -87,6 +87,52 @@
     startProgress();
   });
 
+  // --- 클립보드 복사 ------------------------------------------------------
+  // 토큰은 발급 화면에서 한 번만 보인다 — 손으로 긁다 흘리면 재발급뿐이라 버튼을 준다.
+  // navigator.clipboard 는 보안 컨텍스트(https·localhost)에서만 산다. 사내 http 로 열면
+  // 없을 수 있어서, 그때는 숨긴 textarea + execCommand 로 떨어진다(구식이지만 아직 먹는다).
+  function legacyCopy(text) {
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      ta.remove();
+      ok ? resolve() : reject(new Error('copy failed'));
+    });
+  }
+
+  function copyText(text) {
+    // 있다고 되는 게 아니다 — 권한이 막히면 writeText 가 거부(reject)된다. 그때도 폴백한다.
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).catch(function () { return legacyCopy(text); });
+    }
+    return legacyCopy(text);
+  }
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-copy]');
+    if (!btn) { return; }
+    e.preventDefault();
+    var label = btn.dataset.label || btn.textContent.trim();
+    btn.dataset.label = label;
+    copyText(btn.getAttribute('data-copy')).then(function () {
+      btn.classList.add('is-done');
+      btn.textContent = '복사됨';
+    }).catch(function () {
+      btn.textContent = '복사 실패 — 직접 선택하세요';
+    });
+    setTimeout(function () {
+      btn.classList.remove('is-done');
+      btn.textContent = label;
+    }, 2000);
+  });
+
   // --- 페이지 이동 --------------------------------------------------------
   document.addEventListener('click', function (e) {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) { return; }
