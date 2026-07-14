@@ -112,6 +112,22 @@ try {
     $ids = [];
     foreach ($rows as $r) { if ($r['scan_id'] !== null) { $ids[] = (int) $r['scan_id']; } }
     $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
+
+    // 함대에서 가장 높은 에이전트 버전 — 이보다 낮은 호스트는 옛 에이전트가 돌고 있다.
+    //   중앙은 노드에 아무것도 내려보내지 않으므로(노드가 밀어 올리기만 한다) 에이전트를 고쳐도
+    //   **각 노드에 다시 깔 때까지 옛 코드가 계속 돈다.** 실제로 master 가 2.1 로 몇 주를 돌았는데
+    //   화면에 숫자만 있고 "이게 구버전" 이라는 신호가 없어 아무도 못 알아챘다.
+    //   기준을 코드에 박지 않고 **관측된 최댓값**으로 잡는다 — 웹 컨테이너는 agent/ 를 마운트하지
+    //   않으므로 저장소의 버전을 읽을 수 없고, 박아 두면 배포 때마다 두 곳을 고쳐야 한다.
+    //   (버전은 '2.10' > '2.9' 라 문자열 비교로는 틀린다 → version_compare)
+    $seen = $pdo->query(
+        "SELECT DISTINCT agent_version FROM tb_scans
+          WHERE agent_version IS NOT NULL AND agent_version <> '' AND is_deleted = 0"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    $latestAgent = (string) array_reduce(
+        $seen,
+        static fn(?string $max, string $v) => ($max === null || version_compare($v, $max, '>')) ? $v : $max
+    );
 } catch (Throwable $e) {
     $err = $e->getMessage();
 }
@@ -198,7 +214,16 @@ vg_header('자산관리', 'assets');
               'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['id'] . '">' . vg_h($r['fqdn']) . '</a></strong>',
               'state' => fn($r) => vg_asset_state($r['age_min']),
               'os'            => fn($r) => vg_h(trim($r['os_id'] . ' ' . $r['os_version'])) ?: '<span class="why">–</span>',
-              'agent_version' => fn($r) => $r['agent_version'] ? '<code>' . vg_h($r['agent_version']) . '</code>' : '<span class="why">–</span>',
+              // 구버전 뱃지: 이 호스트만 옛 에이전트가 돈다는 뜻이다(중앙은 노드에 내려보내지 않는다).
+              //   갱신은 master 에서 `deploy/agent_push.sh <노드>` — 토큰·타이머는 건드리지 않는다.
+              'agent_version' => function ($r) use ($latestAgent) {
+                  if (!$r['agent_version']) { return '<span class="why">–</span>'; }
+                  $v   = (string) $r['agent_version'];
+                  $old = $latestAgent !== '' && version_compare($v, $latestAgent, '<');
+                  return '<code>' . vg_h($v) . '</code>'
+                       . ($old ? ' ' . vg_badge('구버전', 'med',
+                             "함대 최신은 {$latestAgent} — master 에서 deploy/agent_push.sh 로 갱신하세요") : '');
+              },
               'resource' => fn($r) => $r['scan_id'] !== null
                   ? vg_resource_mem($r['peak_rss_mb']) . ' <span class="why">·</span> ' . vg_resource_cpu($r['cpu_seconds'])
                   : '<span class="why">–</span>',
