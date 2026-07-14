@@ -254,6 +254,51 @@ final class VgUbuntuOvalConnector implements VgFeedConnector {
                 }
                 $flush($batch);
                 $pdo->commit();
+
+                // **취약 후보도 여기서 나온다.** 지금까지 우분투 후보는 OSV 에만 의존했다.
+                //   실측: dev 에서 ubuntu:24.04 를 판정했더니 findings 0 이었다(Trivy 는 34건).
+                //   OSV 의 우분투 수록이 우리 커버리지의 상한이 되는 구조였다 — 벤더 데이터가
+                //   "어느 패키지가 영향받나" 의 정본인데 그걸 억제에만 쓰고 후보엔 안 썼다.
+                //   그래서 카탈로그(tb_cves + tb_cve_affected_packages)에도 넣는다. 생태계 표기는
+                //   OSV·매처와 같은 기준('Ubuntu:24.04').
+                //   미수정 CVE 는 fixed_version=NULL 로 넣는다 — 버전 억제가 안 걸리고(조치안이 없으니
+                //   당연하다), 판정 맵이 no_fix 로 표시한다.
+                $eco = 'Ubuntu:' . vg_ubuntu_version_of($code);
+                if (vg_ubuntu_version_of($code) === '') { continue; }   // 모르는 코드명은 후보를 만들지 않는다
+
+                $cveB   = [];
+                $affB   = [];
+                $flushC = static function (array $cveB, array $affB) use ($pdo): void {
+                    if ($cveB) {
+                        $ph = implode(',', array_fill(0, count($cveB), '(?)'));
+                        $pdo->prepare("INSERT IGNORE INTO tb_cves (cve_id) VALUES $ph")->execute($cveB);
+                    }
+                    if ($affB) {
+                        $ph = implode(',', array_fill(0, count($affB), '(?,?,?,?)'));
+                        $pdo->prepare(
+                            "INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+                             VALUES $ph
+                             ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
+                        )->execute(array_merge(...$affB));
+                    }
+                };
+
+                $pdo->beginTransaction();
+                $n = 0;
+                foreach ($rows as $r) {
+                    $cveB[] = $r['cve'];
+                    $affB[] = [
+                        $r['cve'], $eco, mb_substr($r['pkg'], 0, 255),
+                        $r['evr'] !== null ? mb_substr($r['evr'], 0, 128) : null,
+                    ];
+                    if (++$n % 500 === 0) {
+                        $flushC($cveB, $affB);
+                        $cveB = []; $affB = [];
+                        if ($n % 10000 === 0) { $pdo->commit(); $pdo->beginTransaction(); }
+                    }
+                }
+                $flushC($cveB, $affB);
+                $pdo->commit();
             } finally {
                 @unlink($src['path']);
             }

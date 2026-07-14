@@ -398,7 +398,7 @@ collect_pkg_origins() {
       if ($1 == "release" && lastkey != "") {
         o = ""
         if (match($0, /o=[^,]+/)) { o = substr($0, RSTART + 2, RLENGTH - 2) }
-        if (o != "") { repo[lastkey] = o }
+        if (o != "") { repo[lastkey] = o; nrepo++ }
         lastkey = ""
       }
       next
@@ -427,8 +427,16 @@ collect_pkg_origins() {
     END { flush() }
 
     # 설치본의 저장소가 있으면 그것, 없으면 그 패키지를 파는 저장소, 둘 다 없어야 LOCAL(수동 설치).
+    #
+    # **저장소를 하나도 모르면(nrepo==0) 아무것도 말하지 않는다.** 도커 이미지·폐쇄망 서버는
+    #   apt 인덱스(/var/lib/apt/lists)가 비어 있어 모든 패키지의 소스가 dpkg/status 뿐이다.
+    #   그걸 LOCAL(수동 설치)로 읽으면 **시스템 전체가 서드파티**가 되고, 중앙은 서드파티를
+    #   "자동 판정 불가" 로 두므로 **벤더 판정이 통째로 꺼진다**(실측 ubuntu:24.04: 억제 0건,
+    #   우리 281 vs Trivy 34). 모르는 것은 모른다고 해야 한다 — 출처를 안 보내면 중앙은
+    #   "정보 없음 → 배포판 패키지로 취급" 으로 안전하게 판정한다.
     function flush() {
       if (pkg == "") { return }
+      if (nrepo == 0) { pkg = ""; return }
       print pkg "\t" (inst != "" ? inst : (any != "" ? any : "LOCAL"))
       pkg = ""
     }'

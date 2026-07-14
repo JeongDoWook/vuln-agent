@@ -35,6 +35,19 @@ function vg_ubuntu_codename(?string $osVersion): string {
     ][$v] ?? '';
 }
 
+/** 코드명 → VERSION_ID (생태계 표기 'Ubuntu:24.04' 를 만들 때 쓴다). */
+function vg_ubuntu_version_of(string $codename): string {
+    return [
+        'bionic'   => '18.04',
+        'focal'    => '20.04',
+        'jammy'    => '22.04',
+        'noble'    => '24.04',
+        'oracular' => '24.10',
+        'plucky'   => '25.04',
+        'questing' => '25.10',
+    ][$codename] ?? '';
+}
+
 /**
  * 이 스캔의 **우분투 호스트와 우분투 컨테이너**에 OVAL 을 적용해 "아직 취약" 맵을 만든다.
  *   조회는 이 스캔이 실제로 가진 패키지 이름으로 한정한다 — 릴리스 전량(수십만 행)을 배열에

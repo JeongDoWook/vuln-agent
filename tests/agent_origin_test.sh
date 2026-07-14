@@ -94,6 +94,30 @@ check "서드파티 저장소"     "$(printf 'docker-ce-cli\tDocker')"
 check "수동 설치"           "$(printf 'zoom\tLOCAL')"
 check "평범한 배포판 패키지" "$(printf 'vim\tDebian')"
 
+# ── 저장소를 하나도 모르는 시스템(도커 이미지·폐쇄망) ──────────────────────
+# apt 인덱스가 비어 있으면 모든 패키지의 소스가 dpkg/status 뿐이다. 그걸 LOCAL(수동 설치)로 읽으면
+# 시스템 전체가 서드파티가 되고 벤더 판정이 통째로 꺼진다(실측 ubuntu:24.04: 억제 0건).
+# 모르는 것은 모른다고 해야 한다 → 아무것도 출력하지 않는다(중앙은 "정보 없음 → 배포판" 으로 본다).
+apt-cache() {
+  if [ "$#" -eq 1 ]; then
+    printf 'Package files:\n 100 /var/lib/dpkg/status\n     release a=now\n'
+    return 0
+  fi
+  cat <<'EOF'
+curl:
+  Installed: 8.5.0-2ubuntu10.6
+  Candidate: 8.5.0-2ubuntu10.6
+  Version table:
+ *** 8.5.0-2ubuntu10.6 100
+        100 /var/lib/dpkg/status
+EOF
+}
+empty="$(collect_pkg_origins)"
+if [ -n "$empty" ]; then
+  printf '  ✗ [저장소를 모르면 출처를 말하지 않는다] 출력이 있음: %s\n' "$empty" >&2
+  fail=$((fail + 1))
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "agent_origin: 통과"
   exit 0
