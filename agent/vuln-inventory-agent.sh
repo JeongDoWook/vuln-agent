@@ -27,7 +27,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="2.1"
+SCRIPT_VERSION="2.2"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
@@ -373,6 +373,15 @@ collect_exposure() {
 #   URL 이 아니라 **라벨**(o=Debian / o=Docker / o=LP-PPA-…)로 판정한다 — URL 로 보면 사내
 #   미러(mirror.company.com)가 서드파티로 오판된다.
 #   출력: 패키지<TAB>라벨   (LOCAL = 어느 저장소에도 없음 = 수동 .deb 설치, UNKNOWN = 매핑 실패)
+#
+#   **설치된 버전 줄만 보면 안 된다.** 보안 업데이트가 나와 설치본이 뒤처지면 그 버전은 더 이상
+#   인덱스에 없어서 소스가 `/var/lib/dpkg/status` 하나뿐이다 — 그걸 LOCAL 로 읽었다.
+#     curl:  *** 8.14.1-2+deb13u3 100 → /var/lib/dpkg/status   (설치본: 인덱스에 없음)
+#                8.14.1-2+deb13u4 500 → deb.debian.org trixie  (저장소가 지금 주는 것)
+#   실측(raspberrypi5-00): 이렇게 LOCAL 로 잘못 찍힌 데비안 패키지가 findings 237건을 만들었다.
+#   중앙은 서드파티를 "자동 판정 불가" 로 두므로 **억제도, 조치 가능 여부도 못 붙는다** —
+#   하필 "지금 apt 로 고칠 수 있는" 패키지들이 통째로 그렇게 됐다.
+#   그래서 **그 패키지의 다른 버전 줄**에 저장소가 있으면 그 저장소가 출처다(설치본이 낡았을 뿐).
 collect_pkg_origins() {
   have apt-cache || return 0
   {
@@ -395,18 +404,33 @@ collect_pkg_origins() {
       next
     }
     phase == 2 {
-      if ($0 ~ /^[^ \t]/)   { pkg = $0; sub(/:$/, "", pkg); star = 0; next }
-      if ($0 ~ /^ \*\*\*/)  { star = 1; next }     # 설치된 버전 줄
-      if (star == 1 && $1 ~ /^[0-9]+$/) {
-        if ($2 ~ /^(http|https|ftp|file)/) {
-          k = $2 " " $3 " " $4
-          print pkg "\t" ((k in repo) ? repo[k] : "UNKNOWN")
-          star = 0
-        } else if ($2 ~ /dpkg\/status/) {
-          print pkg "\tLOCAL"
-          star = 0
-        }
+      # "curl:" — 앞 패키지를 마감하고 새로 시작한다. 경고 줄(N:/W:/E: …)은 패키지가 아니다.
+      if ($0 ~ /^[^ \t]/) {
+        flush(); star = 0; inst = ""; any = ""
+        if ($0 ~ /^[^ \t:]+:$/) { pkg = $0; sub(/:$/, "", pkg) } else { pkg = "" }
+        next
       }
+      if (pkg == "") { next }
+
+      if ($0 ~ /^ \*\*\*/) { star = 1; next }                 # 설치된 버전 줄
+      if ($1 !~ /^[0-9]+$/) { star = 0; next }                # 다른 버전 줄(설치본 아님)
+
+      # 소스 줄: "        500 http://deb.debian.org/debian trixie/main arm64 Packages"
+      if ($2 ~ /^(http|https|ftp|file)/) {
+        k = $2 " " $3 " " $4
+        o = (k in repo) ? repo[k] : "UNKNOWN"
+        if (star == 1) { if (inst == "") inst = o }           # 설치본의 저장소 — 가장 정확
+        else           { if (any  == "") any  = o }           # 저장소가 지금 주는 버전의 출처
+      }
+      # /var/lib/dpkg/status 는 저장소가 아니다 — 여기서 LOCAL 을 단정하지 않는다.
+    }
+    END { flush() }
+
+    # 설치본의 저장소가 있으면 그것, 없으면 그 패키지를 파는 저장소, 둘 다 없어야 LOCAL(수동 설치).
+    function flush() {
+      if (pkg == "") { return }
+      print pkg "\t" (inst != "" ? inst : (any != "" ? any : "LOCAL"))
+      pkg = ""
     }'
 }
 
