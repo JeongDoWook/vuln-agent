@@ -108,13 +108,22 @@ vg_header('에이전트 토큰', 'agenttokens');
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
-  <?php if ($newToken !== null): ?>
+  <?php if ($newToken !== null):
+    // 설치 명령을 통째로 복사하게 준다 — 토큰만 주면 사용자가 --server 를 다시 찾아야 한다.
+    $scheme  = (($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'http';
+    $ingest  = $scheme . '://' . (string) ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/ingest.php';
+    $install = 'sudo bash install-agent.sh --server ' . $ingest . ' --token ' . $newToken;
+  ?>
     <div class="card card--accent">
       <div class="card__body">
         <strong>발급된 토큰 (한 번만 표시됨)</strong>
         <pre class="out selectable"><?= vg_h($newToken) ?></pre>
-        <div class="why">이 값은 저장되지 않습니다. 지금 복사해 대상 서버의
-          <code>install-agent.sh --token &lt;토큰&gt;</code> 로 설치하세요. 잃어버리면 새로 발급해야 합니다.</div>
+        <div class="actions">
+          <?php vg_copy_btn($newToken, '토큰 복사'); ?>
+          <?php vg_copy_btn($install, '설치 명령 복사'); ?>
+        </div>
+        <div class="why">이 값은 저장되지 않습니다. 지금 복사해 대상 서버에서
+          <code><?= vg_h($install) ?></code> 로 설치하세요. 잃어버리면 새로 발급해야 합니다.</div>
       </div>
     </div>
   <?php endif; ?>

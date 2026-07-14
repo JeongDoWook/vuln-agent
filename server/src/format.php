@@ -121,6 +121,27 @@ function vg_sev_counts(array $counts, ?callable $href = null): string {
     return $out ? implode(' ', $out) : '<span class="why">–</span>';
 }
 
+/**
+ * 심각도 구성 막대(가로 누적). 숫자 뱃지만 있으면 호스트끼리 "누가 더 나쁜지"를
+ * 머리로 더해야 한다 — 막대는 그걸 눈으로 보게 한다. 뱃지와 같이 쓴다(색만으로 말하지 않게).
+ * 폭 계산(width:N%)은 app.css 로 옮길 수 없는 값이라 인라인 style 예외에 해당한다.
+ */
+function vg_sev_bar(array $counts): string {
+    $total = 0;
+    foreach (VG_TONE_SEV as $sev => $tone) { $total += (int) ($counts[$sev] ?? 0); }
+    if ($total === 0) { return ''; }
+
+    $out = '';
+    foreach (VG_TONE_SEV as $sev => $tone) {
+        $n = (int) ($counts[$sev] ?? 0);
+        if ($n === 0) { continue; }
+        $pct = round($n / $total * 100, 2);
+        $out .= '<i class="tone-' . $tone . '" style="width:' . $pct . '%" title="'
+              . vg_h($sev . ' ' . number_format($n) . '건') . '"></i>';
+    }
+    return '<span class="riskbar">' . $out . '</span>';
+}
+
 // 런타임 상태(EXTERNAL/LISTENING/RUNNING/LOADED/INSTALLED)
 function vg_status_label(?string $s): string {
     $m = ['EXTERNAL' => '외부노출', 'LISTENING' => '로컬리스닝', 'RUNNING' => '실행중', 'LOADED' => '사용중', 'INSTALLED' => '설치만'];

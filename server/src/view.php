@@ -54,6 +54,93 @@ function vg_sev_donut(array $counts, int $size = 132): void {
 }
 
 /**
+ * 심각도 추세 (누적 막대 — 순수 SVG. 도넛과 같은 톤 토큰을 쓴다).
+ *   $days: [['d'=>'2026-07-14', 'counts'=>['CRITICAL'=>3,…]], …] — 날짜 오름차순.
+ *   $sevs: 그릴 등급. 기본은 조치 대상 3종.
+ *
+ * 왜 누적 막대인가: 답해야 할 질문이 "나아지고 있나"라서 날짜별 총량과 그 안의 등급 구성이
+ * 동시에 보여야 한다. CRITICAL 을 **바닥에** 깐다 — 기준선에 붙은 조각이 가장 읽기 쉽고,
+ * 제일 급한 등급의 추세를 눈이 먼저 잡아야 하기 때문이다.
+ * 조각 사이는 2px 를 띄워 배경색이 비치게 한다(등급 경계가 색만으로 구분되지 않게).
+ *
+ * LOW 는 기본에서 뺀다. 실측에서 LOW 2,198건 : CRITICAL 2건이라, 한 축에 같이 쌓으면
+ * 정작 봐야 할 CRITICAL·HIGH 가 1px 실선이 된다(스케일이 다른 계열을 한 축에 쌓지 않는다).
+ * 전체 구성은 옆의 도넛이 그대로 보여준다.
+ */
+function vg_sev_trend(array $days, array $sevs = ['CRITICAL', 'HIGH', 'MEDIUM']): void {
+    $tones = array_intersect_key(VG_TONE_SEV, array_flip($sevs));
+    $tot = static fn(array $c): int => array_sum(array_map(
+        static fn($s) => (int) ($c[$s] ?? 0), array_keys($tones)
+    ));
+    $max = 0;
+    foreach ($days as $d) { $max = max($max, $tot($d['counts'])); }
+
+    if (!$days || $max === 0) {
+        vg_empty(['icon' => '📈', 'title' => '추세를 그릴 스캔이 없습니다.',
+                  'hint'  => '에이전트가 두 번 이상 수집하면 여기에 변화가 쌓입니다.']);
+        return;
+    }
+
+    // 논리 좌표(px). CSS 가 width:100% 로 늘려도 비율은 유지된다.
+    $W = 720; $H = 190;
+    $padL = 36; $padR = 8; $padT = 12; $padB = 26;
+    $plotW = $W - $padL - $padR;
+    $plotH = $H - $padT - $padB;
+    $n = count($days);
+    $colW = $plotW / $n;
+    $barW = min(30.0, $colW * 0.62);   // 얇은 마크 — 열을 꽉 채우지 않는다
+    $gap  = 2;                          // 조각 사이 배경이 비치는 틈
+
+    // 눈금은 3줄(0·중간·최대)이면 충분하다. 최대는 보기 좋은 수로 올림.
+    $step = (int) max(1, 10 ** max(0, (int) floor(log10(max(1, $max))) - 1));
+    $top  = (int) (ceil($max / $step) * $step);
+
+    echo '<div class="chart">';
+    echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="최근 ' . $n . '일 심각도 추세">';
+
+    // 눈금선·눈금값 — 뒤로 물러나 있어야 한다(데이터가 주인공).
+    foreach ([0, 0.5, 1] as $f) {
+        $y = $padT + $plotH * (1 - $f);
+        echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($y, 1) . '"'
+            . ' x2="' . ($W - $padR) . '" y2="' . round($y, 1) . '"></line>';
+        echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($y + 3.5, 1) . '">'
+            . number_format((int) round($top * $f)) . '</text>';
+    }
+
+    foreach ($days as $i => $day) {
+        $x = $padL + $colW * $i + ($colW - $barW) / 2;
+        $y = $padT + $plotH;   // 바닥에서 위로 쌓는다
+        foreach ($tones as $sev => $tone) {   // CRITICAL 부터: 급한 게 바닥
+            $v = (int) ($day['counts'][$sev] ?? 0);
+            if ($v === 0) { continue; }
+            $h = $v / $top * $plotH;
+            $y -= $h;
+            $drawH = max(1.5, $h - $gap);          // 틈만큼 줄여 그린다(조각이 붙지 않게)
+            echo '<rect class="chart__seg tone-' . $tone . '" rx="2"'
+                . ' x="' . round($x, 1) . '" y="' . round($y, 1) . '"'
+                . ' width="' . round($barW, 1) . '" height="' . round($drawH, 1) . '">'
+                . '<title>' . vg_h($day['d'] . ' · ' . $sev . ' ' . number_format($v) . '건') . '</title>'
+                . '</rect>';
+        }
+        // 날짜는 하나 걸러 하나만 — 14개를 다 쓰면 글자가 겹친다. 마지막 날은 항상 쓴다.
+        if ($i % 2 === 1 || $i === $n - 1) {
+            echo '<text class="chart__lbl" x="' . round($x + $barW / 2, 1) . '" y="' . ($H - 8) . '">'
+                . vg_h(date('n/j', strtotime($day['d']))) . '</text>';
+        }
+    }
+    echo '</svg></div>';
+}
+
+/**
+ * 클립보드 복사 버튼. JS 가 죽어도 값 자체는 화면에 그대로 있으므로(선택해서 복사 가능)
+ * 이 버튼은 편의일 뿐 필수 경로가 아니다 — 그래서 <button type=button>.
+ */
+function vg_copy_btn(string $text, string $label = '복사'): void {
+    echo '<button type="button" class="btn btn--sm btn--ghost copy" data-copy="' . vg_h($text) . '">'
+        . vg_h($label) . '</button>';
+}
+
+/**
  * 모달 — 자주 안 쓰는 폼(추가·발급·설치안내)을 화면에 펼쳐두지 않고 버튼 뒤에 숨긴다.
  *
  * 네이티브 <dialog> 를 쓴다. showModal() 이 포커스 가둠·ESC 닫기·backdrop 을 다 해주므로
