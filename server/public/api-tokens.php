@@ -50,7 +50,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    // PRG — 결과를 세션에 넘기고 GET 으로 되돌린다. 여기서 바로 그리면 새로고침이
+    // 발급 POST 를 재전송해 같은 용도의 토큰이 계속 쌓인다.
+    vg_redirect_flash([
+        'msg' => $msg, 'err' => $err, 'token' => $newToken,
+        'failed' => $issueFailed, 'label' => $issueLabel,
+    ]);
 }
+
+$f           = vg_flash_take();
+$msg         = $f['msg']   ?? null;
+$err         = $f['err']   ?? null;
+$newToken    = $f['token'] ?? null;   // 리다이렉트 뒤 1회만 보여주고 세션에서 사라진다.
+$issueFailed = (bool) ($f['failed'] ?? false);
+$issueLabel  = (string) ($f['label'] ?? '');
 
 $csrf = vg_csrf_token();
 

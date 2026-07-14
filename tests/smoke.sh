@@ -317,8 +317,10 @@ rm -f "$JAR2"
 #   위조해 스캔을 덮어쓰는 것을 ingest.php 가 403 으로 막는지 회귀로 고정한다(HIGH-2).
 printf "\n[에이전트 토큰 · 호스트 바인딩]\n"
 # 로그인 세션($JAR)으로 web01 에 바인딩된 개별 토큰 발급 → 원문(vgt_...)을 1회 표시에서 추출.
+#   발급은 303 으로 GET 에 되돌려주므로(-L) 원문은 리다이렉트 뒤 화면에 실린다.
 ATCSRF=$(curl -s -b "$JAR" "$BASE/agent-tokens.php" | grep -oE 'name="csrf" value="[a-f0-9]+"' | grep -oE '[a-f0-9]{32}' | head -1)
-issued=$(curl -s -b "$JAR" -X POST "$BASE/agent-tokens.php" \
+#   -X POST 를 쓰지 않는다 — -X 는 리다이렉트 뒤에도 POST 를 강제해 발급이 무한 재전송된다.
+issued=$(curl -sL -b "$JAR" "$BASE/agent-tokens.php" \
   --data-urlencode "csrf=$ATCSRF" --data-urlencode "action=create" \
   --data-urlencode "fqdn=web01.example.com" --data-urlencode "label=smoke")
 AGTOK=$(printf '%s' "$issued" | grep -oE 'vgt_[0-9a-f]{40}' | head -1)
@@ -330,6 +332,24 @@ if [ -n "$AGTOK" ] && printf '%s' "$listed" | grep -q "$AGTOK"; then
 else
   ok "목록엔 원문 없음(DB 엔 해시만 저장)"
 fi
+# 새로고침이 토큰을 재발급하지 않는다(PRG) — 예전엔 POST 응답을 그대로 그려서, F5 한 번이
+#   방금 받은 토큰을 자동 폐기하고 또 발급했다. 이제 발급은 303 으로 GET 에 되돌린다.
+prgcode=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$BASE/agent-tokens.php" \
+  --data-urlencode "csrf=$ATCSRF" --data-urlencode "action=create" \
+  --data-urlencode "fqdn=prg.example.com" --data-urlencode "label=smoke-prg")
+assert_eq "$prgcode" "303" "발급 POST 는 303 으로 GET 에 되돌린다(새로고침 재전송 방지)"
+prg1=$(curl -s -b "$JAR" "$BASE/agent-tokens.php")    # 리다이렉트된 GET — 원문 1회 표시
+assert_contains "$prg1" '한 번만 표시됨' "리다이렉트된 GET 에 발급 카드가 실린다"
+prg2=$(curl -s -b "$JAR" "$BASE/agent-tokens.php")    # 새로고침 = 같은 GET 재요청
+if printf '%s' "$prg2" | grep -q '한 번만 표시됨'; then
+  no "새로고침에도 발급 카드가 남아 있음(1회 표시 위반)"
+else
+  ok "새로고침하면 발급 카드가 사라진다(1회 표시)"
+fi
+# 새로고침이 반복하는 것은 이제 GET 이다 — 총 개수가 그대로면 재발급이 없었다는 뜻.
+cnt1=$(printf '%s' "$prg1" | grep -oE '\([0-9,]+개\)' | head -1)
+cnt2=$(printf '%s' "$prg2" | grep -oE '\([0-9,]+개\)' | head -1)
+assert_eq "$cnt2" "$cnt1" "새로고침해도 토큰이 다시 발급되지 않는다(총 개수 불변)"
 # (a) 바인딩된 호스트(web01)로 수신 → 200 ok, 저장 호스트가 바인딩 fqdn.
 resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $AGTOK" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"ok":true' "(a) 개별 토큰 + 바인딩 호스트 → ok:true"

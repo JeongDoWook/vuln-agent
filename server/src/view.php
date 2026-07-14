@@ -92,6 +92,27 @@ function vg_modal_close(): void {
     echo '</div></dialog>';
 }
 
+/**
+ * POST 처리 결과를 세션에 담고 같은 URL 로 303 리다이렉트한다(PRG).
+ *   POST 응답을 그대로 그리면 새로고침이 POST 를 재전송한다 — 토큰 발급 화면에선
+ *   새로고침 한 번이 방금 받은 토큰을 폐기하고 또 발급해 버렸다.
+ *   출력 전에 부른다. 되돌아오지 않는다.
+ */
+function vg_redirect_flash(array $flash): void {
+    $_SESSION['vg_flash'] = $flash;
+    // REQUEST_URI 는 raw(미디코딩)라 개행이 들어올 수 없지만, 헤더 분리는 값싸게 막는다.
+    $uri = preg_replace('/[\r\n].*$/s', '', (string) ($_SERVER['REQUEST_URI'] ?? '/'));
+    header('Location: ' . ($uri === '' ? '/' : $uri), true, 303);
+    exit;
+}
+
+/** 직전 POST 가 남긴 결과를 꺼내며 지운다(1회용). 없으면 빈 배열. */
+function vg_flash_take(): array {
+    $f = $_SESSION['vg_flash'] ?? null;
+    unset($_SESSION['vg_flash']);
+    return is_array($f) ? $f : [];
+}
+
 /** 성공/오류 알림. $msg 가 null·빈문자면 아무것도 출력하지 않는다. */
 function vg_alert(?string $msg, string $type = 'err'): void {
     if ($msg === null || $msg === '') {
