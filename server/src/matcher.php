@@ -13,6 +13,7 @@ require_once __DIR__ . '/vercmp.php';   // vg_ver_cmp — dpkg/rpm 버전 비교
 require_once __DIR__ . '/distro.php';   // vg_osv_ecosystem — 수집과 동일 기준
 require_once __DIR__ . '/debtracker.php';   // vg_debtracker_evidence — 데비안 백포트 판정(중앙)
 require_once __DIR__ . '/vendorerrata.php'; // vg_vendor_errata_evidence — RHEL 계열 백포트 판정(중앙)
+require_once __DIR__ . '/kernelcve.php';    // vg_kernel_fixed_set — 커널은 업스트림(kernel.org)이 판정한다
 
 if (!function_exists('vg_scope_rank')) {
     // 노출 범위 위험도 (클수록 위험)
@@ -363,6 +364,17 @@ if (!function_exists('vg_scope_rank')) {
             }
         }
 
+        // 커널 판정의 정본은 **업스트림(kernel.org CNA)** 이다 — 배포판 EVR 이 아니라 uname 버전으로 본다.
+        //   라즈베리·자체빌드 커널은 배포판 트래커/OVAL 관할 밖이라 "서드파티 → 자동 판정 불가" 로
+        //   전부 남았다(실측 raspberrypi5-00: LOW 2,069 중 702건이 커널 하나. 6.18 커널에 2004년 CVE 까지).
+        //   대상은 이 스캔의 커널 후보 CVE 뿐 — 전량 적재하면 매처 메모리가 또 터진다.
+        $kernelCves = [];
+        foreach ($affected as $key => $rows) {
+            if (!vg_is_kernel_source((string) $key) && !vg_is_kernel_code_pkg((string) $key)) { continue; }
+            foreach ($rows as $r) { $kernelCves[(string) $r['cve']] = true; }
+        }
+        $kernelFixed = vg_kernel_fixed_set($pdo, $runningKernel, array_keys($kernelCves));
+
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
         $ownTx = !$pdo->inTransaction();
@@ -527,6 +539,24 @@ if (!function_exists('vg_scope_rank')) {
                         $inKev ? 1 : 0, $cvss, $sev,
                         sprintf('실행 중이 아닌 커널(설치만 됨) — 지금 도는 커널은 %s 다. 부팅해야 활성화된다',
                                 (string) ($scan['running_kernel'] ?? '?')),
+                    ]);
+                    $counts['SUPPRESSED']++;
+                    continue;
+                }
+
+                // 커널 CNA 억제: 업스트림(kernel.org)이 "구동 커널 버전엔 이 수정본이 들어 있다"고
+                //   말해 준 경우. 배포판 조치안이 아니라 uname 의 **업스트림 버전**(6.18.34)으로 보므로,
+                //   배포판 관할 밖의 커널(라즈베리 `1:6.18.34-1+rpt1`)도 정확히 판정된다.
+                //
+                //   **배포판 커널엔 쓰지 않는다**(!$isDistroPkg 조건). RHEL 커널은 5.14.0 위에 백포트를
+                //   쌓은 것이라 업스트림 버전이 코드 내용을 대변하지 않는다 — "이 취약 코드는 6.1부터"를
+                //   그대로 믿으면 Red Hat 이 6.1 의 기능을 5.14 로 백포트한 경우를 놓친다(미탐).
+                //   배포판 커널은 트래커·OVAL 이 이미 정확히 판정한다. 여기는 **그들이 관할하지 않는
+                //   커널만** 맡는다.
+                if ($isKernelPkg && !$isDistroPkg && isset($kernelFixed[$cveId])) {
+                    $insSupp->execute([
+                        $scanId, $cveId, $p['name'], $p['version'],
+                        $inKev ? 1 : 0, $cvss, $sev, $kernelFixed[$cveId],
                     ]);
                     $counts['SUPPRESSED']++;
                     continue;
