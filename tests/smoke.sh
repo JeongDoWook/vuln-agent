@@ -99,6 +99,17 @@ else
   no "awk JSON 빌더  (자세히: bash tests/agent_json_test.sh)"
 fi
 
+# --- rpmdb 단위 테스트 --------------------------------------------------------
+# 컨테이너의 rpm DB 를 중앙이 파싱한다 — 컨테이너에 rpm 바이너리가 없고 호스트에도 rpm 이 없으면
+# 이 경로 말고는 그 패키지를 볼 방법이 아예 없다. 파서가 틀리면 통째로 사라진다(미탐).
+printf "\n[rpmdb]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/rpmdb_test.php >/dev/null 2>&1; then
+  ok "rpmdb 단위 테스트 (rpm 헤더 파싱)"
+else
+  no "rpmdb 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/rpmdb_test.php)"
+fi
+
 # --- distro 단위 테스트 -------------------------------------------------------
 # 패키지 출처·커널 판정(server/src/distro.php). 판정 하나가 findings 수천 건을 좌우한다 —
 # 커널 소스에서 나온 헤더·메타패키지 21개에 커널 CVE 369건이 곱해져 LOW 7,925건이 뜬 적이 있다.
