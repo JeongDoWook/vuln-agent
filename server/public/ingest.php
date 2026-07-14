@@ -178,7 +178,7 @@ $contentHash = vg_ingest_content_hash(
     $pkgRows, $manager, $langRows, $expRows, $staleRows,
     $ctrPkgRows, $ctrRows, $ctrExpRows,
     $runningKernel, $kernelLatest, $kernelReboot,
-    $vm, $sys
+    $vm, $sys, $originMap
 );
 $chgCount = 0;   // 이번에 기록한 패키지 변경 건수
 
