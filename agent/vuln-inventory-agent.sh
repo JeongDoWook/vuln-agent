@@ -635,7 +635,27 @@ collect_containers() {
         pkgs=$(timeout "$CMD_TIMEOUT" chroot "$root" rpm -qa \
                  --qf "${cid}|rpm|%{NAME}|%{EPOCH}:%{VERSION}-%{RELEASE}|%{SOURCERPM}\n" 2>/dev/null)
       fi
-      # 둘 다 실패하면 manager 를 비워 남긴다 — 패키지 0개를 "깨끗함"으로 오독하면 그게 미탐이다.
+      # 3) 그래도 안 되면 **DB 파일 자체를 중앙으로 올린다**(중앙이 파싱한다).
+      #    실측: calico UBI8 이미지엔 rpm 바이너리가 없고 호스트(데비안)에도 rpm 이 없다
+      #    → 그 컨테이너의 패키지가 통째로 안 보였다(미탐). 에이전트에 rpm 을 깔 수는 없고
+      #    (무설치 원칙), 셸로 바이너리 DB 를 파싱할 수도 없다. Trivy·Grype 처럼 **DB 를 그대로
+      #    넘기고 중앙이 해석**한다 — "에이전트는 사실만 나르고 판정은 중앙" 원칙 그대로다.
+      #    형식은 중앙이 시그니처로 판별한다(sqlite: rpm 4.16+ / BDB: rpm 4.14).
+      if [ -z "$pkgs" ]; then
+        for _db in "$root/var/lib/rpm/rpmdb.sqlite" "$root/var/lib/rpm/Packages"; do
+          [ -f "$_db" ] || continue
+          _sz=$(stat -c%s "$_db" 2>/dev/null || echo 0)
+          # 너무 크면 보내지 않는다(전송 본문 한계 32MB). 실측은 11~15MB → gzip 2~4MB.
+          [ "$_sz" -gt 0 ] && [ "$_sz" -le 67108864 ] || continue
+          if have gzip && have base64; then
+            printf '%s|gz|%s\n' "$cid" "$(gzip -c "$_db" 2>/dev/null | base64 -w0 2>/dev/null)" \
+              >> "$TMP/containers__rpmdb.txt"
+            mgr="rpm"   # 매니저는 rpm 이다 — 패키지 0개를 "깨끗함"으로 오독하면 미탐이다
+          fi
+          break
+        done
+      fi
+      # 전부 실패하면 manager 를 비워 남긴다 — 패키지 0개를 "깨끗함"으로 오독하면 그게 미탐이다.
       [ -n "$pkgs" ] && mgr="rpm"
     fi
 

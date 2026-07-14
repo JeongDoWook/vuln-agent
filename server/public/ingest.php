@@ -14,6 +14,7 @@ $cfg = require __DIR__ . '/../src/config.php';
 require __DIR__ . '/../src/db.php';
 require __DIR__ . '/../src/matcher.php';
 require __DIR__ . '/../src/cce.php';          // vg_evaluate_cce (보안설정 점검)
+require __DIR__ . '/../src/rpmdb.php';        // vg_ingest_rpmdb_rows (컨테이너 rpm DB 를 중앙이 파싱)
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/agenttoken.php';  // vg_agent_token_verify (호스트 바인딩)
 require_once __DIR__ . '/../src/ingest_parse.php';  // vg_ingest_parse_* (순수 변환, DB 비의존)
@@ -149,6 +150,14 @@ $ctrRows     = vg_ingest_parse_container_list((string) ($ctr['list'] ?? ''));
 $ctrPkgRows  = vg_ingest_parse_container_packages((string) ($ctr['packages'] ?? ''));
 $ctrProcRows = vg_ingest_parse_container_processes((string) ($ctr['processes'] ?? ''));
 $ctrExpRows  = vg_ingest_parse_container_exposures((string) ($ctr['exposure'] ?? ''));
+
+// rpm DB 파일을 받은 컨테이너 — **중앙이 직접 파싱**해 패키지 행으로 펼친다.
+//   컨테이너 안에 rpm 바이너리가 없고 호스트에도 rpm 이 없으면 에이전트는 DB 를 읽을 수 없다
+//   (실측: 데비안 호스트 + calico UBI8 컨테이너 → 패키지가 통째로 안 보였다 = 미탐).
+//   에이전트가 DB 파일을 그대로 올리고 여기서 해석한다 — 결과 행 모양이 같아 아래 저장 경로를
+//   그대로 탄다(Trivy·Grype 와 같은 방식).
+$ctrPkgRows = array_merge($ctrPkgRows, vg_ingest_rpmdb_rows((string) ($ctr['rpmdb'] ?? '')));
+
 $ctrCount     = count($ctrRows);
 $ctrPkgCount  = count($ctrPkgRows);
 $ctrProcCount = count($ctrProcRows);
