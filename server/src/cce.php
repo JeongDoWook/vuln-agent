@@ -355,6 +355,51 @@ if (!function_exists('vg_sshd_val')) {
     }
 
     /**
+     * 우리 점검 코드 → **SCAP Security Guide(SSG) 룰 ID**.
+     *
+     * 왜 필요한가: 점검 항목의 "왜 중요한가 / 어느 기준에 근거하나" 를 우리가 지어내면 안 된다.
+     *   SSG 는 오픈소스 룰셋이고 룰마다 CIS·NIST 800-53·STIG·PCI-DSS 참조와 근거를 갖는다.
+     *   여기서 묶어 두면 화면이 그 기준을 그대로 인용할 수 있다(tb_compliance_rules).
+     *
+     * 매핑은 **추측하지 않았다** — SSG 룰 2,493개의 ID 를 실제로 검색해 대응하는 것만 적었다.
+     *   대응하는 SSG 룰이 없는 항목(KISA 가이드 고유 등)은 여기 없다 → 화면에서 "자체 기준" 으로 뜬다.
+     */
+    function vg_cce_ssg_map(): array { return [
+        // SSH (sshd -T 실효값으로 판정)
+        'CCE-SSH-ROOT'      => 'sshd_disable_root_login',
+        'CCE-SSH-EMPTYPW'   => 'sshd_disable_empty_passwords',
+        'CCE-SSH-MAXAUTH'   => 'sshd_set_max_auth_tries',
+        'CCE-SSH-X11'       => 'sshd_disable_x11_forwarding',
+        'CCE-SSH-GRACE'     => 'sshd_set_login_grace_time',
+        'CCE-SSH-IDLE'      => 'sshd_set_idle_timeout',
+        // 계정
+        'CCE-ACC-EMPTYPW'   => 'no_empty_passwords',
+        'CCE-ACC-UID0'      => 'accounts_no_uid_except_zero',
+        'CCE-ACC-DUPUID'    => 'no_duplicate_uids',
+        'CCE-ACC-SHADOW'    => 'accounts_password_all_shadowed',
+        // 패스워드 정책
+        'CCE-PW-MINLEN'     => 'accounts_password_minlen_login_defs',
+        'CCE-PW-MAXDAYS'    => 'accounts_maximum_age_login_defs',
+        'CCE-PW-MINDAYS'    => 'accounts_minimum_age_login_defs',
+        'CCE-PW-QUALITY'    => 'accounts_password_pam_pwquality_enabled',
+        'CCE-PW-LOCKOUT'    => 'accounts_passwords_pam_faillock_deny',
+        // 파일 권한
+        'CCE-FILE-PASSWD'   => 'file_permissions_etc_passwd',
+        'CCE-FILE-SHADOW'   => 'file_permissions_etc_shadow',
+        'CCE-FILE-GROUP'    => 'file_permissions_etc_group',
+        'CCE-FILE-GSHADOW'  => 'file_permissions_etc_gshadow',
+        'CCE-FILE-CRONTAB'  => 'file_permissions_crontab',
+        // 시스템
+        'CCE-UMASK'         => 'accounts_umask_etc_login_defs',
+        'CCE-SESSION-TMOUT' => 'accounts_tmout',
+        'CCE-ROOT-PATH'     => 'root_path_default',
+        'CCE-RHOSTS'        => 'no_rsh_trust_files',
+        'CCE-SVC-LEGACY'    => 'service_telnetd_disabled',
+        'CCE-SEC-MODULE'    => 'selinux_state',
+        'CCE-SEC-FW'        => 'service_firewalld_enabled',
+    ]; }
+
+    /**
      * 한 스캔에 대해 CCE 점검 수행 → tb_cce_findings 재계산. 반환: 결과별 카운트.
      *   matcher 와 동일하게 스캔별 DELETE 후 재삽입, 자체 트랜잭션으로 원자성 보장.
      */
@@ -366,13 +411,15 @@ if (!function_exists('vg_sshd_val')) {
         try {
             $pdo->prepare('DELETE FROM tb_cce_findings WHERE scan_id = ?')->execute([$scanId]);
             $ins = $pdo->prepare(
-                'INSERT INTO tb_cce_findings (scan_id, code, title, result, severity, evidence, rationale)
-                 VALUES (?,?,?,?,?,?,?)'
+                'INSERT INTO tb_cce_findings (scan_id, code, ssg_rule_id, title, result, severity, evidence, rationale)
+                 VALUES (?,?,?,?,?,?,?,?)'
             );
             $counts = ['PASS' => 0, 'FAIL' => 0, 'NA' => 0];
             foreach ($rows as $r) {
                 [$code, $title, $result, $sev, $ev, $why] = $r;
-                $ins->execute([$scanId, $code, $title, $result, $sev, $ev, $why]);
+                // 검증된 룰셋에 묶는다 — 없으면 null(자체 기준 항목).
+                $ssg = vg_cce_ssg_map()[$code] ?? null;
+                $ins->execute([$scanId, $code, $ssg, $title, $result, $sev, $ev, $why]);
                 $counts[$result] = ($counts[$result] ?? 0) + 1;
             }
             if ($ownTx) { $pdo->commit(); }

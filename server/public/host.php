@@ -133,10 +133,15 @@ try {
         } elseif ($tab === 'cce') {
             $st = $pdo->prepare('SELECT COUNT(*) FROM tb_cce_findings WHERE scan_id = ?');
             $st->execute([$sid]); $total = (int) $st->fetchColumn();
+            // 점검 항목을 **검증된 룰셋(SSG)** 에 묶어 두었으므로, 그 룰의 기준 참조(CIS/NIST/STIG)를
+            //   함께 읽어 화면이 근거를 인용할 수 있게 한다. 묶이지 않은 항목은 refs 가 비어 있다.
             $st = $pdo->prepare(
-                "SELECT code, title, result, severity, evidence, rationale
-                   FROM tb_cce_findings WHERE scan_id = ?
-                  ORDER BY FIELD(result,'FAIL','NA','PASS'), FIELD(severity,'HIGH','MEDIUM','LOW'), code
+                "SELECT f.code, f.ssg_rule_id, f.title, f.result, f.severity, f.evidence, f.rationale,
+                        r.refs_json, r.title AS ssg_title
+                   FROM tb_cce_findings f
+                   LEFT JOIN tb_compliance_rules r ON r.rule_id = f.ssg_rule_id AND r.is_deleted = 0
+                  WHERE f.scan_id = ?
+                  ORDER BY FIELD(f.result,'FAIL','NA','PASS'), FIELD(f.severity,'HIGH','MEDIUM','LOW'), f.code
                   LIMIT $perPage OFFSET $offset"
             );
             $st->execute([$sid]);
@@ -362,11 +367,35 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
                 : ($r['result'] === 'PASS' ? 'low' : 'muted');
           return vg_badge($r['result'], $tone);
       };
+      // 기준 배지 — 이 점검이 **어느 룰셋의 어느 항목**에 근거하는지 보여준다.
+      //   예전엔 우리가 정한 코드(CCE-SSH-ROOT)만 있어서 "왜 이게 기준인가" 를 답할 수 없었다.
+      //   이제 SSG 룰에 묶여 있고, 그 룰이 CIS·NIST·STIG 참조를 들고 있다.
+      $refBadges = static function (array $r): string {
+          if (empty($r['ssg_rule_id'])) {
+              return '<span class="why">자체 기준(대응 SSG 룰 없음)</span>';
+          }
+          $refs = json_decode((string) ($r['refs_json'] ?? ''), true) ?: [];
+          $html = '';
+          foreach ($refs as $k => $v) {
+              // 기관 기준만 보여준다 — cis-csc 같은 상위 카테고리는 항목 번호가 아니라 생략.
+              if (strncmp((string) $k, 'cis@', 4) === 0) {
+                  $html .= ' ' . vg_badge('CIS ' . $v, 'info', 'CIS 벤치마크 ' . $k . ' 항목 ' . $v);
+              } elseif ($k === 'nist') {
+                  $html .= ' ' . vg_badge('NIST ' . vg_trunc((string) $v, 14), 'muted', 'NIST 800-53: ' . $v);
+              } elseif ($k === 'stigid') {
+                  $html .= ' ' . vg_badge('STIG', 'muted', 'DISA STIG: ' . $v);
+              }
+          }
+          $rule = '<code class="why">' . vg_h((string) $r['ssg_rule_id']) . '</code>';
+          return $rule . ($html !== '' ? '<br>' . $html : '');
+      };
+
       vg_table(
           [
               ['label' => '결과', 'key' => 'result'],
               ['label' => '점검 항목', 'key' => 'title'],
               ['label' => '코드', 'key' => 'code'],
+              ['label' => '기준(SSG 룰 · CIS/NIST)'],
               ['label' => '근거'],
               ['label' => '사유'],
           ],
@@ -377,8 +406,9 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
               'cell' => [
                   'result' => $cceBadge,
                   'code'   => fn($r) => '<code>' . vg_h($r['code']) . '</code>',
-                  3 => fn($r) => '<span class="why">' . vg_trunc($r['evidence'], 40) . '</span>',
-                  4 => fn($r) => '<span class="why">' . vg_trunc($r['rationale']) . '</span>',
+                  3 => $refBadges,
+                  4 => fn($r) => '<span class="why">' . vg_trunc($r['evidence'], 40) . '</span>',
+                  5 => fn($r) => '<span class="why">' . vg_trunc($r['rationale']) . '</span>',
               ],
           ]
       );
