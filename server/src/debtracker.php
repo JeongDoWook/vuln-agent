@@ -39,7 +39,10 @@ function vg_debtracker_is_vulnerable(array $row, string $binName, string $binVer
 
 /**
  * 이 스캔의 **호스트와 데비안 컨테이너**에 트래커를 적용해 "아직 취약" 맵을 만든다.
- *   반환: container_id => [바이너리패키지명 => [cve_id => true]]   (호스트는 0)
+ *   반환: container_id => [바이너리패키지명 => [cve_id => has_fix(0|1)]]   (호스트는 0)
+ *   값의 0/1 은 **데비안이 이 릴리스에 수정본을 냈는가**(debsecan flags[3]=='F').
+ *   0 이면 지금 apt 로 고칠 수 없다 → 매처가 "조치 불가" 로 표시한다. 실측(raspberrypi5-00):
+ *   트래커가 답한 1,025건 중 708건이 수정본 없음이었다 — 이걸 안 나누면 고칠 수 있는 317건이 묻힌다.
  *   에이전트 debsecan(tb_debsecan)과 같은 모양이라 매처의 기존 억제 경로를 그대로 탄다.
  *
  * **컨테이너에도 적용하는 이유**: 예전 규칙은 "컨테이너를 호스트 근거로 억제하지 말 것" 이었다.
@@ -92,7 +95,7 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): ar
         foreach (array_chunk($names, 500) as $chunk) {
             $inN = implode(',', array_fill(0, count($chunk), '?'));
             $st  = $pdo->prepare(
-                "SELECT pkg_name, is_binary, cve_id, fixed_version, other_versions
+                "SELECT pkg_name, is_binary, cve_id, fixed_version, other_versions, has_fix
                    FROM tb_debian_tracker
                   WHERE is_deleted = 0 AND release_codename = ? AND pkg_name IN ($inN)"
             );
@@ -104,6 +107,7 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): ar
                     'cve'       => (string) $r['cve_id'],
                     'fixed'     => (string) ($r['fixed_version'] ?? ''),
                     'others'    => (string) ($r['other_versions'] ?? ''),
+                    'has_fix'   => (int) ($r['has_fix'] ?? 0),
                 ];
             }
         }
@@ -124,9 +128,11 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): ar
 
         foreach (array_unique([$bin, $src]) as $key) {
             foreach ($rows[$key] ?? [] as $row) {
-                if (vg_debtracker_is_vulnerable($row, $bin, $binVer, $src, $srcVer)) {
-                    $out[$ctrId][$bin][$row['cve']] = true;
-                }
+                if (!vg_debtracker_is_vulnerable($row, $bin, $binVer, $src, $srcVer)) { continue; }
+                // 같은 CVE 가 바이너리·소스 두 행으로 잡히면 **수정본 있음이 이긴다**.
+                //   한쪽이라도 고칠 수 있으면 "조치 불가" 가 아니다(잘못 붙이면 조치를 포기하게 만든다).
+                $prev = $out[$ctrId][$bin][$row['cve']] ?? 0;
+                $out[$ctrId][$bin][$row['cve']] = max((int) $prev, (int) ($row['has_fix'] ?? 0));
             }
         }
     }
