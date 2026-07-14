@@ -165,6 +165,17 @@ else
   no "rhoval 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/rhoval_test.php)"
 fi
 
+# --- kernelcve 단위 테스트 ----------------------------------------------------
+# 커널은 배포판이 아니라 업스트림(kernel.org CNA)이 판정한다. 스트림(6.1.y·6.18.y)을 잘못 고르면
+# 다른 스트림의 수정본을 내 것으로 읽어 진짜 커널 취약점을 조용히 지운다(미탐).
+printf "\n[kernelcve]\n"
+if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+     -w /w php:8.3-cli php tests/kernelcve_test.php >/dev/null 2>&1; then
+  ok "kernelcve 단위 테스트 (CNA 파싱 · 스트림 판정 · tar 스캔)"
+else
+  no "kernelcve 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/kernelcve_test.php)"
+fi
+
 # --- schedule 단위 테스트 -----------------------------------------------------
 # feeds.php 의 cron 파싱·스케줄 계산(vg_cron_*/vg_schedule_*)을 server/src/schedule.php 로
 # 뽑아냈다 — 피드 실행과 무관한 순수 시간 계산이라 SRP 상 분리. ingest_parse 처럼 서버 없이

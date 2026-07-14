@@ -16,6 +16,7 @@ declare(strict_types=1);
  *     feeds/kisa.php   — VgKisaConnector + KISA RSS/URL/HTML 파싱(공지 저장/본문 로직은 advisory.php)
  *     feeds/epss.php   — VgEpssConnector + vg_epss_fetch
  *     feeds/debtracker.php — VgDebtrackerConnector + 데비안 보안 트래커(백포트 오탐 억제 근거)
+ *     feeds/kcve.php   — VgKcveConnector + 리눅스 커널 CNA(kernel.org — 커널 판정의 정본)
  *
  *   새 피드 추가: feeds/<type>.php 에 VgFeedConnector 구현 + 여기 require 한 줄 +
  *   vg_feed_make() 한 줄. run/preview 는 같은 클래스가 갖는다(미리보기가 실제 수집과
@@ -50,6 +51,7 @@ require_once __DIR__ . '/feeds/debtracker.php';
 require_once __DIR__ . '/feeds/rhoval.php';
 require_once __DIR__ . '/feeds/rhunfixed.php';
 require_once __DIR__ . '/feeds/ssg.php';
+require_once __DIR__ . '/feeds/kcve.php';
 
 function vg_feed_make(string $type): VgFeedConnector {
     switch ($type) {
@@ -62,6 +64,7 @@ function vg_feed_make(string $type): VgFeedConnector {
         case 'rhoval': return new VgRhovalConnector();
         case 'rhunfixed': return new VgRhunfixedConnector();
         case 'ssg': return new VgSsgConnector();
+        case 'kcve': return new VgKcveConnector();
         default: throw new InvalidArgumentException("알 수 없는 커넥터 타입: $type");
     }
 }
