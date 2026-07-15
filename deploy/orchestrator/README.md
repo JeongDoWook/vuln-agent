@@ -17,9 +17,9 @@
 ```
 메인(마일스톤) 세션
  ├─ .omc/plans/<milestone>.md        ← 계획서(단일 진실, milestone.template.md 참고)
- ├─ spawn-worker.ps1 -Task a ...      ← 워커 창 1 (wt/a, feat/a)
- ├─ spawn-worker.ps1 -Task b ...      ← 워커 창 2 (wt/b, feat/b)
- ├─ status.ps1 -Watch                 ← .omc/results/*.md 로 워커 감독
+ ├─ spawn-worker.ps1 -Task a ...      ← 워커 탭 1 (wt/a, feat/a)
+ ├─ spawn-worker.ps1 -Task b ...      ← 워커 탭 2 (wt/b, feat/b)
+ ├─ watch-workers.ps1                 ← 전원 끝날 때까지 대기 후 취합(메인이 이어받음)
  └─ PR 병합 후  stop-worker.ps1 -Task a
 ```
 
@@ -29,6 +29,7 @@
 |---|---|
 | `spawn-worker.ps1` | 워커 1개 스폰 — 워크트리 생성 + `.initial-prompt` 주입 + claude 창 실행 |
 | `status.ps1` | 워커 감독 — 결과 파일·git·PR 상태 한눈에 (`-Watch` 주기 갱신) |
+| `watch-workers.ps1` | **자동 이어받기** — 전원이 끝날 때까지 대기했다가 취합 리포트 후 종료 |
 | `stop-worker.ps1` | 워커 정리 — 워크트리 제거 + 매니페스트 삭제 |
 | `milestone.template.md` | 계획서 템플릿 |
 
@@ -56,12 +57,16 @@ cd C:\APM\Apache24\htdocs\vuln-agent
 # 4) 헤드리스(창 없이 로그로만) — 대량 팬아웃·읽기 작업에
 .\deploy\orchestrator\spawn-worker.ps1 -Task audit-sql -Prompt "..." -Launch headless
 
-# 5) 감독
+# 5) 감독 (한눈에 보기)
 .\deploy\orchestrator\status.ps1            # 전체 현황 한 번
 .\deploy\orchestrator\status.ps1 -Watch     # 5초마다 갱신
 .\deploy\orchestrator\status.ps1 -Task cve-badge   # 특정 워커 결과 전문
 
-# 6) PR 병합 후 정리
+# 6) 자동 이어받기 — 전원 끝날 때까지 대기 후 취합 (메인이 여기서 이어받음)
+.\deploy\orchestrator\watch-workers.ps1              # 전체 대기
+.\deploy\orchestrator\watch-workers.ps1 -Task a,b    # a,b 만 대기
+
+# 7) PR 병합 후 정리
 .\deploy\orchestrator\stop-worker.ps1 -Task cve-badge
 ```
 
@@ -76,6 +81,21 @@ cd C:\APM\Apache24\htdocs\vuln-agent
 | `-Permissions` | `skip` | `skip`=자율(--dangerously-skip-permissions), `ask`=매번 확인 |
 | `-Launch` | `tab` | `tab`=현재 WT 창에 새 탭 · `window`=분리된 새 창 · `headless`=창 없이 로그로만 |
 | `-DryRun` | off | 워크트리·지시문·매니페스트만 만들고 claude 실행은 생략(미리보기) |
+
+## 자동 이어받기 & 최적화
+
+claude-pipeline 은 cmux `read-screen` 으로 **다른 세션 화면을 훔쳐봐** 완료를 감지한다
+("완료"/"✅"/idle 마커 폴링). 순수 PowerShell 은 화면을 못 읽으므로, 워커가
+`.omc/results/<task>.md` 첫 줄에 남기는 상태 라벨을 폴링한다 — 화면 스크래핑보다 확실한 신호.
+
+`watch-workers.ps1` 이 그 폴링을 담당한다: 감시 대상 전원이 종료 상태(`완료`|`차단`)가 되면
+취합 리포트를 찍고 종료 → 메인 세션이 그 출력을 받아 사용자에게 답한다(= 이어받는 지점).
+
+**핵심 최적화**: 이 대기 루프는 claude 가 아니라 **순수 셸**이다. 기다리는 동안 메인 세션의
+컨텍스트(토큰)가 전혀 늘지 않는다 — 무거운 작업 컨텍스트는 각 워커 탭에만 쌓이고, 메인은
+계획 + 취합 몇 줄만 들고 가볍게 유지된다. 이게 서브에이전트(요약이 메인에 계속 쌓임) 대비
+이 구조의 이점이다. (부수 최적화: 결과 파일 mtime 이 바뀐 것만 다시 읽고, 상태가 바뀐
+워커만 한 줄 출력한다.)
 
 ## 주의
 
