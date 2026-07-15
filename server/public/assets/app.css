@@ -881,13 +881,17 @@ label.inline input { width: auto; }
 input[type=text], input[type=password], input[type=search], select, textarea {
   width: 100%;
   padding: .55rem .65rem;
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--line-2);
   border-radius: var(--r-sm);
   color: var(--text);
   font-size: .95rem;
   font-family: inherit;
+  transition: border-color .12s ease-out, box-shadow .12s ease-out;
 }
+/* 포커스 때 테두리도 강조색으로(전역 :focus-visible 링과 함께 또렷하게) */
+input[type=text]:focus, input[type=password]:focus, input[type=search]:focus,
+select:focus, textarea:focus { border-color: var(--accent); }
 input[type=search], select { padding: .45rem .6rem; font-size: .85rem; }
 input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
 
@@ -948,13 +952,23 @@ form.card .btn--block { margin-top: 1.1rem; }
 
 /* --- 툴바 / 페이저 ------------------------------------------------------- */
 .toolbar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
-.toolbar input[type=search] { width: auto; min-width: 15rem; }
+/* 검색창엔 돋보기 아이콘을 안에 둔다(참고 디자인처럼). 아이콘은 배경 SVG 라 여백만 비운다. */
+.toolbar input[type=search] {
+  width: auto;
+  min-width: 15rem;
+  padding-left: 2rem;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239aa4b2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/></svg>");
+  background-repeat: no-repeat;
+  background-position: .6rem center;
+}
 .toolbar select { width: auto; }
 
 .pager { display: flex; gap: .3rem; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
 .pager a, .pager span {
-  padding: .3rem .6rem;
-  border-radius: var(--r-xs);
+  padding: .32rem .6rem;
+  min-width: 2rem;
+  text-align: center;
+  border-radius: var(--r-sm);
   font-size: .82rem;
   border: 1px solid var(--line);
   color: var(--text-2);
@@ -965,7 +979,7 @@ form.card .btn--block { margin-top: 1.1rem; }
 .pager select { width: auto; }
 
 /* --- 로그인 / 좁은 폼 카드 ------------------------------------------------ */
-form.card { max-width: 360px; margin: 3rem auto; }
+form.card { max-width: 360px; margin: 3rem auto; padding: 2rem 1.8rem; }
 form.card h1 { text-align: center; }
 form.card .sub { text-align: center; }
 
