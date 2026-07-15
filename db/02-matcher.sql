@@ -46,7 +46,11 @@ CREATE TABLE IF NOT EXISTS tb_cve_affected_packages (
   UNIQUE KEY uq_cap (cve_id, package_name, ecosystem),
   KEY idx_cap_pkg (package_name),
   KEY idx_cap_cve (cve_id),
-  INDEX idx_cve_affected_packages_is_deleted (is_deleted)
+  INDEX idx_cve_affected_packages_is_deleted (is_deleted),
+  -- packages.php 의 (package_name,ecosystem) GROUP BY 집계 지원. is_deleted 로 필터를
+  -- 인덱스로 만족하고, 그룹·집계 컬럼(cve_id,fixed_version)까지 담아 커버링 스캔이 되게 한다
+  -- (92만 행에서 임시테이블+filesort 로 20초 걸리던 걸 없앤다). 마이그레이션도 같은 인덱스.
+  KEY idx_cap_group (is_deleted, package_name, ecosystem, cve_id, fixed_version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ── 매처 판정 결과 : 스캔×CVE×패키지 1행. 노출/로드/KEV/등급/근거 ──────
