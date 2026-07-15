@@ -216,6 +216,7 @@ umask 077
 cat > "$ETC/agent.env" <<EOF
 SEND_URL=$SERVER
 SEND_TOKEN=$TOKEN
+SCHEDULE=$SCHEDULE
 EOF
 chmod 600 "$ETC/agent.env"
 

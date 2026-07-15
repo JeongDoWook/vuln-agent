@@ -154,8 +154,13 @@ sudo bash install-agent.sh
 배포 폴더는 피한다.** 3번에서 홈의 원본을 지우는 것도 같은 이유다 — sudo 로 실행할 파일이
 root 소유 폴더 한 곳에만 남는다.
 
-재설치·주기 변경도 같은 경로에서 하면 된다(설치기는 멱등하다). 다른 경로에 설치하려면
-`--prefix` 를 쓴다(운영 서버는 `/apps/vulnagent`).
+재설치·주기 변경도 같은 경로에서 하면 된다(설치기는 멱등하다).
+
+**에이전트는 어느 호스트든 `/opt/vuln-agent` 로 통일한다 — 중앙 서버 자신도 마찬가지다.**
+`/apps/vulnagent` 는 *중앙 앱* 배포 루트(`{app,bin,etc,logs,data,backups}`)라 성격이 다르다.
+에이전트를 거기로 깔면 그 bin/etc/logs 가 앱과 섞이고, `--uninstall` 이 앱 배포 디렉토리를
+통째로 지운다. 그래서 에이전트는 앱 루트에 끼워 넣지 않는다. `--prefix` 는 `/opt` 를 못 쓰는
+진짜 예외 상황에서만 쓴다.
 
 ## 갱신 — 에이전트를 고쳤을 때 (`deploy/agent_push.sh`)
 
@@ -179,6 +184,28 @@ bash deploy/agent_push.sh 10.3.142.100 10.3.142.101 10.3.142.102
 - **웹에서 누르는 버튼으로 만들지 않는다.** 그러려면 PHP 컨테이너가 전 노드에 root 로 설치할 수
   있는 SSH 키를 들어야 하고, 웹앱이 한 번 뚫리면 전 노드 root 장악으로 번진다. 보는 건 웹(자산
   화면의 `meta.agent_version`), 미는 건 CLI.
+
+## 주기 변경 — 일괄 (`deploy/agent_schedule.sh`)
+
+수집 주기(`OnCalendar`)는 설치 때 각 노드의 로컬 systemd 타이머에 박힌다. 여러 노드의 주기를
+한 번에 바꾸려면 master 처럼 **노드들에 SSH 로 닿는 곳**에서:
+
+```bash
+bash deploy/agent_schedule.sh daily 10.3.142.100 10.3.142.101        # 셋 다 daily
+bash deploy/agent_schedule.sh hourly 10.3.142.100 10.3.142.101='*:0/30'  # 노드별로 다르게
+```
+
+첫 인자가 기본 주기, 뒤는 노드 목록이다. `<노드>=<주기>` 로 주면 그 노드만 개별 주기를 쓴다.
+각 노드에서 (1) systemd 타이머의 `OnCalendar` 를 새 값으로 바꿔 재무장하고, (2) `agent.env` 의
+`SCHEDULE` 을 같은 값으로 갱신한다 — 다음 수집이 `meta.schedule` 로 실어 보내 **중앙 화면
+(`assets.php` 의 "주기" 열)이 바뀐 주기를 그대로 보여준다**(중앙은 읽기전용으로 볼 뿐, 변경은
+언제나 여기 CLI 로). **토큰·URL 은 안 건드린다** — 주기 변경엔 필요 없다.
+
+- `agent_push.sh` 와 같은 보안 모델이다(사람의 SSH 키로 CLI, 웹 버튼 아님).
+- 안 깔린 노드(`agent.env` 없음)는 건너뛴다. cron 폴백 노드는 `hourly`/`daily` 만 되고,
+  커스텀 `OnCalendar`(`*:0/30` 등)는 cron 으로 표현 불가라 건너뛴다.
+- 주기 열이 채워지려면 노드가 `meta.schedule` 을 보내는 에이전트(2.4+)여야 한다. 옛 에이전트는
+  주기 열이 비어 보인다 — `agent_push.sh` 로 본체를 올리면 다음 수집부터 채워진다.
 
 ## 주의점
 
