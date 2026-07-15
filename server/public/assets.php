@@ -296,5 +296,6 @@ sudo bash install-agent.sh
         그 호스트만 갱신할 수 있어 위조를 막습니다. (구버전 공유 토큰은 <code>secrets/ingest_token.txt</code>, deprecated)</li>
       <li>제거: <code>sudo bash install-agent.sh --uninstall</code></li>
     </ul>
+    <?php vg_modal_foot(null); ?>
   <?php vg_modal_close(); ?>
 <?php vg_footer();

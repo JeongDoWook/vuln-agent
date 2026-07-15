@@ -306,13 +306,13 @@ vg_header('피드 커넥터', 'connectors');
       <label class="inline">
         <input type="checkbox" name="enabled" value="1" <?= ($edit['enabled'] ?? 0) ? 'checked' : '' ?>> 활성(enabled)
       </label>
-      <button type="submit" class="btn btn--ok btn--block"><?= $edit ? '저장' : '추가' ?></button>
-      <button type="button" id="vgPrevBtn" class="btn btn--ghost btn--block" data-loading="조회 중…" onclick="vgPreview(this)">API 미리보기 (10건)</button>
       <?php if ($edit): ?>
         <div class="sub center"><a href="/connectors.php">+ 새 커넥터로 비우기</a></div>
       <?php endif; ?>
+      <pre id="vgPrev" class="out" hidden></pre>
+      <?php vg_modal_foot($edit ? '저장' : '추가', ['extra' =>
+          '<button type="button" id="vgPrevBtn" class="btn btn--ghost" data-loading="조회 중…" onclick="vgPreview(this)">API 미리보기 (10건)</button>']); ?>
     </form>
-    <pre id="vgPrev" class="out" hidden></pre>
   <?php vg_modal_close(); ?>
 
   <?php
@@ -373,6 +373,7 @@ vg_header('피드 커넥터', 'connectors');
         <div class="sub">총 <?= number_format($n) ?>건</div>
       <?php endif; ?>
       <?php vg_table($logHeaders, $logsByConn[$cid] ?? [], ['card' => false, 'empty' => $logEmpty, 'cell' => $logCells]); ?>
+      <?php vg_modal_foot(null); ?>
   <?php
       vg_modal_close();
   endforeach;

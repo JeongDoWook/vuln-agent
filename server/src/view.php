@@ -153,7 +153,7 @@ function vg_copy_btn(string $text, string $label = '복사'): void {
  * 주의: 모달 안의 폼은 서버로 POST 하는 평범한 폼이다. JS 가 죽어도 내용은 DOM 에 있고,
  *       열기 버튼만 안 먹는다 — 그래서 열기 버튼은 <button> 이지 <a> 가 아니다.
  */
-function vg_modal_btn(string $target, string $label, string $class = 'btn btn--primary'): void {
+function vg_modal_btn(string $target, string $label, string $class = 'btn btn--sm btn--primary'): void {
     echo '<button type="button" class="' . vg_h($class) . '" data-modal="' . vg_h($target) . '">'
         . vg_h($label) . '</button>';
 }
@@ -173,6 +173,28 @@ function vg_modal_open(string $id, string $title, string $class = '', bool $open
         . '<button type="button" class="modal__x" data-modal-close aria-label="닫기">✕</button>'
         . '</div>'
         . '<div class="modal__body">';
+}
+
+/**
+ * 모달 푸터 — 주작업/닫기를 **오른쪽 아래**에 모은다(모든 모달 통일). 폼 모달은 폼 안
+ * 맨 끝에서 부른다(제출 버튼이 그 폼에 속해야 하므로). 정보 모달은 $submit=null 로 닫기만.
+ *   $submit : 주작업 라벨(저장·추가·발급…). null 이면 닫기 버튼만.
+ *   $opts   : tone(주작업 톤, 기본 primary) · loading(제출 중 문구) · cancel(닫기 라벨) ·
+ *             extra(왼쪽에 붙일 보조 버튼 HTML — 이미 이스케이프됨, 예: 미리보기)
+ * 버튼 크기는 손대지 않는다 → 기본 .btn(중간) 하나로 모든 모달이 같은 크기·정렬을 갖는다.
+ */
+function vg_modal_foot(?string $submit = '저장', array $opts = []): void {
+    echo '<div class="modal__foot">';
+    if (!empty($opts['extra'])) {
+        echo '<div class="modal__foot__extra">' . $opts['extra'] . '</div>';
+    }
+    echo '<button type="button" class="btn btn--ghost" data-modal-close>' . vg_h((string) ($opts['cancel'] ?? '닫기')) . '</button>';
+    if ($submit !== null) {
+        $tone = (string) ($opts['tone'] ?? 'primary');
+        $ld   = !empty($opts['loading']) ? ' data-loading="' . vg_h((string) $opts['loading']) . '"' : '';
+        echo '<button type="submit" class="btn btn--' . vg_h($tone) . '"' . $ld . '>' . vg_h($submit) . '</button>';
+    }
+    echo '</div>';
 }
 
 function vg_modal_close(): void {

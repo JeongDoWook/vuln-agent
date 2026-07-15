@@ -198,7 +198,7 @@ vg_header('에이전트 토큰', 'agenttokens');
       <input type="text" name="label" value="<?= vg_h($issueLabel) ?>"
              placeholder="비우면 호스트명으로 자동 지정" maxlength="100" autocomplete="off">
       <div class="why">발급된 토큰 원문은 <strong>이 화면에서 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
-      <button type="submit" class="btn btn--ok btn--block" data-loading="발급 중…">발급</button>
+      <?php vg_modal_foot('발급', ['loading' => '발급 중…']); ?>
     </form>
   <?php vg_modal_close(); ?>
 <?php vg_footer();
