@@ -8,6 +8,9 @@
 # Docker Secrets: 실제 비밀값 txt 는 커밋 금지. secrets/README.md 만 커밋.
 secrets/*.txt
 
+# 배포별 Caddy 루트 CA(공개 인증서지만 배포마다 다른 값 → 레포엔 안 넣는다). .gitkeep 만 커밋.
+agent-ca/*.crt
+
 # --- PHP ---
 /vendor/
 composer.lock

@@ -1,0 +1,5 @@
+# 이 디렉토리는 각 배포의 Caddy 루트 CA(공개 인증서)를 담는다.
+# caddy-root.crt 는 배포마다 다른 값이라 git 에 커밋하지 않는다(../.gitignore 가 *.crt 제외).
+# 최초 배포 시 아래 한 줄로 추출한다(deploy/README.md 참고):
+#   docker exec vulnagent-caddy cat /data/caddy/pki/authorities/local/root.crt > agent-ca/caddy-root.crt
+# 그러면 자산 화면 '에이전트 설치 안내'의 caddy-root.crt 다운로드 버튼이 이 파일을 내보낸다.

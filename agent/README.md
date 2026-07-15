@@ -18,7 +18,15 @@
 
 ## 설치
 
-스크립트 2개 + **중앙 루트 CA(`caddy-root.crt`)** 를 대상 서버에 복사하고, **인자 없이 실행하면 물어본다.**
+파일 3개(스크립트 2개 + 중앙의 루트 CA `caddy-root.crt`)를 대상 서버에 두고 **인자 없이 실행하면
+물어본다.** 세 파일 모두 **중앙 대시보드의 자산 화면 → “에이전트 설치 안내”** 에서 버튼으로 받는다
+(레포 체크아웃 불필요, `agent-dl.php`). `caddy-root.crt` 는 자체서명 Caddy(HTTPS) 신뢰용으로,
+`install-agent.sh` 옆에 두면 설치 시 자동 등록된다(`--ca-file PATH` 로도 지정 가능).
+
+> **CA 는 배포마다 다르다.** `caddy-root.crt` 는 각 중앙 서버의 Caddy 가 만든 고유값이라 레포에
+> 커밋하지 않는다(오픈소스라 남의 배포가 내 CA 를 신뢰하면 안 된다). 자산 화면의 다운로드 버튼이
+> "아직 준비 안 됨" 이라면, 중앙 관리자가 최초 1회 추출해야 한다 — [`deploy/README.md`](../deploy/README.md)
+> 의 **“에이전트 CA 준비”** 참고.
 
 ```bash
 sudo bash install-agent.sh
@@ -126,14 +134,17 @@ sudo ./install-agent.sh
 **스크립트 2개를 `/opt/vuln-agent/` 에 두고 거기서 실행한다.** 설치기가 설치물을 두는 곳과
 같은 경로라 **외울 경로가 하나뿐**이다.
 
-```bash
-scp -r agent/ caddy-root.crt 대상서버:~/      # 1) 홈으로 전송 (scp 는 root 로 못 붙는 경우가 많다)
-ssh 대상서버
-sudo mkdir -p /opt/vuln-agent                # 2) 제자리로 (root 소유가 된다)
-sudo cp ~/agent/*.sh ~/caddy-root.crt /opt/vuln-agent/
-rm -rf ~/agent ~/caddy-root.crt              # 3) 홈의 원본은 정리
+중앙 자산 화면의 “에이전트 설치 안내” 에서 두 스크립트를 받아(브라우저 다운로드) 대상 서버로 옮긴다.
+`caddy-root.crt` 도 같이 받는다 — `install-agent.sh` 옆에 있으면 설치가 자동 등록한다.
 
-cd /opt/vuln-agent                           # 4) 설치 (CA 는 옆에 있으니 알아서 등록된다)
+```bash
+scp install-agent.sh vuln-inventory-agent.sh caddy-root.crt 대상서버:~/   # 1) 홈으로 전송 (scp 는 root 로 못 붙는 경우가 많다)
+ssh 대상서버
+sudo mkdir -p /opt/vuln-agent                                            # 2) 제자리로 (root 소유가 된다)
+sudo cp ~/install-agent.sh ~/vuln-inventory-agent.sh ~/caddy-root.crt /opt/vuln-agent/
+rm -f ~/install-agent.sh ~/vuln-inventory-agent.sh ~/caddy-root.crt      # 3) 홈의 원본은 정리
+
+cd /opt/vuln-agent                                                       # 4) 설치 (CA 는 옆에 있으니 알아서 등록된다)
 sudo bash install-agent.sh
 ```
 
