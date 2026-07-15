@@ -193,7 +193,7 @@ $statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'nev
 vg_header('피드 커넥터', 'connectors');
 ?>
   <h1>CVE 피드 커넥터</h1>
-  <div class="sub">외부 취약점 소스(CISA KEV · OSV · NVD)를 설정·스케줄·수집. 결과는 매처가 자동 재계산.</div>
+  <div class="sub">외부 소스를 <strong>역할별</strong>로 묶어 설정·스케줄·수집한다 — 취약점 정체 · 우선순위 신호 · 벤더 패치 판정 · 보안설정 룰셋. 결과는 매처가 자동 재계산.</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
@@ -217,53 +217,94 @@ vg_header('피드 커넥터', 'connectors');
   }
   unset($c);
 
-  vg_table(
-      [
-          ['label' => '이름'], ['label' => '타입'], ['label' => '스케줄'], ['label' => '활성'],
-          ['label' => '마지막 실행', 'nowrap' => true], ['label' => '다음 실행', 'nowrap' => true], ['label' => '상태'], ['label' => '작업'],
-      ],
-      $connectors,
-      [
-          'empty' => [
-              'icon'  => '🔌',
-              'title' => '등록된 커넥터가 없습니다.',
-              'hint'  => '아래 폼에서 피드(CISA KEV · OSV · NVD · KISA · EPSS)를 추가하세요.',
-          ],
-          'cell' => [
-              0 => fn($c) => '<strong>' . vg_h($c['name']) . '</strong>',
-              1 => fn($c) => '<span class="pill">' . vg_h($c['connector_type']) . '</span>',
-              2 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
-              3 => fn($c) => '<form method="post">'
-                  . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['id'] . '">'
-                  . '<button class="btn btn--sm ' . ($c['enabled'] ? 'btn--ok' : 'btn--ghost') . '">' . ($c['enabled'] ? 'ON' : 'OFF') . '</button></form>',
-              4 => fn($c) => '<span class="why">' . vg_h($c['last_run_at'] ?? '–') . '</span>',
-              5 => fn($c) => '<span class="why">' . vg_h($c['_next_run'] ?: '–') . '</span>',
-              6 => function ($c) use ($statusTone) {
-                  $status = (string) ($c['last_status'] ?? 'never');
-                  $html = vg_badge($status, $statusTone[$status] ?? 'muted');
-                  if ($c['last_message']) {
-                      $html .= '<div class="why" title="' . vg_h($c['last_message']) . '">' . vg_h(mb_strimwidth((string) $c['last_message'], 0, 40, '…')) . '</div>';
-                  }
-                  return $html;
-              },
-              // "지금 실행" 은 외부 수집 + 전 스캔 재매칭이라 수십 초 걸린다 → 스피너 + 이중제출 차단(app.js).
-              7 => function ($c) use ($csrf, $logCountByConn) {
-                  $id = (int) $c['id'];
-                  $n  = $logCountByConn[$id] ?? 0;
-                  return '<div class="actions">'
-                      . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . $id . '">'
-                      . '<button class="btn btn--sm btn--primary" data-loading="수집 중…">지금 실행</button></form>'
-                      // 이력은 그 커넥터 것만 모달로 — 전엔 전 커넥터 로그가 한 표에 섞여 있었다.
-                      . '<button type="button" class="btn btn--sm btn--ghost" data-modal="log' . $id . '">'
-                      . '이력 <span class="why">' . number_format($n) . '</span></button>'
-                      . '<a class="btn btn--sm btn--ghost" href="?edit=' . $id . '">편집</a>'
-                      . '<form method="post" onsubmit="return confirm(\'삭제할까요?\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
-                      . '<button class="btn btn--sm btn--danger">삭제</button></form>'
-                      . '</div>';
-              },
-          ],
-      ]
-  );
+  // 커넥터를 역할별로 나눠 보여준다. 11종이 한 표에 평평하게 있으면 "무엇이 취약점을
+  // 가져오고 무엇이 벤더 패치버전을 가져오는지" 가 안 보인다. 분류 기준은 docs/피드소스-역할.md.
+  //   타입 → 그룹 매핑은 아래 목록이 유일한 근거다(새 타입은 여기 한 줄 추가). 목록에 없는
+  //   타입은 맨 아래 '기타' 로 떨어져 화면에서 사라지지 않는다.
+  $roleGroups = [
+      ['title' => '취약점 정체 — 무엇인가',
+       'desc'  => 'CVE 원본 정보·설명·CVSS·영향 버전의 기준.',
+       'types' => ['nvd', 'osv', 'kisa']],
+      ['title' => '우선순위 신호 — 얼마나 급한가',
+       'desc'  => 'KEV(실제 악용 중)로 등급 상향, EPSS(악용 확률)로 같은 등급 내 정렬.',
+       'types' => ['kev', 'epss']],
+      ['title' => '배포판 벤더 판정 — 고쳐졌나 / 고칠 수 있나',
+       'desc'  => '어느 버전에서 고쳤는지 벤더가 답한다 → 백포트 오탐 억제 + 수정본 없는 건 조치 불가로 분리.',
+       'types' => ['debtracker', 'rhoval', 'rhunfixed', 'ubuntuoval', 'kcve']],
+      ['title' => '보안설정 룰셋 — 설정이 기준에 맞나',
+       'desc'  => 'CVE 가 아니라 보안설정 점검(CCE). CIS·NIST·STIG 참조 룰셋.',
+       'types' => ['ssg']],
+  ];
+
+  $tableHeaders = [
+      ['label' => '이름'], ['label' => '타입'], ['label' => '스케줄'], ['label' => '활성'],
+      ['label' => '마지막 실행', 'nowrap' => true], ['label' => '다음 실행', 'nowrap' => true], ['label' => '상태'], ['label' => '작업'],
+  ];
+  $tableCells = [
+      0 => fn($c) => '<strong>' . vg_h($c['name']) . '</strong>',
+      1 => fn($c) => '<span class="pill">' . vg_h($c['connector_type']) . '</span>',
+      2 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
+      3 => fn($c) => '<form method="post">'
+          . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['id'] . '">'
+          . '<button class="btn btn--sm ' . ($c['enabled'] ? 'btn--ok' : 'btn--ghost') . '">' . ($c['enabled'] ? 'ON' : 'OFF') . '</button></form>',
+      4 => fn($c) => '<span class="why">' . vg_h($c['last_run_at'] ?? '–') . '</span>',
+      5 => fn($c) => '<span class="why">' . vg_h($c['_next_run'] ?: '–') . '</span>',
+      6 => function ($c) use ($statusTone) {
+          $status = (string) ($c['last_status'] ?? 'never');
+          $html = vg_badge($status, $statusTone[$status] ?? 'muted');
+          if ($c['last_message']) {
+              $html .= '<div class="why" title="' . vg_h($c['last_message']) . '">' . vg_h(mb_strimwidth((string) $c['last_message'], 0, 40, '…')) . '</div>';
+          }
+          return $html;
+      },
+      // "지금 실행" 은 외부 수집 + 전 스캔 재매칭이라 수십 초 걸린다 → 스피너 + 이중제출 차단(app.js).
+      7 => function ($c) use ($csrf, $logCountByConn) {
+          $id = (int) $c['id'];
+          $n  = $logCountByConn[$id] ?? 0;
+          return '<div class="actions">'
+              . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . $id . '">'
+              . '<button class="btn btn--sm btn--primary" data-loading="수집 중…">지금 실행</button></form>'
+              // 이력은 그 커넥터 것만 모달로 — 전엔 전 커넥터 로그가 한 표에 섞여 있었다.
+              . '<button type="button" class="btn btn--sm btn--ghost" data-modal="log' . $id . '">'
+              . '이력 <span class="why">' . number_format($n) . '</span></button>'
+              . '<a class="btn btn--sm btn--ghost" href="?edit=' . $id . '">편집</a>'
+              . '<form method="post" onsubmit="return confirm(\'삭제할까요?\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
+              . '<button class="btn btn--sm btn--danger">삭제</button></form>'
+              . '</div>';
+      },
+  ];
+
+  if (!$connectors) {
+      // 등록된 게 하나도 없으면 그룹 헤딩 없이 안내만.
+      vg_table($tableHeaders, [], ['empty' => [
+          'icon'  => '🔌',
+          'title' => '등록된 커넥터가 없습니다.',
+          'hint'  => '아래 [+ 커넥터 추가] 로 피드(CISA KEV · OSV · NVD · KISA · EPSS)를 추가하세요.',
+      ]]);
+  } else {
+      // 타입 → 그룹 인덱스. 그룹에 담고, 매핑에 없는 타입은 '기타' 로.
+      $typeGroup = [];
+      foreach ($roleGroups as $gi => $g) { foreach ($g['types'] as $t) { $typeGroup[$t] = $gi; } }
+      $grouped = []; $others = [];
+      foreach ($connectors as $c) {
+          $gi = $typeGroup[$c['connector_type']] ?? null;
+          if ($gi === null) { $others[] = $c; } else { $grouped[$gi][] = $c; }
+      }
+      foreach ($roleGroups as $gi => $g) {
+          if (empty($grouped[$gi])) { continue; }
+          echo '<div class="card"><strong>' . vg_h($g['title']) . '</strong>'
+             . ' <span class="why">— ' . vg_h($g['desc']) . '</span>'
+             . '<div class="card__body">';
+          vg_table($tableHeaders, $grouped[$gi], ['card' => false, 'cell' => $tableCells]);
+          echo '</div></div>';
+      }
+      if ($others) {
+          echo '<div class="card"><strong>기타</strong>'
+             . ' <span class="why">— 역할 미분류 커넥터.</span><div class="card__body">';
+          vg_table($tableHeaders, $others, ['card' => false, 'cell' => $tableCells]);
+          echo '</div></div>';
+      }
+  }
   ?>
 
   <?php
