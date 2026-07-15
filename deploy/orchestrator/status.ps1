@@ -53,7 +53,9 @@ function Get-Workers {
 # 결과 파일 첫 줄에서 상태 라벨 추출 (대기중/진행중/완료/차단)
 function Get-ResultLine($path) {
   if (-not (Test-Path $path)) { return '(결과 파일 없음)' }
-  $line = (Get-Content $path -TotalCount 1 -ErrorAction SilentlyContinue)
+  # -Encoding UTF8 필수: 워커(claude)는 UTF-8 로 쓰는데 PS5.1 Get-Content 기본은 cp949 →
+  # 한글이 깨져 완료/차단 라벨 매칭이 실패한다.
+  $line = (Get-Content $path -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue)
   if (-not $line) { return '(빈 결과 파일)' }
   return $line.Trim()
 }
@@ -96,7 +98,7 @@ function Show-Status {
     Write-Host "git : $(Get-GitState $w.worktree $w.branch)  $(Get-PrState $w.branch)"
     Write-Host "mode: $($w.mode)  pid: $($w.pid)  시작: $($w.startedAt)"
     Write-Host "--- 결과 파일 ($($w.result)) ---" -ForegroundColor DarkGray
-    if (Test-Path $w.result) { Get-Content $w.result } else { Write-Host '(없음)' }
+    if (Test-Path $w.result) { Get-Content $w.result -Encoding UTF8 } else { Write-Host '(없음)' }
     return
   }
 

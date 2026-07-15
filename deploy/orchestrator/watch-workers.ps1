@@ -52,7 +52,9 @@ function Get-Manifests {
 }
 function Get-FirstLine($path) {
   if (-not (Test-Path $path)) { return '' }
-  $l = Get-Content $path -TotalCount 1 -ErrorAction SilentlyContinue
+  # -Encoding UTF8 필수: 워커는 UTF-8 로 쓰는데 PS5.1 기본은 cp949 → 완료/차단 라벨이
+  # 깨져 매칭 실패 → 자동 이어받기가 영영 완료를 감지 못 한다.
+  $l = Get-Content $path -TotalCount 1 -Encoding UTF8 -ErrorAction SilentlyContinue
   if ($l) { return $l.Trim() } else { return '' }
 }
 function Test-Terminal($line) { return ($line -match '^(완료|차단)') }
