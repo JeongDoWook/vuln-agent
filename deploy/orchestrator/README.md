@@ -3,6 +3,21 @@
 한 세션(**마일스톤/메인**)이 계획만 들고, 실제 작업은 **독립 claude 세션**을 창마다
 띄워서 시킨다. Windows PowerShell 전용 — tmux/cmux 불필요.
 
+마무리 방식은 두 가지다:
+
+- **옵션 A: 워커별 개별 PR (기본)** — 워커가 각자 커밋→push→PR 까지 끝낸다. 서로 관련
+  없는 독립 작업을 여러 개 병렬로 돌릴 때 쓴다(리뷰도 워커별로 따로 받는다).
+- **옵션 B: 마일스톤 통합 PR** — 워커는 커밋→push 까지만 하고(`-Finish push`), 메인이
+  `merge-milestone.ps1` 로 그 브랜치들을 로컬에서 순서대로 병합해 PR 1개로 묶어 낸다.
+  파일이 겹치거나 서로 연관된 하위작업을 모아 리뷰 부담을 줄이고 싶을 때 쓴다.
+
+```powershell
+# 옵션 B 예시
+.\deploy\orchestrator\spawn-worker.ps1 -Task sub-a -Finish push -Prompt "..."
+.\deploy\orchestrator\spawn-worker.ps1 -Task sub-b -Finish push -Prompt "..."
+.\deploy\orchestrator\merge-milestone.ps1 -Milestone my-feature -Task sub-a,sub-b
+```
+
 > 영감: `claude-pipeline` 의 `scripts/lib/multiplexer.js`(cmux/tmux/**powershell** 추상화).
 > 거기선 cmux 로 워크스페이스/탭을 관리하지만, 여기선 그 `powershell` 경로 하나만 떼어
 > vuln-agent 의 `deploy/wt.sh` 워크트리 위에 얹었다. 워커 = 워크트리 = 브랜치 = PR.
@@ -30,6 +45,7 @@
 | `spawn-worker.ps1` | 워커 1개 스폰 — 워크트리 생성 + `.initial-prompt` 주입 + claude 창 실행 |
 | `status.ps1` | 워커 감독 — 결과 파일·git·PR 상태 한눈에 (`-Watch` 주기 갱신) |
 | `watch-workers.ps1` | **자동 이어받기** — 전원이 끝날 때까지 대기했다가 취합 리포트 후 종료 |
+| `merge-milestone.ps1` | **마일스톤 통합 PR(옵션 B)** — 전원 완료를 기다렸다가 워커 브랜치들을 로컬 병합해 PR 1개로 낸다 |
 | `stop-worker.ps1` | 워커 정리 — 워크트리 제거 + 매니페스트 삭제 |
 | `reap-merged.ps1` | **병합 자동정리** — PR 이 main 에 병합된 워커를 감지해 stop-worker 실행(gh 필요) |
 | `worker-stop-hook.ps1` | **완료 자동기록** — 워커 세션이 idle 될 때 git 상태로 결과 파일을 갱신(spawn 이 주입) |
@@ -88,6 +104,7 @@ cd C:\APM\Apache24\htdocs\vuln-agent
 | `-Permissions` | `skip` | `skip`=자율(--dangerously-skip-permissions), `ask`=매번 확인 |
 | `-Launch` | `tab` | `tab`=현재 WT 창에 새 탭 · `window`=분리된 새 창 · `headless`=창 없이 로그로만 |
 | `-DryRun` | off | 워크트리·지시문·매니페스트만 만들고 claude 실행은 생략(미리보기) |
+| `-Finish` | `pr` | `pr`=워커가 스스로 커밋·push·PR(옵션 A) · `push`=커밋·push 까지만(옵션 B, `merge-milestone.ps1` 과 짝) |
 
 ## 자동 이어받기 & 최적화
 
