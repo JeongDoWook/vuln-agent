@@ -50,8 +50,18 @@ for target in "$@"; do
   case "$target" in *@*) node="$target" ;; *) node="$SSH_USER@$target" ;; esac
   printf '%-28s ' "$node"
 
-  # 1) 설치돼 있나 — agent.env(토큰·URL)가 있어야 덮어쓰기가 의미를 갖는다.
-  if ! ssh -o BatchMode=yes -o ConnectTimeout=8 "$node" "sudo test -f '$PREFIX/etc/agent.env'" 2>/dev/null; then
+  # 1) 접근 가능한가 + 설치돼 있나. 이 둘을 **구분**한다 — 예전엔 SSH 연결 실패(노드 다운·sshd 죽음)를
+  #    "미설치" 로 표시해 엉뚱한 안내(install-agent.sh)를 했다. 실측: rpi5-03 이 ping 은 되는데
+  #    sshd 만 죽어(Connection reset) "미설치" 로 나왔다.
+  #    ssh 는 연결 자체가 실패하면 255 를 준다. 원격 명령은 `… && echo INSTALLED || echo MISSING`
+  #    라 항상 성공(echo)하므로, 종료코드로 "연결됨/안됨" 을, 출력으로 "설치됨/아님" 을 가른다.
+  probe=$(ssh -o BatchMode=yes -o ConnectTimeout=8 "$node" \
+            "sudo test -f '$PREFIX/etc/agent.env' && echo INSTALLED || echo MISSING" 2>/dev/null)
+  if [ $? -eq 255 ] || [ -z "$probe" ]; then
+    echo "건너뜀 (접근 불가 — SSH 연결 실패. 노드 다운이거나 sshd 문제: 'ssh $node' 로 직접 확인)"
+    SKIP+=("$node"); continue
+  fi
+  if [ "$probe" != INSTALLED ]; then
     echo "건너뜀 (미설치 — 그 서버에서 install-agent.sh 를 먼저 돌리세요)"
     SKIP+=("$node"); continue
   fi
