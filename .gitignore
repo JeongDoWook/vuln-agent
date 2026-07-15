@@ -30,6 +30,10 @@ vulninv-*.txt
 # --- OMC / 로컬 상태 ---
 .omc/
 
+# 오케스트레이터 워커가 워크트리에 남기는 실행 파일. 커밋하지 않는다.
+.initial-prompt
+.launch.ps1
+
 # --- wt 파이프라인: git worktree 작업 영역 (브랜치별 체크아웃) ---
 # 각 worktree 는 별도 브랜치 체크아웃 + .pipe/ 산출물. main 에는 커밋하지 않는다.
 /wt/
