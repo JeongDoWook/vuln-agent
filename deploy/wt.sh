@@ -80,6 +80,11 @@ cmd_add() {
     say "  ${GREEN}✓${NC} 새 브랜치: $branch (기점 $start)"
   fi
 
+  # sweep 이 "커밋 0개인 갓 만든 브랜치"를 "병합됨"으로 오판하지 않도록, 갈라져 나온
+  #   시점의 HEAD sha 를 마커로 남긴다. 워크트리 로컬 파일(wt/ 전체가 gitignore 대상)이라
+  #   커밋되지 않는다.
+  git -C "$dir" rev-parse HEAD > "$dir/.wt-base-sha"
+
   # secrets: gitignore 라 워크트리엔 없다. 메인 트리에서 복사.
   mkdir -p "$dir/secrets"
   local n copied=0
@@ -241,6 +246,14 @@ cmd_sweep() {
 
     if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
       say "  ${YELLOW}⚠${NC} $name ($branch) — 커밋 안 된 변경, 유지"
+      kept=$((kept+1)); continue
+    fi
+
+    # 갈라져 나온 시점 sha 와 현재 HEAD sha 가 같으면 커밋을 하나도 안 한 갓 만든
+    #   브랜치다 — origin/main 기점이라 is-ancestor 가 참이 되어버려 "병합됨"으로
+    #   오판하는 걸 막는다(마커 없는 옛 워크트리는 기존 로직 그대로 둔다).
+    if [ -f "$dir/.wt-base-sha" ] && [ "$(cat "$dir/.wt-base-sha")" = "$sha" ]; then
+      say "  ${BLUE}→${NC} $name ($branch) — 아직 커밋 없음(갓 생성), 유지"
       kept=$((kept+1)); continue
     fi
 
