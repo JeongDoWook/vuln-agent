@@ -132,6 +132,70 @@ function vg_sev_trend(array $days, array $sevs = ['CRITICAL', 'HIGH', 'MEDIUM'])
 }
 
 /**
+ * 스캔별 리소스(메모리/CPU) 추이 라인차트 — vg_sev_trend() 와 같은 chart__grid/tick/lbl
+ * 눈금을 쓰고, 누적 막대 대신 폴리라인 + 포인트로 그린다.
+ *   $scans: host.php 가 이미 들고 있는 tb_scans 행(oldest→newest 순으로 넘긴다 — 차트는 좌→우).
+ *   값이 없는(구버전 에이전트) 스캔은 건너뛴다 — 0으로 이으면 실제로 없는 급락처럼 보인다.
+ *   $tone: 'mem'|'cpu' — app.css 의 .chart__line.tone-* 색만 다르다.
+ */
+function vg_resource_trend(array $scans, string $field, string $unit, int $decimals, string $tone): void {
+    $pts = [];
+    foreach ($scans as $s) {
+        if ($s[$field] === null || $s[$field] === '') { continue; }
+        $pts[] = ['t' => (string) $s['collected_at'], 'v' => (float) $s[$field]];
+    }
+    if (count($pts) < 2) {
+        vg_empty(['icon' => '📉', 'title' => '그래프를 그리기엔 스캔 이력이 부족합니다.',
+                  'hint'  => '메모리·CPU 값이 있는 스캔이 2건 이상 쌓이면 여기에 추이가 표시됩니다.']);
+        return;
+    }
+
+    $W = 720; $H = 190;
+    $padL = 44; $padR = 8; $padT = 12; $padB = 26;
+    $plotW = $W - $padL - $padR;
+    $plotH = $H - $padT - $padB;
+    $n = count($pts);
+
+    $vals = array_column($pts, 'v');
+    $min = min($vals);
+    $max = max($vals);
+    if ($max <= $min) { $max += 1; }   // 값이 전부 같으면 0 나눗셈 방지 — 수평선으로 그려진다
+
+    $xAt = static fn(int $i): float => $padL + ($n === 1 ? 0.0 : $plotW * $i / ($n - 1));
+    $yAt = static fn(float $v): float => $padT + $plotH * (1 - ($v - $min) / ($max - $min));
+
+    echo '<div class="chart">';
+    echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="' . vg_h($unit) . ' 추이(스캔 ' . $n . '건)">';
+
+    // 눈금은 최소·최대만 — 값 하나로 좁게 흔들리는 계열에 중간값은 소음이다.
+    foreach ([0, 1] as $f) {
+        $gy = $padT + $plotH * (1 - $f);
+        $gv = $min + ($max - $min) * $f;
+        echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($gy, 1) . '"'
+            . ' x2="' . ($W - $padR) . '" y2="' . round($gy, 1) . '"></line>';
+        echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($gy + 3.5, 1) . '">'
+            . number_format($gv, $decimals) . '</text>';
+    }
+
+    $poly = [];
+    foreach ($pts as $i => $p) { $poly[] = round($xAt($i), 1) . ',' . round($yAt($p['v']), 1); }
+    echo '<polyline class="chart__line tone-' . vg_h($tone) . '" points="' . implode(' ', $poly) . '"></polyline>';
+
+    foreach ($pts as $i => $p) {
+        $cx = round($xAt($i), 1); $cy = round($yAt($p['v']), 1);
+        echo '<circle class="chart__pt tone-' . vg_h($tone) . '" cx="' . $cx . '" cy="' . $cy . '" r="3">'
+            . '<title>' . vg_h($p['t'] . ' · ' . number_format($p['v'], $decimals) . $unit) . '</title>'
+            . '</circle>';
+        // x축 라벨은 시작·끝만 — 과하게 붙이면 겹친다(작업 지침).
+        if ($i === 0 || $i === $n - 1) {
+            echo '<text class="chart__lbl" x="' . $cx . '" y="' . ($H - 8) . '">'
+                . vg_h(date('n/j H:i', strtotime($p['t']))) . '</text>';
+        }
+    }
+    echo '</svg></div>';
+}
+
+/**
  * 클립보드 복사 버튼. JS 가 죽어도 값 자체는 화면에 그대로 있으므로(선택해서 복사 가능)
  * 이 버튼은 편의일 뿐 필수 경로가 아니다 — 그래서 <button type=button>.
  */

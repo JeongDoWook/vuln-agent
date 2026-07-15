@@ -596,6 +596,14 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .chart__seg.tone-med  { fill: var(--med); }
 .chart__seg.tone-low  { fill: var(--low); }
 
+/* 리소스(메모리/CPU) 라인차트 — 같은 chart__grid/tick/lbl 눈금 위에 선+포인트만 얹는다. */
+.chart__line { fill: none; stroke-width: 2; }
+.chart__line.tone-mem { stroke: var(--accent); }
+.chart__line.tone-cpu { stroke: var(--high); }
+.chart__pt { fill: var(--surface); stroke-width: 2; }
+.chart__pt.tone-mem { stroke: var(--accent); }
+.chart__pt.tone-cpu { stroke: var(--high); }
+
 /* 심각도 구성 막대(가로 누적) — 표의 한 행에서 "누가 더 나쁜지" 를 눈으로 보게 한다.
  * 폭은 PHP 가 인라인 style="width:N%" 로 준다(값이라서 CSS 가 가질 수 없다). */
 .riskbar { display: flex; gap: 2px; height: 5px; margin-bottom: .35rem; max-width: 190px; }
