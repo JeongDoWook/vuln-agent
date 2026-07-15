@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 /**
  * activity.php — 감사로그 뷰 (admin 전용).
- *   tb_activity_log 를 최신순으로 목록. scope 필터 + 페이지네이션(50개씩).
+ *   tb_activity_log 를 최신순으로 목록. scope 필터 + 페이지네이션.
+ *   다른 목록 페이지와 같은 공용 표 모듈(vg_table)로 렌더한다(형식 통일).
  */
 
 require __DIR__ . '/../src/auth.php';
@@ -62,73 +63,64 @@ vg_header('감사로그', 'activity');
           'options' => array_combine($scopes, $scopes)],
   ]); ?>
 
-  <?php if (!$rows): ?>
-    <div class="card">
-      <?php vg_empty([
+  <?php
+  // 구분(scope) 뱃지 톤 — 종류별로 색을 살짝 달리해 표에서 훑기 쉽게. 모르는 scope 는 muted.
+  $scopeTone = static function (string $s): string {
+      switch (strtoupper($s)) {
+          case 'USER':        return 'info';
+          case 'HOST':        return 'purple';
+          case 'AGENT_TOKEN': return 'med';
+          case 'API_TOKEN':   return 'ok';
+          case 'CONNECTOR':   return 'high';
+          default:            return 'muted';
+      }
+  };
+
+  vg_table([
+      ['label' => '시각',   'width' => '170px', 'nowrap' => true],
+      ['label' => '구분',   'width' => '150px', 'nowrap' => true],
+      ['label' => '액션',   'width' => '180px', 'nowrap' => true],
+      ['label' => '내용'],
+      ['label' => '사용자', 'width' => '130px', 'nowrap' => true],
+  ], $rows, [
+      'empty' => [
           'icon'  => '📋',
           'title' => '기록된 활동이 없습니다.',
           'hint'  => $scope !== '' ? '이 범위에는 기록이 없습니다. 필터를 바꿔 보세요.' : '사용자·시스템 행위가 생기면 여기에 쌓입니다.',
-      ]); ?>
-    </div>
-  <?php else: ?>
-    <div class="card">
-      <ul class="tl">
-        <?php
-        // 날짜가 바뀔 때만 헤더를 끼운다 — 표의 '시각' 컬럼에서 날짜가 매 행 반복되던 걸 없앤다.
-        $curDay = null;
-        foreach ($rows as $r):
-            $ts  = (string) $r['created_at'];
-            $day = substr($ts, 0, 10);
-            if ($day !== $curDay) {
-                $curDay = $day;
-                echo '<li class="tl__day">' . vg_h($day) . '</li>';
-            }
-
-            // data 는 JSON 문자열. 예쁘게 펴서 보여준다(못 펴면 원문 그대로).
-            $pretty = null;
-            if (!empty($r['data'])) {
-                $decoded = json_decode((string) $r['data'], true);
-                $pretty  = $decoded !== null
-                    ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-                    : (string) $r['data'];
-            }
-        ?>
-          <li class="tl__item">
-            <div class="tl__time"><?= vg_h(substr($ts, 11, 5)) ?></div>
-            <div class="tl__body">
-              <div class="tl__head">
-                <span class="pill"><?= vg_h((string) $r['scope']) ?><?php
-                    if ($r['scope_id'] !== null) { echo ' #' . (int) $r['scope_id']; }
-                ?></span>
-                <strong><?= vg_h((string) $r['activity_type']) ?></strong>
-                <?php
-                /* 주체 표시. 이름이 있으면 이름만 — actor_type 을 괄호로 덧붙이면 중복이다.
-                 * 이름이 없으면 actor_type 을 한글로 푼다. 이름 없다고 무턱대고 "시스템" 이라
-                 * 쓰면 actor_type=USER 인 행이 "시스템 (USER)" 로 나와 모순된다
-                 * (사용자가 눌렀는데 이름이 기록 안 된 경우다). */
-                $who = !empty($r['user_name'])
-                    ? (string) $r['user_name']
-                    : (((string) ($r['actor_type'] ?? '')) === 'SYSTEM' ? '시스템' : '사용자');
-                ?>
-                <span class="tl__who"><?= vg_h($who) ?></span>
-              </div>
-
-              <?php if (!empty($r['message'])): ?>
-                <div class="tl__msg"><?= vg_h((string) $r['message']) ?></div>
-              <?php endif; ?>
-
-              <?php if ($pretty !== null): ?>
-                <details>
-                  <summary>상세 데이터</summary>
-                  <pre class="out"><?= vg_h($pretty) ?></pre>
-                </details>
-              <?php endif; ?>
-            </div>
-          </li>
-        <?php endforeach; ?>
-      </ul>
-    </div>
-    <?php vg_page_nav($total, $perPage, $page); ?>
-  <?php endif; ?>
+      ],
+      'cell' => [
+          // 시각 — 날짜+시각(초까지). 다른 표처럼 매 행에 그대로 둔다.
+          0 => static fn (array $r): string => vg_h(str_replace('T', ' ', substr((string) $r['created_at'], 0, 19))),
+          // 구분 — scope(+대상 id) 를 톤 뱃지로.
+          1 => static function (array $r) use ($scopeTone): string {
+              $label = (string) $r['scope'] . ($r['scope_id'] !== null ? ' #' . (int) $r['scope_id'] : '');
+              return '<span class="badge tone-' . $scopeTone((string) $r['scope']) . '">' . vg_h($label) . '</span>';
+          },
+          // 액션 — activity_type 코드.
+          2 => static fn (array $r): string => '<code>' . vg_h((string) $r['activity_type']) . '</code>',
+          // 내용 — 메시지 + (있으면) data(JSON) 를 셀 안 <details> 로 접어 둔다.
+          3 => static function (array $r): string {
+              $msg = trim((string) ($r['message'] ?? ''));
+              $out = $msg !== '' ? vg_h($msg) : '<span class="why">—</span>';
+              if (!empty($r['data'])) {
+                  $decoded = json_decode((string) $r['data'], true);
+                  $pretty  = $decoded !== null
+                      ? json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                      : (string) $r['data'];
+                  $out .= '<details><summary>상세 데이터</summary><pre class="out">' . vg_h((string) $pretty) . '</pre></details>';
+              }
+              return $out;
+          },
+          // 사용자 — 이름이 있으면 이름, 없으면 actor_type 을 한글로(SYSTEM=시스템, 그 외=사용자).
+          4 => static function (array $r): string {
+              $who = !empty($r['user_name'])
+                  ? (string) $r['user_name']
+                  : (((string) ($r['actor_type'] ?? '')) === 'SYSTEM' ? '시스템' : '사용자');
+              return vg_h($who);
+          },
+      ],
+  ]);
+  ?>
+  <?php vg_page_nav($total, $perPage, $page); ?>
 <?php endif; ?>
 <?php vg_footer();
