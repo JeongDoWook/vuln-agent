@@ -80,7 +80,8 @@ $lastMtime = @{}   # task -> 마지막으로 읽은 결과 파일 mtime(ticks)
 $deadline = (Get-Date).AddMinutes($TimeoutMin)
 
 while ($true) {
-  $mans = Get-Manifests | Where-Object { $watchTasks -contains $_.task }
+  # @(...) 필수: 워커가 1개면 스칼라가 돼 .Count 가 null → 종료조건이 영영 거짓이 된다.
+  $mans = @(Get-Manifests | Where-Object { $watchTasks -contains $_.task })
   $doneCount = 0
   foreach ($m in $mans) {
     $line = $lastLine[$m.task]   # 기본값: 캐시

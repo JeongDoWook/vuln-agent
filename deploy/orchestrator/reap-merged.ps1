@@ -87,7 +87,8 @@ function Test-Merged($branch) {
   # --json 값은 콤마-연결 단일 문자열로 인용한다(PS 에서 number,mergedAt 은 배열 연산자).
   $r = Invoke-Gh @('pr', 'list', '--head', $branch, '--state', 'merged', '--json', 'number,mergedAt')
   if ($r.Code -ne 0 -or -not $r.Out) { return $false }
-  $prs = $r.Out | ConvertFrom-Json
+  # @(...) 필수: PR 이 1개면 스칼라가 돼 .Count 가 null → 병합 감지를 놓친다.
+  $prs = @($r.Out | ConvertFrom-Json)
   return ($prs.Count -gt 0)
 }
 
