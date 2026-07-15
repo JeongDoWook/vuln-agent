@@ -19,7 +19,7 @@ const VG_TREND_DAYS = 14;
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
 $kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
-$trend = []; $delta = [];
+$trend = []; $delta = []; $osDist = []; $topHosts = [];
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = vg_perpage();
 try {
@@ -90,6 +90,29 @@ try {
            JOIN tb_kev_catalog k ON k.cve_id = f.cve_id AND k.is_deleted = 0
           WHERE f.scan_id IN ($latestScans) AND k.due_date IS NOT NULL AND k.due_date < CURDATE()"
     )->fetchColumn();
+
+    // OS 분포 — 비삭제 호스트를 os_id 기준으로 묶어 상위 10개. os_id 가 비어있으면 "미상".
+    $osDist = $pdo->query(
+        "SELECT COALESCE(NULLIF(os_id, ''), '미상') AS os_label, COUNT(*) c
+           FROM tb_hosts
+          WHERE is_deleted = 0
+          GROUP BY os_label
+          ORDER BY c DESC, os_label
+          LIMIT 10"
+    )->fetchAll();
+
+    // 취약 자산 TOP10 — 호스트별 최신 스캔 기준 findings 건수 상위 10개.
+    // "호스트별 현황" 표(전체·페이지네이션)와 별개로, 카드 안에서 한눈에 보는 용도.
+    $topHosts = $pdo->query(
+        "SELECT h.id AS host_id, h.fqdn, COUNT(f.id) c
+           FROM tb_findings f
+           JOIN tb_scans s ON s.id = f.scan_id
+           JOIN tb_hosts h ON h.id = s.host_id
+          WHERE f.scan_id IN ($latestScans)
+          GROUP BY h.id, h.fqdn
+          ORDER BY c DESC
+          LIMIT 10"
+    )->fetchAll();
 
     /* 심각도 추세(최근 VG_TREND_DAYS 일).
      *
@@ -303,6 +326,24 @@ vg_header('대시보드', 'dashboard');
           ]
       );
       ?>
+      </div>
+    </div>
+  </div>
+
+  <div class="split split--even">
+    <div class="card">
+      <strong>OS 분포</strong>
+      <span class="why">— 비삭제 호스트 기준 상위 <?= count($osDist) ?>개</span>
+      <div class="card__body">
+        <?php vg_hbar_list($osDist, 'os_label', 'c', ['icon' => '🖥️', 'title' => '등록된 호스트가 없습니다.']); ?>
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>취약 자산 TOP10</strong>
+      <span class="why">— 호스트별 최신 스캔의 findings 건수 기준</span>
+      <div class="card__body">
+        <?php vg_hbar_list($topHosts, 'fqdn', 'c', ['icon' => '✅', 'title' => '취약점이 있는 호스트가 없습니다.']); ?>
       </div>
     </div>
   </div>

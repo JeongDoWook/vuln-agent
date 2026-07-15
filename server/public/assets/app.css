@@ -572,6 +572,10 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .split { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
 @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
 
+/* 폭이 비슷한 카드 두 개를 나란히(OS 분포 · 취약 자산 TOP10) — .split 은 도넛(좁음)+표(넓음) 전용이라 안 맞는다. */
+.split--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+@media (max-width: 900px) { .split--even { grid-template-columns: 1fr; } }
+
 /* 도넛 옆 범례 */
 .legend { display: grid; gap: .3rem; font-size: .84rem; margin-top: .9rem; }
 .legend div { display: flex; align-items: center; gap: .5rem; }
@@ -612,6 +616,16 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .riskbar .tone-high { background: var(--high); }
 .riskbar .tone-med  { background: var(--med); }
 .riskbar .tone-low  { background: var(--low); }
+
+/* 가로 막대 순위 목록(OS 분포 · 취약 자산 TOP10) — 등급(심각도) 이 아니라 "누가 제일
+ * 많은가" 순위라서 항목마다 색을 나누지 않는다(범주 색은 정체성 구분용 — 여기선 순위가
+ * 이미 위치로 말한다). 막대는 하나의 강조색(--accent)만 쓰는 단일 계열 크기 인코딩. */
+.hbar-list { display: grid; gap: .5rem; margin-top: .5rem; }
+.hbar-list__row { display: grid; grid-template-columns: minmax(0, 9rem) 1fr auto; align-items: center; gap: .6rem; font-size: .84rem; }
+.hbar-list__label { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-list__track { height: 8px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
+.hbar-list__track i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.hbar-list__n { min-width: 2.4rem; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 
 /* KPI 증감 칩 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전 대비를 같이 준다.
  * 방향은 색만으로 말하지 않는다(▲/▼ 기호가 같이 간다). */
