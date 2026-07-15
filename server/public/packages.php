@@ -17,10 +17,10 @@ vg_require_menu('findings');
 const VG_PKG_SORTS = [
     'cves'    => ['col' => 'cve_cnt',  'label' => 'CVE 많은순'],
     'epss'    => ['col' => 'max_epss', 'label' => 'EPSS 높은순'],
-    'package' => ['col' => 'a.package_name', 'label' => '패키지명순'],
+    'package' => ['col' => 'package_name', 'label' => '패키지명순'],
 ];
 
-$err = null; $rows = []; $total = 0; $ecos = [];
+$err = null; $rows = []; $total = 0; $ecos = []; $summaryAt = '';
 
 $q    = trim((string) ($_GET['q'] ?? ''));
 $eco  = trim((string) ($_GET['eco'] ?? ''));
@@ -49,47 +49,41 @@ function vg_pkg_max_fixed(array $versions): ?string {
 try {
     $pdo = vg_pdo();
 
+    // 배포판 목록·개수·정렬은 사전집계 요약(tb_package_summary)에서 읽는다. 원본
+    //   tb_cve_affected_packages(92만 행)를 매 로드 재집계하던 걸(운영 ~8초) OSV 실행 때 한 번
+    //   요약해 둔 것(vg_rebuild_package_summary). 40K행이라 즉답이다.
     $ecos = $pdo->query(
-        'SELECT DISTINCT ecosystem FROM tb_cve_affected_packages
-          WHERE is_deleted = 0 AND ecosystem IS NOT NULL AND ecosystem <> "" ORDER BY ecosystem'
+        "SELECT DISTINCT ecosystem FROM tb_package_summary WHERE ecosystem <> '' ORDER BY ecosystem"
     )->fetchAll(PDO::FETCH_COLUMN);
     $ecoOptions = array_combine($ecos, $ecos) ?: [];
     if ($eco !== '' && !in_array($eco, $ecos, true)) { $eco = ''; }
 
-    $where  = 'a.is_deleted = 0';
+    // 집계 기준 시각(요약을 마지막으로 다시 만든 때) — 목록이 언제 기준인지 화면에 밝힌다.
+    $summaryAt = (string) ($pdo->query('SELECT MAX(updated_at) FROM tb_package_summary')->fetchColumn() ?: '');
+
+    $where  = '1=1';
     $params = [];
     if ($q !== '') {
-        $where .= ' AND a.package_name LIKE ?';
+        $where .= ' AND package_name LIKE ?';
         $params[] = '%' . $q . '%';
     }
     if ($eco !== '') {
-        $where .= ' AND a.ecosystem = ?';
+        $where .= ' AND ecosystem = ?';
         $params[] = $eco;
     }
 
-    $from = 'FROM tb_cve_affected_packages a
-             LEFT JOIN tb_cves c ON c.cve_id = a.cve_id AND c.is_deleted = 0';
-    $group = 'GROUP BY a.package_name, a.ecosystem';
-
-    // 총 그룹 수에는 tb_cves 조인이 필요 없다 — 서브쿼리가 c 를 참조하지 않고, cve_id 가
-    //   tb_cves PK 라 LEFT JOIN 이 a 의 행을 늘리지도 않는다. 92만 행 조인을 빼면 이 COUNT 가
-    //   운영에서 6초→0.3초로 준다($where 는 a.* 만 참조하므로 안전).
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM (SELECT 1 FROM tb_cve_affected_packages a WHERE $where $group) t");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_package_summary WHERE $where");
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
 
     $offset = ($page - 1) * $perPage;
     $col = VG_PKG_SORTS[$sort]['col'];
     $stmt = $pdo->prepare(
-        "SELECT a.package_name, a.ecosystem,
-                COUNT(DISTINCT a.cve_id) AS cve_cnt,
-                MAX(c.epss) AS max_epss,
-                SUM(a.fixed_version IS NOT NULL) AS fix_cnt
-         $from
-         WHERE $where
-         $group
-         ORDER BY $col DESC, a.package_name ASC
-         LIMIT $perPage OFFSET $offset"
+        "SELECT package_name, ecosystem, cve_cnt, max_epss, fix_cnt
+           FROM tb_package_summary
+          WHERE $where
+          ORDER BY $col DESC, package_name ASC
+          LIMIT $perPage OFFSET $offset"
     );
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
@@ -123,6 +117,7 @@ vg_header('영향 패키지', 'packages');
   <div class="sub">
     <a href="/connectors.php">OSV 커넥터</a>가 스캔된 패키지를 조회해 찾아낸 "이 패키지가 이 CVE 에 취약하다" 매핑입니다.
     CVE 단위로 보려면 <a href="/cves.php">CVE 목록</a>.
+    <?php if ($summaryAt !== ''): ?><span class="why">· 집계 기준 <?= vg_h($summaryAt) ?> (OSV 수집 시 갱신)</span><?php endif; ?>
   </div>
 
 <?php if ($err !== null): ?>

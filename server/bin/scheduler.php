@@ -44,5 +44,8 @@ if ($ok > 0) {
     if (vg_feed_has_type($pdo, $okIds, 'osv')) {
         $s = vg_osv_enrich_fixed($pdo);
         fwrite(STDOUT, '[' . date('c') . "] OSV 조치안 보강 — 대상 {$s['targets']}종 · 조회 {$s['queried']} · 채움 {$s['filled']} · 건너뜀 {$s['skipped']}\n");
+        // OSV 로 affected_packages 가 바뀌었으니 packages.php 요약을 다시 만든다.
+        vg_rebuild_package_summary($pdo);
+        fwrite(STDOUT, '[' . date('c') . "] packages 요약 재빌드 완료\n");
     }
 }

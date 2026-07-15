@@ -108,6 +108,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (vg_feed_has_type($pdo, [$id], 'osv')) {
                         $s = vg_osv_enrich_fixed($pdo);
                         $msg .= " 조치안 {$s['filled']}건 보강.";
+                        // OSV 로 affected_packages 가 바뀌었으니 packages.php 요약을 다시 만든다.
+                        vg_rebuild_package_summary($pdo);
                     }
                 } else {
                     $err = "실행 실패: {$r['error']}";
