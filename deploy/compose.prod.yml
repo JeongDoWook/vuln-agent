@@ -35,6 +35,10 @@ services:
       #   ro: 코드가 자기 디렉토리에 쓰는 일이 없고(확인됨), 웹셸이 코드를 덮어쓰는 것도 막는다.
       #   이미지의 COPY 는 그대로 둔다 — 마운트 없이 띄워도 동작하는 안전망.
       - ../server:/var/www/html:ro
+      # 에이전트 스크립트를 웹에서 내려받게 한다(agent-dl.php). docroot 밖이라 직접 노출은 안 됨.
+      - ../agent:/var/www/agent-src:ro
+      # 배포별 Caddy 루트 CA(공개, gitignore). 최초 배포 시 관리자가 추출해 둔다(deploy/README.md).
+      - ../agent-ca:/var/www/agent-ca:ro
 
   scheduler:
     container_name: vulnagent-scheduler

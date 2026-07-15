@@ -109,7 +109,9 @@ vg_header('에이전트 토큰', 'agenttokens');
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <?php if ($newToken !== null):
-    // 설치 명령을 통째로 복사하게 준다 — 토큰만 주면 사용자가 --server 를 다시 찾아야 한다.
+    // 설치는 대화형을 1순위로 안내한다 — 토큰을 --token 인자로 주면 셸 히스토리에 남는다.
+    //   대화형(인자 없이 실행 → 숨김 프롬프트)은 히스토리·ps 어디에도 토큰이 남지 않는다.
+    //   빠른 설치 명령은 자동화(무인) 편의를 위해 그대로 두되, 위험을 문구로 밝힌다.
     $scheme  = (($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'http';
     $ingest  = $scheme . '://' . (string) ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/ingest.php';
     $install = 'sudo bash install-agent.sh --server ' . $ingest . ' --token ' . $newToken;
@@ -120,10 +122,13 @@ vg_header('에이전트 토큰', 'agenttokens');
         <pre class="out selectable"><?= vg_h($newToken) ?></pre>
         <div class="actions">
           <?php vg_copy_btn($newToken, '토큰 복사'); ?>
-          <?php vg_copy_btn($install, '설치 명령 복사'); ?>
+          <?php vg_copy_btn($install, '빠른 설치 명령 복사'); ?>
         </div>
-        <div class="why">이 값은 저장되지 않습니다. 지금 복사해 대상 서버에서
-          <code><?= vg_h($install) ?></code> 로 설치하세요. 잃어버리면 새로 발급해야 합니다.</div>
+        <div class="why">이 값은 저장되지 않습니다 — 지금 복사하세요(잃으면 재발급).
+          <strong>권장</strong>: 대상 서버에서 <code>sudo bash install-agent.sh</code> 를 인자 없이 실행하고
+          이 토큰을 <strong>숨김 프롬프트</strong>에 붙여넣습니다 — 히스토리·<code>ps</code> 에 남지 않습니다.
+          스크립트는 <a href="/assets.php">자산</a> 화면의 “에이전트 설치 안내”에서 내려받습니다.
+          자동화(무인)라면 “빠른 설치 명령”을 쓰되 <code>--token</code> 이 셸 히스토리에 남는 점에 유의하세요.</div>
       </div>
     </div>
   <?php endif; ?>

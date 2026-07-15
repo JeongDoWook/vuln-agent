@@ -256,10 +256,22 @@ vg_header('자산관리', 'assets');
     <div class="why">자산은 에이전트가 수집을 보내면 <strong>자동 등록</strong>됩니다.
       중앙에서 대상 서버로 접속하지 않습니다(아웃바운드 push).</div>
 
-    <div class="why mt">대상 서버(Linux)의 <code>/opt/vuln-agent/</code> 에 스크립트 2개를 두고 한 번 실행합니다.
+    <div class="why mt"><strong>1) 아래 세 파일을 받습니다</strong> — 레포 체크아웃이 필요 없습니다.
+      버튼으로 받아 대상 서버로 옮깁니다.</div>
+
+    <div class="mt">
+      <a class="btn btn--sm btn--ghost" href="/agent-dl.php?f=install-agent.sh" download>⬇ install-agent.sh</a>
+      <a class="btn btn--sm btn--ghost" href="/agent-dl.php?f=vuln-inventory-agent.sh" download>⬇ vuln-inventory-agent.sh</a>
+      <a class="btn btn--sm btn--ghost" href="/agent-dl.php?f=caddy-root.crt" download>⬇ caddy-root.crt</a>
+    </div>
+
+    <pre class="code">scp install-agent.sh vuln-inventory-agent.sh caddy-root.crt 대상서버:~/</pre>
+
+    <div class="why mt"><strong>2) 대상 서버(Linux)</strong>의 <code>/opt/vuln-agent/</code> 에 두고 한 번 실행합니다.
       인자 없이 실행하면 주소·토큰·주기를 물어봅니다.</div>
 
-    <pre class="code">sudo mkdir -p /opt/vuln-agent &amp;&amp; sudo cp ~/agent/*.sh /opt/vuln-agent/
+    <pre class="code">ssh 대상서버
+sudo mkdir -p /opt/vuln-agent &amp;&amp; sudo cp ~/install-agent.sh ~/vuln-inventory-agent.sh ~/caddy-root.crt /opt/vuln-agent/
 cd /opt/vuln-agent
 sudo bash install-agent.sh
   중앙 서버 주소 (예: ost-server.duckdns.org:8080): <?= vg_h($ingest) ?>
@@ -268,6 +280,7 @@ sudo bash install-agent.sh
   수집 주기 [hourly] (daily / '*:0/30'=30분마다):</pre>
 
     <ul class="hint-list why">
+      <li><code>caddy-root.crt</code> 는 자체서명 Caddy(HTTPS) 신뢰용입니다 — <code>install-agent.sh</code> 옆에 두면 설치 시 자동 등록됩니다(없으면 TLS 검증 실패). 이 파일은 배포마다 다르며, 없다고 뜨면 중앙 관리자가 아직 추출하지 않은 것입니다.</li>
       <li>수집 엔드포인트: <code class="selectable"><?= vg_h($ingest) ?></code> — 대상 서버 → 중앙 아웃바운드 1개면 충분합니다.</li>
       <li><code>sudo</code> 만 있으면 됩니다. <code>chmod</code>/<code>chown</code> 은 필요 없습니다(<code>bash &lt;파일&gt;</code> 로 실행하므로).</li>
       <li>토큰은 <a href="/agent-tokens.php">에이전트 토큰</a> 화면에서 이 호스트(fqdn)용으로 발급받아 넣습니다 —
