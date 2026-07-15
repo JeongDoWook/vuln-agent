@@ -95,6 +95,9 @@ try {
         $st = $pdo->prepare('SELECT COUNT(*) FROM tb_scans WHERE host_id = ?');
         $st->execute([$hostId]); $scanTotal = (int) $st->fetchColumn();
 
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_processes WHERE scan_id = ?');
+        $st->execute([$sid]); $processCount = (int) $st->fetchColumn();
+
         // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
         $validTabs = ['vuln', 'runtime', 'cce'];
         if ($suppressedCount > 0) { $validTabs[] = 'suppressed'; }
@@ -241,7 +244,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
     // 탭 정의(배열 순서 = 표시 순서). n 은 라벨 옆 숫자(null 이면 숨김).
     $tabDefs = [
         'vuln'    => ['label' => '취약점',    'n' => $vulnTotal],
-        'runtime' => ['label' => '런타임',    'n' => null],
+        'runtime' => ['label' => '런타임',    'n' => $processCount],
         'cce'     => ['label' => '보안 설정', 'n' => $cceFail],
     ];
     if ($suppressedCount > 0) { $tabDefs['suppressed'] = ['label' => '억제', 'n' => $suppressedCount]; }
