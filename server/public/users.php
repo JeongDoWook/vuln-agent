@@ -192,7 +192,7 @@ vg_header('사용자', 'users');
         <option value="operator"<?= $addRole === 'operator' ? ' selected' : '' ?>>운영자 (피드)</option>
         <option value="admin"<?= $addRole === 'admin' ? ' selected' : '' ?>>관리자 (전체)</option>
       </select>
-      <button type="submit" class="btn btn--ok btn--block">추가</button>
+      <?php vg_modal_foot('추가'); ?>
     </form>
   <?php vg_modal_close(); ?>
 <?php vg_footer();

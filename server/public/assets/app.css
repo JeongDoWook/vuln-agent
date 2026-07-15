@@ -868,6 +868,20 @@ a.pill--on:hover { background: var(--accent); }
 .modal__body .card { margin-bottom: 0; }
 .modal__body > .btn--block { margin-top: 1.1rem; }
 
+/* 모달 푸터 — 주작업/닫기를 **오른쪽 아래**에 모아 모든 모달을 통일한다. body 패딩을
+ * 상쇄해 모달 가장자리까지 잇고 위에 구분선을 둔다(참고 디자인의 닫기/저장 바).
+ * 폼 안에서 불러도 form{margin:0} 이라 폭이 딱 맞는다. */
+.modal__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .5rem;
+  margin: 1.3rem -1.2rem -1.3rem;
+  padding: .85rem 1.2rem;
+  border-top: 1px solid var(--line);
+}
+.modal__foot .modal__foot__extra { margin-right: auto; }   /* 보조 버튼(미리보기 등)은 왼쪽으로 */
+
 /* --- 도움말 툴팁 ----------------------------------------------------------
  * 본문에 늘어놓으면 화면이 무거워지는 부연설명을 아이콘 뒤로. 네이티브 title 을 쓴다. */
 .help {
