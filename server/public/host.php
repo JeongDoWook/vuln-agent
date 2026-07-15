@@ -20,6 +20,9 @@ $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 // 재시작·재부팅 표에 보여줄 최대 건수. 나머지는 취약점 현황(fx=restart)으로 넘긴다.
 const VG_RESTART_TOP = 10;
 
+// 리소스 추이 차트에 그릴 최대 스캔 건수(최근 것부터).
+const VG_RESOURCE_TREND_LIMIT = 50;
+
 // 재시작이 필요한 finding 중 **커널**인가 — 커널은 프로세스 재시작이 아니라 재부팅이 답이다.
 function vg_needs_reboot(array $f): bool {
     return preg_match('/^(kernel|linux-image-|linux-headers-)/', (string) ($f['package_name'] ?? '')) === 1;
@@ -28,7 +31,7 @@ $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
 $critHighTotal = 0; $restartTotal = 0; $restartRows = [];
 $tab = 'vuln'; $page = 1; $perPage = vg_perpage(); $total = 0;
-$rows = []; $exposures = []; $sevByScan = [];
+$rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
 
 try {
     $pdo = vg_pdo();
@@ -95,6 +98,7 @@ try {
         // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
         $validTabs = ['vuln', 'runtime', 'cce'];
         if ($suppressedCount > 0) { $validTabs[] = 'suppressed'; }
+        $validTabs[] = 'resources';
         $validTabs[] = 'scans';
         $tab = (string) ($_GET['tab'] ?? 'vuln');
         if (!in_array($tab, $validTabs, true)) { $tab = 'vuln'; }
@@ -181,6 +185,15 @@ try {
             );
             $st->execute([$sid]);
             $rows = $st->fetchAll();
+        } elseif ($tab === 'resources') {
+            // 새 수집·새 컬럼 없이 스캔 이력 탭과 같은 데이터를 시간순으로만 가져온다.
+            //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
+            $st = $pdo->prepare(
+                'SELECT collected_at, peak_rss_mb, cpu_seconds
+                   FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT ' . VG_RESOURCE_TREND_LIMIT
+            );
+            $st->execute([$hostId]);
+            $resourceScans = array_reverse($st->fetchAll());
         } else { // scans
             $total = $scanTotal;
             $st = $pdo->prepare(
@@ -232,6 +245,7 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
         'cce'     => ['label' => '보안 설정', 'n' => $cceFail],
     ];
     if ($suppressedCount > 0) { $tabDefs['suppressed'] = ['label' => '억제', 'n' => $suppressedCount]; }
+    $tabDefs['resources'] = ['label' => '리소스', 'n' => null];
     $tabDefs['scans'] = ['label' => '스캔 이력', 'n' => $scanTotal];
 ?>
   <?php
@@ -501,6 +515,23 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
       </div>
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
+
+  <?php elseif ($tab === 'resources'): ?>
+    <div class="card">
+      <strong>메모리 사용량 추이</strong>
+      <span class="why">— 스캔당 피크 RSS(최근 <?= count($resourceScans) ?>건)</span>
+      <div class="card__body">
+      <?php vg_resource_trend($resourceScans, 'peak_rss_mb', 'MB', 0, 'mem'); ?>
+      </div>
+    </div>
+
+    <div class="card mt-lg">
+      <strong>CPU 사용량 추이</strong>
+      <span class="why">— 스캔당 CPU 점유 시간(초, 자식 프로세스 포함)</span>
+      <div class="card__body">
+      <?php vg_resource_trend($resourceScans, 'cpu_seconds', 's', 1, 'cpu'); ?>
+      </div>
+    </div>
 
   <?php else: /* scans */ ?>
     <div class="card">
