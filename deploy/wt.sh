@@ -19,6 +19,7 @@
 #   ./deploy/wt.sh add fix/foo origin/main    # 기점 명시
 #   ./deploy/wt.sh list                       # 워크트리 + 할당 포트
 #   ./deploy/wt.sh rm cve-list                # 스택 내리고 워크트리 + 병합된 브랜치 제거
+#   ./deploy/wt.sh sweep                      # 병합된 워크트리를 한 번에 정리
 # =============================================================================
 set -euo pipefail
 
@@ -52,8 +53,10 @@ usage() {
   say "  ${GREEN}add${NC} <브랜치> [기점]   wt/<이름> 워크트리 생성 (기점 기본 origin/main)"
   say "  ${GREEN}list${NC}                  워크트리 + 할당 포트"
   say "  ${GREEN}rm${NC} <이름>             dev 스택 내리고 워크트리 + 병합된 브랜치 제거"
+  say "  ${GREEN}sweep${NC}                 병합된 워크트리를 한 번에 정리 (미병합·미커밋은 유지)"
   echo ""
   say "예: ${CYAN}./deploy/wt.sh add feat/cve-list${NC}  →  wt/cve-list"
+  say "예: ${CYAN}./deploy/wt.sh sweep${NC}  →  origin/main 에 병합된 워크트리 모두 제거"
 }
 
 # --- add --------------------------------------------------------------------
@@ -122,6 +125,21 @@ cmd_list() {
   fi
 }
 
+# dev 스택이 이 워크트리를 서빙 중이면 내린다(볼륨은 공용이라 -v 금지). 다른 트리면 손대지 않는다.
+#   마운트 원본이 사라지면 500 만 뜨므로, 지울 트리를 서빙 중일 때만 미리 내린다.
+stack_down_if_serving() {
+  local dir="$1" mine
+  mine="$( (cd "$dir" && pwd -W 2>/dev/null) || printf '%s' "$dir" )/server"
+  if [ "$(norm_path "$(dev_stack_src)")" = "$(norm_path "$mine")" ]; then
+    say "${BLUE}→${NC} dev 스택이 이 워크트리를 서빙 중 → 내립니다(볼륨은 보존)..."
+    ( cd "$dir/deploy" \
+      && docker compose --env-file "$MAIN_ROOT/deploy/.env.dev" -p vulnagent-dev \
+           -f compose.yml -f compose.common.yml -f compose.dev.yml down \
+    ) || say "  ${YELLOW}⚠${NC} 스택 중지 실패(이미 내려갔을 수 있음)"
+    say "  ${YELLOW}!${NC} 다음 작업 트리에서 ${CYAN}./deploy/compose_runner.sh dev up -d${NC} 로 다시 올리세요."
+  fi
+}
+
 # --- rm ---------------------------------------------------------------------
 # 워크트리를 지워도 브랜치는 남아 목록이 계속 불어난다. PR 이 병합됐으면 로컬·원격 모두 정리한다.
 #
@@ -181,18 +199,8 @@ cmd_rm() {
   fi
 
   # dev 스택은 저장소에 하나뿐이고 **DB 볼륨도 공용**이다 → 여기서 `down -v` 를 하면
-  #   남의 세션 DB 까지 날아간다. 절대 -v 를 붙이지 않는다.
-  #   지울 워크트리를 스택이 서빙 중일 때만 내린다(마운트 원본이 사라지면 500 만 뜬다).
-  #   다른 트리를 서빙 중이면 손대지 않는다.
-  local mine; mine="$( (cd "$dir" && pwd -W 2>/dev/null) || printf '%s' "$dir" )/server"
-  if [ "$(norm_path "$(dev_stack_src)")" = "$(norm_path "$mine")" ]; then
-    say "${BLUE}→${NC} dev 스택이 이 워크트리를 서빙 중 → 내립니다(볼륨은 보존)..."
-    ( cd "$dir/deploy" \
-      && docker compose --env-file "$MAIN_ROOT/deploy/.env.dev" -p vulnagent-dev \
-           -f compose.yml -f compose.common.yml -f compose.dev.yml down \
-    ) || say "  ${YELLOW}⚠${NC} 스택 중지 실패(이미 내려갔을 수 있음)"
-    say "  ${YELLOW}!${NC} 다음 작업 트리에서 ${CYAN}./deploy/compose_runner.sh dev up -d${NC} 로 다시 올리세요."
-  fi
+  #   남의 세션 DB 까지 날아간다. 절대 -v 를 붙이지 않는다(stack_down_if_serving 이 -v 없이 내린다).
+  stack_down_if_serving "$dir"
 
   # secrets/·data/ 는 untracked 라 --force 없이는 remove 가 거부한다.
   git -C "$MAIN_ROOT" worktree remove --force "$dir"
@@ -201,9 +209,62 @@ cmd_rm() {
   branch_cleanup "$branch" "$sha"
 }
 
+# --- sweep -------------------------------------------------------------------
+# "머지했어 / 다음" — 병합된 워크트리를 한 번에 정리한다. rm 을 트리마다 치는 수고를 없앤다.
+#   각 wt/* 에 대해:
+#     · 커밋 안 된 변경 있으면 → 유지(날리지 않는다).
+#     · main/master/detached 는 → 유지.
+#     · 브랜치 tip 이 origin/main 의 조상(=병합됨)이면 → 워크트리+브랜치 제거, 아니면 유지.
+#   병합 판정·브랜치 정리는 rm 과 동일한 함수를 쓴다(merge 커밋 방식에서 정확, squash·rebase 는 유지).
+cmd_sweep() {
+  [ -d "$WT_ROOT" ] || { say "${YELLOW}wt/ 없음 — 정리할 워크트리가 없습니다.${NC}"; return 0; }
+
+  # 병합 여부를 믿으려면 origin/main 이 최신이어야 한다. 한 번만 fetch.
+  git -C "$MAIN_ROOT" fetch origin --quiet \
+    || die "fetch 실패 — 병합 여부를 못 믿어 sweep 중단"
+
+  say "${CYAN}== wt sweep · 병합된 워크트리 정리 ==${NC}"
+  local removed=0 kept=0 dir name branch sha
+  for dir in "$WT_ROOT"/*/; do
+    [ -d "$dir" ] || continue                     # glob 매치 없으면 리터럴로 남는다
+    dir="${dir%/}"; name="${dir##*/}"
+
+    branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)" \
+      || { say "  ${YELLOW}⚠${NC} $name — git 워크트리 아님, 유지"; kept=$((kept+1)); continue; }
+    sha="$(git -C "$dir" rev-parse HEAD 2>/dev/null)" || { kept=$((kept+1)); continue; }
+
+    case "$branch" in
+      ''|HEAD|main|master)
+        say "  ${YELLOW}⚠${NC} $name — '$branch' 는 sweep 대상 아님, 유지"
+        kept=$((kept+1)); continue ;;
+    esac
+
+    if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
+      say "  ${YELLOW}⚠${NC} $name ($branch) — 커밋 안 된 변경, 유지"
+      kept=$((kept+1)); continue
+    fi
+
+    if ! git -C "$MAIN_ROOT" merge-base --is-ancestor "$sha" origin/main; then
+      say "  ${BLUE}→${NC} $name ($branch) — 아직 origin/main 에 없음, 유지"
+      kept=$((kept+1)); continue
+    fi
+
+    say "${CYAN}-- $name ($branch) 병합됨 → 제거 --${NC}"
+    stack_down_if_serving "$dir"
+    git -C "$MAIN_ROOT" worktree remove --force "$dir"
+    say "  ${GREEN}✓${NC} 제거: wt/$name"
+    branch_cleanup "$branch" "$sha"
+    removed=$((removed+1))
+  done
+
+  echo ""
+  say "${GREEN}sweep 완료${NC}: 제거 ${removed} · 유지 ${kept}"
+}
+
 case "${1:-}" in
-  add)  shift; cmd_add "$@" ;;
-  list) cmd_list ;;
-  rm)   shift; cmd_rm "$@" ;;
-  *)    usage ;;
+  add)   shift; cmd_add "$@" ;;
+  list)  cmd_list ;;
+  rm)    shift; cmd_rm "$@" ;;
+  sweep) cmd_sweep ;;
+  *)     usage ;;
 esac
