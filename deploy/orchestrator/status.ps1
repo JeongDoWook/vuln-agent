@@ -32,7 +32,16 @@ $gitCommonAbs = (Resolve-Path $gitCommon).Path
 $MainRoot = Split-Path $gitCommonAbs -Parent
 $manifestDir = Join-Path $MainRoot '.omc\orchestrator'
 
-$hasGh = [bool](Get-Command gh -ErrorAction SilentlyContinue)
+# gh 는 방금 설치 시 기존 셸 PATH 에 없을 수 있다 → 설치 경로도 직접 찾는다.
+function Resolve-Gh {
+  $c = Get-Command gh -ErrorAction SilentlyContinue
+  if ($c) { return $c.Source }
+  $p = Join-Path $env:ProgramFiles 'GitHub CLI\gh.exe'
+  if (Test-Path $p) { return $p }
+  return $null
+}
+$Gh = Resolve-Gh
+$hasGh = [bool]$Gh
 
 function Get-Workers {
   if (-not (Test-Path $manifestDir)) { return @() }
@@ -64,8 +73,12 @@ function Get-GitState($wt, $branch) {
 
 function Get-PrState($branch) {
   if (-not $hasGh) { return '' }
-  $pr = (& gh pr list --head $branch --json number, state, url 2>$null | ConvertFrom-Json)
-  if ($pr) { return "PR #$($pr[0].number) $($pr[0].state)" }
+  # --json 은 콤마-연결 단일 문자열로 인용(PS 에서 number,state 는 배열). try/catch 로
+  # PS5.1 의 네이티브-stderr 크래시(EAP=Stop)를 삼킨다 — PR 정보는 부가일 뿐.
+  try {
+    $pr = (& $Gh pr list --head $branch --json 'number,state,url' 2>$null | ConvertFrom-Json)
+    if ($pr) { return "PR #$($pr[0].number) $($pr[0].state)" }
+  } catch { }
   return ''
 }
 

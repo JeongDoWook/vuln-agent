@@ -31,6 +31,7 @@
 | `status.ps1` | 워커 감독 — 결과 파일·git·PR 상태 한눈에 (`-Watch` 주기 갱신) |
 | `watch-workers.ps1` | **자동 이어받기** — 전원이 끝날 때까지 대기했다가 취합 리포트 후 종료 |
 | `stop-worker.ps1` | 워커 정리 — 워크트리 제거 + 매니페스트 삭제 |
+| `reap-merged.ps1` | **병합 자동정리** — PR 이 main 에 병합된 워커를 감지해 stop-worker 실행(gh 필요) |
 | `milestone.template.md` | 계획서 템플릿 |
 
 런타임 산출물(메인 트리 `.omc/` 에 고정, git 추적 밖):
@@ -66,8 +67,13 @@ cd C:\APM\Apache24\htdocs\vuln-agent
 .\deploy\orchestrator\watch-workers.ps1              # 전체 대기
 .\deploy\orchestrator\watch-workers.ps1 -Task a,b    # a,b 만 대기
 
-# 7) PR 병합 후 정리
+# 7) PR 병합 후 정리 — 수동 한 개
 .\deploy\orchestrator\stop-worker.ps1 -Task cve-badge
+
+# 7') 또는 병합 자동정리 — main 병합된 워커를 감지해 알아서 정리 (gh 인증 필요)
+.\deploy\orchestrator\reap-merged.ps1            # 한 번 훑기
+.\deploy\orchestrator\reap-merged.ps1 -DryRun    # 정리 대상만 표시
+.\deploy\orchestrator\reap-merged.ps1 -Watch     # 5분마다 반복 감시
 ```
 
 ## 파라미터 (spawn-worker.ps1)
@@ -96,6 +102,22 @@ claude-pipeline 은 cmux `read-screen` 으로 **다른 세션 화면을 훔쳐�
 계획 + 취합 몇 줄만 들고 가볍게 유지된다. 이게 서브에이전트(요약이 메인에 계속 쌓임) 대비
 이 구조의 이점이다. (부수 최적화: 결과 파일 mtime 이 바뀐 것만 다시 읽고, 상태가 바뀐
 워커만 한 줄 출력한다.)
+
+## 워커 라이프사이클 — 언제 정리하나
+
+워커는 **PR 생성 시점이 아니라 main 병합 시점**에 정리한다. PR 은 리뷰가 되돌아올 수 있어,
+병합 전까지는 같은 브랜치·워크트리가 다시 필요하다(리뷰 코멘트 반영). 세션을 PR 생성에
+닫으면 그 컨텍스트가 날아가 재스폰해야 한다. **진짜로 필요 없어지는 시점은 병합**이다.
+
+```
+스폰 → 작업 → 커밋 → push → PR ──(리뷰·수정 왕복)──▶ main 병합 ──▶ 정리(stop/reap)
+                              └ 이 구간은 워크트리를 살려둔다 ┘
+```
+
+- 병합은 GitHub 에서 사람이 한다(시스템 밖). 로컬이 알려면 PR 상태를 폴링해야 하고 → `gh` 필요.
+- `reap-merged.ps1` 이 그 폴링을 한다: 각 워커 브랜치의 PR 이 `MERGED` 면 stop-worker 로 정리.
+  `-Watch` 로 5분마다 돌리면 **완전 자동**(병합하는 순간 다음 주기에 알아서 치워진다).
+- `gh` 미인증이면 안내 후 아무것도 안 한다 — `gh auth login` 은 사용자가 직접(OAuth/토큰).
 
 ## 주의
 

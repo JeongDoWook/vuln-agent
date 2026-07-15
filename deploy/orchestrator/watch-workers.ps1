@@ -33,7 +33,16 @@ $gitCommon = (& git rev-parse --git-common-dir 2>$null)
 if (-not $gitCommon) { throw 'git 저장소가 아닙니다.' }
 $MainRoot = Split-Path (Resolve-Path $gitCommon).Path -Parent
 $manifestDir = Join-Path $MainRoot '.omc\orchestrator'
-$hasGh = [bool](Get-Command gh -ErrorAction SilentlyContinue)
+# gh 는 방금 설치 시 기존 셸 PATH 에 없을 수 있다 → 설치 경로도 직접 찾는다.
+function Resolve-Gh {
+  $c = Get-Command gh -ErrorAction SilentlyContinue
+  if ($c) { return $c.Source }
+  $p = Join-Path $env:ProgramFiles 'GitHub CLI\gh.exe'
+  if (Test-Path $p) { return $p }
+  return $null
+}
+$Gh = Resolve-Gh
+$hasGh = [bool]$Gh
 
 function Get-Manifests {
   if (-not (Test-Path $manifestDir)) { return @() }
@@ -97,8 +106,10 @@ while ($true) {
       }
       $pr = ''
       if ($hasGh) {
-        $p = (& gh pr list --head $m.branch --json number, url 2>$null | ConvertFrom-Json)
-        if ($p) { $pr = "PR #$($p[0].number)" }
+        try {
+          $p = (& $Gh pr list --head $m.branch --json 'number,url' 2>$null | ConvertFrom-Json)
+          if ($p) { $pr = "PR #$($p[0].number)" }
+        } catch { }
       }
       Write-Host ("• {0} ({1})  {2} {3}" -f $m.task, $m.branch, $git, $pr) -ForegroundColor White
       Write-Host ("    {0}" -f $line) -ForegroundColor (Label-Color $line)
