@@ -136,6 +136,23 @@ cd wt/무엇
   대상을 직접 지정하려면 `VG_SMOKE_BASE=http://localhost:8080 git push`(훅의 대조를 건너뛴다).
 - 워크트리에서 `prod` 는 띄울 수 없다(compose_runner.sh 가 거부). 운영은 메인 트리에서만.
 
+## 병렬 워커 오케스트레이터 (deploy/orchestrator)
+독립적인 하위작업이 여럿이거나 사용자가 **"병렬"·"워커 나눠서"·"여러 창"** 을 요청하면,
+순차로 다 하지 말고 `deploy/orchestrator/` 로 팬아웃한다. 이 세션이 오케스트레이터가 되어
+계획을 세우고, 각 하위작업을 **독립 claude 세션(워커 탭)** 에 시킨 뒤 결과를 취합한다.
+Windows PowerShell 전용, tmux 불필요. (자세한 건 `deploy/orchestrator/README.md`.)
+
+- **언제**: 사용자가 병렬을 명시하거나, 작업이 서로 **독립적인 2개 이상**으로 자연히 쪼개질 때.
+  단일 파일 수정 등 작은 건 그냥 직접 한다(팬아웃은 워커마다 별도 세션=별도 과금이라 낭비).
+- **어떻게**:
+  1. 작업을 독립 하위작업으로 쪼갠 계획을 세우고, **스폰 전에 "이렇게 N개로 나눠 돌린다" 를 한 번 확인**받는다.
+  2. 하위작업마다 `.\deploy\orchestrator\spawn-worker.ps1 -Task <슬러그> -Prompt "<지시>"` 로 워커 탭을 띄운다.
+     기본 `-Permissions ask`(워커가 탭에서 사용자 승인을 받음). 믿고 맡길 작업만 `-Permissions skip`.
+  3. `.\deploy\orchestrator\watch-workers.ps1` 로 전원 완료까지 대기 → 취합해서 **이 창(메인)에 보고**.
+  4. PR 병합 뒤 `.\deploy\orchestrator\reap-merged.ps1` 로 워크트리 자동 정리(gh 인증 필요).
+- **왜**: 메인 세션은 계획·취합만 들고 가볍게 유지된다(무거운 작업 컨텍스트는 각 워커 탭에만 쌓임).
+  워커 = 워크트리 = 브랜치 = PR 이라 저장소 규칙과도 자연히 맞물린다.
+
 ## 가드레일 (강제)
 - **main 직접 commit/push 금지** — 항상 작업 브랜치 경유 후 PR 로 병합. (`.claude/hooks/block-main-push.sh` 가 차단)
 - **검증 게이트**: `php -l` + `bash -n` + 마이그레이션 파일명 + `tests/smoke.sh` 통과 전 커밋/PR 금지. 상태 보고 시 실행한 검증 명령·결과를 증거로 첨부.
