@@ -43,7 +43,9 @@ $GitBash = Resolve-GitBash
 $wtDir = Join-Path $MainRoot "wt\$Task"
 if (Test-Path $wtDir) {
   Write-Host "== 워크트리 제거: wt/$Task ==" -ForegroundColor Cyan
-  & $GitBash "$MainRootFwd/deploy/wt.sh" rm $Task
+  # wt.sh(bash) 도 cwd 에서 git 저장소를 찾는다 → 메인 트리에서 실행해야 한다.
+  Push-Location $MainRoot
+  try { & $GitBash "$MainRootFwd/deploy/wt.sh" rm $Task } finally { Pop-Location }
   if ($LASTEXITCODE -ne 0) {
     Write-Host "⚠ wt.sh rm 실패 (exit $LASTEXITCODE) — 미커밋 변경이 있으면 먼저 커밋/되돌리세요." -ForegroundColor Yellow
     return

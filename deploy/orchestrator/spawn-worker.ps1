@@ -123,7 +123,9 @@ if (Test-Path $wtDir) {
 }
 else {
   Write-Host "== 워크트리 생성: $branch → wt/$Task ==" -ForegroundColor Cyan
-  & $GitBash "$MainRootFwd/deploy/wt.sh" add $branch $Base
+  # wt.sh(bash) 도 cwd 에서 git 저장소를 찾는다 → 메인 트리에서 실행해야 한다.
+  Push-Location $MainRoot
+  try { & $GitBash "$MainRootFwd/deploy/wt.sh" add $branch $Base } finally { Pop-Location }
   if ($LASTEXITCODE -ne 0) { throw "wt.sh add 실패 (exit $LASTEXITCODE)" }
 }
 

@@ -111,7 +111,11 @@ function Reap-Once {
       else {
         Write-Host "== 병합 감지 → 정리: $($m.task) ($($m.branch)) ==" -ForegroundColor Cyan
         if ($Purge) { & $stopWorker -Task $m.task -Purge } else { & $stopWorker -Task $m.task }
-        $reaped++
+        # 워크트리가 아직 남아 있으면 실패(대개 그 워커의 탭/세션이 열려 폴더를 잡고 있음).
+        if (Test-Path (Join-Path $MainRoot "wt\$($m.task)")) {
+          Write-Host "  ⚠ 정리 실패 — '$($m.task)' 탭/세션을 닫고 다시 실행하세요." -ForegroundColor Yellow
+        }
+        else { $reaped++ }
       }
     }
     else {
