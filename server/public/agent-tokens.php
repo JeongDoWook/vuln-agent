@@ -172,7 +172,7 @@ vg_header('에이전트 토큰', 'agenttokens');
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="delete">'
                       . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'
-                      . '<button class="btn btn--sm">삭제</button></form>'
+                      . '<button class="btn btn--sm btn--danger">삭제</button></form>'
                   : '<form method="post" onsubmit="return confirm(\'이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.\');">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="revoke">'
