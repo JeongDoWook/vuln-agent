@@ -92,6 +92,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 넉넉하다. 터진 적은 없고, 호스트가 늘어 USN 캐시가 커질 때 UI 경로만 먼저
                 // 죽는 함정을 막아두는 것이다(죽으면 로그가 'running' 으로 굳는다).
                 ini_set('memory_limit', '512M');
+                // 세션 파일 락을 먼저 놓는다. PHP 는 session_start 부터 스크립트 끝까지 세션
+                // 파일을 배타 잠그는데, 이 실행은 위 주석대로 수 분(NVD 432초)이 걸린다. 락을
+                // 쥔 채 돌면 같은 세션(같은 브라우저)의 다른 탭·페이지가 그 시간 내내
+                // session_start 에서 막혀 UI 전체가 얼어붙는다. 아래는 세션에 쓰지 않고
+                // ($msg/$err 로 인라인 렌더, csrf 는 이미 검증됨) 읽기만 하므로 지금 닫아도 안전하다.
+                session_write_close();
                 $r = vg_feed_run($pdo, $id, 'manual');
                 if (!empty($r['ok'])) {
                     foreach (array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
