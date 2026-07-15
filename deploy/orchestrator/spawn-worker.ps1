@@ -48,7 +48,12 @@ param(
   [ValidateSet('tab', 'window', 'headless')][string]$Launch = 'tab',
 
   # 워크트리·지시문·매니페스트만 만들고 claude 실행은 생략(미리보기·테스트용)
-  [switch]$DryRun
+  [switch]$DryRun,
+
+  # 마무리 방식: pr(기본) = 워커가 스스로 커밋·push·PR 까지. push = 커밋·push 까지만 하고
+  # PR 은 만들지 않는다 — 메인 세션이 merge-milestone.ps1 로 여러 워커 브랜치를 로컬 병합해
+  # PR 1개로 묶어 낸다(마일스톤 통합 PR 모드).
+  [ValidateSet('pr', 'push')][string]$Finish = 'pr'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -131,14 +136,18 @@ else {
 
 # ── 워커 지시문 = 사용자 작업 + 오케스트레이터 프리앰블 ───────────────────────
 $resultPathFwd = $resultPath -replace '\\', '/'
-$preamble = @"
-$taskText
-
----
-[오케스트레이터 지침 — 이 워커 세션 규칙]
-- 너는 vuln-agent 워크트리 wt/$Task/ 에서 도는 독립 워커다. 브랜치: $branch.
-- 저장소 규칙은 CLAUDE.md 를 따른다. main 직접 커밋/push 금지 — 이 브랜치에서만.
-- 코드를 건드렸으면 검증 게이트 통과: php -l / bash -n / (server·db·tests 변경 시) tests/smoke.sh.
+$finishBlock = if ($Finish -eq 'push') {
+@"
+- 완료 시: 커밋 → push 까지만 한다. **PR 은 만들지 않는다** — 이 브랜치는 메인 세션이
+  마일스톤 브랜치로 로컬 병합한 뒤 PR 하나로 묶어서 낸다.
+- 진행/결과 요약을 아래 파일에 한국어로 남긴다(메인 세션이 이 파일로 너를 감독한다):
+    $resultPathFwd
+  · 시작할 때 한 줄: '진행중: <무엇을 하는 중>'
+  · 끝나면: '완료: <한 일 요약>' 다음 줄에 'push 완료, 브랜치: $branch'
+  · 막히면: '차단: <이유>' 로 남기고 멈춘다.
+"@
+} else {
+@"
 - 완료 시: 커밋 → push → PR 생성까지 한다.
 - 진행/결과 요약을 아래 파일에 한국어로 남긴다(메인 세션이 이 파일로 너를 감독한다):
     $resultPathFwd
@@ -148,6 +157,17 @@ $taskText
 - **PR 링크는 이 탭에 보여도 정보 제공용이다.** 사용자에게 "이제 병합하세요" 처럼 행동을 유도하지
   않는다 — 병합 진행 여부는 메인(오케스트레이터) 세션이 모든 워커를 취합한 뒤 사용자에게 확인받고
   결정한다. 이 탭에서 곧장 병합되면, 메인이 뒤이어 같은 브랜치에 후속 커밋을 얹다가 경합할 수 있다.
+"@
+}
+$preamble = @"
+$taskText
+
+---
+[오케스트레이터 지침 — 이 워커 세션 규칙]
+- 너는 vuln-agent 워크트리 wt/$Task/ 에서 도는 독립 워커다. 브랜치: $branch.
+- 저장소 규칙은 CLAUDE.md 를 따른다. main 직접 커밋/push 금지 — 이 브랜치에서만.
+- 코드를 건드렸으면 검증 게이트 통과: php -l / bash -n / (server·db·tests 변경 시) tests/smoke.sh.
+$finishBlock
 "@
 Set-Content -Path (Join-Path $wtDir '.initial-prompt') -Value $preamble -Encoding utf8
 
@@ -235,6 +255,7 @@ $manifest = [ordered]@{
   result      = $resultPath
   mode        = $Launch
   permissions = $Permissions
+  finish      = $Finish
   pid         = if ($proc) { $proc.Id } else { $null }
   startedAt   = (Get-Date).ToString('s')
 }
