@@ -176,6 +176,83 @@ function vg_http_json(string $method, string $url, $body = null, array $headers 
     return ['code' => $r['code'], 'json' => is_array($decoded) ? $decoded : null, 'error' => $r['error']];
 }
 
+/**
+ * 여러 URL 을 curl_multi 로 **동시에** GET 한다. 건별 조회가 많은 커넥터(rhunfixed 의 컴포넌트
+ *   목록·CVE 상세)에서 순차 왕복 지연을 없앤다 — 실측: 57개 컴포넌트 목록이 순차 210초.
+ *
+ *   SSRF 는 유지한다: **호스트별로 한 번** resolve 검사하고(같은 URL 뭉치는 대개 한 호스트다),
+ *   차단 대역이면 통째로 던진다(부분 병렬 실패보다 전체 거부가 안전하다). FOLLOWLOCATION 은 끈다
+ *   — 3xx 는 그대로 돌려주니, 리다이렉트가 필요한 호출자는 그 URL 만 vg_http_json 으로 순차 폴백한다.
+ *   (rhunfixed 대상 access.redhat.com 은 리다이렉트하지 않는다.)
+ *
+ *   동시성은 대상 API 부담을 고려해 제한한다(기본 6). 슬라이딩 윈도우로 항상 최대 N개만 in-flight.
+ *
+ * @param string[] $urls
+ * @return array<string, array{code:int,body:string,error:string}>  url => 결과(요청 안 된 url 은 없음)
+ */
+function vg_http_get_many(array $urls, int $concurrency = 6, int $timeout = 30, array $headers = []): array {
+    $urls = array_values(array_unique(array_filter($urls, 'strlen')));
+    if (!$urls) { return []; }
+
+    // 호스트별 SSRF 1회 검사(resolve → 차단대역). 하나라도 막히면 전체를 던진다.
+    $seen = [];
+    foreach ($urls as $u) {
+        $h = strtolower((string) parse_url($u, PHP_URL_HOST));
+        if ($h !== '' && !isset($seen[$h])) { vg_ssrf_guard_url($u); $seen[$h] = true; }
+    }
+
+    $concurrency = max(1, min($concurrency, count($urls)));
+    $opt = [
+        CURLOPT_RETURNTRANSFER  => true,
+        CURLOPT_FOLLOWLOCATION  => false,
+        CURLOPT_TIMEOUT         => $timeout,
+        CURLOPT_CONNECTTIMEOUT  => 20,
+        CURLOPT_USERAGENT       => 'vuln-agent-feed/1.0',
+        CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_HTTPHEADER      => array_merge(['Accept: application/json'], $headers),
+    ];
+
+    $results = [];
+    $mh      = curl_multi_init();
+    $inflight = [];   // spl_object_id => ['url'=>, 'ch'=>]   (curl 핸들은 PHP8 에서 객체 → int 캐스팅 불가)
+    $i = 0;
+    $n = count($urls);
+
+    $launch = static function () use (&$i, $n, $urls, $opt, $mh, &$inflight): void {
+        if ($i >= $n) { return; }
+        $u  = $urls[$i++];
+        $ch = curl_init($u);
+        curl_setopt_array($ch, $opt);
+        curl_multi_add_handle($mh, $ch);
+        $inflight[spl_object_id($ch)] = ['url' => $u, 'ch' => $ch];
+    };
+    for ($k = 0; $k < $concurrency; $k++) { $launch(); }
+
+    do {
+        curl_multi_exec($mh, $running);
+        curl_multi_select($mh, 1.0);   // 이벤트 대기(바쁜 대기 방지)
+        while ($info = curl_multi_info_read($mh)) {
+            $ch  = $info['handle'];
+            $key = spl_object_id($ch);
+            $u   = $inflight[$key]['url'] ?? '';
+            if ($u !== '') {
+                $results[$u] = [
+                    'code'  => (int) curl_getinfo($ch, CURLINFO_HTTP_CODE),
+                    'body'  => (string) curl_multi_getcontent($ch),
+                    'error' => curl_error($ch),
+                ];
+            }
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+            unset($inflight[$key]);
+            $launch();   // 빈 슬롯을 다음 URL 로 채운다
+        }
+    } while ($running > 0 || $inflight);
+
+    curl_multi_close($mh);
+    return $results;
+}
+
 // raw 응답 (XML/RSS 등 non-JSON 소스용)
 function vg_http_raw(string $method, string $url, array $headers = [], int $timeout = 60): array {
     return vg_http_follow($url, [
