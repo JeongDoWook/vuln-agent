@@ -217,6 +217,29 @@
     });
   });
 
+  // --- 테마 토글 (Light/Dark) --------------------------------------------
+  // head 의 인라인 스크립트가 첫 페인트 전에 data-theme 를 이미 적용해 뒀다.
+  // 여기서는 세그먼트 버튼 클릭으로 전환·저장하고, 로드 시 버튼 상태를 맞춘다.
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+  function syncThemeButtons() {
+    var t = currentTheme();
+    document.querySelectorAll('[data-theme-set]').forEach(function (b) {
+      b.classList.toggle('on', b.getAttribute('data-theme-set') === t);
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-theme-set]');
+    if (!b) { return; }
+    e.preventDefault();
+    var v = b.getAttribute('data-theme-set');
+    document.documentElement.setAttribute('data-theme', v);
+    try { localStorage.setItem('vg-theme', v); } catch (err) {}
+    syncThemeButtons();
+  });
+  document.addEventListener('DOMContentLoaded', syncThemeButtons);
+
   /**
    * fetch 등 자체 비동기 작업용. 시작 시 busy(true), 끝나면 busy(false).
    *   vgLoading(button, true) → 버튼 스피너 + 상단 진행바

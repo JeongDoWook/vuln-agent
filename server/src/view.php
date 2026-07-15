@@ -541,6 +541,29 @@ function vg_nav(string $active): void {
     }
 }
 
+/**
+ * 상단바 브레드크럼 — "지금 어디" 를 사이드바 밖에서 한 줄로. 홈 › 섹션 › 현재.
+ *   active 키로 vg_nav_sections() 에서 소속 섹션·라벨을 찾는다. 네비에 없는 상세
+ *   페이지(cve·advisory·host 등)는 섹션을 못 찾으니 제목($title)을 잎으로 쓴다.
+ */
+function vg_breadcrumb(string $active, string $title): void {
+    $section = null;
+    $label = null;
+    foreach (vg_nav_sections() as $sec => $links) {
+        foreach ($links as $l) {
+            if ($l['key'] === $active) { $section = $sec; $label = $l['label']; break 2; }
+        }
+    }
+    $leaf = $label ?? $title;
+    echo '<nav class="crumbs" aria-label="위치">';
+    echo '<a href="/">홈</a>';
+    if ($section !== null && $section !== '') {
+        echo '<span class="sep">›</span><span>' . vg_h($section) . '</span>';
+    }
+    echo '<span class="sep">›</span><span class="cur">' . vg_h($leaf) . '</span>';
+    echo '</nav>';
+}
+
 function vg_header(string $title, string $active = ''): void {
     $user = function_exists('vg_current_user') ? vg_current_user() : null;
     ?>
@@ -550,6 +573,9 @@ function vg_header(string $title, string $active = ''): void {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= vg_h($title) ?> · vuln-agent</title>
+<?php // 테마 초기화 — 저장된 선택(없으면 OS 설정)을 첫 페인트 전에 적용해 깜빡임을 막는다.
+      //   defer 되는 app.js 로는 늦다(스타일이 먼저 그려진다). 그래서 인라인·즉시 실행. ?>
+<script>(function(){try{var t=localStorage.getItem('vg-theme');if(t!=='dark'&&t!=='light'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <link rel="stylesheet" href="<?= vg_asset('/assets/app.css') ?>">
 <script src="<?= vg_asset('/assets/app.js') ?>" defer></script>
 <?php
@@ -578,6 +604,17 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../public/assets/js/{$pageJs}.js")): ?
   </aside>
 <?php endif; ?>
 <div class="app">
+<?php if ($user !== null): ?>
+  <header class="topbar">
+    <?php vg_breadcrumb($active, $title); ?>
+    <div class="topbar__right">
+      <div class="seg" role="group" aria-label="테마 전환">
+        <button type="button" class="seg__btn" data-theme-set="light" aria-label="밝은 테마">☀ Light</button>
+        <button type="button" class="seg__btn" data-theme-set="dark" aria-label="어두운 테마">☾ Dark</button>
+      </div>
+    </div>
+  </header>
+<?php endif; ?>
 <main>
 <?php
 }

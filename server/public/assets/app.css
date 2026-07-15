@@ -5,11 +5,99 @@
  *   톤 어휘(crit/high/med/low/ok/warn/danger/muted/info/purple)로 뱃지·KPI 를 칠한다.
  * ========================================================================== */
 
-/* --- 토큰 ---------------------------------------------------------------- */
+/* --- 토큰 ----------------------------------------------------------------
+ * 두 테마가 같은 이름의 토큰을 공유한다. 기본(:root)은 밝은 테마이고,
+ * <html data-theme="dark"> 가 붙으면 아래 오버라이드가 값만 갈아끼운다.
+ * 컴포넌트 CSS 는 토큰만 참조하므로 테마 전환 시 규칙을 손댈 필요가 없다.
+ *
+ * 톤마다 4종 세트: --X(원색·면) / --X-fg(글자) / --X-bg(옅은 틴트) / --X-bd(테두리).
+ *   밝은 테마에서는 -fg 를 흰 배경 위에서 읽히도록 진하게, 다크에서는 밝게 준다.
+ * ========================================================================== */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
   /* 표면 */
+  --bg:        #f3f5f8;
+  --surface:   #ffffff;
+  --surface-2: #eef1f5;
+  --sunken:    #f6f8fa;
+  --line:      #e4e8ee;
+  --line-2:    #d3dae3;
+
+  /* 글자 */
+  --text:      #1b2430;
+  --text-2:    #45526a;
+  --muted:     #697588;
+  --muted-2:   #97a1b2;
+
+  /* 강조 */
+  --accent:    #2f6fed;
+  --accent-2:  #2563e0;
+
+  /* 톤 */
+  --crit:      #e5484d;
+  --crit-fg:   #c62a2f;
+  --crit-bg:   rgb(229 72 77 / .10);
+  --crit-bd:   rgb(229 72 77 / .28);
+
+  --high:      #e07b1a;
+  --high-fg:   #b45f09;
+  --high-bg:   rgb(224 123 26 / .12);
+  --high-bd:   rgb(224 123 26 / .30);
+
+  --med:       #d19a06;
+  --med-fg:    #986f00;
+  --med-bg:    rgb(209 154 6 / .13);
+  --med-bd:    rgb(209 154 6 / .32);
+
+  --low:       #5580b4;
+  --low-fg:    #3f6392;
+  --low-bg:    rgb(85 128 180 / .12);
+  --low-bd:    rgb(85 128 180 / .30);
+
+  --ok:        #1f9d47;
+  --ok-fg:     #157a35;
+  --ok-bg:     rgb(31 157 71 / .12);
+  --ok-bd:     rgb(31 157 71 / .30);
+  --ok-hover:  #23ab4e;
+
+  --purple:    #7b52dd;
+  --purple-fg: #6032c0;
+  --purple-bg: rgb(123 82 221 / .12);
+  --purple-bd: rgb(123 82 221 / .30);
+
+  --info-fg:   #2563e0;
+  --info-bg:   rgb(47 111 237 / .12);
+  --info-bd:   rgb(47 111 237 / .30);
+
+  --muted-fg:  #5a6576;
+  --muted-bg:  rgb(105 117 136 / .12);
+  --muted-bd:  rgb(105 117 136 / .28);
+
+  --danger:    #dc3838;
+
+  /* 중립 버튼(초기화·ghost) — 흰 배경 위에서 흰 글자가 될 수 없으므로 별도 토큰 */
+  --btn-bg:    #e7ebf1;
+  --btn-fg:    #26313f;
+  --btn-hover: #dbe1ea;
+
+  /* 형태 */
+  --r-lg: 12px;
+  --r-md: 10px;
+  --r-sm: 8px;
+  --r-xs: 6px;
+
+  --ring: 0 0 0 3px rgb(47 111 237 / .25);
+  --shadow: 0 1px 2px rgb(16 24 40 / .05), 0 1px 3px rgb(16 24 40 / .05);
+  --shadow-lg: 0 12px 32px rgb(16 24 40 / .16);
+
+  --ctl-h: 1.9rem;   /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
+}
+
+/* --- 다크 테마 오버라이드 (토글 시 <html data-theme="dark">) -------------- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
   --bg:        #0f1115;
   --surface:   #171a21;
   --surface-2: #1c2029;
@@ -17,28 +105,14 @@
   --line:      #262b36;
   --line-2:    #30363d;
 
-  /* 글자 */
   --text:      #e6e6e6;
   --text-2:    #adbac7;
   --muted:     #8b93a1;
   --muted-2:   #6e7681;
 
-  /* 강조 */
   --accent:    #1f6feb;
   --accent-2:  #58a6ff;
 
-  /* 톤 (심각도·상태 공용 어휘)
-   *
-   * 톤마다 4종 세트를 준다. 한 톤을 쓰는 모든 자리(뱃지·KPI·행 강조·게이지)가
-   * 같은 어휘를 공유해야 색이 어긋나지 않는다.
-   *   --X     : 진한 원색   — KPI 카드·게이지 채움처럼 "면"으로 칠하는 자리
-   *   --X-fg  : 밝은 글자색 — 어두운 배경 위 텍스트/뱃지 라벨 (WCAG 대비 확보)
-   *   --X-bg  : 옅은 틴트   — 뱃지·행 배경
-   *   --X-bd  : 테두리      — 뱃지 윤곽
-   *
-   * 이전 팔레트는 med(#9e6a03)가 탁한 겨자색, low(#6e7681)가 무채색 회색이라
-   * 어두운 배경에서 죽었다. med 는 앰버로 띄우고, low 는 회청색으로 돌려
-   * "낮음"이 무채색(=정보 없음)처럼 보이지 않게 한다. */
   --crit:      #e5484d;
   --crit-fg:   #ff9592;
   --crit-bg:   rgb(229 72 77 / .16);
@@ -80,17 +154,13 @@
 
   --danger:    #6e2830;
 
-  /* 형태 */
-  --r-lg: 12px;
-  --r-md: 10px;
-  --r-sm: 8px;
-  --r-xs: 6px;
+  --btn-bg:    #30363d;
+  --btn-fg:    #ffffff;
+  --btn-hover: #3a424d;
 
   --ring: 0 0 0 3px rgb(31 111 235 / .35);
   --shadow: 0 1px 2px rgb(0 0 0 / .3);
   --shadow-lg: 0 8px 24px rgb(0 0 0 / .4);
-
-  --ctl-h: 1.9rem;   /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
 }
 
 * { box-sizing: border-box; }
@@ -227,8 +297,8 @@ body { display: flex; min-height: 100vh; }
   text-decoration: none;
 }
 .side a.link.active {
-  background: rgb(31 111 235 / .15);
-  color: #fff;
+  background: var(--info-bg);
+  color: var(--accent-2);
   font-weight: 600;
   border-left: 2px solid var(--accent);
   padding-left: calc(1.05rem - 1px);
@@ -248,12 +318,61 @@ body { display: flex; min-height: 100vh; }
 .side .foot { border-top: 1px solid var(--line); padding: .85rem 1.15rem; }
 .side .who { display: block; color: var(--muted); font-size: .8rem; margin-bottom: .45rem; }
 .side .foot a { color: var(--text-2); font-size: .82rem; margin-right: .7rem; }
-.side .foot a.active { color: #fff; font-weight: 600; }
+.side .foot a.active { color: var(--text); font-weight: 600; }
 
 /* min-width:0 이 없으면 넓은 표가 사이드바를 밀어낸다(flex 자식 기본 min-width:auto) */
-.app { flex: 1; min-width: 0; }
+.app { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-main { padding: 1.8rem 1.6rem; max-width: 1760px; margin: 0 auto; }
+/* --- 상단바 (브레드크럼 + 테마 토글) --------------------------------------
+ * 사이드바가 "어느 메뉴" 라면 상단바는 "지금 어디" 다. 스크롤해도 위치·테마 토글이
+ * 항상 손 닿는 곳에 있도록 sticky. 본문(main)은 아래에서 가운데 정렬로 흐른다. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 56px;
+  padding: .5rem 1.6rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.crumbs { display: flex; align-items: center; flex-wrap: wrap; gap: .1rem .4rem; font-size: .85rem; color: var(--muted); min-width: 0; }
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--accent-2); text-decoration: none; }
+.crumbs .sep { color: var(--muted-2); }
+.crumbs .cur { color: var(--text); font-weight: 600; }
+.topbar__right { display: flex; align-items: center; gap: 1rem; flex: none; }
+
+/* 세그먼트 토글(Light/Dark) — 선택된 칸만 떠오른다(surface + shadow) */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.seg__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .28rem .7rem;
+  border: none;
+  background: none;
+  border-radius: 999px;
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.seg__btn:hover { color: var(--text); }
+.seg__btn.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+main { padding: 1.8rem 1.6rem; max-width: 1760px; margin: 0 auto; width: 100%; }
 
 /* 좁은 화면: 사이드바를 상단 가로 메뉴로 되돌린다 */
 @media (max-width: 860px) {
@@ -269,6 +388,7 @@ main { padding: 1.8rem 1.6rem; max-width: 1760px; margin: 0 auto; }
   .side .menu { display: flex; flex-wrap: wrap; gap: .15rem; padding: .5rem .6rem; }
   .side .grp { display: none; }
   .side a.link.active { box-shadow: none; }
+  .topbar { padding: .5rem 1rem; }
   main { padding: 1.4rem 1rem; }
 }
 
@@ -284,6 +404,7 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
   padding: 1.1rem 1.4rem;
   overflow-x: auto;
   margin-bottom: 1.2rem;
+  box-shadow: var(--shadow);
 }
 .card:hover { border-color: var(--line-2); }
 .card strong { color: var(--text); }
@@ -318,6 +439,7 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
   border-radius: var(--r-md);
   background: var(--surface);
   color: var(--text);
+  box-shadow: var(--shadow);
 }
 .kpi b {
   font-size: 1.75rem;
@@ -385,7 +507,7 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
   margin-bottom: -1px;
 }
 .subtabs a:hover { color: var(--text); text-decoration: none; }
-.subtabs a.on { color: #fff; border-bottom-color: var(--accent); }
+.subtabs a.on { color: var(--text); border-bottom-color: var(--accent); }
 .subtabs .n { margin-left: .35rem; font-size: .82em; color: var(--muted); font-weight: 700; }
 .subtabs a.on .n { color: var(--accent-2); }
 
@@ -734,8 +856,8 @@ a.pill--on:hover { background: var(--accent); }
   margin-bottom: 1rem;
   border: 1px solid;
 }
-.alert--err { background: #3b1418; border-color: #6e2830; color: #ffb3ba; }
-.alert--ok  { background: #12261a; border-color: var(--ok); color: #7ee787; }
+.alert--err { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
+.alert--ok  { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
 
 /* --- 폼 컨트롤 ----------------------------------------------------------- */
 label { display: block; font-size: .82rem; color: var(--text-2); margin: .8rem 0 .3rem; }
@@ -771,20 +893,21 @@ input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
   /* 글자를 접지 않는다 — 좁은 표의 액션 열(5rem)에서 "폐기" 가 두 줄로 쪼개져
    * 고정 높이(.btn--sm) 밖으로 넘쳤다. 버튼은 열을 밀어내더라도 한 줄이어야 한다. */
   white-space: nowrap;
-  color: #fff;
-  background: var(--line-2);
+  color: var(--btn-fg);
+  background: var(--btn-bg);
   cursor: pointer;
   transition: filter .12s ease-out;
 }
-.btn:hover { filter: brightness(1.15); text-decoration: none; }
+.btn:hover { filter: brightness(1.08); text-decoration: none; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
-.btn--ok      { background: var(--ok); }
+/* 색 채운 변형은 밝은/어두운 테마 모두 흰 글자로 고정(기본 글자색이 테마별로 달라서) */
+.btn--ok      { background: var(--ok);     color: #fff; }
 .btn--ok:hover{ background: var(--ok-hover); filter: none; }
-.btn--primary { background: var(--accent); }
-.btn--danger  { background: var(--danger); }
-.btn--warn    { background: var(--med); }
-.btn--ghost   { background: var(--line-2); }
+.btn--primary { background: var(--accent); color: #fff; }
+.btn--danger  { background: var(--danger); color: #fff; }
+.btn--warn    { background: var(--med);    color: #3a2b00; }
+.btn--ghost   { background: var(--btn-bg); color: var(--btn-fg); }
 
 .btn--block { width: 100%; }
 .btn--sm    { height: var(--ctl-h); padding: .35rem .8rem; font-size: .82rem; font-weight: 600; }
