@@ -49,6 +49,9 @@ try {
     // KEV 는 존재 여부만 필요하므로 LEFT JOIN 후 IS NOT NULL 로 거른다.
     $from = 'FROM tb_cves c
              LEFT JOIN tb_kev_catalog k ON k.cve_id = c.cve_id AND k.is_deleted = 0';
+    // COUNT(*) 는 is_kev 뱃지를 안 그리므로, kev=1 필터가 아니면 조인이 필요 없다.
+    // tb_kev_catalog(36만행) 건별 eq_ref 조인이 COUNT 를 15배 느리게 만든다(0.048s → 0.73s).
+    $fromCount = $kev === '1' ? $from : 'FROM tb_cves c';
 
     $where  = 'c.is_deleted = 0';
     $params = [];
@@ -79,7 +82,7 @@ try {
         $params[] = $year . '-12-31';
     }
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) $from WHERE $where");
+    $stmt = $pdo->prepare("SELECT COUNT(*) $fromCount WHERE $where");
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
 
