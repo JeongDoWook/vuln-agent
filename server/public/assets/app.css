@@ -931,7 +931,10 @@ input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
 .btn--primary { background: var(--accent); color: #fff; }
 .btn--danger  { background: var(--danger); color: #fff; }
 .btn--warn    { background: var(--med);    color: #3a2b00; }
-.btn--ghost   { background: var(--btn-bg); color: var(--btn-fg); }
+/* 보조 버튼은 외곽선형 — 한 행에 여러 개(이력·편집·초기화)가 깔려도 시끄럽지 않고,
+ * OFF 토글이 외곽선(비활성)으로 보여 ON(초록 채움)과 또렷이 갈린다. */
+.btn--ghost   { background: transparent; color: var(--text-2); border: 1px solid var(--line-2); }
+.btn--ghost:hover { background: var(--surface-2); color: var(--text); filter: none; }
 
 .btn--block { width: 100%; }
 .btn--sm    { height: var(--ctl-h); padding: .35rem .8rem; font-size: .82rem; font-weight: 600; }
@@ -939,7 +942,7 @@ input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
 
 /* 복사 버튼 — 한 번만 보이는 값(토큰)을 손으로 긁게 두지 않는다.
  * 복사되면 라벨이 "복사됨" 으로 바뀌고 색이 성공 톤으로 간다(app.js 가 is-done 을 붙인다). */
-.copy.is-done { background: var(--ok); color: #fff; }
+.copy.is-done { background: var(--ok); color: #fff; border-color: var(--ok); }
 
 /* 세로 폼(로그인·추가 폼)의 제출 버튼은 넓게 */
 form.card .btn--block { margin-top: 1.1rem; }
