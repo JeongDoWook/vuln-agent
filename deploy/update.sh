@@ -55,6 +55,13 @@ NEW=$(git rev-parse HEAD)
 
 if [ "$OLD" = "$NEW" ] && [ "$MOUNTED" = "yes" ]; then
   echo "  이미 최신입니다 ($(git log --oneline -1))"
+  # 코드가 다른 경로(직접 git pull·다른 세션 배포)로 먼저 도착해 마이그레이션만 밀렸을 수 있다.
+  # 그때 여기서 그냥 exit 하면 스키마가 영영 안 붙어 새 코드가 없는 테이블/컬럼을 찾아 500 이 난다
+  # (실제로 tb_package_summary 누락으로 packages.php 가 500 이었다). migrate.sh 는 파일명 기준
+  # 멱등이라 적용할 게 없으면 즉시 끝난다 → "최신"이어도 항상 미적용분을 적용하고 나간다.
+  if docker inspect vulnagent-db --format '{{.State.Status}}' 2>/dev/null | grep -q running; then
+    bash deploy/migrate.sh vulnagent-db
+  fi
   exit 0
 fi
 echo "  $(git rev-parse --short "$OLD") → $(git rev-parse --short "$NEW")"
