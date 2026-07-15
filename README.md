@@ -315,3 +315,9 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 ## 라이선스
 
 MIT — [`LICENSE`](LICENSE)
+
+## 병렬 워커 오케스트레이터
+
+`deploy/orchestrator/` 에 마일스톤 세션과 병렬 워커(탭) 오케스트레이터가 있다 — 여러 작업을
+탭 단위 워커로 나눠 동시에 돌리고 마일스톤 단위로 묶어 진행한다. 설정·실행 등 자세한 사용법은
+[`deploy/orchestrator/README.md`](deploy/orchestrator/README.md) 를 참고한다.
