@@ -54,11 +54,11 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # ── 메인 트리 루트 (wt.sh 와 동일 규칙: git-common-dir 의 부모) ───────────────
-$gitCommon = (& git rev-parse --git-common-dir 2>$null)
-if (-not $gitCommon) { throw 'git 저장소가 아닙니다.' }
-# git-common-dir 은 메인 트리에서 상대경로(.git)를 줄 수 있다 → 절대경로로 먼저 변환.
-$gitCommonAbs = (Resolve-Path $gitCommon).Path
-$MainRoot = Split-Path $gitCommonAbs -Parent
+# 저장소는 cwd 가 아니라 스크립트 위치 기준으로 찾는다 — 어느 폴더에서 실행해도 동작.
+$gitCommon = (& git -C $PSScriptRoot rev-parse --git-common-dir 2>$null)
+if (-not $gitCommon) { throw '스크립트가 git 저장소 안에 있지 않습니다.' }
+if (-not [System.IO.Path]::IsPathRooted($gitCommon)) { $gitCommon = Join-Path $PSScriptRoot $gitCommon }
+$MainRoot = Split-Path (Resolve-Path $gitCommon).Path -Parent
 $MainRootFwd = $MainRoot -replace '\\', '/'
 
 # ── git-bash 탐색 ────────────────────────────────────────────────────────────

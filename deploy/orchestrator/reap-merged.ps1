@@ -34,10 +34,17 @@ $ErrorActionPreference = 'Stop'
 $scriptDir = Split-Path $MyInvocation.MyCommand.Path -Parent
 $stopWorker = Join-Path $scriptDir 'stop-worker.ps1'
 
-$gitCommon = (& git rev-parse --git-common-dir 2>$null)
-if (-not $gitCommon) { throw 'git 저장소가 아닙니다.' }
+# 저장소는 cwd 가 아니라 스크립트 위치($scriptDir) 기준으로 찾는다 — 어느 폴더에서 실행해도 동작.
+$gitCommon = (& git -C $scriptDir rev-parse --git-common-dir 2>$null)
+if (-not $gitCommon) { throw '스크립트가 git 저장소 안에 있지 않습니다.' }
+if (-not [System.IO.Path]::IsPathRooted($gitCommon)) { $gitCommon = Join-Path $scriptDir $gitCommon }
 $MainRoot = Split-Path (Resolve-Path $gitCommon).Path -Parent
 $manifestDir = Join-Path $MainRoot '.omc\orchestrator'
+
+# gh 는 cwd 의 git 저장소로 repo 를 추론한다 → 다른 폴더에서 실행돼도 맞는 repo 를 쓰도록
+# origin 에서 owner/repo 를 뽑아 GH_REPO 로 고정한다.
+$originUrl = (& git -C $MainRoot remote get-url origin 2>$null)
+if ($originUrl -match 'github\.com[:/](.+?)(?:\.git)?/?\s*$') { $env:GH_REPO = $matches[1] }
 
 # ── gh 확인 ──────────────────────────────────────────────────────────────────
 # gh 는 방금 설치 시 기존 셸 PATH 에 없을 수 있다 → 설치 경로도 직접 찾는다.
