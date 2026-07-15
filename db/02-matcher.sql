@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS tb_package_summary (
   cve_cnt      INT UNSIGNED NOT NULL DEFAULT 0,
   max_epss     DOUBLE       NULL,
   fix_cnt      INT UNSIGNED NOT NULL DEFAULT 0,
+  max_fixed    VARCHAR(255) NULL,                 -- 조치 버전 최댓값(자연순, vg_pkg_max_fixed)
   updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (package_name, ecosystem),
   KEY idx_psum_cve  (cve_cnt),

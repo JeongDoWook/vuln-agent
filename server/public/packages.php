@@ -30,22 +30,6 @@ $perPage = vg_perpage();
 
 if (!isset(VG_PKG_SORTS[$sort])) { $sort = 'cves'; }
 
-/**
- * 이 패키지를 전부 고치려면 올려야 할 버전 = 조치 버전 중 가장 높은 것.
- *
- * SQL MAX() 는 사전순이라 '3.0.13-0ubuntu3.9' > '3.0.13-0ubuntu3.11' 로 뒤집힌다.
- * strnatcmp 는 숫자 덩어리를 수로 비교해 11 > 9 를 지킨다. epoch('2:9.1...')도 앞자리
- * 숫자로 먼저 비교돼 일관된다. dpkg 완전 호환은 아니지만 표시용으로 충분하다.
- */
-function vg_pkg_max_fixed(array $versions): ?string {
-    $max = null;
-    foreach ($versions as $v) {
-        if ($v === null || $v === '') { continue; }
-        if ($max === null || strnatcmp($v, $max) > 0) { $max = $v; }
-    }
-    return $max;
-}
-
 try {
     $pdo = vg_pdo();
 
@@ -79,7 +63,7 @@ try {
     $offset = ($page - 1) * $perPage;
     $col = VG_PKG_SORTS[$sort]['col'];
     $stmt = $pdo->prepare(
-        "SELECT package_name, ecosystem, cve_cnt, max_epss, fix_cnt
+        "SELECT package_name, ecosystem, cve_cnt, max_epss, fix_cnt, max_fixed
            FROM tb_package_summary
           WHERE $where
           ORDER BY $col DESC, package_name ASC
@@ -87,26 +71,6 @@ try {
     );
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
-
-    // 조치 버전은 화면에 뜬 패키지(최대 perPage 개)만 따로 읽어 PHP 에서 고른다.
-    if ($rows) {
-        $names = array_column($rows, 'package_name');
-        $in    = implode(',', array_fill(0, count($names), '?'));
-        $fx = $pdo->prepare(
-            "SELECT package_name, ecosystem, fixed_version FROM tb_cve_affected_packages
-              WHERE is_deleted = 0 AND fixed_version IS NOT NULL AND package_name IN ($in)"
-        );
-        $fx->execute($names);
-        $byPkg = [];
-        foreach ($fx->fetchAll() as $f) {
-            $byPkg[$f['package_name'] . '|' . (string) $f['ecosystem']][] = $f['fixed_version'];
-        }
-        foreach ($rows as &$r) {
-            $key = $r['package_name'] . '|' . (string) $r['ecosystem'];
-            $r['max_fixed'] = vg_pkg_max_fixed($byPkg[$key] ?? []);
-        }
-        unset($r);
-    }
 } catch (Throwable $e) {
     $err = $e->getMessage();
 }

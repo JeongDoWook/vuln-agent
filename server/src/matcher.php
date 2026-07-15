@@ -734,6 +734,24 @@ if (!function_exists('vg_scope_rank')) {
  * 보다 커밋 순간 새 값으로 전환된다(빈 창이 없다). OSV 실행 뒤라 affected_packages 로의 동시
  * 쓰기도 없다.
  */
+/**
+ * 이 패키지를 전부 고치려면 올려야 할 버전 = 조치 버전 중 가장 높은 것.
+ *
+ * SQL MAX() 는 사전순이라 '3.0.13-0ubuntu3.9' > '3.0.13-0ubuntu3.11' 로 뒤집힌다.
+ * strnatcmp 는 숫자 덩어리를 수로 비교해 11 > 9 를 지킨다. epoch('2:9.1...')도 앞자리
+ * 숫자로 먼저 비교돼 일관된다. dpkg 완전 호환은 아니지만 표시용으로 충분하다.
+ */
+if (!function_exists('vg_pkg_max_fixed')) {
+    function vg_pkg_max_fixed(array $versions): ?string {
+        $max = null;
+        foreach ($versions as $v) {
+            if ($v === null || $v === '') { continue; }
+            if ($max === null || strnatcmp($v, $max) > 0) { $max = $v; }
+        }
+        return $max;
+    }
+}
+
 if (!function_exists('vg_rebuild_package_summary')) {
     function vg_rebuild_package_summary(PDO $pdo): void {
         $ownTx = !$pdo->inTransaction();
@@ -749,6 +767,30 @@ if (!function_exists('vg_rebuild_package_summary')) {
                   WHERE a.is_deleted = 0
                   GROUP BY a.package_name, a.ecosystem"
             );
+
+            // 조치 버전 최댓값은 자연순 비교가 필요해 SQL MAX() 로 못 구한다 — PHP 에서 계산해
+            //   별도로 갱신한다. DISTINCT 로 (패키지,배포판,조치버전) 조합만 읽어 92만 원본 행보다
+            //   훨씬 적은 수만 순회한다.
+            $fx = $pdo->query(
+                "SELECT DISTINCT package_name, ecosystem, fixed_version
+                   FROM tb_cve_affected_packages
+                  WHERE is_deleted = 0 AND fixed_version IS NOT NULL"
+            );
+            $byPkg = [];
+            foreach ($fx as $row) {
+                $byPkg[$row['package_name']][$row['ecosystem']][] = $row['fixed_version'];
+            }
+            if ($byPkg) {
+                $upd = $pdo->prepare(
+                    'UPDATE tb_package_summary SET max_fixed = ? WHERE package_name = ? AND ecosystem = ?'
+                );
+                foreach ($byPkg as $name => $byEco) {
+                    foreach ($byEco as $eco => $versions) {
+                        $upd->execute([vg_pkg_max_fixed($versions), $name, $eco]);
+                    }
+                }
+            }
+
             if ($ownTx) { $pdo->commit(); }
         } catch (Throwable $e) {
             if ($ownTx && $pdo->inTransaction()) { $pdo->rollBack(); }
