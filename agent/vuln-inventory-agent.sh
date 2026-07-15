@@ -27,7 +27,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="2.4"
+SCRIPT_VERSION="2.5"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
@@ -352,6 +352,13 @@ collect_exposure() {
         "")                        scope="-"        ;;
         *)                         scope="BOUND"    ;;
       esac
+      # 링크로컬 멀티캐스트 전용 프로토콜(mDNS 5353 · LLMNR 5355 · SSDP 1900 · WS-Discovery 3702)은
+      #   0.0.0.0 에 떠 있어도 멀티캐스트(224.0.0.251/ff02::fb)라 **라우터를 넘지 못한다** → 인터넷
+      #   노출이 아니라 같은 세그먼트 한정(LAN). 방화벽 판정보다 먼저 본다(라우팅 자체가 안 되니까).
+      #   실측: avahi mDNS 5353 하나가 라이브러리 HIGH 130여 건을 만들었다.
+      if [ "$scope" = "EXTERNAL" ] && [ "$proto" = "udp" ]; then
+        case "$port" in 5353|5355|1900|3702) scope="LAN" ;; esac
+      fi
       # 전체 인터페이스에 떠 있어도 방화벽이 그 포트를 막으면 외부 도달 불가 → FILTERED.
       #   이게 없으면 "방화벽 뒤의 내부 서비스"가 전부 외부노출(HIGH/CRITICAL)로 뜬다.
       if [ "$scope" = "EXTERNAL" ] && ! fw_port_allowed "$port" "$proto"; then
