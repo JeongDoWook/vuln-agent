@@ -27,7 +27,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="2.5"
+SCRIPT_VERSION="2.6"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
@@ -358,6 +358,10 @@ collect_exposure() {
       #   실측: avahi mDNS 5353 하나가 라이브러리 HIGH 130여 건을 만들었다.
       if [ "$scope" = "EXTERNAL" ] && [ "$proto" = "udp" ]; then
         case "$port" in 5353|5355|1900|3702) scope="LAN" ;; esac
+        # avahi 는 5353(멀티캐스트) 말고도 **랜덤 고포트**로 유니캐스트 mDNS 응답을 받는다
+        #   (실측: avahi-daemon udp 33257·54564). 포트가 랜덤이라 번호로는 못 잡으니 데몬 이름으로
+        #   잡는다 — avahi 는 mDNS 전용 데몬이라 그 소켓은 전부 로컬 세그먼트 한정이다.
+        case "$comm" in avahi-daemon) scope="LAN" ;; esac
       fi
       # 전체 인터페이스에 떠 있어도 방화벽이 그 포트를 막으면 외부 도달 불가 → FILTERED.
       #   이게 없으면 "방화벽 뒤의 내부 서비스"가 전부 외부노출(HIGH/CRITICAL)로 뜬다.
