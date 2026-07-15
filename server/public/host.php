@@ -282,7 +282,6 @@ vg_header($host['fqdn'] ?? '호스트', 'dashboard');
     <?php endforeach; ?>
     <div class="kpi"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
     <div class="kpi tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>"><b><?= (int) $cceFail ?></b><span>설정 취약</span></div>
-    <?php if ($suppressedCount > 0): ?><div class="kpi tone-muted"><b><?= number_format($suppressedCount) ?></b><span>백포트 억제</span></div><?php endif; ?>
   </div>
 
   <?php vg_subtabs($tabDefs, $tab); ?>
