@@ -22,6 +22,9 @@ if (!function_exists('vg_scope_rank')) {
         switch ($s) {
             case 'EXTERNAL': return 3;
             case 'BOUND':    return 2;
+            // LAN: 링크로컬 멀티캐스트(mDNS/LLMNR/SSDP…) — 0.0.0.0 이지만 라우터를 못 넘어 같은
+            //   세그먼트만 닿는다. 인터넷 노출(EXTERNAL)은 아니고 루프백(LOCAL)보다는 위험 → 중간.
+            case 'LAN':      return 2;
             // FILTERED: 전체 인터페이스에 떠 있지만 방화벽이 그 포트를 막아 외부에서 못 닿는다.
             //   (에이전트가 firewalld/ufw 의 허용 포트와 대조해 판정) → LOCAL 과 같은 무게.
             case 'FILTERED':
@@ -41,6 +44,11 @@ if (!function_exists('vg_scope_rank')) {
         if ($le && ($le['scope'] ?? '') === 'EXTERNAL') {
             $status = 'EXTERNAL'; $level = 3;
             $base = sprintf('외부노출(%s:%d 가 %s 사용)', $le['proc'] ?? '?', $le['port'] ?? 0, $pkg);
+        } elseif ($le && ($le['scope'] ?? '') === 'LAN') {
+            // 링크로컬 멀티캐스트(mDNS 등) — 인터넷엔 안 닿고 같은 세그먼트만. 외부노출보다 한 단계 아래.
+            $status = 'LAN'; $level = 2;
+            $base = sprintf('로컬 세그먼트 노출(%s:%d 가 %s 사용 — mDNS 등 멀티캐스트라 라우터를 넘지 않음)',
+                            $le['proc'] ?? '?', $le['port'] ?? 0, $pkg);
         } elseif ($le && ($le['scope'] ?? '') === 'FILTERED') {
             // 전체 인터페이스 바인딩이지만 방화벽이 막고 있다 → 외부노출 아님.
             //   이 판정이 없으면 방화벽 뒤의 내부 서비스가 전부 HIGH/CRITICAL 로 뜬다(오탐).

@@ -143,7 +143,7 @@ try {
                                         IFNULL(c.cid, \'\') AS ctr
                                    FROM tb_exposures e LEFT JOIN tb_containers c ON c.id = e.container_id
                                   WHERE e.scan_id = ?
-                                  ORDER BY FIELD(e.scope,\'EXTERNAL\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), e.port');
+                                  ORDER BY FIELD(e.scope,\'EXTERNAL\',\'LAN\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), e.port');
             $st->execute([$sid]);
             $exposures = $st->fetchAll();
 
@@ -202,7 +202,8 @@ try {
 
 // 노출 범위 → 뱃지 톤(색은 CSS 가 결정).
 //   FILTERED = 전체 인터페이스에 떠 있지만 방화벽이 막아 외부에서 못 닿는 포트.
-$scopeTone = ['EXTERNAL' => 'crit', 'BOUND' => 'med', 'FILTERED' => 'muted', 'LOCAL' => 'muted'];
+// LAN = 링크로컬 멀티캐스트(mDNS 등) — 인터넷엔 안 닿고 같은 세그먼트만(외부노출보다 아래).
+$scopeTone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'BOUND' => 'med', 'FILTERED' => 'muted', 'LOCAL' => 'muted'];
 
 vg_header($host['fqdn'] ?? '호스트', 'dashboard');
 ?>
