@@ -19,11 +19,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$gitCommon = (& git rev-parse --git-common-dir 2>$null)
-if (-not $gitCommon) { throw 'git 저장소가 아닙니다.' }
-# git-common-dir 은 메인 트리에서 상대경로(.git)를 줄 수 있다 → 절대경로로 먼저 변환.
-$gitCommonAbs = (Resolve-Path $gitCommon).Path
-$MainRoot = Split-Path $gitCommonAbs -Parent
+# 저장소는 cwd 가 아니라 스크립트 위치 기준으로 찾는다 — 어느 폴더에서 실행해도 동작.
+$gitCommon = (& git -C $PSScriptRoot rev-parse --git-common-dir 2>$null)
+if (-not $gitCommon) { throw '스크립트가 git 저장소 안에 있지 않습니다.' }
+if (-not [System.IO.Path]::IsPathRooted($gitCommon)) { $gitCommon = Join-Path $PSScriptRoot $gitCommon }
+$MainRoot = Split-Path (Resolve-Path $gitCommon).Path -Parent
 $MainRootFwd = $MainRoot -replace '\\', '/'
 $omcDir = Join-Path $MainRoot '.omc'
 
@@ -43,7 +43,9 @@ $GitBash = Resolve-GitBash
 $wtDir = Join-Path $MainRoot "wt\$Task"
 if (Test-Path $wtDir) {
   Write-Host "== 워크트리 제거: wt/$Task ==" -ForegroundColor Cyan
-  & $GitBash "$MainRootFwd/deploy/wt.sh" rm $Task
+  # wt.sh(bash) 도 cwd 에서 git 저장소를 찾는다 → 메인 트리에서 실행해야 한다.
+  Push-Location $MainRoot
+  try { & $GitBash "$MainRootFwd/deploy/wt.sh" rm $Task } finally { Pop-Location }
   if ($LASTEXITCODE -ne 0) {
     Write-Host "⚠ wt.sh rm 실패 (exit $LASTEXITCODE) — 미커밋 변경이 있으면 먼저 커밋/되돌리세요." -ForegroundColor Yellow
     return
