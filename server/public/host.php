@@ -221,7 +221,7 @@ try {
 // LAN = 링크로컬 멀티캐스트(mDNS 등) — 인터넷엔 안 닿고 같은 세그먼트만(외부노출보다 아래).
 $scopeTone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'BOUND' => 'med', 'FILTERED' => 'muted', 'LOCAL' => 'muted'];
 
-vg_header($host['fqdn'] ?? '호스트', 'dashboard');
+vg_header($host['fqdn'] ?? '호스트', 'assets');
 ?>
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
