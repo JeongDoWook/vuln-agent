@@ -281,7 +281,9 @@ body { display: flex; min-height: 100vh; }
 
 /* 중분류(a.link) — 대분류 아래로 한 단 들여쓰고, 왼쪽 가이드선으로 소속을 보인다 */
 .side a.link {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: .55rem;
   position: relative;
   padding: .46rem .6rem .46rem 1.05rem;
   margin-left: .3rem;
@@ -290,6 +292,10 @@ body { display: flex; min-height: 100vh; }
   color: var(--text-2);
   font-size: .88rem;
 }
+/* 메뉴 아이콘 — stroke=currentColor 라 링크 색을 상속한다. 비활성은 살짝 흐리게. */
+.side a.link .ico { flex: none; opacity: .8; }
+.side a.link:hover .ico,
+.side a.link.active .ico { opacity: 1; }
 .side a.link:hover {
   background: var(--surface-2);
   color: var(--text);
