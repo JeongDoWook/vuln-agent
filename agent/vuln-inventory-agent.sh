@@ -27,7 +27,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="2.3"
+SCRIPT_VERSION="2.4"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
@@ -961,6 +961,9 @@ cap meta hostname_fqdn 'hostname -f 2>/dev/null || hostname'
 cap meta collected_at  'date -Is'
 cap meta agent_version "echo $SCRIPT_VERSION"
 cap meta running_as    'id -un'
+# 수집 주기 — install-agent.sh 가 agent.env 에 SCHEDULE 을 써 두고 run.sh 가 export 한다.
+#   중앙(assets.php)이 노드별 타이머 주기를 읽기전용으로 보여주는 근거. 값을 못 받으면 빈칸.
+cap meta schedule      'echo "${SCHEDULE:-}"'
 cap meta loadavg       'cat /proc/loadavg'
 cap meta nproc         'nproc'
 

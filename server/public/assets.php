@@ -97,7 +97,7 @@ try {
     $st = $pdo->prepare(
         "SELECT h.id, h.fqdn, h.os_id, h.os_version, h.first_seen,
                 s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
-                s.peak_rss_mb, s.cpu_seconds,
+                s.schedule, s.peak_rss_mb, s.cpu_seconds,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
                 (SELECT COUNT(*) FROM tb_scans x WHERE x.host_id = h.id) AS scan_count
            $fromSql
@@ -184,6 +184,7 @@ vg_header('자산관리', 'assets');
       ['label' => '상태', 'key' => 'state'],
       ['label' => 'OS', 'key' => 'os'],
       ['label' => '에이전트', 'key' => 'agent_version'],
+      ['label' => '주기', 'key' => 'schedule'],
       ['label' => '리소스', 'key' => 'resource', 'align' => 'right'],
       ['label' => '패키지', 'key' => 'package_count', 'align' => 'right'],
       ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right'],
@@ -223,6 +224,14 @@ vg_header('자산관리', 'assets');
                   return '<code>' . vg_h($v) . '</code>'
                        . ($old ? ' ' . vg_badge('구버전', 'med',
                              "함대 최신은 {$latestAgent} — master 에서 deploy/agent_push.sh 로 갱신하세요") : '');
+              },
+              // 수집 주기(에이전트 타이머). 중앙은 읽기전용으로 보여줄 뿐 — 바꾸는 건 master 에서
+              //   `deploy/agent_schedule.sh <주기> <노드>`(SSH 팬아웃). 하향 채널을 두지 않으려는 설계.
+              'schedule' => function ($r) {
+                  $s = trim((string) ($r['schedule'] ?? ''));
+                  if ($s === '') { return '<span class="why">–</span>'; }
+                  $label = ['hourly' => '매시간', 'daily' => '하루 1회'][$s] ?? $s;
+                  return '<code title="' . vg_h($s) . '">' . vg_h($label) . '</code>';
               },
               'resource' => fn($r) => $r['scan_id'] !== null
                   ? vg_resource_mem($r['peak_rss_mb']) . ' <span class="why">·</span> ' . vg_resource_cpu($r['cpu_seconds'])
