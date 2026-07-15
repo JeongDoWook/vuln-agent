@@ -150,7 +150,7 @@ vg_header('CVE 목록', 'cves');
   $emptyMsg = $hasFilter ? '조건에 맞는 CVE가 없습니다.' : '아직 수집된 CVE가 없습니다. 피드 커넥터를 실행하세요.';
   vg_table(
       [
-          ['label' => 'CVE', 'width' => '11rem'],
+          ['label' => 'CVE', 'width' => '13rem', 'nowrap' => true],
           ['label' => '심각도', 'width' => '6rem'],
           ['label' => 'CVSS', 'align' => 'right', 'width' => '4rem'],
           ['label' => 'EPSS', 'align' => 'right', 'width' => '9rem'],
