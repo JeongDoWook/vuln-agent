@@ -149,6 +149,21 @@ Set-Content -Path (Join-Path $wtDir '.initial-prompt') -Value $preamble -Encodin
 # ── 결과 파일 초기화 (status.ps1 이 즉시 잡도록) ──────────────────────────────
 Set-Content -Path $resultPath -Value "대기중: 워커 스폰됨 ($branch)" -Encoding utf8
 
+# ── Stop 훅 등록 (결정론적 완료 자동기록) ────────────────────────────────────
+# 워커 세션이 idle 될 때마다 worker-stop-hook.ps1 이 git 상태로 결과 파일을 갱신한다 →
+# 워커가 "완료" 기록을 잊어도 메인(watch-workers)이 감지한다. settings.local.json 은
+# gitignore(전역 **/.claude/settings.local.json)라 워커가 커밋할 위험이 없다.
+# 이미 있으면(재스폰) 덮지 않는다.
+$claudeDir = Join-Path $wtDir '.claude'
+$settingsPath = Join-Path $claudeDir 'settings.local.json'
+if (-not (Test-Path $settingsPath)) {
+  if (-not (Test-Path $claudeDir)) { New-Item -ItemType Directory -Force -Path $claudeDir | Out-Null }
+  $hookScript = Join-Path $PSScriptRoot 'worker-stop-hook.ps1'
+  $hookCmd = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$hookScript`""
+  $settings = @{ hooks = @{ Stop = @(@{ hooks = @(@{ type = 'command'; command = $hookCmd }) }) } }
+  $settings | ConvertTo-Json -Depth 8 | Set-Content -Path $settingsPath -Encoding utf8
+}
+
 # ── claude 실행 ──────────────────────────────────────────────────────────────
 # 실행 명령을 워커별 .launch.ps1 파일에 담는다. -Command 인라인 대신 -File 을 쓰면
 # wt 의 ';' 파싱·따옴표 이스케이프 지옥을 피할 수 있다.

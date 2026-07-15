@@ -32,6 +32,7 @@
 | `watch-workers.ps1` | **자동 이어받기** — 전원이 끝날 때까지 대기했다가 취합 리포트 후 종료 |
 | `stop-worker.ps1` | 워커 정리 — 워크트리 제거 + 매니페스트 삭제 |
 | `reap-merged.ps1` | **병합 자동정리** — PR 이 main 에 병합된 워커를 감지해 stop-worker 실행(gh 필요) |
+| `worker-stop-hook.ps1` | **완료 자동기록** — 워커 세션이 idle 될 때 git 상태로 결과 파일을 갱신(spawn 이 주입) |
 | `milestone.template.md` | 계획서 템플릿 |
 
 런타임 산출물(메인 트리 `.omc/` 에 고정, git 추적 밖):
@@ -103,6 +104,14 @@ claude-pipeline 은 cmux `read-screen` 으로 **다른 세션 화면을 훔쳐�
 이 구조의 이점이다. (부수 최적화: 결과 파일 mtime 이 바뀐 것만 다시 읽고, 상태가 바뀐
 워커만 한 줄 출력한다.)
 
+**결정론적 완료 신호 (`worker-stop-hook.ps1`)**: 워커(claude)가 "완료" 기록을 잊으면
+watch-workers 가 영영 못 기다린다 — 실제로 겪은 취약점이다. 그래서 spawn 이 워커 워크트리의
+`.claude/settings.local.json` 에 **Stop 훅**을 심는다. 워커 세션이 idle 될 때마다 훅이 git
+상태로 결과 파일을 자동 갱신한다(모델의 협조 불요):
+- HEAD 가 push 됨(+커밋) → `완료(자동)` · 커밋만/미커밋 → `진행중(자동)` · 변경 없음 → `대기중(자동)`
+- 워커/메인이 **명시한** `완료`/`차단` 은 덮지 않는다(명시 신호 우선). 이게 claude-pipeline 의
+  "thinking→idle" 감지에 대응하는 결정론적 버전이다.
+
 ## 워커 라이프사이클 — 언제 정리하나
 
 워커는 **PR 생성 시점이 아니라 main 병합 시점**에 정리한다. PR 은 리뷰가 되돌아올 수 있어,
@@ -127,6 +136,7 @@ claude-pipeline 은 cmux `read-screen` 으로 **다른 세션 화면을 훔쳐�
 - 워커는 `CLAUDE.md` 규칙을 그대로 따른다(main 직접 금지·검증 게이트·PR). 지시문
   프리앰블에 그 요구가 박혀 있다.
 - 순수 PowerShell 창은 화면을 프로그램으로 훔쳐볼 수 없다 → 감독은 `status.ps1`(결과
-  파일 기반)로 한다. 워커가 `.omc/results/<task>.md` 를 성실히 갱신하는 게 전제다.
+  파일 기반)로 한다. 워커가 결과 파일을 잊어도 `worker-stop-hook.ps1` 이 git 상태로
+  자동 기록하므로, "워커가 성실히 갱신" 에 의존하지 않는다.
 - 워크트리·DB·스택 규칙은 최상위 `CLAUDE.md` 를 따른다. 스택은 `server·db·tests` 를
   건드리는 워커에서만 올린다.
