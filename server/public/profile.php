@@ -50,7 +50,7 @@ vg_header('내 프로필', 'profile');
       <input type="password" id="new" name="new" autocomplete="new-password" required>
       <label for="confirm">새 비밀번호 확인</label>
       <input type="password" id="confirm" name="confirm" autocomplete="new-password" required>
-      <button type="submit" class="btn btn--ok btn--block">변경</button>
+      <button type="submit" class="btn btn--primary btn--block">변경</button>
     </form>
   </div>
 <?php vg_footer();

@@ -86,7 +86,7 @@ vg_header('권한설정', 'permissions');
         </tbody>
       </table>
     </div>
-    <button type="submit" class="btn btn--ok" data-loading="저장 중…">저장</button>
+    <button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button>
   </form>
 
   <div class="sub card__body">

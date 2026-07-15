@@ -51,7 +51,7 @@ vg_header('로그인');
     <label for="password">비밀번호</label>
     <input type="password" id="password" name="password" autocomplete="current-password" required>
     <?php // 로그인 실패가 누적되면 서버가 최대 5초 지연시킨다 → 스피너로 "멈춘 게 아님" 을 보여준다. ?>
-    <button type="submit" class="btn btn--ok btn--block" data-loading="확인 중…">로그인</button>
+    <button type="submit" class="btn btn--primary btn--block" data-loading="확인 중…">로그인</button>
   </form>
 <?php
 vg_footer();
