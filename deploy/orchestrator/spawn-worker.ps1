@@ -9,7 +9,7 @@
   흐름:
     1) deploy/wt.sh add <prefix>/<task>  → wt/<task> 워크트리 생성(origin/main 기점)
     2) 워커 지시문을 wt/<task>/.initial-prompt 로 주입(오케스트레이터 프리앰블 포함)
-    3) 보이는 PowerShell 창(-Visible, 기본) 또는 헤드리스(-Headless)로 claude 실행
+    3) -Launch tab(현재 WT 창 새 탭·기본) / window(분리 창) / headless(창 없이 로그)로 claude 실행
     4) <MainRoot>/.omc/orchestrator/<task>.json 에 워커 매니페스트 기록(status.ps1 이 읽음)
 
   워커는 자기 워크트리에서 구현→커밋→push→PR 까지 하고,
@@ -19,7 +19,7 @@
   .\spawn-worker.ps1 -Task cve-badge -Prompt "findings.php 에 CVE 심각도 배지 추가"
 
 .EXAMPLE
-  .\spawn-worker.ps1 -Task matcher-fix -PromptFile .omc/tasks/matcher.md -Headless
+  .\spawn-worker.ps1 -Task matcher-fix -PromptFile .omc/tasks/matcher.md -Launch headless
 #>
 [CmdletBinding(DefaultParameterSetName = 'Inline')]
 param(
@@ -41,8 +41,11 @@ param(
   # 권한 모드: skip = --dangerously-skip-permissions(자율 워커 기본), ask = 매번 확인
   [ValidateSet('skip', 'ask')][string]$Permissions = 'skip',
 
-  # 창을 띄우지 않고 백그라운드에서 claude -p 로 실행, 출력은 로그 파일로만
-  [switch]$Headless,
+  # 워커를 어디에 띄울지:
+  #   tab     = 현재 Windows Terminal 창에 새 탭(기본)
+  #   window  = 분리된 새 PowerShell 창
+  #   headless= 창 없이 claude -p, 출력은 로그 파일로만
+  [ValidateSet('tab', 'window', 'headless')][string]$Launch = 'tab',
 
   # 워크트리·지시문·매니페스트만 만들고 claude 실행은 생략(미리보기·테스트용)
   [switch]$DryRun
@@ -74,6 +77,18 @@ function Resolve-GitBash {
   return 'bash'   # 최후 fallback
 }
 $GitBash = Resolve-GitBash
+
+# ── Windows Terminal 탐색 (-Launch tab 용) ───────────────────────────────────
+# wt.exe 는 앱 실행 별칭이라 PATH/Get-Command 로 안 잡히는 수가 있다 → 경로로 직접 찾는다.
+function Resolve-Wt {
+  $p = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\wt.exe'
+  if (Test-Path $p) { return $p }
+  $g = Get-ChildItem "$env:ProgramFiles\WindowsApps\Microsoft.WindowsTerminal*\wt.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($g) { return $g.FullName }
+  $c = Get-Command wt.exe -ErrorAction SilentlyContinue
+  if ($c) { return $c.Source }
+  return $null
+}
 
 # ── 지시문 확보 ──────────────────────────────────────────────────────────────
 if ($PromptFile) {
@@ -134,31 +149,23 @@ Set-Content -Path (Join-Path $wtDir '.initial-prompt') -Value $preamble -Encodin
 # ── 결과 파일 초기화 (status.ps1 이 즉시 잡도록) ──────────────────────────────
 Set-Content -Path $resultPath -Value "대기중: 워커 스폰됨 ($branch)" -Encoding utf8
 
-# ── claude 실행 명령 조립 ────────────────────────────────────────────────────
+# ── claude 실행 ──────────────────────────────────────────────────────────────
+# 실행 명령을 워커별 .launch.ps1 파일에 담는다. -Command 인라인 대신 -File 을 쓰면
+# wt 의 ';' 파싱·따옴표 이스케이프 지옥을 피할 수 있다.
 $permFlag = if ($Permissions -eq 'skip') { '--dangerously-skip-permissions' } else { '' }
 $wtDirEsc = $wtDir -replace "'", "''"
+$launchPs1 = Join-Path $wtDir '.launch.ps1'
 
-if ($DryRun) {
-  # 미리보기: 워크트리·지시문·매니페스트는 만들되 claude 는 띄우지 않는다.
-  Write-Host "✓ [DryRun] 워크트리·지시문 준비됨: wt/$Task ($branch)" -ForegroundColor Green
-  Write-Host "  claude 실행은 생략. 실제 스폰은 -DryRun 없이 다시 실행." -ForegroundColor DarkGray
-  $proc = $null
-}
-elseif ($Headless) {
-  # 헤드리스: 창 없이, claude -p(비대화형) 출력을 로그 파일로만.
-  $psCmd = @"
-Set-Location '$wtDirEsc'
+if ($Launch -eq 'headless') {
+  $launchBody = @"
+Set-Location -LiteralPath '$wtDirEsc'
 `$p = Get-Content '.initial-prompt' -Raw
 claude $permFlag -p `$p *> '$($logPath -replace "'", "''")'
 "@
-  $proc = Start-Process powershell -WindowStyle Hidden -PassThru `
-    -ArgumentList '-NoProfile', '-Command', $psCmd
-  Write-Host "✓ 헤드리스 워커 시작: $Task (PID $($proc.Id))  로그: .omc/logs/$Task.log" -ForegroundColor Green
 }
 else {
-  # 보이는 창: 대화형 claude. 사용자가 직접 지켜보고 이어서 타이핑도 가능.
-  $psCmd = @"
-Set-Location '$wtDirEsc'
+  $launchBody = @"
+Set-Location -LiteralPath '$wtDirEsc'
 `$env:TERM = 'xterm-256color'
 Write-Host '=== 워커: $Task ($branch) ===' -ForegroundColor Cyan
 Write-Host '결과 파일: $resultPathFwd' -ForegroundColor DarkGray
@@ -166,9 +173,37 @@ Write-Host ''
 `$p = Get-Content '.initial-prompt' -Raw
 claude $permFlag `$p
 "@
-  $proc = Start-Process powershell -PassThru `
-    -ArgumentList '-NoExit', '-NoProfile', '-Command', $psCmd
-  Write-Host "✓ 워커 창 열림: $Task (PID $($proc.Id))  브랜치: $branch" -ForegroundColor Green
+}
+
+$proc = $null
+if ($DryRun) {
+  # 미리보기: 워크트리·지시문·매니페스트는 만들되 claude 는 띄우지 않는다.
+  Write-Host "✓ [DryRun] 워크트리·지시문 준비됨: wt/$Task ($branch)" -ForegroundColor Green
+  Write-Host "  claude 실행은 생략. 실제 스폰은 -DryRun 없이 다시 실행." -ForegroundColor DarkGray
+}
+else {
+  Set-Content -Path $launchPs1 -Value $launchBody -Encoding utf8   # PS 5.1 utf8 = BOM(한글 배너)
+  $eff = $Launch
+  if ($Launch -eq 'tab') {
+    $wt = Resolve-Wt
+    if (-not $wt) {
+      Write-Host "⚠ Windows Terminal(wt.exe) 없음 → 분리된 새 창으로 대체." -ForegroundColor Yellow
+      $eff = 'window'
+    }
+    else {
+      # -w 0 = 가장 최근 사용한 WT 창에 새 탭. 없으면 새 창을 연다.
+      & $wt -w 0 new-tab --title $Task -d $wtDir powershell.exe -NoExit -NoProfile -File $launchPs1
+      Write-Host "✓ 새 탭 열림: $Task (현재 Windows Terminal 창)  브랜치: $branch" -ForegroundColor Green
+    }
+  }
+  if ($eff -eq 'window') {
+    $proc = Start-Process powershell -PassThru -ArgumentList '-NoExit', '-NoProfile', '-File', $launchPs1
+    Write-Host "✓ 워커 창 열림: $Task (PID $($proc.Id))  브랜치: $branch" -ForegroundColor Green
+  }
+  elseif ($eff -eq 'headless') {
+    $proc = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList '-NoProfile', '-File', $launchPs1
+    Write-Host "✓ 헤드리스 워커 시작: $Task (PID $($proc.Id))  로그: .omc/logs/$Task.log" -ForegroundColor Green
+  }
 }
 
 # ── 매니페스트 기록 (status.ps1 이 워커 목록을 여기서 읽는다) ─────────────────
@@ -178,9 +213,9 @@ $manifest = [ordered]@{
   worktree    = $wtDir
   log         = $logPath
   result      = $resultPath
-  mode        = if ($Headless) { 'headless' } else { 'visible' }
+  mode        = $Launch
   permissions = $Permissions
-  pid         = $proc.Id
+  pid         = if ($proc) { $proc.Id } else { $null }
   startedAt   = (Get-Date).ToString('s')
 }
 $manifest | ConvertTo-Json | Set-Content -Path $manifestPath -Encoding utf8

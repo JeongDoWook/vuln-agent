@@ -50,15 +50,18 @@ cd C:\APM\Apache24\htdocs\vuln-agent
 .\deploy\orchestrator\spawn-worker.ps1 -Task feed-kisa -PromptFile .omc\tasks\kisa.md
 .\deploy\orchestrator\spawn-worker.ps1 -Task feed-epss -PromptFile .omc\tasks\epss.md
 
-# 3) 헤드리스(창 없이 로그로만) — 대량 팬아웃·읽기 작업에
-.\deploy\orchestrator\spawn-worker.ps1 -Task audit-sql -Prompt "..." -Headless
+# 3) 분리된 새 창으로 (탭 말고 별도 창)
+.\deploy\orchestrator\spawn-worker.ps1 -Task feed-nvd -Prompt "..." -Launch window
 
-# 4) 감독
+# 4) 헤드리스(창 없이 로그로만) — 대량 팬아웃·읽기 작업에
+.\deploy\orchestrator\spawn-worker.ps1 -Task audit-sql -Prompt "..." -Launch headless
+
+# 5) 감독
 .\deploy\orchestrator\status.ps1            # 전체 현황 한 번
 .\deploy\orchestrator\status.ps1 -Watch     # 5초마다 갱신
 .\deploy\orchestrator\status.ps1 -Task cve-badge   # 특정 워커 결과 전문
 
-# 5) PR 병합 후 정리
+# 6) PR 병합 후 정리
 .\deploy\orchestrator\stop-worker.ps1 -Task cve-badge
 ```
 
@@ -71,7 +74,8 @@ cd C:\APM\Apache24\htdocs\vuln-agent
 | `-Prefix` | `feat` | 브랜치 접두사 (feat/fix/chore) |
 | `-Base` | `origin/main` | 워크트리 기점 |
 | `-Permissions` | `skip` | `skip`=자율(--dangerously-skip-permissions), `ask`=매번 확인 |
-| `-Headless` | off | 창 없이 `claude -p`, 출력은 로그 파일로만 |
+| `-Launch` | `tab` | `tab`=현재 WT 창에 새 탭 · `window`=분리된 새 창 · `headless`=창 없이 로그로만 |
+| `-DryRun` | off | 워크트리·지시문·매니페스트만 만들고 claude 실행은 생략(미리보기) |
 
 ## 주의
 
