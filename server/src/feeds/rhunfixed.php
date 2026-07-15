@@ -134,48 +134,87 @@ final class VgRhunfixedConnector implements VgFeedConnector {
         //   curl 을 "이미 고쳐짐" 으로 건너뛰었다 → curl 의 진짜 취약점을 놓쳤다(미탐).
         //   목록의 affected_packages 검사(vg_rhcve_fixed_in_release)가 컴포넌트까지 보므로 그걸로 충분하다.
 
-        foreach (vg_rhcve_targets($pdo) as [$vendor, $major, $comp]) {
-            $list = $this->fetchList($comp, $major);
-            $fetched += count($list);
+        // ── 1단계: 컴포넌트 목록을 **병렬로** 받는다 ──────────────────────────────
+        //   57개 컴포넌트를 순차로 받으면 왕복 지연만 210초였다(신규 0건이어도). 컴포넌트 간에는
+        //   의존이 없어 동시에 받을 수 있다. 페이지네이션(1000건 초과)만 그 컴포넌트 안에서 순차다.
+        $targets  = vg_rhcve_targets($pdo);
+        $listUrls = [];   // url => [vendor, major, comp]
+        foreach ($targets as [$vendor, $major, $comp]) {
+            $listUrls[$this->listUrl($comp, $major, 1)] = [$vendor, $major, $comp];
+        }
+        $listResp = $listUrls ? vg_http_get_many(array_keys($listUrls), 6, 60) : [];
 
-            foreach ($list as $c) {
-                if ($details >= $maxDetail) { $stopped = true; break 2; }
+        // ── 2단계: 상세가 필요한 (컴포넌트, CVE) 를 모은다 ────────────────────────
+        //   known(이미 확인)·수정본 있음(목록에 실림)은 여기서 걸러 상세를 아예 안 받는다.
+        $pending    = [];   // [vendor, major, comp, cve, listItem]
+        $needDetail = [];   // cve => true  (같은 CVE 가 여러 컴포넌트에 걸려도 상세는 한 번만 받는다)
+        foreach ($listUrls as $url => [$vendor, $major, $comp]) {
+            $rows = $this->decodeList($listResp[$url] ?? null);
+            // 1페이지가 가득 찼으면(1000건) 나머지 페이지는 순차로 이어 받는다(드문 컴포넌트만).
+            if (count($rows) >= 1000) {
+                $rows = array_merge($rows, $this->fetchListRest($comp, $major));
+            }
+            $fetched += count($rows);
 
+            foreach ($rows as $c) {
                 $cve = (string) ($c['CVE'] ?? '');
                 if (!vg_is_cve_id($cve)) { continue; }
-
-                $key = "$vendor|$major|$comp|$cve";
-                if (isset($known[$key])) { continue; }              // 이미 확인함
-
-                // 목록에 이미 **이 릴리스·이 컴포넌트의 수정본**이 실려 있으면 상세를 받을 이유가 없다.
-                //   남의 제품(jbcs-httpd24-curl … .el8jbcs)을 우리 것으로 오인하면 CVE 를 통째로
-                //   건너뛴다 — 실제로 curl CVE-2023-27534 를 그렇게 놓쳤다.
+                if (isset($known["$vendor|$major|$comp|$cve"])) { continue; }   // 이미 확인함
+                // 목록에 이 릴리스·이 컴포넌트의 수정본이 있으면 상세 불필요(컴포넌트·dist태그까지 본다).
                 if (vg_rhcve_fixed_in_release((array) ($c['affected_packages'] ?? []), $comp, $major)) {
                     continue;
                 }
+                $pending[] = [$vendor, $major, $comp, $cve, $c];
+                $needDetail[$cve] = true;
+            }
+        }
 
-                $detail = $this->fetchDetail($cve);
-                $details++;
-                if ($detail === null) { $failed++; continue; }   // 실패는 캐시 안 함 → 다음 실행이 재시도
+        // ── 3단계: CVE 상세를 **병렬로** 받는다(상한까지) ─────────────────────────
+        $cves = array_keys($needDetail);
+        if (count($cves) > $maxDetail) {
+            $cves    = array_slice($cves, 0, $maxDetail);
+            $stopped = true;   // 상한에 걸렸다 — 아래에서 로그로 남긴다(조용한 미완성 금지)
+        }
+        $wanted     = array_flip($cves);
+        $detailUrls = array_map(fn(string $cve) => VG_RHCVE_DETAIL . rawurlencode($cve) . '.json', $cves);
+        $detailResp = $detailUrls ? vg_http_get_many($detailUrls, 6, 30) : [];
 
-                $state = vg_rhcve_fix_state($detail, $major, $comp);
-                if ($state === null || $state === '') { continue; }  // 이 릴리스와 무관
+        // 병렬 배치에서 실패한(200 아닌) 상세는 순차로 한 번 더 시도한다 — 간헐적 레이트리밋 대비.
+        //   실패를 그냥 넘기면 그 CVE 가 조용히 사라진다(zstd CVE-2022-4899 를 그렇게 놓쳤다).
+        $details = count($detailResp);
+        $detailByCve = [];
+        foreach ($cves as $cve) {
+            $url  = VG_RHCVE_DETAIL . rawurlencode($cve) . '.json';
+            $body = ($detailResp[$url]['code'] ?? 0) === 200 ? $detailResp[$url]['body'] : '';
+            $d    = $body !== '' ? json_decode($body, true) : null;
+            if (!is_array($d)) {
+                $d = $this->fetchDetail($cve);   // 순차 재시도(2회)
+            }
+            if (is_array($d)) { $detailByCve[$cve] = $d; } else { $failed++; }
+        }
 
-                $sev  = (string) ($detail['threat_severity'] ?? ($c['severity'] ?? ''));
-                $cvss = $c['cvss3_score'] ?? null;
+        // ── 4단계: 판정·저장 ─────────────────────────────────────────────────────
+        foreach ($pending as [$vendor, $major, $comp, $cve, $c]) {
+            if (!isset($wanted[$cve])) { continue; }               // 상한 밖으로 잘린 CVE
+            $detail = $detailByCve[$cve] ?? null;
+            if ($detail === null) { continue; }                    // 상세 실패(캐시 안 함 → 다음 실행 재시도)
 
-                $ins->execute([
-                    $vendor, $major, mb_substr($comp, 0, 255), mb_substr($cve, 0, 32),
-                    mb_substr($state, 0, 32), mb_substr($sev, 0, 16),
-                    $cvss !== null ? (float) $cvss : null,
-                ]);
-                $known[$key] = true;
-                $upserted++;
+            $state = vg_rhcve_fix_state($detail, $major, $comp);
+            if ($state === null || $state === '') { continue; }    // 이 릴리스와 무관
 
-                // CVE 상세(요약·CVSS)는 NVD 가 채우지만, 없을 수 있으니 껍데기는 만들어 둔다.
-                if (vg_rhcve_is_unfixed($state)) {
-                    vg_upsert_cve($pdo, $cve, null, $cvss !== null ? (float) $cvss : null, null);
-                }
+            $sev  = (string) ($detail['threat_severity'] ?? ($c['severity'] ?? ''));
+            $cvss = $c['cvss3_score'] ?? null;
+
+            $ins->execute([
+                $vendor, $major, mb_substr($comp, 0, 255), mb_substr($cve, 0, 32),
+                mb_substr($state, 0, 32), mb_substr($sev, 0, 16),
+                $cvss !== null ? (float) $cvss : null,
+            ]);
+            $known["$vendor|$major|$comp|$cve"] = true;   // 같은 실행에서 다른 컴포넌트 중복 방지
+            $upserted++;
+
+            if (vg_rhcve_is_unfixed($state)) {
+                vg_upsert_cve($pdo, $cve, null, $cvss !== null ? (float) $cvss : null, null);
             }
         }
         // 조용히 끝내지 않는다 — 미완성인 채로 "성공" 이라고 하면 그 차이가 곧 미탐이다.
@@ -191,7 +230,8 @@ final class VgRhunfixedConnector implements VgFeedConnector {
     public function preview(PDO $pdo, array $conn): array {
         $t = vg_rhcve_targets($pdo)[0] ?? ['redhat', '9', 'openssl'];
         [$vendor, $major, $comp] = $t;
-        $list  = array_slice($this->fetchList($comp), 0, 10);
+        $resp  = vg_http_get_many([$this->listUrl($comp, $major, 1)], 1, 60);
+        $list  = array_slice($this->decodeList(reset($resp) ?: null), 0, 10);
         $items = [];
         foreach ($list as $c) {
             $items[] = [
@@ -205,22 +245,33 @@ final class VgRhunfixedConnector implements VgFeedConnector {
     }
 
     /**
-     * 컴포넌트의 CVE 목록(페이지네이션). **product 로 릴리스를 먼저 좁힌다.**
-     *   안 좁히면 그 컴포넌트의 전 제품·전 릴리스 CVE 가 다 와서, 상세를 받아 보고서야
-     *   "이 릴리스와 무관" 임을 알게 된다 — 실측 폐기율 93%(1,279건 중 1,076건)였다.
+     * 컴포넌트 목록 URL. **product 로 릴리스를 먼저 좁힌다** — 안 좁히면 그 컴포넌트의 전 제품·전
+     *   릴리스 CVE 가 다 와서, 상세를 받아 보고서야 "이 릴리스와 무관" 임을 안다(실측 폐기율 93%).
      */
-    private function fetchList(string $component, string $major = ''): array {
-        $out  = [];
-        $page = 1;
+    private function listUrl(string $component, string $major, int $page): string {
         $prod = $major !== '' ? '&product=' . rawurlencode("Red Hat Enterprise Linux $major") : '';
+        return VG_RHCVE_LIST . '?per_page=1000&page=' . $page . $prod . '&package=' . rawurlencode($component);
+    }
+
+    /** 목록 응답(vg_http_get_many 결과 1건) → 행 배열. 실패·비200 은 빈 배열. */
+    private function decodeList(?array $resp): array {
+        if (($resp['code'] ?? 0) !== 200 || ($resp['body'] ?? '') === '') { return []; }
+        $rows = json_decode($resp['body'], true);
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * 1페이지가 가득 찬(1000건) 컴포넌트의 2페이지 이후를 순차로 받는다 — 드문 대형 컴포넌트만 온다.
+     *   대부분 컴포넌트는 1페이지로 끝나므로 이 경로는 거의 안 탄다(그래서 병렬화하지 않았다).
+     */
+    private function fetchListRest(string $component, string $major): array {
+        $out  = [];
+        $page = 2;
         while ($page <= 10) {                                       // 안전 상한(컴포넌트당 1만 건)
-            $url = VG_RHCVE_LIST . '?per_page=1000&page=' . $page . $prod . '&package=' . rawurlencode($component);
             try {
-                // 목록도 예외를 흡수한다 — 컴포넌트 하나의 일시적 실패로 수집 전체를 죽이지 않는다.
-                //   그 컴포넌트는 이번 실행에서 비워지고, 다음 실행이 다시 시도한다.
-                $r = vg_http_raw('GET', $url, [], 60);
+                $r = vg_http_raw('GET', $this->listUrl($component, $major, $page), [], 60);
             } catch (Throwable $e) {
-                error_log("[rhunfixed] 목록 조회 예외($component): " . $e->getMessage());
+                error_log("[rhunfixed] 목록 조회 예외($component p$page): " . $e->getMessage());
                 break;
             }
             if ($r['code'] !== 200 || $r['body'] === '') { break; }
