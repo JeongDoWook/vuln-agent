@@ -650,8 +650,8 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .links a:hover { border-color: var(--accent); color: var(--accent-2); text-decoration: none; }
 
 /* --- 표 ------------------------------------------------------------------ */
-table { width: 100%; border-collapse: collapse; font-size: .93rem; }
-th, td { text-align: left; padding: .7rem .9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: left; padding: .72rem 1rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th {
   color: var(--muted);
   font-weight: 600;
@@ -659,9 +659,23 @@ th {
   text-transform: uppercase;
   letter-spacing: .04em;
   white-space: nowrap;
+  background: var(--sunken);   /* 머리글 밴드 — 본문 행과 시각적으로 갈라준다 */
 }
 td.nowrap, td code { white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
+
+/* 카드가 표 하나만 담을 때(툴바·페이저는 카드 밖에 있다) 표를 카드 모서리까지
+ * 채워서 머리글 밴드가 가장자리까지 이어지게 한다 — 참고 디자인의 깔끔한 표 느낌.
+ * 카드의 안쪽 여백은 셀이 대신 갖는다. .card 의 overflow-x:auto 가 넓은 표는 그대로
+ * 가로 스크롤시키고 모서리 라운드로 클립한다. 제목·설명이 함께 든 카드는
+ * :only-child 가 아니므로 손대지 않는다(기존 여백 유지). */
+.card:has(> table:only-child) { padding: 0; }
+.card > table:only-child th:first-child,
+.card > table:only-child td:first-child { padding-left: 1.4rem; }
+.card > table:only-child th:last-child,
+.card > table:only-child td:last-child { padding-right: 1.4rem; }
+/* 첫 칸에 심각도 띠가 붙는 표는 왼쪽 여백을 띠 두께만큼만 줄인다(열이 안 밀리게) */
+.card > table:only-child tbody tr[class*="sev-"] td:first-child { padding-left: calc(1.4rem - 3px); }
 
 /* 행 심각도 강조 — 표를 훑을 때 눈이 "위험한 줄" 부터 잡게 한다.
  * 왼쪽 3px 띠로 등급을 알리고, CRITICAL·HIGH 만 배경까지 아주 옅게 물들인다.
