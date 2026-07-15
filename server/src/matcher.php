@@ -715,3 +715,36 @@ if (!function_exists('vg_scope_rank')) {
         }
     }
 }
+
+/**
+ * packages.php 용 사전집계 요약(tb_package_summary)을 통째로 다시 만든다.
+ *   원본 tb_cve_affected_packages(92만 행)를 (package_name,ecosystem)로 집계한 결과를 담아,
+ *   화면이 매 로드마다 전체를 재집계(~8초)하지 않고 이 40K행만 읽게 한다.
+ *   affected_packages 는 OSV 커넥터만 쓰므로 OSV 실행 직후(재매칭·조치안 보강 뒤)에만 부른다.
+ *
+ * 트랜잭션 안에서 DELETE→INSERT 한다: InnoDB MVCC 로 읽는 쪽은 커밋 전까지 옛 요약을 그대로
+ * 보다 커밋 순간 새 값으로 전환된다(빈 창이 없다). OSV 실행 뒤라 affected_packages 로의 동시
+ * 쓰기도 없다.
+ */
+if (!function_exists('vg_rebuild_package_summary')) {
+    function vg_rebuild_package_summary(PDO $pdo): void {
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) { $pdo->beginTransaction(); }
+        try {
+            $pdo->exec('DELETE FROM tb_package_summary');
+            $pdo->exec(
+                "INSERT INTO tb_package_summary (package_name, ecosystem, cve_cnt, max_epss, fix_cnt)
+                 SELECT a.package_name, a.ecosystem,
+                        COUNT(DISTINCT a.cve_id), MAX(c.epss), SUM(a.fixed_version IS NOT NULL)
+                   FROM tb_cve_affected_packages a
+                   LEFT JOIN tb_cves c ON c.cve_id = a.cve_id AND c.is_deleted = 0
+                  WHERE a.is_deleted = 0
+                  GROUP BY a.package_name, a.ecosystem"
+            );
+            if ($ownTx) { $pdo->commit(); }
+        } catch (Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) { $pdo->rollBack(); }
+            throw $e;
+        }
+    }
+}

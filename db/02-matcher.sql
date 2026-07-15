@@ -53,6 +53,22 @@ CREATE TABLE IF NOT EXISTS tb_cve_affected_packages (
   KEY idx_cap_group (is_deleted, package_name, ecosystem, cve_id, fixed_version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ── packages.php 전용 사전집계 요약 (package×ecosystem 1행) ──────────────
+--   원본 tb_cve_affected_packages 는 92만 행이라 매 로드 재집계가 ~8초였다. OSV 실행 때만
+--   바뀌므로 그때 vg_rebuild_package_summary()(matcher.php)가 통째로 다시 만든다. 화면은
+--   이 40K행만 읽는다(8초→0.3초). 기존 볼륨은 db/migrations/..._package_summary.sql.
+CREATE TABLE IF NOT EXISTS tb_package_summary (
+  package_name VARCHAR(255) NOT NULL,
+  ecosystem    VARCHAR(32)  NOT NULL DEFAULT '',
+  cve_cnt      INT UNSIGNED NOT NULL DEFAULT 0,
+  max_epss     DOUBLE       NULL,
+  fix_cnt      INT UNSIGNED NOT NULL DEFAULT 0,
+  updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (package_name, ecosystem),
+  KEY idx_psum_cve  (cve_cnt),
+  KEY idx_psum_epss (max_epss)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ── 매처 판정 결과 : 스캔×CVE×패키지 1행. 노출/로드/KEV/등급/근거 ──────
 CREATE TABLE IF NOT EXISTS tb_findings (
   id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
