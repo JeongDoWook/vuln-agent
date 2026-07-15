@@ -213,7 +213,7 @@ vg_header('취약점', 'findings');
   $headers = array_merge($headers, [
       ['label' => '등급',  'key' => 'severity',       'width' => '6rem',  'nowrap' => true],
       ['label' => '상태',  'key' => 'runtime_status', 'width' => '7rem',  'nowrap' => true],
-      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '13rem', 'nowrap' => true],
+      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '15rem', 'nowrap' => true],
       ['label' => '패키지', 'key' => 'package_name',  'width' => '13rem'],
       ['label' => '위험도', 'key' => 'risk',          'width' => '7rem',  'nowrap' => true],
       ['label' => '근거 (왜 위험한가)', 'key' => 'rationale'],
