@@ -187,10 +187,13 @@ function vg_http_json(string $method, string $url, $body = null, array $headers 
  *
  *   동시성은 대상 API 부담을 고려해 제한한다(기본 6). 슬라이딩 윈도우로 항상 최대 N개만 in-flight.
  *
+ *   $maxBytes>0 이면 응답이 그 크기를 넘는 순간 그 핸들만 중단한다(거대 advisory 로 OOM 방지 —
+ *   vg_http_json 과 같은 방식). 중단된 URL 은 code=0 으로 표시되니 호출자가 순차 폴백할 수 있다.
+ *
  * @param string[] $urls
  * @return array<string, array{code:int,body:string,error:string}>  url => 결과(요청 안 된 url 은 없음)
  */
-function vg_http_get_many(array $urls, int $concurrency = 6, int $timeout = 30, array $headers = []): array {
+function vg_http_get_many(array $urls, int $concurrency = 6, int $timeout = 30, array $headers = [], int $maxBytes = 0): array {
     $urls = array_values(array_unique(array_filter($urls, 'strlen')));
     if (!$urls) { return []; }
 
@@ -211,6 +214,12 @@ function vg_http_get_many(array $urls, int $concurrency = 6, int $timeout = 30, 
         CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         CURLOPT_HTTPHEADER      => array_merge(['Accept: application/json'], $headers),
     ];
+    if ($maxBytes > 0) {
+        $opt[CURLOPT_NOPROGRESS]       = false;
+        $opt[CURLOPT_PROGRESSFUNCTION] = static function ($ch, $dltotal, $dlnow) use ($maxBytes) {
+            return ($dlnow > $maxBytes || $dltotal > $maxBytes) ? 1 : 0;   // 상한 초과 시 이 핸들만 중단
+        };
+    }
 
     $results = [];
     $mh      = curl_multi_init();

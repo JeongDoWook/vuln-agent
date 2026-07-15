@@ -182,6 +182,13 @@ final class VgOsvConnector implements VgFeedConnector {
         )->fetchAll();
 
         $fetched = 0; $up = 0; $seen = [];
+        $direct  = [];   // [cve, eco, key] — id 에 CVE 가 있는 것. upsert 는 3-pass 트랜잭션에서.
+        $advWork = [];   // [id, eco, key] — CVE 가 id 에 없는 보안공지. 3-pass 로 펼친다.
+        $advIds  = [];   // id => true    — prefetch 할 고유 공지(같은 USN 이 여러 패키지에 걸린다)
+
+        // ── 1-pass: querybatch(이미 100개 배치라 빠르다). 결과를 **모으기만** 한다 —
+        //    HTTP 와 DB write 를 분리해, upsert 는 아래 트랜잭션에서 한꺼번에 커밋한다
+        //    (예전엔 write 마다 autocommit fsync 라 1,646 write 가 76초였다). ──
         foreach ($scans as $sc) {
             $eco = $ecoOverride !== '' ? $ecoOverride : vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
 
@@ -215,20 +222,50 @@ final class VgOsvConnector implements VgFeedConnector {
                             if ($id === '') { continue; }
                             // batch 는 id 만 반환 → id 에서 CVE 추출(DEBIAN-CVE-…/UBUNTU-CVE-…/CVE-…)
                             if (preg_match('/CVE-\d{4}-\d+/i', $id, $m)) {
-                                vg_upsert_cve($pdo, strtoupper($m[0]), null, null, null);
-                                vg_upsert_affected($pdo, strtoupper($m[0]), $qEco, $key, null);
-                                $up++;
+                                $dk = strtoupper($m[0]) . '|' . $qEco . '|' . $key;
+                                if (!isset($seen[$dk])) {
+                                    $seen[$dk] = true;
+                                    $direct[]  = [strtoupper($m[0]), (string) $qEco, $key];
+                                }
                                 continue;
                             }
-                            // id 에 CVE 가 없는 보안공지(USN-*, DSA-*, GHSA-* …). 버리면 취약점을 놓친다
-                            // (vg_osv_advisory_cves 주석 참고) → 단건 조회로 CVE 목록을 펼친다.
-                            $up += $this->expandAdvisory($pdo, $id, (string) $qEco, $key);
+                            // CVE 없는 공지 → 3-pass 로. 같은 (공지,패키지) 중복은 여기서 걸러 GET 을 아낀다.
+                            $wk = $id . '|' . $qEco . '|' . $key;
+                            if (!isset($seen[$wk])) {
+                                $seen[$wk]   = true;
+                                $advWork[]   = [$id, (string) $qEco, $key];
+                                $advIds[$id] = true;
+                            }
                         }
                     }
                 }
                 unset($r); // 응답 메모리 즉시 해제
             }
         }
+
+        // ── 2-pass: 고유 공지 문서를 **병렬로** 받아 캐시를 채운다(GHSA 가 많은 환경에서 순차 GET 을
+        //    없앤다). HTTP 라 트랜잭션 밖에서 한다 — 트랜잭션을 HTTP 동안 열어두면 락을 오래 쥔다. ──
+        $this->prefetchAdvisories(array_keys($advIds));
+
+        // ── 3-pass: DB write 를 **한 트랜잭션으로** 묶어 커밋한다(개별 autocommit fsync 제거).
+        //    2000건마다 끊어 락을 짧게 쥔다(rhoval·ubuntuoval 과 같은 방식). ──
+        $pdo->beginTransaction();
+        $w = 0;
+        $tick = function () use ($pdo, &$w) {
+            if (++$w % 2000 === 0) { $pdo->commit(); $pdo->beginTransaction(); }
+        };
+        foreach ($direct as [$cve, $qEco, $key]) {
+            vg_upsert_cve($pdo, $cve, null, null, null);
+            vg_upsert_affected($pdo, $cve, $qEco, $key, null);
+            $up++;
+            $tick();
+        }
+        // 공지 펼치기(전부 캐시 히트). 캐시 실패분만 expandAdvisory 가 순차 폴백한다(소수).
+        foreach ($advWork as [$id, $qEco, $key]) {
+            $up += $this->expandAdvisory($pdo, $id, $qEco, $key);
+            $tick();
+        }
+        $pdo->commit();
         return ['fetched' => $fetched, 'upserted' => $up];
     }
 
@@ -267,6 +304,30 @@ final class VgOsvConnector implements VgFeedConnector {
         }
         $note = sprintf('ecosystem=%s, 패키지 %d개 조회 → 취약 %d개', $eco, count($queries), count($hits));
         return ['ok' => true, 'count' => count($hits), 'note' => $note, 'sample' => array_slice($hits, 0, 10)];
+    }
+
+    /**
+     * 공지 문서들을 **병렬로** 받아 advCache 를 채운다(expandAdvisory 가 이 캐시를 그대로 쓴다).
+     *   그래서 판정 로직은 한 줄도 안 바뀌고, 순차 GET 만 사라진다.
+     *   거대 응답(커널 등)은 상한으로 그 건만 건너뛰고 캐시에 null 을 남긴다 → expandAdvisory 가
+     *   순차 폴백(4MB 제한 GET)으로 다시 시도한다(기존 동작과 동일).
+     * @param string[] $ids
+     */
+    private function prefetchAdvisories(array $ids): void {
+        $ids = array_values(array_filter($ids, fn(string $id) => !array_key_exists($id, $this->advCache)));
+        if (!$ids) { return; }
+
+        $urlOf = [];
+        foreach ($ids as $id) { $urlOf[vg_osv_vuln_url($id)] = $id; }
+        // OSV advisory 는 대개 수 KB — 4MB 상한이면 커널류 거대 문서만 걸러진다(expandAdvisory 와 동일).
+        $resp = vg_http_get_many(array_keys($urlOf), 8, 30, [], 4 * 1024 * 1024);
+
+        foreach ($urlOf as $u => $id) {
+            $body = ($resp[$u]['code'] ?? 0) === 200 ? ($resp[$u]['body'] ?? '') : '';
+            $doc  = $body !== '' ? json_decode($body, true) : null;
+            // 실패·거대응답은 캐시하지 않는다 → expandAdvisory 가 순차로 한 번 더 시도한다(멱등).
+            if (is_array($doc)) { $this->advCache[$id] = $doc; }
+        }
     }
 
     /**
