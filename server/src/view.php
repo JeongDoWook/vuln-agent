@@ -639,6 +639,11 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../public/assets/js/{$pageJs}.js")): ?
         <button type="button" class="seg__btn" data-theme-set="light" aria-label="밝은 테마">☀ Light</button>
         <button type="button" class="seg__btn" data-theme-set="dark" aria-label="어두운 테마">☾ Dark</button>
       </div>
+      <?php // 사용자 칩 — 아바타(아이디 첫 글자) + 이름·역할. 누르면 내 프로필로. ?>
+      <a class="topbar__user" href="/profile.php" title="내 프로필">
+        <span class="avatar"><?= vg_h(mb_strtoupper(mb_substr($user['username'], 0, 1))) ?></span>
+        <span class="topbar__who"><?= vg_h($user['username']) ?><i><?= vg_h(vg_role_label(vg_role())) ?></i></span>
+      </a>
     </div>
   </header>
 <?php endif; ?>
