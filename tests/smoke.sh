@@ -37,23 +37,40 @@ printf "${CYAN}== vuln-agent smoke test @ %s ==${NC}\n" "$BASE"
 #   pre-push 훅은 이미 이 대조를 한다. 수동 실행에도 같은 보호를 준다.
 #   일부러 다른 대상을 칠 때는 끈다: VG_SMOKE_ANY=1, 또는 VG_SMOKE_BASE 로 대상을 명시했을 때
 #   (그건 "이 스택이 아닌 걸 안다"는 뜻이다 — 훅도 그때는 대조를 건너뛴다).
+# 윈도는 역슬래시로 준다 → 슬래시·소문자로 정규화해 비교한다.
+norm() { printf '%s' "$1" | tr '\\' '/' | tr 'A-Z' 'a-z' | sed 's:/*$::'; }
+# 지금 스택이 서빙 중인 소스 경로(웹 컨테이너의 /var/www/html 마운트).
+stack_serving_src() {
+  docker inspect "${VG_WEB_CONTAINER:-vulnagent-web-dev}" \
+    --format '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true
+}
+SMOKE_GUARD=0
+MINE_SRC="$( (cd "$ROOT" && pwd -W 2>/dev/null) || printf '%s' "$ROOT" )/server"
 if [ "${VG_SMOKE_ANY:-0}" != "1" ] && [ -z "${VG_SMOKE_BASE:-}" ] && command -v docker >/dev/null 2>&1; then
-  stack_src=$(docker inspect "${VG_WEB_CONTAINER:-vulnagent-web-dev}" \
-    --format '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
-  if [ -n "$stack_src" ]; then
-    # 윈도는 역슬래시로 준다 → 슬래시·소문자로 정규화해 비교한다.
-    norm() { printf '%s' "$1" | tr '\\' '/' | tr 'A-Z' 'a-z' | sed 's:/*$::'; }
-    mine="$( (cd "$ROOT" && pwd -W 2>/dev/null) || printf '%s' "$ROOT" )/server"
-    if [ "$(norm "$stack_src")" != "$(norm "$mine")" ]; then
-      printf "${RED}✗ dev 스택이 이 트리를 서빙하고 있지 않습니다 — 스모크를 중단합니다.${NC}\n" >&2
-      printf "    이 트리 : %s\n" "$mine" >&2
-      printf "    스택    : %s\n" "$stack_src" >&2
-      printf "    가져오려면: ./deploy/compose_runner.sh dev up -d\n" >&2
-      printf "    (남의 트리를 검사해 초록불을 주면 그게 거짓이다. 일부러 다른 대상을 칠 때만 VG_SMOKE_ANY=1)\n" >&2
-      exit 2
-    fi
-  fi
+  SMOKE_GUARD=1
 fi
+
+# 스택이 **내 트리**를 서빙 중인지 확인한다. 다르면 즉시 중단(exit 2).
+#   $1 = 시점("시작"|"종료"). **종료에도 부르는 이유**: smoke 는 수십 초 걸리는데, 그 도중
+#   다른 세션이 `dev up -d` 로 스택을 가져가면 뒷부분 검사가 남의 코드를 친다. 시작만 대조하면
+#   그 탈취를 못 잡아 "남의 코드로 74 통과" 를 받는다(실측: 한 세션에서 스모크 도중 3번 탈취됐다).
+assert_my_tree() {
+  [ "$SMOKE_GUARD" = 1 ] || return 0
+  src=$(stack_serving_src)
+  [ -n "$src" ] || return 0                       # 컨테이너 없음(호스트 실행) → 대조 생략
+  if [ "$(norm "$src")" != "$(norm "$MINE_SRC")" ]; then
+    printf "${RED}✗ [%s] dev 스택이 이 트리를 서빙하고 있지 않습니다 — 스모크를 중단합니다.${NC}\n" "$1" >&2
+    printf "    이 트리 : %s\n" "$MINE_SRC" >&2
+    printf "    스택    : %s\n" "$src" >&2
+    if [ "$1" = "종료" ]; then
+      printf "    ${RED}스모크 도중 다른 세션이 스택을 가져갔습니다 — 위 결과는 남의 코드입니다(무효).${NC}\n" >&2
+    fi
+    printf "    가져오려면: ./deploy/compose_runner.sh dev up -d\n" >&2
+    printf "    (남의 트리를 검사해 초록불을 주면 그게 거짓이다. 일부러 다른 대상을 칠 때만 VG_SMOKE_ANY=1)\n" >&2
+    exit 2
+  fi
+}
+assert_my_tree "시작"
 
 
 # --- UI 정적 검사 -----------------------------------------------------------
@@ -435,6 +452,9 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
   -H "X-Agent-Token: $AGTOK" --data-binary @"$SPOOF")
 assert_eq "$code" "403" "(b) 같은 토큰으로 다른 호스트 위조 → 403 (스푸핑 차단)"
 rm -f "$SPOOF"
+
+# --- 종료 시 재대조: 스모크 도중 스택이 남의 트리로 옮겨갔으면 위 결과는 전부 무효다. ----------
+assert_my_tree "종료"
 
 # --- 요약 -------------------------------------------------------------------
 printf "\n${CYAN}== 결과: ${GREEN}%d 통과${NC}, ${RED}%d 실패${NC} ==\n" "$pass" "$fail"
