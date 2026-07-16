@@ -89,15 +89,15 @@ sudo /opt/vuln-agent/bin/run.sh          # 즉시 1회 수집해 확인(선택)
 |---|---|---|
 | 소스 | `./server` 라이브 마운트(즉시 반영) | `../server` 읽기전용 마운트(PHP 는 배포=`git pull`, 무중단) |
 | DB 포트 | 호스트에 노출(3307) | **미노출**(내부 네트워크만) |
-| 웹 접속 | 평문 `http://localhost:8080` | **HTTPS** `https://ost-server.duckdns.org:8080` (Caddy) |
+| 웹 접속 | 평문 `http://localhost:8000` | **HTTPS** `https://ost-server.duckdns.org:8080` (Caddy) |
 | 환경변수 | `.env.dev` | `.env.prod` |
 | 프로젝트명 | `vulnagent-dev` | `vulnagent` |
 
 `wt/<이름>/` 워크트리에서 dev 를 띄우면 프로젝트명·컨테이너명·이미지태그에 `-<이름>` 이 붙고
-포트도 따로 잡히므로, 메인 dev 스택(8080)과 나란히 돌릴 수 있다. 워크트리 만들기는
+포트도 따로 잡히므로, 메인 dev 스택(8000)과 나란히 돌릴 수 있다. 워크트리 만들기는
 `./deploy/wt.sh add feat/무엇` — 자세한 규칙은 [CLAUDE.md](CLAUDE.md#작업-파이프라인) 참고.
 
-- 현황 페이지(dev): <http://localhost:8080>
+- 현황 페이지(dev): <http://localhost:8000>
 - 현황 페이지(prod): <https://ost-server.duckdns.org:8080> (자체서명 인증서 → 브라우저 경고 뜸)
 - 수신 API: `POST .../ingest.php` (헤더 `X-Agent-Token`). prod 는 web 이 외부에 직접 노출되지
   않고, 중앙서버 자신을 스캔하는 로컬 에이전트만 루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
@@ -317,7 +317,7 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 스택이 떠 있는 상태에서 API~웹 로그인까지 자동 검증:
 
 ```bash
-./tests/smoke.sh            # 기본 http://localhost:8080
+./tests/smoke.sh            # 기본 http://localhost:8000
 ```
 
 수집→저장→매칭(CRITICAL/HIGH 산출), 토큰 인증, 로그인 흐름을 curl 로 점검한다.

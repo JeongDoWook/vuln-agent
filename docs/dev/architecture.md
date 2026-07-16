@@ -98,7 +98,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 다이어그램: [`docs/specs/diagrams/배포구성.puml`](../specs/diagrams/배포구성.puml)
 
 > web·scheduler 는 같은 이미지(`vulnagent-app`)를 공유하고, 환경/시크릿은 compose 앵커
-> (`x-app-env`/`x-app-secrets`)로 DRY 하게 재사용한다. dev 는 caddy 없이 `web` 을 `${WEB_PORT:-8080}`
+> (`x-app-env`/`x-app-secrets`)로 DRY 하게 재사용한다. dev 는 caddy 없이 `web` 을 `${WEB_PORT:-8000}`
 > 으로 평문 직접 노출한다(§ Caddy README 참고: `deploy/caddy/README.md`).
 >
 > dev 는 web+scheduler 가 워크트리별 독립 컴포즈 프로젝트(`vulnagent-dev-<워크트리이름>`)로 뜨고,
@@ -109,7 +109,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 |---|---|---|
 | 소스 | `./server` 라이브 마운트 | `../server` 읽기전용 마운트(PHP 는 배포=`git pull`, 무중단) |
 | DB 포트 | 노출(3307) | 미노출(내부망만) |
-| 웹 접속 | `http://localhost:8080` (평문) | `https://ost-server.duckdns.org:8080` (Caddy, 현재 자체서명) |
+| 웹 접속 | `http://localhost:8000` (평문) | `https://ost-server.duckdns.org:8080` (Caddy, 현재 자체서명) |
 | my.cnf | 미적용(기본값) | 적용(charset/보안 튜닝) |
 | 프로젝트 | `vulnagent-dev`(메인) · `vulnagent-dev-<워크트리>`(web+scheduler) | `vulnagent` |
 

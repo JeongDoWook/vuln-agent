@@ -49,7 +49,7 @@ WEB=${VG_WEB_CONTAINER:-vulnagent-web-dev${WT_NAME:+-$WT_NAME}}
 # 포트는 이 트리 자신의 deploy/.env.dev 에 있다(워크트리는 wt.sh add 가 만든 전용 파일,
 #   메인 트리는 init 이 만든 공용 파일 — 둘 다 자기 자신을 읽으면 된다).
 WEB_PORT=$(sed -n 's/^WEB_PORT=\([0-9]\+\).*/\1/p' "$ROOT/deploy/.env.dev" 2>/dev/null | head -1)
-BASE=${VG_SMOKE_BASE:-http://localhost:${WEB_PORT:-8080}}
+BASE=${VG_SMOKE_BASE:-http://localhost:${WEB_PORT:-8000}}
 
 # --- push 대상 커밋이 건드린 파일 수집: "<sha>\t<path>" -----------------------
 pairs=$(
