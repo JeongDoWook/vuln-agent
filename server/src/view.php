@@ -88,46 +88,63 @@ function vg_sev_trend(array $days, array $sevs = ['CRITICAL', 'HIGH', 'MEDIUM'])
     $plotH = $H - $padT - $padB;
     $n = count($days);
     $colW = $plotW / $n;
-    $barW = min(30.0, $colW * 0.62);   // 얇은 마크 — 열을 꽉 채우지 않는다
+    $barW = min(28.0, $colW * 0.56);   // 얇은 마크 — 열을 꽉 채우지 않는다
     $gap  = 2;                          // 조각 사이 배경이 비치는 틈
+    $rx   = min(4.0, $barW / 2);        // 모서리 radius — 막대가 좁은 화면에서도 찌그러지지 않게
 
     // 눈금은 3줄(0·중간·최대)이면 충분하다. 최대는 보기 좋은 수로 올림.
     $step = (int) max(1, 10 ** max(0, (int) floor(log10(max(1, $max))) - 1));
     $top  = (int) (ceil($max / $step) * $step);
+    $baseY = $padT + $plotH;
 
     echo '<div class="chart">';
     echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="최근 ' . $n . '일 심각도 추세">';
 
-    // 눈금선·눈금값 — 뒤로 물러나 있어야 한다(데이터가 주인공).
+    // 눈금선·눈금값 — 뒤로 물러나 있어야 한다(데이터가 주인공). 바닥선(0)만 살짝 진하게 —
+    // 막대가 바닥에서 떠 보인다는 피드백이 있어 기준선을 눈에 띄게 잡아준다.
     foreach ([0, 0.5, 1] as $f) {
         $y = $padT + $plotH * (1 - $f);
-        echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($y, 1) . '"'
+        $cls = 'chart__grid' . ($f === 0 ? ' chart__grid--base' : '');
+        echo '<line class="' . $cls . '" x1="' . $padL . '" y1="' . round($y, 1) . '"'
             . ' x2="' . ($W - $padR) . '" y2="' . round($y, 1) . '"></line>';
         echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($y + 3.5, 1) . '">'
             . number_format((int) round($top * $f)) . '</text>';
     }
 
+    // 막대와 함께, 스택 꼭대기(=그날 합계)를 잇는 얇은 흐름선 — 막대만으로 뭉툭해 보이는 걸
+    // 보완해 추세 방향을 한눈에 보여준다. 색은 별도 톤 없이 중립(accent)만 쓴다.
+    $peaks = [];
+
     foreach ($days as $i => $day) {
         $x = $padL + $colW * $i + ($colW - $barW) / 2;
-        $y = $padT + $plotH;   // 바닥에서 위로 쌓는다
+        $y = $baseY;   // 바닥에서 위로 쌓는다
         foreach ($tones as $sev => $tone) {   // CRITICAL 부터: 급한 게 바닥
             $v = (int) ($day['counts'][$sev] ?? 0);
             if ($v === 0) { continue; }
             $h = $v / $top * $plotH;
             $y -= $h;
             $drawH = max(1.5, $h - $gap);          // 틈만큼 줄여 그린다(조각이 붙지 않게)
-            echo '<rect class="chart__seg tone-' . $tone . '" rx="2"'
+            echo '<rect class="chart__seg tone-' . $tone . '" rx="' . round($rx, 1) . '"'
                 . ' x="' . round($x, 1) . '" y="' . round($y, 1) . '"'
                 . ' width="' . round($barW, 1) . '" height="' . round($drawH, 1) . '">'
                 . '<title>' . vg_h($day['d'] . ' · ' . $sev . ' ' . number_format($v) . '건') . '</title>'
                 . '</rect>';
         }
+        $peaks[] = round($x + $barW / 2, 1) . ',' . round($y, 1);
         // 날짜는 하나 걸러 하나만 — 14개를 다 쓰면 글자가 겹친다. 마지막 날은 항상 쓴다.
         if ($i % 2 === 1 || $i === $n - 1) {
             echo '<text class="chart__lbl" x="' . round($x + $barW / 2, 1) . '" y="' . ($H - 8) . '">'
                 . vg_h(date('n/j', strtotime($day['d']))) . '</text>';
         }
     }
+
+    echo '<polyline class="chart__total" points="' . implode(' ', $peaks) . '"></polyline>';
+    $last = $days[$n - 1];
+    $lastPt = explode(',', $peaks[$n - 1]);
+    echo '<circle class="chart__total-pt" cx="' . $lastPt[0] . '" cy="' . $lastPt[1] . '" r="3">'
+        . '<title>' . vg_h($last['d'] . ' · 합계 ' . number_format($tot($last['counts'])) . '건') . '</title>'
+        . '</circle>';
+
     echo '</svg></div>';
 }
 

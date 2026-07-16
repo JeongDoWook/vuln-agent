@@ -78,11 +78,9 @@ try {
 vg_header('영향 패키지', 'packages');
 ?>
   <h1>영향 패키지 <span class="hint">(<?= number_format($total) ?>종)</span></h1>
-  <div class="sub">
-    <a href="/connectors.php">OSV 커넥터</a>가 스캔된 패키지를 조회해 찾아낸 "이 패키지가 이 CVE 에 취약하다" 매핑입니다.
-    CVE 단위로 보려면 <a href="/cves.php">CVE 목록</a>.
-    <?php if ($summaryAt !== ''): ?><span class="why">· 집계 기준 <?= vg_h($summaryAt) ?> (OSV 수집 시 갱신)</span><?php endif; ?>
-  </div>
+  <?php if ($summaryAt !== ''): ?>
+  <div class="sub"><span class="why">집계 기준 <?= vg_h($summaryAt) ?> (OSV 수집 시 갱신)</span></div>
+  <?php endif; ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
