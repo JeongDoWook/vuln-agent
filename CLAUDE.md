@@ -172,6 +172,7 @@ cd wt/무엇
 
 ## 가드레일 (강제)
 - **main 직접 commit/push 금지** — 항상 작업 브랜치 경유 후 PR 로 병합. (`.claude/hooks/block-main-push.sh` 가 차단)
+  훅은 명령이 **실제로 향하는** 저장소를 보고 판단한다(cwd + 명령 안의 `cd`/`git -C`) — 다른 저장소면 통과.
 - **검증 게이트**: `php -l` + `bash -n` + 마이그레이션 파일명 + `tests/smoke.sh` 통과 전 커밋/PR 금지. 상태 보고 시 실행한 검증 명령·결과를 증거로 첨부.
   집행자는 `deploy/hooks/pre-push` — **저장소가 들고 있다**(`core.hooksPath=deploy/hooks`,
   `compose_runner.sh init` 이 설치). 예전엔 `.git/hooks/` 에 있어서 git 이 추적하지 않았고,
