@@ -53,6 +53,7 @@ require_once __DIR__ . '/feeds/rhunfixed.php';
 require_once __DIR__ . '/feeds/ssg.php';
 require_once __DIR__ . '/feeds/kcve.php';
 require_once __DIR__ . '/feeds/ubuntuoval.php';
+require_once __DIR__ . '/feeds/generic_api.php';
 
 function vg_feed_make(string $type): VgFeedConnector {
     switch ($type) {
@@ -67,6 +68,7 @@ function vg_feed_make(string $type): VgFeedConnector {
         case 'ssg': return new VgSsgConnector();
         case 'kcve': return new VgKcveConnector();
         case 'ubuntuoval': return new VgUbuntuOvalConnector();
+        case 'generic_api': return new VgGenericApiConnector();
         default: throw new InvalidArgumentException("알 수 없는 커넥터 타입: $type");
     }
 }
