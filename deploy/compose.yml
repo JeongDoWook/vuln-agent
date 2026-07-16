@@ -10,7 +10,10 @@
 
 # 앱 컨테이너(web·scheduler) 공통 환경/시크릿 — 앵커로 재사용
 x-app-env: &app-env
-  DB_HOST: db
+  # 기본은 서비스명 "db"(같은 프로젝트 안에서 뜨는 prod·메인트리 dev). 워크트리 dev 는 db 를
+  # 이 프로젝트에서 안 띄우므로(공용 db 는 메인 트리 프로젝트 소유) compose_runner.sh 가
+  # DB_HOST=vulnagent-db-dev 로 덮어써 공용 db 컨테이너명을 직접 가리키게 한다.
+  DB_HOST: ${DB_HOST:-db}
   DB_NAME: ${MYSQL_DATABASE}
   DB_USER: ${MYSQL_USER}
   DB_PASS_FILE: /run/secrets/mysql_password

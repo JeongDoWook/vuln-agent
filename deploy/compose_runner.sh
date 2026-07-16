@@ -7,12 +7,21 @@
 # [파일 구조]
 #   compose.yml         서비스 정의 (db=MySQL, web=PHP/Apache)
 #   compose.common.yml  공통 런타임 (restart, 로깅, pids_limit)
-#   compose.dev.yml     개발: 소스 마운트 + DB 포트 노출
+#   compose.dev.yml     개발: web+scheduler (소스 마운트) — 워크트리별 독립 프로젝트로 뜬다
+#   compose.dev-db.yml  개발: db (포트 노출) — 메인 트리 전용, 워크트리 프로젝트엔 안 들어간다
+#   compose.dev-net.yml 개발: 위 둘이 컨테이너명으로 서로 찾을 외부 네트워크(vulnagent-dev-net)
 #   compose.prod.yml    운영: 이미지 코드 + DB 포트 미노출
 #   .env.dev / .env.prod  (각 *.template 에서 복사)
 #
+# [dev 는 "web+scheduler 는 워크트리별 독립, DB 는 공용 하나"다]
+#   메인 트리에서 `dev up -d` → db+web+scheduler 전부(프로젝트 vulnagent-dev, 기존과 동일).
+#   워크트리에서 `dev up -d` → 그 워크트리 전용 프로젝트(vulnagent-dev-<이름>)로 web+scheduler 만
+#   뜨고, DB 는 안 건드린다(메인 트리의 vulnagent-db-dev 를 외부 네트워크로 그대로 쓴다) — 그래서
+#   메인 트리·워크트리끼리, 워크트리끼리 서로 스택을 빼앗지 않는다(컨테이너명이 애초에 안 겹친다).
+#   전제: 공용 DB(메인 트리 스택)가 먼저 떠 있어야 워크트리 web/scheduler 가 DB 에 붙는다.
+#
 # [사용법]
-#   ./compose_runner.sh init             # .env.dev/.env.prod 생성(템플릿 복사)
+#   ./compose_runner.sh init             # .env.dev/.env.prod 생성(템플릿 복사) + dev 네트워크 생성
 #   ./compose_runner.sh doctor           # 사전 점검
 #   ./compose_runner.sh dev  up -d           # 개발 환경 기동(이미지는 재사용, Dockerfile 바뀔 때만 --build)
 #   ./compose_runner.sh dev  down            # 개발 환경 중지
@@ -51,11 +60,12 @@ BASE_FILE="compose.yml"
 COMMON_FILE="compose.common.yml"
 
 # --- 워크트리 감지 -----------------------------------------------------------
-# **dev 스택은 온 저장소에 하나뿐이다.** 워크트리마다 따로 띄우지 않는다.
-#   compose 가 마운트하는 ../server 는 "compose 파일이 있는 그 트리"의 소스라, 컨테이너 하나는
-#   한 트리만 서빙한다. 그래서 워크트리에서 `dev up -d` 를 하면 스택이 **새로 생기는 게 아니라
-#   그 트리로 옮겨간다**(같은 프로젝트명 → docker 가 컨테이너 3개를 재생성하며 마운트를 갈아끼움).
-#   예전엔 프로젝트명에 -<워크트리> 접미사를 붙여 스택이 워크트리 수만큼 쌓였다.
+# **dev 는 web+scheduler 는 워크트리별 독립, DB 는 공용 하나다.** 워크트리에서 `dev up -d` 를
+#   하면 그 워크트리 전용 컴포즈 프로젝트(vulnagent-dev-<이름>)로 web/scheduler 만 새로 뜨고
+#   (컨테이너명도 접미사가 붙어 고유하다), DB 는 메인 트리의 공용 컨테이너(vulnagent-db-dev)를
+#   외부 네트워크(compose.dev-net.yml)로 그대로 쓴다 — db 서비스는 워크트리 컴포즈 대상에 아예
+#   포함되지 않는다(`up -d --no-deps web scheduler`). 그래서 워크트리끼리, 그리고 워크트리와
+#   메인 트리끼리 서로 스택을 빼앗지 않는다 — 컨테이너명이 애초에 겹치지 않기 때문이다.
 TREE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WT_NAME=""
 if [ "$(basename "$(dirname "$TREE_ROOT")")" = "wt" ]; then
@@ -65,11 +75,13 @@ fi
 MAIN_ROOT="$TREE_ROOT"
 [ -n "$WT_NAME" ] && MAIN_ROOT="$(cd "$TREE_ROOT/../.." && pwd)"
 
-# 지금 dev 스택이 **어느 트리를 서빙 중인지** 알고 싶으면 docker 에 묻는다(표식 파일을 두지 않는다):
-#   docker inspect vulnagent-web-dev --format '{{range .Mounts}}…{{end}}'
-#   표식 파일은 옛 러너로 스택을 옮기면 갱신되지 않아 낡은 채로 남고, 그걸 믿으면 pre-push 가
-#   남의 코드를 검사하고 초록불을 준다(실측). 진실은 컨테이너의 마운트뿐이다.
-#   → tests/smoke.sh 와 deploy/hooks/pre-push, deploy/wt.sh 가 모두 그렇게 대조한다.
+# dev 컨테이너들이 서로 이름으로 찾아갈 외부 네트워크. 없으면 만든다(멱등) — init/doctor 뿐
+# 아니라 dev 실행 시점에도 방어적으로 보장한다(예전에 init 을 안 돌린 저장소도 있을 수 있음).
+ensure_dev_net() {
+  command -v docker >/dev/null 2>&1 || return 0
+  docker network inspect vulnagent-dev-net >/dev/null 2>&1 \
+    || docker network create vulnagent-dev-net >/dev/null
+}
 
 show_help() {
   say "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -158,6 +170,17 @@ run_init() {
     say "      ${CYAN}printf %s 'DuckDNS-토큰' > $df${NC}"
   fi
 
+  # 2.5) dev 공유 네트워크 — db(메인 트리)와 web/scheduler(워크트리별)가 서로 이름으로 찾아갈
+  #      외부 네트워크. 없으면 만든다(멱등, 한 번만 하면 모든 워크트리가 함께 쓴다).
+  if command -v docker >/dev/null 2>&1; then
+    if docker network inspect vulnagent-dev-net >/dev/null 2>&1; then
+      say "  ${BLUE}→${NC} 존재: docker network vulnagent-dev-net (유지)"
+    else
+      docker network create vulnagent-dev-net >/dev/null
+      say "  ${GREEN}✓${NC} 생성: docker network vulnagent-dev-net"
+    fi
+  fi
+
   # 3) 검증 게이트(pre-push) 설치 — core.hooksPath 를 저장소 안 deploy/hooks 로 돌린다.
   #    전에는 .git/hooks/pre-push 에 손으로 넣어 뒀는데, .git 은 git 이 추적하지 않는다.
   #    즉 새로 clone 하면 CLAUDE.md 가 "강제" 라고 적은 게이트가 아예 없었다.
@@ -193,12 +216,19 @@ run_doctor() {
   else
     say "  ${RED}✗${NC} docker compose 미설치"; issues=$((issues+1))
   fi
-  for f in "$BASE_FILE" "$COMMON_FILE" compose.dev.yml compose.prod.yml; do
+  for f in "$BASE_FILE" "$COMMON_FILE" compose.dev.yml compose.dev-db.yml compose.dev-net.yml compose.prod.yml; do
     if [ -f "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${RED}✗${NC} $f 없음"; issues=$((issues+1)); fi
   done
   for f in .env.dev .env.prod; do
     if [ -f "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음 (init 실행 필요)"; fi
   done
+  if command -v docker >/dev/null 2>&1; then
+    if docker network inspect vulnagent-dev-net >/dev/null 2>&1; then
+      say "  ${GREEN}✓${NC} docker network vulnagent-dev-net"
+    else
+      say "  ${YELLOW}⚠${NC} docker network vulnagent-dev-net 없음 (init 실행 필요 — dev up -d 가 자동 생성도 함)"
+    fi
+  fi
   for f in ../secrets/mysql_root_password.txt ../secrets/mysql_password.txt ../secrets/ingest_token.txt ../secrets/admin_password.txt; do
     if [ -s "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음/빈값 (init 실행 필요)"; fi
   done
@@ -234,38 +264,65 @@ esac
 ENV="$1"; shift
 case "$ENV" in
   dev|development)
-    ENV_FILE="compose.dev.yml"
-    # **메인 트리의 .env.dev 를 쓴다**(워크트리 것이 아니라). 포트·DB 는 트리 속성이 아니라
-    #   스택 속성이다 — 스택이 하나뿐인데 트리마다 포트가 다르면 스모크가 엉뚱한 포트를 친다
-    #   (실측: 옛 wt.sh 가 워크트리에 8101 을 박아둬 8080 을 치던 스모크가 46개 실패).
+    ensure_dev_net
+    # MYSQL_DATABASE/USER/VERSION 같은 공통값은 항상 메인 트리의 .env.dev 에서 읽는다(DB 는 공용).
     ENV_VAR_FILE="$MAIN_ROOT/deploy/.env.dev"
-    # 프로젝트명·컨테이너명에 워크트리 접미사를 붙이지 않는다 → 스택은 언제나 이 하나다.
-    PROJECT="vulnagent-dev"
-    ENV_DISPLAY="Development${WT_NAME:+ · wt/$WT_NAME 를 서빙}"
-    export DB_CONTAINER="vulnagent-db-dev"
-    export WEB_CONTAINER="vulnagent-web-dev"
-    export SCHEDULER_CONTAINER="vulnagent-scheduler-dev"
-    # dev DB 는 **메인 트리의 data/mysql 하나**를 모든 트리가 같이 쓴다.
-    #   .env.dev 의 `DB_DATA=../data/mysql` 은 **상대경로**라 compose 파일이 있는 트리 기준으로
-    #   풀린다 — 워크트리에서 올리면 wt/<이름>/data/mysql 을 파서 DB 가 통째로 바뀐다.
-    #   그래서 여기서 **메인 트리 절대경로로 고정**한다(쉘 환경변수가 --env-file 값보다 우선).
-    #   named volume 이 아니라 바인드마운트인 이유: 기존 dev 데이터(수백 MB)를 그대로 쓰고,
-    #   디스크에서 눈으로 확인·백업할 수 있다.
-    #   pwd -W 는 git-bash 에서 윈도 경로(C:/…)를 준다. 리눅스면 실패하니 pwd 로 떨어진다.
-    export DB_DATA="$( (cd "$MAIN_ROOT" && pwd -W 2>/dev/null) || printf '%s' "$MAIN_ROOT" )/data/mysql"
     # dev 이미지는 **모든 워크트리가 공유한다**(태그 고정).
     #   dev 는 ../server 를 바인드 마운트하므로 이미지 안의 코드는 어차피 덮인다 —
     #   워크트리마다 이미지를 따로 구울 이유가 없다. 예전엔 APP_TAG=워크트리명이라
     #   워크트리를 팔 때마다 504MB 이미지가 새로 생겼다(실측: 태그 47개).
     #   Dockerfile(server/Dockerfile)을 바꾼 브랜치에서만 `--build` 를 붙이면 된다.
-    export APP_TAG="dev" ;;
+    export APP_TAG="dev"
+    # DB 컨테이너명은 트리와 무관하게 항상 이 하나 — web/scheduler 가 외부 네트워크로 찾아간다.
+    export DB_CONTAINER="vulnagent-db-dev"
+    # DB_DATA 도 항상 메인 트리 절대경로로 고정한다(워크트리는 db 서비스를 아예 안 띄우지만,
+    #   --env-file 의 상대경로(../data/mysql)가 "컴포즈 파일이 있는 트리" 기준으로 풀려 실수로
+    #   워크트리 밑을 가리키는 걸 막는 방어선 — db 를 절대 안 띄우는 게 1차 방어, 이건 2차 방어).
+    #   pwd -W 는 git-bash 에서 윈도 경로(C:/…)를 준다. 리눅스면 실패하니 pwd 로 떨어진다.
+    export DB_DATA="$( (cd "$MAIN_ROOT" && pwd -W 2>/dev/null) || printf '%s' "$MAIN_ROOT" )/data/mysql"
+
+    if [ -n "$WT_NAME" ]; then
+      # --- 워크트리: web+scheduler 만 이 워크트리 전용 프로젝트로 뜬다. DB 는 안 건드린다. ---
+      ENV_FILE_ARGS=(-f compose.dev.yml -f compose.dev-net.yml)
+      PROJECT="vulnagent-dev-$WT_NAME"
+      ENV_DISPLAY="Development · wt/$WT_NAME (web+scheduler 독립, DB 는 공용)"
+      # 컨테이너명에 워크트리 접미사 — 같은 호스트에서 이름이 겹치면 충돌하므로 필수.
+      export WEB_CONTAINER="vulnagent-web-dev-$WT_NAME"
+      export SCHEDULER_CONTAINER="vulnagent-scheduler-dev-$WT_NAME"
+      # WEB_PORT 만 이 워크트리 로컬 .env.dev 에서 읽는다(wt.sh add 가 만듦) — 그 외 값은
+      #   메인 트리 것을 그대로 쓴다(쉘 환경변수가 --env-file 값보다 우선한다).
+      WT_ENV_FILE="$TREE_ROOT/deploy/.env.dev"
+      if [ ! -f "$WT_ENV_FILE" ]; then
+        say "${RED}오류: $WT_ENV_FILE 이 없습니다.${NC} ${CYAN}./deploy/wt.sh add${NC} 로 만든 워크트리만 dev 를 쓸 수 있습니다."
+        exit 1
+      fi
+      WT_WEB_PORT="$(sed -n 's/^WEB_PORT=\([0-9]\+\).*/\1/p' "$WT_ENV_FILE" | head -1)"
+      if [ -z "$WT_WEB_PORT" ]; then
+        say "${RED}오류: $WT_ENV_FILE 에 WEB_PORT 가 없습니다.${NC}"
+        exit 1
+      fi
+      export WEB_PORT="$WT_WEB_PORT"
+      # web/scheduler 가 DB_HOST=db(서비스명) 대신 공용 db 컨테이너명을 직접 가리키게 한다 —
+      #   외부 네트워크의 서비스 별칭에 기대는 대신 명시적으로 고정한다(server/src/config.php 가
+      #   DB_HOST 를 env 로 이미 읽으므로 이 값만 얹으면 된다. 새 추상화 불필요).
+      export DB_HOST="vulnagent-db-dev"
+    else
+      # --- 메인 트리: 지금처럼 db+web+scheduler 전부 한 프로젝트(vulnagent-dev)로 뜬다. ---
+      ENV_FILE_ARGS=(-f compose.dev.yml -f compose.dev-db.yml -f compose.dev-net.yml)
+      PROJECT="vulnagent-dev"
+      ENV_DISPLAY="Development (db+web+scheduler, 공용)"
+      export WEB_CONTAINER="vulnagent-web-dev"
+      export SCHEDULER_CONTAINER="vulnagent-scheduler-dev"
+      # DB_DATA(위에서 이미 메인 트리 절대경로로 고정) 는 named volume 이 아니라 바인드마운트다 —
+      #   기존 dev 데이터(수백 MB)를 그대로 쓰고, 디스크에서 눈으로 확인·백업할 수 있다.
+    fi ;;
   prod|production)
     # 워크트리에서 운영 스택을 건드리는 건 사고다. 메인 트리에서만 허용.
     if [ -n "$WT_NAME" ]; then
       say "${RED}오류: 워크트리(wt/$WT_NAME)에서는 prod 를 띄울 수 없습니다.${NC}"
       say "메인 트리에서 실행하세요."; exit 1
     fi
-    ENV_FILE="compose.prod.yml"; ENV_VAR_FILE=".env.prod"
+    ENV_FILE_ARGS=(-f compose.prod.yml); ENV_VAR_FILE=".env.prod"
     PROJECT="vulnagent";         ENV_DISPLAY="Production"
     export DB_CONTAINER="vulnagent-db" ;;
   *)
@@ -273,7 +330,8 @@ case "$ENV" in
     say "사용 가능: ${GREEN}dev${NC}, ${GREEN}prod${NC}"; echo ""; show_help; exit 1 ;;
 esac
 
-check_file "$BASE_FILE"; check_file "$COMMON_FILE"; check_file "$ENV_FILE"
+check_file "$BASE_FILE"; check_file "$COMMON_FILE"
+for f in "${ENV_FILE_ARGS[@]}"; do [ "$f" = "-f" ] || check_file "$f"; done
 if [ ! -f "$ENV_VAR_FILE" ]; then
   say "${RED}오류: $ENV_VAR_FILE 이 없습니다.${NC} 먼저 ${CYAN}$0 init${NC} 을 실행하세요."
   exit 1
@@ -283,11 +341,11 @@ fi
 COMPOSE=(docker compose
   --env-file "$ENV_VAR_FILE"
   -p "$PROJECT"
-  -f "$BASE_FILE" -f "$COMMON_FILE" -f "$ENV_FILE")
+  -f "$BASE_FILE" -f "$COMMON_FILE" "${ENV_FILE_ARGS[@]}")
 
 say "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 say "  환경 : ${GREEN}${ENV_DISPLAY}${NC}  (project: ${PROJECT})"
-say "  파일 : $BASE_FILE + $COMMON_FILE + $ENV_FILE"
+say "  파일 : $BASE_FILE + $COMMON_FILE + ${ENV_FILE_ARGS[*]}"
 say "  변수 : $ENV_VAR_FILE"
 say "  실행 : ${GREEN}docker compose ... $*${NC}"
 say "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -295,8 +353,17 @@ echo ""
 
 # `up` 이면 기동 후 DB 마이그레이션을 이어서 적용한다(fresh 볼륨의 증분 스키마 반영).
 #   그 외 명령(down/logs/ps…)은 그대로 exec. migrate 는 DB healthy 를 스스로 기다린다.
+#   워크트리 dev 는 web/scheduler 만 대상으로 한다(--no-deps 로 db 는 이 프로젝트에서 절대
+#   시작하지 않는다 — db 는 메인 트리 프로젝트 소유). 마이그레이션은 그대로 돌린다: DB_CONTAINER 가
+#   트리와 무관하게 항상 vulnagent-db-dev 라 어느 워크트리에서 걸어도 공용 DB에 적용된다
+#   (migrate.sh 의 flock 이 DB_CONTAINER 기준이라 동시 실행도 안전).
 if [ "${1:-}" = "up" ]; then
-  "${COMPOSE[@]}" "$@"
+  if [ "$ENV" = "dev" ] && [ -n "$WT_NAME" ]; then
+    shift
+    "${COMPOSE[@]}" up --no-deps "$@" web scheduler
+  else
+    "${COMPOSE[@]}" "$@"
+  fi
   say ""
   say "${CYAN}== DB 마이그레이션 ==${NC}"
   bash "$SCRIPT_DIR/migrate.sh" "$DB_CONTAINER"

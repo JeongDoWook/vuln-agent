@@ -13,12 +13,11 @@
 #     경로로 lint 하면 남의 파일을 검사할 수 있다. stdin 이면 어떤 컨테이너를 쓰든 안전하다.
 #   - 작업트리가 아니라 push 될 커밋의 내용(git show <sha>:<file>)을 검사한다.
 #     커밋되지 않은 수정은 push 되지 않으므로 게이트 대상이 아니다.
-#   - **스모크는 "이 트리를 서빙하는 스택" 만 친다.** 예전엔 8080 을 하드코딩했는데,
-#     8080 은 메인 트리 코드를 서빙한다 — 워크트리에서 push 하면 내 브랜치가 아니라
-#     남의 코드를 검사하고 있었다(실제로 다른 세션이 픽스처를 바꾸자 엉뚱하게 막혔다).
-#     이제 이 트리의 deploy/.env.dev 에서 WEB_PORT 를 읽어 자기 스택을 친다.
-#     자기 스택이 안 떠 있으면 **다른 스택으로 대체하지 않고 건너뛴다** — 남의 코드를
-#     검사해 초록불을 주느니 검사를 안 하는 편이 정직하다.
+#   - **스모크는 "이 트리 전용 컨테이너" 만 친다.** web+scheduler 는 워크트리별로 독립된
+#     컨테이너명(vulnagent-web-dev-<워크트리>, 메인 트리는 접미사 없음)을 쓰므로 애초에
+#     다른 트리 것과 겹치지 않는다 — 이 트리의 deploy/.env.dev 에서 WEB_PORT 를 읽어 자기
+#     컨테이너가 떠 있는지만 확인한다. 안 떠 있으면 **건너뛴다** — 남의 코드를 검사해
+#     초록불을 주느니 검사를 안 하는 편이 정직하다.
 #
 # 우회(정말 필요할 때만):
 #   VG_SKIP_SMOKE=1 git push    스모크만 건너뜀
@@ -37,30 +36,19 @@ fail=0
 
 ROOT=$(git rev-parse --show-toplevel)
 
-# --- dev 스택이 **내 트리**를 서빙 중인가 -------------------------------------
-# dev 스택은 저장소에 하나뿐이다(compose_runner 가 프로젝트명을 vulnagent-dev 로 고정).
-#   그래서 "떠 있다"는 건 아무 의미가 없다 — 그 스택이 **다른 트리**의 코드를 서빙 중일 수 있고,
-#   그걸 스모크하면 내 코드가 아니라 남의 코드를 검사하고 초록불을 준다(거짓).
-#   compose_runner 가 `up` 할 때 서빙 중인 트리를 표식에 적어 둔다 → 그걸 대조한다.
+# --- 이 트리 전용 컨테이너가 떠 있나 ------------------------------------------
+# web+scheduler 는 워크트리별로 독립된 컨테이너명을 쓴다(vulnagent-web-dev-<워크트리>,
+#   메인 트리는 접미사 없음) — 애초에 다른 트리 것과 안 겹치므로 마운트 경로를 대조할
+#   필요 없이 "이 트리 전용 컨테이너가 떠 있나" 만 보면 된다.
 WT_NAME=""
 if [ "$(basename "$(dirname "$ROOT")")" = "wt" ]; then
   WT_NAME="$(basename "$ROOT")"
 fi
-MAIN_ROOT="$ROOT"
-[ -n "$WT_NAME" ] && MAIN_ROOT="$(cd "$ROOT/../.." && pwd)"
-WEB=${VG_WEB_CONTAINER:-vulnagent-web-dev}
+WEB=${VG_WEB_CONTAINER:-vulnagent-web-dev${WT_NAME:+-$WT_NAME}}
 
-# 지금 스택이 **어느 트리를 서빙 중인가** — docker 에 직접 묻는다(파일 표식을 두지 않는다).
-#   표식 파일은 옛 러너로 스택을 옮기면 갱신되지 않아 낡은 채로 남는다. 그 낡은 값을 믿으면
-#   "내 트리를 서빙 중" 이라 착각하고 **남의 코드를 스모크해 초록불**을 준다(실측).
-#   진실은 컨테이너가 실제로 마운트한 경로뿐이다.
-norm_path() { printf '%s' "$1" | tr '\\' '/' | tr 'A-Z' 'a-z' | sed 's:/*$::'; }
-STACK_SRC=$(docker inspect "$WEB" \
-  --format '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true)
-MY_SRC="$( (cd "$ROOT" && pwd -W 2>/dev/null) || printf '%s' "$ROOT" )/server"
-
-# 포트는 **메인 트리의 .env.dev** 에만 있다(스택 속성 — compose_runner 도 이것만 쓴다).
-WEB_PORT=$(sed -n 's/^WEB_PORT=\([0-9]\+\).*/\1/p' "$MAIN_ROOT/deploy/.env.dev" 2>/dev/null | head -1)
+# 포트는 이 트리 자신의 deploy/.env.dev 에 있다(워크트리는 wt.sh add 가 만든 전용 파일,
+#   메인 트리는 init 이 만든 공용 파일 — 둘 다 자기 자신을 읽으면 된다).
+WEB_PORT=$(sed -n 's/^WEB_PORT=\([0-9]\+\).*/\1/p' "$ROOT/deploy/.env.dev" 2>/dev/null | head -1)
 BASE=${VG_SMOKE_BASE:-http://localhost:${WEB_PORT:-8080}}
 
 # --- push 대상 커밋이 건드린 파일 수집: "<sha>\t<path>" -----------------------
@@ -170,18 +158,15 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
-# --- 스모크 (이 트리를 서빙하는 스택이 떠 있을 때만) --------------------------
+# --- 스모크 (이 트리 전용 컨테이너가 떠 있을 때만) ----------------------------
 if [ "${VG_SKIP_SMOKE:-0}" = "1" ]; then
   echo "pre-push: VG_SKIP_SMOKE=1 — 스모크 건너뜀" >&2
 elif [ ! -x tests/smoke.sh ]; then
   echo "pre-push: ⚠ tests/smoke.sh 없음(또는 비실행) — 스모크 건너뜀" >&2
-elif [ -z "${VG_SMOKE_BASE:-}" ] && [ "$(norm_path "$STACK_SRC")" != "$(norm_path "$MY_SRC")" ]; then
-  # 스택이 다른 트리를 서빙 중(또는 안 떠 있음) → 검사해봐야 남의 코드다.
-  echo "pre-push: ⚠ dev 스택이 이 트리를 서빙하고 있지 않습니다 — 스모크 건너뜀." >&2
-  echo "           이 트리 : $MY_SRC" >&2
-  echo "           스택    : ${STACK_SRC:-(안 떠 있음)}" >&2
-  echo "           이 트리로 옮기려면: ./deploy/compose_runner.sh dev up -d" >&2
-  echo "           (남의 트리를 서빙하는 스택을 대신 검사하지 않습니다 — 초록불이 거짓이 됩니다.)" >&2
+elif [ -z "${VG_SMOKE_BASE:-}" ] && [ "$(docker inspect -f '{{.State.Running}}' "$WEB" 2>/dev/null)" != "true" ]; then
+  # 이 트리 전용 컨테이너가 안 떠 있음 → 검사할 대상이 없다.
+  echo "pre-push: ⚠ 이 트리의 dev 컨테이너($WEB)가 떠 있지 않습니다 — 스모크 건너뜀." >&2
+  echo "           올리려면: ./deploy/compose_runner.sh dev up -d" >&2
 elif ! curl -fsS -o /dev/null --max-time 3 "$BASE/" 2>/dev/null; then
   echo "pre-push: ⚠ dev 스택이 응답하지 않습니다($BASE) — 스모크 건너뜀." >&2
   echo "           올리려면: ./deploy/compose_runner.sh dev up -d" >&2
