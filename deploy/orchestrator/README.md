@@ -48,13 +48,19 @@
 | `merge-milestone.ps1` | **마일스톤 통합 PR(옵션 B)** — 전원 완료를 기다렸다가 워커 브랜치들을 로컬 병합해 PR 1개로 낸다 |
 | `stop-worker.ps1` | 워커 정리 — 워크트리 제거 + 매니페스트 삭제 |
 | `reap-merged.ps1` | **병합 자동정리** — PR 이 main 에 병합된 워커를 감지해 stop-worker 실행(gh 필요) |
-| `worker-stop-hook.ps1` | **완료 자동기록** — 워커 세션이 idle 될 때 git 상태로 결과 파일을 갱신(spawn 이 주입) |
+| `worker-stop-hook.ps1` | **완료 자동기록** — 워커 세션이 idle 될 때 git 상태로 결과 파일을 갱신(spawn 이 주입). **동시에 `.omc/history.jsonl` 에 idle 타임라인도 강제로 남긴다**(에이전트가 스스로 기록해야 하는 방식이 아니다 — 훅이 매번 자동으로 씀) |
+| `report.ps1` | `.omc/history.jsonl` 을 task 별로 묶어 체류 시간(어디서 오래 걸렸는지) 요약 (`-Task <슬러그>` 로 전문 조회) |
 | `milestone.template.md` | 계획서 템플릿 |
 
 런타임 산출물(메인 트리 `.omc/` 에 고정, git 추적 밖):
 - `.omc/logs/<task>.log` — 헤드리스 워커 출력
 - `.omc/results/<task>.md` — 워커가 남기는 진행/결과 (`대기중`→`진행중`→`완료`/`차단`)
 - `.omc/orchestrator/<task>.json` — 워커 매니페스트(status.ps1 이 읽음)
+- `.omc/history.jsonl` — task 별 idle 타임라인(`worker-stop-hook.ps1` 이 매 idle 마다 append,
+  `report.ps1` 이 읽는다). 왜 에이전트가 직접 쓰지 않고 훅이 쓰나: claude-pipeline 의
+  `conversation.jsonl` 은 에이전트가 Write 도구로 스스로 남겨야 해서 실제로 자주 빠뜨린다
+  (그 프로젝트 문서에 "자주 빠뜨리는 케이스" 체크리스트가 있을 정도). 이 파일은 hook 이
+  강제로 쓰므로 그 문제가 구조적으로 없다.
 
 ## 쓰는 법
 
