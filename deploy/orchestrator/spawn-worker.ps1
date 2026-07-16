@@ -9,7 +9,8 @@
   흐름:
     1) deploy/wt.sh add <prefix>/<task>  → wt/<task> 워크트리 생성(origin/main 기점)
     2) 워커 지시문을 wt/<task>/.initial-prompt 로 주입(오케스트레이터 프리앰블 포함)
-    3) -Launch tab(현재 WT 창 새 탭·기본) / window(분리 창) / headless(창 없이 로그)로 claude 실행
+    3) -Launch auto(호스트 터미널 감지·기본) / termkeep(새 termkeep 세션) / tab(현재 WT 창 새 탭)
+       / window(분리 창) / headless(창 없이 로그)로 claude 실행
     4) <MainRoot>/.omc/orchestrator/<task>.json 에 워커 매니페스트 기록(status.ps1 이 읽음)
 
   워커는 자기 워크트리에서 구현→커밋→push→PR 까지 하고,
@@ -42,10 +43,12 @@ param(
   [ValidateSet('skip', 'ask')][string]$Permissions = 'skip',
 
   # 워커를 어디에 띄울지:
-  #   tab     = 현재 Windows Terminal 창에 새 탭(기본)
+  #   auto    = 지금 이 세션이 도는 터미널을 감지해 같은 터미널로 스폰(기본, Resolve-HostTerminal)
+  #   termkeep= termkeep 데몬에 새 세션(탭) 생성
+  #   tab     = 현재 Windows Terminal 창에 새 탭
   #   window  = 분리된 새 PowerShell 창
   #   headless= 창 없이 claude -p, 출력은 로그 파일로만
-  [ValidateSet('tab', 'window', 'headless')][string]$Launch = 'tab',
+  [ValidateSet('auto', 'termkeep', 'tab', 'window', 'headless')][string]$Launch = 'auto',
 
   # 워크트리·지시문·매니페스트만 만들고 claude 실행은 생략(미리보기·테스트용)
   [switch]$DryRun,
@@ -93,6 +96,158 @@ function Resolve-Wt {
   $c = Get-Command wt.exe -ErrorAction SilentlyContinue
   if ($c) { return $c.Source }
   return $null
+}
+
+# ── 호스트 터미널 감지 (-Launch auto 용) ─────────────────────────────────────
+# 사용자가 claude 를 띄운 터미널과 같은 종류로 워커를 스폰한다.
+#   termkeep(사용자 자작 세션 매니저) 안 → termkeep 새 세션 · WT 안 → 새 탭 · 그 외 → 새 창
+#
+# 왜 $env:TERMKEEP 이 아니라 부모 체인인가:
+#   termkeep 소스엔 PTY 에 TERMKEEP=1 을 심는 코드가 있지만 아직 미커밋·미빌드다 — 지금 도는
+#   데몬 바이너리는 그 변수를 안 심는다(실측: termkeep 안에서 도는 claude 에서 $env:TERMKEEP 이
+#   비어 있음). 그래서 실제 판정은 부모 프로세스 체인을 거슬러 termkeepd.exe/termkeep.exe 를
+#   찾는 것으로 한다. env 검사는 나중에 termkeep 이 재빌드되면 켜질 빠른 경로라 먼저 본다.
+#   실측된 체인: claude.exe → cmd.exe → node.exe → powershell.exe → termkeepd.exe → termkeep.exe
+function Resolve-HostTerminal {
+  if ($env:TERMKEEP -eq '1') { return 'termkeep' }   # 재빌드 후의 빠른 경로
+
+  # 체인 탐색은 절대 throw 하지 않는다 — 감지 실패가 워커 스폰 자체를 막으면 안 된다.
+  try {
+    $seen = @{}
+    $p = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction SilentlyContinue
+    for ($d = 0; $d -lt 20 -and $p -and -not $seen.ContainsKey([int]$p.ProcessId); $d++) {
+      $seen[[int]$p.ProcessId] = $true
+      if ($p.Name -eq 'termkeepd.exe' -or $p.Name -eq 'termkeep.exe') { return 'termkeep' }
+
+      $ppid = [int]$p.ParentProcessId
+      if ($ppid -le 0) { break }
+      $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$ppid" -ErrorAction SilentlyContinue
+      if (-not $parent) { break }   # 부모가 이미 종료 → 체인 끝(분리된 창이 이 경우다)
+
+      # Windows 는 PID 를 재사용한다. 부모가 죽은 뒤 그 PID 를 무관한 프로세스가 물고 있으면
+      # 엉뚱한 체인으로 새어 오판한다 → 부모가 자식보다 늦게 태어났으면 재사용된 PID 로 보고 끊는다.
+      if ($parent.CreationDate -gt $p.CreationDate) { break }
+      $p = $parent
+    }
+  }
+  catch { }   # CIM 조회 실패 → 아래 폴백
+
+  if ($env:WT_SESSION) { return 'tab' }   # Windows Terminal 안
+  return 'window'                          # 맨 PowerShell 콘솔 창
+}
+
+# ── termkeep 새 세션으로 워커 스폰 ───────────────────────────────────────────
+# termkeep 데몬(termkeepd.exe)과 TCP 로 말한다: 127.0.0.1:<port>, 개행으로 끝나는 JSON 한 줄씩.
+# 포트는 %APPDATA%\termkeep\daemon.json 에 있다(예: {"pid":10456,"port":51115}).
+# 데몬은 SessionCreated 를 모든 구독 클라이언트에 브로드캐스트하고 GUI 가 그 이벤트로 탭을
+# 띄우므로, 우리가 세션만 만들면 사용자 화면에 탭이 뜬다.
+#
+# 왜 CreateSession 의 cwd/command 대신 SendInput 인가:
+#   termkeep 소스엔 cwd/command 필드가 있지만 미커밋·미빌드라 지금 도는 데몬엔 그 기능이 없다.
+#   게다가 serde 는 모르는 필드를 에러 없이 조용히 무시하므로 응답만 보고는 신/구 데몬을 구분할
+#   수 없다(성공한 척 빈 셸만 뜬다). CreateSession{name} + SendInput 은 양쪽에서 똑같이 동작하는
+#   단일 경로라 분기가 필요 없다(KISS).
+#
+# 실패는 전부 $null 반환 → 호출부가 window 로 폴백한다. 감지·IPC 문제로 워커 스폰 자체가
+# 실패하면 안 되므로 여기서 throw 하지 않는다.
+function Start-TermkeepWorker {
+  param(
+    [Parameter(Mandatory)][string]$LaunchPs1,
+    [Parameter(Mandatory)][string]$TaskName,
+    [Parameter(Mandatory)][string]$WorkDir
+  )
+
+  $djPath = Join-Path $env:APPDATA 'termkeep\daemon.json'
+  if (-not (Test-Path $djPath)) {
+    Write-Host "⚠ termkeep daemon.json 없음($djPath) → 새 PowerShell 창으로 대체." -ForegroundColor Yellow
+    return $null
+  }
+  try { $port = [int](Get-Content -Raw $djPath | ConvertFrom-Json).port } catch { $port = 0 }
+  if (-not $port) {
+    Write-Host "⚠ termkeep daemon.json 에서 포트를 못 읽음 → 새 PowerShell 창으로 대체." -ForegroundColor Yellow
+    return $null
+  }
+
+  $client = $null
+  try {
+    $client = New-Object System.Net.Sockets.TcpClient
+    $client.Connect('127.0.0.1', $port)
+    $stream = $client.GetStream()
+    $stream.ReadTimeout = 1000     # 1초마다 깨어나 아래 마감시한을 검사한다(영영 매달리지 않게)
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    $reader = New-Object System.IO.StreamReader($stream, $enc)
+    $writer = New-Object System.IO.StreamWriter($stream, $enc)
+    $writer.AutoFlush = $true
+
+    # 데몬은 새 클라이언트를 paused 로 시작해서 Output 브로드캐스트를 안 보낸다. ListSessions 를
+    # 한 번 보내야 paused 가 풀린다(데몬 소스 확인 + 실측). 아래에서 "프롬프트가 실제로 떴는지"를
+    # PTY 출력으로 확인하려면 이게 먼저 필요하다.
+    $writer.Write('{"type":"ListSessions"}' + "`n")
+
+    # JSON 은 반드시 한 줄 — 개행이 프레임 구분자다. (name 필드는 #[serde(default)] 가 없어
+    # 반드시 있어야 한다.)
+    $createMsg = ([ordered]@{ type = 'CreateSession'; name = $TaskName } | ConvertTo-Json -Compress)
+    $writer.Write($createMsg + "`n")
+
+    # 응답 사이에 SessionList·다른 세션의 Output 이 섞여 오므로 SessionCreated 를 골라 읽는다.
+    $sid = $null
+    $deadline = (Get-Date).AddSeconds(10)
+    while (-not $sid -and (Get-Date) -lt $deadline) {
+      try { $line = $reader.ReadLine() } catch { continue }   # ReadTimeout → 마감시한 재검사
+      if (-not $line) { continue }
+      try { $m = $line | ConvertFrom-Json } catch { continue }
+      if ($m.type -eq 'SessionCreated' -and $m.session_id) { $sid = [string]$m.session_id }
+      elseif ($m.type -eq 'Error') {
+        Write-Host "⚠ termkeep 세션 생성 실패($($m.message)) → 새 PowerShell 창으로 대체." -ForegroundColor Yellow
+        return $null
+      }
+    }
+    if (-not $sid) {
+      Write-Host "⚠ termkeep 데몬이 SessionCreated 를 안 보냄 → 새 PowerShell 창으로 대체." -ForegroundColor Yellow
+      return $null
+    }
+
+    # PTY 안 powershell 이 프롬프트를 내기 전에 밀어 넣은 키는 그대로 버려진다. 고정 대기는
+    # 못 믿는다 — 700ms 로는 입력이 통째로 씹혔고, 실측상 프롬프트까지 약 2.4초 걸렸다.
+    # 그래서 데몬이 브로드캐스트하는 PTY 출력에서 프롬프트('PS ...>')를 눈으로 확인한 뒤 넣는다.
+    # 느린 PC 에서도 안전하고, 빨리 뜨면 그만큼 빨리 지나간다.
+    $acc = ''
+    $ready = $false
+    $promptDeadline = (Get-Date).AddSeconds(20)
+    while (-not $ready -and (Get-Date) -lt $promptDeadline) {
+      try { $line = $reader.ReadLine() } catch { continue }
+      if (-not $line) { continue }
+      try { $m = $line | ConvertFrom-Json } catch { continue }
+      if ($m.type -eq 'Output' -and $m.session_id -eq $sid -and $m.data) {
+        try { $acc += [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($m.data)) } catch { }
+        if ($acc -match 'PS [^\r\n]*>') { $ready = $true }
+      }
+    }
+    if (-not $ready) {
+      # 세션은 이미 떴으니 창 폴백 대신 그대로 시도한다(입력이 씹히면 사용자가 탭에서 직접 실행 가능).
+      Write-Host "⚠ termkeep 프롬프트를 확인 못 했지만 입력을 시도한다(session $sid)." -ForegroundColor Yellow
+    }
+
+    $wtDirEsc = $WorkDir -replace "'", "''"
+    $ps1Esc = $LaunchPs1 -replace "'", "''"
+    $cmdText = "Set-Location -LiteralPath '$wtDirEsc'; powershell -NoProfile -ExecutionPolicy Bypass -File '$ps1Esc'" + "`r"
+
+    # data 는 base64 로 인코딩된 바이트다(데몬이 디코드해 PTY 에 그대로 쓴다).
+    # UTF-8 바이트로 인코딩해야 한다 — 경로에 한글이 들어간다(사용자 홈이 C:\Users\정도욱).
+    $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($cmdText))
+    $inputMsg = ([ordered]@{ type = 'SendInput'; session_id = $sid; data = $b64 } | ConvertTo-Json -Compress)
+    $writer.Write($inputMsg + "`n")   # 성공 시 무응답이라 읽지 않는다
+
+    Write-Host "✓ termkeep 새 세션: $TaskName (session $sid)" -ForegroundColor Green
+    return $sid
+  }
+  catch {
+    Write-Host "⚠ termkeep 연결/전송 실패($($_.Exception.Message)) → 새 PowerShell 창으로 대체." -ForegroundColor Yellow
+    return $null
+  }
+  finally {
+    if ($client) { $client.Close() }
+  }
 }
 
 # ── 지시문 확보 ──────────────────────────────────────────────────────────────
@@ -189,6 +344,20 @@ if (-not (Test-Path $settingsPath)) {
   $settings | ConvertTo-Json -Depth 8 | Set-Content -Path $settingsPath -Encoding utf8
 }
 
+# ── 스폰 모드 확정 ───────────────────────────────────────────────────────────
+# -Launch auto 면 지금 이 세션이 도는 터미널을 보고 워커도 같은 터미널로 띄운다.
+# 사용자가 모드를 명시했으면 감지 없이 그대로 존중한다(기존 동작 유지).
+$LaunchMode = $Launch
+if ($Launch -eq 'auto') {
+  $LaunchMode = Resolve-HostTerminal
+  $how = switch ($LaunchMode) {
+    'termkeep' { 'termkeep 새 세션으로 스폰' }
+    'tab' { 'Windows Terminal 새 탭으로 스폰' }
+    default { '새 PowerShell 창으로 스폰' }
+  }
+  Write-Host "→ 호스트 터미널 감지: $LaunchMode → $how" -ForegroundColor Cyan
+}
+
 # ── claude 실행 ──────────────────────────────────────────────────────────────
 # 실행 명령을 워커별 .launch.ps1 파일에 담는다. -Command 인라인 대신 -File 을 쓰면
 # wt 의 ';' 파싱·따옴표 이스케이프 지옥을 피할 수 있다.
@@ -206,7 +375,7 @@ $wtDirEsc = $wtDir -replace "'", "''"
 $launchPs1 = Join-Path $wtDir '.launch.ps1'
 $trigger = ".initial-prompt 파일을 Read 도구로 읽고, 그 내용을 지시사항 삼아 바로 작업을 시작해라."
 
-if ($Launch -eq 'headless') {
+if ($LaunchMode -eq 'headless') {
   $launchBody = @"
 Set-Location -LiteralPath '$wtDirEsc'
 claude $permFlag -p '$trigger' *> '$($logPath -replace "'", "''")'
@@ -224,6 +393,8 @@ claude $permFlag '$trigger'
 }
 
 $proc = $null
+$termkeepSessionId = $null
+$eff = $LaunchMode   # 실제로 쓰인 모드(폴백되면 아래에서 바뀐다) — 매니페스트에 이 값을 남긴다
 if ($DryRun) {
   # 미리보기: 워크트리·지시문·매니페스트는 만들되 claude 는 띄우지 않는다.
   Write-Host "✓ [DryRun] 워크트리·지시문 준비됨: wt/$Task ($branch)" -ForegroundColor Green
@@ -231,8 +402,12 @@ if ($DryRun) {
 }
 else {
   Set-Content -Path $launchPs1 -Value $launchBody -Encoding utf8   # PS 5.1 utf8 = BOM(한글 배너)
-  $eff = $Launch
-  if ($Launch -eq 'tab') {
+  if ($eff -eq 'termkeep') {
+    $termkeepSessionId = Start-TermkeepWorker -LaunchPs1 $launchPs1 -TaskName $Task -WorkDir $wtDir
+    if ($termkeepSessionId) { Write-Host "  브랜치: $branch" -ForegroundColor Green }
+    else { $eff = 'window' }   # daemon.json/연결/응답 문제 → 창으로 폴백
+  }
+  if ($eff -eq 'tab') {
     $wt = Resolve-Wt
     if (-not $wt) {
       Write-Host "⚠ Windows Terminal(wt.exe) 없음 → 분리된 새 창으로 대체." -ForegroundColor Yellow
@@ -255,21 +430,25 @@ else {
 }
 
 # ── 매니페스트 기록 (status.ps1 이 워커 목록을 여기서 읽는다) ─────────────────
+# mode 에는 -Launch 인자(auto 일 수 있다)가 아니라 **실제로 쓰인 모드**를 남긴다.
+# termkeep 모드면 pid 가 없으므로(창을 우리가 띄운 게 아니다) termkeepSessionId 로 세션을 가리킨다.
+# status.ps1 이 mode/pid 를 그대로 읽으므로 기존 키는 유지한다.
 $manifest = [ordered]@{
-  task        = $Task
-  branch      = $branch
-  worktree    = $wtDir
-  log         = $logPath
-  result      = $resultPath
-  mode        = $Launch
-  permissions = $Permissions
-  finish      = $Finish
-  pid         = if ($proc) { $proc.Id } else { $null }
-  startedAt   = (Get-Date).ToString('s')
+  task              = $Task
+  branch            = $branch
+  worktree          = $wtDir
+  log               = $logPath
+  result            = $resultPath
+  mode              = $eff
+  permissions       = $Permissions
+  finish            = $Finish
+  pid               = if ($proc) { $proc.Id } else { $null }
+  termkeepSessionId = $termkeepSessionId
+  startedAt         = (Get-Date).ToString('s')
 }
 $manifest | ConvertTo-Json | Set-Content -Path $manifestPath -Encoding utf8
 
 . (Join-Path $PSScriptRoot 'history-log.ps1')
-Add-OrchestratorHistory -MainRoot $MainRoot -Task $Task -Event 'spawn' -Detail "$branch ($Launch/$Permissions)"
+Add-OrchestratorHistory -MainRoot $MainRoot -Task $Task -Event 'spawn' -Detail "$branch ($eff/$Permissions)"
 
 Write-Host "  매니페스트: .omc/orchestrator/$Task.json" -ForegroundColor DarkGray
