@@ -540,6 +540,9 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 
 /* 섹션 탭(호스트 상세). cves.php 의 필터 프리셋(.tabs/.pill)과 달리 밑줄형 주요 내비. */
 .subtabs { display: flex; flex-wrap: wrap; gap: .1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.3rem; }
+/* .cards 뒤에 곧바로 subtabs 가 오면(changes.php, host.php) 두 블록의 1.3rem 여백이
+ * 각자 그대로 남아 표/필터 시작 위치가 subtabs 없는 다른 리스트 페이지보다 눈에 띄게 밀린다. */
+.cards + .subtabs { margin-top: -.8rem; }
 .subtabs a {
   padding: .55rem .95rem;
   color: var(--text-2);
