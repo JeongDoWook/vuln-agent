@@ -60,6 +60,10 @@ Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·we
 감사 4컬럼 중 `is_deleted` 만 표기했고, FK 없이 애플리케이션 조인으로만 엮이는 테이블은 소스에 주석으로 적혀 있다.
 테이블별 전체 컬럼은 [`docs/dev/데이터베이스.md`](../../dev/데이터베이스.md) 가 따로 다룬다.
 
+`tb_scans` 에 달린 **억제 근거 ②③④** 는 관계선이 몰려 있어 그림에선 번호만 적었다. 각각
+② `tb_pkg_changelog_cves` — changelog 에 그 CVE 수정 기록, ③ `tb_applied_errata` — 벤더 권고(errata),
+④ `tb_debsecan` — 데비안 트래커(역방향) 다.
+
 쿼리를 짜거나 조인 경로를 확인할 때 본다.
 
 [![ERD](erd.svg)](erd.svg)
