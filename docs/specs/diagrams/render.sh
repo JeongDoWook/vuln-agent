@@ -12,5 +12,9 @@ else
     mount_src="$d"
 fi
 
-MSYS_NO_PATHCONV=1 docker run --rm -v "${mount_src}:/d" -w /d plantuml/plantuml \
+# plantuml/plantuml 에는 한글 폰트가 없어 글자가 겹친다 → 폰트를 넣은 이미지를 먼저 빌드해서 쓴다.
+# 이유는 Dockerfile 주석 참고. 도커 레이어 캐시가 먹으므로 두 번째부터는 사실상 공짜다.
+MSYS_NO_PATHCONV=1 docker build -q -t vulnagent-plantuml:ko "${mount_src}" >/dev/null
+
+MSYS_NO_PATHCONV=1 docker run --rm -v "${mount_src}:/d" -w /d vulnagent-plantuml:ko \
     -tsvg -charset UTF-8 "*.puml"   # -charset UTF-8 없으면 한글 라벨이 깨진다
