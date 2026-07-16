@@ -13,13 +13,10 @@ vg_require_menu('dashboard');
 // "지금 급한 것" 에 보여줄 최대 건수. 나머지는 취약점 현황으로 넘긴다.
 const VG_URGENT_TOP = 6;
 
-// 추세 창(窓). 2주면 "지난주보다 나아졌나" 에 답하면서도 막대가 뭉개지지 않는다.
-const VG_TREND_DAYS = 14;
-
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
 $kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
-$trend = []; $delta = []; $osDist = []; $topHosts = [];
+$delta = []; $osDist = []; $topHosts = [];
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = vg_perpage();
 try {
@@ -114,57 +111,29 @@ try {
           LIMIT 10"
     )->fetchAll();
 
-    /* 심각도 추세(최근 VG_TREND_DAYS 일).
+    /* KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
      *
      * 스캔은 **바뀔 때만** 저장된다(feat/change-tracking) — 날짜가 듬성듬성하다.
-     * 그래서 스캔이 없는 날을 0 으로 그리면 "취약점이 사라졌다"는 거짓말이 된다.
-     * 날짜마다 호스트별로 **그날까지의 최신 스캔을 이월(carry-forward)** 해서 합산한다.
-     *
-     * 창 안의 스캔 + 각 호스트가 창 시작 전에 가진 마지막 스캔(이월의 출발점)만 읽는다 —
-     * 전체 스캔을 다 읽으면 이력이 쌓일수록 대시보드가 느려진다.
+     * 그래서 "7일 전 그날의 스캔" 만 보면 그날 스캔이 없는 호스트가 0건으로 세어져
+     * "일주일 새 확 늘었다"는 거짓말이 된다. 호스트별로 **7일 전까지의 최신 스캔을
+     * 이월(carry-forward)** 해서 합산한다 = 호스트별 MAX(id) WHERE 날짜 <= 7일 전.
      */
-    $since = date('Y-m-d', strtotime('-' . (VG_TREND_DAYS - 1) . ' days'));
-    $scanRows = $pdo->query(
-        "SELECT s.id, s.host_id, DATE(s.collected_at) AS d
+    $weekAgoDay = date('Y-m-d', strtotime('-7 days'));
+    $weekAgoScans = $pdo->query(
+        "SELECT MAX(s.id) AS mid
            FROM tb_scans s
            JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-          WHERE s.is_deleted = 0 AND DATE(s.collected_at) >= '$since'
-          UNION
-         SELECT s.id, s.host_id, DATE(s.collected_at) AS d
-           FROM tb_scans s
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-           JOIN (SELECT host_id, MAX(id) AS mid FROM tb_scans
-                  WHERE is_deleted = 0 AND DATE(collected_at) < '$since'
-                  GROUP BY host_id) b ON b.mid = s.id"
+          WHERE s.is_deleted = 0 AND DATE(s.collected_at) <= '$weekAgoDay'
+          GROUP BY s.host_id"
     )->fetchAll();
 
-    // 호스트별 (날짜, 스캔id) 를 시간순으로 — 이월은 "그날 이하의 마지막 스캔" 고르기다.
-    $byHost = [];
-    foreach ($scanRows as $s) { $byHost[(int) $s['host_id']][] = ['d' => (string) $s['d'], 'id' => (int) $s['id']]; }
-    foreach ($byHost as &$list) {
-        usort($list, fn($a, $b) => $a['id'] <=> $b['id']);
+    // 7일 전에 스캔이 하나도 없었으면 전부 0 — 그때 대비 지금 건수가 그대로 증가분이다.
+    $weekAgo = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0];
+    $sevOfScan = vg_sev_by_scan_ids($pdo, array_map(fn($s) => (int) $s['mid'], $weekAgoScans));
+    foreach ($sevOfScan as $counts) {
+        foreach ($weekAgo as $sev => $_) { $weekAgo[$sev] += (int) ($counts[$sev] ?? 0); }
     }
-    unset($list);
-
-    $sevOfScan = vg_sev_by_scan_ids($pdo, array_map(fn($s) => (int) $s['id'], $scanRows));
-
-    for ($i = VG_TREND_DAYS - 1; $i >= 0; $i--) {
-        $day = date('Y-m-d', strtotime("-$i days"));
-        $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0];
-        foreach ($byHost as $list) {
-            $pick = null;
-            foreach ($list as $s) { if ($s['d'] <= $day) { $pick = $s['id']; } }   // 그날까지의 최신
-            if ($pick === null) { continue; }                                      // 그날엔 아직 이 호스트가 없었다
-            foreach ($counts as $sev => $_) { $counts[$sev] += (int) ($sevOfScan[$pick][$sev] ?? 0); }
-        }
-        $trend[] = ['d' => $day, 'counts' => $counts];
-    }
-
-    // KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
-    $weekAgo = $trend[max(0, count($trend) - 8)]['counts'] ?? null;
-    if ($weekAgo !== null) {
-        foreach ($totals as $sev => $now) { $delta[$sev] = $now - (int) ($weekAgo[$sev] ?? 0); }
-    }
+    foreach ($totals as $sev => $now) { $delta[$sev] = $now - $weekAgo[$sev]; }
 
     // 목록 대상 = 최신 스캔이 있는 비삭제 호스트 수(페이지네이션 총건).
     $total = (int) $pdo->query(
@@ -238,29 +207,12 @@ vg_header('대시보드', 'dashboard');
     </div>
   </div>
 
-  <?php
-  // 추세는 **조치 대상 등급만** 그린다. LOW 가 수천 건이라 같이 쌓으면 CRITICAL 이 안 보인다.
-  // 전체 구성은 아래 도넛이 맡는다.
-  $trendSevs = ['CRITICAL', 'HIGH', 'MEDIUM'];
-  ?>
-  <div class="card">
-    <strong>최근 <?= VG_TREND_DAYS ?>일 추세</strong>
-    <span class="why">— 조치 대상 등급만(LOW 는 수천 건이라 같이 쌓으면 CRITICAL 이 묻힌다) ·
-      스캔이 없는 날은 직전 스캔을 이어 그린다</span>
-    <div class="legend legend--row">
-      <?php foreach ($trendSevs as $s): ?>
-        <div<?= (int) $totals[$s] === 0 ? ' class="is-zero"' : '' ?>><i class="tone-<?= vg_sev_tone($s) ?>"></i><span><?= $s ?></span>
-          <span class="n"><?= number_format((int) $totals[$s]) ?></span></div>
-      <?php endforeach; ?>
-    </div>
-    <div class="card__body"><?php vg_sev_trend($trend, $trendSevs); ?></div>
-  </div>
-
   <div class="split">
     <div class="card">
       <strong>심각도 분포</strong>
       <div class="card__body center">
-        <?php vg_sev_donut($totals); ?>
+        <?php // 추세 카드가 빠져 도넛이 이 화면의 유일한 그래픽이 됐다 — 기본(132)보다 키운다. ?>
+        <?php vg_sev_donut($totals, 152); ?>
         <div class="legend">
           <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
             <div>
