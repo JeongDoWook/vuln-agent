@@ -1,0 +1,78 @@
+@startuml 배포구성
+' vuln-agent §4 배포 구성 (dev / prod)
+' 원본: docs/dev/architecture.md §4 (mermaid flowchart TB)
+
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam databaseBackgroundColor #ffffff
+skinparam shadowing false
+
+package "compose_runner.sh" as Runner {
+    rectangle "dev up\n(메인 트리: db+web+scheduler)" as R1
+    rectangle "dev up\n(워크트리: web+scheduler만)" as R1W
+    rectangle "prod up --build" as R2
+}
+
+package "compose 레이어" as Files {
+    rectangle "compose.yml\n(서비스 정의 + secrets)" as F0
+    rectangle "compose.common.yml\n(restart·로깅·pids)" as FC
+    rectangle "compose.dev.yml\n(web+scheduler 소스마운트·웹 평문:${WEB_PORT})" as FD
+    rectangle "compose.dev-db.yml\n(db·DB포트노출 — 메인 트리 전용)" as FDB
+    rectangle "compose.dev-net.yml\n(외부 네트워크 vulnagent-dev-net 공유)" as FN
+    rectangle "compose.prod.yml\n(이미지코드·DB비노출·my.cnf·caddy)" as FP
+}
+
+package "Docker Secrets (txt)" as Secrets {
+    rectangle "mysql_root_password" as S1
+    rectangle "mysql_password" as S2
+    rectangle "ingest_token" as S3
+    rectangle "admin_password" as S4
+    rectangle "duckdns_token (prod 전용)" as S5
+}
+
+package "실행 컨테이너 (prod)" as Stack {
+    rectangle "caddy\n443→호스트 ${WEB_PORT:-8080}" as CADDY #8250df
+    rectangle "web · php:8.3-apache\n내부 80만(외부 비노출)" as WC #238636
+    rectangle "scheduler · php-cli\n(피드 주기 실행)" as SCH #a371f7
+    database "db · mysql:8.0\n내부망만" as DC #1f6feb
+}
+
+R1 --> F0
+R1 --> FC
+R1 --> FD
+R1 --> FDB
+R1 --> FN
+
+R1W --> F0
+R1W --> FC
+R1W --> FD
+R1W --> FN
+
+R2 --> F0
+R2 --> FC
+R2 --> FP
+
+F0 --> Stack
+
+S5 --> CADDY
+S2 --> WC
+S3 --> WC
+S4 --> WC
+S2 --> SCH
+S3 --> SCH
+S4 --> SCH
+S1 --> DC
+S2 --> DC
+
+rectangle "원격 에이전트 / 브라우저" as REMOTE
+rectangle "로컬 에이전트\n(중앙서버 자신 스캔)" as LOCAL
+
+REMOTE --> CADDY : https://ost-server.duckdns.org:8080
+CADDY --> WC : http (내부망)
+LOCAL --> WC : 평문 127.0.0.1:8081
+WC --> DC : vulnagent 내부망
+SCH --> DC
+
+@enduml

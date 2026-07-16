@@ -1,0 +1,38 @@
+@startuml 시스템개요
+' vuln-agent §1 시스템 개요 (데이터 흐름)
+' 원본: docs/dev/architecture.md §1 (mermaid flowchart LR)
+
+left to right direction
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam databaseBackgroundColor #ffffff
+skinparam shadowing false
+
+package "수집 대상 서버들 (Linux)" as Servers {
+    rectangle "에이전트\nvuln-inventory-agent.sh" as A1 #1f6feb
+    rectangle "에이전트" as A2
+    rectangle "에이전트" as A3
+}
+
+package "중앙 서버 · Docker" as Central {
+    rectangle "Caddy\n(HTTPS 종료 · 자체서명/DNS-01)" as CADDY #8250df
+    rectangle "ingest.php\n(수신 API · 토큰 인증)" as ING #238636
+    database "MySQL\ntb_hosts·tb_scans·tb_packages·tb_exposures" as DB
+    rectangle "매처 (PHP)\nexposure + pkg × CVE" as MAT #a371f7
+    database "CVE 미러\nNVD·OSV·KEV·EPSS·KISA" as CVE
+    rectangle "웹 대시보드\n우선순위·노출근거·억제근거·감사로그" as WEB #db6d28
+}
+
+A1 --> CADDY : 매시간(systemd-timer)\nJSON POST
+A2 --> CADDY
+A3 --> CADDY
+CADDY --> ING
+ING --> DB
+DB --> MAT
+CVE --> MAT
+MAT --> DB : findings
+DB --> WEB
+
+@enduml

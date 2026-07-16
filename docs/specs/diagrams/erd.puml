@@ -1,0 +1,281 @@
+@startuml erd
+' vuln-agent §5 데이터 모델 (ERD)
+' 원본: docs/dev/architecture.md §5 (mermaid erDiagram)
+' 테이블별 전체 컬럼·책임·정규화 현황은 docs/dev/데이터베이스.md 참고.
+'
+' 표기: 감사 4컬럼(created_at/updated_at/is_deleted/deleted_at)은 모든 테이블에 통일되어 있으나
+'      이 다이어그램엔 is_deleted 만 표기하고 나머지는 생략한다(mermaid 원본과 동일).
+
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+skinparam entity {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+
+entity tb_hosts {
+    id : bigint <<PK>>
+    --
+    fqdn : string <<UK>>
+    os_id : string
+    is_deleted : bool
+}
+
+entity tb_scans {
+    id : bigint <<PK>>
+    --
+    host_id : bigint <<FK>>
+    collected_at : datetime
+    package_count : int
+    exposure_count : int
+    is_deleted : bool
+}
+
+entity tb_packages {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    container_id : bigint
+    ' 호스트는 0, 컨테이너는 양수
+    manager : string
+    ' dpkg rpm apk pip npm
+    name : string
+    version : string
+    source_pkg : string
+    origin : string
+    ' 출처 - 서드파티 판정
+}
+
+entity tb_containers {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    cid : string
+    image : string
+    os_id : string
+    manager : string
+    ' dpkg apk rpm
+    pkg_count : int
+}
+
+entity tb_stale_libs {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    comm : string
+    ' 옛 so 를 문 프로세스
+    package_name : string
+    lib_path : string
+}
+
+entity tb_applied_errata {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    package_name : string
+    cve_id : string
+    evidence : string
+    ' 권고가 지목한 설치 NEVRA
+}
+
+entity tb_debsecan {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    cve_id : string
+    package_name : string
+}
+
+entity tb_pkg_changes {
+    id : bigint <<PK>>
+    --
+    host_id : bigint <<FK>>
+    scan_id : bigint <<FK>>
+    package_name : string
+    change_type : string
+    ' installed removed upgraded downgraded
+    old_version : string
+    new_version : string
+}
+
+entity tb_exposures {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    proc : string
+    port : int
+    scope : string
+    exe_pkg : string
+    loaded_pkgs : text
+}
+
+entity tb_processes {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    comm : string
+    exe_pkg : string
+    loaded_pkgs : text
+}
+
+entity tb_findings {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    cve_id : string <<FK>>
+    severity : string
+    runtime_status : string
+    in_kev : bool
+}
+
+entity tb_pkg_changelog_cves {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    package_name : string
+    cve_id : string
+    evidence : string
+}
+
+entity tb_suppressed_findings {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    cve_id : string
+    package_name : string
+    base_severity : string
+    suppress_reason : string
+}
+
+entity tb_cce_findings {
+    id : bigint <<PK>>
+    --
+    scan_id : bigint <<FK>>
+    code : string
+    result : string
+    severity : string
+    rationale : string
+}
+
+entity tb_cves {
+    cve_id : string <<PK>>
+    --
+    cvss : decimal
+    epss : decimal
+    epss_percentile : decimal
+    is_deleted : bool
+}
+
+entity tb_kev_catalog {
+    cve_id : string <<PK>>
+    --
+    date_added : date
+}
+
+entity tb_cve_affected_packages {
+    id : bigint <<PK>>
+    --
+    cve_id : string <<FK>>
+    package_name : string
+    fixed_version : string
+}
+
+entity tb_feed_connectors {
+    id : bigint <<PK>>
+    --
+    connector_type : string
+    connection_json : json
+    schedule_json : json
+    enabled : bool
+    next_run_at : datetime
+    is_deleted : bool
+}
+
+entity tb_feed_collection_logs {
+    id : bigint <<PK>>
+    --
+    connector_id : bigint <<FK>>
+    status : string
+    items_upserted : int
+}
+
+entity tb_advisories {
+    id : bigint <<PK>>
+    --
+    source : string
+    title : string
+    url : string <<UK>>
+    published : date
+    cve_ids : string
+    is_deleted : bool
+}
+
+entity tb_users {
+    id : bigint <<PK>>
+    --
+    username : string <<UK>>
+    password_hash : string
+    role : string
+    is_deleted : bool
+}
+
+entity tb_role_permissions {
+    id : int <<PK>>
+    --
+    role : string
+    menu_code : string
+    allowed : bool
+}
+
+entity tb_api_tokens {
+    id : bigint <<PK>>
+    --
+    label : string
+    token_hash : string <<UK>>
+    token_prefix : string
+    last_used_at : datetime
+    is_deleted : bool
+}
+
+entity tb_activity_log {
+    id : bigint <<PK>>
+    --
+    user_id : bigint
+    scope : string
+    scope_id : bigint
+    activity_type : string
+    data : json
+    ip_address : string
+    created_at : datetime
+}
+
+' ── 관계 ───────────────────────────────────────────────
+tb_hosts ||--o{ tb_scans : "수집 이력"
+tb_scans ||--o{ tb_packages : "설치 패키지"
+tb_scans ||--o{ tb_exposures : "노출 소켓(포트)"
+tb_scans ||--o{ tb_processes : "실행 프로세스"
+tb_scans ||--o{ tb_findings : "매처 판정"
+tb_scans ||--o{ tb_containers : "컨테이너 인벤토리"
+tb_containers ||--o{ tb_packages : "컨테이너 내부 패키지(container_id)"
+tb_scans ||--o{ tb_pkg_changelog_cves : "억제 근거② changelog"
+tb_scans ||--o{ tb_applied_errata : "억제 근거③ 벤더 권고"
+tb_scans ||--o{ tb_debsecan : "억제 근거④ 데비안 트래커(역방향)"
+tb_scans ||--o{ tb_stale_libs : "억제 취소 — 재시작 필요"
+tb_scans ||--o{ tb_suppressed_findings : "억제된 건"
+tb_scans ||--o{ tb_cce_findings : "보안설정 점검"
+tb_hosts ||--o{ tb_pkg_changes : "패키지 변화 이력"
+tb_cves ||--o{ tb_cve_affected_packages : "영향 패키지"
+tb_cves ||--o{ tb_findings : "취약점"
+tb_cves ||--o| tb_kev_catalog : "KEV 등재"
+tb_feed_connectors ||--o{ tb_feed_collection_logs : "수집 이력"
+tb_users ||--o{ tb_activity_log : "행위 기록(느슨한 연계)"
+tb_users ||--o{ tb_api_tokens : "발급(Export API)"
+
+' ── FK 없는 테이블 (자연키 애플리케이션 조인) ──────────
+' tb_advisories : CVE 와 느슨한 연계(제목의 CVE best-effort)라 FK 없음.
+' tb_activity_log : user_id 가 NULL 가능(SYSTEM 행위, 예: ingest 수신)이라
+'                   FK 없이 논리적 연계만 유지.
+' tb_role_permissions : 역할(role) 문자열 기준 설정형 RBAC — FK 없음.
+
+@enduml

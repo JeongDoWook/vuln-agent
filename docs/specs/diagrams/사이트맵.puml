@@ -1,0 +1,56 @@
+@startuml 사이트맵
+' vuln-agent §6 웹 화면 구성 (사이트맵 · 인증)
+' 원본: docs/dev/architecture.md §6 (mermaid flowchart TD)
+
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam shadowing false
+
+rectangle "/login.php\n세션 로그인 · CSRF" as LOGIN #1f6feb
+rectangle "/ 대시보드\n호스트별 최신스캔 · 심각도 KPI" as DASH
+rectangle "/host.php\n호스트 상세 · 노출·프로세스·취약점\n+ CCE 점검 · 백포트 억제 내역" as HOST
+
+package "취약점 (perm: findings / advisories)" as Vuln {
+    rectangle "/findings.php\n취약점 우선순위 · 검색/필터" as FIND
+    rectangle "/changes.php\n변화 추적 · 신규/해결/등급변경" as CHG
+    rectangle "/cves.php\nCVE 목록 · 탭(전체/KEV/EPSS 상위)" as CVES
+    rectangle "/cve.php\nCVE 상세 · 영향패키지 · 발견 위치" as CVE
+    rectangle "/packages.php\n영향 패키지 × 배포판" as PKG
+    rectangle "/advisories.php · /advisory.php\n국내 보안공지(KISA) 목록·상세" as ADV
+}
+
+package "자산 (perm: assets)" as Asset {
+    rectangle "/assets.php\n호스트 자산 관리 · 소프트삭제" as ASSETS
+}
+
+package "피드 (perm: connectors)" as Feed {
+    rectangle "/connectors.php\n피드 커넥터 · 스케줄 · 미리보기" as CONN
+}
+
+package "시스템 (perm: users/permissions/apitokens/activity — 기본 admin 전용)" as Sys {
+    rectangle "/users.php\n계정 관리" as USERS
+    rectangle "/permissions.php\n역할×메뉴 권한 설정" as PERM #db6d28
+    rectangle "/api-tokens.php\nExport API 토큰 발급·폐기" as TOK #db6d28
+    rectangle "/activity.php\n감사로그 · scope 필터" as ACT
+}
+
+package "인증: 토큰(사람 로그인과 분리)" as API {
+    rectangle "/ingest.php\n수집 수신 · X-Agent-Token" as ING #238636
+    rectangle "/rematch.php\n재매칭 · X-Agent-Token" as REM
+    rectangle "/export.php\n결과 내보내기 JSON/XML · X-API-Token" as EXP #238636
+}
+
+LOGIN --> DASH : 인증 성공
+
+DASH --> HOST
+HOST --> FIND
+FIND --> CVE
+
+DASH ..> Vuln
+DASH ..> Asset
+DASH ..> Feed
+DASH ..> Sys
+
+@enduml

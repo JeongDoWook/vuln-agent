@@ -9,7 +9,7 @@
 아래를 안 읽으면 구조를 처음부터 다시 추측하게 된다.
 
 1. `CONTEXT.md` — 프로젝트 맥락·핵심 전략·현재 단계. **가장 먼저.**
-2. `docs/architecture.md` — 구조·규칙의 최종 기준.
+2. `docs/dev/architecture.md` — 구조·규칙의 최종 기준.
 3. 화면 흐름이 궁금하면 `server/public/process.html`(웹으로 `/process.html`).
 
 ## 핵심 원칙
