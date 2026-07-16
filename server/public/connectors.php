@@ -192,8 +192,7 @@ $statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'nev
 
 vg_header('피드 커넥터', 'connectors');
 ?>
-  <h1>CVE 피드 커넥터</h1>
-  <div class="sub">외부 소스를 <strong>역할별</strong>로 묶어 설정·스케줄·수집한다 — 취약점 정체 · 우선순위 신호 · 벤더 패치 판정 · 보안설정 룰셋. 결과는 매처가 자동 재계산.</div>
+  <h1>CVE 피드 커넥터<span class="info-icon" title="외부 소스를 역할별로 묶어 설정·스케줄·수집한다 — 취약점 정체 · 우선순위 신호 · 벤더 패치 판정 · 보안설정 룰셋. 결과는 매처가 자동 재계산.">ⓘ</span></h1>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
@@ -293,7 +292,7 @@ vg_header('피드 커넥터', 'connectors');
       foreach ($roleGroups as $gi => $g) {
           if (empty($grouped[$gi])) { continue; }
           echo '<div class="card"><strong>' . vg_h($g['title']) . '</strong>'
-             . ' <span class="why">— ' . vg_h($g['desc']) . '</span>'
+             . '<span class="info-icon" title="' . vg_h($g['desc']) . '">ⓘ</span>'
              . '<div class="card__body">';
           vg_table($tableHeaders, $grouped[$gi], ['card' => false, 'cell' => $tableCells]);
           echo '</div></div>';
