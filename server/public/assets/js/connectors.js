@@ -1,21 +1,30 @@
 // connectors.php 전용 JS. 공용 동작(vgLoading 등)은 app.js 가 갖고, 이 화면에서만 쓰는
-//   "API 미리보기"만 여기 둔다. view.php 가 페이지 이름(connectors)으로 이 파일을 자동 로드한다.
+//   "API 미리보기" + 범용 API 커넥터(generic_api) 전용 동적 폼을 여기 둔다.
+//   view.php 가 페이지 이름(connectors)으로 이 파일을 자동 로드한다.
 
 // 외부 소스를 직접 치는 요청이라 수 초 걸린다 → 버튼 스피너 + 상단 진행바(app.js 의 vgLoading).
 //   버튼의 onclick="vgPreview(this)" 에서 부른다.
 function vgPreview(btn) {
   var f = document.getElementById('connForm');
   var out = document.getElementById('vgPrev');
-  var qs = new URLSearchParams({
-    type: f.connector_type.value, url: f.url.value,
-    api_key: f.api_key.value, ecosystem: f.ecosystem.value, days: f.days.value
-  });
   out.hidden = false;
   out.classList.add('is-loading');
   out.textContent = '조회 중…';
   vgLoading(btn, true);
-  fetch('/feed_preview.php?' + qs.toString())
-    .then(function (r) { return r.json(); })
+
+  var req;
+  if (f.connector_type.value === 'generic_api') {
+    var body = new URLSearchParams({ type: 'generic_api', g_config_json: vgGenericSerialize() });
+    req = fetch('/feed_preview.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+  } else {
+    var qs = new URLSearchParams({
+      type: f.connector_type.value, url: f.url.value,
+      api_key: f.api_key.value, ecosystem: f.ecosystem.value, days: f.days.value
+    });
+    req = fetch('/feed_preview.php?' + qs.toString());
+  }
+
+  req.then(function (r) { return r.json(); })
     .then(function (j) {
       if (!j.ok) { out.textContent = '오류: ' + (j.error || '알 수 없음'); return; }
       var head = '총 ' + (j.count != null ? j.count : '?') + '건' + (j.note ? ' · ' + j.note : '') + ' (아래는 최대 10건)\n\n';
@@ -27,3 +36,205 @@ function vgPreview(btn) {
       vgLoading(btn, false);
     });
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// 범용 API 커넥터(generic_api) 전용 동적 폼.
+//   설계: .omc/plans/generic-api-connector-design.md 4장(role별 매핑표) · 6장(UI).
+//   서버는 connection_json 구조를 그대로 받는다(server/src/feeds/generic_api.php
+//   vg_generic_parse_config 가 파싱) — 그래서 여기서도 같은 shape 로 직렬화한다.
+// ─────────────────────────────────────────────────────────────────────────
+var VG_GENERIC_ROLE_FIELDS = {
+  identity: [
+    { key: 'cve_id', label: 'CVE ID', required: true },
+    { key: 'summary', label: '요약', required: false },
+    { key: 'cvss', label: 'CVSS 점수', required: false },
+    { key: 'published', label: '공개일', required: false },
+    { key: 'cvss_vector', label: 'CVSS 벡터', required: false },
+    { key: 'cwe', label: 'CWE', required: false },
+    { key: 'package_name', label: '영향 패키지명', required: false },
+    { key: 'ecosystem', label: '생태계(ecosystem)', required: false },
+    { key: 'fixed_version', label: '조치 버전', required: false }
+  ],
+  priority: [
+    { key: 'cve_id', label: 'CVE ID', required: true },
+    { key: 'date_added', label: '등재일', required: false },
+    { key: 'note', label: '설명', required: false },
+    { key: 'due_date', label: '조치 기한', required: false },
+    { key: 'ransomware', label: '랜섬웨어 연관', required: false },
+    { key: 'epss', label: 'EPSS 점수', required: false },
+    { key: 'epss_percentile', label: 'EPSS 백분위', required: false }
+  ],
+  vendor: [
+    { key: 'cve_id', label: 'CVE ID', required: true },
+    { key: 'vendor', label: '벤더', required: true },
+    { key: 'release_major', label: '배포판 메이저 버전', required: true },
+    { key: 'pkg_name', label: '패키지명', required: true },
+    { key: 'fixed_evr', label: '조치 버전(epoch:version-release)', required: true },
+    { key: 'advisory', label: '권고 ID', required: false },
+    { key: 'severity', label: '심각도', required: false }
+  ],
+  compliance: [
+    { key: 'rule_id', label: '룰 ID', required: true },
+    { key: 'title', label: '제목', required: true },
+    { key: 'severity', label: '심각도', required: true },
+    { key: 'rationale', label: '설명', required: false },
+    { key: 'refs_json', label: '참조(JSON)', required: false }
+  ]
+};
+var VG_GENERIC_ROLE_LABELS = { identity: '취약점 정체', priority: '우선순위 신호', vendor: '벤더 패치 판정', compliance: '보안설정 룰셋' };
+
+function vgKvRow(container, labelHtml, value, placeholder, removable) {
+  var row = document.createElement('div');
+  row.className = 'kvrow';
+  var label = document.createElement('div');
+  label.className = 'kvrow__label';
+  label.innerHTML = labelHtml;
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.value = value || '';
+  if (placeholder) { input.placeholder = placeholder; }
+  row.appendChild(label);
+  row.appendChild(input);
+  if (removable) {
+    var rm = document.createElement('button');
+    rm.type = 'button';
+    rm.className = 'btn btn--sm btn--ghost';
+    rm.textContent = '삭제';
+    rm.addEventListener('click', function () { row.remove(); });
+    row.appendChild(rm);
+  } else {
+    row.appendChild(document.createElement('span')); // 열 정렬 유지
+  }
+  container.appendChild(row);
+  return input;
+}
+
+// 헤더 행: 키 입력 + 값 입력 + 삭제 버튼 (자유 입력이라 label 대신 key input 을 둔다)
+function vgHeaderRow(container, key, value) {
+  var row = document.createElement('div');
+  row.className = 'kvrow';
+  var kInput = document.createElement('input');
+  kInput.type = 'text'; kInput.placeholder = '헤더 이름 (예: Authorization)'; kInput.value = key || '';
+  kInput.className = 'g-h-key';
+  var vInput = document.createElement('input');
+  vInput.type = 'text'; vInput.placeholder = '값'; vInput.value = value || '';
+  vInput.className = 'g-h-val';
+  var rm = document.createElement('button');
+  rm.type = 'button'; rm.className = 'btn btn--sm btn--ghost'; rm.textContent = '삭제';
+  rm.addEventListener('click', function () { row.remove(); });
+  row.appendChild(kInput); row.appendChild(vInput); row.appendChild(rm);
+  container.appendChild(row);
+}
+
+function vgRenderFieldMap(role, existingMapping) {
+  var wrap = document.getElementById('gFieldMap');
+  if (!wrap) { return; }
+  wrap.innerHTML = '';
+  wrap.dataset.role = role;
+  var defs = VG_GENERIC_ROLE_FIELDS[role] || [];
+  var mapping = existingMapping || {};
+  defs.forEach(function (d) {
+    var labelHtml = (d.required ? '<strong class="kvrow__label is-required">' : '<span class="kvrow__label">') + d.label + (d.required ? '*' : '') + (d.required ? '</strong>' : '</span>');
+    var input = vgKvRow(wrap, labelHtml, mapping[d.key], '예: data.' + d.key, false);
+    input.className = 'g-fm-val';
+    input.dataset.fmKey = d.key;
+  });
+  var lbl = document.getElementById('gRoleLabel');
+  if (lbl) { lbl.textContent = '(' + (VG_GENERIC_ROLE_LABELS[role] || role) + ')'; }
+  var notice = document.getElementById('gRoleNotice');
+  if (notice) { notice.hidden = role !== 'compliance'; }
+}
+
+function vgGenericCollect() {
+  var form = document.getElementById('connForm');
+  var role = document.getElementById('gRole').value;
+  var headers = {};
+  document.querySelectorAll('#gHeaders .kvrow').forEach(function (row) {
+    var k = row.querySelector('.g-h-key').value.trim();
+    var v = row.querySelector('.g-h-val').value.trim();
+    if (k !== '' && v !== '') { headers[k] = v; }
+  });
+  var fieldMapping = {};
+  document.querySelectorAll('#gFieldMap .g-fm-val').forEach(function (input) {
+    var v = input.value.trim();
+    if (v !== '') { fieldMapping[input.dataset.fmKey] = v; }
+  });
+  var pageSize = parseInt(document.getElementById('gPageSize').value, 10);
+  var pagination = { type: document.getElementById('gPageType').value };
+  if (!isNaN(pageSize) && pageSize > 0) { pagination.page_size = pageSize; }
+  var totalPath = document.getElementById('gTotalPath').value.trim();
+  if (totalPath !== '') { pagination.total_path = totalPath; }
+  return {
+    role: role,
+    url_template: document.getElementById('gUrlTemplate').value.trim(),
+    method: document.getElementById('gMethod').value,
+    headers: headers,
+    pagination: pagination,
+    response: {
+      items_path: document.getElementById('gItemsPath').value.trim(),
+      field_mapping: fieldMapping
+    }
+  };
+}
+
+function vgGenericSerialize() {
+  var json = JSON.stringify(vgGenericCollect());
+  var hidden = document.getElementById('gConfigJson');
+  if (hidden) { hidden.value = json; }
+  return json;
+}
+
+function vgGenericInit() {
+  var form = document.getElementById('connForm');
+  if (!form) { return; }
+  var typeSel = document.getElementById('connType');
+  var std = document.getElementById('stdFields');
+  var generic = document.getElementById('genericFields');
+  if (!typeSel || !std || !generic) { return; }
+
+  var editRaw = form.dataset.editGeneric;
+  var editConfig = null;
+  if (editRaw) {
+    try { editConfig = JSON.parse(editRaw); } catch (e) { editConfig = null; }
+  }
+
+  function toggle() {
+    var isGeneric = typeSel.value === 'generic_api';
+    std.hidden = isGeneric;
+    generic.hidden = !isGeneric;
+  }
+
+  document.getElementById('gRole').addEventListener('change', function () {
+    vgRenderFieldMap(this.value, null);
+  });
+  document.getElementById('gHeaderAdd').addEventListener('click', function () {
+    vgHeaderRow(document.getElementById('gHeaders'), '', '');
+  });
+
+  typeSel.addEventListener('change', toggle);
+  toggle();
+
+  if (editConfig) {
+    document.getElementById('gRole').value = editConfig.role || 'identity';
+    document.getElementById('gMethod').value = editConfig.method || 'GET';
+    document.getElementById('gUrlTemplate').value = editConfig.url_template || '';
+    var headers = editConfig.headers || {};
+    Object.keys(headers).forEach(function (k) { vgHeaderRow(document.getElementById('gHeaders'), k, headers[k]); });
+    var pg = editConfig.pagination || {};
+    document.getElementById('gPageType').value = pg.type || 'none';
+    document.getElementById('gPageSize').value = pg.page_size || '';
+    document.getElementById('gTotalPath').value = pg.total_path || '';
+    var resp = editConfig.response || {};
+    document.getElementById('gItemsPath').value = resp.items_path || '';
+    vgRenderFieldMap(editConfig.role || 'identity', resp.field_mapping || {});
+  } else {
+    vgRenderFieldMap('identity', null);
+  }
+
+  // 네이티브 제출 직전에 현재 DOM 상태를 g_config_json 으로 굳힌다(저장/미리보기가 같은 shape).
+  form.addEventListener('submit', function () {
+    if (typeSel.value === 'generic_api') { vgGenericSerialize(); }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', vgGenericInit);

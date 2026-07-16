@@ -29,10 +29,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($name === '' || !in_array($type, ['kev','osv','nvd','kisa','epss','debtracker','rhoval','rhunfixed','ssg','kcve','ubuntuoval','generic_api'], true)) {
                     throw new RuntimeException('이름과 커넥터 타입을 확인하세요.');
                 }
-                $conn = ['url' => trim((string) ($_POST['url'] ?? ''))];
-                if (($_POST['api_key'] ?? '') !== '')   { $conn['api_key']   = trim((string) $_POST['api_key']); }
-                if (($_POST['ecosystem'] ?? '') !== '') { $conn['ecosystem'] = trim((string) $_POST['ecosystem']); }
-                if (($_POST['days'] ?? '') !== '')      { $conn['days']      = (int) $_POST['days']; }
+                if ($type === 'generic_api') {
+                    // 범용 API 커넥터는 폼 전체(role/url_template/headers/pagination/response)를
+                    // JS 가 하나의 JSON(g_config_json)으로 직렬화해 보낸다 — 필드마다 흩어진
+                    // g_xxx[] 배열을 여기서 다시 조립하지 않고, generic_api.php 의 파서를 그대로
+                    // 재사용해 저장 시점 검증까지 한 번에 맞춘다(run() 과 같은 규칙 — DRY).
+                    $conn = json_decode((string) ($_POST['g_config_json'] ?? ''), true);
+                    if (!is_array($conn)) {
+                        throw new RuntimeException('범용 API 커넥터 설정이 비어있습니다.');
+                    }
+                    vg_generic_parse_config($conn); // role/url_template/field_mapping 검증(설계문서 5장)
+                } else {
+                    $conn = ['url' => trim((string) ($_POST['url'] ?? ''))];
+                    if (($_POST['api_key'] ?? '') !== '')   { $conn['api_key']   = trim((string) $_POST['api_key']); }
+                    if (($_POST['ecosystem'] ?? '') !== '') { $conn['ecosystem'] = trim((string) $_POST['ecosystem']); }
+                    if (($_POST['days'] ?? '') !== '')      { $conn['days']      = (int) $_POST['days']; }
+                }
                 $mode = (string) ($_POST['schedule_mode'] ?? 'manual');
                 if (!in_array($mode, ['interval', 'daily', 'cron', 'manual'], true)) { $mode = 'manual'; }
                 $sched = ['mode' => $mode];
@@ -285,9 +297,17 @@ vg_header('피드 커넥터', 'connectors');
       // 타입 → 그룹 인덱스. 그룹에 담고, 매핑에 없는 타입은 '기타' 로.
       $typeGroup = [];
       foreach ($roleGroups as $gi => $g) { foreach ($g['types'] as $t) { $typeGroup[$t] = $gi; } }
+      // generic_api 는 타입이 하나뿐이라 위 표로 그룹을 못 정한다 — connection_json.role 로 정한다
+      // (VG_GENERIC_ROLES 순서와 roleGroups 카드 순서가 그대로 대응: identity/priority/vendor/compliance).
+      $genericRoleGroup = ['identity' => 0, 'priority' => 1, 'vendor' => 2, 'compliance' => 3];
       $grouped = []; $others = [];
       foreach ($connectors as $c) {
-          $gi = $typeGroup[$c['connector_type']] ?? null;
+          if ($c['connector_type'] === 'generic_api') {
+              $gc = json_decode((string) $c['connection_json'], true) ?: [];
+              $gi = $genericRoleGroup[$gc['role'] ?? ''] ?? null;
+          } else {
+              $gi = $typeGroup[$c['connector_type']] ?? null;
+          }
           if ($gi === null) { $others[] = $c; } else { $grouped[$gi][] = $c; }
       }
       foreach ($roleGroups as $gi => $g) {
@@ -312,26 +332,72 @@ vg_header('피드 커넥터', 'connectors');
   // ?edit=N 으로 들어오면(행의 [편집]) 값이 채워진 채 자동으로 열린다.
   vg_modal_open('connModal', $edit ? '커넥터 편집' : '커넥터 추가', '', $edit !== null);
   ?>
-    <form id="connForm" method="post">
+    <form id="connForm" method="post" data-edit-generic="<?= ($edit['connector_type'] ?? '') === 'generic_api' ? vg_h(json_encode($econn)) : '' ?>">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="save">
       <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
       <label>이름</label>
       <input type="text" name="name" value="<?= vg_h($edit['name'] ?? '') ?>" required>
       <label>커넥터 타입</label>
-      <select name="connector_type">
-        <?php foreach (['kev'=>'CISA KEV','osv'=>'OSV.dev','nvd'=>'NVD 2.0','kisa'=>'KISA 보안공지','epss'=>'FIRST EPSS','debtracker'=>'데비안 보안 트래커','rhoval'=>'RHEL 계열 벤더 권고(OVAL)','rhunfixed'=>'Red Hat 미수정 CVE(조치 불가)','ssg'=>'SCAP Security Guide(보안설정 룰셋)','kcve'=>'리눅스 커널 CNA(kernel.org)','ubuntuoval'=>'우분투 보안 OVAL'] as $tv=>$tl): ?>
+      <select name="connector_type" id="connType">
+        <?php foreach (['kev'=>'CISA KEV','osv'=>'OSV.dev','nvd'=>'NVD 2.0','kisa'=>'KISA 보안공지','epss'=>'FIRST EPSS','debtracker'=>'데비안 보안 트래커','rhoval'=>'RHEL 계열 벤더 권고(OVAL)','rhunfixed'=>'Red Hat 미수정 CVE(조치 불가)','ssg'=>'SCAP Security Guide(보안설정 룰셋)','kcve'=>'리눅스 커널 CNA(kernel.org)','ubuntuoval'=>'우분투 보안 OVAL','generic_api'=>'범용 API 커넥터'] as $tv=>$tl): ?>
           <option value="<?= $tv ?>" <?= ($edit['connector_type'] ?? 'kev')===$tv?'selected':'' ?>><?= $tl ?></option>
         <?php endforeach; ?>
       </select>
-      <label>API URL</label>
-      <input type="text" name="url" value="<?= vg_h($econn['url'] ?? '') ?>" placeholder="https://...">
-      <label>API Key (NVD 선택)</label>
-      <input type="text" name="api_key" value="<?= vg_h($econn['api_key'] ?? '') ?>" placeholder="비워도 됨">
-      <label>Ecosystem (OSV용, 예: Rocky Linux)</label>
-      <input type="text" name="ecosystem" value="<?= vg_h($econn['ecosystem'] ?? '') ?>">
-      <label>최근 N일 (NVD용)</label>
-      <input type="text" name="days" value="<?= vg_h((string) ($econn['days'] ?? '')) ?>" placeholder="7">
+      <div id="stdFields">
+        <label>API URL</label>
+        <input type="text" name="url" value="<?= vg_h($econn['url'] ?? '') ?>" placeholder="https://...">
+        <label>API Key (NVD 선택)</label>
+        <input type="text" name="api_key" value="<?= vg_h($econn['api_key'] ?? '') ?>" placeholder="비워도 됨">
+        <label>Ecosystem (OSV용, 예: Rocky Linux)</label>
+        <input type="text" name="ecosystem" value="<?= vg_h($econn['ecosystem'] ?? '') ?>">
+        <label>최근 N일 (NVD용)</label>
+        <input type="text" name="days" value="<?= vg_h((string) ($econn['days'] ?? '')) ?>" placeholder="7">
+      </div>
+      <div id="genericFields" hidden>
+        <label>역할</label>
+        <select id="gRole">
+          <option value="identity">취약점 정체</option>
+          <option value="priority">우선순위 신호</option>
+          <option value="vendor">벤더 패치 판정</option>
+          <option value="compliance">보안설정 룰셋</option>
+        </select>
+        <div class="sub" id="gRoleNotice" hidden>⚠ compliance role은 1차 미지원입니다 — 저장은 되지만 실행 시 오류가 발생합니다.</div>
+
+        <label>HTTP 메서드</label>
+        <select id="gMethod">
+          <option value="GET">GET</option>
+          <option value="POST">POST</option>
+        </select>
+
+        <label>URL 템플릿</label>
+        <input type="text" id="gUrlTemplate" placeholder="https://api.example.com/vulns?page={page}">
+        <div class="sub">플레이스홀더: <code>{page}</code>(1부터) · <code>{offset}</code>(0부터) · <code>{today}</code> · <code>{days_ago_N}</code></div>
+
+        <label>인증 헤더</label>
+        <div id="gHeaders" class="kvrows"></div>
+        <button type="button" class="btn btn--sm btn--ghost" id="gHeaderAdd">+ 헤더 추가</button>
+
+        <label>페이징 타입</label>
+        <select id="gPageType">
+          <option value="none">없음</option>
+          <option value="offset">offset</option>
+        </select>
+        <label>페이지 크기</label>
+        <input type="text" id="gPageSize" placeholder="100">
+        <label>총 건수 경로 (선택)</label>
+        <input type="text" id="gTotalPath" placeholder="meta.total">
+
+        <label>응답 아이템 경로</label>
+        <input type="text" id="gItemsPath" placeholder="data.vulnerabilities">
+        <div class="sub">응답 JSON 안에서 목록 배열의 dot-notation 경로. 최상위 배열이면 비워둔다.</div>
+
+        <label>필드 매핑 <span id="gRoleLabel" class="why"></span></label>
+        <div id="gFieldMap" class="kvrows"></div>
+        <div class="sub">각 대상 필드에 응답 JSON 안의 경로(dot-notation, 예: <code>data.cve</code>)를 입력한다. <strong>굵게</strong> 표시된 필드는 필수.</div>
+
+        <input type="hidden" name="g_config_json" id="gConfigJson">
+      </div>
       <label>스케줄</label>
       <select name="schedule_mode">
         <?php $sm = $esched['mode'] ?? 'manual'; foreach (['manual'=>'수동 (직접 실행)','interval'=>'주기 실행(N분)','daily'=>'매일 지정 시각','cron'=>'cron 표현식'] as $mv=>$ml): ?>

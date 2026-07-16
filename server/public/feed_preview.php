@@ -14,12 +14,19 @@ require __DIR__ . '/../src/feeds.php';
 vg_require_menu('connectors');   // 미리보기: 피드 메뉴 권한
 
 $type = (string) ($_GET['type'] ?? $_POST['type'] ?? '');
-$conn = [
-    'url'       => trim((string) ($_GET['url'] ?? $_POST['url'] ?? '')),
-    'api_key'   => trim((string) ($_GET['api_key'] ?? $_POST['api_key'] ?? '')),
-    'ecosystem' => trim((string) ($_GET['ecosystem'] ?? $_POST['ecosystem'] ?? '')),
-    'days'      => (int) ($_GET['days'] ?? $_POST['days'] ?? 7),
-];
+if ($type === 'generic_api') {
+    // 범용 API 커넥터는 폼 전체가 g_config_json 하나에 직렬화돼 온다(connectors.js
+    // vgGenericSerialize) — connectors.php 저장 처리와 같은 shape 라 그대로 preview()에 넘긴다.
+    $conn = json_decode((string) ($_POST['g_config_json'] ?? ''), true);
+    if (!is_array($conn)) { $conn = []; }
+} else {
+    $conn = [
+        'url'       => trim((string) ($_GET['url'] ?? $_POST['url'] ?? '')),
+        'api_key'   => trim((string) ($_GET['api_key'] ?? $_POST['api_key'] ?? '')),
+        'ecosystem' => trim((string) ($_GET['ecosystem'] ?? $_POST['ecosystem'] ?? '')),
+        'days'      => (int) ($_GET['days'] ?? $_POST['days'] ?? 7),
+    ];
+}
 
 try {
     $res = vg_feed_preview($type, $conn, vg_pdo());
