@@ -86,7 +86,7 @@ flowchart TD
 > **FILTERED** — 전체 인터페이스에 바인딩됐지만 방화벽(firewalld/ufw)이 그 포트를 막아 외부에서
 > 못 닿는 경우다. 이 판정이 없으면 방화벽 뒤의 내부 서비스가 **전부 HIGH/CRITICAL 로 뜬다**(오탐).
 
-**오탐 억제는 4겹이다.** 배포판은 버전을 안 올리고 패치만 이식하므로 버전 비교만으로는 오탐이 난다.
+**오탐 억제는 4겹이다(데비안 중심).** 배포판은 버전을 안 올리고 패치만 이식하므로 버전 비교만으로는 오탐이 난다.
 
 | 겹 | 근거 테이블 | 판정 | 커버리지 |
 |---|---|---|---|
@@ -101,6 +101,19 @@ flowchart TD
 > debsecan 은 방향이 반대(있는 게 아니라 **없는** 게 근거)라 안전장치를 두 겹 뒀다 —
 > `os_id=debian` 일 때만 쓰고(우분투는 OSV 의 USN 경로로 커버), **목록이 비면 억제하지 않는다**
 > (수집 실패와 "취약점 0"을 구분할 수 없어, 믿었다간 전부 억제해 버린다).
+
+**RHEL 계열·우분투·커널은 각자의 벤더 소스로 별도 판정한다.** 위 4겹은 데비안 트래커 중심으로
+자란 규칙이라, 배포판마다 조치 EVR 표기 방식이 다른 다른 벤더는 한 테이블로 합칠 수 없었다.
+
+| 벤더 | 근거 테이블 | 판정 |
+|---|---|---|
+| RHEL 계열(Red Hat/AlmaLinux/Oracle) | `tb_vendor_errata`(OVAL 조치 EVR) + `tb_vendor_unfixed`(조치 불가) | 릴리스별 조치 EVR 대조, 수정본 없는 CVE 는 별도 API 로 확인 |
+| 우분투 | `tb_ubuntu_oval` | 테스트에 조치 EVR 이 있으면 억제, 없으면 아직 수정본 없음(조치 불가) — 한 테이블에서 둘 다 표현 |
+| 리눅스 커널(배포판 밖) | `tb_kernel_cves`(kernel.org CNA) | 구동 커널의 업스트림 버전과 스트림별 수정 버전 대조. 라즈베리·자체빌드처럼 배포판 트래커·OVAL 이 관할하지 않는 커널만 담당 |
+
+벤더가 "아직 안 고쳤다"고 확인한 CVE 는 `tb_findings.no_fix` 로 표시한다 — **오탐 제거와는 다른
+축**이다. 등급(런타임 노출 기준)은 그대로 두되, "지금 고칠 수 있는 것"과 "조치 불가"를 화면에서
+분리해 조치 불가 수백 건이 고칠 수 있는 몇 건을 덮지 않게 한다.
 
 **억제를 취소하는 두 신호 — "패치됨"이 곧 "안전함"은 아니다.**
 
@@ -160,7 +173,7 @@ flowchart LR
     style MAT fill:#a371f7,color:#fff
 ```
 
-커넥터 = `{type(kev/osv/nvd/kisa/epss/debtracker/rhoval/rhunfixed/ssg/kcve/ubuntuoval/generic_api), connection(url·key·ecosystem 등 타입별), schedule, enabled}`.
+커넥터 = `{type(11종 — 고정 5종 kev/osv/nvd/kisa/epss + 벤더판정 6종 debtracker/rhoval/rhunfixed/ssg/kcve/ubuntuoval + 범용 generic_api), connection(url·key·ecosystem 등 타입별), schedule, enabled}`.
 스케줄은 **manual / interval(N분) / daily(HH:MM) / cron(5필드 표현식)** 지원 — UI에서 지정하면
 스케줄러 사이드카가 매 tick(60s) 판정해 그 시각에 수집·재매칭한다(Quartz 유사, 중앙 실행).
 수집 이력·상태는 `tb_feed_collection_logs` 에 남고 커넥터 행에 마지막 상태로 표시된다.

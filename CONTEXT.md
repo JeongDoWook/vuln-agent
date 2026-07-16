@@ -171,7 +171,7 @@ vuln-agent/
 - `FILTERED` 가 없으면 방화벽 뒤의 내부 서비스가 **전부 HIGH/CRITICAL 로 뜬다**(오탐).
   에이전트가 firewalld/ufw 허용 포트와 대조해 판정한다.
 
-**오탐 억제는 4겹이다.** 통과 못 한 건은 finding 이 아니라 `tb_suppressed_findings` 로 분리된다
+**오탐 억제는 4겹이다(데비안 중심).** 통과 못 한 건은 finding 이 아니라 `tb_suppressed_findings` 로 분리된다
 — 위험 집계·화면은 그대로 두고 오탐만 빠지며, **근거는 호스트 상세에 그대로 노출된다**(숨기지 않는다).
 
 | 겹 | 근거 | 판정 |
@@ -184,6 +184,13 @@ vuln-agent/
 > debsecan 은 방향이 반대라 안전장치를 두 겹 뒀다 — `os_id=debian` 일 때만 쓰고(우분투는 OSV 의
 > USN 경로로 이미 커버), **목록이 비면 억제하지 않는다**(수집 실패와 "취약점 0"을 구분할 수 없어
 > 믿었다간 전부 억제해 버린다).
+
+**RHEL 계열·우분투·커널은 각자의 벤더 소스로 별도 판정한다.** 데비안 4겹과 별개로, RHEL 계열은
+`tb_vendor_errata`(OVAL 조치 EVR)+`tb_vendor_unfixed`(조치 불가), 우분투는 `tb_ubuntu_oval` 한
+테이블이 조치 EVR·조치 불가를 모두 표현, 커널은 `tb_kernel_cves`(kernel.org CNA)가 배포판 밖의
+커널(라즈베리·자체빌드)까지 판정한다. 벤더가 "아직 안 고쳤다"고 확인한 CVE 는 `tb_findings.no_fix`
+로 표시한다 — 오탐 제거와는 다른 축으로, 등급은 그대로 두되 "지금 고칠 수 있는 것"과 "조치 불가"를
+화면에서 분리한다.
 
 **억제를 취소하는 두 신호** — "패치됨"이 곧 "안전함"이 아닌 경우다. 이게 없으면 미탐이 된다.
 
@@ -210,7 +217,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
 - [x] **1. 수집→전송→저장** — 에이전트 `--send` POST + `ingest.php` 수신 + DB
 - [x] **2. 매처** — 노출 맥락 우선순위(외부노출+로드+KEV=CRITICAL), findings + 아키텍처 다이어그램
 - [x] **3. 웹** — 로그인(users 세션) → 대시보드 → 호스트 상세 → 취약점(+조치·EPSS·상태) · 사용자관리
-- [x] **4a. CVE 피드 커넥터** — 커넥터 5종(KEV/OSV/NVD/KISA/EPSS), UI 설정·미리보기·cron 스케줄, 스케줄러 사이드카
+- [x] **4a. CVE 피드 커넥터** — 커넥터 11종(고정 5종 KEV/OSV/NVD/KISA/EPSS + 벤더 판정 6종 데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api), UI 설정·미리보기·cron 스케줄, 스케줄러 사이드카
 - [x] **4b. 국내특화** — KISA 보안공지 수집·표시(상세 본문까지) + 공지 상세 페이지 `advisory.php`
 - [x] **NVD 전체 데이터** — tb_cves 약 36만건. 주기 수집을 수정일(lastMod) 기준으로 전환(뒤늦게 CVSS 붙는 CVE 추적, 120일 상한).
       전체 백필 `bin/backfill_nvd.php`(멱등·재개, 병렬 워커로 가속). CVE 목록 페이지 `cves.php`(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬).
@@ -250,6 +257,9 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
       올린다(조치: 프로세스 재시작 / 재부팅). 이 판정이 없으면 "패치됨=안전"으로 착각해 미탐이 난다.
 - [x] **억제 근거 확장(errata·debsecan)** — changelog(핵심 13개)만으로는 좁아서, 벤더 권고
       `tb_applied_errata`(시스템 전체)와 데비안 보안 트래커 `tb_debsecan`(역방향 판정)을 더했다 → 억제 4겹(§7).
+- [x] **벤더별 판정 확장(RHEL·우분투·커널)** — 데비안 4겹과 별개로, RHEL 계열(`tb_vendor_errata`·
+      `tb_vendor_unfixed`)·우분투(`tb_ubuntu_oval`)·커널(`tb_kernel_cves`)이 각자의 벤더 소스로
+      백포트 판정 + 조치 불가(`no_fix`)를 담당한다(커넥터: rhoval/rhunfixed/ubuntuoval/kcve).
 - [x] **방화벽 차단(FILTERED) 분류** — 전체 인터페이스에 떠 있어도 방화벽이 막고 있으면 외부노출이 아니다.
       이 판정이 없으면 방화벽 뒤 내부 서비스가 전부 HIGH/CRITICAL 로 뜬다(오탐).
 - [x] **미지원 배포판 경고** — Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭 0건이 된다.

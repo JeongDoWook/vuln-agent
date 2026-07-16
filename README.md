@@ -11,7 +11,7 @@ agent/    수집 에이전트 (Bash) — 패키지·런타임 노출·백포트 
 server/   PHP 중앙 서버 — 수신 API(ingest)·Export API + 웹(대시보드·취약점·변화추적·CVE·자산·국내공지·시스템) + 매처
 deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·migrate.sh(스키마 자동 적용)·wt.sh
 db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼. 최상위 *.sql 은 빈 볼륨 초기화용, 증분 변경은 migrations/
-docs/     아키텍처 · 기획안 · 설명글 · 피드소스-역할(커넥터 12종: 고정 5종 + 벤더판정 6종 + 범용 API) · export-api · 에이전트-리소스-프로파일
+docs/     아키텍처 · 기획안 · 설명글 · 피드소스-역할(커넥터 11종: 고정 5종 + 벤더판정 6종) · export-api · 에이전트-리소스-프로파일
           (전체 프로세스 소개는 웹으로 서빙 — server/public/process.html → /process.html)
 shadow-ai/  (사이드 PoC) 섀도우 AI DLP 크롬 확장 — AI 챗봇 입력창의 민감정보 탐지. 본 파이프라인과 독립
 ```
@@ -174,13 +174,13 @@ sudo bash install-agent.sh \
 - [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
 - [x] 2. 매처 (외부노출 + 로드됨 + KEV = CRITICAL) · findings.php · 아키텍처 다이어그램
 - [x] 3. 웹 (로그인 → 대시보드 → 호스트상세 → 취약점 → CVE상세 · 사용자관리) + 검색/필터·페이지네이션
-- [x] 4a. CVE 피드 커넥터 (CISA KEV 실데이터 · OSV · NVD · EPSS · KISA) + 벤더 판정 6종(데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터 + 스케줄러 사이드카
+- [x] 4a. CVE 피드 커넥터 11종 (CISA KEV 실데이터 · OSV · NVD · EPSS · KISA) + 벤더 판정 6종(데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api) + 스케줄러 사이드카
 - [x] 4b. 국내 특화 — KISA 보안공지 커넥터 + 국내공지 페이지
 - [x] HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)
 - [x] 에이전트 자동 배포 — install-agent.sh (systemd-timer 우선/cron 폴백, 매시간)
 - [x] DB 전면 개편 — 전 테이블 `tb_` 접두사 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
       + 소프트삭제 + 활동 감사로그(`tb_activity_log` + `activity.php` 조회 화면)
-- [x] 백포트 오탐 억제 — changelog·errata·debsecan 4겹으로 "버전은 낮아도 이미 패치됨"을 증명(아래 참고)
+- [x] 백포트 오탐 억제 — changelog·errata·debsecan 4겹(데비안 중심)으로 "버전은 낮아도 이미 패치됨"을 증명 + RHEL/우분투/커널은 각자의 벤더 소스로 별도 판정(아래 참고)
 - [x] 재시작·재부팅 필요 판정 — 패치됐어도 옛 `.so` 를 물고 있거나 재부팅 전이면 억제하지 않는다
 - [x] 컨테이너 스캔 — 컨테이너 내부 패키지 인벤토리(호스트 스캔에서 빠지던 미탐 영역)
 - [x] 방화벽 차단(FILTERED) 분류 — 방화벽 뒤 내부 서비스가 전부 HIGH 로 뜨던 오탐 제거
@@ -246,6 +246,12 @@ API: `POST /ingest.php`(에이전트 수집 수신) · `POST /rematch.php`(재�
 억제된 건은 `tb_suppressed_findings` 로 **분리**된다 → 위험 집계·화면은 그대로 두고 오탐만
 사라지며, 숨기지 않고 **호스트 상세에 근거와 함께** 보여준다(설명가능성).
 
+위 4겹은 데비안 중심이다. **RHEL 계열(`tb_vendor_errata`·`tb_vendor_unfixed`)·우분투(`tb_ubuntu_oval`)·
+커널(`tb_kernel_cves`)은 각자의 벤더 소스로 별도 판정한다** — 배포판마다 조치 EVR 표기 방식이 달라
+한 테이블로 합칠 수 없다. 또한 벤더가 "아직 안 고쳤다"고 확인한 CVE 는 `tb_findings.no_fix` 로
+표시한다 — 오탐 제거와는 다른 축으로, 등급은 그대로 두되 "지금 고칠 수 있는 것"과 "조치 불가"를
+화면에서 분리한다.
+
 ### "패치됨"이 곧 "안전함"은 아니다 — 재시작·재부팅 필요
 
 억제를 **취소하는** 두 신호가 있다. 이게 없으면 미탐이 난다.
@@ -291,7 +297,7 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 - **FIRST EPSS** (기본 활성): CVE별 악용확률(0~1)을 매일 갱신 → KEV(이미 악용됨) + EPSS(악용 가능성)로 우선순위/정렬. findings·호스트 상세에 EPSS % 표시.
 - **KISA 보안공지** (기본 활성): 보호나라 RSS 수집 → 국내공지 페이지. 해외 도구가 안 하는 국내 특화. 신규 공지는 **상세 본문까지 수집**해 `/advisory.php` 에서 그대로 보여준다(과거분은 `bin/backfill_kisa_content.php` 로 1회 채움).
 - **벤더 판정 6종**(데비안 보안 트래커 · RHEL 계열 OVAL · Red Hat 미수정 CVE · 우분투 보안 OVAL · 리눅스 커널 CNA · SCAP Security Guide): 배포판/커널 벤더가 "이 빌드가 아직도 취약한가"를 직접 판정한 데이터로, 버전만 비교하면 나는 백포트 오탐을 걸러낸다. 각 소스가 무슨 질문에 답하는지는 [`docs/피드소스-역할.md`](docs/피드소스-역할.md) 참고.
-- **범용 API 커넥터**(`generic_api`): 위 고정 소스가 못 미치는 조직별 커스텀 REST API 를 UI 에서 직접 등록(URL 템플릿·헤더·페이징·응답 매핑). 상세: [`docs/피드소스-역할.md`](docs/피드소스-역할.md).
+- **범용 API 커넥터**(`generic_api`): 위 고정 5종+벤더 6종이 못 미치는 조직별 커스텀 REST API 를 UI 에서 직접 등록(URL 템플릿·헤더·페이징·응답 매핑). 상세: [`docs/피드소스-역할.md`](docs/피드소스-역할.md).
 - 스케줄러 사이드카(`scheduler` 컨테이너)가 1분마다 due 커넥터를 실행하고, 수집 후 전체 스캔을 재매칭. 중단돼 `running` 으로 굳은 실행도 정리한다.
 - 수동 실행: 커넥터 행의 "지금 실행", 또는 `docker compose exec web php bin/sync.php <id>`.
 
