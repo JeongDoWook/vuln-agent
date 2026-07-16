@@ -98,7 +98,11 @@ function Resolve-Wt {
 # ── 지시문 확보 ──────────────────────────────────────────────────────────────
 if ($PromptFile) {
   if (-not (Test-Path $PromptFile)) { throw "PromptFile 없음: $PromptFile" }
-  $taskText = Get-Content $PromptFile -Raw
+  # -Encoding UTF8 필수: PS5.1 Get-Content 기본은 ANSI(한국어 윈도 = cp949)라 BOM 없는
+  # UTF-8 을 cp949 로 오독한다. 지시문은 claude 의 Write 도구가 쓴 BOM 없는 UTF-8 이다.
+  # 그대로 두면 오독한 글자를 아래 Set-Content 가 UTF-8 로 다시 써서 이중으로 깨진다
+  # (실제 사고: 워커가 '理쒖긽??README.md' 같은 지시문을 받아 복원해 읽고서야 작업했다).
+  $taskText = Get-Content $PromptFile -Raw -Encoding UTF8
 }
 elseif ($Prompt) {
   $taskText = $Prompt
