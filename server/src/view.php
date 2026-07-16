@@ -604,6 +604,36 @@ function vg_toolbar(array $fields): void {
 }
 
 /**
+ * 활동 로그 activity_type → 한글 라벨(SSOT). activity.php(전체 로그) 와 user.php(사용자별
+ * 최근 로그) 가 같은 매핑을 쓴다 — 실제 존재하는 값만(vg_log_activity 호출부 기준),
+ * 코드에 없으면 원본 그대로 fallback 하니 새 값이 추가돼도 화면이 깨지진 않는다.
+ */
+function vg_activity_type_labels(): array {
+    return [
+        'login'                => '로그인',
+        'password_change'      => '비밀번호 변경',
+        'agent_token_issue'    => '에이전트 토큰 발급',
+        'agent_token_revoke'   => '에이전트 토큰 폐기',
+        'agent_token_delete'   => '에이전트 토큰 삭제',
+        'token_issue'          => 'API 토큰 발급',
+        'token_revoke'         => 'API 토큰 폐기',
+        'host_delete'          => '호스트 삭제',
+        'connector_save'       => '커넥터 저장',
+        'connector_toggle'     => '커넥터 사용여부 전환',
+        'connector_delete'     => '커넥터 삭제',
+        'ingest'               => '수집 반영',
+        'ingest_spoof_blocked' => '수집 위조 차단',
+        'ingest_shared_token'  => '공유 토큰 수집',
+        'permission_update'    => '권한 변경',
+        'user_add'             => '사용자 추가',
+        'user_role'            => '사용자 권한 변경',
+        'user_pw_reset'        => '사용자 비밀번호 재설정',
+        'user_delete'          => '사용자 삭제',
+        'feed_run'             => '피드 실행',
+    ];
+}
+
+/**
  * 사이드바 메뉴(라벨 SSOT). 대분류(섹션 라벨) → 중분류(링크) 2단.
  *   섹션 라벨이 '' 이면 라벨 없이 링크만 렌더한다(대시보드처럼 단독 항목).
  *   각 링크의 'perm' 은 vg_can() 메뉴코드, 'key' 는 vg_header($active) 와 맞춘다.
