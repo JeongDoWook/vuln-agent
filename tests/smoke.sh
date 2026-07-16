@@ -60,8 +60,9 @@ assert_my_stack() {
     if [ "$1" = "종료" ]; then
       printf "    ${RED}스모크 도중 컨테이너가 사라졌습니다 — 위 결과는 무효입니다.${NC}\n" >&2
     fi
-    printf "    가져오려면: ./deploy/compose_runner.sh dev up -d\n" >&2
-    printf "    (일부러 다른 대상을 칠 때만 VG_SMOKE_ANY=1)\n" >&2
+    printf "    올리려면: ./deploy/compose_runner.sh dev up -d\n" >&2
+    printf "    (여기가 워크트리면 에이전트가 스스로 올려도 된다 — 이 트리 전용 web+scheduler 만 뜬다.\n" >&2
+    printf "     메인 트리 스택과 공용 DB 는 사람이 올린다. 일부러 다른 대상을 칠 때만 VG_SMOKE_ANY=1)\n" >&2
     exit 2
   fi
 }

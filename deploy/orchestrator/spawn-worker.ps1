@@ -326,6 +326,9 @@ $taskText
 - 너는 vuln-agent 워크트리 wt/$Task/ 에서 도는 독립 워커다. 브랜치: $branch.
 - 저장소 규칙은 CLAUDE.md 를 따른다. main 직접 커밋/push 금지 — 이 브랜치에서만.
 - 코드를 건드렸으면 검증 게이트 통과: php -l / bash -n / (server·db·tests 변경 시) tests/smoke.sh.
+  스모크가 이 트리 전용 컨테이너 부재로 중단(exit 2)되면 **네 워크트리 스택은 스스로 올려도 된다**
+  (./deploy/compose_runner.sh dev up -d). 이 트리 전용 web+scheduler 만 뜨고(db 는 안 뜬다)
+  컨테이너명이 트리마다 고유해 다른 워커를 건드리지 않는다. 메인 트리 스택과 공용 DB 는 사람 몫이다.
 $finishBlock
 "@
 Set-Content -Path (Join-Path $wtDir '.initial-prompt') -Value $preamble -Encoding utf8
