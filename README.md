@@ -11,7 +11,7 @@ agent/    수집 에이전트 (Bash) — 패키지·런타임 노출·백포트 
 server/   PHP 중앙 서버 — 수신 API(ingest)·Export API + 웹(대시보드·취약점·변화추적·CVE·자산·국내공지·시스템) + 매처
 deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·migrate.sh(스키마 자동 적용)·wt.sh
 db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼. 최상위 *.sql 은 빈 볼륨 초기화용, 증분 변경은 migrations/
-docs/     아키텍처 · 기획안 · 설명글 · 피드소스-역할(커넥터 5종) · export-api · 에이전트-리소스-프로파일
+docs/     아키텍처 · 기획안 · 설명글 · 피드소스-역할(커넥터 12종: 고정 5종 + 벤더판정 6종 + 범용 API) · export-api · 에이전트-리소스-프로파일
           (전체 프로세스 소개는 웹으로 서빙 — server/public/process.html → /process.html)
 shadow-ai/  (사이드 PoC) 섀도우 AI DLP 크롬 확장 — AI 챗봇 입력창의 민감정보 탐지. 본 파이프라인과 독립
 ```
@@ -174,7 +174,7 @@ sudo bash install-agent.sh \
 - [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
 - [x] 2. 매처 (외부노출 + 로드됨 + KEV = CRITICAL) · findings.php · 아키텍처 다이어그램
 - [x] 3. 웹 (로그인 → 대시보드 → 호스트상세 → 취약점 → CVE상세 · 사용자관리) + 검색/필터·페이지네이션
-- [x] 4a. CVE 피드 커넥터 (CISA KEV 실데이터 · OSV · NVD · EPSS) + 스케줄러 사이드카
+- [x] 4a. CVE 피드 커넥터 (CISA KEV 실데이터 · OSV · NVD · EPSS · KISA) + 벤더 판정 6종(데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터 + 스케줄러 사이드카
 - [x] 4b. 국내 특화 — KISA 보안공지 커넥터 + 국내공지 페이지
 - [x] HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)
 - [x] 에이전트 자동 배포 — install-agent.sh (systemd-timer 우선/cron 폴백, 매시간)
@@ -200,7 +200,7 @@ sudo bash install-agent.sh \
 | 취약점 | `/findings.php` 우선순위(+조치안) · `/changes.php` 변화 추적 · `/cves.php` CVE 목록 · `/packages.php` 영향 패키지 · `/advisories.php`·`/advisory.php` 국내 보안공지 |
 | 자산 | `/assets.php` 호스트 자산 관리 |
 | 피드 | `/connectors.php` 피드 커넥터(설정·스케줄·미리보기·지금 실행) |
-| 시스템 | `/users.php` 사용자 · `/permissions.php` 권한 설정 · `/api-tokens.php` API 토큰 · `/activity.php` 감사 로그 |
+| 시스템 | `/users.php` 사용자 목록 · `/user.php` 사용자 상세(관리 액션) · `/permissions.php` 권한 설정 · `/agent-tokens.php` 에이전트 토큰 발급 · `/api-tokens.php` API 토큰 · `/activity.php` 감사 로그 |
 
 API: `POST /ingest.php`(에이전트 수집 수신) · `POST /rematch.php`(재매칭) · `GET /export.php`
 (결과 내보내기 — 상세: [`docs/export-api.md`](docs/export-api.md)).
@@ -290,6 +290,8 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 - **NVD 2.0**: 전체 CVE(약 36만건, CVSS·설명 포함). 주기 수집은 **수정일(lastMod) 기준** 증분이라 뒤늦게 CVSS 가 붙는 CVE 도 따라잡는다(120일 상한). 전체 이력은 `bin/backfill_nvd.php` 로 1회 백필(멱등, `--start-index` 재개). API 키는 DB(`connection_json.api_key`)에만 두고 코드·저장소엔 없다. `/cves.php` 에서 목록 조회.
 - **FIRST EPSS** (기본 활성): CVE별 악용확률(0~1)을 매일 갱신 → KEV(이미 악용됨) + EPSS(악용 가능성)로 우선순위/정렬. findings·호스트 상세에 EPSS % 표시.
 - **KISA 보안공지** (기본 활성): 보호나라 RSS 수집 → 국내공지 페이지. 해외 도구가 안 하는 국내 특화. 신규 공지는 **상세 본문까지 수집**해 `/advisory.php` 에서 그대로 보여준다(과거분은 `bin/backfill_kisa_content.php` 로 1회 채움).
+- **벤더 판정 6종**(데비안 보안 트래커 · RHEL 계열 OVAL · Red Hat 미수정 CVE · 우분투 보안 OVAL · 리눅스 커널 CNA · SCAP Security Guide): 배포판/커널 벤더가 "이 빌드가 아직도 취약한가"를 직접 판정한 데이터로, 버전만 비교하면 나는 백포트 오탐을 걸러낸다. 각 소스가 무슨 질문에 답하는지는 [`docs/피드소스-역할.md`](docs/피드소스-역할.md) 참고.
+- **범용 API 커넥터**(`generic_api`): 위 고정 소스가 못 미치는 조직별 커스텀 REST API 를 UI 에서 직접 등록(URL 템플릿·헤더·페이징·응답 매핑). 상세: [`docs/피드소스-역할.md`](docs/피드소스-역할.md).
 - 스케줄러 사이드카(`scheduler` 컨테이너)가 1분마다 due 커넥터를 실행하고, 수집 후 전체 스캔을 재매칭. 중단돼 `running` 으로 굳은 실행도 정리한다.
 - 수동 실행: 커넥터 행의 "지금 실행", 또는 `docker compose exec web php bin/sync.php <id>`.
 
