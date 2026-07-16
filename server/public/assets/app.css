@@ -1019,7 +1019,10 @@ form.card .btn--block { margin-top: 1.1rem; }
 .actions input[type=password] { width: 120px; }
 
 /* --- 툴바 / 페이저 ------------------------------------------------------- */
-.toolbar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+/* 필드(검색·필터)는 좌측에 여유 있게, 검색/초기화 버튼 묶음은 margin-left:auto 로
+   우측 끝에 붙인다 — 필터가 짧아도 버튼이 항상 툴바 우측 상단에 정렬된다. */
+.toolbar { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+.toolbar > button[type="submit"] { margin-left: auto; }
 /* 검색창엔 돋보기 아이콘을 안에 둔다(참고 디자인처럼). 아이콘은 배경 SVG 라 여백만 비운다. */
 .toolbar input[type=search] {
   width: auto;
@@ -1030,6 +1033,13 @@ form.card .btn--block { margin-top: 1.1rem; }
   background-position: .6rem center;
 }
 .toolbar select { width: auto; }
+
+/* --- 페이지 헤더(제목 + 우측 상단 액션 버튼) ----------------------------- */
+/* 검색 필터 없이 "+ 추가"류 단독 버튼만 있는 페이지는 그 버튼을 h1 옆 우측 상단에 둔다.
+   모달 내부 저장/닫기 버튼은 이 규칙 대상이 아니다(모달 하단 그대로). */
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .3rem; }
+.page-head h1 { margin: 0; }
+.page-head .toolbar { margin-bottom: 0; }
 
 .pager { display: flex; gap: .3rem; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
 .pager a, .pager span {

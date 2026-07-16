@@ -147,7 +147,10 @@ vg_header('자산관리', 'assets');
       VG_STALE_MIN / 60, VG_STALE_MIN / 60, VG_OFFLINE_MIN / 1440, VG_OFFLINE_MIN / 1440
   );
   ?>
-  <h1>자산관리 <?= vg_help($stateHelp) ?></h1>
+  <div class="page-head">
+    <h1>자산관리 <?= vg_help($stateHelp) ?></h1>
+    <div class="toolbar"><?php vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost'); ?></div>
+  </div>
   <div class="sub">에이전트가 등록한 호스트 · 최신 수집 상태와 취약점 요약</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err !== null ? '오류 · ' . $err : null); ?>
@@ -166,10 +169,6 @@ vg_header('자산관리', 'assets');
         <b><?= number_format($stateCounts[$key]) ?></b><span><?= vg_h($label) ?></span>
       </a>
     <?php endforeach; ?>
-  </div>
-
-  <div class="toolbar">
-    <?php vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost'); ?>
   </div>
 
   <?php
