@@ -11,7 +11,7 @@ agent/    수집 에이전트 (Bash) — 패키지·런타임 노출·백포트 
 server/   PHP 중앙 서버 — 수신 API(ingest)·Export API + 웹(대시보드·취약점·변화추적·CVE·자산·국내공지·시스템) + 매처
 deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·migrate.sh(스키마 자동 적용)·wt.sh
 db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼. 최상위 *.sql 은 빈 볼륨 초기화용, 증분 변경은 migrations/
-docs/     아키텍처 · 기획안 · 설명글 · 피드소스-역할(커넥터 11종: 고정 5종 + 벤더판정 6종) · export-api · 에이전트-리소스-프로파일
+docs/     아키텍처 · 기획안 · 설명글 · 피드소스-역할(커넥터 12종: 고정 5종 + 벤더판정 6종 + 범용 1종) · export-api · 에이전트-리소스-프로파일
           (전체 프로세스 소개는 웹으로 서빙 — server/public/process.html → /process.html)
 shadow-ai/  (사이드 PoC) 섀도우 AI DLP 크롬 확장 — AI 챗봇 입력창의 민감정보 탐지. 본 파이프라인과 독립
 ```
@@ -174,7 +174,7 @@ sudo bash install-agent.sh \
 - [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
 - [x] 2. 매처 (외부노출 + 로드됨 + KEV = CRITICAL) · findings.php · 아키텍처 다이어그램
 - [x] 3. 웹 (로그인 → 대시보드 → 호스트상세 → 취약점 → CVE상세 · 사용자관리) + 검색/필터·페이지네이션
-- [x] 4a. CVE 피드 커넥터 11종 (CISA KEV 실데이터 · OSV · NVD · EPSS · KISA) + 벤더 판정 6종(데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api) + 스케줄러 사이드카
+- [x] 4a. CVE 피드 커넥터 12종 (CISA KEV 실데이터 · OSV · NVD · EPSS · KISA) + 벤더 판정 6종(데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api) + 스케줄러 사이드카
 - [x] 4b. 국내 특화 — KISA 보안공지 커넥터 + 국내공지 페이지
 - [x] HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)
 - [x] 에이전트 자동 배포 — install-agent.sh (systemd-timer 우선/cron 폴백, 매시간)
