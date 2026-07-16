@@ -17,30 +17,8 @@ $q = trim((string) ($_GET['q'] ?? ''));
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = vg_perpage();
 
-// 액션(activity_type) 코드 → 한글 라벨. 실제 존재하는 값만(vg_log_activity 호출부 기준) — 새 값은
-// 코드에 없으면 원본 그대로 fallback 하니 여기 없다고 화면이 깨지진 않는다.
-$activityLabels = [
-    'login'                => '로그인',
-    'password_change'      => '비밀번호 변경',
-    'agent_token_issue'    => '에이전트 토큰 발급',
-    'agent_token_revoke'   => '에이전트 토큰 폐기',
-    'agent_token_delete'   => '에이전트 토큰 삭제',
-    'token_issue'          => 'API 토큰 발급',
-    'token_revoke'         => 'API 토큰 폐기',
-    'host_delete'          => '호스트 삭제',
-    'connector_save'       => '커넥터 저장',
-    'connector_toggle'     => '커넥터 사용여부 전환',
-    'connector_delete'     => '커넥터 삭제',
-    'ingest'               => '수집 반영',
-    'ingest_spoof_blocked' => '수집 위조 차단',
-    'ingest_shared_token'  => '공유 토큰 수집',
-    'permission_update'    => '권한 변경',
-    'user_add'             => '사용자 추가',
-    'user_role'            => '사용자 권한 변경',
-    'user_pw_reset'        => '사용자 비밀번호 재설정',
-    'user_delete'          => '사용자 삭제',
-    'feed_run'             => '피드 실행',
-];
+// 액션(activity_type) 코드 → 한글 라벨(SSOT: vg_activity_type_labels(), user.php 와 공유).
+$activityLabels = vg_activity_type_labels();
 
 try {
     $pdo = vg_pdo();
