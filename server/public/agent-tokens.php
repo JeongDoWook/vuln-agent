@@ -99,7 +99,10 @@ if ($issueFqdn === '') { $issueFqdn = trim((string) ($_GET['fqdn'] ?? '')); }
 
 vg_header('에이전트 토큰', 'agenttokens');
 ?>
-  <h1>에이전트 토큰 <span class="hint">(<?= number_format($total) ?>개)</span></h1>
+  <div class="page-head">
+    <h1>에이전트 토큰 <span class="hint">(<?= number_format($total) ?>개)</span></h1>
+    <div class="toolbar"><?php vg_modal_btn('issueToken', '+ 토큰 발급'); ?></div>
+  </div>
   <div class="sub">
     각 수집 에이전트에 발급하는 <strong>호스트 전용 토큰</strong>입니다. 발급 시 정한 호스트(fqdn)의
     스캔만 갱신할 수 있어, 침해된 대상 1대가 다른 호스트를 위조하는 것을 막습니다.
@@ -132,10 +135,6 @@ vg_header('에이전트 토큰', 'agenttokens');
       </div>
     </div>
   <?php endif; ?>
-
-  <div class="toolbar">
-    <?php vg_modal_btn('issueToken', '+ 토큰 발급'); ?>
-  </div>
 
   <?php
   vg_table(

@@ -96,14 +96,13 @@ $csrf = vg_csrf_token();
 
 vg_header('사용자', 'users');
 ?>
-  <h1>사용자 관리 <span class="hint">(<?= number_format($total) ?>명)</span></h1>
+  <div class="page-head">
+    <h1>사용자 관리 <span class="hint">(<?= number_format($total) ?>명)</span></h1>
+    <div class="toolbar"><?php vg_modal_btn('addUser', '+ 사용자 추가'); ?></div>
+  </div>
   <div class="sub">admin 전용 · 계정 추가 · 역할 변경 · 비번 초기화 · 삭제</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
-
-  <div class="toolbar">
-    <?php vg_modal_btn('addUser', '+ 사용자 추가'); ?>
-  </div>
 
   <?php
   $meId = (int) ($me['id'] ?? 0);

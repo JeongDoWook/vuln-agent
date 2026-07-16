@@ -55,13 +55,16 @@ foreach ($pdo->query('SELECT role, menu_code, allowed FROM tb_role_permissions W
 $csrf = vg_csrf_token();
 vg_header('권한설정', 'permissions');
 ?>
-  <h1>역할별 메뉴 접근권한</h1>
-  <div class="sub">admin 전용 · 운영자·사용자가 접근할 수 있는 메뉴를 체크로 설정 · 관리자는 항상 전체 허용</div>
-
-  <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
-
   <form method="post">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+    <div class="page-head">
+      <h1>역할별 메뉴 접근권한</h1>
+      <div class="toolbar"><button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button></div>
+    </div>
+    <div class="sub">admin 전용 · 운영자·사용자가 접근할 수 있는 메뉴를 체크로 설정 · 관리자는 항상 전체 허용</div>
+
+    <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+
     <div class="card">
       <table class="matrix">
         <thead><tr>
@@ -86,7 +89,6 @@ vg_header('권한설정', 'permissions');
         </tbody>
       </table>
     </div>
-    <button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button>
   </form>
 
   <div class="sub card__body">
