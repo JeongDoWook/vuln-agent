@@ -82,7 +82,7 @@
   파일 구성: `deploy/compose.dev.yml`(web+scheduler, 모든 트리 공통) · `compose.dev-db.yml`(db,
   메인 트리 전용) · `compose.dev-net.yml`(공유 네트워크 선언, dev 전체 공통).
 - **포트는 트리 속성, DB 는 여전히 스택 속성이다.** `WEB_PORT` 는 각 트리 자신의 `deploy/.env.dev`
-  에서 읽는다 — 메인 트리는 8080(`init` 이 만듦), 워크트리는 `wt.sh add` 가 안 쓰는 포트를 골라
+  에서 읽는다 — 메인 트리는 8000(`init` 이 만듦), 워크트리는 `wt.sh add` 가 안 쓰는 포트를 골라
   그 워크트리 전용 `deploy/.env.dev`(gitignore, WEB_PORT 한 줄만)에 박아 둔다. 반면 `MYSQL_*`·
   `DB_DATA`·`DB_PORT` 등은 여전히 **메인 트리의 `deploy/.env.dev`** 하나만 쓴다(DB 는 공용이므로).
   `DB_DATA=../data/mysql` 은 상대경로라 compose 파일이 있는 트리 기준으로 풀리는데, db 는 항상

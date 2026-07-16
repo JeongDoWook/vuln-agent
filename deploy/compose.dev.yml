@@ -17,7 +17,7 @@ services:
   web:
     container_name: ${WEB_CONTAINER:-vulnagent-web-dev}
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_PORT:-8000}:80"
     volumes:
       # 소스를 그대로 마운트 (docroot 는 이미지의 /var/www/html/public)
       - ../server:/var/www/html

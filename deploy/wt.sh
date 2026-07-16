@@ -39,7 +39,7 @@ SECRET_FILES=(mysql_root_password mysql_password ingest_token admin_password duc
 
 # --- WEB_PORT 할당 -----------------------------------------------------------
 # web+scheduler 는 이제 워크트리별로 독립된 컨테이너로 뜬다(compose_runner.sh) — 포트가
-# 겹치면 안 되므로, 메인 트리 포트(보통 8080)와 다른 워크트리에 이미 준 포트를 피해 하나 고른다.
+# 겹치면 안 되므로, 메인 트리 포트(보통 8000)와 다른 워크트리에 이미 준 포트를 피해 하나 고른다.
 # 파일이 없으면 sed 가 비영(0 이 아닌) 종료코드를 낸다 — set -e/pipefail 아래서 이 함수를 부르는
 #   쪽까지 조용히 죽지 않도록 `|| true` 로 항상 0 을 반환한다(WEB_PORT 못 찾으면 빈 문자열).
 main_web_port() {
@@ -51,7 +51,7 @@ wt_web_port() {  # $1 = 워크트리 디렉터리
 alloc_web_port() {
   local used port d p mainport
   mainport="$(main_web_port)"
-  used=" ${mainport:-8080} "
+  used=" ${mainport:-8000} "
   if [ -d "$WT_ROOT" ]; then
     for d in "$WT_ROOT"/*/; do
       [ -d "$d" ] || continue

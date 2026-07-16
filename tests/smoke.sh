@@ -3,14 +3,14 @@
 # vuln-agent · API 스모크 테스트 (curl 기반 end-to-end)
 # =============================================================================
 # 실행 중인 스택을 대상으로 수집→저장→매칭→웹 로그인까지 자동 검증한다.
-#   사용:  ./tests/smoke.sh [BASE_URL]     (기본 http://localhost:8080)
+#   사용:  ./tests/smoke.sh [BASE_URL]     (기본 http://localhost:8000)
 #   사전:  ./compose_runner.sh dev up -d  로 스택이 떠 있어야 함.
 #          비밀값은 secrets/*.txt 에서 읽는다.
 # 종료코드: 실패가 하나라도 있으면 1.
 # =============================================================================
 set -uo pipefail
 
-BASE="${1:-http://localhost:8080}"
+BASE="${1:-http://localhost:8000}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SAMPLE="$ROOT/tests/sample-scan.json"
 
