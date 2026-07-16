@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id    = (int) ($_POST['id'] ?? 0);
                 $name  = trim((string) ($_POST['name'] ?? ''));
                 $type  = (string) ($_POST['connector_type'] ?? '');
-                if ($name === '' || !in_array($type, ['kev','osv','nvd','kisa','epss','debtracker','rhoval','rhunfixed','ssg','kcve','ubuntuoval'], true)) {
+                if ($name === '' || !in_array($type, ['kev','osv','nvd','kisa','epss','debtracker','rhoval','rhunfixed','ssg','kcve','ubuntuoval','generic_api'], true)) {
                     throw new RuntimeException('이름과 커넥터 타입을 확인하세요.');
                 }
                 $conn = ['url' => trim((string) ($_POST['url'] ?? ''))];
