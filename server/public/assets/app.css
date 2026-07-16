@@ -752,6 +752,7 @@ tbody tr.sev-high:hover { background: var(--surface-2); }
 .empty__hint { display: block; margin-top: .35rem; font-size: .84rem; color: var(--muted-2); }
 .empty .btn { margin-top: .9rem; }
 .why { color: var(--text-2); font-size: .82rem; }
+.info-icon { cursor: help; color: var(--muted); font-size: .9em; margin-left: 4px; }
 .trunc {
   display: inline-block;
   max-width: min(46vw, 820px);
