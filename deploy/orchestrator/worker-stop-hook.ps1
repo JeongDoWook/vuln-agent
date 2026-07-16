@@ -43,6 +43,12 @@ try {
   elseif ($dirty) { "진행중(자동): 편집 중, 미커밋 · $branch" }
   else { "대기중(자동): 변경 없음 · $branch" }
 
+  # 상태가 실제로 바뀔 때만 히스토리에 남긴다(매 idle tick 마다가 아니라 전환 시점만).
+  if ($line -ne $first) {
+    . (Join-Path $PSScriptRoot 'history-log.ps1')
+    Add-OrchestratorHistory -MainRoot $mainRoot -Task $task -Event 'status' -Detail $line
+  }
+
   Set-Content -Path $resultPath -Value $line -Encoding UTF8
 }
 catch { }

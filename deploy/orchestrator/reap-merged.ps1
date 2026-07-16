@@ -40,6 +40,7 @@ if (-not $gitCommon) { throw '스크립트가 git 저장소 안에 있지 않습
 if (-not [System.IO.Path]::IsPathRooted($gitCommon)) { $gitCommon = Join-Path $scriptDir $gitCommon }
 $MainRoot = Split-Path (Resolve-Path $gitCommon).Path -Parent
 $manifestDir = Join-Path $MainRoot '.omc\orchestrator'
+. (Join-Path $scriptDir 'history-log.ps1')
 
 # gh 는 cwd 의 git 저장소로 repo 를 추론한다 → 다른 폴더에서 실행돼도 맞는 repo 를 쓰도록
 # origin 에서 owner/repo 를 뽑아 GH_REPO 로 고정한다.
@@ -115,7 +116,10 @@ function Reap-Once {
         if (Test-Path (Join-Path $MainRoot "wt\$($m.task)")) {
           Write-Host "  ⚠ 정리 실패 — '$($m.task)' 탭/세션을 닫고 다시 실행하세요." -ForegroundColor Yellow
         }
-        else { $reaped++ }
+        else {
+          $reaped++
+          Add-OrchestratorHistory -MainRoot $MainRoot -Task $m.task -Event 'merged_cleanup' -Detail $m.branch
+        }
       }
     }
     else {
