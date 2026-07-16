@@ -78,7 +78,7 @@ usage() {
   echo ""
   say "  ${GREEN}add${NC} <브랜치> [기점]   wt/<이름> 워크트리 생성 (기점 기본 origin/main)"
   say "  ${GREEN}list${NC}                  워크트리 + 할당 포트"
-  say "  ${GREEN}rm${NC} <이름>             워크트리 + 병합된 브랜치 제거(dev 스택은 안 건드림, 서빙 중이면 경고만)"
+  say "  ${GREEN}rm${NC} <이름>             이 트리 스택 회수(떠 있으면) + 워크트리 + 병합된 브랜치 제거"
   say "  ${GREEN}sweep${NC}                 병합된 워크트리를 한 번에 정리 (미병합·미커밋은 유지)"
   echo ""
   say "예: ${CYAN}./deploy/wt.sh add feat/cve-list${NC}  →  wt/cve-list"
@@ -173,20 +173,23 @@ cmd_list() {
   done
 }
 
-# 이 워크트리의 web/scheduler 스택이 떠 있으면 "경고만" 한다 — 절대 자동으로 내리지 않는다.
-#   예전엔(스택이 저장소에 하나뿐이던 시절) 여기서 마운트 경로를 대조해 "지금 이 트리를
-#   서빙 중인가" 를 확인해야 했다. 이제 워크트리마다 컨테이너명이 고유해서(vulnagent-web-dev-<이름>)
-#   그 이름이 떠 있는지만 보면 곧 이 워크트리 얘기다 — 대조할 다른 트리가 없다.
-#   docker compose down 은 여기서 직접 실행하지 않는다. wt.sh rm/sweep 은 사람이든 에이전트든
-#   일상적으로 부르는 정리 명령인데, 부를 때마다 예고 없이 스택이 내려가면 혼란만 준다 —
-#   워크트리 삭제 자체는 그대로 진행하고(마운트 원본이 사라져 컨테이너가 500 을 내기 시작할 수
-#   있다는 것만 알린다), 실제 docker 명령은 사람이 직접 판단해서 친다.
+# 이 워크트리의 web/scheduler 스택이 떠 있으면 워크트리를 지우기 **전에** 내린다(회수).
+#   워크트리마다 컨테이너명이 고유해서(vulnagent-web-dev-<이름>) 그 이름이 떠 있는지만 보면
+#   곧 이 워크트리 얘기다 — 대조할 다른 트리가 없다(옛 러너 시절의 마운트 대조가 불필요).
+#   예전엔 안내만 출력하고 실제 down 은 사람에게 미뤘다. 그런데 워커가 자기 트리 스택을 스스로
+#   올릴 수 있게 된 뒤로는(block-dev-stack.sh 완화) 그게 곧 메모리 단조 증가가 된다 — 워크트리를
+#   지워도 web/scheduler 가 남아, 마운트 원본이 사라진 채 500 을 내며 자리만 차지한다.
+#   내리는 대상은 이 트리 전용 프로젝트(vulnagent-dev-<이름>)의 web+scheduler 뿐이다.
+#   공용 db 는 이 프로젝트에 애초에 포함되지 않는다(compose.dev.yml + compose.dev-net.yml).
 stack_down_if_serving() {
-  local name="$1"
-  if wt_stack_up "$name"; then
-    say "${YELLOW}⚠${NC} 이 워크트리의 web/scheduler 가 떠 있습니다. 지우면 마운트 원본이"
-    say "  사라져 컨테이너가 500 을 내기 시작합니다 — 필요하면 직접 내리세요:"
-    say "  ${CYAN}(cd wt/$name && ./deploy/compose_runner.sh dev down)${NC}"
+  local name="$1" dir="$WT_ROOT/$1"
+  wt_stack_up "$name" || return 0
+  say "  ${BLUE}→${NC} 이 워크트리 스택 회수 중 (vulnagent-dev-$name)…"
+  if ( cd "$dir" && ./deploy/compose_runner.sh dev down >/dev/null 2>&1 ); then
+    say "  ${GREEN}✓${NC} web/scheduler 내림 (공용 DB 는 그대로)"
+  else
+    say "  ${YELLOW}⚠${NC} 스택 내리기 실패 — 남은 컨테이너를 확인하세요:"
+    say "     ${CYAN}docker ps -a --filter name=vulnagent-.*-dev-$name${NC}"
   fi
 }
 
@@ -248,7 +251,7 @@ cmd_rm() {
     die "커밋하거나 되돌린 뒤 다시 실행하세요."
   fi
 
-  # 이 워크트리의 web/scheduler 가 떠 있으면 경고만 한다(자동으로 내리지 않는다).
+  # 이 워크트리의 web/scheduler 가 떠 있으면 지우기 전에 내린다(컨테이너 회수).
   stack_down_if_serving "$name"
 
   # secrets/·data/ 는 untracked 라 --force 없이는 remove 가 거부한다.
