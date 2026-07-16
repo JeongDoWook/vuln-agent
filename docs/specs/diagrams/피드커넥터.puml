@@ -1,0 +1,59 @@
+@startuml 피드커넥터
+' vuln-agent §3 CVE 피드 커넥터 (외부 소스 수집)
+' 원본: docs/dev/architecture.md §3 (mermaid flowchart LR)
+
+left to right direction
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam databaseBackgroundColor #ffffff
+skinparam shadowing false
+
+package "웹 (admin)" as UI {
+    rectangle "connectors.php\n설정·스케줄·지금실행·미리보기" as CFG
+}
+
+package "scheduler 사이드카" as Sched {
+    rectangle "매 1분\ndue 커넥터 조회" as TICK
+}
+
+package "외부 소스" as Sources {
+    rectangle "CISA KEV json" as KEV #238636
+    rectangle "OSV.dev API" as OSV
+    rectangle "NVD 2.0 API" as NVD
+    rectangle "FIRST EPSS csv" as EPSS
+    rectangle "KISA RSS" as KISA
+    rectangle "벤더 판정 소스(6종)\ndebtracker·rhoval·rhunfixed\nubuntuoval·kcve·ssg" as VENDOR
+    rectangle "범용 API(generic_api)\n사용자 등록 REST" as GAPI
+}
+
+database "tb_feed_connectors\ntb_feed_collection_logs" as DBc
+database "tb_cves · tb_kev_catalog\ntb_cve_affected_packages · tb_advisories" as CVE
+rectangle "매처 재계산" as MAT #a371f7
+
+CFG --> DBc : 저장
+TICK --> DBc : enabled & next_run<=now
+
+TICK --> KEV
+TICK --> OSV
+TICK --> NVD
+TICK --> EPSS
+TICK --> KISA
+TICK --> VENDOR
+TICK --> GAPI
+
+KEV --> CVE : upsert
+OSV --> CVE : upsert
+NVD --> CVE : upsert
+EPSS --> CVE : upsert
+KISA --> CVE : upsert
+VENDOR --> CVE : upsert
+GAPI --> CVE : upsert
+
+CVE --> MAT
+TICK --> MAT : 실행 후
+CFG --> MAT : 지금 실행
+CFG ..> KEV : 미리보기 10건\nfeed_preview.php
+
+@enduml

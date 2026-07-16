@@ -1,0 +1,41 @@
+@startuml 매처판정로직
+' vuln-agent §2 매처 판정 로직 — "실제로 위험한가"
+' 원본: docs/dev/architecture.md §2 (mermaid flowchart TD)
+
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam shadowing false
+
+rectangle "패키지 P 에 영향을 주는 CVE" as START
+hexagon "이미 패치됐다는 근거가 있나?\nchangelog · errata · debsecan" as FIX
+hexagon "그래도 옛 코드가 도는가?\n옛 .so 로드 중 · 커널 재부팅 전" as STALE
+rectangle "억제하지 않는다\n→ 조치: 프로세스 재시작 / 재부팅" as KEEP #8250df
+rectangle "백포트로 이미 패치됨\n→ tb_suppressed_findings\n(위험 집계 제외 · 근거 표시)" as SUP #1f6feb
+hexagon "외부(0.0.0.0)\n오픈 포트로 노출?" as EXT
+hexagon "방화벽이 그 포트를\n막고 있나?" as FW
+hexagon "CVE 가 KEV 등재?" as KEV
+rectangle "외부노출 + KEV\n→ CRITICAL" as CRIT #da3633
+rectangle "외부노출\n→ HIGH" as HIGH #db6d28
+rectangle "방화벽차단(FILTERED)\n→ MEDIUM" as FLT #9e6a03
+hexagon "리스닝(로컬)·\n실행중·라이브러리 로드\n중 하나라도?" as USE
+rectangle "로컬리스닝/실행중/사용중\n→ MEDIUM" as MED #9e6a03
+rectangle "설치만 됨\n→ LOW" as INS #6e7681
+
+START --> FIX
+FIX --> STALE : 예
+STALE --> KEEP : 예
+STALE --> SUP : 아니오
+FIX --> KEEP : 아니오
+KEEP --> EXT
+EXT --> FW : 예
+FW --> KEV : 아니오
+KEV --> CRIT : 예
+KEV --> HIGH : 아니오
+FW --> FLT : 예
+EXT --> USE : 아니오
+USE --> MED : 예
+USE --> INS : 아니오
+
+@enduml

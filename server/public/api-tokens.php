@@ -90,7 +90,7 @@ vg_header('API 토큰', 'apitokens');
   </div>
   <div class="sub">
     외부 시스템이 <code>/export.php</code> 로 스캔 결과(JSON/XML)를 읽어갈 때 쓰는 읽기 전용 토큰입니다.
-    요청 헤더에 <code>X-API-Token: &lt;토큰&gt;</code> 로 넣습니다. 자세한 사용법은 <code>docs/export-api.md</code>.
+    요청 헤더에 <code>X-API-Token: &lt;토큰&gt;</code> 로 넣습니다. 자세한 사용법은 <code>docs/dev/export-api.md</code>.
   </div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>

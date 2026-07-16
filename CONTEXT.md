@@ -1,8 +1,8 @@
 # CONTEXT.md — 프로젝트 맥락 (Claude Code 최우선 참고)
 
 > 이 파일은 개발을 이어받는 사람(및 Claude Code)이 **가장 먼저 읽는** 요약이다.
-> 쉬운 설명은 `docs/설명글.md`, 대회용 기획 문서는 `docs/기획안_v1.0.html`
-> (둘 다 현행 구현 기준으로 갱신됨). 구조·규칙의 최종 기준은 이 파일과 `docs/architecture.md`.
+> 쉬운 설명은 `docs/dev/설명글.md`, 대회용 기획 문서는 `docs/dev/기획안_v1.0.html`
+> (둘 다 현행 구현 기준으로 갱신됨). 구조·규칙의 최종 기준은 이 파일과 `docs/dev/architecture.md`.
 > 전체 프로세스 소개 페이지는 웹으로 서빙된다 — `server/public/process.html` → `/process.html`
 > (사본을 두지 않는다. 예전에 `docs/` 에도 같은 파일이 있었는데 두 벌이 어긋났다).
 
@@ -65,7 +65,7 @@ CVE와 매칭한다. 단순 스캐너와 다른 점은 **"이 취약점이 이 �
 읽기 전용. 서버에 무리 안 감(nice 19 / ionice idle / 명령별 timeout).
 **피크 메모리는 실측 61.6MB**(Debian 12 · 91패키지 — 마지막에 jq 로 전 섹션을 한 번에 조립하는
 단계가 1등 요인이라 페이로드 크기에 비례한다). 수치·외삽·재측정법은
-`docs/에이전트-리소스-프로파일.md`, 실측기는 `tests/agent-bench.sh`.
+`docs/dev/에이전트-리소스-프로파일.md`, 실측기는 `tests/agent-bench.sh`.
 jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자동 감지.
 
 **수집 항목(취약점 매핑에 중요한 것 위주):**
@@ -248,7 +248,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
       admin 은 코드에서 항상 전체 허용(잠금 방지).
 - [x] **Export API** — `GET /export.php`(JSON/XML, 호스트·심각도·KEV·EPSS 필터). 전용 읽기 토큰을
       `api-tokens.php` 에서 발급(DB 엔 SHA-256 해시만, 원문은 1회 표시). 인증 헤더 `X-API-Token`
-      또는 `Authorization: Bearer`(Apache 가 스트립해도 우회). 상세: `docs/export-api.md`.
+      또는 `Authorization: Bearer`(Apache 가 스트립해도 우회). 상세: `docs/dev/export-api.md`.
 - [x] **컨테이너 스캔** — `collect_containers` 가 실행 중 컨테이너의 rootfs 를 읽어 **내부 패키지**를
       수집(`tb_containers`, `tb_packages.container_id`). docker CLI 비의존(podman/containerd 도 잡힘).
       호스트 스캔에서 통째로 빠지던 미탐 영역이었다. 호스트 상세·취약점 목록에서 컨테이너별로 본다.

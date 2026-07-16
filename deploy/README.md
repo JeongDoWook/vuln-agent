@@ -3,7 +3,7 @@
 중앙 서버(대시보드 + 수집 API)를 컨테이너로 띄우는 곳이다. compose 파일·러너·Caddy(HTTPS
 리버스 프록시)·마이그레이션 러너가 모두 여기 있다. **모든 명령은 `cd deploy` 후 실행한다.**
 
-- 전체 구조·매처 규칙: [`../docs/architecture.md`](../docs/architecture.md)
+- 전체 구조·매처 규칙: [`../docs/dev/architecture.md`](../docs/dev/architecture.md)
 - 에이전트(대상 서버) 설치·운영: [`../agent/README.md`](../agent/README.md)
 
 ---

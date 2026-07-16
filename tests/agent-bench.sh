@@ -221,4 +221,4 @@ fi
 
 echo -e "${GREEN}완료.${NC}"
 [ -n "$CSV" ] && echo "  CSV 누적: $CSV  (다른 서버에서도 같은 경로로 돌려 모으세요)"
-echo -e "  해석 가이드: ${CYAN}docs/에이전트-리소스-프로파일.md${NC}"
+echo -e "  해석 가이드: ${CYAN}docs/dev/에이전트-리소스-프로파일.md${NC}"
