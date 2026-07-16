@@ -171,14 +171,17 @@ flowchart LR
 flowchart TB
     subgraph Runner["compose_runner.sh"]
         direction LR
-        R1["dev up"]
+        R1["dev up<br/>(메인 트리: db+web+scheduler)"]
+        R1W["dev up<br/>(워크트리: web+scheduler만)"]
         R2["prod up --build"]
     end
 
     subgraph Files["compose 레이어"]
         F0["compose.yml<br/>(서비스 정의 + secrets)"]
         FC["compose.common.yml<br/>(restart·로깅·pids)"]
-        FD["compose.dev.yml<br/>(소스마운트·DB포트노출·웹 평문:8080)"]
+        FD["compose.dev.yml<br/>(web+scheduler 소스마운트·웹 평문:${WEB_PORT})"]
+        FDB["compose.dev-db.yml<br/>(db·DB포트노출 — 메인 트리 전용)"]
+        FN["compose.dev-net.yml<br/>(외부 네트워크 vulnagent-dev-net 공유)"]
         FP["compose.prod.yml<br/>(이미지코드·DB비노출·my.cnf·caddy)"]
     end
 
@@ -197,7 +200,8 @@ flowchart TB
         DC[("db · mysql:8.0<br/>내부망만")]
     end
 
-    R1 --> F0 & FC & FD
+    R1 --> F0 & FC & FD & FDB & FN
+    R1W --> F0 & FC & FD & FN
     R2 --> F0 & FC & FP
     F0 --> Stack
     S5 --> CADDY
@@ -220,6 +224,10 @@ flowchart TB
 > web·scheduler 는 같은 이미지(`vulnagent-app`)를 공유하고, 환경/시크릿은 compose 앵커
 > (`x-app-env`/`x-app-secrets`)로 DRY 하게 재사용한다. dev 는 caddy 없이 `web` 을 `${WEB_PORT:-8080}`
 > 으로 평문 직접 노출한다(§ Caddy README 참고: `deploy/caddy/README.md`).
+>
+> dev 는 web+scheduler 가 워크트리별 독립 컴포즈 프로젝트(`vulnagent-dev-<워크트리이름>`)로 뜨고,
+> db 는 메인 트리 프로젝트(`vulnagent-dev`) 하나만 존재한다 — 서로 다른 프로젝트지만 외부 네트워크
+> `vulnagent-dev-net`(`compose.dev-net.yml`)을 공유해 컨테이너명(`vulnagent-db-dev`)으로 붙는다.
 
 | | dev | prod |
 |---|---|---|
@@ -227,7 +235,7 @@ flowchart TB
 | DB 포트 | 노출(3307) | 미노출(내부망만) |
 | 웹 접속 | `http://localhost:8080` (평문) | `https://ost-server.duckdns.org:8080` (Caddy, 현재 자체서명) |
 | my.cnf | 미적용(기본값) | 적용(charset/보안 튜닝) |
-| 프로젝트 | `vulnagent-dev` | `vulnagent` |
+| 프로젝트 | `vulnagent-dev`(메인) · `vulnagent-dev-<워크트리>`(web+scheduler) | `vulnagent` |
 
 각 대상 서버는 `agent/install-agent.sh` 로 systemd-timer(우선)/cron(폴백)을 등록해 기본
 **매시간** 자동 수집·전송한다. 중앙 서버 자신을 스캔하는 로컬 에이전트만 루프백(`8081`)

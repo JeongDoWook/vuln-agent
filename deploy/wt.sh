@@ -10,9 +10,11 @@
 #
 # 이 스크립트가 하는 일 (worktree 만으론 부족한 부분):
 #   1) wt/<이름>/ 에 워크트리 생성 (기본 기점 origin/main — 낡은 로컬 main 방지)
-#   2) secrets/*.txt · deploy/.env.dev 복사 (gitignore 라 워크트리에 안 딸려온다)
-#   3) 안 쓰는 WEB_PORT/DB_PORT 를 골라 그 워크트리의 .env.dev 에 박아둔다
-#   compose_runner.sh 가 wt/ 를 감지해 프로젝트명·컨테이너명·이미지태그를 분리한다.
+#   2) secrets/*.txt 복사 (gitignore 라 워크트리에 안 딸려온다)
+#   3) 안 쓰는 WEB_PORT 를 하나 골라 이 워크트리 전용 deploy/.env.dev 에 박아둔다
+#      (DB_DATA·MYSQL_* 등 공용값은 메인 트리 것을 그대로 쓴다 — DB 는 공용 하나)
+#   compose_runner.sh 가 wt/ 를 감지해 프로젝트명·컨테이너명·포트를 워크트리별로 분리한다
+#   (web+scheduler 만 — DB 는 항상 메인 트리 소유의 vulnagent-db-dev 하나).
 #
 # 사용법:
 #   ./deploy/wt.sh add feat/cve-list          # wt/cve-list 생성 (origin/main 기점)
@@ -35,17 +37,41 @@ WT_ROOT="$MAIN_ROOT/wt"
 
 SECRET_FILES=(mysql_root_password mysql_password ingest_token admin_password duckdns_token)
 
-# (포트 탐색기는 없앴다 — dev 스택이 저장소에 하나뿐이라 워크트리끼리 포트가 겹칠 일이 없다.)
-
-# dev 스택이 지금 **어느 트리의 server/ 를 마운트하고 있나**(안 떠 있으면 빈 문자열).
-#   파일 표식을 두지 않는다 — 옛 러너로 스택을 옮기면 갱신되지 않아 낡은 값이 남는다.
-#   진실은 컨테이너의 마운트뿐이다. (tests/smoke.sh·pre-push 도 같은 방식으로 대조한다.)
-dev_stack_src() {
-  docker inspect vulnagent-web-dev \
-    --format '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' 2>/dev/null || true
+# --- WEB_PORT 할당 -----------------------------------------------------------
+# web+scheduler 는 이제 워크트리별로 독립된 컨테이너로 뜬다(compose_runner.sh) — 포트가
+# 겹치면 안 되므로, 메인 트리 포트(보통 8080)와 다른 워크트리에 이미 준 포트를 피해 하나 고른다.
+# 파일이 없으면 sed 가 비영(0 이 아닌) 종료코드를 낸다 — set -e/pipefail 아래서 이 함수를 부르는
+#   쪽까지 조용히 죽지 않도록 `|| true` 로 항상 0 을 반환한다(WEB_PORT 못 찾으면 빈 문자열).
+main_web_port() {
+  sed -n 's/^WEB_PORT=\([0-9]\+\).*/\1/p' "$MAIN_ROOT/deploy/.env.dev" 2>/dev/null | head -1 || true
 }
-# 윈도는 역슬래시로 주므로 비교 전에 정규화한다.
-norm_path() { printf '%s' "$1" | tr '\\' '/' | tr 'A-Z' 'a-z' | sed 's:/*$::'; }
+wt_web_port() {  # $1 = 워크트리 디렉터리
+  sed -n 's/^WEB_PORT=\([0-9]\+\).*/\1/p' "$1/deploy/.env.dev" 2>/dev/null | head -1 || true
+}
+alloc_web_port() {
+  local used port d p mainport
+  mainport="$(main_web_port)"
+  used=" ${mainport:-8080} "
+  if [ -d "$WT_ROOT" ]; then
+    for d in "$WT_ROOT"/*/; do
+      [ -d "$d" ] || continue
+      p="$(wt_web_port "${d%/}")"
+      [ -n "$p" ] && used="$used $p "
+    done
+  fi
+  port=8090
+  while printf '%s' "$used" | grep -q " $port "; do
+    port=$((port + 1))
+  done
+  printf '%s' "$port"
+}
+
+# 이 워크트리의 web 컨테이너가 지금 떠 있나(컨테이너명이 워크트리 접미사로 고유하므로,
+#   존재하면 그게 곧 이 워크트리다 — 옛 러너 시절의 마운트 대조가 더 이상 필요 없다).
+wt_web_container() { printf 'vulnagent-web-dev-%s' "$1"; }
+wt_stack_up() {
+  docker inspect "$(wt_web_container "$1")" >/dev/null 2>&1
+}
 
 usage() {
   say "${CYAN}vuln-agent · wt${NC}"
@@ -101,49 +127,66 @@ cmd_add() {
     say "  ${GREEN}✓${NC} secrets ${copied}개 복사"
   fi
 
-  # .env.dev 는 **복사하지 않는다.** dev 스택은 하나뿐이고, 포트·DB 는 트리 속성이 아니라
-  #   스택 속성이라 compose_runner 가 **메인 트리의 .env.dev** 만 읽는다. 워크트리에 사본을
-  #   두면 "여기 값을 고치면 반영되겠지" 하는 착각만 만든다(실제로 옛 사본의 포트 8101 때문에
-  #   스모크가 엉뚱한 포트를 쳐서 46개가 터졌다).
+  # .env.dev 는 이 워크트리 전용 WEB_PORT 만 담는다(gitignore, 매번 새로 만듦) — 나머지 값
+  #   (MYSQL_*·DB_DATA 등)은 메인 트리의 .env.dev 를 그대로 쓴다(DB 는 공용, compose_runner.sh).
   [ -f "$MAIN_ROOT/deploy/.env.dev" ] || die "메인 트리에 deploy/.env.dev 가 없습니다. 먼저 init 하세요."
-  say "  ${GREEN}✓${NC} dev 설정은 메인 트리의 .env.dev 를 공유(포트 8080 · DB 공용)"
+  local web_port; web_port="$(alloc_web_port)"
+  mkdir -p "$dir/deploy"
+  cat > "$dir/deploy/.env.dev" <<EOF
+# 이 워크트리 전용 dev 포트 (gitignore — wt.sh add 가 매번 새로 만든다)
+# 나머지 값(MYSQL_*·DB_DATA 등)은 메인 트리의 deploy/.env.dev 를 그대로 쓴다 — DB 는 공용.
+WEB_PORT=$web_port
+EOF
+  say "  ${GREEN}✓${NC} 이 워크트리 WEB_PORT=$web_port 할당 (deploy/.env.dev, DB 는 공용)"
 
   echo ""
   say "${GREEN}완료.${NC} 다음:"
   say "  ${CYAN}cd wt/$name${NC}"
-  say "  server/·db/·tests/ 를 건드릴 때만 스택을 이 트리로 가져온다:"
-  say "  ${CYAN}./deploy/compose_runner.sh dev up -d${NC}   # 스택은 하나뿐 — 새로 안 생기고 옮겨온다"
-  say "  ${CYAN}./tests/smoke.sh http://localhost:8080${NC}"
+  say "  server/·db/·tests/ 를 건드릴 때만 이 워크트리 전용 web/scheduler 를 띄운다(DB 는 공용 유지):"
+  say "  ${CYAN}./deploy/compose_runner.sh dev up -d${NC}   # 이 워크트리만의 새 스택 — 다른 트리엔 영향 없음"
+  say "  ${CYAN}./tests/smoke.sh http://localhost:$web_port${NC}"
 }
 
 # --- list -------------------------------------------------------------------
 cmd_list() {
   git -C "$MAIN_ROOT" worktree list
   echo ""
-  # dev 스택은 하나뿐이다 — 중요한 건 "포트"가 아니라 **지금 어느 트리를 서빙 중인가** 다.
-  #   윈도 경로의 역슬래시를 그대로 출력하면 say(echo -e)가 \v 를 이스케이프로 먹는다 → 슬래시로.
-  local tree; tree="$(dev_stack_src | tr '\\' '/')"
-  if [ -n "$tree" ]; then
-    say "${CYAN}dev 스택(vulnagent-dev)이 서빙 중${NC}: $tree"
+  say "${CYAN}메인 트리 · 공용 DB${NC}"
+  if docker inspect vulnagent-db-dev >/dev/null 2>&1; then
+    say "  ${GREEN}✓${NC} db 떠 있음 (vulnagent-db-dev)"
   else
-    say "${CYAN}dev 스택${NC}: 내려가 있음(또는 옛 러너로 띄움). 작업 트리에서 ${GREEN}dev up -d${NC}."
+    say "  ${YELLOW}⚠${NC} db 안 떠 있음 — 메인 트리에서 ${GREEN}dev up -d${NC} 해야 워크트리 web/scheduler 가 붙는다"
   fi
+  echo ""
+  say "${CYAN}워크트리별 web/scheduler · 포트${NC}"
+  [ -d "$WT_ROOT" ] || { say "  (없음)"; return 0; }
+  local d name port
+  for d in "$WT_ROOT"/*/; do
+    [ -d "$d" ] || continue
+    d="${d%/}"; name="${d##*/}"
+    port="$(wt_web_port "$d")"
+    if wt_stack_up "$name"; then
+      say "  ${GREEN}✓${NC} $name — http://localhost:${port:-?} (기동 중)"
+    else
+      say "  ${BLUE}→${NC} $name — 포트 ${port:-미할당} (내려가 있음)"
+    fi
+  done
 }
 
-# dev 스택이 이 워크트리를 서빙 중이면 "경고만" 한다 — 절대 자동으로 내리지 않는다.
-#   예전엔 여기서 docker compose down 을 직접 실행했다. wt.sh rm/sweep 은 사람이든
-#   에이전트든 일상적으로 부르는 정리 명령인데, 부를 때마다 예고 없이 dev 스택이
-#   내려가 버려 "왜 자꾸 dev down 되는지 모르겠다"는 혼란의 원인이었다 — 이 저장소가
-#   그 외 모든 곳에서 못박은 "스택 기동/중지는 항상 사람이 명시적으로 한다" 원칙과도
-#   어긋났다. 워크트리 삭제 자체는 그대로 진행하고(마운트 원본이 사라져 스택이 500 을
-#   내기 시작할 수 있다는 것만 알린다), 실제 docker 명령은 사람이 직접 판단해서 친다.
+# 이 워크트리의 web/scheduler 스택이 떠 있으면 "경고만" 한다 — 절대 자동으로 내리지 않는다.
+#   예전엔(스택이 저장소에 하나뿐이던 시절) 여기서 마운트 경로를 대조해 "지금 이 트리를
+#   서빙 중인가" 를 확인해야 했다. 이제 워크트리마다 컨테이너명이 고유해서(vulnagent-web-dev-<이름>)
+#   그 이름이 떠 있는지만 보면 곧 이 워크트리 얘기다 — 대조할 다른 트리가 없다.
+#   docker compose down 은 여기서 직접 실행하지 않는다. wt.sh rm/sweep 은 사람이든 에이전트든
+#   일상적으로 부르는 정리 명령인데, 부를 때마다 예고 없이 스택이 내려가면 혼란만 준다 —
+#   워크트리 삭제 자체는 그대로 진행하고(마운트 원본이 사라져 컨테이너가 500 을 내기 시작할 수
+#   있다는 것만 알린다), 실제 docker 명령은 사람이 직접 판단해서 친다.
 stack_down_if_serving() {
-  local dir="$1" mine
-  mine="$( (cd "$dir" && pwd -W 2>/dev/null) || printf '%s' "$dir" )/server"
-  if [ "$(norm_path "$(dev_stack_src)")" = "$(norm_path "$mine")" ]; then
-    say "${YELLOW}⚠${NC} dev 스택이 이 워크트리를 서빙 중입니다. 지우면 마운트 원본이"
-    say "  사라져 스택이 500 을 내기 시작합니다 — 필요하면 직접 내리세요:"
-    say "  ${CYAN}./deploy/compose_runner.sh dev down${NC}   (다른 트리로 옮기려면 그 트리에서 dev up -d)"
+  local name="$1"
+  if wt_stack_up "$name"; then
+    say "${YELLOW}⚠${NC} 이 워크트리의 web/scheduler 가 떠 있습니다. 지우면 마운트 원본이"
+    say "  사라져 컨테이너가 500 을 내기 시작합니다 — 필요하면 직접 내리세요:"
+    say "  ${CYAN}(cd wt/$name && ./deploy/compose_runner.sh dev down)${NC}"
   fi
 }
 
@@ -205,8 +248,8 @@ cmd_rm() {
     die "커밋하거나 되돌린 뒤 다시 실행하세요."
   fi
 
-  # dev 스택이 이 워크트리를 서빙 중이면 경고만 한다(자동으로 내리지 않는다).
-  stack_down_if_serving "$dir"
+  # 이 워크트리의 web/scheduler 가 떠 있으면 경고만 한다(자동으로 내리지 않는다).
+  stack_down_if_serving "$name"
 
   # secrets/·data/ 는 untracked 라 --force 없이는 remove 가 거부한다.
   git -C "$MAIN_ROOT" worktree remove --force "$dir"
@@ -264,7 +307,7 @@ cmd_sweep() {
     fi
 
     say "${CYAN}-- $name ($branch) 병합됨 → 제거 --${NC}"
-    stack_down_if_serving "$dir"
+    stack_down_if_serving "$name"
     git -C "$MAIN_ROOT" worktree remove --force "$dir"
     say "  ${GREEN}✓${NC} 제거: wt/$name"
     branch_cleanup "$branch" "$sha"
