@@ -169,7 +169,9 @@ cd wt/무엇
      않는다(과거엔 인자로 직접 넘겨서, 프롬프트에 큰따옴표나 마크다운 백틱이 섞이면 Windows
      커맨드라인 재인용 중 그 지점에서 잘리는 사고가 두 번 있었다 — 이미 스크립트에서 고쳤다).
   3. 워커: 자기 워크트리에서 구현 → 검증(php -l·smoke) → 커밋 → push → PR.
-  4. 메인: `.\deploy\orchestrator\watch-workers.ps1` 로 전원 완료까지 대기 → 취합해 **이 창에 보고**.
+  4. 메인: `.\deploy\orchestrator\watch-workers.ps1` 로 전원 완료까지 대기 → **취합 보고 전에
+     스킬 `orchestrator-review` 로 각 워커 브랜치 diff 를 자동 리뷰**(절차는 스킬 파일 참고 —
+     CLAUDE.md 는 무겁게 안 만든다) → 이 창에 보고.
   5. PR 병합 뒤 `.\deploy\orchestrator\reap-merged.ps1` 로 워크트리 자동 정리(gh 인증 필요).
 - **메인이 직접 해도 되는 것(위임 안 함)**: 조사·설명·질문답변 등 읽기 작업, 한두 줄짜리 사소한
   수정. 그 외 실제 구현은 워커에 위임한다.
