@@ -190,10 +190,11 @@ cd wt/무엇
   `compose_runner.sh init` 이 설치). 예전엔 `.git/hooks/` 에 있어서 git 이 추적하지 않았고,
   **새로 clone 하면 게이트가 아예 없었다.** 걸려 있는지는 `compose_runner.sh doctor` 로 확인한다.
 - `--no-verify` 등 hook 우회 명령 금지. `.env`/`secrets/*.txt` 커밋 금지.
-- **에이전트는 `./deploy/compose_runner.sh dev up -d` 를 실행하지 않는다** — 스택은 하나뿐인 공유
-  자원이라 여러 세션이 반사적으로 올리면 서로 계속 뺏고 뺏기는 경합이 난다. 스택 기동·전환은
-  사용자가 직접 한다. 스모크가 남의 트리 서빙 중이라 중단(exit 2)되면, 에이전트는 결과를 그대로
-  보고하고 기다린다.
+- **에이전트는 `./deploy/compose_runner.sh dev up -d`/`dev down` 을 실행하지 않는다** — 스택은
+  하나뿐인 공유 자원이라 여러 세션이 반사적으로 올리면 서로 계속 뺏고 뺏기는 경합이 난다.
+  스택 기동·전환은 사용자가 직접 한다. 스모크가 남의 트리 서빙 중이라 중단(exit 2)되면,
+  에이전트는 결과를 그대로 보고하고 기다린다. **이제 문서뿐 아니라 `.claude/hooks/block-dev-stack.sh`
+  가 코드로도 막는다**(과거엔 문서만 있어서 여러 세션이 무시하고 직접 쳤다).
 - 관련 없는 파일 수정·요청 범위 초과 리팩터 금지. 읽지 않은 코드 기반 추정 금지.
 - **여러 줄 명령에 PowerShell 백틱(`` ` ``) 줄바꿈을 쓰지 않는다.** 이 환경은 Bash 도구가
   git-bash(POSIX sh) 이고 PowerShell 은 별도 도구라, 한쪽 문법(백틱 줄바꿈은 PowerShell 전용)을
