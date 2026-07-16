@@ -139,7 +139,9 @@ claude-pipeline 의 `work-report.py`(토큰·재작업·품질점수까지 마�
 런타임 산출물(메인 트리 `.omc/` 에 고정, git 추적 밖):
 - `.omc/logs/<task>.log` — 헤드리스 워커 출력
 - `.omc/results/<task>.md` — 워커가 남기는 진행/결과 (`대기중`→`진행중`→`완료`/`차단`)
-- `.omc/orchestrator/<task>.json` — 워커 매니페스트(status.ps1 이 읽음)
+- `.omc/orchestrator/<task>.json` — 워커 매니페스트(status.ps1 이 읽음). `mode` 엔 `-Launch` 인자가
+  아니라 **실제로 쓰인 모드**가 들어간다(`auto` 는 안 들어간다 — 폴백됐으면 폴백된 모드). termkeep
+  모드는 창을 우리가 띄운 게 아니라 `pid` 가 `null` 이고 대신 `termkeepSessionId` 로 세션을 가리킨다
 - `.omc/logs/history.jsonl` — 전체 이벤트 히스토리(spawn/status전환/merged_cleanup, history-report.ps1 이 읽음)
 
 ## 쓰는 법
@@ -188,9 +190,72 @@ cd C:\APM\Apache24\htdocs\vuln-agent
 | `-Prefix` | `feat` | 브랜치 접두사 (feat/fix/chore) |
 | `-Base` | `origin/main` | 워크트리 기점 |
 | `-Permissions` | `skip` | `skip`=자율(--dangerously-skip-permissions), `ask`=매번 확인 |
-| `-Launch` | `tab` | `tab`=현재 WT 창에 새 탭 · `window`=분리된 새 창 · `headless`=창 없이 로그로만 |
+| `-Launch` | `auto` | `auto`=호스트 터미널 감지해서 같은 터미널로(아래 참고) · `termkeep`=termkeep 새 세션 · `tab`=현재 WT 창에 새 탭 · `window`=분리된 새 창 · `headless`=창 없이 로그로만 |
 | `-DryRun` | off | 워크트리·지시문·매니페스트만 만들고 claude 실행은 생략(미리보기) |
 | `-Finish` | `pr` | `pr`=워커가 스스로 커밋·push·PR(옵션 A) · `push`=커밋·push 까지만(옵션 B, `merge-milestone.ps1` 과 짝) |
+
+## 호스트 터미널 자동 감지 (`-Launch auto`, 기본값)
+
+사용자는 claude 를 두 종류의 터미널에서 띄운다 — **Windows PowerShell 창**과 **termkeep**
+(사용자가 직접 만든 터미널 세션 매니저, `C:\APM\Apache24\htdocs\termkeep`, cmux 비슷).
+워커를 늘 같은 곳에 띄우면 한쪽에선 창이 엉뚱한 데 뜬다. 그래서 `-Launch auto` 가 **지금 이
+세션이 도는 터미널을 보고** 워커도 같은 터미널로 스폰한다(`Resolve-HostTerminal`):
+
+| 감지 | 스폰 |
+|---|---|
+| `$env:TERMKEEP -eq '1'` | `termkeep` (빠른 경로) |
+| 부모 체인에 `termkeepd.exe`/`termkeep.exe` | `termkeep` |
+| `$env:WT_SESSION` 있음 | `tab` (Windows Terminal 새 탭) |
+| 그 외 | `window` (분리된 새 PowerShell 창) |
+
+`tab`/`window`/`termkeep`/`headless` 를 **명시하면 감지 없이 그대로 존중한다**(기존 동작 유지).
+감지 실패·termkeep 연결 실패는 전부 `window` 로 폴백한다 — 감지 문제로 워커 스폰 자체가
+실패하면 안 되므로 이 경로들은 throw 하지 않는다.
+
+### 왜 env 가 아니라 부모 체인인가
+
+termkeep 소스엔 PTY 에 `TERMKEEP=1` 을 심는 코드가 있지만 **아직 미커밋·미빌드**다 — 지금
+도는 데몬 바이너리는 그 변수를 안 심는다(실측: termkeep 안에서 도는 claude 에서 `$env:TERMKEEP`
+이 비어 있음). 그래서 실제 판정은 **부모 프로세스 체인**을 거슬러 termkeep 프로세스를 찾는 것으로
+한다. env 검사는 나중에 termkeep 이 재빌드되면 켜질 빠른 경로라 먼저 볼 뿐이다.
+
+실측된 체인(termkeep 안의 claude):
+```
+claude.exe → cmd.exe → node.exe → powershell.exe → termkeepd.exe → termkeep.exe → explorer.exe
+```
+
+체인 탐색 주의: 깊이 상한(~20)·방문 PID 기록으로 무한루프를 막고, **Windows 의 PID 재사용**도
+막는다 — 부모가 죽은 뒤 그 PID 를 무관한 프로세스가 물고 있으면 엉뚱한 체인으로 새어 오판하므로,
+부모가 자식보다 늦게 태어났으면 재사용된 PID 로 보고 끊는다(분리된 창으로 띄운 워커는 실제로
+부모가 이미 죽어 체인이 끊긴 상태로 관측된다 → 그 경우가 정상적으로 `window` 로 떨어진다).
+
+### 왜 `cwd`/`command` 대신 `SendInput` 인가
+
+termkeep 데몬 IPC 는 TCP(`127.0.0.1:<port>`, 포트는 `%APPDATA%\termkeep\daemon.json`)로
+**개행으로 끝나는 JSON 한 줄**씩 주고받는다. `CreateSession` 엔 `cwd`/`command` 필드가 있지만
+**미커밋·미빌드라 지금 도는 데몬엔 그 기능이 없다.** 게다가 serde 는 모르는 필드를 **에러 없이
+조용히 무시**하므로 응답만 보고는 신/구 데몬을 구분할 수 없다(성공한 척 빈 셸만 뜬다).
+그래서 `CreateSession{name}` + `SendInput`(base64 로 인코딩한 키 입력 주입) **단일 경로**로 간다 —
+구/신 데몬 양쪽에서 똑같이 동작하므로 분기가 필요 없다(KISS). base64 는 **UTF-8 바이트**로
+인코딩한다(사용자 홈이 `C:\Users\정도욱` 이라 경로에 한글이 들어간다).
+
+### 프롬프트를 기다린 뒤에 입력을 넣는다 (고정 sleep 금지)
+
+PTY 안 powershell 이 **프롬프트를 내기 전에 밀어 넣은 키는 그대로 버려진다.** 처음엔 고정
+700ms 대기로 넣었다가 입력이 통째로 씹혔다 — 실측상 프롬프트까지 **약 2.4초** 걸린다(고정
+sleep 은 느린 PC 에서 또 깨진다). 그래서 데몬이 브로드캐스트하는 PTY 출력(`Output`)에서
+프롬프트(`PS ...>`)를 **실제로 확인한 뒤** `SendInput` 한다.
+
+여기에 함정이 하나 더 있다: 데몬은 새 클라이언트를 **`paused` 상태로 시작해 `Output` 브로드캐스트를
+보내지 않는다.** `ListSessions` 를 한 번 보내야 `paused` 가 풀린다(데몬 소스 확인 + 실측) —
+그래서 `CreateSession` 앞에 `ListSessions` 를 먼저 보낸다.
+
+### 절대 하지 말 것
+
+- **데몬(`termkeepd.exe`) 재시작·종료 금지.** 사용자의 claude 세션들이 그 데몬의 자식이라
+  재시작하면 세션이 전부 죽는다.
+- **`DestroySession` 을 남의 세션에 쓰지 말 것**(테스트로 직접 만든 세션만 정리).
+- termkeep 은 **별개 저장소다 — 소스 수정·재빌드 금지.** 읽기 참고만.
 
 ## 자동 이어받기 & 최적화
 
