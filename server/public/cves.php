@@ -109,11 +109,6 @@ try {
 vg_header('CVE 목록', 'cves');
 ?>
   <h1>CVE 목록 <span class="hint">(<?= number_format($total) ?>건)</span></h1>
-  <div class="sub">
-    <a href="/connectors.php">피드 커넥터</a>(kev/osv/nvd/epss)가 수집한 CVE.
-    KEV 는 실제 악용이 확인된 취약점, EPSS 는 향후 30일 내 악용 확률입니다.
-    패키지별로 보려면 <a href="/packages.php">영향 패키지</a>.
-  </div>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

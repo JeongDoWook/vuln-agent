@@ -199,7 +199,6 @@ try {
 vg_header('대시보드', 'dashboard');
 ?>
   <h1>대시보드</h1>
-  <div class="sub">호스트별 최신 스캔 기준 요약 · 런타임 노출 맥락으로 우선순위화</div>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>
@@ -250,7 +249,7 @@ vg_header('대시보드', 'dashboard');
       스캔이 없는 날은 직전 스캔을 이어 그린다</span>
     <div class="legend legend--row">
       <?php foreach ($trendSevs as $s): ?>
-        <div><i class="tone-<?= vg_sev_tone($s) ?>"></i><span><?= $s ?></span>
+        <div<?= (int) $totals[$s] === 0 ? ' class="is-zero"' : '' ?>><i class="tone-<?= vg_sev_tone($s) ?>"></i><span><?= $s ?></span>
           <span class="n"><?= number_format((int) $totals[$s]) ?></span></div>
       <?php endforeach; ?>
     </div>

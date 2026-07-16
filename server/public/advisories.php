@@ -74,7 +74,6 @@ try {
 vg_header('국내 보안공지', 'advisories');
 ?>
   <h1>🇰🇷 국내 보안공지 <span class="hint">(KISA 보호나라)</span></h1>
-  <div class="sub">해외 스캐너가 다루지 않는 국내 보안공지. <a href="/connectors.php">피드 커넥터</a>(kisa)가 본문까지 주기 수집. 제목을 누르면 상세를 봅니다.</div>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
