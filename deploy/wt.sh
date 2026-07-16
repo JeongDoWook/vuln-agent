@@ -52,7 +52,7 @@ usage() {
   echo ""
   say "  ${GREEN}add${NC} <브랜치> [기점]   wt/<이름> 워크트리 생성 (기점 기본 origin/main)"
   say "  ${GREEN}list${NC}                  워크트리 + 할당 포트"
-  say "  ${GREEN}rm${NC} <이름>             dev 스택 내리고 워크트리 + 병합된 브랜치 제거"
+  say "  ${GREEN}rm${NC} <이름>             워크트리 + 병합된 브랜치 제거(dev 스택은 안 건드림, 서빙 중이면 경고만)"
   say "  ${GREEN}sweep${NC}                 병합된 워크트리를 한 번에 정리 (미병합·미커밋은 유지)"
   echo ""
   say "예: ${CYAN}./deploy/wt.sh add feat/cve-list${NC}  →  wt/cve-list"
@@ -130,18 +130,20 @@ cmd_list() {
   fi
 }
 
-# dev 스택이 이 워크트리를 서빙 중이면 내린다(볼륨은 공용이라 -v 금지). 다른 트리면 손대지 않는다.
-#   마운트 원본이 사라지면 500 만 뜨므로, 지울 트리를 서빙 중일 때만 미리 내린다.
+# dev 스택이 이 워크트리를 서빙 중이면 "경고만" 한다 — 절대 자동으로 내리지 않는다.
+#   예전엔 여기서 docker compose down 을 직접 실행했다. wt.sh rm/sweep 은 사람이든
+#   에이전트든 일상적으로 부르는 정리 명령인데, 부를 때마다 예고 없이 dev 스택이
+#   내려가 버려 "왜 자꾸 dev down 되는지 모르겠다"는 혼란의 원인이었다 — 이 저장소가
+#   그 외 모든 곳에서 못박은 "스택 기동/중지는 항상 사람이 명시적으로 한다" 원칙과도
+#   어긋났다. 워크트리 삭제 자체는 그대로 진행하고(마운트 원본이 사라져 스택이 500 을
+#   내기 시작할 수 있다는 것만 알린다), 실제 docker 명령은 사람이 직접 판단해서 친다.
 stack_down_if_serving() {
   local dir="$1" mine
   mine="$( (cd "$dir" && pwd -W 2>/dev/null) || printf '%s' "$dir" )/server"
   if [ "$(norm_path "$(dev_stack_src)")" = "$(norm_path "$mine")" ]; then
-    say "${BLUE}→${NC} dev 스택이 이 워크트리를 서빙 중 → 내립니다(볼륨은 보존)..."
-    ( cd "$dir/deploy" \
-      && docker compose --env-file "$MAIN_ROOT/deploy/.env.dev" -p vulnagent-dev \
-           -f compose.yml -f compose.common.yml -f compose.dev.yml down \
-    ) || say "  ${YELLOW}⚠${NC} 스택 중지 실패(이미 내려갔을 수 있음)"
-    say "  ${YELLOW}!${NC} 다음 작업 트리에서 ${CYAN}./deploy/compose_runner.sh dev up -d${NC} 로 다시 올리세요."
+    say "${YELLOW}⚠${NC} dev 스택이 이 워크트리를 서빙 중입니다. 지우면 마운트 원본이"
+    say "  사라져 스택이 500 을 내기 시작합니다 — 필요하면 직접 내리세요:"
+    say "  ${CYAN}./deploy/compose_runner.sh dev down${NC}   (다른 트리로 옮기려면 그 트리에서 dev up -d)"
   fi
 }
 
@@ -203,8 +205,7 @@ cmd_rm() {
     die "커밋하거나 되돌린 뒤 다시 실행하세요."
   fi
 
-  # dev 스택은 저장소에 하나뿐이고 **DB 볼륨도 공용**이다 → 여기서 `down -v` 를 하면
-  #   남의 세션 DB 까지 날아간다. 절대 -v 를 붙이지 않는다(stack_down_if_serving 이 -v 없이 내린다).
+  # dev 스택이 이 워크트리를 서빙 중이면 경고만 한다(자동으로 내리지 않는다).
   stack_down_if_serving "$dir"
 
   # secrets/·data/ 는 untracked 라 --force 없이는 remove 가 거부한다.
