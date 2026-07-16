@@ -192,15 +192,24 @@ if (-not (Test-Path $settingsPath)) {
 # ── claude 실행 ──────────────────────────────────────────────────────────────
 # 실행 명령을 워커별 .launch.ps1 파일에 담는다. -Command 인라인 대신 -File 을 쓰면
 # wt 의 ';' 파싱·따옴표 이스케이프 지옥을 피할 수 있다.
+#
+# 지시문(.initial-prompt)을 claude 의 CLI 인자로 그대로 넘기지 않는다 — 반드시 안 된다.
+# claude 는 npm 셈(claude.cmd/.ps1)을 거쳐 실행되는데, 지시문에 큰따옴표(`"...")나
+# 백틱(마크다운 인라인 코드 `` `foo` ``)이 하나라도 섞이면 Windows 커맨드라인 재인용
+# 과정에서 인자가 그 지점에서 잘리거나 깨진다(실제로 두 번 겪음 — 백틱 케이스는 PowerShell
+# 자체 이스케이프와 충돌, 큰따옴표 케이스는 셈의 재인용 중 조기 종료). 프롬프트 작성자가
+# 특수문자를 피해서 우회할 문제가 아니라 구조적 결함이라 스크립트에서 근본 수정한다:
+# 지시문은 오직 파일(.initial-prompt, Set-Content 로 안전하게 기록됨)로만 전달하고,
+# claude 에는 그 파일을 읽으라는 짧고 안전한(따옴표·백틱·개행 없는) 트리거 문장만 넘긴다.
 $permFlag = if ($Permissions -eq 'skip') { '--dangerously-skip-permissions' } else { '' }
 $wtDirEsc = $wtDir -replace "'", "''"
 $launchPs1 = Join-Path $wtDir '.launch.ps1'
+$trigger = ".initial-prompt 파일을 Read 도구로 읽고, 그 내용을 지시사항 삼아 바로 작업을 시작해라."
 
 if ($Launch -eq 'headless') {
   $launchBody = @"
 Set-Location -LiteralPath '$wtDirEsc'
-`$p = Get-Content '.initial-prompt' -Raw
-claude $permFlag -p `$p *> '$($logPath -replace "'", "''")'
+claude $permFlag -p '$trigger' *> '$($logPath -replace "'", "''")'
 "@
 }
 else {
@@ -210,8 +219,7 @@ Set-Location -LiteralPath '$wtDirEsc'
 Write-Host '=== 워커: $Task ($branch) ===' -ForegroundColor Cyan
 Write-Host '결과 파일: $resultPathFwd' -ForegroundColor DarkGray
 Write-Host ''
-`$p = Get-Content '.initial-prompt' -Raw
-claude $permFlag `$p
+claude $permFlag '$trigger'
 "@
 }
 
