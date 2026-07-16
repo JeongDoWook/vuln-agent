@@ -140,6 +140,8 @@ flowchart LR
         NVD["NVD 2.0 API"]
         EPSS["FIRST EPSS csv"]
         KISA["KISA RSS"]
+        VENDOR["벤더 판정 소스(6종)<br/>debtracker·rhoval·rhunfixed<br/>ubuntuoval·kcve·ssg"]
+        GAPI["범용 API(generic_api)<br/>사용자 등록 REST"]
     end
     DBc[("tb_feed_connectors<br/>tb_feed_collection_logs")]
     CVE[("tb_cves · tb_kev_catalog<br/>tb_cve_affected_packages · tb_advisories")]
@@ -147,8 +149,8 @@ flowchart LR
 
     CFG -->|저장| DBc
     TICK -->|enabled & next_run<=now| DBc
-    TICK --> KEV & OSV & NVD & EPSS & KISA
-    KEV & OSV & NVD & EPSS & KISA -->|upsert| CVE
+    TICK --> KEV & OSV & NVD & EPSS & KISA & VENDOR & GAPI
+    KEV & OSV & NVD & EPSS & KISA & VENDOR & GAPI -->|upsert| CVE
     CVE --> MAT
     TICK -->|실행 후| MAT
     CFG -->|지금 실행| MAT
@@ -158,7 +160,7 @@ flowchart LR
     style MAT fill:#a371f7,color:#fff
 ```
 
-커넥터 = `{type(kev/osv/nvd/kisa/epss), connection(url·key·ecosystem), schedule, enabled}`.
+커넥터 = `{type(kev/osv/nvd/kisa/epss/debtracker/rhoval/rhunfixed/ssg/kcve/ubuntuoval/generic_api), connection(url·key·ecosystem 등 타입별), schedule, enabled}`.
 스케줄은 **manual / interval(N분) / daily(HH:MM) / cron(5필드 표현식)** 지원 — UI에서 지정하면
 스케줄러 사이드카가 매 tick(60s) 판정해 그 시각에 수집·재매칭한다(Quartz 유사, 중앙 실행).
 수집 이력·상태는 `tb_feed_collection_logs` 에 남고 커넥터 행에 마지막 상태로 표시된다.
@@ -455,7 +457,8 @@ erDiagram
 ```
 
 *(tb_cves / tb_kev_catalog / tb_cve_affected_packages / tb_findings 는 2단계 매처, tb_feed_* 는
-4a 피드 커넥터(connector_type: kev/osv/nvd/kisa/epss), tb_advisories 는 4b KISA 국내공지,
+4a 피드 커넥터(connector_type: kev/osv/nvd/kisa/epss/debtracker/rhoval/rhunfixed/ssg/kcve/
+ubuntuoval/generic_api), tb_advisories 는 4b KISA 국내공지,
 tb_users 는 3단계 인증, tb_activity_log 는 감사 추적, tb_cce_findings 는 보안설정 점검,
 tb_role_permissions 는 설정형 RBAC, tb_api_tokens 는 Export API 에서 도입.
 **억제 계열**(§2): 근거는 tb_pkg_changelog_cves(②)·tb_applied_errata(③)·tb_debsecan(④),
