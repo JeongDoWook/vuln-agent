@@ -269,4 +269,7 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json | Set-Content -Path $manifestPath -Encoding utf8
 
+. (Join-Path $PSScriptRoot 'history-log.ps1')
+Add-OrchestratorHistory -MainRoot $MainRoot -Task $Task -Event 'spawn' -Detail "$branch ($Launch/$Permissions)"
+
 Write-Host "  매니페스트: .omc/orchestrator/$Task.json" -ForegroundColor DarkGray

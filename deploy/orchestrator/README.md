@@ -49,12 +49,38 @@
 | `stop-worker.ps1` | 워커 정리 — 워크트리 제거 + 매니페스트 삭제 |
 | `reap-merged.ps1` | **병합 자동정리** — PR 이 main 에 병합된 워커를 감지해 stop-worker 실행(gh 필요) |
 | `worker-stop-hook.ps1` | **완료 자동기록** — 워커 세션이 idle 될 때 git 상태로 결과 파일을 갱신(spawn 이 주입) |
+| `history-log.ps1` | 이벤트 히스토리 기록 헬퍼(dot-source) — 아래 "히스토리" 참고 |
+| `history-report.ps1` | 작업별 스폰→완료→병합정리 소요시간 표로 출력 |
 | `milestone.template.md` | 계획서 템플릿 |
+
+## 히스토리 — "어디가 오래 걸렸는지" 나중에 되짚어보기
+
+사람(에이전트)이 기억해서 기록하는 방식은 까먹거나 생략하면 그 구간이 영영 안 남는다.
+그래서 기록은 **스크립트가 자동으로** 한다 — 워커·메인이 신경 쓸 필요 없다:
+
+- `spawn-worker.ps1` 이 스폰 시점에 `spawn` 이벤트를 남긴다.
+- `worker-stop-hook.ps1` 이 워커 세션이 idle 될 때마다 상태를 재판정하는데, **실제로 상태가
+  바뀐 시점에만**(매 idle tick 이 아니라) `status` 이벤트를 남긴다.
+- `reap-merged.ps1` 이 병합 감지 후 정리하면서 `merged_cleanup` 이벤트를 남긴다.
+
+전부 `.omc/logs/history.jsonl` 에 한 줄씩(JSON Lines) append 된다. 실패해도 실제 작업을
+막지 않는다(기록 실패보다 작업 진행이 우선).
+
+```powershell
+.\deploy\orchestrator\history-report.ps1              # 작업별 스폰→완료→병합정리 소요시간 표
+.\deploy\orchestrator\history-report.ps1 -Task cve-badge  # 특정 작업만
+.\deploy\orchestrator\history-report.ps1 -Raw          # 원본 이벤트 라인 그대로
+```
+
+claude-pipeline 의 `work-report.py`(토큰·재작업·품질점수까지 마이닝하는 주간 HTML 대시보드)는
+이 저장소 규모(1인 유지보수)엔 과하다(YAGNI) — 여기선 세 시점의 경과시간만 표로 본다. 나중에
+실제로 "이 유형 작업이 자꾸 오래 걸린다" 는 패턴이 쌓이면 그때 확장한다.
 
 런타임 산출물(메인 트리 `.omc/` 에 고정, git 추적 밖):
 - `.omc/logs/<task>.log` — 헤드리스 워커 출력
 - `.omc/results/<task>.md` — 워커가 남기는 진행/결과 (`대기중`→`진행중`→`완료`/`차단`)
 - `.omc/orchestrator/<task>.json` — 워커 매니페스트(status.ps1 이 읽음)
+- `.omc/logs/history.jsonl` — 전체 이벤트 히스토리(spawn/status전환/merged_cleanup, history-report.ps1 이 읽음)
 
 ## 쓰는 법
 
