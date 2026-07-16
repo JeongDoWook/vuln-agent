@@ -43,6 +43,7 @@
 | 스크립트 | 역할 |
 |---|---|
 | `spawn-worker.ps1` | 워커 1개 스폰 — 워크트리 생성 + `.initial-prompt` 주입 + claude 창 실행 |
+| `spawn-batch.ps1` | 워커 **여러 개** 스폰 — `.omc/tasks/*.md` 파일마다 `spawn-worker.ps1 -PromptFile` 자동 호출, 성공분은 `.omc/tasks/archive/` 로 이동. 스킬 `orchestrator-plan`(지시문 작성) → `orchestrator-spawn`(이 스크립트 실행) 짝으로 쓰인다 |
 | `status.ps1` | 워커 감독 — 결과 파일·git·PR 상태 한눈에 (`-Watch` 주기 갱신) |
 | `watch-workers.ps1` | **자동 이어받기** — 전원이 끝날 때까지 대기했다가 취합 리포트 후 종료 |
 | `merge-milestone.ps1` | **마일스톤 통합 PR(옵션 B)** — 전원 완료를 기다렸다가 워커 브랜치들을 로컬 병합해 PR 1개로 낸다 |

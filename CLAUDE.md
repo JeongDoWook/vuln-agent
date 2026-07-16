@@ -168,6 +168,13 @@ cd wt/무엇
      `spawn-worker.ps1` 이 `.initial-prompt` 파일로만 전달하고 claude 실행 인자로는 넘기지
      않는다(과거엔 인자로 직접 넘겨서, 프롬프트에 큰따옴표나 마크다운 백틱이 섞이면 Windows
      커맨드라인 재인용 중 그 지점에서 잘리는 사고가 두 번 있었다 — 이미 스크립트에서 고쳤다).
+     **하위작업이 2개 이상이면** 인라인 `-Prompt "..."` 를 그 자리에서 조립하지 말고 스킬
+     `orchestrator-plan` → `orchestrator-spawn` 을 쓴다: plan 스킬이 각 지시문을
+     `.omc/tasks/<슬러그>.md` 로 먼저 써 두고(워커 스폰 없이, Write 도구라 셸을 안 거친다),
+     spawn 스킬이 `deploy/orchestrator/spawn-batch.ps1` 로 그 파일들을 한 번에 스폰한다 —
+     "명령 작성"과 "구현 실행"을 분리해 파일마다 손으로 spawn-worker.ps1 을 반복 호출하며
+     슬러그를 잘못 짝짓거나 하나를 빼먹는 실수를 없앤다. 하위작업이 1개뿐이면 이 스킬 없이
+     바로 인라인 스폰해도 된다(오버헤드 낭비 금지).
   3. 워커: 자기 워크트리에서 구현 → 검증(php -l·smoke) → 커밋 → push → PR.
   4. 메인: `.\deploy\orchestrator\watch-workers.ps1` 로 전원 완료까지 대기 → 취합해 **이 창에 보고**.
   5. PR 병합 뒤 `.\deploy\orchestrator\reap-merged.ps1` 로 워크트리 자동 정리(gh 인증 필요).
