@@ -436,6 +436,7 @@ main { padding: 1.8rem 1.6rem; max-width: 1760px; margin: 0 auto; width: 100%; }
 h1 { font-size: 1.3rem; margin: 0 0 .3rem; }
 h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
 .sub { color: var(--muted); font-size: .85rem; margin-bottom: 1.3rem; }
+.info-icon { cursor: help; color: var(--muted); font-size: .9em; margin-left: 4px; }
 
 /* --- 카드 ---------------------------------------------------------------- */
 .card {
