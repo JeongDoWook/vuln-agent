@@ -12,7 +12,6 @@ set -uo pipefail
 
 BASE="${1:-http://localhost:8000}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SAMPLE="$ROOT/tests/sample-scan.json"
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 pass=0; fail=0
@@ -67,6 +66,31 @@ assert_my_stack() {
   fi
 }
 assert_my_stack "시작"
+
+# --- 이 트리 전용 fqdn -------------------------------------------------------
+# dev DB 는 모든 워크트리가 공유하는 하나다(vulnagent-db-dev). 그런데 아래 e2e 는 호스트 레코드에
+#   상태를 쓰고 **바로 그 상태를 assert** 한다 — fqdn 이 고정이면 두 트리가 동시에 스모크를 돌 때
+#   같은 호스트를 서로 덮어써, 아무 잘못 없는 트리의 검사가 깨진다. 제일 먼저 무너지는 건
+#   [변경 추적] 의 "동일 내용 재전송 → changed:false" 다(남이 그 사이에 다른 내용을 밀어넣으므로).
+# 그래서 검사를 느슨하게 만드는 대신 **데이터를 격리한다**: fqdn 에 트리 이름을 라벨 하나로 끼운다.
+#   메인 트리 → web01.main.example.com · 워크트리 X → web01.X.example.com
+# 라벨을 점으로 감싸는 게 핵심이다. assets.php 의 검색은 `fqdn LIKE '%q%'` 라 부분문자열이 걸리는데,
+#   라벨엔 점이 없으므로(비-DNS 문자는 - 로 치환) 한 트리의 fqdn 이 다른 트리의 fqdn 을 부분문자열로
+#   품는 일이 구조적으로 불가능하다 — 전체 fqdn 으로 조회하면 항상 자기 호스트만 집힌다.
+# WT_NAME 은 위에서 이미 계산했다(워크트리면 그 이름, 메인 트리면 빈 문자열) — 재사용한다.
+WT_LABEL="$(printf '%s' "${WT_NAME:-main}" | tr -c 'a-zA-Z0-9-' '-')"
+FQDN_WEB01="web01.$WT_LABEL.example.com"   # sample-scan.json        (Rocky 9.3)
+FQDN_WEB02="web02.$WT_LABEL.example.com"   # sample-scan-debian.json (Debian 12)
+FQDN_WEB03="web03.$WT_LABEL.example.com"   # sample-scan-amzn.json   (Amazon Linux 2023)
+
+# 샘플은 원본을 두고 전송 직전에 fqdn 만 바꾼 사본을 쓴다($UPG·$SPOOF 와 같은 sed 패턴).
+#   원본을 템플릿화하면 사람이 읽는 샘플에 플레이스홀더가 새고, 다른 테스트도 같이 고쳐야 한다.
+SAMPLE="$(mktemp)"; SAMPLE_DEB="$(mktemp)"; SAMPLE_AMZN="$(mktemp)"
+trap 'rm -f "$SAMPLE" "$SAMPLE_DEB" "$SAMPLE_AMZN" "${JAR:-}"' EXIT
+sed "s/web01\.example\.com/$FQDN_WEB01/g" "$ROOT/tests/sample-scan.json"        > "$SAMPLE"
+sed "s/web02\.example\.com/$FQDN_WEB02/g" "$ROOT/tests/sample-scan-debian.json" > "$SAMPLE_DEB"
+sed "s/web03\.example\.com/$FQDN_WEB03/g" "$ROOT/tests/sample-scan-amzn.json"   > "$SAMPLE_AMZN"
+printf "  이 트리의 호스트: %s (트리 라벨 =%s)\n" "$FQDN_WEB01" "$WT_LABEL"
 
 
 # --- UI 정적 검사 -----------------------------------------------------------
@@ -270,7 +294,7 @@ if [ "${cceFail:-0}" -ge 5 ]; then ok "CCE FAIL 검출 (shadow 640·hosts 644·M
 #   debsecan(데비안 보안 트래커)이 curl 만 지목했다 → openssl 은 백포트로 이미 고쳐진 것(억제).
 printf "\n[debsecan · 데비안 백포트 억제]\n"
 resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
-  --data-binary @"$ROOT/tests/sample-scan-debian.json")
+  --data-binary @"$SAMPLE_DEB")
 assert_contains "$resp" '"ok":true' "데비안 호스트 수집 → ok:true"
 assert_contains "$resp" '"debsecan":1' "debsecan 판정 1건 저장"
 dlow=$(printf '%s' "$resp" | grep -oE '"LOW":[0-9]+' | grep -oE '[0-9]+$')
@@ -283,7 +307,7 @@ if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백�
 #   **억제 건수로 판정하지 않는다** — 그건 DB 에 실제 피드 데이터가 들어오면 바로 깨진다
 #   (dev DB 가 공용이 된 뒤 실측으로 깨졌다: 기대 1건 vs 실제 72건).
 #   억제 목록에 nginx 가 있는지를 직접 본다. 그게 이 테스트가 진짜 지키려는 것이다.
-WEB02_ID=$(curl -s -b "$JAR" "$BASE/assets.php?q=web02" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
+WEB02_ID=$(curl -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB02" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
 supbody=$(curl -s -b "$JAR" "$BASE/host.php?id=${WEB02_ID:-0}&tab=suppressed")
 if printf '%s' "$supbody" | grep -q 'nginx'; then
   no "서드파티 nginx 가 억제됨 — 미탐!"
@@ -312,7 +336,7 @@ SCAN_ID=$(printf '%s' "$resp" | grep -oE '"scan_id":[0-9]+' | grep -oE '[0-9]+$'
 #   취약점이 0건으로 뜨는데, 운영자가 "안전하다"고 읽으면 침묵하는 미탐이 된다 → 명시적으로 알린다.
 printf "\n[미지원 배포판 경고]\n"
 resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
-  --data-binary @"$ROOT/tests/sample-scan-amzn.json")
+  --data-binary @"$SAMPLE_AMZN")
 assert_contains "$resp" '"ok":true' "Amazon Linux 호스트 수집 → ok:true"
 assert_contains "$resp" 'ALAS' "ingest 응답에 미지원 경고(자체 ALAS 피드 필요)"
 
@@ -334,7 +358,7 @@ assert_contains "$resp" '"ok":true' "재매칭 성공(헤더 인증)"
 
 # --- 웹 인증 흐름 -----------------------------------------------------------
 printf "\n[web auth]\n"
-JAR="$(mktemp)"; trap 'rm -f "$JAR"' EXIT
+JAR="$(mktemp)"   # 정리는 위 trap 이 샘플 사본과 함께 맡는다.
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")
 assert_eq "$code" "302" "미인증 대시보드 → 302(로그인 리다이렉트)"
 
@@ -360,7 +384,7 @@ assert_eq "$code" "200" "국내 보안공지 페이지 200"
 # 호스트 id 를 하드코딩(=1)하면 빈 볼륨에서만 통과한다. 스택·DB 를 재사용하면 auto_increment 가
 # 밀려(삭제·재등록) id 가 6,7,11 처럼 바뀌고, 그때부터 아래 검사가 전부 "호스트 없음" 을 본다.
 # 자산 목록에서 web01 의 실제 id 를 찾아 쓴다 — 데이터가 어디서 시작하든 무관하게.
-WEB01_ID=$(curl -s -b "$JAR" "$BASE/assets.php?q=web01" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
+WEB01_ID=$(curl -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB01" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
 if [ -n "$WEB01_ID" ]; then
   ok "web01 호스트 id 확인 (=$WEB01_ID)"
 else
@@ -418,7 +442,7 @@ ATCSRF=$(curl -s -b "$JAR" "$BASE/agent-tokens.php" | grep -oE 'name="csrf" valu
 #   -X POST 를 쓰지 않는다 — -X 는 리다이렉트 뒤에도 POST 를 강제해 발급이 무한 재전송된다.
 issued=$(curl -sL -b "$JAR" "$BASE/agent-tokens.php" \
   --data-urlencode "csrf=$ATCSRF" --data-urlencode "action=create" \
-  --data-urlencode "fqdn=web01.example.com" --data-urlencode "label=smoke")
+  --data-urlencode "fqdn=$FQDN_WEB01" --data-urlencode "label=smoke $WT_LABEL")
 AGTOK=$(printf '%s' "$issued" | grep -oE 'vgt_[0-9a-f]{40}' | head -1)
 if [ -n "$AGTOK" ]; then ok "개별 토큰 발급 + 원문 1회 표시"; else no "개별 토큰 발급 실패"; fi
 # 목록엔 prefix(앞자리)만 — 원문 전체는 저장/표시되지 않아야 한다(DB 엔 해시만).
@@ -430,9 +454,13 @@ else
 fi
 # 새로고침이 토큰을 재발급하지 않는다(PRG) — 예전엔 POST 응답을 그대로 그려서, F5 한 번이
 #   방금 받은 토큰을 자동 폐기하고 또 발급했다. 이제 발급은 303 으로 GET 에 되돌린다.
+# 이 fqdn 만 **매 실행 고유**로 잡는다($$ = 이 스모크 프로세스). 아래에서 "재발급이 없었다"를
+#   내 토큰 행 수로 재기 때문이다 — 같은 fqdn 으로 재발급하면 옛 행이 폐기된 채 목록에 남아
+#   실행이 쌓일수록 행 수가 늘고, 그러면 "1개" 라는 기대가 성립하지 않는다.
+PRG_FQDN="prg.$$.$WT_LABEL.example.com"
 prgcode=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$BASE/agent-tokens.php" \
   --data-urlencode "csrf=$ATCSRF" --data-urlencode "action=create" \
-  --data-urlencode "fqdn=prg.example.com" --data-urlencode "label=smoke-prg")
+  --data-urlencode "fqdn=$PRG_FQDN" --data-urlencode "label=smoke-prg $WT_LABEL")
 assert_eq "$prgcode" "303" "발급 POST 는 303 으로 GET 에 되돌린다(새로고침 재전송 방지)"
 prg1=$(curl -s -b "$JAR" "$BASE/agent-tokens.php")    # 리다이렉트된 GET — 원문 1회 표시
 assert_contains "$prg1" '한 번만 표시됨' "리다이렉트된 GET 에 발급 카드가 실린다"
@@ -442,16 +470,26 @@ if printf '%s' "$prg2" | grep -q '한 번만 표시됨'; then
 else
   ok "새로고침하면 발급 카드가 사라진다(1회 표시)"
 fi
-# 새로고침이 반복하는 것은 이제 GET 이다 — 총 개수가 그대로면 재발급이 없었다는 뜻.
-cnt1=$(printf '%s' "$prg1" | grep -oE '\([0-9,]+개\)' | head -1)
-cnt2=$(printf '%s' "$prg2" | grep -oE '\([0-9,]+개\)' | head -1)
-assert_eq "$cnt2" "$cnt1" "새로고침해도 토큰이 다시 발급되지 않는다(총 개수 불변)"
+# 새로고침이 반복하는 것은 이제 GET 이다 — 발급된 내 토큰이 딱 1개면 재발급이 없었다는 뜻.
+#   예전엔 페이지의 `(N개)` 뱃지(=DB 전체 토큰 수)를 새로고침 전후로 비교했다. 그건 공용 dev DB
+#   에서 남의 트리가 그 사이에 토큰 하나만 발급해도 깨진다 — 실측으로 깨졌다(기대 314 vs 실제 315).
+#   검사가 지키려는 건 "새로고침이 **내** 토큰을 또 발급하지 않는다" 이므로 내 것만 센다.
+#   목록은 fqdn 을 행마다 한 번 싣고(발급 카드엔 안 실린다) 내 토큰은 방금 만든 최신이라 1페이지에 있다.
+#   (-c 는 "맞는 줄 수" 라 한 줄에 두 번 실려도 1 로 읽는다 — 실제 등장 횟수를 센다.)
+prgcnt1=$(printf '%s' "$prg1" | grep -o "$PRG_FQDN" | wc -l | tr -d ' ')
+prgcnt2=$(printf '%s' "$prg2" | grep -o "$PRG_FQDN" | wc -l | tr -d ' ')
+# 0 이면 "없어서 통과" 하는 빈 검사가 되므로 둘 다 정확히 1 인지 본다(재발급이 있었다면 2가 된다).
+if [ "$prgcnt1" = "1" ] && [ "$prgcnt2" = "1" ]; then
+  ok "새로고침해도 토큰이 다시 발급되지 않는다(내 토큰 1개 그대로)"
+else
+  no "새로고침해도 토큰이 다시 발급되지 않는다  (발급 직후=$prgcnt1, 새로고침 후=$prgcnt2, 기대=둘 다 1)"
+fi
 # (a) 바인딩된 호스트(web01)로 수신 → 200 ok, 저장 호스트가 바인딩 fqdn.
 resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $AGTOK" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"ok":true' "(a) 개별 토큰 + 바인딩 호스트 → ok:true"
-assert_contains "$resp" '"fqdn":"web01.example.com"' "(a) 저장 호스트가 바인딩 fqdn"
+assert_contains "$resp" "\"fqdn\":\"$FQDN_WEB01\"" "(a) 저장 호스트가 바인딩 fqdn"
 # (b) 같은 토큰으로 다른 호스트(evil)를 주장 → 403 거부. 스푸핑 차단의 핵심 회귀.
-SPOOF="$(mktemp)"; sed 's/web01\.example\.com/evil.example.com/g' "$SAMPLE" > "$SPOOF"
+SPOOF="$(mktemp)"; sed "s/web01\.$WT_LABEL\.example\.com/evil.$WT_LABEL.example.com/g" "$SAMPLE" > "$SPOOF"
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
   -H "X-Agent-Token: $AGTOK" --data-binary @"$SPOOF")
 assert_eq "$code" "403" "(b) 같은 토큰으로 다른 호스트 위조 → 403 (스푸핑 차단)"
