@@ -20,12 +20,15 @@ if ($type === 'generic_api') {
     $conn = json_decode((string) ($_POST['g_config_json'] ?? ''), true);
     if (!is_array($conn)) { $conn = []; }
 } else {
-    $conn = [
-        'url'       => trim((string) ($_GET['url'] ?? $_POST['url'] ?? '')),
-        'api_key'   => trim((string) ($_GET['api_key'] ?? $_POST['api_key'] ?? '')),
-        'ecosystem' => trim((string) ($_GET['ecosystem'] ?? $_POST['ecosystem'] ?? '')),
-        'days'      => (int) ($_GET['days'] ?? $_POST['days'] ?? 7),
-    ];
+    // 이 타입이 실제로 읽는 필드만 담는다(근거는 src/feeds.php 카탈로그 — 저장 로직과 같은 표).
+    //   전엔 넷을 무조건 넣었고, 안 쓰는 타입엔 빈 값이 실려 갔다. 빈 값은 키를 만들지 않는다
+    //   — 그래야 커넥터가 자기 기본 URL 을 쓴다.
+    $conn = [];
+    foreach (vg_connector_fields($type) as $f) {
+        $v = trim((string) ($_GET[$f] ?? $_POST[$f] ?? ''));
+        if ($v === '') { continue; }
+        $conn[$f] = $f === 'days' ? (int) $v : $v;
+    }
 }
 
 try {
