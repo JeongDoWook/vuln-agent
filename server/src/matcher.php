@@ -404,7 +404,26 @@ if (!function_exists('vg_scope_rank')) {
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
         $ownTx = !$pdo->inTransaction();
-        if ($ownTx) { $pdo->beginTransaction(); }
+
+        // 이 트랜잭션만 READ COMMITTED 로 내린다 — 기본 REPEATABLE READ 의 **갭락**이 동시 재매칭을
+        //   데드락시킨다(1213). 실측한 사이클(SHOW ENGINE INNODB STATUS):
+        //     아래 `DELETE ... WHERE scan_id = ?` 는 유니크키(uq_find·uq_supp) 선두가 scan_id 라
+        //     그 범위를 스캔하는데, 새 스캔은 scan_id 가 가장 커서 스캔이 인덱스 끝까지 간다
+        //     → **supremum 갭에 X 갭락**. 갭락끼리는 호환이라 동시 스캔 둘이 **둘 다** 잡는다.
+        //     이어서 각자 자기 행을 INSERT 하면 그 갭에 **insert intention** 이 필요한데 이건
+        //     상대의 갭락과 충돌 → 서로 대기 → 데드락. 행이 겹치지 않아도(스캔이 달라도) 걸린다.
+        //   READ COMMITTED 는 이 스캔에 갭락을 걸지 않으므로 원인 자체가 사라진다.
+        //   락 순서 통일로는 못 고친다 — 둘이 **같은 순서로 같은 갭**을 잡다 나는 사고다.
+        // 정합성: 이 트랜잭션 안에는 **쓰기(DELETE 2 + INSERT N)뿐이고 읽기가 하나도 없다** —
+        //   $packages·$affected 등 판단 근거는 전부 beginTransaction() 이전에 읽어 뒀다.
+        //   다시 읽는 게 없으니 비반복읽기·팬텀이 성립할 여지가 없고, 원자성은 격리수준과 무관하다.
+        // 범위: SET TRANSACTION(SESSION/GLOBAL 없이)은 **다음 트랜잭션 하나에만** 걸린다.
+        //   그래서 우리가 직접 여는 경우($ownTx)에만 건다 — 남의 트랜잭션 안이면 지금 것엔 안 먹고
+        //   엉뚱한 다음 트랜잭션에 새어 들어간다.
+        if ($ownTx) {
+            $pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+            $pdo->beginTransaction();
+        }
         try {
 
         // 기존 findings 삭제 후 재삽입. INSERT 는 멱등(동시성 대비).
