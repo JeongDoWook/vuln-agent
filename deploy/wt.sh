@@ -296,13 +296,19 @@ cmd_sweep() {
     dir="${dir%/}"; name="${dir##*/}"
 
     # 워크트리가 아니면 남은 쓰레기다. 비었으면 지우고(잃을 게 없다), 내용이 있으면
-    #   사람이 안 본 파일을 지우지 않는다 — 경고만. rmdir 이 곧 빈 디렉터리 판정이다.
+    #   사람이 안 본 파일을 지우지 않는다 — 경고만.
+    #   빈 여부를 rmdir 성공으로 판정하지 않는 이유: 빈 디렉터리도 다른 프로세스가 cwd 로
+    #   잡고 있으면 rmdir 이 "Device or resource busy" 로 실패한다(실측 — wt/rematch-timeout).
+    #   그걸 "내용 있음" 으로 보고하면 사용자가 없는 파일을 찾게 된다.
     if ! is_worktree_root "$dir"; then
-      if rmdir "$dir" 2>/dev/null; then
+      if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+        say "  ${YELLOW}⚠${NC} $name — 워크트리 아님(내용 있음), 유지 — 확인 후 직접 지우세요: ${CYAN}$dir${NC}"
+        kept=$((kept+1))
+      elif rmdir "$dir" 2>/dev/null; then
         say "  ${GREEN}✓${NC} $name — 워크트리 아닌 빈 디렉터리, 제거"
         removed=$((removed+1))
       else
-        say "  ${YELLOW}⚠${NC} $name — 워크트리 아님(내용 있음), 유지 — 확인 후 직접 지우세요: ${CYAN}$dir${NC}"
+        say "  ${YELLOW}⚠${NC} $name — 워크트리 아닌 빈 디렉터리지만 제거 실패(다른 셸이 이 폴더에 머무는 중?), 유지"
         kept=$((kept+1))
       fi
       continue
