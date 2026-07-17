@@ -304,7 +304,8 @@ assert_contains "$resp" '"changed":true'  "glibc 업그레이드 → 새 스냅�
 assert_contains "$resp" '"pkg_changes":1' "패키지 변경 1건 기록"
 rm -f "$UPG"
 # 되돌려 놓는다(뒤의 검사들이 원래 샘플 기준이라 상태를 원복해야 한다).
-curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE" >/dev/null
+resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
+SCAN_ID=$(printf '%s' "$resp" | grep -oE '"scan_id":[0-9]+' | grep -oE '[0-9]+$')
 
 # --- 피드 미지원 배포판: 0건이 "안전"이 아니라 "판정 불가" -------------------
 #   Amazon Linux 는 OSV 생태계 목록에 없다(질의하면 INVALID_ARGUMENT). 매칭 후보가 아예 없어
@@ -321,7 +322,10 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -H "X-Agent-Token: WRONG" "$BASE/r
 assert_eq "$code" "401" "잘못된 토큰 → 401"
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=$TOKEN")
 assert_eq "$code" "401" "?token= 쿼리는 더 이상 인증 안 됨(헤더만 허용) → 401"
-resp=$(curl -s -H "X-Agent-Token: $TOKEN" "$BASE/rematch.php")
+# 대상을 방금 수집한 스캔 1건으로 한정한다. scan_id 를 빼면 DB 전체를 재매칭하는데, 공용 dev DB 는
+#   스모크가 돌 때마다 스캔이 쌓여 결국 PHP 30초 실행제한에 걸린다 — 그러면 이 검사는 인증이 아니라
+#   DB 크기를 재는 검사가 된다(여기서 보려는 건 헤더 인증이 통과하느냐다).
+resp=$(curl -s -H "X-Agent-Token: $TOKEN" "$BASE/rematch.php?scan_id=$SCAN_ID")
 assert_contains "$resp" '"ok":true' "재매칭 성공(헤더 인증)"
 
 # --- 웹 인증 흐름 -----------------------------------------------------------
