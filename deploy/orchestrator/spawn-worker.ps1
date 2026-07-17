@@ -102,14 +102,14 @@ function Resolve-Wt {
 # 사용자가 claude 를 띄운 터미널과 같은 종류로 워커를 스폰한다.
 #   termkeep(사용자 자작 세션 매니저) 안 → termkeep 새 세션 · WT 안 → 새 탭 · 그 외 → 새 창
 #
-# 왜 $env:TERMKEEP 이 아니라 부모 체인인가:
-#   termkeep 소스엔 PTY 에 TERMKEEP=1 을 심는 코드가 있지만 아직 미커밋·미빌드다 — 지금 도는
-#   데몬 바이너리는 그 변수를 안 심는다(실측: termkeep 안에서 도는 claude 에서 $env:TERMKEEP 이
-#   비어 있음). 그래서 실제 판정은 부모 프로세스 체인을 거슬러 termkeepd.exe/termkeep.exe 를
-#   찾는 것으로 한다. env 검사는 나중에 termkeep 이 재빌드되면 켜질 빠른 경로라 먼저 본다.
+# 왜 env 검사와 부모 체인을 둘 다 보는가:
+#   termkeep 이 PTY 에 TERMKEEP=1 을 심게 재빌드돼, 지금은 빠른 경로(env)가 실제로 맞는다
+#   (실측 2026-07: termkeep 안에서 도는 claude 에서 $env:TERMKEEP 이 1). 다만 옛 데몬 바이너리로
+#   띄운 세션엔 그 변수가 없으므로, 부모 프로세스 체인을 거슬러 termkeepd.exe/termkeep.exe 를
+#   찾는 판정을 폴백으로 남겨 둔다.
 #   실측된 체인: claude.exe → cmd.exe → node.exe → powershell.exe → termkeepd.exe → termkeep.exe
 function Resolve-HostTerminal {
-  if ($env:TERMKEEP -eq '1') { return 'termkeep' }   # 재빌드 후의 빠른 경로
+  if ($env:TERMKEEP -eq '1') { return 'termkeep' }   # 빠른 경로(재빌드된 termkeep)
 
   # 체인 탐색은 절대 throw 하지 않는다 — 감지 실패가 워커 스폰 자체를 막으면 안 된다.
   try {
