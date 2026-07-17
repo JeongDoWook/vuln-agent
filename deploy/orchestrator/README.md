@@ -229,6 +229,18 @@ claude.exe → cmd.exe → node.exe → powershell.exe → termkeepd.exe → ter
 부모가 자식보다 늦게 태어났으면 재사용된 PID 로 보고 끊는다(분리된 창으로 띄운 워커는 실제로
 부모가 이미 죽어 체인이 끊긴 상태로 관측된다 → 그 경우가 정상적으로 `window` 로 떨어진다).
 
+### 워커 세션 이름엔 만든 중앙 세션이 박힌다 (`S<id>/<슬러그>`)
+
+사용자는 중앙 세션(창)을 여러 개 띄운다. 이름이 슬러그뿐이면 사이드바에 워커가 쌓여도 어느 창
+소생인지 알 수 없어, termkeep 워커 세션 이름 앞에 **만든 중앙 세션 ID** 를 붙인다 —
+`S1/rematch-timeout`, `S2/smoke-fqdn-isolation`. 이름순 정렬 시 같은 창의 워커가 뭉친다.
+
+- ID 출처는 `$env:TERMKEEP_SESSION_ID`(사이드바의 `Session N` 과 같은 값). 재빌드된 termkeep 이
+  PTY 에 심어 주고, `spawn-worker.ps1` 은 중앙 세션의 claude 가 실행하므로 그대로 물려받는다.
+- **옛 데몬으로 띄운 세션엔 그 변수가 없다 → 접두사를 생략하고 슬러그만 쓴다**(도입 전과 동일).
+  `S0/`·`unknown/` 같은 가짜 값은 쓰지 않는다 — 생략할 땐 그 사실을 한 줄 출력한다.
+- 접두사는 세션 **이름에만** 붙는다. 매니페스트(`task` 등)와 브랜치·워크트리는 슬러그 그대로다.
+
 ### 왜 `cwd`/`command` 대신 `SendInput` 인가
 
 termkeep 데몬 IPC 는 TCP(`127.0.0.1:<port>`, 포트는 `%APPDATA%\termkeep\daemon.json`)로
