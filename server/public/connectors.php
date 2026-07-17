@@ -26,8 +26,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id    = (int) ($_POST['id'] ?? 0);
                 $name  = trim((string) ($_POST['name'] ?? ''));
                 $type  = (string) ($_POST['connector_type'] ?? '');
-                if ($name === '' || !in_array($type, ['kev','osv','nvd','kisa','epss','debtracker','rhoval','rhunfixed','ssg','kcve','ubuntuoval','generic_api'], true)) {
+                // 타입 목록의 근거는 src/feeds.php 의 카탈로그 하나다(폼 <select>·vg_feed_make 와 같은 표).
+                if ($name === '' || !isset(VG_CONNECTOR_TYPES[$type])) {
                     throw new RuntimeException('이름과 커넥터 타입을 확인하세요.');
+                }
+                // 기존 레코드(편집일 때). connection_json 병합과 next_run_at 계산이 함께 쓴다.
+                $prev = null;
+                if ($id > 0) {
+                    $q = $pdo->prepare('SELECT connection_json, last_run_at FROM tb_feed_connectors WHERE id=?');
+                    $q->execute([$id]);
+                    $prev = $q->fetch() ?: null;
                 }
                 if ($type === 'generic_api') {
                     // 범용 API 커넥터는 폼 전체(role/url_template/headers/pagination/response)를
@@ -40,10 +48,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     vg_generic_parse_config($conn); // role/url_template/field_mapping 검증(설계문서 5장)
                 } else {
-                    $conn = ['url' => trim((string) ($_POST['url'] ?? ''))];
-                    if (($_POST['api_key'] ?? '') !== '')   { $conn['api_key']   = trim((string) $_POST['api_key']); }
-                    if (($_POST['ecosystem'] ?? '') !== '') { $conn['ecosystem'] = trim((string) $_POST['ecosystem']); }
-                    if (($_POST['days'] ?? '') !== '')      { $conn['days']      = (int) $_POST['days']; }
+                    // **기존 설정 위에 덮는다.** 전엔 $conn 을 새로 만들어 버려서, 폼에 없는 키가
+                    // 편집·저장 한 번에 조용히 날아갔다 — debtracker/rhoval/ubuntuoval 의
+                    // releases(수집 대상 릴리스)와 rhunfixed 의 max_detail 이 그렇다.
+                    $conn = $prev ? (json_decode((string) $prev['connection_json'], true) ?: []) : [];
+                    // 폼이 소유한 키만 갈아끼운다. 일단 전부 지우고 이 타입이 실제로 읽는 것만
+                    // 다시 채워, 타입을 바꿔 무관해진 값(kev 로 바꿨는데 남은 ecosystem)이 안 남게 한다.
+                    foreach (vg_connector_form_fields() as $f) { unset($conn[$f]); }
+                    foreach (vg_connector_fields($type) as $f) {
+                        $v = trim((string) ($_POST[$f] ?? ''));
+                        if ($v === '') { continue; }   // 빈 값은 키를 아예 안 만든다 → 커넥터의 기본 URL 이 산다
+                        $conn[$f] = $f === 'days' ? (int) $v : $v;
+                    }
                 }
                 $mode = (string) ($_POST['schedule_mode'] ?? 'manual');
                 if (!in_array($mode, ['interval', 'daily', 'cron', 'manual'], true)) { $mode = 'manual'; }
@@ -68,12 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 //   고쳐도 "다음 실행 05:00"). 실제 due 판정은 vg_feed_due() 가 schedule_json 과
                 //   last_run_at 로 매번 새로 하므로 실행 시각 자체는 원래 정상이었다.
                 //   interval 은 "마지막 실행 + N분" 이라야 due 판정과 같은 값이 나온다.
-                $lastRun = null;
-                if ($id > 0) {
-                    $q = $pdo->prepare('SELECT last_run_at FROM tb_feed_connectors WHERE id=?');
-                    $q->execute([$id]);
-                    $lastRun = $q->fetchColumn() ?: null;
-                }
+                $lastRun = ($prev['last_run_at'] ?? null) ?: null;
                 $from = ($mode === 'interval' && $lastRun !== null) ? strtotime((string) $lastRun) : time();
                 $next = ($enabled && $mode !== 'manual') ? vg_schedule_next($sched, $from) : null;
 
@@ -331,8 +342,26 @@ vg_header('피드 커넥터', 'connectors');
   // 추가·편집 폼은 목록 아래 늘 펼쳐두던 것 → 버튼 뒤 모달로.
   // ?edit=N 으로 들어오면(행의 [편집]) 값이 채워진 채 자동으로 열린다.
   vg_modal_open('connModal', $edit ? '커넥터 편집' : '커넥터 추가', '', $edit !== null);
+
+  /* 타입 → 수집 방식·노출 필드. 근거는 src/feeds.php 의 카탈로그 하나다 — PHP 가 첫 화면을
+   * 그리고(JS 없이도 맞다), 같은 표를 JSON 으로 넘겨 JS 가 타입 변경 때 다시 그린다.
+   * 표를 JS 에 복붙하면 커넥터가 늘 때 한쪽만 고쳐진다(data-edit-generic 이 쓰는 것과 같은 수법). */
+  $typeMeta = [];
+  foreach (VG_CONNECTOR_TYPES as $tv => $m) {
+      $tr = VG_TRANSPORTS[$m['transport']];
+      $typeMeta[$tv] = [
+          'transport' => $tr['label'], 'tone' => $tr['tone'], 'desc' => $m['desc'],
+          'fields'    => $m['fields'], 'urlLabel' => $m['url_label'] ?? '',
+      ];
+  }
+  $curType = (string) ($edit['connector_type'] ?? 'kev');
+  $curMeta = $typeMeta[$curType];
+  // 이 타입이 안 읽는 필드는 아예 숨긴다 — 예전엔 전 타입에 다 띄우고 라벨의 괄호로 변명했다.
+  $fieldOn = fn(string $f): string => in_array($f, $curMeta['fields'], true) ? '' : ' hidden';
   ?>
-    <form id="connForm" method="post" data-edit-generic="<?= ($edit['connector_type'] ?? '') === 'generic_api' ? vg_h(json_encode($econn)) : '' ?>">
+    <form id="connForm" method="post"
+          data-edit-generic="<?= ($edit['connector_type'] ?? '') === 'generic_api' ? vg_h(json_encode($econn)) : '' ?>"
+          data-type-meta="<?= vg_h(json_encode($typeMeta, JSON_UNESCAPED_UNICODE)) ?>">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="save">
       <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
@@ -340,19 +369,32 @@ vg_header('피드 커넥터', 'connectors');
       <input type="text" name="name" value="<?= vg_h($edit['name'] ?? '') ?>" required>
       <label>커넥터 타입</label>
       <select name="connector_type" id="connType">
-        <?php foreach (['kev'=>'CISA KEV','osv'=>'OSV.dev','nvd'=>'NVD 2.0','kisa'=>'KISA 보안공지','epss'=>'FIRST EPSS','debtracker'=>'데비안 보안 트래커','rhoval'=>'RHEL 계열 벤더 권고(OVAL)','rhunfixed'=>'Red Hat 미수정 CVE(조치 불가)','ssg'=>'SCAP Security Guide(보안설정 룰셋)','kcve'=>'리눅스 커널 CNA(kernel.org)','ubuntuoval'=>'우분투 보안 OVAL','generic_api'=>'범용 API 커넥터'] as $tv=>$tl): ?>
-          <option value="<?= $tv ?>" <?= ($edit['connector_type'] ?? 'kev')===$tv?'selected':'' ?>><?= $tl ?></option>
+        <?php foreach (VG_CONNECTOR_TYPES as $tv => $m): ?>
+          <option value="<?= vg_h($tv) ?>" <?= $curType===$tv?'selected':'' ?>><?= vg_h($m['label']) ?></option>
         <?php endforeach; ?>
       </select>
+      <?php /* 수집 방식 — 이 커넥터가 데이터를 어떻게 가져오는가(역할이 아니다. 역할은 목록의 그룹 카드). */ ?>
+      <div class="connmeta" id="connTransport">
+        <?= vg_badge($curMeta['transport'], $curMeta['tone']) ?>
+        <div class="sub" id="connTransportDesc"><?= vg_h($curMeta['desc']) ?></div>
+      </div>
       <div id="stdFields">
-        <label>API URL</label>
-        <input type="text" name="url" value="<?= vg_h($econn['url'] ?? '') ?>" placeholder="https://...">
-        <label>API Key (NVD 선택)</label>
-        <input type="text" name="api_key" value="<?= vg_h($econn['api_key'] ?? '') ?>" placeholder="비워도 됨">
-        <label>Ecosystem (OSV용, 예: Rocky Linux)</label>
-        <input type="text" name="ecosystem" value="<?= vg_h($econn['ecosystem'] ?? '') ?>">
-        <label>최근 N일 (NVD용)</label>
-        <input type="text" name="days" value="<?= vg_h((string) ($econn['days'] ?? '')) ?>" placeholder="7">
+        <div data-field="url"<?= $fieldOn('url') ?>>
+          <label id="urlLabel"><?= vg_h($curMeta['urlLabel'] ?: 'URL') ?></label>
+          <input type="text" name="url" value="<?= vg_h($econn['url'] ?? '') ?>" placeholder="비우면 기본 주소를 쓴다">
+        </div>
+        <div data-field="api_key"<?= $fieldOn('api_key') ?>>
+          <label>API Key (선택)</label>
+          <input type="text" name="api_key" value="<?= vg_h($econn['api_key'] ?? '') ?>" placeholder="비워도 됨">
+        </div>
+        <div data-field="ecosystem"<?= $fieldOn('ecosystem') ?>>
+          <label>Ecosystem (예: Rocky Linux)</label>
+          <input type="text" name="ecosystem" value="<?= vg_h($econn['ecosystem'] ?? '') ?>">
+        </div>
+        <div data-field="days"<?= $fieldOn('days') ?>>
+          <label>최근 N일</label>
+          <input type="text" name="days" value="<?= vg_h((string) ($econn['days'] ?? '')) ?>" placeholder="7">
+        </div>
       </div>
       <div id="genericFields" hidden>
         <label>역할</label>
@@ -418,7 +460,8 @@ vg_header('피드 커넥터', 'connectors');
       <?php endif; ?>
       <pre id="vgPrev" class="out" hidden></pre>
       <?php vg_modal_foot($edit ? '저장' : '추가', ['extra' =>
-          '<button type="button" id="vgPrevBtn" class="btn btn--ghost" data-loading="조회 중…" onclick="vgPreview(this)">API 미리보기 (10건)</button>']); ?>
+          // "API 미리보기" 였는데 12종 중 절반은 API 가 아니다(정적 파일·gz/bz2 덤프·RSS).
+          '<button type="button" id="vgPrevBtn" class="btn btn--ghost" data-loading="조회 중…" onclick="vgPreview(this)">미리보기 (10건)</button>']); ?>
     </form>
   <?php vg_modal_close(); ?>
 

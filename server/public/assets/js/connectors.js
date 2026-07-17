@@ -2,6 +2,10 @@
 //   "API 미리보기" + 범용 API 커넥터(generic_api) 전용 동적 폼을 여기 둔다.
 //   view.php 가 페이지 이름(connectors)으로 이 파일을 자동 로드한다.
 
+// 타입 → 수집 방식·노출 필드. PHP 의 카탈로그(src/feeds.php VG_CONNECTOR_TYPES)가 유일한
+//   근거이고, vgGenericInit 이 폼의 data-type-meta 에서 읽어 채운다. 미리보기·폼 토글이 함께 쓴다.
+var VG_TYPE_META = {};
+
 // 외부 소스를 직접 치는 요청이라 수 초 걸린다 → 버튼 스피너 + 상단 진행바(app.js 의 vgLoading).
 //   버튼의 onclick="vgPreview(this)" 에서 부른다.
 function vgPreview(btn) {
@@ -17,9 +21,12 @@ function vgPreview(btn) {
     var body = new URLSearchParams({ type: 'generic_api', g_config_json: vgGenericSerialize() });
     req = fetch('/feed_preview.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
   } else {
-    var qs = new URLSearchParams({
-      type: f.connector_type.value, url: f.url.value,
-      api_key: f.api_key.value, ecosystem: f.ecosystem.value, days: f.days.value
+    // 이 타입이 실제로 읽는 필드만 보낸다 — 숨긴 칸에 남은 남의 값(osv 를 보다 kev 로 바꿨을 때의
+    //   ecosystem)을 실어 보내면 미리보기가 저장될 설정과 다른 걸 보게 된다.
+    var qs = new URLSearchParams({ type: f.connector_type.value });
+    var meta = VG_TYPE_META[f.connector_type.value];
+    ((meta && meta.fields) || []).forEach(function (k) {
+      if (f[k]) { qs.set(k, f[k].value); }
     });
     req = fetch('/feed_preview.php?' + qs.toString());
   }
@@ -198,10 +205,33 @@ function vgGenericInit() {
     try { editConfig = JSON.parse(editRaw); } catch (e) { editConfig = null; }
   }
 
+  // 카탈로그를 PHP 에서 넘겨받는다(data-edit-generic 과 같은 수법) — 표를 JS 에 복붙하면
+  //   커넥터가 늘 때 한쪽만 고쳐진다.
+  try { VG_TYPE_META = JSON.parse(form.dataset.typeMeta || '{}'); } catch (e) { VG_TYPE_META = {}; }
+
   function toggle() {
     var isGeneric = typeSel.value === 'generic_api';
     std.hidden = isGeneric;
     generic.hidden = !isGeneric;
+
+    var meta = VG_TYPE_META[typeSel.value];
+    if (!meta) { return; }
+
+    // 수집 방식 뱃지 + 한 줄 설명. PHP 가 그린 첫 화면과 같은 모양으로 다시 그린다.
+    var badge = document.querySelector('#connTransport .badge');
+    if (badge) {
+      badge.textContent = meta.transport;
+      badge.className = 'badge tone-' + meta.tone;
+    }
+    var desc = document.getElementById('connTransportDesc');
+    if (desc) { desc.textContent = meta.desc; }
+
+    // 이 타입이 실제로 읽는 필드만 남긴다. 라벨도 방식에 맞게 바꾼다(kev 는 API 가 아니다).
+    std.querySelectorAll('[data-field]').forEach(function (box) {
+      box.hidden = meta.fields.indexOf(box.dataset.field) === -1;
+    });
+    var urlLabel = document.getElementById('urlLabel');
+    if (urlLabel && meta.urlLabel) { urlLabel.textContent = meta.urlLabel; }
   }
 
   document.getElementById('gRole').addEventListener('change', function () {

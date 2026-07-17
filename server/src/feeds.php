@@ -19,7 +19,9 @@ declare(strict_types=1);
  *     feeds/kcve.php   — VgKcveConnector + 리눅스 커널 CNA(kernel.org — 커널 판정의 정본)
  *
  *   새 피드 추가: feeds/<type>.php 에 VgFeedConnector 구현 + 여기 require 한 줄 +
- *   vg_feed_make() 한 줄. run/preview 는 같은 클래스가 갖는다(미리보기가 실제 수집과
+ *   VG_CONNECTOR_TYPES 에 한 줄. 그 한 줄이 구현·폼 <select>·저장 검증·수집 방식 표시·
+ *   노출 필드를 전부 정한다(예전엔 목록이 세 곳에 흩어져 있었다).
+ *   run/preview 는 같은 클래스가 갖는다(미리보기가 실제 수집과
  *   다른 소스·기준을 보는 사고를 구조적으로 막는다 — 예전 NVD 발행일/수정일 불일치).
  */
 
@@ -55,22 +57,115 @@ require_once __DIR__ . '/feeds/kcve.php';
 require_once __DIR__ . '/feeds/ubuntuoval.php';
 require_once __DIR__ . '/feeds/generic_api.php';
 
-function vg_feed_make(string $type): VgFeedConnector {
-    switch ($type) {
-        case 'kev':  return new VgKevConnector();
-        case 'osv':  return new VgOsvConnector();
-        case 'nvd':  return new VgNvdConnector();
-        case 'kisa': return new VgKisaConnector();
-        case 'epss': return new VgEpssConnector();
-        case 'debtracker': return new VgDebtrackerConnector();
-        case 'rhoval': return new VgRhovalConnector();
-        case 'rhunfixed': return new VgRhunfixedConnector();
-        case 'ssg': return new VgSsgConnector();
-        case 'kcve': return new VgKcveConnector();
-        case 'ubuntuoval': return new VgUbuntuOvalConnector();
-        case 'generic_api': return new VgGenericApiConnector();
-        default: throw new InvalidArgumentException("알 수 없는 커넥터 타입: $type");
+// ─────────────────────────────────────────────────────────────────────────
+// 커넥터 카탈로그 — 타입 하나당 한 줄. **타입에 관한 유일한 근거다.**
+//   예전엔 같은 목록이 connectors.php 의 저장 검증(in_array)·폼 <select>·여기 vg_feed_make
+//   세 곳에 흩어져 있었다. 커넥터가 늘 때 한 곳만 고치면 나머지가 조용히 어긋난다(OCP).
+//
+//   · class     — vg_feed_make 가 만들 구현
+//   · label     — 폼 <select> 표기
+//   · transport — **수집 방식**(VG_TRANSPORTS 의 키). "어떻게 가져오는가" 다.
+//                 "무엇에 답하는가"(역할)와는 다른 축이고, 역할은 목록 화면의 그룹 카드가 보여준다.
+//   · desc      — 방식 한 줄 설명(무엇을 받아서 어떻게 푸는지)
+//   · fields    — 이 타입이 **실제로 읽는** 설정 필드. feeds/*.php 를 읽어 확인한 결과이며,
+//                 여기 없는 필드는 폼에서 감춘다(그래야 라벨에 "(OSV용)" 같은 변명을 안 단다).
+//   · url_label — url 필드 라벨. 절반이 API 가 아닌데 전부 "API URL" 이라 부르면 거짓말이다.
+// ─────────────────────────────────────────────────────────────────────────
+const VG_TRANSPORTS = [
+    'api'    => ['label' => 'REST API',     'tone' => 'info'],
+    'file'   => ['label' => '파일 다운로드', 'tone' => 'purple'],
+    'feed'   => ['label' => 'RSS + HTML',   'tone' => 'ok'],
+    'hybrid' => ['label' => 'API + 파일',    'tone' => 'low'],
+];
+
+const VG_CONNECTOR_TYPES = [
+    'kev' => [
+        'class' => VgKevConnector::class, 'label' => 'CISA KEV', 'transport' => 'file',
+        'desc'  => '정적 JSON 파일 하나(known_exploited_vulnerabilities.json)를 받아 통째로 읽는다. API 가 아니다.',
+        'fields' => ['url'], 'url_label' => 'JSON 파일 URL',
+    ],
+    'osv' => [
+        'class' => VgOsvConnector::class, 'label' => 'OSV.dev', 'transport' => 'api',
+        'desc'  => 'api.osv.dev/v1/querybatch 에 패키지 목록을 POST 로 배치 조회하고, 상세(/v1/vulns/{id})는 동시 8개로 받는다.',
+        'fields' => ['url', 'ecosystem'], 'url_label' => 'API URL (querybatch)',
+    ],
+    'nvd' => [
+        'class' => VgNvdConnector::class, 'label' => 'NVD 2.0', 'transport' => 'api',
+        'desc'  => 'services.nvd.nist.gov REST API 를 startIndex 로 끝까지 페이지네이션한다. 수정일(lastMod) 기준이라 범위는 최대 120일.',
+        'fields' => ['url', 'api_key', 'days'], 'url_label' => 'API URL',
+    ],
+    'kisa' => [
+        'class' => VgKisaConnector::class, 'label' => 'KISA 보안공지', 'transport' => 'feed',
+        'desc'  => 'boho.or.kr RSS 를 simplexml 로 읽고, 공지 본문은 상세 HTML 을 DOMDocument 로 훑어 평문으로 뽑는다.',
+        'fields' => ['url'], 'url_label' => 'RSS URL (비우면 기본 3종을 모두 순회한다)',
+    ],
+    'epss' => [
+        'class' => VgEpssConnector::class, 'label' => 'FIRST EPSS', 'transport' => 'file',
+        'desc'  => 'gz 덤프(epss_scores-current.csv.gz)를 받아 gzdecode 로 풀고 CSV 로 읽는다.',
+        'fields' => ['url'], 'url_label' => '덤프 파일 URL (csv.gz)',
+    ],
+    'debtracker' => [
+        'class' => VgDebtrackerConnector::class, 'label' => '데비안 보안 트래커', 'transport' => 'file',
+        'desc'  => '릴리스별 debsecan 덤프를 받아 zlib 으로 풀고 줄 단위로 읽는다. 대상 릴리스는 수집된 데비안 호스트에서 자동으로 정한다.',
+        'fields' => ['url'], 'url_label' => '덤프 베이스 URL (뒤에 릴리스 코드네임이 붙는다)',
+    ],
+    'rhoval' => [
+        'class' => VgRhovalConnector::class, 'label' => 'RHEL 계열 벤더 권고(OVAL)', 'transport' => 'file',
+        'desc'  => 'OVAL XML 덤프를 벤더별 고정 주소에서 받아 XMLReader 로 스트리밍 파싱한다(Red Hat·Oracle 은 bz2, AlmaLinux 는 평문). 주소와 대상 릴리스 모두 코드·수집 호스트가 정하므로 설정할 값이 없다.',
+        'fields' => [],
+    ],
+    'rhunfixed' => [
+        'class' => VgRhunfixedConnector::class, 'label' => 'Red Hat 미수정 CVE(조치 불가)', 'transport' => 'api',
+        'desc'  => 'access.redhat.com hydra REST API 를 고정 주소로 동시 6개씩 조회한다. 대상 컴포넌트는 수집된 호스트에서 자동으로 정하므로 설정할 값이 없다.',
+        'fields' => [],
+    ],
+    'ssg' => [
+        'class' => VgSsgConnector::class, 'label' => 'SCAP Security Guide(보안설정 룰셋)', 'transport' => 'hybrid',
+        'desc'  => 'GitHub 릴리스 API 로 최신 자산 주소를 먼저 받고, 그 tar.bz2 파일을 내려받아 푼다 — 두 단계라 API 하나로도 파일 하나로도 부르기 어렵다.',
+        'fields' => ['url'], 'url_label' => '릴리스 API URL (자산 주소를 여기서 찾는다)',
+    ],
+    'kcve' => [
+        'class' => VgKcveConnector::class, 'label' => '리눅스 커널 CNA(kernel.org)', 'transport' => 'file',
+        'desc'  => 'kernel.org vulns.git 스냅샷 tarball(약 20MB)을 받아 tar 를 직접 훑는다. CVE 당 개별 요청(1만 2천 회)을 피하려는 것이다.',
+        'fields' => ['url'], 'url_label' => '스냅샷 tarball URL (tar.gz)',
+    ],
+    'ubuntuoval' => [
+        'class' => VgUbuntuOvalConnector::class, 'label' => '우분투 보안 OVAL', 'transport' => 'file',
+        'desc'  => 'OVAL XML 덤프(*.xml.bz2)를 릴리스별로 받아 푼다. 대상 릴리스는 수집된 우분투 호스트에서 자동으로 정한다.',
+        'fields' => ['url'], 'url_label' => '덤프 URL 템플릿 ({C} 자리에 릴리스 코드네임이 들어간다)',
+    ],
+    'generic_api' => [
+        'class' => VgGenericApiConnector::class, 'label' => '범용 API 커넥터', 'transport' => 'api',
+        'desc'  => '사용자가 지정하는 REST API. 주소·헤더·페이징·필드 매핑을 아래에서 직접 정의한다.',
+        'fields' => [],
+    ],
+];
+
+/** 이 타입이 실제로 읽는 설정 필드(카탈로그 확인 결과). 모르는 타입은 빈 배열. */
+function vg_connector_fields(string $type): array {
+    return VG_CONNECTOR_TYPES[$type]['fields'] ?? [];
+}
+
+/**
+ * 표준 폼(connectors.php #stdFields)이 관리하는 설정 키 전체 = 카탈로그 fields 의 합집합.
+ *   저장이 "폼이 소유한 키만" 갈아끼우고 나머지는 보존하도록 경계를 긋는다 — connection_json
+ *   에는 폼이 모르는 키도 산다(releases · max_detail). 카탈로그에서 파생하므로 따로 안 늘린다.
+ * @return list<string>
+ */
+function vg_connector_form_fields(): array {
+    $out = [];
+    foreach (VG_CONNECTOR_TYPES as $meta) {
+        foreach ($meta['fields'] as $f) { $out[$f] = true; }
     }
+    return array_keys($out);
+}
+
+function vg_feed_make(string $type): VgFeedConnector {
+    $cls = VG_CONNECTOR_TYPES[$type]['class'] ?? null;
+    if ($cls === null) {
+        throw new InvalidArgumentException("알 수 없는 커넥터 타입: $type");
+    }
+    return new $cls();
 }
 
 // ─────────────────────────────────────────────────────────────────────────

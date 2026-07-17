@@ -1122,6 +1122,13 @@ form.card { max-width: 360px; margin: 3rem auto; padding: 2rem 1.8rem; }
 form.card h1 { text-align: center; }
 form.card .sub { text-align: center; }
 
+/* --- 커넥터 편집 폼: 수집 방식 ---------------------------------------------
+ * 타입을 고르면 그 커넥터가 데이터를 **어떻게** 가져오는지(REST API · 파일 다운로드 ·
+ * RSS) 를 뱃지 + 한 줄 설명으로 드러낸다. 없으면 kev(정적 JSON)·epss(csv.gz 덤프)가
+ * "API URL" 라벨 뒤에서 API 처럼 보인다. 뱃지·설명 자체는 .badge/.sub 를 그대로 쓴다. */
+.connmeta { margin-top: .5rem; }
+.connmeta .sub { margin: .35rem 0 0; }
+
 /* --- 권한 매트릭스 ------------------------------------------------------- */
 .matrix th, .matrix td { text-align: center; }
 .matrix th:first-child, .matrix td:first-child { text-align: left; }
