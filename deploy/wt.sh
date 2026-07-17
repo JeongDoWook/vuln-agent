@@ -261,9 +261,23 @@ cmd_rm() {
   branch_cleanup "$branch" "$sha"
 }
 
+# $1 이 정말 이 저장소의 워크트리 루트인가.
+#   `git -C "$dir" ...` 의 실패를 가드로 쓸 수 없다: git 은 저장소를 못 찾으면 상위로 거슬러
+#   올라가므로, wt/ 밑의 워크트리 아닌 디렉터리에서도 부모 저장소(vuln-agent/.git)를 찾아
+#   성공하고 'main' 을 돌려준다. 그래서 고아 디렉터리가 "메인 트리라 보호됨" 으로 오인됐다.
+#   대신 git 이 본 루트가 $dir 자신인지를 본다 — 새면 루트가 부모 저장소로 잡힌다.
+#   양쪽을 pwd 로 통과시키는 이유: git 은 Windows 표기(C:/…)를, 셸은 MSYS 표기(/c/…)를 내므로
+#   생경로끼리 비교하면 멀쩡한 워크트리까지 전부 고아로 판정된다(git-bash 실측).
+is_worktree_root() {
+  local dir="$1" top
+  top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [ "$(cd "$top" && pwd)" = "$(cd "$dir" && pwd)" ]
+}
+
 # --- sweep -------------------------------------------------------------------
 # "머지했어 / 다음" — 병합된 워크트리를 한 번에 정리한다. rm 을 트리마다 치는 수고를 없앤다.
 #   각 wt/* 에 대해:
+#     · 워크트리가 아니면 → 비었으면 제거, 내용이 있으면 경고만(is_worktree_root).
 #     · 커밋 안 된 변경 있으면 → 유지(날리지 않는다).
 #     · main/master/detached 는 → 유지.
 #     · 브랜치 tip 이 origin/main 의 조상(=병합됨)이면 → 워크트리+브랜치 제거, 아니면 유지.
@@ -281,8 +295,27 @@ cmd_sweep() {
     [ -d "$dir" ] || continue                     # glob 매치 없으면 리터럴로 남는다
     dir="${dir%/}"; name="${dir##*/}"
 
+    # 워크트리가 아니면 남은 쓰레기다. 비었으면 지우고(잃을 게 없다), 내용이 있으면
+    #   사람이 안 본 파일을 지우지 않는다 — 경고만.
+    #   빈 여부를 rmdir 성공으로 판정하지 않는 이유: 빈 디렉터리도 다른 프로세스가 cwd 로
+    #   잡고 있으면 rmdir 이 "Device or resource busy" 로 실패한다(실측 — wt/rematch-timeout).
+    #   그걸 "내용 있음" 으로 보고하면 사용자가 없는 파일을 찾게 된다.
+    if ! is_worktree_root "$dir"; then
+      if [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+        say "  ${YELLOW}⚠${NC} $name — 워크트리 아님(내용 있음), 유지 — 확인 후 직접 지우세요: ${CYAN}$dir${NC}"
+        kept=$((kept+1))
+      elif rmdir "$dir" 2>/dev/null; then
+        say "  ${GREEN}✓${NC} $name — 워크트리 아닌 빈 디렉터리, 제거"
+        removed=$((removed+1))
+      else
+        say "  ${YELLOW}⚠${NC} $name — 워크트리 아닌 빈 디렉터리지만 제거 실패(다른 셸이 이 폴더에 머무는 중?), 유지"
+        kept=$((kept+1))
+      fi
+      continue
+    fi
+
     branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)" \
-      || { say "  ${YELLOW}⚠${NC} $name — git 워크트리 아님, 유지"; kept=$((kept+1)); continue; }
+      || { say "  ${YELLOW}⚠${NC} $name — HEAD 를 읽을 수 없음, 유지"; kept=$((kept+1)); continue; }
     sha="$(git -C "$dir" rev-parse HEAD 2>/dev/null)" || { kept=$((kept+1)); continue; }
 
     case "$branch" in
