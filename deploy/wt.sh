@@ -73,6 +73,47 @@ wt_stack_up() {
   docker inspect "$(wt_web_container "$1")" >/dev/null 2>&1
 }
 
+# --- 살아있는 워커 감지 -------------------------------------------------------
+# 워크트리를 지울 때 그 안의 claude(런처의 손자 프로세스)가 아직 살아 있으면, git 이 폴더를
+#   지운 뒤에도 그 프로세스의 OMC 훅이 .omc/state/hud-*.json 을 다시 써 `.git` 없는 껍데기가
+#   되살아난다(2026-07-17 실측 — matcher-deadlock 등 5개). stop-worker.ps1 의
+#   Stop-WorkerProcessTree 와 같은 근거로 판정한다: 우리가 만든 런처의 경로가 커맨드라인에
+#   그대로 박혀 있다(`-File <워크트리>\.launch.ps1`). 워크트리 경로는 트리마다 고유하므로
+#   PID 로 짐작하지 않고도 이 워크트리 것임이 자명하다.
+#   프로세스 나열은 PowerShell(Win32_Process)만 할 수 있어 트리마다 부르면 매번 수백 ms 가
+#   드니, sweep 처럼 여러 트리를 도는 호출에서도 한 번만 묻고 재사용한다(gh_available 과 같은 캐시 패턴).
+WORKER_CMDLINES_CACHED=0
+WORKER_CMDLINES=""
+WORKER_CHECK_FAILED=0
+worker_cmdlines() {
+  if [ "$WORKER_CMDLINES_CACHED" -eq 0 ]; then
+    WORKER_CMDLINES_CACHED=1
+    if command -v powershell.exe >/dev/null 2>&1; then
+      if ! WORKER_CMDLINES="$(powershell.exe -NoProfile -Command '(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -like "*.launch.ps1*" }).CommandLine' 2>/dev/null)"; then
+        WORKER_CMDLINES=""
+        WORKER_CHECK_FAILED=1
+      fi
+    else
+      WORKER_CHECK_FAILED=1
+    fi
+    if [ "$WORKER_CHECK_FAILED" -eq 1 ]; then
+      say "  ${YELLOW}⚠${NC} 워커 생존 여부를 확인할 수 없습니다(PowerShell 실행 실패/부재) — 안전하게 모든 대상을 '살아있을 수 있음'으로 간주해 건너뜁니다."
+    fi
+  fi
+  printf '%s' "$WORKER_CMDLINES"
+}
+
+# 이 워크트리를 가리키는 살아있는 워커 런처가 있나. 확인 자체가 불가능하면(PowerShell 부재
+#   등) 지우지 않는 쪽(=살아있다고 간주)으로 기운다 — is_merged 와 같은 원칙("불확실하면 유지").
+wt_worker_alive() {
+  local dir="$1" win_dir needle cmdlines
+  cmdlines="$(worker_cmdlines)"
+  [ "$WORKER_CHECK_FAILED" -eq 1 ] && return 0
+  win_dir="$(cd "$dir" 2>/dev/null && pwd -W)" || return 0
+  needle="${win_dir//\//\\}\\.launch.ps1"
+  printf '%s\n' "$cmdlines" | grep -qF "$needle"
+}
+
 usage() {
   say "${CYAN}vuln-agent · wt${NC}"
   echo ""
@@ -286,6 +327,12 @@ cmd_rm() {
   local dir="$WT_ROOT/$name"
   [ -d "$dir" ] || die "없습니다: $dir"
 
+  # 살아있는 워커가 쓰는 트리는 지우지 않는다 — git 이 폴더를 지운 뒤에도 그 안의 claude 가
+  #   .omc/ 를 되살려 `.git` 없는 껍데기만 남는다.
+  if wt_worker_alive "$dir"; then
+    die "'$name' 을(를) 쓰는 워커가 아직 살아 있습니다 — 지금 지우면 그 워커가 .omc/ 를 되살려 껍데기만 남습니다. 먼저 세션을 닫으세요: deploy/orchestrator/stop-worker.ps1 -Task $name"
+  fi
+
   # 워크트리가 사라지면 어떤 브랜치였는지 알 수 없다 → 지우기 전에 붙잡아 둔다.
   local branch sha
   branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
@@ -372,6 +419,12 @@ cmd_sweep() {
         say "  ${YELLOW}⚠${NC} $name — '$branch' 는 sweep 대상 아님, 유지"
         kept=$((kept+1)); continue ;;
     esac
+
+    # 살아있는 워커가 쓰는 트리는 건드리지 않는다(위 wt_worker_alive 참고) — 병합됐어도 예외 없음.
+    if wt_worker_alive "$dir"; then
+      say "  ${YELLOW}⚠${NC} $name ($branch) — 아직 살아있는 워커가 씁니다, 유지 — 먼저 닫으세요: ${CYAN}deploy/orchestrator/stop-worker.ps1 -Task $name${NC}"
+      kept=$((kept+1)); continue
+    fi
 
     if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
       say "  ${YELLOW}⚠${NC} $name ($branch) — 커밋 안 된 변경, 유지"
