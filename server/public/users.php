@@ -83,21 +83,19 @@ vg_header('사용자', 'users');
           ['label' => '역할'],
           ['label' => '생성', 'nowrap' => true],
           ['label' => '마지막 로그인', 'nowrap' => true],
-          ['label' => ''],
       ],
       $users,
       [
           'cell' => [
               0 => fn($u) => vg_h((string) $u['id']),
-              1 => fn($u) => '<strong>' . vg_h($u['username']) . '</strong>',
+              1 => function ($u) use ($meId) {
+                  $html = '<strong><a href="/user.php?id=' . (int) $u['id'] . '">' . vg_h($u['username']) . '</a></strong>';
+                  if ((int) $u['id'] === $meId) { $html .= ' <span class="pill">본인</span>'; }
+                  return $html;
+              },
               2 => fn($u) => '<span class="pill">' . vg_h(vg_role_label($u['role'])) . '</span>',
               3 => fn($u) => '<span class="why">' . vg_h($u['created_at']) . '</span>',
               4 => fn($u) => '<span class="why">' . vg_h($u['last_login'] ?? '–') . '</span>',
-              5 => function ($u) use ($meId) {
-                  $id = (int) $u['id'];
-                  $label = $id === $meId ? '상세 (본인)' : '상세';
-                  return '<a href="/user.php?id=' . $id . '">' . vg_h($label) . ' →</a>';
-              },
           ],
       ]
   );
