@@ -329,6 +329,8 @@ is_worktree_root() {
 #     · main/master/detached 는 → 유지.
 #     · 브랜치가 병합됐으면(is_merged) → 워크트리+브랜치 제거, 아니면 유지.
 #   병합 판정·브랜치 정리는 rm 과 동일한 함수를 쓴다(is_merged/branch_cleanup).
+#   한 트리의 제거가 실패해도 경고만 하고 다음 트리로 넘어간다 — 요약은 어떤 경우에도 찍힌다.
+#   그게 "끝까지 돌았다" 는 유일한 신호다.
 cmd_sweep() {
   [ -d "$WT_ROOT" ] || { say "${YELLOW}wt/ 없음 — 정리할 워크트리가 없습니다.${NC}"; return 0; }
 
@@ -337,7 +339,7 @@ cmd_sweep() {
     || die "fetch 실패 — 병합 여부를 못 믿어 sweep 중단"
 
   say "${CYAN}== wt sweep · 병합된 워크트리 정리 ==${NC}"
-  local removed=0 kept=0 dir name branch sha
+  local removed=0 kept=0 failed=0 dir name branch sha
   for dir in "$WT_ROOT"/*/; do
     [ -d "$dir" ] || continue                     # glob 매치 없으면 리터럴로 남는다
     dir="${dir%/}"; name="${dir##*/}"
@@ -392,7 +394,18 @@ cmd_sweep() {
 
     say "${CYAN}-- $name ($branch) 병합됨 → 제거 --${NC}"
     stack_down_if_serving "$name"
-    git -C "$MAIN_ROOT" worktree remove --force "$dir"
+    # 제거 실패를 반드시 받는다. 안 받으면 set -e(:26) 가 sweep 을 통째로 죽여, 뒤의 워크트리는
+    #   검사조차 안 된 채 요약도 안 찍힌다 — 사용자는 경고 몇 줄만 보고 "돌았다" 고 읽는다(실측).
+    #   실패의 실제 원인은 대개 다른 셸/세션이 그 폴더를 cwd 로 붙들고 있는 것이다(Windows 는
+    #   사용 중인 디렉터리를 못 지운다) → 사람이 닫아야 풀린다. 강제로 뚫지 않는다.
+    if ! git -C "$MAIN_ROOT" worktree remove --force "$dir"; then
+      say "  ${YELLOW}⚠${NC} $name — 워크트리 제거 실패(다른 셸이 이 폴더에 머무는 중?), 유지"
+      say "     그 폴더를 쓰는 셸/탭을 닫고 다시: ${CYAN}./deploy/wt.sh sweep${NC}"
+      # 워크트리가 남았는데 브랜치를 지우면 그 워크트리가 브랜치 없는 상태로 고아가 된다(실측 —
+      #   fix/stop-worker-close-session 이 로컬 브랜치만 남아 사람이 손으로 지웠다).
+      say "     브랜치 '$branch' 도 함께 남깁니다 — 워크트리가 있는데 브랜치를 지우면 고아가 됩니다."
+      kept=$((kept+1)); failed=$((failed+1)); continue
+    fi
     say "  ${GREEN}✓${NC} 제거: wt/$name"
     branch_cleanup "$branch" "$sha"
     removed=$((removed+1))
@@ -400,6 +413,14 @@ cmd_sweep() {
 
   echo ""
   say "${GREEN}sweep 완료${NC}: 제거 ${removed} · 유지 ${kept}"
+  if [ "$failed" -gt 0 ]; then
+    say "  ${YELLOW}⚠${NC} 그중 ${failed}개는 제거하려다 실패했습니다 — 그 폴더를 쓰는 셸/탭을 닫고 다시 sweep 하세요."
+  fi
+  # 부분 실패여도 0 으로 끝낸다. 근거: sweep 에서 "유지" 는 정상 결과의 일부고(미병합·미커밋도
+  #   유지다), 제거 실패는 그중 한 종류일 뿐이다 — 다음 실행이 그대로 재시도하므로 멱등하게
+  #   회복된다. 비영으로 끝내면 set -e 를 쓰는 상위 스크립트에서 sweep 이 다시 중간에 죽어,
+  #   방금 없앤 "조용히 중단" 을 되살린다. 사람에겐 위 경고와 요약으로 이미 드러난다.
+  return 0
 }
 
 case "${1:-}" in
