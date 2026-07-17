@@ -325,6 +325,10 @@ assert_eq "$code" "401" "?token= 쿼리는 더 이상 인증 안 됨(헤더만 �
 # 대상을 방금 수집한 스캔 1건으로 한정한다. scan_id 를 빼면 DB 전체를 재매칭하는데, 공용 dev DB 는
 #   스모크가 돌 때마다 스캔이 쌓여 결국 PHP 30초 실행제한에 걸린다 — 그러면 이 검사는 인증이 아니라
 #   DB 크기를 재는 검사가 된다(여기서 보려는 건 헤더 인증이 통과하느냐다).
+# scan_id 를 못 뽑으면 URL 이 `?scan_id=` 가 되는데, rematch.php 는 isset() 로 보므로 빈 값도
+#   "지정됨"으로 읽어 없는 스캔 0번을 매칭하고 ok:true 를 준다 — 아래 검사가 아무것도 안 하면서
+#   통과한다. 값을 먼저 못박는다.
+if [ -n "$SCAN_ID" ]; then ok "재매칭 대상 scan_id 확보 (=$SCAN_ID)"; else no "scan_id 를 못 뽑음 — 아래 재매칭 검사가 무의미해진다"; fi
 resp=$(curl -s -H "X-Agent-Token: $TOKEN" "$BASE/rematch.php?scan_id=$SCAN_ID")
 assert_contains "$resp" '"ok":true' "재매칭 성공(헤더 인증)"
 
