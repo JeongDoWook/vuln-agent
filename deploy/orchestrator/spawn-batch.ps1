@@ -15,7 +15,8 @@
 
 .EXAMPLE
   .\spawn-batch.ps1
-  # .omc/tasks/*.md 전부를 기본값(Permissions ask, Launch tab, Finish pr)으로 스폰
+  # .omc/tasks/*.md 전부를 기본값(Permissions ask, Launch auto, Finish pr)으로 스폰
+  # Launch auto = spawn-worker.ps1 이 호스트 터미널을 감지해 같은 터미널로 띄운다
 
 .EXAMPLE
   .\spawn-batch.ps1 -Permissions skip -Launch headless
@@ -28,7 +29,8 @@ param(
   [ValidateSet('feat', 'fix', 'chore')][string]$Prefix = 'feat',
   [string]$Base = 'origin/main',
   [ValidateSet('skip', 'ask')][string]$Permissions = 'ask',
-  [ValidateSet('tab', 'window', 'headless')][string]$Launch = 'tab',
+  # 값 집합·기본값은 spawn-worker.ps1 의 -Launch 와 일치시킨다(배치만 다르면 감지가 안 붙는다)
+  [ValidateSet('auto', 'termkeep', 'tab', 'window', 'headless')][string]$Launch = 'auto',
   [ValidateSet('pr', 'push')][string]$Finish = 'pr',
 
   # 미리보기만 — 스폰·아카이브 생략

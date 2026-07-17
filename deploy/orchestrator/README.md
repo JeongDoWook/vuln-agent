@@ -212,12 +212,12 @@ cd C:\APM\Apache24\htdocs\vuln-agent
 감지 실패·termkeep 연결 실패는 전부 `window` 로 폴백한다 — 감지 문제로 워커 스폰 자체가
 실패하면 안 되므로 이 경로들은 throw 하지 않는다.
 
-### 왜 env 가 아니라 부모 체인인가
+### 왜 env 와 부모 체인을 둘 다 보는가
 
-termkeep 소스엔 PTY 에 `TERMKEEP=1` 을 심는 코드가 있지만 **아직 미커밋·미빌드**다 — 지금
-도는 데몬 바이너리는 그 변수를 안 심는다(실측: termkeep 안에서 도는 claude 에서 `$env:TERMKEEP`
-이 비어 있음). 그래서 실제 판정은 **부모 프로세스 체인**을 거슬러 termkeep 프로세스를 찾는 것으로
-한다. env 검사는 나중에 termkeep 이 재빌드되면 켜질 빠른 경로라 먼저 볼 뿐이다.
+termkeep 이 PTY 에 `TERMKEEP=1` 을 심게 재빌드돼, 지금은 빠른 경로(env)가 실제로 맞는다
+(실측 2026-07: termkeep 안에서 도는 claude 에서 `$env:TERMKEEP` 이 `1`). 다만 옛 데몬 바이너리로
+띄운 세션엔 그 변수가 없으므로, **부모 프로세스 체인**을 거슬러 termkeep 프로세스를 찾는 판정을
+폴백으로 남겨 둔다.
 
 실측된 체인(termkeep 안의 claude):
 ```
