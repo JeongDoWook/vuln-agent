@@ -92,7 +92,6 @@ CREATE TABLE IF NOT EXISTS tb_findings (
   deleted_at        DATETIME NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_find (scan_id, cve_id, package_name),
-  KEY idx_find_scan (scan_id),
   KEY idx_find_sev (severity),
   KEY idx_find_cve (cve_id),
   INDEX idx_findings_is_deleted (is_deleted),
