@@ -180,7 +180,7 @@ function vg_change_tone(string $type): string {
 
 vg_header('변화 추적', 'changes');
 ?>
-  <h1>변화 추적 <span class="hint">(각 호스트 최근 2스캔 비교)</span> <span class="info-icon" title="지난 수집 대비 새로 생긴 / 해결된 / 등급이 바뀐 취약점. 무엇이 달라졌는지 한눈에 본다.">ⓘ</span></h1>
+  <h1>변화 추적 <span class="hint">(각 호스트 최근 2스캔 비교)</span> <?= vg_info_icon('지난 수집 대비 새로 생긴 / 해결된 / 등급이 바뀐 취약점. 무엇이 달라졌는지 한눈에 본다.') ?></h1>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -273,7 +273,7 @@ vg_header('변화 추적', 'changes');
     ?>
 
   <?php else: ?>
-    <div class="sub">패키지 변경 이력 <span class="info-icon" title="언제 무엇이 설치·제거·업그레이드됐는지. 수집 내용이 직전과 같으면 스냅샷을 새로 찍지 않으므로, 여기 남는 건 실제로 달라진 것뿐입니다.">ⓘ</span></div>
+    <div class="sub">패키지 변경 이력 <?= vg_info_icon('언제 무엇이 설치·제거·업그레이드됐는지. 수집 내용이 직전과 같으면 스냅샷을 새로 찍지 않으므로, 여기 남는 건 실제로 달라진 것뿐입니다.') ?></div>
     <?php
     vg_table(
         [

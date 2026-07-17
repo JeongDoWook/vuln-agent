@@ -436,7 +436,68 @@ main { padding: 1.8rem 1.6rem; max-width: 1760px; margin: 0 auto; width: 100%; }
 h1 { font-size: 1.3rem; margin: 0 0 .3rem; }
 h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
 .sub { color: var(--muted); font-size: .85rem; margin-bottom: 1.3rem; }
-.info-icon { cursor: help; color: var(--muted); font-size: .9em; margin-left: 4px; }
+
+/* --- ⓘ 인포팁 -------------------------------------------------------------
+ * 제목·라벨 옆의 ⓘ 에 부연설명을 감춰 둔다. 표시는 여기서 직접 그린다 —
+ * 예전엔 브라우저 기본 title 에 맡겼는데 1초쯤 기다려야 뜨고, OS 스타일이라
+ * 화면과 따로 놀고, 터치에선 아예 안 떠서 "툴팁이 없는 것" 처럼 보였다.
+ * 설명은 title 이 아니라 data-tip 으로 넘긴다 — title 을 남기면 브라우저 기본
+ * 툴팁이 우리 것과 같이 떠서 두 개가 겹친다(vg_info_icon() 이 이 계약을 지킨다).
+ * ⓘ 가 붙는 .card 는 overflow-x: auto 라 말풍선이 카드 밖으로는 못 나간다.
+ * 그래서 아래로(카드 안쪽으로) 펼친다 — 제목 옆 ⓘ 밑은 늘 카드 본문이라 자리가 있다. */
+.info-icon {
+  position: relative;
+  cursor: help;
+  color: var(--muted);
+  font-size: .9em;
+  margin-left: 4px;
+}
+.info-icon:hover, .info-icon:focus-visible { color: var(--accent-2); }
+
+.info-icon[data-tip]::after {          /* 말풍선 */
+  content: attr(data-tip);
+  top: calc(100% + 7px);
+  width: max-content;
+  max-width: 22rem;                    /* 긴 문구는 줄바꿈 — nowrap 이면 화면을 뚫는다 */
+  padding: .5rem .7rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  color: var(--text-2);
+  font-size: .78rem;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  word-break: keep-all;                /* 한글은 단어 중간에서 끊지 않는다 */
+}
+.info-icon[data-tip]::before {         /* 꼬리 — 말풍선 위 테두리에 얹히는 45° 사각형 */
+  content: "";
+  top: calc(100% + 3px);
+  width: 8px;
+  height: 8px;
+  background: var(--surface);
+  border-left: 1px solid var(--line-2);
+  border-top: 1px solid var(--line-2);
+  rotate: 45deg;
+}
+.info-icon[data-tip]::before,
+.info-icon[data-tip]::after {
+  position: absolute;
+  left: 50%;
+  translate: -50%;
+  z-index: 30;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+/* :focus-visible 로 키보드 Tab 에서도 뜬다(vg_info_icon 이 tabindex="0" 을 준다) */
+.info-icon[data-tip]:hover::before,
+.info-icon[data-tip]:hover::after,
+.info-icon[data-tip]:focus-visible::before,
+.info-icon[data-tip]:focus-visible::after { opacity: 1; visibility: visible; }
 
 /* --- 카드 ---------------------------------------------------------------- */
 .card {
@@ -750,7 +811,6 @@ tbody tr.sev-high:hover { background: var(--surface-2); }
 .empty__hint { display: block; margin-top: .35rem; font-size: .84rem; color: var(--muted-2); }
 .empty .btn { margin-top: .9rem; }
 .why { color: var(--text-2); font-size: .82rem; }
-.info-icon { cursor: help; color: var(--muted); font-size: .9em; margin-left: 4px; }
 .trunc {
   display: inline-block;
   max-width: min(46vw, 820px);

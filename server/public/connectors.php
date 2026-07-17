@@ -205,7 +205,7 @@ $statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'nev
 vg_header('피드 커넥터', 'connectors');
 ?>
   <div class="page-head">
-    <h1>CVE 피드 커넥터<span class="info-icon" title="외부 소스를 역할별로 묶어 설정·스케줄·수집한다 — 취약점 정체 · 우선순위 신호 · 벤더 패치 판정 · 보안설정 룰셋. 결과는 매처가 자동 재계산.">ⓘ</span></h1>
+    <h1>CVE 피드 커넥터<?= vg_info_icon('외부 소스를 역할별로 묶어 설정·스케줄·수집한다 — 취약점 정체 · 우선순위 신호 · 벤더 패치 판정 · 보안설정 룰셋. 결과는 매처가 자동 재계산.') ?></h1>
     <div class="toolbar">
       <?php // 모달 id 는 connModal — 폼 자체의 id(connForm)와 겹치면 미리보기 JS 가 폼 대신 dialog 를 잡는다.
       vg_modal_btn('connModal', '+ 커넥터 추가'); ?>
@@ -313,7 +313,7 @@ vg_header('피드 커넥터', 'connectors');
       foreach ($roleGroups as $gi => $g) {
           if (empty($grouped[$gi])) { continue; }
           echo '<div class="card"><strong>' . vg_h($g['title']) . '</strong>'
-             . '<span class="info-icon" title="' . vg_h($g['desc']) . '">ⓘ</span>'
+             . vg_info_icon($g['desc'])
              . '<div class="card__body">';
           vg_table($tableHeaders, $grouped[$gi], ['card' => false, 'cell' => $tableCells]);
           echo '</div></div>';
