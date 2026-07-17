@@ -136,6 +136,32 @@ function Resolve-HostTerminal {
   return 'window'                          # 맨 PowerShell 콘솔 창
 }
 
+# ── 워커 termkeep 세션 이름 = S<중앙세션ID>/<슬러그> ─────────────────────────
+# 사용자는 중앙 세션(창)을 여러 개 띄운다. 이름이 슬러그뿐이면 사이드바에 워커가 나란히 쌓여도
+# 어느 창 소생인지 알 수 없다("무슨 일" 만 알고 "누구 밑" 은 모른다). 그래서 만든 세션의 ID 를
+# 접두사로 박는다 — 짧고, 이름순 정렬 시 같은 창의 워커가 뭉친다.
+# ASCII 만 쓴다(한글·이모지는 cp949 재해석으로 깨진 전례가 있다).
+#
+# ID 출처는 $env:TERMKEEP_SESSION_ID — 재빌드된 termkeep 이 PTY 에 심어 준다(실측 2026-07:
+# 사이드바의 'Session N' 과 정확히 일치). 이 스크립트는 중앙 세션의 claude 가 실행하므로 그
+# env 를 그대로 물려받는다 = 스폰하는 쪽이 자기가 몇 번 창인지 이미 안다.
+#
+# 옛 데몬으로 띄운 세션엔 이 변수가 없다(Resolve-HostTerminal 주석의 경고와 같은 사정).
+# 그때는 접두사를 생략하고 슬러그만 쓴다 — 최악이라도 접두사 도입 전과 동일하다.
+# 'S0/'·'unknown/' 같은 가짜 값은 지어내지 않는다: 이 저장소는 폴백이 조용히 틀린 값을 넣어
+# 사고가 난 전례가 있다(PR #217). 생략할 땐 그 사실을 한 줄 출력해 보이게 한다.
+function Resolve-WorkerSessionName {
+  param([Parameter(Mandatory)][string]$TaskName)
+
+  # 빈 값도 이 검사에서 같이 걸린다(값이 없든 쓸 수 없든 결과는 "접두사 생략" 하나).
+  $sid = "$env:TERMKEEP_SESSION_ID".Trim()
+  if ($sid -notmatch '^[A-Za-z0-9_-]+$') {
+    Write-Host "→ TERMKEEP_SESSION_ID 없음/사용불가 → 소유 세션 접두사 생략, 이름: $TaskName" -ForegroundColor DarkGray
+    return $TaskName
+  }
+  return "S$sid/$TaskName"
+}
+
 # ── termkeep 새 세션으로 워커 스폰 ───────────────────────────────────────────
 # termkeep 데몬(termkeepd.exe)과 TCP 로 말한다: 127.0.0.1:<port>, 개행으로 끝나는 JSON 한 줄씩.
 # 포트는 %APPDATA%\termkeep\daemon.json 에 있다(예: {"pid":10456,"port":51115}).
@@ -410,7 +436,9 @@ if ($DryRun) {
 else {
   Set-Content -Path $launchPs1 -Value $launchBody -Encoding utf8   # PS 5.1 utf8 = BOM(한글 배너)
   if ($eff -eq 'termkeep') {
-    $termkeepSessionId = Start-TermkeepWorker -LaunchPs1 $launchPs1 -TaskName $Task -WorkDir $wtDir
+    # 세션 이름에만 소유 세션 태그를 붙인다 — 매니페스트의 task 등 다른 값은 슬러그 그대로다.
+    $sessionName = Resolve-WorkerSessionName -TaskName $Task
+    $termkeepSessionId = Start-TermkeepWorker -LaunchPs1 $launchPs1 -TaskName $sessionName -WorkDir $wtDir
     if ($termkeepSessionId) { Write-Host "  브랜치: $branch" -ForegroundColor Green }
     else { $eff = 'window' }   # daemon.json/연결/응답 문제 → 창으로 폴백
   }
