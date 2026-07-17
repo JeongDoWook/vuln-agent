@@ -41,7 +41,10 @@ try {
     $host = $st->fetch() ?: null;
 
     if ($host) {
-        $st = $pdo->prepare('SELECT *, TIMESTAMPDIFF(MINUTE, collected_at, NOW()) AS age_min
+        // 컬럼을 못 박는 이유: tb_scans.raw_json 은 호스트당 MB 단위(실측 3.14MB)라
+        // SELECT * 로 끌면 ORDER BY 의 정렬 버퍼(운영 sort_buffer_size=2M)를 한 행만으로도 넘겨 1038 이 난다.
+        $st = $pdo->prepare('SELECT id, collected_at, package_count,
+                                    TIMESTAMPDIFF(MINUTE, collected_at, NOW()) AS age_min
                                FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 1');
         $st->execute([$hostId]);
         $scan = $st->fetch() ?: null;
