@@ -193,12 +193,56 @@ stack_down_if_serving() {
   fi
 }
 
+# --- 병합 판정 ---------------------------------------------------------------
+# 이 저장소는 squash 머지를 쓴다(PR 하나 = 커밋 하나). squash 는 새 커밋 객체를 만들므로
+#   원래 브랜치 tip 은 영원히 origin/main 의 조상이 되지 않는다 → "tip 이 조상인가"(merge-base
+#   --is-ancestor)는 **항상 거짓**이고, 그 판정만 쓰던 시절 sweep 은 사실상 죽은 기능이었다.
+#   그래서 1순위는 gh 로 본 PR 상태다(squash·rebase 에도 정확). gh 가 없거나 미인증이면 옛
+#   판정으로 폴백한다 — 나빠지진 않되, 폴백에 떨어졌다는 사실은 반드시 알린다(조용히 폴백하면
+#   "무동작인데 이유를 모르는" 원래 상태로 돌아간다).
+GH_CHECKED=0
+GH_OK=0
+# gh 존재·인증 확인은 비싸다(인증은 네트워크를 탄다) → 딱 한 번만 하고 결과를 재사용한다.
+#   sweep 은 워크트리마다 이 함수를 부르므로, 캐시가 없으면 트리 10개에 인증 조회가 10번 나간다.
+gh_available() {
+  if [ "$GH_CHECKED" -eq 0 ]; then
+    GH_CHECKED=1
+    if ! command -v gh >/dev/null 2>&1; then
+      say "  ${YELLOW}⚠${NC} gh(GitHub CLI) 없음 — PR 상태를 못 봐 옛 판정(tip 이 origin/main 의 조상인가)으로 폴백합니다."
+      say "     이 저장소는 squash 머지라 그 판정은 거의 항상 '미병합' 입니다 — 병합된 브랜치가 안 지워질 수 있습니다."
+      say "     설치: ${CYAN}winget install --id GitHub.cli -e${NC}"
+    elif ! gh auth status >/dev/null 2>&1; then
+      say "  ${YELLOW}⚠${NC} gh 인증 안 됨 — PR 상태를 못 봐 옛 판정으로 폴백합니다(squash 머지는 '미병합' 으로 잡힙니다)."
+      say "     인증: ${CYAN}gh auth login${NC}"
+    else
+      GH_OK=1
+    fi
+  fi
+  [ "$GH_OK" -eq 1 ]
+}
+
+# 브랜치가 병합됐나 → 0(병합됨) / 1(아님·불확실). 불확실하면 1 — 지우지 않는 쪽으로 기운다.
+#   $1 = 브랜치명, $2 = 브랜치 tip sha(폴백 판정에만 쓴다)
+is_merged() {
+  local branch="$1" sha="$2" out
+  if gh_available; then
+    # 같은 head 로 PR 이 여러 개일 수 있다(#227 MERGED / #228 CLOSED 처럼 재생성된 이력이 실제로
+    #   있다) → --state merged 로 걸러 **하나라도 있으면** 병합됨으로 본다.
+    #   PR 이 없으면 빈 배열([])이고, 조회 실패(네트워크·권한)면 비영 종료다. set -e 아래서
+    #   죽지 않도록 `|| out=''` 로 받고, 그 경우는 "병합 아님"(=유지)으로 다룬다.
+    out="$(gh pr list --head "$branch" --state merged --json number 2>/dev/null)" || out=''
+    case "$out" in
+      *'"number"'*) return 0 ;;
+      *)            return 1 ;;
+    esac
+  fi
+  git -C "$MAIN_ROOT" merge-base --is-ancestor "$sha" origin/main
+}
+
 # --- rm ---------------------------------------------------------------------
 # 워크트리를 지워도 브랜치는 남아 목록이 계속 불어난다. PR 이 병합됐으면 로컬·원격 모두 정리한다.
-#
-# 병합 판정은 "브랜치 tip 이 origin/main 의 조상인가". merge 커밋 방식(이 저장소의 기본)에선
-# 정확하다. squash·rebase 병합은 tip 이 조상이 아니라 '미병합' 으로 잡히는데, 그때는 지우지
-# 않고 남긴다 — 안 지워서 손해볼 건 브랜치 하나지만 잘못 지우면 커밋이 날아간다.
+#   병합 판정은 is_merged() — 불확실하면 남긴다. 안 지워서 손해볼 건 브랜치 하나지만 잘못
+#   지우면 커밋이 날아간다.
 branch_cleanup() {
   local branch="$1" sha="$2"
   case "$branch" in
@@ -211,9 +255,8 @@ branch_cleanup() {
     return 0
   fi
 
-  if ! git -C "$MAIN_ROOT" merge-base --is-ancestor "$sha" origin/main; then
-    say "  ${YELLOW}⚠${NC} '$branch' 가 origin/main 에 안 보입니다 — 브랜치 유지"
-    say "     병합했는데도 이 메시지가 뜨면 squash·rebase 병합입니다."
+  if ! is_merged "$branch" "$sha"; then
+    say "  ${YELLOW}⚠${NC} '$branch' 의 병합된 PR 을 못 찾았습니다 — 브랜치 유지"
     say "     확인 후 직접: ${CYAN}git branch -D $branch && git push origin --delete $branch${NC}"
     return 0
   fi
@@ -280,8 +323,8 @@ is_worktree_root() {
 #     · 워크트리가 아니면 → 비었으면 제거, 내용이 있으면 경고만(is_worktree_root).
 #     · 커밋 안 된 변경 있으면 → 유지(날리지 않는다).
 #     · main/master/detached 는 → 유지.
-#     · 브랜치 tip 이 origin/main 의 조상(=병합됨)이면 → 워크트리+브랜치 제거, 아니면 유지.
-#   병합 판정·브랜치 정리는 rm 과 동일한 함수를 쓴다(merge 커밋 방식에서 정확, squash·rebase 는 유지).
+#     · 브랜치가 병합됐으면(is_merged) → 워크트리+브랜치 제거, 아니면 유지.
+#   병합 판정·브랜치 정리는 rm 과 동일한 함수를 쓴다(is_merged/branch_cleanup).
 cmd_sweep() {
   [ -d "$WT_ROOT" ] || { say "${YELLOW}wt/ 없음 — 정리할 워크트리가 없습니다.${NC}"; return 0; }
 
@@ -330,15 +373,16 @@ cmd_sweep() {
     fi
 
     # 갈라져 나온 시점 sha 와 현재 HEAD sha 가 같으면 커밋을 하나도 안 한 갓 만든
-    #   브랜치다 — origin/main 기점이라 is-ancestor 가 참이 되어버려 "병합됨"으로
+    #   브랜치다 — origin/main 기점이라 폴백 판정(is-ancestor)이 참이 되어버려 "병합됨"으로
     #   오판하는 걸 막는다(마커 없는 옛 워크트리는 기존 로직 그대로 둔다).
+    #   gh 경로에선 PR 이 없어 어차피 미병합이지만, 폴백에 떨어졌을 때를 위해 그대로 둔다.
     if [ -f "$dir/.wt-base-sha" ] && [ "$(cat "$dir/.wt-base-sha")" = "$sha" ]; then
       say "  ${BLUE}→${NC} $name ($branch) — 아직 커밋 없음(갓 생성), 유지"
       kept=$((kept+1)); continue
     fi
 
-    if ! git -C "$MAIN_ROOT" merge-base --is-ancestor "$sha" origin/main; then
-      say "  ${BLUE}→${NC} $name ($branch) — 아직 origin/main 에 없음, 유지"
+    if ! is_merged "$branch" "$sha"; then
+      say "  ${BLUE}→${NC} $name ($branch) — 아직 병합 안 됨, 유지"
       kept=$((kept+1)); continue
     fi
 
