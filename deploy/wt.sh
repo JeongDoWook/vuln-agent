@@ -222,19 +222,23 @@ gh_available() {
 }
 
 # 브랜치가 병합됐나 → 0(병합됨) / 1(아님·불확실). 불확실하면 1 — 지우지 않는 쪽으로 기운다.
-#   $1 = 브랜치명, $2 = 브랜치 tip sha(폴백 판정에만 쓴다)
+#   $1 = 브랜치명, $2 = 브랜치 tip sha
 is_merged() {
-  local branch="$1" sha="$2" out
+  local branch="$1" sha="$2" out oid
   if gh_available; then
-    # 같은 head 로 PR 이 여러 개일 수 있다(#227 MERGED / #228 CLOSED 처럼 재생성된 이력이 실제로
-    #   있다) → --state merged 로 걸러 **하나라도 있으면** 병합됨으로 본다.
-    #   PR 이 없으면 빈 배열([])이고, 조회 실패(네트워크·권한)면 비영 종료다. set -e 아래서
+    # "이 이름으로 병합된 PR 이 있었나" 로는 부족하다 — 이 저장소는 브랜치명을 재사용한다
+    #   (fix/rematch-timeout 은 워커가 두 번 스폰돼 PR #227 MERGED / #228 CLOSED 가 함께 있다).
+    #   이름만 보면 같은 슬러그로 새로 판 브랜치의 **방금 연 PR** 이 병합됨으로 오판되고, 원격
+    #   브랜치가 push --delete 로 날아간다. 그래서 지금 tip sha 가 병합된 PR 의 head 와 같은지까지
+    #   본다. squash 머지에서도 headRefOid 는 병합 당시의 브랜치 tip 이라 이 비교가 정확하다.
+    #   새 커밋이 얹히면 sha 가 달라져 자동으로 미병합이 된다.
+    #   PR 이 없으면 출력이 비고, 조회 실패(네트워크·권한)면 비영 종료다. set -e 아래서
     #   죽지 않도록 `|| out=''` 로 받고, 그 경우는 "병합 아님"(=유지)으로 다룬다.
-    out="$(gh pr list --head "$branch" --state merged --json number 2>/dev/null)" || out=''
-    case "$out" in
-      *'"number"'*) return 0 ;;
-      *)            return 1 ;;
-    esac
+    out="$(gh pr list --head "$branch" --state merged --json headRefOid -q '.[].headRefOid' 2>/dev/null)" || out=''
+    while IFS= read -r oid; do
+      if [ -n "$oid" ] && [ "$oid" = "$sha" ]; then return 0; fi
+    done <<< "$out"
+    return 1
   fi
   git -C "$MAIN_ROOT" merge-base --is-ancestor "$sha" origin/main
 }
