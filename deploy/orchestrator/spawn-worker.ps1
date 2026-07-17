@@ -136,6 +136,16 @@ function Resolve-HostTerminal {
   return 'window'                          # 맨 PowerShell 콘솔 창
 }
 
+# ── 안전한 토큰인지(영숫자·'-'·'_' 만) ───────────────────────────────────────
+# 세션 이름의 세션 ID 와 트리거 문장의 작업 슬러그가 같은 판정을 쓴다. 이 화이트리스트를
+# 통과하면 작은따옴표·백틱·개행·공백이 원천 배제되므로, 생성되는 런치 스크립트에서
+# 작은따옴표 안에 그대로 끼워 넣어도 깨지지 않는다.
+# 값을 고쳐서 통과시키지 않는다 — 못 미더우면 호출부가 그 값을 빼고 진행한다(가짜 값 금지).
+function Test-SafeToken {
+  param([string]$Value)
+  return ($Value -match '^[A-Za-z0-9_-]+$')
+}
+
 # ── 워커 termkeep 세션 이름 = S<중앙세션ID>/<슬러그> ─────────────────────────
 # 사용자는 중앙 세션(창)을 여러 개 띄운다. 이름이 슬러그뿐이면 사이드바에 워커가 나란히 쌓여도
 # 어느 창 소생인지 알 수 없다("무슨 일" 만 알고 "누구 밑" 은 모른다). 그래서 만든 세션의 ID 를
@@ -155,7 +165,7 @@ function Resolve-WorkerSessionName {
 
   # 빈 값도 이 검사에서 같이 걸린다(값이 없든 쓸 수 없든 결과는 "접두사 생략" 하나).
   $sid = "$env:TERMKEEP_SESSION_ID".Trim()
-  if ($sid -notmatch '^[A-Za-z0-9_-]+$') {
+  if (-not (Test-SafeToken $sid)) {
     Write-Host "→ TERMKEEP_SESSION_ID 없음/사용불가 → 소유 세션 접두사 생략, 이름: $TaskName" -ForegroundColor DarkGray
     return $TaskName
   }
@@ -406,7 +416,27 @@ if ($Launch -eq 'auto') {
 $permFlag = if ($Permissions -eq 'skip') { '--dangerously-skip-permissions' } else { '' }
 $wtDirEsc = $wtDir -replace "'", "''"
 $launchPs1 = Join-Path $wtDir '.launch.ps1'
-$trigger = ".initial-prompt 파일을 Read 도구로 읽고, 그 내용을 지시사항 삼아 바로 작업을 시작해라."
+#
+# 트리거 첫머리에는 작업 슬러그를 박는다. termkeep 사이드바의 워커 "제목" 은 termkeep 이 아니라
+# claude 가 대화 내용(= 이 첫 문장)으로 자동 생성하는데, 트리거가 모든 워커에게 똑같았던 탓에
+# 제목이 전부 'Read initial prompt …' 로 겹쳐 목록에서 구분이 안 됐다(부제는 #235 가 해결).
+# 제목을 강제하는 API 는 없으므로 이건 유도일 뿐이다 — 슬러그가 제목에 실릴 가능성을 높인다.
+#
+# 슬러그를 '[foo] ' 같은 꼬리표로 붙이지 마라(실측 2026-07): claude 는 꼬리표를 제목에서 통째로
+# 버려 '초기 프롬프트 파일 읽기 및 작업 시작' 이 됐다 — 슬러그가 사라져 고치기 전과 똑같아진다.
+# 슬러그를 문장의 주어로 넣으니 제목이 'title-probe2 작업 시작' 으로 떴다. 그래서 꼬리표가 아니라
+# 문장이다. 이 문장을 줄이거나 꼬리표로 되돌리려면 실제 스폰으로 제목을 다시 확인해라.
+#
+# 슬러그는 위 화이트리스트를 통과할 때만 넣는다: $Task 는 형식 검증이 없는 자유 문자열이라
+# 작은따옴표가 섞이면 아래 `claude $permFlag '$trigger'` 가 그 자리에서 깨진다.
+$triggerBody = '.initial-prompt 파일을 Read 도구로 읽고, 그 내용을 지시사항 삼아 바로 작업을 시작해라.'
+if (Test-SafeToken $Task) {
+  $trigger = "$Task 작업을 맡는다. $triggerBody"
+}
+else {
+  Write-Host "→ 작업 슬러그에 쓸 수 없는 문자 → 트리거 접두사 생략(제목이 워커끼리 겹칠 수 있다): $Task" -ForegroundColor DarkGray
+  $trigger = $triggerBody
+}
 
 if ($LaunchMode -eq 'headless') {
   $launchBody = @"
