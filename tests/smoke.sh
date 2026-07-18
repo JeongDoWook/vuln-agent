@@ -13,6 +13,13 @@ set -uo pipefail
 BASE="${1:-http://localhost:8000}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# 서버가 요청을 받고도 응답을 안 주면(PHP 가 외부 API 호출에서 멈춤·DB 락 대기 등) curl 이
+# 무한 대기해 push 가 그대로 멈춘 것처럼 보인다 — 모든 curl 호출에 상한을 둔다.
+#   curl_  : 단순 GET/로그인류 (20초)
+#   curl_i : ingest.php/rematch.php — 매칭 파이프라인이 도는 요청이라 여유 있게 (30초)
+curl_()  { curl --max-time 20 "$@"; }
+curl_i() { curl --max-time 30 "$@"; }
+
 GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 pass=0; fail=0
 ok() { printf "  ${GREEN}✓${NC} %s\n" "$1"; pass=$((pass+1)); }
@@ -42,7 +49,11 @@ DEFAULT_WEB_CONTAINER="vulnagent-web-dev${WT_NAME:+-$WT_NAME}"
 WEB_CONTAINER="${VG_WEB_CONTAINER:-$DEFAULT_WEB_CONTAINER}"
 
 container_running() {
-  [ "$(docker inspect -f '{{.State.Running}}' "$WEB_CONTAINER" 2>/dev/null)" = "true" ]
+  # healthcheck 가 있으면(떠 있어도 응답 불가능한 상태일 수 있다) healthy 여부까지 본다.
+  # 없으면 예전처럼 running 여부만 본다. (deploy/migrate.sh 의 이중 판정 패턴과 동일)
+  local st
+  st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Running}}{{end}}' "$WEB_CONTAINER" 2>/dev/null)
+  case "$st" in healthy|true) return 0 ;; *) return 1 ;; esac
 }
 SMOKE_GUARD=0
 if [ "${VG_SMOKE_ANY:-0}" != "1" ] && [ -z "${VG_SMOKE_BASE:-}" ] && command -v docker >/dev/null 2>&1; then
@@ -247,11 +258,11 @@ fi
 
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"
-code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
+code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
   -H 'X-Agent-Token: WRONG' --data-binary @"$SAMPLE")
 assert_eq "$code" "401" "잘못된 토큰 → 401"
 
-resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
+resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"ok":true' "정상 토큰 → ok:true"
 assert_contains "$resp" '"packages":7' "패키지 7건 저장"
 assert_contains "$resp" '"exposures":5' "노출 5건 저장"
@@ -293,7 +304,7 @@ if [ "${cceFail:-0}" -ge 5 ]; then ok "CCE FAIL 검출 (shadow 640·hosts 644·M
 #   web02(Debian 12)의 curl·openssl 은 둘 다 조치 버전보다 낮아 "버전만 보면" 취약하다.
 #   debsecan(데비안 보안 트래커)이 curl 만 지목했다 → openssl 은 백포트로 이미 고쳐진 것(억제).
 printf "\n[debsecan · 데비안 백포트 억제]\n"
-resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
+resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
   --data-binary @"$SAMPLE_DEB")
 assert_contains "$resp" '"ok":true' "데비안 호스트 수집 → ok:true"
 assert_contains "$resp" '"debsecan":1' "debsecan 판정 1건 저장"
@@ -307,8 +318,8 @@ if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백�
 #   **억제 건수로 판정하지 않는다** — 그건 DB 에 실제 피드 데이터가 들어오면 바로 깨진다
 #   (dev DB 가 공용이 된 뒤 실측으로 깨졌다: 기대 1건 vs 실제 72건).
 #   억제 목록에 nginx 가 있는지를 직접 본다. 그게 이 테스트가 진짜 지키려는 것이다.
-WEB02_ID=$(curl -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB02" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
-supbody=$(curl -s -b "$JAR" "$BASE/host.php?id=${WEB02_ID:-0}&tab=suppressed")
+WEB02_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB02" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
+supbody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=${WEB02_ID:-0}&tab=suppressed")
 if printf '%s' "$supbody" | grep -q 'nginx'; then
   no "서드파티 nginx 가 억제됨 — 미탐!"
 else
@@ -319,32 +330,32 @@ fi
 #   같은 내용을 다시 보내면 새 스캔을 만들지 않는다(수집시각만 갱신). 패키지가 바뀌면 새 스냅샷 +
 #   변경이력. 매시간 수집이 대부분 "직전과 동일"이라 이게 없으면 데이터가 무한히 불어난다.
 printf "\n[변경 추적]\n"
-resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
+resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"changed":false' "동일 내용 재전송 → 새 스냅샷 안 만듦"
 
 UPG="$(mktemp)"; sed 's/0:2.34-60.el9_2.3/0:2.34-83.el9_3.7/' "$SAMPLE" > "$UPG"
-resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$UPG")
+resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$UPG")
 assert_contains "$resp" '"changed":true'  "glibc 업그레이드 → 새 스냅샷"
 assert_contains "$resp" '"pkg_changes":1' "패키지 변경 1건 기록"
 rm -f "$UPG"
 # 되돌려 놓는다(뒤의 검사들이 원래 샘플 기준이라 상태를 원복해야 한다).
-resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
+resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 SCAN_ID=$(printf '%s' "$resp" | grep -oE '"scan_id":[0-9]+' | grep -oE '[0-9]+$')
 
 # --- 피드 미지원 배포판: 0건이 "안전"이 아니라 "판정 불가" -------------------
 #   Amazon Linux 는 OSV 생태계 목록에 없다(질의하면 INVALID_ARGUMENT). 매칭 후보가 아예 없어
 #   취약점이 0건으로 뜨는데, 운영자가 "안전하다"고 읽으면 침묵하는 미탐이 된다 → 명시적으로 알린다.
 printf "\n[미지원 배포판 경고]\n"
-resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
+resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
   --data-binary @"$SAMPLE_AMZN")
 assert_contains "$resp" '"ok":true' "Amazon Linux 호스트 수집 → ok:true"
 assert_contains "$resp" 'ALAS' "ingest 응답에 미지원 경고(자체 ALAS 피드 필요)"
 
 # --- 재매칭 -----------------------------------------------------------------
 printf "\n[rematch]\n"
-code=$(curl -s -o /dev/null -w '%{http_code}' -H "X-Agent-Token: WRONG" "$BASE/rematch.php")
+code=$(curl_i -s -o /dev/null -w '%{http_code}' -H "X-Agent-Token: WRONG" "$BASE/rematch.php")
 assert_eq "$code" "401" "잘못된 토큰 → 401"
-code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=$TOKEN")
+code=$(curl_i -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=$TOKEN")
 assert_eq "$code" "401" "?token= 쿼리는 더 이상 인증 안 됨(헤더만 허용) → 401"
 # 대상을 방금 수집한 스캔 1건으로 한정한다. scan_id 를 빼면 DB 전체를 재매칭하는데, 공용 dev DB 는
 #   스모크가 돌 때마다 스캔이 쌓여 결국 PHP 30초 실행제한에 걸린다 — 그러면 이 검사는 인증이 아니라
@@ -353,38 +364,38 @@ assert_eq "$code" "401" "?token= 쿼리는 더 이상 인증 안 됨(헤더만 �
 #   "지정됨"으로 읽어 없는 스캔 0번을 매칭하고 ok:true 를 준다 — 아래 검사가 아무것도 안 하면서
 #   통과한다. 값을 먼저 못박는다.
 if [ -n "$SCAN_ID" ]; then ok "재매칭 대상 scan_id 확보 (=$SCAN_ID)"; else no "scan_id 를 못 뽑음 — 아래 재매칭 검사가 무의미해진다"; fi
-resp=$(curl -s -H "X-Agent-Token: $TOKEN" "$BASE/rematch.php?scan_id=$SCAN_ID")
+resp=$(curl_i -s -H "X-Agent-Token: $TOKEN" "$BASE/rematch.php?scan_id=$SCAN_ID")
 assert_contains "$resp" '"ok":true' "재매칭 성공(헤더 인증)"
 
 # --- 웹 인증 흐름 -----------------------------------------------------------
 printf "\n[web auth]\n"
 JAR="$(mktemp)"   # 정리는 위 trap 이 샘플 사본과 함께 맡는다.
-code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")
+code=$(curl_ -s -o /dev/null -w '%{http_code}' "$BASE/")
 assert_eq "$code" "302" "미인증 대시보드 → 302(로그인 리다이렉트)"
 
-csrf=$(curl -s -c "$JAR" "$BASE/login.php" | grep -oE 'name="csrf" value="[a-f0-9]+"' | grep -oE '[a-f0-9]{32}')
+csrf=$(curl_ -s -c "$JAR" "$BASE/login.php" | grep -oE 'name="csrf" value="[a-f0-9]+"' | grep -oE '[a-f0-9]{32}')
 if [ -n "$csrf" ]; then ok "로그인 폼 CSRF 토큰 취득"; else no "CSRF 토큰 없음"; fi
 
-code=$(curl -s -b "$JAR" -c "$JAR" -o /dev/null -w '%{http_code}' \
+code=$(curl_ -s -b "$JAR" -c "$JAR" -o /dev/null -w '%{http_code}' \
   --data-urlencode "csrf=$csrf" --data-urlencode "username=admin" --data-urlencode "password=$ADMPW" \
   "$BASE/login.php")
 assert_eq "$code" "302" "올바른 로그인 → 302(대시보드)"
 
-body=$(curl -s -b "$JAR" "$BASE/")
+body=$(curl_ -s -b "$JAR" "$BASE/")
 assert_contains "$body" "대시보드" "대시보드 접근(인증됨)"
-code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/findings.php")
+code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/findings.php")
 assert_eq "$code" "200" "취약점 페이지 200"
-code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/users.php")
+code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/users.php")
 assert_eq "$code" "200" "사용자 페이지 200(admin)"
 
-body=$(curl -s -b "$JAR" "$BASE/connectors.php")
+body=$(curl_ -s -b "$JAR" "$BASE/connectors.php")
 assert_contains "$body" "CISA KEV" "피드 커넥터 페이지(기본 커넥터 노출)"
-code=$(curl -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
+code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
 assert_eq "$code" "200" "국내 보안공지 페이지 200"
 # 호스트 id 를 하드코딩(=1)하면 빈 볼륨에서만 통과한다. 스택·DB 를 재사용하면 auto_increment 가
 # 밀려(삭제·재등록) id 가 6,7,11 처럼 바뀌고, 그때부터 아래 검사가 전부 "호스트 없음" 을 본다.
 # 자산 목록에서 web01 의 실제 id 를 찾아 쓴다 — 데이터가 어디서 시작하든 무관하게.
-WEB01_ID=$(curl -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB01" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
+WEB01_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB01" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
 if [ -n "$WEB01_ID" ]; then
   ok "web01 호스트 id 확인 (=$WEB01_ID)"
 else
@@ -392,22 +403,22 @@ else
   WEB01_ID=1
 fi
 
-body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
+body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "최고 위험도" "호스트 상세(자산 식별 히어로 + 섹션 탭)"
 # curl 은 조치 버전 이상이지만 nginx 가 옛 libcurl 을 물고 있다 → 억제 대신 "재시작 필요"로 남는다(기본=취약점 탭).
 assert_contains "$body" "재시작 필요" "재시작 필요 근거 노출(패치됐지만 옛 라이브러리 사용 중)"
 # 커널은 패치가 설치돼도 재부팅 전까지 옛 커널이 돈다 → 억제하지 않고 "재부팅"을 조치로 제시한다.
 assert_contains "$body" "재부팅 필요" "커널 재부팅 필요 뱃지(설치 -503 / 실행 -427)"
 assert_contains "$body" "재부팅</span>" "조치가 '재부팅' (프로세스 재시작으로는 안 고쳐진다)"
-body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=runtime")
+body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=runtime")
 assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(노출·프로세스)"
 # 컨테이너의 프로세스·포트는 호스트 것과 섞이면 안 된다 — 어느 쪽인지 표에 드러나야 한다.
 assert_contains "$body" "컨테이너 api" "런타임 탭이 컨테이너 출처를 구분해 표시"
 # redis 는 0.0.0.0:6379 지만 방화벽이 막는다 → EXTERNAL 이 아니라 FILTERED 로 분류돼야 한다.
-body=$(curl -s -b "$JAR" "$BASE/findings.php?st=FILTERED")
+body=$(curl_ -s -b "$JAR" "$BASE/findings.php?st=FILTERED")
 assert_contains "$body" "redis" "방화벽 차단(FILTERED) 분류 — redis 가 외부노출로 새지 않음"
 # 미지원 배포판 호스트가 있으면 취약점 화면 상단에 경고가 떠야 한다("0건 = 판정 불가").
-body=$(curl -s -b "$JAR" "$BASE/findings.php")
+body=$(curl_ -s -b "$JAR" "$BASE/findings.php")
 assert_contains "$body" "판정 불가" "취약점 화면에 미지원 배포판 경고 노출"
 # **패키지 DB 가 없는 컨테이너**(Calico 같은 이미지)도 0건이 나온다 — rhel 은 피드 지원 배포판이라
 #   미지원 경고에 안 걸린다. 이걸 침묵하면 "안전함"으로 읽힌다(운영 실측 9개).
@@ -415,22 +426,22 @@ assert_contains "$body" "컨테이너 nodb" "패키지 DB 없는 컨테이너도
 # Go 바이너리에서 뽑은 의존 모듈이 **Go 생태계로** 매칭돼야 한다. 배포판 생태계로 물으면
 #   조회가 통째로 빗나가 미탐이 된다(kube-apiserver 는 dpkg 4개 vs Go 의존 248개다).
 #   (LOW 라 목록 1페이지엔 안 뜬다 → 검색으로 집어서 확인한다.)
-gobody=$(curl -s -b "$JAR" "$BASE/findings.php?q=golang.org%2Fx%2Fnet")
+gobody=$(curl_ -s -b "$JAR" "$BASE/findings.php?q=golang.org%2Fx%2Fnet")
 assert_contains "$gobody" "CVE-2023-45288" "컨테이너의 Go 의존성 취약점이 매칭됨(golang.org/x/net v0.20.0)"
 # 패키지 DB 도 Go 도 없는 이미지(whisker=nginx) — 바이너리에서 뽑은 버전을 OSV 의 Bitnami
 #   생태계로 매칭한다. 이게 죽으면 그 컨테이너는 다시 "판정 불가"로 돌아간다.
 # cve.php?tab=locations 는 전역(모든 워크트리·모든 호스트) 목록이라 공용 dev DB 가 자랄수록
 #   (실측 1,138건) 1페이지 밖으로 밀려 깨진다 — findings.php 의 host 필터(위 WEB01_ID)로
 #   이 워크트리의 호스트 하나로 좁히고, q 로 이 CVE 하나만 골라 전역 건수와 무관하게 만든다.
-upbody=$(curl -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID&q=CVE-2023-44487")
+upbody=$(curl_ -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID&q=CVE-2023-44487")
 assert_contains "$upbody" "upsvc" "업스트림 바이너리(nginx 1.24.0) 취약점이 그 컨테이너에 매칭됨"
 assert_contains "$body" "패키지 DB 가 없는 이미지" "판정 불가 사유가 '패키지 DB 없음'으로 구분됨"
-body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
+body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에도 패키지DB 없는 컨테이너 경고"
 
 # 잘못된 비번
-JAR2="$(mktemp)"; csrf2=$(curl -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)
-body=$(curl -s -b "$JAR2" -c "$JAR2" --data-urlencode "csrf=$csrf2" \
+JAR2="$(mktemp)"; csrf2=$(curl_ -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)
+body=$(curl_ -s -b "$JAR2" -c "$JAR2" --data-urlencode "csrf=$csrf2" \
   --data-urlencode "username=admin" --data-urlencode "password=WRONG" "$BASE/login.php")
 assert_contains "$body" "올바르지 않습니다" "틀린 비밀번호 → 로그인 거부"
 rm -f "$JAR2"
@@ -441,15 +452,15 @@ rm -f "$JAR2"
 printf "\n[에이전트 토큰 · 호스트 바인딩]\n"
 # 로그인 세션($JAR)으로 web01 에 바인딩된 개별 토큰 발급 → 원문(vgt_...)을 1회 표시에서 추출.
 #   발급은 303 으로 GET 에 되돌려주므로(-L) 원문은 리다이렉트 뒤 화면에 실린다.
-ATCSRF=$(curl -s -b "$JAR" "$BASE/agent-tokens.php" | grep -oE 'name="csrf" value="[a-f0-9]+"' | grep -oE '[a-f0-9]{32}' | head -1)
+ATCSRF=$(curl_ -s -b "$JAR" "$BASE/agent-tokens.php" | grep -oE 'name="csrf" value="[a-f0-9]+"' | grep -oE '[a-f0-9]{32}' | head -1)
 #   -X POST 를 쓰지 않는다 — -X 는 리다이렉트 뒤에도 POST 를 강제해 발급이 무한 재전송된다.
-issued=$(curl -sL -b "$JAR" "$BASE/agent-tokens.php" \
+issued=$(curl_ -sL -b "$JAR" "$BASE/agent-tokens.php" \
   --data-urlencode "csrf=$ATCSRF" --data-urlencode "action=create" \
   --data-urlencode "fqdn=$FQDN_WEB01" --data-urlencode "label=smoke $WT_LABEL")
 AGTOK=$(printf '%s' "$issued" | grep -oE 'vgt_[0-9a-f]{40}' | head -1)
 if [ -n "$AGTOK" ]; then ok "개별 토큰 발급 + 원문 1회 표시"; else no "개별 토큰 발급 실패"; fi
 # 목록엔 prefix(앞자리)만 — 원문 전체는 저장/표시되지 않아야 한다(DB 엔 해시만).
-listed=$(curl -s -b "$JAR" "$BASE/agent-tokens.php")
+listed=$(curl_ -s -b "$JAR" "$BASE/agent-tokens.php")
 if [ -n "$AGTOK" ] && printf '%s' "$listed" | grep -q "$AGTOK"; then
   no "목록에 토큰 원문 노출(해시만 저장돼야 함)"
 else
@@ -461,13 +472,13 @@ fi
 #   내 토큰 행 수로 재기 때문이다 — 같은 fqdn 으로 재발급하면 옛 행이 폐기된 채 목록에 남아
 #   실행이 쌓일수록 행 수가 늘고, 그러면 "1개" 라는 기대가 성립하지 않는다.
 PRG_FQDN="prg.$$.$WT_LABEL.example.com"
-prgcode=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$BASE/agent-tokens.php" \
+prgcode=$(curl_ -s -o /dev/null -w '%{http_code}' -b "$JAR" "$BASE/agent-tokens.php" \
   --data-urlencode "csrf=$ATCSRF" --data-urlencode "action=create" \
   --data-urlencode "fqdn=$PRG_FQDN" --data-urlencode "label=smoke-prg $WT_LABEL")
 assert_eq "$prgcode" "303" "발급 POST 는 303 으로 GET 에 되돌린다(새로고침 재전송 방지)"
-prg1=$(curl -s -b "$JAR" "$BASE/agent-tokens.php")    # 리다이렉트된 GET — 원문 1회 표시
+prg1=$(curl_ -s -b "$JAR" "$BASE/agent-tokens.php")    # 리다이렉트된 GET — 원문 1회 표시
 assert_contains "$prg1" '한 번만 표시됨' "리다이렉트된 GET 에 발급 카드가 실린다"
-prg2=$(curl -s -b "$JAR" "$BASE/agent-tokens.php")    # 새로고침 = 같은 GET 재요청
+prg2=$(curl_ -s -b "$JAR" "$BASE/agent-tokens.php")    # 새로고침 = 같은 GET 재요청
 if printf '%s' "$prg2" | grep -q '한 번만 표시됨'; then
   no "새로고침에도 발급 카드가 남아 있음(1회 표시 위반)"
 else
@@ -488,12 +499,12 @@ else
   no "새로고침해도 토큰이 다시 발급되지 않는다  (발급 직후=$prgcnt1, 새로고침 후=$prgcnt2, 기대=둘 다 1)"
 fi
 # (a) 바인딩된 호스트(web01)로 수신 → 200 ok, 저장 호스트가 바인딩 fqdn.
-resp=$(curl -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $AGTOK" --data-binary @"$SAMPLE")
+resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $AGTOK" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"ok":true' "(a) 개별 토큰 + 바인딩 호스트 → ok:true"
 assert_contains "$resp" "\"fqdn\":\"$FQDN_WEB01\"" "(a) 저장 호스트가 바인딩 fqdn"
 # (b) 같은 토큰으로 다른 호스트(evil)를 주장 → 403 거부. 스푸핑 차단의 핵심 회귀.
 SPOOF="$(mktemp)"; sed "s/web01\.$WT_LABEL\.example\.com/evil.$WT_LABEL.example.com/g" "$SAMPLE" > "$SPOOF"
-code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
+code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
   -H "X-Agent-Token: $AGTOK" --data-binary @"$SPOOF")
 assert_eq "$code" "403" "(b) 같은 토큰으로 다른 호스트 위조 → 403 (스푸핑 차단)"
 rm -f "$SPOOF"
