@@ -14,6 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUB="$ROOT/server/public"
+SRC="$ROOT/server/src"
 CSS="$PUB/assets/app.css"
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
@@ -41,8 +42,12 @@ else
 fi
 
 # --- 2) 인라인 style -------------------------------------------------------
-# 색·레이아웃은 app.css 가 소유한다(CLAUDE.md). 폭 계산(width:N%)만 예외 — 게이지·미터가 쓴다.
-inline=$(grep -nE 'style="' "$PUB"/*.php | grep -vE 'style="width:[^"]*%' || true)
+# 색·레이아웃은 app.css 가 소유한다(CLAUDE.md). 폭 계산(width:…)만 예외 — 게이지·미터,
+# 표 컬럼 너비(vg_table() 의 $width, rem/px 단위)가 쓴다. width 하나만 있고 다른 속성이
+# 안 섞였는지까지 본다 — 'width:10px;color:red' 처럼 얹혀 오는 건 여전히 잡아야 하므로.
+#   공용 헬퍼(server/src/view.php 의 vg_table())도 style="…" 을 만들 수 있으므로 server/src 도 본다
+#   — 예전엔 $PUB 만 봐서 vg_table() 의 text-align 인라인 style 이 그대로 새고 있었다.
+inline=$(grep -nE 'style="' "$PUB"/*.php "$SRC"/*.php | grep -vE 'style="width:[^";]*;?"' || true)
 if [ -z "$inline" ]; then
   ok "PHP 안에 인라인 style 없음 (폭 계산 제외)"
 else
