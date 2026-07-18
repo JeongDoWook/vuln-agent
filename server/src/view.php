@@ -439,10 +439,9 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
         $label = is_array($h) ? (string) ($h['label'] ?? '') : (string) $h;
         $align = is_array($h) ? ($h['align'] ?? null) : null;
         $width = is_array($h) ? ($h['width'] ?? null) : null;
-        $style = '';
-        if ($align && $align !== 'left') { $style .= 'text-align:' . $align . ';'; }
-        if ($width) { $style .= 'width:' . $width . ';'; }
-        echo '<th' . ($style !== '' ? ' style="' . vg_h($style) . '"' : '') . '>' . vg_h($label) . '</th>';
+        $style = $width ? ' style="width:' . vg_h($width) . ';"' : '';
+        $thClass = ($align === 'right') ? ' class="right"' : (($align === 'center') ? ' class="center"' : '');
+        echo '<th' . $thClass . $style . '>' . vg_h($label) . '</th>';
     }
     echo '</tr></thead><tbody>';
     foreach ($rows as $row) {
@@ -460,8 +459,12 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
                 $html = '';
             }
             $nowrap = is_array($h) && !empty($h['nowrap']);
-            $style = ($align && $align !== 'left') ? ' style="text-align:' . vg_h($align) . ';"' : '';
-            echo '<td' . ($nowrap ? ' class="nowrap"' : '') . $style . '>' . $html . '</td>';
+            $tdClasses = [];
+            if ($nowrap) { $tdClasses[] = 'nowrap'; }
+            if ($align === 'right') { $tdClasses[] = 'right'; }
+            elseif ($align === 'center') { $tdClasses[] = 'center'; }
+            $tdClass = $tdClasses ? ' class="' . vg_h(implode(' ', $tdClasses)) . '"' : '';
+            echo '<td' . $tdClass . '>' . $html . '</td>';
         }
         echo '</tr>';
     }
