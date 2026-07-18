@@ -443,6 +443,77 @@ if (!function_exists('vg_scope_rank')) {
     }
 
     /**
+     * 한 패키지의 판정 맥락을 모은다: 재시작/재부팅 필요 신호, 커널 실행 여부, 서드파티 판정,
+     *   런타임 노출 상태(리스닝·실행·로드). 이 값들은 이 패키지에 매달린 **모든 CVE 에 공통**이라
+     *   (CVE 별로 다시 계산할 필요가 없어) 패키지 루프에서 한 번만 구한다.
+     */
+    function vg_match_pkg_context(
+        array $p, ?array $ctr, int $ctrId, string $mgr, array $scan,
+        string $runningKernel, bool $runningKernelPresent,
+        array $loadMap, array $procRunningPkgs, array $procLoadedPkgs, array $stale
+    ): array {
+        // 재시작 필요 — 이 패키지의 옛 라이브러리를 물고 있는 프로세스가 있나.
+        //   있으면 어떤 억제 근거가 있어도 억제하지 않는다(그 프로세스는 여전히 취약).
+        //   컨테이너 패키지엔 적용하지 않는다(호스트 프로세스 기준 신호라서).
+        $staleEv = $ctr !== null ? null
+            : ($stale[$p['name']] ?? ($p['source_pkg'] ? ($stale[$p['source_pkg']] ?? null) : null));
+
+        // 억제 근거(changelog·errata·debsecan)는 전부 **호스트** 상태다. 컨테이너 CVE 를
+        //   호스트 근거로 억제하면 실제 취약점을 숨기는 미탐이 된다 → 컨테이너는 제외한다.
+        //   (버전 비교는 그 컨테이너의 패키지 버전으로 하는 것이라 컨테이너에도 유효하다.)
+        // 커널: 패치했어도 **재부팅 전까지는 옛 커널이 돈다** → 억제하면 미탐이다.
+        //   (라이브러리의 "재시작 필요"와 같은 문제. 조치는 프로세스 재시작이 아니라 재부팅.)
+        $isKernelPkg = $ctr === null && vg_is_kernel_code_pkg((string) $p['name']);
+        $kernelPending = $isKernelPkg && (int) ($scan['kernel_reboot_needed'] ?? 0) === 1;
+
+        // 실행 중이 아닌 커널 이미지 — 부팅해야 활성화된다. 커널 CVE 를 설치된 이미지 전부에
+        //   매달면 같은 목록이 몇 번씩 중복된다(실측 raspberrypi5-00: 702건 × 이미지 4개 = 2,808).
+        //   업계 표준(Vuls 등)대로 uname 으로 잡은 **구동 커널**만 판정한다.
+        //   단, 실행 중인 커널의 패키지가 목록에 없으면(그 커널만 제거된 드문 경우) 아무것도
+        //   억제하지 않는다 — 그러면 커널 CVE 가 통째로 사라져 미탐이 된다.
+        $kernelNotRunning = $isKernelPkg && $runningKernelPresent
+            && !vg_is_running_kernel_pkg((string) $p['name'], (string) $p['version'], $runningKernel);
+
+        // 서드파티 저장소(PPA·Docker·NodeSource) 패키지 / 수동 .deb 설치는 배포판 트래커에
+        //   아예 없다. 배포판 기준 억제(debsecan·errata·changelog)는 "트래커에 없으면 이미
+        //   수정됨"으로 보므로, 그대로 두면 진짜 취약점을 숨긴다(미탐) → 억제하지 않는다.
+        //   버전 억제도 막는다: 배포판 조치안(EVR)과 서드파티 버전은 체계가 다르다
+        //   (예: docker-ce-cli 5:27.0.3-1~debian.12 vs 배포판 EVR).
+        $osForOrigin = $ctr !== null ? ($ctr['os'] ?: null) : ($scan['os_id'] ?? null);
+        $isDistroPkg = !vg_is_os_manager($mgr)      // 언어 패키지는 이 판정과 무관
+            || vg_is_distro_pkg($p['origin'] ?? null, $osForOrigin);
+
+        $hostEvidenceOk = ($ctr === null) && $isDistroPkg;
+
+        // 런타임 상태 신호 (exposures=포트, processes=실행/로드).
+        //   **자기 것만 본다** — 맵이 container_id 로 갈려 있어 호스트 신호가 컨테이너로
+        //   새지 않는다(호스트 nginx 의 외부노출이 컨테이너 openssl 로 넘어가면 오탐).
+        //   에이전트가 컨테이너 런타임을 못 보낸 경우엔 맵이 비어 예전처럼 INSTALLED(LOW) 로
+        //   떨어진다 — 옛 에이전트와도 호환된다.
+        $le        = $loadMap[$ctrId][$p['name']] ?? ($loadMap[$ctrId][$p['source_pkg']] ?? null);
+        $running   = isset($procRunningPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procRunningPkgs[$ctrId][$p['source_pkg']]));
+        $pkgLoaded = isset($procLoadedPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procLoadedPkgs[$ctrId][$p['source_pkg']]));
+        $exposed   = $le !== null && ($le['scope'] ?? '') === 'EXTERNAL';
+        $loaded    = $le !== null || $pkgLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
+        $scope     = $le['scope'] ?? null;
+
+        return [
+            'staleEv'          => $staleEv,
+            'isKernelPkg'      => $isKernelPkg,
+            'kernelPending'    => $kernelPending,
+            'kernelNotRunning' => $kernelNotRunning,
+            'isDistroPkg'      => $isDistroPkg,
+            'hostEvidenceOk'   => $hostEvidenceOk,
+            'le'               => $le,
+            'running'          => $running,
+            'pkgLoaded'        => $pkgLoaded,
+            'exposed'          => $exposed,
+            'loaded'           => $loaded,
+            'scope'            => $scope,
+        ];
+    }
+
+    /**
      * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
      */
     function vg_match_scan(PDO $pdo, int $scanId): array {
@@ -551,50 +622,22 @@ if (!function_exists('vg_scope_rank')) {
                 continue;
             }
 
-            // 재시작 필요 — 이 패키지의 옛 라이브러리를 물고 있는 프로세스가 있나.
-            //   있으면 어떤 억제 근거가 있어도 억제하지 않는다(그 프로세스는 여전히 취약).
-            //   컨테이너 패키지엔 적용하지 않는다(호스트 프로세스 기준 신호라서).
-            $staleEv = $ctr !== null ? null
-                : ($stale[$p['name']] ?? ($p['source_pkg'] ? ($stale[$p['source_pkg']] ?? null) : null));
-
-            // 억제 근거(changelog·errata·debsecan)는 전부 **호스트** 상태다. 컨테이너 CVE 를
-            //   호스트 근거로 억제하면 실제 취약점을 숨기는 미탐이 된다 → 컨테이너는 제외한다.
-            //   (버전 비교는 그 컨테이너의 패키지 버전으로 하는 것이라 컨테이너에도 유효하다.)
-            // 커널: 패치했어도 **재부팅 전까지는 옛 커널이 돈다** → 억제하면 미탐이다.
-            //   (라이브러리의 "재시작 필요"와 같은 문제. 조치는 프로세스 재시작이 아니라 재부팅.)
-            $isKernelPkg = $ctr === null && vg_is_kernel_code_pkg((string) $p['name']);
-            $kernelPending = $isKernelPkg && (int) ($scan['kernel_reboot_needed'] ?? 0) === 1;
-
-            // 실행 중이 아닌 커널 이미지 — 부팅해야 활성화된다. 커널 CVE 를 설치된 이미지 전부에
-            //   매달면 같은 목록이 몇 번씩 중복된다(실측 raspberrypi5-00: 702건 × 이미지 4개 = 2,808).
-            //   업계 표준(Vuls 등)대로 uname 으로 잡은 **구동 커널**만 판정한다.
-            //   단, 실행 중인 커널의 패키지가 목록에 없으면(그 커널만 제거된 드문 경우) 아무것도
-            //   억제하지 않는다 — 그러면 커널 CVE 가 통째로 사라져 미탐이 된다.
-            $kernelNotRunning = $isKernelPkg && $runningKernelPresent
-                && !vg_is_running_kernel_pkg((string) $p['name'], (string) $p['version'], $runningKernel);
-
-            // 서드파티 저장소(PPA·Docker·NodeSource) 패키지 / 수동 .deb 설치는 배포판 트래커에
-            //   아예 없다. 배포판 기준 억제(debsecan·errata·changelog)는 "트래커에 없으면 이미
-            //   수정됨"으로 보므로, 그대로 두면 진짜 취약점을 숨긴다(미탐) → 억제하지 않는다.
-            //   버전 억제도 막는다: 배포판 조치안(EVR)과 서드파티 버전은 체계가 다르다
-            //   (예: docker-ce-cli 5:27.0.3-1~debian.12 vs 배포판 EVR).
-            $osForOrigin = $ctr !== null ? ($ctr['os'] ?: null) : ($scan['os_id'] ?? null);
-            $isDistroPkg = !vg_is_os_manager($mgr)      // 언어 패키지는 이 판정과 무관
-                || vg_is_distro_pkg($p['origin'] ?? null, $osForOrigin);
-
-            $hostEvidenceOk = ($ctr === null) && $isDistroPkg;
-
-            // 런타임 상태 신호 (exposures=포트, processes=실행/로드).
-            //   **자기 것만 본다** — 맵이 container_id 로 갈려 있어 호스트 신호가 컨테이너로
-            //   새지 않는다(호스트 nginx 의 외부노출이 컨테이너 openssl 로 넘어가면 오탐).
-            //   에이전트가 컨테이너 런타임을 못 보낸 경우엔 맵이 비어 예전처럼 INSTALLED(LOW) 로
-            //   떨어진다 — 옛 에이전트와도 호환된다.
-            $le        = $loadMap[$ctrId][$p['name']] ?? ($loadMap[$ctrId][$p['source_pkg']] ?? null);
-            $running   = isset($procRunningPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procRunningPkgs[$ctrId][$p['source_pkg']]));
-            $pkgLoaded = isset($procLoadedPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procLoadedPkgs[$ctrId][$p['source_pkg']]));
-            $exposed   = $le !== null && ($le['scope'] ?? '') === 'EXTERNAL';
-            $loaded    = $le !== null || $pkgLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
-            $scope     = $le['scope'] ?? null;
+            $ctx = vg_match_pkg_context(
+                $p, $ctr, $ctrId, $mgr, $scan, $runningKernel, $runningKernelPresent,
+                $loadMap, $procRunningPkgs, $procLoadedPkgs, $stale
+            );
+            $staleEv          = $ctx['staleEv'];
+            $isKernelPkg      = $ctx['isKernelPkg'];
+            $kernelPending    = $ctx['kernelPending'];
+            $kernelNotRunning = $ctx['kernelNotRunning'];
+            $isDistroPkg      = $ctx['isDistroPkg'];
+            $hostEvidenceOk   = $ctx['hostEvidenceOk'];
+            $le               = $ctx['le'];
+            $running          = $ctx['running'];
+            $pkgLoaded        = $ctx['pkgLoaded'];
+            $exposed          = $ctx['exposed'];
+            $loaded           = $ctx['loaded'];
+            $scope            = $ctx['scope'];
 
             foreach ($cands as $cveId => $cand) {
                 $cvss = $cand['cvss'];
