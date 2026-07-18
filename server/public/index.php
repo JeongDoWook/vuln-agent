@@ -311,7 +311,7 @@ vg_header('대시보드', 'dashboard');
           ['label' => '노출', 'align' => 'right'],
           ['label' => '심각도'],
           ['label' => '수집시각', 'nowrap' => true],
-          ['label' => ''],
+          ['label' => '', 'nowrap' => true],
       ],
       $rows,
       [

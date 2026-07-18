@@ -527,7 +527,9 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
 .selectable { user-select: all; }
 
 /* 카드 안 설명용 목록(왜 0건인가 등). 기본 ul 은 들여쓰기가 과하다. */
-.hint-list { margin: .4rem 0 0; padding-left: 1.1rem; }
+/* 대상이 많으면(운영에서 실측 50+ 건) 목록이 화면 대부분을 차지해 정작 본문을 밀어낸다 —
+ * 스크롤로 접어 둔다(사라지는 게 아니라 필요하면 계속 볼 수 있다). */
+.hint-list { margin: .4rem 0 0; padding-left: 1.1rem; max-height: 9rem; overflow-y: auto; }
 
 /* --- KPI -----------------------------------------------------------------
  * 틴트 배경 + 큰 발광 숫자. 이전엔 원색 면에 흰 글자였는데, 팔레트를 밝히면서
@@ -729,7 +731,7 @@ td details[open] summary { margin-bottom: .35rem; }
 /* 이름:값 목록 — 메트릭 사이드바의 뼈대 */
 .kv { display: grid; grid-template-columns: auto 1fr; gap: .45rem .8rem; font-size: .85rem; }
 .kv dt { color: var(--muted); white-space: nowrap; }
-.kv dd { margin: 0; color: var(--text); text-align: right; }
+.kv dd { margin: 0; color: var(--text); text-align: right; word-break: keep-all; }
 .kv dd.is-danger { color: var(--crit-fg); font-weight: 600; }
 
 /* 점수 막대 — CVSS 를 "10점 만점 중 어디" 로 보이게. 숫자만으로는 크기 감이 안 온다. */
