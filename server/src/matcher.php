@@ -723,8 +723,7 @@ if (!function_exists('vg_scope_rank')) {
         //   vg_with_tx 가 새로 트랜잭션을 열 때만 적용된다(중첩 호출이면 참여만 하고 안 건다).
         return vg_with_tx($pdo, function () use (
             $pdo, $scanId, $affected, $kernelFixed, $packages, $ctrs, $hostEco, $family,
-            $backport, $stale, $debsecan, $useDebsecan, $trackerLabel, $errata, $vendorErrata,
-            $unfixed, $scan, $kev, $loadMap, $procRunningPkgs, $procLoadedPkgs,
+            $sup, $stale, $unfixed, $scan, $kev, $loadMap, $procRunningPkgs, $procLoadedPkgs,
             $runningKernelPresent, $runningKernel
         ) {
 
