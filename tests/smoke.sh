@@ -27,6 +27,22 @@ no() { printf "  ${RED}✗${NC} %s\n" "$1"; fail=$((fail+1)); }
 assert_eq() { if [ "$1" = "$2" ]; then ok "$3"; else no "$3  (기대=$2, 실제=$1)"; fi; }
 assert_contains() { if printf '%s' "$1" | grep -q "$2"; then ok "$3"; else no "$3  ('$2' 없음)"; fi; }
 
+# 아래 단위테스트 11개(vercmp~schedule)는 실행 방식(마운트·php:8.3-cli·리다이렉션)이 전부
+# 동일하고 파일명·라벨·메시지만 다르다 — DRY 로 묶는다. 각 테스트가 왜 존재하는지는
+# 호출부 바로 위 주석에 그대로 남아 있다(도메인 지식이라 이 헬퍼로 뭉개지 않는다).
+#   $1=tests/ 밑 파일명  $2=printf 라벨  $3=성공 메시지  $4=실패 메시지(생략 시 성공 메시지 재사용)
+run_phpunit() {
+  local file="$1" label="$2" okmsg="$3"
+  local nomsg="${4:-$okmsg}"
+  printf "\n[%s]\n" "$label"
+  if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+       -w /w php:8.3-cli php "tests/$file" >/dev/null 2>&1; then
+    ok "$okmsg"
+  else
+    no "$nomsg  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/$file)"
+  fi
+}
+
 for f in "$ROOT/secrets/ingest_token.txt" "$ROOT/secrets/admin_password.txt"; do
   [ -s "$f" ] || { echo "secrets 없음: $f — 먼저 ./compose_runner.sh init"; exit 2; }
 done
@@ -117,25 +133,13 @@ fi
 # 기대값을 dpkg/rpm 실측으로 뽑아 둔 테스트라 회귀를 정확히 잡는데, 예전엔 아무도 안 불러서
 # server/src/vercmp.php 를 고쳐도 조용히 지나갔다 — 스모크에 묶는다.
 # php 8.3 컨테이너로 돈다: 호스트 php 는 7.2 라 8.x 문법을 오탐한다(pre-push 와 같은 이유).
-printf "\n[vercmp]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/vercmp_test.php >/dev/null 2>&1; then
-  ok "vercmp 단위 테스트"
-else
-  no "vercmp 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/vercmp_test.php)"
-fi
+run_phpunit "vercmp_test.php" "vercmp" "vercmp 단위 테스트"
 
 # --- ingest_parse 단위 테스트 -------------------------------------------------
 # ingest.php 의 순수 변환(패키지/노출/컨테이너/changelog 파싱, 내용해시, 패키지 diff)을
 # server/src/ingest_parse.php 로 뽑아냈다. 예전엔 이 파싱 로직에 단위테스트가 0개였다 —
 # vercmp 처럼 서버 없이 도는 정적 검사라 스모크 앞단에 묶는다.
-printf "\n[ingest_parse]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/ingest_parse_test.php >/dev/null 2>&1; then
-  ok "ingest_parse 단위 테스트"
-else
-  no "ingest_parse 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/ingest_parse_test.php)"
-fi
+run_phpunit "ingest_parse_test.php" "ingest_parse" "ingest_parse 단위 테스트"
 
 # --- 에이전트 JSON 빌더 -------------------------------------------------------
 # 에이전트는 대상 서버에 아무것도 요구하지 않는다 → jq 없이 awk 로 JSON 을 만든다.
@@ -159,102 +163,48 @@ fi
 # --- ssg 단위 테스트 ----------------------------------------------------------
 # 보안설정 점검(CCE)을 검증된 룰셋(SCAP Security Guide)에 묶는다. 매핑에 오타가 나면 조용히
 # "자체 기준" 으로 떨어져 근거가 사라진다. 파서도 Jinja 섞인 실제 형식으로 고정한다.
-printf "\n[ssg]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/ssg_test.php >/dev/null 2>&1; then
-  ok "ssg 단위 테스트 (룰 파싱 · CIS/NIST 매핑)"
-else
-  no "ssg 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/ssg_test.php)"
-fi
+run_phpunit "ssg_test.php" "ssg" "ssg 단위 테스트 (룰 파싱 · CIS/NIST 매핑)" "ssg 단위 테스트"
 
 # --- rhunfixed 단위 테스트 ----------------------------------------------------
 # Red Hat 미수정 CVE(조치 불가) 판정. 컴포넌트 매핑이나 릴리스 매칭이 틀리면 조용히 미탐이 된다
 # (바이너리 이름으로 물으면 API 가 0건을 주고, "Linux 1" 이 "Linux 10" 에 걸리면 남의 상태를 쓴다).
-printf "\n[rhunfixed]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/rhunfixed_test.php >/dev/null 2>&1; then
-  ok "rhunfixed 단위 테스트 (컴포넌트·릴리스 판정)"
-else
-  no "rhunfixed 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/rhunfixed_test.php)"
-fi
+run_phpunit "rhunfixed_test.php" "rhunfixed" "rhunfixed 단위 테스트 (컴포넌트·릴리스 판정)" "rhunfixed 단위 테스트"
 
 # --- rpmdb 단위 테스트 --------------------------------------------------------
 # 컨테이너의 rpm DB 를 중앙이 파싱한다 — 컨테이너에 rpm 바이너리가 없고 호스트에도 rpm 이 없으면
 # 이 경로 말고는 그 패키지를 볼 방법이 아예 없다. 파서가 틀리면 통째로 사라진다(미탐).
-printf "\n[rpmdb]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/rpmdb_test.php >/dev/null 2>&1; then
-  ok "rpmdb 단위 테스트 (rpm 헤더 파싱)"
-else
-  no "rpmdb 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/rpmdb_test.php)"
-fi
+run_phpunit "rpmdb_test.php" "rpmdb" "rpmdb 단위 테스트 (rpm 헤더 파싱)" "rpmdb 단위 테스트"
 
 # --- distro 단위 테스트 -------------------------------------------------------
 # 패키지 출처·커널 판정(server/src/distro.php). 판정 하나가 findings 수천 건을 좌우한다 —
 # 커널 소스에서 나온 헤더·메타패키지 21개에 커널 CVE 369건이 곱해져 LOW 7,925건이 뜬 적이 있다.
-printf "\n[distro]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/distro_test.php >/dev/null 2>&1; then
-  ok "distro 단위 테스트 (출처·커널 판정)"
-else
-  no "distro 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/distro_test.php)"
-fi
+run_phpunit "distro_test.php" "distro" "distro 단위 테스트 (출처·커널 판정)" "distro 단위 테스트"
 
 # --- debtracker 단위 테스트 ---------------------------------------------------
 # 데비안 보안 트래커 파서·판정(백포트 억제 근거). 느슨하면 오탐이 남고, 빡빡하면 진짜 취약점을
 # "고쳐졌다"고 지운다(미탐). 규칙을 debsecan 원본과 대조해 옮겼으므로 회귀를 여기서 막는다.
-printf "\n[debtracker]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/debtracker_test.php >/dev/null 2>&1; then
-  ok "debtracker 단위 테스트 (데비안 백포트 판정)"
-else
-  no "debtracker 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/debtracker_test.php)"
-fi
+run_phpunit "debtracker_test.php" "debtracker" "debtracker 단위 테스트 (데비안 백포트 판정)" "debtracker 단위 테스트"
 
 # --- rhoval 단위 테스트 -------------------------------------------------------
 # RHEL 계열 OVAL 파서·백포트 판정. 같은 (패키지,CVE)가 마이너 스트림마다 다른 EVR 로 고쳐지는데
 # (el9_2 · el9_4), 스트림을 잘못 고르면 오탐(안 지움) 또는 미탐(잘못 지움)이 난다.
-printf "\n[rhoval]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/rhoval_test.php >/dev/null 2>&1; then
-  ok "rhoval 단위 테스트 (OVAL 파싱·스트림 판정)"
-else
-  no "rhoval 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/rhoval_test.php)"
-fi
+run_phpunit "rhoval_test.php" "rhoval" "rhoval 단위 테스트 (OVAL 파싱·스트림 판정)" "rhoval 단위 테스트"
 
 # --- ubuntuoval 단위 테스트 ---------------------------------------------------
 # 우분투 OVAL 한 파일이 억제(조치 EVR)와 조치 불가(state 없는 테스트)를 동시에 만든다.
 # state 없는 테스트를 버리면 "아직 수정본 없음" 이 통째로 미탐이 된다 — 그걸 고정한다.
-printf "\n[ubuntuoval]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/ubuntuoval_test.php >/dev/null 2>&1; then
-  ok "ubuntuoval 단위 테스트 (조치 EVR · 미수정 CVE · 코드명)"
-else
-  no "ubuntuoval 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/ubuntuoval_test.php)"
-fi
+run_phpunit "ubuntuoval_test.php" "ubuntuoval" "ubuntuoval 단위 테스트 (조치 EVR · 미수정 CVE · 코드명)" "ubuntuoval 단위 테스트"
 
 # --- kernelcve 단위 테스트 ----------------------------------------------------
 # 커널은 배포판이 아니라 업스트림(kernel.org CNA)이 판정한다. 스트림(6.1.y·6.18.y)을 잘못 고르면
 # 다른 스트림의 수정본을 내 것으로 읽어 진짜 커널 취약점을 조용히 지운다(미탐).
-printf "\n[kernelcve]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/kernelcve_test.php >/dev/null 2>&1; then
-  ok "kernelcve 단위 테스트 (CNA 파싱 · 스트림 판정 · tar 스캔)"
-else
-  no "kernelcve 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/kernelcve_test.php)"
-fi
+run_phpunit "kernelcve_test.php" "kernelcve" "kernelcve 단위 테스트 (CNA 파싱 · 스트림 판정 · tar 스캔)" "kernelcve 단위 테스트"
 
 # --- schedule 단위 테스트 -----------------------------------------------------
 # feeds.php 의 cron 파싱·스케줄 계산(vg_cron_*/vg_schedule_*)을 server/src/schedule.php 로
 # 뽑아냈다 — 피드 실행과 무관한 순수 시간 계산이라 SRP 상 분리. ingest_parse 처럼 서버 없이
 # 도는 정적 검사라 스모크 앞단에 묶는다.
-printf "\n[schedule]\n"
-if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-     -w /w php:8.3-cli php tests/schedule_test.php >/dev/null 2>&1; then
-  ok "schedule 단위 테스트"
-else
-  no "schedule 단위 테스트  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/schedule_test.php)"
-fi
+run_phpunit "schedule_test.php" "schedule" "schedule 단위 테스트"
 
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"
