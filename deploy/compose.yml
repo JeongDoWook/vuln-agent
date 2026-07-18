@@ -19,6 +19,11 @@ x-app-env: &app-env
   DB_PASS_FILE: /run/secrets/mysql_password
   INGEST_TOKEN_FILE: /run/secrets/ingest_token
   ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+  # translate(LibreTranslate)는 db 와 달리 워크트리마다 독립된 인스턴스다(compose.dev.yml 참고,
+  # 이유는 그 파일 헤더에). 기본은 서비스명("translate", prod 처럼 프로젝트가 하나뿐인 환경에서
+  # 유효)이고, dev 는 트리마다 컨테이너명이 다르므로 compose_runner.sh 가 항상
+  # TRANSLATE_HOST=http://<이 트리의 translate 컨테이너명>:5000 로 덮어쓴다.
+  TRANSLATE_HOST: ${TRANSLATE_HOST:-http://translate:5000}
   TZ: Asia/Seoul
 
 x-app-secrets: &app-secrets
@@ -79,6 +84,29 @@ services:
     environment: *app-env
     secrets: *app-secrets
     command: ["sh", "-c", "while true; do php /var/www/html/bin/scheduler.php || true; sleep 60; done"]
+    networks:
+      - vulnagent
+
+  # --- LibreTranslate: CVE/KEV 요약 영→한 기계번역 (자체 호스팅, 외부 포트 미노출) ---
+  #   db 와 달리 워크트리마다 독립 인스턴스로 띄운다(compose.dev.yml 헤더에 이유 상세).
+  #   web/scheduler 는 이 서비스가 없어도 죽지 않는다 — 번역은 부가 기능이라 일부러
+  #   depends_on 을 걸지 않는다(vg_translate_ko() 가 타임아웃/에러를 흡수해 null 을 돌려줄 뿐
+  #   CVE 수집·매칭 파이프라인을 막지 않는다).
+  translate:
+    image: libretranslate/libretranslate:latest
+    environment:
+      # 영어→한글만 쓰므로 로드 언어를 제한해 기동 시간·메모리를 줄인다(공식 문서·소스 확인:
+      # libretranslate/default_values.py 의 LOAD_ONLY → env LT_LOAD_ONLY).
+      LT_LOAD_ONLY: en,ko
+    healthcheck:
+      # 공식 docker-compose.yml 과 동일한 헬스체크(scripts/healthcheck.py) — 모델 로드 중엔
+      # /tmp/booting.flag 를 보고 즉시 성공 처리를 건너뛴다. 첫 기동은 모델 다운로드까지
+      # 포함해 수 분 걸릴 수 있어 start_period·retries 를 넉넉히 둔다.
+      test: ["CMD-SHELL", "./venv/bin/python scripts/healthcheck.py"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
     networks:
       - vulnagent
 

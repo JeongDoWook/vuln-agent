@@ -282,13 +282,14 @@ case "$ENV" in
     export DB_DATA="$( (cd "$MAIN_ROOT" && pwd -W 2>/dev/null) || printf '%s' "$MAIN_ROOT" )/data/mysql"
 
     if [ -n "$WT_NAME" ]; then
-      # --- 워크트리: web+scheduler 만 이 워크트리 전용 프로젝트로 뜬다. DB 는 안 건드린다. ---
+      # --- 워크트리: web+scheduler+translate 만 이 워크트리 전용 프로젝트로 뜬다. DB 는 안 건드린다. ---
       ENV_FILE_ARGS=(-f compose.dev.yml -f compose.dev-net.yml)
       PROJECT="vulnagent-dev-$WT_NAME"
-      ENV_DISPLAY="Development · wt/$WT_NAME (web+scheduler 독립, DB 는 공용)"
+      ENV_DISPLAY="Development · wt/$WT_NAME (web+scheduler+translate 독립, DB 는 공용)"
       # 컨테이너명에 워크트리 접미사 — 같은 호스트에서 이름이 겹치면 충돌하므로 필수.
       export WEB_CONTAINER="vulnagent-web-dev-$WT_NAME"
       export SCHEDULER_CONTAINER="vulnagent-scheduler-dev-$WT_NAME"
+      export TRANSLATE_CONTAINER="vulnagent-translate-dev-$WT_NAME"
       # WEB_PORT 만 이 워크트리 로컬 .env.dev 에서 읽는다(wt.sh add 가 만듦) — 그 외 값은
       #   메인 트리 것을 그대로 쓴다(쉘 환경변수가 --env-file 값보다 우선한다).
       WT_ENV_FILE="$TREE_ROOT/deploy/.env.dev"
@@ -306,13 +307,19 @@ case "$ENV" in
       #   외부 네트워크의 서비스 별칭에 기대는 대신 명시적으로 고정한다(server/src/config.php 가
       #   DB_HOST 를 env 로 이미 읽으므로 이 값만 얹으면 된다. 새 추상화 불필요).
       export DB_HOST="vulnagent-db-dev"
+      # translate 는 db 와 달리 이 워크트리 전용 인스턴스다(아래 참고) — 서비스 별칭 "translate" 는
+      #   외부 네트워크에서 트리마다 겹치므로(같은 별칭을 여러 프로젝트가 동시에 등록) 쓸 수 없고,
+      #   컨테이너명을 직접 가리켜야 한다.
+      export TRANSLATE_HOST="http://$TRANSLATE_CONTAINER:5000"
     else
-      # --- 메인 트리: 지금처럼 db+web+scheduler 전부 한 프로젝트(vulnagent-dev)로 뜬다. ---
+      # --- 메인 트리: 지금처럼 db+web+scheduler+translate 전부 한 프로젝트(vulnagent-dev)로 뜬다. ---
       ENV_FILE_ARGS=(-f compose.dev.yml -f compose.dev-db.yml -f compose.dev-net.yml)
       PROJECT="vulnagent-dev"
-      ENV_DISPLAY="Development (db+web+scheduler, 공용)"
+      ENV_DISPLAY="Development (db+web+scheduler+translate, translate 는 트리별 독립)"
       export WEB_CONTAINER="vulnagent-web-dev"
       export SCHEDULER_CONTAINER="vulnagent-scheduler-dev"
+      export TRANSLATE_CONTAINER="vulnagent-translate-dev"
+      export TRANSLATE_HOST="http://$TRANSLATE_CONTAINER:5000"
       # DB_DATA(위에서 이미 메인 트리 절대경로로 고정) 는 named volume 이 아니라 바인드마운트다 —
       #   기존 dev 데이터(수백 MB)를 그대로 쓰고, 디스크에서 눈으로 확인·백업할 수 있다.
     fi ;;
@@ -353,14 +360,15 @@ echo ""
 
 # `up` 이면 기동 후 DB 마이그레이션을 이어서 적용한다(fresh 볼륨의 증분 스키마 반영).
 #   그 외 명령(down/logs/ps…)은 그대로 exec. migrate 는 DB healthy 를 스스로 기다린다.
-#   워크트리 dev 는 web/scheduler 만 대상으로 한다(--no-deps 로 db 는 이 프로젝트에서 절대
-#   시작하지 않는다 — db 는 메인 트리 프로젝트 소유). 마이그레이션은 그대로 돌린다: DB_CONTAINER 가
-#   트리와 무관하게 항상 vulnagent-db-dev 라 어느 워크트리에서 걸어도 공용 DB에 적용된다
+#   워크트리 dev 는 web/scheduler/translate 만 대상으로 한다(--no-deps 로 db 는 이 프로젝트에서
+#   절대 시작하지 않는다 — db 는 메인 트리 프로젝트 소유. translate 는 db 와 달리 이 워크트리
+#   전용이라 여기서 같이 띄운다). 마이그레이션은 그대로 돌린다: DB_CONTAINER 가 트리와 무관하게
+#   항상 vulnagent-db-dev 라 어느 워크트리에서 걸어도 공용 DB에 적용된다
 #   (migrate.sh 의 flock 이 DB_CONTAINER 기준이라 동시 실행도 안전).
 if [ "${1:-}" = "up" ]; then
   if [ "$ENV" = "dev" ] && [ -n "$WT_NAME" ]; then
     shift
-    "${COMPOSE[@]}" up --no-deps "$@" web scheduler
+    "${COMPOSE[@]}" up --no-deps "$@" web scheduler translate
   else
     "${COMPOSE[@]}" "$@"
   fi
