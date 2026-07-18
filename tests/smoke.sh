@@ -419,7 +419,10 @@ gobody=$(curl -s -b "$JAR" "$BASE/findings.php?q=golang.org%2Fx%2Fnet")
 assert_contains "$gobody" "CVE-2023-45288" "컨테이너의 Go 의존성 취약점이 매칭됨(golang.org/x/net v0.20.0)"
 # 패키지 DB 도 Go 도 없는 이미지(whisker=nginx) — 바이너리에서 뽑은 버전을 OSV 의 Bitnami
 #   생태계로 매칭한다. 이게 죽으면 그 컨테이너는 다시 "판정 불가"로 돌아간다.
-upbody=$(curl -s -b "$JAR" "$BASE/cve.php?cve=CVE-2023-44487&tab=locations")
+# cve.php?tab=locations 는 전역(모든 워크트리·모든 호스트) 목록이라 공용 dev DB 가 자랄수록
+#   (실측 1,138건) 1페이지 밖으로 밀려 깨진다 — findings.php 의 host 필터(위 WEB01_ID)로
+#   이 워크트리의 호스트 하나로 좁히고, q 로 이 CVE 하나만 골라 전역 건수와 무관하게 만든다.
+upbody=$(curl -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID&q=CVE-2023-44487")
 assert_contains "$upbody" "upsvc" "업스트림 바이너리(nginx 1.24.0) 취약점이 그 컨테이너에 매칭됨"
 assert_contains "$body" "패키지 DB 가 없는 이미지" "판정 불가 사유가 '패키지 DB 없음'으로 구분됨"
 body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
