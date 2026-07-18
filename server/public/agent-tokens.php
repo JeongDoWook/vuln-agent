@@ -80,7 +80,7 @@ $csrf = vg_csrf_token();
 
 // 목록 페이지네이션.
 $perPage = vg_perpage();
-$page    = max(1, (int) ($_GET['page'] ?? 1));
+$page    = vg_page();
 $total   = (int) $pdo->query('SELECT COUNT(*) FROM tb_agent_tokens WHERE is_deleted = 0')->fetchColumn();
 $offset  = ($page - 1) * $perPage;
 

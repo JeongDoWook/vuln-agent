@@ -140,7 +140,7 @@ $q   = trim((string) ($_GET['q'] ?? ''));
 $pkg = trim((string) ($_GET['pkg'] ?? ''));
 $rel = trim((string) ($_GET['rel'] ?? ''));
 $src = (string) ($_GET['src'] ?? '');
-$page = max(1, (int) ($_GET['page'] ?? 1));
+$page = vg_page();
 $perPage = vg_perpage();
 
 // 소스는 화이트리스트. 사용자 입력이 SQL(테이블명·컬럼명)에 그대로 들어가는 자리라 필수다.

@@ -25,7 +25,7 @@ $err = null; $rows = []; $total = 0; $ecos = []; $summaryAt = '';
 $q    = trim((string) ($_GET['q'] ?? ''));
 $eco  = trim((string) ($_GET['eco'] ?? ''));
 $sort = (string) ($_GET['sort'] ?? '');
-$page = max(1, (int) ($_GET['page'] ?? 1));
+$page = vg_page();
 $perPage = vg_perpage();
 
 if (!isset(VG_PKG_SORTS[$sort])) { $sort = 'cves'; }

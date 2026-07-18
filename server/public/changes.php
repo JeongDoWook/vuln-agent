@@ -37,7 +37,7 @@ $baselineHosts = [];   // 스캔이 1개뿐이라 비교 불가(첫 수집)
 
 $hostId = (int) ($_GET['host'] ?? 0);
 $type   = (string) ($_GET['type'] ?? '');
-$page   = max(1, (int) ($_GET['page'] ?? 1));
+$page   = vg_page();
 $perPage = vg_perpage();
 if (!isset(VG_CHANGE_TYPES[$type])) { $type = ''; }
 

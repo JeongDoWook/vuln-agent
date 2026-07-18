@@ -32,7 +32,7 @@ if (!in_array($st, $stOptions, true)) { $st = ''; }
 // 조치 가능성: '' 전체 / action 조치 가능 / nofix 조치 불가(벤더가 수정본을 안 냈다)
 //              / restart 재시작·재부팅만 하면 됨(패치는 이미 됐다 — 자산 상세에서 넘어온다)
 if (!in_array($fx, ['action', 'nofix', 'restart'], true)) { $fx = ''; }
-$page   = max(1, (int) ($_GET['page'] ?? 1));
+$page   = vg_page();
 $hostId = (int) ($_GET['host'] ?? 0);
 $scanId = (int) ($_GET['scan_id'] ?? 0);
 

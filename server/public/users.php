@@ -52,7 +52,7 @@ $me = vg_current_user();
 
 // 목록 페이지네이션 — 계정이 쌓이면 한 화면에 다 쏟지 않는다.
 $perPage = vg_perpage();
-$page    = max(1, (int) ($_GET['page'] ?? 1));
+$page    = vg_page();
 $total   = (int) $pdo->query('SELECT COUNT(*) FROM tb_users WHERE is_deleted = 0')->fetchColumn();
 $offset  = ($page - 1) * $perPage;
 

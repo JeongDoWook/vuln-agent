@@ -340,6 +340,11 @@ function vg_perpage(int $default = VG_PERPAGE_DEFAULT): int {
     return in_array($v, VG_PERPAGE_OPTIONS, true) ? $v : $default;
 }
 
+// 현재 페이지 번호. ?page= 를 정수로 파싱해 1 미만이면 1로 올린다.
+function vg_page(): int {
+    return max(1, (int) ($_GET['page'] ?? 1));
+}
+
 // "페이지당 N개" 셀렉트. onchange 시 현재 쿼리스트링 유지한 채 per_page 변경 + page=1 로 이동.
 //   data-nav 는 app.js 가 이동 시작을 알아채 상단 진행바를 띄우는 표식이다.
 function vg_perpage_select(): void {

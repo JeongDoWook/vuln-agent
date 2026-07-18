@@ -17,7 +17,7 @@ $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0
 $hostCount = 0; $total = 0; $sevByScan = [];
 $kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
 $delta = []; $osDist = []; $topHosts = [];
-$page = max(1, (int) ($_GET['page'] ?? 1));
+$page = vg_page();
 $perPage = vg_perpage();
 try {
     $pdo = vg_pdo();

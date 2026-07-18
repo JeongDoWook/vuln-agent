@@ -13,7 +13,7 @@ vg_require_menu('advisories');
 
 $err = null; $rows = []; $total = 0;
 $q = trim((string) ($_GET['q'] ?? ''));
-$page = max(1, (int) ($_GET['page'] ?? 1));
+$page = vg_page();
 $perPage = vg_perpage();
 
 try {
