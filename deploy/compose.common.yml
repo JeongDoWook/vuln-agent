@@ -9,6 +9,7 @@ services:
   db:
     restart: unless-stopped
     pids_limit: 512
+    mem_limit: 1g
     logging:
       driver: "json-file"
       options:
@@ -18,6 +19,7 @@ services:
   web:
     restart: unless-stopped
     pids_limit: 256
+    mem_limit: 768m
     logging:
       driver: "json-file"
       options:
@@ -27,6 +29,7 @@ services:
   scheduler:
     restart: unless-stopped
     pids_limit: 128
+    mem_limit: 384m
     logging:
       driver: "json-file"
       options:
