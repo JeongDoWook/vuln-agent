@@ -341,6 +341,41 @@ if (!function_exists('vg_scope_rank')) {
     }
 
     /**
+     * 구동 커널(uname -r) 파악 + 그 커널 버전에 대한 업스트림(kernel.org CNA) 수정 여부 판정.
+     *   배포판 EVR 이 아니라 uname 버전으로 본다 — 배포판 트래커/OVAL 관할 밖(라즈베리·자체빌드)
+     *   커널만 여기서 담당한다(호출부 vg_match_scan 의 커널 CNA 억제 참고).
+     */
+    function vg_match_load_kernel_context(PDO $pdo, array $packages, array $affected, array $scan): array {
+        // 구동 커널의 패키지가 실제로 설치 목록에 있을 때만 "나머지는 안 돈다"고 판단한다.
+        //   (없으면 판단 보류 → 아무것도 억제하지 않는다. 잘못 억제하면 커널 CVE 가 통째로 사라진다.)
+        $runningKernel        = (string) ($scan['running_kernel'] ?? '');
+        $runningKernelPresent = false;
+        if ($runningKernel !== '') {
+            foreach ($packages as $rp) {
+                if ((int) ($rp['container_id'] ?? 0) !== 0) { continue; }   // 호스트 패키지만
+                if (vg_is_running_kernel_pkg((string) $rp['name'], (string) $rp['version'], $runningKernel)) {
+                    $runningKernelPresent = true;
+                    break;
+                }
+            }
+        }
+
+        // 대상은 이 스캔의 커널 후보 CVE 뿐 — 전량 적재하면 매처 메모리가 또 터진다.
+        $kernelCves = [];
+        foreach ($affected as $key => $rows) {
+            if (!vg_is_kernel_source((string) $key) && !vg_is_kernel_code_pkg((string) $key)) { continue; }
+            foreach ($rows as $r) { $kernelCves[(string) $r['cve']] = true; }
+        }
+        $kernelFixed = vg_kernel_fixed_set($pdo, $runningKernel, array_keys($kernelCves));
+
+        return [
+            'runningKernel'        => $runningKernel,
+            'runningKernelPresent' => $runningKernelPresent,
+            'kernelFixed'          => $kernelFixed,
+        ];
+    }
+
+    /**
      * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
      */
     function vg_match_scan(PDO $pdo, int $scanId): array {
@@ -375,31 +410,13 @@ if (!function_exists('vg_scope_rank')) {
         $vendorErrata = $sup['vendorErrata'];
         $unfixed      = $sup['unfixed'];
 
-        // 구동 커널(uname -r) — 커널 CVE 는 **지금 도는 커널**에만 해당한다.
-        //   그 커널의 패키지가 실제로 설치 목록에 있을 때만 "나머지는 안 돈다"고 판단한다.
-        //   (없으면 판단 보류 → 아무것도 억제하지 않는다. 잘못 억제하면 커널 CVE 가 통째로 사라진다.)
-        $runningKernel        = (string) ($scan['running_kernel'] ?? '');
-        $runningKernelPresent = false;
-        if ($runningKernel !== '') {
-            foreach ($packages as $rp) {
-                if ((int) ($rp['container_id'] ?? 0) !== 0) { continue; }   // 호스트 패키지만
-                if (vg_is_running_kernel_pkg((string) $rp['name'], (string) $rp['version'], $runningKernel)) {
-                    $runningKernelPresent = true;
-                    break;
-                }
-            }
-        }
-
         // 커널 판정의 정본은 **업스트림(kernel.org CNA)** 이다 — 배포판 EVR 이 아니라 uname 버전으로 본다.
         //   라즈베리·자체빌드 커널은 배포판 트래커/OVAL 관할 밖이라 "서드파티 → 자동 판정 불가" 로
         //   전부 남았다(실측 raspberrypi5-00: LOW 2,069 중 702건이 커널 하나. 6.18 커널에 2004년 CVE 까지).
-        //   대상은 이 스캔의 커널 후보 CVE 뿐 — 전량 적재하면 매처 메모리가 또 터진다.
-        $kernelCves = [];
-        foreach ($affected as $key => $rows) {
-            if (!vg_is_kernel_source((string) $key) && !vg_is_kernel_code_pkg((string) $key)) { continue; }
-            foreach ($rows as $r) { $kernelCves[(string) $r['cve']] = true; }
-        }
-        $kernelFixed = vg_kernel_fixed_set($pdo, $runningKernel, array_keys($kernelCves));
+        $kernelCtx            = vg_match_load_kernel_context($pdo, $packages, $affected, $scan);
+        $runningKernel        = $kernelCtx['runningKernel'];
+        $runningKernelPresent = $kernelCtx['runningKernelPresent'];
+        $kernelFixed          = $kernelCtx['kernelFixed'];
 
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
