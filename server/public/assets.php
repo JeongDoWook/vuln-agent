@@ -22,7 +22,7 @@ $err = null; $msg = null; $rows = []; $total = 0; $sevByScan = [];
 $stateCounts = ['ok' => 0, 'stale' => 0, 'offline' => 0, 'none' => 0];
 $q     = trim((string) ($_GET['q'] ?? ''));
 $state = trim((string) ($_GET['state'] ?? ''));
-$page  = max(1, (int) ($_GET['page'] ?? 1));
+$page  = vg_page();
 $perPage = vg_perpage();
 
 // 수집 상태 어휘. vg_asset_state() 가 뱃지를 그리는 기준(VG_STALE_MIN/VG_OFFLINE_MIN)과 같아야 한다.

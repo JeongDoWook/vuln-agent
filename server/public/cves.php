@@ -28,7 +28,7 @@ $kev  = (string) ($_GET['kev'] ?? '');
 $eTop = (string) ($_GET['epss'] ?? '');   // 상위 N% (탭)
 $year = (string) ($_GET['year'] ?? '');
 $sort = (string) ($_GET['sort'] ?? '');
-$page = max(1, (int) ($_GET['page'] ?? 1));
+$page = vg_page();
 $perPage = vg_perpage();
 
 if (!isset(VG_CVE_SORTS[$sort])) { $sort = 'published'; }

@@ -18,7 +18,7 @@ require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = [];
-$locTotal = 0; $assetTotal = 0; $page = max(1, (int) ($_GET['page'] ?? 1)); $perPage = vg_perpage();
+$locTotal = 0; $assetTotal = 0; $page = vg_page(); $perPage = vg_perpage();
 
 $tab = (string) ($_GET['tab'] ?? 'overview');
 if (!in_array($tab, ['overview', 'affected', 'locations'], true)) { $tab = 'overview'; }

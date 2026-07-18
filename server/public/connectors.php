@@ -165,7 +165,7 @@ $connectors = $pdo->query('SELECT * FROM tb_feed_connectors WHERE is_deleted = 0
 const VG_LOG_PEEK = 8;
 
 $perPage  = vg_perpage();
-$page     = max(1, (int) ($_GET['page'] ?? 1));
+$page     = vg_page();
 $connFilter = (int) ($_GET['conn'] ?? 0);
 
 $peek = $pdo->prepare(

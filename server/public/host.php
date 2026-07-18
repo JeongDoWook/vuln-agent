@@ -109,7 +109,7 @@ try {
         $tab = (string) ($_GET['tab'] ?? 'vuln');
         if (!in_array($tab, $validTabs, true)) { $tab = 'vuln'; }
 
-        $page   = max(1, (int) ($_GET['page'] ?? 1));
+        $page   = vg_page();
         $offset = ($page - 1) * $perPage;
 
         // --- 활성 탭 데이터만 조회(+페이지네이션) ---

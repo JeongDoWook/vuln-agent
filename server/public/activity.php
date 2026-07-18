@@ -14,7 +14,7 @@ vg_require_menu('activity');
 $err = null; $rows = []; $total = 0; $scopes = [];
 $scope = trim((string) ($_GET['scope'] ?? ''));
 $q = trim((string) ($_GET['q'] ?? ''));
-$page = max(1, (int) ($_GET['page'] ?? 1));
+$page = vg_page();
 $perPage = vg_perpage();
 
 // 액션(activity_type) 코드 → 한글 라벨(SSOT: vg_activity_type_labels(), user.php 와 공유).
