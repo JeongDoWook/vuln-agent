@@ -1,0 +1,19 @@
+# 빌드 컨텍스트(server/)에서 이미지에 넣지 않을 파일들.
+# 루트 .gitignore 와 동일한 취지 — git 에 안 들어가는 건 이미지에도 안 들어가는 게 일관적이다.
+# (server/ 안엔 현재 vendor·.env·에디터 산출물이 실제로 없지만, 로컬에서 생겨도 안전하게 배제한다)
+
+.git
+.gitignore
+.env
+.env.*
+*.local
+
+/vendor/
+composer.lock
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.log
