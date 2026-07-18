@@ -1135,3 +1135,63 @@ form.card .sub { text-align: center; }
 .matrix th:first-child, .matrix td:first-child { text-align: left; }
 .matrix input[type=checkbox] { transform: scale(1.3); }
 .matrix .col-role { width: 120px; }
+
+/* --- 로그인 화면 -----------------------------------------------------------
+ * form.card 셀렉터는 login.php 에서만 쓴다(다른 페이지엔 없음) — 그래서
+ * body:has(form.card) 로 배경 그라디언트를 이 페이지에만 스코프한다. body 자체의
+ * --bg 값은 안 바꾼다(전역 토큰), 기존 색을 얹은 은은한 radial 만 겹친다. */
+body:has(form.card) {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 60% 45% at 50% -8%, rgb(47 111 237 / .14), transparent 62%),
+    radial-gradient(ellipse 45% 35% at 100% 100%, rgb(37 99 224 / .08), transparent 60%),
+    var(--bg);
+}
+:root[data-theme="dark"] body:has(form.card) {
+  background:
+    radial-gradient(ellipse 60% 45% at 50% -8%, rgb(31 111 235 / .20), transparent 62%),
+    radial-gradient(ellipse 45% 35% at 100% 100%, rgb(88 166 255 / .09), transparent 60%),
+    var(--bg);
+}
+
+/* 카드 자체 — 배경 위에 붕 뜬 느낌(진한 그림자) + 상단 브랜드 띠 */
+form.card {
+  position: relative;
+  box-shadow: var(--shadow-lg);
+}
+form.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+form.card h1 { margin: .3rem 0 .3rem; font-size: 1.5rem; }
+form.card .sub { margin-bottom: 1.6rem; }
+form.card label:first-of-type { margin-top: .2rem; }
+
+/* 포커스/hover 를 로그인 화면에서만 더 또렷하게(전역 input/.btn 규칙은 그대로 둔다) */
+form.card input[type=text]:focus, form.card input[type=password]:focus {
+  box-shadow: var(--ring);
+}
+form.card .btn--primary:hover {
+  box-shadow: 0 4px 14px rgb(47 111 237 / .35);
+}
+:root[data-theme="dark"] form.card .btn--primary:hover {
+  box-shadow: 0 4px 14px rgb(31 111 235 / .45);
+}
+
+@media (max-width: 860px) {
+  form.card { margin: 1.6rem auto; max-width: calc(100% - 2rem); padding: 1.6rem 1.3rem; }
+  body:has(form.card) {
+    background:
+      radial-gradient(ellipse 80% 30% at 50% -5%, rgb(47 111 237 / .12), transparent 60%),
+      var(--bg);
+  }
+  :root[data-theme="dark"] body:has(form.card) {
+    background:
+      radial-gradient(ellipse 80% 30% at 50% -5%, rgb(31 111 235 / .18), transparent 60%),
+      var(--bg);
+  }
+}
