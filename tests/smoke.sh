@@ -419,7 +419,11 @@ gobody=$(curl -s -b "$JAR" "$BASE/findings.php?q=golang.org%2Fx%2Fnet")
 assert_contains "$gobody" "CVE-2023-45288" "컨테이너의 Go 의존성 취약점이 매칭됨(golang.org/x/net v0.20.0)"
 # 패키지 DB 도 Go 도 없는 이미지(whisker=nginx) — 바이너리에서 뽑은 버전을 OSV 의 Bitnami
 #   생태계로 매칭한다. 이게 죽으면 그 컨테이너는 다시 "판정 불가"로 돌아간다.
-upbody=$(curl -s -b "$JAR" "$BASE/cve.php?cve=CVE-2023-44487&tab=locations")
+# cve.php?tab=locations 는 이 CVE 전체(전 호스트 합산)를 페이지네이션한다 — 공용 DB 에
+#   같은 광범위 CVE(nginx Rapid Reset)가 여러 워크트리에서 반복 적재되면 이번 컨테이너가
+#   1페이지 밖으로 밀려난다. findings.php 는 host= 로 이 트리의 스캔 하나로,
+#   q= 로 이 CVE 하나로 좁혀 조회하므로 공용 DB 가 얼마나 커져도 안정적으로 1페이지 안에 있다.
+upbody=$(curl -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID&q=CVE-2023-44487")
 assert_contains "$upbody" "upsvc" "업스트림 바이너리(nginx 1.24.0) 취약점이 그 컨테이너에 매칭됨"
 assert_contains "$body" "패키지 DB 가 없는 이미지" "판정 불가 사유가 '패키지 DB 없음'으로 구분됨"
 body=$(curl -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
