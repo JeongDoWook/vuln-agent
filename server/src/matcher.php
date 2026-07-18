@@ -376,6 +376,73 @@ if (!function_exists('vg_scope_rank')) {
     }
 
     /**
+     * 한 패키지의 후보 CVE 를 모은다: 생태계 판정 → name/source_pkg 매칭 → 벤더 미수정 후보 병합.
+     *   빈 배열을 반환하면 "이 패키지는 매칭 대상이 없다"는 뜻이다(배포판 미지원 또는 후보 CVE
+     *   없음, 두 경우를 호출부가 구분하지 않고 그대로 건너뛰므로 합쳐도 무방하다).
+     */
+    function vg_match_pkg_candidates(
+        array $p, ?array $ctr, string $mgr, int $ctrId,
+        ?string $hostEco, string $family, array $affected, array $unfixed
+    ): array {
+        // 이 패키지가 속한 생태계 — OS 패키지는 배포판, 언어 패키지는 PyPI/npm/RubyGems/Packagist.
+        //   섞이면 이름만 같은 엉뚱한 CVE 가 붙는다(OS 의 curl vs npm 의 curl).
+        //   컨테이너 패키지는 **그 컨테이너의 배포판** 기준이다(호스트와 다를 수 있다).
+        $baseEco = $ctr !== null ? $ctr['eco'] : $hostEco;
+        $pkgFam  = $ctr !== null ? $ctr['family'] : $family;
+        $pkgEco  = vg_pkg_ecosystem($mgr, $baseEco);
+        // 컨테이너 배포판이 OSV 미지원이면 **배포판 패키지는** 판단 근거가 없다 → 매칭 안 한다(추측 금지).
+        //   단 언어 패키지(Go/PyPI/npm…)는 배포판과 무관하다. 여기서 같이 버리면,
+        //   배포판이 미지원이라는 이유로 Go 의존성 취약점을 통째로 놓친다(미탐).
+        if ($ctr !== null && $baseEco === null && vg_is_os_manager($mgr)) { return []; }
+
+        // pkg.name 또는 source_pkg 로 후보 CVE 수집.
+        //   비교 버전은 매칭된 키에 맞춘다 — OSV 의 deb 조치안은 **소스 버전** 기준이라
+        //   source_pkg 로 매칭됐으면 source_version 과 비교해야 한다(binNMU: 1.2.3-4+b1).
+        $cands = [];   // cve => ['cvss'=>, 'fixed'=>, 'cmpver'=>]
+        foreach ([[$p['name'], $p['version']], [$p['source_pkg'], $p['source_version'] ?: $p['version']]] as [$key, $cmpVer]) {
+            if (!$key || !isset($affected[$key])) { continue; }
+            // 커널 CVE 는 **커널 코드가 든 바이너리**에만 해당한다.
+            //   커널 소스(linux/kernel) 하나에서 헤더·빌드도구·메타패키지가 20개 넘게 나오는데,
+            //   source_pkg 가 같다는 이유로 커널 CVE 전량이 거기에도 매달렸다.
+            //   실측(raspberrypi5-00): linux 소스 패키지 21개 × CVE 369건 = LOW 7,925건이 오탐.
+            if (vg_is_os_manager($mgr) && vg_is_kernel_source($key) && !vg_is_kernel_code_pkg((string) $p['name'])) {
+                continue;
+            }
+            foreach ($affected[$key] as $row) {
+                // 생태계 필터 — 남의 배포판/생태계 행이 이름만 같다고 붙던 것을 막는다.
+                //   OS 패키지는 배포판 행만, 언어 패키지는 자기 생태계(PyPI 등) 행만 받는다.
+                if (!vg_eco_matches($row['eco'] ?? null, $pkgEco, $pkgFam)) { continue; }
+                // 언어 패키지는 'rpm'/'deb' 계열 표기 행과 무관하다(계열 토큰은 OS 전용).
+                if (!vg_is_os_manager($mgr) && !vg_eco_is_distro($row['eco'] ?? null)) { continue; }
+
+                // 조치안을 설치 버전과 직접 비교해도 되는 행인지(=배포판 EVR 인지) 표시.
+                $fixed = vg_eco_is_distro($row['eco'] ?? null) ? $row['fixed'] : null;
+
+                $cve = $row['cve'];
+                if (!isset($cands[$cve]) || ($cands[$cve]['fixed'] === null && $fixed !== null)) {
+                    $cands[$cve] = ['cvss' => $row['cvss'], 'fixed' => $fixed, 'cmpver' => (string) $cmpVer];
+                }
+            }
+        }
+
+        // 벤더가 **아직 안 고친** CVE — 수정본이 없어 조치할 수 없다(OVAL 엔 RHSA=수정본만 있다).
+        //   실측(UBI8): Trivy 523건 중 514건이 이것이었다. 이건 오탐이 아니라 미탐이었다.
+        //   조치안이 없으므로 버전 비교 억제가 걸리지 않고, no_fix 로 표시해 화면에서
+        //   "지금 고칠 수 있는 것" 과 분리한다 — 섞으면 조치 불가 500건이 고칠 수 있는 9건을 덮는다.
+        foreach ($unfixed[$ctrId][$p['name']] ?? [] as $cve => $info) {
+            if (isset($cands[$cve])) { continue; }               // 수정본이 있으면 그쪽이 우선
+            $cands[$cve] = [
+                'cvss'   => $info['cvss'],
+                'fixed'  => null,
+                'cmpver' => (string) $p['version'],
+                'no_fix' => (string) $info['state'],
+            ];
+        }
+
+        return $cands;
+    }
+
+    /**
      * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
      */
     function vg_match_scan(PDO $pdo, int $scanId): array {
@@ -478,60 +545,7 @@ if (!function_exists('vg_scope_rank')) {
             $ctrId = (int) ($p['container_id'] ?? 0);
             $ctr   = $ctrId > 0 ? ($ctrs[$ctrId] ?? null) : null;
 
-            // 이 패키지가 속한 생태계 — OS 패키지는 배포판, 언어 패키지는 PyPI/npm/RubyGems/Packagist.
-            //   섞이면 이름만 같은 엉뚱한 CVE 가 붙는다(OS 의 curl vs npm 의 curl).
-            //   컨테이너 패키지는 **그 컨테이너의 배포판** 기준이다(호스트와 다를 수 있다).
-            $baseEco = $ctr !== null ? $ctr['eco'] : $hostEco;
-            $pkgFam  = $ctr !== null ? $ctr['family'] : $family;
-            $pkgEco  = vg_pkg_ecosystem($mgr, $baseEco);
-            // 컨테이너 배포판이 OSV 미지원이면 **배포판 패키지는** 판단 근거가 없다 → 매칭 안 한다(추측 금지).
-            //   단 언어 패키지(Go/PyPI/npm…)는 배포판과 무관하다. 여기서 같이 버리면,
-            //   배포판이 미지원이라는 이유로 Go 의존성 취약점을 통째로 놓친다(미탐).
-            if ($ctr !== null && $baseEco === null && vg_is_os_manager($mgr)) { continue; }
-
-            // pkg.name 또는 source_pkg 로 후보 CVE 수집.
-            //   비교 버전은 매칭된 키에 맞춘다 — OSV 의 deb 조치안은 **소스 버전** 기준이라
-            //   source_pkg 로 매칭됐으면 source_version 과 비교해야 한다(binNMU: 1.2.3-4+b1).
-            $cands = [];   // cve => ['cvss'=>, 'fixed'=>, 'cmpver'=>]
-            foreach ([[$p['name'], $p['version']], [$p['source_pkg'], $p['source_version'] ?: $p['version']]] as [$key, $cmpVer]) {
-                if (!$key || !isset($affected[$key])) { continue; }
-                // 커널 CVE 는 **커널 코드가 든 바이너리**에만 해당한다.
-                //   커널 소스(linux/kernel) 하나에서 헤더·빌드도구·메타패키지가 20개 넘게 나오는데,
-                //   source_pkg 가 같다는 이유로 커널 CVE 전량이 거기에도 매달렸다.
-                //   실측(raspberrypi5-00): linux 소스 패키지 21개 × CVE 369건 = LOW 7,925건이 오탐.
-                if (vg_is_os_manager($mgr) && vg_is_kernel_source($key) && !vg_is_kernel_code_pkg((string) $p['name'])) {
-                    continue;
-                }
-                foreach ($affected[$key] as $row) {
-                    // 생태계 필터 — 남의 배포판/생태계 행이 이름만 같다고 붙던 것을 막는다.
-                    //   OS 패키지는 배포판 행만, 언어 패키지는 자기 생태계(PyPI 등) 행만 받는다.
-                    if (!vg_eco_matches($row['eco'] ?? null, $pkgEco, $pkgFam)) { continue; }
-                    // 언어 패키지는 'rpm'/'deb' 계열 표기 행과 무관하다(계열 토큰은 OS 전용).
-                    if (!vg_is_os_manager($mgr) && !vg_eco_is_distro($row['eco'] ?? null)) { continue; }
-
-                    // 조치안을 설치 버전과 직접 비교해도 되는 행인지(=배포판 EVR 인지) 표시.
-                    $fixed = vg_eco_is_distro($row['eco'] ?? null) ? $row['fixed'] : null;
-
-                    $cve = $row['cve'];
-                    if (!isset($cands[$cve]) || ($cands[$cve]['fixed'] === null && $fixed !== null)) {
-                        $cands[$cve] = ['cvss' => $row['cvss'], 'fixed' => $fixed, 'cmpver' => (string) $cmpVer];
-                    }
-                }
-            }
-
-            // 벤더가 **아직 안 고친** CVE — 수정본이 없어 조치할 수 없다(OVAL 엔 RHSA=수정본만 있다).
-            //   실측(UBI8): Trivy 523건 중 514건이 이것이었다. 이건 오탐이 아니라 미탐이었다.
-            //   조치안이 없으므로 버전 비교 억제가 걸리지 않고, no_fix 로 표시해 화면에서
-            //   "지금 고칠 수 있는 것" 과 분리한다 — 섞으면 조치 불가 500건이 고칠 수 있는 9건을 덮는다.
-            foreach ($unfixed[$ctrId][$p['name']] ?? [] as $cve => $info) {
-                if (isset($cands[$cve])) { continue; }               // 수정본이 있으면 그쪽이 우선
-                $cands[$cve] = [
-                    'cvss'   => $info['cvss'],
-                    'fixed'  => null,
-                    'cmpver' => (string) $p['version'],
-                    'no_fix' => (string) $info['state'],
-                ];
-            }
+            $cands = vg_match_pkg_candidates($p, $ctr, $mgr, $ctrId, $hostEco, $family, $affected, $unfixed);
 
             if (!$cands) {
                 continue;
