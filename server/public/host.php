@@ -446,7 +446,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           if (empty($r['ssg_rule_id'])) {
               return '<span class="why">자체 기준(대응 SSG 룰 없음)</span>';
           }
-          $refs = json_decode((string) ($r['refs_json'] ?? ''), true) ?: [];
+          $refs = vg_json_col($r['refs_json'] ?? '');
           $html = '';
           foreach ($refs as $k => $v) {
               // 기관 기준만 보여준다 — cis-csc 같은 상위 카테고리는 항목 번호가 아니라 생략.

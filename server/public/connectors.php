@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // **기존 설정 위에 덮는다.** 전엔 $conn 을 새로 만들어 버려서, 폼에 없는 키가
                     // 편집·저장 한 번에 조용히 날아갔다 — debtracker/rhoval/ubuntuoval 의
                     // releases(수집 대상 릴리스)와 rhunfixed 의 max_detail 이 그렇다.
-                    $conn = $prev ? (json_decode((string) $prev['connection_json'], true) ?: []) : [];
+                    $conn = $prev ? vg_json_col($prev['connection_json']) : [];
                     // 폼이 소유한 키만 갈아끼운다. 일단 전부 지우고 이 타입이 실제로 읽는 것만
                     // 다시 채워, 타입을 바꿔 무관해진 값(kev 로 바꿨는데 남은 ecosystem)이 안 남게 한다.
                     foreach (vg_connector_form_fields() as $f) { unset($conn[$f]); }
@@ -207,8 +207,8 @@ $edit = null;
 if (isset($_GET['edit'])) {
     foreach ($connectors as $c) { if ((int) $c['id'] === (int) $_GET['edit']) { $edit = $c; } }
 }
-$econn = $edit ? (json_decode((string) $edit['connection_json'], true) ?: []) : [];
-$esched = $edit ? (json_decode((string) $edit['schedule_json'], true) ?: []) : [];
+$econn = $edit ? vg_json_col($edit['connection_json']) : [];
+$esched = $edit ? vg_json_col($edit['schedule_json']) : [];
 
 // 수집 상태 → 뱃지 톤(색은 CSS 가 결정).
 $statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'never' => 'muted'];
@@ -228,7 +228,7 @@ vg_header('피드 커넥터', 'connectors');
   <?php
   // 표시용 부가값(스케줄 라벨/다음 실행) 을 미리 계산해 각 행에 얹는다.
   foreach ($connectors as &$c) {
-      $sc = json_decode((string) $c['schedule_json'], true) ?: [];
+      $sc = vg_json_col($c['schedule_json']);
       $mode = $sc['mode'] ?? 'manual';
       switch ($mode) {
           case 'interval': $c['_sched_label'] = '매 ' . (int) ($sc['interval_minutes'] ?? 0) . '분'; break;
@@ -314,7 +314,7 @@ vg_header('피드 커넥터', 'connectors');
       $grouped = []; $others = [];
       foreach ($connectors as $c) {
           if ($c['connector_type'] === 'generic_api') {
-              $gc = json_decode((string) $c['connection_json'], true) ?: [];
+              $gc = vg_json_col($c['connection_json']);
               $gi = $genericRoleGroup[$gc['role'] ?? ''] ?? null;
           } else {
               $gi = $typeGroup[$c['connector_type']] ?? null;

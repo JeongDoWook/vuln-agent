@@ -39,7 +39,7 @@ $pdo = vg_pdo();
 // 커넥터 레코드에서 url·api_key 를 가져온다(없으면 기본 URL, 키 없이 동작).
 $row  = $pdo->query("SELECT connection_json FROM tb_feed_connectors WHERE connector_type='nvd' AND is_deleted=0 LIMIT 1")
             ->fetchColumn();
-$conn = $row ? (json_decode((string) $row, true) ?: []) : [];
+$conn = $row ? vg_json_col($row) : [];
 
 $hasKey = trim((string) ($conn['api_key'] ?? '')) !== '';
 fwrite(STDOUT, sprintf(

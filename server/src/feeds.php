@@ -191,8 +191,8 @@ function vg_feed_run(PDO $pdo, int $connectorId, string $triggerBy = 'schedule')
     }
     // 스케줄러가 돌리면 SYSTEM, 사람이 누르면 USER 로 감사 기록.
     $actor = $triggerBy === 'schedule' ? 'SYSTEM' : 'USER';
-    $conn     = json_decode((string) $c['connection_json'], true) ?: [];
-    $schedule = json_decode((string) $c['schedule_json'], true) ?: [];
+    $conn     = vg_json_col($c['connection_json']);
+    $schedule = vg_json_col($c['schedule_json']);
 
     $lg = $pdo->prepare('INSERT INTO tb_feed_collection_logs (connector_id, trigger_by, status) VALUES (?,?,?)');
     $lg->execute([$connectorId, $triggerBy, 'running']);
@@ -273,7 +273,7 @@ function vg_feed_due(PDO $pdo): array {
     $rows = $pdo->query('SELECT id, schedule_json, last_run_at FROM tb_feed_connectors WHERE enabled = 1 AND is_deleted = 0')->fetchAll();
     $due = [];
     foreach ($rows as $r) {
-        $sch = json_decode((string) $r['schedule_json'], true) ?: [];
+        $sch = vg_json_col($r['schedule_json']);
         if (vg_schedule_due($sch, $r['last_run_at'])) {
             $due[] = (int) $r['id'];
         }
