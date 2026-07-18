@@ -101,6 +101,7 @@ function Show-Status {
     Write-Host "=== 워커: $($w.task) ($($w.branch)) ===" -ForegroundColor Cyan
     Write-Host "git : $(Get-GitState $w.worktree $w.branch)  $(Get-PrState $w.branch)"
     Write-Host "mode: $($w.mode)  pid: $($w.pid)  시작: $($w.startedAt)"
+    if ($w.centralSessionTitle) { Write-Host "중앙 세션: $($w.centralSessionTitle) (S$($w.centralSessionId))" }
     Write-Host "--- 결과 파일 ($($w.result)) ---" -ForegroundColor DarkGray
     if (Test-Path $w.result) { Get-Content $w.result -Encoding UTF8 } else { Write-Host '(없음)' }
     return
@@ -117,6 +118,11 @@ function Show-Status {
       '^차단'   { 'Red' }
       '^진행중' { 'Yellow' }
       default   { 'Gray' }
+    }
+    if ($w.centralSessionTitle) {
+      $title = $w.centralSessionTitle
+      if ($title.Length -gt 20) { $title = $title.Substring(0, 20) + '…' }
+      Write-Host ("[{0}] " -f $title) -ForegroundColor DarkMagenta -NoNewline
     }
     Write-Host ("{0,-16} " -f $w.task) -ForegroundColor White -NoNewline
     Write-Host ("{0,-10} " -f $git) -ForegroundColor DarkGray -NoNewline

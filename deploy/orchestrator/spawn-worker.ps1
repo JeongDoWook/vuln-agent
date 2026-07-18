@@ -226,13 +226,26 @@ function Start-TermkeepWorker {
     $writer.Write($createMsg + "`n")
 
     # 응답 사이에 SessionList·다른 세션의 Output 이 섞여 오므로 SessionCreated 를 골라 읽는다.
+    # 같은 루프에서 SessionList 도 훑어 중앙 세션(자신) 자신의 name 을 함께 건진다 — 데몬
+    # 소스(termkeep/shared/src/lib.rs) 확인: SessionList 는 {type,sessions:[{id,name,alive,
+    # custom_name}]} 이고 rename_all 이 없어 필드명이 그대로다(id/name, camelCase 아님).
     $sid = $null
+    $centralTitle = $null
+    $centralSid = "$env:TERMKEEP_SESSION_ID".Trim()
     $deadline = (Get-Date).AddSeconds(10)
     while (-not $sid -and (Get-Date) -lt $deadline) {
       try { $line = $reader.ReadLine() } catch { continue }   # ReadTimeout → 마감시한 재검사
       if (-not $line) { continue }
       try { $m = $line | ConvertFrom-Json } catch { continue }
       if ($m.type -eq 'SessionCreated' -and $m.session_id) { $sid = [string]$m.session_id }
+      elseif ($m.type -eq 'SessionList' -and $centralSid -and $m.sessions) {
+        # 조회 실패는 부가 정보 손실일 뿐 — throw 하지 않는다(이 함수 전체가 실패해도
+        # window 로 폴백하는 원칙과 동일하게, 여기선 title 만 $null 로 남기고 계속 진행).
+        try {
+          $match = $m.sessions | Where-Object { "$($_.id)".Trim() -eq $centralSid } | Select-Object -First 1
+          if ($match) { $centralTitle = [string]$match.name }
+        } catch { }
+      }
       elseif ($m.type -eq 'Error') {
         Write-Host "⚠ termkeep 세션 생성 실패($($m.message)) → 새 PowerShell 창으로 대체." -ForegroundColor Yellow
         return $null
@@ -275,7 +288,7 @@ function Start-TermkeepWorker {
     $writer.Write($inputMsg + "`n")   # 성공 시 무응답이라 읽지 않는다
 
     Write-Host "✓ termkeep 새 세션: $TaskName (session $sid)" -ForegroundColor Green
-    return $sid
+    return [pscustomobject]@{ Sid = $sid; CentralTitle = $centralTitle }
   }
   catch {
     Write-Host "⚠ termkeep 연결/전송 실패($($_.Exception.Message)) → 새 PowerShell 창으로 대체." -ForegroundColor Yellow
@@ -457,6 +470,7 @@ claude $permFlag '$trigger'
 
 $proc = $null
 $termkeepSessionId = $null
+$centralSessionTitle = $null   # termkeep 모드가 아니면 그대로 $null(매니페스트에 빈 값으로 남는다)
 $eff = $LaunchMode   # 실제로 쓰인 모드(폴백되면 아래에서 바뀐다) — 매니페스트에 이 값을 남긴다
 if ($DryRun) {
   # 미리보기: 워크트리·지시문·매니페스트는 만들되 claude 는 띄우지 않는다.
@@ -468,7 +482,9 @@ else {
   if ($eff -eq 'termkeep') {
     # 세션 이름에만 소유 세션 태그를 붙인다 — 매니페스트의 task 등 다른 값은 슬러그 그대로다.
     $sessionName = Resolve-WorkerSessionName -TaskName $Task
-    $termkeepSessionId = Start-TermkeepWorker -LaunchPs1 $launchPs1 -TaskName $sessionName -WorkDir $wtDir
+    $startResult = Start-TermkeepWorker -LaunchPs1 $launchPs1 -TaskName $sessionName -WorkDir $wtDir
+    $termkeepSessionId = if ($startResult) { $startResult.Sid } else { $null }
+    $centralSessionTitle = if ($startResult) { $startResult.CentralTitle } else { $null }
     if ($termkeepSessionId) { Write-Host "  브랜치: $branch" -ForegroundColor Green }
     else { $eff = 'window' }   # daemon.json/연결/응답 문제 → 창으로 폴백
   }
@@ -509,6 +525,8 @@ $manifest = [ordered]@{
   finish            = $Finish
   pid               = if ($proc) { $proc.Id } else { $null }
   termkeepSessionId = $termkeepSessionId
+  centralSessionTitle = $centralSessionTitle
+  centralSessionId  = "$env:TERMKEEP_SESSION_ID".Trim()
   startedAt         = (Get-Date).ToString('s')
 }
 $manifest | ConvertTo-Json | Set-Content -Path $manifestPath -Encoding utf8
