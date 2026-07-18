@@ -406,9 +406,7 @@ if (!function_exists('vg_sshd_val')) {
     function vg_evaluate_cce(PDO $pdo, int $scanId, array $data): array {
         $rows = vg_cce_checks($data);
 
-        $ownTx = !$pdo->inTransaction();
-        if ($ownTx) { $pdo->beginTransaction(); }
-        try {
+        return vg_with_tx($pdo, function () use ($pdo, $scanId, $rows) {
             $pdo->prepare('DELETE FROM tb_cce_findings WHERE scan_id = ?')->execute([$scanId]);
             $ins = $pdo->prepare(
                 'INSERT INTO tb_cce_findings (scan_id, code, ssg_rule_id, title, result, severity, evidence, rationale)
@@ -422,11 +420,7 @@ if (!function_exists('vg_sshd_val')) {
                 $ins->execute([$scanId, $code, $ssg, $title, $result, $sev, $ev, $why]);
                 $counts[$result] = ($counts[$result] ?? 0) + 1;
             }
-            if ($ownTx) { $pdo->commit(); }
             return $counts;
-        } catch (Throwable $e) {
-            if ($ownTx && $pdo->inTransaction()) { $pdo->rollBack(); }
-            throw $e;
-        }
+        });
     }
 }

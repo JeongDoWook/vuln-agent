@@ -59,3 +59,35 @@ if (!function_exists('vg_sev_by_scan_ids')) {
         return $out;
     }
 }
+
+/**
+ * 콜백을 트랜잭션 안에서 실행한다. 이미 트랜잭션 중이면 새로 시작하지 않고 그대로
+ * 참여한다(중첩 호출 안전). $isolation 이 있으면 새 트랜잭션을 시작할 때만 적용한다.
+ */
+if (!function_exists('vg_with_tx')) {
+    function vg_with_tx(PDO $pdo, callable $fn, ?string $isolation = null)
+    {
+        $ownTx = !$pdo->inTransaction();
+        if ($ownTx) {
+            if ($isolation !== null) {
+                $pdo->exec("SET TRANSACTION ISOLATION LEVEL {$isolation}");
+            }
+            $pdo->beginTransaction();
+        }
+        try {
+            $result = $fn();
+            if ($ownTx) { $pdo->commit(); }
+            return $result;
+        } catch (Throwable $e) {
+            if ($ownTx && $pdo->inTransaction()) { $pdo->rollBack(); }
+            throw $e;
+        }
+    }
+}
+
+/** JSON 컬럼(문자열) 을 배열로. NULL·빈 문자열·파싱 실패는 전부 빈 배열. */
+if (!function_exists('vg_json_col')) {
+    function vg_json_col($val): array {
+        return json_decode((string) $val, true) ?: [];
+    }
+}

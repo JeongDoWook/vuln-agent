@@ -403,8 +403,7 @@ if (!function_exists('vg_scope_rank')) {
 
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
-        $ownTx = !$pdo->inTransaction();
-
+        //
         // 이 트랜잭션만 READ COMMITTED 로 내린다 — 기본 REPEATABLE READ 의 **갭락**이 동시 재매칭을
         //   데드락시킨다(1213). 실측한 사이클(SHOW ENGINE INNODB STATUS):
         //     아래 `DELETE ... WHERE scan_id = ?` 는 유니크키(uq_find·uq_supp) 선두가 scan_id 라
@@ -415,16 +414,16 @@ if (!function_exists('vg_scope_rank')) {
         //   READ COMMITTED 는 이 스캔에 갭락을 걸지 않으므로 원인 자체가 사라진다.
         //   락 순서 통일로는 못 고친다 — 둘이 **같은 순서로 같은 갭**을 잡다 나는 사고다.
         // 정합성: 이 트랜잭션 안에는 **쓰기(DELETE 2 + INSERT N)뿐이고 읽기가 하나도 없다** —
-        //   $packages·$affected 등 판단 근거는 전부 beginTransaction() 이전에 읽어 뒀다.
+        //   $packages·$affected 등 판단 근거는 전부 이 시점 이전에 읽어 뒀다.
         //   다시 읽는 게 없으니 비반복읽기·팬텀이 성립할 여지가 없고, 원자성은 격리수준과 무관하다.
-        // 범위: SET TRANSACTION(SESSION/GLOBAL 없이)은 **다음 트랜잭션 하나에만** 걸린다.
-        //   그래서 우리가 직접 여는 경우($ownTx)에만 건다 — 남의 트랜잭션 안이면 지금 것엔 안 먹고
-        //   엉뚱한 다음 트랜잭션에 새어 들어간다.
-        if ($ownTx) {
-            $pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
-            $pdo->beginTransaction();
-        }
-        try {
+        // 범위: SET TRANSACTION(SESSION/GLOBAL 없이)은 **다음 트랜잭션 하나에만** 걸린다 —
+        //   vg_with_tx 가 새로 트랜잭션을 열 때만 적용된다(중첩 호출이면 참여만 하고 안 건다).
+        return vg_with_tx($pdo, function () use (
+            $pdo, $scanId, $affected, $kernelFixed, $packages, $ctrs, $hostEco, $family,
+            $backport, $stale, $debsecan, $useDebsecan, $trackerLabel, $errata, $vendorErrata,
+            $unfixed, $scan, $kev, $loadMap, $procRunningPkgs, $procLoadedPkgs,
+            $runningKernelPresent, $runningKernel
+        ) {
 
         // 기존 findings 삭제 후 재삽입. INSERT 는 멱등(동시성 대비).
         $pdo->prepare('DELETE FROM tb_findings WHERE scan_id = ?')->execute([$scanId]);
@@ -734,12 +733,8 @@ if (!function_exists('vg_scope_rank')) {
             }
         }
 
-            if ($ownTx) { $pdo->commit(); }
             return $counts;
-        } catch (Throwable $e) {
-            if ($ownTx && $pdo->inTransaction()) { $pdo->rollBack(); }
-            throw $e;
-        }
+        }, 'READ COMMITTED');
     }
 }
 
@@ -773,9 +768,7 @@ if (!function_exists('vg_pkg_max_fixed')) {
 
 if (!function_exists('vg_rebuild_package_summary')) {
     function vg_rebuild_package_summary(PDO $pdo): void {
-        $ownTx = !$pdo->inTransaction();
-        if ($ownTx) { $pdo->beginTransaction(); }
-        try {
+        vg_with_tx($pdo, function () use ($pdo) {
             $pdo->exec('DELETE FROM tb_package_summary');
             $pdo->exec(
                 "INSERT INTO tb_package_summary (package_name, ecosystem, cve_cnt, max_epss, fix_cnt)
@@ -809,11 +802,6 @@ if (!function_exists('vg_rebuild_package_summary')) {
                     }
                 }
             }
-
-            if ($ownTx) { $pdo->commit(); }
-        } catch (Throwable $e) {
-            if ($ownTx && $pdo->inTransaction()) { $pdo->rollBack(); }
-            throw $e;
-        }
+        });
     }
 }
