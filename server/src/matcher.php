@@ -341,6 +341,330 @@ if (!function_exists('vg_scope_rank')) {
     }
 
     /**
+     * 구동 커널(uname -r) 파악 + 그 커널 버전에 대한 업스트림(kernel.org CNA) 수정 여부 판정.
+     *   배포판 EVR 이 아니라 uname 버전으로 본다 — 배포판 트래커/OVAL 관할 밖(라즈베리·자체빌드)
+     *   커널만 여기서 담당한다(호출부 vg_match_scan 의 커널 CNA 억제 참고).
+     */
+    function vg_match_load_kernel_context(PDO $pdo, array $packages, array $affected, array $scan): array {
+        // 구동 커널의 패키지가 실제로 설치 목록에 있을 때만 "나머지는 안 돈다"고 판단한다.
+        //   (없으면 판단 보류 → 아무것도 억제하지 않는다. 잘못 억제하면 커널 CVE 가 통째로 사라진다.)
+        $runningKernel        = (string) ($scan['running_kernel'] ?? '');
+        $runningKernelPresent = false;
+        if ($runningKernel !== '') {
+            foreach ($packages as $rp) {
+                if ((int) ($rp['container_id'] ?? 0) !== 0) { continue; }   // 호스트 패키지만
+                if (vg_is_running_kernel_pkg((string) $rp['name'], (string) $rp['version'], $runningKernel)) {
+                    $runningKernelPresent = true;
+                    break;
+                }
+            }
+        }
+
+        // 대상은 이 스캔의 커널 후보 CVE 뿐 — 전량 적재하면 매처 메모리가 또 터진다.
+        $kernelCves = [];
+        foreach ($affected as $key => $rows) {
+            if (!vg_is_kernel_source((string) $key) && !vg_is_kernel_code_pkg((string) $key)) { continue; }
+            foreach ($rows as $r) { $kernelCves[(string) $r['cve']] = true; }
+        }
+        $kernelFixed = vg_kernel_fixed_set($pdo, $runningKernel, array_keys($kernelCves));
+
+        return [
+            'runningKernel'        => $runningKernel,
+            'runningKernelPresent' => $runningKernelPresent,
+            'kernelFixed'          => $kernelFixed,
+        ];
+    }
+
+    /**
+     * 한 패키지의 후보 CVE 를 모은다: 생태계 판정 → name/source_pkg 매칭 → 벤더 미수정 후보 병합.
+     *   빈 배열을 반환하면 "이 패키지는 매칭 대상이 없다"는 뜻이다(배포판 미지원 또는 후보 CVE
+     *   없음, 두 경우를 호출부가 구분하지 않고 그대로 건너뛰므로 합쳐도 무방하다).
+     */
+    function vg_match_pkg_candidates(
+        array $p, ?array $ctr, string $mgr, int $ctrId,
+        ?string $hostEco, string $family, array $affected, array $unfixed
+    ): array {
+        // 이 패키지가 속한 생태계 — OS 패키지는 배포판, 언어 패키지는 PyPI/npm/RubyGems/Packagist.
+        //   섞이면 이름만 같은 엉뚱한 CVE 가 붙는다(OS 의 curl vs npm 의 curl).
+        //   컨테이너 패키지는 **그 컨테이너의 배포판** 기준이다(호스트와 다를 수 있다).
+        $baseEco = $ctr !== null ? $ctr['eco'] : $hostEco;
+        $pkgFam  = $ctr !== null ? $ctr['family'] : $family;
+        $pkgEco  = vg_pkg_ecosystem($mgr, $baseEco);
+        // 컨테이너 배포판이 OSV 미지원이면 **배포판 패키지는** 판단 근거가 없다 → 매칭 안 한다(추측 금지).
+        //   단 언어 패키지(Go/PyPI/npm…)는 배포판과 무관하다. 여기서 같이 버리면,
+        //   배포판이 미지원이라는 이유로 Go 의존성 취약점을 통째로 놓친다(미탐).
+        if ($ctr !== null && $baseEco === null && vg_is_os_manager($mgr)) { return []; }
+
+        // pkg.name 또는 source_pkg 로 후보 CVE 수집.
+        //   비교 버전은 매칭된 키에 맞춘다 — OSV 의 deb 조치안은 **소스 버전** 기준이라
+        //   source_pkg 로 매칭됐으면 source_version 과 비교해야 한다(binNMU: 1.2.3-4+b1).
+        $cands = [];   // cve => ['cvss'=>, 'fixed'=>, 'cmpver'=>]
+        foreach ([[$p['name'], $p['version']], [$p['source_pkg'], $p['source_version'] ?: $p['version']]] as [$key, $cmpVer]) {
+            if (!$key || !isset($affected[$key])) { continue; }
+            // 커널 CVE 는 **커널 코드가 든 바이너리**에만 해당한다.
+            //   커널 소스(linux/kernel) 하나에서 헤더·빌드도구·메타패키지가 20개 넘게 나오는데,
+            //   source_pkg 가 같다는 이유로 커널 CVE 전량이 거기에도 매달렸다.
+            //   실측(raspberrypi5-00): linux 소스 패키지 21개 × CVE 369건 = LOW 7,925건이 오탐.
+            if (vg_is_os_manager($mgr) && vg_is_kernel_source($key) && !vg_is_kernel_code_pkg((string) $p['name'])) {
+                continue;
+            }
+            foreach ($affected[$key] as $row) {
+                // 생태계 필터 — 남의 배포판/생태계 행이 이름만 같다고 붙던 것을 막는다.
+                //   OS 패키지는 배포판 행만, 언어 패키지는 자기 생태계(PyPI 등) 행만 받는다.
+                if (!vg_eco_matches($row['eco'] ?? null, $pkgEco, $pkgFam)) { continue; }
+                // 언어 패키지는 'rpm'/'deb' 계열 표기 행과 무관하다(계열 토큰은 OS 전용).
+                if (!vg_is_os_manager($mgr) && !vg_eco_is_distro($row['eco'] ?? null)) { continue; }
+
+                // 조치안을 설치 버전과 직접 비교해도 되는 행인지(=배포판 EVR 인지) 표시.
+                $fixed = vg_eco_is_distro($row['eco'] ?? null) ? $row['fixed'] : null;
+
+                $cve = $row['cve'];
+                if (!isset($cands[$cve]) || ($cands[$cve]['fixed'] === null && $fixed !== null)) {
+                    $cands[$cve] = ['cvss' => $row['cvss'], 'fixed' => $fixed, 'cmpver' => (string) $cmpVer];
+                }
+            }
+        }
+
+        // 벤더가 **아직 안 고친** CVE — 수정본이 없어 조치할 수 없다(OVAL 엔 RHSA=수정본만 있다).
+        //   실측(UBI8): Trivy 523건 중 514건이 이것이었다. 이건 오탐이 아니라 미탐이었다.
+        //   조치안이 없으므로 버전 비교 억제가 걸리지 않고, no_fix 로 표시해 화면에서
+        //   "지금 고칠 수 있는 것" 과 분리한다 — 섞으면 조치 불가 500건이 고칠 수 있는 9건을 덮는다.
+        foreach ($unfixed[$ctrId][$p['name']] ?? [] as $cve => $info) {
+            if (isset($cands[$cve])) { continue; }               // 수정본이 있으면 그쪽이 우선
+            $cands[$cve] = [
+                'cvss'   => $info['cvss'],
+                'fixed'  => null,
+                'cmpver' => (string) $p['version'],
+                'no_fix' => (string) $info['state'],
+            ];
+        }
+
+        return $cands;
+    }
+
+    /**
+     * 한 패키지의 판정 맥락을 모은다: 재시작/재부팅 필요 신호, 커널 실행 여부, 서드파티 판정,
+     *   런타임 노출 상태(리스닝·실행·로드). 이 값들은 이 패키지에 매달린 **모든 CVE 에 공통**이라
+     *   (CVE 별로 다시 계산할 필요가 없어) 패키지 루프에서 한 번만 구한다.
+     */
+    function vg_match_pkg_context(
+        array $p, ?array $ctr, int $ctrId, string $mgr, array $scan,
+        string $runningKernel, bool $runningKernelPresent,
+        array $loadMap, array $procRunningPkgs, array $procLoadedPkgs, array $stale
+    ): array {
+        // 재시작 필요 — 이 패키지의 옛 라이브러리를 물고 있는 프로세스가 있나.
+        //   있으면 어떤 억제 근거가 있어도 억제하지 않는다(그 프로세스는 여전히 취약).
+        //   컨테이너 패키지엔 적용하지 않는다(호스트 프로세스 기준 신호라서).
+        $staleEv = $ctr !== null ? null
+            : ($stale[$p['name']] ?? ($p['source_pkg'] ? ($stale[$p['source_pkg']] ?? null) : null));
+
+        // 억제 근거(changelog·errata·debsecan)는 전부 **호스트** 상태다. 컨테이너 CVE 를
+        //   호스트 근거로 억제하면 실제 취약점을 숨기는 미탐이 된다 → 컨테이너는 제외한다.
+        //   (버전 비교는 그 컨테이너의 패키지 버전으로 하는 것이라 컨테이너에도 유효하다.)
+        // 커널: 패치했어도 **재부팅 전까지는 옛 커널이 돈다** → 억제하면 미탐이다.
+        //   (라이브러리의 "재시작 필요"와 같은 문제. 조치는 프로세스 재시작이 아니라 재부팅.)
+        $isKernelPkg = $ctr === null && vg_is_kernel_code_pkg((string) $p['name']);
+        $kernelPending = $isKernelPkg && (int) ($scan['kernel_reboot_needed'] ?? 0) === 1;
+
+        // 실행 중이 아닌 커널 이미지 — 부팅해야 활성화된다. 커널 CVE 를 설치된 이미지 전부에
+        //   매달면 같은 목록이 몇 번씩 중복된다(실측 raspberrypi5-00: 702건 × 이미지 4개 = 2,808).
+        //   업계 표준(Vuls 등)대로 uname 으로 잡은 **구동 커널**만 판정한다.
+        //   단, 실행 중인 커널의 패키지가 목록에 없으면(그 커널만 제거된 드문 경우) 아무것도
+        //   억제하지 않는다 — 그러면 커널 CVE 가 통째로 사라져 미탐이 된다.
+        $kernelNotRunning = $isKernelPkg && $runningKernelPresent
+            && !vg_is_running_kernel_pkg((string) $p['name'], (string) $p['version'], $runningKernel);
+
+        // 서드파티 저장소(PPA·Docker·NodeSource) 패키지 / 수동 .deb 설치는 배포판 트래커에
+        //   아예 없다. 배포판 기준 억제(debsecan·errata·changelog)는 "트래커에 없으면 이미
+        //   수정됨"으로 보므로, 그대로 두면 진짜 취약점을 숨긴다(미탐) → 억제하지 않는다.
+        //   버전 억제도 막는다: 배포판 조치안(EVR)과 서드파티 버전은 체계가 다르다
+        //   (예: docker-ce-cli 5:27.0.3-1~debian.12 vs 배포판 EVR).
+        $osForOrigin = $ctr !== null ? ($ctr['os'] ?: null) : ($scan['os_id'] ?? null);
+        $isDistroPkg = !vg_is_os_manager($mgr)      // 언어 패키지는 이 판정과 무관
+            || vg_is_distro_pkg($p['origin'] ?? null, $osForOrigin);
+
+        $hostEvidenceOk = ($ctr === null) && $isDistroPkg;
+
+        // 런타임 상태 신호 (exposures=포트, processes=실행/로드).
+        //   **자기 것만 본다** — 맵이 container_id 로 갈려 있어 호스트 신호가 컨테이너로
+        //   새지 않는다(호스트 nginx 의 외부노출이 컨테이너 openssl 로 넘어가면 오탐).
+        //   에이전트가 컨테이너 런타임을 못 보낸 경우엔 맵이 비어 예전처럼 INSTALLED(LOW) 로
+        //   떨어진다 — 옛 에이전트와도 호환된다.
+        $le        = $loadMap[$ctrId][$p['name']] ?? ($loadMap[$ctrId][$p['source_pkg']] ?? null);
+        $running   = isset($procRunningPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procRunningPkgs[$ctrId][$p['source_pkg']]));
+        $pkgLoaded = isset($procLoadedPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procLoadedPkgs[$ctrId][$p['source_pkg']]));
+        $exposed   = $le !== null && ($le['scope'] ?? '') === 'EXTERNAL';
+        $loaded    = $le !== null || $pkgLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
+        $scope     = $le['scope'] ?? null;
+
+        return [
+            'staleEv'          => $staleEv,
+            'isKernelPkg'      => $isKernelPkg,
+            'kernelPending'    => $kernelPending,
+            'kernelNotRunning' => $kernelNotRunning,
+            'isDistroPkg'      => $isDistroPkg,
+            'hostEvidenceOk'   => $hostEvidenceOk,
+            'le'               => $le,
+            'running'          => $running,
+            'pkgLoaded'        => $pkgLoaded,
+            'exposed'          => $exposed,
+            'loaded'           => $loaded,
+            'scope'            => $scope,
+        ];
+    }
+
+    /**
+     * 한 패키지의 CVE 후보 1건을 판정한다: 6단계 상태분류 → 억제 취소 신호(재시작/재부팅 필요는
+     *   그대로 억제 불가로 반영) → 오탐 억제 4겹(①버전 ②배포판 트래커 ③벤더권고(OVAL) ④errata·
+     *   changelog) → 조치불가(no_fix) 표시. **순서가 그 자체로 우선순위다** — 먼저 걸리는 조건이
+     *   이기고, 뒤 조건은 평가되지 않는다(vg_match_scan 의 억제 겹 순서를 그대로 옮겼다).
+     *   억제로 판정되면 suppress=true + reason 을, findings 로 남으면 false + 등급/근거를 반환한다.
+     *   실제 INSERT 와 $counts 집계는 호출부(vg_match_scan)가 한다 — 두 종류의 prepared
+     *   statement(tb_findings/tb_suppressed_findings)와 카운터는 스캔 1건에 하나뿐이라 여기서
+     *   더 나누면 오히려 인자가 늘어난다.
+     *
+     * @param array $ctx 이 패키지의 vg_match_pkg_context() 반환값(패키지 단위로 한 번만 계산).
+     * @param array $sup 이 스캔의 vg_load_suppression_evidence() 반환값(억제 근거 전체 묶음).
+     */
+    function vg_match_decide_cve(
+        string $cveId, array $cand, array $p, string $mgr, ?array $ctr, int $ctrId, array $scan,
+        array $ctx, array $kev, array $kernelFixed, array $sup
+    ): array {
+        $cvss  = $cand['cvss'];
+        $inKev = isset($kev[$cveId]);
+        [$status, $sev, $why] = vg_classify($ctx['le'], $ctx['running'], $ctx['pkgLoaded'], $inKev, $p['name']);
+
+        // 실행 중이 아닌 커널: 그 코드는 지금 돌지 않는다 → 억제(근거는 남긴다).
+        //   조치는 "패치"가 아니라 "그 커널로 부팅하지 않기"이고, 실제로 부팅하면
+        //   그때 실행 커널이 바뀌어 다음 수집에서 정상적으로 취약점으로 잡힌다.
+        if ($ctx['kernelNotRunning']) {
+            return [
+                'suppress' => true, 'sev' => $sev, 'cvss' => $cvss, 'inKev' => $inKev,
+                'reason' => sprintf('실행 중이 아닌 커널(설치만 됨) — 지금 도는 커널은 %s 다. 부팅해야 활성화된다',
+                                     (string) ($scan['running_kernel'] ?? '?')),
+            ];
+        }
+
+        // 커널 CNA 억제: 업스트림(kernel.org)이 "구동 커널 버전엔 이 수정본이 들어 있다"고
+        //   말해 준 경우. 배포판 조치안이 아니라 uname 의 **업스트림 버전**(6.18.34)으로 보므로,
+        //   배포판 관할 밖의 커널(라즈베리 `1:6.18.34-1+rpt1`)도 정확히 판정된다.
+        //
+        //   **배포판 커널엔 쓰지 않는다**(!$isDistroPkg 조건). RHEL 커널은 5.14.0 위에 백포트를
+        //   쌓은 것이라 업스트림 버전이 코드 내용을 대변하지 않는다 — "이 취약 코드는 6.1부터"를
+        //   그대로 믿으면 Red Hat 이 6.1 의 기능을 5.14 로 백포트한 경우를 놓친다(미탐).
+        //   배포판 커널은 트래커·OVAL 이 이미 정확히 판정한다. 여기는 **그들이 관할하지 않는
+        //   커널만** 맡는다.
+        if ($ctx['isKernelPkg'] && !$ctx['isDistroPkg'] && isset($kernelFixed[$cveId])) {
+            return [
+                'suppress' => true, 'sev' => $sev, 'cvss' => $cvss, 'inKev' => $inKev,
+                'reason' => $kernelFixed[$cveId],
+            ];
+        }
+
+        // 옛 라이브러리가 메모리에 상주하면 "패치됨"이라도 억제하지 않는다(재시작 전까지 취약).
+        $canSuppress = ($ctx['staleEv'] === null);
+        if ($ctx['staleEv'] !== null) {
+            $why .= ' · 재시작 필요(패치됐지만 옛 라이브러리 사용 중: ' . $ctx['staleEv'] . ')';
+        }
+        // 커널이 패치됐지만 재부팅 전이면, 설치 버전으로 억제하면 안 된다(옛 커널이 실행 중).
+        if ($ctx['kernelPending']) {
+            $canSuppress = false;
+            $why .= sprintf(' · 재부팅 필요(설치 %s / 실행 중 %s — 패치된 커널이 아직 안 올라옴)',
+                            (string) ($scan['kernel_latest'] ?? '?'),
+                            (string) ($scan['running_kernel'] ?? '?'));
+        }
+
+        // 서드파티 패키지는 배포판 조치안과 버전 체계가 달라 "설치 ≥ 조치" 비교도 못 믿는다.
+        //   억제하지 않고 근거에 출처를 남겨, 사람이 판단할 수 있게 한다.
+        if (!$ctx['isDistroPkg']) {
+            $canSuppress = false;
+            $why .= sprintf(' · 서드파티 저장소(%s) 패키지 — 배포판 조치안과 버전 체계가 달라 자동 판정 불가',
+                            (string) ($p['origin'] ?? '출처 미상'));
+        }
+
+        // 버전 억제: 설치 버전이 조치 버전 이상이면 이미 패치된 것.
+        //   배포판 규칙(epoch·릴리스·틸드)대로 비교한다 — vg_ver_cmp.
+        //   fixed 가 비어 있으면(피드가 조치안을 안 준 경우) 판단하지 않고 남긴다.
+        $fixed = $cand['fixed'];
+        if ($canSuppress && $fixed !== null && $fixed !== '' && $cand['cmpver'] !== ''
+            && vg_ver_cmp($cand['cmpver'], (string) $fixed, $mgr) >= 0) {
+            return [
+                'suppress' => true, 'sev' => $sev, 'cvss' => $cvss, 'inKev' => $inKev,
+                'reason' => sprintf('설치 %s ≥ 조치 %s → 이미 패치됨', $cand['cmpver'], $fixed),
+            ];
+        }
+
+        // 배포판 벤더 억제(데비안 보안 트래커 · 우분투 보안 OVAL): 벤더가 이 패키지의 이 CVE 를
+        //   "아직 취약"으로 보지 않았다면 백포트로 이미 고쳐진 것이다(벤더의 패치 상태가 근거다).
+        //   **컨테이너에도 적용된다** — 맵이 대상별로 갈려 있어(자기 릴리스 · 자기 패키지)
+        //   호스트 상태가 컨테이너로 새지 않는다. hostEvidenceOk 가 아니라 isDistroPkg 로
+        //   거른다: 서드파티 저장소 패키지는 트래커 관할이 아니므로 여전히 억제하지 않는다.
+        if ($canSuppress && $ctx['isDistroPkg'] && vg_is_os_manager($mgr)
+            && ($sup['useDebsecan'][$ctrId] ?? false)
+            && !isset($sup['debsecan'][$ctrId][$p['name']][$cveId])) {
+            return [
+                'suppress' => true, 'sev' => $sev, 'cvss' => $cvss, 'inKev' => $inKev,
+                'reason' => ($sup['trackerLabel'][$ctrId] ?? '배포판 보안 트래커') . '가 ' . $p['name'] . ' 의 ' . $cveId
+                    . ' 를 해당 없음으로 판정 → 백포트로 이미 수정됨'
+                    . ($ctr !== null ? ' (컨테이너 ' . (string) $ctr['cid'] . ')' : ''),
+            ];
+        }
+
+        // 중앙 벤더권고(OVAL) 억제: RHEL 계열의 백포트 판정. 데비안 트래커의 rpm 판이다.
+        //   대상별로 갈린 맵이라(자기 벤더·자기 메이저) 컨테이너에도 안전하게 적용된다.
+        //   설치 EVR ≥ 조치 EVR 이면 이미 패치된 것 — 백포트라 업스트림 버전만 보면 낮아 보인다.
+        $veEv = $sup['vendorErrata'][$ctrId][$p['name']][$cveId] ?? null;
+        if ($canSuppress && $ctx['isDistroPkg'] && $veEv !== null) {
+            return [
+                'suppress' => true, 'sev' => $sev, 'cvss' => $cvss, 'inKev' => $inKev,
+                'reason' => $p['name'] . ' — ' . $veEv,
+            ];
+        }
+
+        // errata 억제: 벤더 보안권고가 이 설치 빌드에서 해당 CVE 를 고쳤다고 확인해 준 경우.
+        //   버전이 낮아 보여도(백포트) 이미 패치된 것 → 실제 위험에서 제외.
+        $erEv = $sup['errata'][$p['name']][$cveId]
+            ?? ($p['source_pkg'] ? ($sup['errata'][$p['source_pkg']][$cveId] ?? null) : null);
+        if ($canSuppress && $ctx['hostEvidenceOk'] && $erEv !== null) {
+            $reason = $p['name'] . ' 에 적용된 벤더 보안권고가 ' . $cveId . ' 를 고침(백포트) → 이미 패치됨';
+            if (is_string($erEv) && $erEv !== '') { $reason .= ' · ' . $erEv; }
+            return ['suppress' => true, 'sev' => $sev, 'cvss' => $cvss, 'inKev' => $inKev, 'reason' => $reason];
+        }
+
+        // 백포트 억제: 이 빌드의 changelog 에 해당 CVE 수정 기록이 있으면
+        //   버전이 낮아 보여도 이미 패치된 것 → 실제 위험에서 제외(오탐 제거).
+        $bpEv = $sup['backport'][$p['name']][$cveId]
+            ?? ($p['source_pkg'] ? ($sup['backport'][$p['source_pkg']][$cveId] ?? null) : null);
+        if ($canSuppress && $ctx['hostEvidenceOk'] && $bpEv !== null) {
+            $reason = $p['name'] . ' changelog 에 ' . $cveId . ' 수정 기록(백포트) → 버전이 낮아 보여도 패치됨';
+            if (is_string($bpEv) && $bpEv !== '') { $reason .= ' · ' . $bpEv; }
+            return ['suppress' => true, 'sev' => $sev, 'cvss' => $cvss, 'inKev' => $inKev, 'reason' => $reason];
+        }
+
+        // 조치 불가(벤더가 아직 안 고침) — 등급은 그대로 두되 별도 축으로 표시한다.
+        //   덜 위험해서가 아니라 **지금 할 수 있는 일이 없다**는 뜻이다(완화·격리가 답).
+        $noFix = (string) ($cand['no_fix'] ?? '');
+
+        // 데비안도 같은 축을 갖고 있었는데 우리가 버리고 있었다. 트래커는 CVE 마다
+        //   **이 릴리스에 수정본이 나왔는지**(debsecan flags[3]=='F')를 알려준다.
+        //   실측(raspberrypi5-00): 트래커가 답한 호스트 1,025건 중 708건이 수정본 없음이었다
+        //   — HIGH 87건 중 지금 apt 로 고칠 수 있는 건 8건뿐인데, 화면엔 다 섞여 있었다.
+        //   값이 0(수정본 없음)일 때만 붙인다. 에이전트 debsecan 경로는 값이 true 라 해당 없음.
+        if ($noFix === '' && ($sup['debsecan'][$ctrId][$p['name']][$cveId] ?? null) === 0) {
+            $noFix = ($sup['trackerLabel'][$ctrId] ?? '배포판') . ': 수정본 미배포';
+        }
+
+        if ($noFix !== '') {
+            $why .= ' · 벤더 미수정(' . $noFix . ') — 조치 불가(수정본 없음)';
+        }
+
+        return [
+            'suppress' => false, 'status' => $status, 'sev' => $sev, 'cvss' => $cvss,
+            'inKev' => $inKev, 'noFix' => $noFix, 'why' => $why,
+        ];
+    }
+
+    /**
      * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
      */
     function vg_match_scan(PDO $pdo, int $scanId): array {
@@ -365,41 +689,20 @@ if (!function_exists('vg_scope_rank')) {
         $kev      = $catalog['kev'];
         $affected = $catalog['affected'];
 
-        $sup         = vg_load_suppression_evidence($pdo, $scanId, $scan['os_id'] ?? null, $scan['os_version'] ?? null);
-        $backport    = $sup['backport'];
-        $stale       = $sup['stale'];
-        $debsecan    = $sup['debsecan'];
-        $useDebsecan = $sup['useDebsecan'];
-        $trackerLabel = $sup['trackerLabel'];
-        $errata       = $sup['errata'];
-        $vendorErrata = $sup['vendorErrata'];
-        $unfixed      = $sup['unfixed'];
-
-        // 구동 커널(uname -r) — 커널 CVE 는 **지금 도는 커널**에만 해당한다.
-        //   그 커널의 패키지가 실제로 설치 목록에 있을 때만 "나머지는 안 돈다"고 판단한다.
-        //   (없으면 판단 보류 → 아무것도 억제하지 않는다. 잘못 억제하면 커널 CVE 가 통째로 사라진다.)
-        $runningKernel        = (string) ($scan['running_kernel'] ?? '');
-        $runningKernelPresent = false;
-        if ($runningKernel !== '') {
-            foreach ($packages as $rp) {
-                if ((int) ($rp['container_id'] ?? 0) !== 0) { continue; }   // 호스트 패키지만
-                if (vg_is_running_kernel_pkg((string) $rp['name'], (string) $rp['version'], $runningKernel)) {
-                    $runningKernelPresent = true;
-                    break;
-                }
-            }
-        }
+        // backport·debsecan·useDebsecan·trackerLabel·errata·vendorErrata 는 개별로 뽑지 않고
+        //   $sup 를 통째로 vg_match_decide_cve() 에 넘긴다(그 함수의 억제 겹 ②~④가 쓴다).
+        //   stale·unfixed 만 여기서 따로 쓴다(패키지 단위 헬퍼 vg_match_pkg_context/candidates 의 인자).
+        $sup     = vg_load_suppression_evidence($pdo, $scanId, $scan['os_id'] ?? null, $scan['os_version'] ?? null);
+        $stale   = $sup['stale'];
+        $unfixed = $sup['unfixed'];
 
         // 커널 판정의 정본은 **업스트림(kernel.org CNA)** 이다 — 배포판 EVR 이 아니라 uname 버전으로 본다.
         //   라즈베리·자체빌드 커널은 배포판 트래커/OVAL 관할 밖이라 "서드파티 → 자동 판정 불가" 로
         //   전부 남았다(실측 raspberrypi5-00: LOW 2,069 중 702건이 커널 하나. 6.18 커널에 2004년 CVE 까지).
-        //   대상은 이 스캔의 커널 후보 CVE 뿐 — 전량 적재하면 매처 메모리가 또 터진다.
-        $kernelCves = [];
-        foreach ($affected as $key => $rows) {
-            if (!vg_is_kernel_source((string) $key) && !vg_is_kernel_code_pkg((string) $key)) { continue; }
-            foreach ($rows as $r) { $kernelCves[(string) $r['cve']] = true; }
-        }
-        $kernelFixed = vg_kernel_fixed_set($pdo, $runningKernel, array_keys($kernelCves));
+        $kernelCtx            = vg_match_load_kernel_context($pdo, $packages, $affected, $scan);
+        $runningKernel        = $kernelCtx['runningKernel'];
+        $runningKernelPresent = $kernelCtx['runningKernelPresent'];
+        $kernelFixed          = $kernelCtx['kernelFixed'];
 
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
@@ -460,275 +763,53 @@ if (!function_exists('vg_scope_rank')) {
             $ctrId = (int) ($p['container_id'] ?? 0);
             $ctr   = $ctrId > 0 ? ($ctrs[$ctrId] ?? null) : null;
 
-            // 이 패키지가 속한 생태계 — OS 패키지는 배포판, 언어 패키지는 PyPI/npm/RubyGems/Packagist.
-            //   섞이면 이름만 같은 엉뚱한 CVE 가 붙는다(OS 의 curl vs npm 의 curl).
-            //   컨테이너 패키지는 **그 컨테이너의 배포판** 기준이다(호스트와 다를 수 있다).
-            $baseEco = $ctr !== null ? $ctr['eco'] : $hostEco;
-            $pkgFam  = $ctr !== null ? $ctr['family'] : $family;
-            $pkgEco  = vg_pkg_ecosystem($mgr, $baseEco);
-            // 컨테이너 배포판이 OSV 미지원이면 **배포판 패키지는** 판단 근거가 없다 → 매칭 안 한다(추측 금지).
-            //   단 언어 패키지(Go/PyPI/npm…)는 배포판과 무관하다. 여기서 같이 버리면,
-            //   배포판이 미지원이라는 이유로 Go 의존성 취약점을 통째로 놓친다(미탐).
-            if ($ctr !== null && $baseEco === null && vg_is_os_manager($mgr)) { continue; }
-
-            // pkg.name 또는 source_pkg 로 후보 CVE 수집.
-            //   비교 버전은 매칭된 키에 맞춘다 — OSV 의 deb 조치안은 **소스 버전** 기준이라
-            //   source_pkg 로 매칭됐으면 source_version 과 비교해야 한다(binNMU: 1.2.3-4+b1).
-            $cands = [];   // cve => ['cvss'=>, 'fixed'=>, 'cmpver'=>]
-            foreach ([[$p['name'], $p['version']], [$p['source_pkg'], $p['source_version'] ?: $p['version']]] as [$key, $cmpVer]) {
-                if (!$key || !isset($affected[$key])) { continue; }
-                // 커널 CVE 는 **커널 코드가 든 바이너리**에만 해당한다.
-                //   커널 소스(linux/kernel) 하나에서 헤더·빌드도구·메타패키지가 20개 넘게 나오는데,
-                //   source_pkg 가 같다는 이유로 커널 CVE 전량이 거기에도 매달렸다.
-                //   실측(raspberrypi5-00): linux 소스 패키지 21개 × CVE 369건 = LOW 7,925건이 오탐.
-                if (vg_is_os_manager($mgr) && vg_is_kernel_source($key) && !vg_is_kernel_code_pkg((string) $p['name'])) {
-                    continue;
-                }
-                foreach ($affected[$key] as $row) {
-                    // 생태계 필터 — 남의 배포판/생태계 행이 이름만 같다고 붙던 것을 막는다.
-                    //   OS 패키지는 배포판 행만, 언어 패키지는 자기 생태계(PyPI 등) 행만 받는다.
-                    if (!vg_eco_matches($row['eco'] ?? null, $pkgEco, $pkgFam)) { continue; }
-                    // 언어 패키지는 'rpm'/'deb' 계열 표기 행과 무관하다(계열 토큰은 OS 전용).
-                    if (!vg_is_os_manager($mgr) && !vg_eco_is_distro($row['eco'] ?? null)) { continue; }
-
-                    // 조치안을 설치 버전과 직접 비교해도 되는 행인지(=배포판 EVR 인지) 표시.
-                    $fixed = vg_eco_is_distro($row['eco'] ?? null) ? $row['fixed'] : null;
-
-                    $cve = $row['cve'];
-                    if (!isset($cands[$cve]) || ($cands[$cve]['fixed'] === null && $fixed !== null)) {
-                        $cands[$cve] = ['cvss' => $row['cvss'], 'fixed' => $fixed, 'cmpver' => (string) $cmpVer];
-                    }
-                }
-            }
-
-            // 벤더가 **아직 안 고친** CVE — 수정본이 없어 조치할 수 없다(OVAL 엔 RHSA=수정본만 있다).
-            //   실측(UBI8): Trivy 523건 중 514건이 이것이었다. 이건 오탐이 아니라 미탐이었다.
-            //   조치안이 없으므로 버전 비교 억제가 걸리지 않고, no_fix 로 표시해 화면에서
-            //   "지금 고칠 수 있는 것" 과 분리한다 — 섞으면 조치 불가 500건이 고칠 수 있는 9건을 덮는다.
-            foreach ($unfixed[$ctrId][$p['name']] ?? [] as $cve => $info) {
-                if (isset($cands[$cve])) { continue; }               // 수정본이 있으면 그쪽이 우선
-                $cands[$cve] = [
-                    'cvss'   => $info['cvss'],
-                    'fixed'  => null,
-                    'cmpver' => (string) $p['version'],
-                    'no_fix' => (string) $info['state'],
-                ];
-            }
+            $cands = vg_match_pkg_candidates($p, $ctr, $mgr, $ctrId, $hostEco, $family, $affected, $unfixed);
 
             if (!$cands) {
                 continue;
             }
 
-            // 재시작 필요 — 이 패키지의 옛 라이브러리를 물고 있는 프로세스가 있나.
-            //   있으면 어떤 억제 근거가 있어도 억제하지 않는다(그 프로세스는 여전히 취약).
-            //   컨테이너 패키지엔 적용하지 않는다(호스트 프로세스 기준 신호라서).
-            $staleEv = $ctr !== null ? null
-                : ($stale[$p['name']] ?? ($p['source_pkg'] ? ($stale[$p['source_pkg']] ?? null) : null));
-
-            // 억제 근거(changelog·errata·debsecan)는 전부 **호스트** 상태다. 컨테이너 CVE 를
-            //   호스트 근거로 억제하면 실제 취약점을 숨기는 미탐이 된다 → 컨테이너는 제외한다.
-            //   (버전 비교는 그 컨테이너의 패키지 버전으로 하는 것이라 컨테이너에도 유효하다.)
-            // 커널: 패치했어도 **재부팅 전까지는 옛 커널이 돈다** → 억제하면 미탐이다.
-            //   (라이브러리의 "재시작 필요"와 같은 문제. 조치는 프로세스 재시작이 아니라 재부팅.)
-            $isKernelPkg = $ctr === null && vg_is_kernel_code_pkg((string) $p['name']);
-            $kernelPending = $isKernelPkg && (int) ($scan['kernel_reboot_needed'] ?? 0) === 1;
-
-            // 실행 중이 아닌 커널 이미지 — 부팅해야 활성화된다. 커널 CVE 를 설치된 이미지 전부에
-            //   매달면 같은 목록이 몇 번씩 중복된다(실측 raspberrypi5-00: 702건 × 이미지 4개 = 2,808).
-            //   업계 표준(Vuls 등)대로 uname 으로 잡은 **구동 커널**만 판정한다.
-            //   단, 실행 중인 커널의 패키지가 목록에 없으면(그 커널만 제거된 드문 경우) 아무것도
-            //   억제하지 않는다 — 그러면 커널 CVE 가 통째로 사라져 미탐이 된다.
-            $kernelNotRunning = $isKernelPkg && $runningKernelPresent
-                && !vg_is_running_kernel_pkg((string) $p['name'], (string) $p['version'], $runningKernel);
-
-            // 서드파티 저장소(PPA·Docker·NodeSource) 패키지 / 수동 .deb 설치는 배포판 트래커에
-            //   아예 없다. 배포판 기준 억제(debsecan·errata·changelog)는 "트래커에 없으면 이미
-            //   수정됨"으로 보므로, 그대로 두면 진짜 취약점을 숨긴다(미탐) → 억제하지 않는다.
-            //   버전 억제도 막는다: 배포판 조치안(EVR)과 서드파티 버전은 체계가 다르다
-            //   (예: docker-ce-cli 5:27.0.3-1~debian.12 vs 배포판 EVR).
-            $osForOrigin = $ctr !== null ? ($ctr['os'] ?: null) : ($scan['os_id'] ?? null);
-            $isDistroPkg = !vg_is_os_manager($mgr)      // 언어 패키지는 이 판정과 무관
-                || vg_is_distro_pkg($p['origin'] ?? null, $osForOrigin);
-
-            $hostEvidenceOk = ($ctr === null) && $isDistroPkg;
-
-            // 런타임 상태 신호 (exposures=포트, processes=실행/로드).
-            //   **자기 것만 본다** — 맵이 container_id 로 갈려 있어 호스트 신호가 컨테이너로
-            //   새지 않는다(호스트 nginx 의 외부노출이 컨테이너 openssl 로 넘어가면 오탐).
-            //   에이전트가 컨테이너 런타임을 못 보낸 경우엔 맵이 비어 예전처럼 INSTALLED(LOW) 로
-            //   떨어진다 — 옛 에이전트와도 호환된다.
-            $le        = $loadMap[$ctrId][$p['name']] ?? ($loadMap[$ctrId][$p['source_pkg']] ?? null);
-            $running   = isset($procRunningPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procRunningPkgs[$ctrId][$p['source_pkg']]));
-            $pkgLoaded = isset($procLoadedPkgs[$ctrId][$p['name']]) || ($p['source_pkg'] && isset($procLoadedPkgs[$ctrId][$p['source_pkg']]));
-            $exposed   = $le !== null && ($le['scope'] ?? '') === 'EXTERNAL';
-            $loaded    = $le !== null || $pkgLoaded;   // 리스닝 프로세스 로드 or 일반 프로세스 로드
-            $scope     = $le['scope'] ?? null;
+            $ctx = vg_match_pkg_context(
+                $p, $ctr, $ctrId, $mgr, $scan, $runningKernel, $runningKernelPresent,
+                $loadMap, $procRunningPkgs, $procLoadedPkgs, $stale
+            );
+            $staleEv          = $ctx['staleEv'];
+            $isKernelPkg      = $ctx['isKernelPkg'];
+            $kernelPending    = $ctx['kernelPending'];
+            $kernelNotRunning = $ctx['kernelNotRunning'];
+            $isDistroPkg      = $ctx['isDistroPkg'];
+            $hostEvidenceOk   = $ctx['hostEvidenceOk'];
+            $le               = $ctx['le'];
+            $running          = $ctx['running'];
+            $pkgLoaded        = $ctx['pkgLoaded'];
+            $exposed          = $ctx['exposed'];
+            $loaded           = $ctx['loaded'];
+            $scope            = $ctx['scope'];
 
             foreach ($cands as $cveId => $cand) {
-                $cvss = $cand['cvss'];
                 // 컨테이너별로 따로 센다 — 호스트의 openssl 과 컨테이너의 openssl 은 별개 취약점이다.
                 $key = $ctrId . '|' . $cveId . '|' . $p['name'];
                 if (isset($seen[$key])) { continue; }
                 $seen[$key] = true;
 
-                $inKev = isset($kev[$cveId]);
-                [$status, $sev, $why] = vg_classify($le, $running, $pkgLoaded, $inKev, $p['name']);
+                $decision = vg_match_decide_cve($cveId, $cand, $p, $mgr, $ctr, $ctrId, $scan, $ctx, $kev, $kernelFixed, $sup);
 
-                // 실행 중이 아닌 커널: 그 코드는 지금 돌지 않는다 → 억제(근거는 남긴다).
-                //   조치는 "패치"가 아니라 "그 커널로 부팅하지 않기"이고, 실제로 부팅하면
-                //   그때 실행 커널이 바뀌어 다음 수집에서 정상적으로 취약점으로 잡힌다.
-                if ($kernelNotRunning) {
+                if ($decision['suppress']) {
                     $insSupp->execute([
                         $scanId, $cveId, $p['name'], $p['version'],
-                        $inKev ? 1 : 0, $cvss, $sev,
-                        sprintf('실행 중이 아닌 커널(설치만 됨) — 지금 도는 커널은 %s 다. 부팅해야 활성화된다',
-                                (string) ($scan['running_kernel'] ?? '?')),
+                        $decision['inKev'] ? 1 : 0, $decision['cvss'], $decision['sev'], $decision['reason'],
                     ]);
                     $counts['SUPPRESSED']++;
                     continue;
                 }
 
-                // 커널 CNA 억제: 업스트림(kernel.org)이 "구동 커널 버전엔 이 수정본이 들어 있다"고
-                //   말해 준 경우. 배포판 조치안이 아니라 uname 의 **업스트림 버전**(6.18.34)으로 보므로,
-                //   배포판 관할 밖의 커널(라즈베리 `1:6.18.34-1+rpt1`)도 정확히 판정된다.
-                //
-                //   **배포판 커널엔 쓰지 않는다**(!$isDistroPkg 조건). RHEL 커널은 5.14.0 위에 백포트를
-                //   쌓은 것이라 업스트림 버전이 코드 내용을 대변하지 않는다 — "이 취약 코드는 6.1부터"를
-                //   그대로 믿으면 Red Hat 이 6.1 의 기능을 5.14 로 백포트한 경우를 놓친다(미탐).
-                //   배포판 커널은 트래커·OVAL 이 이미 정확히 판정한다. 여기는 **그들이 관할하지 않는
-                //   커널만** 맡는다.
-                if ($isKernelPkg && !$isDistroPkg && isset($kernelFixed[$cveId])) {
-                    $insSupp->execute([
-                        $scanId, $cveId, $p['name'], $p['version'],
-                        $inKev ? 1 : 0, $cvss, $sev, $kernelFixed[$cveId],
-                    ]);
-                    $counts['SUPPRESSED']++;
-                    continue;
-                }
-
-                // 옛 라이브러리가 메모리에 상주하면 "패치됨"이라도 억제하지 않는다(재시작 전까지 취약).
-                $canSuppress = ($staleEv === null);
-                if ($staleEv !== null) {
-                    $why .= ' · 재시작 필요(패치됐지만 옛 라이브러리 사용 중: ' . $staleEv . ')';
-                }
-                // 커널이 패치됐지만 재부팅 전이면, 설치 버전으로 억제하면 안 된다(옛 커널이 실행 중).
-                if ($kernelPending) {
-                    $canSuppress = false;
-                    $why .= sprintf(' · 재부팅 필요(설치 %s / 실행 중 %s — 패치된 커널이 아직 안 올라옴)',
-                                    (string) ($scan['kernel_latest'] ?? '?'),
-                                    (string) ($scan['running_kernel'] ?? '?'));
-                }
-
-                // 서드파티 패키지는 배포판 조치안과 버전 체계가 달라 "설치 ≥ 조치" 비교도 못 믿는다.
-                //   억제하지 않고 근거에 출처를 남겨, 사람이 판단할 수 있게 한다.
-                if (!$isDistroPkg) {
-                    $canSuppress = false;
-                    $why .= sprintf(' · 서드파티 저장소(%s) 패키지 — 배포판 조치안과 버전 체계가 달라 자동 판정 불가',
-                                    (string) ($p['origin'] ?? '출처 미상'));
-                }
-
-                // 버전 억제: 설치 버전이 조치 버전 이상이면 이미 패치된 것.
-                //   배포판 규칙(epoch·릴리스·틸드)대로 비교한다 — vg_ver_cmp.
-                //   fixed 가 비어 있으면(피드가 조치안을 안 준 경우) 판단하지 않고 남긴다.
-                $fixed = $cand['fixed'];
-                if ($canSuppress && $fixed !== null && $fixed !== '' && $cand['cmpver'] !== ''
-                    && vg_ver_cmp($cand['cmpver'], (string) $fixed, $mgr) >= 0) {
-                    $insSupp->execute([
-                        $scanId, $cveId, $p['name'], $p['version'],
-                        $inKev ? 1 : 0, $cvss, $sev,
-                        sprintf('설치 %s ≥ 조치 %s → 이미 패치됨', $cand['cmpver'], $fixed),
-                    ]);
-                    $counts['SUPPRESSED']++;
-                    continue;
-                }
-
-                // 배포판 벤더 억제(데비안 보안 트래커 · 우분투 보안 OVAL): 벤더가 이 패키지의 이 CVE 를
-                //   "아직 취약"으로 보지 않았다면 백포트로 이미 고쳐진 것이다(벤더의 패치 상태가 근거다).
-                //   **컨테이너에도 적용된다** — 맵이 대상별로 갈려 있어(자기 릴리스 · 자기 패키지)
-                //   호스트 상태가 컨테이너로 새지 않는다. hostEvidenceOk 가 아니라 isDistroPkg 로
-                //   거른다: 서드파티 저장소 패키지는 트래커 관할이 아니므로 여전히 억제하지 않는다.
-                if ($canSuppress && $isDistroPkg && vg_is_os_manager($mgr)
-                    && ($useDebsecan[$ctrId] ?? false)
-                    && !isset($debsecan[$ctrId][$p['name']][$cveId])) {
-                    $insSupp->execute([
-                        $scanId, $cveId, $p['name'], $p['version'],
-                        $inKev ? 1 : 0, $cvss, $sev,
-                        ($trackerLabel[$ctrId] ?? '배포판 보안 트래커') . '가 ' . $p['name'] . ' 의 ' . $cveId
-                        . ' 를 해당 없음으로 판정 → 백포트로 이미 수정됨'
-                        . ($ctr !== null ? ' (컨테이너 ' . (string) $ctr['cid'] . ')' : ''),
-                    ]);
-                    $counts['SUPPRESSED']++;
-                    continue;
-                }
-
-                // 중앙 벤더권고(OVAL) 억제: RHEL 계열의 백포트 판정. 데비안 트래커의 rpm 판이다.
-                //   대상별로 갈린 맵이라(자기 벤더·자기 메이저) 컨테이너에도 안전하게 적용된다.
-                //   설치 EVR ≥ 조치 EVR 이면 이미 패치된 것 — 백포트라 업스트림 버전만 보면 낮아 보인다.
-                $veEv = $vendorErrata[$ctrId][$p['name']][$cveId] ?? null;
-                if ($canSuppress && $isDistroPkg && $veEv !== null) {
-                    $insSupp->execute([
-                        $scanId, $cveId, $p['name'], $p['version'],
-                        $inKev ? 1 : 0, $cvss, $sev,
-                        $p['name'] . ' — ' . $veEv,
-                    ]);
-                    $counts['SUPPRESSED']++;
-                    continue;
-                }
-
-                // errata 억제: 벤더 보안권고가 이 설치 빌드에서 해당 CVE 를 고쳤다고 확인해 준 경우.
-                //   버전이 낮아 보여도(백포트) 이미 패치된 것 → 실제 위험에서 제외.
-                $erEv = $errata[$p['name']][$cveId]
-                    ?? ($p['source_pkg'] ? ($errata[$p['source_pkg']][$cveId] ?? null) : null);
-                if ($canSuppress && $hostEvidenceOk && $erEv !== null) {
-                    $reason = $p['name'] . ' 에 적용된 벤더 보안권고가 ' . $cveId . ' 를 고침(백포트) → 이미 패치됨';
-                    if (is_string($erEv) && $erEv !== '') { $reason .= ' · ' . $erEv; }
-                    $insSupp->execute([
-                        $scanId, $cveId, $p['name'], $p['version'],
-                        $inKev ? 1 : 0, $cvss, $sev, $reason,
-                    ]);
-                    $counts['SUPPRESSED']++;
-                    continue;
-                }
-
-                // 백포트 억제: 이 빌드의 changelog 에 해당 CVE 수정 기록이 있으면
-                //   버전이 낮아 보여도 이미 패치된 것 → 실제 위험에서 제외(오탐 제거).
-                $bpEv = $backport[$p['name']][$cveId]
-                    ?? ($p['source_pkg'] ? ($backport[$p['source_pkg']][$cveId] ?? null) : null);
-                if ($canSuppress && $hostEvidenceOk && $bpEv !== null) {
-                    $reason = $p['name'] . ' changelog 에 ' . $cveId . ' 수정 기록(백포트) → 버전이 낮아 보여도 패치됨';
-                    if (is_string($bpEv) && $bpEv !== '') { $reason .= ' · ' . $bpEv; }
-                    $insSupp->execute([
-                        $scanId, $cveId, $p['name'], $p['version'],
-                        $inKev ? 1 : 0, $cvss, $sev, $reason,
-                    ]);
-                    $counts['SUPPRESSED']++;
-                    continue;
-                }
-
-                // 조치 불가(벤더가 아직 안 고침) — 등급은 그대로 두되 별도 축으로 표시한다.
-                //   덜 위험해서가 아니라 **지금 할 수 있는 일이 없다**는 뜻이다(완화·격리가 답).
-                $noFix = (string) ($cand['no_fix'] ?? '');
-
-                // 데비안도 같은 축을 갖고 있었는데 우리가 버리고 있었다. 트래커는 CVE 마다
-                //   **이 릴리스에 수정본이 나왔는지**(debsecan flags[3]=='F')를 알려준다.
-                //   실측(raspberrypi5-00): 트래커가 답한 호스트 1,025건 중 708건이 수정본 없음이었다
-                //   — HIGH 87건 중 지금 apt 로 고칠 수 있는 건 8건뿐인데, 화면엔 다 섞여 있었다.
-                //   값이 0(수정본 없음)일 때만 붙인다. 에이전트 debsecan 경로는 값이 true 라 해당 없음.
-                if ($noFix === '' && ($debsecan[$ctrId][$p['name']][$cveId] ?? null) === 0) {
-                    $noFix = ($trackerLabel[$ctrId] ?? '배포판') . ': 수정본 미배포';
-                }
-
-                if ($noFix !== '') {
-                    $why .= ' · 벤더 미수정(' . $noFix . ') — 조치 불가(수정본 없음)';
-                    $counts['NOFIX']++;
-                }
-
-                $counts[$sev]++;
+                if ($decision['noFix'] !== '') { $counts['NOFIX']++; }
+                $counts[$decision['sev']]++;
                 $ins->execute([
                     $scanId, $ctrId, $cveId, $p['name'], $p['version'],
-                    $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $status, $inKev ? 1 : 0,
-                    ($staleEv !== null || $kernelPending) ? 1 : 0, $noFix !== '' ? 1 : 0,
-                    $cvss, $sev, $why,
+                    $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $decision['status'], $decision['inKev'] ? 1 : 0,
+                    ($staleEv !== null || $kernelPending) ? 1 : 0, $decision['noFix'] !== '' ? 1 : 0,
+                    $decision['cvss'], $decision['sev'], $decision['why'],
                 ]);
             }
         }
