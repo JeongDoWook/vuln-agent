@@ -23,11 +23,6 @@ const VG_RESTART_TOP = 10;
 // 리소스 추이 차트에 그릴 최대 스캔 건수(최근 것부터).
 const VG_RESOURCE_TREND_LIMIT = 50;
 
-// 재시작이 필요한 finding 중 **커널**인가 — 커널은 프로세스 재시작이 아니라 재부팅이 답이다.
-function vg_needs_reboot(array $f): bool {
-    return preg_match('/^(kernel|linux-image-|linux-headers-)/', (string) ($f['package_name'] ?? '')) === 1;
-}
-
 // --- 탭별 데이터 조회 (?tab= 에 따라 갈리는 SQL). 각자 {total, rows, ...} 형태의 배열을 반환한다. ---
 
 function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perPage, int $offset): array {
@@ -154,7 +149,7 @@ function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perP
     return ['total' => $total, 'rows' => $rows, 'sevByScan' => $sevByScan];
 }
 
-$counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
+$counts =['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
 $critHighTotal = 0; $restartTotal = 0; $restartRows = [];
 $tab = 'vuln'; $page = 1; $perPage = vg_perpage(); $total = 0;
@@ -355,12 +350,12 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         // 커널은 재부팅해야 새 코드가 올라온다 — 프로세스 재시작으로는 안 고쳐진다.
         4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>'
                        . (!empty($f['needs_restart'])
-                          ? ' ' . vg_badge(vg_needs_reboot($f) ? '재부팅 필요' : '재시작 필요', 'high')
+                          ? ' ' . vg_badge(vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅 필요' : '재시작 필요', 'high')
                           : ''),
         5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
         // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
         6 => fn($f) => !empty($f['needs_restart'])
-                       ? '<span class="pill">' . (vg_needs_reboot($f) ? '재부팅' : '프로세스 재시작') . '</span>'
+                       ? '<span class="pill">' . (vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅' : '프로세스 재시작') . '</span>'
                        : vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null),
     ];
     $vulnOpts = [
