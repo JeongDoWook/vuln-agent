@@ -8,18 +8,8 @@ declare(strict_types=1);
  *   직후(재매칭·조치안 보강 뒤)에만 호출된다.
  */
 
-require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/db.php'; // vg_with_tx — 트랜잭션 래퍼
 
-/**
- * packages.php 용 사전집계 요약(tb_package_summary)을 통째로 다시 만든다.
- *   원본 tb_cve_affected_packages(92만 행)를 (package_name,ecosystem)로 집계한 결과를 담아,
- *   화면이 매 로드마다 전체를 재집계(~8초)하지 않고 이 40K행만 읽게 한다.
- *   affected_packages 는 OSV 커넥터만 쓰므로 OSV 실행 직후(재매칭·조치안 보강 뒤)에만 부른다.
- *
- * 트랜잭션 안에서 DELETE→INSERT 한다: InnoDB MVCC 로 읽는 쪽은 커밋 전까지 옛 요약을 그대로
- * 보다 커밋 순간 새 값으로 전환된다(빈 창이 없다). OSV 실행 뒤라 affected_packages 로의 동시
- * 쓰기도 없다.
- */
 /**
  * 이 패키지를 전부 고치려면 올려야 할 버전 = 조치 버전 중 가장 높은 것.
  *
@@ -38,6 +28,12 @@ if (!function_exists('vg_pkg_max_fixed')) {
     }
 }
 
+/**
+ * tb_package_summary 를 통째로 다시 만든다(DELETE→INSERT, 트랜잭션 안).
+ *
+ * InnoDB MVCC 로 읽는 쪽은 커밋 전까지 옛 요약을 그대로 보다 커밋 순간 새 값으로 전환된다
+ * (빈 창이 없다). OSV 실행 직후에만 불리므로 affected_packages 로의 동시 쓰기도 없다.
+ */
 if (!function_exists('vg_rebuild_package_summary')) {
     function vg_rebuild_package_summary(PDO $pdo): void {
         vg_with_tx($pdo, function () use ($pdo) {
@@ -62,6 +58,9 @@ if (!function_exists('vg_rebuild_package_summary')) {
             );
             $byPkg = [];
             foreach ($fx as $row) {
+                // ecosystem 은 스키마상 NOT NULL DEFAULT '' 라(02-matcher.sql) PHP 배열 키로
+                //   안전하다 — NULL 이 ''로 강제변환돼 아래 UPDATE 의 WHERE ecosystem = ? 와
+                //   어긋나는 경우가 없다.
                 $byPkg[$row['package_name']][$row['ecosystem']][] = $row['fixed_version'];
             }
             if ($byPkg) {
