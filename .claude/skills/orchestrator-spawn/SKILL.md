@@ -22,11 +22,20 @@ description: .omc/tasks/*.md 에 준비된 지시문 파일들로 워커를 실�
    ```powershell
    .\deploy\orchestrator\spawn-batch.ps1
    ```
-   기본값은 `-Permissions ask -Launch tab -Finish pr -Prefix feat -Base origin/main` — 워커가
-   탭에서 사용자 승인을 받고, 완료 시 스스로 PR 까지 낸다. 필요하면 오버라이드:
+   기본값은 `-Permissions ask -Launch auto -Finish pr -Prefix feat -Base origin/main` — 워커가
+   사용자 승인을 받고, 완료 시 스스로 PR 까지 낸다. 필요하면 오버라이드:
    - 믿고 맡길 작업만 `-Permissions skip`
    - 창 없이 로그로만 돌리려면 `-Launch headless`
    - 여러 워커를 로컬 병합해 PR 1개로 묶을 계획이면 `-Finish push`(이후 `merge-milestone.ps1`)
+
+   **`-Launch` 는 그냥 생략해라(기본값 `auto` 를 쓴다).** `auto` 가 지금 세션이 termkeep
+   안에서 도는지 부모 프로세스 체인으로 감지해 termkeep 이면 termkeep 새 세션으로, 아니면
+   현재 터미널에 맞춰 띄운다(`deploy/orchestrator/README.md` "호스트 터미널 자동 감지" 절).
+   `-Launch tab`/`window` 을 손으로 넘기면 이 감지를 건너뛰어 termkeep 안에서 돌아도 무조건
+   Windows Terminal 새 탭으로 튄다 — 실제로 이 문서에 "기본값" 이라고 잘못 적혀 있던 예시를
+   그대로 따라 했다가 termkeep 세션 대신 별도 창 탭 3개가 뜬 사고가 있었다(2026-07-19).
+   사용자가 명시적으로 "새 창으로/탭으로/헤드리스로 띄워줘" 라고 하지 않는 한 `-Launch` 인자
+   자체를 아예 쓰지 않는다.
 
    스폰에 성공한 파일은 자동으로 `.omc/tasks/archive/` 로 옮겨진다(재실행 시 중복 스폰 방지).
 
