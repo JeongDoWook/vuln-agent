@@ -27,6 +27,133 @@ const VG_RESOURCE_TREND_LIMIT = 50;
 function vg_needs_reboot(array $f): bool {
     return preg_match('/^(kernel|linux-image-|linux-headers-)/', (string) ($f['package_name'] ?? '')) === 1;
 }
+
+// --- 탭별 데이터 조회 (?tab= 에 따라 갈리는 SQL). 각자 {total, rows, ...} 형태의 배열을 반환한다. ---
+
+function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perPage, int $offset): array {
+    /* 성격이 다른 두 부류를 한 목록에 섞고 페이지를 나누면, 어느 한쪽은 반드시 뒤로 밀린다.
+     *   - 등급순으로 정렬했더니: 커널 재부팅 건(등급이 낮다)이 2페이지로 밀려 사라졌다.
+     *   - 그래서 needs_restart 를 맨 위로 올렸더니: 이번엔 **CRITICAL 이 안 보였다**
+     *     (실측: web01 은 재시작 필요 건이 앞을 다 채워 CRITICAL 2건이 44페이지 뒤로 갔다).
+     * 정렬로는 못 푼다 — 표를 둘로 나눈다. 각자 자기 기준으로 정렬하고, 둘 다 첫 화면에 있다.
+     *   표1(주 목록·페이지네이션): CRITICAL·HIGH — 등급 → EPSS 순
+     *   표2(상위 N건 + 전체보기):  재시작·재부팅 필요 — 등급이 낮아도 놓치면 안 되는 부류
+     *                              (이미 패치됐는데 옛 코드가 상주해 "패치됨"으로 사라진다)
+     */
+    $sel = "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
+                   f.needs_restart, c.epss, c.epss_percentile, c.ref_urls_json,
+               " . VG_FIXED_VERSION_SUBQ . "
+              FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id";
+
+    $total = $critHighTotal;
+    $st = $pdo->prepare(
+        "$sel WHERE f.scan_id = ? AND f.severity IN ('CRITICAL','HIGH')
+         ORDER BY FIELD(f.severity,'CRITICAL','HIGH'), c.epss DESC, f.cve_id
+         LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute([$sid]);
+    $rows = $st->fetchAll();
+
+    $st = $pdo->prepare(
+        "$sel WHERE f.scan_id = ? AND f.needs_restart = 1
+         ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
+         LIMIT " . VG_RESTART_TOP
+    );
+    $st->execute([$sid]);
+    $restartRows = $st->fetchAll();
+
+    return ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows];
+}
+
+function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset): array {
+    // 노출은 보통 소량이라 전부 보여주고, 프로세스는 많을 수 있어 페이지네이션한다
+    // (이 탭의 ?page= 는 프로세스 표에 적용된다).
+    // 컨테이너 안의 프로세스·포트도 여기 함께 있다(container_id > 0).
+    //   출처를 표시하지 않으면 컨테이너의 nginx 가 호스트의 nginx 처럼 보인다 → "위치" 열.
+    $st = $pdo->prepare('SELECT e.proc, e.proto, e.bind_addr, e.port, e.scope, e.exe_pkg, e.loaded_pkgs,
+                                IFNULL(c.cid, \'\') AS ctr
+                           FROM tb_exposures e LEFT JOIN tb_containers c ON c.id = e.container_id
+                          WHERE e.scan_id = ?
+                          ORDER BY FIELD(e.scope,\'EXTERNAL\',\'LAN\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), e.port');
+    $st->execute([$sid]);
+    $exposures = $st->fetchAll();
+
+    $total = $pdo->prepare('SELECT COUNT(*) FROM tb_processes WHERE scan_id = ?');
+    $total->execute([$sid]); $total = (int) $total->fetchColumn();
+    $st = $pdo->prepare("SELECT p.pid, p.comm, p.username, p.exe_pkg, p.loaded_pkgs,
+                                IFNULL(c.cid, '') AS ctr
+                           FROM tb_processes p LEFT JOIN tb_containers c ON c.id = p.container_id
+                          WHERE p.scan_id = ? ORDER BY p.comm LIMIT $perPage OFFSET $offset");
+    $st->execute([$sid]);
+    $rows = $st->fetchAll();
+
+    return ['total' => $total, 'exposures' => $exposures, 'rows' => $rows];
+}
+
+function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset): array {
+    $st = $pdo->prepare('SELECT COUNT(*) FROM tb_cce_findings WHERE scan_id = ?');
+    $st->execute([$sid]); $total = (int) $st->fetchColumn();
+    // 점검 항목을 **검증된 룰셋(SSG)** 에 묶어 두었으므로, 그 룰의 기준 참조(CIS/NIST/STIG)를
+    //   함께 읽어 화면이 근거를 인용할 수 있게 한다. 묶이지 않은 항목은 refs 가 비어 있다.
+    $st = $pdo->prepare(
+        "SELECT f.code, f.ssg_rule_id, f.title, f.result, f.severity, f.evidence, f.rationale,
+                r.refs_json, r.title AS ssg_title
+           FROM tb_cce_findings f
+           LEFT JOIN tb_compliance_rules r ON r.rule_id = f.ssg_rule_id AND r.is_deleted = 0
+          WHERE f.scan_id = ?
+          ORDER BY FIELD(f.result,'FAIL','NA','PASS'), FIELD(f.severity,'HIGH','MEDIUM','LOW'), f.code
+          LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute([$sid]);
+    $rows = $st->fetchAll();
+
+    return ['total' => $total, 'rows' => $rows];
+}
+
+function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, int $perPage, int $offset): array {
+    $total = $suppressedCount;
+    $st = $pdo->prepare(
+        "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason
+           FROM tb_suppressed_findings WHERE scan_id = ?
+          ORDER BY FIELD(base_severity,'CRITICAL','HIGH','MEDIUM','LOW'), cve_id
+          LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute([$sid]);
+    $rows = $st->fetchAll();
+
+    return ['total' => $total, 'rows' => $rows];
+}
+
+function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
+    // 새 수집·새 컬럼 없이 스캔 이력 탭과 같은 데이터를 시간순으로만 가져온다.
+    //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
+    $st = $pdo->prepare(
+        'SELECT collected_at, peak_rss_mb, cpu_seconds
+           FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT ' . VG_RESOURCE_TREND_LIMIT
+    );
+    $st->execute([$hostId]);
+    $resourceScans = array_reverse($st->fetchAll());
+
+    return ['resourceScans' => $resourceScans];
+}
+
+function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perPage, int $offset): array {
+    $total = $scanTotal;
+    $st = $pdo->prepare(
+        "SELECT id, collected_at, received_at, package_count, exposure_count, agent_version,
+                elapsed_seconds, peak_rss_mb, cpu_seconds
+           FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute([$hostId]);
+    $rows = $st->fetchAll();
+
+    $ids = [];
+    foreach ($rows as $s) { $ids[] = (int) $s['id']; }
+    $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
+
+    return ['total' => $total, 'rows' => $rows, 'sevByScan' => $sevByScan];
+}
+
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
 $critHighTotal = 0; $restartTotal = 0; $restartRows = [];
@@ -114,105 +241,22 @@ try {
 
         // --- 활성 탭 데이터만 조회(+페이지네이션) ---
         if ($tab === 'vuln') {
-            /* 성격이 다른 두 부류를 한 목록에 섞고 페이지를 나누면, 어느 한쪽은 반드시 뒤로 밀린다.
-             *   - 등급순으로 정렬했더니: 커널 재부팅 건(등급이 낮다)이 2페이지로 밀려 사라졌다.
-             *   - 그래서 needs_restart 를 맨 위로 올렸더니: 이번엔 **CRITICAL 이 안 보였다**
-             *     (실측: web01 은 재시작 필요 건이 앞을 다 채워 CRITICAL 2건이 44페이지 뒤로 갔다).
-             * 정렬로는 못 푼다 — 표를 둘로 나눈다. 각자 자기 기준으로 정렬하고, 둘 다 첫 화면에 있다.
-             *   표1(주 목록·페이지네이션): CRITICAL·HIGH — 등급 → EPSS 순
-             *   표2(상위 N건 + 전체보기):  재시작·재부팅 필요 — 등급이 낮아도 놓치면 안 되는 부류
-             *                              (이미 패치됐는데 옛 코드가 상주해 "패치됨"으로 사라진다)
-             */
-            $sel = "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
-                           f.needs_restart, c.epss, c.epss_percentile, c.ref_urls_json,
-                       " . VG_FIXED_VERSION_SUBQ . "
-                      FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id";
-
-            $total = $critHighTotal;
-            $st = $pdo->prepare(
-                "$sel WHERE f.scan_id = ? AND f.severity IN ('CRITICAL','HIGH')
-                 ORDER BY FIELD(f.severity,'CRITICAL','HIGH'), c.epss DESC, f.cve_id
-                 LIMIT $perPage OFFSET $offset"
-            );
-            $st->execute([$sid]);
-            $rows = $st->fetchAll();
-
-            $st = $pdo->prepare(
-                "$sel WHERE f.scan_id = ? AND f.needs_restart = 1
-                 ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
-                 LIMIT " . VG_RESTART_TOP
-            );
-            $st->execute([$sid]);
-            $restartRows = $st->fetchAll();
+            ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows]
+                = vg_host_load_vuln_tab($pdo, $sid, $critHighTotal, $perPage, $offset);
         } elseif ($tab === 'runtime') {
-            // 노출은 보통 소량이라 전부 보여주고, 프로세스는 많을 수 있어 페이지네이션한다
-            // (이 탭의 ?page= 는 프로세스 표에 적용된다).
-            // 컨테이너 안의 프로세스·포트도 여기 함께 있다(container_id > 0).
-            //   출처를 표시하지 않으면 컨테이너의 nginx 가 호스트의 nginx 처럼 보인다 → "위치" 열.
-            $st = $pdo->prepare('SELECT e.proc, e.proto, e.bind_addr, e.port, e.scope, e.exe_pkg, e.loaded_pkgs,
-                                        IFNULL(c.cid, \'\') AS ctr
-                                   FROM tb_exposures e LEFT JOIN tb_containers c ON c.id = e.container_id
-                                  WHERE e.scan_id = ?
-                                  ORDER BY FIELD(e.scope,\'EXTERNAL\',\'LAN\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), e.port');
-            $st->execute([$sid]);
-            $exposures = $st->fetchAll();
-
-            $total = $pdo->prepare('SELECT COUNT(*) FROM tb_processes WHERE scan_id = ?');
-            $total->execute([$sid]); $total = (int) $total->fetchColumn();
-            $st = $pdo->prepare("SELECT p.pid, p.comm, p.username, p.exe_pkg, p.loaded_pkgs,
-                                        IFNULL(c.cid, '') AS ctr
-                                   FROM tb_processes p LEFT JOIN tb_containers c ON c.id = p.container_id
-                                  WHERE p.scan_id = ? ORDER BY p.comm LIMIT $perPage OFFSET $offset");
-            $st->execute([$sid]);
-            $rows = $st->fetchAll();
+            ['total' => $total, 'exposures' => $exposures, 'rows' => $rows]
+                = vg_host_load_runtime_tab($pdo, $sid, $perPage, $offset);
         } elseif ($tab === 'cce') {
-            $st = $pdo->prepare('SELECT COUNT(*) FROM tb_cce_findings WHERE scan_id = ?');
-            $st->execute([$sid]); $total = (int) $st->fetchColumn();
-            // 점검 항목을 **검증된 룰셋(SSG)** 에 묶어 두었으므로, 그 룰의 기준 참조(CIS/NIST/STIG)를
-            //   함께 읽어 화면이 근거를 인용할 수 있게 한다. 묶이지 않은 항목은 refs 가 비어 있다.
-            $st = $pdo->prepare(
-                "SELECT f.code, f.ssg_rule_id, f.title, f.result, f.severity, f.evidence, f.rationale,
-                        r.refs_json, r.title AS ssg_title
-                   FROM tb_cce_findings f
-                   LEFT JOIN tb_compliance_rules r ON r.rule_id = f.ssg_rule_id AND r.is_deleted = 0
-                  WHERE f.scan_id = ?
-                  ORDER BY FIELD(f.result,'FAIL','NA','PASS'), FIELD(f.severity,'HIGH','MEDIUM','LOW'), f.code
-                  LIMIT $perPage OFFSET $offset"
-            );
-            $st->execute([$sid]);
-            $rows = $st->fetchAll();
+            ['total' => $total, 'rows' => $rows]
+                = vg_host_load_cce_tab($pdo, $sid, $perPage, $offset);
         } elseif ($tab === 'suppressed') {
-            $total = $suppressedCount;
-            $st = $pdo->prepare(
-                "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason
-                   FROM tb_suppressed_findings WHERE scan_id = ?
-                  ORDER BY FIELD(base_severity,'CRITICAL','HIGH','MEDIUM','LOW'), cve_id
-                  LIMIT $perPage OFFSET $offset"
-            );
-            $st->execute([$sid]);
-            $rows = $st->fetchAll();
+            ['total' => $total, 'rows' => $rows]
+                = vg_host_load_suppressed_tab($pdo, $sid, $suppressedCount, $perPage, $offset);
         } elseif ($tab === 'resources') {
-            // 새 수집·새 컬럼 없이 스캔 이력 탭과 같은 데이터를 시간순으로만 가져온다.
-            //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
-            $st = $pdo->prepare(
-                'SELECT collected_at, peak_rss_mb, cpu_seconds
-                   FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT ' . VG_RESOURCE_TREND_LIMIT
-            );
-            $st->execute([$hostId]);
-            $resourceScans = array_reverse($st->fetchAll());
+            ['resourceScans' => $resourceScans] = vg_host_load_resources_tab($pdo, $hostId);
         } else { // scans
-            $total = $scanTotal;
-            $st = $pdo->prepare(
-                "SELECT id, collected_at, received_at, package_count, exposure_count, agent_version,
-                        elapsed_seconds, peak_rss_mb, cpu_seconds
-                   FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT $perPage OFFSET $offset"
-            );
-            $st->execute([$hostId]);
-            $rows = $st->fetchAll();
-
-            $ids = [];
-            foreach ($rows as $s) { $ids[] = (int) $s['id']; }
-            $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
+            ['total' => $total, 'rows' => $rows, 'sevByScan' => $sevByScan]
+                = vg_host_load_scans_tab($pdo, $hostId, $scanTotal, $perPage, $offset);
         }
     }
 } catch (Throwable $e) {
