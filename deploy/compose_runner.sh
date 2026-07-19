@@ -282,14 +282,13 @@ case "$ENV" in
     export DB_DATA="$( (cd "$MAIN_ROOT" && pwd -W 2>/dev/null) || printf '%s' "$MAIN_ROOT" )/data/mysql"
 
     if [ -n "$WT_NAME" ]; then
-      # --- 워크트리: web+scheduler+translate 만 이 워크트리 전용 프로젝트로 뜬다. DB 는 안 건드린다. ---
+      # --- 워크트리: web+scheduler 만 이 워크트리 전용 프로젝트로 뜬다. DB 는 안 건드린다. ---
       ENV_FILE_ARGS=(-f compose.dev.yml -f compose.dev-net.yml)
       PROJECT="vulnagent-dev-$WT_NAME"
-      ENV_DISPLAY="Development · wt/$WT_NAME (web+scheduler+translate 독립, DB 는 공용)"
+      ENV_DISPLAY="Development · wt/$WT_NAME (web+scheduler 독립, DB 는 공용)"
       # 컨테이너명에 워크트리 접미사 — 같은 호스트에서 이름이 겹치면 충돌하므로 필수.
       export WEB_CONTAINER="vulnagent-web-dev-$WT_NAME"
       export SCHEDULER_CONTAINER="vulnagent-scheduler-dev-$WT_NAME"
-      export TRANSLATE_CONTAINER="vulnagent-translate-dev-$WT_NAME"
       # WEB_PORT 만 이 워크트리 로컬 .env.dev 에서 읽는다(wt.sh add 가 만듦) — 그 외 값은
       #   메인 트리 것을 그대로 쓴다(쉘 환경변수가 --env-file 값보다 우선한다).
       WT_ENV_FILE="$TREE_ROOT/deploy/.env.dev"
@@ -307,19 +306,13 @@ case "$ENV" in
       #   외부 네트워크의 서비스 별칭에 기대는 대신 명시적으로 고정한다(server/src/config.php 가
       #   DB_HOST 를 env 로 이미 읽으므로 이 값만 얹으면 된다. 새 추상화 불필요).
       export DB_HOST="vulnagent-db-dev"
-      # translate 는 db 와 달리 이 워크트리 전용 인스턴스다(아래 참고) — 서비스 별칭 "translate" 는
-      #   외부 네트워크에서 트리마다 겹치므로(같은 별칭을 여러 프로젝트가 동시에 등록) 쓸 수 없고,
-      #   컨테이너명을 직접 가리켜야 한다.
-      export TRANSLATE_HOST="http://$TRANSLATE_CONTAINER:5000"
     else
-      # --- 메인 트리: 지금처럼 db+web+scheduler+translate 전부 한 프로젝트(vulnagent-dev)로 뜬다. ---
+      # --- 메인 트리: 지금처럼 db+web+scheduler 전부 한 프로젝트(vulnagent-dev)로 뜬다. ---
       ENV_FILE_ARGS=(-f compose.dev.yml -f compose.dev-db.yml -f compose.dev-net.yml)
       PROJECT="vulnagent-dev"
-      ENV_DISPLAY="Development (db+web+scheduler+translate, translate 는 트리별 독립)"
+      ENV_DISPLAY="Development (db+web+scheduler)"
       export WEB_CONTAINER="vulnagent-web-dev"
       export SCHEDULER_CONTAINER="vulnagent-scheduler-dev"
-      export TRANSLATE_CONTAINER="vulnagent-translate-dev"
-      export TRANSLATE_HOST="http://$TRANSLATE_CONTAINER:5000"
       # DB_DATA(위에서 이미 메인 트리 절대경로로 고정) 는 named volume 이 아니라 바인드마운트다 —
       #   기존 dev 데이터(수백 MB)를 그대로 쓰고, 디스크에서 눈으로 확인·백업할 수 있다.
     fi ;;
@@ -358,17 +351,56 @@ say "  실행 : ${GREEN}docker compose ... $*${NC}"
 say "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
+# 워크트리 dev 프로젝트엔 db 서비스가 기본 대상엔 없지만(compose.dev.yml 에 web/scheduler만
+#   등장), BASE_FILE(compose.yml)에는 db 서비스 정의 자체가 있다 — 그래서 사용자가 인자로
+#   "db" 를 직접 주면 docker compose 가 그걸 명시적 대상으로 받아들여 그대로 시도한다. db 는
+#   메인 트리 프로젝트 소유라 워크트리 프로젝트로 뜨면 컨테이너명이 vulnagent-db-dev 로
+#   충돌하거나, 메인 스택이 안 떠 있을 때 워크트리가 공용 DB 를 잘못 소유해 버린다.
+#   검사 대상 서브커맨드를 스택 라이프사이클(up/down/restart/stop/start)로 한정한다 — exec/run
+#   은 서비스 위치 뒤에 컨테이너 내부 명령·옵션 인자가 그대로 붙어서(예: `exec web mysql -h db`)
+#   "db" 라는 토큰이 서비스가 아니라 그 명령의 인자값으로도 나타날 수 있어 전체 스캔이 오탐을
+#   낸다. logs/ps 등 정보 조회용도 같은 이유로 제외한다(컨테이너를 새로 만들거나 상태를 바꾸지
+#   않으니 사고 리스크가 낮다).
+case "${1:-}" in
+  up|down|restart|stop|start)
+    if [ "$ENV" = "dev" ] && [ -n "$WT_NAME" ]; then
+      for a in "$@"; do
+        if [ "$a" = "db" ]; then
+          say "${RED}오류: 워크트리에서는 db 를 다룰 수 없습니다.${NC} 공용 DB 는 메인 트리에서 관리하세요."
+          exit 1
+        fi
+      done
+    fi
+    ;;
+esac
+
 # `up` 이면 기동 후 DB 마이그레이션을 이어서 적용한다(fresh 볼륨의 증분 스키마 반영).
 #   그 외 명령(down/logs/ps…)은 그대로 exec. migrate 는 DB healthy 를 스스로 기다린다.
-#   워크트리 dev 는 web/scheduler/translate 만 대상으로 한다(--no-deps 로 db 는 이 프로젝트에서
-#   절대 시작하지 않는다 — db 는 메인 트리 프로젝트 소유. translate 는 db 와 달리 이 워크트리
-#   전용이라 여기서 같이 띄운다). 마이그레이션은 그대로 돌린다: DB_CONTAINER 가 트리와 무관하게
-#   항상 vulnagent-db-dev 라 어느 워크트리에서 걸어도 공용 DB에 적용된다
-#   (migrate.sh 의 flock 이 DB_CONTAINER 기준이라 동시 실행도 안전).
+#   워크트리 dev 는 web/scheduler 만 대상으로 한다("db" 인자는 위에서 이미 걸렀다) —
+#   사용자가 web/scheduler 중 일부를 인자로 직접 지정하면(예: `dev up -d scheduler`, 특정
+#   서비스만 재기동) 그 지정을 존중해 기본값을 덧붙이지 않는다. 아무 서비스도 지정하지
+#   않았을 때만 web scheduler 둘 다를 기본으로 띄운다(뒤에 붙이는 자리라 "$@" 끝이 값을 요구하는
+#   옵션이면 그 값으로 먹힐 수 있지만, 이 저장소 dev 워크플로우에선 그런 옵션을 쓰지 않는다).
+#   svcs 는 배열이 아니라 문자열 플래그로 둔다 — 빈 배열의 `${#arr[@]}` 참조가 구버전 bash
+#   (Windows git-bash 구성에 따라 남아 있을 수 있는 4.3 이하)에서 `set -u` 와 부딪혀
+#   unbound variable 로 죽는 사례가 있어, 배열 확장 자체를 피한다. 마이그레이션은 그대로
+#   돌린다: DB_CONTAINER 가 트리와 무관하게 항상 vulnagent-db-dev 라 어느 워크트리에서 걸어도
+#   공용 DB에 적용된다(migrate.sh 의 flock 이 DB_CONTAINER 이름 기준 호스트 로컬 락이라 동시
+#   실행도 안전 — 모든 워크트리가 같은 호스트에 있다는 전제).
 if [ "${1:-}" = "up" ]; then
   if [ "$ENV" = "dev" ] && [ -n "$WT_NAME" ]; then
     shift
-    "${COMPOSE[@]}" up --no-deps "$@" web scheduler translate
+    svcs=""
+    for a in "$@"; do
+      case "$a" in
+        web|scheduler) svcs="y" ;;
+      esac
+    done
+    if [ -z "$svcs" ]; then
+      "${COMPOSE[@]}" up --no-deps "$@" web scheduler
+    else
+      "${COMPOSE[@]}" up --no-deps "$@"
+    fi
   else
     "${COMPOSE[@]}" "$@"
   fi

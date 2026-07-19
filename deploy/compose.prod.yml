@@ -46,9 +46,6 @@ services:
       # web 과 같은 이유. scheduler 는 매 분 php 를 새로 띄우므로 다음 주기부터 새 코드를 쓴다.
       - ../server:/var/www/html:ro
 
-  translate:
-    container_name: vulnagent-translate
-
   # --- Caddy: HTTPS 종료 리버스 프록시 -------------------------------------
   #   Let's Encrypt 인증서를 DuckDNS DNS-01 로 발급(인바운드 80/443 불필요).
   #   호스트 ${WEB_PORT}(기존 8080 포워딩) → 컨테이너 443(TLS) → 내부 web:80.

@@ -35,16 +35,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  translate:
-    restart: unless-stopped
-    # LT_THREADS=8 + torch/ctranslate2 기본 스레드풀만으로 idle 상태에서 이미 PIDS 115/128 —
-    # 동시요청 자체는 스레드 수를 늘리지 않는다고 실측했지만(요청은 이미 떠 있는 워커 스레드
-    # 큐에 쌓일 뿐) 여유가 13개뿐이라 GC·헬스체크 등 일시 스레드에도 위험하다. 여유를 두려고
-    # 다른 워크트리를 건드리지 않는 배수(웹과 같은 256)로 올린다.
-    pids_limit: 256
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
