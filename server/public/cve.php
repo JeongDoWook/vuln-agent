@@ -184,10 +184,10 @@ vg_subtabs([
                 // 컬럼이 TEXT 라 형식이 강제되지 않는다 — 원소가 배열이 아니거나(백필/수동 INSERT
                 //   등 이 파일이 쓰지 않은 경로로 들어온 값) 스킴이 http(s) 가 아니면 건너뛴다.
                 $url = is_array($r) ? (string) ($r['url'] ?? '') : '';
-                if (!preg_match('#^https?://#i', $url)) { continue; }
+                if (!vg_is_safe_http_url($url)) { continue; }
               ?>
                 <li>
-                  <a href="<?= vg_h($url) ?>" target="_blank" rel="noopener"><?= vg_h($url) ?></a>
+                  <a href="<?= vg_h($url) ?>" target="_blank" rel="noopener noreferrer"><?= vg_h($url) ?></a>
                   <?php foreach ((array) ($r['tags'] ?? []) as $t): ?>
                     <?= vg_badge((string) $t, 'muted') ?>
                   <?php endforeach; ?>

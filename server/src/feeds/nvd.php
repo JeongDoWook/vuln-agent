@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/http.php';
 require_once __DIR__ . '/upsert.php';
+require_once __DIR__ . '/../format.php';   // vg_is_safe_http_url — 저장/출력 검증을 한 곳에서 공유
 
 // 커넥터 기본 소스 URL. 커넥터 레코드의 url 이 비어 있으면 이 값을 쓴다(run/미리보기 공용).
 const VG_NVD_URL = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
@@ -80,11 +81,17 @@ function vg_nvd_extract_ref_urls(array $references): ?string {
     $list = [];
     foreach ($references as $ref) {
         $url = (string) ($ref['url'] ?? '');
-        if (!preg_match('#^https?://#i', $url)) { continue; }
+        if (!vg_is_safe_http_url($url)) { continue; }
+        // TEXT 컬럼(64KB) 저장 방어 — NVD 에는 쿼리스트링이 아주 긴 URL 이 섞인다. 비-strict
+        //   모드에서 초과분이 조용히 잘리면 JSON 문자열이 깨져 cve.php 의 json_decode 가
+        //   실패하고 카드가 통째로 사라진다(원인 추적도 어렵다). 넉넉히 512자로 자른다.
+        if (strlen($url) > 512) { continue; }
         if (isset($seen[$url])) { continue; }
         $seen[$url] = true;
         $tags = [];
         foreach ($ref['tags'] ?? [] as $t) { $tags[] = (string) $t; }
+        // NVD 가 죽은 링크라고 명시한 것 — 화면 대표 링크로 쓰이면 사용자가 클릭 후 헛수고한다.
+        if (in_array('Broken Link', $tags, true)) { continue; }
         $list[] = ['url' => $url, 'tags' => $tags];
     }
     if (!$list) { return null; }

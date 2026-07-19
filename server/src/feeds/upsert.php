@@ -63,6 +63,11 @@ function vg_upsert_cve(
            published      = COALESCE(VALUES(published), published),
            cvss_vector    = COALESCE(VALUES(cvss_vector), cvss_vector),
            cwe            = COALESCE(VALUES(cwe), cwe),
+           -- ref_urls_json 은 지금은 NVD 만 채운다 — 다른 피드가 vg_upsert_cve 를 부를 때
+           -- 넘기는 null 이 기존 링크를 지우면 안 되므로 COALESCE. 대가: NVD 가 재수집에서
+           -- 링크를 뺐거나(죽은 링크 정리 등) extract 가 전부 걸러 null 이 돼도 옛 URL 이
+           -- DB 에 남는다. 출력 시점(vg_cve_first_ref/cve.php)의 스킴 재검증이 최소한의
+           -- 방어선이다 — 완전한 해는 아니다.
            ref_urls_json  = COALESCE(VALUES(ref_urls_json), ref_urls_json)'
     );
     $st->execute([$id, $summary, $cvss, $published, $vector, $cwe, $refUrlsJson]);
