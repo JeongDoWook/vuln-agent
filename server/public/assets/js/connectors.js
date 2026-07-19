@@ -211,6 +211,9 @@ function vgGenericInit() {
   //   커넥터가 늘 때 한쪽만 고쳐진다.
   try { VG_TYPE_META = JSON.parse(form.dataset.typeMeta || '{}'); } catch (e) { VG_TYPE_META = {}; }
   try { VG_GENERIC_ROLE_LABELS = JSON.parse(form.dataset.roleLabels || '{}'); } catch (e) { VG_GENERIC_ROLE_LABELS = {}; }
+  if (Object.keys(VG_GENERIC_ROLE_LABELS).length === 0) {
+    console.warn('vgGenericInit: data-role-labels 가 비었거나 파싱 실패 — 역할 select 가 원시 키로 표시됩니다.');
+  }
 
   function toggle() {
     var isGeneric = typeSel.value === 'generic_api';
