@@ -10,14 +10,14 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php'; // vg_with_tx — 트랜잭션 래퍼
 
-/**
- * 이 패키지를 전부 고치려면 올려야 할 버전 = 조치 버전 중 가장 높은 것.
- *
- * SQL MAX() 는 사전순이라 '3.0.13-0ubuntu3.9' > '3.0.13-0ubuntu3.11' 로 뒤집힌다.
- * strnatcmp 는 숫자 덩어리를 수로 비교해 11 > 9 를 지킨다. epoch('2:9.1...')도 앞자리
- * 숫자로 먼저 비교돼 일관된다. dpkg 완전 호환은 아니지만 표시용으로 충분하다.
- */
 if (!function_exists('vg_pkg_max_fixed')) {
+    /**
+     * 이 패키지를 전부 고치려면 올려야 할 버전 = 조치 버전 중 가장 높은 것.
+     *
+     * SQL MAX() 는 사전순이라 '3.0.13-0ubuntu3.9' > '3.0.13-0ubuntu3.11' 로 뒤집힌다.
+     * strnatcmp 는 숫자 덩어리를 수로 비교해 11 > 9 를 지킨다. epoch('2:9.1...')도 앞자리
+     * 숫자로 먼저 비교돼 일관된다. dpkg 완전 호환은 아니지만 표시용으로 충분하다.
+     */
     function vg_pkg_max_fixed(array $versions): ?string {
         $max = null;
         foreach ($versions as $v) {
@@ -28,13 +28,13 @@ if (!function_exists('vg_pkg_max_fixed')) {
     }
 }
 
-/**
- * tb_package_summary 를 통째로 다시 만든다(DELETE→INSERT, 트랜잭션 안).
- *
- * InnoDB MVCC 로 읽는 쪽은 커밋 전까지 옛 요약을 그대로 보다 커밋 순간 새 값으로 전환된다
- * (빈 창이 없다). OSV 실행 직후에만 불리므로 affected_packages 로의 동시 쓰기도 없다.
- */
 if (!function_exists('vg_rebuild_package_summary')) {
+    /**
+     * tb_package_summary 를 통째로 다시 만든다(DELETE→INSERT, 트랜잭션 안).
+     *
+     * InnoDB MVCC 로 읽는 쪽은 커밋 전까지 옛 요약을 그대로 보다 커밋 순간 새 값으로 전환된다
+     * (빈 창이 없다). OSV 실행 직후에만 불리므로 affected_packages 로의 동시 쓰기도 없다.
+     */
     function vg_rebuild_package_summary(PDO $pdo): void {
         vg_with_tx($pdo, function () use ($pdo) {
             $pdo->exec('DELETE FROM tb_package_summary');
@@ -69,7 +69,10 @@ if (!function_exists('vg_rebuild_package_summary')) {
                 );
                 foreach ($byPkg as $name => $byEco) {
                     foreach ($byEco as $eco => $versions) {
-                        $upd->execute([vg_pkg_max_fixed($versions), $name, $eco]);
+                        // PHP 는 '2048' 같은 순수 숫자 문자열을 배열 키에서 int 로 강제변환한다
+                        //   (패키지명 '2048' 실존) — 그대로 바인딩하면 varchar 비교가 암묵 형변환을
+                        //   타 PK 인덱스를 못 쓸 수 있어 명시적으로 문자열로 되돌린다.
+                        $upd->execute([vg_pkg_max_fixed($versions), (string) $name, (string) $eco]);
                     }
                 }
             }

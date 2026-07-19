@@ -15,7 +15,7 @@ require_once __DIR__ . '/debtracker.php';   // vg_debtracker_evidence — 데비
 require_once __DIR__ . '/vendorerrata.php'; // vg_vendor_errata_evidence — RHEL 계열 백포트 판정(중앙)
 require_once __DIR__ . '/ubuntuoval.php';   // vg_ubuntu_evidence — 우분투 벤더 판정(중앙)
 require_once __DIR__ . '/kernelcve.php';    // vg_kernel_fixed_set — 커널은 업스트림(kernel.org)이 판정한다
-require_once __DIR__ . '/package_summary.php'; // vg_rebuild_package_summary — packages.php 사전집계 재구성
+require_once __DIR__ . '/package_summary.php'; // vg_rebuild_package_summary — 하위호환 재노출(신규 호출부는 직접 require)
 
 if (!function_exists('vg_scope_rank')) {
     // 노출 범위 위험도 (클수록 위험)
