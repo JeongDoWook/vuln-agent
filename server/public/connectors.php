@@ -13,6 +13,15 @@ require __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
 vg_require_menu('connectors');   // 피드 커넥터: 설정형 권한
 
+// 범용 API 커넥터(generic_api)의 역할 라벨 — 단일 소스. <select id="gRole"> 옵션과
+//   connectors.js 가 각자 하드코딩해 두 곳이 따로 놀던 것을 여기로 합친다. $roleGroups(아래)
+//   카드 타이틀과 뜻은 겹치지만 "취약점 정체 — 무엇인가" 처럼 부가설명이 붙어 있어 옵션 라벨
+//   (설명 없는 짧은 형태)로 그대로 못 쓴다 — 억지로 문자열을 자르지 않고 새 상수로 둔다.
+const VG_GENERIC_ROLE_LABELS = [
+    'identity' => '취약점 정체', 'priority' => '우선순위 신호',
+    'vendor' => '벤더 패치 판정', 'compliance' => '보안설정 룰셋',
+];
+
 $pdo = vg_pdo();
 $msg = null; $err = null;
 
@@ -361,7 +370,8 @@ vg_header('피드 커넥터', 'connectors');
   ?>
     <form id="connForm" method="post"
           data-edit-generic="<?= ($edit['connector_type'] ?? '') === 'generic_api' ? vg_h(json_encode($econn)) : '' ?>"
-          data-type-meta="<?= vg_h(json_encode($typeMeta, JSON_UNESCAPED_UNICODE)) ?>">
+          data-type-meta="<?= vg_h(json_encode($typeMeta, JSON_UNESCAPED_UNICODE)) ?>"
+          data-role-labels="<?= vg_h(json_encode(VG_GENERIC_ROLE_LABELS, JSON_UNESCAPED_UNICODE)) ?>">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="save">
       <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
@@ -399,10 +409,9 @@ vg_header('피드 커넥터', 'connectors');
       <div id="genericFields" hidden>
         <label>역할</label>
         <select id="gRole">
-          <option value="identity">취약점 정체</option>
-          <option value="priority">우선순위 신호</option>
-          <option value="vendor">벤더 패치 판정</option>
-          <option value="compliance">보안설정 룰셋</option>
+          <?php foreach (VG_GENERIC_ROLE_LABELS as $rv => $rl): ?>
+            <option value="<?= vg_h($rv) ?>"><?= vg_h($rl) ?></option>
+          <?php endforeach; ?>
         </select>
         <div class="sub" id="gRoleNotice" hidden>⚠ compliance role은 1차 미지원입니다 — 저장은 되지만 실행 시 오류가 발생합니다.</div>
 
