@@ -13,7 +13,10 @@ SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
            WHERE TABLE_SCHEMA = DATABASE()
              AND TABLE_NAME   = 'tb_cves'
              AND COLUMN_NAME  = 'ref_urls_json');
+-- AFTER 절 없음(의도적) — cwe 컬럼 존재에 결합되면, cwe 를 추가한 마이그레이션(0014)이
+--   무슨 이유로든 건너뛰어진 환경에서 이 마이그레이션이 1054 로 죽고 원인이 안 보인다.
+--   컬럼 위치는 기능상 의미가 없다.
 SET @s := IF(@c = 0,
-             'ALTER TABLE tb_cves ADD COLUMN ref_urls_json TEXT NULL AFTER cwe',
+             'ALTER TABLE tb_cves ADD COLUMN ref_urls_json TEXT NULL',
              'DO 0');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;

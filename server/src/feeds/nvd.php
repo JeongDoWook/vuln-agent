@@ -73,6 +73,9 @@ function vg_nvd_upsert_item(PDO $pdo, array $item): bool {
  * 'Vendor Advisory' 태그가 붙은 것을 앞으로 정렬한다 — 첫 항목이 화면 대표 링크로 쓰인다.
  */
 function vg_nvd_extract_ref_urls(array $references): ?string {
+    // 자르기 전에 먼저 정렬한다 — Patch 태그가 원본 배열 뒤쪽에 오는 경우가 흔해서,
+    //   자르고 나서 정렬하면 앞 10개에 Patch 가 하나도 없어 벤더 패치 URL 이 통째로
+    //   버려질 수 있다(그러면 화면의 대표 링크가 무관한 메일링리스트를 가리킨다).
     $seen = [];
     $list = [];
     foreach ($references as $ref) {
@@ -83,7 +86,6 @@ function vg_nvd_extract_ref_urls(array $references): ?string {
         $tags = [];
         foreach ($ref['tags'] ?? [] as $t) { $tags[] = (string) $t; }
         $list[] = ['url' => $url, 'tags' => $tags];
-        if (count($list) >= 10) { break; }
     }
     if (!$list) { return null; }
 
@@ -91,8 +93,10 @@ function vg_nvd_extract_ref_urls(array $references): ?string {
         $pref = fn($r) => (in_array('Patch', $r['tags'], true) || in_array('Vendor Advisory', $r['tags'], true)) ? 0 : 1;
         return $pref($a) <=> $pref($b);
     });
+    $list = array_slice($list, 0, 10);
 
-    return json_encode($list, JSON_UNESCAPED_SLASHES);
+    $json = json_encode($list, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    return $json !== false ? $json : null;
 }
 
 /**

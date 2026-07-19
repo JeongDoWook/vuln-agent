@@ -235,7 +235,23 @@ function vg_cve_first_ref_url(?string $json): ?string {
     $list = json_decode($json, true);
     if (!is_array($list) || !isset($list[0]['url'])) { return null; }
     $url = (string) $list[0]['url'];
-    return $url !== '' ? $url : null;
+    // 저장 시점(vg_nvd_extract_ref_urls) 검증을 우회한 값(다른 피드·수동 INSERT)이
+    //   href 로 그대로 나가지 않게, 출력 직전에도 스킴을 다시 확인한다.
+    return preg_match('#^https?://#i', $url) ? $url : null;
+}
+
+/**
+ * 조치 열 공통 표시 규칙 — findings.php/host.php 가 각자 들고 있던 같은 삼항 로직을 통일.
+ *   조치버전이 있으면 버전, 없고 NVD 대표 참조링크가 있으면 링크, 둘 다 없으면 평문.
+ */
+function vg_fix_cell(?string $fixedVersion, ?string $refUrlsJson): string {
+    if ($fixedVersion !== null && $fixedVersion !== '') {
+        return '<span class="pill">' . vg_h($fixedVersion) . ' 이상</span>';
+    }
+    $ref = vg_cve_first_ref_url($refUrlsJson);
+    return $ref !== null
+        ? '<a class="why" href="' . vg_h($ref) . '" target="_blank" rel="noopener">패치 확인 →</a>'
+        : '<span class="why">패치 확인</span>';
 }
 
 /**

@@ -315,18 +315,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                           : ''),
         5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
         // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
-        6 => function ($f) {
-            if (!empty($f['needs_restart'])) {
-                return '<span class="pill">' . (vg_needs_reboot($f) ? '재부팅' : '프로세스 재시작') . '</span>';
-            }
-            if (!empty($f['fixed_version'])) {
-                return '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>';
-            }
-            $ref = vg_cve_first_ref_url($f['ref_urls_json'] ?? null);
-            return $ref !== null
-                ? '<a class="why" href="' . vg_h($ref) . '" target="_blank" rel="noopener">패치 확인 →</a>'
-                : '<span class="why">패치 확인</span>';
-        },
+        6 => fn($f) => !empty($f['needs_restart'])
+                       ? '<span class="pill">' . (vg_needs_reboot($f) ? '재부팅' : '프로세스 재시작') . '</span>'
+                       : vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null),
     ];
     $vulnOpts = [
         'card'      => false,

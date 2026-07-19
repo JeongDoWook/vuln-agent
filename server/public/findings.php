@@ -271,15 +271,7 @@ vg_header('취약점', 'findings');
                   return $cvss . '<div class="why">' . $epss . '</div>';
               },
               'rationale' => fn($r) => '<span class="why">' . vg_trunc($r['rationale'], 80) . '</span>',
-              'fix'       => function ($r) {
-                  if (!empty($r['fixed_version'])) {
-                      return '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>';
-                  }
-                  $ref = vg_cve_first_ref_url($r['ref_urls_json'] ?? null);
-                  return $ref !== null
-                      ? '<a class="why" href="' . vg_h($ref) . '" target="_blank" rel="noopener">패치 확인 →</a>'
-                      : '<span class="why">패치 확인</span>';
-              },
+              'fix'       => fn($r) => vg_fix_cell($r['fixed_version'] ?? null, $r['ref_urls_json'] ?? null),
           ],
       ]
   );
