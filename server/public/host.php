@@ -382,7 +382,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
               'card' => false,
               'empty' => '리스닝 소켓 없음(외부 노출면 없음).',
               'cell' => [
-                  0 => fn($e) => vg_badge((string) $e['scope'], $scopeTone[$e['scope']] ?? 'muted'),
+                  0 => fn($e) => vg_badge(vg_scope_label((string) $e['scope']), $scopeTone[$e['scope']] ?? 'muted'),
                   1 => fn($e) => $e['ctr'] !== ''
                         ? '<span class="why">컨테이너 ' . vg_h($e['ctr']) . '</span>'
                         : '<span class="why">호스트</span>',
