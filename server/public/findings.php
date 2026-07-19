@@ -223,9 +223,26 @@ vg_header('취약점', 'findings');
   // 필터 초기화 CTA — vg_qs() 는 지금 $_GET 을 기준으로 넘겨받은 키만 비우므로, 단일 호스트
   //   모드(?host=N)·단일 스캔 모드(?scan_id=N)에서 눌러도 그 컨텍스트는 유지되고 필터만 지워진다
   //   (하드코딩된 '/findings.php' 였다면 호스트·스캔 컨텍스트까지 함께 날아갔다).
+  // href 는 이중으로 안전하다: vg_qs() 자체가 모든 키·값을 urlencode() 하고(server/src/view/
+  //   components.php 의 vg_qs 정의), 그 결과를 vg_empty() 가 다시 vg_h() 로 이스케이프해서
+  //   출력한다(vg_empty 의 cta.href 렌더 라인 — title 과 동일한 규약). 그래서 호출부(여기)에서
+  //   vg_h() 를 또 감싸면 '&' 가 '&amp;amp;' 로 이중 이스케이프된다 — 하면 안 된다.
+  //   (같은 vg_qs() 를 KPI 카드처럼 직접 <a href=...> 를 만드는 코드에 쓸 땐, 그건 vg_empty() 를
+  //   거치지 않으므로 그 호출부가 스스로 vg_h() 해야 한다 — 여기와는 다른 경로다.)
+  //   tests/smoke.sh 가 임의 쿼리값 주입으로 이 전제를 회귀 검증한다.
   $filterCta  = ['href' => vg_qs(['q' => '', 'sev' => '', 'st' => '', 'fx' => '', 'page' => 1]), 'label' => '필터 초기화'];
   $hasAnyFilter = $q !== '' || $sev !== '' || $st !== '' || $fx !== '';
-  if (!$hostOptions) {
+  if ($scanId > 0 && !$scan) {
+      // 단일 스캔 모드인데 그 스캔이 없는 경우(삭제됐거나 잘못된 id) — 필터 문제가 아니다.
+      //   초기화 CTA 를 줘도 scan_id 는 그대로 유지돼(컨텍스트 보존이 이번 변경의 의도) 계속
+      //   0건이므로, 전체 호스트 뷰로 보내는 별도 CTA 를 둔다.
+      $emptySpec = [
+          'icon'  => '📭',
+          'title' => '스캔 #' . $scanId . ' 을(를) 찾을 수 없습니다.',
+          'hint'  => '삭제됐거나 존재하지 않는 스캔입니다.',
+          'cta'   => ['href' => '/findings.php', 'label' => '전체 호스트 보기'],
+      ];
+  } elseif (!$hostOptions) {
       // 필터 문제가 아니라 수집된 스캔 자체가 없는 경우 — "필터를 넓혀라" 는 오해를 준다.
       $emptySpec = [
           'icon'  => '📭',
@@ -238,8 +255,7 @@ vg_header('취약점', 'findings');
       //   이 화면(호스트별 최신 스캔에서 매처가 실제로 잡은 판정)엔 없을 수 있다.
       $emptySpec = [
           'icon'  => '🔍',
-          // title 은 vg_empty() 가 렌더링 시 vg_h() 로 이스케이프한다
-          //   (server/src/view/components.php:124 — echo '...' . vg_h((string) ($spec['title'] ?? ...)) . '...').
+          // title 은 vg_empty() 가 렌더링 시 vg_h() 로 이스케이프한다(cta.href 주석 참고 — 같은 함수).
           //   vg_trunc() 는 자체적으로 HTML/vg_h 를 반환하므로 여기서 같이 쓰면 이중 이스케이프로
           //   깨진다 — 그래서 순수 문자열 자르기(mb_strimwidth)만 쓴다. tests/smoke.sh 의
           //   "findings.php 검색어 XSS 이스케이프" 항목이 이 전제를 회귀 검증한다.

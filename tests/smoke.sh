@@ -390,9 +390,28 @@ body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에도 패키지DB 없는 컨테이너 경고"
 
 # findings.php 검색 0건 안내(empty.title)에 $q 를 그대로 넣는다 — vg_empty() 가 vg_h() 로
-#   이스케이프하는 것에 기대는 코드라, 그 전제가 깨지면 여기서 바로 잡는다(반사형 XSS 회귀 검증).
+#   이스케이프하는 것에 기대는 코드다. "이스케이프된 문자열이 응답 어딘가에 있다"만 보면
+#   vg_toolbar 의 검색창 value 가 이미 그걸 만족시켜 공허하게 통과한다(raw 값이 title 에도
+#   새는지는 안 잡힘) — 그래서 raw 페이로드가 "없다"는 부정 검사로 확인하고, 0건 안내가
+#   실제로 그 경로를 탔는지도 함께 못박는다.
 xssbody=$(curl_ -s -b "$JAR" -G "$BASE/findings.php" --data-urlencode 'q=<script>alert(1)</script>')
-assert_contains "$xssbody" '&lt;script&gt;alert(1)&lt;/script&gt;' "findings.php 검색어 XSS 이스케이프(vg_empty 의존)"
+if printf '%s' "$xssbody" | grep -qF '<script>alert(1)</script>'; then
+  no "findings.php 검색어가 raw HTML 로 출력됨 — 반사형 XSS!"
+else
+  ok "findings.php 검색어 XSS 이스케이프(vg_empty 의존)"
+fi
+assert_contains "$xssbody" '이 화면(실제 스캔·매칭된 현재 판정)에는 없습니다' "검색 0건 안내가 노출됨(빈 상태 분기 확인)"
+
+# 필터초기화 CTA 의 href(vg_qs() 결과) — q/sev/st/fx 는 지우지만, 목록에 없는 임의 쿼리값은
+#   그대로 실어 나른다. vg_qs() 의 urlencode() + vg_empty() 의 vg_h() 이중 이스케이프에
+#   기대는 코드라, href 속성을 깨고 나가는 raw 값이 없는지 부정 검사로 확인한다.
+evilbody=$(curl_ -s -b "$JAR" -G "$BASE/findings.php" --data-urlencode 'q=zzz-no-match-xyz-999' \
+  --data-urlencode 'evil="><script>alert(1)</script>')
+if printf '%s' "$evilbody" | grep -qF '"><script>alert(1)</script>'; then
+  no "findings.php 필터초기화 CTA href 에 임의 쿼리값이 이스케이프 없이 흘러듦 — XSS!"
+else
+  ok "findings.php 필터초기화 CTA href 의 임의 쿼리값이 안전하게 인코딩됨"
+fi
 
 # 잘못된 비번
 JAR2="$(mktemp)"; csrf2=$(curl_ -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)
