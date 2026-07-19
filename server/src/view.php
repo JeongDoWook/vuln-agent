@@ -581,6 +581,7 @@ function vg_nav_sections(): array {
             ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE 목록',      'key' => 'cves'],
             ['perm' => 'findings',   'href' => '/packages.php',   'label' => '영향 패키지',   'key' => 'packages'],
             ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '벤더 판정',     'key' => 'vendor'],
+            ['perm' => 'findings',   'href' => '/compliance_rules.php', 'label' => '보안설정 룰셋', 'key' => 'compliance'],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '국내 보안공지', 'key' => 'advisories'],
         ],
         '자산' => [
@@ -613,6 +614,8 @@ function vg_nav_icon(string $key): string {
         'packages'    => '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22" x2="12" y2="12"/>',
         // 벤더 판정 — 검인(도장) 모양: 벤더가 "고쳤다/안 고쳤다" 를 확인해 준 것이라는 뜻.
         'vendor'      => '<circle cx="12" cy="9" r="6"/><polyline points="9.3 9 11.2 10.9 14.9 7.2"/><path d="M8.5 14.4 7.4 21l4.6-2.3 4.6 2.3-1.1-6.6"/>',
+        // 보안설정 룰셋 — 체크리스트 모양: 기준(CIS/NIST/STIG)에 맞나 항목별로 확인한다는 뜻.
+        'compliance'  => '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
         'advisories'  => '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
         'assets'      => '<rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/>',
         'connectors'  => '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
