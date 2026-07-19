@@ -7,6 +7,7 @@ declare(strict_types=1);
  *   그대로 참조하므로 팔레트를 바꾸면 차트도 같이 바뀐다.
  */
 
+require_once __DIR__ . '/../format.php';
 require_once __DIR__ . '/components.php';
 
 /**

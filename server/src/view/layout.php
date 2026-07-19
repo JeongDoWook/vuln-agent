@@ -6,6 +6,7 @@ declare(strict_types=1);
  *   정적 자산 URL(vg_asset)도 골격의 일부라 여기 둔다.
  */
 
+require_once __DIR__ . '/../format.php';
 require_once __DIR__ . '/nav.php';
 
 /** 정적 파일 URL + 캐시버스팅(mtime). 파일이 없으면 경로만 돌려준다. */

@@ -5,7 +5,10 @@ declare(strict_types=1);
  * nav.php — 사이드바·브레드크럼·활동로그 라벨의 SSOT.
  *   메뉴 구조(vg_nav_sections)를 사이드바 렌더(vg_nav)와 브레드크럼(vg_breadcrumb)이
  *   함께 참조한다 — 메뉴를 바꾸면 두 화면이 자동으로 같이 바뀐다.
+ *   vg_can()/vg_role() 은 인증·권한 부트스트랩(auth.php)이 이미 로드된 상태를 전제한다.
  */
+
+require_once __DIR__ . '/../format.php';
 
 /**
  * 활동 로그 activity_type → 한글 라벨(SSOT). activity.php(전체 로그) 와 user.php(사용자별
