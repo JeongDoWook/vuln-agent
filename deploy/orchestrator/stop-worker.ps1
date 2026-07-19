@@ -228,8 +228,13 @@ if (Test-Path $manifestPath) {
   catch { Write-Host "⚠ 매니페스트를 읽지 못함($($_.Exception.Message)) — 세션 종료를 건너뛴다." -ForegroundColor Yellow }
 }
 
-# ── 1) 세션 종료 (termkeep 모드만) ───────────────────────────────────────────
-# window/tab 모드는 창을 사용자가 닫는다 — 이번 범위 밖이라 건드리지 않는다(기존 동작 유지).
+# ── 1) 세션·프로세스 정리 ────────────────────────────────────────────────────
+# termkeep 모드는 먼저 데몬에 세션 종료를 요청한다(이름 대조로 남의 세션은 안 건드림).
+# tab/window 모드는 termkeep 세션이 없어 예전엔 "창은 사용자가 닫는다"고 범위를 좁혀뒀는데,
+# -Launch tab 워커 3개가 병합 뒤에도 탭이 안 닫혀 사용자가 직접 taskkill 해야 했던 사고
+# (2026-07-19)로 넓혔다. Stop-WorkerProcessTree 는 세션 유무와 무관하게 이 워크트리의
+# .launch.ps1 경로로만 프로세스를 골라낸다(경로가 워크트리마다 고유해 PID 재사용으로 남의
+# 프로세스를 잘못 죽일 위험이 없다) — 그래서 모드 분기 없이 항상 호출해도 안전하다.
 $sessionId = if ($manifest) { "$($manifest.termkeepSessionId)".Trim() } else { '' }
 if ($manifest -and $manifest.mode -eq 'termkeep' -and $sessionId) {
   Write-Host "== termkeep 세션 종료: session $sessionId ==" -ForegroundColor Cyan
@@ -241,8 +246,10 @@ if ($manifest -and $manifest.mode -eq 'termkeep' -and $sessionId) {
     Write-Host "  → 탭을 이미 닫았다면 매니페스트가 낡은 것이다: .omc/orchestrator/$Task.json 을 지우고 다시 실행." -ForegroundColor Yellow
     exit 1
   }
-  # 세션이 우리 것으로 확인돼 닫혔다(또는 이미 없었다) → 그 세션이 남긴 프로세스도 우리 것이다.
-  if (Test-Path $wtDir) { $null = Stop-WorkerProcessTree -WorkDir $wtDir }
+}
+if (Test-Path $wtDir) {
+  $killed = Stop-WorkerProcessTree -WorkDir $wtDir
+  if ($killed -gt 0) { Write-Host "✓ 워커 프로세스 $killed 개 정리" -ForegroundColor Green }
 }
 
 # ── 2) 워크트리 제거 (있을 때만) ─────────────────────────────────────────────
