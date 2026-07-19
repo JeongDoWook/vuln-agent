@@ -8,6 +8,8 @@
 .env.*
 *.local
 
+.omc/
+
 /vendor/
 composer.lock
 
