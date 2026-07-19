@@ -152,6 +152,20 @@ function vg_status_badge(?string $s): string {
     return vg_badge(vg_status_label($s), $tone[$s ?? ''] ?? 'muted');
 }
 
+// 노출 범위(tb_exposures.scope: EXTERNAL/LAN/BOUND/FILTERED/LOCAL).
+//   문구는 matcher.php vg_classify()/agent 판정 주석과 통일(같은 값을 두 곳에서 다르게 부르지 않게).
+//   톤(색) 매핑은 host.php 의 $scopeTone 이 계속 갖는다 — 여기는 라벨 텍스트만.
+function vg_scope_label(?string $s): string {
+    $m = [
+        'EXTERNAL' => '외부노출',
+        'LAN'      => '로컬 세그먼트 노출',
+        'BOUND'    => '특정 IP 바인딩',
+        'FILTERED' => '방화벽 차단',
+        'LOCAL'    => '로컬 전용',
+    ];
+    return $m[$s ?? ''] ?? (string) $s;
+}
+
 /* 수집 상태 판정 기준(분). 에이전트 기본 스케줄이 매시간이라 3시간까지는 정상으로 본다.
  *   자산관리 목록(assets.php)과 호스트 상세(host.php) 히어로가 공유한다. */
 const VG_STALE_MIN   = 180;        // 3시간 초과 → 지연
