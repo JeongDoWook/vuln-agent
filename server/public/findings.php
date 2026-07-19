@@ -129,7 +129,7 @@ try {
         $offset = ($page - 1) * $perPage;
 
         $stmt = $pdo->prepare(
-            "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss, c.epss_percentile,
+            "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss, c.epss_percentile, c.ref_urls_json,
                     ctr.cid AS container_cid, ctr.image AS container_image,
                 " . VG_FIXED_VERSION_SUBQ . "
              FROM tb_findings f
@@ -271,9 +271,15 @@ vg_header('취약점', 'findings');
                   return $cvss . '<div class="why">' . $epss . '</div>';
               },
               'rationale' => fn($r) => '<span class="why">' . vg_trunc($r['rationale'], 80) . '</span>',
-              'fix'       => fn($r) => !empty($r['fixed_version'])
-                  ? '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>'
-                  : '<span class="why">패치 확인</span>',
+              'fix'       => function ($r) {
+                  if (!empty($r['fixed_version'])) {
+                      return '<span class="pill">' . vg_h($r['fixed_version']) . ' 이상</span>';
+                  }
+                  $ref = vg_cve_first_ref_url($r['ref_urls_json'] ?? null);
+                  return $ref !== null
+                      ? '<a class="why" href="' . vg_h($ref) . '" target="_blank" rel="noopener">패치 확인 →</a>'
+                      : '<span class="why">패치 확인</span>';
+              },
           ],
       ]
   );

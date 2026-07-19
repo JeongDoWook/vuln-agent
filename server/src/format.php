@@ -227,6 +227,18 @@ function vg_trunc(?string $text, int $len = 72): string {
 }
 
 /**
+ * tb_cves.ref_urls_json(첫 항목의 url)만 꺼낸다. findings.php/host.php 는 대표 링크 1개만
+ * 보여주면 되므로(전체 표는 cve.php 개요 탭) 파싱 실패·빈 배열이면 null.
+ */
+function vg_cve_first_ref_url(?string $json): ?string {
+    if ($json === null || $json === '') { return null; }
+    $list = json_decode($json, true);
+    if (!is_array($list) || !isset($list[0]['url'])) { return null; }
+    $url = (string) $list[0]['url'];
+    return $url !== '' ? $url : null;
+}
+
+/**
  * 도움말 툴팁. 본문에 늘어놓으면 화면이 무거워지는 부연설명을 아이콘 뒤로 보낸다.
  * 네이티브 title 을 쓴다 — 스크린리더도 읽고, JS 도 필요 없다.
  */

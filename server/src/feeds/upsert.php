@@ -49,22 +49,23 @@ function vg_extract_cve_ids(string $text): array {
  */
 function vg_upsert_cve(
     PDO $pdo, string $id, ?string $summary, ?float $cvss, ?string $published,
-    ?string $vector = null, ?string $cwe = null
+    ?string $vector = null, ?string $cwe = null, ?string $refUrlsJson = null
 ): void {
     if (!vg_is_cve_id($id)) {
         error_log("[cve] 잘못된 CVE-ID 무시: $id");
         return;
     }
     $st = $pdo->prepare(
-        'INSERT INTO tb_cves (cve_id, summary, cvss, published, cvss_vector, cwe) VALUES (?,?,?,?,?,?)
+        'INSERT INTO tb_cves (cve_id, summary, cvss, published, cvss_vector, cwe, ref_urls_json) VALUES (?,?,?,?,?,?,?)
          ON DUPLICATE KEY UPDATE
-           summary     = COALESCE(VALUES(summary), summary),
-           cvss        = COALESCE(VALUES(cvss), cvss),
-           published   = COALESCE(VALUES(published), published),
-           cvss_vector = COALESCE(VALUES(cvss_vector), cvss_vector),
-           cwe         = COALESCE(VALUES(cwe), cwe)'
+           summary        = COALESCE(VALUES(summary), summary),
+           cvss           = COALESCE(VALUES(cvss), cvss),
+           published      = COALESCE(VALUES(published), published),
+           cvss_vector    = COALESCE(VALUES(cvss_vector), cvss_vector),
+           cwe            = COALESCE(VALUES(cwe), cwe),
+           ref_urls_json  = COALESCE(VALUES(ref_urls_json), ref_urls_json)'
     );
-    $st->execute([$id, $summary, $cvss, $published, $vector, $cwe]);
+    $st->execute([$id, $summary, $cvss, $published, $vector, $cwe, $refUrlsJson]);
 }
 
 /**

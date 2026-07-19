@@ -164,6 +164,35 @@ vg_subtabs([
         </div>
       <?php endif; ?>
 
+      <?php
+      // 벤더 패치/공지 URL 목록 — NVD 는 fixed_version 처럼 구조화된 조치버전을 안 주는 경우가
+      // 대부분이라, 최소한 참고 링크라도 보여준다. 옛 CVE(아직 재수집 전)는 컬럼이 비어 카드째 생략.
+      $refUrls = [];
+      $refsJson = $cve['ref_urls_json'] ?? null;
+      if ($refsJson) {
+          $decoded = json_decode((string) $refsJson, true);
+          if (is_array($decoded)) { $refUrls = $decoded; }
+      }
+      ?>
+      <?php if ($refUrls): ?>
+        <div class="card">
+          <strong>참조 자료</strong>
+          <span class="why">— NVD 가 제공하는 벤더 패치·공지 URL</span>
+          <div class="card__body">
+            <ul class="hint-list">
+              <?php foreach ($refUrls as $r): ?>
+                <li>
+                  <a href="<?= vg_h((string) ($r['url'] ?? '')) ?>" target="_blank" rel="noopener"><?= vg_h((string) ($r['url'] ?? '')) ?></a>
+                  <?php foreach ((array) ($r['tags'] ?? []) as $t): ?>
+                    <?= vg_badge((string) $t, 'muted') ?>
+                  <?php endforeach; ?>
+                </li>
+              <?php endforeach; ?>
+            </ul>
+          </div>
+        </div>
+      <?php endif; ?>
+
       <?php if ($kev && !empty($kev['note'])): ?>
         <div class="card">
           <strong>CISA KEV</strong>

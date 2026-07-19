@@ -60,8 +60,39 @@ function vg_nvd_upsert_item(PDO $pdo, array $item): bool {
     }
 
     $pub = !empty($c['published']) ? substr((string) $c['published'], 0, 10) : null;
-    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, VG_TEXT_MAX), $cvss, $pub, $vector, $cwe);
+    $refUrlsJson = vg_nvd_extract_ref_urls($c['references'] ?? []);
+    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, VG_TEXT_MAX), $cvss, $pub, $vector, $cwe, $refUrlsJson);
     return true;
+}
+
+/**
+ * NVD references 배열 → [['url'=>..,'tags'=>[..]],...] 을 JSON 문자열로. 벤더 패치/공지 URL
+ * 목록이다 — fixed_version 이 없는 CVE(NVD 는 구조화된 조치버전을 안 준다)라도 최소한 링크는
+ * 보여줄 수 있게 저장한다. http(s) 스킴만 허용(그대로 href 로 출력되므로 방어적 검증 필수),
+ * 중복 제거, 최대 10개로 자른다(CVE 하나에 수십 개가 붙는 경우가 있다). 'Patch'/
+ * 'Vendor Advisory' 태그가 붙은 것을 앞으로 정렬한다 — 첫 항목이 화면 대표 링크로 쓰인다.
+ */
+function vg_nvd_extract_ref_urls(array $references): ?string {
+    $seen = [];
+    $list = [];
+    foreach ($references as $ref) {
+        $url = (string) ($ref['url'] ?? '');
+        if (!preg_match('#^https?://#i', $url)) { continue; }
+        if (isset($seen[$url])) { continue; }
+        $seen[$url] = true;
+        $tags = [];
+        foreach ($ref['tags'] ?? [] as $t) { $tags[] = (string) $t; }
+        $list[] = ['url' => $url, 'tags' => $tags];
+        if (count($list) >= 10) { break; }
+    }
+    if (!$list) { return null; }
+
+    usort($list, function ($a, $b) {
+        $pref = fn($r) => (in_array('Patch', $r['tags'], true) || in_array('Vendor Advisory', $r['tags'], true)) ? 0 : 1;
+        return $pref($a) <=> $pref($b);
+    });
+
+    return json_encode($list, JSON_UNESCAPED_SLASHES);
 }
 
 /**
