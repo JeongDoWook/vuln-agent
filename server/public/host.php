@@ -124,7 +124,7 @@ try {
              *                              (이미 패치됐는데 옛 코드가 상주해 "패치됨"으로 사라진다)
              */
             $sel = "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
-                           f.needs_restart, c.epss, c.epss_percentile,
+                           f.needs_restart, c.epss, c.epss_percentile, c.ref_urls_json,
                        " . VG_FIXED_VERSION_SUBQ . "
                       FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id";
 
@@ -317,7 +317,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
         6 => fn($f) => !empty($f['needs_restart'])
                        ? '<span class="pill">' . (vg_needs_reboot($f) ? '재부팅' : '프로세스 재시작') . '</span>'
-                       : (!empty($f['fixed_version']) ? '<span class="pill">' . vg_h($f['fixed_version']) . ' 이상</span>' : '<span class="why">패치 확인</span>'),
+                       : vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null),
     ];
     $vulnOpts = [
         'card'      => false,

@@ -227,6 +227,52 @@ function vg_trunc(?string $text, int $len = 72): string {
 }
 
 /**
+ * href 로 그대로 출력해도 안전한 URL 인가(http/https 스킴만). 저장 시점(vg_nvd_extract_ref_urls)과
+ * 출력 시점(vg_cve_first_ref·cve.php 참조 목록)이 각자 정규식을 들고 있으면 한쪽만 고쳤을 때
+ * 다른 쪽에 구멍이 남는다 — 검증을 여기 한 곳으로 모은다.
+ */
+function vg_is_safe_http_url(?string $url): bool {
+    return $url !== null && preg_match('#^https?://#i', $url) === 1;
+}
+
+/**
+ * tb_cves.ref_urls_json(첫 항목)에서 url·tags 를 꺼낸다. findings.php/host.php 는 대표 링크
+ * 1개만 보여주면 되므로(전체 표는 cve.php 개요 탭) 파싱 실패·빈 배열·안전하지 않은 스킴이면 null.
+ * tags 를 함께 돌려주는 건 호출부가 "이게 실제로 패치 링크인지"를 판단해야 하기 때문 —
+ * vg_nvd_extract_ref_urls 의 정렬은 Patch/Vendor Advisory 가 있을 때만 앞으로 올리므로,
+ * 태그가 없거나 Mailing List/Broken Link 뿐인 CVE 는 첫 항목이 패치 링크가 아닐 수 있다.
+ */
+function vg_cve_first_ref(?string $json): ?array {
+    if ($json === null || $json === '') { return null; }
+    $list = json_decode($json, true);
+    if (!is_array($list) || !isset($list[0]['url'])) { return null; }
+    $url = (string) $list[0]['url'];
+    if (!vg_is_safe_http_url($url)) { return null; }
+    $tags = [];
+    foreach ((array) ($list[0]['tags'] ?? []) as $t) { $tags[] = (string) $t; }
+    return ['url' => $url, 'tags' => $tags];
+}
+
+/**
+ * 조치 열 공통 표시 규칙 — findings.php/host.php 가 각자 들고 있던 같은 삼항 로직을 통일.
+ *   조치버전이 있으면 버전, 없고 NVD 대표 참조링크가 있으면 링크, 둘 다 없으면 평문.
+ *   링크 문구는 태그로 갈린다 — Patch/Vendor Advisory 가 아니면 "패치 확인"이라고 단정하지
+ *   않는다(무관한 메일링리스트·죽은 링크를 패치인 줄 알고 클릭하게 만들 수 있다).
+ */
+function vg_fix_cell(?string $fixedVersion, ?string $refUrlsJson): string {
+    if ($fixedVersion !== null && $fixedVersion !== '') {
+        return '<span class="pill">' . vg_h($fixedVersion) . ' 이상</span>';
+    }
+    $ref = vg_cve_first_ref($refUrlsJson);
+    if ($ref === null) {
+        return '<span class="why">패치 확인</span>';
+    }
+    $isPatch = in_array('Patch', $ref['tags'], true) || in_array('Vendor Advisory', $ref['tags'], true);
+    return '<a class="why" href="' . vg_h($ref['url']) . '" target="_blank" rel="noopener noreferrer">'
+        . ($isPatch ? '패치 확인 →' : '참고 링크 →') . '</a>';
+}
+
+/**
  * 도움말 툴팁. 본문에 늘어놓으면 화면이 무거워지는 부연설명을 아이콘 뒤로 보낸다.
  * 네이티브 title 을 쓴다 — 스크린리더도 읽고, JS 도 필요 없다.
  */

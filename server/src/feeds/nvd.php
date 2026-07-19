@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/http.php';
 require_once __DIR__ . '/upsert.php';
+require_once __DIR__ . '/../format.php';   // vg_is_safe_http_url — 저장/출력 검증을 한 곳에서 공유
 
 // 커넥터 기본 소스 URL. 커넥터 레코드의 url 이 비어 있으면 이 값을 쓴다(run/미리보기 공용).
 const VG_NVD_URL = 'https://services.nvd.nist.gov/rest/json/cves/2.0';
@@ -60,8 +61,49 @@ function vg_nvd_upsert_item(PDO $pdo, array $item): bool {
     }
 
     $pub = !empty($c['published']) ? substr((string) $c['published'], 0, 10) : null;
-    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, VG_TEXT_MAX), $cvss, $pub, $vector, $cwe);
+    $refUrlsJson = vg_nvd_extract_ref_urls($c['references'] ?? []);
+    vg_upsert_cve($pdo, $id, mb_substr($desc, 0, VG_TEXT_MAX), $cvss, $pub, $vector, $cwe, $refUrlsJson);
     return true;
+}
+
+/**
+ * NVD references 배열 → [['url'=>..,'tags'=>[..]],...] 을 JSON 문자열로. 벤더 패치/공지 URL
+ * 목록이다 — fixed_version 이 없는 CVE(NVD 는 구조화된 조치버전을 안 준다)라도 최소한 링크는
+ * 보여줄 수 있게 저장한다. http(s) 스킴만 허용(그대로 href 로 출력되므로 방어적 검증 필수),
+ * 중복 제거, 최대 10개로 자른다(CVE 하나에 수십 개가 붙는 경우가 있다). 'Patch'/
+ * 'Vendor Advisory' 태그가 붙은 것을 앞으로 정렬한다 — 첫 항목이 화면 대표 링크로 쓰인다.
+ */
+function vg_nvd_extract_ref_urls(array $references): ?string {
+    // 자르기 전에 먼저 정렬한다 — Patch 태그가 원본 배열 뒤쪽에 오는 경우가 흔해서,
+    //   자르고 나서 정렬하면 앞 10개에 Patch 가 하나도 없어 벤더 패치 URL 이 통째로
+    //   버려질 수 있다(그러면 화면의 대표 링크가 무관한 메일링리스트를 가리킨다).
+    $seen = [];
+    $list = [];
+    foreach ($references as $ref) {
+        $url = (string) ($ref['url'] ?? '');
+        if (!vg_is_safe_http_url($url)) { continue; }
+        // TEXT 컬럼(64KB) 저장 방어 — NVD 에는 쿼리스트링이 아주 긴 URL 이 섞인다. 비-strict
+        //   모드에서 초과분이 조용히 잘리면 JSON 문자열이 깨져 cve.php 의 json_decode 가
+        //   실패하고 카드가 통째로 사라진다(원인 추적도 어렵다). 넉넉히 512자로 자른다.
+        if (strlen($url) > 512) { continue; }
+        if (isset($seen[$url])) { continue; }
+        $seen[$url] = true;
+        $tags = [];
+        foreach ($ref['tags'] ?? [] as $t) { $tags[] = (string) $t; }
+        // NVD 가 죽은 링크라고 명시한 것 — 화면 대표 링크로 쓰이면 사용자가 클릭 후 헛수고한다.
+        if (in_array('Broken Link', $tags, true)) { continue; }
+        $list[] = ['url' => $url, 'tags' => $tags];
+    }
+    if (!$list) { return null; }
+
+    usort($list, function ($a, $b) {
+        $pref = fn($r) => (in_array('Patch', $r['tags'], true) || in_array('Vendor Advisory', $r['tags'], true)) ? 0 : 1;
+        return $pref($a) <=> $pref($b);
+    });
+    $list = array_slice($list, 0, 10);
+
+    $json = json_encode($list, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    return $json !== false ? $json : null;
 }
 
 /**
