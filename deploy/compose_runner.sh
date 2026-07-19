@@ -353,13 +353,23 @@ echo ""
 
 # `up` 이면 기동 후 DB 마이그레이션을 이어서 적용한다(fresh 볼륨의 증분 스키마 반영).
 #   그 외 명령(down/logs/ps…)은 그대로 exec. migrate 는 DB healthy 를 스스로 기다린다.
-#   워크트리 dev 는 web/scheduler 만 대상으로 한다(--no-deps 로 db 는 이 프로젝트에서
-#   절대 시작하지 않는다 — db 는 메인 트리 프로젝트 소유). 마이그레이션은 그대로 돌린다:
-#   DB_CONTAINER 가 트리와 무관하게 항상 vulnagent-db-dev 라 어느 워크트리에서 걸어도 공용
-#   DB에 적용된다(migrate.sh 의 flock 이 DB_CONTAINER 기준이라 동시 실행도 안전).
+#   워크트리 dev 는 web/scheduler 만 대상으로 한다 — --no-deps 는 web/scheduler 의 depends_on
+#   의존성(db)을 안 끌어올릴 뿐이지, 사용자가 인자로 "db" 를 직접 주면 그건 명시적 대상이라
+#   --no-deps 와 무관하게 그대로 뜬다. 그래서 아래에서 "db" 인자를 별도로 걸러 거부한다
+#   (db 는 메인 트리 프로젝트 소유 — 워크트리 프로젝트로 뜨면 컨테이너명이 vulnagent-db-dev 로
+#   충돌하거나, 메인 스택이 안 떠 있을 때 워크트리가 공용 DB 를 잘못 소유해 버린다).
+#   마이그레이션은 그대로 돌린다: DB_CONTAINER 가 트리와 무관하게 항상 vulnagent-db-dev 라
+#   어느 워크트리에서 걸어도 공용 DB에 적용된다(migrate.sh 의 flock 이 DB_CONTAINER 이름 기준
+#   호스트 로컬 락이라 동시 실행도 안전 — 모든 워크트리가 같은 호스트에 있다는 전제).
 if [ "${1:-}" = "up" ]; then
   if [ "$ENV" = "dev" ] && [ -n "$WT_NAME" ]; then
     shift
+    for a in "$@"; do
+      if [ "$a" = "db" ]; then
+        say "${RED}오류: 워크트리에서는 db 를 띄울 수 없습니다.${NC} 공용 DB 는 메인 트리에서 기동하세요."
+        exit 1
+      fi
+    done
     "${COMPOSE[@]}" up --no-deps "$@" web scheduler
   else
     "${COMPOSE[@]}" "$@"
