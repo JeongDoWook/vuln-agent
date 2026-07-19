@@ -269,8 +269,16 @@ vg_header('벤더 판정', 'vendor');
               // 패키지명 → 취약점 현황에서 그 패키지만 걸러 본다(packages.php 와 같은 연결).
               2 => fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['pkg']) . '">'
                              . vg_trunc((string) $r['pkg'], 32) . '</a>',
-              3 => fn($r) => '<a href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
-                             . vg_h((string) $r['cve_id']) . '</a>',
+              // cve.php 가 '/^CVE-\d{4}-\d+$/i' 아니면 오류로 튕긴다(정상 동작). 데비안 트래커의
+              //   TEMP-<날짜>-<해시> 같은 정식 CVE 미배정 식별자는 링크 없이 텍스트로만 보여준다.
+              3 => function ($r) {
+                  $cveId = (string) $r['cve_id'];
+                  if (preg_match('/^CVE-\d{4}-\d+$/i', $cveId)) {
+                      return '<a href="/cve.php?cve=' . urlencode($cveId) . '">' . vg_h($cveId) . '</a>';
+                  }
+                  return '<span class="why" title="데비안 보안 트래커 임시 식별자(정식 CVE 미배정)">'
+                       . vg_h($cveId) . '</span>';
+              },
               // 고친 버전. rhunfixed 는 **고친 버전이 없는 게 핵심**이라(수정본 자체가 없다)
               //   그 자리에 조치 상태를 뱃지로 둔다 — 이게 "조치 불가" 의 근거다.
               4 => function ($r) {
