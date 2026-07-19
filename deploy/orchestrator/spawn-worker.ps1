@@ -256,6 +256,37 @@ function Start-TermkeepWorker {
       return $null
     }
 
+    # 사이드바 굵은 제목을 $TaskName 으로 락 건다(custom_name=true). CreateSession 의 name 만으로는
+    # 안 된다 — SessionCreated 브로드캐스트엔 custom_name 필드가 없어 프론트가 세팅을 안 하고,
+    # 이후 Claude 가 PTY 에 찍는 OSC 자동 타이틀에 곧 덮인다. RenameSession 은 프론트가 받으면
+    # custom_name 을 true 로 명시 세팅하므로, 같은 이름으로 한 번 더 보내면 제목이 고정된다.
+    #
+    # $TaskName 이 비어 있으면 보내지 않는다 — 빈 문자열로 제목을 락 걸면 자동 타이틀조차
+    # 못 들어오는 최악의 상태가 된다(이름 없음 < 자동 타이틀).
+    #
+    # 순서 레이스 없음(daemon/src/main.rs 확인, termkeep 저장소는 참고만·수정 안 함): 데몬은
+    # 연결 하나당 요청을 순차 처리한다(main.rs:329-400 — read_line 후 process_request(msg).await
+    # 완료까지 기다렸다가 다음 줄을 읽는다). CreateSession 은 state.create_session().await 이
+    # 끝나고 SessionCreated 를 브로드캐스트한 다음에야 우리에게 응답한다(main.rs:407-419) — 즉
+    # 우리가 그 응답(위 $sid)을 받은 시점엔 이미 세션이 서버 상태에 있고 다른 모든 클라이언트도
+    # SessionCreated 를 먼저 받은 뒤다. 우리는 그 응답을 받은 뒤에만 RenameSession 을 보내므로
+    # "세션이 아직 없어 조용히 무시" 되는 경로는 없다.
+    #
+    # 파이어앤포겟: 구버전 데몬이 이 메시지 타입을 몰라도(모르는 타입은 조용히 무시) 스폰 자체는
+    # 막지 않는다 — 응답을 기다리지 않고 실패해도 조용히 한 줄만 남긴다. Flush 는 명시 호출한다
+    # ($writer.AutoFlush 가 이미 true 라 사실상 즉시 나가지만, 뒤이은 20초짜리 Output 대기
+    # 루프에 묻혀 안 나간 게 아님을 코드로도 분명히 한다).
+    if (-not [string]::IsNullOrWhiteSpace($TaskName)) {
+      try {
+        $renameMsg = ([ordered]@{ type = 'RenameSession'; session_id = $sid; name = $TaskName } | ConvertTo-Json -Compress)
+        $writer.Write($renameMsg + "`n")
+        $writer.Flush()
+      }
+      catch {
+        Write-Host "→ RenameSession 전송 실패(session $sid): $($_.Exception.Message) → 제목은 자동 타이틀에 덮일 수 있음." -ForegroundColor DarkGray
+      }
+    }
+
     # PTY 안 powershell 이 프롬프트를 내기 전에 밀어 넣은 키는 그대로 버려진다. 고정 대기는
     # 못 믿는다 — 700ms 로는 입력이 통째로 씹혔고, 실측상 프롬프트까지 약 2.4초 걸렸다.
     # 그래서 데몬이 브로드캐스트하는 PTY 출력에서 프롬프트('PS ...>')를 눈으로 확인한 뒤 넣는다.
