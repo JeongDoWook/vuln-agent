@@ -25,6 +25,9 @@ if (!in_array($tab, ['overview', 'affected', 'locations'], true)) { $tab = 'over
 
 try {
     $raw = (string) ($_GET['cve'] ?? '');
+    // 이 정규식은 vendor.php 의 CVE 컬럼 렌더러(cell[3], 링크 여부 판정)와 동기화되어야 한다 —
+    //   거기서도 같은 식을 그대로 복제해 쓴다(의도적 중복, 공유 상수로 안 뽑음 — 최초 작업 지침의
+    //   YAGNI). 둘 중 하나만 고치면 "링크는 걸리는데 여긴 튕긴다" 가 조용히 생기니 같이 바꿀 것.
     if (!preg_match('/^CVE-\d{4}-\d+$/i', $raw)) {
         $err = '잘못된 CVE 형식입니다.';
     } else {
