@@ -6,11 +6,15 @@ declare(strict_types=1);
  *   save/run/toggle/delete. HTML 출력 없음, DB 조작만.
  */
 
+require_once __DIR__ . '/db.php';      // vg_json_col — feeds.php 가 이미 물고 오지만 직접 쓰므로 명시
 require_once __DIR__ . '/feeds.php';
 require_once __DIR__ . '/matcher.php';
 require_once __DIR__ . '/audit.php';
 
 /**
+ * 주의: action='run' 은 내부에서 session_write_close() 를 호출한다(장시간 수집 중
+ *   세션 파일 락으로 다른 탭이 얼어붙는 것을 막기 위함). 호출 이후 세션에 쓰는
+ *   코드(예: CSRF 토큰 신규 발급)를 두면 그 쓰기가 유실된다.
  * @param array<string,mixed> $post
  * @return array{msg: ?string, err: ?string}
  */
@@ -67,7 +71,7 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
                 $sched['time'] = preg_match('/^\d{1,2}:\d{2}$/', $t) ? $t : '03:00';
             } elseif ($mode === 'cron') {
                 $expr = trim((string) ($post['schedule_cron'] ?? ''));
-                if ($expr === '' || count(preg_split('/\s+/', $expr)) !== 5) {
+                if ($expr === '' || count(preg_split('/\s+/', $expr) ?: []) !== 5) {
                     throw new RuntimeException('cron 은 5필드(분 시 일 월 요일)로 입력하세요. 예: 0 3 * * *');
                 }
                 $sched['expr'] = $expr;
@@ -145,6 +149,7 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
             $msg = '커넥터 삭제됨.';
         }
     } catch (Throwable $e) {
+        error_log('[connector_actions] action=' . (string) $action . ': ' . $e->getMessage());
         $err = $e->getMessage();
     }
     return ['msg' => $msg, 'err' => $err];

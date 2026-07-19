@@ -11,7 +11,7 @@ require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/feeds.php';
 require __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
-require __DIR__ . '/../src/connector_actions.php';   // POST 액션(save/run/toggle/delete) 처리
+require_once __DIR__ . '/../src/connector_actions.php';   // POST 액션(save/run/toggle/delete) 처리
 vg_require_menu('connectors');   // 피드 커넥터: 설정형 권한
 
 // 범용 API 커넥터(generic_api)의 역할 라벨 — 단일 소스. <select id="gRole"> 옵션과
