@@ -7,11 +7,16 @@
 --   멱등: information_schema 확인 후에만 추가(기존 마이그레이션 관례와 동일).
 SET NAMES utf8mb4;
 
+-- 이 테이블의 '첫' FULLTEXT 인덱스라 InnoDB 가 숨은 FTS_DOC_ID 컬럼을 위해 테이블을 재구축한다.
+--   ALGORITHM=INPLACE 라도 동시 DML 은 못 받는다(사실상 쓰기 잠금) — LOCK=SHARED 로 의도를
+--   드러내고, 수집 잡이 쓰기 중이면 조용히 기다리는 대신 즉시 실패하게 한다. 지금(2.5만행)은
+--   짧게 끝나지만 운영 볼륨이 커지면 점검창 배포를 고려할 것.
 SET @c := (SELECT COUNT(*) FROM information_schema.STATISTICS
            WHERE TABLE_SCHEMA = DATABASE()
              AND TABLE_NAME   = 'tb_cves'
-             AND INDEX_NAME   = 'ft_cves_summary');
+             AND INDEX_NAME   = 'ft_cves_summary'
+             AND INDEX_TYPE   = 'FULLTEXT');
 SET @s := IF(@c = 0,
-             'ALTER TABLE tb_cves ADD FULLTEXT KEY ft_cves_summary (summary), ALGORITHM=INPLACE',
+             'ALTER TABLE tb_cves ADD FULLTEXT KEY ft_cves_summary (summary), ALGORITHM=INPLACE, LOCK=SHARED',
              'DO 0');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;

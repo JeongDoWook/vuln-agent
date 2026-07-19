@@ -57,13 +57,24 @@ try {
     $params = [];
 
     if ($q !== '') {
-        if (preg_match('/^cve-?/i', $q)) {
-            // "CVE-2024-1234" 처럼 CVE-ID 형태 입력은 접두 매칭만 쓴다(PK 인덱스, KISS).
+        // "CVE-2024-1234" 뿐 아니라 "CVE" 없이 번호만("2024-1234", "1999-0003", "2024")
+        // 입력하는 흔한 패턴도 ID 검색으로 잡는다 — 안 잡으면 하이픈 포함 숫자가 FULLTEXT
+        // 토큰과 안 맞아 사실상 0건이 된다.
+        if (preg_match('/^cve-?/i', $q) || preg_match('/^\d{4}(-\d*)?$/', $q)) {
             // summary FULLTEXT 를 같이 OR 하면 "CVE"·연도가 낱말로 쪼개져, 다른 CVE 를
             // 교차참조("...duplicate of CVE-1999-0032...")한 요약까지 잡혀 노이즈가 커진다
-            // (실측: CVE-1999-0003 전체 입력이 요약 교차참조 때문에 62건까지 걸렸다).
-            $where .= ' AND c.cve_id LIKE ?';
-            $params[] = $q . '%';
+            // (실측: CVE-1999-0003 전체 입력이 요약 교차참조 때문에 62건까지 걸렸다) — 그래서
+            // ID 형태 입력은 cve_id 접두 매칭만 쓴다(PK 인덱스, KISS).
+            $norm = preg_match('/^cve/i', $q) ? $q : 'CVE-' . $q;
+            // LIKE 의 %/_ 는 와일드카드라 사용자 입력에 그대로 남아 있으면 의도 밖 매칭이 된다.
+            $where .= " AND c.cve_id LIKE ? ESCAPE '\\\\'";
+            $params[] = strtr($norm, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']) . '%';
+        } elseif (mb_strlen($q) < 3) {
+            // innodb_ft_min_token_size(기본 3) 미만인 검색어는 FULLTEXT 가 무조건 0건을 준다
+            // ("ls", "xz" 같은 2글자 검색이 고장난 것처럼 보임) — 이 경우만 기존 LIKE 로 폴백한다.
+            // stopword 케이스(기술 용어 코퍼스라 흔치 않음)까지 감지해 폴백하는 건 과설계로 보고 넘긴다.
+            $where .= " AND c.summary LIKE ? ESCAPE '\\\\'";
+            $params[] = '%' . strtr($q, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']) . '%';
         } else {
             // summary 는 FULLTEXT(ft_cves_summary, db/migrations/20260719105602_*.sql). NATURAL
             // LANGUAGE MODE 는 검색어에 +-*"() 같은 예약문자가 섞여도 문법 오류 없이 그냥 단어로
