@@ -122,10 +122,6 @@ vg_subtabs([
       <div class="card">
         <strong>요약</strong>
         <p class="why prose"><?= $cve && $cve['summary'] ? vg_h($cve['summary']) : '수집된 설명이 없습니다.' ?></p>
-        <?php if ($cve && !empty($cve['summary_ko'])): ?>
-          <p class="why mt">자동 번역 · 참고용</p>
-          <p class="prose"><?= vg_h((string) $cve['summary_ko']) ?></p>
-        <?php endif; ?>
       </div>
 
       <?php
@@ -204,10 +200,6 @@ vg_subtabs([
           <span class="why">— 실제 악용이 확인된 취약점. 등재되면 우선순위가 최상단으로 올라간다</span>
           <div class="card__body">
             <p class="why prose"><?= vg_h((string) $kev['note']) ?></p>
-            <?php if (!empty($kev['note_ko'])): ?>
-              <p class="why mt">자동 번역 · 참고용</p>
-              <p class="prose"><?= vg_h((string) $kev['note_ko']) ?></p>
-            <?php endif; ?>
           </div>
         </div>
       <?php endif; ?>

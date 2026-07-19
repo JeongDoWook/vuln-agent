@@ -1,5 +1,5 @@
 # =============================================================================
-# vuln-agent · Compose Dev — web + scheduler + translate (워크트리별 독립)
+# vuln-agent · Compose Dev — web + scheduler (워크트리별 독립)
 # =============================================================================
 # 특징:
 #   - 소스 라이브 마운트(./server) → PHP 수정 즉시 반영, 재빌드 불필요
@@ -7,16 +7,10 @@
 # 실행:  ./compose_runner.sh dev up -d
 #
 # DB 는 이 파일에 없다 — compose.dev-db.yml(메인 트리 전용)로 분리했다. 워크트리에서
-# `dev up -d` 를 하면 web/scheduler/translate 만 이 워크트리의 독립 컴포즈 프로젝트로 뜨고, DB 는
+# `dev up -d` 를 하면 web/scheduler 만 이 워크트리의 독립 컴포즈 프로젝트로 뜨고, DB 는
 # 건드리지 않는다(메인 트리의 공용 db 컨테이너를 compose.dev-net.yml 의 외부 네트워크로
 # 찾아간다). 컨테이너명은 변수로 둔다 — compose_runner.sh 가 워크트리 이름을 접미사로 붙여
 # 워크트리마다 고유한 이름을 쓴다(같은 호스트에서 컨테이너명이 겹치면 충돌하므로).
-#
-# translate(LibreTranslate)는 db 와 달리 워크트리별로 독립시켰다 — db 처럼 공용으로 두려면
-# 메인 트리 컴포즈 파일에 서비스를 추가해야 하는데, 메인 트리 dev 스택은 사람만 건드릴 수
-# 있다(CLAUDE.md 가드레일 · .claude/hooks/block-dev-stack.sh). 상태가 없는(stateless) 서비스라
-# 워크트리마다 띄워도 데이터 정합성 문제가 없고, 각 워커가 자기 트리 안에서 스스로 기동·검증할
-# 수 있다(모델 로드로 메모리를 조금 더 쓰지만, en+ko 로 제한해 무리한 수준은 아니다).
 # =============================================================================
 
 services:
@@ -36,6 +30,3 @@ services:
     container_name: ${SCHEDULER_CONTAINER:-vulnagent-scheduler-dev}
     volumes:
       - ../server:/var/www/html   # 소스 라이브 반영
-
-  translate:
-    container_name: ${TRANSLATE_CONTAINER:-vulnagent-translate-dev}
