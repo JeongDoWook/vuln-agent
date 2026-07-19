@@ -6,10 +6,10 @@ declare(strict_types=1);
  *   목록/추가/편집/삭제, 즉시 실행(수동), 활성 토글, 최근 수집 이력.
  */
 
-require __DIR__ . '/../src/auth.php';
-require __DIR__ . '/../src/view.php';
-require __DIR__ . '/../src/feeds.php';
-require __DIR__ . '/../src/matcher.php';
+require_once __DIR__ . '/../src/auth.php';
+require_once __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/feeds.php';
+require_once __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
 require_once __DIR__ . '/../src/connector_actions.php';   // POST 액션(save/run/toggle/delete) 처리
 vg_require_menu('connectors');   // 피드 커넥터: 설정형 권한
@@ -30,6 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
         $err = '세션이 만료되었습니다.';
     } else {
+        // 주의: action='run' 이면 이 호출 안에서 session_write_close() 가 일어난다 →
+        //   이 아래에서 세션에 '쓰는' 코드를 추가하면 조용히 유실된다.
         $r = vg_connector_handle_post($pdo, $_POST);
         $msg = $r['msg'];
         $err = $r['err'];

@@ -12,6 +12,9 @@ require_once __DIR__ . '/matcher.php';
 require_once __DIR__ . '/audit.php';
 
 /**
+ * 전제: **호출 전에 vg_csrf_check() 로 CSRF 검증이 끝나 있어야 한다.**
+ *   이 함수는 검증을 다시 하지 않는다 — 호출부(connectors.php)가 소유.
+ *
  * 주의: action='run' 은 내부에서 session_write_close() 를 호출한다(장시간 수집 중
  *   세션 파일 락으로 다른 탭이 얼어붙는 것을 막기 위함). 호출 이후 세션에 쓰는
  *   코드(예: CSRF 토큰 신규 발급)를 두면 그 쓰기가 유실된다.
@@ -120,6 +123,8 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
             // 쥔 채 돌면 같은 세션(같은 브라우저)의 다른 탭·페이지가 그 시간 내내
             // session_start 에서 막혀 UI 전체가 얼어붙는다. 아래는 세션에 쓰지 않고
             // ($msg/$err 로 인라인 렌더, csrf 는 이미 검증됨) 읽기만 하므로 지금 닫아도 안전하다.
+            // ※ 이 시점 이후로는 이 요청 전체에서 세션 쓰기가 유실된다 — 호출부
+            //   (connectors.php)가 이 뒤에 세션에 쓰는 코드를 추가하면 안 된다.
             session_write_close();
             $r = vg_feed_run($pdo, $id, 'manual');
             if (!empty($r['ok'])) {
