@@ -88,7 +88,9 @@ var VG_GENERIC_ROLE_FIELDS = {
     { key: 'refs_json', label: '참조(JSON)', required: false }
   ]
 };
-var VG_GENERIC_ROLE_LABELS = { identity: '취약점 정체', priority: '우선순위 신호', vendor: '벤더 패치 판정', compliance: '보안설정 룰셋' };
+// PHP 의 VG_GENERIC_ROLE_LABELS(connectors.php)가 유일한 근거 — vgGenericInit 이 폼의
+//   data-role-labels 에서 읽어 채운다(data-type-meta 와 같은 수법).
+var VG_GENERIC_ROLE_LABELS = {};
 
 function vgKvRow(container, labelHtml, value, placeholder, removable) {
   var row = document.createElement('div');
@@ -208,6 +210,7 @@ function vgGenericInit() {
   // 카탈로그를 PHP 에서 넘겨받는다(data-edit-generic 과 같은 수법) — 표를 JS 에 복붙하면
   //   커넥터가 늘 때 한쪽만 고쳐진다.
   try { VG_TYPE_META = JSON.parse(form.dataset.typeMeta || '{}'); } catch (e) { VG_TYPE_META = {}; }
+  try { VG_GENERIC_ROLE_LABELS = JSON.parse(form.dataset.roleLabels || '{}'); } catch (e) { VG_GENERIC_ROLE_LABELS = {}; }
 
   function toggle() {
     var isGeneric = typeSel.value === 'generic_api';

@@ -90,10 +90,10 @@ const VG_VENDOR_SRC = [
 ];
 
 // 벤더마다 심각도 어휘가 다르다(Red Hat: Important/Moderate · 우분투: high/negligible · 데비안 urgency).
-//   톤은 app.css 에 실제 있는 것만. 모르는 값은 muted 로 떨어진다.
-const VG_VENDOR_SEV_TONE = [
-    'CRITICAL' => 'crit', 'IMPORTANT' => 'high', 'HIGH' => 'high',
-    'MODERATE' => 'med',  'MEDIUM' => 'med',     'LOW' => 'low',
+//   CRITICAL/HIGH/MEDIUM/LOW 는 format.php 의 VG_TONE_SEV(공용 단일 소스)를 그대로 쓰고,
+//   벤더 고유 어휘만 여기서 얹는다. 톤은 app.css 에 실제 있는 것만. 모르는 값은 muted 로 떨어진다.
+const VG_VENDOR_SEV_TONE = VG_TONE_SEV + [
+    'IMPORTANT' => 'high', 'MODERATE' => 'med',
     'NEGLIGIBLE' => 'muted', 'UNKNOWN' => 'muted', 'UNTRIAGED' => 'muted',
 ];
 
