@@ -57,9 +57,20 @@ try {
     $params = [];
 
     if ($q !== '') {
-        $where .= ' AND (c.cve_id LIKE ? OR c.summary LIKE ?)';
-        $params[] = '%' . $q . '%';
-        $params[] = '%' . $q . '%';
+        if (preg_match('/^cve-?/i', $q)) {
+            // "CVE-2024-1234" 처럼 CVE-ID 형태 입력은 접두 매칭만 쓴다(PK 인덱스, KISS).
+            // summary FULLTEXT 를 같이 OR 하면 "CVE"·연도가 낱말로 쪼개져, 다른 CVE 를
+            // 교차참조("...duplicate of CVE-1999-0032...")한 요약까지 잡혀 노이즈가 커진다
+            // (실측: CVE-1999-0003 전체 입력이 요약 교차참조 때문에 62건까지 걸렸다).
+            $where .= ' AND c.cve_id LIKE ?';
+            $params[] = $q . '%';
+        } else {
+            // summary 는 FULLTEXT(ft_cves_summary, db/migrations/20260719105602_*.sql). NATURAL
+            // LANGUAGE MODE 는 검색어에 +-*"() 같은 예약문자가 섞여도 문법 오류 없이 그냥 단어로
+            // 다뤄져 BOOLEAN MODE 특유의 이스케이프 처리가 필요 없다(KISS).
+            $where .= ' AND MATCH(c.summary) AGAINST (? IN NATURAL LANGUAGE MODE)';
+            $params[] = $q;
+        }
     }
     if ($sev !== '') {
         [$lo, $hi] = VG_SEV_RANGES[$sev];

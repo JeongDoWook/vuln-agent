@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS tb_cves (
   is_deleted TINYINT(1) NOT NULL DEFAULT 0,
   deleted_at DATETIME NULL,
   PRIMARY KEY (cve_id),
-  INDEX idx_cves_is_deleted (is_deleted)
+  INDEX idx_cves_is_deleted (is_deleted),
+  -- cves.php 요약 검색(q)용. 와일드카드 선두 LIKE 는 인덱스를 못 타 풀스캔이었다.
+  -- 기존 볼륨은 db/migrations/20260719105602_cves_summary_fulltext.sql.
+  FULLTEXT KEY ft_cves_summary (summary)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ── CISA KEV (실제 악용된 취약점 목록) — 우선순위 가중의 핵심 ───────────
