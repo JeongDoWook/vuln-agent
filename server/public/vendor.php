@@ -271,13 +271,17 @@ vg_header('벤더 판정', 'vendor');
                              . vg_trunc((string) $r['pkg'], 32) . '</a>',
               // cve.php 가 '/^CVE-\d{4}-\d+$/i' 아니면 오류로 튕긴다(정상 동작). 데비안 트래커의
               //   TEMP-<날짜>-<해시> 같은 정식 CVE 미배정 식별자는 링크 없이 텍스트로만 보여준다.
+              //   이 컬럼은 5개 소스가 섞인 결과라, debtracker 가 아닌 소스에서 비정형 식별자가
+              //   와도 "데비안" 이라고 단정하지 않도록 소스별로 문구를 나눈다.
               3 => function ($r) {
                   $cveId = (string) $r['cve_id'];
                   if (preg_match('/^CVE-\d{4}-\d+$/i', $cveId)) {
                       return '<a href="/cve.php?cve=' . urlencode($cveId) . '">' . vg_h($cveId) . '</a>';
                   }
-                  return '<span class="why" title="데비안 보안 트래커 임시 식별자(정식 CVE 미배정)">'
-                       . vg_h($cveId) . '</span>';
+                  $tip = $r['src'] === 'debtracker'
+                      ? '데비안 보안 트래커 임시 식별자(정식 CVE 미배정)'
+                      : '정식 CVE 가 배정되지 않은 벤더 자체 식별자';
+                  return '<span class="why" title="' . vg_h($tip) . '">' . vg_h($cveId) . '</span>';
               },
               // 고친 버전. rhunfixed 는 **고친 버전이 없는 게 핵심**이라(수정본 자체가 없다)
               //   그 자리에 조치 상태를 뱃지로 둔다 — 이게 "조치 불가" 의 근거다.
