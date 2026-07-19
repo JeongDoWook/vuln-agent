@@ -1121,7 +1121,7 @@ form.card .btn--block { margin-top: 1.1rem; }
 .pager select { width: auto; }
 
 /* --- 로그인 / 좁은 폼 카드 ------------------------------------------------ */
-form.card { max-width: 360px; margin: 3rem auto; padding: 2rem 1.8rem; }
+form.card { max-width: 400px; margin: 3rem auto; padding: 2.4rem 2.2rem 2.2rem; }
 form.card h1 { text-align: center; }
 form.card .sub { text-align: center; }
 
@@ -1145,14 +1145,16 @@ form.card .sub { text-align: center; }
 body:has(form.card) {
   min-height: 100vh;
   background:
-    radial-gradient(ellipse 60% 45% at 50% -8%, rgb(47 111 237 / .14), transparent 62%),
-    radial-gradient(ellipse 45% 35% at 100% 100%, rgb(37 99 224 / .08), transparent 60%),
+    radial-gradient(ellipse 62% 48% at 50% -10%, rgb(47 111 237 / .20), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 100% 105%, rgb(37 99 224 / .12), transparent 62%),
+    radial-gradient(ellipse 40% 32% at -5% 95%, rgb(47 111 237 / .07), transparent 60%),
     var(--bg);
 }
 :root[data-theme="dark"] body:has(form.card) {
   background:
-    radial-gradient(ellipse 60% 45% at 50% -8%, rgb(31 111 235 / .20), transparent 62%),
-    radial-gradient(ellipse 45% 35% at 100% 100%, rgb(88 166 255 / .09), transparent 60%),
+    radial-gradient(ellipse 62% 48% at 50% -10%, rgb(31 111 235 / .28), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 100% 105%, rgb(88 166 255 / .13), transparent 62%),
+    radial-gradient(ellipse 40% 32% at -5% 95%, rgb(31 111 235 / .10), transparent 60%),
     var(--bg);
 }
 
@@ -1169,31 +1171,64 @@ form.card::before {
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
 }
-form.card h1 { margin: .3rem 0 .3rem; font-size: 1.5rem; }
-form.card .sub { margin-bottom: 1.6rem; }
+
+/* 브랜드 배지 — 방패 아이콘을 원형 그라데이션 안에 띄워 카드 최상단 시선을 잡는다 */
+form.card .login-badge {
+  width: 60px;
+  height: 60px;
+  margin: .2rem auto .9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 6px 18px rgb(47 111 237 / .35);
+}
+:root[data-theme="dark"] form.card .login-badge {
+  box-shadow: 0 6px 18px rgb(31 111 235 / .45);
+}
+
+form.card h1 { margin: 0 0 .3rem; font-size: 1.4rem; }
+form.card .sub { margin-bottom: 1.7rem; }
 form.card label:first-of-type { margin-top: .2rem; }
 
-/* 포커스/hover 를 로그인 화면에서만 더 또렷하게(전역 input/.btn 규칙은 그대로 둔다) */
+/* 입력창을 카드 표면보다 한 단 가라앉혀(--sunken) 켜켜이 쌓인 느낌을 주고,
+ * 포커스 시 카드 표면 색으로 "떠오르며" 강조색 링을 받는다. */
+form.card input[type=text], form.card input[type=password] {
+  background: var(--sunken);
+  transition: background-color .15s ease-out, border-color .12s ease-out, box-shadow .12s ease-out;
+}
 form.card input[type=text]:focus, form.card input[type=password]:focus {
+  background: var(--surface);
   box-shadow: var(--ring);
 }
+
+/* 제출 버튼 — 눌림감을 주는 미세한 상승/복귀 인터랙션(전역 .btn 규칙은 그대로 둔다) */
+form.card .btn--primary {
+  padding: .75rem 1rem;
+  transition: filter .12s ease-out, transform .12s ease-out, box-shadow .12s ease-out;
+}
 form.card .btn--primary:hover {
+  transform: translateY(-1px);
   box-shadow: 0 4px 14px rgb(47 111 237 / .35);
 }
+form.card .btn--primary:active { transform: translateY(0); }
 :root[data-theme="dark"] form.card .btn--primary:hover {
   box-shadow: 0 4px 14px rgb(31 111 235 / .45);
 }
 
 @media (max-width: 860px) {
-  form.card { margin: 1.6rem auto; max-width: calc(100% - 2rem); padding: 1.6rem 1.3rem; }
+  form.card { margin: 1.6rem auto; max-width: calc(100% - 2rem); padding: 1.8rem 1.4rem; }
+  form.card .login-badge { width: 52px; height: 52px; font-size: 1.5rem; }
   body:has(form.card) {
     background:
-      radial-gradient(ellipse 80% 30% at 50% -5%, rgb(47 111 237 / .12), transparent 60%),
+      radial-gradient(ellipse 80% 30% at 50% -5%, rgb(47 111 237 / .16), transparent 60%),
       var(--bg);
   }
   :root[data-theme="dark"] body:has(form.card) {
     background:
-      radial-gradient(ellipse 80% 30% at 50% -5%, rgb(31 111 235 / .18), transparent 60%),
+      radial-gradient(ellipse 80% 30% at 50% -5%, rgb(31 111 235 / .22), transparent 60%),
       var(--bg);
   }
 }

@@ -42,7 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $err === null) {
 vg_header('로그인');
 ?>
   <form class="card" method="post" action="/login.php">
-    <h1>🛡️ vuln-agent</h1>
+    <div class="login-badge" aria-hidden="true">🛡️</div>
+    <h1>vuln-agent</h1>
     <div class="sub">로그인이 필요합니다</div>
     <?php vg_alert($err); ?>
     <input type="hidden" name="csrf" value="<?= vg_h(vg_csrf_token()) ?>">
