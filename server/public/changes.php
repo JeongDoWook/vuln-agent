@@ -220,7 +220,12 @@ vg_header('변화 추적', 'changes');
   vg_toolbar($filters);
 
   if ($baselineHosts) {
-      echo '<div class="sub">기준선(첫 수집이라 비교 대상 없음): ' . vg_h(implode(', ', $baselineHosts)) . '</div>';
+      // 호스트 수가 많으면(운영에서 실측 50+대) 한 줄 텍스트로는 화면을 다 차지한다 —
+      // findings.php 의 "판정 불가" 목록과 같은 컴포넌트(.hint-list, 스크롤 캡)를 재사용한다.
+      echo '<div class="sub">기준선(첫 수집이라 비교 대상 없음)</div>';
+      echo '<ul class="hint-list">';
+      foreach ($baselineHosts as $bh) { echo '<li>' . vg_h($bh) . '</li>'; }
+      echo '</ul>';
   }
   ?>
 
