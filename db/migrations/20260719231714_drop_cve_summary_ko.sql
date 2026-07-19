@@ -5,11 +5,14 @@
 --     도는 시점엔 항상 존재한다(테이블 자체 부재는 스키마 초기화 실패이지 이 마이그레이션의 책임 밖).
 --   인덱스: DROP COLUMN 은 해당 컬럼이 포함된 인덱스를 MySQL 이 함께 정리하므로 별도 DROP INDEX
 --     불필요(참고: FULLTEXT 는 원문 summary 에만 걸려 있다, 20260719105602).
---   백업: 이 마이그레이션은 compose_runner.sh 의 `up` 경로에서 migrate.sh 로 자동 실행되어
---     배포자가 손으로 개입할 기회가 없다(CLAUDE.md "수동 apply 금지"). translate 컨테이너 자체를
---     같이 없애 재번역(재생성) 경로도 사라지므로, DROP 전에 *_bak 테이블로 데이터를 멱등 백업해
---     둔다(컬럼이 이미 없는 재실행에서는 게이트가 막아 스킵). *_bak 은 이번 마이그레이션이
---     정리하지 않는다 — 필요 없어지면 별도 마이그레이션으로 DROP.
+--   백업: 이 마이그레이션은 배포 러너의 `up` 경로에서 migrate.sh 로 자동 실행되어 배포자가
+--     손으로 개입할 기회가 없다(CLAUDE.md "수동 apply 금지"). translate 컨테이너 자체를 같이
+--     없애 재번역(재생성) 경로도 사라지므로, DROP 전에 *_bak 테이블로 키+번역 컬럼만 멱등
+--     백업해 둔다(컬럼이 이미 없는 재실행에서는 게이트가 막아 스킵 — 실측: MySQL 8.0 에서
+--     `CREATE TABLE IF NOT EXISTS ... AS SELECT` 는 대상 테이블이 이미 있으면 SELECT 를
+--     insert 하지 않고 그대로 스킵한다. 재실행해도 행이 중복 적재되지 않음을 별도 컨테이너로
+--     확인했다). *_bak 은 이번 마이그레이션이 정리하지 않는다 — 정리 시점은 아직 정해지지
+--     않았다(배포 후 문제 없다고 확인되면 배포자가 판단해 별도 마이그레이션으로 DROP).
 SET NAMES utf8mb4;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
@@ -26,7 +29,7 @@ PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_kev_catalog' AND COLUMN_NAME = 'note_ko');
 SET @b := IF(@c > 0,
-             'CREATE TABLE IF NOT EXISTS tb_kev_note_ko_bak AS SELECT * FROM tb_kev_catalog WHERE note_ko IS NOT NULL',
+             'CREATE TABLE IF NOT EXISTS tb_kev_note_ko_bak AS SELECT cve_id, note_ko FROM tb_kev_catalog WHERE note_ko IS NOT NULL',
              'DO 0');
 PREPARE st FROM @b; EXECUTE st; DEALLOCATE PREPARE st;
 SET @s := IF(@c > 0,
