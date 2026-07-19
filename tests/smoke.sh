@@ -389,6 +389,11 @@ assert_contains "$body" "패키지 DB 가 없는 이미지" "판정 불가 사�
 body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에도 패키지DB 없는 컨테이너 경고"
 
+# findings.php 검색 0건 안내(empty.title)에 $q 를 그대로 넣는다 — vg_empty() 가 vg_h() 로
+#   이스케이프하는 것에 기대는 코드라, 그 전제가 깨지면 여기서 바로 잡는다(반사형 XSS 회귀 검증).
+xssbody=$(curl_ -s -b "$JAR" -G "$BASE/findings.php" --data-urlencode 'q=<script>alert(1)</script>')
+assert_contains "$xssbody" '&lt;script&gt;alert(1)&lt;/script&gt;' "findings.php 검색어 XSS 이스케이프(vg_empty 의존)"
+
 # 잘못된 비번
 JAR2="$(mktemp)"; csrf2=$(curl_ -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)
 body=$(curl_ -s -b "$JAR2" -c "$JAR2" --data-urlencode "csrf=$csrf2" \

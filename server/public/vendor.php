@@ -274,14 +274,18 @@ vg_header('벤더 판정', 'vendor');
               //   이 컬럼은 5개 소스가 섞인 결과라, debtracker 가 아닌 소스에서 비정형 식별자가
               //   와도 "데비안" 이라고 단정하지 않도록 소스별로 문구를 나눈다.
               3 => function ($r) {
-                  $cveId = (string) $r['cve_id'];
+                  // 커넥터가 넣은 원본에 앞뒤 공백·개행이 섞이면 앵커 매칭이 실패해 멀쩡한 CVE 도
+                  //   임시 식별자 취급을 받는다 — 판정·출력 모두 trim() 한 값을 쓴다.
+                  $cveId = trim((string) $r['cve_id']);
                   if (preg_match('/^CVE-\d{4}-\d+$/i', $cveId)) {
                       return '<a href="/cve.php?cve=' . urlencode($cveId) . '">' . vg_h($cveId) . '</a>';
                   }
                   $tip = $r['src'] === 'debtracker'
                       ? '데비안 보안 트래커 임시 식별자(정식 CVE 미배정)'
                       : '정식 CVE 가 배정되지 않은 벤더 자체 식별자';
-                  return '<span class="why" title="' . vg_h($tip) . '">' . vg_h($cveId) . '</span>';
+                  // .why 는 이 파일에서 "부가·희미한 보조 텍스트"(268/294행 등) 용도라, 값 자체가
+                  //   유효한 식별자인 여기에 쓰면 중요도가 낮은 것처럼 보인다 — 클래스 없이 title 만.
+                  return '<span title="' . vg_h($tip) . '">' . vg_h($cveId) . '</span>';
               },
               // 고친 버전. rhunfixed 는 **고친 버전이 없는 게 핵심**이라(수정본 자체가 없다)
               //   그 자리에 조치 상태를 뱃지로 둔다 — 이게 "조치 불가" 의 근거다.

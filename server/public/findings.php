@@ -220,29 +220,56 @@ vg_header('취약점', 'findings');
       ['label' => '조치',  'key' => 'fix',            'width' => '11rem'],
   ]);
 
+  // 필터 초기화 CTA — vg_qs() 는 지금 $_GET 을 기준으로 넘겨받은 키만 비우므로, 단일 호스트
+  //   모드(?host=N)·단일 스캔 모드(?scan_id=N)에서 눌러도 그 컨텍스트는 유지되고 필터만 지워진다
+  //   (하드코딩된 '/findings.php' 였다면 호스트·스캔 컨텍스트까지 함께 날아갔다).
+  $filterCta  = ['href' => vg_qs(['q' => '', 'sev' => '', 'st' => '', 'fx' => '', 'page' => 1]), 'label' => '필터 초기화'];
+  $hasAnyFilter = $q !== '' || $sev !== '' || $st !== '' || $fx !== '';
+  if (!$hostOptions) {
+      // 필터 문제가 아니라 수집된 스캔 자체가 없는 경우 — "필터를 넓혀라" 는 오해를 준다.
+      $emptySpec = [
+          'icon'  => '📭',
+          'title' => '아직 수집된 스캔이 없습니다.',
+          'hint'  => '에이전트가 자산을 최소 한 번은 수집해야 이 화면에 판정이 뜹니다.',
+      ];
+  } elseif ($q !== '') {
+      // $q 검색인데 0건이면 "필터를 넓혀라" 가 아니라 왜 안 나오는지를 알려준다 —
+      //   vendor.php/packages.php 가 보여주는 패키지는 실제 설치 여부와 무관한 전역 데이터라,
+      //   이 화면(호스트별 최신 스캔에서 매처가 실제로 잡은 판정)엔 없을 수 있다.
+      $emptySpec = [
+          'icon'  => '🔍',
+          // title 은 vg_empty() 가 렌더링 시 vg_h() 로 이스케이프한다
+          //   (server/src/view/components.php:124 — echo '...' . vg_h((string) ($spec['title'] ?? ...)) . '...').
+          //   vg_trunc() 는 자체적으로 HTML/vg_h 를 반환하므로 여기서 같이 쓰면 이중 이스케이프로
+          //   깨진다 — 그래서 순수 문자열 자르기(mb_strimwidth)만 쓴다. tests/smoke.sh 의
+          //   "findings.php 검색어 XSS 이스케이프" 항목이 이 전제를 회귀 검증한다.
+          'title' => "'" . mb_strimwidth($q, 0, 60, '…') . "' 는 이 화면(실제 스캔·매칭된 현재 판정)에는 없습니다.",
+          'hint'  => '벤더 판정·영향 패키지 목록은 실제 설치 여부와 무관한 전역 데이터라 다를 수 있습니다. '
+                   . '등급·상태·조치 가능성 필터도 확인해 보세요.',
+          'cta'   => $filterCta,
+      ];
+  } elseif ($hasAnyFilter) {
+      // 검색어 없이 등급·상태·조치 가능성만으로 0건 — KPI 카드 클릭으로 sev 가 걸린 경우
+      //   특히 눈치채기 어려우므로 초기화 CTA 를 준다.
+      $emptySpec = [
+          'icon'  => '🔍',
+          'title' => '조건에 맞는 판정 결과가 없습니다.',
+          'hint'  => '등급·상태·조치 가능성 필터를 넓혀 보세요.',
+          'cta'   => $filterCta,
+      ];
+  } else {
+      $emptySpec = [
+          'icon'  => '🔍',
+          'title' => '조건에 맞는 판정 결과가 없습니다.',
+          'hint'  => '검색어·등급·상태 필터를 넓혀 보세요.',
+      ];
+  }
+
   vg_table(
       $headers,
       $rows,
       [
-          // $q 검색인데 0건이면 "필터를 넓혀라" 가 아니라 왜 안 나오는지를 알려준다 —
-          //   vendor.php/packages.php 가 보여주는 패키지는 실제 설치 여부와 무관한 전역 데이터라,
-          //   이 화면(호스트별 최신 스캔에서 매처가 실제로 잡은 판정)엔 없을 수 있다.
-          'empty' => $q !== ''
-              ? [
-                  'icon'  => '🔍',
-                  // title 은 vg_empty() 가 렌더링 시 vg_h() 로 이스케이프한다(vg_trunc 는 자체적으로
-                  //   HTML 을 반환하므로 여기선 안 쓴다 — 이중 이스케이프/깨진 마크업 방지).
-                  //   과도하게 긴 검색어는 mb_strimwidth 로만 자른다.
-                  'title' => "'" . mb_strimwidth($q, 0, 60, '…') . "' 는 이 화면(실제 스캔·매칭된 현재 판정)에는 없습니다.",
-                  'hint'  => '벤더 판정·영향 패키지 목록은 실제 설치 여부와 무관한 전역 데이터라 다를 수 있습니다. '
-                           . '등급·상태·조치 가능성 필터도 확인해 보세요.',
-                  'cta'   => ['href' => '/findings.php', 'label' => '필터 초기화'],
-              ]
-              : [
-                  'icon'  => '🔍',
-                  'title' => '조건에 맞는 판정 결과가 없습니다.',
-                  'hint'  => '검색어·등급·상태 필터를 넓혀 보세요.',
-              ],
+          'empty' => $emptySpec,
           'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
           'cell' => [
               'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
