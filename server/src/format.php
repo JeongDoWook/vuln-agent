@@ -255,21 +255,25 @@ function vg_cve_first_ref(?string $json): ?array {
 
 /**
  * 조치 열 공통 표시 규칙 — findings.php/host.php 가 각자 들고 있던 같은 삼항 로직을 통일.
- *   조치버전이 있으면 버전, 없고 NVD 대표 참조링크가 있으면 링크, 둘 다 없으면 평문.
+ *   조치버전이 있으면 "현재버전 → 조치버전 이상", 없고 NVD 대표 참조링크가 있으면 링크,
+ *   둘 다 없으면 평문 — 두 경우 모두 현재 버전을 곁들여 패키지 열과 오가지 않아도 되게 한다.
  *   링크 문구는 태그로 갈린다 — Patch/Vendor Advisory 가 아니면 "패치 확인"이라고 단정하지
  *   않는다(무관한 메일링리스트·죽은 링크를 패치인 줄 알고 클릭하게 만들 수 있다).
  */
-function vg_fix_cell(?string $fixedVersion, ?string $refUrlsJson): string {
+function vg_fix_cell(?string $fixedVersion, ?string $refUrlsJson, ?string $installedVersion = null): string {
+    $installed = ($installedVersion !== null && $installedVersion !== '') ? vg_h($installedVersion) : null;
     if ($fixedVersion !== null && $fixedVersion !== '') {
-        return '<span class="pill">' . vg_h($fixedVersion) . ' 이상</span>';
+        $ver = $installed !== null ? $installed . ' → ' . vg_h($fixedVersion) : vg_h($fixedVersion);
+        return '<span class="pill">' . $ver . ' 이상</span>';
     }
+    $currentLine = $installed !== null ? '<div class="why">현재 ' . $installed . '</div>' : '';
     $ref = vg_cve_first_ref($refUrlsJson);
     if ($ref === null) {
-        return '<span class="why">패치 확인</span>';
+        return '<span class="why">패치 확인</span>' . $currentLine;
     }
     $isPatch = in_array('Patch', $ref['tags'], true) || in_array('Vendor Advisory', $ref['tags'], true);
     return '<a class="why" href="' . vg_h($ref['url']) . '" target="_blank" rel="noopener noreferrer">'
-        . ($isPatch ? '패치 확인 →' : '참고 링크 →') . '</a>';
+        . ($isPatch ? '패치 확인 →' : '참고 링크 →') . '</a>' . $currentLine;
 }
 
 /**

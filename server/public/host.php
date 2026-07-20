@@ -356,7 +356,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
         6 => fn($f) => !empty($f['needs_restart'])
                        ? '<span class="pill">' . (vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅' : '프로세스 재시작') . '</span>'
-                       : vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null),
+                       : vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null, $f['installed_version'] ?? null),
     ];
     $vulnOpts = [
         'card'      => false,
