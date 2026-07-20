@@ -563,6 +563,9 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
 a.kpi { transition: border-color .12s ease-out, background .12s ease-out; }
 a.kpi:hover { text-decoration: none; border-color: var(--line-2); filter: brightness(1.12); }
 a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
+/* 링크 kpi 와 색·톤이 같아서 눌리는 카드처럼 보이는 정적 집계 카드 — 점선 테두리로 구분한다
+   (연결 가능한 필터가 없어 링크화할 수 없는 경우에만 쓴다. 새 필터를 만들지 않는다). */
+.kpi--static { cursor: default; border-style: dashed; }
 
 .kpi.tone-crit { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
 .kpi.tone-high { background: var(--high-bg); border-color: var(--high-bd); color: var(--high-fg); }

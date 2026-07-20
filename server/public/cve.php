@@ -200,9 +200,14 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
 ?>
 
 <?php if ($cve === null): ?>
-  <?php vg_alert('이 CVE 는 아직 수집되지 않았습니다. NVD 커넥터 수집 후 다시 확인해 주세요.'); ?>
-<?php endif; ?>
-
+  <div class="card">
+    <?php vg_empty([
+        'icon'  => '📭',
+        'title' => '이 CVE 는 아직 수집되지 않았습니다.',
+        'hint'  => 'NVD 커넥터가 수집한 뒤 다시 확인해 주세요.',
+    ]); ?>
+  </div>
+<?php else: ?>
 <div class="card">
   <strong>핵심 지표</strong>
   <span class="why">— 흩어놓지 않고 한 카드에 모았다</span>
@@ -220,13 +225,13 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
     </div>
 
     <div class="stat">
-      <span class="stat__val"><?= $cve ? vg_epss_cell($cve['epss'] ?? null, $cve['epss_percentile'] ?? null) : '<span class="why">–</span>' ?></span>
+      <span class="stat__val"><?= vg_epss_cell($cve['epss'] ?? null, $cve['epss_percentile'] ?? null) ?></span>
       <div class="why">EPSS(악용확률)</div>
     </div>
 
     <div class="stat">
       <span class="stat__val">
-        <?= $kev ? vg_badge('등재됨', 'crit', '실제 악용이 확인된 취약점') : vg_badge('미등재', 'ok') ?>
+        <?= $kev ? vg_badge('등재됨', 'crit', '실제 악용이 확인된 취약점') : vg_badge('미등재', 'muted') ?>
       </span>
       <div class="why">CISA KEV</div>
     </div>
@@ -239,12 +244,12 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
     <?php endif; ?>
 
     <div class="stat">
-      <span class="stat__val"><?= $cve && !empty($cve['cwe']) ? vg_h((string) $cve['cwe']) : '<span class="why">–</span>' ?></span>
+      <span class="stat__val"><?= !empty($cve['cwe']) ? vg_h((string) $cve['cwe']) : '<span class="why">–</span>' ?></span>
       <div class="why">CWE 유형</div>
     </div>
 
     <div class="stat">
-      <span class="stat__val"><?= $cve && $cve['published'] ? vg_h((string) $cve['published']) : '<span class="why">–</span>' ?></span>
+      <span class="stat__val"><?= $cve['published'] ? vg_h((string) $cve['published']) : '<span class="why">–</span>' ?></span>
       <div class="why">공개일</div>
     </div>
 
@@ -254,6 +259,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
     </div>
   </div>
 </div>
+<?php endif; ?>
 
 <nav class="subtabs subtabs--sticky">
   <a href="#summary">요약</a>

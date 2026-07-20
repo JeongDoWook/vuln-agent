@@ -169,14 +169,17 @@ vg_header('취약점', 'findings');
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php if ($unsupHosts): ?>
-    <div class="alert alert--err">
-      <strong>일부 대상은 취약점 매칭이 수행되지 않습니다</strong> — 피드가 모르는 배포판이거나,
-      패키지 DB 가 없어 무엇이 깔렸는지 알 수 없습니다.
-      이 대상들의 취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.
-      <ul class="hint-list">
-        <?php foreach ($unsupHosts as $line): ?><li><?= vg_h($line) ?></li><?php endforeach; ?>
-      </ul>
-    </div>
+    <?php vg_alert([
+        'type'  => 'warn',
+        'title' => '일부 대상은 취약점 매칭이 수행되지 않습니다',
+        'hints' => array_merge(
+            [
+                '피드가 모르는 배포판이거나, 패키지 DB 가 없어 무엇이 깔렸는지 알 수 없습니다.',
+                '이 대상들의 취약점 0건은 "안전함"이 아니라 "판정 불가"입니다.',
+            ],
+            $unsupHosts
+        ),
+    ]); ?>
   <?php endif; ?>
 
   <div class="cards">

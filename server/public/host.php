@@ -313,11 +313,17 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       $unsup[] = '컨테이너 ' . $c['cid'] . ' — ' . $c['reason'];
   }
   if ($unsup) {
-      echo '<div class="alert alert--err"><strong>취약점 매칭이 수행되지 않습니다</strong> — '
-         . '아래 대상은 피드가 모르는 배포판이거나, 패키지 DB 가 없어 무엇이 깔렸는지 알 수 없습니다. '
-         . '취약점 0건은 "안전함"이 아니라 <strong>"판정 불가"</strong>입니다.<ul class="hint-list">';
-      foreach ($unsup as $line) { echo '<li>' . vg_h($line) . '</li>'; }
-      echo '</ul></div>';
+      vg_alert([
+          'type'  => 'warn',
+          'title' => '취약점 매칭이 수행되지 않습니다',
+          'hints' => array_merge(
+              [
+                  '아래 대상은 피드가 모르는 배포판이거나, 패키지 DB 가 없어 무엇이 깔렸는지 알 수 없습니다.',
+                  '취약점 0건은 "안전함"이 아니라 "판정 불가"입니다.',
+              ],
+              $unsup
+          ),
+      ]);
   }
   ?>
 
@@ -326,7 +332,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
     <?php endforeach; ?>
     <div class="kpi"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
-    <div class="kpi tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>"><b><?= (int) $cceFail ?></b><span>설정 취약</span></div>
+    <a class="kpi tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>" href="<?= vg_h(vg_qs(['tab' => 'cce', 'page' => null])) ?>">
+      <b><?= (int) $cceFail ?></b><span>설정 취약</span>
+    </a>
   </div>
 
   <?php vg_subtabs($tabDefs, $tab); ?>

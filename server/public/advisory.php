@@ -78,14 +78,21 @@ vg_header($adv ? (string) $adv['title'] : '국내 보안공지', 'advisories');
       <p class="why prose"><?= vg_h($adv['content']) ?></p>
     <?php elseif (!empty($adv['content_fetched_at'])): ?>
       <?php // 수집은 했지만 본문 텍스트가 없는 공지(이미지 전용·경보단계). 재수집해도 같다. ?>
-      <p class="why card__body">
-        이 공지는 본문이 이미지나 표로만 되어 있어 옮겨올 텍스트가 없습니다. 아래 원문에서 확인하세요.
-      </p>
+      <div class="card__body">
+        <?php vg_empty([
+            'icon'  => '🖼️',
+            'title' => '본문이 이미지나 표로만 되어 있습니다.',
+            'hint'  => '옮겨올 텍스트가 없습니다. 아래 원문에서 확인하세요.',
+        ]); ?>
+      </div>
     <?php else: ?>
-      <p class="why card__body">
-        본문이 아직 수집되지 않았습니다. 아래 원문 링크로 확인하세요.
-        <br>(수집: <code>php bin/backfill_kisa_content.php</code>)
-      </p>
+      <div class="card__body">
+        <?php vg_empty([
+            'icon'  => '📄',
+            'title' => '본문이 아직 수집되지 않았습니다.',
+            'hint'  => '아래 원문 링크로 확인하거나, php bin/backfill_kisa_content.php 로 수집하세요.',
+        ]); ?>
+      </div>
     <?php endif; ?>
   </div>
 
