@@ -103,7 +103,7 @@ vg_header($user['username'] ?? '사용자', 'users');
     <strong>계정 관리</strong>
     <span class="why">— 역할 변경 · 비밀번호 초기화 · 삭제. 자기 자신은 역할변경·삭제를 할 수 없습니다.</span>
     <div class="card__body">
-      <div class="actions">
+      <div class="actions actions--stack">
         <?php if (!$isSelf): ?>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
@@ -111,11 +111,10 @@ vg_header($user['username'] ?? '사용자', 'users');
             <label>역할 변경</label>
             <select name="role">
               <?php
-              $roleLabels = ['user' => '사용자', 'operator' => '운영자', 'admin' => '관리자'];
               $cur = $user['role'] === 'viewer' ? 'user' : (string) $user['role'];
-              foreach ($roleLabels as $v => $l):
+              foreach (VG_ROLES as $v):
               ?>
-                <option value="<?= vg_h($v) ?>"<?= $cur === $v ? ' selected' : '' ?>><?= vg_h($l) ?></option>
+                <option value="<?= vg_h($v) ?>"<?= $cur === $v ? ' selected' : '' ?>><?= vg_h(vg_role_label($v)) ?></option>
               <?php endforeach; ?>
             </select>
             <button class="btn btn--sm btn--ghost">역할 변경</button>
@@ -124,7 +123,7 @@ vg_header($user['username'] ?? '사용자', 'users');
           <span class="why">역할 변경: 자기 자신은 변경할 수 없습니다.</span>
         <?php endif; ?>
 
-        <form method="post" onsubmit="return confirm('비밀번호를 초기화할까요?');">
+        <form method="post" onsubmit="return confirm('이 사용자의 비밀번호를 초기화할까요? 아래 입력한 새 비밀번호로 즉시 바뀌며, 기존 비밀번호로는 더는 로그인할 수 없습니다.');">
           <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
           <input type="hidden" name="action" value="reset">
           <label>비밀번호 초기화</label>
@@ -133,7 +132,7 @@ vg_header($user['username'] ?? '사용자', 'users');
         </form>
 
         <?php if (!$isSelf): ?>
-          <form method="post" onsubmit="return confirm('삭제할까요?');">
+          <form method="post" onsubmit="return confirm('이 사용자를 삭제할까요? 계정이 즉시 비활성화되어 로그인할 수 없게 되고 사용자 목록에서도 사라집니다. 이 사용자의 활동 이력은 감사로그에 그대로 남습니다.');">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="delete">
             <label>삭제</label>

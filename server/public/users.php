@@ -30,8 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $u = trim((string) ($_POST['username'] ?? ''));
         $p = (string) ($_POST['password'] ?? '');
         $role = in_array($_POST['role'] ?? '', VG_ROLES, true) ? (string) $_POST['role'] : 'user';
-        if ($u === '' || strlen($p) < 4) {
-            $err = '아이디와 4자 이상 비밀번호를 입력하세요.';
+        if ($u === '' || strlen($p) < 8) {
+            $err = '아이디와 8자 이상 비밀번호를 입력하세요.';
         } else {
             try {
                 $st = $pdo->prepare('INSERT INTO tb_users (username, password_hash, role) VALUES (?,?,?)');
@@ -112,13 +112,13 @@ vg_header('사용자', 'users');
       <input type="hidden" name="action" value="add">
       <label>아이디</label>
       <input type="text" name="username" value="<?= vg_h($addUsername) ?>" required autocomplete="off">
-      <label>비밀번호 <span class="why">(4자 이상)</span></label>
+      <label>비밀번호 <span class="why">(8자 이상)</span></label>
       <input type="password" name="password" required autocomplete="new-password">
       <label>역할</label>
       <select name="role">
-        <option value="user"<?= $addRole === 'user' ? ' selected' : '' ?>>사용자 (조회)</option>
-        <option value="operator"<?= $addRole === 'operator' ? ' selected' : '' ?>>운영자 (피드)</option>
-        <option value="admin"<?= $addRole === 'admin' ? ' selected' : '' ?>>관리자 (전체)</option>
+        <?php foreach (VG_ROLES as $v): ?>
+          <option value="<?= vg_h($v) ?>"<?= $addRole === $v ? ' selected' : '' ?>><?= vg_h(vg_role_label($v) . ' (' . VG_ROLE_DESCRIPTIONS[$v] . ')') ?></option>
+        <?php endforeach; ?>
       </select>
       <?php vg_modal_foot('추가'); ?>
     </form>

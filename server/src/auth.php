@@ -95,6 +95,11 @@ function vg_role_label(string $role): string {
     return $m[$role] ?? '사용자';
 }
 
+// 역할 선택 UI 부가 설명(SSOT) — vg_role_label() 라벨만으론 화면에 필요한 용도 설명
+//   ("(조회)"/"(피드)"/"(전체)")이 빠진다. users.php 신규 계정 추가 폼이 라벨+설명을
+//   조합해 쓴다 — 화면 코드에 문구를 반복 작성하지 않기 위해 여기 하나로 묶는다.
+const VG_ROLE_DESCRIPTIONS = ['admin' => '전체', 'operator' => '피드', 'user' => '조회'];
+
 // --- 설정형 메뉴 접근권한 (tb_role_permissions 기반) ---
 
 /**
