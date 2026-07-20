@@ -3,13 +3,16 @@ declare(strict_types=1);
 
 /**
  * cve.php — CVE 상세페이지. 로그인 필요.
- *   ?cve=CVE-XXXX-XXXXX  ·  ?page=N (발견 위치 섹션)
+ *   ?cve=CVE-XXXX-XXXXX  ·  ?page=N/?per_page=N (발견 위치) ·  ?vpage=N/?vper_page=N (벤더 판정) ·
+ *   ?apage=N/?aper_page=N (영향 패키지)
  *
  * 구성: 히어로(식별 + 등급) → 통계 그리드(핵심 지표 한눈에) → 앵커 내비(sticky) →
  *   요약 → 공격 벡터 → (있으면) 벤더 판정 → 영향 패키지 → 발견 위치 → 참조 자료.
  *   예전엔 탭 3개(개요/영향 패키지/발견 위치) 뒤에 숨기고 지표를 사이드바에 따로 뒀는데,
  *   "한눈에 안 들어온다" 는 사용자 피드백의 핵심 원인이었다 — 탭 전환 없이 스크롤 한 번으로
- *   전부 보이는 단일 페이지로 바꾼다. 발견 위치만 건수가 많을 수 있어 페이지네이션은 유지.
+ *   전부 보이는 단일 페이지로 바꾼다. 세 섹션(벤더 판정·영향 패키지·발견 위치) 모두 같은 화면에
+ *   동시에 존재해 건수가 많을 수 있으므로 각각 독립된 쿼리 파라미터로 페이지네이션한다
+ *   (vg_page_nav 의 파라미터명을 섹션마다 다르게 줘서 서로의 페이지 이동이 섞이지 않게 한다).
  *
  * cvss_vector·cwe·due_date·ransomware 는 커넥터가 이제야 받아오기 시작한 필드라
  * 예전에 수집된 행은 NULL 이다. 전부 "없으면 그 줄을 생략" 으로 처리한다.
@@ -69,8 +72,9 @@ const VG_CVE_VENDOR_SRC = [
 ];
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = []; $vendorRows = [];
-$vendorMore = false;
 $locTotal = 0; $assetTotal = 0; $page = vg_page(); $perPage = vg_perpage();
+$vendorTotal = 0; $vPage = vg_page('vpage'); $vPerPage = vg_perpage(VG_PERPAGE_DEFAULT, 'vper_page');
+$affectedTotal = 0; $aPage = vg_page('apage'); $aPerPage = vg_perpage(VG_PERPAGE_DEFAULT, 'aper_page');
 
 try {
     $raw = (string) ($_GET['cve'] ?? '');
@@ -92,24 +96,34 @@ try {
         $kev = $stmt->fetch() ?: null;
 
         // 벤더 판정 5종 UNION — 커널/RHEL/우분투는 릴리스·패키지별로 행이 쪼개져 CVE 하나가
-        //   수백~수천 건도 나올 수 있다(CVE-2023-44487 실측 373건). "한 스크롤로 훑기" 목표에
-        //   맞춰 51건만 가져오고(50건 표시 + 초과 판정용 여유 1건), 정확한 총 건수는 세지 않는다
-        //   (COUNT 쿼리를 추가하면 최초 설계 원칙 "COUNT·페이지네이션 없이" 를 어기게 된다).
+        //   수백~수천 건도 나올 수 있다(CVE-2023-44487 실측 373건). 정확한 총 건수를 COUNT 로
+        //   구하고, 목록은 페이지 단위(vpage/vper_page)만 가져온다.
         $vParts = []; $vParams = [];
         foreach (VG_CVE_VENDOR_SRC as $def) {
             $w = ($def['soft'] ? 'is_deleted = 0 AND ' : '') . $def['cve'] . ' = ?';
             $vParts[] = "SELECT {$def['cols']} FROM {$def['from']} WHERE $w";
             $vParams[] = $cveId;
         }
-        $stmt = $pdo->prepare(implode(' UNION ALL ', $vParts) . ' ORDER BY src, vendor, rel LIMIT 51');
+        $vUnion = implode(' UNION ALL ', $vParts);
+
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM ($vUnion) t");
+        $stmt->execute($vParams);
+        $vendorTotal = (int) $stmt->fetchColumn();
+
+        $vOffset = ($vPage - 1) * $vPerPage;
+        $stmt = $pdo->prepare("$vUnion ORDER BY src, vendor, rel LIMIT $vPerPage OFFSET $vOffset");
         $stmt->execute($vParams);
         $vendorRows = $stmt->fetchAll();
-        $vendorMore = count($vendorRows) > 50;
-        if ($vendorMore) {
-            $vendorRows = array_slice($vendorRows, 0, 50);
-        }
 
-        $stmt = $pdo->prepare('SELECT ecosystem, package_name, fixed_version FROM tb_cve_affected_packages WHERE cve_id = ? ORDER BY ecosystem, package_name');
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM tb_cve_affected_packages WHERE cve_id = ?');
+        $stmt->execute([$cveId]);
+        $affectedTotal = (int) $stmt->fetchColumn();
+
+        $aOffset = ($aPage - 1) * $aPerPage;
+        $stmt = $pdo->prepare(
+            "SELECT ecosystem, package_name, fixed_version FROM tb_cve_affected_packages WHERE cve_id = ?
+             ORDER BY ecosystem, package_name LIMIT $aPerPage OFFSET $aOffset"
+        );
         $stmt->execute([$cveId]);
         $affected = $stmt->fetchAll();
 
@@ -244,8 +258,8 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
 <nav class="subtabs subtabs--sticky">
   <a href="#summary">요약</a>
   <a href="#vector">공격 벡터</a>
-  <?php if ($vendorRows): ?><a href="#vendor">벤더 판정<span class="n"><?= number_format(count($vendorRows)) . ($vendorMore ? '+' : '') ?></span></a><?php endif; ?>
-  <a href="#affected">영향 패키지<span class="n"><?= number_format(count($affected)) ?></span></a>
+  <?php if ($vendorTotal > 0): ?><a href="#vendor">벤더 판정<span class="n"><?= number_format($vendorTotal) ?></span></a><?php endif; ?>
+  <a href="#affected">영향 패키지<span class="n"><?= number_format($affectedTotal) ?></span></a>
   <a href="#locations">발견 위치<span class="n"><?= number_format($locTotal) ?></span></a>
   <a href="#references">참조 자료</a>
 </nav>
@@ -305,7 +319,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
   <?php endif; ?>
 </section>
 
-<?php if ($vendorRows): ?>
+<?php if ($vendorTotal > 0): ?>
 <section id="vendor">
   <div class="card">
     <strong>벤더 판정</strong>
@@ -341,11 +355,11 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
             ],
         ]
     );
+    if ($vendorRows) { vg_page_nav($vendorTotal, $vPerPage, $vPage, 'vpage', 'vper_page'); }
     ?>
     </div>
     <div class="why mt">
       <a href="/vendor.php?q=<?= urlencode($cveId) ?>">벤더 판정 전체 보기(필터·상세) →</a>
-      <?php if ($vendorMore): ?><span> · 50건 초과 — 나머지는 전체 보기에서 확인하세요</span><?php endif; ?>
     </div>
   </div>
 </section>
@@ -378,6 +392,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
             ],
         ]
     );
+    if ($affected) { vg_page_nav($affectedTotal, $aPerPage, $aPage, 'apage', 'aper_page'); }
     ?>
     </div>
   </div>

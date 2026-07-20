@@ -198,23 +198,25 @@ const VG_PERPAGE_OPTIONS = [10, 20, 40, 60, 100];
 const VG_PERPAGE_DEFAULT = 10;
 
 // 페이지당 표시 개수. ?per_page= 를 화이트리스트로 검증해 반환. 잘못된 값이면 $default.
-function vg_perpage(int $default = VG_PERPAGE_DEFAULT): int {
-    $v = (int) ($_GET['per_page'] ?? $default);
+//   $param 은 한 화면에 페이지네이션 섹션이 여러 개일 때 서로 다른 쿼리 파라미터를 쓰기 위함
+//   (예: cve.php 의 벤더 판정=vper_page, 영향 패키지=aper_page, 발견 위치=per_page).
+function vg_perpage(int $default = VG_PERPAGE_DEFAULT, string $param = 'per_page'): int {
+    $v = (int) ($_GET[$param] ?? $default);
     return in_array($v, VG_PERPAGE_OPTIONS, true) ? $v : $default;
 }
 
 // 현재 페이지 번호. ?page= 를 정수로 파싱해 1 미만이면 1로 올린다.
-function vg_page(): int {
-    return max(1, (int) ($_GET['page'] ?? 1));
+function vg_page(string $param = 'page'): int {
+    return max(1, (int) ($_GET[$param] ?? 1));
 }
 
 // "페이지당 N개" 셀렉트. onchange 시 현재 쿼리스트링 유지한 채 per_page 변경 + page=1 로 이동.
 //   data-nav 는 app.js 가 이동 시작을 알아채 상단 진행바를 띄우는 표식이다.
-function vg_perpage_select(): void {
-    $current = vg_perpage();
+function vg_perpage_select(string $pageParam = 'page', string $perPageParam = 'per_page'): void {
+    $current = vg_perpage(VG_PERPAGE_DEFAULT, $perPageParam);
     echo '<select data-nav onchange="location.href=this.value" aria-label="페이지당 표시 개수">';
     foreach (VG_PERPAGE_OPTIONS as $n) {
-        $url = vg_qs(['per_page' => $n, 'page' => 1]);
+        $url = vg_qs([$perPageParam => $n, $pageParam => 1]);
         echo '<option value="' . vg_h($url) . '"' . ($current === $n ? ' selected' : '') . '>' . $n . '개씩 보기</option>';
     }
     echo '</select>';
@@ -223,8 +225,10 @@ function vg_perpage_select(): void {
 /**
  * 페이지네이션 출력. 한 페이지에 다 들어가도 "N개씩 보기" 셀렉트는 남긴다
  * (큰 값을 고른 뒤 되돌릴 UI가 사라지지 않게). 최소 선택지 이하면 아예 생략.
+ *   $pageParam·$perPageParam 은 한 화면에 페이지네이션 섹션이 여러 개일 때(cve.php) 서로
+ *   다른 쿼리 파라미터를 써서 페이지 이동이 섞이지 않게 하기 위함. 기본값은 기존 'page'/'per_page'.
  */
-function vg_page_nav(int $total, int $perPage, int $page): void {
+function vg_page_nav(int $total, int $perPage, int $page, string $pageParam = 'page', string $perPageParam = 'per_page'): void {
     $totalPages = max(1, (int) ceil($total / $perPage));
     if ($totalPages === 1 && $total <= VG_PERPAGE_OPTIONS[0]) {
         return;
@@ -234,7 +238,7 @@ function vg_page_nav(int $total, int $perPage, int $page): void {
 
     if ($totalPages === 1) {   // 페이지 링크는 필요없고 개수 셀렉트만
         echo '<div class="pager"><span class="muted">· 총 ' . number_format($total) . '건</span>';
-        vg_perpage_select();
+        vg_perpage_select($pageParam, $perPageParam);
         echo '</div>';
         return;
     }
@@ -249,7 +253,7 @@ function vg_page_nav(int $total, int $perPage, int $page): void {
 
     echo '<div class="pager">';
     if ($page > 1) {
-        echo '<a href="' . vg_h(vg_qs(['page' => $page - 1])) . '">‹ 이전</a>';
+        echo '<a href="' . vg_h(vg_qs([$pageParam => $page - 1])) . '">‹ 이전</a>';
     } else {
         echo '<span class="muted">‹ 이전</span>';
     }
@@ -261,17 +265,17 @@ function vg_page_nav(int $total, int $perPage, int $page): void {
         if ($p === $page) {
             echo '<span class="cur">' . $p . '</span>';
         } else {
-            echo '<a href="' . vg_h(vg_qs(['page' => $p])) . '">' . $p . '</a>';
+            echo '<a href="' . vg_h(vg_qs([$pageParam => $p])) . '">' . $p . '</a>';
         }
         $prev = $p;
     }
     if ($page < $totalPages) {
-        echo '<a href="' . vg_h(vg_qs(['page' => $page + 1])) . '">다음 ›</a>';
+        echo '<a href="' . vg_h(vg_qs([$pageParam => $page + 1])) . '">다음 ›</a>';
     } else {
         echo '<span class="muted">다음 ›</span>';
     }
     echo '<span class="muted">· 총 ' . number_format($total) . '건 · ' . $page . '/' . $totalPages . '페이지</span>';
-    vg_perpage_select();
+    vg_perpage_select($pageParam, $perPageParam);
     echo '</div>';
 }
 
