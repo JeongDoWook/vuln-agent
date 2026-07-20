@@ -216,6 +216,20 @@ function vg_epss_cell($epss, $percentile = null): string {
     return $out;
 }
 
+/**
+ * 중앙값 — 정렬 후 가운데 값(홀수) 또는 두 가운데 평균(짝수). 빈 배열이면 0.0.
+ *   호스트 수가 적어(함대 5~10대) 평균이 이상치 1대에 크게 흔들리는 집계(에이전트
+ *   리소스 사용량 추이)에 평균 대신 쓴다 — 정렬 후 가운데 값이면 충분해 별도 라이브러리는 안 쓴다.
+ */
+function vg_median(array $vals): float {
+    $vals = array_map('floatval', array_values($vals));
+    sort($vals);
+    $n = count($vals);
+    if ($n === 0) { return 0.0; }
+    $mid = intdiv($n, 2);
+    return $n % 2 === 1 ? $vals[$mid] : ($vals[$mid - 1] + $vals[$mid]) / 2;
+}
+
 // 긴 텍스트 말줄임 + 툴팁(title 에 원문). 안 잘리면 그냥 이스케이프만.
 function vg_trunc(?string $text, int $len = 72): string {
     $text = (string) $text;

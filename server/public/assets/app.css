@@ -675,6 +675,10 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .chart__grid { stroke: var(--line); stroke-width: 1; opacity: .6; }
 .chart__tick { fill: var(--muted); font-size: 10px; text-anchor: end; font-variant-numeric: tabular-nums; }
 .chart__lbl  { fill: var(--muted); font-size: 10px; text-anchor: middle; }
+/* 시작·끝 라벨은 가운데 정렬이면 SVG viewBox 밖으로 삐져나간다(끝 라벨이 특히 위험 —
+ * x 가 그래프 오른쪽 끝이라 절반이 잘린다). 좌표는 그대로 두고 앵커만 안쪽으로 튼다. */
+.chart__lbl--start { text-anchor: start; }
+.chart__lbl--end   { text-anchor: end; }
 
 /* 리소스(메모리/CPU) 라인차트(host.php) — 위 눈금 위에 선+포인트만 얹는다. */
 .chart__line { fill: none; stroke-width: 2; }

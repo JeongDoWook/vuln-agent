@@ -102,8 +102,11 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
             . '<title>' . vg_h($p['t'] . ' · ' . number_format($p['v'], $decimals) . $unit) . '</title>'
             . '</circle>';
         // x축 라벨은 시작·끝만 — 과하게 붙이면 겹친다(작업 지침).
+        // 가운데 정렬(chart__lbl)로 두면 끝 라벨은 x=W-padR 에서 절반이 viewBox 밖으로
+        // 잘린다 — 위치별로 앵커를 안쪽(시작=start/끝=end)으로 튼다.
         if ($i === 0 || $i === $n - 1) {
-            echo '<text class="chart__lbl" x="' . $cx . '" y="' . ($H - 8) . '">'
+            $edge = $i === 0 ? 'start' : 'end';
+            echo '<text class="chart__lbl chart__lbl--' . $edge . '" x="' . $cx . '" y="' . ($H - 8) . '">'
                 . vg_h(date('n/j H:i', strtotime($p['t']))) . '</text>';
         }
     }
