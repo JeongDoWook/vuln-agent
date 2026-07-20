@@ -12,11 +12,14 @@ vg_require_menu('dashboard');
 
 // "지금 급한 것" 에 보여줄 최대 건수. 나머지는 취약점 현황으로 넘긴다.
 const VG_URGENT_TOP = 6;
+// 에이전트 리소스 사용량 카드의 함대 평균 추이 — 최근 며칠치를 볼지.
+const VG_RESOURCE_TREND_DAYS = 30;
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
 $kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
 $delta = []; $osDist = []; $topHosts = [];
+$resKpi = null; $memTrend = []; $cpuTrend = [];
 $page = vg_page();
 $perPage = vg_perpage();
 try {
@@ -109,6 +112,35 @@ try {
           GROUP BY h.id, h.fqdn
           ORDER BY c DESC
           LIMIT 10"
+    )->fetchAll();
+
+    /* 에이전트 리소스 사용량 — "설치해도 서버 부담이 거의 없다" 를 함대 전체로 보여주는 카드.
+     * KPI 는 전 호스트 최신 스캔 기준 평균(구버전 에이전트의 NULL 은 AVG() 가 자동으로 뺀다).
+     * 추이는 개별 스캔 산점이 아니라 날짜별 함대 평균 — 값 없는 행은 그 날짜 집계에서 제외한다.
+     */
+    $resKpi = $pdo->query(
+        "SELECT AVG(peak_rss_mb) avg_mem, AVG(cpu_seconds) avg_cpu
+           FROM tb_scans WHERE id IN ($latestScans)"
+    )->fetch();
+
+    $memTrend = $pdo->query(
+        "SELECT DATE(s.collected_at) AS collected_at, AVG(s.peak_rss_mb) AS peak_rss_mb
+           FROM tb_scans s
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+          WHERE s.is_deleted = 0 AND s.peak_rss_mb IS NOT NULL
+            AND s.collected_at >= DATE_SUB(CURDATE(), INTERVAL " . VG_RESOURCE_TREND_DAYS . " DAY)
+          GROUP BY DATE(s.collected_at)
+          ORDER BY collected_at ASC"
+    )->fetchAll();
+
+    $cpuTrend = $pdo->query(
+        "SELECT DATE(s.collected_at) AS collected_at, AVG(s.cpu_seconds) AS cpu_seconds
+           FROM tb_scans s
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+          WHERE s.is_deleted = 0 AND s.cpu_seconds IS NOT NULL
+            AND s.collected_at >= DATE_SUB(CURDATE(), INTERVAL " . VG_RESOURCE_TREND_DAYS . " DAY)
+          GROUP BY DATE(s.collected_at)
+          ORDER BY collected_at ASC"
     )->fetchAll();
 
     /* KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
@@ -295,6 +327,35 @@ vg_header('대시보드', 'dashboard');
       <span class="why">— 호스트별 최신 스캔의 findings 건수 기준</span>
       <div class="card__body">
         <?php vg_hbar_list($topHosts, 'fqdn', 'c', ['icon' => '✅', 'title' => '취약점이 있는 호스트가 없습니다.']); ?>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <strong>에이전트 리소스 사용량</strong>
+    <span class="why">— 이 에이전트를 설치해도 서버에 부담이 거의 없다는 걸 함대 전체로 보여준다</span>
+    <div class="card__body">
+      <div class="cards">
+        <div class="kpi">
+          <b><?= vg_resource_mem($resKpi['avg_mem'] ?? null) ?></b>
+          <span>평균 피크 메모리 · 최신 스캔</span>
+        </div>
+        <div class="kpi">
+          <b><?= vg_resource_cpu($resKpi['avg_cpu'] ?? null) ?></b>
+          <span>평균 CPU 소요시간 · 최신 스캔</span>
+        </div>
+      </div>
+      <div class="split split--even">
+        <div>
+          <strong>메모리 추이</strong>
+          <span class="why">— 일별 함대 평균(MB) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+          <?php vg_resource_trend($memTrend, 'peak_rss_mb', 'MB', 0, 'mem'); ?>
+        </div>
+        <div>
+          <strong>CPU 추이</strong>
+          <span class="why">— 일별 함대 평균(초) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+          <?php vg_resource_trend($cpuTrend, 'cpu_seconds', 's', 1, 'cpu'); ?>
+        </div>
       </div>
     </div>
   </div>
