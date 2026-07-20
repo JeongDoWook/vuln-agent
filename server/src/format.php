@@ -195,6 +195,15 @@ function vg_resource_cpu($sec): string {
 }
 
 /**
+ * 리소스 사용률(%) 셀 — 호스트 스펙(메모리 총량·CPU 코어수) 대비 퍼센트.
+ *   대시보드 함대 카드 전용(host.php 는 절대치를 그대로 쓴다). 스펙 미수집 스캔은 null.
+ */
+function vg_resource_pct(?float $pct): string {
+    if ($pct === null) { return '<span class="why">–</span>'; }
+    return number_format($pct, 1) . '<span class="why">%</span>';
+}
+
+/**
  * EPSS 셀 — 악용확률과 백분위를 함께.
  *
  * 확률만 보면 크기 감이 안 온다. EPSS 는 절대다수가 1% 미만이라 "2.7%" 도 실은 상위권이다.
