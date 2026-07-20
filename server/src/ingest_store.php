@@ -98,7 +98,8 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
         $pdo->prepare(
             'UPDATE tb_scans SET collected_at = :ca, agent_version = :av, schedule = :sch,
                                  elapsed_seconds = :el,
-                                 peak_rss_mb = :pk, cpu_seconds = :cpu WHERE id = :id'
+                                 peak_rss_mb = :pk, cpu_seconds = :cpu,
+                                 mem_total_mb = :mem, cpu_cores = :cores WHERE id = :id'
         )->execute([
             ':ca' => $collectedAt,
             ':av' => ($meta['agent_version'] ?? '') ?: null,
@@ -106,6 +107,8 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
             ':el' => isset($meta['elapsed_seconds']) ? (int) $meta['elapsed_seconds'] : null,
             ':pk' => isset($meta['peak_rss_mb']) ? (float) $meta['peak_rss_mb'] : null,
             ':cpu' => isset($meta['cpu_seconds']) ? (float) $meta['cpu_seconds'] : null,
+            ':mem' => isset($meta['mem_total_mb']) ? (float) $meta['mem_total_mb'] : null,
+            ':cores' => isset($meta['nproc']) ? (int) $meta['nproc'] : null,
             ':id' => $scanId,
         ]);
     } else {
@@ -113,11 +116,12 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     $stmt = $pdo->prepare(
         'INSERT INTO tb_scans
             (host_id, collected_at, agent_version, schedule, elapsed_seconds, peak_rss_mb, cpu_seconds,
+             mem_total_mb, cpu_cores,
              os_id, os_version, kernel, running_kernel, kernel_latest, kernel_reboot_needed,
              cpe, package_family, content_hash,
              package_count, exposure_count, raw_json)
          VALUES
-            (:h, :ca, :av, :sch, :el, :pk, :cpu, :osid, :osver, :kern, :rk, :kl, :krn, :cpe, :fam, :hash, :pc, :ec, :raw)'
+            (:h, :ca, :av, :sch, :el, :pk, :cpu, :mem, :cores, :osid, :osver, :kern, :rk, :kl, :krn, :cpe, :fam, :hash, :pc, :ec, :raw)'
     );
     $stmt->execute([
         ':h'     => $hostId,
@@ -127,6 +131,8 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
         ':el'    => isset($meta['elapsed_seconds']) ? (int) $meta['elapsed_seconds'] : null,
         ':pk'    => isset($meta['peak_rss_mb']) ? (float) $meta['peak_rss_mb'] : null,
         ':cpu'   => isset($meta['cpu_seconds']) ? (float) $meta['cpu_seconds'] : null,
+        ':mem'   => isset($meta['mem_total_mb']) ? (float) $meta['mem_total_mb'] : null,
+        ':cores' => isset($meta['nproc']) ? (int) $meta['nproc'] : null,
         ':osid'  => ($vm['distro_id'] ?? '') ?: null,
         ':osver' => ($vm['distro_version'] ?? '') ?: null,
         ':kern'  => ($sys['kernel_release'] ?? ($sys['kernel'] ?? '')) ?: null,
