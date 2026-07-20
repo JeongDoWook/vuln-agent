@@ -291,10 +291,10 @@ vg_header('대시보드', 'dashboard');
         <?php endif; ?>
       </a>
     <?php endforeach; ?>
-    <div class="kpi tone-<?= $kevCount > 0 ? 'crit' : 'ok' ?>">
+    <div class="kpi kpi--static tone-<?= $kevCount > 0 ? 'crit' : 'ok' ?>" title="집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다">
       <b><?= number_format($kevCount) ?></b><span>KEV 악용확인</span>
     </div>
-    <div class="kpi tone-<?= $overdueCount > 0 ? 'crit' : 'ok' ?>">
+    <div class="kpi kpi--static tone-<?= $overdueCount > 0 ? 'crit' : 'ok' ?>" title="집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다">
       <b><?= number_format($overdueCount) ?></b><span>패치기한 초과</span>
     </div>
   </div>
