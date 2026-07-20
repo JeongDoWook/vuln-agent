@@ -79,9 +79,11 @@ vg_header('권한설정', 'permissions');
             <td><strong><?= vg_h($label) ?></strong> <code><?= vg_h($code) ?></code></td>
             <td title="관리자는 항상 전체 허용"><span class="pill">✔ 항상</span></td>
             <?php foreach (VG_PERM_ROLES as $role): ?>
-              <td>
-                <input type="checkbox" name="perm[<?= vg_h($role) ?>][<?= vg_h($code) ?>]" value="1"
-                       <?= !empty($cur[$role][$code]) ? 'checked' : '' ?>>
+              <td class="col-role">
+                <label>
+                  <input type="checkbox" name="perm[<?= vg_h($role) ?>][<?= vg_h($code) ?>]" value="1"
+                         <?= !empty($cur[$role][$code]) ? 'checked' : '' ?>>
+                </label>
               </td>
             <?php endforeach; ?>
           </tr>
@@ -89,10 +91,14 @@ vg_header('권한설정', 'permissions');
         </tbody>
       </table>
     </div>
+
+    <div class="mt-lg"><button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button></div>
   </form>
 
-  <div class="sub card__body">
-    · <strong>권한설정</strong> 메뉴 자체는 관리자 전용이라 목록에서 제외됩니다.<br>
-    · 관리자 계정은 어떤 설정과 무관하게 모든 메뉴에 접근합니다(잠금방지).
+  <div class="card">
+    <div class="sub">
+      · <strong>권한설정</strong> 메뉴 자체는 관리자 전용이라 목록에서 제외됩니다.<br>
+      · 관리자 계정은 어떤 설정과 무관하게 모든 메뉴에 접근합니다(잠금방지).
+    </div>
   </div>
 <?php vg_footer();

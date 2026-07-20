@@ -1100,6 +1100,14 @@ form.card .btn--block { margin-top: 1.1rem; }
 }
 .actions input[type=password] { width: 120px; }
 
+/* 세로로 쌓는 액션 폼 묶음 — user.php 계정관리처럼 폼 여러 개를 나란히 두면 각 폼의
+ * <label>(display:block)이 인라인 흐름 속에서 위로 뜨는 것처럼 보인다. 방향만 바꾸고
+ * 폼 사이에 구분선을 둬 각 폼이 소섹션으로 보이게 한다. */
+.actions--stack { flex-direction: column; align-items: stretch; gap: 0; }
+.actions--stack > * { padding: .9rem 0 0; border-top: 1px solid var(--line); }
+.actions--stack > form { display: block; margin: 0; }
+.actions--stack > *:first-child { padding-top: 0; border-top: none; }
+
 /* --- 키-값 반복 입력(범용 API 커넥터 — 인증 헤더 · 필드 매핑) ------------- */
 .kvrows { display: grid; gap: .4rem; margin-bottom: .3rem; }
 .kvrow { display: grid; grid-template-columns: minmax(0, 10rem) 1fr auto; gap: .4rem; align-items: center; }
@@ -1162,6 +1170,9 @@ form.card .sub { text-align: center; }
 .matrix th:first-child, .matrix td:first-child { text-align: left; }
 .matrix input[type=checkbox] { transform: scale(1.3); }
 .matrix .col-role { width: 120px; }
+/* 체크박스를 <label> 로 감싸 클릭 타겟을 셀 전체로 넓힌다(체크박스 자체만 클릭되던 문제).
+ * margin/padding 은 위 th,td 공통 규칙의 값(.72rem 1rem)과 맞춰 셀을 그대로 채운다. */
+.matrix .col-role label { display: block; margin: -.72rem -1rem; padding: .72rem 1rem; cursor: pointer; }
 
 /* --- 로그인 화면 -----------------------------------------------------------
  * form.card 셀렉터는 login.php 에서만 쓴다(다른 페이지엔 없음) — 그래서
