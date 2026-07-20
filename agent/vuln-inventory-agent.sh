@@ -977,6 +977,7 @@ cap meta running_as    'id -un'
 cap meta schedule      'echo "${SCHEDULE:-}"'
 cap meta loadavg       'cat /proc/loadavg'
 cap meta nproc         'nproc'
+cap meta mem_total_mb  'awk "/^MemTotal:/{printf \"%.0f\", \$2/1024}" /proc/meminfo'
 
 cap system os_release     'cat /etc/os-release'
 cap system redhat_release 'cat /etc/redhat-release'
