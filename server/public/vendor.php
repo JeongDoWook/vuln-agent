@@ -28,6 +28,9 @@ vg_require_menu('findings');
  *   'cve'/'rel'/'pkg' 는 WHERE 에 쓸 컬럼 표현식(kcve 만 JOIN 이라 별칭이 붙는다),
  *   'soft' 는 소프트삭제 컬럼 유무(커널 두 테이블엔 없다),
  *   'cols' 는 UNION 컬럼 순서·이름을 맞춘 SELECT 목록이다 — 다섯 갈래가 정확히 같아야 한다.
+ *
+ *   cve.php 의 VG_CVE_VENDOR_SRC 가 같은 테이블·컬럼을 이 CVE 하나로 좁혀 복제한다
+ *   (의도적 중복 — cve.php 쪽 주석 참고). 여기 스키마를 바꾸면 그쪽도 같이 고칠 것.
  */
 const VG_VENDOR_SRC = [
     'debtracker' => [

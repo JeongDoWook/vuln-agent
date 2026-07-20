@@ -69,6 +69,7 @@ const VG_CVE_VENDOR_SRC = [
 ];
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = []; $vendorRows = [];
+$vendorMore = false;
 $locTotal = 0; $assetTotal = 0; $page = vg_page(); $perPage = vg_perpage();
 
 try {
@@ -90,16 +91,23 @@ try {
         $stmt->execute([$cveId]);
         $kev = $stmt->fetch() ?: null;
 
-        // 벤더 판정 5종 UNION — 이 CVE 로만 좁힌 소량 조회라 COUNT·페이지네이션 없이 전량.
+        // 벤더 판정 5종 UNION — 커널/RHEL/우분투는 릴리스·패키지별로 행이 쪼개져 CVE 하나가
+        //   수백~수천 건도 나올 수 있다(CVE-2023-44487 실측 373건). "한 스크롤로 훑기" 목표에
+        //   맞춰 51건만 가져오고(50건 표시 + 초과 판정용 여유 1건), 정확한 총 건수는 세지 않는다
+        //   (COUNT 쿼리를 추가하면 최초 설계 원칙 "COUNT·페이지네이션 없이" 를 어기게 된다).
         $vParts = []; $vParams = [];
         foreach (VG_CVE_VENDOR_SRC as $def) {
             $w = ($def['soft'] ? 'is_deleted = 0 AND ' : '') . $def['cve'] . ' = ?';
             $vParts[] = "SELECT {$def['cols']} FROM {$def['from']} WHERE $w";
             $vParams[] = $cveId;
         }
-        $stmt = $pdo->prepare(implode(' UNION ALL ', $vParts) . ' ORDER BY src, vendor, rel');
+        $stmt = $pdo->prepare(implode(' UNION ALL ', $vParts) . ' ORDER BY src, vendor, rel LIMIT 51');
         $stmt->execute($vParams);
         $vendorRows = $stmt->fetchAll();
+        $vendorMore = count($vendorRows) > 50;
+        if ($vendorMore) {
+            $vendorRows = array_slice($vendorRows, 0, 50);
+        }
 
         $stmt = $pdo->prepare('SELECT ecosystem, package_name, fixed_version FROM tb_cve_affected_packages WHERE cve_id = ? ORDER BY ecosystem, package_name');
         $stmt->execute([$cveId]);
@@ -177,6 +185,10 @@ if ($kev) {
 vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 현황에서 보기</a>'], $sevUp ?? '등급 미상', $tone, 'CVSS 등급');
 ?>
 
+<?php if ($cve === null): ?>
+  <?php vg_alert('이 CVE 는 아직 수집되지 않았습니다. NVD 커넥터 수집 후 다시 확인해 주세요.'); ?>
+<?php endif; ?>
+
 <div class="card">
   <strong>핵심 지표</strong>
   <span class="why">— 흩어놓지 않고 한 카드에 모았다</span>
@@ -232,7 +244,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
 <nav class="subtabs subtabs--sticky">
   <a href="#summary">요약</a>
   <a href="#vector">공격 벡터</a>
-  <?php if ($vendorRows): ?><a href="#vendor">벤더 판정<span class="n"><?= number_format(count($vendorRows)) ?></span></a><?php endif; ?>
+  <?php if ($vendorRows): ?><a href="#vendor">벤더 판정<span class="n"><?= number_format(count($vendorRows)) . ($vendorMore ? '+' : '') ?></span></a><?php endif; ?>
   <a href="#affected">영향 패키지<span class="n"><?= number_format(count($affected)) ?></span></a>
   <a href="#locations">발견 위치<span class="n"><?= number_format($locTotal) ?></span></a>
   <a href="#references">참조 자료</a>
@@ -313,8 +325,8 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
             'cell' => [
                 0 => function ($r) {
                     $d = VG_CVE_VENDOR_SRC[$r['src']] ?? null;
-                    return '<span class="pill" title="' . vg_h($d !== null ? $d['label'] : '') . '">'
-                         . vg_h((string) $r['src']) . '</span>';
+                    $label = $d !== null ? $d['label'] : (string) $r['src'];
+                    return '<span class="pill">' . vg_h($label) . '</span>';
                 },
                 1 => fn($r) => vg_h((string) $r['vendor']) . '<span class="why">/</span>' . vg_h((string) $r['rel']),
                 2 => fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['pkg']) . '">'
@@ -331,7 +343,10 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
     );
     ?>
     </div>
-    <div class="why mt"><a href="/vendor.php?q=<?= urlencode($cveId) ?>">벤더 판정 전체 보기(필터·상세) →</a></div>
+    <div class="why mt">
+      <a href="/vendor.php?q=<?= urlencode($cveId) ?>">벤더 판정 전체 보기(필터·상세) →</a>
+      <?php if ($vendorMore): ?><span> · 50건 초과 — 나머지는 전체 보기에서 확인하세요</span><?php endif; ?>
+    </div>
   </div>
 </section>
 <?php endif; ?>
