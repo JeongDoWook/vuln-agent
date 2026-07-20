@@ -120,7 +120,11 @@ try {
      * 모집단·집계방식이 달라 KPI 와 추이 마지막 값이 정확히 같진 않다(화면 부제로 기준을 구분해 표시).
      */
     $resKpi = $pdo->query(
-        "SELECT AVG(peak_rss_mb) avg_mem, AVG(cpu_seconds) avg_cpu
+        "SELECT AVG(CASE WHEN mem_total_mb IS NOT NULL AND mem_total_mb > 0
+                         THEN peak_rss_mb / mem_total_mb * 100 END) avg_mem_pct,
+                AVG(CASE WHEN cpu_cores IS NOT NULL AND cpu_cores > 0
+                          AND elapsed_seconds IS NOT NULL AND elapsed_seconds > 0
+                         THEN cpu_seconds / (elapsed_seconds * cpu_cores) * 100 END) avg_cpu_pct
            FROM tb_scans WHERE id IN ($latestScans)"
     )->fetch() ?: null;
 
@@ -136,10 +140,25 @@ try {
      */
     $trendStart = date('Y-m-d', strtotime('-' . (VG_RESOURCE_TREND_DAYS - 1) . ' days'));
 
+    // 스캔 행 하나의 mem_total_mb/cpu_cores/elapsed_seconds 로 그 행의 메모리·CPU 퍼센트를 계산.
+    // 계산에 필요한 값이 하나라도 없거나(NULL) 분모가 0 이면 그 지표는 null(그 스캔은 이월에서 제외).
+    $scanPct = static function (array $r): array {
+        $mem = null;
+        if ($r['peak_rss_mb'] !== null && $r['mem_total_mb'] !== null && (float) $r['mem_total_mb'] > 0) {
+            $mem = (float) $r['peak_rss_mb'] / (float) $r['mem_total_mb'] * 100;
+        }
+        $cpu = null;
+        if ($r['cpu_seconds'] !== null && $r['cpu_cores'] !== null && (float) $r['cpu_cores'] > 0
+            && $r['elapsed_seconds'] !== null && (float) $r['elapsed_seconds'] > 0) {
+            $cpu = (float) $r['cpu_seconds'] / ((float) $r['elapsed_seconds'] * (float) $r['cpu_cores']) * 100;
+        }
+        return ['mem' => $mem, 'cpu' => $cpu];
+    };
+
     // 시드 — 관찰 기간 시작 이전, 호스트별 가장 최근 값(메모리·CPU 어느 한쪽이라도 있으면) 1건.
     $seedRows = $pdo->query(
-        "SELECT host_id, peak_rss_mb, cpu_seconds FROM (
-            SELECT s.host_id, s.peak_rss_mb, s.cpu_seconds,
+        "SELECT host_id, peak_rss_mb, cpu_seconds, mem_total_mb, cpu_cores, elapsed_seconds FROM (
+            SELECT s.host_id, s.peak_rss_mb, s.cpu_seconds, s.mem_total_mb, s.cpu_cores, s.elapsed_seconds,
                    ROW_NUMBER() OVER (PARTITION BY s.host_id ORDER BY s.collected_at DESC) rn
               FROM tb_scans s
               JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
@@ -151,7 +170,8 @@ try {
     // 본 구간 — 관찰 기간의 스캔 전부(oldest→newest). "최근 N일" 라벨과 맞추려고 (N-1)일 전부터
     // 오늘까지로 잡는다(DATE_SUB(...,N DAY) 는 N+1일치가 걸린다).
     $rangeRows = $pdo->query(
-        "SELECT s.host_id, DATE(s.collected_at) AS d, s.peak_rss_mb, s.cpu_seconds
+        "SELECT s.host_id, DATE(s.collected_at) AS d, s.peak_rss_mb, s.cpu_seconds,
+                s.mem_total_mb, s.cpu_cores, s.elapsed_seconds
            FROM tb_scans s
            JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
           WHERE s.is_deleted = 0 AND s.collected_at >= '$trendStart'
@@ -162,7 +182,8 @@ try {
 
     $known = [];
     foreach ($seedRows as $r) {
-        $known[(int) $r['host_id']] = ['mem' => $r['peak_rss_mb'], 'cpu' => $r['cpu_seconds']];
+        $pct = $scanPct($r);
+        $known[(int) $r['host_id']] = ['mem' => $pct['mem'], 'cpu' => $pct['cpu']];
     }
 
     $today = date('Y-m-d');
@@ -170,9 +191,10 @@ try {
         foreach ($rangeByDay[$d] ?? [] as $r) {
             $hid = (int) $r['host_id'];
             if (!isset($known[$hid])) { $known[$hid] = ['mem' => null, 'cpu' => null]; }
-            // 필드별로 NULL 아닌 것만 덮어쓴다 — 구버전 에이전트가 한쪽만 보냈을 수도 있다.
-            if ($r['peak_rss_mb'] !== null) { $known[$hid]['mem'] = $r['peak_rss_mb']; }
-            if ($r['cpu_seconds'] !== null) { $known[$hid]['cpu'] = $r['cpu_seconds']; }
+            $pct = $scanPct($r);
+            // 필드별로 계산 가능한 것만 덮어쓴다 — 스펙 미수집 스캔은 이전 값을 유지.
+            if ($pct['mem'] !== null) { $known[$hid]['mem'] = $pct['mem']; }
+            if ($pct['cpu'] !== null) { $known[$hid]['cpu'] = $pct['cpu']; }
         }
         // 아직 한 번도 안 보인 호스트는 값이 없으니 그날 집계에서 제외한다.
         $memVals = array_values(array_filter(array_column($known, 'mem'), fn($v) => $v !== null));
@@ -371,28 +393,29 @@ vg_header('대시보드', 'dashboard');
 
   <div class="card">
     <strong>에이전트 리소스 사용량</strong>
-    <span class="why">— 이 에이전트를 설치해도 서버에 부담이 거의 없다는 걸 함대 전체로 보여준다</span>
+    <span class="why">— 이 에이전트를 설치해도 서버에 부담이 거의 없다는 걸 함대 전체로 보여준다(호스트 스펙 대비 %,
+      스펙 정보가 아직 없는 호스트는 제외됩니다)</span>
     <div class="card__body">
       <div class="cards">
         <div class="kpi">
-          <b><?= vg_resource_mem($resKpi['avg_mem'] ?? null) ?></b>
-          <span>평균 피크 메모리 · 최신 스캔</span>
+          <b><?= vg_resource_pct($resKpi['avg_mem_pct'] !== null ? (float) $resKpi['avg_mem_pct'] : null) ?></b>
+          <span>평균 메모리 사용률 · 최신 스캔</span>
         </div>
         <div class="kpi">
-          <b><?= vg_resource_cpu($resKpi['avg_cpu'] ?? null) ?></b>
-          <span>평균 CPU 소요시간 · 최신 스캔</span>
+          <b><?= vg_resource_pct($resKpi['avg_cpu_pct'] !== null ? (float) $resKpi['avg_cpu_pct'] : null) ?></b>
+          <span>평균 CPU 사용률 · 최신 스캔</span>
         </div>
       </div>
       <div class="split split--even">
         <div>
           <strong>메모리 추이</strong>
-          <span class="why">— 일별 함대 중앙값(이월 적용, MB) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
-          <?php vg_resource_trend($memTrend, 'peak_rss_mb', 'MB', 0, 'mem'); ?>
+          <span class="why">— 일별 함대 중앙값(이월 적용, 시스템 메모리 대비 %) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+          <?php vg_resource_trend($memTrend, 'peak_rss_mb', '%', 1, 'mem'); ?>
         </div>
         <div>
           <strong>CPU 추이</strong>
-          <span class="why">— 일별 함대 중앙값(이월 적용, 초) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
-          <?php vg_resource_trend($cpuTrend, 'cpu_seconds', 's', 1, 'cpu'); ?>
+          <span class="why">— 일별 함대 중앙값(이월 적용, 코어수 대비 %) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+          <?php vg_resource_trend($cpuTrend, 'cpu_seconds', '%', 1, 'cpu'); ?>
         </div>
       </div>
     </div>
