@@ -328,7 +328,7 @@ vg_header('취약점', 'findings');
                   return $cvss . '<div class="why">' . $epss . '</div>';
               },
               'rationale' => fn($r) => '<span class="why">' . vg_trunc($r['rationale'], 80) . '</span>',
-              'fix'       => fn($r) => vg_fix_cell($r['fixed_version'] ?? null, $r['ref_urls_json'] ?? null),
+              'fix'       => fn($r) => vg_fix_cell($r['fixed_version'] ?? null, $r['ref_urls_json'] ?? null, $r['installed_version'] ?? null),
           ],
       ]
   );
