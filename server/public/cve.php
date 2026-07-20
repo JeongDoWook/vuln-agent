@@ -3,11 +3,13 @@ declare(strict_types=1);
 
 /**
  * cve.php — CVE 상세페이지. 로그인 필요.
- *   ?cve=CVE-XXXX-XXXXX  ·  ?tab=overview|affected|locations  ·  ?page=N (발견 위치 탭)
+ *   ?cve=CVE-XXXX-XXXXX  ·  ?page=N (발견 위치 섹션)
  *
- * 구성: 히어로(식별 + 등급) → 본문 탭 + 우측 고정 메트릭 사이드바.
- *   수치(CVSS·EPSS·KEV)를 사이드바에 sticky 로 붙인 건, 본문 위에 눕히면 읽으려고
- *   스크롤하는 순간 사라지기 때문이다 — "얼마나 위험한가" 는 계속 보여야 한다.
+ * 구성: 히어로(식별 + 등급) → 통계 그리드(핵심 지표 한눈에) → 앵커 내비(sticky) →
+ *   요약 → 공격 벡터 → (있으면) 벤더 판정 → 영향 패키지 → 발견 위치 → 참조 자료.
+ *   예전엔 탭 3개(개요/영향 패키지/발견 위치) 뒤에 숨기고 지표를 사이드바에 따로 뒀는데,
+ *   "한눈에 안 들어온다" 는 사용자 피드백의 핵심 원인이었다 — 탭 전환 없이 스크롤 한 번으로
+ *   전부 보이는 단일 페이지로 바꾼다. 발견 위치만 건수가 많을 수 있어 페이지네이션은 유지.
  *
  * cvss_vector·cwe·due_date·ransomware 는 커넥터가 이제야 받아오기 시작한 필드라
  * 예전에 수집된 행은 NULL 이다. 전부 "없으면 그 줄을 생략" 으로 처리한다.
@@ -17,11 +19,58 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('findings');
 
-$err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = [];
-$locTotal = 0; $assetTotal = 0; $page = vg_page(); $perPage = vg_perpage();
+/**
+ * 벤더 판정 5종 — vendor.php 의 VG_VENDOR_SRC 를 이 CVE 하나로 좁혀 최소 재현한다
+ * (의도적 중복 — vendor.php 는 필터·페이지네이션까지 갖춘 별도 화면이라 그대로 재사용할 수
+ * 없고, 여긴 "한 CVE 분량" 이라 COUNT·LIMIT 도 필요 없다. vendor.php 자체는 건드리지 않는다).
+ * cols 는 UNION 컬럼을 (src, vendor, rel, pkg, fixed, state) 로 고정 — 다섯 갈래가 같아야 한다.
+ */
+const VG_CVE_VENDOR_SRC = [
+    'debtracker' => [
+        'label' => '데비안 보안 트래커',
+        'from'  => 'tb_debian_tracker',
+        'cve'   => 'cve_id',
+        'soft'  => true,
+        'cols'  => "'debtracker' AS src, 'debian' AS vendor, release_codename AS rel, pkg_name AS pkg,"
+                 . " fixed_version AS fixed, IF(has_fix = 1, '수정본 있음', '수정본 없음') AS state",
+    ],
+    'rhoval' => [
+        'label' => 'RHEL 계열 벤더 권고(OVAL)',
+        'from'  => 'tb_vendor_errata',
+        'cve'   => 'cve_id',
+        'soft'  => true,
+        'cols'  => "'rhoval' AS src, vendor, release_major AS rel, pkg_name AS pkg,"
+                 . " fixed_evr AS fixed, severity AS state",
+    ],
+    'rhunfixed' => [
+        'label' => 'Red Hat 미수정 CVE(조치 불가)',
+        'from'  => 'tb_vendor_unfixed',
+        'cve'   => 'cve_id',
+        'soft'  => true,
+        'cols'  => "'rhunfixed' AS src, vendor, release_major AS rel, component AS pkg,"
+                 . " NULL AS fixed, fix_state AS state",
+    ],
+    'ubuntuoval' => [
+        'label' => '우분투 보안 OVAL',
+        'from'  => 'tb_ubuntu_oval',
+        'cve'   => 'cve_id',
+        'soft'  => true,
+        'cols'  => "'ubuntuoval' AS src, 'ubuntu' AS vendor, release_codename AS rel, pkg_name AS pkg,"
+                 . " fixed_evr AS fixed, severity AS state",
+    ],
+    'kcve' => [
+        'label' => '리눅스 커널 CNA(kernel.org)',
+        'from'  => 'tb_kernel_cve_fixes f JOIN tb_kernel_cves k ON k.cve_id = f.cve_id',
+        'cve'   => 'f.cve_id',
+        'soft'  => false,   // 커널 두 테이블엔 소프트삭제 컬럼이 없다(vendor.php 와 같은 확인 사항).
+        'cols'  => "'kcve' AS src, 'kernel' AS vendor, f.stream AS rel, 'linux' AS pkg,"
+                 . " f.fixed_version AS fixed, k.mainline_fixed AS state",
+    ],
+];
 
-$tab = (string) ($_GET['tab'] ?? 'overview');
-if (!in_array($tab, ['overview', 'affected', 'locations'], true)) { $tab = 'overview'; }
+$err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = []; $vendorRows = [];
+$vendorMore = false;
+$locTotal = 0; $assetTotal = 0; $page = vg_page(); $perPage = vg_perpage();
 
 try {
     $raw = (string) ($_GET['cve'] ?? '');
@@ -41,6 +90,24 @@ try {
         $stmt = $pdo->prepare('SELECT * FROM tb_kev_catalog WHERE cve_id = ?');
         $stmt->execute([$cveId]);
         $kev = $stmt->fetch() ?: null;
+
+        // 벤더 판정 5종 UNION — 커널/RHEL/우분투는 릴리스·패키지별로 행이 쪼개져 CVE 하나가
+        //   수백~수천 건도 나올 수 있다(CVE-2023-44487 실측 373건). "한 스크롤로 훑기" 목표에
+        //   맞춰 51건만 가져오고(50건 표시 + 초과 판정용 여유 1건), 정확한 총 건수는 세지 않는다
+        //   (COUNT 쿼리를 추가하면 최초 설계 원칙 "COUNT·페이지네이션 없이" 를 어기게 된다).
+        $vParts = []; $vParams = [];
+        foreach (VG_CVE_VENDOR_SRC as $def) {
+            $w = ($def['soft'] ? 'is_deleted = 0 AND ' : '') . $def['cve'] . ' = ?';
+            $vParts[] = "SELECT {$def['cols']} FROM {$def['from']} WHERE $w";
+            $vParams[] = $cveId;
+        }
+        $stmt = $pdo->prepare(implode(' UNION ALL ', $vParts) . ' ORDER BY src, vendor, rel LIMIT 51');
+        $stmt->execute($vParams);
+        $vendorRows = $stmt->fetchAll();
+        $vendorMore = count($vendorRows) > 50;
+        if ($vendorMore) {
+            $vendorRows = array_slice($vendorRows, 0, 50);
+        }
 
         $stmt = $pdo->prepare('SELECT ecosystem, package_name, fixed_version FROM tb_cve_affected_packages WHERE cve_id = ? ORDER BY ecosystem, package_name');
         $stmt->execute([$cveId]);
@@ -97,6 +164,15 @@ $sevName = vg_cvss_sev($cvss === null ? null : (string) $cvss);
 $sevUp   = $sevName !== '' ? strtoupper($sevName) : null;
 $tone    = $sevUp !== null ? vg_sev_tone($sevUp) : 'muted';
 
+// KEV 패치 기한 — "언제까지 고쳐야 하나" 를 말해주는 유일한 신호. 지났으면 붉게.
+//   통계 그리드·사이드 카드가 둘 다 이 값을 쓰므로 히어로보다 먼저 계산해 둔다.
+$due = $kev['due_date'] ?? null;
+$dLeft = null; $overdue = false;
+if ($due) {
+    $dLeft   = (int) (new DateTimeImmutable('today'))->diff(new DateTimeImmutable((string) $due))->format('%r%a');
+    $overdue = $dLeft < 0;
+}
+
 // 히어로 제목 — KEV·랜섬웨어는 다른 무엇보다 먼저 보여야 할 신호라 제목 옆에 붙인다.
 $title = vg_h($cveId);
 if ($kev) {
@@ -106,66 +182,264 @@ if ($kev) {
     }
 }
 
-$meta = [$cve && $cve['published'] ? '공개 ' . vg_h((string) $cve['published']) : '공개일 미상'];
-if ($cve && !empty($cve['cwe'])) { $meta[] = '유형 ' . vg_h((string) $cve['cwe']); }
-$meta[] = '<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 현황에서 보기</a>';
-
-vg_hero($title, $meta, $sevUp ?? '등급 미상', $tone, 'CVSS 등급');
-
-vg_subtabs([
-    'overview'  => ['label' => '개요',        'n' => null],
-    'affected'  => ['label' => '영향 패키지', 'n' => count($affected)],
-    'locations' => ['label' => '발견 위치',   'n' => $locTotal],
-], $tab);
+vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 현황에서 보기</a>'], $sevUp ?? '등급 미상', $tone, 'CVSS 등급');
 ?>
 
-<div class="detail">
-  <div class="detail__main">
-    <?php if ($tab === 'overview'): ?>
-      <div class="card">
-        <strong>요약</strong>
-        <p class="why prose"><?= $cve && $cve['summary'] ? vg_h($cve['summary']) : '수집된 설명이 없습니다.' ?></p>
-      </div>
+<?php if ($cve === null): ?>
+  <?php vg_alert('이 CVE 는 아직 수집되지 않았습니다. NVD 커넥터 수집 후 다시 확인해 주세요.'); ?>
+<?php endif; ?>
 
-      <?php
-      // CVSS 벡터 분해 — 점수 하나로는 "원격인지 로컬인지, 인증이 필요한지" 를 알 수 없다.
-      $parts  = vg_cvss_vector_parts($cve['cvss_vector'] ?? null);
-      $vecRaw = $cve['cvss_vector'] ?? null;
-      ?>
-      <?php if ($parts): ?>
-        <div class="card">
-          <strong>공격 벡터</strong>
-          <span class="why">— 붉은 값이 공격자에게 유리한 조건이다</span>
-          <div class="card__body">
-            <dl class="kv">
-              <?php foreach ($parts as $p): ?>
-                <dt><?= vg_h($p['label']) ?></dt>
-                <dd class="<?= $p['danger'] ? 'is-danger' : '' ?>"><?= vg_h($p['value']) ?></dd>
-              <?php endforeach; ?>
-            </dl>
-            <div class="why mt"><code><?= vg_h((string) $vecRaw) ?></code></div>
-          </div>
-        </div>
-      <?php elseif (!empty($vecRaw)): ?>
-        <div class="card">
-          <strong>공격 벡터</strong>
-          <div class="card__body">
-            <code><?= vg_h((string) $vecRaw) ?></code>
-            <div class="why">해독할 수 없는 형식입니다(CVSS v2 벡터일 수 있음).</div>
-          </div>
+<div class="card">
+  <strong>핵심 지표</strong>
+  <span class="why">— 흩어놓지 않고 한 카드에 모았다</span>
+  <div class="card__body stat-grid">
+    <div class="stat">
+      <?php if ($cvss !== null): ?>
+        <div class="score tone-<?= vg_h($tone) ?>"><?= vg_h((string) $cvss) ?><small> / 10</small></div>
+        <div class="meter meter--<?= vg_h($tone) ?>">
+          <i style="width:<?= (int) round(min(10.0, max(0.0, (float) $cvss)) * 10) ?>%"></i>
         </div>
       <?php else: ?>
-        <div class="card">
-          <strong>공격 벡터</strong>
-          <div class="card__body">
-            <div class="why">벡터 정보가 없습니다. NVD 커넥터가 다시 돌면 채워집니다.</div>
-          </div>
-        </div>
+        <span class="stat__val"><span class="why">–</span></span>
       <?php endif; ?>
+      <div class="why">CVSS 기본점수</div>
+    </div>
 
+    <div class="stat">
+      <span class="stat__val"><?= $cve ? vg_epss_cell($cve['epss'] ?? null, $cve['epss_percentile'] ?? null) : '<span class="why">–</span>' ?></span>
+      <div class="why">EPSS(악용확률)</div>
+    </div>
+
+    <div class="stat">
+      <span class="stat__val">
+        <?= $kev ? vg_badge('등재됨', 'crit', '실제 악용이 확인된 취약점') : vg_badge('미등재', 'ok') ?>
+      </span>
+      <div class="why">CISA KEV</div>
+    </div>
+
+    <?php if ($kev && $due !== null && $due !== ''): ?>
+      <div class="stat">
+        <span class="stat__val <?= $overdue ? 'is-danger' : '' ?>"><?= vg_h((string) $due) ?></span>
+        <div class="why"><?= $overdue ? vg_h(abs($dLeft) . '일 초과') : vg_h('D-' . $dLeft) ?> · 패치 기한</div>
+      </div>
+    <?php endif; ?>
+
+    <div class="stat">
+      <span class="stat__val"><?= $cve && !empty($cve['cwe']) ? vg_h((string) $cve['cwe']) : '<span class="why">–</span>' ?></span>
+      <div class="why">CWE 유형</div>
+    </div>
+
+    <div class="stat">
+      <span class="stat__val"><?= $cve && $cve['published'] ? vg_h((string) $cve['published']) : '<span class="why">–</span>' ?></span>
+      <div class="why">공개일</div>
+    </div>
+
+    <div class="stat">
+      <span class="stat__val"><?= number_format($assetTotal) ?>대</span>
+      <div class="why">영향 자산<?= $locTotal > $assetTotal ? ' · 발견 ' . number_format($locTotal) . '건' : '' ?></div>
+    </div>
+  </div>
+</div>
+
+<nav class="subtabs subtabs--sticky">
+  <a href="#summary">요약</a>
+  <a href="#vector">공격 벡터</a>
+  <?php if ($vendorRows): ?><a href="#vendor">벤더 판정<span class="n"><?= number_format(count($vendorRows)) . ($vendorMore ? '+' : '') ?></span></a><?php endif; ?>
+  <a href="#affected">영향 패키지<span class="n"><?= number_format(count($affected)) ?></span></a>
+  <a href="#locations">발견 위치<span class="n"><?= number_format($locTotal) ?></span></a>
+  <a href="#references">참조 자료</a>
+</nav>
+
+<section id="summary">
+  <div class="card">
+    <strong>요약</strong>
+    <p class="why prose"><?= $cve && $cve['summary'] ? vg_h($cve['summary']) : '수집된 설명이 없습니다.' ?></p>
+  </div>
+
+  <?php if ($kev && !empty($kev['note'])): ?>
+    <div class="card">
+      <strong>CISA KEV</strong>
+      <span class="why">— 실제 악용이 확인된 취약점. 등재되면 우선순위가 최상단으로 올라간다</span>
+      <div class="card__body">
+        <p class="why prose"><?= vg_h((string) $kev['note']) ?></p>
+      </div>
+    </div>
+  <?php endif; ?>
+</section>
+
+<section id="vector">
+  <?php
+  // CVSS 벡터 분해 — 점수 하나로는 "원격인지 로컬인지, 인증이 필요한지" 를 알 수 없다.
+  $parts  = vg_cvss_vector_parts($cve['cvss_vector'] ?? null);
+  $vecRaw = $cve['cvss_vector'] ?? null;
+  ?>
+  <?php if ($parts): ?>
+    <div class="card">
+      <strong>공격 벡터</strong>
+      <span class="why">— 붉은 값이 공격자에게 유리한 조건이다</span>
+      <div class="card__body">
+        <dl class="kv">
+          <?php foreach ($parts as $p): ?>
+            <dt><?= vg_h($p['label']) ?></dt>
+            <dd class="<?= $p['danger'] ? 'is-danger' : '' ?>"><?= vg_h($p['value']) ?></dd>
+          <?php endforeach; ?>
+        </dl>
+        <div class="why mt"><code><?= vg_h((string) $vecRaw) ?></code></div>
+      </div>
+    </div>
+  <?php elseif (!empty($vecRaw)): ?>
+    <div class="card">
+      <strong>공격 벡터</strong>
+      <div class="card__body">
+        <code><?= vg_h((string) $vecRaw) ?></code>
+        <div class="why">해독할 수 없는 형식입니다(CVSS v2 벡터일 수 있음).</div>
+      </div>
+    </div>
+  <?php else: ?>
+    <div class="card">
+      <strong>공격 벡터</strong>
+      <div class="card__body">
+        <div class="why">벡터 정보가 없습니다. NVD 커넥터가 다시 돌면 채워집니다.</div>
+      </div>
+    </div>
+  <?php endif; ?>
+</section>
+
+<?php if ($vendorRows): ?>
+<section id="vendor">
+  <div class="card">
+    <strong>벤더 판정</strong>
+    <span class="why">— 배포판 벤더가 "이 CVE 를 고쳤나 · 고칠 수는 있나" 에 답한 원본(5개 소스)</span>
+    <div class="card__body">
+    <?php
+    vg_table(
+        [
+            ['label' => '소스', 'width' => '11rem'],
+            ['label' => '벤더/릴리스', 'width' => '12rem'],
+            ['label' => '패키지'],
+            ['label' => '고친 버전 / 상태'],
+        ],
+        $vendorRows,
+        [
+            'card' => false,
+            'cell' => [
+                0 => function ($r) {
+                    $d = VG_CVE_VENDOR_SRC[$r['src']] ?? null;
+                    $label = $d !== null ? $d['label'] : (string) $r['src'];
+                    return '<span class="pill">' . vg_h($label) . '</span>';
+                },
+                1 => fn($r) => vg_h((string) $r['vendor']) . '<span class="why">/</span>' . vg_h((string) $r['rel']),
+                2 => fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['pkg']) . '">'
+                             . vg_trunc((string) $r['pkg'], 32) . '</a>',
+                3 => function ($r) {
+                    if (!empty($r['fixed'])) {
+                        return '<span class="pill">' . vg_h((string) $r['fixed']) . ' 이상</span>';
+                    }
+                    $state = trim((string) ($r['state'] ?? ''));
+                    return $state !== '' ? '<span class="why">' . vg_h($state) . '</span>' : '<span class="why">–</span>';
+                },
+            ],
+        ]
+    );
+    ?>
+    </div>
+    <div class="why mt">
+      <a href="/vendor.php?q=<?= urlencode($cveId) ?>">벤더 판정 전체 보기(필터·상세) →</a>
+      <?php if ($vendorMore): ?><span> · 50건 초과 — 나머지는 전체 보기에서 확인하세요</span><?php endif; ?>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
+
+<section id="affected">
+  <div class="card">
+    <strong>영향 패키지</strong>
+    <span class="why">— 피드가 알려준, 이 CVE 가 적용되는 패키지와 수정 버전(우리 환경 설치 여부와 무관한 전역 범위)</span>
+    <div class="card__body">
+    <?php
+    vg_table(
+        [
+            ['label' => '생태계', 'key' => 'ecosystem', 'width' => '10rem'],
+            ['label' => '패키지', 'key' => 'package_name'],
+            ['label' => '수정 버전', 'width' => '16rem'],
+        ],
+        $affected,
+        [
+            'card'  => false,
+            'empty' => [
+                'icon'  => '📦',
+                'title' => '영향 패키지 정보가 없습니다.',
+                'hint'  => '피드(OSV·NVD)가 이 CVE 의 패키지 범위를 아직 안 알려준 경우입니다.',
+            ],
+            'cell' => [
+                2 => fn($a) => !empty($a['fixed_version'])
+                    ? '<span class="pill">' . vg_h($a['fixed_version']) . ' 이상</span>'
+                    : '<span class="why">수정 버전 미공개</span>',
+            ],
+        ]
+    );
+    ?>
+    </div>
+  </div>
+</section>
+
+<section id="locations">
+  <div class="card">
+    <strong>이 CVE 가 발견된 위치</strong>
+    <span class="why">— 우리 환경에서 실제로 발견된 위치(호스트별 최신 스캔 기준). 위 영향 패키지와 달리 설치 여부가 확인된 것만 나온다</span>
+    <div class="card__body">
+    <?php
+    vg_table(
+        [
+            ['label' => '호스트'],
+            ['label' => '위치'],
+            ['label' => '등급', 'key' => 'severity', 'width' => '6rem'],
+            ['label' => '상태', 'key' => 'runtime_status', 'width' => '7rem'],
+            ['label' => '패키지', 'key' => 'package_name'],
+            ['label' => '설치 버전'],
+            ['label' => '수집일', 'nowrap' => true],
+        ],
+        $locations,
+        [
+            'card'  => false,
+            'empty' => [
+                'icon'  => '✅',
+                'title' => '이 CVE 에 노출된 자산이 없습니다.',
+                'hint'  => '최신 스캔 기준으로 영향받는 호스트가 없습니다.',
+            ],
+            'row_class' => fn($l) => vg_sev_row((string) $l['severity']),
+            'cell' => [
+                0 => fn($l) => '<a href="/host.php?id=' . (int) $l['host_id'] . '">' . vg_h($l['fqdn']) . '</a>',
+                // 같은 호스트가 여러 줄로 반복되는 이유를 밝힌다 — 호스트냐 그 안의 컨테이너냐.
+                1 => fn($l) => $l['ctr'] !== ''
+                      ? '<span class="why">컨테이너 ' . vg_h($l['ctr']) . '</span>'
+                      : '<span class="why">호스트</span>',
+                'severity'       => fn($l) => vg_sev_badge((string) $l['severity']),
+                'runtime_status' => fn($l) => vg_status_badge($l['runtime_status']),
+                5 => fn($l) => '<code>' . vg_h($l['installed_version']) . '</code>',
+                6 => fn($l) => '<span class="why">' . vg_h($l['collected_at']) . '</span>',
+            ],
+        ]
+    );
+    if ($locations) { vg_page_nav($locTotal, $perPage, $page); }
+    ?>
+    </div>
+  </div>
+</section>
+
+<section id="references">
+  <div class="card">
+    <strong>참조 자료</strong>
+    <span class="why">— 원본·벤더 패치·공지 링크. 쌓지 않고 원본으로 내보낸다</span>
+    <div class="card__body">
+      <div class="links">
+        <a href="https://nvd.nist.gov/vuln/detail/<?= urlencode($cveId) ?>" target="_blank" rel="noopener">NVD</a>
+        <a href="https://www.cve.org/CVERecord?id=<?= urlencode($cveId) ?>" target="_blank" rel="noopener">CVE.org</a>
+        <a href="https://osv.dev/vulnerability/<?= urlencode($cveId) ?>" target="_blank" rel="noopener">OSV</a>
+      </div>
       <?php
       // 벤더 패치/공지 URL 목록 — NVD 는 fixed_version 처럼 구조화된 조치버전을 안 주는 경우가
-      // 대부분이라, 최소한 참고 링크라도 보여준다. 옛 CVE(아직 재수집 전)는 컬럼이 비어 카드째 생략.
+      // 대부분이라, 최소한 참고 링크라도 보여준다. 옛 CVE(아직 재수집 전)는 컬럼이 비어 목록만 생략.
       $refUrls = [];
       $refsJson = $cve['ref_urls_json'] ?? null;
       if ($refsJson) {
@@ -174,194 +448,24 @@ vg_subtabs([
       }
       ?>
       <?php if ($refUrls): ?>
-        <div class="card">
-          <strong>참조 자료</strong>
-          <span class="why">— NVD 가 제공하는 벤더 패치·공지 URL</span>
-          <div class="card__body">
-            <ul class="hint-list">
-              <?php foreach ($refUrls as $r):
-                // 컬럼이 TEXT 라 형식이 강제되지 않는다 — 원소가 배열이 아니거나(백필/수동 INSERT
-                //   등 이 파일이 쓰지 않은 경로로 들어온 값) 스킴이 http(s) 가 아니면 건너뛴다.
-                $url = is_array($r) ? (string) ($r['url'] ?? '') : '';
-                if (!vg_is_safe_http_url($url)) { continue; }
-              ?>
-                <li>
-                  <a href="<?= vg_h($url) ?>" target="_blank" rel="noopener noreferrer"><?= vg_h($url) ?></a>
-                  <?php foreach ((array) ($r['tags'] ?? []) as $t): ?>
-                    <?= vg_badge((string) $t, 'muted') ?>
-                  <?php endforeach; ?>
-                </li>
+        <ul class="hint-list mt">
+          <?php foreach ($refUrls as $r):
+            // 컬럼이 TEXT 라 형식이 강제되지 않는다 — 원소가 배열이 아니거나(백필/수동 INSERT
+            //   등 이 파일이 쓰지 않은 경로로 들어온 값) 스킴이 http(s) 가 아니면 건너뛴다.
+            $url = is_array($r) ? (string) ($r['url'] ?? '') : '';
+            if (!vg_is_safe_http_url($url)) { continue; }
+          ?>
+            <li>
+              <a href="<?= vg_h($url) ?>" target="_blank" rel="noopener noreferrer"><?= vg_h($url) ?></a>
+              <?php foreach ((array) ($r['tags'] ?? []) as $t): ?>
+                <?= vg_badge((string) $t, 'muted') ?>
               <?php endforeach; ?>
-            </ul>
-          </div>
-        </div>
+            </li>
+          <?php endforeach; ?>
+        </ul>
       <?php endif; ?>
-
-      <?php if ($kev && !empty($kev['note'])): ?>
-        <div class="card">
-          <strong>CISA KEV</strong>
-          <span class="why">— 실제 악용이 확인된 취약점. 등재되면 우선순위가 최상단으로 올라간다</span>
-          <div class="card__body">
-            <p class="why prose"><?= vg_h((string) $kev['note']) ?></p>
-          </div>
-        </div>
-      <?php endif; ?>
-
-    <?php elseif ($tab === 'affected'): ?>
-      <div class="card">
-        <strong>영향 패키지</strong>
-        <span class="why">— 피드가 알려준, 이 CVE 가 적용되는 패키지와 수정 버전</span>
-        <div class="card__body">
-        <?php
-        vg_table(
-            [
-                ['label' => '생태계', 'key' => 'ecosystem', 'width' => '10rem'],
-                ['label' => '패키지', 'key' => 'package_name'],
-                ['label' => '수정 버전', 'width' => '16rem'],
-            ],
-            $affected,
-            [
-                'card'  => false,
-                'empty' => [
-                    'icon'  => '📦',
-                    'title' => '영향 패키지 정보가 없습니다.',
-                    'hint'  => '피드(OSV·NVD)가 이 CVE 의 패키지 범위를 아직 안 알려준 경우입니다.',
-                ],
-                'cell' => [
-                    2 => fn($a) => !empty($a['fixed_version'])
-                        ? '<span class="pill">' . vg_h($a['fixed_version']) . ' 이상</span>'
-                        : '<span class="why">수정 버전 미공개</span>',
-                ],
-            ]
-        );
-        ?>
-        </div>
-      </div>
-
-    <?php else: ?>
-      <div class="card">
-        <strong>이 CVE 가 발견된 위치</strong>
-        <span class="why">— 호스트별 최신 스캔 기준</span>
-        <div class="card__body">
-        <?php
-        vg_table(
-            [
-                ['label' => '호스트'],
-                ['label' => '위치'],
-                ['label' => '등급', 'key' => 'severity', 'width' => '6rem'],
-                ['label' => '상태', 'key' => 'runtime_status', 'width' => '7rem'],
-                ['label' => '패키지', 'key' => 'package_name'],
-                ['label' => '설치 버전'],
-                ['label' => '수집일', 'nowrap' => true],
-            ],
-            $locations,
-            [
-                'card'  => false,
-                'empty' => [
-                    'icon'  => '✅',
-                    'title' => '이 CVE 에 노출된 자산이 없습니다.',
-                    'hint'  => '최신 스캔 기준으로 영향받는 호스트가 없습니다.',
-                ],
-                'row_class' => fn($l) => vg_sev_row((string) $l['severity']),
-                'cell' => [
-                    0 => fn($l) => '<a href="/host.php?id=' . (int) $l['host_id'] . '">' . vg_h($l['fqdn']) . '</a>',
-                    // 같은 호스트가 여러 줄로 반복되는 이유를 밝힌다 — 호스트냐 그 안의 컨테이너냐.
-                    1 => fn($l) => $l['ctr'] !== ''
-                          ? '<span class="why">컨테이너 ' . vg_h($l['ctr']) . '</span>'
-                          : '<span class="why">호스트</span>',
-                    'severity'       => fn($l) => vg_sev_badge((string) $l['severity']),
-                    'runtime_status' => fn($l) => vg_status_badge($l['runtime_status']),
-                    5 => fn($l) => '<code>' . vg_h($l['installed_version']) . '</code>',
-                    6 => fn($l) => '<span class="why">' . vg_h($l['collected_at']) . '</span>',
-                ],
-            ]
-        );
-        if ($locations) { vg_page_nav($locTotal, $perPage, $page); }
-        ?>
-        </div>
-      </div>
-    <?php endif; ?>
+    </div>
   </div>
-
-  <aside class="detail__side">
-    <div class="card">
-      <strong>위험도</strong>
-      <div class="card__body">
-        <?php if ($cvss !== null): ?>
-          <div class="score tone-<?= vg_h($tone) ?>"><?= vg_h((string) $cvss) ?><small> / 10</small></div>
-          <div class="meter meter--<?= vg_h($tone) ?>">
-            <i style="width:<?= (int) round(min(10.0, max(0.0, (float) $cvss)) * 10) ?>%"></i>
-          </div>
-          <div class="why">CVSS 기본점수</div>
-        <?php else: ?>
-          <div class="why">CVSS 점수 없음</div>
-        <?php endif; ?>
-
-        <dl class="kv mt-lg">
-          <dt>EPSS</dt>
-          <dd><?= $cve ? vg_epss_cell($cve['epss'] ?? null, $cve['epss_percentile'] ?? null) : '<span class="why">–</span>' ?></dd>
-
-          <?php if ($cve && !empty($cve['cwe'])): ?>
-            <dt>유형</dt><dd><?= vg_h((string) $cve['cwe']) ?></dd>
-          <?php endif; ?>
-
-          <dt>공개일</dt>
-          <dd><?= $cve && $cve['published'] ? vg_h((string) $cve['published']) : '<span class="why">–</span>' ?></dd>
-
-          <dt>영향 자산</dt>
-          <dd><?= number_format($assetTotal) ?>대
-            <?php if ($locTotal > $assetTotal): ?>
-              <span class="why">(발견 <?= number_format($locTotal) ?>건 — 패키지·컨테이너별)</span>
-            <?php endif; ?>
-          </dd>
-        </dl>
-      </div>
-    </div>
-
-    <?php if ($kev): ?>
-      <?php
-      // KEV 패치 기한 — "언제까지 고쳐야 하나" 를 말해주는 유일한 신호. 지났으면 붉게.
-      $due = $kev['due_date'] ?? null;
-      $dLeft = null; $overdue = false;
-      if ($due) {
-          $dLeft   = (int) (new DateTimeImmutable('today'))->diff(new DateTimeImmutable((string) $due))->format('%r%a');
-          $overdue = $dLeft < 0;
-      }
-      ?>
-      <div class="card">
-        <strong>CISA KEV</strong>
-        <div class="card__body">
-          <dl class="kv">
-            <dt>등재일</dt>
-            <dd><?= !empty($kev['date_added']) ? vg_h((string) $kev['date_added']) : '<span class="why">–</span>' ?></dd>
-
-            <?php if ($due !== null && $due !== ''): ?>
-              <dt>패치 기한</dt>
-              <dd class="<?= $overdue ? 'is-danger' : '' ?>">
-                <?= vg_h((string) $due) ?>
-                <div class="why"><?= $overdue ? vg_h(abs($dLeft) . '일 초과') : vg_h('D-' . $dLeft) ?></div>
-              </dd>
-            <?php endif; ?>
-
-            <dt>랜섬웨어</dt>
-            <dd class="<?= !empty($kev['ransomware']) ? 'is-danger' : '' ?>">
-              <?= !empty($kev['ransomware']) ? '악용 확인' : '확인 안 됨' ?>
-            </dd>
-          </dl>
-        </div>
-      </div>
-    <?php endif; ?>
-
-    <div class="card">
-      <strong>원본</strong>
-      <span class="why">— 참조 링크는 쌓지 않고 원본으로 내보낸다</span>
-      <div class="card__body links">
-        <a href="https://nvd.nist.gov/vuln/detail/<?= urlencode($cveId) ?>" target="_blank" rel="noopener">NVD</a>
-        <a href="https://www.cve.org/CVERecord?id=<?= urlencode($cveId) ?>" target="_blank" rel="noopener">CVE.org</a>
-        <a href="https://osv.dev/vulnerability/<?= urlencode($cveId) ?>" target="_blank" rel="noopener">OSV</a>
-      </div>
-    </div>
-  </aside>
-</div>
+</section>
 
 <?php vg_footer();

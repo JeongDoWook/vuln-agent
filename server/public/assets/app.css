@@ -92,6 +92,7 @@
   --shadow-lg: 0 12px 32px rgb(16 24 40 / .16);
 
   --ctl-h: 1.9rem;   /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
+  --topbar-h: 56px;  /* .topbar 의 min-height 와 공유 — sticky 내비 top·scroll-margin 이 같이 따라간다 */
 }
 
 /* --- 다크 테마 오버라이드 (토글 시 <html data-theme="dark">) -------------- */
@@ -356,7 +357,7 @@ body { display: flex; min-height: 100vh; }
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 56px;
+  min-height: var(--topbar-h);
   padding: .5rem 1.6rem;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
@@ -619,6 +620,16 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .subtabs .n { margin-left: .35rem; font-size: .82em; color: var(--muted); font-weight: 700; }
 .subtabs a.on .n { color: var(--accent-2); }
 
+/* 앵커 내비(cve.php) — 탭 전환이 아니라 같은 페이지 안 섹션으로 스크롤 점프한다.
+ * sticky 로 스크롤 중에도 손 닿는 곳에 남긴다(상단바 바로 아래 — --topbar-h 로 값을 공유한다.
+ * .crumbs 가 flex-wrap 이라 브레드크럼이 길어지면 상단바가 두 줄로 커질 수 있는데, 이 내비의
+ * top 이 고정 3.5rem 으로 따로 박혀 있으면 그때 상단바와 겹친다). */
+.subtabs--sticky { position: sticky; top: var(--topbar-h); z-index: 15; background: var(--bg); }
+/* 점프 대상 섹션 — sticky 상단바 + 이 내비에 안 가리도록 여유를 둔다.
+ * sticky 내비가 있는 화면(cve.php)으로 범위를 좁힌다 — 다른 페이지가 id 있는 section 을
+ * 쓰기 시작해도 이 여백이 의도치 않게 따라붙지 않도록. */
+main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h) + 3.7rem); }
+
 /* --- 도넛 (심각도 분포) --------------------------------------------------
  * 순수 SVG. 색은 톤 변수를 그대로 참조하므로 팔레트를 바꾸면 도넛도 따라 바뀐다. */
 .donut { position: relative; display: inline-grid; place-items: center; }
@@ -755,6 +766,15 @@ td details[open] summary { margin-bottom: .35rem; }
 .links { display: flex; flex-wrap: wrap; gap: .4rem; }
 .links a { font-size: .8rem; padding: .25rem .6rem; border: 1px solid var(--line-2); border-radius: var(--r-xs); color: var(--text-2); }
 .links a:hover { border-color: var(--accent); color: var(--accent-2); text-decoration: none; }
+
+/* 통계 그리드(cve.php) — CVSS·EPSS·KEV·CWE·공개일·영향자산을 히어로 바로 아래 한 카드에
+ * 모은다. 예전엔 이 값들이 사이드바/본문에 흩어져 있어 "한눈에 안 들어온다" 는 불만의 핵심이었다. */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 1.1rem 1.6rem; }
+.stat { min-width: 0; }
+.stat .score { font-size: 1.7rem; margin-bottom: .15rem; }
+.stat__val { display: block; font-size: 1.15rem; font-weight: 700; color: var(--text); margin-bottom: .15rem; }
+.stat__val.is-danger { color: var(--crit-fg); }
+.stat > .why { display: block; }
 
 /* --- 표 ------------------------------------------------------------------ */
 table { width: 100%; border-collapse: collapse; font-size: .92rem; }
