@@ -115,33 +115,31 @@ try {
     )->fetchAll();
 
     /* 에이전트 리소스 사용량 — "설치해도 서버 부담이 거의 없다" 를 함대 전체로 보여주는 카드.
-     * KPI 는 전 호스트 최신 스캔 기준 평균(구버전 에이전트의 NULL 은 AVG() 가 자동으로 뺀다).
-     * 추이는 개별 스캔 산점이 아니라 날짜별 함대 평균 — 값 없는 행은 그 날짜 집계에서 제외한다.
+     * KPI 는 전 호스트 최신 스캔 기준 평균(구버전 에이전트의 NULL 은 AVG() 가 자동으로 뺀다) —
+     * 호스트당 1건 가중. 추이는 개별 스캔 산점이 아니라 날짜별 함대 평균(스캔 건수 가중) —
+     * 모집단이 달라 KPI 와 추이 마지막 값이 정확히 같진 않다(화면 부제로 기준을 구분해 표시).
      */
     $resKpi = $pdo->query(
         "SELECT AVG(peak_rss_mb) avg_mem, AVG(cpu_seconds) avg_cpu
            FROM tb_scans WHERE id IN ($latestScans)"
-    )->fetch();
+    )->fetch() ?: null;
 
-    $memTrend = $pdo->query(
-        "SELECT DATE(s.collected_at) AS collected_at, AVG(s.peak_rss_mb) AS peak_rss_mb
+    // 메모리·CPU 를 한 쿼리로 같이 집계한다 — AVG() 가 컬럼별로 NULL 을 알아서 빼므로 굳이
+    // 쿼리를 둘로 나눠 tb_scans 를 두 번 훑을 이유가 없다. "최근 N일" 라벨과 맞추려고
+    // (N-1)일 전부터 오늘까지로 잡는다(DATE_SUB(...,N DAY) 는 N+1일치가 걸린다).
+    $resTrendRows = $pdo->query(
+        "SELECT DATE(s.collected_at) AS d, AVG(s.peak_rss_mb) AS peak_rss_mb, AVG(s.cpu_seconds) AS cpu_seconds
            FROM tb_scans s
            JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-          WHERE s.is_deleted = 0 AND s.peak_rss_mb IS NOT NULL
-            AND s.collected_at >= DATE_SUB(CURDATE(), INTERVAL " . VG_RESOURCE_TREND_DAYS . " DAY)
-          GROUP BY DATE(s.collected_at)
-          ORDER BY collected_at ASC"
+          WHERE s.is_deleted = 0
+            AND s.collected_at >= DATE_SUB(CURDATE(), INTERVAL " . (VG_RESOURCE_TREND_DAYS - 1) . " DAY)
+          GROUP BY d
+          ORDER BY d ASC"
     )->fetchAll();
-
-    $cpuTrend = $pdo->query(
-        "SELECT DATE(s.collected_at) AS collected_at, AVG(s.cpu_seconds) AS cpu_seconds
-           FROM tb_scans s
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-          WHERE s.is_deleted = 0 AND s.cpu_seconds IS NOT NULL
-            AND s.collected_at >= DATE_SUB(CURDATE(), INTERVAL " . VG_RESOURCE_TREND_DAYS . " DAY)
-          GROUP BY DATE(s.collected_at)
-          ORDER BY collected_at ASC"
-    )->fetchAll();
+    foreach ($resTrendRows as $t) {
+        if ($t['peak_rss_mb'] !== null) { $memTrend[] = ['collected_at' => $t['d'], 'peak_rss_mb' => $t['peak_rss_mb']]; }
+        if ($t['cpu_seconds'] !== null) { $cpuTrend[] = ['collected_at' => $t['d'], 'cpu_seconds' => $t['cpu_seconds']]; }
+    }
 
     /* KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
      *
@@ -348,12 +346,12 @@ vg_header('대시보드', 'dashboard');
       <div class="split split--even">
         <div>
           <strong>메모리 추이</strong>
-          <span class="why">— 일별 함대 평균(MB) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+          <span class="why">— 일별 함대 평균(MB, 스캔 기준) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
           <?php vg_resource_trend($memTrend, 'peak_rss_mb', 'MB', 0, 'mem'); ?>
         </div>
         <div>
           <strong>CPU 추이</strong>
-          <span class="why">— 일별 함대 평균(초) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+          <span class="why">— 일별 함대 평균(초, 스캔 기준) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
           <?php vg_resource_trend($cpuTrend, 'cpu_seconds', 's', 1, 'cpu'); ?>
         </div>
       </div>
