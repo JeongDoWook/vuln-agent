@@ -1012,8 +1012,9 @@ a.pill--on:hover { background: var(--accent); }
   margin-bottom: 1rem;
   border: 1px solid;
 }
-.alert--err { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
-.alert--ok  { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
+.alert--err  { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
+.alert--ok   { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
+.alert--warn { background: var(--med-bg);  border-color: var(--med-bd);  color: var(--med-fg); }
 
 /* --- 폼 컨트롤 ----------------------------------------------------------- */
 label { display: block; font-size: .82rem; color: var(--text-2); margin: .8rem 0 .3rem; }

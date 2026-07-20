@@ -99,12 +99,34 @@ function vg_flash_take(): array {
     return is_array($f) ? $f : [];
 }
 
-/** 성공/오류 알림. $msg 가 null·빈문자면 아무것도 출력하지 않는다. */
-function vg_alert(?string $msg, string $type = 'err'): void {
-    if ($msg === null || $msg === '') {
+/**
+ * 성공/오류/경고 알림. $msg 가 null·빈문자면 아무것도 출력하지 않는다.
+ *   문자열을 주면 기존처럼 한 줄만 출력(하위호환): vg_alert($msg, 'err'|'ok'|'warn')
+ *   배열을 주면 제목+힌트 목록까지: vg_alert(['title'=>…, 'hints'=>[…], 'type'=>'warn'])
+ */
+function vg_alert($msg, string $type = 'err'): void {
+    if ($msg === null || $msg === '' || $msg === []) {
         return;
     }
-    echo '<div class="alert alert--' . ($type === 'ok' ? 'ok' : 'err') . '">' . vg_h($msg) . '</div>';
+    if (is_array($msg)) {
+        $type = (string) ($msg['type'] ?? $type);
+        $title = (string) ($msg['title'] ?? '');
+        $hints = is_array($msg['hints'] ?? null) ? $msg['hints'] : [];
+        echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '">';
+        if ($title !== '') {
+            echo '<strong>' . vg_h($title) . '</strong>';
+        }
+        if ($hints) {
+            echo '<ul class="hint-list">';
+            foreach ($hints as $hint) {
+                echo '<li>' . vg_h((string) $hint) . '</li>';
+            }
+            echo '</ul>';
+        }
+        echo '</div>';
+        return;
+    }
+    echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '">' . vg_h((string) $msg) . '</div>';
 }
 
 /**
