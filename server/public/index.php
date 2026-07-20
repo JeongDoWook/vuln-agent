@@ -116,29 +116,69 @@ try {
 
     /* 에이전트 리소스 사용량 — "설치해도 서버 부담이 거의 없다" 를 함대 전체로 보여주는 카드.
      * KPI 는 전 호스트 최신 스캔 기준 평균(구버전 에이전트의 NULL 은 AVG() 가 자동으로 뺀다) —
-     * 호스트당 1건 가중. 추이는 개별 스캔 산점이 아니라 날짜별 함대 평균(스캔 건수 가중) —
-     * 모집단이 달라 KPI 와 추이 마지막 값이 정확히 같진 않다(화면 부제로 기준을 구분해 표시).
+     * 호스트당 1건 가중. 추이는 날짜별 함대 중앙값(이월 적용, 아래 참고) —
+     * 모집단·집계방식이 달라 KPI 와 추이 마지막 값이 정확히 같진 않다(화면 부제로 기준을 구분해 표시).
      */
     $resKpi = $pdo->query(
         "SELECT AVG(peak_rss_mb) avg_mem, AVG(cpu_seconds) avg_cpu
            FROM tb_scans WHERE id IN ($latestScans)"
     )->fetch() ?: null;
 
-    // 메모리·CPU 를 한 쿼리로 같이 집계한다 — AVG() 가 컬럼별로 NULL 을 알아서 빼므로 굳이
-    // 쿼리를 둘로 나눠 tb_scans 를 두 번 훑을 이유가 없다. "최근 N일" 라벨과 맞추려고
-    // (N-1)일 전부터 오늘까지로 잡는다(DATE_SUB(...,N DAY) 는 N+1일치가 걸린다).
-    $resTrendRows = $pdo->query(
-        "SELECT DATE(s.collected_at) AS d, AVG(s.peak_rss_mb) AS peak_rss_mb, AVG(s.cpu_seconds) AS cpu_seconds
+    /* 스캔은 "값이 바뀔 때만" 저장돼(feat/change-tracking) 호스트별로 날짜가 듬성듬성하다.
+     * 그날 도착한 스캔만 단순 평균 내면, 그날 스캔한 호스트가 적을수록(함대 5~10대라 극단적으로
+     * 적을 수 있다) 표본 편향 + 이상치 취약이 겹친다. 그래서:
+     *   1) 이월(carry-forward) — "그날 도착한 값" 이 아니라 "그날 기준 각 호스트의 가장
+     *      최근 알려진 값" 을 쓴다($weekAgoScans 의 이월 아이디어와 같으나 날짜별 시계열이라
+     *      새로 구현).
+     *   2) 평균 대신 중앙값 — 이월을 해도 호스트 수가 적어 이상치 1대가 흔들 수 있다.
+     * MySQL 상관 서브쿼리를 N일치 반복하기보단 PHP 로 한 번 훑는 게 단순하다(호스트·스캔 수가
+     * 적어 성능 문제 없음).
+     */
+    $trendStart = date('Y-m-d', strtotime('-' . (VG_RESOURCE_TREND_DAYS - 1) . ' days'));
+
+    // 시드 — 관찰 기간 시작 이전, 호스트별 가장 최근 값(메모리·CPU 어느 한쪽이라도 있으면) 1건.
+    $seedRows = $pdo->query(
+        "SELECT host_id, peak_rss_mb, cpu_seconds FROM (
+            SELECT s.host_id, s.peak_rss_mb, s.cpu_seconds,
+                   ROW_NUMBER() OVER (PARTITION BY s.host_id ORDER BY s.collected_at DESC) rn
+              FROM tb_scans s
+              JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+             WHERE s.is_deleted = 0 AND s.collected_at < '$trendStart'
+               AND (s.peak_rss_mb IS NOT NULL OR s.cpu_seconds IS NOT NULL)
+         ) seed WHERE rn = 1"
+    )->fetchAll();
+
+    // 본 구간 — 관찰 기간의 스캔 전부(oldest→newest). "최근 N일" 라벨과 맞추려고 (N-1)일 전부터
+    // 오늘까지로 잡는다(DATE_SUB(...,N DAY) 는 N+1일치가 걸린다).
+    $rangeRows = $pdo->query(
+        "SELECT s.host_id, DATE(s.collected_at) AS d, s.peak_rss_mb, s.cpu_seconds
            FROM tb_scans s
            JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-          WHERE s.is_deleted = 0
-            AND s.collected_at >= DATE_SUB(CURDATE(), INTERVAL " . (VG_RESOURCE_TREND_DAYS - 1) . " DAY)
-          GROUP BY d
-          ORDER BY d ASC"
+          WHERE s.is_deleted = 0 AND s.collected_at >= '$trendStart'
+          ORDER BY s.collected_at ASC"
     )->fetchAll();
-    foreach ($resTrendRows as $t) {
-        if ($t['peak_rss_mb'] !== null) { $memTrend[] = ['collected_at' => $t['d'], 'peak_rss_mb' => $t['peak_rss_mb']]; }
-        if ($t['cpu_seconds'] !== null) { $cpuTrend[] = ['collected_at' => $t['d'], 'cpu_seconds' => $t['cpu_seconds']]; }
+    $rangeByDay = [];
+    foreach ($rangeRows as $r) { $rangeByDay[$r['d']][] = $r; }
+
+    $known = [];
+    foreach ($seedRows as $r) {
+        $known[(int) $r['host_id']] = ['mem' => $r['peak_rss_mb'], 'cpu' => $r['cpu_seconds']];
+    }
+
+    $today = date('Y-m-d');
+    for ($d = $trendStart; $d <= $today; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
+        foreach ($rangeByDay[$d] ?? [] as $r) {
+            $hid = (int) $r['host_id'];
+            if (!isset($known[$hid])) { $known[$hid] = ['mem' => null, 'cpu' => null]; }
+            // 필드별로 NULL 아닌 것만 덮어쓴다 — 구버전 에이전트가 한쪽만 보냈을 수도 있다.
+            if ($r['peak_rss_mb'] !== null) { $known[$hid]['mem'] = $r['peak_rss_mb']; }
+            if ($r['cpu_seconds'] !== null) { $known[$hid]['cpu'] = $r['cpu_seconds']; }
+        }
+        // 아직 한 번도 안 보인 호스트는 값이 없으니 그날 집계에서 제외한다.
+        $memVals = array_values(array_filter(array_column($known, 'mem'), fn($v) => $v !== null));
+        $cpuVals = array_values(array_filter(array_column($known, 'cpu'), fn($v) => $v !== null));
+        if ($memVals) { $memTrend[] = ['collected_at' => $d, 'peak_rss_mb' => vg_median($memVals)]; }
+        if ($cpuVals) { $cpuTrend[] = ['collected_at' => $d, 'cpu_seconds' => vg_median($cpuVals)]; }
     }
 
     /* KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
@@ -346,12 +386,12 @@ vg_header('대시보드', 'dashboard');
       <div class="split split--even">
         <div>
           <strong>메모리 추이</strong>
-          <span class="why">— 일별 함대 평균(MB, 스캔 기준) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+          <span class="why">— 일별 함대 중앙값(이월 적용, MB) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
           <?php vg_resource_trend($memTrend, 'peak_rss_mb', 'MB', 0, 'mem'); ?>
         </div>
         <div>
           <strong>CPU 추이</strong>
-          <span class="why">— 일별 함대 평균(초, 스캔 기준) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+          <span class="why">— 일별 함대 중앙값(이월 적용, 초) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
           <?php vg_resource_trend($cpuTrend, 'cpu_seconds', 's', 1, 'cpu'); ?>
         </div>
       </div>
