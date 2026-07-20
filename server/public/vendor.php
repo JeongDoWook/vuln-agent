@@ -130,12 +130,22 @@ function vg_like_prefix(string $s): string {
     return addcslashes($s, '\\%_') . '%';
 }
 
-/** 한 소스 갈래의 WHERE 절. $params 에 바인딩 값을 순서대로 쌓는다. */
-function vg_vendor_where(array $def, string $q, string $pkg, string $rel, array &$params): string {
+/**
+ * 한 소스 갈래의 WHERE 절. $params 에 바인딩 값을 순서대로 쌓는다.
+ *   $q 는 CVE 든 패키지든 하나만 넣으면 매칭되도록 (cve_id LIKE ? OR pkg_name LIKE ?) 로 OR 매칭한다.
+ *   두 갈래 다 접두(prefix) LIKE 를 유지 — idx_*_cve(cve_id, pkg_name, is_deleted, release_*) 가
+ *   cve_id 를 선두로 둔 커버링 인덱스라, OR 라도 원본 조회 없이 인덱스만 훑는다(부분일치로 바꾸면
+ *   이 인덱스를 못 타 51만~78만행 풀스캔이 된다 — 절대 %x% 로 바꾸지 말 것).
+ */
+function vg_vendor_where(array $def, string $q, string $rel, array &$params): string {
     $w = [];
     if ($def['soft']) { $w[] = 'is_deleted = 0'; }
-    if ($q !== '')    { $w[] = $def['cve'] . ' LIKE ?'; $params[] = vg_like_prefix($q); }
-    if ($pkg !== '')  { $w[] = $def['pkg'] . ' LIKE ?'; $params[] = vg_like_prefix($pkg); }
+    if ($q !== '') {
+        $like = vg_like_prefix($q);
+        $w[] = '(' . $def['cve'] . ' LIKE ? OR ' . $def['pkg'] . ' LIKE ?)';
+        $params[] = $like;
+        $params[] = $like;
+    }
     if ($rel !== '')  { $w[] = $def['rel'] . ' = ?';    $params[] = $rel; }
     return $w ? implode(' AND ', $w) : '1=1';
 }
@@ -143,7 +153,6 @@ function vg_vendor_where(array $def, string $q, string $pkg, string $rel, array 
 $err = null; $rows = []; $total = 0; $relOptions = [];
 
 $q   = trim((string) ($_GET['q'] ?? ''));
-$pkg = trim((string) ($_GET['pkg'] ?? ''));
 $rel = trim((string) ($_GET['rel'] ?? ''));
 $src = (string) ($_GET['src'] ?? '');
 $page = vg_page();
@@ -179,7 +188,7 @@ try {
     //   원본을 행마다 뒤지지 않는다(실측 55만 행: 풀 테이블 스캔 3.23초 → 커버링 0.34초).
     $countParts = []; $countParams = [];
     foreach ($active as $def) {
-        $where = vg_vendor_where($def, $q, $pkg, $rel, $countParams);
+        $where = vg_vendor_where($def, $q, $rel, $countParams);
         $countParts[] = "SELECT COUNT(*) AS n FROM {$def['from']} WHERE $where";
     }
     $stmt = $pdo->prepare('SELECT SUM(n) FROM (' . implode(' UNION ALL ', $countParts) . ') c');
@@ -202,7 +211,7 @@ try {
     $cap = $offset + $perPage;
     $listParts = []; $listParams = [];
     foreach ($active as $def) {
-        $where = vg_vendor_where($def, $q, $pkg, $rel, $listParams);
+        $where = vg_vendor_where($def, $q, $rel, $listParams);
         $listParts[] = "(SELECT {$def['cols']} FROM {$def['from']} WHERE $where"
                      . " ORDER BY {$def['cve']} DESC, {$def['pkg']} DESC LIMIT $cap)";
     }
@@ -231,13 +240,12 @@ vg_header('벤더 판정', 'vendor');
   vg_toolbar([
       ['type' => 'select', 'name' => 'src', 'selected' => $src, 'empty_label' => '소스 전체',
        'options' => $srcOptions],
-      ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 검색 (예: CVE-2024)', 'value' => $q],
-      ['type' => 'search', 'name' => 'pkg', 'placeholder' => '패키지 (앞부분 일치)', 'value' => $pkg],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지 검색 (예: CVE-2024, openssl)', 'value' => $q],
       ['type' => 'select', 'name' => 'rel', 'selected' => $rel, 'empty_label' => '릴리스 전체',
        'options' => $relOptions],
   ]);
 
-  $hasFilter = $q !== '' || $pkg !== '' || $rel !== '' || $src !== '';
+  $hasFilter = $q !== '' || $rel !== '' || $src !== '';
   vg_table(
       [
           ['label' => '소스', 'width' => '11rem'],
@@ -253,7 +261,7 @@ vg_header('벤더 판정', 'vendor');
               ? [
                   'icon'  => '🔍',
                   'title' => '조건에 맞는 벤더 판정이 없습니다.',
-                  'hint'  => '패키지는 앞부분만 일치합니다(openssl → openssl-libs). 소스·릴리스 조합도 확인해 보세요.',
+                  'hint'  => 'CVE·패키지 모두 앞부분만 일치합니다(openssl → openssl-libs). 소스·릴리스 조합도 확인해 보세요.',
                   'cta'   => ['href' => '/vendor.php', 'label' => '필터 초기화'],
               ]
               : [
