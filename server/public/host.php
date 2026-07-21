@@ -12,6 +12,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('findings');
 
 $err = null; $host = null; $scan = null; $scanAge = null;

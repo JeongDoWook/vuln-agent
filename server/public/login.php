@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 
 $err = null;
 try {
