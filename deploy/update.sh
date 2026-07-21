@@ -31,6 +31,12 @@ say() { printf "\n${C}== %s${N}\n" "$*"; }
 BUILD_RE='^(server/Dockerfile|deploy/caddy/)'
 RECREATE_RE='^deploy/(compose[^/]*\.yml|config/)'
 DB_RE='^db/'
+# deploy/config/mysql/my.cnf 는 db 컨테이너에 바인드마운트(:ro)되지만, docker compose 의
+# 재생성 판단은 compose 서비스 정의(볼륨 매핑 경로) 변경 여부만 보고 마운트된 호스트 파일의
+# '내용' 변경은 보지 않는다 — 매핑 자체는 안 바뀌므로 일반 `up -d` 는 db 컨테이너를 그대로
+# 둔다. mysqld 는 conf.d 를 기동 시점에만 읽으므로, 내용만 바뀐 my.cnf 는 db 를 명시적으로
+# force-recreate 하지 않으면 조용히 반영 안 된 채 남는다(2026-07-21 binlog 만료 미반영 재발 방지).
+DB_CONFIG_RE='^deploy/config/mysql/'
 
 say "[1/6] 사전 점검"
 if [ -n "$(git status --porcelain)" ]; then
@@ -72,6 +78,7 @@ echo "  변경 파일 $(printf '%s' "$CHANGED" | grep -c . || true)개"
 say "[3/6] 무엇을 해야 하나"
 NEED_BUILD=0
 NEED_RECREATE=0
+NEED_DB_RECREATE=0
 # 소스 마운트가 없으면 코드가 이미지 안에 있다 → 새 코드를 넣으려면 굽는 수밖에 없다.
 [ "$MOUNTED" = "yes" ] || NEED_BUILD=1
 if printf '%s\n' "$CHANGED" | grep -qE "$BUILD_RE"; then
@@ -83,6 +90,11 @@ if printf '%s\n' "$CHANGED" | grep -qE "$RECREATE_RE"; then
   NEED_RECREATE=1
   echo "  compose/설정 변경 감지(재생성만, 빌드는 불필요):"
   printf '%s\n' "$CHANGED" | grep -E "$RECREATE_RE" | sed 's/^/    /'
+fi
+if printf '%s\n' "$CHANGED" | grep -qE "$DB_CONFIG_RE"; then
+  NEED_DB_RECREATE=1
+  echo "  MySQL 설정(my.cnf) 변경 감지(db 컨테이너 강제 재생성 필요):"
+  printf '%s\n' "$CHANGED" | grep -E "$DB_CONFIG_RE" | sed 's/^/    /'
 fi
 if printf '%s\n' "$CHANGED" | grep -qE "$DB_RE"; then
   echo "  DB 변경 감지:"
@@ -128,6 +140,10 @@ else
     printf "  ${Y}참고:${N} 실행 중인 bin 스크립트 %s개는 옛 코드로 계속 돕니다.\n" "$RUNNING"
   fi
   sleep 3
+fi
+if [ "$NEED_DB_RECREATE" = 1 ]; then
+  echo "  my.cnf 내용 변경은 위 up -d 가 자동 감지하지 못한다(바인드마운트 경로는 안 바뀌므로) → db 컨테이너 강제 재생성"
+  bash deploy/compose_runner.sh prod up -d --force-recreate db
 fi
 
 say "[6/6] 검증"
