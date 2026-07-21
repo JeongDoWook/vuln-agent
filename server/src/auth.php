@@ -36,24 +36,71 @@ function vg_bootstrap_admin(PDO $pdo): void {
     $st->execute(['admin', password_hash($pw, PASSWORD_DEFAULT), 'admin']);
 }
 
-function vg_login(PDO $pdo, string $user, string $pass): bool {
-    $st = $pdo->prepare('SELECT id, username, password_hash, role FROM tb_users WHERE username = ? AND is_deleted = 0');
+/**
+ * 로그인 시도. 성공하면 null, 실패하면 실패 사유('locked'|'invalid')를 반환한다
+ *   (호출부인 login.php 가 이 값으로 잠금/일반실패 메시지를 분기한다).
+ *   - 이미 잠긴 계정: 비밀번호 검증 없이 즉시 'locked' — 실패 카운트는 건드리지 않는다.
+ *   - 비밀번호 불일치: failed_login_count 1 증가. LOGIN_MAX_FAILS(env, 기본 5) 도달 시
+ *     LOGIN_LOCK_MINUTES(env, 기본 15)분 잠금 + account_lock 감사로그.
+ *   - 성공: session_token 을 새로 발급해 DB/세션에 함께 저장 — 이 컬럼을 덮어쓰는 것 자체가
+ *     "기존 세션 강제 종료" 메커니즘이다(vg_current_user() 가 대조해 이전 세션을 끊는다).
+ */
+function vg_login(PDO $pdo, string $user, string $pass): ?string {
+    $st = $pdo->prepare(
+        'SELECT id, username, password_hash, role, locked_until, failed_login_count
+           FROM tb_users WHERE username = ? AND is_deleted = 0'
+    );
     $st->execute([$user]);
     $row = $st->fetch();
-    if (!$row || !password_verify($pass, $row['password_hash'])) {
-        return false;
+
+    if ($row && $row['locked_until'] !== null && strtotime((string) $row['locked_until']) > time()) {
+        return 'locked';
     }
+
+    if (!$row || !password_verify($pass, $row['password_hash'])) {
+        if ($row) {
+            $uid = (int) $row['id'];
+            $fails = (int) $row['failed_login_count'] + 1;
+            $maxFails = (int) vg_env('LOGIN_MAX_FAILS', '5');
+            if ($fails >= $maxFails) {
+                $lockMinutes = (int) vg_env('LOGIN_LOCK_MINUTES', '15');
+                $pdo->prepare(
+                    'UPDATE tb_users SET failed_login_count = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?'
+                )->execute([$fails, $lockMinutes, $uid]);
+                vg_log_activity($pdo, 'USER', $uid, 'account_lock', '로그인 실패 누적으로 계정 잠금', null, $uid);
+            } else {
+                $pdo->prepare('UPDATE tb_users SET failed_login_count = ? WHERE id = ?')->execute([$fails, $uid]);
+                vg_log_activity($pdo, 'USER', $uid, 'login_fail', null, null, $uid);
+            }
+        }
+        return 'invalid';
+    }
+
     session_regenerate_id(true);
-    $_SESSION['uid']   = (int) $row['id'];
-    $_SESSION['uname'] = $row['username'];
-    $_SESSION['role']  = $row['role'];
-    $pdo->prepare('UPDATE tb_users SET last_login = NOW() WHERE id = ?')->execute([(int) $row['id']]);
+    $uid = (int) $row['id'];
+    $token = bin2hex(random_bytes(32));
+    $_SESSION['uid']    = $uid;
+    $_SESSION['uname']  = $row['username'];
+    $_SESSION['role']   = $row['role'];
+    $_SESSION['stoken'] = $token;
+    $pdo->prepare(
+        'UPDATE tb_users SET last_login = NOW(), session_token = ?, failed_login_count = 0, locked_until = NULL WHERE id = ?'
+    )->execute([$token, $uid]);
     // 로그인 성공 감사로그(누가·언제·어디서).
-    vg_log_activity($pdo, 'USER', (int) $row['id'], 'login', null, null, (int) $row['id'], 'USER', $_SERVER['REMOTE_ADDR'] ?? null);
-    return true;
+    vg_log_activity($pdo, 'USER', $uid, 'login', null, null, $uid, 'USER', $_SERVER['REMOTE_ADDR'] ?? null);
+    return null;
 }
 
 function vg_logout(): void {
+    // 이미 다른 로그인이 덮어쓴 토큰을 실수로 지우지 않도록 반드시 토큰 값도 WHERE 에 넣는다.
+    if (!empty($_SESSION['uid']) && !empty($_SESSION['stoken'])) {
+        try {
+            vg_pdo()->prepare('UPDATE tb_users SET session_token = NULL WHERE id = ? AND session_token = ?')
+                ->execute([(int) $_SESSION['uid'], (string) $_SESSION['stoken']]);
+        } catch (Throwable $e) {
+            error_log('[auth] logout session_token 정리 실패: ' . $e->getMessage());
+        }
+    }
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
         $p = session_get_cookie_params();
@@ -62,16 +109,43 @@ function vg_logout(): void {
     session_destroy();
 }
 
+/**
+ * 현재 로그인 사용자. $_SESSION['stoken'] 을 DB session_token(PK 조회, 저렴함)과 대조해
+ *   불일치하면(다른 곳에서 재로그인되어 이 세션이 무효화된 것) 세션을 비우고 null 을 반환한다
+ *   — 사유는 $_SESSION['login_kicked'] 플래그로 남겨 login.php 가 안내 문구를 보여준다.
+ *   요청당 1회만 DB 조회하도록 결과를 static 캐시한다(여러 곳에서 반복 호출되므로).
+ */
 function vg_current_user(): ?array {
     if (empty($_SESSION['uid'])) {
         return null;
     }
-    return ['id' => (int) $_SESSION['uid'], 'username' => $_SESSION['uname'] ?? '', 'role' => $_SESSION['role'] ?? 'user'];
+    static $cached = false;   // false = 미검증, null = 무효화됨, array = 유효
+    if ($cached !== false) {
+        return $cached;
+    }
+    try {
+        $st = vg_pdo()->prepare('SELECT session_token FROM tb_users WHERE id = ?');
+        $st->execute([(int) $_SESSION['uid']]);
+        $dbTok = $st->fetchColumn();
+        $dbTok = is_string($dbTok) ? $dbTok : '';
+        $sessTok = (string) ($_SESSION['stoken'] ?? '');
+        if ($dbTok === '' || $sessTok === '' || !hash_equals($dbTok, $sessTok)) {
+            unset($_SESSION['uid'], $_SESSION['uname'], $_SESSION['role'], $_SESSION['stoken']);
+            $_SESSION['login_kicked'] = true;
+            return $cached = null;
+        }
+    } catch (Throwable $e) {
+        // DB 오류 시 세션을 강제로 끊지 않는다(가용성 우선) — 로그만 남긴다.
+        error_log('[auth] 세션 토큰 검증 실패: ' . $e->getMessage());
+    }
+    return $cached = ['id' => (int) $_SESSION['uid'], 'username' => $_SESSION['uname'] ?? '', 'role' => $_SESSION['role'] ?? 'user'];
 }
 
 function vg_require_login(): void {
     if (!vg_current_user()) {
-        header('Location: /login.php');
+        $q = !empty($_SESSION['login_kicked']) ? '?reason=kicked' : '';
+        unset($_SESSION['login_kicked']);
+        header('Location: /login.php' . $q);
         exit;
     }
 }
