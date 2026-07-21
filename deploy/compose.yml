@@ -20,6 +20,9 @@ x-app-env: &app-env
   INGEST_TOKEN_FILE: /run/secrets/ingest_token
   ADMIN_PASSWORD_FILE: /run/secrets/admin_password
   TZ: Asia/Seoul
+  # 로그인 실패 제한/계정 잠금 — 시크릿 아닌 일반 설정값(vg_env, auth.php 가 기본값도 갖고 있음).
+  LOGIN_MAX_FAILS: ${LOGIN_MAX_FAILS:-5}
+  LOGIN_LOCK_MINUTES: ${LOGIN_LOCK_MINUTES:-15}
 
 x-app-secrets: &app-secrets
   # 주의: Apache 는 www-data(uid33)로 돌고, non-swarm compose 는 시크릿을 호스트 권한
