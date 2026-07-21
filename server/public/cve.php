@@ -161,7 +161,8 @@ try {
         $locations = $stmt->fetchAll();
     }
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[cve] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 vg_header($cveId !== '' ? $cveId : 'CVE', 'findings');

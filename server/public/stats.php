@@ -57,7 +57,8 @@ try {
     $stmt->execute([$days]);
     $typeUsage = $stmt->fetchAll();
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[stats] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 $activityLabels = vg_activity_type_labels();

@@ -35,7 +35,8 @@ try {
         }
     }
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[advisory] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 vg_header($adv ? (string) $adv['title'] : '국내 보안공지', 'advisories');

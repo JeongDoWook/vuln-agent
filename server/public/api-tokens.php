@@ -43,7 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $msg = '토큰을 폐기했습니다.';
             }
         } catch (Throwable $e) {
-            $err = $e->getMessage();
+            error_log('[api-tokens] ' . $e->getMessage());
+            $err = '처리 중 오류가 발생했습니다.';
             if ($action === 'create') {
                 $issueFailed = true;
                 $issueLabel  = trim((string) ($_POST['label'] ?? ''));

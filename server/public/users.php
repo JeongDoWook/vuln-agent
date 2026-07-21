@@ -39,7 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 vg_log_activity($pdo, 'USER', (int) $pdo->lastInsertId(), 'user_add', "사용자 '$u' 추가", ['username' => $u, 'role' => $role]);
                 $msg = "사용자 '$u' 추가됨.";
             } catch (Throwable $e) {
-                $err = '추가 실패(중복 아이디?): ' . $e->getMessage();
+                error_log('[users] ' . $e->getMessage());
+                $err = '추가 실패(중복 아이디?).';
             }
         }
         if ($err !== null) {
