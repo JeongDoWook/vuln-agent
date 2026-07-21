@@ -222,7 +222,8 @@ try {
     $stmt->execute($listParams);
     $rows = $stmt->fetchAll();
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[vendor] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 vg_header('벤더 판정', 'vendor');

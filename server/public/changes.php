@@ -103,11 +103,19 @@ try {
     }
 
     // findings 를 한 번에 로드 → scan_id => key(cve|pkg) => row
+    //   SQL LIMIT/OFFSET 페이지네이션(패키지 변경 탭과 동일한 방식)은 실측으로 기각됐다 —
+    //   호스트쌍마다 tb_findings 를 자기조인(신규/해결 판정용 LEFT JOIN anti-join)하는 SQL 로
+    //   diff 를 내리면, 이 dev DB(findings 51만행·비교대상 호스트 56개) 기준 인덱스 힌트를
+    //   줘도 30초+ 걸렸다(현재 이 방식의 벌크 로드는 1.2초). 자기조인이 호스트당 반복되며
+    //   인덱스 탐색 비용이 누적되는 게 원인 — 개선하려면 전용 커버링 인덱스나
+    //   tb_pkg_changes 처럼 변경 이력을 미리 적재해두는 테이블이 필요해, 이번 "경미한
+    //   정리" 범위를 넘는다. 대신 실제 쓰지 않는 컬럼(cvss, exposure_scope)만 걷어낸다
+    //   (vg_change_row() 는 cve_id/package_name/severity/in_kev/exposed/rationale 만 쓴다).
     $bySc = [];
     if ($scanIds) {
         $in = implode(',', array_map('intval', $scanIds));
         $fst = $pdo->query(
-            "SELECT scan_id, cve_id, package_name, severity, cvss, in_kev, exposed, exposure_scope, rationale
+            "SELECT scan_id, cve_id, package_name, severity, in_kev, exposed, rationale
                FROM tb_findings WHERE scan_id IN ($in) AND is_deleted = 0"
         );
         foreach ($fst->fetchAll(PDO::FETCH_ASSOC) as $f) {
@@ -154,7 +162,8 @@ try {
         $changes = array_values(array_filter($changes, fn($c) => $c['type'] === $type));
     }
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[changes] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 /** 변화 1건을 표 행으로. */

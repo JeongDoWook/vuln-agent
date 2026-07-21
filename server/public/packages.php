@@ -72,7 +72,8 @@ try {
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[packages] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 vg_header('영향 패키지', 'packages');

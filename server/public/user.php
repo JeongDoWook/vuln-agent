@@ -50,6 +50,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vg_log_activity($pdo, 'USER', $id, 'user_pw_reset', '비밀번호 초기화');
             $msg = '비밀번호가 초기화되었습니다.';
         }
+    } elseif (($_POST['action'] ?? '') === 'unlock') {
+        $pdo->prepare('UPDATE tb_users SET failed_login_count = 0, locked_until = NULL WHERE id = ?')->execute([$id]);
+        vg_log_activity($pdo, 'USER', $id, 'account_unlock', '계정 잠금 해제');
+        $msg = '계정 잠금이 해제되었습니다.';
     } elseif (($_POST['action'] ?? '') === 'delete') {
         if ($id === $meId) {
             $err = '자기 자신은 삭제할 수 없습니다.';
@@ -63,9 +67,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$st = $pdo->prepare('SELECT id, username, role, created_at, last_login FROM tb_users WHERE id = ? AND is_deleted = 0');
+$st = $pdo->prepare('SELECT id, username, role, created_at, last_login, locked_until FROM tb_users WHERE id = ? AND is_deleted = 0');
 $st->execute([$id]);
 $user = $st->fetch() ?: null;
+$isLocked = $user && $user['locked_until'] !== null && strtotime((string) $user['locked_until']) > time();
 
 $activity = [];
 if ($user) {
@@ -92,8 +97,11 @@ vg_header($user['username'] ?? '사용자', 'users');
       vg_h(vg_role_label($user['role'])),
       '생성 ' . vg_h($user['created_at']),
       '최근 로그인 ' . vg_h($user['last_login'] ?? '–'),
-      '<a href="/users.php">← 사용자 목록</a>',
   ];
+  if ($isLocked) {
+      $meta[] = '<span class="badge tone-crit">🔒 잠김 — ' . vg_h((string) $user['locked_until']) . '까지</span>';
+  }
+  $meta[] = '<a href="/users.php">← 사용자 목록</a>';
   vg_hero('👤 ' . vg_h($user['username']) . ($isSelf ? ' <span class="why">(본인)</span>' : ''), $meta);
   ?>
 
@@ -104,6 +112,15 @@ vg_header($user['username'] ?? '사용자', 'users');
     <span class="why">— 역할 변경 · 비밀번호 초기화 · 삭제. 자기 자신은 역할변경·삭제를 할 수 없습니다.</span>
     <div class="card__body">
       <div class="actions actions--stack">
+        <?php if ($isLocked): ?>
+          <form method="post" onsubmit="return confirm('이 계정의 잠금을 해제할까요? 실패 카운트도 함께 초기화됩니다.');">
+            <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+            <input type="hidden" name="action" value="unlock">
+            <label>계정 잠금</label>
+            <button class="btn btn--sm btn--warn">잠금 해제</button>
+          </form>
+        <?php endif; ?>
+
         <?php if (!$isSelf): ?>
           <form method="post">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">

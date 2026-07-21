@@ -19,6 +19,8 @@ function vg_activity_type_labels(): array {
     return [
         'login'                => '로그인',
         'login_fail'           => '로그인 실패',
+        'account_lock'         => '계정 잠금',
+        'account_unlock'       => '계정 잠금 해제',
         'password_change'      => '비밀번호 변경',
         'agent_token_issue'    => '에이전트 토큰 발급',
         'agent_token_revoke'   => '에이전트 토큰 폐기',
@@ -76,6 +78,7 @@ function vg_nav_sections(): array {
             ['perm' => 'agenttokens', 'href' => '/agent-tokens.php', 'label' => '에이전트 토큰', 'key' => 'agenttokens'],
             ['perm' => 'apitokens',   'href' => '/api-tokens.php',   'label' => 'API 토큰',    'key' => 'apitokens'],
             ['perm' => 'activity',    'href' => '/activity.php',     'label' => '감사 로그',   'key' => 'activity'],
+            ['perm' => 'stats',       'href' => '/stats.php',        'label' => '사용 통계',   'key' => 'stats'],
         ],
     ];
 }
@@ -104,6 +107,8 @@ function vg_nav_icon(string $key): string {
         'agenttokens' => '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><line x1="13" y1="5" x2="13" y2="19"/>',
         'apitokens'   => '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         'activity'    => '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+        // 사용 통계 — 막대그래프(추이) 느낌의 라인 아이콘, 다른 아이콘과 같은 톤.
+        'stats'       => '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
     ];
     $p = $paths[$key] ?? '<circle cx="12" cy="12" r="9"/>';
     return '<svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"'

@@ -63,7 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $msg = "자산 '$fqdn' 을(를) 삭제했습니다. 해당 호스트가 다시 수집을 보내면 재등록됩니다.";
             }
         } catch (Throwable $e) {
-            $err = '삭제 실패: ' . $e->getMessage();
+            error_log('[assets] delete ' . $e->getMessage());
+            $err = '삭제 실패: 처리 중 오류가 발생했습니다.';
         }
     }
 }
@@ -129,7 +130,8 @@ try {
         static fn(?string $max, string $v) => ($max === null || version_compare($v, $max, '>')) ? $v : $max
     );
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[assets] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 // 에이전트가 POST 할 수집 엔드포인트(현재 접속 주소 기준).
