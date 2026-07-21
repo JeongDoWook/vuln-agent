@@ -255,7 +255,8 @@ try {
         }
     }
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[host] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 // 노출 범위 → 뱃지 톤(색은 CSS 가 결정).

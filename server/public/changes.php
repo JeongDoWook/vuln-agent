@@ -154,7 +154,8 @@ try {
         $changes = array_values(array_filter($changes, fn($c) => $c['type'] === $type));
     }
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[changes] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 /** 변화 1건을 표 행으로. */
