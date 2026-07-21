@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('advisories');
 
 $err = null; $adv = null; $cves = [];
@@ -28,6 +29,9 @@ try {
         if (!$adv) {
             $err = '존재하지 않는 공지입니다.';
         } else {
+            // 보안공지 상세 열람 감사로그.
+            vg_log_activity($pdo, 'ADVISORY', $id, 'view_advisory', (string) ($adv['title'] ?? null));
+
             // cve_ids CSV 대신 정규화된 junction 에서 조회(tb_advisory_cves).
             $cst = $pdo->prepare('SELECT cve_id FROM tb_advisory_cves WHERE advisory_id = ? AND is_deleted = 0 ORDER BY cve_id');
             $cst->execute([$id]);

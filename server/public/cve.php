@@ -20,6 +20,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('findings');
 
 /**
@@ -90,6 +91,11 @@ try {
         $stmt = $pdo->prepare('SELECT * FROM tb_cves WHERE cve_id = ?');
         $stmt->execute([$cveId]);
         $cve = $stmt->fetch() ?: null;
+
+        if ($cve) {
+            // CVE 상세 열람 감사로그. CVE ID 는 정수 PK 가 아니라 message 에 담는다(host.php 의 fqdn 과 동일한 방식).
+            vg_log_activity($pdo, 'CVE', null, 'view_cve', $cveId);
+        }
 
         $stmt = $pdo->prepare('SELECT * FROM tb_kev_catalog WHERE cve_id = ?');
         $stmt->execute([$cveId]);
