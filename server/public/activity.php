@@ -57,7 +57,8 @@ try {
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[activity] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 vg_header('감사로그', 'activity');

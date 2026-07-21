@@ -9,7 +9,8 @@ try {
     $pdo = vg_pdo();
     vg_bootstrap_admin($pdo);   // 최초 접근 시 admin 생성
 } catch (Throwable $e) {
-    $err = 'DB 연결 오류: ' . $e->getMessage();
+    error_log('[login] ' . $e->getMessage());
+    $err = 'DB 연결 오류가 발생했습니다.';
 }
 
 // 이미 로그인 → 대시보드 (세션이 다른 곳에서 재로그인으로 무효화됐다면 vg_current_user() 가

@@ -34,7 +34,8 @@ if ($type === 'generic_api') {
 try {
     $res = vg_feed_preview($type, $conn, vg_pdo());
 } catch (Throwable $e) {
-    $res = ['ok' => false, 'error' => $e->getMessage()];
+    error_log('[feed_preview] ' . $e->getMessage());
+    $res = ['ok' => false, 'error' => 'internal error'];
 }
 // 통일 에러 포맷: 실패 응답에 code/ts 부가.
 if (empty($res['ok'])) {

@@ -41,7 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vg_log_activity($pdo, 'PERMISSION', null, 'permission_update', '역할별 메뉴 접근권한 변경', $posted);
             $msg = '권한이 저장되었습니다.';
         } catch (Throwable $e) {
-            $err = '저장 실패: ' . $e->getMessage();
+            error_log('[permissions] ' . $e->getMessage());
+            $err = '저장 실패.';
         }
     }
 }

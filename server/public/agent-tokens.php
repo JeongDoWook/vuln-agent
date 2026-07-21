@@ -52,7 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $msg = '폐기된 토큰을 목록에서 지웠습니다. 이력은 활동 로그에 남습니다.';
             }
         } catch (Throwable $e) {
-            $err = $e->getMessage();
+            error_log('[agent-tokens] ' . $e->getMessage());
+            $err = '처리 중 오류가 발생했습니다.';
             if ($action === 'create') {
                 $issueFailed = true;
                 $issueFqdn   = trim((string) ($_POST['fqdn'] ?? ''));
