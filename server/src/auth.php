@@ -119,6 +119,7 @@ function vg_menus(): array {
         'agenttokens' => '에이전트 토큰',
         'activity'    => '감사 로그',
         'permissions' => '권한 설정',
+        'stats'       => '사용 통계',
     ];
 }
 
