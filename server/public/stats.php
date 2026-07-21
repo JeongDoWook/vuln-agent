@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * stats.php — 사용 통계 (admin 전용).
  *   activity.php(원장 나열)와 달리 tb_activity_log 를 집계해 보여준다: 오늘/최근 KPI,
- *   기간별 로그인 추이, 기능별 사용 건수. 사전집계 테이블 없이 온디맨드 GROUP BY로 처리
+ *   일자별 로그인 건수, 기능별 사용 건수. 사전집계 테이블 없이 온디맨드 GROUP BY로 처리
  *   (현재 규모에서 충분 — CLAUDE.md YAGNI).
  */
 
@@ -19,7 +19,7 @@ const VG_STATS_DAYS_DEFAULT = 30;
 const VG_STATS_TYPE_TOP = 20;
 
 $err = null;
-$todayLogins = 0; $activeUsers24h = 0; $totalUsers = 0; $loginFails = 0;
+$todayLogins = 0; $activeUsers24h = 0; $totalUsers = 0;
 $loginTrend = []; $typeUsage = [];
 
 $days = (int) ($_GET['days'] ?? VG_STATS_DAYS_DEFAULT);
@@ -39,13 +39,6 @@ try {
     )->fetchColumn();
 
     $totalUsers = (int) $pdo->query('SELECT COUNT(*) FROM tb_users WHERE is_deleted = 0')->fetchColumn();
-
-    // login_fail 은 feat/login-security 병합 전에는 존재하지 않는 activity_type 이다 —
-    // 쿼리 자체는 항상 유효하고(0건), 병합되면 자연히 값이 채워진다.
-    $loginFails = (int) $pdo->query(
-        "SELECT COUNT(*) FROM tb_activity_log
-          WHERE activity_type = 'login_fail' AND is_deleted = 0 AND created_at >= CURDATE()"
-    )->fetchColumn();
 
     $stmt = $pdo->prepare(
         "SELECT DATE(created_at) d, COUNT(*) c FROM tb_activity_log
@@ -87,9 +80,6 @@ vg_header('사용 통계', 'stats');
     <div class="kpi kpi--static">
       <b><?= number_format($totalUsers) ?></b><span>전체 사용자</span>
     </div>
-    <div class="kpi kpi--static tone-<?= $loginFails > 0 ? 'crit' : 'ok' ?>">
-      <b><?= number_format($loginFails) ?></b><span>오늘 로그인 실패</span>
-    </div>
   </div>
 
   <?php vg_toolbar([
@@ -102,8 +92,8 @@ vg_header('사용 통계', 'stats');
 
   <div class="split split--even">
     <div class="card">
-      <strong>일자별 로그인 추이</strong>
-      <span class="why">— 최근 <?= $days ?>일</span>
+      <strong>일자별 로그인 건수</strong>
+      <span class="why">— 최근 <?= $days ?>일 · 로그인이 있었던 날짜만 표시(0건인 날짜는 생략)</span>
       <div class="card__body">
         <?php vg_hbar_list(
             array_map(fn($r) => ['label' => (string) $r['d'], 'n' => (int) $r['c']], $loginTrend),
