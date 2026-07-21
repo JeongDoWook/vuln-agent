@@ -9,7 +9,7 @@ declare(strict_types=1);
  */
 
 // 모든 curl 요청의 연결 타임아웃(초). vg_http_json/vg_http_get_many/vg_http_raw 3곳이 공유.
-define('VG_HTTP_CONNECT_TIMEOUT', 20);
+const VG_HTTP_CONNECT_TIMEOUT = 20;
 
 // 커넥터 URL 을 고른다. 빈 값이면 기본 URL.
 //
