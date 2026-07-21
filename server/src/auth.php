@@ -53,24 +53,36 @@ function vg_login(PDO $pdo, string $user, string $pass): ?string {
     $st->execute([$user]);
     $row = $st->fetch();
 
-    if ($row && $row['locked_until'] !== null && strtotime((string) $row['locked_until']) > time()) {
-        return 'locked';
+    // 잠금 기간이 지났으면 이번 시도부터 실패 카운트를 0 부터 다시 센다 — 그렇지 않으면
+    // 만료 직후 첫 실패(count=maxFails+1)가 조건을 즉시 재충족해 그대로 재잠금되고, 공격자는
+    // 잠금주기마다 실패 요청 1건만 보내 계정을 사실상 영구 잠글 수 있었다(admin 자기잠금 위험).
+    $lockExpired = false;
+    if ($row && $row['locked_until'] !== null) {
+        if (strtotime((string) $row['locked_until']) > time()) {
+            return 'locked';
+        }
+        $lockExpired = true;
     }
 
     if (!$row || !password_verify($pass, $row['password_hash'])) {
         if ($row) {
             $uid = (int) $row['id'];
-            $fails = (int) $row['failed_login_count'] + 1;
+            $fails = ($lockExpired ? 0 : (int) $row['failed_login_count']) + 1;
             $maxFails = (int) vg_env('LOGIN_MAX_FAILS', '5');
             if ($fails >= $maxFails) {
                 $lockMinutes = (int) vg_env('LOGIN_LOCK_MINUTES', '15');
                 $pdo->prepare(
                     'UPDATE tb_users SET failed_login_count = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?'
                 )->execute([$fails, $lockMinutes, $uid]);
-                vg_log_activity($pdo, 'USER', $uid, 'account_lock', '로그인 실패 누적으로 계정 잠금', null, $uid);
+                // 미인증 상태의 시도라 행위자는 세션 사용자가 아니다 — SYSTEM 으로 남겨 대상
+                // 계정(scope_id) 을 행위자처럼 오인하지 않게 한다.
+                vg_log_activity($pdo, 'USER', $uid, 'account_lock', '로그인 실패 누적으로 계정 잠금', null, null, 'SYSTEM');
             } else {
-                $pdo->prepare('UPDATE tb_users SET failed_login_count = ? WHERE id = ?')->execute([$fails, $uid]);
-                vg_log_activity($pdo, 'USER', $uid, 'login_fail', null, null, $uid);
+                // locked_until 도 함께 NULL 로 — 만료된 잠금 시각이 그대로 남아있으면
+                // (DB 를 직접 보는 사람에게) 여전히 잠긴 것처럼 오인될 수 있다.
+                $pdo->prepare('UPDATE tb_users SET failed_login_count = ?, locked_until = NULL WHERE id = ?')
+                    ->execute([$fails, $uid]);
+                vg_log_activity($pdo, 'USER', $uid, 'login_fail', null, null, null, 'SYSTEM');
             }
         }
         return 'invalid';
