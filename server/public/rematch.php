@@ -42,6 +42,7 @@ try {
     }
     echo json_encode(['ok' => true, 'matched_scans' => count($ids), 'counts' => $result], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
+    error_log('[rematch] ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage(), 'code' => 'internal_error', 'ts' => date('c')], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => false, 'error' => 'internal error', 'code' => 'internal_error', 'ts' => date('c')], JSON_UNESCAPED_UNICODE);
 }

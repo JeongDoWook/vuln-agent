@@ -254,7 +254,8 @@ try {
         $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
     }
 } catch (Throwable $e) {
-    $err = $e->getMessage();
+    error_log('[index] ' . $e->getMessage());
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 vg_header('대시보드', 'dashboard');
