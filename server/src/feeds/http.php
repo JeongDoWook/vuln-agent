@@ -8,6 +8,9 @@ declare(strict_types=1);
  *   모든 커넥터(kev/osv/nvd/kisa/epss)가 이 파일만 통해 외부로 나간다.
  */
 
+// 모든 curl 요청의 연결 타임아웃(초). vg_http_json/vg_http_get_many/vg_http_raw 3곳이 공유.
+const VG_HTTP_CONNECT_TIMEOUT = 20;
+
 // 커넥터 URL 을 고른다. 빈 값이면 기본 URL.
 //
 // `$conn['url'] ?? $default` 는 안 된다. connectors.php 의 저장 폼이 url 키를 항상 넣기
@@ -151,7 +154,7 @@ function vg_http_json(string $method, string $url, $body = null, array $headers 
         CURLOPT_RETURNTRANSFER  => true,
         CURLOPT_FOLLOWLOCATION  => false,  // vg_http_follow 가 SSRF 재검사하며 직접 따라간다
         CURLOPT_TIMEOUT         => $timeout,
-        CURLOPT_CONNECTTIMEOUT  => 20,
+        CURLOPT_CONNECTTIMEOUT  => VG_HTTP_CONNECT_TIMEOUT,
         CURLOPT_CUSTOMREQUEST   => $method,
         CURLOPT_USERAGENT       => 'vuln-agent-feed/1.0',
         CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,   // file://·gopher:// 등 차단
@@ -209,7 +212,7 @@ function vg_http_get_many(array $urls, int $concurrency = 6, int $timeout = 30, 
         CURLOPT_RETURNTRANSFER  => true,
         CURLOPT_FOLLOWLOCATION  => false,
         CURLOPT_TIMEOUT         => $timeout,
-        CURLOPT_CONNECTTIMEOUT  => 20,
+        CURLOPT_CONNECTTIMEOUT  => VG_HTTP_CONNECT_TIMEOUT,
         CURLOPT_USERAGENT       => 'vuln-agent-feed/1.0',
         CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         CURLOPT_HTTPHEADER      => array_merge(['Accept: application/json'], $headers),
@@ -268,7 +271,7 @@ function vg_http_raw(string $method, string $url, array $headers = [], int $time
         CURLOPT_RETURNTRANSFER   => true,
         CURLOPT_FOLLOWLOCATION   => false,  // vg_http_follow 가 SSRF 재검사하며 직접 따라간다
         CURLOPT_TIMEOUT          => $timeout,
-        CURLOPT_CONNECTTIMEOUT   => 20,
+        CURLOPT_CONNECTTIMEOUT   => VG_HTTP_CONNECT_TIMEOUT,
         CURLOPT_CUSTOMREQUEST    => $method,
         CURLOPT_USERAGENT        => 'vuln-agent-feed/1.0',
         CURLOPT_PROTOCOLS        => CURLPROTO_HTTP | CURLPROTO_HTTPS,   // file://·gopher:// 등 차단
