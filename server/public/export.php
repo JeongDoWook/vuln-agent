@@ -20,6 +20,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/config.php';   // vg_auth_token (요청 헤더 파싱 헬퍼)
 require __DIR__ . '/../src/db.php';
 require __DIR__ . '/../src/apitoken.php';
+require __DIR__ . '/../src/audit.php';    // vg_log_activity
 
 const VG_EXPORT_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
@@ -38,8 +39,10 @@ if (!in_array($_SERVER['REQUEST_METHOD'] ?? '', ['GET', 'HEAD'], true)) {
 // ── 인증: 웹에서 발급한 읽기 토큰(DB, SHA-256 대조) ───────────
 //   토큰은 api-tokens.php 에서 발급/폐기한다. 폐기(soft-delete)된 토큰은 즉시 거부된다.
 $provided = vg_auth_token('X-API-Token');   // 커스텀 헤더 우선, 없으면 Authorization: Bearer
+$tokenId  = null;
 try {
-    if (vg_api_token_verify(vg_pdo(), (string) $provided) === null) {
+    $tokenId = vg_api_token_verify(vg_pdo(), (string) $provided);
+    if ($tokenId === null) {
         vg_export_fail(401, 'unauthorized', 'unauthorized');
     }
 } catch (Throwable $e) {
@@ -178,6 +181,17 @@ $doc = [
     'summary'      => $summary,
     'hosts'        => array_values($hosts),
 ];
+
+// 누가(토큰)·언제·어떤 필터로·몇 건을 내보냈는지 감사로그. 실패해도 다운로드는 막지 않는다
+// (vg_log_activity 자체가 내부 try/catch).
+vg_log_activity(
+    $pdo, 'API_TOKEN', $tokenId, 'export_data',
+    "형식={$format} 건수={$summary['findings']}건 (호스트 {$summary['hosts']}개)",
+    ['format' => $format, 'host' => $host, 'scan_id' => $scanId ?: null,
+     'severity' => $sevFilter, 'kev' => $kevOnly, 'min_epss' => $minEpss,
+     'findings' => $summary['findings'], 'hosts' => $summary['hosts']],
+    null, 'SYSTEM'
+);
 
 // ── 직렬화 ────────────────────────────────────────────────────
 if ($format === 'xml') {

@@ -36,6 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $err === null) {
         }
         $_SESSION['login_fails'] = $fails + 1;
         $err = '아이디 또는 비밀번호가 올바르지 않습니다.';
+        // 사후 추적을 위한 실패 감사로그. 비밀번호는 절대 넘기지 않는다.
+        vg_log_activity($pdo, 'USER', null, 'login_fail', "로그인 실패 시도: {$u}", ['username' => $u]);
     }
 }
 

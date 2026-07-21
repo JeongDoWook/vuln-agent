@@ -18,6 +18,7 @@ require_once __DIR__ . '/../format.php';
 function vg_activity_type_labels(): array {
     return [
         'login'                => '로그인',
+        'login_fail'           => '로그인 실패',
         'password_change'      => '비밀번호 변경',
         'agent_token_issue'    => '에이전트 토큰 발급',
         'agent_token_revoke'   => '에이전트 토큰 폐기',
@@ -37,6 +38,8 @@ function vg_activity_type_labels(): array {
         'user_pw_reset'        => '사용자 비밀번호 재설정',
         'user_delete'          => '사용자 삭제',
         'feed_run'             => '피드 실행',
+        'export_data'          => '데이터 내보내기',
+        'view_host'            => '호스트 상세 조회',
     ];
 }
 

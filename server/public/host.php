@@ -163,6 +163,9 @@ try {
     $host = $st->fetch() ?: null;
 
     if ($host) {
+        // 호스트 상세(설치 패키지·노출 포트·실행 프로세스 등 인프라 민감정보) 열람 감사로그.
+        vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null));
+
         // 컬럼을 못 박는 이유: tb_scans.raw_json 은 호스트당 MB 단위(실측 3.14MB)라
         // SELECT * 로 끌면 ORDER BY 의 정렬 버퍼(운영 sort_buffer_size=2M)를 한 행만으로도 넘겨 1038 이 난다.
         $st = $pdo->prepare('SELECT id, collected_at, package_count,
