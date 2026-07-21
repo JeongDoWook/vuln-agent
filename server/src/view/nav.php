@@ -42,6 +42,8 @@ function vg_activity_type_labels(): array {
         'feed_run'             => '피드 실행',
         'export_data'          => '데이터 내보내기',
         'view_host'            => '호스트 상세 조회',
+        'view_cve'             => '취약점 상세 조회',
+        'view_advisory'        => '보안공지 상세 조회',
     ];
 }
 
