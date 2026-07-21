@@ -37,70 +37,91 @@ function vg_bootstrap_admin(PDO $pdo): void {
 }
 
 /**
- * 로그인 시도. 성공하면 null, 실패하면 실패 사유('locked'|'invalid')를 반환한다
- *   (호출부인 login.php 가 이 값으로 잠금/일반실패 메시지를 분기한다).
- *   - 이미 잠긴 계정: 비밀번호 검증 없이 즉시 'locked' — 실패 카운트는 건드리지 않는다.
- *   - 비밀번호 불일치: failed_login_count 1 증가. LOGIN_MAX_FAILS(env, 기본 5) 도달 시
+ * 로그인 시도. 성공하면 null, 실패하면 실패 사유를 반환한다 — 'invalid' 또는
+ * 'locked:{남은분}'(호출부인 login.php 가 이 값으로 잠금/일반실패 메시지를 분기·표시한다).
+ *   - 이미 잠긴 계정: 비밀번호 검증 없이 즉시 'locked:{남은분}' — 실패 카운트는 건드리지 않는다.
+ *   - 비밀번호 불일치: failed_login_count 를 원자적으로 1 증가(SELECT ... FOR UPDATE 로 행을
+ *     잠근 뒤 같은 트랜잭션에서 UPDATE — 동시(브루트포스) 요청이 같은 옛 값을 읽어 서로
+ *     덮어쓰는 lost-update 를 막는다). LOGIN_MAX_FAILS(env, 기본 5) 도달 시
  *     LOGIN_LOCK_MINUTES(env, 기본 15)분 잠금 + account_lock 감사로그.
  *   - 성공: session_token 을 새로 발급해 DB/세션에 함께 저장 — 이 컬럼을 덮어쓰는 것 자체가
  *     "기존 세션 강제 종료" 메커니즘이다(vg_current_user() 가 대조해 이전 세션을 끊는다).
  */
 function vg_login(PDO $pdo, string $user, string $pass): ?string {
-    $st = $pdo->prepare(
-        'SELECT id, username, password_hash, role, locked_until, failed_login_count
-           FROM tb_users WHERE username = ? AND is_deleted = 0'
-    );
-    $st->execute([$user]);
-    $row = $st->fetch();
+    $pdo->beginTransaction();
+    try {
+        $st = $pdo->prepare(
+            'SELECT id, username, password_hash, role, locked_until, failed_login_count
+               FROM tb_users WHERE username = ? AND is_deleted = 0 FOR UPDATE'
+        );
+        $st->execute([$user]);
+        $row = $st->fetch();
 
-    // 잠금 기간이 지났으면 이번 시도부터 실패 카운트를 0 부터 다시 센다 — 그렇지 않으면
-    // 만료 직후 첫 실패(count=maxFails+1)가 조건을 즉시 재충족해 그대로 재잠금되고, 공격자는
-    // 잠금주기마다 실패 요청 1건만 보내 계정을 사실상 영구 잠글 수 있었다(admin 자기잠금 위험).
-    $lockExpired = false;
-    if ($row && $row['locked_until'] !== null) {
-        if (strtotime((string) $row['locked_until']) > time()) {
-            return 'locked';
+        // 잠금 기간이 지났으면 이번 시도부터 실패 카운트를 0 부터 다시 센다 — 그렇지 않으면
+        // 만료 직후 첫 실패(count=maxFails+1)가 조건을 즉시 재충족해 그대로 재잠금되고, 공격자는
+        // 잠금주기마다 실패 요청 1건만 보내 계정을 사실상 영구 잠글 수 있었다(admin 자기잠금 위험).
+        $lockExpired = false;
+        if ($row && $row['locked_until'] !== null) {
+            $lockedUntilTs = strtotime((string) $row['locked_until']);
+            if ($lockedUntilTs > time()) {
+                $pdo->commit();
+                $remainMinutes = max(1, (int) ceil(($lockedUntilTs - time()) / 60));
+                return 'locked:' . $remainMinutes;
+            }
+            $lockExpired = true;
         }
-        $lockExpired = true;
-    }
 
-    if (!$row || !password_verify($pass, $row['password_hash'])) {
-        if ($row) {
-            $uid = (int) $row['id'];
-            $fails = ($lockExpired ? 0 : (int) $row['failed_login_count']) + 1;
-            $maxFails = (int) vg_env('LOGIN_MAX_FAILS', '5');
-            if ($fails >= $maxFails) {
-                $lockMinutes = (int) vg_env('LOGIN_LOCK_MINUTES', '15');
-                $pdo->prepare(
-                    'UPDATE tb_users SET failed_login_count = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?'
-                )->execute([$fails, $lockMinutes, $uid]);
+        if (!$row || !password_verify($pass, $row['password_hash'])) {
+            if ($row) {
+                $uid = (int) $row['id'];
+                $fails = ($lockExpired ? 0 : (int) $row['failed_login_count']) + 1;
+                $maxFails = (int) vg_env('LOGIN_MAX_FAILS', '5');
+                $locked = $fails >= $maxFails;
+                if ($locked) {
+                    $lockMinutes = (int) vg_env('LOGIN_LOCK_MINUTES', '15');
+                    $pdo->prepare(
+                        'UPDATE tb_users SET failed_login_count = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?'
+                    )->execute([$fails, $lockMinutes, $uid]);
+                } else {
+                    // locked_until 도 함께 NULL 로 — 만료된 잠금 시각이 그대로 남아있으면
+                    // (DB 를 직접 보는 사람에게) 여전히 잠긴 것처럼 오인될 수 있다.
+                    $pdo->prepare('UPDATE tb_users SET failed_login_count = ?, locked_until = NULL WHERE id = ?')
+                        ->execute([$fails, $uid]);
+                }
+                $pdo->commit();
                 // 미인증 상태의 시도라 행위자는 세션 사용자가 아니다 — SYSTEM 으로 남겨 대상
                 // 계정(scope_id) 을 행위자처럼 오인하지 않게 한다.
-                vg_log_activity($pdo, 'USER', $uid, 'account_lock', '로그인 실패 누적으로 계정 잠금', null, null, 'SYSTEM');
-            } else {
-                // locked_until 도 함께 NULL 로 — 만료된 잠금 시각이 그대로 남아있으면
-                // (DB 를 직접 보는 사람에게) 여전히 잠긴 것처럼 오인될 수 있다.
-                $pdo->prepare('UPDATE tb_users SET failed_login_count = ?, locked_until = NULL WHERE id = ?')
-                    ->execute([$fails, $uid]);
+                if ($locked) {
+                    vg_log_activity($pdo, 'USER', $uid, 'account_lock', '로그인 실패 누적으로 계정 잠금', null, null, 'SYSTEM');
+                    return 'locked:' . $lockMinutes;
+                }
                 vg_log_activity($pdo, 'USER', $uid, 'login_fail', null, null, null, 'SYSTEM');
+            } else {
+                $pdo->commit();
             }
+            return 'invalid';
         }
-        return 'invalid';
-    }
 
-    session_regenerate_id(true);
-    $uid = (int) $row['id'];
-    $token = bin2hex(random_bytes(32));
-    $_SESSION['uid']    = $uid;
-    $_SESSION['uname']  = $row['username'];
-    $_SESSION['role']   = $row['role'];
-    $_SESSION['stoken'] = $token;
-    $pdo->prepare(
-        'UPDATE tb_users SET last_login = NOW(), session_token = ?, failed_login_count = 0, locked_until = NULL WHERE id = ?'
-    )->execute([$token, $uid]);
-    // 로그인 성공 감사로그(누가·언제·어디서).
-    vg_log_activity($pdo, 'USER', $uid, 'login', null, null, $uid, 'USER', $_SERVER['REMOTE_ADDR'] ?? null);
-    return null;
+        session_regenerate_id(true);
+        $uid = (int) $row['id'];
+        $token = bin2hex(random_bytes(32));
+        $_SESSION['uid']    = $uid;
+        $_SESSION['uname']  = $row['username'];
+        $_SESSION['role']   = $row['role'];
+        $_SESSION['stoken'] = $token;
+        $pdo->prepare(
+            'UPDATE tb_users SET last_login = NOW(), session_token = ?, failed_login_count = 0, locked_until = NULL WHERE id = ?'
+        )->execute([$token, $uid]);
+        $pdo->commit();
+        // 로그인 성공 감사로그(누가·언제·어디서).
+        vg_log_activity($pdo, 'USER', $uid, 'login', null, null, $uid, 'USER', $_SERVER['REMOTE_ADDR'] ?? null);
+        return null;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
 }
 
 function vg_logout(): void {

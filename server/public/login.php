@@ -19,8 +19,6 @@ if (vg_current_user()) {
     exit;
 }
 
-$lockMinutes = (int) vg_env('LOGIN_LOCK_MINUTES', '15');
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $err === null) {
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
         $err = '세션이 만료되었습니다. 다시 시도하세요.';
@@ -32,9 +30,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $err === null) {
             header('Location: /');
             exit;
         }
-        $err = $result === 'locked'
-            ? "계정이 잠시 잠겼습니다. {$lockMinutes}분 후 다시 시도하세요."
-            : '아이디 또는 비밀번호가 올바르지 않습니다.';
+        // 'locked:{남은분}' — 실제 남은 대기시간(설정값이 아니라 locked_until 기준 계산값)을 보여준다.
+        if (str_starts_with($result, 'locked:')) {
+            $remainMinutes = (int) substr($result, strlen('locked:'));
+            $err = "계정이 잠시 잠겼습니다. {$remainMinutes}분 후 다시 시도하세요.";
+        } else {
+            $err = '아이디 또는 비밀번호가 올바르지 않습니다.';
+        }
     }
 } elseif ($err === null && (($_GET['reason'] ?? '') === 'kicked' || !empty($_SESSION['login_kicked']))) {
     $err = '다른 곳에서 로그인되어 세션이 종료되었습니다.';
