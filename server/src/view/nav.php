@@ -40,6 +40,8 @@ function vg_activity_type_labels(): array {
         'user_pw_reset'        => '사용자 비밀번호 재설정',
         'user_delete'          => '사용자 삭제',
         'feed_run'             => '피드 실행',
+        'export_data'          => '데이터 내보내기',
+        'view_host'            => '호스트 상세 조회',
     ];
 }
 
