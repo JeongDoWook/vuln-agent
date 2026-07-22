@@ -212,10 +212,28 @@ final class VgUbuntuOvalConnector implements VgFeedConnector {
         $fetched  = 0;
         $upserted = 0;
 
-        foreach (vg_ubuntu_oval_releases($pdo, $conn) as $code) {
-            $src = vg_ubuntu_oval_fetch(str_replace('{C}', $code, $base));
+        // bz2 확장 체크는 대상마다 반복할 필요 없다 — 병렬 다운로드 전에 한 번만.
+        if (!extension_loaded('bz2')) {
+            throw new RuntimeException('bz2 확장이 없습니다 — 우분투 OVAL 은 bz2 로만 배포된다');
+        }
+
+        // 중복 코드명(설정 오류)이 있으면 같은 임시파일을 두 번째 순회에서 이미 지운 뒤 열게 된다 —
+        //   여기서 걷어낸다(원래도 같은 릴리스를 두 번 처리할 이유가 없다).
+        $codes = array_values(array_unique(vg_ubuntu_oval_releases($pdo, $conn)));
+        $urlOf = [];
+        foreach ($codes as $code) { $urlOf[$code] = str_replace('{C}', $code, $base); }
+        $downloads = vg_http_download_many(array_values($urlOf));
+
+        foreach ($codes as $code) {
+            $url = $urlOf[$code];
+            $dl  = $downloads[$url] ?? ['path' => null, 'code' => 0, 'error' => '다운로드 안 됨'];
+            if ($dl['path'] === null) {
+                // 기존 시맨틱 유지: 다운로드 실패는 RuntimeException 으로 전체 run() 을 중단한다.
+                throw new RuntimeException("우분투 OVAL fetch 실패 (HTTP {$dl['code']}) {$dl['error']} — $url");
+            }
+            $uri = 'compress.bzip2://' . $dl['path'];
             try {
-                $rows     = vg_ubuntu_oval_parse($src['uri']);
+                $rows     = vg_ubuntu_oval_parse($uri);
                 $fetched += count($rows);
                 if (!$rows) { continue; }   // 빈 결과로 기존 데이터를 지우지 않는다(수집 실패 = 억제 전멸)
 
@@ -300,7 +318,7 @@ final class VgUbuntuOvalConnector implements VgFeedConnector {
                 $flushC($cveB, $affB);
                 $pdo->commit();
             } finally {
-                @unlink($src['path']);
+                @unlink($dl['path']);
             }
         }
         return ['fetched' => $fetched, 'upserted' => $upserted];

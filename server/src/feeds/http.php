@@ -265,6 +265,94 @@ function vg_http_get_many(array $urls, int $concurrency = 6, int $timeout = 30, 
     return $results;
 }
 
+/**
+ * 여러 URL 을 curl_multi 로 **동시에 다운로드해 각각 임시파일에 스트리밍 저장**한다.
+ *   rhoval/ubuntuoval 처럼 응답이 수십~수백MB(bz2→XML) 라 vg_http_get_many 처럼 메모리에
+ *   담으면(여러 대상을 동시에 담을 경우) 위험한 소스용 — CURLOPT_RETURNTRANSFER 대신
+ *   CURLOPT_FILE 로 디스크에 직접 쓴다. 대용량 파일이라 동시성 기본값은 vg_http_get_many(6)
+ *   보다 낮게 잡는다.
+ *
+ *   SSRF·프로토콜 제한·리다이렉트 미지원은 vg_http_get_many 와 동일하다(호스트별 1회 검사,
+ *   FOLLOWLOCATION 끔 — 이 두 소스는 무리다이렉트로 실측됐다).
+ *
+ * @param string[] $urls
+ * @return array<string, array{path:?string,code:int,error:string}>
+ *   url => 결과. 성공하면 path 는 다운로드된 임시파일 경로(호출자가 다 쓴 뒤 unlink 책임진다).
+ *   실패(HTTP != 200 또는 curl 오류)면 그 임시파일은 여기서 바로 지우고 path=null 로 돌려준다.
+ */
+function vg_http_download_many(array $urls, int $concurrency = 3, int $timeout = 300): array {
+    $urls = array_values(array_unique(array_filter($urls, 'strlen')));
+    if (!$urls) { return []; }
+
+    // 호스트별 SSRF 1회 검사 — vg_http_get_many 와 동일한 근거.
+    $seen = [];
+    foreach ($urls as $u) {
+        $h = strtolower((string) parse_url($u, PHP_URL_HOST));
+        if ($h !== '' && !isset($seen[$h])) { vg_ssrf_guard_url($u); $seen[$h] = true; }
+    }
+
+    $concurrency = max(1, min($concurrency, count($urls)));
+    $baseOpt = [
+        CURLOPT_FOLLOWLOCATION  => false,   // 무리다이렉트로 실측된 소스 전용 — 리다이렉트 지원은 과설계
+        CURLOPT_TIMEOUT         => $timeout,
+        CURLOPT_CONNECTTIMEOUT  => VG_HTTP_CONNECT_TIMEOUT,
+        CURLOPT_USERAGENT       => 'vuln-agent-feed/1.0',
+        CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+    ];
+
+    $results  = [];
+    $mh       = curl_multi_init();
+    $inflight = [];   // spl_object_id => ['url'=>, 'path'=>, 'fh'=>]
+    $i = 0;
+    $n = count($urls);
+
+    $launch = static function () use (&$i, $n, $urls, $baseOpt, $mh, &$inflight, &$results): void {
+        if ($i >= $n) { return; }
+        $u    = $urls[$i++];
+        $path = tempnam(sys_get_temp_dir(), 'vgdl');
+        $fh   = $path !== false ? fopen($path, 'wb') : false;
+        if ($path === false || $fh === false) {
+            if ($path !== false) { @unlink($path); }
+            $results[$u] = ['path' => null, 'code' => 0, 'error' => '임시파일 생성 실패'];
+            return;
+        }
+        $ch = curl_init($u);
+        curl_setopt_array($ch, $baseOpt + [CURLOPT_FILE => $fh]);
+        curl_multi_add_handle($mh, $ch);
+        $inflight[spl_object_id($ch)] = ['url' => $u, 'path' => $path, 'fh' => $fh];
+    };
+    for ($k = 0; $k < $concurrency; $k++) { $launch(); }
+
+    do {
+        curl_multi_exec($mh, $running);
+        curl_multi_select($mh, 1.0);   // 이벤트 대기(바쁜 대기 방지)
+        while ($info = curl_multi_info_read($mh)) {
+            $ch  = $info['handle'];
+            $key = spl_object_id($ch);
+            $rec = $inflight[$key] ?? null;
+            if ($rec !== null) {
+                fclose($rec['fh']);
+                $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $err  = curl_error($ch);
+                if ($code === 200 && $err === '') {
+                    $results[$rec['url']] = ['path' => $rec['path'], 'code' => $code, 'error' => ''];
+                } else {
+                    @unlink($rec['path']);
+                    $results[$rec['url']] = ['path' => null, 'code' => $code, 'error' => $err];
+                }
+            }
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+            unset($inflight[$key]);
+            $launch();   // 빈 슬롯을 다음 URL 로 채운다
+        }
+    } while ($running > 0 || $inflight);
+
+    curl_multi_close($mh);
+    return $results;
+}
+
 // raw 응답 (XML/RSS 등 non-JSON 소스용)
 function vg_http_raw(string $method, string $url, array $headers = [], int $timeout = 60): array {
     return vg_http_follow($url, [

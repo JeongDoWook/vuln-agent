@@ -69,6 +69,15 @@ function vg_rhoval_fetch(string $url): array {
     return ['path' => $tmp, 'uri' => $isBz2 ? 'compress.bzip2://' . $tmp : $tmp];
 }
 
+/** 이미 다운로드된 임시파일 경로 → XMLReader 가 열 수 있는 uri(bz2 면 스트림 래퍼). vg_rhoval_fetch 의 후반부만 뽑았다. */
+function vg_rhoval_uri(string $path, string $url): string {
+    $isBz2 = substr($url, -4) === '.bz2';
+    if ($isBz2 && !extension_loaded('bz2')) {
+        throw new RuntimeException('bz2 확장이 없습니다 — Red Hat OVAL 은 bz2 로만 배포된다(이미지 재빌드 필요)');
+    }
+    return $isBz2 ? 'compress.bzip2://' . $path : $path;
+}
+
 /**
  * OVAL → 권고 행 목록. 네트워크·DB 없이 도는 순수 함수(경로만 받는다 → 픽스처로 단위 테스트).
  *
@@ -261,16 +270,39 @@ final class VgRhovalConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
         $fetched = 0; $upserted = 0;
 
-        foreach (vg_rhoval_targets($pdo, $conn) as [$vendor, $major]) {
+        $targets = vg_rhoval_targets($pdo, $conn);
+
+        // 다운로드만 먼저 동시에 한다(파싱·DB 로직은 그대로 순차). Oracle 처럼 같은 URL(전체릴리스
+        //   파일 하나)을 메이저마다 중복 요청하면(현재도 그렇다, 캐싱은 범위 밖) 여러 대상이 같은
+        //   임시파일을 참조하게 된다 — refs 로 참조수를 세어 그 URL 을 쓰는 모든 대상의 파싱이
+        //   끝난 뒤에만 unlink 한다(파싱 중간에 지우면 다른 대상이 못 연다).
+        $urls = [];
+        $refs = [];
+        foreach ($targets as [$vendor, $major]) {
             $tpl = VG_RHOVAL_SOURCES[$vendor] ?? null;
             if ($tpl === null) { continue; }
-            $src = vg_rhoval_fetch(str_replace('{N}', $major, $tpl));
+            $url = str_replace('{N}', $major, $tpl);
+            $urls[] = $url;
+            $refs[$url] = ($refs[$url] ?? 0) + 1;
+        }
+        $downloads = vg_http_download_many(array_values(array_unique($urls)));
+
+        foreach ($targets as [$vendor, $major]) {
+            $tpl = VG_RHOVAL_SOURCES[$vendor] ?? null;
+            if ($tpl === null) { continue; }
+            $url = str_replace('{N}', $major, $tpl);
+            $dl  = $downloads[$url] ?? ['path' => null, 'code' => 0, 'error' => '다운로드 안 됨'];
+            if ($dl['path'] === null) {
+                // 기존 시맨틱 유지: 다운로드 실패는 RuntimeException 으로 전체 run() 을 중단한다.
+                throw new RuntimeException("OVAL fetch 실패 (HTTP {$dl['code']}) {$dl['error']} — $url");
+            }
+            $uri = vg_rhoval_uri($dl['path'], $url);
 
             try {
                 // 한 파일에 여러 릴리스가 섞인 소스(Oracle)는 **이 릴리스 것만** 파싱한다.
                 //   안 거르면 (1) OL8 의 조치 EVR 이 OL9 행으로 들어가 판정이 틀어지고,
                 //   (2) 전 릴리스를 메모리에 이고 가다 죽는다(실측: 512MB 초과).
-                $rows = vg_rhoval_parse($src['uri'], vg_rhoval_is_combined($vendor) ? $major : '');
+                $rows = vg_rhoval_parse($uri, vg_rhoval_is_combined($vendor) ? $major : '');
                 if (vg_rhoval_is_combined($vendor) && !$rows) {
                     throw new RuntimeException("$vendor OVAL 에 릴리스 $major 정의가 없다(플랫폼 표기 변경?)");
                 }
@@ -374,7 +406,10 @@ final class VgRhovalConnector implements VgFeedConnector {
                 $flushC($cveB, $affB);
                 $pdo->commit();
             } finally {
-                @unlink($src['path']);
+                // 이 URL 을 쓰는 마지막 대상의 파싱이 끝났을 때만 지운다(Oracle 공유 파일 대비).
+                if (--$refs[$url] <= 0) {
+                    @unlink($dl['path']);
+                }
             }
         }
         return ['fetched' => $fetched, 'upserted' => $upserted];
