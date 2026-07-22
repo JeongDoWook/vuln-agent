@@ -510,7 +510,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                   $html .= ' ' . vg_badge('STIG', 'muted', 'DISA STIG: ' . $v);
               }
           }
-          $rule = '<code class="why">' . vg_h((string) $r['ssg_rule_id']) . '</code>';
+          $ruleId = (string) $r['ssg_rule_id'];
+          $rule = '<a href="/compliance_rules.php?q=' . urlencode($ruleId) . '">'
+              . '<code class="why">' . vg_h($ruleId) . '</code></a>';
           return $rule . ($html !== '' ? '<br>' . $html : '');
       };
 
