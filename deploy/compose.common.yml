@@ -9,7 +9,7 @@ services:
   db:
     restart: unless-stopped
     pids_limit: 512
-    mem_limit: 2560m
+    mem_limit: 3g
     logging:
       driver: "json-file"
       options:
