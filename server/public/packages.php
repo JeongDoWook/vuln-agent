@@ -117,8 +117,7 @@ vg_header('영향 패키지', 'packages');
                   'icon'  => '📦',
                   'title' => '아직 수집된 패키지가 없습니다.',
                   'hint'  => 'OSV 커넥터가 스캔된 패키지를 조회해야 이 매핑이 만들어집니다.',
-                  // connectors 메뉴 권한이 없는 역할(기본 'user')에겐 눌러도 403 인 링크를 주지 않는다.
-                  'cta'   => vg_can('connectors') ? ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'] : null,
+                  'cta'   => vg_connectors_empty_cta(),
               ]),
           'cell' => [
               // 패키지명 → 취약점 현황에서 그 패키지만 검색

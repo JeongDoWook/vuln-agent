@@ -435,7 +435,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
               'empty' => [
                   'icon'  => '✅',
                   'title' => '리스닝 소켓이 없습니다.',
-                  'hint'  => '외부에 노출된 포트가 없습니다.',
+                  'hint'  => '외부·내부 포함 열린 포트가 없습니다.',
               ],
               'cell' => [
                   0 => fn($e) => vg_badge(vg_scope_label((string) $e['scope']), $scopeTone[$e['scope']] ?? 'muted'),

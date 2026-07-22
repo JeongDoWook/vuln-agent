@@ -103,8 +103,7 @@ vg_header('국내 보안공지', 'advisories');
                   'icon'  => '🇰🇷',
                   'title' => '아직 수집된 공지가 없습니다.',
                   'hint'  => 'KISA 보안공지 커넥터를 실행하면 여기에 쌓입니다.',
-                  // connectors 메뉴 권한이 없는 역할(기본 'user')에겐 눌러도 403 인 링크를 주지 않는다.
-                  'cta'   => vg_can('connectors') ? ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'] : null,
+                  'cta'   => vg_connectors_empty_cta(),
               ]),
           'cell' => [
               0 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',

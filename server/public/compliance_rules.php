@@ -115,8 +115,7 @@ vg_header('보안설정 룰셋', 'compliance');
                   'icon'  => '📋',
                   'title' => '아직 수집된 보안설정 룰이 없습니다.',
                   'hint'  => 'SSG(SCAP Security Guide) 커넥터가 한 번은 돌아야 합니다.',
-                  // connectors 메뉴 권한이 없는 역할(기본 'user')에겐 눌러도 403 인 링크를 주지 않는다.
-                  'cta'   => vg_can('connectors') ? ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'] : null,
+                  'cta'   => vg_connectors_empty_cta(),
               ]),
           'cell' => [
               0 => fn($r) => '<code class="why">' . vg_h((string) $r['rule_id']) . '</code>',
