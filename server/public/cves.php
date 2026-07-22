@@ -172,12 +172,13 @@ vg_header('CVE 목록', 'cves');
           'hint'  => '검색어나 등급·연도 필터를 바꿔 보세요.',
           'cta'   => ['href' => '/cves.php', 'label' => '필터 초기화'],
       ]
-      : [
+      : array_filter([
           'icon'  => '📭',
           'title' => '아직 수집된 CVE가 없습니다.',
           'hint'  => '피드 커넥터가 한 번은 돌아야 합니다.',
-          'cta'   => ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'],
-      ];
+          // connectors 메뉴 권한이 없는 역할(기본 'user')에겐 눌러도 403 인 링크를 주지 않는다.
+          'cta'   => vg_can('connectors') ? ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'] : null,
+      ]);
   vg_table(
       [
           ['label' => 'CVE', 'width' => '13rem', 'nowrap' => true],
