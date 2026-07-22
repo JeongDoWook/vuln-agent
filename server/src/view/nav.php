@@ -74,11 +74,15 @@ function vg_nav_sections(): array {
         '수집' => [
             ['perm' => 'connectors', 'href' => '/connectors.php', 'label' => '피드 커넥터', 'key' => 'connectors'],
         ],
-        '시스템' => [
+        '계정' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',      'key' => 'users'],
             ['perm' => 'permissions', 'href' => '/permissions.php',  'label' => '권한 설정',   'key' => 'permissions'],
+        ],
+        '연동' => [
             ['perm' => 'agenttokens', 'href' => '/agent-tokens.php', 'label' => '에이전트 토큰', 'key' => 'agenttokens'],
             ['perm' => 'apitokens',   'href' => '/api-tokens.php',   'label' => 'API 토큰',    'key' => 'apitokens'],
+        ],
+        '기록' => [
             ['perm' => 'activity',    'href' => '/activity.php',     'label' => '감사 로그',   'key' => 'activity'],
             ['perm' => 'stats',       'href' => '/stats.php',        'label' => '사용 통계',   'key' => 'stats'],
         ],
