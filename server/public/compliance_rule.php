@@ -36,7 +36,7 @@ try {
             $hostSql =
                 "FROM tb_cce_findings f
                  JOIN tb_scans s ON s.id = f.scan_id
-                 JOIN tb_hosts h ON h.id = s.host_id
+                 JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
                  JOIN " . vg_latest_scan_subq() . " latest
                    ON latest.host_id = s.host_id AND latest.mid = s.id
                  WHERE f.ssg_rule_id = ?";
