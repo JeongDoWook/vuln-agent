@@ -537,6 +537,19 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
  * 앰버(med)·회청(low) 위의 흰 글자는 대비가 무너진다. 숫자 자체를 톤 색으로
  * 크게 띄우면 대비도 잡히고 뱃지와 같은 색 어휘를 쓰게 된다. */
 .cards { display: flex; gap: .7rem; margin-bottom: 1.3rem; flex-wrap: wrap; }
+/* 격자 정렬 KPI 줄 — 카드 폭이 라벨 길이에 따라 제각각이던 것을 열 단위로 맞춘다.
+ * 기존 .cards(flex)는 다른 화면(assets/changes/findings/host/stats)이 그대로 쓰므로
+ * 건드리지 않고, 정렬이 필요한 줄에만 opt-in 하는 변형으로 둔다. */
+.cards--grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
+.cards--grid .kpi { min-width: 0; }
+/* auto-fit 은 항목 수가 한 행에 들어갈 최대 열보다 적으면 빈 트랙을 접고 그 여유폭을
+ * 남은 항목에 1fr 로 재분배한다 — 항목이 5~7개인 KPI 줄에선 열이 적당히 넓어지는 정도로
+ * 끝나지만, 항목이 2개뿐인 줄(에이전트 리소스 사용량)에 그대로 쓰면 칸 하나가 카드
+ * 절반 폭까지 늘어나 숫자가 왼쪽에 붕 뜬 모양이 된다. 항목 수가 고정인 줄은 실제
+ * 개수만큼 열을 못박고 상한폭을 둔다. */
+.cards--grid-2 { display: grid; grid-template-columns: repeat(2, minmax(9.5rem, 12rem)); }
+.cards--grid-2 .kpi { min-width: 0; }
+@media (max-width: 480px) { .cards--grid-2 { grid-template-columns: 1fr; } }
 .kpi {
   flex: 0 0 auto;          /* 늘리지 않는다 — 늘리면 값 하나에 카드가 화면을 가로지른다 */
   min-width: 116px;
@@ -649,13 +662,45 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .donut__mid b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
 .donut__mid span { font-size: .7rem; color: var(--muted); }
 
-/* 대시보드 상단: 도넛 + 급한 일 목록을 나란히 */
-.split { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+/* 대시보드 상단: 도넛 + 급한 일 목록을 나란히.
+ * align-items: stretch — 급한 목록 쪽이 더 길 때(행이 많을수록) 도넛 카드만 짧게 남아
+ * 밑에 빈 공간이 생겼다. 같은 높이로 늘리고, 늘어난 만큼은 카드 내부에서
+ * .card__body.center 가 flex 로 나눠 갖는다(도넛+범례는 위, 부가 정보는 아래로 밀림) —
+ * 그래서 늘어나도 "빈 칸"이 아니라 "여유 있게 채워진 칸"으로 보인다. */
+.split { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: 1.2rem; align-items: stretch; }
 @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
 
 /* 폭이 비슷한 카드 두 개를 나란히(OS 분포 · 취약 자산 TOP10) — .split 은 도넛(좁음)+표(넓음) 전용이라 안 맞는다. */
 .split--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 @media (max-width: 900px) { .split--even { grid-template-columns: 1fr; } }
+
+/* 도넛 카드 — .split 이 stretch 로 옆 카드(지금 급한 것)와 높이를 맞추면 도넛+범례만으로는
+ * 아래가 빈다. 카드 자체를 세로 flex 로 바꾸고 .card__body.center 를 flex:1 로 늘려,
+ * 늘어난 여백은 .donut-foot(KEV·기한초과 요약)이 맨 아래로 밀려 채운다.
+ * 조합 셀렉터(.card__body.center)라 이 카드 외 다른 화면(th.center 등)엔 영향 없다. */
+.card:has(> .card__body.center) { display: flex; flex-direction: column; }
+.card__body.center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+}
+.donut-wrap { display: flex; flex-direction: column; align-items: center; }
+
+/* 도넛 카드 바닥의 요약 뱃지 — 예전엔 상단 KPI 줄에 점선 카드(kpi--static)로 있었는데
+ * 링크형 카드들 사이에서 톤이 안 맞아 붕 떠 보였다. 필터가 없는 "집계 전용" 값이라
+ * 여기(도넛 카드 안, 여백을 채우는 자리)가 오히려 제자리다. */
+.donut-foot {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+  margin-top: 1.1rem;
+  padding-top: .9rem;
+  border-top: 1px solid var(--line);
+}
 
 /* 도넛 옆 범례 */
 .legend { display: grid; gap: .3rem; font-size: .84rem; margin-top: .9rem; }
@@ -703,12 +748,17 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 /* 가로 막대 순위 목록(OS 분포 · 취약 자산 TOP10) — 등급(심각도) 이 아니라 "누가 제일
  * 많은가" 순위라서 항목마다 색을 나누지 않는다(범주 색은 정체성 구분용 — 여기선 순위가
  * 이미 위치로 말한다). 막대는 하나의 강조색(--accent)만 쓰는 단일 계열 크기 인코딩. */
+/* 라벨열(9rem)·숫자열(4rem) 모두 고정폭 — OS 분포·취약 자산 TOP10 처럼 두 .hbar-list 가
+ * .split--even 으로 나란히 있을 때, 숫자열이 auto 면 카드마다 자릿수가 달라(예: "4" vs "2,921")
+ * 막대 시작 위치가 서로 어긋나 보였다. 고정폭이면 내용과 무관하게 두 카드가 항상 맞는다.
+ * 4rem 은 tabular-nums 6자리("999,999")까지 여유 있게 들어간다 — 그보다 더 길어지면
+ * .card 의 overflow-x:auto 로 가로 스크롤될 뿐 잘리지는 않는다. */
 .hbar-list { display: grid; gap: .5rem; margin-top: .5rem; }
-.hbar-list__row { display: grid; grid-template-columns: minmax(0, 9rem) 1fr auto; align-items: center; gap: .6rem; font-size: .84rem; }
+.hbar-list__row { display: grid; grid-template-columns: minmax(0, 9rem) 1fr 4rem; align-items: center; gap: .6rem; font-size: .84rem; }
 .hbar-list__label { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hbar-list__track { height: 8px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
 .hbar-list__track i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
-.hbar-list__n { min-width: 2.4rem; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+.hbar-list__n { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 
 /* KPI 증감 칩 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전 대비를 같이 준다.
  * 방향은 색만으로 말하지 않는다(▲/▼ 기호가 같이 간다). */
