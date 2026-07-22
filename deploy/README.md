@@ -65,3 +65,23 @@ curl -s http://127.0.0.1:8081/agent-dl.php?f=caddy-root.crt | head -1
 
 Caddy 루트는 10년짜리라 거의 바뀌지 않는다. `data`(caddy_data) 볼륨을 지우면 새로 생성되므로,
 그때만 위 추출을 다시 하고 대상 서버들의 CA 를 갱신하면 된다.
+
+---
+
+## DB 백업
+
+`deploy/backup_db.sh` 가 `vulnagent-db` 컨테이너 안에서 `mysqldump`(`--single-transaction
+--routines`)를 실행해 gzip 압축 후 `/apps/vulnagent/backups/vulnagent_YYYYMMDD_HHMMSS.sql.gz`
+로 저장한다. 비밀번호는 항상 컨테이너 안에서 `/run/secrets/mysql_root_password` 를 읽어 쓰고
+호스트엔 노출하지 않는다. 설치는 운영 서버 crontab 에 한 줄:
+
+```bash
+crontab -e
+# 대략 3일에 1번, 새벽 4시 (*/3 은 day-of-month 필드라 월 경계에서 리셋 — 정확히 72시간
+# 간격은 아니지만 "약 30일치 보관"이 목적이라 무방하다)
+0 4 */3 * * /apps/vulnagent/app/deploy/backup_db.sh >> /apps/vulnagent/backups/cron.log 2>&1
+```
+
+보관 정책은 스크립트 상단 `KEEP=10`(3일 주기 기준 약 30일치) — `vulnagent_*.sql.gz` 만 최신
+10개를 남기고 자동 정리한다. 기존 수동 백업(`pre_content_*`, `pre_tb_*`)은 패턴이 달라 건드리지
+않는다. 실행 결과는 `$BACKUP_DIR/backup.log` 에 한 줄씩 쌓인다.
