@@ -59,9 +59,16 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
         if ($s[$field] === null || $s[$field] === '') { continue; }
         $pts[] = ['t' => (string) $s['collected_at'], 'v' => (float) $s[$field]];
     }
-    if (count($pts) < 2) {
+    if (count($pts) === 0) {
         vg_empty(['icon' => '📉', 'title' => '그래프를 그리기엔 스캔 이력이 부족합니다.',
                   'hint'  => '메모리·CPU 값이 있는 스캔이 2건 이상 쌓이면 여기에 추이가 표시됩니다.']);
+        return;
+    }
+    if (count($pts) === 1) {
+        $when = date('n/j H:i', strtotime($pts[0]['t']));
+        vg_empty(['icon' => '📍',
+                  'title' => '현재 ' . number_format($pts[0]['v'], $decimals) . $unit . ' (' . $when . ')',
+                  'hint'  => '스캔이 1건뿐이라 추이선은 아직 못 그립니다. 2건 이상 쌓이면 선으로 표시됩니다.']);
         return;
     }
 
