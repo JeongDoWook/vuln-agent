@@ -276,7 +276,7 @@ vg_header('대시보드', 'dashboard');
     <span class="why"><?= vg_h($rel) ?> · <?= vg_h($nextFeed['name']) ?> (<?= vg_h(strtoupper((string) $nextFeed['connector_type'])) ?>)</span></div>
   <?php endif; ?>
 
-  <div class="cards">
+  <div class="cards cards--grid">
     <div class="kpi"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s):
       // 증감은 방향을 색만으로 말하지 않는다 — ▲/▼ 기호를 같이 준다(색각 이상·흑백 출력).
@@ -292,28 +292,32 @@ vg_header('대시보드', 'dashboard');
         <?php endif; ?>
       </a>
     <?php endforeach; ?>
-    <div class="kpi kpi--static tone-<?= $kevCount > 0 ? 'crit' : 'ok' ?>" title="집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다">
-      <b><?= number_format($kevCount) ?></b><span>KEV 악용확인</span>
-    </div>
-    <div class="kpi kpi--static tone-<?= $overdueCount > 0 ? 'crit' : 'ok' ?>" title="집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다">
-      <b><?= number_format($overdueCount) ?></b><span>패치기한 초과</span>
-    </div>
   </div>
 
   <div class="split">
     <div class="card">
       <strong>심각도 분포</strong>
       <div class="card__body center">
-        <?php // 추세 카드가 빠져 도넛이 이 화면의 유일한 그래픽이 됐다 — 기본(132)보다 키운다. ?>
-        <?php vg_sev_donut($totals, 152); ?>
-        <div class="legend">
-          <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
-            <div>
-              <i class="tone-<?= vg_sev_tone($s) ?>"></i>
-              <span><?= $s ?></span>
-              <span class="n"><?= number_format((int) $totals[$s]) ?></span>
-            </div>
-          <?php endforeach; ?>
+        <div class="donut-wrap">
+          <?php // 추세 카드가 빠져 도넛이 이 화면의 유일한 그래픽이 됐다 — 기본(132)보다 키운다. ?>
+          <?php vg_sev_donut($totals, 152); ?>
+          <div class="legend">
+            <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
+              <div>
+                <i class="tone-<?= vg_sev_tone($s) ?>"></i>
+                <span><?= $s ?></span>
+                <span class="n"><?= number_format((int) $totals[$s]) ?></span>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        </div>
+        <?php /* 예전엔 이 두 값이 상단 KPI 줄에 점선 카드(kpi--static)로 있었는데, 링크형
+         * 카드들 사이에서 톤이 안 맞아 붕 떠 보였다. 필터가 없는 "집계 전용" 값이라
+         * 여기(도넛 카드 바닥)가 오히려 제자리 — 옆 "지금 급한 것" 카드와 높이를 맞추며
+         * 생기는 여백도 이걸로 채운다. */ ?>
+        <div class="donut-foot">
+          <?= vg_badge('KEV 악용확인 ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok', '집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다') ?>
+          <?= vg_badge('패치기한 초과 ' . number_format($overdueCount) . '건', $overdueCount > 0 ? 'crit' : 'ok', '집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다') ?>
         </div>
       </div>
     </div>
@@ -397,7 +401,7 @@ vg_header('대시보드', 'dashboard');
     <span class="why">— 이 에이전트를 설치해도 서버에 부담이 거의 없다는 걸 함대 전체로 보여준다(호스트 스펙 대비 %,
       스펙 정보가 아직 없는 호스트는 제외됩니다)</span>
     <div class="card__body">
-      <div class="cards">
+      <div class="cards cards--grid">
         <div class="kpi">
           <b><?= vg_resource_pct($resKpi['avg_mem_pct'] !== null ? (float) $resKpi['avg_mem_pct'] : null) ?></b>
           <span>평균 메모리 사용률 · 최신 스캔</span>
