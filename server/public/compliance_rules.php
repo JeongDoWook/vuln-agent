@@ -118,7 +118,8 @@ vg_header('보안설정 룰셋', 'compliance');
                   'cta'   => ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'],
               ],
           'cell' => [
-              0 => fn($r) => '<code class="why">' . vg_h((string) $r['rule_id']) . '</code>',
+              0 => fn($r) => '<a href="/compliance_rule.php?rule=' . urlencode((string) $r['rule_id']) . '">'
+                            . '<code class="why">' . vg_h((string) $r['rule_id']) . '</code></a>',
               1 => fn($r) => vg_h((string) $r['title']),
               2 => function ($r) {
                   $s = mb_strtoupper((string) $r['severity']);

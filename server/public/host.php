@@ -511,7 +511,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
               }
           }
           $ruleId = (string) $r['ssg_rule_id'];
-          $rule = '<a href="/compliance_rules.php?q=' . urlencode($ruleId) . '">'
+          $rule = '<a href="/compliance_rule.php?rule=' . urlencode($ruleId) . '">'
               . '<code class="why">' . vg_h($ruleId) . '</code></a>';
           return $rule . ($html !== '' ? '<br>' . $html : '');
       };
