@@ -229,8 +229,7 @@ try {
 vg_header('벤더 판정', 'vendor');
 ?>
   <h1>벤더 판정 <span class="hint">(<?= number_format($total) ?>건)</span></h1>
-  <div class="sub"><span class="why">배포판 벤더가 “이 CVE 를 고쳤나 · 고칠 수는 있나” 에 답한 원본이다.
-    매처의 백포트 오탐 억제와 조치 불가 표시가 이 데이터에 근거한다.</span></div>
+  <div class="sub"><span class="why">— 벤더별 패치 여부 원본 · 백포트 오탐 억제·조치불가 판정 근거</span></div>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

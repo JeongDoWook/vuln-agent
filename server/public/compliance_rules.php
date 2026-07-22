@@ -81,9 +81,7 @@ try {
 vg_header('보안설정 룰셋', 'compliance');
 ?>
   <h1>보안설정 룰셋 <span class="hint">(<?= number_format($total) ?>건)</span></h1>
-  <div class="sub"><span class="why">SCAP Security Guide(ComplianceAsCode)가 정의한 보안설정 점검 룰
-    카탈로그다. CIS·NIST·STIG 기준에 어떻게 매핑되는지, 왜 필요한지(근거)를 보여준다 — 실제 점검
-    결과가 아니라 "무엇을 점검할 수 있는가" 의 사전이다.</span></div>
+  <div class="sub"><span class="why">— SCAP(ComplianceAsCode) 점검 룰 카탈로그 · CIS/NIST/STIG 매핑 사전(점검 결과 아님)</span></div>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

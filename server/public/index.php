@@ -398,8 +398,7 @@ vg_header('대시보드', 'dashboard');
 
   <div class="card">
     <strong>에이전트 리소스 사용량</strong>
-    <span class="why">— 이 에이전트를 설치해도 서버에 부담이 거의 없다는 걸 함대 전체로 보여준다(호스트 스펙 대비 %,
-      스펙 정보가 아직 없는 호스트는 제외됩니다)</span>
+    <span class="why">— 호스트 스펙 대비 사용률(%) · 스펙 미확인 호스트 제외</span>
     <div class="card__body">
       <div class="cards cards--grid-2">
         <div class="kpi">
