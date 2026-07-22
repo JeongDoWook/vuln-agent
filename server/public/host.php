@@ -26,7 +26,7 @@ const VG_RESOURCE_TREND_LIMIT = 50;
 
 // --- 탭별 데이터 조회 (?tab= 에 따라 갈리는 SQL). 각자 {total, rows, ...} 형태의 배열을 반환한다. ---
 
-function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perPage, int $offset): array {
+function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perPage, int $offset, ?string $q = null): array {
     /* 성격이 다른 두 부류를 한 목록에 섞고 페이지를 나누면, 어느 한쪽은 반드시 뒤로 밀린다.
      *   - 등급순으로 정렬했더니: 커널 재부팅 건(등급이 낮다)이 2페이지로 밀려 사라졌다.
      *   - 그래서 needs_restart 를 맨 위로 올렸더니: 이번엔 **CRITICAL 이 안 보였다**
@@ -35,19 +35,36 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
      *   표1(주 목록·페이지네이션): CRITICAL·HIGH — 등급 → EPSS 순
      *   표2(상위 N건 + 전체보기):  재시작·재부팅 필요 — 등급이 낮아도 놓치면 안 되는 부류
      *                              (이미 패치됐는데 옛 코드가 상주해 "패치됨"으로 사라진다)
+     * 검색(q)은 표1(주 목록)에만 적용한다 — 표2는 "상위 N건은 놓치지 않는다"가 목적이라
+     *   필터링하면 그 의도와 충돌한다.
      */
     $sel = "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
                    f.needs_restart, c.epss, c.epss_percentile, c.ref_urls_json,
                " . VG_FIXED_VERSION_SUBQ . "
               FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id";
 
-    $total = $critHighTotal;
+    $where = "f.scan_id = ? AND f.severity IN ('CRITICAL','HIGH')";
+    $params = [$sid];
+    if ($q !== null && $q !== '') {
+        $where .= ' AND (f.cve_id LIKE ? OR f.package_name LIKE ?)';
+        $params[] = '%' . $q . '%';
+        $params[] = '%' . $q . '%';
+    }
+
+    if ($q !== null && $q !== '') {
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_findings f WHERE $where");
+        $cnt->execute($params);
+        $total = (int) $cnt->fetchColumn();
+    } else {
+        $total = $critHighTotal;
+    }
+
     $st = $pdo->prepare(
-        "$sel WHERE f.scan_id = ? AND f.severity IN ('CRITICAL','HIGH')
+        "$sel WHERE $where
          ORDER BY FIELD(f.severity,'CRITICAL','HIGH'), c.epss DESC, f.cve_id
          LIMIT $perPage OFFSET $offset"
     );
-    $st->execute([$sid]);
+    $st->execute($params);
     $rows = $st->fetchAll();
 
     $st = $pdo->prepare(
@@ -61,34 +78,72 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
     return ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows];
 }
 
-function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset): array {
-    // 노출은 보통 소량이라 전부 보여주고, 프로세스는 많을 수 있어 페이지네이션한다
-    // (이 탭의 ?page= 는 프로세스 표에 적용된다).
+function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset, int $ePage, ?string $q = null): array {
+    // 노출·프로세스 모두 건수가 늘 수 있어 각자 페이지네이션한다(노출은 ?epage=, 프로세스는 ?page=).
     // 컨테이너 안의 프로세스·포트도 여기 함께 있다(container_id > 0).
     //   출처를 표시하지 않으면 컨테이너의 nginx 가 호스트의 nginx 처럼 보인다 → "위치" 열.
-    $st = $pdo->prepare('SELECT e.proc, e.proto, e.bind_addr, e.port, e.scope, e.exe_pkg, e.loaded_pkgs,
-                                IFNULL(c.cid, \'\') AS ctr
+    $q = ($q !== null && $q !== '') ? $q : null;
+
+    $eWhere = 'e.scan_id = ?';
+    $eParams = [$sid];
+    if ($q !== null) {
+        $eWhere .= ' AND (e.proc LIKE ? OR e.exe_pkg LIKE ?)';
+        $eParams[] = '%' . $q . '%';
+        $eParams[] = '%' . $q . '%';
+    }
+    $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_exposures e WHERE $eWhere");
+    $cnt->execute($eParams);
+    $exposureTotal = (int) $cnt->fetchColumn();
+
+    // vg_toolbar() 의 기본 "초기화" 링크는 page 만 지우고 epage 는 모른다(공용 컴포넌트, 이번
+    //   범위에서 손 안 댐) — 검색 초기화 후에도 epage 가 URL 에 남을 수 있다. 그 값을 신뢰해
+    //   그대로 OFFSET 에 쓰면 총건수를 넘겨 빈 표가 뜬다. 여기서 유효 범위로 접어 방어한다.
+    $eMaxPage = max(1, (int) ceil($exposureTotal / $perPage));
+    if ($ePage > $eMaxPage) { $ePage = $eMaxPage; }
+    $eOffset = ($ePage - 1) * $perPage;
+
+    $st = $pdo->prepare("SELECT e.proc, e.proto, e.bind_addr, e.port, e.scope, e.exe_pkg, e.loaded_pkgs,
+                                IFNULL(c.cid, '') AS ctr
                            FROM tb_exposures e LEFT JOIN tb_containers c ON c.id = e.container_id
-                          WHERE e.scan_id = ?
-                          ORDER BY FIELD(e.scope,\'EXTERNAL\',\'LAN\',\'BOUND\',\'FILTERED\',\'LOCAL\',\'-\'), e.port');
-    $st->execute([$sid]);
+                          WHERE $eWhere
+                          ORDER BY FIELD(e.scope,'EXTERNAL','LAN','BOUND','FILTERED','LOCAL','-'), e.port
+                          LIMIT $perPage OFFSET $eOffset");
+    $st->execute($eParams);
     $exposures = $st->fetchAll();
 
-    $total = $pdo->prepare('SELECT COUNT(*) FROM tb_processes WHERE scan_id = ?');
-    $total->execute([$sid]); $total = (int) $total->fetchColumn();
+    $pWhere = 'p.scan_id = ?';
+    $pParams = [$sid];
+    if ($q !== null) {
+        $pWhere .= ' AND (p.comm LIKE ? OR p.username LIKE ? OR p.exe_pkg LIKE ?)';
+        $pParams[] = '%' . $q . '%';
+        $pParams[] = '%' . $q . '%';
+        $pParams[] = '%' . $q . '%';
+    }
+    $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_processes p WHERE $pWhere");
+    $cnt->execute($pParams);
+    $total = (int) $cnt->fetchColumn();
+
     $st = $pdo->prepare("SELECT p.pid, p.comm, p.username, p.exe_pkg, p.loaded_pkgs,
                                 IFNULL(c.cid, '') AS ctr
                            FROM tb_processes p LEFT JOIN tb_containers c ON c.id = p.container_id
-                          WHERE p.scan_id = ? ORDER BY p.comm LIMIT $perPage OFFSET $offset");
-    $st->execute([$sid]);
+                          WHERE $pWhere ORDER BY p.comm LIMIT $perPage OFFSET $offset");
+    $st->execute($pParams);
     $rows = $st->fetchAll();
 
-    return ['total' => $total, 'exposures' => $exposures, 'rows' => $rows];
+    return ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows, 'ePage' => $ePage];
 }
 
-function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset): array {
-    $st = $pdo->prepare('SELECT COUNT(*) FROM tb_cce_findings WHERE scan_id = ?');
-    $st->execute([$sid]); $total = (int) $st->fetchColumn();
+function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset, ?string $q = null): array {
+    $where = 'f.scan_id = ?';
+    $params = [$sid];
+    if ($q !== null && $q !== '') {
+        $where .= ' AND (f.code LIKE ? OR f.title LIKE ? OR f.ssg_rule_id LIKE ?)';
+        $params[] = '%' . $q . '%';
+        $params[] = '%' . $q . '%';
+        $params[] = '%' . $q . '%';
+    }
+    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_findings f WHERE $where");
+    $st->execute($params); $total = (int) $st->fetchColumn();
     // 점검 항목을 **검증된 룰셋(SSG)** 에 묶어 두었으므로, 그 룰의 기준 참조(CIS/NIST/STIG)를
     //   함께 읽어 화면이 근거를 인용할 수 있게 한다. 묶이지 않은 항목은 refs 가 비어 있다.
     $st = $pdo->prepare(
@@ -96,25 +151,40 @@ function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset): ar
                 r.refs_json, r.title AS ssg_title
            FROM tb_cce_findings f
            LEFT JOIN tb_compliance_rules r ON r.rule_id = f.ssg_rule_id AND r.is_deleted = 0
-          WHERE f.scan_id = ?
+          WHERE $where
           ORDER BY FIELD(f.result,'FAIL','NA','PASS'), FIELD(f.severity,'HIGH','MEDIUM','LOW'), f.code
           LIMIT $perPage OFFSET $offset"
     );
-    $st->execute([$sid]);
+    $st->execute($params);
     $rows = $st->fetchAll();
 
     return ['total' => $total, 'rows' => $rows];
 }
 
-function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, int $perPage, int $offset): array {
-    $total = $suppressedCount;
+function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, int $perPage, int $offset, ?string $q = null): array {
+    $where = 'scan_id = ?';
+    $params = [$sid];
+    if ($q !== null && $q !== '') {
+        $where .= ' AND (cve_id LIKE ? OR package_name LIKE ?)';
+        $params[] = '%' . $q . '%';
+        $params[] = '%' . $q . '%';
+    }
+
+    if ($q !== null && $q !== '') {
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_suppressed_findings WHERE $where");
+        $cnt->execute($params);
+        $total = (int) $cnt->fetchColumn();
+    } else {
+        $total = $suppressedCount;
+    }
+
     $st = $pdo->prepare(
         "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason
-           FROM tb_suppressed_findings WHERE scan_id = ?
+           FROM tb_suppressed_findings WHERE $where
           ORDER BY FIELD(base_severity,'CRITICAL','HIGH','MEDIUM','LOW'), cve_id
           LIMIT $perPage OFFSET $offset"
     );
-    $st->execute([$sid]);
+    $st->execute($params);
     $rows = $st->fetchAll();
 
     return ['total' => $total, 'rows' => $rows];
@@ -124,11 +194,29 @@ function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     // 새 수집·새 컬럼 없이 스캔 이력 탭과 같은 데이터를 시간순으로만 가져온다.
     //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
     $st = $pdo->prepare(
-        'SELECT collected_at, peak_rss_mb, cpu_seconds
+        'SELECT collected_at, peak_rss_mb, cpu_seconds, mem_total_mb, cpu_cores, elapsed_seconds
            FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT ' . VG_RESOURCE_TREND_LIMIT
     );
     $st->execute([$hostId]);
     $resourceScans = array_reverse($st->fetchAll());
+
+    // 스캔(행) 단위로 먼저 %를 계산한다 — 절대치를 먼저 모아 나중에 나누면 스캔마다
+    //   다른 스펙(mem_total_mb/cpu_cores)이 섞여 값이 왜곡된다. 필요값이 하나라도 없거나
+    //   분모가 0이면 그 스캔은 이 지표에서 제외(NULL) — 0/100 대체 금지.
+    foreach ($resourceScans as &$s) {
+        $s['mem_pct'] = null;
+        if ($s['peak_rss_mb'] !== null && $s['peak_rss_mb'] !== ''
+            && $s['mem_total_mb'] !== null && $s['mem_total_mb'] !== '' && (float) $s['mem_total_mb'] > 0) {
+            $s['mem_pct'] = (float) $s['peak_rss_mb'] / (float) $s['mem_total_mb'] * 100;
+        }
+        $s['cpu_pct'] = null;
+        if ($s['cpu_seconds'] !== null && $s['cpu_seconds'] !== ''
+            && $s['cpu_cores'] !== null && $s['cpu_cores'] !== '' && (float) $s['cpu_cores'] > 0
+            && $s['elapsed_seconds'] !== null && $s['elapsed_seconds'] !== '' && (float) $s['elapsed_seconds'] > 0) {
+            $s['cpu_pct'] = (float) $s['cpu_seconds'] / ((float) $s['elapsed_seconds'] * (float) $s['cpu_cores']) * 100;
+        }
+    }
+    unset($s);
 
     return ['resourceScans' => $resourceScans];
 }
@@ -153,8 +241,10 @@ function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perP
 $counts =['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
 $critHighTotal = 0; $restartTotal = 0; $restartRows = [];
-$tab = 'vuln'; $page = 1; $perPage = vg_perpage(); $total = 0;
+$tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
+$q = trim((string) ($_GET['q'] ?? ''));
+$hasFilter = $q !== '';
 
 try {
     $pdo = vg_pdo();
@@ -237,20 +327,21 @@ try {
 
         $page   = vg_page();
         $offset = ($page - 1) * $perPage;
+        $ePage  = vg_page('epage');
 
-        // --- 활성 탭 데이터만 조회(+페이지네이션) ---
+        // --- 활성 탭 데이터만 조회(+페이지네이션+검색) ---
         if ($tab === 'vuln') {
             ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows]
-                = vg_host_load_vuln_tab($pdo, $sid, $critHighTotal, $perPage, $offset);
+                = vg_host_load_vuln_tab($pdo, $sid, $critHighTotal, $perPage, $offset, $q);
         } elseif ($tab === 'runtime') {
-            ['total' => $total, 'exposures' => $exposures, 'rows' => $rows]
-                = vg_host_load_runtime_tab($pdo, $sid, $perPage, $offset);
+            ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows, 'ePage' => $ePage]
+                = vg_host_load_runtime_tab($pdo, $sid, $perPage, $offset, $ePage, $q);
         } elseif ($tab === 'cce') {
             ['total' => $total, 'rows' => $rows]
-                = vg_host_load_cce_tab($pdo, $sid, $perPage, $offset);
+                = vg_host_load_cce_tab($pdo, $sid, $perPage, $offset, $q);
         } elseif ($tab === 'suppressed') {
             ['total' => $total, 'rows' => $rows]
-                = vg_host_load_suppressed_tab($pdo, $sid, $suppressedCount, $perPage, $offset);
+                = vg_host_load_suppressed_tab($pdo, $sid, $suppressedCount, $perPage, $offset, $q);
         } elseif ($tab === 'resources') {
             ['resourceScans' => $resourceScans] = vg_host_load_resources_tab($pdo, $hostId);
         } else { // scans
@@ -377,17 +468,29 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         'cell'      => $vulnCells,
     ];
   ?>
+    <?php vg_toolbar([
+        ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
+        ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
+    ]); ?>
     <div class="card">
       <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
       <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>">전체 취약점 보기 →</a></span>
       <div class="card__body">
       <?php
       vg_table($vulnHeaders, $rows, $vulnOpts + [
-          'empty' => [
-              'icon'  => '✅',
-              'title' => 'CRITICAL·HIGH 가 없습니다.',
-              'hint'  => '아래의 재시작·재부팅 필요 항목은 등급이 낮아도 확인하세요.',
-          ],
+          'empty' => $hasFilter
+              ? [
+                  'icon'  => '🔍',
+                  'title' => '검색 결과가 없습니다.',
+                  'hint'  => '검색어를 확인하거나 초기화해 보세요.',
+                  'cta'   => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
+              ]
+              : [
+                  'icon'  => '✅',
+                  'title' => 'CRITICAL·HIGH 가 없습니다.',
+                  'hint'  => '아래의 재시작·재부팅 필요 항목은 등급이 낮아도 확인하세요.',
+              ],
       ]);
       ?>
       </div>
@@ -416,6 +519,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
 
   <?php elseif ($tab === 'runtime'): ?>
+    <?php vg_toolbar([
+        ['type' => 'search', 'name' => 'q', 'placeholder' => '프로세스명·사용자·실행패키지 검색', 'value' => $q],
+        ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
+    ]); ?>
     <div class="card">
       <strong>런타임 노출</strong> <span class="why">— 어떤 프로세스가 무슨 포트를 열고 어떤 라이브러리를 로드했나</span>
       <div class="card__body">
@@ -432,11 +540,18 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           $exposures,
           [
               'card' => false,
-              'empty' => [
-                  'icon'  => '✅',
-                  'title' => '리스닝 소켓이 없습니다.',
-                  'hint'  => '외부·내부 포함 열린 포트가 없습니다.',
-              ],
+              'empty' => $hasFilter
+                  ? [
+                      'icon'  => '🔍',
+                      'title' => '검색 결과가 없습니다.',
+                      'hint'  => '검색어를 확인하거나 초기화해 보세요.',
+                      'cta'   => ['href' => vg_qs(['q' => null, 'page' => null, 'epage' => null]), 'label' => '검색 초기화'],
+                  ]
+                  : [
+                      'icon'  => '✅',
+                      'title' => '리스닝 소켓이 없습니다.',
+                      'hint'  => '외부·내부 포함 열린 포트가 없습니다.',
+                  ],
               'cell' => [
                   0 => fn($e) => vg_badge(vg_scope_label((string) $e['scope']), $scopeTone[$e['scope']] ?? 'muted'),
                   1 => fn($e) => $e['ctr'] !== ''
@@ -450,8 +565,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       ?>
       </div>
     </div>
+    <?php vg_page_nav($exposureTotal, $perPage, $ePage, 'epage'); ?>
 
-    <div class="card">
+    <div class="card mt-lg">
       <strong>실행 프로세스</strong> <span class="why">— 실행 중인 프로그램과 소속 패키지(=실행중), 로드한 라이브러리(=사용중)</span>
       <div class="card__body">
       <?php
@@ -467,11 +583,18 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           $rows,
           [
               'card' => false,
-              'empty' => [
-                  'icon'  => '🗂️',
-                  'title' => '실행 프로세스 데이터가 없습니다.',
-                  'hint'  => '구버전 에이전트로 수집된 스캔입니다.',
-              ],
+              'empty' => $hasFilter
+                  ? [
+                      'icon'  => '🔍',
+                      'title' => '검색 결과가 없습니다.',
+                      'hint'  => '검색어를 확인하거나 초기화해 보세요.',
+                      'cta'   => ['href' => vg_qs(['q' => null, 'page' => null, 'epage' => null]), 'label' => '검색 초기화'],
+                  ]
+                  : [
+                      'icon'  => '🗂️',
+                      'title' => '실행 프로세스 데이터가 없습니다.',
+                      'hint'  => '구버전 에이전트로 수집된 스캔입니다.',
+                  ],
               'cell' => [
                   0 => fn($pr) => '<span class="why">' . (int) $pr['pid'] . '</span>',
                   1 => fn($pr) => $pr['ctr'] !== ''
@@ -488,6 +611,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     <?php vg_page_nav($total, $perPage, $page); ?>
 
   <?php elseif ($tab === 'cce'): ?>
+    <?php vg_toolbar([
+        ['type' => 'search', 'name' => 'q', 'placeholder' => '코드·점검항목·SSG 룰 검색', 'value' => $q],
+        ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
+    ]); ?>
     <div class="card">
       <strong>보안 설정 점검 (CCE)</strong>
       <span class="why">— 버전이 아닌 설정 점검 · NA=미수집</span>
@@ -536,11 +664,18 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           $rows,
           [
               'card' => false,
-              'empty' => [
-                  'icon'  => '🗂️',
-                  'title' => 'CCE 점검 데이터가 없습니다.',
-                  'hint'  => '구버전 에이전트 또는 security/users 미수집입니다.',
-              ],
+              'empty' => $hasFilter
+                  ? [
+                      'icon'  => '🔍',
+                      'title' => '검색 결과가 없습니다.',
+                      'hint'  => '검색어를 확인하거나 초기화해 보세요.',
+                      'cta'   => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
+                  ]
+                  : [
+                      'icon'  => '🗂️',
+                      'title' => 'CCE 점검 데이터가 없습니다.',
+                      'hint'  => '구버전 에이전트 또는 security/users 미수집입니다.',
+                  ],
               'cell' => [
                   'result' => $cceBadge,
                   'code'   => fn($r) => '<code>' . vg_h($r['code']) . '</code>',
@@ -556,6 +691,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     <?php vg_page_nav($total, $perPage, $page); ?>
 
   <?php elseif ($tab === 'suppressed'): ?>
+    <?php vg_toolbar([
+        ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
+        ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
+    ]); ?>
     <div class="card">
       <strong>백포트로 억제된 취약점</strong>
       <span class="why">— 백포트로 이미 수정됨 · 오탐 제외 근거</span>
@@ -571,11 +711,18 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           $rows,
           [
               'card' => false,
-              'empty' => [
-                  'icon'  => '✅',
-                  'title' => '억제된 취약점이 없습니다.',
-                  'hint'  => '백포트로 억제 처리된 항목이 없습니다.',
-              ],
+              'empty' => $hasFilter
+                  ? [
+                      'icon'  => '🔍',
+                      'title' => '검색 결과가 없습니다.',
+                      'hint'  => '검색어를 확인하거나 초기화해 보세요.',
+                      'cta'   => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
+                  ]
+                  : [
+                      'icon'  => '✅',
+                      'title' => '억제된 취약점이 없습니다.',
+                      'hint'  => '백포트로 억제 처리된 항목이 없습니다.',
+                  ],
               'row_class' => fn($r) => vg_sev_row((string) $r['base_severity']),
               'cell' => [
                   'base_severity' => fn($r) => vg_sev_badge((string) $r['base_severity'])
@@ -591,20 +738,46 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
 
-  <?php elseif ($tab === 'resources'): ?>
+  <?php elseif ($tab === 'resources'):
+    $latestResourceScan = $resourceScans ? end($resourceScans) : null;
+  ?>
     <div class="card">
       <strong>메모리 사용량 추이</strong>
-      <span class="why">— 스캔당 피크 RSS(최근 <?= count($resourceScans) ?>건)</span>
+      <span class="why">— 스캔당 피크 RSS(최근 <?= count($resourceScans) ?>건)
+        <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
+          · 현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?>(호스트 총 메모리 대비)
+        <?php endif; ?>
+      </span>
       <div class="card__body">
       <?php vg_resource_trend($resourceScans, 'peak_rss_mb', 'MB', 0, 'mem'); ?>
       </div>
     </div>
 
     <div class="card mt-lg">
+      <strong>메모리 사용률 추이</strong>
+      <span class="why">— 호스트 총 메모리(mem_total_mb) 대비 %. 스펙 미수집 스캔은 이 지표에서 제외됩니다.</span>
+      <div class="card__body">
+      <?php vg_resource_trend($resourceScans, 'mem_pct', '%', 1, 'mem'); ?>
+      </div>
+    </div>
+
+    <div class="card mt-lg">
       <strong>CPU 사용량 추이</strong>
-      <span class="why">— 스캔당 CPU 점유 시간(초, 자식 프로세스 포함)</span>
+      <span class="why">— 스캔당 CPU 점유 시간(초, 자식 프로세스 포함)
+        <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
+          · 현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?>(코어수 대비)
+        <?php endif; ?>
+      </span>
       <div class="card__body">
       <?php vg_resource_trend($resourceScans, 'cpu_seconds', 's', 1, 'cpu'); ?>
+      </div>
+    </div>
+
+    <div class="card mt-lg">
+      <strong>CPU 사용률 추이</strong>
+      <span class="why">— 코어수(cpu_cores) 대비 %. 스펙 미수집 스캔은 이 지표에서 제외됩니다.</span>
+      <div class="card__body">
+      <?php vg_resource_trend($resourceScans, 'cpu_pct', '%', 1, 'cpu'); ?>
       </div>
     </div>
 
