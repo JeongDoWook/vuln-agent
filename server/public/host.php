@@ -78,7 +78,7 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
     return ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows];
 }
 
-function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset, int $eOffset, ?string $q = null): array {
+function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset, int $ePage, ?string $q = null): array {
     // 노출·프로세스 모두 건수가 늘 수 있어 각자 페이지네이션한다(노출은 ?epage=, 프로세스는 ?page=).
     // 컨테이너 안의 프로세스·포트도 여기 함께 있다(container_id > 0).
     //   출처를 표시하지 않으면 컨테이너의 nginx 가 호스트의 nginx 처럼 보인다 → "위치" 열.
@@ -94,6 +94,13 @@ function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset,
     $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_exposures e WHERE $eWhere");
     $cnt->execute($eParams);
     $exposureTotal = (int) $cnt->fetchColumn();
+
+    // vg_toolbar() 의 기본 "초기화" 링크는 page 만 지우고 epage 는 모른다(공용 컴포넌트, 이번
+    //   범위에서 손 안 댐) — 검색 초기화 후에도 epage 가 URL 에 남을 수 있다. 그 값을 신뢰해
+    //   그대로 OFFSET 에 쓰면 총건수를 넘겨 빈 표가 뜬다. 여기서 유효 범위로 접어 방어한다.
+    $eMaxPage = max(1, (int) ceil($exposureTotal / $perPage));
+    if ($ePage > $eMaxPage) { $ePage = $eMaxPage; }
+    $eOffset = ($ePage - 1) * $perPage;
 
     $st = $pdo->prepare("SELECT e.proc, e.proto, e.bind_addr, e.port, e.scope, e.exe_pkg, e.loaded_pkgs,
                                 IFNULL(c.cid, '') AS ctr
@@ -123,7 +130,7 @@ function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset,
     $st->execute($pParams);
     $rows = $st->fetchAll();
 
-    return ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows];
+    return ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows, 'ePage' => $ePage];
 }
 
 function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset, ?string $q = null): array {
@@ -237,6 +244,7 @@ $critHighTotal = 0; $restartTotal = 0; $restartRows = [];
 $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
 $q = trim((string) ($_GET['q'] ?? ''));
+$hasFilter = $q !== '';
 
 try {
     $pdo = vg_pdo();
@@ -319,16 +327,15 @@ try {
 
         $page   = vg_page();
         $offset = ($page - 1) * $perPage;
-        $ePage   = vg_page('epage');
-        $eOffset = ($ePage - 1) * $perPage;
+        $ePage  = vg_page('epage');
 
         // --- 활성 탭 데이터만 조회(+페이지네이션+검색) ---
         if ($tab === 'vuln') {
             ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows]
                 = vg_host_load_vuln_tab($pdo, $sid, $critHighTotal, $perPage, $offset, $q);
         } elseif ($tab === 'runtime') {
-            ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows]
-                = vg_host_load_runtime_tab($pdo, $sid, $perPage, $offset, $eOffset, $q);
+            ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows, 'ePage' => $ePage]
+                = vg_host_load_runtime_tab($pdo, $sid, $perPage, $offset, $ePage, $q);
         } elseif ($tab === 'cce') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_cce_tab($pdo, $sid, $perPage, $offset, $q);
@@ -460,11 +467,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         'row_class' => fn($f) => vg_sev_row((string) $f['severity']),
         'cell'      => $vulnCells,
     ];
-    $hasFilter = $q !== '';
   ?>
     <?php vg_toolbar([
         ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
     ]); ?>
     <div class="card">
       <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
@@ -511,12 +518,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       </div>
     </div>
 
-  <?php elseif ($tab === 'runtime'):
-    $hasFilter = $q !== '';
-  ?>
+  <?php elseif ($tab === 'runtime'): ?>
     <?php vg_toolbar([
         ['type' => 'search', 'name' => 'q', 'placeholder' => '프로세스명·사용자·실행패키지 검색', 'value' => $q],
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
     ]); ?>
     <div class="card">
       <strong>런타임 노출</strong> <span class="why">— 어떤 프로세스가 무슨 포트를 열고 어떤 라이브러리를 로드했나</span>
@@ -604,12 +610,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
 
-  <?php elseif ($tab === 'cce'):
-    $hasFilter = $q !== '';
-  ?>
+  <?php elseif ($tab === 'cce'): ?>
     <?php vg_toolbar([
         ['type' => 'search', 'name' => 'q', 'placeholder' => '코드·점검항목·SSG 룰 검색', 'value' => $q],
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
     ]); ?>
     <div class="card">
       <strong>보안 설정 점검 (CCE)</strong>
@@ -685,12 +690,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
 
-  <?php elseif ($tab === 'suppressed'):
-    $hasFilter = $q !== '';
-  ?>
+  <?php elseif ($tab === 'suppressed'): ?>
     <?php vg_toolbar([
         ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
     ]); ?>
     <div class="card">
       <strong>백포트로 억제된 취약점</strong>

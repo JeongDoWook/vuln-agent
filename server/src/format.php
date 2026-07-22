@@ -196,7 +196,7 @@ function vg_resource_cpu($sec): string {
 
 /**
  * 리소스 사용률(%) 셀 — 호스트 스펙(메모리 총량·CPU 코어수) 대비 퍼센트.
- *   대시보드 함대 카드 전용(host.php 는 절대치를 그대로 쓴다). 스펙 미수집 스캔은 null.
+ *   host.php 리소스 탭·대시보드 함대 카드 양쪽에서 쓴다. 스펙 미수집 스캔은 null.
  */
 function vg_resource_pct(?float $pct): string {
     if ($pct === null) { return '<span class="why">–</span>'; }
