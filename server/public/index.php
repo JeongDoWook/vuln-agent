@@ -401,7 +401,7 @@ vg_header('대시보드', 'dashboard');
     <span class="why">— 이 에이전트를 설치해도 서버에 부담이 거의 없다는 걸 함대 전체로 보여준다(호스트 스펙 대비 %,
       스펙 정보가 아직 없는 호스트는 제외됩니다)</span>
     <div class="card__body">
-      <div class="cards cards--grid">
+      <div class="cards cards--grid-2">
         <div class="kpi">
           <b><?= vg_resource_pct($resKpi['avg_mem_pct'] !== null ? (float) $resKpi['avg_mem_pct'] : null) ?></b>
           <span>평균 메모리 사용률 · 최신 스캔</span>

@@ -542,6 +542,14 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
  * 건드리지 않고, 정렬이 필요한 줄에만 opt-in 하는 변형으로 둔다. */
 .cards--grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
 .cards--grid .kpi { min-width: 0; }
+/* auto-fit 은 항목 수가 한 행에 들어갈 최대 열보다 적으면 빈 트랙을 접고 그 여유폭을
+ * 남은 항목에 1fr 로 재분배한다 — 항목이 5~7개인 KPI 줄에선 열이 적당히 넓어지는 정도로
+ * 끝나지만, 항목이 2개뿐인 줄(에이전트 리소스 사용량)에 그대로 쓰면 칸 하나가 카드
+ * 절반 폭까지 늘어나 숫자가 왼쪽에 붕 뜬 모양이 된다. 항목 수가 고정인 줄은 실제
+ * 개수만큼 열을 못박고 상한폭을 둔다. */
+.cards--grid-2 { display: grid; grid-template-columns: repeat(2, minmax(9.5rem, 12rem)); }
+.cards--grid-2 .kpi { min-width: 0; }
+@media (max-width: 480px) { .cards--grid-2 { grid-template-columns: 1fr; } }
 .kpi {
   flex: 0 0 auto;          /* 늘리지 않는다 — 늘리면 값 하나에 카드가 화면을 가로지른다 */
   min-width: 116px;
@@ -740,11 +748,13 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 /* 가로 막대 순위 목록(OS 분포 · 취약 자산 TOP10) — 등급(심각도) 이 아니라 "누가 제일
  * 많은가" 순위라서 항목마다 색을 나누지 않는다(범주 색은 정체성 구분용 — 여기선 순위가
  * 이미 위치로 말한다). 막대는 하나의 강조색(--accent)만 쓰는 단일 계열 크기 인코딩. */
-/* 라벨열(9rem)·숫자열(3.6rem) 모두 고정폭 — OS 분포·취약 자산 TOP10 처럼 두 .hbar-list 가
+/* 라벨열(9rem)·숫자열(4rem) 모두 고정폭 — OS 분포·취약 자산 TOP10 처럼 두 .hbar-list 가
  * .split--even 으로 나란히 있을 때, 숫자열이 auto 면 카드마다 자릿수가 달라(예: "4" vs "2,921")
- * 막대 시작 위치가 서로 어긋나 보였다. 고정폭이면 내용과 무관하게 두 카드가 항상 맞는다. */
+ * 막대 시작 위치가 서로 어긋나 보였다. 고정폭이면 내용과 무관하게 두 카드가 항상 맞는다.
+ * 4rem 은 tabular-nums 6자리("999,999")까지 여유 있게 들어간다 — 그보다 더 길어지면
+ * .card 의 overflow-x:auto 로 가로 스크롤될 뿐 잘리지는 않는다. */
 .hbar-list { display: grid; gap: .5rem; margin-top: .5rem; }
-.hbar-list__row { display: grid; grid-template-columns: minmax(0, 9rem) 1fr 3.6rem; align-items: center; gap: .6rem; font-size: .84rem; }
+.hbar-list__row { display: grid; grid-template-columns: minmax(0, 9rem) 1fr 4rem; align-items: center; gap: .6rem; font-size: .84rem; }
 .hbar-list__label { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hbar-list__track { height: 8px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
 .hbar-list__track i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
