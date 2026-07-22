@@ -36,7 +36,8 @@ const VG_CVE_VENDOR_SRC = [
         'cve'   => 'cve_id',
         'soft'  => true,
         'cols'  => "'debtracker' AS src, 'debian' AS vendor, release_codename AS rel, pkg_name AS pkg,"
-                 . " fixed_version AS fixed, IF(has_fix = 1, '수정본 있음', '수정본 없음') AS state",
+                 . " fixed_version AS fixed, IF(has_fix = 1, '수정본 있음', '수정본 없음') AS state,"
+                 . " other_versions AS extra1, is_binary AS extra2",
     ],
     'rhoval' => [
         'label' => 'RHEL 계열 벤더 권고(OVAL)',
@@ -44,7 +45,7 @@ const VG_CVE_VENDOR_SRC = [
         'cve'   => 'cve_id',
         'soft'  => true,
         'cols'  => "'rhoval' AS src, vendor, release_major AS rel, pkg_name AS pkg,"
-                 . " fixed_evr AS fixed, severity AS state",
+                 . " fixed_evr AS fixed, severity AS state, advisory AS extra1, NULL AS extra2",
     ],
     'rhunfixed' => [
         'label' => 'Red Hat 미수정 CVE(조치 불가)',
@@ -52,7 +53,7 @@ const VG_CVE_VENDOR_SRC = [
         'cve'   => 'cve_id',
         'soft'  => true,
         'cols'  => "'rhunfixed' AS src, vendor, release_major AS rel, component AS pkg,"
-                 . " NULL AS fixed, fix_state AS state",
+                 . " NULL AS fixed, fix_state AS state, cvss AS extra1, checked_at AS extra2",
     ],
     'ubuntuoval' => [
         'label' => '우분투 보안 OVAL',
@@ -60,7 +61,7 @@ const VG_CVE_VENDOR_SRC = [
         'cve'   => 'cve_id',
         'soft'  => true,
         'cols'  => "'ubuntuoval' AS src, 'ubuntu' AS vendor, release_codename AS rel, pkg_name AS pkg,"
-                 . " fixed_evr AS fixed, severity AS state",
+                 . " fixed_evr AS fixed, severity AS state, NULL AS extra1, NULL AS extra2",
     ],
     'kcve' => [
         'label' => '리눅스 커널 CNA(kernel.org)',
@@ -68,7 +69,7 @@ const VG_CVE_VENDOR_SRC = [
         'cve'   => 'f.cve_id',
         'soft'  => false,   // 커널 두 테이블엔 소프트삭제 컬럼이 없다(vendor.php 와 같은 확인 사항).
         'cols'  => "'kcve' AS src, 'kernel' AS vendor, f.stream AS rel, 'linux' AS pkg,"
-                 . " f.fixed_version AS fixed, k.mainline_fixed AS state",
+                 . " f.fixed_version AS fixed, k.mainline_fixed AS state, NULL AS extra1, NULL AS extra2",
     ],
 ];
 
@@ -363,12 +364,38 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
                 1 => fn($r) => vg_h((string) $r['vendor']) . '<span class="why">/</span>' . vg_h((string) $r['rel']),
                 2 => fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['pkg']) . '">'
                              . vg_trunc((string) $r['pkg'], 32) . '</a>',
-                3 => function ($r) {
-                    if (!empty($r['fixed'])) {
-                        return '<span class="pill">' . vg_h((string) $r['fixed']) . ' 이상</span>';
+                3 => function ($r) use ($cveId) {
+                    // vendor.php 와 같은 벤더 링크·툴팁 규칙(작업 1·2) — 한쪽만 반영되면 사용자가 헷갈린다.
+                    $src = (string) $r['src'];
+                    $tipParts = [];
+                    if ($src === 'debtracker') {
+                        $tipParts[] = ((int) $r['extra2']) === 1 ? '바이너리 패키지' : '소스 패키지';
+                        $ov = trim((string) ($r['extra1'] ?? ''));
+                        if ($ov !== '') { $tipParts[] = '예외 버전 ' . $ov; }
+                    } elseif ($src === 'rhunfixed') {
+                        $cvss = trim((string) ($r['extra1'] ?? ''));
+                        if ($cvss !== '') { $tipParts[] = 'CVSS ' . $cvss; }
+                        $checkedAt = trim((string) ($r['extra2'] ?? ''));
+                        if ($checkedAt !== '') { $tipParts[] = '확인일 ' . substr($checkedAt, 0, 10); }
                     }
-                    $state = trim((string) ($r['state'] ?? ''));
-                    return $state !== '' ? '<span class="why">' . vg_h($state) . '</span>' : '<span class="why">–</span>';
+                    $tipAttr = $tipParts ? ' title="' . vg_h(implode(' · ', $tipParts)) . '"' : '';
+
+                    if (!empty($r['fixed'])) {
+                        $body = '<span class="pill"' . $tipAttr . '>' . vg_h((string) $r['fixed']) . ' 이상</span>';
+                    } else {
+                        $state = trim((string) ($r['state'] ?? ''));
+                        $body = $state !== ''
+                            ? '<span class="why"' . $tipAttr . '>' . vg_h($state) . '</span>'
+                            : '<span class="why">–</span>';
+                    }
+
+                    $link = $src === 'rhoval'
+                        ? vg_vendor_advisory_url((string) $r['vendor'], (string) ($r['extra1'] ?? ''), (string) $r['rel'])
+                        : (in_array($src, ['debtracker', 'ubuntuoval', 'rhunfixed'], true) ? vg_vendor_cve_url($src, $cveId) : null);
+                    if ($link !== null) {
+                        $body .= ' <a class="why" href="' . vg_h($link) . '" target="_blank" rel="noopener">원문 ↗</a>';
+                    }
+                    return $body;
                 },
             ],
         ]
