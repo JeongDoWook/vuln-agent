@@ -12,11 +12,13 @@ vg_require_menu('dashboard');
 
 // "대응 우선순위" 에 보여줄 최대 건수. 나머지는 취약점 현황으로 넘긴다.
 const VG_URGENT_TOP = 6;
+// 취약점 위험 추이 카드 — 최근 며칠치를 볼지.
+const VG_RISK_TREND_DAYS = 14;
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
 $kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
-$delta = []; $osDist = []; $topHosts = [];
+$delta = []; $osDist = []; $topHosts = []; $riskTrend = [];
 $resKpi = null;
 $page = vg_page();
 $perPage = vg_perpage();
@@ -112,6 +114,61 @@ try {
           LIMIT 10"
     )->fetchAll();
 
+    /* 취약점 위험 추이 — "지금 몇 건" 보다 "나아지는 중인가" 를 한눈에 보여주는 상단 카드.
+     * 스캔은 "값이 바뀔 때만" 저장돼(feat/change-tracking) 호스트별로 날짜가 듬성듬성하다.
+     * 그날 도착한 스캔만 보면 그날 스캔 안 한 호스트가 빠져 표본이 흔들리므로, $weekAgoScans 와
+     * 같은 이월(carry-forward) 아이디어를 날짜별 시계열로 확장한다 — 그날 기준 각 호스트의
+     * 가장 최근 스캔 값을 이어 쓰고, 그 값들을 합산한다. 가중치(CRITICAL×N 등)는 만들지 않는다 —
+     * CRITICAL+HIGH 단순 합계로 시작(YAGNI).
+     */
+    $riskStart = date('Y-m-d', strtotime('-' . (VG_RISK_TREND_DAYS - 1) . ' days'));
+
+    // 시드 — 관찰 기간 시작 이전, 호스트별 가장 최근 스캔 1건.
+    $riskSeedRows = $pdo->query(
+        "SELECT host_id, id AS scan_id FROM (
+            SELECT s.host_id, s.id,
+                   ROW_NUMBER() OVER (PARTITION BY s.host_id ORDER BY s.collected_at DESC) rn
+              FROM tb_scans s
+              JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+             WHERE s.is_deleted = 0 AND s.collected_at < '$riskStart'
+         ) seed WHERE rn = 1"
+    )->fetchAll();
+
+    // 본 구간 — 관찰 기간의 스캔 전부(oldest→newest). "최근 N일" 라벨과 맞추려고 (N-1)일 전부터
+    // 오늘까지로 잡는다(DATE_SUB(...,N DAY) 는 N+1일치가 걸린다).
+    $riskRangeRows = $pdo->query(
+        "SELECT s.host_id, DATE(s.collected_at) AS d, s.id AS scan_id
+           FROM tb_scans s
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+          WHERE s.is_deleted = 0 AND s.collected_at >= '$riskStart'
+          ORDER BY s.collected_at ASC"
+    )->fetchAll();
+    $riskRangeByDay = [];
+    foreach ($riskRangeRows as $r) { $riskRangeByDay[$r['d']][] = $r; }
+
+    // 위 두 조회에 등장한 scan_id 전부의 심각도 카운트를 한 번에 가져온다(N+1 방지).
+    $riskScanIds = array_merge(
+        array_map(fn($r) => (int) $r['scan_id'], $riskSeedRows),
+        array_map(fn($r) => (int) $r['scan_id'], $riskRangeRows)
+    );
+    $riskSevByScan = vg_sev_by_scan_ids($pdo, $riskScanIds);
+    $riskScore = static fn(int $scanId): int =>
+        (int) ($riskSevByScan[$scanId]['CRITICAL'] ?? 0) + (int) ($riskSevByScan[$scanId]['HIGH'] ?? 0);
+
+    $riskKnown = [];
+    foreach ($riskSeedRows as $r) { $riskKnown[(int) $r['host_id']] = $riskScore((int) $r['scan_id']); }
+
+    $riskToday = date('Y-m-d');
+    for ($d = $riskStart; $d <= $riskToday; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
+        foreach ($riskRangeByDay[$d] ?? [] as $r) {
+            $riskKnown[(int) $r['host_id']] = $riskScore((int) $r['scan_id']);
+        }
+        // 아직 한 번도 안 보인 호스트는 값이 없으니 그날 집계에서 제외한다.
+        if ($riskKnown) {
+            $riskTrend[] = ['collected_at' => $d, 'risk_score' => array_sum($riskKnown)];
+        }
+    }
+
     /* 에이전트 리소스 사용량 — "설치해도 서버 부담이 거의 없다" 를 함대 전체로 보여주는 카드.
      * 전 호스트 최신 스캔 기준 평균(구버전 에이전트의 NULL 은 AVG() 가 자동으로 뺀다) — 호스트당 1건 가중.
      */
@@ -196,6 +253,14 @@ vg_header('대시보드', 'dashboard');
   <div class="sub">다음 수집 예정 · <strong><?= vg_h((string) $nextFeed['next_run_at']) ?></strong>
     <span class="why"><?= vg_h($rel) ?> · <?= vg_h($nextFeed['name']) ?> (<?= vg_h(strtoupper((string) $nextFeed['connector_type'])) ?>)</span></div>
   <?php endif; ?>
+
+  <div class="card">
+    <strong>취약점 위험 추이</strong>
+    <span class="why">— 전 호스트 최신 스캔 기준 CRITICAL+HIGH 합계(이월 적용) · 최근 <?= VG_RISK_TREND_DAYS ?>일</span>
+    <div class="card__body">
+      <?php vg_resource_trend($riskTrend, 'risk_score', '건', 0, 'crit'); ?>
+    </div>
+  </div>
 
   <div class="cards cards--grid">
     <div class="kpi"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>

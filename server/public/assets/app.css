@@ -590,6 +590,17 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 /* 숫자는 톤 색으로, 라벨은 항상 차분하게 — 라벨까지 물들면 다시 균일해진다 */
 .kpi[class*="tone-"] b { color: inherit; }
 
+/* 대시보드 KPI 줄(index.php 의 .cards--grid, 다른 화면은 안 씀)만 배경 틴트를 뺀다 —
+ * 카드 4개가 나란히 배경색을 켜면 화면이 산만하다. 숫자·테두리 톤은 유지해 등급 구분은 남긴다.
+ * findings.php/assets.php/changes.php 의 필터용 .kpi.tone-*(is-selected 포함)는 .cards--grid 를
+ * 안 쓰므로 이 규칙의 영향을 안 받는다 — 전역 .kpi.tone-* 는 그대로 둔다. */
+.cards--grid .kpi.tone-crit,
+.cards--grid .kpi.tone-high,
+.cards--grid .kpi.tone-med,
+.cards--grid .kpi.tone-low {
+  background: var(--surface);
+}
+
 /* --- 자산 상세: 히어로(식별 + 최고 위험도) + 섹션 탭 ---------------------- */
 .hero {
   display: flex;
@@ -729,13 +740,15 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .chart__lbl--start { text-anchor: start; }
 .chart__lbl--end   { text-anchor: end; }
 
-/* 리소스(메모리/CPU) 라인차트(host.php) — 위 눈금 위에 선+포인트만 얹는다. */
+/* 리소스(메모리/CPU) 라인차트(host.php) · 위험 추이(index.php) — 위 눈금 위에 선+포인트만 얹는다. */
 .chart__line { fill: none; stroke-width: 2; }
 .chart__line.tone-mem { stroke: var(--accent); }
 .chart__line.tone-cpu { stroke: var(--high); }
+.chart__line.tone-crit { stroke: var(--crit); }
 .chart__pt { fill: var(--surface); stroke-width: 2; }
 .chart__pt.tone-mem { stroke: var(--accent); }
 .chart__pt.tone-cpu { stroke: var(--high); }
+.chart__pt.tone-crit { stroke: var(--crit); }
 
 /* 심각도 구성 막대(가로 누적) — 표의 한 행에서 "누가 더 나쁜지" 를 눈으로 보게 한다.
  * 폭은 PHP 가 인라인 style="width:N%" 로 준다(값이라서 CSS 가 가질 수 없다). */
@@ -880,8 +893,9 @@ tbody tr.sev-high td:first-child { border-left-color: var(--high); }
 tbody tr.sev-med  td:first-child { border-left-color: var(--med); }
 tbody tr.sev-low  td:first-child { border-left-color: var(--low); }
 
-tbody tr.sev-crit { background: rgb(229 72 77 / .06); }
-tbody tr.sev-high { background: rgb(240 136 62 / .05); }
+/* HIGH 는 왼쪽 띠만으로 등급을 표시한다(배경 틴트는 뺐다) — CRITICAL 행 하나에
+ * 띠+배경+KEV뱃지+기한초과뱃지까지 색이 겹치는 걸 줄인다. CRITICAL 배경은 남기되 더 옅게. */
+tbody tr.sev-crit { background: rgb(229 72 77 / .035); }
 
 /* hover 는 등급 배경보다 우선 — 어느 행에 커서가 있는지가 항상 먼저 읽혀야 한다 */
 tbody tr:hover,
