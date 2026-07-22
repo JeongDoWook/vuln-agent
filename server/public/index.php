@@ -10,7 +10,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('dashboard');
 
-// "지금 급한 것" 에 보여줄 최대 건수. 나머지는 취약점 현황으로 넘긴다.
+// "대응 우선순위" 에 보여줄 최대 건수. 나머지는 취약점 현황으로 넘긴다.
 const VG_URGENT_TOP = 6;
 // 에이전트 리소스 사용량 카드의 함대 평균 추이 — 최근 며칠치를 볼지.
 const VG_RESOURCE_TREND_DAYS = 7;
@@ -48,9 +48,9 @@ try {
     )->fetchAll();
     foreach ($totalsRows as $f) { if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; } }
 
-    /* "지금 급한 것" — 대시보드에 없던, 정작 제일 필요한 답.
+    /* "대응 우선순위" — 대시보드에 없던, 정작 제일 필요한 답.
      *
-     * 급함의 정의(순서대로):
+     * 우선순위 산정 기준(순서대로):
      *   1) KEV 패치 기한이 지났다      — CISA 가 정한 기한. 유일하게 "언제까지" 가 있는 신호다.
      *   2) 악용이 확인됐고(KEV) 외부에 노출돼 있다
      *   3) 그 외 등급순
@@ -313,7 +313,7 @@ vg_header('대시보드', 'dashboard');
         </div>
         <?php /* 예전엔 이 두 값이 상단 KPI 줄에 점선 카드(kpi--static)로 있었는데, 링크형
          * 카드들 사이에서 톤이 안 맞아 붕 떠 보였다. 필터가 없는 "집계 전용" 값이라
-         * 여기(도넛 카드 바닥)가 오히려 제자리 — 옆 "지금 급한 것" 카드와 높이를 맞추며
+         * 여기(도넛 카드 바닥)가 오히려 제자리 — 옆 "대응 우선순위" 카드와 높이를 맞추며
          * 생기는 여백도 이걸로 채운다. */ ?>
         <div class="donut-foot">
           <?= vg_badge('KEV 악용확인 ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok', '집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다') ?>
@@ -323,8 +323,8 @@ vg_header('대시보드', 'dashboard');
     </div>
 
     <div class="card">
-      <strong>지금 급한 것</strong>
-      <span class="why">— 패치 기한이 지났거나, 악용이 확인됐는데 외부에 노출된 것부터</span>
+      <strong>대응 우선순위</strong>
+      <span class="why">— 패치 기한 초과 또는 악용 확인 + 외부 노출 자산부터</span>
       <?php if ($urgentTotal > count($urgent)): ?>
         <span class="why">· 총 <?= number_format($urgentTotal) ?>건 중 상위 <?= count($urgent) ?>건 ·
           <a href="/findings.php?st=EXTERNAL">전체 보기 →</a></span>
@@ -337,7 +337,7 @@ vg_header('대시보드', 'dashboard');
               ['label' => 'CVE', 'width' => '13rem', 'nowrap' => true],
               ['label' => '호스트'],
               ['label' => '패키지'],
-              ['label' => '왜 급한가', 'width' => '15rem'],
+              ['label' => '우선순위 사유', 'width' => '15rem'],
           ],
           $urgent,
           [
@@ -358,7 +358,7 @@ vg_header('대시보드', 'dashboard');
                   },
                   2 => fn($u) => '<a href="/host.php?id=' . (int) $u['host_id'] . '">' . vg_h((string) $u['fqdn']) . '</a>',
                   3 => fn($u) => vg_h((string) $u['package_name']),
-                  // "왜 급한가" — 기한 초과가 최우선, 그다음이 악용확인+외부노출.
+                  // "우선순위 사유" — 기한 초과가 최우선, 그다음이 악용확인+외부노출.
                   4 => function ($u) {
                       $over = $u['days_over'] !== null ? (int) $u['days_over'] : null;
                       if ($over !== null && $over > 0) {
@@ -398,8 +398,7 @@ vg_header('대시보드', 'dashboard');
 
   <div class="card">
     <strong>에이전트 리소스 사용량</strong>
-    <span class="why">— 이 에이전트를 설치해도 서버에 부담이 거의 없다는 걸 함대 전체로 보여준다(호스트 스펙 대비 %,
-      스펙 정보가 아직 없는 호스트는 제외됩니다)</span>
+    <span class="why">— 호스트 스펙 대비 사용률(%) · 스펙 미확인 호스트 제외</span>
     <div class="card__body">
       <div class="cards cards--grid-2">
         <div class="kpi">

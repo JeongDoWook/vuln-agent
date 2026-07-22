@@ -286,7 +286,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
   <?php if ($kev && !empty($kev['note'])): ?>
     <div class="card">
       <strong>CISA KEV</strong>
-      <span class="why">— 실제 악용이 확인된 취약점. 등재되면 우선순위가 최상단으로 올라간다</span>
+      <span class="why">— 실제 악용 확인 · 최우선 대응 대상</span>
       <div class="card__body">
         <p class="why prose"><?= vg_h((string) $kev['note']) ?></p>
       </div>
@@ -336,7 +336,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
 <section id="vendor">
   <div class="card">
     <strong>벤더 판정</strong>
-    <span class="why">— 배포판 벤더가 "이 CVE 를 고쳤나 · 고칠 수는 있나" 에 답한 원본(5개 소스)</span>
+    <span class="why">— 벤더별 패치 여부 원본(5개 소스)</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -381,7 +381,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
 <section id="affected">
   <div class="card">
     <strong>영향 패키지</strong>
-    <span class="why">— 피드가 알려준, 이 CVE 가 적용되는 패키지와 수정 버전(우리 환경 설치 여부와 무관한 전역 범위)</span>
+    <span class="why">— 이 CVE 의 전역 영향 범위(설치 여부 무관)</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -414,7 +414,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
 <section id="locations">
   <div class="card">
     <strong>이 CVE 가 발견된 위치</strong>
-    <span class="why">— 우리 환경에서 실제로 발견된 위치(호스트별 최신 스캔 기준). 위 영향 패키지와 달리 설치 여부가 확인된 것만 나온다</span>
+    <span class="why">— 실제 설치 확인된 위치(호스트별 최신 스캔 기준)</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -458,7 +458,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
 <section id="references">
   <div class="card">
     <strong>참조 자료</strong>
-    <span class="why">— 원본·벤더 패치·공지 링크. 쌓지 않고 원본으로 내보낸다</span>
+    <span class="why">— 원본·벤더 패치·공지 링크</span>
     <div class="card__body">
       <div class="links">
         <a href="https://nvd.nist.gov/vuln/detail/<?= urlencode($cveId) ?>" target="_blank" rel="noopener">NVD</a>

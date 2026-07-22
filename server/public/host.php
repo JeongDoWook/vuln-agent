@@ -396,7 +396,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
 
     <div class="card mt-lg">
       <strong>재시작·재부팅 필요 <span class="hint">(<?= number_format($restartTotal) ?>건)</span></strong>
-      <span class="why">— 패치는 됐지만 옛 코드가 아직 돌고 있다. 등급이 낮게 잡혀도 놓치면 안 되는 부류다
+      <span class="why">— 패치 완료, 재시작 전까지 옛 코드 실행 중
         <?php if ($restartTotal > count($restartRows)): ?>
           · 상위 <?= count($restartRows) ?>건 ·
           <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>&amp;fx=restart">전체 보기 →</a>
@@ -482,7 +482,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php elseif ($tab === 'cce'): ?>
     <div class="card">
       <strong>보안 설정 점검 (CCE)</strong>
-      <span class="why">— 취약한 버전(CVE)이 아니라 잘못된 설정을 본다. NA 는 수집 못한 항목(비-root 실행 등)</span>
+      <span class="why">— 버전이 아닌 설정 점검 · NA=미수집</span>
       <div class="card__body">
       <?php
       // 결과 → 톤: FAIL 은 위험도색, PASS 는 low(초록), NA 는 muted.
@@ -546,7 +546,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php elseif ($tab === 'suppressed'): ?>
     <div class="card">
       <strong>백포트로 억제된 취약점</strong>
-      <span class="why">— 버전상 취약해 보였으나 배포판 changelog에 수정 기록(백포트)이 있어 실제 위험에서 제외한 건. 오탐 제거의 근거</span>
+      <span class="why">— 백포트로 이미 수정됨 · 오탐 제외 근거</span>
       <div class="card__body">
       <?php
       vg_table(
