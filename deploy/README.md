@@ -77,7 +77,8 @@ Caddy 루트는 10년짜리라 거의 바뀌지 않는다. `data`(caddy_data) �
 
 ```bash
 crontab -e
-# 3일에 1번, 새벽 4시
+# 대략 3일에 1번, 새벽 4시 (*/3 은 day-of-month 필드라 월 경계에서 리셋 — 정확히 72시간
+# 간격은 아니지만 "약 30일치 보관"이 목적이라 무방하다)
 0 4 */3 * * /apps/vulnagent/app/deploy/backup_db.sh >> /apps/vulnagent/backups/cron.log 2>&1
 ```
 

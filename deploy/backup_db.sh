@@ -7,6 +7,9 @@
 #
 # 설치: crontab -e 로 다음 줄 추가
 #   0 4 */3 * * /apps/vulnagent/app/deploy/backup_db.sh >> /apps/vulnagent/backups/cron.log 2>&1
+#   주의: */3 은 일(day-of-month) 필드라 매달 1일 기준 3,6,9…일에 돌고 월 경계에서 리셋된다
+#   (예: 30일 실행 후 다음은 다음 달 3일 — 정확히 72시간 간격은 아니다). "대략 3일 주기,
+#   약 30일치 보관"이 목적이라 무방하지만, 정확한 간격이 필요하면 systemd timer 를 쓴다.
 #
 # 로컬 dev 에서 시험하려면:
 #   DB_CONTAINER=vulnagent-db-dev BACKUP_DIR=/tmp/vg-backup-test bash deploy/backup_db.sh
@@ -16,6 +19,17 @@ set -euo pipefail
 DB_CONTAINER="${DB_CONTAINER:-vulnagent-db}"
 BACKUP_DIR="${BACKUP_DIR:-/apps/vulnagent/backups}"
 KEEP=10   # 3일 주기 기준 약 30일치 보관. vulnagent_*.sql.gz 패턴만 대상(수동 백업은 안 건드림).
+
+# ---------- 중복 실행 방지 (수동 실행과 cron 겹침 대비, agent/vuln-inventory-agent.sh 와 동일 패턴) ----------
+#   fd 열기 실패(sudo 등 일부 환경)를 flock 실패로 오탐하지 않도록, 열기 성공을 먼저 확인한다.
+LOCK="/tmp/.vulnagent-backup-db.lock"
+if command -v flock >/dev/null 2>&1; then
+  if exec 9>"$LOCK"; then
+    flock -n 9 || { echo ">> 이미 실행 중입니다. 종료합니다." >&2; exit 0; }
+  else
+    echo ">> 락 파일 열기 실패($LOCK) — 락 없이 진행합니다." >&2
+  fi
+fi
 
 mkdir -p "$BACKUP_DIR"
 LOG_FILE="$BACKUP_DIR/backup.log"
