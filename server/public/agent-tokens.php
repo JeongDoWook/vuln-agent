@@ -160,8 +160,8 @@ vg_header('에이전트 토큰', 'agenttokens');
               1 => fn($t) => vg_h((string) $t['label']),
               2 => fn($t) => '<code>' . vg_h((string) $t['token_prefix']) . '…</code>',
               3 => fn($t) => (int) $t['is_revoked'] === 1
-                  ? '<span class="why">폐기됨</span>'
-                  : '<strong>활성</strong>',
+                  ? vg_badge('폐기됨', 'muted')
+                  : vg_badge('활성', 'ok'),
               4 => fn($t) => $t['last_seen_at']
                   ? '<span class="why">' . vg_h((string) $t['last_seen_at']) . '</span>'
                   : '<span class="why">미수신</span>',

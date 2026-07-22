@@ -264,12 +264,12 @@ vg_header('벤더 판정', 'vendor');
                   'hint'  => 'CVE·패키지 모두 앞부분만 일치합니다(openssl → openssl-libs). 소스·릴리스 조합도 확인해 보세요.',
                   'cta'   => ['href' => '/vendor.php', 'label' => '필터 초기화'],
               ]
-              : [
+              : array_filter([
                   'icon'  => '🏷️',
                   'title' => '아직 수집된 벤더 판정이 없습니다.',
                   'hint'  => '벤더 판정 커넥터 5종(데비안 트래커·RHEL OVAL·Red Hat 미수정·우분투 OVAL·커널 CNA)이 한 번은 돌아야 합니다.',
-                  'cta'   => ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'],
-              ],
+                  'cta'   => vg_connectors_empty_cta(),
+              ]),
           'cell' => [
               0 => function ($r) {
                   $d = VG_VENDOR_SRC[$r['src']] ?? null;

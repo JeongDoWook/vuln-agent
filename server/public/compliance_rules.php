@@ -111,12 +111,12 @@ vg_header('보안설정 룰셋', 'compliance');
                   'hint'  => '검색어나 심각도 필터를 확인해 보세요.',
                   'cta'   => ['href' => '/compliance_rules.php', 'label' => '필터 초기화'],
               ]
-              : [
+              : array_filter([
                   'icon'  => '📋',
                   'title' => '아직 수집된 보안설정 룰이 없습니다.',
                   'hint'  => 'SSG(SCAP Security Guide) 커넥터가 한 번은 돌아야 합니다.',
-                  'cta'   => ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'],
-              ],
+                  'cta'   => vg_connectors_empty_cta(),
+              ]),
           'cell' => [
               0 => fn($r) => '<code class="why">' . vg_h((string) $r['rule_id']) . '</code>',
               1 => fn($r) => vg_h((string) $r['title']),

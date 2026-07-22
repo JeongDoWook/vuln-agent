@@ -99,12 +99,12 @@ vg_header('국내 보안공지', 'advisories');
                   'hint'  => '제목·CVE·본문을 모두 검색합니다. 다른 검색어를 써 보세요.',
                   'cta'   => ['href' => '/advisories.php', 'label' => '검색 초기화'],
               ]
-              : [
+              : array_filter([
                   'icon'  => '🇰🇷',
                   'title' => '아직 수집된 공지가 없습니다.',
                   'hint'  => 'KISA 보안공지 커넥터를 실행하면 여기에 쌓입니다.',
-                  'cta'   => ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'],
-              ],
+                  'cta'   => vg_connectors_empty_cta(),
+              ]),
           'cell' => [
               0 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
               // 제목을 누르면 상세로. 원문은 상세 안의 [원문 열기] 버튼에서 연다.

@@ -349,6 +349,11 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
         $vendorRows,
         [
             'card' => false,
+            'empty' => [
+                'icon'  => '🏷️',
+                'title' => '이 페이지에 표시할 벤더 판정이 없습니다.',
+                'hint'  => '앞 페이지로 돌아가 보세요.',
+            ],
             'cell' => [
                 0 => function ($r) {
                     $d = VG_CVE_VENDOR_SRC[$r['src']] ?? null;

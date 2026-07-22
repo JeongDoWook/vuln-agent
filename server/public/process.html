@@ -5,10 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vuln-agent · 전체 프로세스</title>
 <style>
+  /* 색 토큰은 app.css(로그인 후 화면)의 라이트 테마 값과 맞춘다 — 소개 페이지만 다른
+   * 팔레트를 쓰면 로그인 전/후 인상이 갈린다(같은 앱처럼 안 보인다). */
   :root{
-    --bg:#f6f8fa; --card:#fff; --ink:#1f2328; --muted:#636c76; --line:#d0d7de;
-    --blue:#1f6feb; --green:#1a7f37; --purple:#8250df; --orange:#bc4c00;
-    --crit:#cf222e; --high:#bc4c00; --med:#9a6700; --low:#6e7781;
+    --bg:#f3f5f8; --card:#fff; --ink:#1b2430; --muted:#697588; --line:#e4e8ee;
+    --blue:#2f6fed; --green:#1f9d47; --purple:#7b52dd; --orange:#e07b1a;
+    --crit:#e5484d; --high:#e07b1a; --med:#d19a06; --low:#5580b4;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);

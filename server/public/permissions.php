@@ -78,7 +78,7 @@ vg_header('권한설정', 'permissions');
         <?php foreach ($menus as $code => $label): ?>
           <tr>
             <td><strong><?= vg_h($label) ?></strong> <code><?= vg_h($code) ?></code></td>
-            <td title="관리자는 항상 전체 허용"><span class="pill">✔ 항상</span></td>
+            <td title="관리자는 항상 전체 허용"><?= vg_badge('✔ 항상', 'ok') ?></td>
             <?php foreach (VG_PERM_ROLES as $role): ?>
               <td class="col-role">
                 <label>

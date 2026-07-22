@@ -113,12 +113,12 @@ vg_header('영향 패키지', 'packages');
                   'hint'  => '패키지명 검색어나 배포판 필터를 바꿔 보세요.',
                   'cta'   => ['href' => '/packages.php', 'label' => '필터 초기화'],
               ]
-              : [
+              : array_filter([
                   'icon'  => '📦',
                   'title' => '아직 수집된 패키지가 없습니다.',
                   'hint'  => 'OSV 커넥터가 스캔된 패키지를 조회해야 이 매핑이 만들어집니다.',
-                  'cta'   => ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'],
-              ],
+                  'cta'   => vg_connectors_empty_cta(),
+              ]),
           'cell' => [
               // 패키지명 → 취약점 현황에서 그 패키지만 검색
               0 => fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['package_name']) . '">'

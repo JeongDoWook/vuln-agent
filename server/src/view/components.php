@@ -155,6 +155,16 @@ function vg_empty($spec): void {
 }
 
 /**
+ * "아직 수집된 데이터 없음" 빈 상태의 CTA — 피드 커넥터 화면으로 안내한다.
+ *   connectors 메뉴 권한이 없는 역할(기본 'user')에겐 눌러도 403 인 링크를 주지 않도록
+ *   null 을 돌려준다(vg_empty 는 'cta' 가 없으면 버튼을 그리지 않는다).
+ *   cves.php/advisories.php/compliance_rules.php/packages.php/vendor.php 가 공유한다.
+ */
+function vg_connectors_empty_cta(): ?array {
+    return vg_can('connectors') ? ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'] : null;
+}
+
+/**
  * 상세 페이지 히어로 — "무엇을 보고 있나(좌) + 얼마나 위험한가(우)".
  * 왼쪽 띠 색이 위험도다. host.php 가 인라인으로 갖고 있던 것을 공용으로 뺐다.
  *   $title·$meta 는 이미 이스케이프된 HTML (호출부가 vg_h 책임 — 링크·뱃지를 섞어 넣어야 해서).
