@@ -93,7 +93,10 @@ vg_header('감사로그', 'activity');
       ['label' => '로그인 실패', 'width' => '90px', 'align' => 'right'],
       ['label' => '잠금 상태',   'width' => '140px', 'nowrap' => true],
   ], $accessRows, [
-      'empty' => '등록된 사용자가 없습니다.',
+      'empty' => [
+          'icon'  => '👤',
+          'title' => '등록된 사용자가 없습니다.',
+      ],
       'cell' => [
           0 => static fn (array $u): string => '<strong>' . vg_h((string) $u['username']) . '</strong>',
           1 => static fn (array $u): string => '<span class="pill">' . vg_h(vg_role_label((string) $u['role'])) . '</span>',

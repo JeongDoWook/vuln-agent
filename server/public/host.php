@@ -273,7 +273,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif (!$host): ?>
-  <div class="card"><div class="empty">호스트를 찾을 수 없습니다. <a href="/">← 대시보드</a></div></div>
+  <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '호스트를 찾을 수 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif (!$scan): ?>
   <h1>🖥️ <?= vg_h($host['fqdn']) ?></h1>
   <div class="sub">
@@ -281,7 +281,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     <?php if (vg_can('assets')): ?><a href="/assets.php">자산관리</a> · <?php endif; ?>
     <?= vg_h(trim($host['os_id'] . ' ' . $host['os_version'])) ?>
   </div>
-  <div class="card"><div class="empty">아직 수집된 스캔이 없습니다.</div></div>
+  <div class="card"><?php vg_empty(['icon' => '📭', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
     $worst = null;
@@ -432,7 +432,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           $exposures,
           [
               'card' => false,
-              'empty' => '리스닝 소켓 없음(외부 노출면 없음).',
+              'empty' => [
+                  'icon'  => '✅',
+                  'title' => '리스닝 소켓이 없습니다.',
+                  'hint'  => '외부에 노출된 포트가 없습니다.',
+              ],
               'cell' => [
                   0 => fn($e) => vg_badge(vg_scope_label((string) $e['scope']), $scopeTone[$e['scope']] ?? 'muted'),
                   1 => fn($e) => $e['ctr'] !== ''
@@ -463,7 +467,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           $rows,
           [
               'card' => false,
-              'empty' => '실행 프로세스 데이터 없음(구버전 에이전트로 수집됨).',
+              'empty' => [
+                  'icon'  => '🗂️',
+                  'title' => '실행 프로세스 데이터가 없습니다.',
+                  'hint'  => '구버전 에이전트로 수집된 스캔입니다.',
+              ],
               'cell' => [
                   0 => fn($pr) => '<span class="why">' . (int) $pr['pid'] . '</span>',
                   1 => fn($pr) => $pr['ctr'] !== ''
@@ -528,7 +536,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           $rows,
           [
               'card' => false,
-              'empty' => 'CCE 점검 데이터 없음(구버전 에이전트 또는 security/users 미수집).',
+              'empty' => [
+                  'icon'  => '🗂️',
+                  'title' => 'CCE 점검 데이터가 없습니다.',
+                  'hint'  => '구버전 에이전트 또는 security/users 미수집입니다.',
+              ],
               'cell' => [
                   'result' => $cceBadge,
                   'code'   => fn($r) => '<code>' . vg_h($r['code']) . '</code>',
@@ -559,7 +571,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           $rows,
           [
               'card' => false,
-              'empty' => '억제된 취약점 없음.',
+              'empty' => [
+                  'icon'  => '✅',
+                  'title' => '억제된 취약점이 없습니다.',
+                  'hint'  => '백포트로 억제 처리된 항목이 없습니다.',
+              ],
               'row_class' => fn($r) => vg_sev_row((string) $r['base_severity']),
               'cell' => [
                   'base_severity' => fn($r) => vg_sev_badge((string) $r['base_severity'])
@@ -612,7 +628,10 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           $rows,
           [
               'card' => false,
-              'empty' => '스캔 이력이 없습니다.',
+              'empty' => [
+                  'icon'  => '🕘',
+                  'title' => '스캔 이력이 없습니다.',
+              ],
               'cell' => [
                   'id'             => fn($s) => '<a href="/findings.php?scan_id=' . (int) $s['id'] . '">#' . (int) $s['id'] . '</a>',
                   'collected_at'   => fn($s) => vg_h($s['collected_at']),

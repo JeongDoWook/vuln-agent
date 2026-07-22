@@ -87,6 +87,10 @@ vg_header('사용자', 'users');
       ],
       $users,
       [
+          'empty' => [
+              'icon'  => '👤',
+              'title' => '등록된 사용자가 없습니다.',
+          ],
           'cell' => [
               0 => fn($u) => vg_h((string) $u['id']),
               1 => function ($u) use ($meId) {

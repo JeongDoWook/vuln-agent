@@ -165,7 +165,19 @@ vg_header('CVE 목록', 'cves');
 
   <?php
   $hasFilter = $q !== '' || $sev !== '' || $kev !== '' || $eTop !== '' || $year !== '';
-  $emptyMsg = $hasFilter ? '조건에 맞는 CVE가 없습니다.' : '아직 수집된 CVE가 없습니다. 피드 커넥터를 실행하세요.';
+  $emptySpec = $hasFilter
+      ? [
+          'icon'  => '🔍',
+          'title' => '조건에 맞는 CVE가 없습니다.',
+          'hint'  => '검색어나 등급·연도 필터를 바꿔 보세요.',
+          'cta'   => ['href' => '/cves.php', 'label' => '필터 초기화'],
+      ]
+      : [
+          'icon'  => '📭',
+          'title' => '아직 수집된 CVE가 없습니다.',
+          'hint'  => '피드 커넥터가 한 번은 돌아야 합니다.',
+          'cta'   => ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'],
+      ];
   vg_table(
       [
           ['label' => 'CVE', 'width' => '13rem', 'nowrap' => true],
@@ -177,7 +189,7 @@ vg_header('CVE 목록', 'cves');
       ],
       $rows,
       [
-          'empty' => $emptyMsg,
+          'empty' => $emptySpec,
           // 이 표엔 severity 컬럼이 없다 — CVSS 점수에서 등급을 파생시킨다(vg_cvss_sev 는 소문자를 준다).
           'row_class' => fn($r) => vg_sev_row(strtoupper(vg_cvss_sev($r['cvss'] === null ? null : (string) $r['cvss']))),
           'cell' => [

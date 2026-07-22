@@ -88,7 +88,13 @@ $csrf = vg_csrf_token();
 vg_header($user['username'] ?? '사용자', 'users');
 ?>
 <?php if (!$user): ?>
-  <div class="card"><div class="empty">사용자를 찾을 수 없습니다. <a href="/users.php">← 사용자 목록</a></div></div>
+  <div class="card">
+    <?php vg_empty([
+        'icon'  => '📭',
+        'title' => '사용자를 찾을 수 없습니다.',
+        'cta'   => ['href' => '/users.php', 'label' => '← 사용자 목록'],
+    ]); ?>
+  </div>
 <?php else:
     $isSelf = $id === $meId;
 ?>
