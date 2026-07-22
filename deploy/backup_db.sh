@@ -23,6 +23,9 @@ STAMP="$(date +%Y%m%d_%H%M%S)"
 OUT_FILE="$BACKUP_DIR/vulnagent_${STAMP}.sql.gz"
 
 fail() {
+  # 중간에 실패하면 쓰다 만 손상된 .sql.gz 가 남아 다음 정리 로직이 이걸 "최신 백업"으로
+  # 착각해 보관할 수 있다 — 실패 시에는 반드시 지운다.
+  rm -f "$OUT_FILE"
   echo "$(date -Iseconds) FAIL $*" >> "$LOG_FILE"
   exit 1
 }
@@ -33,6 +36,7 @@ docker exec "$DB_CONTAINER" sh -c \
   'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysqldump --single-transaction --routines -uroot "$MYSQL_DATABASE"' \
   | gzip > "$OUT_FILE"
 
+chmod 600 "$OUT_FILE"   # DB 전체 덤프라 소유자만 읽게 제한
 SIZE=$(du -h "$OUT_FILE" | cut -f1)
 echo "$(date -Iseconds) OK size=$SIZE file=$(basename "$OUT_FILE")" >> "$LOG_FILE"
 
