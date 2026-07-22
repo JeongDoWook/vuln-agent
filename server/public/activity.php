@@ -25,12 +25,17 @@ try {
 
     // 사용자별 접속 현황 — tb_users 의 로그인 보안 컬럼(login_security 마이그레이션)을 그대로 노출.
     // session_token 은 만료 로직이 없어 "현재 접속중"으로 오인될 수 있어 화면에 안 보여준다(last_login 시각만).
-    $accessRows = $pdo->query(
-        "SELECT username, role, last_login, failed_login_count, locked_until
-           FROM tb_users
-          WHERE is_deleted = 0
-          ORDER BY last_login IS NULL, last_login DESC"
-    )->fetchAll();
+    // vg_can('activity') 는 tb_role_permissions 로 operator/user 에게도 위임될 수 있어(vg_require_menu 는
+    // "activity 메뉴 접근"만 보장) failed_login_count/locked_until(브루트포스 잠금 정보)은 그 게이트만으론
+    // admin 전용이 아니다 — 여기서 vg_has_role('admin') 을 추가로 확인해 진짜 admin 에게만 조회/렌더한다.
+    if (vg_has_role('admin')) {
+        $accessRows = $pdo->query(
+            "SELECT username, role, last_login, failed_login_count, locked_until
+               FROM tb_users
+              WHERE is_deleted = 0
+              ORDER BY last_login IS NULL, last_login DESC"
+        )->fetchAll();
+    }
 
     $scopes = $pdo->query(
         "SELECT DISTINCT scope FROM tb_activity_log WHERE is_deleted = 0 ORDER BY scope"
@@ -78,6 +83,7 @@ vg_header('감사로그', 'activity');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
+  <?php if (vg_has_role('admin')): ?>
   <h2>사용자별 접속 현황</h2>
   <?php
   vg_table([
@@ -104,6 +110,7 @@ vg_header('감사로그', 'activity');
       ],
   ]);
   ?>
+  <?php endif; ?>
 
   <?php vg_toolbar([
       ['type' => 'search', 'name' => 'q', 'placeholder' => '메시지/사용자/액션 검색', 'value' => $q],
