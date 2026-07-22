@@ -300,6 +300,43 @@ function vg_fix_cell(?string $fixedVersion, ?string $refUrlsJson, ?string $insta
 }
 
 /**
+ * 벤더 판정 advisory → 벤더 공식 권고 URL. 확신 가능한 두 벤더만(레드햇·알마리눅스) — vendor.php·
+ *   cve.php 가 공유한다(원본 지침: 한쪽만 링크되면 사용자가 헷갈린다).
+ *   AlmaLinux 는 OVAL 자체엔 ALSA 참조도 있지만 커넥터(feeds/rhoval.php)가 RHSA/ELSA 참조만
+ *   골라 저장한다 — 그래서 vendor='almalinux' 행도 advisory 값은 "RHSA-YYYY:NNNN" 이다.
+ *   실물 OVAL(org.almalinux.alsa-9.xml) 대조 결과 같은 정의 안에서 RHSA·ALSA 번호(연도:일련번호)는
+ *   1610건 전수 동일했다(AlmaLinux 가 RHEL 권고를 그대로 재빌드하며 번호를 유지) — 그래서 접두만
+ *   RHSA→ALSA 로 바꿔 재구성해도 안전하다. 확신 없는 패턴(Oracle ELSA 등)은 null.
+ */
+function vg_vendor_advisory_url(string $vendor, ?string $advisory, string $releaseMajor = ''): ?string {
+    $advisory = trim((string) $advisory);
+    if ($advisory === '') { return null; }
+    if ($vendor === 'redhat' && preg_match('/^RHSA-\d+:\d+$/i', $advisory)) {
+        return 'https://access.redhat.com/errata/' . rawurlencode($advisory);
+    }
+    if ($vendor === 'almalinux' && $releaseMajor !== '' && preg_match('/^RHSA-(\d+:\d+)$/i', $advisory, $m)) {
+        return 'https://errata.almalinux.org/' . rawurlencode($releaseMajor) . '/ALSA-' . str_replace(':', '-', $m[1]) . '.html';
+    }
+    return null;
+}
+
+/**
+ * 벤더 판정 소스 cve_id → 벤더 공식 CVE 페이지 URL. advisory 가 없는 소스(rhunfixed)이거나
+ *   패키지가 아니라 CVE 단위로 원문을 보여주는 소스(debtracker·ubuntuoval)만 해당.
+ *   kcve 는 마땅한 벤더 페이지가 없어 null(호출부가 링크 없이 텍스트만 보여준다).
+ */
+function vg_vendor_cve_url(string $src, string $cveId): ?string {
+    $cveId = trim($cveId);
+    if ($cveId === '' || !preg_match('/^CVE-\d{4}-\d+$/i', $cveId)) { return null; }
+    switch ($src) {
+        case 'rhunfixed':  return 'https://access.redhat.com/security/cve/' . rawurlencode($cveId);
+        case 'debtracker': return 'https://security-tracker.debian.org/tracker/' . rawurlencode($cveId);
+        case 'ubuntuoval': return 'https://ubuntu.com/security/' . rawurlencode($cveId);
+        default: return null;
+    }
+}
+
+/**
  * 도움말 툴팁. 본문에 늘어놓으면 화면이 무거워지는 부연설명을 아이콘 뒤로 보낸다.
  * 네이티브 title 을 쓴다 — 스크린리더도 읽고, JS 도 필요 없다.
  */

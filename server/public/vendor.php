@@ -43,7 +43,8 @@ const VG_VENDOR_SRC = [
         'soft'  => true,
         'cols'  => "'debtracker' AS src, 'debian' AS vendor, release_codename AS rel, pkg_name AS pkg,"
                  . " cve_id, fixed_version AS fixed,"
-                 . " IF(has_fix = 1, '수정본 있음', '수정본 없음') AS state, urgency AS note",
+                 . " IF(has_fix = 1, '수정본 있음', '수정본 없음') AS state, urgency AS note,"
+                 . " other_versions AS extra1, is_binary AS extra2",
     ],
     'rhoval' => [
         'label' => 'RHEL 계열 벤더 권고(OVAL)',
@@ -54,7 +55,8 @@ const VG_VENDOR_SRC = [
         'pkg'   => 'pkg_name',
         'soft'  => true,
         'cols'  => "'rhoval' AS src, vendor, release_major AS rel, pkg_name AS pkg,"
-                 . " cve_id, fixed_evr AS fixed, severity AS state, advisory AS note",
+                 . " cve_id, fixed_evr AS fixed, severity AS state, advisory AS note,"
+                 . " NULL AS extra1, NULL AS extra2",
     ],
     'rhunfixed' => [
         'label' => 'Red Hat 미수정 CVE(조치 불가)',
@@ -67,7 +69,8 @@ const VG_VENDOR_SRC = [
         'pkg'   => 'component',
         'soft'  => true,
         'cols'  => "'rhunfixed' AS src, vendor, release_major AS rel, component AS pkg,"
-                 . " cve_id, NULL AS fixed, fix_state AS state, severity AS note",
+                 . " cve_id, NULL AS fixed, fix_state AS state, severity AS note,"
+                 . " cvss AS extra1, checked_at AS extra2",
     ],
     'ubuntuoval' => [
         'label' => '우분투 보안 OVAL',
@@ -78,7 +81,8 @@ const VG_VENDOR_SRC = [
         'pkg'   => 'pkg_name',
         'soft'  => true,
         'cols'  => "'ubuntuoval' AS src, 'ubuntu' AS vendor, release_codename AS rel, pkg_name AS pkg,"
-                 . " cve_id, fixed_evr AS fixed, severity AS state, NULL AS note",
+                 . " cve_id, fixed_evr AS fixed, severity AS state, NULL AS note,"
+                 . " NULL AS extra1, NULL AS extra2",
     ],
     'kcve' => [
         'label' => '리눅스 커널 CNA(kernel.org)',
@@ -91,7 +95,8 @@ const VG_VENDOR_SRC = [
         'soft'  => false,   // 커널 두 테이블엔 소프트삭제 컬럼이 없다(스키마 확인함).
         'cols'  => "'kcve' AS src, 'kernel' AS vendor, f.stream AS rel, 'linux' AS pkg,"
                  . " f.cve_id AS cve_id, f.fixed_version AS fixed,"
-                 . " k.mainline_fixed AS state, k.introduced_version AS note",
+                 . " k.mainline_fixed AS state, k.introduced_version AS note,"
+                 . " NULL AS extra1, NULL AS extra2",
     ],
 ];
 
@@ -195,6 +200,17 @@ try {
     $stmt->execute($countParams);
     $total = (int) $stmt->fetchColumn();
 
+    // 소스별 요약 카드용 건수 — 무필터 진입 시 55만+ 행이 뒤섞여 막막한 문제의 진입점(작업 3).
+    //   src 선택과 무관하게 5종 전부 세되, q·rel 필터는 그대로 반영한다(N=5, COUNT 쿼리라 가볍다).
+    $srcCounts = [];
+    foreach (VG_VENDOR_SRC as $srcKey => $srcDef) {
+        $srcCountParams = [];
+        $srcWhere = vg_vendor_where($srcDef, $q, $rel, $srcCountParams);
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$srcDef['from']} WHERE $srcWhere");
+        $stmt->execute($srcCountParams);
+        $srcCounts[$srcKey] = (int) $stmt->fetchColumn();
+    }
+
     $offset = ($page - 1) * $perPage;
 
     // 갈래마다 **자기 LIMIT 을 먼저 건다.** UNION 결과를 통째로 만들어 놓고 바깥에서 정렬·자르면
@@ -235,6 +251,17 @@ vg_header('벤더 판정', 'vendor');
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php
+  // 소스별 진입점(작업 3) — 무필터로 들어왔을 때 5개 소스가 뒤섞인 채 페이지네이션만으로
+  //   넘겨야 하는 막막함을 줄인다. 필터 프리셋 탭(cves.php)과 같은 .tabs/.pill 을 그대로 쓴다.
+  echo '<div class="tabs">';
+  foreach (VG_VENDOR_SRC as $k => $d) {
+      $on = $src === $k;
+      echo '<a class="pill' . ($on ? ' pill--on' : '') . '" href="/vendor.php' . vg_qs(['src' => $k, 'page' => null])
+         . '" title="' . vg_h($d['desc']) . '">' . vg_h($d['label'])
+         . ' <span class="why">' . number_format($srcCounts[$k]) . '건</span></a>';
+  }
+  echo '</div>';
+
   $srcOptions = [];
   foreach (VG_VENDOR_SRC as $k => $d) { $srcOptions[$k] = $d['label']; }
   vg_toolbar([
@@ -289,7 +316,16 @@ vg_header('벤더 판정', 'vendor');
                   //   임시 식별자 취급을 받는다 — 판정·출력 모두 trim() 한 값을 쓴다.
                   $cveId = trim((string) $r['cve_id']);
                   if (preg_match('/^CVE-\d{4}-\d+$/i', $cveId)) {
-                      return '<a href="/cve.php?cve=' . urlencode($cveId) . '">' . vg_h($cveId) . '</a>';
+                      $out = '<a href="/cve.php?cve=' . urlencode($cveId) . '">' . vg_h($cveId) . '</a>';
+                      // 벤더 원문 링크는 여기 debtracker·ubuntuoval 만 반영한다 — rhoval 은 advisory 가
+                      //   있는 상태 셀(cell 5)에서, rhunfixed 도 advisory 가 없어 cell 5 에서 다룬다.
+                      if (in_array($r['src'], ['debtracker', 'ubuntuoval'], true)) {
+                          $extUrl = vg_vendor_cve_url((string) $r['src'], $cveId);
+                          if ($extUrl !== null) {
+                              $out .= ' <a class="why" href="' . vg_h($extUrl) . '" target="_blank" rel="noopener" title="벤더 공식 페이지에서 보기">↗</a>';
+                          }
+                      }
+                      return $out;
                   }
                   $tip = $r['src'] === 'debtracker'
                       ? '데비안 보안 트래커 임시 식별자(정식 CVE 미배정)'
@@ -310,10 +346,19 @@ vg_header('벤더 판정', 'vendor');
                       $st = (string) $r['state'];
                       return vg_badge($st, VG_VENDOR_FIXSTATE_TONE[$st] ?? 'warn', '벤더 조치 상태 · 수정본 없음');
                   }
-                  if (empty($r['fixed'])) {
-                      return '<span class="why">수정본 없음</span>';
+                  // 데비안은 목록엔 없는 필드(예외 버전·바이너리 여부)가 있다(작업 2) — title 로 노출.
+                  $tip = '';
+                  if ($r['src'] === 'debtracker') {
+                      $tipParts = [((int) $r['extra2']) === 1 ? '바이너리 패키지' : '소스 패키지'];
+                      $ov = trim((string) ($r['extra1'] ?? ''));
+                      if ($ov !== '') { $tipParts[] = '예외 버전 ' . $ov; }
+                      $tip = implode(' · ', $tipParts);
                   }
-                  return '<span class="pill">' . vg_h((string) $r['fixed']) . '</span>';
+                  $tipAttr = $tip !== '' ? ' title="' . vg_h($tip) . '"' : '';
+                  if (empty($r['fixed'])) {
+                      return '<span class="why"' . $tipAttr . '>수정본 없음</span>';
+                  }
+                  return '<span class="pill"' . $tipAttr . '>' . vg_h((string) $r['fixed']) . '</span>';
               },
               // 상태 — 소스마다 답의 성격이 다르다. 억지로 한 어휘로 접지 않고 각자의 말을 보여준다.
               5 => function ($r) {
@@ -326,11 +371,30 @@ vg_header('벤더 판정', 'vendor');
                           return $note !== '' ? $out . ' <span class="why">긴급도 ' . vg_h($note) . '</span>' : $out;
                       case 'rhoval':
                           $out = vg_vendor_sev_badge($state);
-                          if ($note !== '') { $out .= ' <span class="why">' . vg_h($note) . '</span>'; }
+                          if ($note !== '') {
+                              // note 는 advisory(RHSA-2024:1234 등) — 레드햇·알마리눅스만 원문 URL 을 안다(작업 1).
+                              $advUrl = vg_vendor_advisory_url((string) $r['vendor'], $note, (string) $r['rel']);
+                              $out .= $advUrl !== null
+                                  ? ' <a class="why" href="' . vg_h($advUrl) . '" target="_blank" rel="noopener">' . vg_h($note) . '</a>'
+                                  : ' <span class="why">' . vg_h($note) . '</span>';
+                          }
                           return $out !== '' ? $out : '<span class="why">–</span>';
                       case 'rhunfixed':
-                          // 조치 상태는 고친버전 칸이 이미 말한다 → 여기는 심각도.
+                          // 조치 상태는 고친버전 칸이 이미 말한다 → 여기는 심각도 + CVE 원문.
                           $out = vg_vendor_sev_badge($note);
+                          $tipParts = [];
+                          $cvss = trim((string) ($r['extra1'] ?? ''));
+                          if ($cvss !== '') { $tipParts[] = 'CVSS ' . $cvss; }
+                          $checkedAt = trim((string) ($r['extra2'] ?? ''));
+                          if ($checkedAt !== '') { $tipParts[] = '확인일 ' . substr($checkedAt, 0, 10); }
+                          $tip = implode(' · ', $tipParts);
+                          $cveUrl = vg_vendor_cve_url('rhunfixed', trim((string) $r['cve_id']));
+                          if ($cveUrl !== null) {
+                              $out .= ($out !== '' ? ' ' : '') . '<a class="why" href="' . vg_h($cveUrl) . '" target="_blank" rel="noopener"'
+                                    . ($tip !== '' ? ' title="' . vg_h($tip) . '"' : '') . '>CVE 확인 ↗</a>';
+                          } elseif ($tip !== '') {
+                              $out .= ($out !== '' ? ' ' : '') . '<span class="why" title="' . vg_h($tip) . '">ⓘ</span>';
+                          }
                           return $out !== '' ? $out : '<span class="why">–</span>';
                       case 'kcve':
                           // 스트림별 수정본(고친 버전 칸)의 부가 정보 — 메인라인 축.
