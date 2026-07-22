@@ -54,6 +54,12 @@ services:
     build: ./caddy
     image: vulnagent-caddy:latest
     restart: unless-stopped
+    # 나머지 서비스와 동일하게 로그 로테이션 — 무제한 누적 방지
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       - web
     ports:
