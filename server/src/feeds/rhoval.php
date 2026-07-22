@@ -69,6 +69,15 @@ function vg_rhoval_fetch(string $url): array {
     return ['path' => $tmp, 'uri' => $isBz2 ? 'compress.bzip2://' . $tmp : $tmp];
 }
 
+/** 이미 다운로드된 임시파일 경로 → XMLReader 가 열 수 있는 uri(bz2 면 스트림 래퍼). vg_rhoval_fetch 의 후반부만 뽑았다. */
+function vg_rhoval_uri(string $path, string $url): string {
+    $isBz2 = substr($url, -4) === '.bz2';
+    if ($isBz2 && !extension_loaded('bz2')) {
+        throw new RuntimeException('bz2 확장이 없습니다 — Red Hat OVAL 은 bz2 로만 배포된다(이미지 재빌드 필요)');
+    }
+    return $isBz2 ? 'compress.bzip2://' . $path : $path;
+}
+
 /**
  * OVAL → 권고 행 목록. 네트워크·DB 없이 도는 순수 함수(경로만 받는다 → 픽스처로 단위 테스트).
  *
@@ -261,120 +270,156 @@ final class VgRhovalConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
         $fetched = 0; $upserted = 0;
 
-        foreach (vg_rhoval_targets($pdo, $conn) as [$vendor, $major]) {
+        $targets = vg_rhoval_targets($pdo, $conn);
+
+        // 다운로드만 먼저 동시에 한다(파싱·DB 로직은 그대로 순차). Oracle 처럼 같은 URL(전체릴리스
+        //   파일 하나)을 메이저마다 중복 요청하면(현재도 그렇다, 캐싱은 범위 밖) 여러 대상이 같은
+        //   임시파일을 참조하게 된다 — refs 로 참조수를 세어 그 URL 을 쓰는 모든 대상의 파싱이
+        //   끝난 뒤에만 unlink 한다(파싱 중간에 지우면 다른 대상이 못 연다).
+        $urls = [];
+        $refs = [];
+        foreach ($targets as [$vendor, $major]) {
             $tpl = VG_RHOVAL_SOURCES[$vendor] ?? null;
             if ($tpl === null) { continue; }
-            $src = vg_rhoval_fetch(str_replace('{N}', $major, $tpl));
+            $url = str_replace('{N}', $major, $tpl);
+            $urls[] = $url;
+            $refs[$url] = ($refs[$url] ?? 0) + 1;
+        }
+        // 기존 vg_rhoval_fetch 의 개별 타임아웃(180초)을 유지한다 — 병렬화 자체가 목적이라
+        //   타임아웃까지 늘릴 이유는 없다(기본값 300은 이 커넥터엔 과하다).
+        $downloads = vg_http_download_many(array_values(array_unique($urls)), 3, 180);
 
-            try {
-                // 한 파일에 여러 릴리스가 섞인 소스(Oracle)는 **이 릴리스 것만** 파싱한다.
-                //   안 거르면 (1) OL8 의 조치 EVR 이 OL9 행으로 들어가 판정이 틀어지고,
-                //   (2) 전 릴리스를 메모리에 이고 가다 죽는다(실측: 512MB 초과).
-                $rows = vg_rhoval_parse($src['uri'], vg_rhoval_is_combined($vendor) ? $major : '');
-                if (vg_rhoval_is_combined($vendor) && !$rows) {
-                    throw new RuntimeException("$vendor OVAL 에 릴리스 $major 정의가 없다(플랫폼 표기 변경?)");
+        try {
+            foreach ($targets as [$vendor, $major]) {
+                $tpl = VG_RHOVAL_SOURCES[$vendor] ?? null;
+                if ($tpl === null) { continue; }
+                $url = str_replace('{N}', $major, $tpl);
+                $dl  = $downloads[$url] ?? ['path' => null, 'code' => 0, 'error' => '다운로드 안 됨'];
+                if ($dl['path'] === null) {
+                    // 기존 시맨틱 유지: 다운로드 실패는 RuntimeException 으로 전체 run() 을 중단한다.
+                    throw new RuntimeException("OVAL fetch 실패 (HTTP {$dl['code']}) {$dl['error']} — $url");
                 }
-                $fetched += count($rows);
+                $uri = vg_rhoval_uri($dl['path'], $url);
 
-                // 24만 행을 한 트랜잭션에 넣었더니 **운영에서 Lock wait timeout** 이 났다 —
-                //   락을 수 분간 쥐고 있는 동안 스케줄러(재매칭·다른 피드)와 부딪혔다.
-                //   그래서 (1) 여러 행을 한 INSERT 로 묶고 (2) 배치마다 커밋해 락을 짧게 쥔다.
-                //   중간에 죽으면 권고가 일부만 남는데, 그건 "억제를 덜 함"(오탐이 남을 뿐)이라
-                //   안전한 방향이다 — 다음 수집이 다시 통째로 교체한다.
-                $pdo->beginTransaction();
-                $pdo->prepare('DELETE FROM tb_vendor_errata WHERE vendor = ? AND release_major = ?')
-                    ->execute([$vendor, $major]);
-                $pdo->commit();
-
-                $maxFix = [];   // "패키지|CVE" => 가장 높은 조치 EVR (카탈로그에 넣을 값)
-                $batch  = [];
-                $flush  = static function (array $b) use ($pdo): void {
-                    if (!$b) { return; }
-                    $ph  = implode(',', array_fill(0, count($b), '(?,?,?,?,?,?,?)'));
-                    $st  = $pdo->prepare(
-                        "INSERT INTO tb_vendor_errata
-                           (vendor, release_major, pkg_name, cve_id, fixed_evr, advisory, severity)
-                         VALUES $ph
-                         ON DUPLICATE KEY UPDATE advisory = VALUES(advisory), severity = VALUES(severity)"
-                    );
-                    $st->execute(array_merge(...$b));
-                };
-
-                $pdo->beginTransaction();
-                foreach ($rows as $i => $r) {
-                    $batch[] = [
-                        $vendor, $major,
-                        mb_substr($r['pkg'], 0, 255),
-                        mb_substr($r['cve'], 0, 32),
-                        mb_substr($r['evr'], 0, 128),
-                        mb_substr($r['advisory'], 0, 64),
-                        mb_substr($r['severity'], 0, 16),
-                    ];
-                    $upserted++;
-
-                    $k = $r['pkg'] . '|' . $r['cve'];
-                    if (!isset($maxFix[$k]) || vg_ver_cmp($r['evr'], $maxFix[$k], 'rpm') > 0) {
-                        $maxFix[$k] = $r['evr'];
+                try {
+                    // 한 파일에 여러 릴리스가 섞인 소스(Oracle)는 **이 릴리스 것만** 파싱한다.
+                    //   안 거르면 (1) OL8 의 조치 EVR 이 OL9 행으로 들어가 판정이 틀어지고,
+                    //   (2) 전 릴리스를 메모리에 이고 가다 죽는다(실측: 512MB 초과).
+                    $rows = vg_rhoval_parse($uri, vg_rhoval_is_combined($vendor) ? $major : '');
+                    if (vg_rhoval_is_combined($vendor) && !$rows) {
+                        throw new RuntimeException("$vendor OVAL 에 릴리스 $major 정의가 없다(플랫폼 표기 변경?)");
                     }
+                    $fetched += count($rows);
 
-                    if (count($batch) >= 500) {
-                        $flush($batch);
-                        $batch = [];
-                        if (($i % 10000) < 500) { $pdo->commit(); $pdo->beginTransaction(); }
-                    }
-                }
-                $flush($batch);
-                $pdo->commit();
+                    // 24만 행을 한 트랜잭션에 넣었더니 **운영에서 Lock wait timeout** 이 났다 —
+                    //   락을 수 분간 쥐고 있는 동안 스케줄러(재매칭·다른 피드)와 부딪혔다.
+                    //   그래서 (1) 여러 행을 한 INSERT 로 묶고 (2) 배치마다 커밋해 락을 짧게 쥔다.
+                    //   중간에 죽으면 권고가 일부만 남는데, 그건 "억제를 덜 함"(오탐이 남을 뿐)이라
+                    //   안전한 방향이다 — 다음 수집이 다시 통째로 교체한다.
+                    $pdo->beginTransaction();
+                    $pdo->prepare('DELETE FROM tb_vendor_errata WHERE vendor = ? AND release_major = ?')
+                        ->execute([$vendor, $major]);
+                    $pdo->commit();
 
-                // **취약 후보도 여기서 나온다.** RHEL 계열은 OSV 에 조치안이 없어(실측: UBI9 스캔의
-                //   findings 가 0 이었다) OVAL 이 유일한 소스다. 그래서 카탈로그(tb_cves +
-                //   tb_cve_affected_packages)에도 넣어 매처가 후보를 찾을 수 있게 한다.
-                //   생태계 표기는 매처·OSV 와 같은 기준(vg_osv_ecosystem): 'Red Hat:9' / 'AlmaLinux:9'.
-                //
-                //   카탈로그의 조치버전은 **가장 높은 EVR** 을 넣는다. 같은 (패키지,CVE)가 마이너
-                //   스트림마다 다른 EVR 로 고쳐지는데(el9_2 · el9_4) 자연키는 하나뿐이라 하나만 남는다.
-                //   낮은 EVR 을 넣으면 다른 스트림에서 "이미 패치됨" 으로 잘못 억제한다(미탐).
-                //   높은 쪽은 보수적이다 — 억제를 덜 할 뿐이고, 정밀한 스트림 판정은
-                //   tb_vendor_errata 를 보는 vg_vendor_errata_evidence 가 따로 한다.
-                //   카탈로그도 배치로 넣는다(행마다 upsert 하면 8만 번 왕복 + 락 유지 시간이 길다).
-                $eco    = ['almalinux' => "AlmaLinux:$major", 'oracle' => "Oracle Linux:$major"][$vendor]
-                          ?? "Red Hat:$major";
-                $cveB   = [];
-                $affB   = [];
-                $flushC = static function (array $cveB, array $affB) use ($pdo): void {
-                    if ($cveB) {
-                        // 상세(요약·CVSS)는 NVD 가 채운다 — 여기선 CVE 존재만 보장한다(INSERT IGNORE).
-                        $ph = implode(',', array_fill(0, count($cveB), '(?)'));
-                        $pdo->prepare("INSERT IGNORE INTO tb_cves (cve_id) VALUES $ph")->execute($cveB);
-                    }
-                    if ($affB) {
-                        $ph = implode(',', array_fill(0, count($affB), '(?,?,?,?)'));
-                        $pdo->prepare(
-                            "INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+                    $maxFix = [];   // "패키지|CVE" => 가장 높은 조치 EVR (카탈로그에 넣을 값)
+                    $batch  = [];
+                    $flush  = static function (array $b) use ($pdo): void {
+                        if (!$b) { return; }
+                        $ph  = implode(',', array_fill(0, count($b), '(?,?,?,?,?,?,?)'));
+                        $st  = $pdo->prepare(
+                            "INSERT INTO tb_vendor_errata
+                               (vendor, release_major, pkg_name, cve_id, fixed_evr, advisory, severity)
                              VALUES $ph
-                             ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
-                        )->execute(array_merge(...$affB));
+                             ON DUPLICATE KEY UPDATE advisory = VALUES(advisory), severity = VALUES(severity)"
+                        );
+                        $st->execute(array_merge(...$b));
+                    };
+
+                    $pdo->beginTransaction();
+                    foreach ($rows as $i => $r) {
+                        $batch[] = [
+                            $vendor, $major,
+                            mb_substr($r['pkg'], 0, 255),
+                            mb_substr($r['cve'], 0, 32),
+                            mb_substr($r['evr'], 0, 128),
+                            mb_substr($r['advisory'], 0, 64),
+                            mb_substr($r['severity'], 0, 16),
+                        ];
+                        $upserted++;
+
+                        $k = $r['pkg'] . '|' . $r['cve'];
+                        if (!isset($maxFix[$k]) || vg_ver_cmp($r['evr'], $maxFix[$k], 'rpm') > 0) {
+                            $maxFix[$k] = $r['evr'];
+                        }
+
+                        if (count($batch) >= 500) {
+                            $flush($batch);
+                            $batch = [];
+                            if (($i % 10000) < 500) { $pdo->commit(); $pdo->beginTransaction(); }
+                        }
                     }
-                };
+                    $flush($batch);
+                    $pdo->commit();
 
-                $pdo->beginTransaction();
-                $n = 0;
-                foreach ($maxFix as $k => $evr) {
-                    [$pkg, $cve] = explode('|', $k, 2);
-                    if (!vg_is_cve_id($cve)) { continue; }
-                    $cveB[] = $cve;
-                    $affB[] = [$cve, $eco, mb_substr($pkg, 0, 255), mb_substr($evr, 0, 128)];
+                    // **취약 후보도 여기서 나온다.** RHEL 계열은 OSV 에 조치안이 없어(실측: UBI9 스캔의
+                    //   findings 가 0 이었다) OVAL 이 유일한 소스다. 그래서 카탈로그(tb_cves +
+                    //   tb_cve_affected_packages)에도 넣어 매처가 후보를 찾을 수 있게 한다.
+                    //   생태계 표기는 매처·OSV 와 같은 기준(vg_osv_ecosystem): 'Red Hat:9' / 'AlmaLinux:9'.
+                    //
+                    //   카탈로그의 조치버전은 **가장 높은 EVR** 을 넣는다. 같은 (패키지,CVE)가 마이너
+                    //   스트림마다 다른 EVR 로 고쳐지는데(el9_2 · el9_4) 자연키는 하나뿐이라 하나만 남는다.
+                    //   낮은 EVR 을 넣으면 다른 스트림에서 "이미 패치됨" 으로 잘못 억제한다(미탐).
+                    //   높은 쪽은 보수적이다 — 억제를 덜 할 뿐이고, 정밀한 스트림 판정은
+                    //   tb_vendor_errata 를 보는 vg_vendor_errata_evidence 가 따로 한다.
+                    //   카탈로그도 배치로 넣는다(행마다 upsert 하면 8만 번 왕복 + 락 유지 시간이 길다).
+                    $eco    = ['almalinux' => "AlmaLinux:$major", 'oracle' => "Oracle Linux:$major"][$vendor]
+                              ?? "Red Hat:$major";
+                    $cveB   = [];
+                    $affB   = [];
+                    $flushC = static function (array $cveB, array $affB) use ($pdo): void {
+                        if ($cveB) {
+                            // 상세(요약·CVSS)는 NVD 가 채운다 — 여기선 CVE 존재만 보장한다(INSERT IGNORE).
+                            $ph = implode(',', array_fill(0, count($cveB), '(?)'));
+                            $pdo->prepare("INSERT IGNORE INTO tb_cves (cve_id) VALUES $ph")->execute($cveB);
+                        }
+                        if ($affB) {
+                            $ph = implode(',', array_fill(0, count($affB), '(?,?,?,?)'));
+                            $pdo->prepare(
+                                "INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+                                 VALUES $ph
+                                 ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
+                            )->execute(array_merge(...$affB));
+                        }
+                    };
 
-                    if (++$n % 500 === 0) {
-                        $flushC($cveB, $affB);
-                        $cveB = []; $affB = [];
-                        if ($n % 10000 === 0) { $pdo->commit(); $pdo->beginTransaction(); }
+                    $pdo->beginTransaction();
+                    $n = 0;
+                    foreach ($maxFix as $k => $evr) {
+                        [$pkg, $cve] = explode('|', $k, 2);
+                        if (!vg_is_cve_id($cve)) { continue; }
+                        $cveB[] = $cve;
+                        $affB[] = [$cve, $eco, mb_substr($pkg, 0, 255), mb_substr($evr, 0, 128)];
+
+                        if (++$n % 500 === 0) {
+                            $flushC($cveB, $affB);
+                            $cveB = []; $affB = [];
+                            if ($n % 10000 === 0) { $pdo->commit(); $pdo->beginTransaction(); }
+                        }
+                    }
+                    $flushC($cveB, $affB);
+                    $pdo->commit();
+                } finally {
+                    // 이 URL 을 쓰는 마지막 대상의 파싱이 끝났을 때만 지운다(Oracle 공유 파일 대비).
+                    if (--$refs[$url] <= 0) {
+                        @unlink($dl['path']);
                     }
                 }
-                $flushC($cveB, $affB);
-                $pdo->commit();
-            } finally {
-                @unlink($src['path']);
+            }
+        } finally {
+            // 다운로드 실패·파싱 예외로 run() 이 중간에 끊겨도, 아직 처리 차례가 오지 않은
+            //   다른 대상의 다운로드 파일(수십~수백MB)이 /tmp 에 남지 않게 한다.
+            foreach ($downloads as $d) {
+                if ($d['path'] !== null) { @unlink($d['path']); }
             }
         }
         return ['fetched' => $fetched, 'upserted' => $upserted];

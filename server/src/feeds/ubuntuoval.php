@@ -212,95 +212,121 @@ final class VgUbuntuOvalConnector implements VgFeedConnector {
         $fetched  = 0;
         $upserted = 0;
 
-        foreach (vg_ubuntu_oval_releases($pdo, $conn) as $code) {
-            $src = vg_ubuntu_oval_fetch(str_replace('{C}', $code, $base));
-            try {
-                $rows     = vg_ubuntu_oval_parse($src['uri']);
-                $fetched += count($rows);
-                if (!$rows) { continue; }   // 빈 결과로 기존 데이터를 지우지 않는다(수집 실패 = 억제 전멸)
+        // bz2 확장 체크는 대상마다 반복할 필요 없다 — 병렬 다운로드 전에 한 번만.
+        if (!extension_loaded('bz2')) {
+            throw new RuntimeException('bz2 확장이 없습니다 — 우분투 OVAL 은 bz2 로만 배포된다');
+        }
 
-                // 릴리스 단위 통째 교체 — 벤더가 뺀 항목(=해당 없음으로 정정)이 남아 있으면 계속 취약으로 잡힌다.
-                $pdo->beginTransaction();
-                $pdo->prepare('DELETE FROM tb_ubuntu_oval WHERE release_codename = ?')->execute([$code]);
-                $pdo->commit();
+        // 중복 코드명(설정 오류)이 있으면 같은 임시파일을 두 번째 순회에서 이미 지운 뒤 열게 된다 —
+        //   여기서 걷어낸다(원래도 같은 릴리스를 두 번 처리할 이유가 없다).
+        $codes = array_values(array_unique(vg_ubuntu_oval_releases($pdo, $conn)));
+        $urlOf = [];
+        foreach ($codes as $code) { $urlOf[$code] = str_replace('{C}', $code, $base); }
+        $downloads = vg_http_download_many(array_values($urlOf));
 
-                $batch = [];
-                $flush = static function (array $b) use ($pdo): void {
-                    if (!$b) { return; }
-                    $ph = implode(',', array_fill(0, count($b), '(?,?,?,?,?)'));
-                    $pdo->prepare(
-                        "INSERT INTO tb_ubuntu_oval (release_codename, pkg_name, cve_id, fixed_evr, severity)
-                         VALUES $ph
-                         ON DUPLICATE KEY UPDATE fixed_evr = VALUES(fixed_evr), severity = VALUES(severity)"
-                    )->execute(array_merge(...$b));
-                };
-
-                // 배치 INSERT + 주기적 커밋 — 한 트랜잭션에 수십만 행을 담으면 락 대기로 죽는다(OVAL 때 겪었다).
-                $pdo->beginTransaction();
-                foreach ($rows as $i => $r) {
-                    $batch[] = [
-                        $code,
-                        mb_substr($r['pkg'], 0, 255),
-                        mb_substr($r['cve'], 0, 32),
-                        $r['evr'] !== null ? mb_substr($r['evr'], 0, 128) : null,
-                        mb_substr($r['severity'], 0, 16),
-                    ];
-                    $upserted++;
-                    if (count($batch) >= 500) {
-                        $flush($batch);
-                        $batch = [];
-                        if (($i % 10000) < 500) { $pdo->commit(); $pdo->beginTransaction(); }
-                    }
+        try {
+            foreach ($codes as $code) {
+                $url = $urlOf[$code];
+                $dl  = $downloads[$url] ?? ['path' => null, 'code' => 0, 'error' => '다운로드 안 됨'];
+                if ($dl['path'] === null) {
+                    // 기존 시맨틱 유지: 다운로드 실패는 RuntimeException 으로 전체 run() 을 중단한다.
+                    throw new RuntimeException("우분투 OVAL fetch 실패 (HTTP {$dl['code']}) {$dl['error']} — $url");
                 }
-                $flush($batch);
-                $pdo->commit();
+                $uri = 'compress.bzip2://' . $dl['path'];
+                try {
+                    $rows     = vg_ubuntu_oval_parse($uri);
+                    $fetched += count($rows);
+                    if (!$rows) { continue; }   // 빈 결과로 기존 데이터를 지우지 않는다(수집 실패 = 억제 전멸)
 
-                // **취약 후보도 여기서 나온다.** 지금까지 우분투 후보는 OSV 에만 의존했다.
-                //   실측: dev 에서 ubuntu:24.04 를 판정했더니 findings 0 이었다(Trivy 는 34건).
-                //   OSV 의 우분투 수록이 우리 커버리지의 상한이 되는 구조였다 — 벤더 데이터가
-                //   "어느 패키지가 영향받나" 의 정본인데 그걸 억제에만 쓰고 후보엔 안 썼다.
-                //   그래서 카탈로그(tb_cves + tb_cve_affected_packages)에도 넣는다. 생태계 표기는
-                //   OSV·매처와 같은 기준('Ubuntu:24.04').
-                //   미수정 CVE 는 fixed_version=NULL 로 넣는다 — 버전 억제가 안 걸리고(조치안이 없으니
-                //   당연하다), 판정 맵이 no_fix 로 표시한다.
-                $eco = 'Ubuntu:' . vg_ubuntu_version_of($code);
-                if (vg_ubuntu_version_of($code) === '') { continue; }   // 모르는 코드명은 후보를 만들지 않는다
+                    // 릴리스 단위 통째 교체 — 벤더가 뺀 항목(=해당 없음으로 정정)이 남아 있으면 계속 취약으로 잡힌다.
+                    $pdo->beginTransaction();
+                    $pdo->prepare('DELETE FROM tb_ubuntu_oval WHERE release_codename = ?')->execute([$code]);
+                    $pdo->commit();
 
-                $cveB   = [];
-                $affB   = [];
-                $flushC = static function (array $cveB, array $affB) use ($pdo): void {
-                    if ($cveB) {
-                        $ph = implode(',', array_fill(0, count($cveB), '(?)'));
-                        $pdo->prepare("INSERT IGNORE INTO tb_cves (cve_id) VALUES $ph")->execute($cveB);
-                    }
-                    if ($affB) {
-                        $ph = implode(',', array_fill(0, count($affB), '(?,?,?,?)'));
+                    $batch = [];
+                    $flush = static function (array $b) use ($pdo): void {
+                        if (!$b) { return; }
+                        $ph = implode(',', array_fill(0, count($b), '(?,?,?,?,?)'));
                         $pdo->prepare(
-                            "INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+                            "INSERT INTO tb_ubuntu_oval (release_codename, pkg_name, cve_id, fixed_evr, severity)
                              VALUES $ph
-                             ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
-                        )->execute(array_merge(...$affB));
-                    }
-                };
+                             ON DUPLICATE KEY UPDATE fixed_evr = VALUES(fixed_evr), severity = VALUES(severity)"
+                        )->execute(array_merge(...$b));
+                    };
 
-                $pdo->beginTransaction();
-                $n = 0;
-                foreach ($rows as $r) {
-                    $cveB[] = $r['cve'];
-                    $affB[] = [
-                        $r['cve'], $eco, mb_substr($r['pkg'], 0, 255),
-                        $r['evr'] !== null ? mb_substr($r['evr'], 0, 128) : null,
-                    ];
-                    if (++$n % 500 === 0) {
-                        $flushC($cveB, $affB);
-                        $cveB = []; $affB = [];
-                        if ($n % 10000 === 0) { $pdo->commit(); $pdo->beginTransaction(); }
+                    // 배치 INSERT + 주기적 커밋 — 한 트랜잭션에 수십만 행을 담으면 락 대기로 죽는다(OVAL 때 겪었다).
+                    $pdo->beginTransaction();
+                    foreach ($rows as $i => $r) {
+                        $batch[] = [
+                            $code,
+                            mb_substr($r['pkg'], 0, 255),
+                            mb_substr($r['cve'], 0, 32),
+                            $r['evr'] !== null ? mb_substr($r['evr'], 0, 128) : null,
+                            mb_substr($r['severity'], 0, 16),
+                        ];
+                        $upserted++;
+                        if (count($batch) >= 500) {
+                            $flush($batch);
+                            $batch = [];
+                            if (($i % 10000) < 500) { $pdo->commit(); $pdo->beginTransaction(); }
+                        }
                     }
+                    $flush($batch);
+                    $pdo->commit();
+
+                    // **취약 후보도 여기서 나온다.** 지금까지 우분투 후보는 OSV 에만 의존했다.
+                    //   실측: dev 에서 ubuntu:24.04 를 판정했더니 findings 0 이었다(Trivy 는 34건).
+                    //   OSV 의 우분투 수록이 우리 커버리지의 상한이 되는 구조였다 — 벤더 데이터가
+                    //   "어느 패키지가 영향받나" 의 정본인데 그걸 억제에만 쓰고 후보엔 안 썼다.
+                    //   그래서 카탈로그(tb_cves + tb_cve_affected_packages)에도 넣는다. 생태계 표기는
+                    //   OSV·매처와 같은 기준('Ubuntu:24.04').
+                    //   미수정 CVE 는 fixed_version=NULL 로 넣는다 — 버전 억제가 안 걸리고(조치안이 없으니
+                    //   당연하다), 판정 맵이 no_fix 로 표시한다.
+                    $eco = 'Ubuntu:' . vg_ubuntu_version_of($code);
+                    if (vg_ubuntu_version_of($code) === '') { continue; }   // 모르는 코드명은 후보를 만들지 않는다
+
+                    $cveB   = [];
+                    $affB   = [];
+                    $flushC = static function (array $cveB, array $affB) use ($pdo): void {
+                        if ($cveB) {
+                            $ph = implode(',', array_fill(0, count($cveB), '(?)'));
+                            $pdo->prepare("INSERT IGNORE INTO tb_cves (cve_id) VALUES $ph")->execute($cveB);
+                        }
+                        if ($affB) {
+                            $ph = implode(',', array_fill(0, count($affB), '(?,?,?,?)'));
+                            $pdo->prepare(
+                                "INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+                                 VALUES $ph
+                                 ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
+                            )->execute(array_merge(...$affB));
+                        }
+                    };
+
+                    $pdo->beginTransaction();
+                    $n = 0;
+                    foreach ($rows as $r) {
+                        $cveB[] = $r['cve'];
+                        $affB[] = [
+                            $r['cve'], $eco, mb_substr($r['pkg'], 0, 255),
+                            $r['evr'] !== null ? mb_substr($r['evr'], 0, 128) : null,
+                        ];
+                        if (++$n % 500 === 0) {
+                            $flushC($cveB, $affB);
+                            $cveB = []; $affB = [];
+                            if ($n % 10000 === 0) { $pdo->commit(); $pdo->beginTransaction(); }
+                        }
+                    }
+                    $flushC($cveB, $affB);
+                    $pdo->commit();
+                } finally {
+                    @unlink($dl['path']);
                 }
-                $flushC($cveB, $affB);
-                $pdo->commit();
-            } finally {
-                @unlink($src['path']);
+            }
+        } finally {
+            // 다운로드 실패·파싱 예외로 run() 이 중간에 끊겨도, 아직 처리 차례가 오지 않은
+            //   다른 릴리스의 다운로드 파일(수십~수백MB)이 /tmp 에 남지 않게 한다.
+            foreach ($downloads as $d) {
+                if ($d['path'] !== null) { @unlink($d['path']); }
             }
         }
         return ['fetched' => $fetched, 'upserted' => $upserted];
