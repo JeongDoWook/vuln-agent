@@ -729,13 +729,15 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .chart__lbl--start { text-anchor: start; }
 .chart__lbl--end   { text-anchor: end; }
 
-/* 리소스(메모리/CPU) 라인차트(host.php) — 위 눈금 위에 선+포인트만 얹는다. */
+/* 리소스(메모리/CPU) 라인차트(host.php) · 위험 추이(index.php) — 위 눈금 위에 선+포인트만 얹는다. */
 .chart__line { fill: none; stroke-width: 2; }
 .chart__line.tone-mem { stroke: var(--accent); }
 .chart__line.tone-cpu { stroke: var(--high); }
+.chart__line.tone-crit { stroke: var(--crit); }
 .chart__pt { fill: var(--surface); stroke-width: 2; }
 .chart__pt.tone-mem { stroke: var(--accent); }
 .chart__pt.tone-cpu { stroke: var(--high); }
+.chart__pt.tone-crit { stroke: var(--crit); }
 
 /* 심각도 구성 막대(가로 누적) — 표의 한 행에서 "누가 더 나쁜지" 를 눈으로 보게 한다.
  * 폭은 PHP 가 인라인 style="width:N%" 로 준다(값이라서 CSS 가 가질 수 없다). */
