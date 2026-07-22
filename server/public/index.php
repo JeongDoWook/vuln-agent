@@ -13,7 +13,7 @@ vg_require_menu('dashboard');
 // "지금 급한 것" 에 보여줄 최대 건수. 나머지는 취약점 현황으로 넘긴다.
 const VG_URGENT_TOP = 6;
 // 에이전트 리소스 사용량 카드의 함대 평균 추이 — 최근 며칠치를 볼지.
-const VG_RESOURCE_TREND_DAYS = 30;
+const VG_RESOURCE_TREND_DAYS = 7;
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
