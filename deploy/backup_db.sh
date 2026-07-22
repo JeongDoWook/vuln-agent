@@ -15,6 +15,7 @@
 #   DB_CONTAINER=vulnagent-db-dev BACKUP_DIR=/tmp/vg-backup-test bash deploy/backup_db.sh
 # =============================================================================
 set -euo pipefail
+umask 077   # 이후 생성되는 모든 파일(LOCK, 덤프 .sql.gz)을 처음부터 소유자 전용 권한으로
 
 DB_CONTAINER="${DB_CONTAINER:-vulnagent-db}"
 BACKUP_DIR="${BACKUP_DIR:-/apps/vulnagent/backups}"
@@ -50,7 +51,7 @@ docker exec "$DB_CONTAINER" sh -c \
   'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysqldump --single-transaction --routines -uroot "$MYSQL_DATABASE"' \
   | gzip > "$OUT_FILE"
 
-chmod 600 "$OUT_FILE"   # DB 전체 덤프라 소유자만 읽게 제한
+chmod 600 "$OUT_FILE"   # umask 077 로 이미 600 이지만 방어적으로 재확인
 SIZE=$(du -h "$OUT_FILE" | cut -f1)
 echo "$(date -Iseconds) OK size=$SIZE file=$(basename "$OUT_FILE")" >> "$LOG_FILE"
 
