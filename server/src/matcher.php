@@ -775,8 +775,8 @@ if (!function_exists('vg_scope_rank')) {
         $pdo->prepare('DELETE FROM tb_suppressed_findings WHERE scan_id = ?')->execute([$scanId]);
         $insSupp = $pdo->prepare(
             'INSERT INTO tb_suppressed_findings
-               (scan_id, cve_id, package_name, installed_version, in_kev, cvss, base_severity, suppress_reason)
-             VALUES (?,?,?,?,?,?,?,?)
+               (scan_id, container_id, cve_id, package_name, installed_version, in_kev, cvss, base_severity, suppress_reason)
+             VALUES (?,?,?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE
                installed_version=VALUES(installed_version), in_kev=VALUES(in_kev), cvss=VALUES(cvss),
                base_severity=VALUES(base_severity), suppress_reason=VALUES(suppress_reason)'
@@ -824,7 +824,7 @@ if (!function_exists('vg_scope_rank')) {
 
                 if ($decision['suppress']) {
                     $insSupp->execute([
-                        $scanId, $cveId, $p['name'], $p['version'],
+                        $scanId, $ctrId, $cveId, $p['name'], $p['version'],
                         $decision['inKev'] ? 1 : 0, $decision['cvss'], $decision['sev'], $decision['reason'],
                     ]);
                     $counts['SUPPRESSED']++;

@@ -163,16 +163,16 @@ function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset, ?st
 }
 
 function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, int $perPage, int $offset, ?string $q = null): array {
-    $where = 'scan_id = ?';
+    $where = 'sf.scan_id = ?';
     $params = [$sid];
     if ($q !== null && $q !== '') {
-        $where .= ' AND (cve_id LIKE ? OR package_name LIKE ?)';
+        $where .= ' AND (sf.cve_id LIKE ? OR sf.package_name LIKE ?)';
         $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
     }
 
     if ($q !== null && $q !== '') {
-        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_suppressed_findings WHERE $where");
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_suppressed_findings sf WHERE $where");
         $cnt->execute($params);
         $total = (int) $cnt->fetchColumn();
     } else {
@@ -180,8 +180,10 @@ function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, i
     }
 
     $st = $pdo->prepare(
-        "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason
-           FROM tb_suppressed_findings WHERE $where
+        "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason,
+                CASE WHEN sf.container_id = 0 THEN 'HOST'
+                     ELSE COALESCE((SELECT c.name FROM tb_containers c WHERE c.id = sf.container_id), CONCAT('container #', sf.container_id)) END AS target
+           FROM tb_suppressed_findings sf WHERE $where
           ORDER BY FIELD(base_severity,'CRITICAL','HIGH','MEDIUM','LOW'), cve_id
           LIMIT $perPage OFFSET $offset"
     );
@@ -758,6 +760,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           [
               ['label' => '원래등급', 'key' => 'base_severity'],
               ['label' => 'CVE'],
+              ['label' => '대상', 'key' => 'target'],
               ['label' => '패키지'],
               ['label' => '억제 근거'],
           ],
@@ -781,8 +784,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                   'base_severity' => fn($r) => vg_sev_badge((string) $r['base_severity'])
                       . ((int) $r['in_kev'] === 1 ? ' ' . vg_badge('KEV', 'crit') : ''),
                   1 => fn($r) => '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a></strong>',
-                  2 => fn($r) => vg_h($r['package_name']) . ' <span class="why">' . vg_h($r['installed_version']) . '</span>',
-                  3 => fn($r) => '<span class="why">' . vg_trunc($r['suppress_reason'], 90) . '</span>',
+                  3 => fn($r) => vg_h($r['package_name']) . ' <span class="why">' . vg_h($r['installed_version']) . '</span>',
+                  4 => fn($r) => '<span class="why">' . vg_trunc($r['suppress_reason'], 90) . '</span>',
               ],
           ]
       );
