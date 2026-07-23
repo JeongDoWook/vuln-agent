@@ -68,33 +68,49 @@ $issueLabel  = (string) ($f['label'] ?? '');
 
 $csrf = vg_csrf_token();
 
-// 목록 페이지네이션 — 발급/폐기가 쌓이면 한 화면에 다 쏟지 않는다.
+// 목록 검색·페이지네이션. 검색값은 바인딩하고 LIMIT/OFFSET 은 검증된 정수만 사용한다.
+$q       = trim((string) ($_GET['q'] ?? ''));
 $perPage = vg_perpage();
 $page    = vg_page();
-$total   = (int) $pdo->query('SELECT COUNT(*) FROM tb_api_tokens WHERE is_deleted = 0')->fetchColumn();
-$offset  = ($page - 1) * $perPage;
+$where   = 't.is_deleted = 0';
+$params  = [];
+if ($q !== '') {
+    $where .= ' AND (t.label LIKE ? OR t.token_prefix LIKE ?)';
+    $like = '%' . $q . '%';
+    $params = [$like, $like];
+}
+$count = $pdo->prepare("SELECT COUNT(*) FROM tb_api_tokens t WHERE $where");
+$count->execute($params);
+$total  = (int) $count->fetchColumn();
+$offset = ($page - 1) * $perPage;
 
-$tokens = $pdo->query(
+$list = $pdo->prepare(
     "SELECT t.id, t.label, t.token_prefix, t.last_used_at, t.created_at, u.username AS created_by
        FROM tb_api_tokens t
        LEFT JOIN tb_users u ON u.id = t.created_by
-      WHERE t.is_deleted = 0
+      WHERE $where
       ORDER BY t.id DESC
       LIMIT $perPage OFFSET $offset"
-)->fetchAll();
+);
+$list->execute($params);
+$tokens = $list->fetchAll();
 
 vg_header('API 토큰', 'apitokens');
 ?>
-  <div class="page-head page-title page-title--actions">
-    <h1>API 토큰 <span class="hint">(<?= number_format($total) ?>개)</span></h1>
-    <div class="toolbar"><?php vg_modal_btn('issueToken', '+ 토큰 발급'); ?></div>
-  </div>
+  <?php vg_page_title('API 토큰', 'API ACCESS', '', [
+      'count' => $total, 'count_label' => '개',
+      'actions' => vg_capture(static fn() => vg_modal_btn('issueToken', '+ 토큰 발급')),
+  ]); ?>
   <div class="sub">
     외부 시스템이 <code>/export.php</code> 로 스캔 결과(JSON/XML)를 읽어갈 때 쓰는 읽기 전용 토큰입니다.
     요청 헤더에 <code>X-API-Token: &lt;토큰&gt;</code> 로 넣습니다. 자세한 사용법은 <code>docs/dev/export-api.md</code>.
   </div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+
+  <?php vg_toolbar([
+      ['type' => 'search', 'name' => 'q', 'value' => $q, 'placeholder' => '용도·토큰 앞자리 검색'],
+  ]); ?>
 
   <?php if ($newToken !== null): ?>
     <div class="card card--accent">
@@ -119,10 +135,13 @@ vg_header('API 토큰', 'apitokens');
       ],
       $tokens,
       [
-          'empty' => [
-              'icon'  => '🔑',
-              'title' => '발급된 토큰이 없습니다.',
-              'hint'  => '외부 시스템이 스캔 결과를 읽어가려면 토큰이 필요합니다. 위에서 발급하세요.',
+          'empty' => $q !== '' ? [
+              'icon' => '🔍', 'title' => '검색 결과가 없습니다.',
+              'hint' => '용도나 토큰 앞자리를 다시 확인하세요.',
+              'cta' => ['href' => '/api-tokens.php', 'label' => '검색 초기화'],
+          ] : [
+              'icon' => '🔑', 'title' => '발급된 토큰이 없습니다.',
+              'hint' => '외부 시스템이 스캔 결과를 읽어가려면 토큰이 필요합니다. 위에서 발급하세요.',
           ],
           'cell'  => [
               0 => fn($t) => vg_h((string) $t['label']),

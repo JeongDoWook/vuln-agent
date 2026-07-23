@@ -88,6 +88,7 @@ $csrf = vg_csrf_token();
 vg_header($user['username'] ?? '사용자', 'users');
 ?>
 <?php if (!$user): ?>
+  <?php vg_page_title('사용자를 찾을 수 없습니다', 'USER DETAIL', '삭제되었거나 존재하지 않는 계정입니다.'); ?>
   <div class="card">
     <?php vg_empty([
         'icon'  => '📭',

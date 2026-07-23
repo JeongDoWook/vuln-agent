@@ -58,10 +58,9 @@ vg_header('권한설정', 'permissions');
 ?>
   <form method="post">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-    <div class="page-head page-title page-title--actions">
-      <h1>역할별 메뉴 접근권한</h1>
-      <div class="toolbar"><button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button></div>
-    </div>
+    <?php vg_page_title('역할별 메뉴 접근권한', 'ACCESS CONTROL', '운영자와 사용자의 메뉴 접근 범위를 설정합니다.', [
+        'actions' => '<button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button>',
+    ]); ?>
     <div class="sub">admin 전용 · 운영자·사용자가 접근할 수 있는 메뉴를 체크로 설정 · 관리자는 항상 전체 허용</div>
 
     <?php vg_alert($msg, 'ok'); vg_alert($err); ?>

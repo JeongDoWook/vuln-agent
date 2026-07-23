@@ -9,12 +9,25 @@ declare(strict_types=1);
 require_once __DIR__ . '/../format.php';
 require_once __DIR__ . '/../ui_config.php';
 
+/** 출력형 공통 컴포넌트를 문자열 슬롯(actions 등)에 안전하게 담는다. */
+function vg_capture(callable $render): string {
+    ob_start();
+    try {
+        $render();
+        return (string) ob_get_clean();
+    } catch (Throwable $e) {
+        ob_end_clean();
+        throw $e;
+    }
+}
+
 /** 목록 화면의 제목·설명·건수·우측 작업을 일관되게 렌더한다. */
 function vg_page_title(string $title, string $eyebrow, string $description = '', array $opts = []): void {
     $class = trim('page-title ' . (!empty($opts['actions']) ? 'page-title--actions ' : '') . (string) ($opts['class'] ?? ''));
     echo '<header class="' . vg_h($class) . '"><div><span class="page-title__eyebrow">' . vg_h($eyebrow) . '</span><h1>' . vg_h($title);
     if (array_key_exists('count', $opts)) { echo ' <span class="hint">(' . number_format((int) $opts['count']) . vg_h((string) ($opts['count_label'] ?? '건')) . ')</span>'; }
     if (!empty($opts['hint'])) { echo ' <span class="hint">' . vg_h((string) $opts['hint']) . '</span>'; }
+    if (!empty($opts['suffix_html'])) { echo ' ' . (string) $opts['suffix_html']; }
     echo '</h1>';
     if ($description !== '') { echo '<p>' . vg_h($description) . '</p>'; }
     echo '</div>';
