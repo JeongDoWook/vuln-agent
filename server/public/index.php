@@ -37,15 +37,26 @@ try {
     )->fetch() ?: null;
 
     // 전 호스트의 "최신 스캔" 집합 — KPI·도넛·급한목록이 모두 이 기준을 쓴다.
+    //   tb_findings 를 조인하는 아래 쿼리들은 WHERE scan_id IN(이 서브쿼리) 대신 JOIN 으로
+    //   표현한다(cve.php·compliance_rule.php 와 동일 패턴). IN(서브쿼리) 로 두면 옵티마이저가
+    //   호스트당 "최신 스캔 하나"가 아니라 tb_scans 전체(변경시에만 저장되지만 이력이 계속
+    //   쌓인다 — 실측 호스트당 평균 6.5개)를 먼저 tb_findings 와 조인한 뒤에야 필터링해,
+    //   스캔 이력이 쌓일수록 대시보드가 선형으로 느려진다(실측: "대응 우선순위" 카드 하나가
+    //   7.2초 — EXPLAIN ANALYZE 로 확인. JOIN 전환 후 0.2초).
+    //   tb_scans 자체(작은 표, 아래 resKpi)에는 이 문제가 없어 IN(서브쿼리)를 그대로 둔다.
     $latestScans =
         "SELECT t.mid FROM " . vg_latest_scan_subq() . " t
           JOIN tb_hosts h ON h.id = t.host_id
          WHERE h.is_deleted = 0";
+    $latestJoin = "JOIN " . vg_latest_scan_subq() . " latest ON latest.host_id = s.host_id AND latest.mid = s.id";
 
     // KPI 는 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
     $totalsRows = $pdo->query(
-        "SELECT f.severity, COUNT(*) c FROM tb_findings f
-          WHERE f.scan_id IN ($latestScans)
+        "SELECT f.severity, COUNT(*) c
+           FROM tb_findings f
+           JOIN tb_scans s ON s.id = f.scan_id
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+           $latestJoin
           GROUP BY f.severity"
     )->fetchAll();
     foreach ($totalsRows as $f) { if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; } }
@@ -64,10 +75,10 @@ try {
                 DATEDIFF(CURDATE(), k.due_date) AS days_over
            FROM tb_findings f
            JOIN tb_scans s ON s.id = f.scan_id
-           JOIN tb_hosts h ON h.id = s.host_id
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+           $latestJoin
            LEFT JOIN tb_kev_catalog k ON k.cve_id = f.cve_id AND k.is_deleted = 0
-          WHERE f.scan_id IN ($latestScans)
-            AND (f.in_kev = 1 OR f.runtime_status = 'EXTERNAL')
+          WHERE (f.in_kev = 1 OR f.runtime_status = 'EXTERNAL')
           ORDER BY (k.due_date IS NOT NULL AND k.due_date < CURDATE()) DESC,
                    (f.in_kev = 1 AND f.runtime_status = 'EXTERNAL') DESC,
                    FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),
@@ -78,19 +89,31 @@ try {
     // 급한 항목의 전체 건수 — 상위 N개만 보여주면서 "몇 건 중 몇 건인지" 를 말하지 않으면
     // 화면이 "이게 전부" 라고 거짓말을 한다. 나머지는 취약점 현황에서 본다.
     $urgentTotal = (int) $pdo->query(
-        "SELECT COUNT(*) FROM tb_findings f
-          WHERE f.scan_id IN ($latestScans)
-            AND (f.in_kev = 1 OR f.runtime_status = 'EXTERNAL')"
+        "SELECT COUNT(*)
+           FROM tb_findings f
+           JOIN tb_scans s ON s.id = f.scan_id
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+           $latestJoin
+          WHERE (f.in_kev = 1 OR f.runtime_status = 'EXTERNAL')"
     )->fetchColumn();
 
     // KEV 노출 건수 · 패치 기한 초과 건수(KPI)
     $kevCount = (int) $pdo->query(
-        "SELECT COUNT(*) FROM tb_findings f WHERE f.scan_id IN ($latestScans) AND f.in_kev = 1"
+        "SELECT COUNT(*)
+           FROM tb_findings f
+           JOIN tb_scans s ON s.id = f.scan_id
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+           $latestJoin
+          WHERE f.in_kev = 1"
     )->fetchColumn();
     $overdueCount = (int) $pdo->query(
-        "SELECT COUNT(*) FROM tb_findings f
+        "SELECT COUNT(*)
+           FROM tb_findings f
+           JOIN tb_scans s ON s.id = f.scan_id
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+           $latestJoin
            JOIN tb_kev_catalog k ON k.cve_id = f.cve_id AND k.is_deleted = 0
-          WHERE f.scan_id IN ($latestScans) AND k.due_date IS NOT NULL AND k.due_date < CURDATE()"
+          WHERE k.due_date IS NOT NULL AND k.due_date < CURDATE()"
     )->fetchColumn();
 
     // OS 분포 — 비삭제 호스트를 os_id 기준으로 묶어 상위 10개. os_id 가 비어있으면 "미상".
@@ -109,8 +132,8 @@ try {
         "SELECT h.id AS host_id, h.fqdn, COUNT(f.id) c
            FROM tb_findings f
            JOIN tb_scans s ON s.id = f.scan_id
-           JOIN tb_hosts h ON h.id = s.host_id
-          WHERE f.scan_id IN ($latestScans)
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+           $latestJoin
           GROUP BY h.id, h.fqdn
           ORDER BY c DESC
           LIMIT 10"
