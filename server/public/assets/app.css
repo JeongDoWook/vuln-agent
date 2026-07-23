@@ -1674,3 +1674,35 @@ form.card { border-radius:24px; }
 .check-row span { display:grid; gap:.2rem; }
 .check-row small { color:var(--muted); font-weight:450; line-height:1.5; }
 .setting-card .actions { padding-top:.15rem; }
+/* Permissions matrix: stable columns and a single centered control per role. */
+.sr-only {
+  position:absolute !important;
+  width:1px !important;
+  height:1px !important;
+  padding:0 !important;
+  margin:-1px !important;
+  overflow:hidden !important;
+  clip:rect(0,0,0,0) !important;
+  white-space:nowrap !important;
+  border:0 !important;
+}
+.page--permissions .permission-form { display:grid; gap:1rem; }
+.page--permissions .permission-form > .page-title,
+.page--permissions .permission-form > .sub,
+.page--permissions .permission-form > .alert { margin-bottom:0; }
+.page--permissions .permission-form > .card:has(> .matrix) { margin:0; padding:0; overflow:hidden; }
+.page--permissions .matrix { table-layout:fixed; }
+.page--permissions .matrix .permission-menu { width:46%; }
+.page--permissions .matrix .permission-role { width:18%; text-align:center; }
+.page--permissions .matrix th,
+.page--permissions .matrix td { height:58px; vertical-align:middle; }
+.page--permissions .matrix .permission-menu { padding-left:1.5rem; }
+.page--permissions .check-cell { display:grid; place-items:center; width:100%; min-height:32px; cursor:pointer; }
+.page--permissions .matrix input[type="checkbox"] { width:1.2rem; height:1.2rem; margin:0; transform:none; accent-color:var(--primary); }
+.page--permissions .permission-note { margin-top:.25rem; }
+@media(max-width:860px) {
+  .page--permissions .matrix .permission-menu,
+  .page--permissions .matrix .permission-role { width:100%; padding-left:0; }
+  .page--permissions .matrix td.permission-role { grid-template-columns:minmax(6rem,34%) 1fr; align-items:center; }
+  .page--permissions .check-cell { justify-items:end; }
+}

@@ -35,6 +35,14 @@ foreach (['agent-tokens.php', 'api-tokens.php', 'users.php'] as $name) {
     $check(str_contains($source, 'prepare('), "$name 검색 SQL 바인딩");
 }
 
+$permissionsPhp = (string) file_get_contents($public . '/permissions.php');
+$appCss = (string) file_get_contents($public . '/assets/app.css');
+$componentsPhp = (string) file_get_contents($root . '/server/src/view/components.php');
+$check(str_contains($permissionsPhp, 'class="permission-form"'), '권한 매트릭스 전용 레이아웃');
+$check(str_contains($permissionsPhp, "'class' => 'permission-role'"), '권한 역할 열 클래스');
+$check(str_contains($appCss, '.page--permissions .check-cell'), '권한 체크박스 중앙 정렬');
+$check(str_contains($appCss, '.sr-only'), '보조기술 전용 텍스트 숨김');
+$check(str_contains($componentsPhp, "!empty(\$h['class'])"), '공통 테이블 열 클래스 지원');
 $connectorPhp = (string) file_get_contents($public . '/connectors.php');
 $connectorJs = (string) file_get_contents($public . '/assets/js/connectors.js');
 $check(str_contains($connectorPhp, 'data-feed-preview'), '커넥터 미리보기 data 속성');

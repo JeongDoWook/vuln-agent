@@ -56,7 +56,7 @@ foreach ($pdo->query('SELECT role, menu_code, allowed FROM tb_role_permissions W
 $csrf = vg_csrf_token();
 vg_header('권한설정', 'permissions');
 ?>
-  <form method="post">
+  <form method="post" class="permission-form">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
     <?php vg_page_title('역할별 메뉴 접근권한', 'ACCESS CONTROL', '운영자와 사용자의 메뉴 접근 범위를 설정합니다.', [
         'actions' => '<button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button>',
@@ -69,10 +69,10 @@ vg_header('권한설정', 'permissions');
       $permissionRows = [];
       foreach ($menus as $code => $label) { $permissionRows[] = ['code' => $code, 'label' => $label]; }
       vg_table([
-          ['label' => '메뉴', 'key' => 'label'],
-          ['label' => '관리자', 'align' => 'center'],
-          ['label' => '운영자', 'align' => 'center'],
-          ['label' => '사용자', 'align' => 'center'],
+          ['label' => '메뉴', 'key' => 'label', 'class' => 'permission-menu'],
+          ['label' => '관리자', 'align' => 'center', 'class' => 'permission-role'],
+          ['label' => '운영자', 'align' => 'center', 'class' => 'permission-role'],
+          ['label' => '사용자', 'align' => 'center', 'class' => 'permission-role'],
       ], $permissionRows, [
           'class' => 'matrix',
           'cell' => [
@@ -83,10 +83,9 @@ vg_header('권한설정', 'permissions');
           ],
       ]);
     ?>
-    <div class="mt-lg"><button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button></div>
   </form>
 
-  <div class="card">
+  <div class="card permission-note">
     <div class="sub">
       · <strong>권한설정</strong> 메뉴 자체는 관리자 전용이라 목록에서 제외됩니다.<br>
       · 관리자 계정은 어떤 설정과 무관하게 모든 메뉴에 접근합니다(잠금방지).
