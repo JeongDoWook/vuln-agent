@@ -61,7 +61,8 @@ vg_header($adv ? (string) $adv['title'] : '국내 보안공지', 'advisories');
       $meta,
       $cves ? 'CVE ' . count($cves) . '건' : 'CVE 없음',
       $cves ? 'info' : 'muted',
-      '관련 취약점'
+      '관련 취약점',
+      'ADVISORY DETAIL'
   );
   ?>
 

@@ -43,10 +43,11 @@ function vg_modal_btn(string $target, string $label, string $class = 'btn btn--s
  * data-modal-autoopen 을 달아 app.js 가 showModal() 을 부르게 한다.
  */
 function vg_modal_open(string $id, string $title, string $class = '', bool $open = false): void {
-    echo '<dialog class="modal ' . vg_h($class) . '" id="' . vg_h($id) . '"'
+    $titleId = $id . 'Title';
+    echo '<dialog class="modal ' . vg_h($class) . '" id="' . vg_h($id) . '" aria-labelledby="' . vg_h($titleId) . '"'
         . ($open ? ' data-modal-autoopen' : '') . '>'
         . '<div class="modal__head">'
-        . '<strong>' . vg_h($title) . '</strong>'
+        . '<strong id="' . vg_h($titleId) . '">' . vg_h($title) . '</strong>'
         . '<button type="button" class="modal__x" data-modal-close aria-label="닫기">✕</button>'
         . '</div>'
         . '<div class="modal__body">';
@@ -172,9 +173,9 @@ function vg_connectors_empty_cta(): ?array {
  *   $riskTone 은 톤 어휘(crit/high/med/low/ok/muted). 라벨과 톤을 분리한 건 "양호" 처럼
  *   심각도 어휘에 없는 라벨을 써야 할 때가 있기 때문이다(vg_sev_tone 은 그걸 muted 로 떨군다).
  */
-function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, string $riskTone = 'ok', string $riskCap = '최고 위험도'): void {
+function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, string $riskTone = 'ok', string $riskCap = '최고 위험도', string $eyebrow = 'DETAIL'): void {
     echo '<div class="hero hero--' . vg_h($riskLabel !== null ? $riskTone : 'ok') . '">';
-    echo '<div class="hero__id"><h1>' . $title . '</h1>';
+    echo '<div class="hero__id"><span class="hero__eyebrow">' . vg_h($eyebrow) . '</span><h1>' . $title . '</h1>';
     if ($meta) {
         echo '<div class="hero__meta">' . implode(' <span class="why">·</span> ', $meta) . '</div>';
     }

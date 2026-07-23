@@ -202,7 +202,7 @@ function vg_change_tone(string $type): string {
 
 vg_header('변화 추적', 'findings');
 ?>
-  <h1>변화 추적 <span class="hint">(각 호스트 최근 2스캔 비교)</span> <?= vg_info_icon('지난 수집 대비 새로 생긴 / 해결된 / 등급이 바뀐 취약점. 무엇이 달라졌는지 한눈에 본다.') ?></h1>
+  <header class="page-title"><div><span class="page-title__eyebrow">CHANGES</span><h1>변화 추적 <span class="hint">(최근 2스캔 비교)</span> <?= vg_info_icon('지난 수집 대비 새로 생긴 / 해결된 / 등급이 바뀐 취약점. 무엇이 달라졌는지 한눈에 본다.') ?></h1><p>새로 생긴 위험과 해결된 항목, 등급 변화를 한눈에 비교합니다.</p></div></header>
 
   <nav class="subtabs">
     <a href="/findings.php">현황</a>

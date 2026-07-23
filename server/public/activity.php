@@ -77,8 +77,7 @@ try {
 
 vg_header('감사로그', 'activity');
 ?>
-  <h1>감사로그</h1>
-  <div class="sub">admin 전용 · 사용자/시스템 행위 기록(최신순)</div>
+  <header class="page-title"><div><span class="page-title__eyebrow">AUDIT</span><h1>감사로그</h1><p>사용자와 시스템의 주요 행위를 최신순으로 추적합니다.</p></div></header>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

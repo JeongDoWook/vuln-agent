@@ -39,13 +39,13 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
 <script src="<?= vg_asset("/assets/js/{$pageJs}.js") ?>" defer></script>
 <?php endif; ?>
 </head>
-<body>
+<body class="page page--<?= vg_h($pageJs !== '' ? $pageJs : 'default') ?><?= $user !== null ? ' is-authenticated' : ' is-guest' ?>">
 <?php if ($user !== null): ?>
   <aside class="side">
     <?php if (vg_can('dashboard')): ?>
-      <a class="brand" href="/" title="대시보드로 이동">🛡️ vuln-agent</a>
+      <a class="brand" href="/" title="대시보드로 이동"><span class="brand__mark" aria-hidden="true">V</span><span>vuln-agent</span></a>
     <?php else: ?>
-      <span class="brand">🛡️ vuln-agent</span>
+      <span class="brand"><span class="brand__mark" aria-hidden="true">V</span><span>vuln-agent</span></span>
     <?php endif; ?>
     <nav class="menu"><?php vg_nav($active); ?></nav>
     <?php // 사이드바 마크업 직후 동기 실행 — 저장된 접힘 상태를 첫 페인트 전에 반영(FOUC 방지). ?>
@@ -60,6 +60,9 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
 <div class="app">
 <?php if ($user !== null): ?>
   <header class="topbar">
+    <button type="button" class="nav-toggle" data-nav-toggle aria-label="메뉴 열기" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
     <?php vg_breadcrumb($active, $title); ?>
     <div class="topbar__right">
       <div class="seg" role="group" aria-label="테마 전환">
@@ -73,8 +76,9 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
       </a>
     </div>
   </header>
+  <button type="button" class="nav-backdrop" data-nav-close aria-label="메뉴 닫기"></button>
 <?php endif; ?>
-<main>
+<main class="page__main">
 <?php
 }
 

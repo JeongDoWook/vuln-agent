@@ -240,6 +240,31 @@
   });
   document.addEventListener('DOMContentLoaded', syncThemeButtons);
 
+  // --- 모바일 내비게이션 -------------------------------------------------
+  function setMobileNav(open) {
+    document.body.classList.toggle('nav-open', open);
+    var toggle = document.querySelector('[data-nav-toggle]');
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기');
+    }
+  }
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('[data-nav-toggle]')) {
+      e.preventDefault();
+      setMobileNav(!document.body.classList.contains('nav-open'));
+      return;
+    }
+    if (e.target.closest('[data-nav-close]') || e.target.closest('.side a.link')) {
+      setMobileNav(false);
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.body.classList.contains('nav-open')) {
+      setMobileNav(false);
+    }
+  });
+
   // --- 사이드바 아코디언 (접이식 그룹) ------------------------------------
   // 서버는 모든 그룹을 <details open> 으로 렌더한다 → JS 가 죽어도 전부 펼쳐져 링크 접근 가능.
   // 여기서는 데스크톱에서 접힘 상태를 그룹명(data-grp) 기준 localStorage 에 기억·복원하되,

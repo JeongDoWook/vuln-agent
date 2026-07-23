@@ -151,7 +151,7 @@ try {
 
 vg_header('취약점', 'findings');
 ?>
-  <h1>취약점 우선순위 <span class="hint">(매처 결과)</span></h1>
+  <div class="page-title page-title--stack"><div><span class="page-title__eyebrow">PRIORITIZED FINDINGS</span><h1>취약점 우선순위 <span class="hint">(매처 결과)</span></h1>
   <div class="sub">
     <?php if ($scan): ?>
       호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['id'] ?> · <?= vg_h($scan['collected_at']) ?>
@@ -164,7 +164,7 @@ vg_header('취약점', 'findings');
     <?php elseif ($hostOptions): ?>
       전체 호스트 <?= count($hostOptions) ?>대 · 각 호스트의 최신 스캔 기준
     <?php else: ?>스캔 없음<?php endif; ?>
-  </div>
+  </div></div>
 
   <nav class="subtabs">
     <a class="on" href="/findings.php">현황</a>

@@ -58,7 +58,7 @@ vg_header('권한설정', 'permissions');
 ?>
   <form method="post">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-    <div class="page-head">
+    <div class="page-head page-title page-title--actions">
       <h1>역할별 메뉴 접근권한</h1>
       <div class="toolbar"><button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button></div>
     </div>

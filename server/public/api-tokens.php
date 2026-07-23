@@ -85,7 +85,7 @@ $tokens = $pdo->query(
 
 vg_header('API 토큰', 'apitokens');
 ?>
-  <div class="page-head">
+  <div class="page-head page-title page-title--actions">
     <h1>API 토큰 <span class="hint">(<?= number_format($total) ?>개)</span></h1>
     <div class="toolbar"><?php vg_modal_btn('issueToken', '+ 토큰 발급'); ?></div>
   </div>

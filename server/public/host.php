@@ -434,7 +434,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       '<a href="/">대시보드</a>',
   ];
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
-  vg_hero('🖥️ ' . vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone);
+  vg_hero('🖥️ ' . vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'ASSET DETAIL');
 
   $portStmt = $pdo->prepare('SELECT port, proto FROM tb_host_ext_ports WHERE host_id = ? AND is_deleted = 0 ORDER BY port, proto');
   $portStmt->execute([$hostId]);

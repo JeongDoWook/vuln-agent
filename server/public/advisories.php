@@ -74,7 +74,7 @@ try {
 
 vg_header('국내 보안공지', 'advisories');
 ?>
-  <h1>🇰🇷 국내 보안공지 <span class="hint">(KISA 보호나라)</span></h1>
+  <header class="page-title"><div><span class="page-title__eyebrow">KOREA SECURITY</span><h1>국내 보안공지 <span class="hint">(KISA 보호나라)</span></h1><p>국내 보안공지와 연결된 CVE를 함께 확인합니다.</p></div></header>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
