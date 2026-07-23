@@ -380,7 +380,11 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
         $align = is_array($h) ? ($h['align'] ?? null) : null;
         $width = is_array($h) ? ($h['width'] ?? null) : null;
         $style = $width ? ' style="width:' . vg_h($width) . ';"' : '';
-        $thClass = ($align === 'right') ? ' class="right"' : (($align === 'center') ? ' class="center"' : '');
+        $thClasses = [];
+        if ($align === 'right') { $thClasses[] = 'right'; }
+        elseif ($align === 'center') { $thClasses[] = 'center'; }
+        if (is_array($h) && !empty($h['class'])) { $thClasses[] = (string) $h['class']; }
+        $thClass = $thClasses ? ' class="' . vg_h(implode(' ', $thClasses)) . '"' : '';
         echo '<th' . $thClass . $style . '>' . vg_h($label) . '</th>';
     }
     echo '</tr></thead><tbody>';
@@ -401,6 +405,7 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
             $nowrap = is_array($h) && !empty($h['nowrap']);
             $tdClasses = [];
             if ($nowrap) { $tdClasses[] = 'nowrap'; }
+            if (is_array($h) && !empty($h['class'])) { $tdClasses[] = (string) $h['class']; }
             if ($align === 'right') { $tdClasses[] = 'right'; }
             elseif ($align === 'center') { $tdClasses[] = 'center'; }
             $tdClass = $tdClasses ? ' class="' . vg_h(implode(' ', $tdClasses)) . '"' : '';
