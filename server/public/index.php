@@ -21,6 +21,7 @@ $page = vg_page();
 $perPage = vg_perpage();
 try {
     $pdo = vg_pdo();
+    $actionableStatusesSql = vg_ui_dashboard_actionable_statuses_sql();
     $hostCount = (int) $pdo->query('SELECT COUNT(*) FROM tb_hosts WHERE is_deleted = 0')->fetchColumn();
 
     // 다음 수집 예정 — enabled·비manual 커넥터 중 next_run_at 이 가장 이른 하나.
@@ -73,11 +74,14 @@ try {
            JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
            $latestJoin
            LEFT JOIN tb_kev_catalog k ON k.cve_id = f.cve_id AND k.is_deleted = 0
-          WHERE (f.in_kev = 1 OR f.runtime_status = 'EXTERNAL')
-          ORDER BY (k.due_date IS NOT NULL AND k.due_date < CURDATE()) DESC,
-                   (f.in_kev = 1 AND f.runtime_status = 'EXTERNAL') DESC,
+          WHERE (f.runtime_status = 'EXTERNAL'
+                 OR (f.in_kev = 1 AND f.runtime_status IN ($actionableStatusesSql)))
+          ORDER BY (f.in_kev = 1 AND f.runtime_status = 'EXTERNAL') DESC,
+                   (f.in_kev = 1 AND f.runtime_status IN ($actionableStatusesSql)) DESC,
+                   (f.runtime_status = 'EXTERNAL') DESC,
                    FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),
-                   k.due_date
+                   k.due_date,
+                   f.cve_id
           LIMIT " . vg_ui_dashboard_urgent_limit()
     )->fetchAll();
 
@@ -89,7 +93,8 @@ try {
            JOIN tb_scans s ON s.id = f.scan_id
            JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
            $latestJoin
-          WHERE (f.in_kev = 1 OR f.runtime_status = 'EXTERNAL')"
+          WHERE (f.runtime_status = 'EXTERNAL'
+                 OR (f.in_kev = 1 AND f.runtime_status IN ($actionableStatusesSql)))"
     )->fetchColumn();
 
     // KEV 노출 건수 · 패치 기한 초과 건수(KPI)
@@ -108,7 +113,9 @@ try {
            JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
            $latestJoin
            JOIN tb_kev_catalog k ON k.cve_id = f.cve_id AND k.is_deleted = 0
-          WHERE k.due_date IS NOT NULL AND k.due_date < CURDATE()"
+          WHERE k.due_date IS NOT NULL AND k.due_date < CURDATE()
+            AND (f.runtime_status = 'EXTERNAL'
+                 OR (f.in_kev = 1 AND f.runtime_status IN ($actionableStatusesSql)))"
     )->fetchColumn();
 
     // OS 분포 — 비삭제 호스트를 os_id 기준으로 묶어 상위 10개. os_id 가 비어있으면 "미상".
@@ -248,17 +255,17 @@ vg_header('대시보드', 'dashboard');
          * 생기는 여백도 이걸로 채운다. */ ?>
         <div class="donut-foot">
           <?= vg_badge('KEV 악용확인 ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok', '집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다') ?>
-          <?= vg_badge('패치기한 초과 ' . number_format($overdueCount) . '건', $overdueCount > 0 ? 'crit' : 'ok', '집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다') ?>
+          <?= vg_badge('CISA 기준일 경과 ' . number_format($overdueCount) . '건', $overdueCount > 0 ? 'warn' : 'ok', '미국 연방기관에 적용되는 CISA KEV 조치 기준일입니다. 내부 SLA가 아닙니다.') ?>
         </div>
       </div>
     </div>
 
     <div class="card">
       <strong>대응 우선순위</strong>
-      <span class="why">— 패치 기한 초과 또는 악용 확인 + 외부 노출 자산부터</span>
+      <span class="why">— 실제 사용 중인 KEV와 외부 노출 자산부터</span>
       <?php if ($urgentTotal > count($urgent)): ?>
         <span class="why">· 총 <?= number_format($urgentTotal) ?>건 중 상위 <?= count($urgent) ?>건 ·
-          <a href="/findings.php?st=EXTERNAL">전체 보기 →</a></span>
+          <a href="/findings.php">전체 보기 →</a></span>
       <?php endif; ?>
       <div class="card__body">
       <?php
@@ -289,15 +296,17 @@ vg_header('대시보드', 'dashboard');
                   },
                   2 => fn($u) => '<a href="/host.php?id=' . (int) $u['host_id'] . '">' . vg_h((string) $u['fqdn']) . '</a>',
                   3 => fn($u) => vg_h((string) $u['package_name']),
-                  // "우선순위 사유" — 기한 초과가 최우선, 그다음이 악용확인+외부노출.
+                  // "우선순위 사유" — 실제 악용+노출/사용 맥락이 우선이며 CISA 날짜는 보조 근거다.
                   4 => function ($u) {
                       $over = $u['days_over'] !== null ? (int) $u['days_over'] : null;
-                      if ($over !== null && $over > 0) {
-                          return vg_badge('기한 ' . number_format($over) . '일 초과', 'crit')
-                               . '<div class="why">기한 ' . vg_h((string) $u['due_date']) . '</div>';
-                      }
+                      $cisaDate = $over !== null && $over > 0
+                          ? '<div class="why">CISA 연방기관 기준일 ' . vg_h((string) $u['due_date']) . ' 경과</div>'
+                          : '';
                       if ($u['in_kev'] && $u['runtime_status'] === 'EXTERNAL') {
-                          return vg_badge('악용확인 + 외부노출', 'crit');
+                          return vg_badge('악용확인 + 외부노출', 'crit') . $cisaDate;
+                      }
+                      if ($u['in_kev']) {
+                          return vg_badge('악용확인 + 실제 사용', 'warn') . $cisaDate;
                       }
                       return vg_status_badge($u['runtime_status']);
                   },

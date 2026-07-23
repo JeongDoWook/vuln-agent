@@ -4,6 +4,7 @@ declare(strict_types=1);
 /** UI 운영 설정·감사 로그 마스킹 단위 테스트. */
 require_once __DIR__ . '/../server/src/ui_config.php';
 require_once __DIR__ . '/../server/src/audit.php';
+require_once __DIR__ . '/../server/src/distro.php';
 
 $fail = 0;
 $eq = static function (string $label, $got, $want) use (&$fail): void {
@@ -23,6 +24,11 @@ putenv('UI_DASHBOARD_URGENT_LIMIT=999');
 $eq('대시보드 한도 상한', vg_ui_dashboard_urgent_limit(), 30);
 putenv('UI_TREND_LIMIT=-1');
 $eq('추이 한도 하한', vg_ui_trend_limit(), 10);
+putenv('UI_DASHBOARD_ACTIONABLE_STATUSES=external,loaded,installed,bad');
+$eq('긴급 상태 화이트리스트', vg_ui_dashboard_actionable_statuses(), ['EXTERNAL', 'LOADED']);
+$eq('긴급 상태 SQL도 검증된 값만 사용', vg_ui_dashboard_actionable_statuses_sql(), "'EXTERNAL','LOADED'");
+$eq('Wolfi OSV 생태계', vg_osv_ecosystem('wolfi', '20230201'), 'Wolfi');
+$eq('Wolfi는 판정 가능', vg_distro_unsupported('wolfi', '20230201'), null);
 
 $clean = vg_audit_sanitize([
     'username' => 'alice',
@@ -39,6 +45,7 @@ $eq('CSRF 마스킹', $clean['csrf_value'], '[REDACTED]');
 putenv('UI_PER_PAGE_OPTIONS');
 putenv('UI_PER_PAGE_DEFAULT');
 putenv('UI_DASHBOARD_URGENT_LIMIT');
+putenv('UI_DASHBOARD_ACTIONABLE_STATUSES');
 putenv('UI_TREND_LIMIT');
 
 if ($fail > 0) {

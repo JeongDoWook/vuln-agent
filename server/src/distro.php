@@ -256,6 +256,9 @@ if (!function_exists('vg_osv_ecosystem')) {
             // 알파인은 컨테이너에서 흔하다. OSV 표기는 'Alpine:v3.19' (마이너까지, v 접두).
             case 'alpine':
                 return preg_match('/^(\d+\.\d+)/', $ver, $mm) ? "Alpine:v{$mm[1]}" : null;
+            // Wolfi는 롤링 배포판이라 VERSION_ID(예: 20230201)를 ecosystem에 붙이지 않는다.
+            // OSV 공식 ecosystem 이름은 항상 "Wolfi"다.
+            case 'wolfi':                return 'Wolfi';
             case 'rocky': case 'rockylinux': return $major ? "Rocky Linux:$major" : null;
             case 'almalinux':            return $major ? "AlmaLinux:$major" : null;
             case 'rhel': case 'redhat':  return $major ? "Red Hat:$major" : null;
