@@ -481,12 +481,16 @@ vg_header('대시보드', 'dashboard');
       <div class="mt-lg">
         <strong>메모리 사용률 추이</strong>
         <span class="why">— 함대 평균 %(호스트별 최신값 이월) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
-        <?php vg_resource_trend($resTrend, 'avg_mem_pct', '%', 1, 'mem'); ?>
+        <div class="card__body">
+          <?php vg_resource_trend($resTrend, 'avg_mem_pct', '%', 1, 'mem'); ?>
+        </div>
       </div>
       <div class="mt-lg">
         <strong>CPU 사용률 추이</strong>
         <span class="why">— 함대 평균 %(호스트별 최신값 이월) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
-        <?php vg_resource_trend($resTrend, 'avg_cpu_pct', '%', 1, 'cpu'); ?>
+        <div class="card__body">
+          <?php vg_resource_trend($resTrend, 'avg_cpu_pct', '%', 1, 'cpu'); ?>
+        </div>
       </div>
     </div>
   </div>
