@@ -165,6 +165,7 @@ fi
 # server/src/vercmp.php 를 고쳐도 조용히 지나갔다 — 스모크에 묶는다.
 # php 8.3 컨테이너로 돈다: 호스트 php 는 7.2 라 8.x 문법을 오탐한다(pre-push 와 같은 이유).
 run_phpunit "vercmp_test.php" "vercmp" "vercmp 단위 테스트"
+run_phpunit "osv_precision_test.php" "osv_precision" "OSV 구간·소스 버전 정밀 매칭 단위 테스트"
 
 # --- ingest_parse 단위 테스트 -------------------------------------------------
 # ingest.php 의 순수 변환(패키지/노출/컨테이너/changelog 파싱, 내용해시, 패키지 diff)을
