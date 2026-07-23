@@ -99,13 +99,10 @@ $statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'nev
 
 vg_header('피드 커넥터', 'connectors');
 ?>
-  <div class="page-head page-title page-title--actions">
-    <h1>CVE 피드 커넥터<?= vg_info_icon('외부 소스를 역할별로 묶어 설정·스케줄·수집한다 — 취약점 정체 · 우선순위 신호 · 벤더 패치 판정 · 보안설정 룰셋. 결과는 매처가 자동 재계산.') ?></h1>
-    <div class="toolbar">
-      <?php // 모달 id 는 connModal — 폼 자체의 id(connForm)와 겹치면 미리보기 JS 가 폼 대신 dialog 를 잡는다.
-      vg_modal_btn('connModal', '+ 커넥터 추가'); ?>
-    </div>
-  </div>
+  <?php vg_page_title('CVE 피드 커넥터', 'DATA SOURCES', '외부 보안 데이터를 역할별로 연결하고 수집 상태를 관리합니다.', [
+      'suffix_html' => vg_info_icon('외부 소스를 역할별로 묶어 설정·스케줄·수집합니다. 결과는 매처가 자동 재계산합니다.'),
+      'actions' => vg_capture(static fn() => vg_modal_btn('connModal', '+ 커넥터 추가')),
+  ]); ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
@@ -348,7 +345,7 @@ vg_header('피드 커넥터', 'connectors');
       <pre id="vgPrev" class="out" hidden></pre>
       <?php vg_modal_foot($edit ? '저장' : '추가', ['extra' =>
           // "API 미리보기" 였는데 12종 중 절반은 API 가 아니다(정적 파일·gz/bz2 덤프·RSS).
-          '<button type="button" id="vgPrevBtn" class="btn btn--ghost" data-loading="조회 중…" onclick="vgPreview(this)">미리보기 (10건)</button>']); ?>
+          '<button type="button" id="vgPrevBtn" class="btn btn--ghost" data-loading="조회 중…" data-feed-preview>미리보기 (10건)</button>']); ?>
     </form>
   <?php vg_modal_close(); ?>
 

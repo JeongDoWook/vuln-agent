@@ -46,6 +46,7 @@ try {
 vg_header($adv ? (string) $adv['title'] : '국내 보안공지', 'advisories');
 ?>
 <?php if ($err !== null): ?>
+  <?php vg_page_title('보안공지를 찾을 수 없습니다', 'ADVISORY DETAIL', '삭제되었거나 존재하지 않는 공지입니다.'); ?>
   <?php vg_alert('오류 · ' . $err); ?>
   <div class="sub"><a href="/advisories.php">← 공지 목록으로</a></div>
 <?php else: ?>

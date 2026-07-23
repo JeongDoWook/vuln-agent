@@ -398,16 +398,13 @@ $scopeTone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'BOUND' => 'med', 'FILTERED'
 vg_header($host['fqdn'] ?? '호스트', 'assets');
 ?>
 <?php if ($err !== null): ?>
+  <?php vg_page_title('호스트 상세', 'ASSET DETAIL', '호스트 정보를 불러오지 못했습니다.'); ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif (!$host): ?>
-  <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '호스트를 찾을 수 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
+  <?php vg_page_title('호스트를 찾을 수 없습니다', 'ASSET DETAIL', '삭제되었거나 존재하지 않는 자산입니다.'); ?>
+  <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif (!$scan): ?>
-  <h1>🖥️ <?= vg_h($host['fqdn']) ?></h1>
-  <div class="sub">
-    <a href="/">← 대시보드</a> ·
-    <?php if (vg_can('assets')): ?><a href="/assets.php">자산관리</a> · <?php endif; ?>
-    <?= vg_h(trim($host['os_id'] . ' ' . $host['os_version'])) ?>
-  </div>
+  <?php vg_hero(vg_h($host['fqdn']), [vg_h(trim($host['os_id'] . ' ' . $host['os_version'])), '<a href="/">대시보드</a>'], null, 'ok', '수집 상태', 'ASSET DETAIL'); ?>
   <div class="card"><?php vg_empty(['icon' => '📭', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
@@ -443,19 +440,18 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       $portValues[] = (int) $portRow['port'] . '/' . strtolower((string) $portRow['proto']);
   }
   if ($msg !== null) { vg_alert(['type' => 'ok', 'title' => $msg]); }
-  $dq = chr(34);
-  echo '<div class=card><strong>경계 방화벽 설정</strong>';
-  echo '<span class=why>에이전트가 볼 수 없는 라우터·경계 방화벽 뒤의 호스트만 설정하세요.</span>';
-  echo '<div class=card__body><form method=post>';
-  echo '<input type=hidden name=csrf value=' . $dq . vg_h(vg_csrf_token()) . $dq . '>';
-  echo '<input type=hidden name=id value=' . $dq . (int) $hostId . $dq . '>';
-  echo '<label><input type=checkbox name=perimeter_firewalled value=1 '
+  vg_section_title('경계 방화벽 설정', '에이전트가 볼 수 없는 라우터·경계 방화벽 뒤의 호스트만 설정하세요.');
+  echo '<div class="card setting-card"><div class="card__body"><form method="post" class="setting-form">';
+  echo '<input type="hidden" name="csrf" value="' . vg_h(vg_csrf_token()) . '">';
+  echo '<input type="hidden" name="id" value="' . (int) $hostId . '">';
+  echo '<label class="check-row"><input type="checkbox" name="perimeter_firewalled" value="1" '
       . (!empty($host['perimeter_firewalled']) ? 'checked' : '')
-      . '> 이 호스트는 경계 방화벽 뒤에 있음</label>';
-  echo '<label>실제 인터넷 공개 포트 <input type=text name=external_ports value=' . $dq
-      . vg_h(implode(', ', $portValues)) . $dq . ' placeholder=' . $dq . '22/tcp, 443/tcp, 8080/tcp' . $dq . '></label>';
-  echo '<p class=hint>쉼표 또는 공백으로 구분합니다. 목록에 없는 호스트 EXTERNAL 포트만 FILTERED로 강등되며 컨테이너에는 적용되지 않습니다.</p>';
-  echo '<button type=submit>저장 및 최신 스캔 재매칭</button></form></div></div>';
+      . '><span><strong>경계 방화벽 뒤에 있음</strong><small>이 호스트에 실제 외부 공개 포트 기준을 적용합니다.</small></span></label>';
+  echo '<label class="field"><span>실제 인터넷 공개 포트</span><input type="text" name="external_ports" value="'
+      . vg_h(implode(', ', $portValues)) . '" placeholder="22/tcp, 443/tcp, 8080/tcp"></label>';
+  echo '<p class="hint">쉼표 또는 공백으로 구분합니다. 목록에 없는 호스트 EXTERNAL 포트만 FILTERED로 강등되며 컨테이너에는 적용되지 않습니다.</p>';
+  echo '<div class="actions"><button type="submit" class="btn btn--primary" data-loading="저장 및 재매칭 중…">저장 및 최신 스캔 재매칭</button></div>';
+  echo '</form></div></div>';
 
   // CVE 피드가 지원하지 않는 배포판이면 매칭 후보가 아예 없어 **취약점이 0건으로 뜬다.**
   //   운영자는 "안전하다"고 읽는다 — 침묵하는 미탐이라 반드시 화면에 알린다.

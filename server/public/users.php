@@ -51,28 +51,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $me = vg_current_user();
 
-// 목록 페이지네이션 — 계정이 쌓이면 한 화면에 다 쏟지 않는다.
+// 사용자 검색·역할 필터·페이지네이션.
+$q       = trim((string) ($_GET['q'] ?? ''));
+$role    = in_array((string) ($_GET['role'] ?? ''), VG_ROLES, true) ? (string) $_GET['role'] : '';
 $perPage = vg_perpage();
 $page    = vg_page();
-$total   = (int) $pdo->query('SELECT COUNT(*) FROM tb_users WHERE is_deleted = 0')->fetchColumn();
-$offset  = ($page - 1) * $perPage;
-
-$users = $pdo->query(
+$where   = 'is_deleted = 0';
+$params  = [];
+if ($q !== '') { $where .= ' AND username LIKE ?'; $params[] = '%' . $q . '%'; }
+if ($role !== '') { $where .= ' AND role = ?'; $params[] = $role; }
+$count = $pdo->prepare("SELECT COUNT(*) FROM tb_users WHERE $where");
+$count->execute($params);
+$total  = (int) $count->fetchColumn();
+$offset = ($page - 1) * $perPage;
+$list = $pdo->prepare(
     "SELECT id, username, role, created_at, last_login
-       FROM tb_users WHERE is_deleted = 0 ORDER BY id
+       FROM tb_users WHERE $where ORDER BY id
       LIMIT $perPage OFFSET $offset"
-)->fetchAll();
+);
+$list->execute($params);
+$users = $list->fetchAll();
 $csrf = vg_csrf_token();
 
 vg_header('사용자', 'users');
 ?>
-  <div class="page-head page-title page-title--actions">
-    <h1>사용자 관리 <span class="hint">(<?= number_format($total) ?>명)</span></h1>
-    <div class="toolbar"><?php vg_modal_btn('addUser', '+ 사용자 추가'); ?></div>
-  </div>
+  <?php vg_page_title('사용자 관리', 'IDENTITY', '', [
+      'count' => $total, 'count_label' => '명',
+      'actions' => vg_capture(static fn() => vg_modal_btn('addUser', '+ 사용자 추가')),
+  ]); ?>
   <div class="sub">admin 전용 · 계정 추가 · 역할 변경/초기화/삭제는 상세 페이지에서</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+
+  <?php
+  $roleOptions = [];
+  foreach (VG_ROLES as $roleCode) { $roleOptions[$roleCode] = vg_role_label($roleCode); }
+  vg_toolbar([
+      ['type' => 'search', 'name' => 'q', 'value' => $q, 'placeholder' => '아이디 검색'],
+      ['type' => 'select', 'name' => 'role', 'selected' => $role, 'empty_label' => '역할 전체', 'options' => $roleOptions],
+  ]);
+  ?>
 
   <?php
   $meId = (int) ($me['id'] ?? 0);
@@ -87,9 +105,12 @@ vg_header('사용자', 'users');
       ],
       $users,
       [
-          'empty' => [
-              'icon'  => '👤',
-              'title' => '등록된 사용자가 없습니다.',
+          'empty' => ($q !== '' || $role !== '') ? [
+              'icon' => '🔍', 'title' => '조건에 맞는 사용자가 없습니다.',
+              'hint' => '아이디나 역할 필터를 바꿔 보세요.',
+              'cta' => ['href' => '/users.php', 'label' => '필터 초기화'],
+          ] : [
+              'icon' => '👤', 'title' => '등록된 사용자가 없습니다.',
           ],
           'cell' => [
               0 => fn($u) => vg_h((string) $u['id']),
