@@ -81,6 +81,9 @@ if (!function_exists('vg_pkg_ecosystem')) {
             case 'npm':      return 'npm';
             case 'gem':      return 'RubyGems';
             case 'composer': return 'Packagist';
+            case 'maven':    return 'Maven';
+            case 'nuget':    return 'NuGet';
+            case 'cargo':    return 'crates.io';
             // Go 바이너리에서 뽑은 의존 모듈(buildinfo). OSV 의 Go 생태계로 그대로 조회된다.
             case 'go':       return 'Go';
             // 패키지 DB 도 Go 도 없는 이미지에서 바이너리 버전을 뽑아낸 것(nginx 등).

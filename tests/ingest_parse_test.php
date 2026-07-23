@@ -53,8 +53,11 @@ $lang = vg_ingest_parse_langpkgs([
     'npm_global' => "/usr/local/lib\n+-- corepack@0.34.6\n`-- npm@10.8.2",
     'gem'        => "rails (7.0.4, 6.1.7)\nabbrev (default: 0.1.1)",
     'composer'   => "psr/log 3.0.2 어떤 설명",
+    'maven'      => "org.apache.logging.log4j:log4j-core 2.14.1",
+    'nuget'      => "Newtonsoft.Json 13.0.3",
+    'cargo'      => "ripgrep v14.1.1:",
 ]);
-$eq('langpkg 총 7건(pip2+npm2+gem2+composer1)', count($lang), 7);
+$eq('langpkg 총 10건(기존7+Maven+NuGet+Cargo)', count($lang), 10);
 $byKey = [];
 foreach ($lang as $r) { $byKey[$r[0] . '|' . $r[1]] = $r[2]; }
 $eq('pip requests 버전', $byKey['pip|requests'] ?? null, '2.19.1');
@@ -62,7 +65,19 @@ $eq('npm corepack 버전', $byKey['npm|corepack'] ?? null, '0.34.6');
 $eq('gem rails 첫 버전만', $byKey['gem|rails'] ?? null, '7.0.4');
 $eq('gem abbrev default 제거', $byKey['gem|abbrev'] ?? null, '0.1.1');
 $eq('composer psr/log 버전', $byKey['composer|psr/log'] ?? null, '3.0.2');
+$eq('maven 좌표', $byKey['maven|org.apache.logging.log4j:log4j-core'] ?? null, '2.14.1');
+$eq('nuget 패키지', $byKey['nuget|Newtonsoft.Json'] ?? null, '13.0.3');
+$eq('cargo crate', $byKey['cargo|ripgrep'] ?? null, '14.1.1');
 
+// ── CycloneDX/SPDX SBOM ──────────────────────────────────────────────────
+$cdx = json_encode(['bomFormat'=>'CycloneDX','components'=>[
+    ['name'=>'log4j-core','version'=>'2.14.1','purl'=>'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1'],
+    ['name'=>'requests','version'=>'2.19.1','purl'=>'pkg:pypi/requests@2.19.1'],
+]]);
+$sbom = vg_ingest_parse_sbom('ctr-a|cyclonedx|' . base64_encode($cdx));
+$eq('SBOM 패키지 2건', count($sbom['packages']), 2);
+$eq('SBOM 형식', $sbom['meta']['ctr-a'][0] ?? null, 'cyclonedx');
+$eq('SBOM 해시', $sbom['meta']['ctr-a'][1] ?? null, hash('sha256', $cdx));
 // ── 노출 상관 ──────────────────────────────────────────────────────────────
 $exp = vg_ingest_parse_exposures(
     "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\n"

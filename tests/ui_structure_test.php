@@ -22,7 +22,7 @@ foreach ($phpFiles as $file) {
 $titlePages = [
     'activity.php', 'advisories.php', 'agent-tokens.php', 'api-tokens.php', 'assets.php',
     'changes.php', 'compliance_rules.php', 'connectors.php', 'cves.php', 'index.php',
-    'packages.php', 'permissions.php', 'profile.php', 'users.php', 'vendor.php',
+    'packages.php', 'permissions.php', 'profile.php', 'remediations.php', 'users.php', 'vendor.php',
 ];
 foreach ($titlePages as $name) {
     $source = (string) file_get_contents($public . '/' . $name);

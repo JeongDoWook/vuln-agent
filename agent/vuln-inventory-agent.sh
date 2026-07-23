@@ -27,11 +27,12 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="2.7"
+SCRIPT_VERSION="3.0"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
-MEM_MAX="${MEM_MAX:-300M}"            # --limit 시 메모리 상한
+MEM_MAX="${MEM_MAX:-300M}"             # --limit 시 메모리 상한
+SBOM_DIR="${SBOM_DIR:-/opt/vuln-agent/sbom}" # 선택적 CycloneDX/SPDX 입력 디렉터리
 DO_CHANGELOG=1                        # 핵심 패키지 CVE changelog 수집 여부
 DO_LIMIT=0                            # cgroup 리밋 사용 여부
 OUT=""
@@ -650,9 +651,25 @@ ctr_upstream_bins() {   # $1=대표pid $2=cid
   done | sort -u
 }
 
+# Optional offline SBOM import. Filename (without .json) must match container cid/name.
+collect_sbom() {
+  [ -d "$SBOM_DIR" ] || return 0
+  local f cid format size
+  for f in "$SBOM_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    size=$(stat -c%s "$f" 2>/dev/null || echo 0)
+    [ "$size" -gt 0 ] && [ "$size" -le 2097152 ] || continue
+    cid=$(basename "$f" .json)
+    case "$cid" in *'|'*|*'/'*) continue;; esac
+    if grep -q '"SPDXID"' "$f" 2>/dev/null; then format=spdx; else format=cyclonedx; fi
+    printf '%s|%s|' "$cid" "$format"
+    base64 -w0 "$f" 2>/dev/null || base64 "$f" 2>/dev/null | tr -d '\n'
+    printf '\n'
+  done
+}
 collect_containers() {
   is_root || return 0
-  local HOST_PIDNS pid key pidns root cid name image osid osver mgr pkgs gopkgs binpkgs cnt line MAP KEYMAP p n i k osrel f
+  local HOST_PIDNS pid key pidns root cid name image digest k8sns k8spod k8sctr workload osid osver mgr pkgs gopkgs binpkgs cnt line MAP KEYMAP p n i d k osrel f
   HOST_PIDNS=$(readlink /proc/self/ns/pid 2>/dev/null)
   declare -A SEEN
 
@@ -660,7 +677,7 @@ collect_containers() {
   MAP=""
   if have docker; then
     MAP=$(timeout "$CMD_TIMEOUT" docker ps -q 2>/dev/null \
-          | xargs -r timeout "$CMD_TIMEOUT" docker inspect -f '{{.State.Pid}}|{{.Name}}|{{.Config.Image}}' 2>/dev/null)
+          | xargs -r timeout "$CMD_TIMEOUT" docker inspect -f '{{.State.Pid}}|{{.Name}}|{{.Config.Image}}|{{.Image}}' 2>/dev/null)
   fi
   if [ -z "$MAP" ] && have podman; then
     MAP=$(timeout "$CMD_TIMEOUT" podman ps --format '{{.Pid}}|{{.Names}}|{{.Image}}' 2>/dev/null)
@@ -672,11 +689,11 @@ collect_containers() {
   # → 컨테이너 키로 바꿔 둔다. 같은 컨테이너면 자식도 같은 키다.
   KEYMAP=""
   if [ -n "$MAP" ]; then
-    while IFS='|' read -r p n i; do
+    while IFS='|' read -r p n i d; do
       [ -z "$p" ] && continue
       k=$(ctr_key "$p")
       [ -z "$k" ] && continue
-      KEYMAP="${KEYMAP}${k}|${n#/}|${i}
+      KEYMAP="${KEYMAP}${k}|${n#/}|${i}|${d}||||
 "
     done <<< "$MAP"
   fi
@@ -689,13 +706,13 @@ collect_containers() {
   #   이미지는 .image.image 가 sha256 다이제스트라 사람이 못 읽는다 → userSpecifiedImage 를 쓴다.
   #   jq 가 없으면 건너뛴다(이름 없이 ID 로만 잡힌다 — 지금까지의 동작).
   if have crictl && have jq; then
-    while IFS='|' read -r k n i; do
+    while IFS='|' read -r k n i d ns pod ctr workload; do
       [ -z "$k" ] && continue
-      KEYMAP="${KEYMAP}${k}|${n#/}|${i}
+      KEYMAP="${KEYMAP}${k}|${n#/}|${i}|${d}|${ns}|${pod}|${ctr}|${workload}
 "
     done <<< "$(timeout "$CMD_TIMEOUT" crictl ps -o json 2>/dev/null \
                 | jq -r '.containers[]? |
-                    "\(.id[0:12])|\(.labels["io.kubernetes.pod.name"] // "")/\(.metadata.name)|\(.image.userSpecifiedImage // .image.image)"' \
+                    "\(.id[0:12])|\(.labels["io.kubernetes.pod.name"] // "")/\(.metadata.name)|\(.image.userSpecifiedImage // .image.image)|\(.image.image // "")|\(.labels["io.kubernetes.pod.namespace"] // "")|\(.labels["io.kubernetes.pod.name"] // "")|\(.metadata.name // "")|\(.labels["io.kubernetes.container.name"] // "")"' \
                   2>/dev/null)"
   fi
 
@@ -730,11 +747,16 @@ collect_containers() {
     if [ -n "$line" ]; then
       name=$(printf '%s' "$line" | cut -d'|' -f2)
       image=$(printf '%s' "$line" | cut -d'|' -f3)
+      digest=$(printf '%s' "$line" | cut -d'|' -f4)
+      k8sns=$(printf '%s' "$line" | cut -d'|' -f5)
+      k8spod=$(printf '%s' "$line" | cut -d'|' -f6)
+      k8sctr=$(printf '%s' "$line" | cut -d'|' -f7)
+      workload=$(printf '%s' "$line" | cut -d'|' -f8)
       cid="$name"
     else
       # docker 가 모르는 컨테이너(containerd/CRI = 쿠버네티스, podman …).
       # 키가 곧 컨테이너 ID 다 — `crictl inspect <id>` 로 바로 조회된다.
-      name=""; image=""; cid="$key"
+      name=""; image=""; digest=""; k8sns=""; k8spod=""; k8sctr=""; workload=""; cid="$key"
     fi
 
     pkgs=""; mgr=""
@@ -850,7 +872,7 @@ collect_containers() {
 
     cnt=0
     [ -n "$pkgs" ] && { printf '%s\n' "$pkgs"; cnt=$(printf '%s\n' "$pkgs" | grep -c '^'); }
-    printf '%s|%s|%s|%s|%s|%s|%s\n' "$cid" "$name" "$image" "$osid" "$osver" "$mgr" "$cnt" \
+    printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s||\n' "$cid" "$name" "$image" "$osid" "$osver" "$mgr" "$cnt" "$digest" "$k8sns" "$k8spod" "$k8sctr" "$workload" "running" \
       >> "$TMP/containers__list.txt"
 
     # 런타임 증거 수집(collect_container_runtime)이 컨테이너를 다시 찾아 헤매지 않도록
@@ -1221,6 +1243,8 @@ have pip3 && cap langpkg pip 'pip3 list --format=freeze --disable-pip-version-ch
 have npm  && cap langpkg npm_global 'npm ls -g --depth=0 2>/dev/null'
 have gem  && cap langpkg gem 'gem list 2>/dev/null'
 have composer && cap langpkg composer 'composer global show 2>/dev/null'
+have cargo && cap langpkg cargo 'cargo install --list 2>/dev/null'
+have dotnet && cap langpkg nuget 'dotnet tool list -g 2>/dev/null | awk "NR>2 && NF>=2 {print \$1,\$2}"'
 
 # ==================================================================
 # 7) 컨테이너 이미지 (이미지별 CVE 매핑)
@@ -1308,7 +1332,7 @@ collect_pkg_origins > "$TMP/pkg__origins.txt" 2>/dev/null || true
 
 # 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
 #   목록(list)은 함수가 직접 append 하므로 헤더를 먼저 써 둔다. 패키지는 함수의 stdout.
-echo "cid|name|image|os_id|os_version|manager|pkg_count" > "$TMP/containers__list.txt"
+echo "cid|name|image|os_id|os_version|manager|pkg_count|image_digest|k8s_namespace|k8s_pod|k8s_container|workload_ref|runtime_state|sbom_format|sbom_hash" > "$TMP/containers__list.txt"
 {
   echo "cid|manager|name|version|source"
   collect_containers
@@ -1319,6 +1343,8 @@ echo "cid|name|image|os_id|os_version|manager|pkg_count" > "$TMP/containers__lis
 
 # 컨테이너 런타임 증거(프로세스·리스닝 포트) — 이게 없으면 컨테이너 취약점은 전부 LOW 로 깔린다.
 #   ctr_exposure 가 노출 파일에 직접 append 하므로 헤더를 먼저 써 둔다.
+collect_sbom | head -c "$MAX_BYTES" > "$TMP/containers__sbom.txt" 2>/dev/null || true
+[ -s "$TMP/containers__sbom.txt" ] || rm -f "$TMP/containers__sbom.txt"
 echo "cid|pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs" > "$TMP/containers__exposure.txt"
 {
   echo "cid|pid|comm|user|exe_pkg|loaded_pkgs"
@@ -1455,6 +1481,8 @@ echo "----------------------------------------" >&2
 #   - 전송을 요청받았는데 못 보냈으면 **종료코드 1**. 예전엔 조용히 0 으로 끝나서,
 #     타이머는 매시간 초록불인데 중앙엔 자산이 영영 안 올라오는 상태를 아무도 몰랐다.
 # ==================================================================
+AGENT_SENT_AT=$(date +%s)
+AGENT_NONCE=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || printf '%s-%s-%s' "$AGENT_SENT_AT" "$$" "${RANDOM:-0}")
 SEND_FAILED=0
 if [ -n "$SEND_URL" ]; then
   if [ "${OUTPUT_IS_JSON:-0}" != 1 ]; then
@@ -1467,6 +1495,7 @@ if [ -n "$SEND_URL" ]; then
     echo ">> 전송 시작(wget) → $SEND_URL" >&2
     HTTP_CODE=$(wget -q -O "$TMP/_ingest_resp.json" --server-response \
       --header='Content-Type: application/json' \
+      --header="X-Agent-Timestamp: $AGENT_SENT_AT" --header="X-Agent-Nonce: $AGENT_NONCE" \
       ${SEND_TOKEN:+--header="X-Agent-Token: $SEND_TOKEN"} \
       --post-file="$OUT" "$SEND_URL" 2>&1 | awk '/^  HTTP\//{code=$2} END{print (code ? code : "000")}')
     if [ "$HTTP_CODE" = "200" ]; then
@@ -1485,7 +1514,7 @@ if [ -n "$SEND_URL" ]; then
     HDR_FILE="$TMP/_agent_token_header.txt"
     if [ -n "$SEND_TOKEN" ]; then
       : > "$HDR_FILE"; chmod 600 "$HDR_FILE"
-      printf 'X-Agent-Token: %s\r\n' "$SEND_TOKEN" > "$HDR_FILE"
+      printf 'X-Agent-Token: %s\r\nX-Agent-Timestamp: %s\r\nX-Agent-Nonce: %s\r\n' "$SEND_TOKEN" "$AGENT_SENT_AT" "$AGENT_NONCE" > "$HDR_FILE"
     fi
     HTTP_CODE=$(curl -sS -m 30 \
       -o "$TMP/_ingest_resp.json" -w '%{http_code}' \

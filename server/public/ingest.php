@@ -43,6 +43,13 @@ $sharedTok = false;     // 공유 토큰(하위호환)으로 인증됐나
 $agentTok = vg_agent_token_verify($pdoAuth, (string) $provided);
 if ($agentTok !== null) {
     $boundFqdn = $agentTok['fqdn'];
+    $nonce = trim((string) ($_SERVER['HTTP_X_AGENT_NONCE'] ?? ''));
+    $sentAt = (int) ($_SERVER['HTTP_X_AGENT_TIMESTAMP'] ?? 0);
+    if ($nonce !== '' || $sentAt > 0) {
+        if (!vg_agent_nonce_accept($pdoAuth, (int) $agentTok['id'], $nonce, $sentAt)) {
+            respond_fail(409, 'stale or replayed request', 'replay_rejected');
+        }
+    }
 } else {
     $expected = (string) ($cfg['ingest_token'] ?? '');
     if ($expected !== '' && $provided !== '' && hash_equals($expected, (string) $provided)) {
@@ -150,7 +157,11 @@ $ctr = $data['containers'] ?? [];
 $ctrRows     = vg_ingest_parse_container_list((string) ($ctr['list'] ?? ''));
 $ctrPkgRows  = vg_ingest_parse_container_packages((string) ($ctr['packages'] ?? ''));
 $ctrProcRows = vg_ingest_parse_container_processes((string) ($ctr['processes'] ?? ''));
-$ctrExpRows  = vg_ingest_parse_container_exposures((string) ($ctr['exposure'] ?? ''));
+$ctrExpRows  = vg_ingest_parse_container_exposures((string) ($ctr['exposure'] ?? ''));$sbom = vg_ingest_parse_sbom((string) ($ctr['sbom'] ?? ''));
+$ctrPkgRows = array_merge($ctrPkgRows, $sbom['packages']);
+foreach ($sbom['meta'] as $cid => $sm) {
+    if (isset($ctrRows[$cid])) { $ctrRows[$cid][13]=$sm[0]; $ctrRows[$cid][14]=$sm[1]; }
+}
 
 // rpm DB 파일을 받은 컨테이너 — **중앙이 직접 파싱**해 패키지 행으로 펼친다.
 //   컨테이너 안에 rpm 바이너리가 없고 호스트에도 rpm 이 없으면 에이전트는 DB 를 읽을 수 없다
@@ -163,6 +174,14 @@ $ctrCount     = count($ctrRows);
 $ctrPkgCount  = count($ctrPkgRows);
 $ctrProcCount = count($ctrProcRows);
 $ctrExpCount  = count($ctrExpRows);
+// 수집 완전성은 취약점 0건과 별개다. 섹션이 없으면 "안전"이 아니라 누락으로 저장한다.
+$collectionStages = [
+    ['packages', $pkgCount > 0 ? 'COMPLETE' : 'MISSING', $pkgCount],
+    ['language_packages', $langCount > 0 ? 'COMPLETE' : 'EMPTY', $langCount],
+    ['runtime_processes', $procCount > 0 ? 'COMPLETE' : 'MISSING', $procCount],
+    ['network_exposure', $expCount > 0 ? 'COMPLETE' : 'EMPTY', $expCount],
+    ['containers', $ctrCount > 0 ? 'COMPLETE' : 'EMPTY', $ctrCount],
+];
 
 // ── 커널: 실행 중인 커널 vs 설치된 최신 커널 ─────────────────────
 //   커널을 패치해도 **재부팅 전까지는 옛 커널이 돈다.** 설치 버전만 보면 "패치됨"이라
@@ -225,6 +244,7 @@ try {
             'kernel_latest'  => $kernelLatest,
             'kernel_reboot'  => $kernelReboot,
             'content_hash'   => $contentHash,
+            'collection_stages' => $collectionStages,
         ]
     );
     $hostId    = $store['host_id'];

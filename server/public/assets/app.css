@@ -1706,3 +1706,7 @@ form.card { border-radius:24px; }
   .page--permissions .matrix td.permission-role { grid-template-columns:minmax(6rem,34%) 1fr; align-items:center; }
   .page--permissions .check-cell { justify-items:end; }
 }
+/* Remediation workspace: compact action editing without hiding evidence columns. */
+.page--remediations .inline-form { display:grid; grid-template-columns:minmax(8rem,auto) minmax(9rem,1fr) minmax(8rem,auto) auto; gap:.45rem; align-items:center; min-width:22rem; }
+.page--remediations .inline-form input,.page--remediations .inline-form select { margin:0; min-height:36px; }
+@media (max-width:860px) { .page--remediations .inline-form { min-width:0; grid-template-columns:1fr; } }

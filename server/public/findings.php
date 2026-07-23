@@ -131,12 +131,14 @@ try {
         $stmt = $pdo->prepare(
             "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss, c.epss_percentile, c.ref_urls_json,
                     ctr.cid AS container_cid, ctr.image AS container_image,
+                    fe.match_source, fe.fixed_version AS evidence_fixed_version,
                 " . VG_FIXED_VERSION_SUBQ . "
              FROM tb_findings f
              JOIN tb_scans s ON s.id = f.scan_id
              JOIN tb_hosts h ON h.id = s.host_id
              LEFT JOIN tb_containers ctr ON ctr.id = f.container_id
              LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
+             LEFT JOIN tb_finding_evidence fe ON fe.finding_id = f.id
              WHERE $where
              ORDER BY f.no_fix ASC, FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC, h.fqdn
              LIMIT $perPage OFFSET $offset"
@@ -337,8 +339,8 @@ vg_header('취약점', 'findings');
                       : 'EPSS –';
                   return $cvss . '<div class="why">' . $epss . '</div>';
               },
-              'rationale' => fn($r) => '<span class="why">' . vg_trunc($r['rationale'], 80) . '</span>',
-              'fix'       => fn($r) => vg_fix_cell($r['fixed_version'] ?? null, $r['ref_urls_json'] ?? null, $r['installed_version'] ?? null),
+              'rationale' => fn($r) => '<span class="badge tone-muted">' . vg_h((string) ($r['match_source'] ?? 'catalog')) . '</span><div class="why">' . vg_trunc($r['rationale'], 80) . '</div>',
+              'fix'       => fn($r) => vg_fix_cell($r['evidence_fixed_version'] ?? ($r['fixed_version'] ?? null), $r['ref_urls_json'] ?? null, $r['installed_version'] ?? null),
           ],
       ]
   );

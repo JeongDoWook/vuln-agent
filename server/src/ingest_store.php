@@ -61,6 +61,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     $kernelReboot  = $parsed['kernel_reboot'];
 
     $contentHash = (string) $parsed['content_hash'];
+    $collectionStages = $parsed['collection_stages'] ?? [];
 
     $chgCount = 0;   // 이번에 기록한 패키지 변경 건수
 
@@ -169,13 +170,17 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     $ctrIds = [];   // cid => tb_containers.id
     if ($ctrCount > 0) {
         $insC = $pdo->prepare(
-            'INSERT INTO tb_containers (scan_id, cid, name, image, os_id, os_version, manager, pkg_count)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO tb_containers (scan_id,cid,name,image,image_digest,k8s_namespace,k8s_pod,k8s_container,workload_ref,runtime_state,sbom_format,sbom_hash,os_id,os_version,manager,pkg_count)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
         );
         foreach ($ctrRows as $cid => $f) {
             $insC->execute([
                 $scanId, $cid,
                 ($f[1] !== '' ? $f[1] : null), ($f[2] !== '' ? $f[2] : null),
+                (($f[7] ?? '') !== '' ? $f[7] : null), (($f[8] ?? '') !== '' ? $f[8] : null),
+                (($f[9] ?? '') !== '' ? $f[9] : null), (($f[10] ?? '') !== '' ? $f[10] : null),
+                (($f[11] ?? '') !== '' ? $f[11] : null), (($f[12] ?? '') !== '' ? $f[12] : 'running'),
+                (($f[13] ?? '') !== '' ? $f[13] : null), (($f[14] ?? '') !== '' ? $f[14] : null),
                 ($f[3] !== '' ? $f[3] : null), ($f[4] !== '' ? $f[4] : null),
                 ($f[5] !== '' ? $f[5] : null), (int) $f[6],
             ]);
@@ -347,6 +352,12 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     }
 
     }   // ← 변경 있음(새 스냅샷) 분기 끝
+
+    // 동일 스냅샷 재전송이어도 수집기 완전성은 최신 상태로 갱신한다.
+    if ($collectionStages) {
+        $stage = $pdo->prepare('INSERT INTO tb_collection_stages (scan_id,stage_code,status,item_count) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status),item_count=VALUES(item_count),created_at=NOW()');
+        foreach ($collectionStages as $r) { $stage->execute([$scanId, $r[0], $r[1], $r[2]]); }
+    }
 
     $pdo->commit();
 
