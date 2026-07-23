@@ -166,6 +166,11 @@ vg_header('취약점', 'findings');
     <?php else: ?>스캔 없음<?php endif; ?>
   </div>
 
+  <nav class="subtabs">
+    <a class="on" href="/findings.php">현황</a>
+    <a href="/changes.php">변화</a>
+  </nav>
+
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>

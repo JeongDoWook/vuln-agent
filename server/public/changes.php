@@ -187,9 +187,14 @@ function vg_change_tone(string $type): string {
     return ['new' => 'crit', 'up' => 'high', 'down' => 'muted', 'resolved' => 'ok'][$type] ?? 'muted';
 }
 
-vg_header('변화 추적', 'changes');
+vg_header('변화 추적', 'findings');
 ?>
   <h1>변화 추적 <span class="hint">(각 호스트 최근 2스캔 비교)</span> <?= vg_info_icon('지난 수집 대비 새로 생긴 / 해결된 / 등급이 바뀐 취약점. 무엇이 달라졌는지 한눈에 본다.') ?></h1>
+
+  <nav class="subtabs">
+    <a href="/findings.php">현황</a>
+    <a class="on" href="/changes.php">변화</a>
+  </nav>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
