@@ -48,7 +48,7 @@ function vg_sev_donut(array $counts, int $size = 132): void {
 
 /**
  * 스캔별 리소스(메모리/CPU) 추이 라인차트 — app.css 의 chart__grid/tick/lbl
- * 눈금 위에 폴리라인 + 포인트로 그린다.
+ * 눈금 위에 area 채움(세로 그라데이션) + 폴리라인 + 포인트로 그린다.
  *   $scans: host.php 가 이미 들고 있는 tb_scans 행(oldest→newest 순으로 넘긴다 — 차트는 좌→우).
  *   값이 없는(구버전 에이전트) 스캔은 건너뛴다 — 0으로 이으면 실제로 없는 급락처럼 보인다.
  *   $tone: 'mem'|'cpu' — app.css 의 .chart__line.tone-* 색만 다르다.
@@ -85,9 +85,22 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
 
     $xAt = static fn(int $i): float => $padL + ($n === 1 ? 0.0 : $plotW * $i / ($n - 1));
     $yAt = static fn(float $v): float => $padT + $plotH * (1 - ($v - $min) / ($max - $min));
+    $baseY = $padT + $plotH;   // area 를 닫는 바닥선(plot 하단)
+
+    // area 채움 그라데이션 id 는 인스턴스마다 고유해야 한다 — 한 화면(host.php 리소스 탭)에
+    // 이 차트가 4개 뜨는데, id 가 겹치면 브라우저가 첫 그라데이션으로만 그린다.
+    static $seq = 0;
+    $gradId = 'chart-grad-' . vg_h($tone) . '-' . (++$seq);
 
     echo '<div class="chart">';
     echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="' . vg_h($unit) . ' 추이(스캔 ' . $n . '건)">';
+
+    // 선 아래 area 를 채울 세로 그라데이션(선 근처 옅게 → 바닥으로 투명). stop 색은 app.css 가
+    // CSS 변수(--accent/--high)로 준다 — 색 하드코딩 없이 라이트/다크 모두 계열색을 탄다.
+    echo '<defs><linearGradient id="' . $gradId . '" x1="0" y1="0" x2="0" y2="1">'
+        . '<stop class="chart__grad-0 tone-' . vg_h($tone) . '" offset="0"></stop>'
+        . '<stop class="chart__grad-1 tone-' . vg_h($tone) . '" offset="1"></stop>'
+        . '</linearGradient></defs>';
 
     // 눈금은 최소·최대만 — 값 하나로 좁게 흔들리는 계열에 중간값은 소음이다.
     foreach ([0, 1] as $f) {
@@ -101,11 +114,21 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
 
     $poly = [];
     foreach ($pts as $i => $p) { $poly[] = round($xAt($i), 1) . ',' . round($yAt($p['v']), 1); }
+
+    // area — 선을 그대로 따라가다 양끝에서 바닥으로 떨어뜨려 닫는다(선 아래를 그라데이션으로 채움).
+    $xFirst = round($xAt(0), 1);
+    $xLast  = round($xAt($n - 1), 1);
+    echo '<polygon class="chart__area" fill="url(#' . $gradId . ')" points="'
+        . implode(' ', $poly) . ' ' . $xLast . ',' . round($baseY, 1)
+        . ' ' . $xFirst . ',' . round($baseY, 1) . '"></polygon>';
+
     echo '<polyline class="chart__line tone-' . vg_h($tone) . '" points="' . implode(' ', $poly) . '"></polyline>';
 
     foreach ($pts as $i => $p) {
         $cx = round($xAt($i), 1); $cy = round($yAt($p['v']), 1);
-        echo '<circle class="chart__pt tone-' . vg_h($tone) . '" cx="' . $cx . '" cy="' . $cy . '" r="3">'
+        // 마지막(현재) 점은 계열색으로 채워 강조한다.
+        $last = $i === $n - 1 ? ' chart__pt--last' : '';
+        echo '<circle class="chart__pt tone-' . vg_h($tone) . $last . '" cx="' . $cx . '" cy="' . $cy . '" r="3">'
             . '<title>' . vg_h($p['t'] . ' · ' . number_format($p['v'], $decimals) . $unit) . '</title>'
             . '</circle>';
         // x축 라벨은 시작·끝만 — 과하게 붙이면 겹친다(작업 지침).
