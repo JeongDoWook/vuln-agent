@@ -153,6 +153,25 @@ function vg_nav(string $active): void {
 }
 
 /**
+ * 사이드바 아코디언 안티-FOUC 부트스트랩. 사이드바 마크업 '직후' 동기 실행돼(테마 초기화와
+ * 같은 방식) 저장된 접힘 상태를 첫 페인트 전에 반영한다 — defer 되는 app.js 로는 늦어
+ * 저장해 둔 접힘 그룹이 매 로드마다 '펼쳐졌다 접히는' 깜빡임(FOUC)이 보이기 때문.
+ * 여기서는 '접기'만 한다(서버가 전부 open 이므로). 토글·저장·반응형은 app.js 가 얹는다.
+ * 활성 그룹(현재 페이지)과 모바일(<=860px)은 항상 펼침이라 건드리지 않는다.
+ * 정적 마크업이라(사용자 입력 없음) 그대로 출력한다.
+ */
+function vg_nav_boot(): void {
+    echo '<script>(function(){try{'
+        . 'if(window.matchMedia&&window.matchMedia("(max-width: 860px)").matches)return;'
+        . 'var s=JSON.parse(localStorage.getItem("vg-nav")||"{}");'
+        . 'var g=document.querySelectorAll(".side details.nav-grp");'
+        . 'for(var i=0;i<g.length;i++){var d=g[i];'
+        . 'if(d.querySelector("a.link.active"))continue;'
+        . 'if(s[d.getAttribute("data-grp")]===false)d.removeAttribute("open");}'
+        . '}catch(e){}})();</script>';
+}
+
+/**
  * 상단바 브레드크럼 — "지금 어디" 를 사이드바 밖에서 한 줄로. 홈 › 섹션 › 현재.
  *   active 키로 vg_nav_sections() 에서 소속 섹션·라벨을 찾는다. 네비에 없는 상세
  *   페이지(cve·advisory·host 등)는 섹션을 못 찾으니 제목($title)을 잎으로 쓴다.

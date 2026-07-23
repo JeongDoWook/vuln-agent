@@ -48,6 +48,8 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
       <span class="brand">🛡️ vuln-agent</span>
     <?php endif; ?>
     <nav class="menu"><?php vg_nav($active); ?></nav>
+    <?php // 사이드바 마크업 직후 동기 실행 — 저장된 접힘 상태를 첫 페인트 전에 반영(FOUC 방지). ?>
+    <?php vg_nav_boot(); ?>
     <div class="foot">
       <span class="who"><?= vg_h($user['username']) ?> (<?= vg_h(vg_role_label(vg_role())) ?>)</span>
       <a href="/profile.php"<?= $active === 'profile' ? ' class="active"' : '' ?>>내 프로필</a>
