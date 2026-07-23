@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS tb_pkg_changelog_cves (
 CREATE TABLE IF NOT EXISTS tb_suppressed_findings (
   id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   scan_id           BIGINT UNSIGNED NOT NULL,
+  container_id      BIGINT UNSIGNED NOT NULL DEFAULT 0,
   cve_id            VARCHAR(32) NOT NULL,
   package_name      VARCHAR(255) NOT NULL,
   installed_version VARCHAR(255) NULL,
@@ -43,8 +44,9 @@ CREATE TABLE IF NOT EXISTS tb_suppressed_findings (
   is_deleted        TINYINT(1) NOT NULL DEFAULT 0,
   deleted_at        DATETIME NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_supp (scan_id, cve_id, package_name),
+  UNIQUE KEY uq_supp (scan_id, container_id, cve_id, package_name),
   KEY idx_supp_scan (scan_id),
+  KEY idx_supp_container (container_id),
   INDEX idx_supp_is_deleted (is_deleted),
   CONSTRAINT fk_supp_scan FOREIGN KEY (scan_id) REFERENCES tb_scans(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
