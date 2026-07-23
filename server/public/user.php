@@ -18,7 +18,7 @@ vg_require_menu('users');
 const VG_ROLES = ['user', 'operator', 'admin'];
 
 // 최근 활동 로그 표시 건수.
-const VG_USER_ACTIVITY_LIMIT = 20;
+$userActivityLimit = vg_ui_detail_preview_limit();
 
 $pdo = vg_pdo();
 $msg = null; $err = null;
@@ -77,7 +77,7 @@ if ($user) {
     $st = $pdo->prepare(
         'SELECT created_at, activity_type, actor_type, user_name, message, ip_address
            FROM tb_activity_log WHERE scope = ? AND scope_id = ? AND is_deleted = 0
-          ORDER BY id DESC LIMIT ' . VG_USER_ACTIVITY_LIMIT
+          ORDER BY id DESC LIMIT ' . $userActivityLimit
     );
     $st->execute(['USER', $id]);
     $activity = $st->fetchAll();
@@ -170,7 +170,7 @@ vg_header($user['username'] ?? '사용자', 'users');
 
   <div class="card mt-lg">
     <strong>최근 활동</strong>
-    <span class="why">— 이 사용자와 관련된 감사 로그(최근 <?= VG_USER_ACTIVITY_LIMIT ?>건) ·
+    <span class="why">— 이 사용자와 관련된 감사 로그(최근 <?= $userActivityLimit ?>건) ·
       <a href="/activity.php?q=<?= urlencode($user['username']) ?>">전체 감사로그에서 보기 →</a></span>
     <div class="card__body">
       <?php

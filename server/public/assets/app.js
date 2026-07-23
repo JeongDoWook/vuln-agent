@@ -372,6 +372,30 @@
    * fetch 등 자체 비동기 작업용. 시작 시 busy(true), 끝나면 busy(false).
    *   vgLoading(button, true) → 버튼 스피너 + 상단 진행바
    */
+  // --- 정보 밀도 ----------------------------------------------------------
+  // 상세 정보는 유지하되 사용자가 행·카드 간격을 줄여 빠르게 훑을 수 있게 한다.
+  var DENSITY_KEY = 'vg-density';
+  function applyDensity(value) {
+    var compact = value === 'compact';
+    document.documentElement.setAttribute('data-density', compact ? 'compact' : 'comfortable');
+    document.querySelectorAll('[data-density-toggle]').forEach(function (button) {
+      button.setAttribute('aria-pressed', compact ? 'true' : 'false');
+      var label = button.querySelector('.density-toggle__label');
+      if (label) { label.textContent = compact ? '촘촘하게' : '편안하게'; }
+    });
+  }
+  document.addEventListener('click', function (event) {
+    var button = event.target.closest('[data-density-toggle]');
+    if (!button) { return; }
+    var next = document.documentElement.getAttribute('data-density') === 'compact' ? 'comfortable' : 'compact';
+    try { localStorage.setItem(DENSITY_KEY, next); } catch (error) {}
+    applyDensity(next);
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    var saved = 'comfortable';
+    try { saved = localStorage.getItem(DENSITY_KEY) || saved; } catch (error) {}
+    applyDensity(saved);
+  });
   window.vgLoading = function (btn, busy) {
     if (busy) {
       busyButton(btn);

@@ -20,10 +20,10 @@ $err = null; $msg = null; $host = null; $scan = null; $scanAge = null;
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 
 // 재시작·재부팅 표에 보여줄 최대 건수. 나머지는 취약점 현황(fx=restart)으로 넘긴다.
-const VG_RESTART_TOP = 10;
+
 
 // 리소스 추이 차트에 그릴 최대 스캔 건수(최근 것부터).
-const VG_RESOURCE_TREND_LIMIT = 50;
+
 
 // --- 탭별 데이터 조회 (?tab= 에 따라 갈리는 SQL). 각자 {total, rows, ...} 형태의 배열을 반환한다. ---
 
@@ -71,7 +71,7 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
     $st = $pdo->prepare(
         "$sel WHERE f.scan_id = ? AND f.needs_restart = 1
          ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
-         LIMIT " . VG_RESTART_TOP
+         LIMIT " . vg_ui_detail_preview_limit()
     );
     $st->execute([$sid]);
     $restartRows = $st->fetchAll();
@@ -196,7 +196,7 @@ function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
     $st = $pdo->prepare(
         'SELECT collected_at, peak_rss_mb, cpu_seconds, mem_total_mb, cpu_cores, elapsed_seconds
-           FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT ' . VG_RESOURCE_TREND_LIMIT
+           FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT ' . vg_ui_trend_limit()
     );
     $st->execute([$hostId]);
     $resourceScans = array_reverse($st->fetchAll());

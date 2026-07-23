@@ -66,33 +66,24 @@ vg_header('권한설정', 'permissions');
 
     <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
-    <div class="card">
-      <table class="matrix">
-        <thead><tr>
-          <th>메뉴</th>
-          <th class="col-role">관리자</th>
-          <th class="col-role">운영자</th>
-          <th class="col-role">사용자</th>
-        </tr></thead>
-        <tbody>
-        <?php foreach ($menus as $code => $label): ?>
-          <tr>
-            <td><strong><?= vg_h($label) ?></strong> <code><?= vg_h($code) ?></code></td>
-            <td title="관리자는 항상 전체 허용"><?= vg_badge('✔ 항상', 'ok') ?></td>
-            <?php foreach (VG_PERM_ROLES as $role): ?>
-              <td class="col-role">
-                <label>
-                  <input type="checkbox" name="perm[<?= vg_h($role) ?>][<?= vg_h($code) ?>]" value="1"
-                         <?= !empty($cur[$role][$code]) ? 'checked' : '' ?>>
-                </label>
-              </td>
-            <?php endforeach; ?>
-          </tr>
-        <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
-
+    <?php
+      $permissionRows = [];
+      foreach ($menus as $code => $label) { $permissionRows[] = ['code' => $code, 'label' => $label]; }
+      vg_table([
+          ['label' => '메뉴', 'key' => 'label'],
+          ['label' => '관리자', 'align' => 'center'],
+          ['label' => '운영자', 'align' => 'center'],
+          ['label' => '사용자', 'align' => 'center'],
+      ], $permissionRows, [
+          'class' => 'matrix',
+          'cell' => [
+              0 => static fn($row) => '<strong>' . vg_h($row['label']) . '</strong> <code>' . vg_h($row['code']) . '</code>',
+              1 => static fn() => vg_badge('✔ 항상', 'ok'),
+              2 => static fn($row) => '<label class="check-cell"><input type="checkbox" name="perm[operator][' . vg_h($row['code']) . ']" value="1"' . (!empty($cur['operator'][$row['code']]) ? ' checked' : '') . '><span class="sr-only">운영자 ' . vg_h($row['label']) . ' 접근 허용</span></label>',
+              3 => static fn($row) => '<label class="check-cell"><input type="checkbox" name="perm[user][' . vg_h($row['code']) . ']" value="1"' . (!empty($cur['user'][$row['code']]) ? ' checked' : '') . '><span class="sr-only">사용자 ' . vg_h($row['label']) . ' 접근 허용</span></label>',
+          ],
+      ]);
+    ?>
     <div class="mt-lg"><button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button></div>
   </form>
 

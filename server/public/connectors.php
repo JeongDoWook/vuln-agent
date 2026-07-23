@@ -43,10 +43,10 @@ $connectors = $pdo->query('SELECT * FROM tb_feed_connectors WHERE is_deleted = 0
 /* 수집 이력.
  * 전엔 전 커넥터의 로그를 목록 아래 한 표에 쏟아 놨는데, 정작 "이 커넥터가 왜 실패했나" 를
  * 보려면 남의 로그 사이에서 눈으로 골라야 했다. 커넥터마다 [이력] 버튼 → 그 커넥터 로그만.
- *   · 모달엔 최근 VG_LOG_PEEK 건. 그보다 많으면 "전체 이력" 링크로 넘긴다.
+ *   · 모달엔 최근 $logPeek 건. 그보다 많으면 "전체 이력" 링크로 넘긴다.
  *   · ?conn=N 이면 그 커넥터의 전체 이력을 페이지네이션해서 아래에 편다.
  */
-const VG_LOG_PEEK = 8;
+$logPeek = vg_ui_detail_preview_limit();
 
 $perPage  = vg_perpage();
 $page     = vg_page();
@@ -55,7 +55,7 @@ $connFilter = (int) ($_GET['conn'] ?? 0);
 $peek = $pdo->prepare(
     'SELECT status, trigger_by, items_fetched, items_upserted, message, started_at
        FROM tb_feed_collection_logs WHERE connector_id = ?
-      ORDER BY started_at DESC LIMIT ' . VG_LOG_PEEK
+      ORDER BY started_at DESC LIMIT ' . $logPeek
 );
 $cnt = $pdo->prepare('SELECT COUNT(*) FROM tb_feed_collection_logs WHERE connector_id = ?');
 
@@ -403,8 +403,8 @@ vg_header('피드 커넥터', 'connectors');
       $n   = $logCountByConn[$cid] ?? 0;
       vg_modal_open('log' . $cid, $c['name'] . ' · 수집 이력', 'modal--wide');
   ?>
-      <?php if ($n > VG_LOG_PEEK): ?>
-        <div class="sub">총 <?= number_format($n) ?>건 중 최근 <?= VG_LOG_PEEK ?>건 ·
+      <?php if ($n > $logPeek): ?>
+        <div class="sub">총 <?= number_format($n) ?>건 중 최근 <?= $logPeek ?>건 ·
           <a href="?conn=<?= $cid ?>">전체 이력 보기 →</a></div>
       <?php elseif ($n > 0): ?>
         <div class="sub">총 <?= number_format($n) ?>건</div>

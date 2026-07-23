@@ -75,8 +75,8 @@ const VG_CVE_VENDOR_SRC = [
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = []; $vendorRows = [];
 $locTotal = 0; $assetTotal = 0; $page = vg_page(); $perPage = vg_perpage();
-$vendorTotal = 0; $vPage = vg_page('vpage'); $vPerPage = vg_perpage(VG_PERPAGE_DEFAULT, 'vper_page');
-$affectedTotal = 0; $aPage = vg_page('apage'); $aPerPage = vg_perpage(VG_PERPAGE_DEFAULT, 'aper_page');
+$vendorTotal = 0; $vPage = vg_page('vpage'); $vPerPage = vg_perpage(null, 'vper_page');
+$affectedTotal = 0; $aPage = vg_page('apage'); $aPerPage = vg_perpage(null, 'aper_page');
 
 try {
     $raw = (string) ($_GET['cve'] ?? '');
