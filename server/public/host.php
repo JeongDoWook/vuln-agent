@@ -742,6 +742,14 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     $latestResourceScan = $resourceScans ? end($resourceScans) : null;
   ?>
     <div class="card">
+      <strong>메모리 사용률 추이</strong>
+      <span class="why">— 호스트 총 메모리(mem_total_mb) 대비 %. 스펙 미수집 스캔은 이 지표에서 제외됩니다.</span>
+      <div class="card__body">
+      <?php vg_resource_trend($resourceScans, 'mem_pct', '%', 1, 'mem'); ?>
+      </div>
+    </div>
+
+    <div class="card mt-lg">
       <strong>메모리 사용량 추이</strong>
       <span class="why">— 스캔당 피크 RSS(최근 <?= count($resourceScans) ?>건)
         <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
@@ -754,10 +762,10 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
 
     <div class="card mt-lg">
-      <strong>메모리 사용률 추이</strong>
-      <span class="why">— 호스트 총 메모리(mem_total_mb) 대비 %. 스펙 미수집 스캔은 이 지표에서 제외됩니다.</span>
+      <strong>CPU 사용률 추이</strong>
+      <span class="why">— 코어수(cpu_cores) 대비 %. 스펙 미수집 스캔은 이 지표에서 제외됩니다.</span>
       <div class="card__body">
-      <?php vg_resource_trend($resourceScans, 'mem_pct', '%', 1, 'mem'); ?>
+      <?php vg_resource_trend($resourceScans, 'cpu_pct', '%', 1, 'cpu'); ?>
       </div>
     </div>
 
@@ -770,14 +778,6 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       </span>
       <div class="card__body">
       <?php vg_resource_trend($resourceScans, 'cpu_seconds', 's', 1, 'cpu'); ?>
-      </div>
-    </div>
-
-    <div class="card mt-lg">
-      <strong>CPU 사용률 추이</strong>
-      <span class="why">— 코어수(cpu_cores) 대비 %. 스펙 미수집 스캔은 이 지표에서 제외됩니다.</span>
-      <div class="card__body">
-      <?php vg_resource_trend($resourceScans, 'cpu_pct', '%', 1, 'cpu'); ?>
       </div>
     </div>
 
