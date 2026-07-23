@@ -94,6 +94,39 @@ OUT=$(printf '%s\n' "$RS" | fw_parse_nft)
 FW_KIND="nftables"; FW_ALLOW=$(printf '%s' "$OUT" | norm)
 fw_port_allowed 22 tcp && bad "빈 허용집합 22/tcp" "차단" "허용" || ok "  → 22/tcp 차단(FILTERED)"
 
+# 6b) 신뢰 체인 안 dport 인데 정규식이 못 알아본 accept(ct state new 섞임) → 계정 불가 → 강등 안 함
+RS='table inet filter {
+	chain input {
+		type filter hook input priority 0; policy drop;
+		tcp dport 22 ct state new accept
+	}
+}'
+OUT=$(printf '%s\n' "$RS" | fw_parse_nft)
+eq "drop+dport에 ct state new 섞임: 강등 안 함(미탐 방지)" "@@UNTRUSTED@@" "$OUT"
+
+# 6c) comment 접미사 붙은 단순 dport accept → 포트 추출(신뢰 유지)
+RS='table inet filter {
+	chain input {
+		type filter hook input priority 0; policy drop;
+		iif "lo" accept
+		tcp dport 80 accept comment "http"
+	}
+}'
+OUT=$(printf '%s\n' "$RS" | fw_parse_nft); ALLOW=$(printf '%s' "$OUT" | norm)
+eq "drop+dport accept comment: 80 추출" "80/tcp" "$ALLOW"
+
+# 6d) 신뢰 체인 안 미지 accept(meta l4proto tcp accept) → 계정 불가 → 강등 안 함
+RS='table inet filter {
+	chain input {
+		type filter hook input priority 0; policy drop;
+		ct state established,related accept
+		meta l4proto tcp accept
+		tcp dport 22 accept
+	}
+}'
+OUT=$(printf '%s\n' "$RS" | fw_parse_nft)
+eq "drop+미지 accept(meta l4proto): 강등 안 함" "@@UNTRUSTED@@" "$OUT"
+
 echo "== iptables =="
 
 # 7) -P INPUT DROP + --dport 22 ACCEPT → 22 만
@@ -131,6 +164,18 @@ IPT='-P INPUT DROP
 -A INPUT -j RETURN'
 OUT=$(printf '%s\n' "$IPT" | fw_parse_ipt); ALLOW=$(printf '%s' "$OUT" | norm)
 eq "DROP+LOG/RETURN+dport53: 신뢰" "53/udp" "$ALLOW"
+
+# 11b) 포트 특정 없는 광범위 accept(-p tcp -j ACCEPT) → 강등 안 함(모든 tcp 미탐 방지)
+IPT='-P INPUT DROP
+-A INPUT -p tcp -j ACCEPT'
+OUT=$(printf '%s\n' "$IPT" | fw_parse_ipt)
+eq "DROP+전체 tcp accept: 강등 안 함" "@@UNTRUSTED@@" "$OUT"
+
+# 11c) 조건 없는 bare -j ACCEPT → 강등 안 함
+IPT='-P INPUT DROP
+-A INPUT -j ACCEPT'
+OUT=$(printf '%s\n' "$IPT" | fw_parse_ipt)
+eq "DROP+조건없는 accept: 강등 안 함" "@@UNTRUSTED@@" "$OUT"
 
 echo "== 정책 게이트(호출부 시뮬레이션) =="
 # 12) -P INPUT ACCEPT → 호출부가 파서를 부르지 않고 강등 안 함

@@ -293,10 +293,10 @@ FW_KIND="none"; FW_ALLOW=""
 #   `tcp dport 6000-6007 accept`)만 뽑는다. drop 체인이 없거나 jump 가 섞이면 강등 불가로 판단.
 fw_parse_nft() {
   awk '
-    BEGIN{ inchain=0; sawInputDrop=0; hadjump=0; allow="" }
-    /^[[:space:]]*chain [^ ]+[[:space:]]*[{]/ { inchain=1; isinput=0; isdrop=0; chainjump=0; ctok=""; next }
+    BEGIN{ inchain=0; sawInputDrop=0; distrust=0; allow="" }
+    /^[[:space:]]*chain [^ ]+[[:space:]]*[{]/ { inchain=1; isinput=0; isdrop=0; chainjump=0; chainunacc=0; ctok=""; next }
     inchain && /^[[:space:]]*[}]/ {
-      if (isinput && isdrop) { sawInputDrop=1; if (chainjump) hadjump=1; else allow=allow ctok }
+      if (isinput && isdrop) { sawInputDrop=1; if (chainjump || chainunacc) distrust=1; else allow=allow ctok }
       inchain=0; next
     }
     inchain {
@@ -304,17 +304,31 @@ fw_parse_nft() {
       if ($0 ~ /policy[[:space:]]+drop/) isdrop=1
       if ($0 ~ /(^|[[:space:]])(jump|goto)([[:space:]]|$)/) chainjump=1
       t=$0; gsub(/^[[:space:]]+/,"",t); gsub(/[[:space:]]+$/,"",t)
-      if (t ~ /^(tcp|udp) dport ([{][^}]*[}]|[0-9]+(-[0-9]+)?) accept$/) {
+      # 정책 선언 라인(type ...; policy ...;)은 accept 규칙이 아니다 → 계정 대상에서 제외
+      if (t ~ /(^|[[:space:]])policy[[:space:]]/) next
+      # 2) 단순 dport accept (끝의 comment "..." 접미사 허용) → 포트 추출
+      if (t ~ /^(tcp|udp) dport ([{][^}]*[}]|[0-9]+(-[0-9]+)?) accept( comment "[^"]*")?$/) {
         proto=substr(t,1,3); spec=t
-        sub(/^(tcp|udp) dport /,"",spec); sub(/ accept$/,"",spec)
+        sub(/^(tcp|udp) dport /,"",spec); sub(/ accept( comment "[^"]*")?$/,"",spec)
         gsub(/[{}]/,"",spec); gsub(/,/," ",spec)
         n=split(spec,arr," ")
         for(i=1;i<=n;i++) if(arr[i]!="") ctok=ctok arr[i]"/"proto" "
+        next
+      }
+      # accept 규칙(verb accept 로 끝나거나 포함)인가?
+      if (t ~ /(^|[[:space:]])accept([[:space:]]|$)/) {
+        # 1) 무시해도 안전한 accept — 외부 신규연결을 여는 게 아님
+        if (t ~ /(^|[[:space:]])(iif|iifname)[[:space:]]+"?lo"?([[:space:]]|$)/) next             # 루프백
+        if (t ~ /(^|[[:space:]])ct[[:space:]]+state/ && t !~ /(^|[[:space:],:])new([,[:space:]]|$)/) next  # est/rel/invalid 만
+        if (t ~ /(^|[[:space:]])icmp(v6)?([[:space:]]|$)/) next                                   # icmp/icmpv6
+        # 3) 그 외 accept → 눈으로 계정 불가 → 이 체인 신뢰 불가
+        chainunacc=1
+        next
       }
       next
     }
     END {
-      if (!sawInputDrop || hadjump) { print "@@UNTRUSTED@@"; exit }
+      if (!sawInputDrop || distrust) { print "@@UNTRUSTED@@"; exit }
       print allow
     }
   '
@@ -333,19 +347,23 @@ fw_parse_ipt() {
       for(i=1;i<=NF;i++) if($i=="-j"){ jt=$(i+1); break }
       if (jt!="" && jt!="ACCEPT" && jt!="DROP" && jt!="REJECT" && jt!="LOG" && jt!="RETURN") untrusted=1
       if (jt=="ACCEPT") {
-        if ($0 ~ /(^| )-s /) next
-        if ($0 ~ /-m (state|conntrack)/) next
+        if ($0 ~ /(^| )-s /) next                 # 소스 한정 → 외부 전체 허용 아님
+        if ($0 ~ /-m (state|conntrack)/) next     # 연결추적 → 외부 신규 아님
+        if ($0 ~ /(^| )-i lo( |$)/) next          # 루프백
         proto=""
         if ($0 ~ /-p tcp/) proto="tcp"; else if ($0 ~ /-p udp/) proto="udp"
+        got=0
         if (match($0, /--dport [0-9]+(:[0-9]+)?/)) {
           d=substr($0,RSTART+8,RLENGTH-8); sub(/:/,"-",d)
-          allow = allow d (proto!="" ? "/"proto : "") " "
+          allow = allow d (proto!="" ? "/"proto : "") " "; got=1
         }
         if (match($0, /--dports [0-9,:]+/)) {
           d=substr($0,RSTART+9,RLENGTH-9); gsub(/,/," ",d); gsub(/:/,"-",d)
           n=split(d,arr," ")
-          for(k=1;k<=n;k++) if(arr[k]!="") allow = allow arr[k] (proto!="" ? "/"proto : "") " "
+          for(k=1;k<=n;k++) if(arr[k]!="") { allow = allow arr[k] (proto!="" ? "/"proto : "") " "; got=1 }
         }
+        # 포트를 특정하지 못한 광범위 accept(예: -p tcp -j ACCEPT, 조건 없는 -j ACCEPT) → 신뢰 불가
+        if (!got) untrusted=1
       }
     }
     END {
