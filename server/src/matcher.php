@@ -34,6 +34,17 @@ if (!function_exists('vg_scope_rank')) {
         }
     }
 
+    function vg_apply_host_perimeter_scope(
+        string $scope, int $containerId, ?string $proto, int $port,
+        bool $perimeterFirewalled, array $externalPorts
+    ): string {
+        if (!$perimeterFirewalled || $containerId !== 0 || $scope !== 'EXTERNAL') {
+            return $scope;
+        }
+        $key = strtolower((string) $proto) . '/' . $port;
+        return isset($externalPorts[$key]) ? 'EXTERNAL' : 'FILTERED';
+    }
+
     // 런타임 상태 판정 + 등급 + 근거.
     //   상태 강도: EXTERNAL(외부노출) > LISTENING(로컬리스닝) > RUNNING(실행중) > LOADED(사용중) > INSTALLED(설치만)
     //   레벨: 설치1 / 실행·로드·로컬리스닝2 / 외부노출3, KEV 시 +1(최대 CRITICAL).
@@ -84,9 +95,12 @@ if (!function_exists('vg_scope_rank')) {
      */
     function vg_load_scan_signals(PDO $pdo, int $scanId): array {
         // 이 스캔의 배포판 → 생태계. 수집(feeds)이 'Ubuntu:24.04' 로 태깅한 것과 같은 기준.
-        $sc = $pdo->prepare('SELECT os_id, os_version, package_family,
-                                    running_kernel, kernel_latest, kernel_reboot_needed
-                               FROM tb_scans WHERE id = ?');
+        $sc = $pdo->prepare('SELECT s.host_id, s.os_id, s.os_version, s.package_family,
+                                    s.running_kernel, s.kernel_latest, s.kernel_reboot_needed,
+                                    h.perimeter_firewalled
+                               FROM tb_scans s
+                               JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+                              WHERE s.id = ?');
         $sc->execute([$scanId]);
         $scan = $sc->fetch() ?: [];
         $hostEco = vg_osv_ecosystem($scan['os_id'] ?? null, $scan['os_version'] ?? null);
@@ -115,11 +129,23 @@ if (!function_exists('vg_scope_rank')) {
         // 노출 → 패키지별 최악(worst) 로드 상태 맵.
         //   **컨테이너별로 따로 담는다**(container_id, 0=호스트). 한 덩어리로 합치면 호스트 nginx 의
         //   외부노출이 컨테이너 openssl 로 새어 EXTERNAL 로 오판한다(오탐).
-        $stmt = $pdo->prepare('SELECT container_id, proc, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ?');
+        $externalPorts = [];
+        if (!empty($scan['perimeter_firewalled'])) {
+            $ps = $pdo->prepare('SELECT port, proto FROM tb_host_ext_ports WHERE host_id = ? AND is_deleted = 0');
+            $ps->execute([(int) $scan['host_id']]);
+            foreach ($ps->fetchAll() as $p) {
+                $externalPorts[strtolower((string) $p['proto']) . '/' . (int) $p['port']] = true;
+            }
+        }
+        $stmt = $pdo->prepare('SELECT container_id, proc, proto, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         $loadMap = []; // ctrId => pkgName => ['rank','scope','proc','port']
         foreach ($stmt->fetchAll() as $e) {
             $c = (int) $e['container_id'];
+            $e['scope'] = vg_apply_host_perimeter_scope(
+                (string) $e['scope'], $c, $e['proto'] ?? null, (int) $e['port'],
+                !empty($scan['perimeter_firewalled']), $externalPorts
+            );
             $names = [];
             if (!empty($e['exe_pkg']) && $e['exe_pkg'] !== 'UNPACKAGED') {
                 $names[] = $e['exe_pkg'];
