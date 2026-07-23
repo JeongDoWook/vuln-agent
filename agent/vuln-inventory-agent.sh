@@ -278,8 +278,83 @@ vg_json_build() {
 #   firewalld: 모든 zone 의 ports + services 를 합집합으로(인터페이스별 zone 을 놓치면
 #              허용된 포트를 차단으로 오판하므로, 넓게 잡는 쪽이 안전하다).
 #   ufw:       ALLOW/LIMIT 규칙의 포트. DENY/REJECT 는 허용 아님.
-#   그 외(iptables/nft 직접 운용): 판정하지 않는다(규칙 해석이 어렵고 오판 비용이 크다).
+#   nftables:  base input chain 의 policy 가 **drop 임을 확인했을 때만** 신뢰한다. 그 체인의
+#              단순 dport accept 만 FW_ALLOW 로 뽑는다. policy accept·input chain 없음·하위 체인
+#              jump/goto(따라갈 수 없음)면 **강등하지 않는다**(FW_KIND 를 none 으로 남겨 EXTERNAL 유지).
+#   iptables:  `-P INPUT DROP` 기본 정책일 때만 신뢰. 단순 dport accept 만 뽑고, -s/-m state 로
+#              조건이 붙은 accept·미지의 커스텀 체인 jump 는 "외부 전체 허용"이 아니므로 강등 안 함.
+#   공통 원칙: 애매하면 EXTERNAL 유지 — "닫혔다 착각해 강등"보다 "열렸다 보고 유지"가 항상 안전(미탐 방지).
 FW_KIND="none"; FW_ALLOW=""
+
+# fw_parse_nft : stdin=`nft list ruleset` → 신뢰 시 "22/tcp 80/tcp …", 아니면 "@@UNTRUSTED@@".
+#   신뢰 조건: base input chain(type filter hook input) 중 policy drop 인 게 하나라도 있고,
+#   그 drop 체인들이 하위 체인으로 jump/goto 하지 않아 accept 를 전부 눈으로 확인할 수 있을 때.
+#   그 조건에서 **단순 dport accept**(`tcp dport 22 accept`, `tcp dport {22,80} accept`,
+#   `tcp dport 6000-6007 accept`)만 뽑는다. drop 체인이 없거나 jump 가 섞이면 강등 불가로 판단.
+fw_parse_nft() {
+  awk '
+    BEGIN{ inchain=0; sawInputDrop=0; hadjump=0; allow="" }
+    /^[[:space:]]*chain [^ ]+[[:space:]]*[{]/ { inchain=1; isinput=0; isdrop=0; chainjump=0; ctok=""; next }
+    inchain && /^[[:space:]]*[}]/ {
+      if (isinput && isdrop) { sawInputDrop=1; if (chainjump) hadjump=1; else allow=allow ctok }
+      inchain=0; next
+    }
+    inchain {
+      if ($0 ~ /type[[:space:]]+filter[[:space:]]+hook[[:space:]]+input/) isinput=1
+      if ($0 ~ /policy[[:space:]]+drop/) isdrop=1
+      if ($0 ~ /(^|[[:space:]])(jump|goto)([[:space:]]|$)/) chainjump=1
+      t=$0; gsub(/^[[:space:]]+/,"",t); gsub(/[[:space:]]+$/,"",t)
+      if (t ~ /^(tcp|udp) dport ([{][^}]*[}]|[0-9]+(-[0-9]+)?) accept$/) {
+        proto=substr(t,1,3); spec=t
+        sub(/^(tcp|udp) dport /,"",spec); sub(/ accept$/,"",spec)
+        gsub(/[{}]/,"",spec); gsub(/,/," ",spec)
+        n=split(spec,arr," ")
+        for(i=1;i<=n;i++) if(arr[i]!="") ctok=ctok arr[i]"/"proto" "
+      }
+      next
+    }
+    END {
+      if (!sawInputDrop || hadjump) { print "@@UNTRUSTED@@"; exit }
+      print allow
+    }
+  '
+}
+
+# fw_parse_ipt : stdin=`iptables -S INPUT`(호출부가 -P INPUT DROP/REJECT 확인 후 넘김) →
+#   단순 dport accept("22/tcp …"), 아니면 "@@UNTRUSTED@@".
+#   INPUT 이 ACCEPT/DROP/REJECT/LOG/RETURN 이 아닌 커스텀 체인으로 jump(-j)하면(calico 등)
+#   accept 가 그 안에 숨어 따라갈 수 없으니 강등 불가. -s(소스한정)·-m state/conntrack(연결추적)
+#   조건이 붙은 accept 는 "외부 전체 허용"이 아니므로 제외.
+fw_parse_ipt() {
+  awk '
+    BEGIN{ untrusted=0; allow="" }
+    /^-A INPUT / {
+      jt=""
+      for(i=1;i<=NF;i++) if($i=="-j"){ jt=$(i+1); break }
+      if (jt!="" && jt!="ACCEPT" && jt!="DROP" && jt!="REJECT" && jt!="LOG" && jt!="RETURN") untrusted=1
+      if (jt=="ACCEPT") {
+        if ($0 ~ /(^| )-s /) next
+        if ($0 ~ /-m (state|conntrack)/) next
+        proto=""
+        if ($0 ~ /-p tcp/) proto="tcp"; else if ($0 ~ /-p udp/) proto="udp"
+        if (match($0, /--dport [0-9]+(:[0-9]+)?/)) {
+          d=substr($0,RSTART+8,RLENGTH-8); sub(/:/,"-",d)
+          allow = allow d (proto!="" ? "/"proto : "") " "
+        }
+        if (match($0, /--dports [0-9,:]+/)) {
+          d=substr($0,RSTART+9,RLENGTH-9); gsub(/,/," ",d); gsub(/:/,"-",d)
+          n=split(d,arr," ")
+          for(k=1;k<=n;k++) if(arr[k]!="") allow = allow arr[k] (proto!="" ? "/"proto : "") " "
+        }
+      }
+    }
+    END {
+      if (untrusted) { print "@@UNTRUSTED@@"; exit }
+      print allow
+    }
+  '
+}
+
 fw_detect() {
   if have firewall-cmd && firewall-cmd --state >/dev/null 2>&1; then
     FW_KIND="firewalld"
@@ -299,6 +374,30 @@ fw_detect() {
     # "22/tcp   ALLOW   Anywhere" / "80/tcp (v6)  ALLOW  Anywhere (v6)" / "6000:6007/tcp ..."
     FW_ALLOW=$(ufw status 2>/dev/null | grep -E 'ALLOW|LIMIT' | awk '{print $1}' \
                | grep -E '^[0-9]+(:[0-9]+)?(/(tcp|udp))?$' | sort -u | paste -sd' ' -)
+  elif have nft || have iptables; then
+    # nftables 를 먼저 본다(iptables-nft 백엔드면 여기서 룰이 다 보인다). 못 잡으면 iptables 시도.
+    local _fwout
+    if have nft && nft list ruleset >/dev/null 2>&1; then
+      _fwout=$(timeout "$CMD_TIMEOUT" nft list ruleset 2>/dev/null | fw_parse_nft)
+      if [ "$_fwout" != "@@UNTRUSTED@@" ]; then
+        FW_KIND="nftables"
+        FW_ALLOW=$(printf '%s\n' "$_fwout" | tr ' ' '\n' \
+                   | grep -E '^[0-9]+(-[0-9]+)?/(tcp|udp)$' | sort -u | paste -sd' ' -)
+      fi
+    fi
+    if [ "$FW_KIND" = "none" ] && have iptables && iptables -S INPUT >/dev/null 2>&1; then
+      local _iptdump _iptpol
+      _iptdump=$(timeout "$CMD_TIMEOUT" iptables -S INPUT 2>/dev/null)
+      _iptpol=$(printf '%s\n' "$_iptdump" | awk '/^-P INPUT /{print $3; exit}')
+      if [ "$_iptpol" = "DROP" ] || [ "$_iptpol" = "REJECT" ]; then
+        _fwout=$(printf '%s\n' "$_iptdump" | fw_parse_ipt)
+        if [ "$_fwout" != "@@UNTRUSTED@@" ]; then
+          FW_KIND="iptables"
+          FW_ALLOW=$(printf '%s\n' "$_fwout" | tr ' ' '\n' \
+                     | grep -E '^[0-9]+(-[0-9]+)?/(tcp|udp)$' | sort -u | paste -sd' ' -)
+        fi
+      fi
+    fi
   fi
 }
 
