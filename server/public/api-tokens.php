@@ -132,7 +132,7 @@ vg_header('API 토큰', 'apitokens');
                   : '<span class="why">미사용</span>',
               3 => fn($t) => vg_h((string) ($t['created_by'] ?? '–')),
               4 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
-              5 => fn($t) => '<form method="post" onsubmit="return confirm(\'이 토큰을 폐기할까요? 즉시 무효가 됩니다.\');">'
+              5 => fn($t) => '<form method="post" data-confirm="이 토큰을 폐기할까요? 즉시 무효가 됩니다.">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                   . '<input type="hidden" name="action" value="revoke">'
                   . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'

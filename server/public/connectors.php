@@ -175,7 +175,7 @@ vg_header('피드 커넥터', 'connectors');
               . '<button type="button" class="btn btn--sm btn--ghost" data-modal="log' . $id . '">'
               . '이력 <span class="why">' . number_format($n) . '</span></button>'
               . '<a class="btn btn--sm btn--ghost" href="?edit=' . $id . '">편집</a>'
-              . '<form method="post" onsubmit="return confirm(\'이 커넥터를 삭제할까요? 스케줄된 수집이 중단되고 목록에서 사라집니다. 지금까지의 수집 이력은 삭제되지 않고 남습니다.\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
+              . '<form method="post" data-confirm="이 커넥터를 삭제할까요? 스케줄된 수집이 중단되고 목록에서 사라집니다. 지금까지의 수집 이력은 삭제되지 않고 남습니다."><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
               . '<button class="btn btn--sm btn--danger">삭제</button></form>'
               . '</div>';
       },

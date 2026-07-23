@@ -108,7 +108,7 @@ vg_header($user['username'] ?? '사용자', 'users');
       $meta[] = '<span class="badge tone-crit">🔒 잠김 — ' . vg_h((string) $user['locked_until']) . '까지</span>';
   }
   $meta[] = '<a href="/users.php">← 사용자 목록</a>';
-  vg_hero('👤 ' . vg_h($user['username']) . ($isSelf ? ' <span class="why">(본인)</span>' : ''), $meta, null, 'ok', '계정 상태', 'USER DETAIL');
+  vg_hero(vg_h($user['username']) . ($isSelf ? ' <span class="why">(본인)</span>' : ''), $meta, null, 'ok', '계정 상태', 'USER DETAIL');
   ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
@@ -119,7 +119,7 @@ vg_header($user['username'] ?? '사용자', 'users');
     <div class="card__body">
       <div class="actions actions--stack">
         <?php if ($isLocked): ?>
-          <form method="post" onsubmit="return confirm('이 계정의 잠금을 해제할까요? 실패 카운트도 함께 초기화됩니다.');">
+          <form method="post" data-confirm="이 계정의 잠금을 해제할까요? 실패 카운트도 함께 초기화됩니다.">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="unlock">
             <label>계정 잠금</label>
@@ -146,7 +146,7 @@ vg_header($user['username'] ?? '사용자', 'users');
           <span class="why">역할 변경: 자기 자신은 변경할 수 없습니다.</span>
         <?php endif; ?>
 
-        <form method="post" onsubmit="return confirm('이 사용자의 비밀번호를 초기화할까요? 아래 입력한 새 비밀번호로 즉시 바뀌며, 기존 비밀번호로는 더는 로그인할 수 없습니다.');">
+        <form method="post" data-confirm="이 사용자의 비밀번호를 초기화할까요? 아래 입력한 새 비밀번호로 즉시 바뀌며, 기존 비밀번호로는 더는 로그인할 수 없습니다.">
           <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
           <input type="hidden" name="action" value="reset">
           <label>비밀번호 초기화</label>
@@ -155,7 +155,7 @@ vg_header($user['username'] ?? '사용자', 'users');
         </form>
 
         <?php if (!$isSelf): ?>
-          <form method="post" onsubmit="return confirm('이 사용자를 삭제할까요? 계정이 즉시 비활성화되어 로그인할 수 없게 되고 사용자 목록에서도 사라집니다. 이 사용자의 활동 이력은 감사로그에 그대로 남습니다.');">
+          <form method="post" data-confirm="이 사용자를 삭제할까요? 계정이 즉시 비활성화되어 로그인할 수 없게 되고 사용자 목록에서도 사라집니다. 이 사용자의 활동 이력은 감사로그에 그대로 남습니다.">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="delete">
             <label>삭제</label>

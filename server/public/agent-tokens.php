@@ -168,12 +168,12 @@ vg_header('에이전트 토큰', 'agenttokens');
               5 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
               // 활성이면 [폐기], 폐기된 것이면 [삭제] — 폐기·재발급을 반복해 쌓인 죽은 행을 치운다.
               6 => fn($t) => (int) $t['is_revoked'] === 1
-                  ? '<form method="post" onsubmit="return confirm(\'이 토큰을 목록에서 지울까요? 이미 폐기되어 무효인 토큰입니다.\');">'
+                  ? '<form method="post" data-confirm="이 토큰을 목록에서 지울까요? 이미 폐기되어 무효인 토큰입니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="delete">'
                       . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'
                       . '<button class="btn btn--sm btn--danger">삭제</button></form>'
-                  : '<form method="post" onsubmit="return confirm(\'이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.\');">'
+                  : '<form method="post" data-confirm="이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="revoke">'
                       . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'

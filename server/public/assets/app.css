@@ -1584,3 +1584,51 @@ form.card { border-radius:24px; }
 
 .hero__eyebrow { display:block; margin-bottom:.32rem; color:var(--accent-2); font-size:.68rem; font-weight:800; letter-spacing:.11em; }
 .hero__id h1 { letter-spacing:-.035em; }
+
+/* 2nd-pass density: calm surfaces, strong hierarchy, responsive data cards. */
+.page-title { background:var(--surface); box-shadow:none; border-color:var(--line); }
+.page-title__eyebrow,.hero__eyebrow { color:var(--muted); letter-spacing:.09em; }
+.card,.hero,.toolbar { box-shadow:none; }
+.card:hover { border-color:var(--line); }
+.data-table td,.data-table th { font-variant-numeric:tabular-nums; }
+.data-table tbody tr:hover { background:var(--surface-2); }
+
+@media(max-width:680px){
+  .card:has(> .data-table:only-child),.card:has(> .card__body > .data-table) { overflow:visible; background:transparent; border:0; padding:0; box-shadow:none; }
+  .data-table,.data-table tbody,.data-table tr,.data-table td { display:block; width:100%; }
+  .data-table thead { display:none; }
+  .data-table tbody { display:grid; gap:.7rem; }
+  .data-table tbody tr { padding:.75rem 1rem; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:var(--shadow); }
+  .data-table tbody tr:hover { background:var(--surface); }
+  .data-table tbody tr[class*="sev-"] { border-left-width:3px; }
+  .data-table td { display:grid; grid-template-columns:minmax(5.5rem,34%) minmax(0,1fr); gap:.75rem; align-items:start; padding:.48rem 0; border:0; text-align:left !important; white-space:normal; overflow-wrap:anywhere; }
+  .data-table td + td { border-top:1px solid var(--line); }
+  .data-table td::before { content:attr(data-label); color:var(--muted); font-size:.72rem; font-weight:650; }
+  .data-table td:not([data-label]) { display:flex; justify-content:flex-end; padding-top:.65rem; }
+  .data-table td:not([data-label])::before { display:none; }
+  .data-table .actions { justify-content:flex-end; }
+}
+
+.confirm-modal { width:min(440px,calc(100vw - 2rem)); }
+.confirm-modal__message { margin:0; color:var(--text-2); line-height:1.7; white-space:pre-line; }
+.confirm-modal .modal__foot { margin-top:1.25rem; }
+.toolbar__toggle { display:none; }
+@media(max-width:680px){
+  form.toolbar.has-filter-toggle { display:grid; grid-template-columns:1fr; padding:.55rem; }
+  .toolbar__toggle { display:flex; align-items:center; justify-content:space-between; width:100%; min-height:42px; padding:.55rem .7rem; border:0; background:transparent; color:var(--text); font:inherit; font-weight:700; cursor:pointer; }
+  .toolbar__toggle i { width:.5rem; height:.5rem; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg); transition:transform .15s; }
+  form.toolbar.is-open .toolbar__toggle i { transform:rotate(-135deg); }
+  form.toolbar.has-filter-toggle:not(.is-open) > :not(.toolbar__toggle):not(input[type=hidden]) { display:none; }
+  form.toolbar.has-filter-toggle.is-open { gap:.55rem; }
+  form.toolbar.has-filter-toggle.is-open input,form.toolbar.has-filter-toggle.is-open select,form.toolbar.has-filter-toggle.is-open .btn { width:100%; }
+}
+/* Detail pages: summary first, evidence second, raw references last. */
+.page--cve section,.page--compliance_rule section { margin:2.2rem 0 0; padding-top:.2rem; }
+.page--cve section + section,.page--compliance_rule section + section { border-top:1px solid var(--line); padding-top:1.5rem; }
+.page--cve section > h2,.page--compliance_rule section > h2 { margin-top:0; font-size:1.12rem; }
+.page--cve #summary .card,.page--compliance_rule #rationale .card { font-size:.98rem; line-height:1.75; }
+.page--cve #references,.page--compliance_rule #refs { color:var(--text-2); }
+.page--host .stat-grid,.page--cve .stat-grid,.page--compliance_rule .stat-grid { gap:0; border:1px solid var(--line); border-radius:18px; overflow:hidden; background:var(--surface); }
+.page--host .stat,.page--cve .stat,.page--compliance_rule .stat { padding:1rem 1.15rem; border-right:1px solid var(--line); }
+.alert { display:flex; flex-direction:column; gap:.2rem; box-shadow:none; }
+.alert strong { font-size:.9rem; }

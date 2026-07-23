@@ -248,7 +248,7 @@ vg_header('자산관리', 'assets');
               'scan_count'   => fn($r) => (int) $r['scan_count'] > 0
                   ? '<a href="/host.php?id=' . (int) $r['id'] . '&tab=scans">' . number_format((int) $r['scan_count']) . '회</a>'
                   : '<span class="why">0회</span>',
-              'act' => fn($r) => '<form method="post" class="actions" onsubmit="return confirm(\'' . vg_h($r['fqdn']) . ' 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.\');">'
+              'act' => fn($r) => '<form method="post" class="actions" data-confirm="' . vg_h($r['fqdn']) . ' 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                   . '<input type="hidden" name="id" value="' . (int) $r['id'] . '">'
                   . '<button type="submit" class="btn btn--sm btn--danger">삭제</button></form>',
