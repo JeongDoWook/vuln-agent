@@ -98,11 +98,11 @@ vg_header('영향 패키지', 'packages');
   $hasFilter = $q !== '' || $eco !== '';
   vg_table(
       [
-          ['label' => '패키지', 'width' => '16rem'],
+          ['label' => '패키지', 'width' => '20rem'],
           ['label' => '배포판', 'width' => '10rem'],
           ['label' => 'CVE 수', 'align' => 'right', 'width' => '6rem'],
-          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '9rem'],
-          ['label' => '조치'],
+          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '11rem'],
+          ['label' => '조치', 'width' => '18rem'],
       ],
       $rows,
       [
@@ -127,14 +127,32 @@ vg_header('영향 패키지', 'packages');
                              ? vg_h((string) $r['ecosystem'])
                              : '<span class="why">–</span>',
               2 => fn($r) => number_format((int) $r['cve_cnt']),
-              3 => fn($r) => vg_epss_cell($r['max_epss'], null),
-              // 조치 버전이 있으면 "N 이상". 없으면 아직 패치가 안 나온 CVE 들이다.
+              // 최고 EPSS: 텍스트("96.3%") 아래 게이지. 폭 = max_epss*100%.
+              //   톤은 값 구간별(>=0.5 high / >=0.1 med / 그 외 low). 값 없으면 대시만.
+              3 => function ($r) {
+                  $txt = vg_epss_cell($r['max_epss'], null);
+                  if ($r['max_epss'] === null || $r['max_epss'] === '') {
+                      return $txt;
+                  }
+                  $e = (float) $r['max_epss'];
+                  $tone = $e >= 0.5 ? 'high' : ($e >= 0.1 ? 'med' : 'low');
+                  return $txt . '<div class="meter meter--' . $tone . '">'
+                       . '<i style="width:' . number_format($e * 100, 1) . '%"></i></div>';
+              },
+              // 조치: fix_cnt/cve_cnt 진행바가 주된 시각요소. max_fixed 있으면 pill 로 함께.
+              //   cve_cnt=0 은 0 나눗셈 방지. 완료율 100% 는 low(ok) 톤, 그 외 med.
               4 => function ($r) {
+                  $cve   = (int) $r['cve_cnt'];
+                  $fix   = (int) $r['fix_cnt'];
+                  $ratio = $cve > 0 ? $fix / $cve : 0.0;
+                  $tone  = $ratio >= 1.0 ? 'low' : 'med';
+                  $bar   = '<div class="meter meter--' . $tone . '">'
+                         . '<i style="width:' . number_format($ratio * 100, 1) . '%"></i></div>';
                   if (empty($r['max_fixed'])) {
-                      return '<span class="why">패치 확인 (조치 0/' . (int) $r['cve_cnt'] . ')</span>';
+                      return '<span class="why">패치 확인 (조치 ' . $fix . '/' . $cve . ')</span>' . $bar;
                   }
                   return '<span class="pill">' . vg_h((string) $r['max_fixed']) . ' 이상</span>'
-                       . ' <span class="why">조치 ' . (int) $r['fix_cnt'] . '/' . (int) $r['cve_cnt'] . '</span>';
+                       . ' <span class="why">조치 ' . $fix . '/' . $cve . '</span>' . $bar;
               },
           ],
       ]
