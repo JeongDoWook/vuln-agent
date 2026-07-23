@@ -182,6 +182,15 @@ elif ! curl -fsS -o /dev/null --max-time 3 "$BASE/" 2>/dev/null; then
   echo "pre-push: ⚠ dev 스택이 응답하지 않습니다($BASE) — 스모크 건너뜀." >&2
   echo "           올리려면: ./deploy/compose_runner.sh dev up -d" >&2
 else
+  # 실행 중인 dev 스택이 새 코드보다 오래된 스키마일 수 있다. compose up 때만
+  # 마이그레이션하면 "코드만 바꾸고 push" 하는 가장 흔한 흐름에서 매처가 500으로 죽고,
+  # severity·억제·rematch 검사가 연쇄 실패한다. 스모크 직전에 미적용분을 멱등 적용한다.
+  DB_CONTAINER=${VG_DB_CONTAINER:-vulnagent-db-dev}
+  echo "pre-push: dev DB 마이그레이션 확인 ($DB_CONTAINER)"
+  if ! bash deploy/migrate.sh "$DB_CONTAINER"; then
+    echo "pre-push: ✗ dev DB 마이그레이션 실패 — push 중단" >&2
+    exit 1
+  fi
   echo "pre-push: 스모크 실행 ($BASE${WT_NAME:+ · wt/$WT_NAME})"
   if ! ./tests/smoke.sh "$BASE"; then
     echo "pre-push: ✗ 스모크 실패 — push 중단" >&2
