@@ -810,10 +810,15 @@ td details[open] summary { margin-bottom: .35rem; }
   .detail__side { position: static; }
 }
 
-/* 이름:값 목록 — 메트릭 사이드바의 뼈대 */
-.kv { display: grid; grid-template-columns: auto 1fr; gap: .45rem .8rem; font-size: .85rem; }
+/* 이름:값 목록 — 원래 300px 사이드바(.detail__side) 안에서 쓰려고 만든 컴포넌트라
+ * dd 가 1fr 을 오른쪽 정렬로 채우면 사이드바 폭에서는 "라벨 …… 값" 모양이 났다. 지금은
+ * .detail 레이아웃 자체를 아무 화면도 안 쓰고(cve.php 는 스크롤 한 번짜리 단일 페이지로
+ * 바뀌었다), .kv 만 남아 폭이 넓은 .card__body 안에 그대로 쓰인다(cve.php 공격 벡터,
+ * compliance_rule.php 참조 매핑) — 값이 카드 오른쪽 끝까지 밀려나 라벨과 멀어져 보인다.
+ * 열 폭을 내용에 맞추고 왼쪽 정렬로 붙이면 라벨·값이 한 쌍처럼 붙어 보인다. */
+.kv { display: grid; grid-template-columns: max-content max-content; column-gap: .8rem; row-gap: .45rem; font-size: .85rem; }
 .kv dt { color: var(--muted); white-space: nowrap; }
-.kv dd { margin: 0; color: var(--text); text-align: right; word-break: keep-all; }
+.kv dd { margin: 0; color: var(--text); text-align: left; word-break: keep-all; }
 .kv dd.is-danger { color: var(--crit-fg); font-weight: 600; }
 
 /* 점수 막대 — CVSS 를 "10점 만점 중 어디" 로 보이게. 숫자만으로는 크기 감이 안 온다. */
