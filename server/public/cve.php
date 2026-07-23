@@ -245,7 +245,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
     <?php if ($kev && $due !== null && $due !== ''): ?>
       <div class="stat">
         <span class="stat__val <?= $overdue ? 'is-danger' : '' ?>"><?= vg_h((string) $due) ?></span>
-        <div class="why"><?= $overdue ? vg_h(abs($dLeft) . '일 초과') : vg_h('D-' . $dLeft) ?> · 패치 기한</div>
+        <div class="why"><?= $overdue ? vg_h(abs($dLeft) . '일 초과') : vg_h('D-' . $dLeft) ?> · CISA 연방기관 조치 기준일</div>
       </div>
     <?php endif; ?>
 

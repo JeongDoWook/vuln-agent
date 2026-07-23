@@ -8,6 +8,7 @@ UI 목록 크기와 요약 카드 한도는 코드 수정 없이 웹 컨테이�
 | `UI_PER_PAGE_OPTIONS` | `10,20,40,60,100` | 각 5~200 | 목록의 페이지 크기 선택지 |
 | `UI_PER_PAGE_DEFAULT` | `20` | 선택지 중 하나 | 기본 페이지 크기 |
 | `UI_DASHBOARD_URGENT_LIMIT` | `6` | 3~30 | 대시보드 대응 우선순위 |
+| UI_DASHBOARD_ACTIONABLE_STATUSES | EXTERNAL,LAN,LISTENING,RUNNING,LOADED | 허용 상태값 | KEV 긴급 목록에 포함할 실제 사용 상태 |
 | `UI_DASHBOARD_CHART_LIMIT` | `10` | 5~30 | 대시보드 분포·상위 자산 |
 | `UI_DETAIL_PREVIEW_LIMIT` | `10` | 5~100 | 상세 화면 이력·프로세스 미리보기 |
 | `UI_TREND_LIMIT` | `50` | 10~500 | 상세 화면 추이 데이터 수 |
