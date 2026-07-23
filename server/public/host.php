@@ -13,9 +13,10 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
+require_once __DIR__ . '/../src/matcher.php';
 vg_require_menu('findings');
 
-$err = null; $host = null; $scan = null; $scanAge = null;
+$err = null; $msg = null; $host = null; $scan = null; $scanAge = null;
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 
 // 재시작·재부팅 표에 보여줄 최대 건수. 나머지는 취약점 현황(fx=restart)으로 넘긴다.
@@ -248,7 +249,41 @@ $hasFilter = $q !== '';
 
 try {
     $pdo = vg_pdo();
-    $hostId = (int) ($_GET['id'] ?? 0);
+    $hostId = (int) ($_POST['id'] ?? $_GET['id'] ?? 0);
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!vg_csrf_check($_POST['csrf'] ?? null)) {
+            throw new RuntimeException('잘못된 요청입니다. 페이지를 새로고침한 뒤 다시 시도하세요.');
+        }
+        $perimeter = isset($_POST['perimeter_firewalled']) ? 1 : 0;
+        $portsText = trim((string) ($_POST['external_ports'] ?? ''));
+        $ports = [];
+        if ($portsText !== '') {
+            foreach (preg_split('/[\s,]+/', $portsText) ?: [] as $token) {
+                if (!preg_match('/^([1-9][0-9]{0,4})\/(tcp|udp)$/i', $token, $m) || (int) $m[1] > 65535) {
+                    throw new InvalidArgumentException('노출 포트는 22/tcp, 53/udp 형식으로 입력하세요.');
+                }
+                $ports[strtolower($m[2]) . '/' . (int) $m[1]] = [(int) $m[1], strtolower($m[2])];
+            }
+        }
+        $pdo->beginTransaction();
+        $exists = $pdo->prepare('SELECT fqdn FROM tb_hosts WHERE id = ? AND is_deleted = 0 FOR UPDATE');
+        $exists->execute([$hostId]);
+        $fqdn = $exists->fetchColumn();
+        if ($fqdn === false) { throw new RuntimeException('호스트를 찾을 수 없습니다.'); }
+        $pdo->prepare('UPDATE tb_hosts SET perimeter_firewalled = ? WHERE id = ?')->execute([$perimeter, $hostId]);
+        $pdo->prepare('DELETE FROM tb_host_ext_ports WHERE host_id = ?')->execute([$hostId]);
+        $insPort = $pdo->prepare('INSERT INTO tb_host_ext_ports (host_id, port, proto) VALUES (?, ?, ?)');
+        foreach ($ports as [$port, $proto]) { $insPort->execute([$hostId, $port, $proto]); }
+        $pdo->commit();
+        vg_log_activity($pdo, 'HOST', $hostId, 'host_perimeter_update', '경계 방화벽 설정 변경: ' . (string) $fqdn,
+            ['perimeter_firewalled' => $perimeter, 'external_ports' => array_keys($ports)]);
+        $latest = $pdo->prepare('SELECT id FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 1');
+        $latest->execute([$hostId]);
+        $latestScanId = (int) ($latest->fetchColumn() ?: 0);
+        if ($latestScanId > 0) { vg_match_scan($pdo, $latestScanId); }
+        $msg = '경계 방화벽 설정을 저장하고 최신 스캔을 다시 매칭했습니다.';
+    }
     $st = $pdo->prepare('SELECT * FROM tb_hosts WHERE id = ? AND is_deleted = 0');
     $st->execute([$hostId]);
     $host = $st->fetch() ?: null;
@@ -350,8 +385,9 @@ try {
         }
     }
 } catch (Throwable $e) {
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) { $pdo->rollBack(); }
     error_log('[host] ' . $e->getMessage());
-    $err = '처리 중 오류가 발생했습니다.';
+    $err = $e instanceof InvalidArgumentException || $e instanceof RuntimeException ? $e->getMessage() : '처리 중 오류가 발생했습니다.';
 }
 
 // 노출 범위 → 뱃지 톤(색은 CSS 가 결정).
@@ -399,6 +435,27 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   ];
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
   vg_hero('🖥️ ' . vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone);
+
+  $portStmt = $pdo->prepare('SELECT port, proto FROM tb_host_ext_ports WHERE host_id = ? AND is_deleted = 0 ORDER BY port, proto');
+  $portStmt->execute([$hostId]);
+  $portValues = [];
+  foreach ($portStmt->fetchAll() as $portRow) {
+      $portValues[] = (int) $portRow['port'] . '/' . strtolower((string) $portRow['proto']);
+  }
+  if ($msg !== null) { vg_alert(['type' => 'ok', 'title' => $msg]); }
+  $dq = chr(34);
+  echo '<div class=card><strong>경계 방화벽 설정</strong>';
+  echo '<span class=why>에이전트가 볼 수 없는 라우터·경계 방화벽 뒤의 호스트만 설정하세요.</span>';
+  echo '<div class=card__body><form method=post>';
+  echo '<input type=hidden name=csrf value=' . $dq . vg_h(vg_csrf_token()) . $dq . '>';
+  echo '<input type=hidden name=id value=' . $dq . (int) $hostId . $dq . '>';
+  echo '<label><input type=checkbox name=perimeter_firewalled value=1 '
+      . (!empty($host['perimeter_firewalled']) ? 'checked' : '')
+      . '> 이 호스트는 경계 방화벽 뒤에 있음</label>';
+  echo '<label>실제 인터넷 공개 포트 <input type=text name=external_ports value=' . $dq
+      . vg_h(implode(', ', $portValues)) . $dq . ' placeholder=' . $dq . '22/tcp, 443/tcp, 8080/tcp' . $dq . '></label>';
+  echo '<p class=hint>쉼표 또는 공백으로 구분합니다. 목록에 없는 호스트 EXTERNAL 포트만 FILTERED로 강등되며 컨테이너에는 적용되지 않습니다.</p>';
+  echo '<button type=submit>저장 및 최신 스캔 재매칭</button></form></div></div>';
 
   // CVE 피드가 지원하지 않는 배포판이면 매칭 후보가 아예 없어 **취약점이 0건으로 뜬다.**
   //   운영자는 "안전하다"고 읽는다 — 침묵하는 미탐이라 반드시 화면에 알린다.
