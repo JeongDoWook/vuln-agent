@@ -119,6 +119,37 @@ sed "s/web02\.example\.com/$FQDN_WEB02/g" "$ROOT/tests/sample-scan-debian.json" 
 sed "s/web03\.example\.com/$FQDN_WEB03/g" "$ROOT/tests/sample-scan-amzn.json"   > "$SAMPLE_AMZN"
 printf "  이 트리의 호스트: %s (트리 라벨 =%s)\n" "$FQDN_WEB01" "$WT_LABEL"
 
+# --- 워크트리 전용 로그인 계정 ------------------------------------------------
+# admin 은 DB 가 공용이라 전 워크트리가 같은 행을 쓴다. vg_login() 은 로그인마다
+#   session_token 을 덮어써 "새 로그인 = 이전 세션 강제종료"를 강제한다(auth.php) — 그래서
+#   워크트리 여러 개가 동시에 admin 으로 스모크를 돌리면 서로의 세션을 계속 걷어차 뒤쪽
+#   웹 인증 검사가 302 연쇄로 실패한다(실제로 겪음). 워크트리마다 admin-<라벨> 계정을 따로
+#   써서 세션을 격리한다. DB 를 직접 upsert 하는 이유: users.php 로 만들려면 이미 로그인된
+#   admin 세션이 있어야 하는데, 그 세션을 지키자고 이 계정을 만드는 것이라 순서가 안 맞는다.
+#   메인 트리는 원래 하나뿐이라(동시에 도는 스모크가 없다) 손대지 않고 admin 을 그대로 쓴다.
+SMOKE_USER="admin"
+if [ -n "$WT_NAME" ] && command -v docker >/dev/null 2>&1; then
+  SMOKE_USER="admin-$WT_LABEL"
+  DB_CONTAINER="vulnagent-db-dev"   # 공용 DB, 트리와 무관하게 고정(compose_runner.sh 와 동일 전제)
+  db_mysql() {
+    docker exec -i "$DB_CONTAINER" sh -c \
+      'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot vulnagent "$@"' _ "$@"
+  }
+  SMOKE_HASH="$(docker run --rm -e P="$ADMPW" php:8.3-cli php -r 'echo password_hash(getenv("P"), PASSWORD_DEFAULT);' 2>/dev/null)"
+  if [ -n "$SMOKE_HASH" ] && db_mysql -e \
+      "INSERT INTO tb_users (username, password_hash, role, is_deleted)
+       VALUES ('$SMOKE_USER', '$SMOKE_HASH', 'admin', 0)
+       ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), role = 'admin',
+         is_deleted = 0, failed_login_count = 0, locked_until = NULL, session_token = NULL" \
+      >/dev/null 2>&1
+  then
+    printf "  이 트리의 계정: %s (다른 워크트리와 세션 격리)\n" "$SMOKE_USER"
+  else
+    printf "  ${RED}⚠ 워크트리 전용 계정(%s) 준비 실패 — admin 으로 폴백(다른 트리와 세션 경합 가능)${NC}\n" "$SMOKE_USER" >&2
+    SMOKE_USER="admin"
+  fi
+fi
+
 
 # --- UI 정적 검사 -----------------------------------------------------------
 # 서버를 치기 전에 먼저 돈다(죽은 CSS 클래스·인라인 style·조용히 잘리는 목록).
@@ -327,7 +358,7 @@ csrf=$(curl_ -s -c "$JAR" "$BASE/login.php" | grep -oE 'name="csrf" value="[a-f0
 if [ -n "$csrf" ]; then ok "로그인 폼 CSRF 토큰 취득"; else no "CSRF 토큰 없음"; fi
 
 code=$(curl_ -s -b "$JAR" -c "$JAR" -o /dev/null -w '%{http_code}' \
-  --data-urlencode "csrf=$csrf" --data-urlencode "username=admin" --data-urlencode "password=$ADMPW" \
+  --data-urlencode "csrf=$csrf" --data-urlencode "username=$SMOKE_USER" --data-urlencode "password=$ADMPW" \
   "$BASE/login.php")
 assert_eq "$code" "302" "올바른 로그인 → 302(대시보드)"
 
@@ -336,7 +367,7 @@ assert_contains "$body" "대시보드" "대시보드 접근(인증됨)"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/findings.php")
 assert_eq "$code" "200" "취약점 페이지 200"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/users.php")
-assert_eq "$code" "200" "사용자 페이지 200(admin)"
+assert_eq "$code" "200" "사용자 페이지 200(관리자 권한)"
 
 body=$(curl_ -s -b "$JAR" "$BASE/connectors.php")
 assert_contains "$body" "CISA KEV" "피드 커넥터 페이지(기본 커넥터 노출)"
@@ -416,7 +447,7 @@ fi
 # 잘못된 비번
 JAR2="$(mktemp)"; csrf2=$(curl_ -s -c "$JAR2" "$BASE/login.php" | grep -oE '[a-f0-9]{32}' | head -1)
 body=$(curl_ -s -b "$JAR2" -c "$JAR2" --data-urlencode "csrf=$csrf2" \
-  --data-urlencode "username=admin" --data-urlencode "password=WRONG" "$BASE/login.php")
+  --data-urlencode "username=$SMOKE_USER" --data-urlencode "password=WRONG" "$BASE/login.php")
 assert_contains "$body" "올바르지 않습니다" "틀린 비밀번호 → 로그인 거부"
 rm -f "$JAR2"
 
