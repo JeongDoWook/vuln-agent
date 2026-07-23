@@ -19,12 +19,16 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     }
 }
 $status=(string)($_GET['status']??'');if(!in_array($status,VG_REMEDIATION_STATUSES,true))$status='';
-$overdue=(string)($_GET['overdue']??'');$q=trim((string)($_GET['q']??''));
+$overdue=(string)($_GET['overdue']??'');$q=trim((string)($_GET['q']??''));$page=vg_page();$perPage=vg_perpage();
 $where=['r.is_deleted=0'];$params=[];
 if($status!==''){$where[]='r.status=?';$params[]=$status;}
 if($overdue==='1'){$where[]="r.due_at<NOW() AND r.status NOT IN ('RESOLVED','EXCEPTION')";}
 if($q!==''){$where[]='(h.fqdn LIKE ? OR r.cve_id LIKE ? OR r.package_name LIKE ?)';$params=array_merge($params,array_fill(0,3,'%'.$q.'%'));}
-$sql="SELECT r.*,h.fqdn,u.username,DATEDIFF(r.due_at,NOW()) due_days FROM tb_remediation_cases r JOIN tb_hosts h ON h.id=r.host_id LEFT JOIN tb_users u ON u.id=r.assignee_user_id WHERE ".implode(' AND ',$where)." ORDER BY FIELD(r.status,'OPEN','IN_PROGRESS','EXCEPTION','RESOLVED'),r.due_at ASC LIMIT 500";
+$whereSql=implode(' AND ',$where);
+$countSt=$pdo->prepare("SELECT COUNT(*) FROM tb_remediation_cases r JOIN tb_hosts h ON h.id=r.host_id WHERE {$whereSql}");
+$countSt->execute($params);$total=(int)$countSt->fetchColumn();
+$offset=($page-1)*$perPage;
+$sql="SELECT r.*,h.fqdn,u.username,DATEDIFF(r.due_at,NOW()) due_days FROM tb_remediation_cases r JOIN tb_hosts h ON h.id=r.host_id LEFT JOIN tb_users u ON u.id=r.assignee_user_id WHERE {$whereSql} ORDER BY FIELD(r.status,'OPEN','IN_PROGRESS','EXCEPTION','RESOLVED'),r.due_at ASC LIMIT {$perPage} OFFSET {$offset}";
 $st=$pdo->prepare($sql);$st->execute($params);$rows=$st->fetchAll();
 $counts=$pdo->query("SELECT SUM(status='OPEN') open_count,SUM(status='IN_PROGRESS') progress_count,SUM(status='EXCEPTION') exception_count,SUM(status NOT IN ('RESOLVED','EXCEPTION') AND due_at<NOW()) overdue_count FROM tb_remediation_cases WHERE is_deleted=0")->fetch();
 vg_header('조치 관리','remediations');
@@ -45,11 +49,12 @@ vg_table($headers,$rows,[
  'row_class'=>static fn(array $r):string=>((int)$r['due_days']<0&&!in_array($r['status'],['RESOLVED','EXCEPTION'],true))?'sev-high':'',
  'cell'=>[
   0=>static fn(array $r):string=>'<strong>'.vg_h($r['cve_id']).'</strong><div class="muted">'.vg_h($r['package_name']).'</div>',
-  1=>static fn(array $r):string=>vg_h($r['fqdn']).($r['container_ref']!==''?'<div class="muted mono">'.vg_h($r['container_ref']).'</div>':''),
+  1=>static fn(array $r):string=>vg_h($r['fqdn']).($r['container_ref']!==''?'<div class="muted">'.vg_h($r['container_ref']).'</div>':''),
   2=>static fn(array $r):string=>'<span class="badge">'.vg_h($r['status']).'</span>',
   3=>static function(array $r):string{$late=(int)$r['due_days']<0&&!in_array($r['status'],['RESOLVED','EXCEPTION'],true);return '<span'.($late?' class="badge tone-high"':'').'>'.vg_h($r['due_at']??'-').'</span>'.($late?'<div class="muted">'.abs((int)$r['due_days']).'일 초과</div>':'');},
   4=>static fn(array $r):string=>vg_h($r['username']??'미지정'),
-  5=>static function(array $r):string{if(!vg_has_role('admin','operator'))return '';$options='';foreach(VG_REMEDIATION_STATUSES as $v){$options.='<option value="'.$v.'"'.($r['status']===$v?' selected':'').'>'.$v.'</option>';}$csrf=vg_h(vg_csrf_token());return '<form method="post" class="inline-form"><input type="hidden" name="csrf" value="'.$csrf.'"><input type="hidden" name="id" value="'.(int)$r['id'].'"><select name="status">'.$options.'</select><input name="note" maxlength="1000" placeholder="조치·예외 사유"><input type="date" name="exception_until" aria-label="예외 만료일"><button class="btn btn--small">저장</button></form>';},
+  5=>static function(array $r):string{if(!vg_has_role('admin','operator'))return '';$options='';foreach(VG_REMEDIATION_STATUSES as $v){$options.='<option value="'.$v.'"'.($r['status']===$v?' selected':'').'>'.$v.'</option>';}$csrf=vg_h(vg_csrf_token());return '<form method="post" class="inline-form"><input type="hidden" name="csrf" value="'.$csrf.'"><input type="hidden" name="id" value="'.(int)$r['id'].'"><select name="status">'.$options.'</select><input name="note" maxlength="1000" placeholder="조치·예외 사유"><input type="date" name="exception_until" aria-label="예외 만료일"><button class="btn btn--sm">저장</button></form>';},
  ],
 ]);
+if($rows){vg_page_nav($total,$perPage,$page);}
 ?><?php vg_footer();
