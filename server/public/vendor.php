@@ -244,7 +244,7 @@ try {
 
 vg_header('벤더 판정', 'vendor');
 ?>
-  <header class="page-title"><div><span class="page-title__eyebrow">VENDOR EVIDENCE</span><h1>벤더 판정 <span class="hint">(<?= number_format($total) ?>건)</span></h1><p>벤더가 제공한 패치 여부와 백포트 판정 근거를 비교합니다.</p></div></header>
+  <?php vg_page_title('벤더 판정', 'VENDOR EVIDENCE', '벤더가 제공한 패치 여부와 백포트 판정 근거를 비교합니다.', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

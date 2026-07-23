@@ -27,7 +27,7 @@ no() { printf "  ${RED}✗${NC} %s\n" "$1"; fail=$((fail+1)); }
 assert_eq() { if [ "$1" = "$2" ]; then ok "$3"; else no "$3  (기대=$2, 실제=$1)"; fi; }
 assert_contains() { if printf '%s' "$1" | grep -q "$2"; then ok "$3"; else no "$3  ('$2' 없음)"; fi; }
 
-# 아래 단위테스트 11개(vercmp~schedule)는 실행 방식(마운트·php:8.3-cli·리다이렉션)이 전부
+# 아래 단위테스트 12개(vercmp~ui_config)는 실행 방식(마운트·php:8.3-cli·리다이렉션)이 전부
 # 동일하고 파일명·라벨·메시지만 다르다 — DRY 로 묶는다. 각 테스트가 왜 존재하는지는
 # 호출부 바로 위 주석에 그대로 남아 있다(도메인 지식이라 이 헬퍼로 뭉개지 않는다).
 #   $1=tests/ 밑 파일명  $2=printf 라벨  $3=성공 메시지  $4=실패 메시지(생략 시 성공 메시지 재사용)
@@ -236,6 +236,9 @@ run_phpunit "kernelcve_test.php" "kernelcve" "kernelcve 단위 테스트 (CNA �
 # 뽑아냈다 — 피드 실행과 무관한 순수 시간 계산이라 SRP 상 분리. ingest_parse 처럼 서버 없이
 # 도는 정적 검사라 스모크 앞단에 묶는다.
 run_phpunit "schedule_test.php" "schedule" "schedule 단위 테스트"
+
+# --- UI 설정·감사 마스킹 단위 테스트 -----------------------------------------
+run_phpunit "ui_config_test.php" "ui_config" "UI 설정 범위·감사정보 마스킹 단위 테스트"
 
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"

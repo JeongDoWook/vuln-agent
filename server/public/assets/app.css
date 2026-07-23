@@ -1632,3 +1632,38 @@ form.card { border-radius:24px; }
 .page--host .stat,.page--cve .stat,.page--compliance_rule .stat { padding:1rem 1.15rem; border-right:1px solid var(--line); }
 .alert { display:flex; flex-direction:column; gap:.2rem; box-shadow:none; }
 .alert strong { font-size:.9rem; }
+
+/* 3차 UI 정돈: 정보는 유지하면서 시선 흐름과 밀도를 사용자가 제어한다. */
+.page__main { width:min(100%,1680px); margin-inline:auto; }
+.page-title { align-items:flex-end; gap:1.5rem; padding-bottom:1.25rem; border-bottom:1px solid var(--line); }
+.page-title > div:first-child { min-width:0; }
+.page-title h1 { letter-spacing:-.035em; }
+.page-title p { max-width:760px; line-height:1.65; }
+.page-title__actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:.55rem; }
+.section-title { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin:2rem 0 .8rem; }
+.section-title h2 { margin:0; font-size:1.1rem; letter-spacing:-.02em; }
+.section-title p { margin:.3rem 0 0; color:var(--muted); font-size:.86rem; line-height:1.55; }
+.section-title__actions { display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; }
+.density-toggle { display:inline-flex; align-items:center; gap:.4rem; min-height:36px; padding:.4rem .65rem; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--text-2); font:inherit; font-size:.78rem; font-weight:650; cursor:pointer; }
+.density-toggle:hover { color:var(--text); border-color:var(--line-strong); background:var(--surface-2); }
+.density-toggle[aria-pressed="true"] { color:var(--primary); border-color:color-mix(in srgb,var(--primary) 35%,var(--line)); background:color-mix(in srgb,var(--primary) 8%,var(--surface)); }
+[data-density="compact"] table th,[data-density="compact"] table td { padding-top:.56rem; padding-bottom:.56rem; }
+[data-density="compact"] .card__body { padding-top:.8rem; padding-bottom:.8rem; }
+[data-density="compact"] .toolbar { padding:.55rem; }
+[data-density="compact"] .stat { padding:.75rem 1rem; }
+[data-density="compact"] .page-title { margin-bottom:1rem; padding-bottom:.9rem; }
+.matrix.data-table td { vertical-align:middle; }
+.matrix.data-table td.col-role { text-align:center; }
+.matrix.data-table input[type="checkbox"] { width:1.15rem; height:1.15rem; accent-color:var(--primary); cursor:pointer; }
+.page--host .page__main,.page--cve .page__main,.page--compliance_rule .page__main,.page--advisory .page__main,.page--user .page__main { max-width:1480px; }
+@media(max-width:860px){
+  .density-toggle__label { display:none; }
+  .page-title { align-items:flex-start; }
+  .page-title__actions { width:100%; justify-content:flex-start; }
+  .section-title { align-items:flex-start; flex-direction:column; }
+}
+@media(max-width:680px){
+  .page-title { gap:.75rem; padding-bottom:1rem; }
+  .page-title__actions,.page-title__actions .btn { width:100%; }
+  [data-density="compact"] .data-table td { padding:.45rem .8rem; }
+}

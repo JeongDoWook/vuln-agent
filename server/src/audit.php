@@ -11,6 +11,23 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/ui_config.php';
+
+/** 감사 데이터에서 인증정보 원문을 재귀적으로 제거한다. */
+function vg_audit_sanitize($data) {
+    if (!is_array($data)) { return $data; }
+    $sensitive = ['password', 'password_hash', 'pass', 'token', 'token_hash', 'secret', 'csrf', 'authorization'];
+    $clean = [];
+    foreach ($data as $key => $value) {
+        $normalized = strtolower((string) $key);
+        $blocked = false;
+        foreach ($sensitive as $needle) {
+            if (str_contains($normalized, $needle)) { $blocked = true; break; }
+        }
+        $clean[$key] = $blocked ? '[REDACTED]' : vg_audit_sanitize($value);
+    }
+    return $clean;
+}
 
 /**
  * 소프트 삭제: 실제 DELETE 대신 is_deleted/deleted_at 를 세운다.
@@ -53,8 +70,10 @@ function vg_log_activity(
         $uname = isset($_SESSION['uname']) ? (string) $_SESSION['uname'] : null;
         $ip    = $ip ?? ($_SERVER['REMOTE_ADDR'] ?? null);
         $dataJson = null;
-        if (is_array($data) || is_object($data)) {
-            $dataJson = json_encode($data, JSON_UNESCAPED_UNICODE);
+        if (is_array($data)) {
+            $dataJson = json_encode(vg_audit_sanitize($data), JSON_UNESCAPED_UNICODE);
+        } elseif (is_object($data)) {
+            $dataJson = json_encode(vg_audit_sanitize((array) $data), JSON_UNESCAPED_UNICODE);
         } elseif (is_string($data) && $data !== '') {
             $dataJson = $data;
         }
@@ -67,4 +86,21 @@ function vg_log_activity(
     } catch (Throwable $e) {
         error_log('[activity_log] ' . $e->getMessage());
     }
+}
+
+/** 인증된 HTML 페이지 열람을 요청당 한 번 기록한다. 쿼리 값은 저장하지 않는다. */
+function vg_log_page_view(PDO $pdo, string $page, string $title, string $menuCode): void {
+    if (!vg_audit_page_views_enabled() || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') { return; }
+    static $logged = false;
+    if ($logged) { return; }
+    $logged = true;
+    $queryKeys = array_values(array_filter(array_map(
+        static fn($key): string => preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $key),
+        array_keys($_GET)
+    )));
+    vg_log_activity($pdo, 'PAGE', null, 'page_view', $title, [
+        'page' => basename($page),
+        'menu' => $menuCode,
+        'query_keys' => $queryKeys,
+    ]);
 }

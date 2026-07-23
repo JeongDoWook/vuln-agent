@@ -11,7 +11,7 @@ require __DIR__ . '/../src/view.php';
 vg_require_menu('dashboard');
 
 // "대응 우선순위" 에 보여줄 최대 건수. 나머지는 취약점 현황으로 넘긴다.
-const VG_URGENT_TOP = 6;
+
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
@@ -78,7 +78,7 @@ try {
                    (f.in_kev = 1 AND f.runtime_status = 'EXTERNAL') DESC,
                    FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),
                    k.due_date
-          LIMIT " . VG_URGENT_TOP
+          LIMIT " . vg_ui_dashboard_urgent_limit()
     )->fetchAll();
 
     // 급한 항목의 전체 건수 — 상위 N개만 보여주면서 "몇 건 중 몇 건인지" 를 말하지 않으면
@@ -118,7 +118,7 @@ try {
           WHERE is_deleted = 0
           GROUP BY os_label
           ORDER BY c DESC, os_label
-          LIMIT 10"
+          LIMIT " . vg_ui_dashboard_chart_limit()
     )->fetchAll();
 
     // 취약 자산 TOP10 — 호스트별 최신 스캔 기준 findings 건수 상위 10개.
@@ -131,7 +131,7 @@ try {
            $latestJoin
           GROUP BY h.id, h.fqdn
           ORDER BY c DESC
-          LIMIT 10"
+          LIMIT " . vg_ui_dashboard_chart_limit()
     )->fetchAll();
 
     /* KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
@@ -191,7 +191,7 @@ try {
 
 vg_header('대시보드', 'dashboard');
 ?>
-  <header class="page-title"><div><span class="page-title__eyebrow">OVERVIEW</span><h1>대시보드</h1><p>자산 전체의 위험 신호와 지금 먼저 대응할 항목을 확인합니다.</p></div></header>
+  <?php vg_page_title('대시보드', 'OVERVIEW', '자산 전체의 위험 신호와 지금 먼저 대응할 항목을 확인합니다.'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>
