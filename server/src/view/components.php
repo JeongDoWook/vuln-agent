@@ -113,7 +113,7 @@ function vg_alert($msg, string $type = 'err'): void {
         $type = (string) ($msg['type'] ?? $type);
         $title = (string) ($msg['title'] ?? '');
         $hints = is_array($msg['hints'] ?? null) ? $msg['hints'] : [];
-        echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '">';
+        echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '" role="' . ($type === 'ok' ? 'status' : 'alert') . '">';
         if ($title !== '') {
             echo '<strong>' . vg_h($title) . '</strong>';
         }
@@ -127,7 +127,7 @@ function vg_alert($msg, string $type = 'err'): void {
         echo '</div>';
         return;
     }
-    echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '">' . vg_h((string) $msg) . '</div>';
+    echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '" role="' . ($type === 'ok' ? 'status' : 'alert') . '">' . vg_h((string) $msg) . '</div>';
 }
 
 /**
@@ -325,7 +325,7 @@ function vg_page_nav(int $total, int $perPage, int $page, string $pageParam = 'p
  */
 function vg_table(array $headers, array $rows, array $opts = []): void {
     $card     = $opts['card'] ?? true;
-    $class    = $opts['class'] ?? '';
+    $class    = trim('data-table ' . ($opts['class'] ?? ''));
     $cell     = $opts['cell'] ?? [];
     $empty    = $opts['empty'] ?? '데이터가 없습니다.';
     $rowClass = $opts['row_class'] ?? null;
@@ -338,7 +338,7 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
         return;
     }
 
-    echo '<table' . ($class !== '' ? ' class="' . vg_h($class) . '"' : '') . '>';
+    echo '<table class="' . vg_h($class) . '">';
     echo '<thead><tr>';
     foreach ($headers as $h) {
         $label = is_array($h) ? (string) ($h['label'] ?? '') : (string) $h;
@@ -369,7 +369,9 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
             if ($align === 'right') { $tdClasses[] = 'right'; }
             elseif ($align === 'center') { $tdClasses[] = 'center'; }
             $tdClass = $tdClasses ? ' class="' . vg_h(implode(' ', $tdClasses)) . '"' : '';
-            echo '<td' . $tdClass . '>' . $html . '</td>';
+            $cellLabel = is_array($h) ? (string) ($h['label'] ?? '') : (string) $h;
+            $labelAttr = $cellLabel !== '' ? ' data-label="' . vg_h($cellLabel) . '"' : '';
+            echo '<td' . $tdClass . $labelAttr . '>' . $html . '</td>';
         }
         echo '</tr>';
     }
