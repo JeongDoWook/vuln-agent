@@ -372,7 +372,7 @@ code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/users.php")
 assert_eq "$code" "200" "사용자 페이지 200(관리자 권한)"
 
 body=$(curl_ -s -b "$JAR" "$BASE/connectors.php")
-assert_contains "$body" 'value="kev"' "피드 커넥터 페이지(KEV 타입 선택 가능)"
+assert_contains "$body" "CVE 피드 커넥터" "피드 커넥터 페이지 접근·렌더링"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
 assert_eq "$code" "200" "국내 보안공지 페이지 200"
 # 호스트 id 를 하드코딩(=1)하면 빈 볼륨에서만 통과한다. 스택·DB 를 재사용하면 auto_increment 가
