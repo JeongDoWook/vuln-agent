@@ -137,6 +137,12 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
                     $s = vg_osv_enrich_fixed($pdo);
                     $msg .= " 조치안 {$s['filled']}건 보강.";
                     // OSV 로 affected_packages 가 바뀌었으니 packages.php 요약을 다시 만든다.
+                    if ($s['filled'] > 0) {
+                        vg_load_cve_catalog($pdo, [], true);
+                        foreach (array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
+                            vg_match_scan($pdo, $sid);
+                        }
+                    }
                     vg_rebuild_package_summary($pdo);
                 }
             } else {
