@@ -37,6 +37,7 @@ $baselineHosts = [];   // 스캔이 1개뿐이라 비교 불가(첫 수집)
 
 $hostId = (int) ($_GET['host'] ?? 0);
 $type   = (string) ($_GET['type'] ?? '');
+$q      = trim((string) ($_GET['q'] ?? ''));   // CVE·패키지명 부분일치 검색
 $page   = vg_page();
 $perPage = vg_perpage();
 if (!isset(VG_CHANGE_TYPES[$type])) { $type = ''; }
@@ -57,8 +58,13 @@ try {
     $pkgFrom = 'FROM tb_pkg_changes c
                 JOIN tb_hosts h ON h.id = c.host_id AND h.is_deleted = 0
                 JOIN tb_scans s ON s.id = c.scan_id
-               WHERE c.is_deleted = 0' . ($hostId ? ' AND c.host_id = ?' : '');
-    $pkgParams = $hostId ? [$hostId] : [];
+               WHERE c.is_deleted = 0'
+             . ($hostId ? ' AND c.host_id = ?' : '')
+             . ($q !== '' ? ' AND c.package_name LIKE ?' : '');
+    // COUNT·SELECT 가 같은 WHERE 를 쓰므로 파라미터 순서를 그대로 맞춘다(host → q).
+    $pkgParams = [];
+    if ($hostId)  { $pkgParams[] = $hostId; }
+    if ($q !== '') { $pkgParams[] = '%' . $q . '%'; }
 
     $st = $pdo->prepare("SELECT COUNT(*) $pkgFrom");
     $st->execute($pkgParams);
@@ -161,6 +167,13 @@ try {
     if ($type !== '') {
         $changes = array_values(array_filter($changes, fn($c) => $c['type'] === $type));
     }
+    if ($q !== '') {
+        // CVE·패키지명 대소문자 무시 부분일치(둘 다 ASCII라 stripos 로 충분).
+        $changes = array_values(array_filter(
+            $changes,
+            fn($c) => stripos($c['cve_id'], $q) !== false || stripos($c['package_name'], $q) !== false
+        ));
+    }
 } catch (Throwable $e) {
     error_log('[changes] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';
@@ -223,6 +236,7 @@ vg_header('변화 추적', 'findings');
 
   // 변화유형 필터는 취약점 변화 탭에만 뜻이 있다 — 패키지 변경엔 그 어휘가 없다.
   $filters = [
+      ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE·패키지명 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'host', 'selected' => (string) ($hostId ?: ''),
        'empty_label' => '전체 호스트', 'options' => $hostOptions],
   ];
@@ -257,11 +271,11 @@ vg_header('변화 추적', 'findings');
         ],
         $paged,
         [
-            'empty' => ($type !== '' || $hostId)
+            'empty' => ($type !== '' || $hostId || $q !== '')
                 ? [
                     'icon'  => '🔍',
                     'title' => '조건에 맞는 변화가 없습니다.',
-                    'hint'  => '호스트나 변화유형 필터를 바꿔 보세요.',
+                    'hint'  => '검색어나 호스트·변화유형 필터를 바꿔 보세요.',
                     'cta'   => ['href' => '/changes.php', 'label' => '필터 초기화'],
                 ]
                 : [
