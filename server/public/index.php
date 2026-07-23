@@ -14,12 +14,14 @@ vg_require_menu('dashboard');
 const VG_URGENT_TOP = 6;
 // 취약점 위험 추이 카드 — 최근 며칠치를 볼지.
 const VG_RISK_TREND_DAYS = 14;
+// 리소스 사용률 추이 카드 — 최근 며칠치를 볼지(위험 추이와 이유가 달라 별도 상수).
+const VG_RESOURCE_TREND_DAYS = 14;
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
 $kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
 $delta = []; $osDist = []; $topHosts = []; $riskTrend = [];
-$resKpi = null;
+$resKpi = null; $resTrend = [];
 $page = vg_page();
 $perPage = vg_perpage();
 try {
@@ -180,6 +182,86 @@ try {
                          THEN cpu_seconds / (elapsed_seconds * cpu_cores) * 100 END) avg_cpu_pct
            FROM tb_scans WHERE id IN ($latestScans)"
     )->fetch() ?: null;
+
+    /* 리소스 사용률 추이 — 위 KPI(현재 평균) 아래에 붙는 시계열 카드.
+     * 스캔은 "값이 바뀔 때만" 저장되므로(feat/change-tracking) riskTrend 와 똑같이
+     * carry-forward(이월) 로 그날 기준 각 호스트의 최신값을 이어 쓴다 — risk_score 대신
+     * 메모리%·CPU% 를. 두 지표는 호스트별로 따로 이월한다(메모리 스펙만 있고 CPU 스펙은
+     * 없는 스캔이 있을 수 있어 "알려진 호스트 집합"이 서로 다르다).
+     */
+    $resStart = date('Y-m-d', strtotime('-' . (VG_RESOURCE_TREND_DAYS - 1) . ' days'));
+
+    // 시드 — 관찰 기간 시작 이전, 호스트별 가장 최근 스캔 1건.
+    $resSeedRows = $pdo->query(
+        "SELECT host_id, id AS scan_id FROM (
+            SELECT s.host_id, s.id,
+                   ROW_NUMBER() OVER (PARTITION BY s.host_id ORDER BY s.collected_at DESC) rn
+              FROM tb_scans s
+              JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+             WHERE s.is_deleted = 0 AND s.collected_at < '$resStart'
+         ) seed WHERE rn = 1"
+    )->fetchAll();
+
+    // 본 구간 — 관찰 기간의 스캔 전부(oldest→newest).
+    $resRangeRows = $pdo->query(
+        "SELECT s.host_id, DATE(s.collected_at) AS d, s.id AS scan_id
+           FROM tb_scans s
+           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+          WHERE s.is_deleted = 0 AND s.collected_at >= '$resStart'
+          ORDER BY s.collected_at ASC"
+    )->fetchAll();
+    $resRangeByDay = [];
+    foreach ($resRangeRows as $r) { $resRangeByDay[$r['d']][] = $r; }
+
+    // 등장한 scan_id 전부의 리소스 스펙을 한 번에 가져온다(N+1 방지).
+    $resScanIds = array_merge(
+        array_map(fn($r) => (int) $r['scan_id'], $resSeedRows),
+        array_map(fn($r) => (int) $r['scan_id'], $resRangeRows)
+    );
+    $resSpecByScan = [];
+    if ($resScanIds) {
+        $in = implode(',', array_map('intval', array_unique($resScanIds)));
+        foreach ($pdo->query(
+            "SELECT id, peak_rss_mb, mem_total_mb, cpu_seconds, elapsed_seconds, cpu_cores
+               FROM tb_scans WHERE id IN ($in)"
+        )->fetchAll() as $r) { $resSpecByScan[(int) $r['id']] = $r; }
+    }
+
+    // 스캔 한 건의 메모리%·CPU% — $resKpi 쿼리와 동일한 식. 스펙 미수집이면 null(이월 대상 제외).
+    $resMemPct = static function (int $scanId) use ($resSpecByScan): ?float {
+        $s = $resSpecByScan[$scanId] ?? null;
+        if ($s === null || $s['peak_rss_mb'] === null
+            || $s['mem_total_mb'] === null || (float) $s['mem_total_mb'] <= 0) { return null; }
+        return (float) $s['peak_rss_mb'] / (float) $s['mem_total_mb'] * 100;
+    };
+    $resCpuPct = static function (int $scanId) use ($resSpecByScan): ?float {
+        $s = $resSpecByScan[$scanId] ?? null;
+        if ($s === null || $s['cpu_seconds'] === null
+            || $s['cpu_cores'] === null || (float) $s['cpu_cores'] <= 0
+            || $s['elapsed_seconds'] === null || (float) $s['elapsed_seconds'] <= 0) { return null; }
+        return (float) $s['cpu_seconds'] / ((float) $s['elapsed_seconds'] * (float) $s['cpu_cores']) * 100;
+    };
+
+    // 메모리·CPU 를 호스트별로 따로 이월한다. 값이 null 인 스캔은 갱신하지 않아 직전 값이 유지된다.
+    $memKnown = [];   // host_id => 최신 메모리%
+    $cpuKnown = [];   // host_id => 최신 CPU%
+    $resApply = static function (array $r) use (&$memKnown, &$cpuKnown, $resMemPct, $resCpuPct): void {
+        $hid = (int) $r['host_id']; $sid = (int) $r['scan_id'];
+        $m = $resMemPct($sid); if ($m !== null) { $memKnown[$hid] = $m; }
+        $c = $resCpuPct($sid); if ($c !== null) { $cpuKnown[$hid] = $c; }
+    };
+    foreach ($resSeedRows as $r) { $resApply($r); }
+
+    $resToday = date('Y-m-d');
+    for ($d = $resStart; $d <= $resToday; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
+        foreach ($resRangeByDay[$d] ?? [] as $r) { $resApply($r); }
+        // 그날 값이 알려진 호스트가 하나도 없으면 null 로 두면 vg_resource_trend 가 건너뛴다.
+        $resTrend[] = [
+            'collected_at' => $d,
+            'avg_mem_pct'  => $memKnown ? array_sum($memKnown) / count($memKnown) : null,
+            'avg_cpu_pct'  => $cpuKnown ? array_sum($cpuKnown) / count($cpuKnown) : null,
+        ];
+    }
 
     /* KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
      *
@@ -395,6 +477,16 @@ vg_header('대시보드', 'dashboard');
           <b><?= vg_resource_pct($resKpi['avg_cpu_pct'] !== null ? (float) $resKpi['avg_cpu_pct'] : null) ?></b>
           <span>평균 CPU 사용률 · 최신 스캔</span>
         </div>
+      </div>
+      <div class="mt-lg">
+        <strong>메모리 사용률 추이</strong>
+        <span class="why">— 함대 평균 %(호스트별 최신값 이월) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+        <?php vg_resource_trend($resTrend, 'avg_mem_pct', '%', 1, 'mem'); ?>
+      </div>
+      <div class="mt-lg">
+        <strong>CPU 사용률 추이</strong>
+        <span class="why">— 함대 평균 %(호스트별 최신값 이월) · 최근 <?= VG_RESOURCE_TREND_DAYS ?>일</span>
+        <?php vg_resource_trend($resTrend, 'avg_cpu_pct', '%', 1, 'cpu'); ?>
       </div>
     </div>
   </div>
