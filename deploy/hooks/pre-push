@@ -92,15 +92,16 @@ elif other=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -m1 '^vulnagent-
   php_backend=container; lint_container="$other"
 elif docker info >/dev/null 2>&1; then
   php_backend=docker_run
-elif command -v php >/dev/null 2>&1; then
-  php_backend=host
+fi
+
+if [ "$php_backend" = "none" ]; then
+  echo "pre-push: ✗ 컨테이너가 떠있지 않고 docker도 없음 — dev 스택을 올리거나 docker를 설치하세요" >&2
+  exit 1
 fi
 
 case $php_backend in
   container)  echo "pre-push: PHP lint = 컨테이너 $lint_container (8.3)" ;;
   docker_run) echo "pre-push: PHP lint = docker run php:8.3-cli (일회용)" ;;
-  host)       echo "pre-push: ⚠ 컨테이너·docker 없음 → 호스트 php $(php -r 'echo PHP_VERSION;' 2>/dev/null) 로 lint (8.x 문법 오탐 가능)" >&2 ;;
-  none)       echo "pre-push: ✗ php 를 찾을 수 없어 lint 불가 — dev 스택을 올리거나 php 를 설치하세요" >&2; exit 1 ;;
 esac
 
 php_lint() {  # stdin ← 파일 내용
