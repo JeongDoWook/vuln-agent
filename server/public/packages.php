@@ -128,16 +128,14 @@ vg_header('영향 패키지', 'packages');
                              : '<span class="why">–</span>',
               2 => fn($r) => number_format((int) $r['cve_cnt']),
               // 최고 EPSS: 텍스트("96.3%") 아래 게이지. 폭 = max_epss*100%.
-              //   톤은 값 구간별(>=0.5 high / >=0.1 med / 그 외 low). 값 없으면 대시만.
+              //   톤은 값 구간별(vg_epss_tone). 값 없으면 대시만(게이지 없음).
               3 => function ($r) {
                   $txt = vg_epss_cell($r['max_epss'], null);
                   if ($r['max_epss'] === null || $r['max_epss'] === '') {
                       return $txt;
                   }
                   $e = (float) $r['max_epss'];
-                  $tone = $e >= 0.5 ? 'high' : ($e >= 0.1 ? 'med' : 'low');
-                  return $txt . '<div class="meter meter--' . $tone . '">'
-                       . '<i style="width:' . number_format($e * 100, 1) . '%"></i></div>';
+                  return $txt . vg_meter(vg_epss_tone($e), $e * 100);
               },
               // 조치: fix_cnt/cve_cnt 진행바가 주된 시각요소. max_fixed 있으면 pill 로 함께.
               //   cve_cnt=0 은 0 나눗셈 방지. 완료율 100% 는 low(ok) 톤, 그 외 med.
@@ -145,9 +143,7 @@ vg_header('영향 패키지', 'packages');
                   $cve   = (int) $r['cve_cnt'];
                   $fix   = (int) $r['fix_cnt'];
                   $ratio = $cve > 0 ? $fix / $cve : 0.0;
-                  $tone  = $ratio >= 1.0 ? 'low' : 'med';
-                  $bar   = '<div class="meter meter--' . $tone . '">'
-                         . '<i style="width:' . number_format($ratio * 100, 1) . '%"></i></div>';
+                  $bar   = vg_meter($ratio >= 1.0 ? 'low' : 'med', $ratio * 100);
                   if (empty($r['max_fixed'])) {
                       return '<span class="why">패치 확인 (조치 ' . $fix . '/' . $cve . ')</span>' . $bar;
                   }

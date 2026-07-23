@@ -52,6 +52,31 @@ function vg_cvss_sev(?string $cvss): string {
     return '';
 }
 
+/* EPSS(악용확률 0~1) → 게이지 톤 구간. packages.php 최고 EPSS 셀에서 쓴다.
+ * CVSS→심각도(VG_SEV_RANGES)와 같은 성격의 분류 기준이라 매직 넘버 대신 이름있는 상수로 둔다.
+ * 큰 값부터 위에 두고 순서대로 맞춰본다(vg_epss_tone). */
+const VG_EPSS_RANGES = ['high' => 0.5, 'med' => 0.1];
+
+/** EPSS 확률(0~1) → 게이지 톤 라벨. 가장 높은 구간부터 맞춰보고, 아무 데도 안 걸리면 low. */
+function vg_epss_tone(float $epss): string {
+    foreach (VG_EPSS_RANGES as $tone => $min) {
+        if ($epss >= $min) { return $tone; }
+    }
+    return 'low';
+}
+
+/**
+ * 값 게이지(진행바) 마크업 — "0~100 중 어디" 를 시각적으로 보인다. 숫자만으로는 크기 감이 안 온다.
+ *   cve.php(CVSS)·packages.php(최고 EPSS·조치 완료율)가 공유한다. $tone 은 meter-- 뒤 클래스
+ *   (crit/high/med/low). $pct 는 채움 비율(%) — 0~100 밖은 잘라낸다.
+ *   width:N% 인라인은 app.css 규칙의 명시적 예외(게이지 폭 계산).
+ */
+function vg_meter(string $tone, float $pct): string {
+    $pct = max(0.0, min(100.0, $pct));
+    return '<div class="meter meter--' . vg_h($tone) . '">'
+         . '<i style="width:' . number_format($pct, 1) . '%"></i></div>';
+}
+
 /* CVSS v3 벡터 해독표. 점수 하나로는 "원격인지 로컬인지, 인증이 필요한지" 를 알 수 없다.
  * 벡터가 그걸 말한다 — 같은 9.8 이라도 AV:N/PR:N 이면 인터넷에서 무인증 공격이 가능하다는 뜻.
  * 축약키만 담는다(v2 벡터는 키가 달라 해독 안 되고, 그대로 원문만 보여준다). */
