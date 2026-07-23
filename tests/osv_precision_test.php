@@ -1,5 +1,11 @@
 <?php
 declare(strict_types=1);
+if (!interface_exists('VgFeedConnector')) {
+    interface VgFeedConnector {
+        public function run(PDO $pdo, array $conn): array;
+        public function preview(PDO $pdo, array $conn): array;
+    }
+}
 require_once __DIR__ . '/../server/src/feeds/osv.php';
 $fail = 0;
 $check = static function (string $label, $got, $want) use (&$fail): void {

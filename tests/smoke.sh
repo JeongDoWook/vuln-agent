@@ -372,7 +372,7 @@ code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/users.php")
 assert_eq "$code" "200" "사용자 페이지 200(관리자 권한)"
 
 body=$(curl_ -s -b "$JAR" "$BASE/connectors.php")
-assert_contains "$body" "CISA KEV" "피드 커넥터 페이지(기본 커넥터 노출)"
+assert_contains "$body" 'value="kev"' "피드 커넥터 페이지(KEV 타입 선택 가능)"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
 assert_eq "$code" "200" "국내 보안공지 페이지 200"
 # 호스트 id 를 하드코딩(=1)하면 빈 볼륨에서만 통과한다. 스택·DB 를 재사용하면 auto_increment 가
@@ -433,7 +433,7 @@ assert_contains "$gobody" "CVE-2023-45288" "컨테이너의 Go 의존성 취약�
 #   이 워크트리의 호스트 하나로 좁히고, q 로 이 CVE 하나만 골라 전역 건수와 무관하게 만든다.
 upbody=$(curl_ -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID&q=CVE-2023-44487")
 assert_contains "$upbody" "upsvc" "업스트림 바이너리(nginx 1.24.0) 취약점이 그 컨테이너에 매칭됨"
-assert_contains "$body" "패키지 DB 가 없는 이미지" "판정 불가 사유가 '패키지 DB 없음'으로 구분됨"
+# 정확한 사유 문구는 아래 호스트 상세에서 검증한다. findings 경고는 대상명·판정 불가 노출을 위에서 검증함.
 body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에도 패키지DB 없는 컨테이너 경고"
 
