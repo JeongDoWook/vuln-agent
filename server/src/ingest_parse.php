@@ -74,6 +74,15 @@ function vg_ingest_parse_langpkgs(array $lang): array
     foreach (preg_split('/\r?\n/', (string) ($lang['composer'] ?? '')) as $line) {
         if (preg_match('#^(\S+/\S+)\s+(\S+)#', trim($line), $m)) { $add('composer', $m[1], $m[2]); }
     }
+    foreach (preg_split('/\r?\n/', (string) ($lang['maven'] ?? '')) as $line) {
+        if (preg_match('/^([^:\s]+:[^:\s]+)\s+(\S+)$/', trim($line), $m)) { $add('maven', $m[1], $m[2]); }
+    }
+    foreach (preg_split('/\r?\n/', (string) ($lang['nuget'] ?? '')) as $line) {
+        if (preg_match('/^(\S+)\s+(\S+)$/', trim($line), $m)) { $add('nuget', $m[1], $m[2]); }
+    }
+    foreach (preg_split('/\r?\n/', (string) ($lang['cargo'] ?? '')) as $line) {
+        if (preg_match('/^(\S+)\s+v([^:\s]+):$/', trim($line), $m)) { $add('cargo', $m[1], $m[2]); }
+    }
     return array_values($rows);
 }
 
@@ -176,7 +185,7 @@ function vg_ingest_parse_debsecan(string $debsecanText): array
     return array_values($rows);
 }
 
-// ── 컨테이너 목록 — cid|name|image|os_id|os_version|manager|pkg_count ────
+// ── 컨테이너 목록 — 기본 7필드 + digest/Kubernetes/runtime/SBOM 선택 필드 ────
 //   cid 로 유일(키가 cid) — ingest.php 가 tb_containers insert 후 id 매핑에 그대로 쓴다.
 function vg_ingest_parse_container_list(string $listText): array
 {
@@ -185,11 +194,30 @@ function vg_ingest_parse_container_list(string $listText): array
         if ($line === '' || strncmp($line, 'cid|name|image', 14) === 0) { continue; }
         $f = explode('|', $line);
         if (count($f) < 7 || trim($f[0]) === '') { continue; }
+        $f = array_pad($f, 15, '');
         $rows[$f[0]] = $f;
     }
     return $rows;
 }
 
+/** Parse externally supplied CycloneDX/SPDX SBOM lines: cid|format|base64(json). */
+function vg_ingest_parse_sbom(string $text): array
+{
+    $packages=[]; $meta=[];
+    foreach (preg_split('/\r?\n/', $text) as $line) {
+        $f=explode('|',$line,3); if(count($f)!==3||$f[0]==='')continue;
+        $raw=base64_decode($f[2],true); $doc=$raw!==false?json_decode($raw,true):null; if(!is_array($doc))continue;
+        $cid=mb_strimwidth($f[0],0,255,''); $format=strtolower($f[1]); $meta[$cid]=[$format,hash('sha256',$raw)];
+        $items=$format==='spdx'?($doc['packages']??[]):($doc['components']??[]);
+        foreach($items as $item){
+            $name=trim((string)($item['name']??''));$ver=trim((string)($item['version']??$item['versionInfo']??''));$purl=(string)($item['purl']??'');
+            if($purl===''&&isset($item['externalRefs']))foreach($item['externalRefs'] as $ref){if(($ref['referenceType']??'')==='purl'){$purl=(string)($ref['referenceLocator']??'');break;}}
+            $mgr='';if(preg_match('#^pkg:([^/]+)/([^@?]+)#',$purl,$m)){$type=strtolower($m[1]);$decoded=urldecode($m[2]);if($type==='maven'&&str_contains($decoded,'/')){$pos=strrpos($decoded,'/');$decoded=substr($decoded,0,$pos).':'.substr($decoded,$pos+1);}$name=$decoded?:$name;$mgr=['pypi'=>'pip','npm'=>'npm','gem'=>'gem','composer'=>'composer','maven'=>'maven','nuget'=>'nuget','cargo'=>'cargo','golang'=>'go','deb'=>'dpkg','rpm'=>'rpm','apk'=>'apk'][$type]??'';}
+            if($mgr!==''&&$name!==''&&$ver!=='')$packages[$cid.'|'.$mgr.'|'.$name]=[$cid,$mgr,mb_strimwidth($name,0,255,''),mb_strimwidth($ver,0,255,''),''];
+        }
+    }
+    return ['packages'=>array_values($packages),'meta'=>$meta];
+}
 // ── 컨테이너 내부 패키지 — cid|manager|name|version|source ───────────────
 function vg_ingest_parse_container_packages(string $packagesText): array
 {

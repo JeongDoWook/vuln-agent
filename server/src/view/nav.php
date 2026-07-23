@@ -47,6 +47,7 @@ function vg_activity_type_labels(): array {
         'view_compliance_rule' => '보안설정 룰 상세 조회',
         'host_perimeter_update'=> '경계 방화벽 설정 변경',
         'page_view'            => '페이지 열람',
+        'remediation_update'   => '조치 상태 변경',
     ];
 }
 
@@ -64,6 +65,7 @@ function vg_nav_sections(): array {
         ],
         '취약점' => [
             ['perm' => 'findings',   'href' => '/findings.php',   'label' => '취약점 현황',   'key' => 'findings'],
+            ['perm' => 'findings',   'href' => '/remediations.php','label' => '조치 관리',     'key' => 'remediations'],
             ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE 목록',      'key' => 'cves'],
             ['perm' => 'findings',   'href' => '/packages.php',   'label' => '영향 패키지',   'key' => 'packages'],
             ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '벤더 판정',     'key' => 'vendor'],
@@ -97,6 +99,7 @@ function vg_nav_sections(): array {
  */
 function vg_nav_icon(string $key): string {
     static $paths = [
+        'remediations'=> '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
         'dashboard'   => '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
         'findings'    => '<path d="m10.29 3.86-8.4 14.55A2 2 0 0 0 3.62 21h16.76a2 2 0 0 0 1.73-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
         'changes'     => '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',

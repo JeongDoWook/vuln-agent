@@ -14,7 +14,8 @@ require_once __DIR__ . '/distro.php';   // vg_osv_ecosystem — 수집과 동일
 require_once __DIR__ . '/debtracker.php';   // vg_debtracker_evidence — 데비안 백포트 판정(중앙)
 require_once __DIR__ . '/vendorerrata.php'; // vg_vendor_errata_evidence — RHEL 계열 백포트 판정(중앙)
 require_once __DIR__ . '/ubuntuoval.php';   // vg_ubuntu_evidence — 우분투 벤더 판정(중앙)
-require_once __DIR__ . '/kernelcve.php';    // vg_kernel_fixed_set — 커널은 업스트림(kernel.org)이 판정한다
+require_once __DIR__ . '/kernelcve.php';
+require_once __DIR__ . '/remediation.php';    // vg_kernel_fixed_set — 커널은 업스트림(kernel.org)이 판정한다
 require_once __DIR__ . '/package_summary.php'; // vg_rebuild_package_summary — 하위호환 재노출(신규 호출부는 직접 require)
 
 if (!function_exists('vg_scope_rank')) {
@@ -770,6 +771,7 @@ if (!function_exists('vg_scope_rank')) {
                needs_restart=VALUES(needs_restart), no_fix=VALUES(no_fix), cvss=VALUES(cvss),
                severity=VALUES(severity), rationale=VALUES(rationale)'
         );
+        $findId = $pdo->prepare('SELECT id FROM tb_findings WHERE scan_id=? AND container_id=? AND cve_id=? AND package_name=?');
 
         // 억제(백포트)된 건은 tb_findings 가 아니라 여기로 — 위험 집계에서 자동 제외.
         $pdo->prepare('DELETE FROM tb_suppressed_findings WHERE scan_id = ?')->execute([$scanId]);
@@ -839,9 +841,15 @@ if (!function_exists('vg_scope_rank')) {
                     ($staleEv !== null || $kernelPending) ? 1 : 0, $decision['noFix'] !== '' ? 1 : 0,
                     $decision['cvss'], $decision['sev'], $decision['why'],
                 ]);
+                $findId->execute([$scanId, $ctrId, $cveId, $p['name']]);
+                $findingId = (int) $findId->fetchColumn();
+                if ($findingId > 0) {
+                    vg_store_finding_evidence($pdo, $findingId, $scan, $p, $mgr, $ctr, $cand, $ctx, $decision);
+                }
             }
         }
 
+            vg_sync_remediation_cases($pdo, $scanId);
             return $counts;
         }, 'READ COMMITTED');
     }

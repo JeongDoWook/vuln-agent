@@ -243,6 +243,8 @@ run_phpunit "ui_config_test.php" "ui_config" "UI 설정 범위·감사정보 마
 
 # --- UI 공통 구조 회귀 테스트 -----------------------------------------------
 run_phpunit "ui_structure_test.php" "ui_structure" "UI 공통 컴포넌트·검색·인라인 이벤트 회귀 테스트"
+# --- 내부 SLA·조치 단위·판정 출처 회귀 테스트 -------------------------------
+run_phpunit "remediation_test.php" "remediation" "내부 SLA·조치 단위·판정 출처 단위 테스트"
 
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"

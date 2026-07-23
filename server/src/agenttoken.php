@@ -92,3 +92,18 @@ function vg_agent_token_delete(PDO $pdo, int $id): void {
         throw new RuntimeException('폐기된 토큰만 삭제할 수 있습니다. 활성 토큰은 먼저 폐기하세요.');
     }
 }
+
+/** Reject stale or repeated signed transport metadata for individual agent tokens. */
+function vg_agent_nonce_accept(PDO $pdo, int $tokenId, string $nonce, int $sentAt): bool {
+    $maxSkew = max(60, (int) vg_env('AGENT_NONCE_MAX_SKEW_SECONDS', '600'));
+    if ($nonce === '' || strlen($nonce) > 200 || abs(time() - $sentAt) > $maxSkew) { return false; }
+    $pdo->prepare('DELETE FROM tb_agent_replay_nonces WHERE expires_at < NOW()')->execute();
+    try {
+        $pdo->prepare('INSERT INTO tb_agent_replay_nonces (token_id,nonce_hash,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL ? SECOND))')
+            ->execute([$tokenId, hash('sha256', $nonce), $maxSkew]);
+        return true;
+    } catch (PDOException $e) {
+        if ($e->getCode() === '23000') { return false; }
+        throw $e;
+    }
+}
