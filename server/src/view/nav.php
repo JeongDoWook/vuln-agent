@@ -61,7 +61,6 @@ function vg_nav_sections(): array {
         ],
         '취약점' => [
             ['perm' => 'findings',   'href' => '/findings.php',   'label' => '취약점 현황',   'key' => 'findings'],
-            ['perm' => 'findings',   'href' => '/changes.php',    'label' => '변화 추적',     'key' => 'changes'],
             ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE 목록',      'key' => 'cves'],
             ['perm' => 'findings',   'href' => '/packages.php',   'label' => '영향 패키지',   'key' => 'packages'],
             ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '벤더 판정',     'key' => 'vendor'],
