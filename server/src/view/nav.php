@@ -117,22 +117,57 @@ function vg_nav_icon(string $key): string {
         . ' stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $p . '</svg>';
 }
 
+// 사이드바 링크 하나를 렌더한다(단독 링크·그룹 내부 링크가 함께 쓴다 — DRY).
+function vg_nav_link(array $l, string $active): string {
+    $cls = 'link' . ($active === $l['key'] ? ' active' : '');
+    return '<a class="' . $cls . '" href="' . vg_h($l['href']) . '">'
+        . vg_nav_icon($l['key']) . '<span>' . vg_h($l['label']) . '</span></a>';
+}
+
 // 사이드바 렌더. 권한 없는 링크는 빼고, 링크가 하나도 안 남은 섹션은 라벨째 숨긴다.
+//   라벨 있는 그룹은 <details>(접이식) 로 감싼다 — 헤더(<summary>) 클릭으로 펼침/접힘,
+//   키보드·aria-expanded 는 네이티브가 준다. 서버는 모든 그룹을 open 으로 렌더한다:
+//   JS 가 없거나 죽어도 링크가 다 보여 접근 가능하다(progressive enhancement 폴백).
+//   접힘 상태 기억·활성 그룹 우선 펼침은 app.js 가 얹는다.
 function vg_nav(string $active): void {
     foreach (vg_nav_sections() as $section => $links) {
         $visible = array_filter($links, fn($l) => vg_can($l['perm']));
         if (!$visible) {
             continue;
         }
-        if ($section !== '') {
-            echo '<div class="grp">' . vg_h($section) . '</div>';
+        // 라벨 없는 섹션(대시보드)은 단독 링크 — 아코디언 밖, 항상 노출.
+        if ($section === '') {
+            foreach ($visible as $l) {
+                echo vg_nav_link($l, $active);
+            }
+            continue;
         }
+        echo '<details class="nav-grp" data-grp="' . vg_h($section) . '" open>';
+        echo '<summary class="grp">' . vg_h($section) . '</summary>';
         foreach ($visible as $l) {
-            $cls = 'link' . ($active === $l['key'] ? ' active' : '');
-            echo '<a class="' . $cls . '" href="' . vg_h($l['href']) . '">'
-                . vg_nav_icon($l['key']) . '<span>' . vg_h($l['label']) . '</span></a>';
+            echo vg_nav_link($l, $active);
         }
+        echo '</details>';
     }
+}
+
+/**
+ * 사이드바 아코디언 안티-FOUC 부트스트랩. 사이드바 마크업 '직후' 동기 실행돼(테마 초기화와
+ * 같은 방식) 저장된 접힘 상태를 첫 페인트 전에 반영한다 — defer 되는 app.js 로는 늦어
+ * 저장해 둔 접힘 그룹이 매 로드마다 '펼쳐졌다 접히는' 깜빡임(FOUC)이 보이기 때문.
+ * 여기서는 '접기'만 한다(서버가 전부 open 이므로). 토글·저장·반응형은 app.js 가 얹는다.
+ * 활성 그룹(현재 페이지)과 모바일(<=860px)은 항상 펼침이라 건드리지 않는다.
+ * 정적 마크업이라(사용자 입력 없음) 그대로 출력한다.
+ */
+function vg_nav_boot(): void {
+    echo '<script>(function(){try{'
+        . 'if(window.matchMedia&&window.matchMedia("(max-width: 860px)").matches)return;'
+        . 'var s=JSON.parse(localStorage.getItem("vg-nav")||"{}");'
+        . 'var g=document.querySelectorAll(".side details.nav-grp");'
+        . 'for(var i=0;i<g.length;i++){var d=g[i];'
+        . 'if(d.querySelector("a.link.active"))continue;'
+        . 'if(s[d.getAttribute("data-grp")]===false)d.removeAttribute("open");}'
+        . '}catch(e){}})();</script>';
 }
 
 /**
