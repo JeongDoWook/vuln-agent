@@ -36,8 +36,7 @@ $csrf = vg_csrf_token();
 
 vg_header('내 프로필', 'profile');
 ?>
-  <h1>내 프로필</h1>
-  <div class="sub"><strong><?= vg_h($me['username']) ?></strong> · <?= vg_h(vg_role_label(vg_role())) ?></div>
+  <header class="page-title"><div><span class="page-title__eyebrow">MY ACCOUNT</span><h1>내 프로필</h1><p><strong><?= vg_h($me['username']) ?></strong> · <?= vg_h(vg_role_label(vg_role())) ?></p></div></header>
 
   <div class="card card--sm">
     <strong>비밀번호 변경</strong>

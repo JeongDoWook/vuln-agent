@@ -8,16 +8,16 @@
   /* 색 토큰은 app.css(로그인 후 화면)의 라이트 테마 값과 맞춘다 — 소개 페이지만 다른
    * 팔레트를 쓰면 로그인 전/후 인상이 갈린다(같은 앱처럼 안 보인다). */
   :root{
-    --bg:#f3f5f8; --card:#fff; --ink:#1b2430; --muted:#697588; --line:#e4e8ee;
-    --blue:#2f6fed; --green:#1f9d47; --purple:#7b52dd; --orange:#e07b1a;
+    --bg:#f6f7f9; --card:#fff; --ink:#191f28; --muted:#6b7684; --line:#edf0f3;
+    --blue:#3182f6; --green:#1f9d47; --purple:#7b52dd; --orange:#e07b1a;
     --crit:#e5484d; --high:#e07b1a; --med:#d19a06; --low:#5580b4;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif;line-height:1.6}
-  .wrap{max-width:1040px;margin:0 auto;padding:2.4rem 1.3rem 4rem}
-  header.top{border-bottom:2px solid var(--line);padding-bottom:1.2rem;margin-bottom:2rem}
-  header.top h1{margin:0 0 .3rem;font-size:1.8rem}
+  .wrap{max-width:1120px;margin:0 auto;padding:3rem 1.5rem 5rem}
+  header.top{background:linear-gradient(135deg,#fff,#f2f7ff);border:1px solid var(--line);border-radius:24px;padding:2rem 2.2rem;margin-bottom:2rem;box-shadow:0 12px 34px rgba(0,0,0,.05)}
+  header.top h1{margin:0 0 .35rem;font-size:clamp(1.8rem,4vw,2.45rem);letter-spacing:-.045em}
   header.top .sub{color:var(--muted);font-size:1rem}
   .tag{display:inline-block;background:#ddf4ff;color:var(--blue);border:1px solid #b6e3ff;
     border-radius:999px;padding:.1rem .6rem;font-size:.78rem;font-weight:600;margin-right:.3rem}
@@ -25,7 +25,7 @@
   h2 .n{display:inline-block;width:1.7rem;height:1.7rem;line-height:1.7rem;text-align:center;
     background:var(--ink);color:#fff;border-radius:50%;font-size:.9rem;margin-right:.5rem;vertical-align:2px}
   p.lead{color:var(--muted)}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1.1rem 1.3rem;margin:.9rem 0;
+  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:1.35rem 1.5rem;margin:1rem 0;
     box-shadow:0 1px 2px rgba(0,0,0,.04)}
   /* pipeline */
   .pipe{display:flex;flex-wrap:wrap;gap:.5rem;align-items:stretch;margin:1rem 0}
@@ -45,7 +45,7 @@
   .b-ext{background:var(--crit)} .b-lis{background:var(--high)} .b-run{background:var(--med)}
   .b-loa{background:var(--purple)} .b-ins{background:var(--low)}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:.9rem}
-  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}.wrap{padding:1rem .75rem 3rem}header.top{padding:1.4rem 1.2rem;border-radius:18px}.pipe{display:grid;grid-template-columns:1fr}.arrow{transform:rotate(90deg);justify-self:center}.card{border-radius:16px;padding:1.1rem;overflow-x:auto}}
   ul.tight{margin:.3rem 0;padding-left:1.2rem} ul.tight li{margin:.15rem 0}
   .ok{color:var(--green);font-weight:700}
   .note{background:#fff8c5;border:1px solid #eac54f;border-radius:8px;padding:.6rem .9rem;font-size:.88rem;margin:.7rem 0}

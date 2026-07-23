@@ -78,7 +78,7 @@ try {
 
 vg_header('영향 패키지', 'packages');
 ?>
-  <h1>영향 패키지 <span class="hint">(<?= number_format($total) ?>종)</span></h1>
+  <header class="page-title"><div><span class="page-title__eyebrow">AFFECTED PACKAGES</span><h1>영향 패키지 <span class="hint">(<?= number_format($total) ?>종)</span></h1><p>패키지와 배포판 단위로 연결된 취약점 범위를 확인합니다.</p></div></header>
   <?php if ($summaryAt !== ''): ?>
   <div class="sub"><span class="why">집계 기준 <?= vg_h($summaryAt) ?> (OSV 수집 시 갱신)</span></div>
   <?php endif; ?>

@@ -131,7 +131,7 @@ try {
 
 vg_header('CVE 목록', 'cves');
 ?>
-  <h1>CVE 목록 <span class="hint">(<?= number_format($total) ?>건)</span></h1>
+  <header class="page-title"><div><span class="page-title__eyebrow">VULNERABILITY CATALOG</span><h1>CVE 목록 <span class="hint">(<?= number_format($total) ?>건)</span></h1><p>수집된 취약점을 악용 가능성과 위험도 기준으로 탐색합니다.</p></div></header>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

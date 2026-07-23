@@ -244,8 +244,7 @@ try {
 
 vg_header('벤더 판정', 'vendor');
 ?>
-  <h1>벤더 판정 <span class="hint">(<?= number_format($total) ?>건)</span></h1>
-  <div class="sub"><span class="why">— 벤더별 패치 여부 원본 · 백포트 오탐 억제·조치불가 판정 근거</span></div>
+  <header class="page-title"><div><span class="page-title__eyebrow">VENDOR EVIDENCE</span><h1>벤더 판정 <span class="hint">(<?= number_format($total) ?>건)</span></h1><p>벤더가 제공한 패치 여부와 백포트 판정 근거를 비교합니다.</p></div></header>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

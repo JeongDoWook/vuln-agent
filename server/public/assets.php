@@ -149,7 +149,7 @@ vg_header('자산관리', 'assets');
       VG_STALE_MIN / 60, VG_STALE_MIN / 60, VG_OFFLINE_MIN / 1440, VG_OFFLINE_MIN / 1440
   );
   ?>
-  <div class="page-head">
+  <div class="page-head page-title page-title--actions">
     <h1>자산관리 <?= vg_help($stateHelp) ?></h1>
     <div class="toolbar"><?php vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost'); ?></div>
   </div>

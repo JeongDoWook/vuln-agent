@@ -191,7 +191,7 @@ try {
 
 vg_header('대시보드', 'dashboard');
 ?>
-  <h1>대시보드</h1>
+  <header class="page-title"><div><span class="page-title__eyebrow">OVERVIEW</span><h1>대시보드</h1><p>자산 전체의 위험 신호와 지금 먼저 대응할 항목을 확인합니다.</p></div></header>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>

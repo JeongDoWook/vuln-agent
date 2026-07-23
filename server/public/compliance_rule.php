@@ -79,7 +79,7 @@ $sevUp = $rule ? mb_strtoupper((string) $rule['severity']) : null;
 $tone  = $sevUp !== null ? vg_sev_tone($sevUp) : 'muted';
 
 $title = vg_h($ruleId);
-vg_hero($title, $rule ? ['<code class="why">' . vg_h($ruleId) . '</code>'] : [], $sevUp, $tone, 'SSG 심각도');
+vg_hero($title, $rule ? ['<code class="why">' . vg_h($ruleId) . '</code>'] : [], $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
 ?>
 
 <?php if ($rule === null): ?>

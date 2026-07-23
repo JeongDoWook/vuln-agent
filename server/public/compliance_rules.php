@@ -80,8 +80,7 @@ try {
 
 vg_header('보안설정 룰셋', 'compliance');
 ?>
-  <h1>보안설정 룰셋 <span class="hint">(<?= number_format($total) ?>건)</span></h1>
-  <div class="sub"><span class="why">— SCAP(ComplianceAsCode) 점검 룰 카탈로그 · CIS/NIST/STIG 매핑 사전(점검 결과 아님)</span></div>
+  <header class="page-title"><div><span class="page-title__eyebrow">COMPLIANCE CATALOG</span><h1>보안설정 룰셋 <span class="hint">(<?= number_format($total) ?>건)</span></h1><p>SCAP 룰과 CIS·NIST·STIG 매핑을 검색합니다. 실제 점검 결과와는 별도입니다.</p></div></header>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

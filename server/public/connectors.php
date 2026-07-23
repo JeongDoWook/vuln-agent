@@ -99,7 +99,7 @@ $statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'nev
 
 vg_header('피드 커넥터', 'connectors');
 ?>
-  <div class="page-head">
+  <div class="page-head page-title page-title--actions">
     <h1>CVE 피드 커넥터<?= vg_info_icon('외부 소스를 역할별로 묶어 설정·스케줄·수집한다 — 취약점 정체 · 우선순위 신호 · 벤더 패치 판정 · 보안설정 룰셋. 결과는 매처가 자동 재계산.') ?></h1>
     <div class="toolbar">
       <?php // 모달 id 는 connModal — 폼 자체의 id(connForm)와 겹치면 미리보기 JS 가 폼 대신 dialog 를 잡는다.
