@@ -240,6 +240,53 @@
   });
   document.addEventListener('DOMContentLoaded', syncThemeButtons);
 
+  // --- 사이드바 아코디언 (접이식 그룹) ------------------------------------
+  // 서버는 모든 그룹을 <details open> 으로 렌더한다 → JS 가 죽어도 전부 펼쳐져 링크 접근 가능.
+  // 여기서는 데스크톱에서 접힘 상태를 그룹명(data-grp) 기준 localStorage 에 기억·복원하되,
+  // 활성 그룹(현재 페이지)은 저장값보다 우선해 항상 편다. 모바일(<=860px)에선 항상 펼침.
+  var NAV_KEY = 'vg-nav';
+  var navMq = window.matchMedia('(max-width: 860px)');
+  function navState() {
+    try { return JSON.parse(localStorage.getItem(NAV_KEY)) || {}; }
+    catch (err) { return {}; }
+  }
+  function saveNavState(s) {
+    try { localStorage.setItem(NAV_KEY, JSON.stringify(s)); } catch (err) {}
+  }
+  function applyNavAccordion() {
+    var groups = document.querySelectorAll('.side details.nav-grp');
+    if (!groups.length) { return; }
+    if (navMq.matches) {                          // 모바일: 접이식 없이 항상 전부 펼침
+      groups.forEach(function (d) { d.open = true; });
+      return;
+    }
+    var saved = navState();
+    groups.forEach(function (d) {
+      if (d.querySelector('a.link.active')) {      // 활성 그룹은 저장값보다 우선
+        d.open = true;
+      } else {
+        d.open = saved[d.getAttribute('data-grp')] !== false;   // 기본은 펼침
+      }
+    });
+  }
+  function bindNavAccordion() {
+    document.querySelectorAll('.side details.nav-grp').forEach(function (d) {
+      d.addEventListener('toggle', function () {
+        if (navMq.matches) { return; }             // 모바일 상태는 저장하지 않는다
+        if (d.querySelector('a.link.active')) { return; }  // 활성 그룹은 항상 펼침이 우선
+        var s = navState();
+        s[d.getAttribute('data-grp')] = d.open;
+        saveNavState(s);
+      });
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    applyNavAccordion();   // 복원을 먼저 — 그 뒤에 리스너를 걸어 초기 복원이 저장을 덮지 않게
+    bindNavAccordion();
+  });
+  if (navMq.addEventListener) { navMq.addEventListener('change', applyNavAccordion); }
+  else if (navMq.addListener) { navMq.addListener(applyNavAccordion); }
+
   /**
    * fetch 등 자체 비동기 작업용. 시작 시 busy(true), 끝나면 busy(false).
    *   vgLoading(button, true) → 버튼 스피너 + 상단 진행바
