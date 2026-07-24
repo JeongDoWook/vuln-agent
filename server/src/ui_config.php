@@ -76,3 +76,7 @@ function vg_ui_trend_limit(): int {
 function vg_audit_page_views_enabled(): bool {
     return filter_var(vg_env('AUDIT_PAGE_VIEWS', '1'), FILTER_VALIDATE_BOOLEAN);
 }
+
+function vg_ui_filter_option_limit(): int {
+    return vg_ui_int('UI_FILTER_OPTION_LIMIT', 300, 50, 2000);
+}

@@ -24,6 +24,8 @@ putenv('UI_DASHBOARD_URGENT_LIMIT=999');
 $eq('대시보드 한도 상한', vg_ui_dashboard_urgent_limit(), 30);
 putenv('UI_TREND_LIMIT=-1');
 $eq('추이 한도 하한', vg_ui_trend_limit(), 10);
+putenv('UI_FILTER_OPTION_LIMIT=99999');
+$eq('필터 선택지 한도 상한', vg_ui_filter_option_limit(), 2000);
 putenv('UI_DASHBOARD_ACTIONABLE_STATUSES=external,loaded,installed,bad');
 $eq('긴급 상태 화이트리스트', vg_ui_dashboard_actionable_statuses(), ['EXTERNAL', 'LOADED']);
 $eq('긴급 상태 SQL도 검증된 값만 사용', vg_ui_dashboard_actionable_statuses_sql(), "'EXTERNAL','LOADED'");
@@ -47,6 +49,7 @@ putenv('UI_PER_PAGE_DEFAULT');
 putenv('UI_DASHBOARD_URGENT_LIMIT');
 putenv('UI_DASHBOARD_ACTIONABLE_STATUSES');
 putenv('UI_TREND_LIMIT');
+putenv('UI_FILTER_OPTION_LIMIT');
 
 if ($fail > 0) {
     printf("ui_config_test: %d건 실패\n", $fail);

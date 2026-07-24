@@ -20,7 +20,7 @@ $sevOptions = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 $stOptions  = ['EXTERNAL', 'FILTERED', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
 
 $err = null; $scan = null; $rows = []; $total = 0; $perPage = vg_perpage();
-$scanIds = []; $hostOptions = [];
+$scanIds = []; $hostOptions = []; $hostFound = false; $hostOptionCount = 0;
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 
 $q   = trim((string) ($_GET['q'] ?? ''));
@@ -45,10 +45,15 @@ try {
            FROM tb_hosts h
            JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.id
           WHERE h.is_deleted = 0
-          ORDER BY h.fqdn'
+          ORDER BY h.last_seen DESC, h.fqdn'
     )->fetchAll();
     foreach ($hosts as $h) {
-        $hostOptions[(int) $h['host_id']] = (string) $h['fqdn'];
+        $hid = (int) $h['host_id'];
+        if ($hid === $hostId) { $hostFound = true; }
+        if ($hostOptionCount < vg_ui_filter_option_limit() || $hid === $hostId) {
+            $hostOptions[$hid] = (string) $h['fqdn'];
+            $hostOptionCount++;
+        }
         // 피드가 지원하지 않는 배포판은 매칭 후보가 없어 0건으로 뜬다 → 목록에 모아 경고한다.
         $reason = vg_distro_unsupported($h['os_id'] ?? null, $h['os_version'] ?? null);
         if ($reason !== null) { $unsupHosts[] = $h['fqdn'] . ' (' . $reason . ')'; }
@@ -84,7 +89,7 @@ try {
         $scan = $stmt->fetch() ?: null;
         if ($scan) { $scanIds = [(int) $scan['id']]; }
     } else {
-        if (!isset($hostOptions[$hostId])) { $hostId = 0; }   // 없는 호스트면 전체로
+        if ($hostId > 0 && !$hostFound) { $hostId = 0; }   // 없는 호스트면 전체로
         foreach ($hosts as $h) {
             if ($hostId === 0 || (int) $h['host_id'] === $hostId) { $scanIds[] = (int) $h['scan_id']; }
         }
