@@ -56,8 +56,9 @@ $lang = vg_ingest_parse_langpkgs([
     'maven'      => "org.apache.logging.log4j:log4j-core 2.14.1",
     'nuget'      => "Newtonsoft.Json 13.0.3",
     'cargo'      => "ripgrep v14.1.1:",
+    'inventory'  => "maven|org.example:demo|1.2.3\nnuget|Serilog|3.1.0",
 ]);
-$eq('langpkg 총 10건(기존7+Maven+NuGet+Cargo)', count($lang), 10);
+$eq('langpkg 총 12건(기존10+프로젝트2)', count($lang), 12);
 $byKey = [];
 foreach ($lang as $r) { $byKey[$r[0] . '|' . $r[1]] = $r[2]; }
 $eq('pip requests 버전', $byKey['pip|requests'] ?? null, '2.19.1');

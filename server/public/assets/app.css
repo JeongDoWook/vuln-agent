@@ -1710,3 +1710,8 @@ form.card { border-radius:24px; }
 .page--remediations .inline-form { display:grid; grid-template-columns:minmax(8rem,auto) minmax(9rem,1fr) minmax(8rem,auto) auto; gap:.45rem; align-items:center; min-width:22rem; }
 .page--remediations .inline-form input,.page--remediations .inline-form select { margin:0; min-height:36px; }
 @media (max-width:860px) { .page--remediations .inline-form { min-width:0; grid-template-columns:1fr; } }
+.saved-views { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin:-.35rem 0 1rem; }
+.saved-views__label { color:var(--muted); font-size:.78rem; font-weight:700; }
+.saved-views__form { display:flex; align-items:center; gap:.4rem; margin-left:auto; }
+.saved-views__form input[name="name"] { width:12rem; min-height:36px; }
+@media(max-width:680px){.saved-views__form{width:100%;margin-left:0}.saved-views__form input[name="name"]{flex:1;width:auto}}

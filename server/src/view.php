@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/format.php';
 require_once __DIR__ . '/ui_config.php';
+require_once __DIR__ . '/saved_views.php';
 require_once __DIR__ . '/view/charts.php';
 require_once __DIR__ . '/view/nav.php';
 require_once __DIR__ . '/view/components.php';

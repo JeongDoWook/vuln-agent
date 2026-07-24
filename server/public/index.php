@@ -65,59 +65,27 @@ try {
      *   3) 그 외 등급순
      * due_date 는 KEV 커넥터가 최근에야 받아오기 시작한 값이라 NULL 일 수 있다 — NULL 은 "기한 없음".
      */
+    // 원시 finding 행이 아니라 안정적인 조치 단위로 묶는다. 같은 CVE·패키지 중복이 대시보드를 점유하지 않는다.
     $urgent = $pdo->query(
-        "SELECT f.cve_id, f.severity, f.package_name, f.runtime_status, f.in_kev,
-                h.id AS host_id, h.fqdn, k.due_date,
-                DATEDIFF(CURDATE(), k.due_date) AS days_over
-           FROM tb_findings f
-           JOIN tb_scans s ON s.id = f.scan_id
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+        "SELECT r.id AS remediation_id,r.cve_id,r.package_name,r.status AS remediation_status,r.due_at,
+                DATEDIFF(CURDATE(),DATE(r.due_at)) days_over,h.id host_id,h.fqdn,
+                f.severity,f.runtime_status,f.in_kev
+           FROM tb_remediation_cases r
+           JOIN tb_hosts h ON h.id=r.host_id AND h.is_deleted=0
+           JOIN tb_scans s ON s.host_id=h.id
            $latestJoin
-           LEFT JOIN tb_kev_catalog k ON k.cve_id = f.cve_id AND k.is_deleted = 0
-          WHERE (f.runtime_status = 'EXTERNAL'
-                 OR (f.in_kev = 1 AND f.runtime_status IN ($actionableStatusesSql)))
-          ORDER BY (f.in_kev = 1 AND f.runtime_status = 'EXTERNAL') DESC,
-                   (f.in_kev = 1 AND f.runtime_status IN ($actionableStatusesSql)) DESC,
-                   (f.runtime_status = 'EXTERNAL') DESC,
-                   FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),
-                   k.due_date,
-                   f.cve_id
+           JOIN tb_findings f ON f.scan_id=s.id AND f.cve_id=r.cve_id AND f.package_name=r.package_name
+           LEFT JOIN tb_containers ctr ON ctr.id=f.container_id
+          WHERE r.is_deleted=0 AND r.status IN ('OPEN','IN_PROGRESS')
+            AND COALESCE(ctr.image_digest,ctr.cid,'')=r.container_ref
+          GROUP BY r.id,r.cve_id,r.package_name,r.status,r.due_at,h.id,h.fqdn,f.severity,f.runtime_status,f.in_kev
+          ORDER BY (r.due_at<CURDATE()) DESC,(f.in_kev=1 AND f.runtime_status='EXTERNAL') DESC,
+                   FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),r.due_at,r.id
           LIMIT " . vg_ui_dashboard_urgent_limit()
     )->fetchAll();
-
-    // 급한 항목의 전체 건수 — 상위 N개만 보여주면서 "몇 건 중 몇 건인지" 를 말하지 않으면
-    // 화면이 "이게 전부" 라고 거짓말을 한다. 나머지는 취약점 현황에서 본다.
-    $urgentTotal = (int) $pdo->query(
-        "SELECT COUNT(*)
-           FROM tb_findings f
-           JOIN tb_scans s ON s.id = f.scan_id
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-           $latestJoin
-          WHERE (f.runtime_status = 'EXTERNAL'
-                 OR (f.in_kev = 1 AND f.runtime_status IN ($actionableStatusesSql)))"
-    )->fetchColumn();
-
-    // KEV 노출 건수 · 패치 기한 초과 건수(KPI)
-    $kevCount = (int) $pdo->query(
-        "SELECT COUNT(*)
-           FROM tb_findings f
-           JOIN tb_scans s ON s.id = f.scan_id
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-           $latestJoin
-          WHERE f.in_kev = 1"
-    )->fetchColumn();
-    $overdueCount = (int) $pdo->query(
-        "SELECT COUNT(*)
-           FROM tb_findings f
-           JOIN tb_scans s ON s.id = f.scan_id
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-           $latestJoin
-           JOIN tb_kev_catalog k ON k.cve_id = f.cve_id AND k.is_deleted = 0
-          WHERE k.due_date IS NOT NULL AND k.due_date < CURDATE()
-            AND (f.runtime_status = 'EXTERNAL'
-                 OR (f.in_kev = 1 AND f.runtime_status IN ($actionableStatusesSql)))"
-    )->fetchColumn();
-
+    $urgentTotal=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_cases WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS')")->fetchColumn();
+    $kevCount=(int)$pdo->query("SELECT COUNT(DISTINCT r.id) FROM tb_remediation_cases r JOIN tb_scans s ON s.host_id=r.host_id JOIN ".vg_latest_scan_subq()." latest ON latest.host_id=s.host_id AND latest.mid=s.id JOIN tb_findings f ON f.scan_id=s.id AND f.cve_id=r.cve_id AND f.package_name=r.package_name WHERE r.is_deleted=0 AND r.status IN ('OPEN','IN_PROGRESS') AND f.in_kev=1")->fetchColumn();
+    $overdueCount=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_cases WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS') AND due_at<NOW()")->fetchColumn();
     // OS 분포 — 비삭제 호스트를 os_id 기준으로 묶어 상위 10개. os_id 가 비어있으면 "미상".
     $osDist = $pdo->query(
         "SELECT COALESCE(NULLIF(os_id, ''), '미상') AS os_label, COUNT(*) c
@@ -255,7 +223,7 @@ vg_header('대시보드', 'dashboard');
          * 생기는 여백도 이걸로 채운다. */ ?>
         <div class="donut-foot">
           <?= vg_badge('KEV 악용확인 ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok', '집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다') ?>
-          <?= vg_badge('CISA 기준일 경과 ' . number_format($overdueCount) . '건', $overdueCount > 0 ? 'warn' : 'ok', '미국 연방기관에 적용되는 CISA KEV 조치 기준일입니다. 내부 SLA가 아닙니다.') ?>
+          <?= vg_badge('내부 SLA 초과 ' . number_format($overdueCount) . '건', $overdueCount > 0 ? 'warn' : 'ok', '조직의 심각도·노출·KEV 정책으로 계산된 내부 조치기한입니다.') ?>
         </div>
       </div>
     </div>
@@ -265,7 +233,7 @@ vg_header('대시보드', 'dashboard');
       <span class="why">— 실제 사용 중인 KEV와 외부 노출 자산부터</span>
       <?php if ($urgentTotal > count($urgent)): ?>
         <span class="why">· 총 <?= number_format($urgentTotal) ?>건 중 상위 <?= count($urgent) ?>건 ·
-          <a href="/findings.php">전체 보기 →</a></span>
+          <a href="/remediations.php">전체 보기 →</a></span>
       <?php endif; ?>
       <div class="card__body">
       <?php
@@ -300,8 +268,8 @@ vg_header('대시보드', 'dashboard');
                   4 => function ($u) {
                       $over = $u['days_over'] !== null ? (int) $u['days_over'] : null;
                       $cisaDate = $over !== null && $over > 0
-                          ? '<div class="why">CISA 연방기관 기준일 ' . vg_h((string) $u['due_date']) . ' 경과</div>'
-                          : '';
+                          ? '<div class="why">내부 SLA ' . number_format($over) . '일 초과 · ' . vg_h((string) $u['due_at']) . '</div>'
+                          : '<div class="why">내부 기한 ' . vg_h((string) $u['due_at']) . '</div>';
                       if ($u['in_kev'] && $u['runtime_status'] === 'EXTERNAL') {
                           return vg_badge('악용확인 + 외부노출', 'crit') . $cisaDate;
                       }
