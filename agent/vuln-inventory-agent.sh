@@ -33,6 +33,7 @@ MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
 MEM_MAX="${MEM_MAX:-300M}"             # --limit 시 메모리 상한
 SBOM_DIR="${SBOM_DIR:-/opt/vuln-agent/sbom}" # 선택적 CycloneDX/SPDX 입력 디렉터리
+PROJECT_SCAN_ROOTS="${PROJECT_SCAN_ROOTS:-/opt /srv /app /usr/local}"
 DO_CHANGELOG=1                        # 핵심 패키지 CVE changelog 수집 여부
 DO_LIMIT=0                            # cgroup 리밋 사용 여부
 OUT=""
@@ -1128,6 +1129,25 @@ cap system uptime         'uptime'
 cap system boot_time      'uptime -s 2>/dev/null || who -b'
 cap system timezone       'timedatectl 2>/dev/null || cat /etc/timezone 2>/dev/null'
 
+# Project-local dependencies missed by global package-manager commands.
+# Output: manager|name|version. File count/depth is bounded for predictable load.
+collect_project_dependencies() {
+  local root f name ver group key count=0
+  for root in $PROJECT_SCAN_ROOTS; do
+    [ -d "$root" ] || continue
+    while IFS= read -r f; do
+      count=$((count+1)); [ "$count" -le 3000 ] || return 0
+      case "$f" in
+        */METADATA) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);[ -n "$name" ]&&[ -n "$ver" ]&&printf 'pip|%s|%s\n' "$name" "$ver";;
+        */Cargo.lock) awk 'BEGIN{n=""}/^name = /{gsub(/^name = "|"$/,"",$0);n=$0}/^version = /{gsub(/^version = "|"$/,"",$0);if(n!="")print "cargo|"n"|"$0}' "$f";;
+        */package-lock.json) have jq&&jq -r '.packages//{}|to_entries[]|select(.value.name and .value.version)|"npm|\(.value.name)|\(.value.version)"' "$f" 2>/dev/null;;
+        */composer/installed.json) have jq&&jq -r '(.packages//.)[]?|select(.name and .version)|"composer|\(.name)|\(.version|sub("^v";""))"' "$f" 2>/dev/null;;
+        *.deps.json) have jq&&jq -r '.targets[]?|keys[]|select(test("/"))|split("/")|"nuget|\(.[0])|\(.[1])"' "$f" 2>/dev/null;;
+        *.jar) if have unzip;then while IFS= read -r key;do group=$(unzip -p "$f" "$key" 2>/dev/null|sed -n 's/^groupId=//p'|head -1);name=$(unzip -p "$f" "$key" 2>/dev/null|sed -n 's/^artifactId=//p'|head -1);ver=$(unzip -p "$f" "$key" 2>/dev/null|sed -n 's/^version=//p'|head -1);[ -n "$group" ]&&[ -n "$name" ]&&[ -n "$ver" ]&&printf 'maven|%s:%s|%s\n' "$group" "$name" "$ver";done < <(unzip -Z1 "$f" 2>/dev/null|grep '^META-INF/maven/.*/pom.properties$'|head -20);fi;;
+      esac
+    done < <(find "$root" -xdev -maxdepth 8 -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' \) 2>/dev/null|head -3000)
+  done | sort -u
+}
 # --- 매핑 힌트: 어떤 OVAL/보안트래커로 대조할지 자기설명적으로 기록 ---
 OS_ID="$( . /etc/os-release 2>/dev/null; echo "${ID:-unknown}" )"
 OS_CPE="$( . /etc/os-release 2>/dev/null; echo "${CPE_NAME:-}" )"
@@ -1245,6 +1265,8 @@ have gem  && cap langpkg gem 'gem list 2>/dev/null'
 have composer && cap langpkg composer 'composer global show 2>/dev/null'
 have cargo && cap langpkg cargo 'cargo install --list 2>/dev/null'
 have dotnet && cap langpkg nuget 'dotnet tool list -g 2>/dev/null | awk "NR>2 && NF>=2 {print \$1,\$2}"'
+collect_project_dependencies | head -c "$MAX_BYTES" > "$TMP/langpkg__inventory.txt" 2>/dev/null || true
+[ -s "$TMP/langpkg__inventory.txt" ] || rm -f "$TMP/langpkg__inventory.txt"
 
 # ==================================================================
 # 7) 컨테이너 이미지 (이미지별 CVE 매핑)

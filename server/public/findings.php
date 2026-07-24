@@ -216,6 +216,7 @@ vg_header('취약점', 'findings');
           'options' => ['action' => '조치 가능', 'nofix' => '조치 불가(벤더 미수정)',
                         'restart' => '재시작·재부팅만 하면 됨']],
   ]));
+  vg_saved_view_bar($pdo, 'findings');
 
   // 컬럼 11개는 가로 스크롤을 만들어서, 정작 제일 중요한 "조치" 가 화면 밖으로 밀려났었다.
   // 값을 버리는 게 아니라 관련된 것끼리 한 칸에 쌓는다(패키지+버전, CVSS+EPSS+KEV).

@@ -74,7 +74,10 @@ function vg_ingest_parse_langpkgs(array $lang): array
     foreach (preg_split('/\r?\n/', (string) ($lang['composer'] ?? '')) as $line) {
         if (preg_match('#^(\S+/\S+)\s+(\S+)#', trim($line), $m)) { $add('composer', $m[1], $m[2]); }
     }
-    foreach (preg_split('/\r?\n/', (string) ($lang['maven'] ?? '')) as $line) {
+    foreach (preg_split('/\r?\n/', (string) ($lang['inventory'] ?? '')) as $line) {
+        $f=explode('|',trim($line),3);
+        if(count($f)===3 && in_array($f[0],['pip','npm','gem','composer','maven','nuget','cargo','go'],true)) { $add($f[0],$f[1],$f[2]); }
+    }    foreach (preg_split('/\r?\n/', (string) ($lang['maven'] ?? '')) as $line) {
         if (preg_match('/^([^:\s]+:[^:\s]+)\s+(\S+)$/', trim($line), $m)) { $add('maven', $m[1], $m[2]); }
     }
     foreach (preg_split('/\r?\n/', (string) ($lang['nuget'] ?? '')) as $line) {
