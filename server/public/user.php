@@ -18,7 +18,7 @@ vg_require_menu('users');
 const VG_ROLES = ['user', 'operator', 'admin'];
 
 // 최근 활동 로그 표시 건수.
-const VG_USER_ACTIVITY_LIMIT = 20;
+$userActivityLimit = vg_ui_detail_preview_limit();
 
 $pdo = vg_pdo();
 $msg = null; $err = null;
@@ -77,7 +77,7 @@ if ($user) {
     $st = $pdo->prepare(
         'SELECT created_at, activity_type, actor_type, user_name, message, ip_address
            FROM tb_activity_log WHERE scope = ? AND scope_id = ? AND is_deleted = 0
-          ORDER BY id DESC LIMIT ' . VG_USER_ACTIVITY_LIMIT
+          ORDER BY id DESC LIMIT ' . $userActivityLimit
     );
     $st->execute(['USER', $id]);
     $activity = $st->fetchAll();
@@ -88,6 +88,7 @@ $csrf = vg_csrf_token();
 vg_header($user['username'] ?? '사용자', 'users');
 ?>
 <?php if (!$user): ?>
+  <?php vg_page_title('사용자를 찾을 수 없습니다', 'USER DETAIL', '삭제되었거나 존재하지 않는 계정입니다.'); ?>
   <div class="card">
     <?php vg_empty([
         'icon'  => '📭',
@@ -108,7 +109,7 @@ vg_header($user['username'] ?? '사용자', 'users');
       $meta[] = '<span class="badge tone-crit">🔒 잠김 — ' . vg_h((string) $user['locked_until']) . '까지</span>';
   }
   $meta[] = '<a href="/users.php">← 사용자 목록</a>';
-  vg_hero('👤 ' . vg_h($user['username']) . ($isSelf ? ' <span class="why">(본인)</span>' : ''), $meta, null, 'ok', '계정 상태', 'USER DETAIL');
+  vg_hero(vg_h($user['username']) . ($isSelf ? ' <span class="why">(본인)</span>' : ''), $meta, null, 'ok', '계정 상태', 'USER DETAIL');
   ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
@@ -119,7 +120,7 @@ vg_header($user['username'] ?? '사용자', 'users');
     <div class="card__body">
       <div class="actions actions--stack">
         <?php if ($isLocked): ?>
-          <form method="post" onsubmit="return confirm('이 계정의 잠금을 해제할까요? 실패 카운트도 함께 초기화됩니다.');">
+          <form method="post" data-confirm="이 계정의 잠금을 해제할까요? 실패 카운트도 함께 초기화됩니다.">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="unlock">
             <label>계정 잠금</label>
@@ -146,7 +147,7 @@ vg_header($user['username'] ?? '사용자', 'users');
           <span class="why">역할 변경: 자기 자신은 변경할 수 없습니다.</span>
         <?php endif; ?>
 
-        <form method="post" onsubmit="return confirm('이 사용자의 비밀번호를 초기화할까요? 아래 입력한 새 비밀번호로 즉시 바뀌며, 기존 비밀번호로는 더는 로그인할 수 없습니다.');">
+        <form method="post" data-confirm="이 사용자의 비밀번호를 초기화할까요? 아래 입력한 새 비밀번호로 즉시 바뀌며, 기존 비밀번호로는 더는 로그인할 수 없습니다.">
           <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
           <input type="hidden" name="action" value="reset">
           <label>비밀번호 초기화</label>
@@ -155,7 +156,7 @@ vg_header($user['username'] ?? '사용자', 'users');
         </form>
 
         <?php if (!$isSelf): ?>
-          <form method="post" onsubmit="return confirm('이 사용자를 삭제할까요? 계정이 즉시 비활성화되어 로그인할 수 없게 되고 사용자 목록에서도 사라집니다. 이 사용자의 활동 이력은 감사로그에 그대로 남습니다.');">
+          <form method="post" data-confirm="이 사용자를 삭제할까요? 계정이 즉시 비활성화되어 로그인할 수 없게 되고 사용자 목록에서도 사라집니다. 이 사용자의 활동 이력은 감사로그에 그대로 남습니다.">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="delete">
             <label>삭제</label>
@@ -170,7 +171,7 @@ vg_header($user['username'] ?? '사용자', 'users');
 
   <div class="card mt-lg">
     <strong>최근 활동</strong>
-    <span class="why">— 이 사용자와 관련된 감사 로그(최근 <?= VG_USER_ACTIVITY_LIMIT ?>건) ·
+    <span class="why">— 이 사용자와 관련된 감사 로그(최근 <?= $userActivityLimit ?>건) ·
       <a href="/activity.php?q=<?= urlencode($user['username']) ?>">전체 감사로그에서 보기 →</a></span>
     <div class="card__body">
       <?php

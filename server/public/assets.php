@@ -149,10 +149,10 @@ vg_header('자산관리', 'assets');
       VG_STALE_MIN / 60, VG_STALE_MIN / 60, VG_OFFLINE_MIN / 1440, VG_OFFLINE_MIN / 1440
   );
   ?>
-  <div class="page-head page-title page-title--actions">
-    <h1>자산관리 <?= vg_help($stateHelp) ?></h1>
-    <div class="toolbar"><?php vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost'); ?></div>
-  </div>
+  <?php vg_page_title('자산 관리', 'ASSETS', '수집 상태와 운영 위험을 기준으로 관리 대상을 찾습니다.', [
+      'suffix_html' => vg_help($stateHelp),
+      'actions' => vg_capture(static fn() => vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost')),
+  ]); ?>
   <div class="sub">에이전트가 등록한 호스트 · 최신 수집 상태와 취약점 요약</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err !== null ? '오류 · ' . $err : null); ?>
@@ -248,7 +248,7 @@ vg_header('자산관리', 'assets');
               'scan_count'   => fn($r) => (int) $r['scan_count'] > 0
                   ? '<a href="/host.php?id=' . (int) $r['id'] . '&tab=scans">' . number_format((int) $r['scan_count']) . '회</a>'
                   : '<span class="why">0회</span>',
-              'act' => fn($r) => '<form method="post" class="actions" onsubmit="return confirm(\'' . vg_h($r['fqdn']) . ' 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.\');">'
+              'act' => fn($r) => '<form method="post" class="actions" data-confirm="' . vg_h($r['fqdn']) . ' 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                   . '<input type="hidden" name="id" value="' . (int) $r['id'] . '">'
                   . '<button type="submit" class="btn btn--sm btn--danger">삭제</button></form>',

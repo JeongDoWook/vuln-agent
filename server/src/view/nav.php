@@ -44,6 +44,9 @@ function vg_activity_type_labels(): array {
         'view_host'            => '호스트 상세 조회',
         'view_cve'             => '취약점 상세 조회',
         'view_advisory'        => '보안공지 상세 조회',
+        'view_compliance_rule' => '보안설정 룰 상세 조회',
+        'host_perimeter_update'=> '경계 방화벽 설정 변경',
+        'page_view'            => '페이지 열람',
     ];
 }
 

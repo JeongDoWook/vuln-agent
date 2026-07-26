@@ -43,10 +43,10 @@ $connectors = $pdo->query('SELECT * FROM tb_feed_connectors WHERE is_deleted = 0
 /* 수집 이력.
  * 전엔 전 커넥터의 로그를 목록 아래 한 표에 쏟아 놨는데, 정작 "이 커넥터가 왜 실패했나" 를
  * 보려면 남의 로그 사이에서 눈으로 골라야 했다. 커넥터마다 [이력] 버튼 → 그 커넥터 로그만.
- *   · 모달엔 최근 VG_LOG_PEEK 건. 그보다 많으면 "전체 이력" 링크로 넘긴다.
+ *   · 모달엔 최근 $logPeek 건. 그보다 많으면 "전체 이력" 링크로 넘긴다.
  *   · ?conn=N 이면 그 커넥터의 전체 이력을 페이지네이션해서 아래에 편다.
  */
-const VG_LOG_PEEK = 8;
+$logPeek = vg_ui_detail_preview_limit();
 
 $perPage  = vg_perpage();
 $page     = vg_page();
@@ -55,7 +55,7 @@ $connFilter = (int) ($_GET['conn'] ?? 0);
 $peek = $pdo->prepare(
     'SELECT status, trigger_by, items_fetched, items_upserted, message, started_at
        FROM tb_feed_collection_logs WHERE connector_id = ?
-      ORDER BY started_at DESC LIMIT ' . VG_LOG_PEEK
+      ORDER BY started_at DESC LIMIT ' . $logPeek
 );
 $cnt = $pdo->prepare('SELECT COUNT(*) FROM tb_feed_collection_logs WHERE connector_id = ?');
 
@@ -99,13 +99,10 @@ $statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'nev
 
 vg_header('피드 커넥터', 'connectors');
 ?>
-  <div class="page-head page-title page-title--actions">
-    <h1>CVE 피드 커넥터<?= vg_info_icon('외부 소스를 역할별로 묶어 설정·스케줄·수집한다 — 취약점 정체 · 우선순위 신호 · 벤더 패치 판정 · 보안설정 룰셋. 결과는 매처가 자동 재계산.') ?></h1>
-    <div class="toolbar">
-      <?php // 모달 id 는 connModal — 폼 자체의 id(connForm)와 겹치면 미리보기 JS 가 폼 대신 dialog 를 잡는다.
-      vg_modal_btn('connModal', '+ 커넥터 추가'); ?>
-    </div>
-  </div>
+  <?php vg_page_title('CVE 피드 커넥터', 'DATA SOURCES', '외부 보안 데이터를 역할별로 연결하고 수집 상태를 관리합니다.', [
+      'suffix_html' => vg_info_icon('외부 소스를 역할별로 묶어 설정·스케줄·수집합니다. 결과는 매처가 자동 재계산합니다.'),
+      'actions' => vg_capture(static fn() => vg_modal_btn('connModal', '+ 커넥터 추가')),
+  ]); ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
@@ -175,7 +172,7 @@ vg_header('피드 커넥터', 'connectors');
               . '<button type="button" class="btn btn--sm btn--ghost" data-modal="log' . $id . '">'
               . '이력 <span class="why">' . number_format($n) . '</span></button>'
               . '<a class="btn btn--sm btn--ghost" href="?edit=' . $id . '">편집</a>'
-              . '<form method="post" onsubmit="return confirm(\'이 커넥터를 삭제할까요? 스케줄된 수집이 중단되고 목록에서 사라집니다. 지금까지의 수집 이력은 삭제되지 않고 남습니다.\');"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
+              . '<form method="post" data-confirm="이 커넥터를 삭제할까요? 스케줄된 수집이 중단되고 목록에서 사라집니다. 지금까지의 수집 이력은 삭제되지 않고 남습니다."><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
               . '<button class="btn btn--sm btn--danger">삭제</button></form>'
               . '</div>';
       },
@@ -348,7 +345,7 @@ vg_header('피드 커넥터', 'connectors');
       <pre id="vgPrev" class="out" hidden></pre>
       <?php vg_modal_foot($edit ? '저장' : '추가', ['extra' =>
           // "API 미리보기" 였는데 12종 중 절반은 API 가 아니다(정적 파일·gz/bz2 덤프·RSS).
-          '<button type="button" id="vgPrevBtn" class="btn btn--ghost" data-loading="조회 중…" onclick="vgPreview(this)">미리보기 (10건)</button>']); ?>
+          '<button type="button" id="vgPrevBtn" class="btn btn--ghost" data-loading="조회 중…" data-feed-preview>미리보기 (10건)</button>']); ?>
     </form>
   <?php vg_modal_close(); ?>
 
@@ -403,8 +400,8 @@ vg_header('피드 커넥터', 'connectors');
       $n   = $logCountByConn[$cid] ?? 0;
       vg_modal_open('log' . $cid, $c['name'] . ' · 수집 이력', 'modal--wide');
   ?>
-      <?php if ($n > VG_LOG_PEEK): ?>
-        <div class="sub">총 <?= number_format($n) ?>건 중 최근 <?= VG_LOG_PEEK ?>건 ·
+      <?php if ($n > $logPeek): ?>
+        <div class="sub">총 <?= number_format($n) ?>건 중 최근 <?= $logPeek ?>건 ·
           <a href="?conn=<?= $cid ?>">전체 이력 보기 →</a></div>
       <?php elseif ($n > 0): ?>
         <div class="sub">총 <?= number_format($n) ?>건</div>

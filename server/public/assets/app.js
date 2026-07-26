@@ -72,12 +72,47 @@
     }
   }
 
+  // --- 중요 작업 확인 -----------------------------------------------------
+  function confirmAction(message, submitter) {
+    return new Promise(function (resolve) {
+      var dlg = document.createElement('dialog');
+      dlg.className = 'modal confirm-modal';
+      dlg.setAttribute('aria-labelledby', 'confirmTitle');
+      dlg.innerHTML = '<div class="modal__head"><strong id="confirmTitle">작업을 진행할까요?</strong>'
+        + '<button type="button" class="modal__x" data-confirm-cancel aria-label="닫기">✕</button></div>'
+        + '<div class="modal__body"><p class="confirm-modal__message"></p>'
+        + '<div class="modal__foot"><button type="button" class="btn btn--ghost" data-confirm-cancel>취소</button>'
+        + '<button type="button" class="btn btn--danger" data-confirm-ok>계속</button></div></div>';
+      dlg.querySelector('.confirm-modal__message').textContent = message;
+      var action = dlg.querySelector('[data-confirm-ok]');
+      if (submitter && submitter.textContent.trim()) { action.textContent = submitter.textContent.trim(); }
+      function finish(ok) { dlg.close(); dlg.remove(); resolve(ok); }
+      dlg.querySelectorAll('[data-confirm-cancel]').forEach(function (b) { b.addEventListener('click', function () { finish(false); }); });
+      action.addEventListener('click', function () { finish(true); });
+      dlg.addEventListener('cancel', function (e) { e.preventDefault(); finish(false); });
+      document.body.appendChild(dlg); dlg.showModal(); action.focus();
+    });
+  }
+
   // --- 폼 제출 ------------------------------------------------------------
   // 버튼을 disabled 로 만들면 그 name/value 가 전송되지 않는다. aria-busy +
   // 폼 플래그로 이중제출만 막고, 버튼은 활성 상태로 둔다(CSS 가 클릭을 무효화).
   document.addEventListener('submit', function (e) {
-    if (e.defaultPrevented) { return; }   // confirm() 취소 등
+    if (e.defaultPrevented) { return; }
     var form = e.target;
+    var confirmMessage = form.getAttribute('data-confirm');
+    if (confirmMessage && form.dataset.vgConfirmed !== '1') {
+      e.preventDefault();
+      var submitter = e.submitter;
+      confirmAction(confirmMessage, submitter).then(function (ok) {
+        if (!ok) { return; }
+        form.dataset.vgConfirmed = '1';
+        if (form.requestSubmit) { form.requestSubmit(submitter || undefined); }
+        else { form.submit(); }
+      });
+      return;
+    }
+    delete form.dataset.vgConfirmed;
     if (form.dataset.vgSubmitting === '1') {
       e.preventDefault();
       return;
@@ -161,6 +196,27 @@
       startProgress();      // 구형 브라우저 폴백 — submit 이벤트가 안 나므로 직접 켠다
       sel.form.submit();
     }
+  });
+
+  // --- 모바일 필터 패널 ---------------------------------------------------
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('form.toolbar').forEach(function (form) {
+      var fields = form.querySelectorAll('input:not([type=hidden]), select');
+      if (!fields.length) { return; }
+      var active = Array.prototype.some.call(fields, function (field) { return field.value !== ''; });
+      var toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'toolbar__toggle';
+      toggle.innerHTML = '<span>검색 및 필터</span><i aria-hidden="true"></i>';
+      toggle.setAttribute('aria-expanded', active ? 'true' : 'false');
+      form.classList.add('has-filter-toggle');
+      if (active) { form.classList.add('is-open'); }
+      form.insertBefore(toggle, form.firstChild);
+      toggle.addEventListener('click', function () {
+        var open = form.classList.toggle('is-open');
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    });
   });
 
   // --- 모달 ---------------------------------------------------------------
@@ -316,6 +372,30 @@
    * fetch 등 자체 비동기 작업용. 시작 시 busy(true), 끝나면 busy(false).
    *   vgLoading(button, true) → 버튼 스피너 + 상단 진행바
    */
+  // --- 정보 밀도 ----------------------------------------------------------
+  // 상세 정보는 유지하되 사용자가 행·카드 간격을 줄여 빠르게 훑을 수 있게 한다.
+  var DENSITY_KEY = 'vg-density';
+  function applyDensity(value) {
+    var compact = value === 'compact';
+    document.documentElement.setAttribute('data-density', compact ? 'compact' : 'comfortable');
+    document.querySelectorAll('[data-density-toggle]').forEach(function (button) {
+      button.setAttribute('aria-pressed', compact ? 'true' : 'false');
+      var label = button.querySelector('.density-toggle__label');
+      if (label) { label.textContent = compact ? '촘촘하게' : '편안하게'; }
+    });
+  }
+  document.addEventListener('click', function (event) {
+    var button = event.target.closest('[data-density-toggle]');
+    if (!button) { return; }
+    var next = document.documentElement.getAttribute('data-density') === 'compact' ? 'comfortable' : 'compact';
+    try { localStorage.setItem(DENSITY_KEY, next); } catch (error) {}
+    applyDensity(next);
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    var saved = 'comfortable';
+    try { saved = localStorage.getItem(DENSITY_KEY) || saved; } catch (error) {}
+    applyDensity(saved);
+  });
   window.vgLoading = function (btn, busy) {
     if (busy) {
       busyButton(btn);

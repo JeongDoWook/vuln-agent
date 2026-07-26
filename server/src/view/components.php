@@ -7,6 +7,42 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../format.php';
+require_once __DIR__ . '/../ui_config.php';
+
+/** 출력형 공통 컴포넌트를 문자열 슬롯(actions 등)에 안전하게 담는다. */
+function vg_capture(callable $render): string {
+    ob_start();
+    try {
+        $render();
+        return (string) ob_get_clean();
+    } catch (Throwable $e) {
+        ob_end_clean();
+        throw $e;
+    }
+}
+
+/** 목록 화면의 제목·설명·건수·우측 작업을 일관되게 렌더한다. */
+function vg_page_title(string $title, string $eyebrow, string $description = '', array $opts = []): void {
+    $class = trim('page-title ' . (!empty($opts['actions']) ? 'page-title--actions ' : '') . (string) ($opts['class'] ?? ''));
+    echo '<header class="' . vg_h($class) . '"><div><span class="page-title__eyebrow">' . vg_h($eyebrow) . '</span><h1>' . vg_h($title);
+    if (array_key_exists('count', $opts)) { echo ' <span class="hint">(' . number_format((int) $opts['count']) . vg_h((string) ($opts['count_label'] ?? '건')) . ')</span>'; }
+    if (!empty($opts['hint'])) { echo ' <span class="hint">' . vg_h((string) $opts['hint']) . '</span>'; }
+    if (!empty($opts['suffix_html'])) { echo ' ' . (string) $opts['suffix_html']; }
+    echo '</h1>';
+    if ($description !== '') { echo '<p>' . vg_h($description) . '</p>'; }
+    echo '</div>';
+    if (!empty($opts['actions'])) { echo '<div class="page-title__actions">' . $opts['actions'] . '</div>'; }
+    echo '</header>';
+}
+
+/** 상세 화면 안의 제목·설명·우측 보조 액션을 일관되게 렌더한다. */
+function vg_section_title(string $title, string $description = '', string $actions = ''): void {
+    echo '<div class="section-title"><div><h2>' . vg_h($title) . '</h2>';
+    if ($description !== '') { echo '<p>' . vg_h($description) . '</p>'; }
+    echo '</div>';
+    if ($actions !== '') { echo '<div class="section-title__actions">' . $actions . '</div>'; }
+    echo '</div>';
+}
 
 /**
  * 클립보드 복사 버튼. JS 가 죽어도 값 자체는 화면에 그대로 있으므로(선택해서 복사 가능)
@@ -113,7 +149,7 @@ function vg_alert($msg, string $type = 'err'): void {
         $type = (string) ($msg['type'] ?? $type);
         $title = (string) ($msg['title'] ?? '');
         $hints = is_array($msg['hints'] ?? null) ? $msg['hints'] : [];
-        echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '">';
+        echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '" role="' . ($type === 'ok' ? 'status' : 'alert') . '">';
         if ($title !== '') {
             echo '<strong>' . vg_h($title) . '</strong>';
         }
@@ -127,7 +163,7 @@ function vg_alert($msg, string $type = 'err'): void {
         echo '</div>';
         return;
     }
-    echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '">' . vg_h((string) $msg) . '</div>';
+    echo '<div class="alert alert--' . (in_array($type, ['ok', 'warn'], true) ? $type : 'err') . '" role="' . ($type === 'ok' ? 'status' : 'alert') . '">' . vg_h((string) $msg) . '</div>';
 }
 
 /**
@@ -226,16 +262,14 @@ function vg_qs(array $overrides = []): string {
     return '?' . implode('&', $parts);
 }
 
-// 페이지당 표시 개수 선택지(SSOT). vg_perpage / vg_perpage_select 가 공유한다.
-const VG_PERPAGE_OPTIONS = [10, 20, 40, 60, 100];
-const VG_PERPAGE_DEFAULT = 10;
 
 // 페이지당 표시 개수. ?per_page= 를 화이트리스트로 검증해 반환. 잘못된 값이면 $default.
 //   $param 은 한 화면에 페이지네이션 섹션이 여러 개일 때 서로 다른 쿼리 파라미터를 쓰기 위함
 //   (예: cve.php 의 벤더 판정=vper_page, 영향 패키지=aper_page, 발견 위치=per_page).
-function vg_perpage(int $default = VG_PERPAGE_DEFAULT, string $param = 'per_page'): int {
+function vg_perpage(?int $default = null, string $param = 'per_page'): int {
+    $default ??= vg_ui_per_page_default();
     $v = (int) ($_GET[$param] ?? $default);
-    return in_array($v, VG_PERPAGE_OPTIONS, true) ? $v : $default;
+    return in_array($v, vg_ui_per_page_options(), true) ? $v : $default;
 }
 
 // 현재 페이지 번호. ?page= 를 정수로 파싱해 1 미만이면 1로 올린다.
@@ -246,9 +280,9 @@ function vg_page(string $param = 'page'): int {
 // "페이지당 N개" 셀렉트. onchange 시 현재 쿼리스트링 유지한 채 per_page 변경 + page=1 로 이동.
 //   data-nav 는 app.js 가 이동 시작을 알아채 상단 진행바를 띄우는 표식이다.
 function vg_perpage_select(string $pageParam = 'page', string $perPageParam = 'per_page'): void {
-    $current = vg_perpage(VG_PERPAGE_DEFAULT, $perPageParam);
+    $current = vg_perpage(null, $perPageParam);
     echo '<select data-nav onchange="location.href=this.value" aria-label="페이지당 표시 개수">';
-    foreach (VG_PERPAGE_OPTIONS as $n) {
+    foreach (vg_ui_per_page_options() as $n) {
         $url = vg_qs([$perPageParam => $n, $pageParam => 1]);
         echo '<option value="' . vg_h($url) . '"' . ($current === $n ? ' selected' : '') . '>' . $n . '개씩 보기</option>';
     }
@@ -263,7 +297,8 @@ function vg_perpage_select(string $pageParam = 'page', string $perPageParam = 'p
  */
 function vg_page_nav(int $total, int $perPage, int $page, string $pageParam = 'page', string $perPageParam = 'per_page'): void {
     $totalPages = max(1, (int) ceil($total / $perPage));
-    if ($totalPages === 1 && $total <= VG_PERPAGE_OPTIONS[0]) {
+    $options = vg_ui_per_page_options();
+    if ($totalPages === 1 && $total <= $options[0]) {
         return;
     }
     if ($page < 1) { $page = 1; }
@@ -325,7 +360,7 @@ function vg_page_nav(int $total, int $perPage, int $page, string $pageParam = 'p
  */
 function vg_table(array $headers, array $rows, array $opts = []): void {
     $card     = $opts['card'] ?? true;
-    $class    = $opts['class'] ?? '';
+    $class    = trim('data-table ' . ($opts['class'] ?? ''));
     $cell     = $opts['cell'] ?? [];
     $empty    = $opts['empty'] ?? '데이터가 없습니다.';
     $rowClass = $opts['row_class'] ?? null;
@@ -338,14 +373,18 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
         return;
     }
 
-    echo '<table' . ($class !== '' ? ' class="' . vg_h($class) . '"' : '') . '>';
+    echo '<table class="' . vg_h($class) . '">';
     echo '<thead><tr>';
     foreach ($headers as $h) {
         $label = is_array($h) ? (string) ($h['label'] ?? '') : (string) $h;
         $align = is_array($h) ? ($h['align'] ?? null) : null;
         $width = is_array($h) ? ($h['width'] ?? null) : null;
         $style = $width ? ' style="width:' . vg_h($width) . ';"' : '';
-        $thClass = ($align === 'right') ? ' class="right"' : (($align === 'center') ? ' class="center"' : '');
+        $thClasses = [];
+        if ($align === 'right') { $thClasses[] = 'right'; }
+        elseif ($align === 'center') { $thClasses[] = 'center'; }
+        if (is_array($h) && !empty($h['class'])) { $thClasses[] = (string) $h['class']; }
+        $thClass = $thClasses ? ' class="' . vg_h(implode(' ', $thClasses)) . '"' : '';
         echo '<th' . $thClass . $style . '>' . vg_h($label) . '</th>';
     }
     echo '</tr></thead><tbody>';
@@ -366,10 +405,13 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
             $nowrap = is_array($h) && !empty($h['nowrap']);
             $tdClasses = [];
             if ($nowrap) { $tdClasses[] = 'nowrap'; }
+            if (is_array($h) && !empty($h['class'])) { $tdClasses[] = (string) $h['class']; }
             if ($align === 'right') { $tdClasses[] = 'right'; }
             elseif ($align === 'center') { $tdClasses[] = 'center'; }
             $tdClass = $tdClasses ? ' class="' . vg_h(implode(' ', $tdClasses)) . '"' : '';
-            echo '<td' . $tdClass . '>' . $html . '</td>';
+            $cellLabel = is_array($h) ? (string) ($h['label'] ?? '') : (string) $h;
+            $labelAttr = $cellLabel !== '' ? ' data-label="' . vg_h($cellLabel) . '"' : '';
+            echo '<td' . $tdClass . $labelAttr . '>' . $html . '</td>';
         }
         echo '</tr>';
     }
@@ -391,7 +433,7 @@ function vg_toolbar(array $fields): void {
     echo '<form class="toolbar" method="get">';
 
     $perPage = vg_perpage();
-    if ($perPage !== VG_PERPAGE_DEFAULT) {
+    if ($perPage !== vg_ui_per_page_default()) {
         echo '<input type="hidden" name="per_page" value="' . $perPage . '">';
     }
 

@@ -20,10 +20,10 @@ $err = null; $msg = null; $host = null; $scan = null; $scanAge = null;
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 
 // 재시작·재부팅 표에 보여줄 최대 건수. 나머지는 취약점 현황(fx=restart)으로 넘긴다.
-const VG_RESTART_TOP = 10;
+
 
 // 리소스 추이 차트에 그릴 최대 스캔 건수(최근 것부터).
-const VG_RESOURCE_TREND_LIMIT = 50;
+
 
 // --- 탭별 데이터 조회 (?tab= 에 따라 갈리는 SQL). 각자 {total, rows, ...} 형태의 배열을 반환한다. ---
 
@@ -71,7 +71,7 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
     $st = $pdo->prepare(
         "$sel WHERE f.scan_id = ? AND f.needs_restart = 1
          ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
-         LIMIT " . VG_RESTART_TOP
+         LIMIT " . vg_ui_detail_preview_limit()
     );
     $st->execute([$sid]);
     $restartRows = $st->fetchAll();
@@ -163,16 +163,16 @@ function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset, ?st
 }
 
 function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, int $perPage, int $offset, ?string $q = null): array {
-    $where = 'scan_id = ?';
+    $where = 'sf.scan_id = ?';
     $params = [$sid];
     if ($q !== null && $q !== '') {
-        $where .= ' AND (cve_id LIKE ? OR package_name LIKE ?)';
+        $where .= ' AND (sf.cve_id LIKE ? OR sf.package_name LIKE ?)';
         $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
     }
 
     if ($q !== null && $q !== '') {
-        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_suppressed_findings WHERE $where");
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_suppressed_findings sf WHERE $where");
         $cnt->execute($params);
         $total = (int) $cnt->fetchColumn();
     } else {
@@ -180,8 +180,10 @@ function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, i
     }
 
     $st = $pdo->prepare(
-        "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason
-           FROM tb_suppressed_findings WHERE $where
+        "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason,
+                CASE WHEN sf.container_id = 0 THEN 'HOST'
+                     ELSE COALESCE((SELECT c.name FROM tb_containers c WHERE c.id = sf.container_id), CONCAT('container #', sf.container_id)) END AS target
+           FROM tb_suppressed_findings sf WHERE $where
           ORDER BY FIELD(base_severity,'CRITICAL','HIGH','MEDIUM','LOW'), cve_id
           LIMIT $perPage OFFSET $offset"
     );
@@ -196,7 +198,7 @@ function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
     $st = $pdo->prepare(
         'SELECT collected_at, peak_rss_mb, cpu_seconds, mem_total_mb, cpu_cores, elapsed_seconds
-           FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT ' . VG_RESOURCE_TREND_LIMIT
+           FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT ' . vg_ui_trend_limit()
     );
     $st->execute([$hostId]);
     $resourceScans = array_reverse($st->fetchAll());
@@ -398,16 +400,13 @@ $scopeTone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'BOUND' => 'med', 'FILTERED'
 vg_header($host['fqdn'] ?? '호스트', 'assets');
 ?>
 <?php if ($err !== null): ?>
+  <?php vg_page_title('호스트 상세', 'ASSET DETAIL', '호스트 정보를 불러오지 못했습니다.'); ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif (!$host): ?>
-  <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '호스트를 찾을 수 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
+  <?php vg_page_title('호스트를 찾을 수 없습니다', 'ASSET DETAIL', '삭제되었거나 존재하지 않는 자산입니다.'); ?>
+  <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif (!$scan): ?>
-  <h1>🖥️ <?= vg_h($host['fqdn']) ?></h1>
-  <div class="sub">
-    <a href="/">← 대시보드</a> ·
-    <?php if (vg_can('assets')): ?><a href="/assets.php">자산관리</a> · <?php endif; ?>
-    <?= vg_h(trim($host['os_id'] . ' ' . $host['os_version'])) ?>
-  </div>
+  <?php vg_hero(vg_h($host['fqdn']), [vg_h(trim($host['os_id'] . ' ' . $host['os_version'])), '<a href="/">대시보드</a>'], null, 'ok', '수집 상태', 'ASSET DETAIL'); ?>
   <div class="card"><?php vg_empty(['icon' => '📭', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
@@ -434,7 +433,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       '<a href="/">대시보드</a>',
   ];
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
-  vg_hero('🖥️ ' . vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'ASSET DETAIL');
+  vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'ASSET DETAIL');
 
   $portStmt = $pdo->prepare('SELECT port, proto FROM tb_host_ext_ports WHERE host_id = ? AND is_deleted = 0 ORDER BY port, proto');
   $portStmt->execute([$hostId]);
@@ -443,19 +442,18 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       $portValues[] = (int) $portRow['port'] . '/' . strtolower((string) $portRow['proto']);
   }
   if ($msg !== null) { vg_alert(['type' => 'ok', 'title' => $msg]); }
-  $dq = chr(34);
-  echo '<div class=card><strong>경계 방화벽 설정</strong>';
-  echo '<span class=why>에이전트가 볼 수 없는 라우터·경계 방화벽 뒤의 호스트만 설정하세요.</span>';
-  echo '<div class=card__body><form method=post>';
-  echo '<input type=hidden name=csrf value=' . $dq . vg_h(vg_csrf_token()) . $dq . '>';
-  echo '<input type=hidden name=id value=' . $dq . (int) $hostId . $dq . '>';
-  echo '<label><input type=checkbox name=perimeter_firewalled value=1 '
+  vg_section_title('경계 방화벽 설정', '에이전트가 볼 수 없는 라우터·경계 방화벽 뒤의 호스트만 설정하세요.');
+  echo '<div class="card setting-card"><div class="card__body"><form method="post" class="setting-form">';
+  echo '<input type="hidden" name="csrf" value="' . vg_h(vg_csrf_token()) . '">';
+  echo '<input type="hidden" name="id" value="' . (int) $hostId . '">';
+  echo '<label class="check-row"><input type="checkbox" name="perimeter_firewalled" value="1" '
       . (!empty($host['perimeter_firewalled']) ? 'checked' : '')
-      . '> 이 호스트는 경계 방화벽 뒤에 있음</label>';
-  echo '<label>실제 인터넷 공개 포트 <input type=text name=external_ports value=' . $dq
-      . vg_h(implode(', ', $portValues)) . $dq . ' placeholder=' . $dq . '22/tcp, 443/tcp, 8080/tcp' . $dq . '></label>';
-  echo '<p class=hint>쉼표 또는 공백으로 구분합니다. 목록에 없는 호스트 EXTERNAL 포트만 FILTERED로 강등되며 컨테이너에는 적용되지 않습니다.</p>';
-  echo '<button type=submit>저장 및 최신 스캔 재매칭</button></form></div></div>';
+      . '><span><strong>경계 방화벽 뒤에 있음</strong><small>이 호스트에 실제 외부 공개 포트 기준을 적용합니다.</small></span></label>';
+  echo '<label class="field"><span>실제 인터넷 공개 포트</span><input type="text" name="external_ports" value="'
+      . vg_h(implode(', ', $portValues)) . '" placeholder="22/tcp, 443/tcp, 8080/tcp"></label>';
+  echo '<p class="hint">쉼표 또는 공백으로 구분합니다. 목록에 없는 호스트 EXTERNAL 포트만 FILTERED로 강등되며 컨테이너에는 적용되지 않습니다.</p>';
+  echo '<div class="actions"><button type="submit" class="btn btn--primary" data-loading="저장 및 재매칭 중…">저장 및 최신 스캔 재매칭</button></div>';
+  echo '</form></div></div>';
 
   // CVE 피드가 지원하지 않는 배포판이면 매칭 후보가 아예 없어 **취약점이 0건으로 뜬다.**
   //   운영자는 "안전하다"고 읽는다 — 침묵하는 미탐이라 반드시 화면에 알린다.
@@ -762,6 +760,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           [
               ['label' => '원래등급', 'key' => 'base_severity'],
               ['label' => 'CVE'],
+              ['label' => '대상', 'key' => 'target'],
               ['label' => '패키지'],
               ['label' => '억제 근거'],
           ],
@@ -785,8 +784,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                   'base_severity' => fn($r) => vg_sev_badge((string) $r['base_severity'])
                       . ((int) $r['in_kev'] === 1 ? ' ' . vg_badge('KEV', 'crit') : ''),
                   1 => fn($r) => '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a></strong>',
-                  2 => fn($r) => vg_h($r['package_name']) . ' <span class="why">' . vg_h($r['installed_version']) . '</span>',
-                  3 => fn($r) => '<span class="why">' . vg_trunc($r['suppress_reason'], 90) . '</span>',
+                  3 => fn($r) => vg_h($r['package_name']) . ' <span class="why">' . vg_h($r['installed_version']) . '</span>',
+                  4 => fn($r) => '<span class="why">' . vg_trunc($r['suppress_reason'], 90) . '</span>',
               ],
           ]
       );

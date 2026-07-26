@@ -79,31 +79,43 @@ $issueLabel  = (string) ($f['label'] ?? '');
 
 $csrf = vg_csrf_token();
 
-// 목록 페이지네이션.
+// 목록 검색·페이지네이션. 검색값은 바인딩하고 LIMIT/OFFSET 은 검증된 정수만 사용한다.
+$q       = trim((string) ($_GET['q'] ?? ''));
 $perPage = vg_perpage();
 $page    = vg_page();
-$total   = (int) $pdo->query('SELECT COUNT(*) FROM tb_agent_tokens WHERE is_deleted = 0')->fetchColumn();
-$offset  = ($page - 1) * $perPage;
+$where   = 't.is_deleted = 0';
+$params  = [];
+if ($q !== '') {
+    $where .= ' AND (t.host_fqdn LIKE ? OR t.label LIKE ? OR t.token_prefix LIKE ?)';
+    $like = '%' . $q . '%';
+    $params = [$like, $like, $like];
+}
+$count = $pdo->prepare("SELECT COUNT(*) FROM tb_agent_tokens t WHERE $where");
+$count->execute($params);
+$total  = (int) $count->fetchColumn();
+$offset = ($page - 1) * $perPage;
 
-$tokens = $pdo->query(
+$list = $pdo->prepare(
     "SELECT t.id, t.host_fqdn, t.label, t.token_prefix, t.last_seen_at, t.is_revoked, t.created_at,
             u.username AS created_by
        FROM tb_agent_tokens t
        LEFT JOIN tb_users u ON u.id = t.created_by
-      WHERE t.is_deleted = 0
+      WHERE $where
       ORDER BY t.id DESC
       LIMIT $perPage OFFSET $offset"
-)->fetchAll();
+);
+$list->execute($params);
+$tokens = $list->fetchAll();
 
 // 발급 폼 prefill — 자산관리 등에서 ?fqdn=web01.example.com 로 넘어올 수 있게.
 if ($issueFqdn === '') { $issueFqdn = trim((string) ($_GET['fqdn'] ?? '')); }
 
 vg_header('에이전트 토큰', 'agenttokens');
 ?>
-  <div class="page-head page-title page-title--actions">
-    <h1>에이전트 토큰 <span class="hint">(<?= number_format($total) ?>개)</span></h1>
-    <div class="toolbar"><?php vg_modal_btn('issueToken', '+ 토큰 발급'); ?></div>
-  </div>
+  <?php vg_page_title('에이전트 토큰', 'AGENT ACCESS', '', [
+      'count' => $total, 'count_label' => '개',
+      'actions' => vg_capture(static fn() => vg_modal_btn('issueToken', '+ 토큰 발급')),
+  ]); ?>
   <div class="sub">
     각 수집 에이전트에 발급하는 <strong>호스트 전용 토큰</strong>입니다. 발급 시 정한 호스트(fqdn)의
     스캔만 갱신할 수 있어, 침해된 대상 1대가 다른 호스트를 위조하는 것을 막습니다.
@@ -111,6 +123,10 @@ vg_header('에이전트 토큰', 'agenttokens');
   </div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+
+  <?php vg_toolbar([
+      ['type' => 'search', 'name' => 'q', 'value' => $q, 'placeholder' => '호스트·용도·토큰 앞자리 검색'],
+  ]); ?>
 
   <?php if ($newToken !== null):
     // 설치는 대화형을 1순위로 안내한다 — 토큰을 --token 인자로 주면 셸 히스토리에 남는다.
@@ -150,10 +166,13 @@ vg_header('에이전트 토큰', 'agenttokens');
       ],
       $tokens,
       [
-          'empty' => [
-              'icon'  => '🔑',
-              'title' => '발급된 에이전트 토큰이 없습니다.',
-              'hint'  => '각 대상 서버마다 호스트 전용 토큰을 발급해 설치하세요. 위에서 발급합니다.',
+          'empty' => $q !== '' ? [
+              'icon' => '🔍', 'title' => '검색 결과가 없습니다.',
+              'hint' => '호스트명·용도·토큰 앞자리를 다시 확인하세요.',
+              'cta' => ['href' => '/agent-tokens.php', 'label' => '검색 초기화'],
+          ] : [
+              'icon' => '🔑', 'title' => '발급된 에이전트 토큰이 없습니다.',
+              'hint' => '각 대상 서버마다 호스트 전용 토큰을 발급해 설치하세요. 위에서 발급합니다.',
           ],
           'cell'  => [
               0 => fn($t) => '<code>' . vg_h((string) $t['host_fqdn']) . '</code>',
@@ -168,12 +187,12 @@ vg_header('에이전트 토큰', 'agenttokens');
               5 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
               // 활성이면 [폐기], 폐기된 것이면 [삭제] — 폐기·재발급을 반복해 쌓인 죽은 행을 치운다.
               6 => fn($t) => (int) $t['is_revoked'] === 1
-                  ? '<form method="post" onsubmit="return confirm(\'이 토큰을 목록에서 지울까요? 이미 폐기되어 무효인 토큰입니다.\');">'
+                  ? '<form method="post" data-confirm="이 토큰을 목록에서 지울까요? 이미 폐기되어 무효인 토큰입니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="delete">'
                       . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'
                       . '<button class="btn btn--sm btn--danger">삭제</button></form>'
-                  : '<form method="post" onsubmit="return confirm(\'이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.\');">'
+                  : '<form method="post" data-confirm="이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="revoke">'
                       . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'

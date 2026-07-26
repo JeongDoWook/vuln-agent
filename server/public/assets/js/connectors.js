@@ -7,7 +7,7 @@
 var VG_TYPE_META = {};
 
 // 외부 소스를 직접 치는 요청이라 수 초 걸린다 → 버튼 스피너 + 상단 진행바(app.js 의 vgLoading).
-//   버튼의 onclick="vgPreview(this)" 에서 부른다.
+//   data-feed-preview 버튼은 아래 이벤트 위임에서 호출한다.
 function vgPreview(btn) {
   var f = document.getElementById('connForm');
   var out = document.getElementById('vgPrev');
@@ -43,6 +43,13 @@ function vgPreview(btn) {
       vgLoading(btn, false);
     });
 }
+
+document.addEventListener('click', function (event) {
+  var button = event.target.closest('[data-feed-preview]');
+  if (!button) { return; }
+  event.preventDefault();
+  vgPreview(button);
+});
 
 // ─────────────────────────────────────────────────────────────────────────
 // 범용 API 커넥터(generic_api) 전용 동적 폼.
