@@ -25,7 +25,13 @@ pass=0; fail=0
 ok() { printf "  ${GREEN}✓${NC} %s\n" "$1"; pass=$((pass+1)); }
 no() { printf "  ${RED}✗${NC} %s\n" "$1"; fail=$((fail+1)); }
 assert_eq() { if [ "$1" = "$2" ]; then ok "$3"; else no "$3  (기대=$2, 실제=$1)"; fi; }
-assert_contains() { if printf '%s' "$1" | grep -q "$2"; then ok "$3"; else no "$3  ('$2' 없음)"; fi; }
+# 본문 검사는 **파이프로 넘기지 않는다** — `printf … | grep -q` 는 위의 `set -o pipefail` 과 만나면
+#   문자열이 있는데도 실패로 뒤집힌다: grep -q 는 첫 매치에서 즉시 끝나므로, 본문이 파이프
+#   버퍼(64KB)보다 크고 매치가 앞쪽이면 아직 쓰던 printf 가 SIGPIPE 로 죽어 파이프라인 종료코드가
+#   141 이 된다. 공용 dev DB 가 자라 findings.php 응답이 64KB 를 넘긴 뒤로 '컨테이너 nodb' 검사가
+#   모든 워크트리에서 상시 실패했다(응답에는 그 문자열이 멀쩡히 있었다). here-string 은 파이프가
+#   아니라서 grep 의 종료코드가 그대로 결과가 된다.
+assert_contains() { if grep -q "$2" <<<"$1"; then ok "$3"; else no "$3  ('$2' 없음)"; fi; }
 
 # 아래 단위테스트 13개(vercmp~ui_structure)는 실행 방식(마운트·php:8.3-cli·리다이렉션)이 전부
 # 동일하고 파일명·라벨·메시지만 다르다 — DRY 로 묶는다. 각 테스트가 왜 존재하는지는
@@ -395,7 +401,7 @@ if [ -n "$WEB03_ID" ]; then ok "web03 호스트 id 확인 (=$WEB03_ID)"; else no
 
 # debsecan 억제 검사는 인증이 필요한 호스트 상세에서 확인한다.
 supbody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB02_ID&tab=suppressed")
-if printf '%s' "$supbody" | grep -q 'nginx'; then
+if grep -q 'nginx' <<<"$supbody"; then
   no "서드파티 nginx 가 억제됨 — 미탐!"
 else
   ok "서드파티 nginx 는 억제되지 않음(억제 목록에 없음)"
@@ -445,7 +451,7 @@ assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에
 #   새는지는 안 잡힘) — 그래서 raw 페이로드가 "없다"는 부정 검사로 확인하고, 0건 안내가
 #   실제로 그 경로를 탔는지도 함께 못박는다.
 xssbody=$(curl_ -s -b "$JAR" -G "$BASE/findings.php" --data-urlencode 'q=<script>alert(1)</script>')
-if printf '%s' "$xssbody" | grep -qF '<script>alert(1)</script>'; then
+if grep -qF '<script>alert(1)</script>' <<<"$xssbody"; then
   no "findings.php 검색어가 raw HTML 로 출력됨 — 반사형 XSS!"
 else
   ok "findings.php 검색어 XSS 이스케이프(vg_empty 의존)"
@@ -457,7 +463,7 @@ assert_contains "$xssbody" '이 화면(실제 스캔·매칭된 현재 판정)�
 #   기대는 코드라, href 속성을 깨고 나가는 raw 값이 없는지 부정 검사로 확인한다.
 evilbody=$(curl_ -s -b "$JAR" -G "$BASE/findings.php" --data-urlencode 'q=zzz-no-match-xyz-999' \
   --data-urlencode 'evil="><script>alert(1)</script>')
-if printf '%s' "$evilbody" | grep -qF '"><script>alert(1)</script>'; then
+if grep -qF '"><script>alert(1)</script>' <<<"$evilbody"; then
   no "findings.php 필터초기화 CTA href 에 임의 쿼리값이 이스케이프 없이 흘러듦 — XSS!"
 else
   ok "findings.php 필터초기화 CTA href 의 임의 쿼리값이 안전하게 인코딩됨"
@@ -485,7 +491,7 @@ AGTOK=$(printf '%s' "$issued" | grep -oE 'vgt_[0-9a-f]{40}' | head -1)
 if [ -n "$AGTOK" ]; then ok "개별 토큰 발급 + 원문 1회 표시"; else no "개별 토큰 발급 실패"; fi
 # 목록엔 prefix(앞자리)만 — 원문 전체는 저장/표시되지 않아야 한다(DB 엔 해시만).
 listed=$(curl_ -s -b "$JAR" "$BASE/agent-tokens.php")
-if [ -n "$AGTOK" ] && printf '%s' "$listed" | grep -q "$AGTOK"; then
+if [ -n "$AGTOK" ] && grep -q "$AGTOK" <<<"$listed"; then
   no "목록에 토큰 원문 노출(해시만 저장돼야 함)"
 else
   ok "목록엔 원문 없음(DB 엔 해시만 저장)"
@@ -503,7 +509,7 @@ assert_eq "$prgcode" "303" "발급 POST 는 303 으로 GET 에 되돌린다(새�
 prg1=$(curl_ -s -b "$JAR" "$BASE/agent-tokens.php")    # 리다이렉트된 GET — 원문 1회 표시
 assert_contains "$prg1" '한 번만 표시됨' "리다이렉트된 GET 에 발급 카드가 실린다"
 prg2=$(curl_ -s -b "$JAR" "$BASE/agent-tokens.php")    # 새로고침 = 같은 GET 재요청
-if printf '%s' "$prg2" | grep -q '한 번만 표시됨'; then
+if grep -q '한 번만 표시됨' <<<"$prg2"; then
   no "새로고침에도 발급 카드가 남아 있음(1회 표시 위반)"
 else
   ok "새로고침하면 발급 카드가 사라진다(1회 표시)"
