@@ -5,6 +5,13 @@
 .env.prod
 *.local
 
+# 워크트리별 로컬 상태 — wt.sh add 가 그 트리의 기점 sha 를 여기 쓰고(153행),
+#   sweep 이 "갓 만든 커밋 없는 브랜치"를 병합됐다고 오판하지 않게 쓴다(438행).
+#   값이 트리마다 다르므로 **추적하면 안 된다** — 추적하던 동안엔 워크트리를 만드는 순간
+#   ' M .wt-base-sha' 로 dirty 가 되어 `wt.sh rm` 이 "커밋되지 않은 변경" 으로 정리를 거부했다
+#   (실측 2026-07-26: 워크트리 11개를 정리할 때마다 손으로 checkout 해서 되돌려야 했다).
+.wt-base-sha
+
 # Docker Secrets: 실제 비밀값 txt 는 커밋 금지. secrets/README.md 만 커밋.
 secrets/*.txt
 
