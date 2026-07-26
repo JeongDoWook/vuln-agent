@@ -119,27 +119,67 @@ if (!function_exists('vg_sev_by_scan_ids')) {
     }
 }
 
+// 교착 재시도 파라미터. 대기는 지수 백오프 + 지터(같은 두 트랜잭션이 같은 간격으로 재충돌하는 것을 피한다).
+//   최악 대기 = 50+100ms 에 지터를 더한 수준 — 웹 요청 경로도 이 함수를 쓰므로 짧게 잡는다.
+const VG_TX_DEADLOCK_TRIES   = 3;      // 총 시도 횟수(첫 시도 포함)
+const VG_TX_DEADLOCK_WAIT_US = 50000;  // 첫 재시도 기본 대기(마이크로초). 시도마다 2배 + 0~같은 값의 지터.
+
+/**
+ * 이 예외가 교착(1213)·락 대기 초과(1205) 인가 — 재시도하면 통할 실패.
+ *   1213 은 원인을 제거해도 동시성 상황에 따라 나므로(matcher.php 는 이미 READ COMMITTED 로
+ *   갭락 원인을 없앴는데도 운영에서 2건 났다) 재시도가 정석이다.
+ *   1205 는 SQLSTATE 가 HY000 이라 드라이버 번호를 함께 봐야 잡힌다.
+ */
+if (!function_exists('vg_db_is_retryable_deadlock')) {
+    function vg_db_is_retryable_deadlock(Throwable $e): bool {
+        if (!$e instanceof PDOException) { return false; }
+        if ((string) $e->getCode() === '40001') { return true; }
+        $info = $e->errorInfo;
+        if (is_array($info) && (string) ($info[0] ?? '') === '40001') { return true; }
+        $errno = vg_db_driver_errno($e);
+        return $errno === 1213 || $errno === 1205;
+    }
+}
+
 /**
  * 콜백을 트랜잭션 안에서 실행한다. 이미 트랜잭션 중이면 새로 시작하지 않고 그대로
  * 참여한다(중첩 호출 안전). $isolation 이 있으면 새 트랜잭션을 시작할 때만 적용한다.
+ *
+ * 교착(1213)·락 대기 초과(1205)는 **자기가 트랜잭션을 소유할 때만** 롤백 후 재시도한다.
+ *   남의 트랜잭션에 참여 중이면 롤백 범위가 호출자 것이라 여기서 되돌릴 게 없고, 콜백만 다시
+ *   돌리면 이미 죽은 트랜잭션 위에서 반쪽으로 실행된다 → 그대로 던져 호출자가 결정하게 한다.
+ * 전제(호출부 확인 완료): 소유 경로의 콜백은 전부 `DELETE ... WHERE <키>` 뒤 `INSERT` 로
+ *   통째 재작성하므로 재실행이 안전하다 — matcher.php(tb_finding·tb_suppressed_finding),
+ *   cce.php(tb_cce_finding), package_summary.php(tb_package_summary).
  */
 if (!function_exists('vg_with_tx')) {
     function vg_with_tx(PDO $pdo, callable $fn, ?string $isolation = null)
     {
-        $ownTx = !$pdo->inTransaction();
-        if ($ownTx) {
+        // 참여만 하는 경로는 예전 그대로 — 트랜잭션을 열지도 닫지도 않고 재시도도 하지 않는다.
+        if ($pdo->inTransaction()) {
+            return $fn();
+        }
+        for ($try = 1; ; $try++) {
+            // SET TRANSACTION(SESSION/GLOBAL 없이)은 **다음 트랜잭션 하나에만** 걸리므로
+            //   재시도마다 다시 걸어야 한다.
             if ($isolation !== null) {
                 $pdo->exec("SET TRANSACTION ISOLATION LEVEL {$isolation}");
             }
             $pdo->beginTransaction();
-        }
-        try {
-            $result = $fn();
-            if ($ownTx) { $pdo->commit(); }
-            return $result;
-        } catch (Throwable $e) {
-            if ($ownTx && $pdo->inTransaction()) { $pdo->rollBack(); }
-            throw $e;
+            try {
+                $result = $fn();
+                $pdo->commit();
+                if ($try > 1) { error_log(sprintf('[db] 트랜잭션 재시도 %d회 후 성공', $try - 1)); }
+                return $result;
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                if ($try >= VG_TX_DEADLOCK_TRIES || !vg_db_is_retryable_deadlock($e)) { throw $e; }
+                // 조용히 삼키지 않는다 — 로그가 없으면 교착 빈도가 안 보인다.
+                error_log(sprintf('[db] 교착 재시도 %d/%d: %s', $try, VG_TX_DEADLOCK_TRIES, $e->getMessage()));
+                // 롤백 **뒤에** 기다린다(락을 쥔 채 자면 상대도 못 풀린다).
+                $wait = VG_TX_DEADLOCK_WAIT_US << ($try - 1);
+                usleep($wait + random_int(0, $wait));
+            }
         }
     }
 }
