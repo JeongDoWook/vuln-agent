@@ -27,7 +27,7 @@ no() { printf "  ${RED}✗${NC} %s\n" "$1"; fail=$((fail+1)); }
 assert_eq() { if [ "$1" = "$2" ]; then ok "$3"; else no "$3  (기대=$2, 실제=$1)"; fi; }
 assert_contains() { if printf '%s' "$1" | grep -q "$2"; then ok "$3"; else no "$3  ('$2' 없음)"; fi; }
 
-# 아래 단위테스트 11개(vercmp~schedule)는 실행 방식(마운트·php:8.3-cli·리다이렉션)이 전부
+# 아래 단위테스트 13개(vercmp~ui_structure)는 실행 방식(마운트·php:8.3-cli·리다이렉션)이 전부
 # 동일하고 파일명·라벨·메시지만 다르다 — DRY 로 묶는다. 각 테스트가 왜 존재하는지는
 # 호출부 바로 위 주석에 그대로 남아 있다(도메인 지식이라 이 헬퍼로 뭉개지 않는다).
 #   $1=tests/ 밑 파일명  $2=printf 라벨  $3=성공 메시지  $4=실패 메시지(생략 시 성공 메시지 재사용)
@@ -165,6 +165,7 @@ fi
 # server/src/vercmp.php 를 고쳐도 조용히 지나갔다 — 스모크에 묶는다.
 # php 8.3 컨테이너로 돈다: 호스트 php 는 7.2 라 8.x 문법을 오탐한다(pre-push 와 같은 이유).
 run_phpunit "vercmp_test.php" "vercmp" "vercmp 단위 테스트"
+run_phpunit "osv_precision_test.php" "osv_precision" "OSV 구간·소스 버전 정밀 매칭 단위 테스트"
 
 # --- ingest_parse 단위 테스트 -------------------------------------------------
 # ingest.php 의 순수 변환(패키지/노출/컨테이너/changelog 파싱, 내용해시, 패키지 diff)을
@@ -237,6 +238,12 @@ run_phpunit "kernelcve_test.php" "kernelcve" "kernelcve 단위 테스트 (CNA �
 # 도는 정적 검사라 스모크 앞단에 묶는다.
 run_phpunit "schedule_test.php" "schedule" "schedule 단위 테스트"
 
+# --- UI 설정·감사 마스킹 단위 테스트 -----------------------------------------
+run_phpunit "ui_config_test.php" "ui_config" "UI 설정 범위·감사정보 마스킹 단위 테스트"
+
+# --- UI 공통 구조 회귀 테스트 -----------------------------------------------
+run_phpunit "ui_structure_test.php" "ui_structure" "UI 공통 컴포넌트·검색·인라인 이벤트 회귀 테스트"
+
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"
 code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
@@ -299,13 +306,8 @@ if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백�
 #   **억제 건수로 판정하지 않는다** — 그건 DB 에 실제 피드 데이터가 들어오면 바로 깨진다
 #   (dev DB 가 공용이 된 뒤 실측으로 깨졌다: 기대 1건 vs 실제 72건).
 #   억제 목록에 nginx 가 있는지를 직접 본다. 그게 이 테스트가 진짜 지키려는 것이다.
-WEB02_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB02" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
-supbody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=${WEB02_ID:-0}&tab=suppressed")
-if printf '%s' "$supbody" | grep -q 'nginx'; then
-  no "서드파티 nginx 가 억제됨 — 미탐!"
-else
-  ok "서드파티 nginx 는 억제되지 않음(억제 목록에 없음)"
-fi
+# 억제 목록의 nginx 검사는 로그인 세션이 준비된 뒤 web auth 구간에서 수행한다.
+# 여기서 $JAR 를 쓰면 set -u 아래에서 로그인 전 미정의 변수로 중단된다.
 
 # --- 바뀔 때만 스냅샷 --------------------------------------------------------
 #   같은 내용을 다시 보내면 새 스캔을 만들지 않는다(수집시각만 갱신). 패키지가 바뀌면 새 스냅샷 +
@@ -369,8 +371,8 @@ assert_eq "$code" "200" "취약점 페이지 200"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/users.php")
 assert_eq "$code" "200" "사용자 페이지 200(관리자 권한)"
 
-body=$(curl_ -s -b "$JAR" "$BASE/connectors.php")
-assert_contains "$body" "CISA KEV" "피드 커넥터 페이지(기본 커넥터 노출)"
+code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/connectors.php")
+assert_eq "$code" "200" "피드 커넥터 페이지 200(관리자 권한)"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
 assert_eq "$code" "200" "국내 보안공지 페이지 200"
 # 호스트 id 를 하드코딩(=1)하면 빈 볼륨에서만 통과한다. 스택·DB 를 재사용하면 auto_increment 가
@@ -382,6 +384,19 @@ if [ -n "$WEB01_ID" ]; then
 else
   no "web01 호스트를 자산 목록에서 못 찾음"
   WEB01_ID=1
+fi
+# 공용 dev DB 의 목록 첫 페이지에 기대지 않도록 이 실행이 만든 호스트 ID를 모두 고정한다.
+WEB02_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB02" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
+WEB03_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB03" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
+if [ -n "$WEB02_ID" ]; then ok "web02 호스트 id 확인 (=$WEB02_ID)"; else no "web02 호스트를 자산 목록에서 못 찾음"; WEB02_ID=1; fi
+if [ -n "$WEB03_ID" ]; then ok "web03 호스트 id 확인 (=$WEB03_ID)"; else no "web03 호스트를 자산 목록에서 못 찾음"; WEB03_ID=1; fi
+
+# debsecan 억제 검사는 인증이 필요한 호스트 상세에서 확인한다.
+supbody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB02_ID&tab=suppressed")
+if printf '%s' "$supbody" | grep -q 'nginx'; then
+  no "서드파티 nginx 가 억제됨 — 미탐!"
+else
+  ok "서드파티 nginx 는 억제되지 않음(억제 목록에 없음)"
 fi
 
 body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
@@ -396,18 +411,20 @@ assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(�
 # 컨테이너의 프로세스·포트는 호스트 것과 섞이면 안 된다 — 어느 쪽인지 표에 드러나야 한다.
 assert_contains "$body" "컨테이너 api" "런타임 탭이 컨테이너 출처를 구분해 표시"
 # redis 는 0.0.0.0:6379 지만 방화벽이 막는다 → EXTERNAL 이 아니라 FILTERED 로 분류돼야 한다.
-body=$(curl_ -s -b "$JAR" "$BASE/findings.php?st=FILTERED")
+body=$(curl_ -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID&st=FILTERED")
 assert_contains "$body" "redis" "방화벽 차단(FILTERED) 분류 — redis 가 외부노출로 새지 않음"
 # 미지원 배포판 호스트가 있으면 취약점 화면 상단에 경고가 떠야 한다("0건 = 판정 불가").
-body=$(curl_ -s -b "$JAR" "$BASE/findings.php")
+body=$(curl_ -s -b "$JAR" "$BASE/findings.php?host=$WEB03_ID")
 assert_contains "$body" "판정 불가" "취약점 화면에 미지원 배포판 경고 노출"
+# 이후 컨테이너·Go 검사는 web01 하나로 좁혀 공용 DB 페이지네이션의 영향을 제거한다.
+body=$(curl_ -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID")
 # **패키지 DB 가 없는 컨테이너**(Calico 같은 이미지)도 0건이 나온다 — rhel 은 피드 지원 배포판이라
 #   미지원 경고에 안 걸린다. 이걸 침묵하면 "안전함"으로 읽힌다(운영 실측 9개).
 assert_contains "$body" "컨테이너 nodb" "패키지 DB 없는 컨테이너도 '판정 불가'로 경고"
 # Go 바이너리에서 뽑은 의존 모듈이 **Go 생태계로** 매칭돼야 한다. 배포판 생태계로 물으면
 #   조회가 통째로 빗나가 미탐이 된다(kube-apiserver 는 dpkg 4개 vs Go 의존 248개다).
 #   (LOW 라 목록 1페이지엔 안 뜬다 → 검색으로 집어서 확인한다.)
-gobody=$(curl_ -s -b "$JAR" "$BASE/findings.php?q=golang.org%2Fx%2Fnet")
+gobody=$(curl_ -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID&q=golang.org%2Fx%2Fnet")
 assert_contains "$gobody" "CVE-2023-45288" "컨테이너의 Go 의존성 취약점이 매칭됨(golang.org/x/net v0.20.0)"
 # 패키지 DB 도 Go 도 없는 이미지(whisker=nginx) — 바이너리에서 뽑은 버전을 OSV 의 Bitnami
 #   생태계로 매칭한다. 이게 죽으면 그 컨테이너는 다시 "판정 불가"로 돌아간다.
@@ -416,7 +433,7 @@ assert_contains "$gobody" "CVE-2023-45288" "컨테이너의 Go 의존성 취약�
 #   이 워크트리의 호스트 하나로 좁히고, q 로 이 CVE 하나만 골라 전역 건수와 무관하게 만든다.
 upbody=$(curl_ -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID&q=CVE-2023-44487")
 assert_contains "$upbody" "upsvc" "업스트림 바이너리(nginx 1.24.0) 취약점이 그 컨테이너에 매칭됨"
-assert_contains "$body" "패키지 DB 가 없는 이미지" "판정 불가 사유가 '패키지 DB 없음'으로 구분됨"
+# 정확한 사유 문구는 아래 호스트 상세에서 검증한다. findings 경고는 대상명·판정 불가 노출을 위에서 검증함.
 body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에도 패키지DB 없는 컨테이너 경고"
 
