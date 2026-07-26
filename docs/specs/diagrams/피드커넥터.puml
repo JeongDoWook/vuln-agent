@@ -28,8 +28,8 @@ package "외부 소스" as Sources {
     rectangle "범용 API(generic_api)\n사용자 등록 REST" as GAPI
 }
 
-database "tb_feed_connectors\ntb_feed_collection_logs" as DBc
-database "tb_cves · tb_kev_catalog\ntb_cve_affected_packages · tb_advisories" as CVE
+database "tb_feed_connector\ntb_feed_collection_log" as DBc
+database "tb_cve · tb_kev_catalog\ntb_cve_affected_package · tb_advisory" as CVE
 rectangle "매처 재계산" as MAT #a371f7
 
 CFG --> DBc : 저장

@@ -5,6 +5,11 @@
 '
 ' 표기: 감사 4컬럼(created_at/updated_at/is_deleted/deleted_at)은 모든 테이블에 통일되어 있으나
 '      이 다이어그램엔 is_deleted 만 표기하고 나머지는 생략한다(mermaid 원본과 동일).
+'
+' 명명규칙: 테이블명은 단수, 대리키 PK 는 <단수 테이블명>_id, FK 는 부모 PK 이름을 그대로 쓴다
+'          (tb_host.host_id ← tb_scan.host_id — 조인 양쪽 이름이 같다).
+'          자연키·복합키·FK-as-PK 라 대리키를 두지 않는 예외(tb_cve/tb_kev_catalog 등)는
+'          docs/dev/데이터베이스.md 의 예외표 참고.
 
 hide circle
 skinparam linetype ortho
@@ -14,16 +19,16 @@ skinparam entity {
     BorderColor #6e7681
 }
 
-entity tb_hosts {
-    id : bigint <<PK>>
+entity tb_host {
+    host_id : bigint <<PK>>
     --
     fqdn : string <<UK>>
     os_id : string
     is_deleted : bool
 }
 
-entity tb_scans {
-    id : bigint <<PK>>
+entity tb_scan {
+    scan_id : bigint <<PK>>
     --
     host_id : bigint <<FK>>
     collected_at : datetime
@@ -32,8 +37,8 @@ entity tb_scans {
     is_deleted : bool
 }
 
-entity tb_packages {
-    id : bigint <<PK>>
+entity tb_package {
+    package_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     container_id : bigint
@@ -47,8 +52,8 @@ entity tb_packages {
     ' 출처 - 서드파티 판정
 }
 
-entity tb_containers {
-    id : bigint <<PK>>
+entity tb_container {
+    container_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     cid : string
@@ -59,8 +64,8 @@ entity tb_containers {
     pkg_count : int
 }
 
-entity tb_stale_libs {
-    id : bigint <<PK>>
+entity tb_stale_lib {
+    stale_lib_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     comm : string
@@ -70,7 +75,7 @@ entity tb_stale_libs {
 }
 
 entity tb_applied_errata {
-    id : bigint <<PK>>
+    applied_errata_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     package_name : string
@@ -80,15 +85,15 @@ entity tb_applied_errata {
 }
 
 entity tb_debsecan {
-    id : bigint <<PK>>
+    debsecan_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     cve_id : string
     package_name : string
 }
 
-entity tb_pkg_changes {
-    id : bigint <<PK>>
+entity tb_pkg_change {
+    pkg_change_id : bigint <<PK>>
     --
     host_id : bigint <<FK>>
     scan_id : bigint <<FK>>
@@ -99,8 +104,8 @@ entity tb_pkg_changes {
     new_version : string
 }
 
-entity tb_exposures {
-    id : bigint <<PK>>
+entity tb_exposure {
+    exposure_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     proc : string
@@ -110,8 +115,8 @@ entity tb_exposures {
     loaded_pkgs : text
 }
 
-entity tb_processes {
-    id : bigint <<PK>>
+entity tb_process {
+    process_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     comm : string
@@ -119,8 +124,8 @@ entity tb_processes {
     loaded_pkgs : text
 }
 
-entity tb_findings {
-    id : bigint <<PK>>
+entity tb_finding {
+    finding_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     cve_id : string <<FK>>
@@ -129,8 +134,8 @@ entity tb_findings {
     in_kev : bool
 }
 
-entity tb_pkg_changelog_cves {
-    id : bigint <<PK>>
+entity tb_pkg_changelog_cve {
+    pkg_changelog_cve_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     package_name : string
@@ -138,8 +143,8 @@ entity tb_pkg_changelog_cves {
     evidence : string
 }
 
-entity tb_suppressed_findings {
-    id : bigint <<PK>>
+entity tb_suppressed_finding {
+    suppressed_finding_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     cve_id : string
@@ -148,8 +153,8 @@ entity tb_suppressed_findings {
     suppress_reason : string
 }
 
-entity tb_cce_findings {
-    id : bigint <<PK>>
+entity tb_cce_finding {
+    cce_finding_id : bigint <<PK>>
     --
     scan_id : bigint <<FK>>
     code : string
@@ -158,8 +163,9 @@ entity tb_cce_findings {
     rationale : string
 }
 
-entity tb_cves {
+entity tb_cve {
     cve_id : string <<PK>>
+    ' 자연키 PK — 명명규칙 예외
     --
     cvss : decimal
     epss : decimal
@@ -169,20 +175,21 @@ entity tb_cves {
 
 entity tb_kev_catalog {
     cve_id : string <<PK>>
+    ' FK-as-PK — 명명규칙 예외(대리키 없음)
     --
     date_added : date
 }
 
-entity tb_cve_affected_packages {
-    id : bigint <<PK>>
+entity tb_cve_affected_package {
+    cve_affected_package_id : bigint <<PK>>
     --
     cve_id : string <<FK>>
     package_name : string
     fixed_version : string
 }
 
-entity tb_feed_connectors {
-    id : bigint <<PK>>
+entity tb_feed_connector {
+    feed_connector_id : bigint <<PK>>
     --
     connector_type : string
     connection_json : json
@@ -192,16 +199,16 @@ entity tb_feed_connectors {
     is_deleted : bool
 }
 
-entity tb_feed_collection_logs {
-    id : bigint <<PK>>
+entity tb_feed_collection_log {
+    feed_collection_log_id : bigint <<PK>>
     --
-    connector_id : bigint <<FK>>
+    feed_connector_id : bigint <<FK>>
     status : string
     items_upserted : int
 }
 
-entity tb_advisories {
-    id : bigint <<PK>>
+entity tb_advisory {
+    advisory_id : bigint <<PK>>
     --
     source : string
     title : string
@@ -211,8 +218,8 @@ entity tb_advisories {
     is_deleted : bool
 }
 
-entity tb_users {
-    id : bigint <<PK>>
+entity tb_user {
+    user_id : bigint <<PK>>
     --
     username : string <<UK>>
     password_hash : string
@@ -220,16 +227,16 @@ entity tb_users {
     is_deleted : bool
 }
 
-entity tb_role_permissions {
-    id : int <<PK>>
+entity tb_role_permission {
+    role_permission_id : int <<PK>>
     --
     role : string
     menu_code : string
     allowed : bool
 }
 
-entity tb_api_tokens {
-    id : bigint <<PK>>
+entity tb_api_token {
+    api_token_id : bigint <<PK>>
     --
     label : string
     token_hash : string <<UK>>
@@ -239,7 +246,7 @@ entity tb_api_tokens {
 }
 
 entity tb_activity_log {
-    id : bigint <<PK>>
+    activity_log_id : bigint <<PK>>
     --
     user_id : bigint
     scope : string
@@ -251,31 +258,31 @@ entity tb_activity_log {
 }
 
 ' ── 관계 ───────────────────────────────────────────────
-tb_hosts ||--o{ tb_scans : "수집 이력"
-tb_scans ||--o{ tb_packages : "설치 패키지"
-tb_scans ||--o{ tb_exposures : "노출 소켓(포트)"
-tb_scans ||--o{ tb_processes : "실행 프로세스"
-tb_scans ||--o{ tb_findings : "매처 판정"
-tb_scans ||--o{ tb_containers : "컨테이너 인벤토리"
-tb_containers ||--o{ tb_packages : "컨테이너 내부 패키지(container_id)"
-tb_scans ||--o{ tb_pkg_changelog_cves : "억제 근거②"
-tb_scans ||--o{ tb_applied_errata : "억제 근거③"
-tb_scans ||--o{ tb_debsecan : "억제 근거④"
-tb_scans ||--o{ tb_stale_libs : "억제 취소 — 재시작 필요"
-tb_scans ||--o{ tb_suppressed_findings : "억제된 건"
-tb_scans ||--o{ tb_cce_findings : "보안설정 점검"
-tb_hosts ||--o{ tb_pkg_changes : "패키지 변화 이력"
-tb_cves ||--o{ tb_cve_affected_packages : "영향 패키지"
-tb_cves ||--o{ tb_findings : "취약점"
-tb_cves ||--o| tb_kev_catalog : "KEV 등재"
-tb_feed_connectors ||--o{ tb_feed_collection_logs : "수집 이력"
-tb_users ||--o{ tb_activity_log : "행위 기록(느슨한 연계)"
-tb_users ||--o{ tb_api_tokens : "발급(Export API)"
+tb_host ||--o{ tb_scan : "수집 이력"
+tb_scan ||--o{ tb_package : "설치 패키지"
+tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
+tb_scan ||--o{ tb_process : "실행 프로세스"
+tb_scan ||--o{ tb_finding : "매처 판정"
+tb_scan ||--o{ tb_container : "컨테이너 인벤토리"
+tb_container ||--o{ tb_package : "컨테이너 내부 패키지(container_id)"
+tb_scan ||--o{ tb_pkg_changelog_cve : "억제 근거②"
+tb_scan ||--o{ tb_applied_errata : "억제 근거③"
+tb_scan ||--o{ tb_debsecan : "억제 근거④"
+tb_scan ||--o{ tb_stale_lib : "억제 취소 — 재시작 필요"
+tb_scan ||--o{ tb_suppressed_finding : "억제된 건"
+tb_scan ||--o{ tb_cce_finding : "보안설정 점검"
+tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
+tb_cve ||--o{ tb_cve_affected_package : "영향 패키지"
+tb_cve ||--o{ tb_finding : "취약점"
+tb_cve ||--o| tb_kev_catalog : "KEV 등재"
+tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
+tb_user ||--o{ tb_activity_log : "행위 기록(느슨한 연계)"
+tb_user ||--o{ tb_api_token : "발급(Export API)"
 
 ' ── FK 없는 테이블 (자연키 애플리케이션 조인) ──────────
-' tb_advisories : CVE 와 느슨한 연계(제목의 CVE best-effort)라 FK 없음.
+' tb_advisory : CVE 와 느슨한 연계(제목의 CVE best-effort)라 FK 없음.
 ' tb_activity_log : user_id 가 NULL 가능(SYSTEM 행위, 예: ingest 수신)이라
 '                   FK 없이 논리적 연계만 유지.
-' tb_role_permissions : 역할(role) 문자열 기준 설정형 RBAC — FK 없음.
+' tb_role_permission : 역할(role) 문자열 기준 설정형 RBAC — FK 없음.
 
 @enduml

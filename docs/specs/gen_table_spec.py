@@ -176,6 +176,44 @@ def apply_sql(sql, tables):
         if re.match(r'ADD\s+(UNIQUE|PRIMARY|KEY|INDEX|CONSTRAINT|FOREIGN)', action, re.I):
             t['keys'].append(action)
 
+    # ── RENAME COLUMN / RENAME TABLE ──
+    # 명명규칙 통일(테이블 단수화 + PK `<단수 테이블명>_id`)이 rename 으로 들어온다.
+    # 이걸 안 따라가면 명세서가 옛 이름으로 조용히 낡는다.
+    for m in re.finditer(r"ALTER\s+TABLE\s+`?(\w+)`?\s+RENAME\s+COLUMN\s+`?(\w+)`?\s+TO\s+`?(\w+)`?",
+                         sql_nc, re.I):
+        rename_col(tables, m.group(1), m.group(2), m.group(3))
+
+    for m in re.finditer(r"RENAME\s+TABLE\s+`?(\w+)`?\s+TO\s+`?(\w+)`?", sql_nc, re.I):
+        rename_table(tables, m.group(1), m.group(2))
+
+def rename_col(tables, tname, old, new):
+    t = tables.get(tname)
+    if not t or any(c.name == new for c in t['cols']):
+        return
+    if not any(c.name == old for c in t['cols']):
+        return
+    for c in t['cols']:
+        if c.name == old:
+            c.name = new
+            break
+    # 키 정의 안의 컬럼 목록도 같이 바꾼다 — 안 그러면 assign_keys 가 PK 를 못 찾아
+    # 명세서의 '키' 칸이 통째로 비어 버린다(괄호 안만 건드려 인덱스 이름은 보존).
+    def sub_cols(m):
+        return '(' + re.sub(r'(?<![\w`])`?' + re.escape(old) + r'`?(?![\w`])',
+                            '`%s`' % new, m.group(1)) + ')'
+    t['keys'] = [re.sub(r'\(([^)]*)\)', sub_cols, k) for k in t['keys']]
+    cm = tables.get('__comments__', {}).get(tname)
+    if cm and old in cm:
+        cm.setdefault(new, cm.pop(old))
+
+def rename_table(tables, old, new):
+    if old not in tables or new in tables:
+        return
+    tables[new] = tables.pop(old)
+    cm = tables.get('__comments__', {})
+    if old in cm and new not in cm:
+        cm[new] = cm.pop(old)
+
 def assign_keys(tables):
     """PK/UNI/MUL 을 컬럼에 표기 (SHOW COLUMNS 의 Key 컬럼 규칙: 인덱스 선두 컬럼만)."""
     for name, t in tables.items():
