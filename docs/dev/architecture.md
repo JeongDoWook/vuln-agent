@@ -74,9 +74,9 @@ exposures(포트) + processes(실행/로드) 를 합쳐 6단계 상태를 판정
 ingest 응답과 취약점 화면에 경고를 띄운다(자체 피드가 따로 필요하다는 뜻).
 
 **재매칭은 결과가 같으면 아무것도 쓰지 않는다.** 피드가 갱신돼도 특정 스캔의 판정 결과는 대부분
-그대로인데, 예전엔 1비트도 안 바뀐 경우까지 `tb_findings`/`tb_suppressed_findings` 를 통째
+그대로인데, 예전엔 1비트도 안 바뀐 경우까지 `tb_finding`/`tb_suppressed_finding` 를 통째
 삭제·재삽입해 **binlog 가 하루 20GB 넘게** 쌓였다(운영 실측: 디스크 105G 중 76G). 지금은
-`vg_match_scan()` 이 판정을 전부 메모리에서 끝낸 뒤 결과 지문(sha1)을 `tb_scans.match_fingerprint`
+`vg_match_scan()` 이 판정을 전부 메모리에서 끝낸 뒤 결과 지문(sha1)을 `tb_scan.match_fingerprint`
 와 비교해, 같으면 트랜잭션조차 열지 않고 카운트만 돌려준다. 다르면 예전과 똑같이 통째 재작성하고
 같은 트랜잭션 안에서 지문을 갱신한다(행 단위 diff 로 하지 않는다 — 비교 컬럼을 하나 빠뜨리면
 stale 값이 영구히 남는다).
