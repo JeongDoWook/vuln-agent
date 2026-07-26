@@ -18,6 +18,7 @@ vg_require_menu('findings');
 
 $err = null; $msg = null; $host = null; $scan = null; $scanAge = null;
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
+$missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단계(한글 라벨)
 
 // 재시작·재부팅 표에 보여줄 최대 건수. 나머지는 취약점 현황(fx=restart)으로 넘긴다.
 
@@ -321,6 +322,18 @@ try {
             }
         }
 
+        // 수집 단계 누락 — 배포판도 알고 이미지도 멀쩡한데 **에이전트가 그 항목을 아예 못 걷은** 경우.
+        //   MISSING 만 모은다. EMPTY 는 "정상적으로 없음"(컨테이너를 안 쓰는 호스트, 언어 패키지가
+        //   없는 호스트)이라 같이 경고하면 정상 호스트마다 경고가 떠서 아무도 안 보게 된다.
+        //   item_count 는 안 읽는다 — MISSING 은 정의상 0건이라(ingest.php 생산자) 볼 값이 없다.
+        $st = $pdo->prepare("SELECT stage_code FROM tb_collection_stage
+                              WHERE scan_id = ? AND status = 'MISSING' ORDER BY stage_code");
+        $st->execute([$sid]);
+        foreach ($st->fetchAll() as $r) {
+            $code = (string) $r['stage_code'];
+            $missingStages[] = VG_COLLECTION_STAGE_LABEL[$code] ?? $code;   // 모르는 코드는 원문 그대로
+        }
+
         // --- 히어로/KPI 집계 (탭과 무관한 값싼 COUNT) ---
         $st = $pdo->prepare('SELECT severity, COUNT(*) c FROM tb_finding WHERE scan_id = ? GROUP BY severity');
         $st->execute([$sid]);
@@ -474,6 +487,21 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
               ],
               $unsup
           ),
+      ]);
+  }
+
+  // 위 경고와 같은 주제("0건 = 안전"이 아닐 수 있다)의 세 번째 축.
+  //   배포판·이미지 문제가 아니라 **에이전트가 그 항목을 못 걷은** 경우다 — 지금까진 침묵했다.
+  if ($missingStages) {
+      $stageHints = [
+          '해당 항목의 0건은 "없음"이 아니라 "수집 실패"입니다.',
+          '에이전트 실행 권한·환경을 확인한 뒤 다시 수집하세요.',
+      ];
+      foreach ($missingStages as $s) { $stageHints[] = '수집 실패 — ' . $s; }
+      vg_alert([
+          'type'  => 'warn',
+          'title' => '이 스캔은 일부 항목을 수집하지 못했습니다',
+          'hints' => $stageHints,
       ]);
   }
   ?>

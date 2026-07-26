@@ -421,6 +421,24 @@ assert_contains "$body" "재시작 필요" "재시작 필요 근거 노출(패�
 # 커널은 패치가 설치돼도 재부팅 전까지 옛 커널이 돈다 → 억제하지 않고 "재부팅"을 조치로 제시한다.
 assert_contains "$body" "재부팅 필요" "커널 재부팅 필요 뱃지(설치 -503 / 실행 -427)"
 assert_contains "$body" "재부팅</span>" "조치가 '재부팅' (프로세스 재시작으로는 안 고쳐진다)"
+# 수집 단계 누락 — tb_collection_stage 는 스캔마다 5단계를 COMPLETE/EMPTY/MISSING 으로 남긴다.
+#   MISSING("있어야 하는데 못 걷음")만 경고한다. EMPTY("정상적으로 없음")까지 경고하면 정상 호스트마다
+#   경고가 떠서 아무도 안 보게 된다 — 위 CCE NA 와 같은 함정이라 두 방향을 다 고정한다.
+#   web01 샘플은 5단계 전부 COMPLETE, web02(데비안) 샘플은 runtime_processes 만 MISSING 이고
+#   컨테이너·언어 패키지·네트워크 노출은 EMPTY 다 — 샘플만으로 양쪽이 성립한다(새 수집 불필요).
+if grep -q '수집하지 못했습니다' <<<"$body"; then
+  no "전 단계 COMPLETE 인 호스트(web01)에 수집 실패 경고 — 오경고"
+else
+  ok "전 단계 COMPLETE 면 수집 실패 경고 없음(web01)"
+fi
+stagebody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB02_ID")
+assert_contains "$stagebody" "수집하지 못했습니다" "수집 못한 단계(MISSING)를 호스트 상세에 경고"
+assert_contains "$stagebody" "수집 실패 — 실행 프로세스" "누락 단계를 한글 라벨로 지목"
+if grep -q '수집 실패 — 컨테이너' <<<"$stagebody"; then
+  no "EMPTY(컨테이너 없음)까지 수집 실패로 경고 — 정상을 실패로 표시"
+else
+  ok "EMPTY 단계(컨테이너·언어 패키지)는 경고하지 않음"
+fi
 body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=runtime")
 assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(노출·프로세스)"
 # 컨테이너의 프로세스·포트는 호스트 것과 섞이면 안 된다 — 어느 쪽인지 표에 드러나야 한다.
