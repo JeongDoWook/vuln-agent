@@ -65,7 +65,7 @@ const VG_CVE_VENDOR_SRC = [
     ],
     'kcve' => [
         'label' => '리눅스 커널 CNA(kernel.org)',
-        'from'  => 'tb_kernel_cve_fixes f JOIN tb_kernel_cves k ON k.cve_id = f.cve_id',
+        'from'  => 'tb_kernel_cve_fix f JOIN tb_kernel_cve k ON k.cve_id = f.cve_id',
         'cve'   => 'f.cve_id',
         'soft'  => false,   // 커널 두 테이블엔 소프트삭제 컬럼이 없다(vendor.php 와 같은 확인 사항).
         'cols'  => "'kcve' AS src, 'kernel' AS vendor, f.stream AS rel, 'linux' AS pkg,"
@@ -89,7 +89,7 @@ try {
         $cveId = strtoupper($raw);
         $pdo = vg_pdo();
 
-        $stmt = $pdo->prepare('SELECT * FROM tb_cves WHERE cve_id = ?');
+        $stmt = $pdo->prepare('SELECT * FROM tb_cve WHERE cve_id = ?');
         $stmt->execute([$cveId]);
         $cve = $stmt->fetch() ?: null;
 
@@ -122,13 +122,13 @@ try {
         $stmt->execute($vParams);
         $vendorRows = $stmt->fetchAll();
 
-        $stmt = $pdo->prepare('SELECT COUNT(*) FROM tb_cve_affected_packages WHERE cve_id = ?');
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM tb_cve_affected_package WHERE cve_id = ?');
         $stmt->execute([$cveId]);
         $affectedTotal = (int) $stmt->fetchColumn();
 
         $aOffset = ($aPage - 1) * $aPerPage;
         $stmt = $pdo->prepare(
-            "SELECT ecosystem, package_name, fixed_version FROM tb_cve_affected_packages WHERE cve_id = ?
+            "SELECT ecosystem, package_name, fixed_version FROM tb_cve_affected_package WHERE cve_id = ?
              ORDER BY ecosystem, package_name LIMIT $aPerPage OFFSET $aOffset"
         );
         $stmt->execute([$cveId]);
@@ -138,12 +138,12 @@ try {
         //   한 자산에서 여러 건이 나온다: 같은 CVE 가 여러 패키지에 걸리고(curl·libcurl4t64 처럼
         //   같은 소스의 바이너리들), 컨테이너 안에서도 따로 잡힌다.
         $locSql =
-            "FROM tb_findings f
-             JOIN tb_scans s ON s.id = f.scan_id
-             JOIN tb_hosts h ON h.id = s.host_id
-             LEFT JOIN tb_containers c ON c.id = f.container_id
+            "FROM tb_finding f
+             JOIN tb_scan s ON s.scan_id = f.scan_id
+             JOIN tb_host h ON h.host_id = s.host_id
+             LEFT JOIN tb_container c ON c.container_id = f.container_id
              JOIN " . vg_latest_scan_subq() . " latest
-               ON latest.host_id = s.host_id AND latest.mid = s.id
+               ON latest.host_id = s.host_id AND latest.mid = s.scan_id
              WHERE f.cve_id = ?";
         $stmt = $pdo->prepare("SELECT COUNT(*) $locSql");
         $stmt->execute([$cveId]);
@@ -152,13 +152,13 @@ try {
         // **영향 자산은 발견 건수가 아니라 호스트 수다.** COUNT(*) 를 "N대"로 찍으면
         //   서버 1대인데 "4대"가 된다(패키지 2종 × CVE 2건 = 4행이었을 뿐 — 실측).
         //   위험 범위를 부풀려 보여주는 셈이라, 중복 없는 호스트로 센다.
-        $stmt = $pdo->prepare("SELECT COUNT(DISTINCT h.id) $locSql");
+        $stmt = $pdo->prepare("SELECT COUNT(DISTINCT h.host_id) $locSql");
         $stmt->execute([$cveId]);
         $assetTotal = (int) $stmt->fetchColumn();
 
         $offset = ($page - 1) * $perPage;
         $stmt = $pdo->prepare(
-            "SELECT h.id AS host_id, h.fqdn, IFNULL(c.cid, '') AS ctr,
+            "SELECT h.host_id, h.fqdn, IFNULL(c.cid, '') AS ctr,
                     f.severity, f.runtime_status, f.package_name, f.installed_version, s.collected_at
              $locSql
              ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), h.fqdn, c.cid
@@ -180,7 +180,7 @@ if ($err !== null) {
     return;
 }
 
-// 등급은 CVSS 점수에서 파생한다 — tb_cves 엔 등급 컬럼이 없다(cves.php 목록과 같은 구간).
+// 등급은 CVSS 점수에서 파생한다 — tb_cve 엔 등급 컬럼이 없다(cves.php 목록과 같은 구간).
 $cvss    = $cve['cvss'] ?? null;
 $sevName = vg_cvss_sev($cvss === null ? null : (string) $cvss);
 $sevUp   = $sevName !== '' ? strtoupper($sevName) : null;

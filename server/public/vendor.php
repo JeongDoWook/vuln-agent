@@ -88,7 +88,7 @@ const VG_VENDOR_SRC = [
         'label' => '리눅스 커널 CNA(kernel.org)',
         'desc'  => '이 커널 버전에 수정본이 들어 있나',
         // stream 별 수정 버전은 fixes 에, 메인라인 축(도입·수정)은 cves 에 있다 → JOIN 해야 한 줄이 된다.
-        'from'  => 'tb_kernel_cve_fixes f JOIN tb_kernel_cves k ON k.cve_id = f.cve_id',
+        'from'  => 'tb_kernel_cve_fix f JOIN tb_kernel_cve k ON k.cve_id = f.cve_id',
         'cve'   => 'f.cve_id',
         'rel'   => 'f.stream',
         'pkg'   => "'linux'",
@@ -180,7 +180,7 @@ try {
           UNION SELECT DISTINCT release_major FROM tb_vendor_errata
           UNION SELECT DISTINCT release_major FROM tb_vendor_unfixed
           UNION SELECT DISTINCT release_codename FROM tb_ubuntu_oval
-          UNION SELECT DISTINCT stream FROM tb_kernel_cve_fixes
+          UNION SELECT DISTINCT stream FROM tb_kernel_cve_fix
           ORDER BY rel"
     )->fetchAll(PDO::FETCH_COLUMN);
     $relOptions = array_combine($relOptions, $relOptions) ?: [];

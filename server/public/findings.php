@@ -41,9 +41,9 @@ try {
 
     // 호스트별 최신 스캔 (삭제된 호스트 제외) — 통합 뷰의 대상 스캔 집합.
     $hosts = $pdo->query(
-        'SELECT h.id AS host_id, h.fqdn, h.os_id, h.os_version, t.mid AS scan_id
-           FROM tb_hosts h
-           JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.id
+        'SELECT h.host_id, h.fqdn, h.os_id, h.os_version, t.mid AS scan_id
+           FROM tb_host h
+           JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.host_id
           WHERE h.is_deleted = 0
           ORDER BY h.last_seen DESC, h.fqdn'
     )->fetchAll();
@@ -63,10 +63,10 @@ try {
     //   rhel 로 잡혀 "미지원 배포판" 경고에도 안 걸린 채 조용히 0건으로 지나갔다(운영 실측 9개).
     $ctrs = $pdo->query(
         'SELECT h.fqdn, c.cid, c.os_id, c.os_version, c.manager, c.pkg_count
-           FROM tb_containers c
-           JOIN tb_scans s ON s.id = c.scan_id
-           JOIN tb_hosts h ON h.id = s.host_id
-           JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.id
+           FROM tb_container c
+           JOIN tb_scan s ON s.scan_id = c.scan_id
+           JOIN tb_host h ON h.host_id = s.host_id
+           JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.scan_id
           WHERE h.is_deleted = 0
           ORDER BY h.fqdn, c.cid'
     )->fetchAll();
@@ -83,11 +83,11 @@ try {
     if ($scanId > 0) {
         // 단일 스캔 모드 — 어느 호스트의 어느 시점인지 부제에 명시해야 한다.
         $stmt = $pdo->prepare(
-            'SELECT s.id, s.collected_at, h.fqdn FROM tb_scans s JOIN tb_hosts h ON h.id = s.host_id WHERE s.id = ?'
+            'SELECT s.scan_id, s.collected_at, h.fqdn FROM tb_scan s JOIN tb_host h ON h.host_id = s.host_id WHERE s.scan_id = ?'
         );
         $stmt->execute([$scanId]);
         $scan = $stmt->fetch() ?: null;
-        if ($scan) { $scanIds = [(int) $scan['id']]; }
+        if ($scan) { $scanIds = [(int) $scan['scan_id']]; }
     } else {
         if ($hostId > 0 && !$hostFound) { $hostId = 0; }   // 없는 호스트면 전체로
         foreach ($hosts as $h) {
@@ -99,7 +99,7 @@ try {
         $in = implode(',', array_fill(0, count($scanIds), '?'));
 
         // KPI 는 필터 무관 — 대상 스캔 전체 기준
-        $stmt = $pdo->prepare("SELECT severity, COUNT(*) c FROM tb_findings WHERE scan_id IN ($in) GROUP BY severity");
+        $stmt = $pdo->prepare("SELECT severity, COUNT(*) c FROM tb_finding WHERE scan_id IN ($in) GROUP BY severity");
         $stmt->execute($scanIds);
         foreach ($stmt->fetchAll() as $r) { if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; } }
 
@@ -127,23 +127,23 @@ try {
         // 재시작·재부팅만 하면 되는 것 — 자산 상세의 "전체 보기" 가 여기로 온다.
         if ($fx === 'restart') { $where .= ' AND f.needs_restart = 1'; }
 
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_findings f WHERE $where");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_finding f WHERE $where");
         $stmt->execute($params);
         $total = (int) $stmt->fetchColumn();
 
         $offset = ($page - 1) * $perPage;
 
         $stmt = $pdo->prepare(
-            "SELECT f.*, h.id AS host_id, h.fqdn, c.summary, c.epss, c.epss_percentile, c.ref_urls_json,
+            "SELECT f.*, h.host_id, h.fqdn, c.summary, c.epss, c.epss_percentile, c.ref_urls_json,
                     ctr.cid AS container_cid, ctr.image AS container_image,
                     fe.match_source, fe.fixed_version AS evidence_fixed_version,
                 " . VG_FIXED_VERSION_SUBQ . "
-             FROM tb_findings f
-             JOIN tb_scans s ON s.id = f.scan_id
-             JOIN tb_hosts h ON h.id = s.host_id
-             LEFT JOIN tb_containers ctr ON ctr.id = f.container_id
-             LEFT JOIN tb_cves c ON c.cve_id = f.cve_id
-             LEFT JOIN tb_finding_evidence fe ON fe.finding_id = f.id
+             FROM tb_finding f
+             JOIN tb_scan s ON s.scan_id = f.scan_id
+             JOIN tb_host h ON h.host_id = s.host_id
+             LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id
+             LEFT JOIN tb_cve c ON c.cve_id = f.cve_id
+             LEFT JOIN tb_finding_evidence fe ON fe.finding_id = f.finding_id
              WHERE $where
              ORDER BY f.no_fix ASC, FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC, h.fqdn
              LIMIT $perPage OFFSET $offset"
@@ -161,7 +161,7 @@ vg_header('취약점', 'findings');
   <div class="page-title page-title--stack"><div><span class="page-title__eyebrow">PRIORITIZED FINDINGS</span><h1>취약점 우선순위 <span class="hint">(매처 결과)</span></h1>
   <div class="sub">
     <?php if ($scan): ?>
-      호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['id'] ?> · <?= vg_h($scan['collected_at']) ?>
+      호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['scan_id'] ?> · <?= vg_h($scan['collected_at']) ?>
       · <a href="/findings.php">전체 호스트 보기 →</a>
     <?php elseif ($scanId > 0): ?>
       스캔 #<?= $scanId ?> 을(를) 찾을 수 없습니다. · <a href="/findings.php">전체 호스트 보기 →</a>
@@ -207,7 +207,7 @@ vg_header('취약점', 'findings');
   <?php
   // 단일 스캔 모드에선 scan_id 를 유지하고, 통합 모드에선 호스트 선택 드롭다운을 준다.
   $toolbar = $scan
-      ? [['type' => 'hidden', 'name' => 'scan_id', 'value' => (string) $scan['id']]]
+      ? [['type' => 'hidden', 'name' => 'scan_id', 'value' => (string) $scan['scan_id']]]
       : [['type' => 'select', 'name' => 'host', 'empty_label' => '전체 호스트',
           'selected' => $hostId > 0 ? (string) $hostId : '', 'options' => $hostOptions]];
   vg_toolbar(array_merge($toolbar, [

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * packages.php — 영향 패키지 목록. OSV 커넥터의 산출물(tb_cve_affected_packages)을
+ * packages.php — 영향 패키지 목록. OSV 커넥터의 산출물(tb_cve_affected_package)을
  *   "패키지 × 배포판" 단위로 접어서 보여준다. 로그인 필요(취약점 메뉴 권한 재사용).
  *
  *   CVE 목록(cves.php)은 행이 CVE 하나지만 여기는 패키지 하나다. 같은 테이블에 못 담아
@@ -34,7 +34,7 @@ try {
     $pdo = vg_pdo();
 
     // 배포판 목록·개수·정렬은 사전집계 요약(tb_package_summary)에서 읽는다. 원본
-    //   tb_cve_affected_packages(92만 행)를 매 로드 재집계하던 걸(운영 ~8초) OSV 실행 때 한 번
+    //   tb_cve_affected_package(92만 행)를 매 로드 재집계하던 걸(운영 ~8초) OSV 실행 때 한 번
     //   요약해 둔 것(vg_rebuild_package_summary). 40K행이라 즉답이다.
     $ecos = $pdo->query(
         "SELECT DISTINCT ecosystem FROM tb_package_summary WHERE ecosystem <> '' ORDER BY ecosystem"
