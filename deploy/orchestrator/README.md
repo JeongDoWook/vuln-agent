@@ -279,6 +279,63 @@ sleep 은 느린 PC 에서 또 깨진다). 그래서 데몬이 브로드캐스�
   `"1"` → `""` 로 바꿔 고쳤다고 판단했다가 안 고쳐진 이력이 있다. 이미 있으면 **값을 비우지 말고
   키를 삭제**한다. 일회성으로 색을 끄려면 그 명령에만 `NO_COLOR=1 <명령>` 으로 준다.
 
+## 함정 — 왜 스폰이 "성공했는데 실패"로 보고됐나 (PS 5.1 stderr 승격)
+
+Windows PowerShell 5.1 은 네이티브 exe 가 **stderr 에 쓴 줄을 ErrorRecord(`NativeCommandError`)로
+승격**한다. 스크립트가 `$ErrorActionPreference = 'Stop'` 이면 그게 **종료 오류**가 되어,
+**종료코드가 0 이어도** 그 자리에서 throw 된다.
+
+`wt.sh` 는 진행 상황을 stderr 로 쓴다(`git worktree add` 의 `Preparing worktree …`). 그래서
+`spawn-worker.ps1` 은 워크트리를 **정상 생성해 놓고도** 바로 다음 줄의 `if ($LASTEXITCODE -ne 0)`
+검사에 닿기 전에 죽었다 — 사람이 매번 두 번 실행해야 했고, `spawn-batch.ps1` 로 3개를 띄우면
+3개 전부 "실패"로 찍혔다(2026-07-26 실측, 5회 이상).
+
+승격의 방아쇠는 **PowerShell 이 그 stderr 를 가로채는 상황**이다: `2>$null`·`2>&1` 리다이렉트가
+걸려 있거나 호출자가 스트림을 합쳐 받을 때. 맨 콘솔에서 리다이렉트 없이 부르면 승격되지 않아
+**재현이 안 되는 것처럼 보인다** — 재현하려면 리다이렉트를 걸어라:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+& bash -c 'echo x 1>&2; exit 0' 2>$null      # → THROW (FQID=NativeCommandError)
+.\spawn-worker.ps1 -Task probe -DryRun 2>&1  # → 고치기 전엔 여기서 THROW
+```
+
+대응(이 저장소 공통 패턴): 네이티브 호출 **구간에만** EAP 를 낮추고 `finally` 로 원복한다.
+`spawn-worker.ps1` 의 `Invoke-Native`, `merge-milestone.ps1`/`reap-merged.ps1` 의 `Invoke-Gh`.
+
+- **`2>&1` 로 덮지 마라** — stderr 가 stdout 에 섞여 출력을 읽는 쪽이 깨지고, 근본도 안 고쳐진다.
+- **종료코드 검사(`$LASTEXITCODE`)는 반드시 남겨라.** stderr 를 무시하는 것과 종료코드를 무시하는
+  것은 다르다 — 진짜 실패(브랜치 충돌 등)는 여전히 throw 돼야 한다. `$LASTEXITCODE` 는 전역이라
+  래퍼 함수를 거쳐도 값이 그대로 남는다.
+- 부작용 하나: 가로채인 상황에선 stderr 텍스트가 화면에서 사라진다(승격된 레코드를 삼키므로).
+  `wt.sh` 가 알려주는 정보(할당된 WEB_PORT 등)는 전부 stdout 이라 그대로 보인다.
+
+## 함정 — 워커 전사(transcript)가 저장되지 않던 이유
+
+부모(중앙) 세션의 환경엔 `CLAUDE_CODE_CHILD_SESSION=1` 이 들어 있고, 워커가 그걸 **상속**한다
+(`spawn-worker.ps1` 이 세우는 값이 아니다). claude 는 그 마커를 보면 세션을 저장하지 않고 탭
+하단에 경고를 띄운다:
+
+```
+⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker
+  · restart with CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 to keep future transcripts
+```
+
+그러면 워커가 무엇을 했는지 되짚을 기록도 `--resume` 도 없다. 결과 파일이 비었을 때 특히 아프다.
+그래서 런치 바디(`NO_COLOR` 를 지우는 그 자리)에서 `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1` 을
+세운다 — 부모 환경 오염을 워커 진입점에서 끊는 것으로, `NO_COLOR` 와 같은 이유·같은 자리다.
+
+- 이름·값은 추측이 아니다: 화면 폭에 잘려 불확실했던 변수명을 **실행 중인 claude 2.1.220
+  바이너리의 판정 로직**으로 확인했다 —
+  `if (env.CLAUDE_CODE_FORCE_SESSION_PERSISTENCE) return false;`(false = 억제 안 함) 가
+  `CLAUDE_CODE_CHILD_SESSION` 검사보다 **먼저** 나온다.
+- **상속 마커를 지우는 쪽(`Remove-Item Env:CLAUDE_CODE_CHILD_SESSION`)은 고르지 않았다.** 그
+  마커는 전사 말고 다른 판정에도 쓰여(팀/서브에이전트 감지) 부작용 범위를 알 수 없다. 이 변수는
+  전사 억제 하나만 끈다.
+- 확인법: 워커 워크트리 경로로 만들어지는
+  `~/.claude/projects/<경로슬러그>/<세션id>.jsonl` 이 생기는지 본다. 고치기 전에 스폰된 워커는
+  그 디렉터리 **자체가 없다**(2026-07-26 A/B 실측).
+
 ## 자동 이어받기 & 최적화
 
 claude-pipeline 은 cmux `read-screen` 으로 **다른 세션 화면을 훔쳐봐** 완료를 감지한다

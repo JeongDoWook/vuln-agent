@@ -40,7 +40,15 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # ── 메인 트리 루트 (spawn-worker.ps1 과 동일 규칙) ────────────────────────────
-$gitCommon = (& git -C $PSScriptRoot rev-parse --git-common-dir 2>$null)
+# PS 5.1 은 네이티브 exe 의 stderr 를 ErrorRecord 로 승격하고, EAP=Stop 이면 그게 종료 오류가 된다
+#   — `2>$null` 리다이렉트가 바로 그 승격의 방아쇠다(실측). 저장소 밖에서 실행하면 git 이
+#   'fatal: not a git repository' 를 stderr 로 쓰므로, 아래 friendly throw 대신 NativeCommandError
+#   로 죽는다. 네이티브 호출 구간에만 EAP 를 낮추고 finally 로 원복한다(spawn-worker.ps1 의
+#   Invoke-Native, merge-milestone.ps1/reap-merged.ps1 의 Invoke-Gh 와 같은 대응). 이 파일엔
+#   네이티브 호출이 이 하나뿐이라 함수로 빼지 않고 인라인으로 둔다.
+$prev = $ErrorActionPreference
+try { $ErrorActionPreference = 'SilentlyContinue'; $gitCommon = (& git -C $PSScriptRoot rev-parse --git-common-dir 2>$null) }
+finally { $ErrorActionPreference = $prev }
 if (-not $gitCommon) { throw '스크립트가 git 저장소 안에 있지 않습니다.' }
 if (-not [System.IO.Path]::IsPathRooted($gitCommon)) { $gitCommon = Join-Path $PSScriptRoot $gitCommon }
 $MainRoot = Split-Path (Resolve-Path $gitCommon).Path -Parent
