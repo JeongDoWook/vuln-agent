@@ -22,7 +22,7 @@ function vg_merge_cve_ids(?string $a, ?string $b): ?string {
 }
 
 /**
- * tb_advisories.cve_ids(CSV, 정본)를 tb_advisory_cves 정션에 동기화한다(멱등).
+ * tb_advisory.cve_ids(CSV, 정본)를 tb_advisory_cve 정션에 동기화한다(멱등).
  *   $cveIds 는 이미 검증된 배열(vg_extract_cve_ids 출력)이어야 한다.
  *   신규는 INSERT..ON DUPLICATE KEY 로 되살리고(과거 soft-delete 복구),
  *   목록에서 빠진 건 soft-delete 한다 — rebuild_advisory_cveids.php 가 오탈자를
@@ -31,7 +31,7 @@ function vg_merge_cve_ids(?string $a, ?string $b): ?string {
 function vg_sync_advisory_cves(PDO $pdo, int $advisoryId, array $cveIds): void {
     if ($cveIds) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_advisory_cves (advisory_id, cve_id) VALUES (?,?)
+            'INSERT INTO tb_advisory_cve (advisory_id, cve_id) VALUES (?,?)
              ON DUPLICATE KEY UPDATE is_deleted = 0, deleted_at = NULL'
         );
         foreach ($cveIds as $cve) {
@@ -39,7 +39,7 @@ function vg_sync_advisory_cves(PDO $pdo, int $advisoryId, array $cveIds): void {
         }
     }
     $placeholders = $cveIds ? implode(',', array_fill(0, count($cveIds), '?')) : '';
-    $sql = 'UPDATE tb_advisory_cves SET is_deleted = 1, deleted_at = NOW()
+    $sql = 'UPDATE tb_advisory_cve SET is_deleted = 1, deleted_at = NOW()
              WHERE advisory_id = ? AND is_deleted = 0'
          . ($placeholders !== '' ? " AND cve_id NOT IN ($placeholders)" : '');
     $pdo->prepare($sql)->execute($cveIds ? array_merge([$advisoryId], $cveIds) : [$advisoryId]);
@@ -57,7 +57,7 @@ function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url
     $url   = vg_kisa_canon_url($url);
     $title = html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $title = mb_substr(trim(preg_replace('/\s+/u', ' ', $title)), 0, 500);
-    $chk = $pdo->prepare('SELECT id, title, published, cve_ids FROM tb_advisories WHERE url = ? LIMIT 1');
+    $chk = $pdo->prepare('SELECT advisory_id, title, published, cve_ids FROM tb_advisory WHERE url = ? LIMIT 1');
     $chk->execute([$url]);
     $cur = $chk->fetch(PDO::FETCH_ASSOC);
     if ($cur) {
@@ -68,7 +68,7 @@ function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url
         //   실제로 백필 재실행이 공지 1,742건의 cve_ids 를 지웠다.
         //   전량 재계산(축소 포함)은 bin/rebuild_advisory_cveids.php 가 직접 UPDATE 로 한다.
         $cveIds = vg_merge_cve_ids($cur['cve_ids'] ?? null, $cveIds);
-        $id = (int) $cur['id'];
+        $id = (int) $cur['advisory_id'];
         // junction 은 cve_ids 가 실제로 바뀌었는지와 무관하게 항상 최신 CSV 를 반영한다
         // (제목/발행일만 바뀐 경우에도 junction 이 CSV 와 어긋나지 않게).
         vg_sync_advisory_cves($pdo, $id, vg_extract_cve_ids((string) $cveIds));
@@ -78,11 +78,11 @@ function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url
         if ($same) {
             return 'unchanged';
         }
-        $pdo->prepare('UPDATE tb_advisories SET title=?, published=?, cve_ids=? WHERE id=?')
+        $pdo->prepare('UPDATE tb_advisory SET title=?, published=?, cve_ids=? WHERE advisory_id=?')
             ->execute([$title, $published, $cveIds, $id]);
         return 'updated';
     }
-    $pdo->prepare('INSERT INTO tb_advisories (source, title, url, published, cve_ids) VALUES (?,?,?,?,?)')
+    $pdo->prepare('INSERT INTO tb_advisory (source, title, url, published, cve_ids) VALUES (?,?,?,?,?)')
         ->execute([$source, $title, $url, $published, $cveIds]);
     vg_sync_advisory_cves($pdo, (int) $pdo->lastInsertId(), vg_extract_cve_ids((string) $cveIds));
     return 'new';
@@ -97,7 +97,7 @@ function vg_upsert_advisory(PDO $pdo, string $source, string $title, string $url
  */
 function vg_advisory_fill_content(PDO $pdo, string $url): bool {
     $url = vg_kisa_canon_url($url);
-    $st = $pdo->prepare('SELECT id, cve_ids, content_fetched_at FROM tb_advisories WHERE url = ? AND is_deleted = 0 LIMIT 1');
+    $st = $pdo->prepare('SELECT advisory_id, cve_ids, content_fetched_at FROM tb_advisory WHERE url = ? AND is_deleted = 0 LIMIT 1');
     $st->execute([$url]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
     // "이미 시도했는가"는 content 가 아니라 content_fetched_at 이 판단한다. 본문 텍스트가
@@ -106,7 +106,7 @@ function vg_advisory_fill_content(PDO $pdo, string $url): bool {
         return false;
     }
 
-    $id = (int) $row['id'];
+    $id = (int) $row['advisory_id'];
 
     // HTTP 실패는 일시적일 수 있다 → 표시를 남기지 않고 예외. 다음 수집 때 재시도한다.
     $r = vg_http_raw('GET', $url, [], 30);
@@ -120,12 +120,12 @@ function vg_advisory_fill_content(PDO $pdo, string $url): bool {
         //   - 보안공지 일부: content_html 안이 이미지뿐이라 추출 텍스트가 &nbsp; 한 글자
         //   - 경보단계: 게시글 본문 영역 자체가 없고 제목이 내용의 전부
         // 다시 긁어도 결과가 같으므로 시도 시각만 남겨 무한 재시도를 막는다.
-        $pdo->prepare("UPDATE tb_advisories SET content='', content_fetched_at=NOW() WHERE id=?")
+        $pdo->prepare("UPDATE tb_advisory SET content='', content_fetched_at=NOW() WHERE advisory_id=?")
             ->execute([$id]);
         return false;
     }
 
-    $pdo->prepare('UPDATE tb_advisories SET content=?, content_fetched_at=NOW() WHERE id=?')
+    $pdo->prepare('UPDATE tb_advisory SET content=?, content_fetched_at=NOW() WHERE advisory_id=?')
         ->execute([$text, $id]);
 
     $found = vg_extract_cve_ids($text);
@@ -139,7 +139,7 @@ function vg_advisory_fill_content(PDO $pdo, string $url): bool {
         // 컬럼은 TEXT 로 넓혀 두었다(db/06-advisories.sql).
         $joined = implode(',', $merged);
         if ($joined !== (string) $row['cve_ids']) {
-            $pdo->prepare('UPDATE tb_advisories SET cve_ids=? WHERE id=?')->execute([$joined, $id]);
+            $pdo->prepare('UPDATE tb_advisory SET cve_ids=? WHERE advisory_id=?')->execute([$joined, $id]);
         }
         vg_sync_advisory_cves($pdo, $id, $merged);
         foreach ($merged as $cve) {

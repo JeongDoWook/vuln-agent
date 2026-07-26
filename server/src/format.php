@@ -177,7 +177,7 @@ function vg_status_badge(?string $s): string {
     return vg_badge(vg_status_label($s), $tone[$s ?? ''] ?? 'muted');
 }
 
-// 노출 범위(tb_exposures.scope: EXTERNAL/LAN/BOUND/FILTERED/LOCAL).
+// 노출 범위(tb_exposure.scope: EXTERNAL/LAN/BOUND/FILTERED/LOCAL).
 //   문구는 matcher.php vg_classify()/agent 판정 주석과 통일(같은 값을 두 곳에서 다르게 부르지 않게).
 //   톤(색) 매핑은 host.php 의 $scopeTone 이 계속 갖는다 — 여기는 라벨 텍스트만.
 function vg_scope_label(?string $s): string {
@@ -284,7 +284,7 @@ function vg_is_safe_http_url(?string $url): bool {
 }
 
 /**
- * tb_cves.ref_urls_json(첫 항목)에서 url·tags 를 꺼낸다. findings.php/host.php 는 대표 링크
+ * tb_cve.ref_urls_json(첫 항목)에서 url·tags 를 꺼낸다. findings.php/host.php 는 대표 링크
  * 1개만 보여주면 되므로(전체 표는 cve.php 개요 탭) 파싱 실패·빈 배열·안전하지 않은 스킴이면 null.
  * tags 를 함께 돌려주는 건 호출부가 "이게 실제로 패치 링크인지"를 판단해야 하기 때문 —
  * vg_nvd_extract_ref_urls 의 정렬은 Patch/Vendor Advisory 가 있을 때만 앞으로 올리므로,
