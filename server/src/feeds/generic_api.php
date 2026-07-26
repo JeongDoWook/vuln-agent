@@ -170,7 +170,7 @@ function vg_generic_upsert_priority(PDO $pdo, array $m): bool {
     if (array_key_exists('epss', $m) || array_key_exists('epss_percentile', $m)) {
         $epss = (isset($m['epss']) && $m['epss'] !== null && $m['epss'] !== '') ? (float) $m['epss'] : null;
         $pct  = (isset($m['epss_percentile']) && $m['epss_percentile'] !== null && $m['epss_percentile'] !== '') ? (float) $m['epss_percentile'] : null;
-        $pdo->prepare('UPDATE tb_cves SET epss = COALESCE(?, epss), epss_percentile = COALESCE(?, epss_percentile) WHERE cve_id = ?')
+        $pdo->prepare('UPDATE tb_cve SET epss = COALESCE(?, epss), epss_percentile = COALESCE(?, epss_percentile) WHERE cve_id = ?')
             ->execute([$epss, $pct, $cve]);
         $touched = true;
     }

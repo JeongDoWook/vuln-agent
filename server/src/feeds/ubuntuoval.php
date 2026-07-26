@@ -190,10 +190,10 @@ function vg_ubuntu_oval_releases(PDO $pdo, array $conn): array {
     if ($cfg) { return $cfg; }
 
     $rows = $pdo->query(
-        "SELECT DISTINCT os_version FROM tb_scans
+        "SELECT DISTINCT os_version FROM tb_scan
           WHERE LOWER(os_id) = 'ubuntu' AND os_version IS NOT NULL AND is_deleted = 0
          UNION
-         SELECT DISTINCT os_version FROM tb_containers
+         SELECT DISTINCT os_version FROM tb_container
           WHERE LOWER(os_id) = 'ubuntu' AND os_version IS NOT NULL"
     )->fetchAll(PDO::FETCH_COLUMN);
 
@@ -278,7 +278,7 @@ final class VgUbuntuOvalConnector implements VgFeedConnector {
                     //   실측: dev 에서 ubuntu:24.04 를 판정했더니 findings 0 이었다(Trivy 는 34건).
                     //   OSV 의 우분투 수록이 우리 커버리지의 상한이 되는 구조였다 — 벤더 데이터가
                     //   "어느 패키지가 영향받나" 의 정본인데 그걸 억제에만 쓰고 후보엔 안 썼다.
-                    //   그래서 카탈로그(tb_cves + tb_cve_affected_packages)에도 넣는다. 생태계 표기는
+                    //   그래서 카탈로그(tb_cve + tb_cve_affected_package)에도 넣는다. 생태계 표기는
                     //   OSV·매처와 같은 기준('Ubuntu:24.04').
                     //   미수정 CVE 는 fixed_version=NULL 로 넣는다 — 버전 억제가 안 걸리고(조치안이 없으니
                     //   당연하다), 판정 맵이 no_fix 로 표시한다.
@@ -290,12 +290,12 @@ final class VgUbuntuOvalConnector implements VgFeedConnector {
                     $flushC = static function (array $cveB, array $affB) use ($pdo): void {
                         if ($cveB) {
                             $ph = implode(',', array_fill(0, count($cveB), '(?)'));
-                            $pdo->prepare("INSERT IGNORE INTO tb_cves (cve_id) VALUES $ph")->execute($cveB);
+                            $pdo->prepare("INSERT IGNORE INTO tb_cve (cve_id) VALUES $ph")->execute($cveB);
                         }
                         if ($affB) {
                             $ph = implode(',', array_fill(0, count($affB), '(?,?,?,?)'));
                             $pdo->prepare(
-                                "INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+                                "INSERT INTO tb_cve_affected_package (cve_id, ecosystem, package_name, fixed_version)
                                  VALUES $ph
                                  ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
                             )->execute(array_merge(...$affB));

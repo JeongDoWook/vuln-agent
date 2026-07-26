@@ -36,7 +36,7 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
             // 기존 레코드(편집일 때). connection_json 병합과 next_run_at 계산이 함께 쓴다.
             $prev = null;
             if ($id > 0) {
-                $q = $pdo->prepare('SELECT connection_json, last_run_at FROM tb_feed_connectors WHERE id=?');
+                $q = $pdo->prepare('SELECT connection_json, last_run_at FROM tb_feed_connector WHERE feed_connector_id=?');
                 $q->execute([$id]);
                 $prev = $q->fetch() ?: null;
             }
@@ -92,11 +92,11 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
             $next = ($enabled && $mode !== 'manual') ? vg_schedule_next($sched, $from) : null;
 
             if ($id > 0) {
-                $st = $pdo->prepare('UPDATE tb_feed_connectors SET name=?, connector_type=?, connection_json=?, schedule_json=?, enabled=?, next_run_at=? WHERE id=?');
+                $st = $pdo->prepare('UPDATE tb_feed_connector SET name=?, connector_type=?, connection_json=?, schedule_json=?, enabled=?, next_run_at=? WHERE feed_connector_id=?');
                 $st->execute([$name, $type, json_encode($conn), json_encode($sched), $enabled, $next, $id]);
                 $msg = "커넥터 '$name' 수정됨.";
             } else {
-                $st = $pdo->prepare('INSERT INTO tb_feed_connectors (name, connector_type, connection_json, schedule_json, enabled, last_status, next_run_at) VALUES (?,?,?,?,?,?,?)');
+                $st = $pdo->prepare('INSERT INTO tb_feed_connector (name, connector_type, connection_json, schedule_json, enabled, last_status, next_run_at) VALUES (?,?,?,?,?,?,?)');
                 $st->execute([$name, $type, json_encode($conn), json_encode($sched), $enabled, 'never', $next]);
                 $id = (int) $pdo->lastInsertId();
                 $msg = "커넥터 '$name' 추가됨.";
@@ -151,12 +151,12 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
             }
         } elseif ($action === 'toggle') {
             $id = (int) ($post['id'] ?? 0);
-            $pdo->prepare('UPDATE tb_feed_connectors SET enabled = 1 - enabled WHERE id = ?')->execute([$id]);
+            $pdo->prepare('UPDATE tb_feed_connector SET enabled = 1 - enabled WHERE feed_connector_id = ?')->execute([$id]);
             vg_log_activity($pdo, 'CONNECTOR', $id, 'connector_toggle', '활성 상태 변경');
             $msg = '활성 상태 변경됨.';
         } elseif ($action === 'delete') {
             $id = (int) ($post['id'] ?? 0);
-            vg_soft_delete($pdo, 'tb_feed_connectors', $id);
+            vg_soft_delete($pdo, 'tb_feed_connector', $id);
             vg_log_activity($pdo, 'CONNECTOR', $id, 'connector_delete', '커넥터 삭제');
             $msg = '커넥터 삭제됨.';
         }

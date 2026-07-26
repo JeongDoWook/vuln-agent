@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * feeds/nvd.php — NVD 2.0 커넥터. 최근 N일 "수정된"(lastMod) CVE → tb_cves (CVSS 포함).
+ * feeds/nvd.php — NVD 2.0 커넥터. 최근 N일 "수정된"(lastMod) CVE → tb_cve (CVSS 포함).
  *   증분 수집(전체 미러 아님). 공통 순회 루틴 vg_nvd_sync 는 주기 수집(커넥터)과
  *   전체 백필(bin/backfill_nvd.php)이 함께 쓴다.
  *   미리보기·주기 수집은 같은 날짜창(lastMod)을 본다 — 발행일 기준으로 어긋나던 버그를 막는다.
@@ -29,7 +29,7 @@ const VG_NVD_TIMEOUT    = 300;    // 초. 느린 응답(50KB/s)에 여유를 둔
 const VG_NVD_MAX_RETRY  = 5;      // 일시적 오류(HTTP/2 스트림 끊김·5xx·타임아웃) 재시도 횟수
 const VG_NVD_MAX_WINDOW = 120;    // NVD 가 허용하는 최대 날짜 범위(일). 넘으면 404.
 
-/** NVD 응답 1건을 tb_cves 로 upsert. @return bool 실제로 처리했는지 */
+/** NVD 응답 1건을 tb_cve 로 upsert. @return bool 실제로 처리했는지 */
 function vg_nvd_upsert_item(PDO $pdo, array $item): bool {
     $c  = $item['cve'] ?? [];
     $id = $c['id'] ?? '';

@@ -9,7 +9,7 @@ declare(strict_types=1);
  *
  *   분할:
  *     feeds/http.php   — SSRF 가드 + curl(vg_http_*) + vg_conn_url
- *     feeds/upsert.php — tb_cves/kev/affected 공용 write + CVE-ID 형식검증 + VG_TEXT_MAX
+ *     feeds/upsert.php — tb_cve/kev/affected 공용 write + CVE-ID 형식검증 + VG_TEXT_MAX
  *     feeds/kev.php    — VgKevConnector
  *     feeds/osv.php    — VgOsvConnector + vg_osv_* + vg_osv_enrich_fixed
  *     feeds/nvd.php    — VgNvdConnector + vg_nvd_sync(백필 공용)
@@ -176,14 +176,14 @@ function vg_feed_make(string $type): VgFeedConnector {
 function vg_feed_has_type(PDO $pdo, array $ids, string $type): bool {
     if (!$ids) { return false; }
     $in = implode(',', array_fill(0, count($ids), '?'));
-    $st = $pdo->prepare("SELECT 1 FROM tb_feed_connectors WHERE connector_type = ? AND id IN ($in) LIMIT 1");
+    $st = $pdo->prepare("SELECT 1 FROM tb_feed_connector WHERE connector_type = ? AND feed_connector_id IN ($in) LIMIT 1");
     $st->execute(array_merge([$type], array_map('intval', $ids)));
     return (bool) $st->fetchColumn();
 }
 
 /** 커넥터 1건 실행: 로그(running→success/error) + 커넥터 상태/다음실행 갱신. */
 function vg_feed_run(PDO $pdo, int $connectorId, string $triggerBy = 'schedule'): array {
-    $st = $pdo->prepare('SELECT * FROM tb_feed_connectors WHERE id = ? AND is_deleted = 0');
+    $st = $pdo->prepare('SELECT * FROM tb_feed_connector WHERE feed_connector_id = ? AND is_deleted = 0');
     $st->execute([$connectorId]);
     $c = $st->fetch();
     if (!$c) {
@@ -194,17 +194,17 @@ function vg_feed_run(PDO $pdo, int $connectorId, string $triggerBy = 'schedule')
     $conn     = vg_json_col($c['connection_json']);
     $schedule = vg_json_col($c['schedule_json']);
 
-    $lg = $pdo->prepare('INSERT INTO tb_feed_collection_logs (connector_id, trigger_by, status) VALUES (?,?,?)');
+    $lg = $pdo->prepare('INSERT INTO tb_feed_collection_log (feed_connector_id, trigger_by, status) VALUES (?,?,?)');
     $lg->execute([$connectorId, $triggerBy, 'running']);
     $logId = (int) $pdo->lastInsertId();
-    $pdo->prepare('UPDATE tb_feed_connectors SET last_status=?, last_run_at=NOW() WHERE id=?')->execute(['running', $connectorId]);
+    $pdo->prepare('UPDATE tb_feed_connector SET last_status=?, last_run_at=NOW() WHERE feed_connector_id=?')->execute(['running', $connectorId]);
 
     try {
         $res = vg_feed_make((string) $c['connector_type'])->run($pdo, $conn);
         $msg = "fetched={$res['fetched']} upserted={$res['upserted']}";
-        $pdo->prepare('UPDATE tb_feed_collection_logs SET status=?, finished_at=NOW(), items_fetched=?, items_upserted=?, message=? WHERE id=?')
+        $pdo->prepare('UPDATE tb_feed_collection_log SET status=?, finished_at=NOW(), items_fetched=?, items_upserted=?, message=? WHERE feed_collection_log_id=?')
             ->execute(['success', $res['fetched'], $res['upserted'], $msg, $logId]);
-        $pdo->prepare('UPDATE tb_feed_connectors SET last_status=?, last_message=?, next_run_at=? WHERE id=?')
+        $pdo->prepare('UPDATE tb_feed_connector SET last_status=?, last_message=?, next_run_at=? WHERE feed_connector_id=?')
             ->execute(['success', $msg, vg_schedule_next($schedule), $connectorId]);
         vg_log_activity($pdo, 'CONNECTOR', $connectorId, 'feed_run', "수집 {$res['upserted']}건",
             ['fetched' => $res['fetched'], 'upserted' => $res['upserted'], 'status' => 'success'], null, $actor);
@@ -212,9 +212,9 @@ function vg_feed_run(PDO $pdo, int $connectorId, string $triggerBy = 'schedule')
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }
         $msg = mb_substr($e->getMessage(), 0, 480);
-        $pdo->prepare('UPDATE tb_feed_collection_logs SET status=?, finished_at=NOW(), message=? WHERE id=?')
+        $pdo->prepare('UPDATE tb_feed_collection_log SET status=?, finished_at=NOW(), message=? WHERE feed_collection_log_id=?')
             ->execute(['error', $msg, $logId]);
-        $pdo->prepare('UPDATE tb_feed_connectors SET last_status=?, last_message=?, next_run_at=? WHERE id=?')
+        $pdo->prepare('UPDATE tb_feed_connector SET last_status=?, last_message=?, next_run_at=? WHERE feed_connector_id=?')
             ->execute(['error', $msg, vg_schedule_next($schedule), $connectorId]);
         vg_log_activity($pdo, 'CONNECTOR', $connectorId, 'feed_run', "수집 실패: $msg",
             ['status' => 'error'], null, $actor);
@@ -251,7 +251,7 @@ function vg_feed_reap_stale(PDO $pdo, int $hours = 6): int {
     $msg   = "중단된 실행으로 판단해 정리(시작 후 {$hours}시간 초과)";
 
     $st = $pdo->prepare(
-        "UPDATE tb_feed_collection_logs
+        "UPDATE tb_feed_collection_log
             SET status = 'error', finished_at = NOW(), message = ?
           WHERE status = 'running' AND started_at < NOW() - INTERVAL $hours HOUR"
     );
@@ -260,7 +260,7 @@ function vg_feed_reap_stale(PDO $pdo, int $hours = 6): int {
 
     if ($n > 0) {
         $pdo->prepare(
-            "UPDATE tb_feed_connectors
+            "UPDATE tb_feed_connector
                 SET last_status = 'error', last_message = ?
               WHERE last_status = 'running' AND last_run_at < NOW() - INTERVAL $hours HOUR"
         )->execute([$msg]);
@@ -270,12 +270,12 @@ function vg_feed_reap_stale(PDO $pdo, int $hours = 6): int {
 
 /** 스케줄러가 돌릴 대상: enabled=1 이고 스케줄(interval/daily/cron) 상 지금이 due. */
 function vg_feed_due(PDO $pdo): array {
-    $rows = $pdo->query('SELECT id, schedule_json, last_run_at FROM tb_feed_connectors WHERE enabled = 1 AND is_deleted = 0')->fetchAll();
+    $rows = $pdo->query('SELECT feed_connector_id, schedule_json, last_run_at FROM tb_feed_connector WHERE enabled = 1 AND is_deleted = 0')->fetchAll();
     $due = [];
     foreach ($rows as $r) {
         $sch = vg_json_col($r['schedule_json']);
         if (vg_schedule_due($sch, $r['last_run_at'])) {
-            $due[] = (int) $r['id'];
+            $due[] = (int) $r['feed_connector_id'];
         }
     }
     return $due;

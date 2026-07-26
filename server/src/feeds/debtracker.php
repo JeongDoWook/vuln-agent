@@ -95,10 +95,10 @@ function vg_debtracker_releases(PDO $pdo, array $conn): array {
 
     $rel  = [];
     $rows = $pdo->query(
-        "SELECT DISTINCT os_version FROM tb_scans
+        "SELECT DISTINCT os_version FROM tb_scan
           WHERE LOWER(os_id) = 'debian' AND os_version IS NOT NULL AND is_deleted = 0
          UNION
-         SELECT DISTINCT os_version FROM tb_containers
+         SELECT DISTINCT os_version FROM tb_container
           WHERE LOWER(os_id) = 'debian' AND os_version IS NOT NULL"
     )->fetchAll(PDO::FETCH_COLUMN);
     foreach ($rows as $v) {
