@@ -519,9 +519,35 @@ else {
   $trigger = $triggerBody
 }
 
+# ── 워커 전사(transcript) 저장 ───────────────────────────────────────────────
+# 부모(중앙) 세션의 환경에는 CLAUDE_CODE_CHILD_SESSION=1 이 들어 있다(실측 2026-07-26: 워커
+# 안에서 `env | grep CLAUDE_CODE_CHILD_SESSION` → 1). spawn-worker.ps1 이 세우는 값이 아니라
+# **상속된 것**이다. claude 는 그 마커를 보면 이 세션을 저장하지 않고 탭 하단에 경고를 띄운다:
+#   "Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker
+#    · restart with CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 to keep future transcripts"
+# 그러면 워커가 무엇을 했는지 나중에 되짚을 기록도, --resume 도 남지 않는다.
+#
+# 변수 이름·값은 추측이 아니다 — 실행 중인 claude 2.1.220 바이너리에서 판정 로직을 직접 확인했다
+# (경고 문구가 화면 폭에 잘려 이름이 불확실했으므로):
+#   if (env.CLAUDE_CODE_FORCE_SESSION_PERSISTENCE) return false;   // false = 억제 안 함(저장한다)
+#   if (!(env.CLAUDE_CODE_CHILD_SESSION && …)) return false;
+# 같은 바이너리의 안내 문구도 "…FORCE_SESSION_PERSISTENCE=1 to keep future transcripts" 다.
+#
+# 상속 마커(CLAUDE_CODE_CHILD_SESSION)를 지우는 대신 이 변수를 세우는 이유: 그 마커는 전사 말고
+# 다른 판정에도 쓰여(팀/서브에이전트 감지) 지웠을 때의 부작용 범위를 알 수 없다. 이 변수는 전사
+# 억제 한 가지만 끈다 — 좁은 쪽을 고른다.
+# NO_COLOR 를 지우는 것과 같은 자리·같은 이유다: 부모 환경의 오염이 워커로 새는 것을 런치 바디에서
+# 끊는다(부모 세션은 재시작 전까지 못 고친다).
+$transcriptEnv = @'
+# 부모 세션에서 상속된 CLAUDE_CODE_CHILD_SESSION=1 때문에 claude 가 이 세션의 전사를 저장하지
+#   않는다("Transcript saving is off"). claude 가 안내하는 해제 변수를 세워 워커도 기록을 남긴다.
+$env:CLAUDE_CODE_FORCE_SESSION_PERSISTENCE = '1'
+'@
+
 if ($LaunchMode -eq 'headless') {
   $launchBody = @"
 Set-Location -LiteralPath '$wtDirEsc'
+$transcriptEnv
 claude $permFlag -p '$trigger' *> '$($logPath -replace "'", "''")'
 "@
 }
@@ -534,6 +560,7 @@ Set-Location -LiteralPath '$wtDirEsc'
 #   ~/.claude/settings.json 의 env 에 한 번 들어가면 그 뒤 뜬 모든 워커가 상속받고,
 #   settings.json 을 고쳐도 **이미 떠 있는 부모 세션**의 환경은 재시작 전까지 그대로다(실측 2026-07-26).
 Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue
+$transcriptEnv
 Write-Host '=== 워커: $Task ($branch) ===' -ForegroundColor Cyan
 Write-Host '결과 파일: $resultPathFwd' -ForegroundColor DarkGray
 Write-Host ''

@@ -310,6 +310,32 @@ $ErrorActionPreference = 'Stop'
 - 부작용 하나: 가로채인 상황에선 stderr 텍스트가 화면에서 사라진다(승격된 레코드를 삼키므로).
   `wt.sh` 가 알려주는 정보(할당된 WEB_PORT 등)는 전부 stdout 이라 그대로 보인다.
 
+## 함정 — 워커 전사(transcript)가 저장되지 않던 이유
+
+부모(중앙) 세션의 환경엔 `CLAUDE_CODE_CHILD_SESSION=1` 이 들어 있고, 워커가 그걸 **상속**한다
+(`spawn-worker.ps1` 이 세우는 값이 아니다). claude 는 그 마커를 보면 세션을 저장하지 않고 탭
+하단에 경고를 띄운다:
+
+```
+⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker
+  · restart with CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 to keep future transcripts
+```
+
+그러면 워커가 무엇을 했는지 되짚을 기록도 `--resume` 도 없다. 결과 파일이 비었을 때 특히 아프다.
+그래서 런치 바디(`NO_COLOR` 를 지우는 그 자리)에서 `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1` 을
+세운다 — 부모 환경 오염을 워커 진입점에서 끊는 것으로, `NO_COLOR` 와 같은 이유·같은 자리다.
+
+- 이름·값은 추측이 아니다: 화면 폭에 잘려 불확실했던 변수명을 **실행 중인 claude 2.1.220
+  바이너리의 판정 로직**으로 확인했다 —
+  `if (env.CLAUDE_CODE_FORCE_SESSION_PERSISTENCE) return false;`(false = 억제 안 함) 가
+  `CLAUDE_CODE_CHILD_SESSION` 검사보다 **먼저** 나온다.
+- **상속 마커를 지우는 쪽(`Remove-Item Env:CLAUDE_CODE_CHILD_SESSION`)은 고르지 않았다.** 그
+  마커는 전사 말고 다른 판정에도 쓰여(팀/서브에이전트 감지) 부작용 범위를 알 수 없다. 이 변수는
+  전사 억제 하나만 끈다.
+- 확인법: 워커 워크트리 경로로 만들어지는
+  `~/.claude/projects/<경로슬러그>/<세션id>.jsonl` 이 생기는지 본다. 고치기 전에 스폰된 워커는
+  그 디렉터리 **자체가 없다**(2026-07-26 A/B 실측).
+
 ## 자동 이어받기 & 최적화
 
 claude-pipeline 은 cmux `read-screen` 으로 **다른 세션 화면을 훔쳐봐** 완료를 감지한다
