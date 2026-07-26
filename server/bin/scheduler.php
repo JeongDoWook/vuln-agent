@@ -6,7 +6,7 @@ ini_set('memory_limit', '1024M'); // 대량 피드 처리 여유(Oracle OVAL 은
 /**
  * scheduler.php — 예약된(enabled + due) 피드 커넥터를 실행한다.
  *   스케줄러 사이드카 컨테이너가 1분마다 호출(compose.yml).
- *   피드 수집으로 CVE/KEV 가 갱신되면 전체 스캔을 재매칭한다.
+ *   피드가 실제로 뭔가를 수집했으면 호스트별 최신 2건 스캔을 재매칭한다(vg_rematch_scan_ids).
  */
 
 require __DIR__ . '/../src/feeds.php';
@@ -26,15 +26,17 @@ if (!$due) {
     exit(0);
 }
 
-$ok = 0; $okIds = [];
+$ok = 0; $okIds = []; $upserted = 0;
 foreach ($due as $id) {
     $r = vg_feed_run($pdo, $id, 'schedule');
     fwrite(STDOUT, '[' . date('c') . "] connector #$id → " . ($r['ok'] ? "ok ({$r['upserted']} upserted)" : "error: {$r['error']}") . "\n");
-    if (!empty($r['ok'])) { $ok++; $okIds[] = $id; }
+    if (!empty($r['ok'])) { $ok++; $okIds[] = $id; $upserted += (int) ($r['upserted'] ?? 0); }
 }
 
-if ($ok > 0) {
-    $scans = array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN));
+// 성공 여부가 아니라 **실제 수집분**을 기준으로 재매칭한다. 커넥터가 ok 이기만 하면 돌리던
+//   예전 코드는 `ok (0 upserted)` 뒤에도 전체 재매칭을 걸어 binlog 만 불렸다(달라진 게 없는데).
+if ($upserted > 0) {
+    $scans = vg_rematch_scan_ids($pdo);
     foreach ($scans as $sid) { vg_match_scan($pdo, $sid); }
     fwrite(STDOUT, '[' . date('c') . "] 재매칭 완료 (" . count($scans) . " 스캔)\n");
 
@@ -52,4 +54,7 @@ if ($ok > 0) {
         vg_rebuild_package_summary($pdo);
         fwrite(STDOUT, '[' . date('c') . "] packages 요약 재빌드 완료\n");
     }
+} else {
+    // 조용히 건너뛰지 않는다 — 왜 재매칭이 안 돌았는지 로그로 드러나야 한다.
+    fwrite(STDOUT, '[' . date('c') . "] 수집 0건 (커넥터 성공 {$ok}/" . count($due) . ") — 재매칭 생략\n");
 }
