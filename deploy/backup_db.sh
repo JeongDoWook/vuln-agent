@@ -6,10 +6,10 @@
 # 오래된 자동 백업(vulnagent_*.sql.gz)은 최신 KEEP 개만 남기고 정리한다.
 #
 # 설치: crontab -e 로 다음 줄 추가
-#   0 4 */3 * * /apps/vulnagent/app/deploy/backup_db.sh >> /apps/vulnagent/backups/cron.log 2>&1
-#   주의: */3 은 일(day-of-month) 필드라 매달 1일 기준 3,6,9…일에 돌고 월 경계에서 리셋된다
-#   (예: 30일 실행 후 다음은 다음 달 3일 — 정확히 72시간 간격은 아니다). "대략 3일 주기,
-#   약 30일치 보관"이 목적이라 무방하지만, 정확한 간격이 필요하면 systemd timer 를 쓴다.
+#   0 4 * * * /apps/vulnagent/app/deploy/backup_db.sh >> /apps/vulnagent/backups/cron.log 2>&1
+#   매일 돌리고 KEEP 개(=7일치)만 남긴다. 예전엔 3일 주기(*/3)에 30일치였는데, */3 은
+#   일(day-of-month) 필드라 월 경계에서 리셋돼 간격이 들쭉날쭉했다(30일 실행 후 다음은
+#   다음 달 3일). 매일이면 그 함정 자체가 없고 복구 시점도 최대 하루 전으로 좁혀진다.
 #
 # 로컬 dev 에서 시험하려면:
 #   DB_CONTAINER=vulnagent-db-dev BACKUP_DIR=/tmp/vg-backup-test bash deploy/backup_db.sh
@@ -19,7 +19,9 @@ umask 077   # 이후 생성되는 모든 파일(LOCK, 덤프 .sql.gz)을 처음�
 
 DB_CONTAINER="${DB_CONTAINER:-vulnagent-db}"
 BACKUP_DIR="${BACKUP_DIR:-/apps/vulnagent/backups}"
-KEEP=10   # 3일 주기 기준 약 30일치 보관. vulnagent_*.sql.gz 패턴만 대상(수동 백업은 안 건드림).
+KEEP=7    # 매일 주기 기준 7일치 보관. vulnagent_*.sql.gz 패턴만 대상(수동 백업은 안 건드림).
+          # 나이(mtime)가 아니라 **개수** 기준인 게 의도적이다 — 백업이 며칠 연속 실패해도
+          # 마지막 7개는 남는다. 나이 기준이면 실패가 이어질 때 남은 것까지 다 지워 0개가 된다.
 
 mkdir -p "$BACKUP_DIR"
 
