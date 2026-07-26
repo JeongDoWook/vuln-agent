@@ -189,7 +189,7 @@ function vg_ingest_parse_debsecan(string $debsecanText): array
 }
 
 // ── 컨테이너 목록 — 기본 7필드 + digest/Kubernetes/runtime/SBOM 선택 필드 ────
-//   cid 로 유일(키가 cid) — ingest.php 가 tb_containers insert 후 id 매핑에 그대로 쓴다.
+//   cid 로 유일(키가 cid) — ingest.php 가 tb_container insert 후 container_id 매핑에 그대로 쓴다.
 function vg_ingest_parse_container_list(string $listText): array
 {
     $rows = [];
@@ -341,7 +341,7 @@ function vg_ingest_content_hash(
     $hashParts = [];
     // **저장하는 값 전부**를 해시에 넣는다(이름·버전만 넣으면 안 된다).
     //   예전엔 이름·버전만 봤다. 그래서 에이전트가 **출처(origin) 판정을 고쳐서 보내도** 패키지·버전이
-    //   그대로면 "변경 없음" 으로 스캔을 재사용했고, tb_packages 를 다시 쓰지 않아 옛 출처가 영원히
+    //   그대로면 "변경 없음" 으로 스캔을 재사용했고, tb_package 를 다시 쓰지 않아 옛 출처가 영원히
     //   남았다(실측: 에이전트 2.2 가 curl→Debian 으로 고쳐 보냈는데 DB 엔 LOCAL 이 그대로였다).
     //   소스패키지·벤더도 같은 이유로 포함한다 — 저장은 하는데 해시가 안 보면 갱신되지 않는다.
     foreach ($pkgRows as $r)  {

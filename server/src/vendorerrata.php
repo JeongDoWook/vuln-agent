@@ -110,7 +110,7 @@ function vg_vendor_unfixed_candidates(PDO $pdo, int $scanId, ?string $hostOsId, 
     $in  = implode(',', array_fill(0, count($ids), '?'));
     $ps  = $pdo->prepare(
         "SELECT container_id, name, source_pkg
-           FROM tb_packages
+           FROM tb_package
           WHERE scan_id = ? AND manager = 'rpm' AND container_id IN ($in)"
     );
     $ps->execute(array_merge([$scanId], $ids));
@@ -174,12 +174,12 @@ function vg_vendor_errata_targets(PDO $pdo, int $scanId, ?string $hostOsId, ?str
     $hm = $major($hostOsVersion);
     if ($hv !== null && $hm !== '') { $targets[0] = [$hv, $hm]; }
 
-    $cs = $pdo->prepare('SELECT id, os_id, os_version FROM tb_containers WHERE scan_id = ?');
+    $cs = $pdo->prepare('SELECT container_id, os_id, os_version FROM tb_container WHERE scan_id = ?');
     $cs->execute([$scanId]);
     foreach ($cs->fetchAll() as $c) {
         $v = vg_errata_vendor((string) $c['os_id']);
         $m = $major((string) $c['os_version']);
-        if ($v !== null && $m !== '') { $targets[(int) $c['id']] = [$v, $m]; }
+        if ($v !== null && $m !== '') { $targets[(int) $c['container_id']] = [$v, $m]; }
     }
     return $targets;
 }
@@ -203,7 +203,7 @@ function vg_vendor_errata_evidence(PDO $pdo, int $scanId, ?string $hostOsId, ?st
     $in  = implode(',', array_fill(0, count($ids), '?'));
     $ps  = $pdo->prepare(
         "SELECT container_id, name, version
-           FROM tb_packages
+           FROM tb_package
           WHERE scan_id = ? AND manager = 'rpm' AND container_id IN ($in)"
     );
     $ps->execute(array_merge([$scanId], $ids));
