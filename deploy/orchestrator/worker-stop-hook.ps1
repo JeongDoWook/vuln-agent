@@ -49,7 +49,14 @@ try {
     Add-OrchestratorHistory -MainRoot $mainRoot -Task $task -Event 'status' -Detail $line
   }
 
-  Set-Content -Path $resultPath -Value $line -Encoding UTF8
+  # 첫 줄(상태 라벨)만 갈아끼우고 2행 이후 본문은 그대로 남긴다.
+  # 라벨이 첫 줄이어야 하는 건 계약이다 — status.ps1·watch-workers.ps1·merge-milestone.ps1 이
+  # Get-Content -TotalCount 1 로 첫 줄만 읽어 상태를 판정한다.
+  # 예전엔 Set-Content 로 파일 전체를 $line 하나로 대체해서, 워커가 남긴 검증 증거가
+  # idle 될 때마다 통째로 사라졌다(첫 줄이 '진행중' 이면 위 가드에도 안 걸린다).
+  # 본문이 없는 1줄 파일이면 아래는 예전 동작과 동일하다.
+  $body = @(Get-Content -Path $resultPath -Encoding UTF8 2>$null | Select-Object -Skip 1)
+  Set-Content -Path $resultPath -Value (@($line) + $body) -Encoding UTF8
 }
 catch { }
 exit 0
