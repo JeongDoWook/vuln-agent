@@ -77,6 +77,9 @@ CREATE TABLE IF NOT EXISTS tb_package_summary (
 CREATE TABLE IF NOT EXISTS tb_findings (
   id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   scan_id           BIGINT UNSIGNED NOT NULL,
+  -- 이 판정이 어느 컨테이너 것인지. **0 = 호스트 자신**(18-containers.sql 주석 참조).
+  --   기존 볼륨은 db/migrations/0014_containers.sql 이 같은 위치(AFTER scan_id)에 추가한다.
+  container_id      BIGINT UNSIGNED NOT NULL DEFAULT 0,
   cve_id            VARCHAR(32) NOT NULL,
   package_name      VARCHAR(255) NOT NULL,
   installed_version VARCHAR(255) NULL,
@@ -94,7 +97,9 @@ CREATE TABLE IF NOT EXISTS tb_findings (
   is_deleted        TINYINT(1) NOT NULL DEFAULT 0,
   deleted_at        DATETIME NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_find (scan_id, cve_id, package_name),
+  -- container_id 를 유니크 키에 포함한다. 빼면 호스트의 openssl 과 컨테이너의 openssl 이
+  -- 같은 CVE 로 충돌해 서로 덮어쓴다(18-containers.sql / 0014_containers.sql 주석 참조).
+  UNIQUE KEY uq_find (scan_id, container_id, cve_id, package_name),
   KEY idx_find_sev (severity),
   KEY idx_find_cve (cve_id),
   INDEX idx_findings_is_deleted (is_deleted),
