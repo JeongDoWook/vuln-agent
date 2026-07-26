@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $err = '아이디와 8자 이상 비밀번호를 입력하세요.';
         } else {
             try {
-                $st = $pdo->prepare('INSERT INTO tb_users (username, password_hash, role) VALUES (?,?,?)');
+                $st = $pdo->prepare('INSERT INTO tb_user (username, password_hash, role) VALUES (?,?,?)');
                 $st->execute([$u, password_hash($p, PASSWORD_DEFAULT), $role]);
                 vg_log_activity($pdo, 'USER', (int) $pdo->lastInsertId(), 'user_add', "사용자 '$u' 추가", ['username' => $u, 'role' => $role]);
                 $msg = "사용자 '$u' 추가됨.";
@@ -60,13 +60,13 @@ $where   = 'is_deleted = 0';
 $params  = [];
 if ($q !== '') { $where .= ' AND username LIKE ?'; $params[] = '%' . $q . '%'; }
 if ($role !== '') { $where .= ' AND role = ?'; $params[] = $role; }
-$count = $pdo->prepare("SELECT COUNT(*) FROM tb_users WHERE $where");
+$count = $pdo->prepare("SELECT COUNT(*) FROM tb_user WHERE $where");
 $count->execute($params);
 $total  = (int) $count->fetchColumn();
 $offset = ($page - 1) * $perPage;
 $list = $pdo->prepare(
-    "SELECT id, username, role, created_at, last_login
-       FROM tb_users WHERE $where ORDER BY id
+    "SELECT user_id, username, role, created_at, last_login
+       FROM tb_user WHERE $where ORDER BY user_id
       LIMIT $perPage OFFSET $offset"
 );
 $list->execute($params);
@@ -113,10 +113,10 @@ vg_header('사용자', 'users');
               'icon' => '👤', 'title' => '등록된 사용자가 없습니다.',
           ],
           'cell' => [
-              0 => fn($u) => vg_h((string) $u['id']),
+              0 => fn($u) => vg_h((string) $u['user_id']),
               1 => function ($u) use ($meId) {
-                  $html = '<strong><a href="/user.php?id=' . (int) $u['id'] . '">' . vg_h($u['username']) . '</a></strong>';
-                  if ((int) $u['id'] === $meId) { $html .= ' <span class="pill">본인</span>'; }
+                  $html = '<strong><a href="/user.php?id=' . (int) $u['user_id'] . '">' . vg_h($u['username']) . '</a></strong>';
+                  if ((int) $u['user_id'] === $meId) { $html .= ' <span class="pill">본인</span>'; }
                   return $html;
               },
               2 => fn($u) => '<span class="pill">' . vg_h(vg_role_label($u['role'])) . '</span>',

@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $msg = "토큰이 발급되었습니다. 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다.";
             } elseif ($action === 'revoke') {
                 $id = (int) ($_POST['id'] ?? 0);
-                vg_soft_delete($pdo, 'tb_api_tokens', $id);
+                vg_soft_delete($pdo, 'tb_api_token', $id);
                 vg_log_activity($pdo, 'API_TOKEN', $id, 'token_revoke', '토큰 폐기');
                 $msg = '토큰을 폐기했습니다.';
             }
@@ -79,17 +79,17 @@ if ($q !== '') {
     $like = '%' . $q . '%';
     $params = [$like, $like];
 }
-$count = $pdo->prepare("SELECT COUNT(*) FROM tb_api_tokens t WHERE $where");
+$count = $pdo->prepare("SELECT COUNT(*) FROM tb_api_token t WHERE $where");
 $count->execute($params);
 $total  = (int) $count->fetchColumn();
 $offset = ($page - 1) * $perPage;
 
 $list = $pdo->prepare(
-    "SELECT t.id, t.label, t.token_prefix, t.last_used_at, t.created_at, u.username AS created_by
-       FROM tb_api_tokens t
-       LEFT JOIN tb_users u ON u.id = t.created_by
+    "SELECT t.api_token_id, t.label, t.token_prefix, t.last_used_at, t.created_at, u.username AS created_by
+       FROM tb_api_token t
+       LEFT JOIN tb_user u ON u.user_id = t.created_by
       WHERE $where
-      ORDER BY t.id DESC
+      ORDER BY t.api_token_id DESC
       LIMIT $perPage OFFSET $offset"
 );
 $list->execute($params);
@@ -154,7 +154,7 @@ vg_header('API 토큰', 'apitokens');
               5 => fn($t) => '<form method="post" data-confirm="이 토큰을 폐기할까요? 즉시 무효가 됩니다.">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                   . '<input type="hidden" name="action" value="revoke">'
-                  . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'
+                  . '<input type="hidden" name="id" value="' . (int) $t['api_token_id'] . '">'
                   . '<button class="btn btn--sm btn--danger">폐기</button></form>',
           ],
       ]

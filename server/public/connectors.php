@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$connectors = $pdo->query('SELECT * FROM tb_feed_connectors WHERE is_deleted = 0 ORDER BY id')->fetchAll();
+$connectors = $pdo->query('SELECT * FROM tb_feed_connector WHERE is_deleted = 0 ORDER BY feed_connector_id')->fetchAll();
 
 /* 수집 이력.
  * 전엔 전 커넥터의 로그를 목록 아래 한 표에 쏟아 놨는데, 정작 "이 커넥터가 왜 실패했나" 를
@@ -54,14 +54,14 @@ $connFilter = (int) ($_GET['conn'] ?? 0);
 
 $peek = $pdo->prepare(
     'SELECT status, trigger_by, items_fetched, items_upserted, message, started_at
-       FROM tb_feed_collection_logs WHERE connector_id = ?
+       FROM tb_feed_collection_log WHERE feed_connector_id = ?
       ORDER BY started_at DESC LIMIT ' . $logPeek
 );
-$cnt = $pdo->prepare('SELECT COUNT(*) FROM tb_feed_collection_logs WHERE connector_id = ?');
+$cnt = $pdo->prepare('SELECT COUNT(*) FROM tb_feed_collection_log WHERE feed_connector_id = ?');
 
 $logsByConn = []; $logCountByConn = [];
 foreach ($connectors as $c) {
-    $id = (int) $c['id'];
+    $id = (int) $c['feed_connector_id'];
     $peek->execute([$id]);
     $logsByConn[$id] = $peek->fetchAll();
     $cnt->execute([$id]);
@@ -71,12 +71,12 @@ foreach ($connectors as $c) {
 // ?conn=N — 그 커넥터의 전체 이력(페이지네이션)
 $logs = []; $logTotal = 0; $connName = '';
 if ($connFilter > 0) {
-    foreach ($connectors as $c) { if ((int) $c['id'] === $connFilter) { $connName = (string) $c['name']; } }
+    foreach ($connectors as $c) { if ((int) $c['feed_connector_id'] === $connFilter) { $connName = (string) $c['name']; } }
     $logTotal = $logCountByConn[$connFilter] ?? 0;
     $offset   = ($page - 1) * $perPage;
     $st = $pdo->prepare(
         "SELECT status, trigger_by, items_fetched, items_upserted, message, started_at
-           FROM tb_feed_collection_logs WHERE connector_id = ?
+           FROM tb_feed_collection_log WHERE feed_connector_id = ?
           ORDER BY started_at DESC
           LIMIT $perPage OFFSET $offset"
     );
@@ -89,7 +89,7 @@ $csrf = vg_csrf_token();
 // 편집 대상 — ?edit=N 이면 추가/편집 모달을 그 값으로 채워 자동으로 연다.
 $edit = null;
 if (isset($_GET['edit'])) {
-    foreach ($connectors as $c) { if ((int) $c['id'] === (int) $_GET['edit']) { $edit = $c; } }
+    foreach ($connectors as $c) { if ((int) $c['feed_connector_id'] === (int) $_GET['edit']) { $edit = $c; } }
 }
 $econn = $edit ? vg_json_col($edit['connection_json']) : [];
 $esched = $edit ? vg_json_col($edit['schedule_json']) : [];
@@ -149,7 +149,7 @@ vg_header('피드 커넥터', 'connectors');
       1 => fn($c) => '<span class="pill">' . vg_h($c['connector_type']) . '</span>',
       2 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
       3 => fn($c) => '<form method="post">'
-          . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['id'] . '">'
+          . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['feed_connector_id'] . '">'
           . '<button class="btn btn--sm ' . ($c['enabled'] ? 'btn--ok' : 'btn--ghost') . '">' . ($c['enabled'] ? 'ON' : 'OFF') . '</button></form>',
       4 => fn($c) => '<span class="why">' . vg_h($c['last_run_at'] ?? '–') . '</span>',
       5 => fn($c) => '<span class="why">' . vg_h($c['_next_run'] ?: '–') . '</span>',
@@ -163,7 +163,7 @@ vg_header('피드 커넥터', 'connectors');
       },
       // "지금 실행" 은 외부 수집 + 전 스캔 재매칭이라 수십 초 걸린다 → 스피너 + 이중제출 차단(app.js).
       7 => function ($c) use ($csrf, $logCountByConn) {
-          $id = (int) $c['id'];
+          $id = (int) $c['feed_connector_id'];
           $n  = $logCountByConn[$id] ?? 0;
           return '<div class="actions">'
               . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . $id . '">'
@@ -246,7 +246,7 @@ vg_header('피드 커넥터', 'connectors');
           data-role-labels="<?= vg_h(json_encode(VG_GENERIC_ROLE_LABELS, JSON_UNESCAPED_UNICODE)) ?>">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="save">
-      <input type="hidden" name="id" value="<?= (int) ($edit['id'] ?? 0) ?>">
+      <input type="hidden" name="id" value="<?= (int) ($edit['feed_connector_id'] ?? 0) ?>">
       <label>이름</label>
       <input type="text" name="name" value="<?= vg_h($edit['name'] ?? '') ?>" required>
       <label>커넥터 타입</label>
@@ -396,7 +396,7 @@ vg_header('피드 커넥터', 'connectors');
   /* 커넥터마다 이력 모달. 전엔 전 커넥터 로그를 목록 아래 한 표에 쏟아놔서,
    * "이 커넥터가 왜 실패했나" 를 보려면 남의 로그 사이에서 눈으로 골라야 했다. */
   foreach ($connectors as $c):
-      $cid = (int) $c['id'];
+      $cid = (int) $c['feed_connector_id'];
       $n   = $logCountByConn[$cid] ?? 0;
       vg_modal_open('log' . $cid, $c['name'] . ' · 수집 이력', 'modal--wide');
   ?>

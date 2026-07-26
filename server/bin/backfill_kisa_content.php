@@ -28,9 +28,9 @@ $pdo = vg_pdo();
 
 // 기준은 content 가 아니라 content_fetched_at. 본문 텍스트가 없는 공지(이미지 전용·경보단계)는
 // content='' 로 저장되므로, content IS NULL 로 고르면 매 실행마다 걔들을 다시 긁는다.
-$sql = 'SELECT id, url FROM tb_advisories
+$sql = 'SELECT advisory_id, url FROM tb_advisory
         WHERE is_deleted = 0 AND content_fetched_at IS NULL AND url LIKE "%boho.or.kr%"
-        ORDER BY published DESC, id DESC';
+        ORDER BY published DESC, advisory_id DESC';
 if ($limit > 0) { $sql .= ' LIMIT ' . $limit; }
 
 $rows  = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
@@ -53,7 +53,7 @@ foreach ($rows as $i => $row) {
         }
     } catch (Throwable $e) {
         $fail++;
-        fwrite(STDERR, "[{$n}/{$total}] 실패 id={$row['id']}: " . $e->getMessage() . "\n");
+        fwrite(STDERR, "[{$n}/{$total}] 실패 advisory_id={$row['advisory_id']}: " . $e->getMessage() . "\n");
     }
     if ($n % 50 === 0 || $n === $total) {
         fwrite(STDOUT, "  진행 {$n}/{$total} · 저장 {$done} · 스킵 {$skip} · 실패 {$fail}\n");

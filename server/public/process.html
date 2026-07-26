@@ -145,7 +145,7 @@
   <div class="arrow">→</div>
   <div class="step p"><span class="k">2단</span><h4>changelog 검증</h4><p>통과한 건도 에이전트가 보낸 패키지 changelog 에 <b>그 CVE 수정 기록</b>이 있으면 취약점으로 올리지 않음</p></div>
   <div class="arrow">→</div>
-  <div class="step o"><span class="k">분리</span><h4>tb_suppressed_findings</h4><p>위험 집계·화면에서는 빠지되, 숨기지 않고 <b>근거와 함께 호스트 상세에 표시</b>(설명가능성)</p></div>
+  <div class="step o"><span class="k">분리</span><h4>tb_suppressed_finding</h4><p>위험 집계·화면에서는 빠지되, 숨기지 않고 <b>근거와 함께 호스트 상세에 표시</b>(설명가능성)</p></div>
 </div>
 <div class="note">
   에이전트는 <code class="i">rpm -q --changelog</code> / dpkg changelog 에서 <b>CVE 줄만</b> 뽑아 함께 보낸다 —
@@ -157,7 +157,7 @@
 <h2><span class="n">5</span>보안설정 점검 (CCE)</h2>
 <p class="lead">CVE(취약한 버전)가 아니라 <b>잘못된 설정</b>을 본다. 새로 수집하지 않고 에이전트가 이미 보낸
 <code class="i">security</code>/<code class="i">users</code> 섹션을 <code class="i">src/cce.php</code> 가 판정해
-<code class="i">tb_cce_findings</code> 에 저장하고 호스트 상세에 PASS/FAIL/NA 로 표시한다.</p>
+<code class="i">tb_cce_finding</code> 에 저장하고 호스트 상세에 PASS/FAIL/NA 로 표시한다.</p>
 <div class="card">
 <table>
   <thead><tr><th>점검 항목</th><th>판정 기준</th></tr></thead>
@@ -195,7 +195,7 @@
 
 <!-- 7. 변화 추적 -->
 <h2><span class="n">7</span>변화 추적</h2>
-<p class="lead"><code class="i">/changes.php</code> 가 최근 2개 스캔의 <code class="i">tb_findings</code> 를
+<p class="lead"><code class="i">/changes.php</code> 가 최근 2개 스캔의 <code class="i">tb_finding</code> 를
 <code class="i">(cve_id, package_name)</code> 기준으로 대조해 <b>신규 발생 · 해결됨 · 등급 상승/하락</b>을 보여준다.
 새 테이블 없이 기존 findings 비교만으로 동작한다.</p>
 
@@ -205,34 +205,34 @@
   <div class="card">
     <b>수집 데이터</b>
     <ul class="tight">
-      <li><code class="i">tb_hosts</code> — 서버(fqdn, OS)</li>
-      <li><code class="i">tb_scans</code> — 수집 이력(원본 JSON 포함)</li>
-      <li><code class="i">tb_packages</code> — 패키지(버전·소스패키지·벤더)</li>
-      <li><code class="i">tb_exposures</code> — 노출 소켓(포트·scope·로드)</li>
-      <li><code class="i">tb_processes</code> — 실행 프로세스(exe·로드)</li>
+      <li><code class="i">tb_host</code> — 서버(fqdn, OS)</li>
+      <li><code class="i">tb_scan</code> — 수집 이력(원본 JSON 포함)</li>
+      <li><code class="i">tb_package</code> — 패키지(버전·소스패키지·벤더)</li>
+      <li><code class="i">tb_exposure</code> — 노출 소켓(포트·scope·로드)</li>
+      <li><code class="i">tb_process</code> — 실행 프로세스(exe·로드)</li>
     </ul>
   </div>
   <div class="card">
     <b>취약점 · 판정 · 계정</b>
     <ul class="tight">
-      <li><code class="i">tb_cves</code> — CVE(cvss·epss·요약)</li>
+      <li><code class="i">tb_cve</code> — CVE(cvss·epss·요약)</li>
       <li><code class="i">tb_kev_catalog</code> — KEV 등재</li>
-      <li><code class="i">tb_cve_affected_packages</code> — 영향 패키지·조치버전</li>
-      <li><code class="i">tb_findings</code> — 판정(등급·상태·근거)</li>
-      <li><code class="i">tb_advisories</code> — 국내 보안공지</li>
-      <li><code class="i">tb_feed_connectors / _collection_logs</code> — 커넥터·이력</li>
-      <li><code class="i">tb_users</code> — 웹 계정</li>
+      <li><code class="i">tb_cve_affected_package</code> — 영향 패키지·조치버전</li>
+      <li><code class="i">tb_finding</code> — 판정(등급·상태·근거)</li>
+      <li><code class="i">tb_advisory</code> — 국내 보안공지</li>
+      <li><code class="i">tb_feed_connector / _collection_log</code> — 커넥터·이력</li>
+      <li><code class="i">tb_user</code> — 웹 계정</li>
       <li><code class="i">tb_activity_log</code> — 감사로그(로그인·CRUD·ingest 기록)</li>
     </ul>
   </div>
   <div class="card">
     <b>오탐억제 · 설정점검 · 권한</b>
     <ul class="tight">
-      <li><code class="i">tb_pkg_changelog_cves</code> — changelog 의 CVE 수정 기록(백포트 근거)</li>
-      <li><code class="i">tb_suppressed_findings</code> — 백포트로 억제된 finding(근거 포함)</li>
-      <li><code class="i">tb_cce_findings</code> — 보안설정 점검 결과(PASS/FAIL/NA)</li>
-      <li><code class="i">tb_role_permissions</code> — 역할×메뉴 허용 여부(설정형 RBAC)</li>
-      <li><code class="i">tb_api_tokens</code> — Export API 토큰(SHA-256 해시만 저장)</li>
+      <li><code class="i">tb_pkg_changelog_cve</code> — changelog 의 CVE 수정 기록(백포트 근거)</li>
+      <li><code class="i">tb_suppressed_finding</code> — 백포트로 억제된 finding(근거 포함)</li>
+      <li><code class="i">tb_cce_finding</code> — 보안설정 점검 결과(PASS/FAIL/NA)</li>
+      <li><code class="i">tb_role_permission</code> — 역할×메뉴 허용 여부(설정형 RBAC)</li>
+      <li><code class="i">tb_api_token</code> — Export API 토큰(SHA-256 해시만 저장)</li>
     </ul>
   </div>
 </div>
@@ -278,7 +278,7 @@
 <h2><span class="n">11</span>권한 (설정형 RBAC)</h2>
 <p class="lead">역할은 <b>admin / operator / user</b> 3단계. <code class="i">admin</code> 은 코드에서 항상 전체 허용(잠금 방지)이고,
 <code class="i">operator</code>·<code class="i">user</code> 는 <b>역할 × 메뉴</b> 허용 여부를 <code class="i">/permissions.php</code> 에서 켜고 끈다
-(<code class="i">tb_role_permissions</code>). 각 페이지는 <code class="i">vg_require_menu('메뉴코드')</code> 하나로 가드한다.</p>
+(<code class="i">tb_role_permission</code>). 각 페이지는 <code class="i">vg_require_menu('메뉴코드')</code> 하나로 가드한다.</p>
 
 <!-- 12. 웹 화면 -->
 <h2><span class="n">12</span>웹 화면</h2>
@@ -314,7 +314,7 @@
     <li><span class="ok">✓</span> Docker(dev/prod·secrets) · 수집→전송→저장 파이프라인</li>
     <li><span class="ok">✓</span> 정밀 런타임 수집(실행중/사용중/포트 구분) · 매처 5단계 상태 판정</li>
     <li><span class="ok">✓</span> OSV 자동 매칭(전 패키지·버전필터·조치버전) · KEV/EPSS 우선순위</li>
-    <li><span class="ok">✓</span> 백포트 오탐 억제(2단: 버전필터 + changelog 검증) → tb_suppressed_findings, 호스트 상세에 근거 표시</li>
+    <li><span class="ok">✓</span> 백포트 오탐 억제(2단: 버전필터 + changelog 검증) → tb_suppressed_finding, 호스트 상세에 근거 표시</li>
     <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·MAC·방화벽 5항목 PASS/FAIL/NA(신규 수집 없음)</li>
     <li><span class="ok">✓</span> 변화 추적(changes.php) — 최근 2개 스캔 대비 신규/해결/등급변경</li>
     <li><span class="ok">✓</span> 웹(로그인·대시보드·호스트상세·취약점·변화추적·CVE상세·국내공지·자산·커넥터·사용자·권한·API토큰·감사로그) · 검색/필터·페이지네이션</li>
