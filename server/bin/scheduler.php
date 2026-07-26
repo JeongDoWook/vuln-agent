@@ -34,7 +34,7 @@ foreach ($due as $id) {
 }
 
 if ($ok > 0) {
-    $scans = array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN));
+    $scans = array_map('intval', $pdo->query('SELECT scan_id FROM tb_scan')->fetchAll(PDO::FETCH_COLUMN));
     foreach ($scans as $sid) { vg_match_scan($pdo, $sid); }
     fwrite(STDOUT, '[' . date('c') . "] 재매칭 완료 (" . count($scans) . " 스캔)\n");
 

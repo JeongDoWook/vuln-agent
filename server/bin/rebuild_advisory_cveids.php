@@ -11,9 +11,9 @@ declare(strict_types=1);
  *
  *   네트워크를 쓰지 않는다. 이미 DB 에 있는 content/title 만 다시 읽어 계산하므로
  *   보호나라에 부담이 없고 몇 초면 끝난다. 몇 번을 돌려도 멱등하다.
- *   cve_ids 가 바뀐 행은 tb_advisory_cves 정션도 함께 동기화한다(vg_sync_advisory_cves).
+ *   cve_ids 가 바뀐 행은 tb_advisory_cve 정션도 함께 동기화한다(vg_sync_advisory_cves).
  *
- *   선행 조건: tb_advisories.cve_ids 가 TEXT 여야 한다(db/06-advisories.sql).
+ *   선행 조건: tb_advisory.cve_ids 가 TEXT 여야 한다(db/06-advisories.sql).
  *
  *   사용:
  *     php bin/rebuild_advisory_cveids.php            # 실제 적용
@@ -26,12 +26,12 @@ $opts   = getopt('', ['dry-run']);
 $dryRun = array_key_exists('dry-run', $opts);
 
 $pdo  = vg_pdo();
-$rows = $pdo->query('SELECT id, title, content, cve_ids FROM tb_advisories WHERE is_deleted = 0 ORDER BY id')
+$rows = $pdo->query('SELECT advisory_id, title, content, cve_ids FROM tb_advisory WHERE is_deleted = 0 ORDER BY advisory_id')
             ->fetchAll(PDO::FETCH_ASSOC);
 
 fwrite(STDOUT, sprintf("대상 %d건%s\n", count($rows), $dryRun ? ' (dry-run)' : ''));
 
-$upd = $pdo->prepare('UPDATE tb_advisories SET cve_ids = ? WHERE id = ?');
+$upd = $pdo->prepare('UPDATE tb_advisory SET cve_ids = ? WHERE advisory_id = ?');
 $changed = 0; $grew = 0; $cleaned = 0;
 
 foreach ($rows as $r) {
@@ -52,10 +52,10 @@ foreach ($rows as $r) {
     }
 
     if ($dryRun) {
-        fwrite(STDOUT, sprintf("  id=%-6s %d개 → %d개\n", $r['id'], $oldN, $newN));
+        fwrite(STDOUT, sprintf("  advisory_id=%-6s %d개 → %d개\n", $r['advisory_id'], $oldN, $newN));
     } else {
-        $upd->execute([$new, (int) $r['id']]);
-        vg_sync_advisory_cves($pdo, (int) $r['id'], $ids);
+        $upd->execute([$new, (int) $r['advisory_id']]);
+        vg_sync_advisory_cves($pdo, (int) $r['advisory_id'], $ids);
         foreach ($ids as $cve) { vg_upsert_cve($pdo, $cve, null, null, null); }
     }
 }
