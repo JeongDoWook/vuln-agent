@@ -127,11 +127,11 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
             //   (connectors.php)가 이 뒤에 세션에 쓰는 코드를 추가하면 안 된다.
             session_write_close();
             $r = vg_feed_run($pdo, $id, 'manual');
-            if (!empty($r['ok'])) {
-                foreach (array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
-                    vg_match_scan($pdo, $sid);
-                }
-                $msg = "실행 완료: {$r['upserted']} 건 수집 · 재매칭됨.";
+            // 성공 여부가 아니라 **실제 수집분**이 기준이다 — 0건 수집이면 재계산할 근거가 없다.
+            if (!empty($r['ok']) && (int) $r['upserted'] > 0) {
+                $scans = vg_rematch_scan_ids($pdo);
+                foreach ($scans as $sid) { vg_match_scan($pdo, $sid); }
+                $msg = "실행 완료: {$r['upserted']} 건 수집 · 재매칭 " . count($scans) . ' 스캔.';
                 // OSV 면 조치안(fixed_version)까지 이어서 보강한다(findings 를 읽으므로 재매칭 뒤에).
                 if (vg_feed_has_type($pdo, [$id], 'osv')) {
                     $s = vg_osv_enrich_fixed($pdo);
@@ -139,12 +139,13 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
                     // OSV 로 affected_packages 가 바뀌었으니 packages.php 요약을 다시 만든다.
                     if ($s['filled'] > 0) {
                         vg_load_cve_catalog($pdo, [], true);
-                        foreach (array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
-                            vg_match_scan($pdo, $sid);
-                        }
+                        foreach ($scans as $sid) { vg_match_scan($pdo, $sid); }
                     }
                     vg_rebuild_package_summary($pdo);
                 }
+            } elseif (!empty($r['ok'])) {
+                // 조용히 건너뛰지 않는다 — 왜 재매칭이 안 돌았는지 화면에 드러나야 한다.
+                $msg = '실행 완료: 수집 0건 — 재매칭 생략.';
             } else {
                 $err = "실행 실패: {$r['error']}";
             }

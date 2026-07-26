@@ -922,4 +922,34 @@ if (!function_exists('vg_scope_rank')) {
             return $counts;
         }, 'READ COMMITTED');
     }
+
+    /**
+     * 재매칭 대상 스캔 id — 호스트별 최신 N건(기본 2). changes.php 가 최신+직전을 비교하므로 2가 하한.
+     *
+     * 왜 전체가 아닌가: vg_match_scan() 은 스캔 1건마다 tb_findings·tb_suppressed_findings 를
+     *   DELETE+INSERT 로 통째 재작성한다. 피드 수집마다 전체 스캔(운영 268건)을 돌리면
+     *   binlog 가 하루 23GB 씩 불어난다(운영 실측 2026-07-26 — 디스크 105G 중 76G 가 binlog).
+     *   옛 스캔의 findings 는 어느 화면도 최신 기준으로 읽지 않으므로 다시 계산할 이유가 없다.
+     * 왜 1건이 아니라 2건인가: changes.php 의 변화 추적이 호스트마다 **최신 + 직전** 스캔의
+     *   findings 를 비교한다. 최신 1건만 갱신하면 직전 스캔이 옛 피드 기준으로 남아
+     *   "피드가 늘어서 생긴 차이"가 신규 취약점으로 오표시된다.
+     *
+     * 삭제된 스캔·호스트는 제외 — vg_latest_scan_subq()(db.php)·index.php 와 같은 기준.
+     * @return list<int> 스캔 id 내림차순(최신부터)
+     */
+    function vg_rematch_scan_ids(PDO $pdo, int $perHost = 2): array {
+        $st = $pdo->prepare(
+            'SELECT t.id FROM (
+                 SELECT s.id, ROW_NUMBER() OVER (PARTITION BY s.host_id ORDER BY s.id DESC) AS rn
+                   FROM tb_scans s
+                   JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+                  WHERE s.is_deleted = 0
+             ) t
+             WHERE t.rn <= ?
+             ORDER BY t.id DESC'
+        );
+        $st->bindValue(1, max(1, $perHost), PDO::PARAM_INT);
+        $st->execute();
+        return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+    }
 }
