@@ -11,7 +11,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/http.php';
 require_once __DIR__ . '/upsert.php';
 require_once __DIR__ . '/../db.php';      // vg_latest_scan_subq
-require_once __DIR__ . '/../distro.php';  // vg_osv_ecosystem / vg_pkg_ecosystem (매처와 공유)
+require_once __DIR__ . '/../distro.php';
+require_once __DIR__ . '/../vercmp.php';  // vg_osv_ecosystem / vg_pkg_ecosystem (매처와 공유)
 
 // 커넥터 기본 소스 URL. 커넥터 레코드의 url 이 비어 있으면 이 값을 쓴다(run/미리보기 공용).
 const VG_OSV_URL = 'https://api.osv.dev/v1/querybatch';
@@ -35,12 +36,55 @@ function vg_osv_cve(array $vuln): ?string {
  * 24.04 호스트에 20.04 의 fixed 버전을 붙일 수 있다.
  * OSV 의 ecosystem 은 'Ubuntu:24.04:LTS' 처럼 접미사가 붙어 접두 일치로 비교한다.
  */
-function vg_osv_fixed(array $vuln, string $key, ?string $eco = null): ?string {
+function vg_osv_manager(string $eco): string {
+    $e = strtolower($eco);
+    if (strpos($e, 'debian') === 0 || strpos($e, 'ubuntu') === 0) { return 'dpkg'; }
+    if (strpos($e, 'red hat') === 0 || strpos($e, 'rocky linux') === 0 ||
+        strpos($e, 'almalinux') === 0 || strpos($e, 'oracle linux') === 0) { return 'rpm'; }
+    if (strpos($e, 'alpine') === 0) { return 'apk'; }
+    $map = ['pypi' => 'pip', 'npm' => 'npm', 'rubygems' => 'gem',
+            'packagist' => 'composer', 'go' => 'go'];
+    return $map[$e] ?? 'upstream';
+}
+
+/** 설치 버전이 포함된 OSV 취약 구간의 fixed 경계만 반환한다. */
+function vg_osv_range_fixed(array $range, string $installed, string $manager): ?string {
+    if (strtoupper((string) ($range['type'] ?? '')) === 'GIT') { return null; }
+    $vulnerable = false;
+    foreach ($range['events'] ?? [] as $event) {
+        if (isset($event['introduced'])) {
+            $introduced = (string) $event['introduced'];
+            if ($introduced === '0' || vg_ver_cmp($installed, $introduced, $manager) >= 0) { $vulnerable = true; }
+            continue;
+        }
+        if (isset($event['fixed'])) {
+            $fixed = (string) $event['fixed'];
+            if ($vulnerable && vg_ver_cmp($installed, $fixed, $manager) < 0) { return $fixed; }
+            if (vg_ver_cmp($installed, $fixed, $manager) >= 0) { $vulnerable = false; }
+            continue;
+        }
+        if (isset($event['last_affected']) && vg_ver_cmp($installed, (string) $event['last_affected'], $manager) > 0) {
+            $vulnerable = false;
+            continue;
+        }
+        if (isset($event['limit']) && (string) $event['limit'] !== '*' &&
+            vg_ver_cmp($installed, (string) $event['limit'], $manager) >= 0) { $vulnerable = false; }
+    }
+    return null;
+}
+
+function vg_osv_fixed(array $vuln, string $key, ?string $eco = null, ?string $installed = null): ?string {
     $fixed = null;
     foreach ($vuln['affected'] ?? [] as $aff) {
         if (($aff['package']['name'] ?? '') !== $key) { continue; }
         if ($eco !== null && strpos((string) ($aff['package']['ecosystem'] ?? ''), $eco) !== 0) { continue; }
+        $manager = vg_osv_manager((string) ($aff['package']['ecosystem'] ?? $eco ?? ''));
         foreach ($aff['ranges'] ?? [] as $rng) {
+            if ($installed !== null) {
+                $candidate = vg_osv_range_fixed($rng, $installed, $manager);
+                if ($candidate !== null) { return $candidate; }
+                continue;
+            }
             foreach ($rng['events'] ?? [] as $ev) {
                 if (!empty($ev['fixed'])) { $fixed = (string) $ev['fixed']; }
             }
@@ -49,6 +93,35 @@ function vg_osv_fixed(array $vuln, string $key, ?string $eco = null): ?string {
     return $fixed;
 }
 
+/** 전역 카탈로그에는 모든 설치본에 안전한 단일 fixed 경계만 저장한다. */
+function vg_osv_global_fixed(array $vuln, string $key, string $eco, string $installed): ?string {
+    $fixedEvents = [];
+    foreach ($vuln['affected'] ?? [] as $aff) {
+        if (($aff['package']['name'] ?? '') !== $key) { continue; }
+        if (strpos((string) ($aff['package']['ecosystem'] ?? ''), $eco) !== 0) { continue; }
+        foreach ($aff['ranges'] ?? [] as $range) {
+            if (strtoupper((string) ($range['type'] ?? '')) === 'GIT') { continue; }
+            foreach ($range['events'] ?? [] as $event) {
+                if (isset($event['fixed'])) { $fixedEvents[(string) $event['fixed']] = true; }
+            }
+        }
+    }
+    // 스키마는 package/ecosystem당 fixed 하나만 표현한다. 여러 구간을 마지막 값으로
+    // 덮으면 다른 브랜치가 패치된 것으로 오판되므로 보수적으로 미정(null) 처리한다.
+    if (count($fixedEvents) !== 1) { return null; }
+    return vg_osv_fixed($vuln, $key, $eco, $installed);
+}
+/** Debian 계열은 source_pkg와 source_version을 한 쌍으로 질의해야 한다. */
+function vg_osv_package_query(array $pkg, string $eco): ?array {
+    $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
+    $source = trim((string) ($pkg['source_pkg'] ?? ''));
+    $key = $isDeb && $source !== '' ? $source : trim((string) ($pkg['name'] ?? ''));
+    $sourceVersion = trim((string) ($pkg['source_version'] ?? ''));
+    $version = $isDeb && $source !== '' && $sourceVersion !== '' ? $sourceVersion : trim((string) ($pkg['version'] ?? ''));
+    if ($key === '' || $version === '') { return null; }
+    return ['key' => $key, 'eco' => $eco,
+            'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $version]];
+}
 /**
  * 보안공지 레코드(USN-*, DSA-* …)가 묶고 있는 CVE 목록.
  *   querybatch 는 id 만 준다. USN 은 id 에 CVE 가 없어 그대로 버리면 취약점을 놓친다:
@@ -86,20 +159,19 @@ function vg_osv_batch_url(array $conn): string {
  * @return list<array{key:string,q:array}>
  */
 function vg_osv_queries(PDO $pdo, int $scanId, string $eco): array {
-    $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
     // OS 패키지만. 언어 패키지는 vg_osv_lang_queries 가 자기 생태계로 따로 조회한다.
-    $pk = $pdo->prepare("SELECT name, source_pkg, version FROM tb_packages
+    $pk = $pdo->prepare("SELECT name, source_pkg, source_version, version FROM tb_packages
                          WHERE scan_id = ? AND container_id = 0 AND manager IN ('rpm','dpkg')");
     $pk->execute([$scanId]);
 
     $out = []; $seen = [];
     foreach ($pk->fetchAll() as $p) {
-        $key = $isDeb ? ($p['source_pkg'] ?: $p['name']) : $p['name'];
-        $ver = (string) $p['version'];
-        if ($key === '' || $ver === '' || isset($seen["$key|$ver"])) { continue; }
+        $query = vg_osv_package_query($p, $eco);
+        if ($query === null) { continue; }
+        $key = $query['key']; $ver = $query['q']['version'];
+        if (isset($seen["$key|$ver"])) { continue; }
         $seen["$key|$ver"] = true;
-        $out[] = ['key' => $key, 'eco' => $eco,
-                  'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
+        $out[] = $query;
     }
     return $out;
 }
@@ -136,7 +208,7 @@ function vg_osv_lang_queries(PDO $pdo, int $scanId): array {
  */
 function vg_osv_container_queries(PDO $pdo, int $scanId): array {
     $st = $pdo->prepare(
-        'SELECT c.os_id, c.os_version, p.manager, p.name, p.source_pkg, p.version
+        'SELECT c.os_id, c.os_version, p.manager, p.name, p.source_pkg, p.source_version, p.version
            FROM tb_packages p JOIN tb_containers c ON c.id = p.container_id
           WHERE p.scan_id = ? AND p.container_id > 0'
     );
@@ -155,13 +227,12 @@ function vg_osv_container_queries(PDO $pdo, int $scanId): array {
             $eco = vg_pkg_ecosystem($mgr, null);
         }
         if ($eco === null) { continue; }                     // OSV 미지원 배포판 → 조회 불가
-        $isDeb = stripos($eco, 'Debian') === 0 || stripos($eco, 'Ubuntu') === 0;
-        $key = $isDeb ? (($p['source_pkg'] ?: $p['name'])) : (string) $p['name'];
-        $ver = (string) $p['version'];
-        if ($key === '' || $ver === '' || isset($seen["$eco|$key|$ver"])) { continue; }
+        $query = vg_osv_package_query($p, $eco);
+        if ($query === null) { continue; }
+        $key = $query['key']; $ver = $query['q']['version'];
+        if (isset($seen["$eco|$key|$ver"])) { continue; }
         $seen["$eco|$key|$ver"] = true;
-        $out[] = ['key' => $key, 'eco' => $eco,
-                  'q' => ['package' => ['ecosystem' => $eco, 'name' => $key], 'version' => $ver]];
+        $out[] = $query;
     }
     return $out;
 }
@@ -424,7 +495,7 @@ function vg_osv_enrich_fixed(PDO $pdo, ?callable $log = null): array {
             }
             foreach ($r['json']['vulns'] as $v) {
                 $cve   = vg_osv_cve($v);
-                $fixed = vg_osv_fixed($v, $key, $qEco);
+                $fixed = vg_osv_global_fixed($v, $key, $qEco, (string) $ver);
                 if ($cve === null || $fixed === null) { continue; }
                 vg_upsert_affected($pdo, $cve, $qEco, $key, $fixed);   // fixed 채움(기존 행 UPDATE)
                 $stat['filled']++;

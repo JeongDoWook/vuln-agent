@@ -207,9 +207,11 @@ if (!function_exists('vg_scope_rank')) {
      * 그래서 **필요한 패키지 이름만** 질의하고, 이름 단위로 캐시한다(재매칭은 같은 패키지를
      * 스캔마다 다시 보므로 캐시 적중률이 높다). KEV 는 작아서 통째로 캐시한다.
      */
-    function vg_load_cve_catalog(PDO $pdo, array $pkgNames): array {
+    function vg_load_cve_catalog(PDO $pdo, array $pkgNames, bool $reset = false): array {
         static $kev = null;
-        static $cache = [];        // 패키지명 => 행들 (없으면 빈 배열 — "조회했지만 없음"도 캐시)
+        static $cache = [];        // package name => cached catalog rows, including empty results
+
+        if ($reset) { $kev = null; $cache = []; return ['kev' => [], 'affected' => []]; }
 
         if ($kev === null) {
             $kev = [];
@@ -773,8 +775,8 @@ if (!function_exists('vg_scope_rank')) {
         $pdo->prepare('DELETE FROM tb_suppressed_findings WHERE scan_id = ?')->execute([$scanId]);
         $insSupp = $pdo->prepare(
             'INSERT INTO tb_suppressed_findings
-               (scan_id, cve_id, package_name, installed_version, in_kev, cvss, base_severity, suppress_reason)
-             VALUES (?,?,?,?,?,?,?,?)
+               (scan_id, container_id, cve_id, package_name, installed_version, in_kev, cvss, base_severity, suppress_reason)
+             VALUES (?,?,?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE
                installed_version=VALUES(installed_version), in_kev=VALUES(in_kev), cvss=VALUES(cvss),
                base_severity=VALUES(base_severity), suppress_reason=VALUES(suppress_reason)'
@@ -822,7 +824,7 @@ if (!function_exists('vg_scope_rank')) {
 
                 if ($decision['suppress']) {
                     $insSupp->execute([
-                        $scanId, $cveId, $p['name'], $p['version'],
+                        $scanId, $ctrId, $cveId, $p['name'], $p['version'],
                         $decision['inKev'] ? 1 : 0, $decision['cvss'], $decision['sev'], $decision['reason'],
                     ]);
                     $counts['SUPPRESSED']++;

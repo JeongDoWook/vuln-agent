@@ -22,9 +22,8 @@ $r = vg_feed_run($pdo, $id, 'manual');
 fwrite(STDOUT, json_encode($r, JSON_UNESCAPED_UNICODE) . "\n");
 
 if (!empty($r['ok'])) {
-    foreach (array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN)) as $sid) {
-        vg_match_scan($pdo, $sid);
-    }
+    $scans = array_map('intval', $pdo->query('SELECT id FROM tb_scans')->fetchAll(PDO::FETCH_COLUMN));
+    foreach ($scans as $sid) { vg_match_scan($pdo, $sid); }
     fwrite(STDOUT, "재매칭 완료\n");
 
     // OSV 면 조치안(fixed_version)까지 이어서 보강한다. findings 를 읽으므로 재매칭 뒤에.
@@ -32,6 +31,10 @@ if (!empty($r['ok'])) {
         $s = vg_osv_enrich_fixed($pdo);
         fwrite(STDOUT, "OSV 조치안 보강 — 대상 {$s['targets']}종 · 조회 {$s['queried']} · 채움 {$s['filled']} · 건너뜀 {$s['skipped']}\n");
         // OSV 로 affected_packages 가 바뀌었으니 packages.php 요약을 다시 만든다.
+        if ($s['filled'] > 0) {
+            vg_load_cve_catalog($pdo, [], true);
+            foreach ($scans as $sid) { vg_match_scan($pdo, (int) $sid); }
+        }
         vg_rebuild_package_summary($pdo);
         fwrite(STDOUT, "packages 요약 재빌드 완료\n");
     }
