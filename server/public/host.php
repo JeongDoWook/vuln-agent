@@ -42,7 +42,7 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
     $sel = "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
                    f.needs_restart, c.epss, c.epss_percentile, c.ref_urls_json,
                " . VG_FIXED_VERSION_SUBQ . "
-              FROM tb_findings f LEFT JOIN tb_cves c ON c.cve_id = f.cve_id";
+              FROM tb_finding f LEFT JOIN tb_cve c ON c.cve_id = f.cve_id";
 
     $where = "f.scan_id = ? AND f.severity IN ('CRITICAL','HIGH')";
     $params = [$sid];
@@ -53,7 +53,7 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
     }
 
     if ($q !== null && $q !== '') {
-        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_findings f WHERE $where");
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_finding f WHERE $where");
         $cnt->execute($params);
         $total = (int) $cnt->fetchColumn();
     } else {
@@ -92,7 +92,7 @@ function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset,
         $eParams[] = '%' . $q . '%';
         $eParams[] = '%' . $q . '%';
     }
-    $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_exposures e WHERE $eWhere");
+    $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_exposure e WHERE $eWhere");
     $cnt->execute($eParams);
     $exposureTotal = (int) $cnt->fetchColumn();
 
@@ -105,7 +105,7 @@ function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset,
 
     $st = $pdo->prepare("SELECT e.proc, e.proto, e.bind_addr, e.port, e.scope, e.exe_pkg, e.loaded_pkgs,
                                 IFNULL(c.cid, '') AS ctr
-                           FROM tb_exposures e LEFT JOIN tb_containers c ON c.id = e.container_id
+                           FROM tb_exposure e LEFT JOIN tb_container c ON c.container_id = e.container_id
                           WHERE $eWhere
                           ORDER BY FIELD(e.scope,'EXTERNAL','LAN','BOUND','FILTERED','LOCAL','-'), e.port
                           LIMIT $perPage OFFSET $eOffset");
@@ -120,13 +120,13 @@ function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset,
         $pParams[] = '%' . $q . '%';
         $pParams[] = '%' . $q . '%';
     }
-    $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_processes p WHERE $pWhere");
+    $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_process p WHERE $pWhere");
     $cnt->execute($pParams);
     $total = (int) $cnt->fetchColumn();
 
     $st = $pdo->prepare("SELECT p.pid, p.comm, p.username, p.exe_pkg, p.loaded_pkgs,
                                 IFNULL(c.cid, '') AS ctr
-                           FROM tb_processes p LEFT JOIN tb_containers c ON c.id = p.container_id
+                           FROM tb_process p LEFT JOIN tb_container c ON c.container_id = p.container_id
                           WHERE $pWhere ORDER BY p.comm LIMIT $perPage OFFSET $offset");
     $st->execute($pParams);
     $rows = $st->fetchAll();
@@ -143,15 +143,15 @@ function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset, ?st
         $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
     }
-    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_findings f WHERE $where");
+    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_finding f WHERE $where");
     $st->execute($params); $total = (int) $st->fetchColumn();
     // 점검 항목을 **검증된 룰셋(SSG)** 에 묶어 두었으므로, 그 룰의 기준 참조(CIS/NIST/STIG)를
     //   함께 읽어 화면이 근거를 인용할 수 있게 한다. 묶이지 않은 항목은 refs 가 비어 있다.
     $st = $pdo->prepare(
         "SELECT f.code, f.ssg_rule_id, f.title, f.result, f.severity, f.evidence, f.rationale,
                 r.refs_json, r.title AS ssg_title
-           FROM tb_cce_findings f
-           LEFT JOIN tb_compliance_rules r ON r.rule_id = f.ssg_rule_id AND r.is_deleted = 0
+           FROM tb_cce_finding f
+           LEFT JOIN tb_compliance_rule r ON r.rule_id = f.ssg_rule_id AND r.is_deleted = 0
           WHERE $where
           ORDER BY FIELD(f.result,'FAIL','NA','PASS'), FIELD(f.severity,'HIGH','MEDIUM','LOW'), f.code
           LIMIT $perPage OFFSET $offset"
@@ -172,7 +172,7 @@ function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, i
     }
 
     if ($q !== null && $q !== '') {
-        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_suppressed_findings sf WHERE $where");
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_suppressed_finding sf WHERE $where");
         $cnt->execute($params);
         $total = (int) $cnt->fetchColumn();
     } else {
@@ -182,8 +182,8 @@ function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, i
     $st = $pdo->prepare(
         "SELECT cve_id, package_name, installed_version, base_severity, in_kev, suppress_reason,
                 CASE WHEN sf.container_id = 0 THEN 'HOST'
-                     ELSE COALESCE((SELECT c.name FROM tb_containers c WHERE c.id = sf.container_id), CONCAT('container #', sf.container_id)) END AS target
-           FROM tb_suppressed_findings sf WHERE $where
+                     ELSE COALESCE((SELECT c.name FROM tb_container c WHERE c.container_id = sf.container_id), CONCAT('container #', sf.container_id)) END AS target
+           FROM tb_suppressed_finding sf WHERE $where
           ORDER BY FIELD(base_severity,'CRITICAL','HIGH','MEDIUM','LOW'), cve_id
           LIMIT $perPage OFFSET $offset"
     );
@@ -198,7 +198,7 @@ function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
     $st = $pdo->prepare(
         'SELECT collected_at, peak_rss_mb, cpu_seconds, mem_total_mb, cpu_cores, elapsed_seconds
-           FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT ' . vg_ui_trend_limit()
+           FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT ' . vg_ui_trend_limit()
     );
     $st->execute([$hostId]);
     $resourceScans = array_reverse($st->fetchAll());
@@ -227,15 +227,15 @@ function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
 function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perPage, int $offset): array {
     $total = $scanTotal;
     $st = $pdo->prepare(
-        "SELECT id, collected_at, received_at, package_count, exposure_count, agent_version,
+        "SELECT scan_id, collected_at, received_at, package_count, exposure_count, agent_version,
                 elapsed_seconds, peak_rss_mb, cpu_seconds
-           FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT $perPage OFFSET $offset"
+           FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT $perPage OFFSET $offset"
     );
     $st->execute([$hostId]);
     $rows = $st->fetchAll();
 
     $ids = [];
-    foreach ($rows as $s) { $ids[] = (int) $s['id']; }
+    foreach ($rows as $s) { $ids[] = (int) $s['scan_id']; }
     $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
 
     return ['total' => $total, 'rows' => $rows, 'sevByScan' => $sevByScan];
@@ -269,24 +269,24 @@ try {
             }
         }
         $pdo->beginTransaction();
-        $exists = $pdo->prepare('SELECT fqdn FROM tb_hosts WHERE id = ? AND is_deleted = 0 FOR UPDATE');
+        $exists = $pdo->prepare('SELECT fqdn FROM tb_host WHERE host_id = ? AND is_deleted = 0 FOR UPDATE');
         $exists->execute([$hostId]);
         $fqdn = $exists->fetchColumn();
         if ($fqdn === false) { throw new RuntimeException('호스트를 찾을 수 없습니다.'); }
-        $pdo->prepare('UPDATE tb_hosts SET perimeter_firewalled = ? WHERE id = ?')->execute([$perimeter, $hostId]);
-        $pdo->prepare('DELETE FROM tb_host_ext_ports WHERE host_id = ?')->execute([$hostId]);
-        $insPort = $pdo->prepare('INSERT INTO tb_host_ext_ports (host_id, port, proto) VALUES (?, ?, ?)');
+        $pdo->prepare('UPDATE tb_host SET perimeter_firewalled = ? WHERE host_id = ?')->execute([$perimeter, $hostId]);
+        $pdo->prepare('DELETE FROM tb_host_ext_port WHERE host_id = ?')->execute([$hostId]);
+        $insPort = $pdo->prepare('INSERT INTO tb_host_ext_port (host_id, port, proto) VALUES (?, ?, ?)');
         foreach ($ports as [$port, $proto]) { $insPort->execute([$hostId, $port, $proto]); }
         $pdo->commit();
         vg_log_activity($pdo, 'HOST', $hostId, 'host_perimeter_update', '경계 방화벽 설정 변경: ' . (string) $fqdn,
             ['perimeter_firewalled' => $perimeter, 'external_ports' => array_keys($ports)]);
-        $latest = $pdo->prepare('SELECT id FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 1');
+        $latest = $pdo->prepare('SELECT scan_id FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT 1');
         $latest->execute([$hostId]);
         $latestScanId = (int) ($latest->fetchColumn() ?: 0);
         if ($latestScanId > 0) { vg_match_scan($pdo, $latestScanId); }
         $msg = '경계 방화벽 설정을 저장하고 최신 스캔을 다시 매칭했습니다.';
     }
-    $st = $pdo->prepare('SELECT * FROM tb_hosts WHERE id = ? AND is_deleted = 0');
+    $st = $pdo->prepare('SELECT * FROM tb_host WHERE host_id = ? AND is_deleted = 0');
     $st->execute([$hostId]);
     $host = $st->fetch() ?: null;
 
@@ -294,22 +294,22 @@ try {
         // 호스트 상세(설치 패키지·노출 포트·실행 프로세스 등 인프라 민감정보) 열람 감사로그.
         vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null));
 
-        // 컬럼을 못 박는 이유: tb_scans.raw_json 은 호스트당 MB 단위(실측 3.14MB)라
+        // 컬럼을 못 박는 이유: tb_scan.raw_json 은 호스트당 MB 단위(실측 3.14MB)라
         // SELECT * 로 끌면 ORDER BY 의 정렬 버퍼(운영 sort_buffer_size=2M)를 한 행만으로도 넘겨 1038 이 난다.
-        $st = $pdo->prepare('SELECT id, collected_at, package_count,
+        $st = $pdo->prepare('SELECT scan_id, collected_at, package_count,
                                     TIMESTAMPDIFF(MINUTE, collected_at, NOW()) AS age_min
-                               FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 1');
+                               FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT 1');
         $st->execute([$hostId]);
         $scan = $st->fetch() ?: null;
     }
 
     if ($scan) {
-        $sid = (int) $scan['id'];
+        $sid = (int) $scan['scan_id'];
         $scanAge = $scan['age_min'];
 
         // 취약점 0건이 "판정 불가"인 컨테이너 — 피드 미지원 배포판 + **패키지 DB 없는 이미지**.
         //   후자는 rhel 처럼 피드가 지원하는 배포판이라 미지원 경고에 안 걸린다 → 따로 잡아야 한다.
-        $st = $pdo->prepare('SELECT cid, os_id, os_version, manager, pkg_count FROM tb_containers WHERE scan_id = ?');
+        $st = $pdo->prepare('SELECT cid, os_id, os_version, manager, pkg_count FROM tb_container WHERE scan_id = ?');
         $st->execute([$sid]);
         foreach ($st->fetchAll() as $c) {
             $reason = vg_container_unjudgeable(
@@ -322,36 +322,36 @@ try {
         }
 
         // --- 히어로/KPI 집계 (탭과 무관한 값싼 COUNT) ---
-        $st = $pdo->prepare('SELECT severity, COUNT(*) c FROM tb_findings WHERE scan_id = ? GROUP BY severity');
+        $st = $pdo->prepare('SELECT severity, COUNT(*) c FROM tb_finding WHERE scan_id = ? GROUP BY severity');
         $st->execute([$sid]);
         foreach ($st->fetchAll() as $r) { if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; } }
 
-        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_exposures WHERE scan_id = ?');
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_exposure WHERE scan_id = ?');
         $st->execute([$sid]); $exposureCount = (int) $st->fetchColumn();
 
-        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_findings WHERE scan_id = ? AND result = 'FAIL'");
+        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_finding WHERE scan_id = ? AND result = 'FAIL'");
         $st->execute([$sid]); $cceFail = (int) $st->fetchColumn();
 
-        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_suppressed_findings WHERE scan_id = ?');
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_suppressed_finding WHERE scan_id = ?');
         $st->execute([$sid]); $suppressedCount = (int) $st->fetchColumn();
 
         // 우선순위 취약점 = CRITICAL·HIGH + 재시작 필요(등급이 낮아도 숨기지 않는다).
         //   탭 배지는 둘의 합, 화면은 두 표로 나눠 보여준다(아래 vuln 탭 주석 참고).
-        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_findings
+        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_finding
                               WHERE scan_id = ? AND (severity IN ('CRITICAL','HIGH') OR needs_restart = 1)");
         $st->execute([$sid]); $vulnTotal = (int) $st->fetchColumn();
 
-        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_findings
+        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_finding
                               WHERE scan_id = ? AND severity IN ('CRITICAL','HIGH')");
         $st->execute([$sid]); $critHighTotal = (int) $st->fetchColumn();
 
-        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_findings WHERE scan_id = ? AND needs_restart = 1');
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_finding WHERE scan_id = ? AND needs_restart = 1');
         $st->execute([$sid]); $restartTotal = (int) $st->fetchColumn();
 
-        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_scans WHERE host_id = ?');
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_scan WHERE host_id = ?');
         $st->execute([$hostId]); $scanTotal = (int) $st->fetchColumn();
 
-        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_processes WHERE scan_id = ?');
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_process WHERE scan_id = ?');
         $st->execute([$sid]); $processCount = (int) $st->fetchColumn();
 
         // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
@@ -435,7 +435,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
   vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'ASSET DETAIL');
 
-  $portStmt = $pdo->prepare('SELECT port, proto FROM tb_host_ext_ports WHERE host_id = ? AND is_deleted = 0 ORDER BY port, proto');
+  $portStmt = $pdo->prepare('SELECT port, proto FROM tb_host_ext_port WHERE host_id = ? AND is_deleted = 0 ORDER BY port, proto');
   $portStmt->execute([$hostId]);
   $portValues = [];
   foreach ($portStmt->fetchAll() as $portRow) {
@@ -530,7 +530,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     ]); ?>
     <div class="card">
       <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
-      <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>">전체 취약점 보기 →</a></span>
+      <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>">전체 취약점 보기 →</a></span>
       <div class="card__body">
       <?php
       vg_table($vulnHeaders, $rows, $vulnOpts + [
@@ -557,7 +557,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       <span class="why">— 패치 완료, 재시작 전까지 옛 코드 실행 중
         <?php if ($restartTotal > count($restartRows)): ?>
           · 상위 <?= count($restartRows) ?>건 ·
-          <a href="/findings.php?scan_id=<?= (int) $scan['id'] ?>&amp;fx=restart">전체 보기 →</a>
+          <a href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>&amp;fx=restart">전체 보기 →</a>
         <?php endif; ?>
       </span>
       <div class="card__body">
@@ -844,7 +844,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       <?php
       vg_table(
           [
-              ['label' => '스캔', 'key' => 'id'],
+              ['label' => '스캔', 'key' => 'scan_id'],
               ['label' => '수집시각', 'key' => 'collected_at'],
               ['label' => '수신시각', 'key' => 'received_at'],
               ['label' => '패키지', 'key' => 'package_count', 'align' => 'right'],
@@ -862,7 +862,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                   'title' => '스캔 이력이 없습니다.',
               ],
               'cell' => [
-                  'id'             => fn($s) => '<a href="/findings.php?scan_id=' . (int) $s['id'] . '">#' . (int) $s['id'] . '</a>',
+                  'scan_id'        => fn($s) => '<a href="/findings.php?scan_id=' . (int) $s['scan_id'] . '">#' . (int) $s['scan_id'] . '</a>',
                   'collected_at'   => fn($s) => vg_h($s['collected_at']),
                   'received_at'    => fn($s) => '<span class="why">' . vg_h($s['received_at']) . '</span>',
                   'package_count'  => fn($s) => number_format((int) $s['package_count']),
@@ -870,7 +870,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                   'peak_rss_mb'    => fn($s) => vg_resource_mem($s['peak_rss_mb']),
                   'cpu_seconds'    => fn($s) => vg_resource_cpu($s['cpu_seconds']),
                   'agent_version'  => fn($s) => $s['agent_version'] ? '<code>' . vg_h($s['agent_version']) . '</code>' : '<span class="why">–</span>',
-                  'sev' => fn($s) => vg_sev_counts($sevByScan[(int) $s['id']] ?? []),
+                  'sev' => fn($s) => vg_sev_counts($sevByScan[(int) $s['scan_id']] ?? []),
               ],
           ]
       );
