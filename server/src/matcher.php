@@ -726,7 +726,7 @@ if (!function_exists('vg_scope_rank')) {
 
     /**
      * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
-     *   판정은 매번 전부 다시 하지만, 결과 지문이 `tb_scans.match_fingerprint` 와 같으면
+     *   판정은 매번 전부 다시 하지만, 결과 지문이 `tb_scan.match_fingerprint` 와 같으면
      *   **한 줄도 쓰지 않는다.** 피드가 갱신돼도 특정 스캔의 판정 결과는 대부분 그대로인데,
      *   지금까지는 1비트도 안 바뀐 경우에도 findings 를 통째 삭제·재삽입해 binlog 만
      *   하루 20GB 넘게 쌓였다(운영 실측: 105G 중 76G 가 binlog).
@@ -772,8 +772,8 @@ if (!function_exists('vg_scope_rank')) {
         // ── 1단계: 계산. 여기선 DB 에 한 줄도 쓰지 않고 결과를 배열로만 모은다.
         //   쓸지 말지는 아래 지문 비교가 정하므로, 판정과 쓰기가 붙어 있으면 안 된다.
         //   메모리: 스캔당 최대 2.5만 행(운영 실측)이라 수 MB 수준이다.
-        $findRows = [];  // ['key'=>유니크키, 'row'=>tb_findings INSERT 파라미터, 'evidence'=>증거 payload]
-        $suppRows = [];  // ['key'=>유니크키, 'row'=>tb_suppressed_findings INSERT 파라미터]
+        $findRows = [];  // ['key'=>유니크키, 'row'=>tb_finding INSERT 파라미터, 'evidence'=>증거 payload]
+        $suppRows = [];  // ['key'=>유니크키, 'row'=>tb_suppressed_finding INSERT 파라미터]
 
         // NOFIX 는 등급이 아니라 **별도 축**이다(조치 불가). CRITICAL~LOW 와 겹쳐서 센다.
         $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0, 'SUPPRESSED' => 0, 'NOFIX' => 0];
@@ -809,7 +809,7 @@ if (!function_exists('vg_scope_rank')) {
                 $decision = vg_match_decide_cve($cveId, $cand, $p, $mgr, $ctr, $ctrId, $scan, $ctx, $kev, $kernelFixed, $sup);
 
                 if ($decision['suppress']) {
-                    // 억제(백포트)된 건은 tb_findings 가 아니라 tb_suppressed_findings 로 — 위험 집계에서 자동 제외.
+                    // 억제(백포트)된 건은 tb_finding 이 아니라 tb_suppressed_finding 으로 — 위험 집계에서 자동 제외.
                     $suppRows[] = ['key' => $key, 'row' => [
                         $scanId, $ctrId, $cveId, $p['name'], $p['version'],
                         $decision['inKev'] ? 1 : 0, $decision['cvss'], $decision['sev'], $decision['reason'],
@@ -836,12 +836,12 @@ if (!function_exists('vg_scope_rank')) {
         // ── 2단계: 지문 비교. 결과가 그대로면 DELETE·INSERT·증거·remediation 을 전부 건너뛴다
         //   (트랜잭션도 열지 않는다).
         //   remediation 을 같이 건너뛰어도 안전한 근거: vg_sync_remediation_cases() 가 보는 값은
-        //   findings(그대로) + tb_scans.collected_at(그대로)뿐이고, ON DUPLICATE 절이 `due_at=due_at`
+        //   findings(그대로) + tb_scan.collected_at(그대로)뿐이고, ON DUPLICATE 절이 `due_at=due_at`
         //   라 SLA 정책 변경은 애초에 반영되지 않는다 → 같은 입력이면 같은 결과다.
         //   지문이 NULL(최초·신규 스캔)이면 당연히 다르므로 항상 쓴다.
         $fingerprint = vg_match_fingerprint($findRows, $suppRows);
         if (!$force) {
-            $fpSt = $pdo->prepare('SELECT match_fingerprint FROM tb_scans WHERE id = ?');
+            $fpSt = $pdo->prepare('SELECT match_fingerprint FROM tb_scan WHERE scan_id = ?');
             $fpSt->execute([$scanId]);
             $prevFp = $fpSt->fetchColumn();
             if (is_string($prevFp) && hash_equals($prevFp, $fingerprint)) {
@@ -865,7 +865,7 @@ if (!function_exists('vg_scope_rank')) {
         //   READ COMMITTED 는 이 스캔에 갭락을 걸지 않으므로 원인 자체가 사라진다.
         //   락 순서 통일로는 못 고친다 — 둘이 **같은 순서로 같은 갭**을 잡다 나는 사고다.
         // 정합성: 이 트랜잭션 안의 읽기는 **방금 자기가 쓴 행을 도로 보는 것뿐**이다 —
-        //   finding id 재조회(SELECT id FROM tb_findings)와 vg_sync_remediation_cases() 의 조회가
+        //   finding id 재조회(SELECT finding_id FROM tb_finding)와 vg_sync_remediation_cases() 의 조회가
         //   그것이고, 판정 근거($packages·$affected 등)는 전부 이 시점 이전에 읽어 뒀다.
         //   남이 쓴 데이터를 다시 읽는 게 없으니 비반복읽기·팬텀이 성립할 여지가 없고,
         //   원자성은 격리수준과 무관하다.
@@ -918,7 +918,7 @@ if (!function_exists('vg_scope_rank')) {
             vg_sync_remediation_cases($pdo, $scanId);
             // 지문은 **같은 트랜잭션 안에서** 갱신한다 — 밖에서 갱신하면 롤백 시
             //   "안 썼는데 썼다고 기록"이 남아 이후 재매칭이 영영 건너뛴다.
-            $pdo->prepare('UPDATE tb_scans SET match_fingerprint = ? WHERE id = ?')->execute([$fingerprint, $scanId]);
+            $pdo->prepare('UPDATE tb_scan SET match_fingerprint = ? WHERE scan_id = ?')->execute([$fingerprint, $scanId]);
             return $counts;
         }, 'READ COMMITTED');
     }
@@ -926,7 +926,7 @@ if (!function_exists('vg_scope_rank')) {
     /**
      * 재매칭 대상 스캔 id — 호스트별 최신 N건(기본 2). changes.php 가 최신+직전을 비교하므로 2가 하한.
      *
-     * 왜 전체가 아닌가: vg_match_scan() 은 스캔 1건마다 tb_findings·tb_suppressed_findings 를
+     * 왜 전체가 아닌가: vg_match_scan() 은 스캔 1건마다 tb_finding·tb_suppressed_finding 을
      *   DELETE+INSERT 로 통째 재작성한다. 피드 수집마다 전체 스캔(운영 268건)을 돌리면
      *   binlog 가 하루 23GB 씩 불어난다(운영 실측 2026-07-26 — 디스크 105G 중 76G 가 binlog).
      *   옛 스캔의 findings 는 어느 화면도 최신 기준으로 읽지 않으므로 다시 계산할 이유가 없다.
@@ -939,14 +939,14 @@ if (!function_exists('vg_scope_rank')) {
      */
     function vg_rematch_scan_ids(PDO $pdo, int $perHost = 2): array {
         $st = $pdo->prepare(
-            'SELECT t.id FROM (
-                 SELECT s.id, ROW_NUMBER() OVER (PARTITION BY s.host_id ORDER BY s.id DESC) AS rn
-                   FROM tb_scans s
-                   JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+            'SELECT t.scan_id FROM (
+                 SELECT s.scan_id, ROW_NUMBER() OVER (PARTITION BY s.host_id ORDER BY s.scan_id DESC) AS rn
+                   FROM tb_scan s
+                   JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
                   WHERE s.is_deleted = 0
              ) t
              WHERE t.rn <= ?
-             ORDER BY t.id DESC'
+             ORDER BY t.scan_id DESC'
         );
         $st->bindValue(1, max(1, $perHost), PDO::PARAM_INT);
         $st->execute();
