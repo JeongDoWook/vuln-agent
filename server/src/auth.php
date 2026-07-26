@@ -23,7 +23,7 @@ if (session_status() === PHP_SESSION_NONE) {
 //   예전엔 시크릿이 없을 때 비번 'admin' 으로 조용히 계정을 열었다. compose.yml 은 항상
 //   ADMIN_PASSWORD_FILE 을 주입하므로(dev·prod 공통) 정상 경로엔 영향 없다.
 function vg_bootstrap_admin(PDO $pdo): void {
-    $n = (int) $pdo->query('SELECT COUNT(*) FROM tb_users')->fetchColumn();
+    $n = (int) $pdo->query('SELECT COUNT(*) FROM tb_user')->fetchColumn();
     if ($n > 0) {
         return;
     }
@@ -32,7 +32,7 @@ function vg_bootstrap_admin(PDO $pdo): void {
         error_log('[auth] ADMIN_PASSWORD 시크릿이 없어 admin 부트스트랩을 거부했습니다.');
         return;
     }
-    $st = $pdo->prepare('INSERT INTO tb_users (username, password_hash, role) VALUES (?,?,?)');
+    $st = $pdo->prepare('INSERT INTO tb_user (username, password_hash, role) VALUES (?,?,?)');
     $st->execute(['admin', password_hash($pw, PASSWORD_DEFAULT), 'admin']);
 }
 
@@ -51,8 +51,8 @@ function vg_login(PDO $pdo, string $user, string $pass): ?string {
     $pdo->beginTransaction();
     try {
         $st = $pdo->prepare(
-            'SELECT id, username, password_hash, role, locked_until, failed_login_count
-               FROM tb_users WHERE username = ? AND is_deleted = 0 FOR UPDATE'
+            'SELECT user_id, username, password_hash, role, locked_until, failed_login_count
+               FROM tb_user WHERE username = ? AND is_deleted = 0 FOR UPDATE'
         );
         $st->execute([$user]);
         $row = $st->fetch();
@@ -73,19 +73,19 @@ function vg_login(PDO $pdo, string $user, string $pass): ?string {
 
         if (!$row || !password_verify($pass, $row['password_hash'])) {
             if ($row) {
-                $uid = (int) $row['id'];
+                $uid = (int) $row['user_id'];
                 $fails = ($lockExpired ? 0 : (int) $row['failed_login_count']) + 1;
                 $maxFails = (int) vg_env('LOGIN_MAX_FAILS', '5');
                 $locked = $fails >= $maxFails;
                 if ($locked) {
                     $lockMinutes = (int) vg_env('LOGIN_LOCK_MINUTES', '15');
                     $pdo->prepare(
-                        'UPDATE tb_users SET failed_login_count = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE id = ?'
+                        'UPDATE tb_user SET failed_login_count = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? MINUTE) WHERE user_id = ?'
                     )->execute([$fails, $lockMinutes, $uid]);
                 } else {
                     // locked_until 도 함께 NULL 로 — 만료된 잠금 시각이 그대로 남아있으면
                     // (DB 를 직접 보는 사람에게) 여전히 잠긴 것처럼 오인될 수 있다.
-                    $pdo->prepare('UPDATE tb_users SET failed_login_count = ?, locked_until = NULL WHERE id = ?')
+                    $pdo->prepare('UPDATE tb_user SET failed_login_count = ?, locked_until = NULL WHERE user_id = ?')
                         ->execute([$fails, $uid]);
                 }
                 $pdo->commit();
@@ -103,14 +103,14 @@ function vg_login(PDO $pdo, string $user, string $pass): ?string {
         }
 
         session_regenerate_id(true);
-        $uid = (int) $row['id'];
+        $uid = (int) $row['user_id'];
         $token = bin2hex(random_bytes(32));
         $_SESSION['uid']    = $uid;
         $_SESSION['uname']  = $row['username'];
         $_SESSION['role']   = $row['role'];
         $_SESSION['stoken'] = $token;
         $pdo->prepare(
-            'UPDATE tb_users SET last_login = NOW(), session_token = ?, failed_login_count = 0, locked_until = NULL WHERE id = ?'
+            'UPDATE tb_user SET last_login = NOW(), session_token = ?, failed_login_count = 0, locked_until = NULL WHERE user_id = ?'
         )->execute([$token, $uid]);
         $pdo->commit();
         // 로그인 성공 감사로그(누가·언제·어디서).
@@ -128,7 +128,7 @@ function vg_logout(): void {
     // 이미 다른 로그인이 덮어쓴 토큰을 실수로 지우지 않도록 반드시 토큰 값도 WHERE 에 넣는다.
     if (!empty($_SESSION['uid']) && !empty($_SESSION['stoken'])) {
         try {
-            vg_pdo()->prepare('UPDATE tb_users SET session_token = NULL WHERE id = ? AND session_token = ?')
+            vg_pdo()->prepare('UPDATE tb_user SET session_token = NULL WHERE user_id = ? AND session_token = ?')
                 ->execute([(int) $_SESSION['uid'], (string) $_SESSION['stoken']]);
         } catch (Throwable $e) {
             error_log('[auth] logout session_token 정리 실패: ' . $e->getMessage());
@@ -157,7 +157,7 @@ function vg_current_user(): ?array {
         return $cached;
     }
     try {
-        $st = vg_pdo()->prepare('SELECT session_token FROM tb_users WHERE id = ?');
+        $st = vg_pdo()->prepare('SELECT session_token FROM tb_user WHERE user_id = ?');
         $st->execute([(int) $_SESSION['uid']]);
         $dbTok = $st->fetchColumn();
         $dbTok = is_string($dbTok) ? $dbTok : '';
@@ -207,7 +207,7 @@ function vg_role_label(string $role): string {
 //   조합해 쓴다 — 화면 코드에 문구를 반복 작성하지 않기 위해 여기 하나로 묶는다.
 const VG_ROLE_DESCRIPTIONS = ['admin' => '전체', 'operator' => '피드', 'user' => '조회'];
 
-// --- 설정형 메뉴 접근권한 (tb_role_permissions 기반) ---
+// --- 설정형 메뉴 접근권한 (tb_role_permission 기반) ---
 
 /**
  * 메뉴코드→한글라벨. 권한설정 화면(permissions.php)의 행 라벨 SSOT.
@@ -232,7 +232,7 @@ function vg_menus(): array {
 // 현재 사용자가 $menuCode 메뉴에 접근 가능한가.
 //   - 비로그인: false
 //   - admin: 항상 true (잠금방지 — DB 에 admin 행을 두지 않는다)
-//   - 그 외: tb_role_permissions 에서 (현재role) 전 메뉴를 요청당 1회 로드해 캐시.
+//   - 그 외: tb_role_permission 에서 (현재role) 전 메뉴를 요청당 1회 로드해 캐시.
 function vg_can(string $menuCode): bool {
     if (!vg_current_user()) {
         return false;
@@ -246,7 +246,7 @@ function vg_can(string $menuCode): bool {
         $allowed = [];
         try {
             $st = vg_pdo()->prepare(
-                'SELECT menu_code, allowed FROM tb_role_permissions WHERE role = ? AND is_deleted = 0'
+                'SELECT menu_code, allowed FROM tb_role_permission WHERE role = ? AND is_deleted = 0'
             );
             $st->execute([$role]);
             foreach ($st->fetchAll() as $r) {
@@ -276,7 +276,7 @@ function vg_require_menu(string $menuCode): void {
  *   - 현재 비번 불일치 / 8자 미만 / 아이디 포함 / 이전과 동일 을 순서대로 검증.
  */
 function vg_change_own_password(PDO $pdo, int $uid, string $current, string $new): ?string {
-    $st = $pdo->prepare('SELECT username, password_hash FROM tb_users WHERE id = ? AND is_deleted = 0');
+    $st = $pdo->prepare('SELECT username, password_hash FROM tb_user WHERE user_id = ? AND is_deleted = 0');
     $st->execute([$uid]);
     $row = $st->fetch();
     if (!$row) {
@@ -294,7 +294,7 @@ function vg_change_own_password(PDO $pdo, int $uid, string $current, string $new
     if (password_verify($new, $row['password_hash'])) {
         return '이전과 다른 비밀번호를 사용하세요.';
     }
-    $pdo->prepare('UPDATE tb_users SET password_hash = ? WHERE id = ?')
+    $pdo->prepare('UPDATE tb_user SET password_hash = ? WHERE user_id = ?')
         ->execute([password_hash($new, PASSWORD_DEFAULT), $uid]);
     vg_log_activity($pdo, 'USER', $uid, 'password_change', '비밀번호 변경', null, $uid);
     return null;

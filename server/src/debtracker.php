@@ -58,12 +58,12 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): ar
     $relOf = [];
     if ($hostCodename !== '') { $relOf[0] = $hostCodename; }
 
-    $cs = $pdo->prepare('SELECT id, os_id, os_version FROM tb_containers WHERE scan_id = ?');
+    $cs = $pdo->prepare('SELECT container_id, os_id, os_version FROM tb_container WHERE scan_id = ?');
     $cs->execute([$scanId]);
     foreach ($cs->fetchAll() as $c) {
         if (strtolower((string) $c['os_id']) !== 'debian') { continue; }   // 우분투는 OSV 경로가 덮는다
         $code = vg_debian_codename((string) $c['os_version']);
-        if ($code !== '') { $relOf[(int) $c['id']] = $code; }
+        if ($code !== '') { $relOf[(int) $c['container_id']] = $code; }
     }
     if (!$relOf) { return []; }
 
@@ -74,7 +74,7 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): ar
     $inC = implode(',', array_fill(0, count($ids), '?'));
     $ps  = $pdo->prepare(
         "SELECT container_id, name, source_pkg, version, source_version
-           FROM tb_packages
+           FROM tb_package
           WHERE scan_id = ? AND manager = 'dpkg' AND container_id IN ($inC)"
     );
     $ps->execute(array_merge([$scanId], $ids));

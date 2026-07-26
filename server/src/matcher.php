@@ -104,9 +104,9 @@ if (!function_exists('vg_scope_rank')) {
         $sc = $pdo->prepare('SELECT s.host_id, s.os_id, s.os_version, s.package_family,
                                     s.running_kernel, s.kernel_latest, s.kernel_reboot_needed,
                                     h.perimeter_firewalled
-                               FROM tb_scans s
-                               JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-                              WHERE s.id = ?');
+                               FROM tb_scan s
+                               JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
+                              WHERE s.scan_id = ?');
         $sc->execute([$scanId]);
         $scan = $sc->fetch() ?: [];
         $hostEco = vg_osv_ecosystem($scan['os_id'] ?? null, $scan['os_version'] ?? null);
@@ -115,11 +115,11 @@ if (!function_exists('vg_scope_rank')) {
         // 컨테이너 — 호스트와 OS 가 다를 수 있다(호스트 Rocky + 컨테이너 Debian).
         //   그래서 컨테이너 패키지의 생태계는 **그 컨테이너의 OS** 로 판정해야 한다.
         $ctrs = [];   // container_id => ['eco'=>, 'family'=>, 'cid'=>]
-        $cs = $pdo->prepare('SELECT id, cid, os_id, os_version, manager FROM tb_containers WHERE scan_id = ?');
+        $cs = $pdo->prepare('SELECT container_id, cid, os_id, os_version, manager FROM tb_container WHERE scan_id = ?');
         $cs->execute([$scanId]);
         foreach ($cs->fetchAll() as $c) {
             $mgr = (string) ($c['manager'] ?? '');
-            $ctrs[(int) $c['id']] = [
+            $ctrs[(int) $c['container_id']] = [
                 'cid'    => (string) $c['cid'],
                 'os'     => (string) ($c['os_id'] ?? ''),   // 출처 판정에 쓴다(배포판이 호스트와 다름)
                 'eco'    => vg_osv_ecosystem($c['os_id'], $c['os_version']),
@@ -128,7 +128,7 @@ if (!function_exists('vg_scope_rank')) {
         }
 
         // 패키지 (호스트: container_id=0, 컨테이너: >0)
-        $stmt = $pdo->prepare('SELECT container_id, manager, name, source_pkg, version, source_version, origin FROM tb_packages WHERE scan_id = ?');
+        $stmt = $pdo->prepare('SELECT container_id, manager, name, source_pkg, version, source_version, origin FROM tb_package WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         $packages = $stmt->fetchAll();
 
@@ -137,13 +137,13 @@ if (!function_exists('vg_scope_rank')) {
         //   외부노출이 컨테이너 openssl 로 새어 EXTERNAL 로 오판한다(오탐).
         $externalPorts = [];
         if (!empty($scan['perimeter_firewalled'])) {
-            $ps = $pdo->prepare('SELECT port, proto FROM tb_host_ext_ports WHERE host_id = ? AND is_deleted = 0');
+            $ps = $pdo->prepare('SELECT port, proto FROM tb_host_ext_port WHERE host_id = ? AND is_deleted = 0');
             $ps->execute([(int) $scan['host_id']]);
             foreach ($ps->fetchAll() as $p) {
                 $externalPorts[strtolower((string) $p['proto']) . '/' . (int) $p['port']] = true;
             }
         }
-        $stmt = $pdo->prepare('SELECT container_id, proc, proto, port, scope, exe_pkg, loaded_pkgs FROM tb_exposures WHERE scan_id = ?');
+        $stmt = $pdo->prepare('SELECT container_id, proc, proto, port, scope, exe_pkg, loaded_pkgs FROM tb_exposure WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         $loadMap = []; // ctrId => pkgName => ['rank','scope','proc','port']
         foreach ($stmt->fetchAll() as $e) {
@@ -175,7 +175,7 @@ if (!function_exists('vg_scope_rank')) {
         //   개별 패키지가 여기 속하는지는 호출부에서 isset() 으로 조회해 패키지별 bool 을 만든다 —
         //   vg_classify() 의 패키지별 bool 파라미터($pkgLoaded)와 이름이 겹치지 않도록 Pkgs 접미사로 구분한다.
         $procRunningPkgs = []; $procLoadedPkgs = [];
-        $stmt = $pdo->prepare('SELECT container_id, exe_pkg, loaded_pkgs FROM tb_processes WHERE scan_id = ?');
+        $stmt = $pdo->prepare('SELECT container_id, exe_pkg, loaded_pkgs FROM tb_process WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         foreach ($stmt->fetchAll() as $pr) {
             $c = (int) $pr['container_id'];
@@ -205,7 +205,7 @@ if (!function_exists('vg_scope_rank')) {
     /**
      * CVE 카탈로그: KEV 등재 집합 + **이 스캔에 실제로 있는 패키지**의 영향 인덱스.
      *
-     * 예전엔 tb_cve_affected_packages 를 통째로 읽었다. RHEL OVAL 이 들어오며 그 표가 50만 행이
+     * 예전엔 tb_cve_affected_package 를 통째로 읽었다. RHEL OVAL 이 들어오며 그 표가 50만 행이
      * 되자 두 번 터졌다 — 스캔마다 다시 읽어 30초 실행제한(재매칭 사망), 그리고 전부 배열에 올려
      * 512MB 메모리 초과(운영에서 실제로 죽었다). 스캔 하나가 보는 패키지는 수백 개뿐인데
      * 수십만 행을 들고 있을 이유가 없다.
@@ -241,8 +241,8 @@ if (!function_exists('vg_scope_rank')) {
             $in = implode(',', array_fill(0, count($chunk), '?'));
             $st = $pdo->prepare(
                 "SELECT a.cve_id, a.package_name, a.ecosystem, a.fixed_version, c.cvss
-                   FROM tb_cve_affected_packages a
-                   LEFT JOIN tb_cves c ON c.cve_id = a.cve_id
+                   FROM tb_cve_affected_package a
+                   LEFT JOIN tb_cve c ON c.cve_id = a.cve_id
                   WHERE a.package_name IN ($in)"
             );
             $st->execute($chunk);
@@ -273,7 +273,7 @@ if (!function_exists('vg_scope_rank')) {
         // 백포트 근거: 패키지 changelog 에 명시된 CVE(=그 빌드에 이미 수정됨).
         //   package_name => [cve_id => evidence(changelog 줄)]
         $backport = [];
-        $bpStmt = $pdo->prepare('SELECT package_name, cve_id, evidence FROM tb_pkg_changelog_cves WHERE scan_id = ?');
+        $bpStmt = $pdo->prepare('SELECT package_name, cve_id, evidence FROM tb_pkg_changelog_cve WHERE scan_id = ?');
         $bpStmt->execute([$scanId]);
         foreach ($bpStmt->fetchAll() as $r) {
             $backport[$r['package_name']][$r['cve_id']] = $r['evidence'];
@@ -283,7 +283,7 @@ if (!function_exists('vg_scope_rank')) {
         //   package_name => 근거(lib 경로). 이게 있으면 "이미 패치됨" 억제를 하면 안 된다 —
         //   그 프로세스는 여전히 옛(취약한) 코드를 실행 중이기 때문이다.
         $stale = [];
-        $slStmt = $pdo->prepare('SELECT package_name, comm, lib_path FROM tb_stale_libs WHERE scan_id = ?');
+        $slStmt = $pdo->prepare('SELECT package_name, comm, lib_path FROM tb_stale_lib WHERE scan_id = ?');
         $slStmt->execute([$scanId]);
         foreach ($slStmt->fetchAll() as $r) {
             if (!isset($stale[$r['package_name']])) {
@@ -555,7 +555,7 @@ if (!function_exists('vg_scope_rank')) {
      *   이기고, 뒤 조건은 평가되지 않는다(vg_match_scan 의 억제 겹 순서를 그대로 옮겼다).
      *   억제로 판정되면 suppress=true + reason 을, findings 로 남으면 false + 등급/근거를 반환한다.
      *   실제 INSERT 와 $counts 집계는 호출부(vg_match_scan)가 한다 — 두 종류의 prepared
-     *   statement(tb_findings/tb_suppressed_findings)와 카운터는 스캔 1건에 하나뿐이라 여기서
+     *   statement(tb_finding/tb_suppressed_finding)와 카운터는 스캔 1건에 하나뿐이라 여기서
      *   더 나누면 오히려 인자가 늘어난다.
      *
      * @param array $ctx 이 패키지의 vg_match_pkg_context() 반환값(패키지 단위로 한 번만 계산).
@@ -874,9 +874,9 @@ if (!function_exists('vg_scope_rank')) {
         return vg_with_tx($pdo, function () use ($pdo, $scanId, $findRows, $suppRows, $counts, $fingerprint) {
 
         // 기존 findings 삭제 후 재삽입. INSERT 는 멱등(동시성 대비).
-        $pdo->prepare('DELETE FROM tb_findings WHERE scan_id = ?')->execute([$scanId]);
+        $pdo->prepare('DELETE FROM tb_finding WHERE scan_id = ?')->execute([$scanId]);
         $ins = $pdo->prepare(
-            'INSERT INTO tb_findings
+            'INSERT INTO tb_finding
                (scan_id, container_id, cve_id, package_name, installed_version, loaded, exposed,
                 exposure_scope, runtime_status, in_kev, needs_restart, no_fix, cvss, severity, rationale)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -887,12 +887,12 @@ if (!function_exists('vg_scope_rank')) {
                needs_restart=VALUES(needs_restart), no_fix=VALUES(no_fix), cvss=VALUES(cvss),
                severity=VALUES(severity), rationale=VALUES(rationale)'
         );
-        $findId = $pdo->prepare('SELECT id FROM tb_findings WHERE scan_id=? AND container_id=? AND cve_id=? AND package_name=?');
+        $findId = $pdo->prepare('SELECT finding_id FROM tb_finding WHERE scan_id=? AND container_id=? AND cve_id=? AND package_name=?');
 
-        // 억제(백포트)된 건은 tb_findings 가 아니라 여기로 — 위험 집계에서 자동 제외.
-        $pdo->prepare('DELETE FROM tb_suppressed_findings WHERE scan_id = ?')->execute([$scanId]);
+        // 억제(백포트)된 건은 tb_finding 이 아니라 여기로 — 위험 집계에서 자동 제외.
+        $pdo->prepare('DELETE FROM tb_suppressed_finding WHERE scan_id = ?')->execute([$scanId]);
         $insSupp = $pdo->prepare(
-            'INSERT INTO tb_suppressed_findings
+            'INSERT INTO tb_suppressed_finding
                (scan_id, container_id, cve_id, package_name, installed_version, in_kev, cvss, base_severity, suppress_reason)
              VALUES (?,?,?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE

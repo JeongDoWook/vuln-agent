@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * cce.php — 보안설정 점검(CCE). 에이전트가 이미 수집한 security/users 섹션을
- *   서버에서 판정해 tb_cce_findings 에 저장한다. (CVE=취약한 버전, CCE=잘못된 설정)
+ *   서버에서 판정해 tb_cce_finding 에 저장한다. (CVE=취약한 버전, CCE=잘못된 설정)
  *
  *   신규 수집 없음 — vuln-inventory-agent.sh 의 12)보안자세 · 13)사용자/인증 섹션을 재활용.
  *   각 점검은 [코드, 제목, 결과(PASS/FAIL/NA), 위험도, 근거값, 판정사유] 를 남긴다(설명가능성).
@@ -359,7 +359,7 @@ if (!function_exists('vg_sshd_val')) {
      *
      * 왜 필요한가: 점검 항목의 "왜 중요한가 / 어느 기준에 근거하나" 를 우리가 지어내면 안 된다.
      *   SSG 는 오픈소스 룰셋이고 룰마다 CIS·NIST 800-53·STIG·PCI-DSS 참조와 근거를 갖는다.
-     *   여기서 묶어 두면 화면이 그 기준을 그대로 인용할 수 있다(tb_compliance_rules).
+     *   여기서 묶어 두면 화면이 그 기준을 그대로 인용할 수 있다(tb_compliance_rule).
      *
      * 매핑은 **추측하지 않았다** — SSG 룰 2,493개의 ID 를 실제로 검색해 대응하는 것만 적었다.
      *   대응하는 SSG 룰이 없는 항목(KISA 가이드 고유 등)은 여기 없다 → 화면에서 "자체 기준" 으로 뜬다.
@@ -400,16 +400,16 @@ if (!function_exists('vg_sshd_val')) {
     ]; }
 
     /**
-     * 한 스캔에 대해 CCE 점검 수행 → tb_cce_findings 재계산. 반환: 결과별 카운트.
+     * 한 스캔에 대해 CCE 점검 수행 → tb_cce_finding 재계산. 반환: 결과별 카운트.
      *   matcher 와 동일하게 스캔별 DELETE 후 재삽입, 자체 트랜잭션으로 원자성 보장.
      */
     function vg_evaluate_cce(PDO $pdo, int $scanId, array $data): array {
         $rows = vg_cce_checks($data);
 
         return vg_with_tx($pdo, function () use ($pdo, $scanId, $rows) {
-            $pdo->prepare('DELETE FROM tb_cce_findings WHERE scan_id = ?')->execute([$scanId]);
+            $pdo->prepare('DELETE FROM tb_cce_finding WHERE scan_id = ?')->execute([$scanId]);
             $ins = $pdo->prepare(
-                'INSERT INTO tb_cce_findings (scan_id, code, ssg_rule_id, title, result, severity, evidence, rationale)
+                'INSERT INTO tb_cce_finding (scan_id, code, ssg_rule_id, title, result, severity, evidence, rationale)
                  VALUES (?,?,?,?,?,?,?,?)'
             );
             $counts = ['PASS' => 0, 'FAIL' => 0, 'NA' => 0];

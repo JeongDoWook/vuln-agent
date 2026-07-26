@@ -74,7 +74,7 @@ function vg_kernel_fixed_set(PDO $pdo, string $runningKernel, array $cveIds): ar
     foreach (array_chunk(array_values(array_unique($cveIds)), 500) as $chunk) {
         $in = implode(',', array_fill(0, count($chunk), '?'));
 
-        $st = $pdo->prepare("SELECT cve_id, introduced_version, mainline_fixed FROM tb_kernel_cves WHERE cve_id IN ($in)");
+        $st = $pdo->prepare("SELECT cve_id, introduced_version, mainline_fixed FROM tb_kernel_cve WHERE cve_id IN ($in)");
         $st->execute($chunk);
         foreach ($st->fetchAll() as $r) {
             $recs[(string) $r['cve_id']] = [
@@ -84,7 +84,7 @@ function vg_kernel_fixed_set(PDO $pdo, string $runningKernel, array $cveIds): ar
             ];
         }
 
-        $st = $pdo->prepare("SELECT cve_id, stream, fixed_version FROM tb_kernel_cve_fixes WHERE cve_id IN ($in)");
+        $st = $pdo->prepare("SELECT cve_id, stream, fixed_version FROM tb_kernel_cve_fix WHERE cve_id IN ($in)");
         $st->execute($chunk);
         foreach ($st->fetchAll() as $r) {
             $cve = (string) $r['cve_id'];

@@ -49,7 +49,7 @@ function vg_sev_donut(array $counts, int $size = 132): void {
 /**
  * 스캔별 리소스(메모리/CPU) 추이 라인차트 — app.css 의 chart__grid/tick/lbl
  * 눈금 위에 area 채움(세로 그라데이션) + 폴리라인 + 포인트로 그린다.
- *   $scans: host.php 가 이미 들고 있는 tb_scans 행(oldest→newest 순으로 넘긴다 — 차트는 좌→우).
+ *   $scans: host.php 가 이미 들고 있는 tb_scan 행(oldest→newest 순으로 넘긴다 — 차트는 좌→우).
  *   값이 없는(구버전 에이전트) 스캔은 건너뛴다 — 0으로 이으면 실제로 없는 급락처럼 보인다.
  *   $tone: 'mem'|'cpu' — app.css 의 .chart__line.tone-* 색만 다르다.
  */
