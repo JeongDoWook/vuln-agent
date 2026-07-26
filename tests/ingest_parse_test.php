@@ -199,7 +199,7 @@ if ($hashA === $hashC) {
 }
 
 // **출처(origin)가 바뀌면 해시도 바뀌어야 한다.** 안 그러면 "변경 없음" 으로 스캔을 재사용하고
-//   tb_packages 를 다시 쓰지 않아, 에이전트가 고쳐 보낸 출처가 DB 에 영원히 안 들어간다
+//   tb_package 를 다시 쓰지 않아, 에이전트가 고쳐 보낸 출처가 DB 에 영원히 안 들어간다
 //   (실측: 에이전트 2.2 가 curl→Debian 으로 고쳤는데 DB 엔 LOCAL 이 그대로였다).
 $withOrigin = static fn(array $originMap) => vg_ingest_content_hash(
     [['openssl', '1.0']], 'rpm', [], [], [], [], [], [],

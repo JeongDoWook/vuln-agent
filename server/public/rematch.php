@@ -34,7 +34,7 @@ try {
     if (isset($_GET['scan_id'])) {
         $ids = [(int) $_GET['scan_id']];
     } else {
-        $ids = array_map('intval', $pdo->query('SELECT id FROM tb_scans ORDER BY id')->fetchAll(PDO::FETCH_COLUMN));
+        $ids = array_map('intval', $pdo->query('SELECT scan_id FROM tb_scan ORDER BY scan_id')->fetchAll(PDO::FETCH_COLUMN));
     }
     // 사람이 직접 부르는 재매칭은 **강제**다($force=true) — 결과 지문이 같아도 통째 다시 쓴다.
     //   스케줄러·수집 경로는 지문이 같으면 쓰기를 건너뛰지만(binlog 절감), DB 를 직접 손댔거나

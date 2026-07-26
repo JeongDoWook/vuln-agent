@@ -80,11 +80,11 @@ function vg_rhcve_targets(PDO $pdo): array {
         "SELECT DISTINCT s.os_id AS host_os, s.os_version AS host_ver,
                 c.os_id AS ctr_os, c.os_version AS ctr_ver,
                 p.container_id, p.source_pkg, p.name
-           FROM tb_packages p
-           JOIN tb_scans s      ON s.id = p.scan_id AND s.is_deleted = 0
-           LEFT JOIN tb_containers c ON c.id = p.container_id AND c.scan_id = p.scan_id
+           FROM tb_package p
+           JOIN tb_scan s      ON s.scan_id = p.scan_id AND s.is_deleted = 0
+           LEFT JOIN tb_container c ON c.container_id = p.container_id AND c.scan_id = p.scan_id
           WHERE p.manager = 'rpm'
-            AND p.scan_id IN (SELECT MAX(id) FROM tb_scans WHERE is_deleted = 0 GROUP BY host_id)"
+            AND p.scan_id IN (SELECT MAX(scan_id) FROM tb_scan WHERE is_deleted = 0 GROUP BY host_id)"
     )->fetchAll();
 
     $out = [];

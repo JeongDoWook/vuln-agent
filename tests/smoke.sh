@@ -143,7 +143,7 @@ if [ -n "$WT_NAME" ] && command -v docker >/dev/null 2>&1; then
   }
   SMOKE_HASH="$(docker run --rm -e P="$ADMPW" php:8.3-cli php -r 'echo password_hash(getenv("P"), PASSWORD_DEFAULT);' 2>/dev/null)"
   if [ -n "$SMOKE_HASH" ] && db_mysql -e \
-      "INSERT INTO tb_users (username, password_hash, role, is_deleted)
+      "INSERT INTO tb_user (username, password_hash, role, is_deleted)
        VALUES ('$SMOKE_USER', '$SMOKE_HASH', 'admin', 0)
        ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), role = 'admin',
          is_deleted = 0, failed_login_count = 0, locked_until = NULL, session_token = NULL" \

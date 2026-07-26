@@ -21,8 +21,8 @@ try {
     } else {
         $pdo = vg_pdo();
         $stmt = $pdo->prepare(
-            'SELECT id, source, title, url, published, content, content_fetched_at
-             FROM tb_advisories WHERE id = ? AND is_deleted = 0'
+            'SELECT advisory_id, source, title, url, published, content, content_fetched_at
+             FROM tb_advisory WHERE advisory_id = ? AND is_deleted = 0'
         );
         $stmt->execute([$id]);
         $adv = $stmt->fetch() ?: null;
@@ -32,8 +32,8 @@ try {
             // 보안공지 상세 열람 감사로그.
             vg_log_activity($pdo, 'ADVISORY', $id, 'view_advisory', (string) ($adv['title'] ?? null));
 
-            // cve_ids CSV 대신 정규화된 junction 에서 조회(tb_advisory_cves).
-            $cst = $pdo->prepare('SELECT cve_id FROM tb_advisory_cves WHERE advisory_id = ? AND is_deleted = 0 ORDER BY cve_id');
+            // cve_ids CSV 대신 정규화된 junction 에서 조회(tb_advisory_cve).
+            $cst = $pdo->prepare('SELECT cve_id FROM tb_advisory_cve WHERE advisory_id = ? AND is_deleted = 0 ORDER BY cve_id');
             $cst->execute([$id]);
             $cves = $cst->fetchAll(PDO::FETCH_COLUMN);
         }

@@ -250,9 +250,9 @@ function vg_rhoval_targets(PDO $pdo, array $conn): array {
     }
 
     $rows = $pdo->query(
-        "SELECT DISTINCT os_id, os_version FROM tb_scans WHERE os_id IS NOT NULL AND is_deleted = 0
+        "SELECT DISTINCT os_id, os_version FROM tb_scan WHERE os_id IS NOT NULL AND is_deleted = 0
          UNION
-         SELECT DISTINCT os_id, os_version FROM tb_containers WHERE os_id IS NOT NULL"
+         SELECT DISTINCT os_id, os_version FROM tb_container WHERE os_id IS NOT NULL"
     )->fetchAll();
 
     $out = [];
@@ -362,8 +362,8 @@ final class VgRhovalConnector implements VgFeedConnector {
                     $pdo->commit();
 
                     // **취약 후보도 여기서 나온다.** RHEL 계열은 OSV 에 조치안이 없어(실측: UBI9 스캔의
-                    //   findings 가 0 이었다) OVAL 이 유일한 소스다. 그래서 카탈로그(tb_cves +
-                    //   tb_cve_affected_packages)에도 넣어 매처가 후보를 찾을 수 있게 한다.
+                    //   findings 가 0 이었다) OVAL 이 유일한 소스다. 그래서 카탈로그(tb_cve +
+                    //   tb_cve_affected_package)에도 넣어 매처가 후보를 찾을 수 있게 한다.
                     //   생태계 표기는 매처·OSV 와 같은 기준(vg_osv_ecosystem): 'Red Hat:9' / 'AlmaLinux:9'.
                     //
                     //   카탈로그의 조치버전은 **가장 높은 EVR** 을 넣는다. 같은 (패키지,CVE)가 마이너
@@ -380,12 +380,12 @@ final class VgRhovalConnector implements VgFeedConnector {
                         if ($cveB) {
                             // 상세(요약·CVSS)는 NVD 가 채운다 — 여기선 CVE 존재만 보장한다(INSERT IGNORE).
                             $ph = implode(',', array_fill(0, count($cveB), '(?)'));
-                            $pdo->prepare("INSERT IGNORE INTO tb_cves (cve_id) VALUES $ph")->execute($cveB);
+                            $pdo->prepare("INSERT IGNORE INTO tb_cve (cve_id) VALUES $ph")->execute($cveB);
                         }
                         if ($affB) {
                             $ph = implode(',', array_fill(0, count($affB), '(?,?,?,?)'));
                             $pdo->prepare(
-                                "INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+                                "INSERT INTO tb_cve_affected_package (cve_id, ecosystem, package_name, fixed_version)
                                  VALUES $ph
                                  ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
                             )->execute(array_merge(...$affB));

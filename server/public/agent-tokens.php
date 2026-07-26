@@ -90,18 +90,18 @@ if ($q !== '') {
     $like = '%' . $q . '%';
     $params = [$like, $like, $like];
 }
-$count = $pdo->prepare("SELECT COUNT(*) FROM tb_agent_tokens t WHERE $where");
+$count = $pdo->prepare("SELECT COUNT(*) FROM tb_agent_token t WHERE $where");
 $count->execute($params);
 $total  = (int) $count->fetchColumn();
 $offset = ($page - 1) * $perPage;
 
 $list = $pdo->prepare(
-    "SELECT t.id, t.host_fqdn, t.label, t.token_prefix, t.last_seen_at, t.is_revoked, t.created_at,
+    "SELECT t.agent_token_id, t.host_fqdn, t.label, t.token_prefix, t.last_seen_at, t.is_revoked, t.created_at,
             u.username AS created_by
-       FROM tb_agent_tokens t
-       LEFT JOIN tb_users u ON u.id = t.created_by
+       FROM tb_agent_token t
+       LEFT JOIN tb_user u ON u.user_id = t.created_by
       WHERE $where
-      ORDER BY t.id DESC
+      ORDER BY t.agent_token_id DESC
       LIMIT $perPage OFFSET $offset"
 );
 $list->execute($params);
@@ -190,12 +190,12 @@ vg_header('에이전트 토큰', 'agenttokens');
                   ? '<form method="post" data-confirm="이 토큰을 목록에서 지울까요? 이미 폐기되어 무효인 토큰입니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="delete">'
-                      . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'
+                      . '<input type="hidden" name="id" value="' . (int) $t['agent_token_id'] . '">'
                       . '<button class="btn btn--sm btn--danger">삭제</button></form>'
                   : '<form method="post" data-confirm="이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="revoke">'
-                      . '<input type="hidden" name="id" value="' . (int) $t['id'] . '">'
+                      . '<input type="hidden" name="id" value="' . (int) $t['agent_token_id'] . '">'
                       . '<button class="btn btn--sm btn--danger">폐기</button></form>',
           ],
       ]

@@ -160,7 +160,7 @@ function vg_osv_batch_url(array $conn): string {
  */
 function vg_osv_queries(PDO $pdo, int $scanId, string $eco): array {
     // OS 패키지만. 언어 패키지는 vg_osv_lang_queries 가 자기 생태계로 따로 조회한다.
-    $pk = $pdo->prepare("SELECT name, source_pkg, source_version, version FROM tb_packages
+    $pk = $pdo->prepare("SELECT name, source_pkg, source_version, version FROM tb_package
                          WHERE scan_id = ? AND container_id = 0 AND manager IN ('rpm','dpkg')");
     $pk->execute([$scanId]);
 
@@ -183,7 +183,7 @@ function vg_osv_queries(PDO $pdo, int $scanId, string $eco): array {
  * @return list<array{key:string,eco:string,q:array}>
  */
 function vg_osv_lang_queries(PDO $pdo, int $scanId): array {
-    $pk = $pdo->prepare("SELECT manager, name, version FROM tb_packages
+    $pk = $pdo->prepare("SELECT manager, name, version FROM tb_package
                          WHERE scan_id = ? AND container_id = 0 AND manager NOT IN ('rpm','dpkg')");
     $pk->execute([$scanId]);
 
@@ -209,7 +209,7 @@ function vg_osv_lang_queries(PDO $pdo, int $scanId): array {
 function vg_osv_container_queries(PDO $pdo, int $scanId): array {
     $st = $pdo->prepare(
         'SELECT c.os_id, c.os_version, p.manager, p.name, p.source_pkg, p.source_version, p.version
-           FROM tb_packages p JOIN tb_containers c ON c.id = p.container_id
+           FROM tb_package p JOIN tb_container c ON c.container_id = p.container_id
           WHERE p.scan_id = ? AND p.container_id > 0'
     );
     $st->execute([$scanId]);
@@ -248,8 +248,8 @@ final class VgOsvConnector implements VgFeedConnector {
         $ecoOverride = trim((string) ($conn['ecosystem'] ?? ''));
 
         $scans = $pdo->query(
-            'SELECT s.id, s.os_id, s.os_version
-             FROM tb_scans s JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.id'
+            'SELECT s.scan_id, s.os_id, s.os_version
+             FROM tb_scan s JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.scan_id'
         )->fetchAll();
 
         $fetched = 0; $up = 0; $seen = [];
@@ -265,10 +265,10 @@ final class VgOsvConnector implements VgFeedConnector {
 
             // OS 패키지(배포판 생태계) + 언어 패키지(PyPI/npm/RubyGems/Packagist).
             //   배포판이 미지원(eco=null)이어도 언어 패키지는 조회할 수 있다.
-            $cand = array_merge(vg_osv_lang_queries($pdo, (int) $sc['id']),
-                            vg_osv_container_queries($pdo, (int) $sc['id']));   // 컨테이너 내부 패키지도 자기 배포판으로 조회
+            $cand = array_merge(vg_osv_lang_queries($pdo, (int) $sc['scan_id']),
+                            vg_osv_container_queries($pdo, (int) $sc['scan_id']));   // 컨테이너 내부 패키지도 자기 배포판으로 조회
             if ($eco !== null && $eco !== '') {
-                $cand = array_merge(vg_osv_queries($pdo, (int) $sc['id'], $eco), $cand);
+                $cand = array_merge(vg_osv_queries($pdo, (int) $sc['scan_id'], $eco), $cand);
             }
 
             // 스캔 간 중복 조회 방지(호스트가 달라도 같은 생태계·패키지·버전이면 한 번만).
@@ -344,9 +344,9 @@ final class VgOsvConnector implements VgFeedConnector {
     //   패키지 1건만 단건 조회하면 대개 취약점이 없어 항상 "0건" 으로 보였다.
     public function preview(PDO $pdo, array $conn): array {
         $sc = $pdo->query(
-            'SELECT s.id, s.os_id, s.os_version FROM tb_scans s
-             JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.id
-             ORDER BY s.id DESC LIMIT 1'
+            'SELECT s.scan_id, s.os_id, s.os_version FROM tb_scan s
+             JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.scan_id
+             ORDER BY s.scan_id DESC LIMIT 1'
         )->fetch();
         if (!$sc) {
             return ['ok' => false, 'error' => '수집된 스캔이 없어 미리보기 불가(에이전트 먼저 실행).'];
@@ -355,9 +355,9 @@ final class VgOsvConnector implements VgFeedConnector {
         if (!$eco) {
             return ['ok' => false, 'error' => "OSV ecosystem 판정 불가(os_id={$sc['os_id']}). 커넥터에 ecosystem 지정."];
         }
-        $queries = array_slice(vg_osv_queries($pdo, (int) $sc['id'], $eco), 0, 100);
+        $queries = array_slice(vg_osv_queries($pdo, (int) $sc['scan_id'], $eco), 0, 100);
         if (!$queries) {
-            return ['ok' => false, 'error' => "최신 스캔(id={$sc['id']})에 패키지가 없어 미리보기 불가."];
+            return ['ok' => false, 'error' => "최신 스캔(id={$sc['scan_id']})에 패키지가 없어 미리보기 불가."];
         }
         $r = vg_http_json('POST', vg_osv_batch_url($conn),
             ['queries' => array_column($queries, 'q')], [], 90);
@@ -451,8 +451,8 @@ function vg_osv_enrich_fixed(PDO $pdo, ?callable $log = null): array {
     $needFix = [];
     foreach ($pdo->query(
         'SELECT DISTINCT a.package_name
-           FROM tb_cve_affected_packages a
-           JOIN tb_findings f ON f.package_name = a.package_name
+           FROM tb_cve_affected_package a
+           JOIN tb_finding f ON f.package_name = a.package_name
           WHERE a.fixed_version IS NULL'
     )->fetchAll(PDO::FETCH_COLUMN) as $k) {
         $needFix[$k] = true;
@@ -461,8 +461,8 @@ function vg_osv_enrich_fixed(PDO $pdo, ?callable $log = null): array {
     if (!$needFix) { return $stat; }
 
     $scans = $pdo->query(
-        'SELECT s.id, s.os_id, s.os_version
-           FROM tb_scans s JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.id'
+        'SELECT s.scan_id, s.os_id, s.os_version
+           FROM tb_scan s JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.scan_id'
     )->fetchAll();
 
     $seen = [];
@@ -470,10 +470,10 @@ function vg_osv_enrich_fixed(PDO $pdo, ?callable $log = null): array {
         $eco = vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
 
         // OS 패키지 + 언어 패키지 둘 다 보강한다(생태계는 질의마다 다르다).
-        $cand = array_merge(vg_osv_lang_queries($pdo, (int) $sc['id']),
-                            vg_osv_container_queries($pdo, (int) $sc['id']));   // 컨테이너 내부 패키지도 자기 배포판으로 조회
+        $cand = array_merge(vg_osv_lang_queries($pdo, (int) $sc['scan_id']),
+                            vg_osv_container_queries($pdo, (int) $sc['scan_id']));   // 컨테이너 내부 패키지도 자기 배포판으로 조회
         if ($eco !== null && $eco !== '') {
-            $cand = array_merge(vg_osv_queries($pdo, (int) $sc['id'], $eco), $cand);
+            $cand = array_merge(vg_osv_queries($pdo, (int) $sc['scan_id'], $eco), $cand);
         }
 
         foreach ($cand as $q) {

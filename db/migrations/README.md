@@ -44,5 +44,30 @@ echo "$(date +%Y%m%d%H%M%S)_무엇.sql"
 - 최상위 `db/*.sql` 은 **빈 볼륨 initdb 전용**(기본 스키마). 증분 변경은 여기에 둔다.
 
 ## 최상위 `db/*.sql` 과의 차이
-`db/01~13*.sql` 은 **빈 볼륨 initdb 전용**이라 이미 데이터가 든 볼륨에는 적용되지 않는다.
+`db/01~18*.sql` 은 **빈 볼륨 initdb 전용**이라 이미 데이터가 든 볼륨에는 적용되지 않는다.
 그래서 스키마를 바꿀 땐 두 곳 모두 손댄다 — 최상위 파일(새 볼륨용)과 여기(기존 볼륨용).
+
+### 명명규칙 rename 과 initdb — 최상위 `db/*.sql` 은 **옛 이름 그대로 둔다**
+
+`20260726115611_pk_naming_unification.sql` 이 테이블·PK 를 새 이름(`tb_host.host_id`)으로 바꾼다.
+그런데 **최상위 `db/*.sql` 은 여전히 옛 이름(`tb_hosts.id`)으로 테이블을 만든다.** 일부러 그렇다.
+
+빈 볼륨의 실행 순서가 `initdb(db/*.sql)` → `migrate.sh(db/migrations/*.sql 사전순)` 이기 때문이다.
+initdb 를 새 이름으로 바꾸면, 그 다음에 도는 **옛 마이그레이션들이 옛 이름을 찾다 죽는다.** 실측:
+
+```
+# 'initdb 가 최종 형태' 상태를 만들고 옛 마이그레이션을 사전순 적용 → 두 번째 파일에서 즉사
+실패: 0002_changelog_suppression.sql
+  → ERROR 1824 (HY000) at line 6: Failed to open the referenced table 'tb_scans'
+```
+
+`migrate.sh` 는 `set -e` 라 여기서 배포가 통째로 멈춘다. 옛 마이그레이션은 **고칠 수 없다** —
+러너가 파일명으로 이력을 추적하므로 과거 파일을 고쳐도 이미 적용된 DB 엔 반영되지 않고,
+빈 볼륨에서만 달라져 두 환경 스키마가 갈라진다.
+
+→ 그래서 rename 은 **사슬의 맨 끝(=마이그레이션)에서 딱 한 번만** 한다.
+   그러면 빈 볼륨도(initdb 옛 이름 → 옛 마이그레이션 51개 → rename), 기존 볼륨도(rename 만)
+   **같은 최종 스키마**에 도달한다. 실제로 두 경로의 `information_schema`
+   COLUMNS·STATISTICS·KEY_COLUMN_USAGE 를 대조해 diff 가 비는 것을 확인했다.
+
+**최상위 `db/*.sql` 을 새 이름으로 "정리"하지 마라.** 빈 볼륨이 뜨지 않게 된다.

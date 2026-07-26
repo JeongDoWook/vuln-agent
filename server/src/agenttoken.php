@@ -36,7 +36,7 @@ function vg_agent_token_issue(PDO $pdo, string $fqdn, string $label, ?int $userI
     }
     // 기존 활성 토큰을 폐기(활성은 호스트당 하나) — 재발급이 곧 로테이션이 되도록.
     $st = $pdo->prepare(
-        'UPDATE tb_agent_tokens SET is_revoked = 1
+        'UPDATE tb_agent_token SET is_revoked = 1
           WHERE host_fqdn = ? AND is_revoked = 0 AND is_deleted = 0'
     );
     $st->execute([$fqdn]);
@@ -45,7 +45,7 @@ function vg_agent_token_issue(PDO $pdo, string $fqdn, string $label, ?int $userI
     $token  = vg_agent_token_new();
     $prefix = substr($token, 0, 12);                 // vgt_ + 앞 8자
     $pdo->prepare(
-        'INSERT INTO tb_agent_tokens (host_fqdn, label, token_hash, token_prefix, created_by)
+        'INSERT INTO tb_agent_token (host_fqdn, label, token_hash, token_prefix, created_by)
          VALUES (?, ?, ?, ?, ?)'
     )->execute([$fqdn, $label, vg_agent_token_hash($token), $prefix, $userId]);
     return ['token' => $token, 'prefix' => $prefix, 'revoked' => $revoked];
@@ -61,19 +61,19 @@ function vg_agent_token_verify(PDO $pdo, string $provided): ?array {
     $provided = trim($provided);
     if ($provided === '') { return null; }
     $st = $pdo->prepare(
-        'SELECT id, host_fqdn FROM tb_agent_tokens
+        'SELECT agent_token_id, host_fqdn FROM tb_agent_token
           WHERE token_hash = ? AND is_revoked = 0 AND is_deleted = 0 LIMIT 1'
     );
     $st->execute([vg_agent_token_hash($provided)]);
     $row = $st->fetch();
     if (!$row) { return null; }
-    $pdo->prepare('UPDATE tb_agent_tokens SET last_seen_at = NOW() WHERE id = ?')->execute([(int) $row['id']]);
-    return ['id' => (int) $row['id'], 'fqdn' => (string) $row['host_fqdn']];
+    $pdo->prepare('UPDATE tb_agent_token SET last_seen_at = NOW() WHERE agent_token_id = ?')->execute([(int) $row['agent_token_id']]);
+    return ['id' => (int) $row['agent_token_id'], 'fqdn' => (string) $row['host_fqdn']];
 }
 
 /** 폐기(즉시 무효). soft-delete 가 아니라 is_revoked 로 — 이력은 남기고 사용만 막는다. */
 function vg_agent_token_revoke(PDO $pdo, int $id): void {
-    $pdo->prepare('UPDATE tb_agent_tokens SET is_revoked = 1 WHERE id = ?')->execute([$id]);
+    $pdo->prepare('UPDATE tb_agent_token SET is_revoked = 1 WHERE agent_token_id = ?')->execute([$id]);
 }
 
 /**
@@ -84,8 +84,8 @@ function vg_agent_token_revoke(PDO $pdo, int $id): void {
  */
 function vg_agent_token_delete(PDO $pdo, int $id): void {
     $st = $pdo->prepare(
-        'UPDATE tb_agent_tokens SET is_deleted = 1, deleted_at = NOW()
-          WHERE id = ? AND is_revoked = 1 AND is_deleted = 0'
+        'UPDATE tb_agent_token SET is_deleted = 1, deleted_at = NOW()
+          WHERE agent_token_id = ? AND is_revoked = 1 AND is_deleted = 0'
     );
     $st->execute([$id]);
     if ($st->rowCount() === 0) {
@@ -97,9 +97,9 @@ function vg_agent_token_delete(PDO $pdo, int $id): void {
 function vg_agent_nonce_accept(PDO $pdo, int $tokenId, string $nonce, int $sentAt): bool {
     $maxSkew = max(60, (int) vg_env('AGENT_NONCE_MAX_SKEW_SECONDS', '600'));
     if ($nonce === '' || strlen($nonce) > 200 || abs(time() - $sentAt) > $maxSkew) { return false; }
-    $pdo->prepare('DELETE FROM tb_agent_replay_nonces WHERE expires_at < NOW()')->execute();
+    $pdo->prepare('DELETE FROM tb_agent_replay_nonce WHERE expires_at < NOW()')->execute();
     try {
-        $pdo->prepare('INSERT INTO tb_agent_replay_nonces (token_id,nonce_hash,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL ? SECOND))')
+        $pdo->prepare('INSERT INTO tb_agent_replay_nonce (agent_token_id,nonce_hash,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL ? SECOND))')
             ->execute([$tokenId, hash('sha256', $nonce), $maxSkew]);
         return true;
     } catch (PDOException $e) {

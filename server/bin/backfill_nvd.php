@@ -19,7 +19,7 @@ declare(strict_types=1);
  *   출력된 --start-index 로 이어서 실행하면 된다. 메모리는 페이지 단위로 해제돼
  *   36만건을 훑어도 40MB 안팎으로 일정하다(실측).
  *
- *   API 키는 DB(tb_feed_connectors.connection_json.api_key)에서 읽는다. 코드·저장소에
+ *   API 키는 DB(tb_feed_connector.connection_json.api_key)에서 읽는다. 코드·저장소에
  *   키를 두지 않는다. 키가 있으면 요청 간격 1초, 없으면 6초로 자동 조절된다.
  *
  *   사용:
@@ -37,7 +37,7 @@ $maxPages = isset($opts['max-pages']) ? max(1, (int) $opts['max-pages']) : 0;   
 $pdo = vg_pdo();
 
 // 커넥터 레코드에서 url·api_key 를 가져온다(없으면 기본 URL, 키 없이 동작).
-$row  = $pdo->query("SELECT connection_json FROM tb_feed_connectors WHERE connector_type='nvd' AND is_deleted=0 LIMIT 1")
+$row  = $pdo->query("SELECT connection_json FROM tb_feed_connector WHERE connector_type='nvd' AND is_deleted=0 LIMIT 1")
             ->fetchColumn();
 $conn = $row ? vg_json_col($row) : [];
 

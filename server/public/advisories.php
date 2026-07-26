@@ -23,27 +23,27 @@ try {
     $params = [];
     if ($q !== '') {
         // 본문까지 검색 대상(수집된 건에 한함). 2천여 행이라 LIKE 스캔으로 충분.
-        // CVE 검색은 cve_ids CSV 대신 정규화된 junction(tb_advisory_cves)을 본다.
+        // CVE 검색은 cve_ids CSV 대신 정규화된 junction(tb_advisory_cve)을 본다.
         $where .= ' AND (title LIKE ? OR content LIKE ? OR EXISTS (
-            SELECT 1 FROM tb_advisory_cves ac
-             WHERE ac.advisory_id = tb_advisories.id AND ac.is_deleted = 0 AND ac.cve_id LIKE ?
+            SELECT 1 FROM tb_advisory_cve ac
+             WHERE ac.advisory_id = tb_advisory.advisory_id AND ac.is_deleted = 0 AND ac.cve_id LIKE ?
         ))';
         $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
         $params[] = '%' . $q . '%';
     }
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_advisories WHERE $where");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_advisory WHERE $where");
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
 
     $offset = ($page - 1) * $perPage;
 
     $stmt = $pdo->prepare(
-        "SELECT id, source, title, url, published
-         FROM tb_advisories
+        "SELECT advisory_id, source, title, url, published
+         FROM tb_advisory
          WHERE $where
-         ORDER BY published DESC, id DESC
+         ORDER BY published DESC, advisory_id DESC
          LIMIT $perPage OFFSET $offset"
     );
     $stmt->execute($params);
@@ -51,10 +51,10 @@ try {
 
     // 관련 CVE 는 정션에서 배치 조회(N+1 방지) — advisory_id 로 묶어 각 행에 붙인다.
     if ($rows) {
-        $ids = array_column($rows, 'id');
+        $ids = array_column($rows, 'advisory_id');
         $in  = implode(',', array_fill(0, count($ids), '?'));
         $cst = $pdo->prepare(
-            "SELECT advisory_id, cve_id FROM tb_advisory_cves
+            "SELECT advisory_id, cve_id FROM tb_advisory_cve
              WHERE advisory_id IN ($in) AND is_deleted = 0 ORDER BY cve_id"
         );
         $cst->execute($ids);
@@ -63,7 +63,7 @@ try {
             $byAdvisory[(int) $c['advisory_id']][] = $c['cve_id'];
         }
         foreach ($rows as &$row) {
-            $row['cve_id_list'] = $byAdvisory[(int) $row['id']] ?? [];
+            $row['cve_id_list'] = $byAdvisory[(int) $row['advisory_id']] ?? [];
         }
         unset($row);
     }
@@ -108,7 +108,7 @@ vg_header('국내 보안공지', 'advisories');
           'cell' => [
               0 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
               // 제목을 누르면 상세로. 원문은 상세 안의 [원문 열기] 버튼에서 연다.
-              1 => fn($r) => '<a href="/advisory.php?id=' . (int) $r['id'] . '">' . vg_trunc($r['title']) . '</a>',
+              1 => fn($r) => '<a href="/advisory.php?id=' . (int) $r['advisory_id'] . '">' . vg_trunc($r['title']) . '</a>',
               // CVE 를 수십 개 달고 오는 공지가 있다(예: 월간 브라우저 패치).
               // 전부 알약으로 깔면 행이 터지므로 앞 4개만 보이고 나머지는 "+N" 으로 접는다.
               2 => function ($r) {
@@ -124,7 +124,7 @@ vg_header('국내 보안공지', 'advisories');
                   }
                   if ($rest > 0) {
                       // 나머지는 상세에서 전부 본다. title 로 원문 목록을 남겨 둔다.
-                      $html .= '<a class="pill" href="/advisory.php?id=' . (int) $r['id'] . '"'
+                      $html .= '<a class="pill" href="/advisory.php?id=' . (int) $r['advisory_id'] . '"'
                              . ' title="' . vg_h(implode(', ', array_slice($ids, 4))) . '">+' . $rest . '</a>';
                   }
                   return $html;

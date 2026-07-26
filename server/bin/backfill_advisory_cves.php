@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * backfill_advisory_cves.php — 기존 tb_advisories.cve_ids CSV 를 tb_advisory_cves 정션으로
+ * backfill_advisory_cves.php — 기존 tb_advisory.cve_ids CSV 를 tb_advisory_cve 정션으로
  *   1회 백필한다. 정규화 마이그레이션(db/migrations/20260713192700_advisory_cves.sql)으로
  *   정션 테이블을 만든 뒤, 이 스크립트로 기존 행의 CSV 를 채워 넣는다.
  *
@@ -24,7 +24,7 @@ $opts   = getopt('', ['dry-run']);
 $dryRun = array_key_exists('dry-run', $opts);
 
 $pdo  = vg_pdo();
-$rows = $pdo->query('SELECT id, cve_ids FROM tb_advisories WHERE is_deleted = 0 ORDER BY id')
+$rows = $pdo->query('SELECT advisory_id, cve_ids FROM tb_advisory WHERE is_deleted = 0 ORDER BY advisory_id')
             ->fetchAll(PDO::FETCH_ASSOC);
 
 fwrite(STDOUT, sprintf("대상 %d건%s\n", count($rows), $dryRun ? ' (dry-run)' : ''));
@@ -35,7 +35,7 @@ foreach ($rows as $r) {
     $ids = vg_extract_cve_ids((string) $r['cve_ids']);
     if ($ids) { $withCves++; }
     if ($dryRun) { continue; }
-    vg_sync_advisory_cves($pdo, (int) $r['id'], $ids);
+    vg_sync_advisory_cves($pdo, (int) $r['advisory_id'], $ids);
     $synced++;
 }
 

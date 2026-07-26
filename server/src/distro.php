@@ -215,7 +215,7 @@ if (!function_exists('vg_pkg_ecosystem')) {
 
 if (!function_exists('vg_eco_matches')) {
     /**
-     * tb_cve_affected_packages.ecosystem 은 두 표기가 섞여 있다:
+     * tb_cve_affected_package.ecosystem 은 두 표기가 섞여 있다:
      *   · 배포판 형식 'Ubuntu:24.04' / 'Rocky Linux:9'  — OSV 커넥터가 쓴다(조치안이 배포판 EVR).
      *   · 패키지 계열 'rpm' / 'deb' / 'generic'         — 초기 스키마·시드의 표기.
      * 이 행이 지금 호스트에 해당하는지 판정한다.

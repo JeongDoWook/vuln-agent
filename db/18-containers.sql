@@ -26,32 +26,14 @@ CREATE TABLE IF NOT EXISTS tb_containers (
   CONSTRAINT fk_container_scan FOREIGN KEY (scan_id) REFERENCES tb_scans(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 이 패키지/취약점이 어느 컨테이너 것인지. **0 = 호스트 자신**.
---   NULL 이 아니라 0 을 쓰는 이유: MySQL 유니크 키는 NULL 을 중복 허용한다. tb_findings 의
---   유니크 키에 container_id 가 들어가야 하는데(호스트와 컨테이너에 같은 패키지가 있으면
---   서로 덮어쓴다), NULL 이면 호스트 finding 이 중복 삽입된다.
-SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_packages' AND COLUMN_NAME = 'container_id');
-SET @s := IF(@c = 0,
-             'ALTER TABLE tb_packages ADD COLUMN container_id BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER scan_id',
-             'DO 0');
-PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
-
-SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_findings' AND COLUMN_NAME = 'container_id');
-SET @s := IF(@c = 0,
-             'ALTER TABLE tb_findings ADD COLUMN container_id BIGINT UNSIGNED NOT NULL DEFAULT 0 AFTER scan_id',
-             'DO 0');
-PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
-
--- 유니크 키에 container_id 를 포함시킨다. 예전 키는 (scan_id, cve_id, package_name) 이라
--- 호스트의 openssl 과 컨테이너의 openssl 이 같은 CVE 로 충돌해 서로 덮어썼다.
-SET @k := (SELECT COUNT(*) FROM information_schema.STATISTICS
-           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_findings'
-             AND INDEX_NAME = 'uq_find' AND COLUMN_NAME = 'container_id');
-SET @s := IF(@k = 0, 'ALTER TABLE tb_findings DROP INDEX uq_find', 'DO 0');
-PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
-SET @s := IF(@k = 0,
-             'ALTER TABLE tb_findings ADD UNIQUE KEY uq_find (scan_id, container_id, cve_id, package_name)',
-             'DO 0');
-PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+-- 이 패키지/취약점이 어느 컨테이너 것인지(`container_id`)는 **01-schema.sql · 02-matcher.sql 이
+-- 처음부터 최종 형태로 정의한다.** 여기서 나중에 ALTER 로 얹지 않는다. **0 = 호스트 자신**이며,
+-- NULL 이 아니라 0 을 쓰는 이유는 MySQL 유니크 키가 NULL 중복을 허용하기 때문이다(NULL 이면
+-- 호스트 finding 이 중복 삽입된다). 기존 볼륨은 db/migrations/0014_containers.sql 이 얹는다.
+--
+-- 왜 여기서 걷어냈나(실측): 예전엔 이 파일이 `tb_findings` 의 uq_find 를 DROP 후 재생성했는데,
+-- 나중에 20260718000026_drop_idx_find_scan.sql 이 initdb 에서도 idx_find_scan 을 없애면서
+-- uq_find 가 fk_find_scan 이 쓰는 **유일한** 인덱스가 됐다. 그래서 빈 볼륨 initdb 가
+--   ERROR 1553 (HY000) at line 53: Cannot drop index 'uq_find': needed in a foreign key constraint
+-- 로 죽어 **DB 컨테이너가 아예 뜨지 않았다**(mysql:8.0 entrypoint 는 initdb 실패 시 exit 1).
+-- 기존 볼륨은 0014 를 idx_find_scan 이 살아 있던 시절에 이미 적용해 무사했기에 안 드러났다.

@@ -32,21 +32,24 @@ function vg_audit_sanitize($data) {
 /**
  * 소프트 삭제: 실제 DELETE 대신 is_deleted/deleted_at 를 세운다.
  *   $table 은 SQL 에 그대로 들어가므로 반드시 화이트리스트로만 허용(주입 방지).
+ *   PK 이름이 테이블마다 다르므로(`<단수 테이블명>_id`) 화이트리스트가 PK 도 함께 갖는다 —
+ *   SQL 에 들어가는 두 이름 모두 이 표에서만 나오므로 주입 경로는 그대로 없다.
  */
 function vg_soft_delete(PDO $pdo, string $table, int $id): void {
-    // is_deleted/deleted_at 를 가진 삭제 대상 테이블만 허용.
+    // is_deleted/deleted_at 를 가진 삭제 대상 테이블만 허용. 값은 그 테이블의 PK 컬럼명.
     static $allowed = [
-        'tb_users'           => true,
-        'tb_feed_connectors' => true,
-        'tb_advisories'      => true,
-        'tb_hosts'           => true,
-        'tb_scans'           => true,
-        'tb_api_tokens'      => true,
+        'tb_user'           => 'user_id',
+        'tb_feed_connector' => 'feed_connector_id',
+        'tb_advisory'       => 'advisory_id',
+        'tb_host'           => 'host_id',
+        'tb_scan'           => 'scan_id',
+        'tb_api_token'      => 'api_token_id',
     ];
-    if (empty($allowed[$table])) {
+    $pk = $allowed[$table] ?? null;
+    if ($pk === null) {
         throw new InvalidArgumentException("soft-delete 불가 테이블: $table");
     }
-    $pdo->prepare("UPDATE $table SET is_deleted = 1, deleted_at = NOW() WHERE id = ?")->execute([$id]);
+    $pdo->prepare("UPDATE $table SET is_deleted = 1, deleted_at = NOW() WHERE $pk = ?")->execute([$id]);
 }
 
 /**

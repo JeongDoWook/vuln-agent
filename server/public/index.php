@@ -22,36 +22,36 @@ $perPage = vg_perpage();
 try {
     $pdo = vg_pdo();
     $actionableStatusesSql = vg_ui_dashboard_actionable_statuses_sql();
-    $hostCount = (int) $pdo->query('SELECT COUNT(*) FROM tb_hosts WHERE is_deleted = 0')->fetchColumn();
+    $hostCount = (int) $pdo->query('SELECT COUNT(*) FROM tb_host WHERE is_deleted = 0')->fetchColumn();
 
     // 다음 수집 예정 — enabled·비manual 커넥터 중 next_run_at 이 가장 이른 하나.
     //   manual 커넥터는 next_run_at 이 NULL 이라 자연히 제외된다(connectors.php 가 그렇게 저장).
     $nextFeed = $pdo->query(
-        "SELECT name, connector_type, next_run_at FROM tb_feed_connectors
+        "SELECT name, connector_type, next_run_at FROM tb_feed_connector
           WHERE enabled = 1 AND is_deleted = 0 AND next_run_at IS NOT NULL
           ORDER BY next_run_at ASC LIMIT 1"
     )->fetch() ?: null;
 
     // 전 호스트의 "최신 스캔" 집합 — KPI·도넛·급한목록이 모두 이 기준을 쓴다.
-    //   tb_findings 를 조인하는 아래 쿼리들은 WHERE scan_id IN(이 서브쿼리) 대신 JOIN 으로
+    //   tb_finding 을 조인하는 아래 쿼리들은 WHERE scan_id IN(이 서브쿼리) 대신 JOIN 으로
     //   표현한다(cve.php·compliance_rule.php 와 동일 패턴). IN(서브쿼리) 로 두면 옵티마이저가
-    //   호스트당 "최신 스캔 하나"가 아니라 tb_scans 전체(변경시에만 저장되지만 이력이 계속
-    //   쌓인다 — 실측 호스트당 평균 6.5개)를 먼저 tb_findings 와 조인한 뒤에야 필터링해,
+    //   호스트당 "최신 스캔 하나"가 아니라 tb_scan 전체(변경시에만 저장되지만 이력이 계속
+    //   쌓인다 — 실측 호스트당 평균 6.5개)를 먼저 tb_finding 과 조인한 뒤에야 필터링해,
     //   스캔 이력이 쌓일수록 대시보드가 선형으로 느려진다(실측: "대응 우선순위" 카드 하나가
     //   7.2초 — EXPLAIN ANALYZE 로 확인. JOIN 전환 후 0.2초).
-    //   tb_scans 자체(작은 표, 아래 resKpi)에는 이 문제가 없어 IN(서브쿼리)를 그대로 둔다.
+    //   tb_scan 자체(작은 표, 아래 resKpi)에는 이 문제가 없어 IN(서브쿼리)를 그대로 둔다.
     $latestScans =
         "SELECT t.mid FROM " . vg_latest_scan_subq() . " t
-          JOIN tb_hosts h ON h.id = t.host_id
+          JOIN tb_host h ON h.host_id = t.host_id
          WHERE h.is_deleted = 0";
-    $latestJoin = "JOIN " . vg_latest_scan_subq() . " latest ON latest.host_id = s.host_id AND latest.mid = s.id";
+    $latestJoin = "JOIN " . vg_latest_scan_subq() . " latest ON latest.host_id = s.host_id AND latest.mid = s.scan_id";
 
     // KPI 는 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
     $totalsRows = $pdo->query(
         "SELECT f.severity, COUNT(*) c
-           FROM tb_findings f
-           JOIN tb_scans s ON s.id = f.scan_id
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+           FROM tb_finding f
+           JOIN tb_scan s ON s.scan_id = f.scan_id
+           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
            $latestJoin
           GROUP BY f.severity"
     )->fetchAll();
@@ -67,29 +67,29 @@ try {
      */
     // 원시 finding 행이 아니라 안정적인 조치 단위로 묶는다. 같은 CVE·패키지 중복이 대시보드를 점유하지 않는다.
     $urgent = $pdo->query(
-        "SELECT r.id AS remediation_id,r.cve_id,r.package_name,r.status AS remediation_status,r.due_at,
-                DATEDIFF(CURDATE(),DATE(r.due_at)) days_over,h.id host_id,h.fqdn,
+        "SELECT r.remediation_case_id,r.cve_id,r.package_name,r.status AS remediation_status,r.due_at,
+                DATEDIFF(CURDATE(),DATE(r.due_at)) days_over,h.host_id,h.fqdn,
                 f.severity,f.runtime_status,f.in_kev
-           FROM tb_remediation_cases r
-           JOIN tb_hosts h ON h.id=r.host_id AND h.is_deleted=0
-           JOIN tb_scans s ON s.host_id=h.id
+           FROM tb_remediation_case r
+           JOIN tb_host h ON h.host_id=r.host_id AND h.is_deleted=0
+           JOIN tb_scan s ON s.host_id=h.host_id
            $latestJoin
-           JOIN tb_findings f ON f.scan_id=s.id AND f.cve_id=r.cve_id AND f.package_name=r.package_name
-           LEFT JOIN tb_containers ctr ON ctr.id=f.container_id
+           JOIN tb_finding f ON f.scan_id=s.scan_id AND f.cve_id=r.cve_id AND f.package_name=r.package_name
+           LEFT JOIN tb_container ctr ON ctr.container_id=f.container_id
           WHERE r.is_deleted=0 AND r.status IN ('OPEN','IN_PROGRESS')
             AND COALESCE(ctr.image_digest,ctr.cid,'')=r.container_ref
-          GROUP BY r.id,r.cve_id,r.package_name,r.status,r.due_at,h.id,h.fqdn,f.severity,f.runtime_status,f.in_kev
+          GROUP BY r.remediation_case_id,r.cve_id,r.package_name,r.status,r.due_at,h.host_id,h.fqdn,f.severity,f.runtime_status,f.in_kev
           ORDER BY (r.due_at<CURDATE()) DESC,(f.in_kev=1 AND f.runtime_status='EXTERNAL') DESC,
-                   FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),r.due_at,r.id
+                   FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),r.due_at,r.remediation_case_id
           LIMIT " . vg_ui_dashboard_urgent_limit()
     )->fetchAll();
-    $urgentTotal=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_cases WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS')")->fetchColumn();
-    $kevCount=(int)$pdo->query("SELECT COUNT(DISTINCT r.id) FROM tb_remediation_cases r JOIN tb_scans s ON s.host_id=r.host_id JOIN ".vg_latest_scan_subq()." latest ON latest.host_id=s.host_id AND latest.mid=s.id JOIN tb_findings f ON f.scan_id=s.id AND f.cve_id=r.cve_id AND f.package_name=r.package_name WHERE r.is_deleted=0 AND r.status IN ('OPEN','IN_PROGRESS') AND f.in_kev=1")->fetchColumn();
-    $overdueCount=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_cases WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS') AND due_at<NOW()")->fetchColumn();
+    $urgentTotal=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_case WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS')")->fetchColumn();
+    $kevCount=(int)$pdo->query("SELECT COUNT(DISTINCT r.remediation_case_id) FROM tb_remediation_case r JOIN tb_scan s ON s.host_id=r.host_id JOIN ".vg_latest_scan_subq()." latest ON latest.host_id=s.host_id AND latest.mid=s.scan_id JOIN tb_finding f ON f.scan_id=s.scan_id AND f.cve_id=r.cve_id AND f.package_name=r.package_name WHERE r.is_deleted=0 AND r.status IN ('OPEN','IN_PROGRESS') AND f.in_kev=1")->fetchColumn();
+    $overdueCount=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_case WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS') AND due_at<NOW()")->fetchColumn();
     // OS 분포 — 비삭제 호스트를 os_id 기준으로 묶어 상위 10개. os_id 가 비어있으면 "미상".
     $osDist = $pdo->query(
         "SELECT COALESCE(NULLIF(os_id, ''), '미상') AS os_label, COUNT(*) c
-           FROM tb_hosts
+           FROM tb_host
           WHERE is_deleted = 0
           GROUP BY os_label
           ORDER BY c DESC, os_label
@@ -99,12 +99,12 @@ try {
     // 취약 자산 TOP10 — 호스트별 최신 스캔 기준 findings 건수 상위 10개.
     // "호스트별 현황" 표(전체·페이지네이션)와 별개로, 카드 안에서 한눈에 보는 용도.
     $topHosts = $pdo->query(
-        "SELECT h.id AS host_id, h.fqdn, COUNT(f.id) c
-           FROM tb_findings f
-           JOIN tb_scans s ON s.id = f.scan_id
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+        "SELECT h.host_id, h.fqdn, COUNT(f.finding_id) c
+           FROM tb_finding f
+           JOIN tb_scan s ON s.scan_id = f.scan_id
+           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
            $latestJoin
-          GROUP BY h.id, h.fqdn
+          GROUP BY h.host_id, h.fqdn
           ORDER BY c DESC
           LIMIT " . vg_ui_dashboard_chart_limit()
     )->fetchAll();
@@ -114,13 +114,13 @@ try {
      * 스캔은 **바뀔 때만** 저장된다(feat/change-tracking) — 날짜가 듬성듬성하다.
      * 그래서 "7일 전 그날의 스캔" 만 보면 그날 스캔이 없는 호스트가 0건으로 세어져
      * "일주일 새 확 늘었다"는 거짓말이 된다. 호스트별로 **7일 전까지의 최신 스캔을
-     * 이월(carry-forward)** 해서 합산한다 = 호스트별 MAX(id) WHERE 날짜 <= 7일 전.
+     * 이월(carry-forward)** 해서 합산한다 = 호스트별 MAX(scan_id) WHERE 날짜 <= 7일 전.
      */
     $weekAgoDay = date('Y-m-d', strtotime('-7 days'));
     $weekAgoScans = $pdo->query(
-        "SELECT MAX(s.id) AS mid
-           FROM tb_scans s
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+        "SELECT MAX(s.scan_id) AS mid
+           FROM tb_scan s
+           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
           WHERE s.is_deleted = 0 AND DATE(s.collected_at) <= '$weekAgoDay'
           GROUP BY s.host_id"
     )->fetchAll();
@@ -135,19 +135,19 @@ try {
 
     // 목록 대상 = 최신 스캔이 있는 비삭제 호스트 수(페이지네이션 총건).
     $total = (int) $pdo->query(
-        'SELECT COUNT(*) FROM tb_hosts h WHERE h.is_deleted = 0
-          AND EXISTS (SELECT 1 FROM tb_scans s WHERE s.host_id = h.id)'
+        'SELECT COUNT(*) FROM tb_host h WHERE h.is_deleted = 0
+          AND EXISTS (SELECT 1 FROM tb_scan s WHERE s.host_id = h.host_id)'
     )->fetchColumn();
 
     $offset = ($page - 1) * $perPage;
 
     // 호스트별 최신 스캔(한 페이지)
     $rows = $pdo->query(
-        "SELECT s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
-                h.id AS host_id, h.fqdn, h.os_id, h.os_version
-         FROM tb_scans s
-         JOIN " . vg_latest_scan_subq() . " t ON t.mid = s.id
-         JOIN tb_hosts h ON h.id = s.host_id
+        "SELECT s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
+                h.host_id, h.fqdn, h.os_id, h.os_version
+         FROM tb_scan s
+         JOIN " . vg_latest_scan_subq() . " t ON t.mid = s.scan_id
+         JOIN tb_host h ON h.host_id = s.host_id
          WHERE h.is_deleted = 0
          ORDER BY s.collected_at DESC
          LIMIT $perPage OFFSET $offset"

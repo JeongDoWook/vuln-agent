@@ -29,25 +29,25 @@ function vg_api_token_issue(PDO $pdo, string $label, ?int $userId): array {
     $token  = vg_api_token_new();
     $prefix = substr($token, 0, 12);                 // vga_ + 앞 8자
     $pdo->prepare(
-        'INSERT INTO tb_api_tokens (label, token_hash, token_prefix, created_by)
+        'INSERT INTO tb_api_token (label, token_hash, token_prefix, created_by)
          VALUES (?, ?, ?, ?)'
     )->execute([$label, vg_api_token_hash($token), $prefix, $userId]);
     return ['token' => $token, 'prefix' => $prefix];
 }
 
 /**
- * 토큰 검증. 유효하면 last_used_at 갱신 후 토큰 행 id 반환, 아니면 null.
+ * 토큰 검증. 유효하면 last_used_at 갱신 후 토큰 행 api_token_id 반환, 아니면 null.
  *   해시 컬럼이 UNIQUE 라 인덱스 조회 1회. (해시 자체는 비밀이 아니므로 직접 조회해도 안전)
  */
 function vg_api_token_verify(PDO $pdo, string $provided): ?int {
     $provided = trim($provided);
     if ($provided === '') { return null; }
     $st = $pdo->prepare(
-        'SELECT id FROM tb_api_tokens WHERE token_hash = ? AND is_deleted = 0 LIMIT 1'
+        'SELECT api_token_id FROM tb_api_token WHERE token_hash = ? AND is_deleted = 0 LIMIT 1'
     );
     $st->execute([vg_api_token_hash($provided)]);
     $id = $st->fetchColumn();
     if ($id === false) { return null; }
-    $pdo->prepare('UPDATE tb_api_tokens SET last_used_at = NOW() WHERE id = ?')->execute([(int) $id]);
+    $pdo->prepare('UPDATE tb_api_token SET last_used_at = NOW() WHERE api_token_id = ?')->execute([(int) $id]);
     return (int) $id;
 }

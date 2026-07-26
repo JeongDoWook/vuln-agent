@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * package_summary.php — packages.php 용 사전집계 요약(tb_package_summary)을 재구성한다.
- *   원본 tb_cve_affected_packages(92만 행)를 (package_name,ecosystem)로 집계해 화면이
+ *   원본 tb_cve_affected_package(92만 행)를 (package_name,ecosystem)로 집계해 화면이
  *   매 로드마다 전체를 재집계하지 않고 이 요약 테이블만 읽게 한다. OSV 커넥터 실행
  *   직후(재매칭·조치안 보강 뒤)에만 호출된다.
  */
@@ -42,8 +42,8 @@ if (!function_exists('vg_rebuild_package_summary')) {
                 "INSERT INTO tb_package_summary (package_name, ecosystem, cve_cnt, max_epss, fix_cnt)
                  SELECT a.package_name, a.ecosystem,
                         COUNT(DISTINCT a.cve_id), MAX(c.epss), SUM(a.fixed_version IS NOT NULL)
-                   FROM tb_cve_affected_packages a
-                   LEFT JOIN tb_cves c ON c.cve_id = a.cve_id AND c.is_deleted = 0
+                   FROM tb_cve_affected_package a
+                   LEFT JOIN tb_cve c ON c.cve_id = a.cve_id AND c.is_deleted = 0
                   WHERE a.is_deleted = 0
                   GROUP BY a.package_name, a.ecosystem"
             );
@@ -53,7 +53,7 @@ if (!function_exists('vg_rebuild_package_summary')) {
             //   훨씬 적은 수만 순회한다.
             $fx = $pdo->query(
                 "SELECT DISTINCT package_name, ecosystem, fixed_version
-                   FROM tb_cve_affected_packages
+                   FROM tb_cve_affected_package
                   WHERE is_deleted = 0 AND fixed_version IS NOT NULL"
             );
             $byPkg = [];

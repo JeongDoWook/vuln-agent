@@ -67,16 +67,16 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
 
     $pdo->beginTransaction();
 
-    // 호스트 upsert (fqdn 유니크). LAST_INSERT_ID 트릭으로 기존 id 회수.
+    // 호스트 upsert (fqdn 유니크). LAST_INSERT_ID 트릭으로 기존 host_id 회수.
     $stmt = $pdo->prepare(
-        'INSERT INTO tb_hosts (fqdn, hostname, os_id, os_version, first_seen, last_seen)
+        'INSERT INTO tb_host (fqdn, hostname, os_id, os_version, first_seen, last_seen)
          VALUES (:fqdn, :hn, :osid, :osver, NOW(), NOW())
          ON DUPLICATE KEY UPDATE
             hostname   = VALUES(hostname),
             os_id      = VALUES(os_id),
             os_version = VALUES(os_version),
             last_seen  = NOW(),
-            id         = LAST_INSERT_ID(id)'
+            host_id    = LAST_INSERT_ID(host_id)'
     );
     $stmt->execute([
         ':fqdn'  => $fqdn,
@@ -87,20 +87,20 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     $hostId = (int) $pdo->lastInsertId();
 
     // 직전 스캔과 내용이 같으면 새 스냅샷을 만들지 않는다 — 수집시각만 갱신한다.
-    //   호스트 생존 신호는 tb_hosts.last_seen 이 위에서 이미 갱신했으므로 잃는 정보가 없다.
+    //   호스트 생존 신호는 tb_host.last_seen 이 위에서 이미 갱신했으므로 잃는 정보가 없다.
     //   그 결과 스캔 목록 자체가 "변경 시점" 목록이 된다(changes.php 의 비교도 더 정확해진다).
-    $q = $pdo->prepare('SELECT id, content_hash FROM tb_scans WHERE host_id = ? ORDER BY id DESC LIMIT 1');
+    $q = $pdo->prepare('SELECT scan_id, content_hash FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT 1');
     $q->execute([$hostId]);
     $prev = $q->fetch() ?: null;
     $unchanged = $prev !== null && (string) $prev['content_hash'] === $contentHash;
 
     if ($unchanged) {
-        $scanId = (int) $prev['id'];
+        $scanId = (int) $prev['scan_id'];
         $pdo->prepare(
-            'UPDATE tb_scans SET collected_at = :ca, agent_version = :av, schedule = :sch,
+            'UPDATE tb_scan SET collected_at = :ca, agent_version = :av, schedule = :sch,
                                  elapsed_seconds = :el,
                                  peak_rss_mb = :pk, cpu_seconds = :cpu,
-                                 mem_total_mb = :mem, cpu_cores = :cores WHERE id = :id'
+                                 mem_total_mb = :mem, cpu_cores = :cores WHERE scan_id = :sid'
         )->execute([
             ':ca' => $collectedAt,
             ':av' => ($meta['agent_version'] ?? '') ?: null,
@@ -110,12 +110,12 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
             ':cpu' => isset($meta['cpu_seconds']) ? (float) $meta['cpu_seconds'] : null,
             ':mem' => isset($meta['mem_total_mb']) ? (float) $meta['mem_total_mb'] : null,
             ':cores' => isset($meta['nproc']) ? (int) $meta['nproc'] : null,
-            ':id' => $scanId,
+            ':sid' => $scanId,
         ]);
     } else {
     // 스캔 1행
     $stmt = $pdo->prepare(
-        'INSERT INTO tb_scans
+        'INSERT INTO tb_scan
             (host_id, collected_at, agent_version, schedule, elapsed_seconds, peak_rss_mb, cpu_seconds,
              mem_total_mb, cpu_cores,
              os_id, os_version, kernel, running_kernel, kernel_latest, kernel_reboot_needed,
@@ -152,7 +152,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     // 패키지 벌크
     if ($pkgCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_packages (scan_id, manager, name, version, arch, source_pkg, source_version, vendor, origin)
+            'INSERT INTO tb_package (scan_id, manager, name, version, arch, source_pkg, source_version, vendor, origin)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         foreach ($pkgRows as $r) {
@@ -166,11 +166,11 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
 
     // 컨테이너 + 그 안의 패키지.
     //   컨테이너는 호스트와 OS 가 다를 수 있어(호스트 Rocky + 컨테이너 Debian) os 를 따로 갖는다.
-    //   패키지는 같은 tb_packages 에 container_id 를 달아 넣는다(0 = 호스트).
-    $ctrIds = [];   // cid => tb_containers.id
+    //   패키지는 같은 tb_package 에 container_id 를 달아 넣는다(0 = 호스트).
+    $ctrIds = [];   // cid => tb_container.container_id
     if ($ctrCount > 0) {
         $insC = $pdo->prepare(
-            'INSERT INTO tb_containers (scan_id,cid,name,image,image_digest,k8s_namespace,k8s_pod,k8s_container,workload_ref,runtime_state,sbom_format,sbom_hash,os_id,os_version,manager,pkg_count)
+            'INSERT INTO tb_container (scan_id,cid,name,image,image_digest,k8s_namespace,k8s_pod,k8s_container,workload_ref,runtime_state,sbom_format,sbom_hash,os_id,os_version,manager,pkg_count)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
         );
         foreach ($ctrRows as $cid => $f) {
@@ -189,7 +189,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     }
     if ($ctrPkgCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_packages (scan_id, container_id, manager, name, version, source_pkg)
+            'INSERT INTO tb_package (scan_id, container_id, manager, name, version, source_pkg)
              VALUES (?, ?, ?, ?, ?, ?)'
         );
         foreach ($ctrPkgRows as $r) {
@@ -206,7 +206,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     //   이게 있어야 매처가 컨테이너 패키지에도 "로드됨/외부노출" 을 적용해 등급을 매길 수 있다.
     if ($ctrProcCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_processes (scan_id, container_id, pid, comm, username, exe_pkg, loaded_pkgs)
+            'INSERT INTO tb_process (scan_id, container_id, pid, comm, username, exe_pkg, loaded_pkgs)
              VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
         foreach ($ctrProcRows as $f) {
@@ -220,7 +220,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     }
     if ($ctrExpCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_exposures
+            'INSERT INTO tb_exposure
                 (scan_id, container_id, pid, proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
@@ -236,11 +236,11 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
         }
     }
 
-    // 언어 패키지 벌크 — 같은 tb_packages 에 manager=pip|npm|gem|composer 로 넣는다.
+    // 언어 패키지 벌크 — 같은 tb_package 에 manager=pip|npm|gem|composer 로 넣는다.
     //   매처가 manager 로 생태계(PyPI/npm/…)를 정해 OS 패키지와 섞이지 않게 매칭한다.
     if ($langCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_packages (scan_id, manager, name, version) VALUES (?, ?, ?, ?)'
+            'INSERT INTO tb_package (scan_id, manager, name, version) VALUES (?, ?, ?, ?)'
         );
         foreach ($langRows as $r) {
             $ins->execute([$scanId, $r[0], $r[1], $r[2]]);
@@ -250,7 +250,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     // 노출 벌크
     if ($expCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_exposures
+            'INSERT INTO tb_exposure
                 (scan_id, pid, proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
@@ -268,7 +268,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     // 실행 프로세스 벌크
     if ($procCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_processes (scan_id, pid, comm, username, exe_pkg, loaded_pkgs)
+            'INSERT INTO tb_process (scan_id, pid, comm, username, exe_pkg, loaded_pkgs)
              VALUES (?, ?, ?, ?, ?, ?)'
         );
         foreach ($procRows as $f) {
@@ -283,7 +283,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     // changelog CVE 벌크 (백포트 근거 — 매처가 억제 판정에 사용)
     if ($clogCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_pkg_changelog_cves (scan_id, package_name, cve_id, evidence)
+            'INSERT INTO tb_pkg_changelog_cve (scan_id, package_name, cve_id, evidence)
              VALUES (?, ?, ?, ?)'
         );
         foreach ($clogRows as $r) {
@@ -294,7 +294,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     // 재시작 필요 벌크 (옛 라이브러리 상주 — 매처가 억제를 막는 근거로 사용)
     if ($staleCount > 0) {
         $ins = $pdo->prepare(
-            'INSERT INTO tb_stale_libs (scan_id, pid, comm, package_name, lib_path)
+            'INSERT INTO tb_stale_lib (scan_id, pid, comm, package_name, lib_path)
              VALUES (?, ?, ?, ?, ?)'
         );
         foreach ($staleRows as $r) {
@@ -328,8 +328,8 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     if ($prev !== null) {
         // 호스트 패키지만 비교한다(container_id=0). 컨테이너 것까지 섞으면 컨테이너 패키지가
         // 전부 "제거됨"으로 잘못 기록된다 — $curPkgs 에는 호스트·언어 패키지만 담기기 때문이다.
-        $q = $pdo->prepare('SELECT manager, name, version FROM tb_packages WHERE scan_id = ? AND container_id = 0');
-        $q->execute([(int) $prev['id']]);
+        $q = $pdo->prepare('SELECT manager, name, version FROM tb_package WHERE scan_id = ? AND container_id = 0');
+        $q->execute([(int) $prev['scan_id']]);
         $prevPkgs = [];
         foreach ($q->fetchAll() as $r) {
             $prevPkgs[$r['manager'] . '|' . $r['name']] = (string) $r['version'];
@@ -339,7 +339,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
         $pkgChanges = vg_ingest_diff_packages($prevPkgs, $curPkgs, 'vg_ver_cmp');
 
         $insChg = $pdo->prepare(
-            'INSERT INTO tb_pkg_changes (host_id, scan_id, manager, package_name, change_type, old_version, new_version)
+            'INSERT INTO tb_pkg_change (host_id, scan_id, manager, package_name, change_type, old_version, new_version)
              VALUES (?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE change_type=VALUES(change_type),
                old_version=VALUES(old_version), new_version=VALUES(new_version)'
@@ -355,7 +355,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
 
     // 동일 스냅샷 재전송이어도 수집기 완전성은 최신 상태로 갱신한다.
     if ($collectionStages) {
-        $stage = $pdo->prepare('INSERT INTO tb_collection_stages (scan_id,stage_code,status,item_count) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status),item_count=VALUES(item_count),created_at=NOW()');
+        $stage = $pdo->prepare('INSERT INTO tb_collection_stage (scan_id,stage_code,status,item_count) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status),item_count=VALUES(item_count),created_at=NOW()');
         foreach ($collectionStages as $r) { $stage->execute([$scanId, $r[0], $r[1], $r[2]]); }
     }
 

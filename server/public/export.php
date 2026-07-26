@@ -78,19 +78,19 @@ try {
 
     // 스캔 스코프: scan_id 지정이면 그것, 아니면 (host 필터 후) 호스트별 최신 스캔.
     if ($scanId > 0) {
-        $scanSql = 'SELECT s.id AS scan_id, s.collected_at, s.os_id, s.os_version, s.kernel,
+        $scanSql = 'SELECT s.scan_id, s.collected_at, s.os_id, s.os_version, s.kernel,
                            s.package_count, s.agent_version, h.fqdn, h.hostname
-                      FROM tb_scans s
-                      JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
-                     WHERE s.is_deleted = 0 AND s.id = ?';
+                      FROM tb_scan s
+                      JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
+                     WHERE s.is_deleted = 0 AND s.scan_id = ?';
         $scanParams = [$scanId];
     } else {
-        $scanSql = 'SELECT s.id AS scan_id, s.collected_at, s.os_id, s.os_version, s.kernel,
+        $scanSql = 'SELECT s.scan_id, s.collected_at, s.os_id, s.os_version, s.kernel,
                            s.package_count, s.agent_version, h.fqdn, h.hostname
-                      FROM tb_scans s
-                      JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+                      FROM tb_scan s
+                      JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
                       JOIN ' . vg_latest_scan_subq() . ' t
-                        ON t.mid = s.id
+                        ON t.mid = s.scan_id
                      WHERE s.is_deleted = 0';
         $scanParams = [];
         if ($host !== '') { $scanSql .= ' AND h.fqdn = ?'; $scanParams[] = $host; }
@@ -136,8 +136,8 @@ try {
                        f.loaded, f.exposed, f.exposure_scope, f.in_kev, f.cvss, f.severity, f.rationale,
                        c.summary, c.epss, c.epss_percentile,
                        " . VG_FIXED_VERSION_SUBQ . "
-                  FROM tb_findings f
-                  LEFT JOIN tb_cves c ON c.cve_id = f.cve_id AND c.is_deleted = 0
+                  FROM tb_finding f
+                  LEFT JOIN tb_cve c ON c.cve_id = f.cve_id AND c.is_deleted = 0
                  WHERE $where
                  ORDER BY f.scan_id,
                           FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id";

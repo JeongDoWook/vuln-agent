@@ -35,7 +35,7 @@
 ## 피드 커넥터
 
 scheduler 사이드카가 매 1분 due 커넥터를 조회해 KEV·OSV·NVD·EPSS·KISA·벤더 판정 소스·범용 API 를
-긁고, `tb_cves` 계열에 upsert 한 뒤 매처를 재계산시키는 경로다. `connectors.php` 에서 설정·지금 실행·
+긁고, `tb_cve` 계열에 upsert 한 뒤 매처를 재계산시키는 경로다. `connectors.php` 에서 설정·지금 실행·
 미리보기가 어디로 붙는지도 같이 있다.
 
 피드를 추가하거나 "왜 이 CVE 정보가 아직 안 들어왔나" 를 볼 때 본다.
@@ -56,12 +56,13 @@ Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·we
 
 ## ERD
 
-`tb_hosts`→`tb_scans` 를 축으로 패키지·노출·프로세스·판정 결과와 CVE 미러 쪽 테이블이 어떻게 엮이는지다.
+`tb_host`→`tb_scan` 을 축으로 패키지·노출·프로세스·판정 결과와 CVE 미러 쪽 테이블이 어떻게 엮이는지다.
 감사 4컬럼 중 `is_deleted` 만 표기했고, FK 없이 애플리케이션 조인으로만 엮이는 테이블은 소스에 주석으로 적혀 있다.
-테이블별 전체 컬럼은 [`docs/dev/데이터베이스.md`](../../dev/데이터베이스.md) 가 따로 다룬다.
+테이블명은 단수, 대리키 PK 는 `<단수 테이블명>_id`(`tb_host.host_id`)라 **조인 양쪽 이름이 같다**.
+테이블별 전체 컬럼과 명명규칙 예외는 [`docs/dev/데이터베이스.md`](../../dev/데이터베이스.md) 가 따로 다룬다.
 
-`tb_scans` 에 달린 **억제 근거 ②③④** 는 관계선이 몰려 있어 그림에선 번호만 적었다. 각각
-② `tb_pkg_changelog_cves` — changelog 에 그 CVE 수정 기록, ③ `tb_applied_errata` — 벤더 권고(errata),
+`tb_scan` 에 달린 **억제 근거 ②③④** 는 관계선이 몰려 있어 그림에선 번호만 적었다. 각각
+② `tb_pkg_changelog_cve` — changelog 에 그 CVE 수정 기록, ③ `tb_applied_errata` — 벤더 권고(errata),
 ④ `tb_debsecan` — 데비안 트래커(역방향) 다.
 
 쿼리를 짜거나 조인 경로를 확인할 때 본다.
