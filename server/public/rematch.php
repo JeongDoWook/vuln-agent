@@ -34,7 +34,7 @@ try {
     if (isset($_GET['scan_id'])) {
         $ids = [(int) $_GET['scan_id']];
     } else {
-        $ids = array_map('intval', $pdo->query('SELECT id FROM tb_scans ORDER BY id')->fetchAll(PDO::FETCH_COLUMN));
+        $ids = array_map('intval', $pdo->query('SELECT scan_id FROM tb_scan ORDER BY scan_id')->fetchAll(PDO::FETCH_COLUMN));
     }
     $result = [];
     foreach ($ids as $id) {

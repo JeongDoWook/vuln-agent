@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * compliance_rules.php — SSG(SCAP Security Guide) 룰 카탈로그 조회.
  *   vendor.php 가 "벤더가 이 CVE 를 뭐라 했나" 를 보여주듯, 이 페이지는 "SSG 가 이 보안설정
- *   항목을 뭐라 정의했나" 를 보여준다. tb_compliance_rules 는 지금 host.php 에서 그 호스트가
+ *   항목을 뭐라 정의했나" 를 보여준다. tb_compliance_rule 은 지금 host.php 에서 그 호스트가
  *   실제 점검한 규칙만 조각으로 보여줄 뿐, 룰셋 전체(약 2,493개)를 검색·필터로 훑어보는
  *   화면이 없었다. 로그인 필요(취약점 메뉴 권한 재사용 — vendor.php·packages.php 와 같은 이유).
  */
@@ -44,7 +44,7 @@ try {
     $pdo = vg_pdo();
 
     $sevValues = $pdo->query(
-        'SELECT DISTINCT severity FROM tb_compliance_rules WHERE is_deleted = 0 ORDER BY severity'
+        'SELECT DISTINCT severity FROM tb_compliance_rule WHERE is_deleted = 0 ORDER BY severity'
     )->fetchAll(PDO::FETCH_COLUMN);
     foreach ($sevValues as $v) { $sevOptions[$v] = mb_strtoupper($v); }
     if ($sev !== '' && !isset($sevOptions[$sev])) { $sev = ''; }
@@ -62,13 +62,13 @@ try {
     }
     $whereSql = implode(' AND ', $where);
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_compliance_rules WHERE $whereSql");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_compliance_rule WHERE $whereSql");
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
 
     $offset = ($page - 1) * $perPage;
     $stmt = $pdo->prepare(
-        "SELECT rule_id, title, severity, rationale, refs_json FROM tb_compliance_rules
+        "SELECT rule_id, title, severity, rationale, refs_json FROM tb_compliance_rule
           WHERE $whereSql ORDER BY rule_id ASC LIMIT $perPage OFFSET $offset"
     );
     $stmt->execute($params);

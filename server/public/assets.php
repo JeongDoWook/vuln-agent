@@ -32,15 +32,15 @@ if (!isset(VG_ASSET_STATES[$state])) { $state = ''; }
 /* 호스트 한 대의 수집 상태를 SQL 안에서 판정하는 식.
  * 목록 필터·KPI 집계가 같은 식을 써야 "지연 3대" 를 눌렀을 때 3대가 나온다. */
 $stateExpr =
-    "CASE WHEN s.id IS NULL THEN 'none'
+    "CASE WHEN s.scan_id IS NULL THEN 'none'
           WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > " . VG_OFFLINE_MIN . " THEN 'offline'
           WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > " . VG_STALE_MIN . " THEN 'stale'
           ELSE 'ok' END";
 
 // 호스트 + 최신 스캔. LEFT JOIN 이라 등록만 되고 아직 수집이 없는 호스트도 남는다.
-$fromSql = 'FROM tb_hosts h
-            LEFT JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.id
-            LEFT JOIN tb_scans s ON s.id = t.mid';
+$fromSql = 'FROM tb_host h
+            LEFT JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.host_id
+            LEFT JOIN tb_scan s ON s.scan_id = t.mid';
 
 $pdo = vg_pdo();
 
@@ -52,13 +52,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $id = (int) ($_POST['id'] ?? 0);
-            $st = $pdo->prepare('SELECT fqdn FROM tb_hosts WHERE id = ? AND is_deleted = 0');
+            $st = $pdo->prepare('SELECT fqdn FROM tb_host WHERE host_id = ? AND is_deleted = 0');
             $st->execute([$id]);
             $fqdn = $st->fetchColumn();
             if ($fqdn === false) {
                 $err = '호스트를 찾을 수 없습니다.';
             } else {
-                vg_soft_delete($pdo, 'tb_hosts', $id);
+                vg_soft_delete($pdo, 'tb_host', $id);
                 vg_log_activity($pdo, 'HOST', $id, 'host_delete', "자산 삭제: $fqdn");
                 $msg = "자산 '$fqdn' 을(를) 삭제했습니다. 해당 호스트가 다시 수집을 보내면 재등록됩니다.";
             }
@@ -96,11 +96,11 @@ try {
     $offset = ($page - 1) * $perPage;
 
     $st = $pdo->prepare(
-        "SELECT h.id, h.fqdn, h.os_id, h.os_version, h.first_seen,
-                s.id AS scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
+        "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.first_seen,
+                s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
                 s.schedule, s.peak_rss_mb, s.cpu_seconds,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
-                (SELECT COUNT(*) FROM tb_scans x WHERE x.host_id = h.id) AS scan_count
+                (SELECT COUNT(*) FROM tb_scan x WHERE x.host_id = h.host_id) AS scan_count
            $fromSql
           WHERE $where
           ORDER BY h.fqdn
@@ -122,7 +122,7 @@ try {
     //   않으므로 저장소의 버전을 읽을 수 없고, 박아 두면 배포 때마다 두 곳을 고쳐야 한다.
     //   (버전은 '2.10' > '2.9' 라 문자열 비교로는 틀린다 → version_compare)
     $seen = $pdo->query(
-        "SELECT DISTINCT agent_version FROM tb_scans
+        "SELECT DISTINCT agent_version FROM tb_scan
           WHERE agent_version IS NOT NULL AND agent_version <> '' AND is_deleted = 0"
     )->fetchAll(PDO::FETCH_COLUMN);
     $latestAgent = (string) array_reduce(
@@ -213,7 +213,7 @@ vg_header('자산관리', 'assets');
                   'hint'  => '자산은 에이전트가 수집을 보내면 자동 등록됩니다. 아래 설치 안내를 따르세요.',
               ],
           'cell' => [
-              'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['id'] . '">' . vg_h($r['fqdn']) . '</a></strong>',
+              'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a></strong>',
               'state' => fn($r) => vg_asset_state($r['age_min']),
               'os'            => fn($r) => vg_h(trim($r['os_id'] . ' ' . $r['os_version'])) ?: '<span class="why">–</span>',
               // 구버전 뱃지: 이 호스트만 옛 에이전트가 돈다는 뜻이다(중앙은 노드에 내려보내지 않는다).
@@ -242,15 +242,15 @@ vg_header('자산관리', 'assets');
               // 뱃지를 누르면 그 호스트·등급의 취약점 목록으로.
               'sev' => fn($r) => vg_sev_counts(
                   $sevByScan[(int) $r['scan_id']] ?? [],
-                  fn(string $s) => '/findings.php?host=' . (int) $r['id'] . '&sev=' . $s
+                  fn(string $s) => '/findings.php?host=' . (int) $r['host_id'] . '&sev=' . $s
               ),
               'collected_at' => fn($r) => $r['collected_at'] ? '<span class="why">' . vg_h($r['collected_at']) . '</span>' : '<span class="why">–</span>',
               'scan_count'   => fn($r) => (int) $r['scan_count'] > 0
-                  ? '<a href="/host.php?id=' . (int) $r['id'] . '&tab=scans">' . number_format((int) $r['scan_count']) . '회</a>'
+                  ? '<a href="/host.php?id=' . (int) $r['host_id'] . '&tab=scans">' . number_format((int) $r['scan_count']) . '회</a>'
                   : '<span class="why">0회</span>',
               'act' => fn($r) => '<form method="post" class="actions" data-confirm="' . vg_h($r['fqdn']) . ' 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
-                  . '<input type="hidden" name="id" value="' . (int) $r['id'] . '">'
+                  . '<input type="hidden" name="id" value="' . (int) $r['host_id'] . '">'
                   . '<button type="submit" class="btn btn--sm btn--danger">삭제</button></form>',
           ],
       ]

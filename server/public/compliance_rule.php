@@ -24,7 +24,7 @@ try {
     if ($ruleId !== '') {
         $pdo = vg_pdo();
 
-        $stmt = $pdo->prepare('SELECT * FROM tb_compliance_rules WHERE rule_id = ? AND is_deleted = 0');
+        $stmt = $pdo->prepare('SELECT * FROM tb_compliance_rule WHERE rule_id = ? AND is_deleted = 0');
         $stmt->execute([$ruleId]);
         $rule = $stmt->fetch() ?: null;
 
@@ -34,11 +34,11 @@ try {
 
             // 호스트별 최신 스캔 기준으로 이 룰로 점검된 결과만 본다(cve.php 의 $locSql 패턴 재사용).
             $hostSql =
-                "FROM tb_cce_findings f
-                 JOIN tb_scans s ON s.id = f.scan_id
-                 JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+                "FROM tb_cce_finding f
+                 JOIN tb_scan s ON s.scan_id = f.scan_id
+                 JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
                  JOIN " . vg_latest_scan_subq() . " latest
-                   ON latest.host_id = s.host_id AND latest.mid = s.id
+                   ON latest.host_id = s.host_id AND latest.mid = s.scan_id
                  WHERE f.ssg_rule_id = ?";
 
             $stmt = $pdo->prepare("SELECT COUNT(*) $hostSql");
@@ -53,7 +53,7 @@ try {
 
             $offset = ($page - 1) * $perPage;
             $stmt = $pdo->prepare(
-                "SELECT h.id AS host_id, h.fqdn, f.result, f.severity, f.evidence, s.collected_at
+                "SELECT h.host_id, h.fqdn, f.result, f.severity, f.evidence, s.collected_at
                  $hostSql
                  ORDER BY FIELD(f.result,'FAIL','NA','PASS'), h.fqdn
                  LIMIT $perPage OFFSET $offset"
