@@ -186,6 +186,12 @@ def apply_sql(sql, tables):
     for m in re.finditer(r"RENAME\s+TABLE\s+`?(\w+)`?\s+TO\s+`?(\w+)`?", sql_nc, re.I):
         rename_table(tables, m.group(1), m.group(2))
 
+    # ── DROP TABLE ──
+    # 이걸 안 따라가면 폐기된 테이블(예: *_ko_bak 백업본)이 명세서에 유령으로 남는다.
+    # CREATE 만 보고 DROP 을 무시하면 스키마엔 없는 테이블을 외부 전달 문서가 있다고 말하게 된다.
+    for m in re.finditer(r"DROP\s+TABLE(?:\s+IF\s+EXISTS)?\s+`?(\w+)`?", sql_nc, re.I):
+        drop_table(tables, m.group(1))
+
 def rename_col(tables, tname, old, new):
     t = tables.get(tname)
     if not t or any(c.name == new for c in t['cols']):
@@ -213,6 +219,10 @@ def rename_table(tables, old, new):
     cm = tables.get('__comments__', {})
     if old in cm and new not in cm:
         cm[new] = cm.pop(old)
+
+def drop_table(tables, name):
+    tables.pop(name, None)
+    tables.get('__comments__', {}).pop(name, None)
 
 def assign_keys(tables):
     """PK/UNI/MUL 을 컬럼에 표기 (SHOW COLUMNS 의 Key 컬럼 규칙: 인덱스 선두 컬럼만)."""
