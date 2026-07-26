@@ -7,7 +7,7 @@ declare(strict_types=1);
  *     - 신규   : 지난 스캔엔 없다가 이번에 생긴 취약점
  *     - 해결   : 지난 스캔엔 있었는데 이번에 사라진 것
  *     - 등급↑/↓: 양쪽에 있으나 심각도가 바뀐 것
- *   취약점 식별자는 (cve_id, package_name). 새 테이블 없이 tb_findings 만 대조한다.
+ *   취약점 식별자는 (cve_id, package_name). 새 테이블 없이 tb_finding 만 대조한다.
  */
 
 require __DIR__ . '/../src/auth.php';
@@ -17,7 +17,7 @@ vg_require_menu('findings');
 const VG_SEV_RANK = ['LOW' => 1, 'MEDIUM' => 2, 'HIGH' => 3, 'CRITICAL' => 4];
 // 변화유형: 정렬·필터·배지에 공유
 const VG_CHANGE_TYPES = ['new' => '신규', 'up' => '등급 상승', 'down' => '등급 하락', 'resolved' => '해결'];
-// 패키지 변경유형(tb_pkg_changes.change_type)
+// 패키지 변경유형(tb_pkg_change.change_type)
 const VG_PKG_CHANGE_TYPES = [
     'installed'   => '설치',
     'removed'     => '제거',
@@ -55,9 +55,9 @@ try {
     /* 패키지 변경 이력. 예전엔 LIMIT 200 으로 잘라놓고 "더 있다" 는 표시가 없어서
      * 201번째부터의 변경은 화면에서 볼 방법이 아예 없었다 — 제대로 페이지네이션한다.
      * 호스트 필터는 취약점 변화 목록과 공유한다. */
-    $pkgFrom = 'FROM tb_pkg_changes c
-                JOIN tb_hosts h ON h.id = c.host_id AND h.is_deleted = 0
-                JOIN tb_scans s ON s.id = c.scan_id
+    $pkgFrom = 'FROM tb_pkg_change c
+                JOIN tb_host h ON h.host_id = c.host_id AND h.is_deleted = 0
+                JOIN tb_scan s ON s.scan_id = c.scan_id
                WHERE c.is_deleted = 0'
              . ($hostId ? ' AND c.host_id = ?' : '')
              . ($q !== '' ? ' AND c.package_name LIKE ?' : '');
@@ -76,7 +76,7 @@ try {
             "SELECT c.host_id, h.fqdn, c.manager, c.package_name, c.change_type,
                     c.old_version, c.new_version, s.collected_at AS `when`
              $pkgFrom
-             ORDER BY c.id DESC
+             ORDER BY c.pkg_change_id DESC
              LIMIT $perPage OFFSET $pkgOffset"
         );
         $st->execute($pkgParams);
@@ -85,11 +85,11 @@ try {
 
     // 호스트별 스캔을 최신순으로. PHP 에서 앞의 2개(최신·직전)만 취한다.
     $rows = $pdo->query(
-        "SELECT s.host_id, h.fqdn, s.id AS scan_id, s.collected_at
-           FROM tb_scans s
-           JOIN tb_hosts h ON h.id = s.host_id AND h.is_deleted = 0
+        "SELECT s.host_id, h.fqdn, s.scan_id, s.collected_at
+           FROM tb_scan s
+           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
           WHERE s.is_deleted = 0
-          ORDER BY s.host_id, s.id DESC"
+          ORDER BY s.host_id, s.scan_id DESC"
     )->fetchAll(PDO::FETCH_ASSOC);
 
     $perHost = [];   // host_id => [{scan_id, fqdn, collected_at}, ...] 최신순
@@ -110,11 +110,11 @@ try {
 
     // findings 를 한 번에 로드 → scan_id => key(cve|pkg) => row
     //   SQL LIMIT/OFFSET 페이지네이션(패키지 변경 탭과 동일한 방식)은 실측으로 기각됐다 —
-    //   호스트쌍마다 tb_findings 를 자기조인(신규/해결 판정용 LEFT JOIN anti-join)하는 SQL 로
+    //   호스트쌍마다 tb_finding 을 자기조인(신규/해결 판정용 LEFT JOIN anti-join)하는 SQL 로
     //   diff 를 내리면, 이 dev DB(findings 51만행·비교대상 호스트 56개) 기준 인덱스 힌트를
     //   줘도 30초+ 걸렸다(현재 이 방식의 벌크 로드는 1.2초). 자기조인이 호스트당 반복되며
     //   인덱스 탐색 비용이 누적되는 게 원인 — 개선하려면 전용 커버링 인덱스나
-    //   tb_pkg_changes 처럼 변경 이력을 미리 적재해두는 테이블이 필요해, 이번 "경미한
+    //   tb_pkg_change 처럼 변경 이력을 미리 적재해두는 테이블이 필요해, 이번 "경미한
     //   정리" 범위를 넘는다. 대신 실제 쓰지 않는 컬럼(cvss, exposure_scope)만 걷어낸다
     //   (vg_change_row() 는 cve_id/package_name/severity/in_kev/exposed/rationale 만 쓴다).
     $bySc = [];
@@ -122,7 +122,7 @@ try {
         $in = implode(',', array_map('intval', $scanIds));
         $fst = $pdo->query(
             "SELECT scan_id, cve_id, package_name, severity, in_kev, exposed, rationale
-               FROM tb_findings WHERE scan_id IN ($in) AND is_deleted = 0"
+               FROM tb_finding WHERE scan_id IN ($in) AND is_deleted = 0"
         );
         foreach ($fst->fetchAll(PDO::FETCH_ASSOC) as $f) {
             $bySc[(int) $f['scan_id']][$f['cve_id'] . '|' . $f['package_name']] = $f;
