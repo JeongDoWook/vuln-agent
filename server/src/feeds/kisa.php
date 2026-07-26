@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * feeds/kisa.php — KISA(보호나라) 국내 보안공지 RSS 커넥터.
- *   RSS 는 title/link/pubDate 만 제공(CVE 없음) → 공지 자체를 tb_advisories 로 수집하고,
+ *   RSS 는 title/link/pubDate 만 제공(CVE 없음) → 공지 자체를 tb_advisory 로 수집하고,
  *   상세 HTML 본문을 평문으로 뽑아 CVE 를 흡수한다. 제목·URL 정규화로 중복을 막는다.
  *   미리보기는 run 과 같은 기본 피드의 첫 카테고리를 본다.
  *

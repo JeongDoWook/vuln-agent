@@ -136,7 +136,7 @@ final class VgSsgConnector implements VgFeedConnector {
             if (!$rules) { throw new RuntimeException('SSG tarball 에서 룰을 하나도 읽지 못했다'); }
 
             $ins = $pdo->prepare(
-                'INSERT INTO tb_compliance_rules (rule_id, title, severity, rationale, refs_json, ssg_version)
+                'INSERT INTO tb_compliance_rule (rule_id, title, severity, rationale, refs_json, ssg_version)
                  VALUES (?,?,?,?,?,?)
                  ON DUPLICATE KEY UPDATE title = VALUES(title), severity = VALUES(severity),
                    rationale = VALUES(rationale), refs_json = VALUES(refs_json),

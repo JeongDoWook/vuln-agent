@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * feeds/kev.php — CISA KEV 커넥터. 실제 악용 취약점 카탈로그(JSON, 무인증).
- *   tb_kev_catalog + tb_cves 로 upsert. 미리보기는 앞 10건을 그대로 보여준다.
+ *   tb_kev_catalog + tb_cve 로 upsert. 미리보기는 앞 10건을 그대로 보여준다.
  */
 
 require_once __DIR__ . '/http.php';

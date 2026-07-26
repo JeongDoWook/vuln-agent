@@ -30,13 +30,13 @@ final class VgEpssConnector implements VgFeedConnector {
         $txt = vg_epss_fetch(vg_conn_url($conn, VG_EPSS_URL));
         // 우리가 보유한 CVE 만 갱신(전체 34만건 삽입 안 함)
         $have = [];
-        foreach ($pdo->query('SELECT cve_id FROM tb_cves')->fetchAll(PDO::FETCH_COLUMN) as $c) {
+        foreach ($pdo->query('SELECT cve_id FROM tb_cve')->fetchAll(PDO::FETCH_COLUMN) as $c) {
             $have[strtoupper((string) $c)] = true;
         }
         if (!$have) {
             return ['fetched' => 0, 'upserted' => 0];
         }
-        $upd = $pdo->prepare('UPDATE tb_cves SET epss = ?, epss_percentile = ? WHERE cve_id = ?');
+        $upd = $pdo->prepare('UPDATE tb_cve SET epss = ?, epss_percentile = ? WHERE cve_id = ?');
         $fetched = 0; $up = 0;
         $pdo->beginTransaction();
         foreach (explode("\n", $txt) as $line) {

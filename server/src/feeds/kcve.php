@@ -133,12 +133,12 @@ final class VgKcveConnector implements VgFeedConnector {
         unset($r);
 
         $insCve = $pdo->prepare(
-            'INSERT INTO tb_kernel_cves (cve_id, introduced_version, mainline_fixed) VALUES (?,?,?)
+            'INSERT INTO tb_kernel_cve (cve_id, introduced_version, mainline_fixed) VALUES (?,?,?)
              ON DUPLICATE KEY UPDATE introduced_version = VALUES(introduced_version),
                                      mainline_fixed = VALUES(mainline_fixed)'
         );
         $insFix = $pdo->prepare(
-            'INSERT INTO tb_kernel_cve_fixes (cve_id, stream, fixed_version) VALUES (?,?,?)
+            'INSERT INTO tb_kernel_cve_fix (cve_id, stream, fixed_version) VALUES (?,?,?)
              ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)'
         );
 
