@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * permissions.php — 역할별 메뉴 접근권한 설정 (admin 전용).
  *   매트릭스 UI: 행=메뉴, 열=운영자/사용자 체크박스. 관리자 열은 "항상 허용"으로 잠금.
- *   저장 시 tb_role_permissions 를 upsert 하고 감사로그를 남긴다.
+ *   저장 시 tb_role_permission 을 upsert 하고 감사로그를 남긴다.
  */
 
 require __DIR__ . '/../src/auth.php';
@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $posted = $_POST['perm'] ?? [];   // perm[role][menu] = '1'
             $up = $pdo->prepare(
-                'INSERT INTO tb_role_permissions (role, menu_code, allowed)
+                'INSERT INTO tb_role_permission (role, menu_code, allowed)
                  VALUES (?,?,?)
                  ON DUPLICATE KEY UPDATE allowed = VALUES(allowed), is_deleted = 0, deleted_at = NULL'
             );
@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // 현재 권한 로드 → $cur[role][menu] = bool
 $cur = [];
-foreach ($pdo->query('SELECT role, menu_code, allowed FROM tb_role_permissions WHERE is_deleted = 0')->fetchAll() as $r) {
+foreach ($pdo->query('SELECT role, menu_code, allowed FROM tb_role_permission WHERE is_deleted = 0')->fetchAll() as $r) {
     $cur[(string) $r['role']][(string) $r['menu_code']] = (int) $r['allowed'] === 1;
 }
 

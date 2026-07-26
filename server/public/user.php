@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($role === '') {
             $err = '유효하지 않은 역할입니다.';
         } else {
-            $pdo->prepare('UPDATE tb_users SET role = ? WHERE id = ?')->execute([$role, $id]);
+            $pdo->prepare('UPDATE tb_user SET role = ? WHERE user_id = ?')->execute([$role, $id]);
             vg_log_activity($pdo, 'USER', $id, 'user_role', '역할 변경', ['role' => $role]);
             $msg = '역할이 변경되었습니다.';
         }
@@ -45,20 +45,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (strlen($p) < 8) {
             $err = '초기화 비밀번호는 8자 이상이어야 합니다.';
         } else {
-            $pdo->prepare('UPDATE tb_users SET password_hash = ? WHERE id = ?')
+            $pdo->prepare('UPDATE tb_user SET password_hash = ? WHERE user_id = ?')
                 ->execute([password_hash($p, PASSWORD_DEFAULT), $id]);
             vg_log_activity($pdo, 'USER', $id, 'user_pw_reset', '비밀번호 초기화');
             $msg = '비밀번호가 초기화되었습니다.';
         }
     } elseif (($_POST['action'] ?? '') === 'unlock') {
-        $pdo->prepare('UPDATE tb_users SET failed_login_count = 0, locked_until = NULL WHERE id = ?')->execute([$id]);
+        $pdo->prepare('UPDATE tb_user SET failed_login_count = 0, locked_until = NULL WHERE user_id = ?')->execute([$id]);
         vg_log_activity($pdo, 'USER', $id, 'account_unlock', '계정 잠금 해제');
         $msg = '계정 잠금이 해제되었습니다.';
     } elseif (($_POST['action'] ?? '') === 'delete') {
         if ($id === $meId) {
             $err = '자기 자신은 삭제할 수 없습니다.';
         } else {
-            vg_soft_delete($pdo, 'tb_users', $id);
+            vg_soft_delete($pdo, 'tb_user', $id);
             vg_log_activity($pdo, 'USER', $id, 'user_delete', '사용자 삭제');
             // 삭제된 사용자는 더는 이 페이지에서 보여줄 게 없다 — 목록으로 돌아간다.
             header('Location: /users.php');
@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$st = $pdo->prepare('SELECT id, username, role, created_at, last_login, locked_until FROM tb_users WHERE id = ? AND is_deleted = 0');
+$st = $pdo->prepare('SELECT user_id, username, role, created_at, last_login, locked_until FROM tb_user WHERE user_id = ? AND is_deleted = 0');
 $st->execute([$id]);
 $user = $st->fetch() ?: null;
 $isLocked = $user && $user['locked_until'] !== null && strtotime((string) $user['locked_until']) > time();
@@ -77,7 +77,7 @@ if ($user) {
     $st = $pdo->prepare(
         'SELECT created_at, activity_type, actor_type, user_name, message, ip_address
            FROM tb_activity_log WHERE scope = ? AND scope_id = ? AND is_deleted = 0
-          ORDER BY id DESC LIMIT ' . $userActivityLimit
+          ORDER BY activity_log_id DESC LIMIT ' . $userActivityLimit
     );
     $st->execute(['USER', $id]);
     $activity = $st->fetchAll();
