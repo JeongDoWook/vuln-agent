@@ -18,6 +18,11 @@ require_once __DIR__ . '/kernelcve.php';
 require_once __DIR__ . '/remediation.php';    // vg_kernel_fixed_set — 커널은 업스트림(kernel.org)이 판정한다
 require_once __DIR__ . '/package_summary.php'; // vg_rebuild_package_summary — 하위호환 재노출(신규 호출부는 직접 require)
 
+// 재매칭 결과 지문의 **알고리즘 버전**. 판정 로직이나 저장 컬럼을 바꾸면 이 값을 올린다.
+//   안 올리면 입력(피드·수집물)이 그대로인 스캔은 지문도 그대로라 "결과가 같다"고 판단해
+//   **새 코드로 재계산한 결과가 영영 저장되지 않는다.** 올리면 전 스캔이 한 번씩 다시 쓰인다.
+if (!defined('VG_MATCH_FP_VERSION')) { define('VG_MATCH_FP_VERSION', 1); }
+
 if (!function_exists('vg_scope_rank')) {
     // 노출 범위 위험도 (클수록 위험)
     function vg_scope_rank(?string $s): int {
@@ -695,9 +700,39 @@ if (!function_exists('vg_scope_rank')) {
     }
 
     /**
-     * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
+     * 판정 결과의 지문. **같은 결과면 같은 지문**이어야 한다(쓰기를 건너뛰는 근거).
+     *   · 행이 담기는 순서에 흔들리지 않게 유니크키(container_id|cve_id|package_name)로 정렬한다.
+     *   · 스칼라는 전부 문자열로 통일한다 — cvss 는 float 이라 표현이 흔들릴 수 있다.
+     *   · feed_updated_at 은 NOW() 라 매 실행 달라지므로 넣지 않는다(저장만 되고 읽는 코드가 없다).
+     *   · 알고리즘 버전(VG_MATCH_FP_VERSION)을 섞는다 — 그 상수 옆 주석 참고.
      */
-    function vg_match_scan(PDO $pdo, int $scanId): array {
+    function vg_match_fingerprint(array $findRows, array $suppRows): string {
+        $norm = function (array $rows): array {
+            $out = [];
+            foreach ($rows as $r) {
+                $out[$r['key']] = [
+                    array_map(function ($v) { return $v === null ? null : (string) $v; }, $r['row']),
+                    $r['evidence'] ?? null,
+                ];
+            }
+            ksort($out);
+            return $out;
+        };
+        return sha1((string) json_encode(
+            ['v' => VG_MATCH_FP_VERSION, 'f' => $norm($findRows), 's' => $norm($suppRows)],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        ));
+    }
+
+    /**
+     * 한 스캔에 대해 매칭 수행 → findings 재계산. 반환: 등급별 카운트.
+     *   판정은 매번 전부 다시 하지만, 결과 지문이 `tb_scans.match_fingerprint` 와 같으면
+     *   **한 줄도 쓰지 않는다.** 피드가 갱신돼도 특정 스캔의 판정 결과는 대부분 그대로인데,
+     *   지금까지는 1비트도 안 바뀐 경우에도 findings 를 통째 삭제·재삽입해 binlog 만
+     *   하루 20GB 넘게 쌓였다(운영 실측: 105G 중 76G 가 binlog).
+     *   $force 면 지문 비교를 건너뛰고 무조건 재작성한다(사람이 누르는 rematch.php 용 탈출구).
+     */
+    function vg_match_scan(PDO $pdo, int $scanId, bool $force = false): array {
         $sig = vg_load_scan_signals($pdo, $scanId);
         $scan            = $sig['scan'];
         $hostEco         = $sig['hostEco'];
@@ -734,6 +769,89 @@ if (!function_exists('vg_scope_rank')) {
         $runningKernelPresent = $kernelCtx['runningKernelPresent'];
         $kernelFixed          = $kernelCtx['kernelFixed'];
 
+        // ── 1단계: 계산. 여기선 DB 에 한 줄도 쓰지 않고 결과를 배열로만 모은다.
+        //   쓸지 말지는 아래 지문 비교가 정하므로, 판정과 쓰기가 붙어 있으면 안 된다.
+        //   메모리: 스캔당 최대 2.5만 행(운영 실측)이라 수 MB 수준이다.
+        $findRows = [];  // ['key'=>유니크키, 'row'=>tb_findings INSERT 파라미터, 'evidence'=>증거 payload]
+        $suppRows = [];  // ['key'=>유니크키, 'row'=>tb_suppressed_findings INSERT 파라미터]
+
+        // NOFIX 는 등급이 아니라 **별도 축**이다(조치 불가). CRITICAL~LOW 와 겹쳐서 센다.
+        $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0, 'SUPPRESSED' => 0, 'NOFIX' => 0];
+        $seen = [];
+
+        foreach ($packages as $p) {
+            $mgr   = (string) ($p['manager'] ?? 'dpkg');
+            $ctrId = (int) ($p['container_id'] ?? 0);
+            $ctr   = $ctrId > 0 ? ($ctrs[$ctrId] ?? null) : null;
+
+            $cands = vg_match_pkg_candidates($p, $ctr, $mgr, $ctrId, $hostEco, $family, $affected, $unfixed);
+
+            if (!$cands) {
+                continue;
+            }
+
+            $ctx = vg_match_pkg_context(
+                $p, $ctr, $ctrId, $mgr, $scan, $runningKernel, $runningKernelPresent,
+                $loadMap, $procRunningPkgs, $procLoadedPkgs, $stale
+            );
+            $staleEv          = $ctx['staleEv'];
+            $kernelPending    = $ctx['kernelPending'];
+            $exposed          = $ctx['exposed'];
+            $loaded           = $ctx['loaded'];
+            $scope            = $ctx['scope'];
+
+            foreach ($cands as $cveId => $cand) {
+                // 컨테이너별로 따로 센다 — 호스트의 openssl 과 컨테이너의 openssl 은 별개 취약점이다.
+                $key = $ctrId . '|' . $cveId . '|' . $p['name'];
+                if (isset($seen[$key])) { continue; }
+                $seen[$key] = true;
+
+                $decision = vg_match_decide_cve($cveId, $cand, $p, $mgr, $ctr, $ctrId, $scan, $ctx, $kev, $kernelFixed, $sup);
+
+                if ($decision['suppress']) {
+                    // 억제(백포트)된 건은 tb_findings 가 아니라 tb_suppressed_findings 로 — 위험 집계에서 자동 제외.
+                    $suppRows[] = ['key' => $key, 'row' => [
+                        $scanId, $ctrId, $cveId, $p['name'], $p['version'],
+                        $decision['inKev'] ? 1 : 0, $decision['cvss'], $decision['sev'], $decision['reason'],
+                    ]];
+                    $counts['SUPPRESSED']++;
+                    continue;
+                }
+
+                if ($decision['noFix'] !== '') { $counts['NOFIX']++; }
+                $counts[$decision['sev']]++;
+                $findRows[] = [
+                    'key' => $key,
+                    'row' => [
+                        $scanId, $ctrId, $cveId, $p['name'], $p['version'],
+                        $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $decision['status'], $decision['inKev'] ? 1 : 0,
+                        ($staleEv !== null || $kernelPending) ? 1 : 0, $decision['noFix'] !== '' ? 1 : 0,
+                        $decision['cvss'], $decision['sev'], $decision['why'],
+                    ],
+                    'evidence' => vg_build_finding_evidence($scan, $p, $mgr, $ctr, $cand, $ctx, $decision),
+                ];
+            }
+        }
+
+        // ── 2단계: 지문 비교. 결과가 그대로면 DELETE·INSERT·증거·remediation 을 전부 건너뛴다
+        //   (트랜잭션도 열지 않는다).
+        //   remediation 을 같이 건너뛰어도 안전한 근거: vg_sync_remediation_cases() 가 보는 값은
+        //   findings(그대로) + tb_scans.collected_at(그대로)뿐이고, ON DUPLICATE 절이 `due_at=due_at`
+        //   라 SLA 정책 변경은 애초에 반영되지 않는다 → 같은 입력이면 같은 결과다.
+        //   지문이 NULL(최초·신규 스캔)이면 당연히 다르므로 항상 쓴다.
+        $fingerprint = vg_match_fingerprint($findRows, $suppRows);
+        if (!$force) {
+            $fpSt = $pdo->prepare('SELECT match_fingerprint FROM tb_scans WHERE id = ?');
+            $fpSt->execute([$scanId]);
+            $prevFp = $fpSt->fetchColumn();
+            if (is_string($prevFp) && hash_equals($prevFp, $fingerprint)) {
+                return $counts;
+            }
+        }
+
+        // ── 3단계: 쓰기. 결과가 달라졌으므로 **통째 재작성**한다(행 단위 diff 로 하지 않는다 —
+        //   비교 컬럼을 하나 빠뜨리면 stale 값이 영구히 남는다).
+        //
         // 재계산은 원자적으로(자체 트랜잭션). 스케줄러 사이드카와 동시 재매칭 시
         // DELETE↔INSERT 경합으로 유니크키 충돌이 나던 것을 방지.
         //
@@ -746,16 +864,14 @@ if (!function_exists('vg_scope_rank')) {
         //     상대의 갭락과 충돌 → 서로 대기 → 데드락. 행이 겹치지 않아도(스캔이 달라도) 걸린다.
         //   READ COMMITTED 는 이 스캔에 갭락을 걸지 않으므로 원인 자체가 사라진다.
         //   락 순서 통일로는 못 고친다 — 둘이 **같은 순서로 같은 갭**을 잡다 나는 사고다.
-        // 정합성: 이 트랜잭션 안에는 **쓰기(DELETE 2 + INSERT N)뿐이고 읽기가 하나도 없다** —
-        //   $packages·$affected 등 판단 근거는 전부 이 시점 이전에 읽어 뒀다.
-        //   다시 읽는 게 없으니 비반복읽기·팬텀이 성립할 여지가 없고, 원자성은 격리수준과 무관하다.
+        // 정합성: 이 트랜잭션 안의 읽기는 **방금 자기가 쓴 행을 도로 보는 것뿐**이다 —
+        //   finding id 재조회(SELECT id FROM tb_findings)와 vg_sync_remediation_cases() 의 조회가
+        //   그것이고, 판정 근거($packages·$affected 등)는 전부 이 시점 이전에 읽어 뒀다.
+        //   남이 쓴 데이터를 다시 읽는 게 없으니 비반복읽기·팬텀이 성립할 여지가 없고,
+        //   원자성은 격리수준과 무관하다.
         // 범위: SET TRANSACTION(SESSION/GLOBAL 없이)은 **다음 트랜잭션 하나에만** 걸린다 —
         //   vg_with_tx 가 새로 트랜잭션을 열 때만 적용된다(중첩 호출이면 참여만 하고 안 건다).
-        return vg_with_tx($pdo, function () use (
-            $pdo, $scanId, $affected, $kernelFixed, $packages, $ctrs, $hostEco, $family,
-            $sup, $stale, $unfixed, $scan, $kev, $loadMap, $procRunningPkgs, $procLoadedPkgs,
-            $runningKernelPresent, $runningKernel
-        ) {
+        return vg_with_tx($pdo, function () use ($pdo, $scanId, $findRows, $suppRows, $counts, $fingerprint) {
 
         // 기존 findings 삭제 후 재삽입. INSERT 는 멱등(동시성 대비).
         $pdo->prepare('DELETE FROM tb_findings WHERE scan_id = ?')->execute([$scanId]);
@@ -784,72 +900,25 @@ if (!function_exists('vg_scope_rank')) {
                base_severity=VALUES(base_severity), suppress_reason=VALUES(suppress_reason)'
         );
 
-        // NOFIX 는 등급이 아니라 **별도 축**이다(조치 불가). CRITICAL~LOW 와 겹쳐서 센다.
-        $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0, 'SUPPRESSED' => 0, 'NOFIX' => 0];
-        $seen = [];
+        foreach ($suppRows as $r) {
+            $insSupp->execute($r['row']);
+        }
 
-        foreach ($packages as $p) {
-            $mgr   = (string) ($p['manager'] ?? 'dpkg');
-            $ctrId = (int) ($p['container_id'] ?? 0);
-            $ctr   = $ctrId > 0 ? ($ctrs[$ctrId] ?? null) : null;
-
-            $cands = vg_match_pkg_candidates($p, $ctr, $mgr, $ctrId, $hostEco, $family, $affected, $unfixed);
-
-            if (!$cands) {
-                continue;
-            }
-
-            $ctx = vg_match_pkg_context(
-                $p, $ctr, $ctrId, $mgr, $scan, $runningKernel, $runningKernelPresent,
-                $loadMap, $procRunningPkgs, $procLoadedPkgs, $stale
-            );
-            $staleEv          = $ctx['staleEv'];
-            $isKernelPkg      = $ctx['isKernelPkg'];
-            $kernelPending    = $ctx['kernelPending'];
-            $kernelNotRunning = $ctx['kernelNotRunning'];
-            $isDistroPkg      = $ctx['isDistroPkg'];
-            $hostEvidenceOk   = $ctx['hostEvidenceOk'];
-            $le               = $ctx['le'];
-            $running          = $ctx['running'];
-            $pkgLoaded        = $ctx['pkgLoaded'];
-            $exposed          = $ctx['exposed'];
-            $loaded           = $ctx['loaded'];
-            $scope            = $ctx['scope'];
-
-            foreach ($cands as $cveId => $cand) {
-                // 컨테이너별로 따로 센다 — 호스트의 openssl 과 컨테이너의 openssl 은 별개 취약점이다.
-                $key = $ctrId . '|' . $cveId . '|' . $p['name'];
-                if (isset($seen[$key])) { continue; }
-                $seen[$key] = true;
-
-                $decision = vg_match_decide_cve($cveId, $cand, $p, $mgr, $ctr, $ctrId, $scan, $ctx, $kev, $kernelFixed, $sup);
-
-                if ($decision['suppress']) {
-                    $insSupp->execute([
-                        $scanId, $ctrId, $cveId, $p['name'], $p['version'],
-                        $decision['inKev'] ? 1 : 0, $decision['cvss'], $decision['sev'], $decision['reason'],
-                    ]);
-                    $counts['SUPPRESSED']++;
-                    continue;
-                }
-
-                if ($decision['noFix'] !== '') { $counts['NOFIX']++; }
-                $counts[$decision['sev']]++;
-                $ins->execute([
-                    $scanId, $ctrId, $cveId, $p['name'], $p['version'],
-                    $loaded ? 1 : 0, $exposed ? 1 : 0, $scope, $decision['status'], $decision['inKev'] ? 1 : 0,
-                    ($staleEv !== null || $kernelPending) ? 1 : 0, $decision['noFix'] !== '' ? 1 : 0,
-                    $decision['cvss'], $decision['sev'], $decision['why'],
-                ]);
-                $findId->execute([$scanId, $ctrId, $cveId, $p['name']]);
-                $findingId = (int) $findId->fetchColumn();
-                if ($findingId > 0) {
-                    vg_store_finding_evidence($pdo, $findingId, $scan, $p, $mgr, $ctr, $cand, $ctx, $decision);
-                }
+        foreach ($findRows as $r) {
+            $ins->execute($r['row']);
+            // 증거는 finding 의 id 를 참조하므로 삽입 뒤에야 쓸 수 있다.
+            //   행 앞 4개(scan_id, container_id, cve_id, package_name)가 곧 유니크키다.
+            $findId->execute(array_slice($r['row'], 0, 4));
+            $findingId = (int) $findId->fetchColumn();
+            if ($findingId > 0) {
+                vg_store_finding_evidence($pdo, $findingId, $r['evidence']);
             }
         }
 
             vg_sync_remediation_cases($pdo, $scanId);
+            // 지문은 **같은 트랜잭션 안에서** 갱신한다 — 밖에서 갱신하면 롤백 시
+            //   "안 썼는데 썼다고 기록"이 남아 이후 재매칭이 영영 건너뛴다.
+            $pdo->prepare('UPDATE tb_scans SET match_fingerprint = ? WHERE id = ?')->execute([$fingerprint, $scanId]);
             return $counts;
         }, 'READ COMMITTED');
     }
