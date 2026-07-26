@@ -1,10 +1,17 @@
 @startuml erd
 ' vuln-agent §5 데이터 모델 (ERD)
-' 원본: docs/dev/architecture.md §5 (mermaid erDiagram)
+' 원본: docs/dev/architecture.md §5
 ' 테이블별 전체 컬럼·책임·정규화 현황은 docs/dev/데이터베이스.md 참고.
 '
-' 표기: 감사 4컬럼(created_at/updated_at/is_deleted/deleted_at)은 모든 테이블에 통일되어 있으나
-'      이 다이어그램엔 is_deleted 만 표기하고 나머지는 생략한다(mermaid 원본과 동일).
+' 범위: 도메인 엔티티 41개 전부(= 전체 42테이블 - tb_schema_migrations).
+'      tb_schema_migrations 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
+'      영역이 한눈에 안 잡히던 문제는 package 로 묶어 해결한다(수집 / CVE / 벤더판정 / 판정결과 /
+'      조치 / 운영).
+'
+' 표기: · 감사 4컬럼(created_at/updated_at/is_deleted/deleted_at)은 대부분의 테이블에 통일되어
+'        있으나 이 다이어그램엔 생략한다(엔티티 41개에 4줄씩 붙으면 읽을 수 없다).
+'      · 컬럼도 전부 적지 않는다 — PK/FK 와 그 테이블을 이해하는 데 필요한 것만.
+'      · 실선(--)은 FK 가 실제로 걸린 관계, 점선(..)은 FK 없이 애플리케이션이 조인하는 관계다.
 '
 ' 명명규칙: 테이블명은 단수, 대리키 PK 는 <단수 테이블명>_id, FK 는 부모 PK 이름을 그대로 쓴다
 '          (tb_host.host_id ← tb_scan.host_id — 조인 양쪽 이름이 같다).
@@ -14,275 +21,517 @@
 hide circle
 skinparam linetype ortho
 skinparam shadowing false
+skinparam nodesep 12
+skinparam ranksep 22
+skinparam packageStyle rectangle
+skinparam package {
+    BackgroundColor #f6f8fa
+    BorderColor #adb5bd
+    FontColor #57606a
+}
 skinparam entity {
     BackgroundColor #ffffff
     BorderColor #6e7681
 }
 
-entity tb_host {
-    host_id : bigint <<PK>>
-    --
-    fqdn : string <<UK>>
-    os_id : string
-    is_deleted : bool
+package "수집·인벤토리 — 에이전트가 보내온 원본" {
+
+    entity tb_host {
+        host_id : bigint <<PK>>
+        --
+        fqdn : string <<UK>>
+        os_id : string
+        perimeter_firewalled : bool
+        ' 경계 방화벽 뒤 - 강등 판정 스위치
+        is_deleted : bool
+    }
+
+    entity tb_host_ext_port {
+        host_ext_port_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        port : int
+        proto : string
+        ' UK(host_id, port, proto)
+        ' 경계 방화벽 뒤에서도 정말 열린 포트
+    }
+
+    entity tb_scan {
+        scan_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        collected_at : datetime
+        package_count : int
+        exposure_count : int
+        match_fingerprint : string
+        ' 판정 결과 지문 - 같으면 재작성 안 함
+        is_deleted : bool
+    }
+
+    entity tb_collection_stage {
+        scan_id : bigint <<PK>><<FK>>
+        stage_code : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        status : string
+        ' MISSING 안 돌았음 / EMPTY 0건
+        item_count : int
+    }
+
+    entity tb_package {
+        package_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        container_id : bigint
+        ' 호스트는 0, 컨테이너는 양수
+        manager : string
+        ' dpkg rpm apk pip npm
+        name : string
+        version : string
+        source_pkg : string
+        origin : string
+        ' 출처 - 서드파티 판정
+    }
+
+    entity tb_container {
+        container_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        cid : string
+        image : string
+        image_digest : string
+        k8s_namespace : string
+        os_id : string
+        pkg_count : int
+    }
+
+    entity tb_exposure {
+        exposure_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        proc : string
+        port : int
+        scope : string
+        ' EXTERNAL LAN BOUND FILTERED LOCAL
+        exe_pkg : string
+        loaded_pkgs : text
+    }
+
+    entity tb_process {
+        process_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        comm : string
+        exe_pkg : string
+        loaded_pkgs : text
+    }
+
+    entity tb_pkg_change {
+        pkg_change_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        scan_id : bigint <<FK>>
+        package_name : string
+        change_type : string
+        ' installed removed upgraded downgraded
+        old_version : string
+        new_version : string
+    }
 }
 
-entity tb_scan {
-    scan_id : bigint <<PK>>
-    --
-    host_id : bigint <<FK>>
-    collected_at : datetime
-    package_count : int
-    exposure_count : int
-    is_deleted : bool
+package "CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)" {
+
+    entity tb_cve {
+        cve_id : string <<PK>>
+        ' 자연키 PK — 명명규칙 예외
+        --
+        cvss : decimal
+        epss : decimal
+        epss_percentile : decimal
+        is_deleted : bool
+    }
+
+    entity tb_kev_catalog {
+        cve_id : string <<PK>>
+        ' FK-as-PK — 명명규칙 예외(대리키 없음)
+        --
+        date_added : date
+        due_date : date
+    }
+
+    entity tb_cve_affected_package {
+        cve_affected_package_id : bigint <<PK>>
+        --
+        cve_id : string
+        ecosystem : string
+        package_name : string
+        fixed_version : string
+        ' UK(cve_id, package_name, ecosystem)
+    }
+
+    entity tb_package_summary {
+        package_name : string <<PK>>
+        ecosystem : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        cve_cnt : int
+        max_epss : decimal
+        max_fixed : string
+        ' 사전집계 - packages.php 전용
+    }
+
+    entity tb_advisory {
+        advisory_id : bigint <<PK>>
+        --
+        source : string
+        title : string
+        url : string <<UK>>
+        published : date
+        cve_ids : string
+        ' CSV - 호환용 유지, 읽기 정본은 junction
+        is_deleted : bool
+    }
+
+    entity tb_advisory_cve {
+        advisory_cve_id : bigint <<PK>>
+        --
+        advisory_id : bigint <<FK>>
+        cve_id : string
+        ' UK(advisory_id, cve_id)
+    }
 }
 
-entity tb_package {
-    package_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    container_id : bigint
-    ' 호스트는 0, 컨테이너는 양수
-    manager : string
-    ' dpkg rpm apk pip npm
-    name : string
-    version : string
-    source_pkg : string
-    origin : string
-    ' 출처 - 서드파티 판정
+package "벤더 판정 소스 — 배포판·커널의 중앙 카탈로그" {
+
+    entity tb_debian_tracker {
+        debian_tracker_id : bigint <<PK>>
+        --
+        release_codename : string
+        pkg_name : string
+        is_binary : bool
+        cve_id : string
+        fixed_version : string
+        other_versions : string
+        ' UK(release_codename, pkg_name, is_binary, cve_id)
+    }
+
+    entity tb_ubuntu_oval {
+        ubuntu_oval_id : bigint <<PK>>
+        --
+        release_codename : string
+        pkg_name : string
+        cve_id : string
+        fixed_version : string
+        ' NULL 이면 아직 수정본 없음(조치 불가)
+    }
+
+    entity tb_vendor_errata {
+        vendor_errata_id : bigint <<PK>>
+        --
+        vendor : string
+        ' redhat almalinux
+        release_major : string
+        pkg_name : string
+        cve_id : string
+        fixed_evr : string
+        advisory : string
+    }
+
+    entity tb_vendor_unfixed {
+        vendor_unfixed_id : bigint <<PK>>
+        --
+        vendor : string
+        release_major : string
+        component : string
+        ' 소스 패키지 단위
+        cve_id : string
+        fix_state : string
+        ' 영향받음 고치지않음 조사중 지원종료
+    }
+
+    entity tb_kernel_cve {
+        cve_id : string <<PK>>
+        ' FK-as-PK — 명명규칙 예외
+        --
+        introduced_version : string
+        mainline_fixed : string
+    }
+
+    entity tb_kernel_cve_fix {
+        cve_id : string <<PK>><<FK>>
+        stream : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        fixed_version : string
+    }
+
+    entity tb_compliance_rule {
+        compliance_rule_id : bigint <<PK>>
+        --
+        rule_id : string <<UK>>
+        ' SSG 룰 문자열 ID
+        title : string
+        severity : string
+        refs_json : json
+        ' CIS NIST STIG PCI-DSS 참조
+    }
 }
 
-entity tb_container {
-    container_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    cid : string
-    image : string
-    os_id : string
-    manager : string
-    ' dpkg apk rpm
-    pkg_count : int
+package "판정 결과 — 우리 기여(런타임 상태·억제)" {
+
+    entity tb_finding {
+        finding_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        container_id : bigint
+        cve_id : string
+        package_name : string
+        severity : string
+        runtime_status : string
+        ' EXTERNAL LISTENING RUNNING LOADED INSTALLED
+        in_kev : bool
+        no_fix : bool
+        ' 벤더가 조치 불가로 확인
+    }
+
+    entity tb_finding_evidence {
+        finding_id : bigint <<PK>><<FK>>
+        ' FK-as-PK(1:1 확장) — 명명규칙 예외
+        --
+        match_source : string
+        fixed_version : string
+        source_package : string
+        process_evidence : text
+        network_evidence : text
+        evidence_json : longtext
+    }
+
+    entity tb_suppressed_finding {
+        suppressed_finding_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        cve_id : string
+        package_name : string
+        base_severity : string
+        suppress_reason : string
+    }
+
+    entity tb_pkg_changelog_cve {
+        pkg_changelog_cve_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        package_name : string
+        cve_id : string
+        evidence : string
+    }
+
+    entity tb_applied_errata {
+        applied_errata_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        package_name : string
+        cve_id : string
+        evidence : string
+        ' 권고가 지목한 설치 NEVRA
+    }
+
+    entity tb_debsecan {
+        debsecan_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        cve_id : string
+        package_name : string
+    }
+
+    entity tb_stale_lib {
+        stale_lib_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        comm : string
+        ' 옛 so 를 문 프로세스
+        package_name : string
+        lib_path : string
+    }
+
+    entity tb_cce_finding {
+        cce_finding_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        code : string
+        ssg_rule_id : string
+        result : string
+        ' PASS FAIL NA
+        severity : string
+    }
 }
 
-entity tb_stale_lib {
-    stale_lib_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    comm : string
-    ' 옛 so 를 문 프로세스
-    package_name : string
-    lib_path : string
+package "조치 관리 — SLA·조치 케이스" {
+
+    entity tb_sla_policy {
+        sla_policy_id : bigint <<PK>>
+        --
+        severity : string
+        exposure_scope : string
+        in_kev : bool
+        due_days : int
+        priority : int
+        ' UK(severity, exposure_scope, in_kev)
+    }
+
+    entity tb_remediation_case {
+        remediation_case_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        container_ref : string
+        cve_id : string
+        package_name : string
+        ' UK(host_id, container_ref, cve_id, package_name)
+        status : string
+        ' OPEN IN_PROGRESS RESOLVED EXCEPTION
+        assignee_user_id : bigint <<FK>>
+        due_at : datetime
+        exception_until : datetime
+    }
 }
 
-entity tb_applied_errata {
-    applied_errata_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    package_name : string
-    cve_id : string
-    evidence : string
-    ' 권고가 지목한 설치 NEVRA
+package "피드 운영 · 인증 · 감사" {
+
+    entity tb_feed_connector {
+        feed_connector_id : bigint <<PK>>
+        --
+        connector_type : string
+        connection_json : json
+        schedule_json : json
+        enabled : bool
+        next_run_at : datetime
+        is_deleted : bool
+    }
+
+    entity tb_feed_collection_log {
+        feed_collection_log_id : bigint <<PK>>
+        --
+        feed_connector_id : bigint <<FK>>
+        status : string
+        items_upserted : int
+    }
+
+    entity tb_user {
+        user_id : bigint <<PK>>
+        --
+        username : string <<UK>>
+        password_hash : string
+        role : string
+        is_deleted : bool
+    }
+
+    entity tb_role_permission {
+        role_permission_id : int <<PK>>
+        --
+        role : string
+        menu_code : string
+        allowed : bool
+    }
+
+    entity tb_api_token {
+        api_token_id : bigint <<PK>>
+        --
+        label : string
+        token_hash : string <<UK>>
+        token_prefix : string
+        last_used_at : datetime
+        is_deleted : bool
+    }
+
+    entity tb_agent_token {
+        agent_token_id : bigint <<PK>>
+        --
+        host_fqdn : string
+        token_hash : string <<UK>>
+        is_revoked : bool
+    }
+
+    entity tb_agent_replay_nonce {
+        agent_token_id : bigint <<PK>><<FK>>
+        nonce_hash : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        expires_at : datetime
+    }
+
+    entity tb_saved_view {
+        saved_view_id : bigint <<PK>>
+        --
+        user_id : bigint <<FK>>
+        page_code : string
+        name : string
+        ' UK(user_id, page_code, name)
+        query_json : text
+        is_default : bool
+    }
+
+    entity tb_activity_log {
+        activity_log_id : bigint <<PK>>
+        --
+        user_id : bigint
+        scope : string
+        scope_id : bigint
+        activity_type : string
+        data : json
+        ip_address : string
+    }
 }
 
-entity tb_debsecan {
-    debsecan_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    cve_id : string
-    package_name : string
-}
-
-entity tb_pkg_change {
-    pkg_change_id : bigint <<PK>>
-    --
-    host_id : bigint <<FK>>
-    scan_id : bigint <<FK>>
-    package_name : string
-    change_type : string
-    ' installed removed upgraded downgraded
-    old_version : string
-    new_version : string
-}
-
-entity tb_exposure {
-    exposure_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    proc : string
-    port : int
-    scope : string
-    exe_pkg : string
-    loaded_pkgs : text
-}
-
-entity tb_process {
-    process_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    comm : string
-    exe_pkg : string
-    loaded_pkgs : text
-}
-
-entity tb_finding {
-    finding_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    cve_id : string <<FK>>
-    severity : string
-    runtime_status : string
-    in_kev : bool
-}
-
-entity tb_pkg_changelog_cve {
-    pkg_changelog_cve_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    package_name : string
-    cve_id : string
-    evidence : string
-}
-
-entity tb_suppressed_finding {
-    suppressed_finding_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    cve_id : string
-    package_name : string
-    base_severity : string
-    suppress_reason : string
-}
-
-entity tb_cce_finding {
-    cce_finding_id : bigint <<PK>>
-    --
-    scan_id : bigint <<FK>>
-    code : string
-    result : string
-    severity : string
-    rationale : string
-}
-
-entity tb_cve {
-    cve_id : string <<PK>>
-    ' 자연키 PK — 명명규칙 예외
-    --
-    cvss : decimal
-    epss : decimal
-    epss_percentile : decimal
-    is_deleted : bool
-}
-
-entity tb_kev_catalog {
-    cve_id : string <<PK>>
-    ' FK-as-PK — 명명규칙 예외(대리키 없음)
-    --
-    date_added : date
-}
-
-entity tb_cve_affected_package {
-    cve_affected_package_id : bigint <<PK>>
-    --
-    cve_id : string <<FK>>
-    package_name : string
-    fixed_version : string
-}
-
-entity tb_feed_connector {
-    feed_connector_id : bigint <<PK>>
-    --
-    connector_type : string
-    connection_json : json
-    schedule_json : json
-    enabled : bool
-    next_run_at : datetime
-    is_deleted : bool
-}
-
-entity tb_feed_collection_log {
-    feed_collection_log_id : bigint <<PK>>
-    --
-    feed_connector_id : bigint <<FK>>
-    status : string
-    items_upserted : int
-}
-
-entity tb_advisory {
-    advisory_id : bigint <<PK>>
-    --
-    source : string
-    title : string
-    url : string <<UK>>
-    published : date
-    cve_ids : string
-    is_deleted : bool
-}
-
-entity tb_user {
-    user_id : bigint <<PK>>
-    --
-    username : string <<UK>>
-    password_hash : string
-    role : string
-    is_deleted : bool
-}
-
-entity tb_role_permission {
-    role_permission_id : int <<PK>>
-    --
-    role : string
-    menu_code : string
-    allowed : bool
-}
-
-entity tb_api_token {
-    api_token_id : bigint <<PK>>
-    --
-    label : string
-    token_hash : string <<UK>>
-    token_prefix : string
-    last_used_at : datetime
-    is_deleted : bool
-}
-
-entity tb_activity_log {
-    activity_log_id : bigint <<PK>>
-    --
-    user_id : bigint
-    scope : string
-    scope_id : bigint
-    activity_type : string
-    data : json
-    ip_address : string
-    created_at : datetime
-}
-
-' ── 관계 ───────────────────────────────────────────────
+' ── FK 가 실제로 걸린 관계 ────────────────────────────
 tb_host ||--o{ tb_scan : "수집 이력"
+tb_host ||--o{ tb_host_ext_port : "외부노출 포트 선언"
+tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
+tb_host ||--o{ tb_remediation_case : "조치 케이스"
+
 tb_scan ||--o{ tb_package : "설치 패키지"
 tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
 tb_scan ||--o{ tb_process : "실행 프로세스"
-tb_scan ||--o{ tb_finding : "매처 판정"
 tb_scan ||--o{ tb_container : "컨테이너 인벤토리"
-tb_container ||--o{ tb_package : "컨테이너 내부 패키지(container_id)"
+tb_scan ||--o{ tb_collection_stage : "수집 단계 완전성"
+tb_scan ||--o{ tb_finding : "매처 판정"
+tb_scan ||--o{ tb_suppressed_finding : "억제된 건"
 tb_scan ||--o{ tb_pkg_changelog_cve : "억제 근거②"
 tb_scan ||--o{ tb_applied_errata : "억제 근거③"
 tb_scan ||--o{ tb_debsecan : "억제 근거④"
 tb_scan ||--o{ tb_stale_lib : "억제 취소 — 재시작 필요"
-tb_scan ||--o{ tb_suppressed_finding : "억제된 건"
 tb_scan ||--o{ tb_cce_finding : "보안설정 점검"
-tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
-tb_cve ||--o{ tb_cve_affected_package : "영향 패키지"
-tb_cve ||--o{ tb_finding : "취약점"
-tb_cve ||--o| tb_kev_catalog : "KEV 등재"
-tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
-tb_user ||--o{ tb_activity_log : "행위 기록(느슨한 연계)"
-tb_user ||--o{ tb_api_token : "발급(Export API)"
 
-' ── FK 없는 테이블 (자연키 애플리케이션 조인) ──────────
-' tb_advisory : CVE 와 느슨한 연계(제목의 CVE best-effort)라 FK 없음.
-' tb_activity_log : user_id 가 NULL 가능(SYSTEM 행위, 예: ingest 수신)이라
-'                   FK 없이 논리적 연계만 유지.
-' tb_role_permission : 역할(role) 문자열 기준 설정형 RBAC — FK 없음.
+tb_finding ||--o| tb_finding_evidence : "판정 근거(1:1)"
+tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별 조치버전"
+tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
+tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
+tb_user ||--o{ tb_api_token : "발급(Export API)"
+tb_user ||--o{ tb_saved_view : "저장된 목록 필터"
+tb_user |o--o{ tb_remediation_case : "담당자(assignee_user_id)"
+tb_agent_token ||--o{ tb_agent_replay_nonce : "소진된 nonce"
+
+' ── FK 없는 관계(점선) — 자연키 애플리케이션 조인 ─────
+' CVE 도메인은 피드마다 수집 순서가 독립이라 FK 를 걸지 않는다(의도적 설계).
+tb_cve ||..o{ tb_cve_affected_package : "영향 패키지"
+tb_cve ||..o{ tb_finding : "취약점"
+tb_cve ||..o| tb_kev_catalog : "KEV 등재"
+tb_cve ||..o{ tb_advisory_cve : "CVE → 공지 역조회"
+tb_cve_affected_package }o..|| tb_package_summary : "사전집계(OSV 실행 시 재생성)"
+tb_container ||..o{ tb_package : "컨테이너 내부 패키지(container_id)"
+tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"
+tb_sla_policy ||..o{ tb_remediation_case : "조치기한 계산(due_at)"
+tb_host_ext_port }o..|| tb_exposure : "EXTERNAL → FILTERED 강등 판정"
+
+' 벤더 판정 소스는 매처가 참조만 한다(스캔에 매달리지 않음).
+tb_debian_tracker }o..|| tb_finding : "데비안 백포트 판정"
+tb_ubuntu_oval }o..|| tb_finding : "우분투 OVAL 판정"
+tb_vendor_errata }o..|| tb_finding : "RHEL 계열 조치 EVR"
+tb_vendor_unfixed }o..|| tb_finding : "조치 불가(no_fix)"
+tb_kernel_cve }o..|| tb_finding : "커널 CVE 판정"
+
+' ── 관계선을 두지 않은 테이블 ──────────────────────────
+' tb_advisory       : CVE 와 느슨한 연계(제목의 CVE best-effort)라 FK 없음. 정본은 junction.
+' tb_activity_log   : user_id 가 NULL 가능(SYSTEM 행위, 예: ingest 수신)이라 FK 없이 논리적 연계만.
+' tb_role_permission: 역할(role) 문자열 기준 설정형 RBAC — FK 없음.
+' tb_schema_migrations : 마이그레이션 러너의 인프라 테이블 — 도메인 엔티티가 아니라 이 ERD 에서 제외.
 
 @enduml

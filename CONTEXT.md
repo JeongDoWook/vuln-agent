@@ -171,7 +171,7 @@ vuln-agent/
 - `FILTERED` 가 없으면 방화벽 뒤의 내부 서비스가 **전부 HIGH/CRITICAL 로 뜬다**(오탐).
   에이전트가 firewalld/ufw 허용 포트와 대조해 판정한다.
 
-**오탐 억제는 4겹이다(데비안 중심).** 통과 못 한 건은 finding 이 아니라 `tb_suppressed_findings` 로 분리된다
+**오탐 억제는 4겹이다(데비안 중심).** 통과 못 한 건은 finding 이 아니라 `tb_suppressed_finding` 으로 분리된다
 — 위험 집계·화면은 그대로 두고 오탐만 빠지며, **근거는 호스트 상세에 그대로 노출된다**(숨기지 않는다).
 
 | 겹 | 근거 | 판정 |
@@ -187,14 +187,14 @@ vuln-agent/
 
 **RHEL 계열·우분투·커널은 각자의 벤더 소스로 별도 판정한다.** 데비안 4겹과 별개로, RHEL 계열은
 `tb_vendor_errata`(OVAL 조치 EVR)+`tb_vendor_unfixed`(조치 불가), 우분투는 `tb_ubuntu_oval` 한
-테이블이 조치 EVR·조치 불가를 모두 표현, 커널은 `tb_kernel_cves`(kernel.org CNA)가 배포판 밖의
-커널(라즈베리·자체빌드)까지 판정한다. 벤더가 "아직 안 고쳤다"고 확인한 CVE 는 `tb_findings.no_fix`
+테이블이 조치 EVR·조치 불가를 모두 표현, 커널은 `tb_kernel_cve`(kernel.org CNA)가 배포판 밖의
+커널(라즈베리·자체빌드)까지 판정한다. 벤더가 "아직 안 고쳤다"고 확인한 CVE 는 `tb_finding.no_fix`
 로 표시한다 — 오탐 제거와는 다른 축으로, 등급은 그대로 두되 "지금 고칠 수 있는 것"과 "조치 불가"를
 화면에서 분리한다.
 
 **억제를 취소하는 두 신호** — "패치됨"이 곧 "안전함"이 아닌 경우다. 이게 없으면 미탐이 된다.
 
-- **재시작 필요**(`tb_stale_libs`): 패치됐지만 프로세스가 옛 `.so` 를 메모리에 물고 있다 →
+- **재시작 필요**(`tb_stale_lib`): 패치됐지만 프로세스가 옛 `.so` 를 메모리에 물고 있다 →
   그 프로세스는 **여전히 옛 코드를 실행 중**이므로 억제하지 않는다. 조치는 프로세스 재시작.
 - **커널 재부팅 필요**: 커널을 패치해도 재부팅 전엔 옛 커널이 돈다 → 억제하지 않는다.
   조치는 **재부팅**(프로세스 재시작으로는 안 고쳐진다).
@@ -207,7 +207,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
 
 **보안설정 점검(CCE)** 은 같은 수집물을 다른 눈으로 본다 — CVE(취약한 버전)가 아니라 잘못된 설정
 (SSH root 로그인·패스워드 인증·UID 0 계정·SELinux/AppArmor·방화벽)을 `src/cce.php` 가 판정해
-`tb_cce_findings` 에 저장한다. 신규 수집은 없다.
+`tb_cce_finding` 에 저장한다. 신규 수집은 없다.
 
 ---
 
@@ -219,7 +219,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
 - [x] **3. 웹** — 로그인(users 세션) → 대시보드 → 호스트 상세 → 취약점(+조치·EPSS·상태) · 사용자관리
 - [x] **4a. CVE 피드 커넥터** — 커넥터 11종(고정 5종 KEV/OSV/NVD/KISA/EPSS + 벤더 판정 6종 데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api), UI 설정·미리보기·cron 스케줄, 스케줄러 사이드카
 - [x] **4b. 국내특화** — KISA 보안공지 수집·표시(상세 본문까지) + 공지 상세 페이지 `advisory.php`
-- [x] **NVD 전체 데이터** — tb_cves 약 36만건. 주기 수집을 수정일(lastMod) 기준으로 전환(뒤늦게 CVSS 붙는 CVE 추적, 120일 상한).
+- [x] **NVD 전체 데이터** — tb_cve 약 36만건. 주기 수집을 수정일(lastMod) 기준으로 전환(뒤늦게 CVSS 붙는 CVE 추적, 120일 상한).
       전체 백필 `bin/backfill_nvd.php`(멱등·재개, 병렬 워커로 가속). CVE 목록 페이지 `cves.php`(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬).
       API 키는 DB 저장(코드·저장소에 없음). 일시 오류 재시도·CVE-ID 형식 검증·긴 텍스트 컬럼 확장(summary MEDIUMTEXT, cve_ids/note TEXT).
 - [x] **정밀 런타임 수집** — 실행 프로세스 전체(실행중/사용중) + 노출(포트) → 상태 5단계 구분
@@ -237,28 +237,28 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
       캐시는 예외) · 활동 감사로그 `tb_activity_log`(`vg_log_activity()` — 로그인·커넥터저장/삭제/실행·
       사용자추가/삭제·ingest 수신을 기록) + 조회 화면 `activity.php`(scope 필터·페이지네이션).
 - [x] **백포트 억제(차별점 ③ 설명가능한 오탐 억제)** — 에이전트 changelog 의 CVE 수정 기록으로
-      "버전은 낮아도 이미 패치됨"을 증명해 finding 을 `tb_suppressed_findings` 로 분리(위험 집계에서 자동 제외).
+      "버전은 낮아도 이미 패치됨"을 증명해 finding 을 `tb_suppressed_finding` 으로 분리(위험 집계에서 자동 제외).
       숨기지 않고 근거와 함께 호스트 상세에 표시. 스케줄 수집에서 changelog 가 기본값.
-- [x] **보안설정 점검(CCE)** — 이미 수집한 sshd·계정·MAC·방화벽 값을 `src/cce.php` 가 판정 → `tb_cce_findings`,
+- [x] **보안설정 점검(CCE)** — 이미 수집한 sshd·계정·MAC·방화벽 값을 `src/cce.php` 가 판정 → `tb_cce_finding`,
       호스트 상세에 PASS/FAIL/NA. 신규 수집 없음(수집물 재활용).
 - [x] **변화 추적(차별점 ④ 시계열)** — `changes.php`: 최근 2개 스캔을 대조해 신규/해결/등급상승·하락.
-      새 테이블 없이 `tb_findings` 만 비교((cve_id, package_name) 기준).
+      새 테이블 없이 `tb_finding` 만 비교((cve_id, package_name) 기준).
 - [x] **자산 관리 + 설정형 RBAC** — `assets.php`(호스트 자산·소프트삭제) · 역할 3단계(admin/operator/user) ·
-      역할×메뉴 권한을 `permissions.php` 에서 설정(`tb_role_permissions`, 가드는 `vg_require_menu()`).
+      역할×메뉴 권한을 `permissions.php` 에서 설정(`tb_role_permission`, 가드는 `vg_require_menu()`).
       admin 은 코드에서 항상 전체 허용(잠금 방지).
 - [x] **Export API** — `GET /export.php`(JSON/XML, 호스트·심각도·KEV·EPSS 필터). 전용 읽기 토큰을
       `api-tokens.php` 에서 발급(DB 엔 SHA-256 해시만, 원문은 1회 표시). 인증 헤더 `X-API-Token`
       또는 `Authorization: Bearer`(Apache 가 스트립해도 우회). 상세: `docs/dev/export-api.md`.
 - [x] **컨테이너 스캔** — `collect_containers` 가 실행 중 컨테이너의 rootfs 를 읽어 **내부 패키지**를
-      수집(`tb_containers`, `tb_packages.container_id`). docker CLI 비의존(podman/containerd 도 잡힘).
+      수집(`tb_container`, `tb_package.container_id`). docker CLI 비의존(podman/containerd 도 잡힘).
       호스트 스캔에서 통째로 빠지던 미탐 영역이었다. 호스트 상세·취약점 목록에서 컨테이너별로 본다.
 - [x] **재시작·재부팅 필요 판정** — "패치됐지만 아직 안 안전한" 상태를 잡는다.
-      옛 `.so` 를 물고 있는 프로세스(`tb_stale_libs`)와 재부팅 전 커널은 **억제하지 않고** 근거와 함께
+      옛 `.so` 를 물고 있는 프로세스(`tb_stale_lib`)와 재부팅 전 커널은 **억제하지 않고** 근거와 함께
       올린다(조치: 프로세스 재시작 / 재부팅). 이 판정이 없으면 "패치됨=안전"으로 착각해 미탐이 난다.
 - [x] **억제 근거 확장(errata·debsecan)** — changelog(핵심 13개)만으로는 좁아서, 벤더 권고
       `tb_applied_errata`(시스템 전체)와 데비안 보안 트래커 `tb_debsecan`(역방향 판정)을 더했다 → 억제 4겹(§7).
 - [x] **벤더별 판정 확장(RHEL·우분투·커널)** — 데비안 4겹과 별개로, RHEL 계열(`tb_vendor_errata`·
-      `tb_vendor_unfixed`)·우분투(`tb_ubuntu_oval`)·커널(`tb_kernel_cves`)이 각자의 벤더 소스로
+      `tb_vendor_unfixed`)·우분투(`tb_ubuntu_oval`)·커널(`tb_kernel_cve`)이 각자의 벤더 소스로
       백포트 판정 + 조치 불가(`no_fix`)를 담당한다(커넥터: rhoval/rhunfixed/ubuntuoval/kcve).
 - [x] **방화벽 차단(FILTERED) 분류** — 전체 인터페이스에 떠 있어도 방화벽이 막고 있으면 외부노출이 아니다.
       이 판정이 없으면 방화벽 뒤 내부 서비스가 전부 HIGH/CRITICAL 로 뜬다(오탐).

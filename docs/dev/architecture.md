@@ -74,9 +74,9 @@ exposures(포트) + processes(실행/로드) 를 합쳐 6단계 상태를 판정
 ingest 응답과 취약점 화면에 경고를 띄운다(자체 피드가 따로 필요하다는 뜻).
 
 **재매칭은 결과가 같으면 아무것도 쓰지 않는다.** 피드가 갱신돼도 특정 스캔의 판정 결과는 대부분
-그대로인데, 예전엔 1비트도 안 바뀐 경우까지 `tb_findings`/`tb_suppressed_findings` 를 통째
+그대로인데, 예전엔 1비트도 안 바뀐 경우까지 `tb_finding`/`tb_suppressed_finding` 를 통째
 삭제·재삽입해 **binlog 가 하루 20GB 넘게** 쌓였다(운영 실측: 디스크 105G 중 76G). 지금은
-`vg_match_scan()` 이 판정을 전부 메모리에서 끝낸 뒤 결과 지문(sha1)을 `tb_scans.match_fingerprint`
+`vg_match_scan()` 이 판정을 전부 메모리에서 끝낸 뒤 결과 지문(sha1)을 `tb_scan.match_fingerprint`
 와 비교해, 같으면 트랜잭션조차 열지 않고 카운트만 돌려준다. 다르면 예전과 똑같이 통째 재작성하고
 같은 트랜잭션 안에서 지문을 갱신한다(행 단위 diff 로 하지 않는다 — 비교 컬럼을 하나 빠뜨리면
 stale 값이 영구히 남는다).
@@ -147,6 +147,13 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 
 다이어그램: [`docs/specs/diagrams/erd.puml`](../specs/diagrams/erd.puml)
 
+**범위**: 도메인 엔티티 **41개 전부**(= 전체 42테이블 − `tb_schema_migrations`)를 그린다.
+`tb_schema_migrations` 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
+엔티티가 많아 영역별 `package` 로 묶었다 — 수집·인벤토리 / CVE 도메인 / 벤더 판정 소스 /
+판정 결과 / 조치 관리 / 피드 운영·인증·감사. **실선은 FK 가 실제로 걸린 관계, 점선은 FK 없이
+애플리케이션이 자연키로 조인하는 관계**다. 컬럼은 전부 적지 않는다(PK/FK 와 이해에 필요한 것만) —
+테이블별 전체 컬럼은 `docs/dev/데이터베이스.md`.
+
 **명명규칙**: 테이블명은 **단수**(`tb_host`·`tb_finding`), 대리키 PK 는 **`<단수 테이블명>_id`**
 (`tb_host.host_id`), FK 는 **부모 PK 이름을 그대로** 쓴다(`tb_scan.host_id`). 예전엔 PK 가 전부
 `id` 라 `ON h.id = s.host_id` 처럼 조인 양쪽 이름이 어긋났다. 예외(자연키·복합키·FK-as-PK 라
@@ -162,7 +169,13 @@ tb_role_permission 은 설정형 RBAC, tb_api_token 은 Export API 에서 도입
 억제 결과는 tb_suppressed_finding, **억제를 취소**하는 신호가 tb_stale_lib(재시작 필요).
 tb_container 는 컨테이너 인벤토리이고 컨테이너 내부 패키지는 tb_package 에 `container_id>0` 으로
 같이 들어간다(호스트는 0). tb_pkg_change 는 패키지 변화 이력.
-스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh).*
+**벤더 판정 소스**: tb_debian_tracker(데비안 트래커 중앙 수집)·tb_ubuntu_oval·tb_vendor_errata·
+tb_vendor_unfixed·tb_kernel_cve/tb_kernel_cve_fix 는 스캔에 매달리지 않고 매처가 참조만 한다.
+**정밀 판정 플랫폼**: tb_finding_evidence(판정 근거 구조화, tb_finding 1:1)·tb_collection_stage
+(수집 단계 완전성 — 단계 누락을 미탐 대신 경고로)·tb_host_ext_port(경계 방화벽 뒤 외부노출 선언).
+**조치 관리**: tb_sla_policy(조치기한 정책) → tb_remediation_case(자산×CVE×패키지 케이스, 담당자·기한·예외).
+tb_saved_view 는 사용자별 저장 필터, tb_agent_replay_nonce 는 에이전트 재전송 공격 방지.
+스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh) — ERD 범위 밖.*
 *모든 테이블에 감사 4컬럼(`created_at`/`updated_at`/`is_deleted`/`deleted_at`)이 통일되어 있다
 (다이어그램엔 `is_deleted` 만 표기, 나머지 생략). 삭제는 하드삭제 대신 `vg_soft_delete()` 로
 `is_deleted=1` 표시(대상: tb_user/tb_feed_connector/tb_advisory/tb_host/tb_scan —
