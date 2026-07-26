@@ -244,6 +244,13 @@ function vg_feed_preview(string $type, array $conn, PDO $pdo): array {
  * 시작 후 $hours 시간이 지난 running 을 실패로 마감한다. 정상 수집은 길어야 10분대라
  * 기본 6시간이면 진행 중인 실행을 잘못 죽일 위험이 없다.
  *
+ * 마감할 때 next_run_at 도 다시 계산한다. 이 컬럼은 vg_feed_run() 이 실행을 **정상 종료할
+ * 때만** 쓰므로, 프로세스가 즉사하면 직전 성공 때 계산된 값이 그대로 남아 화면의
+ * "다음 실행"이 영구히 과거 시각으로 굳는다(실측: #7 rhoval 이 last_run_at 보다 하루 이른
+ * next_run_at 을 달고 있었고, 그걸 보고 "스케줄러가 방치한다"고 오진했다).
+ * 스케줄링 자체는 무관하다 — vg_feed_due() 는 next_run_at 을 읽지 않고 schedule_json +
+ * last_run_at 으로 판정한다. 여기서 고치는 건 표시값뿐이다.
+ *
  * @return int 정리한 로그 수
  */
 function vg_feed_reap_stale(PDO $pdo, int $hours = 6): int {
@@ -258,12 +265,33 @@ function vg_feed_reap_stale(PDO $pdo, int $hours = 6): int {
     $st->execute([$msg]);
     $n = $st->rowCount();
 
-    if ($n > 0) {
-        $pdo->prepare(
-            "UPDATE tb_feed_connector
-                SET last_status = 'error', last_message = ?
-              WHERE last_status = 'running' AND last_run_at < NOW() - INTERVAL $hours HOUR"
-        )->execute([$msg]);
+    // 커넥터 마감은 로그 정리 건수($n)와 무관하게 매번 본다. 두 조건은 서로 다른 테이블의
+    //   서로 다른 컬럼(started_at vs last_run_at)을 보므로 건수가 같이 움직이지 않는다 —
+    //   앞선 tick 에서 로그만 먼저 마감되면($n=0) 커넥터는 영구히 'running' 으로 남았다.
+    //   대상은 보통 0~1행이고 조건도 그대로라 매번 봐도 비용은 사실상 없다.
+    $stale = $pdo->prepare(
+        "SELECT feed_connector_id, schedule_json, enabled, last_run_at
+           FROM tb_feed_connector
+          WHERE last_status = 'running' AND last_run_at < NOW() - INTERVAL $hours HOUR"
+    );
+    $stale->execute();
+    $rows = $stale->fetchAll();
+    if (!$rows) { return $n; }
+
+    // 커넥터마다 schedule_json 이 달라 한 줄 UPDATE 로는 안 된다 — 각자 계산해 개별 UPDATE.
+    $upd = $pdo->prepare(
+        'UPDATE tb_feed_connector SET last_status = ?, last_message = ?, next_run_at = ? WHERE feed_connector_id = ?'
+    );
+    foreach ($rows as $r) {
+        $sch  = vg_json_col($r['schedule_json']);
+        $mode = (string) ($sch['mode'] ?? 'manual');
+        // interval 은 "마지막 실행 + N분" 이라야 vg_feed_due() 판정과 같은 값이 나온다.
+        //   나머지 모드는 지금 기준(connector_actions.php 의 저장 시 계산과 같은 규칙).
+        $from = ($mode === 'interval' && $r['last_run_at']) ? strtotime((string) $r['last_run_at']) : time();
+        // manual 은 vg_schedule_next() 가 null 을 준다. 비활성 커넥터도 스케줄러가 건너뛰므로
+        //   예정 시각이 없다 → 둘 다 NULL(스키마가 NULL 허용, "예정 없음"의 표기다).
+        $next = ((int) $r['enabled'] === 1) ? vg_schedule_next($sch, $from) : null;
+        $upd->execute(['error', $msg, $next, (int) $r['feed_connector_id']]);
     }
     return $n;
 }

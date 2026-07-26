@@ -83,6 +83,22 @@ $eq('daily 다음실행(오늘 지정시각 이미 지남 → 내일)', vg_sched
 $eq('cron 다음실행(당일 나중 시각)', vg_schedule_next(['mode' => 'cron', 'expr' => '0 11 * * *'], $now), '2026-07-13 11:00:00');
 $eq('cron 빈 expr → null', vg_schedule_next(['mode' => 'cron', 'expr' => ''], $now), null);
 $eq('manual → null', vg_schedule_next(['mode' => 'manual'], $now), null);
+$eq('mode 없으면 manual 취급 → null', vg_schedule_next([], $now), null);
+$eq('interval_minutes 누락 → 기본 1440분', vg_schedule_next(['mode' => 'interval'], $now), date('Y-m-d H:i:s', $now + 1440 * 60));
+
+// ── 중단된 실행 정리(vg_feed_reap_stale)가 쓰는 계산 규칙 ────────────────────
+// 그 함수 자체는 DB 가 필요해 여기서 못 돌린다. 대신 그 함수가 의존하는 산술만 고정한다:
+//   interval 은 fromTs = last_run_at 으로 계산해야 vg_schedule_due 판정과 같은 값이 나오고,
+//   결과가 last_run_at 보다 항상 미래여서 "다음 실행이 과거"라는 모순이 생기지 않는다.
+$lastRun = '2026-07-25 21:55:27';   // 운영 실측(#7 rhoval): interval 1440분인데 next 가 07-24 였다
+$eq('reap: interval 은 last_run + 간격', vg_schedule_next(['mode' => 'interval', 'interval_minutes' => 1440], strtotime($lastRun)), '2026-07-26 21:55:27');
+$eq('reap: 결과는 last_run 보다 미래', strtotime((string) vg_schedule_next(['mode' => 'interval', 'interval_minutes' => 1440], strtotime($lastRun))) > strtotime($lastRun), true);
+// 간격이 정리 임계(6시간)보다 짧으면 결과가 과거일 수 있다 — 이건 모순이 아니라 "지금 due" 라는 뜻이고
+//   vg_schedule_due 도 같은 판정을 한다. 두 함수가 어긋나지 않는다는 것까지 같이 고정한다.
+$stale7h = date('Y-m-d H:i:s', $now - 7 * 3600);
+$sch60   = ['mode' => 'interval', 'interval_minutes' => 60];
+$eq('reap: 간격 짧으면 next 는 과거(=지금 due)', strtotime((string) vg_schedule_next($sch60, strtotime($stale7h))) < $now, true);
+$eq('reap: 그때 due 판정도 true', vg_schedule_due($sch60, $stale7h, $now), true);
 
 // ── 결과 ──────────────────────────────────────────────────────────────────
 if ($fail > 0) {
