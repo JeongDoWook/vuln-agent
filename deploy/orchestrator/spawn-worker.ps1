@@ -492,6 +492,11 @@ else {
   $launchBody = @"
 Set-Location -LiteralPath '$wtDirEsc'
 `$env:TERM = 'xterm-256color'
+# NO_COLOR 가 상속돼 있으면 워커 탭의 색이 통째로 깨진다(Write diff 가 빨강/초록 통짜 블록).
+#   부모 환경이 오염돼 있어도 워커는 항상 정상이도록 여기서 지운다. 문서만으로는 못 막는다 —
+#   ~/.claude/settings.json 의 env 에 한 번 들어가면 그 뒤 뜬 모든 워커가 상속받고,
+#   settings.json 을 고쳐도 **이미 떠 있는 부모 세션**의 환경은 재시작 전까지 그대로다(실측 2026-07-26).
+Remove-Item Env:NO_COLOR -ErrorAction SilentlyContinue
 Write-Host '=== 워커: $Task ($branch) ===' -ForegroundColor Cyan
 Write-Host '결과 파일: $resultPathFwd' -ForegroundColor DarkGray
 Write-Host ''
