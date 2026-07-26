@@ -191,6 +191,17 @@ function vg_scope_label(?string $s): string {
     return $m[$s ?? ''] ?? (string) $s;
 }
 
+/* 수집 단계(tb_collection_stage.stage_code) → 한글 라벨.
+ *   ingest.php 가 스캔마다 이 5종만 기록한다(고정된 알려진 구조라 하드코딩이 맞다 — 새 단계는
+ *   생산자와 함께 여기 한 줄을 늘린다). 모르는 코드가 오면 코드 원문을 그대로 보여준다. */
+const VG_COLLECTION_STAGE_LABEL = [
+    'packages'          => '설치 패키지',
+    'language_packages' => '언어 패키지',
+    'runtime_processes' => '실행 프로세스',
+    'network_exposure'  => '네트워크 노출',
+    'containers'        => '컨테이너',
+];
+
 /* 수집 상태 판정 기준(분). 에이전트 기본 스케줄이 매시간이라 3시간까지는 정상으로 본다.
  *   자산관리 목록(assets.php)과 호스트 상세(host.php) 히어로가 공유한다. */
 const VG_STALE_MIN   = 180;        // 3시간 초과 → 지연
