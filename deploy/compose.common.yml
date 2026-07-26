@@ -29,7 +29,13 @@ services:
   scheduler:
     restart: unless-stopped
     pids_limit: 128
-    mem_limit: 384m
+    # 이 값은 server/bin/scheduler.php·sync.php 의 ini_set('memory_limit', ...) 와 **짝**이다.
+    #   반드시 mem_limit > PHP memory_limit 을 유지한다(지금 1g > 768M).
+    #   역전되면(예전: 384m < 1024M) PHP 가 자기 한도에 닿기 전에 cgroup 이 SIGKILL 해서
+    #   잡히는 PHP 오류 없이 프로세스가 즉사한다 → vg_feed_run() 의 catch 가 못 돌고 로그가
+    #   'running' 으로 굳어 6시간 뒤 vg_feed_reap_stale() 이 마감한다(2026-07 RHEL OVAL 6일 연속 실패).
+    #   이 값을 내리려면 scheduler.php·sync.php 의 memory_limit 도 함께 내려라.
+    mem_limit: 1g
     logging:
       driver: "json-file"
       options:

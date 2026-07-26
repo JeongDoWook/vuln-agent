@@ -1,7 +1,13 @@
 <?php
 declare(strict_types=1);
 
-ini_set('memory_limit', '1024M'); // 대량 피드 처리 여유(Oracle OVAL 은 236MB XML & 49만 행 — 512M 로는 죽는다)
+// PHP 한도는 **반드시 이 프로세스가 도는 컨테이너의 mem_limit 보다 낮아야** 한다 — 높으면
+//   PHP 가 자기 한도에 닿기 전에 cgroup 이 SIGKILL 해서 잡히는 오류 없이 즉사하고,
+//   vg_feed_run() 의 catch 가 못 돌아 로그가 'running' 으로 굳는다(2026-07 스케줄러 사고).
+//   sync.php 는 web 컨테이너에서 돈다(README: `docker compose exec web php bin/sync.php <id>`,
+//   mem_limit 768m) → 같은 컨테이너에서 같은 vg_feed_run() 을 부르는 UI 수동실행
+//   (server/src/connector_actions.php)과 동일하게 512M 으로 맞춘다.
+ini_set('memory_limit', '512M');
 
 /**
  * sync.php — 커넥터 1건을 즉시 실행(수동). 사용: php sync.php <connector_id>
