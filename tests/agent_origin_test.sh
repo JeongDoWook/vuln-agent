@@ -80,7 +80,10 @@ EOF
 got="$(collect_pkg_origins)"
 fail=0
 check() {   # check <라벨> <기대 줄>
-  if ! printf '%s\n' "$got" | grep -qxF "$2"; then
+  # smoke.sh 와 같은 이유로 파이프를 쓰지 않는다 — pipefail + `grep -q` 조기종료 조합은
+  #   입력이 파이프 버퍼보다 커지는 순간 SIGPIPE(141)로 오판한다. 여기 입력은 지금은 작아
+  #   무해하지만, 판정 헬퍼가 입력 크기에 따라 뒤집히는 형태를 저장소에 남기지 않는다.
+  if ! grep -qxF "$2" <<< "$got"; then
     printf '  ✗ [%s] 기대한 줄이 없습니다: %s\n' "$1" "$2" >&2
     fail=$((fail + 1))
   fi
