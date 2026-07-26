@@ -61,9 +61,44 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# ── 네이티브 exe 호출 래퍼 (PS 5.1 stderr 승격 회피) ─────────────────────────
+# Windows PowerShell 5.1 은 네이티브 exe 가 stderr 에 쓴 줄을 ErrorRecord(NativeCommandError)로
+# 승격한다. $ErrorActionPreference='Stop' 이면 그게 **종료 오류**가 되어, 종료코드가 0 이어도
+# 그 자리에서 throw 된다 — 즉 "성공했는데 실패로 보고" 한다.
+#   실측(2026-07-26): wt.sh 는 진행 상황(git worktree add 의 'Preparing worktree …')을 stderr 로
+#   쓴다. 그래서 워크트리는 정상 생성됐는데 스폰이 실패로 끝났고, 사람이 매번 두 번 실행해야 했다
+#   (spawn-batch 로 3개를 띄우면 3개 전부 '실패'로 찍혔다).
+#   승격의 방아쇠는 **PowerShell 이 그 stderr 를 가로채는 상황**이다 — `2>$null`·`2>&1` 같은
+#   리다이렉트가 걸려 있거나 호출자가 스트림을 합쳐 받을 때. 재현: 아래 두 줄이 실제로 throw 한다.
+#     $ErrorActionPreference='Stop'; & bash -c 'echo x 1>&2; exit 0' 2>$null
+#
+# 대응: 네이티브 호출 **구간에만** EAP 를 낮춰 stderr 승격을 무시하고, 원복은 finally 로 보장한다
+# (merge-milestone.ps1 / reap-merged.ps1 의 Invoke-Gh 와 같은 패턴).
+#   · 2>&1 로 덮지 않는다 — stderr 가 stdout 에 섞이면 출력을 읽는 쪽이 깨지고, 근본(EAP 승격)도
+#     안 고쳐진다.
+#   · **종료코드 검사는 호출부에 그대로 남긴다.** stderr 를 무시하는 것과 종료코드를 무시하는 것은
+#     다르다 — 진짜 실패(브랜치 충돌 등)는 여전히 throw 돼야 한다. $LASTEXITCODE 는 전역이라
+#     이 함수를 거쳐도 마지막 네이티브 프로세스의 값이 그대로 남는다(호출부에서 바로 검사 가능).
+#   · 출력은 흘려보낸다(캡처하지 않는다) — wt.sh 의 진행 로그·할당된 WEB_PORT 안내가 사용자에게
+#     그대로 보여야 한다.
+function Invoke-Native {
+  param(
+    [Parameter(Mandatory)][string]$FilePath,
+    [string[]]$Arguments = @()
+  )
+  $prev = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'SilentlyContinue'
+    & $FilePath @Arguments
+  }
+  finally { $ErrorActionPreference = $prev }
+}
+
 # ── 메인 트리 루트 (wt.sh 와 동일 규칙: git-common-dir 의 부모) ───────────────
 # 저장소는 cwd 가 아니라 스크립트 위치 기준으로 찾는다 — 어느 폴더에서 실행해도 동작.
-$gitCommon = (& git -C $PSScriptRoot rev-parse --git-common-dir 2>$null)
+# 저장소 밖에서 실행하면 git 이 stderr 로 'fatal: not a git repository' 를 쓴다 → 위 승격 때문에
+# 아래 friendly throw 대신 NativeCommandError 로 죽는다. 그래서 이 호출도 래퍼를 거친다.
+$gitCommon = (Invoke-Native git @('-C', $PSScriptRoot, 'rev-parse', '--git-common-dir'))
 if (-not $gitCommon) { throw '스크립트가 git 저장소 안에 있지 않습니다.' }
 if (-not [System.IO.Path]::IsPathRooted($gitCommon)) { $gitCommon = Join-Path $PSScriptRoot $gitCommon }
 $MainRoot = Split-Path (Resolve-Path $gitCommon).Path -Parent
@@ -368,8 +403,10 @@ if (Test-Path $wtDir) {
 else {
   Write-Host "== 워크트리 생성: $branch → wt/$Task ==" -ForegroundColor Cyan
   # wt.sh(bash) 도 cwd 에서 git 저장소를 찾는다 → 메인 트리에서 실행해야 한다.
+  # Invoke-Native 를 거치는 이유: wt.sh 가 진행 상황을 stderr 로 쓴다(위 래퍼 주석 참고).
+  # 종료코드 검사는 그대로 둔다 — 진짜 실패는 여전히 여기서 throw 된다.
   Push-Location $MainRoot
-  try { & $GitBash "$MainRootFwd/deploy/wt.sh" add $branch $Base } finally { Pop-Location }
+  try { Invoke-Native $GitBash @("$MainRootFwd/deploy/wt.sh", 'add', $branch, $Base) } finally { Pop-Location }
   if ($LASTEXITCODE -ne 0) { throw "wt.sh add 실패 (exit $LASTEXITCODE)" }
 }
 
@@ -532,7 +569,11 @@ else {
     }
     else {
       # -w 0 = 가장 최근 사용한 WT 창에 새 탭. 없으면 새 창을 연다.
-      & $wt -w 0 new-tab --title $Task -d $wtDir powershell.exe -NoExit -NoProfile -File $launchPs1
+      # wt.exe 도 경고를 stderr 로 낸다(예: 프로필 못 찾음) → 같은 승격 함정. 래퍼로 감싼다.
+      # 종료코드 검사는 **새로 붙이지 않는다**: 원래 없던 게이트를 여기서 만들면, 탭은 떴는데
+      # wt.exe 가 비영으로 끝나는 경우에 스폰이 새로 실패하기 시작한다(지금 고치는 것과 같은 종류의
+      # 오탐). 승격만 막아 "탭은 떴는데 실패로 보고" 되는 것을 없애는 게 이 변경의 범위다.
+      Invoke-Native $wt @('-w', '0', 'new-tab', '--title', $Task, '-d', $wtDir, 'powershell.exe', '-NoExit', '-NoProfile', '-File', $launchPs1)
       Write-Host "✓ 새 탭 열림: $Task (현재 Windows Terminal 창)  브랜치: $branch" -ForegroundColor Green
     }
   }

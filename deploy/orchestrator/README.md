@@ -279,6 +279,37 @@ sleep 은 느린 PC 에서 또 깨진다). 그래서 데몬이 브로드캐스�
   `"1"` → `""` 로 바꿔 고쳤다고 판단했다가 안 고쳐진 이력이 있다. 이미 있으면 **값을 비우지 말고
   키를 삭제**한다. 일회성으로 색을 끄려면 그 명령에만 `NO_COLOR=1 <명령>` 으로 준다.
 
+## 함정 — 왜 스폰이 "성공했는데 실패"로 보고됐나 (PS 5.1 stderr 승격)
+
+Windows PowerShell 5.1 은 네이티브 exe 가 **stderr 에 쓴 줄을 ErrorRecord(`NativeCommandError`)로
+승격**한다. 스크립트가 `$ErrorActionPreference = 'Stop'` 이면 그게 **종료 오류**가 되어,
+**종료코드가 0 이어도** 그 자리에서 throw 된다.
+
+`wt.sh` 는 진행 상황을 stderr 로 쓴다(`git worktree add` 의 `Preparing worktree …`). 그래서
+`spawn-worker.ps1` 은 워크트리를 **정상 생성해 놓고도** 바로 다음 줄의 `if ($LASTEXITCODE -ne 0)`
+검사에 닿기 전에 죽었다 — 사람이 매번 두 번 실행해야 했고, `spawn-batch.ps1` 로 3개를 띄우면
+3개 전부 "실패"로 찍혔다(2026-07-26 실측, 5회 이상).
+
+승격의 방아쇠는 **PowerShell 이 그 stderr 를 가로채는 상황**이다: `2>$null`·`2>&1` 리다이렉트가
+걸려 있거나 호출자가 스트림을 합쳐 받을 때. 맨 콘솔에서 리다이렉트 없이 부르면 승격되지 않아
+**재현이 안 되는 것처럼 보인다** — 재현하려면 리다이렉트를 걸어라:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+& bash -c 'echo x 1>&2; exit 0' 2>$null      # → THROW (FQID=NativeCommandError)
+.\spawn-worker.ps1 -Task probe -DryRun 2>&1  # → 고치기 전엔 여기서 THROW
+```
+
+대응(이 저장소 공통 패턴): 네이티브 호출 **구간에만** EAP 를 낮추고 `finally` 로 원복한다.
+`spawn-worker.ps1` 의 `Invoke-Native`, `merge-milestone.ps1`/`reap-merged.ps1` 의 `Invoke-Gh`.
+
+- **`2>&1` 로 덮지 마라** — stderr 가 stdout 에 섞여 출력을 읽는 쪽이 깨지고, 근본도 안 고쳐진다.
+- **종료코드 검사(`$LASTEXITCODE`)는 반드시 남겨라.** stderr 를 무시하는 것과 종료코드를 무시하는
+  것은 다르다 — 진짜 실패(브랜치 충돌 등)는 여전히 throw 돼야 한다. `$LASTEXITCODE` 는 전역이라
+  래퍼 함수를 거쳐도 값이 그대로 남는다.
+- 부작용 하나: 가로채인 상황에선 stderr 텍스트가 화면에서 사라진다(승격된 레코드를 삼키므로).
+  `wt.sh` 가 알려주는 정보(할당된 WEB_PORT 등)는 전부 stdout 이라 그대로 보인다.
+
 ## 자동 이어받기 & 최적화
 
 claude-pipeline 은 cmux `read-screen` 으로 **다른 세션 화면을 훔쳐봐** 완료를 감지한다
