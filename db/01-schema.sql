@@ -72,6 +72,9 @@ CREATE TABLE IF NOT EXISTS tb_scans (
 CREATE TABLE IF NOT EXISTS tb_packages (
   id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   scan_id    BIGINT UNSIGNED NOT NULL,
+  -- 이 패키지가 어느 컨테이너 것인지. **0 = 호스트 자신**(18-containers.sql 주석 참조).
+  --   기존 볼륨은 db/migrations/0014_containers.sql 이 같은 위치(AFTER scan_id)에 추가한다.
+  container_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
   manager    VARCHAR(16)  NULL,        -- rpm | dpkg
   name       VARCHAR(255) NOT NULL,
   version    VARCHAR(255) NULL,        -- 전체 EVR / dpkg 버전 (릴리스번호 포함)
