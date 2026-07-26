@@ -50,7 +50,9 @@ services:
       #   운영은 .env.prod 에 DB_DATA=/data/vulnagent/mysql 로 서버 디스크에 영속(down -v 에도 안전).
       - ${DB_DATA:-db_data}:/var/lib/mysql
       - ../db:/docker-entrypoint-initdb.d:ro
-      # my.cnf 는 운영 전용(compose.prod.yml) — Windows dev 는 기본값 사용
+      # my.cnf 는 운영 전용(compose.prod.yml) — Windows 는 bind 마운트한 설정 파일이
+      # world-writable 로 보여 MySQL 이 무시한다. dev 는 그래서 파일 대신 mysqld 인자로
+      # binlog 를 끈다(compose.dev-db.yml 의 `command: --skip-log-bin`).
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$(cat /run/secrets/mysql_root_password)\" --silent"]
       interval: 10s

@@ -12,3 +12,12 @@ services:
     container_name: ${DB_CONTAINER:-vulnagent-db-dev}
     ports:
       - "${DB_PORT:-3307}:3306"
+    # dev 는 바이너리 로그를 아예 만들지 않는다. 복제 replica 도 PITR 도 없어(백업은 별도
+    # mysqldump) binlog 가 하는 일이 없는데, 기본값 30일 만료라 계속 쌓였다 — 실측으로
+    # data/mysql 32GB 중 30GB(파일 173개)가 binlog 였다.
+    #   왜 my.cnf 마운트가 아니라 command 인가: Windows 에서 bind 마운트한 설정 파일은
+    #   world-writable 로 보여 MySQL 이 조용히 무시한다(그래서 deploy/config/mysql/my.cnf 는
+    #   compose.prod.yml 만 마운트한다). mysqld 인자는 파일 권한과 무관하게 항상 먹는다.
+    #   mysql 이미지 entrypoint 가 `-` 로 시작하는 첫 인자 앞에 mysqld 를 붙여준다.
+    #   운영은 binlog 를 유지한다(장애 분석·복구 여지) — my.cnf 의 3일 만료 그대로.
+    command: --skip-log-bin
