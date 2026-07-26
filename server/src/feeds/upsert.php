@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * feeds/upsert.php — 수집 결과를 tb_cves / tb_kev_catalog / tb_cve_affected_packages 로
+ * feeds/upsert.php — 수집 결과를 tb_cve / tb_kev_catalog / tb_cve_affected_package 로
  *   넣는 공용 write 프리미티브 + CVE-ID 형식검증. 여러 커넥터가 공유한다(KISA 공지 전용
  *   upsert 는 feeds/kisa.php 가 따로 갖는다).
  */
@@ -19,7 +19,7 @@ const VG_TEXT_MAX = 60000;
 
 /**
  * CVE-ID 형식 검증. 공지 본문·제목에서 정규식으로 긁은 값에는 원문 오탈자가 섞인다
- * (실제로 CVE-0215-8451, CVE-2016-03246 이 tb_cves 에 들어갔다).
+ * (실제로 CVE-0215-8451, CVE-2016-03246 이 tb_cve 에 들어갔다).
  *   - 연도는 1999 ~ 내년.
  *   - 일련번호는 4자리면 선행 0 허용(CVE-2014-0160 = Heartbleed), 5자리 이상이면 금지.
  */
@@ -42,7 +42,7 @@ function vg_extract_cve_ids(string $text): array {
     return $ids;
 }
 
-// tb_cves 로 들어가는 유일한 통로. 여기서 막으면 모든 커넥터·백필이 함께 보호된다.
+// tb_cve 로 들어가는 유일한 통로. 여기서 막으면 모든 커넥터·백필이 함께 보호된다.
 /**
  * $vector·$cwe 는 NVD 만 준다(KEV·OSV·KISA 는 null 을 넘긴다). COALESCE 라 null 은
  * 기존 값을 덮지 않는다 — 어느 피드가 먼저/나중에 돌든 채워진 값이 지워지지 않는다.
@@ -56,7 +56,7 @@ function vg_upsert_cve(
         return;
     }
     $st = $pdo->prepare(
-        'INSERT INTO tb_cves (cve_id, summary, cvss, published, cvss_vector, cwe, ref_urls_json) VALUES (?,?,?,?,?,?,?)
+        'INSERT INTO tb_cve (cve_id, summary, cvss, published, cvss_vector, cwe, ref_urls_json) VALUES (?,?,?,?,?,?,?)
          ON DUPLICATE KEY UPDATE
            summary        = COALESCE(VALUES(summary), summary),
            cvss           = COALESCE(VALUES(cvss), cvss),
@@ -101,7 +101,7 @@ function vg_upsert_affected(PDO $pdo, string $cve, ?string $eco, string $pkg, ?s
     $ecoKey = (string) ($eco ?? '');
     $fixedVal = ($fixed !== null && $fixed !== '') ? $fixed : null;
     $pdo->prepare(
-        'INSERT INTO tb_cve_affected_packages (cve_id, ecosystem, package_name, fixed_version)
+        'INSERT INTO tb_cve_affected_package (cve_id, ecosystem, package_name, fixed_version)
          VALUES (?,?,?,?)
          ON DUPLICATE KEY UPDATE fixed_version = COALESCE(VALUES(fixed_version), fixed_version)'
     )->execute([$cve, $ecoKey, $pkg, $fixedVal]);
