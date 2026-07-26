@@ -252,6 +252,11 @@ run_phpunit "ui_structure_test.php" "ui_structure" "UI 공통 컴포넌트·검�
 # --- 내부 SLA·조치 단위·판정 출처 회귀 테스트 -------------------------------
 run_phpunit "remediation_test.php" "remediation" "내부 SLA·조치 단위·판정 출처 단위 테스트"
 
+# --- DB 재시도 단위 테스트 ----------------------------------------------------
+# 접속 실패 재시도 판정(server/src/db.php). 판정이 넓어지면 인증 실패·DB 없음에도 매달려
+# 배포가 늦고, 좁아지면 DB 재시작 때 스케줄러 실행이 통째로 유실된다(운영 실측 2026-07-26).
+run_phpunit "db_retry_test.php" "db_retry" "DB 접속 재시도 판정 단위 테스트"
+
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"
 code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \

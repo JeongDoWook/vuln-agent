@@ -1,7 +1,49 @@
 <?php
 declare(strict_types=1);
 
+// 접속 재시도 파라미터. 짧게 잡는다 — 웹 요청도 vg_pdo() 를 쓰므로 길면 사용자 응답이 멈춘다
+//   (최악 대기 = (TRIES-1) × WAIT_US).
+const VG_DB_CONNECT_TRIES   = 3;        // 총 시도 횟수(첫 시도 포함)
+const VG_DB_CONNECT_WAIT_US = 1000000;  // 재시도 간 대기(마이크로초 = 1초)
+
+/**
+ * 기다리면 풀릴 접속 실패의 MySQL 오류번호. DB 컨테이너 재시작 중에 나는 것들만 담는다.
+ *   2002 소켓/호스트 접속 실패(운영 로그의 `[2002] Connection refused` 11회)
+ *   2003 TCP 접속 거부
+ *   2013 핸드셰이크 중 끊김(서버가 떴지만 아직 초기화 중일 때)
+ * 인증 실패(1045)·DB 없음(1049)·호스트 차단(1129) 은 기다려도 안 되므로 여기 없다 → 즉시 던진다.
+ */
+const VG_DB_CONNECT_RETRY_ERRNOS = [2002, 2003, 2013];
+
+/**
+ * PDOException 에서 MySQL 드라이버 오류번호를 뽑는다. 못 뽑으면 null.
+ *   errorInfo[1] 이 정석이고, 접속 단계 예외는 errorInfo 가 비어 있을 수 있어 getCode() 를 본다.
+ *   메시지의 `[2002]` 파싱은 **최후수단**(둘 다 비었을 때만).
+ */
+if (!function_exists('vg_db_driver_errno')) {
+    function vg_db_driver_errno(Throwable $e): ?int {
+        if (!$e instanceof PDOException) { return null; }
+        $info = $e->errorInfo;
+        if (is_array($info) && isset($info[1]) && is_numeric($info[1])) { return (int) $info[1]; }
+        $code = $e->getCode();
+        if (is_numeric($code) && (int) $code > 0) { return (int) $code; }
+        if (preg_match('/\[(\d{4})\]/', $e->getMessage(), $m)) { return (int) $m[1]; }
+        return null;
+    }
+}
+
+/** 이 예외가 "잠시 기다렸다 다시 붙으면 통할" 접속 실패인가. */
+if (!function_exists('vg_db_is_retryable_connect')) {
+    function vg_db_is_retryable_connect(Throwable $e): bool {
+        $errno = vg_db_driver_errno($e);
+        return $errno !== null && in_array($errno, VG_DB_CONNECT_RETRY_ERRNOS, true);
+    }
+}
+
 // PDO 싱글턴. 예외 모드 + 진짜 prepared statement.
+//   접속은 짧게 재시도한다 — compose 의 `depends_on: condition: service_healthy` 는 **최초 기동에만**
+//   걸려서 운영 중 DB 재시작을 못 막는다. 스케줄러는 1분마다 새 프로세스라 결국 회복하지만
+//   그 사이 실행이 통째로 유실됐다(운영 실측 2026-07-26).
 if (!function_exists('vg_pdo')) {
     function vg_pdo(): PDO {
         static $pdo = null;
@@ -13,12 +55,29 @@ if (!function_exists('vg_pdo')) {
             'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
             $cfg['db_host'], $cfg['db_port'], $cfg['db_name']
         );
-        $pdo = new PDO($dsn, $cfg['db_user'], $cfg['db_pass'], [
+        $opts = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
-        ]);
-        return $pdo;
+        ];
+        for ($try = 1; ; $try++) {
+            try {
+                // 성공한 PDO 만 static 에 담는다 — 실패한 값이 캐시되면 이후 호출이 전부 깨진다.
+                $pdo = new PDO($dsn, $cfg['db_user'], $cfg['db_pass'], $opts);
+                if ($try > 1) { error_log(sprintf('[db] 접속 재시도 %d회 후 성공', $try - 1)); }
+                return $pdo;
+            } catch (PDOException $e) {
+                if ($try >= VG_DB_CONNECT_TRIES || !vg_db_is_retryable_connect($e)) {
+                    // 상세(호스트·SQLSTATE·자격증명 힌트)는 서버 로그로만. 사용자에겐 일반 메시지.
+                    //   previous 로 원본을 달지 않는다 — 미처리 예외는 PHP 가 체인을 전부 출력해
+                    //   display_errors 켜진 환경에서 상세가 화면으로 새어 나간다.
+                    error_log(sprintf('[db] 접속 실패(%d회 시도): %s', $try, $e->getMessage()));
+                    throw new RuntimeException('데이터베이스에 연결할 수 없습니다.');
+                }
+                error_log(sprintf('[db] 접속 실패 재시도 %d/%d: %s', $try, VG_DB_CONNECT_TRIES, $e->getMessage()));
+                usleep(VG_DB_CONNECT_WAIT_US);
+            }
+        }
     }
 }
 
