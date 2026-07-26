@@ -220,17 +220,6 @@ body.is-busy { cursor: progress; }
 /* --- 스피너 -------------------------------------------------------------- */
 @keyframes vg-spin { to { transform: rotate(1turn); } }
 
-.spinner {
-  display: inline-block;
-  width: 1em;
-  height: 1em;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  vertical-align: -.15em;
-  animation: vg-spin .7s linear infinite;
-}
-
 /* 로딩 중인 버튼: 폭이 흔들리지 않게 라벨을 남기고 앞에 스피너만 끼운다 */
 .btn[aria-busy="true"] {
   pointer-events: none;
@@ -252,7 +241,7 @@ body.is-busy { cursor: progress; }
 .is-loading { position: relative; color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
-  #vg-progress, .spinner, .btn[aria-busy="true"]::before { animation: none; transition: opacity .2s; }
+  #vg-progress, .btn[aria-busy="true"]::before { animation: none; transition: opacity .2s; }
 }
 
 /* --- 레이아웃: 좌측 사이드바 + 본문 -------------------------------------- */
@@ -544,7 +533,6 @@ h2 { font-size: 1.05rem; margin: 1.6rem 0 .6rem; }
 }
 .card:hover { border-color: var(--line-2); }
 .card strong { color: var(--text); }
-.card--narrow { max-width: 560px; }
 .card--sm { max-width: 380px; }
 /* 방금 발급된 토큰처럼 "이번 한 번만 보여주는" 카드 — 테두리로 시선을 끈다 */
 .card--accent { border-color: var(--accent); }
@@ -600,9 +588,6 @@ h2 { font-size: 1.05rem; margin: 1.6rem 0 .6rem; }
 a.kpi { transition: border-color .12s ease-out, background .12s ease-out; }
 a.kpi:hover { text-decoration: none; border-color: var(--line-2); filter: brightness(1.12); }
 a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
-/* 링크 kpi 와 색·톤이 같아서 눌리는 카드처럼 보이는 정적 집계 카드 — 점선 테두리로 구분한다
-   (연결 가능한 필터가 없어 링크화할 수 없는 경우에만 쓴다. 새 필터를 만들지 않는다). */
-.kpi--static { cursor: default; border-style: dashed; }
 
 .kpi.tone-crit { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
 .kpi.tone-high { background: var(--high-bg); border-color: var(--high-bd); color: var(--high-fg); }
@@ -746,10 +731,6 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .legend .tone-high { background: var(--high); }
 .legend .tone-med  { background: var(--med); }
 .legend .tone-low  { background: var(--low); }
-/* 값이 0인 등급은 흐리게 + 채움 없는 점선 테두리로 — 색만으로 "해당 없음" 을 말하지 않는다
- * (색각 이상·흑백 출력 고려). */
-.legend div.is-zero { opacity: .5; }
-.legend div.is-zero i { background: none; border: 1px dashed var(--muted-2); }
 
 /* --- 차트 공통 눈금 -------------------------------------------------------
  * 라이브러리를 들이지 않는다. SVG 는 논리좌표(720x190)로 그리고 여기서 폭에 맞춰 늘린다.
@@ -831,20 +812,6 @@ td details { margin-top: .4rem; }
 td summary { cursor: pointer; font-size: .78rem; color: var(--muted); width: fit-content; }
 td summary:hover { color: var(--accent-2); }
 td details[open] summary { margin-bottom: .35rem; }
-
-/* --- 상세 2단 레이아웃 (본문 + 고정 메트릭 사이드바) ----------------------
- * CVE 상세처럼 "읽는 본문" 과 "항상 보여야 할 수치" 가 같이 있는 화면용.
- * 수치를 위에 눕히면 스크롤하는 순간 사라진다 — 옆에 붙여 sticky 로 띄운다. */
-.detail { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 1.2rem; align-items: start; }
-/* min-width:0 이 없으면 넓은 표가 사이드바를 밀어낸다 — 그리드 자식의 기본 min-width 는
- * auto 라서 내용보다 작아지지 않는다(레이아웃 .app 이 겪은 것과 같은 함정). */
-.detail__main { min-width: 0; }
-.detail__side { position: sticky; top: 1rem; }
-
-@media (max-width: 1100px) {
-  .detail { grid-template-columns: 1fr; }
-  .detail__side { position: static; }
-}
 
 /* 이름:값 목록 — 원래 300px 사이드바(.detail__side) 안에서 쓰려고 만든 컴포넌트라
  * dd 가 1fr 을 오른쪽 정렬로 채우면 사이드바 폭에서는 "라벨 …… 값" 모양이 났다. 지금은
@@ -954,7 +921,6 @@ tbody tr.sev-high:hover { background: var(--surface-2); }
   white-space: nowrap;
   vertical-align: bottom;
 }
-.trunc--sm { max-width: 280px; }
 .center { text-align: center; }
 .right { text-align: right; }
 
@@ -1240,13 +1206,6 @@ form.card .btn--block { margin-top: 1.1rem; }
 }
 .toolbar select { width: auto; }
 
-/* --- 페이지 헤더(제목 + 우측 상단 액션 버튼) ----------------------------- */
-/* 검색 필터 없이 "+ 추가"류 단독 버튼만 있는 페이지는 그 버튼을 h1 옆 우측 상단에 둔다.
-   모달 내부 저장/닫기 버튼은 이 규칙 대상이 아니다(모달 하단 그대로). */
-.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .3rem; }
-.page-head h1 { margin: 0; }
-.page-head .toolbar { margin-bottom: 0; }
-
 .pager { display: flex; gap: .3rem; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
 .pager a, .pager span {
   padding: .32rem .6rem;
@@ -1278,10 +1237,6 @@ form.card .sub { text-align: center; }
 .matrix th, .matrix td { text-align: center; }
 .matrix th:first-child, .matrix td:first-child { text-align: left; }
 .matrix input[type=checkbox] { transform: scale(1.3); }
-.matrix .col-role { width: 120px; }
-/* 체크박스를 <label> 로 감싸 클릭 타겟을 셀 전체로 넓힌다(체크박스 자체만 클릭되던 문제).
- * margin/padding 은 위 th,td 공통 규칙의 값(.72rem 1rem)과 맞춰 셀을 그대로 채운다. */
-.matrix .col-role label { display: block; margin: -.72rem -1rem; padding: .72rem 1rem; cursor: pointer; }
 
 /* --- 로그인 화면 -----------------------------------------------------------
  * form.card 셀렉터는 login.php 에서만 쓴다(다른 페이지엔 없음) — 그래서
@@ -1481,10 +1436,8 @@ form.card { border-radius:24px; }
  * Dashboard, dense lists, detail views and management pages use distinct rhythm.
  * ========================================================================== */
 .page__main { min-height:calc(100vh - var(--topbar-h)); }
-.page__main > h1:first-child,.page__main > .page-head:first-child { margin-top:.15rem; }
-.page__main > h1:first-child + .sub,.page__main > .page-head + .sub { margin-top:.25rem; }
-.page-head { align-items:center; margin-bottom:.45rem; }
-.page-head .toolbar { width:auto; padding:0; border:0; box-shadow:none; background:transparent; }
+.page__main > h1:first-child { margin-top:.15rem; }
+.page__main > h1:first-child + .sub { margin-top:.25rem; }
 
 /* Dashboard: editorial overview, wider breathing room and stronger primary cards. */
 .page--index .page__main { max-width:1520px; }
@@ -1548,14 +1501,11 @@ form.card { border-radius:24px; }
   .page--host .subtabs,.page--cve .subtabs { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
   .page--host .subtabs::-webkit-scrollbar,.page--cve .subtabs::-webkit-scrollbar { display:none; }
   .page--host .subtabs a,.page--cve .subtabs a { flex:none; }
-  .page-head { align-items:flex-start; }
 }
 @media (max-width:560px) {
   .page--index .cards--grid .kpi:first-child { grid-column:1/-1; }
   .page--index .cards--grid .kpi b { font-size:1.65rem; }
   .page--login form.card { padding:2rem 1.35rem 1.6rem; }
-  .page-head .toolbar { width:100%; }
-  .page-head .toolbar .btn { width:100%; }
 }
 
 /* Page title blocks are authored per PHP page so copy, count and actions match its job. */
@@ -1653,7 +1603,6 @@ form.card { border-radius:24px; }
 [data-density="compact"] .stat { padding:.75rem 1rem; }
 [data-density="compact"] .page-title { margin-bottom:1rem; padding-bottom:.9rem; }
 .matrix.data-table td { vertical-align:middle; }
-.matrix.data-table td.col-role { text-align:center; }
 .matrix.data-table input[type="checkbox"] { width:1.15rem; height:1.15rem; accent-color:var(--primary); cursor:pointer; }
 .page--host .page__main,.page--cve .page__main,.page--compliance_rule .page__main,.page--advisory .page__main,.page--user .page__main { max-width:1480px; }
 @media(max-width:860px){
