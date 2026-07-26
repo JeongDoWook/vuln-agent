@@ -36,9 +36,12 @@ try {
     } else {
         $ids = array_map('intval', $pdo->query('SELECT id FROM tb_scans ORDER BY id')->fetchAll(PDO::FETCH_COLUMN));
     }
+    // 사람이 직접 부르는 재매칭은 **강제**다($force=true) — 결과 지문이 같아도 통째 다시 쓴다.
+    //   스케줄러·수집 경로는 지문이 같으면 쓰기를 건너뛰지만(binlog 절감), DB 를 직접 손댔거나
+    //   결과가 의심스러울 때 사람이 정본을 다시 만들 수단이 하나는 있어야 한다.
     $result = [];
     foreach ($ids as $id) {
-        $result[$id] = vg_match_scan($pdo, $id);
+        $result[$id] = vg_match_scan($pdo, $id, true);
     }
     echo json_encode(['ok' => true, 'matched_scans' => count($ids), 'counts' => $result], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {

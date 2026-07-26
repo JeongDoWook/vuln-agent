@@ -73,6 +73,19 @@ exposures(포트) + processes(실행/로드) 를 합쳐 6단계 상태를 판정
 조용히 "취약점 없음"으로 보이면 더 위험하므로 `vg_distro_unsupported`(`src/distro.php`)가 판정해
 ingest 응답과 취약점 화면에 경고를 띄운다(자체 피드가 따로 필요하다는 뜻).
 
+**재매칭은 결과가 같으면 아무것도 쓰지 않는다.** 피드가 갱신돼도 특정 스캔의 판정 결과는 대부분
+그대로인데, 예전엔 1비트도 안 바뀐 경우까지 `tb_findings`/`tb_suppressed_findings` 를 통째
+삭제·재삽입해 **binlog 가 하루 20GB 넘게** 쌓였다(운영 실측: 디스크 105G 중 76G). 지금은
+`vg_match_scan()` 이 판정을 전부 메모리에서 끝낸 뒤 결과 지문(sha1)을 `tb_scans.match_fingerprint`
+와 비교해, 같으면 트랜잭션조차 열지 않고 카운트만 돌려준다. 다르면 예전과 똑같이 통째 재작성하고
+같은 트랜잭션 안에서 지문을 갱신한다(행 단위 diff 로 하지 않는다 — 비교 컬럼을 하나 빠뜨리면
+stale 값이 영구히 남는다).
+
+> **판정 로직이나 저장 컬럼을 바꾸면 `VG_MATCH_FP_VERSION`(`src/matcher.php`)을 올려야 한다.**
+> 입력이 같으면 지문도 같아 **새 코드로 재계산한 결과가 영영 저장되지 않는** 함정이 있다.
+> 이 상수는 지문에 섞여 들어가므로, 올리면 전 스캔이 한 번씩 다시 쓰인다.
+> 사람이 누르는 `rematch.php` 는 항상 강제 재작성(`vg_match_scan($pdo,$id,true)`)이다.
+
 **보안설정 점검(CCE)** 은 별도 경로다. 같은 수집물의 `security`/`users` 섹션을 `src/cce.php` 가
 판정해 `tb_cce_findings`(PASS/FAIL/NA)에 저장한다 — CVE 가 아니라 **설정**(SSH root 로그인,
 패스워드 인증, UID 0 계정, SELinux/AppArmor, 방화벽)을 본다. 신규 수집은 하지 않는다.
