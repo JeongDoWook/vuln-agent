@@ -2,9 +2,42 @@
 
 런타임 노출 맥락으로 오탐을 줄이는 자율 취약점 진단 에이전트 (2026 오픈소스 개발자대회)
 
+버전만 비교하는 스캐너는 "설치돼 있으면 취약"으로 판정하기 때문에, 아무 프로세스도 쓰지 않는
+패키지까지 전부 경고가 되어 오탐이 쌓인다. vuln-agent 는 각 서버의 경량 에이전트가 설치 패키지뿐
+아니라 **런타임 노출(열린 포트)·실행 중인 프로세스·로드한 라이브러리**까지 수집하고, 중앙 매처가
+그 맥락으로 "이 서버에서 실제로 위험한가"를 6단계 상태로 갈라 우선순위를 매긴다. 매칭 판정 자체는
+검증된 피드(OSV·NVD·KEV·EPSS)에서 상속받고, 기여는 그 위 레이어에 둔다. 차별점은 세 가지다 —
+**백포트 오탐 억제**(changelog·errata·debsecan 근거 4겹으로 "버전은 낮아도 이미 패치됨"을 증명),
+**국내 특화**(KISA 보안공지 연동), 그리고 억제한 건을 숨기지 않고 **근거와 함께 보여주는
+설명가능성**이다.
+
 > 프로젝트 전체 맥락·전략·로드맵은 [`CONTEXT.md`](CONTEXT.md) 참고.
 
-## 구성
+## 목차
+
+- [이게 뭔가](#이게-뭔가)
+- [빠른 시작](#빠른-시작)
+- [문서 지도](#문서-지도)
+- [웹 화면 · API](#웹-화면--api)
+- [오탐을 줄이는 방법](#오탐을-줄이는-방법)
+  - [런타임 상태 구분](#런타임-상태-구분)
+  - [백포트 오탐 억제 (근거 4겹)](#백포트-오탐-억제-근거-4겹)
+  - ["패치됨"이 곧 "안전함"은 아니다 — 재시작·재부팅 필요](#패치됨이-곧-안전함은-아니다--재시작재부팅-필요)
+  - [컨테이너 내부까지 본다](#컨테이너-내부까지-본다)
+  - [미지원 배포판은 조용히 넘어가지 않는다](#미지원-배포판은-조용히-넘어가지-않는다)
+  - [보안설정 점검 (CCE)](#보안설정-점검-cce)
+- [피드 커넥터](#피드-커넥터)
+- [에이전트 설치 · 운영](#에이전트-설치--운영)
+- [배포 · 운영](#배포--운영)
+- [권한 · 감사 로그](#권한--감사-로그)
+- [테스트](#테스트)
+- [진행 상태](#진행-상태)
+- [라이선스](#라이선스)
+- [병렬 워커 오케스트레이터](#병렬-워커-오케스트레이터)
+
+## 이게 뭔가
+
+데이터 흐름: **에이전트(JSON) ─POST(HTTPS)→ `ingest.php` → MySQL(`tb_*`) → 웹 현황**
 
 ```
 agent/    수집 에이전트 (Bash) — 패키지·런타임 노출·백포트 changelog 수집 + install-agent.sh(systemd-timer/cron 자동 배포). 설치·운영은 agent/README.md
@@ -16,18 +49,7 @@ docs/     아키텍처 · 기획안 · 설명글 · 피드소스-역할(커넥�
 shadow-ai/  (사이드 PoC) 섀도우 AI DLP 크롬 확장 — AI 챗봇 입력창의 민감정보 탐지. 본 파이프라인과 독립
 ```
 
-**꼭 볼 문서**
-- [`agent/README.md`](agent/README.md) — 에이전트 설치·운영. 설치 한 번이면 systemd 타이머가 매시간 자동 재실행(계속 켜둘 필요 없음), 전송 URL 주의점.
-- [`docs/dev/피드소스-역할.md`](docs/dev/피드소스-역할.md) — NVD/OSV·EPSS·KEV·KISA 각 커넥터가 무슨 질문에 답하는지.
-- [`docs/dev/architecture.md`](docs/dev/architecture.md) — 시스템 구조·매처 규칙·배포 방식.
-- [`docs/dev/export-api.md`](docs/dev/export-api.md) — 스캔 결과 내보내기 API(JSON/XML)·API 토큰 발급.
-- [`docs/dev/데이터베이스.md`](docs/dev/데이터베이스.md) — DB 테이블·컬럼 레퍼런스(정규화 현황 포함).
-- [`docs/specs/테이블명세서.xlsx`](docs/specs/테이블명세서.xlsx) — 외부 전달용 테이블 명세서(엑셀).
-- [`docs/specs/diagrams/`](docs/specs/diagrams/) — 시스템 구조·ERD 등 PlantUML 다이어그램 6종.
-
-데이터 흐름: **에이전트(JSON) ─POST(HTTPS)→ `ingest.php` → MySQL(`tb_*`) → 웹 현황**
-
-## 빠른 시작 (Docker · 러너 스크립트)
+## 빠른 시작
 
 모든 것은 컨테이너로 동작한다(로컬 PHP/MySQL 불필요). 환경은 **dev / prod** 두 가지.
 러너·compose 파일은 모두 `deploy/` 에 있다(`cd deploy` 후 실행).
@@ -50,40 +72,7 @@ cd deploy
 ./compose_runner.sh prod up -d --build
 ```
 
-이후 업데이트는 `deploy/update.sh` 한 줄이면 된다. **바뀐 파일을 보고 스스로 갈라진다** —
-`server/` 아래 PHP 만 바뀌었으면 `git pull` 로 끝(무중단, 소스가 읽기전용으로 마운트돼 있고
-opcache 가 2초마다 파일 갱신을 확인한다). `Dockerfile`·`compose*.yml`·`caddy/`·`config/` 가
-바뀔 때만 재빌드한다. **스키마 변경은 `deploy/migrate.sh` 가 자동 적용한다** — `db/migrations/`
-의 `*.sql` 중 아직 안 든 것만 파일명 사전순으로 돌리고 `tb_schema_migrations` 에 기록하므로,
-스키마를 바꾸려면 파일 하나만 추가하면 된다(`up` 과 `update.sh` 가 자동 호출).
-파일명은 **타임스탬프**로 짓는다(`$(date +%Y%m%d%H%M%S)_이름.sql`) — 연번은 동시에 작업하는
-브랜치들이 같은 번호를 집어 충돌한다.
-
-```bash
-bash deploy/update.sh
-```
-
-**마이그레이션은 코드 반영보다 먼저 돈다.** 소스가 라이브 마운트라 `git pull` 하는 순간
-새 PHP 가 이미 디스크에 있고 opcache 가 2초 안에 로드한다. 스키마를 뒤에 올리면 그 사이
-들어온 수집이 `Unknown column …` 으로 500 이 난다(실제로 겪었다). 반대 순서는 안전하다 —
-컬럼 추가·인덱스 확장은 옛 코드에 무해하다.
-
-### 에이전트 배포 순서 — 서버 먼저, 에이전트 나중
-
-에이전트가 새 항목을 수집하게 됐다면(컨테이너 내부 패키지, 패키지 출처, CCE 점검값 등)
-**서버를 먼저 올리고 에이전트를 나중에** 업데이트한다. 반대로 하면 새 필드를 서버가 모른다.
-
-구 에이전트가 보내는 옛 페이로드는 새 서버가 그대로 처리한다(검증됨) — 새 필드가 없으면
-그 기능만 비활성이고 수집은 계속된다. 그러니 **에이전트는 급하지 않다.**
-
-업데이트는 **스크립트 교체 한 줄**이면 된다. 타이머·토큰(`etc/agent.env`)은 그대로 두면 되므로
-`install-agent.sh` 를 다시 돌릴 필요가 없다(다시 돌리면 서버 주소·토큰을 또 물어본다).
-
-```bash
-# 각 대상 서버에서 — 새 agent/ 를 받아온 뒤
-sudo cp vuln-inventory-agent.sh /opt/vuln-agent/bin/vuln-inventory-agent.sh
-sudo /opt/vuln-agent/bin/run.sh          # 즉시 1회 수집해 확인(선택)
-```
+업데이트 절차·마이그레이션 순서·compose 파일 구조는 [배포 · 운영](#배포--운영) 참고.
 
 | | dev | prod |
 |---|---|---|
@@ -93,10 +82,6 @@ sudo /opt/vuln-agent/bin/run.sh          # 즉시 1회 수집해 확인(선택)
 | 환경변수 | `.env.dev` | `.env.prod` |
 | 프로젝트명 | `vulnagent-dev` | `vulnagent` |
 
-`wt/<이름>/` 워크트리에서 dev 를 띄우면 프로젝트명·컨테이너명·이미지태그에 `-<이름>` 이 붙고
-포트도 따로 잡히므로, 메인 dev 스택(8000)과 나란히 돌릴 수 있다. 워크트리 만들기는
-`./deploy/wt.sh add feat/무엇` — 자세한 규칙은 [CLAUDE.md](CLAUDE.md#작업-파이프라인) 참고.
-
 - 현황 페이지(dev): <http://localhost:8000>
 - 현황 페이지(prod): <https://ost-server.duckdns.org> (자체서명 인증서 → 브라우저 경고 뜸)
   평문 `http://ost-server.duckdns.org` 로 들어와도 https 로 자동 리다이렉트(308)된다.
@@ -104,100 +89,19 @@ sudo /opt/vuln-agent/bin/run.sh          # 즉시 1회 수집해 확인(선택)
 - 수신 API: `POST .../ingest.php` (헤더 `X-Agent-Token`). prod 는 web 이 외부에 직접 노출되지
   않고, 중앙서버 자신을 스캔하는 로컬 에이전트만 루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
 
-### 파일 구조 (compose · 모두 `deploy/` 하위)
+## 문서 지도
 
-```
-deploy/compose.yml         서비스 정의 (db=MySQL, web=PHP/Apache)
-deploy/compose.common.yml  공통 런타임 (restart, 로깅, pids_limit)
-deploy/compose.dev.yml     개발 override
-deploy/compose.prod.yml    운영 override (+ caddy: HTTPS 리버스 프록시)
-deploy/.env.{dev,prod}.template   → init 이 .env.{dev,prod} 로 복사(커밋 제외)
-deploy/compose_runner.sh   실행 러너
-deploy/caddy/ deploy/config/   caddy 이미지 · MySQL my.cnf
-```
+- [`agent/README.md`](agent/README.md) — 에이전트 설치·운영. 설치 한 번이면 systemd 타이머가 매시간 자동 재실행(계속 켜둘 필요 없음), 전송 URL 주의점.
+- [`docs/dev/피드소스-역할.md`](docs/dev/피드소스-역할.md) — NVD/OSV·EPSS·KEV·KISA 각 커넥터가 무슨 질문에 답하는지.
+- [`docs/dev/architecture.md`](docs/dev/architecture.md) — 시스템 구조·매처 규칙·배포 방식.
+- [`docs/dev/export-api.md`](docs/dev/export-api.md) — 스캔 결과 내보내기 API(JSON/XML)·API 토큰 발급.
+- [`docs/dev/데이터베이스.md`](docs/dev/데이터베이스.md) — DB 테이블·컬럼 레퍼런스(정규화 현황 포함).
+- [`docs/specs/테이블명세서.xlsx`](docs/specs/테이블명세서.xlsx) — 외부 전달용 테이블 명세서(엑셀).
+- [`docs/specs/diagrams/`](docs/specs/diagrams/) — 시스템 구조·ERD 등 PlantUML 다이어그램 6종.
 
-compose 경로 기준: `../server`·`../db`·`../secrets`·`../data` 는 저장소 루트, `./caddy`·`./config` 는 `deploy/` 내부.
+## 웹 화면 · API
 
-## 에이전트 실행 & 전송
-
-수집 대상 서버(Linux)에서:
-
-```bash
-# 로컬 저장만
-./agent/vuln-inventory-agent.sh
-
-# 수집 후 중앙 서버로 전송 (파일 저장도 유지)
-./agent/vuln-inventory-agent.sh \
-    --send https://중앙서버:8080/ingest.php \
-    --token .env의_INGEST_TOKEN값
-```
-
-전송하려면 대상 서버에 `jq`(JSON 출력)와 `curl`이 필요합니다.
-
-### 배포 — 각 서버에 에이전트 설치 + 주기 수집
-
-**방식: 에이전트-사이드 push** (각 서버가 로컬 스케줄로 수집 → 중앙으로 POST).
-중앙이 각 호스트로 들어갈 필요 없음(아웃바운드만). 표준적인 에이전트 모델.
-
-대상 서버(Linux)의 **`/opt/vuln-agent/`** 에 `agent/` 의 스크립트 2개를 두고 한 번
-실행하면 끝. **인자 없이 실행하면 물어본다.**
-
-```bash
-sudo mkdir -p /opt/vuln-agent && sudo cp ~/agent/*.sh /opt/vuln-agent/
-cd /opt/vuln-agent
-sudo bash install-agent.sh
-#   중앙 서버 주소 (예: ost-server.duckdns.org:8080):   ← 도메인만 넣어도 됨(스킴·/ingest.php 자동)
-#   전송 토큰 (입력은 화면에 보이지 않습니다):          ← 중앙의 secrets/ingest_token.txt 값
-#   수집 주기 [hourly] (daily / '*:0/30'=30분마다):     ← Enter 치면 hourly
-```
-
-`sudo` 만 있으면 되고 `chmod`/`chown` 은 필요 없다(자세한 이유는 [`agent/README.md`](agent/README.md)).
-자동화(Ansible 등)로 무인 설치할 땐 인자로 넘긴다 — TTY 가 아니면 물어보지 않는다:
-
-```bash
-sudo bash install-agent.sh \
-     --server https://ost-server.duckdns.org:8080/ingest.php \
-     --token  <중앙의 secrets/ingest_token.txt 값> \
-     --schedule hourly          # 또는 daily, '*:0/30'(30분마다, systemd)
-```
-
-설치 내용:
-- 설치물을 `--prefix`(기본 `/opt/vuln-agent`) 한 곳에 배치 — `<prefix>/bin`(실행), `<prefix>/etc/agent.env`(600, 토큰), `<prefix>/logs`(수집 결과).
-  토큰은 env 로만 전달해 `ps` 노출을 막는다. 운영 서버는 `--prefix /apps/vulnagent` 로 설치.
-- **systemd-timer**(우선) 또는 **cron**(폴백)으로 주기 수집 등록(기본 매시간) + 즉시 1회 실행(통신 확인)
-- 컨테이너가 떠 있는 호스트에서도 다른 mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토리
-  — 컨테이너 오버레이 경로를 `dpkg -S`/`rpm -qf` 로 전수조사하다 멈추는 문제를 회피
-- 제거: `sudo bash install-agent.sh --uninstall`
-
-네트워크 요건: 대상 서버 → 중앙서버 `WEB_PORT`(기본 8080) **아웃바운드 HTTPS** 하나면 됨
-(운영은 Caddy 가 앞단에서 TLS 를 받는다). 중앙 서버 자신을 스캔하는 로컬 에이전트만
-루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
-
-## 상태
-
-- [x] 0. Docker 구성 (compose dev/prod + Dockerfile + Docker Secrets)
-- [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
-- [x] 2. 매처 (외부노출 + 로드됨 + KEV = CRITICAL) · findings.php · 아키텍처 다이어그램
-- [x] 3. 웹 (로그인 → 대시보드 → 호스트상세 → 취약점 → CVE상세 · 사용자관리) + 검색/필터·페이지네이션
-- [x] 4a. CVE 피드 커넥터 12종 (CISA KEV 실데이터 · OSV · NVD · EPSS · KISA) + 벤더 판정 6종(데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api) + 스케줄러 사이드카
-- [x] 4b. 국내 특화 — KISA 보안공지 커넥터 + 국내공지 페이지
-- [x] HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)
-- [x] 에이전트 자동 배포 — install-agent.sh (systemd-timer 우선/cron 폴백, 매시간)
-- [x] DB 전면 개편 — 전 테이블 `tb_` 접두사 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
-      + 소프트삭제 + 활동 감사로그(`tb_activity_log` + `activity.php` 조회 화면)
-- [x] 백포트 오탐 억제 — changelog·errata·debsecan 4겹(데비안 중심)으로 "버전은 낮아도 이미 패치됨"을 증명 + RHEL/우분투/커널은 각자의 벤더 소스로 별도 판정(아래 참고)
-- [x] 재시작·재부팅 필요 판정 — 패치됐어도 옛 `.so` 를 물고 있거나 재부팅 전이면 억제하지 않는다
-- [x] 컨테이너 스캔 — 컨테이너 내부 패키지 인벤토리(호스트 스캔에서 빠지던 미탐 영역)
-- [x] 방화벽 차단(FILTERED) 분류 — 방화벽 뒤 내부 서비스가 전부 HIGH 로 뜨던 오탐 제거
-- [x] 미지원 배포판 경고 — Amazon/Oracle/CentOS 는 매칭 0건이라 "취약점 없음"으로 오인될 수 있다
-- [x] 보안설정 점검(CCE) — 이미 수집한 sshd·계정·MAC·방화벽 설정을 판정해 호스트 상세에 표시
-- [x] 변화 추적 — 최근 2개 스캔 대비 신규/해결/등급변경 (`changes.php`)
-- [x] 자산 관리 · 설정형 RBAC — 호스트 자산 화면 + 역할(admin/operator/user)×메뉴 권한을 UI 에서 설정
-- [x] Export API — 스캔 결과 JSON/XML 내보내기 + 웹에서 발급하는 API 토큰
-- [x] 스키마 마이그레이션 자동화 — `deploy/migrate.sh` + `db/migrations/`
-- [ ] 대시보드 "다음 수집 예정", 알림
-
-**웹 화면** (좌측 사이드바 · 역할별 권한으로 노출)
+좌측 사이드바 · 역할별 권한으로 노출.
 
 | 대분류 | 화면 |
 |---|---|
@@ -212,14 +116,11 @@ API: `POST /ingest.php`(에이전트 수집 수신) · `POST /rematch.php`(재�
 
 각 취약점에는 **조치안**("어느 버전 이상으로 업데이트")이 함께 표시된다(OSV 의 fixed 버전).
 
-### 감사 로그
+## 오탐을 줄이는 방법
 
-로그인·커넥터 저장/토글/삭제·사용자 추가/삭제·ingest 수신이 `tb_activity_log` 에 자동
-기록된다(`server/src/audit.php` 의 `vg_log_activity()`). `/activity.php`(admin 전용)에서
-범위(scope) 필터 + 페이지네이션으로 조회한다. 삭제는 하드 DELETE 대신 `vg_soft_delete()`
-로 `is_deleted/deleted_at` 를 세운다(대상: users/feed_connectors/advisories/hosts/scans).
+이 프로젝트의 핵심이다. "설치=취약"으로 전부 올리지 않고, 런타임 맥락과 벤더 근거로 걸러낸다.
 
-### 런타임 상태 구분 (오탐 감소의 핵심)
+### 런타임 상태 구분
 
 에이전트는 리스닝 소켓뿐 아니라 **실행 중인 모든 프로세스 + 소속 패키지 + 로드한 라이브러리**를
 수집한다. 매처는 이를 합쳐 각 취약점을 런타임 상태로 구분한다:
@@ -236,7 +137,7 @@ API: `POST /ingest.php`(에이전트 수집 수신) · `POST /rematch.php`(재�
 "설치=취약"으로 전부 올리지 않고 **실제 노출·실행·사용 여부로 우선순위를 가른다.**
 `방화벽차단`이 없으면 방화벽 뒤의 내부 서비스가 전부 HIGH/CRITICAL 로 떠버린다(오탐).
 
-### 백포트 오탐 억제 (버전은 낮아도 이미 패치됨)
+### 백포트 오탐 억제 (근거 4겹)
 
 배포판은 버전 번호를 그대로 두고 보안 패치만 이식(백포트)한다. 버전만 보는 스캐너는 이걸
 "취약"으로 잘못 잡는다. **근거 4겹**으로 걸러낸다:
@@ -286,13 +187,7 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 호스트 상세에 PASS/FAIL/NA 로 표시한다. 항목: SSH root 로그인 차단 · SSH 패스워드 인증 제한
 · root 외 UID 0 계정 금지 · 강제접근제어(SELinux/AppArmor) 활성 · 호스트 방화벽 정책 존재.
 
-### 권한 (설정형 RBAC)
-
-역할은 **admin / operator / user** 3단계. `admin` 은 코드에서 항상 전체 허용(잠금 방지)이고,
-`operator`·`user` 는 **역할 × 메뉴** 허용 여부를 `/permissions.php` 에서 켜고 끈다
-(`tb_role_permissions`). 각 페이지는 `vg_require_menu('<메뉴코드>')` 하나로 가드한다.
-
-### 피드 커넥터
+## 피드 커넥터
 
 외부 CVE 소스를 UI에서 설정·스케줄·수집한다 (admin → "피드").
 
@@ -314,6 +209,151 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 > 과거 공지를 영원히 못 가져오므로 과거 이력은 `backfill_kisa.php` 로만 채울 수 있다.
 > NVD 도 주기 수집은 수정일 기준 증분이라 전체 36만 건은 `backfill_nvd.php` 로 1회 채운다.
 
+## 에이전트 설치 · 운영
+
+### 에이전트 실행 & 전송
+
+수집 대상 서버(Linux)에서:
+
+```bash
+# 로컬 저장만
+./agent/vuln-inventory-agent.sh
+
+# 수집 후 중앙 서버로 전송 (파일 저장도 유지)
+./agent/vuln-inventory-agent.sh \
+    --send https://중앙서버:8080/ingest.php \
+    --token .env의_INGEST_TOKEN값
+```
+
+전송하려면 대상 서버에 `jq`(JSON 출력)와 `curl`이 필요합니다.
+
+### 배포 — 각 서버에 에이전트 설치 + 주기 수집
+
+**방식: 에이전트-사이드 push** (각 서버가 로컬 스케줄로 수집 → 중앙으로 POST).
+중앙이 각 호스트로 들어갈 필요 없음(아웃바운드만). 표준적인 에이전트 모델.
+
+대상 서버(Linux)의 **`/opt/vuln-agent/`** 에 `agent/` 의 스크립트 2개를 두고 한 번
+실행하면 끝. **인자 없이 실행하면 물어본다.**
+
+```bash
+sudo mkdir -p /opt/vuln-agent && sudo cp ~/agent/*.sh /opt/vuln-agent/
+cd /opt/vuln-agent
+sudo bash install-agent.sh
+#   중앙 서버 주소 (예: ost-server.duckdns.org:8080):   ← 도메인만 넣어도 됨(스킴·/ingest.php 자동)
+#   전송 토큰 (입력은 화면에 보이지 않습니다):          ← 중앙의 secrets/ingest_token.txt 값
+#   수집 주기 [hourly] (daily / '*:0/30'=30분마다):     ← Enter 치면 hourly
+```
+
+`sudo` 만 있으면 되고 `chmod`/`chown` 은 필요 없다(자세한 이유는 [`agent/README.md`](agent/README.md)).
+
+<details>
+<summary>설치 옵션 상세 — 무인 설치 인자 · 설치 내용 · 네트워크 요건 (펼치기)</summary>
+
+자동화(Ansible 등)로 무인 설치할 땐 인자로 넘긴다 — TTY 가 아니면 물어보지 않는다:
+
+```bash
+sudo bash install-agent.sh \
+     --server https://ost-server.duckdns.org:8080/ingest.php \
+     --token  <중앙의 secrets/ingest_token.txt 값> \
+     --schedule hourly          # 또는 daily, '*:0/30'(30분마다, systemd)
+```
+
+설치 내용:
+- 설치물을 `--prefix`(기본 `/opt/vuln-agent`) 한 곳에 배치 — `<prefix>/bin`(실행), `<prefix>/etc/agent.env`(600, 토큰), `<prefix>/logs`(수집 결과).
+  토큰은 env 로만 전달해 `ps` 노출을 막는다. 운영 서버는 `--prefix /apps/vulnagent` 로 설치.
+- **systemd-timer**(우선) 또는 **cron**(폴백)으로 주기 수집 등록(기본 매시간) + 즉시 1회 실행(통신 확인)
+- 컨테이너가 떠 있는 호스트에서도 다른 mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토리
+  — 컨테이너 오버레이 경로를 `dpkg -S`/`rpm -qf` 로 전수조사하다 멈추는 문제를 회피
+- 제거: `sudo bash install-agent.sh --uninstall`
+
+네트워크 요건: 대상 서버 → 중앙서버 `WEB_PORT`(기본 8080) **아웃바운드 HTTPS** 하나면 됨
+(운영은 Caddy 가 앞단에서 TLS 를 받는다). 중앙 서버 자신을 스캔하는 로컬 에이전트만
+루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
+
+</details>
+
+## 배포 · 운영
+
+<details>
+<summary>운영 배포·업데이트 절차 — update.sh · 마이그레이션 순서 · compose 파일 구조 · 워크트리 (펼치기)</summary>
+
+운영에 한 번 올린 뒤의 업데이트는 `deploy/update.sh` 한 줄이면 된다. **바뀐 파일을 보고 스스로 갈라진다** —
+`server/` 아래 PHP 만 바뀌었으면 `git pull` 로 끝(무중단, 소스가 읽기전용으로 마운트돼 있고
+opcache 가 2초마다 파일 갱신을 확인한다). `Dockerfile`·`compose*.yml`·`caddy/`·`config/` 가
+바뀔 때만 재빌드한다. **스키마 변경은 `deploy/migrate.sh` 가 자동 적용한다** — `db/migrations/`
+의 `*.sql` 중 아직 안 든 것만 파일명 사전순으로 돌리고 `tb_schema_migrations` 에 기록하므로,
+스키마를 바꾸려면 파일 하나만 추가하면 된다(`up` 과 `update.sh` 가 자동 호출).
+파일명은 **타임스탬프**로 짓는다(`$(date +%Y%m%d%H%M%S)_이름.sql`) — 연번은 동시에 작업하는
+브랜치들이 같은 번호를 집어 충돌한다.
+
+```bash
+bash deploy/update.sh
+```
+
+**마이그레이션은 코드 반영보다 먼저 돈다.** 소스가 라이브 마운트라 `git pull` 하는 순간
+새 PHP 가 이미 디스크에 있고 opcache 가 2초 안에 로드한다. 스키마를 뒤에 올리면 그 사이
+들어온 수집이 `Unknown column …` 으로 500 이 난다(실제로 겪었다). 반대 순서는 안전하다 —
+컬럼 추가·인덱스 확장은 옛 코드에 무해하다.
+
+### 에이전트 배포 순서 — 서버 먼저, 에이전트 나중
+
+에이전트가 새 항목을 수집하게 됐다면(컨테이너 내부 패키지, 패키지 출처, CCE 점검값 등)
+**서버를 먼저 올리고 에이전트를 나중에** 업데이트한다. 반대로 하면 새 필드를 서버가 모른다.
+
+구 에이전트가 보내는 옛 페이로드는 새 서버가 그대로 처리한다(검증됨) — 새 필드가 없으면
+그 기능만 비활성이고 수집은 계속된다. 그러니 **에이전트는 급하지 않다.**
+
+업데이트는 **스크립트 교체 한 줄**이면 된다. 타이머·토큰(`etc/agent.env`)은 그대로 두면 되므로
+`install-agent.sh` 를 다시 돌릴 필요가 없다(다시 돌리면 서버 주소·토큰을 또 물어본다).
+
+```bash
+# 각 대상 서버에서 — 새 agent/ 를 받아온 뒤
+sudo cp vuln-inventory-agent.sh /opt/vuln-agent/bin/vuln-inventory-agent.sh
+sudo /opt/vuln-agent/bin/run.sh          # 즉시 1회 수집해 확인(선택)
+```
+
+### 파일 구조 (compose · 모두 `deploy/` 하위)
+
+```
+deploy/compose.yml         서비스 정의 (db=MySQL, web=PHP/Apache)
+deploy/compose.common.yml  공통 런타임 (restart, 로깅, pids_limit)
+deploy/compose.dev.yml     개발 override
+deploy/compose.prod.yml    운영 override (+ caddy: HTTPS 리버스 프록시)
+deploy/.env.{dev,prod}.template   → init 이 .env.{dev,prod} 로 복사(커밋 제외)
+deploy/compose_runner.sh   실행 러너
+deploy/caddy/ deploy/config/   caddy 이미지 · MySQL my.cnf
+```
+
+compose 경로 기준: `../server`·`../db`·`../secrets`·`../data` 는 저장소 루트, `./caddy`·`./config` 는 `deploy/` 내부.
+
+### 워크트리에서 dev 띄우기
+
+`wt/<이름>/` 워크트리에서 dev 를 띄우면 프로젝트명·컨테이너명·이미지태그에 `-<이름>` 이 붙고
+포트도 따로 잡히므로, 메인 dev 스택(8000)과 나란히 돌릴 수 있다. 워크트리 만들기는
+`./deploy/wt.sh add feat/무엇` — 자세한 규칙은 [CLAUDE.md](CLAUDE.md#작업-파이프라인) 참고.
+
+dev 에서 `git pull` 한 뒤에는 `./deploy/compose_runner.sh dev up -d` 를 다시 돌린다. 소스가
+라이브 마운트라 코드는 즉시 바뀌지만 **DB 스키마는 따라오지 않는다** — 남이 머지한 마이그레이션이
+있으면 새 코드가 없는 컬럼을 찾아 500 이 난다. `up` 이 `migrate.sh` 를 불러 미적용분만 적용하며,
+컨테이너는 그대로 두므로 싸다.
+
+</details>
+
+## 권한 · 감사 로그
+
+### 감사 로그
+
+로그인·커넥터 저장/토글/삭제·사용자 추가/삭제·ingest 수신이 `tb_activity_log` 에 자동
+기록된다(`server/src/audit.php` 의 `vg_log_activity()`). `/activity.php`(admin 전용)에서
+범위(scope) 필터 + 페이지네이션으로 조회한다. 삭제는 하드 DELETE 대신 `vg_soft_delete()`
+로 `is_deleted/deleted_at` 를 세운다(대상: users/feed_connectors/advisories/hosts/scans).
+
+### 권한 (설정형 RBAC)
+
+역할은 **admin / operator / user** 3단계. `admin` 은 코드에서 항상 전체 허용(잠금 방지)이고,
+`operator`·`user` 는 **역할 × 메뉴** 허용 여부를 `/permissions.php` 에서 켜고 끈다
+(`tb_role_permissions`). 각 페이지는 `vg_require_menu('<메뉴코드>')` 하나로 가드한다.
+
 ## 테스트
 
 스택이 떠 있는 상태에서 API~웹 로그인까지 자동 검증:
@@ -324,6 +364,30 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 
 수집→저장→매칭(CRITICAL/HIGH 산출), 토큰 인증, 로그인 흐름을 curl 로 점검한다.
 (브라우저 E2E는 나중에 Playwright 로 추가 예정)
+
+## 진행 상태
+
+- [x] 0. Docker 구성 (compose dev/prod + Dockerfile + Docker Secrets)
+- [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
+- [x] 2. 매처 (외부노출 + 로드됨 + KEV = CRITICAL) · findings.php · 아키텍처 다이어그램
+- [x] 3. 웹 (로그인 → 대시보드 → 호스트상세 → 취약점 → CVE상세 · 사용자관리) + 검색/필터·페이지네이션
+- [x] 4a. CVE 피드 커넥터 12종 (CISA KEV 실데이터 · OSV · NVD · EPSS · KISA) + 벤더 판정 6종(데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api) + 스케줄러 사이드카
+- [x] 4b. 국내 특화 — KISA 보안공지 커넥터 + 국내공지 페이지
+- [x] HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)
+- [x] 에이전트 자동 배포 — install-agent.sh (systemd-timer 우선/cron 폴백, 매시간)
+- [x] DB 전면 개편 — 전 테이블 `tb_` 접두사 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
+      + 소프트삭제 + 활동 감사로그(`tb_activity_log` + `activity.php` 조회 화면)
+- [x] 백포트 오탐 억제 — changelog·errata·debsecan 4겹(데비안 중심)으로 "버전은 낮아도 이미 패치됨"을 증명 + RHEL/우분투/커널은 각자의 벤더 소스로 별도 판정([백포트 오탐 억제](#백포트-오탐-억제-근거-4겹) 참고)
+- [x] 재시작·재부팅 필요 판정 — 패치됐어도 옛 `.so` 를 물고 있거나 재부팅 전이면 억제하지 않는다
+- [x] 컨테이너 스캔 — 컨테이너 내부 패키지 인벤토리(호스트 스캔에서 빠지던 미탐 영역)
+- [x] 방화벽 차단(FILTERED) 분류 — 방화벽 뒤 내부 서비스가 전부 HIGH 로 뜨던 오탐 제거
+- [x] 미지원 배포판 경고 — Amazon/Oracle/CentOS 는 매칭 0건이라 "취약점 없음"으로 오인될 수 있다
+- [x] 보안설정 점검(CCE) — 이미 수집한 sshd·계정·MAC·방화벽 설정을 판정해 호스트 상세에 표시
+- [x] 변화 추적 — 최근 2개 스캔 대비 신규/해결/등급변경 (`changes.php`)
+- [x] 자산 관리 · 설정형 RBAC — 호스트 자산 화면 + 역할(admin/operator/user)×메뉴 권한을 UI 에서 설정
+- [x] Export API — 스캔 결과 JSON/XML 내보내기 + 웹에서 발급하는 API 토큰
+- [x] 스키마 마이그레이션 자동화 — `deploy/migrate.sh` + `db/migrations/`
+- [ ] 대시보드 "다음 수집 예정", 알림
 
 ## 라이선스
 
