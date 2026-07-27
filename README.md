@@ -92,7 +92,7 @@ cd deploy
 
 ## 문서 지도
 
-- [`agent/README.md`](agent/README.md) — 에이전트 설치·운영. 설치 한 번이면 systemd 타이머가 매시간 자동 재실행(계속 켜둘 필요 없음), 전송 URL 주의점.
+- [`agent/README.md`](agent/README.md) — 에이전트 설치·운영의 단일 출처(설치·권한·갱신·주기 변경·제거·수집 항목). 설치 한 번이면 systemd 타이머가 매시간 자동 재실행(계속 켜둘 필요 없음), 전송 URL 주의점.
 - [`docs/dev/피드소스-역할.md`](docs/dev/피드소스-역할.md) — NVD/OSV·EPSS·KEV·KISA 각 커넥터가 무슨 질문에 답하는지.
 - [`docs/dev/architecture.md`](docs/dev/architecture.md) — 시스템 구조·매처 규칙·배포 방식.
 - [`docs/dev/export-api.md`](docs/dev/export-api.md) — 스캔 결과 내보내기 API(JSON/XML)·API 토큰 발급.
@@ -213,66 +213,21 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 
 ## 에이전트 설치 · 운영
 
-### 에이전트 실행 & 전송
+방식은 **에이전트-사이드 push** — 각 서버가 로컬 스케줄(systemd 타이머)로 수집해 중앙으로 POST 한다.
+중앙이 각 호스트로 들어가지 않으므로 대상 서버엔 아웃바운드 HTTPS 하나만 열면 된다.
 
-수집 대상 서버(Linux)에서:
-
-```bash
-# 로컬 저장만
-./agent/vuln-inventory-agent.sh
-
-# 수집 후 중앙 서버로 전송 (파일 저장도 유지)
-./agent/vuln-inventory-agent.sh \
-    --send https://중앙서버:8080/ingest.php \
-    --token .env의_INGEST_TOKEN값
-```
-
-전송하려면 대상 서버에 `jq`(JSON 출력)와 `curl`이 필요합니다.
-
-### 배포 — 각 서버에 에이전트 설치 + 주기 수집
-
-**방식: 에이전트-사이드 push** (각 서버가 로컬 스케줄로 수집 → 중앙으로 POST).
-중앙이 각 호스트로 들어갈 필요 없음(아웃바운드만). 표준적인 에이전트 모델.
-
-대상 서버(Linux)의 **`/opt/vuln-agent/`** 에 `agent/` 의 스크립트 2개를 두고 한 번
-실행하면 끝. **인자 없이 실행하면 물어본다.**
+대상 서버(Linux)에서 스크립트 2개와 루트 CA 를 `/opt/vuln-agent/` 에 두고 한 번 실행하면 끝이다.
+세 파일은 자산 화면의 "에이전트 설치 안내" 에서 받고, **인자 없이 실행하면** 중앙 주소·토큰·주기를
+물어본다:
 
 ```bash
-sudo mkdir -p /opt/vuln-agent && sudo cp ~/agent/*.sh /opt/vuln-agent/
-cd /opt/vuln-agent
-sudo bash install-agent.sh
-#   중앙 서버 주소 (예: vulnagent.example.com:8080):   ← 도메인만 넣어도 됨(스킴·/ingest.php 자동)
-#   전송 토큰 (입력은 화면에 보이지 않습니다):          ← 중앙의 secrets/ingest_token.txt 값
-#   수집 주기 [hourly] (daily / '*:0/30'=30분마다):     ← Enter 치면 hourly
+cd /opt/vuln-agent && sudo bash install-agent.sh
 ```
 
-`sudo` 만 있으면 되고 `chmod`/`chown` 은 필요 없다(자세한 이유는 [`agent/README.md`](agent/README.md)).
-
-<details>
-<summary>설치 옵션 상세 — 무인 설치 인자 · 설치 내용 · 네트워크 요건 (펼치기)</summary>
-
-자동화(Ansible 등)로 무인 설치할 땐 인자로 넘긴다 — TTY 가 아니면 물어보지 않는다:
-
-```bash
-sudo bash install-agent.sh \
-     --server https://<운영-도메인>:8080/ingest.php \
-     --token  <중앙의 secrets/ingest_token.txt 값> \
-     --schedule hourly          # 또는 daily, '*:0/30'(30분마다, systemd)
-```
-
-설치 내용:
-- 설치물을 `--prefix`(기본 `/opt/vuln-agent`) 한 곳에 배치 — `<prefix>/bin`(실행), `<prefix>/etc/agent.env`(600, 토큰), `<prefix>/logs`(수집 결과).
-  토큰은 env 로만 전달해 `ps` 노출을 막는다. 운영 서버는 `--prefix /apps/vulnagent` 로 설치.
-- **systemd-timer**(우선) 또는 **cron**(폴백)으로 주기 수집 등록(기본 매시간) + 즉시 1회 실행(통신 확인)
-- 컨테이너가 떠 있는 호스트에서도 다른 mount namespace(컨테이너)는 건너뛰고 **호스트 자신만** 인벤토리
-  — 컨테이너 오버레이 경로를 `dpkg -S`/`rpm -qf` 로 전수조사하다 멈추는 문제를 회피
-- 제거: `sudo bash install-agent.sh --uninstall`
-
-네트워크 요건: 대상 서버 → 중앙서버 `WEB_PORT`(기본 8080) **아웃바운드 HTTPS** 하나면 됨
-(운영은 Caddy 가 앞단에서 TLS 를 받는다). 중앙 서버 자신을 스캔하는 로컬 에이전트만
-루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
-
-</details>
+나머지는 [`agent/README.md`](agent/README.md) 가 갖는다 — 설치 전 선행 검사(자체서명 CA 등록 ·
+헤어핀 NAT), 대상 서버 요구사항(패키지를 새로 깔지 않는다), root 가 필요한 이유, 무인 설치 인자,
+갱신(`deploy/agent_push.sh`) · 주기 일괄 변경(`deploy/agent_schedule.sh`), 상태 확인, 제거,
+무엇을 수집하나, 실행 옵션.
 
 ## 배포 · 운영
 
