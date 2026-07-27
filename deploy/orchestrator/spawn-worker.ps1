@@ -218,14 +218,15 @@ function Resolve-WorkerSessionName {
 #   게다가 serde 는 모르는 필드를 에러 없이 조용히 무시하므로 응답만 보고는 신/구 데몬을 구분할
 #   수 없다(성공한 척 빈 셸만 뜬다). CreateSession{name} + SendInput 은 양쪽에서 똑같이 동작하는
 #   단일 경로라 분기가 필요 없다(KISS).
+#   → 셸을 우리가 고를 수 없다는 뜻이기도 하다. 새 세션은 데몬 기본 셸로 뜨고 실측상 그게
+#     cmd.exe 였다. 그래서 아래 프롬프트 감지와 주입 문장은 둘 다 셸 중립이어야 한다.
 #
 # 실패는 전부 $null 반환 → 호출부가 window 로 폴백한다. 감지·IPC 문제로 워커 스폰 자체가
 # 실패하면 안 되므로 여기서 throw 하지 않는다.
 function Start-TermkeepWorker {
   param(
     [Parameter(Mandatory)][string]$LaunchPs1,
-    [Parameter(Mandatory)][string]$TaskName,
-    [Parameter(Mandatory)][string]$WorkDir
+    [Parameter(Mandatory)][string]$TaskName
   )
 
   $djPath = Join-Path $env:APPDATA 'termkeep\daemon.json'
@@ -250,20 +251,17 @@ function Start-TermkeepWorker {
     $writer = New-Object System.IO.StreamWriter($stream, $enc)
     $writer.AutoFlush = $true
 
-    # 데몬은 새 클라이언트를 paused 로 시작해서 Output 브로드캐스트를 안 보낸다. ListSessions 를
-    # 한 번 보내야 paused 가 풀린다(데몬 소스 확인 + 실측). 아래에서 "프롬프트가 실제로 떴는지"를
-    # PTY 출력으로 확인하려면 이게 먼저 필요하다.
-    $writer.Write('{"type":"ListSessions"}' + "`n")
-
+    # ⚠ CreateSession 이 **먼저**고 ListSessions 는 그 뒤다. 순서를 바꾸면 아래 프롬프트 감지가
+    # 통째로 죽는다 — 데몬은 ListSessions 를 받은 그 시점에 **존재하던** 세션에만 이 연결을
+    # 구독시키므로, ListSessions 뒤에 만든 세션의 Output 은 이 연결로 영영 오지 않는다.
+    # 실측(2026-07-27): ListSessions→CreateSession 순서로는 30초 동안 새 세션 Output 이 0건이고
+    # (다른 세션 것만 2151줄 도착), 순서를 뒤집으니 0.16초 만에 첫 Output 이 왔다.
+    #
     # JSON 은 반드시 한 줄 — 개행이 프레임 구분자다. (name 필드는 #[serde(default)] 가 없어
-    # 반드시 있어야 한다.)
+    # 반드시 있어야 한다.) CreateSession 의 직접 응답은 paused 상태에서도 온다(실측).
     $createMsg = ([ordered]@{ type = 'CreateSession'; name = $TaskName } | ConvertTo-Json -Compress)
     $writer.Write($createMsg + "`n")
 
-    # 응답 사이에 SessionList·다른 세션의 Output 이 섞여 오므로 SessionCreated 를 골라 읽는다.
-    # 같은 루프에서 SessionList 도 훑어 중앙 세션(자신) 자신의 name 을 함께 건진다 — 데몬
-    # 소스(termkeep/shared/src/lib.rs) 확인: SessionList 는 {type,sessions:[{id,name,alive,
-    # custom_name}]} 이고 rename_all 이 없어 필드명이 그대로다(id/name, camelCase 아님).
     $sid = $null
     $centralTitle = $null
     $centralSid = "$env:TERMKEEP_SESSION_ID".Trim()
@@ -273,14 +271,6 @@ function Start-TermkeepWorker {
       if (-not $line) { continue }
       try { $m = $line | ConvertFrom-Json } catch { continue }
       if ($m.type -eq 'SessionCreated' -and $m.session_id) { $sid = [string]$m.session_id }
-      elseif ($m.type -eq 'SessionList' -and $centralSid -and $m.sessions) {
-        # 조회 실패는 부가 정보 손실일 뿐 — throw 하지 않는다(이 함수 전체가 실패해도
-        # window 로 폴백하는 원칙과 동일하게, 여기선 title 만 $null 로 남기고 계속 진행).
-        try {
-          $match = $m.sessions | Where-Object { "$($_.id)".Trim() -eq $centralSid } | Select-Object -First 1
-          if ($match) { $centralTitle = [string]$match.name }
-        } catch { }
-      }
       elseif ($m.type -eq 'Error') {
         Write-Host "⚠ termkeep 세션 생성 실패($($m.message)) → 새 PowerShell 창으로 대체." -ForegroundColor Yellow
         return $null
@@ -322,20 +312,56 @@ function Start-TermkeepWorker {
       }
     }
 
-    # PTY 안 powershell 이 프롬프트를 내기 전에 밀어 넣은 키는 그대로 버려진다. 고정 대기는
-    # 못 믿는다 — 700ms 로는 입력이 통째로 씹혔고, 실측상 프롬프트까지 약 2.4초 걸렸다.
-    # 그래서 데몬이 브로드캐스트하는 PTY 출력에서 프롬프트('PS ...>')를 눈으로 확인한 뒤 넣는다.
-    # 느린 PC 에서도 안전하고, 빨리 뜨면 그만큼 빨리 지나간다.
+    # 데몬은 새 클라이언트를 paused 로 시작해서 Output 브로드캐스트를 안 보낸다. ListSessions 를
+    # 한 번 보내야 paused 가 풀린다(데몬 소스 확인 + 실측: 이걸 안 보내면 Output 이 한 건도 안 온다).
+    # 위에서 세션을 이미 만들어 뒀으므로 이 구독에 우리 새 세션도 포함된다.
+    # 덤으로 오는 SessionList 에서 중앙 세션(자신)의 name 을 건진다 — 데몬 소스
+    # (termkeep/shared/src/lib.rs) 확인: {type,sessions:[{id,name,alive,custom_name}]} 이고
+    # rename_all 이 없어 필드명이 그대로다(id/name, camelCase 아님).
+    $writer.Write('{"type":"ListSessions"}' + "`n")
+
+    # PTY 안 셸이 프롬프트를 내기 전에 밀어 넣은 키는 그대로 버려진다. 고정 대기는 못 믿는다 —
+    # 700ms 로는 입력이 통째로 씹혔고, 실측상 프롬프트까지 약 2.4초 걸렸다. 그래서 데몬이
+    # 브로드캐스트하는 PTY 출력에서 프롬프트를 눈으로 확인한 뒤 넣는다.
+    #
+    # ⚠ 셸이 powershell 이라고 가정하지 않는다. 실측(2026-07-27) 새 세션은 **cmd.exe** 로 떴다.
+    # 그래서 프롬프트 패턴이 둘이다:
+    #   powershell → 'PS C:\...>'    ·    cmd → 'C:\Users\정도욱>'
+    # cmd 쪽에 줄머리 앵커('(?m)^')를 붙이면 안 된다 — 실제 바이트를 떠 보면 프롬프트 앞에
+    # 커서이동 시퀀스가 붙어 같은 줄에 이어 온다:
+    #   …(c) Microsoft Corporation. All rights reserved.<ESC>[4;1HC:\Users\정도욱><ESC>[?25h
+    # 앵커를 붙인 '(?m)^[A-Za-z]:\\[^\r\n]*>' 가 실패했던 이유가 이것이다. 대신 ESC 를 문자
+    # 클래스에서 빼서(\x1b) 앞선 OSC 타이틀('<ESC>]0;C:\WINDOWS\system32\cmd.exe<BEL>')이
+    # 뒤 문장까지 삼켜 오검출되는 일을 막는다.
+    #
+    # ⚠ 이 루프에서 **줄마다 ConvertFrom-Json 을 돌리면 안 된다.** unpause 직후 이 연결로는 다른
+    # 세션들의 출력이 쏟아진다(실측: 20초에 1000~1500줄, 1.6MB). PS5.1 의 ConvertFrom-Json 은
+    # 그 속도를 못 따라가고, 뒤처진 구독자는 메시지를 흘린다 — 같은 20초 동안 우리 세션 Output 이
+    # **한 건도** 안 잡혔다(누적 버퍼 0바이트). 값싼 문자열 선필터로 바꾸자 우리 첫 Output 이
+    # 도착 4번째 줄·0.03초에 잡혔다. 즉 위 정규식이 실패한 게 아니라 **볼 버퍼가 비어 있었다.**
+    # 선필터는 데몬 직렬화 형식({"type":"Output","session_id":"17",...})에 기대지만, 어긋나도
+    # 최악은 기존 동작(확인 못 하고 그냥 주입)이라 안전 방향으로 무너진다.
+    # base64 data 안에는 '"' 가 못 들어가므로 needle 오검출도 없다.
+    $needle = '"session_id":"' + $sid + '"'
     $acc = ''
     $ready = $false
     $promptDeadline = (Get-Date).AddSeconds(20)
     while (-not $ready -and (Get-Date) -lt $promptDeadline) {
       try { $line = $reader.ReadLine() } catch { continue }
       if (-not $line) { continue }
+      if (-not ($line.Contains($needle) -or $line.Contains('"SessionList"'))) { continue }
       try { $m = $line | ConvertFrom-Json } catch { continue }
-      if ($m.type -eq 'Output' -and $m.session_id -eq $sid -and $m.data) {
+      if ($m.type -eq 'SessionList' -and $centralSid -and $m.sessions) {
+        # 조회 실패는 부가 정보 손실일 뿐 — throw 하지 않는다(이 함수 전체가 실패해도
+        # window 로 폴백하는 원칙과 동일하게, 여기선 title 만 $null 로 남기고 계속 진행).
+        try {
+          $match = $m.sessions | Where-Object { "$($_.id)".Trim() -eq $centralSid } | Select-Object -First 1
+          if ($match) { $centralTitle = [string]$match.name }
+        } catch { }
+      }
+      elseif ($m.type -eq 'Output' -and $m.session_id -eq $sid -and $m.data) {
         try { $acc += [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($m.data)) } catch { }
-        if ($acc -match 'PS [^\r\n]*>') { $ready = $true }
+        if ($acc -match 'PS [^\r\n]*>' -or $acc -match '[A-Za-z]:\\[^\r\n\x1b]*>') { $ready = $true }
       }
     }
     if (-not $ready) {
@@ -343,9 +369,14 @@ function Start-TermkeepWorker {
       Write-Host "⚠ termkeep 프롬프트를 확인 못 했지만 입력을 시도한다(session $sid)." -ForegroundColor Yellow
     }
 
-    $wtDirEsc = $WorkDir -replace "'", "''"
-    $ps1Esc = $LaunchPs1 -replace "'", "''"
-    $cmdText = "Set-Location -LiteralPath '$wtDirEsc'; powershell -NoProfile -ExecutionPolicy Bypass -File '$ps1Esc'" + "`r"
+    # 주입 문장은 **셸 중립**이어야 한다 — 위에서 본 대로 세션 셸이 cmd.exe 일 수 있다.
+    # cmd 는 'Set-Location' 도, 명령 구분자 ';' 도, 경로를 묶는 작은따옴표도 모른다(셋 다 동시에
+    # 깨졌다). 그런데 .launch.ps1 은 자기 첫 줄에서 이미 `Set-Location -LiteralPath '<워크트리>'`
+    # 를 하므로 여기서 cd 를 또 할 이유가 없다. 그걸 빼면 남는 한 문장은 cmd·PowerShell 양쪽에서
+    # 문법이 같다.
+    # 경로는 큰따옴표로 묶는다 — 두 셸 모두 인용부호로 받는다. Windows 경로엔 '"' 가 애초에 못
+    # 들어가므로 이스케이프도 필요 없다(예전의 작은따옴표 '' 이스케이프가 사라진 이유가 이것이다).
+    $cmdText = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$LaunchPs1`"" + "`r"
 
     # data 는 base64 로 인코딩된 바이트다(데몬이 디코드해 PTY 에 그대로 쓴다).
     # UTF-8 바이트로 인코딩해야 한다 — 경로에 한글이 들어간다(사용자 홈이 C:\Users\정도욱).
@@ -582,7 +613,7 @@ else {
   if ($eff -eq 'termkeep') {
     # 세션 이름에만 소유 세션 태그를 붙인다 — 매니페스트의 task 등 다른 값은 슬러그 그대로다.
     $sessionName = Resolve-WorkerSessionName -TaskName $Task
-    $startResult = Start-TermkeepWorker -LaunchPs1 $launchPs1 -TaskName $sessionName -WorkDir $wtDir
+    $startResult = Start-TermkeepWorker -LaunchPs1 $launchPs1 -TaskName $sessionName
     $termkeepSessionId = if ($startResult) { $startResult.Sid } else { $null }
     $centralSessionTitle = if ($startResult) { $startResult.CentralTitle } else { $null }
     if ($termkeepSessionId) { Write-Host "  브랜치: $branch" -ForegroundColor Green }
