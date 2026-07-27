@@ -61,10 +61,6 @@ function vg_ui_dashboard_actionable_statuses_sql(): string {
     ));
 }
 
-function vg_ui_dashboard_chart_limit(): int {
-    return vg_ui_int('UI_DASHBOARD_CHART_LIMIT', 10, 5, 30);
-}
-
 function vg_ui_detail_preview_limit(): int {
     return vg_ui_int('UI_DETAIL_PREVIEW_LIMIT', 10, 5, 100);
 }

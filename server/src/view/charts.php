@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * charts.php — 순수 SVG 차트 렌더. 심각도 도넛·리소스 추이 라인차트·가로 막대 순위.
+ * charts.php — 순수 SVG 차트 렌더. 심각도 도넛·리소스 추이 라인차트.
  *   차트 라이브러리를 들이지 않고 <svg> 를 직접 그린다. 색은 app.css 의 CSS 변수/클래스를
  *   그대로 참조하므로 팔레트를 바꾸면 차트도 같이 바뀐다.
  */
@@ -141,32 +141,4 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
         }
     }
     echo '</svg></div>';
-}
-
-/**
- * 범용 가로 막대 순위 목록 — "상위 N개" 카드(OS 분포·취약 자산 TOP10)가 공유하는 렌더러.
- *   $rows: [['label'=>'Ubuntu 22.04','n'=>12], ...] — 정렬·상한(LIMIT)은 SQL 이 이미 적용한 상태로 받는다.
- *   막대 길이는 이 목록 안 **최댓값 대비** 비율이다 — 전체 합 대비 %(도넛의 몫)가 아니라
- *   "누가 제일 많은가" 순위라서, 항목이 하나뿐이면 그 막대가 꽉 차는 게 맞다.
- *   폭 계산(width:N%)만 인라인 style 예외(작업지침). 그 외 색은 app.css 의 .hbar-list 가 정한다.
- */
-function vg_hbar_list(array $rows, string $labelKey, string $countKey, array $empty = ['icon' => '📊', 'title' => '표시할 데이터가 없습니다.']): void {
-    if (!$rows) {
-        vg_empty($empty);
-        return;
-    }
-    $max = 1;
-    foreach ($rows as $r) { $max = max($max, (int) $r[$countKey]); }
-
-    echo '<div class="hbar-list">';
-    foreach ($rows as $r) {
-        $n = (int) $r[$countKey];
-        $pct = round($n / $max * 100, 1);
-        echo '<div class="hbar-list__row">'
-           . '<span class="hbar-list__label">' . vg_h((string) $r[$labelKey]) . '</span>'
-           . '<span class="hbar-list__track"><i style="width:' . $pct . '%"></i></span>'
-           . '<span class="hbar-list__n">' . number_format($n) . '</span>'
-           . '</div>';
-    }
-    echo '</div>';
 }

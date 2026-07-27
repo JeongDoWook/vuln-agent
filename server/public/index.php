@@ -16,7 +16,7 @@ vg_require_menu('dashboard');
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
 $kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
-$delta = []; $osDist = []; $topHosts = [];
+$delta = [];
 $page = vg_page();
 $perPage = vg_perpage();
 try {
@@ -86,28 +86,6 @@ try {
     $urgentTotal=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_case WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS')")->fetchColumn();
     $kevCount=(int)$pdo->query("SELECT COUNT(DISTINCT r.remediation_case_id) FROM tb_remediation_case r JOIN tb_scan s ON s.host_id=r.host_id JOIN ".vg_latest_scan_subq()." latest ON latest.host_id=s.host_id AND latest.mid=s.scan_id JOIN tb_finding f ON f.scan_id=s.scan_id AND f.cve_id=r.cve_id AND f.package_name=r.package_name WHERE r.is_deleted=0 AND r.status IN ('OPEN','IN_PROGRESS') AND f.in_kev=1")->fetchColumn();
     $overdueCount=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_case WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS') AND due_at<NOW()")->fetchColumn();
-    // OS 분포 — 비삭제 호스트를 os_id 기준으로 묶어 상위 10개. os_id 가 비어있으면 "미상".
-    $osDist = $pdo->query(
-        "SELECT COALESCE(NULLIF(os_id, ''), '미상') AS os_label, COUNT(*) c
-           FROM tb_host
-          WHERE is_deleted = 0
-          GROUP BY os_label
-          ORDER BY c DESC, os_label
-          LIMIT " . vg_ui_dashboard_chart_limit()
-    )->fetchAll();
-
-    // 취약 자산 TOP10 — 호스트별 최신 스캔 기준 findings 건수 상위 10개.
-    // "호스트별 현황" 표(전체·페이지네이션)와 별개로, 카드 안에서 한눈에 보는 용도.
-    $topHosts = $pdo->query(
-        "SELECT h.host_id, h.fqdn, COUNT(f.finding_id) c
-           FROM tb_finding f
-           JOIN tb_scan s ON s.scan_id = f.scan_id
-           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
-           $latestJoin
-          GROUP BY h.host_id, h.fqdn
-          ORDER BY c DESC
-          LIMIT " . vg_ui_dashboard_chart_limit()
-    )->fetchAll();
 
     /* KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
      *
@@ -141,23 +119,41 @@ try {
 
     $offset = ($page - 1) * $perPage;
 
-    // 호스트별 최신 스캔(한 페이지)
+    /* 호스트별 최신 스캔(한 페이지) — **위험도 높은 순**.
+     *
+     * 정렬은 반드시 SQL 에서 한다. 페이지네이션이 걸려 있어 PHP 로 현재 페이지만 정렬하면
+     * 1페이지에 못 들어온 위험 호스트가 영영 안 보인다(지금은 11대라 한 페이지지만 자산이 늘면 깨진다).
+     *
+     * tb_finding 은 위 주석과 같은 이유로 IN(서브쿼리)가 아니라 JOIN 으로 붙인다.
+     * LEFT JOIN 이어야 findings 0건인 호스트가 목록에서 사라지지 않는다.
+     * COALESCE 가 필요한 이유: 매칭 행이 없으면 SUM(...) 이 NULL 이라 정렬·렌더가 흔들린다.
+     * (scan_id, severity) 인덱스 idx_find_scan_sev 가 이 집계를 받쳐준다.
+     */
     $rows = $pdo->query(
         "SELECT s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
-                h.host_id, h.fqdn, h.os_id, h.os_version
+                h.host_id, h.fqdn, h.os_id, h.os_version,
+                COALESCE(SUM(f.severity = 'CRITICAL'), 0) sev_critical,
+                COALESCE(SUM(f.severity = 'HIGH'), 0)     sev_high,
+                COALESCE(SUM(f.severity = 'MEDIUM'), 0)   sev_medium,
+                COALESCE(SUM(f.severity = 'LOW'), 0)      sev_low
          FROM tb_scan s
          JOIN " . vg_latest_scan_subq() . " t ON t.mid = s.scan_id
          JOIN tb_host h ON h.host_id = s.host_id
+         LEFT JOIN tb_finding f ON f.scan_id = s.scan_id
          WHERE h.is_deleted = 0
-         ORDER BY s.collected_at DESC
+         GROUP BY s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
+                  h.host_id, h.fqdn, h.os_id, h.os_version
+         ORDER BY sev_critical DESC, sev_high DESC, sev_medium DESC, sev_low DESC,
+                  s.collected_at DESC, s.scan_id DESC
          LIMIT $perPage OFFSET $offset"
     )->fetchAll();
 
-    // 이 페이지 최신 스캔들의 심각도 카운트
-    if ($rows) {
-        $ids = [];
-        foreach ($rows as $r) { $ids[] = (int) $r['scan_id']; }
-        $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
+    // 심각도 카운트는 위 정렬용 집계를 그대로 쓴다 — vg_sev_by_scan_ids() 로 한 번 더 세지 않는다(DRY).
+    foreach ($rows as $r) {
+        $sevByScan[(int) $r['scan_id']] = [
+            'CRITICAL' => (int) $r['sev_critical'], 'HIGH' => (int) $r['sev_high'],
+            'MEDIUM'   => (int) $r['sev_medium'],   'LOW'  => (int) $r['sev_low'],
+        ];
     }
 } catch (Throwable $e) {
     error_log('[index] ' . $e->getMessage());
@@ -286,26 +282,8 @@ vg_header('대시보드', 'dashboard');
     </div>
   </div>
 
-  <div class="split split--even">
-    <div class="card">
-      <strong>OS 분포</strong>
-      <span class="why">— 비삭제 호스트 기준 상위 <?= count($osDist) ?>개</span>
-      <div class="card__body">
-        <?php vg_hbar_list($osDist, 'os_label', 'c', ['icon' => '🖥️', 'title' => '등록된 호스트가 없습니다.']); ?>
-      </div>
-    </div>
-
-    <div class="card">
-      <strong>취약 자산 TOP10</strong>
-      <span class="why">— 호스트별 최신 스캔의 findings 건수 기준</span>
-      <div class="card__body">
-        <?php vg_hbar_list($topHosts, 'fqdn', 'c', ['icon' => '✅', 'title' => '취약점이 있는 호스트가 없습니다.']); ?>
-      </div>
-    </div>
-  </div>
-
   <div class="card">
-    <strong>호스트별 현황</strong> <span class="why">— 각 호스트의 최신 스캔 기준</span>
+    <strong>호스트별 현황</strong> <span class="why">— 위험도 높은 순 · 각 호스트의 최신 스캔 기준</span>
     <div class="card__body">
   <?php
   vg_table(
