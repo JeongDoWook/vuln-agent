@@ -81,7 +81,8 @@ sudo docker cp vulnagent-caddy:/data/caddy/pki/authorities/local/root.crt ./cadd
 이름을 IP 로 바꿔 붙는 건 **안 된다** — Caddy 가 SNI 로 사이트를 고르므로 도메인이어야 하고,
 그래서 IP 를 바꾸는 게 아니라 `/etc/hosts` 로 **이름이 가리키는 곳**을 바꾼다.
 
-자동화(Ansible 등)로 무인 설치할 땐 인자로 넘긴다 — 예전 방식 그대로다:
+자동화(Ansible 등)로 무인 설치할 땐 인자로 넘긴다 — 예전 방식 그대로다. **TTY 가 아니면
+아무것도 묻지 않으므로**, 세 값을 다 주면 사람 없이 끝난다:
 
 ```bash
 sudo bash install-agent.sh \
@@ -239,6 +240,9 @@ bash deploy/agent_schedule.sh hourly 10.3.142.100 10.3.142.101='*:0/30'  # 노�
    라우터로 되돌아 들어가는 건(헤어핀 NAT) 대개 막혀 있다. `Connection refused` 가 그것이다.
    IP 로 직접 8080 을 치는 것도 안 된다 — Caddy 가 **SNI 로 사이트를 고르므로** 이름이어야 한다.
 
+   방화벽에 뚫을 건 **하나뿐이다** — 대상 서버 → 중앙 `WEB_PORT`(기본 8080) **아웃바운드 HTTPS**
+   (운영은 Caddy 가 앞단에서 TLS 를 받는다). 중앙이 대상 서버로 들어가는 경로는 없다.
+
 3. **HTTP 405/401 은 정상 신호다.** `ingest.php` 는 POST 전용이라 GET 으로 열면 405,
    토큰이 틀리면 401 이 온다. 설치기의 "즉시 1회" 전송이 성공(2xx)했는지로 판단한다.
 
@@ -305,6 +309,15 @@ OS/커널/CPE, 설치 패키지(dpkg/rpm — NEVRA·소스패키지·**출처**)
 | `--no-changelog` | changelog 수집 생략 — **가장 무거운 단계**. 대신 백포트 억제가 약해진다 |
 | `--timeout N` | 명령별 타임아웃 초(기본 20) |
 | `--qf FMT` | rpm 질의 포맷 재정의(디버깅용) |
+
+설치하지 않고 **그 자리에서 한 번만** 돌려볼 수도 있다(타이머를 등록하지 않는다):
+
+```bash
+sudo bash vuln-inventory-agent.sh                       # 수집해서 로컬 파일로만 저장
+sudo bash vuln-inventory-agent.sh \
+     --send https://<운영-도메인>:8080/ingest.php \
+     --token <중앙에서 이 호스트용으로 발급한 토큰>       # 수집 후 전송(파일 저장도 유지)
+```
 
 부하가 걱정되면 `--limit` 을 쓴다(끄는 것보다 낫다). 에이전트 자체가 이미 `nice 19` ·
 `ionice idle` · 명령별 timeout 으로 동작한다. **피크 메모리는 실측 61.6MB**(Debian 12 · 91패키지,
