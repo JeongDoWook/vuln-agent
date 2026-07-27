@@ -122,7 +122,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 |---|---|---|
 | 소스 | `./server` 라이브 마운트 | `../server` 읽기전용 마운트(PHP 는 배포=`git pull`, 무중단) |
 | DB 포트 | 노출(3307) | 미노출(내부망만) |
-| 웹 접속 | `http://localhost:8000` (평문) | `https://ost-server.duckdns.org:8080` (Caddy, 현재 자체서명) |
+| 웹 접속 | `http://localhost:8000` (평문) | `https://ost-server.duckdns.org` (Caddy, 현재 자체서명 · 평문 80 은 308 리다이렉트 · `:8080` 도 계속 동작) |
 | my.cnf | 미적용(기본값) | 적용(charset/보안 튜닝) |
 | 프로젝트 | `vulnagent-dev`(메인) · `vulnagent-dev-<워크트리>`(web+scheduler) | `vulnagent` |
 

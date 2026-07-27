@@ -227,7 +227,8 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
 - [x] **EPSS/KEV** — 악용확률 + 악용목록으로 우선순위·정렬
 - [x] **배포 설치기** — `agent/install-agent.sh` (systemd-timer 우선/cron 폴백, 매시간 자동 수집)
 - [x] **HTTPS 배포** — `caddy/` 리버스 프록시가 TLS 종료(Let's Encrypt DNS-01, 현재 자체서명).
-      접속 `https://ost-server.duckdns.org:8080`. web·db 는 내부망/루프백(`127.0.0.1:8081`)만 노출.
+      접속 `https://ost-server.duckdns.org`(평문 80 은 https 로 308 리다이렉트, 기존 `:8080` 도 계속 동작).
+      web·db 는 내부망/루프백(`127.0.0.1:8081`)만 노출.
 - [x] **무중단 배포** — prod 가 `../server` 를 읽기전용 마운트. PHP 만 바뀌면 `deploy/update.sh`(=`git pull`)로 끝(opcache 가 2초 내 반영).
       Dockerfile·compose·caddy 변경 시에만 재빌드. 서버 디렉토리는 `/apps/vulnagent/{app,bin,etc,logs,data,backups}` 로 통합.
 - [x] **웹 대개편** — 페이지네이션(`vg_page_nav`) · 검색/필터(`vg_toolbar`, findings/advisories/cves)
