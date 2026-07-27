@@ -44,7 +44,7 @@ vuln-agent 웹을 **HTTPS**로 감싸는 앞단 프록시. Let's Encrypt 인증�
 5. 리다이렉트·하위호환 확인 (80·443 은 앞단 네트워크 방화벽 포워딩이 열린 뒤에 밖에서 닿는다):
    ```bash
    curl -sI http://ost-server.duckdns.org/findings.php   # → 308 + Location: https://…/findings.php
-   curl -skI https://ost-server.duckdns.org:8080/findings.php  # → 200 (기존 에이전트 경로)
+   curl -skI https://ost-server.duckdns.org:8080/findings.php  # → 302 (미로그인 리다이렉트 = TLS 정상)
    ```
 
 인증서는 `caddy_data` 볼륨에 영속화되어 재시작해도 재발급하지 않으며, 만료 전 자동 갱신된다.
