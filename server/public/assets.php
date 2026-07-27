@@ -284,7 +284,7 @@ vg_header('자산관리', 'assets');
 sudo mkdir -p /opt/vuln-agent &amp;&amp; sudo cp ~/install-agent.sh ~/vuln-inventory-agent.sh ~/caddy-root.crt /opt/vuln-agent/
 cd /opt/vuln-agent
 sudo bash install-agent.sh
-  중앙 서버 주소 (예: ost-server.duckdns.org:8080): <?= vg_h($ingest) ?>
+  중앙 서버 주소 (예: vulnagent.example.com:8080): <?= vg_h($ingest) ?>
 
   전송 토큰 (입력은 화면에 보이지 않습니다): ********
   수집 주기 [hourly] (daily / '*:0/30'=30분마다):</pre>

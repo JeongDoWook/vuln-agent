@@ -94,7 +94,7 @@ if [ -z "$SERVER" ] || [ -z "$TOKEN" ]; then
   [ -t 0 ] || { echo "필수: --server, --token (터미널이 아니라 물어볼 수 없습니다)" >&2; exit 1; }
   echo "== vuln-agent 설치 =="
   while [ -z "$SERVER" ]; do
-    printf '중앙 서버 주소 (예: ost-server.duckdns.org:8080): '
+    printf '중앙 서버 주소 (예: vulnagent.example.com:8080): '
     read -r SERVER
   done
   while [ -z "$TOKEN" ]; do

@@ -257,12 +257,13 @@
   <b>② 각 대상 서버</b> (에이전트 설치 + 시간마다 자동 수집)
   <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
     sudo bash install-agent.sh<br>
-    &nbsp;&nbsp;중앙 서버 주소 → https://ost-server.duckdns.org:8080/ingest.php<br>
+    &nbsp;&nbsp;중앙 서버 주소 → https://&lt;운영-도메인&gt;:8080/ingest.php<br>
     &nbsp;&nbsp;전송 토큰 → &lt;ingest_token&gt; · 수집 주기 → hourly
   </div>
   systemd-timer(우선)/cron(폴백)으로 자동 등록. 중앙 서버 자신을 스캔하는 로컬 에이전트는
   루프백 평문 포트(<code class="i">127.0.0.1:8081</code>)로 직접 전송(외부에서는 접근 불가).
-  <b>③ 웹</b> — <code class="i">https://ost-server.duckdns.org:8080</code> 접속 → 서버별 취약점·상태·감사로그 확인
+  <b>③ 웹</b> — <code class="i">https://&lt;운영-도메인&gt;:8080</code> 접속 → 서버별 취약점·상태·감사로그 확인
+  (<code class="i">&lt;운영-도메인&gt;</code> 은 운영 배포 시 정해 <code class="i">.env.prod</code> 의 <code class="i">PROD_DOMAIN</code> 에 넣는 값)
   <div style="color:var(--muted);font-size:.85rem;margin-top:.5rem">네트워크 요건: 대상 서버 → 중앙 8080 아웃바운드만. 토큰은 <code class="i">&lt;prefix&gt;/etc/agent.env</code>(600).</div>
 </div>
 

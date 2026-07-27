@@ -78,14 +78,15 @@ cd deploy
 |---|---|---|
 | 소스 | `./server` 라이브 마운트(즉시 반영) | `../server` 읽기전용 마운트(PHP 는 배포=`git pull`, 무중단) |
 | DB 포트 | 호스트에 노출(3307) | **미노출**(내부 네트워크만) |
-| 웹 접속 | 평문 `http://localhost:8000` | **HTTPS** `https://ost-server.duckdns.org` (Caddy · `:8080` 도 계속 동작) |
+| 웹 접속 | 평문 `http://localhost:8000` | **HTTPS** `https://<운영-도메인>` (Caddy · `:8080` 도 계속 동작) |
 | 환경변수 | `.env.dev` | `.env.prod` |
 | 프로젝트명 | `vulnagent-dev` | `vulnagent` |
 
 - 현황 페이지(dev): <http://localhost:8000>
-- 현황 페이지(prod): <https://ost-server.duckdns.org> (자체서명 인증서 → 브라우저 경고 뜸)
-  평문 `http://ost-server.duckdns.org` 로 들어와도 https 로 자동 리다이렉트(308)된다.
-  기존 `https://ost-server.duckdns.org:8080` 도 하위호환으로 그대로 동작한다(설치된 에이전트가 쓰는 주소).
+- 현황 페이지(prod): `https://<운영-도메인>` — `<운영-도메인>` 은 운영 배포 시 정해 `.env.prod` 의
+  `PROD_DOMAIN` 에 넣는 값이다(저장소에는 두지 않는다). 자체서명 인증서라 브라우저 경고가 뜬다.
+  평문 `http://<운영-도메인>` 으로 들어와도 https 로 자동 리다이렉트(308)된다.
+  기존 `https://<운영-도메인>:8080` 도 하위호환으로 그대로 동작한다(설치된 에이전트가 쓰는 주소).
 - 수신 API: `POST .../ingest.php` (헤더 `X-Agent-Token`). prod 는 web 이 외부에 직접 노출되지
   않고, 중앙서버 자신을 스캔하는 로컬 에이전트만 루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
 
@@ -240,7 +241,7 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 sudo mkdir -p /opt/vuln-agent && sudo cp ~/agent/*.sh /opt/vuln-agent/
 cd /opt/vuln-agent
 sudo bash install-agent.sh
-#   중앙 서버 주소 (예: ost-server.duckdns.org:8080):   ← 도메인만 넣어도 됨(스킴·/ingest.php 자동)
+#   중앙 서버 주소 (예: vulnagent.example.com:8080):   ← 도메인만 넣어도 됨(스킴·/ingest.php 자동)
 #   전송 토큰 (입력은 화면에 보이지 않습니다):          ← 중앙의 secrets/ingest_token.txt 값
 #   수집 주기 [hourly] (daily / '*:0/30'=30분마다):     ← Enter 치면 hourly
 ```
@@ -254,7 +255,7 @@ sudo bash install-agent.sh
 
 ```bash
 sudo bash install-agent.sh \
-     --server https://ost-server.duckdns.org:8080/ingest.php \
+     --server https://<운영-도메인>:8080/ingest.php \
      --token  <중앙의 secrets/ingest_token.txt 값> \
      --schedule hourly          # 또는 daily, '*:0/30'(30분마다, systemd)
 ```
@@ -368,27 +369,16 @@ dev 에서 `git pull` 한 뒤에는 `./deploy/compose_runner.sh dev up -d` 를 �
 
 ## 진행 상태
 
-- [x] 0. Docker 구성 (compose dev/prod + Dockerfile + Docker Secrets)
-- [x] 1. 수집 → 전송 → 저장 (에이전트 POST + PHP 수신 + DB)
-- [x] 2. 매처 (외부노출 + 로드됨 + KEV = CRITICAL) · findings.php · 아키텍처 다이어그램
-- [x] 3. 웹 (로그인 → 대시보드 → 호스트상세 → 취약점 → CVE상세 · 사용자관리) + 검색/필터·페이지네이션
-- [x] 4a. CVE 피드 커넥터 12종 (CISA KEV 실데이터 · OSV · NVD · EPSS · KISA) + 벤더 판정 6종(데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api) + 스케줄러 사이드카
-- [x] 4b. 국내 특화 — KISA 보안공지 커넥터 + 국내공지 페이지
-- [x] HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)
-- [x] 에이전트 자동 배포 — install-agent.sh (systemd-timer 우선/cron 폴백, 매시간)
-- [x] DB 전면 개편 — 전 테이블 `tb_` 접두사 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
-      + 소프트삭제 + 활동 감사로그(`tb_activity_log` + `activity.php` 조회 화면)
-- [x] 백포트 오탐 억제 — changelog·errata·debsecan 4겹(데비안 중심)으로 "버전은 낮아도 이미 패치됨"을 증명 + RHEL/우분투/커널은 각자의 벤더 소스로 별도 판정([백포트 오탐 억제](#백포트-오탐-억제-근거-4겹) 참고)
-- [x] 재시작·재부팅 필요 판정 — 패치됐어도 옛 `.so` 를 물고 있거나 재부팅 전이면 억제하지 않는다
-- [x] 컨테이너 스캔 — 컨테이너 내부 패키지 인벤토리(호스트 스캔에서 빠지던 미탐 영역)
-- [x] 방화벽 차단(FILTERED) 분류 — 방화벽 뒤 내부 서비스가 전부 HIGH 로 뜨던 오탐 제거
-- [x] 미지원 배포판 경고 — Amazon/Oracle/CentOS 는 매칭 0건이라 "취약점 없음"으로 오인될 수 있다
-- [x] 보안설정 점검(CCE) — 이미 수집한 sshd·계정·MAC·방화벽 설정을 판정해 호스트 상세에 표시
-- [x] 변화 추적 — 최근 2개 스캔 대비 신규/해결/등급변경 (`changes.php`)
-- [x] 자산 관리 · 설정형 RBAC — 호스트 자산 화면 + 역할(admin/operator/user)×메뉴 권한을 UI 에서 설정
-- [x] Export API — 스캔 결과 JSON/XML 내보내기 + 웹에서 발급하는 API 토큰
-- [x] 스키마 마이그레이션 자동화 — `deploy/migrate.sh` + `db/migrations/`
-- [ ] 대시보드 "다음 수집 예정", 알림
+**파이프라인은 끝까지 돈다** — 수집(에이전트) → 전송 → 저장 → 매칭 → 웹까지 전 구간이 동작한다.
+그 위에 이 프로젝트의 기여인 **런타임 상태 7단계 · 백포트 오탐 억제(근거 4겹 + RHEL/우분투/커널
+벤더별 판정) · 컨테이너 스캔 · CCE · 변화 추적 · Export API** 와, 피드 커넥터 12종(고정 5종 +
+벤더 판정 6종 + 범용 API)이 올라가 있다. 운영 쪽은 HTTPS(Caddy) 배포 · 에이전트 자동 설치 ·
+스키마 마이그레이션 자동화 · 설정형 RBAC · 감사 로그까지 갖췄다.
+**남은 것은 브라우저 E2E(Playwright)** 뿐이다 — 알림은 외부 채널 수신지가 없어 만들지 않기로 했다.
+
+> 항목별 상세 목록(각 항목을 왜 그렇게 만들었는지까지)은
+> [`CONTEXT.md` §8 개발 현황](CONTEXT.md#8-개발-현황-2026-07-기준--파이프라인https감사--오탐억제cce변화추적export-완성)
+> 이 갖는다. 두 곳에 같은 목록을 두면 어긋나므로 이 README 는 요약만 둔다.
 
 ## 라이선스
 

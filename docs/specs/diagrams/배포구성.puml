@@ -69,7 +69,7 @@ S2 --> DC
 rectangle "원격 에이전트 / 브라우저" as REMOTE
 rectangle "로컬 에이전트\n(중앙서버 자신 스캔)" as LOCAL
 
-REMOTE --> CADDY : https://ost-server.duckdns.org:8080
+REMOTE --> CADDY : https://<운영-도메인>:8080
 CADDY --> WC : http (내부망)
 LOCAL --> WC : 평문 127.0.0.1:8081
 WC --> DC : vulnagent 내부망
