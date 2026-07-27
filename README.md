@@ -89,7 +89,7 @@ sudo /opt/vuln-agent/bin/run.sh          # 즉시 1회 수집해 확인(선택)
 |---|---|---|
 | 소스 | `./server` 라이브 마운트(즉시 반영) | `../server` 읽기전용 마운트(PHP 는 배포=`git pull`, 무중단) |
 | DB 포트 | 호스트에 노출(3307) | **미노출**(내부 네트워크만) |
-| 웹 접속 | 평문 `http://localhost:8000` | **HTTPS** `https://ost-server.duckdns.org:8080` (Caddy) |
+| 웹 접속 | 평문 `http://localhost:8000` | **HTTPS** `https://ost-server.duckdns.org` (Caddy · `:8080` 도 계속 동작) |
 | 환경변수 | `.env.dev` | `.env.prod` |
 | 프로젝트명 | `vulnagent-dev` | `vulnagent` |
 
@@ -98,7 +98,9 @@ sudo /opt/vuln-agent/bin/run.sh          # 즉시 1회 수집해 확인(선택)
 `./deploy/wt.sh add feat/무엇` — 자세한 규칙은 [CLAUDE.md](CLAUDE.md#작업-파이프라인) 참고.
 
 - 현황 페이지(dev): <http://localhost:8000>
-- 현황 페이지(prod): <https://ost-server.duckdns.org:8080> (자체서명 인증서 → 브라우저 경고 뜸)
+- 현황 페이지(prod): <https://ost-server.duckdns.org> (자체서명 인증서 → 브라우저 경고 뜸)
+  평문 `http://ost-server.duckdns.org` 로 들어와도 https 로 자동 리다이렉트(308)된다.
+  기존 `https://ost-server.duckdns.org:8080` 도 하위호환으로 그대로 동작한다(설치된 에이전트가 쓰는 주소).
 - 수신 API: `POST .../ingest.php` (헤더 `X-Agent-Token`). prod 는 web 이 외부에 직접 노출되지
   않고, 중앙서버 자신을 스캔하는 로컬 에이전트만 루프백 평문 `127.0.0.1:8081` 로 직접 전송한다.
 

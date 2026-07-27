@@ -6,7 +6,9 @@
 #     Dockerfile·compose·caddy 가 바뀔 때만 재빌드. 판단은 deploy/update.sh 가 한다.
 #   - DB 포트 미노출 → 컨테이너 내부 네트워크(vulnagent)로만 접근. 공격면 축소.
 #   - 앞단 Caddy 리버스 프록시가 TLS(HTTPS) 종료 → web 은 내부(80)로만.
-#     외부 8080 포워딩을 재사용(https://ost-server.duckdns.org:8080), 새 포트 개방 불필요.
+#     정식 주소는 포트 없는 https://ost-server.duckdns.org (443). 평문 80 으로 들어오면
+#     Caddy 가 https 로 308 리다이렉트한다. 기존 8080 포워딩도 하위호환으로 계속 살려 둔다
+#     (설치된 에이전트들이 :8080 으로 등록돼 있다 — caddy ports 주석 참고).
 # 실행:  ./compose_runner.sh prod up -d --build
 # =============================================================================
 
@@ -67,8 +69,8 @@ services:
       - ../server:/var/www/html:ro
 
   # --- Caddy: HTTPS 종료 리버스 프록시 -------------------------------------
-  #   Let's Encrypt 인증서를 DuckDNS DNS-01 로 발급(인바운드 80/443 불필요).
-  #   호스트 ${WEB_PORT}(기존 8080 포워딩) → 컨테이너 443(TLS) → 내부 web:80.
+  #   인증서는 DNS-01(또는 현재처럼 내부 CA)로 발급하므로 인바운드 80 은 발급에 쓰이지 않는다.
+  #   호스트 80/443/${WEB_PORT} → 컨테이너 80(리다이렉트)·443(TLS) → 내부 web:80.
   caddy:
     container_name: vulnagent-caddy
     build: ./caddy
@@ -82,8 +84,23 @@ services:
         max-file: "3"
     depends_on:
       - web
+    # 세 줄이 각각 다른 이유로 존재한다 — 하나라도 지우면 무엇이 깨지는지 아래에 남긴다.
     ports:
+      # ① 8080 → 443 : **기존 에이전트 하위호환. 절대 지우지 말 것.**
+      #    설치된 에이전트들이 https://ost-server.duckdns.org:8080/ingest.php 로 등록돼 있고,
+      #    agent/install-agent.sh·agent/README.md·server/public/assets.php 의 설치 안내 예시도
+      #    전부 이 주소다. 지우는 순간 재설치 전까지 수집이 통째로 끊긴다.
       - "${WEB_PORT:-8080}:443"
+      # ② 80 → 80 : 평문 진입점. Caddyfile 사이트 블록에 포트를 안 적었으므로 Caddy 가 80
+      #    리다이렉트 리스너를 자동으로 만들어 둔 상태다(컨테이너 안에서 이미 listen 중).
+      #    이 줄이 없으면 사용자가 http:// 로 들어올 때 TLS 포트에 평문이 꽂혀
+      #    "Client sent an HTTP request to an HTTPS server." 400 이 뜬다(Caddy 하드코딩 문구라
+      #    Caddyfile 로 못 바꾼다). 열어 두면 대신 https 로 308 리다이렉트가 나간다.
+      - "80:80"
+      # ③ 443 → 443 : ②가 보내는 **목적지**. 리다이렉트 Location 이 포트 없는
+      #    https://ost-server.duckdns.org/… 라 443 이 안 열려 있으면 리다이렉트만 되고
+      #    정작 접속이 안 된다. ②와 짝으로만 의미가 있다.
+      - "443:443"
     environment:
       TZ: Asia/Seoul
     secrets:
