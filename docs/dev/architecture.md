@@ -147,7 +147,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 
 다이어그램: [`docs/specs/diagrams/erd.puml`](../specs/diagrams/erd.puml)
 
-**범위**: 도메인 엔티티 **41개 전부**(= 전체 42테이블 − `tb_schema_migrations`)를 그린다.
+**범위**: 도메인 엔티티 **40개 전부**(= 전체 41테이블 − `tb_schema_migrations`)를 그린다.
 `tb_schema_migrations` 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
 엔티티가 많아 영역별 `package` 로 묶었다 — 수집·인벤토리 / CVE 도메인 / 벤더 판정 소스 /
 판정 결과 / 조치 관리 / 피드 운영·인증·감사. **실선은 FK 가 실제로 걸린 관계, 점선은 FK 없이
@@ -174,7 +174,7 @@ tb_vendor_unfixed·tb_kernel_cve/tb_kernel_cve_fix 는 스캔에 매달리지 �
 **정밀 판정 플랫폼**: tb_finding_evidence(판정 근거 구조화, tb_finding 1:1)·tb_collection_stage
 (수집 단계 완전성 — 단계 누락을 미탐 대신 경고로)·tb_host_ext_port(경계 방화벽 뒤 외부노출 선언).
 **조치 관리**: tb_sla_policy(조치기한 정책) → tb_remediation_case(자산×CVE×패키지 케이스, 담당자·기한·예외).
-tb_saved_view 는 사용자별 저장 필터, tb_agent_replay_nonce 는 에이전트 재전송 공격 방지.
+tb_agent_replay_nonce 는 에이전트 재전송 공격 방지.
 스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh) — ERD 범위 밖.*
 *모든 테이블에 감사 4컬럼(`created_at`/`updated_at`/`is_deleted`/`deleted_at`)이 통일되어 있다
 (다이어그램엔 `is_deleted` 만 표기, 나머지 생략). 삭제는 하드삭제 대신 `vg_soft_delete()` 로
