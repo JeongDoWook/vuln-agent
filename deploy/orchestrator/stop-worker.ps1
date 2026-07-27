@@ -30,8 +30,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# 네이티브 exe 호출은 전부 Invoke-Native 를 거친다 — PS 5.1 은 exe 의 stderr 한 줄을 종료 오류로
+# 승격해서, 성공한 작업이 그 자리에서 죽는다(원리·실측 사고는 native-call.ps1 주석).
+. (Join-Path $PSScriptRoot 'native-call.ps1')
+
 # 저장소는 cwd 가 아니라 스크립트 위치 기준으로 찾는다 — 어느 폴더에서 실행해도 동작.
-$gitCommon = (& git -C $PSScriptRoot rev-parse --git-common-dir 2>$null)
+# 저장소 밖에서 실행하면 git 이 stderr 로 'fatal: not a git repository' 를 쓴다 → 승격 때문에
+# 아래 friendly throw 대신 NativeCommandError 로 죽는다. 그래서 이 호출도 래퍼를 거친다.
+$gitCommon = (Invoke-Native git @('-C', $PSScriptRoot, 'rev-parse', '--git-common-dir'))
 if (-not $gitCommon) { throw '스크립트가 git 저장소 안에 있지 않습니다.' }
 if (-not [System.IO.Path]::IsPathRooted($gitCommon)) { $gitCommon = Join-Path $PSScriptRoot $gitCommon }
 $MainRoot = Split-Path (Resolve-Path $gitCommon).Path -Parent
@@ -178,6 +184,16 @@ function Stop-TermkeepWorkerSession {
 # 이 워크트리 것임이 자명하다 — 워크트리 경로는 트리마다 고유하므로 다른 워커와 겹칠 수 없고,
 # 사용자가 손으로 연 셸은 애초에 이 경로를 커맨드라인에 갖지 않는다.
 # claude 는 그 런처의 자식이라 자기 커맨드라인엔 경로가 없다 → 트리째(taskkill /T) 닫는다.
+#
+# ⚠ **"이미 없는 PID" 는 실패가 아니다.** 바로 위에서 termkeep 세션을 닫으면 그 안의 프로세스도
+#   같이 죽는다 — 목록을 뜬 시점과 taskkill 이 닿는 시점 사이의 시차 때문에 대상이 이미 사라진
+#   상태가 흔하다(실측 2026-07-27, 2회 연속). taskkill 은 그걸 stderr + 종료코드 128 로 알린다.
+#   여기서 PS 5.1 의 stderr 승격이 발동해 **정리가 정상적으로 끝난 순간 스크립트가 죽었고**,
+#   뒤에 올 워크트리 제거·브랜치 삭제·매니페스트 삭제가 통째로 안 돌았다. 그래서:
+#     · 호출은 Invoke-Native 로 (stdout 만 Out-Null — 2>&1 은 방아쇠를 하나 더 만들 뿐이다).
+#     · 종료코드 128(프로세스 없음)은 정상 경로로 삼는다.
+#     · 그 외 실패는 경고만 하고 **계속 진행**한다 — 죽이기 실패는 뒤의 Wait-WorktreeUnlocked 가
+#       어차피 걸러내므로, 여기서 멈추면 걸러낼 기회조차 없앤다.
 function Stop-WorkerProcessTree {
   param([Parameter(Mandatory)][string]$WorkDir)
   $launch = Join-Path $WorkDir '.launch.ps1'
@@ -185,7 +201,13 @@ function Stop-WorkerProcessTree {
     Where-Object { $_.CommandLine -and $_.CommandLine.Contains($launch) })
   foreach ($p in $procs) {
     Write-Host "  → 워커가 남긴 프로세스 종료: PID $($p.ProcessId) ($($p.Name)) + 자식" -ForegroundColor DarkGray
-    & taskkill.exe /PID $p.ProcessId /T /F 2>&1 | Out-Null
+    Invoke-Native taskkill.exe @('/PID', "$($p.ProcessId)", '/T', '/F') | Out-Null
+    if ($LASTEXITCODE -eq 128) {
+      Write-Host "    (이미 종료됨 — 세션을 닫을 때 함께 죽었다)" -ForegroundColor DarkGray
+    }
+    elseif ($LASTEXITCODE -ne 0) {
+      Write-Host "    ⚠ taskkill 실패 (exit $LASTEXITCODE) — 계속 진행한다(잠금 확인에서 다시 걸러진다)." -ForegroundColor Yellow
+    }
   }
   return $procs.Count
 }
@@ -262,8 +284,10 @@ if (Test-Path $wtDir) {
   }
   Write-Host "== 워크트리 제거: wt/$Task ==" -ForegroundColor Cyan
   # wt.sh(bash) 도 cwd 에서 git 저장소를 찾는다 → 메인 트리에서 실행해야 한다.
+  # Invoke-Native 를 거치는 이유: wt.sh 가 진행 상황을 stderr 로 쓴다(spawn-worker.ps1 이 같은
+  # 호출에서 겪은 그 사고다) — 여기선 바로 아래 $LASTEXITCODE 검사에 닿기도 전에 죽는다.
   Push-Location $MainRoot
-  try { & $GitBash "$MainRootFwd/deploy/wt.sh" rm $Task } finally { Pop-Location }
+  try { Invoke-Native $GitBash @("$MainRootFwd/deploy/wt.sh", 'rm', $Task) } finally { Pop-Location }
   if ($LASTEXITCODE -ne 0) {
     Write-Host "⚠ wt.sh rm 실패 (exit $LASTEXITCODE) — 미커밋 변경이 있으면 먼저 커밋/되돌리세요." -ForegroundColor Yellow
     return

@@ -110,6 +110,7 @@ GitLab 이슈 연동·Gate 승인·spec/qa/push/done 나머지 단계는 과설�
 | `reap-merged.ps1` | **병합 자동정리** — PR 이 main 에 병합된 워커를 감지해 stop-worker 실행(gh 필요) |
 | `worker-stop-hook.ps1` | **완료 자동기록** — 워커 세션이 idle 될 때 git 상태로 결과 파일을 갱신(spawn 이 주입) |
 | `history-log.ps1` | 이벤트 히스토리 기록 헬퍼(dot-source) — 아래 "히스토리" 참고 |
+| `native-call.ps1` | 네이티브 exe 호출 래퍼 `Invoke-Native`(dot-source) — 아래 "PS 5.1 stderr 승격" 참고 |
 | `history-report.ps1` | 작업별 스폰→완료→병합정리 소요시간 표로 출력 |
 | `milestone.template.md` | 계획서 템플릿 |
 
@@ -299,7 +300,7 @@ sleep 은 느린 PC 에서 또 깨진다). 그래서 데몬이 브로드캐스�
   `"1"` → `""` 로 바꿔 고쳤다고 판단했다가 안 고쳐진 이력이 있다. 이미 있으면 **값을 비우지 말고
   키를 삭제**한다. 일회성으로 색을 끄려면 그 명령에만 `NO_COLOR=1 <명령>` 으로 준다.
 
-## 함정 — 왜 스폰이 "성공했는데 실패"로 보고됐나 (PS 5.1 stderr 승격)
+## 함정 — 왜 스폰·정리가 "성공했는데 실패"로 보고됐나 (PS 5.1 stderr 승격)
 
 Windows PowerShell 5.1 은 네이티브 exe 가 **stderr 에 쓴 줄을 ErrorRecord(`NativeCommandError`)로
 승격**한다. 스크립트가 `$ErrorActionPreference = 'Stop'` 이면 그게 **종료 오류**가 되어,
@@ -320,10 +321,29 @@ $ErrorActionPreference = 'Stop'
 .\spawn-worker.ps1 -Task probe -DryRun 2>&1  # → 고치기 전엔 여기서 THROW
 ```
 
+**같은 결함이 정리 쪽에도 있었다(2026-07-27 실측, 2회 연속).** `stop-worker.ps1` 은 세션을 닫은
+뒤 워커가 남긴 프로세스를 `taskkill` 로 치우는데, 세션을 닫을 때 그 안의 프로세스도 같이 죽어
+**taskkill 이 닿을 때는 이미 없는 PID** 인 경우가 흔하다. taskkill 은 그걸 stderr + 종료코드 128 로
+알리고, 그 한 줄이 승격돼 **정리가 정상적으로 끝난 순간 스크립트가 죽었다** — 뒤에 올 워크트리
+제거·브랜치 삭제·매니페스트 삭제가 통째로 안 돌아 사람이 매번 한 번 더 실행해야 했다.
+
+```
+  → 워커가 남긴 프로세스 종료: PID 34736 (powershell.exe) + 자식
+taskkill.exe : ERROR: The process "34736" not found.
+    + FullyQualifiedErrorId : NativeCommandError
+```
+
 대응(이 저장소 공통 패턴): 네이티브 호출 **구간에만** EAP 를 낮추고 `finally` 로 원복한다.
-`spawn-worker.ps1` 의 `Invoke-Native`, `merge-milestone.ps1`/`reap-merged.ps1` 의 `Invoke-Gh`.
+래퍼는 `native-call.ps1` 의 `Invoke-Native` **하나로 모았다**(dot-source) — `spawn-worker.ps1`·
+`stop-worker.ps1` 이 같은 파일을 쓴다. `merge-milestone.ps1`/`reap-merged.ps1` 의 `Invoke-Gh` 는
+같은 원리지만 **계약이 다르다**(stdout 을 캡처해 `{Out, Code}` 로 돌려준다) → 그대로 둔다.
 
 - **`2>&1` 로 덮지 마라** — stderr 가 stdout 에 섞여 출력을 읽는 쪽이 깨지고, 근본도 안 고쳐진다.
+  `2>&1` 만 지우는 것도 부족하다: 방아쇠 하나를 치울 뿐이라, **호출자가 스트림을 합쳐 받으면**
+  (예: `reap-merged.ps1` 이 `& stop-worker.ps1` 을 같은 프로세스에서 부르고 그 reap 를 다시 합쳐
+  받을 때) 그대로 다시 throw 한다. 실측으로 확인된 차이다.
+- **"이미 없는 PID" 는 실패가 아니다.** taskkill 종료코드 128 은 정상 경로로 삼고, 그 외 실패는
+  경고만 하고 계속 진행한다 — 죽이기 실패는 뒤의 `Wait-WorktreeUnlocked` 가 어차피 걸러낸다.
 - **종료코드 검사(`$LASTEXITCODE`)는 반드시 남겨라.** stderr 를 무시하는 것과 종료코드를 무시하는
   것은 다르다 — 진짜 실패(브랜치 충돌 등)는 여전히 throw 돼야 한다. `$LASTEXITCODE` 는 전역이라
   래퍼 함수를 거쳐도 값이 그대로 남는다.
