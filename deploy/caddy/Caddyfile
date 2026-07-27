@@ -1,8 +1,16 @@
 # Caddy 리버스 프록시 — vuln-agent 앞단 TLS 종료.
 #   Let's Encrypt 인증서를 DuckDNS DNS-01 챌린지로 발급 → 인바운드 80/443 불필요.
 #   Caddy 가 https 를 받아 내부 web:80(Apache/PHP) 으로 프록시한다.
+#
+# 사이트 주소는 환경변수 PROD_DOMAIN 으로 받는다(.env.prod → compose.prod.yml → 이 파일).
+#   **기본값을 일부러 주지 않는다.** {$PROD_DOMAIN:localhost} 처럼 폴백을 두면 변수가 빠졌을 때
+#   엉뚱한 이름으로 조용히 떠서 TLS 가 그 이름으로 발급되고, HTTPS 가 깨진 걸 아무도 모른다.
+#   폴백이 없으면 빈 주소가 되어 Caddy 가 기동 자체를 거부한다 — 시끄럽게 죽는 쪽이 안전하다.
+#     실측(caddy:2, `caddy validate`): PROD_DOMAIN 없음 → 주소가 빈 문자열이 되어 이 블록이
+#     사이트가 아닌 **전역 옵션 블록**으로 파싱된다 → "unrecognized global option: encode" +
+#     종료코드 1. 있음(example.test) → "Valid configuration" + 종료코드 0. 둘 다 실측 확인.
 
-ost-server.duckdns.org {
+{$PROD_DOMAIN} {
 	encode gzip
 
 	# [현재] 자체서명(Caddy 내부 CA). 토큰/도메인소유 불필요, 즉시 HTTPS(브라우저 경고 뜸).

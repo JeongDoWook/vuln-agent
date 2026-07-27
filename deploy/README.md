@@ -23,6 +23,27 @@ cd deploy
 
 ---
 
+## ⚠ 2026-07-27 변경 후 운영 서버에서 할 일 (1회) — `.env.prod` 에 `PROD_DOMAIN` 추가
+
+Caddy 사이트 주소를 저장소에 박아 두지 않고 **환경변수 `PROD_DOMAIN`** 으로 뺐다
+(`deploy/caddy/Caddyfile` 의 `{$PROD_DOMAIN}`). **이미 돌고 있는 서버의 `.env.prod` 에는
+이 줄이 없다** — 그대로 `update.sh` 를 돌리면 caddy 가 못 뜬다(= HTTPS 중단).
+`update.sh` **전에** 서버에서 한 줄 추가한다:
+
+```bash
+cd /apps/vulnagent/app/deploy
+grep -q '^PROD_DOMAIN=' .env.prod || echo 'PROD_DOMAIN=실제운영도메인' >> .env.prod
+./compose_runner.sh doctor        # "✓ .env.prod: PROD_DOMAIN" 확인
+bash update.sh                    # 그 다음에 갱신
+```
+
+값은 **지금 접속하는 도메인과 정확히 같아야 한다** — TLS 인증서가 이 이름으로 발급/서빙된다.
+빠뜨리면 조용히 넘어가지 않고 시끄럽게 실패한다(의도적):
+compose 가 `${PROD_DOMAIN:?…}` 로 거부하고, 뚫려도 Caddy 가 빈 주소를
+`unrecognized global option: encode` 로 파싱해 기동에 실패한다.
+
+---
+
 ## 에이전트 CA 준비 (최초 1회, 필수)
 
 **왜 필요한가.** 중앙 Caddy 는 자체서명(`tls internal`)으로 HTTPS 를 한다. 대상 서버의 에이전트가

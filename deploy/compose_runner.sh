@@ -222,6 +222,15 @@ run_doctor() {
   for f in .env.dev .env.prod; do
     if [ -f "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음 (init 실행 필요)"; fi
   done
+  # prod 의 Caddy 사이트 주소. 없으면 `prod up` 이 compose 단계에서 거부되고(${PROD_DOMAIN:?…}),
+  # 뚫려도 Caddy 가 빈 주소로 기동에 실패한다 → 뜨기 전에 여기서 알려 준다.
+  if [ -f .env.prod ]; then
+    if grep -Eq '^[[:space:]]*PROD_DOMAIN=[^[:space:]]' .env.prod; then
+      say "  ${GREEN}✓${NC} .env.prod: PROD_DOMAIN"
+    else
+      say "  ${YELLOW}⚠${NC} .env.prod 에 PROD_DOMAIN 없음/빈값 (운영 Caddy 사이트 주소 — 없으면 prod up 이 거부된다)"
+    fi
+  fi
   if command -v docker >/dev/null 2>&1; then
     if docker network inspect vulnagent-dev-net >/dev/null 2>&1; then
       say "  ${GREEN}✓${NC} docker network vulnagent-dev-net"

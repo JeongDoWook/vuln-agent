@@ -34,11 +34,13 @@ sudo bash install-agent.sh
 
 ```
 == vuln-agent 설치 ==
-중앙 서버 주소 (예: ost-server.duckdns.org:8080): ost-server.duckdns.org:8080
+중앙 서버 주소 (예: vulnagent.example.com:8080): <운영-도메인>:8080
 전송 토큰 (입력은 화면에 보이지 않습니다): ********      ← 중앙에서 이 호스트용으로 발급한 개별 토큰
 수집 주기 [hourly] (daily / '*:0/30'=30분마다): ⏎        ← Enter 치면 hourly
 ```
 
+- `<운영-도메인>` 은 이 배포의 중앙서버 도메인이다 — 운영 배포 시 정해 `deploy/.env.prod` 의
+  `PROD_DOMAIN` 에 넣은 값으로, 저장소에는 실제 값을 두지 않는다. 중앙 관리자에게 받는다.
 - 주소는 **도메인만 넣어도 된다.** `https://` 와 `/ingest.php` 는 자동으로 붙는다.
 - 토큰은 화면·셸 히스토리에 남지 않는다(입력 숨김).
 
@@ -83,7 +85,7 @@ sudo docker cp vulnagent-caddy:/data/caddy/pki/authorities/local/root.crt ./cadd
 
 ```bash
 sudo bash install-agent.sh \
-  --server https://ost-server.duckdns.org:8080/ingest.php \
+  --server https://<운영-도메인>:8080/ingest.php \
   --token  <중앙의 secrets/ingest_token.txt 값> \
   --schedule hourly              # 또는 daily, '*:0/30'(30분마다, systemd)
 ```
@@ -230,8 +232,8 @@ bash deploy/agent_schedule.sh hourly 10.3.142.100 10.3.142.101='*:0/30'  # 노�
    | 대상 | 넣을 주소 | 왜 |
    |---|---|---|
    | 중앙 서버 자신 | `http://127.0.0.1:8081/ingest.php` | 웹 컨테이너 직결(loopback 전용 포트). Caddy·TLS 를 통째로 건너뛴다 |
-   | 같은 내부망의 다른 서버 | `ost-server.duckdns.org:8080` | Caddy(HTTPS)를 거친다. 도메인이 공인 IP 로 풀리면 설치기가 `/etc/hosts` 로 내부 IP 에 묶는다 |
-   | 진짜 외부 서버 | `ost-server.duckdns.org:8080` | 밖에서는 공인 IP 가 정답 |
+   | 같은 내부망의 다른 서버 | `<운영-도메인>:8080` | Caddy(HTTPS)를 거친다. 도메인이 공인 IP 로 풀리면 설치기가 `/etc/hosts` 로 내부 IP 에 묶는다 |
+   | 진짜 외부 서버 | `<운영-도메인>:8080` | 밖에서는 공인 IP 가 정답 |
 
    중앙 자신에 loopback 을 쓰는 이유: 도메인은 **공인 IP(라우터)** 로 풀리는데, 내부에서 자기
    라우터로 되돌아 들어가는 건(헤어핀 NAT) 대개 막혀 있다. `Connection refused` 가 그것이다.

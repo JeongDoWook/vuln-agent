@@ -62,8 +62,11 @@ XML 은 같은 구조를 요소로 표현한다: `<vulnExport><summary><bySeveri
 ```python
 import requests
 
+# BASE 는 이 배포의 중앙서버 주소(운영 배포 시 정한 `<운영-도메인>`, 포트는 WEB_PORT).
+BASE = "https://<운영-도메인>:8080"
+
 r = requests.get(
-    "https://ost-server.duckdns.org:8080/export.php",
+    f"{BASE}/export.php",
     params={"format": "json", "severity": "critical,high"},
     headers={"X-API-Token": EXPORT_TOKEN},
     timeout=30,

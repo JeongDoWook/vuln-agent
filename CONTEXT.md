@@ -218,7 +218,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
 - [x] **1. 수집→전송→저장** — 에이전트 `--send` POST + `ingest.php` 수신 + DB
 - [x] **2. 매처** — 노출 맥락 우선순위(외부노출+로드+KEV=CRITICAL), findings + 아키텍처 다이어그램
 - [x] **3. 웹** — 로그인(users 세션) → 대시보드 → 호스트 상세 → 취약점(+조치·EPSS·상태) · 사용자관리
-- [x] **4a. CVE 피드 커넥터** — 커넥터 11종(고정 5종 KEV/OSV/NVD/KISA/EPSS + 벤더 판정 6종 데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api), UI 설정·미리보기·cron 스케줄, 스케줄러 사이드카
+- [x] **4a. CVE 피드 커넥터** — 커넥터 11종(고정 5종 KEV/OSV/NVD/KISA/EPSS + 벤더 판정 6종 데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api) = **합계 12종**, UI 설정·미리보기·cron 스케줄, 스케줄러 사이드카
 - [x] **4b. 국내특화** — KISA 보안공지 수집·표시(상세 본문까지) + 공지 상세 페이지 `advisory.php`
 - [x] **NVD 전체 데이터** — tb_cve 약 36만건. 주기 수집을 수정일(lastMod) 기준으로 전환(뒤늦게 CVSS 붙는 CVE 추적, 120일 상한).
       전체 백필 `bin/backfill_nvd.php`(멱등·재개, 병렬 워커로 가속). CVE 목록 페이지 `cves.php`(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬).
@@ -228,7 +228,8 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
 - [x] **EPSS/KEV** — 악용확률 + 악용목록으로 우선순위·정렬
 - [x] **배포 설치기** — `agent/install-agent.sh` (systemd-timer 우선/cron 폴백, 매시간 자동 수집)
 - [x] **HTTPS 배포** — `caddy/` 리버스 프록시가 TLS 종료(Let's Encrypt DNS-01, 현재 자체서명).
-      접속 `https://ost-server.duckdns.org`(평문 80 은 https 로 308 리다이렉트, 기존 `:8080` 도 계속 동작).
+      접속 `https://<운영-도메인>`(평문 80 은 https 로 308 리다이렉트, 기존 `:8080` 도 계속 동작).
+      도메인은 저장소에 두지 않고 `.env.prod` 의 `PROD_DOMAIN` 으로 주입한다(Caddyfile 이 `{$PROD_DOMAIN}` 로 읽는다).
       web·db 는 내부망/루프백(`127.0.0.1:8081`)만 노출.
 - [x] **무중단 배포** — prod 가 `../server` 를 읽기전용 마운트. PHP 만 바뀌면 `deploy/update.sh`(=`git pull`)로 끝(opcache 가 2초 내 반영).
       Dockerfile·compose·caddy 변경 시에만 재빌드. 서버 디렉토리는 `/apps/vulnagent/{app,bin,etc,logs,data,backups}` 로 통합.
@@ -277,6 +278,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
       · EPSS 백분위 병기 · 필터 즉시 적용.
 - [x] 대시보드 "다음 수집 예정" — enabled·비manual 커넥터 중 가장 이른 next_run_at 을 헤더 아래 표시.
       (알림은 만들지 않기로 — 외부 채널 수신지가 없어 YAGNI. 필요해지면 그때.)
+- [ ] 브라우저 E2E — 지금 검증은 `tests/smoke.sh`(curl 로 API~로그인)까지다. Playwright 로 화면 흐름까지 덮는 건 남았다.
 
 > 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·백포트 억제·KEV/EPSS·설명가능성).
 > Python AI 문서생성은 본체 범위에서 제외 — Export API 로 결과만 넘긴다.

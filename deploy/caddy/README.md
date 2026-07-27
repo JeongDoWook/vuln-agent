@@ -11,19 +11,25 @@ vuln-agent 웹을 **HTTPS**로 감싸는 앞단 프록시. Let's Encrypt 인증�
 
 ```
 브라우저 ──https──▶ [포워딩 443]  ──▶ caddy:443 (TLS 종료) ──http──▶ web:80 (Apache/PHP)
-브라우저 ──http ──▶ [포워딩 80]   ──▶ caddy:80  ──308──▶ https://ost-server.duckdns.org/…
+브라우저 ──http ──▶ [포워딩 80]   ──▶ caddy:80  ──308──▶ https://<운영-도메인>/…
 에이전트 ──https──▶ [포워딩 8080] ──▶ caddy:443 (TLS 종료) ──http──▶ web:80   ← 하위호환
 ```
 
-접속 주소: **https://ost-server.duckdns.org**
-평문 `http://ost-server.duckdns.org` 로 들어와도 https 로 자동 리다이렉트(308)된다.
-기존 **https://ost-server.duckdns.org:8080** 도 그대로 동작한다 — 설치된 에이전트들이
+접속 주소: **https://<운영-도메인>** — `<운영-도메인>` 은 운영 배포 시 `.env.prod` 의
+`PROD_DOMAIN` 에 넣은 실제 도메인이다(저장소에는 값을 두지 않는다).
+평문 `http://<운영-도메인>` 으로 들어와도 https 로 자동 리다이렉트(308)된다.
+기존 **https://<운영-도메인>:8080** 도 그대로 동작한다 — 설치된 에이전트들이
 그 주소로 등록돼 있어 하위호환으로 계속 열어 둔다(`compose.prod.yml` 의 caddy `ports` 참고).
 
 ## 구성 파일
 - `Dockerfile` — DuckDNS 플러그인을 넣어 Caddy 를 빌드(공식 이미지엔 없음)
-- `Caddyfile` — 도메인 1개, `tls { dns duckdns }`, `reverse_proxy web:80`
+- `Caddyfile` — 도메인 1개(`{$PROD_DOMAIN}` — `.env.prod` 에서 온다), `tls { dns duckdns }`, `reverse_proxy web:80`
 - `entrypoint.sh` — docker secret 의 토큰을 `DUCKDNS_TOKEN` env 로 노출 후 Caddy 실행
+
+> `PROD_DOMAIN` 은 **기본값이 없다.** 비어 있으면 compose 가 `${PROD_DOMAIN:?…}` 로 기동을
+> 거부하고, 그걸 뚫어도 Caddy 가 빈 주소를 전역 옵션 블록으로 읽어
+> `unrecognized global option: encode` 로 죽는다. 폴백을 두면 엉뚱한 이름으로 조용히 떠서
+> **HTTPS 가 깨진 걸 아무도 모르기 때문에** 일부러 시끄럽게 죽게 뒀다.
 
 ## 배포 (서버에서)
 1. **DuckDNS 토큰 입력** (랜덤 아님, 본인 DuckDNS 계정 토큰) — `deploy/` 에서 실행:
@@ -40,11 +46,12 @@ vuln-agent 웹을 **HTTPS**로 감싸는 앞단 프록시. Let's Encrypt 인증�
    docker compose -p vulnagent logs -f caddy
    #  "certificate obtained successfully" 뜨면 성공
    ```
-4. 브라우저에서 **https://ost-server.duckdns.org** — 자물쇠 확인.
-5. 리다이렉트·하위호환 확인 (80·443 은 앞단 네트워크 방화벽 포워딩이 열린 뒤에 밖에서 닿는다):
+4. 브라우저에서 **https://<운영-도메인>** — 자물쇠 확인.
+5. 리다이렉트·하위호환 확인 (80·443 은 앞단 네트워크 방화벽 포워딩이 열린 뒤에 밖에서 닿는다.
+   아래 `$PROD_DOMAIN` 은 `.env.prod` 에 넣은 값 — `source .env.prod` 하거나 직접 치환한다):
    ```bash
-   curl -sI http://ost-server.duckdns.org/findings.php   # → 308 + Location: https://…/findings.php
-   curl -skI https://ost-server.duckdns.org:8080/findings.php  # → 302 (미로그인 리다이렉트 = TLS 정상)
+   curl -sI http://$PROD_DOMAIN/findings.php        # → 308 + Location: https://…/findings.php
+   curl -skI https://$PROD_DOMAIN:8080/findings.php # → 302 (미로그인 리다이렉트 = TLS 정상)
    ```
 
 인증서는 `caddy_data` 볼륨에 영속화되어 재시작해도 재발급하지 않으며, 만료 전 자동 갱신된다.
