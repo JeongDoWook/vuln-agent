@@ -17,7 +17,7 @@ vg_require_menu('findings');
 $unsupHosts = [];   // 취약점 0건이 "안전"이 아니라 "판정 불가"인 대상(호스트 + 컨테이너)
 
 $sevOptions = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-$stOptions  = ['EXTERNAL', 'FILTERED', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
+$stOptions  = ['EXTERNAL', 'LAN', 'FILTERED', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
 
 $err = null; $scan = null; $rows = []; $total = 0; $perPage = vg_perpage();
 $scanIds = []; $hostOptions = []; $hostFound = false; $hostOptionCount = 0;

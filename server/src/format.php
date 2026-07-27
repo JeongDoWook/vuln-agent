@@ -167,13 +167,17 @@ function vg_sev_bar(array $counts): string {
     return '<span class="riskbar">' . $out . '</span>';
 }
 
-// 런타임 상태(EXTERNAL/LISTENING/RUNNING/LOADED/INSTALLED)
+// 런타임 상태(EXTERNAL/LAN/FILTERED/LISTENING/RUNNING/LOADED/INSTALLED)
+//   LAN·FILTERED 의 문구는 아래 vg_scope_label() 과 글자까지 동일하게 유지한다(같은 값을 두 곳에서
+//   다르게 부르지 않게). 톤도 host.php 의 $scopeTone 과 맞춘다 — LAN=med, FILTERED=muted.
 function vg_status_label(?string $s): string {
-    $m = ['EXTERNAL' => '외부노출', 'LISTENING' => '로컬리스닝', 'RUNNING' => '실행중', 'LOADED' => '사용중', 'INSTALLED' => '설치만'];
+    $m = ['EXTERNAL' => '외부노출', 'LAN' => '로컬 세그먼트 노출', 'FILTERED' => '방화벽 차단',
+          'LISTENING' => '로컬리스닝', 'RUNNING' => '실행중', 'LOADED' => '사용중', 'INSTALLED' => '설치만'];
     return $m[$s ?? ''] ?? (string) $s;
 }
 function vg_status_badge(?string $s): string {
-    $tone = ['EXTERNAL' => 'crit', 'LISTENING' => 'high', 'RUNNING' => 'med', 'LOADED' => 'purple', 'INSTALLED' => 'muted'];
+    $tone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'FILTERED' => 'muted',
+             'LISTENING' => 'high', 'RUNNING' => 'med', 'LOADED' => 'purple', 'INSTALLED' => 'muted'];
     return vg_badge(vg_status_label($s), $tone[$s ?? ''] ?? 'muted');
 }
 

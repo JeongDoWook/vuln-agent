@@ -155,7 +155,7 @@ vuln-agent/
 ## 7. 매처 핵심 규칙 (구현됨)
 
 수집한 `packages` + `exposures`(포트) + `processes`(실행/로드)를 CVE와 조인해
-각 취약점의 **런타임 상태**를 6단계로 판정하고 우선순위를 매긴다(`vg_classify`).
+각 취약점의 **런타임 상태**를 7단계로 판정하고 우선순위를 매긴다(`vg_classify`).
 
 | 상태 | 조건 | 레벨 |
 |---|---|---|
@@ -222,7 +222,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
 - [x] **NVD 전체 데이터** — tb_cve 약 36만건. 주기 수집을 수정일(lastMod) 기준으로 전환(뒤늦게 CVSS 붙는 CVE 추적, 120일 상한).
       전체 백필 `bin/backfill_nvd.php`(멱등·재개, 병렬 워커로 가속). CVE 목록 페이지 `cves.php`(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬).
       API 키는 DB 저장(코드·저장소에 없음). 일시 오류 재시도·CVE-ID 형식 검증·긴 텍스트 컬럼 확장(summary MEDIUMTEXT, cve_ids/note TEXT).
-- [x] **정밀 런타임 수집** — 실행 프로세스 전체(실행중/사용중) + 노출(포트) → 상태 5단계 구분
+- [x] **정밀 런타임 수집** — 실행 프로세스 전체(실행중/사용중) + 노출(포트) → 상태 7단계 구분
 - [x] **OSV 자동 매칭** — 수집 전 패키지를 OSV 조회(배포판 ecosystem, 소스패키지·버전필터) → 취약점 전체 발굴 + 조치안(fixed_version)
 - [x] **EPSS/KEV** — 악용확률 + 악용목록으로 우선순위·정렬
 - [x] **배포 설치기** — `agent/install-agent.sh` (systemd-timer 우선/cron 폴백, 매시간 자동 수집)

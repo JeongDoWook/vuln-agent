@@ -22,7 +22,7 @@
 ## 2. 매처 판정 로직 — "실제로 위험한가"
 
 설치되었다고 전부 올리지 않는다. **런타임 상태(노출·실행·사용) + KEV** 로 우선순위를 가른다.
-exposures(포트) + processes(실행/로드) 를 합쳐 6단계 상태를 판정한다(`vg_classify`).
+exposures(포트) + processes(실행/로드) 를 합쳐 7단계 상태를 판정한다(`vg_classify`).
 
 다이어그램: [`docs/specs/diagrams/매처판정로직.puml`](../specs/diagrams/매처판정로직.puml)
 
