@@ -22,12 +22,14 @@
 ## 2. 매처 판정 로직 — "실제로 위험한가"
 
 설치되었다고 전부 올리지 않는다. **런타임 상태(노출·실행·사용) + KEV** 로 우선순위를 가른다.
-exposures(포트) + processes(실행/로드) 를 합쳐 6단계 상태를 판정한다(`vg_classify`).
+exposures(포트) + processes(실행/로드) 를 합쳐 7단계 상태를 판정한다(`vg_classify`).
 
 다이어그램: [`docs/specs/diagrams/매처판정로직.puml`](../specs/diagrams/매처판정로직.puml)
 
-> 상태: EXTERNAL > FILTERED ≈ LISTENING > RUNNING > LOADED > INSTALLED. KEV 시 한 단계 상향,
+> 상태: EXTERNAL > LAN ≈ FILTERED ≈ LISTENING > RUNNING > LOADED > INSTALLED. KEV 시 한 단계 상향,
 > EPSS·CVSS 는 같은 등급 내 정렬. 각 판정에 근거(어떤 프로세스·포트·라이브러리)가 남는다.
+> **LAN** — mDNS/LLMNR/SSDP 같은 링크로컬 멀티캐스트다. 0.0.0.0 에 떠 있어도 라우터를 넘지
+> 못해 같은 세그먼트에서만 닿으므로 EXTERNAL 로 올리지 않는다.
 > **FILTERED** — 전체 인터페이스에 바인딩됐지만 방화벽(firewalld/ufw)이 그 포트를 막아 외부에서
 > 못 닿는 경우다. 이 판정이 없으면 방화벽 뒤의 내부 서비스가 **전부 HIGH/CRITICAL 로 뜬다**(오탐).
 

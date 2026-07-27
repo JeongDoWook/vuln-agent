@@ -42,7 +42,8 @@
   td code,code.i{background:#eff1f3;border-radius:5px;padding:.05rem .35rem;font-size:.86em}
   .badge{display:inline-block;color:#fff;border-radius:999px;padding:.08rem .5rem;font-size:.74rem;font-weight:700}
   .b-crit{background:var(--crit)} .b-high{background:var(--high)} .b-med{background:var(--med)} .b-low{background:var(--low)}
-  .b-ext{background:var(--crit)} .b-lis{background:var(--high)} .b-run{background:var(--med)}
+  .b-ext{background:var(--crit)} .b-lan{background:var(--med)} .b-fil{background:var(--muted)}
+  .b-lis{background:var(--high)} .b-run{background:var(--med)}
   .b-loa{background:var(--purple)} .b-ins{background:var(--low)}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:.9rem}
   @media(max-width:720px){.grid2{grid-template-columns:1fr}.wrap{padding:1rem .75rem 3rem}header.top{padding:1.4rem 1.2rem;border-radius:18px}.pipe{display:grid;grid-template-columns:1fr}.arrow{transform:rotate(90deg);justify-self:center}.card{border-radius:16px;padding:1.1rem;overflow-x:auto}}
@@ -83,7 +84,7 @@
   <div class="arrow">→</div>
   <div class="step p"><span class="k">④ 매핑</span><h4>CVE 조인</h4><p>OSV 로 전 패키지 취약점 발굴 + KEV·EPSS·NVD 보강. 백포트는 버전필터+changelog 2단 검증으로 억제(§4)</p></div>
   <div class="arrow">→</div>
-  <div class="step o"><span class="k">⑤ 우선순위</span><h4>매처</h4><p>런타임 상태 5단계 + KEV/EPSS 로 심각도 판정·정렬</p></div>
+  <div class="step o"><span class="k">⑤ 우선순위</span><h4>매처</h4><p>런타임 상태 7단계 + KEV/EPSS 로 심각도 판정·정렬</p></div>
   <div class="arrow">→</div>
   <div class="step"><span class="k">⑥ 표시</span><h4>웹</h4><p>대시보드 → 호스트 상세 → 취약점(근거·조치·상태)</p></div>
 </div>
@@ -114,12 +115,14 @@
 <!-- 3. 런타임 상태 -->
 <h2><span class="n">3</span>런타임 상태 — 오탐 감소의 핵심</h2>
 <p class="lead">“설치=취약”으로 전부 올리지 않는다. exposures(포트) + processes(실행/로드) 를 합쳐
-각 취약점을 아래 5단계로 구분하고, 실제 노출/사용 여부로 우선순위를 가른다.</p>
+각 취약점을 아래 7단계로 구분하고, 실제 노출/사용 여부로 우선순위를 가른다.</p>
 <div class="card">
 <table>
   <thead><tr><th>상태</th><th>의미</th><th>기본 등급</th></tr></thead>
   <tbody>
     <tr><td><span class="badge b-ext">외부노출</span></td><td>외부(0.0.0.0) 오픈 포트로 노출 + 사용</td><td><span class="badge b-high">HIGH</span> <span style="color:var(--muted)">(+KEV → <span class="badge b-crit">CRITICAL</span>)</span></td></tr>
+    <tr><td><span class="badge b-lan">로컬 세그먼트 노출</span></td><td>mDNS 등 링크로컬 멀티캐스트 — 같은 세그먼트에만 닿고 라우터를 넘지 않음</td><td><span class="badge b-med">MEDIUM</span></td></tr>
+    <tr><td><span class="badge b-fil">방화벽 차단</span></td><td>전체 인터페이스에 리스닝하지만 방화벽이 막아 외부 도달 불가</td><td><span class="badge b-med">MEDIUM</span></td></tr>
     <tr><td><span class="badge b-lis">로컬리스닝</span></td><td>리스닝하지만 127.0.0.1 만</td><td><span class="badge b-med">MEDIUM</span></td></tr>
     <tr><td><span class="badge b-run">실행중</span></td><td>실행 중이나 포트 미개방</td><td><span class="badge b-med">MEDIUM</span></td></tr>
     <tr><td><span class="badge b-loa">사용중</span></td><td>실행 프로세스가 라이브러리 로드</td><td><span class="badge b-med">MEDIUM</span></td></tr>
@@ -312,7 +315,7 @@
 <div class="card">
   <ul class="tight">
     <li><span class="ok">✓</span> Docker(dev/prod·secrets) · 수집→전송→저장 파이프라인</li>
-    <li><span class="ok">✓</span> 정밀 런타임 수집(실행중/사용중/포트 구분) · 매처 5단계 상태 판정</li>
+    <li><span class="ok">✓</span> 정밀 런타임 수집(실행중/사용중/포트 구분) · 매처 7단계 상태 판정</li>
     <li><span class="ok">✓</span> OSV 자동 매칭(전 패키지·버전필터·조치버전) · KEV/EPSS 우선순위</li>
     <li><span class="ok">✓</span> 백포트 오탐 억제(2단: 버전필터 + changelog 검증) → tb_suppressed_finding, 호스트 상세에 근거 표시</li>
     <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·MAC·방화벽 5항목 PASS/FAIL/NA(신규 수집 없음)</li>

@@ -52,8 +52,9 @@ if (!function_exists('vg_scope_rank')) {
     }
 
     // 런타임 상태 판정 + 등급 + 근거.
-    //   상태 강도: EXTERNAL(외부노출) > LISTENING(로컬리스닝) > RUNNING(실행중) > LOADED(사용중) > INSTALLED(설치만)
-    //   레벨: 설치1 / 실행·로드·로컬리스닝2 / 외부노출3, KEV 시 +1(최대 CRITICAL).
+    //   상태 강도: EXTERNAL(외부노출) > LAN(로컬 세그먼트 노출) > FILTERED(방화벽 차단)
+    //              > LISTENING(로컬리스닝) > RUNNING(실행중) > LOADED(사용중) > INSTALLED(설치만) — 7종.
+    //   레벨: 설치1 / 로컬세그먼트·방화벽차단·실행·로드·로컬리스닝2 / 외부노출3, KEV 시 +1(최대 CRITICAL).
     //   반환: [status, severity, rationale]
     //   $pkgLoaded: 이 패키지가 "리스닝 중이 아닌" 실행 프로세스에 라이브러리로 로드됐는가(패키지 1개 기준 bool).
     //     호출부의 procLoadedPkgs(컨테이너별 로드 패키지 집합, 배열)와 이름이 겹치지 않도록 구분한다 —
@@ -549,7 +550,7 @@ if (!function_exists('vg_scope_rank')) {
     }
 
     /**
-     * 한 패키지의 CVE 후보 1건을 판정한다: 6단계 상태분류 → 억제 취소 신호(재시작/재부팅 필요는
+     * 한 패키지의 CVE 후보 1건을 판정한다: 7단계 상태분류 → 억제 취소 신호(재시작/재부팅 필요는
      *   그대로 억제 불가로 반영) → 오탐 억제 4겹(①버전 ②배포판 트래커 ③벤더권고(OVAL) ④errata·
      *   changelog) → 조치불가(no_fix) 표시. **순서가 그 자체로 우선순위다** — 먼저 걸리는 조건이
      *   이기고, 뒤 조건은 평가되지 않는다(vg_match_scan 의 억제 겹 순서를 그대로 옮겼다).
