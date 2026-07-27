@@ -42,7 +42,6 @@ if($notice)vg_alert(['type'=>'ok','title'=>$notice]);if($error)vg_alert($error);
   <div class="kpi tone-high"><span>내부 SLA 초과</span><strong><?= (int)$counts['overdue_count'] ?></strong></div>
 </div>
 <form class="toolbar" method="get"><input type="search" name="q" value="<?= vg_h($q) ?>" placeholder="호스트, CVE, 패키지 검색"><select name="status"><option value="">전체 상태</option><?php foreach(VG_REMEDIATION_STATUSES as $v):?><option value="<?= $v ?>"<?= $status===$v?' selected':'' ?>><?= vg_h($v) ?></option><?php endforeach?></select><label class="inline"><input type="checkbox" name="overdue" value="1"<?= $overdue==='1'?' checked':'' ?>> SLA 초과만</label><button class="btn" type="submit">검색</button></form>
-<?php vg_saved_view_bar($pdo, 'remediations'); ?>
 <?php
 $headers=[['label'=>'조치 단위'],['label'=>'대상'],['label'=>'상태'],['label'=>'내부 기한'],['label'=>'담당'],['label'=>'변경']];
 vg_table($headers,$rows,[
