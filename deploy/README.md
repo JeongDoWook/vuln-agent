@@ -23,7 +23,7 @@ cd deploy
 
 ---
 
-## ⚠ 이번 변경 후 운영 서버에서 할 일 — `.env.prod` 에 `PROD_DOMAIN` 추가
+## ⚠ 2026-07-27 변경 후 운영 서버에서 할 일 (1회) — `.env.prod` 에 `PROD_DOMAIN` 추가
 
 Caddy 사이트 주소를 저장소에 박아 두지 않고 **환경변수 `PROD_DOMAIN`** 으로 뺐다
 (`deploy/caddy/Caddyfile` 의 `{$PROD_DOMAIN}`). **이미 돌고 있는 서버의 `.env.prod` 에는
