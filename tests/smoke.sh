@@ -173,6 +173,12 @@ fi
 run_phpunit "vercmp_test.php" "vercmp" "vercmp 단위 테스트"
 run_phpunit "osv_precision_test.php" "osv_precision" "OSV 구간·소스 버전 정밀 매칭 단위 테스트"
 
+# --- 매처 억제 게이트 단위 테스트 ---------------------------------------------
+# "어느 근거가 어느 가드에 막히는가" 는 오탐(잘못 뜸)과 미탐(잘못 숨김)이 직접 갈리는 자리인데
+# 눈으로 읽어선 회귀를 못 잡는다 — 실제로 changelog 억제가 서드파티 가드에 막혀 운영에서
+# 억제 0건이었다(docs/dev/changelog-억제층-실측.md). 계약을 테스트로 고정한다.
+run_phpunit "matcher_suppress_test.php" "matcher_suppress" "매처 억제 게이트 단위 테스트"
+
 # --- ingest_parse 단위 테스트 -------------------------------------------------
 # ingest.php 의 순수 변환(패키지/노출/컨테이너/changelog 파싱, 내용해시, 패키지 diff)을
 # server/src/ingest_parse.php 로 뽑아냈다. 예전엔 이 파싱 로직에 단위테스트가 0개였다 —
