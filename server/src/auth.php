@@ -214,6 +214,10 @@ const VG_ROLE_DESCRIPTIONS = ['admin' => '전체', 'operator' => '피드', 'user
  *   사이드바 라벨은 vg_nav_sections() 가 따로 갖는다 — 코드 하나가 링크 둘을 여는
  *   경우(findings → 취약점 현황 + CVE 목록)가 있어 1:1 로 못 묶기 때문이다.
  *   그래서 여기 라벨은 "그 코드를 체크하면 열리는 메뉴들"을 그대로 적는다.
+ *
+ *   이 목록은 nav.php 의 'perm' 코드와 반드시 일치해야 하는 **메뉴코드 정본**이다 —
+ *   어긋나면 사이드바에 보이는데 눌러보면 403 나는 링크가 생긴다. admin 전용 메뉴
+ *   (permissions·apitokens)도 여기엔 남기고, 권한 매트릭스에서만 뺀다(permissions.php).
  */
 function vg_menus(): array {
     return [
@@ -224,6 +228,7 @@ function vg_menus(): array {
         'connectors'  => '피드 커넥터',
         'users'       => '사용자',
         'agenttokens' => '에이전트 토큰',
+        'apitokens'   => 'API 토큰',
         'activity'    => '감사 로그',
         'permissions' => '권한 설정',
     ];
