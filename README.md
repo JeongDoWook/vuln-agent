@@ -41,7 +41,7 @@
 
 ```
 agent/    수집 에이전트 (Bash) — 패키지·런타임 노출·백포트 changelog 수집 + install-agent.sh(systemd-timer/cron 자동 배포). 설치·운영은 agent/README.md
-server/   PHP 중앙 서버 — 수신 API(ingest)·Export API + 웹(대시보드·취약점·변화추적·CVE·자산·국내공지·시스템) + 매처
+server/   PHP 중앙 서버 — 수신 API(ingest)·Export API + 웹(대시보드·취약점·자산·수집·계정·연동·기록) + 매처
 deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·migrate.sh(스키마 자동 적용)·wt.sh
 db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼. 최상위 *.sql 은 빈 볼륨 초기화용, 증분 변경은 migrations/
 docs/     아키텍처 · 기획안 · 설명글 · 피드소스-역할(커넥터 12종: 고정 5종 + 벤더판정 6종 + 범용 API) · export-api · 에이전트-리소스-프로파일
@@ -106,14 +106,20 @@ cd deploy
 
 | 대분류 | 화면 |
 |---|---|
-| 대시보드 | `/` 호스트별 최신 스캔·심각도 KPI → 서버명 클릭 시 호스트 상세 `host.php`(노출·프로세스·취약점·CCE·억제 내역) |
-| 취약점 | `/findings.php` 우선순위(+조치안) · `/changes.php` 변화 추적 · `/cves.php` CVE 목록 · `/packages.php` 영향 패키지 · `/advisories.php`·`/advisory.php` 국내 보안공지 |
+| (대분류 없음) | `/` 대시보드 — 호스트별 최신 스캔·심각도 KPI → 서버명 클릭 시 호스트 상세 `host.php`(노출·프로세스·취약점·CCE·억제 내역) |
+| 취약점 | `/findings.php` 취약점 현황(+조치안, 서브탭으로 `/changes.php` 변화 추적) · `/remediations.php` 조치 관리(자산×CVE 조치 상태·담당자·기한) · `/cves.php` CVE 목록 · `/cve.php` CVE 상세 · `/packages.php` 영향 패키지 · `/vendor.php` 벤더 판정(억제 근거 원본) · `/compliance_rules.php` 보안설정 룰셋(SSG) · `/compliance_rule.php` 룰 상세 · `/advisories.php`·`/advisory.php` 국내 보안공지 |
 | 자산 | `/assets.php` 호스트 자산 관리 |
-| 피드 | `/connectors.php` 피드 커넥터(설정·스케줄·미리보기·지금 실행) |
-| 시스템 | `/users.php` 사용자 목록 · `/user.php` 사용자 상세(관리 액션) · `/permissions.php` 권한 설정 · `/agent-tokens.php` 에이전트 토큰 발급 · `/api-tokens.php` API 토큰 · `/activity.php` 감사 로그 |
+| 수집 | `/connectors.php` 피드 커넥터(설정·스케줄·미리보기·지금 실행) |
+| 계정 | `/users.php` 사용자 목록 · `/user.php` 사용자 상세(관리 액션) · `/permissions.php` 권한 설정 |
+| 연동 | `/agent-tokens.php` 에이전트 토큰 발급 · `/api-tokens.php` API 토큰 |
+| 기록 | `/activity.php` 감사 로그 |
+
+사이드바 밖: `/profile.php` 내 프로필(상단바 사용자 메뉴 — 로그인 사용자 전원, 본인 비밀번호 변경).
 
 API: `POST /ingest.php`(에이전트 수집 수신) · `POST /rematch.php`(재매칭) · `GET /export.php`
-(결과 내보내기 — 상세: [`docs/dev/export-api.md`](docs/dev/export-api.md)).
+(결과 내보내기 — 상세: [`docs/dev/export-api.md`](docs/dev/export-api.md)) ·
+`GET /agent-dl.php`(에이전트 설치 파일 배포 — 자산 화면의 설치 안내 모달이 링크) ·
+`GET /feed_preview.php`(커넥터 미리보기, perm=connectors).
 
 각 취약점에는 **조치안**("어느 버전 이상으로 업데이트")이 함께 표시된다(OSV 의 fixed 버전).
 
@@ -191,7 +197,7 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 
 ## 피드 커넥터
 
-외부 CVE 소스를 UI에서 설정·스케줄·수집한다 (admin → "피드").
+외부 CVE 소스를 UI에서 설정·스케줄·수집한다 (admin → "수집 → 피드 커넥터").
 
 - **CISA KEV** (기본 활성): 실제 악용 취약점 카탈로그 JSON, 무인증. 매일 자동 수집.
 - **OSV.dev** (기본 활성): 수집된 **모든 패키지**를 OSV querybatch 로 조회(배포판별 ecosystem 자동, deb 는 소스패키지·설치버전 기준) → `cve_affected_packages` 를 실제로 채워 매처가 전 패키지를 검사. 시드 3개가 아니라 서버의 실제 취약점 전체를 발굴.
