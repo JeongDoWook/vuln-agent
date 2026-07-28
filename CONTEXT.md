@@ -118,7 +118,10 @@ vuln-agent/
 ├── server/
 │   ├── Dockerfile
 │   ├── public/   # ingest·rematch·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
-│   │             #   packages/advisories/advisory/assets/connectors/users/permissions/api-tokens/activity/profile(웹)
+│   │             #   packages/advisories/advisory/assets/connectors/users/user/permissions/api-tokens/
+│   │             #   agent-tokens/activity/profile + remediations(조치관리)/vendor(벤더 판정 근거)/
+│   │             #   compliance_rules·compliance_rule(SSG 룰셋 카탈로그) (웹)
+│   │             #   agent-dl.php — 에이전트 설치 파일 배포(자산 화면 설치 모달의 다운로드 대상)
 │   │             #   process.html — 프로세스 소개(로그인 불필요, /process.html 로 공유)
 │   ├── src/      # config·db·auth(RBAC)·view·matcher(+백포트억제)·feeds·cce·apitoken·audit(감사로그·소프트삭제)
 │   └── bin/      # scheduler.php(사이드카)·sync.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
@@ -278,6 +281,37 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
       · EPSS 백분위 병기 · 필터 즉시 적용.
 - [x] 대시보드 "다음 수집 예정" — enabled·비manual 커넥터 중 가장 이른 next_run_at 을 헤더 아래 표시.
       (알림은 만들지 않기로 — 외부 채널 수신지가 없어 YAGNI. 필요해지면 그때.)
+- [x] **조치 관리 · SLA** — 지금까지는 "찾은 것"까지였고 "누가 언제까지 고치나"가 없었다.
+      `tb_sla_policy`(심각도별 조치기한 정책)로 기한을 자동 산정해 `tb_remediation_case`(자산×CVE×패키지
+      단위 케이스: 담당자·기한·예외·상태)를 만들고 `remediations.php` 에서 관리한다. 상태 변경은
+      admin/operator 만(CSRF 검증), 대시보드에도 OPEN/IN_PROGRESS 건수를 카드로 띄운다.
+- [x] **벤더 판정 조회 화면** — `vendor.php`. 벤더 데이터(debtracker·rhoval·rhunfixed·ubuntuoval·kcve)는
+      지금까지 매처가 억제에만 썼고, 억제가 의심스러우면 DB 에 직접 붙어야 했다. 원본을 소스 필터와 함께
+      한 화면에서 보여줘 **억제 근거를 사람이 확인할 수 있게** 했다(설명가능성 — 차별점 ③의 연장).
+- [x] **보안설정 룰셋(SSG) 카탈로그** — `tb_compliance_rule`(약 2,493개 룰) + 목록·검색 `compliance_rules.php`
+      · 상세 `compliance_rule.php`(`?rule=<rule_id>`). CCE 판정이 인용하는 CIS/NIST/STIG 기준이 뭔지
+      화면에서 확인한다 — 근거를 못 보면 FAIL 이 떠도 무엇을 고쳐야 하는지 알 수 없다.
+      (SSG 커넥터 자체는 4a 에 이미 있다 — 여기 추가된 건 **화면**이다.)
+- [x] **정밀 판정 플랫폼** — `tb_finding_evidence`(판정 근거를 `tb_finding` 1:1 로 구조화 저장) +
+      `tb_collection_stage`(수집 단계별 완전성 기록). 에이전트가 어떤 수집 단계를 못 채우면 그 영역은
+      조용히 "취약점 없음"이 된다 → 단계 누락을 호스트 상세에 **경고로 드러내** 미탐을 미탐인 채로
+      넘기지 않는다(미지원 배포판 경고와 같은 취지).
+- [x] **경계 방화벽 뒤 외부노출 선언** — `tb_host_ext_port`. 서버 자신은 0.0.0.0 에 떠 있어도 경계
+      방화벽이 막으면 실제로 외부에서 못 닿는다. 호스트별로 "경계가 실제로 열어 준 포트"를 선언해
+      그 외 포트는 EXTERNAL 로 올리지 않는다(호스트 내 firewalld/ufw 만 보는 FILTERED 로는 못 잡는
+      층이다). 변경은 감사로그 `host_perimeter_update` 로 남는다 — 등급을 낮추는 선언이라 이력이 필요하다.
+- [x] **패키지 요약 사전집계** — `tb_package_summary`(자연키 `(package_name, ecosystem)`). `packages.php`
+      가 92만 행을 매 요청마다 GROUP BY 하느라 8초 걸리던 것을 사전집계 조회로 바꿔 약 0.05초가 됐다
+      (갱신은 OSV 커넥터 실행 시 — 목록이 웹 요청을 붙잡지 않게 한다).
+- [x] **에이전트 재전송 공격 방지** — `tb_agent_replay_nonce`(복합키 `(agent_token_id, nonce_hash)`).
+      토큰이 유효해도 가로챈 요청을 그대로 다시 보내면 옛 수집물이 최신으로 덮인다 → 요청별 nonce 를
+      1회만 허용한다. 허용 시계오차는 `AGENT_NONCE_MAX_SKEW_SECONDS`(기본 600초, 코드에 안 박는다).
+- [x] **에이전트 설치 파일 웹 배포** — `agent-dl.php`. 대상 서버가 저장소 체크아웃 없이 스크립트 2개 +
+      **배포별** 루트 CA 를 받아 설치한다(자산 화면의 설치 모달이 여기를 가리킨다). CA 는 배포마다 값이
+      달라 저장소에 두지 않는다(`agent-ca/`, gitignore).
+- [x] **재매칭 지문** — `tb_scan.match_fingerprint`. 피드가 갱신돼도 판정 결과가 같으면 트랜잭션조차
+      열지 않는다. 예전엔 1비트도 안 바뀐 경우까지 통째 삭제·재삽입해 binlog 가 하루 20GB 넘게 쌓였다
+      (운영 실측: 디스크 105G 중 76G). 상세는 `docs/dev/architecture.md §2`.
 - [ ] 브라우저 E2E — 지금 검증은 `tests/smoke.sh`(curl 로 API~로그인)까지다. Playwright 로 화면 흐름까지 덮는 건 남았다.
 
 > 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·백포트 억제·KEV/EPSS·설명가능성).
