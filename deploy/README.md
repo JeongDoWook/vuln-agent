@@ -18,29 +18,14 @@ cd deploy
 ./compose_runner.sh prod up -d --build    # 운영 기동 — Caddy 가 자체서명 루트 CA 를 이때 생성한다
 ```
 
-기동되면 대시보드가 `https://<도메인>:8080` 에 뜬다(Caddy 가 HTTPS 종료). 갱신은 서버에서
-`bash deploy/update.sh` 한 줄 — 바뀐 파일을 보고 재빌드/pull 을 스스로 고른다.
+기동되면 대시보드가 **`https://<도메인>`**(443, 포트 없음)에 뜬다(Caddy 가 HTTPS 종료).
+평문 `http://<도메인>` 으로 들어와도 308 로 https 에 리다이렉트된다. `https://<도메인>:8080`
+도 계속 동작한다 — 이미 설치된 에이전트들이 그 주소로 등록돼 있어 **하위호환**으로 열어 둔다.
+포트 구성·리다이렉트 상세는 [`caddy/README.md`](caddy/README.md).
 
----
-
-## ⚠ 2026-07-27 변경 후 운영 서버에서 할 일 (1회) — `.env.prod` 에 `PROD_DOMAIN` 추가
-
-Caddy 사이트 주소를 저장소에 박아 두지 않고 **환경변수 `PROD_DOMAIN`** 으로 뺐다
-(`deploy/caddy/Caddyfile` 의 `{$PROD_DOMAIN}`). **이미 돌고 있는 서버의 `.env.prod` 에는
-이 줄이 없다** — 그대로 `update.sh` 를 돌리면 caddy 가 못 뜬다(= HTTPS 중단).
-`update.sh` **전에** 서버에서 한 줄 추가한다:
-
-```bash
-cd /apps/vulnagent/app/deploy
-grep -q '^PROD_DOMAIN=' .env.prod || echo 'PROD_DOMAIN=실제운영도메인' >> .env.prod
-./compose_runner.sh doctor        # "✓ .env.prod: PROD_DOMAIN" 확인
-bash update.sh                    # 그 다음에 갱신
-```
-
-값은 **지금 접속하는 도메인과 정확히 같아야 한다** — TLS 인증서가 이 이름으로 발급/서빙된다.
-빠뜨리면 조용히 넘어가지 않고 시끄럽게 실패한다(의도적):
-compose 가 `${PROD_DOMAIN:?…}` 로 거부하고, 뚫려도 Caddy 가 빈 주소를
-`unrecognized global option: encode` 로 파싱해 기동에 실패한다.
+갱신은 서버에서 `bash deploy/update.sh` 한 줄 — 바뀐 파일을 보고 재빌드/pull 을 스스로 고른다.
+**운영 중인 서버를 업데이트한다면** 문서 끝 [“지난 변경 — 운영 서버에서 1회 조치가 필요했던 것”](#지난-변경--운영-서버에서-1회-조치가-필요했던-것)
+을 먼저 확인한다.
 
 ---
 
@@ -98,11 +83,46 @@ Caddy 루트는 10년짜리라 거의 바뀌지 않는다. `data`(caddy_data) �
 
 ```bash
 crontab -e
-# 대략 3일에 1번, 새벽 4시 (*/3 은 day-of-month 필드라 월 경계에서 리셋 — 정확히 72시간
-# 간격은 아니지만 "약 30일치 보관"이 목적이라 무방하다)
-0 4 */3 * * /apps/vulnagent/app/deploy/backup_db.sh >> /apps/vulnagent/backups/cron.log 2>&1
+# 매일 새벽 4시
+0 4 * * * /apps/vulnagent/app/deploy/backup_db.sh >> /apps/vulnagent/backups/cron.log 2>&1
 ```
 
-보관 정책은 스크립트 상단 `KEEP=10`(3일 주기 기준 약 30일치) — `vulnagent_*.sql.gz` 만 최신
-10개를 남기고 자동 정리한다. 기존 수동 백업(`pre_content_*`, `pre_tb_*`)은 패턴이 달라 건드리지
-않는다. 실행 결과는 `$BACKUP_DIR/backup.log` 에 한 줄씩 쌓인다.
+**왜 매일인가.** 예전엔 3일 주기(`0 4 */3 * *`)에 30일치였는데, `*/3` 은 일(day-of-month)
+필드라 **월 경계에서 리셋돼** 간격이 들쭉날쭉했다(30일에 돌면 다음은 다음 달 3일). 매일이면
+그 함정 자체가 없고, 복구 시점도 최대 하루 전으로 좁혀진다.
+
+보관 정책은 스크립트 상단 `KEEP=7`(매일 주기 기준 **7일치**) — `vulnagent_*.sql.gz` 만 최신
+7개를 남기고 자동 정리한다. **나이(mtime)가 아니라 개수 기준인 것도 의도적이다** — 백업이 며칠
+연속 실패해도 마지막 7개는 남는다. 나이 기준이면 실패가 이어질 때 남은 것까지 다 지워 0개가 된다.
+
+기존 수동 백업(`pre_content_*`, `pre_tb_*`)은 패턴이 달라 건드리지 않는다. 실행 결과는
+`$BACKUP_DIR/backup.log` 에 한 줄씩 쌓인다.
+
+> cron 한 줄과 `KEEP` 은 **짝이다.** 한쪽만 바꾸면 보관 기간이 의도와 달라지므로
+> `deploy/backup_db.sh` 를 정답으로 보고 양쪽을 함께 맞춘다.
+
+---
+
+## 지난 변경 — 운영 서버에서 1회 조치가 필요했던 것
+
+새로 배포하는 서버엔 **해당 없다**(템플릿에서 만든 `.env.prod` 는 처음부터 갖춰져 있다).
+**이미 돌고 있는 서버를 업데이트할 때만** 아래를 날짜 순으로 훑고, 아직 안 한 게 있으면
+`update.sh` **전에** 처리한다. 앞으로 같은 성격의 공지도 여기에 날짜별로 쌓는다.
+
+### 2026-07-27 — `.env.prod` 에 `PROD_DOMAIN` 추가
+
+Caddy 사이트 주소를 저장소에 박아 두지 않고 **환경변수 `PROD_DOMAIN`** 으로 뺐다
+(`deploy/caddy/Caddyfile` 의 `{$PROD_DOMAIN}`). **이 변경 이전부터 돌던 서버의 `.env.prod` 에는
+이 줄이 없다** — 그대로 `update.sh` 를 돌리면 caddy 가 못 뜬다(= HTTPS 중단).
+
+```bash
+cd /apps/vulnagent/app/deploy
+grep -q '^PROD_DOMAIN=' .env.prod || echo 'PROD_DOMAIN=실제운영도메인' >> .env.prod
+./compose_runner.sh doctor        # "✓ .env.prod: PROD_DOMAIN" 확인
+bash update.sh                    # 그 다음에 갱신
+```
+
+값은 **지금 접속하는 도메인과 정확히 같아야 한다** — TLS 인증서가 이 이름으로 발급/서빙된다.
+빠뜨리면 조용히 넘어가지 않고 시끄럽게 실패한다(의도적):
+compose 가 `${PROD_DOMAIN:?…}` 로 거부하고, 뚫려도 Caddy 가 빈 주소를
+`unrecognized global option: encode` 로 파싱해 기동에 실패한다.
