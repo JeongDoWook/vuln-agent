@@ -242,10 +242,19 @@ OVAL 로도 남는 판단불가 8건은 `libudev-dev` 처럼 OVAL 에 항목이 
 (`agent/vuln-inventory-agent.sh:1248,1252`) apk 패키지에는 근거가 있을 수 없는데,
 `tb_pkg_changelog_cve` 에 `container_id` 가 없어 조인만 걸린 것이다.
 
-## 권고
+## 권고 — 이 PR 에서 적용했다
 
-**changelog 억제를 서드파티 가드보다 앞에 둔다.** 단 `staleEv`(재시작 필요)·
+**changelog 억제를 서드파티 가드에서 뺀다.** 단 `staleEv`(재시작 필요)·
 `kernelPending`(재부팅 필요) 가드는 그대로 유지한다.
+
+구현은 억제 보류를 성격이 다른 둘로 나눈 것이다(`matcher.php`) — 근거의 종류를 가리지
+않는 **런타임 보류**(`$runtimeStale`)와, 버전 비교 계열에만 해당하는 **서드파티 보류**.
+changelog 억제는 앞엣것만 보고 뒤엣것은 보지 않는다. 컨테이너 제외(`$ctr === null`)는
+그대로다. 판정이 바뀌었으므로 `VG_MATCH_FP_VERSION` 도 2 로 올렸다 — 안 올리면 입력이
+그대로인 스캔의 지문이 같아서 새 결과가 저장되지 않는다.
+
+계약은 `tests/matcher_suppress_test.php` 로 고정했다(스모크에 편입). 변경 전 코드로
+돌리면 바뀐 2건만 실패하고 나머지 9건(버전·트래커·errata·커널 경로)은 그대로 통과한다.
 
 근거는 서드파티 가드의 사유가 changelog 에는 적용되지 않는다는 것이다. 그 가드의 주석
 (matcher.php:613)이 밝히는 이유는 *"배포판 조치안과 버전 체계가 달라 자동 판정 불가"* 인데,
