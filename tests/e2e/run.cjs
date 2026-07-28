@@ -1,9 +1,13 @@
 /* =============================================================================
  * run.cjs — 브라우저 E2E 시나리오. tests/e2e.sh 가 전용 컨테이너에서 실행한다.
  * =============================================================================
- *  덮는 것은 **클라이언트 JS 동작뿐**이다(server/public/assets/app.js).
+ *  덮는 것은 **클라이언트 JS 동작뿐**이다(server/public/assets/app.js 와 화면 전용 JS).
  *  "화면이 뜨는지"는 tests/smoke.sh 가 이미 curl 로 본다 — 여기서 다시 보지 않는다.
  *  curl 은 HTML 만 받으므로 이 JS 가 통째로 깨져도 smoke 는 전부 통과한다.
+ *
+ *  ⚠ 부작용 금지: 외부 소스를 치거나 DB 를 바꾸는 버튼(커넥터 미리보기·지금 실행·저장·
+ *    활성토글·삭제)은 **누르지 않는다.** 폼은 채우기만 하고 제출하지 않는다 — dev DB 는
+ *    워크트리 공용이고, 수집 실행은 세션 락을 오래 쥔다.
  *
  *  ⚠ 반드시 CommonJS(.cjs + require) 로 쓴다. playwright 는 이미지에 **전역 설치**돼
  *    있고 NODE_PATH 로 찾는데, NODE_PATH 는 CJS 전용 해석 경로다. ESM 의
@@ -56,6 +60,58 @@ function snapshot(page) {
 }
 
 const navOpen = (page) => page.evaluate(() => document.body.classList.contains('nav-open'));
+
+/**
+ * 커넥터 폼의 타입을 고르고 화면 상태를 한 번에 읽는다(connectors.js 의 toggle()).
+ * 값 비교는 PHP 카탈로그(#connForm data-type-meta)와 하고 여기 문자열을 박지 않는다 —
+ * 그래야 카탈로그가 늘어도 안 깨지고, 오히려 "PHP 와 화면이 일치하는가" 를 검사하게 된다.
+ */
+async function selectConnType(page, type) {
+  await page.selectOption('#connType', type);
+  return page.evaluate(() => {
+    const badge = document.querySelector('#connTransport .badge');
+    const desc = document.getElementById('connTransportDesc');
+    const urlLabel = document.getElementById('urlLabel');
+    const fields = {};
+    document.querySelectorAll('#stdFields [data-field]').forEach((box) => {
+      fields[box.dataset.field] = !box.hidden;
+    });
+    return {
+      badge: badge ? badge.textContent.trim() : null,
+      badgeClass: badge ? badge.className : '',
+      desc: desc ? desc.textContent.trim() : null,
+      urlLabel: urlLabel ? urlLabel.textContent.trim() : null,
+      fields,
+      stdHidden: document.getElementById('stdFields').hidden,
+      genericHidden: document.getElementById('genericFields').hidden,
+    };
+  });
+}
+
+/** 위에서 읽은 화면 상태가 카탈로그 한 줄(want)과 어긋나지 않는지. */
+function checkTypeMatchesCatalog(type, got, want) {
+  check(got.badge === want.transport, type + ': 수집 방식 뱃지가 카탈로그와 일치',
+    'badge=' + got.badge + ' meta=' + want.transport);
+  check(got.badgeClass.indexOf('tone-' + want.tone) >= 0, type + ': 뱃지 톤이 카탈로그와 일치',
+    'class=' + got.badgeClass + ' meta=' + want.tone);
+  check(got.desc === want.desc, type + ': 수집 방식 설명이 카탈로그와 일치');
+  // url_label 이 빈 타입(설정할 값이 없는 커넥터)은 JS 가 라벨을 손대지 않는다 — 비교 대상이 아니다.
+  if (want.urlLabel) {
+    check(got.urlLabel === want.urlLabel, type + ': URL 라벨이 카탈로그와 일치',
+      'label=' + got.urlLabel + ' meta=' + want.urlLabel);
+  }
+  const shown = Object.keys(got.fields).filter((k) => got.fields[k]).sort().join(',');
+  const wanted = want.fields.slice().sort().join(',');
+  check(shown === wanted, type + ': 카탈로그가 정한 필드만 노출', 'shown=[' + shown + '] meta=[' + wanted + ']');
+}
+
+/** 범용 API 커넥터의 역할 매핑 영역(vgRenderFieldMap 이 다시 그린 결과). */
+const roleState = (page) => page.evaluate(() => ({
+  role: document.getElementById('gFieldMap').dataset.role,
+  keys: Array.from(document.querySelectorAll('#gFieldMap .g-fm-val')).map((i) => i.dataset.fmKey),
+  label: (document.getElementById('gRoleLabel').textContent || '').trim(),
+  notice: !document.getElementById('gRoleNotice').hidden,
+}));
 
 /**
  * 페이지 이동. waitUntil:'load' 는 defer 된 app.js 실행과 DOMContentLoaded 핸들러가
@@ -147,6 +203,86 @@ async function main() {
     // 모르고 데스크톱에서 클릭하면 30초 타임아웃으로 실패한다).
     check(await page.locator('.toolbar__toggle').first().isVisible(),
       '모바일 폭에서 "검색 및 필터" 토글 노출');
+
+    // --- 5) 커넥터 화면 JS(connectors.js) + 모달 -----------------------------
+    // ⚠ 이 화면엔 누르면 **외부 소스를 실제로 치거나 공용 dev DB 를 바꾸는** 버튼이 섞여 있다
+    //   (미리보기·지금 실행·저장·활성토글·삭제). 여기서는 그중 무엇도 누르지 않고 **폼을 채우기만
+    //   하고 절대 제출하지 않는다** — connectors.js 의 검증 가치는 네트워크 없는 DOM 조작에 있다.
+    await page.setViewportSize({ width: 1280, height: 900 });   // 4)가 375 로 바꿔 놨다
+    await go(page, '/connectors.php');
+
+    const meta = await page.evaluate(() => {
+      const f = document.getElementById('connForm');
+      if (!f) { return null; }
+      return { types: JSON.parse(f.dataset.typeMeta || '{}'), roles: JSON.parse(f.dataset.roleLabels || '{}') };
+    });
+    check(meta !== null && Object.keys(meta.types).length > 0,
+      '#connForm 이 PHP 카탈로그(data-type-meta)를 화면에 넘긴다');
+    check(meta !== null && Object.keys(meta.roles).length > 0,
+      '#connForm 이 역할 라벨(data-role-labels)을 화면에 넘긴다');
+
+    const modal = page.locator('#connModal');
+    check(!(await modal.isVisible()), '처음엔 커넥터 모달이 닫혀 있다');
+    await page.click('[data-modal="connModal"]');
+    check(await modal.isVisible(), '[+ 커넥터 추가] 클릭 → 모달 열림');
+
+    // kev: 파일 다운로드 방식 — API 가 아니라 파일 라벨이어야 하고, url 말고는 안 보인다.
+    const kev = await selectConnType(page, 'kev');
+    check(!kev.stdHidden && kev.genericHidden, 'kev: 표준 필드 보이고 범용 폼 숨김');
+    checkTypeMatchesCatalog('kev', kev, meta.types.kev);
+
+    // osv: 방식이 바뀌고, kev 에선 숨어 있던 ecosystem 이 나타난다(타입별 fields 차이).
+    const osv = await selectConnType(page, 'osv');
+    checkTypeMatchesCatalog('osv', osv, meta.types.osv);
+    check(osv.badge !== kev.badge, '타입을 바꾸면 수집 방식 뱃지가 실제로 바뀐다',
+      'kev=' + kev.badge + ' osv=' + osv.badge);
+    check(osv.fields.ecosystem === true && kev.fields.ecosystem === false,
+      'ecosystem 필드는 osv 에서만 보인다(kev 에선 숨김)');
+
+    // generic_api: 표준 폼 ↔ 범용 폼 전환.
+    const generic = await selectConnType(page, 'generic_api');
+    check(generic.stdHidden && !generic.genericHidden, 'generic_api: 범용 폼 보이고 표준 필드 숨김');
+
+    // 역할 변경 → 필드 매핑·라벨·안내가 다시 그려진다(vgRenderFieldMap).
+    const identity = await roleState(page);
+    check(identity.role === 'identity' && identity.keys.length > 0,
+      '범용 폼 초기 역할은 identity 이고 필드 매핑이 그려져 있다', 'role=' + identity.role);
+
+    await page.selectOption('#gRole', 'vendor');
+    const vendor = await roleState(page);
+    check(vendor.role === 'vendor', '역할을 vendor 로 바꾸면 #gFieldMap 이 다시 그려진다', 'role=' + vendor.role);
+    check(vendor.keys.join(',') !== identity.keys.join(','), '역할이 다르면 매핑 입력 목록도 다르다',
+      'identity=' + identity.keys.length + '개 vendor=' + vendor.keys.length + '개');
+    check(vendor.label === '(' + meta.roles.vendor + ')', '#gRoleLabel 이 PHP 라벨(data-role-labels)과 일치',
+      'label=' + vendor.label);
+    check(!vendor.notice, 'vendor 역할에선 미지원 안내가 뜨지 않는다');
+
+    await page.selectOption('#gRole', 'compliance');
+    const compliance = await roleState(page);
+    check(compliance.notice, 'compliance 역할로 바꾸면 1차 미지원 안내가 뜬다');
+    check(compliance.label === '(' + meta.roles.compliance + ')', 'compliance 라벨도 PHP 라벨과 일치',
+      'label=' + compliance.label);
+
+    // 인증 헤더 행 추가/삭제(vgHeaderRow). 제출하지 않으므로 서버엔 닿지 않는다.
+    const headerRows = page.locator('#gHeaders .kvrow');
+    const before = await headerRows.count();
+    await page.click('#gHeaderAdd');
+    check(await headerRows.count() === before + 1, '[+ 헤더 추가] → .kvrow 한 줄 늘어남',
+      'before=' + before + ' after=' + (await headerRows.count()));
+    const lastRow = headerRows.last();
+    check(await lastRow.locator('.g-h-key').count() === 1 && await lastRow.locator('.g-h-val').count() === 1,
+      '추가된 행에 헤더 키·값 입력이 있다');
+    await lastRow.locator('button').click();
+    check(await headerRows.count() === before, '행의 [삭제] → 다시 줄어듦');
+
+    // 닫기 — Escape(브라우저 네이티브)와 닫기 버튼(app.js data-modal-close) 둘 다.
+    await page.keyboard.press('Escape');
+    check(!(await modal.isVisible()), 'Escape → 커넥터 모달 닫힘');
+
+    await page.click('[data-modal="connModal"]');
+    check(await modal.isVisible(), '다시 열기 → 모달 열림');
+    await modal.locator('.modal__foot [data-modal-close]').click();
+    check(!(await modal.isVisible()), '[닫기] 버튼 → 커넥터 모달 닫힘');
   } catch (err) {
     fail('시나리오 실행 중 예외', safe(err && err.message ? err.message : err));
   } finally {
