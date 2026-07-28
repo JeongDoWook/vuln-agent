@@ -129,7 +129,8 @@ vuln-agent/
 │   └── migrations/    # YYYYMMDDHHMMSS_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
 │                      #   연번(0001…)은 금지 — 동시 브랜치가 같은 번호를 집는다. pre-push 가 막는다.
 │                      #   기존 0001~0020 은 그대로 둔다(사전순이라 옛 것이 먼저 돈다).
-├── tests/        # smoke.sh(E2E) · ui_lint.sh(죽은 CSS·인라인 style) · vercmp_test.php(버전비교 단위)
+├── tests/        # smoke.sh(API~로그인 curl) · e2e.sh+e2e/(브라우저 JS, Playwright — 게이트 밖)
+│                 #   · ui_lint.sh(죽은 CSS·인라인 style) · vercmp_test.php(버전비교 단위)
 │                 #   · agent-bench.sh(에이전트 리소스 실측)
 ├── docs/         # 아키텍처·기획안·설명글·피드소스-역할·export-api·에이전트-리소스-프로파일
 └── shadow-ai/    # (사이드 PoC) 섀도우 AI DLP 크롬 확장 — 본 파이프라인과 독립
@@ -312,7 +313,13 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
 - [x] **재매칭 지문** — `tb_scan.match_fingerprint`. 피드가 갱신돼도 판정 결과가 같으면 트랜잭션조차
       열지 않는다. 예전엔 1비트도 안 바뀐 경우까지 통째 삭제·재삽입해 binlog 가 하루 20GB 넘게 쌓였다
       (운영 실측: 디스크 105G 중 76G). 상세는 `docs/dev/architecture.md §2`.
-- [ ] 브라우저 E2E — 지금 검증은 `tests/smoke.sh`(curl 로 API~로그인)까지다. Playwright 로 화면 흐름까지 덮는 건 남았다.
+- [x] **브라우저 E2E** — `tests/e2e.sh` + `tests/e2e/run.cjs`(Playwright, 전용 컨테이너). `smoke.sh` 는
+      curl 이라 HTML 만 받는다 — **클라이언트 JS(`assets/app.js` 408줄 + `assets/js/connectors.js` 283줄)가
+      통째로 깨져도 88개 검사가 전부 통과**한다. 그 구멍만 덮는다("화면이 뜨는지"는 smoke 가 이미 본다).
+      덮는 것: ① 로그인→대시보드 ② 테마 토글(클릭·저장·다른 화면 복원·실제 배경색 변화) ③ 밀도 토글
+      ④ 모바일 사이드바(375폭, 백드롭·Escape 닫기 + 필터 토글 노출). **안 덮는 것: 커넥터 화면
+      JS(`connectors.js`)·모달·필터 즉시적용.** 브라우저 기동이 느려 pre-push 게이트에는 넣지 않았다
+      (CI 가 없어 훅이 곧 매 push 다) — opt-in 으로 직접 돌린다.
 
 > 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·백포트 억제·KEV/EPSS·설명가능성).
 > Python AI 문서생성은 본체 범위에서 제외 — Export API 로 결과만 넘긴다.

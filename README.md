@@ -326,7 +326,15 @@ dev 에서 `git pull` 한 뒤에는 `./deploy/compose_runner.sh dev up -d` 를 �
 ```
 
 수집→저장→매칭(CRITICAL/HIGH 산출), 토큰 인증, 로그인 흐름을 curl 로 점검한다.
-(브라우저 E2E는 나중에 Playwright 로 추가 예정)
+
+curl 은 HTML 만 받으므로 **클라이언트 JS**(`assets/app.js` — 테마·밀도·모바일 내비)는 위에서
+안 덮인다. 그 구멍만 브라우저로 확인한다(Playwright, 전용 컨테이너에서 실행):
+
+```bash
+./tests/e2e.sh http://localhost:8000    # 로그인 · 테마 · 밀도 · 모바일 사이드바 4종
+```
+
+브라우저 기동이 느려 **pre-push 게이트에는 넣지 않는다** — 필요할 때 직접 돌린다.
 
 ## 진행 상태
 
@@ -335,7 +343,9 @@ dev 에서 `git pull` 한 뒤에는 `./deploy/compose_runner.sh dev up -d` 를 �
 벤더별 판정) · 컨테이너 스캔 · CCE · 변화 추적 · Export API** 와, 피드 커넥터 12종(고정 5종 +
 벤더 판정 6종 + 범용 API)이 올라가 있다. 운영 쪽은 HTTPS(Caddy) 배포 · 에이전트 자동 설치 ·
 스키마 마이그레이션 자동화 · 설정형 RBAC · 감사 로그까지 갖췄다.
-**남은 것은 브라우저 E2E(Playwright)** 뿐이다 — 알림은 외부 채널 수신지가 없어 만들지 않기로 했다.
+검증은 `tests/smoke.sh`(curl) 위에 **브라우저 E2E(`tests/e2e.sh`, Playwright)** 가 얹혀 클라이언트
+JS 의 핵심 4종까지 덮는다(커넥터 화면 JS·모달·필터 즉시적용은 아직) — 알림은 외부 채널 수신지가
+없어 만들지 않기로 했다.
 
 > 항목별 상세 목록(각 항목을 왜 그렇게 만들었는지까지)은
 > [`CONTEXT.md` §8 개발 현황](CONTEXT.md#8-개발-현황-2026-07-기준--파이프라인https감사--오탐억제cce변화추적export-완성)
