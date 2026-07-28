@@ -3,7 +3,7 @@
 지금까지 확정·구현된 구조를 그림으로 정리한다.
 다이어그램은 [`docs/specs/diagrams/`](../specs/diagrams/) 에 PlantUML(`.puml`)로 분리해 두었다.
 
-관련 문서: 전략·로드맵은 [`../CONTEXT.md`](../CONTEXT.md), 실행법은 [`../README.md`](../README.md).
+관련 문서: 전략·로드맵은 [`CONTEXT.md`](../../CONTEXT.md), 실행법은 [`README.md`](../../README.md).
 
 ---
 
@@ -189,8 +189,9 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 
 ## 6. 웹 화면 구성 (사이트맵 · 인증)
 
-좌측 사이드바가 대분류(대시보드/취약점/자산/피드/시스템)로 묶고, **역할×메뉴 권한**에서 허용된
-링크만 렌더한다(링크가 하나도 안 남은 섹션은 라벨째 숨김).
+좌측 사이드바가 대분류(대시보드/취약점/자산/수집/계정/연동/기록)로 묶고, **역할×메뉴 권한**에서
+허용된 링크만 렌더한다(링크가 하나도 안 남은 섹션은 라벨째 숨김). 대분류·링크 구성의 SSOT 는
+`server/src/view/nav.php` 의 `vg_nav_sections()` 하나이며, 사이드바와 브레드크럼이 같이 참조한다.
 
 다이어그램: [`docs/specs/diagrams/사이트맵.puml`](../specs/diagrams/사이트맵.puml)
 
@@ -199,7 +200,8 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
   `operator`·`user` 는 **역할 × 메뉴코드**(dashboard/findings/advisories/assets/connectors/
   users/permissions/agenttokens/apitokens/activity) 허용 여부를 `tb_role_permission` 에 두고 `/permissions.php`
   에서 켜고 끈다. 각 페이지 가드는 `vg_require_menu('<메뉴코드>')` 하나로 통일.
-  기본 시드 — operator: 대시보드/취약점/공지/자산/피드 허용, 시스템 불가. user: 대시보드/취약점/공지만.
+  기본 시드 — operator: 대시보드/취약점/공지/자산/수집 + 연동의 에이전트 토큰 허용, 계정·기록 불가.
+  user: 대시보드/취약점/공지만.
 - **토큰 인증**(사람 로그인과 분리):
   - 에이전트 → `ingest.php` : **호스트별 개별 토큰**(`X-Agent-Token`). `/agent-tokens.php` 에서
     호스트(fqdn)마다 발급하고, 토큰은 발급 시 정한 fqdn 만 갱신할 수 있다 — `ingest.php` 가
