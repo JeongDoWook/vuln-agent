@@ -16,10 +16,12 @@ $pdo = vg_pdo();
 $msg = null; $err = null;
 
 // 매트릭스에서 토글 가능한 역할·메뉴.
-//   permissions 메뉴는 admin 전용 성격이라 매트릭스에서 제외(코드에서 admin 만 true).
+//   admin 전용 메뉴는 여기서만 뺀다 — vg_menus() 에는 남겨야 nav.php 의 'perm' 코드와
+//   일치해서 "보이는데 403" 링크가 안 생긴다(메뉴코드 정본은 vg_menus()).
 const VG_PERM_ROLES = ['operator', 'user'];
 $menus = vg_menus();
-unset($menus['permissions']);   // 권한설정 행은 표시하지 않음
+unset($menus['permissions']);   // 권한설정: admin 전용(코드에서 admin 만 true)
+unset($menus['apitokens']);     // Export API 토큰 발급: admin 전용(코드에서 admin 만 true)
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {

@@ -200,6 +200,10 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
   `operator`·`user` 는 **역할 × 메뉴코드**(dashboard/findings/advisories/assets/connectors/
   users/permissions/agenttokens/apitokens/activity) 허용 여부를 `tb_role_permission` 에 두고 `/permissions.php`
   에서 켜고 끈다. 각 페이지 가드는 `vg_require_menu('<메뉴코드>')` 하나로 통일.
+  메뉴코드 정본은 `vg_menus()`(`server/src/auth.php`) 이고 `nav.php` 의 `'perm'` 과 반드시 일치해야
+  한다(어긋나면 사이드바에 보이는데 눌러보면 403 나는 링크가 생긴다). 단 **`permissions`·`apitokens`
+  둘은 admin 전용이라 `/permissions.php` 매트릭스에서 제외**된다 — 정본에는 남기되 화면에서 켤 수
+  없고, 시드 행이 없어 `vg_can()` 의 기본 거부로 operator·user 는 항상 불가다.
   기본 시드 — operator: 대시보드/취약점/공지/자산/수집 + 연동의 에이전트 토큰 허용, 계정·기록 불가.
   user: 대시보드/취약점/공지만.
 - **토큰 인증**(사람 로그인과 분리):
