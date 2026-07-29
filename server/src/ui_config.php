@@ -33,7 +33,7 @@ function vg_ui_per_page_options(): array {
 
 function vg_ui_per_page_default(): int {
     $options = vg_ui_per_page_options();
-    $configured = vg_ui_int('UI_PER_PAGE_DEFAULT', 20, 5, 200);
+    $configured = vg_ui_int('UI_PER_PAGE_DEFAULT', 10, 5, 200);
     return in_array($configured, $options, true) ? $configured : $options[0];
 }
 
