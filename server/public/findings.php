@@ -198,7 +198,7 @@ vg_header('취약점', 'findings');
   <div class="cards">
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
       <a href="<?= vg_h(vg_qs(['sev' => $sev === $s ? '' : $s, 'page' => 1])) ?>"
-         class="kpi tone-<?= vg_sev_tone($s) ?><?= $sev === $s ? ' is-selected' : '' ?>">
+         class="kpi kpi--sm tone-<?= vg_sev_tone($s) ?><?= $sev === $s ? ' is-selected' : '' ?>">
         <b><?= (int) $counts[$s] ?></b><span><?= $s ?></span>
       </a>
     <?php endforeach; ?>

@@ -508,10 +508,10 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
 
   <div class="cards">
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
-      <div class="kpi tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
+      <div class="kpi kpi--sm tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
     <?php endforeach; ?>
-    <div class="kpi"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
-    <a class="kpi tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>" href="<?= vg_h(vg_qs(['tab' => 'cce', 'page' => null])) ?>">
+    <div class="kpi kpi--sm"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
+    <a class="kpi kpi--sm tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>" href="<?= vg_h(vg_qs(['tab' => 'cce', 'page' => null])) ?>">
       <b><?= (int) $cceFail ?></b><span>설정 취약</span>
     </a>
   </div>

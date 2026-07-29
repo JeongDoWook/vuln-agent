@@ -164,9 +164,9 @@ vg_header('자산관리', 'assets');
   $totalHosts = array_sum($stateCounts);
   ?>
   <div class="cards">
-    <div class="kpi"><b><?= number_format($totalHosts) ?></b><span>전체 자산</span></div>
+    <div class="kpi kpi--sm"><b><?= number_format($totalHosts) ?></b><span>전체 자산</span></div>
     <?php foreach (VG_ASSET_STATES as $key => $label): ?>
-      <a class="kpi tone-<?= vg_h($stateTone[$key]) ?><?= $state === $key ? ' is-selected' : '' ?>"
+      <a class="kpi kpi--sm tone-<?= vg_h($stateTone[$key]) ?><?= $state === $key ? ' is-selected' : '' ?>"
          href="<?= vg_h(vg_qs(['state' => $state === $key ? '' : $key, 'page' => null])) ?>">
         <b><?= number_format($stateCounts[$key]) ?></b><span><?= vg_h($label) ?></span>
       </a>

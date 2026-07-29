@@ -571,9 +571,14 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
 .hint-list { margin: .4rem 0 0; padding-left: 1.1rem; max-height: 9rem; overflow-y: auto; }
 
 /* --- KPI -----------------------------------------------------------------
- * 틴트 배경 + 큰 발광 숫자. 이전엔 원색 면에 흰 글자였는데, 팔레트를 밝히면서
- * 앰버(med)·회청(low) 위의 흰 글자는 대비가 무너진다. 숫자 자체를 톤 색으로
- * 크게 띄우면 대비도 잡히고 뱃지와 같은 색 어휘를 쓰게 된다. */
+ * 정본 한 벌: 흰 면 + 톤 색 숫자 + 톤 테두리. 배경 틴트는 쓰지 않는다.
+ *   왜 절제된 쪽이 정본인가: 목록 화면(findings/changes/assets)의 KPI 줄은 바로 아래
+ *   표의 심각도 배지·행 강조와 같은 색을 쓴다. 위에 큰 색면 4개를 켜면 두 색 어휘가
+ *   충돌해 정작 표의 강조가 죽는다. 숫자를 톤 색으로 크게 띄우면 대비도 잡히고
+ *   뱃지와 같은 색 어휘를 쓰면서도 면은 조용하다.
+ *   (예전엔 이 절제를 대시보드 줄(.cards--grid)에만 예외로 걸어 화면마다 KPI 가
+ *    달라 보였다 — 예외를 없애고 전 화면이 이 한 벌을 쓴다.)
+ * 크기 차이는 변형 클래스 .kpi--sm 하나로만 낸다(.btn--sm·.card--sm 선례). */
 .cards { display: flex; gap: .85rem; margin-bottom: 1.3rem; flex-wrap: wrap; }
 /* 격자 정렬 KPI 줄 — 카드 폭이 라벨 길이에 따라 제각각이던 것을 열 단위로 맞춘다.
  * 기존 .cards(flex)는 다른 화면(assets/changes/findings/host)이 그대로 쓰므로
@@ -582,7 +587,11 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
 .cards--grid .kpi { min-width: 0; }
 .kpi {
   flex: 0 0 auto;          /* 늘리지 않는다 — 늘리면 값 하나에 카드가 화면을 가로지른다 */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   min-width: 116px;
+  min-height: 112px;
   padding: 1rem 1.15rem;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -591,11 +600,13 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   box-shadow: var(--shadow);
   transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-.kpi b {
-  font-size: 1.75rem;
+/* 숫자는 <b>(대부분) 또는 <strong>(remediations) 로 온다 — 둘을 같이 잡는다 */
+.kpi b, .kpi strong {
+  font-size: 2rem;
   font-weight: 700;
   display: block;
   line-height: 1.15;
+  letter-spacing: -.04em;
   font-variant-numeric: tabular-nums;   /* 숫자 폭 고정 — 값이 바뀌어도 안 흔들린다 */
 }
 .kpi span {
@@ -604,35 +615,28 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   color: var(--muted);
   letter-spacing: .02em;
 }
+/* 목록 화면 위에 얹는 작은 변형 — 그 화면의 주인공은 아래 표라 KPI 는 한 단계 물러난다 */
+.kpi--sm { min-height: 0; padding: .7rem .95rem; }
+.kpi--sm b, .kpi--sm strong { font-size: 1.5rem; }
 a.kpi { transition: border-color .12s ease-out, background .12s ease-out; }
 a.kpi:hover {
   text-decoration: none;
-  border-color: var(--line-2);
   transform: translateY(-2px);
   box-shadow: 0 10px 24px rgb(0 0 0 / .07);
   filter: none;
 }
+/* 톤이 없는 카드만 hover 로 테두리를 세운다 — 톤 카드는 테두리가 곧 등급 표시라 뺏지 않는다 */
+a.kpi:not([class*="tone-"]):hover { border-color: var(--line-2); }
 a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 
-.kpi.tone-crit { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
-.kpi.tone-high { background: var(--high-bg); border-color: var(--high-bd); color: var(--high-fg); }
-.kpi.tone-med  { background: var(--med-bg);  border-color: var(--med-bd);  color: var(--med-fg); }
-.kpi.tone-low  { background: var(--low-bg);  border-color: var(--low-bd);  color: var(--low-fg); }
-.kpi.tone-ok   { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
-.kpi.tone-muted{ background: var(--muted-bg);border-color: var(--muted-bd);color: var(--muted-fg); }
+.kpi.tone-crit { border-color: var(--crit-bd); color: var(--crit-fg); }
+.kpi.tone-high { border-color: var(--high-bd); color: var(--high-fg); }
+.kpi.tone-med  { border-color: var(--med-bd);  color: var(--med-fg); }
+.kpi.tone-low  { border-color: var(--low-bd);  color: var(--low-fg); }
+.kpi.tone-ok   { border-color: var(--ok-bd);   color: var(--ok-fg); }
+.kpi.tone-muted{ border-color: var(--muted-bd);color: var(--muted-fg); }
 /* 숫자는 톤 색으로, 라벨은 항상 차분하게 — 라벨까지 물들면 다시 균일해진다 */
-.kpi[class*="tone-"] b { color: inherit; }
-
-/* 대시보드 KPI 줄(index.php 의 .cards--grid, 다른 화면은 안 씀)만 배경 틴트를 뺀다 —
- * 카드 4개가 나란히 배경색을 켜면 화면이 산만하다. 숫자·테두리 톤은 유지해 등급 구분은 남긴다.
- * findings.php/assets.php/changes.php 의 필터용 .kpi.tone-*(is-selected 포함)는 .cards--grid 를
- * 안 쓰므로 이 규칙의 영향을 안 받는다 — 전역 .kpi.tone-* 는 그대로 둔다. */
-.cards--grid .kpi.tone-crit,
-.cards--grid .kpi.tone-high,
-.cards--grid .kpi.tone-med,
-.cards--grid .kpi.tone-low {
-  background: var(--surface);
-}
+.kpi[class*="tone-"] b, .kpi[class*="tone-"] strong { color: inherit; }
 
 /* --- 자산 상세: 히어로(식별 + 최고 위험도) + 섹션 탭 ---------------------- */
 .hero {
@@ -806,7 +810,9 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .riskbar .tone-low  { background: var(--low); }
 
 /* KPI 증감 칩 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전 대비를 같이 준다.
- * 방향은 색만으로 말하지 않는다(▲/▼ 기호가 같이 간다). */
+ * 방향은 색만으로 말하지 않는다(▲/▼ 기호가 같이 간다).
+ * 변화가 0 이면 칩 자체를 안 그린다(index.php) — "— 0" 은 알려주는 게 없는 노이즈였다.
+ * 그래서 여기에도 flat(회색) 상태가 없다. */
 /* `.kpi span` 보다 구체적이어야 색·크기가 먹는다(그래서 .kpi 를 앞에 붙인다). */
 .kpi .kpi__delta {
   display: block;
@@ -817,7 +823,6 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 }
 .kpi .kpi__delta.up   { color: var(--crit-fg); }   /* 늘었다 = 나빠졌다 */
 .kpi .kpi__delta.down { color: var(--ok-fg); }
-.kpi .kpi__delta.flat { color: var(--muted-2); }
 
 /* --- 표 셀 안의 접이식 상세(JSON 등) -------------------------------------
  * 감사로그의 data(JSON)처럼 평소엔 접어 두고 눌러서 펴 본다(JS 없이 <details>).
@@ -1484,9 +1489,8 @@ form.card .btn--primary:active { transform: translateY(0); }
 
 /* 대시보드: 개요형. 여백을 넓게 쓰고 KPI 줄을 5열로 고정한다. */
 .page--index .page__main { max-width: 1520px; }
+/* 카드의 모양·크기는 컴포넌트(.kpi)가 소유한다 — 여기서는 줄의 열 배치만 정한다 */
 .page--index .cards--grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1rem; }
-.page--index .cards--grid .kpi { min-height: 112px; display: flex; flex-direction: column; justify-content: center; }
-.page--index .cards--grid .kpi b { font-size: 2rem; letter-spacing: -.04em; }
 .page--index .split { gap: 1.35rem; }
 .page--index .card > strong:first-child { font-size: 1.05rem; letter-spacing: -.02em; }
 .page--index .donut-wrap { padding: .7rem 0; }
@@ -1537,7 +1541,11 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--permissions .permission-form > .page-title,
 .page--permissions .permission-form > .sub,
 .page--permissions .permission-form > .alert { margin-bottom: 0; }
-.page--permissions .permission-form > .card:has(> .matrix) { margin: 0; padding: 0; overflow: hidden; }
+/* overflow 는 hidden 이 아니라 clip 이다 — hidden 은 스크롤 컨테이너를 만들어서
+ * 아래 sticky th 가 뷰포트가 아니라 이 카드를 기준으로 잡힌다. 그러면 스크롤이 없는데도
+ * th 가 top(=--topbar-h, 64px)만큼 아래로 밀려 표 위에 빈 띠가 생겼다(그 빈 띠의 정체).
+ * clip 은 모서리는 그대로 잘라 주면서 스크롤 컨테이너가 아니라 sticky 가 뷰포트를 본다. */
+.page--permissions .permission-form > .card:has(> .matrix) { margin: 0; padding: 0; overflow: clip; }
 .page--permissions .matrix { table-layout: fixed; }
 .page--permissions .matrix th { position: sticky; top: var(--topbar-h); z-index: 5; background: var(--sunken); }
 .page--permissions .matrix .permission-menu { width: 46%; padding-left: 1.5rem; }
@@ -1604,7 +1612,7 @@ form.card .btn--primary:active { transform: translateY(0); }
   .page--changes .toolbar, .page--compliance_rules .toolbar, .page--cves .toolbar,
   .page--findings .toolbar, .page--packages .toolbar, .page--vendor .toolbar { position: static; }
   .page--index .cards--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .page--index .cards--grid .kpi { min-height: 94px; }
+  .kpi:not(.kpi--sm) { min-height: 94px; }
   .page--host .subtabs, .page--cve .subtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .page--host .subtabs::-webkit-scrollbar, .page--cve .subtabs::-webkit-scrollbar { display: none; }
   .page--host .subtabs a, .page--cve .subtabs a { flex: none; }
@@ -1670,6 +1678,6 @@ form.card .btn--primary:active { transform: translateY(0); }
   .modal__body { padding: 1rem 1.1rem 1.2rem; }
   .modal__foot { position: sticky; bottom: -1.2rem; margin: 1.2rem -1.1rem -1.2rem; padding: .9rem 1.1rem max(.9rem, env(safe-area-inset-bottom)); background: var(--surface); }
   .page--index .cards--grid .kpi:first-child { grid-column: 1/-1; }
-  .page--index .cards--grid .kpi b { font-size: 1.65rem; }
+  .kpi:not(.kpi--sm) b, .kpi:not(.kpi--sm) strong { font-size: 1.65rem; }
   .page--login form.card { padding: 2rem 1.35rem 1.6rem; }
 }
