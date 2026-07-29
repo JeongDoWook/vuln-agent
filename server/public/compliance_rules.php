@@ -97,7 +97,9 @@ vg_header('보안설정 룰셋', 'compliance');
       [
           ['label' => '룰 ID', 'width' => '20%', 'class' => 'col-id'],
           ['label' => '제목'],
-          ['label' => '심각도', 'width' => '7%'],
+          // 심각도 뱃지는 고정 크기라 % 가 아니라 rem 이다(cves.php 와 같은 이유 — 870px 에서
+          //   44.5px 가 옆 열을 덮었다). 값 69 + 칸 여백 32 = 101 → 6.5rem.
+          ['label' => '심각도', 'width' => '6.5rem'],
           ['label' => '참조(CIS/NIST/STIG)', 'width' => '15%'],
           ['label' => '근거'],
       ],

@@ -180,22 +180,31 @@ vg_header('자산관리', 'assets');
        'selected' => $state, 'options' => VG_ASSET_STATES],
   ]);
 
-  // 폭 배분: 목록 표는 table-layout:fixed 다(app.css 의 '목록 화면' 구역). 숫자·짧은 값 열은
-  //   내용 크기로 좁히고 호스트명에 폭을 몰아준다. 폭을 안 준 '심각도'(등급별 건수 뱃지)가
-  //   남는 폭을 갖는다. 폭을 하나도 안 주면 fixed 가 12열을 똑같이 쪼개 호스트명이 잘게 접힌다.
-  //   % 를 쓰는 이유는 findings.php 와 같다 — 합이 화면 폭과 무관하게 고정돼 가로 스크롤이 없다.
+  // 폭 배분: 목록 표는 table-layout:fixed 다(app.css 의 '목록 화면' 구역).
+  //   단위를 두 가지로 나눠 쓴다 — 이 표가 표 모드로 처음 뜨는 1061px 에서 실측한 값이 기준이다.
+  //   · 줄바꿈이 불가능한 고정 크기 값(뱃지·<code>·버튼)이 담기는 열은 rem 이다. % 로 주면 표가
+  //     좁아질 때 그 값보다 좁아지는데, 값은 안 줄어드니 그대로 옆 열 위에 그려진다. 실제로
+  //     '상태' 6.5%(1061px 에서 48px)가 오프라인 뱃지(65px)를 못 담아 OS 열을 32px 덮었고,
+  //     '에이전트' 는 구버전 뱃지가 13px 덮었다(가로 스크롤은 안 생겨 #377 의 넘침 검사엔 안 잡혔다).
+  //     필요한 폭 = 값의 폭 + 칸 여백(.6rem×2): 뱃지 65+19=84 → 5.5rem, 구버전 뱃지 53+19=72 → 5rem.
+  //   · 접거나 잘라도 되는 텍스트 열(OS·리소스·수치·수집시각·심각도 건수)은 그대로 % 다.
+  //     '주기' 도 % 다 — <code>하루 1회</code>(66px)는 고정 크기지만, 12열을 741px 에 담는 폭에서
+  //     그 열까지 rem 으로 묶으면 정작 식별자인 호스트명이 40px 로 주저앉는다. 대신 이 표에서만
+  //     <code> 가 칸 안에서 접히게 해서(app.css) 넘치는 대신 줄이 늘게 했다.
+  //   · 남는 폭은 호스트명이 갖는다(폭을 안 준 열). 예전엔 심각도가 남는 폭을 다 가져가
+  //     1920px 에서 건수 뱃지 4개에 344px 를 썼다 — 그 폭은 잘려 나가던 식별자 쪽이 써야 한다.
   $headers = [
-      ['label' => '호스트', 'key' => 'fqdn', 'width' => '14%', 'class' => 'col-id'],
-      ['label' => '상태', 'key' => 'state', 'width' => '6.5%'],
-      ['label' => 'OS', 'key' => 'os', 'width' => '7.5%'],
-      ['label' => '에이전트', 'key' => 'agent_version', 'width' => '7.5%'],
-      ['label' => '주기', 'key' => 'schedule', 'width' => '5.5%'],
-      ['label' => '리소스', 'key' => 'resource', 'align' => 'right', 'width' => '9.5%'],
-      ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '5.5%'],
-      ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right', 'width' => '5%'],
-      ['label' => '심각도', 'key' => 'sev'],
-      ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '12%', 'nowrap' => true],
-      ['label' => '스캔', 'key' => 'scan_count', 'align' => 'right', 'width' => '5.5%'],
+      ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id'],
+      ['label' => '상태', 'key' => 'state', 'width' => '5.5rem'],
+      ['label' => 'OS', 'key' => 'os', 'width' => '7%'],
+      ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],
+      ['label' => '주기', 'key' => 'schedule', 'width' => '6.5%'],
+      ['label' => '리소스', 'key' => 'resource', 'align' => 'right', 'width' => '6.5%'],
+      ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '5%'],
+      ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right', 'width' => '4.5%'],
+      ['label' => '심각도', 'key' => 'sev', 'width' => '9%'],
+      ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '10.5%', 'nowrap' => true],
+      ['label' => '스캔', 'key' => 'scan_count', 'align' => 'right', 'width' => '4.5%'],
   ];
   // 액션 열만 % 가 아니라 rem 이다. 삭제 버튼은 폭이 늘 같은 고정 크기 조작부라 비율로 줄 이유가 없고,
   //   비율로 주면 표가 좁아질 때 버튼보다 좁아진다 — 실제로 900px 에서 9%(=51px)가 68px 버튼을
