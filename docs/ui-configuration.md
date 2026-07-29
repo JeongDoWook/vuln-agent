@@ -19,7 +19,7 @@ web·scheduler 컨테이너의 환경변수는 `deploy/compose.yml` 맨 위의 *
 x-app-env: &app-env
   DB_HOST: ${DB_HOST:-db}
   ...
-  UI_PER_PAGE_DEFAULT: "20"                      # 고정값이면 앵커에 직접
+  UI_PER_PAGE_DEFAULT: "10"                      # 고정값이면 앵커에 직접
   LOGIN_MAX_FAILS: ${LOGIN_MAX_FAILS:-5}         # 환경별로 다르면 .env 에서 받는다
 ```
 
@@ -40,7 +40,7 @@ LOGIN_LOCK_MINUTES=15
 | 환경변수 | 기본값 | 허용 범위 | 용도 |
 |---|---:|---|---|
 | `UI_PER_PAGE_OPTIONS` | `10,20,40,60,100` | 각 항목 5~200 (범위 밖 항목은 버림) | 목록의 페이지 크기 선택지 |
-| `UI_PER_PAGE_DEFAULT` | `20` | 선택지 중 하나 (아니면 선택지의 최솟값) | 기본 페이지 크기 |
+| `UI_PER_PAGE_DEFAULT` | `10` | 선택지 중 하나 (아니면 선택지의 최솟값) | 기본 페이지 크기 |
 | `UI_DASHBOARD_URGENT_LIMIT` | `6` | 3~30 | 대시보드 대응 우선순위 표시 건수 |
 | `UI_DASHBOARD_ACTIONABLE_STATUSES` | `EXTERNAL,LAN,LISTENING,RUNNING,LOADED` | 이 5종 중 일부 (그 밖의 값은 무시) | KEV 긴급 목록에 포함할 실제 사용 상태 |
 | `UI_DETAIL_PREVIEW_LIMIT` | `10` | 5~100 | 상세 화면 이력·프로세스 미리보기 건수 |
