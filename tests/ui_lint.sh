@@ -55,7 +55,24 @@ else
   printf '      %s\n' "$inline"
 fi
 
-# --- 3) 조용히 잘리는 목록 --------------------------------------------------
+# --- 3) 정의되지 않은 CSS 변수 ----------------------------------------------
+# app.css 가 var(--X) 로 쓰는데 어디에도 --X: 선언이 없는 것. 그 선언은 통째로 무효라
+#   브라우저 기본값으로 조용히 떨어진다(색이 안 칠해져도 오류가 안 난다).
+#   실제로: 리스킨 레이어가 var(--primary)·var(--line-strong) 을 썼는데 토큰명은
+#   --accent·--line-2 였다 — 권한설정 체크박스의 accent-color 가 무효가 돼 브라우저
+#   기본색으로 떴고, 아무도 못 알아챘다.
+undef=""
+declared=$(grep -oE '^[[:space:]]*--[a-z0-9-]+[[:space:]]*:' "$CSS" | tr -d ' :' | sort -u)
+for v in $(grep -oE 'var\([[:space:]]*--[a-z0-9-]+' "$CSS" | grep -oE '\-\-[a-z0-9-]+' | sort -u); do
+  printf '%s\n' "$declared" | grep -qx -- "$v" || undef="$undef $v"
+done
+if [ -z "$undef" ]; then
+  ok "정의되지 않은 CSS 변수 없음 (app.css 의 var(--…) 는 전부 선언돼 있다)"
+else
+  no "app.css 에 선언이 없는 CSS 변수:$undef"
+fi
+
+# --- 4) 조용히 잘리는 목록 --------------------------------------------------
 # LIMIT 을 쓰면서 OFFSET 도 vg_page_nav 도 없으면, 사용자는 "더 있다" 는 걸 알 수 없다.
 #   LIMIT 1 (단건 조회)과 상수 상한(VG_URGENT_TOP 처럼 이름 붙이고 총건수를 함께 보여주는 것)은 예외.
 silent=""
