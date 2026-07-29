@@ -203,10 +203,10 @@ vg_header('대시보드', 'dashboard');
     <div class="kpi"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s):
       // 증감은 방향을 색만으로 말하지 않는다 — ▲/▼ 기호를 같이 준다(색각 이상·흑백 출력).
-      $d = $delta[$s] ?? null;
-      $dir = $d === null ? '' : ($d > 0 ? 'up' : ($d < 0 ? 'down' : 'flat'));
-      $dtxt = $d === null ? '' : ($d > 0 ? '▲ ' . number_format($d)
-                                : ($d < 0 ? '▼ ' . number_format(abs($d)) : '— 0'));
+      // 변화가 없으면(0) 칩 자체를 안 그린다 — "— 0" 은 알려주는 게 없이 카드만 시끄럽게 했다.
+      $d = ($delta[$s] ?? 0) !== 0 ? $delta[$s] : null;
+      $dir = $d === null ? '' : ($d > 0 ? 'up' : 'down');
+      $dtxt = $d === null ? '' : ($d > 0 ? '▲ ' . number_format($d) : '▼ ' . number_format(abs($d)));
     ?>
       <a class="kpi tone-<?= vg_sev_tone($s) ?>" href="/findings.php?sev=<?= $s ?>">
         <b><?= number_format((int) $totals[$s]) ?></b><span><?= $s ?></span>
