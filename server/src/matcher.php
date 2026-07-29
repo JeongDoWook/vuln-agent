@@ -21,7 +21,8 @@ require_once __DIR__ . '/package_summary.php'; // vg_rebuild_package_summary —
 // 재매칭 결과 지문의 **알고리즘 버전**. 판정 로직이나 저장 컬럼을 바꾸면 이 값을 올린다.
 //   안 올리면 입력(피드·수집물)이 그대로인 스캔은 지문도 그대로라 "결과가 같다"고 판단해
 //   **새 코드로 재계산한 결과가 영영 저장되지 않는다.** 올리면 전 스캔이 한 번씩 다시 쓰인다.
-if (!defined('VG_MATCH_FP_VERSION')) { define('VG_MATCH_FP_VERSION', 1); }
+//   2 — changelog 백포트 억제가 서드파티 저장소 패키지에도 적용된다(서드파티 가드에서 분리).
+if (!defined('VG_MATCH_FP_VERSION')) { define('VG_MATCH_FP_VERSION', 2); }
 
 if (!function_exists('vg_scope_rank')) {
     // 노출 범위 위험도 (클수록 위험)
@@ -597,26 +598,33 @@ if (!function_exists('vg_scope_rank')) {
             ];
         }
 
-        // 옛 라이브러리가 메모리에 상주하면 "패치됨"이라도 억제하지 않는다(재시작 전까지 취약).
-        $canSuppress = ($ctx['staleEv'] === null);
+        // 억제 보류에는 성격이 다른 두 종류가 있다. 섞어서 하나의 플래그로 두면
+        //   "근거가 못 믿을 만해서" 와 "근거는 맞지만 지금 도는 코드가 옛 것이라서" 를
+        //   구분할 수 없다 — changelog 억제는 앞엣것엔 안 걸리고 뒤엣것엔 걸려야 한다.
+
+        // (1) 런타임 보류 — **근거의 종류를 가리지 않는다.** 벤더가 뭐라 하든 이 프로세스는
+        //   여전히 옛 코드를 실행 중이라, 어떤 백포트 근거로도 억제하면 안 된다.
+        $runtimeStale = ($ctx['staleEv'] !== null) || $ctx['kernelPending'];
         if ($ctx['staleEv'] !== null) {
             $why .= ' · 재시작 필요(패치됐지만 옛 라이브러리 사용 중: ' . $ctx['staleEv'] . ')';
         }
         // 커널이 패치됐지만 재부팅 전이면, 설치 버전으로 억제하면 안 된다(옛 커널이 실행 중).
         if ($ctx['kernelPending']) {
-            $canSuppress = false;
             $why .= sprintf(' · 재부팅 필요(설치 %s / 실행 중 %s — 패치된 커널이 아직 안 올라옴)',
                             (string) ($scan['kernel_latest'] ?? '?'),
                             (string) ($scan['running_kernel'] ?? '?'));
         }
 
-        // 서드파티 패키지는 배포판 조치안과 버전 체계가 달라 "설치 ≥ 조치" 비교도 못 믿는다.
-        //   억제하지 않고 근거에 출처를 남겨, 사람이 판단할 수 있게 한다.
+        // (2) 서드파티 보류 — **버전 비교 계열 근거에만** 해당한다. 배포판 조치안과 버전
+        //   체계가 달라 "설치 ≥ 조치" 를 못 믿고, 트래커·OVAL 은 애초에 이 저장소를 관할하지
+        //   않는다. 억제하지 않고 근거에 출처를 남겨, 사람이 판단할 수 있게 한다.
+        //   changelog 는 여기 걸리지 않는다 — 그 억제 자리의 주석 참고.
         if (!$ctx['isDistroPkg']) {
-            $canSuppress = false;
             $why .= sprintf(' · 서드파티 저장소(%s) 패키지 — 배포판 조치안과 버전 체계가 달라 자동 판정 불가',
                             (string) ($p['origin'] ?? '출처 미상'));
         }
+
+        $canSuppress = !$runtimeStale && $ctx['isDistroPkg'];
 
         // 버전 억제: 설치 버전이 조치 버전 이상이면 이미 패치된 것.
         //   배포판 규칙(epoch·릴리스·틸드)대로 비교한다 — vg_ver_cmp.
@@ -669,10 +677,30 @@ if (!function_exists('vg_scope_rank')) {
 
         // 백포트 억제: 이 빌드의 changelog 에 해당 CVE 수정 기록이 있으면
         //   버전이 낮아 보여도 이미 패치된 것 → 실제 위험에서 제외(오탐 제거).
+        //
+        //   **서드파티 저장소 패키지에도 적용한다** — `$canSuppress`(서드파티 가드 포함) 대신
+        //   `$runtimeStale` 만 본다. 서드파티 가드의 사유는 "배포판 조치안과 **버전 체계**가
+        //   달라 비교를 못 믿는다" 인데, changelog 는 버전을 비교하지 않는다. 그 빌드 자신의
+        //   변경 기록에 CVE 번호가 박혀 있느냐만 보므로 EVR 체계와 무관하고, 오히려 배포판
+        //   트래커·OVAL 이 관할하지 않는 서드파티 빌드에서는 **유일한 백포트 근거**다.
+        //   실측 근거는 docs/dev/changelog-억제층-실측.md — 서드파티 가드에 막혀 남아 있던
+        //   호스트 4,088건을 벤더 1차 소스와 전수 대조했더니 **정탐이 0건**이었다(라즈베리파이
+        //   6대는 HIGH 70건 중 20건이 이미 패치된 오탐). 걷히는 건 중 no_fix·KEV 는 0건이라
+        //   "조치 불가"나 "실제 악용 중"인 것을 지우지 않는다.
+        //
+        //   반면 **컨테이너는 그대로 제외한다**($ctr === null). changelog 는 호스트에서 긁은
+        //   것이라 컨테이너 패키지에 적용하면 미탐이다 — 같은 실측에서 컨테이너 5,404건은
+        //   벤더 기준으로 **전부 아직 취약**했다(호스트의 openssl 이 패치됐다는 기록은 그 안에서
+        //   도는 debian:12 컨테이너의 openssl 과 무관하다).
+        //   재시작·재부팅 대기($runtimeStale)에는 여전히 걸린다 — 근거가 맞아도 지금 도는
+        //   코드가 옛 것이면 억제하면 안 되기 때문이다.
         $bpEv = $sup['backport'][$p['name']][$cveId]
             ?? ($p['source_pkg'] ? ($sup['backport'][$p['source_pkg']][$cveId] ?? null) : null);
-        if ($canSuppress && $ctx['hostEvidenceOk'] && $bpEv !== null) {
+        if (!$runtimeStale && $ctr === null && $bpEv !== null) {
             $reason = $p['name'] . ' changelog 에 ' . $cveId . ' 수정 기록(백포트) → 버전이 낮아 보여도 패치됨';
+            if (!$ctx['isDistroPkg']) {
+                $reason .= ' · 서드파티 저장소(' . (string) ($p['origin'] ?? '출처 미상') . ') 빌드 자신의 기록';
+            }
             if (is_string($bpEv) && $bpEv !== '') { $reason .= ' · ' . $bpEv; }
             return ['suppress' => true, 'sev' => $sev, 'cvss' => $cvss, 'inKev' => $inKev, 'reason' => $reason];
         }
