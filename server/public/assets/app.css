@@ -114,20 +114,23 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg:        #0f1115;
-  --surface:   #171a21;
-  --surface-2: #1c2029;
-  --sunken:    #0d1017;
-  --line:      #262b36;
-  --line-2:    #30363d;
+  --bg:        #0e1116;
+  --surface:   #161a21;
+  --surface-2: #1d222c;
+  --sunken:    #11151b;
+  --line:      #232833;
+  --line-2:    #333a47;
 
-  --text:      #e6e6e6;
-  --text-2:    #adbac7;
-  --muted:     #8b93a1;
-  --muted-2:   #6e7681;
+  --text:      #eaeef4;
+  --text-2:    #b3bcc9;
+  --muted:     #8d96a5;
+  --muted-2:   #7b8494;
 
-  --accent:    #1f6feb;
-  --accent-2:  #58a6ff;
+  /* 라이트와 같은 파랑(#3182f6) 계열을 어두운 면 위에서 읽히도록 한 단 밝힌다.
+     라이트는 링크(--accent-2)를 원색보다 어둡게 잡아 흰 바탕에서 대비를 얻는데,
+     다크는 같은 의도를 뒤집어 원색보다 밝게 잡는다. */
+  --accent:    #3d8bff;
+  --accent-2:  #7cb0ff;
 
   --crit:      #e5484d;
   --crit-fg:   #ff9592;
@@ -161,22 +164,24 @@
   --purple-bd: rgb(130 80 223 / .45);
 
   --info-fg:   #79c0ff;
-  --info-bg:   rgb(31 111 235 / .16);
-  --info-bd:   rgb(31 111 235 / .45);
+  --info-bg:   rgb(61 139 255 / .16);
+  --info-bd:   rgb(61 139 255 / .45);
 
   --muted-fg:  #adbac7;
   --muted-bg:  rgb(139 147 161 / .14);
   --muted-bd:  rgb(139 147 161 / .35);
 
-  --danger:    #6e2830;
+  --danger:    #d93b41;
 
-  --btn-bg:    #30363d;
-  --btn-fg:    #ffffff;
-  --btn-hover: #3a424d;
+  --btn-bg:    #262c37;
+  --btn-fg:    #e8edf5;
+  --btn-hover: #303845;
 
-  --ring: 0 0 0 3px rgb(31 111 235 / .35);
-  --shadow: 0 1px 2px rgb(0 0 0 / .3);
-  --shadow-lg: 0 8px 24px rgb(0 0 0 / .4);
+  --ring: 0 0 0 3px rgb(61 139 255 / .35);
+  /* 그림자는 라이트와 같은 형상(오프셋·번짐)을 쓰고 진하기만 올린다 —
+     어두운 면 위에선 같은 알파로는 보이지 않는다. */
+  --shadow: 0 1px 2px rgb(0 0 0 / .28), 0 4px 12px rgb(0 0 0 / .34);
+  --shadow-lg: 0 24px 64px rgb(0 0 0 / .6);
 }
 
 * { box-sizing: border-box; }
