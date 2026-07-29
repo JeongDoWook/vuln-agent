@@ -262,12 +262,15 @@ vg_header('변화 추적', 'findings');
     $paged = array_slice($changes, ($page - 1) * $perPage, $perPage);
     vg_table(
         [
-            ['label' => '변화', 'width' => '8%', 'nowrap' => true],
+            // 폭은 머리글 글자까지 담아야 한다 — th 는 nowrap 이라 좁으면 옆 열을 덮고,
+            //   맨 끝 열('수집 시각')이 넘치면 표가 카드 밖으로 밀린다(861px 에서 1px 넘쳤다).
+            //   남는 폭은 자유폭인 '호스트'·'패키지' 가 나눠 갖는다.
+            ['label' => '변화', 'width' => '9%', 'nowrap' => true],
             ['label' => '호스트'],
             ['label' => 'CVE', 'width' => '16%', 'nowrap' => true],
             ['label' => '패키지'],
             ['label' => '등급', 'width' => '12%'],
-            ['label' => '수집 시각', 'width' => '13%', 'nowrap' => true],
+            ['label' => '수집 시각', 'width' => '14%', 'nowrap' => true],
         ],
         $paged,
         [
