@@ -197,7 +197,10 @@ vg_header('자산관리', 'assets');
       ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '12%', 'nowrap' => true],
       ['label' => '스캔', 'key' => 'scan_count', 'align' => 'right', 'width' => '5.5%'],
   ];
-  if ($canDelete) { $headers[] = ['label' => '', 'key' => 'act', 'align' => 'right', 'width' => '9%']; }
+  // 액션 열만 % 가 아니라 rem 이다. 삭제 버튼은 폭이 늘 같은 고정 크기 조작부라 비율로 줄 이유가 없고,
+  //   비율로 주면 표가 좁아질 때 버튼보다 좁아진다 — 실제로 900px 에서 9%(=51px)가 68px 버튼을
+  //   못 담아 카드를 16.7px 밀어냈다(가로 스크롤). 5rem 이면 어느 폭에서도 버튼이 들어간다.
+  if ($canDelete) { $headers[] = ['label' => '', 'key' => 'act', 'align' => 'right', 'width' => '5rem']; }
 
   vg_table(
       $headers,

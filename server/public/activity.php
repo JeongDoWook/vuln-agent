@@ -89,8 +89,10 @@ vg_header('감사로그', 'activity');
       ['label' => '아이디'],
       ['label' => '역할',        'width' => '8%'],
       ['label' => '최근 로그인', 'nowrap' => true],
-      ['label' => '로그인 실패', 'width' => '9%', 'align' => 'right'],
-      ['label' => '잠금 상태',   'width' => '13%', 'nowrap' => true],
+      // 값(횟수·상태)보다 머리글 글자가 길어서 폭을 머리글에 맞춘다 — th 는 nowrap 이라
+      //   좁으면 옆 열을 덮고, 맨 끝 열이 넘치면 표가 카드 밖으로 밀린다.
+      ['label' => '로그인 실패', 'width' => '16%', 'align' => 'right'],
+      ['label' => '잠금 상태',   'width' => '14%', 'nowrap' => true],
   ], $accessRows, [
       'empty' => [
           'icon'  => '👤',
@@ -139,8 +141,11 @@ vg_header('감사로그', 'activity');
       ['label' => '구분',     'width' => '9%', 'nowrap' => true],
       ['label' => '액션',     'width' => '12%', 'nowrap' => true],
       ['label' => '내용'],
-      ['label' => '사용자',   'width' => '9%', 'nowrap' => true],
-      ['label' => '출처 IP', 'width' => '10%', 'nowrap' => true],
+      // 이 둘은 머리글 글자가 칸보다 넓어지는 게 먼저다(th 는 nowrap 이라 접히지도 잘리지도 않는다).
+      //   861~900px 구간에선 사이드바 때문에 표가 538px 밖에 못 써서 '출처 IP' 머리글이 2px 넘쳤고
+      //   그만큼 카드에 가로 스크롤이 생겼다. 남는 폭은 자유폭인 '내용' 이 알아서 접는다.
+      ['label' => '사용자',   'width' => '11%', 'nowrap' => true],
+      ['label' => '출처 IP', 'width' => '12%', 'nowrap' => true],
   ], $rows, [
       'empty' => [
           'icon'  => '📋',
