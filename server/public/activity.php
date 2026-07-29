@@ -87,10 +87,10 @@ vg_header('감사로그', 'activity');
   <?php
   vg_table([
       ['label' => '아이디'],
-      ['label' => '역할',        'width' => '90px'],
+      ['label' => '역할',        'width' => '8%'],
       ['label' => '최근 로그인', 'nowrap' => true],
-      ['label' => '로그인 실패', 'width' => '90px', 'align' => 'right'],
-      ['label' => '잠금 상태',   'width' => '140px', 'nowrap' => true],
+      ['label' => '로그인 실패', 'width' => '9%', 'align' => 'right'],
+      ['label' => '잠금 상태',   'width' => '13%', 'nowrap' => true],
   ], $accessRows, [
       'empty' => [
           'icon'  => '👤',
@@ -135,12 +135,12 @@ vg_header('감사로그', 'activity');
   };
 
   vg_table([
-      ['label' => '시각',     'width' => '140px', 'nowrap' => true],
-      ['label' => '구분',     'width' => '120px', 'nowrap' => true],
-      ['label' => '액션',     'width' => '150px', 'nowrap' => true],
+      ['label' => '시각',     'width' => '12%', 'nowrap' => true],
+      ['label' => '구분',     'width' => '9%', 'nowrap' => true],
+      ['label' => '액션',     'width' => '12%', 'nowrap' => true],
       ['label' => '내용'],
-      ['label' => '사용자',   'width' => '110px', 'nowrap' => true],
-      ['label' => '출처 IP', 'width' => '110px', 'nowrap' => true],
+      ['label' => '사용자',   'width' => '9%', 'nowrap' => true],
+      ['label' => '출처 IP', 'width' => '10%', 'nowrap' => true],
   ], $rows, [
       'empty' => [
           'icon'  => '📋',

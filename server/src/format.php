@@ -313,7 +313,12 @@ function vg_fix_cell(?string $fixedVersion, ?string $refUrlsJson, ?string $insta
     $installed = ($installedVersion !== null && $installedVersion !== '') ? vg_h($installedVersion) : null;
     if ($fixedVersion !== null && $fixedVersion !== '') {
         $ver = $installed !== null ? $installed . ' → ' . vg_h($fixedVersion) : vg_h($fixedVersion);
-        return '<span class="pill">' . $ver . ' 이상</span>';
+        // 조치 버전은 rhel 모듈처럼 아주 긴 것이 있다(1:1.22.1-3.module+el9.2.0+15280+45c505d6.1).
+        //   좁은 칸에서 세 줄로 부풀어 행 높이를 혼자 결정하므로 두 줄까지만 보이게 하고(clamp-2)
+        //   전체 값은 title 로 남긴다 — 목록에서 훑고, 정확한 버전은 상세·툴팁에서 본다.
+        $plain = ($installedVersion !== null && $installedVersion !== '' ? $installedVersion . ' → ' : '')
+               . $fixedVersion . ' 이상';
+        return '<span class="pill clamp-2" title="' . vg_h($plain) . '">' . $ver . ' 이상</span>';
     }
     $currentLine = $installed !== null ? '<div class="why">현재 ' . $installed . '</div>' : '';
     $ref = vg_cve_first_ref($refUrlsJson);

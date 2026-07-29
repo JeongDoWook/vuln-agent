@@ -180,11 +180,11 @@ vg_header('CVE 목록', 'cves');
       ]);
   vg_table(
       [
-          ['label' => 'CVE', 'width' => '13rem', 'nowrap' => true],
-          ['label' => '심각도', 'width' => '6rem'],
-          ['label' => 'CVSS', 'align' => 'right', 'width' => '4rem'],
-          ['label' => 'EPSS', 'align' => 'right', 'width' => '9rem'],
-          ['label' => '공개일', 'width' => '7rem'],
+          ['label' => 'CVE', 'width' => '16%', 'nowrap' => true],
+          ['label' => '심각도', 'width' => '7%'],
+          ['label' => 'CVSS', 'align' => 'right', 'width' => '6%'],
+          ['label' => 'EPSS', 'align' => 'right', 'width' => '10%'],
+          ['label' => '공개일', 'width' => '9%', 'nowrap' => true],
           ['label' => '요약'],
       ],
       $rows,
@@ -208,7 +208,13 @@ vg_header('CVE 목록', 'cves');
               2 => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '<span class="why">–</span>',
               3 => fn($r) => vg_epss_cell($r['epss'], $r['epss_percentile']),
               4 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
-              5 => fn($r) => !empty($r['summary']) ? vg_trunc($r['summary'], 110) : '<span class="why">–</span>',
+              // 요약은 이 표에서 유일하게 여러 줄이 되는 칸이다 — 기본은 두 줄까지만 보이고(clamp-2)
+              //   잘린 뒷부분은 title 에 그대로 남는다(findings.php 의 근거 칸과 같은 규칙).
+              5 => function ($r) {
+                  $s = (string) ($r['summary'] ?? '');
+                  if ($s === '') { return '<span class="why">–</span>'; }
+                  return '<div class="clamp-2" title="' . vg_h($s) . '">' . vg_h($s) . '</div>';
+              },
           ],
       ]
   );

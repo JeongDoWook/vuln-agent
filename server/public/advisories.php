@@ -86,9 +86,9 @@ vg_header('국내 보안공지', 'advisories');
   <?php
   vg_table(
       [
-          ['label' => '발행일', 'nowrap' => true, 'width' => '8rem'],
+          ['label' => '발행일', 'nowrap' => true, 'width' => '9%'],
           ['label' => '제목'],
-          ['label' => '관련 CVE', 'width' => '26rem'],
+          ['label' => '관련 CVE', 'width' => '30%'],
       ],
       $rows,
       [

@@ -878,6 +878,19 @@ th {
   background: var(--sunken);   /* 머리글 밴드 — 본문 행과 시각적으로 갈라준다 */
 }
 td.nowrap, td code { white-space: nowrap; }
+/* 주 식별자 열(호스트명·패키지명) — 하이픈·점마다 접혀 한 이름이 세 줄로 쪼개지는 걸 막는다.
+ * 칸을 넘치면 말줄임으로 접고 전체 값은 title 로 남긴다(지우는 게 아니라 접는 것).
+ * 폭이 고정된 표(아래 '목록 화면' 의 table-layout:fixed)에서만 뜻이 있다. */
+td.col-id { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 여러 줄이 되는 설명 칸(근거·비고) — 기본은 두 줄까지만 보여 행 높이를 한 줄짜리 열에 맞춘다.
+ * 잘린 뒷부분은 title 에 그대로 있다. 촘촘하게 모드에선 한 줄로 더 줄인다. */
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
 tr:last-child td { border-bottom: none; }
 tbody tr { transition: background-color .12s ease; }
 
@@ -1010,6 +1023,9 @@ a.pill:hover { text-decoration: none; background: rgb(31 111 235 / .25); }
 /* 필터 프리셋 탭(cves.php). 선택된 탭만 채워진 배경. */
 .tabs { display: flex; gap: .4rem; margin: 0 0 .9rem; flex-wrap: wrap; }
 .tabs .pill { padding: .25rem .8rem; font-size: .84rem; }
+/* .pill 의 display 선언이 .clamp-2 보다 뒤에 있어 그냥 겹치면 줄 수 제한이 안 먹는다.
+ * -webkit-box 는 블록 상자라 칸 전체로 늘어난다 — fit-content 로 내용만큼만 차지하게 한다. */
+.pill.clamp-2 { display: -webkit-box; width: fit-content; max-width: 100%; }
 .pill--on { background: var(--accent); color: #fff; }
 a.pill--on:hover { background: var(--accent); }
 
@@ -1434,6 +1450,9 @@ form.card .btn--primary:active { transform: translateY(0); }
 [data-density="compact"] .toolbar { padding: .55rem; }
 [data-density="compact"] .stat { padding: .75rem 1rem; }
 [data-density="compact"] .page-title { margin-bottom: 1rem; padding-bottom: .9rem; }
+/* 촘촘하게에선 설명 칸을 한 줄로 더 줄인다. 알약(조치 버전)은 제외 — 값 자체라 한 줄로 자르면
+ * 무엇으로 올려야 하는지가 안 보인다. 설명은 잘려도 앞머리로 무슨 얘기인지 알 수 있다. */
+[data-density="compact"] .clamp-2:not(.pill) { -webkit-line-clamp: 1; line-clamp: 1; }
 
 /* 반응형 표 — 좁은 화면에서 행을 카드로 접는다(td 의 data-label 이 머리글 노릇). */
 .data-table td, .data-table th { font-variant-numeric: tabular-nums; }
@@ -1501,6 +1520,30 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--findings .card:has(> table), .page--packages .card:has(> table),
 .page--vendor .card:has(> table) { margin-top: .9rem; }
 .page--findings .cards, .page--assets .cards, .page--changes .cards { padding: .15rem 0; }
+/* 열 폭은 vg_table() 이 준 width 가 정한다. auto 레이아웃에선 '내용이 긴 칸' 이 폭을 가져가서,
+ * 취약점 현황(1568px 실측)에서 한 줄짜리 '조치' 가 448px 를 먹는 동안 호스트명은 207px 안에서
+ * 세 줄로 접혔다. fixed 면 지정한 폭이 그대로 지켜지고, 남는 폭은 폭을 안 준 열(근거·요약)이
+ * 나눠 갖는다. 권한 매트릭스(.page--permissions .matrix)가 쓰던 방식과 같다.
+ * 폭을 넘는 값은 칸 안에서 접어 가로 스크롤이 생기지 않게 한다. */
+.page--activity .data-table, .page--advisories .data-table, .page--assets .data-table,
+.page--changes .data-table, .page--compliance_rules .data-table, .page--cves .data-table,
+.page--findings .data-table, .page--packages .data-table, .page--vendor .data-table { table-layout: fixed; }
+.page--activity .data-table td, .page--advisories .data-table td, .page--assets .data-table td,
+.page--changes .data-table td, .page--compliance_rules .data-table td, .page--cves .data-table td,
+.page--findings .data-table td, .page--packages .data-table td, .page--vendor .data-table td { overflow-wrap: anywhere; }
+/* 뱃지·알약은 원래 nowrap 이다(어휘가 쪼개지면 못 읽는다). 하지만 '고친 버전' 알약처럼 긴 값이
+ * 들어오는 칸에서는 그 nowrap 이 표를 통째로 밀어 가로 스크롤을 만든다 — 표 안에서만 접게 둔다. */
+.page--activity .data-table .pill, .page--advisories .data-table .pill, .page--assets .data-table .pill,
+.page--changes .data-table .pill, .page--compliance_rules .data-table .pill, .page--cves .data-table .pill,
+.page--findings .data-table .pill, .page--packages .data-table .pill, .page--vendor .data-table .pill { white-space: normal; }
+/* nowrap 칸은 접힐 수가 없으니 폭을 넘으면 표를 통째로 밀어낸다(가로 스크롤). 넘치면 잘라 둔다. */
+.page--activity .data-table td.nowrap, .page--advisories .data-table td.nowrap, .page--assets .data-table td.nowrap,
+.page--changes .data-table td.nowrap, .page--compliance_rules .data-table td.nowrap, .page--cves .data-table td.nowrap,
+.page--findings .data-table td.nowrap, .page--packages .data-table td.nowrap, .page--vendor .data-table td.nowrap { overflow: hidden; text-overflow: ellipsis; }
+/* .trunc 는 뷰포트 기준 max-width 를 갖는다 — 폭이 고정된 칸 안에서는 칸을 넘겨 옆 열을 덮는다. */
+.page--activity .data-table .trunc, .page--advisories .data-table .trunc, .page--assets .data-table .trunc,
+.page--changes .data-table .trunc, .page--compliance_rules .data-table .trunc, .page--cves .data-table .trunc,
+.page--findings .data-table .trunc, .page--packages .data-table .trunc, .page--vendor .data-table .trunc { max-width: 100%; }
 
 /* 상세 화면: 서술은 읽기 좋은 길이로, 증거 표는 폭을 그대로 쓴다. */
 .page--host .page__main, .page--cve .page__main, .page--compliance_rule .page__main,
@@ -1633,6 +1676,12 @@ form.card .btn--primary:active { transform: translateY(0); }
   .data-table tbody tr:hover { background: var(--surface); }
   .data-table tbody tr[class*="sev-"] { border-left-width: 3px; }
   .data-table td { display: grid; grid-template-columns: minmax(5.5rem, 34%) minmax(0, 1fr); gap: .75rem; align-items: start; padding: .48rem 0; border: 0; text-align: left !important; white-space: normal; overflow-wrap: anywhere; }
+  /* 카드형에선 칸 폭이 화면 폭이라 접을 이유가 없다 — 한 줄 고정·두 줄 제한을 되돌린다. */
+  .data-table td.col-id { white-space: normal; overflow: visible; }
+  /* 룰 ID 처럼 긴 <code> 는 nowrap 이면 카드를 뚫는다 — 카드형에선 접게 둔다(폭이 곧 화면 폭이라). */
+  .data-table td code { white-space: normal; }
+  .data-table .clamp-2 { display: block; overflow: visible; }
+  .data-table .pill.clamp-2 { display: inline-block; }   /* 알약은 카드형에서도 내용만큼만 */
   .data-table td + td { border-top: 1px solid var(--line); }
   .data-table td::before { content: attr(data-label); color: var(--muted); font-size: .72rem; font-weight: 650; }
   .data-table td:not([data-label]) { display: flex; justify-content: flex-end; padding-top: .65rem; }

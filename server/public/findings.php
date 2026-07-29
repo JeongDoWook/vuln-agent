@@ -225,15 +225,22 @@ vg_header('취약점', 'findings');
   // 컬럼 11개는 가로 스크롤을 만들어서, 정작 제일 중요한 "조치" 가 화면 밖으로 밀려났었다.
   // 값을 버리는 게 아니라 관련된 것끼리 한 칸에 쌓는다(패키지+버전, CVSS+EPSS+KEV).
   // 호스트 컬럼은 통합 모드에서만 — 단일 스캔 모드는 부제가 이미 호스트를 밝힌다.
-  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn']];
+  // 폭 배분: 목록 표는 table-layout:fixed 라(app.css 의 '목록 화면' 구역) 여기 적은 width 가
+  //   그대로 지켜진다. 짧은 값(등급·상태·위험도)은 내용 크기로 좁히고, 이름이 긴 주 식별자
+  //   (호스트·CVE·패키지)에 폭을 몰아준다. 폭을 안 준 '근거' 가 남는 폭을 전부 갖는다.
+  //   단위가 rem 이 아니라 % 인 이유: fixed 에서 지정폭 합이 표 폭을 넘으면 폭 없는 열이 0 이 되고
+  //   표가 카드를 뚫어 가로 스크롤이 생긴다. % 는 어느 화면 폭에서도 합이 그대로라 그 일이 없다.
+  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '19%', 'class' => 'col-id']];
   $headers = array_merge($headers, [
-      ['label' => '등급',  'key' => 'severity',       'width' => '6rem',  'nowrap' => true],
-      ['label' => '상태',  'key' => 'runtime_status', 'width' => '7rem',  'nowrap' => true],
-      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '15rem', 'nowrap' => true],
-      ['label' => '패키지', 'key' => 'package_name',  'width' => '13rem'],
-      ['label' => '위험도', 'key' => 'risk',          'width' => '7rem',  'nowrap' => true],
+      ['label' => '등급',  'key' => 'severity',       'width' => '9%',   'nowrap' => true],
+      ['label' => '상태',  'key' => 'runtime_status', 'width' => '8.5%', 'nowrap' => true],
+      // CVE 는 nowrap 이 아니다 — 링크 뒤에 KEV·조치불가 표식이 붙어 한 줄에 안 들어간다.
+      //   폭이 고정된 표에서 nowrap 이면 칸을 뚫고 나가 표가 가로로 넘친다.
+      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '13%'],
+      ['label' => '패키지', 'key' => 'package_name',  'width' => '10.5%', 'class' => 'col-id'],
+      ['label' => '위험도', 'key' => 'risk',          'width' => '8.5%', 'nowrap' => true],
       ['label' => '근거 (왜 위험한가)', 'key' => 'rationale'],
-      ['label' => '조치',  'key' => 'fix',            'width' => '11rem'],
+      ['label' => '조치',  'key' => 'fix',            'width' => '15%'],
   ]);
 
   // 필터 초기화 CTA — vg_qs() 는 지금 $_GET 을 기준으로 넘겨받은 키만 비우므로, 단일 호스트
@@ -304,7 +311,8 @@ vg_header('취약점', 'findings');
           'empty' => $emptySpec,
           'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
           'cell' => [
-              'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
+              // 칸을 넘치는 긴 FQDN 은 col-id 가 말줄임으로 접는다 — 전체 이름은 title 로 남긴다.
+              'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a>',
               'severity'       => fn($r) => vg_sev_badge((string) $r['severity']),
               'runtime_status' => fn($r) => vg_status_badge($r['runtime_status']),
               // CVE — 링크 + KEV 뱃지(별도 컬럼이던 '✔' 를 여기로).
@@ -344,8 +352,21 @@ vg_header('취약점', 'findings');
                       : 'EPSS –';
                   return $cvss . '<div class="why">' . $epss . '</div>';
               },
-              'rationale' => fn($r) => '<span class="badge tone-muted">' . vg_h((string) ($r['match_source'] ?? 'catalog')) . '</span><div class="why">' . vg_trunc($r['rationale'], 80) . '</div>',
-              'fix'       => fn($r) => vg_fix_cell($r['evidence_fixed_version'] ?? ($r['fixed_version'] ?? null), $r['ref_urls_json'] ?? null, $r['installed_version'] ?? null),
+              // 근거는 이 표에서 유일하게 여러 줄이 되는 칸이라 행 높이를 혼자 끌어올렸다(실측 5줄·102px).
+              //   기본은 두 줄까지만 보이고(clamp-2), 잘린 뒷부분은 title 에 통째로 남는다.
+              //   글자수로 미리 자르지(vg_trunc) 않는 건, 칸 폭이 화면마다 달라 몇 자가 들어가는지
+              //   서버가 알 수 없기 때문이다 — 자르는 일은 폭을 아는 CSS 에 맡긴다.
+              'rationale' => function ($r) {
+                  $why = (string) ($r['rationale'] ?? '');
+                  // 판정 출처 뱃지는 근거 문장 앞에 같이 흐른다 — 따로 한 줄을 차지하면
+                  //   근거 칸이 이 표에서 가장 높은 칸이 되어 행 전체를 끌어올린다.
+                  return '<div class="why clamp-2" title="' . vg_h($why) . '">'
+                       . '<span class="badge tone-muted">' . vg_h((string) ($r['match_source'] ?? 'catalog')) . '</span> '
+                       . vg_h($why) . '</div>';
+              },
+              // 설치 버전을 조치 칸에 다시 싣지 않는다(같은 행 '패키지' 칸에 이미 있다) — 한 칸에
+              //   "설치 → 고침" 을 다 넣으니 알약이 세 줄이 되어 행 높이를 결정해 버렸다.
+              'fix'       => fn($r) => vg_fix_cell($r['evidence_fixed_version'] ?? ($r['fixed_version'] ?? null), $r['ref_urls_json'] ?? null),
           ],
       ]
   );
