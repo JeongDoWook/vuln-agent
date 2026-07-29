@@ -262,12 +262,12 @@ vg_header('변화 추적', 'findings');
     $paged = array_slice($changes, ($page - 1) * $perPage, $perPage);
     vg_table(
         [
-            ['label' => '변화', 'width' => '7rem', 'nowrap' => true],
+            ['label' => '변화', 'width' => '8%', 'nowrap' => true],
             ['label' => '호스트'],
-            ['label' => 'CVE', 'width' => '12rem', 'nowrap' => true],
+            ['label' => 'CVE', 'width' => '16%', 'nowrap' => true],
             ['label' => '패키지'],
-            ['label' => '등급', 'width' => '13rem'],
-            ['label' => '수집 시각', 'width' => '11rem', 'nowrap' => true],
+            ['label' => '등급', 'width' => '12%'],
+            ['label' => '수집 시각', 'width' => '13%', 'nowrap' => true],
         ],
         $paged,
         [
@@ -310,11 +310,11 @@ vg_header('변화 추적', 'findings');
     <?php
     vg_table(
         [
-            ['label' => '변화', 'width' => '8rem', 'nowrap' => true],
+            ['label' => '변화', 'width' => '9%', 'nowrap' => true],
             ['label' => '호스트'],
             ['label' => '패키지'],
             ['label' => '버전'],
-            ['label' => '시각', 'width' => '11rem', 'nowrap' => true],
+            ['label' => '시각', 'width' => '12%', 'nowrap' => true],
         ],
         $pkgChanges,
         [

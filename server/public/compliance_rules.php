@@ -95,10 +95,10 @@ vg_header('보안설정 룰셋', 'compliance');
   $hasFilter = $q !== '' || $sev !== '';
   vg_table(
       [
-          ['label' => '룰 ID', 'width' => '18rem', 'nowrap' => true],
+          ['label' => '룰 ID', 'width' => '20%', 'class' => 'col-id'],
           ['label' => '제목'],
-          ['label' => '심각도', 'width' => '7rem'],
-          ['label' => '참조(CIS/NIST/STIG)', 'width' => '16rem'],
+          ['label' => '심각도', 'width' => '7%'],
+          ['label' => '참조(CIS/NIST/STIG)', 'width' => '15%'],
           ['label' => '근거'],
       ],
       $rows,
@@ -117,7 +117,8 @@ vg_header('보안설정 룰셋', 'compliance');
                   'cta'   => vg_connectors_empty_cta(),
               ]),
           'cell' => [
-              0 => fn($r) => '<a href="/compliance_rule.php?rule=' . urlencode((string) $r['rule_id']) . '">'
+              // 룰 ID 는 길다 — col-id 가 한 줄로 두고 넘치면 말줄임한다(전체 값은 title 로 남는다).
+              0 => fn($r) => '<a href="/compliance_rule.php?rule=' . urlencode((string) $r['rule_id']) . '" title="' . vg_h((string) $r['rule_id']) . '">'
                             . '<code class="why">' . vg_h((string) $r['rule_id']) . '</code></a>',
               1 => fn($r) => vg_h((string) $r['title']),
               2 => function ($r) {

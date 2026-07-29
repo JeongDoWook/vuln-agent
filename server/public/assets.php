@@ -180,20 +180,24 @@ vg_header('자산관리', 'assets');
        'selected' => $state, 'options' => VG_ASSET_STATES],
   ]);
 
+  // 폭 배분: 목록 표는 table-layout:fixed 다(app.css 의 '목록 화면' 구역). 숫자·짧은 값 열은
+  //   내용 크기로 좁히고 호스트명에 폭을 몰아준다. 폭을 안 준 '심각도'(등급별 건수 뱃지)가
+  //   남는 폭을 갖는다. 폭을 하나도 안 주면 fixed 가 12열을 똑같이 쪼개 호스트명이 잘게 접힌다.
+  //   % 를 쓰는 이유는 findings.php 와 같다 — 합이 화면 폭과 무관하게 고정돼 가로 스크롤이 없다.
   $headers = [
-      ['label' => '호스트', 'key' => 'fqdn'],
-      ['label' => '상태', 'key' => 'state'],
-      ['label' => 'OS', 'key' => 'os'],
-      ['label' => '에이전트', 'key' => 'agent_version'],
-      ['label' => '주기', 'key' => 'schedule'],
-      ['label' => '리소스', 'key' => 'resource', 'align' => 'right'],
-      ['label' => '패키지', 'key' => 'package_count', 'align' => 'right'],
-      ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right'],
+      ['label' => '호스트', 'key' => 'fqdn', 'width' => '14%', 'class' => 'col-id'],
+      ['label' => '상태', 'key' => 'state', 'width' => '6.5%'],
+      ['label' => 'OS', 'key' => 'os', 'width' => '7.5%'],
+      ['label' => '에이전트', 'key' => 'agent_version', 'width' => '7.5%'],
+      ['label' => '주기', 'key' => 'schedule', 'width' => '5.5%'],
+      ['label' => '리소스', 'key' => 'resource', 'align' => 'right', 'width' => '9.5%'],
+      ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '5.5%'],
+      ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right', 'width' => '5%'],
       ['label' => '심각도', 'key' => 'sev'],
-      ['label' => '최신 수집', 'key' => 'collected_at'],
-      ['label' => '스캔', 'key' => 'scan_count', 'align' => 'right'],
+      ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '12%', 'nowrap' => true],
+      ['label' => '스캔', 'key' => 'scan_count', 'align' => 'right', 'width' => '5.5%'],
   ];
-  if ($canDelete) { $headers[] = ['label' => '', 'key' => 'act', 'align' => 'right']; }
+  if ($canDelete) { $headers[] = ['label' => '', 'key' => 'act', 'align' => 'right', 'width' => '9%']; }
 
   vg_table(
       $headers,
@@ -213,7 +217,8 @@ vg_header('자산관리', 'assets');
                   'hint'  => '자산은 에이전트가 수집을 보내면 자동 등록됩니다. 아래 설치 안내를 따르세요.',
               ],
           'cell' => [
-              'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a></strong>',
+              // 칸을 넘치는 긴 FQDN 은 col-id 가 말줄임으로 접는다 — 전체 이름은 title 로 남긴다.
+              'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a></strong>',
               'state' => fn($r) => vg_asset_state($r['age_min']),
               'os'            => fn($r) => vg_h(trim($r['os_id'] . ' ' . $r['os_version'])) ?: '<span class="why">–</span>',
               // 구버전 뱃지: 이 호스트만 옛 에이전트가 돈다는 뜻이다(중앙은 노드에 내려보내지 않는다).

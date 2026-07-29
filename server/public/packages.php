@@ -98,11 +98,11 @@ vg_header('영향 패키지', 'packages');
   $hasFilter = $q !== '' || $eco !== '';
   vg_table(
       [
-          ['label' => '패키지', 'width' => '20rem'],
-          ['label' => '배포판', 'width' => '10rem'],
-          ['label' => 'CVE 수', 'align' => 'right', 'width' => '6rem'],
-          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '11rem'],
-          ['label' => '조치', 'width' => '18rem'],
+          ['label' => '패키지', 'width' => '30%', 'class' => 'col-id'],
+          ['label' => '배포판', 'width' => '14%'],
+          ['label' => 'CVE 수', 'align' => 'right', 'width' => '9%'],
+          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '15%'],
+          ['label' => '조치', 'width' => '32%'],
       ],
       $rows,
       [

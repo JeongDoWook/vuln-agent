@@ -274,11 +274,11 @@ vg_header('벤더 판정', 'vendor');
   $hasFilter = $q !== '' || $rel !== '' || $src !== '';
   vg_table(
       [
-          ['label' => '소스', 'width' => '11rem'],
-          ['label' => '벤더/릴리스', 'width' => '12rem'],
-          ['label' => '패키지', 'width' => '14rem'],
-          ['label' => 'CVE', 'width' => '11rem', 'nowrap' => true],
-          ['label' => '고친 버전', 'width' => '16rem'],
+          ['label' => '소스', 'width' => '11%'],
+          ['label' => '벤더/릴리스', 'width' => '12%'],
+          ['label' => '패키지', 'width' => '15%', 'class' => 'col-id'],
+          ['label' => 'CVE', 'width' => '14%', 'nowrap' => true],
+          ['label' => '고친 버전', 'width' => '17%'],
           ['label' => '상태'],
       ],
       $rows,
