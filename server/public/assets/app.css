@@ -1553,6 +1553,28 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--activity .data-table .trunc, .page--advisories .data-table .trunc, .page--assets .data-table .trunc,
 .page--changes .data-table .trunc, .page--compliance_rules .data-table .trunc, .page--cves .data-table .trunc,
 .page--findings .data-table .trunc, .page--packages .data-table .trunc, .page--vendor .data-table .trunc { max-width: 100%; }
+/* 머리글(th)은 전역 nowrap 이라 자기 열에 못 들어가면 잘리지도 접히지도 않고 옆 머리글 위에
+ * 그대로 그려진다 — 실측으로 '참조(CIS/NIST/STIG)' 51.7px · '근거 (왜 위험한가)' 37.5px ·
+ * '벤더/릴리스' 16.9px 가 이웃을 덮었다(870px). 열 폭을 더 주는 것으로는 못 푼다(열이 5~12개라
+ * 좁은 폭에서는 나눠 줄 폭 자체가 없다). 셀 값과 같은 원칙으로 칸 안에서 접게 둔다 —
+ * 괄호로 이어붙은 머리글은 공백이 없으므로 overflow-wrap 까지 있어야 실제로 접힌다. */
+.page--activity .data-table th, .page--advisories .data-table th, .page--assets .data-table th,
+.page--changes .data-table th, .page--compliance_rules .data-table th, .page--cves .data-table th,
+.page--findings .data-table th, .page--packages .data-table th, .page--vendor .data-table th { white-space: normal; overflow-wrap: anywhere; }
+/* 자산관리만 칸의 가로 여백을 줄인다. 12열이라 여백이 표 폭을 먹는 비율이 다른 화면과 다르다 —
+ * 표 모드의 최소 폭(1061px)에서 표는 741px 인데 칸 여백만 12×32px=384px(52%)였다. 그래서
+ * '상태' 열은 6.5%(48px)를 받고도 오프라인 뱃지(65px)를 담지 못해 OS 열을 32px 덮었다.
+ * 세로 여백(행 높이·밀도)은 건드리지 않는다 — 줄이는 건 가로뿐이다. */
+.page--assets .data-table th, .page--assets .data-table td { padding-inline: .6rem; }
+/* 같은 이유로 이 표에서만 <code> 도 칸 안에서 접는다(.pill 을 접게 둔 것과 같은 결정).
+ * '주기' 의 <code>하루 1회</code> 는 66px 인데, 12열 표에서 그 열에 줄 수 있는 폭은 그보다 좁다 —
+ * nowrap 이면 넘쳐서 옆 열을 덮고, 접으면 줄만 늘어난다. 값이 짧아 넓은 폭에선 어차피 한 줄이다. */
+.page--assets .data-table td code { white-space: normal; }
+.page--assets .card > table:only-child th:first-child,
+.page--assets .card > table:only-child td:first-child { padding-left: .9rem; }
+.page--assets .card > table:only-child th:last-child,
+.page--assets .card > table:only-child td:last-child { padding-right: .9rem; }
+.page--assets .card > table:only-child tbody tr[class*="sev-"] td:first-child { padding-left: calc(.9rem - 3px); }
 
 /* 상세 화면: 서술은 읽기 좋은 길이로, 증거 표는 폭을 그대로 쓴다. */
 .page--host .page__main, .page--cve .page__main, .page--compliance_rule .page__main,

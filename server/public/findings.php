@@ -230,7 +230,9 @@ vg_header('취약점', 'findings');
   //   (호스트·CVE·패키지)에 폭을 몰아준다. 폭을 안 준 '근거' 가 남는 폭을 전부 갖는다.
   //   단위가 rem 이 아니라 % 인 이유: fixed 에서 지정폭 합이 표 폭을 넘으면 폭 없는 열이 0 이 되고
   //   표가 카드를 뚫어 가로 스크롤이 생긴다. % 는 어느 화면 폭에서도 합이 그대로라 그 일이 없다.
-  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '19%', 'class' => 'col-id']];
+  // 폭을 준 열들의 합을 79.5% 로 낮춘 이유: 남는 폭을 갖는 '근거' 칸 맨 앞에는 판정 출처 뱃지가
+  //   있는데(고정 크기 100px), 83.5% 였을 때 870px 에서 근거 칸이 83px 로 줄어 뱃지가 17.5px 넘쳤다.
+  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
   $headers = array_merge($headers, [
       ['label' => '등급',  'key' => 'severity',       'width' => '9%',   'nowrap' => true],
       ['label' => '상태',  'key' => 'runtime_status', 'width' => '8.5%', 'nowrap' => true],
@@ -238,9 +240,9 @@ vg_header('취약점', 'findings');
       //   폭이 고정된 표에서 nowrap 이면 칸을 뚫고 나가 표가 가로로 넘친다.
       ['label' => 'CVE',   'key' => 'cve_id',         'width' => '13%'],
       ['label' => '패키지', 'key' => 'package_name',  'width' => '10.5%', 'class' => 'col-id'],
-      ['label' => '위험도', 'key' => 'risk',          'width' => '8.5%', 'nowrap' => true],
+      ['label' => '위험도', 'key' => 'risk',          'width' => '8%', 'nowrap' => true],
       ['label' => '근거 (왜 위험한가)', 'key' => 'rationale'],
-      ['label' => '조치',  'key' => 'fix',            'width' => '15%'],
+      ['label' => '조치',  'key' => 'fix',            'width' => '13.5%'],
   ]);
 
   // 필터 초기화 CTA — vg_qs() 는 지금 $_GET 을 기준으로 넘겨받은 키만 비우므로, 단일 호스트

@@ -181,7 +181,9 @@ vg_header('CVE 목록', 'cves');
   vg_table(
       [
           ['label' => 'CVE', 'width' => '16%', 'nowrap' => true],
-          ['label' => '심각도', 'width' => '7%'],
+          // 심각도 뱃지(CRITICAL 69px)는 줄바꿈이 안 되는 고정 크기라 % 로 주면 표가 좁아질 때
+          //   덮는다 — 870px 에서 45.8px 를 CVSS 열 위에 그렸다. 값 69 + 칸 여백 32 = 101 → 6.5rem.
+          ['label' => '심각도', 'width' => '6.5rem'],
           ['label' => 'CVSS', 'align' => 'right', 'width' => '6%'],
           ['label' => 'EPSS', 'align' => 'right', 'width' => '10%'],
           ['label' => '공개일', 'width' => '9%', 'nowrap' => true],

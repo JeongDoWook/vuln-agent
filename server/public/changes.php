@@ -269,7 +269,9 @@ vg_header('변화 추적', 'findings');
             ['label' => '호스트'],
             ['label' => 'CVE', 'width' => '16%', 'nowrap' => true],
             ['label' => '패키지'],
-            ['label' => '등급', 'width' => '12%'],
+            // 등급 뱃지도 고정 크기다 — 12% 는 870px 에서 66px 라 CRITICAL 뱃지가 18.3px 넘쳤다.
+            //   값 69 + 칸 여백 32 = 101 → 6.5rem(cves.php·compliance_rules.php 와 같은 기준).
+            ['label' => '등급', 'width' => '6.5rem'],
             ['label' => '수집 시각', 'width' => '14%', 'nowrap' => true],
         ],
         $paged,
