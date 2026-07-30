@@ -15,7 +15,7 @@ require_once __DIR__ . '/debtracker.php';   // vg_debtracker_evidence — 데비
 require_once __DIR__ . '/vendorerrata.php'; // vg_vendor_errata_evidence — RHEL 계열 백포트 판정(중앙)
 require_once __DIR__ . '/ubuntuoval.php';   // vg_ubuntu_evidence — 우분투 벤더 판정(중앙)
 require_once __DIR__ . '/kernelcve.php';
-require_once __DIR__ . '/remediation.php';    // vg_kernel_fixed_set — 커널은 업스트림(kernel.org)이 판정한다
+require_once __DIR__ . '/finding_evidence.php'; // 구조화 판정 근거 생성·저장
 require_once __DIR__ . '/package_summary.php'; // vg_rebuild_package_summary — 하위호환 재노출(신규 호출부는 직접 require)
 
 // 재매칭 결과 지문의 **알고리즘 버전**. 판정 로직이나 저장 컬럼을 바꾸면 이 값을 올린다.
@@ -862,11 +862,8 @@ if (!function_exists('vg_scope_rank')) {
             }
         }
 
-        // ── 2단계: 지문 비교. 결과가 그대로면 DELETE·INSERT·증거·remediation 을 전부 건너뛴다
+        // ── 2단계: 지문 비교. 결과가 그대로면 DELETE·INSERT·증거 기록을 전부 건너뛴다
         //   (트랜잭션도 열지 않는다).
-        //   remediation 을 같이 건너뛰어도 안전한 근거: vg_sync_remediation_cases() 가 보는 값은
-        //   findings(그대로) + tb_scan.collected_at(그대로)뿐이고, ON DUPLICATE 절이 `due_at=due_at`
-        //   라 SLA 정책 변경은 애초에 반영되지 않는다 → 같은 입력이면 같은 결과다.
         //   지문이 NULL(최초·신규 스캔)이면 당연히 다르므로 항상 쓴다.
         $fingerprint = vg_match_fingerprint($findRows, $suppRows);
         if (!$force) {
@@ -894,8 +891,8 @@ if (!function_exists('vg_scope_rank')) {
         //   READ COMMITTED 는 이 스캔에 갭락을 걸지 않으므로 원인 자체가 사라진다.
         //   락 순서 통일로는 못 고친다 — 둘이 **같은 순서로 같은 갭**을 잡다 나는 사고다.
         // 정합성: 이 트랜잭션 안의 읽기는 **방금 자기가 쓴 행을 도로 보는 것뿐**이다 —
-        //   finding id 재조회(SELECT finding_id FROM tb_finding)와 vg_sync_remediation_cases() 의 조회가
-        //   그것이고, 판정 근거($packages·$affected 등)는 전부 이 시점 이전에 읽어 뒀다.
+        //   finding id 재조회(SELECT finding_id FROM tb_finding)가 그것이고,
+        //   판정 근거($packages·$affected 등)는 전부 이 시점 이전에 읽어 뒀다.
         //   남이 쓴 데이터를 다시 읽는 게 없으니 비반복읽기·팬텀이 성립할 여지가 없고,
         //   원자성은 격리수준과 무관하다.
         // 범위: SET TRANSACTION(SESSION/GLOBAL 없이)은 **다음 트랜잭션 하나에만** 걸린다 —
@@ -944,7 +941,6 @@ if (!function_exists('vg_scope_rank')) {
             }
         }
 
-            vg_sync_remediation_cases($pdo, $scanId);
             // 지문은 **같은 트랜잭션 안에서** 갱신한다 — 밖에서 갱신하면 롤백 시
             //   "안 썼는데 썼다고 기록"이 남아 이후 재매칭이 영영 건너뛴다.
             $pdo->prepare('UPDATE tb_scan SET match_fingerprint = ? WHERE scan_id = ?')->execute([$fingerprint, $scanId]);

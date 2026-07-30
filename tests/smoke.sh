@@ -32,6 +32,7 @@ assert_eq() { if [ "$1" = "$2" ]; then ok "$3"; else no "$3  (기대=$2, 실제=
 #   모든 워크트리에서 상시 실패했다(응답에는 그 문자열이 멀쩡히 있었다). here-string 은 파이프가
 #   아니라서 grep 의 종료코드가 그대로 결과가 된다.
 assert_contains() { if grep -q "$2" <<<"$1"; then ok "$3"; else no "$3  ('$2' 없음)"; fi; }
+assert_not_contains() { if grep -q "$2" <<<"$1"; then no "$3  ('$2' 있음)"; else ok "$3"; fi; }
 
 # 아래 단위테스트 13개(vercmp~ui_structure)는 실행 방식(마운트·php:8.3-cli·리다이렉션)이 전부
 # 동일하고 파일명·라벨·메시지만 다르다 — DRY 로 묶는다. 각 테스트가 왜 존재하는지는
@@ -255,8 +256,8 @@ run_phpunit "ui_config_test.php" "ui_config" "UI 설정 범위·감사정보 마
 
 # --- UI 공통 구조 회귀 테스트 -----------------------------------------------
 run_phpunit "ui_structure_test.php" "ui_structure" "UI 공통 컴포넌트·검색·인라인 이벤트 회귀 테스트"
-# --- 내부 SLA·조치 단위·판정 출처 회귀 테스트 -------------------------------
-run_phpunit "remediation_test.php" "remediation" "내부 SLA·조치 단위·판정 출처 단위 테스트"
+# --- 취약점 판정 출처·구조화 근거 회귀 테스트 -------------------------------
+run_phpunit "finding_evidence_test.php" "finding_evidence" "취약점 판정 출처 단위 테스트"
 
 # --- DB 재시도 단위 테스트 ----------------------------------------------------
 # 접속 실패(2002)·교착(1213) 재시도 판정과 vg_with_tx 의 재시도 흐름(server/src/db.php).
@@ -387,6 +388,9 @@ assert_eq "$code" "302" "올바른 로그인 → 302(대시보드)"
 
 body=$(curl_ -s -b "$JAR" "$BASE/")
 assert_contains "$body" "대시보드" "대시보드 접근(인증됨)"
+assert_not_contains "$body" "/remediations.php" "대시보드·메뉴에 조치관리 링크 없음"
+code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/remediations.php")
+assert_eq "$code" "404" "조치관리 페이지 제거"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/findings.php")
 assert_eq "$code" "200" "취약점 페이지 200"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/users.php")
