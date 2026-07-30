@@ -86,7 +86,8 @@ stale 값이 영구히 남는다).
 > **판정 로직이나 저장 컬럼을 바꾸면 `VG_MATCH_FP_VERSION`(`src/matcher.php`)을 올려야 한다.**
 > 입력이 같으면 지문도 같아 **새 코드로 재계산한 결과가 영영 저장되지 않는** 함정이 있다.
 > 이 상수는 지문에 섞여 들어가므로, 올리면 전 스캔이 한 번씩 다시 쓰인다.
-> 사람이 누르는 `rematch.php` 는 항상 강제 재작성(`vg_match_scan($pdo,$id,true)`)이다.
+> 피드 수집·에이전트 수집·호스트 판정 설정 변경 경로가 필요한 스캔을 내부에서 직접 재매칭한다.
+> 외부에서 전체 스캔을 강제로 다시 쓰는 공개 API는 제공하지 않는다.
 
 **보안설정 점검(CCE)** 은 별도 경로다. 같은 수집물의 `security`/`users` 섹션을 `src/cce.php` 가
 판정해 `tb_cce_finding`(PASS/FAIL/NA)에 저장한다 — CVE 가 아니라 **설정**(SSH root 로그인,
@@ -174,7 +175,7 @@ tb_container 는 컨테이너 인벤토리이고 컨테이너 내부 패키지�
 **벤더 판정 소스**: tb_debian_tracker(데비안 트래커 중앙 수집)·tb_ubuntu_oval·tb_vendor_errata·
 tb_vendor_unfixed·tb_kernel_cve/tb_kernel_cve_fix 는 스캔에 매달리지 않고 매처가 참조만 한다.
 **정밀 판정 플랫폼**: tb_finding_evidence(판정 근거 구조화, tb_finding 1:1)·tb_collection_stage
-(수집 단계 완전성 — 단계 누락을 미탐 대신 경고로)·tb_host_ext_port(경계 방화벽 뒤 외부노출 선언).
+(수집 단계 완전성 — 단계 누락을 미탐 대신 경고로).
 tb_agent_replay_nonce 는 에이전트 재전송 공격 방지.
 스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh) — ERD 범위 밖.*
 *모든 테이블에 감사 4컬럼(`created_at`/`updated_at`/`is_deleted`/`deleted_at`)이 통일되어 있다
@@ -211,7 +212,6 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
     바인딩을 강제해, 본문이 다른 호스트를 주장하면 **403 으로 거부**(침해된 대상 1대가 남의
     스캔을 위조·덮어쓰는 것을 차단). DB 엔 SHA-256 해시만 저장(원문 1회 표시), 폐기는 `is_revoked`.
     활성 토큰은 호스트당 하나(재발급 시 기존분 자동 폐기). 공유 수집 토큰은 허용하지 않는다.
-  - 관리 작업 → `rematch.php` : 재매칭 전용 `X-Agent-Token`(`secrets/rematch_token.txt`).
   - 외부 시스템 → `export.php` : 웹에서 발급하는 **읽기 전용** API 토큰(`X-API-Token`, 또는
     `Authorization: Bearer`). DB 엔 SHA-256 해시만 저장(원문은 발급 시 1회 표시), 폐기는 소프트삭제.
 - 최초 admin 은 `secrets/admin_password` 로 부트스트랩.

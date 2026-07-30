@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS tb_hosts (
   hostname   VARCHAR(255) NULL,
   os_id      VARCHAR(64)  NULL,
   os_version VARCHAR(64)  NULL,
-  perimeter_firewalled TINYINT(1) NOT NULL DEFAULT 0,
   first_seen DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_seen  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -21,22 +20,6 @@ CREATE TABLE IF NOT EXISTS tb_hosts (
   PRIMARY KEY (id),
   UNIQUE KEY uq_hosts_fqdn (fqdn),
   INDEX idx_hosts_is_deleted (is_deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS tb_host_ext_ports (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  host_id BIGINT UNSIGNED NOT NULL,
-  port INT UNSIGNED NOT NULL,
-  proto VARCHAR(16) NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
-  deleted_at DATETIME NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_host_ext_port (host_id, port, proto),
-  INDEX idx_host_ext_ports_is_deleted (is_deleted),
-  CONSTRAINT fk_host_ext_ports_host FOREIGN KEY (host_id) REFERENCES tb_hosts(id) ON DELETE CASCADE,
-  CONSTRAINT chk_host_ext_ports_port CHECK (port BETWEEN 1 AND 65535)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ── 스캔 이력 : 수집 1회 = 1행. 원본 JSON 도 보관(2단계 매처가 재활용) ──

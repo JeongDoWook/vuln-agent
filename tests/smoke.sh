@@ -16,7 +16,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # 서버가 요청을 받고도 응답을 안 주면(PHP 가 외부 API 호출에서 멈춤·DB 락 대기 등) curl 이
 # 무한 대기해 push 가 그대로 멈춘 것처럼 보인다 — 모든 curl 호출에 상한을 둔다.
 #   curl_  : 단순 GET/로그인류 (20초)
-#   curl_i : ingest.php/rematch.php — 매칭 파이프라인이 도는 요청이라 여유 있게 (30초)
+#   curl_i : ingest.php — 매칭 파이프라인이 도는 요청이라 여유 있게 (30초)
 curl_()  { curl --max-time 20 "$@"; }
 curl_i() { curl --max-time 30 "$@"; }
 
@@ -50,10 +50,9 @@ run_phpunit() {
   fi
 }
 
-for f in "$ROOT/secrets/rematch_token.txt" "$ROOT/secrets/admin_password.txt"; do
+for f in "$ROOT/secrets/admin_password.txt"; do
   [ -s "$f" ] || { echo "secrets 없음: $f — 먼저 ./compose_runner.sh init"; exit 2; }
 done
-REMATCH_TOKEN="$(cat "$ROOT/secrets/rematch_token.txt")"
 ADMPW="$(cat "$ROOT/secrets/admin_password.txt")"
 
 printf "${CYAN}== vuln-agent smoke test @ %s ==${NC}\n" "$BASE"
@@ -120,7 +119,24 @@ FQDN_WEB03="web03.$WT_LABEL.example.com"   # sample-scan-amzn.json   (Amazon Lin
 # 샘플은 원본을 두고 전송 직전에 fqdn 만 바꾼 사본을 쓴다($UPG·$SPOOF 와 같은 sed 패턴).
 #   원본을 템플릿화하면 사람이 읽는 샘플에 플레이스홀더가 새고, 다른 테스트도 같이 고쳐야 한다.
 SAMPLE="$(mktemp)"; SAMPLE_DEB="$(mktemp)"; SAMPLE_AMZN="$(mktemp)"
-trap 'rm -f "$SAMPLE" "$SAMPLE_DEB" "$SAMPLE_AMZN" "${JAR:-}"' EXIT
+PRG_FQDN=""
+cleanup_smoke() {
+  rm -f "$SAMPLE" "$SAMPLE_DEB" "$SAMPLE_AMZN" "${JAR:-}"
+  # 스모크가 발급한 토큰만 지운다. 테스트 FQDN과 라벨을 함께 제한해
+  # 같은 DB를 쓰는 운영·수동 발급 토큰에는 영향을 주지 않는다.
+  if [ -n "${WEB_CONTAINER:-}" ] && container_running; then
+    docker exec "$WEB_CONTAINER" php -r \
+      '$cfg=require "/var/www/html/src/config.php";
+       require "/var/www/html/src/db.php";
+       $fqdn=array_values(array_filter(array_slice($argv,1)));
+       if (!$fqdn) { exit; }
+       $marks=implode(",",array_fill(0,count($fqdn),"?"));
+       $sql="DELETE FROM tb_agent_token WHERE host_fqdn IN ($marks) AND label LIKE ?";
+       vg_pdo()->prepare($sql)->execute(array_merge($fqdn,["smoke%"]));' \
+      "$FQDN_WEB01" "$FQDN_WEB02" "$FQDN_WEB03" "${PRG_FQDN:-}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_smoke EXIT
 sed "s/web01\.example\.com/$FQDN_WEB01/g" "$ROOT/tests/sample-scan.json"        > "$SAMPLE"
 sed "s/web02\.example\.com/$FQDN_WEB02/g" "$ROOT/tests/sample-scan-debian.json" > "$SAMPLE_DEB"
 sed "s/web03\.example\.com/$FQDN_WEB03/g" "$ROOT/tests/sample-scan-amzn.json"   > "$SAMPLE_AMZN"
@@ -290,10 +306,6 @@ printf "\n[ingest]\n"
 code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
   -H 'X-Agent-Token: WRONG' --data-binary @"$SAMPLE")
 assert_eq "$code" "401" "잘못된 토큰 → 401"
-code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
-  -H "X-Agent-Token: $REMATCH_TOKEN" --data-binary @"$SAMPLE")
-assert_eq "$code" "401" "재매칭 관리 토큰은 수집 인증에 사용할 수 없음"
-
 resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"ok":true' "정상 토큰 → ok:true"
 assert_contains "$resp" '"packages":7' "패키지 7건 저장"
@@ -378,21 +390,10 @@ resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN_AMZN" \
 assert_contains "$resp" '"ok":true' "Amazon Linux 호스트 수집 → ok:true"
 assert_contains "$resp" 'ALAS' "ingest 응답에 미지원 경고(자체 ALAS 피드 필요)"
 
-# --- 재매칭 -----------------------------------------------------------------
-printf "\n[rematch]\n"
-code=$(curl_i -s -o /dev/null -w '%{http_code}' -H "X-Agent-Token: WRONG" "$BASE/rematch.php")
-assert_eq "$code" "401" "잘못된 토큰 → 401"
-code=$(curl_i -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=$REMATCH_TOKEN")
-assert_eq "$code" "401" "?token= 쿼리는 더 이상 인증 안 됨(헤더만 허용) → 401"
-# 대상을 방금 수집한 스캔 1건으로 한정한다. scan_id 를 빼면 DB 전체를 재매칭하는데, 공용 dev DB 는
-#   스모크가 돌 때마다 스캔이 쌓여 결국 PHP 30초 실행제한에 걸린다 — 그러면 이 검사는 인증이 아니라
-#   DB 크기를 재는 검사가 된다(여기서 보려는 건 헤더 인증이 통과하느냐다).
-# scan_id 를 못 뽑으면 URL 이 `?scan_id=` 가 되는데, rematch.php 는 isset() 로 보므로 빈 값도
-#   "지정됨"으로 읽어 없는 스캔 0번을 매칭하고 ok:true 를 준다 — 아래 검사가 아무것도 안 하면서
-#   통과한다. 값을 먼저 못박는다.
-if [ -n "$SCAN_ID" ]; then ok "재매칭 대상 scan_id 확보 (=$SCAN_ID)"; else no "scan_id 를 못 뽑음 — 아래 재매칭 검사가 무의미해진다"; fi
-resp=$(curl_i -s -H "X-Agent-Token: $REMATCH_TOKEN" "$BASE/rematch.php?scan_id=$SCAN_ID")
-assert_contains "$resp" '"ok":true' "재매칭 성공(헤더 인증)"
+# 공개 강제 재매칭 API는 제공하지 않는다. 피드·수집 경로가 필요한 스캔을 내부에서 직접 재매칭한다.
+printf "\n[removed endpoint]\n"
+code=$(curl_i -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php")
+assert_eq "$code" "404" "폐기된 공개 재매칭 API → 404"
 
 # --- 웹 인증 흐름 -----------------------------------------------------------
 printf "\n[web auth]\n"
