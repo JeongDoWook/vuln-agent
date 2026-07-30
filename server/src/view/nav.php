@@ -44,6 +44,7 @@ function vg_activity_type_labels(): array {
         'view_cve'             => '취약점 상세 조회',
         'view_advisory'        => '보안공지 상세 조회',
         'view_compliance_rule' => '보안설정 룰 상세 조회',
+        // 기능은 제거됐지만 과거 감사로그 표시용으로 남김.
         'host_perimeter_update'=> '경계 방화벽 설정 변경',
         'page_view'            => '페이지 열람',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김(매핑을 지우면 원시 코드가 그대로 노출된다).

@@ -113,7 +113,7 @@ cd deploy
 
 사이드바 밖: `/profile.php` 내 프로필(상단바 사용자 메뉴 — 로그인 사용자 전원, 본인 비밀번호 변경).
 
-API: `POST /ingest.php`(에이전트 수집 수신) · `POST /rematch.php`(재매칭) · `GET /export.php`
+API: `POST /ingest.php`(에이전트 수집 수신) · `GET /export.php`
 (결과 내보내기 — 상세: [`docs/dev/export-api.md`](docs/dev/export-api.md)) ·
 `GET /agent-dl.php`(에이전트 설치 파일 배포 — 자산 화면의 설치 안내 모달이 링크) ·
 `GET /feed_preview.php`(커넥터 미리보기, perm=connectors).

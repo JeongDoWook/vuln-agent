@@ -60,5 +60,4 @@ return [
     'db_name'      => vg_env('DB_NAME', 'vulnagent'),
     'db_user'      => vg_env('DB_USER', 'vulnagent'),
     'db_pass'      => vg_secret('DB_PASS', ''),        // DB_PASS_FILE 우선
-    'rematch_token' => vg_secret('REMATCH_TOKEN', ''), // REMATCH_TOKEN_FILE 우선
 ];

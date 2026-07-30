@@ -41,19 +41,7 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         --
         fqdn : string <<UK>>
         os_id : string
-        perimeter_firewalled : bool
-        ' 경계 방화벽 뒤 - 강등 판정 스위치
         is_deleted : bool
-    }
-
-    entity tb_host_ext_port {
-        host_ext_port_id : bigint <<PK>>
-        --
-        host_id : bigint <<FK>>
-        port : int
-        proto : string
-        ' UK(host_id, port, proto)
-        ' 경계 방화벽 뒤에서도 정말 열린 포트
     }
 
     entity tb_scan {
@@ -443,7 +431,6 @@ package "피드 운영 · 인증 · 감사" {
 
 ' ── FK 가 실제로 걸린 관계 ────────────────────────────
 tb_host ||--o{ tb_scan : "수집 이력"
-tb_host ||--o{ tb_host_ext_port : "외부노출 포트 선언"
 tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
 
 tb_scan ||--o{ tb_package : "설치 패키지"
@@ -475,7 +462,6 @@ tb_cve ||..o{ tb_advisory_cve : "CVE → 공지 역조회"
 tb_cve_affected_package }o..|| tb_package_summary : "사전집계(OSV 실행 시 재생성)"
 tb_container ||..o{ tb_package : "컨테이너 내부 패키지(container_id)"
 tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"
-tb_host_ext_port }o..|| tb_exposure : "EXTERNAL → FILTERED 강등 판정"
 
 ' 벤더 판정 소스는 매처가 참조만 한다(스캔에 매달리지 않음).
 tb_debian_tracker }o..|| tb_finding : "데비안 백포트 판정"

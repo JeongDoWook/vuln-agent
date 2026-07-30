@@ -63,7 +63,7 @@
   <div style="margin-top:.7rem">
     <span class="tag">Bash 에이전트</span><span class="tag">PHP + MySQL</span>
     <span class="tag">Docker</span><span class="tag">HTTPS(Caddy)</span><span class="tag">OSV · KEV · EPSS · NVD · KISA</span>
-    <span class="tag">백포트 억제(2단)</span><span class="tag">CCE 설정점검</span><span class="tag">Export API</span>
+    <span class="tag">배포판 근거 기반 백포트 억제</span><span class="tag">보안설정 32개 점검</span><span class="tag">Export API</span>
   </div>
 </header>
 
@@ -83,7 +83,7 @@
   <div class="arrow">→</div>
   <div class="step"><span class="k">③ 저장</span><h4>중앙 DB</h4><p>hosts·scans·packages·exposures·processes 로 <b>구분 저장</b></p></div>
   <div class="arrow">→</div>
-  <div class="step p"><span class="k">④ 매핑</span><h4>CVE 조인</h4><p>OSV 로 전 패키지 취약점 발굴 + KEV·EPSS·NVD 보강. 백포트는 버전필터+changelog 2단 검증으로 억제(§4)</p></div>
+  <div class="step p"><span class="k">④ 매핑</span><h4>CVE 조인</h4><p>OSV 로 전 패키지 취약점 발굴 + KEV·EPSS·NVD 보강. 백포트는 버전 범위와 배포판별 changelog·errata·OVAL·Debian tracker 근거로 억제(§4)</p></div>
   <div class="arrow">→</div>
   <div class="step o"><span class="k">⑤ 우선순위</span><h4>매처</h4><p>런타임 상태 7단계 + KEV/EPSS 로 심각도 판정·정렬</p></div>
   <div class="arrow">→</div>
@@ -137,17 +137,17 @@
   nginx 로 <b>외부노출</b>된 서버에선 <span class="badge b-crit">CRITICAL</span>,
   포트 없는 서버에선 <span class="badge b-low">LOW/MEDIUM</span> 으로 갈린다.
   <b>KEV</b>(이미 악용됨) · <b>EPSS</b>(악용확률)로 실제 악용성까지 반영.
-  백포트 오탐은 <b>버전필터 + changelog 검증</b> 2단으로 억제한다(자세히는 §4).
+  백포트 오탐은 <b>OSV 버전 범위와 배포판별 수정 근거</b>(changelog·적용 errata·벤더 OVAL/errata·Debian tracker)를 교차 확인해 억제한다(자세히는 §4).
 </div>
 
 <!-- 4. 백포트 오탐 억제 -->
-<h2><span class="n">4</span>백포트 오탐 억제 (2단) — 매처의 첫 관문</h2>
+<h2><span class="n">4</span>백포트 오탐 억제 — 버전 범위와 배포판 근거 교차 확인</h2>
 <p class="lead">배포판은 버전 번호를 그대로 두고 보안 패치만 이식(백포트)한다. 버전만 보는 스캐너는
-이를 “취약”으로 잘못 잡는다. 매처는 finding 을 만들기 전에 두 단계로 이를 걸러낸다.</p>
+이를 “취약”으로 잘못 잡는다. 매처는 finding 을 만들기 전에 버전 범위와 배포판별 수정 근거를 교차 확인한다.</p>
 <div class="pipe">
-  <div class="step"><span class="k">1단</span><h4>OSV 버전필터</h4><p>배포판 전체버전(NEVRA)으로 대조해 설치 버전에 실제 영향 없는 건을 1차 제거</p></div>
+  <div class="step"><span class="k">범위</span><h4>OSV 버전 필터</h4><p>배포판 전체버전(NEVRA)과 OSV 영향 구간을 대조해 설치 버전에 실제 영향 없는 건을 제외</p></div>
   <div class="arrow">→</div>
-  <div class="step p"><span class="k">2단</span><h4>changelog 검증</h4><p>통과한 건도 에이전트가 보낸 패키지 changelog 에 <b>그 CVE 수정 기록</b>이 있으면 취약점으로 올리지 않음</p></div>
+  <div class="step p"><span class="k">근거</span><h4>배포판 수정 여부</h4><p>패키지 changelog·호스트 적용 errata와 중앙의 벤더 OVAL/errata·Debian tracker를 배포판에 맞게 확인</p></div>
   <div class="arrow">→</div>
   <div class="step o"><span class="k">분리</span><h4>tb_suppressed_finding</h4><p>위험 집계·화면에서는 빠지되, 숨기지 않고 <b>근거와 함께 호스트 상세에 표시</b>(설명가능성)</p></div>
 </div>
@@ -327,8 +327,8 @@
     <li><span class="ok">✓</span> Docker(dev/prod·secrets) · 수집→전송→저장 파이프라인</li>
     <li><span class="ok">✓</span> 정밀 런타임 수집(실행중/사용중/포트 구분) · 매처 7단계 상태 판정</li>
     <li><span class="ok">✓</span> OSV 자동 매칭(전 패키지·버전필터·수정 버전) · KEV/EPSS 우선순위</li>
-    <li><span class="ok">✓</span> 백포트 오탐 억제(2단: 버전필터 + changelog 검증) → tb_suppressed_finding, 호스트 상세에 근거 표시</li>
-    <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·MAC·방화벽 5항목 PASS/FAIL/NA(신규 수집 없음)</li>
+    <li><span class="ok">✓</span> 백포트 오탐 억제(OSV 버전 범위 + changelog·errata·OVAL·Debian tracker) → tb_suppressed_finding, 호스트 상세에 근거 표시</li>
+    <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·MAC·방화벽 등 32개 항목 PASS/FAIL/NA</li>
     <li><span class="ok">✓</span> 변화 추적(changes.php) — 최근 2개 스캔 대비 신규/해결/등급변경</li>
     <li><span class="ok">✓</span> 웹(로그인·대시보드·호스트상세·취약점·변화추적·CVE상세·국내공지·자산·커넥터·사용자·권한·API토큰·감사로그) · 검색/필터·페이지네이션</li>
     <li><span class="ok">✓</span> 고정 커넥터 11종 + 범용 API · cron 스케줄(스케줄러 사이드카 1분마다 확인) · 배포 설치기(systemd-timer/cron, 매시간)</li>

@@ -41,7 +41,6 @@ package "관리" as Admin {
 
 package "인증: 토큰(사람 로그인과 분리)" as API {
     rectangle "/ingest.php\n수집 수신 · X-Agent-Token" as ING #238636
-    rectangle "/rematch.php\n재매칭 · X-Agent-Token" as REM
     rectangle "/export.php\n결과 내보내기 JSON/XML · X-API-Token" as EXP #238636
 }
 

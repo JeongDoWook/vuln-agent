@@ -41,17 +41,6 @@ if (!function_exists('vg_scope_rank')) {
         }
     }
 
-    function vg_apply_host_perimeter_scope(
-        string $scope, int $containerId, ?string $proto, int $port,
-        bool $perimeterFirewalled, array $externalPorts
-    ): string {
-        if (!$perimeterFirewalled || $containerId !== 0 || $scope !== 'EXTERNAL') {
-            return $scope;
-        }
-        $key = strtolower((string) $proto) . '/' . $port;
-        return isset($externalPorts[$key]) ? 'EXTERNAL' : 'FILTERED';
-    }
-
     // 런타임 상태 판정 + 등급 + 근거.
     //   상태 강도: EXTERNAL(외부노출) > LAN(로컬 세그먼트 노출) > FILTERED(방화벽 차단)
     //              > LISTENING(로컬리스닝) > RUNNING(실행중) > LOADED(사용중) > INSTALLED(설치만) — 7종.
@@ -104,8 +93,7 @@ if (!function_exists('vg_scope_rank')) {
     function vg_load_scan_signals(PDO $pdo, int $scanId): array {
         // 이 스캔의 배포판 → 생태계. 수집(feeds)이 'Ubuntu:24.04' 로 태깅한 것과 같은 기준.
         $sc = $pdo->prepare('SELECT s.host_id, s.os_id, s.os_version, s.package_family,
-                                    s.running_kernel, s.kernel_latest, s.kernel_reboot_needed,
-                                    h.perimeter_firewalled
+                                    s.running_kernel, s.kernel_latest, s.kernel_reboot_needed
                                FROM tb_scan s
                                JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
                               WHERE s.scan_id = ?');
@@ -137,23 +125,11 @@ if (!function_exists('vg_scope_rank')) {
         // 노출 → 패키지별 최악(worst) 로드 상태 맵.
         //   **컨테이너별로 따로 담는다**(container_id, 0=호스트). 한 덩어리로 합치면 호스트 nginx 의
         //   외부노출이 컨테이너 openssl 로 새어 EXTERNAL 로 오판한다(오탐).
-        $externalPorts = [];
-        if (!empty($scan['perimeter_firewalled'])) {
-            $ps = $pdo->prepare('SELECT port, proto FROM tb_host_ext_port WHERE host_id = ? AND is_deleted = 0');
-            $ps->execute([(int) $scan['host_id']]);
-            foreach ($ps->fetchAll() as $p) {
-                $externalPorts[strtolower((string) $p['proto']) . '/' . (int) $p['port']] = true;
-            }
-        }
         $stmt = $pdo->prepare('SELECT container_id, proc, proto, port, scope, exe_pkg, loaded_pkgs FROM tb_exposure WHERE scan_id = ?');
         $stmt->execute([$scanId]);
         $loadMap = []; // ctrId => pkgName => ['rank','scope','proc','port']
         foreach ($stmt->fetchAll() as $e) {
             $c = (int) $e['container_id'];
-            $e['scope'] = vg_apply_host_perimeter_scope(
-                (string) $e['scope'], $c, $e['proto'] ?? null, (int) $e['port'],
-                !empty($scan['perimeter_firewalled']), $externalPorts
-            );
             $names = [];
             if (!empty($e['exe_pkg']) && $e['exe_pkg'] !== 'UNPACKAGED') {
                 $names[] = $e['exe_pkg'];
@@ -759,9 +735,8 @@ if (!function_exists('vg_scope_rank')) {
      *   **한 줄도 쓰지 않는다.** 피드가 갱신돼도 특정 스캔의 판정 결과는 대부분 그대로인데,
      *   지금까지는 1비트도 안 바뀐 경우에도 findings 를 통째 삭제·재삽입해 binlog 만
      *   하루 20GB 넘게 쌓였다(운영 실측: 105G 중 76G 가 binlog).
-     *   $force 면 지문 비교를 건너뛰고 무조건 재작성한다(사람이 누르는 rematch.php 용 탈출구).
      */
-    function vg_match_scan(PDO $pdo, int $scanId, bool $force = false): array {
+    function vg_match_scan(PDO $pdo, int $scanId): array {
         $sig = vg_load_scan_signals($pdo, $scanId);
         $scan            = $sig['scan'];
         $hostEco         = $sig['hostEco'];
@@ -866,13 +841,11 @@ if (!function_exists('vg_scope_rank')) {
         //   (트랜잭션도 열지 않는다).
         //   지문이 NULL(최초·신규 스캔)이면 당연히 다르므로 항상 쓴다.
         $fingerprint = vg_match_fingerprint($findRows, $suppRows);
-        if (!$force) {
-            $fpSt = $pdo->prepare('SELECT match_fingerprint FROM tb_scan WHERE scan_id = ?');
-            $fpSt->execute([$scanId]);
-            $prevFp = $fpSt->fetchColumn();
-            if (is_string($prevFp) && hash_equals($prevFp, $fingerprint)) {
-                return $counts;
-            }
+        $fpSt = $pdo->prepare('SELECT match_fingerprint FROM tb_scan WHERE scan_id = ?');
+        $fpSt->execute([$scanId]);
+        $prevFp = $fpSt->fetchColumn();
+        if (is_string($prevFp) && hash_equals($prevFp, $fingerprint)) {
+            return $counts;
         }
 
         // ── 3단계: 쓰기. 결과가 달라졌으므로 **통째 재작성**한다(행 단위 diff 로 하지 않는다 —

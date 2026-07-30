@@ -27,7 +27,6 @@ package "compose 레이어" as Files {
 package "Docker Secrets (txt)" as Secrets {
     rectangle "mysql_root_password" as S1
     rectangle "mysql_password" as S2
-    rectangle "rematch_token" as S3
     rectangle "admin_password" as S4
     rectangle "duckdns_token (prod 전용)" as S5
 }
