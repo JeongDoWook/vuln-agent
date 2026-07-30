@@ -54,5 +54,11 @@ $check(!str_contains($navPhp, "'계정' =>") && !str_contains($navPhp, "'연동'
 $check(str_contains($connectorPhp, "['label' => '실행 시각'"), '커넥터 실행 시각 열 통합');
 $check(!str_contains($connectorPhp, "['label' => '마지막 실행'"), '커넥터 중복 시각 열 제거');
 
+$cvePhp = (string) file_get_contents($public . '/cve.php');
+$check(str_contains($cvePhp, 'LEFT JOIN tb_finding_evidence fe'), 'CVE 위치별 수정 버전 근거 결합');
+$check(str_contains($cvePhp, "['label' => '현재 → 권장 조치'"), 'CVE 위치별 권장 조치 열 제공');
+$check(str_contains($cvePhp, "vg_is_kernel_code_pkg"), 'CVE 조치에서 프로세스 재시작과 커널 재부팅 구분');
+$check(str_contains($cvePhp, '완화·격리·제거 검토'), '수정본 미공개 CVE의 대체 안내');
+
 if ($fail > 0) { printf("ui_structure_test: %d건 실패\n", $fail); exit(1); }
 printf("ui_structure_test: 전부 통과\n");
