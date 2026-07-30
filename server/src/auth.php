@@ -222,15 +222,15 @@ const VG_ROLE_DESCRIPTIONS = ['admin' => '전체', 'operator' => '피드', 'user
 function vg_menus(): array {
     return [
         'dashboard'   => '대시보드',
-        'assets'      => '자산 관리',
-        'findings'    => '취약점 현황 · CVE 목록',
-        'advisories'  => '국내 보안공지',
-        'connectors'  => '피드 커넥터',
+        'assets'      => '자산',
+        'findings'    => '탐지 결과 · CVE',
+        'advisories'  => '보안 공지',
+        'connectors'  => '데이터 수집',
         'users'       => '사용자',
-        'agenttokens' => '에이전트 토큰',
-        'apitokens'   => 'API 토큰',
+        'agenttokens' => '에이전트 키',
+        'apitokens'   => 'API 키',
         'activity'    => '감사 로그',
-        'permissions' => '권한 설정',
+        'permissions' => '권한',
     ];
 }
 

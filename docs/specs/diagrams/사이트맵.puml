@@ -15,37 +15,28 @@ rectangle "/host.php\n호스트 상세 · 노출·프로세스·취약점\n+ CCE
 rectangle "/profile.php\n내 프로필 · 본인 비밀번호 변경" as PROF
 
 package "취약점 (perm: findings / advisories)" as Vuln {
-    rectangle "/findings.php\n취약점 현황 · 검색/필터" as FIND
+    rectangle "/findings.php\n탐지 결과 · 검색/필터" as FIND
     rectangle "/changes.php\n변화 추적 · 신규/해결/등급변경" as CHG
     rectangle "/cves.php\nCVE 목록 · 탭(전체/KEV/EPSS 상위)" as CVES
     rectangle "/cve.php\nCVE 상세 · 영향패키지 · 발견 위치" as CVE
-    rectangle "/packages.php\n영향 패키지 × 배포판" as PKG
-    rectangle "/vendor.php\n벤더 판정 원본 · 소스 필터" as VEND
-    rectangle "/compliance_rules.php\n보안설정 룰셋(SSG) 카탈로그" as CRULES
+    rectangle "/packages.php\n패키지 × 배포판" as PKG
+    rectangle "/vendor.php\n판정 근거 · 소스 필터" as VEND
+    rectangle "/compliance_rules.php\n보안 설정 기준" as CRULES
     rectangle "/compliance_rule.php\nSSG 룰 상세 · 점검/조치 근거" as CRULE
-    rectangle "/advisories.php · /advisory.php\n국내 보안공지(KISA) 목록·상세" as ADV
+    rectangle "/advisories.php · /advisory.php\n보안 공지(KISA) 목록·상세" as ADV
 }
 
-package "자산 (perm: assets)" as Asset {
-    rectangle "/assets.php\n호스트 자산 관리 · 소프트삭제" as ASSETS
+package "바로가기 (항상 노출)" as Quick {
+    rectangle "/assets.php\n자산" as ASSETS
+    rectangle "/connectors.php\n데이터 수집" as CONN
 }
 
-package "수집 (perm: connectors)" as Feed {
-    rectangle "/connectors.php\n피드 커넥터 · 스케줄 · 미리보기" as CONN
-}
-
-package "계정 (perm: users/permissions — 기본 admin 전용)" as Acct {
-    rectangle "/users.php\n계정 관리" as USERS
-    rectangle "/permissions.php\n역할×메뉴 권한 설정" as PERM #db6d28
-}
-
-package "연동 (perm: agenttokens/apitokens)" as Integ {
-    rectangle "/agent-tokens.php\n호스트별 수집 토큰 발급·폐기" as ATOK
-    rectangle "/api-tokens.php\nExport API 토큰 발급·폐기" as TOK #db6d28
-}
-
-package "기록 (perm: activity — 기본 admin 전용)" as Rec {
-    rectangle "/activity.php\n감사로그 · scope 필터" as ACT
+package "관리" as Admin {
+    rectangle "/users.php\n사용자" as USERS
+    rectangle "/permissions.php\n권한" as PERM #db6d28
+    rectangle "/agent-tokens.php\n에이전트 키" as ATOK
+    rectangle "/api-tokens.php\nAPI 키" as TOK #db6d28
+    rectangle "/activity.php\n감사 로그" as ACT
 }
 
 package "인증: 토큰(사람 로그인과 분리)" as API {
@@ -71,11 +62,8 @@ FIND -[hidden]down- CRULES
 CVES -[hidden]down- ADV
 
 DASH ..> Vuln
-DASH ..> Asset
-DASH ..> Feed
-DASH ..> Acct
-DASH ..> Integ
-DASH ..> Rec
+DASH ..> Quick
+DASH ..> Admin
 
 ' 대분류가 7개라 한 줄로 늘어놓으면 그림이 화면 밖으로 나간다 → 아래 줄로 접는다.
 ASSETS -[hidden]down- USERS

@@ -75,9 +75,9 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('감사로그', 'activity');
+vg_header('감사 로그', 'activity');
 ?>
-  <?php vg_page_title('감사로그', 'AUDIT', '사용자와 시스템의 주요 행위를 최신순으로 추적합니다.'); ?>
+  <?php vg_page_title('감사 로그', 'AUDIT', '사용자와 시스템의 주요 활동을 확인합니다.'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

@@ -72,9 +72,9 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('국내 보안공지', 'advisories');
+vg_header('보안 공지', 'advisories');
 ?>
-  <?php vg_page_title('국내 보안공지', 'KOREA SECURITY', '국내 보안공지와 연결된 CVE를 함께 확인합니다.', ['hint' => '(KISA 보호나라)']); ?>
+  <?php vg_page_title('보안 공지', 'KISA', '국내 보안공지와 관련 CVE를 확인합니다.'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

@@ -97,11 +97,11 @@ $esched = $edit ? vg_json_col($edit['schedule_json']) : [];
 // 수집 상태 → 뱃지 톤(색은 CSS 가 결정).
 $statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'never' => 'muted'];
 
-vg_header('피드 커넥터', 'connectors');
+vg_header('데이터 수집', 'connectors');
 ?>
-  <?php vg_page_title('CVE 피드 커넥터', 'DATA SOURCES', '외부 보안 데이터를 역할별로 연결하고 수집 상태를 관리합니다.', [
-      'suffix_html' => vg_info_icon('외부 소스를 역할별로 묶어 설정·스케줄·수집합니다. 결과는 매처가 자동 재계산합니다.'),
-      'actions' => vg_capture(static fn() => vg_modal_btn('connModal', '+ 커넥터 추가')),
+  <?php vg_page_title('데이터 수집', 'DATA SOURCES', '취약점 판정에 쓰는 외부 데이터와 수집 상태입니다.', [
+      'suffix_html' => vg_info_icon('수집이 끝나면 기존 스캔의 판정도 자동으로 갱신됩니다.'),
+      'actions' => vg_capture(static fn() => vg_modal_btn('connModal', '+ 데이터 소스')),
   ]); ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
@@ -126,53 +126,51 @@ vg_header('피드 커넥터', 'connectors');
   //   타입 → 그룹 매핑은 아래 목록이 유일한 근거다(새 타입은 여기 한 줄 추가). 목록에 없는
   //   타입은 맨 아래 '기타' 로 떨어져 화면에서 사라지지 않는다.
   $roleGroups = [
-      ['title' => '취약점 정체 — 무엇인가',
-       'desc'  => 'CVE 원본 정보·설명·CVSS·영향 버전의 기준.',
+      ['title' => '취약점 정보',
+       'desc'  => 'CVE 설명, CVSS, 영향 버전의 기준 데이터입니다.',
        'types' => ['nvd', 'osv', 'kisa']],
-      ['title' => '우선순위 신호 — 얼마나 급한가',
-       'desc'  => 'KEV(실제 악용 중)로 등급 상향, EPSS(악용 확률)로 같은 등급 내 정렬.',
+      ['title' => '위험 신호',
+       'desc'  => 'KEV의 실제 악용 여부와 EPSS 악용 확률입니다.',
        'types' => ['kev', 'epss']],
-      ['title' => '배포판 벤더 판정 — 고쳐졌나 / 고칠 수 있나',
-       'desc'  => '어느 버전에서 고쳤는지 벤더가 답한다 → 백포트 오탐 억제 + 수정본 없는 건 조치 불가로 분리.',
+      ['title' => '벤더 판정',
+       'desc'  => '배포판별 수정 버전과 미수정 상태를 확인합니다.',
        'types' => ['debtracker', 'rhoval', 'rhunfixed', 'ubuntuoval', 'kcve']],
-      ['title' => '보안설정 룰셋 — 설정이 기준에 맞나',
-       'desc'  => 'CVE 가 아니라 보안설정 점검(CCE). CIS·NIST·STIG 참조 룰셋.',
+      ['title' => '보안 기준',
+       'desc'  => 'CIS·NIST·STIG 기반의 보안 설정 점검 기준입니다.',
        'types' => ['ssg']],
   ];
 
   $tableHeaders = [
-      ['label' => '이름'], ['label' => '타입'], ['label' => '스케줄'], ['label' => '활성'],
-      ['label' => '마지막 실행', 'nowrap' => true], ['label' => '다음 실행', 'nowrap' => true], ['label' => '상태'], ['label' => '작업'],
+      ['label' => '소스'], ['label' => '주기'], ['label' => '실행 시각', 'nowrap' => true],
+      ['label' => '상태'], ['label' => '작업'],
   ];
   $tableCells = [
       0 => fn($c) => '<strong>' . vg_h($c['name']) . '</strong>',
-      1 => fn($c) => '<span class="pill">' . vg_h($c['connector_type']) . '</span>',
-      2 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
-      3 => fn($c) => '<form method="post">'
-          . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['feed_connector_id'] . '">'
-          . '<button class="btn btn--sm ' . ($c['enabled'] ? 'btn--ok' : 'btn--ghost') . '">' . ($c['enabled'] ? 'ON' : 'OFF') . '</button></form>',
-      4 => fn($c) => '<span class="why">' . vg_h($c['last_run_at'] ?? '–') . '</span>',
-      5 => fn($c) => '<span class="why">' . vg_h($c['_next_run'] ?: '–') . '</span>',
-      6 => function ($c) use ($statusTone) {
+      1 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
+      2 => fn($c) => '<span class="why">최근 ' . vg_h($c['last_run_at'] ?? '–')
+          . '<br>다음 ' . vg_h($c['_next_run'] ?: '–') . '</span>',
+      3 => function ($c) use ($csrf, $statusTone) {
           $status = (string) ($c['last_status'] ?? 'never');
-          $html = vg_badge($status, $statusTone[$status] ?? 'muted');
-          if ($c['last_message']) {
-              $html .= '<div class="why" title="' . vg_h($c['last_message']) . '">' . vg_h(mb_strimwidth((string) $c['last_message'], 0, 40, '…')) . '</div>';
-          }
-          return $html;
+          return '<div class="stack-sm"><form method="post">'
+          . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['feed_connector_id'] . '">'
+          . '<button class="btn btn--sm ' . ($c['enabled'] ? 'btn--ok' : 'btn--ghost') . '">' . ($c['enabled'] ? '사용' : '중지') . '</button></form>'
+          . vg_badge($status, $statusTone[$status] ?? 'muted') . '</div>';
       },
-      // "지금 실행" 은 외부 수집 + 전 스캔 재매칭이라 수십 초 걸린다 → 스피너 + 이중제출 차단(app.js).
-      7 => function ($c) use ($csrf, $logCountByConn) {
+      4 => function ($c) use ($csrf, $logCountByConn) {
+          $html = '';
+          if ($c['last_message']) {
+              $html .= '<span class="sr-only">' . vg_h($c['last_message']) . '</span>';
+          }
           $id = (int) $c['feed_connector_id'];
           $n  = $logCountByConn[$id] ?? 0;
-          return '<div class="actions">'
+          return $html . '<div class="actions">'
               . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . $id . '">'
-              . '<button class="btn btn--sm btn--primary" data-loading="수집 중…">지금 실행</button></form>'
+              . '<button class="btn btn--sm btn--primary" data-loading="수집 중…">실행</button></form>'
               // 이력은 그 커넥터 것만 모달로 — 전엔 전 커넥터 로그가 한 표에 섞여 있었다.
               . '<button type="button" class="btn btn--sm btn--ghost" data-modal="log' . $id . '">'
               . '이력 <span class="why">' . number_format($n) . '</span></button>'
               . '<a class="btn btn--sm btn--ghost" href="?edit=' . $id . '">편집</a>'
-              . '<form method="post" data-confirm="이 커넥터를 삭제할까요? 스케줄된 수집이 중단되고 목록에서 사라집니다. 지금까지의 수집 이력은 삭제되지 않고 남습니다."><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
+              . '<form method="post" data-confirm="이 데이터 소스를 삭제할까요? 예약 수집은 중단되며 기존 이력은 남습니다."><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
               . '<button class="btn btn--sm btn--danger">삭제</button></form>'
               . '</div>';
       },
@@ -182,8 +180,8 @@ vg_header('피드 커넥터', 'connectors');
       // 등록된 게 하나도 없으면 그룹 헤딩 없이 안내만.
       vg_table($tableHeaders, [], ['empty' => [
           'icon'  => '🔌',
-          'title' => '등록된 커넥터가 없습니다.',
-          'hint'  => '아래 [+ 커넥터 추가] 로 피드(CISA KEV · OSV · NVD · KISA · EPSS)를 추가하세요.',
+          'title' => '등록된 데이터 소스가 없습니다.',
+          'hint'  => '[+ 데이터 소스]에서 수집 대상을 추가하세요.',
       ]]);
   } else {
       // 타입 → 그룹 인덱스. 그룹에 담고, 매핑에 없는 타입은 '기타' 로.
@@ -212,7 +210,7 @@ vg_header('피드 커넥터', 'connectors');
       }
       if ($others) {
           echo '<div class="card"><strong>기타</strong>'
-             . ' <span class="why">— 역할 미분류 커넥터.</span><div class="card__body">';
+             . ' <span class="why">— 분류되지 않은 데이터 소스입니다.</span><div class="card__body">';
           vg_table($tableHeaders, $others, ['card' => false, 'cell' => $tableCells]);
           echo '</div></div>';
       }
@@ -222,7 +220,7 @@ vg_header('피드 커넥터', 'connectors');
   <?php
   // 추가·편집 폼은 목록 아래 늘 펼쳐두던 것 → 버튼 뒤 모달로.
   // ?edit=N 으로 들어오면(행의 [편집]) 값이 채워진 채 자동으로 열린다.
-  vg_modal_open('connModal', $edit ? '커넥터 편집' : '커넥터 추가', '', $edit !== null);
+  vg_modal_open('connModal', $edit ? '데이터 소스 편집' : '데이터 소스 추가', '', $edit !== null);
 
   /* 타입 → 수집 방식·노출 필드. 근거는 src/feeds.php 의 카탈로그 하나다 — PHP 가 첫 화면을
    * 그리고(JS 없이도 맞다), 같은 표를 JSON 으로 넘겨 JS 가 타입 변경 때 다시 그린다.
@@ -249,7 +247,7 @@ vg_header('피드 커넥터', 'connectors');
       <input type="hidden" name="id" value="<?= (int) ($edit['feed_connector_id'] ?? 0) ?>">
       <label>이름</label>
       <input type="text" name="name" value="<?= vg_h($edit['name'] ?? '') ?>" required>
-      <label>커넥터 타입</label>
+      <label>소스 종류</label>
       <select name="connector_type" id="connType">
         <?php foreach (VG_CONNECTOR_TYPES as $tv => $m): ?>
           <option value="<?= vg_h($tv) ?>" <?= $curType===$tv?'selected':'' ?>><?= vg_h($m['label']) ?></option>
@@ -340,7 +338,7 @@ vg_header('피드 커넥터', 'connectors');
         <input type="checkbox" name="enabled" value="1" <?= ($edit['enabled'] ?? 0) ? 'checked' : '' ?>> 활성(enabled)
       </label>
       <?php if ($edit): ?>
-        <div class="sub center"><a href="/connectors.php">+ 새 커넥터로 비우기</a></div>
+        <div class="sub center"><a href="/connectors.php">+ 새 데이터 소스</a></div>
       <?php endif; ?>
       <pre id="vgPrev" class="out" hidden></pre>
       <?php vg_modal_foot($edit ? '저장' : '추가', ['extra' =>
@@ -382,7 +380,7 @@ vg_header('피드 커넥터', 'connectors');
   <?php if ($connFilter > 0 && $connName !== ''): ?>
     <div class="card">
       <strong><?= vg_h($connName) ?> · 수집 이력</strong>
-      <span class="why">— 총 <?= number_format($logTotal) ?>건 · <a href="/connectors.php">커넥터 목록으로</a></span>
+      <span class="why">— 총 <?= number_format($logTotal) ?>건 · <a href="/connectors.php">목록으로</a></span>
       <div class="card__body">
         <?php
         vg_table($logHeaders, $logs, ['card' => false, 'empty' => $logEmpty, 'cell' => $logCells]);

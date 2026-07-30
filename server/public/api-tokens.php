@@ -95,17 +95,12 @@ $list = $pdo->prepare(
 $list->execute($params);
 $tokens = $list->fetchAll();
 
-vg_header('API 토큰', 'apitokens');
+vg_header('API 키', 'apitokens');
 ?>
-  <?php vg_page_title('API 토큰', 'API ACCESS', '', [
+  <?php vg_page_title('API 키', 'API ACCESS', '외부 시스템의 결과 조회용 키를 관리합니다.', [
       'count' => $total, 'count_label' => '개',
       'actions' => vg_capture(static fn() => vg_modal_btn('issueToken', '+ 토큰 발급')),
   ]); ?>
-  <div class="sub">
-    외부 시스템이 <code>/export.php</code> 로 스캔 결과(JSON/XML)를 읽어갈 때 쓰는 읽기 전용 토큰입니다.
-    요청 헤더에 <code>X-API-Token: &lt;토큰&gt;</code> 로 넣습니다. 자세한 사용법은 <code>docs/dev/export-api.md</code>.
-  </div>
-
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <?php vg_toolbar([

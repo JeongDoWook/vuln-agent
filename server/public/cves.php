@@ -129,9 +129,9 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('CVE 목록', 'cves');
+vg_header('CVE', 'cves');
 ?>
-  <?php vg_page_title('CVE 목록', 'VULNERABILITY CATALOG', '수집된 취약점을 악용 가능성과 위험도 기준으로 탐색합니다.', ['count' => $total]); ?>
+  <?php vg_page_title('CVE', 'CATALOG', '수집된 CVE 정보와 위험 신호를 검색합니다.', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -175,7 +175,7 @@ vg_header('CVE 목록', 'cves');
       : array_filter([
           'icon'  => '📭',
           'title' => '아직 수집된 CVE가 없습니다.',
-          'hint'  => '피드 커넥터가 한 번은 돌아야 합니다.',
+          'hint'  => '데이터 수집을 한 번 실행해 주세요.',
           'cta'   => vg_connectors_empty_cta(),
       ]);
   vg_table(

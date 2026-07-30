@@ -140,7 +140,7 @@ $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
 $ingest = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/ingest.php';
 
 $csrf = vg_csrf_token();
-vg_header('자산관리', 'assets');
+vg_header('자산', 'assets');
 ?>
   <?php
   // 상태 판정 기준은 본문에 늘어놓지 않고 툴팁으로 — 한 번 읽으면 그만인 정보다.
@@ -149,7 +149,7 @@ vg_header('자산관리', 'assets');
       VG_STALE_MIN / 60, VG_STALE_MIN / 60, VG_OFFLINE_MIN / 1440, VG_OFFLINE_MIN / 1440
   );
   ?>
-  <?php vg_page_title('자산 관리', 'ASSETS', '수집 상태와 운영 위험을 기준으로 관리 대상을 찾습니다.', [
+  <?php vg_page_title('자산', 'ASSETS', '호스트별 수집 상태와 탐지 결과를 확인합니다.', [
       'suffix_html' => vg_help($stateHelp),
       'actions' => vg_capture(static fn() => vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost')),
   ]); ?>

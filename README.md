@@ -107,12 +107,9 @@ cd deploy
 | 대분류 | 화면 |
 |---|---|
 | (대분류 없음) | `/` 대시보드 — 호스트별 최신 스캔·심각도 KPI → 서버명 클릭 시 호스트 상세 `host.php`(노출·프로세스·취약점·CCE·억제 내역) |
-| 취약점 | `/findings.php` 취약점 현황(+수정 버전·판정 근거, 서브탭으로 `/changes.php` 변화 추적) · `/cves.php` CVE 목록 · `/cve.php` CVE 상세 · `/packages.php` 영향 패키지 · `/vendor.php` 벤더 판정(억제 근거 원본) · `/compliance_rules.php` 보안설정 룰셋(SSG) · `/compliance_rule.php` 룰 상세 · `/advisories.php`·`/advisory.php` 국내 보안공지 |
-| 자산 | `/assets.php` 호스트 자산 관리 |
-| 수집 | `/connectors.php` 피드 커넥터(설정·스케줄·미리보기·지금 실행) |
-| 계정 | `/users.php` 사용자 목록 · `/user.php` 사용자 상세(관리 액션) · `/permissions.php` 권한 설정 |
-| 연동 | `/agent-tokens.php` 에이전트 토큰 발급 · `/api-tokens.php` API 토큰 |
-| 기록 | `/activity.php` 감사 로그 |
+| 취약점 | `/findings.php` 탐지 결과(+수정 버전·판정 근거, `/changes.php` 변화 추적) · `/cves.php` CVE · `/packages.php` 패키지 · `/vendor.php` 판정 근거 · `/compliance_rules.php` 보안 설정 · `/advisories.php` 보안 공지 |
+| 바로가기 | `/assets.php` 자산 · `/connectors.php` 데이터 수집 |
+| 관리 | `/users.php` 사용자 · `/permissions.php` 권한 · `/agent-tokens.php` 에이전트 키 · `/api-tokens.php` API 키 · `/activity.php` 감사 로그 |
 
 사이드바 밖: `/profile.php` 내 프로필(상단바 사용자 메뉴 — 로그인 사용자 전원, 본인 비밀번호 변경).
 
@@ -197,7 +194,7 @@ Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**�
 
 ## 피드 커넥터
 
-외부 CVE 소스를 UI에서 설정·스케줄·수집한다 (admin → "수집 → 피드 커넥터").
+외부 보안 데이터 소스를 UI에서 설정·스케줄·수집한다(admin → "데이터 수집").
 
 - **CISA KEV** (기본 활성): 실제 악용 취약점 카탈로그 JSON, 무인증. 매일 자동 수집.
 - **OSV.dev** (기본 활성): 수집된 **모든 패키지**를 OSV querybatch 로 조회(배포판별 ecosystem 자동, deb 는 소스패키지·설치버전 기준) → `cve_affected_packages` 를 실제로 채워 매처가 전 패키지를 검사. 시드 3개가 아니라 서버의 실제 취약점 전체를 발굴.

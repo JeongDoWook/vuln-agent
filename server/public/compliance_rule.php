@@ -67,7 +67,7 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header($ruleId !== '' ? $ruleId : '보안설정 룰', 'compliance');
+vg_header($ruleId !== '' ? $ruleId : '보안 설정', 'compliance');
 
 if ($err !== null) {
     vg_alert('오류 · ' . $err);

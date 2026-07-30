@@ -56,11 +56,11 @@ foreach ($pdo->query('SELECT role, menu_code, allowed FROM tb_role_permission WH
 }
 
 $csrf = vg_csrf_token();
-vg_header('권한설정', 'permissions');
+vg_header('권한', 'permissions');
 ?>
   <form method="post" class="permission-form">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-    <?php vg_page_title('역할별 메뉴 접근권한', 'ACCESS CONTROL', '운영자와 사용자의 메뉴 접근 범위를 설정합니다.', [
+    <?php vg_page_title('권한', 'ACCESS', '역할별 메뉴 접근 범위를 설정합니다.', [
         'actions' => '<button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button>',
     ]); ?>
     <div class="sub">admin 전용 · 운영자·사용자가 접근할 수 있는 메뉴를 체크로 설정 · 관리자는 항상 전체 허용</div>

@@ -75,7 +75,7 @@ $csrf = vg_csrf_token();
 
 vg_header('사용자', 'users');
 ?>
-  <?php vg_page_title('사용자 관리', 'IDENTITY', '', [
+  <?php vg_page_title('사용자', 'ACCOUNTS', '', [
       'count' => $total, 'count_label' => '명',
       'actions' => vg_capture(static fn() => vg_modal_btn('addUser', '+ 사용자 추가')),
   ]); ?>
