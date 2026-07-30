@@ -17,7 +17,6 @@ rectangle "/profile.php\n내 프로필 · 본인 비밀번호 변경" as PROF
 package "취약점 (perm: findings / advisories)" as Vuln {
     rectangle "/findings.php\n취약점 현황 · 검색/필터" as FIND
     rectangle "/changes.php\n변화 추적 · 신규/해결/등급변경" as CHG
-    rectangle "/remediations.php\n조치 관리 · 상태/담당자/기한/예외" as REMED
     rectangle "/cves.php\nCVE 목록 · 탭(전체/KEV/EPSS 상위)" as CVES
     rectangle "/cve.php\nCVE 상세 · 영향패키지 · 발견 위치" as CVE
     rectangle "/packages.php\n영향 패키지 × 배포판" as PKG
@@ -68,7 +67,7 @@ CRULES --> CRULE
 ' 취약점 화면이 9개라 한 줄로 두면 그림이 옆으로 길어져 읽기 어렵다 → 두 줄로 접는다(보이지 않는 배치용 선).
 FIND -[hidden]down- PKG
 CHG  -[hidden]down- VEND
-REMED -[hidden]down- CRULES
+FIND -[hidden]down- CRULES
 CVES -[hidden]down- ADV
 
 DASH ..> Vuln

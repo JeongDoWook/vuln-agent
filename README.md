@@ -107,7 +107,7 @@ cd deploy
 | 대분류 | 화면 |
 |---|---|
 | (대분류 없음) | `/` 대시보드 — 호스트별 최신 스캔·심각도 KPI → 서버명 클릭 시 호스트 상세 `host.php`(노출·프로세스·취약점·CCE·억제 내역) |
-| 취약점 | `/findings.php` 취약점 현황(+조치안, 서브탭으로 `/changes.php` 변화 추적) · `/remediations.php` 조치 관리(자산×CVE 조치 상태·담당자·기한) · `/cves.php` CVE 목록 · `/cve.php` CVE 상세 · `/packages.php` 영향 패키지 · `/vendor.php` 벤더 판정(억제 근거 원본) · `/compliance_rules.php` 보안설정 룰셋(SSG) · `/compliance_rule.php` 룰 상세 · `/advisories.php`·`/advisory.php` 국내 보안공지 |
+| 취약점 | `/findings.php` 취약점 현황(+수정 버전·판정 근거, 서브탭으로 `/changes.php` 변화 추적) · `/cves.php` CVE 목록 · `/cve.php` CVE 상세 · `/packages.php` 영향 패키지 · `/vendor.php` 벤더 판정(억제 근거 원본) · `/compliance_rules.php` 보안설정 룰셋(SSG) · `/compliance_rule.php` 룰 상세 · `/advisories.php`·`/advisory.php` 국내 보안공지 |
 | 자산 | `/assets.php` 호스트 자산 관리 |
 | 수집 | `/connectors.php` 피드 커넥터(설정·스케줄·미리보기·지금 실행) |
 | 계정 | `/users.php` 사용자 목록 · `/user.php` 사용자 상세(관리 액션) · `/permissions.php` 권한 설정 |

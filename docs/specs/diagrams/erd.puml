@@ -365,35 +365,6 @@ package "판정 결과 — 우리 기여(런타임 상태·억제)" {
     }
 }
 
-package "조치 관리 — SLA·조치 케이스" {
-
-    entity tb_sla_policy {
-        sla_policy_id : bigint <<PK>>
-        --
-        severity : string
-        exposure_scope : string
-        in_kev : bool
-        due_days : int
-        priority : int
-        ' UK(severity, exposure_scope, in_kev)
-    }
-
-    entity tb_remediation_case {
-        remediation_case_id : bigint <<PK>>
-        --
-        host_id : bigint <<FK>>
-        container_ref : string
-        cve_id : string
-        package_name : string
-        ' UK(host_id, container_ref, cve_id, package_name)
-        status : string
-        ' OPEN IN_PROGRESS RESOLVED EXCEPTION
-        assignee_user_id : bigint <<FK>>
-        due_at : datetime
-        exception_until : datetime
-    }
-}
-
 package "피드 운영 · 인증 · 감사" {
 
     entity tb_feed_connector {
@@ -474,7 +445,6 @@ package "피드 운영 · 인증 · 감사" {
 tb_host ||--o{ tb_scan : "수집 이력"
 tb_host ||--o{ tb_host_ext_port : "외부노출 포트 선언"
 tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
-tb_host ||--o{ tb_remediation_case : "조치 케이스"
 
 tb_scan ||--o{ tb_package : "설치 패키지"
 tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
@@ -494,7 +464,6 @@ tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별 조치버전"
 tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
 tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
 tb_user ||--o{ tb_api_token : "발급(Export API)"
-tb_user |o--o{ tb_remediation_case : "담당자(assignee_user_id)"
 tb_agent_token ||--o{ tb_agent_replay_nonce : "소진된 nonce"
 
 ' ── FK 없는 관계(점선) — 자연키 애플리케이션 조인 ─────
@@ -506,7 +475,6 @@ tb_cve ||..o{ tb_advisory_cve : "CVE → 공지 역조회"
 tb_cve_affected_package }o..|| tb_package_summary : "사전집계(OSV 실행 시 재생성)"
 tb_container ||..o{ tb_package : "컨테이너 내부 패키지(container_id)"
 tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"
-tb_sla_policy ||..o{ tb_remediation_case : "조치기한 계산(due_at)"
 tb_host_ext_port }o..|| tb_exposure : "EXTERNAL → FILTERED 강등 판정"
 
 ' 벤더 판정 소스는 매처가 참조만 한다(스캔에 매달리지 않음).

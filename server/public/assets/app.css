@@ -600,7 +600,7 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   box-shadow: var(--shadow);
   transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-/* 숫자는 <b>(대부분) 또는 <strong>(remediations) 로 온다 — 둘을 같이 잡는다 */
+/* 숫자는 <b> 또는 <strong> 으로 올 수 있어 둘을 같이 잡는다. */
 .kpi b, .kpi strong {
   font-size: 2rem;
   font-weight: 700;
@@ -1621,10 +1621,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--permissions .matrix input[type="checkbox"] { width: 1.2rem; height: 1.2rem; margin: 0; transform: none; accent-color: var(--accent); }
 .page--permissions .permission-note { margin-top: .25rem; }
 
-/* 조치 작업대: 증거 열을 숨기지 않으면서 인라인 편집을 좁게 넣는다. */
-.page--remediations .inline-form { display: grid; grid-template-columns: minmax(8rem, auto) minmax(9rem, 1fr) minmax(8rem, auto) auto; gap: .45rem; align-items: center; min-width: 22rem; }
-.page--remediations .inline-form input, .page--remediations .inline-form select { margin: 0; min-height: 36px; }
-
 /* 로그인: 조용한 진입 화면 */
 .page--login .app { min-height: 100vh; display: grid; place-items: center; }
 .page--login .page__main { min-height: auto; width: 100%; padding: 1.25rem; }
@@ -1718,7 +1714,6 @@ form.card .btn--primary:active { transform: translateY(0); }
   .page--permissions .matrix td.permission-role { grid-template-columns: minmax(6rem, 34%) 1fr; align-items: center; }
   .page--permissions .check-cell { justify-items: end; }
 
-  .page--remediations .inline-form { min-width: 0; grid-template-columns: 1fr; }
 }
 
 @media (max-width: 700px) {

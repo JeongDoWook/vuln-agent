@@ -15,7 +15,7 @@ vg_require_menu('dashboard');
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
-$kevCount = 0; $overdueCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
+$kevCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
 $delta = [];
 $page = vg_page();
 $perPage = vg_perpage();
@@ -52,61 +52,40 @@ try {
     )->fetchAll();
     foreach ($totalsRows as $f) { if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; } }
 
-    /* "대응 우선순위" — 대시보드에 없던, 정작 제일 필요한 답.
-     *
-     * 우선순위 산정 기준(순서대로):
-     *   1) KEV 패치 기한이 지났다      — CISA 가 정한 기한. 유일하게 "언제까지" 가 있는 신호다.
-     *   2) 악용이 확인됐고(KEV) 외부에 노출돼 있다
-     *   3) 그 외 등급순
-     * due_date 는 KEV 커넥터가 최근에야 받아오기 시작한 값이라 NULL 일 수 있다 — NULL 은 "기한 없음".
+    /* 최신 스캔의 실제 취약점 신호를 직접 보여준다.
+     * 업무 상태나 내부 기한을 만들지 않고 KEV·외부 노출·런타임·심각도만으로 정렬한다.
      */
-    // 원시 finding 행이 아니라 안정적인 조치 단위로 묶는다. 같은 CVE·패키지 중복이 대시보드를 점유하지 않는다.
     $urgent = $pdo->query(
-        "SELECT r.remediation_case_id,r.cve_id,r.package_name,r.status AS remediation_status,r.due_at,
-                DATEDIFF(CURDATE(),DATE(r.due_at)) days_over,h.host_id,h.fqdn,
+        "SELECT MIN(f.finding_id) finding_id,f.cve_id,f.package_name,h.host_id,h.fqdn,
                 f.severity,f.runtime_status,f.in_kev
-           FROM tb_remediation_case r
-           JOIN tb_host h ON h.host_id=r.host_id AND h.is_deleted=0
-           JOIN tb_scan s ON s.host_id=h.host_id
+           FROM tb_finding f
+           JOIN tb_scan s ON s.scan_id=f.scan_id
            $latestJoin
-           JOIN tb_finding f ON f.scan_id=s.scan_id AND f.cve_id=r.cve_id AND f.package_name=r.package_name
-           LEFT JOIN tb_container ctr ON ctr.container_id=f.container_id
-          WHERE r.is_deleted=0 AND r.status IN ('OPEN','IN_PROGRESS')
-            AND COALESCE(ctr.image_digest,ctr.cid,'')=r.container_ref
-          GROUP BY r.remediation_case_id,r.cve_id,r.package_name,r.status,r.due_at,h.host_id,h.fqdn,f.severity,f.runtime_status,f.in_kev
-          ORDER BY (r.due_at<CURDATE()) DESC,(f.in_kev=1 AND f.runtime_status='EXTERNAL') DESC,
-                   FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),r.due_at,r.remediation_case_id
+           JOIN tb_host h ON h.host_id=s.host_id AND h.is_deleted=0
+          GROUP BY f.cve_id,f.package_name,h.host_id,h.fqdn,f.severity,f.runtime_status,f.in_kev
+          ORDER BY (f.in_kev=1 AND f.runtime_status='EXTERNAL') DESC,f.in_kev DESC,
+                   FIELD(f.runtime_status,'EXTERNAL','LISTENING','RUNNING','INSTALLED'),
+                   FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),finding_id
           LIMIT " . vg_ui_dashboard_urgent_limit()
     )->fetchAll();
-    $urgentTotal=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_case WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS')")->fetchColumn();
-    /* KEV 악용확인 건수 — 최신 스캔의 KEV finding 집합을 **먼저** 만들고, 그 다음 조치와 대조한다.
-     *
-     * 조치(r) 부터 조인하면 옵티마이저가 tb_remediation_case 를 통째로 스캔한 뒤(6만행 →
-     * OPEN/IN_PROGRESS 3.2만행) 그 행마다 idx_find_cve(cve_id) 로 759행씩 읽어
-     * package_name·in_kev 를 사후 필터한다 = 2,400만 행 읽기. 조인 조건은 3개(scan_id·cve_id·
-     * package_name)인데 쓸 수 있는 인덱스가 cve_id 하나뿐이라 나머지 둘이 필터로 밀리는 탓이다.
-     * 반면 정답 집합은 최신 스캔의 KEV finding 50행뿐이고 idx_find_scan_kev_runtime
-     * (scan_id, in_kev, runtime_status) 로 0.7ms 에 뽑힌다(운영 실측 33.4초 → 62ms).
-     *
-     * 안쪽 GROUP BY 는 장식이 아니다 — MySQL 8 은 GROUP BY 가 있는 파생테이블을 머지하지 않고
-     * materialize 한다. 빼면 파생테이블이 바깥으로 머지돼 옵티마이저가 위의 "r 부터 스캔"
-     * 계획으로 되돌아가고 33초로 회귀한다.
-     * STRAIGHT_JOIN 힌트로도 같은 효과(37ms)가 나지만 쓰지 않았다 — 옵티마이저 재정렬을
-     * 영구히 막아 데이터 분포가 바뀌면 오히려 발목을 잡는다.
-     */
-    $kevCount = (int) $pdo->query(
-        "SELECT COUNT(DISTINCT r.remediation_case_id)
-           FROM (
-             SELECT latest.host_id, f.cve_id, f.package_name
-               FROM " . vg_latest_scan_subq() . " latest
-               JOIN tb_finding f ON f.scan_id = latest.mid AND f.in_kev = 1
-              GROUP BY latest.host_id, f.cve_id, f.package_name
-           ) k
-           JOIN tb_remediation_case r
-             ON r.host_id = k.host_id AND r.cve_id = k.cve_id AND r.package_name = k.package_name
-          WHERE r.is_deleted = 0 AND r.status IN ('OPEN','IN_PROGRESS')"
+    $urgentTotal = (int) $pdo->query(
+        "SELECT COUNT(*) FROM (
+           SELECT f.cve_id,f.package_name,s.host_id,f.severity,f.runtime_status,f.in_kev
+             FROM tb_finding f
+             JOIN tb_scan s ON s.scan_id=f.scan_id
+             JOIN " . vg_latest_scan_subq() . " latest ON latest.host_id=s.host_id AND latest.mid=s.scan_id
+             JOIN tb_host h ON h.host_id=s.host_id AND h.is_deleted=0
+            GROUP BY f.cve_id,f.package_name,s.host_id,f.severity,f.runtime_status,f.in_kev
+         ) current_findings"
     )->fetchColumn();
-    $overdueCount=(int)$pdo->query("SELECT COUNT(*) FROM tb_remediation_case WHERE is_deleted=0 AND status IN ('OPEN','IN_PROGRESS') AND due_at<NOW()")->fetchColumn();
+    $kevCount = (int) $pdo->query(
+        "SELECT COUNT(*) FROM (
+           SELECT latest.host_id,f.cve_id,f.package_name
+             FROM " . vg_latest_scan_subq() . " latest
+             JOIN tb_finding f ON f.scan_id=latest.mid AND f.in_kev=1
+            GROUP BY latest.host_id,f.cve_id,f.package_name
+         ) kev_findings"
+    )->fetchColumn();
 
     /* KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
      *
@@ -239,18 +218,17 @@ vg_header('대시보드', 'dashboard');
          * 여기(도넛 카드 바닥)가 오히려 제자리 — 옆 "대응 우선순위" 카드와 높이를 맞추며
          * 생기는 여백도 이걸로 채운다. */ ?>
         <div class="donut-foot">
-          <?= vg_badge('KEV 악용확인 ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok', '집계 표시 전용 · 이 카드에 대응하는 필터가 없습니다') ?>
-          <?= vg_badge('내부 SLA 초과 ' . number_format($overdueCount) . '건', $overdueCount > 0 ? 'warn' : 'ok', '조직의 심각도·노출·KEV 정책으로 계산된 내부 조치기한입니다.') ?>
+          <?= vg_badge('KEV 악용확인 ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok', '최신 스캔에서 CISA KEV에 등재된 취약점 수입니다.') ?>
         </div>
       </div>
     </div>
 
     <div class="card">
-      <strong>대응 우선순위</strong>
-      <span class="why">— 실제 사용 중인 KEV와 외부 노출 자산부터</span>
+      <strong>주요 취약점 신호</strong>
+      <span class="why">— KEV·외부 노출·런타임 상태·심각도 순</span>
       <?php if ($urgentTotal > count($urgent)): ?>
         <span class="why">· 총 <?= number_format($urgentTotal) ?>건 중 상위 <?= count($urgent) ?>건 ·
-          <a href="/remediations.php">전체 보기 →</a></span>
+          <a href="/findings.php">전체 보기 →</a></span>
       <?php endif; ?>
       <div class="card__body">
       <?php
@@ -260,7 +238,7 @@ vg_header('대시보드', 'dashboard');
               ['label' => 'CVE', 'width' => '13rem', 'nowrap' => true],
               ['label' => '호스트'],
               ['label' => '패키지'],
-              ['label' => '우선순위 사유', 'width' => '15rem'],
+              ['label' => '탐지 신호', 'width' => '15rem'],
           ],
           $urgent,
           [
@@ -281,17 +259,12 @@ vg_header('대시보드', 'dashboard');
                   },
                   2 => fn($u) => '<a href="/host.php?id=' . (int) $u['host_id'] . '">' . vg_h((string) $u['fqdn']) . '</a>',
                   3 => fn($u) => vg_h((string) $u['package_name']),
-                  // "우선순위 사유" — 실제 악용+노출/사용 맥락이 우선이며 CISA 날짜는 보조 근거다.
                   4 => function ($u) {
-                      $over = $u['days_over'] !== null ? (int) $u['days_over'] : null;
-                      $cisaDate = $over !== null && $over > 0
-                          ? '<div class="why">내부 SLA ' . number_format($over) . '일 초과 · ' . vg_h((string) $u['due_at']) . '</div>'
-                          : '<div class="why">내부 기한 ' . vg_h((string) $u['due_at']) . '</div>';
                       if ($u['in_kev'] && $u['runtime_status'] === 'EXTERNAL') {
-                          return vg_badge('악용확인 + 외부노출', 'crit') . $cisaDate;
+                          return vg_badge('악용확인 + 외부노출', 'crit');
                       }
                       if ($u['in_kev']) {
-                          return vg_badge('악용확인 + 실제 사용', 'warn') . $cisaDate;
+                          return vg_badge('악용확인', 'warn') . ' ' . vg_status_badge($u['runtime_status']);
                       }
                       return vg_status_badge($u['runtime_status']);
                   },

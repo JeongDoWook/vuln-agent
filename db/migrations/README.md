@@ -71,3 +71,4 @@ initdb 를 새 이름으로 바꾸면, 그 다음에 도는 **옛 마이그레�
    COLUMNS·STATISTICS·KEY_COLUMN_USAGE 를 대조해 diff 가 비는 것을 확인했다.
 
 **최상위 `db/*.sql` 을 새 이름으로 "정리"하지 마라.** 빈 볼륨이 뜨지 않게 된다.
+20260730120000_drop_remediation_workflow.sql
