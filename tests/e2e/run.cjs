@@ -138,6 +138,12 @@ async function main() {
     check(new URL(page.url()).pathname === '/', '로그인 성공 → 대시보드(/)로 이동');
     const title = await page.title();
     check(title.indexOf('대시보드') >= 0, '대시보드 document.title', 'title=' + title);
+    const rootNav = (await page.locator('.side a.link--root span').allTextContents()).map((v) => v.trim());
+    const navGroups = (await page.locator('.side summary.grp').allTextContents()).map((v) => v.trim());
+    check(JSON.stringify(rootNav) === JSON.stringify(['대시보드', '자산', '데이터 수집']),
+      '자주 쓰는 메뉴 3개는 접지 않고 바로 노출', 'links=' + rootNav.join(','));
+    check(JSON.stringify(navGroups) === JSON.stringify(['취약점', '관리']),
+      '사이드바 접이식 그룹은 취약점·관리만 유지', 'groups=' + navGroups.join(','));
 
     // --- 2) 테마 토글 지속성 -------------------------------------------------
     // 클릭 → 속성 적용 → 저장 → 다른 화면에서 복원 → 실제 CSS 변화까지 한 줄로 이어진다.
@@ -224,7 +230,7 @@ async function main() {
     const modal = page.locator('#connModal');
     check(!(await modal.isVisible()), '처음엔 커넥터 모달이 닫혀 있다');
     await page.click('[data-modal="connModal"]');
-    check(await modal.isVisible(), '[+ 커넥터 추가] 클릭 → 모달 열림');
+    check(await modal.isVisible(), '[+ 데이터 소스] 클릭 → 모달 열림');
 
     // kev: 파일 다운로드 방식 — API 가 아니라 파일 라벨이어야 하고, url 말고는 안 보인다.
     const kev = await selectConnType(page, 'kev');

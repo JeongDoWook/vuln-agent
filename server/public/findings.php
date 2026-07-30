@@ -156,9 +156,9 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('취약점', 'findings');
+vg_header('탐지 결과', 'findings');
 ?>
-  <div class="page-title page-title--stack"><div><span class="page-title__eyebrow">PRIORITIZED FINDINGS</span><h1>취약점 우선순위 <span class="hint">(매처 결과)</span></h1>
+  <div class="page-title page-title--stack"><div><span class="page-title__eyebrow">FINDINGS</span><h1>탐지 결과</h1>
   <div class="sub">
     <?php if ($scan): ?>
       호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['scan_id'] ?> · <?= vg_h($scan['collected_at']) ?>

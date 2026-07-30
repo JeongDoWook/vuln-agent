@@ -198,7 +198,7 @@ function vg_empty($spec): void {
  *   cves.php/advisories.php/compliance_rules.php/packages.php/vendor.php 가 공유한다.
  */
 function vg_connectors_empty_cta(): ?array {
-    return vg_can('connectors') ? ['href' => '/connectors.php', 'label' => '피드 커넥터로 이동'] : null;
+    return vg_can('connectors') ? ['href' => '/connectors.php', 'label' => '데이터 수집으로 이동'] : null;
 }
 
 /**

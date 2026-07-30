@@ -45,8 +45,14 @@ $check(str_contains($appCss, '.sr-only'), '보조기술 전용 텍스트 숨김'
 $check(str_contains($componentsPhp, "!empty(\$h['class'])"), '공통 테이블 열 클래스 지원');
 $connectorPhp = (string) file_get_contents($public . '/connectors.php');
 $connectorJs = (string) file_get_contents($public . '/assets/js/connectors.js');
+$navPhp = (string) file_get_contents($root . '/server/src/view/nav.php');
 $check(str_contains($connectorPhp, 'data-feed-preview'), '커넥터 미리보기 data 속성');
 $check(str_contains($connectorJs, "closest('[data-feed-preview]')"), '커넥터 미리보기 이벤트 위임');
+$check(str_contains($navPhp, "'바로가기' =>"), '자산·데이터 수집 최상위 바로가기');
+$check(str_contains($navPhp, "'관리' =>"), '관리 메뉴 통합');
+$check(!str_contains($navPhp, "'계정' =>") && !str_contains($navPhp, "'연동' =>"), '잘게 나뉜 관리 그룹 제거');
+$check(str_contains($connectorPhp, "['label' => '실행 시각'"), '커넥터 실행 시각 열 통합');
+$check(!str_contains($connectorPhp, "['label' => '마지막 실행'"), '커넥터 중복 시각 열 제거');
 
 if ($fail > 0) { printf("ui_structure_test: %d건 실패\n", $fail); exit(1); }
 printf("ui_structure_test: 전부 통과\n");

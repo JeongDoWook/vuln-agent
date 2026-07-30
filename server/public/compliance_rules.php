@@ -78,9 +78,9 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('보안설정 룰셋', 'compliance');
+vg_header('보안 설정', 'compliance');
 ?>
-  <?php vg_page_title('보안설정 룰셋', 'COMPLIANCE CATALOG', 'SCAP 룰과 CIS·NIST·STIG 매핑을 검색합니다. 실제 점검 결과와는 별도입니다.', ['count' => $total]); ?>
+  <?php vg_page_title('보안 설정', 'SECURITY BASELINE', 'SCAP 점검 항목과 CIS·NIST·STIG 기준을 검색합니다.', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

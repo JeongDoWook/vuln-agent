@@ -242,9 +242,9 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('벤더 판정', 'vendor');
+vg_header('판정 근거', 'vendor');
 ?>
-  <?php vg_page_title('벤더 판정', 'VENDOR EVIDENCE', '벤더가 제공한 패치 여부와 백포트 판정 근거를 비교합니다.', ['count' => $total]); ?>
+  <?php vg_page_title('판정 근거', 'VENDOR DATA', '벤더의 수정 버전과 백포트 근거를 확인합니다.', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

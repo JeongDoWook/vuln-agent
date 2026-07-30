@@ -397,9 +397,9 @@ code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/users.php")
 assert_eq "$code" "200" "사용자 페이지 200(관리자 권한)"
 
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/connectors.php")
-assert_eq "$code" "200" "피드 커넥터 페이지 200(관리자 권한)"
+assert_eq "$code" "200" "데이터 수집 페이지 200(관리자 권한)"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
-assert_eq "$code" "200" "국내 보안공지 페이지 200"
+assert_eq "$code" "200" "보안 공지 페이지 200"
 # 호스트 id 를 하드코딩(=1)하면 빈 볼륨에서만 통과한다. 스택·DB 를 재사용하면 auto_increment 가
 # 밀려(삭제·재등록) id 가 6,7,11 처럼 바뀌고, 그때부터 아래 검사가 전부 "호스트 없음" 을 본다.
 # 자산 목록에서 web01 의 실제 id 를 찾아 쓴다 — 데이터가 어디서 시작하든 무관하게.

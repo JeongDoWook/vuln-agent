@@ -363,6 +363,13 @@ body { display: flex; min-height: 100vh; }
   color: var(--text-2);
   font-size: .88rem;
 }
+.side a.link--root {
+  margin-left: 0;
+  padding-left: .75rem;
+  border-left: 0;
+  border-radius: var(--r-sm);
+}
+.side a.link--root + a.link--root { margin-top: .15rem; }
 /* 메뉴 아이콘 — stroke=currentColor 라 링크 색을 상속한다. 비활성은 살짝 흐리게. */
 .side a.link .ico { flex: none; opacity: .8; }
 .side a.link:hover .ico,
@@ -1497,6 +1504,7 @@ form.card .btn--primary:active { transform: translateY(0); }
   white-space: nowrap !important;
   border: 0 !important;
 }
+.stack-sm { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; }
 
 /* =============================================================================
  * 페이지별 조정 — layout.php 가 <main> 에 page--<스크립트> 클래스를 붙인다.

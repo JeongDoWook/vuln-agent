@@ -110,18 +110,12 @@ $tokens = $list->fetchAll();
 // 발급 폼 prefill — 자산관리 등에서 ?fqdn=web01.example.com 로 넘어올 수 있게.
 if ($issueFqdn === '') { $issueFqdn = trim((string) ($_GET['fqdn'] ?? '')); }
 
-vg_header('에이전트 토큰', 'agenttokens');
+vg_header('에이전트 키', 'agenttokens');
 ?>
-  <?php vg_page_title('에이전트 토큰', 'AGENT ACCESS', '', [
+  <?php vg_page_title('에이전트 키', 'AGENT ACCESS', '호스트별 수집 인증 키를 발급하고 관리합니다.', [
       'count' => $total, 'count_label' => '개',
       'actions' => vg_capture(static fn() => vg_modal_btn('issueToken', '+ 토큰 발급')),
   ]); ?>
-  <div class="sub">
-    각 수집 에이전트에 발급하는 <strong>호스트 전용 토큰</strong>입니다. 발급 시 정한 호스트(fqdn)의
-    스캔만 갱신할 수 있어, 침해된 대상 1대가 다른 호스트를 위조하는 것을 막습니다.
-    설치 시 <code>install-agent.sh --token &lt;토큰&gt;</code> 로 넣습니다.
-  </div>
-
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <?php vg_toolbar([

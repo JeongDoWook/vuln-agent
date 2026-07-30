@@ -110,32 +110,32 @@ const VG_CONNECTOR_TYPES = [
         'fields' => ['url'], 'url_label' => '덤프 베이스 URL (뒤에 릴리스 코드네임이 붙는다)',
     ],
     'rhoval' => [
-        'class' => VgRhovalConnector::class, 'label' => 'RHEL 계열 벤더 권고(OVAL)', 'transport' => 'file',
+        'class' => VgRhovalConnector::class, 'label' => 'RHEL OVAL', 'transport' => 'file',
         'desc'  => 'OVAL XML 덤프를 벤더별 고정 주소에서 받아 XMLReader 로 스트리밍 파싱한다(Red Hat·Oracle 은 bz2, AlmaLinux 는 평문). 주소와 대상 릴리스 모두 코드·수집 호스트가 정하므로 설정할 값이 없다.',
         'fields' => [],
     ],
     'rhunfixed' => [
-        'class' => VgRhunfixedConnector::class, 'label' => 'Red Hat 미수정 CVE(조치 불가)', 'transport' => 'api',
+        'class' => VgRhunfixedConnector::class, 'label' => 'Red Hat 미수정', 'transport' => 'api',
         'desc'  => 'access.redhat.com hydra REST API 를 고정 주소로 동시 6개씩 조회한다. 대상 컴포넌트는 수집된 호스트에서 자동으로 정하므로 설정할 값이 없다.',
         'fields' => [],
     ],
     'ssg' => [
-        'class' => VgSsgConnector::class, 'label' => 'SCAP Security Guide(보안설정 룰셋)', 'transport' => 'hybrid',
+        'class' => VgSsgConnector::class, 'label' => 'SCAP 기준', 'transport' => 'hybrid',
         'desc'  => 'GitHub 릴리스 API 로 최신 자산 주소를 먼저 받고, 그 tar.bz2 파일을 내려받아 푼다 — 두 단계라 API 하나로도 파일 하나로도 부르기 어렵다.',
         'fields' => ['url'], 'url_label' => '릴리스 API URL (자산 주소를 여기서 찾는다)',
     ],
     'kcve' => [
-        'class' => VgKcveConnector::class, 'label' => '리눅스 커널 CNA(kernel.org)', 'transport' => 'file',
+        'class' => VgKcveConnector::class, 'label' => '커널 CNA', 'transport' => 'file',
         'desc'  => 'kernel.org vulns.git 스냅샷 tarball(약 20MB)을 받아 tar 를 직접 훑는다. CVE 당 개별 요청(1만 2천 회)을 피하려는 것이다.',
         'fields' => ['url'], 'url_label' => '스냅샷 tarball URL (tar.gz)',
     ],
     'ubuntuoval' => [
-        'class' => VgUbuntuOvalConnector::class, 'label' => '우분투 보안 OVAL', 'transport' => 'file',
+        'class' => VgUbuntuOvalConnector::class, 'label' => 'Ubuntu OVAL', 'transport' => 'file',
         'desc'  => 'OVAL XML 덤프(*.xml.bz2)를 릴리스별로 받아 푼다. 대상 릴리스는 수집된 우분투 호스트에서 자동으로 정한다.',
         'fields' => ['url'], 'url_label' => '덤프 URL 템플릿 ({C} 자리에 릴리스 코드네임이 들어간다)',
     ],
     'generic_api' => [
-        'class' => VgGenericApiConnector::class, 'label' => '범용 API 커넥터', 'transport' => 'api',
+        'class' => VgGenericApiConnector::class, 'label' => '사용자 API', 'transport' => 'api',
         'desc'  => '사용자가 지정하는 REST API. 주소·헤더·페이징·필드 매핑을 아래에서 직접 정의한다.',
         'fields' => [],
     ],

@@ -76,9 +76,9 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('영향 패키지', 'packages');
+vg_header('패키지', 'packages');
 ?>
-  <?php vg_page_title('영향 패키지', 'AFFECTED PACKAGES', '패키지와 배포판 단위로 연결된 취약점 범위를 확인합니다.', ['count' => $total, 'count_label' => '종']); ?>
+  <?php vg_page_title('패키지', 'PACKAGES', '패키지별 CVE와 수정 버전을 확인합니다.', ['count' => $total, 'count_label' => '종']); ?>
   <?php if ($summaryAt !== ''): ?>
   <div class="sub"><span class="why">집계 기준 <?= vg_h($summaryAt) ?> (OSV 수집 시 갱신)</span></div>
   <?php endif; ?>
@@ -102,7 +102,7 @@ vg_header('영향 패키지', 'packages');
           ['label' => '배포판', 'width' => '14%'],
           ['label' => 'CVE 수', 'align' => 'right', 'width' => '9%'],
           ['label' => '최고 EPSS', 'align' => 'right', 'width' => '15%'],
-          ['label' => '조치', 'width' => '32%'],
+          ['label' => '수정 버전', 'width' => '32%'],
       ],
       $rows,
       [

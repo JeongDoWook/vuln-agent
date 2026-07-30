@@ -64,30 +64,24 @@ function vg_nav_sections(): array {
         '' => [
             ['perm' => 'dashboard', 'href' => '/', 'label' => '대시보드', 'key' => 'dashboard'],
         ],
+        '바로가기' => [
+            ['perm' => 'assets',     'href' => '/assets.php',     'label' => '자산',        'key' => 'assets'],
+            ['perm' => 'connectors', 'href' => '/connectors.php', 'label' => '데이터 수집', 'key' => 'connectors'],
+        ],
         '취약점' => [
-            ['perm' => 'findings',   'href' => '/findings.php',   'label' => '취약점 현황',   'key' => 'findings'],
-            ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE 목록',      'key' => 'cves'],
-            ['perm' => 'findings',   'href' => '/packages.php',   'label' => '영향 패키지',   'key' => 'packages'],
-            ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '벤더 판정',     'key' => 'vendor'],
-            ['perm' => 'findings',   'href' => '/compliance_rules.php', 'label' => '보안설정 룰셋', 'key' => 'compliance'],
-            ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '국내 보안공지', 'key' => 'advisories'],
+            ['perm' => 'findings',   'href' => '/findings.php',   'label' => '탐지 결과', 'key' => 'findings'],
+            ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE',       'key' => 'cves'],
+            ['perm' => 'findings',   'href' => '/packages.php',   'label' => '패키지',    'key' => 'packages'],
+            ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '판정 근거', 'key' => 'vendor'],
+            ['perm' => 'findings',   'href' => '/compliance_rules.php', 'label' => '보안 설정', 'key' => 'compliance'],
+            ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
         ],
-        '자산' => [
-            ['perm' => 'assets', 'href' => '/assets.php', 'label' => '자산 관리', 'key' => 'assets'],
-        ],
-        '수집' => [
-            ['perm' => 'connectors', 'href' => '/connectors.php', 'label' => '피드 커넥터', 'key' => 'connectors'],
-        ],
-        '계정' => [
-            ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',      'key' => 'users'],
-            ['perm' => 'permissions', 'href' => '/permissions.php',  'label' => '권한 설정',   'key' => 'permissions'],
-        ],
-        '연동' => [
-            ['perm' => 'agenttokens', 'href' => '/agent-tokens.php', 'label' => '에이전트 토큰', 'key' => 'agenttokens'],
-            ['perm' => 'apitokens',   'href' => '/api-tokens.php',   'label' => 'API 토큰',    'key' => 'apitokens'],
-        ],
-        '기록' => [
-            ['perm' => 'activity',    'href' => '/activity.php',     'label' => '감사 로그',   'key' => 'activity'],
+        '관리' => [
+            ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],
+            ['perm' => 'permissions', 'href' => '/permissions.php',  'label' => '권한',      'key' => 'permissions'],
+            ['perm' => 'agenttokens', 'href' => '/agent-tokens.php', 'label' => '에이전트 키', 'key' => 'agenttokens'],
+            ['perm' => 'apitokens',   'href' => '/api-tokens.php',   'label' => 'API 키',    'key' => 'apitokens'],
+            ['perm' => 'activity',    'href' => '/activity.php',     'label' => '감사 로그', 'key' => 'activity'],
         ],
     ];
 }
@@ -123,8 +117,8 @@ function vg_nav_icon(string $key): string {
 }
 
 // 사이드바 링크 하나를 렌더한다(단독 링크·그룹 내부 링크가 함께 쓴다 — DRY).
-function vg_nav_link(array $l, string $active): string {
-    $cls = 'link' . ($active === $l['key'] ? ' active' : '');
+function vg_nav_link(array $l, string $active, bool $root = false): string {
+    $cls = 'link' . ($root ? ' link--root' : '') . ($active === $l['key'] ? ' active' : '');
     return '<a class="' . $cls . '" href="' . vg_h($l['href']) . '">'
         . vg_nav_icon($l['key']) . '<span>' . vg_h($l['label']) . '</span></a>';
 }
@@ -140,10 +134,10 @@ function vg_nav(string $active): void {
         if (!$visible) {
             continue;
         }
-        // 라벨 없는 섹션(대시보드)은 단독 링크 — 아코디언 밖, 항상 노출.
-        if ($section === '') {
+        // 대시보드와 자주 쓰는 바로가기는 아코디언 밖에 항상 노출한다.
+        if ($section === '' || $section === '바로가기') {
             foreach ($visible as $l) {
-                echo vg_nav_link($l, $active);
+                echo vg_nav_link($l, $active, true);
             }
             continue;
         }
@@ -191,7 +185,7 @@ function vg_breadcrumb(string $active, string $title): void {
     $leaf = $label ?? $title;
     echo '<nav class="crumbs" aria-label="위치">';
     echo '<a href="/">홈</a>';
-    if ($section !== null && $section !== '') {
+    if ($section !== null && $section !== '' && $section !== '바로가기') {
         echo '<span class="sep">›</span><span>' . vg_h($section) . '</span>';
     }
     echo '<span class="sep">›</span><span class="cur">' . vg_h($leaf) . '</span>';
