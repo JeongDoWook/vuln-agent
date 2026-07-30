@@ -119,7 +119,7 @@ vuln-agent/
 │   ├── Dockerfile
 │   ├── public/   # ingest·rematch·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
 │   │             #   packages/advisories/advisory/assets/connectors/users/user/permissions/api-tokens/
-│   │             #   agent-tokens/activity/profile + remediations(조치관리)/vendor(벤더 판정 근거)/
+│   │             #   agent-tokens/activity/profile + vendor(벤더 판정 근거)/
 │   │             #   compliance_rules·compliance_rule(SSG 룰셋 카탈로그) (웹)
 │   │             #   agent-dl.php — 에이전트 설치 파일 배포(자산 화면 설치 모달의 다운로드 대상)
 │   │             #   process.html — 프로세스 소개(로그인 불필요, /process.html 로 공유)
