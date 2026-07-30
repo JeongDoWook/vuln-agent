@@ -210,9 +210,8 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
     호스트(fqdn)마다 발급하고, 토큰은 발급 시 정한 fqdn 만 갱신할 수 있다 — `ingest.php` 가
     바인딩을 강제해, 본문이 다른 호스트를 주장하면 **403 으로 거부**(침해된 대상 1대가 남의
     스캔을 위조·덮어쓰는 것을 차단). DB 엔 SHA-256 해시만 저장(원문 1회 표시), 폐기는 `is_revoked`.
-    활성 토큰은 호스트당 하나(재발급 시 기존분 자동 폐기). **하위호환**: 구버전 공유 토큰
-    (`secrets/ingest_token.txt`)도 당분간 받되(본문 fqdn 사용) deprecated — 수신 시 감사 로그에 경고.
-  - 에이전트 → `rematch.php` : 공유 시크릿 `X-Agent-Token`(`secrets/ingest_token.txt`).
+    활성 토큰은 호스트당 하나(재발급 시 기존분 자동 폐기). 공유 수집 토큰은 허용하지 않는다.
+  - 관리 작업 → `rematch.php` : 재매칭 전용 `X-Agent-Token`(`secrets/rematch_token.txt`).
   - 외부 시스템 → `export.php` : 웹에서 발급하는 **읽기 전용** API 토큰(`X-API-Token`, 또는
     `Authorization: Bearer`). DB 엔 SHA-256 해시만 저장(원문은 발급 시 1회 표시), 폐기는 소프트삭제.
 - 최초 admin 은 `secrets/admin_password` 로 부트스트랩.

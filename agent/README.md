@@ -87,7 +87,7 @@ sudo docker cp vulnagent-caddy:/data/caddy/pki/authorities/local/root.crt ./cadd
 ```bash
 sudo bash install-agent.sh \
   --server https://<운영-도메인>:8080/ingest.php \
-  --token  <중앙의 secrets/ingest_token.txt 값> \
+  --token  <중앙 웹의 에이전트 키 화면에서 해당 호스트에 발급한 값> \
   --schedule hourly              # 또는 daily, '*:0/30'(30분마다, systemd)
 ```
 

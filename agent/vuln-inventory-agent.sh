@@ -21,7 +21,7 @@
 #    ./vuln-inventory-agent.sh --timeout 10    # 명령별 타임아웃(초)
 #    ./vuln-inventory-agent.sh \
 #        --send http://SERVER:8080/ingest.php \
-#        --token 공유토큰                       # 수집 후 중앙 서버로 전송(파일 저장은 유지)
+#        --token 호스트별토큰                   # 수집 후 중앙 서버로 전송(파일 저장은 유지)
 # ==================================================================
 
 set -uo pipefail
@@ -38,7 +38,7 @@ DO_CHANGELOG=1                        # 핵심 패키지 CVE changelog 수집 �
 DO_LIMIT=0                            # cgroup 리밋 사용 여부
 OUT=""
 SEND_URL="${SEND_URL:-}"             # --send : 중앙 수신 API(ingest.php) URL
-SEND_TOKEN="${SEND_TOKEN:-}"         # --token: 서버와 공유하는 인증 토큰
+SEND_TOKEN="${SEND_TOKEN:-}"         # --token: 중앙에서 이 호스트에 발급한 인증 토큰
 PAGESIZE="$(getconf PAGESIZE 2>/dev/null || echo 4096)"
 CLK_TCK="$(getconf CLK_TCK 2>/dev/null || echo 100)"
 

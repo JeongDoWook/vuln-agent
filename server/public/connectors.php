@@ -20,7 +20,7 @@ vg_require_menu('connectors');   // 피드 커넥터: 설정형 권한
 //   (설명 없는 짧은 형태)로 그대로 못 쓴다 — 억지로 문자열을 자르지 않고 새 상수로 둔다.
 const VG_GENERIC_ROLE_LABELS = [
     'identity' => '취약점 정체', 'priority' => '우선순위 신호',
-    'vendor' => '벤더 패치 판정', 'compliance' => '보안설정 룰셋',
+    'vendor' => '벤더 패치 판정',
 ];
 
 $pdo = vg_pdo();
@@ -188,8 +188,8 @@ vg_header('데이터 수집', 'connectors');
       $typeGroup = [];
       foreach ($roleGroups as $gi => $g) { foreach ($g['types'] as $t) { $typeGroup[$t] = $gi; } }
       // generic_api 는 타입이 하나뿐이라 위 표로 그룹을 못 정한다 — connection_json.role 로 정한다
-      // (VG_GENERIC_ROLES 순서와 roleGroups 카드 순서가 그대로 대응: identity/priority/vendor/compliance).
-      $genericRoleGroup = ['identity' => 0, 'priority' => 1, 'vendor' => 2, 'compliance' => 3];
+      // (VG_GENERIC_ROLES 순서와 앞의 세 roleGroups 카드가 그대로 대응: identity/priority/vendor).
+      $genericRoleGroup = ['identity' => 0, 'priority' => 1, 'vendor' => 2];
       $grouped = []; $others = [];
       foreach ($connectors as $c) {
           if ($c['connector_type'] === 'generic_api') {
@@ -284,8 +284,8 @@ vg_header('데이터 수집', 'connectors');
           <?php endforeach; ?>
         </select>
         <div class="alert alert--warn" id="gRoleNotice" hidden>
-          <strong>compliance role은 1차 미지원입니다</strong>
-          <ul class="hint-list"><li>저장은 되지만 지금 실행하면 오류가 발생합니다.</li></ul>
+          <strong>기존 설정의 역할은 더 이상 지원하지 않습니다.</strong>
+          <ul class="hint-list"><li>지원되는 역할을 다시 선택해야 저장할 수 있습니다.</li></ul>
         </div>
 
         <label>HTTP 메서드</label>

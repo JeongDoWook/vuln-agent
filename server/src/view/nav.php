@@ -33,7 +33,6 @@ function vg_activity_type_labels(): array {
         'connector_delete'     => '커넥터 삭제',
         'ingest'               => '수집 반영',
         'ingest_spoof_blocked' => '수집 위조 차단',
-        'ingest_shared_token'  => '공유 토큰 수집',
         'permission_update'    => '권한 변경',
         'user_add'             => '사용자 추가',
         'user_role'            => '사용자 권한 변경',

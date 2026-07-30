@@ -226,6 +226,8 @@ async function main() {
       '#connForm 이 PHP 카탈로그(data-type-meta)를 화면에 넘긴다');
     check(meta !== null && Object.keys(meta.roles).length > 0,
       '#connForm 이 역할 라벨(data-role-labels)을 화면에 넘긴다');
+    check(meta !== null && !Object.prototype.hasOwnProperty.call(meta.roles, 'compliance'),
+      '미지원 compliance 역할을 범용 커넥터 선택지에서 제외');
 
     const modal = page.locator('#connModal');
     check(!(await modal.isVisible()), '처음엔 커넥터 모달이 닫혀 있다');
@@ -262,12 +264,6 @@ async function main() {
     check(vendor.label === '(' + meta.roles.vendor + ')', '#gRoleLabel 이 PHP 라벨(data-role-labels)과 일치',
       'label=' + vendor.label);
     check(!vendor.notice, 'vendor 역할에선 미지원 안내가 뜨지 않는다');
-
-    await page.selectOption('#gRole', 'compliance');
-    const compliance = await roleState(page);
-    check(compliance.notice, 'compliance 역할로 바꾸면 1차 미지원 안내가 뜬다');
-    check(compliance.label === '(' + meta.roles.compliance + ')', 'compliance 라벨도 PHP 라벨과 일치',
-      'label=' + compliance.label);
 
     // 인증 헤더 행 추가/삭제(vgHeaderRow). 제출하지 않으므로 서버엔 닿지 않는다.
     const headerRows = page.locator('#gHeaders .kvrow');

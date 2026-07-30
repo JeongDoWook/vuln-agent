@@ -53,8 +53,8 @@ function vg_agent_token_issue(PDO $pdo, string $fqdn, string $label, ?int $userI
 
 /**
  * 토큰 검증(수집 인증용). 유효하면 last_seen_at 갱신 후 바인딩 정보를 반환, 아니면 null.
- *   폐기(is_revoked)·소프트삭제된 토큰은 매칭하지 않는다 → 호출자는 다음 인증수단(공유토큰)으로
- *   넘어가거나 거부한다. 해시 컬럼이 UNIQUE 라 인덱스 조회 1회.
+ *   폐기(is_revoked)·소프트삭제된 토큰은 매칭하지 않으며 호출자는 요청을 거부한다.
+ *   해시 컬럼이 UNIQUE 라 인덱스 조회 1회.
  * @return array{id:int,fqdn:string}|null
  */
 function vg_agent_token_verify(PDO $pdo, string $provided): ?array {

@@ -71,6 +71,7 @@
 각 서버에 경량 에이전트를 두고 설치 패키지·<b>런타임 상태</b>를 수집해 중앙으로 모은다.
 단순 스캐너와 다른 점은 <b>“이 취약점이 이 서버에서 실제로 위험한가”</b>를 —
 외부 노출·실행·사용 여부와 KEV/EPSS(실제 악용성)로 — 판단해 오탐을 줄이고 우선순위를 매긴다는 것.
+담당자 배정·티켓·SLA 같은 조치 워크플로를 운영하는 도구가 아니라, 정확한 탐지 결과와 판정 근거를 제공하는 데 집중한다.
 </p>
 
 <!-- 1. 파이프라인 -->
@@ -86,7 +87,7 @@
   <div class="arrow">→</div>
   <div class="step o"><span class="k">⑤ 우선순위</span><h4>매처</h4><p>런타임 상태 7단계 + KEV/EPSS 로 심각도 판정·정렬</p></div>
   <div class="arrow">→</div>
-  <div class="step"><span class="k">⑥ 표시</span><h4>웹</h4><p>대시보드 → 호스트 상세 → 취약점(근거·조치·상태)</p></div>
+  <div class="step"><span class="k">⑥ 표시</span><h4>웹</h4><p>대시보드 → 호스트 상세 → 취약점(근거·수정 버전·판정 상태)</p></div>
 </div>
 
 <!-- 2. 구성요소 -->
@@ -181,17 +182,25 @@
 
 <!-- 6. 데이터 수집 -->
 <h2><span class="n">6</span>데이터 수집</h2>
-<p class="lead">외부 취약점 소스를 UI 에서 설정·미리보기·스케줄(cron/매일/주기)하면 스케줄러가 당겨와 매처가 재계산한다.
-매칭 자체는 검증된 소스에서 상속하고, 우리 기여는 그 위 레이어(상태·KEV/EPSS·설명가능성)에 둔다.</p>
+<p class="lead">고정 커넥터 11종과 범용 API 커넥터를 UI 에서 설정·미리보기·스케줄(cron/매일/주기)하면
+스케줄러가 데이터를 수집하고 매처가 재계산한다. 매칭 자체는 검증된 소스에서 상속하고,
+우리 기여는 그 위 레이어(상태·KEV/EPSS·설명가능성)에 둔다.</p>
 <div class="card">
 <table>
   <thead><tr><th>커넥터</th><th>역할</th><th>채우는 데이터</th></tr></thead>
   <tbody>
-    <tr><td><b>OSV.dev</b></td><td>수집된 전 패키지를 배포판 ecosystem·버전으로 조회 → 취약점 발굴 + 조치버전</td><td>cve_affected_packages · cves</td></tr>
-    <tr><td><b>CISA KEV</b></td><td>실제 악용된 취약점 카탈로그(우선순위 가중)</td><td>kev_catalog</td></tr>
-    <tr><td><b>FIRST EPSS</b></td><td>CVE 별 악용 확률(0~1)</td><td>cves.epss</td></tr>
-    <tr><td><b>NVD 2.0</b></td><td>최근 CVE(CVSS 포함) 증분</td><td>cves.cvss</td></tr>
-    <tr><td><b>KISA 보안공지</b></td><td>국내 보안공지(해외 도구 미지원 국내 특화)</td><td>advisories</td></tr>
+    <tr><td><b>NVD</b></td><td>CVE 설명과 CVSS를 수정일 기준으로 증분 수집</td><td>tb_cve</td></tr>
+    <tr><td><b>OSV</b></td><td>설치 패키지의 영향 여부와 확인된 수정 버전 탐지</td><td>tb_cve · tb_cve_affected_package</td></tr>
+    <tr><td><b>EPSS</b></td><td>CVE별 향후 악용 확률과 백분위 보강</td><td>tb_cve.epss</td></tr>
+    <tr><td><b>KEV</b></td><td>실제 악용이 확인된 취약점 보강</td><td>tb_kev_catalog</td></tr>
+    <tr><td><b>KISA</b></td><td>보호나라 국내 보안공지와 상세 본문 수집</td><td>tb_advisory</td></tr>
+    <tr><td><b>Debian</b></td><td>데비안 릴리스별 영향 여부·수정 가능 여부 판정</td><td>tb_debian_tracker</td></tr>
+    <tr><td><b>RHEL OVAL</b></td><td>Red Hat·AlmaLinux·Oracle의 벤더 수정 EVR 판정</td><td>tb_vendor_errata</td></tr>
+    <tr><td><b>Red Hat 미수정</b></td><td>Red Hat이 아직 수정본을 제공하지 않은 CVE 판정</td><td>tb_vendor_unfixed</td></tr>
+    <tr><td><b>Ubuntu OVAL</b></td><td>우분투 릴리스별 영향 여부와 수정 버전 판정</td><td>tb_ubuntu_oval</td></tr>
+    <tr><td><b>Kernel CNA</b></td><td>리눅스 커널 스트림별 영향·수정 버전 판정</td><td>tb_kernel_cves · tb_kernel_cve_fixes</td></tr>
+    <tr><td><b>SSG</b></td><td>보안설정 룰의 근거와 CIS·NIST·STIG 기준 보강</td><td>tb_compliance_rule</td></tr>
+    <tr><td><b>범용 API</b></td><td>조직별 REST 소스를 탐지·우선순위·벤더 역할로 매핑</td><td>역할별 대상 테이블</td></tr>
   </tbody>
 </table>
 </div>
@@ -220,7 +229,7 @@
     <ul class="tight">
       <li><code class="i">tb_cve</code> — CVE(cvss·epss·요약)</li>
       <li><code class="i">tb_kev_catalog</code> — KEV 등재</li>
-      <li><code class="i">tb_cve_affected_package</code> — 영향 패키지·조치버전</li>
+      <li><code class="i">tb_cve_affected_package</code> — 영향 패키지·수정 버전</li>
       <li><code class="i">tb_finding</code> — 판정(등급·상태·근거)</li>
       <li><code class="i">tb_advisory</code> — 국내 보안공지</li>
       <li><code class="i">tb_feed_connector / _collection_log</code> — 커넥터·이력</li>
@@ -258,7 +267,7 @@
   <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
     sudo bash install-agent.sh<br>
     &nbsp;&nbsp;중앙 서버 주소 → https://&lt;운영-도메인&gt;:8080/ingest.php<br>
-    &nbsp;&nbsp;전송 토큰 → &lt;ingest_token&gt; · 수집 주기 → hourly
+    &nbsp;&nbsp;전송 토큰 → 에이전트 키 화면에서 호스트별 발급 · 수집 주기 → hourly
   </div>
   systemd-timer(우선)/cron(폴백)으로 자동 등록. 중앙 서버 자신을 스캔하는 로컬 에이전트는
   루프백 평문 포트(<code class="i">127.0.0.1:8081</code>)로 직접 전송(외부에서는 접근 불가).
@@ -292,10 +301,10 @@
   <tbody>
     <tr><td>로그인</td><td>세션 인증(users, bcrypt·CSRF)</td><td>-</td></tr>
     <tr><td>대시보드</td><td>호스트별 최신 스캔 + 심각도 KPI</td><td>로그인</td></tr>
-    <tr><td>호스트 상세</td><td>노출·실행 프로세스·우선순위 취약점(조치·상태) + CCE 점검 + 백포트 억제 내역</td><td>로그인</td></tr>
-    <tr><td>취약점</td><td>등급·상태·CVE·EPSS·KEV·근거·조치, 검색/필터+페이지네이션</td><td>로그인</td></tr>
+    <tr><td>호스트 상세</td><td>노출·실행 프로세스·우선순위 취약점(근거·수정 버전·판정 상태) + CCE 점검 + 백포트 억제 내역</td><td>로그인</td></tr>
+    <tr><td>취약점</td><td>등급·판정 상태·CVE·EPSS·KEV·근거·수정 버전, 검색/필터+페이지네이션</td><td>로그인</td></tr>
     <tr><td>변화 추적</td><td>최근 2개 스캔 대조 — 신규/해결/등급변경</td><td>로그인</td></tr>
-    <tr><td>CVE 상세</td><td>요약·영향 패키지·조치버전·이 CVE 가 발견된 호스트 목록</td><td>로그인</td></tr>
+    <tr><td>CVE 상세</td><td>요약·영향 패키지·수정 버전·이 CVE가 발견된 호스트 목록</td><td>로그인</td></tr>
     <tr><td>국내공지</td><td>KISA 보안공지 목록/상세, 검색+페이지네이션</td><td>로그인</td></tr>
     <tr><td>자산 관리</td><td>호스트 자산 관리(소프트삭제)</td><td>로그인(assets 권한)</td></tr>
     <tr><td>데이터 수집</td><td>소스 설정·미리보기·스케줄·실행·이력</td><td>admin(기본, RBAC 설정 가능)</td></tr>
@@ -317,12 +326,12 @@
   <ul class="tight">
     <li><span class="ok">✓</span> Docker(dev/prod·secrets) · 수집→전송→저장 파이프라인</li>
     <li><span class="ok">✓</span> 정밀 런타임 수집(실행중/사용중/포트 구분) · 매처 7단계 상태 판정</li>
-    <li><span class="ok">✓</span> OSV 자동 매칭(전 패키지·버전필터·조치버전) · KEV/EPSS 우선순위</li>
+    <li><span class="ok">✓</span> OSV 자동 매칭(전 패키지·버전필터·수정 버전) · KEV/EPSS 우선순위</li>
     <li><span class="ok">✓</span> 백포트 오탐 억제(2단: 버전필터 + changelog 검증) → tb_suppressed_finding, 호스트 상세에 근거 표시</li>
     <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·MAC·방화벽 5항목 PASS/FAIL/NA(신규 수집 없음)</li>
     <li><span class="ok">✓</span> 변화 추적(changes.php) — 최근 2개 스캔 대비 신규/해결/등급변경</li>
     <li><span class="ok">✓</span> 웹(로그인·대시보드·호스트상세·취약점·변화추적·CVE상세·국내공지·자산·커넥터·사용자·권한·API토큰·감사로그) · 검색/필터·페이지네이션</li>
-    <li><span class="ok">✓</span> 피드 커넥터 5종 · cron 스케줄(스케줄러 사이드카 1분마다 확인) · 배포 설치기(systemd-timer/cron, 매시간)</li>
+    <li><span class="ok">✓</span> 고정 커넥터 11종 + 범용 API · cron 스케줄(스케줄러 사이드카 1분마다 확인) · 배포 설치기(systemd-timer/cron, 매시간)</li>
     <li><span class="ok">✓</span> HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)</li>
     <li><span class="ok">✓</span> Export API(JSON/XML) · 웹에서 발급하는 읽기전용 API 토큰(X-API-Token)</li>
     <li><span class="ok">✓</span> 설정형 RBAC(admin/operator/user × 메뉴) · 자산 관리(assets.php)</li>

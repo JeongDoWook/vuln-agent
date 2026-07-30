@@ -86,13 +86,6 @@ var VG_GENERIC_ROLE_FIELDS = {
     { key: 'fixed_evr', label: '조치 버전(epoch:version-release)', required: true },
     { key: 'advisory', label: '권고 ID', required: false },
     { key: 'severity', label: '심각도', required: false }
-  ],
-  compliance: [
-    { key: 'rule_id', label: '룰 ID', required: true },
-    { key: 'title', label: '제목', required: true },
-    { key: 'severity', label: '심각도', required: true },
-    { key: 'rationale', label: '설명', required: false },
-    { key: 'refs_json', label: '참조(JSON)', required: false }
   ]
 };
 // PHP 의 VG_GENERIC_ROLE_LABELS(connectors.php)가 유일한 근거 — vgGenericInit 이 폼의
@@ -158,7 +151,7 @@ function vgRenderFieldMap(role, existingMapping) {
   var lbl = document.getElementById('gRoleLabel');
   if (lbl) { lbl.textContent = '(' + (VG_GENERIC_ROLE_LABELS[role] || role) + ')'; }
   var notice = document.getElementById('gRoleNotice');
-  if (notice) { notice.hidden = role !== 'compliance'; }
+  if (notice) { notice.hidden = role === '' || Object.prototype.hasOwnProperty.call(VG_GENERIC_ROLE_LABELS, role); }
 }
 
 function vgGenericCollect() {
@@ -258,7 +251,8 @@ function vgGenericInit() {
   toggle();
 
   if (editConfig) {
-    document.getElementById('gRole').value = editConfig.role || 'identity';
+    var editRole = editConfig.role || 'identity';
+    document.getElementById('gRole').value = editRole;
     document.getElementById('gMethod').value = editConfig.method || 'GET';
     document.getElementById('gUrlTemplate').value = editConfig.url_template || '';
     var headers = editConfig.headers || {};
@@ -269,7 +263,7 @@ function vgGenericInit() {
     document.getElementById('gTotalPath').value = pg.total_path || '';
     var resp = editConfig.response || {};
     document.getElementById('gItemsPath').value = resp.items_path || '';
-    vgRenderFieldMap(editConfig.role || 'identity', resp.field_mapping || {});
+    vgRenderFieldMap(editRole, resp.field_mapping || {});
   } else {
     vgRenderFieldMap('identity', null);
   }
