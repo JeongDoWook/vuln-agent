@@ -181,9 +181,10 @@ API: `POST /ingest.php`(에이전트 수집 수신) · `GET /export.php`
 
 ### 미지원 배포판은 조용히 넘어가지 않는다
 
-Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭이 **0건**이 된다. 이걸 그냥 두면
-"취약점 없음"처럼 보여 더 위험하므로, `src/distro.php` 가 판정해 ingest 응답과 취약점 화면에
-**경고를 띄운다**(자체 피드가 따로 필요하다는 뜻).
+Amazon Linux·CentOS 는 현재 연결된 배포판 피드가 없어 매칭이 **0건**이 될 수 있다. 이걸 그냥
+두면 "취약점 없음"처럼 보여 더 위험하므로, `src/distro.php` 가 판정해 ingest 응답과 취약점
+화면에 **경고를 띄운다**(자체 피드가 필요하다는 뜻). Oracle Linux는 OSV에는 없지만
+Oracle ELSA OVAL 커넥터가 릴리스별 영향 여부와 수정 EVR을 직접 제공한다.
 
 ### 보안설정 점검 (CCE)
 
