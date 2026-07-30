@@ -203,20 +203,6 @@ SET @s := IF(@o = 1 AND @n = 0, 'RENAME TABLE tb_kernel_cve_fix TO tb_kernel_cve
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @o := (SELECT COUNT(*) FROM information_schema.TABLES
-           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_sla_policy');
-SET @n := (SELECT COUNT(*) FROM information_schema.TABLES
-           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_sla_policies');
-SET @s := IF(@o = 1 AND @n = 0, 'RENAME TABLE tb_sla_policy TO tb_sla_policies', 'DO 0');
-PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
-
-SET @o := (SELECT COUNT(*) FROM information_schema.TABLES
-           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_remediation_case');
-SET @n := (SELECT COUNT(*) FROM information_schema.TABLES
-           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_remediation_cases');
-SET @s := IF(@o = 1 AND @n = 0, 'RENAME TABLE tb_remediation_case TO tb_remediation_cases', 'DO 0');
-PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
-
-SET @o := (SELECT COUNT(*) FROM information_schema.TABLES
            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_saved_view');
 SET @n := (SELECT COUNT(*) FROM information_schema.TABLES
            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_saved_views');
@@ -247,16 +233,6 @@ PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_saved_views' AND COLUMN_NAME = 'saved_view_id');
 SET @s := IF(@c = 1, 'ALTER TABLE tb_saved_views RENAME COLUMN saved_view_id TO id', 'DO 0');
-PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
-
-SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_remediation_cases' AND COLUMN_NAME = 'remediation_case_id');
-SET @s := IF(@c = 1, 'ALTER TABLE tb_remediation_cases RENAME COLUMN remediation_case_id TO id', 'DO 0');
-PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
-
-SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
-           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tb_sla_policies' AND COLUMN_NAME = 'sla_policy_id');
-SET @s := IF(@c = 1, 'ALTER TABLE tb_sla_policies RENAME COLUMN sla_policy_id TO id', 'DO 0');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
