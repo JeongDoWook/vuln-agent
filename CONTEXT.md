@@ -204,9 +204,10 @@ vuln-agent/
 - **커널 재부팅 필요**: 커널을 패치해도 재부팅 전엔 옛 커널이 돈다 → 억제하지 않는다.
   조치는 **재부팅**(프로세스 재시작으로는 안 고쳐진다).
 
-**미지원 배포판**(Amazon Linux · Oracle Linux · CentOS)은 피드가 안 덮어 매칭이 0건이 된다.
-조용히 "취약점 없음"으로 보이면 위험하므로 `vg_distro_unsupported`(`src/distro.php`)가 판정해
-ingest 응답과 취약점 화면에 **경고로 띄운다**.
+**미지원 배포판**(Amazon Linux · CentOS)은 피드가 안 덮어 매칭이 0건이 된다. 조용히
+"취약점 없음"으로 보이면 위험하므로 `vg_distro_unsupported`(`src/distro.php`)가 판정해
+ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OSV 대신 Oracle ELSA OVAL로
+릴리스별 영향 여부와 수정 EVR을 판정한다.
 
 즉 "설치=취약"으로 전부 올리지 않고, **실제 노출·실행·사용 여부로 우선순위를 가른다.**
 
@@ -269,8 +270,9 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**.
       백포트 판정 + 조치 불가(`no_fix`)를 담당한다(커넥터: rhoval/rhunfixed/ubuntuoval/kcve).
 - [x] **방화벽 차단(FILTERED) 분류** — 전체 인터페이스에 떠 있어도 방화벽이 막고 있으면 외부노출이 아니다.
       이 판정이 없으면 방화벽 뒤 내부 서비스가 전부 HIGH/CRITICAL 로 뜬다(오탐).
-- [x] **미지원 배포판 경고** — Amazon Linux·Oracle Linux·CentOS 는 피드가 안 덮어 매칭 0건이 된다.
+- [x] **미지원 배포판 경고** — Amazon Linux·CentOS 는 피드가 안 덮어 매칭 0건이 된다.
       조용히 "취약점 없음"으로 보이지 않도록 `src/distro.php` 가 판정해 ingest 응답·화면에 경고.
+      Oracle Linux는 Oracle ELSA OVAL 커넥터로 별도 지원한다.
 - [x] **패키지 출처 판정** — dpkg 는 vendor 를 안 주므로 apt 라벨(`o=Debian`/`o=Docker`/`o=LP-PPA-…`)로
       서드파티(PPA·Docker·NodeSource)를 가려낸다(URL 로 보면 사내 미러가 서드파티로 오분류된다).
 - [x] **스키마 마이그레이션 자동화** — `deploy/migrate.sh` 가 `db/migrations/*.sql` 중 미적용분만
