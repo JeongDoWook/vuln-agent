@@ -311,7 +311,7 @@ sudo bash install-agent.sh
       <li>수집 엔드포인트: <code class="selectable"><?= vg_h($ingest) ?></code> — 대상 서버 → 중앙 아웃바운드 1개면 충분합니다.</li>
       <li><code>sudo</code> 만 있으면 됩니다. <code>chmod</code>/<code>chown</code> 은 필요 없습니다(<code>bash &lt;파일&gt;</code> 로 실행하므로).</li>
       <li>토큰은 <a href="/agent-tokens.php">에이전트 토큰</a> 화면에서 이 호스트(fqdn)용으로 발급받아 넣습니다 —
-        그 호스트만 갱신할 수 있어 위조를 막습니다. (구버전 공유 토큰은 <code>secrets/ingest_token.txt</code>, deprecated)</li>
+        그 호스트만 갱신할 수 있어 다른 호스트로 위조하는 요청을 막습니다.</li>
       <li>제거: <code>sudo bash install-agent.sh --uninstall</code></li>
     </ul>
     <?php vg_modal_foot(null); ?>

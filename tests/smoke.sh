@@ -50,10 +50,10 @@ run_phpunit() {
   fi
 }
 
-for f in "$ROOT/secrets/ingest_token.txt" "$ROOT/secrets/admin_password.txt"; do
+for f in "$ROOT/secrets/rematch_token.txt" "$ROOT/secrets/admin_password.txt"; do
   [ -s "$f" ] || { echo "secrets 없음: $f — 먼저 ./compose_runner.sh init"; exit 2; }
 done
-TOKEN="$(cat "$ROOT/secrets/ingest_token.txt")"
+REMATCH_TOKEN="$(cat "$ROOT/secrets/rematch_token.txt")"
 ADMPW="$(cat "$ROOT/secrets/admin_password.txt")"
 
 printf "${CYAN}== vuln-agent smoke test @ %s ==${NC}\n" "$BASE"
@@ -125,6 +125,21 @@ sed "s/web01\.example\.com/$FQDN_WEB01/g" "$ROOT/tests/sample-scan.json"        
 sed "s/web02\.example\.com/$FQDN_WEB02/g" "$ROOT/tests/sample-scan-debian.json" > "$SAMPLE_DEB"
 sed "s/web03\.example\.com/$FQDN_WEB03/g" "$ROOT/tests/sample-scan-amzn.json"   > "$SAMPLE_AMZN"
 printf "  이 트리의 호스트: %s (트리 라벨 =%s)\n" "$FQDN_WEB01" "$WT_LABEL"
+
+# 수집은 공유 시크릿을 허용하지 않는다. 각 샘플 호스트에 바인딩된 토큰을 발급해 사용한다.
+issue_agent_token() {
+  docker exec "$WEB_CONTAINER" php -r \
+    '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/agenttoken.php"; echo vg_agent_token_issue(vg_pdo(), $argv[1], "smoke bootstrap", null)["token"];' \
+    "$1"
+}
+TOKEN="$(issue_agent_token "$FQDN_WEB01")"
+TOKEN_DEB="$(issue_agent_token "$FQDN_WEB02")"
+TOKEN_AMZN="$(issue_agent_token "$FQDN_WEB03")"
+if [ -n "$TOKEN" ] && [ -n "$TOKEN_DEB" ] && [ -n "$TOKEN_AMZN" ]; then
+  ok "호스트별 수집 토큰 준비"
+else
+  no "호스트별 수집 토큰 준비 실패"
+fi
 
 # --- 워크트리 전용 로그인 계정 ------------------------------------------------
 # admin 은 DB 가 공용이라 전 워크트리가 같은 행을 쓴다. vg_login() 은 로그인마다
@@ -256,6 +271,10 @@ run_phpunit "ui_config_test.php" "ui_config" "UI 설정 범위·감사정보 마
 
 # --- UI 공통 구조 회귀 테스트 -----------------------------------------------
 run_phpunit "ui_structure_test.php" "ui_structure" "UI 공통 컴포넌트·검색·인라인 이벤트 회귀 테스트"
+
+# --- 범용 API 지원 역할 회귀 테스트 -----------------------------------------
+run_phpunit "generic_api_config_test.php" "generic_api_config" "범용 API 지원 역할 단위 테스트"
+
 # --- 취약점 판정 출처·구조화 근거 회귀 테스트 -------------------------------
 run_phpunit "finding_evidence_test.php" "finding_evidence" "취약점 판정 출처 단위 테스트"
 
@@ -271,6 +290,9 @@ printf "\n[ingest]\n"
 code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
   -H 'X-Agent-Token: WRONG' --data-binary @"$SAMPLE")
 assert_eq "$code" "401" "잘못된 토큰 → 401"
+code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
+  -H "X-Agent-Token: $REMATCH_TOKEN" --data-binary @"$SAMPLE")
+assert_eq "$code" "401" "재매칭 관리 토큰은 수집 인증에 사용할 수 없음"
 
 resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"ok":true' "정상 토큰 → ok:true"
@@ -314,7 +336,7 @@ if [ "${cceFail:-0}" -ge 5 ]; then ok "CCE FAIL 검출 (shadow 640·hosts 644·M
 #   web02(Debian 12)의 curl·openssl 은 둘 다 조치 버전보다 낮아 "버전만 보면" 취약하다.
 #   debsecan(데비안 보안 트래커)이 curl 만 지목했다 → openssl 은 백포트로 이미 고쳐진 것(억제).
 printf "\n[debsecan · 데비안 백포트 억제]\n"
-resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
+resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN_DEB" \
   --data-binary @"$SAMPLE_DEB")
 assert_contains "$resp" '"ok":true' "데비안 호스트 수집 → ok:true"
 assert_contains "$resp" '"debsecan":1' "debsecan 판정 1건 저장"
@@ -351,7 +373,7 @@ SCAN_ID=$(printf '%s' "$resp" | grep -oE '"scan_id":[0-9]+' | grep -oE '[0-9]+$'
 #   Amazon Linux 는 OSV 생태계 목록에 없다(질의하면 INVALID_ARGUMENT). 매칭 후보가 아예 없어
 #   취약점이 0건으로 뜨는데, 운영자가 "안전하다"고 읽으면 침묵하는 미탐이 된다 → 명시적으로 알린다.
 printf "\n[미지원 배포판 경고]\n"
-resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" \
+resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN_AMZN" \
   --data-binary @"$SAMPLE_AMZN")
 assert_contains "$resp" '"ok":true' "Amazon Linux 호스트 수집 → ok:true"
 assert_contains "$resp" 'ALAS' "ingest 응답에 미지원 경고(자체 ALAS 피드 필요)"
@@ -360,7 +382,7 @@ assert_contains "$resp" 'ALAS' "ingest 응답에 미지원 경고(자체 ALAS �
 printf "\n[rematch]\n"
 code=$(curl_i -s -o /dev/null -w '%{http_code}' -H "X-Agent-Token: WRONG" "$BASE/rematch.php")
 assert_eq "$code" "401" "잘못된 토큰 → 401"
-code=$(curl_i -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=$TOKEN")
+code=$(curl_i -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php?token=$REMATCH_TOKEN")
 assert_eq "$code" "401" "?token= 쿼리는 더 이상 인증 안 됨(헤더만 허용) → 401"
 # 대상을 방금 수집한 스캔 1건으로 한정한다. scan_id 를 빼면 DB 전체를 재매칭하는데, 공용 dev DB 는
 #   스모크가 돌 때마다 스캔이 쌓여 결국 PHP 30초 실행제한에 걸린다 — 그러면 이 검사는 인증이 아니라
@@ -369,7 +391,7 @@ assert_eq "$code" "401" "?token= 쿼리는 더 이상 인증 안 됨(헤더만 �
 #   "지정됨"으로 읽어 없는 스캔 0번을 매칭하고 ok:true 를 준다 — 아래 검사가 아무것도 안 하면서
 #   통과한다. 값을 먼저 못박는다.
 if [ -n "$SCAN_ID" ]; then ok "재매칭 대상 scan_id 확보 (=$SCAN_ID)"; else no "scan_id 를 못 뽑음 — 아래 재매칭 검사가 무의미해진다"; fi
-resp=$(curl_i -s -H "X-Agent-Token: $TOKEN" "$BASE/rematch.php?scan_id=$SCAN_ID")
+resp=$(curl_i -s -H "X-Agent-Token: $REMATCH_TOKEN" "$BASE/rematch.php?scan_id=$SCAN_ID")
 assert_contains "$resp" '"ok":true' "재매칭 성공(헤더 인증)"
 
 # --- 웹 인증 흐름 -----------------------------------------------------------

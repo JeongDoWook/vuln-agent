@@ -35,7 +35,7 @@ GIT_COMMON="$(git rev-parse --git-common-dir 2>/dev/null)" || die "git 저장소
 MAIN_ROOT="$(cd "$(dirname "$GIT_COMMON")" && pwd)"
 WT_ROOT="$MAIN_ROOT/wt"
 
-SECRET_FILES=(mysql_root_password mysql_password ingest_token admin_password duckdns_token)
+SECRET_FILES=(mysql_root_password mysql_password rematch_token admin_password duckdns_token)
 
 # --- WEB_PORT 할당 -----------------------------------------------------------
 # web+scheduler 는 이제 워크트리별로 독립된 컨테이너로 뜬다(compose_runner.sh) — 포트가

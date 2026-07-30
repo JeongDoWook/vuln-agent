@@ -4,11 +4,10 @@ declare(strict_types=1);
 /**
  * feeds/generic_api.php — 화면에서 코드 수정 없이 등록하는 범용 API 커넥터.
  *   connection_json 에 담긴 URL 템플릿 + 인증 헤더 + JSON 응답 필드 매핑만으로 동작하며,
- *   role(identity/priority/vendor/compliance)에 따라 서로 다른 upsert 헬퍼로 라우팅한다.
+ *   role(identity/priority/vendor)에 따라 서로 다른 upsert 헬퍼로 라우팅한다.
  *   설계: .omc/plans/generic-api-connector-design.md
  *
- *   1차 범위(이 파일): identity/priority/vendor role + offset 페이징. compliance 는
- *   XCCDF/XML 파싱이 필요해 아직 미구현이라 run() 이 명시적으로 에러를 던진다(설계문서 9장 Q4).
+ *   범위(이 파일): identity/priority/vendor role + offset 페이징.
  */
 
 require_once __DIR__ . '/http.php';
@@ -17,14 +16,13 @@ require_once __DIR__ . '/upsert.php';
 const VG_GENERIC_MAX_PAGES     = 1000;  // 페이징 무한루프 방어(설계문서 R4)
 const VG_GENERIC_PREVIEW_LIMIT = 10;
 
-const VG_GENERIC_ROLES = ['identity', 'priority', 'vendor', 'compliance'];
+const VG_GENERIC_ROLES = ['identity', 'priority', 'vendor'];
 
 // role별 필수 매핑 키 — 설계문서 4장 매핑표와 동일.
 const VG_GENERIC_REQUIRED_FIELDS = [
     'identity'   => ['cve_id'],
     'priority'   => ['cve_id'],
     'vendor'     => ['cve_id', 'vendor', 'release_major', 'pkg_name', 'fixed_evr'],
-    'compliance' => ['rule_id', 'title', 'severity'],
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -90,7 +88,9 @@ function vg_generic_validate_mapped(string $role, array $mapped): array {
 function vg_generic_parse_config(array $conn): array {
     $role = (string) ($conn['role'] ?? '');
     if (!in_array($role, VG_GENERIC_ROLES, true)) {
-        throw new RuntimeException("generic_api: 잘못된 role ($role)");
+        throw new RuntimeException(
+            "generic_api: 지원하지 않는 role ($role). 지원 역할: " . implode(', ', VG_GENERIC_ROLES)
+        );
     }
     $urlTemplate = trim((string) ($conn['url_template'] ?? ''));
     if ($urlTemplate === '') {
@@ -107,9 +107,8 @@ function vg_generic_parse_config(array $conn): array {
     if (!$fieldMapping) {
         throw new RuntimeException('generic_api: field_mapping 이 비어있습니다.');
     }
-    $idKey = $role === 'compliance' ? 'rule_id' : 'cve_id';
-    if (empty($fieldMapping[$idKey])) {
-        throw new RuntimeException("generic_api: field_mapping 에 $idKey 매핑이 없습니다.");
+    if (empty($fieldMapping['cve_id'])) {
+        throw new RuntimeException('generic_api: field_mapping 에 cve_id 매핑이 없습니다.');
     }
     return [
         'role'          => $role,
@@ -195,7 +194,7 @@ function vg_generic_upsert_vendor(PDO $pdo, array $m): bool {
     return true;
 }
 
-/** role에 맞는 upsert 헬퍼로 라우팅. compliance 는 호출측(run/preview)에서 이미 걸러진다. */
+/** role에 맞는 upsert 헬퍼로 라우팅. */
 function vg_generic_upsert(PDO $pdo, string $role, array $mapped): bool {
     switch ($role) {
         case 'identity': return vg_generic_upsert_identity($pdo, $mapped);
@@ -212,10 +211,6 @@ function vg_generic_upsert(PDO $pdo, string $role, array $mapped): bool {
 final class VgGenericApiConnector implements VgFeedConnector {
     public function run(PDO $pdo, array $conn): array {
         $cfg = vg_generic_parse_config($conn);
-        if ($cfg['role'] === 'compliance') {
-            throw new RuntimeException('generic_api: compliance role은 아직 지원하지 않습니다(설계문서 9장 Q4 참고)');
-        }
-
         $paginationType = (string) ($cfg['pagination']['type'] ?? 'none');
         $pageSize       = (int) ($cfg['pagination']['page_size'] ?? 0);
         // offset 페이징만 1차 지원. 다른 타입(cursor 등)은 1페이지만 처리하고 결과에 안내를 남긴다.
@@ -269,10 +264,6 @@ final class VgGenericApiConnector implements VgFeedConnector {
         } catch (RuntimeException $e) {
             return ['ok' => false, 'error' => $e->getMessage()];
         }
-        if ($cfg['role'] === 'compliance') {
-            return ['ok' => false, 'error' => 'compliance role은 아직 지원하지 않습니다.'];
-        }
-
         $url = vg_generic_render_url($cfg['url_template'], 1, 0);
         $r   = vg_http_json($cfg['method'], $url, null, $cfg['headers']);
         if ($r['code'] < 200 || $r['code'] >= 300 || $r['json'] === null) {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * agent-tokens.php — 에이전트별 개별 수집 토큰 발급/폐기 (admin·operator).
  *   각 토큰은 발급 시 정한 호스트(fqdn)에 묶여, 그 호스트의 스캔만 갱신할 수 있다.
- *   공유 토큰과 달리 침해된 대상이 남의 fqdn 을 위조하는 것을 ingest.php 가 막는다.
+ *   침해된 대상이 남의 fqdn 을 위조하는 것을 ingest.php 가 막는다.
  *   발급 시 원문을 1회만 보여준다(DB 엔 해시만 저장). 폐기는 is_revoked → 즉시 무효.
  */
 
