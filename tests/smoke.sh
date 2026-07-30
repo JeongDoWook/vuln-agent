@@ -503,6 +503,12 @@ assert_contains "$upbody" "upsvc" "업스트림 바이너리(nginx 1.24.0) 취�
 body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$body" "패키지 DB 가 없는 이미지" "호스트 상세에도 패키지DB 없는 컨테이너 경고"
 
+# CVE 상세은 전역 영향 범위와 실제 설치 위치를 따로 보여준다. 발견 위치에서 사용자가 두 표를
+# 직접 대조하지 않아도 설치 버전 → 이 호스트의 수정 버전을 한 줄로 확인할 수 있어야 한다.
+cvebody=$(curl_ -s -b "$JAR" "$BASE/cve.php?cve=CVE-2023-4911&per_page=100")
+assert_contains "$cvebody" "현재 → 권장 조치" "CVE 상세에 호스트별 권장 조치 열"
+assert_contains "$cvebody" "0:2.34-60.el9_2.3 → 2.34-83.el9_3.7 이상" "CVE 상세가 설치→수정 버전을 함께 안내"
+
 # findings.php 검색 0건 안내(empty.title)에 $q 를 그대로 넣는다 — vg_empty() 가 vg_h() 로
 #   이스케이프하는 것에 기대는 코드다. "이스케이프된 문자열이 응답 어딘가에 있다"만 보면
 #   vg_toolbar 의 검색창 value 가 이미 그걸 만족시켜 공허하게 통과한다(raw 값이 title 에도

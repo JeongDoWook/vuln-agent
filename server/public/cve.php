@@ -20,6 +20,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/distro.php'; // vg_is_kernel_code_pkg — 재시작/재부팅 안내 구분
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('findings');
 
@@ -142,6 +143,7 @@ try {
              JOIN tb_scan s ON s.scan_id = f.scan_id
              JOIN tb_host h ON h.host_id = s.host_id
              LEFT JOIN tb_container c ON c.container_id = f.container_id
+             LEFT JOIN tb_finding_evidence fe ON fe.finding_id = f.finding_id
              JOIN " . vg_latest_scan_subq() . " latest
                ON latest.host_id = s.host_id AND latest.mid = s.scan_id
              WHERE f.cve_id = ?";
@@ -159,7 +161,8 @@ try {
         $offset = ($page - 1) * $perPage;
         $stmt = $pdo->prepare(
             "SELECT h.host_id, h.fqdn, IFNULL(c.cid, '') AS ctr,
-                    f.severity, f.runtime_status, f.package_name, f.installed_version, s.collected_at
+                    f.severity, f.runtime_status, f.package_name, f.installed_version,
+                    f.needs_restart, f.no_fix, fe.fixed_version, s.collected_at
              $locSql
              ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), h.fqdn, c.cid
              LIMIT $perPage OFFSET $offset"
@@ -454,7 +457,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
             ['label' => '등급', 'key' => 'severity', 'width' => '6rem'],
             ['label' => '상태', 'key' => 'runtime_status', 'width' => '7rem'],
             ['label' => '패키지', 'key' => 'package_name'],
-            ['label' => '설치 버전'],
+            ['label' => '현재 → 권장 조치', 'width' => '19rem'],
             ['label' => '수집일', 'nowrap' => true],
         ],
         $locations,
@@ -474,7 +477,25 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
                       : '<span class="why">호스트</span>',
                 'severity'       => fn($l) => vg_sev_badge((string) $l['severity']),
                 'runtime_status' => fn($l) => vg_status_badge($l['runtime_status']),
-                5 => fn($l) => '<code>' . vg_h($l['installed_version']) . '</code>',
+                5 => function ($l) use ($cve) {
+                    $installed = (string) ($l['installed_version'] ?? '');
+                    if (!empty($l['needs_restart'])) {
+                        $action = vg_is_kernel_code_pkg((string) ($l['package_name'] ?? ''))
+                            ? '재부팅'
+                            : (!empty($l['ctr']) ? '컨테이너 재시작' : '프로세스 재시작');
+                        return '<span class="pill">' . $action . '</span>'
+                            . '<div class="why">패키지는 수정됨 · 현재 <code>' . vg_h($installed) . '</code></div>';
+                    }
+                    if (!empty($l['no_fix'])) {
+                        return '<span class="why">수정본 미공개</span>'
+                            . '<div class="why">완화·격리·제거 검토 · 현재 <code>' . vg_h($installed) . '</code></div>';
+                    }
+                    return vg_fix_cell(
+                        $l['fixed_version'] ?? null,
+                        $cve['ref_urls_json'] ?? null,
+                        $installed
+                    );
+                },
                 6 => fn($l) => '<span class="why">' . vg_h($l['collected_at']) . '</span>',
             ],
         ]
