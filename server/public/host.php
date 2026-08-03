@@ -376,7 +376,7 @@ try {
             $st = $pdo->prepare(
                 "SELECT agent_command_id, run_at, created_at
                    FROM tb_agent_command
-                  WHERE host_id = ? AND status = 'pending'
+                  WHERE host_id = ? AND status = 'pending' AND is_deleted = 0
                   ORDER BY run_at IS NULL DESC, run_at, created_at"
             );
             $st->execute([$hostId]);
