@@ -36,7 +36,7 @@ MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
 MEM_MAX="${MEM_MAX:-300M}"             # --limit 시 메모리 상한
 SBOM_DIR="${SBOM_DIR:-/opt/vuln-agent/sbom}" # 선택적 CycloneDX/SPDX 입력 디렉터리
-PROJECT_SCAN_ROOTS="${PROJECT_SCAN_ROOTS:-/opt /srv /app /usr/local}"
+PROJECT_SCAN_ROOTS="${PROJECT_SCAN_ROOTS:-/opt /srv /app /usr/local /var/lib/tomcat* /usr/share/tomcat*}"
 DO_CHANGELOG=1                        # 핵심 패키지 CVE changelog 수집 여부
 DO_LIMIT=0                            # cgroup 리밋 사용 여부
 OUT=""
@@ -1141,10 +1141,71 @@ cap system uptime         'uptime'
 cap system boot_time      'uptime -s 2>/dev/null || who -b'
 cap system timezone       'timedatectl 2>/dev/null || cat /etc/timezone 2>/dev/null'
 
+# jar 파일 하나(내부 임시추출 jar 포함)에서 maven|group:artifact|version 을 뽑는다.
+#   1순위: META-INF/maven/*/pom.properties (정확)
+#   2순위: META-INF/MANIFEST.MF 의 Implementation-*/Bundle-* 헤더
+#   3순위: 파일명 "이름-버전.jar" 패턴 → unknown:이름|버전
+# 확신 없으면(패턴이 안 맞으면) 아무 것도 출력하지 않는다 — 잘못된 매핑이 OSV 오매칭을 유발.
+emit_jar_meta() {
+  local jar="$1" fname="$2" key group name ver found=0
+  if have unzip; then
+    while IFS= read -r key; do
+      group=$(unzip -p "$jar" "$key" 2>/dev/null|sed -n 's/^groupId=//p'|head -1)
+      name=$(unzip -p "$jar" "$key" 2>/dev/null|sed -n 's/^artifactId=//p'|head -1)
+      ver=$(unzip -p "$jar" "$key" 2>/dev/null|sed -n 's/^version=//p'|head -1)
+      if [ -n "$group" ] && [ -n "$name" ] && [ -n "$ver" ]; then
+        printf 'maven|%s:%s|%s\n' "$group" "$name" "$ver"
+        found=1
+      fi
+    done < <(unzip -Z1 "$jar" 2>/dev/null|grep '^META-INF/maven/.*/pom.properties$'|head -20)
+  fi
+  [ "$found" -eq 1 ] && return 0
+  if have unzip; then
+    local manifest title vendor version bname bver
+    manifest=$(unzip -p "$jar" META-INF/MANIFEST.MF 2>/dev/null|tr -d '\r')
+    if [ -n "$manifest" ]; then
+      title=$(printf '%s\n' "$manifest"|sed -n 's/^Implementation-Title: *//p'|head -1)
+      vendor=$(printf '%s\n' "$manifest"|sed -n 's/^Implementation-Vendor-Id: *//p'|head -1)
+      version=$(printf '%s\n' "$manifest"|sed -n 's/^Implementation-Version: *//p'|head -1)
+      bname=$(printf '%s\n' "$manifest"|sed -n 's/^Bundle-SymbolicName: *//p'|head -1)
+      bver=$(printf '%s\n' "$manifest"|sed -n 's/^Bundle-Version: *//p'|head -1)
+      [ -z "$title" ] && title="$bname"
+      [ -z "$version" ] && version="$bver"
+      if [ -n "$title" ] && [ -n "$version" ]; then
+        if [ -n "$vendor" ]; then
+          printf 'maven|%s:%s|%s\n' "$vendor" "$title" "$version"
+        else
+          printf 'maven|unknown:%s|%s\n' "$title" "$version"
+        fi
+        return 0
+      fi
+    fi
+  fi
+  local base="${fname%.jar}"
+  if [[ "$base" =~ ^(.+)-([0-9][0-9A-Za-z.+_]*)$ ]]; then
+    printf 'maven|unknown:%s|%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+  fi
+}
+
+# war/ear/fat-jar 내부의 중첩 jar(BOOT-INF/lib, WEB-INF/lib, lib/*)를 재귀 깊이 1단계까지만
+# 뽑아 emit_jar_meta 를 재적용한다. 아카이브당 최대 200개, 임시파일은 처리 즉시 삭제한다.
+emit_nested_jars() {
+  local archive="$1" inner tmp icount=0
+  have unzip || return 0
+  while IFS= read -r inner; do
+    icount=$((icount+1)); [ "$icount" -le 200 ] || break
+    tmp=$(mktemp 2>/dev/null) || continue
+    if unzip -p "$archive" "$inner" > "$tmp" 2>/dev/null; then
+      emit_jar_meta "$tmp" "$(basename "$inner")"
+    fi
+    rm -f "$tmp"
+  done < <(unzip -Z1 "$archive" 2>/dev/null|grep -E '(^|/)(BOOT-INF/lib|WEB-INF/lib|lib)/[^/]*\.jar$'|head -200)
+}
+
 # Project-local dependencies missed by global package-manager commands.
 # Output: manager|name|version. File count/depth is bounded for predictable load.
 collect_project_dependencies() {
-  local root f name ver group key count=0
+  local root f name ver group count=0
   for root in $PROJECT_SCAN_ROOTS; do
     [ -d "$root" ] || continue
     while IFS= read -r f; do
@@ -1155,9 +1216,10 @@ collect_project_dependencies() {
         */package-lock.json) have jq&&jq -r '.packages//{}|to_entries[]|select(.value.name and .value.version)|"npm|\(.value.name)|\(.value.version)"' "$f" 2>/dev/null;;
         */composer/installed.json) have jq&&jq -r '(.packages//.)[]?|select(.name and .version)|"composer|\(.name)|\(.version|sub("^v";""))"' "$f" 2>/dev/null;;
         *.deps.json) have jq&&jq -r '.targets[]?|keys[]|select(test("/"))|split("/")|"nuget|\(.[0])|\(.[1])"' "$f" 2>/dev/null;;
-        *.jar) if have unzip;then while IFS= read -r key;do group=$(unzip -p "$f" "$key" 2>/dev/null|sed -n 's/^groupId=//p'|head -1);name=$(unzip -p "$f" "$key" 2>/dev/null|sed -n 's/^artifactId=//p'|head -1);ver=$(unzip -p "$f" "$key" 2>/dev/null|sed -n 's/^version=//p'|head -1);[ -n "$group" ]&&[ -n "$name" ]&&[ -n "$ver" ]&&printf 'maven|%s:%s|%s\n' "$group" "$name" "$ver";done < <(unzip -Z1 "$f" 2>/dev/null|grep '^META-INF/maven/.*/pom.properties$'|head -20);fi;;
+        *.jar) emit_jar_meta "$f" "$(basename "$f")"; emit_nested_jars "$f";;
+        *.war|*.ear) emit_nested_jars "$f";;
       esac
-    done < <(find "$root" -xdev -maxdepth 8 -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' \) 2>/dev/null|head -3000)
+    done < <(find "$root" -xdev -maxdepth 8 -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -3000)
   done | sort -u
 }
 # --- 매핑 힌트: 어떤 OVAL/보안트래커로 대조할지 자기설명적으로 기록 ---
