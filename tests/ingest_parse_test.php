@@ -79,6 +79,46 @@ $sbom = vg_ingest_parse_sbom('ctr-a|cyclonedx|' . base64_encode($cdx));
 $eq('SBOM 패키지 2건', count($sbom['packages']), 2);
 $eq('SBOM 형식', $sbom['meta']['ctr-a'][0] ?? null, 'cyclonedx');
 $eq('SBOM 해시', $sbom['meta']['ctr-a'][1] ?? null, hash('sha256', $cdx));
+$eq('SBOM dependencies 없으면 엣지 0건', count($sbom['dependency_edges']), 0);
+
+// ── SBOM dependencies 그래프(부모→자식, 루트 판정) ─────────────────────────
+$cdxDeps = json_encode([
+    'bomFormat' => 'CycloneDX',
+    'metadata'  => ['component' => ['bom-ref'=>'root','name'=>'demo-app','version'=>'1.0.0','purl'=>'pkg:maven/com.example/demo-app@1.0.0']],
+    'components' => [
+        ['bom-ref'=>'ref-a','name'=>'log4j-core','version'=>'2.14.1','purl'=>'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1'],
+        ['bom-ref'=>'ref-b','name'=>'commons-lang','version'=>'3.9','purl'=>'pkg:maven/org.apache.commons/commons-lang@3.9'],
+        ['name'=>'no-ref-no-purl-pkg','version'=>'1.0'],  // ref 없음 → 그래프에서 빠져야 함
+    ],
+    'dependencies' => [
+        ['ref'=>'root',  'dependsOn'=>['ref-a']],
+        ['ref'=>'ref-a', 'dependsOn'=>['ref-b']],
+    ],
+]);
+$sbom2 = vg_ingest_parse_sbom('ctr-b|cyclonedx|' . base64_encode($cdxDeps));
+$edges = $sbom2['dependency_edges'];
+$eq('SBOM 엣지 3건(루트자신+2엣지)', count($edges), 3);
+$rootRow = null; $directRow = null; $transitiveRow = null;
+foreach ($edges as $e) {
+    if ($e[4] === null && $e[2] === 'com.example:demo-app') { $rootRow = $e; }
+    if ($e[4] !== null && $e[5] === 'com.example:demo-app' && $e[2] === 'org.apache.logging.log4j:log4j-core') { $directRow = $e; }
+    if ($e[2] === 'org.apache.commons:commons-lang') { $transitiveRow = $e; }
+}
+$eq('SBOM 루트 자신 행(parent 전부 NULL)', $rootRow !== null, true);
+$eq('SBOM 직접의존 판정(parent=루트)', $directRow !== null, true);
+$eq('SBOM 전이의존(parent=log4j-core)', $transitiveRow[5] ?? null, 'org.apache.logging.log4j:log4j-core');
+
+// ── pom.xml 최상위 직접 의존성(best-effort) ─────────────────────────────────
+$pomDeps = vg_ingest_parse_pom_deps(
+    "org.apache.logging.log4j:log4j-core|2.14.1\n"
+    . "org.springframework.boot:spring-boot-starter-web|\${spring-boot.version}\n"  // property 참조 → 스킵
+    . "junit:junit|\n"                                                              // 버전 없음 → 스킵
+    . "bad-line-no-pipe\n"
+);
+$eq('pom 직접의존 1건(property/버전없음 스킵)', count($pomDeps), 1);
+$eq('pom 직접의존 group:artifact', $pomDeps[0][0], 'org.apache.logging.log4j:log4j-core');
+$eq('pom 직접의존 version', $pomDeps[0][1], '2.14.1');
+
 // ── 노출 상관 ──────────────────────────────────────────────────────────────
 $exp = vg_ingest_parse_exposures(
     "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\n"

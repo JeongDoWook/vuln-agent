@@ -101,6 +101,11 @@ $lang = $data['langpkg'] ?? [];
 $langRows  = vg_ingest_parse_langpkgs($lang);
 $langCount = count($langRows);
 
+// ── pom.xml 직접 의존성(best-effort, projdeps.pomdeps) — 패키지 의존성 그래프의 'pom' 출처 ──
+$projDeps    = $data['projdeps'] ?? [];
+$pomDepRows  = vg_ingest_parse_pom_deps((string) ($projDeps['pomdeps'] ?? ''));
+$pomDepCount = count($pomDepRows);
+
 // ── 노출 상관 파싱 (pipe 구분, 첫 줄은 헤더) ─────────────────
 $expRows = !empty($exp['correlation']) ? vg_ingest_parse_exposures((string) $exp['correlation']) : [];
 $expCount = count($expRows);
@@ -145,6 +150,8 @@ $ctrPkgRows = array_merge($ctrPkgRows, $sbom['packages']);
 foreach ($sbom['meta'] as $cid => $sm) {
     if (isset($ctrRows[$cid])) { $ctrRows[$cid][13]=$sm[0]; $ctrRows[$cid][14]=$sm[1]; }
 }
+$sbomDepEdges  = $sbom['dependency_edges'];   // cid 기준 — tb_package_dependency('sbom' 출처)
+$sbomDepCount  = count($sbomDepEdges);
 
 // rpm DB 파일을 받은 컨테이너 — **중앙이 직접 파싱**해 패키지 행으로 펼친다.
 //   컨테이너 안에 rpm 바이너리가 없고 호스트에도 rpm 이 없으면 에이전트는 DB 를 읽을 수 없다
@@ -211,6 +218,10 @@ try {
             'ctr_exp_count'  => $ctrExpCount,
             'lang_rows'      => $langRows,
             'lang_count'     => $langCount,
+            'pom_dep_rows'   => $pomDepRows,
+            'pom_dep_count'  => $pomDepCount,
+            'sbom_dep_edges' => $sbomDepEdges,
+            'sbom_dep_count' => $sbomDepCount,
             'exp_rows'       => $expRows,
             'exp_count'      => $expCount,
             'proc_rows'      => $procRows,

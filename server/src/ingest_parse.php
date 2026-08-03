@@ -89,6 +89,25 @@ function vg_ingest_parse_langpkgs(array $lang): array
     return array_values($rows);
 }
 
+// ── pom.xml 최상위 직접 의존성(best-effort) — 라인 포맷 group:artifact|version ──────────
+//   agent 의 collect_pom_direct_deps() 가 <dependencyManagement>/<parent> 를 제외하고 최상위
+//   <dependencies> 블록만 뽑아 보낸다. 부모 POM 병합·property 치환은 안 한다(주석 참고).
+//   반환: [manager='maven', 'group:artifact', version] — parent_*=NULL 행으로 저장(source='pom').
+function vg_ingest_parse_pom_deps(string $text): array
+{
+    $rows = [];
+    foreach (preg_split('/\r?\n/', $text) as $line) {
+        $line = trim($line);
+        if ($line === '') { continue; }
+        $f = explode('|', $line, 2);
+        if (count($f) !== 2) { continue; }
+        $ga = trim($f[0]); $ver = trim($f[1]);
+        if ($ga === '' || $ver === '' || !str_contains($ga, ':') || str_contains($ver, '${')) { continue; }
+        $rows[$ga] = [mb_strimwidth($ga, 0, 255, ''), mb_strimwidth($ver, 0, 255, '')];
+    }
+    return array_values($rows);
+}
+
 // ── 노출 상관 (pipe 구분, 첫 줄 헤더) ──────────────────────────────────────
 //   pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs
 function vg_ingest_parse_exposures(string $correlation): array
@@ -203,23 +222,78 @@ function vg_ingest_parse_container_list(string $listText): array
     return $rows;
 }
 
-/** Parse externally supplied CycloneDX/SPDX SBOM lines: cid|format|base64(json). */
+/**
+ * purl(pkg:type/name@ver)에서 (manager,정규화된 name) 을 뽑는다. name 은 purl 이 있으면 그걸로
+ * 덮어쓴다(maven 은 group/artifact → group:artifact 로 재조합). 매핑 실패 시 mgr=''.
+ */
+function vg_ingest_sbom_resolve_purl(string $purl, string $fallbackName): array
+{
+    if (!preg_match('#^pkg:([^/]+)/([^@?]+)#', $purl, $m)) { return ['', $fallbackName]; }
+    $type = strtolower($m[1]);
+    $decoded = urldecode($m[2]);
+    if ($type === 'maven' && str_contains($decoded, '/')) {
+        $pos = strrpos($decoded, '/');
+        $decoded = substr($decoded, 0, $pos) . ':' . substr($decoded, $pos + 1);
+    }
+    $mgr = ['pypi'=>'pip','npm'=>'npm','gem'=>'gem','composer'=>'composer','maven'=>'maven','nuget'=>'nuget','cargo'=>'cargo','golang'=>'go','deb'=>'dpkg','rpm'=>'rpm','apk'=>'apk'][$type] ?? '';
+    return [$mgr, $decoded ?: $fallbackName];
+}
+
+/**
+ * Parse externally supplied CycloneDX/SPDX SBOM lines: cid|format|base64(json).
+ *
+ * dependency_edges (CycloneDX 만 — SPDX 의 relationships 는 YAGNI, 실제 요구 생기면 추가):
+ *   각 행 [cid, child_manager, child_name, child_version, parent_manager|null, parent_name|null, parent_version|null]
+ *   parent_*가 전부 null 인 행 = metadata.component(루트) 자신. 그 외는 실제 parent→child 엣지.
+ *   ref 매핑에 필요한 bom-ref/purl 이 없는 컴포넌트는 엣지에서 조용히 빠진다(확신 없으면 안 만든다).
+ */
 function vg_ingest_parse_sbom(string $text): array
 {
-    $packages=[]; $meta=[];
+    $packages=[]; $meta=[]; $edges=[];
     foreach (preg_split('/\r?\n/', $text) as $line) {
         $f=explode('|',$line,3); if(count($f)!==3||$f[0]==='')continue;
         $raw=base64_decode($f[2],true); $doc=$raw!==false?json_decode($raw,true):null; if(!is_array($doc))continue;
         $cid=mb_strimwidth($f[0],0,255,''); $format=strtolower($f[1]); $meta[$cid]=[$format,hash('sha256',$raw)];
         $items=$format==='spdx'?($doc['packages']??[]):($doc['components']??[]);
+        $refMap=[];   // bom-ref|purl => [manager,name,version] (dependencies 그래프 조립용, cyclonedx 만)
         foreach($items as $item){
             $name=trim((string)($item['name']??''));$ver=trim((string)($item['version']??$item['versionInfo']??''));$purl=(string)($item['purl']??'');
             if($purl===''&&isset($item['externalRefs']))foreach($item['externalRefs'] as $ref){if(($ref['referenceType']??'')==='purl'){$purl=(string)($ref['referenceLocator']??'');break;}}
-            $mgr='';if(preg_match('#^pkg:([^/]+)/([^@?]+)#',$purl,$m)){$type=strtolower($m[1]);$decoded=urldecode($m[2]);if($type==='maven'&&str_contains($decoded,'/')){$pos=strrpos($decoded,'/');$decoded=substr($decoded,0,$pos).':'.substr($decoded,$pos+1);}$name=$decoded?:$name;$mgr=['pypi'=>'pip','npm'=>'npm','gem'=>'gem','composer'=>'composer','maven'=>'maven','nuget'=>'nuget','cargo'=>'cargo','golang'=>'go','deb'=>'dpkg','rpm'=>'rpm','apk'=>'apk'][$type]??'';}
+            [$mgr,$name]=vg_ingest_sbom_resolve_purl($purl,$name);
             if($mgr!==''&&$name!==''&&$ver!=='')$packages[$cid.'|'.$mgr.'|'.$name]=[$cid,$mgr,mb_strimwidth($name,0,255,''),mb_strimwidth($ver,0,255,''),''];
+            if($format!=='spdx'){
+                $ref=(string)($item['bom-ref']??$purl);
+                if($ref!==''&&$mgr!==''&&$name!==''&&$ver!=='')$refMap[$ref]=[$mgr,mb_strimwidth($name,0,255,''),mb_strimwidth($ver,0,255,'')];
+            }
+        }
+        if($format==='spdx')continue;   // SPDX relationships 는 이번 스코프 아님(YAGNI)
+
+        // 루트(최상위 프로젝트) 자신 — 있으면 parent 전부 NULL 인 행으로 표시(트리의 뿌리 판정용)
+        $rootRef='';
+        if(isset($doc['metadata']['component'])&&is_array($doc['metadata']['component'])){
+            $rc=$doc['metadata']['component'];
+            $rname=trim((string)($rc['name']??''));$rver=trim((string)($rc['version']??''));$rpurl=(string)($rc['purl']??'');
+            [$rmgr,$rname]=vg_ingest_sbom_resolve_purl($rpurl,$rname);
+            $rootRef=(string)($rc['bom-ref']??$rpurl);
+            if($rootRef!==''&&$rmgr!==''&&$rname!==''&&$rver!==''){
+                $refMap[$rootRef]=[$rmgr,mb_strimwidth($rname,0,255,''),mb_strimwidth($rver,0,255,'')];
+                $edges[]=[$cid,$rmgr,mb_strimwidth($rname,0,255,''),mb_strimwidth($rver,0,255,''),null,null,null];
+            }
+        }
+
+        // dependencies[].ref → dependsOn[] 을 부모→자식 엣지로 펼친다.
+        foreach((array)($doc['dependencies']??[]) as $dep){
+            if(!is_array($dep))continue;
+            $pRef=(string)($dep['ref']??''); if($pRef===''||!isset($refMap[$pRef]))continue;
+            [$pMgr,$pName,$pVer]=$refMap[$pRef];
+            foreach((array)($dep['dependsOn']??[]) as $cRef){
+                $cRef=(string)$cRef; if($cRef===''||!isset($refMap[$cRef]))continue;
+                [$cMgr,$cName,$cVer]=$refMap[$cRef];
+                $edges[]=[$cid,$cMgr,$cName,$cVer,$pMgr,$pName,$pVer];
+            }
         }
     }
-    return ['packages'=>array_values($packages),'meta'=>$meta];
+    return ['packages'=>array_values($packages),'meta'=>$meta,'dependency_edges'=>$edges];
 }
 // ── 컨테이너 내부 패키지 — cid|manager|name|version|source ───────────────
 function vg_ingest_parse_container_packages(string $packagesText): array

@@ -1222,6 +1222,38 @@ collect_project_dependencies() {
     done < <(find "$root" -xdev -maxdepth 8 -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -3000)
   done | sort -u
 }
+
+# pom.xml 최상위 <dependencies> 만 뽑는다(best-effort — 부모 POM 병합·dependencyManagement·
+# BOM import 는 계산 안 함, mvn 미호출). <dependencyManagement>/<parent> 블록은 이 프로젝트의
+# 실제 직접 의존성이 아니므로 먼저 걷어낸 뒤 남은 <dependency> 블록만 읽는다. 버전이
+# ${property} 참조라 확정 불가능하면 조용히 스킵(확신 없으면 안 만든다).
+# 출력: group:artifact|version. 개수 상한 500(파일 500개, 결과 500줄) — 비정상적으로 큰/많은
+# pom.xml 이 있어도 상한을 지킨다.
+collect_pom_direct_deps() {
+  local root f count=0
+  for root in $PROJECT_SCAN_ROOTS; do
+    [ -d "$root" ] || continue
+    while IFS= read -r f; do
+      count=$((count+1)); [ "$count" -le 500 ] || return 0
+      awk '
+        BEGIN{mgmt=0;par=0;indep=0;g="";a="";v=""}
+        /<dependencyManagement>/{mgmt++;next}
+        /<\/dependencyManagement>/{if(mgmt>0)mgmt--;next}
+        /<parent>/{par=1;next}
+        /<\/parent>/{par=0;next}
+        mgmt>0 || par==1{next}
+        /<dependency>/{indep=1;g="";a="";v="";next}
+        /<\/dependency>/{
+          if(indep && g!="" && a!="" && v!="" && v !~ /\$\{/) print g":"a"|"v
+          indep=0;next
+        }
+        indep && /<groupId>/{gsub(/.*<groupId>|<\/groupId>.*/,"");g=$0}
+        indep && /<artifactId>/{gsub(/.*<artifactId>|<\/artifactId>.*/,"");a=$0}
+        indep && /<version>/{gsub(/.*<version>|<\/version>.*/,"");v=$0}
+      ' "$f"
+    done < <(find "$root" -xdev -maxdepth 8 -type f -name pom.xml 2>/dev/null|head -500)
+  done | sort -u | head -500
+}
 # --- 매핑 힌트: 어떤 OVAL/보안트래커로 대조할지 자기설명적으로 기록 ---
 OS_ID="$( . /etc/os-release 2>/dev/null; echo "${ID:-unknown}" )"
 OS_CPE="$( . /etc/os-release 2>/dev/null; echo "${CPE_NAME:-}" )"
@@ -1341,6 +1373,11 @@ have cargo && cap langpkg cargo 'cargo install --list 2>/dev/null'
 have dotnet && cap langpkg nuget 'dotnet tool list -g 2>/dev/null | awk "NR>2 && NF>=2 {print \$1,\$2}"'
 collect_project_dependencies | head -c "$MAX_BYTES" > "$TMP/langpkg__inventory.txt" 2>/dev/null || true
 [ -s "$TMP/langpkg__inventory.txt" ] || rm -f "$TMP/langpkg__inventory.txt"
+# pom.xml 직접 의존성 — 패키지 의존성 그래프의 'pom' 출처(server/src/ingest_parse.php 참고).
+#   cap 이 아니라 직접 리다이렉트하는 이유: cap 은 bash -c 서브셸에서 돌아 이 파일에 정의된
+#   함수를 못 본다(langpkg__inventory.txt 와 같은 이유로 같은 패턴을 쓴다).
+collect_pom_direct_deps | head -c "$MAX_BYTES" > "$TMP/projdeps__pomdeps.txt" 2>/dev/null || true
+[ -s "$TMP/projdeps__pomdeps.txt" ] || rm -f "$TMP/projdeps__pomdeps.txt"
 
 # ==================================================================
 # 7) 컨테이너 이미지 (이미지별 CVE 매핑)

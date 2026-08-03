@@ -38,6 +38,11 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     $langRows  = $parsed['lang_rows'];
     $langCount = (int) $parsed['lang_count'];
 
+    $pomDepRows   = $parsed['pom_dep_rows']   ?? [];
+    $pomDepCount  = (int) ($parsed['pom_dep_count'] ?? 0);
+    $sbomDepEdges = $parsed['sbom_dep_edges'] ?? [];
+    $sbomDepCount = (int) ($parsed['sbom_dep_count'] ?? 0);
+
     $expRows  = $parsed['exp_rows'];
     $expCount = (int) $parsed['exp_count'];
 
@@ -233,6 +238,33 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
                 ($f[5] !== '' ? (int) $f[5] : null),
                 $f[6], $f[7], $f[8],
             ]);
+        }
+    }
+
+    // 패키지 의존성 그래프 — SBOM(정확) + pom.xml(best-effort 직접선언). 재스캔은 새 scan_id 라
+    //   같은 (scan_id,container_id) 로 다시 쌓이지 않는다(별도 DELETE 불필요, 이 분기 자체가
+    //   "새 스냅샷일 때만" 이다).
+    if ($sbomDepCount > 0 || $pomDepCount > 0) {
+        $insDep = $pdo->prepare(
+            'INSERT INTO tb_package_dependency
+                (scan_id, container_id, child_manager, child_name, child_version,
+                 parent_manager, parent_name, parent_version, source)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        // SBOM — cid 로 실제 컨테이너를 찾은 것만 저장한다(목록에 없는 컨테이너는 ctrPkgRows 와
+        //   동일 기준으로 버린다). $ctrIds 는 위 컨테이너 벌크 INSERT 에서 채워진 cid→container_id.
+        foreach ($sbomDepEdges as $e) {
+            $cidKey = $e[0];
+            if (!isset($ctrIds[$cidKey])) { continue; }
+            $insDep->execute([
+                $scanId, $ctrIds[$cidKey], $e[1], $e[2], $e[3],
+                $e[4], $e[5], $e[6], 'sbom',
+            ]);
+        }
+        // pom.xml — 호스트 자신의 직접 의존성(container_id=0), parent 전부 NULL.
+        foreach ($pomDepRows as $r) {
+            [$ga, $ver] = $r;
+            $insDep->execute([$scanId, 0, 'maven', $ga, $ver, null, null, null, 'pom']);
         }
     }
 
