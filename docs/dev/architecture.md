@@ -130,8 +130,12 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 | my.cnf | 미적용(기본값) | 적용(charset/보안 튜닝) |
 | 프로젝트 | `vulnagent-dev`(메인) · `vulnagent-dev-<워크트리>`(web+scheduler) | `vulnagent` |
 
-각 대상 서버는 `agent/install-agent.sh` 로 systemd-timer(우선)/cron(폴백)을 등록해 기본
-**매시간** 자동 수집·전송한다. 중앙 서버 자신을 스캔하는 로컬 에이전트만 루프백(`8081`)
+각 대상 서버는 `agent/install-agent.sh` 로 systemd 가 있으면 **상시 데몬**(`vuln-agent.service`,
+`run.sh` 가 10초마다 `agent-poll.php` 를 poll)을 등록해 초기 주기(기본 매시간, `--schedule`)로
+정기수집을 시작한다. 이후 주기는 poll 응답의 `poll_schedule_seconds` 를 따르므로, 중앙 웹의
+호스트 상세에서 주기를 바꾸면 다음 poll 에 바로 반영된다(SSH 재설치 불필요) — "지금 수집" 같은
+예약 명령도 같은 poll 로 실려온다. systemd 가 없는 노드만 cron 폴백(`run.sh --once` 정기 실행,
+정기수집만 가능)한다. 중앙 서버 자신을 스캔하는 로컬 에이전트만 루프백(`8081`)
 평문 경로를 쓰고, 그 외 원격 서버 에이전트는 모두 Caddy 의 HTTPS 엔드포인트로 전송한다.
 
 **스키마 적용**은 `deploy/migrate.sh` 가 맡는다 — `db/migrations/*.sql` 중 아직 안 든 것만

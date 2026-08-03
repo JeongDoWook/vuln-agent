@@ -37,7 +37,7 @@ CVE와 매칭한다. 단순 스캐너와 다른 점은 **"이 취약점이 이 �
 2. **EPSS + CISA KEV** — 실제 악용 확률/악용된 목록으로 우선순위. CVSS만 안 봄.
 3. **설명가능한 오탐 억제** — 백포트 changelog 를 근거로 억제하고, **왜 안전한지 근거를 화면에
    남긴다**(숨기지 않는다). VEX 문서 산출은 하지 않기로 했다 — 소비할 곳이 없다(YAGNI).
-4. **경량 상주 에이전트 + 시계열** — 매시간 수집, 변화 추적(`changes.php`), 함대 대시보드.
+4. **경량 상주 에이전트 + 시계열** — 상시 데몬으로 주기 수집(웹에서 즉시/예약/주기변경), 변화 추적(`changes.php`), 함대 대시보드.
 5. **KISA 국내 연동** — 해외 도구가 안 하는 국내 보안공지 매칭.
 
 ---
@@ -92,7 +92,12 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 ### `agent/install-agent.sh` — 배포 설치기
 각 대상 서버에서 `sudo bash install-agent.sh` — 인자 없이 실행하면 서버 주소·토큰·주기를 물어본다
 (TTY 아니면 종전대로 `--server/--token` 인자 필수. 도메인만 넣어도 스킴·`/ingest.php` 자동 보정).
-systemd-timer(우선)/cron 으로 주기 수집(기본 매시간) 등록 + 즉시 1회 실행(통신 확인). 설치물은
+systemd 가 있으면 **상시 데몬**(`vuln-agent.service`, `Type=simple`)으로 등록해 `run.sh` 가 10초마다
+중앙의 `agent-poll.php` 를 poll 한다 — 초기 정기수집 주기(`--schedule`, 기본 hourly)는 시작값일
+뿐이고, 이후 주기는 poll 응답의 `poll_schedule_seconds` 를 따른다(중앙 웹의 호스트 상세에서
+바꾸면 다음 poll 에 즉시 반영, SSH 재설치 불필요). "지금 수집" 예약도 poll 로 실려온다.
+systemd 가 없는 노드만 **cron 폴백**(`run.sh --once` 를 주기 실행, 정기수집만 가능)한다. 즉시 1회
+실행(통신 확인)은 스케줄 방식과 무관하게 항상 수행한다. 설치물은
 `--prefix`(기본 `/opt/vuln-agent`) 아래 `bin`/`etc`/`logs` 로 모이고, 토큰은
 `<prefix>/etc/agent.env`(600) 로 관리(ps 노출 방지). **프로세스** 인벤토리(`collect_processes`)는
 다른 mount namespace(컨테이너)를 건너뛰고 호스트 자신만 본다 — 컨테이너 오버레이 경로의 `dpkg -S`
@@ -114,7 +119,7 @@ vuln-agent/
 ├── secrets/(*.txt gitignore)   data/(mysql, gitignore)              # 비밀값·DB 데이터 (루트 유지)
 ├── agent/
 │   ├── vuln-inventory-agent.sh   # 수집(패키지·노출·실행프로세스), --send 전송
-│   └── install-agent.sh          # 각 서버 배포·스케줄(systemd-timer/cron)
+│   └── install-agent.sh          # 각 서버 배포·스케줄(systemd 상시 데몬/cron 폴백)
 ├── server/
 │   ├── Dockerfile
 │   ├── public/   # ingest·rematch·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
@@ -142,8 +147,8 @@ vuln-agent/
 
 ```
 [원격 대상 서버]                    [중앙 서버 · Docker]
-쉘 에이전트 ── 매시간(systemd-timer) ──▶ Caddy(HTTPS:8080) ──▶ ingest.php ──▶ MySQL(tb_*)
-(수집, install-agent.sh 로 배포)     JSON POST                              │
+쉘 에이전트 ── 상시 데몬(10초 poll) ──▶ Caddy(HTTPS:8080) ──▶ ingest.php ──▶ MySQL(tb_*)
+(수집, install-agent.sh 로 배포)     JSON POST(주기가 되면)                  │
                                                                            ▼
 [중앙 서버 자신(로컬 에이전트)] ─▶ web:8081(루프백 평문) ──────────────────┘
                                                                            │
@@ -231,7 +236,12 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 - [x] **정밀 런타임 수집** — 실행 프로세스 전체(실행중/사용중) + 노출(포트) → 상태 7단계 구분
 - [x] **OSV 자동 매칭** — 수집 전 패키지를 OSV 조회(배포판 ecosystem, 소스패키지·버전필터) → 취약점 전체 발굴 + 조치안(fixed_version)
 - [x] **EPSS/KEV** — 악용확률 + 악용목록으로 우선순위·정렬
-- [x] **배포 설치기** — `agent/install-agent.sh` (systemd-timer 우선/cron 폴백, 매시간 자동 수집)
+- [x] **배포 설치기** — `agent/install-agent.sh` (systemd 상시 데몬 우선/cron 폴백, 초기 매시간)
+- [x] **상시 데몬 전환 + 웹 수집 제어** — 에이전트를 systemd oneshot 타이머(매시간)에서 상시
+      데몬(`run.sh`, 10초마다 `agent-poll.php` poll)으로 전환. 중앙 웹(호스트 상세)에서 즉시
+      실행·예약 실행·주기 변경(`tb_host.poll_schedule_seconds`)이 가능해져 SSH 재설치가
+      필요 없어졌다. `deploy/agent_schedule.sh`(SSH 로 주기 변경)는 아직 데몬 전환 전인
+      구버전 노드·systemd 가 없는 cron 폴백 노드에만 남은 보조 수단이다.
 - [x] **HTTPS 배포** — `caddy/` 리버스 프록시가 TLS 종료(Let's Encrypt DNS-01, 현재 자체서명).
       접속 `https://<운영-도메인>`(평문 80 은 https 로 308 리다이렉트, 기존 `:8080` 도 계속 동작).
       도메인은 저장소에 두지 않고 `.env.prod` 의 `PROD_DOMAIN` 으로 주입한다(Caddyfile 이 `{$PROD_DOMAIN}` 로 읽는다).

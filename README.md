@@ -40,7 +40,7 @@
 데이터 흐름: **에이전트(JSON) ─POST(HTTPS)→ `ingest.php` → MySQL(`tb_*`) → 웹 현황**
 
 ```
-agent/    수집 에이전트 (Bash) — 패키지·런타임 노출·백포트 changelog 수집 + install-agent.sh(systemd-timer/cron 자동 배포). 설치·운영은 agent/README.md
+agent/    수집 에이전트 (Bash) — 패키지·런타임 노출·백포트 changelog 수집 + install-agent.sh(systemd 상시 데몬/cron 폴백 자동 배포). 설치·운영은 agent/README.md
 server/   PHP 중앙 서버 — 수신 API(ingest)·Export API + 웹(대시보드·취약점·자산·수집·계정·연동·기록) + 매처
 deploy/   배포 인프라 — compose 파일·러너·caddy(HTTPS 리버스 프록시, 운영 전용)·migrate.sh(스키마 자동 적용)·wt.sh
 db/       MySQL 스키마 — tb_ 접두사 + 감사 4컬럼. 최상위 *.sql 은 빈 볼륨 초기화용, 증분 변경은 migrations/
@@ -92,7 +92,7 @@ cd deploy
 
 ## 문서 지도
 
-- [`agent/README.md`](agent/README.md) — 에이전트 설치·운영의 단일 출처(설치·권한·갱신·주기 변경·제거·수집 항목). 설치 한 번이면 systemd 타이머가 매시간 자동 재실행(계속 켜둘 필요 없음), 전송 URL 주의점.
+- [`agent/README.md`](agent/README.md) — 에이전트 설치·운영의 단일 출처(설치·권한·갱신·주기 변경·제거·수집 항목). 설치 한 번이면 systemd 상시 데몬이 10초마다 poll 하며 주기가 되면 알아서 재수집(계속 켜둘 필요 없음, 중앙 웹에서 즉시/예약/주기변경 가능), 전송 URL 주의점.
 - [`docs/dev/피드소스-역할.md`](docs/dev/피드소스-역할.md) — NVD/OSV·EPSS·KEV·KISA 각 커넥터가 무슨 질문에 답하는지.
 - [`docs/dev/architecture.md`](docs/dev/architecture.md) — 시스템 구조·매처 규칙·배포 방식.
 - [`docs/dev/export-api.md`](docs/dev/export-api.md) — 스캔 결과 내보내기 API(JSON/XML)·API 토큰 발급.
@@ -217,8 +217,10 @@ Oracle ELSA OVAL 커넥터가 릴리스별 영향 여부와 수정 EVR을 직접
 
 ## 에이전트 설치 · 운영
 
-방식은 **에이전트-사이드 push** — 각 서버가 로컬 스케줄(systemd 타이머)로 수집해 중앙으로 POST 한다.
-중앙이 각 호스트로 들어가지 않으므로 대상 서버엔 아웃바운드 HTTPS 하나만 열면 된다.
+방식은 **에이전트-사이드 push** — 각 서버가 상시 데몬(systemd, 10초마다 중앙을 poll)으로 주기가
+되면 수집해 중앙으로 POST 한다. 중앙이 각 호스트로 들어가지 않으므로 대상 서버엔 아웃바운드
+HTTPS 하나만 열면 된다. 중앙 웹(호스트 상세)에서 즉시 실행·예약 실행·주기 변경이 가능하고
+다음 poll 에 바로 반영된다 — SSH 재설치가 필요 없다.
 
 대상 서버(Linux)에서 스크립트 2개와 루트 CA 를 `/opt/vuln-agent/` 에 두고 한 번 실행하면 끝이다.
 세 파일은 자산 화면의 "에이전트 설치 안내" 에서 받고, **인자 없이 실행하면** 중앙 주소·토큰·주기를
@@ -264,13 +266,16 @@ bash deploy/update.sh
 구 에이전트가 보내는 옛 페이로드는 새 서버가 그대로 처리한다(검증됨) — 새 필드가 없으면
 그 기능만 비활성이고 수집은 계속된다. 그러니 **에이전트는 급하지 않다.**
 
-업데이트는 **스크립트 교체 한 줄**이면 된다. 타이머·토큰(`etc/agent.env`)은 그대로 두면 되므로
-`install-agent.sh` 를 다시 돌릴 필요가 없다(다시 돌리면 서버 주소·토큰을 또 물어본다).
+업데이트는 **스크립트 교체 한 줄**이면 된다. 데몬·토큰(`etc/agent.env`)은 그대로 두면 되므로
+`install-agent.sh` 를 다시 돌릴 필요가 없다(다시 돌리면 서버 주소·토큰을 또 물어본다). 여러
+노드를 한 번에 올리려면 `deploy/agent_push.sh` 를 쓴다(agent/README.md 참고).
 
 ```bash
 # 각 대상 서버에서 — 새 agent/ 를 받아온 뒤
 sudo cp vuln-inventory-agent.sh /opt/vuln-agent/bin/vuln-inventory-agent.sh
-sudo /opt/vuln-agent/bin/run.sh          # 즉시 1회 수집해 확인(선택)
+sudo /opt/vuln-agent/bin/run.sh --once   # 즉시 1회 수집해 확인(선택). --once 없이 돌리면
+                                          # 데몬(while-loop)이라 끝나지 않는다 — 상시 서비스는
+                                          # 이미 systemctl 로 돌고 있으니 보통은 안 건드려도 된다.
 ```
 
 ### 파일 구조 (compose · 모두 `deploy/` 하위)
