@@ -1284,6 +1284,36 @@ form.card .btn--block { margin-top: 1.1rem; }
 .agent-progress__track::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .agent-progress__meta { color: var(--muted); font-size: .75rem; }
 .agent-progress.is-stale { border-color: var(--med-bd); background: var(--med-bg); }
+
+.collection-status-btn {
+  display: inline-flex; align-items: center; gap: .45rem; min-height: 2.25rem; padding: 0 .75rem;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text-2);
+  font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer;
+}
+.collection-status-btn:hover { border-color: var(--accent); color: var(--accent-2); }
+.collection-status-btn__dot { width: .45rem; height: .45rem; border-radius: 50%; background: var(--muted); }
+.collection-status-btn.is-active .collection-status-btn__dot { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 15%, transparent); }
+.collection-status-btn b { min-width: 1.15rem; padding: .08rem .3rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .68rem; text-align: center; }
+.collection-overview__summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: .65rem; }
+.collection-overview__summary > div { padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--sunken); }
+.collection-overview__summary span { display: block; color: var(--muted); font-size: .72rem; }
+.collection-overview__summary strong { display: block; margin-top: .2rem; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.collection-overview__hint { margin: .9rem 0; color: var(--muted); font-size: .75rem; }
+.collection-overview__list { display: grid; gap: .6rem; max-height: min(56vh, 540px); overflow: auto; }
+.collection-overview__empty { padding: 2.5rem 1rem; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); text-align: center; }
+.collection-item { position: relative; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.collection-item:hover { border-color: var(--accent); }
+.collection-item.is-stale, .collection-item.is-failed { border-color: var(--med-bd); background: var(--med-bg); }
+.collection-item__head, .collection-item__meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.collection-item__head > div { min-width: 0; }
+.collection-item__head strong, .collection-item__head span { display: block; }
+.collection-item__head > div span { overflow: hidden; color: var(--muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.collection-item__state { flex: none; padding: .2rem .5rem; border-radius: 999px; background: var(--sunken); color: var(--text-2); font-size: .68rem; font-weight: 750; }
+.collection-item.is-running .collection-item__state { background: var(--ok-bg); color: var(--ok); }
+.collection-item progress { display: block; width: 100%; height: .45rem; margin: .7rem 0 .55rem; accent-color: var(--accent); }
+.collection-item__meta { color: var(--muted); font-size: .72rem; }
+.collection-item__link { position: absolute; inset: 0; border-radius: inherit; }
+.collection-item__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .actions--stack > form.agent-control__row {
   display: grid;
   grid-template-columns: minmax(11rem, 1fr) minmax(13rem, 17rem) 4.5rem;
@@ -1826,6 +1856,9 @@ form.card .btn--primary:active { transform: translateY(0); }
 }
 
 @media (max-width: 680px) {
+  .collection-status-btn > span:not(.collection-status-btn__dot) { display: none; }
+  .collection-overview__summary { grid-template-columns: repeat(2, 1fr); }
+  .collection-item__meta { align-items: flex-start; flex-direction: column; gap: .2rem; }
   /* 표를 행 단위 카드로 접는다 — 카드가 표 자리를 대신하므로 감싼 .card 는 껍데기를 벗는다 */
   .card:has(> .data-table:only-child), .card:has(> .card__body > .data-table) { overflow: visible; background: transparent; border: 0; padding: 0; box-shadow: none; }
   .data-table, .data-table tbody, .data-table tr, .data-table td { display: block; width: 100%; }

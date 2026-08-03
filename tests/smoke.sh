@@ -451,6 +451,10 @@ assert_contains "$progress_resp" '"ok":true' "에이전트 진행 heartbeat 인�
 progress_status=$(curl_ -s -b "$JAR" "$BASE/agent-command-status.php?id=$WEB01_ID")
 assert_contains "$progress_status" '"status":"running"' "진행 상태 API가 running 반환"
 assert_contains "$progress_status" '"progress_percent":40' "진행 상태 API가 40% 반환"
+progress_overview=$(curl_ -s -b "$JAR" "$BASE/agent-command-overview.php")
+assert_contains "$progress_overview" '"active":' "전체 수집 현황 API가 활성 작업 집계"
+assert_contains "$progress_overview" '"progress_percent":40' "전체 수집 현황 API가 전체 진행률 집계"
+assert_contains "$progress_overview" "\"agent_command_id\":$PROGRESS_CMD" "전체 수집 현황 API가 실행 중인 자산 반환"
 docker exec "$WEB_CONTAINER" php -r \
   '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
    vg_pdo()->prepare("DELETE FROM tb_agent_command WHERE agent_command_id=?")->execute([(int)$argv[1]]);' \

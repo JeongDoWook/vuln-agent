@@ -263,6 +263,101 @@
     if (auto && typeof auto.showModal === 'function' && !auto.open) { auto.showModal(); }
   });
 
+  // --- 전체 에이전트 수집 현황 ---------------------------------------------
+  document.addEventListener('DOMContentLoaded', function () {
+    var overview = document.querySelector('[data-collection-overview]');
+    if (!overview) { return; }
+    var dialog = overview.closest('dialog');
+    var badge = document.querySelector('[data-collection-status-count]');
+    var list = overview.querySelector('[data-overview-list]');
+    var timer = null;
+
+    function duration(seconds) {
+      seconds = Math.max(0, Number(seconds) || 0);
+      if (seconds < 60) { return Math.floor(seconds) + '초'; }
+      return Math.floor(seconds / 60) + '분 ' + Math.floor(seconds % 60) + '초';
+    }
+    function statusLabel(status) {
+      return {running: '수집 중', pending: '대기 중', done: '완료', failed: '실패'}[status] || status;
+    }
+    function text(tag, className, value) {
+      var node = document.createElement(tag);
+      if (className) { node.className = className; }
+      node.textContent = value;
+      return node;
+    }
+    function renderCommand(command) {
+      var item = document.createElement('article');
+      item.className = 'collection-item is-' + command.status;
+      var head = document.createElement('div');
+      head.className = 'collection-item__head';
+      var identity = document.createElement('div');
+      identity.appendChild(text('strong', '', command.hostname || command.fqdn));
+      identity.appendChild(text('span', '', command.fqdn));
+      head.appendChild(identity);
+      head.appendChild(text('span', 'collection-item__state', statusLabel(command.status)));
+      item.appendChild(head);
+
+      var pct = command.status === 'done' ? 100 : Number(command.progress_percent || 0);
+      var progress = document.createElement('progress');
+      progress.max = 100;
+      progress.value = pct;
+      progress.textContent = pct + '%';
+      item.appendChild(progress);
+
+      var meta = document.createElement('div');
+      meta.className = 'collection-item__meta';
+      var message = command.progress_message;
+      if (!message) { message = command.status === 'pending' ? '다음 poll에서 실행됩니다.' : statusLabel(command.status); }
+      meta.appendChild(text('span', '', pct + '% · ' + message));
+      var timing = command.elapsed_seconds === null ? '' : '경과 ' + duration(command.elapsed_seconds);
+      if (command.status === 'running' && command.heartbeat_age !== null) {
+        timing += ' · ' + (Number(command.heartbeat_age) > 180 ? '통신 지연' : '통신 정상');
+        if (Number(command.heartbeat_age) > 180) { item.classList.add('is-stale'); }
+      }
+      meta.appendChild(text('span', '', timing));
+      item.appendChild(meta);
+      var link = document.createElement('a');
+      link.href = '/host.php?id=' + encodeURIComponent(command.host_id);
+      link.className = 'collection-item__link';
+      link.setAttribute('aria-label', (command.hostname || command.fqdn) + ' 자산 상세 열기');
+      item.appendChild(link);
+      return item;
+    }
+    function render(data) {
+      var summary = data.summary || {};
+      overview.querySelector('[data-overview-active]').textContent = String(summary.active || 0);
+      overview.querySelector('[data-overview-running]').textContent = String(summary.running || 0);
+      overview.querySelector('[data-overview-pending]').textContent = String(summary.pending || 0);
+      overview.querySelector('[data-overview-progress]').textContent = (summary.progress_percent || 0) + '%';
+      var active = Number(summary.active || 0);
+      badge.textContent = String(active);
+      badge.hidden = active === 0;
+      badge.closest('.collection-status-btn').classList.toggle('is-active', active > 0);
+      list.replaceChildren();
+      if (!data.commands || !data.commands.length) {
+        list.appendChild(text('div', 'collection-overview__empty', '현재 또는 최근 수집 작업이 없습니다.'));
+        return;
+      }
+      data.commands.forEach(function (command) { list.appendChild(renderCommand(command)); });
+    }
+    function refresh(schedule) {
+      fetch('/agent-command-overview.php', {headers: {'Accept': 'application/json'}})
+        .then(function (response) { if (!response.ok) { throw new Error('status'); } return response.json(); })
+        .then(render)
+        .catch(function () {
+          if (dialog.open) { list.replaceChildren(text('div', 'collection-overview__empty', '수집 현황을 불러오지 못했습니다.')); }
+        })
+        .then(function () {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(function () { refresh(true); }, dialog.open ? 3000 : 15000);
+        });
+    }
+    dialog.addEventListener('close', function () { window.clearTimeout(timer); refresh(true); });
+    document.querySelector('[data-collection-status-open]').addEventListener('click', function () { refresh(true); });
+    refresh(true);
+  });
+
   // 뒤로가기(bfcache)로 복귀하면 멈춰있던 스피너를 되돌린다.
   window.addEventListener('pageshow', function (e) {
     if (!e.persisted) { return; }

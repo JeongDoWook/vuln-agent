@@ -9,6 +9,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../format.php';
 require_once __DIR__ . '/../audit.php';
 require_once __DIR__ . '/nav.php';
+require_once __DIR__ . '/components.php';
 
 /** 정적 파일 URL + 캐시버스팅(mtime). 파일이 없으면 경로만 돌려준다. */
 function vg_asset(string $path): string {
@@ -69,6 +70,13 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
     </button>
     <?php vg_breadcrumb($active, $title); ?>
     <div class="topbar__right">
+      <?php if (vg_can('assets')): ?>
+        <button type="button" class="collection-status-btn" data-modal="collectionStatus" data-collection-status-open>
+          <span class="collection-status-btn__dot" aria-hidden="true"></span>
+          <span>수집 현황</span>
+          <b data-collection-status-count hidden>0</b>
+        </button>
+      <?php endif; ?>
       <div class="seg" role="group" aria-label="테마 전환">
         <button type="button" class="seg__btn" data-theme-set="light" aria-label="밝은 테마">☀ Light</button>
         <button type="button" class="seg__btn" data-theme-set="dark" aria-label="어두운 테마">☾ Dark</button>
@@ -80,6 +88,23 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
       </a>
     </div>
   </header>
+  <?php if (vg_can('assets')): ?>
+    <?php vg_modal_open('collectionStatus', '전체 자산 수집 현황', 'modal--wide collection-status-modal'); ?>
+      <div class="collection-overview" data-collection-overview>
+        <div class="collection-overview__summary">
+          <div><span>활성 작업</span><strong data-overview-active>확인 중</strong></div>
+          <div><span>실행 중</span><strong data-overview-running>–</strong></div>
+          <div><span>대기 중</span><strong data-overview-pending>–</strong></div>
+          <div><span>전체 진행률</span><strong data-overview-progress>–</strong></div>
+        </div>
+        <p class="collection-overview__hint">실행 중인 모든 자산과 최근 1시간 내 완료·실패 작업입니다. 3초마다 자동 갱신됩니다.</p>
+        <div class="collection-overview__list" data-overview-list aria-live="polite">
+          <div class="collection-overview__empty">수집 현황을 불러오는 중입니다.</div>
+        </div>
+      </div>
+      <?php vg_modal_foot(null); ?>
+    <?php vg_modal_close(); ?>
+  <?php endif; ?>
   <button type="button" class="nav-backdrop" data-nav-close aria-label="메뉴 닫기"></button>
 <?php endif; ?>
 <main class="page__main">
