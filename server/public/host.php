@@ -88,7 +88,7 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
      *   필터링하면 그 의도와 충돌한다.
      */
     $sel = "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
-                   f.needs_restart, c.epss, c.epss_percentile, c.ref_urls_json,
+                   f.needs_restart, f.container_id, c.epss, c.epss_percentile, c.ref_urls_json,
                " . VG_FIXED_VERSION_SUBQ . "
               FROM tb_finding f LEFT JOIN tb_cve c ON c.cve_id = f.cve_id";
 
@@ -602,6 +602,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         ['label' => '패키지'],
         ['label' => '근거'],
         ['label' => '조치'],
+        ['label' => '이력'],
     ];
     $vulnCells = [
         'severity'       => fn($f) => vg_sev_badge((string) $f['severity']),
@@ -618,6 +619,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         6 => fn($f) => !empty($f['needs_restart'])
                        ? '<span class="pill">' . (vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅' : '프로세스 재시작') . '</span>'
                        : vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null, $f['installed_version'] ?? null),
+        7 => fn($f) => '<a class="pill" href="/finding_history.php?id=' . (int) $hostId
+                       . '&amp;cid=' . (int) $f['container_id']
+                       . '&amp;cve=' . urlencode((string) $f['cve_id'])
+                       . '&amp;pkg=' . urlencode((string) $f['package_name'])
+                       . '" title="스캔별 이력 보기">🕘 이력</a>',
     ];
     $vulnOpts = [
         'card'      => false,
