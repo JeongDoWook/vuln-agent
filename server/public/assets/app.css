@@ -1241,6 +1241,28 @@ form.card .btn--block { margin-top: 1.1rem; }
 .actions--stack > form { display: block; margin: 0; }
 .actions--stack > *:first-child { padding-top: 0; border-top: none; }
 
+/* 수집 제어 카드(호스트 상세) — 폼이 카드 전체 폭(매우 넓음)으로 늘어져 라벨/입력/버튼/힌트가
+ * 세로로 길게 퍼지는 문제. label+input+button 은 한 줄로 묶고, 힌트만 다음 줄로 줄바꿈시킨다.
+ * 입력 자체도 width:100% 전역 규칙을 여기서만 좁혀 카드 폭 그대로 늘어나지 않게 한다. */
+.actions--stack > form.agent-control__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem .7rem;
+}
+.agent-control__row label { margin: 0; flex: none; min-width: 6rem; }
+/* 예약 실행 입력은 host.js 가 flatpickr 로 바꿔치기해 실제 노출 입력이 type=text(readonly)
+ * 로 변한다(원본 datetime-local 은 hidden 으로 숨음) — type 선택자로는 안 잡혀 :not([type=hidden])
+ * 로 이 카드 안의 노출 입력 전부를 좁힌다. */
+.agent-control__row input:not([type=hidden]) { width: auto; max-width: 11rem; flex: none; }
+.agent-control__row .btn { flex: none; }
+.agent-control__row .why { flex-basis: 100%; margin: 0; }
+@media (max-width: 640px) {
+  .agent-control__row { align-items: stretch; }
+  .agent-control__row label { min-width: 0; }
+  .agent-control__row input:not([type=hidden]) { max-width: none; width: 100%; }
+}
+
 /* --- 키-값 반복 입력(범용 API 커넥터 — 인증 헤더 · 필드 매핑) ------------- */
 .kvrows { display: grid; gap: .4rem; margin-bottom: .3rem; }
 .kvrow { display: grid; grid-template-columns: minmax(0, 10rem) 1fr auto; gap: .4rem; align-items: center; }

@@ -257,7 +257,7 @@ function vg_host_render_agent_control(
       <div class="card__body">
         <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
         <div class="actions actions--stack">
-          <form method="post" data-confirm="지금 이 호스트의 스캔을 실행할까요?">
+          <form class="agent-control__row" method="post" data-confirm="지금 이 호스트의 스캔을 실행할까요?">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_run_now">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
@@ -266,7 +266,7 @@ function vg_host_render_agent_control(
             <span class="why">에이전트가 다음 poll 에서 바로 실행합니다.</span>
           </form>
 
-          <form method="post">
+          <form class="agent-control__row" method="post">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
@@ -276,7 +276,7 @@ function vg_host_render_agent_control(
             <span class="why">지난 시각은 선택할 수 없습니다.</span>
           </form>
 
-          <form method="post">
+          <form class="agent-control__row" method="post">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_set_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
@@ -517,7 +517,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   $noScanMeta = [vg_h(trim($host['os_id'] . ' ' . $host['os_version']))];
   if (!empty($host['last_seen_ip'])) { $noScanMeta[] = 'IP ' . vg_h($host['last_seen_ip']); }
   $noScanMeta[] = '<a href="/">대시보드</a>';
-  vg_hero(vg_h($host['fqdn']), $noScanMeta, null, 'ok', '수집 상태', 'ASSET DETAIL');
+  vg_hero(vg_h($host['fqdn']), $noScanMeta, null, 'ok', '수집 상태', '');
   ?>
   <?php if (vg_can('assets')): ?>
     <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
@@ -549,7 +549,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   if (!empty($host['last_seen_ip'])) { $meta[] = 'IP ' . vg_h($host['last_seen_ip']); }
   $meta[] = '<a href="/">대시보드</a>';
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
-  vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'ASSET DETAIL');
+  vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', '');
   if (vg_can('assets')) {
       vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr);
   }
