@@ -247,6 +247,17 @@ try {
 vg_log_activity($pdo, 'HOST', $hostId, 'ingest', '스캔 수신',
     ['packages' => $pkgCount, 'exposures' => $expCount, 'processes' => $procCount], null, 'SYSTEM');
 
+// ── 명령 큐 완료 처리 (optional) ─────────────────────────────
+//   agent-poll.php 가 알려준 명령을 수행한 뒤 이 ingest 로 결과를 보고할 때 온다.
+//   host_id 소유 확인 실패(다른 호스트의 command_id 주장) · 이미 done/failed 는 조용히 무시(멱등).
+$commandId = $data['command_id'] ?? null;
+if (is_int($commandId) || (is_string($commandId) && ctype_digit($commandId))) {
+    $pdo->prepare(
+        "UPDATE tb_agent_command SET status = 'done', executed_at = NOW()
+          WHERE agent_command_id = ? AND host_id = ? AND status = 'pending'"
+    )->execute([(int) $commandId, $hostId]);
+}
+
 // 저장 성공 → 즉시 매칭(우선순위 산출). 실패해도 수집 자체는 성공으로 응답.
 $findings = null;
 try {
