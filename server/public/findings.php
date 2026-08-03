@@ -158,7 +158,7 @@ try {
 
 vg_header('탐지 결과', 'findings');
 ?>
-  <div class="page-title page-title--stack"><div><span class="page-title__eyebrow">FINDINGS</span><h1>탐지 결과</h1>
+  <div class="page-title page-title--stack"><div><h1>탐지 결과</h1>
   <div class="sub">
     <?php if ($scan): ?>
       호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['scan_id'] ?> · <?= vg_h($scan['collected_at']) ?>

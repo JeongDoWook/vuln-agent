@@ -658,15 +658,6 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .hero--muted { border-left-color: var(--muted-2); }
 .hero__id { flex: 1 1 320px; min-width: 0; }
 .hero__id h1 { margin: 0 0 .4rem; letter-spacing: -.035em; }
-/* 제목 위 눈썹 라벨 — .page-title__eyebrow 와 같은 어휘 */
-.hero__eyebrow {
-  display: block;
-  margin-bottom: .32rem;
-  color: var(--muted);
-  font-size: .68rem;
-  font-weight: 800;
-  letter-spacing: .09em;
-}
 .hero__meta { color: var(--muted); font-size: .85rem; display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; }
 .hero__risk { flex: none; text-align: center; }
 .hero__risk .cap { display: block; margin-top: .4rem; font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
@@ -1576,14 +1567,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page-title > div:first-child { min-width: 0; }
 .page-title h1 { margin: 0; letter-spacing: -.035em; }
 .page-title p { margin: .35rem 0 0; max-width: 760px; color: var(--muted); font-size: .88rem; line-height: 1.65; }
-.page-title__eyebrow {
-  display: block;
-  margin-bottom: .28rem;
-  color: var(--muted);
-  font-size: .68rem;
-  font-weight: 800;
-  letter-spacing: .09em;
-}
 .page-title__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .55rem; }
 .page-title--actions { align-items: center; }
 .page-title--actions > h1 { flex: 1; }

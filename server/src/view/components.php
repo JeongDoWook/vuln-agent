@@ -24,7 +24,7 @@ function vg_capture(callable $render): string {
 /** 목록 화면의 제목·설명·건수·우측 작업을 일관되게 렌더한다. */
 function vg_page_title(string $title, string $eyebrow, string $description = '', array $opts = []): void {
     $class = trim('page-title ' . (!empty($opts['actions']) ? 'page-title--actions ' : '') . (string) ($opts['class'] ?? ''));
-    echo '<header class="' . vg_h($class) . '"><div><span class="page-title__eyebrow">' . vg_h($eyebrow) . '</span><h1>' . vg_h($title);
+    echo '<header class="' . vg_h($class) . '"><div><h1>' . vg_h($title);
     if (array_key_exists('count', $opts)) { echo ' <span class="hint">(' . number_format((int) $opts['count']) . vg_h((string) ($opts['count_label'] ?? '건')) . ')</span>'; }
     if (!empty($opts['hint'])) { echo ' <span class="hint">' . vg_h((string) $opts['hint']) . '</span>'; }
     if (!empty($opts['suffix_html'])) { echo ' ' . (string) $opts['suffix_html']; }
@@ -211,8 +211,7 @@ function vg_connectors_empty_cta(): ?array {
  */
 function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, string $riskTone = 'ok', string $riskCap = '최고 위험도', string $eyebrow = 'DETAIL'): void {
     echo '<div class="hero hero--' . vg_h($riskLabel !== null ? $riskTone : 'ok') . '">';
-    $eyebrowHtml = $eyebrow === '' ? '' : '<span class="hero__eyebrow">' . vg_h($eyebrow) . '</span>';
-    echo '<div class="hero__id">' . $eyebrowHtml . '<h1>' . $title . '</h1>';
+    echo '<div class="hero__id"><h1>' . $title . '</h1>';
     if ($meta) {
         echo '<div class="hero__meta">' . implode(' <span class="why">·</span> ', $meta) . '</div>';
     }
