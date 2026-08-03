@@ -16,11 +16,13 @@ require_once __DIR__ . '/../src/audit.php';       // vg_log_activity
 require_once __DIR__ . '/../src/finding_history.php';
 vg_require_menu('findings');
 
-$err = null; $host = null; $rows = [];
+$err = null; $host = null; $rows = []; $total = 0; $summary = null; $current = null;
 $hostId = (int) ($_GET['id'] ?? 0);
 $containerId = (int) ($_GET['cid'] ?? 0);
 $cveId = trim((string) ($_GET['cve'] ?? ''));
 $packageName = trim((string) ($_GET['pkg'] ?? ''));
+$page = vg_page();
+$perPage = vg_perpage();
 
 try {
     $pdo = vg_pdo();
@@ -44,7 +46,11 @@ try {
             $cveId . ' / ' . $packageName . ($containerId > 0 ? " (container #{$containerId})" : '')
         );
 
-        $rows = vg_finding_history($pdo, $hostId, $containerId, $cveId, $packageName);
+        $total = vg_finding_history_count($pdo, $hostId);
+        $rows = vg_finding_history($pdo, $hostId, $containerId, $cveId, $packageName, $perPage, ($page - 1) * $perPage);
+        $summary = vg_finding_history_summary($pdo, $hostId, $containerId, $cveId, $packageName);
+        // "현재 상태" 는 항상 최신 스캔(1건) 기준 — 조회 중인 페이지가 1페이지가 아니어도 동일해야 한다.
+        $current = ($page === 1 && $rows) ? $rows[0] : (vg_finding_history($pdo, $hostId, $containerId, $cveId, $packageName, 1, 0)[0] ?? null);
     }
 } catch (Throwable $e) {
     error_log('[finding_history] ' . $e->getMessage());
@@ -80,8 +86,16 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
   vg_hero(vg_h($cveId), $meta, null, 'muted', '스캔별 이력', 'FINDING HISTORY');
   ?>
   <div class="card">
+    <strong>현재 상태:</strong>
+    <?= $current !== null ? vg_badge($statusLabel[$current['status']] ?? $current['status'], $current['status'] === 'FOUND' ? vg_sev_tone((string) $current['severity']) : ($current['status'] === 'SUPPRESSED' ? 'warn' : 'muted')) : '<span class="why">–</span>' ?>
+    <span class="why">
+      · 총 <?= number_format($total) ?>회 스캔 중 <?= number_format($summary['foundCount'] ?? 0) ?>회 발견됨
+      · 최초 발견: <?= $summary && $summary['firstFoundAt'] !== null ? vg_h((string) $summary['firstFoundAt']) : '없음' ?>
+    </span>
+  </div>
+  <div class="card">
     <strong>스캔별 상태 타임라인</strong>
-    <span class="why">— 이 호스트의 전체 스캔(<?= count($rows) ?>건)에 걸친 발견/억제/해당없음 변화</span>
+    <span class="why">— 최신 스캔부터, 이 페이지에 <?= count($rows) ?>건</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -114,6 +128,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
     );
     ?>
     </div>
+    <?php vg_page_nav($total, $perPage, $page); ?>
   </div>
 <?php endif; ?>
 <?php vg_footer();
