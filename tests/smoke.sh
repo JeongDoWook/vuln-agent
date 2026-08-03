@@ -439,6 +439,23 @@ WEB03_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB03" | grep -oE 'host\
 if [ -n "$WEB02_ID" ]; then ok "web02 호스트 id 확인 (=$WEB02_ID)"; else no "web02 호스트를 자산 목록에서 못 찾음"; WEB02_ID=1; fi
 if [ -n "$WEB03_ID" ]; then ok "web03 호스트 id 확인 (=$WEB03_ID)"; else no "web03 호스트를 자산 목록에서 못 찾음"; WEB03_ID=1; fi
 
+# 에이전트 진행 heartbeat — 바인딩 토큰이 자기 호스트의 pending 명령만 running으로 바꿔야 한다.
+PROGRESS_CMD=$(docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $p=vg_pdo(); $p->prepare("INSERT INTO tb_agent_command(host_id,created_by) VALUES(?,NULL)")->execute([(int)$argv[1]]);
+   echo $p->lastInsertId();' "$WEB01_ID")
+progress_resp=$(curl_ -s -X POST "$BASE/agent-progress.php" -H "X-Agent-Token: $TOKEN" \
+  --data-urlencode "command_id=$PROGRESS_CMD" --data-urlencode "stage=patches" \
+  --data-urlencode "percent=40" --data-urlencode "message=패치 상태 확인 중" --data-urlencode "state=running")
+assert_contains "$progress_resp" '"ok":true' "에이전트 진행 heartbeat 인증·저장"
+progress_status=$(curl_ -s -b "$JAR" "$BASE/agent-command-status.php?id=$WEB01_ID")
+assert_contains "$progress_status" '"status":"running"' "진행 상태 API가 running 반환"
+assert_contains "$progress_status" '"progress_percent":40' "진행 상태 API가 40% 반환"
+docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   vg_pdo()->prepare("DELETE FROM tb_agent_command WHERE agent_command_id=?")->execute([(int)$argv[1]]);' \
+  "$PROGRESS_CMD" >/dev/null
+
 # debsecan 억제 검사는 인증이 필요한 호스트 상세에서 확인한다.
 supbody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB02_ID&tab=suppressed")
 if grep -q 'nginx' <<<"$supbody"; then

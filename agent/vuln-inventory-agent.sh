@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.1"
+SCRIPT_VERSION="3.2"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
@@ -226,6 +226,23 @@ cap() {
 }
 # put <category> <key> <string>  : 계산된 값을 직접 기록
 put() { printf '%s' "$3" > "$TMP/${1}__${2}.txt"; }
+
+# 명령 큐로 실행된 경우에만 중앙에 단계 기반 진행률을 보고한다. 실패해도 수집은 계속한다.
+# 토큰은 curl 인자 대신 600 권한 헤더 파일로 넘겨 로컬 ps에 노출하지 않는다.
+progress_report() {
+  [ -n "$COMMAND_ID" ] && [ -n "$SEND_URL" ] && [ -n "$SEND_TOKEN" ] && have curl || return 0
+  local stage="$1" percent="$2" message="$3" state="${4:-running}"
+  local url="${SEND_URL%ingest.php}agent-progress.php" hdr="$TMP/.progress-header"
+  if [ ! -f "$hdr" ]; then
+    : > "$hdr"; chmod 600 "$hdr"; printf 'X-Agent-Token: %s\r\n' "$SEND_TOKEN" > "$hdr"
+  fi
+  curl -sS -m 5 -o /dev/null -H @"$hdr" -X POST "$url" \
+    --data-urlencode "command_id=$COMMAND_ID" --data-urlencode "stage=$stage" \
+    --data-urlencode "percent=$percent" --data-urlencode "message=$message" \
+    --data-urlencode "state=$state" 2>/dev/null || true
+}
+
+progress_report initializing 5 '에이전트가 명령을 수신했습니다.'
 
 # ---------- JSON 조립 (jq 없이도 돈다) ----------
 # 에이전트는 **대상 서버에 아무것도 요구하지 않는다.** 예전엔 jq 가 없으면 텍스트를 뱉고 전송을
@@ -1119,6 +1136,7 @@ collect_processes() {
 # ==================================================================
 # 1) 메타 / 시스템 식별 + 취약점 매핑 힌트
 # ==================================================================
+progress_report system 12 '시스템 정보와 운영체제를 확인하고 있습니다.'
 cap meta hostname_fqdn 'hostname -f 2>/dev/null || hostname'
 cap meta collected_at  'date -Is'
 cap meta agent_version "echo $SCRIPT_VERSION"
@@ -1257,6 +1275,7 @@ cap hardware microcode 'grep -m1 microcode /proc/cpuinfo'
 # 3) 설치 패키지 전체 (릴리스번호 + 소스패키지 + 벤더까지)
 #    ★ 취약점 매핑의 핵심 데이터
 # ==================================================================
+progress_report packages 28 '설치 패키지를 수집하고 있습니다.'
 if have rpm; then
   put pkg manager "rpm"
   # 이름 \t 에포크:버전-릴리스 \t 아키 \t 소스RPM \t 벤더
@@ -1277,6 +1296,7 @@ fi
 # 4) 패치 상태 + 이미 적용된 보안 권고(errata) ★ 오탐 감소 핵심
 #    네트워크는 캐시만 사용(-C) → 서버/네트워크 부하 최소화
 # ==================================================================
+progress_report patches 40 '패치와 보안 권고 적용 상태를 확인하고 있습니다.'
 #    --with-cve 가 핵심이다. 그냥 `updateinfo list installed` 는 권고 ID 만 준다
 #    (RLSA-2023:0340 …) → CVE 를 모르니 억제에 못 쓴다. --with-cve 를 붙이면
 #    "CVE-2022-3715  Moderate/Sec.  bash-5.1.8-6.el9_1.x86_64" 처럼 CVE↔설치 NEVRA 가 나온다.
@@ -1332,6 +1352,7 @@ fi
 # ==================================================================
 # 6) 언어 런타임 패키지 (각각 자체 CVE 존재) — 전부 로컬 조회
 # ==================================================================
+progress_report runtimes 55 '언어 런타임 패키지를 확인하고 있습니다.'
 have pip3 && cap langpkg pip 'pip3 list --format=freeze --disable-pip-version-check 2>/dev/null'
 have npm  && cap langpkg npm_global 'npm ls -g --depth=0 2>/dev/null'
 have gem  && cap langpkg gem 'gem list 2>/dev/null'
@@ -1344,6 +1365,7 @@ collect_project_dependencies | head -c "$MAX_BYTES" > "$TMP/langpkg__inventory.t
 # ==================================================================
 # 7) 컨테이너 이미지 (이미지별 CVE 매핑)
 # ==================================================================
+progress_report containers 63 '컨테이너 이미지와 내부 패키지를 확인하고 있습니다.'
 have docker && cap containers docker_images 'docker images --format "{{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}" 2>/dev/null'
 have docker && cap containers docker_running 'docker ps --format "{{.Image}}\t{{.Names}}\t{{.Status}}" 2>/dev/null'
 have podman && cap containers podman_images 'podman images --format "{{.Repository}}:{{.Tag}}\t{{.ID}}" 2>/dev/null'
@@ -1367,6 +1389,7 @@ cap products docker   'docker --version 2>/dev/null'
 # ==================================================================
 # 9) 커널 모듈 / 네트워크 (공격 표면)
 # ==================================================================
+progress_report exposure 74 '프로세스와 네트워크 노출을 분석하고 있습니다.'
 cap kernel modules 'lsmod'
 cap kernel cmdline 'cat /proc/cmdline'
 # 커널 라이브패치 — 실행 커널 버전만 보면 취약해 보여도 라이브패치로 이미 막힌 CVE 가 있다.
@@ -1456,6 +1479,7 @@ rm -f "$TMP/.ctrmap"
 # ==================================================================
 # 11) 리포지토리 설정
 # ==================================================================
+progress_report security 86 '보안 설정과 예약 작업을 확인하고 있습니다.'
 if have dnf || have yum; then
   cap repos list    'ls -1 /etc/yum.repos.d/ 2>/dev/null'
   cap repos enabled 'dnf -C repolist 2>/dev/null || yum -C repolist 2>/dev/null'
@@ -1530,6 +1554,7 @@ cap filesystem fstab  'cat /etc/fstab'
 # ==================================================================
 # 결과 조립
 # ==================================================================
+progress_report packaging 94 '수집 결과를 조립하고 있습니다.'
 ELAPSED=$(( SECONDS - START_TS ))
 put meta elapsed_seconds "$ELAPSED"
 
@@ -1595,6 +1620,7 @@ AGENT_SENT_AT=$(date +%s)
 AGENT_NONCE=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || printf '%s-%s-%s' "$AGENT_SENT_AT" "$$" "${RANDOM:-0}")
 SEND_FAILED=0
 if [ -n "$SEND_URL" ]; then
+  progress_report uploading 97 '수집 결과를 중앙 서버로 전송하고 있습니다.'
   if [ "${OUTPUT_IS_JSON:-0}" != 1 ]; then
     echo ">> 전송 생략: JSON 을 만들지 못했습니다(jq·awk 둘 다 없음)." >&2
     SEND_FAILED=1
@@ -1640,5 +1666,7 @@ if [ -n "$SEND_URL" ]; then
     fi
   fi
 fi
+
+[ "$SEND_FAILED" = 0 ] || progress_report failed 100 '수집 결과 전송에 실패했습니다.' failed
 
 exit "$SEND_FAILED"

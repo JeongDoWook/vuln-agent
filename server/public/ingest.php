@@ -254,8 +254,10 @@ vg_log_activity($pdo, 'HOST', $hostId, 'ingest', '스캔 수신',
 $commandId = $data['command_id'] ?? null;
 if (is_int($commandId) || (is_string($commandId) && ctype_digit($commandId))) {
     $pdo->prepare(
-        "UPDATE tb_agent_command SET status = 'done', executed_at = NOW()
-          WHERE agent_command_id = ? AND host_id = ? AND status = 'pending' AND is_deleted = 0"
+        "UPDATE tb_agent_command SET status = 'done', progress_percent = 100,
+                progress_stage = 'complete', progress_message = '수집 완료',
+                heartbeat_at = NOW(), executed_at = NOW()
+          WHERE agent_command_id = ? AND host_id = ? AND status IN ('pending','running') AND is_deleted = 0"
     )->execute([(int) $commandId, $hostId]);
 }
 

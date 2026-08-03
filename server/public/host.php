@@ -247,7 +247,7 @@ function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, i
  *   실제 poll·실행은 데몬화된 에이전트 쪽 책임.
  */
 function vg_host_render_agent_control(
-    int $hostId, array $host, string $csrf, array $pendingCommands, ?string $msg, ?string $err
+    int $hostId, array $host, string $csrf, array $agentCommands, ?string $msg, ?string $err
 ): void {
     $curMinutes = (int) round(((int) ($host['poll_schedule_seconds'] ?? 3600)) / 60);
     ?>
@@ -261,6 +261,31 @@ function vg_host_render_agent_control(
       </div>
       <div class="card__body">
         <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+        <div class="agent-control__facts">
+          <span><b>통신 경로</b> <?= vg_h((string)($_SERVER['HTTP_HOST'] ?? '중앙 서버')) ?> · poll 10초</span>
+          <span><b>정기 수집</b> <?= number_format($curMinutes) ?>분마다 · 에이전트 로컬 타이머 기준</span>
+        </div>
+        <?php $activeCommand = $agentCommands[0] ?? null; ?>
+        <?php if ($activeCommand): ?>
+          <?php
+            $isRunning = $activeCommand['status'] === 'running';
+            $pct = $isRunning ? (int) ($activeCommand['progress_percent'] ?? 0) : 0;
+            $stageMessage = $isRunning
+                ? ((string) ($activeCommand['progress_message'] ?: '수집을 진행하고 있습니다.'))
+                : ($activeCommand['run_at'] ? '예약 시각이 되면 다음 poll에서 시작합니다.' : '에이전트의 다음 poll을 기다리고 있습니다.');
+          ?>
+          <div class="agent-progress" data-agent-progress data-host-id="<?= $hostId ?>" data-command-id="<?= (int)$activeCommand['agent_command_id'] ?>" data-state="<?= vg_h((string)$activeCommand['status']) ?>">
+            <div class="agent-progress__top">
+              <strong data-progress-title><?= $isRunning ? '수집 진행 중' : '명령 대기 중' ?></strong>
+              <span data-progress-percent><?= $pct ?>%</span>
+            </div>
+            <progress class="agent-progress__track" data-progress-bar max="100" value="<?= $pct ?>"><?= $pct ?>%</progress>
+            <div class="agent-progress__meta">
+              <span data-progress-message><?= vg_h($stageMessage) ?></span>
+              <span data-progress-time><?= $isRunning && $activeCommand['heartbeat_at'] ? '마지막 통신 ' . vg_h((string)$activeCommand['heartbeat_at']) : 'poll 주기 10초 이내' ?></span>
+            </div>
+          </div>
+        <?php endif; ?>
         <div class="actions actions--stack">
           <form class="agent-control__row" method="post" data-confirm="지금 이 호스트의 스캔을 실행할까요?">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
@@ -289,13 +314,13 @@ function vg_host_render_agent_control(
           </form>
         </div>
 
-        <?php if ($pendingCommands): ?>
+        <?php if ($agentCommands): ?>
           <div class="mt-lg">
             <strong class="why">예약된 명령</strong>
             <ul class="hint-list">
-              <?php foreach ($pendingCommands as $c): ?>
+              <?php foreach ($agentCommands as $c): ?>
                 <li>
-                  <?= $c['run_at'] === null ? '즉시 실행 대기중' : vg_h((string) $c['run_at']) . ' 예약' ?>
+                  <?= $c['status'] === 'running' ? '수집 실행 중' : ($c['run_at'] === null ? '즉시 실행 대기중' : vg_h((string) $c['run_at']) . ' 예약') ?>
                   <span class="why">(등록 <?= vg_h((string) $c['created_at']) ?>)</span>
                 </li>
               <?php endforeach; ?>
@@ -368,10 +393,11 @@ try {
 
         if (vg_can('assets')) {
             $st = $pdo->prepare(
-                "SELECT agent_command_id, run_at, created_at
+                "SELECT agent_command_id, status, progress_percent, progress_stage, progress_message,
+                        run_at, created_at, started_at, heartbeat_at
                    FROM tb_agent_command
-                  WHERE host_id = ? AND status = 'pending' AND is_deleted = 0
-                  ORDER BY run_at IS NULL DESC, run_at, created_at"
+                  WHERE host_id = ? AND status IN ('pending','running') AND is_deleted = 0
+                  ORDER BY status = 'running' DESC, run_at IS NULL DESC, run_at, created_at"
             );
             $st->execute([$hostId]);
             $pendingCommands = $st->fetchAll();
