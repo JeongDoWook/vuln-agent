@@ -181,7 +181,9 @@ function vg_generic_upsert_vendor(PDO $pdo, array $m): bool {
     $pdo->prepare(
         'INSERT INTO tb_vendor_errata (vendor, release_major, pkg_name, cve_id, fixed_evr, advisory, severity)
          VALUES (?,?,?,?,?,?,?)
-         ON DUPLICATE KEY UPDATE advisory = VALUES(advisory), severity = VALUES(severity)'
+         ON DUPLICATE KEY UPDATE
+           advisory = COALESCE(VALUES(advisory), advisory),
+           severity = COALESCE(VALUES(severity), severity)'
     )->execute([
         mb_substr((string) $m['vendor'], 0, 16),
         mb_substr((string) $m['release_major'], 0, 8),

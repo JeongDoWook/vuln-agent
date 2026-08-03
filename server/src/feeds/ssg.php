@@ -138,9 +138,12 @@ final class VgSsgConnector implements VgFeedConnector {
             $ins = $pdo->prepare(
                 'INSERT INTO tb_compliance_rule (rule_id, title, severity, rationale, refs_json, ssg_version)
                  VALUES (?,?,?,?,?,?)
-                 ON DUPLICATE KEY UPDATE title = VALUES(title), severity = VALUES(severity),
-                   rationale = VALUES(rationale), refs_json = VALUES(refs_json),
-                   ssg_version = VALUES(ssg_version), is_deleted = 0'
+                 ON DUPLICATE KEY UPDATE
+                   title = COALESCE(VALUES(title), title),
+                   severity = COALESCE(VALUES(severity), severity),
+                   rationale = COALESCE(VALUES(rationale), rationale),
+                   refs_json = COALESCE(VALUES(refs_json), refs_json),
+                   ssg_version = COALESCE(VALUES(ssg_version), ssg_version), is_deleted = 0'
             );
 
             $n = 0;
