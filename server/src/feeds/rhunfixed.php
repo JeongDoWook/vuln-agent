@@ -125,8 +125,9 @@ final class VgRhunfixedConnector implements VgFeedConnector {
         $ins = $pdo->prepare(
             'INSERT INTO tb_vendor_unfixed (vendor, release_major, component, cve_id, fix_state, severity, cvss)
              VALUES (?,?,?,?,?,?,?)
-             ON DUPLICATE KEY UPDATE fix_state = VALUES(fix_state), severity = VALUES(severity),
-                                     cvss = VALUES(cvss), checked_at = NOW()'
+             ON DUPLICATE KEY UPDATE fix_state = COALESCE(VALUES(fix_state), fix_state),
+                                     severity = COALESCE(VALUES(severity), severity),
+                                     cvss = COALESCE(VALUES(cvss), cvss), checked_at = NOW()'
         );
         // 예전엔 여기서 "OVAL 에 이 CVE 의 수정본이 있으면 건너뛴다" 를 했다. **틀렸다** —
         //   그 검사가 CVE 만 보고 컴포넌트를 안 봐서, 남의 컴포넌트 수정본을 우리 것으로 오인했다.

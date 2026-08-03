@@ -85,9 +85,9 @@ function vg_upsert_kev(
     $st = $pdo->prepare(
         'INSERT INTO tb_kev_catalog (cve_id, date_added, note, due_date, ransomware) VALUES (?,?,?,?,?)
          ON DUPLICATE KEY UPDATE
-           date_added = VALUES(date_added),
-           note       = VALUES(note),
-           due_date   = VALUES(due_date),
+           date_added = COALESCE(VALUES(date_added), date_added),
+           note       = COALESCE(VALUES(note), note),
+           due_date   = COALESCE(VALUES(due_date), due_date),
            ransomware = VALUES(ransomware)'
     );
     $st->execute([$id, $dateAdded ?: null, $note, $dueDate ?: null, $ransomware ? 1 : 0]);

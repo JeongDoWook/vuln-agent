@@ -250,7 +250,9 @@ final class VgUbuntuOvalConnector implements VgFeedConnector {
                         $pdo->prepare(
                             "INSERT INTO tb_ubuntu_oval (release_codename, pkg_name, cve_id, fixed_evr, severity)
                              VALUES $ph
-                             ON DUPLICATE KEY UPDATE fixed_evr = VALUES(fixed_evr), severity = VALUES(severity)"
+                             ON DUPLICATE KEY UPDATE
+                               fixed_evr = COALESCE(VALUES(fixed_evr), fixed_evr),
+                               severity  = COALESCE(VALUES(severity), severity)"
                         )->execute(array_merge(...$b));
                     };
 
@@ -297,7 +299,7 @@ final class VgUbuntuOvalConnector implements VgFeedConnector {
                             $pdo->prepare(
                                 "INSERT INTO tb_cve_affected_package (cve_id, ecosystem, package_name, fixed_version)
                                  VALUES $ph
-                                 ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
+                                 ON DUPLICATE KEY UPDATE fixed_version = COALESCE(VALUES(fixed_version), fixed_version)"
                             )->execute(array_merge(...$affB));
                         }
                     };

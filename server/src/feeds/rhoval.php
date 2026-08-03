@@ -330,7 +330,9 @@ final class VgRhovalConnector implements VgFeedConnector {
                             "INSERT INTO tb_vendor_errata
                                (vendor, release_major, pkg_name, cve_id, fixed_evr, advisory, severity)
                              VALUES $ph
-                             ON DUPLICATE KEY UPDATE advisory = VALUES(advisory), severity = VALUES(severity)"
+                             ON DUPLICATE KEY UPDATE
+                               advisory = COALESCE(VALUES(advisory), advisory),
+                               severity = COALESCE(VALUES(severity), severity)"
                         );
                         $st->execute(array_merge(...$b));
                     };
@@ -387,7 +389,7 @@ final class VgRhovalConnector implements VgFeedConnector {
                             $pdo->prepare(
                                 "INSERT INTO tb_cve_affected_package (cve_id, ecosystem, package_name, fixed_version)
                                  VALUES $ph
-                                 ON DUPLICATE KEY UPDATE fixed_version = VALUES(fixed_version)"
+                                 ON DUPLICATE KEY UPDATE fixed_version = COALESCE(VALUES(fixed_version), fixed_version)"
                             )->execute(array_merge(...$affB));
                         }
                     };
