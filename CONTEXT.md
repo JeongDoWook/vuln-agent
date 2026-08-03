@@ -231,7 +231,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 - [x] **4a. CVE 피드 커넥터** — 커넥터 11종(고정 5종 KEV/OSV/NVD/KISA/EPSS + 벤더 판정 6종 데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api) = **합계 12종**, UI 설정·미리보기·cron 스케줄, 스케줄러 사이드카
 - [x] **4b. 국내특화** — KISA 보안공지 수집·표시(상세 본문까지) + 공지 상세 페이지 `advisory.php`
 - [x] **NVD 전체 데이터** — tb_cve 약 36만건. 주기 수집을 수정일(lastMod) 기준으로 전환(뒤늦게 CVSS 붙는 CVE 추적, 120일 상한).
-      전체 백필 `bin/backfill_nvd.php`(멱등·재개, 병렬 워커로 가속). CVE 목록 페이지 `cves.php`(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬).
+      전체 백필 `bin/backfill_nvd.php`(멱등·재개, 병렬 워커로 가속 — `--workers=N`). CVE 목록 페이지 `cves.php`(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬).
       API 키는 DB 저장(코드·저장소에 없음). 일시 오류 재시도·CVE-ID 형식 검증·긴 텍스트 컬럼 확장(summary MEDIUMTEXT, cve_ids/note TEXT).
 - [x] **정밀 런타임 수집** — 실행 프로세스 전체(실행중/사용중) + 노출(포트) → 상태 7단계 구분
 - [x] **OSV 자동 매칭** — 수집 전 패키지를 OSV 조회(배포판 ecosystem, 소스패키지·버전필터) → 취약점 전체 발굴 + 조치안(fixed_version)

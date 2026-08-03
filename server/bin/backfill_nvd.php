@@ -26,13 +26,22 @@ declare(strict_types=1);
  *     php bin/backfill_nvd.php                    # 전체
  *     php bin/backfill_nvd.php --start-index=40000 # 중단 지점부터 재개
  *     php bin/backfill_nvd.php --max-pages=2       # 앞 2페이지만(시험용)
+ *     php bin/backfill_nvd.php --workers=3         # 3개 프로세스로 구간을 나눠 병렬 백필
  */
 
 require __DIR__ . '/../src/feeds.php';
 
-$opts     = getopt('', ['start-index::', 'max-pages::']);
+$opts     = getopt('', ['start-index::', 'max-pages::', 'workers::']);
 $startIdx = max(0, (int) ($opts['start-index'] ?? 0));
 $maxPages = isset($opts['max-pages']) ? max(1, (int) $opts['max-pages']) : 0;   // 0 = 제한 없음
+$workers  = isset($opts['workers']) ? max(1, (int) $opts['workers']) : 1;
+
+if ($workers > 1) {
+    if (isset($opts['start-index']) || isset($opts['max-pages'])) {
+        fwrite(STDERR, "경고: --workers>1 이면 --start-index/--max-pages 는 무시된다(어느 워커 기준인지 불명확).\n");
+    }
+    exit(vg_backfill_nvd_parallel($workers));
+}
 
 $pdo = vg_pdo();
 
@@ -82,3 +91,114 @@ fwrite(STDOUT, sprintf(
     $res['fetched'], $res['upserted'], $res['total'], $sec, memory_get_peak_usage(true) / 1048576
 ));
 exit(0);
+
+/**
+ * --workers=N(N>1) 경로. 첫 페이지를 한 번 실제로 돌려(멱등 upsert 라 낭비가 아니다)
+ * totalResults 를 얻은 뒤, 남은 구간을 N등분해 자기 자신을 자식 프로세스로 N개 띄운다.
+ * 각 자식의 stdout/stderr 를 stream_select() 로 동시에 읽어 [worker N] 접두어를 붙여 흘려보낸다.
+ */
+function vg_backfill_nvd_parallel(int $workers): int {
+    $pdo  = vg_pdo();
+    $row  = $pdo->query("SELECT connection_json FROM tb_feed_connector WHERE connector_type='nvd' AND is_deleted=0 LIMIT 1")
+                ->fetchColumn();
+    $conn = $row ? vg_json_col($row) : [];
+
+    fwrite(STDOUT, "NVD 병렬 백필 시작. workers=$workers · 총 건수 조회 중(1페이지)...\n");
+
+    $total = 0;
+    $onFirstPage = function (int $next, int $t) use (&$total): bool {
+        $total = $t;
+        return false;   // 1페이지만 받고 중단 — 이미 upsert 는 됐다
+    };
+    try {
+        vg_nvd_sync($pdo, $conn, [], 0, function (int $next, int $t, int $fetched) use ($onFirstPage): bool {
+            return $onFirstPage($next, $t);
+        });
+    } catch (Throwable $e) {
+        fwrite(STDERR, "실패(총 건수 조회): " . $e->getMessage() . "\n");
+        return 1;
+    }
+
+    if ($total <= 0) {
+        fwrite(STDERR, "실패: 총 건수를 확인하지 못했다(totalResults=0).\n");
+        return 1;
+    }
+
+    // 남은 구간(첫 페이지 이후 ~ total)을 워커 수만큼 등분.
+    $remaining = max(0, $total - VG_NVD_PER_PAGE);
+    $chunk     = (int) ceil($remaining / $workers);
+    $starts    = [];
+    for ($i = 0; $i < $workers; $i++) {
+        $starts[] = VG_NVD_PER_PAGE + $i * $chunk;
+    }
+    fwrite(STDOUT, sprintf("총 %d건 · 워커 %d개 · 시작 인덱스: %s\n", $total, $workers, implode(', ', $starts)));
+
+    $php  = PHP_BINARY;
+    $self = __FILE__;
+    $procs = [];
+    $pipes = [];
+    foreach ($starts as $i => $start) {
+        $cmd  = [$php, $self, '--start-index=' . $start];
+        $proc = proc_open($cmd, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $p);
+        if ($proc === false) {
+            fwrite(STDERR, "실패: worker $i 프로세스 생성 실패\n");
+            return 1;
+        }
+        stream_set_blocking($p[1], false);
+        stream_set_blocking($p[2], false);
+        $procs[$i] = $proc;
+        $pipes[$i] = $p;
+    }
+
+    $buf = array_fill_keys(array_keys($pipes), ['', '']);   // [워커번호 => [stdout잔여, stderr잔여]]
+    $open = $pipes;
+    while ($open !== []) {
+        $read = [];
+        foreach ($open as $i => $p) {
+            $read[] = $p[1];
+            $read[] = $p[2];
+        }
+        $write = $except = [];
+        if (stream_select($read, $write, $except, 1) === false) {
+            break;
+        }
+        foreach ($open as $i => $p) {
+            foreach ([1 => 'stdout', 2 => 'stderr'] as $fd => $label) {
+                $chunk2 = fread($p[$fd], 8192);
+                if ($chunk2 === false || $chunk2 === '') {
+                    continue;
+                }
+                $buf[$i][$fd === 1 ? 0 : 1] .= $chunk2;
+                while (($pos = strpos($buf[$i][$fd === 1 ? 0 : 1], "\n")) !== false) {
+                    $line = substr($buf[$i][$fd === 1 ? 0 : 1], 0, $pos);
+                    $buf[$i][$fd === 1 ? 0 : 1] = substr($buf[$i][$fd === 1 ? 0 : 1], $pos + 1);
+                    $out = "[worker $i] $line\n";
+                    fwrite($fd === 1 ? STDOUT : STDERR, $out);
+                }
+            }
+            if (feof($p[1]) && feof($p[2])) {
+                fclose($p[1]);
+                fclose($p[2]);
+                unset($open[$i]);
+            }
+        }
+    }
+
+    $failed = [];
+    foreach ($procs as $i => $proc) {
+        $code = proc_close($proc);
+        if ($code !== 0) {
+            $failed[$i] = $starts[$i];
+        }
+    }
+
+    if ($failed !== []) {
+        foreach ($failed as $i => $start) {
+            fwrite(STDERR, "worker $i 실패. 재개하려면: --start-index=$start\n");
+        }
+        return 1;
+    }
+
+    fwrite(STDOUT, "병렬 백필 완료. 워커 $workers 개 전원 성공.\n");
+    return 0;
+}
