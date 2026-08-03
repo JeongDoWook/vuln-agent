@@ -438,6 +438,11 @@ WEB02_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB02" | grep -oE 'host\
 WEB03_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB03" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
 assetbody=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB01")
 assert_not_contains "$assetbody" 'host_delete' "자산 목록에 삭제 작업 없음"
+assert_contains "$assetbody" '/asset-packages.php' "자산 목록에 전체 설치 패키지 진입점 표시"
+allpackages=$(curl_ -s -b "$JAR" "$BASE/asset-packages.php?q=glibc")
+assert_contains "$allpackages" '실제 서버 설치 현황' "전체 설치 패키지 화면이 취약 패키지 카탈로그와 구분됨"
+assert_contains "$allpackages" 'glibc' "전체 호스트 설치 패키지 검색 결과 표시"
+assert_contains "$allpackages" "$FQDN_WEB01" "설치 패키지 검색 결과에 호스트 표시"
 hostmanage=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$hostmanage" 'name="action" value="host_delete"' "자산 상세에 관리자 삭제 작업 표시"
 assert_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=packages" "자산 목록 패키지 수가 설치 패키지 탭에 연결"

@@ -1,0 +1,134 @@
+<?php
+declare(strict_types=1);
+
+/** 전체 활성 자산의 최신 스캔에 설치된 운영체제 패키지 통합 조회. */
+require __DIR__ . '/../src/auth.php';
+require __DIR__ . '/../src/view.php';
+vg_require_menu('assets');
+
+$err = null;
+$rows = [];
+$total = 0;
+$hostOptions = [];
+$q = trim((string)($_GET['q'] ?? ''));
+$hostId = (int)($_GET['host'] ?? 0);
+$manager = trim((string)($_GET['manager'] ?? ''));
+$page = vg_page();
+$perPage = vg_perpage();
+$managerOptions = ['dpkg' => 'dpkg', 'rpm' => 'rpm', 'apk' => 'apk'];
+if (!isset($managerOptions[$manager])) { $manager = ''; }
+
+try {
+    $pdo = vg_pdo();
+    $hostRows = $pdo->query(
+        'SELECT host_id,fqdn FROM tb_host WHERE is_deleted=0 ORDER BY fqdn'
+    )->fetchAll();
+    foreach ($hostRows as $host) {
+        $hostOptions[(string)$host['host_id']] = (string)$host['fqdn'];
+    }
+    if ($hostId > 0 && !isset($hostOptions[(string)$hostId])) { $hostId = 0; }
+
+    $from = 'FROM tb_host h
+             JOIN ' . vg_latest_scan_subq() . ' latest ON latest.host_id=h.host_id
+             JOIN tb_scan s ON s.scan_id=latest.mid
+             JOIN tb_package p ON p.scan_id=s.scan_id';
+    $where = "h.is_deleted=0 AND p.is_deleted=0 AND p.container_id=0
+              AND p.manager IN ('dpkg','rpm','apk')";
+    $params = [];
+    if ($hostId > 0) {
+        $where .= ' AND h.host_id=?';
+        $params[] = $hostId;
+    }
+    if ($manager !== '') {
+        $where .= ' AND p.manager=?';
+        $params[] = $manager;
+    }
+    if ($q !== '') {
+        $where .= ' AND (p.name LIKE ? OR p.source_pkg LIKE ? OR p.origin LIKE ? OR p.vendor LIKE ?)';
+        $like = '%' . $q . '%';
+        array_push($params, $like, $like, $like, $like);
+    }
+
+    $st = $pdo->prepare("SELECT COUNT(*) $from WHERE $where");
+    $st->execute($params);
+    $total = (int)$st->fetchColumn();
+
+    $offset = ($page - 1) * $perPage;
+    $st = $pdo->prepare(
+        "SELECT h.host_id,h.fqdn,p.manager,p.name,p.version,p.arch,
+                p.source_pkg,p.source_version,p.origin,p.vendor,s.collected_at
+           $from WHERE $where
+          ORDER BY p.name,h.fqdn,p.arch,p.version
+          LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute($params);
+    $rows = $st->fetchAll();
+} catch (Throwable $e) {
+    error_log('[asset-packages] ' . $e->getMessage());
+    $err = '설치 패키지를 불러오는 중 오류가 발생했습니다.';
+}
+
+vg_header('전체 설치 패키지', 'assets');
+?>
+  <?php vg_page_title('전체 설치 패키지', '', '모든 자산의 최신 수집에서 확인된 운영체제 패키지입니다.', [
+      'count' => $total,
+      'actions' => '<a class="btn btn--sm btn--ghost" href="/assets.php">자산 목록</a>',
+  ]); ?>
+  <div class="sub"><span class="why">취약 영향 패키지 카탈로그가 아닌 실제 서버 설치 현황입니다.</span></div>
+
+  <?php vg_alert($err !== null ? '오류 · ' . $err : null); ?>
+  <?php if ($err === null): ?>
+    <?php vg_toolbar([
+        ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명·소스·출처 검색', 'value' => $q],
+        ['type' => 'select', 'name' => 'host', 'selected' => $hostId > 0 ? (string)$hostId : '',
+         'empty_label' => '전체 호스트', 'options' => $hostOptions],
+        ['type' => 'select', 'name' => 'manager', 'selected' => $manager,
+         'empty_label' => '전체 관리자', 'options' => $managerOptions],
+    ]); ?>
+
+    <?php vg_table(
+        [
+            ['label' => '패키지', 'key' => 'name', 'class' => 'col-id'],
+            ['label' => '호스트', 'key' => 'fqdn'],
+            ['label' => '설치 버전', 'key' => 'version'],
+            ['label' => '아키텍처', 'key' => 'arch'],
+            ['label' => '관리자', 'key' => 'manager'],
+            ['label' => '소스 패키지', 'key' => 'source_pkg'],
+            ['label' => '출처', 'key' => 'origin'],
+            ['label' => '수집 시각', 'key' => 'collected_at', 'nowrap' => true],
+        ],
+        $rows,
+        [
+            'empty' => ($q !== '' || $hostId > 0 || $manager !== '')
+                ? [
+                    'icon' => '⌕',
+                    'title' => '검색 조건에 맞는 설치 패키지가 없습니다.',
+                    'cta' => ['href' => '/asset-packages.php', 'label' => '필터 초기화'],
+                ]
+                : [
+                    'icon' => '□',
+                    'title' => '수집된 설치 패키지가 없습니다.',
+                ],
+            'cell' => [
+                'name' => fn($p) => '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages&amp;q='
+                    . urlencode((string)$p['name']) . '"><strong>' . vg_h((string)$p['name']) . '</strong></a>',
+                'fqdn' => fn($p) => '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages">'
+                    . vg_h((string)$p['fqdn']) . '</a>',
+                'version' => fn($p) => '<code>' . vg_h((string)($p['version'] ?? '')) . '</code>',
+                'arch' => fn($p) => $p['arch'] ? vg_h((string)$p['arch']) : '<span class="why">–</span>',
+                'manager' => fn($p) => '<code>' . vg_h((string)$p['manager']) . '</code>',
+                'source_pkg' => function ($p) {
+                    if (empty($p['source_pkg'])) { return '<span class="why">–</span>'; }
+                    return vg_h((string)$p['source_pkg'])
+                        . (!empty($p['source_version']) ? ' <span class="why">' . vg_h((string)$p['source_version']) . '</span>' : '');
+                },
+                'origin' => fn($p) => $p['origin']
+                    ? vg_h((string)$p['origin'])
+                    : (!empty($p['vendor']) ? vg_h((string)$p['vendor']) : '<span class="why">–</span>'),
+                'collected_at' => fn($p) => '<span class="why">' . vg_h((string)$p['collected_at']) . '</span>',
+            ],
+        ]
+    ); ?>
+    <?php vg_page_nav($total, $perPage, $page); ?>
+  <?php endif; ?>
+<?php vg_footer();
