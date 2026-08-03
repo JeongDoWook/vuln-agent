@@ -11,7 +11,7 @@ PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 CREATE TABLE IF NOT EXISTS tb_agent_command (
   agent_command_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  host_id BIGINT NOT NULL,
+  host_id BIGINT UNSIGNED NOT NULL,
   run_at DATETIME NULL,               -- NULL=즉시, 값 있으면 그 시각 1회
   status ENUM('pending','done','failed') NOT NULL DEFAULT 'pending',
   created_by BIGINT NULL,             -- tb_user.user_id (FK 미설정 — 이 저장소 감사 관련 테이블 관례)
