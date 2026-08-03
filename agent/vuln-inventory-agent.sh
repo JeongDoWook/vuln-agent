@@ -22,6 +22,9 @@
 #    ./vuln-inventory-agent.sh \
 #        --send http://SERVER:8080/ingest.php \
 #        --token 호스트별토큰                   # 수집 후 중앙 서버로 전송(파일 저장은 유지)
+#    ./vuln-inventory-agent.sh --send ... --token ... --command-id 42
+#        # run.sh(데몬)가 agent-poll.php 의 due_command_id 를 넘길 때 사용 — POST 바디
+#        # 최상위에 command_id 필드가 실려 그 명령이 완료 처리된다.
 # ==================================================================
 
 set -uo pipefail
@@ -39,6 +42,7 @@ DO_LIMIT=0                            # cgroup 리밋 사용 여부
 OUT=""
 SEND_URL="${SEND_URL:-}"             # --send : 중앙 수신 API(ingest.php) URL
 SEND_TOKEN="${SEND_TOKEN:-}"         # --token: 중앙에서 이 호스트에 발급한 인증 토큰
+COMMAND_ID=""                        # --command-id: agent-poll.php 의 due_command_id (완료 처리용)
 PAGESIZE="$(getconf PAGESIZE 2>/dev/null || echo 4096)"
 CLK_TCK="$(getconf CLK_TCK 2>/dev/null || echo 100)"
 
@@ -51,11 +55,18 @@ while [ $# -gt 0 ]; do
     --timeout)       CMD_TIMEOUT="$2"; shift 2 ;;
     --send)          SEND_URL="$2"; shift 2 ;;
     --token)         SEND_TOKEN="$2"; shift 2 ;;
+    --command-id)    COMMAND_ID="$2"; shift 2 ;;
     -h|--help)
       grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "알 수 없는 옵션: $1" >&2; exit 1 ;;
   esac
 done
+
+if [ -n "$COMMAND_ID" ]; then
+  case "$COMMAND_ID" in
+    ''|*[!0-9]*) echo "--command-id 는 숫자여야 합니다: $COMMAND_ID" >&2; exit 1 ;;
+  esac
+fi
 
 have()    { command -v "$1" >/dev/null 2>&1; }
 is_root() { [ "$(id -u)" -eq 0 ]; }
@@ -170,6 +181,7 @@ if [ "$DO_LIMIT" = 1 ] && [ -z "${_RELAUNCHED:-}" ] && is_root && have systemd-r
   [ "$DO_CHANGELOG" = 0 ]      && relaunch_args+=(--no-changelog)
   [ -n "$SEND_URL" ]           && relaunch_args+=(--send "$SEND_URL")
   [ -n "$SEND_TOKEN" ]         && relaunch_args+=(--token "$SEND_TOKEN")
+  [ -n "$COMMAND_ID" ]         && relaunch_args+=(--command-id "$COMMAND_ID")
   exec systemd-run --scope --quiet \
       -p "CPUQuota=$CPU_QUOTA" -p "MemoryMax=$MEM_MAX" \
       -p CPUWeight=10 -p IOWeight=10 \
@@ -1486,6 +1498,21 @@ else
   # awk 조차 없는 시스템(사실상 없다). 조용히 넘어가지 않고 실패로 끝낸다.
   OUTPUT_IS_JSON=0
   echo ">> [실패] jq·awk 가 모두 없어 JSON 을 만들 수 없습니다." >&2
+fi
+
+# ---------- command_id 주입(--command-id) ----------
+#   run.sh(데몬)가 agent-poll.php 의 due_command_id 를 넘겨받았을 때만 채워진다.
+#   최종 JSON 최상위에 "command_id" 필드를 얹어 POST 하면 ingest.php 가 그 명령을 완료
+#   처리한다. jq/awk 두 경로 모두 마지막 줄이 최상위 객체를 닫는 "}" 이므로 그 줄만 고친다.
+if [ -n "$COMMAND_ID" ] && [ "${OUTPUT_IS_JSON:-0}" = 1 ]; then
+  awk -v cid="$COMMAND_ID" '
+    { lines[NR] = $0 }
+    END {
+      for (i = 1; i <= NR; i++) {
+        if (i == NR) { sub(/}[ \t]*$/, ",\"command_id\":" cid "}", lines[i]) }
+        print lines[i]
+      }
+    }' "$OUT" > "$TMP/_out_cmdid.json" && mv "$TMP/_out_cmdid.json" "$OUT"
 fi
 
 # ---------- 요약 ----------
