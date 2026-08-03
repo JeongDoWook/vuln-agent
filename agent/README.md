@@ -4,17 +4,21 @@
 스캐너를 각 서버에 심는 방식이 아니라, 가벼운 셸 스크립트가 주기적으로 인벤토리를
 수집해 중앙(`ingest.php`)으로 push 한다.
 
-## 한 번만 설치하면 된다 (계속 켜둘 필요 없음)
+## 한 번만 설치하면 된다 (systemd 가 있으면 상시 데몬으로 알아서 돈다)
 
-이게 가장 자주 나오는 오해다.
-
-- 에이전트 본체(`vuln-inventory-agent.sh`)는 **데몬이 아니다.** 한 번 실행하면
-  수집 → 전송 → **종료**한다(`flock` 으로 중복 실행 방지).
-- `install-agent.sh` 가 **systemd 타이머**(`Type=oneshot`, 기본 `OnCalendar=hourly`,
-  `Persistent=true`)를 등록한다. systemd 가 없으면 cron 으로 대체.
-- 그래서 **설치 한 번이면 OS 가 매시간 알아서 재실행**한다. 백그라운드로 계속 돌리거나
-  수동으로 켜둘 필요가 없다.
-- `Persistent=true` 라 서버가 꺼져 있던 동안 놓친 실행은 부팅 후 한 번 따라잡는다.
+- `install-agent.sh` 가 있는 노드는 **`run.sh` 를 systemd 상시 서비스**(`Type=simple`,
+  `Restart=on-failure`)로 등록해 `enable --now` 한다. `run.sh` 는 10초마다 중앙의
+  `agent-poll.php` 를 GET 으로 poll 하는 while-loop 데몬이다 — 리스닝 포트를 열지 않는
+  **아웃바운드 전용**이라 중앙이 노드로 들어오는 경로는 없다.
+- poll 응답에 실린 `poll_schedule_seconds` 가 지났으면(정기수집 주기, 초기값은 설치 때
+  `--schedule` 로 정한 값) `vuln-inventory-agent.sh` 를 돌려 수집·전송한다. 중앙 웹에서
+  주기를 바꾸면 **다음 poll 에 바로 반영**된다 — SSH 로 재설치할 필요가 없다.
+- poll 응답에 `due_command_id` 가 실려 있으면(중앙에서 "지금 수집" 을 누른 경우) 정기
+  주기와 무관하게 즉시 수집하고, 그 명령을 완료 처리한다.
+- 네트워크가 잠깐 끊겨도 데몬은 죽지 않는다 — poll 실패가 연속되면 poll 간격을 10초→
+  최대 5분까지 지수 백오프했다가, 성공하면 10초로 복귀한다.
+- **systemd 가 없는 노드는 cron 폴백**(정기수집만 가능, 즉시/예약 명령은 지원하지 않는다)
+  — `run.sh --once` 를 주기적으로 cron 이 실행한다. 설치 로그에 이 사실이 안내된다.
 
 ## 설치
 
@@ -255,10 +259,11 @@ bash deploy/agent_schedule.sh hourly 10.3.142.100 10.3.142.101='*:0/30'  # 노�
 ## 상태 확인
 
 ```bash
-systemctl status vuln-agent.timer        # 다음 실행 예정
-systemctl list-timers vuln-agent.timer   # 최근/다음 실행
-journalctl -u vuln-agent.service -n 20   # 실행 로그
+systemctl status vuln-agent.service      # 데몬 상태(상시 기동인지)
+journalctl -u vuln-agent.service -n 20   # 실행 로그(poll·수집 시작 등)
 cat <prefix>/logs/last.json              # 최근 수집 결과(로컬 사본)
+cat <prefix>/logs/last_scan_at           # 마지막 정기수집 시각(epoch)
+cat <prefix>/logs/poll_interval          # 현재 정기수집 주기(초, 중앙에서 바꾸면 갱신됨)
 ```
 
 ## 제거
