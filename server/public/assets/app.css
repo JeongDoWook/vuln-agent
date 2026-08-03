@@ -1155,7 +1155,8 @@ label { display: block; font-size: .82rem; color: var(--text-2); margin: .8rem 0
 label.inline { display: flex; align-items: center; gap: .5rem; margin-top: 1rem; }
 label.inline input { width: auto; }
 
-input[type=text], input[type=password], input[type=search], select, textarea {
+input[type=text], input[type=password], input[type=search],
+input[type=datetime-local], input[type=number], select, textarea {
   width: 100%;
   padding: .68rem .8rem;
   background: var(--sunken);   /* 카드 표면보다 한 단 가라앉힌다 — 포커스 때 떠오른다 */
@@ -1168,6 +1169,7 @@ input[type=text], input[type=password], input[type=search], select, textarea {
 }
 /* 포커스 때 표면색으로 떠오르고 테두리도 강조색으로(전역 :focus-visible 링과 함께 또렷하게) */
 input[type=text]:focus, input[type=password]:focus, input[type=search]:focus,
+input[type=datetime-local]:focus, input[type=number]:focus,
 select:focus, textarea:focus { background: var(--surface); border-color: var(--accent); }
 input[type=search], select { font-size: .85rem; }
 input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
