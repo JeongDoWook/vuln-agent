@@ -940,7 +940,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       <strong>에이전트 메모리 사용률</strong>
       <span class="why">— 각 수집 실행의 프로세스 트리 피크 RSS를 호스트 총 메모리 대비 %로 표시합니다.
         <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
-          · 현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?> (<?= vg_resource_mem($latestResourceScan['peak_rss_mb']) ?>)
+          · 현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?>
         <?php endif; ?>
       </span>
       <div class="card__body">
@@ -952,7 +952,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       <strong>에이전트 CPU 사용률</strong>
       <span class="why">— 각 수집 실행에서 에이전트와 자식 프로세스가 사용한 CPU 시간을 호스트 전체 코어 용량 대비 %로 표시합니다.
         <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
-          · 현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?> (CPU 시간 <?= vg_resource_cpu($latestResourceScan['cpu_seconds']) ?>)
+          · 현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?>
         <?php endif; ?>
       </span>
       <div class="card__body">

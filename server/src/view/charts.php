@@ -109,7 +109,7 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
         echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($gy, 1) . '"'
             . ' x2="' . ($W - $padR) . '" y2="' . round($gy, 1) . '"></line>';
         echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($gy + 3.5, 1) . '">'
-            . number_format($gv, $decimals) . '</text>';
+            . number_format($gv, $decimals) . vg_h($unit) . '</text>';
     }
 
     $poly = [];
