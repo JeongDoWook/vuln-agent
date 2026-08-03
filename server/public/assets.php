@@ -98,7 +98,7 @@ try {
     $st = $pdo->prepare(
         "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.first_seen,
                 s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
-                s.schedule, s.peak_rss_mb, s.cpu_seconds,
+                s.schedule, s.peak_rss_mb, s.cpu_seconds, s.mem_total_mb, s.cpu_cores, s.elapsed_seconds,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
                 (SELECT COUNT(*) FROM tb_scan x WHERE x.host_id = h.host_id) AS scan_count
            $fromSql
@@ -199,7 +199,7 @@ vg_header('자산', 'assets');
       ['label' => 'OS', 'key' => 'os', 'width' => '7%'],
       ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],
       ['label' => '주기', 'key' => 'schedule', 'width' => '6.5%'],
-      ['label' => '리소스', 'key' => 'resource', 'align' => 'right', 'width' => '6.5%'],
+      ['label' => '에이전트 리소스', 'key' => 'resource', 'align' => 'right', 'width' => '9%'],
       ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '5%'],
       ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right', 'width' => '4.5%'],
       ['label' => '심각도', 'key' => 'sev', 'width' => '9%'],
@@ -251,9 +251,16 @@ vg_header('자산', 'assets');
                   $label = ['hourly' => '매시간', 'daily' => '하루 1회'][$s] ?? $s;
                   return '<code title="' . vg_h($s) . '">' . vg_h($label) . '</code>';
               },
-              'resource' => fn($r) => $r['scan_id'] !== null
-                  ? vg_resource_mem($r['peak_rss_mb']) . ' <span class="why">·</span> ' . vg_resource_cpu($r['cpu_seconds'])
-                  : '<span class="why">–</span>',
+              'resource' => function ($r) {
+                  if ($r['scan_id'] === null) { return '<span class="why">–</span>'; }
+                  $memPct = vg_agent_mem_pct($r['peak_rss_mb'], $r['mem_total_mb']);
+                  $cpuPct = vg_agent_cpu_pct($r['cpu_seconds'], $r['elapsed_seconds'], $r['cpu_cores']);
+                  $detail = '에이전트 실행 기준 · 피크 ' . strip_tags(vg_resource_mem($r['peak_rss_mb']))
+                      . ' · CPU 시간 ' . strip_tags(vg_resource_cpu($r['cpu_seconds']));
+                  return '<span title="' . vg_h($detail) . '">'
+                      . vg_resource_pct($memPct) . '<span class="why"> RAM · </span>'
+                      . vg_resource_pct($cpuPct) . '<span class="why"> CPU</span></span>';
+              },
               'package_count' => fn($r) => $r['scan_id'] !== null ? number_format((int) $r['package_count']) : '<span class="why">–</span>',
               'exposure_count'=> fn($r) => $r['scan_id'] !== null ? number_format((int) $r['exposure_count']) : '<span class="why">–</span>',
               // 뱃지를 누르면 그 호스트·등급의 취약점 목록으로.

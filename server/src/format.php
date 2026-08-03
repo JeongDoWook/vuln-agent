@@ -243,6 +243,26 @@ function vg_resource_pct(?float $pct): string {
     return number_format($pct, 1) . '<span class="why">%</span>';
 }
 
+/** 한 번의 에이전트 실행이 차지한 호스트 메모리 비율. 잘못된 누적 계측값은 제외한다. */
+function vg_agent_mem_pct($peakMb, $totalMb): ?float {
+    if ($peakMb === null || $peakMb === '' || $totalMb === null || $totalMb === '' || (float) $totalMb <= 0) {
+        return null;
+    }
+    $pct = (float) $peakMb / (float) $totalMb * 100;
+    return $pct >= 0 && $pct <= 100 ? $pct : null;
+}
+
+/** 실행 시간 동안 에이전트 프로세스 트리가 사용한 전체 CPU 용량 비율. */
+function vg_agent_cpu_pct($cpuSeconds, $elapsedSeconds, $cores): ?float {
+    if ($cpuSeconds === null || $cpuSeconds === '' || $elapsedSeconds === null || $elapsedSeconds === ''
+        || $cores === null || $cores === '' || (float) $elapsedSeconds <= 0 || (float) $cores <= 0) {
+        return null;
+    }
+    $pct = (float) $cpuSeconds / ((float) $elapsedSeconds * (float) $cores) * 100;
+    // 한 호스트의 전체 코어 용량을 분모로 삼았으므로 100% 초과는 과거 누적 cgroup 계측값이다.
+    return $pct >= 0 && $pct <= 100 ? $pct : null;
+}
+
 /**
  * EPSS 셀 — 악용확률과 백분위를 함께.
  *

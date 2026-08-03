@@ -321,17 +321,8 @@ function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     //   다른 스펙(mem_total_mb/cpu_cores)이 섞여 값이 왜곡된다. 필요값이 하나라도 없거나
     //   분모가 0이면 그 스캔은 이 지표에서 제외(NULL) — 0/100 대체 금지.
     foreach ($resourceScans as &$s) {
-        $s['mem_pct'] = null;
-        if ($s['peak_rss_mb'] !== null && $s['peak_rss_mb'] !== ''
-            && $s['mem_total_mb'] !== null && $s['mem_total_mb'] !== '' && (float) $s['mem_total_mb'] > 0) {
-            $s['mem_pct'] = (float) $s['peak_rss_mb'] / (float) $s['mem_total_mb'] * 100;
-        }
-        $s['cpu_pct'] = null;
-        if ($s['cpu_seconds'] !== null && $s['cpu_seconds'] !== ''
-            && $s['cpu_cores'] !== null && $s['cpu_cores'] !== '' && (float) $s['cpu_cores'] > 0
-            && $s['elapsed_seconds'] !== null && $s['elapsed_seconds'] !== '' && (float) $s['elapsed_seconds'] > 0) {
-            $s['cpu_pct'] = (float) $s['cpu_seconds'] / ((float) $s['elapsed_seconds'] * (float) $s['cpu_cores']) * 100;
-        }
+        $s['mem_pct'] = vg_agent_mem_pct($s['peak_rss_mb'], $s['mem_total_mb']);
+        $s['cpu_pct'] = vg_agent_cpu_pct($s['cpu_seconds'], $s['elapsed_seconds'], $s['cpu_cores']);
     }
     unset($s);
 
@@ -920,42 +911,26 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     $latestResourceScan = $resourceScans ? end($resourceScans) : null;
   ?>
     <div class="card">
-      <strong>메모리 사용률 추이</strong>
-      <span class="why">— 호스트 총 메모리(mem_total_mb) 대비 %. 스펙 미수집 스캔은 이 지표에서 제외됩니다.</span>
+      <strong>에이전트 메모리 사용률</strong>
+      <span class="why">— 각 수집 실행의 프로세스 트리 피크 RSS를 호스트 총 메모리 대비 %로 표시합니다.
+        <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
+          · 현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?> (<?= vg_resource_mem($latestResourceScan['peak_rss_mb']) ?>)
+        <?php endif; ?>
+      </span>
       <div class="card__body">
       <?php vg_resource_trend($resourceScans, 'mem_pct', '%', 1, 'mem'); ?>
       </div>
     </div>
 
     <div class="card mt-lg">
-      <strong>메모리 사용량 추이</strong>
-      <span class="why">— 스캔당 피크 RSS(최근 <?= count($resourceScans) ?>건)
-        <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
-          · 현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?>(호스트 총 메모리 대비)
+      <strong>에이전트 CPU 사용률</strong>
+      <span class="why">— 각 수집 실행에서 에이전트와 자식 프로세스가 사용한 CPU 시간을 호스트 전체 코어 용량 대비 %로 표시합니다.
+        <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
+          · 현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?> (CPU 시간 <?= vg_resource_cpu($latestResourceScan['cpu_seconds']) ?>)
         <?php endif; ?>
       </span>
-      <div class="card__body">
-      <?php vg_resource_trend($resourceScans, 'peak_rss_mb', 'MB', 0, 'mem'); ?>
-      </div>
-    </div>
-
-    <div class="card mt-lg">
-      <strong>CPU 사용률 추이</strong>
-      <span class="why">— 코어수(cpu_cores) 대비 %. 스펙 미수집 스캔은 이 지표에서 제외됩니다.</span>
       <div class="card__body">
       <?php vg_resource_trend($resourceScans, 'cpu_pct', '%', 1, 'cpu'); ?>
-      </div>
-    </div>
-
-    <div class="card mt-lg">
-      <strong>CPU 사용량 추이</strong>
-      <span class="why">— 스캔당 CPU 점유 시간(초, 자식 프로세스 포함)
-        <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
-          · 현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?>(코어수 대비)
-        <?php endif; ?>
-      </span>
-      <div class="card__body">
-      <?php vg_resource_trend($resourceScans, 'cpu_seconds', 's', 1, 'cpu'); ?>
       </div>
     </div>
 

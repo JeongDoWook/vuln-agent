@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.0"
+SCRIPT_VERSION="3.1"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
@@ -72,17 +72,16 @@ have()    { command -v "$1" >/dev/null 2>&1; }
 is_root() { [ "$(id -u)" -eq 0 ]; }
 
 # ---------- 자기계측: 이 실행이 쓴 피크 메모리·CPU 를 잰다 (담당자 안심용) ----------
-#   1순위: 자기 cgroup(memory.peak·cpu.stat) — 커널이 트리 전체를 공짜로 집계한다.
-#          측정 오버헤드가 0 이라, 정상 배포 경로(systemd 서비스 / --limit scope)에선
-#          "재느라 부담을 준다"는 역설이 없다. cgroup 이 이 실행 전용일 때만 신뢰한다
-#          (경로에 vuln-agent 또는 .scope — cron 은 공유 cgroup 이라 과대집계되므로 제외).
+#   1순위: 이번 실행 전용 systemd scope의 cgroup(memory.peak·cpu.stat).
+#          상시 vuln-agent.service cgroup은 데몬 수명 동안 값이 누적되므로 절대 쓰지 않는다.
+#          이를 한 번의 수집값으로 읽으면 CPU가 실행할 때마다 불어나 수천 %로 보인다.
 #   2순위: cgroup 을 못 쓰면(cron·수동·cgroup v1) 초경량 샘플러로 폴백한다.
 SELF_CG=""; SAMPLER_PID=""
 measure_start() {
   local path
   path="$(sed -n 's/^0::\(.*\)$/\1/p' /proc/self/cgroup 2>/dev/null | head -1)"
   case "$path" in
-    */vuln-agent*|*.scope)
+    *.scope)
       [ -r "/sys/fs/cgroup${path}/memory.peak" ] && SELF_CG="/sys/fs/cgroup${path}" ;;
   esac
   [ -n "$SELF_CG" ] && return                         # cgroup 으로 잴 수 있으면 샘플러 불필요
