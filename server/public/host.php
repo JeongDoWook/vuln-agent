@@ -14,7 +14,54 @@ require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/matcher.php';
+require_once __DIR__ . '/../src/agentcommand.php';   // 수집 제어(즉시/예약 실행·주기 변경)
 vg_require_menu('findings');
+
+// --- 수집 제어 POST 처리 (즉시실행/예약실행/주기변경) — GET 렌더보다 먼저, 헤더 출력 전 ---
+//   자산관리(assets)와 같은 인가 범위를 쓴다 — 새 메뉴 코드를 만들지 않는다(YAGNI).
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $agentMsg = null; $agentErr = null;
+    $postHostId = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
+    if (!vg_csrf_check($_POST['csrf'] ?? null)) {
+        $agentErr = '세션이 만료되었습니다.';
+    } elseif (!vg_can('assets')) {
+        http_response_code(403);
+        echo 'forbidden';
+        exit;
+    } else {
+        $pdo = vg_pdo();
+        $me = vg_current_user();
+        $action = (string) ($_POST['action'] ?? '');
+        try {
+            if ($action === 'agent_run_now') {
+                vg_agent_command_create($pdo, $postHostId, null, $me['id'] ?? null);
+                $agentMsg = '즉시 실행 명령을 등록했습니다. 에이전트가 다음 poll 에서 실행합니다.';
+            } elseif ($action === 'agent_schedule') {
+                $runAtRaw = trim((string) ($_POST['run_at'] ?? ''));
+                if ($runAtRaw === '') {
+                    throw new RuntimeException('예약 시각을 입력하세요.');
+                }
+                // <input type="datetime-local"> 은 'YYYY-MM-DDTHH:MM' 을 준다 — DB 포맷으로 변환.
+                $runAt = str_replace('T', ' ', $runAtRaw) . ':00';
+                vg_agent_command_create($pdo, $postHostId, $runAt, $me['id'] ?? null);
+                $agentMsg = '예약 실행 명령을 등록했습니다.';
+            } elseif ($action === 'agent_set_schedule') {
+                // 화면은 분 단위로 받고 저장은 초로 환산한다(사람이 시간을 셀 때는 분이 더 익숙하다).
+                $minutes = (int) ($_POST['schedule_minutes'] ?? 0);
+                vg_agent_command_set_schedule($pdo, $postHostId, $minutes * 60);
+                $agentMsg = "수집 주기를 {$minutes}분으로 변경했습니다.";
+            }
+        } catch (Throwable $e) {
+            error_log('[host-agent-command] ' . $e->getMessage());
+            $agentErr = $e instanceof RuntimeException ? $e->getMessage() : '처리 중 오류가 발생했습니다.';
+        }
+    }
+    vg_redirect_flash(['agentMsg' => $agentMsg, 'agentErr' => $agentErr]);
+}
+$agentFlash = vg_flash_take();
+$agentMsg = $agentFlash['agentMsg'] ?? null;
+$agentErr = $agentFlash['agentErr'] ?? null;
+$agentCsrf = vg_csrf_token();
 
 $err = null; $host = null; $scan = null; $scanAge = null;
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
@@ -194,6 +241,69 @@ function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, i
     return ['total' => $total, 'rows' => $rows];
 }
 
+/**
+ * 수집 제어 카드 — 즉시실행/예약실행/주기변경 폼 + 예약된 명령 미니 목록.
+ *   agent-command-queue-api 워커가 만드는 명령 큐(tb_agent_command)에 등록만 한다.
+ *   실제 poll·실행은 데몬화된 에이전트 쪽 책임.
+ */
+function vg_host_render_agent_control(
+    int $hostId, array $host, string $csrf, array $pendingCommands, ?string $msg, ?string $err
+): void {
+    $curMinutes = (int) round(((int) ($host['poll_schedule_seconds'] ?? 3600)) / 60);
+    ?>
+    <div class="card">
+      <strong>수집 제어</strong>
+      <span class="why">— 에이전트 명령 큐에 즉시/예약 실행을 등록하거나 수집 주기를 바꿉니다.</span>
+      <div class="card__body">
+        <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+        <div class="actions actions--stack">
+          <form method="post" data-confirm="지금 이 호스트의 스캔을 실행할까요?">
+            <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+            <input type="hidden" name="action" value="agent_run_now">
+            <input type="hidden" name="id" value="<?= (int) $hostId ?>">
+            <label>즉시 실행</label>
+            <button class="btn btn--sm btn--primary">지금 실행</button>
+            <span class="why">에이전트가 다음 poll 에서 바로 실행합니다.</span>
+          </form>
+
+          <form method="post">
+            <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+            <input type="hidden" name="action" value="agent_schedule">
+            <input type="hidden" name="id" value="<?= (int) $hostId ?>">
+            <label>예약 실행</label>
+            <input type="datetime-local" name="run_at" required>
+            <button class="btn btn--sm btn--ghost">등록</button>
+          </form>
+
+          <form method="post">
+            <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+            <input type="hidden" name="action" value="agent_set_schedule">
+            <input type="hidden" name="id" value="<?= (int) $hostId ?>">
+            <label>수집 주기(분)</label>
+            <input type="number" name="schedule_minutes" min="1" value="<?= $curMinutes ?>" required>
+            <button class="btn btn--sm btn--ghost">저장</button>
+            <span class="why">현재 <?= number_format((int) ($host['poll_schedule_seconds'] ?? 3600)) ?>초(<?= $curMinutes ?>분) · 최소 30초</span>
+          </form>
+        </div>
+
+        <?php if ($pendingCommands): ?>
+          <div class="mt-lg">
+            <strong class="why">예약된 명령</strong>
+            <ul class="hint-list">
+              <?php foreach ($pendingCommands as $c): ?>
+                <li>
+                  <?= $c['run_at'] === null ? '즉시 실행 대기중' : vg_h((string) $c['run_at']) . ' 예약' ?>
+                  <span class="why">(등록 <?= vg_h((string) $c['created_at']) ?>)</span>
+                </li>
+              <?php endforeach; ?>
+            </ul>
+          </div>
+        <?php endif; ?>
+      </div>
+    </div>
+    <?php
+}
+
 function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     // 새 수집·새 컬럼 없이 스캔 이력 탭과 같은 데이터를 시간순으로만 가져온다.
     //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
@@ -256,10 +366,22 @@ try {
     $st = $pdo->prepare('SELECT * FROM tb_host WHERE host_id = ? AND is_deleted = 0');
     $st->execute([$hostId]);
     $host = $st->fetch() ?: null;
+    $pendingCommands = [];
 
     if ($host) {
         // 호스트 상세(설치 패키지·노출 포트·실행 프로세스 등 인프라 민감정보) 열람 감사로그.
         vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null));
+
+        if (vg_can('assets')) {
+            $st = $pdo->prepare(
+                "SELECT agent_command_id, run_at, created_at
+                   FROM tb_agent_command
+                  WHERE host_id = ? AND status = 'pending'
+                  ORDER BY run_at IS NULL DESC, run_at, created_at"
+            );
+            $st->execute([$hostId]);
+            $pendingCommands = $st->fetchAll();
+        }
 
         // 컬럼을 못 박는 이유: tb_scan.raw_json 은 호스트당 MB 단위(실측 3.14MB)라
         // SELECT * 로 끌면 ORDER BY 의 정렬 버퍼(운영 sort_buffer_size=2M)를 한 행만으로도 넘겨 1038 이 난다.
@@ -386,6 +508,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif (!$scan): ?>
   <?php vg_hero(vg_h($host['fqdn']), [vg_h(trim($host['os_id'] . ' ' . $host['os_version'])), '<a href="/">대시보드</a>'], null, 'ok', '수집 상태', 'ASSET DETAIL'); ?>
+  <?php if (vg_can('assets')): ?>
+    <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
+  <?php endif; ?>
   <div class="card"><?php vg_empty(['icon' => '📭', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
@@ -413,6 +538,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   ];
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
   vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'ASSET DETAIL');
+  if (vg_can('assets')) {
+      vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr);
+  }
 
   // CVE 피드가 지원하지 않는 배포판이면 매칭 후보가 아예 없어 **취약점이 0건으로 뜬다.**
   //   운영자는 "안전하다"고 읽는다 — 침묵하는 미탐이라 반드시 화면에 알린다.
