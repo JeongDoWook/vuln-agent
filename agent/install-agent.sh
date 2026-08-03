@@ -79,7 +79,8 @@ TIMER=/etc/systemd/system/vuln-agent.timer
 
 if [ "$UNINSTALL" = 1 ]; then
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl disable --now vuln-agent.timer 2>/dev/null || true
+    systemctl disable --now vuln-agent.service 2>/dev/null || true
+    systemctl disable --now vuln-agent.timer 2>/dev/null || true   # 구버전(oneshot+timer) 잔재 정리
     rm -f "$UNIT" "$TIMER"; systemctl daemon-reload 2>/dev/null || true
   fi
   ( crontab -l 2>/dev/null | grep -vF "$RUN" ) | crontab - 2>/dev/null || true
@@ -220,46 +221,141 @@ SCHEDULE=$SCHEDULE
 EOF
 chmod 600 "$ETC/agent.env"
 
-# 3) 실행 래퍼 — env 로드 후 수집(에이전트가 SEND_URL/SEND_TOKEN 을 읽어 전송)
+# 3) 실행 래퍼 — env 로드 후 poll_and_maybe_scan 을 10초마다 반복하는 데몬(systemd Type=simple).
+#   agent-poll.php 를 10초마다 GET 해 (a) 정기수집 주기(poll_schedule_seconds)가 지났거나
+#   (b) 즉시/예약 명령(due_command_id)이 와 있으면 vuln-inventory-agent.sh 를 돌린다.
 #   changelog 수집은 백포트 오탐 제거(서버가 "이미 패치됨"을 증명)의 근거라 켜둔다.
 #   과거엔 --no-changelog 로 껐지만, 에이전트에 명령별 timeout·바이트 상한이 있어
 #   느린 changelog 로부터 보호되고 실측 비용도 수 초라 부담이 없다.
+#   cron 폴백 노드는 상시 프로세스를 못 돌리므로 `run.sh --once` 로 1회만 poll·판단하고 종료한다
+#   (systemd 데몬 경로는 --once 없이 무한루프로 상시 기동).
 cat > "$RUN" <<EOF
 #!/usr/bin/env bash
+# vuln-agent 데몬 루프 — install-agent.sh 가 생성한다. 재설치 시 덮어써지므로 직접 고치지 말 것.
 set -a; . $ETC/agent.env; set +a
-exec $BIN/vuln-inventory-agent.sh -o $LOG/last.json
+set -uo pipefail
+
+BIN_DIR="$BIN"
+LOG_DIR="$LOG"
+POLL_URL="\${SEND_URL%ingest.php}agent-poll.php"
+LAST_SCAN_FILE="\$LOG_DIR/last_scan_at"
+POLL_STATE_FILE="\$LOG_DIR/poll_interval"
+ONCE=0
+[ "\${1:-}" = "--once" ] && ONCE=1
+
+# --schedule 은 초기값일 뿐이다 — 이후 주기는 agent-poll.php 응답의 poll_schedule_seconds 가
+# 우선하며 POLL_STATE_FILE 에 저장돼 재시작해도 유지된다(중앙 웹에서 바꾸면 다음 poll 에 반영,
+# SSH 재설치 불필요).
+case "\$SCHEDULE" in
+  hourly) INIT_INTERVAL=3600 ;;
+  daily)  INIT_INTERVAL=86400 ;;
+  *)      INIT_INTERVAL=3600 ;;   # 커스텀 OnCalendar 는 초로 못 바꾸므로 서버 응답을 받을 때까지만 사용
+esac
+
+have() { command -v "\$1" >/dev/null 2>&1; }
+log()  { echo "[\$(date -Is 2>/dev/null || date)] \$*" >&2; }
+
+# do_poll : agent-poll.php GET → POLL_SCHEDULE / DUE_CMD 채움. 성공(0)/실패(1).
+do_poll() {
+  local resp=""
+  if have curl; then
+    resp=\$(curl -sS -m 15 -H "X-Agent-Token: \$SEND_TOKEN" "\$POLL_URL" 2>/dev/null)
+  elif have wget; then
+    resp=\$(wget -qO- --timeout=15 --header="X-Agent-Token: \$SEND_TOKEN" "\$POLL_URL" 2>/dev/null)
+  else
+    log "curl·wget 이 모두 없어 poll 을 할 수 없습니다."
+    return 1
+  fi
+  [ -z "\$resp" ] && return 1
+  if have jq; then
+    printf '%s' "\$resp" | jq -e . >/dev/null 2>&1 || return 1
+    POLL_SCHEDULE=\$(printf '%s' "\$resp" | jq -r '.poll_schedule_seconds // empty')
+    DUE_CMD=\$(printf '%s' "\$resp" | jq -r '.due_command_id // empty')
+  else
+    # 응답이 단순 flat JSON 2필드뿐이라 grep -o 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
+    POLL_SCHEDULE=\$(printf '%s' "\$resp" | grep -o '"poll_schedule_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
+    DUE_CMD=\$(printf '%s' "\$resp" | grep -o '"due_command_id"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
+  fi
+  case "\$POLL_SCHEDULE" in ''|*[!0-9]*) return 1 ;; esac
+  return 0
+}
+
+run_scan() {
+  local cmd_id="\$1"
+  local args=(-o "\$LOG_DIR/last.json" --send "\$SEND_URL" --token "\$SEND_TOKEN")
+  [ -n "\$cmd_id" ] && args+=(--command-id "\$cmd_id")
+  log "수집 시작\${cmd_id:+ (명령#\$cmd_id 처리 포함)}"
+  "\$BIN_DIR/vuln-inventory-agent.sh" "\${args[@]}"
+}
+
+# poll_and_maybe_scan : poll 1회 + 필요하면 수집. poll 자체의 성공/실패를 돌려준다(백오프 판단용).
+#   주의: due_command_id 로 실행했다고 정기수집 타이머(LAST_SCAN_FILE)를 리셋하지 않는다 —
+#   그러면 "예약 실행 걸었더니 다음 정기수집이 늦어졌다"는 혼란이 생긴다. 타이머는 정기
+#   조건(경과시간 >= poll_schedule_seconds)으로 실행했을 때만 갱신한다.
+poll_and_maybe_scan() {
+  if ! do_poll; then
+    log "poll 실패 — 응답 없음/비정상"
+    return 1
+  fi
+  echo "\$POLL_SCHEDULE" > "\$POLL_STATE_FILE"
+  local now last scheduled_due=0
+  now=\$(date +%s)
+  last=\$(cat "\$LAST_SCAN_FILE" 2>/dev/null || echo 0)
+  case "\$last" in ''|*[!0-9]*) last=0 ;; esac
+  [ \$(( now - last )) -ge "\$POLL_SCHEDULE" ] && scheduled_due=1
+  if [ "\$scheduled_due" = 1 ] || [ -n "\$DUE_CMD" ]; then
+    run_scan "\$DUE_CMD"
+    [ "\$scheduled_due" = 1 ] && echo "\$now" > "\$LAST_SCAN_FILE"
+  fi
+  return 0
+}
+
+FAIL_SLEEP=10
+MAX_FAIL_SLEEP=300
+while true; do
+  if poll_and_maybe_scan; then
+    FAIL_SLEEP=10
+    SLEEP=10
+  else
+    FAIL_SLEEP=\$(( FAIL_SLEEP * 2 ))
+    [ "\$FAIL_SLEEP" -gt "\$MAX_FAIL_SLEEP" ] && FAIL_SLEEP=\$MAX_FAIL_SLEEP
+    SLEEP=\$FAIL_SLEEP
+  fi
+  [ "\$ONCE" = 1 ] && exit 0
+  sleep "\$SLEEP"
+done
 EOF
 chmod 0755 "$RUN"
 
-# 4) 스케줄 등록 (systemd-timer 우선, 실패 시 cron 폴백)
+# 4) 상시 기동 등록 (systemd 상시 서비스 우선, 실패 시 cron 폴백)
+#   systemd 가 있으면 데몬(run.sh 의 while-loop)을 Type=simple 로 상시 기동한다 —
+#   10초마다 agent-poll.php 를 poll 하므로 더 이상 OS 스케줄러(timer)가 주기를 쥐지 않는다.
+#   cron 은 상시 프로세스를 못 돌리므로(주기 실행만 가능) 데몬화가 안 된다 — 이 경우 기존
+#   oneshot 방식을 그대로 유지한다(`run.sh --once` 를 주기적으로 cron 이 실행 → 정기수집만
+#   가능, 중앙의 즉시/예약 명령은 다음 주기까지 반영 안 됨).
 SCHEDULED=""
 if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
   cat > "$UNIT" <<EOF
 [Unit]
-Description=vuln-agent 수집 및 중앙 전송
+Description=vuln-agent 상시 데몬(10초 poll) — 수집·중앙 전송
 After=network-online.target
 Wants=network-online.target
 [Service]
-Type=oneshot
+Type=simple
 Nice=19
 IOSchedulingClass=idle
 ExecStart=$RUN
-EOF
-  cat > "$TIMER" <<EOF
-[Unit]
-Description=vuln-agent 주기 수집
-[Timer]
-OnCalendar=$SCHEDULE
-Persistent=true
-RandomizedDelaySec=120
+Restart=on-failure
+RestartSec=5
 [Install]
-WantedBy=timers.target
+WantedBy=multi-user.target
 EOF
-  if systemctl daemon-reload 2>/dev/null && systemctl enable --now vuln-agent.timer 2>/dev/null; then
-    SCHEDULED="systemd-timer (OnCalendar=$SCHEDULE)"
+  rm -f "$TIMER"   # 구버전(oneshot+timer) 잔재 — 상시 서비스로 대체하므로 더 이상 만들지 않는다
+  if systemctl daemon-reload 2>/dev/null && systemctl enable --now vuln-agent.service 2>/dev/null; then
+    SCHEDULED="systemd 상시 데몬(10초 poll, 초기 정기수집 주기=$SCHEDULE)"
   else
-    rm -f "$UNIT" "$TIMER"
-    echo ">> systemd 사용 불가 → cron 으로 대체 시도"
+    rm -f "$UNIT"
+    echo ">> systemd 사용 불가 → cron 으로 대체 시도(정기수집만, 즉시/예약 명령 미지원)"
   fi
 fi
 if [ -z "$SCHEDULED" ] && command -v crontab >/dev/null 2>&1; then
@@ -269,8 +365,9 @@ if [ -z "$SCHEDULED" ] && command -v crontab >/dev/null 2>&1; then
     *)      CRON="0 * * * *" ;;  # 커스텀 OnCalendar 는 cron 표현 불가 → 매시로
   esac
   if ( crontab -l 2>/dev/null | grep -vF "$RUN"; \
-       echo "$CRON $RUN >/dev/null 2>&1" ) | crontab - 2>/dev/null; then
-    SCHEDULED="cron ($CRON)"
+       echo "$CRON $RUN --once >/dev/null 2>&1" ) | crontab - 2>/dev/null; then
+    SCHEDULED="cron ($CRON, --once — 정기수집만)"
+    echo ">> [안내] 이 노드는 systemd 가 없어 cron 폴백입니다 — 즉시실행/예약 기능을 지원하지 않습니다(정기수집만 가능)."
   fi
 fi
 if [ -n "$SCHEDULED" ]; then
@@ -280,10 +377,13 @@ else
 fi
 
 # 즉시 1회 실행(통신 확인) — 스케줄 방식과 무관하게 항상 수행.
-#   preflight 로 "붙는 것"까지는 이미 확인했으므로, 여기서 실패하면 대개 토큰 문제다
-#   (401=토큰 틀림, 403=개별 토큰이 이 호스트에 안 묶임). 그걸 성공으로 끝내지 않는다.
+#   run.sh(--once 포함)를 거치지 않고 vuln-inventory-agent.sh 를 직접 부른다 — poll 성공
+#   여부(agent-poll.php 가입 상태)와 무관하게 SEND_URL/SEND_TOKEN 자체가 맞는지만 확인하기
+#   위해서다. preflight 로 "붙는 것"까지는 이미 확인했으므로, 여기서 실패하면 대개 토큰
+#   문제다(401=토큰 틀림, 403=개별 토큰이 이 호스트에 안 묶임). 그걸 성공으로 끝내지 않는다.
 echo ">> 즉시 1회 수집·전송 (통신 확인)..."
-if "$RUN"; then
+if ( set -a; . "$ETC/agent.env"; set +a; exec "$BIN/vuln-inventory-agent.sh" -o "$LOG/last.json" ); then
+  date +%s > "$LOG/last_scan_at"   # 데몬의 정기수집 타이머 기준점 — 방금 한 수집을 재차 반복하지 않게
   echo ">> 완료. 수집 로그: $LOG/last.json"
 else
   echo ">> [실패] 수집은 됐지만 전송이 안 됐습니다 (위 HTTP 코드 참고)." >&2
