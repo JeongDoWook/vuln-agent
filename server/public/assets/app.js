@@ -368,34 +368,69 @@
   if (navMq.addEventListener) { navMq.addEventListener('change', applyNavAccordion); }
   else if (navMq.addListener) { navMq.addListener(applyNavAccordion); }
 
+  // 카드·표의 overflow 안에서도 잘리지 않는 공통 인포팁. body 직속 fixed 레이어로 띄운 뒤
+  // 좌우 화면 경계를 기준으로 위치를 보정한다.
+  var infoTip = null;
+  var infoTipOwner = null;
+  function hideInfoTip() {
+    if (infoTipOwner) { infoTipOwner.removeAttribute('aria-describedby'); }
+    if (infoTip) { infoTip.remove(); }
+    infoTip = null;
+    infoTipOwner = null;
+  }
+  function showInfoTip(owner) {
+    var message = owner.getAttribute('data-tip');
+    if (!message) { return; }
+    hideInfoTip();
+    infoTipOwner = owner;
+    infoTip = document.createElement('div');
+    infoTip.id = 'vg-info-tooltip';
+    infoTip.className = 'info-tooltip';
+    infoTip.setAttribute('role', 'tooltip');
+    infoTip.textContent = message;
+    document.body.appendChild(infoTip);
+    owner.setAttribute('aria-describedby', infoTip.id);
+
+    var ownerRect = owner.getBoundingClientRect();
+    var tipRect = infoTip.getBoundingClientRect();
+    var gutter = 12;
+    var left = ownerRect.left + ownerRect.width / 2 - tipRect.width / 2;
+    left = Math.max(gutter, Math.min(left, window.innerWidth - tipRect.width - gutter));
+    var top = ownerRect.bottom + 9;
+    var above = false;
+    if (top + tipRect.height > window.innerHeight - gutter) {
+      top = ownerRect.top - tipRect.height - 9;
+      above = true;
+    }
+    infoTip.style.left = Math.round(left) + 'px';
+    infoTip.style.top = Math.round(Math.max(gutter, top)) + 'px';
+    infoTip.classList.toggle('info-tooltip--above', above);
+    infoTip.style.setProperty('--tip-anchor', Math.round(ownerRect.left + ownerRect.width / 2 - left) + 'px');
+  }
+  document.addEventListener('mouseover', function (event) {
+    var owner = event.target.closest('.info-icon[data-tip]');
+    if (owner) { showInfoTip(owner); }
+  });
+  document.addEventListener('mouseout', function (event) {
+    if (infoTipOwner && event.target.closest('.info-icon[data-tip]') === infoTipOwner) { hideInfoTip(); }
+  });
+  document.addEventListener('focusin', function (event) {
+    var owner = event.target.closest('.info-icon[data-tip]');
+    if (owner) { showInfoTip(owner); }
+  });
+  document.addEventListener('focusout', function (event) {
+    if (event.target === infoTipOwner) { hideInfoTip(); }
+  });
+  window.addEventListener('scroll', hideInfoTip, true);
+  window.addEventListener('resize', hideInfoTip);
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') { hideInfoTip(); }
+  });
+
   /**
    * fetch 등 자체 비동기 작업용. 시작 시 busy(true), 끝나면 busy(false).
    *   vgLoading(button, true) → 버튼 스피너 + 상단 진행바
    */
-  // --- 정보 밀도 ----------------------------------------------------------
-  // 상세 정보는 유지하되 사용자가 행·카드 간격을 줄여 빠르게 훑을 수 있게 한다.
-  var DENSITY_KEY = 'vg-density';
-  function applyDensity(value) {
-    var compact = value === 'compact';
-    document.documentElement.setAttribute('data-density', compact ? 'compact' : 'comfortable');
-    document.querySelectorAll('[data-density-toggle]').forEach(function (button) {
-      button.setAttribute('aria-pressed', compact ? 'true' : 'false');
-      var label = button.querySelector('.density-toggle__label');
-      if (label) { label.textContent = compact ? '촘촘하게' : '편안하게'; }
-    });
-  }
-  document.addEventListener('click', function (event) {
-    var button = event.target.closest('[data-density-toggle]');
-    if (!button) { return; }
-    var next = document.documentElement.getAttribute('data-density') === 'compact' ? 'comfortable' : 'compact';
-    try { localStorage.setItem(DENSITY_KEY, next); } catch (error) {}
-    applyDensity(next);
-  });
-  document.addEventListener('DOMContentLoaded', function () {
-    var saved = 'comfortable';
-    try { saved = localStorage.getItem(DENSITY_KEY) || saved; } catch (error) {}
-    applyDensity(saved);
-  });
   window.vgLoading = function (btn, busy) {
     if (busy) {
       busyButton(btn);

@@ -11,7 +11,7 @@
  *   4) 반응형    — @media 블록. 폭이 큰 것부터 작은 것 순.
  *
  * 왜 이 규칙이 필요한가: 예전엔 리스킨할 때마다 파일 끝에 "2026 UI refresh",
- *   "2nd-pass density", "3차 UI 정돈" 레이어를 덧붙여 같은 셀렉터를 다시 선언했다.
+ *   "2nd-pass", "3차 UI 정돈" 레이어를 덧붙여 같은 셀렉터를 다시 선언했다.
  *   그래서 :root 토큰이 두 벌이 되고(다크 블록이 특이도로 뒤 :root 를 이겨 라이트만
  *   새 팔레트를 받았다), main{max-width} 가 다섯 곳에 흩어져 앞쪽을 고쳐도 화면이
  *   안 바뀌었다. 값을 바꿀 땐 덧붙이지 말고 **그 셀렉터의 선언 하나를 고친다.**
@@ -485,14 +485,7 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
 .sub { color: var(--muted); font-size: .85rem; line-height: 1.6; margin-bottom: 1.3rem; }
 h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
 
-/* --- ⓘ 인포팁 -------------------------------------------------------------
- * 제목·라벨 옆의 ⓘ 에 부연설명을 감춰 둔다. 표시는 여기서 직접 그린다 —
- * 예전엔 브라우저 기본 title 에 맡겼는데 1초쯤 기다려야 뜨고, OS 스타일이라
- * 화면과 따로 놀고, 터치에선 아예 안 떠서 "툴팁이 없는 것" 처럼 보였다.
- * 설명은 title 이 아니라 data-tip 으로 넘긴다 — title 을 남기면 브라우저 기본
- * 툴팁이 우리 것과 같이 떠서 두 개가 겹친다(vg_info_icon() 이 이 계약을 지킨다).
- * ⓘ 가 붙는 .card 는 overflow-x: auto 라 말풍선이 카드 밖으로는 못 나간다.
- * 그래서 아래로(카드 안쪽으로) 펼친다 — 제목 옆 ⓘ 밑은 늘 카드 본문이라 자리가 있다. */
+/* --- ⓘ 인포팁 ------------------------------------------------------------- */
 .info-icon {
   position: relative;
   cursor: help;
@@ -502,11 +495,12 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
 }
 .info-icon:hover, .info-icon:focus-visible { color: var(--accent-2); }
 
-.info-icon[data-tip]::after {          /* 말풍선 */
-  content: attr(data-tip);
-  top: calc(100% + 7px);
+.info-tooltip {
+  --tip-anchor: 50%;
+  position: fixed;
+  z-index: 10000;
   width: max-content;
-  max-width: 22rem;                    /* 긴 문구는 줄바꿈 — nowrap 이면 화면을 뚫는다 */
+  max-width: min(22rem, calc(100vw - 24px));
   padding: .5rem .7rem;
   border: 1px solid var(--line-2);
   border-radius: var(--r-sm);
@@ -518,34 +512,31 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   line-height: 1.5;
   text-align: left;
   white-space: normal;
-  word-break: keep-all;                /* 한글은 단어 중간에서 끊지 않는다 */
+  word-break: keep-all;
+  pointer-events: none;
+  animation: info-tip-in .12s ease-out;
 }
-.info-icon[data-tip]::before {         /* 꼬리 — 말풍선 위 테두리에 얹히는 45° 사각형 */
+.info-tooltip::before {
   content: "";
-  top: calc(100% + 3px);
+  position: absolute;
+  top: -5px;
+  left: clamp(10px, var(--tip-anchor), calc(100% - 10px));
   width: 8px;
   height: 8px;
+  translate: -50%;
+  rotate: 45deg;
   background: var(--surface);
   border-left: 1px solid var(--line-2);
   border-top: 1px solid var(--line-2);
-  rotate: 45deg;
 }
-.info-icon[data-tip]::before,
-.info-icon[data-tip]::after {
-  position: absolute;
-  left: 50%;
-  translate: -50%;
-  z-index: 30;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity .12s ease;
+.info-tooltip--above::before {
+  top: auto;
+  bottom: -5px;
+  border: 0;
+  border-right: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
 }
-/* :focus-visible 로 키보드 Tab 에서도 뜬다(vg_info_icon 이 tabindex="0" 을 준다) */
-.info-icon[data-tip]:hover::before,
-.info-icon[data-tip]:hover::after,
-.info-icon[data-tip]:focus-visible::before,
-.info-icon[data-tip]:focus-visible::after { opacity: 1; visibility: visible; }
+@keyframes info-tip-in { from { opacity: 0; transform: translateY(-3px); } }
 
 /* --- 카드 ---------------------------------------------------------------- */
 .card {
@@ -900,7 +891,7 @@ td.nowrap, td code { white-space: nowrap; }
  * 폭이 고정된 표(아래 '목록 화면' 의 table-layout:fixed)에서만 뜻이 있다. */
 td.col-id { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 여러 줄이 되는 설명 칸(근거·비고) — 기본은 두 줄까지만 보여 행 높이를 한 줄짜리 열에 맞춘다.
- * 잘린 뒷부분은 title 에 그대로 있다. 촘촘하게 모드에선 한 줄로 더 줄인다. */
+ * 잘린 뒷부분은 title 에 그대로 있다. */
 .clamp-2 {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -1549,37 +1540,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 .section-title p { margin: .3rem 0 0; color: var(--muted); font-size: .86rem; line-height: 1.55; }
 .section-title__actions { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
 
-/* 밀도 토글 — 표를 촘촘하게/여유롭게. 상태는 aria-pressed 가 들고 app.js 가 data-density 를 건다. */
-.density-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: .4rem;
-  min-height: 36px;
-  padding: .4rem .65rem;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text-2);
-  font: inherit;
-  font-size: .78rem;
-  font-weight: 650;
-  cursor: pointer;
-}
-.density-toggle:hover { color: var(--text); border-color: var(--line-2); background: var(--surface-2); }
-.density-toggle[aria-pressed="true"] {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-}
-[data-density="compact"] table th, [data-density="compact"] table td { padding-top: .56rem; padding-bottom: .56rem; }
-[data-density="compact"] .card__body { padding-top: .8rem; padding-bottom: .8rem; }
-[data-density="compact"] .toolbar { padding: .55rem; }
-[data-density="compact"] .stat { padding: .75rem 1rem; }
-[data-density="compact"] .page-title { margin-bottom: 1rem; padding-bottom: .9rem; }
-/* 촘촘하게에선 설명 칸을 한 줄로 더 줄인다. 알약(조치 버전)은 제외 — 값 자체라 한 줄로 자르면
- * 무엇으로 올려야 하는지가 안 보인다. 설명은 잘려도 앞머리로 무슨 얘기인지 알 수 있다. */
-[data-density="compact"] .clamp-2:not(.pill) { -webkit-line-clamp: 1; line-clamp: 1; }
-
 /* 반응형 표 — 좁은 화면에서 행을 카드로 접는다(td 의 data-label 이 머리글 노릇). */
 .data-table td, .data-table th { font-variant-numeric: tabular-nums; }
 .data-table tbody tr:hover { background: var(--surface-2); }
@@ -1774,7 +1734,6 @@ form.card .btn--primary:active { transform: translateY(0); }
   .page--assets .data-table td:not([data-label]) { display: flex; justify-content: flex-end; padding-top: .65rem; }
   .page--assets .data-table td:not([data-label])::before { display: none; }
   .page--assets .data-table .actions { justify-content: flex-end; }
-  [data-density="compact"] .page--assets .data-table td { padding: .45rem .8rem; }
 }
 
 /* 좁은 화면: 사이드바를 서랍(drawer)으로 바꾼다 — 햄버거로 열고 backdrop 으로 닫는다.
@@ -1821,7 +1780,6 @@ form.card .btn--primary:active { transform: translateY(0); }
   .page--host .subtabs::-webkit-scrollbar, .page--cve .subtabs::-webkit-scrollbar { display: none; }
   .page--host .subtabs a, .page--cve .subtabs a { flex: none; }
 
-  .density-toggle__label { display: none; }
   .page-title { align-items: flex-start; }
   .page-title__actions { width: 100%; justify-content: flex-start; }
   .section-title { align-items: flex-start; flex-direction: column; }
@@ -1872,7 +1830,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 
   .page-title { gap: .75rem; padding-bottom: 1rem; }
   .page-title__actions, .page-title__actions .btn { width: 100%; }
-  [data-density="compact"] .data-table td { padding: .45rem .8rem; }
 }
 
 @media (max-width: 560px) {

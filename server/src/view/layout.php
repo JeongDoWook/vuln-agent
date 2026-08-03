@@ -73,9 +73,6 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
         <button type="button" class="seg__btn" data-theme-set="light" aria-label="밝은 테마">☀ Light</button>
         <button type="button" class="seg__btn" data-theme-set="dark" aria-label="어두운 테마">☾ Dark</button>
       </div>
-      <button type="button" class="density-toggle" data-density-toggle aria-label="화면 정보 밀도 전환" title="표와 카드 간격 조절">
-        <span aria-hidden="true">≡</span><span class="density-toggle__label">편안하게</span>
-      </button>
       <?php // 사용자 칩 — 아바타(아이디 첫 글자) + 이름·역할. 누르면 내 프로필로. ?>
       <a class="topbar__user" href="/profile.php" title="내 프로필">
         <span class="avatar"><?= vg_h(mb_strtoupper(mb_substr($user['username'], 0, 1))) ?></span>
