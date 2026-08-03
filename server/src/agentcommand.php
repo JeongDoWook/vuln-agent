@@ -57,7 +57,7 @@ function vg_agent_command_set_schedule(PDO $pdo, int $hostId, int $seconds): voi
         throw new RuntimeException('폴링 주기는 최소 ' . VG_AGENT_COMMAND_MIN_SCHEDULE_SECONDS . '초 이상이어야 합니다.');
     }
 
-    $pdo->prepare('UPDATE tb_host SET poll_schedule_seconds = ? WHERE host_id = ?')
+    $pdo->prepare('UPDATE tb_host SET poll_schedule_seconds = ? WHERE host_id = ? AND is_deleted = 0')
         ->execute([$seconds, $hostId]);
 
     vg_log_activity(

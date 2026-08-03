@@ -254,7 +254,7 @@ $commandId = $data['command_id'] ?? null;
 if (is_int($commandId) || (is_string($commandId) && ctype_digit($commandId))) {
     $pdo->prepare(
         "UPDATE tb_agent_command SET status = 'done', executed_at = NOW()
-          WHERE agent_command_id = ? AND host_id = ? AND status = 'pending'"
+          WHERE agent_command_id = ? AND host_id = ? AND status = 'pending' AND is_deleted = 0"
     )->execute([(int) $commandId, $hostId]);
 }
 
