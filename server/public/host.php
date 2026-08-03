@@ -371,6 +371,27 @@ function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     return ['resourceScans' => $resourceScans];
 }
 
+function vg_host_load_packages_tab(PDO $pdo, int $scanId, int $perPage, int $offset, string $q): array {
+    $where = "scan_id = ? AND container_id = 0 AND manager IN ('dpkg','rpm','apk')";
+    $params = [$scanId];
+    if ($q !== '') {
+        $where .= ' AND (name LIKE ? OR source_pkg LIKE ? OR origin LIKE ? OR vendor LIKE ?)';
+        $like = '%' . $q . '%';
+        array_push($params, $like, $like, $like, $like);
+    }
+    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_package WHERE $where");
+    $st->execute($params);
+    $total = (int) $st->fetchColumn();
+
+    $st = $pdo->prepare(
+        "SELECT manager,name,version,arch,source_pkg,source_version,origin,vendor
+           FROM tb_package WHERE $where
+          ORDER BY name,arch,version LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute($params);
+    return ['total' => $total, 'rows' => $st->fetchAll()];
+}
+
 function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perPage, int $offset): array {
     $total = $scanTotal;
     $st = $pdo->prepare(
@@ -390,7 +411,7 @@ function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perP
 
 $counts =['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
-$critHighTotal = 0; $restartTotal = 0; $restartRows = [];
+$critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
 $q = trim((string) ($_GET['q'] ?? ''));
@@ -492,8 +513,12 @@ try {
         $st = $pdo->prepare('SELECT COUNT(*) FROM tb_process WHERE scan_id = ?');
         $st->execute([$sid]); $processCount = (int) $st->fetchColumn();
 
+        $st = $pdo->prepare("SELECT COUNT(*) FROM tb_package
+                              WHERE scan_id = ? AND container_id = 0 AND manager IN ('dpkg','rpm','apk')");
+        $st->execute([$sid]); $packageTotal = (int) $st->fetchColumn();
+
         // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
-        $validTabs = ['vuln', 'runtime', 'cce'];
+        $validTabs = ['vuln', 'packages', 'runtime', 'cce'];
         if ($suppressedCount > 0) { $validTabs[] = 'suppressed'; }
         $validTabs[] = 'resources';
         $validTabs[] = 'scans';
@@ -508,6 +533,9 @@ try {
         if ($tab === 'vuln') {
             ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows]
                 = vg_host_load_vuln_tab($pdo, $sid, $critHighTotal, $perPage, $offset, $q);
+        } elseif ($tab === 'packages') {
+            ['total' => $total, 'rows' => $rows]
+                = vg_host_load_packages_tab($pdo, $sid, $perPage, $offset, $q);
         } elseif ($tab === 'runtime') {
             ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows, 'ePage' => $ePage]
                 = vg_host_load_runtime_tab($pdo, $sid, $perPage, $offset, $ePage, $q);
@@ -568,6 +596,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     // 탭 정의(배열 순서 = 표시 순서). n 은 라벨 옆 숫자(null 이면 숨김).
     $tabDefs = [
         'vuln'    => ['label' => '취약점',    'n' => $vulnTotal],
+        'packages'=> ['label' => '설치 패키지', 'n' => $packageTotal],
         'runtime' => ['label' => '런타임',    'n' => $processCount],
         'cce'     => ['label' => '보안 설정', 'n' => $cceFail],
     ];
@@ -580,7 +609,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       vg_h(trim($host['os_id'] . ' ' . $host['os_version'])) ?: 'OS 미상',
       vg_asset_state($scanAge),
       '최신 수집 ' . vg_h($scan['collected_at']),
-      '패키지 ' . number_format((int) $scan['package_count']) . '개',
+      '<a href="' . vg_h(vg_qs(['tab' => 'packages', 'page' => null, 'q' => null])) . '">패키지 '
+          . number_format($packageTotal) . '개</a>',
   ];
   if (!empty($host['last_seen_ip'])) { $meta[] = 'IP ' . vg_h($host['last_seen_ip']); }
   $meta[] = '<a href="/">대시보드</a>';
@@ -728,6 +758,60 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       ?>
       </div>
     </div>
+
+  <?php elseif ($tab === 'packages'): ?>
+    <?php vg_toolbar([
+        ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명·소스·출처 검색', 'value' => $q],
+        ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
+    ]); ?>
+    <div class="card">
+      <strong>설치 패키지</strong>
+      <span class="why"> · 최신 수집 기준 호스트 운영체제 패키지 <?= number_format($packageTotal) ?>개</span>
+      <div class="card__body">
+      <?php
+      vg_table(
+          [
+              ['label' => '패키지', 'key' => 'name', 'class' => 'col-id'],
+              ['label' => '설치 버전', 'key' => 'version'],
+              ['label' => '아키텍처', 'key' => 'arch'],
+              ['label' => '관리자', 'key' => 'manager'],
+              ['label' => '소스 패키지', 'key' => 'source_pkg'],
+              ['label' => '출처', 'key' => 'origin'],
+          ],
+          $rows,
+          [
+              'card' => false,
+              'empty' => $hasFilter
+                  ? [
+                      'icon' => '⌕',
+                      'title' => '검색 조건에 맞는 설치 패키지가 없습니다.',
+                      'cta' => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
+                  ]
+                  : [
+                      'icon' => '□',
+                      'title' => '수집된 운영체제 패키지가 없습니다.',
+                  ],
+              'cell' => [
+                  'name' => fn($p) => '<strong>' . vg_h((string)$p['name']) . '</strong>',
+                  'version' => fn($p) => '<code>' . vg_h((string)($p['version'] ?? '')) . '</code>',
+                  'arch' => fn($p) => $p['arch'] ? vg_h((string)$p['arch']) : '<span class="why">–</span>',
+                  'manager' => fn($p) => '<code>' . vg_h((string)$p['manager']) . '</code>',
+                  'source_pkg' => function ($p) {
+                      if (empty($p['source_pkg'])) { return '<span class="why">–</span>'; }
+                      return vg_h((string)$p['source_pkg'])
+                          . (!empty($p['source_version']) ? ' <span class="why">' . vg_h((string)$p['source_version']) . '</span>' : '');
+                  },
+                  'origin' => fn($p) => $p['origin']
+                      ? vg_h((string)$p['origin'])
+                      : (!empty($p['vendor']) ? vg_h((string)$p['vendor']) : '<span class="why">–</span>'),
+              ],
+          ]
+      );
+      ?>
+      </div>
+    </div>
+    <?php vg_page_nav($total, $perPage, $page); ?>
 
   <?php elseif ($tab === 'runtime'): ?>
     <?php vg_toolbar([

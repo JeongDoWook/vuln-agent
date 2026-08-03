@@ -223,8 +223,12 @@ vg_header('자산', 'assets');
                   $label = ['hourly' => '매시간', 'daily' => '하루 1회'][$s] ?? $s;
                   return '<code title="' . vg_h($s) . '">' . vg_h($label) . '</code>';
               },
-              'package_count' => fn($r) => $r['scan_id'] !== null ? number_format((int) $r['package_count']) : '<span class="why">–</span>',
-              'exposure_count'=> fn($r) => $r['scan_id'] !== null ? number_format((int) $r['exposure_count']) : '<span class="why">–</span>',
+              'package_count' => fn($r) => $r['scan_id'] !== null
+                  ? '<a href="/host.php?id=' . (int)$r['host_id'] . '&amp;tab=packages">' . number_format((int)$r['package_count']) . '</a>'
+                  : '<span class="why">–</span>',
+              'exposure_count'=> fn($r) => $r['scan_id'] !== null
+                  ? '<a href="/host.php?id=' . (int)$r['host_id'] . '&amp;tab=runtime">' . number_format((int)$r['exposure_count']) . '</a>'
+                  : '<span class="why">–</span>',
               // 뱃지를 누르면 그 호스트·등급의 취약점 목록으로.
               'sev' => fn($r) => vg_sev_counts(
                   $sevByScan[(int) $r['scan_id']] ?? [],

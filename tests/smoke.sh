@@ -440,6 +440,11 @@ assetbody=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB01")
 assert_not_contains "$assetbody" 'host_delete' "자산 목록에 삭제 작업 없음"
 hostmanage=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$hostmanage" 'name="action" value="host_delete"' "자산 상세에 관리자 삭제 작업 표시"
+assert_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=packages" "자산 목록 패키지 수가 설치 패키지 탭에 연결"
+assert_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=runtime" "자산 목록 노출 수가 런타임 탭에 연결"
+packagebody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=packages")
+assert_contains "$packagebody" '설치 패키지' "자산 상세 설치 패키지 탭 표시"
+assert_contains "$packagebody" 'glibc' "최신 스캔의 설치 패키지 전체 목록 조회"
 if [ -n "$WEB02_ID" ]; then ok "web02 호스트 id 확인 (=$WEB02_ID)"; else no "web02 호스트를 자산 목록에서 못 찾음"; WEB02_ID=1; fi
 if [ -n "$WEB03_ID" ]; then ok "web03 호스트 id 확인 (=$WEB03_ID)"; else no "web03 호스트를 자산 목록에서 못 찾음"; WEB03_ID=1; fi
 
