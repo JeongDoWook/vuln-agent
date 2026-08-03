@@ -31,7 +31,7 @@ SELECT c.agent_command_id,c.host_id,c.status,c.progress_percent,c.progress_stage
    )
  ORDER BY FIELD(c.status,'running','pending','failed','done'), c.created_at DESC
 SQL;
-$commands = $pdo->query($sql)->fetchAll();
+$commands = array_slice($pdo->query($sql)->fetchAll(), 0, 10);
 
 $running = 0;
 $pending = 0;

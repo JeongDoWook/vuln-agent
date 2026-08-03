@@ -97,7 +97,7 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
           <div><span>대기 중</span><strong data-overview-pending>–</strong></div>
           <div><span>전체 진행률</span><strong data-overview-progress>–</strong></div>
         </div>
-        <p class="collection-overview__hint">실행 중인 모든 자산과 최근 1시간 내 완료·실패 작업입니다. 3초마다 자동 갱신됩니다.</p>
+        <p class="collection-overview__hint">실행·대기 작업을 우선해 최근 현황을 최대 10건 표시합니다. 3초마다 자동 갱신됩니다.</p>
         <div class="collection-overview__list" data-overview-list aria-live="polite">
           <div class="collection-overview__empty">수집 현황을 불러오는 중입니다.</div>
         </div>
