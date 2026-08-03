@@ -195,6 +195,7 @@ try {
             'sys'          => $sys,
             'raw'          => $raw,
             'collected_at' => $collectedAt,
+            'remote_ip'    => $_SERVER['REMOTE_ADDR'] ?? null,
         ],
         [
             'manager'        => $manager,

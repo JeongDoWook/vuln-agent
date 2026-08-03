@@ -20,6 +20,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     $sys         = $host['sys'];
     $raw         = (string) $host['raw'];
     $collectedAt = $host['collected_at'];
+    $remoteIp    = $host['remote_ip'] ?? null;
 
     $manager   = (string) $parsed['manager'];
     $pkgRows   = $parsed['pkg_rows'];
@@ -69,20 +70,22 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
 
     // 호스트 upsert (fqdn 유니크). LAST_INSERT_ID 트릭으로 기존 host_id 회수.
     $stmt = $pdo->prepare(
-        'INSERT INTO tb_host (fqdn, hostname, os_id, os_version, first_seen, last_seen)
-         VALUES (:fqdn, :hn, :osid, :osver, NOW(), NOW())
+        'INSERT INTO tb_host (fqdn, hostname, os_id, os_version, first_seen, last_seen, last_seen_ip)
+         VALUES (:fqdn, :hn, :osid, :osver, NOW(), NOW(), :ip)
          ON DUPLICATE KEY UPDATE
-            hostname   = VALUES(hostname),
-            os_id      = VALUES(os_id),
-            os_version = VALUES(os_version),
-            last_seen  = NOW(),
-            host_id    = LAST_INSERT_ID(host_id)'
+            hostname     = VALUES(hostname),
+            os_id        = VALUES(os_id),
+            os_version   = VALUES(os_version),
+            last_seen    = NOW(),
+            last_seen_ip = VALUES(last_seen_ip),
+            host_id      = LAST_INSERT_ID(host_id)'
     );
     $stmt->execute([
         ':fqdn'  => $fqdn,
         ':hn'    => $fqdn,
         ':osid'  => ($vm['distro_id'] ?? '') ?: null,
         ':osver' => ($vm['distro_version'] ?? '') ?: null,
+        ':ip'    => $remoteIp,
     ]);
     $hostId = (int) $pdo->lastInsertId();
 

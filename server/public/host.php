@@ -271,8 +271,9 @@ function vg_host_render_agent_control(
             <input type="hidden" name="action" value="agent_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
             <label>예약 실행</label>
-            <input type="datetime-local" name="run_at" required>
+            <input type="datetime-local" name="run_at" min="<?= date('Y-m-d\TH:i') ?>" required>
             <button class="btn btn--sm btn--ghost">등록</button>
+            <span class="why">지난 시각은 선택할 수 없습니다.</span>
           </form>
 
           <form method="post">
@@ -507,7 +508,12 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php vg_page_title('호스트를 찾을 수 없습니다', 'ASSET DETAIL', '삭제되었거나 존재하지 않는 자산입니다.'); ?>
   <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif (!$scan): ?>
-  <?php vg_hero(vg_h($host['fqdn']), [vg_h(trim($host['os_id'] . ' ' . $host['os_version'])), '<a href="/">대시보드</a>'], null, 'ok', '수집 상태', 'ASSET DETAIL'); ?>
+  <?php
+  $noScanMeta = [vg_h(trim($host['os_id'] . ' ' . $host['os_version']))];
+  if (!empty($host['last_seen_ip'])) { $noScanMeta[] = 'IP ' . vg_h($host['last_seen_ip']); }
+  $noScanMeta[] = '<a href="/">대시보드</a>';
+  vg_hero(vg_h($host['fqdn']), $noScanMeta, null, 'ok', '수집 상태', 'ASSET DETAIL');
+  ?>
   <?php if (vg_can('assets')): ?>
     <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
   <?php endif; ?>
@@ -534,8 +540,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       vg_asset_state($scanAge),
       '최신 수집 ' . vg_h($scan['collected_at']),
       '패키지 ' . number_format((int) $scan['package_count']) . '개',
-      '<a href="/">대시보드</a>',
   ];
+  if (!empty($host['last_seen_ip'])) { $meta[] = 'IP ' . vg_h($host['last_seen_ip']); }
+  $meta[] = '<a href="/">대시보드</a>';
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
   vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'ASSET DETAIL');
   if (vg_can('assets')) {
