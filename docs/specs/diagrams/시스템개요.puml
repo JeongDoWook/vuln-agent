@@ -25,7 +25,7 @@ package "중앙 서버 · Docker" as Central {
     rectangle "웹 대시보드\n우선순위·노출근거·억제근거·감사로그" as WEB #db6d28
 }
 
-A1 --> CADDY : 매시간(systemd-timer)\nJSON POST
+A1 --> CADDY : 상시 데몬(10초 poll)\n주기 되면 JSON POST
 A2 --> CADDY
 A3 --> CADDY
 CADDY --> ING
