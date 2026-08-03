@@ -10,13 +10,10 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
 vg_require_menu('assets');
 
 // 수집 지연 판정 기준(VG_STALE_MIN/VG_OFFLINE_MIN)과 vg_asset_state() 는 format.php 에 있다
 // (호스트 상세 히어로와 공유).
-
-$canDelete = vg_has_role('admin', 'operator');
 
 $err = null; $msg = null; $rows = []; $total = 0; $sevByScan = [];
 $stateCounts = ['ok' => 0, 'stale' => 0, 'offline' => 0, 'none' => 0];
@@ -44,30 +41,8 @@ $fromSql = 'FROM tb_host h
 
 $pdo = vg_pdo();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!vg_csrf_check($_POST['csrf'] ?? null)) {
-        $err = '세션이 만료되었습니다. 다시 시도하세요.';
-    } elseif (!$canDelete) {
-        $err = '자산을 삭제할 권한이 없습니다.';
-    } else {
-        try {
-            $id = (int) ($_POST['id'] ?? 0);
-            $st = $pdo->prepare('SELECT fqdn FROM tb_host WHERE host_id = ? AND is_deleted = 0');
-            $st->execute([$id]);
-            $fqdn = $st->fetchColumn();
-            if ($fqdn === false) {
-                $err = '호스트를 찾을 수 없습니다.';
-            } else {
-                vg_soft_delete($pdo, 'tb_host', $id);
-                vg_log_activity($pdo, 'HOST', $id, 'host_delete', "자산 삭제: $fqdn");
-                $msg = "자산 '$fqdn' 을(를) 삭제했습니다. 해당 호스트가 다시 수집을 보내면 재등록됩니다.";
-            }
-        } catch (Throwable $e) {
-            error_log('[assets] delete ' . $e->getMessage());
-            $err = '삭제 실패: 처리 중 오류가 발생했습니다.';
-        }
-    }
-}
+$assetFlash = vg_flash_take();
+$msg = $assetFlash['assetMsg'] ?? null;
 
 try {
     // KPI — 검색어·상태 필터와 무관하게 전체 기준(필터를 걸어도 전체 그림은 유지된다).
@@ -139,7 +114,6 @@ $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 $ingest = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/ingest.php';
 
-$csrf = vg_csrf_token();
 vg_header('자산', 'assets');
 ?>
   <?php
@@ -208,7 +182,6 @@ vg_header('자산', 'assets');
   // 액션 열만 % 가 아니라 rem 이다. 삭제 버튼은 폭이 늘 같은 고정 크기 조작부라 비율로 줄 이유가 없고,
   //   비율로 주면 표가 좁아질 때 버튼보다 좁아진다 — 실제로 900px 에서 9%(=51px)가 68px 버튼을
   //   못 담아 카드를 16.7px 밀어냈다(가로 스크롤). 5rem 이면 어느 폭에서도 버튼이 들어간다.
-  if ($canDelete) { $headers[] = ['label' => '', 'key' => 'act', 'align' => 'right', 'width' => '5rem']; }
 
   vg_table(
       $headers,
@@ -261,10 +234,6 @@ vg_header('자산', 'assets');
               'scan_count'   => fn($r) => (int) $r['scan_count'] > 0
                   ? '<a href="/host.php?id=' . (int) $r['host_id'] . '&tab=scans">' . number_format((int) $r['scan_count']) . '회</a>'
                   : '<span class="why">0회</span>',
-              'act' => fn($r) => '<form method="post" class="actions" data-confirm="' . vg_h($r['fqdn']) . ' 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.">'
-                  . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
-                  . '<input type="hidden" name="id" value="' . (int) $r['host_id'] . '">'
-                  . '<button type="submit" class="btn btn--sm btn--danger">삭제</button></form>',
           ],
       ]
   );

@@ -436,6 +436,10 @@ fi
 # 공용 dev DB 의 목록 첫 페이지에 기대지 않도록 이 실행이 만든 호스트 ID를 모두 고정한다.
 WEB02_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB02" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
 WEB03_ID=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB03" | grep -oE 'host\.php\?id=[0-9]+' | head -1 | grep -oE '[0-9]+')
+assetbody=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB01")
+assert_not_contains "$assetbody" 'host_delete' "자산 목록에 삭제 작업 없음"
+hostmanage=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
+assert_contains "$hostmanage" 'name="action" value="host_delete"' "자산 상세에 관리자 삭제 작업 표시"
 if [ -n "$WEB02_ID" ]; then ok "web02 호스트 id 확인 (=$WEB02_ID)"; else no "web02 호스트를 자산 목록에서 못 찾음"; WEB02_ID=1; fi
 if [ -n "$WEB03_ID" ]; then ok "web03 호스트 id 확인 (=$WEB03_ID)"; else no "web03 호스트를 자산 목록에서 못 찾음"; WEB03_ID=1; fi
 

@@ -50,6 +50,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $minutes = (int) ($_POST['schedule_minutes'] ?? 0);
                 vg_agent_command_set_schedule($pdo, $postHostId, $minutes * 60);
                 $agentMsg = "수집 주기를 {$minutes}분으로 변경했습니다.";
+            } elseif ($action === 'host_delete') {
+                if (!vg_has_role('admin', 'operator')) {
+                    throw new RuntimeException('자산을 삭제할 권한이 없습니다.');
+                }
+                $st = $pdo->prepare('SELECT fqdn FROM tb_host WHERE host_id = ? AND is_deleted = 0');
+                $st->execute([$postHostId]);
+                $fqdn = $st->fetchColumn();
+                if ($fqdn === false) {
+                    throw new RuntimeException('호스트를 찾을 수 없습니다.');
+                }
+                vg_soft_delete($pdo, 'tb_host', $postHostId);
+                vg_log_activity($pdo, 'HOST', $postHostId, 'host_delete', "자산 삭제: $fqdn");
+                $_SESSION['vg_flash'] = [
+                    'assetMsg' => "자산 '$fqdn' 을(를) 삭제했습니다. 해당 호스트가 다시 수집을 보내면 재등록됩니다.",
+                ];
+                header('Location: /assets.php', true, 303);
+                exit;
             }
         } catch (Throwable $e) {
             error_log('[host-agent-command] ' . $e->getMessage());
@@ -1001,6 +1018,21 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       </div>
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
+  <?php endif; ?>
+
+  <?php if (vg_has_role('admin', 'operator')): ?>
+    <div class="card mt-lg">
+      <strong>자산 관리</strong>
+      <span class="why"> · 목록과 집계에서 이 자산을 제외합니다. 수집 이력은 보존되며 에이전트가 다시 전송하면 재등록됩니다.</span>
+      <div class="card__body">
+        <form method="post" class="actions" data-confirm="<?= vg_h((string)$host['fqdn']) ?> 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.">
+          <input type="hidden" name="csrf" value="<?= vg_h($agentCsrf) ?>">
+          <input type="hidden" name="action" value="host_delete">
+          <input type="hidden" name="id" value="<?= (int)$host['host_id'] ?>">
+          <button type="submit" class="btn btn--sm btn--danger">자산 삭제</button>
+        </form>
+      </div>
+    </div>
   <?php endif; ?>
 <?php endif; ?>
 <?php vg_footer();
