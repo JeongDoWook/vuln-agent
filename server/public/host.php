@@ -251,9 +251,14 @@ function vg_host_render_agent_control(
 ): void {
     $curMinutes = (int) round(((int) ($host['poll_schedule_seconds'] ?? 3600)) / 60);
     ?>
-    <div class="card">
-      <strong>수집 제어</strong>
-      <span class="why">— 에이전트 명령 큐에 즉시/예약 실행을 등록하거나 수집 주기를 바꿉니다.</span>
+    <section class="card agent-control" aria-labelledby="agent-control-title">
+      <div class="agent-control__heading">
+        <div>
+          <strong id="agent-control-title">수집 제어</strong>
+          <p class="why">에이전트의 실행 시점과 반복 수집 주기를 관리합니다.</p>
+        </div>
+        <span class="agent-control__status"><span aria-hidden="true"></span>다음 poll 반영</span>
+      </div>
       <div class="card__body">
         <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
         <div class="actions actions--stack">
@@ -261,29 +266,26 @@ function vg_host_render_agent_control(
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_run_now">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label>즉시 실행</label>
+            <label><strong>즉시 실행</strong><span>다음 poll에서 바로 시작합니다.</span></label>
             <button class="btn btn--sm btn--primary">지금 실행</button>
-            <span class="why">에이전트가 다음 poll 에서 바로 실행합니다.</span>
           </form>
 
           <form class="agent-control__row" method="post">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label>예약 실행</label>
-            <input type="datetime-local" name="run_at" min="<?= date('Y-m-d\TH:i') ?>" required>
+            <label for="agent-run-at"><strong>예약 실행</strong><span>원하는 날짜와 시간을 선택하세요.</span></label>
+            <input id="agent-run-at" type="datetime-local" name="run_at" min="<?= date('Y-m-d\TH:i') ?>" placeholder="날짜와 시간 선택" required>
             <button class="btn btn--sm btn--ghost">등록</button>
-            <span class="why">지난 시각은 선택할 수 없습니다.</span>
           </form>
 
           <form class="agent-control__row" method="post">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_set_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label>수집 주기(분)</label>
-            <input type="number" name="schedule_minutes" min="1" value="<?= $curMinutes ?>" required>
+            <label for="agent-schedule-minutes"><strong>수집 주기</strong><span>최소 1분 단위로 설정합니다.</span></label>
+            <div class="agent-control__number"><input id="agent-schedule-minutes" type="number" name="schedule_minutes" min="1" value="<?= $curMinutes ?>" required><span>분</span></div>
             <button class="btn btn--sm btn--ghost">저장</button>
-            <span class="why">현재 <?= number_format((int) ($host['poll_schedule_seconds'] ?? 3600)) ?>초(<?= $curMinutes ?>분) · 최소 30초</span>
           </form>
         </div>
 
@@ -301,7 +303,7 @@ function vg_host_render_agent_control(
           </div>
         <?php endif; ?>
       </div>
-    </div>
+    </section>
     <?php
 }
 
