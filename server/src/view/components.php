@@ -211,7 +211,8 @@ function vg_connectors_empty_cta(): ?array {
  */
 function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, string $riskTone = 'ok', string $riskCap = '최고 위험도', string $eyebrow = 'DETAIL'): void {
     echo '<div class="hero hero--' . vg_h($riskLabel !== null ? $riskTone : 'ok') . '">';
-    echo '<div class="hero__id"><span class="hero__eyebrow">' . vg_h($eyebrow) . '</span><h1>' . $title . '</h1>';
+    $eyebrowHtml = $eyebrow === '' ? '' : '<span class="hero__eyebrow">' . vg_h($eyebrow) . '</span>';
+    echo '<div class="hero__id">' . $eyebrowHtml . '<h1>' . $title . '</h1>';
     if ($meta) {
         echo '<div class="hero__meta">' . implode(' <span class="why">·</span> ', $meta) . '</div>';
     }
