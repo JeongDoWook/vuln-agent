@@ -121,7 +121,8 @@ vg_header('패키지', 'packages');
               ]),
           'cell' => [
               // 패키지명 → 취약점 현황에서 그 패키지만 검색
-              0 => fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['package_name']) . '">'
+              0 => fn($r) => '<a href="/package.php?name=' . urlencode((string)$r['package_name'])
+                             . '&amp;eco=' . urlencode((string)$r['ecosystem']) . '">'
                              . vg_h((string) $r['package_name']) . '</a>',
               1 => fn($r) => !empty($r['ecosystem'])
                              ? vg_h((string) $r['ecosystem'])

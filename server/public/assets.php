@@ -54,8 +54,14 @@ try {
     $where  = 'h.is_deleted = 0';
     $params = [];
     if ($q !== '') {
-        $where .= ' AND h.fqdn LIKE ?';
-        $params[] = '%' . $q . '%';
+        $where .= " AND (h.fqdn LIKE ? OR EXISTS (
+            SELECT 1 FROM tb_package search_pkg
+             WHERE search_pkg.scan_id=s.scan_id AND search_pkg.is_deleted=0
+               AND search_pkg.container_id=0 AND search_pkg.manager IN ('dpkg','rpm','apk')
+               AND (search_pkg.name LIKE ? OR search_pkg.source_pkg LIKE ?)
+        ))";
+        $like = '%' . $q . '%';
+        array_push($params, $like, $like, $like);
     }
     if ($state !== '') {
         // KPI 와 같은 식을 쓴다 — 다른 식을 쓰면 "지연 3대" 를 눌렀는데 2대가 나오는 일이 생긴다.
@@ -152,7 +158,7 @@ vg_header('자산', 'assets');
 
   <?php
   vg_toolbar([
-      ['type' => 'search', 'name' => 'q', 'placeholder' => '호스트명 검색', 'value' => $q],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '호스트명 또는 설치 패키지 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'state', 'empty_label' => '전체 상태',
        'selected' => $state, 'options' => VG_ASSET_STATES],
   ]);
