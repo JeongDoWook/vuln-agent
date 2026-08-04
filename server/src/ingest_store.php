@@ -362,6 +362,23 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
         foreach ($collectionStages as $r) { $stage->execute([$scanId, $r[0], $r[1], $r[2]]); }
     }
 
+    // 수집 결과가 같아 기존 스냅샷을 재사용하더라도 실행 사실과 실행별 자원값은 항상 남긴다.
+    $pdo->prepare(
+        'INSERT INTO tb_scan_run
+            (host_id, scan_id, collected_at, content_changed, package_count, exposure_count,
+             agent_version, schedule, elapsed_seconds, peak_rss_mb, cpu_seconds, mem_total_mb, cpu_cores)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )->execute([
+        $hostId, $scanId, $collectedAt, $unchanged ? 0 : 1, $pkgCount, $expCount,
+        ($meta['agent_version'] ?? '') ?: null,
+        ($meta['schedule'] ?? '') ?: null,
+        isset($meta['elapsed_seconds']) ? (int) $meta['elapsed_seconds'] : null,
+        isset($meta['peak_rss_mb']) ? (float) $meta['peak_rss_mb'] : null,
+        isset($meta['cpu_seconds']) ? (float) $meta['cpu_seconds'] : null,
+        isset($meta['mem_total_mb']) ? (float) $meta['mem_total_mb'] : null,
+        isset($meta['nproc']) ? (int) $meta['nproc'] : null,
+    ]);
+
     $pdo->commit();
 
     return [

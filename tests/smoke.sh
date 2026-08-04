@@ -369,8 +369,17 @@ if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백�
 #   같은 내용을 다시 보내면 새 스캔을 만들지 않는다(수집시각만 갱신). 패키지가 바뀌면 새 스냅샷 +
 #   변경이력. 매시간 수집이 대부분 "직전과 동일"이라 이게 없으면 데이터가 무한히 불어난다.
 printf "\n[변경 추적]\n"
+run_count_before=$(docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $s=vg_pdo()->prepare("SELECT COUNT(*) FROM tb_scan_run r JOIN tb_host h ON h.host_id=r.host_id WHERE h.fqdn=?");
+   $s->execute([$argv[1]]); echo $s->fetchColumn();' "$FQDN_WEB01")
 resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"changed":false' "동일 내용 재전송 → 새 스냅샷 안 만듦"
+run_count_after=$(docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $s=vg_pdo()->prepare("SELECT COUNT(*) FROM tb_scan_run r JOIN tb_host h ON h.host_id=r.host_id WHERE h.fqdn=?");
+   $s->execute([$argv[1]]); echo $s->fetchColumn();' "$FQDN_WEB01")
+assert_eq "$run_count_after" "$((run_count_before + 1))" "동일 내용이어도 수집 실행 이력 1건 누적"
 
 UPG="$(mktemp)"; sed 's/0:2.34-60.el9_2.3/0:2.34-83.el9_3.7/' "$SAMPLE" > "$UPG"
 resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$UPG")

@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.2"
+SCRIPT_VERSION="3.3"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
@@ -116,7 +116,9 @@ measure_finish() {
     pk="$(cat "$TMP/_peak_kb" 2>/dev/null)"
     [ -n "$pk" ] && PEAK_RSS_MB="$(awk -v k="$pk" 'BEGIN{printf "%.1f", k/1024}')"
     # CPU: 자신 + 이미 회수한 자식 (utime+stime+cutime+cstime)
-    line="$(cat /proc/self/stat 2>/dev/null)"; rest="${line#*) }"
+    # /proc/self 를 cat으로 읽으면 self는 cat 프로세스가 되어 CPU가 0에 가깝게 나온다.
+    # 현재 에이전트 셸의 stat을 직접 지정해야 자식 누적 시간(cutime/cstime)까지 측정된다.
+    line="$(cat "/proc/$$/stat" 2>/dev/null)"; rest="${line#*) }"
     # shellcheck disable=SC2086
     set -- $rest
     CPU_SECONDS="$(awk -v j="$(( ${12:-0} + ${13:-0} + ${14:-0} + ${15:-0} ))" -v t="$CLK_TCK" \

@@ -81,7 +81,7 @@ try {
                 s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
                 s.schedule,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
-                (SELECT COUNT(*) FROM tb_scan x WHERE x.host_id = h.host_id) AS scan_count
+                (SELECT COUNT(*) FROM tb_scan_run x WHERE x.host_id = h.host_id) AS scan_count
            $fromSql
           WHERE $where
           ORDER BY h.fqdn
