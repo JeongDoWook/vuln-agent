@@ -463,10 +463,33 @@
   if (navMq.addEventListener) { navMq.addEventListener('change', applyNavAccordion); }
   else if (navMq.addListener) { navMq.addListener(applyNavAccordion); }
 
-  // 카드·표의 overflow 안에서도 잘리지 않는 공통 인포팁. body 직속 fixed 레이어로 띄운 뒤
-  // 좌우 화면 경계를 기준으로 위치를 보정한다.
+  // 카드·표의 overflow 안에서도 잘리지 않는 공통 툴팁. body 직속 fixed 레이어로 띄운 뒤
+  // 좌우 화면 경계를 기준으로 위치를 보정한다. 서버가 출력한 title 과 SVG <title> 도
+  // data-tip 으로 바꿔 브라우저 기본 툴팁의 긴 대기시간·OS별 모양 차이를 없앤다.
   var infoTip = null;
   var infoTipOwner = null;
+  function prepareTooltips(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var titled = [];
+    if (root && root.nodeType === 1 && root.hasAttribute('title')) { titled.push(root); }
+    scope.querySelectorAll('[title]').forEach(function (el) { titled.push(el); });
+    titled.forEach(function (el) {
+      var message = el.getAttribute('title');
+      if (!message) { return; }
+      el.setAttribute('data-tip', message);
+      el.removeAttribute('title');
+    });
+
+    var svgTitles = [];
+    if (root && root.nodeType === 1 && root.matches('svg title')) { svgTitles.push(root); }
+    scope.querySelectorAll('svg title').forEach(function (el) { svgTitles.push(el); });
+    svgTitles.forEach(function (title) {
+      var owner = title.parentElement;
+      var message = title.textContent.trim();
+      if (owner && message) { owner.setAttribute('data-tip', message); }
+      title.remove();
+    });
+  }
   function hideInfoTip() {
     if (infoTipOwner) { infoTipOwner.removeAttribute('aria-describedby'); }
     if (infoTip) { infoTip.remove(); }
@@ -502,15 +525,26 @@
     infoTip.classList.toggle('info-tooltip--above', above);
     infoTip.style.setProperty('--tip-anchor', Math.round(ownerRect.left + ownerRect.width / 2 - left) + 'px');
   }
+  document.addEventListener('DOMContentLoaded', function () {
+    prepareTooltips(document);
+    new MutationObserver(function (records) {
+      records.forEach(function (record) {
+        record.addedNodes.forEach(function (node) {
+          if (node.nodeType === 1) { prepareTooltips(node); }
+        });
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  });
   document.addEventListener('mouseover', function (event) {
-    var owner = event.target.closest('.info-icon[data-tip]');
-    if (owner) { showInfoTip(owner); }
+    var owner = event.target.closest('[data-tip]');
+    if (owner && (!event.relatedTarget || !owner.contains(event.relatedTarget))) { showInfoTip(owner); }
   });
   document.addEventListener('mouseout', function (event) {
-    if (infoTipOwner && event.target.closest('.info-icon[data-tip]') === infoTipOwner) { hideInfoTip(); }
+    if (infoTipOwner && event.target.closest('[data-tip]') === infoTipOwner
+        && (!event.relatedTarget || !infoTipOwner.contains(event.relatedTarget))) { hideInfoTip(); }
   });
   document.addEventListener('focusin', function (event) {
-    var owner = event.target.closest('.info-icon[data-tip]');
+    var owner = event.target.closest('[data-tip]');
     if (owner) { showInfoTip(owner); }
   });
   document.addEventListener('focusout', function (event) {
