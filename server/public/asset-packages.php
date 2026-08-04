@@ -72,8 +72,11 @@ vg_header('전체 설치 패키지', 'assets');
 ?>
   <?php vg_page_title('전체 설치 패키지', '', '모든 자산의 최신 수집에서 확인된 운영체제 패키지입니다.', [
       'count' => $total,
-      'actions' => '<a class="btn btn--sm btn--ghost" href="/assets.php">자산 목록</a>',
   ]); ?>
+  <?php vg_subtabs([
+      'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
+      'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],
+  ], 'packages'); ?>
   <div class="sub"><span class="why">취약 영향 패키지 카탈로그가 아닌 실제 서버 설치 현황입니다.</span></div>
 
   <?php vg_alert($err !== null ? '오류 · ' . $err : null); ?>
