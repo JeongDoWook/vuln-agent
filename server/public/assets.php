@@ -215,7 +215,7 @@ vg_header('자산', 'assets');
               : [
                   'icon'  => '🖥️',
                   'title' => '등록된 자산이 없습니다.',
-                  'hint'  => '자산은 에이전트가 수집을 보내면 자동 등록됩니다. 아래 설치 안내를 따르세요.',
+                  'hint'  => '자산은 에이전트가 수집을 보내면 자동 등록됩니다. 상단의 [에이전트 설치 안내]를 따르세요.',
               ],
           'cell' => [
               // 칸을 넘치는 긴 FQDN 은 col-id 가 말줄임으로 접는다 — 전체 이름은 title 로 남긴다.
@@ -266,8 +266,8 @@ vg_header('자산', 'assets');
     <div class="why">자산은 에이전트가 수집을 보내면 <strong>자동 등록</strong>됩니다.
       중앙에서 대상 서버로 접속하지 않습니다(아웃바운드 push).</div>
 
-    <div class="why mt"><strong>1) 아래 세 파일을 받습니다</strong> — 레포 체크아웃이 필요 없습니다.
-      버튼으로 받아 대상 서버로 옮깁니다.</div>
+    <div class="why mt"><strong>1) 설치 스크립트 두 개와 이 배포의 루트 CA를 받습니다.</strong>
+      레포 체크아웃 없이 버튼으로 받아 대상 서버로 옮깁니다.</div>
 
     <div class="mt">
       <a class="btn btn--sm btn--ghost" href="/agent-dl.php?f=install-agent.sh" download>⬇ install-agent.sh</a>
@@ -290,9 +290,11 @@ sudo bash install-agent.sh
   수집 주기 [hourly] (daily / '*:0/30'=30분마다):</pre>
 
     <ul class="hint-list why">
-      <li><code>caddy-root.crt</code> 는 자체서명 Caddy(HTTPS) 신뢰용입니다 — <code>install-agent.sh</code> 옆에 두면 설치 시 자동 등록됩니다(없으면 TLS 검증 실패). 이 파일은 배포마다 다르며, 없다고 뜨면 중앙 관리자가 아직 추출하지 않은 것입니다.</li>
+      <li><code>caddy-root.crt</code> 는 현재 자체서명 Caddy(HTTPS)를 신뢰하기 위한 공개 인증서입니다. <code>install-agent.sh</code> 옆에 두면 설치 시 자동 등록됩니다. 이 파일은 배포마다 다르며, 503 안내가 뜨면 중앙 관리자가 아직 추출하지 않은 것입니다.</li>
       <li>수집 엔드포인트: <code class="selectable"><?= vg_h($ingest) ?></code> — 대상 서버 → 중앙 아웃바운드 1개면 충분합니다.</li>
-      <li><code>sudo</code> 만 있으면 됩니다. <code>chmod</code>/<code>chown</code> 은 필요 없습니다(<code>bash &lt;파일&gt;</code> 로 실행하므로).</li>
+      <li>대상 서버에는 POSIX <code>awk</code>와 HTTPS 전송용 <code>curl</code> 또는 <code>wget</code> 중 하나가 필요합니다. <code>jq</code>는 선택 사항이며 설치기가 패키지를 추가로 설치하지 않습니다.</li>
+      <li><code>chmod</code>/<code>chown</code> 은 필요 없습니다. <code>sudo bash &lt;파일&gt;</code>로 실행하면 설치물이 root 소유·적정 권한으로 배치됩니다.</li>
+      <li>systemd 환경은 상시 서비스가 10초마다 명령을 확인해 정기·즉시·예약 실행과 중단을 지원합니다. systemd가 없으면 cron 정기수집만 지원합니다.</li>
       <li>토큰은 <a href="/agent-tokens.php">에이전트 토큰</a> 화면에서 이 호스트(fqdn)용으로 발급받아 넣습니다 —
         그 호스트만 갱신할 수 있어 다른 호스트로 위조하는 요청을 막습니다.</li>
       <li>제거: <code>sudo bash install-agent.sh --uninstall</code></li>

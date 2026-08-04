@@ -195,6 +195,33 @@ async function main() {
     // --- 4) 자산 취약점 행 상세 모달 -----------------------------------------
     await page.setViewportSize({ width: 1280, height: 900 });
     await go(page, '/assets.php');
+
+    // 네이티브 title은 브라우저마다 오래 기다려야 하므로 app.js가 즉시 공통 tooltip로 바꾼다.
+    const assetHelp = page.locator('.page-title .help').first();
+    check(await assetHelp.count() === 1, '자산 상태 도움말 아이콘 제공');
+    if (await assetHelp.count()) {
+      await assetHelp.hover();
+      const tip = page.locator('#vg-info-tooltip');
+      check(await tip.isVisible(), '도움말 hover 즉시 공통 툴팁 표시');
+      check((await tip.textContent() || '').includes('10초 poll 통신 기준'),
+        '자산 상태 툴팁이 수집 주기와 poll 연결 상태를 구분');
+      check(Boolean(await assetHelp.getAttribute('aria-describedby')),
+        'hover 툴팁을 aria-describedby로 연결');
+      await page.mouse.move(1100, 850);
+      await assetHelp.focus();
+      check(await tip.isVisible(), '키보드 focus로도 도움말 툴팁 표시');
+    }
+
+    await page.click('[data-modal="agentInstall"]');
+    const installModal = page.locator('#agentInstall');
+    check(await installModal.isVisible(), '에이전트 설치 안내 버튼 → 설치 모달 열림');
+    const installText = (await installModal.textContent() || '').replace(/\s+/g, ' ');
+    check(installText.includes('curl 또는 wget') && installText.includes('jq는 선택 사항'),
+      '설치 모달이 실제 필수·선택 명령을 구분');
+    check(installText.includes('10초마다 명령을 확인') && installText.includes('cron 정기수집만 지원'),
+      '설치 모달이 systemd 기능과 cron 폴백 제약을 구분');
+    await installModal.locator('[data-modal-close]').last().click();
+
     const hostHref = await page.locator('a[href^="/host.php?id="]').first().getAttribute('href');
     check(Boolean(hostHref), '자산 목록에서 상세 화면 링크 확인');
     if (hostHref) {

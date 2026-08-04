@@ -283,7 +283,7 @@ function vg_host_render_agent_control(
         <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
         <div class="agent-control__facts">
           <span><b>통신 경로</b> <?= vg_h((string)($_SERVER['HTTP_HOST'] ?? '중앙 서버')) ?> · poll 10초</span>
-          <span><b>정기 수집</b> <?= number_format($curMinutes) ?>분마다 · 에이전트 로컬 타이머 기준</span>
+          <span><b>정기 수집</b> <?= number_format($curMinutes) ?>분마다 · 에이전트 로컬 스케줄 기준</span>
         </div>
         <?php $activeCommand = $agentCommands[0] ?? null; ?>
         <?php if ($activeCommand): ?>

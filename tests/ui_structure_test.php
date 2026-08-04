@@ -49,6 +49,9 @@ $check(str_contains($appJs, "querySelectorAll('[title]')") && str_contains($appJ
     'HTML·SVG 네이티브 title을 즉시 공통 툴팁으로 변환');
 $check(str_contains($appJs, "closest('[data-tip]')") && str_contains($appCss, '.info-tooltip'),
     '전역 툴팁 이벤트 위임과 body 레이어 스타일');
+$check(str_contains($appJs, "addEventListener('mouseover'") && str_contains($appJs, "addEventListener('focusin'")
+    && !str_contains($appJs, 'setTimeout(showInfoTip'),
+    '툴팁을 지연 없이 hover·키보드 focus 모두에 표시');
 $check(str_contains($hostPhp, '$runtimeTotal = $exposureCount + $processCount;')
     && str_contains($hostPhp, "'runtime' => ['label' => '런타임',    'n' => \$runtimeTotal]"),
     '런타임 탭 건수에 노출 소켓과 실행 프로세스 모두 포함');
@@ -92,6 +95,15 @@ $check(str_contains($ingestPhp, "vg_request_header('X-Real-IP')") && str_contain
     'Caddy 원본 IP 전달과 ingest 저장 연계');
 $check(str_contains($agentSh, 'CPU_QUOTA="${CPU_QUOTA:-10%}"') && str_contains($agentSh, 'DO_LIMIT="${AGENT_LIMIT:-1}"'),
     '에이전트 CPU 10% cgroup 제한 기본 적용');
+$processHtml = (string) file_get_contents($public . '/process.html');
+$check(!str_contains($processHtml, '시간마다 자동 수집') && !str_contains($processHtml, 'tb_kernel_cves'),
+    '공개 프로세스 설명에 폐기된 고정 주기·구 테이블명 없음');
+$check(str_contains($processHtml, 'tb_scan_run') && str_contains($processHtml, 'tb_agent_command')
+    && str_contains($processHtml, '즉시·예약·중단 명령은 지원하지 않는다'),
+    '공개 프로세스 설명에 실행 이력·명령 큐·cron 제약 명시');
+$check(str_contains($assetsPhp, 'POSIX <code>awk</code>') && str_contains($assetsPhp, '<code>curl</code> 또는 <code>wget</code>')
+    && str_contains($assetsPhp, '<code>jq</code>는 선택 사항'),
+    '에이전트 설치 모달의 실제 선행 조건 안내');
 
 if ($fail > 0) { printf("ui_structure_test: %d건 실패\n", $fail); exit(1); }
 printf("ui_structure_test: 전부 통과\n");

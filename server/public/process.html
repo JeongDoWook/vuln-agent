@@ -97,7 +97,7 @@
     <b>에이전트</b> (Bash, 각 대상 서버)
     <ul class="tight">
       <li><code class="i">vuln-inventory-agent.sh</code> — 수집 + <code class="i">--send</code> 전송</li>
-      <li><code class="i">install-agent.sh</code> — 배포·주기 스케줄(systemd/cron)</li>
+      <li><code class="i">install-agent.sh</code> — 배포·상시 poll 서비스(systemd, 불가능하면 정기수집 cron 폴백)</li>
       <li>읽기 전용 · 자원 최저우선(nice19/ionice idle) · 명령별 timeout</li>
     </ul>
   </div>
@@ -198,7 +198,7 @@
     <tr><td><b>RHEL OVAL</b></td><td>Red Hat·AlmaLinux·Oracle의 벤더 수정 EVR 판정</td><td>tb_vendor_errata</td></tr>
     <tr><td><b>Red Hat 미수정</b></td><td>Red Hat이 아직 수정본을 제공하지 않은 CVE 판정</td><td>tb_vendor_unfixed</td></tr>
     <tr><td><b>Ubuntu OVAL</b></td><td>우분투 릴리스별 영향 여부와 수정 버전 판정</td><td>tb_ubuntu_oval</td></tr>
-    <tr><td><b>Kernel CNA</b></td><td>리눅스 커널 스트림별 영향·수정 버전 판정</td><td>tb_kernel_cves · tb_kernel_cve_fixes</td></tr>
+    <tr><td><b>Kernel CNA</b></td><td>리눅스 커널 스트림별 영향·수정 버전 판정</td><td>tb_kernel_cve · tb_kernel_cve_fix</td></tr>
     <tr><td><b>SSG</b></td><td>보안설정 룰의 근거와 CIS·NIST·STIG 기준 보강</td><td>tb_compliance_rule</td></tr>
     <tr><td><b>범용 API</b></td><td>조직별 REST 소스를 탐지·우선순위·벤더 역할로 매핑</td><td>역할별 대상 테이블</td></tr>
   </tbody>
@@ -218,7 +218,9 @@
     <b>수집 데이터</b>
     <ul class="tight">
       <li><code class="i">tb_host</code> — 서버(fqdn, OS)</li>
-      <li><code class="i">tb_scan</code> — 수집 이력(원본 JSON 포함)</li>
+      <li><code class="i">tb_scan</code> — 내용이 달라질 때 생성하는 수집 스냅샷(원본 JSON 포함)</li>
+      <li><code class="i">tb_scan_run</code> — 실제 수집 실행 이력(동일 내용도 매 실행 누적)</li>
+      <li><code class="i">tb_agent_command</code> — 즉시·예약 실행, 진행률·heartbeat·중단 요청</li>
       <li><code class="i">tb_package</code> — 패키지(버전·소스패키지·벤더)</li>
       <li><code class="i">tb_exposure</code> — 노출 소켓(포트·scope·로드)</li>
       <li><code class="i">tb_process</code> — 실행 프로세스(exe·로드)</li>
@@ -249,7 +251,7 @@
   </div>
 </div>
 <p class="lead" style="font-size:.85rem;margin-top:.6rem;">
-  전 테이블 <code class="i">tb_</code> 접두사 통일 + 감사 4컬럼(<code class="i">created_at/updated_at/is_deleted/deleted_at</code>).
+  테이블은 <code class="i">tb_</code> 접두사를 통일하고, 독립 생명주기를 가진 주요 테이블은 감사 4컬럼(<code class="i">created_at/updated_at/is_deleted/deleted_at</code>)을 둔다.
   삭제는 하드삭제 대신 소프트삭제(<code class="i">is_deleted=1</code>, findings 등 재계산 캐시 테이블은 예외).
 </p>
 
@@ -263,17 +265,17 @@
   </div>
   Caddy 가 Let's Encrypt(DuckDNS DNS-01, 현재는 자체서명)로 TLS 를 종료하고 내부 <code class="i">web:80</code> 으로 프록시 —
   인바운드 80/443 개방 없이 기존 <code class="i">8080</code> 포워딩 재사용.
-  <b>② 각 대상 서버</b> (에이전트 설치 + 시간마다 자동 수집)
+  <b>② 각 대상 서버</b> (에이전트 설치 + 호스트별 설정 주기 자동 수집)
   <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
     sudo bash install-agent.sh<br>
     &nbsp;&nbsp;중앙 서버 주소 → https://&lt;운영-도메인&gt;:8080/ingest.php<br>
     &nbsp;&nbsp;전송 토큰 → 에이전트 키 화면에서 호스트별 발급 · 수집 주기 → hourly
   </div>
-  상시 systemd 서비스(불가능한 환경은 cron 폴백)로 자동 등록. 중앙 서버 자신을 스캔하는 로컬 에이전트는
+  상시 systemd 서비스가 10초마다 명령을 poll하고 설정 주기로 수집한다. systemd가 없는 환경은 cron 폴백이라 정기수집만 가능하며 즉시·예약·중단 명령은 지원하지 않는다. 중앙 서버 자신을 스캔하는 로컬 에이전트는
   루프백 평문 포트(<code class="i">127.0.0.1:8081</code>)로 직접 전송(외부에서는 접근 불가).
   <b>③ 웹</b> — <code class="i">https://&lt;운영-도메인&gt;:8080</code> 접속 → 서버별 취약점·상태·감사로그 확인
   (<code class="i">&lt;운영-도메인&gt;</code> 은 운영 배포 시 정해 <code class="i">.env.prod</code> 의 <code class="i">PROD_DOMAIN</code> 에 넣는 값)
-  <div style="color:var(--muted);font-size:.85rem;margin-top:.5rem">네트워크 요건: 대상 서버 → 중앙 8080 아웃바운드만. 토큰은 <code class="i">&lt;prefix&gt;/etc/agent.env</code>(600).</div>
+  <div style="color:var(--muted);font-size:.85rem;margin-top:.5rem">네트워크 요건: 대상 서버에서 설치 시 입력한 중앙 HTTPS 주소로의 아웃바운드만 필요합니다(현재 호환 포트 8080). 토큰은 <code class="i">&lt;prefix&gt;/etc/agent.env</code>(600).</div>
 </div>
 
 <!-- 10. Export API -->
