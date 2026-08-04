@@ -505,6 +505,9 @@ assert_contains "$body" "재시작 필요" "재시작 필요 근거 노출(패�
 # 커널은 패치가 설치돼도 재부팅 전까지 옛 커널이 돈다 → 억제하지 않고 "재부팅"을 조치로 제시한다.
 assert_contains "$body" "재부팅 필요" "커널 재부팅 필요 뱃지(설치 -503 / 실행 -427)"
 assert_contains "$body" "재부팅</span>" "조치가 '재부팅' (프로세스 재시작으로는 안 고쳐진다)"
+assert_contains "$body" 'data-finding-detail=' "취약점 행에 상세 데이터 연결"
+assert_contains "$body" 'id="findingDetailModal"' "취약점 상세 모달 렌더링"
+assert_contains "$body" 'data-finding-rationale' "상세 모달에 전체 판정 근거 영역 제공"
 # 수집 단계 누락 — tb_collection_stage 는 스캔마다 5단계를 COMPLETE/EMPTY/MISSING 으로 남긴다.
 #   MISSING("있어야 하는데 못 걷음")만 경고한다. EMPTY("정상적으로 없음")까지 경고하면 정상 호스트마다
 #   경고가 떠서 아무도 안 보게 된다 — 위 CCE NA 와 같은 함정이라 두 방향을 다 고정한다.

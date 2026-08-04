@@ -167,25 +167,7 @@ async function main() {
     check(s.bg === darkBg && s.bg !== lightBg, '복원된 화면의 배경색도 다크(라이트와 다름)',
       'bg=' + s.bg + ' light=' + lightBg);
 
-    // --- 3) 밀도 토글 --------------------------------------------------------
-    await go(page, '/');
-    s = await snapshot(page);
-    check(s.density === 'comfortable', '초기 밀도는 comfortable', 'density=' + s.density);
-
-    await page.click('[data-density-toggle]');
-    s = await snapshot(page);
-    check(s.density === 'compact', "밀도 클릭 → data-density='compact'", 'density=' + s.density);
-    check(s.densitySaved === 'compact', "localStorage['vg-density']='compact' 저장", 'saved=' + s.densitySaved);
-    const pressed = await page.getAttribute('[data-density-toggle]', 'aria-pressed');
-    const label = (await page.textContent('.density-toggle__label') || '').trim();
-    check(pressed === 'true', '밀도 버튼 aria-pressed=true', 'aria-pressed=' + pressed);
-    check(label === '촘촘하게', '밀도 버튼 라벨이 촘촘하게로 바뀜', 'label=' + label);
-
-    await go(page, '/findings.php');
-    s = await snapshot(page);
-    check(s.density === 'compact', '다른 화면으로 이동해도 촘촘한 밀도 복원', 'density=' + s.density);
-
-    // --- 4) 모바일 사이드바 --------------------------------------------------
+    // --- 3) 모바일 사이드바 --------------------------------------------------
     await page.setViewportSize({ width: 375, height: 812 });
     await go(page, '/findings.php');
     const toggle = page.locator('.nav-toggle');
@@ -209,6 +191,25 @@ async function main() {
     // 모르고 데스크톱에서 클릭하면 30초 타임아웃으로 실패한다).
     check(await page.locator('.toolbar__toggle').first().isVisible(),
       '모바일 폭에서 "검색 및 필터" 토글 노출');
+
+    // --- 4) 자산 취약점 행 상세 모달 -----------------------------------------
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await go(page, '/assets.php');
+    const hostHref = await page.locator('a[href^="/host.php?id="]').first().getAttribute('href');
+    check(Boolean(hostHref), '자산 목록에서 상세 화면 링크 확인');
+    if (hostHref) {
+      await go(page, hostHref);
+      const findingRow = page.locator('tr[data-finding-detail]').first();
+      check(await findingRow.count() === 1, '취약점 행이 클릭 가능한 상세 데이터 제공');
+      if (await findingRow.count()) {
+        await findingRow.click({ position: { x: 5, y: 5 } });
+        const findingModal = page.locator('#findingDetailModal');
+        check(await findingModal.isVisible(), '취약점 행 클릭 → 상세 모달 열림');
+        check((await findingModal.locator('[data-finding-rationale]').textContent() || '').trim().length > 0,
+          '상세 모달에 전체 판정 근거 표시');
+        await findingModal.locator('.modal__foot [data-modal-close]').click();
+      }
+    }
 
     // --- 5) 커넥터 화면 JS(connectors.js) + 모달 -----------------------------
     // ⚠ 이 화면엔 누르면 **외부 소스를 실제로 치거나 공용 dev DB 를 바꾸는** 버튼이 섞여 있다

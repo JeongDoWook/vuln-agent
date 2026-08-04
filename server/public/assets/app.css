@@ -1099,6 +1099,37 @@ a.pill--on:hover { background: var(--accent); }
 }
 .modal__foot .modal__foot__extra { margin-right: auto; }   /* 보조 버튼(미리보기 등)은 왼쪽으로 */
 
+tr[data-finding-detail] { cursor: pointer; }
+tr[data-finding-detail]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.finding-detail__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .55rem;
+  margin-bottom: 1rem;
+}
+.finding-detail__summary strong { font-size: 1.15rem; }
+.finding-detail__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 1rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--line);
+}
+.finding-detail__grid > div { min-width: 0; padding: .85rem 1rem; background: var(--surface-2); }
+.finding-detail__grid dt { margin-bottom: .3rem; color: var(--muted); font-size: .78rem; font-weight: 700; }
+.finding-detail__grid dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
+.finding-detail__section { padding: 1rem; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.finding-detail__section + .finding-detail__section { margin-top: .75rem; }
+.finding-detail__section p { margin: .45rem 0 0; color: var(--muted); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .finding-detail__grid { grid-template-columns: 1fr; } }
+
 /* --- 도움말 툴팁 ----------------------------------------------------------
  * 본문에 늘어놓으면 화면이 무거워지는 부연설명을 즉시 뜨는 공통 레이어 뒤로 보낸다. */
 .help {

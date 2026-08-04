@@ -703,9 +703,48 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                        . '&amp;pkg=' . urlencode((string) $f['package_name'])
                        . '" title="스캔별 이력 보기">🕘 이력</a>',
     ];
+    $findingRowAttrs = function (array $f) use ($hostId): array {
+        $epss = ($f['epss'] ?? null) === null ? '–' : number_format((float) $f['epss'] * 100, 1) . '%';
+        if (($f['epss_percentile'] ?? null) !== null) {
+            $top = max(0.01, (1.0 - (float) $f['epss_percentile']) * 100);
+            $epss .= ' · 상위 ' . number_format($top, $top < 1 ? 2 : ($top < 10 ? 1 : 0)) . '%';
+        }
+        $isKernel = vg_is_kernel_code_pkg((string) ($f['package_name'] ?? ''));
+        if (!empty($f['needs_restart'])) {
+            $action = $isKernel ? '패치된 커널을 적용하려면 호스트를 재부팅하세요.' : '패치된 라이브러리를 적용하려면 관련 프로세스를 재시작하세요.';
+        } elseif (!empty($f['fixed_version'])) {
+            $action = (string) ($f['installed_version'] ?? '') . ' → ' . (string) $f['fixed_version'] . ' 이상으로 업데이트';
+        } else {
+            $action = '공식 패치 또는 벤더 권고를 확인하세요.';
+        }
+        $historyUrl = '/finding_history.php?id=' . (int) $hostId
+            . '&cid=' . (int) $f['container_id']
+            . '&cve=' . urlencode((string) $f['cve_id'])
+            . '&pkg=' . urlencode((string) $f['package_name']);
+        $detail = [
+            'severity' => (string) $f['severity'],
+            'status' => vg_status_label($f['runtime_status'] ?? null),
+            'cve' => (string) $f['cve_id'],
+            'epss' => $epss,
+            'package' => (string) $f['package_name'],
+            'installed' => (string) ($f['installed_version'] ?? '–'),
+            'fixed' => (string) ($f['fixed_version'] ?? '–'),
+            'rationale' => (string) ($f['rationale'] ?? '근거 정보가 없습니다.'),
+            'action' => $action,
+            'cve_url' => '/cve.php?cve=' . urlencode((string) $f['cve_id']),
+            'history_url' => $historyUrl,
+        ];
+        return [
+            'data-finding-detail' => json_encode($detail, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'tabindex' => '0',
+            'role' => 'button',
+            'aria-label' => (string) $f['cve_id'] . ' 상세 보기',
+        ];
+    };
     $vulnOpts = [
         'card'      => false,
         'row_class' => fn($f) => vg_sev_row((string) $f['severity']),
+        'row_attrs' => $findingRowAttrs,
         'cell'      => $vulnCells,
     ];
   ?>
@@ -758,6 +797,37 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       ?>
       </div>
     </div>
+
+    <?php
+    vg_modal_open('findingDetailModal', '취약점 상세', 'modal--wide finding-detail-modal');
+    ?>
+      <div class="finding-detail__summary">
+        <span class="badge" data-finding-severity></span>
+        <span class="badge tone-muted" data-finding-status></span>
+        <strong data-finding-cve></strong>
+      </div>
+      <dl class="finding-detail__grid">
+        <div><dt>패키지</dt><dd data-finding-package></dd></div>
+        <div><dt>설치 버전</dt><dd data-finding-installed></dd></div>
+        <div><dt>조치 버전</dt><dd data-finding-fixed></dd></div>
+        <div><dt>EPSS</dt><dd data-finding-epss></dd></div>
+      </dl>
+      <section class="finding-detail__section">
+        <strong>판정 근거</strong>
+        <p data-finding-rationale></p>
+      </section>
+      <section class="finding-detail__section">
+        <strong>권장 조치</strong>
+        <p data-finding-action></p>
+      </section>
+    <?php
+    vg_modal_foot(null, [
+        'extra' => '<a class="btn btn--ghost" data-finding-history href="#">이력 보기</a>'
+                 . '<a class="btn btn--primary" data-finding-cve-link href="#">CVE 상세</a>',
+        'cancel' => '닫기',
+    ]);
+    vg_modal_close();
+    ?>
 
   <?php elseif ($tab === 'packages'): ?>
     <?php vg_toolbar([

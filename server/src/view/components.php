@@ -364,6 +364,7 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
     $cell     = $opts['cell'] ?? [];
     $empty    = $opts['empty'] ?? '데이터가 없습니다.';
     $rowClass = $opts['row_class'] ?? null;
+    $rowAttrs = $opts['row_attrs'] ?? null;
 
     if ($card) { echo '<div class="card">'; }
 
@@ -390,7 +391,14 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
     echo '</tr></thead><tbody>';
     foreach ($rows as $row) {
         $rc = $rowClass !== null ? (string) $rowClass($row) : '';
-        echo $rc !== '' ? '<tr class="' . vg_h($rc) . '">' : '<tr>';
+        $attrs = $rowAttrs !== null ? (array) $rowAttrs($row) : [];
+        $attrHtml = $rc !== '' ? ' class="' . vg_h($rc) . '"' : '';
+        foreach ($attrs as $name => $value) {
+            $name = (string) $name;
+            if ($value === null || $value === false || preg_match('/^[a-zA-Z_:][a-zA-Z0-9:._-]*$/', $name) !== 1) { continue; }
+            $attrHtml .= $value === true ? ' ' . $name : ' ' . $name . '="' . vg_h((string) $value) . '"';
+        }
+        echo '<tr' . $attrHtml . '>';
         foreach (array_values($headers) as $i => $h) {
             $key   = is_array($h) ? ($h['key'] ?? null) : null;
             $align = is_array($h) ? ($h['align'] ?? null) : null;
