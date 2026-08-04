@@ -32,6 +32,38 @@
     altInputClass: 'agent-control__datetime',
   }); }
 
+  var findingModal = document.getElementById('findingDetailModal');
+  function openFindingDetail(row) {
+    if (!findingModal) { return; }
+    var detail;
+    try { detail = JSON.parse(row.getAttribute('data-finding-detail') || '{}'); }
+    catch (error) { return; }
+    ['severity', 'status', 'cve', 'package', 'installed', 'fixed', 'epss', 'rationale', 'action'].forEach(function (field) {
+      var node = findingModal.querySelector('[data-finding-' + field + ']');
+      if (node) { node.textContent = detail[field] || '–'; }
+    });
+    var severity = findingModal.querySelector('[data-finding-severity]');
+    if (severity) {
+      severity.className = 'badge tone-' + ({CRITICAL: 'crit', HIGH: 'high', MEDIUM: 'med', LOW: 'low'}[detail.severity] || 'muted');
+    }
+    var cveLink = findingModal.querySelector('[data-finding-cve-link]');
+    var historyLink = findingModal.querySelector('[data-finding-history]');
+    if (cveLink) { cveLink.setAttribute('href', detail.cve_url || '#'); }
+    if (historyLink) { historyLink.setAttribute('href', detail.history_url || '#'); }
+    if (typeof findingModal.showModal === 'function') { findingModal.showModal(); }
+  }
+  document.addEventListener('click', function (event) {
+    var row = event.target.closest && event.target.closest('tr[data-finding-detail]');
+    if (!row || event.target.closest('a, button, input, select, textarea, label')) { return; }
+    openFindingDetail(row);
+  });
+  document.addEventListener('keydown', function (event) {
+    var row = event.target.closest && event.target.closest('tr[data-finding-detail]');
+    if (!row || event.target !== row || (event.key !== 'Enter' && event.key !== ' ')) { return; }
+    event.preventDefault();
+    openFindingDetail(row);
+  });
+
   var progress = document.querySelector('[data-agent-progress]');
   if (!progress) { return; }
   var hostId = progress.getAttribute('data-host-id');
