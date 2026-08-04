@@ -389,10 +389,11 @@ function vg_vendor_cve_url(string $src, string $cveId): ?string {
 
 /**
  * 도움말 툴팁. 본문에 늘어놓으면 화면이 무거워지는 부연설명을 아이콘 뒤로 보낸다.
- * 네이티브 title 을 쓴다 — 스크린리더도 읽고, JS 도 필요 없다.
+ * 공통 data-tip 레이어를 쓴다. 브라우저 기본 title 의 지연과 OS별 모양 차이를 피한다.
  */
 function vg_help(string $text): string {
-    return '<span class="help" title="' . vg_h($text) . '" tabindex="0" role="note">?</span>';
+    return '<span class="help" data-tip="' . vg_h($text) . '" aria-label="' . vg_h($text)
+        . '" tabindex="0" role="note">?</span>';
 }
 
 /**

@@ -500,21 +500,22 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   position: fixed;
   z-index: 10000;
   width: max-content;
-  max-width: min(22rem, calc(100vw - 24px));
-  padding: .5rem .7rem;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-sm);
-  background: var(--surface);
+  max-width: min(26rem, calc(100vw - 24px));
+  padding: .62rem .78rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line-2));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--accent) 4%);
   box-shadow: var(--shadow-lg);
   color: var(--text-2);
-  font-size: .78rem;
+  font-size: .8rem;
   font-weight: 400;
   line-height: 1.5;
   text-align: left;
   white-space: normal;
   word-break: keep-all;
   pointer-events: none;
-  animation: info-tip-in .12s ease-out;
+  letter-spacing: -.005em;
+  animation: info-tip-in .09s ease-out;
 }
 .info-tooltip::before {
   content: "";
@@ -525,7 +526,7 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   height: 8px;
   translate: -50%;
   rotate: 45deg;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 96%, var(--accent) 4%);
   border-left: 1px solid var(--line-2);
   border-top: 1px solid var(--line-2);
 }
@@ -1099,7 +1100,7 @@ a.pill--on:hover { background: var(--accent); }
 .modal__foot .modal__foot__extra { margin-right: auto; }   /* 보조 버튼(미리보기 등)은 왼쪽으로 */
 
 /* --- 도움말 툴팁 ----------------------------------------------------------
- * 본문에 늘어놓으면 화면이 무거워지는 부연설명을 아이콘 뒤로. 네이티브 title 을 쓴다. */
+ * 본문에 늘어놓으면 화면이 무거워지는 부연설명을 즉시 뜨는 공통 레이어 뒤로 보낸다. */
 .help {
   display: inline-grid;
   place-items: center;
