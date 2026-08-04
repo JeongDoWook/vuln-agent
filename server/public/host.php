@@ -410,7 +410,7 @@ function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perP
 }
 
 $counts =['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
-$exposureCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
+$exposureCount = 0; $processCount = 0; $runtimeTotal = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
 $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
@@ -529,6 +529,7 @@ try {
 
         $st = $pdo->prepare('SELECT COUNT(*) FROM tb_process WHERE scan_id = ?');
         $st->execute([$sid]); $processCount = (int) $st->fetchColumn();
+        $runtimeTotal = $exposureCount + $processCount;
 
         $st = $pdo->prepare("SELECT COUNT(*) FROM tb_package
                               WHERE scan_id = ? AND container_id = 0 AND manager IN ('dpkg','rpm','apk')");
@@ -614,7 +615,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     $tabDefs = [
         'vuln'    => ['label' => '취약점',    'n' => $vulnTotal],
         'packages'=> ['label' => '설치 패키지', 'n' => $packageTotal],
-        'runtime' => ['label' => '런타임',    'n' => $processCount],
+        // 이 탭은 노출 소켓과 실행 프로세스 두 목록을 함께 제공하므로 둘의 합계를 표시한다.
+        'runtime' => ['label' => '런타임',    'n' => $runtimeTotal],
         'cce'     => ['label' => '보안 설정', 'n' => $cceFail],
     ];
     if ($suppressedCount > 0) { $tabDefs['suppressed'] = ['label' => '억제', 'n' => $suppressedCount]; }

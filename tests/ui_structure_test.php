@@ -40,6 +40,7 @@ $appCss = (string) file_get_contents($public . '/assets/app.css');
 $appJs = (string) file_get_contents($public . '/assets/app.js');
 $componentsPhp = (string) file_get_contents($root . '/server/src/view/components.php');
 $chartsPhp = (string) file_get_contents($root . '/server/src/view/charts.php');
+$hostPhp = (string) file_get_contents($public . '/host.php');
 $check(str_contains($permissionsPhp, 'class="permission-form"'), '권한 매트릭스 전용 레이아웃');
 $check(str_contains($permissionsPhp, "'class' => 'permission-role'"), '권한 역할 열 클래스');
 $check(str_contains($appCss, '.page--permissions .check-cell'), '권한 체크박스 중앙 정렬');
@@ -48,6 +49,9 @@ $check(str_contains($appJs, "querySelectorAll('[title]')") && str_contains($appJ
     'HTML·SVG 네이티브 title을 즉시 공통 툴팁으로 변환');
 $check(str_contains($appJs, "closest('[data-tip]')") && str_contains($appCss, '.info-tooltip'),
     '전역 툴팁 이벤트 위임과 body 레이어 스타일');
+$check(str_contains($hostPhp, '$runtimeTotal = $exposureCount + $processCount;')
+    && str_contains($hostPhp, "'runtime' => ['label' => '런타임',    'n' => \$runtimeTotal]"),
+    '런타임 탭 건수에 노출 소켓과 실행 프로세스 모두 포함');
 $check(str_contains($componentsPhp, "!empty(\$h['class'])"), '공통 테이블 열 클래스 지원');
 $check(str_contains($chartsPhp, '$min = 0.0;') && str_contains($chartsPhp, '$max = 100.0;'),
     '에이전트 리소스 사용률 차트 0~100% 절대 축');
