@@ -79,7 +79,6 @@ try {
     $st = $pdo->prepare(
         "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.first_seen,
                 s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
-                s.schedule,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
                 (SELECT COUNT(*) FROM tb_scan_run x WHERE x.host_id = h.host_id) AS scan_count
            $fromSql
@@ -171,9 +170,6 @@ vg_header('자산', 'assets');
   //     '에이전트' 는 구버전 뱃지가 13px 덮었다(가로 스크롤은 안 생겨 #377 의 넘침 검사엔 안 잡혔다).
   //     필요한 폭 = 값의 폭 + 칸 여백(.6rem×2): 뱃지 65+19=84 → 5.5rem, 구버전 뱃지 53+19=72 → 5rem.
   //   · 접거나 잘라도 되는 텍스트 열(OS·리소스·수치·수집시각·심각도 건수)은 그대로 % 다.
-  //     '주기' 도 % 다 — <code>하루 1회</code>(66px)는 고정 크기지만, 12열을 741px 에 담는 폭에서
-  //     그 열까지 rem 으로 묶으면 정작 식별자인 호스트명이 40px 로 주저앉는다. 대신 이 표에서만
-  //     <code> 가 칸 안에서 접히게 해서(app.css) 넘치는 대신 줄이 늘게 했다.
   //   · 남는 폭은 호스트명이 갖는다(폭을 안 준 열). 예전엔 심각도가 남는 폭을 다 가져가
   //     1920px 에서 건수 뱃지 4개에 344px 를 썼다 — 그 폭은 잘려 나가던 식별자 쪽이 써야 한다.
   $headers = [
@@ -181,7 +177,6 @@ vg_header('자산', 'assets');
       ['label' => '상태', 'key' => 'state', 'width' => '5.5rem'],
       ['label' => 'OS', 'key' => 'os', 'width' => '7%'],
       ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],
-      ['label' => '주기', 'key' => 'schedule', 'width' => '6.5%'],
       ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '5%'],
       ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right', 'width' => '4.5%'],
       ['label' => '심각도', 'key' => 'sev', 'width' => '9%'],
@@ -223,14 +218,6 @@ vg_header('자산', 'assets');
                   return '<code>' . vg_h($v) . '</code>'
                        . ($old ? ' ' . vg_badge('구버전', 'med',
                              "함대 최신은 {$latestAgent} — master 에서 deploy/agent_push.sh 로 갱신하세요") : '');
-              },
-              // 수집 주기(에이전트 타이머). 중앙은 읽기전용으로 보여줄 뿐 — 바꾸는 건 master 에서
-              //   `deploy/agent_schedule.sh <주기> <노드>`(SSH 팬아웃). 하향 채널을 두지 않으려는 설계.
-              'schedule' => function ($r) {
-                  $s = trim((string) ($r['schedule'] ?? ''));
-                  if ($s === '') { return '<span class="why">–</span>'; }
-                  $label = ['hourly' => '매시간', 'daily' => '하루 1회'][$s] ?? $s;
-                  return '<code title="' . vg_h($s) . '">' . vg_h($label) . '</code>';
               },
               'package_count' => fn($r) => $r['scan_id'] !== null
                   ? '<a href="/host.php?id=' . (int)$r['host_id'] . '&amp;tab=packages">' . number_format((int)$r['package_count']) . '</a>'
