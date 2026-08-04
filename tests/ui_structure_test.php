@@ -63,10 +63,14 @@ $check(str_contains($connectorPhp, "['label' => '실행 시각'"), '커넥터 �
 $check(!str_contains($connectorPhp, "['label' => '마지막 실행'"), '커넥터 중복 시각 열 제거');
 
 $cvePhp = (string) file_get_contents($public . '/cve.php');
+$vendorPhp = (string) file_get_contents($public . '/vendor.php');
 $check(str_contains($cvePhp, 'LEFT JOIN tb_finding_evidence fe'), 'CVE 위치별 수정 버전 근거 결합');
 $check(str_contains($cvePhp, "['label' => '현재 → 권장 조치'"), 'CVE 위치별 권장 조치 열 제공');
 $check(str_contains($cvePhp, "vg_is_kernel_code_pkg"), 'CVE 조치에서 프로세스 재시작과 커널 재부팅 구분');
 $check(str_contains($cvePhp, '완화·격리·제거 검토'), '수정본 미공개 CVE의 대체 안내');
+$check(str_contains($vendorPhp, "preg_match('/^TEMP-/i") && str_contains($vendorPhp, '>CVE 미배정</span>'),
+    'Debian TEMP 식별자를 CVE 미배정으로 표시');
+$check(str_contains($vendorPhp, "' · 원본 ' . \$cveId"), 'Debian TEMP 원본 식별자를 툴팁에 보존');
 
 $assetsPhp = (string) file_get_contents($public . '/assets.php');
 $ingestPhp = (string) file_get_contents($public . '/ingest.php');
