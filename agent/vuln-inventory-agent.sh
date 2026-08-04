@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# vuln-inventory-agent.sh  (v2.1)
+# vuln-inventory-agent.sh  (v3.8)
 # ==================================================================
 # Linux 취약점 매핑용 정밀 인벤토리 수집 에이전트
 #

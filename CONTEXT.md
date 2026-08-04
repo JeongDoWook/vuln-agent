@@ -1,5 +1,7 @@
 # CONTEXT.md — 프로젝트 맥락 (Claude Code 최우선 참고)
 
+> 현행 기준: 2026-08-04 · 에이전트 3.8 · 자산별 수집 진행/취소 및 실제 관리 IP 보고 포함.
+
 > 이 파일은 개발을 이어받는 사람(및 Claude Code)이 **가장 먼저 읽는** 요약이다.
 > 쉬운 설명은 `docs/dev/설명글.md`, 대회용 기획 문서는 `docs/dev/기획안_v1.0.html`
 > (둘 다 현행 구현 기준으로 갱신됨). 구조·규칙의 최종 기준은 이 파일과 `docs/dev/architecture.md`.
@@ -61,7 +63,7 @@ CVE와 매칭한다. 단순 스캐너와 다른 점은 **"이 취약점이 이 �
 
 ## 4. 이미 만들어진 것 (재사용)
 
-### `agent/vuln-inventory-agent.sh` (v2.1) — 수집 에이전트, 동작 검증 완료
+### `agent/vuln-inventory-agent.sh` (v3.8) — 수집 에이전트, 동작 검증 완료
 읽기 전용. 서버에 무리 안 감(nice 19 / ionice idle / 명령별 timeout).
 **피크 메모리는 실측 61.6MB**(Debian 12 · 91패키지 — 마지막에 jq 로 전 섹션을 한 번에 조립하는
 단계가 1등 요인이라 페이로드 크기에 비례한다). 수치·외삽·재측정법은
@@ -222,7 +224,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 
 ---
 
-## 8. 개발 현황 (2026-07 기준 — 파이프라인·HTTPS·감사 + 오탐억제/CCE/변화추적/Export 완성)
+## 8. 개발 현황 (2026-08-04 기준 — 파이프라인·HTTPS·감사 + 오탐억제/CCE/변화추적/Export 완성)
 
 - [x] **0. Docker** — compose dev/prod + Dockerfile + Docker Secrets(txt) + 러너
 - [x] **1. 수집→전송→저장** — 에이전트 `--send` POST + `ingest.php` 수신 + DB
