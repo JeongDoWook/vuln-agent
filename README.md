@@ -248,7 +248,7 @@ cd /opt/vuln-agent && sudo bash install-agent.sh
 
 운영에 한 번 올린 뒤의 업데이트는 `deploy/update.sh` 한 줄이면 된다. **바뀐 파일을 보고 스스로 갈라진다** —
 `server/` 아래 PHP 만 바뀌었으면 `git pull` 로 끝(무중단, 소스가 읽기전용으로 마운트돼 있고
-opcache 가 2초마다 파일 갱신을 확인한다). `Dockerfile`·`compose*.yml`·`caddy/`·`config/` 가
+opcache 가 2초마다 파일 갱신을 확인한다). `Dockerfile`·`compose*.yml`·Caddy 런타임 설정·`config/` 가
 바뀔 때만 재빌드한다. **스키마 변경은 `deploy/migrate.sh` 가 자동 적용한다** — `db/migrations/`
 의 `*.sql` 중 아직 안 든 것만 파일명 사전순으로 돌리고 `tb_schema_migrations` 에 기록하므로,
 스키마를 바꾸려면 파일 하나만 추가하면 된다(`up` 과 `update.sh` 가 자동 호출).
