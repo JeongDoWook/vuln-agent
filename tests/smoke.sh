@@ -466,9 +466,11 @@ assetbody=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=$FQDN_WEB01")
 assert_not_contains "$assetbody" 'host_delete' "자산 목록에 삭제 작업 없음"
 assetpkgsearch=$(curl_ -s -b "$JAR" "$BASE/assets.php?q=glibc")
 assert_contains "$assetpkgsearch" 'host.php?id=' "자산 목록에서 설치 패키지명으로 호스트 검색"
-assert_contains "$assetbody" '/asset-packages.php' "자산 목록에 전체 설치 패키지 진입점 표시"
+assert_contains "$assetbody" 'class="on" href="/assets.php">자산 목록' "자산 목록 탭 활성 표시"
+assert_contains "$assetbody" 'href="/asset-packages.php">전체 설치 패키지' "자산 목록에 전체 설치 패키지 탭 표시"
 allpackages=$(curl_ -s -b "$JAR" "$BASE/asset-packages.php?q=glibc")
 assert_contains "$allpackages" '실제 서버 설치 현황' "전체 설치 패키지 화면이 취약 패키지 카탈로그와 구분됨"
+assert_contains "$allpackages" 'class="on" href="/asset-packages.php">전체 설치 패키지' "전체 설치 패키지 탭 활성 표시"
 assert_contains "$allpackages" 'glibc' "전체 호스트 설치 패키지 검색 결과 표시"
 assert_contains "$allpackages" "$FQDN_WEB01" "설치 패키지 검색 결과에 호스트 표시"
 catalogpackages=$(curl_ -s -b "$JAR" "$BASE/packages.php?q=glibc")

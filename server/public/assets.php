@@ -141,10 +141,13 @@ vg_header('자산', 'assets');
   <?php vg_page_title('자산', 'ASSETS', '호스트별 수집 상태와 탐지 결과를 확인합니다.', [
       'suffix_html' => vg_help($stateHelp),
       'actions' => vg_capture(static function (): void {
-          echo '<a class="btn btn--sm btn--ghost" href="/asset-packages.php">전체 설치 패키지</a>';
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
   ]); ?>
+  <?php vg_subtabs([
+      'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
+      'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],
+  ], 'assets'); ?>
   <div class="sub">에이전트가 등록한 호스트 · 최신 수집 상태와 취약점 요약</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err !== null ? '오류 · ' . $err : null); ?>

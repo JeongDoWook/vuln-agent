@@ -77,6 +77,12 @@ $check(str_contains($vendorPhp, "preg_match('/^TEMP-/i") && str_contains($vendor
 $check(str_contains($vendorPhp, "' · 원본 ' . \$cveId"), 'Debian TEMP 원본 식별자를 툴팁에 보존');
 
 $assetsPhp = (string) file_get_contents($public . '/assets.php');
+$assetPackagesPhp = (string) file_get_contents($public . '/asset-packages.php');
+$check(str_contains($assetsPhp, "'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php']")
+    && str_contains($assetPackagesPhp, "'assets' => ['label' => '자산 목록', 'href' => '/assets.php']"),
+    '자산 목록과 전체 설치 패키지를 상호 이동 탭으로 제공');
+$check(!str_contains($assetsPhp, 'echo \'<a class="btn btn--sm btn--ghost" href="/asset-packages.php"'),
+    '자산 제목의 중복 설치 패키지 버튼 제거');
 $ingestPhp = (string) file_get_contents($public . '/ingest.php');
 $caddyfile = (string) file_get_contents($root . '/deploy/caddy/Caddyfile');
 $agentSh = (string) file_get_contents($root . '/agent/vuln-inventory-agent.sh');

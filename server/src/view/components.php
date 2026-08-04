@@ -226,13 +226,15 @@ function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, str
 /**
  * 섹션 탭(밑줄형). 첫 화면에 다 쏟지 않고 갈래로 나눠 담는 자리.
  *   $tabs: ['vuln' => ['label'=>'취약점', 'n'=>12], 'runtime' => ['label'=>'런타임', 'n'=>null], …]
- *   'n' 이 null 이 아니면 라벨 옆에 건수를 붙인다. 탭 전환은 ?tab= + page 초기화.
+ *   'n' 이 null 이 아니면 라벨 옆에 건수를 붙인다. href 를 주면 별도 페이지로 이동하고,
+ *   없으면 같은 페이지의 ?tab= 값을 바꾼다.
  */
 function vg_subtabs(array $tabs, string $active): void {
     echo '<nav class="subtabs">';
     foreach ($tabs as $key => $def) {
         $cls = $active === (string) $key ? ' class="on"' : '';
-        echo '<a' . $cls . ' href="' . vg_h(vg_qs(['tab' => $key, 'page' => null])) . '">'
+        $href = (string) ($def['href'] ?? vg_qs(['tab' => $key, 'page' => null]));
+        echo '<a' . $cls . ' href="' . vg_h($href) . '">'
             . vg_h((string) ($def['label'] ?? $key));
         if (($def['n'] ?? null) !== null) {
             echo '<span class="n">' . number_format((int) $def['n']) . '</span>';
