@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.5"
+SCRIPT_VERSION="3.6"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
@@ -135,10 +135,24 @@ have dpkg-query && PKGMGR="dpkg"
 have rpm        && PKGMGR="rpm"
 declare -A LIBPKG
 file_to_pkg() {
-  local f="$1" rp p=""
+  local f="$1" rp p="" cache
   [ -z "$f" ] && { echo ""; return; }
   rp=$(realpath "$f" 2>/dev/null); [ -z "$rp" ] && rp="$f"   # 삭제된 파일은 realpath 실패 → 원 경로
   if [ -n "${LIBPKG[$rp]+x}" ]; then echo "${LIBPKG[$rp]}"; return; fi
+
+  # collect_exposure/collect_processes 는 명령 치환과 파이프라인 안에서 이 함수를 부른다.
+  # Bash associative array는 그 서브셸마다 복사되어 결과가 부모와 다음 프로세스에 남지 않는다.
+  # 실행 전용 TMP 파일에도 결과를 기록해, 같은 libc/libssl 경로를 프로세스마다 dpkg -S로
+  # 수백 번 다시 조회하지 않는다. 소유 패키지가 없는 경로(빈 값)도 캐시해야 실패 조회도 반복되지 않는다.
+  cache="$TMP/.file-to-pkg.cache"
+  if [ -f "$cache" ]; then
+    if p=$(awk -F '\t' -v k="$rp" '
+        $1 == k { pos=index($0,"\t"); print substr($0,pos+1); found=1; exit }
+        END { exit(found ? 0 : 1) }
+      ' "$cache" 2>/dev/null); then
+      LIBPKG[$rp]="$p"; echo "$p"; return
+    fi
+  fi
   case "$PKGMGR" in
     dpkg)
       p=$(dpkg -S "$rp" 2>/dev/null | cut -d: -f1 | head -1)
@@ -155,7 +169,9 @@ file_to_pkg() {
       ;;
     rpm)  p=$(rpm -qf "$rp" 2>/dev/null | grep -v 'not owned' | head -1) ;;
   esac
-  LIBPKG[$rp]="$p"; echo "$p"
+  LIBPKG[$rp]="$p"
+  printf '%s\t%s\n' "$rp" "$p" >> "$cache"
+  echo "$p"
 }
 
 # root 가 아니어도 실패시키지 않는다 — 읽기 전용이라 OS/커널/패키지 같은 핵심 재료는 그대로
