@@ -50,6 +50,7 @@ try {
     $rows = $stmt->fetchAll();
 
     // 관련 CVE 는 정션에서 배치 조회(N+1 방지) — advisory_id 로 묶어 각 행에 붙인다.
+    $assetsByAdvisory = [];   // advisory_id => ['hostCount'=>int, 'rows'=>array, 'total'=>int]
     if ($rows) {
         $ids = array_column($rows, 'advisory_id');
         $in  = implode(',', array_fill(0, count($ids), '?'));
@@ -66,6 +67,50 @@ try {
             $row['cve_id_list'] = $byAdvisory[(int) $row['advisory_id']] ?? [];
         }
         unset($row);
+
+        // 영향 자산 배지 — 이 페이지에 걸린 전체 cve_id 집합을 한 번에 조회해(N+1 방지)
+        //   각 공지의 cve 목록으로 역매핑한다. 호스트는 항상 "최신 스캔" 기준(host.php/cve.php 와 동일).
+        $allCves = [];
+        foreach ($byAdvisory as $cveList) {
+            foreach ($cveList as $cv) { $allCves[$cv] = true; }
+        }
+        $allCves = array_keys($allCves);
+        if ($allCves) {
+            $cin = implode(',', array_fill(0, count($allCves), '?'));
+            $fst = $pdo->prepare(
+                "SELECT f.cve_id, f.package_name, f.installed_version, f.severity, h.host_id, h.fqdn
+                   FROM tb_finding f
+                   JOIN tb_scan s ON s.scan_id = f.scan_id
+                   JOIN " . vg_latest_scan_subq() . " latest
+                     ON latest.host_id = s.host_id AND latest.mid = s.scan_id
+                   JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
+                  WHERE f.cve_id IN ($cin) AND f.is_deleted = 0
+                  ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), h.fqdn"
+            );
+            $fst->execute($allCves);
+            $findingsByCve = [];
+            foreach ($fst->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                $findingsByCve[$f['cve_id']][] = $f;
+            }
+
+            $detailLimit = vg_ui_advisory_asset_limit();
+            foreach ($rows as $row) {
+                $aid = (int) $row['advisory_id'];
+                $hostIds = [];
+                $detail = [];
+                foreach ($row['cve_id_list'] as $cv) {
+                    foreach ($findingsByCve[$cv] ?? [] as $f) {
+                        $hostIds[(int) $f['host_id']] = true;
+                        $detail[] = $f;
+                    }
+                }
+                $assetsByAdvisory[$aid] = [
+                    'hostCount' => count($hostIds),
+                    'rows'      => array_slice($detail, 0, $detailLimit),
+                    'total'     => count($detail),
+                ];
+            }
+        }
     }
 } catch (Throwable $e) {
     error_log('[advisories] ' . $e->getMessage());
@@ -89,6 +134,7 @@ vg_header('보안 공지', 'advisories');
           ['label' => '발행일', 'nowrap' => true, 'width' => '9%'],
           ['label' => '제목'],
           ['label' => '관련 CVE', 'width' => '30%'],
+          ['label' => '영향 자산', 'nowrap' => true, 'width' => '10%'],
       ],
       $rows,
       [
@@ -129,10 +175,49 @@ vg_header('보안 공지', 'advisories');
                   }
                   return $html;
               },
+              // 배지 값 = 이 공지의 CVE 들과 매칭되는 distinct 호스트 수(컨테이너 포함).
+              //   1건 이상이면 클릭 가능한 배지로 상세(호스트·패키지·버전·CVE·심각도)를 모달에 채운다.
+              3 => function ($r) use ($assetsByAdvisory) {
+                  $aid = (int) $r['advisory_id'];
+                  $a = $assetsByAdvisory[$aid] ?? ['hostCount' => 0, 'rows' => [], 'total' => 0];
+                  if ($a['hostCount'] <= 0) {
+                      return '<span class="badge tone-muted">해당 자산 없음</span>';
+                  }
+                  $payload = [
+                      'title' => $r['title'],
+                      'rows'  => array_map(static function ($f) {
+                          return [
+                              'host_fqdn' => (string) $f['fqdn'],
+                              'host_url'  => '/host.php?id=' . (int) $f['host_id'],
+                              'package'   => (string) $f['package_name'],
+                              'installed' => (string) ($f['installed_version'] ?? '–'),
+                              'cve'       => (string) $f['cve_id'],
+                              'cve_url'   => '/cve.php?cve=' . urlencode((string) $f['cve_id']),
+                              'severity'  => (string) $f['severity'],
+                          ];
+                      }, $a['rows']),
+                      'total' => $a['total'],
+                  ];
+                  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                  return '<span class="badge tone-warn" data-advisory-assets="' . vg_h((string) $json) . '"'
+                       . ' tabindex="0" role="button" aria-label="영향 자산 ' . (int) $a['hostCount'] . '대 상세 보기">'
+                       . number_format($a['hostCount']) . '대</span>';
+              },
           ],
       ]
   );
   if ($rows) { vg_page_nav($total, $perPage, $page); }
+  ?>
+
+  <?php
+  vg_modal_open('advisoryAssetsModal', '영향 자산', 'modal--wide');
+  ?>
+    <p class="why" data-advisory-assets-title></p>
+    <div class="card__body" data-advisory-assets-body></div>
+    <p class="why" data-advisory-assets-more></p>
+  <?php
+  vg_modal_foot(null, ['cancel' => '닫기']);
+  vg_modal_close();
   ?>
 <?php endif; ?>
 <?php vg_footer();
