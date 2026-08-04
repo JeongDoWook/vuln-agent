@@ -1,5 +1,7 @@
 # deploy — 배포 인프라
 
+> 문서 기준: 2026-08-04 · 운영 배포는 `update.sh`, 에이전트 일괄 설치는 `install_staged_agents.sh`가 정본이다.
+
 중앙 서버(대시보드 + 수집 API)를 컨테이너로 띄우는 곳이다. compose 파일·러너·Caddy(HTTPS
 리버스 프록시)·마이그레이션 러너가 모두 여기 있다. **모든 명령은 `cd deploy` 후 실행한다.**
 

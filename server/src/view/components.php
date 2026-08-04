@@ -35,15 +35,6 @@ function vg_page_title(string $title, string $eyebrow, string $description = '',
     echo '</header>';
 }
 
-/** 상세 화면 안의 제목·설명·우측 보조 액션을 일관되게 렌더한다. */
-function vg_section_title(string $title, string $description = '', string $actions = ''): void {
-    echo '<div class="section-title"><div><h2>' . vg_h($title) . '</h2>';
-    if ($description !== '') { echo '<p>' . vg_h($description) . '</p>'; }
-    echo '</div>';
-    if ($actions !== '') { echo '<div class="section-title__actions">' . $actions . '</div>'; }
-    echo '</div>';
-}
-
 /**
  * 클립보드 복사 버튼. JS 가 죽어도 값 자체는 화면에 그대로 있으므로(선택해서 복사 가능)
  * 이 버튼은 편의일 뿐 필수 경로가 아니다 — 그래서 <button type=button>.

@@ -1614,10 +1614,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page-title + .sub { margin-top: -.85rem; padding-inline: .2rem; }
 
 /* 섹션 제목 — 페이지 제목과 같은 어휘의 한 단 아래 위계 */
-.section-title { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin: 2rem 0 .8rem; }
-.section-title h2 { margin: 0; font-size: 1.1rem; letter-spacing: -.02em; }
-.section-title p { margin: .3rem 0 0; color: var(--muted); font-size: .86rem; line-height: 1.55; }
-.section-title__actions { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
 
 /* 반응형 표 — 좁은 화면에서 행을 카드로 접는다(td 의 data-label 이 머리글 노릇). */
 .data-table td, .data-table th { font-variant-numeric: tabular-nums; }
@@ -1861,7 +1857,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 
   .page-title { align-items: flex-start; }
   .page-title__actions { width: 100%; justify-content: flex-start; }
-  .section-title { align-items: flex-start; flex-direction: column; }
 
   .page--permissions .matrix .permission-menu,
   .page--permissions .matrix .permission-role { width: 100%; padding-left: 0; }

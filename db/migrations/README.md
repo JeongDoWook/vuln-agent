@@ -1,5 +1,7 @@
 # db/migrations — 자동 적용 마이그레이션
 
+> 문서 기준: 2026-08-04. 최신 마이그레이션은 파일명 사전순으로 판단한다.
+
 `deploy/migrate.sh` 가 여기 있는 `*.sql` 을 **파일명 사전순으로**, **아직 안 든 것만**
 적용하고 `tb_schema_migrations` 에 기록한다. `compose_runner.sh up` 과 `update.sh` 가
 자동 호출하므로, 스키마를 바꾸려면 여기에 파일 하나만 추가하면 된다(수동 apply 불필요).

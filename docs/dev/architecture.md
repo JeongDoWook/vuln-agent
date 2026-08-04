@@ -1,5 +1,7 @@
 # vuln-agent 아키텍처
 
+> 현행 기준: 2026-08-04 · 에이전트 3.8 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고 포함.
+
 지금까지 확정·구현된 구조를 그림으로 정리한다.
 다이어그램은 [`docs/specs/diagrams/`](../specs/diagrams/) 에 PlantUML(`.puml`)로 분리해 두었다.
 

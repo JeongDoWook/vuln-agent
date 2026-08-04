@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS tb_advisories (
   cve_ids    TEXT NULL,                               -- 제목+본문에서 추출한 CVE(쉼표). 패치데이 공지는 263개까지 나온다
   content    MEDIUMTEXT NULL,                         -- 본문 평문(태그 제거). NULL=미수집
   content_fetched_at DATETIME NULL,                   -- 본문 수집 시각
-  fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   is_deleted TINYINT(1) NOT NULL DEFAULT 0,
