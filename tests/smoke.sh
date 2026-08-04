@@ -495,6 +495,7 @@ progress_resp=$(curl_ -s -X POST "$BASE/agent-progress.php" -H "X-Agent-Token: $
   --data-urlencode "command_id=$PROGRESS_CMD" --data-urlencode "stage=patches" \
   --data-urlencode "percent=40" --data-urlencode "message=패치 상태 확인 중" --data-urlencode "state=running")
 assert_contains "$progress_resp" '"ok":true' "에이전트 진행 heartbeat 인증·저장"
+assert_contains "$progress_resp" '"cancel_requested":false' "취소 요청 전 진행 응답"
 progress_status=$(curl_ -s -b "$JAR" "$BASE/agent-command-status.php?id=$WEB01_ID")
 assert_contains "$progress_status" '"status":"running"' "진행 상태 API가 running 반환"
 assert_contains "$progress_status" '"progress_percent":40' "진행 상태 API가 40% 반환"
@@ -502,6 +503,20 @@ progress_overview=$(curl_ -s -b "$JAR" "$BASE/agent-command-overview.php")
 assert_contains "$progress_overview" '"active":' "전체 수집 현황 API가 활성 작업 집계"
 assert_contains "$progress_overview" '"progress_percent":40' "전체 수집 현황 API가 전체 진행률 집계"
 assert_contains "$progress_overview" "\"agent_command_id\":$PROGRESS_CMD" "전체 수집 현황 API가 실행 중인 자산 반환"
+docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php"; require "/var/www/html/src/agentcommand.php";
+   vg_agent_command_cancel(vg_pdo(), (int)$argv[1], (int)$argv[2], null);' \
+  "$WEB01_ID" "$PROGRESS_CMD"
+cancel_check=$(curl_ -s -X POST "$BASE/agent-progress.php" -H "X-Agent-Token: $TOKEN" \
+  --data-urlencode "command_id=$PROGRESS_CMD" --data-urlencode "stage=patches" \
+  --data-urlencode "percent=40" --data-urlencode "message=중단 확인" --data-urlencode "state=running")
+assert_contains "$cancel_check" '"cancel_requested":true' "실행 중 수집에 취소 요청 전달"
+cancel_done=$(curl_ -s -X POST "$BASE/agent-progress.php" -H "X-Agent-Token: $TOKEN" \
+  --data-urlencode "command_id=$PROGRESS_CMD" --data-urlencode "stage=cancelled" \
+  --data-urlencode "percent=100" --data-urlencode "message=사용자 요청으로 중단" --data-urlencode "state=cancelled")
+assert_contains "$cancel_done" '"ok":true' "에이전트 취소 완료 저장"
+cancel_status=$(curl_ -s -b "$JAR" "$BASE/agent-command-status.php?id=$WEB01_ID")
+assert_contains "$cancel_status" '"status":"cancelled"' "진행 상태 API가 cancelled 반환"
 docker exec "$WEB_CONTAINER" php -r \
   '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
    vg_pdo()->prepare("DELETE FROM tb_agent_command WHERE agent_command_id=?")->execute([(int)$argv[1]]);' \

@@ -67,3 +67,16 @@ function vg_agent_command_set_schedule(PDO $pdo, int $hostId, int $seconds): voi
         null
     );
 }
+
+function vg_agent_command_cancel(PDO $pdo, int $hostId, int $commandId, ?int $userId): void {
+    $st = $pdo->prepare("SELECT status FROM tb_agent_command WHERE agent_command_id=? AND host_id=? AND status IN ('pending','running') AND is_deleted=0");
+    $st->execute([$commandId, $hostId]);
+    $status = $st->fetchColumn();
+    if ($status === false) { throw new RuntimeException('중단할 수집 작업을 찾을 수 없습니다.'); }
+    if ($status === 'pending') {
+        $pdo->prepare("UPDATE tb_agent_command SET status='cancelled', cancel_requested_at=NOW(), cancelled_at=NOW(), executed_at=NOW(), progress_message='실행 전에 취소했습니다.' WHERE agent_command_id=?")->execute([$commandId]);
+    } else {
+        $pdo->prepare("UPDATE tb_agent_command SET cancel_requested_at=NOW(), progress_message='중단 요청을 에이전트에 전달하고 있습니다.' WHERE agent_command_id=?")->execute([$commandId]);
+    }
+    vg_log_activity($pdo, 'HOST', $hostId, 'agent_command_cancel', '수집 작업 중단 요청', ['agent_command_id' => $commandId], $userId);
+}

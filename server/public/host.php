@@ -36,6 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($action === 'agent_run_now') {
                 vg_agent_command_create($pdo, $postHostId, null, $me['id'] ?? null);
                 $agentMsg = '즉시 실행 명령을 등록했습니다. 에이전트가 다음 poll 에서 실행합니다.';
+            } elseif ($action === 'agent_cancel') {
+                vg_agent_command_cancel($pdo, $postHostId, (int) ($_POST['command_id'] ?? 0), $me['id'] ?? null);
+                $agentMsg = '수집 중단을 요청했습니다.';
             } elseif ($action === 'agent_schedule') {
                 $runAtRaw = trim((string) ($_POST['run_at'] ?? ''));
                 if ($runAtRaw === '') {
@@ -301,6 +304,13 @@ function vg_host_render_agent_control(
               <span data-progress-message><?= vg_h($stageMessage) ?></span>
               <span data-progress-time><?= $isRunning && $activeCommand['heartbeat_at'] ? '마지막 통신 ' . vg_h((string)$activeCommand['heartbeat_at']) : 'poll 주기 10초 이내' ?></span>
             </div>
+            <form method="post" data-confirm="이 수집 작업을 중단할까요?">
+              <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+              <input type="hidden" name="action" value="agent_cancel">
+              <input type="hidden" name="id" value="<?= (int)$hostId ?>">
+              <input type="hidden" name="command_id" value="<?= (int)$activeCommand['agent_command_id'] ?>">
+              <button class="btn btn--sm btn--ghost" type="submit"><?= $isRunning ? '수집 중단' : '명령 취소' ?></button>
+            </form>
           </div>
         <?php endif; ?>
         <div class="actions actions--stack">
@@ -442,7 +452,7 @@ try {
         if (vg_can('assets')) {
             $st = $pdo->prepare(
                 "SELECT agent_command_id, status, progress_percent, progress_stage, progress_message,
-                        run_at, created_at, started_at, heartbeat_at
+                        run_at, created_at, started_at, heartbeat_at, cancel_requested_at
                    FROM tb_agent_command
                   WHERE host_id = ? AND status IN ('pending','running') AND is_deleted = 0
                   ORDER BY status = 'running' DESC, run_at IS NULL DESC, run_at, created_at"

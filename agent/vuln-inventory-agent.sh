@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.7"
+SCRIPT_VERSION="3.8"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
@@ -250,15 +250,33 @@ put() { printf '%s' "$3" > "$TMP/${1}__${2}.txt"; }
 # 토큰은 curl 인자 대신 600 권한 헤더 파일로 넘겨 로컬 ps에 노출하지 않는다.
 progress_report() {
   [ -n "$COMMAND_ID" ] && [ -n "$SEND_URL" ] && [ -n "$SEND_TOKEN" ] && have curl || return 0
-  local stage="$1" percent="$2" message="$3" state="${4:-running}"
+  local stage="$1" percent="$2" message="$3" state="${4:-running}" response
   local url="${SEND_URL%ingest.php}agent-progress.php" hdr="$TMP/.progress-header"
   if [ ! -f "$hdr" ]; then
     : > "$hdr"; chmod 600 "$hdr"; printf 'X-Agent-Token: %s\r\n' "$SEND_TOKEN" > "$hdr"
   fi
-  curl -sS -m 5 -o /dev/null -H @"$hdr" -X POST "$url" \
+  response="$(curl -sS -m 5 -H @"$hdr" -X POST "$url" \
     --data-urlencode "command_id=$COMMAND_ID" --data-urlencode "stage=$stage" \
     --data-urlencode "percent=$percent" --data-urlencode "message=$message" \
-    --data-urlencode "state=$state" 2>/dev/null || true
+    --data-urlencode "state=$state" 2>/dev/null || true)"
+  case "$response" in *'"cancel_requested":true'*) : > "$TMP/.cancel-requested" ;; esac
+}
+
+cancel_if_requested() {
+  [ -f "$TMP/.cancel-requested" ] || return 0
+  progress_report cancelled 100 '사용자 요청으로 수집을 중단했습니다.' cancelled
+  echo '>> 사용자 요청으로 수집을 중단합니다.' >&2
+  exit 130
+}
+
+progress_heartbeat() {
+  local now last=0
+  now=$(date +%s); [ -f "$TMP/.progress-heartbeat" ] && read -r last < "$TMP/.progress-heartbeat"
+  if [ $((now - last)) -ge 5 ]; then
+    printf '%s' "$now" > "$TMP/.progress-heartbeat"
+    progress_report exposure 74 '프로세스와 네트워크 노출을 분석하고 있습니다.'
+  fi
+  cancel_if_requested
 }
 
 progress_report initializing 5 '에이전트가 명령을 수신했습니다.'
@@ -793,6 +811,7 @@ collect_containers() {
   fi
 
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    progress_heartbeat
     # **mount namespace 가 다르다고 컨테이너가 아니다.** systemd 의 PrivateTmp/ProtectSystem
     # 서비스도 별도 mount namespace 를 갖는다. 이걸 컨테이너로 오인하면 호스트 rootfs 를 그대로
     # 다시 읽어 **호스트 패키지·CVE 가 통째로 복제된다** — 운영 실측에서 그런 서비스 9개가
@@ -1166,6 +1185,7 @@ collect_processes() {
   #    컨테이너는 각자 에이전트가 스캔해야 함.) + 안전장치: 오래 걸리면 중단.
   local HOST_NS start; HOST_NS=$(readlink /proc/self/ns/mnt 2>/dev/null); start=$SECONDS
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    progress_heartbeat
     [ $((SECONDS - start)) -gt 90 ] && break
     pns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)
     [ -n "$pns" ] && [ "$pns" != "$HOST_NS" ] && continue      # 다른 ns(컨테이너) 제외
@@ -1187,6 +1207,7 @@ progress_report system 12 '시스템 정보와 운영체제를 확인하고 있�
 cap meta hostname_fqdn 'hostname -f 2>/dev/null || hostname'
 cap meta collected_at  'date -Is'
 cap meta agent_version "echo $SCRIPT_VERSION"
+cap meta primary_ip "ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(\$i==\"src\"){print \$(i+1); exit}}'"
 cap meta running_as    'id -un'
 # 수집 주기 — install-agent.sh 가 agent.env 에 SCHEDULE 을 써 두고 run.sh 가 export 한다.
 #   중앙(assets.php)이 노드별 타이머 주기를 읽기전용으로 보여주는 근거. 값을 못 받으면 빈칸.
