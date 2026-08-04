@@ -79,7 +79,7 @@
       .then(function (data) {
         var command = data.command;
         if (!command) { window.location.reload(); return; }
-        if ((command.status === 'done' || command.status === 'failed') && initialState !== command.status) {
+        if ((command.status === 'done' || command.status === 'failed' || command.status === 'cancelled') && initialState !== command.status) {
           window.location.reload(); return;
         }
         var running = command.status === 'running';

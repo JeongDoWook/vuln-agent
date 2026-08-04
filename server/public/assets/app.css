@@ -1311,6 +1311,7 @@ form.card .btn--block { margin-top: 1.1rem; }
 .agent-progress__track::-webkit-progress-value { background: var(--accent); border-radius: 999px; transition: width .25s ease; }
 .agent-progress__track::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .agent-progress__meta { color: var(--muted); font-size: .75rem; }
+.agent-progress > form { display: flex; justify-content: flex-end; margin-top: .75rem; }
 .agent-progress.is-stale { border-color: var(--med-bd); background: var(--med-bg); }
 
 .collection-status-btn {
