@@ -63,5 +63,16 @@ $check(str_contains($cvePhp, "['label' => '현재 → 권장 조치'"), 'CVE 위
 $check(str_contains($cvePhp, "vg_is_kernel_code_pkg"), 'CVE 조치에서 프로세스 재시작과 커널 재부팅 구분');
 $check(str_contains($cvePhp, '완화·격리·제거 검토'), '수정본 미공개 CVE의 대체 안내');
 
+$assetsPhp = (string) file_get_contents($public . '/assets.php');
+$ingestPhp = (string) file_get_contents($public . '/ingest.php');
+$caddyfile = (string) file_get_contents($root . '/deploy/caddy/Caddyfile');
+$agentSh = (string) file_get_contents($root . '/agent/vuln-inventory-agent.sh');
+$check(str_contains($assetsPhp, "['label' => 'IP'") && !str_contains($assetsPhp, "['label' => '스캔'"),
+    '자산 목록 IP 표시 및 스캔 열 제거');
+$check(str_contains($ingestPhp, "vg_request_header('X-Real-IP')") && str_contains($caddyfile, 'header_up X-Real-IP {remote_host}'),
+    'Caddy 원본 IP 전달과 ingest 저장 연계');
+$check(str_contains($agentSh, 'CPU_QUOTA="${CPU_QUOTA:-10%}"') && str_contains($agentSh, 'DO_LIMIT="${AGENT_LIMIT:-1}"'),
+    '에이전트 CPU 10% cgroup 제한 기본 적용');
+
 if ($fail > 0) { printf("ui_structure_test: %d건 실패\n", $fail); exit(1); }
 printf("ui_structure_test: 전부 통과\n");

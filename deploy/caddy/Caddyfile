@@ -27,5 +27,8 @@
 	reverse_proxy web:80 {
 		# 뒷단 PHP 가 원 프로토콜/호스트를 알도록 표준 헤더 전달.
 		header_up X-Forwarded-Proto https
+		# PHP 컨테이너의 REMOTE_ADDR 는 항상 Docker 프록시 주소다. Caddy가 직접 본
+		# 접속 원본만 별도 헤더로 덮어써서 클라이언트가 위조한 전달 헤더와 구분한다.
+		header_up X-Real-IP {remote_host}
 	}
 }

@@ -322,7 +322,7 @@ OS/커널/CPE, 설치 패키지(dpkg/rpm — NEVRA·소스패키지·**출처**)
 |---|---|
 | `--send URL` / `--token TOK` | 수집 후 중앙(`ingest.php`)으로 POST (파일 저장도 유지) |
 | `-o, --output PATH` | 결과 파일 경로 |
-| `--limit` | cgroup 으로 CPU/메모리 상한(기본 CPU 25% · 메모리 300M). sudo 필요 |
+| `--limit` | 기본 적용되는 cgroup 상한을 명시적으로 활성화(CPU는 한 코어의 10% · 메모리 300M). `AGENT_LIMIT=0`일 때만 해제 |
 | `--no-changelog` | changelog 수집 생략 — **가장 무거운 단계**. 대신 백포트 억제가 약해진다 |
 | `--timeout N` | 명령별 타임아웃 초(기본 20) |
 | `--qf FMT` | rpm 질의 포맷 재정의(디버깅용) |
@@ -336,7 +336,7 @@ sudo bash vuln-inventory-agent.sh \
      --token <중앙에서 이 호스트용으로 발급한 토큰>       # 수집 후 전송(파일 저장도 유지)
 ```
 
-부하가 걱정되면 `--limit` 을 쓴다(끄는 것보다 낫다). 에이전트 자체가 이미 `nice 19` ·
+CPU·메모리 cgroup 제한은 기본 적용된다. 에이전트 자체도 `nice 19` ·
 `ionice idle` · 명령별 timeout 으로 동작한다. **피크 메모리는 실측 61.6MB**(Debian 12 · 91패키지,
 jq 로 전 섹션을 한 번에 조립하는 마지막 단계가 1등 요인) — 수치·스케일링 규칙·재측정법은
 [`docs/dev/에이전트-리소스-프로파일.md`](../docs/dev/에이전트-리소스-프로파일.md) 참고.

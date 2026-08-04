@@ -6,7 +6,7 @@
 #
 #  설계 목표
 #   1) 서버에 무리 안 가게: nice/ionice 최저 우선순위, 명령별 timeout,
-#      출력 바이트 상한, (옵션) cgroup CPU/메모리 하드 리밋, 중복실행 방지
+#      출력 바이트 상한, 기본 cgroup CPU/메모리 하드 리밋, 중복실행 방지
 #   2) 오탐을 줄이는 "메타데이터"까지 수집:
 #      릴리스번호(NEVRA) · 소스패키지 · 적용된 보안권고 · CVE changelog · CPE
 #   3) 읽기 전용 — 시스템을 절대 변경하지 않음
@@ -16,7 +16,7 @@
 #  사용법:
 #    ./vuln-inventory-agent.sh                 # 기본(안전+포괄), /tmp 에 저장
 #    ./vuln-inventory-agent.sh -o /path.json   # 출력 경로 지정
-#    sudo ./vuln-inventory-agent.sh --limit    # cgroup 으로 CPU/메모리 상한
+#    sudo ./vuln-inventory-agent.sh            # cgroup CPU/메모리 상한이 기본 적용
 #    ./vuln-inventory-agent.sh --no-changelog  # 가장 무거운 단계 생략
 #    ./vuln-inventory-agent.sh --timeout 10    # 명령별 타임아웃(초)
 #    ./vuln-inventory-agent.sh \
@@ -30,15 +30,15 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.3"
+SCRIPT_VERSION="3.4"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
-CPU_QUOTA="${CPU_QUOTA:-25%}"         # --limit 시 CPU 상한
-MEM_MAX="${MEM_MAX:-300M}"             # --limit 시 메모리 상한
+CPU_QUOTA="${CPU_QUOTA:-10%}"         # 기본 CPU 상한(4코어 호스트 전체 기준 최대 약 2.5%)
+MEM_MAX="${MEM_MAX:-300M}"             # 기본 메모리 상한
 SBOM_DIR="${SBOM_DIR:-/opt/vuln-agent/sbom}" # 선택적 CycloneDX/SPDX 입력 디렉터리
 PROJECT_SCAN_ROOTS="${PROJECT_SCAN_ROOTS:-/opt /srv /app /usr/local /var/lib/tomcat* /usr/share/tomcat*}"
 DO_CHANGELOG=1                        # 핵심 패키지 CVE changelog 수집 여부
-DO_LIMIT=0                            # cgroup 리밋 사용 여부
+DO_LIMIT="${AGENT_LIMIT:-1}"          # 기본 cgroup 리밋 사용(AGENT_LIMIT=0 으로만 해제)
 OUT=""
 SEND_URL="${SEND_URL:-}"             # --send : 중앙 수신 API(ingest.php) URL
 SEND_TOKEN="${SEND_TOKEN:-}"         # --token: 중앙에서 이 호스트에 발급한 인증 토큰
@@ -168,7 +168,7 @@ is_root || cat >&2 <<EOF
    전체 수집: sudo bash $0
 EOF
 
-# ---------- (옵션) cgroup 스코프로 재실행: CPU/메모리 하드 리밋 ----------
+# ---------- cgroup 스코프로 재실행: CPU/메모리 하드 리밋 ----------
 # root + systemd-run 이 있을 때만. 없으면 아래 nice/ionice 로 대체됨.
 if [ "$DO_LIMIT" = 1 ] && [ -z "${_RELAUNCHED:-}" ] && is_root && have systemd-run; then
   export _RELAUNCHED=1

@@ -54,14 +54,14 @@ try {
     $where  = 'h.is_deleted = 0';
     $params = [];
     if ($q !== '') {
-        $where .= " AND (h.fqdn LIKE ? OR EXISTS (
+        $where .= " AND (h.fqdn LIKE ? OR h.last_seen_ip LIKE ? OR EXISTS (
             SELECT 1 FROM tb_package search_pkg
              WHERE search_pkg.scan_id=s.scan_id AND search_pkg.is_deleted=0
                AND search_pkg.container_id=0 AND search_pkg.manager IN ('dpkg','rpm','apk')
                AND (search_pkg.name LIKE ? OR search_pkg.source_pkg LIKE ?)
         ))";
         $like = '%' . $q . '%';
-        array_push($params, $like, $like, $like);
+        array_push($params, $like, $like, $like, $like);
     }
     if ($state !== '') {
         // KPI 와 같은 식을 쓴다 — 다른 식을 쓰면 "지연 3대" 를 눌렀는데 2대가 나오는 일이 생긴다.
@@ -77,10 +77,9 @@ try {
     $offset = ($page - 1) * $perPage;
 
     $st = $pdo->prepare(
-        "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.first_seen,
+        "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.last_seen_ip, h.first_seen,
                 s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
-                TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
-                (SELECT COUNT(*) FROM tb_scan_run x WHERE x.host_id = h.host_id) AS scan_count
+                TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min
            $fromSql
           WHERE $where
           ORDER BY h.fqdn
@@ -173,15 +172,15 @@ vg_header('자산', 'assets');
   //   · 남는 폭은 호스트명이 갖는다(폭을 안 준 열). 예전엔 심각도가 남는 폭을 다 가져가
   //     1920px 에서 건수 뱃지 4개에 344px 를 썼다 — 그 폭은 잘려 나가던 식별자 쪽이 써야 한다.
   $headers = [
-      ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id'],
+      ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '18%'],
       ['label' => '상태', 'key' => 'state', 'width' => '5.5rem'],
-      ['label' => 'OS', 'key' => 'os', 'width' => '7%'],
+      ['label' => 'OS', 'key' => 'os', 'width' => '9%'],
+      ['label' => 'IP', 'key' => 'ip', 'width' => '9%', 'nowrap' => true],
       ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],
       ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '5%'],
       ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right', 'width' => '4.5%'],
-      ['label' => '심각도', 'key' => 'sev', 'width' => '9%'],
-      ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '10.5%', 'nowrap' => true],
-      ['label' => '스캔', 'key' => 'scan_count', 'align' => 'right', 'width' => '4.5%'],
+      ['label' => '심각도', 'key' => 'sev', 'width' => '16%'],
+      ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '12%', 'nowrap' => true],
   ];
   // 액션 열만 % 가 아니라 rem 이다. 삭제 버튼은 폭이 늘 같은 고정 크기 조작부라 비율로 줄 이유가 없고,
   //   비율로 주면 표가 좁아질 때 버튼보다 좁아진다 — 실제로 900px 에서 9%(=51px)가 68px 버튼을
@@ -209,6 +208,9 @@ vg_header('자산', 'assets');
               'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a></strong>',
               'state' => fn($r) => vg_asset_state($r['age_min']),
               'os'            => fn($r) => vg_h(trim($r['os_id'] . ' ' . $r['os_version'])) ?: '<span class="why">–</span>',
+              'ip'            => fn($r) => !empty($r['last_seen_ip'])
+                  ? '<code>' . vg_h((string) $r['last_seen_ip']) . '</code>'
+                  : '<span class="why">–</span>',
               // 구버전 뱃지: 이 호스트만 옛 에이전트가 돈다는 뜻이다(중앙은 노드에 내려보내지 않는다).
               //   갱신은 master 에서 `deploy/agent_push.sh <노드>` — 토큰·타이머는 건드리지 않는다.
               'agent_version' => function ($r) use ($latestAgent) {
@@ -231,9 +233,6 @@ vg_header('자산', 'assets');
                   fn(string $s) => '/findings.php?host=' . (int) $r['host_id'] . '&sev=' . $s
               ),
               'collected_at' => fn($r) => $r['collected_at'] ? '<span class="why">' . vg_h($r['collected_at']) . '</span>' : '<span class="why">–</span>',
-              'scan_count'   => fn($r) => (int) $r['scan_count'] > 0
-                  ? '<a href="/host.php?id=' . (int) $r['host_id'] . '&tab=scans">' . number_format((int) $r['scan_count']) . '회</a>'
-                  : '<span class="why">0회</span>',
           ],
       ]
   );
