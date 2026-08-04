@@ -18,7 +18,7 @@ AGENT="$ROOT/agent/vuln-inventory-agent.sh"
 FIX="$ROOT/tests/fixtures/agent-json"
 
 # 빌더 함수만 떼어 온다 — 에이전트를 통째로 실행하면 수집이 돌아버린다(느리고 호스트에 의존).
-eval "$(sed -n '/^vg_json_escape_file() {/,/^}/p; /^vg_json_build() {/,/^}/p' "$AGENT")"
+eval "$(sed -n '/^vg_json_escape_file() {/,/^}/p; /^vg_json_escape_rpmdb_file() {/,/^}/p; /^vg_json_is_rpmdb_safe() {/,/^}/p; /^vg_json_build() {/,/^}/p' "$AGENT")"
 if ! declare -f vg_json_build >/dev/null; then
   echo "  ✗ 에이전트에서 vg_json_build 를 못 찾았습니다(함수명이 바뀌었나?)" >&2
   exit 1
@@ -30,10 +30,20 @@ want="$(cat "$FIX/expected.json")"
 
 if [ "$got" = "$want" ]; then
   echo "agent_json: awk 빌더 = jq 출력 (일치)"
-  exit 0
+else
+  echo "  ✗ awk 빌더 출력이 jq 정답과 다릅니다" >&2
+  echo "  기대: $want" >&2
+  echo "  실제: $got"  >&2
+  exit 1
 fi
 
-echo "  ✗ awk 빌더 출력이 jq 정답과 다릅니다" >&2
-echo "  기대: $want" >&2
-echo "  실제: $got"  >&2
-exit 1
+rpm_tmp="$(mktemp -d)"
+trap 'rm -rf "$rpm_tmp"' EXIT
+printf 'abc123|gz|H4sIAAAAAAAA\n' > "$rpm_tmp/containers__rpmdb.txt"
+TMP="$rpm_tmp"
+rpm_got="$(vg_json_build)"
+[ "$rpm_got" = '{"containers":{"rpmdb":"abc123|gz|H4sIAAAAAAAA"}}' ] || {
+  echo "  ✗ RPM DB 고속 JSON 경로 출력 불일치: $rpm_got" >&2
+  exit 1
+}
+echo "agent_json: RPM DB Base64 고속 경로 = 정상"

@@ -30,8 +30,9 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.4"
+SCRIPT_VERSION="3.5"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
+PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-10%}"         # 기본 CPU 상한(4코어 호스트 전체 기준 최대 약 2.5%)
 MEM_MAX="${MEM_MAX:-300M}"             # 기본 메모리 상한
@@ -281,6 +282,17 @@ vg_json_escape_file() {
   ' "$1"
 }
 
+# 컨테이너 RPM DB 폴백은 `cid|gz|base64`만 담는다. Base64에는 JSON 이스케이프가 필요한
+# 따옴표·역슬래시·제어문자가 없으므로 수 MB짜리 한 줄을 문자마다 이어 붙일 이유가 없다.
+# 기존 범용 AWK는 `out = out c`가 긴 한 줄에서 O(n²)가 되어 Pi에서 100분 넘게 걸렸다.
+vg_json_escape_rpmdb_file() {
+  LC_ALL=C awk 'BEGIN{first=1} { if (!first) printf "\\n"; printf "%s", $0; first=0 }' "$1"
+}
+
+vg_json_is_rpmdb_safe() {
+  [ -s "$1" ] && ! LC_ALL=C grep -qvE '^[A-Za-z0-9_.:@/-]+\|gz\|[A-Za-z0-9+/=]+$' "$1"
+}
+
 # $TMP/<섹션>__<키>.txt 들을 {"섹션":{"키":"값"}} 으로 조립한다.
 #   파일명이 `섹션__키` 라 glob 정렬이 곧 섹션별 묶음이 된다(같은 섹션이 연속).
 vg_json_build() {
@@ -296,7 +308,11 @@ vg_json_build() {
       prev="$c"; first_key=1
     fi
     [ "$first_key" = 1 ] || printf ','
-    printf '"%s":"%s"' "$k" "$(vg_json_escape_file "$f")"
+    if [ "$base" = "containers__rpmdb" ] && vg_json_is_rpmdb_safe "$f"; then
+      printf '"%s":"%s"' "$k" "$(vg_json_escape_rpmdb_file "$f")"
+    else
+      printf '"%s":"%s"' "$k" "$(vg_json_escape_file "$f")"
+    fi
     first_key=0
   done
   [ -n "$prev" ] && printf '}'
@@ -1557,51 +1573,76 @@ cap filesystem fstab  'cat /etc/fstab'
 # 결과 조립
 # ==================================================================
 progress_report packaging 94 '수집 결과를 조립하고 있습니다.'
-ELAPSED=$(( SECONDS - START_TS ))
-put meta elapsed_seconds "$ELAPSED"
+build_json_output() {
+  local f base
+  if have jq && [ "${VG_FORCE_AWK:-0}" != 1 ]; then
+    for f in "$TMP"/*.txt; do
+      [ -e "$f" ] || continue
+      base="$(basename "$f" .txt)"
+      jq -Rs -c --arg c "${base%%__*}" --arg k "${base#*__}" \
+        '{c:$c,k:$k,v:(sub("\n+$";""))}' "$f"
+    done > "$TMP/_flat.jsonl"
+    jq -s 'reduce .[] as $x ({}; .[$x.c][$x.k] = $x.v)' "$TMP/_flat.jsonl"
+  elif have awk; then
+    vg_json_build
+  else
+    return 127
+  fi
+}
 
-# 자기계측 마감 — 피크 메모리·CPU 를 meta 에 싣는다(중앙이 자산 화면에 표시).
-measure_finish
-[ -n "$PEAK_RSS_MB" ] && put meta peak_rss_mb "$PEAK_RSS_MB"
-[ -n "$CPU_SECONDS" ] && put meta cpu_seconds "$CPU_SECONDS"
-
-# jq 가 있으면 그것으로(빠르다), 없으면 awk 로 만든다. **어느 쪽이든 결과 JSON 은 같다** —
-#   VG_FORCE_AWK=1 로 awk 경로를 강제해 두 결과를 대조할 수 있다(tests/agent_json_test.sh).
-if have jq && [ "${VG_FORCE_AWK:-0}" != 1 ]; then
-  # 각 섹션을 한 줄 JSON 으로 인코딩 후 최종 reduce (O(n), 저부하)
-  for f in "$TMP"/*.txt; do
-    [ -e "$f" ] || continue
-    base="$(basename "$f" .txt)"
-    jq -Rs -c --arg c "${base%%__*}" --arg k "${base#*__}" \
-      '{c:$c,k:$k,v:(sub("\n+$";""))}' "$f"
-  done > "$TMP/_flat.jsonl"
-  jq -s 'reduce .[] as $x ({}; .[$x.c][$x.k] = $x.v)' "$TMP/_flat.jsonl" > "$OUT"
+# 조립은 별도 프로세스로 돌려 10초마다 heartbeat를 보낸다. 비정상 데이터나 구현 회귀가 있어도
+# 120초 뒤에는 실패로 끝내 웹에 영원히 94% running 명령을 남기지 않는다.
+(trap - EXIT; build_json_output) > "$OUT" & JSON_PID=$!
+PACKAGING_STARTED=$SECONDS
+NEXT_PACKAGING_HEARTBEAT=$(( SECONDS + 10 ))
+while kill -0 "$JSON_PID" 2>/dev/null; do
+  sleep 1
+  kill -0 "$JSON_PID" 2>/dev/null || break
+  if [ "$SECONDS" -ge "$NEXT_PACKAGING_HEARTBEAT" ]; then
+    progress_report packaging 94 '수집 결과를 조립하고 있습니다.'
+    NEXT_PACKAGING_HEARTBEAT=$(( SECONDS + 10 ))
+  fi
+  if [ $(( SECONDS - PACKAGING_STARTED )) -ge "$PACKAGING_TIMEOUT" ]; then
+    kill "$JSON_PID" 2>/dev/null || true
+    wait "$JSON_PID" 2>/dev/null || true
+    OUTPUT_IS_JSON=0
+    echo ">> [실패] JSON 조립 제한시간(${PACKAGING_TIMEOUT}초)을 초과했습니다." >&2
+    progress_report failed 100 '수집 결과 조립 제한시간을 초과했습니다.' failed
+    exit 1
+  fi
+done
+if wait "$JSON_PID" && [ -s "$OUT" ]; then
   OUTPUT_IS_JSON=1
-  echo ">> JSON 저장 완료: $OUT" >&2
-elif have awk; then
-  vg_json_build > "$OUT"
-  OUTPUT_IS_JSON=1
-  echo ">> JSON 저장 완료(awk — jq 없이): $OUT" >&2
 else
-  # awk 조차 없는 시스템(사실상 없다). 조용히 넘어가지 않고 실패로 끝낸다.
   OUTPUT_IS_JSON=0
-  echo ">> [실패] jq·awk 가 모두 없어 JSON 을 만들 수 없습니다." >&2
+  echo ">> [실패] JSON 결과를 만들 수 없습니다." >&2
+  progress_report failed 100 '수집 결과를 조립하지 못했습니다.' failed
+  exit 1
 fi
+
+# 조립까지 끝난 시점에 자기계측을 마감한다. 이전에는 조립 직전에 마감해 실제 100분 병목이
+# 소요시간 23초·CPU 0초처럼 누락됐다. 한 번의 선형 AWK 패스로 meta와 command_id를 함께 주입한다.
+ELAPSED=$(( SECONDS - START_TS ))
+measure_finish
+awk -v elapsed="$ELAPSED" -v rss="$PEAK_RSS_MB" -v cpu="$CPU_SECONDS" -v cid="$COMMAND_ID" '
+  {
+    meta="\"elapsed_seconds\":\"" elapsed "\""
+    if (rss != "") meta=meta ",\"peak_rss_mb\":\"" rss "\""
+    if (cpu != "") meta=meta ",\"cpu_seconds\":\"" cpu "\""
+    sub(/"meta":\{/, "\"meta\":{" meta ",")
+    if (cid != "") sub(/}[ \t]*$/, ",\"command_id\":" cid "}")
+    print
+  }
+' "$OUT" > "$TMP/_out_meta.json" && mv "$TMP/_out_meta.json" "$OUT"
+JSON_ENGINE="jq"
+if [ "${VG_FORCE_AWK:-0}" = 1 ] || ! have jq; then JSON_ENGINE="awk — jq 없이"; fi
+echo ">> JSON 저장 완료($JSON_ENGINE): $OUT" >&2
 
 # ---------- command_id 주입(--command-id) ----------
 #   run.sh(데몬)가 agent-poll.php 의 due_command_id 를 넘겨받았을 때만 채워진다.
 #   최종 JSON 최상위에 "command_id" 필드를 얹어 POST 하면 ingest.php 가 그 명령을 완료
 #   처리한다. jq/awk 두 경로 모두 마지막 줄이 최상위 객체를 닫는 "}" 이므로 그 줄만 고친다.
-if [ -n "$COMMAND_ID" ] && [ "${OUTPUT_IS_JSON:-0}" = 1 ]; then
-  awk -v cid="$COMMAND_ID" '
-    { lines[NR] = $0 }
-    END {
-      for (i = 1; i <= NR; i++) {
-        if (i == NR) { sub(/}[ \t]*$/, ",\"command_id\":" cid "}", lines[i]) }
-        print lines[i]
-      }
-    }' "$OUT" > "$TMP/_out_cmdid.json" && mv "$TMP/_out_cmdid.json" "$OUT"
-fi
+# command_id는 위의 meta 주입 패스에서 함께 넣는다.
 
 # ---------- 요약 ----------
 echo "----------------------------------------" >&2
