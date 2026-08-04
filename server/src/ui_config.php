@@ -76,3 +76,8 @@ function vg_audit_page_views_enabled(): bool {
 function vg_ui_filter_option_limit(): int {
     return vg_ui_int('UI_FILTER_OPTION_LIMIT', 300, 50, 2000);
 }
+
+/** advisories.php 영향 자산 모달에 담는 상세 행 상한(초과분은 "외 N건"). */
+function vg_ui_advisory_asset_limit(): int {
+    return vg_ui_int('UI_ADVISORY_ASSET_LIMIT', 200, 20, 2000);
+}

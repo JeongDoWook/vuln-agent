@@ -1104,6 +1104,11 @@ tr[data-finding-detail]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+[data-advisory-assets] { cursor: pointer; }
+[data-advisory-assets]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .finding-detail__summary {
   display: flex;
   align-items: center;
