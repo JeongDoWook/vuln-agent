@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720" role="img" aria-labelledby="title desc">
+  <title id="title">vuln-agent 취약점 수집과 판단 흐름</title>
+  <desc id="desc">각 서버의 에이전트가 실행 정보를 수집하고, 중앙 서버가 실행 맥락과 벤더 근거를 검증한 뒤 우선순위와 조치를 제시하는 네 단계 흐름</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fbff"/>
+      <stop offset="1" stop-color="#eef3ff"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#315ce8"/>
+      <stop offset="1" stop-color="#7656e8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#253b75" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#7180a7"/>
+    </marker>
+    <style>
+      text { font-family: Pretendard, "Noto Sans KR", "Malgun Gothic", sans-serif; }
+      .card-title { font-size: 25px; font-weight: 700; fill: #17223b; }
+      .step { font-size: 16px; font-weight: 800; letter-spacing: 1.5px; }
+      .body { font-size: 18px; fill: #4b5874; }
+      .chip { font-size: 15px; font-weight: 650; fill: #31405f; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="720" rx="34" fill="url(#background)"/>
+  <rect x="40" y="34" width="1320" height="104" rx="24" fill="url(#hero)"/>
+  <circle cx="91" cy="86" r="25" fill="#ffffff" fill-opacity="0.18"/>
+  <path d="M80 86l8 8 16-20" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="132" y="78" font-size="29" font-weight="800" fill="#fff">설치 여부를 넘어, 실제 위험과 조치까지 연결합니다</text>
+  <text x="132" y="111" font-size="17" fill="#eaf0ff">Linux 서버의 Bash 에이전트  →  outbound HTTPS  →  중앙 분석·웹 콘솔</text>
+  <rect x="1090" y="63" width="232" height="46" rx="23" fill="#fff" fill-opacity="0.14" stroke="#fff" stroke-opacity="0.28"/>
+  <text x="1206" y="92" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">서버로의 인바운드 접속 없음</text>
+
+  <!-- Step 1 -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="184" width="300" height="314" rx="24" fill="#fff" stroke="#dce5f7"/>
+  </g>
+  <rect x="64" y="208" width="83" height="31" rx="15" fill="#e9efff"/>
+  <text x="105" y="229" text-anchor="middle" class="step" fill="#315ce8">01 수집</text>
+  <circle cx="296" cy="224" r="24" fill="#eff4ff"/>
+  <path d="M284 224h24M288 216h16M292 208h8M288 232h16" stroke="#4169df" stroke-width="3" stroke-linecap="round"/>
+  <text x="64" y="278" class="card-title">서버의 사실을 수집</text>
+  <text x="64" y="311" class="body">설치 목록만 읽지 않습니다.</text>
+  <g>
+    <rect x="64" y="342" width="110" height="37" rx="12" fill="#f3f6fc"/><text x="119" y="366" text-anchor="middle" class="chip">패키지·버전</text>
+    <rect x="184" y="342" width="132" height="37" rx="12" fill="#f3f6fc"/><text x="250" y="366" text-anchor="middle" class="chip">프로세스·라이브러리</text>
+    <rect x="64" y="390" width="110" height="37" rx="12" fill="#f3f6fc"/><text x="119" y="414" text-anchor="middle" class="chip">포트·방화벽</text>
+    <rect x="184" y="390" width="132" height="37" rx="12" fill="#f3f6fc"/><text x="250" y="414" text-anchor="middle" class="chip">컨테이너</text>
+  </g>
+  <text x="64" y="463" font-size="15" fill="#7a869f">경량 Bash · 주기/즉시/예약 수집</text>
+
+  <path d="M350 341H377" stroke="#7180a7" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <!-- Step 2 -->
+  <g filter="url(#shadow)"><rect x="390" y="184" width="300" height="314" rx="24" fill="#fff" stroke="#dce5f7"/></g>
+  <rect x="414" y="208" width="109" height="31" rx="15" fill="#e8f7f2"/>
+  <text x="468" y="229" text-anchor="middle" class="step" fill="#188866">02 연결</text>
+  <circle cx="646" cy="224" r="24" fill="#eaf8f3"/>
+  <circle cx="636" cy="218" r="5" fill="#239b78"/><circle cx="656" cy="218" r="5" fill="#239b78"/><circle cx="646" cy="234" r="5" fill="#239b78"/>
+  <path d="M640 221l4 9M652 221l-4 9M641 218h10" stroke="#239b78" stroke-width="2.5"/>
+  <text x="414" y="278" class="card-title">실행 맥락을 연결</text>
+  <text x="414" y="311" class="body">실제로 쓰이는 위험인지 봅니다.</text>
+  <rect x="414" y="343" width="252" height="42" rx="12" fill="#edf9f5"/>
+  <text x="540" y="370" text-anchor="middle" font-size="16" font-weight="700" fill="#247b65">취약 패키지 → 사용 프로세스</text>
+  <rect x="414" y="395" width="252" height="42" rx="12" fill="#edf9f5"/>
+  <text x="540" y="422" text-anchor="middle" font-size="16" font-weight="700" fill="#247b65">열린 포트 → 외부 도달 가능성</text>
+  <text x="414" y="463" font-size="15" fill="#7a869f">미실행 · 내부 · 외부 등 7단계 판정</text>
+
+  <path d="M700 341H727" stroke="#7180a7" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <!-- Step 3 -->
+  <g filter="url(#shadow)"><rect x="740" y="184" width="300" height="314" rx="24" fill="#fff" stroke="#dce5f7"/></g>
+  <rect x="764" y="208" width="109" height="31" rx="15" fill="#fff4df"/>
+  <text x="818" y="229" text-anchor="middle" class="step" fill="#a66a00">03 검증</text>
+  <circle cx="996" cy="224" r="24" fill="#fff6e5"/>
+  <path d="M986 224l7 7 14-17" fill="none" stroke="#c5800c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="764" y="278" class="card-title">벤더 근거를 검증</text>
+  <text x="764" y="311" class="body">버전 문자열만 믿지 않습니다.</text>
+  <g>
+    <rect x="764" y="342" width="117" height="37" rx="12" fill="#fff8e9"/><text x="822" y="366" text-anchor="middle" class="chip">OSV 영향 범위</text>
+    <rect x="891" y="342" width="125" height="37" rx="12" fill="#fff8e9"/><text x="953" y="366" text-anchor="middle" class="chip">changelog·errata</text>
+    <rect x="764" y="390" width="252" height="37" rx="12" fill="#fff8e9"/><text x="890" y="414" text-anchor="middle" class="chip">Debian · Ubuntu · RHEL · Kernel</text>
+  </g>
+  <text x="764" y="463" font-size="15" fill="#7a869f">백포트 오탐 억제 · 판정 근거 보존</text>
+
+  <path d="M1050 341H1077" stroke="#7180a7" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <!-- Step 4 -->
+  <g filter="url(#shadow)"><rect x="1090" y="184" width="270" height="314" rx="24" fill="#fff" stroke="#dce5f7"/></g>
+  <rect x="1114" y="208" width="109" height="31" rx="15" fill="#f6ecff"/>
+  <text x="1168" y="229" text-anchor="middle" class="step" fill="#7b45bd">04 조치</text>
+  <circle cx="1316" cy="224" r="24" fill="#f7efff"/>
+  <path d="M1305 224h22M1316 213v22" stroke="#8751c5" stroke-width="3.5" stroke-linecap="round"/>
+  <text x="1114" y="278" class="card-title">우선순위와 조치</text>
+  <text x="1114" y="311" class="body">무엇부터 할지 보여줍니다.</text>
+  <rect x="1114" y="343" width="222" height="42" rx="12" fill="#f8f1ff"/>
+  <text x="1225" y="370" text-anchor="middle" font-size="16" font-weight="700" fill="#7240ad">KEV · EPSS · 실행 위험</text>
+  <rect x="1114" y="395" width="222" height="42" rx="12" fill="#f8f1ff"/>
+  <text x="1225" y="422" text-anchor="middle" font-size="16" font-weight="700" fill="#7240ad">업데이트 · 재시작 · 재부팅</text>
+  <text x="1114" y="463" font-size="15" fill="#7a869f">위험 · 억제 · 판정 불가를 구분</text>
+
+  <!-- Difference band -->
+  <rect x="40" y="542" width="1320" height="136" rx="24" fill="#17223b"/>
+  <text x="70" y="580" font-size="16" font-weight="800" fill="#9ba9c8" letter-spacing="1.3">WHY VULN-AGENT</text>
+  <rect x="70" y="599" width="344" height="51" rx="15" fill="#25324e"/>
+  <text x="92" y="630" font-size="17" fill="#c7d0e4">일반 목록</text>
+  <text x="192" y="630" font-size="18" font-weight="700" fill="#fff">설치됨 → 취약</text>
+  <path d="M443 624H486" stroke="#657393" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="505" y="589" width="825" height="71" rx="17" fill="#253e81" stroke="#557cf0"/>
+  <text x="530" y="617" font-size="16" font-weight="700" fill="#a9c0ff">vuln-agent</text>
+  <text x="530" y="644" font-size="18" font-weight="750" fill="#fff">실제로 쓰는가?  외부에서 닿는가?  이미 패치됐는가?  →  근거 있는 조치</text>
+</svg>
