@@ -121,7 +121,7 @@ try {
     if ($scanIds) {
         $in = implode(',', array_map('intval', $scanIds));
         $fst = $pdo->query(
-            "SELECT scan_id, cve_id, package_name, severity, in_kev, exposed, rationale
+            "SELECT scan_id, cve_id, package_name, severity, in_kev, exposed, rationale, installed_version
                FROM tb_finding WHERE scan_id IN ($in) AND is_deleted = 0"
         );
         foreach ($fst->fetchAll(PDO::FETCH_ASSOC) as $f) {
@@ -135,23 +135,24 @@ try {
         if (count($scans) < 2) { continue; }
         $fqdn = (string) $scans[0]['fqdn'];
         $when = (string) $scans[0]['collected_at'];
-        $cur  = $bySc[(int) $scans[0]['scan_id']] ?? [];
+        $curScanId = (int) $scans[0]['scan_id'];
+        $cur  = $bySc[$curScanId] ?? [];
         $prev = $bySc[(int) $scans[1]['scan_id']] ?? [];
 
         foreach ($cur as $k => $f) {
             if (!isset($prev[$k])) {
-                $changes[] = vg_change_row('new', $hid, $fqdn, $when, $f);
+                $changes[] = vg_change_row('new', $hid, $fqdn, $when, $f, null, $curScanId);
                 $summary['new']++;
             } else {
                 $a = VG_SEV_RANK[$prev[$k]['severity']] ?? 0;
                 $b = VG_SEV_RANK[$f['severity']] ?? 0;
-                if ($b > $a) { $changes[] = vg_change_row('up', $hid, $fqdn, $when, $f, $prev[$k]['severity']); $summary['up']++; }
-                elseif ($b < $a) { $changes[] = vg_change_row('down', $hid, $fqdn, $when, $f, $prev[$k]['severity']); $summary['down']++; }
+                if ($b > $a) { $changes[] = vg_change_row('up', $hid, $fqdn, $when, $f, $prev[$k]['severity'], $curScanId); $summary['up']++; }
+                elseif ($b < $a) { $changes[] = vg_change_row('down', $hid, $fqdn, $when, $f, $prev[$k]['severity'], $curScanId); $summary['down']++; }
             }
         }
         foreach ($prev as $k => $f) {
             if (!isset($cur[$k])) {
-                $changes[] = vg_change_row('resolved', $hid, $fqdn, $when, $f);
+                $changes[] = vg_change_row('resolved', $hid, $fqdn, $when, $f, null, $curScanId);
                 $summary['resolved']++;
             }
         }
@@ -180,24 +181,52 @@ try {
 }
 
 /** 변화 1건을 표 행으로. */
-function vg_change_row(string $type, int $hid, string $fqdn, string $when, array $f, ?string $from = null): array {
+function vg_change_row(string $type, int $hid, string $fqdn, string $when, array $f, ?string $from = null, int $curScanId = 0): array {
     return [
-        'type'         => $type,
-        'host_id'      => $hid,
-        'fqdn'         => $fqdn,
-        'when'         => $when,
-        'cve_id'       => (string) $f['cve_id'],
-        'package_name' => (string) $f['package_name'],
-        'severity'     => (string) $f['severity'],
-        'from_sev'     => $from,
-        'in_kev'       => (int) ($f['in_kev'] ?? 0),
-        'exposed'      => (int) ($f['exposed'] ?? 0),
-        'rationale'    => (string) ($f['rationale'] ?? ''),
+        'type'             => $type,
+        'host_id'          => $hid,
+        'fqdn'             => $fqdn,
+        'when'             => $when,
+        'cve_id'           => (string) $f['cve_id'],
+        'package_name'     => (string) $f['package_name'],
+        'severity'         => (string) $f['severity'],
+        'from_sev'         => $from,
+        'in_kev'           => (int) ($f['in_kev'] ?? 0),
+        'exposed'          => (int) ($f['exposed'] ?? 0),
+        'rationale'        => (string) ($f['rationale'] ?? ''),
+        'installed_version'=> (string) ($f['installed_version'] ?? ''),
+        'cur_scan_id'      => $curScanId,
+        'reason'           => '',
     ];
 }
 
 function vg_change_tone(string $type): string {
     return ['new' => 'crit', 'up' => 'high', 'down' => 'muted', 'resolved' => 'ok'][$type] ?? 'muted';
+}
+
+/** tb_pkg_change 대조 결과(없으면 null)로 변화 사유 문구를 만든다. 추측성 사유는 만들지 않는다. */
+function vg_change_reason(string $type, ?array $pc): string {
+    if ($type === 'new') {
+        if ($pc && in_array($pc['change_type'], ['installed', 'upgraded'], true)) {
+            return $pc['change_type'] === 'installed'
+                ? '새 설치 (' . $pc['new_version'] . ')'
+                : '업그레이드로 신규 노출 (' . $pc['old_version'] . ' → ' . $pc['new_version'] . ')';
+        }
+        return '기존 패키지·신규 CVE 공표';
+    }
+    if ($type === 'resolved') {
+        if ($pc && in_array($pc['change_type'], ['removed', 'upgraded'], true)) {
+            return $pc['change_type'] === 'removed'
+                ? '패키지 제거됨'
+                : '패치 적용 (' . $pc['new_version'] . ')';
+        }
+        return '재판정으로 해결';
+    }
+    // up | down: 등급 변화는 이미 배지로 보이므로, 버전도 같이 바뀐 경우에만 부가 정보를 붙인다.
+    if ($pc && in_array($pc['change_type'], ['upgraded', 'downgraded'], true)) {
+        return '패키지 버전도 ' . $pc['old_version'] . ' → ' . $pc['new_version'] . ' 변경됨';
+    }
+    return '';
 }
 
 vg_header('변화 추적', 'findings');
@@ -260,6 +289,34 @@ vg_header('변화 추적', 'findings');
   <?php if ($tab === 'vuln'): ?>
     <?php
     $paged = array_slice($changes, ($page - 1) * $perPage, $perPage);
+
+    // 사유 판별: 현재 페이지 행만 대상으로 tb_pkg_change 를 한 번에 대조(N+1 금지).
+    if ($err === null && $paged) {
+        try {
+            $curScanIds = array_values(array_unique(array_map(fn($r) => $r['cur_scan_id'], $paged)));
+            $curScanIds = array_filter($curScanIds, fn($v) => $v > 0);
+            if ($curScanIds) {
+                $in = implode(',', array_map('intval', $curScanIds));
+                $pst = $pdo->query(
+                    "SELECT host_id, package_name, scan_id, change_type, old_version, new_version
+                       FROM tb_pkg_change
+                      WHERE is_deleted = 0 AND scan_id IN ($in)"
+                );
+                $pkgByKey = [];
+                foreach ($pst->fetchAll(PDO::FETCH_ASSOC) as $pc) {
+                    $pkgByKey[$pc['host_id'] . '|' . $pc['package_name'] . '|' . $pc['scan_id']] = $pc;
+                }
+                foreach ($paged as &$r) {
+                    $key = $r['host_id'] . '|' . $r['package_name'] . '|' . $r['cur_scan_id'];
+                    $r['reason'] = vg_change_reason($r['type'], $pkgByKey[$key] ?? null);
+                }
+                unset($r);
+            }
+        } catch (Throwable $e) {
+            error_log('[changes] reason lookup: ' . $e->getMessage());
+        }
+    }
+
     vg_table(
         [
             // 폭은 머리글 글자까지 담아야 한다 — th 는 nowrap 이라 좁으면 옆 열을 덮고,
@@ -294,13 +351,22 @@ vg_header('변화 추적', 'findings');
                 1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
                 2 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
                               . ($r['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
-                3 => fn($r) => vg_h($r['package_name']),
+                3 => function ($r) {
+                    $out = vg_h($r['package_name']);
+                    if ($r['installed_version'] !== '') {
+                        $out .= ' <span class="why">' . vg_h($r['installed_version']) . '</span>';
+                    }
+                    return $out;
+                },
                 4 => function ($r) {
                     $sev = vg_sev_badge((string) $r['severity']);
                     if ($r['from_sev']) {
                         $sev = '<span class="why">' . vg_h($r['from_sev']) . ' →</span> ' . $sev;
                     }
                     if ($r['exposed']) { $sev .= ' ' . vg_badge('외부노출', 'high'); }
+                    if ($r['reason'] !== '') {
+                        $sev .= '<br><span class="why">' . vg_h($r['reason']) . '</span>';
+                    }
                     return $sev;
                 },
                 5 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
