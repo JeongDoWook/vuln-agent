@@ -124,8 +124,8 @@ vuln-agent/
 │   └── install-agent.sh          # 각 서버 배포·스케줄(systemd 상시 데몬/cron 폴백)
 ├── server/
 │   ├── Dockerfile
-│   ├── public/   # ingest·rematch·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
-│   │             #   packages/advisories/advisory/assets/connectors/users/user/permissions/api-tokens/
+│   ├── public/   # ingest·agent-poll/progress·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
+│   │             #   packages/package/advisories/advisory/assets/asset-packages/connectors/users/user/permissions/api-tokens/
 │   │             #   agent-tokens/activity/profile + vendor(벤더 판정 근거)/
 │   │             #   compliance_rules·compliance_rule(SSG 룰셋 카탈로그) (웹)
 │   │             #   agent-dl.php — 에이전트 설치 파일 배포(자산 화면 설치 모달의 다운로드 대상)

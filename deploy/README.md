@@ -15,7 +15,7 @@
 ```bash
 cd deploy
 ./compose_runner.sh init                  # .env.dev / .env.prod 생성(템플릿 복사) → 비밀값 채우기
-#   secrets/*.txt (mysql/admin/ingest/duckdns) 와 .env.prod 를 이 서버 값으로 채운다.
+#   secrets/*.txt (mysql/admin/duckdns) 와 .env.prod 를 이 서버 값으로 채운다.
 ./compose_runner.sh doctor                # 사전 점검(훅 설치·포트 등)
 ./compose_runner.sh prod up -d --build    # 운영 기동 — Caddy 가 자체서명 루트 CA 를 이때 생성한다
 ```

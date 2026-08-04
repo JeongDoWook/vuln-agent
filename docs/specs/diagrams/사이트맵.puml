@@ -28,6 +28,7 @@ package "취약점 (perm: findings / advisories)" as Vuln {
 
 package "바로가기 (항상 노출)" as Quick {
     rectangle "/assets.php\n자산" as ASSETS
+    rectangle "/asset-packages.php\n전체 자산 설치 패키지" as APKG
     rectangle "/connectors.php\n데이터 수집" as CONN
 }
 
@@ -41,6 +42,7 @@ package "관리" as Admin {
 
 package "인증: 토큰(사람 로그인과 분리)" as API {
     rectangle "/ingest.php\n수집 수신 · X-Agent-Token" as ING #238636
+    rectangle "/agent-poll.php · /agent-progress.php\n명령 pull · 진행/heartbeat/중단 확인" as APOLL #238636
     rectangle "/export.php\n결과 내보내기 JSON/XML · X-API-Token" as EXP #238636
 }
 
@@ -48,6 +50,7 @@ LOGIN --> DASH : 인증 성공
 DASH --> PROF : 상단바 사용자 메뉴
 
 DASH --> HOST
+ASSETS --> APKG : 설치 패키지 탭
 HOST --> FIND
 FIND --> CVE
 FIND --> CHG : 서브탭
@@ -68,5 +71,7 @@ DASH ..> Admin
 ASSETS -[hidden]down- USERS
 CONN   -[hidden]down- ATOK
 CONN   -[hidden]down- ACT
+
+APOLL ..> ING : 동일한 에이전트 토큰 인증
 
 @enduml

@@ -79,7 +79,7 @@
 <div class="pipe">
   <div class="step"><span class="k">① 수집</span><h4>에이전트</h4><p>각 리눅스 서버에서 패키지·노출 포트·실행 프로세스 수집(읽기전용, nice19)</p></div>
   <div class="arrow">→</div>
-  <div class="step g"><span class="k">② 전송</span><h4>push</h4><p>JSON 을 중앙으로 POST(토큰 인증, HTTPS). <code class="i">install-agent.sh</code> 로 systemd-timer(우선)/cron 자동 등록 → 매시간</p></div>
+  <div class="step g"><span class="k">② 전송</span><h4>push</h4><p>JSON 을 중앙으로 POST(토큰 인증, HTTPS). <code class="i">install-agent.sh</code> 가 상시 systemd 서비스를 등록하고 10초마다 명령을 poll하며, 호스트별 설정 주기로 수집한다.</p></div>
   <div class="arrow">→</div>
   <div class="step"><span class="k">③ 저장</span><h4>중앙 DB</h4><p>hosts·scans·packages·exposures·processes 로 <b>구분 저장</b></p></div>
   <div class="arrow">→</div>
@@ -269,7 +269,7 @@
     &nbsp;&nbsp;중앙 서버 주소 → https://&lt;운영-도메인&gt;:8080/ingest.php<br>
     &nbsp;&nbsp;전송 토큰 → 에이전트 키 화면에서 호스트별 발급 · 수집 주기 → hourly
   </div>
-  systemd-timer(우선)/cron(폴백)으로 자동 등록. 중앙 서버 자신을 스캔하는 로컬 에이전트는
+  상시 systemd 서비스(불가능한 환경은 cron 폴백)로 자동 등록. 중앙 서버 자신을 스캔하는 로컬 에이전트는
   루프백 평문 포트(<code class="i">127.0.0.1:8081</code>)로 직접 전송(외부에서는 접근 불가).
   <b>③ 웹</b> — <code class="i">https://&lt;운영-도메인&gt;:8080</code> 접속 → 서버별 취약점·상태·감사로그 확인
   (<code class="i">&lt;운영-도메인&gt;</code> 은 운영 배포 시 정해 <code class="i">.env.prod</code> 의 <code class="i">PROD_DOMAIN</code> 에 넣는 값)
@@ -331,7 +331,7 @@
     <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·MAC·방화벽 등 32개 항목 PASS/FAIL/NA</li>
     <li><span class="ok">✓</span> 변화 추적(changes.php) — 최근 2개 스캔 대비 신규/해결/등급변경</li>
     <li><span class="ok">✓</span> 웹(로그인·대시보드·호스트상세·취약점·변화추적·CVE상세·국내공지·자산·커넥터·사용자·권한·API토큰·감사로그) · 검색/필터·페이지네이션</li>
-    <li><span class="ok">✓</span> 고정 커넥터 11종 + 범용 API · cron 스케줄(스케줄러 사이드카 1분마다 확인) · 배포 설치기(systemd-timer/cron, 매시간)</li>
+    <li><span class="ok">✓</span> 고정 커넥터 11종 + 범용 API · cron 스케줄(스케줄러 사이드카 1분마다 확인) · 배포 설치기(systemd 상시 poll, 호스트별 수집 주기, cron 폴백)</li>
     <li><span class="ok">✓</span> HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)</li>
     <li><span class="ok">✓</span> Export API(JSON/XML) · 웹에서 발급하는 읽기전용 API 토큰(X-API-Token)</li>
     <li><span class="ok">✓</span> 설정형 RBAC(admin/operator/user × 메뉴) · 자산 관리(assets.php)</li>

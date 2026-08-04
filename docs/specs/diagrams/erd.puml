@@ -3,13 +3,13 @@
 ' 원본: docs/dev/architecture.md §5
 ' 테이블별 전체 컬럼·책임·정규화 현황은 docs/dev/데이터베이스.md 참고.
 '
-' 범위: 도메인 엔티티 40개 전부(= 전체 41테이블 - tb_schema_migrations).
+' 범위: 도메인 엔티티 39개 전부(= 전체 40테이블 - tb_schema_migrations).
 '      tb_schema_migrations 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
 '      영역이 한눈에 안 잡히던 문제는 package 로 묶어 해결한다(수집 / CVE / 벤더판정 / 판정결과 /
 '      조치 / 운영).
 '
 ' 표기: · 감사 4컬럼(created_at/updated_at/is_deleted/deleted_at)은 대부분의 테이블에 통일되어
-'        있으나 이 다이어그램엔 생략한다(엔티티 40개에 4줄씩 붙으면 읽을 수 없다).
+'        있으나 이 다이어그램엔 생략한다(엔티티 39개에 4줄씩 붙으면 읽을 수 없다).
 '      · 컬럼도 전부 적지 않는다 — PK/FK 와 그 테이블을 이해하는 데 필요한 것만.
 '      · 실선(--)은 FK 가 실제로 걸린 관계, 점선(..)은 FK 없이 애플리케이션이 조인하는 관계다.
 '
@@ -41,6 +41,8 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         --
         fqdn : string <<UK>>
         os_id : string
+        last_seen_ip : string
+        poll_schedule_seconds : int
         is_deleted : bool
     }
 
@@ -64,6 +66,31 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         status : string
         ' MISSING 안 돌았음 / EMPTY 0건
         item_count : int
+    }
+
+    entity tb_scan_run {
+        scan_run_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        scan_id : bigint <<FK>>
+        collected_at : datetime
+        content_changed : bool
+        elapsed_seconds : int
+        peak_rss_mb : decimal
+        cpu_seconds : decimal
+    }
+
+    entity tb_agent_command {
+        agent_command_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        run_at : datetime
+        status : string
+        progress_percent : int
+        heartbeat_at : datetime
+        cancel_requested_at : datetime
+        cancelled_at : datetime
+        is_deleted : bool
     }
 
     entity tb_package {
@@ -432,12 +459,15 @@ package "피드 운영 · 인증 · 감사" {
 ' ── FK 가 실제로 걸린 관계 ────────────────────────────
 tb_host ||--o{ tb_scan : "수집 이력"
 tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
+tb_host ||--o{ tb_scan_run : "실제 실행 이력"
+tb_host ||--o{ tb_agent_command : "수집 명령"
 
 tb_scan ||--o{ tb_package : "설치 패키지"
 tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
 tb_scan ||--o{ tb_process : "실행 프로세스"
 tb_scan ||--o{ tb_container : "컨테이너 인벤토리"
 tb_scan ||--o{ tb_collection_stage : "수집 단계 완전성"
+tb_scan ||--o{ tb_scan_run : "동일 스냅샷 재사용 가능"
 tb_scan ||--o{ tb_finding : "매처 판정"
 tb_scan ||--o{ tb_suppressed_finding : "억제된 건"
 tb_scan ||--o{ tb_pkg_changelog_cve : "억제 근거②"

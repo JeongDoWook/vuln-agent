@@ -230,14 +230,14 @@ bash deploy/agent_schedule.sh hourly 10.3.142.100 10.3.142.101='*:0/30'  # 노�
 - **cron 폴백 노드**(systemd 자체가 없음) — crontab 의 `run.sh --once` 항목을 새 주기로 재등록.
 
 어느 경우든 `agent.env` 의 `SCHEDULE` 도 같은 값으로 갱신한다 — 다음 수집이 `meta.schedule` 로
-실어 보내 중앙 화면(`assets.php` 의 "주기" 열)이 바뀐 주기를 그대로 보여준다.
+실어 보내 중앙의 자산 상세 수집 제어 영역이 바뀐 주기를 그대로 보여준다.
 **토큰·URL 은 안 건드린다** — 주기 변경엔 필요 없다.
 
 - `agent_push.sh` 와 같은 보안 모델이다(사람의 SSH 키로 CLI, 웹 버튼 아님).
 - 안 깔린 노드(`agent.env` 없음)는 건너뛴다. cron 폴백 노드는 `hourly`/`daily` 만 되고,
   커스텀 `OnCalendar`(`*:0/30` 등)는 cron 으로 표현 불가라 건너뛴다.
-- 주기 열이 채워지려면 노드가 `meta.schedule` 을 보내는 에이전트여야 한다. 3.8 이전 노드는
-  주기 열이 비어 보인다 — `agent_push.sh` 로 본체를 올리면 다음 수집부터 채워진다.
+- 수집 이력의 실행 당시 주기가 채워지려면 노드가 `meta.schedule` 을 보내는 에이전트여야 한다.
+  3.8 이전 노드는 이 값이 비어 보인다 — `agent_push.sh` 로 본체를 올리면 다음 수집부터 채워진다.
 
 ## 주의점
 

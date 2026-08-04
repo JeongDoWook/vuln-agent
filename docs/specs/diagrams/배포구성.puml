@@ -57,10 +57,8 @@ F0 --> Stack
 
 S5 --> CADDY
 S2 --> WC
-S3 --> WC
 S4 --> WC
 S2 --> SCH
-S3 --> SCH
 S4 --> SCH
 S1 --> DC
 S2 --> DC

@@ -311,7 +311,7 @@
         <div class="rk">④</div>
         <div>
           <div class="rh">경량 상주 에이전트 + 시계열</div>
-          <div class="rb">CI/1회성이 아니라 <b>매시간 상주 수집</b>(systemd-timer, 설치 후 계속 켜둘 필요 없음). "어제 안전 → 오늘 신규 CVE로 취약"을 최근 2개 스캔 대조로 추적하고 여러 서버를 한눈에 본다. 에이전트는 초경량(피크 메모리 약 7MB, 최저 우선순위).</div>
+          <div class="rb">CI/1회성이 아니라 <b>호스트별 주기의 상주 수집</b>(systemd 서비스, 기본 60분). "어제 안전 → 오늘 신규 CVE로 취약"을 스캔 대조로 추적하고 여러 서버를 한눈에 본다. 에이전트 자원은 실행별 프로세스 트리 기준으로 계측한다.</div>
         </div>
       </div>
       <div class="ritem">
@@ -344,7 +344,7 @@
 
     <h3 class="mini">// 데이터 흐름 (구현 결과)</h3>
     <div class="flow"><pre>[각 서버]                          [중앙 서버 · Docker]
-<b>쉘 에이전트</b> ─매시간(systemd-timer)─▶ <u>수신 API(HTTPS)</u> ──▶ MySQL
+<b>쉘 에이전트</b> ─10초 명령 poll·설정 주기 수집(systemd)─▶ <u>수신 API(HTTPS)</u> ──▶ MySQL
 (패키지·노출·프로세스·changelog)   JSON POST                       │
                                                                  ▼
                           CVE 피드(NVD·OSV·KEV·EPSS·KISA)와 매칭
@@ -367,7 +367,7 @@
       <div class="res-item"><div class="rn">백포트 억제 2단계</div><div class="rd">OSV 버전필터로 먼저 걸러내고, 그걸 통과한 소수 건만 changelog 대조(가장 무거운 단계)로 넘긴다 → 불필요한 changelog 파싱을 줄인다. 수집 단계에서 <code>--no-changelog</code>로도 끌 수 있다.</div></div>
       <div class="res-item"><div class="rn">무중단 배포</div><div class="rd">운영은 <code>../server</code>를 읽기전용 마운트. PHP 만 바뀌면 <code>git pull</code> 한 줄로 반영(opcache 가 2초 내 갱신), Dockerfile·compose·caddy 변경 시에만 재빌드.</div></div>
       <div class="res-item"><div class="rn">스키마 마이그레이션 자동화</div><div class="rd"><code>db/migrations/NNNN_*.sql</code> 중 미적용분만 번호순 자동 적용 → 스키마 변경이 파일 하나 추가로 끝난다.</div></div>
-      <div class="res-item"><div class="rn">에이전트 자원</div><div class="rd">nice 19 / ionice idle 최저 우선순위 + 명령별 타임아웃 → 피크 메모리 약 7MB.</div></div>
+      <div class="res-item"><div class="rn">에이전트 자원</div><div class="rd">nice 19 / ionice idle 최저 우선순위 + 명령별 타임아웃. 실행별 프로세스 트리의 피크 RSS와 CPU 시간을 호스트 용량 대비 비율로 기록한다.</div></div>
     </div>
     <div class="note warn"><span class="lbl">간소화 결정 (YAGNI)</span>
       당초 검토했던 <strong>델타 수집·증분 매칭·조회 시점 매칭</strong>은 만들지 않았다. 매 수집 전량 전송 + ingest 시 매칭(및 피드 수집 후 전체 재매칭)만으로도 충분히 단순하고 빨라 실제 병목이 되지 않았다.</div>
@@ -387,7 +387,7 @@
           <li>OSV.dev API 직접 조회로 CVE 매칭(스캐너 도구 호출 대신 API 직접 조회로 단순화)</li>
           <li>런타임 노출 + EPSS/KEV로 우선순위 매겨 웹 대시보드에 표시</li>
         </ul>
-        <div class="out">→ <b>완료.</b> 에이전트가 매시간 스스로 수집·판단해 근거와 함께 웹에 보여준다.</div>
+        <div class="out">→ <b>완료.</b> 에이전트가 호스트별 설정 주기로 수집하고 중앙이 판단해 근거와 함께 웹에 보여준다.</div>
       </div>
       <div class="bstage s2">
         <div class="btop"><div class="bname"><span class="bnum">2</span>국내 특화 · 차별화 무기</div>
@@ -496,7 +496,7 @@
       <li><b>스택 확정</b> — Bash 수집 에이전트 + PHP/MySQL 중앙 서버(Docker). 당초 검토했던 Python 은 채택하지 않았다.</li>
       <li><b>매칭 방식 확정</b> — Trivy/Grype 같은 스캐너 도구 호출 대신 OSV.dev API 를 직접 조회하는 방식으로 단순화(KISS).</li>
       <li><b>AI 활용 범위 확정</b> — 판단·조치 로직엔 AI 모델을 넣지 않고 코드 작성 보조로만 사용. 리포트 생성은 Export API 로 경계 밖으로 분리.</li>
-      <li><b>배포 확정</b> — Docker Compose(dev/prod) + Caddy(HTTPS) + <code>agent/install-agent.sh</code>(systemd-timer 자동 배포, 매시간).</li>
+      <li><b>배포 확정</b> — Docker Compose(dev/prod) + Caddy(HTTPS) + <code>agent/install-agent.sh</code>(systemd 상시 poll 서비스, 호스트별 수집 주기, cron 폴백).</li>
     </ol>
   </section>
 
