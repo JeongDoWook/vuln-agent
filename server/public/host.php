@@ -354,7 +354,7 @@ function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
     $st = $pdo->prepare(
         'SELECT collected_at, peak_rss_mb, cpu_seconds, mem_total_mb, cpu_cores, elapsed_seconds
-           FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT ' . vg_ui_trend_limit()
+           FROM tb_scan_run WHERE host_id = ? ORDER BY scan_run_id DESC LIMIT ' . vg_ui_trend_limit()
     );
     $st->execute([$hostId]);
     $resourceScans = array_reverse($st->fetchAll());
@@ -395,9 +395,9 @@ function vg_host_load_packages_tab(PDO $pdo, int $scanId, int $perPage, int $off
 function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perPage, int $offset): array {
     $total = $scanTotal;
     $st = $pdo->prepare(
-        "SELECT scan_id, collected_at, received_at, package_count, exposure_count, agent_version,
-                elapsed_seconds, peak_rss_mb, cpu_seconds
-           FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT $perPage OFFSET $offset"
+        "SELECT scan_run_id, scan_id, collected_at, received_at, content_changed,
+                package_count, exposure_count, agent_version, elapsed_seconds, peak_rss_mb, cpu_seconds
+           FROM tb_scan_run WHERE host_id = ? ORDER BY scan_run_id DESC LIMIT $perPage OFFSET $offset"
     );
     $st->execute([$hostId]);
     $rows = $st->fetchAll();
@@ -507,7 +507,7 @@ try {
         $st = $pdo->prepare('SELECT COUNT(*) FROM tb_finding WHERE scan_id = ? AND needs_restart = 1');
         $st->execute([$sid]); $restartTotal = (int) $st->fetchColumn();
 
-        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_scan WHERE host_id = ?');
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_scan_run WHERE host_id = ?');
         $st->execute([$hostId]); $scanTotal = (int) $st->fetchColumn();
 
         $st = $pdo->prepare('SELECT COUNT(*) FROM tb_process WHERE scan_id = ?');
@@ -1068,7 +1068,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       <?php
       vg_table(
           [
-              ['label' => '스캔', 'key' => 'scan_id'],
+              ['label' => '실행', 'key' => 'scan_id'],
               ['label' => '수집시각', 'key' => 'collected_at'],
               ['label' => '수신시각', 'key' => 'received_at'],
               ['label' => '패키지', 'key' => 'package_count', 'align' => 'right'],
@@ -1086,7 +1086,10 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                   'title' => '스캔 이력이 없습니다.',
               ],
               'cell' => [
-                  'scan_id'        => fn($s) => '<a href="/findings.php?scan_id=' . (int) $s['scan_id'] . '">#' . (int) $s['scan_id'] . '</a>',
+                  'scan_id'        => fn($s) => '<a href="/findings.php?scan_id=' . (int) $s['scan_id'] . '">#' . (int) $s['scan_run_id'] . '</a>'
+                      . ((int) $s['content_changed'] === 1
+                          ? ' <span class="badge">변경</span>'
+                          : ' <span class="why">동일</span>'),
                   'collected_at'   => fn($s) => vg_h($s['collected_at']),
                   'received_at'    => fn($s) => '<span class="why">' . vg_h($s['received_at']) . '</span>',
                   'package_count'  => fn($s) => number_format((int) $s['package_count']),
