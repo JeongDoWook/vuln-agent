@@ -456,7 +456,14 @@ try {
 
         // 취약점 0건이 "판정 불가"인 컨테이너 — 피드 미지원 배포판 + **패키지 DB 없는 이미지**.
         //   후자는 rhel 처럼 피드가 지원하는 배포판이라 미지원 경고에 안 걸린다 → 따로 잡아야 한다.
-        $st = $pdo->prepare('SELECT cid, os_id, os_version, manager, pkg_count FROM tb_container WHERE scan_id = ?');
+        $st = $pdo->prepare(
+            'SELECT c.cid, c.os_id, c.os_version, c.manager,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM tb_package p
+                         WHERE p.scan_id = c.scan_id AND p.container_id = c.container_id
+                    ) THEN 1 ELSE c.pkg_count END AS pkg_count
+               FROM tb_container c WHERE c.scan_id = ?'
+        );
         $st->execute([$sid]);
         foreach ($st->fetchAll() as $c) {
             $reason = vg_container_unjudgeable(
