@@ -329,6 +329,11 @@ vg_header('판정 근거', 'vendor');
                   $tip = $r['src'] === 'debtracker'
                       ? '데비안 보안 트래커 임시 식별자(정식 CVE 미배정)'
                       : '정식 CVE 가 배정되지 않은 벤더 자체 식별자';
+                  if ($r['src'] === 'debtracker' && preg_match('/^TEMP-/i', $cveId)) {
+                      // TEMP 값은 Debian 원본 추적에는 필요하지만 목록의 CVE처럼 읽히면 안 된다.
+                      // 원문은 즉시 툴팁에 보존하고, 표에서는 의미를 명확히 설명한다.
+                      return '<span class="pill" title="' . vg_h($tip . ' · 원본 ' . $cveId) . '">CVE 미배정</span>';
+                  }
                   // .why 는 이 파일에서 "부가·희미한 보조 텍스트"(벤더/릴리스 구분자, 상태 뱃지 부연
                   //   설명 등) 용도라, 값 자체가 유효한 식별자인 여기엔 안 맞는다 — 클래스 없이 title 만.
                   // 컬럼 폭이 nowrap 11rem 이고 TEMP-<날짜>-<해시> 는 20자를 넘기는 게 흔해
