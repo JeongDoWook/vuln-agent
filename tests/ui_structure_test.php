@@ -38,11 +38,14 @@ foreach (['agent-tokens.php', 'api-tokens.php', 'users.php'] as $name) {
 $permissionsPhp = (string) file_get_contents($public . '/permissions.php');
 $appCss = (string) file_get_contents($public . '/assets/app.css');
 $componentsPhp = (string) file_get_contents($root . '/server/src/view/components.php');
+$chartsPhp = (string) file_get_contents($root . '/server/src/view/charts.php');
 $check(str_contains($permissionsPhp, 'class="permission-form"'), '권한 매트릭스 전용 레이아웃');
 $check(str_contains($permissionsPhp, "'class' => 'permission-role'"), '권한 역할 열 클래스');
 $check(str_contains($appCss, '.page--permissions .check-cell'), '권한 체크박스 중앙 정렬');
 $check(str_contains($appCss, '.sr-only'), '보조기술 전용 텍스트 숨김');
 $check(str_contains($componentsPhp, "!empty(\$h['class'])"), '공통 테이블 열 클래스 지원');
+$check(str_contains($chartsPhp, '$min = 0.0;') && str_contains($chartsPhp, '$max = 100.0;'),
+    '에이전트 리소스 사용률 차트 0~100% 절대 축');
 $connectorPhp = (string) file_get_contents($public . '/connectors.php');
 $connectorJs = (string) file_get_contents($public . '/assets/js/connectors.js');
 $navPhp = (string) file_get_contents($root . '/server/src/view/nav.php');

@@ -78,10 +78,10 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
     $plotH = $H - $padT - $padB;
     $n = count($pts);
 
-    $vals = array_column($pts, 'v');
-    $min = min($vals);
-    $max = max($vals);
-    if ($max <= $min) { $max += 1; }   // 값이 전부 같으면 0 나눗셈 방지 — 수평선으로 그려진다
+    // 관측 구간의 최소·최대로 자동 확대하면 0.6%도 차트 꼭대기에 붙어 실제 부하가 큰 것처럼
+    // 보인다. 사용률 차트는 언제나 같은 의미를 갖도록 0~100% 절대 축으로 고정한다.
+    $min = 0.0;
+    $max = 100.0;
 
     $xAt = static fn(int $i): float => $padL + ($n === 1 ? 0.0 : $plotW * $i / ($n - 1));
     $yAt = static fn(float $v): float => $padT + $plotH * (1 - ($v - $min) / ($max - $min));
@@ -102,7 +102,7 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
         . '<stop class="chart__grad-1 tone-' . vg_h($tone) . '" offset="1"></stop>'
         . '</linearGradient></defs>';
 
-    // 눈금은 최소·최대만 — 값 하나로 좁게 흔들리는 계열에 중간값은 소음이다.
+    // 눈금은 절대 축의 0%·100%만 표시한다.
     foreach ([0, 1] as $f) {
         $gy = $padT + $plotH * (1 - $f);
         $gv = $min + ($max - $min) * $f;
