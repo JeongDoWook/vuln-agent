@@ -9,11 +9,15 @@
 억제한 결과도 숨기지 않습니다. “배포판이 보안 패치를 백포트했기 때문”, “프로세스가 아직 옛
 라이브러리를 사용 중이기 때문”처럼 **판정 근거와 필요한 조치**를 웹에서 확인할 수 있습니다.
 
-<p align="center">
+<picture>
+  <source media="(max-width: 700px)" srcset="docs/readme-flow-mobile.svg">
   <img src="docs/readme-flow.svg" width="100%" alt="vuln-agent가 서버 정보를 수집하고 실행 맥락과 벤더 근거를 검증해 우선순위와 조치를 제시하는 흐름">
-</p>
+</picture>
 
-[기술 소개](docs/dev/설명글.md) · [아키텍처](docs/dev/architecture.md) · [상세 시스템 다이어그램](docs/specs/diagrams/README.md)
+| 프로젝트 이해하기 | 직접 사용하기 | 구조 살펴보기 |
+|---|---|---|
+| [왜 만들었고 무엇이 다른가](docs/dev/설명글.md) | [에이전트 설치·운영](agent/README.md) | [아키텍처와 판정 흐름](docs/dev/architecture.md) |
+| [웹에서 제공하는 기능](#웹에서-확인할-수-있는-것) | [개발·운영 배포](deploy/README.md) | [ERD·배포·사이트맵](docs/specs/diagrams/README.md) |
 
 ## 무엇이 다른가
 
@@ -62,7 +66,10 @@
 
 ## 빠르게 실행해 보기
 
-로컬 PHP나 MySQL 설치 없이 Docker Compose로 개발 환경을 실행할 수 있습니다.
+<details>
+<summary><strong>Docker Compose로 로컬 개발 환경 실행</strong></summary>
+
+로컬 PHP나 MySQL 설치 없이 실행할 수 있습니다.
 
 ```bash
 cd deploy
@@ -77,15 +84,7 @@ cd deploy
 [배포 가이드](deploy/README.md)를 따르세요. 대상 서버에 에이전트를 붙이는 방법은
 [에이전트 설치·운영 가이드](agent/README.md)에 분리되어 있습니다.
 
-## 구성
-
-| 영역 | 역할 |
-|---|---|
-| `agent/` | 의존성을 설치하지 않는 Bash 수집 에이전트와 설치기 |
-| `server/` | PHP 8.3 수신 API, 매처, 웹 UI와 Export API |
-| `db/` | MySQL 스키마와 자동 적용 마이그레이션 |
-| `deploy/` | Docker Compose, Caddy HTTPS, 배포·백업 도구 |
-| `docs/` | 설계, DB 명세, 피드 역할과 PlantUML 다이어그램 |
+</details>
 
 ## 문서
 
