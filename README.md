@@ -9,7 +9,11 @@
 억제한 결과도 숨기지 않습니다. “배포판이 보안 패치를 백포트했기 때문”, “프로세스가 아직 옛
 라이브러리를 사용 중이기 때문”처럼 **판정 근거와 필요한 조치**를 웹에서 확인할 수 있습니다.
 
-[기술 소개](docs/dev/설명글.md) · [아키텍처](docs/dev/architecture.md) · [전체 프로세스 다이어그램](docs/specs/diagrams/README.md)
+<p align="center">
+  <img src="docs/readme-flow.svg" width="100%" alt="vuln-agent가 서버 정보를 수집하고 실행 맥락과 벤더 근거를 검증해 우선순위와 조치를 제시하는 흐름">
+</p>
+
+[기술 소개](docs/dev/설명글.md) · [아키텍처](docs/dev/architecture.md) · [상세 시스템 다이어그램](docs/specs/diagrams/README.md)
 
 ## 무엇이 다른가
 
@@ -35,12 +39,12 @@
 
 ## 동작 방식
 
-[![vuln-agent 데이터 흐름](docs/specs/diagrams/시스템개요.svg)](docs/specs/diagrams/시스템개요.svg)
-
 1. 각 Linux 서버의 Bash 에이전트가 패키지와 런타임 사실을 읽습니다.
 2. 에이전트가 아웃바운드 HTTPS로 중앙 서버에 전송합니다. 중앙에서 대상 서버로 접속하지 않습니다.
 3. 중앙 매처가 NVD·OSV·KEV·EPSS와 배포판·커널 벤더 피드를 대조합니다.
 4. 웹에서 위험도, 실행 맥락, 판정 근거, 조치 버전과 변화 이력을 확인합니다.
+
+더 자세한 구성과 데이터 이동은 [시스템 구성도·ERD·배포 흐름](docs/specs/diagrams/README.md)에서 확인할 수 있습니다.
 
 에이전트는 systemd 환경에서 10초마다 명령을 확인하는 상시 서비스로 동작하며, 무거운 수집은
 호스트별 설정 주기에만 실행합니다. 서버 전체 자원 사용량이 아니라 **에이전트 프로세스 트리의 CPU와

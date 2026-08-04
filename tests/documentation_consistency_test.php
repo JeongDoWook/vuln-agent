@@ -60,4 +60,15 @@ foreach (['agent/README.md', 'deploy/README.md', 'docs/dev/architecture.md', 'do
     }
 }
 
+$readmeFlowPath = $root . '/docs/readme-flow.svg';
+if (!str_contains($readme, 'docs/readme-flow.svg') || !is_file($readmeFlowPath)) {
+    $fail('루트 README의 핵심 흐름 SVG가 빠졌습니다.');
+}
+$readmeFlow = file_get_contents($readmeFlowPath);
+foreach (['<title', '<desc', 'viewBox="0 0 1400 720"'] as $requiredSvgMarkup) {
+    if (!str_contains($readmeFlow, $requiredSvgMarkup)) {
+        $fail("README 핵심 흐름 SVG의 접근성 또는 화면 크기 정보가 빠졌습니다: {$requiredSvgMarkup}");
+    }
+}
+
 echo "documentation consistency: ok\n";
