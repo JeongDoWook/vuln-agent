@@ -28,7 +28,9 @@ say() { printf "\n${C}== %s${N}\n" "$*"; }
 #   3) 아무것도 안 함   : PHP(소스는 ../server 라이브 마운트 → opcache 가 2초 안에 로드),
 #                         그리고 **deploy/compose_runner.sh**(쉘 래퍼라 이미지·컨테이너와 무관).
 #                         예전엔 이게 재빌드 목록에 있어서, 러너 한 줄 고친 배포가 수십 초 다운타임을 먹었다.
-BUILD_RE='^(server/Dockerfile|deploy/caddy/)'
+# README 같은 운영 문서는 이미지 입력이 아니다. 디렉터리 전체를 잡으면 문서 수정만으로도
+# 웹·Caddy를 재생성한다. 실제 Docker build context에서 COPY/RUN하는 파일만 열거한다.
+BUILD_RE='^(server/Dockerfile|deploy/caddy/(Dockerfile|Caddyfile|entrypoint\.sh))$'
 RECREATE_RE='^deploy/(compose[^/]*\.yml|config/)'
 DB_RE='^db/'
 # deploy/config/mysql/my.cnf 는 db 컨테이너에 바인드마운트(:ro)되지만, docker compose 의
