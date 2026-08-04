@@ -77,8 +77,8 @@ Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·we
 ## 사이트맵
 
 로그인부터 대시보드·호스트 상세·취약점·자산·피드·시스템 화면까지의 구성이다. 화면 묶음마다 필요한
-권한(`findings`·`assets`·`connectors` 등)이 붙어 있고, 사람 로그인과 분리된 토큰 인증 API
-(`ingest.php`·`export.php`)도 같이 표시했다.
+권한(`findings`·`assets`·`connectors` 등)이 붙어 있고, 전체 자산 설치 패키지 화면과 사람 로그인에서
+분리된 토큰 인증 API(`ingest.php`·`agent-poll.php`·`agent-progress.php`·`export.php`)도 같이 표시했다.
 
 화면을 추가하거나 권한이 어디서 갈리는지 볼 때 본다.
 

@@ -133,7 +133,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 | 프로젝트 | `vulnagent-dev`(메인) · `vulnagent-dev-<워크트리>`(web+scheduler) | `vulnagent` |
 
 각 대상 서버는 `agent/install-agent.sh` 로 systemd 가 있으면 **상시 데몬**(`vuln-agent.service`,
-`run.sh` 가 10초마다 `agent-poll.php` 를 poll)을 등록해 초기 주기(기본 매시간, `--schedule`)로
+`run.sh` 가 10초마다 `agent-poll.php` 를 poll하고 초기 주기(기본 60분, `--schedule`)로
 정기수집을 시작한다. 이후 주기는 poll 응답의 `poll_schedule_seconds` 를 따르므로, 중앙 웹의
 호스트 상세에서 주기를 바꾸면 다음 poll 에 바로 반영된다(SSH 재설치 불필요) — "지금 수집" 같은
 예약 명령도 같은 poll 로 실려온다. systemd 가 없는 노드만 cron 폴백(`run.sh --once` 정기 실행,
@@ -157,7 +157,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 
 다이어그램: [`docs/specs/diagrams/erd.puml`](../specs/diagrams/erd.puml)
 
-**범위**: 도메인 엔티티 **40개 전부**(= 전체 41테이블 − `tb_schema_migrations`)를 그린다.
+**범위**: 도메인 엔티티 **39개 전부**(= 전체 40테이블 − `tb_schema_migrations`)를 그린다.
 `tb_schema_migrations` 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
 엔티티가 많아 영역별 `package` 로 묶었다 — 수집·인벤토리 / CVE 도메인 / 벤더 판정 소스 /
 판정 결과 / 피드 운영·인증·감사. **실선은 FK 가 실제로 걸린 관계, 점선은 FK 없이
@@ -196,7 +196,7 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 
 ## 6. 웹 화면 구성 (사이트맵 · 인증)
 
-좌측 사이드바가 대분류(대시보드/취약점/자산/수집/계정/연동/기록)로 묶고, **역할×메뉴 권한**에서
+좌측 사이드바는 바로가기(대시보드/자산/데이터 수집), 취약점(탐지 결과/CVE/패키지/판정 근거/보안 설정/보안 공지), 관리(사용자/권한/에이전트 키/API 키/감사 로그)로 묶고, **역할×메뉴 권한**에서
 허용된 링크만 렌더한다(링크가 하나도 안 남은 섹션은 라벨째 숨김). 대분류·링크 구성의 SSOT 는
 `server/src/view/nav.php` 의 `vg_nav_sections()` 하나이며, 사이드바와 브레드크럼이 같이 참조한다.
 
@@ -211,7 +211,7 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
   한다(어긋나면 사이드바에 보이는데 눌러보면 403 나는 링크가 생긴다). 단 **`permissions`·`apitokens`
   둘은 admin 전용이라 `/permissions.php` 매트릭스에서 제외**된다 — 정본에는 남기되 화면에서 켤 수
   없고, 시드 행이 없어 `vg_can()` 의 기본 거부로 operator·user 는 항상 불가다.
-  기본 시드 — operator: 대시보드/취약점/공지/자산/수집 + 연동의 에이전트 토큰 허용, 계정·기록 불가.
+  기본 시드 — operator: 대시보드/취약점/공지/자산/수집과 에이전트 키 허용, 사용자·권한·감사 로그 불가.
   user: 대시보드/취약점/공지만.
 - **토큰 인증**(사람 로그인과 분리):
   - 에이전트 → `ingest.php` : **호스트별 개별 토큰**(`X-Agent-Token`). `/agent-tokens.php` 에서
