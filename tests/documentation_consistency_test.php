@@ -8,6 +8,7 @@ $erd = file_get_contents($root . '/docs/specs/diagrams/erd.puml');
 $site = file_get_contents($root . '/docs/specs/diagrams/사이트맵.puml');
 $deploy = file_get_contents($root . '/docs/specs/diagrams/배포구성.puml');
 $process = file_get_contents($root . '/server/public/process.html');
+$readme = file_get_contents($root . '/README.md');
 
 $fail = static function (string $message): never {
     fwrite(STDERR, "documentation consistency: {$message}\n");
@@ -43,6 +44,20 @@ if (preg_match('/\bS3\s*-->/', $deploy)) {
 }
 if (str_contains($process, 'systemd-timer(우선)/cron') || str_contains($process, '자동 등록 → 매시간')) {
     $fail('프로세스 문서에 폐기된 timer 기반 에이전트 설명이 남았습니다');
+}
+
+foreach (['무엇이 다른가', '동작 방식', '빠르게 실행해 보기', '문서'] as $heading) {
+    if (!str_contains($readme, "## {$heading}")) {
+        $fail("루트 README의 첫 방문자 안내 섹션이 빠졌습니다: {$heading}");
+    }
+}
+if (substr_count($readme, "\n") > 180) {
+    $fail('루트 README에 운영 세부사항이 다시 누적됐습니다. 전문 문서로 분리하세요');
+}
+foreach (['agent/README.md', 'deploy/README.md', 'docs/dev/architecture.md', 'docs/dev/데이터베이스.md'] as $guide) {
+    if (!str_contains($readme, $guide)) {
+        $fail("루트 README에서 상세 가이드 링크가 빠졌습니다: {$guide}");
+    }
 }
 
 echo "documentation consistency: ok\n";
