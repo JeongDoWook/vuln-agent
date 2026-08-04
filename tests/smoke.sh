@@ -541,6 +541,11 @@ body=$(curl_ -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID")
 # **패키지 DB 가 없는 컨테이너**(Calico 같은 이미지)도 0건이 나온다 — rhel 은 피드 지원 배포판이라
 #   미지원 경고에 안 걸린다. 이걸 침묵하면 "안전함"으로 읽힌다(운영 실측 9개).
 assert_contains "$body" "컨테이너 nodb" "패키지 DB 없는 컨테이너도 '판정 불가'로 경고"
+if grep -qF "컨테이너 gosvc" <<<"$body"; then
+  no "중앙에서 패키지를 저장한 컨테이너가 pkg_count=0으로 판정 불가 처리됨"
+else
+  ok "중앙 저장 패키지로 컨테이너 pkg_count 보정"
+fi
 # Go 바이너리에서 뽑은 의존 모듈이 **Go 생태계로** 매칭돼야 한다. 배포판 생태계로 물으면
 #   조회가 통째로 빗나가 미탐이 된다(kube-apiserver 는 dpkg 4개 vs Go 의존 248개다).
 #   (LOW 라 목록 1페이지엔 안 뜬다 → 검색으로 집어서 확인한다.)

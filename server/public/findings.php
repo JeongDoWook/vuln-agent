@@ -62,7 +62,11 @@ try {
     // 컨테이너도 같은 이유로 0건이 된다 — 특히 **패키지 DB 가 없는 이미지**(Calico 등)는
     //   rhel 로 잡혀 "미지원 배포판" 경고에도 안 걸린 채 조용히 0건으로 지나갔다(운영 실측 9개).
     $ctrs = $pdo->query(
-        'SELECT h.fqdn, c.cid, c.os_id, c.os_version, c.manager, c.pkg_count
+        'SELECT h.fqdn, c.cid, c.os_id, c.os_version, c.manager,
+                CASE WHEN EXISTS (
+                    SELECT 1 FROM tb_package p
+                     WHERE p.scan_id = c.scan_id AND p.container_id = c.container_id
+                ) THEN 1 ELSE c.pkg_count END AS pkg_count
            FROM tb_container c
            JOIN tb_scan s ON s.scan_id = c.scan_id
            JOIN tb_host h ON h.host_id = s.host_id

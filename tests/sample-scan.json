@@ -46,7 +46,7 @@
     "firewalld": "public (active)\n  services: ssh"
   },
   "containers": {
-    "list": "cid|name|image|os_id|os_version|manager|pkg_count\napi|api|myco/api:1.4|alpine|3.19.1|apk|2\nlegacy|legacy|debian:12|debian|12|dpkg|1\nnodb|nodb|tigera/typha:v3.28|rhel|9.7||0\ngosvc|gosvc|quay.io/calico/node:v3.31|rhel|9.7|go|1\nupsvc|upsvc|quay.io/calico/whisker:v3.31|rhel|9.7|upstream|1",
+    "list": "cid|name|image|os_id|os_version|manager|pkg_count\napi|api|myco/api:1.4|alpine|3.19.1|apk|2\nlegacy|legacy|debian:12|debian|12|dpkg|1\nnodb|nodb|tigera/typha:v3.28|rhel|9.7||0\ngosvc|gosvc|quay.io/calico/node:v3.31|rhel|9.7|go|0\nupsvc|upsvc|quay.io/calico/whisker:v3.31|rhel|9.7|upstream|1",
     "packages": "cid|manager|name|version|source\napi|apk|openssl|3.1.4-r2|openssl\napi|apk|busybox|1.36.1-r15|busybox\nlegacy|dpkg|curl|7.88.1-10+deb12u5|curl\ngosvc|go|golang.org/x/net|v0.20.0|\nupsvc|upstream|nginx|1.24.0|",
     "processes": "cid|pid|comm|user|exe_pkg|loaded_pkgs\napi|2100|nginx|root|nginx|openssl,busybox\nlegacy|2200|cron|root|cron|",
     "exposure": "cid|pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\napi|2100|nginx|tcp|0.0.0.0|8443|EXTERNAL|nginx|openssl,busybox"

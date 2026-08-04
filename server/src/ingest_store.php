@@ -195,6 +195,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
             'INSERT INTO tb_package (scan_id, container_id, manager, name, version, source_pkg)
              VALUES (?, ?, ?, ?, ?, ?)'
         );
+        $storedCtrPkgCounts = [];
         foreach ($ctrPkgRows as $r) {
             $cidKey = $r[0];
             if (!isset($ctrIds[$cidKey])) { continue; }   // 목록에 없는 컨테이너의 패키지는 버린다
@@ -202,6 +203,17 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
                 $scanId, $ctrIds[$cidKey], $r[1], $r[2], $r[3],
                 (($r[4] ?? '') !== '' ? $r[4] : null),
             ]);
+            $storedCtrPkgCounts[$cidKey] = ($storedCtrPkgCounts[$cidKey] ?? 0) + 1;
+        }
+
+        // 에이전트가 컨테이너 안에서 rpm 명령을 실행하지 못하면 목록의 pkg_count는 0이다.
+        // 이 경우에도 중앙이 업로드된 RPM DB를 파싱해 패키지를 저장하므로, 실제 저장 건수로
+        // 컨테이너 요약을 보정해야 UI가 이를 "패키지 없음/판정 불가"로 오인하지 않는다.
+        if ($storedCtrPkgCounts) {
+            $updCtrPkgCount = $pdo->prepare('UPDATE tb_container SET pkg_count = ? WHERE container_id = ?');
+            foreach ($storedCtrPkgCounts as $cidKey => $storedCount) {
+                $updCtrPkgCount->execute([$storedCount, $ctrIds[$cidKey]]);
+            }
         }
     }
 
