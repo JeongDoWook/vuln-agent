@@ -210,7 +210,7 @@ run_scenario "no-changelog" --no-changelog
 #    /proc 추적이 부정확하므로 벽시계만 신뢰하고, 메모리·CPU 는 cgroup 이 상한을 보장한다.
 if [ "$WITH_LIMIT" = 1 ]; then
   if [ "$(id -u)" -eq 0 ] && have systemd-run; then
-    echo -e "${CYAN}[limit]${NC} (cgroup CPU≤25% · MEM≤300M 을 커널이 강제 — 아래 피크 RSS 값은 재부모화로 과소 측정될 수 있음)"
+    echo -e "${CYAN}[limit]${NC} (cgroup CPU≤한 코어의 10% · MEM≤300M 을 커널이 강제 — 아래 피크 RSS 값은 재부모화로 과소 측정될 수 있음)"
     AGG_WALL=0; AGG_CPU=0; AGG_PEAK=0
     for ITER in $(seq 1 "$ITERS"); do run_one "limit#$ITER" --limit; done
     echo ""

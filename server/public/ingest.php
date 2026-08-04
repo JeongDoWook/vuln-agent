@@ -195,7 +195,10 @@ try {
             'sys'          => $sys,
             'raw'          => $raw,
             'collected_at' => $collectedAt,
-            'remote_ip'    => $_SERVER['REMOTE_ADDR'] ?? null,
+            // 외부 요청은 Caddy가 자신이 직접 본 원격 주소를 X-Real-IP로 덮어쓴다.
+            // 개발/loopback 직결은 헤더가 없으므로 REMOTE_ADDR로 폴백한다.
+            'remote_ip'    => filter_var(vg_request_header('X-Real-IP'), FILTER_VALIDATE_IP)
+                ?: (filter_var($_SERVER['REMOTE_ADDR'] ?? null, FILTER_VALIDATE_IP) ?: null),
         ],
         [
             'manager'        => $manager,
