@@ -256,6 +256,9 @@ run_phpunit "rpmdb_test.php" "rpmdb" "rpmdb 단위 테스트 (rpm 헤더 파싱)
 # 커널 소스에서 나온 헤더·메타패키지 21개에 커널 CVE 369건이 곱해져 LOW 7,925건이 뜬 적이 있다.
 run_phpunit "distro_test.php" "distro" "distro 단위 테스트 (출처·커널 판정)" "distro 단위 테스트"
 
+# 수집 주기가 길어도 10초 poll 이 살아 있으면 자산 연결 상태는 정상이어야 한다.
+run_phpunit "asset_state_test.php" "asset_state" "자산 연결 상태 단위 테스트 (poll·수집 주기 분리)" "자산 연결 상태 단위 테스트"
+
 # --- debtracker 단위 테스트 ---------------------------------------------------
 # 데비안 보안 트래커 파서·판정(백포트 억제 근거). 느슨하면 오탐이 남고, 빡빡하면 진짜 취약점을
 # "고쳐졌다"고 지운다(미탐). 규칙을 debsecan 원본과 대조해 옮겼으므로 회귀를 여기서 막는다.

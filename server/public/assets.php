@@ -12,8 +12,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('assets');
 
-// 수집 지연 판정 기준(VG_STALE_MIN/VG_OFFLINE_MIN)과 vg_asset_state() 는 format.php 에 있다
-// (호스트 상세 히어로와 공유).
+// 연결 상태 판정 기준과 vg_asset_state() 는 format.php 에 있다(호스트 상세와 공유).
 
 $err = null; $msg = null; $rows = []; $total = 0; $sevByScan = [];
 $stateCounts = ['ok' => 0, 'stale' => 0, 'offline' => 0, 'none' => 0];
@@ -22,22 +21,35 @@ $state = trim((string) ($_GET['state'] ?? ''));
 $page  = vg_page();
 $perPage = vg_perpage();
 
-// 수집 상태 어휘. vg_asset_state() 가 뱃지를 그리는 기준(VG_STALE_MIN/VG_OFFLINE_MIN)과 같아야 한다.
+// 연결 상태 어휘. 최신 수집 시각은 별도 열에서 보여준다.
 const VG_ASSET_STATES = ['ok' => '정상', 'stale' => '지연', 'offline' => '오프라인', 'none' => '수집없음'];
 if (!isset(VG_ASSET_STATES[$state])) { $state = ''; }
 
-/* 호스트 한 대의 수집 상태를 SQL 안에서 판정하는 식.
+/* 호스트 한 대의 연결 상태를 SQL 안에서 판정하는 식.
  * 목록 필터·KPI 집계가 같은 식을 써야 "지연 3대" 를 눌렀을 때 3대가 나온다. */
+$legacyStaleMin = 'GREATEST(180, CEIL(h.poll_schedule_seconds / 60 * 1.5))';
+$legacyOfflineMin = 'GREATEST(10080, CEIL(h.poll_schedule_seconds / 60 * 3))';
 $stateExpr =
     "CASE WHEN s.scan_id IS NULL THEN 'none'
-          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > " . VG_OFFLINE_MIN . " THEN 'offline'
-          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > " . VG_STALE_MIN . " THEN 'stale'
+          WHEN agent_seen.last_seen_at IS NOT NULL
+            AND TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) > " . VG_POLL_OFFLINE_MIN . " THEN 'offline'
+          WHEN agent_seen.last_seen_at IS NOT NULL
+            AND TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) > " . VG_POLL_STALE_MIN . " THEN 'stale'
+          WHEN agent_seen.last_seen_at IS NOT NULL THEN 'ok'
+          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > $legacyOfflineMin THEN 'offline'
+          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > $legacyStaleMin THEN 'stale'
           ELSE 'ok' END";
 
 // 호스트 + 최신 스캔. LEFT JOIN 이라 등록만 되고 아직 수집이 없는 호스트도 남는다.
 $fromSql = 'FROM tb_host h
             LEFT JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.host_id
-            LEFT JOIN tb_scan s ON s.scan_id = t.mid';
+            LEFT JOIN tb_scan s ON s.scan_id = t.mid
+            LEFT JOIN (
+                SELECT host_fqdn, MAX(last_seen_at) AS last_seen_at
+                  FROM tb_agent_token
+                 WHERE is_revoked = 0 AND is_deleted = 0
+                 GROUP BY host_fqdn
+            ) agent_seen ON agent_seen.host_fqdn = h.fqdn';
 
 $pdo = vg_pdo();
 
@@ -79,7 +91,9 @@ try {
     $st = $pdo->prepare(
         "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.last_seen_ip, h.first_seen,
                 s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
-                TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min
+                h.poll_schedule_seconds,
+                TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
+                TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) AS poll_age_min
            $fromSql
           WHERE $where
           ORDER BY h.fqdn
@@ -121,11 +135,8 @@ $ingest = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'local
 vg_header('자산', 'assets');
 ?>
   <?php
-  // 상태 판정 기준은 본문에 늘어놓지 않고 툴팁으로 — 한 번 읽으면 그만인 정보다.
-  $stateHelp = sprintf(
-      '정상 = %d시간 이내 수집 · 지연 = %d시간~%d일 · 오프라인 = %d일 초과 · 수집없음 = 등록만 되고 스캔이 아직 없음',
-      VG_STALE_MIN / 60, VG_STALE_MIN / 60, VG_OFFLINE_MIN / 1440, VG_OFFLINE_MIN / 1440
-  );
+  $stateHelp = '상태는 수집 주기가 아니라 10초 poll 통신 기준입니다. '
+      . '1분 초과 시 지연, 5분 초과 시 오프라인이며 최신 수집 시각은 별도로 표시합니다.';
   ?>
   <?php vg_page_title('자산', 'ASSETS', '호스트별 수집 상태와 탐지 결과를 확인합니다.', [
       'suffix_html' => vg_help($stateHelp),
@@ -206,7 +217,12 @@ vg_header('자산', 'assets');
           'cell' => [
               // 칸을 넘치는 긴 FQDN 은 col-id 가 말줄임으로 접는다 — 전체 이름은 title 로 남긴다.
               'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a></strong>',
-              'state' => fn($r) => vg_asset_state($r['age_min']),
+              'state' => fn($r) => vg_asset_state(
+                  $r['scan_id'] !== null,
+                  $r['poll_age_min'],
+                  $r['age_min'],
+                  (int) $r['poll_schedule_seconds']
+              ),
               'os'            => fn($r) => vg_h(trim($r['os_id'] . ' ' . $r['os_version'])) ?: '<span class="why">–</span>',
               'ip'            => fn($r) => !empty($r['last_seen_ip'])
                   ? '<code>' . vg_h((string) $r['last_seen_ip']) . '</code>'

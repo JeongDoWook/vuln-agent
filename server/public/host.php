@@ -80,7 +80,7 @@ $agentMsg = $agentFlash['agentMsg'] ?? null;
 $agentErr = $agentFlash['agentErr'] ?? null;
 $agentCsrf = vg_csrf_token();
 
-$err = null; $host = null; $scan = null; $scanAge = null;
+$err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null;
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 $missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단계(한글 라벨)
 
@@ -429,6 +429,16 @@ try {
         // 호스트 상세(설치 패키지·노출 포트·실행 프로세스 등 인프라 민감정보) 열람 감사로그.
         vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null));
 
+        // 에이전트 연결 상태는 수집 실행 시각이 아니라 10초 poll의 마지막 통신으로 판단한다.
+        $st = $pdo->prepare(
+            'SELECT TIMESTAMPDIFF(MINUTE, MAX(last_seen_at), NOW())
+               FROM tb_agent_token
+              WHERE host_fqdn = ? AND is_revoked = 0 AND is_deleted = 0'
+        );
+        $st->execute([(string) $host['fqdn']]);
+        $lastPollAge = $st->fetchColumn();
+        $pollAge = $lastPollAge !== null && $lastPollAge !== false ? (int) $lastPollAge : null;
+
         if (vg_can('assets')) {
             $st = $pdo->prepare(
                 "SELECT agent_command_id, status, progress_percent, progress_stage, progress_message,
@@ -614,7 +624,12 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php
   $meta = [
       vg_h(trim($host['os_id'] . ' ' . $host['os_version'])) ?: 'OS 미상',
-      vg_asset_state($scanAge),
+      vg_asset_state(
+          $scan !== null,
+          $pollAge,
+          $scanAge,
+          (int) ($host['poll_schedule_seconds'] ?? 3600)
+      ),
       '최신 수집 ' . vg_h($scan['collected_at']),
       '<a href="' . vg_h(vg_qs(['tab' => 'packages', 'page' => null, 'q' => null])) . '">패키지 '
           . number_format($packageTotal) . '개</a>',

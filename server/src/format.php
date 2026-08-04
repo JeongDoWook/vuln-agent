@@ -206,18 +206,41 @@ const VG_COLLECTION_STAGE_LABEL = [
     'containers'        => '컨테이너',
 ];
 
-/* 수집 상태 판정 기준(분). 에이전트 기본 스케줄이 매시간이라 3시간까지는 정상으로 본다.
- *   자산관리 목록(assets.php)과 호스트 상세(host.php) 히어로가 공유한다. */
-const VG_STALE_MIN   = 180;        // 3시간 초과 → 지연
-const VG_OFFLINE_MIN = 10080;      // 7일 초과 → 오프라인
+/* 연결 상태 판정 기준(분). 데몬은 10초마다 poll 하므로 수집 주기와 무관하다.
+ * 일시적인 네트워크 흔들림은 허용하되 1분을 넘기면 지연, 5분을 넘기면 오프라인이다. */
+const VG_POLL_STALE_MIN   = 1;
+const VG_POLL_OFFLINE_MIN = 5;
 
-/** 최신 수집 경과시간(분)으로 수집 상태 뱃지. 스캔이 없으면(null) '수집없음'. */
-function vg_asset_state($ageMin): string {
-    if ($ageMin === null) { return vg_badge('수집없음', 'muted'); }
-    $m = (int) $ageMin;
-    if ($m > VG_OFFLINE_MIN) { return vg_badge('오프라인', 'crit'); }
-    if ($m > VG_STALE_MIN)   { return vg_badge('지연', 'high'); }
-    return vg_badge('정상', 'ok');
+/** 자산 연결 상태 키. poll 관측 전 구버전 자산만 수집 주기를 고려한 호환 판정을 쓴다. */
+function vg_asset_state_key(bool $hasScan, $pollAgeMin, $scanAgeMin, int $scheduleSeconds = 3600): string {
+    if (!$hasScan) { return 'none'; }
+    if ($pollAgeMin !== null) {
+        $m = (int) $pollAgeMin;
+        if ($m > VG_POLL_OFFLINE_MIN) { return 'offline'; }
+        if ($m > VG_POLL_STALE_MIN)   { return 'stale'; }
+        return 'ok';
+    }
+
+    // 개별 토큰/poll 기능이 없던 구버전은 최신 수집만 관측할 수 있다. 12시간 주기를
+    // 3시간 고정 임계값으로 오판하지 않도록 설정 주기의 1.5배까지 정상으로 본다.
+    $scheduleMin = max(1, (int) ceil($scheduleSeconds / 60));
+    $staleAfter = max(180, (int) ceil($scheduleMin * 1.5));
+    $offlineAfter = max(10080, $scheduleMin * 3);
+    $m = (int) $scanAgeMin;
+    if ($m > $offlineAfter) { return 'offline'; }
+    if ($m > $staleAfter)   { return 'stale'; }
+    return 'ok';
+}
+
+/** 연결 상태 뱃지. 최신 수집 시각은 상태와 분리해 목록·상세에 따로 표시한다. */
+function vg_asset_state(bool $hasScan, $pollAgeMin, $scanAgeMin, int $scheduleSeconds = 3600): string {
+    $state = vg_asset_state_key($hasScan, $pollAgeMin, $scanAgeMin, $scheduleSeconds);
+    return match ($state) {
+        'none'    => vg_badge('수집없음', 'muted'),
+        'offline' => vg_badge('오프라인', 'crit'),
+        'stale'   => vg_badge('지연', 'high'),
+        default   => vg_badge('정상', 'ok'),
+    };
 }
 
 /**
