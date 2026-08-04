@@ -52,15 +52,33 @@ if (!function_exists('vg_container_unjudgeable')) {
      *      지우고 빌드해서 /var/lib/rpm 이 아예 없다. rhel 은 OSV **지원** 배포판이라
      *      1)번 경고에도 안 걸려, 지금까지 CVE 0건으로 조용히 지나갔다.
      *
+     *      에이전트는 여기서 물러서지 않는다 — 패키지 DB가 없으면 Go 바이너리 buildinfo,
+     *      그것도 없으면 업스트림 바이너리(nginx 등) 버전 문자열까지 순서대로 시도한다
+     *      (agent/vuln-inventory-agent.sh 의 ctr_go_deps/ctr_upstream_bins). $mgr 이 비어
+     *      있다는 건 이 모든 시도가 다 실패했다는 뜻이라 "SBOM이 필요하다"는 안내가 맞다.
+     *      반면 $mgr 이 채워져 있는데(예: rpm DB 파일은 찾아서 중앙 파싱용으로 올렸음)
+     *      $pkgCount 가 0이면, 시도 자체는 됐고 그 DB가 실제로 비어있거나 파싱이 안 된
+     *      것이다 — 원인이 다르므로 안내 문구도 다르게 준다(운영자가 "또 SBOM 얘기냐"고
+     *      헷갈리지 않게, 뭘 시도했는지 알 수 있게).
+     *
      * @param  string|null $mgr       에이전트가 읽어낸 패키지 매니저(못 읽었으면 빈 값)
      * @param  int         $pkgCount  수집된 패키지 수
      * @return string|null 판정 가능하면 null
      */
     function vg_container_unjudgeable(?string $osId, ?string $osVer, ?string $mgr, int $pkgCount): ?string
     {
-        if (trim((string) $mgr) === '' || $pkgCount === 0) {
+        $mgr = trim((string) $mgr);
+        if ($mgr === '') {
             return '패키지 DB 가 없는 이미지 — 무엇이 깔렸는지 알 수 없어 판정 불가'
-                 . ' (rpm/dpkg DB 를 지우고 빌드한 이미지. 이미지 제공처의 SBOM 이 필요하다)';
+                 . ' (rpm/dpkg DB·Go 바이너리 정보·업스트림 버전 문자열 전부 못 찾음.'
+                 . ' 이미지 제공처의 SBOM 이 필요하다)';
+        }
+        if ($pkgCount === 0) {
+            return sprintf(
+                '%s 패키지 DB 를 찾았지만 실제 패키지가 0건 — 판정 불가'
+                . ' (DB 가 손상됐거나 비어 있는 이미지로 보인다)',
+                strtoupper($mgr)
+            );
         }
         return vg_distro_unsupported($osId, $osVer);
     }
