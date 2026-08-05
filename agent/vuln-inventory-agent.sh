@@ -1300,10 +1300,12 @@ collect_project_deps_installed() {
     while IFS= read -r f; do
       count=$((count+1)); [ "$count" -le "$SCAN_MAX_FILES" ] || break 2
       case "$f" in
-        */METADATA) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);[ -n "$name" ]&&[ -n "$ver" ]&&printf 'pip|%s|%s\n' "$name" "$ver";;
+        */METADATA) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);lic=$(sed -n 's/^License: //p' "$f"|head -1);[ -n "$name" ]&&[ -n "$ver" ]&&{ printf 'pip|%s|%s\n' "$name" "$ver"; [ -n "$lic" ]&&[ "$lic" != "UNKNOWN" ]&&printf 'pip|%s|%s|%s\n' "$name" "$ver" "$lic" >&3; };;
         */Cargo.lock) awk 'BEGIN{n=""}/^name = /{gsub(/^name = "|"$/,"",$0);n=$0}/^version = /{gsub(/^version = "|"$/,"",$0);if(n!="")print "cargo|"n"|"$0}' "$f";;
         */package-lock.json) have jq&&jq -r '.packages//{}|to_entries[]|select(.value.name and .value.version)|"npm|\(.value.name)|\(.value.version)"' "$f" 2>/dev/null;;
-        */composer/installed.json) have jq&&jq -r '(.packages//.)[]?|select(.name and .version)|"composer|\(.name)|\(.version|sub("^v";""))"' "$f" 2>/dev/null;;
+        # composer 는 설치본 메타(installed.json)에 license 필드를 그대로 담고 있다 — 배열이면
+        #   "OR" 로 이어붙인다(SPDX 복수라이선스 표기 관례). 라이선스 없는 패키지는 조용히 건너뛴다.
+        */composer/installed.json) have jq&&{ jq -r '(.packages//.)[]?|select(.name and .version)|"composer|\(.name)|\(.version|sub("^v";""))"' "$f" 2>/dev/null; jq -r '(.packages//.)[]?|select(.name and .version and .license)|"composer|\(.name)|\(.version|sub("^v";""))|\(if (.license|type)=="array" then (.license|join(" OR ")) else .license end)"' "$f" 2>/dev/null >&3; };;
         *.deps.json) have jq&&jq -r '.targets[]?|keys[]|select(test("/"))|split("/")|"nuget|\(.[0])|\(.[1])"' "$f" 2>/dev/null;;
         *.jar) emit_jar_meta "$f" "$(basename "$f")"; emit_nested_jars "$f";;
         *.war|*.ear) emit_nested_jars "$f";;
@@ -1512,9 +1514,13 @@ have dotnet && cap langpkg nuget 'dotnet tool list -g 2>/dev/null | awk "NR>2 &&
 # 두 패스를 각각 자기 예산 안에서 자른다 — 한 스트림으로 이어 붙여 통째로 head -c 하면
 # jar 가 많은 호스트에서 고신뢰(설치본) 데이터가 뒤로 밀려 함께 잘린다.
 VG_INV="$TMP/langpkg__inventory.txt"
+VG_LIC="$TMP/langpkg__pkg_license.txt"
 export PROJECT_SCAN_ROOTS SCAN_MAX_FILES SCAN_MAX_DEPTH
 export -f have emit_jar_meta emit_nested_jars collect_project_deps_installed collect_project_deps_declared
-timeout -k 2 "$PROJECT_SCAN_TIMEOUT" bash -c collect_project_deps_installed 2>/dev/null \
+# METADATA/composer installed.json 안의 license 필드는 collect_project_deps_installed 가 같은
+#   find 패스 안에서 fd 3(=VG_LIC) 로 함께 뽑는다 — 파일 예산을 두 번 쓰지 않기 위함.
+#   "mgr|name|version|spdx" 4필드라 기존 3필드 inventory 스트림과 겹치지 않는다.
+timeout -k 2 "$PROJECT_SCAN_TIMEOUT" bash -c 'exec 3>>"$1"; collect_project_deps_installed' _ "$VG_LIC" 2>/dev/null \
   | head -c "$MAX_BYTES" > "$VG_INV" || true
 # head -c 가 줄 가운데를 자를 수 있다 → 다음 패스 첫 줄과 붙어 엉뚱한 좌표가 되지 않게 개행을 채운다.
 if [ -s "$VG_INV" ] && [ -n "$(tail -c 1 "$VG_INV")" ]; then printf '\n' >> "$VG_INV"; fi
@@ -1524,6 +1530,10 @@ if [ "$VG_INV_REST" -gt 0 ]; then
     | head -c "$VG_INV_REST" >> "$VG_INV" || true
 fi
 [ -s "$VG_INV" ] || rm -f "$VG_INV"
+if [ -s "$VG_LIC" ]; then
+  vg_lic_cut=$(mktemp 2>/dev/null) && head -c "$MAX_BYTES" "$VG_LIC" > "$vg_lic_cut" && mv "$vg_lic_cut" "$VG_LIC"
+fi
+[ -s "$VG_LIC" ] || rm -f "$VG_LIC"
 
 # ==================================================================
 # 7) 컨테이너 이미지 (이미지별 CVE 매핑)

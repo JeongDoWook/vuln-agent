@@ -175,7 +175,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
         $insC = $pdo->prepare(
             'INSERT INTO tb_container (scan_id,cid,name,image,image_digest,k8s_namespace,k8s_pod,k8s_container,workload_ref,runtime_state,sbom_format,sbom_hash,os_id,os_version,manager,pkg_count)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-        );
+        );   // ← 컨테이너 자체 메타. 안의 패키지(license 포함)는 tb_package 벌크(아래)에 들어간다.
         foreach ($ctrRows as $cid => $f) {
             $insC->execute([
                 $scanId, $cid,
@@ -191,9 +191,11 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
         }
     }
     if ($ctrPkgCount > 0) {
+        // license(6번째 필드)는 SBOM 경로(vg_ingest_parse_sbom)만 채운다 — rpm/apk 목록·rpmdb
+        //   경로는 이 자리가 비어 null 로 저장된다(OS 패키지 라이선스는 이번 라운드 scope_out).
         $ins = $pdo->prepare(
-            'INSERT INTO tb_package (scan_id, container_id, manager, name, version, source_pkg)
-             VALUES (?, ?, ?, ?, ?, ?)'
+            'INSERT INTO tb_package (scan_id, container_id, manager, name, version, source_pkg, license)
+             VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
         $storedCtrPkgCounts = [];
         foreach ($ctrPkgRows as $r) {
@@ -202,6 +204,7 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
             $ins->execute([
                 $scanId, $ctrIds[$cidKey], $r[1], $r[2], $r[3],
                 (($r[4] ?? '') !== '' ? $r[4] : null),
+                (($r[5] ?? '') !== '' ? $r[5] : null),
             ]);
             $storedCtrPkgCounts[$cidKey] = ($storedCtrPkgCounts[$cidKey] ?? 0) + 1;
         }
@@ -254,11 +257,12 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     // 언어 패키지 벌크 — 같은 tb_package 에 manager=pip|npm|gem|composer 로 넣는다.
     //   매처가 manager 로 생태계(PyPI/npm/…)를 정해 OS 패키지와 섞이지 않게 매칭한다.
     if ($langCount > 0) {
+        // license(4번째 필드)는 SBOM/METADATA/composer 유래일 때만 채워진다(vg_ingest_attach_pkg_license).
         $ins = $pdo->prepare(
-            'INSERT INTO tb_package (scan_id, manager, name, version) VALUES (?, ?, ?, ?)'
+            'INSERT INTO tb_package (scan_id, manager, name, version, license) VALUES (?, ?, ?, ?, ?)'
         );
         foreach ($langRows as $r) {
-            $ins->execute([$scanId, $r[0], $r[1], $r[2]]);
+            $ins->execute([$scanId, $r[0], $r[1], $r[2], (($r[3] ?? '') !== '' ? $r[3] : null)]);
         }
     }
 

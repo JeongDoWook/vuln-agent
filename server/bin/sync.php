@@ -16,6 +16,7 @@ ini_set('memory_limit', '512M');
 
 require __DIR__ . '/../src/feeds.php';
 require __DIR__ . '/../src/matcher.php';
+require __DIR__ . '/../src/license_summary.php';   // vg_rebuild_license_summary
 
 $id = (int) ($argv[1] ?? 0);
 if ($id <= 0) {
@@ -43,6 +44,7 @@ if (!empty($r['ok']) && (int) $r['upserted'] > 0) {
             foreach ($scans as $sid) { vg_match_scan($pdo, (int) $sid); }
         }
         vg_rebuild_package_summary($pdo);
+        vg_rebuild_license_summary($pdo);
         fwrite(STDOUT, "packages 요약 재빌드 완료\n");
     }
 } elseif (!empty($r['ok'])) {

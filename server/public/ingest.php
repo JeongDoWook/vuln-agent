@@ -98,7 +98,9 @@ $originMap = vg_ingest_parse_origins((string) ($pkg['origins'] ?? ''));
 //   에이전트가 수집해 보내는데 지금까지 서버가 버리고 있었다 → 언어 패키지 CVE 가 전부 미탐.
 //   OSV 는 PyPI/npm/RubyGems/Packagist 생태계를 그대로 지원한다.
 $lang = $data['langpkg'] ?? [];
-$langRows  = vg_ingest_parse_langpkgs($lang);
+$langRows = vg_ingest_parse_langpkgs($lang);
+// 라이선스는 별도 4필드 스트림(pkg_license)으로 와서 mgr|name|version 키로 매칭해 붙인다.
+$langRows = vg_ingest_attach_pkg_license($langRows, vg_ingest_parse_pkg_license((string) ($lang['pkg_license'] ?? '')));
 $langCount = count($langRows);
 
 // ── 노출 상관 파싱 (pipe 구분, 첫 줄은 헤더) ─────────────────

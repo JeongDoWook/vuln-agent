@@ -103,6 +103,40 @@ function vg_ingest_parse_langpkgs(array $lang): array
     return array_values($rows);
 }
 
+// ── 언어 패키지 라이선스 — 별도 4필드 스트림("mgr|name|version|spdx") ─────────
+//   기존 $lang['inventory'](3필드)에 얹지 않는다. 필드수를 다르게 둬야 자리 밀림(파이프
+//   인젝션으로 name/version 에 '|' 가 섞인 오염 줄)이 조용히 4번째 칸을 라이선스로
+//   오인하는 사고를 막을 수 있다.
+function vg_ingest_parse_pkg_license(string $text): array
+{
+    $rows = [];
+    $mgrs = ['pip', 'npm', 'gem', 'composer', 'maven', 'nuget', 'cargo', 'go'];
+    foreach (preg_split('/\r?\n/', $text) as $line) {
+        $f = explode('|', trim($line), 4);
+        if (count($f) !== 4 || !in_array($f[0], $mgrs, true)) { continue; }
+        [$mgr, $name, $ver, $lic] = array_map('trim', $f);
+        if ($name === '' || $ver === '' || $lic === '') { continue; }
+        $rows["$mgr|$name|$ver"] = [
+            $mgr, mb_strimwidth($name, 0, 255, ''), mb_strimwidth($ver, 0, 255, ''), mb_strimwidth($lic, 0, 255, ''),
+        ];
+    }
+    return array_values($rows);
+}
+
+// ── langRows(mgr,name,version) 에 라이선스 스트림을 매칭해 4번째 필드로 붙인다 ──
+//   매칭 안 되면 4번째 필드는 ''(라이선스 미상). langRows 의 앞 3필드 구조는 그대로라
+//   기존 dedup·diff 로직(vg_ingest_build_pkg_map 등)은 건드리지 않는다.
+function vg_ingest_attach_pkg_license(array $langRows, array $licenseRows): array
+{
+    $byKey = [];
+    foreach ($licenseRows as $r) { $byKey["{$r[0]}|{$r[1]}|{$r[2]}"] = $r[3]; }
+    $out = [];
+    foreach ($langRows as $r) {
+        $out[] = [$r[0], $r[1], $r[2], $byKey["{$r[0]}|{$r[1]}|{$r[2]}"] ?? ''];
+    }
+    return $out;
+}
+
 // ── 노출 상관 (pipe 구분, 첫 줄 헤더) ──────────────────────────────────────
 //   pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs
 function vg_ingest_parse_exposures(string $correlation): array
@@ -230,7 +264,22 @@ function vg_ingest_parse_sbom(string $text): array
             $name=trim((string)($item['name']??''));$ver=trim((string)($item['version']??$item['versionInfo']??''));$purl=(string)($item['purl']??'');
             if($purl===''&&isset($item['externalRefs']))foreach($item['externalRefs'] as $ref){if(($ref['referenceType']??'')==='purl'){$purl=(string)($ref['referenceLocator']??'');break;}}
             $mgr='';if(preg_match('#^pkg:([^/]+)/([^@?]+)#',$purl,$m)){$type=strtolower($m[1]);$decoded=urldecode($m[2]);if($type==='maven'&&str_contains($decoded,'/')){$pos=strrpos($decoded,'/');$decoded=substr($decoded,0,$pos).':'.substr($decoded,$pos+1);}$name=$decoded?:$name;$mgr=['pypi'=>'pip','npm'=>'npm','gem'=>'gem','composer'=>'composer','maven'=>'maven','nuget'=>'nuget','cargo'=>'cargo','golang'=>'go','deb'=>'dpkg','rpm'=>'rpm','apk'=>'apk'][$type]??'';}
-            if($mgr!==''&&$name!==''&&$ver!=='')$packages[$cid.'|'.$mgr.'|'.$name]=[$cid,$mgr,mb_strimwidth($name,0,255,''),mb_strimwidth($ver,0,255,''),''];
+            // 라이선스: CycloneDX 는 licenses[].license.{id,name} 또는 licenses[].expression, SPDX 는 licenseConcluded.
+            $lic='';
+            if ($format==='spdx') {
+                $lc=(string)($item['licenseConcluded']??''); if($lc!==''&&$lc!=='NOASSERTION'&&$lc!=='NONE'){$lic=$lc;}
+            } elseif (isset($item['licenses']) && is_array($item['licenses'])) {
+                $parts=[];
+                foreach ($item['licenses'] as $l) {
+                    if (isset($l['license']['id'])) { $parts[]=(string)$l['license']['id']; }
+                    elseif (isset($l['license']['name'])) { $parts[]=(string)$l['license']['name']; }
+                    elseif (isset($l['expression'])) { $parts[]=(string)$l['expression']; }
+                }
+                $lic=implode(' OR ', array_unique(array_filter($parts, static fn($v)=>$v!=='')));
+            }
+            // dedup 키에 버전을 포함한다 — 같은 이름의 다른 버전 컴포넌트(중복 shaded jar 등)가
+            //   이름만으로 서로 덮어써 라이선스를 잃는 사고를 막는다.
+            if($mgr!==''&&$name!==''&&$ver!=='')$packages[$cid.'|'.$mgr.'|'.$name.'|'.$ver]=[$cid,$mgr,mb_strimwidth($name,0,255,''),mb_strimwidth($ver,0,255,''),'',mb_strimwidth($lic,0,255,'')];
         }
     }
     return ['packages'=>array_values($packages),'meta'=>$meta];
@@ -362,10 +411,12 @@ function vg_ingest_content_hash(
         $hashParts[] = "p|$manager|" . implode('|', array_map('strval', $r))
                      . '|' . (string) ($originMap[$r[0]] ?? '');
     }
-    foreach ($langRows as $r) { $hashParts[] = "l|{$r[0]}|{$r[1]}|{$r[2]}"; }
+    // 라이선스 값도 해시에 넣는다 — 안 넣으면 라이선스만 바뀐 재스캔이 "변경 없음"으로
+    //   스킵돼 스캔 재사용 시 라이선스 변경이 구조적으로 누락된다(출처 필드 실사고와 동일 유형).
+    foreach ($langRows as $r) { $hashParts[] = "l|{$r[0]}|{$r[1]}|{$r[2]}|" . ($r[3] ?? ''); }
     foreach ($expRows as $f)  { $hashParts[] = 'e|' . implode('|', array_slice($f, 1, 7)); }   // pid 제외
     foreach ($staleRows as $r) { $hashParts[] = "s|{$r[2]}|{$r[3]}"; }
-    foreach ($ctrPkgRows as $r) { $hashParts[] = "c|{$r[0]}|{$r[1]}|{$r[2]}|{$r[3]}"; }
+    foreach ($ctrPkgRows as $r) { $hashParts[] = "c|{$r[0]}|{$r[1]}|{$r[2]}|{$r[3]}|" . ($r[5] ?? ''); }
     foreach ($ctrRows as $r)    { $hashParts[] = "C|{$r[0]}|{$r[2]}|{$r[3]}|{$r[4]}"; }   // cid|image|os
     foreach ($ctrExpRows as $f) { $hashParts[] = 'CE|' . $f[0] . '|' . implode('|', array_slice($f, 2, 7)); }   // pid 제외
     $hashParts[] = 'k|' . $runningKernel . '|' . $kernelLatest . '|' . $kernelReboot;

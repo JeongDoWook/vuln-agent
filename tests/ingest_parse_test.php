@@ -10,6 +10,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../server/src/ingest_parse.php';
+require_once __DIR__ . '/../server/src/license_risk.php';
 
 date_default_timezone_set('UTC');   // collected_at 변환이 TZ 에 의존하므로 환경과 무관하게 고정
 
@@ -99,6 +100,55 @@ $sbom = vg_ingest_parse_sbom('ctr-a|cyclonedx|' . base64_encode($cdx));
 $eq('SBOM 패키지 2건', count($sbom['packages']), 2);
 $eq('SBOM 형식', $sbom['meta']['ctr-a'][0] ?? null, 'cyclonedx');
 $eq('SBOM 해시', $sbom['meta']['ctr-a'][1] ?? null, hash('sha256', $cdx));
+
+// ── SBOM 라이선스 파싱(CycloneDX licenses[] / SPDX licenseConcluded) ────────
+$cdxLic = json_encode(['bomFormat'=>'CycloneDX','components'=>[
+    ['name'=>'log4j-core','version'=>'2.14.1','purl'=>'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1',
+     'licenses'=>[['license'=>['id'=>'Apache-2.0']]]],
+    // 같은 이름, 다른 버전 — dedup 키에 버전이 없으면 서로 덮어써 하나를 잃는다.
+    ['name'=>'log4j-core','version'=>'2.17.0','purl'=>'pkg:maven/org.apache.logging.log4j/log4j-core@2.17.0',
+     'licenses'=>[['expression'=>'MIT OR Apache-2.0']]],
+]]);
+$sbomLic = vg_ingest_parse_sbom('ctr-b|cyclonedx|' . base64_encode($cdxLic));
+$eq('SBOM 라이선스: 버전 다르면 dedup 안 됨(2건 유지)', count($sbomLic['packages']), 2);
+$byVer = [];
+foreach ($sbomLic['packages'] as $p) { $byVer[$p[3]] = $p[5] ?? null; }
+$eq('SBOM 라이선스: license.id', $byVer['2.14.1'] ?? null, 'Apache-2.0');
+$eq('SBOM 라이선스: expression', $byVer['2.17.0'] ?? null, 'MIT OR Apache-2.0');
+
+$spdxDoc = json_encode(['spdxVersion'=>'SPDX-2.3','packages'=>[
+    ['name'=>'requests','versionInfo'=>'2.19.1','externalRefs'=>[
+        ['referenceType'=>'purl','referenceLocator'=>'pkg:pypi/requests@2.19.1'],
+    ],'licenseConcluded'=>'Apache-2.0'],
+    ['name'=>'noassert','versionInfo'=>'1.0','externalRefs'=>[
+        ['referenceType'=>'purl','referenceLocator'=>'pkg:pypi/noassert@1.0'],
+    ],'licenseConcluded'=>'NOASSERTION'],
+]]);
+$sbomSpdx = vg_ingest_parse_sbom('ctr-c|spdx|' . base64_encode($spdxDoc));
+$byName = [];
+foreach ($sbomSpdx['packages'] as $p) { $byName[$p[2]] = $p[5] ?? null; }
+$eq('SBOM 라이선스: SPDX licenseConcluded', $byName['requests'] ?? null, 'Apache-2.0');
+$eq('SBOM 라이선스: NOASSERTION 은 빈값', $byName['noassert'] ?? null, '');
+
+// ── 언어 패키지 라이선스 스트림(pkg_license, 4필드) ─────────────────────────
+$lic = vg_ingest_parse_pkg_license(
+    "pip|requests|2.19.1|Apache-2.0\n"
+    . "composer|psr/log|3.0.2|MIT\n"
+    . "bad-mgr|foo|1.0|MIT\n"          // 미지원 매니저 → 폐기
+    . "pip|onlythree|1.0"              // 필드 3개(라이선스 없음) → 폐기
+);
+$eq('pkg_license 2건(미지원 매니저·필드부족 제외)', count($lic), 2);
+$licByKey = [];
+foreach ($lic as $r) { $licByKey["{$r[0]}|{$r[1]}|{$r[2]}"] = $r[3]; }
+$eq('pkg_license pip requests', $licByKey['pip|requests|2.19.1'] ?? null, 'Apache-2.0');
+
+$attached = vg_ingest_attach_pkg_license(
+    [['pip', 'requests', '2.19.1'], ['npm', 'lodash', '4.17.21']],
+    $lic
+);
+$eq('attach: 매칭된 라이선스 부여', $attached[0][3] ?? null, 'Apache-2.0');
+$eq('attach: 미매칭은 빈 문자열', $attached[1][3] ?? null, '');
+
 // ── 노출 상관 ──────────────────────────────────────────────────────────────
 $exp = vg_ingest_parse_exposures(
     "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\n"
@@ -230,6 +280,25 @@ if ($withOrigin(['openssl' => 'LOCAL']) === $withOrigin(['openssl' => 'Debian'])
     $fail++;
 }
 
+// **라이선스가 바뀌면 해시도 바뀌어야 한다.** 안 그러면 라이선스만 바뀐 재스캔이 "변경 없음"으로
+//   스킵돼 스캔 재사용 시 라이선스 변경이 구조적으로 누락된다(출처 필드와 동일 유형의 사고).
+$withLangLicense = static fn(string $lic) => vg_ingest_content_hash(
+    [], 'rpm', [['pip', 'requests', '2.19.1', $lic]], [], [], [], [], [],
+    '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0']
+);
+if ($withLangLicense('MIT') === $withLangLicense('Apache-2.0')) {
+    printf("  ✗ [해시: 언어 패키지 라이선스가 다르면 달라야 함] 두 해시가 같음\n");
+    $fail++;
+}
+$withCtrPkgLicense = static fn(string $lic) => vg_ingest_content_hash(
+    [], 'rpm', [], [], [], [['ctr-a', 'maven', 'log4j-core', '2.14.1', '', $lic]], [], [],
+    '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0']
+);
+if ($withCtrPkgLicense('MIT') === $withCtrPkgLicense('Apache-2.0')) {
+    printf("  ✗ [해시: 컨테이너(SBOM) 패키지 라이선스가 다르면 달라야 함] 두 해시가 같음\n");
+    $fail++;
+}
+
 // ── 패키지 맵 + 변경 diff ───────────────────────────────────────────────────
 $pkgMap = vg_ingest_build_pkg_map('rpm', [['openssl', '1.0'], ['glibc', '2.0']], [['pip', 'requests', '2.19.1']]);
 $eq('패키지 맵 3건', count($pkgMap), 3);
@@ -252,6 +321,15 @@ $eq('설치 키', $byType['installed'][0][0] ?? null, 'rpm|new-pkg');
 $eq('업그레이드 1건', count($byType['upgraded'] ?? []), 1);
 $eq('제거 1건', count($byType['removed'] ?? []), 1);
 $eq('제거 키', $byType['removed'][0][0] ?? null, 'rpm|removed-pkg');
+
+// ── 라이선스 위험도 분류(license_risk.php) ──────────────────────────────────
+$eq('permissive 단일', vg_license_classify('MIT'), 'permissive');
+$eq('copyleft 단일', vg_license_classify('GPL-3.0-only'), 'copyleft');
+$eq('빈 값은 unknown', vg_license_classify(''), 'unknown');
+$eq('생소한 식별자는 unknown', vg_license_classify('Some-Custom-License'), 'unknown');
+$eq('복합 표현식: copyleft 가 섞이면 copyleft(보수적 판정)', vg_license_classify('MIT OR GPL-3.0-only'), 'copyleft');
+$eq('복합 표현식: 전부 permissive 면 permissive', vg_license_classify('MIT OR Apache-2.0'), 'permissive');
+$eq('WITH 예외조항도 토큰 분리', vg_license_classify('GPL-2.0-only WITH Classpath-exception-2.0'), 'copyleft');
 
 if ($fail === 0) {
     echo "ingest_parse: 전체 통과\n";
