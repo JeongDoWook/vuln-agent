@@ -20,6 +20,7 @@ ini_set('memory_limit', '768M');
 
 require __DIR__ . '/../src/feeds.php';
 require __DIR__ . '/../src/matcher.php';
+require __DIR__ . '/../src/license_summary.php';   // vg_rebuild_license_summary
 
 $pdo = vg_pdo();
 
@@ -28,6 +29,13 @@ $reaped = vg_feed_reap_stale($pdo);
 if ($reaped > 0) {
     fwrite(STDOUT, '[' . date('c') . "] 중단된 실행 {$reaped}건 정리\n");
 }
+
+// 라이선스 요약은 OSV 게이트/due 커넥터 유무와 무관하게 무조건 실행한다 — 라이선스 데이터는
+//   OSV 가 아니라 에이전트 ingest 로만 들어오므로, OSV upserted>0 조건이나 아래 "due 커넥터
+//   없음" 조기 종료에 묶이면 OSV 가 0건이거나 미등록인 기간 내내 language-packages.php 의
+//   KPI 카드가 영원히 0으로 보인다(실측 확인됨). 스케줄러는 1분마다 도는 구간이라 여기서
+//   매번 갱신해도 최신 데이터를 반영한다.
+vg_rebuild_license_summary($pdo);
 
 $due = vg_feed_due($pdo);
 if (!$due) {

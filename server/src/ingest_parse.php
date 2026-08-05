@@ -7,7 +7,8 @@ declare(strict_types=1);
  *   모든 함수는 같은 입력엔 같은 출력을 내고 부작용이 없다 — tests/ingest_parse_test.php 참고.
  */
 
-require_once __DIR__ . '/vercmp.php';   // vg_ver_cmp — vg_ingest_parse_kernel 에서 커널 버전 비교용
+require_once __DIR__ . '/vercmp.php';       // vg_ver_cmp — vg_ingest_parse_kernel 에서 커널 버전 비교용
+require_once __DIR__ . '/license_risk.php'; // vg_license_normalize_token — pkg_license 정규화
 
 // ── collected_at (ISO-8601) → MySQL DATETIME ──────────────────────────────
 function vg_ingest_parse_collected_at($raw): ?string
@@ -101,6 +102,49 @@ function vg_ingest_parse_langpkgs(array $lang): array
         if (preg_match('/^(\S+)\s+v([^:\s]+):$/', trim($line), $m)) { $add('cargo', $m[1], $m[2]); }
     }
     return array_values($rows);
+}
+
+// ── 언어 패키지 라이선스 — 별도 4필드 스트림("mgr|name|version|spdx") ─────────
+//   기존 $lang['inventory'](3필드)에 얹지 않는다. 필드수를 다르게 둬야 자리 밀림(파이프
+//   인젝션으로 name/version 에 '|' 가 섞인 오염 줄)이 조용히 4번째 칸을 라이선스로
+//   오인하는 사고를 막을 수 있다.
+function vg_ingest_parse_pkg_license(string $text): array
+{
+    $rows = [];
+    $mgrs = ['pip', 'npm', 'gem', 'composer', 'maven', 'nuget', 'cargo', 'go'];
+    foreach (preg_split('/\r?\n/', $text) as $line) {
+        $line = trim($line);
+        if ($line === '') { continue; }
+        // limit 을 주지 않는다 — limit(4) 이면 name/version 에 '|' 가 섞인 오염 줄이 필드 밀림으로
+        //   통과한다(PR#466 과 같은 클래스의 버그). 정확히 4필드가 아니면 엄격히 거부한다.
+        $f = explode('|', $line);
+        if (count($f) !== 4 || !in_array($f[0], $mgrs, true)) { continue; }
+        [$mgr, $name, $ver, $lic] = array_map('trim', $f);
+        if ($name === '' || $ver === '' || $lic === '') { continue; }
+        // 별칭 정규화(자유서술→SPDX)를 화이트리스트 검증보다 먼저 적용한다 — 순서를 바꾸면
+        //   대부분의 자유서술 표기("BSD License" 등)가 정규화 전에 걸려 통째로 버려진다.
+        $lic = vg_license_normalize_token($lic);
+        // SPDX 표현식 문자셋만 허용 — 저작권 문구·파이프 잔존 등 오염값을 걸러낸다.
+        if (!preg_match('/^[A-Za-z0-9.\-+ ()]+$/', $lic)) { continue; }
+        $rows["$mgr|$name|$ver"] = [
+            $mgr, mb_strimwidth($name, 0, 255, ''), mb_strimwidth($ver, 0, 255, ''), mb_strimwidth($lic, 0, 255, ''),
+        ];
+    }
+    return array_values($rows);
+}
+
+// ── langRows(mgr,name,version) 에 라이선스 스트림을 매칭해 4번째 필드로 붙인다 ──
+//   매칭 안 되면 4번째 필드는 ''(라이선스 미상). langRows 의 앞 3필드 구조는 그대로라
+//   기존 dedup·diff 로직(vg_ingest_build_pkg_map 등)은 건드리지 않는다.
+function vg_ingest_attach_pkg_license(array $langRows, array $licenseRows): array
+{
+    $byKey = [];
+    foreach ($licenseRows as $r) { $byKey["{$r[0]}|{$r[1]}|{$r[2]}"] = $r[3]; }
+    $out = [];
+    foreach ($langRows as $r) {
+        $out[] = [$r[0], $r[1], $r[2], $byKey["{$r[0]}|{$r[1]}|{$r[2]}"] ?? ''];
+    }
+    return $out;
 }
 
 // ── 노출 상관 (pipe 구분, 첫 줄 헤더) ──────────────────────────────────────
@@ -230,7 +274,34 @@ function vg_ingest_parse_sbom(string $text): array
             $name=trim((string)($item['name']??''));$ver=trim((string)($item['version']??$item['versionInfo']??''));$purl=(string)($item['purl']??'');
             if($purl===''&&isset($item['externalRefs']))foreach($item['externalRefs'] as $ref){if(($ref['referenceType']??'')==='purl'){$purl=(string)($ref['referenceLocator']??'');break;}}
             $mgr='';if(preg_match('#^pkg:([^/]+)/([^@?]+)#',$purl,$m)){$type=strtolower($m[1]);$decoded=urldecode($m[2]);if($type==='maven'&&str_contains($decoded,'/')){$pos=strrpos($decoded,'/');$decoded=substr($decoded,0,$pos).':'.substr($decoded,$pos+1);}$name=$decoded?:$name;$mgr=['pypi'=>'pip','npm'=>'npm','gem'=>'gem','composer'=>'composer','maven'=>'maven','nuget'=>'nuget','cargo'=>'cargo','golang'=>'go','deb'=>'dpkg','rpm'=>'rpm','apk'=>'apk'][$type]??'';}
-            if($mgr!==''&&$name!==''&&$ver!=='')$packages[$cid.'|'.$mgr.'|'.$name]=[$cid,$mgr,mb_strimwidth($name,0,255,''),mb_strimwidth($ver,0,255,''),''];
+            // 라이선스: CycloneDX 는 licenses[].license.{id,name} 또는 licenses[].expression(복수는
+            //   스펙상 동시적용=AND 의미), SPDX 는 licenseConcluded(없으면 declared 로 폴백 — syft/trivy
+            //   는 보통 concluded=NOASSERTION 이고 declared 에 실값이 있다).
+            $lic='';
+            if ($format==='spdx') {
+                $lc=(string)($item['licenseConcluded']??'');
+                if($lc===''||$lc==='NOASSERTION'||$lc==='NONE'){$lc=(string)($item['licenseDeclared']??'');}
+                if($lc!==''&&$lc!=='NOASSERTION'&&$lc!=='NONE'){$lic=$lc;}
+            } elseif (isset($item['licenses']) && is_array($item['licenses'])) {
+                $parts=[];
+                foreach ($item['licenses'] as $l) {
+                    if (isset($l['license']['id'])) { $parts[]=(string)$l['license']['id']; }
+                    elseif (isset($l['license']['name'])) { $parts[]=(string)$l['license']['name']; }
+                    elseif (isset($l['expression'])) { $parts[]=(string)$l['expression']; }
+                }
+                $lic=implode(' AND ', array_unique(array_filter($parts, static fn($v)=>$v!=='')));
+            }
+            // dedup 키는 이름까지만(버전 제외) — 버전까지 넣으면 같은 이름의 다중 버전(중첩 jar,
+            //   멀티스테이지 이미지)이 전부 별도 행으로 저장돼 tb_container.pkg_count·finding 건수가
+            //   부풀려진다. 대신 **병합**한다: 이미 있는 항목의 라이선스가 비어 있을 때만 채운다.
+            if($mgr!==''&&$name!==''&&$ver!==''){
+                $pkey=$cid.'|'.$mgr.'|'.$name;
+                if(!isset($packages[$pkey])){
+                    $packages[$pkey]=[$cid,$mgr,mb_strimwidth($name,0,255,''),mb_strimwidth($ver,0,255,''),'',mb_strimwidth($lic,0,255,'')];
+                } elseif ($packages[$pkey][5]===''&&$lic!==''){
+                    $packages[$pkey][5]=mb_strimwidth($lic,0,255,'');
+                }
+            }
         }
     }
     return ['packages'=>array_values($packages),'meta'=>$meta];
@@ -241,7 +312,10 @@ function vg_ingest_parse_container_packages(string $packagesText): array
     $rows = [];
     foreach (preg_split('/\r?\n/', $packagesText) as $line) {
         if ($line === '' || strncmp($line, 'cid|manager|name', 16) === 0) { continue; }
-        $f = explode('|', $line);
+        // limit(5) — 형식은 cid|manager|name|version|source 로 정확히 5필드다. limit 없이 쓰면
+        //   source 필드에 '|' 가 섞였을 때(패키지 출처 문자열 등) 6번째 칸이 생겨, ingest_store.php
+        //   가 그 자리를 SBOM 전용 라이선스 필드로 읽는 경로와 인덱스가 겹쳐 조용히 승격된다.
+        $f = explode('|', $line, 5);
         if (count($f) < 4 || trim($f[0]) === '' || trim($f[2]) === '' || trim($f[3]) === '') { continue; }
         $rows[] = $f;
     }
@@ -362,10 +436,12 @@ function vg_ingest_content_hash(
         $hashParts[] = "p|$manager|" . implode('|', array_map('strval', $r))
                      . '|' . (string) ($originMap[$r[0]] ?? '');
     }
-    foreach ($langRows as $r) { $hashParts[] = "l|{$r[0]}|{$r[1]}|{$r[2]}"; }
+    // 라이선스 값도 해시에 넣는다 — 안 넣으면 라이선스만 바뀐 재스캔이 "변경 없음"으로
+    //   스킵돼 스캔 재사용 시 라이선스 변경이 구조적으로 누락된다(출처 필드 실사고와 동일 유형).
+    foreach ($langRows as $r) { $hashParts[] = "l|{$r[0]}|{$r[1]}|{$r[2]}|" . ($r[3] ?? ''); }
     foreach ($expRows as $f)  { $hashParts[] = 'e|' . implode('|', array_slice($f, 1, 7)); }   // pid 제외
     foreach ($staleRows as $r) { $hashParts[] = "s|{$r[2]}|{$r[3]}"; }
-    foreach ($ctrPkgRows as $r) { $hashParts[] = "c|{$r[0]}|{$r[1]}|{$r[2]}|{$r[3]}"; }
+    foreach ($ctrPkgRows as $r) { $hashParts[] = "c|{$r[0]}|{$r[1]}|{$r[2]}|{$r[3]}|" . ($r[5] ?? ''); }
     foreach ($ctrRows as $r)    { $hashParts[] = "C|{$r[0]}|{$r[2]}|{$r[3]}|{$r[4]}"; }   // cid|image|os
     foreach ($ctrExpRows as $f) { $hashParts[] = 'CE|' . $f[0] . '|' . implode('|', array_slice($f, 2, 7)); }   // pid 제외
     $hashParts[] = 'k|' . $runningKernel . '|' . $kernelLatest . '|' . $kernelReboot;
