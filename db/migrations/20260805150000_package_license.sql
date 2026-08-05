@@ -10,7 +10,9 @@ SET @s := IF(@c = 0, 'ALTER TABLE tb_package ADD COLUMN license VARCHAR(255) NUL
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 -- 언어 패키지(pip/npm/gem/composer/maven/nuget/cargo/go) 라이선스 위험도 사전집계.
---   tb_package_summary(OSV CVE 카탈로그 집계)와 같은 패턴 — OSV 커넥터 실행 시 갱신한다.
+--   tb_package_summary(OSV CVE 카탈로그 집계)와 저장 패턴은 같지만 갱신 트리거는 다르다 — 이건
+--   스케줄러가 매 틱 무조건 갱신한다(OSV 게이트와 무관, license_summary.php 참고. 라이선스는 OSV가
+--   아니라 에이전트 ingest 로 들어오므로 OSV 게이트에 묶으면 KPI 가 영구히 0으로 보일 수 있다).
 --   packages.php 40초 사고(무인덱스 재집계) 재발을 막으려고 화면은 이 요약만 읽고
 --   tb_package 에 직접 라이선스 필터/KPI 쿼리를 걸지 않는다.
 CREATE TABLE IF NOT EXISTS tb_package_license_summary (

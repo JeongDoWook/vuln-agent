@@ -89,7 +89,17 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
   패치됐지만 재부팅 전인 상태. **억제를 막는** 신호다(→ §7).
 - `net` / `services` — 포트, 실행 서비스/프로세스
 - `system` — OS/커널/CPE (어떤 OVAL로 대조할지 힌트)
-- 그 외: 커널 CPU취약점 완화상태, 언어패키지(pip/npm), 보안설정 등
+- **언어 패키지** — pip/npm/gem/composer/maven/nuget/cargo/go 8개 생태계. 설치본 고신뢰 소스
+  (`site-packages/*.dist-info/METADATA`·`composer/installed.json`·`Cargo.lock`·`package-lock.json`·
+  `*.jar/war/ear`)에 더해, 선언 파일 `go.mod`/`requirements.txt`/`pom.xml` 을 직접 파싱해 보충한다
+  (설치본이 없거나 못 읽는 환경 대응). OSV 커넥터(`vg_osv_lang_queries`)가 이 8개 생태계 전부를
+  자기 ecosystem 으로 조회해 CVE 매칭한다 — 매니페스트 직접 파싱은 go.mod/requirements.txt/pom.xml
+  3종뿐이고 npm/gem/maven/nuget/cargo 는 설치본(lock 파일·jar 등) 스캔만 한다.
+- **라이선스 식별** — SBOM(CycloneDX/SPDX, `SBOM_DIR` 오프라인 입력) + pip `METADATA` +
+  composer `installed.json` 에서 SPDX 식별자를 수집해 permissive/copyleft/unknown 으로 분류
+  (`server/src/license_risk.php`). 시그니처·스니펫·바이너리 스캔이나 npm/gem/maven/nuget/cargo
+  매니페스트 직접 파싱을 통한 라이선스 식별은 하지 않는다 — 위 세 소스가 없으면 미상(unknown)이다.
+- 그 외: 커널 CPU취약점 완화상태, 보안설정 등
 
 ### `agent/install-agent.sh` — 배포 설치기
 각 대상 서버에서 `sudo bash install-agent.sh` — 인자 없이 실행하면 서버 주소·토큰·주기를 물어본다
@@ -298,6 +308,15 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
       (알림은 만들지 않기로 — 외부 채널 수신지가 없어 YAGNI. 필요해지면 그때.)
 - [x] **제품 범위 정리** — 내부 SLA·담당자·상태·예외를 추적하는 조치 관리 기능은 제거했다.
       제품은 스캔 결과와 판정 근거, 수정 버전, 벤더 상태, 런타임·노출 정보를 정확히 보여주는 데 집중한다.
+- [x] **SCA 언어 패키지 파서 확장** — `go.mod`/`requirements.txt`/`pom.xml` 직접 파싱을 에이전트에
+      추가(설치본이 없는 환경 보충). 8개 언어 생태계 매칭 자체는 새 기능이 아니라 기존 OSV
+      커넥터(`vg_osv_lang_queries`)가 이미 하던 일이다.
+- [x] **SCA 라이선스 식별·관리** — `language-packages.php`(신규 화면). SBOM(CycloneDX/SPDX)·pip
+      METADATA·composer installed.json 에서 라이선스를 식별해 permissive/copyleft/unknown 으로
+      분류(`server/src/license_risk.php`), `tb_package.license` 컬럼 + 사전집계
+      `tb_package_license_summary`(`server/src/license_summary.php`, 스케줄러가 매 틱 무조건 갱신 —
+      OSV 게이트와 무관하다. 원래는 OSV 커넥터 실행 시에만 갱신했는데, OSV 가 미등록/0건인 동안
+      KPI 카드가 영구히 0으로 보이는 결함이 있어 PR#468 리뷰에서 뺐다).
 - [x] **벤더 판정 조회 화면** — `vendor.php`. 벤더 데이터(debtracker·rhoval·rhunfixed·ubuntuoval·kcve)는
       지금까지 매처가 억제에만 썼고, 억제가 의심스러우면 DB 에 직접 붙어야 했다. 원본을 소스 필터와 함께
       한 화면에서 보여줘 **억제 근거를 사람이 확인할 수 있게** 했다(설명가능성 — 차별점 ③의 연장).
