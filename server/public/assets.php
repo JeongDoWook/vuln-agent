@@ -25,20 +25,10 @@ $perPage = vg_perpage();
 const VG_ASSET_STATES = ['ok' => '정상', 'stale' => '지연', 'offline' => '오프라인', 'none' => '수집없음'];
 if (!isset(VG_ASSET_STATES[$state])) { $state = ''; }
 
-/* 호스트 한 대의 연결 상태를 SQL 안에서 판정하는 식.
- * 목록 필터·KPI 집계가 같은 식을 써야 "지연 3대" 를 눌렀을 때 3대가 나온다. */
-$legacyStaleMin = 'GREATEST(180, CEIL(h.poll_schedule_seconds / 60 * 1.5))';
-$legacyOfflineMin = 'GREATEST(10080, CEIL(h.poll_schedule_seconds / 60 * 3))';
-$stateExpr =
-    "CASE WHEN s.scan_id IS NULL THEN 'none'
-          WHEN agent_seen.last_seen_at IS NOT NULL
-            AND TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) > " . VG_POLL_OFFLINE_MIN . " THEN 'offline'
-          WHEN agent_seen.last_seen_at IS NOT NULL
-            AND TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) > " . VG_POLL_STALE_MIN . " THEN 'stale'
-          WHEN agent_seen.last_seen_at IS NOT NULL THEN 'ok'
-          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > $legacyOfflineMin THEN 'offline'
-          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > $legacyStaleMin THEN 'stale'
-          ELSE 'ok' END";
+/* 호스트 한 대의 연결 상태를 SQL 안에서 판정하는 식(format.php 의 vg_asset_state_sql_expr() —
+ * compliance.php 와 공유하는 SSOT). 목록 필터·KPI 집계가 같은 식을 써야 "지연 3대" 를 눌렀을 때
+ * 3대가 나온다. */
+$stateExpr = vg_asset_state_sql_expr();
 
 // 호스트 + 최신 스캔. LEFT JOIN 이라 등록만 되고 아직 수집이 없는 호스트도 남는다.
 $fromSql = 'FROM tb_host h

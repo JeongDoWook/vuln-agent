@@ -31,13 +31,26 @@ function vg_compliance_status(int $violations): array {
     return ['label' => '미준수', 'tone' => 'crit'];
 }
 
+// first_seen 배치 쿼리가 되짚어볼 최대 기간. 가장 긴 SLA(HIGH) + 여유 2주 — 그보다 오래
+//   지속된 발견은 어차피 이미 위반 확정이라 정확한 최초시각까지 알 필요가 없다(경계 밖에
+//   실제 최초시각이 있어도, 경계 안에서 잡히는 first_seen 은 실제보다 항상 같거나 늦으므로
+//   위반 판정이 과소평가되지 않는다).
+const VG_COMPLIANCE_HISTORY_LOOKBACK_DAYS = VG_COMPLIANCE_SLA_HIGH_DAYS + 14;
+
 /**
  * 통제 1: 패치관리(ISMS-P 2.10.8 / ISO 27001 A.8.8).
- *   판정: CRITICAL·HIGH 이면서 조치 가능(no_fix=0)한데 SLA 기준일을 넘겨 아직 살아있는 건.
- *   "최초 미조치 시각"은 tb_finding 에 없다(matcher 가 스캔마다 재작성 — 0009_findings_needs_restart.sql
- *   이후로도 추가 안 됨) — finding_history.php 의 first_found_at 계산(그 CVE+패키지가 처음
- *   나타난 스캔의 collected_at)과 같은 근사를 쓰되, 건별 반복 호출 대신 대상 호스트로만 좁힌
- *   배치 쿼리 1회로 묶는다(N+1 방지 — CLAUDE.md 인덱스 원칙).
+ *   판정: CRITICAL·HIGH 이면서 조치 가능(no_fix=0)하고 재시작 대기(needs_restart=1 — 패치는
+ *   이미 됐고 프로세스 재시작만 남은 상태, 0009_findings_needs_restart.sql)가 아닌데 SLA
+ *   기준일을 넘겨 아직 살아있는 건.
+ *   "최초 미조치 시각"은 tb_finding 에 없다(matcher 가 스캔마다 재작성) — finding_history.php 의
+ *   first_found_at 계산(그 (호스트,컨테이너,CVE,패키지) 조합이 처음 나타난 스캔의 수신 시각)과
+ *   같은 근사를 쓰되, 건별 반복 호출 대신 배치 쿼리 1회로 묶는다(N+1 방지).
+ *   컨테이너 주의: tb_container.container_id 는 스캔마다 새로 발급되는 surrogate PK 라 스캔
+ *   간 그대로 비교하면 안 된다(finding_history.php:8-14 문서화됨) — 컨테이너 이름(cid)으로
+ *   정규화해 매칭한다. 호스트 자신은 container_id=0 → cid ''.
+ *   시각은 agent 자기신고인 collected_at 대신 서버 수신시각 received_at 을 우선한다
+ *   (collected_at 은 신뢰 경계 밖 값 — vg_ingest_parse_collected_at() 이 상하한 검증 없이
+ *   그대로 저장해, 침해된 호스트가 매 스캔 "지금"을 보내면 경과일을 조작할 수 있다).
  * @return array{violations: array<int, array<string, mixed>>, total: int}
  */
 function vg_compliance_load_patch(PDO $pdo): array {
@@ -63,12 +76,15 @@ function vg_compliance_load_patch(PDO $pdo): array {
     }
     $scanIds = array_keys($fqdnByScan);
 
-    // 지금 살아있는(최신 스캔) CRITICAL·HIGH·조치가능 건. idx_find_scan_sev(scan_id,severity) 를 탄다.
+    // 지금 살아있는(최신 스캔) CRITICAL·HIGH·조치가능·재시작대기 아닌 건. 컨테이너는 cid(이름)로
+    //   정규화(container_id 는 스캔마다 새로 발급되는 surrogate PK). idx_find_scan_sev 를 탄다.
     $in = implode(',', array_fill(0, count($scanIds), '?'));
     $st = $pdo->prepare(
-        "SELECT scan_id, container_id, cve_id, package_name, severity, in_kev
-           FROM tb_finding
-          WHERE scan_id IN ($in) AND severity IN ('CRITICAL','HIGH') AND no_fix = 0"
+        "SELECT f.scan_id, COALESCE(c.cid, '') AS cid, f.cve_id, f.package_name, f.severity, f.in_kev
+           FROM tb_finding f
+           LEFT JOIN tb_container c ON c.container_id = f.container_id AND c.is_deleted = 0
+          WHERE f.scan_id IN ($in) AND f.severity IN ('CRITICAL','HIGH')
+            AND f.no_fix = 0 AND f.needs_restart = 0 AND f.is_deleted = 0"
     );
     $st->execute($scanIds);
     $active = [];
@@ -82,33 +98,56 @@ function vg_compliance_load_patch(PDO $pdo): array {
         return ['violations' => [], 'total' => 0];
     }
 
-    // 최초 발견 시각 배치 조회 — 대상 호스트로만 좁힌다(idx_scans_host_time 을 탄다).
-    //   finding_history.php 의 vg_finding_history_summary() 와 같은 근사를 여러 건에 한 번에 적용.
+    // 최초 발견 시각 배치 조회 — tb_finding 을 host_id 로 훑으면 옵티마이저가 그걸 드라이빙으로
+    //   안 써 전체스캔한다(실측: type=ALL, Using temporary). 대신 대상 호스트의 scan_id 목록을
+    //   먼저 작은 tb_scan 에서 좁게 뽑아, 그 scan_id 리스트로 tb_finding 을 걸러
+    //   idx_find_scan_sev(scan_id,severity) 를 태운다. 조회 구간은 VG_COMPLIANCE_HISTORY_LOOKBACK_DAYS
+    //   로 제한한다 — 전체 스캔 이력을 다 훑을 이유가 없다.
     $hostIds = array_values(array_unique(array_map(static fn($r) => (int) $r['host_id'], $active)));
     $in = implode(',', array_fill(0, count($hostIds), '?'));
     $st = $pdo->prepare(
-        "SELECT s2.host_id, f2.container_id, f2.cve_id, f2.package_name,
-                MIN(COALESCE(s2.collected_at, s2.received_at)) AS first_seen
-           FROM tb_scan s2
-           JOIN tb_finding f2 ON f2.scan_id = s2.scan_id
-          WHERE s2.host_id IN ($in) AND f2.severity IN ('CRITICAL','HIGH')
-          GROUP BY s2.host_id, f2.container_id, f2.cve_id, f2.package_name"
+        "SELECT scan_id FROM tb_scan
+          WHERE host_id IN ($in) AND is_deleted = 0
+            AND received_at >= DATE_SUB(NOW(), INTERVAL ? DAY)"
     );
-    $st->execute($hostIds);
+    $st->execute([...$hostIds, VG_COMPLIANCE_HISTORY_LOOKBACK_DAYS]);
+    $histScanIds = array_map('intval', array_column($st->fetchAll(), 'scan_id'));
+
     $firstSeenMap = [];
-    foreach ($st->fetchAll() as $r) {
-        $key = $r['host_id'] . '|' . $r['container_id'] . '|' . $r['cve_id'] . '|' . $r['package_name'];
-        $firstSeenMap[$key] = $r['first_seen'];
+    if ($histScanIds) {
+        $in = implode(',', array_fill(0, count($histScanIds), '?'));
+        // 경과일은 SQL 의 DATEDIFF 로 직접 계산 — PHP strtotime()/타임존 불일치와, 파싱 실패 시
+        //   false 가 산술에서 0(1970년)으로 축약돼 무조건 위반이 되는 문제를 둘 다 없앤다.
+        $st = $pdo->prepare(
+            "SELECT s2.host_id, COALESCE(c2.cid, '') AS cid, f2.cve_id, f2.package_name,
+                    MIN(COALESCE(s2.received_at, s2.collected_at)) AS first_seen,
+                    DATEDIFF(NOW(), MIN(COALESCE(s2.received_at, s2.collected_at))) AS days_since
+               FROM tb_finding f2
+               JOIN tb_scan s2 ON s2.scan_id = f2.scan_id AND s2.is_deleted = 0
+               LEFT JOIN tb_container c2 ON c2.container_id = f2.container_id AND c2.is_deleted = 0
+              WHERE f2.scan_id IN ($in) AND f2.severity IN ('CRITICAL','HIGH') AND f2.is_deleted = 0
+              GROUP BY s2.host_id, cid, f2.cve_id, f2.package_name"
+        );
+        $st->execute($histScanIds);
+        foreach ($st->fetchAll() as $r) {
+            $key = $r['host_id'] . '|' . $r['cid'] . '|' . $r['cve_id'] . '|' . $r['package_name'];
+            $firstSeenMap[$key] = ['first_seen' => $r['first_seen'], 'days' => (int) $r['days_since']];
+        }
     }
 
-    $now = time();
     $violations = [];
     foreach ($active as $r) {
-        $key = $r['host_id'] . '|' . $r['container_id'] . '|' . $r['cve_id'] . '|' . $r['package_name'];
-        $firstSeen = $firstSeenMap[$key] ?? null;
-        if ($firstSeen === null) { continue; }   // 최초 시각을 못 찾으면 판정 보류(과탐 방지)
+        $key = $r['host_id'] . '|' . $r['cid'] . '|' . $r['cve_id'] . '|' . $r['package_name'];
+        $seen = $firstSeenMap[$key] ?? null;
+        if ($seen === null) { continue; }   // 최초 시각을 못 찾으면 판정 보류(과탐 방지)
 
-        $days = (int) floor(($now - strtotime($firstSeen)) / 86400);
+        $days = $seen['days'];
+        if ($days < 0) {
+            // 서버 수신시각이 미래로 나온 데이터 이상 — 조용히 "위반 아님"으로 넘기지 않고 남긴다.
+            error_log("[compliance] 음수 경과일(데이터 이상): host={$r['host_id']} cve={$r['cve_id']} days=$days");
+            continue;
+        }
+
         $slaDays = $r['in_kev']
             ? VG_COMPLIANCE_SLA_KEV_DAYS
             : ($r['severity'] === 'CRITICAL' ? VG_COMPLIANCE_SLA_CRIT_DAYS : VG_COMPLIANCE_SLA_HIGH_DAYS);
@@ -121,7 +160,7 @@ function vg_compliance_load_patch(PDO $pdo): array {
             'package'   => (string) $r['package_name'],
             'severity'  => (string) $r['severity'],
             'in_kev'    => (bool) $r['in_kev'],
-            'first_seen'=> $firstSeen,
+            'first_seen'=> $seen['first_seen'],
             'days'      => $days,
             'sla_days'  => $slaDays,
         ];
@@ -138,7 +177,7 @@ function vg_compliance_load_patch(PDO $pdo): array {
  *   (사유별로 중복 집계하면 "위반 건수"가 자산 대수보다 부풀어 부분준수/미준수 컷라인의 의미가 흐려진다).
  * @return array{violations: array<int, array<string, mixed>>, total: int, totalHosts: int}
  */
-function vg_compliance_load_asset(PDO $pdo): array {
+function vg_compliance_load_asset(PDO $pdo, int $limit): array {
     $latestSubq = vg_latest_scan_subq();
     $fromSql = 'FROM tb_host h
                 LEFT JOIN ' . $latestSubq . ' t ON t.host_id = h.host_id
@@ -149,32 +188,28 @@ function vg_compliance_load_asset(PDO $pdo): array {
                      WHERE is_revoked = 0 AND is_deleted = 0
                      GROUP BY host_fqdn
                 ) agent_seen ON agent_seen.host_fqdn = h.fqdn';
-    // assets.php 의 $stateExpr 과 같은 식(같은 상수) — 다른 식을 쓰면 자산 화면과 다른 대수가 나온다.
-    $legacyStaleMin = 'GREATEST(180, CEIL(h.poll_schedule_seconds / 60 * 1.5))';
-    $legacyOfflineMin = 'GREATEST(10080, CEIL(h.poll_schedule_seconds / 60 * 3))';
-    $stateExpr =
-        "CASE WHEN s.scan_id IS NULL THEN 'none'
-              WHEN agent_seen.last_seen_at IS NOT NULL
-                AND TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) > " . VG_POLL_OFFLINE_MIN . " THEN 'offline'
-              WHEN agent_seen.last_seen_at IS NOT NULL
-                AND TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) > " . VG_POLL_STALE_MIN . " THEN 'stale'
-              WHEN agent_seen.last_seen_at IS NOT NULL THEN 'ok'
-              WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > $legacyOfflineMin THEN 'offline'
-              WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > $legacyStaleMin THEN 'stale'
-              ELSE 'ok' END";
+    // assets.php 와 같은 식(format.php 의 SSOT) — 다른 식을 쓰면 자산 화면과 다른 대수가 나온다.
+    $stateExpr = vg_asset_state_sql_expr();
 
-    $totalHosts = (int) $pdo->query("SELECT COUNT(*) $fromSql WHERE h.is_deleted = 0")->fetchColumn();
+    // totalHosts 는 상태 판정과 무관한 단순 등록 대수 — 상태 조인 없이 센다.
+    $totalHosts = (int) $pdo->query('SELECT COUNT(*) FROM tb_host WHERE is_deleted = 0')->fetchColumn();
 
-    $st = $pdo->query(
-        "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.last_seen_ip, $stateExpr AS state
-           $fromSql
-          WHERE h.is_deleted = 0
+    $whereViol = "h.is_deleted = 0
             AND ($stateExpr IN ('offline','none')
                  OR h.os_id IS NULL OR h.os_id = ''
                  OR h.os_version IS NULL OR h.os_version = ''
-                 OR h.last_seen_ip IS NULL OR h.last_seen_ip = '')
-          ORDER BY h.fqdn"
+                 OR h.last_seen_ip IS NULL OR h.last_seen_ip = '')";
+    $total = (int) $pdo->query("SELECT COUNT(*) $fromSql WHERE $whereViol")->fetchColumn();
+
+    $st = $pdo->prepare(
+        "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.last_seen_ip, $stateExpr AS state
+           $fromSql
+          WHERE $whereViol
+          ORDER BY h.fqdn
+          LIMIT ?"
     );
+    $st->bindValue(1, $limit, PDO::PARAM_INT);
+    $st->execute();
     $rows = $st->fetchAll();
 
     $violations = [];
@@ -191,7 +226,7 @@ function vg_compliance_load_asset(PDO $pdo): array {
         ];
     }
 
-    return ['violations' => $violations, 'total' => count($violations), 'totalHosts' => $totalHosts];
+    return ['violations' => $violations, 'total' => $total, 'totalHosts' => $totalHosts];
 }
 
 /**
@@ -200,16 +235,22 @@ function vg_compliance_load_asset(PDO $pdo): array {
  *   기준으로 집계만 한다 — 판정 로직 자체는 새로 만들지 않는다(YAGNI).
  * @return array{violations: array<int, array<string, mixed>>, total: int}
  */
-function vg_compliance_load_secconfig(PDO $pdo): array {
+function vg_compliance_load_secconfig(PDO $pdo, int $limit): array {
     $latestSubq = vg_latest_scan_subq();
-    $st = $pdo->query(
-        "SELECT t.host_id, h.fqdn, cf.code, cf.title, cf.severity, cf.rationale
-           FROM tb_cce_finding cf
+    $fromSql = "FROM tb_cce_finding cf
            JOIN $latestSubq t ON t.mid = cf.scan_id
            JOIN tb_host h ON h.host_id = t.host_id AND h.is_deleted = 0
-          WHERE cf.result = 'FAIL'
-          ORDER BY FIELD(cf.severity,'HIGH','MEDIUM','LOW'), h.fqdn"
+          WHERE cf.result = 'FAIL' AND cf.is_deleted = 0";
+    $total = (int) $pdo->query("SELECT COUNT(*) $fromSql")->fetchColumn();
+
+    $st = $pdo->prepare(
+        "SELECT t.host_id, h.fqdn, cf.code, cf.title, cf.severity, cf.rationale
+           $fromSql
+          ORDER BY FIELD(cf.severity,'HIGH','MEDIUM','LOW'), h.fqdn
+          LIMIT ?"
     );
+    $st->bindValue(1, $limit, PDO::PARAM_INT);
+    $st->execute();
     $rows = $st->fetchAll();
     $violations = [];
     foreach ($rows as $r) {
@@ -222,7 +263,7 @@ function vg_compliance_load_secconfig(PDO $pdo): array {
             'rationale' => (string) ($r['rationale'] ?? ''),
         ];
     }
-    return ['violations' => $violations, 'total' => count($violations)];
+    return ['violations' => $violations, 'total' => $total];
 }
 
 // 자동판정이 안 되는 통제 — 사람이 심사해야 하는 정책·승인이력류. 상태 판정 없이 항목명만.
@@ -244,19 +285,23 @@ $patch = ['violations' => [], 'total' => 0];
 $asset = ['violations' => [], 'total' => 0, 'totalHosts' => 0];
 $secconfig = ['violations' => [], 'total' => 0];
 $judgedAt = date('Y-m-d H:i');
+$previewLimit = vg_ui_detail_preview_limit();
+// findings 메뉴 권한만으로는 자산 인벤토리(assets 메뉴 전용 정보)를 우회 열람할 수 없게 별도 게이트.
+$canViewAssets = vg_can('assets');
 
 try {
     $pdo = vg_pdo();
     vg_log_activity($pdo, 'PAGE', null, 'view_compliance', '컴플라이언스 매핑 조회');
+    session_write_close();   // 인가·감사로그 이후 무거운 집계 전 세션락 해제(connectors.php 선례)
     $patch = vg_compliance_load_patch($pdo);
-    $asset = vg_compliance_load_asset($pdo);
-    $secconfig = vg_compliance_load_secconfig($pdo);
+    if ($canViewAssets) {
+        $asset = vg_compliance_load_asset($pdo, $previewLimit);
+    }
+    $secconfig = vg_compliance_load_secconfig($pdo, $previewLimit);
 } catch (Throwable $e) {
     error_log('[compliance] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';
 }
-
-$previewLimit = vg_ui_detail_preview_limit();
 
 vg_header('컴플라이언스 매핑', 'compliance_mapping');
 ?>
@@ -274,7 +319,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
 ?>
   <div class="cards">
     <div class="kpi kpi--sm tone-<?= vg_h($sPatch['tone']) ?>"><b><?= $patch['total'] ?></b><span>패치관리 위반</span></div>
-    <div class="kpi kpi--sm tone-<?= vg_h($sAsset['tone']) ?>"><b><?= $asset['total'] ?></b><span>자산식별 위반</span></div>
+    <?php if ($canViewAssets): ?>
+      <div class="kpi kpi--sm tone-<?= vg_h($sAsset['tone']) ?>"><b><?= $asset['total'] ?></b><span>자산식별 위반</span></div>
+    <?php endif; ?>
     <div class="kpi kpi--sm tone-<?= vg_h($sSec['tone']) ?>"><b><?= $secconfig['total'] ?></b><span>보안설정 위반</span></div>
   </div>
 
@@ -322,6 +369,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     </div>
   </div>
 
+  <?php if ($canViewAssets): ?>
   <div class="card mt-lg">
     <div class="card__body">
       <div class="compliance-control__head">
@@ -352,6 +400,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       <?php endif; ?>
     </div>
   </div>
+  <?php endif; ?>
 
   <div class="card mt-lg">
     <div class="card__body">
