@@ -44,6 +44,7 @@ function vg_activity_type_labels(): array {
         'view_cve'             => '취약점 상세 조회',
         'view_advisory'        => '보안공지 상세 조회',
         'view_compliance_rule' => '보안설정 룰 상세 조회',
+        'view_compliance'      => '컴플라이언스 매핑 조회',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김.
         'host_perimeter_update'=> '경계 방화벽 설정 변경',
         'page_view'            => '페이지 열람',
@@ -76,6 +77,7 @@ function vg_nav_sections(): array {
             ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '판정 근거', 'key' => 'vendor'],
             ['perm' => 'findings',   'href' => '/compliance_rules.php', 'label' => '보안 설정', 'key' => 'compliance'],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
+            ['perm' => 'findings',   'href' => '/compliance.php', 'label' => '컴플라이언스 매핑', 'key' => 'compliance_mapping'],
         ],
         '관리' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],
@@ -105,6 +107,8 @@ function vg_nav_icon(string $key): string {
         'vendor'      => '<circle cx="12" cy="9" r="6"/><polyline points="9.3 9 11.2 10.9 14.9 7.2"/><path d="M8.5 14.4 7.4 21l4.6-2.3 4.6 2.3-1.1-6.6"/>',
         // 보안설정 룰셋 — 체크리스트 모양: 기준(CIS/NIST/STIG)에 맞나 항목별로 확인한다는 뜻.
         'compliance'  => '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+        // 컴플라이언스 매핑 — 방패 모양: 외부 기준(ISMS-P/ISO 27001)에 대한 준수 여부를 나타낸다.
+        'compliance_mapping' => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
         'advisories'  => '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
         'assets'      => '<rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/>',
         'connectors'  => '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',

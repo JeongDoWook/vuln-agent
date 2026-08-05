@@ -556,6 +556,9 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
 .card--accent:hover { border-color: var(--accent); }
 .card__body { margin-top: .6rem; }
 
+/* 카드 안에서 "제목 + 상태뱃지"를 양끝 정렬하는 헤드 — compliance.php 의 통제별 카드가 쓴다. */
+.compliance-control__head { display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap; }
+
 /* 여백 유틸 — PHP 에 style="margin-top:…" 을 쓰지 않기 위한 최소한의 유틸.
  * 색·레이아웃은 CSS 가 소유한다는 규칙을 지키되, 클래스를 남발하지 않도록 둘만 둔다. */
 .mt    { margin-top: .8rem; }

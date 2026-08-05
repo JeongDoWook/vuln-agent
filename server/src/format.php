@@ -232,6 +232,25 @@ function vg_asset_state_key(bool $hasScan, $pollAgeMin, $scanAgeMin, int $schedu
     return 'ok';
 }
 
+/**
+ * 호스트 연결 상태 판정 CASE 식(SQL). assets.php·compliance.php 가 공유(SSOT) — 다른 식을 쓰면
+ *   두 화면의 자산 대수가 어긋난다. 별칭 h(tb_host)·s(tb_scan, LEFT JOIN)·agent_seen(host_fqdn,
+ *   last_seen_at) 를 호출부 쿼리가 그대로 갖추고 있어야 한다.
+ */
+function vg_asset_state_sql_expr(): string {
+    $legacyStaleMin = 'GREATEST(180, CEIL(h.poll_schedule_seconds / 60 * 1.5))';
+    $legacyOfflineMin = 'GREATEST(10080, CEIL(h.poll_schedule_seconds / 60 * 3))';
+    return "CASE WHEN s.scan_id IS NULL THEN 'none'
+          WHEN agent_seen.last_seen_at IS NOT NULL
+            AND TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) > " . VG_POLL_OFFLINE_MIN . " THEN 'offline'
+          WHEN agent_seen.last_seen_at IS NOT NULL
+            AND TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) > " . VG_POLL_STALE_MIN . " THEN 'stale'
+          WHEN agent_seen.last_seen_at IS NOT NULL THEN 'ok'
+          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > $legacyOfflineMin THEN 'offline'
+          WHEN TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) > $legacyStaleMin THEN 'stale'
+          ELSE 'ok' END";
+}
+
 /** 연결 상태 뱃지. 최신 수집 시각은 상태와 분리해 목록·상세에 따로 표시한다. */
 function vg_asset_state(bool $hasScan, $pollAgeMin, $scanAgeMin, int $scheduleSeconds = 3600): string {
     $state = vg_asset_state_key($hasScan, $pollAgeMin, $scanAgeMin, $scheduleSeconds);
