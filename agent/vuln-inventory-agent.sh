@@ -1293,6 +1293,9 @@ collect_project_dependencies() {
   local root f name ver group count=0
   for root in $PROJECT_SCAN_ROOTS; do
     [ -d "$root" ] || continue
+    # 1st pass: 기존(신뢰도 높은) 소스 — METADATA/lock/jar 등. 아래 2nd pass(go.mod/
+    # requirements.txt/pom.xml)보다 먼저 출력되어야 sort 없이도(awk '!seen[]') 같은
+    # 패키지에 대해 이쪽 값이 먼저 채워진다(dedup 은 vg_ingest_parse_langpkgs 의 $add 가 담당).
     while IFS= read -r f; do
       count=$((count+1)); [ "$count" -le 3000 ] || return 0
       case "$f" in
@@ -1305,7 +1308,54 @@ collect_project_dependencies() {
         *.war|*.ear) emit_nested_jars "$f";;
       esac
     done < <(find "$root" -xdev -maxdepth 8 -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -3000)
-  done | sort -u
+    # 2nd pass: 보충 소스 — 정확한 버전 정보가 없을 수 있어(범위·플레이스홀더) 위 1st pass 값을
+    # 덮어쓰면 안 된다. go 는 경쟁 소스가 없어 이 구분이 영향 없다.
+    while IFS= read -r f; do
+      count=$((count+1)); [ "$count" -le 3000 ] || return 0
+      case "$f" in
+        */go.mod) awk '
+          /^require[[:space:]]*\(/{inblock=1;next}
+          inblock && /^\)/{inblock=0;next}
+          inblock{
+            line=$0; sub(/\/\/.*/,"",line); gsub(/^[ \t]+|[ \t]+$/,"",line)
+            if(line!=""){n=split(line,a,/[ \t]+/); if(n>=2&&a[1]!=""&&a[2]!="") print "go|"a[1]"|"a[2]}
+            next
+          }
+          /^require[[:space:]]+[^(]/{
+            line=$0; sub(/^require[ \t]+/,"",line); sub(/\/\/.*/,"",line); gsub(/^[ \t]+|[ \t]+$/,"",line)
+            n=split(line,a,/[ \t]+/); if(n>=2&&a[1]!=""&&a[2]!="") print "go|"a[1]"|"a[2]
+          }
+        ' "$f";;
+        */requirements.txt) awk '
+          {
+            line=$0; sub(/#.*/,"",line); sub(/;.*/,"",line); gsub(/^[ \t]+|[ \t]+$/,"",line)
+            if(line=="") next
+            if(line ~ /^-e /) next
+            if(line ~ /^-r /) next
+            if(line ~ /git\+/) next
+            if(line !~ /==/) next
+            if(line ~ /[<>~!]/) next
+            n=split(line,parts,"==")
+            if(n!=2) next
+            name=parts[1]; ver=parts[2]
+            gsub(/^[ \t]+|[ \t]+$/,"",ver)
+            sub(/\[.*\]/,"",name); gsub(/^[ \t]+|[ \t]+$/,"",name)
+            if(name!=""&&ver!="") print "pip|"name"|"ver
+          }
+        ' "$f";;
+        */pom.xml) awk '
+          /<dependency>/{inb=1;g="";a="";v="";next}
+          /<\/dependency>/{
+            if(inb&&g!=""&&a!=""&&v!=""&&g!~/\$\{/&&a!~/\$\{/&&v!~/\$\{/) print "maven|"g":"a"|"v
+            inb=0;next
+          }
+          inb&&/<groupId>/{line=$0;gsub(/.*<groupId>|<\/groupId>.*/,"",line);gsub(/^[ \t]+|[ \t]+$/,"",line);g=line}
+          inb&&/<artifactId>/{line=$0;gsub(/.*<artifactId>|<\/artifactId>.*/,"",line);gsub(/^[ \t]+|[ \t]+$/,"",line);a=line}
+          inb&&/<version>/{line=$0;gsub(/.*<version>|<\/version>.*/,"",line);gsub(/^[ \t]+|[ \t]+$/,"",line);v=line}
+        ' "$f";;
+      esac
+    done < <(find "$root" -xdev -maxdepth 8 -type f \( -name 'go.mod' -o -name 'requirements.txt' -o -name 'pom.xml' \) 2>/dev/null|head -3000)
+  done | awk '!seen[$0]++'
 }
 # --- 매핑 힌트: 어떤 OVAL/보안트래커로 대조할지 자기설명적으로 기록 ---
 OS_ID="$( . /etc/os-release 2>/dev/null; echo "${ID:-unknown}" )"

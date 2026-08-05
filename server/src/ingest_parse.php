@@ -56,10 +56,15 @@ function vg_ingest_parse_origins(string $originsText): array
 function vg_ingest_parse_langpkgs(array $lang): array
 {
     $rows = [];
+    // 먼저 add 된 값을 유지한다(더 신뢰도 높은 소스를 나중 소스가 덮어쓰지 않도록) —
+    // 예: pip freeze(설치본, 아래 pip 루프) 가 inventory 의 requirements.txt 값보다,
+    // jar 스캔(inventory 의 *.jar) 이 pom.xml 값보다 먼저 add 되어 우선한다.
     $add = static function (string $mgr, string $name, string $ver) use (&$rows): void {
         $name = trim($name); $ver = trim($ver);
         if ($name === '' || $ver === '') { return; }
-        $rows["$mgr|$name"] = [$mgr, mb_strimwidth($name, 0, 255, ''), mb_strimwidth($ver, 0, 255, '')];
+        $key = "$mgr|$name";
+        if (isset($rows[$key])) { return; }
+        $rows[$key] = [$mgr, mb_strimwidth($name, 0, 255, ''), mb_strimwidth($ver, 0, 255, '')];
     };
     foreach (preg_split('/\r?\n/', (string) ($lang['pip'] ?? '')) as $line) {
         if (preg_match('/^([A-Za-z0-9._-]+)==(\S+)$/', trim($line), $m)) { $add('pip', $m[1], $m[2]); }
