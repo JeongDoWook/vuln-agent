@@ -1294,7 +1294,7 @@ emit_nested_jars() {
 # 파일 수·깊이는 SCAN_MAX_FILES/SCAN_MAX_DEPTH 로 제한한다. sort 로 출력 순서를 고정해
 # 파일시스템 탐색 순서가 달라져도 같은 결과가 나오게 한다(content_hash 처닝 방지).
 collect_project_deps_installed() {
-  local root f name ver count=0
+  local root f name ver lic count=0
   for root in $PROJECT_SCAN_ROOTS; do
     [ -d "$root" ] || continue
     while IFS= read -r f; do
@@ -1531,7 +1531,15 @@ if [ "$VG_INV_REST" -gt 0 ]; then
 fi
 [ -s "$VG_INV" ] || rm -f "$VG_INV"
 if [ -s "$VG_LIC" ]; then
+  # fd3(VG_LIC) 는 collect_project_deps_installed 함수 마지막의 `| sort -u`(stdout 전용)를
+  #   우회해 나가므로 여기서 별도로 정렬·중복제거해야 한다 — 안 하면 content_hash 가 라이선스
+  #   반영은 맞는데(설계대로) 순서·중복이 스캔마다 흔들려 "변경 없음" 최적화가 무력화되고
+  #   매 스캔 전량 재저장+재매칭이 발생한다.
+  vg_lic_sorted=$(mktemp 2>/dev/null) && sort -u "$VG_LIC" > "$vg_lic_sorted" && mv "$vg_lic_sorted" "$VG_LIC"
   vg_lic_cut=$(mktemp 2>/dev/null) && head -c "$MAX_BYTES" "$VG_LIC" > "$vg_lic_cut" && mv "$vg_lic_cut" "$VG_LIC"
+  # head -c 가 줄 가운데를 자를 수 있다(VG_INV 와 동일 이유) → 다음 파서가 잘린 마지막 줄을
+  #   그대로 저장하지 않도록 개행을 채운다.
+  if [ -s "$VG_LIC" ] && [ -n "$(tail -c 1 "$VG_LIC")" ]; then printf '\n' >> "$VG_LIC"; fi
 fi
 [ -s "$VG_LIC" ] || rm -f "$VG_LIC"
 

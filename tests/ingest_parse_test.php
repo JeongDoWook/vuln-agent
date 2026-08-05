@@ -105,16 +105,16 @@ $eq('SBOM 해시', $sbom['meta']['ctr-a'][1] ?? null, hash('sha256', $cdx));
 $cdxLic = json_encode(['bomFormat'=>'CycloneDX','components'=>[
     ['name'=>'log4j-core','version'=>'2.14.1','purl'=>'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1',
      'licenses'=>[['license'=>['id'=>'Apache-2.0']]]],
-    // 같은 이름, 다른 버전 — dedup 키에 버전이 없으면 서로 덮어써 하나를 잃는다.
-    ['name'=>'log4j-core','version'=>'2.17.0','purl'=>'pkg:maven/org.apache.logging.log4j/log4j-core@2.17.0',
-     'licenses'=>[['expression'=>'MIT OR Apache-2.0']]],
 ]]);
 $sbomLic = vg_ingest_parse_sbom('ctr-b|cyclonedx|' . base64_encode($cdxLic));
-$eq('SBOM 라이선스: 버전 다르면 dedup 안 됨(2건 유지)', count($sbomLic['packages']), 2);
-$byVer = [];
-foreach ($sbomLic['packages'] as $p) { $byVer[$p[3]] = $p[5] ?? null; }
-$eq('SBOM 라이선스: license.id', $byVer['2.14.1'] ?? null, 'Apache-2.0');
-$eq('SBOM 라이선스: expression', $byVer['2.17.0'] ?? null, 'MIT OR Apache-2.0');
+$eq('SBOM 라이선스: license.id', $sbomLic['packages'][0][5] ?? null, 'Apache-2.0');
+
+$cdxExpr = json_encode(['bomFormat'=>'CycloneDX','components'=>[
+    ['name'=>'expr-pkg','version'=>'1.0','purl'=>'pkg:maven/org.example/expr-pkg@1.0',
+     'licenses'=>[['expression'=>'MIT OR Apache-2.0']]],
+]]);
+$sbomExpr = vg_ingest_parse_sbom('ctr-g|cyclonedx|' . base64_encode($cdxExpr));
+$eq('SBOM 라이선스: expression', $sbomExpr['packages'][0][5] ?? null, 'MIT OR Apache-2.0');
 
 $spdxDoc = json_encode(['spdxVersion'=>'SPDX-2.3','packages'=>[
     ['name'=>'requests','versionInfo'=>'2.19.1','externalRefs'=>[
@@ -123,24 +123,71 @@ $spdxDoc = json_encode(['spdxVersion'=>'SPDX-2.3','packages'=>[
     ['name'=>'noassert','versionInfo'=>'1.0','externalRefs'=>[
         ['referenceType'=>'purl','referenceLocator'=>'pkg:pypi/noassert@1.0'],
     ],'licenseConcluded'=>'NOASSERTION'],
+    // syft/trivy 는 보통 concluded=NOASSERTION 이고 declared 에 실값을 담는다 — fallback 검증.
+    ['name'=>'declared-only','versionInfo'=>'1.0','externalRefs'=>[
+        ['referenceType'=>'purl','referenceLocator'=>'pkg:pypi/declared-only@1.0'],
+    ],'licenseConcluded'=>'NOASSERTION','licenseDeclared'=>'MIT'],
 ]]);
 $sbomSpdx = vg_ingest_parse_sbom('ctr-c|spdx|' . base64_encode($spdxDoc));
 $byName = [];
 foreach ($sbomSpdx['packages'] as $p) { $byName[$p[2]] = $p[5] ?? null; }
 $eq('SBOM 라이선스: SPDX licenseConcluded', $byName['requests'] ?? null, 'Apache-2.0');
 $eq('SBOM 라이선스: NOASSERTION 은 빈값', $byName['noassert'] ?? null, '');
+$eq('SBOM 라이선스: concluded 없으면 declared 로 폴백', $byName['declared-only'] ?? null, 'MIT');
+
+// ── SBOM dedup 범위 축소(cid|mgr|name, 버전 제외) + 라이선스 병합 ───────────
+//   design-review 승인이었던 "dedup 키에 버전 포함"이 다중 버전(중첩 jar 등)을 전부 별도
+//   행으로 만들어 tb_container.pkg_count·finding 건수를 부풀렸다 — 이름까지만 dedup 하고
+//   라이선스가 비어 있을 때만 채우는 병합으로 좁힌다.
+$cdxMerge = json_encode(['bomFormat'=>'CycloneDX','components'=>[
+    ['name'=>'log4j-core','version'=>'2.14.1','purl'=>'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1',
+     'licenses'=>[['license'=>['id'=>'Apache-2.0']]]],
+    // 같은 이름, 다른 버전 — 이제는 첫 항목으로 병합돼야 한다(라이선스는 이미 채워졌으니 유지).
+    ['name'=>'log4j-core','version'=>'2.17.0','purl'=>'pkg:maven/org.apache.logging.log4j/log4j-core@2.17.0',
+     'licenses'=>[['expression'=>'MIT']]],
+]]);
+$sbomMerge = vg_ingest_parse_sbom('ctr-d|cyclonedx|' . base64_encode($cdxMerge));
+$eq('SBOM dedup: 같은 이름 다른 버전은 1건으로 병합', count($sbomMerge['packages']), 1);
+$eq('SBOM dedup: 버전은 첫 항목 유지', $sbomMerge['packages'][0][3] ?? null, '2.14.1');
+$eq('SBOM dedup: 라이선스가 이미 있으면 나중 값으로 안 덮음', $sbomMerge['packages'][0][5] ?? null, 'Apache-2.0');
+
+$cdxFill = json_encode(['bomFormat'=>'CycloneDX','components'=>[
+    ['name'=>'foo','version'=>'1.0','purl'=>'pkg:maven/org.example/foo@1.0'],   // 라이선스 없음
+    ['name'=>'foo','version'=>'2.0','purl'=>'pkg:maven/org.example/foo@2.0',
+     'licenses'=>[['license'=>['id'=>'MIT']]]],
+]]);
+$sbomFill = vg_ingest_parse_sbom('ctr-e|cyclonedx|' . base64_encode($cdxFill));
+$eq('SBOM dedup: 먼저 잡힌 라이선스 빈 항목은 나중 값으로 채움', $sbomFill['packages'][0][5] ?? null, 'MIT');
+
+// CycloneDX 복수 licenses[] 는 스펙상 동시적용(AND) 의미다 — OR 로 이으면 뜻이 뒤집힌다.
+$cdxMulti = json_encode(['bomFormat'=>'CycloneDX','components'=>[
+    ['name'=>'multi-lic','version'=>'1.0','purl'=>'pkg:maven/org.example/multi-lic@1.0',
+     'licenses'=>[['license'=>['id'=>'MIT']], ['license'=>['id'=>'Apache-2.0']]]],
+]]);
+$sbomMulti = vg_ingest_parse_sbom('ctr-f|cyclonedx|' . base64_encode($cdxMulti));
+$eq('SBOM 라이선스: 복수 licenses[] 는 AND 로 결합', $sbomMulti['packages'][0][5] ?? null, 'MIT AND Apache-2.0');
 
 // ── 언어 패키지 라이선스 스트림(pkg_license, 4필드) ─────────────────────────
 $lic = vg_ingest_parse_pkg_license(
     "pip|requests|2.19.1|Apache-2.0\n"
     . "composer|psr/log|3.0.2|MIT\n"
     . "bad-mgr|foo|1.0|MIT\n"          // 미지원 매니저 → 폐기
-    . "pip|onlythree|1.0"              // 필드 3개(라이선스 없음) → 폐기
+    . "pip|onlythree|1.0\n"            // 필드 3개(라이선스 없음) → 폐기
+    // 파이프 인젝션: name 에 '|' 가 섞여 필드가 5개로 밀린 오염 줄 → limit 없는 explode 로
+    //   정확히 4필드가 아니면 거부돼야 한다(예전엔 explode(...,4) 라 조용히 통과했다).
+    . "pip|evil|name|1.0|MIT\n"
+    // 자유서술 라이선스 — 정규화(별칭 매핑)를 거쳐 SPDX 로 저장돼야 한다.
+    . "pip|urllib3|2.0.7|BSD License\n"
+    // 화이트리스트를 통과 못 하는 오염값(저작권 문구 등, ':' 포함) → 거부.
+    . "pip|tainted|1.0|Copyright (c) 2024: all rights reserved"
 );
-$eq('pkg_license 2건(미지원 매니저·필드부족 제외)', count($lic), 2);
+$eq('pkg_license 3건(미지원 매니저·필드부족·인젝션·화이트리스트 위반 제외)', count($lic), 3);
 $licByKey = [];
 foreach ($lic as $r) { $licByKey["{$r[0]}|{$r[1]}|{$r[2]}"] = $r[3]; }
 $eq('pkg_license pip requests', $licByKey['pip|requests|2.19.1'] ?? null, 'Apache-2.0');
+$eq('pkg_license 파이프 인젝션 줄 거부', $licByKey['pip|evil|name'] ?? null, null);
+$eq('pkg_license 자유서술 표기 정규화(BSD License→BSD-3-Clause)', $licByKey['pip|urllib3|2.0.7'] ?? null, 'BSD-3-Clause');
+$eq('pkg_license 화이트리스트 위반 거부', $licByKey['pip|tainted|1.0'] ?? null, null);
 
 $attached = vg_ingest_attach_pkg_license(
     [['pip', 'requests', '2.19.1'], ['npm', 'lodash', '4.17.21']],
@@ -203,9 +250,16 @@ $eq('컨테이너 목록 1건', count($ctrList), 1);
 $eq('컨테이너 cid 키', isset($ctrList['api']), true);
 
 $ctrPkg = vg_ingest_parse_container_packages(
-    "cid|manager|name|version|source\napi|apk|openssl|3.1.4-r2|openssl\nbad|apk||1.0|src"
+    "cid|manager|name|version|source\napi|apk|openssl|3.1.4-r2|openssl\nbad|apk||1.0|src\n"
+    // source 필드에 '|' 가 섞인 오염 줄(파이프 인젝션 시도) — limit(5) 없으면 6번째 칸이
+    //   생겨 ingest_store.php 가 그 자리를 SBOM 전용 license 필드로 오인해 승격시킨다.
+    . 'api2|apk|curl|8.0.0|src|FAKE-LICENSE-INJECTED'
 );
-$eq('컨테이너 패키지 1건(name 없는 행 제외)', count($ctrPkg), 1);
+$eq('컨테이너 패키지 2건(name 없는 행 제외)', count($ctrPkg), 2);
+$byCid = [];
+foreach ($ctrPkg as $r) { $byCid[$r[0]] = $r; }
+$eq('컨테이너 패키지 파이프 인젝션: 필드가 5개로 고정됨', count($byCid['api2']), 5);
+$eq('컨테이너 패키지 파이프 인젝션: 6번째 칸(license) 미생성', $byCid['api2'][5] ?? null, null);
 
 $ctrProc = vg_ingest_parse_container_processes(
     "cid|pid|comm|user|exe_pkg|loaded_pkgs\napi|2100|nginx|root|nginx|openssl,busybox"
@@ -330,6 +384,15 @@ $eq('생소한 식별자는 unknown', vg_license_classify('Some-Custom-License')
 $eq('복합 표현식: copyleft 가 섞이면 copyleft(보수적 판정)', vg_license_classify('MIT OR GPL-3.0-only'), 'copyleft');
 $eq('복합 표현식: 전부 permissive 면 permissive', vg_license_classify('MIT OR Apache-2.0'), 'permissive');
 $eq('WITH 예외조항도 토큰 분리', vg_license_classify('GPL-2.0-only WITH Classpath-exception-2.0'), 'copyleft');
+
+// ── 라이선스 정규화(자유서술 별칭·괄호 표현식·'+' 접미사) ──────────────────
+$eq('별칭: BSD License → permissive', vg_license_classify('BSD License'), 'permissive');
+$eq('별칭: 대소문자 무관', vg_license_classify('bsd license'), 'permissive');
+$eq('별칭: Apache Software License → permissive', vg_license_classify('Apache Software License'), 'permissive');
+$eq('별칭: GNU General Public License v3 → copyleft', vg_license_classify('GNU General Public License v3'), 'copyleft');
+$eq("'+' 접미사: GPL-3.0+ → copyleft", vg_license_classify('GPL-3.0+'), 'copyleft');
+$eq('괄호 표현식: (MIT OR Apache-2.0) → permissive', vg_license_classify('(MIT OR Apache-2.0)'), 'permissive');
+$eq('괄호+copyleft 혼합: (MIT OR GPL-3.0-only) → copyleft(보수적)', vg_license_classify('(MIT OR GPL-3.0-only)'), 'copyleft');
 
 if ($fail === 0) {
     echo "ingest_parse: 전체 통과\n";

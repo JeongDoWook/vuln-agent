@@ -26,26 +26,31 @@ if (!function_exists('vg_rebuild_license_summary')) {
         vg_with_tx($pdo, function () use ($pdo) {
             $pdo->exec('DELETE FROM tb_package_license_summary');
 
+            // package_summary.php 와 같은 패턴: 벌크 INSERT...SELECT 로 만들고, risk 는 자연어
+            // 판정(vg_license_classify, PHP 순수함수)이 필요해 distinct license 값만 순회 UPDATE
+            // 한다 — 예전엔 GROUP BY 결과 행마다 PHP 루프로 단건 INSERT 를 돌려 웹 요청 경로에서
+            // 느렸다. tb_host.is_deleted=0 도 걸어야 한다 — 화면 목록(language-packages.php)엔
+            // 있는데 여기 없으면 삭제된 호스트의 패키지가 KPI 집계에 섞여 들어간다.
             $mgrPlaceholders = implode(',', array_fill(0, count(VG_LANG_MANAGERS), '?'));
-            $stmt = $pdo->prepare(
-                "SELECT p.manager, p.name, p.license, COUNT(*) AS pkg_count
+            $pdo->prepare(
+                "INSERT INTO tb_package_license_summary (manager, name, license, risk, pkg_count)
+                 SELECT p.manager, p.name, p.license, 'unknown', COUNT(*)
                    FROM tb_package p
                    JOIN " . vg_latest_scan_subq() . " latest ON latest.mid = p.scan_id
-                  WHERE p.is_deleted = 0 AND p.license IS NOT NULL AND p.license <> ''
+                   JOIN tb_host h ON h.host_id = latest.host_id
+                  WHERE p.is_deleted = 0 AND h.is_deleted = 0
+                    AND p.license IS NOT NULL AND p.license <> ''
                     AND p.manager IN ($mgrPlaceholders)
                   GROUP BY p.manager, p.name, p.license"
-            );
-            $stmt->execute(VG_LANG_MANAGERS);
+            )->execute(VG_LANG_MANAGERS);
 
-            $ins = $pdo->prepare(
-                'INSERT INTO tb_package_license_summary (manager, name, license, risk, pkg_count)
-                 VALUES (?, ?, ?, ?, ?)'
-            );
-            foreach ($stmt as $row) {
-                $ins->execute([
-                    $row['manager'], $row['name'], $row['license'],
-                    vg_license_classify($row['license']), (int) $row['pkg_count'],
-                ]);
+            $licenses = $pdo->query('SELECT DISTINCT license FROM tb_package_license_summary')
+                ->fetchAll(PDO::FETCH_COLUMN);
+            if ($licenses) {
+                $upd = $pdo->prepare('UPDATE tb_package_license_summary SET risk = ? WHERE license = ?');
+                foreach ($licenses as $license) {
+                    $upd->execute([vg_license_classify($license), $license]);
+                }
             }
         });
     }

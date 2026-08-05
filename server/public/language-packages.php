@@ -34,8 +34,11 @@ try {
     $pdo = vg_pdo();
 
     // KPI·위험도 집계는 사전집계 테이블에서만 읽는다(원본 tb_package 재집계 금지).
+    // SUM(pkg_count) 를 쓴다 — COUNT(*) 는 (manager,name,license) 조합 종류 수라 목록 필터
+    // 건수(설치 인스턴스 수, SUM(pkg_count) 기준)와 단위가 달라 KPI 와 목록이 서로 다른
+    // 숫자를 보여줬다. pkg_count 컬럼을 여기서 실제로 사용해 통일한다.
     $summaryAt = (string) ($pdo->query('SELECT MAX(updated_at) FROM tb_package_license_summary')->fetchColumn() ?: '');
-    foreach ($pdo->query('SELECT risk, COUNT(*) AS c FROM tb_package_license_summary GROUP BY risk') as $r) {
+    foreach ($pdo->query('SELECT risk, SUM(pkg_count) AS c FROM tb_package_license_summary GROUP BY risk') as $r) {
         if (isset($riskCounts[$r['risk']])) { $riskCounts[$r['risk']] = (int) $r['c']; }
     }
 
@@ -50,8 +53,12 @@ try {
     $where  = "h.is_deleted = 0 AND p.is_deleted = 0 AND p.manager IN ($mgrPlaceholders)";
     $params = VG_LANG_MANAGERS;
     if ($q !== '') {
+        // LIKE 메타문자(%, _, \) 를 이스케이프해 사용자가 입력한 문자 그대로 매칭한다.
+        // MySQL LIKE 의 기본 이스케이프 문자가 backslash 라 addcslashes 만으로 충분하다.
+        // 접두 검색(뒤쪽 % 만)으로 제한해 idx_package_manager_name(manager, name) 을 탄다 —
+        // 앞쪽 와일드카드는 인덱스를 못 써 packages 40초 사고와 같은 무인덱스 스캔이 된다.
         $where .= ' AND p.name LIKE ?';
-        $params[] = '%' . $q . '%';
+        $params[] = addcslashes($q, '%_\\') . '%';
     }
     if ($manager !== '') {
         $where .= ' AND p.manager = ?';
@@ -66,16 +73,28 @@ try {
     $st->execute($params);
     $total = (int) $st->fetchColumn();
 
+    // 오프셋에 상한을 둔다 — 총 건수 기준 마지막 페이지를 넘어가지 못하게 clamp.
+    if ($total > 0) {
+        $page = min($page, (int) ceil($total / $perPage));
+    }
     $offset = ($page - 1) * $perPage;
     $st = $pdo->prepare(
         "SELECT h.host_id, h.fqdn, c.name AS container_name, p.manager, p.name, p.version, p.license,
                 COALESCE(sm.risk, 'unknown') AS risk, s.collected_at
            $from WHERE $where
-          ORDER BY p.name, h.fqdn, p.version
+          ORDER BY p.name, h.fqdn, p.version, p.package_id
           LIMIT $perPage OFFSET $offset"
     );
     $st->execute($params);
     $rows = $st->fetchAll();
+    // 표시용 위험도는 사전집계(요약) 조인이 아니라 vg_license_classify() 순수함수로 직접 계산한다
+    // — 페이지당 $perPage 행뿐이라 가볍고, 요약 테이블이 아직 그 (manager,name,license) 조합을
+    // 못 따라잡았어도("값은 있는데 뱃지는 미상") 항상 올바른 위험도를 보여준다. 필터(risk=)는
+    // 여전히 요약 테이블을 쓴다 — 최대 1분(스케줄러 주기) 지연은 감수한다.
+    foreach ($rows as &$row) {
+        $row['risk'] = vg_license_classify((string) ($row['license'] ?? ''));
+    }
+    unset($row);
 } catch (Throwable $e) {
     error_log('[language-packages] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';

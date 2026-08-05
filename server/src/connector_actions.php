@@ -10,7 +10,6 @@ require_once __DIR__ . '/db.php';      // vg_json_col — feeds.php 가 이미 �
 require_once __DIR__ . '/feeds.php';
 require_once __DIR__ . '/matcher.php';
 require_once __DIR__ . '/audit.php';
-require_once __DIR__ . '/license_summary.php';   // vg_rebuild_license_summary
 
 /**
  * 전제: **호출 전에 vg_csrf_check() 로 CSRF 검증이 끝나 있어야 한다.**
@@ -143,7 +142,9 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
                         foreach ($scans as $sid) { vg_match_scan($pdo, $sid); }
                     }
                     vg_rebuild_package_summary($pdo);
-                    vg_rebuild_license_summary($pdo);
+                    // 라이선스 요약은 여기서 돌리지 않는다 — DELETE→INSERT...SELECT 벌크라도
+                    // 웹 요청(동기 실행) 안에서 매번 도는 건 불필요하다. scheduler.php 가 1분마다
+                    // 무조건 재빌드하므로 최대 1분 지연으로 최신화된다(OSV 게이트 밖, license_summary.php 참고).
                 }
             } elseif (!empty($r['ok'])) {
                 // 조용히 건너뛰지 않는다 — 왜 재매칭이 안 돌았는지 화면에 드러나야 한다.

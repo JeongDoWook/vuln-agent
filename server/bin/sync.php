@@ -44,11 +44,17 @@ if (!empty($r['ok']) && (int) $r['upserted'] > 0) {
             foreach ($scans as $sid) { vg_match_scan($pdo, (int) $sid); }
         }
         vg_rebuild_package_summary($pdo);
-        vg_rebuild_license_summary($pdo);
         fwrite(STDOUT, "packages 요약 재빌드 완료\n");
     }
 } elseif (!empty($r['ok'])) {
     // 조용히 건너뛰지 않는다 — 왜 재매칭이 안 돌았는지 로그로 드러나야 한다.
     fwrite(STDOUT, "수집 0건 — 재매칭 생략\n");
+}
+
+// 라이선스 요약은 OSV 게이트 밖에서 무조건 실행한다 — 라이선스 데이터는 OSV 가 아니라
+//   에이전트 ingest 로만 들어오므로 OSV upserted>0 조건에 묶으면 KPI 카드가 영원히 0으로
+//   보인다(실측 확인됨). sync.php 는 수동 실행이라 매번 갱신해도 부담이 크지 않다.
+if (!empty($r['ok'])) {
+    vg_rebuild_license_summary($pdo);
 }
 exit(empty($r['ok']) ? 1 : 0);
