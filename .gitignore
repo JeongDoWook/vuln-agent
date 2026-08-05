@@ -52,3 +52,6 @@ Thumbs.db
 .vscode/
 *.log
 
+# go_deps_extract_test.sh 임시 fixture(trap 정상 종료 시 자동 삭제 — 비정상 종료 대비 안전망)
+tests/.tmp-go-deps.*
+
