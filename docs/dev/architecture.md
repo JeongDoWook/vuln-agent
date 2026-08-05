@@ -96,6 +96,16 @@ stale 값이 영구히 남는다).
 판정해 `tb_cce_finding`(PASS/FAIL/NA)에 저장한다 — CVE 가 아니라 **설정**(SSH root 로그인,
 패스워드 인증, UID 0 계정, SELinux/AppArmor, 방화벽)을 본다. 신규 수집은 하지 않는다.
 
+**SCA 라이선스 식별** 은 CVE 매칭과 별개 축이다. 에이전트가 SBOM(CycloneDX/SPDX, `SBOM_DIR`
+오프라인 입력)·pip `METADATA`·composer `installed.json` 에서 라이선스 문자열을 수집해 보내면,
+`src/license_risk.php`(`vg_license_classify`)가 SPDX 식별자·자유서술 별칭·복합 표현식(`OR`/`AND`)을
+permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결과를 `language-packages.php`
+에 보여준다. **npm/gem/maven/nuget/cargo 매니페스트 직접 파싱이나 시그니처·바이너리 스캔으로는
+라이선스를 식별하지 않는다** — 위 세 소스가 없으면 미상(unknown)으로 남는다. 목록·KPI 는
+`tb_package_license_summary`(`src/license_summary.php`, OSV 커넥터 실행 시 재구성)만 읽는다 —
+`tb_package` 를 화면 요청마다 직접 GROUP BY 하면 packages.php 40초 사고(92만 행 무인덱스 재집계)와
+같은 문제가 재현된다.
+
 ---
 
 ## 3. CVE 피드 커넥터 (외부 소스 수집)
@@ -157,7 +167,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 
 다이어그램: [`docs/specs/diagrams/erd.puml`](../specs/diagrams/erd.puml)
 
-**범위**: 도메인 엔티티 **39개 전부**(= 전체 40테이블 − `tb_schema_migrations`)를 그린다.
+**범위**: 도메인 엔티티 **40개 전부**(= 전체 41테이블 − `tb_schema_migrations`)를 그린다.
 `tb_schema_migrations` 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
 엔티티가 많아 영역별 `package` 로 묶었다 — 수집·인벤토리 / CVE 도메인 / 벤더 판정 소스 /
 판정 결과 / 피드 운영·인증·감사. **실선은 FK 가 실제로 걸린 관계, 점선은 FK 없이
@@ -184,6 +194,7 @@ tb_vendor_unfixed·tb_kernel_cve/tb_kernel_cve_fix 는 스캔에 매달리지 �
 **정밀 판정 플랫폼**: tb_finding_evidence(판정 근거 구조화, tb_finding 1:1)·tb_collection_stage
 (수집 단계 완전성 — 단계 누락을 미탐 대신 경고로).
 tb_agent_replay_nonce 는 에이전트 재전송 공격 방지.
+tb_package_license_summary 는 SCA 라이선스 위험도 사전집계(tb_package.license 기반, tb_package_summary 와 같은 패턴).
 스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh) — ERD 범위 밖.*
 *모든 테이블에 감사 4컬럼(`created_at`/`updated_at`/`is_deleted`/`deleted_at`)이 통일되어 있다
 (다이어그램엔 `is_deleted` 만 표기, 나머지 생략). 삭제는 하드삭제 대신 `vg_soft_delete()` 로
