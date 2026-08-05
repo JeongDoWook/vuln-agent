@@ -314,8 +314,9 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 - [x] **SCA 라이선스 식별·관리** — `language-packages.php`(신규 화면). SBOM(CycloneDX/SPDX)·pip
       METADATA·composer installed.json 에서 라이선스를 식별해 permissive/copyleft/unknown 으로
       분류(`server/src/license_risk.php`), `tb_package.license` 컬럼 + 사전집계
-      `tb_package_license_summary`(`server/src/license_summary.php`, OSV 커넥터 실행 시 갱신 —
-      packages.php 40초 사고 재발 방지와 같은 패턴).
+      `tb_package_license_summary`(`server/src/license_summary.php`, 스케줄러가 매 틱 무조건 갱신 —
+      OSV 게이트와 무관하다. 원래는 OSV 커넥터 실행 시에만 갱신했는데, OSV 가 미등록/0건인 동안
+      KPI 카드가 영구히 0으로 보이는 결함이 있어 PR#468 리뷰에서 뺐다).
 - [x] **벤더 판정 조회 화면** — `vendor.php`. 벤더 데이터(debtracker·rhoval·rhunfixed·ubuntuoval·kcve)는
       지금까지 매처가 억제에만 썼고, 억제가 의심스러우면 DB 에 직접 붙어야 했다. 원본을 소스 필터와 함께
       한 화면에서 보여줘 **억제 근거를 사람이 확인할 수 있게** 했다(설명가능성 — 차별점 ③의 연장).

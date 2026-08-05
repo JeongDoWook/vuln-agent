@@ -7,7 +7,8 @@ declare(strict_types=1);
  *   dpkg/rpm/apk 라 언어 패키지가 애초에 안 뜬다)는 건드리지 않고 별도 화면으로 신설했다.
  *   라이선스 값의 소스는 v1 기준 SBOM(CycloneDX/SPDX) + pip METADATA + composer installed.json
  *   뿐이다(ingest_parse.php 참고) — 그 외 매니저는 라이선스 없이 이름/버전만 보인다.
- *   KPI·위험도 필터는 사전집계(tb_package_license_summary, OSV 커넥터 실행 시 갱신)만 읽는다 —
+ *   KPI·위험도 필터는 사전집계(tb_package_license_summary, 스케줄러 매 틱 무조건 갱신 — OSV 게이트와
+ *   무관, license_summary.php 참고)만 읽는다 —
  *   tb_package 는 스캔마다 누적되는 원본이라 여기 직접 필터를 걸면 packages 40초 사고가 재현된다.
  */
 

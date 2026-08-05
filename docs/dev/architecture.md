@@ -102,7 +102,9 @@ stale 값이 영구히 남는다).
 permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결과를 `language-packages.php`
 에 보여준다. **npm/gem/maven/nuget/cargo 매니페스트 직접 파싱이나 시그니처·바이너리 스캔으로는
 라이선스를 식별하지 않는다** — 위 세 소스가 없으면 미상(unknown)으로 남는다. 목록·KPI 는
-`tb_package_license_summary`(`src/license_summary.php`, OSV 커넥터 실행 시 재구성)만 읽는다 —
+`tb_package_license_summary`(`src/license_summary.php`, 스케줄러가 매 틱 무조건 재구성 — OSV 게이트와
+무관하다. tb_package_summary 와 달리 OSV 실행에 안 묶은 이유는 라이선스 데이터가 OSV 가 아니라
+에이전트 ingest 로 들어오기 때문이다)만 읽는다 —
 `tb_package` 를 화면 요청마다 직접 GROUP BY 하면 packages.php 40초 사고(92만 행 무인덱스 재집계)와
 같은 문제가 재현된다.
 
