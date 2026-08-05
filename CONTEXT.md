@@ -137,7 +137,7 @@ vuln-agent/
 │   ├── public/   # ingest·agent-poll/progress·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
 │   │             #   packages/package/advisories/advisory/assets/asset-packages/connectors/users/user/permissions/api-tokens/
 │   │             #   agent-tokens/activity/profile + vendor(벤더 판정 근거)/
-│   │             #   compliance_rules·compliance_rule(SSG 룰셋 카탈로그) (웹)
+│   │             #   compliance_rules·compliance_rule(SSG 룰셋 카탈로그)/compliance(ISMS-P·ISO 27001 매핑) (웹)
 │   │             #   agent-dl.php — 에이전트 설치 파일 배포(자산 화면 설치 모달의 다운로드 대상)
 │   │             #   process.html — 프로세스 소개(로그인 불필요, /process.html 로 공유)
 │   ├── src/      # config·db·auth(RBAC)·view·matcher(+백포트억제)·feeds·cce·apitoken·audit(감사로그·소프트삭제)
@@ -352,6 +352,12 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
       바꾸고 세션 락을 오래 쥔다(E2E 는 폼을 채우기만 하고 제출하지 않는다).
       브라우저 기동이 느려 pre-push 게이트에는 넣지 않았다
       (CI 가 없어 훅이 곧 매 push 다) — opt-in 으로 직접 돌린다.
+- [x] **KISA ISMS-P·ISO 27001 컴플라이언스 매핑** — `compliance.php`(신규 화면). 이미 가진
+      findings(심각도·KEV·no_fix·needs_restart)·자산 연결상태·`tb_cce_finding`(설정 취약) 데이터만
+      으로 자동판정 가능한 통제 3개(패치관리/정보자산 식별/보안시스템 운영)를 SLA 기준일(KEV 15일·
+      CRITICAL 30일·HIGH 60일, 업계 관행값) 대비 위반 건수로 판정한다. 정책·승인이력처럼 사람이
+      심사해야 하는 통제는 판정 없이 체크리스트로만 노출한다(vuln-agent 데이터로 못 채우는 걸
+      억지로 채우지 않는다 — 이 기능의 의도적 한계). 새 테이블·ingest 변경 없는 순수 조회 화면.
 
 > 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·백포트 억제·KEV/EPSS·설명가능성).
 > Python AI 문서생성은 본체 범위에서 제외 — Export API 로 결과만 넘긴다.
