@@ -70,26 +70,6 @@ $eq('maven 좌표', $byKey['maven|org.apache.logging.log4j:log4j-core'] ?? null,
 $eq('nuget 패키지', $byKey['nuget|Newtonsoft.Json'] ?? null, '13.0.3');
 $eq('cargo crate', $byKey['cargo|ripgrep'] ?? null, '14.1.1');
 
-// ── 언어 패키지: inventory 신뢰도(weak) 우선순위 ────────────────────────────
-//   weak = 선언 파일(go.mod/requirements.txt/pom.xml) 유래. 이미 잡힌 값을 덮지 못한다.
-//   그 외(설치본 조회)는 예전 그대로 나중 값이 이긴다.
-$prio = vg_ingest_parse_langpkgs([
-    'pip'       => "requests==2.19.1\nurllib3==1.26.5",
-    'inventory' => "pip|requests|99.0.0|weak\n"          // weak → 설치본 2.19.1 유지
-                 . "pip|urllib3|1.26.18\n"               // non-weak → 덮어쓴다(기존 동작)
-                 . "go|example.com/x|v1.2.3|weak\n"      // 경쟁 없음 → 채택
-                 . "maven|bad:coord|1.0|garbage\n"       // 4번째 필드가 weak 아님 → 오염 줄로 폐기
-                 . "maven|inj|ect|1.0|weak\n"            // name 에 '|' → 자리 밀림 → 폐기
-                 . "unknownmgr|foo|1.0",                 // 미지원 매니저 → 폐기
-]);
-$prioKey = [];
-foreach ($prio as $r) { $prioKey[$r[0] . '|' . $r[1]] = $r[2]; }
-$eq('weak 는 설치본을 덮지 않음', $prioKey['pip|requests'] ?? null, '2.19.1');
-$eq('non-weak 는 예전대로 덮어씀', $prioKey['pip|urllib3'] ?? null, '1.26.18');
-$eq('weak 라도 경쟁 없으면 채택', $prioKey['go|example.com/x'] ?? null, 'v1.2.3');
-$eq('4번째 필드 오염 줄 폐기', $prioKey['maven|bad:coord'] ?? null, null);
-$eq('파이프 인젝션 줄 폐기', count($prio), 3);
-
 // ── CycloneDX/SPDX SBOM ──────────────────────────────────────────────────
 $cdx = json_encode(['bomFormat'=>'CycloneDX','components'=>[
     ['name'=>'log4j-core','version'=>'2.14.1','purl'=>'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1'],

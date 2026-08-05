@@ -56,16 +56,10 @@ function vg_ingest_parse_origins(string $originsText): array
 function vg_ingest_parse_langpkgs(array $lang): array
 {
     $rows = [];
-    // $weak = 선언 파일(go.mod/requirements.txt/pom.xml)에서 읽은 "보충" 값. 설치본이 아니라
-    // 선언이라 실제 배포 버전과 다를 수 있고, 스캔 루트에 파일 한 줄만 심어도 만들어낼 수 있다 —
-    // 그래서 이미 다른 소스가 잡은 값이 있으면 절대 덮어쓰지 않는다.
-    // 그 외 소스(설치본 조회)는 예전 그대로 나중 값이 이긴다.
-    $add = static function (string $mgr, string $name, string $ver, bool $weak = false) use (&$rows): void {
+    $add = static function (string $mgr, string $name, string $ver) use (&$rows): void {
         $name = trim($name); $ver = trim($ver);
         if ($name === '' || $ver === '') { return; }
-        $key = "$mgr|$name";
-        if ($weak && isset($rows[$key])) { return; }
-        $rows[$key] = [$mgr, mb_strimwidth($name, 0, 255, ''), mb_strimwidth($ver, 0, 255, '')];
+        $rows["$mgr|$name"] = [$mgr, mb_strimwidth($name, 0, 255, ''), mb_strimwidth($ver, 0, 255, '')];
     };
     foreach (preg_split('/\r?\n/', (string) ($lang['pip'] ?? '')) as $line) {
         if (preg_match('/^([A-Za-z0-9._-]+)==(\S+)$/', trim($line), $m)) { $add('pip', $m[1], $m[2]); }
@@ -80,18 +74,10 @@ function vg_ingest_parse_langpkgs(array $lang): array
     foreach (preg_split('/\r?\n/', (string) ($lang['composer'] ?? '')) as $line) {
         if (preg_match('#^(\S+/\S+)\s+(\S+)#', trim($line), $m)) { $add('composer', $m[1], $m[2]); }
     }
-    // inventory: "manager|name|version" (+ 선언 파일 유래면 네 번째 필드 'weak').
-    // 필드가 4개인데 마지막이 'weak' 가 아니면 name/version 에 '|' 가 섞여 자리가 밀린 오염 줄이다 → 버린다.
-    $invMgrs = ['pip','npm','gem','composer','maven','nuget','cargo','go'];
     foreach (preg_split('/\r?\n/', (string) ($lang['inventory'] ?? '')) as $line) {
-        $f = explode('|', trim($line), 4);
-        $n = count($f);
-        if ($n < 3 || !in_array($f[0], $invMgrs, true)) { continue; }
-        if ($n === 4 && $f[3] !== 'weak') { continue; }
-        if (!preg_match('/^\S+$/', $f[1]) || !preg_match('/^\S+$/', $f[2])) { continue; }
-        $add($f[0], $f[1], $f[2], $n === 4);
-    }
-    foreach (preg_split('/\r?\n/', (string) ($lang['maven'] ?? '')) as $line) {
+        $f=explode('|',trim($line),3);
+        if(count($f)===3 && in_array($f[0],['pip','npm','gem','composer','maven','nuget','cargo','go'],true)) { $add($f[0],$f[1],$f[2]); }
+    }    foreach (preg_split('/\r?\n/', (string) ($lang['maven'] ?? '')) as $line) {
         if (preg_match('/^([^:\s]+:[^:\s]+)\s+(\S+)$/', trim($line), $m)) { $add('maven', $m[1], $m[2]); }
     }
     foreach (preg_split('/\r?\n/', (string) ($lang['nuget'] ?? '')) as $line) {

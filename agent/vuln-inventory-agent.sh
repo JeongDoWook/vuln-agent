@@ -38,9 +38,6 @@ CPU_QUOTA="${CPU_QUOTA:-10%}"         # 기본 CPU 상한(4코어 호스트 전�
 MEM_MAX="${MEM_MAX:-300M}"             # 기본 메모리 상한
 SBOM_DIR="${SBOM_DIR:-/opt/vuln-agent/sbom}" # 선택적 CycloneDX/SPDX 입력 디렉터리
 PROJECT_SCAN_ROOTS="${PROJECT_SCAN_ROOTS:-/opt /srv /app /usr/local /var/lib/tomcat* /usr/share/tomcat*}"
-SCAN_MAX_FILES="${SCAN_MAX_FILES:-3000}"     # 프로젝트 의존성 스캔 파일 상한(패스별로 각각 적용)
-SCAN_MAX_DEPTH="${SCAN_MAX_DEPTH:-8}"        # 프로젝트 의존성 스캔 디렉터리 깊이 상한
-PROJECT_SCAN_TIMEOUT="${PROJECT_SCAN_TIMEOUT:-300}" # 프로젝트 의존성 스캔 전체 상한(초)
 DO_CHANGELOG=1                        # 핵심 패키지 CVE changelog 수집 여부
 DO_LIMIT="${AGENT_LIMIT:-1}"          # 기본 cgroup 리밋 사용(AGENT_LIMIT=0 으로만 해제)
 OUT=""
@@ -1290,15 +1287,14 @@ emit_nested_jars() {
   done < <(unzip -Z1 "$archive" 2>/dev/null|grep -E '(^|/)(BOOT-INF/lib|WEB-INF/lib|lib)/[^/]*\.jar$'|head -200)
 }
 
-# 설치본에서 직접 읽는 고신뢰 소스 — METADATA/lock/jar. 출력: manager|name|version
-# 파일 수·깊이는 SCAN_MAX_FILES/SCAN_MAX_DEPTH 로 제한한다. sort 로 출력 순서를 고정해
-# 파일시스템 탐색 순서가 달라져도 같은 결과가 나오게 한다(content_hash 처닝 방지).
-collect_project_deps_installed() {
-  local root f name ver count=0
+# Project-local dependencies missed by global package-manager commands.
+# Output: manager|name|version. File count/depth is bounded for predictable load.
+collect_project_dependencies() {
+  local root f name ver group count=0
   for root in $PROJECT_SCAN_ROOTS; do
     [ -d "$root" ] || continue
     while IFS= read -r f; do
-      count=$((count+1)); [ "$count" -le "$SCAN_MAX_FILES" ] || break 2
+      count=$((count+1)); [ "$count" -le 3000 ] || return 0
       case "$f" in
         */METADATA) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);[ -n "$name" ]&&[ -n "$ver" ]&&printf 'pip|%s|%s\n' "$name" "$ver";;
         */Cargo.lock) awk 'BEGIN{n=""}/^name = /{gsub(/^name = "|"$/,"",$0);n=$0}/^version = /{gsub(/^version = "|"$/,"",$0);if(n!="")print "cargo|"n"|"$0}' "$f";;
@@ -1308,85 +1304,7 @@ collect_project_deps_installed() {
         *.jar) emit_jar_meta "$f" "$(basename "$f")"; emit_nested_jars "$f";;
         *.war|*.ear) emit_nested_jars "$f";;
       esac
-    done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -"$SCAN_MAX_FILES")
-  done | sort -u
-}
-
-# 선언 파일에서 읽는 보충 소스 — go.mod/requirements.txt/pom.xml.
-# 출력: manager|name|version|weak. 실제 설치본이 아니라 "선언"이라 중앙(vg_ingest_parse_langpkgs)이
-# 이 표식을 보고 다른 소스가 이미 잡은 값을 덮어쓰지 않게 한다.
-# 파일 예산은 위 패스와 별도로 센다 — jar 많은 호스트에서 이 패스가 통째로 굶지 않도록.
-collect_project_deps_declared() {
-  local root f count=0
-  for root in $PROJECT_SCAN_ROOTS; do
-    [ -d "$root" ] || continue
-    while IFS= read -r f; do
-      count=$((count+1)); [ "$count" -le "$SCAN_MAX_FILES" ] || break 2
-      case "$f" in
-        */go.mod) awk '
-          /^(replace|exclude)[[:space:]]*\(/{skipblock=1;next}
-          skipblock&&/^\)/{skipblock=0;next}
-          skipblock{next}
-          /^require[[:space:]]*\(/{inblock=1;next}
-          inblock&&/^\)/{inblock=0;next}
-          inblock{
-            if($0 ~ /\/\/[ \t]*indirect/) next
-            line=$0; sub(/\/\/.*/,"",line); gsub(/^[ \t]+|[ \t]+$/,"",line)
-            if(line!=""){n=split(line,a,/[ \t]+/); if(n>=2&&a[1]!=""&&a[2]!="") print "go|"a[1]"|"a[2]"|weak"}
-            next
-          }
-          /^require[[:space:]]+[^(]/{
-            if($0 ~ /\/\/[ \t]*indirect/) next
-            line=$0; sub(/^require[ \t]+/,"",line); sub(/\/\/.*/,"",line); gsub(/^[ \t]+|[ \t]+$/,"",line)
-            n=split(line,a,/[ \t]+/); if(n>=2&&a[1]!=""&&a[2]!="") print "go|"a[1]"|"a[2]"|weak"
-          }
-        ' "$f";;
-        */requirements.txt) awk '
-          {
-            line=$0
-            sub(/#.*/,"",line)                 # 주석
-            sub(/;.*/,"",line)                 # 환경 마커
-            sub(/[ \t]*\\[ \t]*$/,"",line)     # 줄이음 백슬래시
-            sub(/[ \t]--.*$/,"",line)          # --hash=sha256:... 등 옵션
-            gsub(/^[ \t]+|[ \t]+$/,"",line)
-            if(line=="") next
-            if(line ~ /^-/) next               # -e / -r / 옵션만 있는 줄
-            if(line ~ /git\+/) next
-            if(line !~ /==/) next
-            if(line ~ /[<>~!]/) next
-            n=split(line,parts,"==")
-            if(n!=2) next
-            name=parts[1]; ver=parts[2]
-            sub(/^=+/,"",ver)                  # === (arbitrary equality)
-            sub(/[ \t].*$/,"",ver)             # 첫 공백 뒤는 버림
-            sub(/\[.*\]/,"",name); gsub(/^[ \t]+|[ \t]+$/,"",name)
-            if(name!=""&&ver!="") print "pip|"name"|"ver"|weak"
-          }
-        ' "$f";;
-        */pom.xml) awk '
-          # <exclusions>(제외 목록)·<dependencyManagement>(버전만 선언, 실제 의존 아님) 안의
-          # 좌표가 부모 <dependency> 의 g/a/v 를 덮어쓰면 엉뚱한 패키지가 잡힌다 → 그 구간은 건너뛴다.
-          {
-            line=$0
-            if(line ~ /<dependencyManagement>/) indm=1
-            if(line ~ /<exclusions>/) inex=1
-            if(line ~ /<dependency>/ && !indm && !inex){ inb=1; g="";a="";v="";sc="" }
-            if(inb && !inex && !indm){
-              if(match(line,/<groupId>[^<]*<\/groupId>/)){t=substr(line,RSTART,RLENGTH);gsub(/<\/?groupId>/,"",t);gsub(/^[ \t]+|[ \t]+$/,"",t);g=t}
-              if(match(line,/<artifactId>[^<]*<\/artifactId>/)){t=substr(line,RSTART,RLENGTH);gsub(/<\/?artifactId>/,"",t);gsub(/^[ \t]+|[ \t]+$/,"",t);a=t}
-              if(match(line,/<version>[^<]*<\/version>/)){t=substr(line,RSTART,RLENGTH);gsub(/<\/?version>/,"",t);gsub(/^[ \t]+|[ \t]+$/,"",t);v=t}
-              if(match(line,/<scope>[^<]*<\/scope>/)){t=substr(line,RSTART,RLENGTH);gsub(/<\/?scope>/,"",t);gsub(/^[ \t]+|[ \t]+$/,"",t);sc=t}
-            }
-            if(line ~ /<\/dependency>/){
-              if(inb&&g!=""&&a!=""&&v!=""&&g!~/\$\{/&&a!~/\$\{/&&v!~/\$\{/&&g!~/\|/&&a!~/\|/&&v!~/\|/&&sc!="test"&&sc!="provided") print "maven|"g":"a"|"v"|weak"
-              inb=0
-            }
-            if(line ~ /<\/exclusions>/) inex=0
-            if(line ~ /<\/dependencyManagement>/) indm=0
-          }
-        ' "$f";;
-      esac
-    done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f \( -name 'go.mod' -o -name 'requirements.txt' -o -name 'pom.xml' \) 2>/dev/null|head -"$SCAN_MAX_FILES")
+    done < <(find "$root" -xdev -maxdepth 8 -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -3000)
   done | sort -u
 }
 # --- 매핑 힌트: 어떤 OVAL/보안트래커로 대조할지 자기설명적으로 기록 ---
@@ -1509,21 +1427,8 @@ have gem  && cap langpkg gem 'gem list 2>/dev/null'
 have composer && cap langpkg composer 'composer global show 2>/dev/null'
 have cargo && cap langpkg cargo 'cargo install --list 2>/dev/null'
 have dotnet && cap langpkg nuget 'dotnet tool list -g 2>/dev/null | awk "NR>2 && NF>=2 {print \$1,\$2}"'
-# 두 패스를 각각 자기 예산 안에서 자른다 — 한 스트림으로 이어 붙여 통째로 head -c 하면
-# jar 가 많은 호스트에서 고신뢰(설치본) 데이터가 뒤로 밀려 함께 잘린다.
-VG_INV="$TMP/langpkg__inventory.txt"
-export PROJECT_SCAN_ROOTS SCAN_MAX_FILES SCAN_MAX_DEPTH
-export -f have emit_jar_meta emit_nested_jars collect_project_deps_installed collect_project_deps_declared
-timeout -k 2 "$PROJECT_SCAN_TIMEOUT" bash -c collect_project_deps_installed 2>/dev/null \
-  | head -c "$MAX_BYTES" > "$VG_INV" || true
-# head -c 가 줄 가운데를 자를 수 있다 → 다음 패스 첫 줄과 붙어 엉뚱한 좌표가 되지 않게 개행을 채운다.
-if [ -s "$VG_INV" ] && [ -n "$(tail -c 1 "$VG_INV")" ]; then printf '\n' >> "$VG_INV"; fi
-VG_INV_REST=$(( MAX_BYTES - $(wc -c < "$VG_INV" 2>/dev/null || echo 0) ))
-if [ "$VG_INV_REST" -gt 0 ]; then
-  timeout -k 2 "$PROJECT_SCAN_TIMEOUT" bash -c collect_project_deps_declared 2>/dev/null \
-    | head -c "$VG_INV_REST" >> "$VG_INV" || true
-fi
-[ -s "$VG_INV" ] || rm -f "$VG_INV"
+collect_project_dependencies | head -c "$MAX_BYTES" > "$TMP/langpkg__inventory.txt" 2>/dev/null || true
+[ -s "$TMP/langpkg__inventory.txt" ] || rm -f "$TMP/langpkg__inventory.txt"
 
 # ==================================================================
 # 7) 컨테이너 이미지 (이미지별 CVE 매핑)

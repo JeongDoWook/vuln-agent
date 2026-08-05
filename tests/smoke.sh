@@ -273,13 +273,6 @@ else
   no "Go 바이너리 의존성 추출 회귀"
 fi
 
-printf "\n[project_deps_parser]\n"
-if bash "$ROOT/tests/project_deps_parser_test.sh"; then
-  ok "go.mod·requirements.txt·pom.xml 파서 (exclusions·scope·--hash 배제)"
-else
-  no "프로젝트 선언 파일 파서 회귀"
-fi
-
 # --- debtracker 단위 테스트 ---------------------------------------------------
 # 데비안 보안 트래커 파서·판정(백포트 억제 근거). 느슨하면 오탐이 남고, 빡빡하면 진짜 취약점을
 # "고쳐졌다"고 지운다(미탐). 규칙을 debsecan 원본과 대조해 옮겼으므로 회귀를 여기서 막는다.
