@@ -793,6 +793,11 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .chart__pt--last.tone-cpu { fill: var(--high); }
 .chart__pt:hover { r: 4.5; }
 
+/* 회차별 신규·해결 다이버징 막대(추이 탭) — 0 기준선 위/아래로만 갈라 그리므로 톤 색만 지정. */
+.chart__bar { shape-rendering: crispEdges; }
+.chart__bar.tone-crit { fill: var(--crit); }
+.chart__bar.tone-ok   { fill: var(--ok); }
+
 /* 심각도 구성 막대(가로 누적) — 표의 한 행에서 "누가 더 나쁜지" 를 눈으로 보게 한다.
  * 폭은 PHP 가 인라인 style="width:N%" 로 준다(값이라서 CSS 가 가질 수 없다). */
 .riskbar { display: flex; gap: 2px; height: 5px; margin-bottom: .35rem; max-width: 190px; }
