@@ -496,6 +496,19 @@ assert_contains "$catalogpackages" '/package.php?name=glibc' "취약 영향 패�
 packageurl=$(grep -oE '/package.php\?name=glibc[^" ]*' <<<"$catalogpackages" | head -1 | sed 's/&amp;/\&/g')
 packagedetail=$(curl_ -s -b "$JAR" "$BASE$packageurl")
 assert_contains "$packagedetail" 'CVE-2023-4911' "패키지 상세에서 관련 CVE 조회"
+
+# --- 패키지 화면 서브탭(os/lang) ---------------------------------------------
+#   language-packages.php 는 packages.php 의 언어 탭으로 흡수됐다 — 옛 링크는 쿼리스트링을
+#   유지한 채 302 리다이렉트돼야 하고, 잘못된 tab 값은 조용히 OS 탭으로 떨어져야 한다.
+printf "\n[패키지 서브탭]\n"
+langredirect=$(curl_ -s -o /dev/null -w '%{http_code} %{redirect_url}' "$BASE/language-packages.php?q=test")
+assert_contains "$langredirect" '302' "옛 언어 패키지 화면 → 302 리다이렉트"
+assert_contains "$langredirect" 'tab=lang' "리다이렉트가 언어 탭으로 이동"
+assert_contains "$langredirect" 'q=test' "리다이렉트가 기존 쿼리스트링(q) 유지"
+langtabbody=$(curl_ -s -b "$JAR" "$BASE/packages.php?tab=lang")
+assert_contains "$langtabbody" "언어 패키지" "언어 탭 응답에 언어 패키지·라이선스 문구 포함"
+badtabbody=$(curl_ -s -b "$JAR" "$BASE/packages.php?tab=zzz")
+assert_contains "$badtabbody" 'class="on" href="?tab=os">OS 패키지' "잘못된 tab 값은 OS 탭으로 안전하게 폴백"
 hostmanage=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$hostmanage" 'name="action" value="host_delete"' "자산 상세에 관리자 삭제 작업 표시"
 assert_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=packages" "자산 목록 패키지 수가 설치 패키지 탭에 연결"

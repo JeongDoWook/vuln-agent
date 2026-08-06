@@ -311,7 +311,8 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 - [x] **SCA 언어 패키지 파서 확장** — `go.mod`/`requirements.txt`/`pom.xml` 직접 파싱을 에이전트에
       추가(설치본이 없는 환경 보충). 8개 언어 생태계 매칭 자체는 새 기능이 아니라 기존 OSV
       커넥터(`vg_osv_lang_queries`)가 이미 하던 일이다.
-- [x] **SCA 라이선스 식별·관리** — `language-packages.php`(신규 화면). SBOM(CycloneDX/SPDX)·pip
+- [x] **SCA 라이선스 식별·관리** — `/packages.php?tab=lang`(언어 패키지·라이선스 탭, 옛
+      `language-packages.php` 는 흡수 후 리다이렉트만 남음). SBOM(CycloneDX/SPDX)·pip
       METADATA·composer installed.json 에서 라이선스를 식별해 permissive/copyleft/unknown 으로
       분류(`server/src/license_risk.php`), `tb_package.license` 컬럼 + 사전집계
       `tb_package_license_summary`(`server/src/license_summary.php`, 스케줄러가 매 틱 무조건 갱신 —

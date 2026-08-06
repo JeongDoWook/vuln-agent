@@ -25,8 +25,17 @@ const VG_PKG_SORTS = [
     'package' => ['col' => 'package_name', 'label' => '패키지명순'],
 ];
 
+// 서브탭 정의 — "os/lang 두 개" 라는 사실을 여기 하나로만 둔다. 화이트리스트 검증·
+//   vg_subtabs() 렌더·hidden 필드 값이 전부 이 상수를 참조한다. 세 번째 탭을 추가할 때
+//   여기 한 줄만 늘리면 된다. 각 탭 전용 필터명(clear)은 다른 탭으로 넘어갈 때 비워서
+//   탭 간 검색어 의미 충돌(부분일치 vs 접두일치)이 새지 않게 한다.
+const VG_PKG_TABS = [
+    'os'   => ['label' => 'OS 패키지', 'clear' => ['q', 'manager', 'risk']],
+    'lang' => ['label' => '언어 패키지·라이선스', 'clear' => ['q', 'eco', 'sort']],
+];
+
 $tab = (string) ($_GET['tab'] ?? 'os');
-if (!in_array($tab, ['os', 'lang'], true)) { $tab = 'os'; }
+if (!isset(VG_PKG_TABS[$tab])) { $tab = 'os'; }
 
 $err = null;
 $page = vg_page();
@@ -68,8 +77,10 @@ try {
         $where  = '1=1';
         $params = [];
         if ($q !== '') {
+            // 언어 탭과 동일하게 LIKE 메타문자(%, _, \)를 이스케이프해 사용자가 입력한
+            // 문자 그대로 매칭한다(부분일치라 앞뒤 % 는 그대로 둔다).
             $where .= ' AND package_name LIKE ?';
-            $params[] = '%' . $q . '%';
+            $params[] = '%' . addcslashes($q, '%_\\') . '%';
         }
         if ($eco !== '') {
             $where .= ' AND ecosystem = ?';
@@ -80,6 +91,10 @@ try {
         $stmt->execute($params);
         $total = (int) $stmt->fetchColumn();
 
+        // 오프셋에 상한을 둔다 — 언어 탭과 동일하게 총 건수 기준 마지막 페이지를 넘어가지 못하게 clamp.
+        if ($total > 0) {
+            $page = min($page, (int) ceil($total / $perPage));
+        }
         $offset = ($page - 1) * $perPage;
         $col = VG_PKG_SORTS[$sort]['col'];
         $stmt = $pdo->prepare(
@@ -87,9 +102,14 @@ try {
                FROM tb_package_summary
               WHERE $where
               ORDER BY $col DESC, package_name ASC
-              LIMIT $perPage OFFSET $offset"
+              LIMIT ? OFFSET ?"
         );
-        $stmt->execute($params);
+        foreach ($params as $i => $v) {
+            $stmt->bindValue($i + 1, $v);
+        }
+        $stmt->bindValue(count($params) + 1, $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(count($params) + 2, $offset, PDO::PARAM_INT);
+        $stmt->execute();
         $rows = $stmt->fetchAll();
     } else {
         // KPI·위험도 집계는 사전집계 테이블에서만 읽는다(원본 tb_package 재집계 금지).
@@ -160,7 +180,7 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('패키지', 'packages');
+vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'packages');
 ?>
   <?php if ($tab === 'lang'): ?>
     <?php vg_page_title('언어 패키지 · 라이선스', 'SCA', 'pip/npm/gem/composer/maven/nuget/cargo/go 패키지의 라이선스를 확인합니다.', ['count' => $langTotal, 'count_label' => '건']); ?>
@@ -174,7 +194,18 @@ vg_header('패키지', 'packages');
     <?php endif; ?>
   <?php endif; ?>
 
-  <?php vg_subtabs(['os' => ['label' => 'OS 패키지'], 'lang' => ['label' => '언어 패키지·라이선스']], $tab); ?>
+  <?php
+  // 탭을 누르면 그 탭에 안 맞는 상대 탭 전용 필터(검색어 포함)를 비운다 — OS 탭의 부분일치
+  // q 와 언어 탭의 접두일치 q 는 의미가 달라 그대로 들고 가면 빈 결과가 뜬다(Critical #2).
+  $pkgTabs = [];
+  foreach (VG_PKG_TABS as $key => $def) {
+      $clear = array_fill_keys($def['clear'], null);
+      $clear['tab'] = $key;
+      $clear['page'] = null;
+      $pkgTabs[$key] = ['label' => $def['label'], 'href' => vg_qs($clear)];
+  }
+  vg_subtabs($pkgTabs, $tab);
+  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -195,7 +226,7 @@ vg_header('패키지', 'packages');
        'empty_label' => '전체 매니저', 'options' => $managerOptions],
       ['type' => 'select', 'name' => 'risk', 'selected' => $risk,
        'empty_label' => '전체 위험도', 'options' => $riskOptions],
-      ['type' => 'hidden', 'name' => 'tab', 'value' => 'lang'],
+      ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
   ]); ?>
 
   <?php
@@ -251,7 +282,7 @@ vg_header('패키지', 'packages');
        'options' => $ecoOptions],
       ['type' => 'select', 'name' => 'sort', 'selected' => $sort === 'cves' ? '' : $sort,
        'empty_label' => 'CVE 많은순', 'options' => ['epss' => 'EPSS 높은순', 'package' => '패키지명순']],
-      ['type' => 'hidden', 'name' => 'tab', 'value' => 'os'],
+      ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
   ]); ?>
 
   <?php
