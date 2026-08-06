@@ -195,6 +195,18 @@ package "CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)" {
         ' 사전집계 - packages.php 전용
     }
 
+    entity tb_package_license_summary {
+        manager : string <<PK>>
+        name : string <<PK>>
+        license : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        risk : string
+        pkg_count : int
+        updated_at : datetime
+        ' 사전집계 - language-packages.php 전용
+    }
+
     entity tb_advisory {
         advisory_id : bigint <<PK>>
         --
