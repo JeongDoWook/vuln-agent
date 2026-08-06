@@ -214,10 +214,12 @@ vg_header('탐지 결과', 'findings');
       ? [['type' => 'hidden', 'name' => 'scan_id', 'value' => (string) $scan['scan_id']]]
       : [['type' => 'select', 'name' => 'host', 'empty_label' => '전체 호스트',
           'selected' => $hostId > 0 ? (string) $hostId : '', 'options' => $hostOptions]];
+  // KPI 카드로 고른 등급(sev)은 검색 폼 필드가 아니라, 폼 제출 시 사라지지 않도록 hidden 으로 함께 싣는다.
+  if ($sev !== '') {
+      $toolbar[] = ['type' => 'hidden', 'name' => 'sev', 'value' => $sev];
+  }
   vg_toolbar(array_merge($toolbar, [
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
-      ['type' => 'select', 'name' => 'sev', 'empty_label' => '전체 등급', 'selected' => $sev,
-          'options' => array_combine($sevOptions, $sevOptions)],
       ['type' => 'select', 'name' => 'st', 'empty_label' => '전체 상태', 'selected' => $st,
           'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
       // 조치 가능성 — 벤더가 수정본을 안 낸 CVE 를 걸러 보거나, 그것만 모아 볼 수 있다.
