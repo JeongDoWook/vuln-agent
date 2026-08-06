@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# vuln-inventory-agent.sh  (v3.8)
+# vuln-inventory-agent.sh  (v3.9)
 # ==================================================================
 # Linux 취약점 매핑용 정밀 인벤토리 수집 에이전트
 #
@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.8"
+SCRIPT_VERSION="3.9"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
@@ -47,6 +47,12 @@ OUT=""
 SEND_URL="${SEND_URL:-}"             # --send : 중앙 수신 API(ingest.php) URL
 SEND_TOKEN="${SEND_TOKEN:-}"         # --token: 중앙에서 이 호스트에 발급한 인증 토큰
 COMMAND_ID=""                        # --command-id: agent-poll.php 의 due_command_id (완료 처리용)
+# _RELAUNCHED: cgroup 재실행 가드. env(export) 상속에만 기대지 않는다 — 일부 호스트(Jetson 계열
+# systemd-run)에서 export 로 세팅한 셸 환경변수가 D-Bus 로 시작되는 새 scope 에 전달되지 않아
+# export 만으로는 가드가 씹히고 무한 재귀 재실행에 빠지는 사례가 실측됐다. 그래서 --setenv 로도
+# 넘기고, 커맨드라인 플래그(--relaunched, 아래 getopts)로도 명시 전달해 인자로도 env 로도
+# 반드시 살아남게 이중화한다.
+_RELAUNCHED="${_RELAUNCHED:-0}"
 PAGESIZE="$(getconf PAGESIZE 2>/dev/null || echo 4096)"
 CLK_TCK="$(getconf CLK_TCK 2>/dev/null || echo 100)"
 
@@ -60,6 +66,7 @@ while [ $# -gt 0 ]; do
     --send)          SEND_URL="$2"; shift 2 ;;
     --token)         SEND_TOKEN="$2"; shift 2 ;;
     --command-id)    COMMAND_ID="$2"; shift 2 ;;
+    --relaunched)    _RELAUNCHED=1; shift ;;
     -h|--help)
       grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "알 수 없는 옵션: $1" >&2; exit 1 ;;
@@ -208,20 +215,23 @@ EOF
 
 # ---------- cgroup 스코프로 재실행: CPU/메모리 하드 리밋 ----------
 # root + systemd-run 이 있을 때만. 없으면 아래 nice/ionice 로 대체됨.
-if [ "$DO_LIMIT" = 1 ] && [ -z "${_RELAUNCHED:-}" ] && is_root && have systemd-run; then
-  export _RELAUNCHED=1
+if [ "$DO_LIMIT" = 1 ] && [ "$_RELAUNCHED" != 1 ] && is_root && have systemd-run; then
   echo ">> cgroup 리밋 적용(CPU=$CPU_QUOTA, MEM=$MEM_MAX) 후 재실행" >&2
   # 재실행 커맨드에 옵션을 그대로 실어야 한다. 예전엔 ${OUT:+…} ${DO_CHANGELOG:+} 만 붙여
   # --no-changelog·--send·--token 이 유실됐고, 특히 `--limit --send URL` 이면 전송이 통째로
   # 사라졌다(${DO_CHANGELOG:+} 는 항상 빈 문자열). 파싱된 값으로 인자를 배열로 재구성한다.
   # (--limit 은 다시 넘기지 않는다 — _RELAUNCHED 가드로 재진입이 막히고, 스코프는 이미 적용됨.)
-  relaunch_args=(--timeout "$CMD_TIMEOUT")
+  # _RELAUNCHED 가드는 --setenv 와 --relaunched 인자 양쪽으로 이중 전달한다: 일부 호스트
+  # (Jetson 계열)에서 export 로 세팅한 환경변수가 systemd-run --scope 로 시작되는 새 scope 에
+  # 상속되지 않아, env 에만 의존하면 가드가 씹히고 무한 재귀 재실행에 빠지는 사례가 실측됐다.
+  relaunch_args=(--relaunched --timeout "$CMD_TIMEOUT")
   [ -n "$OUT" ]                && relaunch_args+=(-o "$OUT")
   [ "$DO_CHANGELOG" = 0 ]      && relaunch_args+=(--no-changelog)
   [ -n "$SEND_URL" ]           && relaunch_args+=(--send "$SEND_URL")
   [ -n "$SEND_TOKEN" ]         && relaunch_args+=(--token "$SEND_TOKEN")
   [ -n "$COMMAND_ID" ]         && relaunch_args+=(--command-id "$COMMAND_ID")
   exec systemd-run --scope --quiet \
+      --setenv=_RELAUNCHED=1 \
       -p "CPUQuota=$CPU_QUOTA" -p "MemoryMax=$MEM_MAX" \
       -p CPUWeight=10 -p IOWeight=10 \
       "$0" "${relaunch_args[@]}"
