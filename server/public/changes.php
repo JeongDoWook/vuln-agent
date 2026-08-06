@@ -188,10 +188,11 @@ try {
     // 추이 탭 — 호스트 전체 합산은 findings 자기조인급 비용이 나므로(위 주석과 같은 이유)
     // 호스트를 선택했을 때만 계산한다. 전체는 안내 문구로 유도.
     if ($tab === 'trend') {
-        if ($hostId <= 0) {
+        if ($hostId <= 0 || !isset($hostOptions[$hostId])) {
+            // 존재하지 않거나 삭제된 호스트 id 는 존재하는 것처럼 라벨을 만들지 않는다 — 그냥 미선택으로 취급.
             $trendNeedsHost = true;
         } else {
-            $trendFqdn = $hostOptions[$hostId] ?? (string) $hostId;
+            $trendFqdn = $hostOptions[$hostId];
             $trendData = vg_trend_load($pdo, $hostId, $trendFqdn, $windowLimit);
             $trendRounds = $trendData['rounds'];
             $trendResolvedAll = $trendData['resolved'];
@@ -263,11 +264,19 @@ function vg_change_reason(string $type, ?array $pc): string {
 function vg_trend_load(PDO $pdo, int $hostId, string $fqdn, int $limit): array {
     $empty = ['rounds' => [], 'resolved' => [], 'summary' => ['new' => 0, 'up' => 0, 'down' => 0, 'resolved' => 0]];
 
+    // tb_scan_run 은 is_deleted 컬럼이 없다 — 삭제된 호스트·스캔의 실행 이력이 그대로 남아 있으므로
+    // 반드시 tb_host/tb_scan 과 조인해 살아있는지 확인해야 한다(그렇지 않으면 접근통제 우회).
     $st = $pdo->prepare(
-        'SELECT scan_run_id, scan_id, collected_at
-           FROM tb_scan_run WHERE host_id = ? ORDER BY scan_run_id DESC LIMIT ' . $limit
+        'SELECT r.scan_run_id, r.scan_id, r.collected_at
+           FROM tb_scan_run r
+           JOIN tb_host h ON h.host_id = r.host_id AND h.is_deleted = 0
+           JOIN tb_scan s ON s.scan_id = r.scan_id AND s.is_deleted = 0
+          WHERE r.host_id = :hid
+          ORDER BY r.scan_run_id DESC LIMIT :lim'
     );
-    $st->execute([$hostId]);
+    $st->bindValue(':hid', $hostId, PDO::PARAM_INT);
+    $st->bindValue(':lim', $limit, PDO::PARAM_INT);
+    $st->execute();
     $rounds = array_reverse($st->fetchAll(PDO::FETCH_ASSOC));   // 오래된 → 최신(차트는 좌→우)
     if (!$rounds) { return $empty; }
 

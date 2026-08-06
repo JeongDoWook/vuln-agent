@@ -163,11 +163,14 @@ function vg_nice_max(int $raw): int {
  * 0~100% 로 고정할 수 없는 건수라 vg_nice_max() 로 데이터 범위에 맞춘 축을 잡는다.
  *   $rounds: changes.php 의 vg_trend_load() 결과(오래된→최신 순). 'collected_at'·'unresolved'·'round' 사용.
  */
-function vg_count_trend(array $rounds, string $tone = 'cpu'): void {
-    $pts = array_map(
-        static fn($r) => ['t' => (string) $r['collected_at'], 'v' => (int) $r['unresolved'], 'round' => (int) $r['round']],
-        $rounds
-    );
+function vg_count_trend(array $rounds, string $tone = 'trend'): void {
+    // collected_at 이 NULL/빈값인 회차(에이전트 파싱 실패)는 건너뛴다 — vg_resource_trend() 와
+    // 같은 이유: 실제로 없는 시점을 0/오늘로 이으면 없는 데이터가 있는 것처럼 보인다.
+    $pts = [];
+    foreach ($rounds as $r) {
+        if ($r['collected_at'] === null || $r['collected_at'] === '') { continue; }
+        $pts[] = ['t' => (string) $r['collected_at'], 'v' => (int) $r['unresolved'], 'round' => (int) $r['round']];
+    }
     $n = count($pts);
     if ($n === 0) {
         vg_empty(['icon' => '📉', 'title' => '그래프를 그리기엔 회차 이력이 부족합니다.',
@@ -250,7 +253,12 @@ function vg_count_trend(array $rounds, string $tone = 'cpu'): void {
  *   $rounds: vg_trend_load() 결과(오래된→최신 순).
  */
 function vg_change_bars(array $rounds): void {
-    $data = array_values(array_filter($rounds, static fn($r) => $r['new'] !== null));
+    // 비교 대상 없는 기준 회차는 이미 'new'===null 로 걸러진다. collected_at 이 NULL/빈값인
+    // 회차도(에이전트 파싱 실패) date() 가 uncaught 오류를 던지므로 같이 건너뛴다.
+    $data = array_values(array_filter(
+        $rounds,
+        static fn($r) => $r['new'] !== null && $r['collected_at'] !== null && $r['collected_at'] !== ''
+    ));
     $n = count($data);
     if ($n === 0) {
         vg_empty(['icon' => '📊', 'title' => '비교할 회차가 아직 없습니다.',
