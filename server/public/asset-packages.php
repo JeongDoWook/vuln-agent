@@ -4,6 +4,7 @@ declare(strict_types=1);
 /** 전체 활성 자산의 최신 스캔에 설치된 운영체제 패키지 통합 조회. */
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require __DIR__ . '/../src/distro.php';
 vg_require_menu('assets');
 
 $err = null;
@@ -56,7 +57,8 @@ try {
     $offset = ($page - 1) * $perPage;
     $st = $pdo->prepare(
         "SELECT h.host_id,h.fqdn,p.manager,p.name,p.version,p.arch,
-                p.source_pkg,p.source_version,p.origin,p.vendor,s.collected_at
+                p.source_pkg,p.source_version,p.origin,p.vendor,s.collected_at,
+                s.os_id,s.os_version
            $from WHERE $where
           ORDER BY p.name,h.fqdn,p.arch,p.version
           LIMIT $perPage OFFSET $offset"
@@ -113,8 +115,16 @@ vg_header('전체 설치 패키지', 'assets');
                     'title' => '수집된 설치 패키지가 없습니다.',
                 ],
             'cell' => [
-                'name' => fn($p) => '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages&amp;q='
-                    . urlencode((string)$p['name']) . '"><strong>' . vg_h((string)$p['name']) . '</strong></a>',
+                'name' => function ($p) {
+                    $out = '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages&amp;q='
+                        . urlencode((string)$p['name']) . '"><strong>' . vg_h((string)$p['name']) . '</strong></a>';
+                    $eco = vg_osv_ecosystem($p['os_id'] ?? null, $p['os_version'] ?? null);
+                    if ($eco !== null) {
+                        $out .= ' <a class="why" href="/package.php?name=' . urlencode((string)$p['name'])
+                            . '&amp;eco=' . urlencode($eco) . '" title="이 패키지의 CVE 현황">CVE ↗</a>';
+                    }
+                    return $out;
+                },
                 'fqdn' => fn($p) => '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages">'
                     . vg_h((string)$p['fqdn']) . '</a>',
                 'version' => fn($p) => '<code>' . vg_h((string)($p['version'] ?? '')) . '</code>',

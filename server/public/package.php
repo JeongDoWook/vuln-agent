@@ -62,7 +62,9 @@ vg_header($name !== '' ? $name : '패키지 상세', 'packages');
     <?php vg_page_title($name, '', '취약 영향 패키지 카탈로그의 관련 CVE와 수정 버전입니다.', [
         'count' => $total,
         'hint' => $ecosystem !== '' ? vg_h($ecosystem) : '생태계 미지정',
-        'actions' => '<a class="btn btn--sm btn--ghost" href="/packages.php">패키지 목록</a>',
+        'actions' => '<a class="btn btn--sm btn--ghost" href="/packages.php">패키지 목록</a>'
+            . ' <a class="btn btn--sm btn--ghost" href="/asset-packages.php?q=' . urlencode($name)
+            . '">설치된 자산 보기</a>',
     ]); ?>
     <div class="cards">
       <div class="kpi kpi--sm"><b><?= number_format($total) ?></b><span>관련 CVE</span></div>
