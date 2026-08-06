@@ -82,11 +82,11 @@ vg_header('전체 설치 패키지', 'assets');
   <?php vg_alert($err !== null ? '오류 · ' . $err : null); ?>
   <?php if ($err === null): ?>
     <?php vg_toolbar([
-        ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명·소스·출처 검색', 'value' => $q],
         ['type' => 'select', 'name' => 'host', 'selected' => $hostId > 0 ? (string)$hostId : '',
          'empty_label' => '전체 호스트', 'options' => $hostOptions],
         ['type' => 'select', 'name' => 'manager', 'selected' => $manager,
          'empty_label' => '전체 관리자', 'options' => $managerOptions],
+        ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명·소스·출처 검색', 'value' => $q],
     ]); ?>
 
     <?php vg_table(

@@ -117,9 +117,9 @@ vg_header('감사 로그', 'activity');
   <?php endif; ?>
 
   <?php vg_toolbar([
-      ['type' => 'search', 'name' => 'q', 'placeholder' => '메시지/사용자/액션 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'scope', 'empty_label' => '전체 범위', 'selected' => $scope,
           'options' => array_combine($scopes, $scopes)],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '메시지/사용자/액션 검색', 'value' => $q],
   ]); ?>
 
   <?php
