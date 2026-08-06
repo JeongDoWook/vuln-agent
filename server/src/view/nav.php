@@ -73,7 +73,6 @@ function vg_nav_sections(): array {
             ['perm' => 'findings',   'href' => '/findings.php',   'label' => '탐지 결과', 'key' => 'findings'],
             ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE',       'key' => 'cves'],
             ['perm' => 'findings',   'href' => '/packages.php',   'label' => '패키지',    'key' => 'packages'],
-            ['perm' => 'findings',   'href' => '/language-packages.php', 'label' => '언어 패키지·라이선스', 'key' => 'language_packages'],
             ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '판정 근거', 'key' => 'vendor'],
             ['perm' => 'findings',   'href' => '/compliance_rules.php', 'label' => '보안 설정', 'key' => 'compliance'],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
@@ -101,8 +100,6 @@ function vg_nav_icon(string $key): string {
         'changes'     => '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
         'cves'        => '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
         'packages'    => '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22" x2="12" y2="12"/>',
-        // 언어 패키지·라이선스 — 저작권(©) 모양: 라이선스 화면임을 한눈에.
-        'language_packages' => '<circle cx="12" cy="12" r="10"/><path d="M14.83 8.5a3.5 3.5 0 1 0 0 7"/>',
         // 벤더 판정 — 검인(도장) 모양: 벤더가 "고쳤다/안 고쳤다" 를 확인해 준 것이라는 뜻.
         'vendor'      => '<circle cx="12" cy="9" r="6"/><polyline points="9.3 9 11.2 10.9 14.9 7.2"/><path d="M8.5 14.4 7.4 21l4.6-2.3 4.6 2.3-1.1-6.6"/>',
         // 보안설정 룰셋 — 체크리스트 모양: 기준(CIS/NIST/STIG)에 맞나 항목별로 확인한다는 뜻.
