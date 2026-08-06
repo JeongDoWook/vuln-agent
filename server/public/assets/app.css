@@ -1368,6 +1368,7 @@ form.card .btn--block { margin-top: 1.1rem; }
 .agent-control__row label strong { display: block; color: var(--text); font-size: .88rem; }
 .agent-control__row label span { display: block; margin-top: .25rem; color: var(--muted); font-size: .76rem; }
 .agent-control__row input:not([type=hidden]),
+.agent-control__row select,
 .agent-control__row .flatpickr-wrapper { width: 100%; max-width: none; }
 .agent-control__row .btn { width: 4.5rem; }
 .agent-control__row:first-child .btn { grid-column: 3; }

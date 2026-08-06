@@ -12,16 +12,7 @@ header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../src/config.php';
 require __DIR__ . '/../src/db.php';
 require_once __DIR__ . '/../src/agenttoken.php';  // vg_agent_token_verify (호스트 바인딩)
-
-// agent_speed_tier(4단계 고정) → CPU 상한%·JSON 조립 타임아웃(초) 매핑.
-//   고정 4종이라 코드 상수로 하드코딩(YAGNI 예외 — 기존 고정 5종 피드 매핑과 동일 원칙).
-//   normal 은 vuln-inventory-agent.sh 상단 CPU_QUOTA/PACKAGING_TIMEOUT 기본값과 동일하게 맞춘다.
-const VG_AGENT_SPEED_TIER_MAP = [
-    'very_fast' => ['cpu_quota_percent' => 80, 'packaging_timeout_seconds' => 300],
-    'fast'      => ['cpu_quota_percent' => 40, 'packaging_timeout_seconds' => 200],
-    'normal'    => ['cpu_quota_percent' => 10, 'packaging_timeout_seconds' => 120],
-    'slow'      => ['cpu_quota_percent' => 5,  'packaging_timeout_seconds' => 90],
-];
+require_once __DIR__ . '/../src/agentspeedtier.php';  // VG_AGENT_SPEED_TIER_MAP (공용 정의 — host.php 와 공유)
 
 function respond_fail(int $httpCode, string $msg, string $code): void {
     http_response_code($httpCode);

@@ -241,7 +241,6 @@ LOG_DIR="$LOG"
 POLL_URL="\${SEND_URL%ingest.php}agent-poll.php"
 LAST_SCAN_FILE="\$LOG_DIR/last_scan_at"
 POLL_STATE_FILE="\$LOG_DIR/poll_interval"
-SPEED_TIER_STATE_FILE="\$LOG_DIR/speed_tier"
 ONCE=0
 [ "\${1:-}" = "--once" ] && ONCE=1
 
@@ -283,6 +282,17 @@ do_poll() {
     POLL_PACKAGING_TIMEOUT=\$(printf '%s' "\$resp" | grep -o '"packaging_timeout_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
   fi
   case "\$POLL_SCHEDULE" in ''|*[!0-9]*) return 1 ;; esac
+  # POLL_CPU_QUOTA/POLL_PACKAGING_TIMEOUT 는 숫자+상식적 범위(CPU 1~100, 타임아웃 30~3600)
+  #   벗어나면 빈 값으로 떨군다 — run_scan 이 그대로 vuln-inventory-agent.sh 기본값(10%/120초)
+  #   으로 폴백하므로 여기서 막아도 수집 자체는 안전하게 계속된다.
+  case "\$POLL_CPU_QUOTA" in ''|*[!0-9]*) POLL_CPU_QUOTA="" ;; esac
+  if [ -n "\$POLL_CPU_QUOTA" ] && { [ "\$POLL_CPU_QUOTA" -lt 1 ] || [ "\$POLL_CPU_QUOTA" -gt 100 ]; }; then
+    POLL_CPU_QUOTA=""
+  fi
+  case "\$POLL_PACKAGING_TIMEOUT" in ''|*[!0-9]*) POLL_PACKAGING_TIMEOUT="" ;; esac
+  if [ -n "\$POLL_PACKAGING_TIMEOUT" ] && { [ "\$POLL_PACKAGING_TIMEOUT" -lt 30 ] || [ "\$POLL_PACKAGING_TIMEOUT" -gt 3600 ]; }; then
+    POLL_PACKAGING_TIMEOUT=""
+  fi
   return 0
 }
 
@@ -298,7 +308,9 @@ run_scan() {
   local tier_env=()
   [ -n "\${POLL_CPU_QUOTA:-}" ] && tier_env+=(CPU_QUOTA="\${POLL_CPU_QUOTA}%")
   [ -n "\${POLL_PACKAGING_TIMEOUT:-}" ] && tier_env+=(PACKAGING_TIMEOUT="\$POLL_PACKAGING_TIMEOUT")
-  env "\${tier_env[@]}" "\$BIN_DIR/vuln-inventory-agent.sh" "\${args[@]}"
+  # "set -u" 상태에서 빈 배열 "\${tier_env[@]}" 확장은 bash 4.3 이하에서 unbound variable 로 죽는다.
+  #   "\${tier_env[@]+"\${tier_env[@]}"}" 는 배열이 비어 있으면 통째로 없던 걸로 취급해 안전하다.
+  env \${tier_env[@]+"\${tier_env[@]}"} "\$BIN_DIR/vuln-inventory-agent.sh" "\${args[@]}"
 }
 
 # poll_and_maybe_scan : poll 1회 + 필요하면 수집. poll 자체의 성공/실패를 돌려준다(백오프 판단용).
@@ -311,8 +323,6 @@ poll_and_maybe_scan() {
     return 1
   fi
   echo "\$POLL_SCHEDULE" > "\$POLL_STATE_FILE"
-  [ -n "\${POLL_CPU_QUOTA:-}" ] && [ -n "\${POLL_PACKAGING_TIMEOUT:-}" ] \
-    && echo "\${POLL_CPU_QUOTA} \${POLL_PACKAGING_TIMEOUT}" > "\$SPEED_TIER_STATE_FILE"
   local now last scheduled_due=0
   now=\$(date +%s)
   last=\$(cat "\$LAST_SCAN_FILE" 2>/dev/null || echo 0)

@@ -15,6 +15,7 @@ require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 �
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/agentcommand.php';   // 수집 제어(즉시/예약 실행·주기 변경)
+require_once __DIR__ . '/../src/agentspeedtier.php';   // 속도 티어 라벨(agent-poll.php 와 공유 정의)
 vg_require_menu('findings');
 
 // --- 수집 제어 POST 처리 (즉시실행/예약실행/주기변경) — GET 렌더보다 먼저, 헤더 출력 전 ---
@@ -54,6 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 vg_agent_command_set_schedule($pdo, $postHostId, $minutes * 60);
                 $agentMsg = "수집 주기를 {$minutes}분으로 변경했습니다.";
             } elseif ($action === 'agent_set_speed_tier') {
+                if (!vg_has_role('admin', 'operator')) {
+                    throw new RuntimeException('속도 티어를 변경할 권한이 없습니다.');
+                }
                 $tier = (string) ($_POST['agent_speed_tier'] ?? '');
                 vg_agent_command_set_speed_tier($pdo, $postHostId, $tier);
                 $agentMsg = '속도 티어를 변경했습니다. 다음 poll/다음 수집 시작부터 반영됩니다.';
@@ -275,12 +279,8 @@ function vg_host_render_agent_control(
 ): void {
     $curMinutes = (int) round(((int) ($host['poll_schedule_seconds'] ?? 3600)) / 60);
     $curSpeedTier = (string) ($host['agent_speed_tier'] ?? 'normal');
-    $speedTierLabels = [
-        'very_fast' => '매우 빠름 (CPU 80%)',
-        'fast'      => '빠름 (CPU 40%)',
-        'normal'    => '보통 (CPU 10%, 기본값)',
-        'slow'      => '느림 (CPU 5%)',
-    ];
+    $speedTierLabels = [];
+    foreach (VG_AGENT_SPEED_TIERS as $t) { $speedTierLabels[$t] = vg_agent_speed_tier_label($t); }
     ?>
     <section class="card agent-control" aria-labelledby="agent-control-title">
       <div class="agent-control__heading">
