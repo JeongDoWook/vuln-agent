@@ -775,6 +775,7 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .chart__line { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
 .chart__line.tone-mem { stroke: var(--accent); }
 .chart__line.tone-cpu { stroke: var(--high); }
+.chart__line.tone-trend { stroke: var(--high); }
 
 /* 선 아래 은은한 area 채움 — 채움색은 SVG <linearGradient>(fill="url(#…)")가 정하고,
  * 그 그라데이션 stop 색만 여기서 CSS 변수로 준다(색 하드코딩 금지). 위(선 근처)는 옅게,
@@ -784,14 +785,23 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .chart__grad-1.tone-mem { stop-color: var(--accent); stop-opacity: 0; }
 .chart__grad-0.tone-cpu { stop-color: var(--high);   stop-opacity: .28; }
 .chart__grad-1.tone-cpu { stop-color: var(--high);   stop-opacity: 0; }
+.chart__grad-0.tone-trend { stop-color: var(--high); stop-opacity: .28; }
+.chart__grad-1.tone-trend { stop-color: var(--high); stop-opacity: 0; }
 
 .chart__pt { fill: var(--surface); stroke-width: 2; transition: r .12s ease; }
 .chart__pt.tone-mem { stroke: var(--accent); }
 .chart__pt.tone-cpu { stroke: var(--high); }
+.chart__pt.tone-trend { stroke: var(--high); }
 /* 마지막(현재) 점은 계열색으로 채워 강조. hover 시 살짝 커진다(과하지 않게). */
 .chart__pt--last { fill: var(--accent); }
 .chart__pt--last.tone-cpu { fill: var(--high); }
+.chart__pt--last.tone-trend { fill: var(--high); }
 .chart__pt:hover { r: 4.5; }
+
+/* 회차별 신규·해결 다이버징 막대(추이 탭) — 0 기준선 위/아래로만 갈라 그리므로 톤 색만 지정. */
+.chart__bar { shape-rendering: crispEdges; }
+.chart__bar.tone-crit { fill: var(--crit); }
+.chart__bar.tone-ok   { fill: var(--ok); }
 
 /* 심각도 구성 막대(가로 누적) — 표의 한 행에서 "누가 더 나쁜지" 를 눈으로 보게 한다.
  * 폭은 PHP 가 인라인 style="width:N%" 로 준다(값이라서 CSS 가 가질 수 없다). */

@@ -42,12 +42,21 @@ $page   = vg_page();
 $perPage = vg_perpage();
 if (!isset(VG_CHANGE_TYPES[$type])) { $type = ''; }
 
-// 취약점 변화 / 패키지 변경 — 두 목록을 세로로 쌓지 않고 탭으로 가른다.
+// 회차별 추이 탭의 구간 선택. 'all' 은 무한정 불러오지 않도록 vg_ui_trend_limit() 로 상한을 건다.
+$windowOptions = ['5' => '최근 5회차', '10' => '최근 10회차', 'all' => '전체 기간'];
+$window = (string) ($_GET['window'] ?? '10');
+if (!isset($windowOptions[$window])) { $window = '10'; }
+$windowLimit = $window === 'all' ? vg_ui_trend_limit() : (int) $window;
+
+// 취약점 변화 / 패키지 변경 / 추이 — 세 목록을 세로로 쌓지 않고 탭으로 가른다.
 //   ?page= 는 활성 탭에만 적용된다(페이저가 하나만 살아 있게).
 $tab = (string) ($_GET['tab'] ?? 'vuln');
-if (!in_array($tab, ['vuln', 'pkg'], true)) { $tab = 'vuln'; }
+if (!in_array($tab, ['vuln', 'pkg', 'trend'], true)) { $tab = 'vuln'; }
 
 $pkgChanges = []; $pkgTotal = 0;
+$trendRounds = []; $trendResolvedAll = [];
+$trendSummary = ['new' => 0, 'up' => 0, 'down' => 0, 'resolved' => 0];
+$trendNeedsHost = false;
 
 try {
     $pdo = vg_pdo();
@@ -175,6 +184,21 @@ try {
             fn($c) => stripos($c['cve_id'], $q) !== false || stripos($c['package_name'], $q) !== false
         ));
     }
+
+    // 추이 탭 — 호스트 전체 합산은 findings 자기조인급 비용이 나므로(위 주석과 같은 이유)
+    // 호스트를 선택했을 때만 계산한다. 전체는 안내 문구로 유도.
+    if ($tab === 'trend') {
+        if ($hostId <= 0 || !isset($hostOptions[$hostId])) {
+            // 존재하지 않거나 삭제된 호스트 id 는 존재하는 것처럼 라벨을 만들지 않는다 — 그냥 미선택으로 취급.
+            $trendNeedsHost = true;
+        } else {
+            $trendFqdn = $hostOptions[$hostId];
+            $trendData = vg_trend_load($pdo, $hostId, $trendFqdn, $windowLimit);
+            $trendRounds = $trendData['rounds'];
+            $trendResolvedAll = $trendData['resolved'];
+            $trendSummary = $trendData['summary'];
+        }
+    }
 } catch (Throwable $e) {
     error_log('[changes] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';
@@ -229,6 +253,119 @@ function vg_change_reason(string $type, ?array $pc): string {
     return '';
 }
 
+/**
+ * 회차별 추이 데이터: 회차(tb_scan_run)마다 미해결 건수 + 직전 회차 대비 신규/등급상승/
+ * 등급하락/해결. 같은 scan_id 가 연속 회차에 반복될 수 있다(내용 무변경 시 스냅샷 재사용) —
+ * 그 구간은 미해결 건수가 그대로 유지되는 게 맞는 동작이라 손대지 않는다.
+ *   첫 회차는 비교 대상이 없어 new/up/down/resolved 가 전부 null(표·차트에서 기준선으로 제외).
+ *   반환: rounds(오래된→최신), resolved(해당 구간 전체 해결 항목 — vg_change_row() 형식 + 'round'),
+ *         summary(구간 합계).
+ */
+function vg_trend_load(PDO $pdo, int $hostId, string $fqdn, int $limit): array {
+    $empty = ['rounds' => [], 'resolved' => [], 'summary' => ['new' => 0, 'up' => 0, 'down' => 0, 'resolved' => 0]];
+
+    // tb_scan_run 은 is_deleted 컬럼이 없다 — 삭제된 호스트·스캔의 실행 이력이 그대로 남아 있으므로
+    // 반드시 tb_host/tb_scan 과 조인해 살아있는지 확인해야 한다(그렇지 않으면 접근통제 우회).
+    $st = $pdo->prepare(
+        'SELECT r.scan_run_id, r.scan_id, r.collected_at
+           FROM tb_scan_run r
+           JOIN tb_host h ON h.host_id = r.host_id AND h.is_deleted = 0
+           JOIN tb_scan s ON s.scan_id = r.scan_id AND s.is_deleted = 0
+          WHERE r.host_id = :hid
+          ORDER BY r.scan_run_id DESC LIMIT :lim'
+    );
+    $st->bindValue(':hid', $hostId, PDO::PARAM_INT);
+    $st->bindValue(':lim', $limit, PDO::PARAM_INT);
+    $st->execute();
+    $rounds = array_reverse($st->fetchAll(PDO::FETCH_ASSOC));   // 오래된 → 최신(차트는 좌→우)
+    if (!$rounds) { return $empty; }
+
+    $scanIds = array_values(array_unique(array_map(fn($r) => (int) $r['scan_id'], $rounds)));
+    $in = implode(',', array_map('intval', $scanIds));
+    $bySc = [];
+    $fst = $pdo->query(
+        "SELECT scan_id, cve_id, package_name, severity, in_kev, exposed, rationale, installed_version
+           FROM tb_finding WHERE scan_id IN ($in) AND is_deleted = 0"
+    );
+    foreach ($fst->fetchAll(PDO::FETCH_ASSOC) as $f) {
+        $bySc[(int) $f['scan_id']][$f['cve_id'] . '|' . $f['package_name']] = $f;
+    }
+
+    $out = [];
+    $resolvedRows = [];
+    $summary = ['new' => 0, 'up' => 0, 'down' => 0, 'resolved' => 0];
+    $prev = null;
+    $cumNew = 0; $cumResolved = 0;
+
+    foreach ($rounds as $i => $r) {
+        $scanId = (int) $r['scan_id'];
+        $when = (string) $r['collected_at'];
+        $cur = $bySc[$scanId] ?? [];
+        $new = null; $up = null; $down = null; $resolved = null;
+
+        if ($prev !== null) {
+            $new = 0; $up = 0; $down = 0; $resolved = 0;
+            foreach ($cur as $k => $f) {
+                if (!isset($prev[$k])) { $new++; $summary['new']++; continue; }
+                $a = VG_SEV_RANK[$prev[$k]['severity']] ?? 0;
+                $b = VG_SEV_RANK[$f['severity']] ?? 0;
+                if ($b > $a) { $up++; $summary['up']++; }
+                elseif ($b < $a) { $down++; $summary['down']++; }
+            }
+            foreach ($prev as $k => $f) {
+                if (!isset($cur[$k])) {
+                    $resolved++;
+                    $summary['resolved']++;
+                    $resolvedRows[] = vg_change_row('resolved', $hostId, $fqdn, $when, $f, null, $scanId) + ['round' => $i + 1];
+                }
+            }
+            $cumNew += $new;
+            $cumResolved += $resolved;
+        }
+
+        $out[] = [
+            'round'        => $i + 1,
+            'scan_run_id'  => (int) $r['scan_run_id'],
+            'scan_id'      => $scanId,
+            'collected_at' => $when,
+            'unresolved'   => count($cur),
+            'new'          => $new,
+            'up'           => $up,
+            'down'         => $down,
+            'resolved'     => $resolved,
+            'cum_rate'     => ($cumNew + $cumResolved) > 0 ? round($cumResolved / ($cumNew + $cumResolved) * 100, 1) : null,
+        ];
+        $prev = $cur;
+    }
+
+    return ['rounds' => $out, 'resolved' => $resolvedRows, 'summary' => $summary];
+}
+
+/**
+ * 페이지에 보이는 변화 행들만 tb_pkg_change 를 배치 조회해 사유(reason)를 채운다(N+1 금지).
+ *   취약점 변화 탭·추이 탭의 "해결된 항목" 목록이 같은 로직을 공유한다.
+ */
+function vg_attach_change_reason(PDO $pdo, array &$rows): void {
+    if (!$rows) { return; }
+    $curScanIds = array_values(array_unique(array_map(fn($r) => $r['cur_scan_id'], $rows)));
+    $curScanIds = array_filter($curScanIds, fn($v) => $v > 0);
+    if (!$curScanIds) { return; }
+    $in = implode(',', array_map('intval', $curScanIds));
+    $pst = $pdo->query(
+        "SELECT host_id, package_name, scan_id, change_type, old_version, new_version
+           FROM tb_pkg_change WHERE is_deleted = 0 AND scan_id IN ($in)"
+    );
+    $pkgByKey = [];
+    foreach ($pst->fetchAll(PDO::FETCH_ASSOC) as $pc) {
+        $pkgByKey[$pc['host_id'] . '|' . $pc['package_name'] . '|' . $pc['scan_id']] = $pc;
+    }
+    foreach ($rows as &$r) {
+        $key = $r['host_id'] . '|' . $r['package_name'] . '|' . $r['cur_scan_id'];
+        $r['reason'] = vg_change_reason($r['type'], $pkgByKey[$key] ?? null);
+    }
+    unset($r);
+}
+
 vg_header('변화 추적', 'findings');
 ?>
   <?php vg_page_title('변화 추적', 'CHANGES', '새로 생긴 위험과 해결된 항목, 등급 변화를 한눈에 비교합니다.', ['hint' => '(최근 2스캔 비교)', 'suffix_html' => vg_info_icon('지난 수집 대비 무엇이 달라졌는지 보여줍니다.')]); ?>
@@ -259,19 +396,26 @@ vg_header('변화 추적', 'findings');
   <?php
   $total = count($changes);
   vg_subtabs([
-      'vuln' => ['label' => '취약점 변화',   'n' => $total],
-      'pkg'  => ['label' => '패키지 변경',   'n' => $pkgTotal],
+      'vuln'  => ['label' => '취약점 변화', 'n' => $total],
+      'pkg'   => ['label' => '패키지 변경', 'n' => $pkgTotal],
+      'trend' => ['label' => '추이'],
   ], $tab);
 
-  // 변화유형 필터는 취약점 변화 탭에만 뜻이 있다 — 패키지 변경엔 그 어휘가 없다.
-  $filters = [
-      ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE·패키지명 검색', 'value' => $q],
-      ['type' => 'select', 'name' => 'host', 'selected' => (string) ($hostId ?: ''),
-       'empty_label' => '전체 호스트', 'options' => $hostOptions],
-  ];
+  // 변화유형 필터는 취약점 변화 탭에만, 구간 필터는 추이 탭에만 뜻이 있다.
+  //   추이 탭엔 검색어(q)도 뜻이 없다 — 회차 전체를 보는 화면이라.
+  $filters = [];
+  if ($tab !== 'trend') {
+      $filters[] = ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE·패키지명 검색', 'value' => $q];
+  }
+  $filters[] = ['type' => 'select', 'name' => 'host', 'selected' => (string) ($hostId ?: ''),
+                'empty_label' => '전체 호스트', 'options' => $hostOptions];
   if ($tab === 'vuln') {
       $filters[] = ['type' => 'select', 'name' => 'type', 'selected' => $type,
                     'empty_label' => '전체 변화', 'options' => VG_CHANGE_TYPES];
+  }
+  if ($tab === 'trend') {
+      $filters[] = ['type' => 'select', 'name' => 'window', 'selected' => $window,
+                    'empty_label' => '기본(최근 10회차)', 'options' => $windowOptions];
   }
   $filters[] = ['type' => 'hidden', 'name' => 'tab', 'value' => $tab];
   vg_toolbar($filters);
@@ -293,25 +437,7 @@ vg_header('변화 추적', 'findings');
     // 사유 판별: 현재 페이지 행만 대상으로 tb_pkg_change 를 한 번에 대조(N+1 금지).
     if ($err === null && $paged) {
         try {
-            $curScanIds = array_values(array_unique(array_map(fn($r) => $r['cur_scan_id'], $paged)));
-            $curScanIds = array_filter($curScanIds, fn($v) => $v > 0);
-            if ($curScanIds) {
-                $in = implode(',', array_map('intval', $curScanIds));
-                $pst = $pdo->query(
-                    "SELECT host_id, package_name, scan_id, change_type, old_version, new_version
-                       FROM tb_pkg_change
-                      WHERE is_deleted = 0 AND scan_id IN ($in)"
-                );
-                $pkgByKey = [];
-                foreach ($pst->fetchAll(PDO::FETCH_ASSOC) as $pc) {
-                    $pkgByKey[$pc['host_id'] . '|' . $pc['package_name'] . '|' . $pc['scan_id']] = $pc;
-                }
-                foreach ($paged as &$r) {
-                    $key = $r['host_id'] . '|' . $r['package_name'] . '|' . $r['cur_scan_id'];
-                    $r['reason'] = vg_change_reason($r['type'], $pkgByKey[$key] ?? null);
-                }
-                unset($r);
-            }
+            vg_attach_change_reason($pdo, $paged);
         } catch (Throwable $e) {
             error_log('[changes] reason lookup: ' . $e->getMessage());
         }
@@ -376,7 +502,7 @@ vg_header('변화 추적', 'findings');
     if ($paged) { vg_page_nav($total, $perPage, $page); }
     ?>
 
-  <?php else: ?>
+  <?php elseif ($tab === 'pkg'): ?>
     <div class="sub">패키지 변경 이력 <?= vg_info_icon('언제 무엇이 설치·제거·업그레이드됐는지. 수집 내용이 직전과 같으면 스냅샷을 새로 찍지 않으므로, 여기 남는 건 실제로 달라진 것뿐입니다.') ?></div>
     <?php
     vg_table(
@@ -409,6 +535,117 @@ vg_header('변화 추적', 'findings');
     );
     if ($pkgChanges) { vg_page_nav($pkgTotal, $perPage, $page); }
     ?>
+
+  <?php else: /* trend */ ?>
+    <?php if ($trendNeedsHost): ?>
+      <?php vg_empty([
+          'icon'  => '📌',
+          'title' => '호스트를 선택하면 추이를 볼 수 있습니다.',
+          'hint'  => '전체 자산 합산은 데이터가 많으면 무거워질 수 있어, 위 필터에서 호스트를 먼저 골라 주세요.',
+      ]); ?>
+    <?php elseif (!$trendRounds): ?>
+      <?php vg_empty([
+          'icon'  => '📉',
+          'title' => '아직 비교할 수집 이력이 없습니다.',
+          'hint'  => '이 호스트의 스캔 이력이 쌓이면 회차별 추이가 표시됩니다.',
+      ]); ?>
+    <?php else: ?>
+      <?php $trendLatest = $trendRounds[count($trendRounds) - 1]; ?>
+      <div class="cards">
+        <div class="kpi kpi--sm tone-crit"><b><?= number_format($trendSummary['new']) ?></b><span>신규</span></div>
+        <div class="kpi kpi--sm tone-high"><b><?= number_format($trendSummary['up']) ?></b><span>등급 상승</span></div>
+        <div class="kpi kpi--sm tone-low"><b><?= number_format($trendSummary['down']) ?></b><span>등급 하락</span></div>
+        <div class="kpi kpi--sm tone-ok"><b><?= number_format($trendSummary['resolved']) ?></b><span>해결</span></div>
+        <div class="kpi kpi--sm tone-muted"><b><?= number_format($trendLatest['unresolved']) ?></b><span>현재 미해결(잔존)</span></div>
+      </div>
+
+      <div class="sub">① 미해결 취약점 수 추이</div>
+      <div class="card"><?php vg_count_trend($trendRounds); ?></div>
+
+      <div class="sub">② 회차별 신규·해결</div>
+      <div class="card"><?php vg_change_bars($trendRounds); ?></div>
+
+      <div class="sub">③ 회차별 요약</div>
+      <?php
+      vg_table(
+          [
+              ['label' => '회차', 'width' => '8%', 'align' => 'center'],
+              ['label' => '수집일시'],
+              ['label' => '신규', 'width' => '10%', 'align' => 'right'],
+              ['label' => '해결', 'width' => '10%', 'align' => 'right'],
+              ['label' => '잔존', 'width' => '10%', 'align' => 'right'],
+              ['label' => '누적 조치율', 'width' => '12%', 'align' => 'right'],
+          ],
+          array_reverse($trendRounds),   // 최신 회차가 맨 위
+          [
+              'cell' => [
+                  0 => fn($r) => (string) $r['round'],
+                  1 => fn($r) => '<span class="why">' . vg_h($r['collected_at'] ?: '–') . '</span>',
+                  2 => fn($r) => $r['new'] === null ? '<span class="why">–</span>' : number_format($r['new']),
+                  3 => fn($r) => $r['resolved'] === null ? '<span class="why">–</span>' : number_format($r['resolved']),
+                  4 => fn($r) => number_format($r['unresolved']),
+                  5 => fn($r) => $r['cum_rate'] === null ? '<span class="why">–</span>' : number_format($r['cum_rate'], 1) . '%',
+              ],
+          ]
+      );
+      ?>
+
+      <div class="sub">④ 이번 구간 해결된 항목</div>
+      <?php
+      $trendResolvedTotal = count($trendResolvedAll);
+      $trendResolvedPaged = array_slice($trendResolvedAll, ($page - 1) * $perPage, $perPage);
+      if ($trendResolvedPaged) {
+          try {
+              vg_attach_change_reason($pdo, $trendResolvedPaged);
+          } catch (Throwable $e) {
+              error_log('[changes] trend reason lookup: ' . $e->getMessage());
+          }
+      }
+      vg_table(
+          [
+              ['label' => '회차', 'width' => '7%', 'align' => 'center'],
+              ['label' => '변화', 'width' => '9%', 'nowrap' => true],
+              ['label' => '호스트'],
+              ['label' => 'CVE', 'width' => '16%', 'nowrap' => true],
+              ['label' => '패키지'],
+              ['label' => '등급', 'width' => '6.5rem'],
+              ['label' => '수집 시각', 'width' => '14%', 'nowrap' => true],
+          ],
+          $trendResolvedPaged,
+          [
+              'empty' => [
+                  'icon'  => '📉',
+                  'title' => '이 구간엔 해결된 항목이 없습니다.',
+                  'hint'  => '구간(호스트·최근 N회차)을 넓혀 보세요.',
+              ],
+              'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
+              'cell' => [
+                  0 => fn($r) => (string) $r['round'],
+                  1 => fn($r) => vg_badge(VG_CHANGE_TYPES[$r['type']], vg_change_tone($r['type'])),
+                  2 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
+                  3 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
+                                . ($r['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
+                  4 => function ($r) {
+                      $out = vg_h($r['package_name']);
+                      if ($r['installed_version'] !== '') {
+                          $out .= ' <span class="why">' . vg_h($r['installed_version']) . '</span>';
+                      }
+                      return $out;
+                  },
+                  5 => function ($r) {
+                      $sev = vg_sev_badge((string) $r['severity']);
+                      if ($r['reason'] !== '') {
+                          $sev .= '<br><span class="why">' . vg_h($r['reason']) . '</span>';
+                      }
+                      return $sev;
+                  },
+                  6 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
+              ],
+          ]
+      );
+      if ($trendResolvedPaged) { vg_page_nav($trendResolvedTotal, $perPage, $page); }
+      ?>
+    <?php endif; ?>
   <?php endif; ?>
 <?php endif; ?>
 <?php vg_footer();

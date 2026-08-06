@@ -142,3 +142,175 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
     }
     echo '</svg></div>';
 }
+
+/**
+ * 보기 좋은 눈금 최댓값. raw 이상인 값 중 1/2/5/10 의 10^n 배수 가운데 가장 작은 것을 고른다
+ * (예: 7→10, 23→50, 140→200). 0 이하면 최소 축(4)을 준다 — 변화가 전혀 없어도 축이 찌그러지지 않게.
+ */
+function vg_nice_max(int $raw): int {
+    if ($raw <= 0) { return 4; }
+    $exp = (int) floor(log10($raw));
+    $base = 10 ** $exp;
+    foreach ([1, 2, 5, 10] as $step) {
+        $candidate = (int) ($step * $base);
+        if ($candidate >= $raw) { return $candidate; }
+    }
+    return (int) (10 * $base);
+}
+
+/**
+ * 회차별 미해결(잔존) 건수 추이. vg_resource_trend() 와 같은 SVG 패턴이지만, 사용률처럼
+ * 0~100% 로 고정할 수 없는 건수라 vg_nice_max() 로 데이터 범위에 맞춘 축을 잡는다.
+ *   $rounds: changes.php 의 vg_trend_load() 결과(오래된→최신 순). 'collected_at'·'unresolved'·'round' 사용.
+ */
+function vg_count_trend(array $rounds, string $tone = 'trend'): void {
+    // collected_at 이 NULL/빈값인 회차(에이전트 파싱 실패)는 건너뛴다 — vg_resource_trend() 와
+    // 같은 이유: 실제로 없는 시점을 0/오늘로 이으면 없는 데이터가 있는 것처럼 보인다.
+    $pts = [];
+    foreach ($rounds as $r) {
+        if ($r['collected_at'] === null || $r['collected_at'] === '') { continue; }
+        $pts[] = ['t' => (string) $r['collected_at'], 'v' => (int) $r['unresolved'], 'round' => (int) $r['round']];
+    }
+    $n = count($pts);
+    if ($n === 0) {
+        vg_empty(['icon' => '📉', 'title' => '그래프를 그리기엔 회차 이력이 부족합니다.',
+                  'hint'  => '스캔이 쌓이면 여기에 추이가 표시됩니다.']);
+        return;
+    }
+    if ($n === 1) {
+        $when = date('n/j H:i', strtotime($pts[0]['t']));
+        vg_empty(['icon' => '📍',
+                  'title' => '현재 미해결 ' . number_format($pts[0]['v']) . '건 (' . $when . ')',
+                  'hint'  => '회차가 1건뿐이라 추이선은 아직 못 그립니다. 2회차 이상 쌓이면 선으로 표시됩니다.']);
+        return;
+    }
+
+    $W = 720; $H = 190;
+    $padL = 44; $padR = 8; $padT = 12; $padB = 26;
+    $plotW = $W - $padL - $padR;
+    $plotH = $H - $padT - $padB;
+
+    $rawMax = 0;
+    foreach ($pts as $p) { $rawMax = max($rawMax, $p['v']); }
+    $niceMax = vg_nice_max($rawMax);
+    $min = 0.0; $max = (float) $niceMax;
+
+    $xAt = static fn(int $i): float => $padL + $plotW * $i / ($n - 1);
+    $yAt = static fn(float $v): float => $padT + $plotH * (1 - ($v - $min) / ($max - $min));
+    $baseY = $padT + $plotH;
+
+    static $seq = 0;
+    $gradId = 'chart-grad-cnt-' . vg_h($tone) . '-' . (++$seq);
+
+    echo '<div class="chart">';
+    echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="미해결 건수 추이(회차 ' . $n . '개)">';
+
+    echo '<defs><linearGradient id="' . $gradId . '" x1="0" y1="0" x2="0" y2="1">'
+        . '<stop class="chart__grad-0 tone-' . vg_h($tone) . '" offset="0"></stop>'
+        . '<stop class="chart__grad-1 tone-' . vg_h($tone) . '" offset="1"></stop>'
+        . '</linearGradient></defs>';
+
+    // 눈금은 0/25/50/75/100% 다섯 자리 — vg_nice_max() 로 반올림한 값 기준.
+    foreach ([0, 0.25, 0.5, 0.75, 1] as $f) {
+        $gy = $padT + $plotH * (1 - $f);
+        $gv = $min + ($max - $min) * $f;
+        echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($gy, 1) . '"'
+            . ' x2="' . ($W - $padR) . '" y2="' . round($gy, 1) . '"></line>';
+        echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($gy + 3.5, 1) . '">'
+            . number_format((int) round($gv)) . '</text>';
+    }
+
+    $poly = [];
+    foreach ($pts as $i => $p) { $poly[] = round($xAt($i), 1) . ',' . round($yAt($p['v']), 1); }
+
+    $xFirst = round($xAt(0), 1);
+    $xLast  = round($xAt($n - 1), 1);
+    echo '<polygon class="chart__area" fill="url(#' . $gradId . ')" points="'
+        . implode(' ', $poly) . ' ' . $xLast . ',' . round($baseY, 1)
+        . ' ' . $xFirst . ',' . round($baseY, 1) . '"></polygon>';
+
+    echo '<polyline class="chart__line tone-' . vg_h($tone) . '" points="' . implode(' ', $poly) . '"></polyline>';
+
+    foreach ($pts as $i => $p) {
+        $cx = round($xAt($i), 1); $cy = round($yAt($p['v']), 1);
+        $last = $i === $n - 1 ? ' chart__pt--last' : '';
+        echo '<circle class="chart__pt tone-' . vg_h($tone) . $last . '" cx="' . $cx . '" cy="' . $cy . '" r="3">'
+            . '<title>' . vg_h($p['round'] . '회차 · ' . $p['t'] . ' · ' . number_format($p['v']) . '건') . '</title>'
+            . '</circle>';
+        if ($i === 0 || $i === $n - 1) {
+            $edge = $i === 0 ? 'start' : 'end';
+            echo '<text class="chart__lbl chart__lbl--' . $edge . '" x="' . $cx . '" y="' . ($H - 8) . '">'
+                . vg_h(date('n/j H:i', strtotime($p['t']))) . '</text>';
+        }
+    }
+    echo '</svg></div>';
+}
+
+/**
+ * 회차별 신규(0 기준선 위)·해결(아래) 다이버징 막대차트 — vg_count_trend() 와 같은
+ * grid/lbl 눈금 패턴 위에 막대만 얹은 변형. 첫 회차(비교 대상 없는 기준선)는
+ * $rounds 에서 'new'===null 이므로 자동으로 빠진다.
+ *   $rounds: vg_trend_load() 결과(오래된→최신 순).
+ */
+function vg_change_bars(array $rounds): void {
+    // 비교 대상 없는 기준 회차는 이미 'new'===null 로 걸러진다. collected_at 이 NULL/빈값인
+    // 회차도(에이전트 파싱 실패) date() 가 uncaught 오류를 던지므로 같이 건너뛴다.
+    $data = array_values(array_filter(
+        $rounds,
+        static fn($r) => $r['new'] !== null && $r['collected_at'] !== null && $r['collected_at'] !== ''
+    ));
+    $n = count($data);
+    if ($n === 0) {
+        vg_empty(['icon' => '📊', 'title' => '비교할 회차가 아직 없습니다.',
+                  'hint'  => '회차가 2개 이상 쌓이면 회차별 신규·해결이 표시됩니다.']);
+        return;
+    }
+
+    $W = 720; $H = 190;
+    $padL = 44; $padR = 8; $padT = 12; $padB = 26;
+    $plotW = $W - $padL - $padR;
+    $plotH = $H - $padT - $padB;
+
+    $rawMax = 0;
+    foreach ($data as $r) { $rawMax = max($rawMax, (int) $r['new'], (int) $r['resolved']); }
+    $niceMax = vg_nice_max($rawMax);
+
+    $zeroY = $padT + $plotH / 2;
+    $yAt = static fn(float $v) => $zeroY - ($plotH / 2) * ($v / $niceMax);
+    $xAt = static fn(int $i): float => $n === 1 ? $padL + $plotW / 2 : $padL + $plotW * $i / ($n - 1);
+
+    echo '<div class="chart">';
+    echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="회차별 신규·해결(회차 ' . $n . '개)">';
+
+    foreach ([-1, 0, 1] as $f) {
+        $gy = $zeroY - ($plotH / 2) * $f;
+        echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($gy, 1) . '"'
+            . ' x2="' . ($W - $padR) . '" y2="' . round($gy, 1) . '"></line>';
+        echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($gy + 3.5, 1) . '">'
+            . number_format((int) ($niceMax * $f)) . '</text>';
+    }
+
+    $barW = $n === 1 ? 24.0 : min(28.0, $plotW / $n * 0.55);
+    foreach ($data as $i => $r) {
+        $cx = $xAt($i);
+        $new = (int) $r['new']; $res = (int) $r['resolved'];
+        if ($new > 0) {
+            $yTop = $yAt((float) $new);
+            echo '<rect class="chart__bar tone-crit" x="' . round($cx - $barW / 2, 1) . '" y="' . round($yTop, 1) . '"'
+                . ' width="' . round($barW, 1) . '" height="' . round($zeroY - $yTop, 1) . '">'
+                . '<title>' . vg_h($r['round'] . '회차 · 신규 ' . number_format($new) . '건') . '</title></rect>';
+        }
+        if ($res > 0) {
+            $yBot = $yAt((float) -$res);
+            echo '<rect class="chart__bar tone-ok" x="' . round($cx - $barW / 2, 1) . '" y="' . round($zeroY, 1) . '"'
+                . ' width="' . round($barW, 1) . '" height="' . round($yBot - $zeroY, 1) . '">'
+                . '<title>' . vg_h($r['round'] . '회차 · 해결 ' . number_format($res) . '건') . '</title></rect>';
+        }
+        if ($i === 0 || $i === $n - 1) {
+            $edge = $i === 0 ? 'start' : 'end';
+            echo '<text class="chart__lbl chart__lbl--' . $edge . '" x="' . round($cx, 1) . '" y="' . ($H - 8) . '">'
+                . vg_h(date('n/j H:i', strtotime((string) $r['collected_at']))) . '</text>';
+        }
+    }
+    echo '</svg></div>';
+}
