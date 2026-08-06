@@ -199,7 +199,10 @@ function vg_ingest_parse_stale(string $staleText): array
     foreach (preg_split('/\r?\n/', $staleText) as $line) {
         if ($line === '') { continue; }
         if (strncmp($line, 'pid|comm|pkg', 12) === 0) { continue; }
-        $f = explode('|', $line);
+        // limit=4: lib(마지막 필드)는 /proc/PID/maps 경로라 비특권 사용자가 임의 파일명으로
+        //   통제 가능 — 필드 수를 고정해 lib 안의 '|' 가 필드를 밀지 못하게 한다(에이전트측
+        //   sanitize 와 이중 방어).
+        $f = explode('|', $line, 4);
         if (count($f) < 4 || trim($f[2]) === '') { continue; }
         $rows[] = $f;
     }

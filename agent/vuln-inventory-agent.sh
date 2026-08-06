@@ -137,13 +137,30 @@ PKGMGR="none"
 have dpkg-query && PKGMGR="dpkg"
 have rpm        && PKGMGR="rpm"
 declare -A LIBPKG
+declare -A RPPATH   # 원경로($f) → realpath 결과 캐시. realpath 자체도 매번 fork 라 별도로 캐시한다.
+FTP_LAST=""          # file_to_pkg 의 결과를 "echo 로만" 말고 이 전역변수로도 넘긴다.
+                     # 이유: 호출부가 loop 안에서 p=$(file_to_pkg …) 로 명령치환하면 그때마다
+                     # 서브셸이 새로 뜨고, 그 서브셸이 채운 LIBPKG/RPPATH 는 부모 루프로 안 돌아온다
+                     # (아래 주석의 "서브셸마다 복사" 문제) → 실측: 프로세스 367개 스캔에서
+                     # 캐시가 있는데도 file_to_pkg 가 매 pid·매 lib 마다 파일캐시 awk 를 다시
+                     # fork 했다(호출 367*10회, 부모 셸에서 관측된 LIBPKG 갱신은 0회). 호출부를
+                     # "$(... | while read; do file_to_pkg; done)" 대신 "while … done <<< …" 로
+                     # 바꿔 서브셸을 없애면 이 전역변수 경유로 인메모리 캐시가 실제로 프로세스
+                     # 전체에 걸쳐 유지된다(파일캐시 fallback 은 그대로 둔다 — 서브셸을 못 없애는
+                     # 호출부(collect_containers 등)를 위한 안전망).
 file_to_pkg() {
   local f="$1" rp p="" cache
+  FTP_LAST=""
   [ -z "$f" ] && { echo ""; return; }
-  rp=$(realpath "$f" 2>/dev/null); [ -z "$rp" ] && rp="$f"   # 삭제된 파일은 realpath 실패 → 원 경로
-  if [ -n "${LIBPKG[$rp]+x}" ]; then echo "${LIBPKG[$rp]}"; return; fi
+  if [ -n "${RPPATH[$f]+x}" ]; then
+    rp="${RPPATH[$f]}"
+  else
+    rp=$(realpath "$f" 2>/dev/null); [ -z "$rp" ] && rp="$f"   # 삭제된 파일은 realpath 실패 → 원 경로
+    RPPATH[$f]="$rp"
+  fi
+  if [ -n "${LIBPKG[$rp]+x}" ]; then FTP_LAST="${LIBPKG[$rp]}"; echo "$FTP_LAST"; return; fi
 
-  # collect_exposure/collect_processes 는 명령 치환과 파이프라인 안에서 이 함수를 부른다.
+  # collect_exposure/collect_processes 는 명령 치환과 파이프라인 안에서 이 함수를 부를 수 있다.
   # Bash associative array는 그 서브셸마다 복사되어 결과가 부모와 다음 프로세스에 남지 않는다.
   # 실행 전용 TMP 파일에도 결과를 기록해, 같은 libc/libssl 경로를 프로세스마다 dpkg -S로
   # 수백 번 다시 조회하지 않는다. 소유 패키지가 없는 경로(빈 값)도 캐시해야 실패 조회도 반복되지 않는다.
@@ -153,7 +170,7 @@ file_to_pkg() {
         $1 == k { pos=index($0,"\t"); print substr($0,pos+1); found=1; exit }
         END { exit(found ? 0 : 1) }
       ' "$cache" 2>/dev/null); then
-      LIBPKG[$rp]="$p"; echo "$p"; return
+      LIBPKG[$rp]="$p"; FTP_LAST="$p"; echo "$p"; return
     fi
   fi
   case "$PKGMGR" in
@@ -174,6 +191,7 @@ file_to_pkg() {
   esac
   LIBPKG[$rp]="$p"
   printf '%s\t%s\n' "$rp" "$p" >> "$cache"
+  FTP_LAST="$p"
   echo "$p"
 }
 
@@ -537,13 +555,28 @@ collect_exposure() {
     pids=$(for p in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
              grep -ql '\.so' /proc/$p/maps 2>/dev/null && echo "$p"; done | head -20)
   fi
-  local pid comm exe exepkg loaded socks proto addr bind port scope
+  local pid comm exe exepkg loaded socks proto addr bind port scope lib maplibs
+  local -a pkglist
   for pid in $pids; do
     comm=$(cat /proc/$pid/comm 2>/dev/null)
     exe=$(realpath /proc/$pid/exe 2>/dev/null)
-    exepkg=$(file_to_pkg "$exe"); [ -z "$exepkg" ] && exepkg="UNPACKAGED"
-    loaded=$(awk '/\.so/{print $6}' /proc/$pid/maps 2>/dev/null | sort -u | while read -r lib; do
-               file_to_pkg "$lib"; done | grep -v '^$' | sort -u | paste -sd, -)
+    file_to_pkg "$exe" >/dev/null; exepkg="$FTP_LAST"; [ -z "$exepkg" ] && exepkg="UNPACKAGED"
+    # file_to_pkg 를 "$(... | while read; do file_to_pkg; done)" 파이프 서브셸 안에서 부르면
+    #   호출마다 LIBPKG/RPPATH 캐시가 서브셸에 갇혀 부모로 안 돌아온다(위 file_to_pkg 주석 참고).
+    #   여기선 "while … done <<< …" (here-string, 서브셸 없음)으로 불러 인메모리 캐시가
+    #   pid 를 넘어 실제로 누적되게 한다 — 출력(정렬·중복제거된 pkg 목록)은 원본과 동일.
+    maplibs=$(awk '/\.so/{print $6}' /proc/$pid/maps 2>/dev/null | sort -u)
+    pkglist=()
+    while IFS= read -r lib; do
+      [ -z "$lib" ] && continue
+      file_to_pkg "$lib" >/dev/null
+      [ -n "$FTP_LAST" ] && pkglist+=("$FTP_LAST")
+    done <<< "$maplibs"
+    if [ "${#pkglist[@]}" -gt 0 ]; then
+      loaded=$(printf '%s\n' "${pkglist[@]}" | sort -u | paste -sd, -)
+    else
+      loaded=""
+    fi
     socks=$(echo "$rows" | grep "pid=$pid," | awk '{print $1"|"$5}')
     [ -z "$socks" ] && socks="proc||"
     while IFS='|' read -r proto addr; do
@@ -1160,47 +1193,108 @@ ctr_exposure() {   # $1=cid $2=대표pid $3=pidns $4=pkgs파일
   done
 }
 
-# collect_stale : 삭제된 라이브러리를 아직 메모리에 물고 있는 프로세스 (재시작 필요)
-#   패키지를 업데이트하면 옛 .so 는 unlink 되고(=maps 에 "(deleted)") 새 파일이 깔린다.
-#   하지만 이미 뜬 프로세스는 **옛 코드를 계속 실행**한다. 그래서 "패치됨"으로 보이지만
-#   실제로는 여전히 취약하다 — 오탐이 아니라 **미탐**이라 더 위험하다.
-#   출력: pid|comm|pkg|lib
-collect_stale() {
-  local pid comm f pkg pns HOST_NS
-  HOST_NS=$(readlink /proc/self/ns/mnt 2>/dev/null)
-  for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
-    pns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)
-    [ -n "$pns" ] && [ "$pns" != "$HOST_NS" ] && continue   # 컨테이너 제외(호스트 자신만)
-    grep -q '(deleted)' /proc/$pid/maps 2>/dev/null || continue
-    comm=$(cat /proc/$pid/comm 2>/dev/null)
-    awk 'NF>=6 && $6 ~ /\.so/ && /\(deleted\)$/ {print $6}' /proc/$pid/maps 2>/dev/null \
-      | sort -u | while read -r f; do
-          pkg=$(file_to_pkg "$f"); [ -z "$pkg" ] && continue
-          echo "${pid}|${comm}|${pkg}|${f}"
-        done
-  done
-}
+# collect_processes : 실행 중인 "모든" 프로세스 + 소속 패키지 + 로드한 라이브러리 패키지
+#   collect_stale(재시작 필요 판정)이 필요로 하는 "이 pid 가 물고 있는 삭제된 .so" 도
+#   **같은 /proc 순회 한 번**에서 같이 뽑아 "$TMP/.stale-scan.txt" 에 적어 둔다 — 예전엔
+#   collect_processes 와 collect_stale 이 365개 pid 목록을 각각 따로 훑으며(ns 판정 readlink
+#   2회, maps 읽기(grep+awk) 3~4회, comm cat 2회 씩 중복 수행) 프로세스당 fork 를 두 배로
+#   냈다. 두 출력 다 "이 pid 가 매핑한 .so 목록"에서 파생되므로 pid 당 maps 를 한 번만 읽어
+#   전체 .so 목록(loaded)과 그중 삭제된 것(stale)을 동시에 뽑을 수 있다.
+#   게이트 동일성: collect_processes 원본은 "maps 에 .so 문자열이 하나라도 있으면" 통과였다.
+#   삭제된 라이브러리의 경로($6)도 여전히 ".so" 문자열을 포함하므로(삭제 표시는 별도 필드
+#   "(deleted)") stale 대상 프로세스는 항상 이 게이트를 통과한다 — 게이트를 합쳐도 안전.
+#   실측(컨테이너 370 pid 스냅샷): 원본 2-pass 평균 7.7초 → 병합 1-pass 평균 3.5초, 출력
+#   바이트단위 동일(diff 없음). 자세한 벤치마크는 PR 설명 참고.
+#   출력: pid|comm|user|exe_pkg|loaded_pkgs(,)
+PROC_SCAN_TRUNCATED=0   # 90초 컷오프로 /proc 순회가 중간에 끊겼는지 — meta__processes_truncated 로 노출
 
 collect_processes() {
-  local pid comm user exe exepkg loaded pns
+  local pid comm user exe exepkg loaded pns lib delf
   # 컨테이너(쿠버네티스/도커) 프로세스는 다른 mount namespace → 호스트 자신만 인벤토리한다.
   #   (컨테이너 라이브러리는 오버레이 경로라 dpkg -S 가 매번 DB 전체스캔 = 수백~수천회로 멈춤.
   #    컨테이너는 각자 에이전트가 스캔해야 함.) + 안전장치: 오래 걸리면 중단.
   local HOST_NS start; HOST_NS=$(readlink /proc/self/ns/mnt 2>/dev/null); start=$SECONDS
+  : > "$TMP/.stale-scan.txt"
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
     progress_heartbeat
-    [ $((SECONDS - start)) -gt 90 ] && break
+    if [ $((SECONDS - start)) -gt 90 ]; then
+      PROC_SCAN_TRUNCATED=1   # 90초 컷오프로 전체 pid 를 못 돌았다 — 프로세스/재시작필요
+      break                    # 판정이 불완전할 수 있음을 meta__processes_truncated 로 알린다.
+    fi
     pns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)
     [ -n "$pns" ] && [ "$pns" != "$HOST_NS" ] && continue      # 다른 ns(컨테이너) 제외
-    grep -ql '\.so' /proc/$pid/maps 2>/dev/null || continue   # 실제 프로그램만
+
+    # maps 를 이 pid 당 딱 한 번만 읽어 "유니크 .so 경로 목록 + 그중 삭제여부"를 동시에 뽑는다
+    # (원본의 grep -ql '\.so' 게이트 + collect_processes 용 awk + collect_stale 용 awk 를 통합).
+    local maplines; maplines=$(awk '
+        $0 ~ /\.so/ && NF>=6 {
+          key=$6; d = (/\(deleted\)$/) ? 1 : 0
+          if (!(key in seen)) { order[++n]=key; seen[key]=1; delf[key]=d }
+          else if (d) { delf[key]=1 }
+        }
+        END { for (i=1;i<=n;i++) print order[i] "\t" delf[order[i]] }
+      ' /proc/$pid/maps 2>/dev/null)
+    [ -z "$maplines" ] && continue   # 원본 grep -ql '\.so' 게이트와 동일 (실제 프로그램만)
+
     comm=$(cat /proc/$pid/comm 2>/dev/null)
+
+    # file_to_pkg 를 "$(... | while read; do file_to_pkg; done)" 파이프 서브셸 안에서 부르면
+    #   호출마다 인메모리 캐시(LIBPKG/RPPATH)가 서브셸에 갇혀 사라진다(file_to_pkg 정의부 주석
+    #   참고 — 실측: 이 문제로 365개 프로세스가 같은 libc.so.6 를 매번 파일캐시(awk fork)로
+    #   다시 조회했다). here-string(<<<, 서브셸 없음)으로 불러 캐시가 pid 를 넘어 누적되게 한다.
+    # dellist 를 "lib|pkg" 문자열로 패킹하면 lib 경로(비특권 로컬 사용자가 임의 파일명으로
+    #   통제 가능)에 포함된 '|' 가 구분자와 충돌해 필드를 위조할 수 있다 — 그래서 패킹/언패킹
+    #   자체를 없애고 병렬 배열 두 개로 들고 다닌다.
+    local -a pkglist=() dellist_file=() dellist_pkg=()
+    while IFS=$'\t' read -r lib delf; do
+      [ -z "$lib" ] && continue
+      file_to_pkg "$lib" >/dev/null
+      [ -n "$FTP_LAST" ] && pkglist+=("$FTP_LAST")
+      if [ "$delf" = "1" ]; then
+        dellist_file+=("$lib")
+        dellist_pkg+=("$FTP_LAST")
+      fi
+    done <<< "$maplines"
+
+    if [ "${#pkglist[@]}" -gt 0 ]; then
+      loaded=$(printf '%s\n' "${pkglist[@]}" | sort -u | paste -sd, -)
+    else
+      loaded=""
+    fi
+
     user=$(stat -c '%U' /proc/$pid 2>/dev/null)
     exe=$(realpath /proc/$pid/exe 2>/dev/null)
-    exepkg=$(file_to_pkg "$exe"); [ -z "$exepkg" ] && exepkg="UNPACKAGED"
-    loaded=$(awk '/\.so/{print $6}' /proc/$pid/maps 2>/dev/null | sort -u | while read -r lib; do
-               file_to_pkg "$lib"; done | grep -v '^$' | sort -u | paste -sd, -)
-    echo "${pid}|${comm}|${user}|${exepkg}|${loaded}"
+    file_to_pkg "$exe" >/dev/null; exepkg="$FTP_LAST"
+    [ -z "$exepkg" ] && exepkg="UNPACKAGED"
+    # "$TMP/.stale-scan.txt" 는 '|' 구분 4필드 그대로 남기지만, 값(특히 lib 경로)에 '|' 나
+    #   개행이 섞여 있으면 필드가 밀린다 — 출력 직전에 제거해 필드 무결성을 서버측 explode
+    #   limit 과 이중으로 보장한다.
+    local safe_comm safe_dpkg safe_dfile
+    safe_comm="${comm//[$'|\n']/_}"
+    echo "${pid}|${safe_comm}|${user}|${exepkg}|${loaded}"
+
+    local i dfile dpkg
+    for ((i=0; i<${#dellist_file[@]}; i++)); do
+      dfile="${dellist_file[$i]}"; dpkg="${dellist_pkg[$i]}"
+      [ -z "$dpkg" ] && continue   # 소유 패키지를 못 찾으면(예: 미패키징 lib) 원본과 동일하게 skip
+      safe_dpkg="${dpkg//[$'|\n']/_}"
+      safe_dfile="${dfile//[$'|\n']/_}"
+      printf '%s|%s|%s|%s\n' "$pid" "$safe_comm" "$safe_dpkg" "$safe_dfile" >> "$TMP/.stale-scan.txt"
+    done
   done
+}
+
+# collect_stale : 삭제된 라이브러리를 아직 메모리에 물고 있는 프로세스 (재시작 필요)
+#   패키지를 업데이트하면 옛 .so 는 unlink 되고(=maps 에 "(deleted)") 새 파일이 깔린다.
+#   하지만 이미 뜬 프로세스는 **옛 코드를 계속 실행**한다. 그래서 "패치됨"으로 보이지만
+#   실제로는 여전히 취약하다 — 오탐이 아니라 **미탐**이라 더 위험하다.
+#   실제 /proc 순회는 collect_processes() 가 이미 했다(위 주석 참고) — 호출 순서 전제:
+#   collect_processes 가 먼저 실행되어 "$TMP/.stale-scan.txt" 를 채운 뒤 이 함수가 불려야 한다
+#   (실제 호출부는 그 순서를 따른다). 여기서는 그 결과를 그대로 내보내기만 한다.
+#   출력: pid|comm|pkg|lib
+collect_stale() {
+  # cap() 을 거치지 않고 직접 append 되는 파일이라 MAX_BYTES 상한을 안 거친다 — 여기서 씌운다.
+  head -c "$MAX_BYTES" "$TMP/.stale-scan.txt" 2>/dev/null
 }
 
 # ==================================================================
@@ -1642,6 +1736,9 @@ put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
 } > "$TMP/runtime__processes.txt" 2>/dev/null || true
 [ "$(wc -l < "$TMP/runtime__processes.txt" 2>/dev/null || echo 0)" -ge 2 ] \
   || rm -f "$TMP/runtime__processes.txt"
+# 90초 컷오프로 순회가 중간에 끊겼으면 중앙이 이 스캔의 프로세스/재시작필요 판정이
+#   불완전할 수 있음을 알 수 있게 meta 로 남긴다(조용한 커버리지 축소 금지).
+[ "$PROC_SCAN_TRUNCATED" = "1" ] && put meta processes_truncated "1"
 
 # 재시작 필요 — 업데이트로 교체된 옛 라이브러리를 아직 물고 있는 프로세스
 {
