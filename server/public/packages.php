@@ -221,11 +221,11 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
   </div>
 
   <?php vg_toolbar([
-      ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'manager', 'selected' => $manager,
        'empty_label' => '전체 매니저', 'options' => $managerOptions],
       ['type' => 'select', 'name' => 'risk', 'selected' => $risk,
        'empty_label' => '전체 위험도', 'options' => $riskOptions],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명 검색', 'value' => $q],
       ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
   ]); ?>
 
@@ -277,11 +277,11 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
 <?php else: ?>
 
   <?php vg_toolbar([
-      ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'eco', 'selected' => $eco, 'empty_label' => '배포판 전체',
        'options' => $ecoOptions],
       ['type' => 'select', 'name' => 'sort', 'selected' => $sort === 'cves' ? '' : $sort,
        'empty_label' => 'CVE 많은순', 'options' => ['epss' => 'EPSS 높은순', 'package' => '패키지명순']],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명 검색', 'value' => $q],
       ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
   ]); ?>
 

@@ -160,9 +160,9 @@ vg_header('자산', 'assets');
 
   <?php
   vg_toolbar([
-      ['type' => 'search', 'name' => 'q', 'placeholder' => '호스트명 또는 설치 패키지 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'state', 'empty_label' => '전체 상태',
        'selected' => $state, 'options' => VG_ASSET_STATES],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '호스트명·IP·설치 패키지 검색', 'value' => $q],
   ]);
 
   // 폭 배분: 목록 표는 table-layout:fixed 다(app.css 의 '목록 화면' 구역).

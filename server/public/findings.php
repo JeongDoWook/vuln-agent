@@ -219,13 +219,13 @@ vg_header('탐지 결과', 'findings');
       $toolbar[] = ['type' => 'hidden', 'name' => 'sev', 'value' => $sev, 'reset' => true];
   }
   vg_toolbar(array_merge($toolbar, [
-      ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'st', 'empty_label' => '전체 상태', 'selected' => $st,
           'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
       // 조치 가능성 — 벤더가 수정본을 안 낸 CVE 를 걸러 보거나, 그것만 모아 볼 수 있다.
       ['type' => 'select', 'name' => 'fx', 'empty_label' => '전체(조치 가능성)', 'selected' => $fx,
           'options' => ['action' => '조치 가능', 'nofix' => '조치 불가(벤더 미수정)',
                         'restart' => '재시작·재부팅만 하면 됨']],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
   ]));
 
   // 컬럼 11개는 가로 스크롤을 만들어서, 정작 제일 중요한 "조치" 가 화면 밖으로 밀려났었다.

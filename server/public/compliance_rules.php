@@ -87,9 +87,9 @@ vg_header('보안 설정', 'compliance');
 <?php else: ?>
   <?php
   vg_toolbar([
-      ['type' => 'search', 'name' => 'q', 'placeholder' => '룰 ID 또는 제목 검색', 'value' => $q],
       ['type' => 'select', 'name' => 'sev', 'selected' => $sev, 'empty_label' => '심각도 전체',
        'options' => $sevOptions],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '룰 ID 또는 제목 검색', 'value' => $q],
   ]);
 
   $hasFilter = $q !== '' || $sev !== '';

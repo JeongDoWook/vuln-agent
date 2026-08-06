@@ -404,9 +404,6 @@ vg_header('변화 추적', 'findings');
   // 변화유형 필터는 취약점 변화 탭에만, 구간 필터는 추이 탭에만 뜻이 있다.
   //   추이 탭엔 검색어(q)도 뜻이 없다 — 회차 전체를 보는 화면이라.
   $filters = [];
-  if ($tab !== 'trend') {
-      $filters[] = ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE·패키지명 검색', 'value' => $q];
-  }
   $filters[] = ['type' => 'select', 'name' => 'host', 'selected' => (string) ($hostId ?: ''),
                 'empty_label' => '전체 호스트', 'options' => $hostOptions];
   if ($tab === 'vuln') {
@@ -416,6 +413,9 @@ vg_header('변화 추적', 'findings');
   if ($tab === 'trend') {
       $filters[] = ['type' => 'select', 'name' => 'window', 'selected' => $window,
                     'empty_label' => '기본(최근 10회차)', 'options' => $windowOptions];
+  }
+  if ($tab !== 'trend') {
+      $filters[] = ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE·패키지명 검색', 'value' => $q];
   }
   $filters[] = ['type' => 'hidden', 'name' => 'tab', 'value' => $tab];
   vg_toolbar($filters);
