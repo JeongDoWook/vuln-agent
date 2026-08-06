@@ -423,9 +423,12 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
 /**
  * GET 검색/필터 툴바(class="toolbar"). 값이 있으면 제출버튼 옆에 초기화 링크 자동 표시.
  *   $fields 각 항목: ['type'=>'search'|'select'|'hidden', 'name'=>, 'value'=>, 'placeholder'=>,
- *                     'options'=>['값'=>'라벨'], 'selected'=>, 'empty_label'=>'전체']
+ *                     'options'=>['값'=>'라벨'], 'selected'=>, 'empty_label'=>'전체', 'reset'=>bool]
  *   per_page 는 이 폼의 입력이 아니므로 hidden 으로 실어 보낸다 —
  *   안 그러면 "100개씩 보기" 상태에서 검색할 때마다 기본값으로 돌아간다.
+ *   hidden 타입은 두 가지 의미로 쓰인다: (1) 컨텍스트 유지용(scan_id, per_page 등 — 'reset' 생략,
+ *   초기화해도 남는다) (2) 폼 밖 필터 운반용(KPI 카드·탭으로 고른 sev/src 등 — 'reset'=>true 를
+ *   켜야 초기화 링크가 이 값도 지운다). 새로 hidden 필드를 추가할 때 어느 쪽인지 판단해서 넣는다.
  */
 function vg_toolbar(array $fields): void {
     $resetOverrides = ['page' => null];
@@ -444,7 +447,13 @@ function vg_toolbar(array $fields): void {
         $value = (string) ($f['value'] ?? '');
 
         if ($type === 'hidden') {
-            echo '<input type="hidden" name="' . vg_h($name) . '" value="' . vg_h($value) . '">';
+            $isReset = !empty($f['reset']);
+            $resetAttr = $isReset ? ' data-reset="1"' : '';
+            echo '<input type="hidden" name="' . vg_h($name) . '" value="' . vg_h($value) . '"' . $resetAttr . '>';
+            if ($isReset) {
+                $resetOverrides[$name] = null;
+                if ($value !== '') { $hasValue = true; }
+            }
             continue;
         }
 

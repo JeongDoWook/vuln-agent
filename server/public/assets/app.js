@@ -201,7 +201,7 @@
   // --- 모바일 필터 패널 ---------------------------------------------------
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('form.toolbar').forEach(function (form) {
-      var fields = form.querySelectorAll('input:not([type=hidden]), select');
+      var fields = form.querySelectorAll('input:not([type=hidden]), select, input[type=hidden][data-reset="1"]');
       if (!fields.length) { return; }
       var active = Array.prototype.some.call(fields, function (field) { return field.value !== ''; });
       var toggle = document.createElement('button');

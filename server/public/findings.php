@@ -216,7 +216,7 @@ vg_header('탐지 결과', 'findings');
           'selected' => $hostId > 0 ? (string) $hostId : '', 'options' => $hostOptions]];
   // KPI 카드로 고른 등급(sev)은 검색 폼 필드가 아니라, 폼 제출 시 사라지지 않도록 hidden 으로 함께 싣는다.
   if ($sev !== '') {
-      $toolbar[] = ['type' => 'hidden', 'name' => 'sev', 'value' => $sev];
+      $toolbar[] = ['type' => 'hidden', 'name' => 'sev', 'value' => $sev, 'reset' => true];
   }
   vg_toolbar(array_merge($toolbar, [
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
