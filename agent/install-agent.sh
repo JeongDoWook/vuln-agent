@@ -376,8 +376,12 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
   rm -f "$TIMER"   # 구버전(oneshot+timer) 잔재 — 상시 서비스로 대체하므로 더 이상 만들지 않는다
-  if systemctl daemon-reload 2>/dev/null && systemctl enable --now vuln-agent.service 2>/dev/null; then
+  # enable --now 는 유닛이 이미 active 면 재시작하지 않는다(start 가 no-op) — 이러면 방금
+  # 디스크에 새로 쓴 run.sh 를, 메모리에서 옛 while-loop 를 계속 돌던 기존 프로세스가 못 읽는다.
+  # daemon-reload → enable(활성화만) → restart(무조건 재기동)로 새 코드 반영을 보장한다.
+  if systemctl daemon-reload 2>/dev/null && systemctl enable vuln-agent.service 2>/dev/null && systemctl restart vuln-agent.service 2>/dev/null; then
     SCHEDULED="systemd 상시 데몬(10초 poll, 초기 정기수집 주기=$SCHEDULE)"
+    echo ">> 서비스 재시작 완료"
   else
     rm -f "$UNIT"
     echo ">> systemd 사용 불가 → cron 으로 대체 시도(정기수집만, 즉시/예약 명령 미지원)"
