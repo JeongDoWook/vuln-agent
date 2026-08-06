@@ -1206,6 +1206,8 @@ ctr_exposure() {   # $1=cid $2=대표pid $3=pidns $4=pkgs파일
 #   실측(컨테이너 370 pid 스냅샷): 원본 2-pass 평균 7.7초 → 병합 1-pass 평균 3.5초, 출력
 #   바이트단위 동일(diff 없음). 자세한 벤치마크는 PR 설명 참고.
 #   출력: pid|comm|user|exe_pkg|loaded_pkgs(,)
+PROC_SCAN_TRUNCATED=0   # 90초 컷오프로 /proc 순회가 중간에 끊겼는지 — meta__processes_truncated 로 노출
+
 collect_processes() {
   local pid comm user exe exepkg loaded pns lib delf
   # 컨테이너(쿠버네티스/도커) 프로세스는 다른 mount namespace → 호스트 자신만 인벤토리한다.
@@ -1215,7 +1217,10 @@ collect_processes() {
   : > "$TMP/.stale-scan.txt"
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
     progress_heartbeat
-    [ $((SECONDS - start)) -gt 90 ] && break
+    if [ $((SECONDS - start)) -gt 90 ]; then
+      PROC_SCAN_TRUNCATED=1   # 90초 컷오프로 전체 pid 를 못 돌았다 — 프로세스/재시작필요
+      break                    # 판정이 불완전할 수 있음을 meta__processes_truncated 로 알린다.
+    fi
     pns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)
     [ -n "$pns" ] && [ "$pns" != "$HOST_NS" ] && continue      # 다른 ns(컨테이너) 제외
 
@@ -1237,12 +1242,18 @@ collect_processes() {
     #   호출마다 인메모리 캐시(LIBPKG/RPPATH)가 서브셸에 갇혀 사라진다(file_to_pkg 정의부 주석
     #   참고 — 실측: 이 문제로 365개 프로세스가 같은 libc.so.6 를 매번 파일캐시(awk fork)로
     #   다시 조회했다). here-string(<<<, 서브셸 없음)으로 불러 캐시가 pid 를 넘어 누적되게 한다.
-    local -a pkglist=() dellist=()
+    # dellist 를 "lib|pkg" 문자열로 패킹하면 lib 경로(비특권 로컬 사용자가 임의 파일명으로
+    #   통제 가능)에 포함된 '|' 가 구분자와 충돌해 필드를 위조할 수 있다 — 그래서 패킹/언패킹
+    #   자체를 없애고 병렬 배열 두 개로 들고 다닌다.
+    local -a pkglist=() dellist_file=() dellist_pkg=()
     while IFS=$'\t' read -r lib delf; do
       [ -z "$lib" ] && continue
       file_to_pkg "$lib" >/dev/null
       [ -n "$FTP_LAST" ] && pkglist+=("$FTP_LAST")
-      [ "$delf" = "1" ] && dellist+=("$lib|$FTP_LAST")
+      if [ "$delf" = "1" ]; then
+        dellist_file+=("$lib")
+        dellist_pkg+=("$FTP_LAST")
+      fi
     done <<< "$maplines"
 
     if [ "${#pkglist[@]}" -gt 0 ]; then
@@ -1255,13 +1266,20 @@ collect_processes() {
     exe=$(realpath /proc/$pid/exe 2>/dev/null)
     file_to_pkg "$exe" >/dev/null; exepkg="$FTP_LAST"
     [ -z "$exepkg" ] && exepkg="UNPACKAGED"
-    echo "${pid}|${comm}|${user}|${exepkg}|${loaded}"
+    # "$TMP/.stale-scan.txt" 는 '|' 구분 4필드 그대로 남기지만, 값(특히 lib 경로)에 '|' 나
+    #   개행이 섞여 있으면 필드가 밀린다 — 출력 직전에 제거해 필드 무결성을 서버측 explode
+    #   limit 과 이중으로 보장한다.
+    local safe_comm safe_dpkg safe_dfile
+    safe_comm="${comm//[$'|\n']/_}"
+    echo "${pid}|${safe_comm}|${user}|${exepkg}|${loaded}"
 
-    local d dfile dpkg
-    for d in "${dellist[@]}"; do
-      dfile="${d%%|*}"; dpkg="${d#*|}"
+    local i dfile dpkg
+    for ((i=0; i<${#dellist_file[@]}; i++)); do
+      dfile="${dellist_file[$i]}"; dpkg="${dellist_pkg[$i]}"
       [ -z "$dpkg" ] && continue   # 소유 패키지를 못 찾으면(예: 미패키징 lib) 원본과 동일하게 skip
-      printf '%s|%s|%s|%s\n' "$pid" "$comm" "$dpkg" "$dfile" >> "$TMP/.stale-scan.txt"
+      safe_dpkg="${dpkg//[$'|\n']/_}"
+      safe_dfile="${dfile//[$'|\n']/_}"
+      printf '%s|%s|%s|%s\n' "$pid" "$safe_comm" "$safe_dpkg" "$safe_dfile" >> "$TMP/.stale-scan.txt"
     done
   done
 }
@@ -1275,7 +1293,8 @@ collect_processes() {
 #   (실제 호출부는 그 순서를 따른다). 여기서는 그 결과를 그대로 내보내기만 한다.
 #   출력: pid|comm|pkg|lib
 collect_stale() {
-  cat "$TMP/.stale-scan.txt" 2>/dev/null
+  # cap() 을 거치지 않고 직접 append 되는 파일이라 MAX_BYTES 상한을 안 거친다 — 여기서 씌운다.
+  head -c "$MAX_BYTES" "$TMP/.stale-scan.txt" 2>/dev/null
 }
 
 # ==================================================================
@@ -1717,6 +1736,9 @@ put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
 } > "$TMP/runtime__processes.txt" 2>/dev/null || true
 [ "$(wc -l < "$TMP/runtime__processes.txt" 2>/dev/null || echo 0)" -ge 2 ] \
   || rm -f "$TMP/runtime__processes.txt"
+# 90초 컷오프로 순회가 중간에 끊겼으면 중앙이 이 스캔의 프로세스/재시작필요 판정이
+#   불완전할 수 있음을 알 수 있게 meta 로 남긴다(조용한 커버리지 축소 금지).
+[ "$PROC_SCAN_TRUNCATED" = "1" ] && put meta processes_truncated "1"
 
 # 재시작 필요 — 업데이트로 교체된 옛 라이브러리를 아직 물고 있는 프로세스
 {

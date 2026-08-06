@@ -14,6 +14,7 @@ eval "$func"
 
 PKGMGR=dpkg
 declare -A LIBPKG
+declare -A RPPATH
 COUNT_FILE="$TMP/dpkg-calls"
 export COUNT_FILE
 dpkg() {
