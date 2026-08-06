@@ -1464,7 +1464,7 @@ span.flatpickr-weekday { color: var(--muted); font-size: .72rem; }
 /* 검색창엔 돋보기 아이콘을 안에 둔다(참고 디자인처럼). 아이콘은 배경 SVG 라 여백만 비운다. */
 .toolbar input[type=search] {
   width: auto;
-  min-width: min(280px, 70vw);
+  min-width: min(420px, 70vw);
   padding-left: 2rem;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239aa4b2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.3-4.3'/></svg>");
   background-repeat: no-repeat;

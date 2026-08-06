@@ -264,8 +264,6 @@ vg_header('판정 근거', 'vendor');
   $srcOptions = [];
   foreach (VG_VENDOR_SRC as $k => $d) { $srcOptions[$k] = $d['label']; }
   vg_toolbar([
-      ['type' => 'select', 'name' => 'src', 'selected' => $src, 'empty_label' => '소스 전체',
-       'options' => $srcOptions],
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지 검색 (예: CVE-2024, openssl)', 'value' => $q],
       ['type' => 'select', 'name' => 'rel', 'selected' => $rel, 'empty_label' => '릴리스 전체',
        'options' => $relOptions],
