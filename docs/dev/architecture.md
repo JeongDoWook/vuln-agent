@@ -99,8 +99,8 @@ stale 값이 영구히 남는다).
 **SCA 라이선스 식별** 은 CVE 매칭과 별개 축이다. 에이전트가 SBOM(CycloneDX/SPDX, `SBOM_DIR`
 오프라인 입력)·pip `METADATA`·composer `installed.json` 에서 라이선스 문자열을 수집해 보내면,
 `src/license_risk.php`(`vg_license_classify`)가 SPDX 식별자·자유서술 별칭·복합 표현식(`OR`/`AND`)을
-permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결과를 `language-packages.php`
-에 보여준다. **npm/gem/maven/nuget/cargo 매니페스트 직접 파싱이나 시그니처·바이너리 스캔으로는
+permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결과를 `/packages.php?tab=lang`
+(언어 패키지·라이선스 탭)에 보여준다. **npm/gem/maven/nuget/cargo 매니페스트 직접 파싱이나 시그니처·바이너리 스캔으로는
 라이선스를 식별하지 않는다** — 위 세 소스가 없으면 미상(unknown)으로 남는다. 목록·KPI 는
 `tb_package_license_summary`(`src/license_summary.php`, 스케줄러가 매 틱 무조건 재구성 — OSV 게이트와
 무관하다. tb_package_summary 와 달리 OSV 실행에 안 묶은 이유는 라이선스 데이터가 OSV 가 아니라

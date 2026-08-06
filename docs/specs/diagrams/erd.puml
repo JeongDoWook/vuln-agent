@@ -204,7 +204,7 @@ package "CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)" {
         risk : string
         pkg_count : int
         updated_at : datetime
-        ' 사전집계 - language-packages.php 전용
+        ' 사전집계 - packages.php?tab=lang 전용
     }
 
     entity tb_advisory {
