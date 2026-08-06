@@ -249,7 +249,11 @@ HOSTNAME_SHORT="$(hostname -s 2>/dev/null || echo unknown)"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT="${OUT:-/tmp/vulninv-${HOSTNAME_SHORT}-${STAMP}.json}"
 TMP="$(mktemp -d /tmp/vulninv.XXXXXX)"
-trap 'rm -rf "$TMP"' EXIT
+# ORIGINS_PID: collect_pkg_origins() 가 백그라운드 apt-cache 를 돌리는 동안만 설정한다.
+# cancel_if_requested() 의 exit 130 은 함수 RETURN 을 안 거치고 프로세스를 바로 끝내므로,
+# 그 자식을 정리할 곳은 결국 여기(전역 EXIT 트랩)뿐이다 — 정상 종료 시엔 이미 wait 로 끝난
+# 뒤라 kill 이 조용히 실패할 뿐 무해하다.
+trap 'kill "${ORIGINS_PID:-}" 2>/dev/null; rm -rf "$TMP"' EXIT
 START_TS=$SECONDS
 measure_start   # 자기계측 시작(cgroup 우선, 없으면 샘플러) — 수집 전체 구간을 덮는다
 
@@ -291,11 +295,13 @@ cancel_if_requested() {
 }
 
 progress_heartbeat() {
+  local stage="${1:-exposure}" percent="${2:-74}" \
+        message="${3:-프로세스와 네트워크 노출을 분석하고 있습니다.}"
   local now last=0
   now=$(date +%s); [ -f "$TMP/.progress-heartbeat" ] && read -r last < "$TMP/.progress-heartbeat"
   if [ $((now - last)) -ge 5 ]; then
     printf '%s' "$now" > "$TMP/.progress-heartbeat"
-    progress_report exposure 74 '프로세스와 네트워크 노출을 분석하고 있습니다.'
+    progress_report "$stage" "$percent" "$message"
   fi
   cancel_if_requested
 }
@@ -630,23 +636,28 @@ collect_exposure() {
 #   그래서 **그 패키지의 다른 버전 줄**에 저장소가 있으면 그 저장소가 출처다(설치본이 낡았을 뿐).
 collect_pkg_origins() {
   have apt-cache || return 0
-  # apt-cache policy 를 패키지 수천 개에 돌리면 수 분이 걸릴 수 있다(CMD_TIMEOUT 은 걸려 있지만
-  # 그동안 진행 신호가 없어 웹 UI 가 180초 뒤 "마지막 통신 지연"을 오탐한다). 백그라운드로 돌리고
-  # 그 PID 가 끝날 때까지 5초 간격으로 progress_heartbeat() 를 부르며 대기한다 — awk 로 들어가는
-  # stdin 내용·순서는 원본과 완전히 동일해야 하므로, 백그라운드 출력을 임시파일에 그대로 받아
-  # 끝난 뒤 그 파일을 awk 에 넘긴다(파이프라인 구조 자체는 바꾸지 않음).
+  # apt-cache policy 를 패키지 수천 개에 돌리면 CMD_TIMEOUT 기본값(20초) 기준으로도 이 블록
+  # 전체가 ~40초(policy 전체 20초 + policy 패키지목록 20초)까지 걸릴 수 있다 — 웹 UI 의 180초
+  # "마지막 통신 지연" 임계(server/public/assets/app.js:315)엔 원래 안 닿지만, CMD_TIMEOUT 을
+  # 크게 잡은 환경이나 apt-cache 가 timeout 안에서도 굼뜬 환경까지 고려해 하트비트를 둔다.
+  # 백그라운드로 돌리고 그 PID 가 끝날 때까지 5초 간격으로 progress_heartbeat() 를 부르며
+  # 대기한다 — awk 로 들어가는 stdin 내용·순서는 원본과 완전히 동일해야 하므로, 백그라운드
+  # 출력을 임시파일에 그대로 받아 끝난 뒤 그 파일을 awk 에 넘긴다(파이프라인 구조 자체는
+  # 바꾸지 않음). cap() 과 동일하게 head -c 로 바이트 상한을 걸고, timeout -k 2 로 SIGTERM
+  # 을 무시하는 자식이 있어도 kill -0 대기 루프가 영원히 끝나지 않는 걸 막는다.
   local origins_raw="$TMP/.pkg-origins-raw.txt"
   {
-    timeout "$CMD_TIMEOUT" apt-cache policy 2>/dev/null
+    timeout -k 2 "$CMD_TIMEOUT" apt-cache policy 2>/dev/null
     echo "@@@SPLIT@@@"
-    timeout "$CMD_TIMEOUT" apt-cache policy $(dpkg-query -W -f='${Package}\n' 2>/dev/null) 2>/dev/null
-  } > "$origins_raw" &
-  local origins_pid=$!
-  while kill -0 "$origins_pid" 2>/dev/null; do
-    progress_heartbeat
+    timeout -k 2 "$CMD_TIMEOUT" apt-cache policy $(dpkg-query -W -f='${Package}\n' 2>/dev/null) 2>/dev/null
+  } | head -c "$MAX_BYTES" > "$origins_raw" &
+  ORIGINS_PID=$!
+  while kill -0 "$ORIGINS_PID" 2>/dev/null; do
+    progress_heartbeat pkg_origins 80 '패키지 출처(서드파티 저장소)를 확인하고 있습니다.'
     sleep 5
   done
-  wait "$origins_pid"
+  wait "$ORIGINS_PID"
+  ORIGINS_PID=""
   awk '
     BEGIN { phase = 1 }
     /^@@@SPLIT@@@$/ { phase = 2; next }
