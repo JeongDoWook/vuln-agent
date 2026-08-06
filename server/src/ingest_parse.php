@@ -10,6 +10,20 @@ declare(strict_types=1);
 require_once __DIR__ . '/vercmp.php';       // vg_ver_cmp — vg_ingest_parse_kernel 에서 커널 버전 비교용
 require_once __DIR__ . '/license_risk.php'; // vg_license_normalize_token — pkg_license 정규화
 
+// ── 패키지 의존성 그래프(tb_package_dependency) 저장 상한 ──────────────────
+//   PR#399 리뷰: dedup/상한 없는 SBOM dependencies 배열이 자원 소진(DoS)로 실측됨.
+//   스캔(컨테이너 SBOM 1개 또는 호스트 pom.xml 전체) 당 상한 — 초과분은 버리고 로그만 남긴다.
+const VG_SBOM_DEP_EDGE_MAX = 5000;
+const VG_POM_DEP_EDGE_MAX  = 2000;
+
+// ── 패키지 의존성 그래프 그룹/이름/버전 문자셋 검증 ─────────────────────────
+//   PR#399 리뷰: 문자셋 검증 없이 저장하면 저장형 XSS 사전조건이 된다. vg_h() 출력 이스케이프는
+//   유지하되 저장 단계에서부터 거른다 — 첫 글자는 영숫자만 허용(특수문자로 시작하는 값 배제).
+function vg_pkg_ident_valid(string $s): bool
+{
+    return $s !== '' && strlen($s) <= 255 && preg_match('/^[A-Za-z0-9][A-Za-z0-9._\-\/:+@]*$/', $s) === 1;
+}
+
 // ── collected_at (ISO-8601) → MySQL DATETIME ──────────────────────────────
 function vg_ingest_parse_collected_at($raw): ?string
 {
@@ -264,12 +278,15 @@ function vg_ingest_parse_container_list(string $listText): array
 /** Parse externally supplied CycloneDX/SPDX SBOM lines: cid|format|base64(json). */
 function vg_ingest_parse_sbom(string $text): array
 {
-    $packages=[]; $meta=[];
+    $packages=[]; $meta=[]; $deps=[]; $depsSeen=[]; $depsDropped=0;
     foreach (preg_split('/\r?\n/', $text) as $line) {
         $f=explode('|',$line,3); if(count($f)!==3||$f[0]==='')continue;
         $raw=base64_decode($f[2],true); $doc=$raw!==false?json_decode($raw,true):null; if(!is_array($doc))continue;
         $cid=mb_strimwidth($f[0],0,255,''); $format=strtolower($f[1]); $meta[$cid]=[$format,hash('sha256',$raw)];
         $items=$format==='spdx'?($doc['packages']??[]):($doc['components']??[]);
+        // ref(bom-ref, 없으면 purl) → [manager,name,version] — CycloneDX dependencies[] 엣지 해석용.
+        //   SPDX relationships 는 이번 스코프 밖(Phase 2)이라 여기선 CycloneDX 만 다룬다.
+        $refMap=[];
         foreach($items as $item){
             $name=trim((string)($item['name']??''));$ver=trim((string)($item['version']??$item['versionInfo']??''));$purl=(string)($item['purl']??'');
             if($purl===''&&isset($item['externalRefs']))foreach($item['externalRefs'] as $ref){if(($ref['referenceType']??'')==='purl'){$purl=(string)($ref['referenceLocator']??'');break;}}
@@ -301,11 +318,122 @@ function vg_ingest_parse_sbom(string $text): array
                 } elseif ($packages[$pkey][5]===''&&$lic!==''){
                     $packages[$pkey][5]=mb_strimwidth($lic,0,255,'');
                 }
+                // dependencies[].ref 는 보통 bom-ref, 없으면 컴포넌트 자신의 purl 로 참조한다.
+                if ($format !== 'spdx') {
+                    $ref = (string) ($item['bom-ref'] ?? $purl);
+                    if ($ref !== '') { $refMap[$ref] = [$mgr, mb_strimwidth($name,0,255,''), mb_strimwidth($ver,0,255,'')]; }
+                }
+            }
+        }
+        // metadata.component — BOM 이 기술하는 대상(스캔된 프로젝트/이미지) 자신. components[] 에는
+        //   안 들어 있으므로 dependencies[] 의 루트 참조를 풀려면 refMap 에 따로 등록해야 한다.
+        if ($format !== 'spdx' && isset($doc['metadata']['component']) && is_array($doc['metadata']['component'])) {
+            $rc = $doc['metadata']['component'];
+            $rname = trim((string) ($rc['name'] ?? ''));
+            $rver  = trim((string) ($rc['version'] ?? ''));
+            $rpurl = (string) ($rc['purl'] ?? '');
+            $rmgr = '';
+            if (preg_match('#^pkg:([^/]+)/([^@?]+)#', $rpurl, $m)) {
+                $type = strtolower($m[1]); $decoded = urldecode($m[2]);
+                if ($type === 'maven' && str_contains($decoded, '/')) { $pos = strrpos($decoded, '/'); $decoded = substr($decoded, 0, $pos) . ':' . substr($decoded, $pos + 1); }
+                $rname = $decoded ?: $rname;
+                $rmgr = ['pypi'=>'pip','npm'=>'npm','gem'=>'gem','composer'=>'composer','maven'=>'maven','nuget'=>'nuget','cargo'=>'cargo','golang'=>'go','deb'=>'dpkg','rpm'=>'rpm','apk'=>'apk'][$type] ?? '';
+            }
+            $rref = (string) ($rc['bom-ref'] ?? $rpurl);
+            if ($rref !== '' && $rmgr !== '' && $rname !== '' && $rver !== '') {
+                $refMap[$rref] = [$rmgr, mb_strimwidth($rname, 0, 255, ''), mb_strimwidth($rver, 0, 255, '')];
+            }
+        }
+        // CycloneDX dependencies[] → 부모→자식 엣지. ref 가 refMap 에 없는(문자셋/미완성) 컴포넌트를
+        //   가리키면 그 엣지는 버린다(정체를 알 수 없는 부모/자식을 저장하지 않는다).
+        if ($format !== 'spdx' && isset($doc['dependencies']) && is_array($doc['dependencies'])) {
+            $rootRef = (string) ($doc['metadata']['component']['bom-ref'] ?? $doc['metadata']['component']['purl'] ?? '');
+            if ($rootRef !== '' && isset($refMap[$rootRef])) {
+                [$rm, $rn, $rv] = $refMap[$rootRef];
+                if (vg_pkg_ident_valid($rm) && vg_pkg_ident_valid($rn) && vg_pkg_ident_valid($rv)) {
+                    $k = "$cid|root|$rm|$rn|$rv";
+                    if (!isset($depsSeen[$k]) && count($deps) < VG_SBOM_DEP_EDGE_MAX) {
+                        $depsSeen[$k] = true;
+                        $deps[] = [$cid, null, null, null, $rm, $rn, $rv];
+                    }
+                }
+            }
+            foreach ($doc['dependencies'] as $dep) {
+                $ref = (string) ($dep['ref'] ?? '');
+                if ($ref === '' || !isset($refMap[$ref])) { continue; }
+                [$pm, $pn, $pv] = $refMap[$ref];
+                if (!vg_pkg_ident_valid($pm) || !vg_pkg_ident_valid($pn) || !vg_pkg_ident_valid($pv)) { continue; }
+                foreach ((array) ($dep['dependsOn'] ?? []) as $childRef) {
+                    $childRef = (string) $childRef;
+                    if (!isset($refMap[$childRef])) { continue; }
+                    [$cm, $cn, $cv] = $refMap[$childRef];
+                    if (!vg_pkg_ident_valid($cm) || !vg_pkg_ident_valid($cn) || !vg_pkg_ident_valid($cv)) { continue; }
+                    $k = "$cid|$pm|$pn|$pv|$cm|$cn|$cv";
+                    if (isset($depsSeen[$k])) { continue; }
+                    if (count($deps) >= VG_SBOM_DEP_EDGE_MAX) { $depsDropped++; continue; }
+                    $depsSeen[$k] = true;
+                    $deps[] = [$cid, $pm, $pn, $pv, $cm, $cn, $cv];
+                }
             }
         }
     }
-    return ['packages'=>array_values($packages),'meta'=>$meta];
+    return ['packages'=>array_values($packages),'meta'=>$meta,'deps'=>$deps,'deps_dropped'=>$depsDropped];
 }
+// ── pom.xml 최상위 <dependencies> 직접 선언 (best-effort, mvn 미호출) ────────
+//   에이전트가 올린 형식: path|base64(pom.xml 원문). 옛 PR#399 는 awk 한 줄 파싱으로
+//   <exclusions> 블록·한 줄 <parent> 를 잘못 잡아 오탐/0건이 났다 — DOMDocument 로 실제
+//   XML 트리를 따라가 "루트 <project> 의 직계 자식인 <dependencies> 의 직계 자식 <dependency>"
+//   만 골라낸다. <parent>·<dependencyManagement>·<exclusions> 안에 같은 태그가 있어도
+//   경로가 다르므로 XPath 가 구조적으로 걸러낸다(한 줄 <parent> 형태도 자식 엘리먼트가
+//   없어 애초에 매칭되지 않는다).
+function vg_ingest_parse_pom_deps(string $text): array
+{
+    $rows = []; $seen = []; $dropped = 0;
+    foreach (preg_split('/\r?\n/', $text) as $line) {
+        if ($line === '') { continue; }
+        $f = explode('|', $line, 2);
+        if (count($f) !== 2 || trim($f[0]) === '' || $f[1] === '') { continue; }
+        $xml = base64_decode($f[1], true);
+        if ($xml === false || trim($xml) === '') { continue; }
+
+        $prevErrors = libxml_use_internal_errors(true);
+        $doc = new DOMDocument();
+        // LIBXML_NONET: 외부 네트워크 참조 금지. 엔티티 확장(LIBXML_NOENT)은 절대 켜지 않는다(XXE 방지).
+        $ok = @$doc->loadXML($xml, LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($prevErrors);
+        if (!$ok) { continue; }
+
+        $xpath = new DOMXPath($doc);
+        $deps = $xpath->query('/*[local-name()="project"]/*[local-name()="dependencies"]/*[local-name()="dependency"]');
+        if ($deps === false) { continue; }
+
+        foreach ($deps as $depNode) {
+            $g = ''; $a = ''; $v = ''; $scope = '';
+            foreach ($depNode->childNodes as $child) {
+                if ($child->nodeType !== XML_ELEMENT_NODE) { continue; }
+                switch ($child->localName) {
+                    case 'groupId':    $g = trim($child->textContent); break;
+                    case 'artifactId': $a = trim($child->textContent); break;
+                    case 'version':    $v = trim($child->textContent); break;
+                    case 'scope':      $scope = trim($child->textContent); break;
+                }
+            }
+            if ($g === '' || $a === '' || $v === '') { continue; }         // 버전 없음(부모/BOM 관리) → 해석 불가, 버림
+            if (str_contains($g, '${') || str_contains($a, '${') || str_contains($v, '${')) { continue; } // 미해석 프로퍼티
+            if ($scope === 'test' || $scope === 'provided') { continue; }   // 런타임 의존이 아님
+            $name = "$g:$a";
+            if (!vg_pkg_ident_valid($name) || !vg_pkg_ident_valid($v)) { continue; }
+            $k = "$name|$v";
+            if (isset($seen[$k])) { continue; }
+            if (count($rows) >= VG_POM_DEP_EDGE_MAX) { $dropped++; continue; }
+            $seen[$k] = true;
+            $rows[] = ['maven', mb_strimwidth($name, 0, 255, ''), mb_strimwidth($v, 0, 255, '')];
+        }
+    }
+    return ['rows' => $rows, 'dropped' => $dropped];
+}
+
 // ── 컨테이너 내부 패키지 — cid|manager|name|version|source ───────────────
 function vg_ingest_parse_container_packages(string $packagesText): array
 {
@@ -424,7 +552,9 @@ function vg_ingest_content_hash(
     int $kernelReboot,
     array $vm,
     array $sys,
-    array $originMap = []
+    array $originMap = [],
+    array $pomDepRows = [],
+    array $sbomDepRows = []
 ): string {
     $hashParts = [];
     // **저장하는 값 전부**를 해시에 넣는다(이름·버전만 넣으면 안 된다).
@@ -447,6 +577,10 @@ function vg_ingest_content_hash(
     $hashParts[] = 'k|' . $runningKernel . '|' . $kernelLatest . '|' . $kernelReboot;
     $hashParts[] = 'o|' . ($vm['distro_id'] ?? '') . '|' . ($vm['distro_version'] ?? '')
                  . '|' . ($sys['kernel_release'] ?? ($sys['kernel'] ?? ''));
+    // 의존성 그래프도 해시에 넣는다 — 안 넣으면 그래프만 바뀐 재스캔이 "변경 없음"으로 스킵돼
+    //   tb_package_dependency 가 영구히 비는 문제가 생긴다(PR#399 리뷰 지적).
+    foreach ($pomDepRows as $r)  { $hashParts[] = 'pd|' . implode('|', $r); }
+    foreach ($sbomDepRows as $r) { $hashParts[] = 'sd|' . implode('|', array_map(static fn($v) => (string) $v, $r)); }
     sort($hashParts);
     return hash('sha256', implode("\n", $hashParts));
 }
