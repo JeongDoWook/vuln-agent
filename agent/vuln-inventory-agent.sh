@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.9"
+SCRIPT_VERSION="3.10"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
@@ -1904,7 +1904,7 @@ build_json_output() {
       jq -Rs -c --arg c "${base%%__*}" --arg k "${base#*__}" \
         '{c:$c,k:$k,v:(sub("\n+$";""))}' "$f"
     done > "$TMP/_flat.jsonl"
-    jq -s 'reduce .[] as $x ({}; .[$x.c][$x.k] = $x.v)' "$TMP/_flat.jsonl"
+    jq -sc 'reduce .[] as $x ({}; .[$x.c][$x.k] = $x.v)' "$TMP/_flat.jsonl"
   elif have awk; then
     vg_json_build
   else
@@ -1951,7 +1951,7 @@ awk -v elapsed="$ELAPSED" -v rss="$PEAK_RSS_MB" -v cpu="$CPU_SECONDS" -v cid="$C
     meta="\"elapsed_seconds\":\"" elapsed "\""
     if (rss != "") meta=meta ",\"peak_rss_mb\":\"" rss "\""
     if (cpu != "") meta=meta ",\"cpu_seconds\":\"" cpu "\""
-    sub(/"meta":\{/, "\"meta\":{" meta ",")
+    sub(/"meta":[ \t]*\{/, "\"meta\":{" meta ",")
     if (cid != "") sub(/}[ \t]*$/, ",\"command_id\":" cid "}")
     print
   }
