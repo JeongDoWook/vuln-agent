@@ -255,7 +255,7 @@ vg_header('판정 근거', 'vendor');
   echo '<div class="tabs">';
   foreach (VG_VENDOR_SRC as $k => $d) {
       $on = $src === $k;
-      echo '<a class="pill' . ($on ? ' pill--on' : '') . '" href="/vendor.php' . vg_qs(['src' => $k, 'page' => null])
+      echo '<a class="pill' . ($on ? ' pill--on' : '') . '" href="/vendor.php' . vg_qs(['src' => $on ? null : $k, 'page' => null])
          . '" title="' . vg_h($d['desc']) . '">' . vg_h($d['label'])
          . ' <span class="why">' . number_format($srcCounts[$k]) . '건</span></a>';
   }
