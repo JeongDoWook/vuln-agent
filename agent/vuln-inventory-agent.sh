@@ -1391,6 +1391,25 @@ collect_project_deps_declared() {
     done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f \( -name 'go.mod' -o -name 'requirements.txt' -o -name 'pom.xml' \) 2>/dev/null|head -"$SCAN_MAX_FILES")
   done | sort -u
 }
+
+# 패키지 의존성 그래프용 — pom.xml 원문을 그대로(경로|base64) 올린다. 옛 awk 한 줄 파싱은
+# <exclusions>/<parent> 를 구조적으로 구분 못 해 오탐/0건이 났다(PR#399 리뷰) — 중앙이
+# DOMDocument 로 실제 XML 트리를 따라가 최상위 <dependencies> 만 정확히 골라낸다
+# (server/src/ingest_parse.php:vg_ingest_parse_pom_deps). 파일당 크기를 캡핑해 한 개의
+# 거대한 pom.xml 이 예산을 통째로 먹지 못하게 한다.
+POM_DEP_FILE_MAX_BYTES="${POM_DEP_FILE_MAX_BYTES:-131072}"   # 파일당 128KB
+collect_pom_direct_deps() {
+  local root f count=0 sz
+  for root in $PROJECT_SCAN_ROOTS; do
+    [ -d "$root" ] || continue
+    while IFS= read -r f; do
+      count=$((count+1)); [ "$count" -le "$SCAN_MAX_FILES" ] || break 2
+      sz=$(wc -c < "$f" 2>/dev/null || echo 0)
+      [ "$sz" -gt 0 ] && [ "$sz" -le "$POM_DEP_FILE_MAX_BYTES" ] || continue
+      printf '%s|%s\n' "$f" "$(base64 -w0 "$f" 2>/dev/null || base64 "$f" 2>/dev/null | tr -d '\n')"
+    done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f -name 'pom.xml' 2>/dev/null|head -"$SCAN_MAX_FILES")
+  done
+}
 # --- 매핑 힌트: 어떤 OVAL/보안트래커로 대조할지 자기설명적으로 기록 ---
 OS_ID="$( . /etc/os-release 2>/dev/null; echo "${ID:-unknown}" )"
 OS_CPE="$( . /etc/os-release 2>/dev/null; echo "${CPE_NAME:-}" )"
@@ -1542,6 +1561,13 @@ if [ -s "$VG_LIC" ]; then
   if [ -s "$VG_LIC" ] && [ -n "$(tail -c 1 "$VG_LIC")" ]; then printf '\n' >> "$VG_LIC"; fi
 fi
 [ -s "$VG_LIC" ] || rm -f "$VG_LIC"
+
+# 패키지 의존성 그래프(직접 선언) — pom.xml 원문(경로|base64). 언어패키지 인벤토리와 별도
+# 예산으로 캡핑한다(원문 전송이라 요약 스트림보다 무겁다 — 서로의 예산을 갉아먹지 않게).
+export -f collect_pom_direct_deps
+timeout -k 2 "$PROJECT_SCAN_TIMEOUT" bash -c collect_pom_direct_deps 2>/dev/null \
+  | head -c "$MAX_BYTES" > "$TMP/langpkg__pom_deps.txt" || true
+[ -s "$TMP/langpkg__pom_deps.txt" ] || rm -f "$TMP/langpkg__pom_deps.txt"
 
 # ==================================================================
 # 7) 컨테이너 이미지 (이미지별 CVE 매핑)

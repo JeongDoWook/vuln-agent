@@ -394,6 +394,247 @@ $eq("'+' 접미사: GPL-3.0+ → copyleft", vg_license_classify('GPL-3.0+'), 'co
 $eq('괄호 표현식: (MIT OR Apache-2.0) → permissive', vg_license_classify('(MIT OR Apache-2.0)'), 'permissive');
 $eq('괄호+copyleft 혼합: (MIT OR GPL-3.0-only) → copyleft(보수적)', vg_license_classify('(MIT OR GPL-3.0-only)'), 'copyleft');
 
+// ── 패키지 의존성 그래프: pom.xml 최상위 <dependencies> (PR#399 재작업) ─────
+$pomOk = <<<'XML'
+<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>demo-a</artifactId>
+      <version>1.2.3</version>
+    </dependency>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>demo-b</artifactId>
+      <version>4.5.6</version>
+      <scope>compile</scope>
+    </dependency>
+  </dependencies>
+</project>
+XML;
+$pom = vg_ingest_parse_pom_deps('pom.xml|' . base64_encode($pomOk));
+$eq('pom 정상: 2건', count($pom['rows']), 2);
+$eq('pom 정상: name', $pom['rows'][0][1], 'org.example:demo-a');
+$eq('pom 정상: version', $pom['rows'][0][2], '1.2.3');
+$eq('pom 정상: manager', $pom['rows'][0][0], 'maven');
+
+// <exclusions> 안의(비표준이지만 오탐 사례로 실제 목격된) <dependency> 는 최상위 직접선언이 아니다.
+$pomExcl = <<<'XML'
+<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>demo-a</artifactId>
+      <version>1.0.0</version>
+      <exclusions>
+        <dependency>
+          <groupId>org.excluded</groupId>
+          <artifactId>should-not-appear</artifactId>
+          <version>9.9.9</version>
+        </dependency>
+      </exclusions>
+    </dependency>
+  </dependencies>
+</project>
+XML;
+$pomE = vg_ingest_parse_pom_deps('pom.xml|' . base64_encode($pomExcl));
+$eq('pom exclusions: 1건만(부모)', count($pomE['rows']), 1);
+$eq('pom exclusions: excluded 좌표는 없음', $pomE['rows'][0][1], 'org.example:demo-a');
+
+// 한 줄 <parent>groupId:artifactId:version</parent> — 최상위 <dependencies> 로 오인하면 안 된다.
+$pomParentOneLine = <<<'XML'
+<project>
+  <parent>org.example:parent-pom:2.0.0</parent>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>demo-c</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>
+XML;
+$pomP1 = vg_ingest_parse_pom_deps('pom.xml|' . base64_encode($pomParentOneLine));
+$eq('pom 한줄 parent: 부모 좌표 안 섞임(1건)', count($pomP1['rows']), 1);
+$eq('pom 한줄 parent: 실제 dependency 만', $pomP1['rows'][0][1], 'org.example:demo-c');
+
+// 여러 줄 <parent><groupId>…</groupId>…</parent> — 역시 dependencies 로 오인하면 안 된다.
+$pomParentMultiLine = <<<'XML'
+<project>
+  <parent>
+    <groupId>org.example</groupId>
+    <artifactId>parent-pom</artifactId>
+    <version>2.0.0</version>
+  </parent>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>demo-d</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>
+XML;
+$pomP2 = vg_ingest_parse_pom_deps('pom.xml|' . base64_encode($pomParentMultiLine));
+$eq('pom 여러줄 parent: 부모 좌표 안 섞임(1건)', count($pomP2['rows']), 1);
+$eq('pom 여러줄 parent: 실제 dependency 만', $pomP2['rows'][0][1], 'org.example:demo-d');
+
+// dependencyManagement 는 버전 선언일 뿐 실제 의존이 아니다.
+$pomDepMgmt = <<<'XML'
+<project>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.managed</groupId>
+        <artifactId>bom-only</artifactId>
+        <version>1.0.0</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>demo-e</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>
+XML;
+$pomDM = vg_ingest_parse_pom_deps('pom.xml|' . base64_encode($pomDepMgmt));
+$eq('pom dependencyManagement 제외: 1건만', count($pomDM['rows']), 1);
+$eq('pom dependencyManagement 제외: 실제 dependency 만', $pomDM['rows'][0][1], 'org.example:demo-e');
+
+// test/provided 스코프는 런타임 의존이 아니다. 프로퍼티(${...}) 미해석 버전도 버린다.
+$pomSkip = <<<'XML'
+<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>test-only</artifactId>
+      <version>1.0.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>provided-only</artifactId>
+      <version>1.0.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>unresolved-prop</artifactId>
+      <version>${some.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>keep-me</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>
+XML;
+$pomSk = vg_ingest_parse_pom_deps('pom.xml|' . base64_encode($pomSkip));
+$eq('pom test/provided/미해석 프로퍼티 제외: 1건만', count($pomSk['rows']), 1);
+$eq('pom test/provided/미해석 프로퍼티 제외: 남는 것', $pomSk['rows'][0][1], 'org.example:keep-me');
+
+// 문자셋 위반(공백 등) 좌표는 저장 전 거부한다.
+$pomBadChars = <<<'XML'
+<project>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>bad name; rm -rf</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>
+XML;
+$pomBad = vg_ingest_parse_pom_deps('pom.xml|' . base64_encode($pomBadChars));
+$eq('pom 문자셋 위반 거부', count($pomBad['rows']), 0);
+
+// 상한 초과 — 나머지는 버리고 dropped 로 알린다(조용히 자르지 않는다).
+$manyDeps = "<project>\n<dependencies>\n";
+for ($i = 0; $i < VG_POM_DEP_EDGE_MAX + 50; $i++) {
+    $manyDeps .= "<dependency><groupId>org.example</groupId><artifactId>gen-$i</artifactId><version>1.0.$i</version></dependency>\n";
+}
+$manyDeps .= "</dependencies>\n</project>";
+$pomMany = vg_ingest_parse_pom_deps('pom.xml|' . base64_encode($manyDeps));
+$eq('pom 상한: rows 는 상한까지만', count($pomMany['rows']), VG_POM_DEP_EDGE_MAX);
+$eq('pom 상한: 초과분은 dropped 로 집계', $pomMany['dropped'], 50);
+
+// 여러 pom.xml 라인을 합쳐도 동작(경로 다르지만 동일 좌표는 dedup)
+$multiFilePom = 'pom.xml|' . base64_encode($pomOk) . "\n" . 'sub/pom.xml|' . base64_encode($pomOk);
+$pomMulti = vg_ingest_parse_pom_deps($multiFilePom);
+$eq('pom 여러 파일 dedup: 동일 좌표는 1건', count($pomMulti['rows']), 2);
+
+// 깨진 XML은 예외 없이 그냥 건너뛴다.
+$pomBrokenXml = vg_ingest_parse_pom_deps('pom.xml|' . base64_encode('<project><dependencies><dependency>'));
+$eq('pom 깨진 XML 은 조용히 스킵', count($pomBrokenXml['rows']), 0);
+
+// ── 패키지 의존성 그래프: SBOM CycloneDX dependencies[] ─────────────────────
+$cdxDeps = json_encode([
+    'bomFormat' => 'CycloneDX',
+    'metadata' => ['component' => ['name' => 'my-app', 'version' => '1.0.0', 'bom-ref' => 'root-ref', 'purl' => 'pkg:npm/my-app@1.0.0']],
+    'components' => [
+        ['name' => 'compA', 'version' => '1.0.0', 'purl' => 'pkg:npm/compA@1.0.0', 'bom-ref' => 'a-ref'],
+        ['name' => 'compB', 'version' => '2.0.0', 'purl' => 'pkg:npm/compB@2.0.0', 'bom-ref' => 'b-ref'],
+    ],
+    'dependencies' => [
+        ['ref' => 'root-ref', 'dependsOn' => ['a-ref']],
+        ['ref' => 'a-ref', 'dependsOn' => ['b-ref']],
+    ],
+]);
+$sbomDeps = vg_ingest_parse_sbom('ctr-dep|cyclonedx|' . base64_encode($cdxDeps));
+$eq('SBOM deps: 루트 표식 + 직접1 + 전이1 = 3건', count($sbomDeps['deps']), 3);
+$byChild = [];
+foreach ($sbomDeps['deps'] as $d) { $byChild[$d[5]] = $d; }
+$eq('SBOM deps: 루트 표식 행(parent NULL)', array_key_exists('my-app', $byChild) ? $byChild['my-app'][1] : 'MISSING', null);
+$eq('SBOM deps: 루트→compA 직접(parent=root)', $byChild['compA'][1] ?? null, 'npm');
+$eq('SBOM deps: compA→compB 전이(parent=compA)', $byChild['compB'][2] ?? null, 'compA');
+
+// ref 를 못 찾으면(components 목록에 없는 컴포넌트) 그 엣지는 버린다 — 정체불명 부모/자식을 안 남긴다.
+$cdxDangling = json_encode(['bomFormat' => 'CycloneDX', 'components' => [
+    ['name' => 'compA', 'version' => '1.0.0', 'purl' => 'pkg:npm/compA@1.0.0', 'bom-ref' => 'a-ref'],
+], 'dependencies' => [
+    ['ref' => 'a-ref', 'dependsOn' => ['unknown-ref']],
+]]);
+$sbomDangling = vg_ingest_parse_sbom('ctr-dangling|cyclonedx|' . base64_encode($cdxDangling));
+$eq('SBOM deps: 알 수 없는 ref 는 버림', count($sbomDangling['deps']), 0);
+
+// 같은 엣지 중복은 dedup, 상한 초과는 dropped 로 집계.
+$manyComponents = []; $manyEdges = [];
+for ($i = 0; $i < VG_SBOM_DEP_EDGE_MAX + 20; $i++) {
+    $manyComponents[] = ['name' => "gen$i", 'version' => '1.0.0', 'purl' => "pkg:npm/gen$i@1.0.0", 'bom-ref' => "g$i-ref"];
+    if ($i > 0) { $manyEdges[] = ['ref' => 'g0-ref', 'dependsOn' => ["g$i-ref"]]; }
+}
+// dependsOn 을 한 엣지 안에 몰아 넣으면 g0-ref 항목 하나로 표현할 수 있다 — 실제 배열 형태로 재구성.
+$manyDependsOn = array_map(static fn($e) => $e['dependsOn'][0], $manyEdges);
+$cdxManyDeps = json_encode(['bomFormat' => 'CycloneDX', 'components' => $manyComponents,
+    'dependencies' => [['ref' => 'g0-ref', 'dependsOn' => $manyDependsOn]]]);
+$sbomMany = vg_ingest_parse_sbom('ctr-many|cyclonedx|' . base64_encode($cdxManyDeps));
+$eq('SBOM deps 상한: 상한까지만 저장', count($sbomMany['deps']), VG_SBOM_DEP_EDGE_MAX);
+$eq('SBOM deps 상한: 초과분은 dropped 로 집계', $sbomMany['deps_dropped'], 19);
+
+// ── content_hash: 의존성 그래프가 바뀌면 해시도 바뀌어야 한다 ───────────────
+//   안 넣으면 그래프만 바뀐 재전송이 "변경 없음"으로 스킵돼 tb_package_dependency 가
+//   영구히 비게 된다(PR#399 리뷰 지적 — 이번 재작업의 핵심 반영사항 중 하나).
+$withPomDeps = static fn(array $pomDepRows) => vg_ingest_content_hash(
+    [], 'rpm', [], [], [], [], [], [],
+    '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0'], [], $pomDepRows
+);
+if ($withPomDeps([]) === $withPomDeps([['maven', 'org.example:demo', '1.0.0']])) {
+    printf("  ✗ [해시: pom 의존성 그래프가 다르면 달라야 함] 두 해시가 같음\n");
+    $fail++;
+}
+$withSbomDeps = static fn(array $sbomDepRows) => vg_ingest_content_hash(
+    [], 'rpm', [], [], [], [], [], [],
+    '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0'], [], [], $sbomDepRows
+);
+if ($withSbomDeps([]) === $withSbomDeps([['ctr-a', 'npm', 'root', '1.0.0', 'npm', 'child', '2.0.0']])) {
+    printf("  ✗ [해시: SBOM 의존성 그래프가 다르면 달라야 함] 두 해시가 같음\n");
+    $fail++;
+}
+
 if ($fail === 0) {
     echo "ingest_parse: 전체 통과\n";
     exit(0);

@@ -57,6 +57,12 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     $errataRows  = $parsed['errata_rows'];
     $errataCount = (int) $parsed['errata_count'];
 
+    // 패키지 의존성 그래프 — pom.xml 최상위 직접 선언(container_id=0) + SBOM CycloneDX dependencies.
+    //   [manager,name,version] 3필드.
+    $pomDepRows  = $parsed['pom_dep_rows'] ?? [];
+    // [cid, parent_manager|null, parent_name|null, parent_version|null, child_manager, child_name, child_version].
+    $sbomDepRows = $parsed['sbom_dep_rows'] ?? [];
+
     $runningKernel = (string) $parsed['running_kernel'];
     $kernelLatest  = (string) $parsed['kernel_latest'];
     $kernelReboot  = $parsed['kernel_reboot'];
@@ -250,6 +256,36 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
                 $f[2], $f[3], $f[4],
                 ($f[5] !== '' ? (int) $f[5] : null),
                 $f[6], $f[7], $f[8],
+            ]);
+        }
+    }
+
+    // 패키지 의존성 그래프 벌크 — pom.xml 직접 선언(호스트, container_id=0) + SBOM 의존성 엣지.
+    //   저장 전 문자셋 검증·dedup·상한은 파싱 단계(vg_ingest_parse_pom_deps/vg_ingest_parse_sbom)에서
+    //   이미 끝났다 — 여기서는 SBOM 엣지의 cid → container_id 매핑만 한다.
+    if ($pomDepRows || $sbomDepRows) {
+        $insDep = $pdo->prepare(
+            'INSERT IGNORE INTO tb_package_dependency
+                (scan_id, container_id, source, parent_manager, parent_name, parent_version,
+                 child_manager, child_name, child_version)
+             VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($pomDepRows as $r) {
+            $insDep->execute([$scanId, 'pom', null, null, null, $r[0], $r[1], $r[2]]);
+        }
+        $insSbomDep = $pdo->prepare(
+            'INSERT IGNORE INTO tb_package_dependency
+                (scan_id, container_id, source, parent_manager, parent_name, parent_version,
+                 child_manager, child_name, child_version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        foreach ($sbomDepRows as $r) {
+            $cidKey = $r[0];
+            if (!isset($ctrIds[$cidKey])) { continue; }   // 목록에 없는 컨테이너의 엣지는 버린다
+            $insSbomDep->execute([
+                $scanId, $ctrIds[$cidKey], 'sbom',
+                $r[1], $r[2], $r[3],
+                $r[4], $r[5], $r[6],
             ]);
         }
     }

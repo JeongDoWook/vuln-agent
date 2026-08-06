@@ -147,6 +147,17 @@ $ctrPkgRows = array_merge($ctrPkgRows, $sbom['packages']);
 foreach ($sbom['meta'] as $cid => $sm) {
     if (isset($ctrRows[$cid])) { $ctrRows[$cid][13]=$sm[0]; $ctrRows[$cid][14]=$sm[1]; }
 }
+$sbomDepRows = $sbom['deps'];
+if ($sbom['deps_dropped'] > 0) {
+    error_log("[ingest] SBOM 의존성 엣지 상한 초과로 {$sbom['deps_dropped']}건 버림");
+}
+
+// ── pom.xml 최상위 <dependencies> 직접 선언 → 패키지 의존성 그래프(host, container_id=0) ──
+$pomDeps = vg_ingest_parse_pom_deps((string) ($lang['pom_deps'] ?? ''));
+$pomDepRows = $pomDeps['rows'];
+if ($pomDeps['dropped'] > 0) {
+    error_log("[ingest] pom.xml 의존성 엣지 상한 초과로 {$pomDeps['dropped']}건 버림");
+}
 
 // rpm DB 파일을 받은 컨테이너 — **중앙이 직접 파싱**해 패키지 행으로 펼친다.
 //   컨테이너 안에 rpm 바이너리가 없고 호스트에도 rpm 이 없으면 에이전트는 DB 를 읽을 수 없다
@@ -183,7 +194,7 @@ $contentHash = vg_ingest_content_hash(
     $pkgRows, $manager, $langRows, $expRows, $staleRows,
     $ctrPkgRows, $ctrRows, $ctrExpRows,
     $runningKernel, $kernelLatest, $kernelReboot,
-    $vm, $sys, $originMap
+    $vm, $sys, $originMap, $pomDepRows, $sbomDepRows
 );
 // ── 저장 (트랜잭션) ── 실 로직은 vg_ingest_store() 로 분리(server/src/ingest_store.php) ──
 try {
@@ -232,6 +243,8 @@ try {
             'debsecan_count' => $debsecanCount,
             'errata_rows'    => $errataRows,
             'errata_count'   => $errataCount,
+            'pom_dep_rows'   => $pomDepRows,
+            'sbom_dep_rows'  => $sbomDepRows,
             'running_kernel' => $runningKernel,
             'kernel_latest'  => $kernelLatest,
             'kernel_reboot'  => $kernelReboot,
