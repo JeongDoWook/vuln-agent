@@ -4,6 +4,7 @@ declare(strict_types=1);
 /** 취약 영향 패키지 카탈로그의 패키지·생태계별 관련 CVE 상세. */
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require __DIR__ . '/../src/distro.php';
 vg_require_menu('findings');
 
 $name = trim((string)($_GET['name'] ?? ''));
@@ -20,15 +21,29 @@ if ($name === '') {
 } else {
     try {
         $pdo = vg_pdo();
+        // asset-packages.php 가 링크에 넣는 eco 는 vg_osv_ecosystem() 의 짧은 형태('Ubuntu:24.04')인데
+        //   tb_package_summary.ecosystem 은 OSV 원본 접미사가 붙어 저장될 수 있다('Ubuntu:24.04:LTS').
+        //   정확일치 대신 매처와 같은 기준(vg_eco_matches, distro.php:234)의 접두 일치로 실제 저장값을 찾는다.
         $st = $pdo->prepare(
             'SELECT package_name,ecosystem,cve_cnt,max_epss,fix_cnt,max_fixed
-               FROM tb_package_summary WHERE package_name=? AND ecosystem=?'
+               FROM tb_package_summary WHERE package_name=?'
         );
-        $st->execute([$name, $ecosystem]);
-        $summary = $st->fetch() ?: null;
+        $st->execute([$name]);
+        $summary = null;
+        // eco 파라미터가 없는 요청까지 vg_eco_matches() 의 "정보 없음→통과" 규칙에 걸리면
+        //   같은 패키지명의 아무 생태계 행이나 집히므로, 값이 있을 때만 매칭을 시도한다.
+        if ($ecosystem !== '') {
+            foreach ($st->fetchAll() as $row) {
+                if (vg_eco_matches($row['ecosystem'] ?? null, $ecosystem, '')) {
+                    $summary = $row;
+                    break;
+                }
+            }
+        }
         if ($summary === null) {
             $err = '패키지 정보를 찾을 수 없습니다.';
         } else {
+            $ecosystem = (string) $summary['ecosystem'];
             $from = 'FROM tb_cve_affected_package a
                      JOIN tb_cve c ON c.cve_id=a.cve_id AND c.is_deleted=0';
             $where = 'a.is_deleted=0 AND a.package_name=? AND a.ecosystem=?';
@@ -62,7 +77,9 @@ vg_header($name !== '' ? $name : '패키지 상세', 'packages');
     <?php vg_page_title($name, '', '취약 영향 패키지 카탈로그의 관련 CVE와 수정 버전입니다.', [
         'count' => $total,
         'hint' => $ecosystem !== '' ? vg_h($ecosystem) : '생태계 미지정',
-        'actions' => '<a class="btn btn--sm btn--ghost" href="/packages.php">패키지 목록</a>',
+        'actions' => '<a class="btn btn--sm btn--ghost" href="/packages.php">패키지 목록</a>'
+            . ' <a class="btn btn--sm btn--ghost" href="/asset-packages.php?q=' . urlencode($name)
+            . '">설치된 자산 보기</a>',
     ]); ?>
     <div class="cards">
       <div class="kpi kpi--sm"><b><?= number_format($total) ?></b><span>관련 CVE</span></div>
