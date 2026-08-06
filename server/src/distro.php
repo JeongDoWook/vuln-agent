@@ -273,7 +273,10 @@ if (!function_exists('vg_osv_ecosystem')) {
         $major = isset($m[0]) ? (int) $m[0] : 0;
         switch ($osId) {
             case 'debian':               return $major ? "Debian:$major" : null;
-            case 'ubuntu':               return $ver !== '' ? "Ubuntu:$ver" : null;
+            // 다른 분기와 달리 우분투는 마이너까지 그대로 붙는다(24.04 등) — 숫자·점만
+            // 허용하는 화이트리스트로 검증한다. 이 값은 에이전트가 보낸 미검증 distro_version 이고
+            // package.php 링크(URL)에 그대로 들어간다.
+            case 'ubuntu':               return preg_match('/^\d+(\.\d+)*$/', $ver) === 1 ? "Ubuntu:$ver" : null;
             // 알파인은 컨테이너에서 흔하다. OSV 표기는 'Alpine:v3.19' (마이너까지, v 접두).
             case 'alpine':
                 return preg_match('/^(\d+\.\d+)/', $ver, $mm) ? "Alpine:v{$mm[1]}" : null;
