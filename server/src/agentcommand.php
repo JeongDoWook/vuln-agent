@@ -68,6 +68,28 @@ function vg_agent_command_set_schedule(PDO $pdo, int $hostId, int $seconds): voi
     );
 }
 
+const VG_AGENT_SPEED_TIERS = ['very_fast', 'fast', 'normal', 'slow'];
+
+/**
+ * 호스트별 에이전트 CPU 상한·조립 타임아웃 티어를 바꾼다. 실제 값 매핑은 agent-poll.php 가
+ *   가지고 있고, 변경은 다음 poll/다음 수집 시작부터 반영된다(즉시 적용 아님 — 호출부가 안내).
+ */
+function vg_agent_command_set_speed_tier(PDO $pdo, int $hostId, string $tier): void {
+    if (!in_array($tier, VG_AGENT_SPEED_TIERS, true)) {
+        throw new RuntimeException('알 수 없는 속도 티어입니다.');
+    }
+
+    $pdo->prepare('UPDATE tb_host SET agent_speed_tier = ? WHERE host_id = ? AND is_deleted = 0')
+        ->execute([$tier, $hostId]);
+
+    vg_log_activity(
+        $pdo, 'HOST', $hostId, 'agent_speed_tier_change',
+        "속도 티어 변경 → {$tier}",
+        ['agent_speed_tier' => $tier],
+        null
+    );
+}
+
 function vg_agent_command_cancel(PDO $pdo, int $hostId, int $commandId, ?int $userId): void {
     $st = $pdo->prepare("SELECT status FROM tb_agent_command WHERE agent_command_id=? AND host_id=? AND status IN ('pending','running') AND is_deleted=0");
     $st->execute([$commandId, $hostId]);

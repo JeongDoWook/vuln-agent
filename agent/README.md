@@ -201,6 +201,11 @@ bash deploy/agent_push.sh 10.3.142.100 10.3.142.101 10.3.142.102
   `install-agent.sh` 를 대화형으로 돌리는 것이고, 이 스크립트는 그걸 대체하지 않는다.
 - `install-agent.sh` 자체가 바뀐 경우(타이머·유닛·preflight)는 대상이 아니다. 그건 노드에서
   설치기를 다시 돌려야 한다.
+- 2026-08-06: `install-agent.sh` 가 생성하는 `run.sh` 가 poll 응답의 `cpu_quota_percent`·
+  `packaging_timeout_seconds`(호스트별 속도 티어)를 읽어 `vuln-inventory-agent.sh` 에 env 로
+  넘기도록 바뀌었다 — **이미 설치된 노드는 재설치 전까지 이 값을 무시하고 스크립트 자체
+  기본값(CPU 10%/120초)으로만 돈다.** 속도 티어를 실제로 적용하려면 해당 노드에서
+  `install-agent.sh` 를 다시 돌려야 한다.
 - **웹에서 누르는 버튼으로 만들지 않는다.** 그러려면 PHP 컨테이너가 전 노드에 root 로 설치할 수
   있는 SSH 키를 들어야 하고, 웹앱이 한 번 뚫리면 전 노드 root 장악으로 번진다. 보는 건 웹(자산
   화면의 `meta.agent_version`), 미는 건 CLI.

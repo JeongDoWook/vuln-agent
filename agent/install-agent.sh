@@ -241,6 +241,7 @@ LOG_DIR="$LOG"
 POLL_URL="\${SEND_URL%ingest.php}agent-poll.php"
 LAST_SCAN_FILE="\$LOG_DIR/last_scan_at"
 POLL_STATE_FILE="\$LOG_DIR/poll_interval"
+SPEED_TIER_STATE_FILE="\$LOG_DIR/speed_tier"
 ONCE=0
 [ "\${1:-}" = "--once" ] && ONCE=1
 
@@ -272,10 +273,14 @@ do_poll() {
     printf '%s' "\$resp" | jq -e . >/dev/null 2>&1 || return 1
     POLL_SCHEDULE=\$(printf '%s' "\$resp" | jq -r '.poll_schedule_seconds // empty')
     DUE_CMD=\$(printf '%s' "\$resp" | jq -r '.due_command_id // empty')
+    POLL_CPU_QUOTA=\$(printf '%s' "\$resp" | jq -r '.cpu_quota_percent // empty')
+    POLL_PACKAGING_TIMEOUT=\$(printf '%s' "\$resp" | jq -r '.packaging_timeout_seconds // empty')
   else
-    # 응답이 단순 flat JSON 2필드뿐이라 grep -o 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
+    # 응답이 단순 flat JSON 필드뿐이라 grep -o 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
     POLL_SCHEDULE=\$(printf '%s' "\$resp" | grep -o '"poll_schedule_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     DUE_CMD=\$(printf '%s' "\$resp" | grep -o '"due_command_id"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
+    POLL_CPU_QUOTA=\$(printf '%s' "\$resp" | grep -o '"cpu_quota_percent"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
+    POLL_PACKAGING_TIMEOUT=\$(printf '%s' "\$resp" | grep -o '"packaging_timeout_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
   fi
   case "\$POLL_SCHEDULE" in ''|*[!0-9]*) return 1 ;; esac
   return 0
@@ -286,7 +291,14 @@ run_scan() {
   local args=(-o "\$LOG_DIR/last.json" --send "\$SEND_URL" --token "\$SEND_TOKEN")
   [ -n "\$cmd_id" ] && args+=(--command-id "\$cmd_id")
   log "수집 시작\${cmd_id:+ (명령#\$cmd_id 처리 포함)}"
-  "\$BIN_DIR/vuln-inventory-agent.sh" "\${args[@]}"
+  # 호스트별 속도 티어(agent-poll.php 의 cpu_quota_percent/packaging_timeout_seconds) 를
+  #   env override 로 넘긴다 — vuln-inventory-agent.sh 상단이 이미 CPU_QUOTA/PACKAGING_TIMEOUT
+  #   환경변수를 지원하므로 새 CLI 플래그 없이 전달만 하면 된다. 값이 비어 있으면(구버전 서버
+  #   등) 스크립트 자체 기본값(10%/120초)이 그대로 쓰인다.
+  local tier_env=()
+  [ -n "\${POLL_CPU_QUOTA:-}" ] && tier_env+=(CPU_QUOTA="\${POLL_CPU_QUOTA}%")
+  [ -n "\${POLL_PACKAGING_TIMEOUT:-}" ] && tier_env+=(PACKAGING_TIMEOUT="\$POLL_PACKAGING_TIMEOUT")
+  env "\${tier_env[@]}" "\$BIN_DIR/vuln-inventory-agent.sh" "\${args[@]}"
 }
 
 # poll_and_maybe_scan : poll 1회 + 필요하면 수집. poll 자체의 성공/실패를 돌려준다(백오프 판단용).
@@ -299,6 +311,8 @@ poll_and_maybe_scan() {
     return 1
   fi
   echo "\$POLL_SCHEDULE" > "\$POLL_STATE_FILE"
+  [ -n "\${POLL_CPU_QUOTA:-}" ] && [ -n "\${POLL_PACKAGING_TIMEOUT:-}" ] \
+    && echo "\${POLL_CPU_QUOTA} \${POLL_PACKAGING_TIMEOUT}" > "\$SPEED_TIER_STATE_FILE"
   local now last scheduled_due=0
   now=\$(date +%s)
   last=\$(cat "\$LAST_SCAN_FILE" 2>/dev/null || echo 0)
