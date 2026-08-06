@@ -261,13 +261,16 @@ vg_header('판정 근거', 'vendor');
   }
   echo '</div>';
 
-  $srcOptions = [];
-  foreach (VG_VENDOR_SRC as $k => $d) { $srcOptions[$k] = $d['label']; }
-  vg_toolbar([
+  $toolbar = [
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지 검색 (예: CVE-2024, openssl)', 'value' => $q],
       ['type' => 'select', 'name' => 'rel', 'selected' => $rel, 'empty_label' => '릴리스 전체',
        'options' => $relOptions],
-  ]);
+  ];
+  // 탭으로 고른 소스(src)는 검색 폼 필드가 아니라, 폼 제출 시 사라지지 않도록 hidden 으로 함께 싣는다.
+  if ($src !== '') {
+      $toolbar[] = ['type' => 'hidden', 'name' => 'src', 'value' => $src];
+  }
+  vg_toolbar($toolbar);
 
   $hasFilter = $q !== '' || $rel !== '' || $src !== '';
   vg_table(
