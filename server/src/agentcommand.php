@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/audit.php';
+require_once __DIR__ . '/agentspeedtier.php';
 
 const VG_AGENT_COMMAND_MIN_SCHEDULE_SECONDS = 30;
 
@@ -64,6 +65,36 @@ function vg_agent_command_set_schedule(PDO $pdo, int $hostId, int $seconds): voi
         $pdo, 'HOST', $hostId, 'agent_schedule_change',
         "폴링 주기 변경 → {$seconds}초",
         ['poll_schedule_seconds' => $seconds],
+        null
+    );
+}
+
+/**
+ * 호스트별 에이전트 CPU 상한·조립 타임아웃 티어를 바꾼다. 실제 값 매핑은 agentspeedtier.php 가
+ *   가지고 있고, 변경은 다음 poll/다음 수집 시작부터 반영된다(즉시 적용 아님 — 호출부가 안내).
+ * UPDATE 전에 host 존재/미삭제를 확인한다 — 없으면 예외를 던져 무조건 감사로그를 남기지 않는다
+ *   (존재하지 않거나 이미 삭제된 host_id 로 반복 호출해 허위 로그를 무한 주입하는 것을 막는다).
+ *   rowCount() 로는 이 확인이 안 된다 — PDO_MYSQL 은 기본으로 "matched" 가 아니라 "changed"
+ *   행수를 돌려주므로, 이미 같은 티어라 값이 안 바뀌면 정상 호출도 0으로 나와 오탐이 난다.
+ */
+function vg_agent_command_set_speed_tier(PDO $pdo, int $hostId, string $tier): void {
+    if (!in_array($tier, VG_AGENT_SPEED_TIERS, true)) {
+        throw new RuntimeException('알 수 없는 속도 티어입니다.');
+    }
+
+    $st = $pdo->prepare('SELECT 1 FROM tb_host WHERE host_id = ? AND is_deleted = 0');
+    $st->execute([$hostId]);
+    if ($st->fetchColumn() === false) {
+        throw new RuntimeException('호스트를 찾을 수 없습니다.');
+    }
+
+    $pdo->prepare('UPDATE tb_host SET agent_speed_tier = ? WHERE host_id = ? AND is_deleted = 0')
+        ->execute([$tier, $hostId]);
+
+    vg_log_activity(
+        $pdo, 'HOST', $hostId, 'agent_speed_tier_change',
+        "속도 티어 변경 → {$tier}",
+        ['agent_speed_tier' => $tier],
         null
     );
 }

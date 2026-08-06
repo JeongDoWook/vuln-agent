@@ -15,6 +15,7 @@ require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 �
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/agentcommand.php';   // 수집 제어(즉시/예약 실행·주기 변경)
+require_once __DIR__ . '/../src/agentspeedtier.php';   // 속도 티어 라벨(agent-poll.php 와 공유 정의)
 vg_require_menu('findings');
 
 // --- 수집 제어 POST 처리 (즉시실행/예약실행/주기변경) — GET 렌더보다 먼저, 헤더 출력 전 ---
@@ -53,6 +54,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $minutes = (int) ($_POST['schedule_minutes'] ?? 0);
                 vg_agent_command_set_schedule($pdo, $postHostId, $minutes * 60);
                 $agentMsg = "수집 주기를 {$minutes}분으로 변경했습니다.";
+            } elseif ($action === 'agent_set_speed_tier') {
+                if (!vg_has_role('admin', 'operator')) {
+                    throw new RuntimeException('속도 티어를 변경할 권한이 없습니다.');
+                }
+                $tier = (string) ($_POST['agent_speed_tier'] ?? '');
+                vg_agent_command_set_speed_tier($pdo, $postHostId, $tier);
+                $agentMsg = '속도 티어를 변경했습니다. 다음 poll/다음 수집 시작부터 반영됩니다.';
             } elseif ($action === 'host_delete') {
                 if (!vg_has_role('admin', 'operator')) {
                     throw new RuntimeException('자산을 삭제할 권한이 없습니다.');
@@ -270,6 +278,9 @@ function vg_host_render_agent_control(
     int $hostId, array $host, string $csrf, array $agentCommands, ?string $msg, ?string $err
 ): void {
     $curMinutes = (int) round(((int) ($host['poll_schedule_seconds'] ?? 3600)) / 60);
+    $curSpeedTier = (string) ($host['agent_speed_tier'] ?? 'normal');
+    $speedTierLabels = [];
+    foreach (VG_AGENT_SPEED_TIERS as $t) { $speedTierLabels[$t] = vg_agent_speed_tier_label($t); }
     ?>
     <section class="card agent-control" aria-labelledby="agent-control-title">
       <div class="agent-control__heading">
@@ -337,6 +348,19 @@ function vg_host_render_agent_control(
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
             <label for="agent-schedule-minutes"><strong>수집 주기</strong><span>최소 1분 단위로 설정합니다.</span></label>
             <div class="agent-control__number"><input id="agent-schedule-minutes" type="number" name="schedule_minutes" min="1" value="<?= $curMinutes ?>" required><span>분</span></div>
+            <button class="btn btn--sm btn--ghost">저장</button>
+          </form>
+
+          <form class="agent-control__row" method="post">
+            <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+            <input type="hidden" name="action" value="agent_set_speed_tier">
+            <input type="hidden" name="id" value="<?= (int) $hostId ?>">
+            <label for="agent-speed-tier"><strong>속도 티어</strong><span>변경은 다음 poll/다음 수집 시작부터 반영됩니다.</span></label>
+            <select id="agent-speed-tier" name="agent_speed_tier">
+              <?php foreach ($speedTierLabels as $v => $label): ?>
+                <option value="<?= vg_h($v) ?>"<?= $curSpeedTier === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
+              <?php endforeach; ?>
+            </select>
             <button class="btn btn--sm btn--ghost">저장</button>
           </form>
         </div>

@@ -12,6 +12,7 @@ header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../src/config.php';
 require __DIR__ . '/../src/db.php';
 require_once __DIR__ . '/../src/agenttoken.php';  // vg_agent_token_verify (호스트 바인딩)
+require_once __DIR__ . '/../src/agentspeedtier.php';  // VG_AGENT_SPEED_TIER_MAP (공용 정의 — host.php 와 공유)
 
 function respond_fail(int $httpCode, string $msg, string $code): void {
     http_response_code($httpCode);
@@ -33,17 +34,24 @@ if ($agentTok === null) {
 $fqdn = $agentTok['fqdn'];
 
 // 호스트가 아직 한 번도 ingest 되지 않았으면 tb_host 행이 없을 수 있다 — 에러가 아니라 기본값.
-$st = $pdo->prepare('SELECT host_id, poll_schedule_seconds FROM tb_host WHERE fqdn = ? AND is_deleted = 0 LIMIT 1');
+$st = $pdo->prepare('SELECT host_id, poll_schedule_seconds, agent_speed_tier FROM tb_host WHERE fqdn = ? AND is_deleted = 0 LIMIT 1');
 $st->execute([$fqdn]);
 $host = $st->fetch();
 
 if (!$host) {
-    echo json_encode(['poll_schedule_seconds' => 3600, 'due_command_id' => null], JSON_UNESCAPED_UNICODE);
+    $defaultTier = VG_AGENT_SPEED_TIER_MAP['normal'];
+    echo json_encode([
+        'poll_schedule_seconds'      => 3600,
+        'due_command_id'             => null,
+        'cpu_quota_percent'          => $defaultTier['cpu_quota_percent'],
+        'packaging_timeout_seconds'  => $defaultTier['packaging_timeout_seconds'],
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 $hostId = (int) $host['host_id'];
 $pollScheduleSeconds = (int) $host['poll_schedule_seconds'];
+$speedTier = VG_AGENT_SPEED_TIER_MAP[$host['agent_speed_tier']] ?? VG_AGENT_SPEED_TIER_MAP['normal'];
 
 $cmdSt = $pdo->prepare(
     "SELECT agent_command_id FROM tb_agent_command
@@ -55,6 +63,8 @@ $cmdSt->execute([$hostId]);
 $dueCommandId = $cmdSt->fetchColumn();
 
 echo json_encode([
-    'poll_schedule_seconds' => $pollScheduleSeconds,
-    'due_command_id'        => $dueCommandId !== false ? (int) $dueCommandId : null,
+    'poll_schedule_seconds'      => $pollScheduleSeconds,
+    'due_command_id'             => $dueCommandId !== false ? (int) $dueCommandId : null,
+    'cpu_quota_percent'          => $speedTier['cpu_quota_percent'],
+    'packaging_timeout_seconds'  => $speedTier['packaging_timeout_seconds'],
 ], JSON_UNESCAPED_UNICODE);
