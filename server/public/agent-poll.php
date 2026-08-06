@@ -45,6 +45,7 @@ if (!$host) {
         'due_command_id'             => null,
         'cpu_quota_percent'          => $defaultTier['cpu_quota_percent'],
         'packaging_timeout_seconds'  => $defaultTier['packaging_timeout_seconds'],
+        'mem_max_mb'                 => $defaultTier['mem_max_mb'],
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -67,4 +68,5 @@ echo json_encode([
     'due_command_id'             => $dueCommandId !== false ? (int) $dueCommandId : null,
     'cpu_quota_percent'          => $speedTier['cpu_quota_percent'],
     'packaging_timeout_seconds'  => $speedTier['packaging_timeout_seconds'],
+    'mem_max_mb'                 => $speedTier['mem_max_mb'],
 ], JSON_UNESCAPED_UNICODE);

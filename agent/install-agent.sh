@@ -274,12 +274,14 @@ do_poll() {
     DUE_CMD=\$(printf '%s' "\$resp" | jq -r '.due_command_id // empty')
     POLL_CPU_QUOTA=\$(printf '%s' "\$resp" | jq -r '.cpu_quota_percent // empty')
     POLL_PACKAGING_TIMEOUT=\$(printf '%s' "\$resp" | jq -r '.packaging_timeout_seconds // empty')
+    POLL_MEM_MAX=\$(printf '%s' "\$resp" | jq -r '.mem_max_mb // empty')
   else
     # 응답이 단순 flat JSON 필드뿐이라 grep -o 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
     POLL_SCHEDULE=\$(printf '%s' "\$resp" | grep -o '"poll_schedule_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     DUE_CMD=\$(printf '%s' "\$resp" | grep -o '"due_command_id"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     POLL_CPU_QUOTA=\$(printf '%s' "\$resp" | grep -o '"cpu_quota_percent"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     POLL_PACKAGING_TIMEOUT=\$(printf '%s' "\$resp" | grep -o '"packaging_timeout_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
+    POLL_MEM_MAX=\$(printf '%s' "\$resp" | grep -o '"mem_max_mb"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
   fi
   case "\$POLL_SCHEDULE" in ''|*[!0-9]*) return 1 ;; esac
   # POLL_CPU_QUOTA/POLL_PACKAGING_TIMEOUT 는 숫자+상식적 범위(CPU 1~100, 타임아웃 30~3600)
@@ -292,6 +294,12 @@ do_poll() {
   case "\$POLL_PACKAGING_TIMEOUT" in ''|*[!0-9]*) POLL_PACKAGING_TIMEOUT="" ;; esac
   if [ -n "\$POLL_PACKAGING_TIMEOUT" ] && { [ "\$POLL_PACKAGING_TIMEOUT" -lt 30 ] || [ "\$POLL_PACKAGING_TIMEOUT" -gt 3600 ]; }; then
     POLL_PACKAGING_TIMEOUT=""
+  fi
+  # POLL_MEM_MAX(MB) 도 같은 방식 — 64~8192 벗어나면 빈 값으로 떨궈 run_scan 이
+  #   vuln-inventory-agent.sh 자체 기본값(300M)으로 폴백하게 한다.
+  case "\$POLL_MEM_MAX" in ''|*[!0-9]*) POLL_MEM_MAX="" ;; esac
+  if [ -n "\$POLL_MEM_MAX" ] && { [ "\$POLL_MEM_MAX" -lt 64 ] || [ "\$POLL_MEM_MAX" -gt 8192 ]; }; then
+    POLL_MEM_MAX=""
   fi
   return 0
 }
@@ -308,6 +316,7 @@ run_scan() {
   local tier_env=()
   [ -n "\${POLL_CPU_QUOTA:-}" ] && tier_env+=(CPU_QUOTA="\${POLL_CPU_QUOTA}%")
   [ -n "\${POLL_PACKAGING_TIMEOUT:-}" ] && tier_env+=(PACKAGING_TIMEOUT="\$POLL_PACKAGING_TIMEOUT")
+  [ -n "\${POLL_MEM_MAX:-}" ] && tier_env+=(MEM_MAX="\${POLL_MEM_MAX}M")
   # "set -u" 상태에서 빈 배열 "\${tier_env[@]}" 확장은 bash 4.3 이하에서 unbound variable 로 죽는다.
   #   "\${tier_env[@]+"\${tier_env[@]}"}" 는 배열이 비어 있으면 통째로 없던 걸로 취급해 안전하다.
   env \${tier_env[@]+"\${tier_env[@]}"} "\$BIN_DIR/vuln-inventory-agent.sh" "\${args[@]}"

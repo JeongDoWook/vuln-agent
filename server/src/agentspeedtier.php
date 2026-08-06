@@ -12,10 +12,10 @@ declare(strict_types=1);
 const VG_AGENT_SPEED_TIERS = ['very_fast', 'fast', 'normal', 'slow'];
 
 const VG_AGENT_SPEED_TIER_MAP = [
-    'very_fast' => ['cpu_quota_percent' => 80, 'packaging_timeout_seconds' => 300],
-    'fast'      => ['cpu_quota_percent' => 40, 'packaging_timeout_seconds' => 200],
-    'normal'    => ['cpu_quota_percent' => 10, 'packaging_timeout_seconds' => 120],
-    'slow'      => ['cpu_quota_percent' => 5,  'packaging_timeout_seconds' => 90],
+    'very_fast' => ['cpu_quota_percent' => 80, 'packaging_timeout_seconds' => 300, 'mem_max_mb' => 1024],
+    'fast'      => ['cpu_quota_percent' => 40, 'packaging_timeout_seconds' => 200, 'mem_max_mb' => 512],
+    'normal'    => ['cpu_quota_percent' => 10, 'packaging_timeout_seconds' => 120, 'mem_max_mb' => 300],
+    'slow'      => ['cpu_quota_percent' => 5,  'packaging_timeout_seconds' => 90,  'mem_max_mb' => 200],
 ];
 
 const VG_AGENT_SPEED_TIER_NAME_KO = [
@@ -30,6 +30,10 @@ const VG_AGENT_SPEED_TIER_NAME_KO = [
 function vg_agent_speed_tier_label(string $tier): string {
     $name = VG_AGENT_SPEED_TIER_NAME_KO[$tier] ?? $tier;
     $cpu = VG_AGENT_SPEED_TIER_MAP[$tier]['cpu_quota_percent'] ?? null;
+    $mem = VG_AGENT_SPEED_TIER_MAP[$tier]['mem_max_mb'] ?? null;
     $suffix = $tier === 'normal' ? ', 기본값' : '';
+    if ($cpu !== null && $mem !== null) {
+        return "{$name} (CPU {$cpu}%·MEM {$mem}MB{$suffix})";
+    }
     return $cpu !== null ? "{$name} (CPU {$cpu}%{$suffix})" : $name;
 }
