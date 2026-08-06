@@ -268,7 +268,7 @@ vg_header('판정 근거', 'vendor');
   ];
   // 탭으로 고른 소스(src)는 검색 폼 필드가 아니라, 폼 제출 시 사라지지 않도록 hidden 으로 함께 싣는다.
   if ($src !== '') {
-      $toolbar[] = ['type' => 'hidden', 'name' => 'src', 'value' => $src];
+      $toolbar[] = ['type' => 'hidden', 'name' => 'src', 'value' => $src, 'reset' => true];
   }
   vg_toolbar($toolbar);
 
