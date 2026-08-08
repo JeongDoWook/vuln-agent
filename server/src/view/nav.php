@@ -34,6 +34,7 @@ function vg_activity_type_labels(): array {
         'ingest'               => '수집 반영',
         'ingest_spoof_blocked' => '수집 위조 차단',
         'permission_update'    => '권한 변경',
+        'setting_update'       => '운영 설정 변경',
         'user_add'             => '사용자 추가',
         'user_role'            => '사용자 권한 변경',
         'user_pw_reset'        => '사용자 비밀번호 재설정',
@@ -84,6 +85,7 @@ function vg_nav_sections(): array {
             ['perm' => 'agenttokens', 'href' => '/agent-tokens.php', 'label' => '에이전트 키', 'key' => 'agenttokens'],
             ['perm' => 'apitokens',   'href' => '/api-tokens.php',   'label' => 'API 키',    'key' => 'apitokens'],
             ['perm' => 'activity',    'href' => '/activity.php',     'label' => '감사 로그', 'key' => 'activity'],
+            ['perm' => 'settings',    'href' => '/settings.php',     'label' => '설정',      'key' => 'settings'],
         ],
     ];
 }
@@ -114,6 +116,8 @@ function vg_nav_icon(string $key): string {
         'agenttokens' => '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><line x1="13" y1="5" x2="13" y2="19"/>',
         'apitokens'   => '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         'activity'    => '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+        // 설정 — 슬라이더 모양: 판정 기준값을 조직에 맞춰 조정한다는 뜻.
+        'settings'    => '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.2"/><circle cx="15" cy="16" r="2.2"/>',
     ];
     $p = $paths[$key] ?? '<circle cx="12" cy="12" r="9"/>';
     return '<svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"'

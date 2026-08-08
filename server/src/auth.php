@@ -231,6 +231,7 @@ function vg_menus(): array {
         'apitokens'   => 'API 키',
         'activity'    => '감사 로그',
         'permissions' => '권한',
+        'settings'    => '설정',
     ];
 }
 
