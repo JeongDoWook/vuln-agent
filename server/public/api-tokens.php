@@ -9,15 +9,16 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-require __DIR__ . '/../src/apitoken.php';
-require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
+require_once __DIR__ . '/../src/apitoken.php';
+require_once __DIR__ . '/../src/audit.php';        // vg_soft_delete / vg_log_activity
+require_once __DIR__ . '/../src/tokenexpiry.php';  // 유효기간 선택지·표시(에이전트 키와 공용)
 vg_require_menu('apitokens');                 // admin 전용(코드에서 admin 만 true)
 
 $pdo = vg_pdo();
 $msg = null; $err = null; $newToken = null;
 
-// 발급 실패 시 모달을 다시 열고 입력한 용도를 되살린다.
-$issueFailed = false; $issueLabel = '';
+// 발급 실패 시 모달을 다시 열고 입력한 용도·유효기간을 되살린다.
+$issueFailed = false; $issueLabel = ''; $issueDays = 0;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
@@ -31,11 +32,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($label === '') {
                     throw new RuntimeException('토큰 이름(용도)을 입력하세요.');
                 }
-                $r = vg_api_token_issue($pdo, mb_substr($label, 0, 100), $me['id'] ?? null);
+                $days = vg_token_expiry_days_input($_POST['expires_days'] ?? 0);
+                $r = vg_api_token_issue($pdo, mb_substr($label, 0, 100), $me['id'] ?? null, $days);
                 $newToken = $r['token'];   // 이 화면에서만 노출. 저장 안 함.
                 vg_log_activity($pdo, 'API_TOKEN', null, 'token_issue', "토큰 발급: {$label}",
-                    ['prefix' => $r['prefix']]);
-                $msg = "토큰이 발급되었습니다. 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다.";
+                    ['prefix' => $r['prefix'], 'expires_at' => $r['expires_at'] ?? '무기한']);
+                $msg = $r['expires_at'] !== null
+                    ? "토큰이 발급되었습니다(유효기간 {$r['expires_at']} 까지). 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다."
+                    : "토큰이 발급되었습니다. 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다.";
             } elseif ($action === 'revoke') {
                 $id = (int) ($_POST['id'] ?? 0);
                 vg_soft_delete($pdo, 'tb_api_token', $id);
@@ -48,6 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($action === 'create') {
                 $issueFailed = true;
                 $issueLabel  = trim((string) ($_POST['label'] ?? ''));
+                $issueDays   = (int) ($_POST['expires_days'] ?? 0);
             }
         }
     }
@@ -55,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // 발급 POST 를 재전송해 같은 용도의 토큰이 계속 쌓인다.
     vg_redirect_flash([
         'msg' => $msg, 'err' => $err, 'token' => $newToken,
-        'failed' => $issueFailed, 'label' => $issueLabel,
+        'failed' => $issueFailed, 'label' => $issueLabel, 'days' => $issueDays,
     ]);
 }
 
@@ -65,6 +70,7 @@ $err         = $f['err']   ?? null;
 $newToken    = $f['token'] ?? null;   // 리다이렉트 뒤 1회만 보여주고 세션에서 사라진다.
 $issueFailed = (bool) ($f['failed'] ?? false);
 $issueLabel  = (string) ($f['label'] ?? '');
+$issueDays   = (int) ($f['days'] ?? 0);
 
 $csrf = vg_csrf_token();
 
@@ -85,7 +91,8 @@ $total  = (int) $count->fetchColumn();
 $offset = ($page - 1) * $perPage;
 
 $list = $pdo->prepare(
-    "SELECT t.api_token_id, t.label, t.token_prefix, t.last_used_at, t.created_at, u.username AS created_by
+    "SELECT t.api_token_id, t.label, t.token_prefix, t.last_used_at, t.created_at, t.expires_at,
+            u.username AS created_by
        FROM tb_api_token t
        LEFT JOIN tb_user u ON u.user_id = t.created_by
       WHERE $where
@@ -123,6 +130,7 @@ vg_header('API 키', 'apitokens');
       [
           ['label' => '용도'],
           ['label' => '토큰(앞자리)', 'width' => '12rem'],
+          ['label' => '유효기간', 'width' => '13rem'],
           ['label' => '마지막 사용', 'width' => '11rem'],
           ['label' => '발급자', 'width' => '8rem'],
           ['label' => '발급일', 'width' => '11rem'],
@@ -141,12 +149,13 @@ vg_header('API 키', 'apitokens');
           'cell'  => [
               0 => fn($t) => vg_h((string) $t['label']),
               1 => fn($t) => '<code>' . vg_h((string) $t['token_prefix']) . '…</code>',
-              2 => fn($t) => $t['last_used_at']
+              2 => fn($t) => vg_token_expiry_badge($t['expires_at'] !== null ? (string) $t['expires_at'] : null),
+              3 => fn($t) => $t['last_used_at']
                   ? '<span class="why">' . vg_h((string) $t['last_used_at']) . '</span>'
                   : '<span class="why">미사용</span>',
-              3 => fn($t) => vg_h((string) ($t['created_by'] ?? '–')),
-              4 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
-              5 => fn($t) => '<form method="post" data-confirm="이 토큰을 폐기할까요? 즉시 무효가 됩니다.">'
+              4 => fn($t) => vg_h((string) ($t['created_by'] ?? '–')),
+              5 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
+              6 => fn($t) => '<form method="post" data-confirm="이 토큰을 폐기할까요? 즉시 무효가 됩니다.">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                   . '<input type="hidden" name="action" value="revoke">'
                   . '<input type="hidden" name="id" value="' . (int) $t['api_token_id'] . '">'
@@ -165,6 +174,9 @@ vg_header('API 키', 'apitokens');
       <label>토큰 용도</label>
       <input type="text" name="label" value="<?= vg_h($issueLabel) ?>"
              placeholder="예: AI 보고서 생성기" maxlength="100" required autocomplete="off">
+      <label>유효기간</label>
+      <?= vg_token_expiry_select($issueDays) ?>
+      <div class="why">기간이 지나면 이 토큰은 <strong>즉시 거부</strong>됩니다(자동 갱신 없음). 필요하면 새로 발급하세요.</div>
       <div class="why">발급된 토큰 원문은 <strong>이 화면에서 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
       <?php vg_modal_foot('발급', ['loading' => '발급 중…']); ?>
     </form>

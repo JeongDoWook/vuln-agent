@@ -20,8 +20,8 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/config.php';   // vg_auth_token (요청 헤더 파싱 헬퍼)
 require __DIR__ . '/../src/db.php';
-require __DIR__ . '/../src/apitoken.php';
-require __DIR__ . '/../src/audit.php';    // vg_log_activity
+require_once __DIR__ . '/../src/apitoken.php';
+require_once __DIR__ . '/../src/audit.php';    // vg_log_activity (apitoken.php 도 만료 기록에 쓴다)
 
 const VG_EXPORT_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 

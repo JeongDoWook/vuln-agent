@@ -11,11 +11,24 @@ require_once __DIR__ . '/config.php';   // vg_env / vg_secret 정의
 require_once __DIR__ . '/db.php';       // vg_pdo
 require_once __DIR__ . '/audit.php';    // vg_log_activity
 
+/* --- 세션 만료 정책 -------------------------------------------------------
+ * 유휴(마지막 활동 이후) · 절대(로그인 이후) 두 축으로 만료시킨다.
+ * 대응 기준: ISMS-P 2.6.3(접근통제 — 세션) · 2.5.1 / N2SF 제4장 SN 세션 · AC-1(4).
+ * 설정 이관 예정(tb_setting) — 다른 워커가 그 테이블을 만드는 중이라 지금은 상수로 둔다. */
+const VG_SESSION_IDLE_SECONDS     = 1800;    // 유휴 30분
+const VG_SESSION_ABSOLUTE_SECONDS = 43200;   // 절대 12시간 (유휴와 무관하게 만료)
+
 if (session_status() === PHP_SESSION_NONE) {
+    // PHP 기본 gc_maxlifetime 은 1440초(24분)라 유휴 타임아웃(30분)보다 짧다 — 그대로 두면
+    // 우리 검사가 돌기 전에 PHP 가 세션 파일을 먼저 지워, 만료 안내 대신 그냥 로그아웃된 것처럼
+    // 보인다. 정책값과 앞뒤가 맞도록 절대 타임아웃까지 살려둔다(만료 판정은 아래 코드가 한다).
+    ini_set('session.gc_maxlifetime', (string) VG_SESSION_ABSOLUTE_SECONDS);
     // HTTPS(또는 리버스프록시 X-Forwarded-Proto)면 Secure 쿠키
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
           || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'secure' => $https]);
+    // 쿠키 lifetime 0 = 브라우저 종료 시 소멸. 만료는 서버가 판정하므로 쿠키에 수명을 심지 않는다
+    // (클라이언트 시계를 신뢰하지 않는다).
+    session_set_cookie_params(['lifetime' => 0, 'httponly' => true, 'samesite' => 'Lax', 'secure' => $https]);
     session_start();
 }
 
@@ -109,6 +122,10 @@ function vg_login(PDO $pdo, string $user, string $pass): ?string {
         $_SESSION['uname']  = $row['username'];
         $_SESSION['role']   = $row['role'];
         $_SESSION['stoken'] = $token;
+        // 만료 판정 기준 시각 — 절대 타임아웃은 login_at, 유휴는 last_activity 를 본다.
+        // 둘 다 세션에만 두고 DB 는 건드리지 않는다(요청마다 쓰기가 생기면 안 된다).
+        $_SESSION['login_at']      = time();
+        $_SESSION['last_activity'] = time();
         $pdo->prepare(
             'UPDATE tb_user SET last_login = NOW(), session_token = ?, failed_login_count = 0, locked_until = NULL WHERE user_id = ?'
         )->execute([$token, $uid]);
@@ -143,6 +160,54 @@ function vg_logout(): void {
 }
 
 /**
+ * 세션 만료 여부. 만료됐으면 사유('idle'|'absolute'), 아니면 null.
+ *   기준 시각이 없는 세션(이 기능 배포 전에 이미 로그인해 있던 세션)은 만료로 보지 않고
+ *   지금 시각으로 채운다 — 배포 순간 전원 로그아웃되는 것을 피한다.
+ */
+function vg_session_expired_reason(): ?string {
+    $now = time();
+    if (empty($_SESSION['login_at']))      { $_SESSION['login_at'] = $now; }
+    if (empty($_SESSION['last_activity'])) { $_SESSION['last_activity'] = $now; }
+    if ($now - (int) $_SESSION['login_at'] >= VG_SESSION_ABSOLUTE_SECONDS) {
+        return 'absolute';
+    }
+    if ($now - (int) $_SESSION['last_activity'] >= VG_SESSION_IDLE_SECONDS) {
+        return 'idle';
+    }
+    return null;
+}
+
+/**
+ * 만료된 세션을 끊는다 — 감사로그 → DB session_token 정리 → 세션 비우기 → login_expired 플래그.
+ *   DB 토큰은 "내 토큰일 때만" 지운다(vg_logout 과 같은 이유 — 그 사이 다른 로그인이
+ *   덮어썼다면 그쪽 세션까지 끊으면 안 된다).
+ *   기존 단일세션 kick(login_kicked)과는 다른 사건이라 플래그를 분리한다.
+ */
+function vg_session_force_expire(string $reason): void {
+    $uid = (int) ($_SESSION['uid'] ?? 0);
+    $tok = (string) ($_SESSION['stoken'] ?? '');
+    try {
+        $pdo = vg_pdo();
+        vg_log_activity($pdo, 'USER', $uid, 'session_expire',
+            $reason === 'absolute'
+                ? '최대 세션 시간(절대) 초과로 자동 로그아웃'
+                : '유휴 시간 초과로 자동 로그아웃',
+            ['reason' => $reason], $uid ?: null, 'SYSTEM');
+        if ($uid > 0 && $tok !== '') {
+            $pdo->prepare('UPDATE tb_user SET session_token = NULL WHERE user_id = ? AND session_token = ?')
+                ->execute([$uid, $tok]);
+        }
+    } catch (Throwable $e) {
+        error_log('[auth] 세션 만료 처리 실패: ' . $e->getMessage());
+    }
+    unset(
+        $_SESSION['uid'], $_SESSION['uname'], $_SESSION['role'], $_SESSION['stoken'],
+        $_SESSION['login_at'], $_SESSION['last_activity']
+    );
+    $_SESSION['login_expired'] = $reason;
+}
+
+/**
  * 현재 로그인 사용자. $_SESSION['stoken'] 을 DB session_token(PK 조회, 저렴함)과 대조해
  *   불일치하면(다른 곳에서 재로그인되어 이 세션이 무효화된 것) 세션을 비우고 null 을 반환한다
  *   — 사유는 $_SESSION['login_kicked'] 플래그로 남겨 login.php 가 안내 문구를 보여준다.
@@ -155,6 +220,13 @@ function vg_current_user(): ?array {
     static $cached = false;   // false = 미검증, null = 무효화됨, array = 유효
     if ($cached !== false) {
         return $cached;
+    }
+    // 만료 검사가 먼저다 — DB 조회 없이 세션 값만 보므로 저렴하고, 만료된 세션으로
+    // DB 를 두드릴 이유도 없다.
+    $expired = vg_session_expired_reason();
+    if ($expired !== null) {
+        vg_session_force_expire($expired);
+        return $cached = null;
     }
     try {
         $st = vg_pdo()->prepare('SELECT session_token FROM tb_user WHERE user_id = ?');
@@ -171,13 +243,22 @@ function vg_current_user(): ?array {
         // DB 오류 시 세션을 강제로 끊지 않는다(가용성 우선) — 로그만 남긴다.
         error_log('[auth] 세션 토큰 검증 실패: ' . $e->getMessage());
     }
+    // 유효한 요청이므로 유휴 기준 시각을 갱신한다. 세션에만 쓰므로 DB 쓰기는 0회이고,
+    // static 캐시 덕분에 요청당 한 번만 실행된다.
+    $_SESSION['last_activity'] = time();
     return $cached = ['id' => (int) $_SESSION['uid'], 'username' => $_SESSION['uname'] ?? '', 'role' => $_SESSION['role'] ?? 'user'];
 }
 
 function vg_require_login(): void {
     if (!vg_current_user()) {
-        $q = !empty($_SESSION['login_kicked']) ? '?reason=kicked' : '';
-        unset($_SESSION['login_kicked']);
+        // 만료와 kick 은 다른 사건 — login.php 가 다른 안내를 보여주도록 사유를 구분해 넘긴다.
+        $q = '';
+        if (!empty($_SESSION['login_expired'])) {
+            $q = '?reason=expired&kind=' . rawurlencode((string) $_SESSION['login_expired']);
+        } elseif (!empty($_SESSION['login_kicked'])) {
+            $q = '?reason=kicked';
+        }
+        unset($_SESSION['login_kicked'], $_SESSION['login_expired']);
         header('Location: /login.php' . $q);
         exit;
     }

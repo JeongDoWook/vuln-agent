@@ -10,6 +10,8 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/audit.php';        // vg_log_activity (만료 토큰 사용 시도 기록)
+require_once __DIR__ . '/tokenexpiry.php';  // vg_token_is_expired / vg_token_expires_at
 
 const VG_AGENT_TOKEN_PREFIX = 'vgt_';   // vuln-agent token. 목록·로그에서 알아보기 쉽게.
 
@@ -27,9 +29,10 @@ function vg_agent_token_hash(string $token): string {
  * 토큰 발급 → DB 저장. 원문은 저장하지 않으므로 호출자가 화면에 1회만 보여줘야 한다.
  *   같은 host_fqdn 에 활성 토큰이 이미 있으면 자동 폐기하고 새로 발급한다(활성 토큰 1:1 보장).
  *   폐기된 기존 토큰 수를 함께 돌려줘 호출자가 감사 로그·안내에 쓸 수 있게 한다.
- * @return array{token:string,prefix:string,revoked:int} 원문·표시용 prefix·자동폐기된 기존 토큰 수
+ *   $expiresDays 는 vg_token_expiry_days_input() 으로 검증된 값(0 = 무기한).
+ * @return array{token:string,prefix:string,revoked:int,expires_at:?string} 원문·prefix·자동폐기 수·만료시각
  */
-function vg_agent_token_issue(PDO $pdo, string $fqdn, string $label, ?int $userId): array {
+function vg_agent_token_issue(PDO $pdo, string $fqdn, string $label, ?int $userId, int $expiresDays = 0): array {
     $fqdn = trim($fqdn);
     if ($fqdn === '') {
         throw new RuntimeException('바인딩할 호스트(fqdn)를 입력하세요.');
@@ -42,33 +45,46 @@ function vg_agent_token_issue(PDO $pdo, string $fqdn, string $label, ?int $userI
     $st->execute([$fqdn]);
     $revoked = $st->rowCount();
 
-    $token  = vg_agent_token_new();
-    $prefix = substr($token, 0, 12);                 // vgt_ + 앞 8자
+    $token     = vg_agent_token_new();
+    $prefix    = substr($token, 0, 12);              // vgt_ + 앞 8자
+    $expiresAt = vg_token_expires_at($expiresDays);
     $pdo->prepare(
-        'INSERT INTO tb_agent_token (host_fqdn, label, token_hash, token_prefix, created_by)
-         VALUES (?, ?, ?, ?, ?)'
-    )->execute([$fqdn, $label, vg_agent_token_hash($token), $prefix, $userId]);
-    return ['token' => $token, 'prefix' => $prefix, 'revoked' => $revoked];
+        'INSERT INTO tb_agent_token (host_fqdn, label, token_hash, token_prefix, created_by, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    )->execute([$fqdn, $label, vg_agent_token_hash($token), $prefix, $userId, $expiresAt]);
+    return ['token' => $token, 'prefix' => $prefix, 'revoked' => $revoked, 'expires_at' => $expiresAt];
 }
 
 /**
  * 토큰 검증(수집 인증용). 유효하면 last_seen_at 갱신 후 바인딩 정보를 반환, 아니면 null.
  *   폐기(is_revoked)·소프트삭제된 토큰은 매칭하지 않으며 호출자는 요청을 거부한다.
  *   해시 컬럼이 UNIQUE 라 인덱스 조회 1회.
+ *   expires_at 이 지난 토큰도 **인증 실패**로 처리하고 감사로그(agent_token_expired)를 남긴다 —
+ *   "없는 토큰"과 "만료된 토큰"은 운영자에게 다른 사건이라 구분해 기록한다.
+ *   만료 토큰은 last_seen_at 을 갱신하지 않는다(수신된 적 없는 것으로 남긴다).
  * @return array{id:int,fqdn:string}|null
  */
 function vg_agent_token_verify(PDO $pdo, string $provided): ?array {
     $provided = trim($provided);
     if ($provided === '') { return null; }
     $st = $pdo->prepare(
-        'SELECT agent_token_id, host_fqdn FROM tb_agent_token
+        'SELECT agent_token_id, host_fqdn, token_prefix, expires_at FROM tb_agent_token
           WHERE token_hash = ? AND is_revoked = 0 AND is_deleted = 0 LIMIT 1'
     );
     $st->execute([vg_agent_token_hash($provided)]);
     $row = $st->fetch();
     if (!$row) { return null; }
-    $pdo->prepare('UPDATE tb_agent_token SET last_seen_at = NOW() WHERE agent_token_id = ?')->execute([(int) $row['agent_token_id']]);
-    return ['id' => (int) $row['agent_token_id'], 'fqdn' => (string) $row['host_fqdn']];
+    $id = (int) $row['agent_token_id'];
+    if (vg_token_is_expired($row['expires_at'] !== null ? (string) $row['expires_at'] : null)) {
+        vg_log_activity($pdo, 'AGENT_TOKEN', $id, 'agent_token_expired',
+            '만료된 에이전트 토큰으로 접근 시도 → 거부',
+            ['fqdn' => (string) $row['host_fqdn'], 'prefix' => (string) $row['token_prefix'],
+             'expires_at' => (string) $row['expires_at']],
+            null, 'SYSTEM');
+        return null;
+    }
+    $pdo->prepare('UPDATE tb_agent_token SET last_seen_at = NOW() WHERE agent_token_id = ?')->execute([$id]);
+    return ['id' => $id, 'fqdn' => (string) $row['host_fqdn']];
 }
 
 /** 폐기(즉시 무효). soft-delete 가 아니라 is_revoked 로 — 이력은 남기고 사용만 막는다. */
