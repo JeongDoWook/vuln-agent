@@ -46,6 +46,7 @@ function vg_activity_type_labels(): array {
         'view_advisory'        => '보안공지 상세 조회',
         'view_compliance_rule' => '보안설정 룰 상세 조회',
         'view_compliance'      => '컴플라이언스 매핑 조회',
+        'view_nofix_packages'  => '제거·대체 검토 권고 조회',
         'view_control_mapping' => '통제 기준 매핑 조회',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김.
         'host_perimeter_update'=> '경계 방화벽 설정 변경',

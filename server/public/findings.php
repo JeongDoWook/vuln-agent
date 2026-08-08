@@ -35,6 +35,14 @@ if (!in_array($fx, ['action', 'nofix', 'restart'], true)) { $fx = ''; }
 $page   = vg_page();
 $hostId = (int) ($_GET['host'] ?? 0);
 $scanId = (int) ($_GET['scan_id'] ?? 0);
+// 컨테이너 스코프(?ctr=). **0 은 "호스트 자신"** 이라 "없음" 과 구분해야 한다(tb_finding.container_id
+//   규약 — 18-containers.sql). 그래서 값이 아니라 파라미터의 존재 여부로 켠다.
+//   제거 권고 목록에서 컨테이너 행을 눌러 왔을 때, 같은 호스트의 다른 컨테이너 판정까지
+//   섞여 보이지 않게 한다. 툴바에 넣지 않는 이유는 이게 필터가 아니라 컨텍스트이기 때문
+//   (scan_id·host 와 같은 부류 — '필터 초기화' 로도 사라지지 않는다).
+$ctrParam = $_GET['ctr'] ?? null;
+$ctrId    = ($ctrParam !== null && $ctrParam !== '' && ctype_digit((string) $ctrParam)) ? (int) $ctrParam : null;
+$ctrLabel = null;   // 부제에 뭘 보고 있는지 밝힌다(스코프를 숨기면 0건이 '안전' 으로 읽힌다)
 
 try {
     $pdo = vg_pdo();
@@ -110,6 +118,20 @@ try {
         // 필터 WHERE 조립 (COUNT 와 목록 쿼리에 동일하게 사용)
         $where  = "f.scan_id IN ($in)";
         $params = $scanIds;
+        if ($ctrId !== null) {
+            // uq_find 가 (scan_id, container_id, …) 라 scan_id 범위 뒤 두 번째 컬럼 등치다 —
+            //   IN 리스트 패턴을 그대로 두고 인덱스도 더 좁게 탄다.
+            $where .= ' AND f.container_id = ?';
+            $params[] = $ctrId;
+            if ($ctrId === 0) {
+                $ctrLabel = '호스트 자신(컨테이너 제외)';
+            } else {
+                $s = $pdo->prepare('SELECT cid FROM tb_container WHERE container_id = ?');
+                $s->execute([$ctrId]);
+                $cid = $s->fetchColumn();
+                $ctrLabel = $cid !== false ? '컨테이너 ' . (string) $cid : '컨테이너 #' . $ctrId;
+            }
+        }
         if ($q !== '') {
             $where .= ' AND (f.cve_id LIKE ? OR f.package_name LIKE ?)';
             $params[] = '%' . $q . '%';
@@ -175,11 +197,19 @@ vg_header('탐지 결과', 'findings');
     <?php elseif ($hostOptions): ?>
       전체 호스트 <?= count($hostOptions) ?>대 · 각 호스트의 최신 스캔 기준
     <?php else: ?>스캔 없음<?php endif; ?>
+    <?php if ($ctrLabel !== null): ?>
+      <?php // 스코프를 숨기면 0건이 "안전" 으로 읽힌다 — 무엇으로 좁혀 봤는지 밝히고 해제 링크를 준다. ?>
+      · <strong><?= vg_h($ctrLabel) ?></strong> 기준
+      · <a href="<?= vg_h(vg_qs(['ctr' => null, 'page' => 1])) ?>">이 호스트 전체 보기 →</a>
+    <?php endif; ?>
   </div></div>
 
   <nav class="subtabs">
     <a class="on" href="/findings.php">현황</a>
     <a href="/changes.php">변화</a>
+    <!-- 같은 패키지의 '조치 불가' 가 이 목록에선 CVE 수십 줄로 흩어진다 —
+         (호스트×패키지) 로 묶어 보는 진입점. 목록 구조는 그대로 둔다. -->
+    <a href="/nofix-packages.php">제거 권고</a>
   </nav>
 
 <?php if ($err !== null): ?>
