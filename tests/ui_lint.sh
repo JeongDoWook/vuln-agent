@@ -109,8 +109,8 @@ DYNAMIC_PREFIXES=(
   'chart__lbl--'  # view/charts.php : 'chart__lbl--' . $edge (start|end)
 )
 
-# 정의: app.css 의 선택자에 나오는 클래스. 주석과 url(...)·content:"..." 은 걷어낸다
-#   — 주석 속 `.page--<스크립트>` 나 데이터 URI 의 `www.w3.org` 가 클래스로 잡히던 것.
+# 정의: app.css 의 선택자에 나오는 클래스. 주석과 url(...) 은 걷어낸다 — 주석 속
+#   `.page--<스크립트>` 나 데이터 URI 의 `www.w3.org` 가 클래스로 잡히던 것.
 css_src=$(awk '
   # 한 줄짜리 주석·데이터 URI. 주석 패턴은 C 주석 정본형 — `[^*]*` 로 줄이면 본문에 `*` 가
   #   든 주석(`.badge.tone-*` 같은 설명)에서 끊겨 뒤 줄의 실제 규칙까지 주석으로 먹는다.
