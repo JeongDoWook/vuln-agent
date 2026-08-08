@@ -1841,6 +1841,45 @@ if is_root; then
   have ufw && cap security ufw 'ufw status verbose 2>/dev/null'
 fi
 
+# ── 시간 동기화 (ISMS-P 2.9.6) ──
+#   "모든 로그 증적의 전제". 타임스탬프가 틀어지면 감사로그 전체의 증거력이 무너진다.
+#   system.timezone 이 이미 `timedatectl`(사람용 status)을 담지만, 판정은 키=값이 필요해
+#   `timedatectl show`(기계용)를 따로 모은다 — 파싱을 화면용 출력에 의존하지 않는다.
+cap security time_sync     'timedatectl show 2>/dev/null || timedatectl status 2>/dev/null'
+cap security time_tracking 'chronyc tracking 2>/dev/null || ntpq -pn 2>/dev/null'
+# is-active 는 유닛마다 한 줄이라 어느 유닛이 떴는지 알 수 없다 → "유닛=상태" 로 찍는다.
+#   systemctl 이 없으면 아무것도 안 나오고, 그러면 서버는 이 항목을 NA 로 남긴다.
+cap security time_services '
+  for u in chrony chronyd systemd-timesyncd ntp ntpd ntpsec; do
+    s="$(systemctl is-active "$u" 2>/dev/null)"
+    [ -n "$s" ] && printf "%s=%s\n" "$u" "$s"
+  done'
+
+# ── 로그 설정 (ISMS-P 2.9.4) ──
+#   기존 CCE-FILE-SYSLOG 는 파일 "권한"만 본다. 보존기간·원격전송 "설정"은 여기서 모은다.
+cap security journald_conf '
+  grep -hE "^[[:space:]]*(Storage|SystemMaxUse|MaxRetentionSec|MaxFileSec)=" \
+    /etc/systemd/journald.conf /etc/systemd/journald.conf.d/*.conf 2>/dev/null'
+# logrotate 는 전역 지시자만 본다. /etc/logrotate.d/* 의 지시자는 파일마다 블록 안에 있어
+#   grep 으로 합치면 어느 rotate 가 어느 주기와 짝인지 알 수 없다(잘못 곱하면 보존기간 오판).
+#   전역 지시자는 /etc/logrotate.conf 에서 들여쓰기 없이 나오므로 행머리로 구분한다.
+cap security logrotate_conf '
+  [ -r /etc/logrotate.conf ] && {
+    grep -hE "^(daily|weekly|monthly|yearly|rotate|maxage)([[:space:]]|$)" \
+      /etc/logrotate.conf 2>/dev/null | grep . || echo NONE; }'
+# 원격 전송(@=UDP, @@=TCP, omfwd) — 위·변조 방지의 실질 수단. "미설정"과 "못 읽음"을 구분한다.
+cap security rsyslog_remote '
+  [ -r /etc/rsyslog.conf ] && {
+    grep -hE "^[^#]*(@@?[A-Za-z0-9\[]|omfwd)" \
+      /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null | grep . || echo NONE; }'
+
+# ── 암호화 (ISMS-P 2.7.1 / N2SF 제5장 DT) ──
+#   디스크 암호화(LUKS) 존재 여부. lsblk 는 비-root 로도 돌고, 없으면 blkid 로 폴백한다.
+#   둘 다 못 쓰면 아무것도 안 남겨 서버가 NA 로 판정한다(없음을 "정상"으로 위장하지 않는다).
+cap security disk_encryption '
+  out="$(lsblk -o NAME,FSTYPE 2>/dev/null || blkid 2>/dev/null)"
+  [ -n "$out" ] && { printf "%s\n" "$out" | grep -i "crypto_LUKS" || echo NONE; }'
+
 # ==================================================================
 # 13) 사용자 / 인증 / 예약작업 / 파일시스템
 # ==================================================================
@@ -1874,7 +1913,7 @@ cap users account_sudoers '[ -r /etc/sudoers ] && { cat /etc/sudoers /etc/sudoer
 #   그때 config 폴백이 없으면 SSH 점검이 통째로 "판정 불가"가 된다 → **둘 다 수집**한다.
 #   (서버는 effective 를 먼저 보고, 없으면 config 로 판정한다.)
 if is_root; then
-  cap users sshd_effective 'sshd -T 2>/dev/null | grep -E "permitrootlogin|passwordauthentication|pubkeyauthentication|permitemptypasswords|maxauthtries|x11forwarding|logingracetime|clientaliveinterval|clientalivecountmax|ciphers|macs"'
+  cap users sshd_effective 'sshd -T 2>/dev/null | grep -E "permitrootlogin|passwordauthentication|pubkeyauthentication|permitemptypasswords|maxauthtries|x11forwarding|logingracetime|clientaliveinterval|clientalivecountmax|ciphers|macs|kexalgorithms"'
 fi
 cap users sshd_config 'grep -iE "^\s*(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|MaxAuthTries|X11Forwarding|LoginGraceTime|ClientAlive)" /etc/ssh/sshd_config 2>/dev/null'
 

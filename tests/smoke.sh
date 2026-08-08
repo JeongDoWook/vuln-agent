@@ -247,6 +247,11 @@ fi
 # "자체 기준" 으로 떨어져 근거가 사라진다. 파서도 Jinja 섞인 실제 형식으로 고정한다.
 run_phpunit "ssg_test.php" "ssg" "ssg 단위 테스트 (룰 파싱 · CIS/NIST 매핑)" "ssg 단위 테스트"
 
+# --- CCE 신규 룰 단위 테스트 ---------------------------------------------------
+# 시간동기화·로그설정·암호화 룰. 가장 중요한 계약은 "수집값이 없으면 PASS 가 아니라 NA" 다 —
+# 비-root 실행에서 조용히 PASS 가 되면 점검을 안 한 서버가 통과한 것처럼 보인다.
+run_phpunit "cce_new_rules_test.php" "cce_new_rules" "CCE 신규 룰 단위 테스트 (시간·로그·암호화)" "CCE 신규 룰 단위 테스트"
+
 # --- rhunfixed 단위 테스트 ----------------------------------------------------
 # Red Hat 미수정 CVE(조치 불가) 판정. 컴포넌트 매핑이나 릴리스 매칭이 틀리면 조용히 미탐이 된다
 # (바이너리 이름으로 물으면 API 가 0건을 주고, "Linux 1" 이 "Linux 10" 에 걸리면 남의 상태를 쓴다).
@@ -365,14 +370,17 @@ if [ "${med:-0}" -ge 1 ]; then ok "MEDIUM ≥ 1 (redis 방화벽 차단 → 외�
 supp=$(printf '%s' "$resp" | grep -oE '"SUPPRESSED":[0-9]+' | grep -oE '[0-9]+$')
 if [ "${supp:-0}" -ge 1 ]; then ok "억제 ≥ 1 (sudo errata) = $supp"; else no "억제 부족 (=${supp:-0})"; fi
 
-# CCE(보안설정) — KISA U-XX 기준 27개 항목. 수집값이 다 있으면 NA 는 0 이어야 한다.
+# CCE(보안설정) — KISA U-XX + 시간동기화·로그·암호화 항목. 수집값이 다 있으면 판정돼야 한다.
 #   NA 가 생기면 "정상"을 "판정 불가"로 표시하는 것이라 운영자가 안심할 수 없다.
+#   예외는 CCE-CRYPTO-KCMVP 하나뿐 — 검증필 암호모듈(N2SF EA-1)은 알고리즘 목록만으로 준수를
+#   단정할 수 없어 **의도적으로** 정보성(NA)이다. 그래서 상한이 0 이 아니라 1 이고, 2 가 되면
+#   다른 룰이 판정을 놓친 것이라 잡힌다.
 ccePass=$(printf '%s' "$resp" | grep -oE '"cce":\{"PASS":[0-9]+' | grep -oE '[0-9]+$')
 cceFail=$(printf '%s' "$resp" | grep -oE '"FAIL":[0-9]+' | tail -1 | grep -oE '[0-9]+$')
 cceNa=$(printf '%s' "$resp"   | grep -oE '"NA":[0-9]+'   | tail -1 | grep -oE '[0-9]+$')
 cceTotal=$(( ${ccePass:-0} + ${cceFail:-0} + ${cceNa:-0} ))
-if [ "$cceTotal" -ge 32 ]; then ok "CCE 32개 항목 판정 (총 $cceTotal)"; else no "CCE 항목 부족 (=$cceTotal)"; fi
-if [ "${cceNa:-1}" -eq 0 ]; then ok "CCE NA 0 (수집값이 있으면 전부 판정)"; else no "CCE NA=$cceNa (정상을 판정불가로 표시?)"; fi
+if [ "$cceTotal" -ge 39 ]; then ok "CCE 39개 항목 판정 (총 $cceTotal)"; else no "CCE 항목 부족 (=$cceTotal)"; fi
+if [ "${cceNa:-9}" -le 1 ]; then ok "CCE NA ≤1 (정보성 KCMVP 외에는 전부 판정) = ${cceNa:-?}"; else no "CCE NA=$cceNa (정상을 판정불가로 표시?)"; fi
 if [ "${cceFail:-0}" -ge 5 ]; then ok "CCE FAIL 검출 (shadow 640·hosts 644·MaxAuthTries 6 등) = $cceFail"; else no "CCE FAIL 미검출 (=${cceFail:-0})"; fi
 
 # --- 데비안 호스트: debsecan 기반 백포트 억제 --------------------------------
