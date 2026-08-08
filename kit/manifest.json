@@ -1,0 +1,168 @@
+{
+  "schema": 1,
+  "_": "킷이 소유한 파일의 SSOT. 설치 안내(README.md·AGENTS.md)의 cp 목록과 같은 집합이어야 한다 — 여기와 거기가 어긋나면 여기가 정본이다. scripts/kit-manifest.js 가 이 파일을 읽어 호스트 저장소의 설치 상태를 검사한다.",
+  "_그룹": "그룹은 '설치 범위'다. 검증 3단계만 쓰는 프로젝트는 lifecycle·contract 그룹이 통째로 없어도 드리프트가 아니다 — 그룹이 통째로 비어 있으면 '미설치'로 보고하고, 일부만 있으면 '부분 설치'로 드리프트를 낸다. 이 구분이 없으면 부분 설치가 정상인 킷에서 check 를 쓸 수 없다.",
+
+  "groups": {
+    "agents": {
+      "description": "역할 브리핑 11종 — 5관점 리뷰어 + critic + 페르소나 2 + 설계 토론 3. 스킬과 같은 이유로 설치 위치가 다르다",
+      "requires": [],
+      "include": ["kit/agents/*.md"],
+      "installPrefix": { "from": "kit/agents/", "to": ".claude/agents/" },
+      "_": "이 파일들은 YAML frontmatter(name/description/tools/model)를 가진 **Claude Code 서브에이전트 정의**다. Claude Code 는 .claude/agents/ 만 훑으므로, kit/agents/ 에 두면 Agent(subagent_type=\"persona-fanout\") 이 호스트에서 등록되지 않는다. 스킬과 같은 이유로 설치 위치만 갈아끼운다 — 두 벌로 복사하지 않는다. Codex 진입점은 같은 경로(.claude/agents/*.md)의 본문만 읽고 frontmatter 는 무시한다."
+    },
+
+    "review": {
+      "description": "검증 3단계 — agents 와 짝을 이뤄 독립 동작한다. 킷의 최소 설치 단위",
+      "requires": ["agents"],
+      "include": [
+        "kit/workflow/code-review-algorithm.md",
+        "kit/workflow/design-review-algorithm.md",
+        "kit/workflow/requirement-fanout-algorithm.md",
+        "kit/workflow/guardrails.md",
+        "scripts/gen-review.js",
+        "scripts/gen-report.js",
+        "scripts/gen-score.js",
+        "scripts/gen-qa.js",
+        "scripts/sync-styles.js",
+        "scripts/lib/report/*.js",
+        "scripts/assets/*.css"
+      ]
+    },
+
+    "orchestration": {
+      "description": "스테이지 체인 드라이버 — 스킬을 순서대로 잇는 얇은 층. 없어도 각 스킬 개별 호출로 같은 결과",
+      "requires": ["review"],
+      "include": [
+        "kit/workflow/pipeline-algorithm.md",
+        "scripts/gen-status.js",
+        "scripts/schema/pipeline-state.schema.json",
+        "scripts/lib/pipeline/*.js"
+      ]
+    },
+
+    "contract": {
+      "description": "프로바이더 계약 — 스킬이 외부 시스템(트래커·PR·작업공간·알림·릴리스)에 나가는 유일한 문. lifecycle 그룹의 전제",
+      "requires": [],
+      "include": [
+        "kit/contract/provider-contract.md",
+        "scripts/px.js",
+        "scripts/lib/provider/*.js",
+        "scripts/lib/provider/**/*.js"
+      ]
+    },
+
+    "_installPrefix": "스킬 3그룹만 설치 위치가 다르다. Claude Code 는 스킬을 .claude/skills/ 에서만 찾기 때문이다. 양쪽에 두 벌 복사하지 않는다 — 두 벌이면 반드시 어긋난다. Codex 진입점(AGENTS.md)도 설치된 이 경로를 그대로 가리킨다.",
+
+    "skills-review": {
+      "description": "검증 3단계 스킬 — 킷의 최소 설치 단위와 짝을 이룬다",
+      "requires": ["review"],
+      "include": [
+        "kit/skills/requirement-fanout/SKILL.md",
+        "kit/skills/design-review/SKILL.md",
+        "kit/skills/code-review/SKILL.md"
+      ],
+      "installPrefix": { "from": "kit/skills/", "to": ".claude/skills/" }
+    },
+
+    "skills-pipeline": {
+      "description": "스테이지 체인 오케스트레이터 스킬",
+      "requires": ["orchestration"],
+      "include": ["kit/skills/pipeline/SKILL.md"],
+      "installPrefix": { "from": "kit/skills/", "to": ".claude/skills/" }
+    },
+
+    "skills-lifecycle": {
+      "description": "작업 시작~릴리스 라이프사이클 스킬 9종. contract 없이는 첫 px 호출에서 죽는다",
+      "requires": ["contract"],
+      "include": [
+        "kit/skills/work-start/SKILL.md",
+        "kit/skills/work-sync/SKILL.md",
+        "kit/skills/spec/SKILL.md",
+        "kit/skills/implement/SKILL.md",
+        "kit/skills/self-qa/SKILL.md",
+        "kit/skills/submit/SKILL.md",
+        "kit/skills/finish/SKILL.md",
+        "kit/skills/release/SKILL.md",
+        "kit/skills/dev-env/SKILL.md"
+      ],
+      "installPrefix": { "from": "kit/skills/", "to": ".claude/skills/" }
+    },
+
+    "milestone": {
+      "description": "다중 작업(마일스톤) 오케스트레이션 — 이슈 하나의 주기 위층. contract 의 issue/pr/ws 동사 위에만 얹힌다",
+      "requires": ["contract", "orchestration"],
+      "include": [
+        "kit/workflow/milestone-algorithm.md",
+        "scripts/ms.js",
+        "scripts/lib/milestone/*.js",
+        "scripts/gen-milestone.js",
+        "scripts/schema/milestone-state.schema.json"
+      ]
+    },
+
+    "skills-milestone": {
+      "description": "마일스톤 오케스트레이터 스킬",
+      "requires": ["milestone"],
+      "include": ["kit/skills/milestone/SKILL.md"],
+      "installPrefix": { "from": "kit/skills/", "to": ".claude/skills/" }
+    },
+
+    "workflows": {
+      "description": "결정론적 Workflow 스크립트 — 산문 절차를 코드로 강제한다. Workflow tool 이 있는 환경에서만 의미가 있다",
+      "requires": ["review"],
+      "include": [
+        "kit/workflows/*.js",
+        "kit/workflows/README.md"
+      ]
+    },
+
+    "codex": {
+      "description": "Codex / 단일세션 CLI 진입점",
+      "requires": ["review"],
+      "include": [
+        ".codex/agents/*.toml",
+        ".codex/config.toml"
+      ],
+      "renames": {
+        "AGENTS.md": "AGENTS-review-kit.md"
+      },
+      "includeRenamed": ["AGENTS.md"]
+    },
+
+    "hooks": {
+      "description": "가드 훅 — 어댑터가 선언한 금지 규칙을 exit 2 로 강제한다. 선택",
+      "requires": [],
+      "include": [
+        "kit/hooks/*.js",
+        "kit/hooks/README.md"
+      ]
+    },
+
+    "worker": {
+      "description": "외부 터미널 워커 launcher — 별도 창에서 독립 세션을 띄울 때만. 선택",
+      "requires": [],
+      "include": [
+        "scripts/spawn-worker.js",
+        "scripts/lib/worker/*.js"
+      ]
+    },
+
+    "manifest": {
+      "description": "설치 매니페스트 자기 자신 — 이 그룹이 설치돼 있어야 호스트가 드리프트를 스스로 검사할 수 있다",
+      "requires": [],
+      "include": [
+        "kit/manifest.json",
+        "scripts/kit-manifest.js",
+        "scripts/install-kit.js",
+        "scripts/lib/content-hash.js"
+      ],
+      "_": "content-hash.js 는 두 스크립트가 **같은 기준으로** 해시하게 하는 공용 모듈이다. 이게 빠지면 호스트에서 둘 다 require 실패로 즉시 죽는다 — 그룹에서 빼지 말 것."
+    }
+  },
+
+  "adapters": {
+    "_": "매니페스트 검사 대상이 아니다. 프로젝트마다 값이 달라야 정상이고, 같으면 오히려 베끼기만 하고 안 채운 것이다. 존재 여부만 안내한다.",
+    "files": [".review-kit.json", ".pipeline.json"]
+  }
+}

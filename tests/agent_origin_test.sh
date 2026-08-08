@@ -28,30 +28,29 @@ fi
 
 CMD_TIMEOUT=5
 have()    { return 0; }
-# timeout 스텁 — 옵션(-k 2)과 초 인자를 걷어내고 실제 명령만 부른다. 예전엔 shift 한 번이라
-#   `timeout -k 2 5 apt-cache …` 형태(#483)에서 "2" 를 명령으로 실행하려 들어 조용히 빈 출력이 됐다.
+# 실제 호출은 `timeout -k 2 "$CMD_TIMEOUT" apt-cache …` 다(#483 에서 -k 가 붙었다).
+#   예전 스텁은 `shift` 한 번이라 `-k` 만 떨어지고 `2` 가 명령어로 실행됐다.
+#   앞의 옵션쌍을 전부 걷어낸 뒤 시간값 하나를 더 버린다 — -k 유무와 무관하게 동작한다.
 timeout() {
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      -*) shift; [ "$#" -gt 0 ] && shift ;;   # -k 2 처럼 값을 갖는 옵션
-      *)  shift; break ;;                     # 시간 인자
-    esac
-  done
-  "$@"
+  while [ "${1:-}" = "-k" ] || [ "${1:-}" = "-s" ]; do shift 2; done
+  shift; "$@"
 }
-
-# 에이전트 본체가 갖고 있는 전역·헬퍼를 테스트용으로 세운다 — collect_pkg_origins() 는 이제
-#   중간 출력을 "$TMP/.pkg-origins-raw.txt" 로 받고(head -c "$MAX_BYTES"), 대기 중
-#   progress_heartbeat() 를 부른다. 함수만 떼어 오므로 여기서 채워 주지 않으면
-#   MAX_BYTES unbound + progress_heartbeat not found 로 이 테스트가 통째로 죽는다.
-#   TMP 를 굳이 저장소 안에 만드는 이유: Windows 는 환경변수 TMP 가 이미 %TEMP% 이고,
-#   사용자명에 비-ASCII 가 섞이면 mingw awk 가 그 경로를 못 연다(go_deps_extract_test.sh 와 같은 함정).
-TMP=$(mktemp -d "$ROOT/tests/.tmp-origin.XXXXXX")
-trap 'rm -rf "$TMP"' EXIT
-MAX_BYTES=524288
-progress_heartbeat() { :; }
-sleep() { :; }   # 하트비트 대기 루프를 실시간으로 기다리지 않는다
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
+
+# collect_pkg_origins() 가 함수 밖에서 오는 것들. #483 이 하트비트를 넣으면서 늘었는데
+#   이 스텁이 안 따라가 스모크의 "패키지 출처 판정"이 계속 실패하고 있었다.
+#   (테스트가 set -u 라 MAX_BYTES 미정의 시점에 즉사한다.)
+MAX_BYTES=524288                  # 에이전트 기본값과 동일(섹션당 512KB 상한)
+progress_heartbeat() { :; }       # 진행 보고는 이 테스트의 관심사가 아니다
+ORIGINS_PID=""
+# 대기 루프의 `sleep 5` 는 스텁 apt-cache 상대로는 순수 낭비다(호출 2회 = 매 스모크 11초).
+#   루프 구조는 그대로 두고 간격만 줄인다.
+sleep() { command sleep 0.05; }
+# $TMP 를 안 잡으면 Windows 가 물려준 %TMP%(`C:\Users\<한글이름>\…`)가 그대로 쓰여
+#   awk 가 그 경로의 파일을 못 연다. 저장소 경로는 항상 ASCII 라 여기에 만든다
+#   (tests/go_deps_extract_test.sh 가 같은 이유로 쓰는 방식).
+TMP=$(mktemp -d "$ROOT/tests/.tmp-pkg-origins.XXXXXX")
+trap 'rm -rf "$TMP"' EXIT
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
 apt-cache() {

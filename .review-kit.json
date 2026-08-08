@@ -1,0 +1,58 @@
+{
+  "_": "vuln-agent 어댑터 — 값은 이 프로젝트 전용. example-adapter(withVTM)를 베끼지 말 것.",
+  "paths": {
+    "specFile": ".omc/review-kit/{branch}/spec.yaml",
+    "planFile": ".omc/review-kit/{branch}/plan.yaml",
+    "codeContextFile": ".omc/review-kit/{branch}/code-context.yaml",
+    "reviewOutDir": ".omc/review-kit/{branch}",
+    "fallbackOutDirs": [".omc/review-kit", "."]
+  },
+  "git": {
+    "diffBase": "origin/main",
+    "branchIssuePattern": "(feat|fix|chore|docs)/(.+)"
+  },
+  "personas": [
+    { "id": "planner", "name": "기획자", "concerns": "정책 우선순위, 커넥터/기능 확장 방향, 타 화면과의 일관성" },
+    { "id": "admin", "name": "관리자/운영자", "concerns": "에이전트 배포·스케줄러 운영, RBAC/감사로그, 장애 대응·모니터링" },
+    { "id": "user", "name": "사용자(개발팀·시스템담당자)", "concerns": "취약점 조회·필터링, 오탐 신고, 알림 수신" }
+  ],
+  "tracks": {
+    "_": "단일 저장소, 트랙 1개. PHP 백엔드+바닐라 JS/CSS 프런트가 화면 단위로 섞여 있어 FE/BE 분리 실익이 낮다.",
+    "detect": "always DEFAULT",
+    "DEFAULT": {
+      "cutlinePass": 80,
+      "cutlineCaution": 70,
+      "weightSecurityRegression": 1.5,
+      "deductions": {
+        "warningHighQuality":   { "fix": -5,  "mrComment": -8,  "accept": -10 },
+        "warningHighSecReg":    { "fix": -8,  "mrComment": -12, "accept": -15 },
+        "warningMediumQuality": { "fix": -2,  "mrComment": -4,  "accept": -5 },
+        "warningMediumSecReg":  { "fix": -4,  "mrComment": -6,  "accept": -8 },
+        "warningLow":           { "fix": 0,   "mrComment": -1,  "accept": -1 }
+      }
+    }
+  },
+  "runtimeTrapTaxonomy": [
+    "PDO prepared statement 누락 (문자열 concat 쿼리) → SQL 인젝션",
+    "vg_h() 이스케이프 누락 (사용자 입력이 목록·상세 화면에 그대로 출력) → XSS",
+    "vg_require_menu()/역할 검사 누락 — 클라이언트 숨김만으로 인가 처리",
+    "마이그레이션 비멱등 — db/migrations 재실행 시 실패·중복, 타임스탬프 파일명 규칙 위반",
+    "N+1 쿼리 — 목록·통계 화면에서 페이지네이션 없이 루프 내 개별 조회",
+    "세션락 장시간 점유 — 커넥터/무거운 작업을 웹 요청 안에서 실행해 PHP 세션락을 오래 쥠(다른 요청 블로킹)",
+    "vercmp 버전 비교 누락/오탐 — 매처가 존재 유무만으로 매칭해 버전 비교를 생략",
+    "비밀값 하드코딩/평문 저장 — secrets/*.txt(Docker Secrets) 대신 코드/DB에 평문",
+    "감사로그 누락 — 열람/조회/수정/삭제 처리에서 vg_log_activity() 호출 누락",
+    "부분 커밋 — 여러 건 upsert/집계 도중 일부 실패 시 트랜잭션 경계 없이 부분 반영"
+  ],
+  "codingGuard": {
+    "nonStandardTag": "// WHY(non-standard):",
+    "ssotTag": "// SSOT:"
+  },
+  "criticalLoop": {
+    "maxIterations": 5,
+    "agentTeamsEnvFlag": "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
+  },
+  "scoreRetry": {
+    "maxIterations": 5
+  }
+}

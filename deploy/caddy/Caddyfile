@@ -7,11 +7,72 @@
 #   엉뚱한 이름으로 조용히 떠서 TLS 가 그 이름으로 발급되고, HTTPS 가 깨진 걸 아무도 모른다.
 #   폴백이 없으면 빈 주소가 되어 Caddy 가 기동 자체를 거부한다 — 시끄럽게 죽는 쪽이 안전하다.
 #     실측(caddy:2, `caddy validate`): PROD_DOMAIN 없음 → 주소가 빈 문자열이 되어 이 블록이
-#     사이트가 아닌 **전역 옵션 블록**으로 파싱된다 → "unrecognized global option: encode" +
-#     종료코드 1. 있음(example.test) → "Valid configuration" + 종료코드 0. 둘 다 실측 확인.
+#     사이트가 아닌 **전역 옵션 블록**으로 파싱된다 → 종료코드 1.
+#     있음(example.test) → "Valid configuration" + 종료코드 0. 둘 다 실측 확인.
+#     (아래에 진짜 전역 옵션 블록이 생긴 뒤로 오류 메시지가 "unrecognized global option: encode"
+#      에서 "server block without any key is global configuration, and if used, it must be first"
+#      으로 바뀌었다 — 2026-08-08 실측. 죽는다는 사실과 종료코드 1 은 그대로다.)
+
+{
+	# 평문 80 은 아래 `http://:80` catch-all 하나가 전부 처리한다.
+	#   이 줄이 없으면 Caddy 가 {$PROD_DOMAIN} 용 리다이렉트 라우트를 **자동으로** 만들어 :80 앞에
+	#   끼워 넣는데, 그건 우리 사이트 블록 밖이라 `import security_headers` 가 안 걸린다.
+	#   실측: 그 경로의 응답만 보안헤더가 하나도 없고 `Server: Caddy` 까지 그대로 나갔다
+	#   (`curl -sI -H 'Host: <운영도메인>' http://…:80/login.php`). 진입 경로에 따라 헤더가
+	#   있다 없다 하는 상태가 제일 나쁘다 — 자동 리다이렉트를 끄고 한 블록으로 통일한다.
+	#   끄는 건 "리다이렉트"뿐이고 인증서 자동관리는 그대로다. 발급도 DNS-01/내부CA 라 80 을 안 쓴다.
+	auto_https disable_redirects
+}
+
+# --- 보안 응답 헤더 (한 곳에만 둔다) ----------------------------------------
+#   사이트 블록마다 복붙하지 않고 snippet 으로 모아 `import security_headers` 로 쓴다.
+#   운영 기준: ISMS-P 2.6.3 / 2.7.1. 2026-08-07 감사에서 "헤더 전무"로 지적된 항목이다.
+(security_headers) {
+	header {
+		# MIME 스니핑 금지 — 업로드/다운로드 응답이 다른 타입으로 실행되는 것을 막는다.
+		X-Content-Type-Options "nosniff"
+
+		# 클릭재킹 방지. 이 제품은 자기 화면을 iframe 에 넣는 곳이 없다(실측: server/ 전체에 iframe 0건).
+		#   아래 CSP 의 frame-ancestors 'none' 과 같은 뜻이며, 이쪽은 구형 브라우저용이다.
+		X-Frame-Options "DENY"
+
+		# 외부 링크(NVD·CVE.org·OSV 로 나가는 a href)로 전체 URL 이 새지 않게 한다.
+		#   같은 출처엔 전체 URL, 교차 출처엔 origin 만, https→http 강등 시엔 아무것도 안 보낸다.
+		Referrer-Policy "strict-origin-when-cross-origin"
+
+		# CSP — 서드파티 런타임 의존성이 0개(composer/npm 없음, 바닐라 JS)라 'self' 기준이 가능하다.
+		#   'unsafe-inline' 이 남아 있는 이유(실측으로 확인한 실제 사용처):
+		#     · script: server/src/view/layout.php:35 의 테마 초기화 인라인 스크립트(첫 페인트 전 실행이
+		#       목적이라 외부 파일로 빼면 깜빡임이 생긴다), nav.php:166 의 인라인 스크립트,
+		#       components.php:277 의 onchange= 인라인 핸들러.
+		#     · style: server/public/process.html:7 의 <style> 블록.
+		#   nonce/해시로 바꾸려면 PHP 를 고쳐야 하는데, 그건 이 변경의 범위가 아니다(별도 작업).
+		#     인라인을 걷어내기 전에 'unsafe-inline' 을 지우면 화면이 통째로 깨진다.
+		#   img-src 에 data: 를 허용하는 이유: app.css 가 아이콘을 data:image/svg+xml 로 인라인한다
+		#     (app.css:1382, 1471). object-src/base-uri/form-action 은 인라인과 무관하게 조일 수 있다.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
+		# HSTS — **지금은 일부러 끈다. 켜지 말 것.**
+		#   현재 TLS 가 `tls internal`(Caddy 내부 CA 자체서명)이라 브라우저가 이미
+		#   ERR_CERT_AUTHORITY_INVALID 를 낸다. 이 상태에서 HSTS 를 보내면 브라우저가 그 호스트를
+		#   HSTS 목록에 넣고, HSTS 호스트에서는 **인증서 예외("고급 → 계속 진행")를 아예 허용하지
+		#   않는다**. 즉 접속 수단이 사라지고, max-age 가 만료되기 전엔 사용자가 되돌릴 방법도 없다
+		#   (브라우저 내부 설정에서 HSTS 항목을 손으로 지워야 한다).
+		#   → Let's Encrypt(신뢰되는 CA)로 전환한 뒤에 아래 한 줄의 주석을 푼다. 절차는 파일 하단
+		#     "[정식으로 전환 시]" 주석과 deploy/README.md 참조.
+		# Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+		# 서버 정보 노출 제거 — 버전 핑거프린팅 표면을 줄인다.
+		#   Server 는 Caddy 가, X-Powered-By 는 뒷단 PHP 가 붙인다(둘 다 여기서 지운다).
+		-Server
+		-X-Powered-By
+	}
+}
 
 {$PROD_DOMAIN} {
 	encode gzip
+
+	import security_headers
 
 	# [현재] 자체서명(Caddy 내부 CA). 토큰/도메인소유 불필요, 즉시 HTTPS(브라우저 경고 뜸).
 	tls internal
@@ -20,6 +81,16 @@
 	#   단, 이 도메인을 소유한 DuckDNS 계정의 토큰이 secrets/duckdns_token.txt 에 있어야 함.
 	#   ⚠ 2026-07-12 전환 시도 실패: DuckDNS 가 KO 반환(토큰이 이 도메인 계정 게 아님) →
 	#     Caddy 가 cert 를 못 받아 HTTPS 다운. 올바른 토큰 확인 전엔 다시 켜지 말 것.
+	#
+	#   전환 절차(사람이 해야 하는 일 — 에이전트가 대신 못 한다):
+	#     1. https://www.duckdns.org 에 **이 도메인을 소유한 계정**으로 로그인해 token 을 복사한다.
+	#        (2026-07-12 실패 원인이 바로 이 "다른 계정 토큰"이었다.)
+	#     2. 운영 서버에서  printf %s '<토큰>' > secrets/duckdns_token.txt
+	#     3. 이 파일에서 `tls internal` 을 지우고 아래 tls 블록의 주석을 푼다.
+	#     4. ./compose_runner.sh prod up -d --build  → docker compose -p vulnagent logs -f caddy
+	#        에서 "certificate obtained successfully" 를 확인한다.
+	#     5. 자물쇠(경고 없음)가 확인된 **뒤에야** 위 security_headers 의
+	#        Strict-Transport-Security 주석을 푼다. 순서를 바꾸면 접속이 막힌다.
 	# tls {
 	# 	dns duckdns {env.DUCKDNS_TOKEN}
 	# }
@@ -31,4 +102,25 @@
 		# 접속 원본만 별도 헤더로 덮어써서 클라이언트가 위조한 전달 헤더와 구분한다.
 		header_up X-Real-IP {remote_host}
 	}
+}
+
+# --- 평문(80) 진입 catch-all -------------------------------------------------
+#   2026-08-07 감사 §7-3 은 여기에 "평문 진입 사용자의 404" 가 있다고 적었지만,
+#   **그 404 는 재현되지 않았다.** 원본 Caddyfile 을 그대로 띄우고 실측한 결과(2026-08-08),
+#   Host 가 운영도메인이든 사내망 IP 든 평문 80 은 이미 308 로 https 에 넘어가고 있었다
+#   (Caddy 가 자동 생성한 리다이렉트가 호스트를 안 가리고 걸린다).
+#   그래서 이 블록은 404 를 고치는 게 아니라 **두 가지 실제 문제**를 고친다:
+#     ① 그 자동 리다이렉트 응답에는 보안헤더가 하나도 안 붙고 `Server: Caddy` 가 그대로 나갔다
+#        — 진입 경로에 따라 헤더가 있다 없다 하는 상태였다(실측).
+#     ② 평문 처리가 Caddy 의 암묵적 동작에 얹혀 있어 설정만 봐선 무슨 일이 나는지 알 수 없었다.
+#   위 전역 블록의 `auto_https disable_redirects` 로 암묵적 리다이렉트를 끄고, 평문 전부를
+#   이 한 블록이 명시적으로 처리한다. 결과 동작은 동일(308 + 같은 Location)하고 헤더만 붙는다.
+#     · `http://` 접두사가 있어야 Caddy 가 이 사이트에 TLS 를 자동 적용하지 않는다
+#       (없으면 이 주소로도 인증서를 얻으려 든다).
+http://:80 {
+	import security_headers
+	#   308 을 쓴다(`permanent` = 301 이 아니라). 301 은 POST 를 GET 으로 바꿔도 되는 코드라
+	#   평문으로 잘못 들어온 POST 가 조용히 빈 GET 이 된다. 308 은 메서드·본문을 보존한다.
+	#   Caddy 가 자동으로 만드는 리다이렉트도 308 이라 동작이 일치한다.
+	redir https://{host}{uri} 308
 }

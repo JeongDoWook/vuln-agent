@@ -1,0 +1,754 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-08-08T05:47:26.904Z",
+  "source": {
+    "root": "spec-review-kit",
+    "commit": "b706e175f43f54b479e14766bfea94fc0b043b73",
+    "spec": "kit/manifest.json"
+  },
+  "adapters": [
+    ".review-kit.json",
+    ".pipeline.json"
+  ],
+  "groups": {
+    "manifest": {
+      "description": "설치 매니페스트 자기 자신 — 이 그룹이 설치돼 있어야 호스트가 드리프트를 스스로 검사할 수 있다",
+      "requires": [],
+      "files": [
+        {
+          "path": "kit/manifest.json",
+          "installPath": "kit/manifest.json",
+          "sha256": "978cb56b9cb7056eb61823995d55f4ce085824174120c05ca21e8c1a01ad279a",
+          "bytes": 7294
+        },
+        {
+          "path": "scripts/install-kit.js",
+          "installPath": "scripts/install-kit.js",
+          "sha256": "684ef4e143941db4465bfd38e3765a93b7d2d5f8b754bef2c86b8307a64c843c",
+          "bytes": 11229
+        },
+        {
+          "path": "scripts/kit-manifest.js",
+          "installPath": "scripts/kit-manifest.js",
+          "sha256": "97403578a606c9b2b54541679f5ac05ba7386dbdde83ed5a8034a104b4391ece",
+          "bytes": 15192
+        },
+        {
+          "path": "scripts/lib/content-hash.js",
+          "installPath": "scripts/lib/content-hash.js",
+          "sha256": "81f975275bbfa026cdbf7d3498f8683d6c2e8c4f1c241aebba7a7d0d4cf79420",
+          "bytes": 2778
+        }
+      ]
+    },
+    "worker": {
+      "description": "외부 터미널 워커 launcher — 별도 창에서 독립 세션을 띄울 때만. 선택",
+      "requires": [],
+      "files": [
+        {
+          "path": "scripts/lib/worker/env.js",
+          "installPath": "scripts/lib/worker/env.js",
+          "sha256": "c1524e0edc12670e0608a0a2110b26552e196f3ea27eac3f02e2d910ec603f9d",
+          "bytes": 977
+        },
+        {
+          "path": "scripts/lib/worker/fallback-launcher.js",
+          "installPath": "scripts/lib/worker/fallback-launcher.js",
+          "sha256": "bfd745e161fbdc95223e375d2de4e48c694043f24fe639befe4f55c3d028a304",
+          "bytes": 1094
+        },
+        {
+          "path": "scripts/lib/worker/resolve-tool.js",
+          "installPath": "scripts/lib/worker/resolve-tool.js",
+          "sha256": "0ebd418301670e26c99520839188780e3721b40a3d4584ef686bbaf8ab39b4eb",
+          "bytes": 1523
+        },
+        {
+          "path": "scripts/lib/worker/termkeep-launcher.js",
+          "installPath": "scripts/lib/worker/termkeep-launcher.js",
+          "sha256": "bf565c7dec738a7f11014b88e9dfeb63a9a710aa652791869a079c582409e15f",
+          "bytes": 4298
+        },
+        {
+          "path": "scripts/lib/worker/windows-terminal-launcher.js",
+          "installPath": "scripts/lib/worker/windows-terminal-launcher.js",
+          "sha256": "0cb3444d8a1d04c8bb4f755f1ffadfc08b5e53e321b52fcfdf90327a48887b59",
+          "bytes": 1612
+        },
+        {
+          "path": "scripts/spawn-worker.js",
+          "installPath": "scripts/spawn-worker.js",
+          "sha256": "81e3dfdfbe877ec783ddd90414a94afbdb2fff5e819ab9d6ebf6e0f785bc9b28",
+          "bytes": 2699
+        }
+      ]
+    },
+    "hooks": {
+      "description": "가드 훅 — 어댑터가 선언한 금지 규칙을 exit 2 로 강제한다. 선택",
+      "requires": [],
+      "files": [
+        {
+          "path": "kit/hooks/guard-bash.js",
+          "installPath": "kit/hooks/guard-bash.js",
+          "sha256": "e1c5e689207c5f0dc0823bced70a12e65307d0b14e94d767a974f85147da3de9",
+          "bytes": 5005
+        },
+        {
+          "path": "kit/hooks/README.md",
+          "installPath": "kit/hooks/README.md",
+          "sha256": "dc8efcaf508793a6c4aa974e3b07262cea0cbeb87e679e5ef36c833992db1102",
+          "bytes": 2978
+        }
+      ]
+    },
+    "codex": {
+      "description": "Codex / 단일세션 CLI 진입점",
+      "requires": [
+        "review"
+      ],
+      "files": [
+        {
+          "path": ".codex/agents/code-auditor.toml",
+          "installPath": ".codex/agents/code-auditor.toml",
+          "sha256": "8c269f46b6302c5d0ebaa9dbddb2255976fcf03151e29f969cf4975e6fc11455",
+          "bytes": 359
+        },
+        {
+          "path": ".codex/agents/design-devil-advocate.toml",
+          "installPath": ".codex/agents/design-devil-advocate.toml",
+          "sha256": "53042d89a79ad5bc8f1445b65ef4ea54ec8fdb5db173c7ad26a741f066c9ffea",
+          "bytes": 347
+        },
+        {
+          "path": ".codex/agents/design-regression-analyst.toml",
+          "installPath": ".codex/agents/design-regression-analyst.toml",
+          "sha256": "f5b10e5c7baa258f9e21eb44295a6d1978067dd28950700183a0bf527ddea901",
+          "bytes": 367
+        },
+        {
+          "path": ".codex/agents/design-runtime-trap.toml",
+          "installPath": ".codex/agents/design-runtime-trap.toml",
+          "sha256": "333f6b946c803412a3d9ea502b29e49ac59b4b141d1b71191d1da4274608226f",
+          "bytes": 365
+        },
+        {
+          "path": ".codex/agents/persona-fanout.toml",
+          "installPath": ".codex/agents/persona-fanout.toml",
+          "sha256": "bfd28eb0c62e29348bac4ac94798a407d1e3afb881bbc6fdd91e9f94d622d5a9",
+          "bytes": 388
+        },
+        {
+          "path": ".codex/agents/quality-reviewer.toml",
+          "installPath": ".codex/agents/quality-reviewer.toml",
+          "sha256": "fd209bc910f6dce2b36e6f416ee2d708b522040079f7414b9c5d42b9f1a3c6a8",
+          "bytes": 443
+        },
+        {
+          "path": ".codex/agents/regression-reviewer.toml",
+          "installPath": ".codex/agents/regression-reviewer.toml",
+          "sha256": "3648bf6b351d9b1f3b4dc435800a4a297d3bcb2157f31ed521c608315d0a0acf",
+          "bytes": 367
+        },
+        {
+          "path": ".codex/agents/requirement-synthesizer.toml",
+          "installPath": ".codex/agents/requirement-synthesizer.toml",
+          "sha256": "474128337d00862b3888b4117b13db62977c41f51c98eb8f0a254fb40a3fa981",
+          "bytes": 454
+        },
+        {
+          "path": ".codex/agents/review-critic.toml",
+          "installPath": ".codex/agents/review-critic.toml",
+          "sha256": "359786e0268bb53fab13ef33ae050ff8ebd9af198c6d8b67c2cb0b6fb679384c",
+          "bytes": 416
+        },
+        {
+          "path": ".codex/agents/runtime-trap-hunter.toml",
+          "installPath": ".codex/agents/runtime-trap-hunter.toml",
+          "sha256": "dce21a3d14904279e8e74e1053d4b5396ce2545b6ae5520444be9b010542b629",
+          "bytes": 427
+        },
+        {
+          "path": ".codex/agents/security-reviewer.toml",
+          "installPath": ".codex/agents/security-reviewer.toml",
+          "sha256": "5148491b5aba903285ebd4bbaf947c9108c94ef676bd3d7c7eaa98497cd86a8b",
+          "bytes": 358
+        },
+        {
+          "path": ".codex/config.toml",
+          "installPath": ".codex/config.toml",
+          "sha256": "b94eacc65d94cf683dc2ba6e4ef99be145a19b02f00c3d22e5c9ab748fc9ff3d",
+          "bytes": 546
+        },
+        {
+          "path": "AGENTS.md",
+          "installPath": "AGENTS-review-kit.md",
+          "sha256": "3d8e5beaf990dd32aaad2b56e321902fcdbd67c077f2c69e8e97ccb0de694db1",
+          "bytes": 10406
+        }
+      ]
+    },
+    "review": {
+      "description": "검증 3단계 — agents 와 짝을 이뤄 독립 동작한다. 킷의 최소 설치 단위",
+      "requires": [
+        "agents"
+      ],
+      "files": [
+        {
+          "path": "kit/workflow/code-review-algorithm.md",
+          "installPath": "kit/workflow/code-review-algorithm.md",
+          "sha256": "93ad421af796ec2d52794476d95710a960b77337c718562ea27c915d63dfad80",
+          "bytes": 8645
+        },
+        {
+          "path": "kit/workflow/design-review-algorithm.md",
+          "installPath": "kit/workflow/design-review-algorithm.md",
+          "sha256": "36e089ea14e507e2a7507f7945055a9c5812313f1d483ef5a1a65b7eb56a9a08",
+          "bytes": 3139
+        },
+        {
+          "path": "kit/workflow/guardrails.md",
+          "installPath": "kit/workflow/guardrails.md",
+          "sha256": "6991fb1faf4622c191bfd0c41b714bc7372a888cdc259d455e98912cf7a1c50b",
+          "bytes": 8016
+        },
+        {
+          "path": "kit/workflow/requirement-fanout-algorithm.md",
+          "installPath": "kit/workflow/requirement-fanout-algorithm.md",
+          "sha256": "9301c18fd6eb510f28cf91f9f81bb182fab5f8df47fc0e6fc26244091bd88fc0",
+          "bytes": 3630
+        },
+        {
+          "path": "scripts/assets/report.css",
+          "installPath": "scripts/assets/report.css",
+          "sha256": "1ec077d784c0eebf7f61ea305f66dfee99e2320f5145c4927ec92ee210f0f20e",
+          "bytes": 9201
+        },
+        {
+          "path": "scripts/gen-qa.js",
+          "installPath": "scripts/gen-qa.js",
+          "sha256": "ea583d9b3a73faabdb7eabe0d62ec1358af458554c31599b23cf6e4bd96428c3",
+          "bytes": 11913
+        },
+        {
+          "path": "scripts/gen-report.js",
+          "installPath": "scripts/gen-report.js",
+          "sha256": "f873af4b92f18183ecc4f38dd2390114167435c8eff924b29dbd3d9f747264c0",
+          "bytes": 13297
+        },
+        {
+          "path": "scripts/gen-review.js",
+          "installPath": "scripts/gen-review.js",
+          "sha256": "97f1f16c8fa8b946909d2470eda744897262b3dedd698dc0e6f5cf623f298e1f",
+          "bytes": 21005
+        },
+        {
+          "path": "scripts/gen-score.js",
+          "installPath": "scripts/gen-score.js",
+          "sha256": "3d056dac7e33f3261ca9e9fb6de46800e195165ebb6af14c5ee287c2c43c76f4",
+          "bytes": 12474
+        },
+        {
+          "path": "scripts/lib/report/css.js",
+          "installPath": "scripts/lib/report/css.js",
+          "sha256": "cc096acd176ba04aa446185def32895989b727d9306ad739a5715ce5e31fe1c5",
+          "bytes": 403
+        },
+        {
+          "path": "scripts/lib/report/html.js",
+          "installPath": "scripts/lib/report/html.js",
+          "sha256": "0ebd3ba0160eb2ef8c57e3edb737787f2ad1324bcdedaf3cb3286812d15acd22",
+          "bytes": 877
+        },
+        {
+          "path": "scripts/lib/report/io.js",
+          "installPath": "scripts/lib/report/io.js",
+          "sha256": "9773939b9358ed8d8959de60e9ab63017a9d2977d74c6b8bae64a8689d55bee6",
+          "bytes": 1665
+        },
+        {
+          "path": "scripts/lib/report/perspective.js",
+          "installPath": "scripts/lib/report/perspective.js",
+          "sha256": "f6e4f03698a283605374d3399fd2815045d530c56e5ef5c165bd6aed00577dfe",
+          "bytes": 704
+        },
+        {
+          "path": "scripts/sync-styles.js",
+          "installPath": "scripts/sync-styles.js",
+          "sha256": "3b5c7c523ae6f123c0dab124889e070e6857e244b8a045dc05afeda4ec919403",
+          "bytes": 6691
+        }
+      ]
+    },
+    "agents": {
+      "description": "역할 브리핑 11종 — 5관점 리뷰어 + critic + 페르소나 2 + 설계 토론 3. 스킬과 같은 이유로 설치 위치가 다르다",
+      "requires": [],
+      "files": [
+        {
+          "path": "kit/agents/code-auditor.md",
+          "installPath": ".claude/agents/code-auditor.md",
+          "sha256": "9f92dfe2f093a38474ef9d7c9391c7aa3e1f71317339ccfa9c578ef3432beab7",
+          "bytes": 1269
+        },
+        {
+          "path": "kit/agents/design-devil-advocate.md",
+          "installPath": ".claude/agents/design-devil-advocate.md",
+          "sha256": "11af77699c2b0ace95a2749eb881271bd4fadfa787a4076f3a8af07279f03abb",
+          "bytes": 949
+        },
+        {
+          "path": "kit/agents/design-regression-analyst.md",
+          "installPath": ".claude/agents/design-regression-analyst.md",
+          "sha256": "2e219d43ee28baf3849746f4a84b0ac7376788d8f7a857fe008772bfdb229e58",
+          "bytes": 1325
+        },
+        {
+          "path": "kit/agents/design-runtime-trap.md",
+          "installPath": ".claude/agents/design-runtime-trap.md",
+          "sha256": "84fc32805c957bbd5e2f2d13ec312d9661074aa1bf639617ff2afe1e9ad184e0",
+          "bytes": 1436
+        },
+        {
+          "path": "kit/agents/persona-fanout.md",
+          "installPath": ".claude/agents/persona-fanout.md",
+          "sha256": "fcc56e8cbf26b62a2429db655c758079c1bcdbbf9987d2ba7d98d7cf2ff98d30",
+          "bytes": 2463
+        },
+        {
+          "path": "kit/agents/quality-reviewer.md",
+          "installPath": ".claude/agents/quality-reviewer.md",
+          "sha256": "5e05663493d917c480205afdb669fcee0e54a202deee2e8402e01bd58f8a15ad",
+          "bytes": 1888
+        },
+        {
+          "path": "kit/agents/regression-reviewer.md",
+          "installPath": ".claude/agents/regression-reviewer.md",
+          "sha256": "b7904ac969cdc84b1798cc35aa23aa421b8a70128a166bfc47cba94ee3b35241",
+          "bytes": 1317
+        },
+        {
+          "path": "kit/agents/requirement-synthesizer.md",
+          "installPath": ".claude/agents/requirement-synthesizer.md",
+          "sha256": "c3f714a580115df28769c15bca9d757a1362f6eccb6cc4e732b693808b71d8c5",
+          "bytes": 2277
+        },
+        {
+          "path": "kit/agents/review-critic.md",
+          "installPath": ".claude/agents/review-critic.md",
+          "sha256": "988880829de75cb5c422142ec6011a57eabc424bf7b624b9a9b6d78c2fb38a57",
+          "bytes": 2042
+        },
+        {
+          "path": "kit/agents/runtime-trap-hunter.md",
+          "installPath": ".claude/agents/runtime-trap-hunter.md",
+          "sha256": "b8d7f7cc511274478cf2a31eeb5b2d7b47a5f5eaa3cfac76adcb9576bfc06bdb",
+          "bytes": 1841
+        },
+        {
+          "path": "kit/agents/security-reviewer.md",
+          "installPath": ".claude/agents/security-reviewer.md",
+          "sha256": "827e5a81d3989105bc2bee1305efa1564e39d8c7852d1790e6a6b61ec3ad46f7",
+          "bytes": 1142
+        }
+      ]
+    },
+    "workflows": {
+      "description": "결정론적 Workflow 스크립트 — 산문 절차를 코드로 강제한다. Workflow tool 이 있는 환경에서만 의미가 있다",
+      "requires": [
+        "review"
+      ],
+      "files": [
+        {
+          "path": "kit/workflows/code-review-find.js",
+          "installPath": "kit/workflows/code-review-find.js",
+          "sha256": "8d9ea1aec9b2451c145f5bebd837c9c8edbd244a7115c2033dcccf7ad00f4f2b",
+          "bytes": 17942
+        },
+        {
+          "path": "kit/workflows/explore.js",
+          "installPath": "kit/workflows/explore.js",
+          "sha256": "192b295bfb400469d178a3951bdd2ceb14fab116b751a499b4e3d6d2c700fec7",
+          "bytes": 6259
+        },
+        {
+          "path": "kit/workflows/impl-phases.js",
+          "installPath": "kit/workflows/impl-phases.js",
+          "sha256": "82f0496fcbc7bdfa19e4d7d701dbeb5261428519725007b2e1003336c77bda83",
+          "bytes": 9269
+        },
+        {
+          "path": "kit/workflows/README.md",
+          "installPath": "kit/workflows/README.md",
+          "sha256": "6bb1a3dbbb358c63eacf254b682cd588ad257a5b5bcee19553590df58b349d47",
+          "bytes": 8080
+        },
+        {
+          "path": "kit/workflows/spec-analyze.js",
+          "installPath": "kit/workflows/spec-analyze.js",
+          "sha256": "13c06c3ab74a83a8ba373fbc5dca9663b876002ea55c9ba98ad22c246ed28983",
+          "bytes": 15480
+        },
+        {
+          "path": "kit/workflows/test-matrix.js",
+          "installPath": "kit/workflows/test-matrix.js",
+          "sha256": "720ee1bd363db696021d516d74edcdfb331b9b577b4e42af94cea51dde2514c4",
+          "bytes": 9457
+        }
+      ]
+    },
+    "skills-milestone": {
+      "description": "마일스톤 오케스트레이터 스킬",
+      "requires": [
+        "milestone"
+      ],
+      "files": [
+        {
+          "path": "kit/skills/milestone/SKILL.md",
+          "installPath": ".claude/skills/milestone/SKILL.md",
+          "sha256": "cf9fd87aed7e11830a91377165f0faafe941091ab2c073daa778b0bdc5bf1f47",
+          "bytes": 5876
+        }
+      ]
+    },
+    "milestone": {
+      "description": "다중 작업(마일스톤) 오케스트레이션 — 이슈 하나의 주기 위층. contract 의 issue/pr/ws 동사 위에만 얹힌다",
+      "requires": [
+        "contract",
+        "orchestration"
+      ],
+      "files": [
+        {
+          "path": "kit/workflow/milestone-algorithm.md",
+          "installPath": "kit/workflow/milestone-algorithm.md",
+          "sha256": "22df39750a36543ae85190443a67546585d36b737ff82ffc04716966d066f9e8",
+          "bytes": 22060
+        },
+        {
+          "path": "scripts/gen-milestone.js",
+          "installPath": "scripts/gen-milestone.js",
+          "sha256": "3b202718a5417b1970e267142ece656c6c3c5e24b54306f3279fb0af9005dc90",
+          "bytes": 13492
+        },
+        {
+          "path": "scripts/lib/milestone/advance-plan.js",
+          "installPath": "scripts/lib/milestone/advance-plan.js",
+          "sha256": "97a8fffe5670e11610bfef08765586984ca32d9466c0bfadc070000be3f925d8",
+          "bytes": 11571
+        },
+        {
+          "path": "scripts/lib/milestone/dispatch-plan.js",
+          "installPath": "scripts/lib/milestone/dispatch-plan.js",
+          "sha256": "3c273f0d826491ec5ea08cbc00ace23623ae5816fbdb518f3a71ee01142e9d13",
+          "bytes": 7059
+        },
+        {
+          "path": "scripts/lib/milestone/errors.js",
+          "installPath": "scripts/lib/milestone/errors.js",
+          "sha256": "8a2de51f9e7ca9dbd1c5b30630d77db31d3be459934471fcba1d91018a9ef122",
+          "bytes": 920
+        },
+        {
+          "path": "scripts/lib/milestone/guard.js",
+          "installPath": "scripts/lib/milestone/guard.js",
+          "sha256": "3a1b95f57ea49920e8ae83528ebcfc56d4a95cd0d83a6e78af539dbd6c719e38",
+          "bytes": 6533
+        },
+        {
+          "path": "scripts/lib/milestone/plan-merge.js",
+          "installPath": "scripts/lib/milestone/plan-merge.js",
+          "sha256": "bf0a0ecbaaf2fa297fa1676c7f012baf0c3a76e2c880fd806095308262f12801",
+          "bytes": 17447
+        },
+        {
+          "path": "scripts/lib/milestone/priority.js",
+          "installPath": "scripts/lib/milestone/priority.js",
+          "sha256": "d740e55cafd7abf5d3aa6bd1e446cfd6a78071d43453e44be5678abeb3122a78",
+          "bytes": 4768
+        },
+        {
+          "path": "scripts/lib/milestone/ref.js",
+          "installPath": "scripts/lib/milestone/ref.js",
+          "sha256": "daac13e2c9b31a434c02d3172cacd9921093f64de275f5c7402c338490cc5211",
+          "bytes": 2959
+        },
+        {
+          "path": "scripts/lib/milestone/state.js",
+          "installPath": "scripts/lib/milestone/state.js",
+          "sha256": "4d88b341733fe1fc94ff77f1f1261fe1f022d9081abe985f6420af398a464e21",
+          "bytes": 11632
+        },
+        {
+          "path": "scripts/ms.js",
+          "installPath": "scripts/ms.js",
+          "sha256": "a23c1b25b3597d607f839dbbbcc179dd0ca23de4cacc73440c474d1ca6e2dcef",
+          "bytes": 31180
+        },
+        {
+          "path": "scripts/schema/milestone-state.schema.json",
+          "installPath": "scripts/schema/milestone-state.schema.json",
+          "sha256": "b6cdfd271860b023b6880b63dbe32b149ed2d34043a9be599f6cda78f7f08b0e",
+          "bytes": 5885
+        }
+      ]
+    },
+    "orchestration": {
+      "description": "스테이지 체인 드라이버 — 스킬을 순서대로 잇는 얇은 층. 없어도 각 스킬 개별 호출로 같은 결과",
+      "requires": [
+        "review"
+      ],
+      "files": [
+        {
+          "path": "kit/workflow/pipeline-algorithm.md",
+          "installPath": "kit/workflow/pipeline-algorithm.md",
+          "sha256": "5729d79233bc9b65381a7a9eb3d88537534b5199178311fab042a2a0554b9e89",
+          "bytes": 24847
+        },
+        {
+          "path": "scripts/gen-status.js",
+          "installPath": "scripts/gen-status.js",
+          "sha256": "13d92ef4dd9597b6ab490c31960ce925e47ef9127547c85ddb490d1a2fadafd6",
+          "bytes": 14056
+        },
+        {
+          "path": "scripts/lib/pipeline/graph.js",
+          "installPath": "scripts/lib/pipeline/graph.js",
+          "sha256": "8005ede557c928f16c76237fec45615a57064236cbc0e0dba2674e986961e4f7",
+          "bytes": 17855
+        },
+        {
+          "path": "scripts/schema/pipeline-state.schema.json",
+          "installPath": "scripts/schema/pipeline-state.schema.json",
+          "sha256": "7ccb814647c54e393bc85a5c201575b7740f38f5025693c44d0d0ac21bec5729",
+          "bytes": 6164
+        }
+      ]
+    },
+    "contract": {
+      "description": "프로바이더 계약 — 스킬이 외부 시스템(트래커·PR·작업공간·알림·릴리스)에 나가는 유일한 문. lifecycle 그룹의 전제",
+      "requires": [],
+      "files": [
+        {
+          "path": "kit/contract/provider-contract.md",
+          "installPath": "kit/contract/provider-contract.md",
+          "sha256": "233ad79fd3e8194e6531cdfeed6f442aa08ba6e5e96c12d841e98292c0cb0874",
+          "bytes": 20166
+        },
+        {
+          "path": "scripts/lib/provider/http.js",
+          "installPath": "scripts/lib/provider/http.js",
+          "sha256": "ddf40be73f396e478190c8ac694f25e4dcab664f3f110ec4c06ccc12f8e0f3fb",
+          "bytes": 6735
+        },
+        {
+          "path": "scripts/lib/provider/index.js",
+          "installPath": "scripts/lib/provider/index.js",
+          "sha256": "c03721b2db44232b74b7f50ac81fd3f870e1fbd4bc6ea719702fcb09a45ca4cc",
+          "bytes": 14483
+        },
+        {
+          "path": "scripts/lib/provider/mux/cmux.js",
+          "installPath": "scripts/lib/provider/mux/cmux.js",
+          "sha256": "5fe33e96357fec793f4ded84cec0264dcfce2887f786a8aa3246bd7a37cb2c59",
+          "bytes": 7978
+        },
+        {
+          "path": "scripts/lib/provider/mux/none.js",
+          "installPath": "scripts/lib/provider/mux/none.js",
+          "sha256": "87225adbe527b0697099ae3a2120326a172028e5fef5ab13dfdd6b28184538d1",
+          "bytes": 1917
+        },
+        {
+          "path": "scripts/lib/provider/mux/tmux.js",
+          "installPath": "scripts/lib/provider/mux/tmux.js",
+          "sha256": "dfb119ef38950d03f8ed00788cb4b4c6f6db9aea2989e518a47fb398a3291d93",
+          "bytes": 7369
+        },
+        {
+          "path": "scripts/lib/provider/notify/none.js",
+          "installPath": "scripts/lib/provider/notify/none.js",
+          "sha256": "2672c0f15e215ce543d8459865133f8c07b53239943bd8f9641e05631035985e",
+          "bytes": 1698
+        },
+        {
+          "path": "scripts/lib/provider/notify/slack.js",
+          "installPath": "scripts/lib/provider/notify/slack.js",
+          "sha256": "cd0d18d518b00e107ad2a6deeaf79528409165b5b36d1ec464cace0f5acc782b",
+          "bytes": 6371
+        },
+        {
+          "path": "scripts/lib/provider/release/git.js",
+          "installPath": "scripts/lib/provider/release/git.js",
+          "sha256": "22258775b8d1f577bc9ec884773a4664b3f39944a3ff42748d32172d491c2df2",
+          "bytes": 12001
+        },
+        {
+          "path": "scripts/lib/provider/release/github.js",
+          "installPath": "scripts/lib/provider/release/github.js",
+          "sha256": "33c1af8186109c85cecb1b991af3f25ea272e079e798a0487a2c0193a40fa1ed",
+          "bytes": 14018
+        },
+        {
+          "path": "scripts/lib/provider/release/gitlab.js",
+          "installPath": "scripts/lib/provider/release/gitlab.js",
+          "sha256": "8f65c95ec4491d6816de11d5c95a74493b74b78edc91bf724970d14ab4521caa",
+          "bytes": 12740
+        },
+        {
+          "path": "scripts/lib/provider/repo-dir.js",
+          "installPath": "scripts/lib/provider/repo-dir.js",
+          "sha256": "dff4ddb00799a28667fd073442ffbba2b5dd790c1aedddc829a742772cf312bf",
+          "bytes": 11552
+        },
+        {
+          "path": "scripts/lib/provider/run/shell.js",
+          "installPath": "scripts/lib/provider/run/shell.js",
+          "sha256": "23ca971688b8987cf299ed7a596e52a8c9d34798d07aff6f83639a6609bf6ea7",
+          "bytes": 19611
+        },
+        {
+          "path": "scripts/lib/provider/tracker/github.js",
+          "installPath": "scripts/lib/provider/tracker/github.js",
+          "sha256": "85bf2bb7e92172ca3b94a2f61a67eb284431f6673153024d49a598fbf36f4eee",
+          "bytes": 14869
+        },
+        {
+          "path": "scripts/lib/provider/tracker/gitlab.js",
+          "installPath": "scripts/lib/provider/tracker/gitlab.js",
+          "sha256": "322762ec1304ef7b5cb46ac79288a06915c75aac96aebaa8bff01a82f21156d1",
+          "bytes": 14731
+        },
+        {
+          "path": "scripts/lib/provider/tracker/local.js",
+          "installPath": "scripts/lib/provider/tracker/local.js",
+          "sha256": "c3f519851a85854661dd8c8eb1fb992272e3db68b1777d4420fa06c150291648",
+          "bytes": 8021
+        },
+        {
+          "path": "scripts/lib/provider/workspace/branch-verbs.js",
+          "installPath": "scripts/lib/provider/workspace/branch-verbs.js",
+          "sha256": "7570a8565a02c4910d8cfefee54cfe46e7920cf933c8068fa93cc5c78c276773",
+          "bytes": 15666
+        },
+        {
+          "path": "scripts/lib/provider/workspace/clone.js",
+          "installPath": "scripts/lib/provider/workspace/clone.js",
+          "sha256": "e84aac3a8035b6a14e0813a44654ac45f97a10b0e5512b87770c639a6d6332ca",
+          "bytes": 21380
+        },
+        {
+          "path": "scripts/lib/provider/workspace/worktree.js",
+          "installPath": "scripts/lib/provider/workspace/worktree.js",
+          "sha256": "7e3f8f49df85ecd95fb77cae9b31b2b51429bee3fa9be6d7ee8433c5e095e386",
+          "bytes": 23130
+        },
+        {
+          "path": "scripts/px.js",
+          "installPath": "scripts/px.js",
+          "sha256": "c5d38e708620ffd0d32b5e71ad2f0b9e51c157daf0b2913d12a53b38a6d13f25",
+          "bytes": 8150
+        }
+      ]
+    },
+    "skills-lifecycle": {
+      "description": "작업 시작~릴리스 라이프사이클 스킬 9종. contract 없이는 첫 px 호출에서 죽는다",
+      "requires": [
+        "contract"
+      ],
+      "files": [
+        {
+          "path": "kit/skills/dev-env/SKILL.md",
+          "installPath": ".claude/skills/dev-env/SKILL.md",
+          "sha256": "21bb30ae549602061428774407155f6b657651ed6adb5875c6fea7c8be07def6",
+          "bytes": 3185
+        },
+        {
+          "path": "kit/skills/finish/SKILL.md",
+          "installPath": ".claude/skills/finish/SKILL.md",
+          "sha256": "1045ba70510fd3c6c77de9ac14a2711f31157da6955f452aac4e3e8d82964169",
+          "bytes": 4734
+        },
+        {
+          "path": "kit/skills/implement/SKILL.md",
+          "installPath": ".claude/skills/implement/SKILL.md",
+          "sha256": "6004af6096b7a823d9baf626bbeb1ba7661b900ba9e4ccecebe8314c81042000",
+          "bytes": 6310
+        },
+        {
+          "path": "kit/skills/release/SKILL.md",
+          "installPath": ".claude/skills/release/SKILL.md",
+          "sha256": "d7325492d8866b25fad428a63a1ea458bdccfaaf5bb54a82df9fd12d4244d070",
+          "bytes": 7493
+        },
+        {
+          "path": "kit/skills/self-qa/SKILL.md",
+          "installPath": ".claude/skills/self-qa/SKILL.md",
+          "sha256": "dc3ee96dbc4c973a475e55f869332a000d941e85dab9c4fd38e289a7f9d0775a",
+          "bytes": 5753
+        },
+        {
+          "path": "kit/skills/spec/SKILL.md",
+          "installPath": ".claude/skills/spec/SKILL.md",
+          "sha256": "184fc8891bfa7b00ecb782b9c49c4572fb53dfffa9e14c928f66fb9d37672a2c",
+          "bytes": 5879
+        },
+        {
+          "path": "kit/skills/submit/SKILL.md",
+          "installPath": ".claude/skills/submit/SKILL.md",
+          "sha256": "92de997833e93f739c8fcb3b1bf23a296085d1f68d6271396b73292d5468d7dc",
+          "bytes": 6076
+        },
+        {
+          "path": "kit/skills/work-start/SKILL.md",
+          "installPath": ".claude/skills/work-start/SKILL.md",
+          "sha256": "a5fafab4f0657bedc6459f736e7113014e3aa24b58adf7fcf4d105705155b67a",
+          "bytes": 6480
+        },
+        {
+          "path": "kit/skills/work-sync/SKILL.md",
+          "installPath": ".claude/skills/work-sync/SKILL.md",
+          "sha256": "05e258b586ea50d1697e0974b29f0bfcd9d6b80d3b7da4db239eaf851798c4fa",
+          "bytes": 4281
+        }
+      ]
+    },
+    "skills-pipeline": {
+      "description": "스테이지 체인 오케스트레이터 스킬",
+      "requires": [
+        "orchestration"
+      ],
+      "files": [
+        {
+          "path": "kit/skills/pipeline/SKILL.md",
+          "installPath": ".claude/skills/pipeline/SKILL.md",
+          "sha256": "8b2272465b99f6006820b85664b1e122866acf7555c52e0b0cdcd432accdbfdd",
+          "bytes": 10928
+        }
+      ]
+    },
+    "skills-review": {
+      "description": "검증 3단계 스킬 — 킷의 최소 설치 단위와 짝을 이룬다",
+      "requires": [
+        "review"
+      ],
+      "files": [
+        {
+          "path": "kit/skills/code-review/SKILL.md",
+          "installPath": ".claude/skills/code-review/SKILL.md",
+          "sha256": "9ed64b8ea260e7c22f513fed5a0bcf735002a02125752f760a624db8fb1b6ad9",
+          "bytes": 7123
+        },
+        {
+          "path": "kit/skills/design-review/SKILL.md",
+          "installPath": ".claude/skills/design-review/SKILL.md",
+          "sha256": "35ad84df3ad800352563dfa3d4cb9444147ab794b037cab03c1e548268ea6453",
+          "bytes": 5020
+        },
+        {
+          "path": "kit/skills/requirement-fanout/SKILL.md",
+          "installPath": ".claude/skills/requirement-fanout/SKILL.md",
+          "sha256": "69c896c9ab411e5b12bb1de7a7d8795cf1fd2485dfd7188342af08882287976f",
+          "bytes": 5038
+        }
+      ]
+    }
+  }
+}

@@ -101,7 +101,8 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
                 $id = (int) $pdo->lastInsertId();
                 $msg = "커넥터 '$name' 추가됨.";
             }
-            vg_log_activity($pdo, 'CONNECTOR', $id, 'connector_save', "커넥터 '$name' 저장", ['type' => $type, 'enabled' => $enabled]);
+            vg_log_activity($pdo, 'CONNECTOR', $id, 'connector_save', "커넥터 '$name' 저장", ['type' => $type, 'enabled' => $enabled],
+                subject: $name, action: 'UPDATE');
         } elseif ($action === 'run') {
             $id = (int) ($post['id'] ?? 0);
             // 수동 실행은 apache 요청 안에서 동기로 돈다. NVD lastMod 수집은 실측 432초가
