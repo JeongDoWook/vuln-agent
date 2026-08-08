@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "generatedAt": "2026-08-08T01:47:06.198Z",
+  "generatedAt": "2026-08-08T05:47:26.904Z",
   "source": {
     "root": "spec-review-kit",
-    "commit": "74e485e2805798e54ea01ae1b5a21c9053493f14",
+    "commit": "b706e175f43f54b479e14766bfea94fc0b043b73",
     "spec": "kit/manifest.json"
   },
   "adapters": [
@@ -18,20 +18,26 @@
         {
           "path": "kit/manifest.json",
           "installPath": "kit/manifest.json",
-          "sha256": "6266e6bb8b02cc20ea3daae10fa70ecb696103826bd93e132ea05d70e7b95194",
-          "bytes": 7193
+          "sha256": "978cb56b9cb7056eb61823995d55f4ce085824174120c05ca21e8c1a01ad279a",
+          "bytes": 7294
         },
         {
           "path": "scripts/install-kit.js",
           "installPath": "scripts/install-kit.js",
-          "sha256": "741cb06cfe2bf4382b07782f7d4078af6d400cfaf61fd72edd6e45f5b6f3d102",
-          "bytes": 11347
+          "sha256": "684ef4e143941db4465bfd38e3765a93b7d2d5f8b754bef2c86b8307a64c843c",
+          "bytes": 11229
         },
         {
           "path": "scripts/kit-manifest.js",
           "installPath": "scripts/kit-manifest.js",
-          "sha256": "02c0b3d13e47fd6c5065dbaa79553c8605399f2b592cfc9407e995cfc18cf906",
-          "bytes": 15384
+          "sha256": "97403578a606c9b2b54541679f5ac05ba7386dbdde83ed5a8034a104b4391ece",
+          "bytes": 15192
+        },
+        {
+          "path": "scripts/lib/content-hash.js",
+          "installPath": "scripts/lib/content-hash.js",
+          "sha256": "81f975275bbfa026cdbf7d3498f8683d6c2e8c4f1c241aebba7a7d0d4cf79420",
+          "bytes": 2778
         }
       ]
     },
@@ -84,14 +90,14 @@
         {
           "path": "kit/hooks/guard-bash.js",
           "installPath": "kit/hooks/guard-bash.js",
-          "sha256": "aba8b593457c26da462efa49abab7ecd2f1579c9f611cbb96b278a93cbc3dba0",
-          "bytes": 5124
+          "sha256": "e1c5e689207c5f0dc0823bced70a12e65307d0b14e94d767a974f85147da3de9",
+          "bytes": 5005
         },
         {
           "path": "kit/hooks/README.md",
           "installPath": "kit/hooks/README.md",
-          "sha256": "541fb54feec54faa4e7d82d585d22982e74f4157fc3eb59c43ae7d4414ead1a8",
-          "bytes": 3043
+          "sha256": "dc8efcaf508793a6c4aa974e3b07262cea0cbeb87e679e5ef36c833992db1102",
+          "bytes": 2978
         }
       ]
     },
@@ -226,14 +232,14 @@
         {
           "path": "scripts/gen-report.js",
           "installPath": "scripts/gen-report.js",
-          "sha256": "42a6cee3a454833fbe8a15eda8af63331fa21369727dbb3466c350719f72c301",
-          "bytes": 13604
+          "sha256": "f873af4b92f18183ecc4f38dd2390114167435c8eff924b29dbd3d9f747264c0",
+          "bytes": 13297
         },
         {
           "path": "scripts/gen-review.js",
           "installPath": "scripts/gen-review.js",
-          "sha256": "fd3de09fa4db856c5cfdf5a70c41d0c4e0e87ce0cb7964794831d1b8c92039c8",
-          "bytes": 21431
+          "sha256": "97f1f16c8fa8b946909d2470eda744897262b3dedd698dc0e6f5cf623f298e1f",
+          "bytes": 21005
         },
         {
           "path": "scripts/gen-score.js",
@@ -360,8 +366,8 @@
         {
           "path": "kit/workflows/explore.js",
           "installPath": "kit/workflows/explore.js",
-          "sha256": "c3fb220de7820c7c05e779665bb6494b5847fd33d202805dc71d478e0be31407",
-          "bytes": 6379
+          "sha256": "192b295bfb400469d178a3951bdd2ceb14fab116b751a499b4e3d6d2c700fec7",
+          "bytes": 6259
         },
         {
           "path": "kit/workflows/impl-phases.js",
@@ -384,8 +390,8 @@
         {
           "path": "kit/workflows/test-matrix.js",
           "installPath": "kit/workflows/test-matrix.js",
-          "sha256": "86e2c61dbba4d32956bbec5ee5553536dd56d0fc52abda8602026af7f43bb563",
-          "bytes": 9653
+          "sha256": "720ee1bd363db696021d516d74edcdfb331b9b577b4e42af94cea51dde2514c4",
+          "bytes": 9457
         }
       ]
     },
@@ -398,8 +404,8 @@
         {
           "path": "kit/skills/milestone/SKILL.md",
           "installPath": ".claude/skills/milestone/SKILL.md",
-          "sha256": "02195f416211efae2b799ecf16fa58df45a669340c44a4575f3e693bfc747330",
-          "bytes": 5989
+          "sha256": "cf9fd87aed7e11830a91377165f0faafe941091ab2c073daa778b0bdc5bf1f47",
+          "bytes": 5876
         }
       ]
     },
@@ -413,74 +419,74 @@
         {
           "path": "kit/workflow/milestone-algorithm.md",
           "installPath": "kit/workflow/milestone-algorithm.md",
-          "sha256": "28cacd106d146bec9a2afaad60a5e14e565c982459753ec4568d826ef1a9cc1e",
-          "bytes": 22387
+          "sha256": "22df39750a36543ae85190443a67546585d36b737ff82ffc04716966d066f9e8",
+          "bytes": 22060
         },
         {
           "path": "scripts/gen-milestone.js",
           "installPath": "scripts/gen-milestone.js",
-          "sha256": "96ce25b8bdfd561be62c146d1b44f75263c41bc6bbb8a94765a1fbd9b786623d",
-          "bytes": 13778
+          "sha256": "3b202718a5417b1970e267142ece656c6c3c5e24b54306f3279fb0af9005dc90",
+          "bytes": 13492
         },
         {
           "path": "scripts/lib/milestone/advance-plan.js",
           "installPath": "scripts/lib/milestone/advance-plan.js",
-          "sha256": "686b969591e3b4f0000b54307409c36aa54712d4d7155d54bd74e2e9588f273f",
-          "bytes": 11808
+          "sha256": "97a8fffe5670e11610bfef08765586984ca32d9466c0bfadc070000be3f925d8",
+          "bytes": 11571
         },
         {
           "path": "scripts/lib/milestone/dispatch-plan.js",
           "installPath": "scripts/lib/milestone/dispatch-plan.js",
-          "sha256": "c45e927efb08e1addb965136bf2eece97c748ca3b3486d344c3338545c63fe0d",
-          "bytes": 7203
+          "sha256": "3c273f0d826491ec5ea08cbc00ace23623ae5816fbdb518f3a71ee01142e9d13",
+          "bytes": 7059
         },
         {
           "path": "scripts/lib/milestone/errors.js",
           "installPath": "scripts/lib/milestone/errors.js",
-          "sha256": "dc71d6bf6e445bec2cadf8d9009cd5402f32c15af5b3505bdd8bd5336ed2a5cb",
-          "bytes": 943
+          "sha256": "8a2de51f9e7ca9dbd1c5b30630d77db31d3be459934471fcba1d91018a9ef122",
+          "bytes": 920
         },
         {
           "path": "scripts/lib/milestone/guard.js",
           "installPath": "scripts/lib/milestone/guard.js",
-          "sha256": "cae734133be873ce56e3e40d80974c81d20a657634ae3b91d12be127eaf598e7",
-          "bytes": 6676
+          "sha256": "3a1b95f57ea49920e8ae83528ebcfc56d4a95cd0d83a6e78af539dbd6c719e38",
+          "bytes": 6533
         },
         {
           "path": "scripts/lib/milestone/plan-merge.js",
           "installPath": "scripts/lib/milestone/plan-merge.js",
-          "sha256": "f2f3e12c949778f3db5c419f437e545d89255d1c9549755c47b3c604353b2da3",
-          "bytes": 17772
+          "sha256": "bf0a0ecbaaf2fa297fa1676c7f012baf0c3a76e2c880fd806095308262f12801",
+          "bytes": 17447
         },
         {
           "path": "scripts/lib/milestone/priority.js",
           "installPath": "scripts/lib/milestone/priority.js",
-          "sha256": "c117bde7ba608aa90d829bbc65ccefbb90c84a4b3b98cf276fbcd58c75f1b2e6",
-          "bytes": 4887
+          "sha256": "d740e55cafd7abf5d3aa6bd1e446cfd6a78071d43453e44be5678abeb3122a78",
+          "bytes": 4768
         },
         {
           "path": "scripts/lib/milestone/ref.js",
           "installPath": "scripts/lib/milestone/ref.js",
-          "sha256": "c3a9ab3b00cdc64d5a79213acb38ce6aee27334598f0e6ab6e66d1191b032315",
-          "bytes": 3016
+          "sha256": "daac13e2c9b31a434c02d3172cacd9921093f64de275f5c7402c338490cc5211",
+          "bytes": 2959
         },
         {
           "path": "scripts/lib/milestone/state.js",
           "installPath": "scripts/lib/milestone/state.js",
-          "sha256": "c3e39212e39d82fbac29a8082c2bd9c54cbf6e6b9b2cf71a63f9d9c3a2d7d423",
-          "bytes": 11878
+          "sha256": "4d88b341733fe1fc94ff77f1f1261fe1f022d9081abe985f6420af398a464e21",
+          "bytes": 11632
         },
         {
           "path": "scripts/ms.js",
           "installPath": "scripts/ms.js",
-          "sha256": "f37891a391f1c47afb116e210287aacb0842d1328bcdcf0d6d76cb438820fc46",
-          "bytes": 31886
+          "sha256": "a23c1b25b3597d607f839dbbbcc179dd0ca23de4cacc73440c474d1ca6e2dcef",
+          "bytes": 31180
         },
         {
           "path": "scripts/schema/milestone-state.schema.json",
           "installPath": "scripts/schema/milestone-state.schema.json",
-          "sha256": "72203515baa9c64eb686415bdd3b9fa6a3f28cfb0eb5ae584b59d27f09e80cfd",
-          "bytes": 5966
+          "sha256": "b6cdfd271860b023b6880b63dbe32b149ed2d34043a9be599f6cda78f7f08b0e",
+          "bytes": 5885
         }
       ]
     },
@@ -493,26 +499,26 @@
         {
           "path": "kit/workflow/pipeline-algorithm.md",
           "installPath": "kit/workflow/pipeline-algorithm.md",
-          "sha256": "bfd03230fa54b2f7a9b6c7e55a66b721478547d00994becf828cd5451b942956",
-          "bytes": 25242
+          "sha256": "5729d79233bc9b65381a7a9eb3d88537534b5199178311fab042a2a0554b9e89",
+          "bytes": 24847
         },
         {
           "path": "scripts/gen-status.js",
           "installPath": "scripts/gen-status.js",
-          "sha256": "8753664c6048efba43fd56f8e219b0ebb4a39086039117aa23c8d89038509f61",
-          "bytes": 14379
+          "sha256": "13d92ef4dd9597b6ab490c31960ce925e47ef9127547c85ddb490d1a2fadafd6",
+          "bytes": 14056
         },
         {
           "path": "scripts/lib/pipeline/graph.js",
           "installPath": "scripts/lib/pipeline/graph.js",
-          "sha256": "d496526a21d4e7008aa581456880ca612502eece129791d4ce6c64b575dbb5d0",
-          "bytes": 18307
+          "sha256": "8005ede557c928f16c76237fec45615a57064236cbc0e0dba2674e986961e4f7",
+          "bytes": 17855
         },
         {
           "path": "scripts/schema/pipeline-state.schema.json",
           "installPath": "scripts/schema/pipeline-state.schema.json",
-          "sha256": "5e8fb30444788c971c2facbc30b07cef5111781f626b86e28684031c00620a06",
-          "bytes": 6306
+          "sha256": "7ccb814647c54e393bc85a5c201575b7740f38f5025693c44d0d0ac21bec5729",
+          "bytes": 6164
         }
       ]
     },
@@ -663,8 +669,8 @@
         {
           "path": "kit/skills/implement/SKILL.md",
           "installPath": ".claude/skills/implement/SKILL.md",
-          "sha256": "d5d2b0d16cf92f86102d557d04704207397a74ea1c76ff0111b683da8609a158",
-          "bytes": 6451
+          "sha256": "6004af6096b7a823d9baf626bbeb1ba7661b900ba9e4ccecebe8314c81042000",
+          "bytes": 6310
         },
         {
           "path": "kit/skills/release/SKILL.md",
@@ -675,14 +681,14 @@
         {
           "path": "kit/skills/self-qa/SKILL.md",
           "installPath": ".claude/skills/self-qa/SKILL.md",
-          "sha256": "6b72222cc25163d0b33aeebb895ae8b5dc5e8b993667e2bf41983643634c325b",
-          "bytes": 5898
+          "sha256": "dc3ee96dbc4c973a475e55f869332a000d941e85dab9c4fd38e289a7f9d0775a",
+          "bytes": 5753
         },
         {
           "path": "kit/skills/spec/SKILL.md",
           "installPath": ".claude/skills/spec/SKILL.md",
-          "sha256": "8ba25588c440bae31be9dec54cea7b5769fd013159c08d6c72176a56e18e12bb",
-          "bytes": 6012
+          "sha256": "184fc8891bfa7b00ecb782b9c49c4572fb53dfffa9e14c928f66fb9d37672a2c",
+          "bytes": 5879
         },
         {
           "path": "kit/skills/submit/SKILL.md",
@@ -713,8 +719,8 @@
         {
           "path": "kit/skills/pipeline/SKILL.md",
           "installPath": ".claude/skills/pipeline/SKILL.md",
-          "sha256": "0740d6935466a25ef12b938b5f0d3c983e8581e22446836f6827316323e6d95d",
-          "bytes": 11088
+          "sha256": "8b2272465b99f6006820b85664b1e122866acf7555c52e0b0cdcd432accdbfdd",
+          "bytes": 10928
         }
       ]
     },

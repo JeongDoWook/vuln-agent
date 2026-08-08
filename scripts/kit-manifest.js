@@ -36,7 +36,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+
+// 해시 기준은 scripts/lib/content-hash.js 한 곳이다 — install-kit.js 도 같은 것을 쓴다.
+// 두 스크립트가 각자 해시하면 "설치할 땐 같다더니 검사하면 다르다"가 나온다.
+const { contentHash, contentBytes } = require('./lib/content-hash');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_MANIFEST = '.review-kit-manifest.json';
@@ -137,10 +140,6 @@ function expand(base, patterns) {
   return [...hit].sort();
 }
 
-function sha256(file) {
-  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-}
-
 function loadSpec() {
   const p = specPath || path.join(against || (cmd === 'check' ? REPO_ROOT : root), 'kit', 'manifest.json');
   const fallback = path.join(REPO_ROOT, 'kit', 'manifest.json');
@@ -184,7 +183,7 @@ function buildManifest(base) {
       const abs = path.join(base, rel);
       if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) continue;
       const installAs = (g.renames && g.renames[rel]) || applyPrefix(g.installPrefix, rel);
-      files.push({ path: rel, installPath: installAs, sha256: sha256(abs), bytes: fs.statSync(abs).size });
+      files.push({ path: rel, installPath: installAs, sha256: contentHash(abs), bytes: contentBytes(abs) });
     }
     if (!files.length) empty.push(name);
     groups[name] = {
@@ -227,7 +226,7 @@ function checkAgainst(manifest, hostRoot) {
       }
       if (!fs.existsSync(abs)) { missing.push(installed); continue; }
       present.push(installed);
-      if (sha256(abs) !== f.sha256) modified.push(installed);
+      if (contentHash(abs) !== f.sha256) modified.push(installed);
     }
 
     let status;

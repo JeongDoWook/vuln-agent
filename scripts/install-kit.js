@@ -31,7 +31,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const cp = require('child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -72,7 +71,9 @@ for (let i = 0; i < argv.length; i++) {
 function fail(msg) { console.error(`❌ ${msg}`); process.exit(1); }
 function help() { console.log(fs.readFileSync(__filename, 'utf8').split('*/')[0].replace(/^#![^\n]*\n/, '')); }
 function stripBom(s) { return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s; }
-function sha256(p) { return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); }
+// 해시 기준은 kit-manifest.js 와 **같은 모듈**이어야 한다. 각자 해시하면
+// "설치할 땐 같다더니 검사하면 다르다"가 나온다.
+const { contentHash: sha256 } = require('./lib/content-hash');
 
 // ── 매니페스트 ────────────────────────────────────────────────
 function buildManifest(base) {
