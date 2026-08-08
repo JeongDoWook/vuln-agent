@@ -48,7 +48,10 @@
           "kev": true, "loaded": true, "exposed": true, "exposure_scope": "EXTERNAL",
           "fixed_version": "3.0.13-0ubuntu3.6",
           "rationale": "…왜 이 등급인지…",
-          "summary": "OpenSSL heap overflow …"
+          "summary": "OpenSSL heap overflow …",
+          "remediation_reason": "내부망 전용이고 벤더 수정본이 없어 다음 정기점검까지 보류",
+          "remediation_approved_by": "admin",
+          "remediation_approved_at": "2026-08-08 11:25:25"
         }
       ]
     }
@@ -56,8 +59,12 @@
 }
 ```
 
+`remediation_*` 3필드는 사람이 남긴 **미조치 사유 메모**다(없으면 전부 `null`).
+이 제품은 결재선·상태 전이 같은 조치 워크플로를 갖지 않는다 — "왜 지금 고치지 않는가"와
+"누가 언제 그렇게 판단했는가"만 붙들고, 본격 워크플로는 이 API 를 가져가는 외부 시스템의 몫이다.
+
 XML 은 같은 구조를 요소로 표현한다: `<vulnExport><summary><bySeverity/></summary><hosts><host><findings><finding>…`.
-스칼라는 속성, 긴 텍스트(`rationale`·`summary`)는 자식 요소.
+스칼라는 속성, 긴 텍스트(`rationale`·`summary`·`remediationReason`)는 자식 요소.
 
 ## Python 예시
 
