@@ -72,7 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('호스트를 찾을 수 없습니다.');
                 }
                 vg_soft_delete($pdo, 'tb_host', $postHostId);
-                vg_log_activity($pdo, 'HOST', $postHostId, 'host_delete', "자산 삭제: $fqdn");
+                vg_log_activity($pdo, 'HOST', $postHostId, 'host_delete', "자산 삭제: $fqdn",
+                    subject: (string) $fqdn, action: 'DELETE');
                 $_SESSION['vg_flash'] = [
                     'assetMsg' => "자산 '$fqdn' 을(를) 삭제했습니다. 해당 호스트가 다시 수집을 보내면 재등록됩니다.",
                 ];
@@ -461,7 +462,8 @@ try {
 
     if ($host) {
         // 호스트 상세(설치 패키지·노출 포트·실행 프로세스 등 인프라 민감정보) 열람 감사로그.
-        vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null));
+        vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null),
+            subject: (string) ($host['fqdn'] ?? ''), action: 'READ');
 
         // 에이전트 연결 상태는 수집 실행 시각이 아니라 10초 poll의 마지막 통신으로 판단한다.
         $st = $pdo->prepare(

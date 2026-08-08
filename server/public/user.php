@@ -26,6 +26,14 @@ $id = (int) ($_GET['id'] ?? 0);
 $me = vg_current_user();
 $meId = (int) ($me['id'] ?? 0);
 
+// 감사로그의 "처리 대상"(subject) 에 쓸 대상 계정 아이디. 삭제하면 조회가 안 되므로 미리 잡아둔다.
+$targetName = '';
+if ($id > 0) {
+    $st = $pdo->prepare('SELECT username FROM tb_user WHERE user_id = ?');
+    $st->execute([$id]);
+    $targetName = (string) ($st->fetchColumn() ?: '');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
         $err = '세션이 만료되었습니다. 다시 시도하세요.';
@@ -37,7 +45,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $err = '유효하지 않은 역할입니다.';
         } else {
             $pdo->prepare('UPDATE tb_user SET role = ? WHERE user_id = ?')->execute([$role, $id]);
-            vg_log_activity($pdo, 'USER', $id, 'user_role', '역할 변경', ['role' => $role]);
+            vg_log_activity($pdo, 'USER', $id, 'user_role', '역할 변경', ['role' => $role],
+                subject: $targetName, action: 'UPDATE');
             $msg = '역할이 변경되었습니다.';
         }
     } elseif (($_POST['action'] ?? '') === 'reset') {
@@ -47,19 +56,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $pdo->prepare('UPDATE tb_user SET password_hash = ? WHERE user_id = ?')
                 ->execute([password_hash($p, PASSWORD_DEFAULT), $id]);
-            vg_log_activity($pdo, 'USER', $id, 'user_pw_reset', '비밀번호 초기화');
+            vg_log_activity($pdo, 'USER', $id, 'user_pw_reset', '비밀번호 초기화', subject: $targetName, action: 'UPDATE');
             $msg = '비밀번호가 초기화되었습니다.';
         }
     } elseif (($_POST['action'] ?? '') === 'unlock') {
         $pdo->prepare('UPDATE tb_user SET failed_login_count = 0, locked_until = NULL WHERE user_id = ?')->execute([$id]);
-        vg_log_activity($pdo, 'USER', $id, 'account_unlock', '계정 잠금 해제');
+        vg_log_activity($pdo, 'USER', $id, 'account_unlock', '계정 잠금 해제', subject: $targetName, action: 'UPDATE');
         $msg = '계정 잠금이 해제되었습니다.';
     } elseif (($_POST['action'] ?? '') === 'delete') {
         if ($id === $meId) {
             $err = '자기 자신은 삭제할 수 없습니다.';
         } else {
             vg_soft_delete($pdo, 'tb_user', $id);
-            vg_log_activity($pdo, 'USER', $id, 'user_delete', '사용자 삭제');
+            vg_log_activity($pdo, 'USER', $id, 'user_delete', '사용자 삭제', subject: $targetName, action: 'DELETE');
             // 삭제된 사용자는 더는 이 페이지에서 보여줄 게 없다 — 목록으로 돌아간다.
             header('Location: /users.php');
             exit;

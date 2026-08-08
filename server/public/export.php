@@ -190,7 +190,9 @@ vg_log_activity(
     ['format' => $format, 'host' => $host, 'scan_id' => $scanId ?: null,
      'severity' => $sevFilter, 'kev' => $kevOnly, 'min_epss' => $minEpss,
      'findings' => $summary['findings'], 'hosts' => $summary['hosts']],
-    null, 'SYSTEM'
+    null, 'SYSTEM',
+    // 처리 대상: 내보내기 범위(호스트 지정이 없으면 전체). 수행업무: 내보내기.
+    subject: $host !== '' ? $host : '전체 호스트', action: 'EXPORT'
 );
 
 // ── 직렬화 ────────────────────────────────────────────────────

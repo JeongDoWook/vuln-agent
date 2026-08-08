@@ -96,7 +96,7 @@ try {
 
         if ($cve) {
             // CVE 상세 열람 감사로그. CVE ID 는 정수 PK 가 아니라 message 에 담는다(host.php 의 fqdn 과 동일한 방식).
-            vg_log_activity($pdo, 'CVE', null, 'view_cve', $cveId);
+            vg_log_activity($pdo, 'CVE', null, 'view_cve', $cveId, subject: $cveId, action: 'READ');
         }
 
         $stmt = $pdo->prepare('SELECT * FROM tb_kev_catalog WHERE cve_id = ?');

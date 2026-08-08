@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $r = vg_api_token_issue($pdo, mb_substr($label, 0, 100), $me['id'] ?? null);
                 $newToken = $r['token'];   // 이 화면에서만 노출. 저장 안 함.
                 vg_log_activity($pdo, 'API_TOKEN', null, 'token_issue', "토큰 발급: {$label}",
-                    ['prefix' => $r['prefix']]);
+                    ['prefix' => $r['prefix']], subject: $label, action: 'CREATE');
                 $msg = "토큰이 발급되었습니다. 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다.";
             } elseif ($action === 'revoke') {
                 $id = (int) ($_POST['id'] ?? 0);

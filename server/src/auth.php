@@ -92,10 +92,11 @@ function vg_login(PDO $pdo, string $user, string $pass): ?string {
                 // 미인증 상태의 시도라 행위자는 세션 사용자가 아니다 — SYSTEM 으로 남겨 대상
                 // 계정(scope_id) 을 행위자처럼 오인하지 않게 한다.
                 if ($locked) {
-                    vg_log_activity($pdo, 'USER', $uid, 'account_lock', '로그인 실패 누적으로 계정 잠금', null, null, 'SYSTEM');
+                    vg_log_activity($pdo, 'USER', $uid, 'account_lock', '로그인 실패 누적으로 계정 잠금', null, null, 'SYSTEM',
+                        subject: $user, action: 'UPDATE');
                     return 'locked:' . $lockMinutes;
                 }
-                vg_log_activity($pdo, 'USER', $uid, 'login_fail', null, null, null, 'SYSTEM');
+                vg_log_activity($pdo, 'USER', $uid, 'login_fail', null, null, null, 'SYSTEM', subject: $user, action: 'LOGIN');
             } else {
                 $pdo->commit();
             }
@@ -114,7 +115,8 @@ function vg_login(PDO $pdo, string $user, string $pass): ?string {
         )->execute([$token, $uid]);
         $pdo->commit();
         // 로그인 성공 감사로그(누가·언제·어디서).
-        vg_log_activity($pdo, 'USER', $uid, 'login', null, null, $uid, 'USER', $_SERVER['REMOTE_ADDR'] ?? null);
+        vg_log_activity($pdo, 'USER', $uid, 'login', null, null, $uid, 'USER', $_SERVER['REMOTE_ADDR'] ?? null,
+            subject: (string) $row['username'], action: 'LOGIN');
         return null;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
@@ -301,7 +303,8 @@ function vg_change_own_password(PDO $pdo, int $uid, string $current, string $new
     }
     $pdo->prepare('UPDATE tb_user SET password_hash = ? WHERE user_id = ?')
         ->execute([password_hash($new, PASSWORD_DEFAULT), $uid]);
-    vg_log_activity($pdo, 'USER', $uid, 'password_change', '비밀번호 변경', null, $uid);
+    vg_log_activity($pdo, 'USER', $uid, 'password_change', '비밀번호 변경', null, $uid,
+        subject: (string) ($_SESSION['uname'] ?? ''), action: 'UPDATE');
     return null;
 }
 

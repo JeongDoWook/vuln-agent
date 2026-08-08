@@ -36,7 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $newToken = $r['token'];   // 이 화면에서만 노출. 저장 안 함.
                 vg_log_activity($pdo, 'AGENT_TOKEN', null, 'agent_token_issue',
                     "에이전트 토큰 발급: {$fqdn}",
-                    ['fqdn' => $fqdn, 'prefix' => $r['prefix'], 'auto_revoked' => $r['revoked']]);
+                    ['fqdn' => $fqdn, 'prefix' => $r['prefix'], 'auto_revoked' => $r['revoked']],
+                    subject: $fqdn, action: 'CREATE');
                 $msg = $r['revoked'] > 0
                     ? "토큰이 발급되었습니다. 같은 호스트의 기존 활성 토큰 {$r['revoked']}개는 자동 폐기되었습니다. 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다."
                     : "토큰이 발급되었습니다. 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다.";
