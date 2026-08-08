@@ -19,7 +19,7 @@ package "수집 대상 서버들 (Linux)" as Servers {
 package "중앙 서버 · Docker" as Central {
     rectangle "Caddy\n(HTTPS 종료 · 자체서명/DNS-01)" as CADDY #8250df
     rectangle "ingest.php\n(수신 API · 토큰 인증)" as ING #238636
-    database "MySQL\n자산·스냅샷·실행 이력·명령 큐·취약점" as DB
+    database "MySQL\n자산·스냅샷·실행 이력·명령 큐·취약점\n계정 인벤토리 · 패키지 의존성 그래프" as DB
     rectangle "매처 (PHP)\nexposure + pkg × CVE" as MAT #a371f7
     database "보안 피드 미러\nNVD·OSV·KEV·EPSS·KISA\nDebian·Ubuntu·RHEL·kernel.org·SSG" as CVE
     rectangle "웹 대시보드\n우선순위·노출근거·억제근거·감사로그" as WEB #db6d28

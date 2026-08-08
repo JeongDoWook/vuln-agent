@@ -1,6 +1,6 @@
 # 다이어그램
 
-> 문서 기준: 2026-08-04. 구조 변경 시 `.puml`과 렌더된 `.svg`를 함께 갱신한다.
+> 문서 기준: 2026-08-09. 구조 변경 시 `.puml`과 렌더된 `.svg`를 함께 갱신한다.
 
 `docs/dev/architecture.md` 의 구조를 그림으로 옮긴 PlantUML 다이어그램 6종이다.
 소스는 `.puml`, 같이 있는 `.svg` 는 그 렌더 결과다 — 아래 그림은 전부 그 `.svg` 이고, 클릭하면 원본이 열린다.
@@ -19,7 +19,8 @@
 
 수집 대상 서버의 에이전트(상시 데몬, 10초마다 poll)가 주기가 되면 JSON 을 POST 하는 지점부터,
 Caddy·`ingest.php`·MySQL·매처를 거쳐 웹 대시보드에 뜨기까지의 데이터 흐름이다. CVE 미러가
-매처로 들어가 findings 를 만드는 갈래도 여기 있다.
+매처로 들어가 findings 를 만드는 갈래도 여기 있다. 에이전트가 보내는 것은 패키지·프로세스·노출만이
+아니다 — 계정 인벤토리와 패키지 의존성 그래프(SBOM·pom)도 같은 경로로 들어와 MySQL 에 쌓인다.
 
 전체 그림에서 내가 건드리는 부분이 어디인지 먼저 잡을 때 본다.
 
@@ -49,7 +50,8 @@ scheduler 사이드카가 매 1분 due 커넥터를 조회해 KEV·OSV·NVD·EPS
 
 `compose_runner.sh` 의 dev(메인 트리 / 워크트리)·prod 실행이 각각 어떤 compose 레이어를 겹쳐 쓰는지,
 Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·web·scheduler·db 가 어떤 포트·내부망으로
-붙는지를 보여준다.
+붙는지를 보여준다. caddy 가 붙이는 보안 응답 헤더(CSP·nosniff·X-Frame-Options — HSTS 는 자체서명이라
+보류)도 그 노드에 적어 두었다.
 
 스택이 안 뜨거나, 어떤 compose 파일을 고쳐야 할지 헷갈릴 때 본다.
 
@@ -59,7 +61,8 @@ Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·we
 
 ## ERD
 
-`tb_host`→`tb_scan` 을 축으로 패키지·노출·프로세스·판정 결과와 CVE 미러 쪽 테이블이 어떻게 엮이는지다.
+`tb_host`→`tb_scan` 을 축으로 패키지·노출·프로세스·계정·의존성 그래프와 판정 결과, CVE 미러 쪽 테이블이
+어떻게 엮이는지다(도메인 엔티티 48개 = 전체 49테이블 − `tb_schema_migrations`).
 감사 4컬럼 중 `is_deleted` 만 표기했고, FK 없이 애플리케이션 조인으로만 엮이는 테이블은 소스에 주석으로 적혀 있다.
 테이블명은 단수, 대리키 PK 는 `<단수 테이블명>_id`(`tb_host.host_id`)라 **조인 양쪽 이름이 같다**.
 테이블별 전체 컬럼과 명명규칙 예외는 [`docs/dev/데이터베이스.md`](../../dev/데이터베이스.md) 가 따로 다룬다.
@@ -76,9 +79,15 @@ Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·we
 
 ## 사이트맵
 
-로그인부터 대시보드·호스트 상세·취약점·자산·피드·시스템 화면까지의 구성이다. 화면 묶음마다 필요한
+로그인부터 대시보드·호스트 상세·취약점·자산·피드·관리 화면까지의 구성이다. 화면 묶음마다 필요한
 권한(`findings`·`assets`·`connectors` 등)이 붙어 있고, 전체 자산 설치 패키지 화면과 사람 로그인에서
 분리된 토큰 인증 API(`ingest.php`·`agent-poll.php`·`agent-progress.php`·`export.php`)도 같이 표시했다.
+사람이 주소창에 치는 화면은 아니지만 화면이 뒤에서 부르는 엔드포인트(`agent-command-overview.php`·
+`agent-command-status.php`·`feed_preview.php`)와 무인증 설치파일 배포(`agent-dl.php`)도 별도 묶음으로 두었다.
+
+`/index.php`(대시보드 자신)·`/logout.php`(리다이렉트)·`/language-packages.php`(옛 링크 호환용 302 shim,
+실제 화면은 `/packages.php?tab=lang`)는 같은 화면을 두 번 그리게 되거나 화면이 아니어서 넣지 않았다 —
+이유는 소스 끝의 주석에 적어 두었다.
 
 화면을 추가하거나 권한이 어디서 갈리는지 볼 때 본다.
 

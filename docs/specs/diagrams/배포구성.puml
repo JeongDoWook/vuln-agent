@@ -32,7 +32,7 @@ package "Docker Secrets (txt)" as Secrets {
 }
 
 package "실행 컨테이너 (prod)" as Stack {
-    rectangle "caddy\n443→호스트 ${WEB_PORT:-8080}" as CADDY #8250df
+    rectangle "caddy\n443→호스트 ${WEB_PORT:-8080}\n보안 응답 헤더(CSP·nosniff·X-Frame-Options)\nHSTS 는 자체서명이라 보류" as CADDY #8250df
     rectangle "web · php:8.3-apache\n내부 80만(외부 비노출)" as WC #238636
     rectangle "scheduler · php-cli\n(피드 주기 실행)" as SCH #a371f7
     database "db · mysql:8.0\n내부망만" as DC #1f6feb

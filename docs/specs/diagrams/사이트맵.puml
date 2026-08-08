@@ -17,12 +17,16 @@ rectangle "/profile.php\n내 프로필 · 본인 비밀번호 변경" as PROF
 package "취약점 (perm: findings / advisories)" as Vuln {
     rectangle "/findings.php\n탐지 결과 · 검색/필터" as FIND
     rectangle "/changes.php\n변화 추적 · 신규/해결/등급변경" as CHG
+    rectangle "/finding_history.php\n(호스트,컨테이너,CVE,패키지) 스캔별 이력\n+ 미조치 사유·승인자 메모" as FHIST
     rectangle "/cves.php\nCVE 목록 · 탭(전체/KEV/EPSS 상위)" as CVES
     rectangle "/cve.php\nCVE 상세 · 영향패키지 · 발견 위치" as CVE
-    rectangle "/packages.php\n패키지 × 배포판" as PKG
+    rectangle "/packages.php · /package.php\n패키지 × 배포판 · 패키지 상세\n(탭: 언어 패키지·라이선스)" as PKG
+    rectangle "/nofix-packages.php\n벤더 미수정 집중 — 제거·대체 검토 권고" as NOFIX
     rectangle "/vendor.php\n판정 근거 · 소스 필터" as VEND
     rectangle "/compliance_rules.php\n보안 설정 기준" as CRULES
     rectangle "/compliance_rule.php\nSSG 룰 상세 · 점검/조치 근거" as CRULE
+    rectangle "/compliance.php\n컴플라이언스 매핑 · 자동판정 + 스냅샷 추이" as CMAP
+    rectangle "/control_mapping.php\n통제 기준 매핑 · CCE 결과를\nKISA U-코드/ISMS-P/N2SF 로" as CTRL
     rectangle "/advisories.php · /advisory.php\n보안 공지(KISA) 목록·상세" as ADV
 }
 
@@ -33,17 +37,25 @@ package "바로가기 (항상 노출)" as Quick {
 }
 
 package "관리" as Admin {
-    rectangle "/users.php\n사용자" as USERS
+    rectangle "/users.php · /user.php\n사용자 목록 · 상세(역할변경·비번초기화·삭제)" as USERS
     rectangle "/permissions.php\n권한" as PERM #db6d28
     rectangle "/agent-tokens.php\n에이전트 키" as ATOK
     rectangle "/api-tokens.php\nAPI 키" as TOK #db6d28
-    rectangle "/activity.php\n감사 로그" as ACT
+    rectangle "/activity.php\n감사 로그 · 접속기록 5요소\n+ 월 1회 점검 기록" as ACT
+    rectangle "/settings.php\n운영 설정(SLA·판정 임계값)" as SET
 }
 
 package "인증: 토큰(사람 로그인과 분리)" as API {
     rectangle "/ingest.php\n수집 수신 · X-Agent-Token" as ING #238636
     rectangle "/agent-poll.php · /agent-progress.php\n명령 pull · 진행/heartbeat/중단 확인" as APOLL #238636
     rectangle "/export.php\n결과 내보내기 JSON/XML · X-API-Token" as EXP #238636
+}
+
+' 화면이 아니라 화면이 부르는 엔드포인트다. 사람이 주소창에 치는 곳이 아니라서 사이드바에 없다.
+package "화면이 부르는 엔드포인트(세션 인증)" as Xhr {
+    rectangle "/agent-command-overview.php\n/agent-command-status.php\n수집 명령 진행 폴링 JSON" as ACMD
+    rectangle "/feed_preview.php\n커넥터 설정값으로 10건 미리보기 JSON" as FPRE
+    rectangle "/agent-dl.php\n에이전트 설치 스크립트·루트 CA 배포\n(무인증 — 비밀 없음, 화이트리스트 고정)" as ADL #9e6a03
 }
 
 LOGIN --> DASH : 인증 성공
@@ -54,14 +66,29 @@ ASSETS --> APKG : 설치 패키지 탭
 HOST --> FIND
 FIND --> CVE
 FIND --> CHG : 서브탭
+FIND --> FHIST : 행별 "이력"
+HOST --> FHIST
+FIND --> NOFIX : 벤더 미수정 모아보기
+PKG --> NOFIX
 HOST --> CRULE : CCE 근거 배지
 CRULES --> CRULE
+PKG --> CVE
+CTRL --> CMAP : 통제 자동판정으로
 
-' 취약점 화면이 9개라 한 줄로 두면 그림이 옆으로 길어져 읽기 어렵다 → 두 줄로 접는다(보이지 않는 배치용 선).
+' 취약점 화면이 13개라 한 줄로 두면 그림이 옆으로 길어져 읽기 어렵다 → 네 칸으로 접는다(보이지 않는 배치용 선).
+'   칸1 FIND-FHIST · 칸2 CHG-CVES-ADV · 칸3 PKG-NOFIX-VEND · 칸4 CRULES-CMAP-CTRL
 FIND -[hidden]down- PKG
-CHG  -[hidden]down- VEND
-FIND -[hidden]down- CRULES
+CHG  -[hidden]down- CVES
 CVES -[hidden]down- ADV
+PKG  -[hidden]down- NOFIX
+NOFIX -[hidden]down- VEND
+FIND -[hidden]down- CRULES
+CRULES -[hidden]down- CMAP
+CMAP -[hidden]down- CTRL
+
+' 엔드포인트 3개도 한 줄로 두면 옆으로 길어진다 → 세로로 접는다.
+ACMD -[hidden]down- FPRE
+FPRE -[hidden]down- ADL
 
 DASH ..> Vuln
 DASH ..> Quick
@@ -71,7 +98,18 @@ DASH ..> Admin
 ASSETS -[hidden]down- USERS
 CONN   -[hidden]down- ATOK
 CONN   -[hidden]down- ACT
+ACT    -[hidden]down- SET
 
 APOLL ..> ING : 동일한 에이전트 토큰 인증
+
+ASSETS ..> ACMD : 수집 진행률 폴링
+HOST   ..> ACMD
+ASSETS ..> ADL : 설치 안내 모달의 다운로드
+CONN   ..> FPRE : 저장 전 미리보기
+
+' ── 사이트맵에 넣지 않은 URL ─────────────────────────────
+' /index.php  : 대시보드(DASH) 그 자체다 — 같은 화면을 두 번 그리지 않는다.
+' /logout.php : 화면이 아니라 세션 파기 후 /login.php 로 보내는 리다이렉트다.
+' /language-packages.php : 옛 링크·북마크 호환용 302 shim. 실제 화면은 /packages.php?tab=lang(PKG)로 흡수됐다.
 
 @enduml
