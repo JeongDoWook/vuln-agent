@@ -16,6 +16,7 @@ require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/agentcommand.php';   // 수집 제어(즉시/예약 실행·주기 변경)
 require_once __DIR__ . '/../src/agentspeedtier.php';   // 속도 티어 라벨(agent-poll.php 와 공유 정의)
+require_once __DIR__ . '/../src/assetgrade.php';       // 자산 중요도·N2SF 등급 어휘와 초안 제안
 require_once __DIR__ . '/../src/account_inventory.php';   // 계정 인벤토리 판정(vg_account_judgments)
 vg_require_menu('findings');
 
@@ -62,6 +63,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tier = (string) ($_POST['agent_speed_tier'] ?? '');
                 vg_agent_command_set_speed_tier($pdo, $postHostId, $tier);
                 $agentMsg = '속도 티어를 변경했습니다. 다음 poll/다음 수집 시작부터 반영됩니다.';
+            } elseif ($action === 'host_set_grade') {
+                /* 자산 등급 **확정** — 사람의 판정이다. 시스템 제안(grade_suggested)은 여기서
+                 * 건드리지 않고, 확정값만 별도 컬럼에 쓴다. 확정은 관리자만 할 수 있다
+                 * (인가는 클라이언트 숨김이 아니라 여기 서버측에서 정해진다). */
+                if (!vg_has_role('admin')) {
+                    throw new RuntimeException('자산 등급을 확정할 권한이 없습니다.');
+                }
+                $newGrade = (string) ($_POST['grade'] ?? '');
+                $newCrit  = (string) ($_POST['criticality'] ?? '');
+                if ($newGrade !== '' && !isset(VG_ASSET_GRADES[$newGrade])) {
+                    throw new RuntimeException('알 수 없는 등급입니다.');
+                }
+                if ($newCrit !== '' && !isset(VG_ASSET_CRITICALITY[$newCrit])) {
+                    throw new RuntimeException('알 수 없는 중요도입니다.');
+                }
+                $reason = mb_strimwidth(trim((string) ($_POST['grade_reason'] ?? '')), 0, 255, '');
+
+                $st = $pdo->prepare('SELECT fqdn FROM tb_host WHERE host_id = ? AND is_deleted = 0');
+                $st->execute([$postHostId]);
+                $fqdn = $st->fetchColumn();
+                if ($fqdn === false) {
+                    throw new RuntimeException('호스트를 찾을 수 없습니다.');
+                }
+
+                // 등급을 비우면 "확정 해제" — 승인 이력도 함께 지운다(확정이 없는데 확정자가
+                //   남아 있으면 감사 때 누가 무엇을 승인했는지 읽을 수 없다). 해제 사실 자체는
+                //   아래 감사로그가 남긴다.
+                $isClear = $newGrade === '';
+                $st = $pdo->prepare(
+                    'UPDATE tb_host
+                        SET criticality = ?, grade = ?, grade_reason = ?,
+                            approved_by = ?, approved_at = ' . ($isClear ? 'NULL' : 'NOW()') . '
+                      WHERE host_id = ? AND is_deleted = 0'
+                );
+                $st->execute([
+                    $newCrit !== '' ? $newCrit : null,
+                    $isClear ? null : $newGrade,
+                    ($isClear || $reason === '') ? null : $reason,
+                    $isClear ? null : ($me['id'] ?? null),
+                    $postHostId,
+                ]);
+
+                vg_log_activity(
+                    $pdo, 'HOST', $postHostId, 'host_set_grade',
+                    $isClear
+                        ? "자산 등급 확정 해제: $fqdn"
+                        : "자산 등급 확정: $fqdn → $newGrade"
+                           . ($newCrit !== '' ? ' (중요도 ' . VG_ASSET_CRITICALITY[$newCrit] . ')' : ''),
+                    ['grade' => $isClear ? null : $newGrade, 'criticality' => $newCrit ?: null, 'reason' => $reason]
+                );
+                $agentMsg = $isClear
+                    ? '자산 등급 확정을 해제했습니다.'
+                    : "자산 등급을 {$newGrade} 로 확정했습니다.";
             } elseif ($action === 'host_delete') {
                 if (!vg_has_role('admin', 'operator')) {
                     throw new RuntimeException('자산을 삭제할 권한이 없습니다.');
@@ -92,7 +146,7 @@ $agentMsg = $agentFlash['agentMsg'] ?? null;
 $agentErr = $agentFlash['agentErr'] ?? null;
 $agentCsrf = vg_csrf_token();
 
-$err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null;
+$err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null; $approver = null;
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 $missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단계(한글 라벨)
 
@@ -384,6 +438,91 @@ function vg_host_render_agent_control(
     <?php
 }
 
+/**
+ * 자산 등급 카드 — 중요도(상/중/하)와 N2SF 등급(C/S/O)을 **사람이 확정**하는 폼.
+ *
+ *   이 화면이 지키는 경계: 시스템 제안(grade_suggested)은 "참고" 자리에만 두고, 확정 입력의
+ *   기본 선택으로 미리 채우지 않는다. 미리 채우면 사람이 그대로 저장하게 되어 사실상
+ *   시스템이 등급을 정한 것이 된다. 등급 판정은 「정보공개법」 제9조 호 매핑에 따른 기관의
+ *   법적 처분이므로 시스템이 대신할 수 없다.
+ *
+ *   $canEdit=false 면 읽기 전용으로 현재 값만 보여준다(확정은 관리자만).
+ */
+function vg_host_render_grade(int $hostId, array $host, string $csrf, ?string $approver, bool $canEdit): void {
+    $curGrade = (string) ($host['grade'] ?? '');
+    $curCrit  = (string) ($host['criticality'] ?? '');
+    $sugGrade = $host['grade_suggested'] ?? null;
+    $sugReason = (string) ($host['grade_suggested_reason'] ?? '');
+    ?>
+    <section class="card mt-lg" aria-labelledby="asset-grade-title">
+      <strong id="asset-grade-title">자산 등급</strong>
+      <span class="why"> · 업무 중요도와 N2SF 보안등급(C/S/O)을 기록합니다.
+        등급 확정은 기관의 판정이며 시스템은 초안만 제안합니다.</span>
+      <div class="card__body">
+        <dl class="fact-grid">
+          <div><dt>확정 등급</dt><dd><?= vg_asset_grade_badge($curGrade !== '' ? $curGrade : null, false, (string) ($host['grade_reason'] ?? '')) ?></dd></div>
+          <div><dt>중요도</dt><dd><?= $curCrit !== '' ? vg_h(VG_ASSET_CRITICALITY[$curCrit] ?? $curCrit) : '<span class="why">–</span>' ?></dd></div>
+          <div><dt>확정자</dt><dd><?= $approver !== null ? vg_h($approver) : '<span class="why">–</span>' ?></dd></div>
+          <div><dt>확정 시각</dt><dd><?= !empty($host['approved_at']) ? vg_h((string) $host['approved_at']) : '<span class="why">–</span>' ?></dd></div>
+        </dl>
+
+        <p class="why mt">
+          <strong>시스템 초안 제안</strong> —
+          <?php if ($sugGrade !== null): ?>
+            <?= vg_asset_grade_badge((string) $sugGrade, true, $sugReason) ?>
+            <?= vg_h($sugReason) ?>
+          <?php else: ?>
+            수집 데이터에서 확실한 근거를 찾지 못해 제안하지 않습니다.
+          <?php endif; ?>
+        </p>
+
+        <?php if ($curGrade !== '' && !empty($host['grade_reason'])): ?>
+          <p class="why"><strong>확정 근거</strong> — <?= vg_h((string) $host['grade_reason']) ?></p>
+        <?php endif; ?>
+
+        <?php if ($canEdit): ?>
+          <form class="setting-form mt-lg" method="post"
+                data-confirm="이 자산의 등급을 확정할까요? 확정자와 시각이 감사로그에 기록됩니다.">
+            <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+            <input type="hidden" name="action" value="host_set_grade">
+            <input type="hidden" name="id" value="<?= (int) $hostId ?>">
+
+            <label class="field" for="asset-criticality">중요도
+              <select id="asset-criticality" name="criticality">
+                <option value="">미지정</option>
+                <?php foreach (VG_ASSET_CRITICALITY as $v => $label): ?>
+                  <option value="<?= vg_h($v) ?>"<?= $curCrit === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+
+            <label class="field" for="asset-grade">보안등급 (N2SF)
+              <select id="asset-grade" name="grade">
+                <option value="">미지정 (확정 해제)</option>
+                <?php foreach (VG_ASSET_GRADES as $v => $label): ?>
+                  <option value="<?= vg_h($v) ?>"<?= $curGrade === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+
+            <label class="field" for="asset-grade-reason">확정 근거
+              <input id="asset-grade-reason" type="text" name="grade_reason" maxlength="255"
+                     placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유"
+                     value="<?= vg_h((string) ($host['grade_reason'] ?? '')) ?>">
+            </label>
+
+            <div class="actions">
+              <button type="submit" class="btn btn--sm btn--primary">등급 확정</button>
+            </div>
+          </form>
+        <?php else: ?>
+          <p class="why">등급 확정은 관리자만 할 수 있습니다.</p>
+        <?php endif; ?>
+      </div>
+    </section>
+    <?php
+}
+
 function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     // 새 수집·새 컬럼 없이 스캔 이력 탭과 같은 데이터를 시간순으로만 가져온다.
     //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
@@ -519,6 +658,14 @@ try {
     if ($host) {
         // 호스트 상세(설치 패키지·노출 포트·실행 프로세스 등 인프라 민감정보) 열람 감사로그.
         vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null));
+
+        // 등급 확정자 이름(승인 이력) — 사용자가 지워졌으면 FK 가 NULL 이라 여기 안 들어온다.
+        if (!empty($host['approved_by'])) {
+            $st = $pdo->prepare('SELECT username FROM tb_user WHERE user_id = ?');
+            $st->execute([(int) $host['approved_by']]);
+            $u = $st->fetchColumn();
+            $approver = $u === false ? null : (string) $u;
+        }
 
         // 에이전트 연결 상태는 수집 실행 시각이 아니라 10초 poll의 마지막 통신으로 판단한다.
         $st = $pdo->prepare(
@@ -704,6 +851,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php if (vg_can('assets')): ?>
     <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
   <?php endif; ?>
+  <?php vg_host_render_grade($hostId, $host, $agentCsrf, $approver, vg_has_role('admin')); ?>
   <div class="card"><?php vg_empty(['icon' => '📭', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
@@ -1423,6 +1571,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
   <?php endif; ?>
+
+  <?php vg_host_render_grade($hostId, $host, $agentCsrf, $approver, vg_has_role('admin')); ?>
 
   <?php if (vg_has_role('admin', 'operator')): ?>
     <div class="card mt-lg">
