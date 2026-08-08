@@ -28,7 +28,23 @@ fi
 
 CMD_TIMEOUT=5
 have()    { return 0; }
-timeout() { shift; "$@"; }
+# 실제 timeout(1) 대신 그냥 실행한다. 옵션(-k 2 / -s TERM)이 앞에 붙는 호출형(#483)도 있어
+#   옵션과 초 인자를 모두 걷어낸 뒤 명령만 남긴다 — 예전처럼 shift 한 번이면 '-k' 다음의
+#   '2' 를 명령으로 실행하려다 조용히 빈 출력을 냈다.
+timeout() {
+  while [ "${1:-}" = "-k" ] || [ "${1:-}" = "-s" ]; do shift 2; done
+  shift
+  "$@"
+}
+# 에이전트 본체가 주는 실행 환경 중 이 함수가 쓰는 것만 흉내낸다.
+#   - MAX_BYTES: 섹션당 출력 상한(에이전트 상단 기본값과 같은 값).
+#   - progress_heartbeat: 진행 보고(#483). 테스트에선 할 일이 없다.
+#   - TMP: 함수가 중간 파일을 쓰는 작업 디렉터리. **반드시 ASCII 경로**여야 한다 —
+#     Windows 의 %TEMP% 를 그대로 물려받으면 사용자명이 한글일 때 awk 가 파일을 못 연다.
+MAX_BYTES="${MAX_BYTES:-524288}"
+progress_heartbeat() { :; }
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
