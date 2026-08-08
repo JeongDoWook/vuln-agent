@@ -21,6 +21,7 @@ ini_set('memory_limit', '768M');
 require __DIR__ . '/../src/feeds.php';
 require __DIR__ . '/../src/matcher.php';
 require __DIR__ . '/../src/license_summary.php';   // vg_rebuild_license_summary
+require __DIR__ . '/../src/compliance.php';        // vg_compliance_take_snapshot
 
 $pdo = vg_pdo();
 
@@ -36,6 +37,27 @@ if ($reaped > 0) {
 //   KPI 카드가 영원히 0으로 보인다(실측 확인됨). 스케줄러는 1분마다 도는 구간이라 여기서
 //   매번 갱신해도 최신 데이터를 반영한다.
 vg_rebuild_license_summary($pdo);
+
+// 컴플라이언스 판정 스냅샷 — 하루 1건. 라이선스 요약과 같은 이유로 due 커넥터 유무와 무관하게
+//   여기(조기 종료 앞)에서 판정한다 — 커넥터가 없는 날에도 증적은 남아야 한다.
+//   판정은 무겁고(전 호스트 집계) 하루 한 번이면 충분하므로, 오늘 것이 이미 있으면 건너뛴다.
+//   UPSERT 라 게이트를 뚫고 두 번 돌아도 행이 늘지 않는다(같은 날짜 = 항상 1건).
+//   판정 기준은 화면과 같은 vg_compliance_policy()(tb_setting 반영)를 쓴다 — 스케줄러만
+//   상수를 쓰면 설정을 바꾼 조직에서 화면과 증적의 기준이 갈라진다(증적 오염).
+try {
+    if (!vg_compliance_snapshot_exists($pdo)) {
+        $snap = vg_compliance_take_snapshot($pdo, null, vg_compliance_policy());
+        $parts = [];
+        foreach ($snap as $key => $c) {
+            $parts[] = $key . '=' . $c['total'] . ($c['unjudged'] > 0 ? '(판정불가 ' . $c['unjudged'] . ')' : '');
+        }
+        fwrite(STDOUT, '[' . date('c') . '] 컴플라이언스 스냅샷 적재 (' . implode(' · ', $parts) . ")\n");
+    }
+} catch (Throwable $e) {
+    // 스냅샷 실패가 피드 실행을 막지 않게 한다 — 조용히 넘기지는 않는다.
+    fwrite(STDOUT, '[' . date('c') . '] 컴플라이언스 스냅샷 실패: ' . $e->getMessage() . "\n");
+    error_log('[compliance] 스냅샷 실패: ' . $e->getMessage());
+}
 
 $due = vg_feed_due($pdo);
 if (!$due) {
