@@ -105,6 +105,35 @@ crontab -e
 
 ---
 
+## 운영 설정 — 세션 만료·토큰 유효기간 (2026-08-08 추가)
+
+컴플라이언스 감사 §7-3(ISMS-P 2.6.3 세션 · 2.5.1 / N2SF SN·AC) 대응으로 로그인 세션과
+API/에이전트 토큰에 만료가 생겼다. **`.env` 나 컨테이너 환경변수로 바꾸는 값이 아니다** —
+아래처럼 소스 상수 또는 화면에서 정한다(설정 화면 이관은 예정 상태다).
+
+| 무엇 | 지금 값 | 어디서 바꾸나 |
+|---|---|---|
+| 세션 **유휴** 만료 | 30분 | `server/src/auth.php:18` `VG_SESSION_IDLE_SECONDS` |
+| 세션 **절대** 만료 | 12시간(유휴와 무관) | `server/src/auth.php:19` `VG_SESSION_ABSOLUTE_SECONDS` |
+| 토큰 유효기간 선택지 | 무기한 / 30일 / 90일 / 1년 | 발급은 **웹 화면**(API 키·에이전트 키), 선택지 자체는 `server/src/tokenexpiry.php:15` |
+| “만료 임박” 표시 기준 | 잔여 7일 | `server/src/tokenexpiry.php:18` `VG_TOKEN_EXPIRY_SOON_DAYS` |
+
+- 세션 만료 판정 기준 시각(`login_at`·`last_activity`)은 **세션에만** 둔다 — 요청마다 DB 쓰기가
+  생기지 않는다. 만료되면 감사로그(`session_expire`)가 남고, 로그인 화면이 "다른 곳에서
+  로그인됨"과 "시간 초과"를 다른 문구로 안내한다.
+- PHP 기본 `session.gc_maxlifetime`(1440초 = 24분)이 유휴 30분보다 짧아 PHP 가 먼저 세션을
+  날리던 문제는 코드에서 `ini_set` 으로 정책값에 맞춰 뒀다. **PHP 상수를 손으로 만질 필요 없다** —
+  위 상수만 바꾸면 따라온다.
+- 토큰은 `tb_api_token`·`tb_agent_token` 의 `expires_at`(NULL = 무기한)으로 관리한다.
+  **이 변경 이전에 발급된 토큰은 NULL 이라 그대로 무기한**이고, 만료된 토큰은 인증 실패(401)로
+  처리되며 `api_token_expired` / `agent_token_expired` 감사로그가 남는다. **자동 갱신·재발급은
+  없다** — 만료되면 사람이 새로 발급하고 노드의 `agent.env` 를 갱신한다
+  ([`../agent/README.md`](../agent/README.md) “주의점” 1번).
+- 스키마는 마이그레이션 `20260808105921_token_expires_at.sql` 이 멱등하게 얹는다 —
+  `update.sh`(→ `migrate.sh`)가 자동 적용하므로 운영에서 손으로 할 일은 없다.
+
+---
+
 ## 지난 변경 — 운영 서버에서 1회 조치가 필요했던 것
 
 새로 배포하는 서버엔 **해당 없다**(템플릿에서 만든 `.env.prod` 는 처음부터 갖춰져 있다).
@@ -145,10 +174,17 @@ configuration, and if used, it must be first`. 그 전엔 `unrecognized global o
 | `Server` / `X-Powered-By` | **제거** |
 | `Strict-Transport-Security` | **아직 안 붙인다** — 아래 참조 |
 
+**평문 80 진입도 같은 헤더를 받는다.** 예전엔 Caddy 가 자동 생성한 리다이렉트가 우리 사이트
+블록 밖이라 `import security_headers` 가 안 걸렸고, 그 경로의 응답만 헤더가 하나도 없이
+`Server: Caddy` 가 그대로 나갔다(실측). 전역 블록의 `auto_https disable_redirects` 로 암묵적
+리다이렉트를 끄고, 평문 전부를 `http://:80` 한 블록이 명시적으로 처리한다 — 동작은 그대로
+308 이고(301 이 아니다. POST 의 메서드·본문을 보존한다) 헤더만 붙는다.
+
 확인:
 
 ```bash
 curl -skI https://$PROD_DOMAIN/login.php   # 위 헤더가 보이고 Server 가 없어야 한다
+curl -sI  -H "Host: $PROD_DOMAIN" http://127.0.0.1:80/login.php   # 평문 진입: 308 + 같은 헤더
 ```
 
 #### HSTS 를 지금 켜지 않은 이유, 그리고 켜는 절차

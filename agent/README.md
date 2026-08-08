@@ -1,6 +1,9 @@
 # vuln-agent 에이전트 — 설치·운영 가이드
 
-> 현행 버전: 3.8 (2026-08-04). 기본 경로 IP 보고, 장시간 단계 heartbeat, 웹 중단 요청을 지원한다.
+> 현행 버전: 3.10 (문서 기준 2026-08-09). 실제 값은 `vuln-inventory-agent.sh:33` 의
+> `SCRIPT_VERSION` 이 정본이다. 기본 경로 IP 보고, 장시간 단계 heartbeat, 웹 중단 요청을 지원하고,
+> 3.9 에서 cgroup 재실행 가드를, 3.10 에서 meta 3필드(`elapsed_seconds`·`peak_rss_mb`·`cpu_seconds`)
+> 누락을 고쳤다.
 
 대상 리눅스 서버에서 **자산·취약노출 정보를 수집해 중앙 서버로 전송**하는 에이전트다.
 스캐너를 각 서버에 심는 방식이 아니라, 가벼운 셸 스크립트가 주기적으로 인벤토리를
@@ -202,13 +205,41 @@ bash deploy/agent_push.sh 10.3.142.100 10.3.142.101 10.3.142.102
 - `install-agent.sh` 자체가 바뀐 경우(타이머·유닛·preflight)는 대상이 아니다. 그건 노드에서
   설치기를 다시 돌려야 한다.
 - 2026-08-06: `install-agent.sh` 가 생성하는 `run.sh` 가 poll 응답의 `cpu_quota_percent`·
-  `packaging_timeout_seconds`(호스트별 속도 티어)를 읽어 `vuln-inventory-agent.sh` 에 env 로
-  넘기도록 바뀌었다 — **이미 설치된 노드는 재설치 전까지 이 값을 무시하고 스크립트 자체
-  기본값(CPU 10%/120초)으로만 돈다.** 속도 티어를 실제로 적용하려면 해당 노드에서
-  `install-agent.sh` 를 다시 돌려야 한다.
+  `packaging_timeout_seconds`·`mem_max_mb`(호스트별 속도 티어)를 읽어 `vuln-inventory-agent.sh`
+  에 env(`CPU_QUOTA`·`PACKAGING_TIMEOUT`·`MEM_MAX`)로 넘긴다
+  (`install-agent.sh:275-319`) — **이미 설치된 노드는 재설치 전까지 이 값을 무시하고 스크립트
+  자체 기본값(CPU 10% / 120초 / 300M)으로만 돈다.** 속도 티어를 실제로 적용하려면 해당
+  노드에서 `install-agent.sh` 를 다시 돌려야 한다.
+- **재실행하면 `run.sh` 가 확실히 갱신된다(2026-08-06 수정).** 예전엔 마지막 단계가
+  `systemctl enable --now` 여서, 유닛이 이미 active 인 노드에서는 **재시작이 일어나지 않아**
+  방금 디스크에 쓴 새 `run.sh` 를 옛 프로세스가 계속 메모리에 물고 돌았다(속도 티어를 넣어도
+  반영 안 되는 원인이었다). 지금은 `daemon-reload` → `enable`(활성화만) → `restart`(무조건
+  재기동) 순서다(`install-agent.sh:390-391`).
 - **웹에서 누르는 버튼으로 만들지 않는다.** 그러려면 PHP 컨테이너가 전 노드에 root 로 설치할 수
   있는 SSH 키를 들어야 하고, 웹앱이 한 번 뚫리면 전 노드 root 장악으로 번진다. 보는 건 웹(자산
   화면의 `meta.agent_version`), 미는 건 CLI.
+
+## 속도 티어 — 호스트마다 CPU·메모리·조립 타임아웃을 다르게
+
+호스트 상세의 **수집 제어 카드**에서 4단계 중 하나를 고른다(`tb_host.agent_speed_tier`,
+기본 `normal`). 값의 정의처는 **`server/src/agentspeedtier.php` 하나**이고,
+`agent-poll.php` 가 poll 응답에 실어 보내면 `run.sh` 가 env 로 넘긴다.
+
+| 티어 | 화면 표기 | `cpu_quota_percent` → `CPU_QUOTA` | `mem_max_mb` → `MEM_MAX` | `packaging_timeout_seconds` → `PACKAGING_TIMEOUT` |
+|---|---|---|---|---|
+| `very_fast` | 매우 빠름 | 80% | 1024MB | 300초 |
+| `fast` | 빠름 | 40% | 512MB | 200초 |
+| `normal` | 보통(기본값) | 10% | 300MB | 120초 |
+| `slow` | 느림 | 5% | 200MB | 90초 |
+
+- `mem_max_mb` 는 나중에 붙었다(2026-08-06). 그전엔 메모리 상한이 **항상 300M 고정**이라
+  여유가 빠듯한 호스트(실측 `peak_rss` 350.2MB)가 cgroup 상한에 걸렸다 — CPU 처럼 티어로
+  조절한다. 세 값 모두 커널 cgroup(`systemd-run --scope`)이 강제하는 하드리밋이다.
+- `install-agent.sh` 는 받은 값을 범위 검증한다(CPU 1~100, 메모리 64~8192MB, 타임아웃
+  30~3600초). 벗어나면 그 값만 버리고 스크립트 기본값으로 돈다 — 중앙이 이상한 값을 줘도
+  노드가 죽지 않는다.
+- 티어를 바꿔도 **이미 설치된 노드에 `run.sh` 가 이 필드를 읽는 버전이어야** 반영된다
+  (위 “갱신” 절 참고).
 
 ## 주기 변경 — 상시 데몬 노드는 웹에서, 구버전/cron 폴백 노드는 CLI 로
 
@@ -250,6 +281,13 @@ bash deploy/agent_schedule.sh hourly 10.3.142.100 10.3.142.101='*:0/30'  # 노�
    에 `600` 으로 쓰고 env 로만 전달하므로 `ps` 에 노출되지 않는다. 대화형으로 설치하면
    토큰이 셸 히스토리에도 남지 않는다. `--token` 인자로 넘긴 경우엔 명령이 히스토리에
    남으니, 신경 쓰이면 설치 후 히스토리를 지운다.
+
+   **토큰에 유효기간이 붙을 수 있다(2026-08-08 추가).** 중앙의 에이전트 키 발급 화면에서
+   무기한/30일/90일/1년 중 하나를 고르며, **기존 토큰은 `expires_at` 이 NULL 이라 그대로
+   무기한**이다. 만료된 토큰으로 보내면 인증 실패(401)가 되고 중앙 감사로그에
+   `agent_token_expired` 가 남는다 — 이때는 그 호스트용 토큰을 새로 발급해 노드의
+   `<prefix>/etc/agent.env` 를 갱신한다(자동 갱신·재발급은 일부러 두지 않았다).
+   에이전트 키 목록에 만료일·만료임박(7일) 뱃지가 표시되므로 만료 전에 확인할 수 있다.
 
 2. **전송 URL(--server)은 대상 서버가 실제로 닿는 주소여야 한다.** 서버마다 다르다.
 
@@ -299,7 +337,8 @@ sudo bash install-agent.sh --uninstall [--prefix 설치경로]
 
 OS/커널/CPE, 설치 패키지(dpkg/rpm — NEVRA·소스패키지·**출처**), 실행 중 프로세스와
 리스닝 포트(외부노출 판정), 보안설정(sshd·계정·SELinux/AppArmor·방화벽 → 서버가 CCE 점검),
-언어 패키지(pip/npm). 이 원자료가 중앙에서 CVE 미러(NVD·OSV·KISA)와 매칭되고, 런타임
+언어 패키지(pip/npm), **계정 인벤토리**(아래 별도 절 — 개인정보성 항목이 포함된다),
+**패키지 의존성 그래프**(직접·전이). 이 원자료가 중앙에서 CVE 미러(NVD·OSV·KISA)와 매칭되고, 런타임
 노출·EPSS·KEV 가중이 얹혀 최종 우선순위가 된다. 피드 소스별 역할은
 [`docs/dev/피드소스-역할.md`](../docs/dev/피드소스-역할.md) 참고.
 
@@ -312,6 +351,47 @@ OS/커널/CPE, 설치 패키지(dpkg/rpm — NEVRA·소스패키지·**출처**)
 > 건너뛴다) — 컨테이너 오버레이 경로를 `dpkg -S`/`rpm -qf` 로 전수조사하다 멈추는 문제 때문.
 > "컨테이너를 안 본다"는 뜻이 아니다. 패키지는 위처럼 따로 수집한다.
 
+### 계정 인벤토리 — 계정명·마지막 로그인이 중앙으로 간다 (개인정보 고지)
+
+ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을 보낸다(그전엔 설정 정책만
+봤다). 원자료는 `vuln-inventory-agent.sh:1901-1911` 의 네 키다 — 전부 읽기 전용이고
+`getent`/`awk` 수준이라 가볍다(파일시스템 전수 `find` 는 하지 않는다).
+
+| 페이로드 키 | 무엇을 읽나 | 무엇을 보내나 |
+|---|---|---|
+| `users.account_passwd` | `getent passwd` | 사용자명 · uid · gid · 로그인셸 · 홈 디렉터리 |
+| `users.account_shadow` | `/etc/shadow`(root 만 읽힌다) | 사용자명 · 마지막 변경일(epoch일) · min/max/warn/inactive · 만료일 · 잠금여부(1/0) |
+| `users.account_lastlog` | `lastlog`(`LC_ALL=C`) | 사용자명 · **마지막 로그인 시각 문자열** 또는 `NEVER` |
+| `users.account_sudoers` | `/etc/sudoers`·`/etc/sudoers.d/*`(0440) | 주석·빈 줄을 뺀 유효 라인 |
+
+- **패스워드 해시는 어떤 형태로도 수집·전송하지 않는다.** shadow 에서는 정책 필드와
+  "해시가 `!`/`*` 로 시작하는가"만 `1/0` 으로 환산해 보낸다.
+- **숨기지 않고 적는다: 계정명·홈 경로·마지막 로그인 시각은 개인 식별로 이어질 수 있는
+  값이고, 그것이 중앙 DB(`tb_host_account`)에 스캔별로 쌓인다.** 중앙은 이 값으로 90일
+  미로그인·sudo 보유자·공유계정 추정·퇴직자 계정 잔존 추정을 판정하며, 호스트 상세의 계정
+  탭 열람은 감사로그 대상이다.
+- `/etc/shadow`·`sudoers` 를 못 읽으면(비root 실행) 그 섹션을 **아예 만들지 않는다** — 중앙이
+  `NA`(판정 불가)로 읽는다. 없는 것을 "정상"으로 위장하지 않는다.
+
+### 패키지 의존성 그래프 — 직접·전이 의존을 함께 보낸다
+
+무엇이 무엇을 끌어오는지(직접/전이)를 중앙 `tb_package_dependency` 에 쌓는다. 출처는 둘이고,
+**에이전트는 파싱하지 않고 원문을 올린다** — 구조 파싱은 중앙 PHP(`ingest_parse.php`)가 한다.
+
+| 페이로드 키 | 수집 함수 | 보내는 것 |
+|---|---|---|
+| `langpkg.pom_deps` | `collect_pom_direct_deps` (`vuln-inventory-agent.sh:1530`) | `PROJECT_SCAN_ROOTS` 아래 `pom.xml` 을 `경로\|base64` 로. 파일당 128KB(`POM_DEP_FILE_MAX_BYTES`) 초과분은 건너뛴다 |
+| `containers.sbom` | `collect_sbom` (`vuln-inventory-agent.sh:820`) | `/opt/vuln-agent/sbom/*.json`(CycloneDX·SPDX)을 `이름\|형식\|base64` 로. 파일당 2MB 상한 |
+
+- pom 은 왜 원문인가: 옛 awk 한 줄 파싱이 `<exclusions>`·`<dependencyManagement>`·한 줄
+  `<parent>` 를 구조적으로 구분하지 못해 오탐/0건이 났다. 중앙이 DOMDocument·XPath 로 최상위
+  `<dependencies>` 만 골라낸다.
+- 전이 의존은 CycloneDX 의 `dependencies[]` 에서 온다(부모→자식 엣지). SPDX
+  `relationships` 는 아직 대상이 아니다.
+- 언어패키지 인벤토리와 **예산이 분리돼 있다**(원문 전송이 요약 스트림보다 무거워 서로를
+  갉아먹지 않게). 전체 스캔은 `PROJECT_SCAN_TIMEOUT`(기본 300초)·`SCAN_MAX_FILES`(3000)·
+  `SCAN_MAX_DEPTH`(8)로 캡핑된다.
+
 **오탐을 억제할 근거도 함께 보낸다.** 중앙 매처는 "버전이 낮다"만으로 취약하다고 하지 않고,
 아래 근거로 이미 패치된 건을 걸러낸다(자세한 판정은 [`docs/dev/architecture.md`](../docs/dev/architecture.md) §2):
 
@@ -323,13 +403,29 @@ OS/커널/CPE, 설치 패키지(dpkg/rpm — NEVRA·소스패키지·**출처**)
 | **재시작 필요**(옛 `.so` 를 물고 있는 프로세스) | 패치됐어도 **억제하지 않는다** — 그 프로세스는 여전히 옛 코드를 실행 중 |
 | **커널 재부팅 필요** | 커널을 패치해도 재부팅 전엔 옛 커널이 돈다 → 억제하지 않는다(조치는 재부팅) |
 
+## 전송 포맷 — 페이로드의 `meta` 자기계측 필드
+
+최종 JSON 은 `{ "<섹션>": { "<키>": "<원문>" }, "meta": { … } }` 꼴이고, `meta` 에는 수집
+자체에 대한 값이 들어간다 — `running_as`·`agent_version`·`schedule` 외에 조립이 끝난 뒤
+주입되는 **`elapsed_seconds`·`peak_rss_mb`·`cpu_seconds`** 세 필드가 있다(중앙의
+`tb_scan.elapsed_seconds` 등이 여기서 채워진다). `--command-id` 를 받았으면 최상위에
+`command_id` 도 얹는다.
+
+> **3.10 미만 노드는 이 세 필드가 비어 있다(2026-08-06 수정).** 조립 2단계 `jq` 호출에 `-c`
+> 가 빠져 `"meta": {` 처럼 콜론 뒤 공백이 들어갔고, 뒤이어 주입하는 `awk sub()` 정규식이
+> 공백 없는 패턴만 매칭해 **조용히 아무것도 못 바꿨다**(awk `sub` 은 매치 실패해도 오류가
+> 없다). jq 가 깔린 거의 모든 호스트에서 재현됐고 운영 DB 에서 해당 필드가 전부 NULL 로
+> 확인됐다. 지금은 `jq -sc` + 공백을 허용하는 정규식 양쪽으로 막았다
+> (`vuln-inventory-agent.sh:1967`·`2014`). 값이 계속 비는 노드는 `agent_push.sh` 로 본체를
+> 올리면 다음 수집부터 채워진다.
+
 ## 실행 옵션
 
 | 옵션 | 뜻 |
 |---|---|
 | `--send URL` / `--token TOK` | 수집 후 중앙(`ingest.php`)으로 POST (파일 저장도 유지) |
 | `-o, --output PATH` | 결과 파일 경로 |
-| `--limit` | 기본 적용되는 cgroup 상한을 명시적으로 활성화(CPU는 한 코어의 10% · 메모리 300M). `AGENT_LIMIT=0`일 때만 해제 |
+| `--limit` | 기본 적용되는 cgroup 상한을 명시적으로 활성화(기본값은 CPU 한 코어의 10% · 메모리 300M = `normal` 티어. 중앙이 티어를 내려주면 그 값 — 위 “속도 티어” 표). `AGENT_LIMIT=0`일 때만 해제 |
 | `--no-changelog` | changelog 수집 생략 — **가장 무거운 단계**. 대신 백포트 억제가 약해진다 |
 | `--timeout N` | 명령별 타임아웃 초(기본 20) |
 | `--qf FMT` | rpm 질의 포맷 재정의(디버깅용) |
