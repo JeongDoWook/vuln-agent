@@ -26,9 +26,29 @@ if ! declare -f collect_pkg_origins >/dev/null; then
   exit 1
 fi
 
+# collect_pkg_origins() 는 에이전트 본문이 만들어 두는 값들을 그대로 쓴다. 함수만 떼어 오면
+#   그것들이 없어서 `set -u` 에 걸려 죽는데, 예전엔 그 실패가 "출처 판정이 틀렸다"로 보였다
+#   (실제 증상: `MAX_BYTES: unbound variable` · `progress_heartbeat: command not found` 뒤에
+#    기대 줄 4개가 전부 없다고 나옴). 함수가 요구하는 환경을 여기서 명시적으로 세운다.
+#   일부러 최소한만 정의한다 — 함수가 새 전역을 요구하기 시작하면 이 테스트가 즉시 터져야 한다.
 CMD_TIMEOUT=5
+MAX_BYTES=524288                      # 에이전트 기본값과 동일(섹션당 512KB 상한)
+# TMP 는 반드시 우리가 만든다. git-bash 는 윈도 환경변수 TMP(C:\Users\…\Temp)를 물려주는데,
+#   그 값이 그대로 쓰이면 함수가 만드는 경로가 `C:\Users\…\Temp/.pkg-origins-raw.txt` 가 되어
+#   awk 가 그 파일을 못 연다(실측 실패 원인). mktemp -d 는 POSIX 경로를 준다.
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+ORIGINS_PID=""
+progress_heartbeat() { :; }            # 수집 진행률 보고는 이 테스트의 관심사가 아니다
 have()    { return 0; }
-timeout() { shift; "$@"; }
+# timeout 스텁 — 옵션을 건너뛰고 뒤의 명령만 그대로 실행한다.
+#   예전엔 `shift` 하나였는데, 에이전트가 `timeout -k 2 <초> …` 로 바뀌자 `-k` 만 벗겨져
+#   `2` 를 명령으로 실행하려 했다(= 아무것도 안 나옴). 옵션 형태가 또 바뀌어도 안 깨지게 한다.
+timeout() {
+  while [ "${1:-}" = "-k" ] || [ "${1:-}" = "-s" ]; do shift 2; done
+  shift                                  # 남은 첫 인자 = 제한시간
+  "$@"
+}
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
