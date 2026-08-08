@@ -1636,20 +1636,13 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page-title--stack .sub { margin: .4rem 0 0; }
 .page-title + .sub { margin-top: -.85rem; padding-inline: .2rem; }
 
-/* 섹션 제목 — 페이지 제목과 같은 어휘의 한 단 아래 위계 */
-
 /* 반응형 표 — 좁은 화면에서 행을 카드로 접는다(td 의 data-label 이 머리글 노릇). */
 .data-table td, .data-table th { font-variant-numeric: tabular-nums; }
 .data-table tbody tr:hover { background: var(--surface-2); }
 
-/* 설정 폼(체크박스 한 줄 = 설정 하나) */
+/* 설정 폼 */
 .setting-form { display: grid; gap: 1rem; }
 .setting-form .field { display: grid; gap: .45rem; max-width: 760px; color: var(--text-2); font-size: .84rem; font-weight: 650; }
-.check-row { display: flex; align-items: flex-start; gap: .75rem; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); cursor: pointer; }
-.check-row input { width: 1.15rem; height: 1.15rem; margin-top: .12rem; accent-color: var(--accent); }
-.check-row span { display: grid; gap: .2rem; }
-.check-row small { color: var(--muted); font-weight: 450; line-height: 1.5; }
-.setting-card .actions { padding-top: .15rem; }
 
 /* 확인 모달(삭제·폐기 등) — 문구만 담는 좁은 모달 */
 .confirm-modal { width: min(440px, calc(100vw - 2rem)); }
