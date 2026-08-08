@@ -1,6 +1,6 @@
 # CONTEXT.md — 프로젝트 맥락 (Claude Code 최우선 참고)
 
-> 현행 기준: 2026-08-04 · 에이전트 3.8 · 자산별 수집 진행/취소 및 실제 관리 IP 보고 포함.
+> 현행 기준: 2026-08-09 · 에이전트 3.10 · 계정 인벤토리·자산 등급(N2SF)·컴플라이언스 스냅샷 포함.
 
 > 이 파일은 개발을 이어받는 사람(및 Claude Code)이 **가장 먼저 읽는** 요약이다.
 > 쉬운 설명은 `docs/dev/설명글.md`, 대회용 기획 문서는 `docs/dev/기획안_v1.0.html`
@@ -63,7 +63,7 @@ CVE와 매칭한다. 단순 스캐너와 다른 점은 **"이 취약점이 이 �
 
 ## 4. 이미 만들어진 것 (재사용)
 
-### `agent/vuln-inventory-agent.sh` (v3.8) — 수집 에이전트, 동작 검증 완료
+### `agent/vuln-inventory-agent.sh` (v3.10) — 수집 에이전트, 동작 검증 완료
 읽기 전용. 서버에 무리 안 감(nice 19 / ionice idle / 명령별 timeout).
 **피크 메모리는 실측 61.6MB**(Debian 12 · 91패키지 — 마지막에 jq 로 전 섹션을 한 번에 조립하는
 단계가 1등 요인이라 페이로드 크기에 비례한다). 수치·외삽·재측정법은
@@ -99,6 +99,14 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
   composer `installed.json` 에서 SPDX 식별자를 수집해 permissive/copyleft/unknown 으로 분류
   (`server/src/license_risk.php`). 시그니처·스니펫·바이너리 스캔이나 npm/gem/maven/nuget/cargo
   매니페스트 직접 파싱을 통한 라이선스 식별은 하지 않는다 — 위 세 소스가 없으면 미상(unknown)이다.
+- `users` — **계정 인벤토리 원자료**(`account_passwd`/`account_shadow`/`account_lastlog`/
+  `account_sudoers`/`sudo_group`). 중앙(`src/account_inventory.php`)이 계정 1행으로 조립해
+  `tb_host_account` 에 저장하고 ISMS-P 2.5.x·N2SF AC 관점으로 판정한다. **패스워드 해시는 어떤
+  형태로도 수집·전송하지 않는다** — shadow 에서는 정책 필드와 잠금 여부(1/0)만 환산해 보낸다.
+  못 읽으면(비-root) 파일을 아예 안 만들어 중앙에서 NA 가 된다(PASS 로 위장하지 않는다).
+- **패키지 의존성 그래프** — 직접/전이 의존 관계(`tb_package_dependency`). `pom.xml` 은 원문을
+  base64 로 올려 중앙이 DOMDocument 로 파싱한다(에이전트 awk 파싱은 `<exclusions>`/`<parent>` 를
+  구분 못 해 오탐이 났다). 아직 수집·저장까지이고 전용 화면은 없다.
 - 그 외: 커널 CPU취약점 완화상태, 보안설정 등
 
 ### `agent/install-agent.sh` — 배포 설치기
@@ -136,11 +144,14 @@ vuln-agent/
 │   ├── Dockerfile
 │   ├── public/   # ingest·agent-poll/progress·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
 │   │             #   packages/package/advisories/advisory/assets/asset-packages/connectors/users/user/permissions/api-tokens/
-│   │             #   agent-tokens/activity/profile + vendor(벤더 판정 근거)/
-│   │             #   compliance_rules·compliance_rule(SSG 룰셋 카탈로그)/compliance(ISMS-P·ISO 27001 매핑) (웹)
+│   │             #   agent-tokens/activity(5요소 접속기록+월1회 점검)/settings(운영 설정)/profile + vendor(벤더 판정 근거)/
+│   │             #   compliance_rules·compliance_rule(SSG 룰셋 카탈로그)/compliance(ISMS-P·ISO 27001 매핑+판정 추이)/
+│   │             #   control_mapping(U-코드·ISMS-P·N2SF 통제 기준 매핑)/nofix-packages(제거·대체 검토 권고) (웹)
 │   │             #   agent-dl.php — 에이전트 설치 파일 배포(자산 화면 설치 모달의 다운로드 대상)
 │   │             #   process.html — 프로세스 소개(로그인 불필요, /process.html 로 공유)
-│   ├── src/      # config·db·auth(RBAC)·view·matcher(+백포트억제)·feeds·cce·apitoken·audit(감사로그·소프트삭제)
+│   ├── src/      # config·db·auth(RBAC·세션만료)·view·matcher(+백포트억제)·feeds·cce·apitoken·audit(감사로그·소프트삭제)
+│   │             #   + compliance(통제 판정·스냅샷)·setting(운영 설정값)·account_inventory·assetgrade(N2SF)
+│   │             #   · nofix(제거·대체 권고)·remediation_note(미조치 사유)·control_mapping·tokenexpiry
 │   └── bin/      # scheduler.php(사이드카)·sync.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
 ├── db/           # 01~18 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
 │   └── migrations/    # YYYYMMDDHHMMSS_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
@@ -149,6 +160,7 @@ vuln-agent/
 ├── tests/        # smoke.sh(API~로그인 curl) · e2e.sh+e2e/(브라우저 JS, Playwright — 게이트 밖)
 │                 #   · ui_lint.sh(죽은 CSS·인라인 style) · vercmp_test.php(버전비교 단위)
 │                 #   · agent-bench.sh(에이전트 리소스 실측)
+│                 #   · *_test.php(단위: 계정 인벤토리·CCE 신규룰·ingest 파싱·문서 일관성 등)
 ├── docs/         # 아키텍처·기획안·설명글·피드소스-역할·export-api·에이전트-리소스-프로파일
 └── shadow-ai/    # (사이드 PoC) 섀도우 AI DLP 크롬 확장 — 본 파이프라인과 독립
 ```
@@ -229,12 +241,18 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 즉 "설치=취약"으로 전부 올리지 않고, **실제 노출·실행·사용 여부로 우선순위를 가른다.**
 
 **보안설정 점검(CCE)** 은 같은 수집물을 다른 눈으로 본다 — CVE(취약한 버전)가 아니라 잘못된 설정
-(SSH root 로그인·패스워드 인증·UID 0 계정·SELinux/AppArmor·방화벽)을 `src/cce.php` 가 판정해
-`tb_cce_finding` 에 저장한다. 신규 수집은 없다.
+(SSH root 로그인·패스워드 인증·UID 0 계정·SELinux/AppArmor·방화벽에 더해 시간동기화 `CCE-TIME-*`·
+로그설정 `CCE-LOG-*`·암호화 `CCE-CRYPTO-*`)을 `src/cce.php` 가 판정해 `tb_cce_finding` 에 저장한다.
+같은 판정 결과를 어느 기준의 증적으로 볼지는 `tb_control_mapping`(U-코드·ISMS-P·N2SF)이 정하고
+`control_mapping.php` 가 보여준다 — 기준을 화면 문자열이나 주석에 다시 적지 않는다(SSOT).
+
+**계정 인벤토리**(`src/account_inventory.php` → `tb_host_account`)는 CCE 와 같은 원칙을 따른다 —
+못 읽은 항목은 PASS 가 아니라 NA 이고, 공유계정·퇴직자 계정 추정은 FAIL 이 아니라 REVIEW(사람 확인)다.
+호스트 상세의 "계정" 탭에서 본다.
 
 ---
 
-## 8. 개발 현황 (2026-08-04 기준 — 파이프라인·HTTPS·감사 + 오탐억제/CCE/변화추적/Export 완성)
+## 8. 개발 현황 (2026-08-09 기준 — 파이프라인·HTTPS·감사 + 오탐억제/CCE/변화추적/Export 에 더해 컴플라이언스·계정·자산등급 완성)
 
 - [x] **0. Docker** — compose dev/prod + Dockerfile + Docker Secrets(txt) + 러너
 - [x] **1. 수집→전송→저장** — 에이전트 `--send` POST + `ingest.php` 수신 + DB
@@ -359,6 +377,57 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
       CRITICAL 30일·HIGH 60일, 업계 관행값) 대비 위반 건수로 판정한다. 정책·승인이력처럼 사람이
       심사해야 하는 통제는 판정 없이 체크리스트로만 노출한다(vuln-agent 데이터로 못 채우는 걸
       억지로 채우지 않는다 — 이 기능의 의도적 한계). 새 테이블·ingest 변경 없는 순수 조회 화면.
+- [x] **컴플라이언스 판정 불가(NA) + SLA 설정화**(#493) — 패치관리 통제가 "보유 이력이 SLA 보다 짧아
+      위반을 검출할 방법 자체가 없는" 경우까지 조용히 **준수**로 셌다(허위 안심). 판정 어휘를
+      준수·판정 불가·부분준수·미준수 4종으로 넓히고, SLA 기준일(KEV/CRITICAL/HIGH)과 부분준수
+      컷라인을 `tb_setting` + 관리자 화면 `settings.php` 로 뺐다(`src/setting.php`, 값이 없으면
+      기존 상수로 폴백해 동작이 안 바뀐다).
+- [x] **컴플라이언스 판정 스냅샷·추이**(#498) — 판정 로직을 `src/compliance.php` 로 분리해 화면과
+      스케줄러가 **같은 함수**를 쓴다(두 벌이면 화면과 증적이 다른 답을 낸다). 스케줄러가 하루 1건
+      `tb_compliance_snapshot` 에 적재하고, 위반 건수와 함께 **판정 불가 건수·사유도 저장**한다
+      (0 만 남기면 나중에 준수로 되읽혀 스냅샷 자체가 허위 안심이 된다). 화면은 저장값을 읽기만 한다.
+- [x] **통제 기준 매핑**(#499) — `tb_control_mapping` + `control_mapping.php`. 같은 CCE 점검 결과가
+      ISMS-P·기반시설 U-코드·N2SF 중 어느 기준의 증적인지 한 화면에서 고른다. 기준 어휘의 SSOT 는
+      `src/control_mapping.php` 하나다.
+- [x] **CCE 룰 3계열 확장**(#494) — 시간동기화·로그설정(보존기간·원격전송)·암호화(SSH 알고리즘·
+      디스크 암호화·국내 검증필 알고리즘) 7개. 확인 못 한 항목은 전부 NA(기존 원칙 유지).
+- [x] **계정 인벤토리**(#490) — 에이전트 `users` 섹션 → `tb_host_account`, 호스트 상세 "계정" 탭.
+      지금까지 계정 **정책**(login.defs·PAM·sshd)만 봤고 **실제 계정 목록**은 안 봐서 ISMS-P 2.5.x·
+      N2SF AC 가 통째로 공백이었다. 패스워드 해시는 수집·저장·표시하지 않는다. 열람은 감사로그 대상.
+- [x] **자산 중요도·N2SF 보안등급(C/S/O)**(#495) — `src/assetgrade.php`. **확정값과 시스템 제안값을
+      분리**한다(`grade` vs `grade_suggested`): 등급 확정은 기관의 법적 처분이라 시스템이 대신할 수
+      없다. 제안 규칙은 원문이 직접 준 두 줄(로그·백업 역할 → S 후보 / 외부 노출 → O 후보)뿐이고,
+      근거가 없으면 아무것도 제안하지 않는다. 여러 등급이 섞이면 가장 높은 등급을 승계한다.
+- [x] **제거·대체 검토 권고**(#489) — `nofix-packages.php` + `src/nofix.php`. 벤더 미수정(`no_fix`)이
+      한 패키지에 몰리면(기본 10건·80% 이상) 개별 CVE 수십 줄 대신 (호스트×패키지) 단위로 묶어
+      보여준다. 실측 근거: 한 호스트의 `libqt5webkit5` 하나에 no_fix CVE 43건(CVSS 10.0 포함)이
+      몰려 있었고 실제 조치는 `apt purge` 한 번이었다. **EOL 이라고 단정하지 않는다** — 관측 + 권고만.
+      심각도 판정(`vg_classify`)은 건드리지 않는 표시 계층 전용.
+- [x] **미조치 사유·승인자**(#491) — `tb_remediation_note` + `src/remediation_note.php`.
+      결재 워크플로는 만들지 않고 사유·승인자 최소 필드만 두고 `export.php` 로 외부 시스템에 넘긴다.
+      매처의 자동 억제와는 별개 축이다(억제 로직을 건드리지 않는다). 키는 스캔이 바뀌어도 유지되는
+      자연키 `(host_id, 컨테이너명, cve_id, 패키지명)` — `container_id` 는 스캔마다 재발급이라 못 쓴다.
+- [x] **접속기록 5요소 + 월 1회 점검**(#496, ISMS-P 2.9.4·2.9.5) — `activity.php` 가 접속일시·식별자·
+      접속지 IP·처리 대상·수행업무를 독립 컬럼으로 노출하고 기간·사용자·IP·수행업무로 필터한다.
+      월 1회 점검 결과는 `tb_activity_review` 에 admin 만 기록하고(미점검 기간은 배너로 알린다),
+      비고는 감사로그와 같은 마스킹을 태운다. 감사로그 삭제·편집 수단은 UI 에 노출하지 않는다.
+- [x] **세션·토큰 유효기간**(#492) — 세션은 유휴 30분·절대 12시간 두 축으로 만료시키고(`src/auth.php`,
+      만료 사유를 로그인 화면에 구분해 알린다), API·에이전트 토큰은 발급 시 유효기간을 고른다
+      (`src/tokenexpiry.php` — 무기한/30일/90일/1년, 만료 임박 7일 표시). 자동 갱신·재발급은 두지 않는다.
+- [x] **패키지 의존성 그래프**(#480) — 직접/전이 의존을 `tb_package_dependency` 에 수집·저장.
+      `pom.xml` 은 원문을 base64 로 올려 중앙이 DOMDocument 로 파싱한다(에이전트 awk 파싱은
+      `<exclusions>`/`<parent>` 를 구조적으로 구분 못 해 오탐/0건이 났다 — PR#399 리뷰).
+      유니크 키가 3,072바이트를 넘어 `edge_hash` 생성컬럼으로 대체했다(#502). **아직 화면은 없다.**
+- [x] **패키지 화면 통합·교차 링크**(#475/#474/#477/#478/#479) — 패키지·언어 패키지를 서브탭으로
+      합치고(`/packages.php?tab=lang`), 툴바 필터를 왼쪽·검색창을 남는 폭으로 통일했다.
+      전체 설치 패키지 목록 ↔ 패키지 상세를 양방향으로 오간다.
+- [x] **에이전트 속도 티어에 메모리 상한**(#487) — 티어(`src/agentspeedtier.php`)에 `mem_max_mb` 를
+      더해 poll 응답으로 내려보내고 `run.sh` 가 `MEM_MAX` 로 cgroup 상한을 건다(CPU 만 조여도 조립
+      단계가 메모리를 밀어 올린다 — §4 참고). 범위를 벗어난 값은 떨궈 에이전트 기본값(300M)으로 폴백한다.
+- [x] **Caddy 보안 응답 헤더**(#497) — `security_headers` snippet 하나로 모아 사이트 블록마다
+      import 한다. 자동 리다이렉트를 끈 것(`auto_https disable_redirects`)이 함께 들어갔다 — 자동
+      생성 라우트는 우리 블록 밖이라 헤더가 안 걸려, 진입 경로에 따라 헤더가 있다 없다 했다(실측).
+      HSTS 는 현재 자체서명 인증서라 보류(켜면 인증서 교체 전까지 브라우저가 접속을 막는다).
 
 > 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·백포트 억제·KEV/EPSS·설명가능성).
 > Python AI 문서생성은 본체 범위에서 제외 — Export API 로 결과만 넘긴다.
