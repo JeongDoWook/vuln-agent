@@ -13,22 +13,37 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';         // vg_pdo, vg_latest_scan_subq, vg_with_tx
 require_once __DIR__ . '/format.php';     // vg_asset_state_sql_expr
+require_once __DIR__ . '/setting.php';    // vg_setting_int — 조직별 SLA·컷라인
 
-// SLA 기준(하드코딩 상수 — 업계 관행값, 바뀔 일이 거의 없는 알려진 값이라 YAGNI 상 설정으로
-//   빼지 않는다). KEV 등재가 가장 급하고, 그다음 CRITICAL, HIGH 순.
+// SLA 기준의 **폴백값**. 실제 판정은 tb_setting 의 값을 쓰고(조직마다 SLA 가 다르다),
+//   설정 행이 없거나 설정 테이블을 못 읽으면 여기 값으로 지금과 동일하게 동작한다.
+//   KEV 등재가 가장 급하고, 그다음 CRITICAL, HIGH 순.
 const VG_COMPLIANCE_SLA_KEV_DAYS  = 15;
 const VG_COMPLIANCE_SLA_CRIT_DAYS = 30;
 const VG_COMPLIANCE_SLA_HIGH_DAYS = 60;
 
-// 위반 건수 → 준수 상태 컷라인. 세 통제가 전부 같은 어휘를 쓴다(사용자가 한 화면에서
+// 위반 건수 → 준수 상태 컷라인의 폴백값. 세 통제가 전부 같은 어휘를 쓴다(사용자가 한 화면에서
 //   "몇 건부터 부분준수인가"를 매 통제마다 다시 배우지 않게).
 const VG_COMPLIANCE_PARTIAL_MAX = 5;   // 1~5건 = 부분준수, 6건 이상 = 미준수
 
-// first_seen 배치 쿼리가 되짚어볼 최대 기간. 가장 긴 SLA(HIGH) + 여유 2주 — 그보다 오래
-//   지속된 발견은 어차피 이미 위반 확정이라 정확한 최초시각까지 알 필요가 없다(경계 밖에
-//   실제 최초시각이 있어도, 경계 안에서 잡히는 first_seen 은 실제보다 항상 같거나 늦으므로
-//   위반 판정이 과소평가되지 않는다).
-const VG_COMPLIANCE_HISTORY_LOOKBACK_DAYS = VG_COMPLIANCE_SLA_HIGH_DAYS + 14;
+// first_seen 배치 쿼리가 되짚어볼 구간의 **여유일**. 실제 구간 = 가장 긴 SLA + 이 값.
+//   절대 일수로 두지 않는 이유: SLA 를 늘려 놓고 구간이 그대로면 경과일이 구간 길이에서
+//   잘려 위반이 아예 검출되지 않는다(= 허위 안심이 설정 실수로 재현된다).
+//   여유를 두는 이유: 그보다 오래 지속된 발견은 어차피 이미 위반 확정이라 정확한 최초시각까지
+//   알 필요가 없다(경계 밖에 실제 최초시각이 있어도, 경계 안에서 잡히는 first_seen 은 실제보다
+//   항상 같거나 늦으므로 위반 판정이 과소평가되지 않는다).
+const VG_COMPLIANCE_HISTORY_MARGIN_DAYS = 14;
+
+/** 설정(tb_setting) + 폴백 상수로 조립한 판정 기준값 한 벌. 화면·스케줄러가 함께 쓴다. */
+function vg_compliance_policy(): array {
+    return [
+        'kev'    => vg_setting_int('compliance.sla_kev_days',  VG_COMPLIANCE_SLA_KEV_DAYS),
+        'crit'   => vg_setting_int('compliance.sla_crit_days', VG_COMPLIANCE_SLA_CRIT_DAYS),
+        'high'   => vg_setting_int('compliance.sla_high_days', VG_COMPLIANCE_SLA_HIGH_DAYS),
+        'partial_max' => vg_setting_int('compliance.partial_max', VG_COMPLIANCE_PARTIAL_MAX),
+        'margin' => vg_setting_int('compliance.history_lookback_margin_days', VG_COMPLIANCE_HISTORY_MARGIN_DAYS),
+    ];
+}
 
 // 스냅샷 1건이 담는 근거(evidence) 최대 개수. 무제한 JSON 은 행을 비대하게 만든다 —
 //   위반이 수천 건인 환경에서 매일 전량을 박으면 스냅샷 테이블이 본 데이터보다 커진다.
@@ -45,17 +60,30 @@ const VG_COMPLIANCE_CONTROLS = [
     'secops' => ['label' => '보안시스템 운영', 'framework' => 'ISMS-P 2.10.1'],
 ];
 
-/** 위반 건수 → ['label'=>..., 'tone'=>...]. 통제 3종이 공유하는 판정 어휘(SSOT). */
-function vg_compliance_status(int $violations): array {
-    if ($violations === 0) { return ['label' => '준수', 'tone' => 'ok']; }
-    if ($violations <= VG_COMPLIANCE_PARTIAL_MAX) { return ['label' => '부분준수', 'tone' => 'high']; }
+/**
+ * 판정 결과 → ['label'=>..., 'tone'=>...]. 통제 3종이 공유하는 판정 어휘(SSOT).
+ *   $unjudged = 위반이 없는데도 **판정 자체가 불가능한 대상**이 남아있는가.
+ *   위반 0건이라고 무조건 "준수"로 쓰지 않는 이유: 볼 수 있는 근거가 모자라서 0건인 것을
+ *   준수로 표기하면 심사 증빙에 허위 안심(false assurance)을 싣게 된다. 이 제품이 CCE 에서
+ *   이미 지키는 원칙("NA 를 PASS 와 구분한다")을 컴플라이언스 판정에도 똑같이 적용한다.
+ *   톤은 'med'(주의) — 'ok'(초록)와 색이 확실히 달라 준수로 오인되지 않는다.
+ */
+function vg_compliance_status(int $violations, bool $unjudged = false, int $partialMax = VG_COMPLIANCE_PARTIAL_MAX): array {
+    if ($violations === 0) {
+        return $unjudged ? ['label' => '판정 불가', 'tone' => 'med'] : ['label' => '준수', 'tone' => 'ok'];
+    }
+    if ($violations <= $partialMax) { return ['label' => '부분준수', 'tone' => 'high']; }
     return ['label' => '미준수', 'tone' => 'crit'];
 }
 
-/** 상태 라벨 → 톤. 스냅샷은 라벨만 저장하므로(판정 어휘가 SSOT) 화면에서 톤을 되찾는다. */
+/**
+ * 상태 라벨 → 톤. 스냅샷은 라벨만 저장하므로(판정 어휘가 SSOT) 화면에서 톤을 되찾는다.
+ *   판정 어휘가 4종(준수·판정 불가·부분준수·미준수)이라 (위반건수, 판정불가여부) 조합을
+ *   전부 돌려 라벨이 맞는 것을 찾는다 — 톤 표를 따로 두면 SSOT 가 둘이 된다.
+ */
 function vg_compliance_tone_of(string $label): string {
-    foreach ([0, 1, VG_COMPLIANCE_PARTIAL_MAX + 1] as $n) {
-        $s = vg_compliance_status($n);
+    foreach ([[0, false], [0, true], [1, false], [PHP_INT_MAX, false]] as [$n, $na]) {
+        $s = vg_compliance_status($n, $na, VG_COMPLIANCE_PARTIAL_MAX);
         if ($s['label'] === $label) { return $s['tone']; }
     }
     return 'muted';
@@ -75,9 +103,19 @@ function vg_compliance_tone_of(string $label): string {
  *   시각은 agent 자기신고인 collected_at 대신 서버 수신시각 received_at 을 우선한다
  *   (collected_at 은 신뢰 경계 밖 값 — vg_ingest_parse_collected_at() 이 상하한 검증 없이
  *   그대로 저장해, 침해된 호스트가 매 스캔 "지금"을 보내면 경과일을 조작할 수 있다).
- * @return array{violations: array<int, array<string, mixed>>, total: int}
+ *
+ *   **판정 불가(NA)**: 최초 발견 시각은 "보유한 스캔 이력 안에서" 역산한다. 그래서 그 호스트의
+ *   이력이 SLA 기준일보다 짧으면 SLA 초과를 **구조적으로 검출할 수 없다** — 이력 30일짜리
+ *   호스트에서 HIGH(60일) 위반은 아무리 방치해도 0건으로 나온다. 이걸 "준수"로 세면 데이터가
+ *   모자라서 나온 0건을 조치를 잘해서 나온 0건처럼 보고하게 된다(허위 안심). 그런 건은 위반도
+ *   준수도 아닌 판정 불가로 따로 센다. 최초 발견 시각을 못 찾은 건·수신시각이 미래인 이상
+ *   데이터도 같은 이유로 판정 불가다(예전엔 조용히 넘겨 "준수" 쪽에 흡수됐다).
+ * @param array $policy vg_compliance_policy() 결과(kev/crit/high/margin 일수)
+ * @return array{violations: array<int, array<string, mixed>>, total: int, unjudged: int,
+ *               na: array<int, array<string, mixed>>, na_unknown: int}
  */
-function vg_compliance_load_patch(PDO $pdo): array {
+function vg_compliance_load_patch(PDO $pdo, array $policy): array {
+    $empty = ['violations' => [], 'total' => 0, 'unjudged' => 0, 'na' => [], 'na_unknown' => 0];
     // 호스트별 최신 scan_id 를 먼저 작은 결과로 뽑아 **리터럴 IN() 리스트**로 건넨다.
     //   findings.php 와 같은 이유(20260723093110_findings_scan_severity_index.sql 주석) —
     //   JOIN 으로 얽으면 옵티마이저가 tb_finding 을 드라이빙 테이블로 골라 idx_find_scan_sev
@@ -90,7 +128,7 @@ function vg_compliance_load_patch(PDO $pdo): array {
           WHERE h.is_deleted = 0'
     )->fetchAll();
     if (!$hosts) {
-        return ['violations' => [], 'total' => 0];
+        return $empty;
     }
     $fqdnByScan = [];
     $hostIdByScan = [];
@@ -119,7 +157,7 @@ function vg_compliance_load_patch(PDO $pdo): array {
         $active[] = $r;
     }
     if (!$active) {
-        return ['violations' => [], 'total' => 0];
+        return $empty;
     }
 
     // 최초 발견 시각 배치 조회 — tb_finding 을 host_id 로 훑으면 옵티마이저가 그걸 드라이빙으로
@@ -129,12 +167,35 @@ function vg_compliance_load_patch(PDO $pdo): array {
     //   로 제한한다 — 전체 스캔 이력을 다 훑을 이유가 없다.
     $hostIds = array_values(array_unique(array_map(static fn($r) => (int) $r['host_id'], $active)));
     $in = implode(',', array_fill(0, count($hostIds), '?'));
+
+    // 호스트별 **실제 보유 이력 길이**(가장 오래된 스캔 ~ 지금). 판정 가능 여부의 근거라
+    //   역산 구간(lookback)으로 자르지 않는다 — 자르면 "이력이 짧다"는 사실 자체를 못 본다.
+    //   tb_scan 은 수집 1회당 1행이라 호스트 수 규모의 작은 집계다.
+    $st = $pdo->prepare(
+        "SELECT host_id,
+                MIN(COALESCE(received_at, collected_at)) AS oldest_at,
+                DATEDIFF(NOW(), MIN(COALESCE(received_at, collected_at))) AS history_days
+           FROM tb_scan WHERE host_id IN ($in) AND is_deleted = 0 GROUP BY host_id"
+    );
+    $st->execute($hostIds);
+    $historyByHost = [];
+    foreach ($st->fetchAll() as $r) {
+        if ($r['history_days'] === null) { continue; }   // 시각이 통째로 비면 판정 불가 취급
+        $historyByHost[(int) $r['host_id']] = [
+            'oldest_at' => (string) $r['oldest_at'],
+            'days'      => max(0, (int) $r['history_days']),
+        ];
+    }
+
+    // 역산 구간 = 가장 긴 SLA + 여유일. SLA 를 설정으로 올렸는데 구간이 안 따라오면
+    //   경과일이 구간에서 잘려 위반이 검출되지 않는다 — 그래서 SLA 에 묶어 계산한다.
+    $lookbackDays = max($policy['kev'], $policy['crit'], $policy['high']) + $policy['margin'];
     $st = $pdo->prepare(
         "SELECT scan_id FROM tb_scan
           WHERE host_id IN ($in) AND is_deleted = 0
             AND received_at >= DATE_SUB(NOW(), INTERVAL ? DAY)"
     );
-    $st->execute([...$hostIds, VG_COMPLIANCE_HISTORY_LOOKBACK_DAYS]);
+    $st->execute([...$hostIds, $lookbackDays]);
     $histScanIds = array_map('intval', array_column($st->fetchAll(), 'scan_id'));
 
     $firstSeenMap = [];
@@ -160,21 +221,47 @@ function vg_compliance_load_patch(PDO $pdo): array {
     }
 
     $violations = [];
+    $na = [];            // 심각도 구간별 판정 불가 집계
+    $naUnknown = 0;      // 최초 발견 시각을 알 수 없어 경과일을 못 세는 건
     foreach ($active as $r) {
+        $hostId = (int) $r['host_id'];
+        [$bucket, $slaDays] = $r['in_kev']
+            ? ['KEV', $policy['kev']]
+            : ($r['severity'] === 'CRITICAL' ? ['CRITICAL', $policy['crit']] : ['HIGH', $policy['high']]);
+
+        // ── 보유 이력이 SLA 보다 짧으면 위반을 검출할 방법 자체가 없다 → 판정 불가 ──
+        //   여기서 continue 하지 않고 위반 0건으로 흘려보내면 그게 허위 안심이다.
+        $hist = $historyByHost[$hostId] ?? null;
+        if ($hist === null || $hist['days'] < $slaDays) {
+            $b = $na[$bucket] ?? ['label' => $bucket, 'sla_days' => $slaDays, 'count' => 0,
+                                  'max_history_days' => 0, 'judgeable_from' => null];
+            $b['count']++;
+            if ($hist !== null) {
+                if ($hist['days'] > $b['max_history_days']) { $b['max_history_days'] = $hist['days']; }
+                // 이 호스트가 판정 가능해지는 날 = 가장 오래된 스캔 + SLA. 구간 안에서 가장
+                //   이른 날짜를 남긴다(= 이력이 가장 긴 호스트가 먼저 판정 가능해진다).
+                $ts = strtotime($hist['oldest_at']);
+                if ($ts !== false) {
+                    $from = date('Y-m-d', strtotime('+' . $slaDays . ' day', $ts));
+                    if ($b['judgeable_from'] === null || $from < $b['judgeable_from']) { $b['judgeable_from'] = $from; }
+                }
+            }
+            $na[$bucket] = $b;
+            continue;
+        }
+
         $key = $r['host_id'] . '|' . $r['cid'] . '|' . $r['cve_id'] . '|' . $r['package_name'];
         $seen = $firstSeenMap[$key] ?? null;
-        if ($seen === null) { continue; }   // 최초 시각을 못 찾으면 판정 보류(과탐 방지)
+        if ($seen === null) { $naUnknown++; continue; }   // 최초 시각 미상 → 준수가 아니라 판정 불가
 
         $days = $seen['days'];
         if ($days < 0) {
             // 서버 수신시각이 미래로 나온 데이터 이상 — 조용히 "위반 아님"으로 넘기지 않고 남긴다.
             error_log("[compliance] 음수 경과일(데이터 이상): host={$r['host_id']} cve={$r['cve_id']} days=$days");
+            $naUnknown++;
             continue;
         }
 
-        $slaDays = $r['in_kev']
-            ? VG_COMPLIANCE_SLA_KEV_DAYS
-            : ($r['severity'] === 'CRITICAL' ? VG_COMPLIANCE_SLA_CRIT_DAYS : VG_COMPLIANCE_SLA_HIGH_DAYS);
         if ($days <= $slaDays) { continue; }
 
         $violations[] = [
@@ -191,7 +278,21 @@ function vg_compliance_load_patch(PDO $pdo): array {
     }
     usort($violations, static fn($a, $b) => $b['days'] <=> $a['days']);
 
-    return ['violations' => $violations, 'total' => count($violations)];
+    // 급한 구간부터 보여준다(KEV → CRITICAL → HIGH) — 표시 순서를 화면이 다시 정하지 않게.
+    $naRows = [];
+    foreach (['KEV', 'CRITICAL', 'HIGH'] as $bucket) {
+        if (isset($na[$bucket])) { $naRows[] = $na[$bucket]; }
+    }
+    $unjudged = $naUnknown;
+    foreach ($naRows as $b) { $unjudged += $b['count']; }
+
+    return [
+        'violations' => $violations,
+        'total'      => count($violations),
+        'unjudged'   => $unjudged,
+        'na'         => $naRows,
+        'na_unknown' => $naUnknown,
+    ];
 }
 
 /**
@@ -199,7 +300,14 @@ function vg_compliance_load_patch(PDO $pdo): array {
  *   판정: 연결상태(assets.php 의 정상/지연/오프라인/수집없음 분류 재사용) 기준 오프라인·수집없음
  *   자산 + 필수 자산정보(OS·IP) 누락 자산. 같은 호스트가 두 사유에 다 걸려도 위반 1건으로 센다
  *   (사유별로 중복 집계하면 "위반 건수"가 자산 대수보다 부풀어 부분준수/미준수 컷라인의 의미가 흐려진다).
- * @return array{violations: array<int, array<string, mixed>>, total: int, totalHosts: int}
+ *
+ *   **판정 불가(부분 수집)**: 에이전트가 root 가 아닌 계정으로 돌면 외부노출(소켓→프로세스)·
+ *   라이브러리 로드 같은 자산 식별 근거를 아예 못 걷는다(agent 스크립트가 그때 경고한다).
+ *   그런데 이 통제는 os_id/os_version/last_seen_ip 필드가 채워졌는지만 봐서, 근거가 빠진
+ *   호스트도 "준수"로 집계됐다. meta.running_as 로 이미 아는 사실이므로 준수에서 빼고
+ *   판정 불가로 분류한다 — 위반(=문제가 확인됨)과도 구분해야 하므로 별도 집계다.
+ * @return array{violations: array<int, array<string, mixed>>, total: int, totalHosts: int,
+ *               unjudged: int, unjudged_rows: array<int, array<string, mixed>>}
  */
 function vg_compliance_load_asset(PDO $pdo, int $limit): array {
     $latestSubq = vg_latest_scan_subq();
@@ -218,11 +326,11 @@ function vg_compliance_load_asset(PDO $pdo, int $limit): array {
     // totalHosts 는 상태 판정과 무관한 단순 등록 대수 — 상태 조인 없이 센다.
     $totalHosts = (int) $pdo->query('SELECT COUNT(*) FROM tb_host WHERE is_deleted = 0')->fetchColumn();
 
-    $whereViol = "h.is_deleted = 0
-            AND ($stateExpr IN ('offline','none')
+    $violCond = "($stateExpr IN ('offline','none')
                  OR h.os_id IS NULL OR h.os_id = ''
                  OR h.os_version IS NULL OR h.os_version = ''
                  OR h.last_seen_ip IS NULL OR h.last_seen_ip = '')";
+    $whereViol = "h.is_deleted = 0 AND $violCond";
     $total = (int) $pdo->query("SELECT COUNT(*) $fromSql WHERE $whereViol")->fetchColumn();
 
     $st = $pdo->prepare(
@@ -250,7 +358,44 @@ function vg_compliance_load_asset(PDO $pdo, int $limit): array {
         ];
     }
 
-    return ['violations' => $violations, 'total' => $total, 'totalHosts' => $totalHosts];
+    // ── 부분 수집(비-root) 호스트 = 판정 불가 ──
+    //   이미 위반으로 잡힌 호스트는 뺀다(NOT (위반조건)) — 확인된 문제가 판정 불가로 희석되면
+    //   위반 건수가 줄어 컷라인 판정이 느슨해진다. 위반 쪽이 더 강한 진술이므로 그쪽이 이긴다.
+    //   running_as 는 스캔 원본(meta)에만 있어 raw_json 에서 그 한 값만 뽑는다.
+    $runAsExpr = "LOWER(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(s.raw_json, '\$.meta.running_as')), '')))";
+    $whereUnjudged = "h.is_deleted = 0 AND NOT $violCond AND $runAsExpr <> 'root'";
+    $unjudged = (int) $pdo->query("SELECT COUNT(*) $fromSql WHERE $whereUnjudged")->fetchColumn();
+
+    $unjudgedRows = [];
+    if ($unjudged > 0) {
+        $st = $pdo->prepare(
+            "SELECT h.host_id, h.fqdn, $runAsExpr AS running_as
+               $fromSql
+              WHERE $whereUnjudged
+              ORDER BY h.fqdn
+              LIMIT ?"
+        );
+        $st->bindValue(1, $limit, PDO::PARAM_INT);
+        $st->execute();
+        foreach ($st->fetchAll() as $r) {
+            $runAs = (string) ($r['running_as'] ?? '');
+            $unjudgedRows[] = [
+                'host_id' => (int) $r['host_id'],
+                'fqdn'    => (string) $r['fqdn'],
+                'reason'  => $runAs === ''
+                    ? '수집 계정 미상 — 외부노출·라이브러리 로드 근거 누락'
+                    : '비-root 수집(' . $runAs . ') — 외부노출·라이브러리 로드 근거 누락',
+            ];
+        }
+    }
+
+    return [
+        'violations'    => $violations,
+        'total'         => $total,
+        'totalHosts'    => $totalHosts,
+        'unjudged'      => $unjudged,
+        'unjudged_rows' => $unjudgedRows,
+    ];
 }
 
 /**
@@ -337,33 +482,48 @@ function vg_compliance_snapshot_exists(PDO $pdo, ?string $date = null): bool {
 /**
  * 통제 3종을 판정해 그날짜 스냅샷으로 적재한다(UPSERT — 같은 날 두 번 돌아도 행이 안 늘어난다).
  *   무거운 집계이므로 웹 요청이 아니라 스케줄러/CLI 에서만 부른다.
- * @return array<string,int> control_key => violation_count
+ *
+ *   판정 기준은 **화면과 같은 vg_compliance_policy()** 를 쓴다. 스케줄러가 상수를 따로 쓰면
+ *   설정을 바꾼 조직에서 화면과 증적의 판정 기준이 갈라진다 — 그 자체가 증적 오염이다.
+ *   판정 불가 건수도 함께 저장한다. 위반 건수만 남기면 "판정 불가였다"는 사실이 증적에서
+ *   사라져, 나중에 그 스냅샷을 "위반 0건 = 준수"로 되읽게 된다(허위 안심의 재발).
+ * @param array|null $policy 판정 기준(생략 시 vg_compliance_policy())
+ * @return array<string,array{total:int,unjudged:int}> control_key => 위반·판정 불가 건수
  */
-function vg_compliance_take_snapshot(PDO $pdo, ?string $date = null): array {
-    $date = $date ?? date('Y-m-d');
-    $cap  = VG_COMPLIANCE_EVIDENCE_MAX;
+function vg_compliance_take_snapshot(PDO $pdo, ?string $date = null, ?array $policy = null): array {
+    $date   = $date ?? date('Y-m-d');
+    $cap    = VG_COMPLIANCE_EVIDENCE_MAX;
+    $policy = $policy ?? vg_compliance_policy();
 
-    $patch = vg_compliance_load_patch($pdo);
+    $patch = vg_compliance_load_patch($pdo, $policy);
     $asset = vg_compliance_load_asset($pdo, $cap);
     $sec   = vg_compliance_load_secconfig($pdo, $cap);
 
     // 근거는 "무엇이 위반이었나"를 나중에 되짚을 최소 식별자만 남긴다(원문 전체를 복사하지 않는다).
+    //   판정 불가 사유도 같은 evidence JSON 안에 둔다 — 건수만 있고 사유가 없으면 나중에
+    //   "왜 판정을 못 했나"를 다시 조사해야 한다.
     $controls = [
         'patch' => [
             'total'    => $patch['total'],
+            'unjudged' => (int) $patch['unjudged'],
             'evidence' => vg_compliance_evidence(array_map(static fn($v) => [
                 'host_id' => $v['host_id'], 'fqdn' => $v['fqdn'], 'cve_id' => $v['cve_id'],
                 'package' => $v['package'], 'severity' => $v['severity'], 'days' => $v['days'],
-            ], array_slice($patch['violations'], 0, $cap)), $patch['total']),
+            ], array_slice($patch['violations'], 0, $cap)), $patch['total'])
+                + ['unjudged' => ['total' => (int) $patch['unjudged'], 'na' => $patch['na'],
+                                  'unknown' => (int) $patch['na_unknown']]],
         ],
         'asset' => [
             'total'    => $asset['total'],
+            'unjudged' => (int) $asset['unjudged'],
             'evidence' => vg_compliance_evidence(array_map(static fn($v) => [
                 'host_id' => $v['host_id'], 'fqdn' => $v['fqdn'], 'reasons' => $v['reasons'],
-            ], $asset['violations']), $asset['total']),
+            ], $asset['violations']), $asset['total'])
+                + ['unjudged' => ['total' => (int) $asset['unjudged'], 'items' => $asset['unjudged_rows']]],
         ],
         'secops' => [
             'total'    => $sec['total'],
+            'unjudged' => 0,   // 이 통제는 판정 불가 개념이 없다(FAIL 집계만)
             'evidence' => vg_compliance_evidence(array_map(static fn($v) => [
                 'host_id' => $v['host_id'], 'fqdn' => $v['fqdn'],
                 'code' => $v['code'], 'severity' => $v['severity'],
@@ -371,7 +531,7 @@ function vg_compliance_take_snapshot(PDO $pdo, ?string $date = null): array {
         ],
     ];
 
-    vg_with_tx($pdo, static function () use ($pdo, $date, $controls) {
+    vg_with_tx($pdo, static function () use ($pdo, $date, $controls, $policy) {
         // 헤더 UPSERT. 소프트삭제됐던 날짜를 다시 찍으면 되살린다(같은 날짜는 항상 1건).
         $pdo->prepare(
             'INSERT INTO tb_compliance_snapshot (snapshot_date, taken_at)
@@ -386,10 +546,12 @@ function vg_compliance_take_snapshot(PDO $pdo, ?string $date = null): array {
 
         $ins = $pdo->prepare(
             'INSERT INTO tb_compliance_snapshot_control
-                    (compliance_snapshot_id, control_key, framework_ids, status_label, violation_count, evidence)
-             VALUES (?,?,?,?,?,?)
+                    (compliance_snapshot_id, control_key, framework_ids, status_label,
+                     violation_count, unjudged_count, evidence)
+             VALUES (?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE framework_ids = VALUES(framework_ids), status_label = VALUES(status_label),
-                                     violation_count = VALUES(violation_count), evidence = VALUES(evidence),
+                                     violation_count = VALUES(violation_count),
+                                     unjudged_count = VALUES(unjudged_count), evidence = VALUES(evidence),
                                      is_deleted = 0, deleted_at = NULL'
         );
         foreach ($controls as $key => $c) {
@@ -397,23 +559,25 @@ function vg_compliance_take_snapshot(PDO $pdo, ?string $date = null): array {
                 $snapId,
                 $key,
                 VG_COMPLIANCE_CONTROLS[$key]['framework'],
-                vg_compliance_status($c['total'])['label'],
+                vg_compliance_status($c['total'], $c['unjudged'] > 0, $policy['partial_max'])['label'],
                 $c['total'],
+                $c['unjudged'],
                 json_encode($c['evidence'], JSON_UNESCAPED_UNICODE),
             ]);
         }
     });
 
-    return array_map(static fn($c) => (int) $c['total'], $controls);
+    return array_map(static fn($c) => ['total' => (int) $c['total'], 'unjudged' => (int) $c['unjudged']], $controls);
 }
 
 /**
  * 최근 스냅샷 추이. 날짜 내림차순으로 최대 $limit 일치.
- *   반환: [ ['date'=>'2026-08-08', 'taken_at'=>..., 'controls'=>['patch'=>['count'=>3,'label'=>'부분준수'], …]], … ]
+ *   반환: [ ['date'=>'2026-08-08', 'taken_at'=>..., 'controls'=>['patch'=>['count'=>3,'unjudged'=>0,'label'=>'부분준수'], …]], … ]
+ *   판정 불가 건수까지 돌려준다 — 화면이 "위반 0건"과 "판정 불가"를 색과 문구로 구분해야 한다.
  */
 function vg_compliance_trend(PDO $pdo, int $limit): array {
     $st = $pdo->prepare(
-        'SELECT s.snapshot_date, s.taken_at, c.control_key, c.violation_count, c.status_label
+        'SELECT s.snapshot_date, s.taken_at, c.control_key, c.violation_count, c.unjudged_count, c.status_label
            FROM (SELECT compliance_snapshot_id, snapshot_date, taken_at
                    FROM tb_compliance_snapshot
                   WHERE is_deleted = 0
@@ -433,8 +597,9 @@ function vg_compliance_trend(PDO $pdo, int $limit): array {
             $rows[$d] = ['date' => $d, 'taken_at' => (string) $r['taken_at'], 'controls' => []];
         }
         $rows[$d]['controls'][(string) $r['control_key']] = [
-            'count' => (int) $r['violation_count'],
-            'label' => (string) $r['status_label'],
+            'count'    => (int) $r['violation_count'],
+            'unjudged' => (int) $r['unjudged_count'],
+            'label'    => (string) $r['status_label'],
         ];
     }
     return array_values($rows);

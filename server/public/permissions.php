@@ -22,6 +22,7 @@ const VG_PERM_ROLES = ['operator', 'user'];
 $menus = vg_menus();
 unset($menus['permissions']);   // 권한설정: admin 전용(코드에서 admin 만 true)
 unset($menus['apitokens']);     // Export API 토큰 발급: admin 전용(코드에서 admin 만 true)
+unset($menus['settings']);      // 운영 설정: admin 전용(판정 기준값을 바꾸는 화면)
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {

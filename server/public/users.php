@@ -36,7 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $st = $pdo->prepare('INSERT INTO tb_user (username, password_hash, role) VALUES (?,?,?)');
                 $st->execute([$u, password_hash($p, PASSWORD_DEFAULT), $role]);
-                vg_log_activity($pdo, 'USER', (int) $pdo->lastInsertId(), 'user_add', "사용자 '$u' 추가", ['username' => $u, 'role' => $role]);
+                vg_log_activity($pdo, 'USER', (int) $pdo->lastInsertId(), 'user_add', "사용자 '$u' 추가", ['username' => $u, 'role' => $role],
+                    subject: $u, action: 'CREATE');
                 $msg = "사용자 '$u' 추가됨.";
             } catch (Throwable $e) {
                 error_log('[users] ' . $e->getMessage());

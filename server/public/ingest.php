@@ -19,6 +19,7 @@ require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/agenttoken.php';  // vg_agent_token_verify (호스트 바인딩)
 require_once __DIR__ . '/../src/ingest_parse.php';  // vg_ingest_parse_* (순수 변환, DB 비의존)
 require_once __DIR__ . '/../src/ingest_store.php';  // vg_ingest_store (트랜잭션 저장)
+require_once __DIR__ . '/../src/account_inventory.php';  // vg_ingest_accounts (계정 인벤토리)
 
 // 통일 에러 포맷: {ok:false,error,code,ts(ISO8601)}
 function respond_fail(int $httpCode, string $msg, string $code): void {
@@ -73,7 +74,8 @@ $fqdn = trim((string) ($meta['hostname_fqdn'] ?? '')) ?: 'unknown';
 if ($fqdn !== 'unknown' && $fqdn !== $boundFqdn) {
     vg_log_activity($pdoAuth, 'HOST', null, 'ingest_spoof_blocked',
         "토큰 바인딩 위반: 토큰은 [{$boundFqdn}] 에 묶였는데 본문은 [{$fqdn}] 주장 → 거부",
-        ['bound' => $boundFqdn, 'claimed' => $fqdn], null, 'SYSTEM');
+        ['bound' => $boundFqdn, 'claimed' => $fqdn], null, 'SYSTEM',
+        subject: $boundFqdn, action: 'EXECUTE');
     respond_fail(403, 'token is bound to a different host', 'host_binding_violation');
 }
 $fqdn = $boundFqdn;   // 본문이 비었거나 일치 → 바인딩 값으로 강제.
@@ -267,7 +269,8 @@ try {
 
 // 스캔 수신 감사로그(에이전트발 → SYSTEM).
 vg_log_activity($pdo, 'HOST', $hostId, 'ingest', '스캔 수신',
-    ['packages' => $pkgCount, 'exposures' => $expCount, 'processes' => $procCount], null, 'SYSTEM');
+    ['packages' => $pkgCount, 'exposures' => $expCount, 'processes' => $procCount], null, 'SYSTEM',
+    subject: $fqdn, action: 'EXECUTE');
 
 // ── 명령 큐 완료 처리 (optional) ─────────────────────────────
 //   agent-poll.php 가 알려준 명령을 수행한 뒤 이 ingest 로 결과를 보고할 때 온다.
@@ -298,6 +301,16 @@ try {
     $cce = ['error' => $e->getMessage()];
 }
 
+// 계정 인벤토리(ISMS-P 2.5.x / N2SF AC 계정관리) — 스캔 내용이 같아 스냅샷을 재사용해도
+//   최신 계정 상태로 재작성한다(계정은 패키지와 무관하게 바뀐다). 실패해도 수집은 성공.
+$accounts = null;
+try {
+    $accounts = vg_ingest_accounts($pdo, $hostId, $scanId, $data, $collectedAt);
+} catch (Throwable $e) {
+    error_log('[ingest] 계정 인벤토리 저장 실패: ' . $e->getMessage());
+    $accounts = ['error' => '계정 인벤토리를 저장하지 못했습니다.'];
+}
+
 echo json_encode([
     'ok'        => true,
     'host_id'   => $hostId,
@@ -320,4 +333,5 @@ echo json_encode([
     'processes' => $procCount,
     'findings'  => $findings,
     'cce'       => $cce,
+    'accounts'  => $accounts,
 ], JSON_UNESCAPED_UNICODE);

@@ -34,6 +34,7 @@ function vg_activity_type_labels(): array {
         'ingest'               => '수집 반영',
         'ingest_spoof_blocked' => '수집 위조 차단',
         'permission_update'    => '권한 변경',
+        'setting_update'       => '운영 설정 변경',
         'user_add'             => '사용자 추가',
         'user_role'            => '사용자 권한 변경',
         'user_pw_reset'        => '사용자 비밀번호 재설정',
@@ -41,15 +42,36 @@ function vg_activity_type_labels(): array {
         'feed_run'             => '피드 실행',
         'export_data'          => '데이터 내보내기',
         'view_host'            => '호스트 상세 조회',
+        'view_host_accounts'   => '호스트 계정 목록 조회',
         'view_cve'             => '취약점 상세 조회',
         'view_advisory'        => '보안공지 상세 조회',
         'view_compliance_rule' => '보안설정 룰 상세 조회',
         'view_compliance'      => '컴플라이언스 매핑 조회',
+        'view_nofix_packages'  => '제거·대체 검토 권고 조회',
+        'view_control_mapping' => '통제 기준 매핑 조회',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김.
         'host_perimeter_update'=> '경계 방화벽 설정 변경',
         'page_view'            => '페이지 열람',
+        'activity_review_save' => '접속기록 점검 기록',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김(매핑을 지우면 원시 코드가 그대로 노출된다).
         'saved_view_save'      => '저장된 보기 저장',
+    ];
+}
+
+/**
+ * 수행업무(action) 코드 → 한글 라벨. 접속기록 5요소의 "수행업무" 자리 표시·필터가 함께 쓴다.
+ *   코드 어휘의 SSOT 는 audit.php 의 VG_ACTIVITY_ACTIONS 이고, 여기는 그 표시 라벨만 갖는다.
+ */
+function vg_activity_action_labels(): array {
+    return [
+        'READ'    => '조회',
+        'CREATE'  => '생성',
+        'UPDATE'  => '수정',
+        'DELETE'  => '삭제',
+        'EXPORT'  => '내보내기',
+        'LOGIN'   => '로그인',
+        'EXECUTE' => '실행',
+        'OTHER'   => '기타',
     ];
 }
 
@@ -77,6 +99,7 @@ function vg_nav_sections(): array {
             ['perm' => 'findings',   'href' => '/compliance_rules.php', 'label' => '보안 설정', 'key' => 'compliance'],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
             ['perm' => 'findings',   'href' => '/compliance.php', 'label' => '컴플라이언스 매핑', 'key' => 'compliance_mapping'],
+            ['perm' => 'findings',   'href' => '/control_mapping.php', 'label' => '통제 기준 매핑', 'key' => 'control_mapping'],
         ],
         '관리' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],
@@ -84,6 +107,7 @@ function vg_nav_sections(): array {
             ['perm' => 'agenttokens', 'href' => '/agent-tokens.php', 'label' => '에이전트 키', 'key' => 'agenttokens'],
             ['perm' => 'apitokens',   'href' => '/api-tokens.php',   'label' => 'API 키',    'key' => 'apitokens'],
             ['perm' => 'activity',    'href' => '/activity.php',     'label' => '감사 로그', 'key' => 'activity'],
+            ['perm' => 'settings',    'href' => '/settings.php',     'label' => '설정',      'key' => 'settings'],
         ],
     ];
 }
@@ -106,6 +130,8 @@ function vg_nav_icon(string $key): string {
         'compliance'  => '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
         // 컴플라이언스 매핑 — 방패 모양: 외부 기준(ISMS-P/ISO 27001)에 대한 준수 여부를 나타낸다.
         'compliance_mapping' => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
+        // 통제 기준 매핑 — 나침반 모양: 같은 점검 결과를 어느 기준(ISMS-P/U-코드/N2SF)으로 볼지 고른다는 뜻.
+        'control_mapping' => '<circle cx="12" cy="12" r="9"/><polygon points="15.5 8.5 10 10 8.5 15.5 14 14 15.5 8.5"/>',
         'advisories'  => '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
         'assets'      => '<rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><line x1="6" y1="7" x2="6.01" y2="7"/><line x1="6" y1="17" x2="6.01" y2="17"/>',
         'connectors'  => '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
@@ -114,6 +140,8 @@ function vg_nav_icon(string $key): string {
         'agenttokens' => '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><line x1="13" y1="5" x2="13" y2="19"/>',
         'apitokens'   => '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         'activity'    => '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+        // 설정 — 슬라이더 모양: 판정 기준값을 조직에 맞춰 조정한다는 뜻.
+        'settings'    => '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.2"/><circle cx="15" cy="16" r="2.2"/>',
     ];
     $p = $paths[$key] ?? '<circle cx="12" cy="12" r="9"/>';
     return '<svg class="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"'

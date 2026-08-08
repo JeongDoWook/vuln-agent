@@ -1,0 +1,57 @@
+{
+  "_": "vuln-agent 프로바이더 어댑터. 값은 이 프로젝트 전용 — spec-review-kit/example-adapter(withVTM/GitLab/Slack)를 베끼지 말 것. 비밀값은 여기 넣지 않는다: 토큰은 *Env 가 가리키는 환경변수로만 읽는다(이 파일은 커밋 대상, 토큰은 아니다).",
+
+  "providers": {
+    "_": "이 프로젝트엔 GitLab 도 Slack 도 없다. 트래커는 GitHub Issues, 알림은 없음, 작업공간은 git worktree(단일 저장소라 clone 불필요), 릴리스는 git 태그.",
+    "tracker": "github",
+    "notify": "none",
+    "workspace": "worktree",
+    "mux": "none",
+    "run": "shell",
+    "release": "git"
+  },
+
+  "tracker": {
+    "github": {
+      "host": "https://api.github.com",
+      "owner": "JeongDoWook",
+      "tokenEnv": "GITHUB_TOKEN",
+      "tokenCommand": "gh auth token",
+      "_": "repos[].project 가 owner/repo 를 준다. 토큰은 이미 gh 의 keyring 에 있으므로 환경변수로 한 벌 더 복사하지 않는다 — tokenEnv 가 비어 있을 때만 이 명령이 돈다(CI 등에서 GITHUB_TOKEN 을 주면 그쪽이 이긴다). 트래커 없이 굴리려면 providers.tracker 를 local 로 바꾼다."
+    },
+    "local": {
+      "dir": ".pipeline/issues",
+      "_": "GITHUB_TOKEN 없이 돌려볼 때의 폴백. providers.tracker 만 local 로 바꾸면 이슈가 파일로 쌓이고 pr 계열은 exit 3 이 된다."
+    }
+  },
+
+  "workspace": {
+    "_": "★ 작업공간의 정본은 `deploy/wt.sh add` 다 — 킷이 못 하는 세 가지(secrets/*.txt 복사, 빈 WEB_PORT 할당, compose 프로젝트명 분리)를 그쪽이 한다. 여기 패턴은 px 가 **같은 경로를 가리키게** 맞춰둔 것이고, px ws 는 주로 verify/stage/resolve 로 쓴다. dirPattern 에 {MMDD} 를 넣지 않는 이유: compose_runner.sh 와 pre-push 훅이 컨테이너명·스모크 대상을 `wt/<이름>` 의 <이름> 으로 정하므로, 날짜가 끼면 그 이름이 매일 달라진다.",
+    "root": "wt",
+    "dirPattern": "{slug}",
+    "repoDirPattern": ".",
+    "branchPattern": "feat/{slug}"
+  },
+
+  "repos": [
+    {
+      "id": "vuln-agent",
+      "project": "JeongDoWook/vuln-agent",
+      "remote": "https://github.com/JeongDoWook/vuln-agent.git",
+      "base": "main",
+      "path": ".",
+      "stack": "php-docker"
+    }
+  ],
+
+  "stacks": {
+    "_": "단일 스택. build 키가 없는 것은 의도다 — PHP 는 빌드 산출물이 없어서 `px run build` 는 exit 3 으로 '이 스택은 build 가 없다'고 정직하게 말한다. 없는 명령을 형식만 맞춰 채우면 통과했다는 거짓 신호가 된다.",
+    "php-docker": {
+      "install": "./deploy/compose_runner.sh init",
+      "lint": "bash -c 'set -e; git ls-files \"*.sh\" | xargs -r -n1 bash -n; MSYS_NO_PATHCONV=1 docker run --rm -v \"$(pwd -W 2>/dev/null || pwd):/w\" -w /w php:8.3-cli sh -c \"git ls-files \\\"*.php\\\" | xargs -r -n1 php -l\"'",
+      "test": "bash -c './tests/smoke.sh \"http://localhost:$(sed -n \"s/^WEB_PORT=//p\" deploy/.env.dev)\"'",
+      "dev": "./deploy/compose_runner.sh dev up",
+      "devUrlPattern": "http://localhost:{port}"
+    }
+  }
+}

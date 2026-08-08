@@ -20,9 +20,12 @@ require_once __DIR__ . '/../src/compliance.php';   // 판정 로직(웹·CLI 공
 vg_require_menu('findings');
 
 $err = null;
-$patch = ['violations' => [], 'total' => 0];
-$asset = ['violations' => [], 'total' => 0, 'totalHosts' => 0];
+$patch = ['violations' => [], 'total' => 0, 'unjudged' => 0, 'na' => [], 'na_unknown' => 0];
+$asset = ['violations' => [], 'total' => 0, 'totalHosts' => 0, 'unjudged' => 0, 'unjudged_rows' => []];
 $secconfig = ['violations' => [], 'total' => 0];
+$policy = ['kev' => VG_COMPLIANCE_SLA_KEV_DAYS, 'crit' => VG_COMPLIANCE_SLA_CRIT_DAYS,
+           'high' => VG_COMPLIANCE_SLA_HIGH_DAYS, 'partial_max' => VG_COMPLIANCE_PARTIAL_MAX,
+           'margin' => VG_COMPLIANCE_HISTORY_MARGIN_DAYS];
 $trend = [];
 $judgedAt = date('Y-m-d H:i');
 $previewLimit = vg_ui_detail_preview_limit();
@@ -33,8 +36,9 @@ try {
     $pdo = vg_pdo();
     // 감사로그는 무거운 집계 **앞**에 남긴다 — 집계가 실패해도 "누가 이 증적 화면을 열었나"는 기록돼야 한다.
     vg_log_activity($pdo, 'PAGE', null, 'view_compliance', '컴플라이언스 매핑·판정 스냅샷 조회');
+    $policy = vg_compliance_policy();   // 설정(tb_setting) 반영 — 세션락 해제 전에 한 번만 읽는다
     session_write_close();   // 인가·감사로그 이후 무거운 집계 전 세션락 해제(connectors.php 선례)
-    $patch = vg_compliance_load_patch($pdo);
+    $patch = vg_compliance_load_patch($pdo, $policy);
     if ($canViewAssets) {
         $asset = vg_compliance_load_asset($pdo, $previewLimit);
     }
@@ -55,14 +59,20 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else:
-    $sPatch = vg_compliance_status($patch['total']);
-    $sAsset = vg_compliance_status($asset['total']);
-    $sSec   = vg_compliance_status($secconfig['total']);
+    $sPatch = vg_compliance_status($patch['total'], $patch['unjudged'] > 0, $policy['partial_max']);
+    $sAsset = vg_compliance_status($asset['total'], $asset['unjudged'] > 0, $policy['partial_max']);
+    $sSec   = vg_compliance_status($secconfig['total'], false, $policy['partial_max']);
 ?>
+  <?php
+  // KPI 의 숫자는 "위반 건수"다. 위반 0건이어도 판정 불가가 남아 있으면 그 사실을 라벨에 함께
+  //   적는다 — 숫자 0 만 보고 준수로 읽히면 안 된다(톤도 ok=초록이 아니라 med=주의로 바뀐다).
+  $naSuffix = static fn(array $s, int $unjudged): string =>
+      $s['label'] === '판정 불가' ? ' · 판정 불가 ' . number_format($unjudged) . '건' : '';
+  ?>
   <div class="cards">
-    <div class="kpi kpi--sm tone-<?= vg_h($sPatch['tone']) ?>"><b><?= $patch['total'] ?></b><span>패치관리 위반</span></div>
+    <div class="kpi kpi--sm tone-<?= vg_h($sPatch['tone']) ?>"><b><?= $patch['total'] ?></b><span>패치관리 위반<?= vg_h($naSuffix($sPatch, (int) $patch['unjudged'])) ?></span></div>
     <?php if ($canViewAssets): ?>
-      <div class="kpi kpi--sm tone-<?= vg_h($sAsset['tone']) ?>"><b><?= $asset['total'] ?></b><span>자산식별 위반</span></div>
+      <div class="kpi kpi--sm tone-<?= vg_h($sAsset['tone']) ?>"><b><?= $asset['total'] ?></b><span>자산식별 위반<?= vg_h($naSuffix($sAsset, (int) $asset['unjudged'])) ?></span></div>
     <?php endif; ?>
     <div class="kpi kpi--sm tone-<?= vg_h($sSec['tone']) ?>"><b><?= $secconfig['total'] ?></b><span>보안설정 위반</span></div>
   </div>
@@ -76,9 +86,32 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sPatch['label'], $sPatch['tone']) ?>
       </div>
-      <p class="why">CRITICAL·HIGH 이면서 조치 가능(패치 존재)한데 SLA 기준일(KEV <?= VG_COMPLIANCE_SLA_KEV_DAYS ?>일 ·
-        CRITICAL <?= VG_COMPLIANCE_SLA_CRIT_DAYS ?>일 · HIGH <?= VG_COMPLIANCE_SLA_HIGH_DAYS ?>일)을 넘겨 미조치 상태인 건수.
-        위반 <?= number_format($patch['total']) ?>건 · 판정 시각 <?= vg_h($judgedAt) ?></p>
+      <p class="why">CRITICAL·HIGH 이면서 조치 가능(패치 존재)한데 SLA 기준일(KEV <?= (int) $policy['kev'] ?>일 ·
+        CRITICAL <?= (int) $policy['crit'] ?>일 · HIGH <?= (int) $policy['high'] ?>일)을 넘겨 미조치 상태인 건수.
+        위반 <?= number_format($patch['total']) ?>건 · 판정 불가 <?= number_format($patch['unjudged']) ?>건 ·
+        판정 시각 <?= vg_h($judgedAt) ?></p>
+      <?php
+      // 판정 불가 사유를 그대로 노출한다 — "위반 0건"이 왜 준수를 뜻하지 않는지 화면에서 설명하지
+      //   않으면, 근거가 모자란 0건이 다시 준수처럼 읽힌다(허위 안심).
+      if ($patch['unjudged'] > 0):
+          $hints = [];
+          foreach ($patch['na'] as $b) {
+              $hints[] = sprintf(
+                  '%s SLA %d일 · 보유 이력 최대 %d일 → 판정 불가 %s건%s',
+                  $b['label'], (int) $b['sla_days'], (int) $b['max_history_days'], number_format((int) $b['count']),
+                  $b['judgeable_from'] !== null ? ' (' . $b['judgeable_from'] . ' 이후 판정 가능)' : ''
+              );
+          }
+          if ($patch['na_unknown'] > 0) {
+              $hints[] = sprintf('최초 발견 시각을 확인할 수 없는 %s건 — 경과일을 계산할 수 없어 판정 불가',
+                  number_format((int) $patch['na_unknown']));
+          }
+          vg_alert([
+              'type'  => 'warn',
+              'title' => '판정 불가 ' . number_format($patch['unjudged']) . '건 — 위반 0건이 곧 준수를 뜻하지 않습니다',
+              'hints' => $hints,
+          ]);
+      endif; ?>
       <?php if ($patch['violations']):
           $shown = array_slice($patch['violations'], 0, $previewLimit);
       ?>
@@ -122,7 +155,20 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         <?= vg_badge($sAsset['label'], $sAsset['tone']) ?>
       </div>
       <p class="why">등록 자산 <?= number_format($asset['totalHosts']) ?>대 중 오프라인·수집없음이거나 필수 자산정보(OS·IP)가
-        누락된 자산 건수. 위반 <?= number_format($asset['total']) ?>건 · 판정 시각 <?= vg_h($judgedAt) ?></p>
+        누락된 자산 건수. 위반 <?= number_format($asset['total']) ?>건 ·
+        판정 불가 <?= number_format($asset['unjudged']) ?>건 · 판정 시각 <?= vg_h($judgedAt) ?></p>
+      <?php if ($asset['unjudged'] > 0):
+          $hints = [];
+          foreach ($asset['unjudged_rows'] as $u) { $hints[] = $u['fqdn'] . ' — ' . $u['reason']; }
+          if ($asset['unjudged'] > count($asset['unjudged_rows'])) {
+              $hints[] = sprintf('외 %s대', number_format($asset['unjudged'] - count($asset['unjudged_rows'])));
+          }
+          vg_alert([
+              'type'  => 'warn',
+              'title' => '판정 불가 ' . number_format($asset['unjudged']) . '대 — 부분 수집(root 아님)이라 식별 근거가 빠져 있습니다',
+              'hints' => $hints,
+          ]);
+      endif; ?>
       <?php if ($asset['violations']):
           $shown = array_slice($asset['violations'], 0, $previewLimit);
       ?>
@@ -205,8 +251,12 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
             $cells[$i + 1] = static function ($r) use ($key) {
                 $c = $r['controls'][$key] ?? null;
                 if ($c === null) { return '<span class="why">기록 없음</span>'; }
+                // 판정 불가는 "위반 0건"과 색(tone med)으로 구분되고, 몇 건이 판정 불가였는지도
+                //   함께 적는다 — 저장된 0 만 보고 준수로 되읽히면 스냅샷이 허위 안심이 된다.
+                $na = (int) ($c['unjudged'] ?? 0);
                 return number_format($c['count']) . '건 '
-                    . vg_badge($c['label'], vg_compliance_tone_of($c['label']));
+                    . vg_badge($c['label'], vg_compliance_tone_of($c['label']))
+                    . ($na > 0 ? ' <span class="why">판정 불가 ' . number_format($na) . '건</span>' : '');
             };
         }
         vg_table($headers, $trend, ['cell' => $cells, 'card' => false]);

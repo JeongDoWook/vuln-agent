@@ -7,7 +7,8 @@ declare(strict_types=1);
  *   용도: Python AI 서비스가 결과를 받아 PDF 보고서 등을 생성한다.
  *   인증: 전용 읽기 토큰(헤더 X-API-Token 또는 Authorization: Bearer). 쓰기(ingest)와 분리.
  *   범위: 기본 = 호스트별 최신 스캔의 findings. host / scan_id / severity / kev / min_epss 로 좁힘.
- *   내용: 실행요약(심각도 집계) + 호스트 맥락(OS·커널·수집시각) + finding(CVE·심각도·KEV·EPSS·노출·조치).
+ *   내용: 실행요약(심각도 집계) + 호스트 맥락(OS·커널·수집시각) + finding(CVE·심각도·KEV·EPSS·노출·조치)
+ *         + 미조치 사유 3필드(사유·승인자·승인일시) — 조치 워크플로는 이 값을 가져가는 외부 시스템의 몫이다.
  *         설치 패키지 원본은 넣지 않는다(수천 건이라 보고서엔 노이즈).
  *
  *   예:
@@ -19,8 +20,8 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/config.php';   // vg_auth_token (요청 헤더 파싱 헬퍼)
 require __DIR__ . '/../src/db.php';
-require __DIR__ . '/../src/apitoken.php';
-require __DIR__ . '/../src/audit.php';    // vg_log_activity
+require_once __DIR__ . '/../src/apitoken.php';
+require_once __DIR__ . '/../src/audit.php';    // vg_log_activity (apitoken.php 도 만료 기록에 쓴다)
 
 const VG_EXPORT_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
@@ -132,11 +133,25 @@ try {
         if ($minEpss !== null) { $where .= ' AND c.epss >= ?'; $params[] = $minEpss; }
 
         // fixed_version: 조치가 있으면 그 값 하나(findings.php 와 동일 패턴).
+        // 미조치 사유 3필드: 본격 조치 워크플로는 이 API 를 가져가는 외부 시스템의 몫이므로,
+        //   "왜 지금 안 고치는가 / 누가 언제 그렇게 판단했는가" 는 여기서 함께 내보낸다.
+        //   메모의 자연키는 컨테이너 '이름'(호스트 자신은 '')이다 — container_id 는 스캔마다 새로 발급된다.
         $sql = "SELECT f.scan_id, f.cve_id, f.package_name, f.installed_version,
                        f.loaded, f.exposed, f.exposure_scope, f.in_kev, f.cvss, f.severity, f.rationale,
                        c.summary, c.epss, c.epss_percentile,
+                       rn.reason AS remediation_reason, rn.approved_at AS remediation_approved_at,
+                       ru.username AS remediation_approved_by,
                        " . VG_FIXED_VERSION_SUBQ . "
                   FROM tb_finding f
+                  JOIN tb_scan rs ON rs.scan_id = f.scan_id
+                  LEFT JOIN tb_container rc ON rc.container_id = f.container_id
+                  LEFT JOIN tb_remediation_note rn
+                         ON rn.host_id = rs.host_id
+                        AND rn.cve_id  = f.cve_id
+                        AND rn.package = f.package_name
+                        AND rn.cid     = COALESCE(rc.cid, '')
+                        AND rn.is_deleted = 0
+                  LEFT JOIN tb_user ru ON ru.user_id = rn.approved_by
                   LEFT JOIN tb_cve c ON c.cve_id = f.cve_id AND c.is_deleted = 0
                  WHERE $where
                  ORDER BY f.scan_id,
@@ -163,6 +178,10 @@ try {
                 'fixed_version'     => $r['fixed_version'],
                 'rationale'         => $r['rationale'],
                 'summary'           => $r['summary'],
+                // 미조치 사유(사람의 메모) — 없으면 전부 null.
+                'remediation_reason'      => $r['remediation_reason'],
+                'remediation_approved_by' => $r['remediation_approved_by'],
+                'remediation_approved_at' => $r['remediation_approved_at'],
             ];
             $summary['findings']++;
             if (isset($summary['by_severity'][$sev])) { $summary['by_severity'][$sev]++; }
@@ -190,7 +209,9 @@ vg_log_activity(
     ['format' => $format, 'host' => $host, 'scan_id' => $scanId ?: null,
      'severity' => $sevFilter, 'kev' => $kevOnly, 'min_epss' => $minEpss,
      'findings' => $summary['findings'], 'hosts' => $summary['hosts']],
-    null, 'SYSTEM'
+    null, 'SYSTEM',
+    // 처리 대상: 내보내기 범위(호스트 지정이 없으면 전체). 수행업무: 내보내기.
+    subject: $host !== '' ? $host : '전체 호스트', action: 'EXPORT'
 );
 
 // ── 직렬화 ────────────────────────────────────────────────────
@@ -239,14 +260,17 @@ function vg_export_xml(array $doc): string {
             foreach (['cve' => 'cve', 'package' => 'package', 'installed_version' => 'installedVersion',
                       'severity' => 'severity', 'cvss' => 'cvss', 'epss' => 'epss',
                       'epss_percentile' => 'epssPercentile', 'exposure_scope' => 'exposureScope',
-                      'fixed_version' => 'fixedVersion'] as $src => $attr) {
+                      'fixed_version' => 'fixedVersion',
+                      'remediation_approved_by' => 'remediationApprovedBy',
+                      'remediation_approved_at' => 'remediationApprovedAt'] as $src => $attr) {
                 if ($f[$src] !== null && $f[$src] !== '') { $fEl->setAttribute($attr, (string) $f[$src]); }
             }
             foreach (['kev', 'loaded', 'exposed'] as $b) {
                 $fEl->setAttribute($b, $f[$b] ? 'true' : 'false');
             }
             // 긴 텍스트는 요소 본문으로(속성보다 가독성↑). DOM 이 이스케이프 처리.
-            foreach (['rationale' => 'rationale', 'summary' => 'summary'] as $src => $tag) {
+            foreach (['rationale' => 'rationale', 'summary' => 'summary',
+                      'remediation_reason' => 'remediationReason'] as $src => $tag) {
                 if ($f[$src] !== null && $f[$src] !== '') {
                     $fEl->appendChild($dom->createElement($tag))
                         ->appendChild($dom->createTextNode((string) $f[$src]));

@@ -30,7 +30,7 @@ try {
 
         if ($rule) {
             // 룰 상세 열람 감사로그. rule_id 는 정수 PK 가 아니라 message 에 담는다(cve.php 의 view_cve 와 동일 패턴).
-            vg_log_activity($pdo, 'COMPLIANCE_RULE', null, 'view_compliance_rule', $ruleId);
+            vg_log_activity($pdo, 'COMPLIANCE_RULE', null, 'view_compliance_rule', $ruleId, subject: $ruleId, action: 'READ');
 
             // 호스트별 최신 스캔 기준으로 이 룰로 점검된 결과만 본다(cve.php 의 $locSql 패턴 재사용).
             $hostSql =

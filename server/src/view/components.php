@@ -422,7 +422,7 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
 
 /**
  * GET 검색/필터 툴바(class="toolbar"). 값이 있으면 제출버튼 옆에 초기화 링크 자동 표시.
- *   $fields 각 항목: ['type'=>'search'|'select'|'hidden', 'name'=>, 'value'=>, 'placeholder'=>,
+ *   $fields 각 항목: ['type'=>'search'|'date'|'select'|'hidden', 'name'=>, 'value'=>, 'placeholder'=>,
  *                     'options'=>['값'=>'라벨'], 'selected'=>, 'empty_label'=>'전체', 'reset'=>bool]
  *   per_page 는 이 폼의 입력이 아니므로 hidden 으로 실어 보낸다 —
  *   안 그러면 "100개씩 보기" 상태에서 검색할 때마다 기본값으로 돌아간다.
@@ -460,6 +460,15 @@ function vg_toolbar(array $fields): void {
         if ($type === 'search') {
             $ph = (string) ($f['placeholder'] ?? '');
             echo '<input type="search" name="' . vg_h($name) . '" placeholder="' . vg_h($ph) . '" value="' . vg_h($value) . '">';
+            if ($value !== '') { $hasValue = true; }
+            $resetOverrides[$name] = null;
+        } elseif ($type === 'date') {
+            // 기간 필터(감사로그의 접속일시). 브라우저 기본 날짜 선택기를 그대로 쓴다 —
+            // 달력 위젯을 직접 만들 이유가 없다(KISS). aria-label 은 값이 비었을 때
+            // 이 칸이 '시작'인지 '종료'인지 알려준다(placeholder 가 안 먹는 입력이라).
+            $ph = (string) ($f['placeholder'] ?? '');
+            echo '<input type="date" name="' . vg_h($name) . '" value="' . vg_h($value) . '"'
+                . ($ph !== '' ? ' aria-label="' . vg_h($ph) . '" title="' . vg_h($ph) . '"' : '') . '>';
             if ($value !== '') { $hasValue = true; }
             $resetOverrides[$name] = null;
         } elseif ($type === 'select') {

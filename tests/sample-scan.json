@@ -29,7 +29,7 @@
   },
   "users": {
     "accounts": "root\t0\t/bin/bash\ndeploy\t1000\t/bin/bash",
-    "sshd_effective": "permitrootlogin no\npasswordauthentication no\npermitemptypasswords no\nmaxauthtries 6\nx11forwarding yes\nlogingracetime 30\nclientaliveinterval 300"
+    "sshd_effective": "permitrootlogin no\npasswordauthentication no\npermitemptypasswords no\nmaxauthtries 6\nx11forwarding yes\nlogingracetime 30\nclientaliveinterval 300\nciphers aes256-gcm@openssh.com,aes256-ctr,aes128-cbc\nmacs hmac-sha2-256,hmac-sha1\nkexalgorithms curve25519-sha256,diffie-hellman-group14-sha1"
   },
   "security": {
     "selinux": "Enforcing",
@@ -43,7 +43,14 @@
     "passwd_shadowed": "NONE",
     "duplicate_uid": "NONE",
     "empty_passwords": "NONE",
-    "firewalld": "public (active)\n  services: ssh"
+    "firewalld": "public (active)\n  services: ssh",
+    "time_sync": "NTP=yes\nNTPSynchronized=yes",
+    "time_tracking": "Reference ID    : C0248F97 (time.example.com)\nSystem time     : 0.000123456 seconds fast of NTP time\nLeap status     : Normal",
+    "time_services": "chrony=active\nntpd=inactive",
+    "journald_conf": "Storage=persistent\nSystemMaxUse=500M\nMaxRetentionSec=90d",
+    "logrotate_conf": "weekly\nrotate 4",
+    "rsyslog_remote": "*.* @@log.example.com:514",
+    "disk_encryption": "sda3 crypto_LUKS"
   },
   "containers": {
     "list": "cid|name|image|os_id|os_version|manager|pkg_count\napi|api|myco/api:1.4|alpine|3.19.1|apk|2\nlegacy|legacy|debian:12|debian|12|dpkg|1\nnodb|nodb|tigera/typha:v3.28|rhel|9.7||0\ngosvc|gosvc|quay.io/calico/node:v3.31|rhel|9.7|go|0\nupsvc|upsvc|quay.io/calico/whisker:v3.31|rhel|9.7|upstream|1",

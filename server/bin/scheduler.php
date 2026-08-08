@@ -42,11 +42,15 @@ vg_rebuild_license_summary($pdo);
 //   여기(조기 종료 앞)에서 판정한다 — 커넥터가 없는 날에도 증적은 남아야 한다.
 //   판정은 무겁고(전 호스트 집계) 하루 한 번이면 충분하므로, 오늘 것이 이미 있으면 건너뛴다.
 //   UPSERT 라 게이트를 뚫고 두 번 돌아도 행이 늘지 않는다(같은 날짜 = 항상 1건).
+//   판정 기준은 화면과 같은 vg_compliance_policy()(tb_setting 반영)를 쓴다 — 스케줄러만
+//   상수를 쓰면 설정을 바꾼 조직에서 화면과 증적의 기준이 갈라진다(증적 오염).
 try {
     if (!vg_compliance_snapshot_exists($pdo)) {
-        $snap = vg_compliance_take_snapshot($pdo);
+        $snap = vg_compliance_take_snapshot($pdo, null, vg_compliance_policy());
         $parts = [];
-        foreach ($snap as $key => $n) { $parts[] = $key . '=' . $n; }
+        foreach ($snap as $key => $c) {
+            $parts[] = $key . '=' . $c['total'] . ($c['unjudged'] > 0 ? '(판정불가 ' . $c['unjudged'] . ')' : '');
+        }
         fwrite(STDOUT, '[' . date('c') . '] 컴플라이언스 스냅샷 적재 (' . implode(' · ', $parts) . ")\n");
     }
 } catch (Throwable $e) {
