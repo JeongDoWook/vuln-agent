@@ -12,7 +12,10 @@ declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
+require_once __DIR__ . '/../src/remediation_note.php';   // 미조치 사유 + 승인자(최소 필드)
 vg_require_menu('findings');
+
+$notes = [];   // 이 페이지 행들의 미조치 사유 메모 (자연키 → 메모)
 
 $unsupHosts = [];   // 취약점 0건이 "안전"이 아니라 "판정 불가"인 대상(호스트 + 컨테이너)
 
@@ -154,6 +157,14 @@ try {
         );
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
+
+        // 사람이 남긴 미조치 사유는 이 페이지에 보이는 행들만 한 번에 읽는다(N+1 방지).
+        $noteKeys = [];
+        foreach ($rows as $r) {
+            $noteKeys[] = [(int) $r['host_id'], (string) ($r['container_cid'] ?? ''),
+                           (string) $r['cve_id'], (string) $r['package_name']];
+        }
+        $notes = vg_remediation_notes_map($pdo, $noteKeys);
     }
 } catch (Throwable $e) {
     error_log('[findings] ' . $e->getMessage());
@@ -374,7 +385,26 @@ vg_header('탐지 결과', 'findings');
               },
               // 설치 버전을 조치 칸에 다시 싣지 않는다(같은 행 '패키지' 칸에 이미 있다) — 한 칸에
               //   "설치 → 고침" 을 다 넣으니 알약이 세 줄이 되어 행 높이를 결정해 버렸다.
-              'fix'       => fn($r) => vg_fix_cell($r['evidence_fixed_version'] ?? ($r['fixed_version'] ?? null), $r['ref_urls_json'] ?? null),
+              // 조치 + 사람이 남긴 "미조치 사유" 표식. 사유 전문·승인자·승인일시는 이력 화면에 있다
+              //   (좁은 칸에 사유 문장을 그대로 풀면 행 높이가 다시 근거 칸처럼 튄다 — title 로만 준다).
+              'fix'       => function ($r) use ($notes) {
+                  $html = vg_fix_cell($r['evidence_fixed_version'] ?? ($r['fixed_version'] ?? null), $r['ref_urls_json'] ?? null);
+                  $note = $notes[vg_remediation_note_key(
+                      (int) $r['host_id'], (string) ($r['container_cid'] ?? ''),
+                      (string) $r['cve_id'], (string) $r['package_name']
+                  )] ?? null;
+                  if ($note !== null) {
+                      $href = '/finding_history.php?id=' . (int) $r['host_id']
+                            . '&cid=' . (int) ($r['container_id'] ?? 0)
+                            . '&cve=' . urlencode((string) $r['cve_id'])
+                            . '&pkg=' . urlencode((string) $r['package_name']);
+                      $title = '미조치 사유: ' . (string) $note['reason']
+                             . ' (승인 ' . (string) ($note['approved_by_name'] ?? '-')
+                             . ' · ' . (string) ($note['approved_at'] ?? '-') . ')';
+                      $html .= ' <a class="badge tone-info" href="' . vg_h($href) . '" title="' . vg_h($title) . '">미조치 사유</a>';
+                  }
+                  return $html;
+              },
           ],
       ]
   );
