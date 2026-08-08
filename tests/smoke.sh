@@ -217,6 +217,12 @@ run_phpunit "matcher_suppress_test.php" "matcher_suppress" "매처 억제 게이
 # vercmp 처럼 서버 없이 도는 정적 검사라 스모크 앞단에 묶는다.
 run_phpunit "ingest_parse_test.php" "ingest_parse" "ingest_parse 단위 테스트"
 
+# --- 계정 인벤토리 단위 테스트 -------------------------------------------------
+# 계정 판정은 "판정 불가(NA)"가 "정상(PASS)"으로 새는 순간 감사에서 거짓 안심이 된다
+# (비-root 로 돌면 /etc/shadow·sudoers 를 못 읽는다 — 그건 점검한 게 아니다).
+# 그 경계와 공유·퇴직자 계정이 **추정**임을 테스트로 고정한다.
+run_phpunit "account_inventory_test.php" "account_inventory" "계정 인벤토리 단위 테스트 (NA·PASS 구분)" "계정 인벤토리 단위 테스트"
+
 # --- 에이전트 JSON 빌더 -------------------------------------------------------
 # 에이전트는 대상 서버에 아무것도 요구하지 않는다 → jq 없이 awk 로 JSON 을 만든다.
 # 이스케이프를 한 글자라도 틀리면 중앙이 파싱에 실패해 전송이 통째로 죽는다. jq 출력과 대조한다.

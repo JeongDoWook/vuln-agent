@@ -16,6 +16,7 @@ require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/agentcommand.php';   // 수집 제어(즉시/예약 실행·주기 변경)
 require_once __DIR__ . '/../src/agentspeedtier.php';   // 속도 티어 라벨(agent-poll.php 와 공유 정의)
+require_once __DIR__ . '/../src/account_inventory.php';   // 계정 인벤토리 판정(vg_account_judgments)
 vg_require_menu('findings');
 
 // --- 수집 제어 POST 처리 (즉시실행/예약실행/주기변경) — GET 렌더보다 먼저, 헤더 출력 전 ---
@@ -426,6 +427,58 @@ function vg_host_load_packages_tab(PDO $pdo, int $scanId, int $perPage, int $off
     return ['total' => $total, 'rows' => $st->fetchAll()];
 }
 
+/**
+ * 계정 탭 — 이 스캔의 계정 대장 + 파생 컴플라이언스 판정.
+ *   판정은 목록 한 페이지가 아니라 **전 계정**을 봐야 한다(90일 미로그인 계정이 3페이지에 있어도
+ *   판정은 나와야 한다) → 판정용으로 계정 전체를 따로 읽는다. 호스트당 계정은 수십 개 규모지만
+ *   상한을 걸어 비정상 데이터가 화면을 못 죽이게 한다.
+ */
+const VG_HOST_ACCOUNT_JUDGE_MAX = 5000;
+
+function vg_host_load_accounts_tab(PDO $pdo, int $scanId, int $perPage, int $offset, string $q, string $filter): array {
+    $where  = 'scan_id = ? AND is_deleted = 0';
+    $params = [$scanId];
+    if ($q !== '') {
+        $where .= ' AND (username LIKE ? OR shell LIKE ? OR home LIKE ?)';
+        $like = '%' . $q . '%';
+        array_push($params, $like, $like, $like);
+    }
+    if ($filter === 'sudo') {
+        $where .= ' AND is_sudoer = 1';
+    } elseif ($filter === 'locked') {
+        $where .= ' AND is_locked = 1';
+    } elseif ($filter === 'human') {
+        $where .= ' AND is_system = 0';
+    } elseif ($filter === 'stale') {
+        // 미로그인 = 로그인 이력이 없거나 임계일을 넘긴 것. 시스템 계정은 애초에 로그인하지 않는다.
+        $where .= ' AND is_system = 0 AND (never_logged_in = 1 OR last_login_at < DATE_SUB(NOW(), INTERVAL ? DAY))';
+        $params[] = VG_ACCOUNT_STALE_LOGIN_DAYS;
+    }
+
+    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_host_account WHERE $where");
+    $st->execute($params);
+    $total = (int) $st->fetchColumn();
+
+    $cols = 'username, uid, gid, shell, home, is_locked, is_sudoer, is_system,
+             pw_last_change, pw_max_days, expire_date, last_login_at, never_logged_in';
+    $st = $pdo->prepare(
+        "SELECT $cols FROM tb_host_account WHERE $where
+          ORDER BY is_system, username LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute($params);
+    $rows = $st->fetchAll();
+
+    $limit = VG_HOST_ACCOUNT_JUDGE_MAX;
+    $st = $pdo->prepare(
+        "SELECT $cols FROM tb_host_account WHERE scan_id = ? AND is_deleted = 0
+          ORDER BY username LIMIT $limit"
+    );
+    $st->execute([$scanId]);
+    $all = $st->fetchAll();
+
+    return ['total' => $total, 'rows' => $rows, 'judgments' => vg_account_judgments($all), 'allCount' => count($all)];
+}
+
 function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perPage, int $offset): array {
     $total = $scanTotal;
     $st = $pdo->prepare(
@@ -448,8 +501,12 @@ $exposureCount = 0; $processCount = 0; $runtimeTotal = 0; $cceFail = 0; $suppres
 $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
+$accountTotal = 0; $accountJudgments = []; $accountAllCount = 0;
 $q = trim((string) ($_GET['q'] ?? ''));
-$hasFilter = $q !== '';
+// 계정 탭 필터(?acc=). 화이트리스트 밖 값은 전체로 떨군다 — 값이 그대로 SQL 로 가지 않는다.
+$accFilter = (string) ($_GET['acc'] ?? '');
+if (!in_array($accFilter, ['sudo', 'locked', 'human', 'stale'], true)) { $accFilter = ''; }
+$hasFilter = $q !== '' || $accFilter !== '';
 
 try {
     $pdo = vg_pdo();
@@ -569,8 +626,11 @@ try {
                               WHERE scan_id = ? AND container_id = 0 AND manager IN ('dpkg','rpm','apk')");
         $st->execute([$sid]); $packageTotal = (int) $st->fetchColumn();
 
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_host_account WHERE scan_id = ? AND is_deleted = 0');
+        $st->execute([$sid]); $accountTotal = (int) $st->fetchColumn();
+
         // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
-        $validTabs = ['vuln', 'packages', 'runtime', 'cce'];
+        $validTabs = ['vuln', 'packages', 'runtime', 'cce', 'accounts'];
         if ($suppressedCount > 0) { $validTabs[] = 'suppressed'; }
         $validTabs[] = 'resources';
         $validTabs[] = 'scans';
@@ -594,6 +654,12 @@ try {
         } elseif ($tab === 'cce') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_cce_tab($pdo, $sid, $perPage, $offset, $q);
+        } elseif ($tab === 'accounts') {
+            ['total' => $total, 'rows' => $rows, 'judgments' => $accountJudgments, 'allCount' => $accountAllCount]
+                = vg_host_load_accounts_tab($pdo, $sid, $perPage, $offset, $q, $accFilter);
+            // 누가 이 호스트의 계정 목록을 열람했는지는 그 자체로 감사 대상이다(원칙 7).
+            vg_log_activity($pdo, 'HOST', $hostId, 'view_host_accounts',
+                '계정 인벤토리 열람: ' . (string) ($host['fqdn'] ?? ''), ['accounts' => $total]);
         } elseif ($tab === 'suppressed') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_suppressed_tab($pdo, $sid, $suppressedCount, $perPage, $offset, $q);
@@ -652,6 +718,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         // 이 탭은 노출 소켓과 실행 프로세스 두 목록을 함께 제공하므로 둘의 합계를 표시한다.
         'runtime' => ['label' => '런타임',    'n' => $runtimeTotal],
         'cce'     => ['label' => '보안 설정', 'n' => $cceFail],
+        // 계정 대장 — "설정 정책"이 아니라 실제로 존재하는 계정(ISMS-P 2.5.x · N2SF AC).
+        'accounts'=> ['label' => '계정',      'n' => $accountTotal],
     ];
     if ($suppressedCount > 0) { $tabDefs['suppressed'] = ['label' => '억제', 'n' => $suppressedCount]; }
     $tabDefs['resources'] = ['label' => '리소스', 'n' => null];
@@ -1105,6 +1173,127 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                   3 => $refBadges,
                   4 => fn($r) => '<span class="why">' . vg_trunc($r['evidence'], 40) . '</span>',
                   5 => fn($r) => '<span class="why">' . vg_trunc($r['rationale']) . '</span>',
+              ],
+          ]
+      );
+      ?>
+      </div>
+    </div>
+    <?php vg_page_nav($total, $perPage, $page); ?>
+
+  <?php elseif ($tab === 'accounts'):
+    // 판정 결과 → 톤. NA 는 회색이다 — 정상(초록)과 절대 같은 색을 쓰지 않는다.
+    $accTone = ['FAIL' => 'high', 'REVIEW' => 'warn', 'PASS' => 'ok', 'NA' => 'muted'];
+    $accLabel = ['FAIL' => '위반', 'REVIEW' => '검토 필요', 'PASS' => '양호', 'NA' => '판정 불가'];
+    // 값이 없다(NULL)는 것과 "아니다"(0)는 다르다 — 화면에서도 구분한다.
+    $accNa = '<span class="why">판정 불가</span>';
+    ?>
+    <div class="card">
+      <strong>계정 컴플라이언스 판정</strong>
+      <span class="why">— 실제 계정 목록에서 파생 · 추정 항목은 "검토 필요" · 원자료 미수집은 "판정 불가"</span>
+      <div class="card__body">
+      <?php
+      vg_table(
+          [
+              ['label' => '결과', 'width' => '92px'],
+              ['label' => '판정 항목', 'key' => 'title'],
+              ['label' => '설명'],
+              ['label' => '해당 계정'],
+              ['label' => '기준', 'nowrap' => true],
+          ],
+          $accountJudgments,
+          [
+              'card'  => false,
+              'empty' => ['icon' => '🗂️', 'title' => '계정 인벤토리가 없습니다.',
+                          'hint' => '구버전 에이전트로 수집된 스캔입니다. 다시 수집하면 채워집니다.'],
+              'cell'  => [
+                  0 => fn($j) => vg_badge($accLabel[$j['result']] ?? $j['result'], $accTone[$j['result']] ?? 'muted'),
+                  2 => fn($j) => '<span class="why">' . vg_h((string) $j['detail']) . '</span>',
+                  3 => fn($j) => $j['names']
+                        ? vg_h(vg_trunc(implode(', ', $j['names']), 90))
+                        : '<span class="why">–</span>',
+                  4 => fn($j) => '<span class="why">ISMS-P ' . vg_h((string) $j['isms'])
+                        . '<br>N2SF ' . vg_h((string) $j['n2sf']) . '</span>',
+              ],
+          ]
+      );
+      ?>
+      </div>
+    </div>
+
+    <?php vg_toolbar([
+        ['type' => 'search', 'name' => 'q', 'placeholder' => '계정명·셸·홈 디렉토리 검색', 'value' => $q],
+        ['type' => 'select', 'name' => 'acc', 'selected' => $accFilter, 'empty_label' => '전체 계정',
+         'options' => [
+             'human'  => '사람 계정(시스템 제외)',
+             'sudo'   => 'sudo 권한 보유',
+             'locked' => '잠긴 계정',
+             'stale'  => VG_ACCOUNT_STALE_LOGIN_DAYS . '일 이상 미로그인',
+         ]],
+        ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
+    ]); ?>
+    <div class="card mt-lg">
+      <strong>계정 목록</strong>
+      <span class="why">— 최신 수집 기준 <?= number_format($accountTotal) ?>개 · 패스워드 해시는 수집·저장하지 않습니다</span>
+      <div class="card__body">
+      <?php
+      vg_table(
+          [
+              ['label' => '계정', 'key' => 'username', 'class' => 'col-id'],
+              ['label' => 'UID / GID', 'nowrap' => true],
+              ['label' => '구분'],
+              ['label' => '셸', 'key' => 'shell'],
+              ['label' => '홈', 'key' => 'home'],
+              ['label' => '마지막 로그인', 'nowrap' => true],
+              ['label' => '패스워드 변경', 'nowrap' => true],
+              ['label' => '만료일', 'nowrap' => true],
+          ],
+          $rows,
+          [
+              'card'  => false,
+              'empty' => $hasFilter
+                  ? ['icon' => '🔍', 'title' => '조건에 맞는 계정이 없습니다.',
+                     'cta' => ['href' => vg_qs(['q' => null, 'acc' => null, 'page' => null]), 'label' => '검색 초기화']]
+                  : ['icon' => '🗂️', 'title' => '수집된 계정이 없습니다.',
+                     'hint' => '/etc/passwd 를 수집하지 못했습니다 — 0건은 "계정 없음"이 아니라 "판정 불가"입니다.'],
+              'cell' => [
+                  'username' => fn($a) => '<strong>' . vg_h((string) $a['username']) . '</strong>',
+                  1 => fn($a) => '<span class="why">' . vg_h((string) ($a['uid'] ?? '–'))
+                        . ' / ' . vg_h((string) ($a['gid'] ?? '–')) . '</span>',
+                  2 => function ($a) {
+                      $b = [];
+                      $b[] = (int) $a['is_system'] === 1 ? vg_badge('시스템', 'muted') : vg_badge('사용자', 'info');
+                      if ($a['is_sudoer'] === null) { $b[] = vg_badge('sudo?', 'muted', 'sudoers 미수집 — 판정 불가'); }
+                      elseif ((int) $a['is_sudoer'] === 1) { $b[] = vg_badge('sudo', 'warn', 'sudo 관리자 권한 보유'); }
+                      if ($a['is_locked'] === null) { $b[] = vg_badge('잠금?', 'muted', '/etc/shadow 미수집 — 판정 불가'); }
+                      elseif ((int) $a['is_locked'] === 1) { $b[] = vg_badge('잠김', 'low', '패스워드 로그인 불가'); }
+                      return implode(' ', $b);
+                  },
+                  'shell' => fn($a) => '<code class="why">' . vg_h((string) ($a['shell'] ?? '')) . '</code>',
+                  'home'  => fn($a) => '<span class="why">' . vg_h(vg_trunc((string) ($a['home'] ?? ''), 28)) . '</span>',
+                  5 => function ($a) use ($accNa) {
+                      if ($a['never_logged_in'] === null) { return $accNa; }
+                      if ((int) $a['never_logged_in'] === 1) { return '<span class="why">이력 없음</span>'; }
+                      $ts = strtotime((string) $a['last_login_at']);
+                      $age = $ts ? (int) floor((time() - $ts) / 86400) : null;
+                      $txt = vg_h(substr((string) $a['last_login_at'], 0, 16));
+                      return $age !== null && $age >= VG_ACCOUNT_STALE_LOGIN_DAYS
+                          ? $txt . ' ' . vg_badge($age . '일', 'warn', VG_ACCOUNT_STALE_LOGIN_DAYS . '일 이상 미로그인')
+                          : $txt;
+                  },
+                  // shadow 를 못 읽었으면(is_locked 가 NULL) 정책 필드 전체가 NA 다.
+                  //   읽었는데 값이 없는 것(–)과 못 읽은 것(판정 불가)은 다르다.
+                  6 => function ($a) use ($accNa) {
+                      if ($a['is_locked'] === null) { return $accNa; }
+                      if (empty($a['pw_last_change'])) { return '<span class="why">–</span>'; }
+                      return vg_h((string) $a['pw_last_change'])
+                          . ($a['pw_max_days'] ? ' <span class="why">/ 최대 ' . (int) $a['pw_max_days'] . '일</span>' : '');
+                  },
+                  7 => function ($a) use ($accNa) {
+                      if ($a['is_locked'] === null) { return $accNa; }
+                      return $a['expire_date'] ? vg_h((string) $a['expire_date']) : '<span class="why">없음</span>';
+                  },
               ],
           ]
       );

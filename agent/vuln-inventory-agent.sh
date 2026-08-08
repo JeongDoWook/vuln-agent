@@ -1846,9 +1846,30 @@ fi
 # ==================================================================
 cap users accounts     'getent passwd | awk -F: "{print \$1\"\t\"\$3\"\t\"\$7}"'
 cap users interactive  'getent passwd | awk -F: "\$3>=1000 && \$7!~/nologin|false/ {print \$1}"'
-cap users sudo_group   'getent group sudo wheel 2>/dev/null'
+#   admin 은 옛 우분투의 sudo 그룹이다 — 아직 남아 있는 서버가 있어 함께 본다(없으면 안 나온다).
+cap users sudo_group   'getent group sudo wheel admin 2>/dev/null'
 cap users logged_in    'who'
 cap users last_logins  'last -n 20 2>/dev/null'
+
+# ── 계정 인벤토리 (ISMS-P 2.5.1·2.5.2·2.5.5·2.5.6 / N2SF AC 계정관리) ──
+#   위 accounts 는 CCE 판정용 3필드 요약이라 계정 대장을 만들 수 없다(GID·홈·정책·마지막 로그인 없음).
+#   아래 네 키가 중앙에서 계정 1행을 조립하는 원자료다. 전부 읽기 전용이고 getent/awk 수준이라 가볍다
+#   (전체 파일시스템 find 는 쓰지 않는다 — 이 에이전트의 "서버에 무리 주지 않는다" 원칙).
+#
+#   **패스워드 해시는 어떤 형태로도 수집·전송하지 않는다.** shadow 에서는 정책 필드와
+#   잠금 여부(해시가 !/* 로 시작하는지)만 1/0 으로 환산해 보낸다.
+# passwd: 사용자명 uid gid 셸 홈
+cap users account_passwd 'getent passwd | awk -F: "{print \$1\"\t\"\$3\"\t\"\$4\"\t\"\$7\"\t\"\$6}"'
+# shadow 정책: 사용자명 마지막변경일(epoch일) min max warn inactive 만료일(epoch일) 잠금(1/0)
+#   /etc/shadow 는 root 만 읽는다 → 못 읽으면 파일 자체를 안 만든다(중앙에서 NA).
+#   읽을 수 있는데 내용이 비었을 때만 NONE(= 정상적으로 비어 있음)을 찍는다.
+cap users account_shadow '[ -r /etc/shadow ] && { awk -F: "\$1 != \"\" { lock = (\$2 ~ /^[!*]/) ? 1 : 0; print \$1\"\t\"\$3\"\t\"\$4\"\t\"\$5\"\t\"\$6\"\t\"\$7\"\t\"\$8\"\t\"lock }" /etc/shadow | grep . || echo NONE; }'
+# 마지막 로그인: 사용자명 <날짜문자열|NEVER>. LC_ALL=C 로 영문 고정(중앙이 파싱한다).
+#   날짜는 요일 약어부터 줄 끝까지를 통째로 넘긴다 — "From" 칸이 비면 열 위치가 밀려서
+#   필드 번호로 자르면 호스트마다 다른 값이 잡힌다.
+cap users account_lastlog 'LC_ALL=C lastlog 2>/dev/null | awk "NR > 1 { if (\$0 ~ /Never logged in/) { print \$1\"\tNEVER\" } else if (match(\$0, /(Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z][a-z]/)) { print \$1\"\t\"substr(\$0, RSTART) } }"'
+# sudoers 유효 라인(주석·빈 줄 제외). 0440 이라 root 만 읽는다 → 못 읽으면 파일 없음(NA).
+cap users account_sudoers '[ -r /etc/sudoers ] && { cat /etc/sudoers /etc/sudoers.d/* 2>/dev/null | grep -vE "^\s*#|^\s*$" | grep . || echo NONE; }'
 # sshd -T 는 "실제 적용값"이라 권위 있지만, 호스트키가 없거나 설정 오류가 있으면 실패한다.
 #   그때 config 폴백이 없으면 SSH 점검이 통째로 "판정 불가"가 된다 → **둘 다 수집**한다.
 #   (서버는 effective 를 먼저 보고, 없으면 config 로 판정한다.)
