@@ -65,8 +65,14 @@ vuln-agent 웹을 **HTTPS**로 감싸는 앞단 프록시. Let's Encrypt 인증�
 ## 참고
 - 뒷단 web 은 호스트로 노출되지 않는다(내부 `web:80`). 외부는 오직 caddy(TLS)만 통과.
 - **`:8080` 없는 깔끔한 주소(443)는 실현됐다.** `compose.prod.yml` 의 caddy `ports` 가
-  8080→443 외에 80→80, 443→443 을 함께 published 한다. 80 리다이렉트 리스너는 Caddyfile
-  사이트 블록에 포트를 적지 않아 Caddy 가 자동으로 만든 것이라 Caddyfile 수정은 필요 없었다.
+  8080→443 외에 80→80, 443→443 을 함께 published 한다. 80 리다이렉트는 예전엔 Caddy 가 자동으로
+  만든 것에 얹혀 있었지만, 2026-08-08 부터 **Caddyfile 의 `http://:80` 블록이 명시적으로** 한다
+  (자동 리다이렉트는 `auto_https disable_redirects` 로 껐다). 바꾼 이유는 자동 생성 경로에는
+  보안 응답 헤더가 안 붙고 `Server: Caddy` 가 그대로 나갔기 때문이다 — 동작(308 + Location)은
+  그대로다.
+- **보안 응답 헤더는 `(security_headers)` snippet 한 곳에만 있다.** 사이트 블록마다 복붙하지 않고
+  `import security_headers` 로 쓴다. 목록·근거·HSTS 를 아직 끈 이유는 Caddyfile 주석과
+  `deploy/README.md` 의 2026-08-08 항목에 있다.
 - 인증서 발급(DNS-01)에는 여전히 80 을 쓰지 않는다 — 80 은 오직 리다이렉트 진입점이다.
 - `:8080` 은 지우지 않는다. 설치된 에이전트들이 그 주소로 등록돼 있다.
 - 토큰이 틀리면 인증서 발급이 실패하고 사이트가 안 뜬다 → 로그로 확인 후 토큰 교정.

@@ -28,31 +28,28 @@ fi
 
 CMD_TIMEOUT=5
 have()    { return 0; }
-# timeout 스텁 — 옵션과 지속시간을 버리고 실제 명령만 실행한다. 예전엔 `shift` 한 번이었는데
-#   에이전트가 `timeout -k 2 "$CMD_TIMEOUT" …` 로 바뀌면서 `-k` 만 떨어져 나가고 `2` 가 명령으로
-#   실행됐다(= 출처 수집 결과가 통째로 빈다). 인자 모양에 안 흔들리게 파싱한다.
+# 실제 호출은 `timeout -k 2 "$CMD_TIMEOUT" apt-cache …` 다(#483 에서 -k 가 붙었다).
+#   예전 스텁은 `shift` 한 번이라 `-k` 만 떨어지고 `2` 가 명령어로 실행됐다.
+#   앞의 옵션쌍을 전부 걷어낸 뒤 시간값 하나를 더 버린다 — -k 유무와 무관하게 동작한다.
 timeout() {
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      -k) shift 2 ;;        # -k <유예시간>
-      -*) shift ;;          # 그 밖의 옵션
-      *)  shift; break ;;   # 첫 비옵션 인자 = 지속시간
-    esac
-  done
-  "$@"
+  while [ "${1:-}" = "-k" ] || [ "${1:-}" = "-s" ]; do shift 2; done
+  shift; "$@"
 }
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
 
-# 에이전트 본문이 쓰는 전역·헬퍼도 함께 세운다. 함수만 떼어 오므로 에이전트가 자기 앞단에서
-#   준비하는 것들이 여기엔 없다 — 빠지면 `set -u` 아래서 조용히 어긋난다. 실제로 #483 이
-#   collect_pkg_origins() 에 진행 하트비트를 넣은 뒤 이 파일이 안 따라와서, 백그라운드
-#   서브셸에서 `MAX_BYTES: unbound variable` 이 나고(백그라운드라 스크립트는 안 죽는다)
-#   출처 파일이 빈 채로 4건이 전부 실패했다.
-MAX_BYTES="${MAX_BYTES:-524288}"        # 에이전트 기본값과 동일(섹션당 512KB)
-progress_heartbeat() { :; }             # 진행 보고는 이 테스트의 관심사가 아니다
-# 에이전트는 TMP 를 mktemp -d 로 잡는다. 상속된 Windows %TEMP% 를 쓰면 사용자명이 한글일 때
-#   awk 가 그 경로를 못 연다(PR #465 와 같은 함정) → 여기서도 ASCII 임시 디렉터리를 쓴다.
-TMP="$(mktemp -d)"
+# collect_pkg_origins() 가 함수 밖에서 오는 것들. #483 이 하트비트를 넣으면서 늘었는데
+#   이 스텁이 안 따라가 스모크의 "패키지 출처 판정"이 계속 실패하고 있었다.
+#   (테스트가 set -u 라 MAX_BYTES 미정의 시점에 즉사한다.)
+MAX_BYTES=524288                  # 에이전트 기본값과 동일(섹션당 512KB 상한)
+progress_heartbeat() { :; }       # 진행 보고는 이 테스트의 관심사가 아니다
+ORIGINS_PID=""
+# 대기 루프의 `sleep 5` 는 스텁 apt-cache 상대로는 순수 낭비다(호출 2회 = 매 스모크 11초).
+#   루프 구조는 그대로 두고 간격만 줄인다.
+sleep() { command sleep 0.05; }
+# $TMP 를 안 잡으면 Windows 가 물려준 %TMP%(`C:\Users\<한글이름>\…`)가 그대로 쓰여
+#   awk 가 그 경로의 파일을 못 연다. 저장소 경로는 항상 ASCII 라 여기에 만든다
+#   (tests/go_deps_extract_test.sh 가 같은 이유로 쓰는 방식).
+TMP=$(mktemp -d "$ROOT/tests/.tmp-pkg-origins.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
