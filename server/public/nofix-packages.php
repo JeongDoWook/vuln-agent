@@ -38,12 +38,11 @@ try {
 
     $rows = vg_nofix_pkg_groups($pdo, $scanIds, $q);
     $truncated = count($rows) >= VG_NOFIX_MAX_GROUPS;
-    $ctrs = vg_nofix_containers($pdo, $rows);
+    $rows = vg_nofix_attach_containers($pdo, $rows);
     foreach ($rows as $i => $r) {
         $info = $scans[(int) $r['scan_id']] ?? ['host_id' => 0, 'fqdn' => '?'];
         $rows[$i]['host_id'] = $info['host_id'];
         $rows[$i]['fqdn'] = $info['fqdn'];
-        $rows[$i]['container_cid'] = $ctrs[(int) $r['container_id']]['cid'] ?? null;
     }
 
     // HAVING 이 이미 권고 대상만 남기므로 남는 행은 소수다 — 페이지 자르기는 PHP 에서 한다
@@ -121,11 +120,17 @@ vg_header('제거 권고', 'findings');
               'severity' => fn($r) => !empty($r['severity'])
                   ? vg_sev_badge((string) $r['severity'])
                   : '<span class="why">–</span>',
-              'runtime_status' => fn($r) => vg_status_badge($r['runtime_status'] ?? null),
+              // 런타임 상태를 모르는 그룹은 빈 뱃지가 되면 안 된다 — 모르는 건 모른다고 쓴다.
+              'runtime_status' => fn($r) => !empty($r['runtime_status'])
+                  ? vg_status_badge((string) $r['runtime_status'])
+                  : '<span class="why">–</span>',
               'reason' => fn($r) => '<div class="why">' . vg_h(vg_nofix_reason($r)) . '</div>',
               // 조치는 "패치" 가 아니다 — 배지로 그 사실을 먼저 말하고, 개별 CVE 로 내려가는 길을 준다.
+              //   ctr 로 이 행의 스코프(호스트 자신=0 / 그 컨테이너)까지 넘긴다 — 안 넘기면 같은
+              //   호스트의 다른 컨테이너 판정까지 섞여 건수가 안 맞는다.
               'advice' => fn($r) => vg_nofix_badge()
                   . '<div class="why"><a href="/findings.php?host=' . (int) $r['host_id']
+                  . '&amp;ctr=' . (int) $r['container_id']
                   . '&amp;q=' . urlencode((string) $r['package_name']) . '&amp;fx=nofix">CVE 목록 →</a></div>',
           ],
       ]

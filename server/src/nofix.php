@@ -131,30 +131,32 @@ function vg_nofix_pkg_groups(PDO $pdo, array $scanIds, string $pkg = '', bool $e
 }
 
 /**
- * 컨테이너 id → ['cid'=>짧은 id, 'os_id'=>…, 'os_version'=>…].
- *   집계 결과에 실제로 나온 것만 뒤늦게 채운다(집계 쿼리는 조인 없이 유지).
- *   컨테이너는 호스트와 배포판이 다를 수 있어(우분투 호스트의 알파인 이미지) os 도 함께 본다.
+ * 각 그룹 행에 그 컨테이너의 짧은 id·OS 를 붙인다(호스트 행은 전부 null).
+ *   집계 쿼리는 조인 없이 두고(인덱스 전제 보존) 여기서 한 번에 채운다 — 화면마다 필요한 게
+ *   달라도(목록은 cid 표시, 상세는 생태계 판정) 쿼리는 이거 하나면 된다.
+ *   컨테이너는 호스트와 배포판이 다를 수 있다(우분투 호스트의 알파인 이미지).
  */
-function vg_nofix_containers(PDO $pdo, array $rows): array {
+function vg_nofix_attach_containers(PDO $pdo, array $rows): array {
     $ids = [];
     foreach ($rows as $r) {
         $cid = (int) $r['container_id'];
         if ($cid > 0) { $ids[$cid] = true; }
     }
-    if (!$ids) { return []; }
-    $ids = array_keys($ids);
-    $in = implode(',', array_fill(0, count($ids), '?'));
-    $st = $pdo->prepare("SELECT container_id, cid, os_id, os_version FROM tb_container WHERE container_id IN ($in)");
-    $st->execute($ids);
-    $out = [];
-    foreach ($st->fetchAll() as $r) {
-        $out[(int) $r['container_id']] = [
-            'cid'        => (string) $r['cid'],
-            'os_id'      => $r['os_id'] ?? null,
-            'os_version' => $r['os_version'] ?? null,
-        ];
+    $map = [];
+    if ($ids) {
+        $ids = array_keys($ids);
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $st = $pdo->prepare("SELECT container_id, cid, os_id, os_version FROM tb_container WHERE container_id IN ($in)");
+        $st->execute($ids);
+        foreach ($st->fetchAll() as $r) { $map[(int) $r['container_id']] = $r; }
     }
-    return $out;
+    foreach ($rows as $i => $r) {
+        $c = $map[(int) $r['container_id']] ?? null;
+        $rows[$i]['container_cid']        = $c !== null ? (string) $c['cid'] : null;
+        $rows[$i]['container_os_id']      = $c['os_id'] ?? null;
+        $rows[$i]['container_os_version'] = $c['os_version'] ?? null;
+    }
+    return $rows;
 }
 
 /**
@@ -166,15 +168,19 @@ function vg_nofix_containers(PDO $pdo, array $rows): array {
  * 대상의 OS 를 모르면(에이전트가 안 보냈거나 컨테이너 정보가 없다) **뺀다.** vg_eco_matches 의
  *   "정보 없음 → 통과" 는 매칭 누락을 막으려는 규칙이지만, 여기서 통과시키면 남의 배포판 화면에
  *   근거 없는 권고를 얹게 된다 — 못 채우는 걸 억지로 채우지 않는다.
+ *
+ * 전제: vg_nofix_attach_containers() 를 먼저 통과한 행이어야 한다(컨테이너 OS 가 필요하다).
  */
-function vg_nofix_filter_eco(PDO $pdo, array $rows, array $scans, string $pageEco): array {
+function vg_nofix_filter_eco(array $rows, array $scans, string $pageEco): array {
     if ($pageEco === '' || !$rows) { return $rows; }
-    $ctrs = vg_nofix_containers($pdo, $rows);
     $out = [];
     foreach ($rows as $r) {
-        $cid = (int) $r['container_id'];
-        $src = $cid > 0 ? ($ctrs[$cid] ?? null) : ($scans[(int) $r['scan_id']] ?? null);
-        $eco = $src === null ? null : vg_osv_ecosystem($src['os_id'] ?? null, $src['os_version'] ?? null);
+        $eco = (int) $r['container_id'] > 0
+            ? vg_osv_ecosystem($r['container_os_id'] ?? null, $r['container_os_version'] ?? null)
+            : vg_osv_ecosystem(
+                $scans[(int) $r['scan_id']]['os_id'] ?? null,
+                $scans[(int) $r['scan_id']]['os_version'] ?? null
+            );
         if ($eco !== null && vg_eco_matches($pageEco, $eco, '')) { $out[] = $r; }
     }
     return $out;

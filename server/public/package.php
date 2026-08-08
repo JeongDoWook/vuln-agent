@@ -74,8 +74,7 @@ if ($name === '') {
             //   걸러낸다 — 안 그러면 데비안 페이지에 RHEL 호스트의 관측이 얹힌다.
             $scans = vg_nofix_latest_scans($pdo);
             $nofixGroups = vg_nofix_filter_eco(
-                $pdo,
-                vg_nofix_pkg_groups($pdo, array_keys($scans), $name, true),
+                vg_nofix_attach_containers($pdo, vg_nofix_pkg_groups($pdo, array_keys($scans), $name, true)),
                 $scans,
                 $ecosystem
             );
@@ -115,7 +114,9 @@ vg_header($name !== '' ? $name : '패키지 상세', 'packages');
     // 관측 + 권고. "EOL 이다" 라고 단정하지 않는다 — 우리가 아는 건 숫자뿐이다.
     $hints = ['이 패키지는 아래 자산에서 벤더 미수정 CVE 가 몰려 있습니다 — 패치를 기다려도 오지 않습니다.'];
     foreach ($nofixGroups as $g) {
-        $hints[] = $g['fqdn'] . ' · ' . vg_nofix_reason($g);
+        // 같은 호스트의 호스트 자신·컨테이너가 나란히 오면 fqdn 만으론 구분이 안 된다.
+        $where = $g['fqdn'] . (!empty($g['container_cid']) ? ' · 컨테이너 ' . $g['container_cid'] : '');
+        $hints[] = $where . ' · ' . vg_nofix_reason($g);
     }
     $hints[] = 'EOL(지원 종료) 확정이 아니라 관측입니다. 조치는 패치가 아니라 제거 또는 대체 검토입니다.';
     vg_alert(['type' => 'warn', 'title' => '조치 = 패치 아님, 제거 또는 대체 검토', 'hints' => $hints]);
