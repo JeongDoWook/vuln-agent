@@ -28,8 +28,32 @@ fi
 
 CMD_TIMEOUT=5
 have()    { return 0; }
-timeout() { shift; "$@"; }
+# timeout 스텁 — 옵션과 지속시간을 버리고 실제 명령만 실행한다. 예전엔 `shift` 한 번이었는데
+#   에이전트가 `timeout -k 2 "$CMD_TIMEOUT" …` 로 바뀌면서 `-k` 만 떨어져 나가고 `2` 가 명령으로
+#   실행됐다(= 출처 수집 결과가 통째로 빈다). 인자 모양에 안 흔들리게 파싱한다.
+timeout() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -k) shift 2 ;;        # -k <유예시간>
+      -*) shift ;;          # 그 밖의 옵션
+      *)  shift; break ;;   # 첫 비옵션 인자 = 지속시간
+    esac
+  done
+  "$@"
+}
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
+
+# 에이전트 본문이 쓰는 전역·헬퍼도 함께 세운다. 함수만 떼어 오므로 에이전트가 자기 앞단에서
+#   준비하는 것들이 여기엔 없다 — 빠지면 `set -u` 아래서 조용히 어긋난다. 실제로 #483 이
+#   collect_pkg_origins() 에 진행 하트비트를 넣은 뒤 이 파일이 안 따라와서, 백그라운드
+#   서브셸에서 `MAX_BYTES: unbound variable` 이 나고(백그라운드라 스크립트는 안 죽는다)
+#   출처 파일이 빈 채로 4건이 전부 실패했다.
+MAX_BYTES="${MAX_BYTES:-524288}"        # 에이전트 기본값과 동일(섹션당 512KB)
+progress_heartbeat() { :; }             # 진행 보고는 이 테스트의 관심사가 아니다
+# 에이전트는 TMP 를 mktemp -d 로 잡는다. 상속된 Windows %TEMP% 를 쓰면 사용자명이 한글일 때
+#   awk 가 그 경로를 못 연다(PR #465 와 같은 함정) → 여기서도 ASCII 임시 디렉터리를 쓴다.
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
 apt-cache() {
