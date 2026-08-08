@@ -1,10 +1,17 @@
-# 설정 레퍼런스 — 환경변수
+# 설정 레퍼런스 — 환경변수 · 운영 설정
 
-> 문서 기준: 2026-08-04.
+> 문서 기준: 2026-08-09.
 
-UI 뿐 아니라 **운영자가 코드 수정 없이 조정할 수 있는 환경변수 전체**를 모아 둔다.
-값이 없거나 형식이 틀리면 코드의 기본값을 쓰고, 허용 범위를 벗어난 숫자는 범위 안으로 잘라 쓴다
-(빈 문자열은 "미설정"과 같게 취급 — `vg_env()`).
+**운영자가 코드 수정 없이 조정할 수 있는 값 전체**를 모아 둔다. 조정 경로는 둘이고 성격이 다르다.
+
+| | 환경변수 | 운영 설정(`tb_setting`) |
+|---|---|---|
+| 바꾸는 곳 | `deploy/compose.yml` 앵커 · `deploy/.env.{dev,prod}` | 웹 **관리 → 설정**(`/settings.php`, admin 전용) |
+| 반영 시점 | 컨테이너 재기동 | 즉시 |
+| 성격 | 배포 환경 값(화면 크기·잠금 정책 등) | 조직마다 다른 **판정 기준**(SLA·컷라인) |
+
+환경변수는 값이 없거나 형식이 틀리면 코드의 기본값을 쓰고, 허용 범위를 벗어난 숫자는 범위 안으로
+잘라 쓴다(빈 문자열은 "미설정"과 같게 취급 — `vg_env()`).
 
 **비밀값은 환경변수로 두지 않는다.** 비밀번호·토큰(DB 비번, ingest 토큰, admin 초기 비번)은
 Docker Secrets(`secrets/*.txt`)로만 주입한다 → [`secrets/README.md`](../secrets/README.md).
@@ -48,6 +55,7 @@ LOGIN_LOCK_MINUTES=15
 | `UI_DETAIL_PREVIEW_LIMIT` | `10` | 5~100 | 상세 화면 이력·프로세스 미리보기 건수 |
 | `UI_TREND_LIMIT` | `50` | 10~500 | 상세 화면 추이 데이터 수 |
 | `UI_FILTER_OPTION_LIMIT` | `300` | 50~2000 | 취약점 목록의 호스트 필터 선택지 최대 개수 (현재 선택된 호스트는 한도와 무관하게 항상 포함) |
+| `UI_ADVISORY_ASSET_LIMIT` | `200` | 20~2000 | 보안 공지 화면 "영향 자산" 모달의 상세 행 상한 (초과분은 "외 N건") |
 
 ## 보안·인증
 
@@ -60,6 +68,18 @@ LOGIN_LOCK_MINUTES=15
 | `AUDIT_PAGE_VIEWS` | `1` | boolean (`1`/`true`/`on`/`yes`) | 인증된 HTML 페이지 열람 로그 기록 여부 |
 
 `LOGIN_MAX_FAILS` 는 코드에서 범위 검사를 하지 않는다 — `0` 이하로 두면 **첫 실패에 바로 잠긴다.**
+
+**세션 만료와 토큰 유효기간은 환경변수가 아니다.** 조직마다 바꿀 값이 아니라고 보고 코드 상수로 둔다.
+
+| 값 | 상수 | 위치 | 비고 |
+|---|---:|---|---|
+| 세션 유휴 만료 | `1800`초(30분) | `VG_SESSION_IDLE_SECONDS`(`server/src/auth.php`) | 마지막 활동 기준 |
+| 세션 절대 만료 | `43200`초(12시간) | `VG_SESSION_ABSOLUTE_SECONDS`(같은 파일) | 유휴와 무관하게 로그인 시점 기준 |
+| 토큰 유효기간 선택지 | 무기한 / 30 / 90 / 365일 | `VG_TOKEN_EXPIRY_OPTIONS`(`server/src/tokenexpiry.php`) | API 키·에이전트 키 공통. `0`=무기한 |
+| 만료 임박 표시 | `7`일 | `VG_TOKEN_EXPIRY_SOON_DAYS`(같은 파일) | 목록에 '만료 임박' 뱃지 |
+
+세션이 만료되면 `session_expire` 감사로그를 남기고 `tb_user.session_token` 을 지운다. 만료된 토큰은
+인증 실패로 처리되고 `api_token_expired`/`agent_token_expired` 로 기록된다(자동 갱신 없음).
 
 페이지 열람 로그에는 페이지명·메뉴 코드·검색 쿼리의 **키만** 저장하고 값은 저장하지 않는다.
 공통 감사 모듈은 password/token/secret/csrf/authorization 계열 필드를 재귀적으로 마스킹한다.
@@ -74,6 +94,34 @@ LOGIN_LOCK_MINUTES=15
 
 에이전트가 보낸 `X-Agent-Timestamp` 가 서버 시각과 이 값 이상 벌어지면 요청을 거부한다.
 NTP 가 안 맞는 망에서 수집이 거부되면 이 값을 올린다(그만큼 재전송 방어 창도 넓어진다).
+
+## 운영 설정 (DB · `tb_setting`)
+
+읽는 곳: `server/src/setting.php`(`vg_setting_int()`/`vg_setting()`), 정의 SSOT 는 `vg_setting_defs()`.
+바꾸는 곳: 웹 **관리 → 설정**(`/settings.php`, admin 전용).
+
+SLA 기준일은 업계 관행값이 아니라 **조직 내부 규정**이라 환경변수가 아닌 DB 설정으로 뺐다 —
+코드를 고쳐야 바꿀 수 있으면 제품으로 쓸 수 없다(하드코딩 금지 원칙).
+
+| 설정 키 | 기본값 | 허용 범위 | 용도 |
+|---|---:|---|---|
+| `compliance.sla_kev_days` | `15` | 1~365 | KEV(실제 악용 확인) 등재 취약점 조치 기한(일) |
+| `compliance.sla_crit_days` | `30` | 1~365 | CRITICAL 취약점 조치 기한(일) |
+| `compliance.sla_high_days` | `60` | 1~365 | HIGH 취약점 조치 기한(일) |
+| `compliance.partial_max` | `5` | 1~1000 | 부분준수 상한(건). 위반 1~이 값이면 부분준수, 초과면 미준수 |
+| `compliance.history_lookback_margin_days` | `14` | 0~365 | 최초 발견 시각 역산 구간의 **여유일**. 실제 구간 = 가장 긴 조치 기한 + 이 값 |
+
+- **기본값은 폴백 상수다.** 설정 행이 없거나 테이블을 못 읽으면 `server/src/compliance.php` 의
+  상수(`VG_COMPLIANCE_SLA_*` 등)를 그대로 쓴다 — 마이그레이션이 아직 안 든 DB 에서도 동작이 같아야
+  하기 때문. 그래서 기본값을 `vg_setting_defs()` 에 다시 적지 않는다(같은 숫자를 두 곳에 두면 갈라진다).
+- 범위를 벗어난 값은 **읽을 때도** 범위로 잘라 쓴다(DB 를 직접 고친 값이 판정을 망가뜨리지 않게).
+- 역산 구간을 절대 일수가 아니라 "여유일"로 둔 이유: 조치 기한만 늘리고 구간이 그대로면 경과일이
+  구간 길이에서 잘려 **위반이 아예 검출되지 않는다.**
+- 화면(`compliance.php`)과 스케줄러의 스냅샷 적재가 같은 `vg_compliance_policy()` 를 쓴다 —
+  한쪽만 상수를 쓰면 화면과 증적의 기준이 갈라진다.
+
+설정으로 아직 빼지 않은 판정 임계값도 있다(계정 미사용 판정 90일 `VG_ACCOUNT_STALE_LOGIN_DAYS`,
+시스템 계정 UID 상한 999 등 — `server/src/account_inventory.php`). 이관 전까지는 코드 상수다.
 
 ## 여기서 다루지 않는 것
 
