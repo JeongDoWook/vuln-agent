@@ -38,12 +38,12 @@ try {
 
     $rows = vg_nofix_pkg_groups($pdo, $scanIds, $q);
     $truncated = count($rows) >= VG_NOFIX_MAX_GROUPS;
-    $cids = vg_nofix_container_cids($pdo, $rows);
+    $ctrs = vg_nofix_containers($pdo, $rows);
     foreach ($rows as $i => $r) {
         $info = $scans[(int) $r['scan_id']] ?? ['host_id' => 0, 'fqdn' => '?'];
         $rows[$i]['host_id'] = $info['host_id'];
         $rows[$i]['fqdn'] = $info['fqdn'];
-        $rows[$i]['container_cid'] = $cids[(int) $r['container_id']] ?? null;
+        $rows[$i]['container_cid'] = $ctrs[(int) $r['container_id']]['cid'] ?? null;
     }
 
     // HAVING 이 이미 권고 대상만 남기므로 남는 행은 소수다 — 페이지 자르기는 PHP 에서 한다
@@ -52,7 +52,9 @@ try {
     $pageRows = array_slice($rows, ($page - 1) * $perPage, $perPage);
 
     // 열람 감사 — 누가 어떤 자산의 위험을 봤는지가 이 화면의 감사 포인트다.
-    vg_log_activity($pdo, 'PAGE', $hostId > 0 ? $hostId : null, 'view_nofix_packages',
+    //   scope_id 는 비운다 — scope 가 'PAGE' 인데 host_id 를 넣으면 감사로그에 'PAGE #462' 로
+    //   찍혀 페이지 id 처럼 읽힌다. 어떤 호스트를 봤는지는 data 에 남는다.
+    vg_log_activity($pdo, 'PAGE', null, 'view_nofix_packages',
         '제거·대체 검토 권고 조회', ['host_id' => $hostId, 'q' => $q, 'matched' => $total]);
 } catch (Throwable $e) {
     error_log('[nofix-packages] ' . $e->getMessage());

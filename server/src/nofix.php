@@ -18,6 +18,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/format.php';
+require_once __DIR__ . '/distro.php';   // vg_osv_ecosystem / vg_eco_matches — 생태계별 화면의 필터
 
 /**
  * 권고 임계값 — 여기 한 곳에서만 정한다.
@@ -44,14 +45,15 @@ function vg_nofix_rank_value(array $order, $rank): ?string {
 }
 
 /**
- * 호스트별 최신 스캔 [scan_id => ['host_id'=>…, 'fqdn'=>…]]. 삭제된 호스트·스캔은 제외.
+ * 호스트별 최신 스캔 [scan_id => ['host_id'=>…, 'fqdn'=>…, 'os_id'=>…, 'os_version'=>…]].
+ *   삭제된 호스트·스캔은 제외. os_* 는 생태계 필터(vg_nofix_filter_eco)가 쓴다.
  *   집계 쿼리에 tb_scan/tb_host 를 JOIN 하지 않기 위해 미리 뽑아 둔다 —
  *   findings 계열 쿼리는 `scan_id IN (리터럴 목록)` 으로 idx_find_* 를 타는 게 전제라,
  *   조인으로 얽으면 옵티마이저가 전체스캔으로 떨어진다(findings.php 주석의 실측 근거).
  */
 function vg_nofix_latest_scans(PDO $pdo): array {
     $rows = $pdo->query(
-        'SELECT h.host_id, h.fqdn, t.mid AS scan_id
+        'SELECT h.host_id, h.fqdn, h.os_id, h.os_version, t.mid AS scan_id
            FROM tb_host h
            JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.host_id
           WHERE h.is_deleted = 0
@@ -59,7 +61,12 @@ function vg_nofix_latest_scans(PDO $pdo): array {
     )->fetchAll();
     $out = [];
     foreach ($rows as $r) {
-        $out[(int) $r['scan_id']] = ['host_id' => (int) $r['host_id'], 'fqdn' => (string) $r['fqdn']];
+        $out[(int) $r['scan_id']] = [
+            'host_id'    => (int) $r['host_id'],
+            'fqdn'       => (string) $r['fqdn'],
+            'os_id'      => $r['os_id'] ?? null,
+            'os_version' => $r['os_version'] ?? null,
+        ];
     }
     return $out;
 }
@@ -99,8 +106,7 @@ function vg_nofix_pkg_groups(PDO $pdo, array $scanIds, string $pkg = '', bool $e
                    SUM(f.no_fix) AS nofix_cnt,
                    SUM(f.in_kev) AS kev_cnt,
                    MIN(NULLIF(FIELD(f.severity, $sevList), 0)) AS sev_rank,
-                   MIN(NULLIF(FIELD(f.runtime_status, $stList), 0)) AS status_rank,
-                   MAX(f.cvss) AS max_cvss
+                   MIN(NULLIF(FIELD(f.runtime_status, $stList), 0)) AS status_rank
               FROM tb_finding f
              WHERE $where
              GROUP BY f.scan_id, f.container_id, f.package_name
@@ -124,8 +130,12 @@ function vg_nofix_pkg_groups(PDO $pdo, array $scanIds, string $pkg = '', bool $e
     return $rows;
 }
 
-/** 컨테이너 id → 짧은 cid. 집계 결과에 실제로 나온 것만 뒤늦게 채운다(집계 쿼리는 조인 없이 유지). */
-function vg_nofix_container_cids(PDO $pdo, array $rows): array {
+/**
+ * 컨테이너 id → ['cid'=>짧은 id, 'os_id'=>…, 'os_version'=>…].
+ *   집계 결과에 실제로 나온 것만 뒤늦게 채운다(집계 쿼리는 조인 없이 유지).
+ *   컨테이너는 호스트와 배포판이 다를 수 있어(우분투 호스트의 알파인 이미지) os 도 함께 본다.
+ */
+function vg_nofix_containers(PDO $pdo, array $rows): array {
     $ids = [];
     foreach ($rows as $r) {
         $cid = (int) $r['container_id'];
@@ -134,10 +144,39 @@ function vg_nofix_container_cids(PDO $pdo, array $rows): array {
     if (!$ids) { return []; }
     $ids = array_keys($ids);
     $in = implode(',', array_fill(0, count($ids), '?'));
-    $st = $pdo->prepare("SELECT container_id, cid FROM tb_container WHERE container_id IN ($in)");
+    $st = $pdo->prepare("SELECT container_id, cid, os_id, os_version FROM tb_container WHERE container_id IN ($in)");
     $st->execute($ids);
     $out = [];
-    foreach ($st->fetchAll() as $r) { $out[(int) $r['container_id']] = (string) $r['cid']; }
+    foreach ($st->fetchAll() as $r) {
+        $out[(int) $r['container_id']] = [
+            'cid'        => (string) $r['cid'],
+            'os_id'      => $r['os_id'] ?? null,
+            'os_version' => $r['os_version'] ?? null,
+        ];
+    }
+    return $out;
+}
+
+/**
+ * 관측 그룹을 **그 화면의 생태계**로 거른다. package.php 는 (패키지명 × 생태계) 화면이라,
+ *   이름만 같고 배포판이 다른 자산의 관측을 얹으면 데비안 페이지에 RHEL 호스트가 뜬다.
+ *   $pageEco 는 tb_package_summary 에 저장된 값(접미사가 붙어 있을 수 있다) —
+ *   비교 기준은 매처와 같은 vg_eco_matches(접두 일치)다.
+ *
+ * 대상의 OS 를 모르면(에이전트가 안 보냈거나 컨테이너 정보가 없다) **뺀다.** vg_eco_matches 의
+ *   "정보 없음 → 통과" 는 매칭 누락을 막으려는 규칙이지만, 여기서 통과시키면 남의 배포판 화면에
+ *   근거 없는 권고를 얹게 된다 — 못 채우는 걸 억지로 채우지 않는다.
+ */
+function vg_nofix_filter_eco(PDO $pdo, array $rows, array $scans, string $pageEco): array {
+    if ($pageEco === '' || !$rows) { return $rows; }
+    $ctrs = vg_nofix_containers($pdo, $rows);
+    $out = [];
+    foreach ($rows as $r) {
+        $cid = (int) $r['container_id'];
+        $src = $cid > 0 ? ($ctrs[$cid] ?? null) : ($scans[(int) $r['scan_id']] ?? null);
+        $eco = $src === null ? null : vg_osv_ecosystem($src['os_id'] ?? null, $src['os_version'] ?? null);
+        if ($eco !== null && vg_eco_matches($pageEco, $eco, '')) { $out[] = $r; }
+    }
     return $out;
 }
 

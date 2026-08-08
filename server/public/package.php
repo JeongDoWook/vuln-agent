@@ -70,8 +70,15 @@ if ($name === '') {
             // 이 카탈로그 패키지가 실제 자산에서 "벤더 미수정 집중" 으로 관측되는가.
             //   카탈로그(전역 CVE 목록)와 달리 이건 호스트별 최신 스캔의 판정 결과다 —
             //   그래서 "고칠 수 있는가" 가 아니라 "고칠 수 없는 게 몰려 있는가" 를 본다.
+            //   이 화면은 (패키지명 × 생태계) 단위라, 이름만 같고 배포판이 다른 자산의 관측은
+            //   걸러낸다 — 안 그러면 데비안 페이지에 RHEL 호스트의 관측이 얹힌다.
             $scans = vg_nofix_latest_scans($pdo);
-            $nofixGroups = vg_nofix_pkg_groups($pdo, array_keys($scans), $name, true);
+            $nofixGroups = vg_nofix_filter_eco(
+                $pdo,
+                vg_nofix_pkg_groups($pdo, array_keys($scans), $name, true),
+                $scans,
+                $ecosystem
+            );
             foreach ($nofixGroups as $i => $g) {
                 $nofixGroups[$i]['fqdn'] = $scans[(int) $g['scan_id']]['fqdn'] ?? '?';
             }
