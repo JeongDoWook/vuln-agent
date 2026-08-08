@@ -2,6 +2,12 @@
 
 > 문서 기준: 2026-08-04. 현재 제품 구조는 `CONTEXT.md`, 에이전트 운용은 `agent/README.md`가 정본이다.
 
+@AGENTS.md
+
+> 위 한 줄이 도구 공통 지침(codelore MCP 조회 규약)을 이 파일에 붙인다. Codex 는 `AGENTS.md` 를
+> 파일명 규약으로 자동 로드하지만 **Claude Code 는 이 import 가 없으면 그 파일을 아예 안 읽는다** —
+> 실제로 없었고, 그래서 codelore 조회 규약이 Codex 세션에만 걸려 있었다(2026-08-08 발견).
+
 이 파일은 이 저장소에서 코드를 작성/수정하는 모든 작업에 **강제 적용**된다.
 새 기능·리팩터·리뷰 전에 항상 아래 원칙에 비추어 판단한다.
 
@@ -213,6 +219,27 @@ cd wt/무엇
 - 워커가 완료(PR 생성)를 보고하면, 병합 확인 전에 스킬 `orchestrator-review` 로 자동 리뷰한다.
 - 메인이 직접 해도 되는 것(위임 안 함): 조사·설명·질문답변, 한두 줄짜리 사소한 수정뿐.
   그 외 구현은 항상 워커에 위임한다. PR 병합 여부는 항상 사용자 확인 후 메인이 결정한다.
+
+### review-kit 과의 경계 — 위임은 이쪽, 검증은 저쪽
+`spec-review-kit` 이식(2026-08-08) 이후 오케스트레이션 층이 둘이다. **역할이 다르니 섞어 부르지 않는다.**
+
+| | `orchestrator-*` (이 저장소 것) | review-kit `pipeline` / `milestone` |
+|---|---|---|
+| 하는 일 | **작업을 남에게 넘긴다** — 워크트리·별도 창 세션·PR 까지 | **한 작업 안의 단계를 잇는다** — 스펙→구현→QA→리뷰 |
+| 실행 주체 | 워커(독립 Claude 세션, 새 창) | 지금 이 세션 |
+| 고유 자산 | PowerShell 배치·termkeep 감지·포트 격리·`.omc/tasks` | 상태파일·게이트·`px` 계약 동사 |
+
+- **구현을 워커에게 넘길 때는 `orchestrator-plan` → `orchestrator-spawn`.** review-kit 의
+  `milestone` 은 이걸 대체하지 못한다 — 워커 스폰 기능이 아예 없다.
+- **워커 안에서(또는 메인이 직접 고칠 때) 단계를 잇는 것은 review-kit `pipeline`.**
+  그 안의 `code-review`·`design-review` 는 지금도 그대로 쓴다.
+- `orchestrator-review` 는 **중복이 아니다.** 리뷰 로직은 review-kit `/code-review` 를 그대로
+  재사용하고, 이 스킬이 더하는 건 "언제(워커 완료 직후) 누구를 대상으로(완료 보고된 브랜치들)"
+  자동으로 부를지뿐이다.
+- 작업공간(worktree)의 정본은 **`deploy/wt.sh`** 다. review-kit 의 `px ws create` 를 쓰지 않는다 —
+  wt.sh 만 `secrets/*.txt` 복사·빈 `WEB_PORT` 할당·compose 프로젝트명 분리를 한다.
+  `.pipeline.json` 의 workspace 패턴은 `px ws verify`/`stage`/`resolve` 가 **같은 경로**를
+  가리키게 맞춰둔 것이지, 생성 경로가 둘이라는 뜻이 아니다.
 
 ## 가드레일 (강제)
 - **main 직접 commit/push 금지** — 항상 작업 브랜치 경유 후 PR 로 병합. (`.claude/hooks/block-main-push.sh` 가 차단)
