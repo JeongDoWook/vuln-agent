@@ -37,6 +37,16 @@ vulninv-*.txt
 # --- OMC / 로컬 상태 ---
 .omc/
 
+# --- review-kit 프로바이더 런타임 상태 (scripts/px.js) ---
+# tracker=local 로 떨어졌을 때의 이슈 파일과 `px env up` 이 남기는 PID 기록.
+# 머신마다 다른 값이라 추적하면 안 된다. 어댑터(.pipeline.json / .review-kit.json)와
+# 설치 기록(.review-kit-manifest.json)은 반대로 **커밋 대상**이다 — 그게 있어야
+# `kit-manifest.js check` 가 킷 대비 뒤처짐을 잰다.
+.pipeline/
+# px ws 가 작업공간에 얹는 상태 파일. wt/ 는 이미 통째로 무시되지만,
+# 다른 위치에 작업공간을 만들 경우를 대비해 이름으로도 막는다.
+.ws-state.json
+
 # 오케스트레이터 워커가 워크트리에 남기는 실행 파일. 커밋하지 않는다.
 .initial-prompt
 .launch.ps1
