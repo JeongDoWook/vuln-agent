@@ -27,23 +27,30 @@ if ! declare -f collect_pkg_origins >/dev/null; then
 fi
 
 CMD_TIMEOUT=5
-# 함수만 떼어 오므로, 에이전트 본체가 세팅하는 실행환경은 여기서 흉내내야 한다.
-#   #483(하트비트 추가)이 collect_pkg_origins() 에 MAX_BYTES·progress_heartbeat·TMP 의존을
-#   들여왔는데 이 하네스는 안 따라와서 origin/main 에서도 4건이 실패하고 있었다.
-#   TMP 는 특히 상속되면 안 된다 — 윈도우 git-bash 에선 TMP=C:\Users\… 가 들어와
-#   awk 가 그 경로를 못 연다(경로 구분자가 역슬래시).
-MAX_BYTES="${MAX_BYTES:-524288}"                 # 섹션당 출력 상한 — 본체 기본값과 동일
-progress_heartbeat() { :; }                      # 진행 하트비트 — 테스트에선 무동작
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT    # 본체가 쓰는 작업 디렉터리
 have()    { return 0; }
+# 실제 호출은 `timeout -k 2 "$CMD_TIMEOUT" apt-cache …` 다(#483 에서 -k 가 붙었다).
+#   예전 스텁은 `shift` 한 번이라 `-k` 만 떨어지고 `2` 가 명령어로 실행됐다.
+#   앞의 옵션쌍을 전부 걷어낸 뒤 시간값 하나를 더 버린다 — -k 유무와 무관하게 동작한다.
 timeout() {
-  # 본체는 `timeout -k 2 <초> <명령>` 으로 부른다(#483). -k 를 안 걷어내면 kill-after 값이
-  # 명령어 자리로 밀려 들어와 아무것도 실행되지 않는다(출력이 통째로 빈다).
-  if [ "${1:-}" = "-k" ]; then shift 2; fi
-  shift
-  "$@"
+  while [ "${1:-}" = "-k" ] || [ "${1:-}" = "-s" ]; do shift 2; done
+  shift; "$@"
 }
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
+
+# collect_pkg_origins() 가 함수 밖에서 오는 것들. #483 이 하트비트를 넣으면서 늘었는데
+#   이 스텁이 안 따라가 스모크의 "패키지 출처 판정"이 계속 실패하고 있었다.
+#   (테스트가 set -u 라 MAX_BYTES 미정의 시점에 즉사한다.)
+MAX_BYTES=524288                  # 에이전트 기본값과 동일(섹션당 512KB 상한)
+progress_heartbeat() { :; }       # 진행 보고는 이 테스트의 관심사가 아니다
+ORIGINS_PID=""
+# 대기 루프의 `sleep 5` 는 스텁 apt-cache 상대로는 순수 낭비다(호출 2회 = 매 스모크 11초).
+#   루프 구조는 그대로 두고 간격만 줄인다.
+sleep() { command sleep 0.05; }
+# $TMP 를 안 잡으면 Windows 가 물려준 %TMP%(`C:\Users\<한글이름>\…`)가 그대로 쓰여
+#   awk 가 그 경로의 파일을 못 연다. 저장소 경로는 항상 ASCII 라 여기에 만든다
+#   (tests/go_deps_extract_test.sh 가 같은 이유로 쓰는 방식).
+TMP=$(mktemp -d "$ROOT/tests/.tmp-pkg-origins.XXXXXX")
+trap 'rm -rf "$TMP"' EXIT
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
 apt-cache() {

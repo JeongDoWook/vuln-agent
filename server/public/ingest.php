@@ -19,6 +19,7 @@ require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/agenttoken.php';  // vg_agent_token_verify (호스트 바인딩)
 require_once __DIR__ . '/../src/ingest_parse.php';  // vg_ingest_parse_* (순수 변환, DB 비의존)
 require_once __DIR__ . '/../src/ingest_store.php';  // vg_ingest_store (트랜잭션 저장)
+require_once __DIR__ . '/../src/account_inventory.php';  // vg_ingest_accounts (계정 인벤토리)
 
 // 통일 에러 포맷: {ok:false,error,code,ts(ISO8601)}
 function respond_fail(int $httpCode, string $msg, string $code): void {
@@ -300,6 +301,16 @@ try {
     $cce = ['error' => $e->getMessage()];
 }
 
+// 계정 인벤토리(ISMS-P 2.5.x / N2SF AC 계정관리) — 스캔 내용이 같아 스냅샷을 재사용해도
+//   최신 계정 상태로 재작성한다(계정은 패키지와 무관하게 바뀐다). 실패해도 수집은 성공.
+$accounts = null;
+try {
+    $accounts = vg_ingest_accounts($pdo, $hostId, $scanId, $data, $collectedAt);
+} catch (Throwable $e) {
+    error_log('[ingest] 계정 인벤토리 저장 실패: ' . $e->getMessage());
+    $accounts = ['error' => '계정 인벤토리를 저장하지 못했습니다.'];
+}
+
 echo json_encode([
     'ok'        => true,
     'host_id'   => $hostId,
@@ -322,4 +333,5 @@ echo json_encode([
     'processes' => $procCount,
     'findings'  => $findings,
     'cce'       => $cce,
+    'accounts'  => $accounts,
 ], JSON_UNESCAPED_UNICODE);

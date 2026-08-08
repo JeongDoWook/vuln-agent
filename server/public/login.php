@@ -39,10 +39,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $err === null) {
             $err = '아이디 또는 비밀번호가 올바르지 않습니다.';
         }
     }
+} elseif ($err === null && (($_GET['reason'] ?? '') === 'expired' || !empty($_SESSION['login_expired']))) {
+    // 만료는 kick 과 다른 사건이라 문구를 나눈다. 유휴/절대 중 무엇인지도 알려준다.
+    $kind = (string) ($_GET['kind'] ?? $_SESSION['login_expired'] ?? '');
+    $err = $kind === 'absolute'
+        ? '최대 사용 시간이 지나 세션이 종료되었습니다. 다시 로그인하세요.'
+        : '오랫동안 사용하지 않아 세션이 종료되었습니다. 다시 로그인하세요.';
 } elseif ($err === null && (($_GET['reason'] ?? '') === 'kicked' || !empty($_SESSION['login_kicked']))) {
     $err = '다른 곳에서 로그인되어 세션이 종료되었습니다.';
 }
-unset($_SESSION['login_kicked']);
+unset($_SESSION['login_kicked'], $_SESSION['login_expired']);
 
 vg_header('로그인');
 ?>

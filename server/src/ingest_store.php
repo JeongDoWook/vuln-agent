@@ -9,6 +9,8 @@ declare(strict_types=1);
  *   호출자(ingest.php)의 책임이다 — 예외를 그대로 위로 던진다.
  */
 
+require_once __DIR__ . '/assetgrade.php';   // vg_asset_grade_refresh (등급 초안 제안 갱신)
+
 // $host  : ['fqdn','vm','meta','sys','raw','collected_at']
 // $parsed: 파싱된 각 섹션의 rows/count 및 manager·origin_map·커널 정보·content_hash
 // 반환    : ['host_id','scan_id','unchanged','chg_count']
@@ -430,6 +432,11 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
         isset($meta['mem_total_mb']) ? (float) $meta['mem_total_mb'] : null,
         isset($meta['nproc']) ? (int) $meta['nproc'] : null,
     ]);
+
+    // 자산 등급 **초안 제안** 갱신 — 확정값(grade)은 건드리지 않는다("판정은 사람이, 초안은 시스템이").
+    //   노출·프로세스가 이미 이 트랜잭션에 들어와 있으므로 여기서 계산해야 최신 데이터를 본다.
+    //   동일 스냅샷 재전송(unchanged)이어도 기존 scan_id 의 행을 그대로 읽으므로 결과는 같다.
+    vg_asset_grade_refresh($pdo, $hostId, $scanId);
 
     $pdo->commit();
 

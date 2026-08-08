@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/assetgrade.php';   // 등급 어휘·뱃지·최고등급 승계
 vg_require_menu('assets');
 
 // 연결 상태 판정 기준과 vg_asset_state() 는 format.php 에 있다(호스트 상세와 공유).
@@ -18,6 +19,10 @@ $err = null; $msg = null; $rows = []; $total = 0; $sevByScan = [];
 $stateCounts = ['ok' => 0, 'stale' => 0, 'offline' => 0, 'none' => 0];
 $q     = trim((string) ($_GET['q'] ?? ''));
 $state = trim((string) ($_GET['state'] ?? ''));
+// 등급 필터. 허용값은 VG_ASSET_GRADES(단일 출처) + 'none'(아직 확정 안 된 자산 찾기).
+$grade = trim((string) ($_GET['grade'] ?? ''));
+if ($grade !== 'none' && !isset(VG_ASSET_GRADES[$grade])) { $grade = ''; }
+$systemGrade = null;   // 함대 전체를 하나의 정보시스템으로 볼 때의 승계 등급
 $page  = vg_page();
 $perPage = vg_perpage();
 
@@ -70,6 +75,12 @@ try {
         $where .= " AND $stateExpr = ?";
         $params[] = $state;
     }
+    if ($grade === 'none') {
+        $where .= ' AND h.grade IS NULL';
+    } elseif ($grade !== '') {
+        $where .= ' AND h.grade = ?';
+        $params[] = $grade;
+    }
 
     // COUNT 도 목록과 같은 FROM 을 써야 한다. 상태 필터가 최신 스캔(s)을 참조하기 때문이다.
     $st = $pdo->prepare("SELECT COUNT(*) $fromSql WHERE $where");
@@ -82,6 +93,8 @@ try {
         "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.last_seen_ip, h.first_seen,
                 s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
                 h.poll_schedule_seconds,
+                h.criticality, h.grade, h.grade_reason,
+                h.grade_suggested, h.grade_suggested_reason,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
                 TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) AS poll_age_min
            $fromSql
@@ -108,6 +121,15 @@ try {
         "SELECT DISTINCT agent_version FROM tb_scan
           WHERE agent_version IS NOT NULL AND agent_version <> '' AND is_deleted = 0"
     )->fetchAll(PDO::FETCH_COLUMN);
+    /* 정보시스템 등급 — 여러 업무정보 등급이 한 시스템에 있으면 **최고등급을 승계**한다.
+     *   여기서 "정보시스템"은 이 함대(자산 전체)다. 확정된 등급만 센다 — 제안값을 섞으면
+     *   "시스템이 등급을 정했다"가 되어 사람 확정과의 경계가 무너진다.
+     *   필터와 무관하게 전체 기준(KPI 와 같은 성격). */
+    $confirmed = $pdo->query(
+        'SELECT grade FROM tb_host WHERE is_deleted = 0 AND grade IS NOT NULL'
+    )->fetchAll(PDO::FETCH_COLUMN);
+    $systemGrade = vg_asset_grade_max($confirmed);
+
     $latestAgent = (string) array_reduce(
         $seen,
         static fn(?string $max, string $v) => ($max === null || version_compare($v, $max, '>')) ? $v : $max
@@ -150,6 +172,10 @@ vg_header('자산', 'assets');
   ?>
   <div class="cards">
     <div class="kpi kpi--sm"><b><?= number_format($totalHosts) ?></b><span>전체 자산</span></div>
+    <?php /* 정보시스템 등급 — 확정 등급의 최고값 승계. 확정이 하나도 없으면 '미지정'. */ ?>
+    <div class="kpi kpi--sm" title="<?= vg_h($systemGrade['reason'] ?? '확정된 자산 등급이 아직 없습니다.') ?>">
+      <b><?= vg_h($systemGrade['grade'] ?? '–') ?></b><span>정보시스템 등급</span>
+    </div>
     <?php foreach (VG_ASSET_STATES as $key => $label): ?>
       <a class="kpi kpi--sm tone-<?= vg_h($stateTone[$key]) ?><?= $state === $key ? ' is-selected' : '' ?>"
          href="<?= vg_h(vg_qs(['state' => $state === $key ? '' : $key, 'page' => null])) ?>">
@@ -162,6 +188,9 @@ vg_header('자산', 'assets');
   vg_toolbar([
       ['type' => 'select', 'name' => 'state', 'empty_label' => '전체 상태',
        'selected' => $state, 'options' => VG_ASSET_STATES],
+      // 등급 어휘는 VG_ASSET_GRADES 가 소유한다 + '미지정'(아직 확정 안 된 자산 찾기).
+      ['type' => 'select', 'name' => 'grade', 'empty_label' => '전체 등급',
+       'selected' => $grade, 'options' => VG_ASSET_GRADES + ['none' => '미지정']],
       ['type' => 'search', 'name' => 'q', 'placeholder' => '호스트명·IP·설치 패키지 검색', 'value' => $q],
   ]);
 
@@ -178,12 +207,15 @@ vg_header('자산', 'assets');
   $headers = [
       ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '18%'],
       ['label' => '상태', 'key' => 'state', 'width' => '5.5rem'],
+      // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
+      //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
+      ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem'],
       ['label' => 'OS', 'key' => 'os', 'width' => '9%'],
       ['label' => 'IP', 'key' => 'ip', 'width' => '9%', 'nowrap' => true],
       ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],
       ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '5%'],
       ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right', 'width' => '4.5%'],
-      ['label' => '심각도', 'key' => 'sev', 'width' => '16%'],
+      ['label' => '심각도', 'key' => 'sev', 'width' => '13%'],
       ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '12%', 'nowrap' => true],
   ];
   // 액션 열만 % 가 아니라 rem 이다. 삭제 버튼은 폭이 늘 같은 고정 크기 조작부라 비율로 줄 이유가 없고,
@@ -195,11 +227,11 @@ vg_header('자산', 'assets');
       $rows,
       [
           // 빈 이유가 셋이라 메시지도 셋 — "필터 때문에 빈 것" 과 "자산이 없는 것" 은 다른 상황이다.
-          'empty' => ($q !== '' || $state !== '')
+          'empty' => ($q !== '' || $state !== '' || $grade !== '')
               ? [
                   'icon'  => '🔍',
                   'title' => '조건에 맞는 자산이 없습니다.',
-                  'hint'  => '검색어나 상태 필터를 바꿔 보세요.',
+                  'hint'  => '검색어나 상태·등급 필터를 바꿔 보세요.',
                   'cta'   => ['href' => '/assets.php', 'label' => '필터 초기화'],
               ]
               : [
@@ -216,6 +248,13 @@ vg_header('자산', 'assets');
                   $r['age_min'],
                   (int) $r['poll_schedule_seconds']
               ),
+              // 확정 등급이 있으면 그것만 보여준다. 없을 때만 제안값을 '제안' 꼬리표와 함께 —
+              //   둘을 나란히 두면 어느 쪽이 확정인지 흐려진다("판정은 사람이, 초안은 시스템이").
+              'grade' => fn($r) => $r['grade'] !== null
+                  ? vg_asset_grade_badge((string) $r['grade'], false, (string) ($r['grade_reason'] ?? ''))
+                  : vg_asset_grade_badge(
+                      $r['grade_suggested'], true, (string) ($r['grade_suggested_reason'] ?? '')
+                  ),
               'os'            => fn($r) => vg_h(trim($r['os_id'] . ' ' . $r['os_version'])) ?: '<span class="why">–</span>',
               'ip'            => fn($r) => !empty($r['last_seen_ip'])
                   ? '<code>' . vg_h((string) $r['last_seen_ip']) . '</code>'
