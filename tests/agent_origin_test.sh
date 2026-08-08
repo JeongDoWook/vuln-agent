@@ -28,7 +28,29 @@ fi
 
 CMD_TIMEOUT=5
 have()    { return 0; }
-timeout() { shift; "$@"; }
+# timeout 스텁 — 옵션(-k 2)과 초 인자를 걷어내고 실제 명령만 부른다. 예전엔 shift 한 번이라
+#   `timeout -k 2 5 apt-cache …` 형태(#483)에서 "2" 를 명령으로 실행하려 들어 조용히 빈 출력이 됐다.
+timeout() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -*) shift; [ "$#" -gt 0 ] && shift ;;   # -k 2 처럼 값을 갖는 옵션
+      *)  shift; break ;;                     # 시간 인자
+    esac
+  done
+  "$@"
+}
+
+# 에이전트 본체가 갖고 있는 전역·헬퍼를 테스트용으로 세운다 — collect_pkg_origins() 는 이제
+#   중간 출력을 "$TMP/.pkg-origins-raw.txt" 로 받고(head -c "$MAX_BYTES"), 대기 중
+#   progress_heartbeat() 를 부른다. 함수만 떼어 오므로 여기서 채워 주지 않으면
+#   MAX_BYTES unbound + progress_heartbeat not found 로 이 테스트가 통째로 죽는다.
+#   TMP 를 굳이 저장소 안에 만드는 이유: Windows 는 환경변수 TMP 가 이미 %TEMP% 이고,
+#   사용자명에 비-ASCII 가 섞이면 mingw awk 가 그 경로를 못 연다(go_deps_extract_test.sh 와 같은 함정).
+TMP=$(mktemp -d "$ROOT/tests/.tmp-origin.XXXXXX")
+trap 'rm -rf "$TMP"' EXIT
+MAX_BYTES=524288
+progress_heartbeat() { :; }
+sleep() { :; }   # 하트비트 대기 루프를 실시간으로 기다리지 않는다
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
