@@ -126,5 +126,48 @@ bash update.sh                    # 그 다음에 갱신
 
 값은 **지금 접속하는 도메인과 정확히 같아야 한다** — TLS 인증서가 이 이름으로 발급/서빙된다.
 빠뜨리면 조용히 넘어가지 않고 시끄럽게 실패한다(의도적):
-compose 가 `${PROD_DOMAIN:?…}` 로 거부하고, 뚫려도 Caddy 가 빈 주소를
-`unrecognized global option: encode` 로 파싱해 기동에 실패한다.
+compose 가 `${PROD_DOMAIN:?…}` 로 거부하고, 뚫려도 Caddy 가 빈 주소를 전역 옵션 블록으로
+파싱해 기동에 실패한다(2026-08-08 이후 메시지: `server block without any key is global
+configuration, and if used, it must be first`. 그 전엔 `unrecognized global option: encode`
+였다 — 죽는다는 사실은 같다).
+
+### 2026-08-08 — 보안 응답 헤더 추가, HSTS 는 아직 꺼져 있음
+
+`deploy/caddy/Caddyfile` 에 `(security_headers)` snippet 을 넣어 모든 응답에 아래를 붙인다.
+**서버에서 할 조치는 없다** — `update.sh`(또는 `prod up -d --build`)로 caddy 가 재기동되면 적용된다.
+
+| 헤더 | 값 |
+| --- | --- |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Content-Security-Policy` | `default-src 'self'` 기준(자세한 값은 Caddyfile) |
+| `Server` / `X-Powered-By` | **제거** |
+| `Strict-Transport-Security` | **아직 안 붙인다** — 아래 참조 |
+
+확인:
+
+```bash
+curl -skI https://$PROD_DOMAIN/login.php   # 위 헤더가 보이고 Server 가 없어야 한다
+```
+
+#### HSTS 를 지금 켜지 않은 이유, 그리고 켜는 절차
+
+지금 TLS 는 `tls internal`(Caddy 내부 CA 자체서명)이라 브라우저가 이미
+`ERR_CERT_AUTHORITY_INVALID` 를 낸다. 이 상태에서 HSTS 를 보내면 브라우저가 그 호스트를 HSTS
+목록에 올리고, **HSTS 호스트에서는 인증서 예외("고급 → 계속 진행")가 아예 허용되지 않는다.**
+즉 접속 수단이 사라지고, `max-age` 가 만료되기 전엔 사용자가 브라우저 내부 설정에서 HSTS 항목을
+손으로 지우는 것 말고는 되돌릴 방법이 없다. 그래서 **정식 인증서로 전환한 뒤에** 켠다.
+
+전환은 **사람이 해야 하는 작업**이다(2026-07-12 시도가 실패해 되돌린 상태 — DuckDNS 가 `KO` 를
+반환했고, 원인은 토큰이 이 도메인을 소유한 계정의 것이 아니었기 때문이다):
+
+1. https://www.duckdns.org 에 **이 도메인을 소유한 계정**으로 로그인해 `token` 을 복사한다.
+   (실패 원인이 바로 이 "다른 계정 토큰"이었으니, 도메인 목록에 그 도메인이 보이는지부터 확인한다.)
+2. 운영 서버에서 토큰을 넣는다 — `printf %s '<토큰>' > /apps/vulnagent/app/secrets/duckdns_token.txt`
+3. `deploy/caddy/Caddyfile` 에서 `tls internal` 을 지우고 바로 아래 `tls { dns duckdns … }` 블록의
+   주석을 푼다.
+4. `./compose_runner.sh prod up -d --build` 후
+   `docker compose -p vulnagent logs -f caddy` 에서 `certificate obtained successfully` 확인.
+5. 브라우저에서 **경고 없는 자물쇠**를 확인한 **뒤에야** Caddyfile 의
+   `Strict-Transport-Security` 한 줄의 주석을 풀고 다시 기동한다. 순서를 바꾸면 접속이 막힌다.
