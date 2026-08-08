@@ -13,6 +13,62 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 
 if (!function_exists('vg_sshd_val')) {
+    // 판정 임계값 — 코드에 숫자를 박지 않는다(하드코딩 금지). 근거는 각 상수 주석 참고.
+    define('VG_CCE_TIME_OFFSET_MAX_SEC', 1.0);   // 로그 상관분석이 흔들리기 시작하는 경계(초)
+    define('VG_CCE_LOG_RETENTION_DAYS', 90);     // ISMS-P 2.9.4 통상 요구 보존기간(일)
+
+    /**
+     * systemd 시간 표기 → 초. "90d" · "2592000" · "1month" · "1h30m" 를 받는다.
+     *   해석할 수 없으면 null — 모르면 NA 로 가야지 0 으로 읽어 FAIL 을 만들면 안 된다.
+     */
+    function vg_cce_timespan_sec(string $v): ?float {
+        $v = trim($v);
+        if ($v === '' || !preg_match_all('/(\d+(?:\.\d+)?)\s*([A-Za-z]*)/', $v, $ms, PREG_SET_ORDER)) {
+            return null;
+        }
+        // systemd 는 대문자 M 만 "달"이고 소문자 m 은 "분"이다 → 소문자화 전에 가른다.
+        $unit = [
+            ''    => 1.0,       'us'  => 0.000001, 'ms'  => 0.001,
+            's'   => 1.0,       'sec' => 1.0,      'secs' => 1.0, 'second' => 1.0, 'seconds' => 1.0,
+            'm'   => 60.0,      'min' => 60.0,     'mins' => 60.0, 'minute' => 60.0, 'minutes' => 60.0,
+            'h'   => 3600.0,    'hr'  => 3600.0,   'hour' => 3600.0, 'hours' => 3600.0,
+            'd'   => 86400.0,   'day' => 86400.0,  'days' => 86400.0,
+            'w'   => 604800.0,  'week' => 604800.0, 'weeks' => 604800.0,
+            'month' => 2629800.0, 'months' => 2629800.0,
+            'y'   => 31557600.0, 'year' => 31557600.0, 'years' => 31557600.0,
+        ];
+        $total = 0.0;
+        foreach ($ms as $m) {
+            $u = ($m[2] === 'M') ? 'month' : strtolower($m[2]);
+            if (!isset($unit[$u])) { return null; }
+            $total += (float) $m[1] * $unit[$u];
+        }
+        return $total;
+    }
+
+    /**
+     * chronyc tracking / ntpq -pn 출력에서 현재 시간 오차(초, 절대값)를 뽑는다.
+     *   못 뽑으면 null(→ NA). 값을 지어내지 않는다.
+     */
+    function vg_cce_time_offset(string $tracking): ?float {
+        // chronyc: "System time : 0.000000123 seconds fast of NTP time"
+        if (preg_match('/System time\s*:\s*([0-9.]+(?:e-?\d+)?)\s*seconds/i', $tracking, $m)) {
+            return abs((float) $m[1]);
+        }
+        // chronyc: "Last offset : +0.000000123 seconds"
+        if (preg_match('/Last offset\s*:\s*([+-]?[0-9.]+(?:e-?\d+)?)\s*seconds/i', $tracking, $m)) {
+            return abs((float) $m[1]);
+        }
+        // ntpq -pn: 선택된 피어(*) 행의 9번째 칼럼이 offset(ms).
+        foreach (preg_split('/\r?\n/', $tracking) as $line) {
+            $line = trim($line);
+            if ($line === '' || $line[0] !== '*') { continue; }
+            $f = preg_split('/\s+/', $line);
+            if (count($f) >= 10 && is_numeric($f[8])) { return abs((float) $f[8]) / 1000.0; }
+        }
+        return null;
+    }
+
     // sshd 설정값 조회: sshd -T(권위, 소문자키) 우선, 없으면 sshd_config grep 폴백.
     //   반환: 소문자 값 문자열, 못 찾으면 null.
     function vg_sshd_val(string $eff, string $cfg, string $key): ?string {
@@ -351,6 +407,195 @@ if (!function_exists('vg_sshd_val')) {
                 $fail ? 'TMOUT 600초 이하 권고.' : '유휴 세션이 자동 종료됨.'];
         }
 
+        // ══════════════════════════════════════════════════════════════════
+        // 시간 동기화 · 로그 설정 · 암호화 (ISMS-P 2.9.6 / 2.9.4 / 2.7.1, N2SF 제5장 DT·EA-1)
+        //   앞의 KISA U-XX 항목과 마찬가지로 판정 근거는 에이전트가 모은 원자료뿐이다.
+        //   수집이 안 됐으면 PASS 가 아니라 NA — "못 봤다"를 "괜찮다"로 바꾸지 않는다.
+        //   대응 기준은 주석으로만 남긴다(코드↔기준 매핑 테이블은 별도 작업 소관).
+        // ══════════════════════════════════════════════════════════════════
+
+        // ── CCE-TIME-SYNC : 시간 동기화 (ISMS-P 2.9.6) ──
+        //   타임스탬프가 틀어지면 아래 모든 로그 증적의 증거력이 함께 무너진다.
+        $tSync  = (string) ($sec['time_sync']     ?? '');
+        $tTrack = (string) ($sec['time_tracking'] ?? '');
+        $tSvc   = (string) ($sec['time_services'] ?? '');
+        $activeSvc = [];
+        foreach (preg_split('/\r?\n/', $tSvc) as $line) {
+            if (preg_match('/^(\S+)=active$/', trim($line), $m)) { $activeSvc[] = $m[1]; }
+        }
+        $synced = null;   // true=동기화됨 / false=아님 / null=모름
+        if (preg_match('/NTPSynchronized=(yes|no)/i', $tSync, $m)) {
+            $synced = strtolower($m[1]) === 'yes';
+        } elseif (preg_match('/System clock synchronized:\s*(yes|no)/i', $tSync, $m)) {
+            $synced = strtolower($m[1]) === 'yes';
+        } elseif (preg_match('/Leap status\s*:\s*(\S+)/i', $tTrack, $m)) {
+            $synced = strcasecmp(trim($m[1]), 'Normal') === 0;
+        }
+        $svcEv = $activeSvc ? '활성 서비스: ' . implode(', ', $activeSvc) : '활성 서비스 없음';
+        if ($synced === null) {
+            $out[] = ['CCE-TIME-SYNC', '시간 동기화 상태 (ISMS-P 2.9.6)', 'NA', 'MEDIUM',
+                $tSvc !== '' ? $svcEv : null,
+                '시간 동기화 여부를 수집하지 못함(timedatectl·chronyc 없음).'];
+        } else {
+            $out[] = ['CCE-TIME-SYNC', '시간 동기화 상태 (ISMS-P 2.9.6)', $synced ? 'PASS' : 'FAIL', 'MEDIUM',
+                'synchronized=' . ($synced ? 'yes' : 'no') . ' / ' . $svcEv,
+                $synced ? '시스템 시각이 NTP 와 동기화된 상태 — 로그 타임스탬프의 전제가 충족됨.'
+                        : 'NTP 동기화가 되어 있지 않다 → 로그 타임스탬프를 신뢰할 수 없다. '
+                          . 'chrony/systemd-timesyncd 등 동기화 서비스 활성 권고.'];
+        }
+
+        // ── CCE-TIME-OFFSET : 시각 오차 임계 (ISMS-P 2.9.6) ──
+        $offset = vg_cce_time_offset($tTrack);
+        if ($offset === null) {
+            $out[] = ['CCE-TIME-OFFSET', '시각 오차 허용범위 (ISMS-P 2.9.6)', 'NA', 'MEDIUM', null,
+                '시각 오차(offset)를 수집하지 못함(chronyc/ntpq 없음).'];
+        } else {
+            $fail = $offset > VG_CCE_TIME_OFFSET_MAX_SEC;
+            $out[] = ['CCE-TIME-OFFSET', '시각 오차 허용범위 (ISMS-P 2.9.6)', $fail ? 'FAIL' : 'PASS', 'MEDIUM',
+                sprintf('offset %.6f초', $offset),
+                $fail ? sprintf('NTP 기준 시각 오차가 %.3f초로 임계(%.1f초)를 초과 → 로그 상관분석·감사 증적이 어긋난다.',
+                                $offset, VG_CCE_TIME_OFFSET_MAX_SEC)
+                      : sprintf('시각 오차가 임계(%.1f초) 이내.', VG_CCE_TIME_OFFSET_MAX_SEC)];
+        }
+
+        // ── CCE-LOG-RETENTION : 로그 보존기간 설정 (ISMS-P 2.9.4) ──
+        //   결함 사례 "중요 로그의 최대 크기를 불충분하게 설정해 보존기간 미충족" 대응.
+        //   journald(MaxRetentionSec) 와 logrotate(전역 rotate×주기 / maxage) 중 **긴 쪽**을 본다 —
+        //   둘은 대상이 다르고(저널 vs /var/log 파일), 하나라도 기준을 채우면 원문이 남는다.
+        $jd = (string) ($sec['journald_conf']  ?? '');
+        $lr = (string) ($sec['logrotate_conf'] ?? '');
+        $retDays = null; $retSrc = [];
+        if (preg_match('/MaxRetentionSec\s*=\s*(\S+)/i', $jd, $m)) {
+            $s = vg_cce_timespan_sec($m[1]);
+            if ($s !== null && $s > 0) { $retDays = $s / 86400.0; $retSrc[] = 'journald MaxRetentionSec=' . $m[1]; }
+        }
+        if ($lr !== '' && strcasecmp(trim($lr), 'NONE') !== 0) {
+            $lrDays = null; $lrSrc = '';
+            if (preg_match('/^maxage\s+(\d+)/mi', $lr, $m)) {
+                $lrDays = (float) $m[1]; $lrSrc = 'logrotate maxage ' . $m[1];
+            } elseif (preg_match('/^(daily|weekly|monthly|yearly)/mi', $lr, $mf)
+                   && preg_match('/^rotate\s+(\d+)/mi', $lr, $mr)) {
+                $per = ['daily' => 1, 'weekly' => 7, 'monthly' => 30, 'yearly' => 365][strtolower($mf[1])];
+                $lrDays = (float) ((int) $mr[1] * $per);
+                $lrSrc  = sprintf('logrotate %s×rotate %d', strtolower($mf[1]), (int) $mr[1]);
+            }
+            if ($lrDays !== null && ($retDays === null || $lrDays > $retDays)) { $retDays = $lrDays; }
+            if ($lrSrc !== '') { $retSrc[] = $lrSrc; }
+        }
+        if ($retDays === null) {
+            $out[] = ['CCE-LOG-RETENTION', '로그 보존기간 설정 (ISMS-P 2.9.4)', 'NA', 'MEDIUM', null,
+                'journald MaxRetentionSec 도 logrotate 전역 보존 설정도 확인되지 않아 보존기간을 계산할 수 없음'
+                . '(설정 미기재이거나 파일을 읽지 못함).'];
+        } else {
+            $fail = $retDays < VG_CCE_LOG_RETENTION_DAYS;
+            $out[] = ['CCE-LOG-RETENTION', '로그 보존기간 설정 (ISMS-P 2.9.4)', $fail ? 'FAIL' : 'PASS', 'MEDIUM',
+                sprintf('%.0f일 (%s)', $retDays, implode(' / ', $retSrc)),
+                $fail ? sprintf('보존기간이 약 %.0f일로 기준(%d일) 미만 → 사후 추적 시점에 로그가 이미 삭제된다.',
+                                $retDays, VG_CCE_LOG_RETENTION_DAYS)
+                      : sprintf('보존기간 약 %.0f일로 기준(%d일) 이상.', $retDays, VG_CCE_LOG_RETENTION_DAYS)];
+        }
+
+        // ── CCE-LOG-REMOTE : 원격 로그 전송 (ISMS-P 2.9.4) ──
+        //   결함 사례 "서버 로그를 백업하지 않아 임의 삭제 가능" 대응. 침해 시 로컬 로그는 지워진다.
+        $rsr = $sec['rsyslog_remote'] ?? null;
+        $rsr = $rsr === null ? '' : trim((string) $rsr);
+        if ($rsr === '') {
+            $out[] = ['CCE-LOG-REMOTE', '원격 로그 전송 설정 (ISMS-P 2.9.4)', 'NA', 'MEDIUM', null,
+                'rsyslog 설정을 읽지 못함(미설치이거나 권한 부족).'];
+        } elseif (strcasecmp($rsr, 'NONE') === 0) {
+            $out[] = ['CCE-LOG-REMOTE', '원격 로그 전송 설정 (ISMS-P 2.9.4)', 'FAIL', 'MEDIUM',
+                '전송 설정 없음',
+                '로그가 이 서버에만 남는다 → 침해 시 삭제·위변조를 막을 수 없다. 원격 로그 서버 전송(@/@@/omfwd) 권고.'];
+        } else {
+            $out[] = ['CCE-LOG-REMOTE', '원격 로그 전송 설정 (ISMS-P 2.9.4)', 'PASS', 'MEDIUM',
+                mb_strimwidth(str_replace("\n", ' | ', $rsr), 0, 200, '…'),
+                '원격 로그 서버로 전송하도록 설정됨 — 로컬 삭제만으로는 증적이 사라지지 않는다.'];
+        }
+
+        // ── SSH 암호 알고리즘 (ISMS-P 2.7.1 / N2SF 제5장 DT) ──
+        //   sshd -T 의 실효값에 취약 알고리즘이 남아 있는지. 근거값에 **실제로 걸린 이름**을 남긴다.
+        //   주의: OpenSSH 기본 MACs 에는 hmac-sha1·umac-64 가 들어 있어 **설정을 손대지 않은 서버는
+        //   대부분 FAIL 로 뜬다**(Debian 12 실측). 이건 오탐이 아니라 실제로 그 알고리즘을 제안한다는
+        //   뜻이고, CIS·KISA 가 제거를 요구하는 항목이다 — U-09(/etc/hosts 600)와 같은 이유로
+        //   기준을 임의로 완화하지 않는다. 조치는 sshd_config 에 MACs 를 명시하는 것이다.
+        $algoKeys = ['ciphers' => 'Ciphers', 'macs' => 'MACs', 'kexalgorithms' => 'KexAlgorithms'];
+        $weakPat = [
+            // CBC 모드(패딩오라클)·arcfour·3DES·blowfish 계열
+            'ciphers' => ['/-cbc$/', '/^arcfour/', '/^3des/', '/^des$/', '/^blowfish/', '/^cast128/'],
+            // MD5·SHA1 기반 MAC, 64비트 UMAC
+            'macs' => ['/^hmac-md5/', '/^hmac-sha1(-96)?(-etm)?$/', '/^umac-64/', '/^hmac-ripemd160/'],
+            // SHA1 기반 키교환(group1/group14/group-exchange 포함)
+            'kexalgorithms' => ['/sha1$/', '/^gss-group1/'],
+        ];
+        $algoVals = []; $weakFound = [];
+        foreach ($algoKeys as $key => $label) {
+            $v = vg_sshd_val($sshEff, $sshCfg, $key);
+            if ($v === null || $v === '') { continue; }
+            $algoVals[$label] = $v;
+            foreach (explode(',', $v) as $algo) {
+                $algo = trim($algo);
+                if ($algo === '') { continue; }
+                $bare = preg_replace('/@.*$/', '', $algo);   // hmac-sha1-etm@openssh.com → hmac-sha1-etm
+                foreach ($weakPat[$key] as $p) {
+                    if (preg_match($p, $bare)) { $weakFound[] = $label . ':' . $algo; break; }
+                }
+            }
+        }
+        if (!$algoVals) {
+            $out[] = ['CCE-CRYPTO-SSH-CIPHER', 'SSH 취약 암호 알고리즘 사용 금지 (ISMS-P 2.7.1)', 'NA', 'MEDIUM',
+                null, 'sshd 의 Ciphers/MACs/KexAlgorithms 실효값을 수집하지 못함(root 실행 필요).'];
+        } else {
+            $fail = $weakFound !== [];
+            $out[] = ['CCE-CRYPTO-SSH-CIPHER', 'SSH 취약 암호 알고리즘 사용 금지 (ISMS-P 2.7.1)',
+                $fail ? 'FAIL' : 'PASS', 'MEDIUM',
+                $fail ? mb_strimwidth(implode(', ', $weakFound), 0, 200, '…')
+                      : '취약 알고리즘 없음 (' . implode('/', array_keys($algoVals)) . ' 점검)',
+                $fail ? 'CBC·MD5·SHA1 등 취약 알고리즘이 허용 목록에 남아 있다 → sshd_config 에 '
+                        . 'Ciphers/MACs/KexAlgorithms 를 명시해 AES-GCM·hmac-sha2·curve25519 계열만 남기도록 권고'
+                        . '(OpenSSH 기본값에도 hmac-sha1·umac-64 가 포함돼 있어 명시 설정이 필요하다).'
+                      : '허용 목록에 알려진 취약 알고리즘이 없음.'];
+        }
+
+        // ── CCE-CRYPTO-DISK : 디스크 암호화(LUKS) 적용 여부 (N2SF 제5장 DT) ──
+        //   디스크 암호화가 모든 서버의 필수 요건은 아니다 → 미적용을 FAIL 로 몰지 않는다(억지 판정 금지).
+        //   적용돼 있으면 PASS, 없으면 정보성(NA)으로 남기고 사유에 검토 기준을 적는다.
+        $disk = $sec['disk_encryption'] ?? null;
+        $disk = $disk === null ? '' : trim((string) $disk);
+        if ($disk === '') {
+            $out[] = ['CCE-CRYPTO-DISK', '디스크 암호화(LUKS) 적용 (N2SF DT)', 'NA', 'LOW', null,
+                '블록 장치 정보를 수집하지 못함(lsblk/blkid 없음).'];
+        } elseif (strcasecmp($disk, 'NONE') === 0) {
+            $out[] = ['CCE-CRYPTO-DISK', '디스크 암호화(LUKS) 적용 (N2SF DT)', 'NA', 'LOW',
+                'LUKS 볼륨 없음',
+                '정보성 — LUKS 암호화 볼륨이 없다. 디스크 암호화는 모든 서버의 필수 요건이 아니므로 '
+                . '위반으로 판정하지 않는다. 개인정보·기밀을 저장하는 서버라면 별도 검토가 필요하다.'];
+        } else {
+            $out[] = ['CCE-CRYPTO-DISK', '디스크 암호화(LUKS) 적용 (N2SF DT)', 'PASS', 'LOW',
+                mb_strimwidth(preg_replace('/\s+/', ' ', str_replace("\n", ' | ', $disk)), 0, 200, '…'),
+                'LUKS 암호화 볼륨이 존재 — 저장 데이터 암호화가 적용돼 있다.'];
+        }
+
+        // ── CCE-CRYPTO-KCMVP : 국내 검증필 암호알고리즘(ARIA/SEED) 사용 여부 (N2SF EA-1 부분대응) ──
+        //   EA-1(검증필 암호모듈)은 "모듈이 KCMVP 검증을 받았는가"를 묻는다. 우리가 볼 수 있는 건
+        //   SSH 알고리즘 목록뿐이라 **완전 판정이 불가능**하다 → PASS/FAIL 을 내지 않고 정보성으로만 남긴다.
+        if (!$algoVals) {
+            $out[] = ['CCE-CRYPTO-KCMVP', '국내 검증필 암호알고리즘 사용 (N2SF EA-1)', 'NA', 'LOW', null,
+                '정보성 — SSH 알고리즘 목록을 수집하지 못해 확인할 수 없다. EA-1(검증필 암호모듈)은 '
+                . '모듈 검증 여부까지 필요해 이 도구만으로는 완전 판정이 불가능하다.'];
+        } else {
+            $kcmvp = [];
+            foreach ($algoVals as $label => $v) {
+                if (preg_match('/\b(aria|seed)\b/i', $v)) { $kcmvp[] = $label; }
+            }
+            $out[] = ['CCE-CRYPTO-KCMVP', '국내 검증필 암호알고리즘 사용 (N2SF EA-1)', 'NA', 'LOW',
+                $kcmvp ? 'ARIA/SEED 포함: ' . implode(', ', $kcmvp) : 'ARIA/SEED 미포함',
+                '정보성 — ' . ($kcmvp
+                    ? 'SSH 알고리즘 목록에 국내 검증필 계열(ARIA/SEED)이 포함돼 있다. '
+                    : 'SSH 알고리즘 목록에 국내 검증필 계열(ARIA/SEED)이 없다. ')
+                . 'EA-1 은 사용 알고리즘이 아니라 암호모듈의 KCMVP 검증 여부를 요구하므로, 이 결과만으로는 '
+                . '준수·미준수를 판정하지 않는다(별도 모듈 검증 확인 필요).'];
+        }
+
         return $out;
     }
 
@@ -363,6 +608,10 @@ if (!function_exists('vg_sshd_val')) {
      *
      * 매핑은 **추측하지 않았다** — SSG 룰 2,493개의 ID 를 실제로 검색해 대응하는 것만 적었다.
      *   대응하는 SSG 룰이 없는 항목(KISA 가이드 고유 등)은 여기 없다 → 화면에서 "자체 기준" 으로 뜬다.
+     *
+     *   시간동기화·로그설정·암호화(CCE-TIME-*·CCE-LOG-*·CCE-CRYPTO-*)는 여기 없다.
+     *   SSG 에 유사 룰이 있을 수는 있으나 **ID 를 실제로 대조하지 않았으므로 적지 않는다** —
+     *   추측 매핑은 화면이 남의 근거를 잘못 인용하게 만든다. 확인되면 그때 추가한다.
      */
     function vg_cce_ssg_map(): array { return [
         // SSH (sshd -T 실효값으로 판정)
