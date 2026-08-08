@@ -28,7 +28,18 @@ fi
 
 CMD_TIMEOUT=5
 have()    { return 0; }
-timeout() { shift; "$@"; }
+# collect_pkg_origins 가 하트비트를 붙이며(#483) 쓰게 된 것들 — 스텁이 안 따라가면 함수가
+#   MAX_BYTES unbound / progress_heartbeat not found 로 죽어 이 테스트가 통째로 실패한다.
+#   TMP 는 반드시 여기서 만든다: 환경의 TMP 를 그대로 물려받으면 Windows 형식 경로가 들어와
+#   mingw awk 가 원자료 파일을 못 연다(한글 사용자명이면 더 확실히 깨진다).
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+MAX_BYTES=524288
+progress_heartbeat() { :; }
+# 에이전트는 `timeout -k 2 <초> <명령>` 으로 부른다 — 옵션을 걷어내고 명령만 실행한다.
+timeout() {
+  while [ "$1" = "-k" ] || [ "$1" = "-s" ]; do shift 2; done
+  shift; "$@"
+}
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
