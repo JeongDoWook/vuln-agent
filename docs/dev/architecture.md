@@ -203,6 +203,9 @@ tb_container 는 컨테이너 인벤토리이고 컨테이너 내부 패키지�
 tb_vendor_unfixed·tb_kernel_cve/tb_kernel_cve_fix 는 스캔에 매달리지 않고 매처가 참조만 한다.
 **정밀 판정 플랫폼**: tb_finding_evidence(판정 근거 구조화, tb_finding 1:1)·tb_collection_stage
 (수집 단계 완전성 — 단계 누락을 미탐 대신 경고로).
+tb_host_account 는 **계정 인벤토리**(스캔별 계정 대장 — 계정명·UID/GID·셸·홈·잠금·sudo·정책·
+마지막 로그인). 패스워드 해시는 수집도 저장도 하지 않는다. 값이 NULL 이면 "없음"이 아니라
+"판정 불가"다(비-root 실행이면 /etc/shadow·sudoers 를 못 읽는다) — ISMS-P 2.5.x·N2SF AC 통제의 근거 데이터.
 tb_agent_replay_nonce 는 에이전트 재전송 공격 방지.
 tb_package_license_summary 는 SCA 라이선스 위험도 사전집계(tb_package.license 기반, tb_package_summary 와 같은 패턴).
 스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh) — ERD 범위 밖.*
