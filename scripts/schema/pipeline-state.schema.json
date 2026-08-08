@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-review-kit.local/schemas/pipeline-state.schema.json",
+  "title": "spec-review-kit pipeline state",
+  "description": "pipeline.statePath(기본 .review-kit-state.json)의 형태. v1(선형 current+history)과 v2(그래프 nodes 맵) 둘 다 유효하다 — v2 는 v1 의 상위집합이고 v1 파일을 계속 읽을 수 있어야 한다. 서술은 kit/workflow/pipeline-algorithm.md 가 SSOT.",
+  "oneOf": [
+    { "$ref": "#/$defs/state_v1" },
+    { "$ref": "#/$defs/state_v2" }
+  ],
+  "$defs": {
+    "state_v1": {
+      "title": "v1 — 선형 실행 상태",
+      "type": "object",
+      "required": ["current", "history"],
+      "properties": {
+        "current": { "type": "integer", "minimum": 0 },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "status"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "status": {
+                "enum": ["done", "skipped", "external_skipped", "external_done", "gate_wait", "external_wait"]
+              },
+              "reason": { "type": "string", "minLength": 1 },
+              "at": { "type": "string", "minLength": 1 },
+              "gate_approved_at": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      },
+      "not": { "required": ["nodes"] }
+    },
+
+    "state_v2": {
+      "title": "v2 — 그래프 실행 상태",
+      "type": "object",
+      "required": ["schemaVersion", "nodes"],
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "runId": {
+          "description": "이 실행 회차의 식별자. 같은 파이프라인을 다시 돌릴 때 이전 기록을 덮지 않기 위한 축이다.",
+          "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1 }]
+        },
+        "revision": {
+          "description": "같은 runId 안에서 그래프 정의가 바뀐 횟수. pipeline 스냅샷과 짝을 이룬다.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "pipeline": {
+          "description": "실행 시작 시점의 그래프 정의 스냅샷(어댑터 pipeline 절과 같은 형태). 어댑터가 도중에 바뀌어도 이 실행의 그래프는 고정된다. 없으면 렌더러는 의존선 없이 노드만 표시한다.",
+          "type": "object",
+          "properties": {
+            "statePath": { "type": "string", "minLength": 1 },
+            "stages": { "type": "array", "items": { "$ref": "#/$defs/node_def" } }
+          }
+        },
+        "nodes": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/node_record" },
+          "propertyNames": { "minLength": 1 }
+        },
+        "history": {
+          "description": "append-only 전이 로그. 노드의 현재 상태는 nodes 가 SSOT 이고, 이 배열은 이력이다.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "state"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "state": { "$ref": "#/$defs/stored_state" },
+              "at": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1 }] }
+            }
+          }
+        }
+      }
+    },
+
+    "stored_state": {
+      "description": "저장 가능한 노드 상태. ready 는 그래프와 다른 노드의 상태에서 매번 파생되므로 저장하지 않는다.",
+      "enum": ["running", "done", "gate_wait", "external_wait", "skipped", "bypassed", "failed"]
+    },
+
+    "node_record": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "$ref": "#/$defs/stored_state" },
+        "activation": { "enum": ["required", "optional"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "error": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1 }] },
+        "startedAt": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1 }] },
+        "completedAt": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1 }] },
+        "gateApprovedAt": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1 }] },
+        "bypassedDeps": {
+          "description": "이 노드가 착수될 때 산출물 없이 지나가 있던 상위 노드들. 입력이 덜 찬 채로 돌았다는 사실을 조용히 잃지 않기 위해 남긴다.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "failed" } }, "required": ["state"] },
+          "then": { "required": ["error"], "properties": { "error": { "type": "string", "minLength": 1 } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "bypassed" } }, "required": ["state"] },
+          "then": { "required": ["reason"] }
+        }
+      ]
+    },
+
+    "node_def": {
+      "description": "그래프 노드 정의. dependsOn 을 한 노드도 선언하지 않으면 배열 순서를 의존으로 읽어 v1 선형 체인으로 승격한다.",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "skill": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1 }] },
+        "type": { "enum": ["auto", "gate", "external"] },
+        "group": { "type": "string", "minLength": 1 },
+        "dependsOn": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "activation": { "enum": ["required", "optional"] },
+        "optional": {
+          "description": "v1 표기. activation 이 있으면 그쪽이 이긴다.",
+          "type": "boolean"
+        },
+        "wait": { "type": "boolean" },
+        "cutlineGate": { "type": "boolean" },
+        "skipCondition": { "type": "string", "minLength": 1 },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
