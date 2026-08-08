@@ -27,8 +27,22 @@ if ! declare -f collect_pkg_origins >/dev/null; then
 fi
 
 CMD_TIMEOUT=5
+# 함수만 떼어 오므로, 에이전트 본체가 세팅하는 실행환경은 여기서 흉내내야 한다.
+#   #483(하트비트 추가)이 collect_pkg_origins() 에 MAX_BYTES·progress_heartbeat·TMP 의존을
+#   들여왔는데 이 하네스는 안 따라와서 origin/main 에서도 4건이 실패하고 있었다.
+#   TMP 는 특히 상속되면 안 된다 — 윈도우 git-bash 에선 TMP=C:\Users\… 가 들어와
+#   awk 가 그 경로를 못 연다(경로 구분자가 역슬래시).
+MAX_BYTES="${MAX_BYTES:-524288}"                 # 섹션당 출력 상한 — 본체 기본값과 동일
+progress_heartbeat() { :; }                      # 진행 하트비트 — 테스트에선 무동작
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT    # 본체가 쓰는 작업 디렉터리
 have()    { return 0; }
-timeout() { shift; "$@"; }
+timeout() {
+  # 본체는 `timeout -k 2 <초> <명령>` 으로 부른다(#483). -k 를 안 걷어내면 kill-after 값이
+  # 명령어 자리로 밀려 들어와 아무것도 실행되지 않는다(출력이 통째로 빈다).
+  if [ "${1:-}" = "-k" ]; then shift 2; fi
+  shift
+  "$@"
+}
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
