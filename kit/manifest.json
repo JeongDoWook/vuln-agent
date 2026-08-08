@@ -154,8 +154,10 @@
       "include": [
         "kit/manifest.json",
         "scripts/kit-manifest.js",
-        "scripts/install-kit.js"
-      ]
+        "scripts/install-kit.js",
+        "scripts/lib/content-hash.js"
+      ],
+      "_": "content-hash.js 는 두 스크립트가 **같은 기준으로** 해시하게 하는 공용 모듈이다. 이게 빠지면 호스트에서 둘 다 require 실패로 즉시 죽는다 — 그룹에서 빼지 말 것."
     }
   },
 
