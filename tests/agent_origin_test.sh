@@ -28,19 +28,29 @@ fi
 
 CMD_TIMEOUT=5
 have()    { return 0; }
-# collect_pkg_origins 가 하트비트를 붙이며(#483) 쓰게 된 것들 — 스텁이 안 따라가면 함수가
-#   MAX_BYTES unbound / progress_heartbeat not found 로 죽어 이 테스트가 통째로 실패한다.
-#   TMP 는 반드시 여기서 만든다: 환경의 TMP 를 그대로 물려받으면 Windows 형식 경로가 들어와
-#   mingw awk 가 원자료 파일을 못 연다(한글 사용자명이면 더 확실히 깨진다).
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-MAX_BYTES=524288
-progress_heartbeat() { :; }
-# 에이전트는 `timeout -k 2 <초> <명령>` 으로 부른다 — 옵션을 걷어내고 명령만 실행한다.
+# 실제 호출은 `timeout -k 2 "$CMD_TIMEOUT" apt-cache …` 다(#483 에서 -k 가 붙었다).
+#   예전 스텁은 `shift` 한 번이라 `-k` 만 떨어지고 `2` 가 명령어로 실행됐다.
+#   앞의 옵션쌍을 전부 걷어낸 뒤 시간값 하나를 더 버린다 — -k 유무와 무관하게 동작한다.
 timeout() {
-  while [ "$1" = "-k" ] || [ "$1" = "-s" ]; do shift 2; done
+  while [ "${1:-}" = "-k" ] || [ "${1:-}" = "-s" ]; do shift 2; done
   shift; "$@"
 }
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
+
+# collect_pkg_origins() 가 함수 밖에서 오는 것들. #483 이 하트비트를 넣으면서 늘었는데
+#   이 스텁이 안 따라가 스모크의 "패키지 출처 판정"이 계속 실패하고 있었다.
+#   (테스트가 set -u 라 MAX_BYTES 미정의 시점에 즉사한다.)
+MAX_BYTES=524288                  # 에이전트 기본값과 동일(섹션당 512KB 상한)
+progress_heartbeat() { :; }       # 진행 보고는 이 테스트의 관심사가 아니다
+ORIGINS_PID=""
+# 대기 루프의 `sleep 5` 는 스텁 apt-cache 상대로는 순수 낭비다(호출 2회 = 매 스모크 11초).
+#   루프 구조는 그대로 두고 간격만 줄인다.
+sleep() { command sleep 0.05; }
+# $TMP 를 안 잡으면 Windows 가 물려준 %TMP%(`C:\Users\<한글이름>\…`)가 그대로 쓰여
+#   awk 가 그 경로의 파일을 못 연다. 저장소 경로는 항상 ASCII 라 여기에 만든다
+#   (tests/go_deps_extract_test.sh 가 같은 이유로 쓰는 방식).
+TMP=$(mktemp -d "$ROOT/tests/.tmp-pkg-origins.XXXXXX")
+trap 'rm -rf "$TMP"' EXIT
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
 apt-cache() {
