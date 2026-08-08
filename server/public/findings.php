@@ -180,6 +180,9 @@ vg_header('탐지 결과', 'findings');
   <nav class="subtabs">
     <a class="on" href="/findings.php">현황</a>
     <a href="/changes.php">변화</a>
+    <!-- 같은 패키지의 '조치 불가' 가 이 목록에선 CVE 수십 줄로 흩어진다 —
+         (호스트×패키지) 로 묶어 보는 진입점. 목록 구조는 그대로 둔다. -->
+    <a href="/nofix-packages.php">제거 권고</a>
   </nav>
 
 <?php if ($err !== null): ?>

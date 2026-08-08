@@ -373,6 +373,7 @@ vg_header('변화 추적', 'findings');
   <nav class="subtabs">
     <a href="/findings.php">현황</a>
     <a class="on" href="/changes.php">변화</a>
+    <a href="/nofix-packages.php">제거 권고</a>
   </nav>
 
 <?php if ($err !== null): ?>

@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';
+require_once __DIR__ . '/../src/nofix.php';   // 벤더 미수정 집중 관측 — 조치가 패치가 아닌 경우
 vg_require_menu('findings');
 
 $name = trim((string)($_GET['name'] ?? ''));
@@ -15,6 +16,7 @@ $rows = [];
 $total = 0;
 $page = vg_page();
 $perPage = vg_perpage();
+$nofixGroups = [];   // 이 패키지가 실제 자산에서 "벤더 미수정 집중" 으로 관측된 조합
 
 if ($name === '') {
     $err = '패키지명이 필요합니다.';
@@ -64,6 +66,15 @@ if ($name === '') {
             );
             $st->execute($params);
             $rows = $st->fetchAll();
+
+            // 이 카탈로그 패키지가 실제 자산에서 "벤더 미수정 집중" 으로 관측되는가.
+            //   카탈로그(전역 CVE 목록)와 달리 이건 호스트별 최신 스캔의 판정 결과다 —
+            //   그래서 "고칠 수 있는가" 가 아니라 "고칠 수 없는 게 몰려 있는가" 를 본다.
+            $scans = vg_nofix_latest_scans($pdo);
+            $nofixGroups = vg_nofix_pkg_groups($pdo, array_keys($scans), $name, true);
+            foreach ($nofixGroups as $i => $g) {
+                $nofixGroups[$i]['fqdn'] = $scans[(int) $g['scan_id']]['fqdn'] ?? '?';
+            }
         }
     } catch (Throwable $e) {
         error_log('[package] ' . $e->getMessage());
@@ -90,6 +101,20 @@ vg_header($name !== '' ? $name : '패키지 상세', 'packages');
     <?php vg_page_title('패키지를 찾을 수 없습니다', '', $err ?? '존재하지 않는 패키지입니다.', [
         'actions' => '<a class="btn btn--sm btn--ghost" href="/packages.php">패키지 목록</a>',
     ]); ?>
+  <?php endif; ?>
+
+  <?php if ($nofixGroups): ?>
+    <?php
+    // 관측 + 권고. "EOL 이다" 라고 단정하지 않는다 — 우리가 아는 건 숫자뿐이다.
+    $hints = ['이 패키지는 아래 자산에서 벤더 미수정 CVE 가 몰려 있습니다 — 패치를 기다려도 오지 않습니다.'];
+    foreach ($nofixGroups as $g) {
+        $hints[] = $g['fqdn'] . ' · ' . vg_nofix_reason($g);
+    }
+    $hints[] = 'EOL(지원 종료) 확정이 아니라 관측입니다. 조치는 패치가 아니라 제거 또는 대체 검토입니다.';
+    vg_alert(['type' => 'warn', 'title' => '조치 = 패치 아님, 제거 또는 대체 검토', 'hints' => $hints]);
+    ?>
+    <p class="why"><?= vg_nofix_badge() ?>
+      <a href="/nofix-packages.php?q=<?= urlencode($name) ?>">제거 권고 목록에서 보기 →</a></p>
   <?php endif; ?>
 
   <?php if ($summary !== null): ?>
