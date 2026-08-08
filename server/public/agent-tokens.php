@@ -39,7 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 vg_log_activity($pdo, 'AGENT_TOKEN', null, 'agent_token_issue',
                     "에이전트 토큰 발급: {$fqdn}",
                     ['fqdn' => $fqdn, 'prefix' => $r['prefix'], 'auto_revoked' => $r['revoked'],
-                     'expires_at' => $r['expires_at'] ?? '무기한']);
+                     'expires_at' => $r['expires_at'] ?? '무기한'],
+                    subject: $fqdn, action: 'CREATE');
                 $expiryNote = $r['expires_at'] !== null ? "유효기간 {$r['expires_at']} 까지. " : '';
                 $msg = $r['revoked'] > 0
                     ? "토큰이 발급되었습니다. {$expiryNote}같은 호스트의 기존 활성 토큰 {$r['revoked']}개는 자동 폐기되었습니다. 아래 값을 지금 복사하세요 — 다시 볼 수 없습니다."

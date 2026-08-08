@@ -44,6 +44,19 @@ $eq('중첩 토큰 마스킹', $clean['nested']['api_token'], '[REDACTED]');
 $eq('중첩 일반값 유지', $clean['nested']['role'], 'user');
 $eq('CSRF 마스킹', $clean['csrf_value'], '[REDACTED]');
 
+// 접속기록 5요소 — subject/action 이 마스킹을 우회하지 않는지, 수행업무 정규화가 맞는지.
+$eq('대상 자원은 그대로', vg_audit_subject('web01.example.com'), 'web01.example.com');
+$eq('대상에 섞인 비밀번호 마스킹', vg_audit_subject('user=alice password=plain'), 'user=alice password=[REDACTED]');
+$eq('대상에 섞인 토큰 마스킹', vg_audit_subject('token: abc123'), 'token=[REDACTED]');
+$eq('빈 대상은 NULL', vg_audit_subject('   '), null);
+$eq('자유 텍스트 길이 제한', vg_audit_redact_text(str_repeat('a', 600), 500), str_repeat('a', 500));
+$eq('열람은 READ', vg_activity_action('view_host'), 'READ');
+$eq('로그인은 LOGIN', vg_activity_action('login_fail'), 'LOGIN');
+$eq('폐기는 DELETE', vg_activity_action('token_revoke'), 'DELETE');
+$eq('발급은 CREATE', vg_activity_action('agent_token_issue'), 'CREATE');
+$eq('내보내기는 EXPORT', vg_activity_action('export_data'), 'EXPORT');
+$eq('모르는 코드는 OTHER', vg_activity_action('무슨_이벤트'), 'OTHER');
+
 putenv('UI_PER_PAGE_OPTIONS');
 putenv('UI_PER_PAGE_DEFAULT');
 putenv('UI_DASHBOARD_URGENT_LIMIT');

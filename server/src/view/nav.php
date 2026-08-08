@@ -51,8 +51,26 @@ function vg_activity_type_labels(): array {
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김.
         'host_perimeter_update'=> '경계 방화벽 설정 변경',
         'page_view'            => '페이지 열람',
+        'activity_review_save' => '접속기록 점검 기록',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김(매핑을 지우면 원시 코드가 그대로 노출된다).
         'saved_view_save'      => '저장된 보기 저장',
+    ];
+}
+
+/**
+ * 수행업무(action) 코드 → 한글 라벨. 접속기록 5요소의 "수행업무" 자리 표시·필터가 함께 쓴다.
+ *   코드 어휘의 SSOT 는 audit.php 의 VG_ACTIVITY_ACTIONS 이고, 여기는 그 표시 라벨만 갖는다.
+ */
+function vg_activity_action_labels(): array {
+    return [
+        'READ'    => '조회',
+        'CREATE'  => '생성',
+        'UPDATE'  => '수정',
+        'DELETE'  => '삭제',
+        'EXPORT'  => '내보내기',
+        'LOGIN'   => '로그인',
+        'EXECUTE' => '실행',
+        'OTHER'   => '기타',
     ];
 }
 

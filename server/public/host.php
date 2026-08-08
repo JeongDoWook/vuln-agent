@@ -127,7 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('호스트를 찾을 수 없습니다.');
                 }
                 vg_soft_delete($pdo, 'tb_host', $postHostId);
-                vg_log_activity($pdo, 'HOST', $postHostId, 'host_delete', "자산 삭제: $fqdn");
+                vg_log_activity($pdo, 'HOST', $postHostId, 'host_delete', "자산 삭제: $fqdn",
+                    subject: (string) $fqdn, action: 'DELETE');
                 $_SESSION['vg_flash'] = [
                     'assetMsg' => "자산 '$fqdn' 을(를) 삭제했습니다. 해당 호스트가 다시 수집을 보내면 재등록됩니다.",
                 ];
@@ -657,7 +658,8 @@ try {
 
     if ($host) {
         // 호스트 상세(설치 패키지·노출 포트·실행 프로세스 등 인프라 민감정보) 열람 감사로그.
-        vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null));
+        vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null),
+            subject: (string) ($host['fqdn'] ?? ''), action: 'READ');
 
         // 등급 확정자 이름(승인 이력) — 사용자가 지워졌으면 FK 가 NULL 이라 여기 안 들어온다.
         if (!empty($host['approved_by'])) {

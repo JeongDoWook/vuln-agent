@@ -74,7 +74,8 @@ $fqdn = trim((string) ($meta['hostname_fqdn'] ?? '')) ?: 'unknown';
 if ($fqdn !== 'unknown' && $fqdn !== $boundFqdn) {
     vg_log_activity($pdoAuth, 'HOST', null, 'ingest_spoof_blocked',
         "토큰 바인딩 위반: 토큰은 [{$boundFqdn}] 에 묶였는데 본문은 [{$fqdn}] 주장 → 거부",
-        ['bound' => $boundFqdn, 'claimed' => $fqdn], null, 'SYSTEM');
+        ['bound' => $boundFqdn, 'claimed' => $fqdn], null, 'SYSTEM',
+        subject: $boundFqdn, action: 'EXECUTE');
     respond_fail(403, 'token is bound to a different host', 'host_binding_violation');
 }
 $fqdn = $boundFqdn;   // 본문이 비었거나 일치 → 바인딩 값으로 강제.
@@ -268,7 +269,8 @@ try {
 
 // 스캔 수신 감사로그(에이전트발 → SYSTEM).
 vg_log_activity($pdo, 'HOST', $hostId, 'ingest', '스캔 수신',
-    ['packages' => $pkgCount, 'exposures' => $expCount, 'processes' => $procCount], null, 'SYSTEM');
+    ['packages' => $pkgCount, 'exposures' => $expCount, 'processes' => $procCount], null, 'SYSTEM',
+    subject: $fqdn, action: 'EXECUTE');
 
 // ── 명령 큐 완료 처리 (optional) ─────────────────────────────
 //   agent-poll.php 가 알려준 명령을 수행한 뒤 이 ingest 로 결과를 보고할 때 온다.
