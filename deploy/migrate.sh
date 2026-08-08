@@ -26,7 +26,12 @@ C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 #   "Duplicate entry ... for key PRIMARY" 로 죽는다. set -e 라 배포가 거기서 멈춘다.
 # 파일 락으로 직렬화한다. 락은 **DB 컨테이너별**이라 워크트리 스택끼리는 서로 막지 않는다.
 LOCK_FILE="${TMPDIR:-/tmp}/vg-migrate-${DB_CONTAINER}.lock"
-if command -v flock >/dev/null 2>&1 && exec 9>"$LOCK_FILE" 2>/dev/null; then
+# `2>/dev/null` 은 **반드시 그룹 `{ }` 에만** 건다. 예전엔 `exec 9>"$LOCK_FILE" 2>/dev/null` 이었는데,
+# 명령 없는 exec 은 리다이렉션을 **현재 셸에 영구 적용**하므로 fd 9 뿐 아니라 `2>/dev/null` 까지
+# 스크립트 끝까지 남아 **이후 모든 stderr(= mysql 오류)가 사라졌다.** 그래서 운영 DB 가
+# 2026-08-06 부터 마이그레이션에 실패하고 있었는데도 로그엔 "적용: …" 한 줄만 찍혔다(2026-08-08 발견).
+# 그룹에 걸면 억제 범위가 fd 9 여는 그 순간뿐이고(열기 실패 메시지만 숨김), fd 9 는 셸에 그대로 남는다.
+if command -v flock >/dev/null 2>&1 && { exec 9>"$LOCK_FILE"; } 2>/dev/null; then
   if ! flock -w 300 9; then
     printf "${R}마이그레이션 중단: 다른 프로세스가 '%s' 를 마이그레이션 중(5분 대기 초과)${N}\n" \
       "$DB_CONTAINER" >&2
@@ -71,7 +76,14 @@ for f in "$MIG_DIR"/*.sql; do
   done_row="$(db_mysql -N -B -e "SELECT 1 FROM tb_schema_migrations WHERE filename='$name' LIMIT 1")"
   if [ -n "$done_row" ]; then skipped=$((skipped + 1)); continue; fi
   printf "  ${C}적용${N}: %s\n" "$name"
-  db_mysql < "$f"                                              # 파일 실행(실패하면 set -e 로 중단 → 기록 안 함)
+  # 파일 실행(실패하면 여기서 중단 → 기록 안 함). mysql 의 상세 오류는 stderr 로 그대로 나가고,
+  # 그와 별개로 "어느 파일에서 멈췄는지"를 stdout 에도 한 줄 남긴다 — stderr 를 버리는 호출자
+  # (로그 파이프라인)가 있어도 실패 사실 자체는 보이게.
+  if ! db_mysql < "$f"; then
+    printf "${R}마이그레이션 실패${N}: %s 적용 중 중단 (원인은 위 mysql 오류 참조) — 적용 %d · 스킵 %d 까지 진행\n" \
+      "$name" "$applied" "$skipped"
+    exit 1
+  fi
   # INSERT IGNORE: 락이 없는 환경에서 경쟁이 나더라도 여기서 죽지 않는다.
   #   마이그레이션 파일은 멱등하게 쓰기로 돼 있으므로(db/migrations/README.md) 두 번 실행돼도
   #   스키마는 안전하다. 죽어서 배포를 멈추는 것보다 낫다.
