@@ -27,8 +27,24 @@ if ! declare -f collect_pkg_origins >/dev/null; then
 fi
 
 CMD_TIMEOUT=5
+# collect_pkg_origins() 는 함수 밖에서 오는 것들에 기댄다 — 함수만 떼어 오므로 여기서 채운다.
+#   빠뜨리면 set -u 에 걸려(MAX_BYTES: unbound variable) 판정 이전에 죽는다.
+#   MAX_BYTES(#483 이후 출처 수집에도 적용)·progress_heartbeat(#483 진행 하트비트).
+MAX_BYTES="${MAX_BYTES:-524288}"
+progress_heartbeat() { :; }
+# TMP: 에이전트는 자기 작업 디렉터리를 쓴다. mktemp 기본값(Windows %TEMP%)에 비-ASCII
+#   사용자명이 섞이면 mingw64 awk 가 그 경로를 못 연다(go_deps_extract_test.sh 와 같은 함정).
+TMP=$(mktemp -d "$ROOT/tests/.tmp-origin.XXXXXX")
+trap 'rm -rf "$TMP"' EXIT
 have()    { return 0; }
-timeout() { shift; "$@"; }
+# timeout 스텁 — 옵션(-k 2 / -s TERM)을 먼저 걷어내고 그 다음 초 인자를 버린다.
+#   예전엔 `shift` 하나뿐이라 `timeout -k 2 20 apt-cache …`(#483 이후 형태)에서
+#   `2 20 apt-cache …` 를 실행하려다 조용히 빈 출력을 냈다.
+timeout() {
+  while [ "${1-}" = "-k" ] || [ "${1-}" = "-s" ]; do shift 2; done
+  shift
+  "$@"
+}
 dpkg-query() { printf 'curl\ndocker-ce-cli\nzoom\nvim\n'; }
 
 # apt-cache 는 두 번 불린다: (1) policy — 저장소 목록, (2) policy <패키지들> — 패키지별 버전표.
