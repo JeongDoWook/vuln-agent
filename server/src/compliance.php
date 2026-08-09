@@ -14,6 +14,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';         // vg_pdo, vg_latest_scan_subq, vg_with_tx
 require_once __DIR__ . '/format.php';     // vg_asset_state_sql_expr
 require_once __DIR__ . '/setting.php';    // vg_setting_int — 조직별 SLA·컷라인
+require_once __DIR__ . '/account_inventory.php';   // vg_account_judgments — 계정 판정(재사용)
 
 // SLA 기준의 **폴백값**. 실제 판정은 tb_setting 의 값을 쓰고(조직마다 SLA 가 다르다),
 //   설정 행이 없거나 설정 테이블을 못 읽으면 여기 값으로 지금과 동일하게 동작한다.
@@ -34,6 +35,11 @@ const VG_COMPLIANCE_PARTIAL_MAX = 5;   // 1~5건 = 부분준수, 6건 이상 = �
 //   항상 같거나 늦으므로 위반 판정이 과소평가되지 않는다).
 const VG_COMPLIANCE_HISTORY_MARGIN_DAYS = 14;
 
+// 접근권한 검토 주기(일)의 **폴백값**. 실제 판정은 tb_setting 의
+//   'compliance.access_review_interval_days' 를 쓴다 — 검토 주기는 조직 내부 규정이라
+//   분기(90일)·반기(180일)로 갈린다. ISMS-P 2.5.3 은 "주기적"이라고만 말한다.
+const VG_COMPLIANCE_ACCESS_REVIEW_DAYS = 90;
+
 /** 설정(tb_setting) + 폴백 상수로 조립한 판정 기준값 한 벌. 화면·스케줄러가 함께 쓴다. */
 function vg_compliance_policy(): array {
     return [
@@ -50,18 +56,29 @@ function vg_compliance_policy(): array {
 //   상한을 넘으면 truncated=true 로 남겨 "잘렸다" 는 사실 자체를 증적에 기록한다.
 const VG_COMPLIANCE_EVIDENCE_MAX = 500;
 
+// 계정 통제가 한 번에 읽어 판정할 계정 행의 상한. host.php 의 VG_HOST_ACCOUNT_JUDGE_MAX(호스트
+//   1대 5000행)와 같은 취지지만 이쪽은 전 호스트를 한 쿼리로 읽으므로 전체 상한이다.
+//   상한에 닿으면 판정이 불완전하다는 사실을 서버 로그에 남긴다(조용히 자르지 않는다).
+const VG_COMPLIANCE_ACCOUNT_ROW_MAX = 50000;
+
 /**
  * 자동판정 통제 정의(SSOT) — 화면 제목·스냅샷의 control_key·framework_ids 가 전부 여기서 온다.
  *   키는 DB 에 그대로 저장되므로 바꾸면 과거 스냅샷과 이어지지 않는다(추가만 한다).
  */
 const VG_COMPLIANCE_CONTROLS = [
-    'patch'  => ['label' => '패치관리',        'framework' => 'ISMS-P 2.10.8 / ISO 27001 A.8.8'],
-    'asset'  => ['label' => '정보자산 식별',   'framework' => 'ISMS-P 1.2.1 / ISO 27001 A.5.9'],
-    'secops' => ['label' => '보안시스템 운영', 'framework' => 'ISMS-P 2.10.1'],
+    'patch'   => ['label' => '패치관리',        'framework' => 'ISMS-P 2.10.8 / ISO 27001 A.8.8'],
+    'asset'   => ['label' => '정보자산 식별',   'framework' => 'ISMS-P 1.2.1 / ISO 27001 A.5.9'],
+    'secops'  => ['label' => '보안시스템 운영', 'framework' => 'ISMS-P 2.10.1'],
+    // 아래 둘은 예전엔 VG_COMPLIANCE_MANUAL_CHECKLIST(사람이 심사) 였다. 계정 인벤토리
+    //   (tb_host_account)와 접속기록 점검 이력(tb_activity_review)이 제품 안에 생기면서
+    //   증적이 DB 에 있으니 자동판정으로 올린다 — 수동 체크리스트에는 증적이 제품 밖에
+    //   있는 항목만 남긴다.
+    'account'        => ['label' => '계정 관리',      'framework' => 'ISMS-P 2.5.1 / ISO 27001 A.9.2'],
+    'access_review'  => ['label' => '접근권한 검토',  'framework' => 'ISMS-P 2.5.3 / ISO 27001 A.9.2.5'],
 ];
 
 /**
- * 판정 결과 → ['label'=>..., 'tone'=>...]. 통제 3종이 공유하는 판정 어휘(SSOT).
+ * 판정 결과 → ['label'=>..., 'tone'=>...]. 통제 5종이 공유하는 판정 어휘(SSOT).
  *   $unjudged = 위반이 없는데도 **판정 자체가 불가능한 대상**이 남아있는가.
  *   위반 0건이라고 무조건 "준수"로 쓰지 않는 이유: 볼 수 있는 근거가 모자라서 0건인 것을
  *   준수로 표기하면 심사 증빙에 허위 안심(false assurance)을 싣게 된다. 이 제품이 CCE 에서
@@ -90,6 +107,32 @@ function vg_compliance_tone_of(string $label): string {
 }
 
 /**
+ * 심각도 버킷 3종의 빈 집계판. 대상이 0건인 버킷도 **행 자체는 남긴다** —
+ *   "위반 0건"과 "애초에 대상이 없음"은 화면에서 다른 말이어야 한다(targets 로 구분).
+ * @return array<string, array<string, mixed>> 버킷키 => 집계
+ */
+function vg_compliance_patch_buckets_init(array $policy): array {
+    $out = [];
+    foreach (['KEV' => $policy['kev'], 'CRITICAL' => $policy['crit'], 'HIGH' => $policy['high']] as $key => $sla) {
+        $out[$key] = [
+            'key' => $key, 'label' => $key, 'sla_days' => (int) $sla,
+            'violations' => 0, 'unjudged' => 0, 'targets' => 0,
+            'max_history_days' => 0, 'judgeable_from' => null, 'restart_excluded' => 0,
+        ];
+    }
+    return $out;
+}
+
+/**
+ * 발견 1건이 속하는 버킷과 그 SLA. KEV 등재가 심각도보다 우선한다(가장 급하다).
+ * @return array{0: string, 1: int}
+ */
+function vg_compliance_patch_bucket_of(array $row, array $policy): array {
+    if (!empty($row['in_kev'])) { return ['KEV', (int) $policy['kev']]; }
+    return $row['severity'] === 'CRITICAL' ? ['CRITICAL', (int) $policy['crit']] : ['HIGH', (int) $policy['high']];
+}
+
+/**
  * 통제 1: 패치관리(ISMS-P 2.10.8 / ISO 27001 A.8.8).
  *   판정: CRITICAL·HIGH 이면서 조치 가능(no_fix=0)하고 재시작 대기(needs_restart=1 — 패치는
  *   이미 됐고 프로세스 재시작만 남은 상태, 0009_findings_needs_restart.sql)가 아닌데 SLA
@@ -110,12 +153,20 @@ function vg_compliance_tone_of(string $label): string {
  *   모자라서 나온 0건을 조치를 잘해서 나온 0건처럼 보고하게 된다(허위 안심). 그런 건은 위반도
  *   준수도 아닌 판정 불가로 따로 센다. 최초 발견 시각을 못 찾은 건·수신시각이 미래인 이상
  *   데이터도 같은 이유로 판정 불가다(예전엔 조용히 넘겨 "준수" 쪽에 흡수됐다).
+ *   **버킷 판정**: 통제 전체에 뱃지 하나만 달면, 이력이 짧아 판정 불가인 버킷 하나가 잘 지킨
+ *   나머지 버킷까지 회색으로 눌러버린다(운영 실측: HIGH 만 판정 불가인데 KEV·CRITICAL 이 함께
+ *   "판정 불가"로 보였다). 그래서 버킷(KEV/CRITICAL/HIGH)별로 위반·판정 불가·대상 건수를 따로
+ *   집계해 돌려준다 — 화면이 3행을 각각 판정할 수 있게. 기존 키(na/na_unknown/…)는 스냅샷
+ *   evidence 호환 때문에 그대로 둔다.
  * @param array $policy vg_compliance_policy() 결과(kev/crit/high/margin 일수)
  * @return array{violations: array<int, array<string, mixed>>, total: int, unjudged: int,
- *               na: array<int, array<string, mixed>>, na_unknown: int}
+ *               na: array<int, array<string, mixed>>, na_unknown: int,
+ *               buckets: array<int, array<string, mixed>>}
  */
 function vg_compliance_load_patch(PDO $pdo, array $policy): array {
-    $empty = ['violations' => [], 'total' => 0, 'unjudged' => 0, 'na' => [], 'na_unknown' => 0];
+    $buckets = vg_compliance_patch_buckets_init($policy);
+    $empty = ['violations' => [], 'total' => 0, 'unjudged' => 0, 'na' => [], 'na_unknown' => 0,
+              'buckets' => array_values($buckets)];
     // 호스트별 최신 scan_id 를 먼저 작은 결과로 뽑아 **리터럴 IN() 리스트**로 건넨다.
     //   findings.php 와 같은 이유(20260723093110_findings_scan_severity_index.sql 주석) —
     //   JOIN 으로 얽으면 옵티마이저가 tb_finding 을 드라이빙 테이블로 골라 idx_find_scan_sev
@@ -138,15 +189,19 @@ function vg_compliance_load_patch(PDO $pdo, array $policy): array {
     }
     $scanIds = array_keys($fqdnByScan);
 
-    // 지금 살아있는(최신 스캔) CRITICAL·HIGH·조치가능·재시작대기 아닌 건. 컨테이너는 cid(이름)로
-    //   정규화(container_id 는 스캔마다 새로 발급되는 surrogate PK). idx_find_scan_sev 를 탄다.
+    // 지금 살아있는(최신 스캔) CRITICAL·HIGH·조치가능 건. 컨테이너는 cid(이름)로 정규화
+    //   (container_id 는 스캔마다 새로 발급되는 surrogate PK). idx_find_scan_sev 를 탄다.
+    //   재시작 대기(needs_restart=1)는 판정 대상이 아니지만 **여기서 함께 읽는다** — 버킷의
+    //   대상이 0건일 때 "왜 0건인지"(재시작 대기로 빠졌다)를 화면이 말할 수 있어야 한다.
+    //   쿼리를 하나 더 두는 대신 같은 결과에서 갈라 쓴다(같은 인덱스, 한 번의 왕복).
     $in = implode(',', array_fill(0, count($scanIds), '?'));
     $st = $pdo->prepare(
-        "SELECT f.scan_id, COALESCE(c.cid, '') AS cid, f.cve_id, f.package_name, f.severity, f.in_kev
+        "SELECT f.scan_id, COALESCE(c.cid, '') AS cid, f.cve_id, f.package_name, f.severity,
+                f.in_kev, f.needs_restart
            FROM tb_finding f
            LEFT JOIN tb_container c ON c.container_id = f.container_id AND c.is_deleted = 0
           WHERE f.scan_id IN ($in) AND f.severity IN ('CRITICAL','HIGH')
-            AND f.no_fix = 0 AND f.needs_restart = 0 AND f.is_deleted = 0"
+            AND f.no_fix = 0 AND f.is_deleted = 0"
     );
     $st->execute($scanIds);
     $active = [];
@@ -154,10 +209,18 @@ function vg_compliance_load_patch(PDO $pdo, array $policy): array {
         $sid = (int) $r['scan_id'];
         $r['host_id'] = $hostIdByScan[$sid] ?? 0;
         $r['fqdn'] = $fqdnByScan[$sid] ?? '';
+        [$bucket] = vg_compliance_patch_bucket_of($r, $policy);
+        if ((int) $r['needs_restart'] === 1) {
+            $buckets[$bucket]['restart_excluded']++;   // 패치 완료·재시작 대기 → 판정 대상 아님
+            continue;
+        }
+        $buckets[$bucket]['targets']++;
         $active[] = $r;
     }
     if (!$active) {
-        return $empty;
+        // 재시작 대기로 전부 빠졌을 수 있다 — 그 사실이 담긴 buckets 를 그대로 돌려준다.
+        return ['violations' => [], 'total' => 0, 'unjudged' => 0, 'na' => [], 'na_unknown' => 0,
+                'buckets' => array_values($buckets)];
     }
 
     // 최초 발견 시각 배치 조회 — tb_finding 을 host_id 로 훑으면 옵티마이저가 그걸 드라이빙으로
@@ -225,9 +288,7 @@ function vg_compliance_load_patch(PDO $pdo, array $policy): array {
     $naUnknown = 0;      // 최초 발견 시각을 알 수 없어 경과일을 못 세는 건
     foreach ($active as $r) {
         $hostId = (int) $r['host_id'];
-        [$bucket, $slaDays] = $r['in_kev']
-            ? ['KEV', $policy['kev']]
-            : ($r['severity'] === 'CRITICAL' ? ['CRITICAL', $policy['crit']] : ['HIGH', $policy['high']]);
+        [$bucket, $slaDays] = vg_compliance_patch_bucket_of($r, $policy);
 
         // ── 보유 이력이 SLA 보다 짧으면 위반을 검출할 방법 자체가 없다 → 판정 불가 ──
         //   여기서 continue 하지 않고 위반 0건으로 흘려보내면 그게 허위 안심이다.
@@ -247,23 +308,34 @@ function vg_compliance_load_patch(PDO $pdo, array $policy): array {
                 }
             }
             $na[$bucket] = $b;
+            $buckets[$bucket]['unjudged']++;
+            if ($hist !== null && $hist['days'] > $buckets[$bucket]['max_history_days']) {
+                $buckets[$bucket]['max_history_days'] = $hist['days'];
+            }
+            $buckets[$bucket]['judgeable_from'] = $b['judgeable_from'];
             continue;
         }
 
         $key = $r['host_id'] . '|' . $r['cid'] . '|' . $r['cve_id'] . '|' . $r['package_name'];
         $seen = $firstSeenMap[$key] ?? null;
-        if ($seen === null) { $naUnknown++; continue; }   // 최초 시각 미상 → 준수가 아니라 판정 불가
+        if ($seen === null) {   // 최초 시각 미상 → 준수가 아니라 판정 불가
+            $naUnknown++;
+            $buckets[$bucket]['unjudged']++;
+            continue;
+        }
 
         $days = $seen['days'];
         if ($days < 0) {
             // 서버 수신시각이 미래로 나온 데이터 이상 — 조용히 "위반 아님"으로 넘기지 않고 남긴다.
             error_log("[compliance] 음수 경과일(데이터 이상): host={$r['host_id']} cve={$r['cve_id']} days=$days");
             $naUnknown++;
+            $buckets[$bucket]['unjudged']++;
             continue;
         }
 
         if ($days <= $slaDays) { continue; }
 
+        $buckets[$bucket]['violations']++;
         $violations[] = [
             'host_id'   => (int) $r['host_id'],
             'fqdn'      => (string) $r['fqdn'],
@@ -292,6 +364,7 @@ function vg_compliance_load_patch(PDO $pdo, array $policy): array {
         'unjudged'   => $unjudged,
         'na'         => $naRows,
         'na_unknown' => $naUnknown,
+        'buckets'    => array_values($buckets),
     ];
 }
 
@@ -435,14 +508,175 @@ function vg_compliance_load_secconfig(PDO $pdo, int $limit): array {
     return ['violations' => $violations, 'total' => $total];
 }
 
+/**
+ * 통제 4: 계정 관리(ISMS-P 2.5.1 / ISO 27001 A.9.2).
+ *   판정 로직을 새로 만들지 않는다 — account_inventory.php 의 vg_account_judgments() 가
+ *   이미 계정 파생판정(미로그인·sudo·공유계정·휴면)을 갖고 있고 host.php 계정 탭이 그걸 쓴다.
+ *   여기서는 호스트별 최신 스캔의 계정 행을 **한 번에** 읽어 그 함수에 넘기고 집계만 한다(DRY).
+ *
+ *   판정 매핑: FAIL = 위반 / REVIEW·NA = 판정 불가 / PASS = 준수.
+ *   REVIEW 를 준수로 흡수하지 않는 이유는 그 함수 주석 그대로다 — 공유계정·휴면계정은
+ *   **추정**이라 사람이 확인해야 하고, NA 는 원자료를 못 걷은 것이라 준수의 근거가 없다.
+ *
+ *   **계정 행이 0인 호스트는 "수집 대기"로 판정 불가**다. 0행을 준수로 세면, 에이전트가 아직
+ *   계정 섹션을 안 보내는 동안 전 호스트가 "계정 관리 준수"로 보인다(허위 안심).
+ * @return array{violations: array<int, array<string, mixed>>, total: int, totalHosts: int,
+ *               unjudged: int, unjudged_rows: array<int, array<string, mixed>>, pending_hosts: int}
+ */
+function vg_compliance_load_account(PDO $pdo, int $limit): array {
+    $hosts = $pdo->query(
+        'SELECT h.host_id, h.fqdn, t.mid AS scan_id
+           FROM tb_host h
+           JOIN ' . vg_latest_scan_subq() . ' t ON t.host_id = h.host_id
+          WHERE h.is_deleted = 0
+          ORDER BY h.fqdn'
+    )->fetchAll();
+    $totalHosts = count($hosts);
+    if (!$hosts) {
+        return ['violations' => [], 'total' => 0, 'totalHosts' => 0, 'unjudged' => 0,
+                'unjudged_rows' => [], 'pending_hosts' => 0];
+    }
+
+    // 호스트별로 쿼리를 돌리면 N+1 이다 — 최신 스캔 전체를 한 번에 읽어 PHP 에서 가른다.
+    //   상한을 두는 이유는 host.php 의 VG_HOST_ACCOUNT_JUDGE_MAX 와 같다(비정상 데이터가
+    //   화면을 죽이지 못하게). 상한에 닿으면 조용히 자르지 않고 로그를 남긴다.
+    $scanIds = array_map(static fn($h) => (int) $h['scan_id'], $hosts);
+    $in = implode(',', array_fill(0, count($scanIds), '?'));
+    $cap = VG_COMPLIANCE_ACCOUNT_ROW_MAX;
+    $st = $pdo->prepare(
+        "SELECT scan_id, username, uid, gid, shell, home, is_locked, is_sudoer, is_system,
+                pw_last_change, pw_max_days, expire_date, last_login_at, never_logged_in
+           FROM tb_host_account
+          WHERE scan_id IN ($in) AND is_deleted = 0
+          ORDER BY scan_id, username
+          LIMIT $cap"
+    );
+    $st->execute($scanIds);
+    $rows = $st->fetchAll();
+    if (count($rows) >= $cap) {
+        error_log('[compliance] 계정 인벤토리 ' . $cap . '행 상한에 닿아 잘렸습니다 — 판정이 불완전합니다.');
+    }
+    $byScan = [];
+    foreach ($rows as $r) { $byScan[(int) $r['scan_id']][] = $r; }
+
+    $violations = [];
+    $unjudgedRows = [];
+    $unjudged = 0;
+    $pending = 0;
+    foreach ($hosts as $h) {
+        $hostId = (int) $h['host_id'];
+        $fqdn   = (string) $h['fqdn'];
+        $accounts = $byScan[(int) $h['scan_id']] ?? [];
+        if (!$accounts) {
+            // 계정 목록 자체가 없다 = 아직 못 걷었다. 준수도 위반도 아니다.
+            $pending++;
+            $unjudged++;
+            $unjudgedRows[] = ['host_id' => $hostId, 'fqdn' => $fqdn, 'code' => 'ACC-INVENTORY',
+                'title' => '계정 인벤토리 수집', 'result' => 'NA',
+                'reason' => '수집 대기 — 계정 목록을 아직 받지 못했습니다(에이전트 버전·실행 권한 확인).'];
+            continue;
+        }
+        foreach (vg_account_judgments($accounts) as $j) {
+            if ($j['result'] === 'FAIL') {
+                $violations[] = [
+                    'host_id' => $hostId, 'fqdn' => $fqdn,
+                    'code'    => (string) $j['code'], 'title' => (string) $j['title'],
+                    'result'  => 'FAIL',
+                    // names 는 계정명·"UID 1000 공유: a, b" 같은 근거 문자열이다.
+                    //   패스워드 해시는 애초에 수집·저장하지 않는다(account_inventory.php).
+                    'names'   => array_values((array) ($j['names'] ?? [])),
+                    'detail'  => (string) ($j['detail'] ?? ''),
+                ];
+                continue;
+            }
+            if ($j['result'] === 'PASS') { continue; }
+            $unjudged++;
+            $unjudgedRows[] = [
+                'host_id' => $hostId, 'fqdn' => $fqdn,
+                'code'    => (string) $j['code'], 'title' => (string) $j['title'],
+                'result'  => (string) $j['result'],
+                'reason'  => (string) ($j['detail'] ?? ''),
+            ];
+        }
+    }
+
+    return [
+        'violations'    => $violations,
+        'total'         => count($violations),
+        'totalHosts'    => $totalHosts,
+        'unjudged'      => $unjudged,
+        'unjudged_rows' => array_slice($unjudgedRows, 0, $limit),
+        'pending_hosts' => $pending,
+    ];
+}
+
+/**
+ * 통제 5: 접근권한 검토(ISMS-P 2.5.3 / ISO 27001 A.9.2.5).
+ *   판정: tb_activity_review(접속기록·권한 점검 이력)의 가장 최근 검토일로부터 경과일이
+ *   검토 주기 안이면 준수, 넘겼으면 위반 1건.
+ *
+ *   **검토 기록이 아예 없으면 판정 불가가 아니라 위반**이다. 다른 통제의 "판정 불가"는
+ *   근거 데이터를 못 걷어서 말할 수 없는 상태지만, 여기서는 "검토를 수행한 기록이 없다"는
+ *   사실 자체가 확인된 것이다 — ISMS-P 가 요구하는 건 검토 수행이고, 안 했으면 미이행이다.
+ * @return array{violations: array<int, array<string, mixed>>, total: int, unjudged: int,
+ *               interval_days: int, last: array<string, mixed>|null, days_since: int|null}
+ */
+function vg_compliance_load_access_review(PDO $pdo): array {
+    $interval = vg_setting_int('compliance.access_review_interval_days', VG_COMPLIANCE_ACCESS_REVIEW_DAYS);
+
+    // 경과일은 SQL 의 DATEDIFF 로 계산한다(패치관리와 같은 이유 — PHP 타임존·파싱 실패 회피).
+    //   "가장 최근 검토"는 대상 기간의 끝(period_end)이 가장 늦은 행. 같은 기간을 다시 점검한
+    //   경우가 있으므로 reviewed_at 으로 한 번 더 정렬한다.
+    $st = $pdo->query(
+        'SELECT period_start, period_end, reviewed_at, reviewer_name, result,
+                DATEDIFF(NOW(), reviewed_at) AS days_since
+           FROM tb_activity_review
+          WHERE is_deleted = 0
+          ORDER BY period_end DESC, reviewed_at DESC
+          LIMIT 1'
+    );
+    $row = $st->fetch();
+
+    if (!$row) {
+        return [
+            'violations' => [[
+                'reason' => '접근권한·접속기록 검토 기록이 없습니다',
+                'detail' => '검토 주기 ' . $interval . '일 · 수행 이력 0건',
+            ]],
+            'total' => 1, 'unjudged' => 0, 'interval_days' => $interval,
+            'last' => null, 'days_since' => null,
+        ];
+    }
+
+    $daysSince = (int) $row['days_since'];
+    $last = [
+        'period_start'  => (string) $row['period_start'],
+        'period_end'    => (string) $row['period_end'],
+        'reviewed_at'   => (string) $row['reviewed_at'],
+        'reviewer_name' => (string) ($row['reviewer_name'] ?? ''),
+        'result'        => (string) $row['result'],
+    ];
+    $violations = [];
+    if ($daysSince > $interval) {
+        $violations[] = [
+            'reason' => '최근 검토 이후 ' . $daysSince . '일 경과 — 검토 주기 ' . $interval . '일 초과',
+            'detail' => $last['period_start'] . ' ~ ' . $last['period_end'] . ' 기간 검토(' . $last['reviewed_at'] . ')',
+        ];
+    }
+
+    return [
+        'violations' => $violations, 'total' => count($violations), 'unjudged' => 0,
+        'interval_days' => $interval, 'last' => $last, 'days_since' => $daysSince,
+    ];
+}
+
 // 자동판정이 안 되는 통제 — 사람이 심사해야 하는 정책·승인이력류. 상태 판정 없이 항목명만.
+//   2.5.1(계정 관리)·2.5.3(접근권한 검토)은 여기서 뺐다 — tb_host_account·tb_activity_review 로
+//   자동판정 통제가 됐다(VG_COMPLIANCE_CONTROLS 의 account·access_review).
+//   남은 3개는 증적이 제품 밖(정책 문서·대응 절차·복구 계획)에 있어 원리적으로 자동판정이 안 된다.
 const VG_COMPLIANCE_MANUAL_CHECKLIST = [
     ['ismsp' => 'ISMS-P 1.1.1~1.1.6 관리체계 기반 마련', 'iso' => 'ISO 27001 A.5.1 정보보안 정책',
      'desc' => '정보보안 정책·관리체계 범위가 문서로 수립·승인되어 있는가'],
-    ['ismsp' => 'ISMS-P 2.5.1 사용자 계정 관리', 'iso' => 'ISO 27001 A.9.2 사용자 접근 관리',
-     'desc' => '계정 발급·변경·해지에 대한 승인 이력이 남아있는가'],
-    ['ismsp' => 'ISMS-P 2.5.3 접근권한 검토', 'iso' => 'ISO 27001 A.9.2.5 접근권한 검토',
-     'desc' => '주기적으로 접근권한 적정성을 재검토하고 있는가'],
     ['ismsp' => 'ISMS-P 2.11.1 사고 예방 및 대응체계 구축', 'iso' => 'ISO 27001 A.5.24~A.5.28 정보보안 사고 관리',
      'desc' => '침해사고 대응 절차·연락체계가 문서화되어 있는가'],
     ['ismsp' => 'ISMS-P 2.12.1 재해복구 체계 구축', 'iso' => 'ISO 27001 A.5.29~A.5.30 업무연속성 관리',
@@ -480,7 +714,7 @@ function vg_compliance_snapshot_exists(PDO $pdo, ?string $date = null): bool {
 }
 
 /**
- * 통제 3종을 판정해 그날짜 스냅샷으로 적재한다(UPSERT — 같은 날 두 번 돌아도 행이 안 늘어난다).
+ * 통제 5종을 판정해 그날짜 스냅샷으로 적재한다(UPSERT — 같은 날 두 번 돌아도 행이 안 늘어난다).
  *   무거운 집계이므로 웹 요청이 아니라 스케줄러/CLI 에서만 부른다.
  *
  *   판정 기준은 **화면과 같은 vg_compliance_policy()** 를 쓴다. 스케줄러가 상수를 따로 쓰면
@@ -498,6 +732,8 @@ function vg_compliance_take_snapshot(PDO $pdo, ?string $date = null, ?array $pol
     $patch = vg_compliance_load_patch($pdo, $policy);
     $asset = vg_compliance_load_asset($pdo, $cap);
     $sec   = vg_compliance_load_secconfig($pdo, $cap);
+    $acct  = vg_compliance_load_account($pdo, $cap);
+    $rev   = vg_compliance_load_access_review($pdo);
 
     // 근거는 "무엇이 위반이었나"를 나중에 되짚을 최소 식별자만 남긴다(원문 전체를 복사하지 않는다).
     //   판정 불가 사유도 같은 evidence JSON 안에 둔다 — 건수만 있고 사유가 없으면 나중에
@@ -528,6 +764,27 @@ function vg_compliance_take_snapshot(PDO $pdo, ?string $date = null, ?array $pol
                 'host_id' => $v['host_id'], 'fqdn' => $v['fqdn'],
                 'code' => $v['code'], 'severity' => $v['severity'],
             ], $sec['violations']), $sec['total']),
+        ],
+        // 계정 근거에는 계정명이 들어간다. 패스워드 해시·비밀값은 애초에 수집·저장하지 않으므로
+        //   증적에 실릴 수 없다(account_inventory.php 설계 원칙).
+        'account' => [
+            'total'    => $acct['total'],
+            'unjudged' => (int) $acct['unjudged'],
+            'evidence' => vg_compliance_evidence(array_map(static fn($v) => [
+                'host_id' => $v['host_id'], 'fqdn' => $v['fqdn'],
+                'code' => $v['code'], 'names' => $v['names'],
+            ], array_slice($acct['violations'], 0, $cap)), $acct['total'])
+                + ['unjudged' => ['total' => (int) $acct['unjudged'], 'items' => $acct['unjudged_rows'],
+                                  'pending_hosts' => (int) $acct['pending_hosts']]],
+        ],
+        'access_review' => [
+            'total'    => $rev['total'],
+            'unjudged' => 0,   // 검토 기록 없음은 판정 불가가 아니라 위반이다(함수 주석 참고)
+            'evidence' => vg_compliance_evidence(array_map(static fn($v) => [
+                'reason' => $v['reason'], 'detail' => $v['detail'],
+            ], $rev['violations']), $rev['total'])
+                + ['interval_days' => (int) $rev['interval_days'], 'last' => $rev['last'],
+                   'days_since' => $rev['days_since']],
         ],
     ];
 
