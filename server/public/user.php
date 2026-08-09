@@ -124,12 +124,13 @@ vg_header($user['username'] ?? '사용자', 'users');
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <div class="card">
+    <?php /* 부제로 "역할 변경 · 비밀번호 초기화 · 삭제" 를 적어 뒀는데, 바로 아래 각 폼의 라벨이
+             같은 말을 그대로 반복한다 — 제목만 남긴다. */ ?>
     <strong>계정 관리</strong>
-    <span class="why">— 역할 변경 · 비밀번호 초기화 · 삭제</span>
     <div class="card__body">
       <div class="actions actions--stack">
         <?php if ($isLocked): ?>
-          <form method="post" data-confirm="이 계정의 잠금을 해제할까요? 실패 카운트도 함께 초기화됩니다.">
+          <form method="post" data-confirm="잠금을 해제할까요? 로그인 실패 횟수도 함께 0 이 됩니다.">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="unlock">
             <label>계정 잠금</label>
@@ -156,7 +157,7 @@ vg_header($user['username'] ?? '사용자', 'users');
           <span class="why">역할 변경: 자기 자신은 변경할 수 없습니다.</span>
         <?php endif; ?>
 
-        <form method="post" data-confirm="이 사용자의 비밀번호를 초기화할까요? 아래 입력한 새 비밀번호로 즉시 바뀌며, 기존 비밀번호로는 더는 로그인할 수 없습니다.">
+        <form method="post" data-confirm="입력한 비밀번호로 즉시 바뀝니다. 기존 비밀번호로는 로그인할 수 없게 됩니다. 계속할까요?">
           <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
           <input type="hidden" name="action" value="reset">
           <label>비밀번호 초기화</label>
@@ -165,7 +166,7 @@ vg_header($user['username'] ?? '사용자', 'users');
         </form>
 
         <?php if (!$isSelf): ?>
-          <form method="post" data-confirm="이 사용자를 삭제할까요? 계정이 즉시 비활성화되어 로그인할 수 없게 되고 사용자 목록에서도 사라집니다. 이 사용자의 활동 이력은 감사로그에 그대로 남습니다.">
+          <form method="post" data-confirm="이 사용자를 삭제할까요? 즉시 로그인이 막히고 목록에서 사라집니다(활동 이력은 감사로그에 남습니다).">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="delete">
             <label>삭제</label>

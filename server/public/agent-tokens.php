@@ -145,11 +145,13 @@ vg_header('에이전트 키', 'agenttokens');
           <?php vg_copy_btn($newToken, '토큰 복사'); ?>
           <?php vg_copy_btn($install, '빠른 설치 명령 복사'); ?>
         </div>
-        <div class="why">이 값은 저장되지 않습니다 — 지금 복사하세요(잃으면 재발급).
-          <strong>권장</strong>: 대상 서버에서 <code>sudo bash install-agent.sh</code> 를 인자 없이 실행하고
-          이 토큰을 <strong>숨김 프롬프트</strong>에 붙여넣습니다 — 히스토리·<code>ps</code> 에 남지 않습니다.
-          스크립트는 <a href="/assets.php">자산</a> 화면의 “에이전트 설치 안내”에서 내려받습니다.
-          자동화(무인)라면 “빠른 설치 명령”을 쓰되 <code>--token</code> 이 셸 히스토리에 남는 점에 유의하세요.</div>
+        <?php /* 문단을 줄이되 위험 고지는 셋 다 남긴다: 재발급 외 복구 불가 · 대화형이 히스토리에 안 남는다 ·
+                 --token 은 남는다. 설치 스크립트 받는 곳은 <a> 로 가리키면 되므로 문장을 뺐다. */ ?>
+        <div class="why">지금 복사하세요 — 저장되지 않아 잃으면 재발급뿐입니다.
+          <strong>권장</strong>: 대상 서버에서 <code>sudo bash install-agent.sh</code> 를 인자 없이 실행해
+          <strong>숨김 프롬프트</strong>에 붙여넣습니다(히스토리·<code>ps</code> 에 안 남음).
+          스크립트는 <a href="/assets.php">자산</a> 화면에서 받습니다.
+          무인 자동화라면 “빠른 설치 명령”을 쓰되 <code>--token</code> 이 셸 히스토리에 남습니다.</div>
       </div>
     </div>
   <?php endif; ?>
@@ -217,15 +219,16 @@ vg_header('에이전트 키', 'agenttokens');
       <label>호스트 (fqdn)</label>
       <input type="text" name="fqdn" value="<?= vg_h($issueFqdn) ?>"
              placeholder="예: web01.example.com" maxlength="255" required autocomplete="off">
-      <div class="why">이 토큰은 <strong>이 호스트의 스캔만</strong> 갱신할 수 있습니다.
-        같은 호스트에 활성 토큰이 이미 있으면 자동 폐기되고 새로 발급됩니다.</div>
+      <div class="why">이 호스트의 스캔만 갱신할 수 있습니다. 같은 호스트의 기존 활성 토큰은 자동 폐기됩니다.</div>
       <label>용도 (선택)</label>
       <input type="text" name="label" value="<?= vg_h($issueLabel) ?>"
              placeholder="비우면 호스트명으로 자동 지정" maxlength="100" autocomplete="off">
       <label>유효기간</label>
       <?= vg_token_expiry_select($issueDays) ?>
-      <div class="why">기간이 지나면 이 에이전트의 수집이 <strong>즉시 거부</strong>됩니다(자동 갱신 없음). 만료 전에 새 토큰을 발급해 교체하세요.</div>
-      <div class="why">발급된 토큰 원문은 <strong>이 화면에서 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
+      <?php // 두 줄 다 발급 전에 알아야 할 사실이라 지우지 않고 한 줄로 합친다.
+      ?>
+      <div class="why">만료되면 수집이 <strong>즉시 거부</strong>됩니다(자동 갱신 없음). 토큰 원문은
+        <strong>발급 직후 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
       <?php vg_modal_foot('발급', ['loading' => '발급 중…']); ?>
     </form>
   <?php vg_modal_close(); ?>

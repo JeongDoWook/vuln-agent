@@ -105,8 +105,9 @@ try {
     // "activity 메뉴 접근"만 보장) failed_login_count/locked_until(브루트포스 잠금 정보)은 그 게이트만으론
     // admin 전용이 아니다 — 여기서 vg_has_role('admin') 을 추가로 확인해 진짜 admin 에게만 조회/렌더한다.
     if (vg_has_role('admin')) {
+        // user_id 를 같이 뽑는다 — 잠긴 계정을 발견해도 여기서 상세(잠금 해제)로 갈 길이 없었다.
         $accessRows = $pdo->query(
-            "SELECT username, role, last_login, failed_login_count, locked_until
+            "SELECT user_id, username, role, last_login, failed_login_count, locked_until
                FROM tb_user
               WHERE is_deleted = 0
               ORDER BY last_login IS NULL, last_login DESC"
@@ -213,8 +214,9 @@ vg_header('감사 로그', 'activity');
   <?php endif; ?>
 
   <div class="card">
+    <?php /* 부제가 바로 아래 입력 라벨(기간·결과·비고)을 그대로 되풀이했다 — 수행자는 로그인 계정으로
+             자동 기록되므로 설명할 것도 없다. 제목만 남긴다. */ ?>
     <strong>월 1회 접속기록 점검</strong>
-    <span class="why">— 점검 대상 기간·수행자·결과를 기록합니다.</span>
     <div class="card__body">
       <form method="post" class="actions">
         <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
@@ -288,7 +290,8 @@ vg_header('감사 로그', 'activity');
           'title' => '등록된 사용자가 없습니다.',
       ],
       'cell' => [
-          0 => static fn (array $u): string => '<strong>' . vg_h((string) $u['username']) . '</strong>',
+          0 => static fn (array $u): string => '<strong><a href="/user.php?id=' . (int) $u['user_id'] . '">'
+              . vg_h((string) $u['username']) . '</a></strong>',
           1 => static fn (array $u): string => '<span class="pill">' . vg_h(vg_role_label((string) $u['role'])) . '</span>',
           2 => static fn (array $u): string => !empty($u['last_login'])
               ? vg_h((string) $u['last_login'])

@@ -10,9 +10,6 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('dashboard');
 
-// "대응 우선순위" 에 보여줄 최대 건수. 나머지는 취약점 현황으로 넘긴다.
-
-
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
 $kevCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
@@ -225,11 +222,11 @@ vg_header('대시보드', 'dashboard');
 
     <div class="card">
       <strong>주요 취약점 신호</strong>
-      <span class="why">— KEV·외부 노출·런타임 상태·심각도 순</span>
-      <?php if ($urgentTotal > count($urgent)): ?>
-        <span class="why">· 총 <?= number_format($urgentTotal) ?>건 중 상위 <?= count($urgent) ?>건 ·
-          <a href="/findings.php">전체 보기 →</a></span>
-      <?php endif; ?>
+      <?php /* 정렬 기준과 "몇 건 중 몇 건" 이 각각 다른 why 로 붙어 제목 옆이 두 줄로 흘렀다 — 한 줄로 합친다.
+               정렬 기준의 근거(KEV·노출·심각도)는 아래 [탐지 신호] 열이 행마다 다시 보여준다. */ ?>
+      <span class="why">— KEV·노출·심각도 순<?php if ($urgentTotal > count($urgent)): ?>
+        · 상위 <?= count($urgent) ?>건 / 총 <?= number_format($urgentTotal) ?>건 ·
+        <a href="/findings.php">전체 보기 →</a><?php endif; ?></span>
       <div class="card__body">
       <?php
       vg_table(

@@ -1795,7 +1795,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--permissions .matrix td { height: 58px; vertical-align: middle; }
 .page--permissions .check-cell { display: grid; place-items: center; width: 100%; min-height: 32px; cursor: pointer; }
 .page--permissions .matrix input[type="checkbox"] { width: 1.2rem; height: 1.2rem; margin: 0; transform: none; accent-color: var(--accent); }
-.page--permissions .permission-note { margin-top: .25rem; }
+/* screen-audit-admin: .permission-note 규칙 제거 — 중복 안내 카드를 지워 참조가 사라졌다(ui_lint 5번 경고). */
 
 /* 로그인: 조용한 진입 화면 */
 .page--login .app { min-height: 100vh; display: grid; place-items: center; }

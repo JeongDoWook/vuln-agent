@@ -121,7 +121,7 @@ vg_header('API 키', 'apitokens');
         <strong>발급된 토큰 (한 번만 표시됨)</strong>
         <pre class="out selectable"><?= vg_h($newToken) ?></pre>
         <div class="actions"><?php vg_copy_btn($newToken, '토큰 복사'); ?></div>
-        <div class="why">이 값은 저장되지 않습니다. 지금 복사해 외부 시스템 설정에 넣으세요. 잃어버리면 새로 발급해야 합니다.</div>
+        <div class="why">지금 복사해 외부 시스템 설정에 넣으세요 — 저장되지 않아 잃으면 재발급뿐입니다.</div>
       </div>
     </div>
   <?php endif; ?>
@@ -177,8 +177,10 @@ vg_header('API 키', 'apitokens');
              placeholder="예: AI 보고서 생성기" maxlength="100" required autocomplete="off">
       <label>유효기간</label>
       <?= vg_token_expiry_select($issueDays) ?>
-      <div class="why">기간이 지나면 이 토큰은 <strong>즉시 거부</strong>됩니다(자동 갱신 없음). 필요하면 새로 발급하세요.</div>
-      <div class="why">발급된 토큰 원문은 <strong>이 화면에서 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
+      <?php // 에이전트 키 화면과 같은 문구 구조로 맞춘다(두 사실 다 발급 전에 알아야 한다).
+      ?>
+      <div class="why">만료되면 <strong>즉시 거부</strong>됩니다(자동 갱신 없음). 토큰 원문은
+        <strong>발급 직후 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
       <?php vg_modal_foot('발급', ['loading' => '발급 중…']); ?>
     </form>
   <?php vg_modal_close(); ?>
