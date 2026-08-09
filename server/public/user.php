@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$st = $pdo->prepare('SELECT user_id, username, role, created_at, last_login, locked_until FROM tb_user WHERE user_id = ? AND is_deleted = 0');
+$st = $pdo->prepare('SELECT user_id, username, role, created_at, last_login, locked_until, failed_login_count FROM tb_user WHERE user_id = ? AND is_deleted = 0');
 $st->execute([$id]);
 $user = $st->fetch() ?: null;
 $isLocked = $user && $user['locked_until'] !== null && strtotime((string) $user['locked_until']) > time();
@@ -110,6 +110,7 @@ vg_header($user['username'] ?? '사용자', 'users');
 ?>
   <?php
   $meta = [
+      '계정 #' . (int) $user['user_id'],
       vg_h(vg_role_label($user['role'])),
       '생성 ' . vg_h($user['created_at']),
       '최근 로그인 ' . vg_h($user['last_login'] ?? '–'),
@@ -154,10 +155,10 @@ vg_header($user['username'] ?? '사용자', 'users');
             <button class="btn btn--sm btn--ghost">역할 변경</button>
           </form>
         <?php else: ?>
-          <span class="why">역할 변경: 자기 자신은 변경할 수 없습니다.</span>
+          <span class="why">본인 역할은 변경할 수 없습니다.</span>
         <?php endif; ?>
 
-        <form method="post" data-confirm="입력한 비밀번호로 즉시 바뀝니다. 기존 비밀번호로는 로그인할 수 없게 됩니다. 계속할까요?">
+        <form method="post" data-confirm="비밀번호를 초기화할까요? 기존 비밀번호는 즉시 사용할 수 없습니다.">
           <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
           <input type="hidden" name="action" value="reset">
           <label>비밀번호 초기화</label>
@@ -166,14 +167,14 @@ vg_header($user['username'] ?? '사용자', 'users');
         </form>
 
         <?php if (!$isSelf): ?>
-          <form method="post" data-confirm="이 사용자를 삭제할까요? 즉시 로그인이 막히고 목록에서 사라집니다(활동 이력은 감사로그에 남습니다).">
+          <form method="post" data-confirm="이 사용자를 삭제할까요? 즉시 로그인이 막히며 활동 이력은 보존됩니다.">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="delete">
             <label>삭제</label>
             <button class="btn btn--sm btn--danger">사용자 삭제</button>
           </form>
         <?php else: ?>
-          <span class="why">삭제: 자기 자신은 삭제할 수 없습니다.</span>
+          <span class="why">본인 계정은 삭제할 수 없습니다.</span>
         <?php endif; ?>
       </div>
     </div>
@@ -181,8 +182,8 @@ vg_header($user['username'] ?? '사용자', 'users');
 
   <div class="card mt-lg">
     <strong>최근 활동</strong>
-    <span class="why">— 이 사용자와 관련된 감사 로그(최근 <?= $userActivityLimit ?>건) ·
-      <a href="/activity.php?q=<?= urlencode($user['username']) ?>">전체 감사로그에서 보기 →</a></span>
+    <span class="why">— 최근 <?= $userActivityLimit ?>건 ·
+      <a href="/activity.php?q=<?= urlencode($user['username']) ?>">전체 보기 →</a></span>
     <div class="card__body">
       <?php
       $activityLabels = vg_activity_type_labels();
@@ -206,7 +207,7 @@ vg_header($user['username'] ?? '사용자', 'users');
                   1 => static function (array $r) use ($activityLabels): string {
                       $code = (string) $r['activity_type'];
                       $label = $activityLabels[$code] ?? $code;
-                      return vg_h($label) . '<div class="why" title="' . vg_h($code) . '">' . vg_h($code) . '</div>';
+                      return vg_h($label) . '<div class="why">' . vg_h($code) . '</div>';
                   },
                   2 => static function (array $r): string {
                       $msg = trim((string) ($r['message'] ?? ''));

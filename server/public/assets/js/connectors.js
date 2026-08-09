@@ -240,6 +240,16 @@ function vgGenericInit() {
     if (urlLabel && meta.urlLabel) { urlLabel.textContent = meta.urlLabel; }
   }
 
+  // 선택한 스케줄에 필요한 입력만 보여준다. 수동 수집인데 interval/daily/cron 입력을
+  // 한꺼번에 노출하면 어떤 값이 저장되는지 오해하기 쉽다.
+  var schedule = document.getElementById('connSchedule');
+  function toggleSchedule() {
+    if (!schedule) { return; }
+    form.querySelectorAll('[data-schedule-field]').forEach(function (box) {
+      box.hidden = box.dataset.scheduleField !== schedule.value;
+    });
+  }
+
   document.getElementById('gRole').addEventListener('change', function () {
     vgRenderFieldMap(this.value, null);
   });
@@ -248,7 +258,9 @@ function vgGenericInit() {
   });
 
   typeSel.addEventListener('change', toggle);
+  if (schedule) { schedule.addEventListener('change', toggleSchedule); }
   toggle();
+  toggleSchedule();
 
   if (editConfig) {
     var editRole = editConfig.role || 'identity';

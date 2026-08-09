@@ -133,10 +133,11 @@ vg_header('제거 권고', 'findings');
               // 조치는 "패치" 가 아니다 — 배지로 그 사실을 먼저 말하고, 개별 CVE 로 내려가는 길을 준다.
               //   ctr 로 이 행의 스코프(호스트 자신=0 / 그 컨테이너)까지 넘긴다 — 안 넘기면 같은
               //   호스트의 다른 컨테이너 판정까지 섞여 건수가 안 맞는다.
-              'advice' => fn($r) => vg_nofix_badge()
+              'advice' => fn($r) => vg_badge('제거·대체 검토', 'high')
                   . '<div class="why"><a href="/findings.php?host=' . (int) $r['host_id']
                   . '&amp;ctr=' . (int) $r['container_id']
-                  . '&amp;q=' . urlencode((string) $r['package_name']) . '&amp;fx=nofix">CVE 목록 →</a></div>',
+                  . '&amp;q=' . urlencode((string) $r['package_name']) . '&amp;fx=nofix">상세 CVE '
+                  . number_format((int) $r['nofix_cnt']) . '건 →</a></div>',
           ],
       ]
   ); ?>

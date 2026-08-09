@@ -105,7 +105,7 @@ $nodeLabel = function (string $key) use ($linkFor, $target, $graph): string {
         . ' <span class="why">' . vg_h($p['version']) . '</span>'
         . ' <code>' . vg_h($p['manager']) . '</code>';
     if ($graph !== null && in_array($key, $graph['roots'], true)) {
-        $html .= ' ' . vg_badge('루트', 'ok', 'SBOM 이 기술하는 최상위 프로젝트 자신');
+        $html .= ' ' . vg_badge('루트', 'ok');
     }
     if ($key === $target) { $html .= ' ' . vg_badge('지금 보는 패키지', 'med'); }
     return $html;
@@ -138,7 +138,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
 
 <div class="card">
   <strong>무엇이 이 패키지를 끌어왔나</strong>
-  <span class="why">— SBOM(CycloneDX <code>dependencies</code>)·pom.xml 직접선언에서 온 부모→자식 엣지. 루트 → 직접 의존 → 전이 순으로 편다.</span>
+  <span class="why">— SBOM·pom.xml 수집 기준</span>
 </div>
 
 <?php if (!$scan): ?>
@@ -160,7 +160,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
   <?php if (count($groups) > 1): ?>
   <div class="card">
     <strong>조회 단위</strong>
-    <span class="why">— 엣지는 (스캔 × 컨테이너) 단위로 저장된다. 엣지가 있는 단위만 나열한다.</span>
+    <span class="why">— 의존 정보가 있는 호스트·컨테이너만 표시</span>
     <div class="card__body">
       <nav class="subtabs">
       <?php foreach ($groups as $gid => $g): ?>
@@ -250,7 +250,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
   <?php if ($tab === 'from'): ?>
   <div class="card">
     <strong>이 패키지를 끌어온 경로</strong>
-    <span class="why">— 루트(최상위 프로젝트)에서 대상까지. 경로가 여럿이면 전부 나열한다.</span>
+    <span class="why">— 루트에서 대상까지의 모든 수집 경로</span>
     <div class="card__body">
     <?php
     $r = vg_pkgdep_paths($graph, $target);
@@ -286,7 +286,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
   <?php elseif ($tab === 'to'): ?>
   <div class="card">
     <strong>이 패키지가 끌어오는 의존성</strong>
-    <span class="why">— 직접 의존부터 전이까지. 깊이 <?= VG_PKGDEP_DEPTH_MAX ?>단계·노드 <?= number_format(VG_PKGDEP_NODE_MAX) ?>개 상한.</span>
+    <span class="why">— 직접·전이 의존성</span>
     <div class="card__body">
     <?php
     if (!vg_pkgdep_children($graph, $target)) {
@@ -303,7 +303,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
   <?php else: ?>
   <div class="card">
     <strong>전체 트리</strong>
-    <span class="why">— 루트 <?= number_format(count($graph['roots'])) ?>개 · 노드 <?= number_format(count($graph['nodes'])) ?>개 · 깊이 <?= VG_PKGDEP_DEPTH_MAX ?>단계·노드 <?= number_format(VG_PKGDEP_NODE_MAX) ?>개 상한.</span>
+    <span class="why">— 루트 <?= number_format(count($graph['roots'])) ?>개 · 노드 <?= number_format(count($graph['nodes'])) ?>개</span>
     <div class="card__body">
     <?php
     if (!$graph['roots']) {

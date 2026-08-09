@@ -67,7 +67,13 @@
     if (more) {
       var shown = (detail.rows || []).length;
       var total = Number(detail.total || shown);
-      more.textContent = total > shown ? ('외 ' + (total - shown) + '건') : '';
+      more.textContent = '';
+      if (total > shown) {
+        more.appendChild(document.createTextNode(total + '건 중 ' + shown + '건 표시 · '));
+      }
+      if (detail.detail_url) {
+        more.appendChild(link(detail.detail_url, '전체 영향 자산 보기 →'));
+      }
     }
 
     if (typeof modal.showModal === 'function') { modal.showModal(); }

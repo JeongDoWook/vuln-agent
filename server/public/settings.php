@@ -78,10 +78,10 @@ vg_header('설정', 'settings');
 ?>
   <form method="post">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-    <?php vg_page_title('설정', 'SETTINGS', '조직 기준에 맞춰 판정 기준값과 세션 만료 정책을 조정합니다.', [
+    <?php vg_page_title('설정', 'SETTINGS', '판정 기준값과 세션 정책을 관리합니다.', [
         'actions' => '<button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button>',
     ]); ?>
-    <div class="sub">admin 전용 · 비워 두면 기본값으로 동작 · 변경은 감사 로그에 남습니다 · 세션 만료는 다음 요청부터 적용됩니다</div>
+    <div class="sub">admin 전용 · 변경 사항은 감사 로그에 기록됩니다</div>
 
     <?php
     vg_alert($msg, 'ok');
@@ -98,7 +98,7 @@ vg_header('설정', 'settings');
         ['label' => '설명'],
     ], $rows, [
         'cell' => [
-            0 => static fn($r) => '<strong>' . vg_h((string) $r['label']) . '</strong> <code class="why">' . vg_h((string) $r['key']) . '</code>',
+            0 => static fn($r) => '<strong>' . vg_h((string) $r['label']) . '</strong>',
             // 입력 스타일은 app.css 의 input[type=number] 가 이미 갖는다 — 클래스를 새로 만들지 않는다.
             1 => static fn($r) => '<input type="number" name="setting[' . vg_h((string) $r['key']) . ']"'
                 . ' value="' . vg_h((string) ($cur[$r['key']] ?? '')) . '"'

@@ -53,7 +53,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
 ?>
   <?php vg_page_title(
       '컴플라이언스 매핑', 'COMPLIANCE',
-      'ISMS-P · ISO 27001 통제를 수집 데이터로 준수/미준수까지 판정합니다. 판정 시각 ' . $judgedAt
+      '수집 데이터로 ISMS-P·ISO 27001 통제 3종을 판정합니다 · ' . $judgedAt
   ); ?>
   <?php
   // 이름이 비슷해 헷갈리는 두 화면을 나란히 세운다 — 여기는 **판정**(준수/미준수/판정 불가),
@@ -95,7 +95,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         <?= vg_badge($sPatch['label'], $sPatch['tone']) ?>
       </div>
       <?php // 건수·판정 시각은 위 KPI 카드와 페이지 부제가 이미 말한다 — 여기는 "무엇을 셌는가"만. ?>
-      <p class="why">패치가 있는 CRITICAL·HIGH 중 SLA 초과분(KEV <?= (int) $policy['kev'] ?>일 ·
+      <p class="why">조치 가능한 CRITICAL·HIGH 취약점의 SLA 초과분(KEV <?= (int) $policy['kev'] ?>일 ·
         CRITICAL <?= (int) $policy['crit'] ?>일 · HIGH <?= (int) $policy['high'] ?>일)</p>
       <?php
       // 판정 불가 사유를 그대로 노출한다 — "위반 0건"이 왜 준수를 뜻하지 않는지 화면에서 설명하지
@@ -117,7 +117,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
               'type'  => 'warn',
               // 예전 문구는 "위반 0건이 곧 준수를 뜻하지 않습니다" 였는데, 위반이 3건일 때도 그대로
               //   떠서 화면과 어긋났다(실측). 위반 건수와 무관하게 참인 말로 바꾼다.
-              'title' => '판정 불가 ' . number_format($patch['unjudged']) . '건 — 아래 위반 건수만으로는 준수를 판단할 수 없습니다',
+              'title' => '판정 불가 ' . number_format($patch['unjudged']) . '건 · 위반 건수만으로 준수를 판단할 수 없습니다',
               'hints' => $hints,
           ]);
       endif; ?>
@@ -163,8 +163,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sAsset['label'], $sAsset['tone']) ?>
       </div>
-      <p class="why">등록 자산 <?= number_format($asset['totalHosts']) ?>대 중 오프라인·수집없음이거나
-        OS·IP 가 누락된 자산</p>
+      <p class="why">등록 <?= number_format($asset['totalHosts']) ?>대 중 오프라인·수집 없음 또는 OS·IP 누락 자산</p>
       <?php if ($asset['unjudged'] > 0):
           $hints = [];
           foreach ($asset['unjudged_rows'] as $u) { $hints[] = $u['fqdn'] . ' — ' . $u['reason']; }
@@ -173,7 +172,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
           }
           vg_alert([
               'type'  => 'warn',
-              'title' => '판정 불가 ' . number_format($asset['unjudged']) . '대 — 부분 수집(root 아님)이라 식별 근거가 빠져 있습니다',
+              'title' => '판정 불가 ' . number_format($asset['unjudged']) . '대 · 부분 수집으로 식별 근거가 부족합니다',
               'hints' => $hints,
           ]);
       endif; ?>
@@ -207,7 +206,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sSec['label'], $sSec['tone']) ?>
       </div>
-      <p class="why">최신 스캔의 SCAP "설정 취약" 건수</p>
+      <p class="why">최신 스캔에서 FAIL로 판정된 보안 설정</p>
       <?php if ($secconfig['violations']):
           $shown = array_slice($secconfig['violations'], 0, $previewLimit);
       ?>
@@ -241,8 +240,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   <div class="card mt-lg">
     <div class="card__body">
       <strong>판정 추이</strong>
-      <p class="why">하루 1건 저장되는 통제별 판정 스냅샷입니다.
-        <?php if ($trend): ?>최근 <?= count($trend) ?>일치 · 최신 기록 <?= vg_h($trend[0]['taken_at']) ?><?php endif; ?></p>
+      <p class="why">일별 판정 스냅샷<?php if ($trend): ?> · 최근 <?= count($trend) ?>일 · 최신 <?= vg_h($trend[0]['taken_at']) ?><?php endif; ?></p>
       <?php if (!$trend): ?>
         <?php vg_empty([
             'icon'  => '🗓',

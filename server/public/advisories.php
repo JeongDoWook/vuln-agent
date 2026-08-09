@@ -172,9 +172,9 @@ vg_header('보안 공지', 'advisories');
                       $html .= '<a class="pill" href="/cve.php?cve=' . urlencode($cv) . '">' . vg_h($cv) . '</a> ';
                   }
                   if ($rest > 0) {
-                      // 나머지는 상세에서 전부 본다. title 로 원문 목록을 남겨 둔다.
-                      $html .= '<a class="pill" href="/advisory.php?id=' . (int) $r['advisory_id'] . '"'
-                             . ' title="' . vg_h(implode(', ', array_slice($ids, 4))) . '">+' . $rest . '</a>';
+                      // 나머지는 상세에서 전부 본다. 긴 CVE 목록을 툴팁에 다시 숨기지 않는다.
+                      $html .= '<a class="pill" href="/advisory.php?id=' . (int) $r['advisory_id']
+                             . '#cves">+' . $rest . ' · 전체</a>';
                   }
                   return $html;
               },
@@ -200,6 +200,7 @@ vg_header('보안 공지', 'advisories');
                           ];
                       }, $a['rows']),
                       'total' => $a['total'],
+                      'detail_url' => '/advisory.php?id=' . $aid . '#assets',
                   ];
                   $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                   return '<span class="badge tone-warn" data-advisory-assets="' . vg_h((string) $json) . '"'

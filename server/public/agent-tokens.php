@@ -104,9 +104,10 @@ $offset = ($page - 1) * $perPage;
 
 $list = $pdo->prepare(
     "SELECT t.agent_token_id, t.host_fqdn, t.label, t.token_prefix, t.last_seen_at, t.is_revoked,
-            t.created_at, t.expires_at, u.username AS created_by
+            t.created_at, t.expires_at, u.username AS created_by, h.host_id
        FROM tb_agent_token t
        LEFT JOIN tb_user u ON u.user_id = t.created_by
+       LEFT JOIN tb_host h ON h.fqdn = t.host_fqdn AND h.is_deleted = 0
       WHERE $where
       ORDER BY t.agent_token_id DESC
       LIMIT $perPage OFFSET $offset"
@@ -145,13 +146,8 @@ vg_header('에이전트 키', 'agenttokens');
           <?php vg_copy_btn($newToken, '토큰 복사'); ?>
           <?php vg_copy_btn($install, '빠른 설치 명령 복사'); ?>
         </div>
-        <?php /* 문단을 줄이되 위험 고지는 셋 다 남긴다: 재발급 외 복구 불가 · 대화형이 히스토리에 안 남는다 ·
-                 --token 은 남는다. 설치 스크립트 받는 곳은 <a> 로 가리키면 되므로 문장을 뺐다. */ ?>
-        <div class="why">지금 복사하세요 — 저장되지 않아 잃으면 재발급뿐입니다.
-          <strong>권장</strong>: 대상 서버에서 <code>sudo bash install-agent.sh</code> 를 인자 없이 실행해
-          <strong>숨김 프롬프트</strong>에 붙여넣습니다(히스토리·<code>ps</code> 에 안 남음).
-          스크립트는 <a href="/assets.php">자산</a> 화면에서 받습니다.
-          무인 자동화라면 “빠른 설치 명령”을 쓰되 <code>--token</code> 이 셸 히스토리에 남습니다.</div>
+        <div class="why">대상 서버에서 <code>sudo bash install-agent.sh</code> 실행 후 숨김 프롬프트에 붙여넣는 방식을 권장합니다.
+          빠른 설치 명령은 자동화용이며 토큰이 셸 히스토리에 남을 수 있습니다. 스크립트는 <a href="/assets.php">자산</a>에서 받습니다.</div>
       </div>
     </div>
   <?php endif; ?>
@@ -179,14 +175,17 @@ vg_header('에이전트 키', 'agenttokens');
               'hint' => '각 대상 서버마다 호스트 전용 토큰을 발급해 설치하세요. 위에서 발급합니다.',
           ],
           'cell'  => [
-              0 => fn($t) => '<code>' . vg_h((string) $t['host_fqdn']) . '</code>',
-              1 => fn($t) => vg_h((string) $t['label']),
+              0 => fn($t) => !empty($t['host_id'])
+                  ? '<a href="/host.php?id=' . (int) $t['host_id'] . '"><code>' . vg_h((string) $t['host_fqdn']) . '</code></a>'
+                  : '<code>' . vg_h((string) $t['host_fqdn']) . '</code>',
+              1 => fn($t) => vg_h((string) $t['label'])
+                  . '<div class="why">발급자 ' . vg_h((string) ($t['created_by'] ?? '–')) . '</div>',
               2 => fn($t) => '<code>' . vg_h((string) $t['token_prefix']) . '…</code>',
               // 폐기 > 만료 > 활성 순으로 판정 — 만료된 토큰이 '활성' 으로 보이면 안 된다.
               3 => fn($t) => (int) $t['is_revoked'] === 1
                   ? vg_badge('폐기됨', 'muted')
                   : (vg_token_is_expired($t['expires_at'] !== null ? (string) $t['expires_at'] : null)
-                      ? vg_badge('만료됨', 'danger', '유효기간이 지나 수신이 거부됩니다.')
+                      ? vg_badge('만료됨', 'danger')
                       : vg_badge('활성', 'ok')),
               4 => fn($t) => vg_token_expiry_badge($t['expires_at'] !== null ? (string) $t['expires_at'] : null),
               5 => fn($t) => $t['last_seen_at']
@@ -225,10 +224,7 @@ vg_header('에이전트 키', 'agenttokens');
              placeholder="비우면 호스트명으로 자동 지정" maxlength="100" autocomplete="off">
       <label>유효기간</label>
       <?= vg_token_expiry_select($issueDays) ?>
-      <?php // 두 줄 다 발급 전에 알아야 할 사실이라 지우지 않고 한 줄로 합친다.
-      ?>
-      <div class="why">만료되면 수집이 <strong>즉시 거부</strong>됩니다(자동 갱신 없음). 토큰 원문은
-        <strong>발급 직후 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
+      <div class="why">만료 시 수집이 즉시 거부됩니다. 토큰 원문은 발급 직후 한 번만 표시됩니다.</div>
       <?php vg_modal_foot('발급', ['loading' => '발급 중…']); ?>
     </form>
   <?php vg_modal_close(); ?>

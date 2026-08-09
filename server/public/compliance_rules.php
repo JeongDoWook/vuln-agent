@@ -53,8 +53,8 @@ try {
     $params = [];
     if ($q !== '') {
         $like = '%' . addcslashes($q, '\\%_') . '%';
-        $where[] = '(rule_id LIKE ? OR title LIKE ?)';
-        $params[] = $like; $params[] = $like;
+        $where[] = '(rule_id LIKE ? OR title LIKE ? OR rationale LIKE ? OR refs_json LIKE ?)';
+        array_push($params, $like, $like, $like, $like);
     }
     if ($sev !== '') {
         $where[] = 'severity = ?';
@@ -80,7 +80,7 @@ try {
 
 vg_header('보안 설정', 'compliance');
 ?>
-  <?php vg_page_title('보안 설정', 'SECURITY BASELINE', 'SCAP 점검 항목과 CIS·NIST·STIG 기준을 검색합니다.', ['count' => $total]); ?>
+  <?php vg_page_title('보안 설정', 'SECURITY BASELINE', 'SSG 룰과 CIS·NIST·STIG 참조를 검색합니다.', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -89,7 +89,7 @@ vg_header('보안 설정', 'compliance');
   vg_toolbar([
       ['type' => 'select', 'name' => 'sev', 'selected' => $sev, 'empty_label' => '심각도 전체',
        'options' => $sevOptions],
-      ['type' => 'search', 'name' => 'q', 'placeholder' => '룰 ID 또는 제목 검색', 'value' => $q],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '룰 ID·제목·참조 검색', 'value' => $q],
   ]);
 
   $hasFilter = $q !== '' || $sev !== '';
@@ -100,7 +100,7 @@ vg_header('보안 설정', 'compliance');
           // 심각도 뱃지는 고정 크기라 % 가 아니라 rem 이다(cves.php 와 같은 이유 — 870px 에서
           //   44.5px 가 옆 열을 덮었다). 값 69 + 칸 여백 32 = 101 → 6.5rem.
           ['label' => '심각도', 'width' => '6.5rem'],
-          ['label' => '참조(CIS/NIST/STIG)', 'width' => '15%'],
+          ['label' => '참조 기준', 'width' => '15%'],
           ['label' => '근거'],
       ],
       $rows,
@@ -122,7 +122,8 @@ vg_header('보안 설정', 'compliance');
               // 룰 ID 는 길다 — col-id 가 한 줄로 두고 넘치면 말줄임한다(전체 값은 title 로 남는다).
               0 => fn($r) => '<a href="/compliance_rule.php?rule=' . urlencode((string) $r['rule_id']) . '" title="' . vg_h((string) $r['rule_id']) . '">'
                             . '<code class="why">' . vg_h((string) $r['rule_id']) . '</code></a>',
-              1 => fn($r) => vg_h((string) $r['title']),
+              1 => fn($r) => '<a href="/compliance_rule.php?rule=' . urlencode((string) $r['rule_id']) . '">'
+                            . vg_h((string) $r['title']) . '</a>',
               2 => function ($r) {
                   $s = mb_strtoupper((string) $r['severity']);
                   return vg_badge($s, vg_sev_tone($s));

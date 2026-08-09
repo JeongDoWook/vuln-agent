@@ -75,22 +75,39 @@
   // --- 중요 작업 확인 -----------------------------------------------------
   function confirmAction(message, submitter) {
     return new Promise(function (resolve) {
-      var dlg = document.createElement('dialog');
-      dlg.className = 'modal confirm-modal';
-      dlg.setAttribute('aria-labelledby', 'confirmTitle');
-      dlg.innerHTML = '<div class="modal__head"><strong id="confirmTitle">작업을 진행할까요?</strong>'
-        + '<button type="button" class="modal__x" data-confirm-cancel aria-label="닫기">✕</button></div>'
-        + '<div class="modal__body"><p class="confirm-modal__message"></p>'
-        + '<div class="modal__foot"><button type="button" class="btn btn--ghost" data-confirm-cancel>취소</button>'
-        + '<button type="button" class="btn btn--danger" data-confirm-ok>계속</button></div></div>';
-      dlg.querySelector('.confirm-modal__message').textContent = message;
+      var dlg = document.getElementById('vgConfirmDialog');
+      if (!dlg || typeof dlg.showModal !== 'function') {
+        resolve(window.confirm(message));
+        return;
+      }
+      dlg.querySelector('[data-confirm-message]').textContent = message;
       var action = dlg.querySelector('[data-confirm-ok]');
-      if (submitter && submitter.textContent.trim()) { action.textContent = submitter.textContent.trim(); }
-      function finish(ok) { dlg.close(); dlg.remove(); resolve(ok); }
-      dlg.querySelectorAll('[data-confirm-cancel]').forEach(function (b) { b.addEventListener('click', function () { finish(false); }); });
-      action.addEventListener('click', function () { finish(true); });
-      dlg.addEventListener('cancel', function (e) { e.preventDefault(); finish(false); });
-      document.body.appendChild(dlg); dlg.showModal(); action.focus();
+      var cancelButtons = dlg.querySelectorAll('[data-confirm-cancel]');
+      action.textContent = submitter && submitter.textContent.trim() ? submitter.textContent.trim() : '계속';
+      var settled = false;
+      function cleanup() {
+        cancelButtons.forEach(function (button) { button.removeEventListener('click', cancel); });
+        action.removeEventListener('click', accept);
+        dlg.removeEventListener('cancel', cancelEvent);
+        dlg.removeEventListener('close', closed);
+      }
+      function finish(ok) {
+        if (settled) { return; }
+        settled = true;
+        cleanup();
+        if (dlg.open) { dlg.close(); }
+        resolve(ok);
+      }
+      function cancel() { finish(false); }
+      function accept() { finish(true); }
+      function cancelEvent(e) { e.preventDefault(); finish(false); }
+      function closed() { finish(false); }
+      cancelButtons.forEach(function (button) { button.addEventListener('click', cancel); });
+      action.addEventListener('click', accept);
+      dlg.addEventListener('cancel', cancelEvent);
+      dlg.addEventListener('close', closed);
+      dlg.showModal();
+      action.focus();
     });
   }
 
@@ -288,8 +305,20 @@
       if (seconds < 60) { return Math.floor(seconds) + '초'; }
       return Math.floor(seconds / 60) + '분 ' + Math.floor(seconds % 60) + '초';
     }
+    function compactDateTime(value) {
+      var match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+      return match ? match[1] + '.' + match[2] + '.' + match[3] + ' ' + match[4] + ':' + match[5] : String(value || '');
+    }
     function statusLabel(status) {
       return {running: '수집 중', pending: '대기 중', done: '완료', failed: '실패'}[status] || status;
+    }
+    function stageLabel(stage) {
+      return {
+        initializing: '초기화', system: '시스템', packages: '설치 패키지', patches: '패치',
+        runtimes: '런타임', containers: '컨테이너', exposure: '노출 분석',
+        pkg_origins: '패키지 출처', security: '보안 설정', packaging: '결과 조립',
+        uploading: '전송', complete: '완료', failed: '실패', cancelled: '중단'
+      }[stage] || stage || '';
     }
     function text(tag, className, value) {
       var node = document.createElement(tag);
@@ -318,12 +347,25 @@
 
       var meta = document.createElement('div');
       meta.className = 'collection-item__meta';
-      var message = command.progress_message;
-      if (!message) { message = command.status === 'pending' ? '다음 poll에서 실행됩니다.' : statusLabel(command.status); }
-      meta.appendChild(text('span', '', pct + '% · ' + message));
-      var timing = command.elapsed_seconds === null ? '' : '경과 ' + duration(command.elapsed_seconds);
+      var detail = '';
+      if (command.status === 'running') {
+        detail = pct + '% · ' + (stageLabel(command.progress_stage) || '수집 준비');
+      } else if (command.status === 'pending') {
+        detail = command.run_at ? '예약 실행' : '즉시 실행 · 다음 poll 대기';
+      } else {
+        detail = command.progress_message || statusLabel(command.status);
+      }
+      meta.appendChild(text('span', 'collection-item__stage', detail));
+      var timing = '';
+      if (command.status === 'pending' && command.run_at) {
+        timing = '예약 ' + compactDateTime(command.run_at);
+      } else if (command.started_at) {
+        timing = '시작 ' + compactDateTime(command.started_at);
+        if (command.elapsed_seconds !== null) { timing += ' · 경과 ' + duration(command.elapsed_seconds); }
+      }
       if (command.status === 'running' && command.heartbeat_age !== null) {
-        timing += ' · ' + (Number(command.heartbeat_age) > 180 ? '통신 지연' : '통신 정상');
+        timing += (timing ? ' · ' : '') + '통신 ' + compactDateTime(command.heartbeat_at)
+          + (Number(command.heartbeat_age) > 180 ? ' 지연' : ' 정상');
         if (Number(command.heartbeat_age) > 180) { item.classList.add('is-stale'); }
       }
       meta.appendChild(text('span', '', timing));
@@ -403,27 +445,37 @@
   document.addEventListener('DOMContentLoaded', syncThemeButtons);
 
   // --- 모바일 내비게이션 -------------------------------------------------
-  function setMobileNav(open) {
+  function setMobileNav(open, restoreFocus) {
     document.body.classList.toggle('nav-open', open);
     var toggle = document.querySelector('[data-nav-toggle]');
     if (toggle) {
       toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
       toggle.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기');
     }
+    if (open) {
+      var firstLink = document.querySelector('.side a.link');
+      if (firstLink) { firstLink.focus(); }
+    } else if (restoreFocus && toggle) {
+      toggle.focus();
+    }
   }
   document.addEventListener('click', function (e) {
     if (e.target.closest('[data-nav-toggle]')) {
       e.preventDefault();
-      setMobileNav(!document.body.classList.contains('nav-open'));
+      setMobileNav(!document.body.classList.contains('nav-open'), true);
       return;
     }
-    if (e.target.closest('[data-nav-close]') || e.target.closest('.side a.link')) {
-      setMobileNav(false);
+    if (e.target.closest('[data-nav-close]')) {
+      setMobileNav(false, true);
+      return;
+    }
+    if (e.target.closest('.side a.link')) {
+      setMobileNav(false, false);
     }
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && document.body.classList.contains('nav-open')) {
-      setMobileNav(false);
+      setMobileNav(false, true);
     }
   });
 
@@ -479,6 +531,14 @@
   // data-tip 으로 바꿔 브라우저 기본 툴팁의 긴 대기시간·OS별 모양 차이를 없앤다.
   var infoTip = null;
   var infoTipOwner = null;
+  function normalizedText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+  function titleRepeatsVisibleText(owner, message) {
+    if (normalizedText(owner.textContent) !== normalizedText(message)) { return false; }
+    if (owner.matches('.clamp-2, [class*="clamp-"]')) { return false; }
+    return owner.scrollWidth <= owner.clientWidth && owner.scrollHeight <= owner.clientHeight;
+  }
   function prepareTooltips(root) {
     var scope = root && root.querySelectorAll ? root : document;
     var titled = [];
@@ -487,6 +547,10 @@
     titled.forEach(function (el) {
       var message = el.getAttribute('title');
       if (!message) { return; }
+      if (titleRepeatsVisibleText(el, message)) {
+        el.removeAttribute('title');
+        return;
+      }
       el.setAttribute('data-tip', message);
       el.removeAttribute('title');
     });

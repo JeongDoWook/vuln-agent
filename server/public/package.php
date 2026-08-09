@@ -95,7 +95,9 @@ if ($name === '') {
                 $ecosystem
             );
             foreach ($nofixGroups as $i => $g) {
-                $nofixGroups[$i]['fqdn'] = $scans[(int) $g['scan_id']]['fqdn'] ?? '?';
+                $host = $scans[(int) $g['scan_id']] ?? [];
+                $nofixGroups[$i]['host_id'] = (int) ($host['host_id'] ?? 0);
+                $nofixGroups[$i]['fqdn'] = $host['fqdn'] ?? '?';
             }
         }
     } catch (Throwable $e) {
@@ -173,10 +175,9 @@ vg_hero(
   // 관측 + 권고. "EOL 이다" 라고 단정하지 않는다 — 우리가 아는 건 숫자뿐이다.
   vg_alert([
       'type'  => 'warn',
-      'title' => '조치 = 패치 아님, 제거 또는 대체 검토',
+      'title' => '제거 또는 대체 검토',
       'hints' => [
-          '아래 자산에서 이 패키지의 CVE 대부분이 벤더 미수정입니다 — 패치를 기다려도 오지 않습니다.',
-          'EOL(지원 종료) 확정이 아니라 관측입니다.',
+          '아래 자산에서 CVE 대부분의 수정본이 확인되지 않았습니다. EOL 확정이 아닌 현재 관측입니다.',
       ],
   ]);
   ?>
@@ -198,7 +199,9 @@ vg_hero(
         [
             'card' => false,
             'cell' => [
-                0 => fn($g) => vg_h((string) $g['fqdn']),
+                0 => fn($g) => !empty($g['host_id'])
+                    ? '<a href="/host.php?id=' . (int) $g['host_id'] . '">' . vg_h((string) $g['fqdn']) . '</a>'
+                    : vg_h((string) $g['fqdn']),
                 // 같은 호스트의 호스트 자신·컨테이너가 나란히 오면 fqdn 만으론 구분이 안 된다.
                 1 => fn($g) => !empty($g['container_cid'])
                     ? '<span class="why">컨테이너 ' . vg_h((string) $g['container_cid']) . '</span>'
@@ -265,7 +268,8 @@ vg_hero(
                     ? '<span class="pill">' . vg_h((string)$r['fixed_version']) . ' 이상</span>'
                     : '<span class="why">수정 버전 미확인</span>',
                 'summary' => fn($r) => !empty($r['summary'])
-                    ? '<div class="clamp-2" title="' . vg_h((string)$r['summary']) . '">' . vg_h((string)$r['summary']) . '</div>'
+                    ? '<a class="clamp-2" href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
+                        . vg_h((string) $r['summary']) . '</a>'
                     : '<span class="why">–</span>',
             ],
         ]

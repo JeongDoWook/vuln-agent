@@ -60,26 +60,30 @@ try {
     if ($found) {
         $guide = vg_control_guide($pdo, $fw, $control);
 
-        // 점검 제목은 판정 결과에 붙어 있다(cce.php 가 코드마다 같은 제목을 쓴다).
-        //   아직 한 번도 점검되지 않은 룰은 제목이 없다 — 코드만 보여준다.
+        // 점검 제목·SSG 룰 ID 는 판정 결과에 붙어 있다(cce.php 가 코드마다 같은 값을 쓴다).
+        //   아직 한 번도 점검되지 않은 룰은 둘 다 없다 — 코드와 자체 가이드만 보여준다.
         $in = implode(',', array_fill(0, count($ruleCodes), '?'));
         $st = $pdo->prepare(
-            "SELECT code, MIN(title) AS title FROM tb_cce_finding
+            "SELECT code, MIN(title) AS title,
+                    MIN(NULLIF(ssg_rule_id, '')) AS ssg_rule_id,
+                    COUNT(DISTINCT NULLIF(ssg_rule_id, '')) AS ssg_rule_count
+               FROM tb_cce_finding
               WHERE is_deleted = 0 AND code IN ($in) GROUP BY code"
         );
         $st->execute($ruleCodes);
         $titles = [];
-        foreach ($st->fetchAll() as $t) { $titles[(string) $t['code']] = (string) $t['title']; }
+        $ssgRuleIds = [];
+        foreach ($st->fetchAll() as $t) {
+            $code = (string) $t['code'];
+            $titles[$code] = (string) $t['title'];
+            // 배포판별로 같은 CCE 코드가 여러 SSG 룰에 대응할 수 있다. 그때 임의의 MIN 룰로
+            //   보내면 잘못된 상세 링크가 되므로 고유 대응일 때만 링크한다.
+            $ssgRuleIds[$code] = (int) ($t['ssg_rule_count'] ?? 0) === 1
+                ? (string) ($t['ssg_rule_id'] ?? '')
+                : '';
+        }
 
         $guides = vg_cce_rule_guides($ruleCodes);
-        foreach ($ruleCodes as $code) {
-            $ruleRows[] = [
-                'code'        => $code,
-                'title'       => $titles[$code] ?? '',
-                'summary'     => $guides[$code]['summary'] ?? '',
-                'remediation' => $guides[$code]['remediation'] ?? '',
-            ];
-        }
 
         // 호스트별 최신 스캔의 CCE 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다
         //   (control_mapping.php 드릴다운이 쓰던 쿼리를 그대로 옮겼다).
@@ -93,12 +97,42 @@ try {
                JOIN tb_control_mapping m ON m.rule_code = cf.code AND m.framework = ? AND m.is_deleted = 0
               WHERE cf.is_deleted = 0 AND m.control_id = ?";
 
-        $st = $pdo->prepare("SELECT cf.result, COUNT(*) AS c $baseSql GROUP BY cf.result");
+        // 통제 전체뿐 아니라 점검 항목별 현황도 한 번에 집계한다. 상세 표에서 조치 설명과 현재
+        //   결과를 함께 보여 주어, 사용자가 호스트 표를 다시 훑어 같은 코드를 셀 필요가 없게 한다.
+        $st = $pdo->prepare(
+            "SELECT cf.code,
+                    SUM(cf.result = 'FAIL') AS fail_cnt,
+                    SUM(cf.result = 'PASS') AS pass_cnt,
+                    SUM(cf.result = 'NA') AS na_cnt
+               $baseSql GROUP BY cf.code"
+        );
         $st->execute([$fw, $control]);
+        $resultByCode = [];
         foreach ($st->fetchAll() as $r) {
-            if (isset($counts[$r['result']])) { $counts[$r['result']] = (int) $r['c']; }
+            $code = (string) $r['code'];
+            $resultByCode[$code] = [
+                'FAIL' => (int) $r['fail_cnt'],
+                'PASS' => (int) $r['pass_cnt'],
+                'NA'   => (int) $r['na_cnt'],
+            ];
+            foreach ($counts as $result => $_) { $counts[$result] += $resultByCode[$code][$result]; }
         }
         $total = array_sum($counts);
+
+        foreach ($ruleCodes as $code) {
+            $current = $resultByCode[$code] ?? ['FAIL' => 0, 'PASS' => 0, 'NA' => 0];
+            $ruleRows[] = [
+                'code'        => $code,
+                'title'       => $titles[$code] ?? '',
+                'ssg_rule_id' => $ssgRuleIds[$code] ?? '',
+                'summary'     => $guides[$code]['summary'] ?? '',
+                'remediation' => $guides[$code]['remediation'] ?? '',
+                'fail_cnt'    => $current['FAIL'],
+                'pass_cnt'    => $current['PASS'],
+                'na_cnt'      => $current['NA'],
+                'result_cnt'  => array_sum($current),
+            ];
+        }
 
         $st = $pdo->prepare("SELECT COUNT(DISTINCT h.host_id) AS hosts, MAX(s.collected_at) AS last_at $baseSql");
         $st->execute([$fw, $control]);
@@ -147,7 +181,8 @@ if (!$found) {
     return;
 }
 
-$failTone = $counts['FAIL'] > 0 ? 'crit' : 'ok';
+$failTone = $counts['FAIL'] > 0 ? 'crit'
+          : ($counts['NA'] > 0 ? 'med' : ($total > 0 ? 'ok' : 'muted'));
 vg_hero(
     vg_h($control),
     [
@@ -157,14 +192,12 @@ vg_hero(
     ],
     number_format($counts['FAIL']) . '건',
     $failTone,
-    '위반',
+    'FAIL',
     'CONTROL DETAIL'
 );
 ?>
 
 <div class="card">
-  <strong><?= vg_h($controlName) ?></strong>
-  <span class="why">— <?= vg_h($frameworks[$fw]) ?> · 호스트별 최신 스캔 기준</span>
   <div class="card__body stat-grid">
     <div class="stat">
       <span class="stat__val"><?= number_format($counts['FAIL']) ?></span>
@@ -176,7 +209,7 @@ vg_hero(
     </div>
     <div class="stat">
       <span class="stat__val"><?= number_format($counts['NA']) ?></span>
-      <div class="why">NA(미점검)</div>
+      <div class="why">NA(판정 불가)</div>
     </div>
     <div class="stat">
       <span class="stat__val"><?= number_format($hostCount) ?></span>
@@ -222,7 +255,8 @@ vg_hero(
     <?php
     vg_table(
         [
-            ['label' => '점검 항목', 'width' => '26%'],
+            ['label' => '점검 항목', 'width' => '23%'],
+            ['label' => '현재 결과', 'width' => '15%'],
             ['label' => '무엇을 보는가'],
             ['label' => '조치 방법'],
         ],
@@ -235,19 +269,32 @@ vg_hero(
                 'hint'  => '매핑은 근거가 있는 항목만 넣습니다 — 없으면 행을 만들지 않습니다.',
             ],
             'cell' => [
-                0 => fn($r) => '<code class="why">' . vg_h((string) $r['code']) . '</code>'
-                             . ($r['title'] !== '' ? '<br>' . vg_h((string) $r['title']) : ''),
-                1 => fn($r) => '<span class="why">'
+                0 => function ($r) {
+                    $title = $r['title'] !== '' ? vg_h((string) $r['title']) : '';
+                    if ($title !== '' && $r['ssg_rule_id'] !== '') {
+                        $title = '<a href="/compliance_rule.php?rule=' . urlencode((string) $r['ssg_rule_id']) . '">'
+                               . $title . '</a>';
+                    }
+                    return '<code class="why">' . vg_h((string) $r['code']) . '</code>'
+                         . ($title !== '' ? '<br>' . $title : '');
+                },
+                1 => function ($r) {
+                    if ((int) $r['result_cnt'] === 0) { return vg_badge('점검 결과 없음', 'muted'); }
+                    $tone = (int) $r['fail_cnt'] > 0 ? 'crit' : ((int) $r['na_cnt'] > 0 ? 'med' : 'ok');
+                    return vg_badge('FAIL ' . number_format((int) $r['fail_cnt']), $tone)
+                         . '<br><span class="why">PASS ' . number_format((int) $r['pass_cnt'])
+                         . ' · 판정 불가 ' . number_format((int) $r['na_cnt']) . '</span>';
+                },
+                2 => fn($r) => '<span class="why">'
                              . ($r['summary'] !== '' ? vg_h((string) $r['summary']) : '설명 준비 중')
                              . '</span>',
-                2 => fn($r) => '<span class="why">'
+                3 => fn($r) => '<span class="why">'
                              . ($r['remediation'] !== '' ? vg_h((string) $r['remediation']) : '조치 방법 준비 중')
                              . '</span>',
             ],
         ]
     );
     ?>
-      <p class="why">여기 조치는 한 줄 요약입니다 — 예시 명령·주의사항·검증 방법까지는 담지 않습니다.</p>
     </div>
   </div>
 </section>
@@ -255,7 +302,7 @@ vg_hero(
 <section id="hosts">
   <div class="card">
     <strong>해당 자산(호스트)</strong>
-    <span class="why">— 호스트별 최신 스캔 기준(PASS/FAIL/NA)</span>
+    <span class="why">— 호스트별 최신 스캔 기준 · NA는 판정 불가</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -272,7 +319,7 @@ vg_hero(
             'empty' => [
                 'icon'  => '📭',
                 'title' => '이 통제에 걸린 점검 결과가 없습니다.',
-                'hint'  => '에이전트가 해당 항목을 점검한 뒤 다시 확인해 주세요. 결과가 없다고 준수로 간주하지 않습니다.',
+                'hint'  => '수집 결과가 없으며 준수로 간주하지 않습니다.',
             ],
             'cell' => [
                 0 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '&amp;tab=cce">'
@@ -305,8 +352,6 @@ vg_hero(
         <dt>통제 ID</dt><dd><code><?= vg_h($control) ?></code></dd>
         <dt>통제명</dt><dd><?= vg_h($controlName) ?></dd>
         <dt>매핑 점검 항목</dt><dd><?= number_format(count($ruleCodes)) ?>개(CCE 룰코드)</dd>
-        <dt>점검 결과</dt>
-        <dd>자산 <?= number_format($hostCount) ?>대 · 결과 <?= number_format($total) ?>건(FAIL <?= number_format($counts['FAIL']) ?>)</dd>
         <dt>최근 점검</dt>
         <dd><?= $lastCheckedAt !== null ? vg_h((string) $lastCheckedAt) : '<span class="why">점검 이력 없음</span>' ?></dd>
         <dt>집계 기준</dt><dd>호스트별 최신 스캔 1건</dd>

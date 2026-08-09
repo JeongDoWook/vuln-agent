@@ -40,7 +40,7 @@ try {
                  JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
                  JOIN " . vg_latest_scan_subq() . " latest
                    ON latest.host_id = s.host_id AND latest.mid = s.scan_id
-                 WHERE f.ssg_rule_id = ?";
+                 WHERE f.ssg_rule_id = ? AND f.is_deleted = 0";
 
             // 총건수와 함께 "몇 대에서" 도 같은 쿼리로 센다 — 한 호스트가 여러 행을 만들 수
             //   있으므로 행 수를 자산 수로 읽으면 위험 범위가 부풀려진다(cve.php 의 같은 교훈).
@@ -112,13 +112,7 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
   </div>
 <?php else: ?>
 <div class="card">
-  <strong><?= vg_h((string) $rule['title']) ?></strong>
-  <span class="why">— SSG 보안설정 룰</span>
   <div class="card__body stat-grid">
-    <div class="stat">
-      <span class="stat__val"><?= vg_badge((string) $sevUp, $tone) ?></span>
-      <div class="why">심각도</div>
-    </div>
     <div class="stat">
       <span class="stat__val"><?= number_format($counts['FAIL']) ?></span>
       <div class="why">FAIL</div>
@@ -129,15 +123,15 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
     </div>
     <div class="stat">
       <span class="stat__val"><?= number_format($counts['NA']) ?></span>
-      <div class="why">NA(미수집)</div>
+      <div class="why">NA(판정 불가)</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= number_format($hostCount) ?>대</span>
+      <div class="why">점검 자산</div>
     </div>
     <div class="stat">
       <span class="stat__val"><?= number_format($failHosts) ?>대</span>
-      <div class="why">위반 자산 · 점검 <?= number_format($hostCount) ?>대</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= !empty($rule['ssg_version']) ? vg_h((string) $rule['ssg_version']) : '<span class="why">–</span>' ?></span>
-      <div class="why">SSG 버전</div>
+      <div class="why">위반 자산</div>
     </div>
   </div>
 </div>
@@ -151,10 +145,16 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
 
 <section id="rationale">
   <div class="card">
-    <strong>근거(rationale)</strong>
-    <span class="why">— SSG 원문 전문</span>
+    <strong>판정 근거</strong>
+    <span class="why">— SSG가 제공한 항목 설명</span>
     <div class="card__body">
-      <p class="why prose"><?= !empty($rule['rationale']) ? vg_h((string) $rule['rationale']) : '수집된 근거가 없습니다.' ?></p>
+      <?php
+      // SSG 원문은 XHTML 조각이다. 태그를 단순 제거하면 <br> 양쪽 문장이 붙으므로 줄바꿈을
+      //   텍스트 구조로 보존한 뒤, 나머지 태그를 제거·이스케이프한다.
+      $rationale = preg_replace('/<br\s*\/?>/i', "\n", (string) ($rule['rationale'] ?? '')) ?? '';
+      $rationale = trim(strip_tags($rationale));
+      ?>
+      <p class="why prose"><?= $rationale !== '' ? nl2br(vg_h($rationale), false) : '수집된 근거가 없습니다.' ?></p>
     </div>
   </div>
 </section>
@@ -168,7 +168,17 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
       <?php if ($refs): ?>
         <dl class="kv">
           <?php foreach ($refs as $k => $v): ?>
-            <dt><?= vg_h((string) $k) ?></dt>
+            <?php
+            $refKey = (string) $k;
+            if (strncmp($refKey, 'cis@', 4) === 0) {
+                $refLabel = 'CIS (' . mb_strtoupper(substr($refKey, 4)) . ')';
+            } elseif (strncmp($refKey, 'stigid', 6) === 0) {
+                $refLabel = 'STIG';
+            } else {
+                $refLabel = mb_strtoupper($refKey);
+            }
+            ?>
+            <dt><?= vg_h($refLabel) ?></dt>
             <dd><?= vg_h(is_array($v) ? implode(', ', $v) : (string) $v) ?></dd>
           <?php endforeach; ?>
         </dl>
@@ -186,16 +196,12 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
     <div class="card__body">
       <dl class="kv">
         <dt>룰 ID</dt><dd><code><?= vg_h($ruleId) ?></code></dd>
-        <dt>제목</dt><dd><?= vg_h((string) $rule['title']) ?></dd>
-        <dt>SSG 심각도</dt><dd><?= vg_badge((string) $sevUp, $tone) ?></dd>
         <dt>SSG 버전</dt>
         <dd><?= !empty($rule['ssg_version']) ? vg_h((string) $rule['ssg_version']) : '<span class="why">–</span>' ?></dd>
         <dt>수집일</dt>
         <dd><?= !empty($rule['created_at']) ? vg_h((string) $rule['created_at']) : '<span class="why">–</span>' ?></dd>
         <dt>갱신일</dt>
         <dd><?= !empty($rule['updated_at']) ? vg_h((string) $rule['updated_at']) : '<span class="why">–</span>' ?></dd>
-        <dt>점검 결과</dt>
-        <dd>자산 <?= number_format($hostCount) ?>대 · 결과 <?= number_format($total) ?>건(FAIL <?= number_format($counts['FAIL']) ?>)</dd>
       </dl>
       <div class="actions mt">
         <?php vg_copy_btn($ruleId, '룰 ID 복사'); ?>
@@ -208,7 +214,7 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
 <section id="hosts">
   <div class="card">
     <strong>이 룰로 점검된 호스트</strong>
-    <span class="why">— 호스트별 최신 스캔 기준(PASS/FAIL/NA)</span>
+    <span class="why">— 호스트별 최신 스캔 기준 · NA는 판정 불가</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -233,7 +239,13 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
                           : ($r['result'] === 'PASS' ? 'low' : 'muted');
                     return vg_badge((string) $r['result'], $tone);
                 },
-                2 => fn($r) => '<span class="why">' . vg_trunc((string) $r['evidence'], 60) . '</span>',
+                // 상세 화면에서는 목록처럼 근거를 자르지 않는다. 사용자는 여기서 실제 판정값을
+                //   확인하고, 긴 값은 표 셀 안에서 자연스럽게 줄바꿈한다.
+                2 => function ($r) {
+                    $evidence = preg_replace('/<br\s*\/?>/i', "\n", (string) ($r['evidence'] ?? '')) ?? '';
+                    $evidence = trim(strip_tags($evidence));
+                    return '<span class="why">' . ($evidence !== '' ? nl2br(vg_h($evidence), false) : '–') . '</span>';
+                },
                 3 => fn($r) => '<span class="why">' . vg_h((string) $r['collected_at']) . '</span>',
             ],
         ]

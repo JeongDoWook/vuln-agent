@@ -107,6 +107,21 @@ function vg_modal_close(): void {
 }
 
 /**
+ * 삭제·폐기처럼 되돌리기 어려운 작업이 공유하는 확인창.
+ * 페이지마다 같은 dialog 골격을 만들지 않고 레이아웃에 한 번만 렌더한 뒤 app.js 가
+ * 문구와 주작업 라벨만 바꿔 쓴다. JS 가 없으면 기존처럼 폼 자체는 그대로 제출된다.
+ */
+function vg_confirm_dialog(): void {
+    vg_modal_open('vgConfirmDialog', '작업을 진행할까요?', 'confirm-modal');
+    echo '<p class="confirm-modal__message" data-confirm-message></p>'
+        . '<div class="modal__foot">'
+        . '<button type="button" class="btn btn--ghost" data-confirm-cancel>취소</button>'
+        . '<button type="button" class="btn btn--danger" data-confirm-ok>계속</button>'
+        . '</div>';
+    vg_modal_close();
+}
+
+/**
  * POST 처리 결과를 세션에 담고 같은 URL 로 303 리다이렉트한다(PRG).
  *   POST 응답을 그대로 그리면 새로고침이 POST 를 재전송한다 — 토큰 발급 화면에선
  *   새로고침 한 번이 방금 받은 토큰을 폐기하고 또 발급해 버렸다.

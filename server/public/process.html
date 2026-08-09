@@ -62,28 +62,26 @@
   <div class="sub">런타임 노출 맥락으로 오탐을 줄이는 자율 취약점 진단 에이전트 · 2026 오픈소스 개발자대회</div>
   <div style="margin-top:.7rem">
     <span class="tag">Bash 에이전트</span><span class="tag">PHP + MySQL</span>
-    <span class="tag">Docker</span><span class="tag">HTTPS(Caddy)</span><span class="tag">OSV · KEV · EPSS · NVD · KISA</span>
-    <span class="tag">배포판 근거 기반 백포트 억제</span><span class="tag">보안설정 39개 점검</span><span class="tag">Export API</span>
+    <span class="tag">Docker + HTTPS</span><span class="tag">OSV · KEV · EPSS</span>
+    <span class="tag">런타임·배포판 근거</span>
   </div>
 </header>
 
 <p class="lead">
-각 서버에 경량 에이전트를 두고 설치 패키지·<b>런타임 상태</b>를 수집해 중앙으로 모은다.
-단순 스캐너와 다른 점은 <b>“이 취약점이 이 서버에서 실제로 위험한가”</b>를 —
-외부 노출·실행·사용 여부와 KEV/EPSS(실제 악용성)로 — 판단해 오탐을 줄이고 우선순위를 매긴다는 것.
-담당자 배정·티켓·SLA 같은 조치 워크플로를 운영하는 도구가 아니라, 정확한 탐지 결과와 판정 근거를 제공하는 데 집중한다.
+각 서버의 패키지와 <b>런타임 상태</b>를 읽기 전용으로 수집한다. 중앙에서는 외부 노출·실행 여부와
+KEV/EPSS를 함께 판단해 우선순위를 정하고 근거를 남긴다. 담당자 배정·티켓·SLA 워크플로는 범위에 두지 않는다.
 </p>
 
 <!-- 1. 파이프라인 -->
 <h2><span class="n">1</span>전체 흐름 (수집 → 표시)</h2>
 <div class="pipe">
-  <div class="step"><span class="k">① 수집</span><h4>에이전트</h4><p>각 리눅스 서버에서 패키지·노출 포트·실행 프로세스 수집(읽기전용, nice19)</p></div>
+  <div class="step"><span class="k">① 수집</span><h4>에이전트</h4><p>패키지·노출 포트·프로세스를 낮은 우선순위로 읽기 전용 수집</p></div>
   <div class="arrow">→</div>
-  <div class="step g"><span class="k">② 전송</span><h4>push</h4><p>JSON 을 중앙으로 POST(토큰 인증, HTTPS). <code class="i">install-agent.sh</code> 가 상시 systemd 서비스를 등록하고 10초마다 명령을 poll하며, 호스트별 설정 주기로 수집한다.</p></div>
+  <div class="step g"><span class="k">② 전송</span><h4>push</h4><p>토큰 인증한 HTTPS로 전송. 설정 주기로 수집하고 10초마다 명령을 확인</p></div>
   <div class="arrow">→</div>
   <div class="step"><span class="k">③ 저장</span><h4>중앙 DB</h4><p>hosts·scans·packages·exposures·processes 로 <b>구분 저장</b></p></div>
   <div class="arrow">→</div>
-  <div class="step p"><span class="k">④ 매핑</span><h4>CVE 조인</h4><p>OSV 로 전 패키지 취약점 발굴 + KEV·EPSS·NVD 보강. 백포트는 버전 범위와 배포판별 changelog·errata·OVAL·Debian tracker 근거로 억제(§4)</p></div>
+  <div class="step p"><span class="k">④ 매핑</span><h4>CVE 조인</h4><p>OSV 매칭 후 KEV·EPSS·NVD 보강, 배포판 근거로 백포트 억제(§4)</p></div>
   <div class="arrow">→</div>
   <div class="step o"><span class="k">⑤ 우선순위</span><h4>매처</h4><p>런타임 상태 7단계 + KEV/EPSS 로 심각도 판정·정렬</p></div>
   <div class="arrow">→</div>
@@ -132,12 +130,9 @@
 </table>
 </div>
 <div class="note">
-  <b>실증:</b> 실 운영 데이터 기준 <b>EXTERNAL(외부노출)</b> 판정 64건 확인.
-  같은 <code class="i">openssl/glibc</code> 취약점이 —
-  nginx 로 <b>외부노출</b>된 서버에선 <span class="badge b-crit">CRITICAL</span>,
-  포트 없는 서버에선 <span class="badge b-low">LOW/MEDIUM</span> 으로 갈린다.
-  <b>KEV</b>(이미 악용됨) · <b>EPSS</b>(악용확률)로 실제 악용성까지 반영.
-  백포트 오탐은 <b>OSV 버전 범위와 배포판별 수정 근거</b>(changelog·적용 errata·벤더 OVAL/errata·Debian tracker)를 교차 확인해 억제한다(자세히는 §4).
+  <b>예:</b> 같은 <code class="i">openssl/glibc</code> 취약점도 외부 서비스가 쓰면
+  <span class="badge b-crit">CRITICAL</span>, 설치만 돼 있으면 <span class="badge b-low">LOW/MEDIUM</span>으로 갈린다.
+  KEV·EPSS와 배포판 수정 근거는 이 판단을 보강한다.
 </div>
 
 <!-- 4. 백포트 오탐 억제 -->
@@ -152,16 +147,14 @@
   <div class="step o"><span class="k">분리</span><h4>tb_suppressed_finding</h4><p>위험 집계·화면에서는 빠지되, 숨기지 않고 <b>근거와 함께 호스트 상세에 표시</b>(설명가능성)</p></div>
 </div>
 <div class="note">
-  에이전트는 <code class="i">rpm -q --changelog</code> / dpkg changelog 에서 <b>CVE 줄만</b> 뽑아 함께 보낸다 —
-  스케줄 수집에서 <b>기본 수집</b>(가장 무거운 단계라 <code class="i">--no-changelog</code> 로 끌 수 있음).
-  기존 위험 집계·화면 로직은 그대로 두고 오탐만 갈라내는 구조라 부작용이 없다.
+  에이전트는 rpm/dpkg changelog의 CVE 줄만 전송한다. 비용이 큰 환경은
+  <code class="i">--no-changelog</code>로 끌 수 있으며, 억제 결과와 근거는 별도 보관한다.
 </div>
 
 <!-- 5. 보안설정 점검(CCE) -->
 <h2><span class="n">5</span>보안설정 점검 (CCE)</h2>
-<p class="lead">CVE(취약한 버전)가 아니라 <b>잘못된 설정</b>을 본다. 새로 수집하지 않고 에이전트가 이미 보낸
-<code class="i">security</code>/<code class="i">users</code> 섹션을 <code class="i">src/cce.php</code> 가 판정해
-<code class="i">tb_cce_finding</code> 에 저장하고 호스트 상세에 PASS/FAIL/NA 로 표시한다.</p>
+<p class="lead">CVE가 아닌 <b>잘못된 설정</b>을 본다. 기존 수집물의 security/users 정보를 판정해
+호스트 상세에 PASS/FAIL/NA와 근거를 표시한다.</p>
 <div class="card">
 <table>
   <thead><tr><th>계열</th><th>보는 것</th></tr></thead>
@@ -175,17 +168,16 @@
 </table>
 </div>
 <p class="lead" style="font-size:.85rem;">
-  현재 39개 항목을 각각 <span class="badge" style="background:var(--green)">PASS</span>
+  39개 항목을 <span class="badge" style="background:var(--green)">PASS</span>
   / <span class="badge" style="background:var(--crit)">FAIL</span>
-  / <span class="badge" style="background:var(--low)">N/A</span> 로 판정한다(확인 못 한 항목은 PASS 가 아니라 N/A).
-  신규 수집 없이 기존 수집물을 재활용하고, 27개는 SSG 룰 ID 에 묶어 CIS·NIST·STIG 근거를 함께 보여준다.
+  / <span class="badge" style="background:var(--low)">N/A</span>로 구분한다. 확인할 수 없는 값은 N/A이며,
+  SSG 연계 항목은 CIS·NIST·STIG 근거도 함께 보여준다.
 </p>
 
 <!-- 6. 데이터 수집 -->
 <h2><span class="n">6</span>데이터 수집</h2>
-<p class="lead">고정 커넥터 11종과 범용 API 커넥터를 UI 에서 설정·미리보기·스케줄(cron/매일/주기)하면
-스케줄러가 데이터를 수집하고 매처가 재계산한다. 매칭 자체는 검증된 소스에서 상속하고,
-우리 기여는 그 위 레이어(상태·KEV/EPSS·설명가능성)에 둔다.</p>
+<p class="lead">UI에서 고정 커넥터 11종과 범용 API를 설정·미리보기·예약한다.
+수집이 끝나면 매처가 기존 결과를 다시 계산한다.</p>
 <div class="card">
 <table>
   <thead><tr><th>커넥터</th><th>역할</th><th>채우는 데이터</th></tr></thead>
@@ -258,43 +250,37 @@
 
 <!-- 9. 배포 -->
 <h2><span class="n">9</span>배포 (agent-side push, HTTPS)</h2>
-<p class="lead">중앙이 각 호스트로 들어갈 필요 없이, 각 서버가 로컬 스케줄로 수집해 <b>아웃바운드 HTTPS</b> 하나로 전송. (표준 에이전트 모델)</p>
+<p class="lead">중앙이 호스트로 접속하지 않는다. 각 서버가 로컬에서 수집한 뒤 아웃바운드 HTTPS로 전송한다.</p>
 <div class="card">
   <b>① 중앙 서버</b> (내부 서버, Docker + Caddy)
   <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
     ./compose_runner.sh init<br>./compose_runner.sh prod up -d --build
   </div>
-  Caddy 가 내부 CA 자체서명(<code class="i">tls internal</code>)으로 TLS 를 종료하고 내부 <code class="i">web:80</code> 으로 프록시 —
-  인바운드 80/443 개방 없이 기존 <code class="i">8080</code> 포워딩 재사용.
-  <b>② 각 대상 서버</b> (에이전트 설치 + 호스트별 설정 주기 자동 수집)
+  Caddy가 TLS를 종료하고 내부 <code class="i">web:80</code>으로 프록시한다.
+  <p><b>② 대상 서버</b> (에이전트 설치 + 호스트별 수집 주기)</p>
   <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
     sudo bash install-agent.sh<br>
     &nbsp;&nbsp;중앙 서버 주소 → https://&lt;운영-도메인&gt;:8080/ingest.php<br>
     &nbsp;&nbsp;전송 토큰 → 에이전트 키 화면에서 호스트별 발급 · 수집 주기 → hourly
   </div>
-  상시 systemd 서비스가 10초마다 명령을 poll하고 설정 주기로 수집한다. systemd가 없는 환경은 cron 폴백이라 정기수집만 가능하며 즉시·예약·중단 명령은 지원하지 않는다. 중앙 서버 자신을 스캔하는 로컬 에이전트는
-  루프백 평문 포트(<code class="i">127.0.0.1:8081</code>)로 직접 전송(외부에서는 접근 불가).
-  <b>③ 웹</b> — <code class="i">https://&lt;운영-도메인&gt;:8080</code> 접속 → 서버별 취약점·상태·감사로그 확인
-  (<code class="i">&lt;운영-도메인&gt;</code> 은 운영 배포 시 정해 <code class="i">.env.prod</code> 의 <code class="i">PROD_DOMAIN</code> 에 넣는 값)
-  <div style="color:var(--muted);font-size:.85rem;margin-top:.5rem">네트워크 요건: 대상 서버에서 설치 시 입력한 중앙 HTTPS 주소로의 아웃바운드만 필요합니다(현재 호환 포트 8080). 토큰은 <code class="i">&lt;prefix&gt;/etc/agent.env</code>(600).</div>
+  systemd 서비스는 명령을 poll하고 설정 주기로 수집한다. cron 폴백은 정기수집만 가능하며
+  즉시·예약·중단 명령은 지원하지 않는다. 토큰은 <code class="i">&lt;prefix&gt;/etc/agent.env</code>(600)에 저장한다.
+  <p><b>③ 웹</b> — 운영 도메인에서 취약점·상태·감사로그를 확인한다.</p>
 </div>
 
 <!-- 10. Export API -->
 <h2><span class="n">10</span>Export API</h2>
-<p class="lead">외부 시스템(예: AI 보고서 생성기)이 스캔 결과를 가져갈 수 있도록 읽기 전용 API 를 둔다.
-본체는 AI 에 묶이지 않고 결과만 넘긴다.</p>
+<p class="lead">외부 시스템이 스캔 결과를 가져갈 수 있는 읽기 전용 API다.</p>
 <div class="card">
   <code class="i">GET /export.php</code> — JSON/XML, 호스트·심각도·KEV·EPSS 필터 지원<br>
-  인증 헤더: <code class="i">X-API-Token</code> 또는 <code class="i">Authorization: Bearer</code>(Apache 가 헤더를 스트립해도 서버가 우회 처리)<br>
-  토큰은 <code class="i">/api-tokens.php</code> 에서 발급(웹 로그인 계정과 별도) — DB 엔 SHA-256 해시만 저장, 원문은 발급 시 1회만 표시.
-  <div style="color:var(--muted);font-size:.85rem;margin-top:.5rem">상세: <code class="i">docs/dev/export-api.md</code></div>
+  인증: <code class="i">X-API-Token</code> 또는 <code class="i">Authorization: Bearer</code><br>
+  토큰은 <code class="i">/api-tokens.php</code>에서 발급하며, 원문은 발급 시 한 번만 표시한다.
 </div>
 
 <!-- 11. 권한 -->
 <h2><span class="n">11</span>권한 (설정형 RBAC)</h2>
-<p class="lead">역할은 <b>admin / operator / user</b> 3단계. <code class="i">admin</code> 은 코드에서 항상 전체 허용(잠금 방지)이고,
-<code class="i">operator</code>·<code class="i">user</code> 는 <b>역할 × 메뉴</b> 허용 여부를 <code class="i">/permissions.php</code> 에서 켜고 끈다
-(<code class="i">tb_role_permission</code>). 각 페이지는 <code class="i">vg_require_menu('메뉴코드')</code> 하나로 가드한다.</p>
+<p class="lead">admin / operator / user 역할을 제공한다. admin은 전체 허용이며,
+operator·user의 메뉴 권한은 <code class="i">/permissions.php</code>에서 설정한다.</p>
 
 <!-- 12. 웹 화면 -->
 <h2><span class="n">12</span>웹 화면</h2>
@@ -303,22 +289,12 @@
   <thead><tr><th>화면</th><th>내용</th><th>접근</th></tr></thead>
   <tbody>
     <tr><td>로그인</td><td>세션 인증(users, bcrypt·CSRF)</td><td>-</td></tr>
-    <tr><td>대시보드</td><td>호스트별 최신 스캔 + 심각도 KPI</td><td>로그인</td></tr>
-    <tr><td>호스트 상세</td><td>노출·실행 프로세스·우선순위 취약점(근거·수정 버전·판정 상태) + CCE 점검 + 백포트 억제 내역</td><td>로그인</td></tr>
-    <tr><td>취약점</td><td>등급·판정 상태·CVE·EPSS·KEV·근거·수정 버전, 검색/필터+페이지네이션</td><td>로그인</td></tr>
-    <tr><td>변화 추적</td><td>최근 2개 스캔 대조 — 신규/해결/등급변경</td><td>로그인</td></tr>
-    <tr><td>CVE 상세</td><td>요약·영향 패키지·수정 버전·이 CVE가 발견된 호스트 목록</td><td>로그인</td></tr>
-    <tr><td>국내공지</td><td>KISA 보안공지 목록/상세, 검색+페이지네이션</td><td>로그인</td></tr>
-    <tr><td>패키지</td><td>전 자산 설치 패키지 통합 검색 · 언어 패키지 라이선스 위험도 탭</td><td>로그인</td></tr>
-    <tr><td>판정 근거</td><td>벤더 원본(트래커·OVAL·미수정·커널 CNA) 조회 — 억제가 옳은지 사람이 확인</td><td>로그인</td></tr>
-    <tr><td>보안 설정</td><td>SSG 룰 카탈로그 목록·상세(CIS·NIST·STIG 참조)</td><td>로그인</td></tr>
-    <tr><td>컴플라이언스·통제</td><td>ISMS-P·ISO 27001 자동판정과 날짜별 추이, 통제 기준(U-코드·ISMS-P·N2SF) 매핑과 통제 상세</td><td>로그인</td></tr>
-    <tr><td>자산 관리</td><td>호스트 자산·중요도·N2SF 등급(소프트삭제)</td><td>로그인(assets 권한)</td></tr>
-    <tr><td>데이터 수집</td><td>소스 설정·미리보기·스케줄·실행·이력</td><td>admin(기본, RBAC 설정 가능)</td></tr>
-    <tr><td>사용자 · 권한 설정</td><td>계정 관리 / 역할×메뉴 허용 여부 설정</td><td>admin(기본)</td></tr>
-    <tr><td>API 키 · 에이전트 키</td><td>결과 조회용·수집용 키 발급·폐기(유효기간 포함)</td><td>admin(기본)</td></tr>
-    <tr><td>감사 로그</td><td>접속기록 5요소 + 월 1회 점검 기록, 필터+페이지네이션</td><td>admin(기본)</td></tr>
-    <tr><td>설정</td><td>SLA 기준일 등 판정 기준값(조직마다 다른 값을 코드에서 뺀 곳)</td><td>admin 전용</td></tr>
+    <tr><td>탐지</td><td>대시보드·호스트·취약점·CVE·패키지 상세와 변화 추적</td><td>로그인</td></tr>
+    <tr><td>판정 근거</td><td>벤더 원본, 백포트 억제 근거, 보안 설정 룰</td><td>로그인</td></tr>
+    <tr><td>컴플라이언스</td><td>ISMS-P·ISO 27001 추이와 U-코드·N2SF 통제 상세</td><td>로그인</td></tr>
+    <tr><td>자산 · 수집</td><td>자산 속성, 커넥터 설정·미리보기·스케줄·실행 이력</td><td>assets / RBAC 권한</td></tr>
+    <tr><td>관리</td><td>사용자·권한·API/에이전트 키·조직별 설정</td><td>admin(기본)</td></tr>
+    <tr><td>감사 로그</td><td>접속기록 5요소와 월 1회 점검 기록</td><td>admin(기본)</td></tr>
   </tbody>
 </table>
 </div>
@@ -331,23 +307,12 @@
 <h2><span class="n">13</span>구현 현황</h2>
 <div class="card">
   <ul class="tight">
-    <li><span class="ok">✓</span> Docker(dev/prod·secrets) · 수집→전송→저장 파이프라인</li>
-    <li><span class="ok">✓</span> 정밀 런타임 수집(실행중/사용중/포트 구분) · 매처 7단계 상태 판정</li>
-    <li><span class="ok">✓</span> OSV 자동 매칭(전 패키지·버전필터·수정 버전) · KEV/EPSS 우선순위</li>
-    <li><span class="ok">✓</span> 백포트 오탐 억제(OSV 버전 범위 + changelog·errata·OVAL·Debian tracker) → tb_suppressed_finding, 호스트 상세에 근거 표시</li>
-    <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·파일권한·MAC/방화벽·시간·로그·암호화 39개 항목 PASS/FAIL/NA</li>
-    <li><span class="ok">✓</span> 컴플라이언스(ISMS-P·ISO 27001) 자동판정 4단계(준수/판정 불가/부분준수/미준수) + 하루 1건 스냅샷 · 통제 기준 매핑(U-코드·ISMS-P·N2SF)</li>
-    <li><span class="ok">✓</span> 계정 인벤토리(패스워드 해시 미수집) · 자산 중요도·N2SF 보안등급(확정값/시스템 제안값 분리)</li>
-    <li><span class="ok">✓</span> 컨테이너 내부 패키지 인벤토리 · SCA(8개 언어 생태계 + 라이선스 분류) · 제거·대체 검토 권고 · 미조치 사유·승인자</li>
-    <li><span class="ok">✓</span> 변화 추적(changes.php) — 최근 2개 스캔 대비 신규/해결/등급변경</li>
-    <li><span class="ok">✓</span> 웹(로그인·대시보드·호스트상세·취약점·변화추적·CVE상세·국내공지·자산·커넥터·사용자·권한·API토큰·감사로그) · 검색/필터·페이지네이션</li>
-    <li><span class="ok">✓</span> 고정 커넥터 11종 + 범용 API · cron 스케줄(스케줄러 사이드카 1분마다 확인) · 배포 설치기(systemd 상시 poll, 호스트별 수집 주기, cron 폴백)</li>
-    <li><span class="ok">✓</span> HTTPS 배포 — Caddy 리버스 프록시(내부 CA 자체서명)</li>
-    <li><span class="ok">✓</span> Export API(JSON/XML) · 웹에서 발급하는 읽기전용 API 토큰(X-API-Token)</li>
-    <li><span class="ok">✓</span> 설정형 RBAC(admin/operator/user × 메뉴) · 자산 관리(assets.php)</li>
-    <li><span class="ok">✓</span> DB 전면 개편 — tb_ 접두사 통일 + 감사 4컬럼 + 소프트삭제 + 활동 감사로그(tb_activity_log · activity.php)</li>
-    <li style="color:var(--muted)">◦ (수집·저장까지만) 패키지 의존성 그래프 — 전용 화면은 아직 없다</li>
-    <li style="color:var(--muted)">◦ (안 만든다) 알림 채널 · 조치 결재 워크플로 — 수신지·결재선이 없어 억지로 만들지 않는다(YAGNI)</li>
+    <li><span class="ok">✓</span> 수집·전송·저장과 systemd/cron 배포</li>
+    <li><span class="ok">✓</span> CVE·런타임·KEV/EPSS 판정과 백포트 억제</li>
+    <li><span class="ok">✓</span> 보안 설정·컴플라이언스·자산·SCA 분석</li>
+    <li><span class="ok">✓</span> 웹 상세·감사·RBAC·읽기 전용 Export API</li>
+    <li><span class="ok">✓</span> SBOM 기반 패키지 의존성 그래프와 루트·직접·전이 경로 조회</li>
+    <li style="color:var(--muted)">◦ 알림 채널·조치 결재 워크플로는 제공하지 않는다</li>
   </ul>
 </div>
 

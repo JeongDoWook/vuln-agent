@@ -221,7 +221,6 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
 <?php else: ?>
 <div class="card">
   <strong>핵심 지표</strong>
-  <span class="why">— 흩어놓지 않고 한 카드에 모았다</span>
   <div class="card__body stat-grid">
     <div class="stat">
       <?php if ($cvss !== null): ?>
@@ -413,7 +412,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
                     return '<span class="pill">' . vg_h($label) . '</span>';
                 },
                 1 => fn($r) => vg_h((string) $r['vendor']) . '<span class="why">/</span>' . vg_h((string) $r['rel']),
-                2 => fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['pkg']) . '">'
+                2 => fn($r) => '<a href="/packages.php?q=' . urlencode((string) $r['pkg']) . '">'
                              . vg_trunc((string) $r['pkg'], 32) . '</a>',
                 3 => function ($r) use ($cveId) {
                     // vendor.php 와 같은 벤더 링크·툴팁 규칙(작업 1·2) — 한쪽만 반영되면 사용자가 헷갈린다.
@@ -429,15 +428,16 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
                         $checkedAt = trim((string) ($r['extra2'] ?? ''));
                         if ($checkedAt !== '') { $tipParts[] = '확인일 ' . substr($checkedAt, 0, 10); }
                     }
-                    $tipAttr = $tipParts ? ' title="' . vg_h(implode(' · ', $tipParts)) . '"' : '';
-
                     if (!empty($r['fixed'])) {
-                        $body = '<span class="pill"' . $tipAttr . '>' . vg_h((string) $r['fixed']) . ' 이상</span>';
+                        $body = '<span class="pill">' . vg_h((string) $r['fixed']) . ' 이상</span>';
                     } else {
                         $state = trim((string) ($r['state'] ?? ''));
                         $body = $state !== ''
-                            ? '<span class="why"' . $tipAttr . '>' . vg_h($state) . '</span>'
+                            ? '<span class="why">' . vg_h($state) . '</span>'
                             : '<span class="why">–</span>';
+                    }
+                    if ($tipParts) {
+                        $body .= '<div class="why">' . vg_h(implode(' · ', $tipParts)) . '</div>';
                     }
 
                     $link = $src === 'rhoval'
@@ -482,6 +482,13 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
                 'hint'  => '피드(OSV·NVD)가 이 CVE 의 패키지 범위를 아직 안 알려준 경우입니다.',
             ],
             'cell' => [
+                'package_name' => function ($a) {
+                    $name = (string) ($a['package_name'] ?? '');
+                    $eco = (string) ($a['ecosystem'] ?? '');
+                    if ($name === '' || $eco === '') { return vg_h($name); }
+                    return '<a href="/package.php?name=' . urlencode($name) . '&amp;eco=' . urlencode($eco) . '">'
+                         . vg_h($name) . '</a>';
+                },
                 2 => fn($a) => !empty($a['fixed_version'])
                     ? '<span class="pill">' . vg_h($a['fixed_version']) . ' 이상</span>'
                     : '<span class="why">수정 버전 미공개</span>',

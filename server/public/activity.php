@@ -393,7 +393,7 @@ vg_header('감사 로그', 'activity');
               $msg   = trim((string) ($r['message'] ?? ''));
               $out   = '<strong>' . vg_h($label) . '</strong>';
               if ($msg !== '') { $out .= ' ' . vg_h($msg); }
-              $out .= '<div class="why" title="' . vg_h($code) . '">' . vg_h($code) . '</div>';
+              $out .= '<div class="why">' . vg_h($code) . '</div>';
               if (!empty($r['data'])) {
                   $decoded = json_decode((string) $r['data'], true);
                   $pretty  = $decoded !== null
