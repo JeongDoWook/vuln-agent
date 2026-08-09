@@ -52,6 +52,9 @@ function vg_activity_action(string $type): string {
         'permission_update'     => 'UPDATE',
         'connector_save'        => 'UPDATE',
         'connector_toggle'      => 'UPDATE',
+        'host_set_grade'        => 'UPDATE',
+        'host_grade_review_save'=> 'UPDATE',
+        'host_grade_review_clear' => 'DELETE',
         'host_perimeter_update' => 'UPDATE',
         'agent_schedule_change' => 'UPDATE',
         'agent_speed_tier_change' => 'UPDATE',
@@ -140,7 +143,8 @@ function vg_log_activity(
     string $actorType = 'USER',
     ?string $ip = null,
     ?string $subject = null,
-    ?string $action = null
+    ?string $action = null,
+    bool $strict = false
 ): void {
     try {
         $uid   = $userId ?? (isset($_SESSION['uid']) ? (int) $_SESSION['uid'] : null);
@@ -168,6 +172,7 @@ function vg_log_activity(
         $st->execute([$uid, $uname, $actorType, $scope, $scopeId, $type, $message, $subject, $action, $dataJson, $ip]);
     } catch (Throwable $e) {
         error_log('[activity_log] ' . $e->getMessage());
+        if ($strict) { throw $e; }
     }
 }
 

@@ -323,6 +323,7 @@ run_phpunit "schedule_test.php" "schedule" "schedule 단위 테스트"
 
 # --- UI 설정·감사 마스킹 단위 테스트 -----------------------------------------
 run_phpunit "ui_config_test.php" "ui_config" "UI 설정 범위·감사정보 마스킹 단위 테스트"
+run_phpunit "asset_grade_review_test.php" "asset_grade_review" "자산 등급 구조화 검토 단위 테스트"
 
 # --- UI 공통 구조 회귀 테스트 -----------------------------------------------
 run_phpunit "ui_structure_test.php" "ui_structure" "UI 공통 컴포넌트·검색·인라인 이벤트 회귀 테스트"
@@ -447,6 +448,21 @@ confirmed_grade_after=$(docker exec "$WEB_CONTAINER" php -r \
 if [ "$grade_history_before" -ge 1 ]; then ok "시스템 등급 제안 관찰 이력 생성"; else no "시스템 등급 제안 관찰 이력 없음"; fi
 assert_eq "$grade_history_after" "$grade_history_before" "동일 scan·결과 replay는 제안 이력 중복 없음"
 assert_eq "$confirmed_grade_after" "$confirmed_grade_before" "ingest 제안 관찰은 사람 확정 grade를 변경하지 않음"
+# #542 후속: replay 는 행 대신 마지막 관찰 시각을 갱신하고, effective_at 은 신선도 클램프 안에 있다.
+grade_history_invalid=$(docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $s=vg_pdo()->query("SELECT COUNT(*) FROM tb_asset_grade_suggestion_history
+     WHERE last_observed_at < observed_at
+        OR effective_at > last_observed_at
+        OR effective_at < DATE_SUB(last_observed_at, INTERVAL 7 DAY)");
+   echo $s->fetchColumn();')
+assert_eq "$grade_history_invalid" "0" "제안 이력의 마지막 관찰 시각·신선도 클램프 불변식 유지"
+grade_replayed=$(docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $s=vg_pdo()->prepare("SELECT COUNT(*) FROM tb_asset_grade_suggestion_history g
+     JOIN tb_host h ON h.host_id=g.host_id WHERE h.fqdn=? AND g.last_observed_at >= g.observed_at");
+   $s->execute([$argv[1]]); echo $s->fetchColumn();' "$FQDN_WEB01")
+assert_eq "$grade_replayed" "$grade_history_after" "replay 는 행을 늘리지 않고 마지막 관찰 시각만 앞으로 간다"
 
 UPG="$(mktemp)"; sed 's/0:2.34-60.el9_2.3/0:2.34-83.el9_3.7/' "$SAMPLE" > "$UPG"
 resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$UPG")
