@@ -23,6 +23,7 @@ $state = trim((string) ($_GET['state'] ?? ''));
 $grade = trim((string) ($_GET['grade'] ?? ''));
 if ($grade !== 'none' && !isset(VG_ASSET_GRADES[$grade])) { $grade = ''; }
 $systemGrade = null;   // 함대 전체를 하나의 정보시스템으로 볼 때의 승계 등급
+$unconfirmed = 0;      // 아직 사람이 등급을 확정하지 않은 자산 수
 $page  = vg_page();
 $perPage = vg_perpage();
 
@@ -48,8 +49,59 @@ $fromSql = 'FROM tb_host h
 
 $pdo = vg_pdo();
 
+/* 자산 등급 **일괄 확정** — 함대가 커지면 호스트를 한 대씩 열어 확정하는 건 현실적이지 않다.
+ *   경계는 상세 화면과 같다:
+ *     · 확정은 **사람이 고른 등급**으로만 한다 — "제안값 그대로 승인" 버튼은 두지 않는다.
+ *       그 버튼이 있으면 사실상 시스템이 등급을 정한 것이 된다.
+ *     · 검증·기록·감사로그는 host.php 와 같은 vg_asset_grade_confirm() 이 한다(증적이 갈리면 안 된다).
+ *     · 일괄로는 **확정만** 한다. 해제는 되돌리기 어려운 조작이라 상세 화면에서 한 대씩 한다.
+ *   POST 를 그대로 그리면 새로고침이 재전송되므로 PRG(303)로 돌린다. */
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    if (!vg_csrf_check($_POST['csrf'] ?? null)) {
+        vg_redirect_flash(['assetErr' => '세션이 만료되었습니다.']);
+    }
+    // 인가는 클라이언트 숨김이 아니라 여기서 정해진다(폼이 안 보여도 POST 는 올 수 있다).
+    if (!vg_has_role('admin')) {
+        vg_redirect_flash(['assetErr' => '자산 등급을 확정할 권한이 없습니다.']);
+    }
+    $me = vg_current_user();
+    $ids = array_values(array_unique(array_filter(
+        array_map('intval', (array) ($_POST['host_ids'] ?? [])),
+        static fn(int $id): bool => $id > 0
+    )));
+    $bulkGrade  = (string) ($_POST['grade'] ?? '');
+    $bulkCrit   = (string) ($_POST['criticality'] ?? '');   // '' = 이번엔 중요도를 안 건드린다
+    $bulkReason = (string) ($_POST['grade_reason'] ?? '');
+    try {
+        if (!$ids) { throw new RuntimeException('확정할 자산을 하나 이상 고르세요.'); }
+        if ($bulkGrade === '') { throw new RuntimeException('확정할 등급을 고르세요.'); }
+        // 한 페이지에서 고른 것만 오므로 정상 경로에선 못 넘는 수다. 조작된 POST 의 상한선.
+        if (count($ids) > 500) { throw new RuntimeException('한 번에 확정할 수 있는 자산은 500대까지입니다.'); }
+
+        // 한 건이라도 실패하면 전부 되돌린다 — "몇 대는 확정되고 몇 대는 아닌" 상태가 제일 나쁘다.
+        $pdo->beginTransaction();
+        foreach ($ids as $id) {
+            vg_asset_grade_confirm(
+                $pdo, $id, $bulkGrade, $bulkCrit === '' ? null : $bulkCrit, $bulkReason, $me['id'] ?? null
+            );
+        }
+        $pdo->commit();
+        vg_redirect_flash([
+            'assetMsg' => '자산 ' . count($ids) . '대의 등급을 ' . $bulkGrade . ' 로 확정했습니다.',
+        ]);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('[assets] ' . $e->getMessage());
+        // 사람이 고칠 수 있는 입력 오류는 그대로 보여주고, 그 밖의 내부 오류는 감춘다.
+        vg_redirect_flash([
+            'assetErr' => $e instanceof RuntimeException ? $e->getMessage() : '처리 중 오류가 발생했습니다.',
+        ]);
+    }
+}
+
 $assetFlash = vg_flash_take();
 $msg = $assetFlash['assetMsg'] ?? null;
+$err = $assetFlash['assetErr'] ?? null;
 
 try {
     // KPI — 검색어·상태 필터와 무관하게 전체 기준(필터를 걸어도 전체 그림은 유지된다).
@@ -130,6 +182,13 @@ try {
     )->fetchAll(PDO::FETCH_COLUMN);
     $systemGrade = vg_asset_grade_max($confirmed);
 
+    /* 미확정 자산 수 — 심사 관점에선 "정보시스템 등급이 무엇인가" 보다 **아직 아무도 판정하지 않은
+     *   자산이 몇 대인가** 가 먼저 나오는 질문이다. 승계 등급만 보이면 미확정이 몇 대든 숫자 하나가
+     *   떠 있어 다 정해진 것처럼 읽힌다. 제안값이 붙어 있어도 확정은 아니므로 여기 포함된다. */
+    $unconfirmed = (int) $pdo->query(
+        'SELECT COUNT(*) FROM tb_host WHERE is_deleted = 0 AND grade IS NULL'
+    )->fetchColumn();
+
     $latestAgent = (string) array_reduce(
         $seen,
         static fn(?string $max, string $v) => ($max === null || version_compare($v, $max, '>')) ? $v : $max
@@ -176,6 +235,12 @@ vg_header('자산', 'assets');
     <div class="kpi kpi--sm" title="<?= vg_h($systemGrade['reason'] ?? '확정된 자산 등급이 아직 없습니다.') ?>">
       <b><?= vg_h($systemGrade['grade'] ?? '–') ?></b><span>정보시스템 등급</span>
     </div>
+    <?php /* 미확정 — 눌러서 그 자산만 거른다(등급 필터의 '미지정'과 같은 조건). 0 이면 톤을 뺀다. */ ?>
+    <a class="kpi kpi--sm<?= $unconfirmed > 0 ? ' tone-med' : '' ?><?= $grade === 'none' ? ' is-selected' : '' ?>"
+       title="아직 사람이 등급을 확정하지 않은 자산입니다. 시스템 제안값은 확정이 아닙니다."
+       href="<?= vg_h(vg_qs(['grade' => $grade === 'none' ? '' : 'none', 'page' => null])) ?>">
+      <b><?= number_format($unconfirmed) ?></b><span>등급 미확정</span>
+    </a>
     <?php foreach (VG_ASSET_STATES as $key => $label): ?>
       <a class="kpi kpi--sm tone-<?= vg_h($stateTone[$key]) ?><?= $state === $key ? ' is-selected' : '' ?>"
          href="<?= vg_h(vg_qs(['state' => $state === $key ? '' : $key, 'page' => null])) ?>">
@@ -204,7 +269,15 @@ vg_header('자산', 'assets');
   //   · 접거나 잘라도 되는 텍스트 열(OS·리소스·수치·수집시각·심각도 건수)은 그대로 % 다.
   //   · 남는 폭은 호스트명이 갖는다(폭을 안 준 열). 예전엔 심각도가 남는 폭을 다 가져가
   //     1920px 에서 건수 뱃지 4개에 344px 를 썼다 — 그 폭은 잘려 나가던 식별자 쪽이 써야 한다.
-  $headers = [
+  /* 등급 확정은 관리자만 한다 — 체크박스 열도 관리자에게만 보인다.
+   *   (인가 자체는 위 POST 처리부가 정한다. 여기서 숨기는 건 안 되는 조작을 보여주지 않기 위해서다.) */
+  $canConfirm = vg_has_role('admin');
+  $headers = [];
+  if ($canConfirm) {
+      // 체크박스만 담는 열이라 폭이 늘 같다 → % 가 아니라 rem(아래 폭 배분 기준 그대로).
+      $headers[] = ['label' => '', 'key' => 'pick', 'width' => '2.5rem', 'align' => 'center'];
+  }
+  $headers = array_merge($headers, [
       ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '18%'],
       ['label' => '상태', 'key' => 'state', 'width' => '5.5rem'],
       // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
@@ -218,10 +291,18 @@ vg_header('자산', 'assets');
       ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right', 'width' => '4.5%'],
       ['label' => '심각도', 'key' => 'sev', 'width' => '13%'],
       ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '12%', 'nowrap' => true],
-  ];
+  ]);
   // 액션 열만 % 가 아니라 rem 이다. 삭제 버튼은 폭이 늘 같은 고정 크기 조작부라 비율로 줄 이유가 없고,
   //   비율로 주면 표가 좁아질 때 버튼보다 좁아진다 — 실제로 900px 에서 9%(=51px)가 68px 버튼을
   //   못 담아 카드를 16.7px 밀어냈다(가로 스크롤). 5rem 이면 어느 폭에서도 버튼이 들어간다.
+
+  /* 표 전체를 일괄 확정 폼으로 감싼다 — 행의 체크박스와 아래 확정 바가 한 폼이어야 같이 전송된다.
+   *   선택은 **지금 보고 있는 페이지** 안에서만 유효하다(페이지를 넘기면 체크가 풀린다).
+   *   "필터에 걸린 전체"를 대상으로 삼지 않는 건 의도다 — 눈에 안 보이는 자산까지 확정되면 안 된다. */
+  if ($canConfirm) {
+      echo '<form method="post" data-confirm="선택한 자산의 등급을 확정할까요? 자산마다 확정자와 시각이 감사로그에 기록됩니다.">';
+      echo '<input type="hidden" name="csrf" value="' . vg_h(vg_csrf_token()) . '">';
+  }
 
   vg_table(
       $headers,
@@ -241,6 +322,9 @@ vg_header('자산', 'assets');
                   'hint'  => '자산은 에이전트가 수집을 보내면 자동 등록됩니다. 상단의 [에이전트 설치 안내]를 따르세요.',
               ],
           'cell' => [
+              // 일괄 확정 대상 선택. 아래 폼 안에 표가 들어 있어 그대로 같이 전송된다.
+              'pick' => fn($r) => '<input type="checkbox" name="host_ids[]" value="' . (int) $r['host_id']
+                  . '" aria-label="' . vg_h($r['fqdn']) . ' 선택">',
               // 칸을 넘치는 긴 FQDN 은 col-id 가 말줄임으로 접는다 — 전체 이름은 title 로 남긴다.
               'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a></strong>',
               'state' => fn($r) => vg_asset_state(
@@ -287,6 +371,51 @@ vg_header('자산', 'assets');
   );
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
+
+  <?php if ($canConfirm && $rows): ?>
+    <div class="card mt-lg">
+      <strong>선택 자산 등급 일괄 확정</strong>
+      <span class="why"> · N2SF 보안등급 <?= vg_h(vg_asset_grade_legend()) ?>.
+        시스템 제안값은 미리 채우지 않습니다 — 확정은 사람의 판정입니다.
+        확정 해제는 자산 상세에서 한 대씩 합니다.</span>
+      <div class="card__body">
+        <div class="setting-form">
+          <label class="field" for="bulk-pick-all">
+            <span>이 페이지의 자산 전체 선택</span>
+            <input id="bulk-pick-all" type="checkbox" data-checkall="host_ids[]">
+          </label>
+
+          <label class="field" for="bulk-criticality">중요도
+            <select id="bulk-criticality" name="criticality">
+              <option value="">변경 안 함</option>
+              <?php foreach (VG_ASSET_CRITICALITY as $v => $label): ?>
+                <option value="<?= vg_h($v) ?>"><?= vg_h($label) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+
+          <label class="field" for="bulk-grade">보안등급 (N2SF)
+            <select id="bulk-grade" name="grade" required>
+              <option value="">고르세요</option>
+              <?php foreach (VG_ASSET_GRADES as $v => $label): ?>
+                <option value="<?= vg_h($v) ?>"><?= vg_h($label) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+
+          <label class="field" for="bulk-grade-reason">확정 근거
+            <input id="bulk-grade-reason" type="text" name="grade_reason" maxlength="255"
+                   placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유">
+          </label>
+
+          <div class="actions">
+            <button class="btn btn--primary" type="submit" data-loading="확정 중…">선택 자산 등급 확정</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  <?php endif; ?>
+  <?php if ($canConfirm) { echo '</form>'; } ?>
 
   <?php
   /* 설치 안내는 자산을 처음 붙일 때 한 번 보는 것이다. 목록 아래 늘 펼쳐두면

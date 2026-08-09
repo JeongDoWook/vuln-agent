@@ -184,6 +184,17 @@
     if (e.target.matches('select[data-nav]')) { startProgress(); }
   });
 
+  // 전체 선택: data-checkall="<체크박스 name>" 을 단 체크박스가 같은 폼 안의 그 name 을 모두 맞춘다.
+  // 범위를 폼으로 한정하는 게 핵심이다 — 문서 전체로 잡으면 다른 표의 선택까지 건드린다.
+  document.addEventListener('change', function (e) {
+    var all = e.target.closest('input[data-checkall]');
+    if (!all || !all.form) { return; }
+    var name = all.getAttribute('data-checkall');
+    all.form.querySelectorAll('input[type=checkbox][name="' + name + '"]').forEach(function (box) {
+      box.checked = all.checked;
+    });
+  });
+
   // 필터 셀렉트: 고르는 즉시 폼 제출. requestSubmit() 은 submit 이벤트를 쏘므로
   // 위의 제출 핸들러가 진행바·검색버튼 스피너를 그대로 붙여준다(form.submit() 은 안 쏜다).
   // 폼에 page 필드가 없으니 제출하면 자연히 1페이지로 돌아간다.

@@ -8,13 +8,16 @@ declare(strict_types=1);
  *   등급 판정 기준은 「정보공개법」 제9조 비공개 대상정보의 호 매핑이고, 업무정보 등급 확정은
  *   기관의 법적 처분이라 시스템이 대신할 수 없다. 그래서 이 파일의 제안 함수는
  *   tb_host.grade(확정값)를 **절대 쓰지 않는다** — grade_suggested/grade_suggested_reason
- *   에만 쓴다. 확정은 host.php 의 관리자 폼이 사람 손으로만 한다.
+ *   에만 쓴다. 확정은 사람이 고른 값으로만 하고, 그 처리는 vg_asset_grade_confirm() 한 곳이
+ *   맡는다 — 호스트 상세(host.php)와 자산 목록의 일괄 확정(assets.php)이 같은 함수를 쓴다.
  *
  * 규칙의 근거는 원문이 직접 준 두 줄뿐이다(억지 제안 금지 — 확신이 없으면 아무것도 제안하지 않는다):
  *   · "기타: 로그 및 임시백업 등"이 명시적 S  → 로그 수신·백업 처리 역할이면 S 후보
  *   · 외부에 열린 자산                        → O 영역 후보
  * 「개인정보 패턴 탐지 → S」는 이 제품이 개인정보를 수집하지 않으므로 구현 대상이 아니다.
  */
+
+require_once __DIR__ . '/audit.php';   // vg_log_activity — 등급 확정은 감사 대상이다
 
 /** N2SF 등급 어휘. 화면 라벨·검증 허용값의 단일 출처(하드코딩 분류표를 늘리지 않는다). */
 const VG_ASSET_GRADES = [
@@ -153,6 +156,74 @@ function vg_asset_grade_max(array $grades): ?array
         'grade'  => $best,
         'reason' => '포함된 업무정보 등급 ' . $count . '건 중 최고등급 ' . $best . ' 를 승계했습니다.',
     ];
+}
+
+/**
+ * 자산 등급 **확정** — 사람의 판정을 tb_host 에 쓴다. 제안값(grade_suggested)은 건드리지 않는다.
+ *
+ *   호스트 상세(host.php)와 자산 목록의 일괄 확정(assets.php)이 **같은 함수**를 쓴다. 두 벌이면
+ *   화면마다 검증과 감사기록이 갈린다 — 확정은 감사 증적이라 갈리면 안 된다.
+ *   인가(admin)는 호출부가 이미 확인한 뒤 부른다(인가는 화면이 아니라 서버측에서 정해진다).
+ *
+ * @param string      $grade       '' 이면 확정 해제(승인 이력도 함께 지운다)
+ * @param string|null $criticality '' 이면 미지정으로 지움, null 이면 **그대로 둔다**(일괄 확정용)
+ * @return string 확정한 호스트의 fqdn
+ * @throws RuntimeException 어휘에 없는 값이거나 호스트를 찾지 못했을 때
+ */
+function vg_asset_grade_confirm(
+    PDO $pdo,
+    int $hostId,
+    string $grade,
+    ?string $criticality,
+    string $reason,
+    ?int $userId
+): string {
+    if ($grade !== '' && !isset(VG_ASSET_GRADES[$grade])) {
+        throw new RuntimeException('알 수 없는 등급입니다.');
+    }
+    if ($criticality !== null && $criticality !== '' && !isset(VG_ASSET_CRITICALITY[$criticality])) {
+        throw new RuntimeException('알 수 없는 중요도입니다.');
+    }
+    $reason = mb_strimwidth(trim($reason), 0, 255, '');
+
+    $st = $pdo->prepare('SELECT fqdn FROM tb_host WHERE host_id = ? AND is_deleted = 0');
+    $st->execute([$hostId]);
+    $fqdn = $st->fetchColumn();
+    if ($fqdn === false) {
+        throw new RuntimeException('호스트를 찾을 수 없습니다.');
+    }
+
+    // 등급을 비우면 "확정 해제" — 승인 이력도 함께 지운다(확정이 없는데 확정자가 남아 있으면
+    //   감사 때 누가 무엇을 승인했는지 읽을 수 없다). 해제 사실 자체는 아래 감사로그가 남긴다.
+    $isClear = $grade === '';
+    $set = [];
+    $args = [];
+    if ($criticality !== null) {           // null 은 "이번 조작에서 중요도는 안 건드린다"
+        $set[] = 'criticality = ?';
+        $args[] = $criticality !== '' ? $criticality : null;
+    }
+    $set[] = 'grade = ?';          $args[] = $isClear ? null : $grade;
+    $set[] = 'grade_reason = ?';   $args[] = ($isClear || $reason === '') ? null : $reason;
+    $set[] = 'approved_by = ?';    $args[] = $isClear ? null : $userId;
+    $set[] = 'approved_at = ' . ($isClear ? 'NULL' : 'NOW()');
+    $args[] = $hostId;
+
+    $st = $pdo->prepare(
+        'UPDATE tb_host SET ' . implode(', ', $set) . ' WHERE host_id = ? AND is_deleted = 0'
+    );
+    $st->execute($args);
+
+    $critLabel = ($criticality !== null && $criticality !== '')
+        ? ' (중요도 ' . VG_ASSET_CRITICALITY[$criticality] . ')' : '';
+    vg_log_activity(
+        $pdo, 'HOST', $hostId, 'host_set_grade',
+        $isClear
+            ? "자산 등급 확정 해제: $fqdn"
+            : "자산 등급 확정: $fqdn → $grade" . $critLabel,
+        ['grade' => $isClear ? null : $grade, 'criticality' => ($criticality ?: null), 'reason' => $reason]
+    );
+
+    return (string) $fqdn;
 }
 
 /**
