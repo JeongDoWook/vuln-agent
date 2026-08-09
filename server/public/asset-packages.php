@@ -122,14 +122,16 @@ vg_header('전체 설치 패키지', 'assets');
                 ],
             'cell' => [
                 'name' => function ($p) {
-                    $out = '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages&amp;q='
-                        . urlencode((string)$p['name']) . '"><strong>' . vg_h((string)$p['name']) . '</strong></a>';
                     $eco = vg_osv_ecosystem($p['os_id'] ?? null, $p['os_version'] ?? null);
+                    $name = vg_h((string)$p['name']);
                     if ($eco !== null) {
-                        $out .= ' <a class="why" href="/package.php?name=' . urlencode((string)$p['name'])
-                            . '&amp;eco=' . urlencode($eco) . '" title="이 패키지의 CVE 현황">CVE ↗</a>';
+                        $name = '<a href="/package.php?name=' . urlencode((string)$p['name'])
+                            . '&amp;eco=' . urlencode($eco) . '">' . $name . '</a>';
                     }
-                    return $out;
+                    return '<strong>' . $name . '</strong>'
+                        . '<div class="why"><a href="/host.php?id=' . (int)$p['host_id']
+                        . '&amp;tab=packages&amp;q=' . urlencode((string)$p['name'])
+                        . '">이 자산에서 보기 →</a></div>';
                 },
                 'fqdn' => fn($p) => '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages">'
                     . vg_h((string)$p['fqdn']) . '</a>',

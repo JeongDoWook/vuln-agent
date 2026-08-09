@@ -16,9 +16,11 @@ require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('advisories');
 
-$err = null; $adv = null; $cves = [];
+$err = null; $adv = null; $cves = []; $assets = [];
 $cveTotal = 0; $kevTotal = 0; $maxCvss = null;
+$assetTotal = 0; $assetHostTotal = 0;
 $cPage = vg_page('cpage'); $cPerPage = vg_perpage(null, 'cper_page');
+$aPage = vg_page('apage'); $aPerPage = vg_perpage(null, 'aper_page');
 
 try {
     $id = (int) ($_GET['id'] ?? 0);
@@ -71,6 +73,33 @@ try {
             );
             $cst->execute([$id]);
             $cves = $cst->fetchAll();
+
+            // 목록의 빠른 모달은 일부 행만 보여주므로 상세에서는 최신 스캔의 전체 영향 범위를 제공한다.
+            $assetFrom = 'FROM tb_advisory_cve ac
+                          JOIN tb_finding f ON f.cve_id = ac.cve_id AND f.is_deleted = 0
+                          JOIN tb_scan s ON s.scan_id = f.scan_id
+                          JOIN ' . vg_latest_scan_subq() . ' latest
+                            ON latest.host_id = s.host_id AND latest.mid = s.scan_id
+                          JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
+                          LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id';
+            $assetWhere = 'WHERE ac.advisory_id = ? AND ac.is_deleted = 0';
+
+            $ast = $pdo->prepare("SELECT COUNT(*) AS n, COUNT(DISTINCT h.host_id) AS host_cnt $assetFrom $assetWhere");
+            $ast->execute([$id]);
+            $assetAgg = $ast->fetch() ?: [];
+            $assetTotal = (int) ($assetAgg['n'] ?? 0);
+            $assetHostTotal = (int) ($assetAgg['host_cnt'] ?? 0);
+
+            $aOffset = ($aPage - 1) * $aPerPage;
+            $ast = $pdo->prepare(
+                "SELECT h.host_id, h.fqdn, IFNULL(ctr.cid, '') AS ctr, f.cve_id,
+                        f.package_name, f.installed_version, f.severity, f.runtime_status, s.collected_at
+                   $assetFrom $assetWhere
+                  ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), h.fqdn, ctr.cid, f.cve_id
+                  LIMIT $aPerPage OFFSET $aOffset"
+            );
+            $ast->execute([$id]);
+            $assets = $ast->fetchAll();
         }
     }
 } catch (Throwable $e) {
@@ -129,6 +158,10 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
       <div class="why">최고 CVSS</div>
     </div>
     <div class="stat">
+      <span class="stat__val"><?= number_format($assetHostTotal) ?>대</span>
+      <div class="why">영향 자산<?= $assetTotal > $assetHostTotal ? ' · 발견 ' . number_format($assetTotal) . '건' : '' ?></div>
+    </div>
+    <div class="stat">
       <span class="stat__val"><?= vg_h((string) ($adv['published'] ?? '–')) ?></span>
       <div class="why">발행일</div>
     </div>
@@ -147,6 +180,7 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 
 <nav class="subtabs subtabs--sticky">
   <a href="#cves">관련 CVE<span class="n"><?= number_format($cveTotal) ?></span></a>
+  <a href="#assets">영향 자산<span class="n"><?= number_format($assetHostTotal) ?></span></a>
   <a href="#content">본문</a>
   <a href="#origin">원문·수집 정보</a>
 </nav>
@@ -198,6 +232,54 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
         ]
     );
     if ($cves) { vg_page_nav($cveTotal, $cPerPage, $cPage, 'cpage', 'cper_page'); }
+    ?>
+    </div>
+  </div>
+</section>
+
+<section id="assets">
+  <div class="card">
+    <strong>영향 자산</strong>
+    <span class="why">— 공지의 CVE가 발견된 최신 스캔</span>
+    <div class="card__body">
+    <?php
+    vg_table(
+        [
+            ['label' => '호스트'],
+            ['label' => '위치', 'width' => '9rem'],
+            ['label' => 'CVE', 'nowrap' => true],
+            ['label' => '패키지'],
+            ['label' => '설치 버전'],
+            ['label' => '등급', 'width' => '6rem'],
+            ['label' => '상태', 'width' => '7rem'],
+            ['label' => '수집일', 'nowrap' => true],
+        ],
+        $assets,
+        [
+            'card' => false,
+            'empty' => [
+                'icon'  => '✅',
+                'title' => '이 공지에 노출된 자산이 없습니다.',
+                'hint'  => '최신 스캔 기준으로 관련 CVE가 발견되지 않았습니다.',
+            ],
+            'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
+            'cell' => [
+                0 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h((string) $r['fqdn']) . '</a>',
+                1 => fn($r) => $r['ctr'] !== ''
+                    ? '<span class="why">컨테이너 ' . vg_h((string) $r['ctr']) . '</span>'
+                    : '<span class="why">호스트</span>',
+                2 => fn($r) => '<a href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
+                    . vg_h((string) $r['cve_id']) . '</a>',
+                4 => fn($r) => !empty($r['installed_version'])
+                    ? '<code>' . vg_h((string) $r['installed_version']) . '</code>'
+                    : '<span class="why">–</span>',
+                5 => fn($r) => vg_sev_badge((string) $r['severity']),
+                6 => fn($r) => vg_status_badge($r['runtime_status']),
+                7 => fn($r) => '<span class="why">' . vg_h((string) $r['collected_at']) . '</span>',
+            ],
+        ]
+    );
+    if ($assets) { vg_page_nav($assetTotal, $aPerPage, $aPage, 'apage', 'aper_page'); }
     ?>
     </div>
   </div>

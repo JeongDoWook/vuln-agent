@@ -254,12 +254,15 @@ vg_header('판정 근거', 'vendor');
   //   넘겨야 하는 막막함을 줄인다. 필터 프리셋 탭(cves.php)과 같은 .tabs/.pill 을 그대로 쓴다.
   echo '<div class="tabs">';
   foreach (VG_VENDOR_SRC as $k => $d) {
-      $on = $src === $k;
-      echo '<a class="pill' . ($on ? ' pill--on' : '') . '" href="/vendor.php' . vg_qs(['src' => $on ? null : $k, 'page' => null])
-         . '" title="' . vg_h($d['desc']) . '">' . vg_h($d['label'])
+       $on = $src === $k;
+       echo '<a class="pill' . ($on ? ' pill--on' : '') . '" href="/vendor.php' . vg_qs(['src' => $on ? null : $k, 'page' => null])
+         . '">' . vg_h($d['label'])
          . ' <span class="why">' . number_format($srcCounts[$k]) . '건</span></a>';
   }
   echo '</div>';
+  if ($src !== '') {
+      echo '<div class="sub"><span class="why">' . vg_h(VG_VENDOR_SRC[$src]['desc']) . '</span></div>';
+  }
 
   $toolbar = [
       ['type' => 'select', 'name' => 'rel', 'selected' => $rel, 'empty_label' => '릴리스 전체',
@@ -279,8 +282,7 @@ vg_header('판정 근거', 'vendor');
   $showSrc = $src === '';
   $srcCell = function ($r) {
       $d = VG_VENDOR_SRC[$r['src']] ?? null;
-      return '<span class="pill" title="' . vg_h($d !== null ? $d['label'] . ' — ' . $d['desc'] : '')
-           . '">' . vg_h((string) $r['src']) . '</span>';
+      return '<span class="pill">' . vg_h($d !== null ? $d['label'] : (string) $r['src']) . '</span>';
   };
 
   vg_table(
@@ -311,8 +313,8 @@ vg_header('판정 근거', 'vendor');
               ]),
           'cell' => array_merge($showSrc ? [$srcCell] : [], [
               fn($r) => vg_h((string) $r['vendor']) . '<span class="why">/</span>' . vg_h((string) $r['rel']),
-              // 패키지명 → 취약점 현황에서 그 패키지만 걸러 본다(packages.php 와 같은 연결).
-              fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['pkg']) . '">'
+              // 생태계가 없는 벤더 원본은 패키지 목록으로 보내 배포판별 상세를 고르게 한다.
+              fn($r) => '<a href="/packages.php?q=' . urlencode((string) $r['pkg']) . '">'
                              . vg_trunc((string) $r['pkg'], 32) . '</a>',
               // cve.php 가 '/^CVE-\d{4}-\d+$/i' 아니면 오류로 튕긴다(정상 동작). 데비안 트래커의
               //   TEMP-<날짜>-<해시> 같은 정식 CVE 미배정 식별자는 링크 없이 텍스트로만 보여준다.
@@ -329,7 +331,7 @@ vg_header('판정 근거', 'vendor');
                       if (in_array($r['src'], ['debtracker', 'ubuntuoval'], true)) {
                           $extUrl = vg_vendor_cve_url((string) $r['src'], $cveId);
                           if ($extUrl !== null) {
-                              $out .= ' <a class="why" href="' . vg_h($extUrl) . '" target="_blank" rel="noopener" title="벤더 공식 페이지에서 보기">↗</a>';
+                              $out .= ' <a class="why" href="' . vg_h($extUrl) . '" target="_blank" rel="noopener" aria-label="벤더 공식 페이지에서 보기">↗</a>';
                           }
                       }
                       return $out;
@@ -356,7 +358,7 @@ vg_header('판정 근거', 'vendor');
               function ($r) {
                   if ($r['src'] === 'rhunfixed') {
                       $st = (string) $r['state'];
-                      return vg_badge($st, VG_VENDOR_FIXSTATE_TONE[$st] ?? 'warn', '벤더 조치 상태 · 수정본 없음');
+                      return vg_badge($st, VG_VENDOR_FIXSTATE_TONE[$st] ?? 'warn');
                   }
                   // 데비안은 목록엔 없는 필드(예외 버전·바이너리 여부)가 있다(작업 2) — title 로 노출.
                   $tip = '';
@@ -366,11 +368,12 @@ vg_header('판정 근거', 'vendor');
                       if ($ov !== '') { $tipParts[] = '예외 버전 ' . $ov; }
                       $tip = implode(' · ', $tipParts);
                   }
-                  $tipAttr = $tip !== '' ? ' title="' . vg_h($tip) . '"' : '';
                   if (empty($r['fixed'])) {
-                      return '<span class="why"' . $tipAttr . '>수정본 없음</span>';
+                      $out = '<span class="why">수정본 없음</span>';
+                  } else {
+                      $out = '<span class="pill">' . vg_h((string) $r['fixed']) . '</span>';
                   }
-                  return '<span class="pill"' . $tipAttr . '>' . vg_h((string) $r['fixed']) . '</span>';
+                  return $out . ($tip !== '' ? '<div class="why">' . vg_h($tip) . '</div>' : '');
               },
               // 상태 — 소스마다 답의 성격이 다르다. 억지로 한 어휘로 접지 않고 각자의 말을 보여준다.
               function ($r) {
@@ -403,9 +406,12 @@ vg_header('판정 근거', 'vendor');
                           $cveUrl = vg_vendor_cve_url('rhunfixed', trim((string) $r['cve_id']));
                           if ($cveUrl !== null) {
                               $out .= ($out !== '' ? ' ' : '') . '<a class="why" href="' . vg_h($cveUrl) . '" target="_blank" rel="noopener"'
-                                    . ($tip !== '' ? ' title="' . vg_h($tip) . '"' : '') . '>CVE 확인 ↗</a>';
+                                    . '>CVE 확인 ↗</a>';
                           } elseif ($tip !== '') {
-                              $out .= ($out !== '' ? ' ' : '') . '<span class="why" title="' . vg_h($tip) . '">ⓘ</span>';
+                              $out .= ($out !== '' ? ' ' : '') . '<span class="why">' . vg_h($tip) . '</span>';
+                          }
+                          if ($cveUrl !== null && $tip !== '') {
+                              $out .= '<div class="why">' . vg_h($tip) . '</div>';
                           }
                           return $out !== '' ? $out : '<span class="why">–</span>';
                       case 'kcve':

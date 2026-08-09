@@ -84,7 +84,8 @@ try {
         $pkgOffset = ($page - 1) * $perPage;
         $st = $pdo->prepare(
             "SELECT c.host_id, h.fqdn, c.manager, c.package_name, c.change_type,
-                    c.old_version, c.new_version, s.collected_at AS `when`
+                    c.old_version, c.new_version, s.collected_at AS `when`,
+                    s.os_id AS package_os_id, s.os_version AS package_os_version
              $pkgFrom
              ORDER BY c.pkg_change_id DESC
              LIMIT $perPage OFFSET $pkgOffset"
@@ -131,8 +132,14 @@ try {
     if ($scanIds) {
         $in = implode(',', array_map('intval', $scanIds));
         $fst = $pdo->query(
-            "SELECT scan_id, cve_id, package_name, severity, in_kev, exposed, rationale, installed_version
-               FROM tb_finding WHERE scan_id IN ($in) AND is_deleted = 0"
+            "SELECT f.scan_id, f.cve_id, f.package_name, f.severity, f.in_kev, f.exposed,
+                    f.rationale, f.installed_version,
+                    CASE WHEN f.container_id = 0 THEN s.os_id ELSE ctr.os_id END AS package_os_id,
+                    CASE WHEN f.container_id = 0 THEN s.os_version ELSE ctr.os_version END AS package_os_version
+               FROM tb_finding f
+               JOIN tb_scan s ON s.scan_id = f.scan_id
+               LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id
+              WHERE f.scan_id IN ($in) AND f.is_deleted = 0"
         );
         foreach ($fst->fetchAll(PDO::FETCH_ASSOC) as $f) {
             $bySc[(int) $f['scan_id']][$f['cve_id'] . '|' . $f['package_name']] = $f;
@@ -226,6 +233,8 @@ function vg_change_row(string $type, int $hid, string $fqdn, string $when, array
         'exposed'          => (int) ($f['exposed'] ?? 0),
         'rationale'        => (string) ($f['rationale'] ?? ''),
         'installed_version'=> (string) ($f['installed_version'] ?? ''),
+        'package_os_id'     => $f['package_os_id'] ?? null,
+        'package_os_version'=> $f['package_os_version'] ?? null,
         'cur_scan_id'      => $curScanId,
         'reason'           => '',
     ];
@@ -233,6 +242,44 @@ function vg_change_row(string $type, int $hid, string $fqdn, string $when, array
 
 function vg_change_tone(string $type): string {
     return ['new' => 'crit', 'up' => 'high', 'down' => 'muted', 'resolved' => 'ok'][$type] ?? 'muted';
+}
+
+/** 실제 스캔 대상의 OS 생태계가 식별되는 패키지만 상세 링크로 만든다. */
+function vg_package_detail_link(array $row): string {
+    $name = (string) $row['package_name'];
+    $ecosystem = vg_osv_ecosystem($row['package_os_id'] ?? null, $row['package_os_version'] ?? null);
+    if ($ecosystem === null) { return vg_h($name); }
+    return '<a href="/package.php?name=' . urlencode($name) . '&amp;eco=' . urlencode($ecosystem) . '">'
+         . vg_h($name) . '</a>';
+}
+
+/** 취약점 변화·추이의 패키지 셀. 두 목록이 같은 판정 근거를 빠뜨리지 않게 한곳에서 렌더한다. */
+function vg_change_package_cell(array $row): string {
+    $out = vg_package_detail_link($row);
+    if (($row['installed_version'] ?? '') !== '') {
+        $out .= ' <span class="why">' . vg_h((string) $row['installed_version']) . '</span>';
+    }
+
+    $rationale = trim((string) ($row['rationale'] ?? ''));
+    if ($rationale !== '') {
+        $label = ($row['type'] ?? '') === 'resolved' ? '직전 판정 근거' : '판정 근거';
+        $out .= '<details><summary>' . $label . '</summary><div class="why">'
+              . nl2br(vg_h($rationale)) . '</div></details>';
+    }
+    return $out;
+}
+
+/** 취약점 변화·추이의 등급 셀. 이전 등급·노출·변화 사유 표시 규칙을 공유한다. */
+function vg_change_severity_cell(array $row): string {
+    $severity = vg_sev_badge((string) $row['severity']);
+    if (!empty($row['from_sev'])) {
+        $severity = '<span class="why">' . vg_h((string) $row['from_sev']) . ' →</span> ' . $severity;
+    }
+    if (!empty($row['exposed'])) { $severity .= ' ' . vg_badge('외부노출', 'high'); }
+    if (($row['reason'] ?? '') !== '') {
+        $severity .= '<br><span class="why">' . vg_h((string) $row['reason']) . '</span>';
+    }
+    return $severity;
 }
 
 /** tb_pkg_change 대조 결과(없으면 null)로 변화 사유 문구를 만든다. 추측성 사유는 만들지 않는다. */
@@ -375,7 +422,7 @@ function vg_attach_change_reason(PDO $pdo, array &$rows): void {
 
 vg_header('변화 추적', 'findings');
 ?>
-  <?php vg_page_title('변화 추적', 'CHANGES', '새로 생긴 위험과 해결된 항목, 등급 변화를 한눈에 비교합니다.', ['hint' => '(최근 2스캔 비교)', 'suffix_html' => vg_info_icon('지난 수집 대비 무엇이 달라졌는지 보여줍니다.')]); ?>
+  <?php vg_page_title('변화 추적', 'CHANGES', '직전 수집과 비교해 신규·해결·등급 변화를 보여줍니다.'); ?>
 
   <?php /* 취약점 계열 세 화면(현황·변화·제거 권고)의 갈래. 사이드바엔 '현황' 하나만 있고
            나머지 둘은 이 줄로만 들어온다 — 그래서 세 화면이 같은 줄을 그려야 한다. */ ?>
@@ -449,7 +496,7 @@ vg_header('변화 추적', 'findings');
         try {
             vg_attach_change_reason($pdo, $paged);
         } catch (Throwable $e) {
-            error_log('[changes] reason lookup: ' . $e->getMessage());
+            error_log('[changes] detail lookup: ' . $e->getMessage());
         }
     }
 
@@ -487,24 +534,8 @@ vg_header('변화 추적', 'findings');
                 1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
                 2 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
                               . ($r['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
-                3 => function ($r) {
-                    $out = vg_h($r['package_name']);
-                    if ($r['installed_version'] !== '') {
-                        $out .= ' <span class="why">' . vg_h($r['installed_version']) . '</span>';
-                    }
-                    return $out;
-                },
-                4 => function ($r) {
-                    $sev = vg_sev_badge((string) $r['severity']);
-                    if ($r['from_sev']) {
-                        $sev = '<span class="why">' . vg_h($r['from_sev']) . ' →</span> ' . $sev;
-                    }
-                    if ($r['exposed']) { $sev .= ' ' . vg_badge('외부노출', 'high'); }
-                    if ($r['reason'] !== '') {
-                        $sev .= '<br><span class="why">' . vg_h($r['reason']) . '</span>';
-                    }
-                    return $sev;
-                },
+                3 => fn($r) => vg_change_package_cell($r),
+                4 => fn($r) => vg_change_severity_cell($r),
                 5 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
             ],
         ]
@@ -513,7 +544,7 @@ vg_header('변화 추적', 'findings');
     ?>
 
   <?php elseif ($tab === 'pkg'): ?>
-    <div class="sub">패키지 변경 이력 <?= vg_info_icon('언제 무엇이 설치·제거·업그레이드됐는지. 수집 내용이 직전과 같으면 스냅샷을 새로 찍지 않으므로, 여기 남는 건 실제로 달라진 것뿐입니다.') ?></div>
+    <div class="sub">직전 수집 이후 실제로 달라진 패키지만 표시합니다.</div>
     <?php
     vg_table(
         [
@@ -534,7 +565,7 @@ vg_header('변화 추적', 'findings');
                 0 => fn($r) => vg_badge(VG_PKG_CHANGE_TYPES[$r['change_type']] ?? $r['change_type'],
                                         vg_pkgchg_tone((string) $r['change_type'])),
                 1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
-                2 => fn($r) => vg_h($r['package_name'])
+                2 => fn($r) => vg_package_detail_link($r)
                               . ' <span class="why">' . vg_h((string) $r['manager']) . '</span>',
                 3 => fn($r) => $r['old_version'] !== null && $r['new_version'] !== null
                               ? '<span class="why">' . vg_h($r['old_version']) . ' →</span> ' . vg_h($r['new_version'])
@@ -566,7 +597,7 @@ vg_header('변화 추적', 'findings');
         <div class="kpi kpi--sm tone-high"><b><?= number_format($trendSummary['up']) ?></b><span>등급 상승</span></div>
         <div class="kpi kpi--sm tone-low"><b><?= number_format($trendSummary['down']) ?></b><span>등급 하락</span></div>
         <div class="kpi kpi--sm tone-ok"><b><?= number_format($trendSummary['resolved']) ?></b><span>해결</span></div>
-        <div class="kpi kpi--sm tone-muted"><b><?= number_format($trendLatest['unresolved']) ?></b><span>현재 미해결(잔존)</span></div>
+        <div class="kpi kpi--sm tone-muted"><b><?= number_format($trendLatest['unresolved']) ?></b><span>현재 잔존</span></div>
       </div>
 
       <div class="sub">① 미해결 취약점 수 추이</div>
@@ -608,7 +639,7 @@ vg_header('변화 추적', 'findings');
           try {
               vg_attach_change_reason($pdo, $trendResolvedPaged);
           } catch (Throwable $e) {
-              error_log('[changes] trend reason lookup: ' . $e->getMessage());
+              error_log('[changes] trend detail lookup: ' . $e->getMessage());
           }
       }
       vg_table(
@@ -635,20 +666,8 @@ vg_header('변화 추적', 'findings');
                   2 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
                   3 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
                                 . ($r['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
-                  4 => function ($r) {
-                      $out = vg_h($r['package_name']);
-                      if ($r['installed_version'] !== '') {
-                          $out .= ' <span class="why">' . vg_h($r['installed_version']) . '</span>';
-                      }
-                      return $out;
-                  },
-                  5 => function ($r) {
-                      $sev = vg_sev_badge((string) $r['severity']);
-                      if ($r['reason'] !== '') {
-                          $sev .= '<br><span class="why">' . vg_h($r['reason']) . '</span>';
-                      }
-                      return $sev;
-                  },
+                  4 => fn($r) => vg_change_package_cell($r),
+                  5 => fn($r) => vg_change_severity_cell($r),
                   6 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
               ],
           ]

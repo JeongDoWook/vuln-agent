@@ -485,15 +485,16 @@ h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
 .sub { color: var(--muted); font-size: .85rem; line-height: 1.6; margin-bottom: 1.3rem; }
 h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
 
-/* --- ⓘ 인포팁 ------------------------------------------------------------- */
-.info-icon {
-  position: relative;
+/* --- 짧은 도움말 트리거 + 공통 툴팁 --------------------------------------- */
+.info-icon, .help {
   cursor: help;
   color: var(--muted);
-  font-size: .9em;
   margin-left: 4px;
+  vertical-align: middle;
 }
-.info-icon:hover, .info-icon:focus-visible { color: var(--accent-2); }
+.info-icon { font-size: .9em; }
+.info-icon:hover, .info-icon:focus-visible,
+.help:hover, .help:focus-visible { color: var(--accent-2); }
 
 .info-tooltip {
   --tip-anchor: 50%;
@@ -1161,17 +1162,13 @@ tr[data-finding-detail]:focus-visible {
   place-items: center;
   width: 1.05rem;
   height: 1.05rem;
-  margin-left: .25rem;
   border: 1px solid var(--line-2);
   border-radius: 50%;
-  color: var(--muted);
   background: var(--surface-2);
   font-size: .66rem;
   font-weight: 700;
-  cursor: help;
-  vertical-align: middle;
 }
-.help:hover, .help:focus-visible { color: var(--accent-2); border-color: var(--accent); }
+.help:hover, .help:focus-visible { border-color: var(--accent); }
 
 /* --- 알림 ---------------------------------------------------------------- */
 .alert {
@@ -1364,6 +1361,7 @@ td.right .actions { justify-content: flex-end; }
 .collection-item.is-running .collection-item__state { background: var(--ok-bg); color: var(--ok); }
 .collection-item progress { display: block; width: 100%; height: .45rem; margin: .7rem 0 .55rem; accent-color: var(--accent); }
 .collection-item__meta { color: var(--muted); font-size: .72rem; }
+.collection-item__stage { color: var(--text-2); font-weight: 650; }
 .collection-item__link { position: absolute; inset: 0; border-radius: inherit; }
 .collection-item__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .actions--stack > form.agent-control__row {

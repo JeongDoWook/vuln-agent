@@ -33,10 +33,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $csrf = vg_csrf_token();
+$st = $pdo->prepare('SELECT user_id, username, role, created_at, last_login FROM tb_user WHERE user_id = ? AND is_deleted = 0');
+$st->execute([(int) $me['id']]);
+$profile = $st->fetch() ?: $me;
+$profileSummary = (string) ($profile['username'] ?? $me['username'])
+    . ' · ' . vg_role_label((string) ($profile['role'] ?? vg_role()))
+    . ' · 계정 #' . (int) ($profile['user_id'] ?? $me['id'])
+    . ' · 생성 ' . (string) ($profile['created_at'] ?? '–')
+    . ' · 최근 로그인 ' . (string) ($profile['last_login'] ?? '–');
 
 vg_header('내 프로필', 'profile');
 ?>
-  <?php vg_page_title('내 프로필', 'MY ACCOUNT', (string) $me['username'] . ' · ' . vg_role_label(vg_role())); ?>
+  <?php vg_page_title('내 프로필', 'MY ACCOUNT', $profileSummary); ?>
 
   <div class="card card--sm">
     <strong>비밀번호 변경</strong>

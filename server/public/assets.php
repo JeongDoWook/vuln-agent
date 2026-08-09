@@ -208,14 +208,12 @@ vg_header('자산', 'assets');
   <?php
   /* 상태 판정 기준. 예전엔 제목 옆 '?' 로 띄웠는데, 정작 궁금해지는 자리는 '상태' 열이다.
    *   같은 문구를 두 곳에 두지 않고 그 열의 머리글 범례로만 단다(등급 열과 같은 방식). */
-  $stateHelp = '상태는 수집 주기가 아니라 10초 poll 통신 기준입니다. '
-      . '1분 초과 시 지연, 5분 초과 시 오프라인이며 최신 수집 시각은 별도로 표시합니다.';
+  $stateHelp = '최근 poll 기준: 1분 초과 지연 · 5분 초과 오프라인';
   ?>
   <?php /* 제목 옆 '?' 는 이 화면 전체에 걸리는 규칙만 담는다 — 열별 기준은 각 열 머리글이 갖는다.
            등급 확정 경계는 관리자용 일괄 확정 카드 밖에는 적혀 있지 않아 여기로 올린다. */ ?>
   <?php vg_page_title('자산', 'ASSETS', '에이전트가 등록한 호스트별 수집 상태와 탐지 결과입니다.', [
-      'suffix_html' => vg_help('자산 등급은 사람이 확정합니다 — 시스템 제안값은 초안이며 확정이 아닙니다. '
-          . '확정 해제는 자산 상세에서 한 대씩 합니다.'),
+      'suffix_html' => vg_help('시스템 제안은 초안이며, 자산 등급은 사람이 확정합니다.'),
       'actions' => vg_capture(static function (): void {
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
@@ -236,12 +234,12 @@ vg_header('자산', 'assets');
   <div class="cards">
     <div class="kpi kpi--sm"><b><?= number_format($totalHosts) ?></b><span>전체 자산</span></div>
     <?php /* 정보시스템 등급 — 확정 등급의 최고값 승계. 확정이 하나도 없으면 '미지정'. */ ?>
-    <div class="kpi kpi--sm" title="<?= vg_h($systemGrade['reason'] ?? '확정된 자산 등급이 아직 없습니다.') ?>">
+    <div class="kpi kpi--sm" title="<?= $systemGrade !== null ? '확정 자산 중 최고 등급' : '확정 등급 없음' ?>">
       <b><?= vg_h($systemGrade['grade'] ?? '–') ?></b><span>정보시스템 등급</span>
     </div>
     <?php /* 미확정 — 눌러서 그 자산만 거른다(등급 필터의 '미지정'과 같은 조건). 0 이면 톤을 뺀다. */ ?>
     <a class="kpi kpi--sm<?= $unconfirmed > 0 ? ' tone-med' : '' ?><?= $grade === 'none' ? ' is-selected' : '' ?>"
-       title="아직 사람이 등급을 확정하지 않은 자산입니다. 시스템 제안값은 확정이 아닙니다."
+       title="시스템 제안만 있는 자산 포함"
        href="<?= vg_h(vg_qs(['grade' => $grade === 'none' ? '' : 'none', 'page' => null])) ?>">
       <b><?= number_format($unconfirmed) ?></b><span>등급 미확정</span>
     </a>
@@ -288,7 +286,7 @@ vg_header('자산', 'assets');
       // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
       //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
       //   C/S/O 기호만 떠 있으면 뜻을 알 수 없어 열 이름에 한 줄 범례를 단다(어휘는 assetgrade.php 소유).
-      ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem', 'title' => vg_asset_grade_legend()],
+      ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem'],
       ['label' => 'OS', 'key' => 'os', 'width' => '9%'],
       ['label' => 'IP', 'key' => 'ip', 'width' => '9%', 'nowrap' => true],
       ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],

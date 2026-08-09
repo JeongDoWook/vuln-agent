@@ -41,38 +41,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $connectors = $pdo->query('SELECT * FROM tb_feed_connector WHERE is_deleted = 0 ORDER BY feed_connector_id')->fetchAll();
 
-/* 수집 이력.
- * 전엔 전 커넥터의 로그를 목록 아래 한 표에 쏟아 놨는데, 정작 "이 커넥터가 왜 실패했나" 를
- * 보려면 남의 로그 사이에서 눈으로 골라야 했다. 커넥터마다 [이력] 버튼 → 그 커넥터 로그만.
- *   · 모달엔 최근 $logPeek 건. 그보다 많으면 "전체 이력" 링크로 넘긴다.
- *   · ?conn=N 이면 그 커넥터의 전체 이력을 페이지네이션해서 아래에 편다.
- */
-$logPeek = vg_ui_detail_preview_limit();
-
+/* 수집 이력. 목록의 [상세]에서 ?conn=N 으로 들어오면 해당 커넥터 정보와 전체 이력을
+ * 한곳에 보여준다. 최근 이력 모달과 전체 이력 화면이 같은 내용을 중복하던 경로는 합쳤다. */
 $perPage  = vg_perpage();
 $page     = vg_page();
 $connFilter = (int) ($_GET['conn'] ?? 0);
 
-$peek = $pdo->prepare(
-    'SELECT status, trigger_by, items_fetched, items_upserted, message, started_at
-       FROM tb_feed_collection_log WHERE feed_connector_id = ?
-      ORDER BY started_at DESC LIMIT ' . $logPeek
-);
-$cnt = $pdo->prepare('SELECT COUNT(*) FROM tb_feed_collection_log WHERE feed_connector_id = ?');
-
-$logsByConn = []; $logCountByConn = [];
-foreach ($connectors as $c) {
-    $id = (int) $c['feed_connector_id'];
-    $peek->execute([$id]);
-    $logsByConn[$id] = $peek->fetchAll();
-    $cnt->execute([$id]);
-    $logCountByConn[$id] = (int) $cnt->fetchColumn();
+$logCountByConn = [];
+foreach ($pdo->query(
+    'SELECT feed_connector_id, COUNT(*) AS total
+       FROM tb_feed_collection_log GROUP BY feed_connector_id'
+)->fetchAll() as $r) {
+    $logCountByConn[(int) $r['feed_connector_id']] = (int) $r['total'];
 }
 
 // ?conn=N — 그 커넥터의 전체 이력(페이지네이션)
-$logs = []; $logTotal = 0; $connName = '';
+$logs = []; $logTotal = 0; $connName = ''; $connDetail = null;
 if ($connFilter > 0) {
-    foreach ($connectors as $c) { if ((int) $c['feed_connector_id'] === $connFilter) { $connName = (string) $c['name']; } }
+    foreach ($connectors as $c) {
+        if ((int) $c['feed_connector_id'] === $connFilter) {
+            $connName = (string) $c['name'];
+            $connDetail = $c;
+            break;
+        }
+    }
     $logTotal = $logCountByConn[$connFilter] ?? 0;
     $offset   = ($page - 1) * $perPage;
     $st = $pdo->prepare(
@@ -91,6 +83,32 @@ $csrf = vg_csrf_token();
 $edit = null;
 if (isset($_GET['edit'])) {
     foreach ($connectors as $c) { if ((int) $c['feed_connector_id'] === (int) $_GET['edit']) { $edit = $c; } }
+}
+$saveFailed = $err !== null && ($_POST['action'] ?? '') === 'save';
+if ($saveFailed) {
+    $submittedId = (int) ($_POST['id'] ?? 0);
+    $submitted = null;
+    foreach ($connectors as $c) {
+        if ((int) $c['feed_connector_id'] === $submittedId) { $submitted = $c; break; }
+    }
+    $edit = $submitted ?? ['feed_connector_id' => $submittedId];
+    $edit['name'] = (string) ($_POST['name'] ?? '');
+    $edit['connector_type'] = (string) ($_POST['connector_type'] ?? 'kev');
+    $edit['enabled'] = isset($_POST['enabled']) ? 1 : 0;
+    $edit['connection_json'] = $edit['connector_type'] === 'generic_api'
+        ? (string) ($_POST['g_config_json'] ?? '{}')
+        : json_encode([
+            'url' => (string) ($_POST['url'] ?? ''),
+            'api_key' => (string) ($_POST['api_key'] ?? ''),
+            'ecosystem' => (string) ($_POST['ecosystem'] ?? ''),
+            'days' => (string) ($_POST['days'] ?? ''),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $edit['schedule_json'] = json_encode([
+        'mode' => (string) ($_POST['schedule_mode'] ?? 'manual'),
+        'interval_minutes' => (string) ($_POST['interval_minutes'] ?? ''),
+        'time' => (string) ($_POST['schedule_time'] ?? ''),
+        'expr' => (string) ($_POST['schedule_cron'] ?? ''),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 $econn = $edit ? vg_json_col($edit['connection_json']) : [];
 $esched = $edit ? vg_json_col($edit['schedule_json']) : [];
@@ -111,8 +129,7 @@ const VG_COLLECT_TRIGGER = ['manual' => '직접 실행', 'schedule' => '예약']
 
 vg_header('데이터 수집', 'connectors');
 ?>
-  <?php vg_page_title('데이터 수집', 'DATA SOURCES', '취약점 판정에 쓰는 외부 데이터와 수집 상태입니다.', [
-      'suffix_html' => vg_info_icon('수집이 끝나면 기존 스캔의 판정도 자동으로 갱신됩니다.'),
+  <?php vg_page_title('데이터 수집', 'DATA SOURCES', '외부 취약점 데이터와 수집 상태를 관리합니다.', [
       'actions' => vg_capture(static fn() => vg_modal_btn('connModal', '+ 데이터 소스')),
   ]); ?>
 
@@ -141,6 +158,7 @@ vg_header('데이터 수집', 'connectors');
           default:         $c['_sched_label'] = '수동';
       }
       $c['_next_run'] = ($c['enabled'] && $mode !== 'manual') ? ($c['next_run_at'] ?: vg_schedule_next($sc)) : '–';
+      if ((int) $c['feed_connector_id'] === $connFilter) { $connDetail = $c; }
   }
   unset($c);
 
@@ -168,7 +186,8 @@ vg_header('데이터 수집', 'connectors');
       ['label' => '상태'], ['label' => '작업', 'align' => 'right'],
   ];
   $tableCells = [
-      0 => fn($c) => '<strong>' . vg_h($c['name']) . '</strong>',
+      0 => fn($c) => '<strong><a href="?conn=' . (int) $c['feed_connector_id']
+          . '#collection-history">' . vg_h($c['name']) . '</a></strong>',
       1 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
       2 => fn($c) => '<span class="why">최근 ' . vg_h($c['last_run_at'] ?? '–')
           . '<br>다음 ' . vg_h($c['_next_run'] ?: '–') . '</span>',
@@ -177,7 +196,7 @@ vg_header('데이터 수집', 'connectors');
       //   꺼진 커넥터는 수집 결과 뱃지만 보면 "왜 안 도는지" 를 알 수 없으므로 '중지' 를 앞에 붙인다.
       3 => function ($c) use ($statusBadge) {
           return '<div class="stack-sm">'
-          . ($c['enabled'] ? '' : vg_badge('중지', 'muted', '이 데이터 소스는 꺼져 있어 예약 수집이 돌지 않습니다.'))
+          . ($c['enabled'] ? '' : vg_badge('중지', 'muted'))
           . $statusBadge($c['last_status'] !== null ? (string) $c['last_status'] : null) . '</div>';
       },
       4 => function ($c) use ($csrf, $logCountByConn) {
@@ -190,9 +209,8 @@ vg_header('데이터 수집', 'connectors');
           return $html . '<div class="actions">'
               . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . $id . '">'
               . '<button class="btn btn--sm btn--primary" data-loading="수집 중…">실행</button></form>'
-              // 이력은 그 커넥터 것만 모달로 — 전엔 전 커넥터 로그가 한 표에 섞여 있었다.
-              . '<button type="button" class="btn btn--sm btn--ghost" data-modal="log' . $id . '">'
-              . '이력 <span class="why">' . number_format($n) . '</span></button>'
+              . '<a class="btn btn--sm btn--ghost" href="?conn=' . $id . '#collection-history">'
+              . '상세 <span class="why">' . number_format($n) . '</span></a>'
               . '<a class="btn btn--sm btn--ghost" href="?edit=' . $id . '">편집</a>'
               . '<form method="post" data-confirm="이 데이터 소스를 삭제할까요? 예약 수집은 중단되며 기존 이력은 남습니다."><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
               . '<button class="btn btn--sm btn--danger">삭제</button></form>'
@@ -227,14 +245,13 @@ vg_header('데이터 수집', 'connectors');
       foreach ($roleGroups as $gi => $g) {
           if (empty($grouped[$gi])) { continue; }
           echo '<div class="card"><strong>' . vg_h($g['title']) . '</strong>'
-             . vg_info_icon($g['desc'])
+             . ' <span class="why">— ' . vg_h($g['desc']) . '</span>'
              . '<div class="card__body">';
           vg_table($tableHeaders, $grouped[$gi], ['card' => false, 'cell' => $tableCells]);
           echo '</div></div>';
       }
       if ($others) {
-          echo '<div class="card"><strong>기타</strong>'
-             . ' <span class="why">— 분류되지 않은 데이터 소스입니다.</span><div class="card__body">';
+          echo '<div class="card"><strong>기타</strong><div class="card__body">';
           vg_table($tableHeaders, $others, ['card' => false, 'cell' => $tableCells]);
           echo '</div></div>';
       }
@@ -258,6 +275,7 @@ vg_header('데이터 수집', 'connectors');
       ];
   }
   $curType = (string) ($edit['connector_type'] ?? 'kev');
+  if (!isset($typeMeta[$curType])) { $curType = 'kev'; }
   $curMeta = $typeMeta[$curType];
   // 이 타입이 안 읽는 필드는 아예 숨긴다 — 예전엔 전 타입에 다 띄우고 라벨의 괄호로 변명했다.
   $fieldOn = fn(string $f): string => in_array($f, $curMeta['fields'], true) ? '' : ' hidden';
@@ -288,12 +306,12 @@ vg_header('데이터 수집', 'connectors');
           <input type="text" name="url" value="<?= vg_h($econn['url'] ?? '') ?>" placeholder="비우면 기본 주소를 쓴다">
         </div>
         <div data-field="api_key"<?= $fieldOn('api_key') ?>>
-          <label>API Key (선택)</label>
-          <input type="text" name="api_key" value="<?= vg_h($econn['api_key'] ?? '') ?>" placeholder="비워도 됨">
+          <label>API Key</label>
+          <input type="text" name="api_key" value="<?= vg_h($econn['api_key'] ?? '') ?>">
         </div>
         <div data-field="ecosystem"<?= $fieldOn('ecosystem') ?>>
-          <label>Ecosystem (예: Rocky Linux)</label>
-          <input type="text" name="ecosystem" value="<?= vg_h($econn['ecosystem'] ?? '') ?>">
+          <label>Ecosystem</label>
+          <input type="text" name="ecosystem" value="<?= vg_h($econn['ecosystem'] ?? '') ?>" placeholder="예: Rocky Linux">
         </div>
         <div data-field="days"<?= $fieldOn('days') ?>>
           <label>최근 N일</label>
@@ -342,24 +360,31 @@ vg_header('데이터 수집', 'connectors');
 
         <label>필드 매핑 <span id="gRoleLabel" class="why"></span></label>
         <div id="gFieldMap" class="kvrows"></div>
-        <div class="sub">각 대상 필드에 응답 JSON 안의 경로(dot-notation, 예: <code>data.cve</code>)를 입력한다. <strong>굵게</strong> 표시된 필드는 필수.</div>
+        <div class="sub">응답 JSON의 dot-notation 경로를 입력합니다. * 표시는 필수입니다.</div>
 
         <input type="hidden" name="g_config_json" id="gConfigJson">
       </div>
       <label>스케줄</label>
-      <select name="schedule_mode">
-        <?php $sm = $esched['mode'] ?? 'manual'; foreach (['manual'=>'수동 (직접 실행)','interval'=>'주기 실행(N분)','daily'=>'매일 지정 시각','cron'=>'cron 표현식'] as $mv=>$ml): ?>
+      <?php $sm = $esched['mode'] ?? 'manual'; ?>
+      <select name="schedule_mode" id="connSchedule">
+        <?php foreach (['manual'=>'수동 (직접 실행)','interval'=>'주기 실행','daily'=>'매일 지정 시각','cron'=>'cron 표현식'] as $mv=>$ml): ?>
           <option value="<?= $mv ?>" <?= $sm===$mv?'selected':'' ?>><?= $ml ?></option>
         <?php endforeach; ?>
       </select>
-      <label>주기(분) — "주기 실행" 시</label>
-      <input type="text" name="interval_minutes" value="<?= vg_h((string) ($esched['interval_minutes'] ?? '1440')) ?>">
-      <label>시각 HH:MM — "매일 지정 시각" 시</label>
-      <input type="text" name="schedule_time" value="<?= vg_h((string) ($esched['time'] ?? '03:00')) ?>" placeholder="03:00">
-      <label>cron (분 시 일 월 요일) — "cron 표현식" 시</label>
-      <input type="text" name="schedule_cron" value="<?= vg_h((string) ($esched['expr'] ?? '')) ?>" placeholder="0 3 * * *  (매일 03:00)">
+      <div data-schedule-field="interval"<?= $sm === 'interval' ? '' : ' hidden' ?>>
+        <label>주기(분)</label>
+        <input type="text" name="interval_minutes" value="<?= vg_h((string) ($esched['interval_minutes'] ?? '1440')) ?>">
+      </div>
+      <div data-schedule-field="daily"<?= $sm === 'daily' ? '' : ' hidden' ?>>
+        <label>시각 (HH:MM)</label>
+        <input type="text" name="schedule_time" value="<?= vg_h((string) ($esched['time'] ?? '03:00')) ?>" placeholder="03:00">
+      </div>
+      <div data-schedule-field="cron"<?= $sm === 'cron' ? '' : ' hidden' ?>>
+        <label>cron (분 시 일 월 요일)</label>
+        <input type="text" name="schedule_cron" value="<?= vg_h((string) ($esched['expr'] ?? '')) ?>" placeholder="0 3 * * *">
+      </div>
       <label class="inline">
-        <input type="checkbox" name="enabled" value="1" <?= ($edit['enabled'] ?? 0) ? 'checked' : '' ?>> 활성(enabled)
+        <input type="checkbox" name="enabled" value="1" <?= ($edit['enabled'] ?? 0) ? 'checked' : '' ?>> 활성
       </label>
       <?php if ($edit): ?>
         <div class="sub center"><a href="/connectors.php">+ 새 데이터 소스</a></div>
@@ -376,7 +401,7 @@ vg_header('데이터 수집', 'connectors');
   ?>
 
   <?php
-  /* 수집 이력 표 — 커넥터 하나에 대한 것. 모달(최근 8건)과 ?conn=N 전체보기가 공유한다. */
+  /* 수집 이력 표 — ?conn=N 상세에서 커넥터 하나의 이력을 보여준다. */
   $logHeaders = [
       ['label' => '상태',      'width' => '7rem',  'nowrap' => true],
       ['label' => '실행 계기', 'width' => '7rem'],
@@ -402,11 +427,16 @@ vg_header('데이터 수집', 'connectors');
   ];
   ?>
 
-  <?php if ($connFilter > 0 && $connName !== ''): ?>
-    <div class="card">
-      <strong><?= vg_h($connName) ?> · 수집 이력</strong>
-      <span class="why">— 총 <?= number_format($logTotal) ?>건 · <a href="/connectors.php">목록으로</a></span>
+  <?php if ($connFilter > 0 && $connName !== '' && $connDetail !== null): ?>
+    <div class="card" id="collection-history">
+      <strong><?= vg_h($connName) ?> · 상세</strong>
+      <span class="why">— <?= vg_h(VG_CONNECTOR_TYPES[(string) $connDetail['connector_type']]['label'] ?? (string) $connDetail['connector_type']) ?>
+        · <?= $connDetail['enabled'] ? '활성' : '중지' ?>
+        · <?= vg_h((string) $connDetail['_sched_label']) ?>
+        · <a href="?edit=<?= $connFilter ?>">설정 편집</a>
+        · <a href="/connectors.php">목록으로</a></span>
       <div class="card__body">
+        <div class="sub">최근 실행 <?= vg_h((string) ($connDetail['last_run_at'] ?? '–')) ?> · 다음 실행 <?= vg_h((string) ($connDetail['_next_run'] ?: '–')) ?> · 수집 이력 <?= number_format($logTotal) ?>건</div>
         <?php
         vg_table($logHeaders, $logs, ['card' => false, 'empty' => $logEmpty, 'cell' => $logCells]);
         vg_page_nav($logTotal, $perPage, $page);
@@ -415,24 +445,4 @@ vg_header('데이터 수집', 'connectors');
     </div>
   <?php endif; ?>
 
-  <?php
-  /* 커넥터마다 이력 모달. 전엔 전 커넥터 로그를 목록 아래 한 표에 쏟아놔서,
-   * "이 커넥터가 왜 실패했나" 를 보려면 남의 로그 사이에서 눈으로 골라야 했다. */
-  foreach ($connectors as $c):
-      $cid = (int) $c['feed_connector_id'];
-      $n   = $logCountByConn[$cid] ?? 0;
-      vg_modal_open('log' . $cid, $c['name'] . ' · 수집 이력', 'modal--wide');
-  ?>
-      <?php if ($n > $logPeek): ?>
-        <div class="sub">총 <?= number_format($n) ?>건 중 최근 <?= $logPeek ?>건 ·
-          <a href="?conn=<?= $cid ?>">전체 이력 보기 →</a></div>
-      <?php elseif ($n > 0): ?>
-        <div class="sub">총 <?= number_format($n) ?>건</div>
-      <?php endif; ?>
-      <?php vg_table($logHeaders, $logsByConn[$cid] ?? [], ['card' => false, 'empty' => $logEmpty, 'cell' => $logCells]); ?>
-      <?php vg_modal_foot(null); ?>
-  <?php
-      vg_modal_close();
-  endforeach;
-  ?>
 <?php vg_footer();

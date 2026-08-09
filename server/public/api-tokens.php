@@ -93,7 +93,7 @@ $offset = ($page - 1) * $perPage;
 
 $list = $pdo->prepare(
     "SELECT t.api_token_id, t.label, t.token_prefix, t.last_used_at, t.created_at, t.expires_at,
-            u.username AS created_by
+            u.user_id AS created_by_id, u.username AS created_by
        FROM tb_api_token t
        LEFT JOIN tb_user u ON u.user_id = t.created_by
       WHERE $where
@@ -109,6 +109,7 @@ vg_header('API 키', 'apitokens');
       'count' => $total, 'count_label' => '개',
       'actions' => vg_capture(static fn() => vg_modal_btn('issueToken', '+ 토큰 발급')),
   ]); ?>
+  <div class="sub"><code>GET /export.php</code> · <code>X-API-Token</code> 또는 Bearer 인증 · JSON/XML</div>
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <?php vg_toolbar([
@@ -121,7 +122,7 @@ vg_header('API 키', 'apitokens');
         <strong>발급된 토큰 (한 번만 표시됨)</strong>
         <pre class="out selectable"><?= vg_h($newToken) ?></pre>
         <div class="actions"><?php vg_copy_btn($newToken, '토큰 복사'); ?></div>
-        <div class="why">지금 복사해 외부 시스템 설정에 넣으세요 — 저장되지 않아 잃으면 재발급뿐입니다.</div>
+        <div class="why">지금 복사하세요. 분실하면 기존 값을 복구할 수 없어 새로 발급해야 합니다.</div>
       </div>
     </div>
   <?php endif; ?>
@@ -154,7 +155,9 @@ vg_header('API 키', 'apitokens');
               3 => fn($t) => $t['last_used_at']
                   ? '<span class="why">' . vg_h((string) $t['last_used_at']) . '</span>'
                   : '<span class="why">미사용</span>',
-              4 => fn($t) => vg_h((string) ($t['created_by'] ?? '–')),
+              4 => fn($t) => !empty($t['created_by_id'])
+                  ? '<a href="/user.php?id=' . (int) $t['created_by_id'] . '">' . vg_h((string) $t['created_by']) . '</a>'
+                  : '<span class="why">–</span>',
               5 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
               6 => fn($t) => '<form method="post" data-confirm="이 토큰을 폐기할까요? 즉시 무효가 됩니다.">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
@@ -177,10 +180,7 @@ vg_header('API 키', 'apitokens');
              placeholder="예: AI 보고서 생성기" maxlength="100" required autocomplete="off">
       <label>유효기간</label>
       <?= vg_token_expiry_select($issueDays) ?>
-      <?php // 에이전트 키 화면과 같은 문구 구조로 맞춘다(두 사실 다 발급 전에 알아야 한다).
-      ?>
-      <div class="why">만료되면 <strong>즉시 거부</strong>됩니다(자동 갱신 없음). 토큰 원문은
-        <strong>발급 직후 한 번만</strong> 보여집니다(DB 엔 해시만 저장).</div>
+      <div class="why">만료 시 즉시 거부됩니다. 토큰 원문은 발급 직후 한 번만 표시됩니다.</div>
       <?php vg_modal_foot('발급', ['loading' => '발급 중…']); ?>
     </form>
   <?php vg_modal_close(); ?>

@@ -100,10 +100,14 @@ function vg_nav_sections(): array {
             ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE',       'key' => 'cves'],
             ['perm' => 'findings',   'href' => '/packages.php',   'label' => '패키지',    'key' => 'packages'],
             ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '판정 근거', 'key' => 'vendor'],
-            ['perm' => 'findings',   'href' => '/compliance_rules.php', 'label' => '보안 설정', 'key' => 'compliance'],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
-            ['perm' => 'findings',   'href' => '/compliance.php', 'label' => '컴플라이언스 매핑', 'key' => 'compliance_mapping'],
-            ['perm' => 'findings',   'href' => '/control_mapping.php', 'label' => '통제 기준 매핑', 'key' => 'control_mapping'],
+        ],
+        '보안 기준' => [
+            ['perm' => 'findings', 'href' => '/compliance_rules.php', 'label' => '보안 설정', 'key' => 'compliance'],
+            // 두 매핑 화면은 페이지 안 탭으로 오간다. 사이드바는 대표 링크 하나만 두되
+            // 어느 탭에 있어도 같은 항목을 활성화해 현재 위치를 잃지 않게 한다.
+            ['perm' => 'findings', 'href' => '/compliance.php', 'label' => '컴플라이언스·통제',
+             'key' => 'compliance_mapping', 'active_keys' => ['compliance_mapping', 'control_mapping']],
         ],
         '관리' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],
@@ -154,7 +158,8 @@ function vg_nav_icon(string $key): string {
 
 // 사이드바 링크 하나를 렌더한다(단독 링크·그룹 내부 링크가 함께 쓴다 — DRY).
 function vg_nav_link(array $l, string $active, bool $root = false): string {
-    $cls = 'link' . ($root ? ' link--root' : '') . ($active === $l['key'] ? ' active' : '');
+    $activeKeys = $l['active_keys'] ?? [$l['key']];
+    $cls = 'link' . ($root ? ' link--root' : '') . (in_array($active, $activeKeys, true) ? ' active' : '');
     return '<a class="' . $cls . '" href="' . vg_h($l['href']) . '">'
         . vg_nav_icon($l['key']) . '<span>' . vg_h($l['label']) . '</span></a>';
 }
@@ -215,7 +220,13 @@ function vg_breadcrumb(string $active, string $title): void {
     $label = null;
     foreach (vg_nav_sections() as $sec => $links) {
         foreach ($links as $l) {
-            if ($l['key'] === $active) { $section = $sec; $label = $l['label']; break 2; }
+            $activeKeys = $l['active_keys'] ?? [$l['key']];
+            if (in_array($active, $activeKeys, true)) {
+                $section = $sec;
+                // 대표 링크의 보조 탭은 실제 페이지 제목을 잎으로 써 의미를 보존한다.
+                $label = $l['key'] === $active ? $l['label'] : $title;
+                break 2;
+            }
         }
     }
     $leaf = $label ?? $title;

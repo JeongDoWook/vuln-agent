@@ -187,7 +187,7 @@ vg_header('대시보드', 'dashboard');
       <a class="kpi tone-<?= vg_sev_tone($s) ?>" href="/findings.php?sev=<?= $s ?>">
         <b><?= number_format((int) $totals[$s]) ?></b><span><?= $s ?></span>
         <?php if ($d !== null): ?>
-          <span class="kpi__delta <?= $dir ?>" title="7일 전 대비"><?= vg_h($dtxt) ?></span>
+          <span class="kpi__delta <?= $dir ?>"><span class="sr-only">7일 전 대비 </span><?= vg_h($dtxt) ?></span>
         <?php endif; ?>
       </a>
     <?php endforeach; ?>
@@ -205,7 +205,6 @@ vg_header('대시보드', 'dashboard');
               <div>
                 <i class="tone-<?= vg_sev_tone($s) ?>"></i>
                 <span><?= $s ?></span>
-                <span class="n"><?= number_format((int) $totals[$s]) ?></span>
               </div>
             <?php endforeach; ?>
           </div>
@@ -215,7 +214,7 @@ vg_header('대시보드', 'dashboard');
          * 여기(도넛 카드 바닥)가 오히려 제자리 — 옆 "대응 우선순위" 카드와 높이를 맞추며
          * 생기는 여백도 이걸로 채운다. */ ?>
         <div class="donut-foot">
-          <?= vg_badge('KEV 악용확인 ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok', '최신 스캔에서 CISA KEV에 등재된 취약점 수입니다.') ?>
+          <?= vg_badge('KEV 악용확인 ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok') ?>
         </div>
       </div>
     </div>

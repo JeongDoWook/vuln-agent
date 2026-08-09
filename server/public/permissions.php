@@ -82,7 +82,7 @@ vg_header('권한', 'permissions');
       ], $permissionRows, [
           'class' => 'matrix',
           'cell' => [
-              0 => static fn($row) => '<strong>' . vg_h($row['label']) . '</strong> <code>' . vg_h($row['code']) . '</code>',
+              0 => static fn($row) => '<strong>' . vg_h($row['label']) . '</strong>',
               1 => static fn() => vg_badge('✔ 항상', 'ok'),
               2 => static fn($row) => '<label class="check-cell"><input type="checkbox" name="perm[operator][' . vg_h($row['code']) . ']" value="1"' . (!empty($cur['operator'][$row['code']]) ? ' checked' : '') . '><span class="sr-only">운영자 ' . vg_h($row['label']) . ' 접근 허용</span></label>',
               3 => static fn($row) => '<label class="check-cell"><input type="checkbox" name="perm[user][' . vg_h($row['code']) . ']" value="1"' . (!empty($cur['user'][$row['code']]) ? ' checked' : '') . '><span class="sr-only">사용자 ' . vg_h($row['label']) . ' 접근 허용</span></label>',

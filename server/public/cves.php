@@ -223,12 +223,12 @@ vg_header('CVE', 'cves');
                   return $cvss . '<div class="why">EPSS ' . vg_epss_cell($r['epss'], null) . '</div>';
               },
               3 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
-              // 요약은 이 표에서 유일하게 여러 줄이 되는 칸이다 — 기본은 두 줄까지만 보이고(clamp-2)
-              //   잘린 뒷부분은 title 에 그대로 남는다(findings.php 의 근거 칸과 같은 규칙).
+              // 요약은 두 줄까지만 보이고, 전체 문장은 CVE 상세에서 읽는다.
               4 => function ($r) {
                   $s = (string) ($r['summary'] ?? '');
                   if ($s === '') { return '<span class="why">–</span>'; }
-                  return '<div class="clamp-2" title="' . vg_h($s) . '">' . vg_h($s) . '</div>';
+                  return '<a class="clamp-2" href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
+                       . vg_h($s) . '</a>';
               },
           ],
       ]

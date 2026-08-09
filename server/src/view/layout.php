@@ -71,7 +71,7 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
     <?php vg_breadcrumb($active, $title); ?>
     <div class="topbar__right">
       <?php if (vg_can('assets')): ?>
-        <button type="button" class="collection-status-btn" data-modal="collectionStatus" data-collection-status-open>
+        <button type="button" class="collection-status-btn" data-modal="collectionStatus" data-collection-status-open aria-label="수집 현황">
           <span class="collection-status-btn__dot" aria-hidden="true"></span>
           <span>수집 현황</span>
           <b data-collection-status-count hidden>0</b>
@@ -97,7 +97,7 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
           <div><span>대기 중</span><strong data-overview-pending>–</strong></div>
           <div><span>전체 진행률</span><strong data-overview-progress>–</strong></div>
         </div>
-        <p class="collection-overview__hint">실행·대기 작업을 우선해 최근 현황을 최대 10건 표시합니다. 3초마다 자동 갱신됩니다.</p>
+        <p class="collection-overview__hint">실행·대기 우선, 최근 10건 · 3초마다 갱신</p>
         <div class="collection-overview__list" data-overview-list aria-live="polite">
           <div class="collection-overview__empty">수집 현황을 불러오는 중입니다.</div>
         </div>
@@ -107,6 +107,7 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
   <?php endif; ?>
   <button type="button" class="nav-backdrop" data-nav-close aria-label="메뉴 닫기"></button>
 <?php endif; ?>
+<?php vg_confirm_dialog(); ?>
 <main class="page__main">
 <?php
 }

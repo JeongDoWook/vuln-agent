@@ -169,6 +169,8 @@ try {
         $stmt = $pdo->prepare(
             "SELECT f.*, h.host_id, h.fqdn, c.summary, c.epss, c.epss_percentile, c.ref_urls_json,
                     ctr.cid AS container_cid, ctr.image AS container_image,
+                    CASE WHEN f.container_id = 0 THEN s.os_id ELSE ctr.os_id END AS package_os_id,
+                    CASE WHEN f.container_id = 0 THEN s.os_version ELSE ctr.os_version END AS package_os_version,
                     fe.match_source, fe.fixed_version AS evidence_fixed_version,
                 " . VG_FIXED_VERSION_SUBQ . "
              FROM tb_finding f
@@ -373,7 +375,6 @@ vg_header('탐지 결과', 'findings');
               // CVE 요약(summary)은 뺐다. 근거와 나란히 두면 긴 텍스트 컬럼이 둘이라
               // 표가 화면을 넘겨서 정작 제일 중요한 '조치' 가 밖으로 밀려난다.
               // 요약은 일반적인 CVE 설명이라 상세 페이지에 있고, 근거는 이 제품만의 판정 이유다.
-              // 마우스를 올리면 title 로 요약을 볼 수 있게만 남긴다.
               // 이 칸에 링크가 둘이다 — 둘의 대상이 다르므로 라벨로 구분한다.
               //   CVE-XXXX(=취약점 자체의 일반 설명, cve.php) / '이 자산 판정'(=이 호스트·패키지에서
               //   왜 그렇게 판정됐고 스캔마다 어땠는지, finding_history.php).
@@ -381,32 +382,38 @@ vg_header('탐지 결과', 'findings');
               //   결정하는데(아래 rationale 주석), CVE 칸은 보통 한 줄이라 여기 한 줄을 더해도
               //   행이 안 높아진다. '조치' 칸에 넣으면 조치 알약(clamp-2)이 이미 두 줄일 때 세 줄이 된다.
               'cve_id' => function ($r) {
-                  $t = $r['summary'] ? ' title="' . vg_h($r['summary']) . '"' : '';
-                  $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '"' . $t . '>'
+                  $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">'
                         . vg_h($r['cve_id']) . '</a></strong>';
-                  if ($r['in_kev']) { $html .= ' ' . vg_badge('KEV', 'crit', '악용이 확인된 취약점 — CISA KEV 등재'); }
+                  if ($r['in_kev']) { $html .= ' ' . vg_badge('KEV', 'crit', 'CISA KEV 등재'); }
                   // 벤더가 수정본을 내지 않은 CVE — 패치로는 못 고친다(완화·격리·제거가 답).
                   // 뱃지 두 개가 겹쳐 시끄러워지는 걸 피하려고, 우선순위가 더 높은 KEV 만
                   // 뱃지로 두드러지게 하고 이건 평범한 텍스트(.why 톤)로 낮춘다 — 정보는 그대로.
                   if (!empty($r['no_fix'])) {
-                      $html .= ' <span class="why" title="벤더 수정본이 없어 패치가 존재하지 않는다">조치 불가</span>';
+                      $html .= ' <span class="why">조치 불가</span>';
                   }
                   $href = vg_finding_history_url(
                       (int) $r['host_id'], $r['container_id'] === null ? 0 : (int) $r['container_id'],
                       (string) $r['cve_id'], (string) $r['package_name']
                   );
-                  $html .= '<div class="why"><a href="' . vg_h($href) . '"'
-                         . ' title="이 자산에서의 판정 근거 전문·위험도·수정 버전과 스캔별 이력">이 자산 판정 →</a></div>';
+                  $html .= '<div class="why"><a href="' . vg_h($href) . '">이 자산 판정 →</a></div>';
                   return $html;
               },
               // 패키지 — 이름 + 설치 버전(아래줄).
               //   컨테이너 안의 취약점은 호스트 것과 조치 방법이 다르다(이미지 재빌드) → 구분해 보여준다.
               //   이미지는 버전 옆에 붙인다(칸을 새로 만들면 표가 다시 가로로 넘친다).
-              'package_name' => fn($r) => vg_h($r['package_name'])
-                  . (!empty($r['container_cid']) ? ' ' . vg_badge('컨테이너 ' . $r['container_cid'], 'med') : '')
-                  . '<div class="why"><code>' . vg_h($r['installed_version']) . '</code>'
-                  . (!empty($r['container_image']) ? ' · ' . vg_h((string) $r['container_image']) : '')
-                  . '</div>',
+              'package_name' => function ($r) {
+                  $name = vg_h((string) $r['package_name']);
+                  $eco = vg_osv_ecosystem($r['package_os_id'] ?? null, $r['package_os_version'] ?? null);
+                  if ($eco !== null) {
+                      $name = '<a href="/package.php?name=' . urlencode((string) $r['package_name'])
+                          . '&amp;eco=' . urlencode($eco) . '">' . $name . '</a>';
+                  }
+                  return $name
+                      . (!empty($r['container_cid']) ? ' ' . vg_badge('컨테이너 ' . $r['container_cid'], 'med') : '')
+                      . '<div class="why"><code>' . vg_h($r['installed_version']) . '</code>'
+                      . (!empty($r['container_image']) ? ' · ' . vg_h((string) $r['container_image']) : '')
+                      . '</div>';
+              },
               // 위험도 — CVSS(얼마나 심한가) + EPSS(실제로 악용될 확률). 다른 걸 재므로 같이 본다.
               //   백분위("상위 N%")는 여기선 뺀다 — 좁은 칸에서 4줄로 접힌다. 상세 페이지에 있다.
               'risk' => function ($r) {
@@ -426,7 +433,7 @@ vg_header('탐지 결과', 'findings');
                   $why = (string) ($r['rationale'] ?? '');
                   // 판정 출처 뱃지는 근거 문장 앞에 같이 흐른다 — 따로 한 줄을 차지하면
                   //   근거 칸이 이 표에서 가장 높은 칸이 되어 행 전체를 끌어올린다.
-                  return '<div class="why clamp-2" title="' . vg_h($why) . '">'
+                  return '<div class="why clamp-2">'
                        . '<span class="badge tone-muted">' . vg_h((string) ($r['match_source'] ?? 'catalog')) . '</span> '
                        . vg_h($why) . '</div>';
               },
@@ -444,11 +451,7 @@ vg_header('탐지 결과', 'findings');
                       (string) $r['cve_id'], (string) $r['package_name']
                   )] ?? null;
                   if ($note !== null) {
-                      $title = '미조치 사유: ' . (string) $note['reason']
-                             . ' (승인 ' . (string) ($note['approved_by_name'] ?? '-')
-                             . ' · ' . (string) ($note['approved_at'] ?? '-') . ')'
-                             . ' — 전문은 CVE 칸의 "이 자산 판정" 에서';
-                      $html .= ' ' . vg_badge('미조치 사유', 'info', $title);
+                      $html .= ' ' . vg_badge('미조치 사유', 'info');
                   }
                   return $html;
               },

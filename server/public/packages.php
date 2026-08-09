@@ -259,7 +259,8 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
                   'cta'   => vg_connectors_empty_cta(),
               ]),
           'cell' => [
-              0 => fn($r) => '<strong>' . vg_h((string) $r['name']) . '</strong>',
+              0 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '&amp;tab=packages&amp;q='
+                  . urlencode((string) $r['name']) . '"><strong>' . vg_h((string) $r['name']) . '</strong></a>',
               1 => fn($r) => '<code>' . vg_h((string) $r['manager']) . '</code>',
               2 => fn($r) => '<code>' . vg_h((string) ($r['version'] ?? '')) . '</code>',
               3 => function ($r) {
@@ -267,7 +268,8 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
                   return vg_h((string) $r['license']) . ' '
                       . vg_badge(vg_license_risk_label((string) $r['risk']), vg_license_risk_tone((string) $r['risk']));
               },
-              4 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '&amp;tab=packages">'
+              4 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '&amp;tab=packages&amp;q='
+                  . urlencode((string) $r['name']) . '">'
                   . vg_h((string) $r['fqdn']) . '</a>'
                   . (!empty($r['container_name']) ? ' <span class="why">(' . vg_h((string) $r['container_name']) . ')</span>' : ''),
               5 => fn($r) => '<span class="why">' . vg_h((string) $r['collected_at']) . '</span>',
@@ -295,10 +297,8 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
           ['label' => '패키지', 'width' => '30%', 'class' => 'col-id'],
           ['label' => '배포판', 'width' => '14%'],
           ['label' => 'CVE 수', 'align' => 'right', 'width' => '9%'],
-          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '15%',
-           'title' => '이 패키지의 CVE 중 가장 높은 악용 확률(EPSS — 앞으로 30일 안에 실제로 악용될 확률)'],
-          ['label' => '수정 버전', 'width' => '32%',
-           'title' => '패치가 나온 최소 버전. 막대는 이 패키지 CVE 중 수정 버전이 확인된 비율(조치 N/M)'],
+          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '15%'],
+          ['label' => '수정 버전·확인율', 'width' => '32%'],
       ],
       $rows,
       [
