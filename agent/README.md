@@ -202,6 +202,8 @@ bash deploy/agent_push.sh 10.3.142.100 10.3.142.101 10.3.142.102
 
 - 신규 설치는 **하지 않는다.** 토큰 발급이 사람 판단이라 그렇다 — 정석은 그 서버에 들어가
   `install-agent.sh` 를 대화형으로 돌리는 것이고, 이 스크립트는 그걸 대체하지 않는다.
+- 노드가 많으면 `deploy/install_staged_agents.sh` 가 같은 일을 **기본 노드 목록 전체**에 한 번에
+  한다(설치·재시작·버전 확인까지) — [`deploy/README.md`](../deploy/README.md) "에이전트 일괄 설치·갱신".
 - `install-agent.sh` 자체가 바뀐 경우(타이머·유닛·preflight)는 대상이 아니다. 그건 노드에서
   설치기를 다시 돌려야 한다.
 - 2026-08-06: `install-agent.sh` 가 생성하는 `run.sh` 가 poll 응답의 `cpu_quota_percent`·
@@ -335,15 +337,17 @@ sudo bash install-agent.sh --uninstall [--prefix 설치경로]
 
 ## 무엇을 수집하나
 
-OS/커널/CPE, 설치 패키지(dpkg/rpm — NEVRA·소스패키지·**출처**), 실행 중 프로세스와
-리스닝 포트(외부노출 판정), 보안설정(sshd·계정·SELinux/AppArmor·방화벽 → 서버가 CCE 점검),
-언어 패키지(pip/npm), **계정 인벤토리**(아래 별도 절 — 개인정보성 항목이 포함된다),
+OS/커널/CPE, 설치 패키지(호스트는 dpkg/rpm — NEVRA·소스패키지·**출처**), 실행 중 프로세스와
+리스닝 포트(외부노출 판정), 보안설정(sshd·계정·파일권한·SELinux/AppArmor·방화벽·시간동기화·
+로그·암호화 → 서버가 CCE 점검), 언어 패키지(pip/npm/gem/composer/maven/nuget/cargo/go 8개
+생태계), **계정 인벤토리**(아래 별도 절 — 개인정보성 항목이 포함된다),
 **패키지 의존성 그래프**(직접·전이). 이 원자료가 중앙에서 CVE 미러(NVD·OSV·KISA)와 매칭되고, 런타임
 노출·EPSS·KEV 가중이 얹혀 최종 우선순위가 된다. 피드 소스별 역할은
 [`docs/dev/피드소스-역할.md`](../docs/dev/피드소스-역할.md) 참고.
 
 **컨테이너 내부도 본다.** `collect_containers` 가 실행 중인 컨테이너의 rootfs 를 직접 읽어
-**내부 패키지 인벤토리**를 뜬다(호스트 패키지와 `container_id` 로 구분해 저장). docker CLI 에
+**내부 패키지 인벤토리**를 뜬다(dpkg·apk 는 텍스트 DB 라 어디서든, rpm 은 호스트에 rpm 이 있을
+때만. 호스트 패키지와는 `container_id` 로 구분해 저장). docker CLI 에
 의존하지 않으므로 podman·containerd 도 잡힌다(이름·이미지만 CLI 로 보강). 컨테이너 안은
 호스트 스캔에서 통째로 빠지던 미탐 영역이었다.
 

@@ -1,6 +1,6 @@
 # vuln-agent 아키텍처
 
-> 현행 기준: 2026-08-09 · 에이전트 3.8 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고,
+> 현행 기준: 2026-08-09 · 에이전트 3.10 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고,
 > 계정 인벤토리·자산 등급·의존성 그래프 수집, 컴플라이언스 스냅샷 포함.
 
 지금까지 확정·구현된 구조를 그림으로 정리한다.
@@ -94,8 +94,10 @@ stale 값이 영구히 남는다).
 > 외부에서 전체 스캔을 강제로 다시 쓰는 공개 API는 제공하지 않는다.
 
 **보안설정 점검(CCE)** 은 별도 경로다. 같은 수집물의 `security`/`users` 섹션을 `src/cce.php` 가
-판정해 `tb_cce_finding`(PASS/FAIL/NA)에 저장한다 — CVE 가 아니라 **설정**(SSH root 로그인,
-패스워드 인증, UID 0 계정, SELinux/AppArmor, 방화벽)을 본다. 신규 수집은 하지 않는다.
+판정해 `tb_cce_finding`(PASS/FAIL/NA)에 저장한다 — CVE 가 아니라 **설정**을 본다(현재 39개 항목:
+SSH·계정·패스워드 정책·파일 권한·MAC/방화벽 + 시간동기화 `CCE-TIME-*`·로그설정 `CCE-LOG-*`·
+암호화 `CCE-CRYPTO-*`). 그중 27개는 SSG 룰 ID 에 묶여 있고 나머지는 화면에서 "자체 기준"으로
+드러낸다(`vg_cce_ssg_map()`). 신규 수집은 하지 않는다.
 한 점검 결과가 **어느 기준의 증적인가**는 `tb_control_mapping`(U-코드/ISMS-P/N2SF 다중 매핑)이
 정본이다 — 예전엔 이 지식이 `cce.php` 주석과 화면 문자열에 흩어져 있어 같은 결과를 다른 기준으로
 볼 수 없었다. 조회는 `src/control_mapping.php`, 화면은 `/control_mapping.php`. 매핑 행 자체가
@@ -185,7 +187,8 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 
 다이어그램: [`docs/specs/diagrams/피드커넥터.puml`](../specs/diagrams/피드커넥터.puml)
 
-커넥터 = `{type(11종 — 고정 5종 kev/osv/nvd/kisa/epss + 벤더판정 6종 debtracker/rhoval/rhunfixed/ssg/kcve/ubuntuoval + 범용 generic_api), connection(url·key·ecosystem 등 타입별), schedule, enabled}`.
+커넥터 = `{type(12종 — 고정 11종 = 기준정보·우선순위 5종 kev/osv/nvd/kisa/epss + 벤더·업스트림 판정 5종 debtracker/rhoval/rhunfixed/kcve/ubuntuoval + 설정 룰셋 ssg, 여기에 범용 generic_api 1종), connection(url·key·ecosystem 등 타입별), schedule, enabled}`.
+타입 카탈로그의 SSOT 는 `VG_CONNECTOR_TYPES`(`server/src/feeds.php`) 하나이고, 역할별 차이는 [`피드소스-역할.md`](피드소스-역할.md).
 스케줄은 **manual / interval(N분) / daily(HH:MM) / cron(5필드 표현식)** 지원 — UI에서 지정하면
 스케줄러 사이드카가 매 tick(60s) 판정해 그 시각에 수집·재매칭한다(Quartz 유사, 중앙 실행).
 수집 이력·상태는 `tb_feed_collection_log` 에 남고 커넥터 행에 마지막 상태로 표시된다.
@@ -248,7 +251,7 @@ snippet → 각 사이트 블록에서 `import`). 사이트마다 복붙하지 �
 
 다이어그램: [`docs/specs/diagrams/erd.puml`](../specs/diagrams/erd.puml)
 
-**범위**: 도메인 엔티티 **48개 전부**(= 전체 49테이블 − `tb_schema_migrations`)를 그린다.
+**범위**: 도메인 엔티티 **50개 전부**(= 전체 51테이블 − `tb_schema_migrations`)를 그린다.
 `tb_schema_migrations` 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
 엔티티가 많아 영역별 `package` 로 묶었다 — 수집·인벤토리 / CVE 도메인 / 벤더 판정 소스 /
 판정 결과 / 피드 운영·인증·감사. **실선은 FK 가 실제로 걸린 관계, 점선은 FK 없이

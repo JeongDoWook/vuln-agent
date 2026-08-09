@@ -63,7 +63,7 @@
   <div style="margin-top:.7rem">
     <span class="tag">Bash 에이전트</span><span class="tag">PHP + MySQL</span>
     <span class="tag">Docker</span><span class="tag">HTTPS(Caddy)</span><span class="tag">OSV · KEV · EPSS · NVD · KISA</span>
-    <span class="tag">배포판 근거 기반 백포트 억제</span><span class="tag">보안설정 32개 점검</span><span class="tag">Export API</span>
+    <span class="tag">배포판 근거 기반 백포트 억제</span><span class="tag">보안설정 39개 점검</span><span class="tag">Export API</span>
   </div>
 </header>
 
@@ -164,20 +164,21 @@
 <code class="i">tb_cce_finding</code> 에 저장하고 호스트 상세에 PASS/FAIL/NA 로 표시한다.</p>
 <div class="card">
 <table>
-  <thead><tr><th>점검 항목</th><th>판정 기준</th></tr></thead>
+  <thead><tr><th>계열</th><th>보는 것</th></tr></thead>
   <tbody>
-    <tr><td>SSH root 로그인 차단</td><td>sshd_config <code class="i">PermitRootLogin</code></td></tr>
-    <tr><td>SSH 패스워드 인증 제한</td><td>sshd_config <code class="i">PasswordAuthentication</code></td></tr>
-    <tr><td>root 외 UID 0 계정 금지</td><td><code class="i">/etc/passwd</code> UID 0 계정 수</td></tr>
-    <tr><td>강제접근제어(SELinux/AppArmor) 활성</td><td>MAC 활성 상태</td></tr>
-    <tr><td>호스트 방화벽 정책 존재</td><td>firewalld/iptables/nftables 규칙</td></tr>
+    <tr><td>SSH (<code class="i">CCE-SSH-*</code>)</td><td><code class="i">sshd -T</code> 실효값 — root 로그인·패스워드 인증·인증 시도 횟수·X11·유휴 타임아웃 등</td></tr>
+    <tr><td>계정·패스워드 (<code class="i">CCE-ACC-* / CCE-PW-*</code>)</td><td>UID 0 중복·빈 패스워드·shadow 이전, 만료일·최소길이·품질·잠금 정책</td></tr>
+    <tr><td>파일 권한 (<code class="i">CCE-FILE-*</code>)</td><td><code class="i">/etc/passwd·shadow·group·gshadow</code>·crontab 등의 소유자·권한</td></tr>
+    <tr><td>시스템 (<code class="i">CCE-UMASK · CCE-SEC-* · CCE-SVC-* …</code>)</td><td>umask·root PATH·세션 타임아웃·SELinux/AppArmor·방화벽·레거시 서비스</td></tr>
+    <tr><td>시간·로그·암호화 (<code class="i">CCE-TIME-* / CCE-LOG-* / CCE-CRYPTO-*</code>)</td><td>시각 동기화와 오차, 로그 보존기간·원격 전송, SSH 알고리즘·디스크 암호화</td></tr>
   </tbody>
 </table>
 </div>
 <p class="lead" style="font-size:.85rem;">
-  5개 항목 각각 <span class="badge" style="background:var(--green)">PASS</span>
+  현재 39개 항목을 각각 <span class="badge" style="background:var(--green)">PASS</span>
   / <span class="badge" style="background:var(--crit)">FAIL</span>
-  / <span class="badge" style="background:var(--low)">N/A</span> 로 판정한다. 신규 수집 없이 기존 수집물을 재활용한다.
+  / <span class="badge" style="background:var(--low)">N/A</span> 로 판정한다(확인 못 한 항목은 PASS 가 아니라 N/A).
+  신규 수집 없이 기존 수집물을 재활용하고, 27개는 SSG 룰 ID 에 묶어 CIS·NIST·STIG 근거를 함께 보여준다.
 </p>
 
 <!-- 6. 데이터 수집 -->
@@ -308,12 +309,16 @@
     <tr><td>변화 추적</td><td>최근 2개 스캔 대조 — 신규/해결/등급변경</td><td>로그인</td></tr>
     <tr><td>CVE 상세</td><td>요약·영향 패키지·수정 버전·이 CVE가 발견된 호스트 목록</td><td>로그인</td></tr>
     <tr><td>국내공지</td><td>KISA 보안공지 목록/상세, 검색+페이지네이션</td><td>로그인</td></tr>
-    <tr><td>자산 관리</td><td>호스트 자산 관리(소프트삭제)</td><td>로그인(assets 권한)</td></tr>
+    <tr><td>패키지</td><td>전 자산 설치 패키지 통합 검색 · 언어 패키지 라이선스 위험도 탭</td><td>로그인</td></tr>
+    <tr><td>판정 근거</td><td>벤더 원본(트래커·OVAL·미수정·커널 CNA) 조회 — 억제가 옳은지 사람이 확인</td><td>로그인</td></tr>
+    <tr><td>보안 설정</td><td>SSG 룰 카탈로그 목록·상세(CIS·NIST·STIG 참조)</td><td>로그인</td></tr>
+    <tr><td>컴플라이언스·통제</td><td>ISMS-P·ISO 27001 자동판정과 날짜별 추이, 통제 기준(U-코드·ISMS-P·N2SF) 매핑과 통제 상세</td><td>로그인</td></tr>
+    <tr><td>자산 관리</td><td>호스트 자산·중요도·N2SF 등급(소프트삭제)</td><td>로그인(assets 권한)</td></tr>
     <tr><td>데이터 수집</td><td>소스 설정·미리보기·스케줄·실행·이력</td><td>admin(기본, RBAC 설정 가능)</td></tr>
-    <tr><td>사용자</td><td>계정 관리</td><td>admin(기본)</td></tr>
-    <tr><td>권한 설정</td><td>역할×메뉴 허용 여부 설정</td><td>admin(기본)</td></tr>
-    <tr><td>API 키</td><td>결과 조회용 키 발급·폐기</td><td>admin(기본)</td></tr>
-    <tr><td>감사로그</td><td>행위 기록(로그인·CRUD·ingest), 범위 필터+페이지네이션</td><td>admin(기본)</td></tr>
+    <tr><td>사용자 · 권한 설정</td><td>계정 관리 / 역할×메뉴 허용 여부 설정</td><td>admin(기본)</td></tr>
+    <tr><td>API 키 · 에이전트 키</td><td>결과 조회용·수집용 키 발급·폐기(유효기간 포함)</td><td>admin(기본)</td></tr>
+    <tr><td>감사 로그</td><td>접속기록 5요소 + 월 1회 점검 기록, 필터+페이지네이션</td><td>admin(기본)</td></tr>
+    <tr><td>설정</td><td>SLA 기준일 등 판정 기준값(조직마다 다른 값을 코드에서 뺀 곳)</td><td>admin 전용</td></tr>
   </tbody>
 </table>
 </div>
@@ -330,7 +335,10 @@
     <li><span class="ok">✓</span> 정밀 런타임 수집(실행중/사용중/포트 구분) · 매처 7단계 상태 판정</li>
     <li><span class="ok">✓</span> OSV 자동 매칭(전 패키지·버전필터·수정 버전) · KEV/EPSS 우선순위</li>
     <li><span class="ok">✓</span> 백포트 오탐 억제(OSV 버전 범위 + changelog·errata·OVAL·Debian tracker) → tb_suppressed_finding, 호스트 상세에 근거 표시</li>
-    <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·MAC·방화벽 등 32개 항목 PASS/FAIL/NA</li>
+    <li><span class="ok">✓</span> 보안설정 점검(CCE) — SSH·계정·파일권한·MAC/방화벽·시간·로그·암호화 39개 항목 PASS/FAIL/NA</li>
+    <li><span class="ok">✓</span> 컴플라이언스(ISMS-P·ISO 27001) 자동판정 4단계(준수/판정 불가/부분준수/미준수) + 하루 1건 스냅샷 · 통제 기준 매핑(U-코드·ISMS-P·N2SF)</li>
+    <li><span class="ok">✓</span> 계정 인벤토리(패스워드 해시 미수집) · 자산 중요도·N2SF 보안등급(확정값/시스템 제안값 분리)</li>
+    <li><span class="ok">✓</span> 컨테이너 내부 패키지 인벤토리 · SCA(8개 언어 생태계 + 라이선스 분류) · 제거·대체 검토 권고 · 미조치 사유·승인자</li>
     <li><span class="ok">✓</span> 변화 추적(changes.php) — 최근 2개 스캔 대비 신규/해결/등급변경</li>
     <li><span class="ok">✓</span> 웹(로그인·대시보드·호스트상세·취약점·변화추적·CVE상세·국내공지·자산·커넥터·사용자·권한·API토큰·감사로그) · 검색/필터·페이지네이션</li>
     <li><span class="ok">✓</span> 고정 커넥터 11종 + 범용 API · cron 스케줄(스케줄러 사이드카 1분마다 확인) · 배포 설치기(systemd 상시 poll, 호스트별 수집 주기, cron 폴백)</li>
@@ -338,7 +346,8 @@
     <li><span class="ok">✓</span> Export API(JSON/XML) · 웹에서 발급하는 읽기전용 API 토큰(X-API-Token)</li>
     <li><span class="ok">✓</span> 설정형 RBAC(admin/operator/user × 메뉴) · 자산 관리(assets.php)</li>
     <li><span class="ok">✓</span> DB 전면 개편 — tb_ 접두사 통일 + 감사 4컬럼 + 소프트삭제 + 활동 감사로그(tb_activity_log · activity.php)</li>
-    <li style="color:var(--muted)">◦ (예정) 대시보드 “다음 수집 예정” · 알림</li>
+    <li style="color:var(--muted)">◦ (수집·저장까지만) 패키지 의존성 그래프 — 전용 화면은 아직 없다</li>
+    <li style="color:var(--muted)">◦ (안 만든다) 알림 채널 · 조치 결재 워크플로 — 수신지·결재선이 없어 억지로 만들지 않는다(YAGNI)</li>
   </ul>
 </div>
 

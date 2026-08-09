@@ -128,40 +128,38 @@ systemd 가 없는 노드만 **cron 폴백**(`run.sh --once` 를 주기 실행, 
 
 ## 5. 폴더 구조 (목표)
 
+**파일은 책임대로 놓는다.** 개별 파일명을 여기 다 적지 않는다 — 화면·헬퍼는 계속 늘고 줄어서
+목록을 두면 곧 어긋난다. 어디에 무엇이 들어가는지만 고정한다.
+
 ```
 vuln-agent/
-├── CONTEXT.md  README.md  CLAUDE.md(개발원칙)
-├── deploy/       # 배포 인프라 (compose·러너·caddy·config)
-│   ├── compose.yml  compose.common/dev/prod.yml  compose_runner.sh   # dev/prod 도커
-│   ├── update.sh  .env.{dev,prod}.template                           # 운영 업데이트·설정 템플릿
-│   ├── caddy/     # HTTPS 리버스 프록시(운영 전용): Dockerfile·Caddyfile·entrypoint.sh
-│   └── config/mysql/my.cnf   # 운영 MySQL 튜닝
-├── secrets/(*.txt gitignore)   data/(mysql, gitignore)              # 비밀값·DB 데이터 (루트 유지)
+├── CONTEXT.md  README.md  CLAUDE.md(개발원칙)  AGENTS.md
+├── deploy/       # 배포 인프라: compose.{common,dev,dev-db,dev-net,prod}.yml · compose_runner.sh
+│   │             #   · migrate.sh · update.sh · backup_db.sh · wt.sh · .env.{dev,prod}.template
+│   ├── caddy/    # HTTPS 리버스 프록시(운영 전용): Dockerfile·Caddyfile·entrypoint.sh
+│   ├── config/mysql/my.cnf   # 운영 MySQL 튜닝
+│   └── hooks/pre-push        # 검증 게이트(저장소가 들고 있다)
+├── secrets/(*.txt gitignore)   data/(mysql, gitignore)   agent-ca/(gitignore)
 ├── agent/
-│   ├── vuln-inventory-agent.sh   # 수집(패키지·노출·실행프로세스), --send 전송
+│   ├── vuln-inventory-agent.sh   # 수집(패키지·노출·실행프로세스·계정·의존성), --send 전송
 │   └── install-agent.sh          # 각 서버 배포·스케줄(systemd 상시 데몬/cron 폴백)
 ├── server/
-│   ├── Dockerfile
-│   ├── public/   # ingest·agent-poll/progress·export·feed_preview(API) + login/index/host/findings/changes/cves/cve/
-│   │             #   packages/package/advisories/advisory/assets/asset-packages/connectors/users/user/permissions/api-tokens/
-│   │             #   agent-tokens/activity(5요소 접속기록+월1회 점검)/settings(운영 설정)/profile + vendor(벤더 판정 근거)/
-│   │             #   compliance_rules·compliance_rule(SSG 룰셋 카탈로그)/compliance(ISMS-P·ISO 27001 매핑+판정 추이)/
-│   │             #   control_mapping(U-코드·ISMS-P·N2SF 통제 기준 매핑)/nofix-packages(제거·대체 검토 권고) (웹)
-│   │             #   agent-dl.php — 에이전트 설치 파일 배포(자산 화면 설치 모달의 다운로드 대상)
-│   │             #   process.html — 프로세스 소개(로그인 불필요, /process.html 로 공유)
-│   ├── src/      # config·db·auth(RBAC·세션만료)·view·matcher(+백포트억제)·feeds·cce·apitoken·audit(감사로그·소프트삭제)
-│   │             #   + compliance(통제 판정·스냅샷)·setting(운영 설정값)·account_inventory·assetgrade(N2SF)
-│   │             #   · nofix(제거·대체 권고)·remediation_note(미조치 사유)·control_mapping·tokenexpiry
-│   └── bin/      # scheduler.php(사이드카)·sync.php·backfill_nvd/kisa/kisa_content·rebuild_advisory_cveids
+│   ├── public/   # HTTP 로 노출되는 것 = URL. 웹 화면(*.php) + 토큰 인증 API(ingest·agent-poll/
+│   │             #   progress·export·agent-dl) + 화면이 뒤에서 부르는 엔드포인트(feed_preview 등)
+│   │             #   · process.html — 프로세스 소개(로그인 불필요, /process.html 로 공유)
+│   │             #   화면 목록의 정본은 src/view/nav.php 의 vg_nav_sections() 와 사이트맵 다이어그램
+│   ├── src/      # 공용 라이브러리(URL 로 안 열린다): db·auth(RBAC·세션만료)·view/·matcher(+억제)
+│   │             #   · feeds/(커넥터 12종)·cce·compliance·account_inventory·assetgrade·setting 등
+│   └── bin/      # CLI 전용: scheduler.php(사이드카)·sync.php·backfill_*·rebuild_*
 ├── db/           # 01~18 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
 │   └── migrations/    # YYYYMMDDHHMMSS_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
 │                      #   연번(0001…)은 금지 — 동시 브랜치가 같은 번호를 집는다. pre-push 가 막는다.
 │                      #   기존 0001~0020 은 그대로 둔다(사전순이라 옛 것이 먼저 돈다).
-├── tests/        # smoke.sh(API~로그인 curl) · e2e.sh+e2e/(브라우저 JS, Playwright — 게이트 밖)
+├── tests/        # smoke.sh(API~로그인 curl) · e2e.sh+e2e/(브라우저, Playwright — 게이트 밖)
 │                 #   · ui_lint.sh(죽은 CSS·인라인 style) · vercmp_test.php(버전비교 단위)
-│                 #   · agent-bench.sh(에이전트 리소스 실측)
-│                 #   · *_test.php(단위: 계정 인벤토리·CCE 신규룰·ingest 파싱·문서 일관성 등)
-├── docs/         # 아키텍처·기획안·설명글·피드소스-역할·export-api·에이전트-리소스-프로파일
+│                 #   · agent-bench.sh(에이전트 리소스 실측) · *_test.php/*_test.sh(단위·문서 일관성)
+├── docs/         # dev/(아키텍처·데이터베이스·피드소스-역할·설명글·화면-안내·조치가이드·리소스 프로파일)
+│                 #   · specs/diagrams/(PlantUML 6종 + 렌더 SVG) · ui-configuration.md
 └── shadow-ai/    # (사이드 PoC) 섀도우 AI DLP 크롬 확장 — 본 파이프라인과 독립
 ```
 
@@ -205,33 +203,19 @@ vuln-agent/
 - `FILTERED` 가 없으면 방화벽 뒤의 내부 서비스가 **전부 HIGH/CRITICAL 로 뜬다**(오탐).
   에이전트가 firewalld/ufw 허용 포트와 대조해 판정한다.
 
-**오탐 억제는 4겹이다(데비안 중심).** 통과 못 한 건은 finding 이 아니라 `tb_suppressed_finding` 으로 분리된다
-— 위험 집계·화면은 그대로 두고 오탐만 빠지며, **근거는 호스트 상세에 그대로 노출된다**(숨기지 않는다).
+**오탐 억제는 데비안 중심의 4겹**(①OSV 버전필터 ②changelog ③errata ④debsecan 역방향)**이고,
+RHEL 계열·우분투·커널은 각자의 벤더 소스로 별도 판정한다.** 억제된 건은 `tb_finding` 이 아니라
+`tb_suppressed_finding` 으로 가서 위험 집계·화면은 그대로 두고 오탐만 빠지며, **근거는 호스트
+상세에 그대로 노출된다**(숨기지 않는다). 벤더가 "아직 안 고쳤다"고 확인한 CVE 는
+`tb_finding.no_fix` 로 표시한다 — 오탐 제거와 다른 축이라 등급은 그대로 두고 "지금 고칠 수 있는
+것"과 화면에서만 분리한다.
 
-| 겹 | 근거 | 판정 |
-|---|---|---|
-| ① OSV 버전필터 | 배포판 전체버전 대조 | 영향 없는 버전이면 제거 |
-| ② changelog | 패키지 changelog 의 CVE 수정 기록 | 있으면 억제 (핵심 13개 패키지) |
-| ③ errata | 벤더가 "이 설치 빌드에서 고쳤다"고 확인한 권고 | 있으면 억제 (**시스템 전체** 커버) |
-| ④ debsecan | 데비안 보안 트래커의 "아직 남은 CVE" 목록 | **없으면** 백포트로 고쳐진 것 → 억제 |
+**억제를 취소하는 두 신호**가 있다 — 패치됐어도 프로세스가 옛 `.so` 를 물고 있거나(`tb_stale_lib`,
+조치는 재시작) 커널 재부팅 전이면(조치는 재부팅) 억제하지 않는다. 이게 없으면 "패치됨=안전"으로
+착각해 미탐이 난다.
 
-> debsecan 은 방향이 반대라 안전장치를 두 겹 뒀다 — `os_id=debian` 일 때만 쓰고(우분투는 OSV 의
-> USN 경로로 이미 커버), **목록이 비면 억제하지 않는다**(수집 실패와 "취약점 0"을 구분할 수 없어
-> 믿었다간 전부 억제해 버린다).
-
-**RHEL 계열·우분투·커널은 각자의 벤더 소스로 별도 판정한다.** 데비안 4겹과 별개로, RHEL 계열은
-`tb_vendor_errata`(OVAL 조치 EVR)+`tb_vendor_unfixed`(조치 불가), 우분투는 `tb_ubuntu_oval` 한
-테이블이 조치 EVR·조치 불가를 모두 표현, 커널은 `tb_kernel_cve`(kernel.org CNA)가 배포판 밖의
-커널(라즈베리·자체빌드)까지 판정한다. 벤더가 "아직 안 고쳤다"고 확인한 CVE 는 `tb_finding.no_fix`
-로 표시한다 — 오탐 제거와는 다른 축으로, 등급은 그대로 두되 "지금 고칠 수 있는 것"과 "조치 불가"를
-화면에서 분리한다.
-
-**억제를 취소하는 두 신호** — "패치됨"이 곧 "안전함"이 아닌 경우다. 이게 없으면 미탐이 된다.
-
-- **재시작 필요**(`tb_stale_lib`): 패치됐지만 프로세스가 옛 `.so` 를 메모리에 물고 있다 →
-  그 프로세스는 **여전히 옛 코드를 실행 중**이므로 억제하지 않는다. 조치는 프로세스 재시작.
-- **커널 재부팅 필요**: 커널을 패치해도 재부팅 전엔 옛 커널이 돈다 → 억제하지 않는다.
-  조치는 **재부팅**(프로세스 재시작으로는 안 고쳐진다).
+> **겹별 근거 테이블·커버리지·debsecan 역방향의 안전장치·벤더별 판정 규칙의 정본은
+> [`docs/dev/architecture.md` §2](docs/dev/architecture.md) 다.** 같은 표를 여기 두 벌로 두지 않는다.
 
 **미지원 배포판**(Amazon Linux · CentOS)은 피드가 안 덮어 매칭이 0건이 된다. 조용히
 "취약점 없음"으로 보이면 위험하므로 `vg_distro_unsupported`(`src/distro.php`)가 판정해
@@ -241,10 +225,10 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 즉 "설치=취약"으로 전부 올리지 않고, **실제 노출·실행·사용 여부로 우선순위를 가른다.**
 
 **보안설정 점검(CCE)** 은 같은 수집물을 다른 눈으로 본다 — CVE(취약한 버전)가 아니라 잘못된 설정
-(SSH root 로그인·패스워드 인증·UID 0 계정·SELinux/AppArmor·방화벽에 더해 시간동기화 `CCE-TIME-*`·
-로그설정 `CCE-LOG-*`·암호화 `CCE-CRYPTO-*`)을 `src/cce.php` 가 판정해 `tb_cce_finding` 에 저장한다.
+(SSH·계정·패스워드 정책·파일 권한·MAC/방화벽에 더해 시간동기화 `CCE-TIME-*`·로그설정 `CCE-LOG-*`·
+암호화 `CCE-CRYPTO-*`)을 `src/cce.php` 가 39개 항목으로 판정해 `tb_cce_finding` 에 저장한다.
 같은 판정 결과를 어느 기준의 증적으로 볼지는 `tb_control_mapping`(U-코드·ISMS-P·N2SF)이 정하고
-`control_mapping.php` 가 보여준다 — 기준을 화면 문자열이나 주석에 다시 적지 않는다(SSOT).
+`control_mapping.php`·`control.php` 가 보여준다 — 기준을 화면 문자열이나 주석에 다시 적지 않는다(SSOT).
 
 **계정 인벤토리**(`src/account_inventory.php` → `tb_host_account`)는 CCE 와 같은 원칙을 따른다 —
 못 읽은 항목은 PASS 가 아니라 NA 이고, 공유계정·퇴직자 계정 추정은 FAIL 이 아니라 REVIEW(사람 확인)다.
@@ -252,182 +236,119 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 
 ---
 
-## 8. 개발 현황 (2026-08-09 기준 — 파이프라인·HTTPS·감사 + 오탐억제/CCE/변화추적/Export 에 더해 컴플라이언스·계정·자산등급 완성)
+## 8. 개발 현황 (2026-08-09 기준)
 
-- [x] **0. Docker** — compose dev/prod + Dockerfile + Docker Secrets(txt) + 러너
-- [x] **1. 수집→전송→저장** — 에이전트 `--send` POST + `ingest.php` 수신 + DB
-- [x] **2. 매처** — 노출 맥락 우선순위(외부노출+로드+KEV=CRITICAL), findings + 아키텍처 다이어그램
-- [x] **3. 웹** — 로그인(users 세션) → 대시보드 → 호스트 상세 → 취약점(+조치·EPSS·상태) · 사용자관리
-- [x] **4a. CVE 피드 커넥터** — 커넥터 11종(고정 5종 KEV/OSV/NVD/KISA/EPSS + 벤더 판정 6종 데비안 트래커·RHEL 계열 OVAL·Red Hat 미수정·우분투 OVAL·리눅스 커널 CNA·SCAP Security Guide) + 범용 API 커넥터(generic_api) = **합계 12종**, UI 설정·미리보기·cron 스케줄, 스케줄러 사이드카
-- [x] **4b. 국내특화** — KISA 보안공지 수집·표시(상세 본문까지) + 공지 상세 페이지 `advisory.php`
-- [x] **NVD 전체 데이터** — tb_cve 약 36만건. 주기 수집을 수정일(lastMod) 기준으로 전환(뒤늦게 CVSS 붙는 CVE 추적, 120일 상한).
-      전체 백필 `bin/backfill_nvd.php`(멱등·재개, 병렬 워커로 가속 — `--workers=N`). CVE 목록 페이지 `cves.php`(검색·심각도/KEV/연도 필터·CVSS/EPSS 정렬).
-      API 키는 DB 저장(코드·저장소에 없음). 일시 오류 재시도·CVE-ID 형식 검증·긴 텍스트 컬럼 확장(summary MEDIUMTEXT, cve_ids/note TEXT).
-- [x] **정밀 런타임 수집** — 실행 프로세스 전체(실행중/사용중) + 노출(포트) → 상태 7단계 구분
-- [x] **OSV 자동 매칭** — 수집 전 패키지를 OSV 조회(배포판 ecosystem, 소스패키지·버전필터) → 취약점 전체 발굴 + 조치안(fixed_version)
-- [x] **EPSS/KEV** — 악용확률 + 악용목록으로 우선순위·정렬
-- [x] **배포 설치기** — `agent/install-agent.sh` (systemd 상시 데몬 우선/cron 폴백, 초기 매시간)
-- [x] **상시 데몬 전환 + 웹 수집 제어** — 에이전트를 systemd oneshot 타이머(매시간)에서 상시
-      데몬(`run.sh`, 10초마다 `agent-poll.php` poll)으로 전환. 중앙 웹(호스트 상세)에서 즉시
-      실행·예약 실행·주기 변경(`tb_host.poll_schedule_seconds`)이 가능해져 SSH 재설치가
-      필요 없어졌다. `deploy/agent_schedule.sh`(SSH 로 주기 변경)는 아직 데몬 전환 전인
-      구버전 노드·systemd 가 없는 cron 폴백 노드에만 남은 보조 수단이다.
-- [x] **HTTPS 배포** — `caddy/` 리버스 프록시가 TLS 종료(Let's Encrypt DNS-01, 현재 자체서명).
-      접속 `https://<운영-도메인>`(평문 80 은 https 로 308 리다이렉트, 기존 `:8080` 도 계속 동작).
-      도메인은 저장소에 두지 않고 `.env.prod` 의 `PROD_DOMAIN` 으로 주입한다(Caddyfile 이 `{$PROD_DOMAIN}` 로 읽는다).
-      web·db 는 내부망/루프백(`127.0.0.1:8081`)만 노출.
-- [x] **무중단 배포** — prod 가 `../server` 를 읽기전용 마운트. PHP 만 바뀌면 `deploy/update.sh`(=`git pull`)로 끝(opcache 가 2초 내 반영).
-      Dockerfile·compose·caddy 변경 시에만 재빌드. 서버 디렉토리는 `/apps/vulnagent/{app,bin,etc,logs,data,backups}` 로 통합.
-- [x] **웹 대개편** — 페이지네이션(`vg_page_nav`) · 검색/필터(`vg_toolbar`, findings/advisories/cves)
-      · CVE 목록 `cves.php` · CVE 상세 `cve.php` · 공지 상세 `advisory.php` · 공통 렌더(`vg_table`) · 긴 텍스트 말줄임(`vg_trunc`)
-- [x] **DB 대개편** — 전 테이블 `tb_` 접두사 통일 + 감사 4컬럼(`created_at/updated_at/is_deleted/deleted_at`)
-      · 소프트삭제(`vg_soft_delete()`: users/feed_connectors/advisories/hosts/scans, findings 등 재계산
-      캐시는 예외) · 활동 감사로그 `tb_activity_log`(`vg_log_activity()` — 로그인·커넥터저장/삭제/실행·
-      사용자추가/삭제·ingest 수신을 기록) + 조회 화면 `activity.php`(scope 필터·페이지네이션).
-- [x] **백포트 억제(차별점 ③ 설명가능한 오탐 억제)** — 에이전트 changelog 의 CVE 수정 기록으로
-      "버전은 낮아도 이미 패치됨"을 증명해 finding 을 `tb_suppressed_finding` 으로 분리(위험 집계에서 자동 제외).
-      숨기지 않고 근거와 함께 호스트 상세에 표시. 스케줄 수집에서 changelog 가 기본값.
-- [x] **보안설정 점검(CCE)** — 이미 수집한 sshd·계정·MAC·방화벽 값을 `src/cce.php` 가 판정 → `tb_cce_finding`,
-      호스트 상세에 PASS/FAIL/NA. 신규 수집 없음(수집물 재활용).
-- [x] **변화 추적(차별점 ④ 시계열)** — `changes.php`: 최근 2개 스캔을 대조해 신규/해결/등급상승·하락.
-      새 테이블 없이 `tb_finding` 만 비교((cve_id, package_name) 기준).
-- [x] **자산 관리 + 설정형 RBAC** — `assets.php`(호스트 자산·소프트삭제) · 역할 3단계(admin/operator/user) ·
-      역할×메뉴 권한을 `permissions.php` 에서 설정(`tb_role_permission`, 가드는 `vg_require_menu()`).
-      admin 은 코드에서 항상 전체 허용(잠금 방지).
-- [x] **Export API** — `GET /export.php`(JSON/XML, 호스트·심각도·KEV·EPSS 필터). 전용 읽기 토큰을
-      `api-tokens.php` 에서 발급(DB 엔 SHA-256 해시만, 원문은 1회 표시). 인증 헤더 `X-API-Token`
-      또는 `Authorization: Bearer`(Apache 가 스트립해도 우회). 상세: `docs/dev/export-api.md`.
-- [x] **컨테이너 스캔** — `collect_containers` 가 실행 중 컨테이너의 rootfs 를 읽어 **내부 패키지**를
-      수집(`tb_container`, `tb_package.container_id`). docker CLI 비의존(podman/containerd 도 잡힘).
-      호스트 스캔에서 통째로 빠지던 미탐 영역이었다. 호스트 상세·취약점 목록에서 컨테이너별로 본다.
-- [x] **재시작·재부팅 필요 판정** — "패치됐지만 아직 안 안전한" 상태를 잡는다.
-      옛 `.so` 를 물고 있는 프로세스(`tb_stale_lib`)와 재부팅 전 커널은 **억제하지 않고** 근거와 함께
-      올린다(조치: 프로세스 재시작 / 재부팅). 이 판정이 없으면 "패치됨=안전"으로 착각해 미탐이 난다.
-- [x] **억제 근거 확장(errata·debsecan)** — changelog(핵심 13개)만으로는 좁아서, 벤더 권고
-      `tb_applied_errata`(시스템 전체)와 데비안 보안 트래커 `tb_debsecan`(역방향 판정)을 더했다 → 억제 4겹(§7).
-- [x] **벤더별 판정 확장(RHEL·우분투·커널)** — 데비안 4겹과 별개로, RHEL 계열(`tb_vendor_errata`·
-      `tb_vendor_unfixed`)·우분투(`tb_ubuntu_oval`)·커널(`tb_kernel_cve`)이 각자의 벤더 소스로
-      백포트 판정 + 조치 불가(`no_fix`)를 담당한다(커넥터: rhoval/rhunfixed/ubuntuoval/kcve).
-- [x] **방화벽 차단(FILTERED) 분류** — 전체 인터페이스에 떠 있어도 방화벽이 막고 있으면 외부노출이 아니다.
-      이 판정이 없으면 방화벽 뒤 내부 서비스가 전부 HIGH/CRITICAL 로 뜬다(오탐).
-- [x] **미지원 배포판 경고** — Amazon Linux·CentOS 는 피드가 안 덮어 매칭 0건이 된다.
-      조용히 "취약점 없음"으로 보이지 않도록 `src/distro.php` 가 판정해 ingest 응답·화면에 경고.
-      Oracle Linux는 Oracle ELSA OVAL 커넥터로 별도 지원한다.
-- [x] **패키지 출처 판정** — dpkg 는 vendor 를 안 주므로 apt 라벨(`o=Debian`/`o=Docker`/`o=LP-PPA-…`)로
-      서드파티(PPA·Docker·NodeSource)를 가려낸다(URL 로 보면 사내 미러가 서드파티로 오분류된다).
-- [x] **스키마 마이그레이션 자동화** — `deploy/migrate.sh` 가 `db/migrations/*.sql` 중 미적용분만
-      **파일명 사전순**으로 적용하고 `tb_schema_migrations` 에 기록(`up`·`update.sh` 가 자동 호출, 수동 apply 불필요).
-      파일명은 **타임스탬프**(`YYYYMMDDHHMMSS_이름.sql`) — 연번은 동시 브랜치가 같은 번호를 집어 충돌한다
-      (실제로 `0003`·`0014` 가 각각 두 개 생겼다). `deploy/hooks/pre-push` 가 신규 연번 파일을 막는다.
-      최상위 `db/01~18*.sql` 은 빈 볼륨 initdb 전용이라 기존 볼륨엔 안 들어간다 → 증분은 `migrations/` 로.
-- [x] **UI** — 좌측 사이드바(대분류/중분류) · CVE 목록 탭(전체/KEV/EPSS 상위) · 영향 패키지 목록 `packages.php`
-      · EPSS 백분위 병기 · 필터 즉시 적용.
-- [x] 대시보드 "다음 수집 예정" — enabled·비manual 커넥터 중 가장 이른 next_run_at 을 헤더 아래 표시.
-      (알림은 만들지 않기로 — 외부 채널 수신지가 없어 YAGNI. 필요해지면 그때.)
-- [x] **제품 범위 정리** — 내부 SLA·담당자·상태·예외를 추적하는 조치 관리 기능은 제거했다.
-      제품은 스캔 결과와 판정 근거, 수정 버전, 벤더 상태, 런타임·노출 정보를 정확히 보여주는 데 집중한다.
-- [x] **SCA 언어 패키지 파서 확장** — `go.mod`/`requirements.txt`/`pom.xml` 직접 파싱을 에이전트에
-      추가(설치본이 없는 환경 보충). 8개 언어 생태계 매칭 자체는 새 기능이 아니라 기존 OSV
-      커넥터(`vg_osv_lang_queries`)가 이미 하던 일이다.
-- [x] **SCA 라이선스 식별·관리** — `/packages.php?tab=lang`(언어 패키지·라이선스 탭, 옛
-      `language-packages.php` 는 흡수 후 리다이렉트만 남음). SBOM(CycloneDX/SPDX)·pip
-      METADATA·composer installed.json 에서 라이선스를 식별해 permissive/copyleft/unknown 으로
-      분류(`server/src/license_risk.php`), `tb_package.license` 컬럼 + 사전집계
-      `tb_package_license_summary`(`server/src/license_summary.php`, 스케줄러가 매 틱 무조건 갱신 —
-      OSV 게이트와 무관하다. 원래는 OSV 커넥터 실행 시에만 갱신했는데, OSV 가 미등록/0건인 동안
-      KPI 카드가 영구히 0으로 보이는 결함이 있어 PR#468 리뷰에서 뺐다).
-- [x] **벤더 판정 조회 화면** — `vendor.php`. 벤더 데이터(debtracker·rhoval·rhunfixed·ubuntuoval·kcve)는
-      지금까지 매처가 억제에만 썼고, 억제가 의심스러우면 DB 에 직접 붙어야 했다. 원본을 소스 필터와 함께
-      한 화면에서 보여줘 **억제 근거를 사람이 확인할 수 있게** 했다(설명가능성 — 차별점 ③의 연장).
-- [x] **보안설정 룰셋(SSG) 카탈로그** — `tb_compliance_rule`(약 2,493개 룰) + 목록·검색 `compliance_rules.php`
-      · 상세 `compliance_rule.php`(`?rule=<rule_id>`). CCE 판정이 인용하는 CIS/NIST/STIG 기준이 뭔지
-      화면에서 확인한다 — 근거를 못 보면 FAIL 이 떠도 무엇을 고쳐야 하는지 알 수 없다.
-      (SSG 커넥터 자체는 4a 에 이미 있다 — 여기 추가된 건 **화면**이다.)
-- [x] **정밀 판정 플랫폼** — `tb_finding_evidence`(판정 근거를 `tb_finding` 1:1 로 구조화 저장) +
-      `tb_collection_stage`(수집 단계별 완전성 기록). 에이전트가 어떤 수집 단계를 못 채우면 그 영역은
-      조용히 "취약점 없음"이 된다 → 단계 누락을 호스트 상세에 **경고로 드러내** 미탐을 미탐인 채로
-      넘기지 않는다(미지원 배포판 경고와 같은 취지).
-- [x] **패키지 요약 사전집계** — `tb_package_summary`(자연키 `(package_name, ecosystem)`). `packages.php`
-      가 92만 행을 매 요청마다 GROUP BY 하느라 8초 걸리던 것을 사전집계 조회로 바꿔 약 0.05초가 됐다
-      (갱신은 OSV 커넥터 실행 시 — 목록이 웹 요청을 붙잡지 않게 한다).
-- [x] **에이전트 재전송 공격 방지** — `tb_agent_replay_nonce`(복합키 `(agent_token_id, nonce_hash)`).
-      토큰이 유효해도 가로챈 요청을 그대로 다시 보내면 옛 수집물이 최신으로 덮인다 → 요청별 nonce 를
-      1회만 허용한다. 허용 시계오차는 `AGENT_NONCE_MAX_SKEW_SECONDS`(기본 600초, 코드에 안 박는다).
-- [x] **에이전트 설치 파일 웹 배포** — `agent-dl.php`. 대상 서버가 저장소 체크아웃 없이 스크립트 2개 +
-      **배포별** 루트 CA 를 받아 설치한다(자산 화면의 설치 모달이 여기를 가리킨다). CA 는 배포마다 값이
-      달라 저장소에 두지 않는다(`agent-ca/`, gitignore).
-- [x] **재매칭 지문** — `tb_scan.match_fingerprint`. 피드가 갱신돼도 판정 결과가 같으면 트랜잭션조차
-      열지 않는다. 예전엔 1비트도 안 바뀐 경우까지 통째 삭제·재삽입해 binlog 가 하루 20GB 넘게 쌓였다
-      (운영 실측: 디스크 105G 중 76G). 상세는 `docs/dev/architecture.md §2`.
-- [x] **브라우저 E2E** — `tests/e2e.sh` + `tests/e2e/run.cjs`(Playwright, 전용 컨테이너). `smoke.sh` 는
-      curl 이라 HTML 만 받는다 — **클라이언트 JS(`assets/app.js` 408줄 + `assets/js/connectors.js` 283줄)가
-      통째로 깨져도 88개 검사가 전부 통과**한다. 그 구멍만 덮는다("화면이 뜨는지"는 smoke 가 이미 본다).
-      덮는 것: ① 로그인→대시보드 ② 테마 토글(클릭·저장·다른 화면 복원·실제 배경색 변화) ③ 밀도 토글
-      ④ 모바일 사이드바(375폭, 백드롭·Escape 닫기 + 필터 토글 노출) ⑤ 커넥터 화면 JS(`connectors.js`)
-      + 모달 — 타입별 폼 토글·역할 매핑 재렌더·헤더 행 추가/삭제·모달 열고 닫기. ⑤의 기대값은
-      JS 에 박지 않고 `#connForm` 의 `data-type-meta`(PHP 카탈로그 `VG_CONNECTOR_TYPES`)와 비교하므로
-      **PHP 카탈로그와 화면이 어긋나면 걸린다**. **안 덮는 것: 필터 즉시적용.** 커넥터의 미리보기·지금
-      실행·저장·활성토글·삭제도 **일부러 안 덮는다** — 누르면 외부 소스를 실제로 치거나 공용 dev DB 를
-      바꾸고 세션 락을 오래 쥔다(E2E 는 폼을 채우기만 하고 제출하지 않는다).
-      브라우저 기동이 느려 pre-push 게이트에는 넣지 않았다
-      (CI 가 없어 훅이 곧 매 push 다) — opt-in 으로 직접 돌린다.
-- [x] **KISA ISMS-P·ISO 27001 컴플라이언스 매핑** — `compliance.php`(신규 화면). 이미 가진
-      findings(심각도·KEV·no_fix·needs_restart)·자산 연결상태·`tb_cce_finding`(설정 취약) 데이터만
-      으로 자동판정 가능한 통제 3개(패치관리/정보자산 식별/보안시스템 운영)를 SLA 기준일(KEV 15일·
-      CRITICAL 30일·HIGH 60일, 업계 관행값) 대비 위반 건수로 판정한다. 정책·승인이력처럼 사람이
-      심사해야 하는 통제는 판정 없이 체크리스트로만 노출한다(vuln-agent 데이터로 못 채우는 걸
-      억지로 채우지 않는다 — 이 기능의 의도적 한계). 새 테이블·ingest 변경 없는 순수 조회 화면.
-- [x] **컴플라이언스 판정 불가(NA) + SLA 설정화**(#493) — 패치관리 통제가 "보유 이력이 SLA 보다 짧아
-      위반을 검출할 방법 자체가 없는" 경우까지 조용히 **준수**로 셌다(허위 안심). 판정 어휘를
-      준수·판정 불가·부분준수·미준수 4종으로 넓히고, SLA 기준일(KEV/CRITICAL/HIGH)과 부분준수
-      컷라인을 `tb_setting` + 관리자 화면 `settings.php` 로 뺐다(`src/setting.php`, 값이 없으면
-      기존 상수로 폴백해 동작이 안 바뀐다).
-- [x] **컴플라이언스 판정 스냅샷·추이**(#498) — 판정 로직을 `src/compliance.php` 로 분리해 화면과
-      스케줄러가 **같은 함수**를 쓴다(두 벌이면 화면과 증적이 다른 답을 낸다). 스케줄러가 하루 1건
-      `tb_compliance_snapshot` 에 적재하고, 위반 건수와 함께 **판정 불가 건수·사유도 저장**한다
-      (0 만 남기면 나중에 준수로 되읽혀 스냅샷 자체가 허위 안심이 된다). 화면은 저장값을 읽기만 한다.
-- [x] **통제 기준 매핑**(#499) — `tb_control_mapping` + `control_mapping.php`. 같은 CCE 점검 결과가
-      ISMS-P·기반시설 U-코드·N2SF 중 어느 기준의 증적인지 한 화면에서 고른다. 기준 어휘의 SSOT 는
-      `src/control_mapping.php` 하나다.
-- [x] **CCE 룰 3계열 확장**(#494) — 시간동기화·로그설정(보존기간·원격전송)·암호화(SSH 알고리즘·
-      디스크 암호화·국내 검증필 알고리즘) 7개. 확인 못 한 항목은 전부 NA(기존 원칙 유지).
-- [x] **계정 인벤토리**(#490) — 에이전트 `users` 섹션 → `tb_host_account`, 호스트 상세 "계정" 탭.
-      지금까지 계정 **정책**(login.defs·PAM·sshd)만 봤고 **실제 계정 목록**은 안 봐서 ISMS-P 2.5.x·
-      N2SF AC 가 통째로 공백이었다. 패스워드 해시는 수집·저장·표시하지 않는다. 열람은 감사로그 대상.
-- [x] **자산 중요도·N2SF 보안등급(C/S/O)**(#495) — `src/assetgrade.php`. **확정값과 시스템 제안값을
-      분리**한다(`grade` vs `grade_suggested`): 등급 확정은 기관의 법적 처분이라 시스템이 대신할 수
-      없다. 제안 규칙은 원문이 직접 준 두 줄(로그·백업 역할 → S 후보 / 외부 노출 → O 후보)뿐이고,
-      근거가 없으면 아무것도 제안하지 않는다. 여러 등급이 섞이면 가장 높은 등급을 승계한다.
-- [x] **제거·대체 검토 권고**(#489) — `nofix-packages.php` + `src/nofix.php`. 벤더 미수정(`no_fix`)이
-      한 패키지에 몰리면(기본 10건·80% 이상) 개별 CVE 수십 줄 대신 (호스트×패키지) 단위로 묶어
-      보여준다. 실측 근거: 한 호스트의 `libqt5webkit5` 하나에 no_fix CVE 43건(CVSS 10.0 포함)이
-      몰려 있었고 실제 조치는 `apt purge` 한 번이었다. **EOL 이라고 단정하지 않는다** — 관측 + 권고만.
-      심각도 판정(`vg_classify`)은 건드리지 않는 표시 계층 전용.
-- [x] **미조치 사유·승인자**(#491) — `tb_remediation_note` + `src/remediation_note.php`.
-      결재 워크플로는 만들지 않고 사유·승인자 최소 필드만 두고 `export.php` 로 외부 시스템에 넘긴다.
-      매처의 자동 억제와는 별개 축이다(억제 로직을 건드리지 않는다). 키는 스캔이 바뀌어도 유지되는
-      자연키 `(host_id, 컨테이너명, cve_id, 패키지명)` — `container_id` 는 스캔마다 재발급이라 못 쓴다.
-- [x] **접속기록 5요소 + 월 1회 점검**(#496, ISMS-P 2.9.4·2.9.5) — `activity.php` 가 접속일시·식별자·
-      접속지 IP·처리 대상·수행업무를 독립 컬럼으로 노출하고 기간·사용자·IP·수행업무로 필터한다.
-      월 1회 점검 결과는 `tb_activity_review` 에 admin 만 기록하고(미점검 기간은 배너로 알린다),
-      비고는 감사로그와 같은 마스킹을 태운다. 감사로그 삭제·편집 수단은 UI 에 노출하지 않는다.
-- [x] **세션·토큰 유효기간**(#492) — 세션은 유휴 30분·절대 12시간 두 축으로 만료시키고(`src/auth.php`,
-      만료 사유를 로그인 화면에 구분해 알린다), API·에이전트 토큰은 발급 시 유효기간을 고른다
-      (`src/tokenexpiry.php` — 무기한/30일/90일/1년, 만료 임박 7일 표시). 자동 갱신·재발급은 두지 않는다.
-- [x] **패키지 의존성 그래프**(#480) — 직접/전이 의존을 `tb_package_dependency` 에 수집·저장.
-      `pom.xml` 은 원문을 base64 로 올려 중앙이 DOMDocument 로 파싱한다(에이전트 awk 파싱은
-      `<exclusions>`/`<parent>` 를 구조적으로 구분 못 해 오탐/0건이 났다 — PR#399 리뷰).
-      유니크 키가 3,072바이트를 넘어 `edge_hash` 생성컬럼으로 대체했다(#502). **아직 화면은 없다.**
-- [x] **패키지 화면 통합·교차 링크**(#475/#474/#477/#478/#479) — 패키지·언어 패키지를 서브탭으로
-      합치고(`/packages.php?tab=lang`), 툴바 필터를 왼쪽·검색창을 남는 폭으로 통일했다.
-      전체 설치 패키지 목록 ↔ 패키지 상세를 양방향으로 오간다.
-- [x] **에이전트 속도 티어에 메모리 상한**(#487) — 티어(`src/agentspeedtier.php`)에 `mem_max_mb` 를
-      더해 poll 응답으로 내려보내고 `run.sh` 가 `MEM_MAX` 로 cgroup 상한을 건다(CPU 만 조여도 조립
-      단계가 메모리를 밀어 올린다 — §4 참고). 범위를 벗어난 값은 떨궈 에이전트 기본값(300M)으로 폴백한다.
-- [x] **Caddy 보안 응답 헤더**(#497) — `security_headers` snippet 하나로 모아 사이트 블록마다
-      import 한다. 자동 리다이렉트를 끈 것(`auto_https disable_redirects`)이 함께 들어갔다 — 자동
-      생성 라우트는 우리 블록 밖이라 헤더가 안 걸려, 진입 경로에 따라 헤더가 있다 없다 했다(실측).
-      HSTS 는 현재 자체서명 인증서라 보류(켜면 인증서 교체 전까지 브라우저가 접속을 막는다).
+파이프라인(수집→전송→저장→매칭→표시)·HTTPS·감사에 더해 오탐억제/CCE/변화추적/Export,
+그리고 컴플라이언스·계정 인벤토리·자산 등급까지 동작한다. 아래는 **무엇이 있는지**와
+**왜 그렇게 했는지**만 남긴 요약이다 — 화면·테이블·함수의 상세는 각 정본 문서가 갖는다
+(`docs/dev/architecture.md`, `docs/dev/데이터베이스.md`, `docs/ui-configuration.md`).
+
+### 기반 — 파이프라인·배포
+
+- **Docker**(compose dev/prod + Docker Secrets + 러너) · **수집→전송→저장**(에이전트 `--send`
+  POST → `ingest.php` → MySQL) · **웹**(로그인 → 대시보드 → 호스트 상세 → 취약점) · **설정형
+  RBAC**(admin/operator/user × 메뉴, admin 은 코드에서 항상 허용해 잠금을 막는다).
+- **HTTPS 배포** — Caddy 가 TLS 종료(현재 `tls internal` 자체서명, Let's Encrypt DNS-01 전환은
+  보류). 도메인은 저장소에 두지 않고 `.env.prod` 의 `PROD_DOMAIN` 으로 주입한다. 평문 80 은 308
+  리다이렉트, 기존 `:8080` 은 설치된 에이전트 호환으로 계속 연다. web·db 는 내부망/루프백만.
+- **무중단 배포** — prod 가 `../server` 를 읽기전용 마운트해 PHP 만 바뀌면 `update.sh`(=`git pull`)
+  로 끝난다(opcache 가 곧 반영). Dockerfile·compose·caddy 변경 시에만 재빌드.
+- **스키마 마이그레이션 자동화** — `deploy/migrate.sh` 가 미적용분만 파일명 사전순으로 적용하고
+  `tb_schema_migrations` 에 기록한다. 파일명은 타임스탬프 — 연번은 동시 브랜치가 같은 번호를
+  집어 실제로 `0003`·`0014` 가 각각 두 개 생겼다. `deploy/hooks/pre-push` 가 신규 연번을 막는다.
+- **DB 규약** — 전 테이블 `tb_` 접두사 + 감사 4컬럼, 소프트삭제(`vg_soft_delete()`), 테이블명 단수 +
+  PK `<엔티티>_id`(조인 양쪽 이름을 맞춘다). 상세·예외는 `docs/dev/데이터베이스.md`.
+- **상시 데몬 전환 + 웹 수집 제어** — 에이전트를 systemd 타이머에서 상시 데몬(10초 poll)으로
+  바꿔, 즉시 실행·예약·주기 변경을 중앙 웹에서 한다(SSH 재설치가 필요 없어졌다).
+  `deploy/agent_schedule.sh` 는 아직 전환 전인 구버전·cron 폴백 노드용 보조 수단으로만 남는다.
+- **에이전트 설치 파일 웹 배포**(`agent-dl.php`) — 대상 서버가 저장소 체크아웃 없이 스크립트 2개 +
+  **배포별** 루트 CA 를 받는다. CA 는 배포마다 값이 달라 저장소에 두지 않는다(`agent-ca/`, gitignore).
+- **에이전트 재전송 공격 방지** — 요청별 nonce 를 1회만 허용한다(`tb_agent_replay_nonce`). 토큰이
+  유효해도 가로챈 요청을 그대로 다시 보내면 옛 수집물이 최신으로 덮이기 때문. 허용 시계오차는
+  `AGENT_NONCE_MAX_SKEW_SECONDS`(코드에 안 박는다).
+- **에이전트 속도 티어**(`src/agentspeedtier.php`) — CPU·조립 타임아웃·메모리 상한을 호스트별로
+  내려보낸다. CPU 만 조여도 조립 단계가 메모리를 밀어 올려 `mem_max_mb` 를 뒤에 더했다.
+
+### 판정 — 매칭·억제·벤더
+
+- **피드 커넥터 12종** = 고정 11종(KEV/OSV/NVD/KISA/EPSS + 벤더·업스트림 판정 debtracker·rhoval·
+  rhunfixed·ubuntuoval·kcve·ssg) + 범용 API(`generic_api`). UI 설정·미리보기·스케줄(manual/
+  interval/daily/cron) + 스케줄러 사이드카. 역할별 차이는 `docs/dev/피드소스-역할.md`.
+- **NVD 전체 데이터**(약 36만 건) — 주기 수집은 **수정일(lastMod) 기준**이다(뒤늦게 CVSS 가 붙는
+  CVE 를 발행일 기준이면 영원히 놓친다). 전체 백필은 `bin/backfill_nvd.php`(멱등·재개·병렬).
+  API 키는 DB 에만 둔다.
+- **정밀 런타임 수집 + 7단계 상태** · **OSV 자동 매칭**(배포판 ecosystem·소스패키지·버전필터) ·
+  **EPSS/KEV 우선순위** · **FILTERED 분류**(방화벽 뒤 내부 서비스가 전부 HIGH 로 뜨는 오탐 제거).
+- **억제 4겹과 억제 취소 두 신호** — §7 요약, 정본은 `docs/dev/architecture.md §2`.
+  changelog(핵심 13개 패키지)만으로는 좁아 errata(시스템 전체)·debsecan(역방향)을 더했고,
+  RHEL 계열·우분투·커널은 각자의 벤더 소스가 백포트 판정과 조치 불가(`no_fix`)를 담당한다.
+- **미지원 배포판 경고** — Amazon Linux·CentOS 는 피드가 안 덮어 0건이 된다. 조용히 "취약점 없음"이
+  되지 않도록 `src/distro.php` 가 판정해 ingest 응답·화면에 경고를 띄운다.
+- **패키지 출처 판정** — dpkg 는 vendor 를 안 주므로 apt 라벨(`o=Debian`/`o=Docker`/`o=LP-PPA-…`)로
+  서드파티를 가린다. URL 로 보면 사내 미러가 서드파티로 오분류된다.
+- **재매칭 지문**(`tb_scan.match_fingerprint`) — 결과가 같으면 트랜잭션조차 열지 않는다. 예전엔
+  1비트도 안 바뀐 경우까지 통째 삭제·재삽입해 binlog 가 하루 20GB 넘게 쌓였다(운영 실측 105G 중 76G).
+  판정 로직·저장 컬럼을 바꾸면 `VG_MATCH_FP_VERSION` 을 올려야 한다.
+- **정밀 판정 플랫폼** — `tb_finding_evidence`(판정 근거를 finding 1:1 로 구조화) +
+  `tb_collection_stage`(수집 단계 완전성). 에이전트가 한 단계를 못 채우면 그 영역이 조용히
+  "취약점 없음"이 되므로 단계 누락을 호스트 상세에 경고로 드러낸다.
+
+### 화면·기능
+
+- **컨테이너 스캔** — `collect_containers` 가 실행 중 컨테이너 rootfs 를 직접 읽어 내부 패키지를
+  수집한다(docker CLI 비의존). 호스트 스캔에서 통째로 빠지던 미탐 영역이었다.
+- **변화 추적**(`changes.php`) — 최근 2개 스캔의 `tb_finding` 만 비교한다(새 테이블 없이).
+- **벤더 판정 조회**(`vendor.php`) — 억제에만 쓰이던 벤더 원본을 사람이 확인할 수 있게 노출(설명가능성).
+- **보안설정 룰셋(SSG) 카탈로그** — `tb_compliance_rule`(약 2,493개) + 목록·상세 화면. FAIL 이 떠도
+  무엇을 고쳐야 하는지 알려면 인용한 CIS/NIST/STIG 기준을 볼 수 있어야 한다.
+- **컴플라이언스**(ISMS-P·ISO 27001) — 자동판정 가능한 통제 3개(`patch`/`asset`/`secops`)만 SLA
+  기준일 대비 위반 건수로 판정하고, 정책·승인이력류는 체크리스트로만 둔다(못 채우는 걸 억지로
+  채우지 않는 의도적 한계). 판정 어휘는 **준수·판정 불가·부분준수·미준수** 4종 — 근거가 모자라
+  0건인 것을 준수로 쓰면 심사 증빙이 허위 안심이 된다(#493). 로직은 `src/compliance.php` 한 곳에
+  두어 화면과 스케줄러가 같은 함수를 쓰고, 스케줄러가 하루 1건 스냅샷을 남긴다(#498).
+- **통제 기준 매핑**(#499) + **통제 상세**(#509) — 같은 CCE 결과를 ISMS-P·U-코드·N2SF 중 어느 기준의
+  증적으로 볼지 고르고, 통제가 무엇을 요구하고 어떻게 고치는지를 함께 본다. 긴 조치 원문은
+  `docs/dev/보안설정-조치가이드.md`.
+- **CCE 룰 3계열 확장**(#494) — 시간동기화·로그설정·암호화. 확인 못 한 항목은 전부 NA.
+- **계정 인벤토리**(#490) — 계정 정책만 보고 실제 계정 목록은 안 봐서 ISMS-P 2.5.x·N2SF AC 가 통째로
+  공백이었다. 패스워드 해시는 수집·저장·표시하지 않고, 열람은 감사로그 대상이다.
+- **자산 중요도·N2SF 보안등급**(#495, #510) — 확정값과 시스템 제안값을 **다른 컬럼**에 담는다(등급
+  확정은 기관의 법적 처분이라 시스템이 대신할 수 없다). 목록에서 일괄 확정이 가능하되 해제는 상세에서
+  한 대씩이고, 여러 등급이 섞이면 가장 높은 등급을 승계한다.
+- **제거·대체 검토 권고**(#489) — 벤더 미수정이 한 패키지에 몰리면 CVE 수십 줄 대신 (호스트×패키지)로
+  묶는다. 실측: 한 호스트의 `libqt5webkit5` 에 no_fix 43건, 실제 조치는 `apt purge` 한 번이었다.
+  EOL 이라고 단정하지 않고 관측 + 권고만 한다.
+- **미조치 사유·승인자**(#491) — 결재 워크플로 없이 사유·승인자만 두고 `export.php` 로 넘긴다.
+  키는 스캔이 바뀌어도 유지되는 자연키(`container_id` 는 스캔마다 재발급이라 못 쓴다).
+- **Export API** — `GET /export.php`(JSON/XML). 읽기 전용 토큰은 DB 에 해시만, 원문은 1회 표시.
+  상세: `docs/dev/export-api.md`.
+- **SCA** — 8개 언어 생태계 매칭은 OSV 커넥터가 이미 하던 일이고, 여기에 `go.mod`/`requirements.txt`/
+  `pom.xml` 직접 파싱(설치본이 없는 환경 보충)과 라이선스 식별(SBOM·pip METADATA·composer
+  installed.json → permissive/copyleft/unknown)을 더했다. 목록·KPI 는 사전집계
+  `tb_package_license_summary` 를 읽고, 이 갱신은 **OSV 게이트에 묶지 않는다** — 라이선스는 OSV 가
+  아니라 ingest 로 들어와서, 묶으면 OSV 미등록 동안 KPI 가 영구히 0으로 보인다(PR#468).
+- **패키지 요약 사전집계**(`tb_package_summary`) — 92만 행을 매 요청마다 GROUP BY 하느라 8초 걸리던
+  목록을 사전집계 조회로 바꿔 0.1초 미만이 됐다(갱신은 OSV 커넥터 실행 시).
+- **패키지 의존성 그래프**(#480) — 직접/전이 의존을 수집·저장한다. `pom.xml` 은 원문을 올려 중앙이
+  DOMDocument 로 파싱한다(에이전트 awk 파싱은 `<exclusions>`/`<parent>` 를 구분 못 해 오탐이 났다).
+  유니크 키가 3,072바이트를 넘어 `edge_hash` 생성컬럼으로 대체했다(#502). **아직 화면은 없다.**
+- **접속기록 5요소 + 월 1회 점검**(#496) · **세션·토큰 유효기간**(#492) · **Caddy 보안 응답 헤더**(#497,
+  HSTS 는 자체서명이라 보류) — 상세는 `docs/dev/architecture.md §6`·`docs/ui-configuration.md`.
+- **제품 범위 정리** — 내부 SLA·담당자·상태·예외를 추적하는 조치 관리 기능은 제거했다. 알림도 만들지
+  않는다(외부 채널 수신지가 없어 YAGNI). 제품은 스캔 결과와 판정 근거를 정확히 보여주는 데 집중한다.
+
+### 검증
+
+- `tests/smoke.sh`(curl) 가 게이트이고, 그 앞단에서 `ui_lint.sh`(죽은 CSS·인라인 style)와
+  단위 테스트(`vercmp_test.php` 등)를 먼저 돌린다.
+- **브라우저 E2E**(`tests/e2e.sh` + Playwright)는 게이트 **밖**이다 — smoke 는 curl 이라 클라이언트
+  JS 가 통째로 깨져도 전부 통과한다. 그 구멍만 덮는다: 로그인, 테마·밀도 토글, 모바일 사이드바,
+  커넥터 화면 JS·모달. 기대값을 JS 에 박지 않고 `#connForm` 의 `data-type-meta`(PHP 카탈로그
+  `VG_CONNECTOR_TYPES`)와 비교하므로 **PHP 카탈로그와 화면이 어긋나면 걸린다**. 커넥터의 미리보기·
+  지금 실행·저장·삭제는 **일부러 안 덮는다**(외부 소스를 실제로 치거나 공용 dev DB 를 바꾼다).
+  브라우저 기동이 느려 pre-push 게이트에는 넣지 않았다(CI 가 없어 훅이 곧 매 push 다).
+- `tests/documentation_consistency_test.php` 가 DB 문서·ERD·사이트맵·README 를 코드와 대조한다 —
+  문서가 조용히 뒤처지는 것을 막는 정적 회귀 테스트다.
 
 > 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·백포트 억제·KEV/EPSS·설명가능성).
 > Python AI 문서생성은 본체 범위에서 제외 — Export API 로 결과만 넘긴다.

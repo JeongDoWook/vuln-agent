@@ -157,6 +157,7 @@ cd deploy
 | ERD·시스템·배포·사이트맵 | [다이어그램](docs/specs/diagrams/README.md) |
 | 외부 시스템 연동 | [Export API](docs/dev/export-api.md) |
 | UI·인증·수집 환경변수 | [설정 레퍼런스](docs/ui-configuration.md) |
+| 화면 안내문의 배경 설명 · 보안설정 조치 절차 | [화면 안내](docs/dev/화면-안내.md) · [보안설정 조치 가이드](docs/dev/보안설정-조치가이드.md) |
 | 개발 원칙과 저장소 작업 규칙 | [CONTEXT.md](CONTEXT.md) · [CLAUDE.md](CLAUDE.md) |
 
 ## 현재 상태와 검증

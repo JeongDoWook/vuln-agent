@@ -13,8 +13,9 @@
 환경변수는 값이 없거나 형식이 틀리면 코드의 기본값을 쓰고, 허용 범위를 벗어난 숫자는 범위 안으로
 잘라 쓴다(빈 문자열은 "미설정"과 같게 취급 — `vg_env()`).
 
-**비밀값은 환경변수로 두지 않는다.** 비밀번호·토큰(DB 비번, ingest 토큰, admin 초기 비번)은
+**비밀값은 환경변수로 두지 않는다.** 배포 비밀값(DB 비번, admin 초기 비번, DuckDNS 토큰)은
 Docker Secrets(`secrets/*.txt`)로만 주입한다 → [`secrets/README.md`](../secrets/README.md).
+에이전트 수집 토큰·Export API 토큰은 시크릿 파일이 아니라 **웹에서 발급**하고 DB 엔 해시만 남는다.
 
 ## 적용 위치
 
@@ -24,7 +25,9 @@ web·scheduler 컨테이너의 환경변수는 `deploy/compose.yml` 맨 위의 *
 쓰면 앵커와 두 곳으로 갈라져 어긋난다.
 
 ```yaml
-# deploy/compose.yml
+# deploy/compose.yml — 값을 새로 넣을 때의 두 가지 꼴(아래 UI_* 줄은 예시다.
+#   지금 앵커에 실제로 있는 앱 설정값은 LOGIN_MAX_FAILS·LOGIN_LOCK_MINUTES 뿐이고,
+#   나머지 UI_* 는 코드 기본값으로 돌고 있어 필요할 때만 앵커에 추가한다.)
 x-app-env: &app-env
   DB_HOST: ${DB_HOST:-db}
   ...
