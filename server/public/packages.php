@@ -295,8 +295,10 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
           ['label' => '패키지', 'width' => '30%', 'class' => 'col-id'],
           ['label' => '배포판', 'width' => '14%'],
           ['label' => 'CVE 수', 'align' => 'right', 'width' => '9%'],
-          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '15%'],
-          ['label' => '수정 버전', 'width' => '32%'],
+          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '15%',
+           'title' => '이 패키지의 CVE 중 가장 높은 악용 확률(EPSS — 앞으로 30일 안에 실제로 악용될 확률)'],
+          ['label' => '수정 버전', 'width' => '32%',
+           'title' => '패치가 나온 최소 버전. 막대는 이 패키지 CVE 중 수정 버전이 확인된 비율(조치 N/M)'],
       ],
       $rows,
       [
@@ -330,7 +332,8 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
                       return $txt;
                   }
                   $e = (float) $r['max_epss'];
-                  return $txt . vg_meter(vg_epss_tone($e), $e * 100);
+                  return $txt . vg_meter(vg_epss_tone($e), $e * 100,
+                      '최고 EPSS ' . number_format($e * 100, 1) . '% (악용 확률)');
               },
               // 조치: fix_cnt/cve_cnt 진행바가 주된 시각요소. max_fixed 있으면 pill 로 함께.
               //   cve_cnt=0 은 0 나눗셈 방지. 완료율 100% 는 low(ok) 톤, 그 외 med.
@@ -338,7 +341,8 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
                   $cve   = (int) $r['cve_cnt'];
                   $fix   = (int) $r['fix_cnt'];
                   $ratio = $cve > 0 ? $fix / $cve : 0.0;
-                  $bar   = vg_meter($ratio >= 1.0 ? 'low' : 'med', $ratio * 100);
+                  $bar   = vg_meter($ratio >= 1.0 ? 'low' : 'med', $ratio * 100,
+                      '수정 버전 확인 ' . $fix . '/' . $cve . ' (' . number_format($ratio * 100, 1) . '%)');
                   if (empty($r['max_fixed'])) {
                       return '<span class="why">패치 확인 (조치 ' . $fix . '/' . $cve . ')</span>' . $bar;
                   }
