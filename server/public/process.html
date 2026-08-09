@@ -104,7 +104,7 @@
   <div class="card">
     <b>중앙 서버</b> (Docker Compose, dev/prod)
     <ul class="tight">
-      <li><code class="i">caddy</code> — HTTPS 리버스 프록시(운영 전용, Let's Encrypt DNS-01, 현재 자체서명)</li>
+      <li><code class="i">caddy</code> — HTTPS 리버스 프록시(운영 전용, 내부 CA 자체서명)</li>
       <li><code class="i">web</code> — PHP 8.3 / Apache (수신 API + 웹, 외부엔 caddy 통해서만)</li>
       <li><code class="i">db</code> — MySQL 8 (수집·매칭 데이터, 내부망만)</li>
       <li><code class="i">scheduler</code> — 사이드카(피드 주기 수집·재매칭)</li>
@@ -264,7 +264,7 @@
   <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
     ./compose_runner.sh init<br>./compose_runner.sh prod up -d --build
   </div>
-  Caddy 가 Let's Encrypt(DuckDNS DNS-01, 현재는 자체서명)로 TLS 를 종료하고 내부 <code class="i">web:80</code> 으로 프록시 —
+  Caddy 가 내부 CA 자체서명(<code class="i">tls internal</code>)으로 TLS 를 종료하고 내부 <code class="i">web:80</code> 으로 프록시 —
   인바운드 80/443 개방 없이 기존 <code class="i">8080</code> 포워딩 재사용.
   <b>② 각 대상 서버</b> (에이전트 설치 + 호스트별 설정 주기 자동 수집)
   <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
@@ -342,7 +342,7 @@
     <li><span class="ok">✓</span> 변화 추적(changes.php) — 최근 2개 스캔 대비 신규/해결/등급변경</li>
     <li><span class="ok">✓</span> 웹(로그인·대시보드·호스트상세·취약점·변화추적·CVE상세·국내공지·자산·커넥터·사용자·권한·API토큰·감사로그) · 검색/필터·페이지네이션</li>
     <li><span class="ok">✓</span> 고정 커넥터 11종 + 범용 API · cron 스케줄(스케줄러 사이드카 1분마다 확인) · 배포 설치기(systemd 상시 poll, 호스트별 수집 주기, cron 폴백)</li>
-    <li><span class="ok">✓</span> HTTPS 배포 — Caddy 리버스 프록시(Let's Encrypt DNS-01, 현재 자체서명)</li>
+    <li><span class="ok">✓</span> HTTPS 배포 — Caddy 리버스 프록시(내부 CA 자체서명)</li>
     <li><span class="ok">✓</span> Export API(JSON/XML) · 웹에서 발급하는 읽기전용 API 토큰(X-API-Token)</li>
     <li><span class="ok">✓</span> 설정형 RBAC(admin/operator/user × 메뉴) · 자산 관리(assets.php)</li>
     <li><span class="ok">✓</span> DB 전면 개편 — tb_ 접두사 통일 + 감사 4컬럼 + 소프트삭제 + 활동 감사로그(tb_activity_log · activity.php)</li>

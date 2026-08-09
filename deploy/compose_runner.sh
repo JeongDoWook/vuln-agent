@@ -160,16 +160,6 @@ run_init() {
     fi
   done
 
-  # DuckDNS 토큰(운영 HTTPS용) — 랜덤 아님. 실제 토큰을 사용자가 직접 넣어야 함.
-  local df="../secrets/duckdns_token.txt"
-  if [ -s "$df" ]; then
-    say "  ${BLUE}→${NC} 존재: $df (유지)"
-  else
-    : > "$df"; chmod 644 "$df" 2>/dev/null || true
-    say "  ${YELLOW}⚠${NC} 생성(빈값): $df — HTTPS(prod) 쓰려면 DuckDNS 토큰 입력 필요:"
-    say "      ${CYAN}printf %s 'DuckDNS-토큰' > $df${NC}"
-  fi
-
   # 2.5) dev 공유 네트워크 — db(메인 트리)와 web/scheduler(워크트리별)가 서로 이름으로 찾아갈
   #      외부 네트워크. 없으면 만든다(멱등, 한 번만 하면 모든 워크트리가 함께 쓴다).
   if command -v docker >/dev/null 2>&1; then
@@ -241,7 +231,6 @@ run_doctor() {
   for f in ../secrets/mysql_root_password.txt ../secrets/mysql_password.txt ../secrets/admin_password.txt; do
     if [ -s "$f" ]; then say "  ${GREEN}✓${NC} $f"; else say "  ${YELLOW}⚠${NC} $f 없음/빈값 (init 실행 필요)"; fi
   done
-  if [ -s ../secrets/duckdns_token.txt ]; then say "  ${GREEN}✓${NC} ../secrets/duckdns_token.txt"; else say "  ${YELLOW}⚠${NC} ../secrets/duckdns_token.txt 없음/빈값 (운영 HTTPS 쓰려면 DuckDNS 토큰 입력)"; fi
 
   # 검증 게이트가 실제로 걸려 있나. CLAUDE.md 는 "강제" 라고 하지만, 설치가 안 됐으면
   # 조용히 없는 상태가 된다 — 있다고 믿는 게 제일 위험하다.

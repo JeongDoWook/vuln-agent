@@ -15,7 +15,7 @@
 ```bash
 cd deploy
 ./compose_runner.sh init                  # .env.dev / .env.prod 생성(템플릿 복사) → 비밀값 채우기
-#   secrets/*.txt (mysql/admin/duckdns) 와 .env.prod 를 이 서버 값으로 채운다.
+#   secrets/*.txt (mysql/admin) 와 .env.prod 를 이 서버 값으로 채운다.
 ./compose_runner.sh doctor                # 사전 점검(훅 설치·포트 등)
 ./compose_runner.sh prod up -d --build    # 운영 기동 — Caddy 가 자체서명 루트 CA 를 이때 생성한다
 ```
@@ -183,7 +183,7 @@ compose 가 `${PROD_DOMAIN:?…}` 로 거부하고, 뚫려도 Caddy 가 빈 주�
 configuration, and if used, it must be first`. 그 전엔 `unrecognized global option: encode`
 였다 — 죽는다는 사실은 같다).
 
-### 2026-08-08 — 보안 응답 헤더 추가, HSTS 는 아직 꺼져 있음
+### 2026-08-08 — 보안 응답 헤더 추가 (HSTS 는 제외)
 
 `deploy/caddy/Caddyfile` 에 `(security_headers)` snippet 을 넣어 모든 응답에 아래를 붙인다.
 **서버에서 할 조치는 없다** — `update.sh`(또는 `prod up -d --build`)로 caddy 가 재기동되면 적용된다.
@@ -195,7 +195,7 @@ configuration, and if used, it must be first`. 그 전엔 `unrecognized global o
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Content-Security-Policy` | `default-src 'self'` 기준(자세한 값은 Caddyfile) |
 | `Server` / `X-Powered-By` | **제거** |
-| `Strict-Transport-Security` | **아직 안 붙인다** — 아래 참조 |
+| `Strict-Transport-Security` | **붙이지 않는다** — 아래 참조 |
 
 **평문 80 진입도 같은 헤더를 받는다.** 예전엔 Caddy 가 자동 생성한 리다이렉트가 우리 사이트
 블록 밖이라 `import security_headers` 가 안 걸렸고, 그 경로의 응답만 헤더가 하나도 없이
@@ -210,15 +210,14 @@ curl -skI https://$PROD_DOMAIN/login.php   # 위 헤더가 보이고 Server 가 
 curl -sI  -H "Host: $PROD_DOMAIN" http://127.0.0.1:80/login.php   # 평문 진입: 308 + 같은 헤더
 ```
 
-#### HSTS 를 지금 켜지 않은 이유, 그리고 켜는 절차
+#### HSTS 를 붙이지 않는 이유
 
-지금 TLS 는 `tls internal`(Caddy 내부 CA 자체서명)이라 브라우저가 이미
-`ERR_CERT_AUTHORITY_INVALID` 를 낸다. 이 상태에서 HSTS 를 보내면 브라우저가 그 호스트를 HSTS
-목록에 올리고, **HSTS 호스트에서는 인증서 예외("고급 → 계속 진행")가 아예 허용되지 않는다.**
-즉 접속 수단이 사라지고, `max-age` 가 만료되기 전엔 사용자가 브라우저 내부 설정에서 HSTS 항목을
-손으로 지우는 것 말고는 되돌릴 방법이 없다. 그래서 **정식 인증서로 전환한 뒤에** 켠다.
+TLS 는 `tls internal`(Caddy 내부 CA 자체서명)이고, **이건 확정된 결정이다**(2026-08-09, 이슈 #518 —
+정식 인증서 전환은 하지 않는다). 자체서명이라 브라우저는 `ERR_CERT_AUTHORITY_INVALID` 를 낸다.
+이 상태에서 HSTS 를 보내면 브라우저가 그 호스트를 HSTS 목록에 올리고,
+**HSTS 호스트에서는 인증서 예외("고급 → 계속 진행")가 아예 허용되지 않는다.** 즉 접속 수단이
+사라지고, `max-age` 가 만료되기 전엔 사용자가 브라우저 내부 설정에서 HSTS 항목을 손으로 지우는 것
+말고는 되돌릴 방법이 없다. 그래서 붙이지 않는다.
 
-전환은 **사람이 해야 하는 작업**이다(2026-07-12 시도가 실패해 되돌린 상태 — DuckDNS 가 `KO` 를
-반환했고, 원인은 토큰이 이 도메인을 소유한 계정의 것이 아니었기 때문이다).
-절차는 한 곳에만 둔다 → [`caddy/README.md`](caddy/README.md) **"정식 인증서로 전환"**.
-HSTS 주석을 푸는 것은 **경고 없는 자물쇠를 확인한 뒤**의 마지막 단계다.
+자체서명을 쓰는 이유와 그 대가(에이전트 루트 CA 배포)는
+[`caddy/README.md`](caddy/README.md) **"자체서명을 쓰는 이유"** 한 곳에 둔다.

@@ -52,7 +52,7 @@ CVE와 매칭한다. 단순 스캐너와 다른 점은 **"이 취약점이 이 �
 | 웹 + 백엔드 + 매처 | **PHP** | 완성됨(핵심) |
 | DB | **MySQL** | 완성됨(핵심) |
 | 인프라 | **Docker + docker-compose** (PHP + MySQL) | 완성됨 |
-| HTTPS 배포 | **Caddy 리버스 프록시** (Let's Encrypt DNS-01, 현재 자체서명) | 완성됨 |
+| HTTPS 배포 | **Caddy 리버스 프록시** (내부 CA 자체서명 — 확정) | 완성됨 |
 | AI 문서 생성 | **Python** (오픈웨이트 로컬 모델) | **범위 제외** — 결과는 `GET /export.php`(JSON/XML)로 넘긴다 |
 
 > 1~2단계(수집·매칭·표시)엔 AI 불필요(DB 조회지 추론 아님). AI 보고서 생성기는 본체에 넣지 않고
@@ -136,7 +136,7 @@ vuln-agent/
 ├── CONTEXT.md  README.md  CLAUDE.md(개발원칙)  AGENTS.md
 ├── deploy/       # 배포 인프라: compose.{common,dev,dev-db,dev-net,prod}.yml · compose_runner.sh
 │   │             #   · migrate.sh · update.sh · backup_db.sh · wt.sh · .env.{dev,prod}.template
-│   ├── caddy/    # HTTPS 리버스 프록시(운영 전용): Dockerfile·Caddyfile·entrypoint.sh
+│   ├── caddy/    # HTTPS 리버스 프록시(운영 전용): Dockerfile·Caddyfile
 │   ├── config/mysql/my.cnf   # 운영 MySQL 튜닝
 │   └── hooks/pre-push        # 검증 게이트(저장소가 들고 있다)
 ├── secrets/(*.txt gitignore)   data/(mysql, gitignore)   agent-ca/(gitignore)
@@ -248,8 +248,9 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 - **Docker**(compose dev/prod + Docker Secrets + 러너) · **수집→전송→저장**(에이전트 `--send`
   POST → `ingest.php` → MySQL) · **웹**(로그인 → 대시보드 → 호스트 상세 → 취약점) · **설정형
   RBAC**(admin/operator/user × 메뉴, admin 은 코드에서 항상 허용해 잠금을 막는다).
-- **HTTPS 배포** — Caddy 가 TLS 종료(현재 `tls internal` 자체서명, Let's Encrypt DNS-01 전환은
-  보류). 도메인은 저장소에 두지 않고 `.env.prod` 의 `PROD_DOMAIN` 으로 주입한다. 평문 80 은 308
+- **HTTPS 배포** — Caddy 가 TLS 종료(`tls internal` 자체서명 — 정식 인증서 전환은 하지 않기로
+  확정, 대신 에이전트에 내부 루트 CA 를 배포한다). 도메인은 저장소에 두지 않고 `.env.prod` 의
+  `PROD_DOMAIN` 으로 주입한다. 평문 80 은 308
   리다이렉트, 기존 `:8080` 은 설치된 에이전트 호환으로 계속 연다. web·db 는 내부망/루프백만.
 - **무중단 배포** — prod 가 `../server` 를 읽기전용 마운트해 PHP 만 바뀌면 `update.sh`(=`git pull`)
   로 끝난다(opcache 가 곧 반영). Dockerfile·compose·caddy 변경 시에만 재빌드.
@@ -333,7 +334,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
   DOMDocument 로 파싱한다(에이전트 awk 파싱은 `<exclusions>`/`<parent>` 를 구분 못 해 오탐이 났다).
   유니크 키가 3,072바이트를 넘어 `edge_hash` 생성컬럼으로 대체했다(#502). **아직 화면은 없다.**
 - **접속기록 5요소 + 월 1회 점검**(#496) · **세션·토큰 유효기간**(#492) · **Caddy 보안 응답 헤더**(#497,
-  HSTS 는 자체서명이라 보류) — 상세는 `docs/dev/architecture.md §6`·`docs/ui-configuration.md`.
+  HSTS 는 자체서명 확정이라 붙이지 않는다) — 상세는 `docs/dev/architecture.md §6`·`docs/ui-configuration.md`.
 - **제품 범위 정리** — 내부 SLA·담당자·상태·예외를 추적하는 조치 관리 기능은 제거했다. 알림도 만들지
   않는다(외부 채널 수신지가 없어 YAGNI). 제품은 스캔 결과와 판정 근거를 정확히 보여주는 데 집중한다.
 
