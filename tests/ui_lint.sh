@@ -88,5 +88,62 @@ else
   no "LIMIT 으로 자르는데 페이저도 총건수도 없는 파일:$silent"
 fi
 
+# --- 5) 역방향: 정의됐는데 아무도 안 쓰는 클래스 (경고 — 실패로 세지 않는다) -----
+# 1) 은 PHP→CSS 한 방향만 본다(쓰는데 정의가 없는 것). 반대 방향은 아무도 안 봐서
+#   화면이 사라져도 규칙만 app.css 에 남았다 — 실제로 #387 이 수동 경계/재매칭 화면을
+#   지웠는데 .check-row·.setting-card 규칙은 그대로 남아 있었다(1949줄까지 불어난 원인).
+#
+#   왜 경고(비차단)인가: 이 검사는 리터럴 일치라 동적 조립을 원리적으로 다 못 본다.
+#   차단으로 두면 정상적인 신규 클래스 추가가 게이트에서 막힌다. 사람이 보고 판단하게 한다.
+#
+#   [예외 접두사] 코드가 문자열로 조립해서 만드는 클래스 — 리터럴로는 절대 안 잡힌다.
+#   접두사 하나당 "누가 만드는가" 를 적어 둔다. 새 동적 클래스를 만들면 여기에 추가한다.
+DYNAMIC_PREFIXES=(
+  'page--'        # view/layout.php  : 'page--' . basename($_SERVER['SCRIPT_NAME'])
+  'hero--'        # view/components.php vg_hero()  : 'hero--' . $riskTone
+  'meter--'       # format.php vg_meter()          : 'meter--' . $tone
+  'alert--'       # view/components.php vg_alert() : 'alert--' . $type
+  'tone-'         # format.php vg_badge()/vg_sev_bar(), view/charts.php : 'tone-' . $tone
+  'sev-'          # format.php vg_sev_row()        : 'sev-' . VG_TONE_SEV[...]
+  'is-'           # assets/app.js : 'collection-item is-' + command.status, classList.toggle
+  'chart__lbl--'  # view/charts.php : 'chart__lbl--' . $edge (start|end)
+)
+
+# 정의: app.css 의 선택자에 나오는 클래스. 주석과 url(...) 은 걷어낸다 — 주석 속
+#   `.page--<스크립트>` 나 데이터 URI 의 `www.w3.org` 가 클래스로 잡히던 것.
+css_src=$(awk '
+  # 한 줄짜리 주석·데이터 URI. 주석 패턴은 C 주석 정본형 — `[^*]*` 로 줄이면 본문에 `*` 가
+  #   든 주석(`.badge.tone-*` 같은 설명)에서 끊겨 뒤 줄의 실제 규칙까지 주석으로 먹는다.
+  { gsub(/url\([^)]*\)/, ""); gsub(/\/\*([^*]|\*+[^*\/])*\*+\//, "") }
+  /\/\*/ { sub(/\/\*.*/, ""); print; inc=1; next }               # 여러 줄 주석 시작
+  inc && /\*\// { sub(/.*\*\//, ""); inc=0; print; next }        # 그 끝
+  inc { next }
+  { print }
+' "$CSS" | grep -oE '\.[A-Za-z][A-Za-z0-9_-]*' | tr -d '.' | sort -u)
+
+# 사용: PHP·JS·HTML 어디든. vendor(flatpickr) JS 도 본다 — app.css 가 그 클래스를
+#   재스타일하므로 vendor 를 빼면 flatpickr-* 23개가 통째로 오탐이 된다.
+use_blob=$(mktemp)
+find "$PUB" "$SRC" -type f \( -name '*.php' -o -name '*.js' -o -name '*.html' \) \
+     ! -name 'app.css' -exec cat {} + > "$use_blob" 2>/dev/null
+
+orphan=""
+for c in $css_src; do
+  skip=""
+  for p in "${DYNAMIC_PREFIXES[@]}"; do
+    case "$c" in "$p"*) skip=1; break;; esac
+  done
+  [ -n "$skip" ] && continue
+  grep -qE "(^|[^A-Za-z0-9_-])$c([^A-Za-z0-9_-]|$)" "$use_blob" || orphan="$orphan $c"
+done
+rm -f "$use_blob"
+
+if [ -z "$orphan" ]; then
+  ok "안 쓰이는 CSS 클래스 없음 (app.css 정의가 전부 코드에서 참조된다)"
+else
+  printf "  ${CYAN}!${NC} 경고: 참조가 안 보이는 app.css 클래스:%s\n" "$orphan"
+  printf "      동적 조립이면 DYNAMIC_PREFIXES 에 사유와 함께 추가하고, 아니면 규칙을 지운다.\n"
+fi
+
 printf "\n${CYAN}== UI 검사: ${GREEN}%d 통과${NC}, ${RED}%d 실패${NC} ==${NC}\n" "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
