@@ -195,9 +195,9 @@ vg_hero(
     <span class="why">— <?= vg_h($frameworks[$fw]) ?> · <?= vg_h($control) ?></span>
     <div class="card__body">
       <?php if ($guide !== null): ?>
-        <p class="why prose"><?= vg_h((string) $guide['description']) ?></p>
+        <p class="why"><?= vg_h((string) $guide['description']) ?></p>
       <?php else: ?>
-        <div class="why">이 통제의 설명이 아직 준비되지 않았습니다. 아래 점검 항목의 조치 방법을 먼저 확인해 주세요.</div>
+        <div class="why">설명이 아직 준비되지 않았습니다. 아래 점검 항목을 먼저 확인해 주세요.</div>
       <?php endif; ?>
     </div>
   </div>
@@ -229,13 +229,16 @@ vg_hero(
                 1 => fn($r) => '<span class="why">'
                              . ($r['summary'] !== '' ? vg_h((string) $r['summary']) : '설명 준비 중')
                              . '</span>',
-                2 => fn($r) => '<span class="why prose">'
+                2 => fn($r) => '<span class="why">'
                              . ($r['remediation'] !== '' ? vg_h((string) $r['remediation']) : '조치 방법 준비 중')
                              . '</span>',
             ],
         ]
     );
     ?>
+      <?php // 링크를 걸지 않는 이유: docs/ 는 웹으로 서빙하지 않아 누르면 404 가 된다. ?>
+      <p class="why">여기 조치는 한 줄 요약입니다. 예시 명령·주의사항·검증 방법을 포함한 자세한 절차는
+        저장소 문서 <code>docs/dev/보안설정-조치가이드.md</code> 를 참고하세요.</p>
     </div>
   </div>
 </section>
