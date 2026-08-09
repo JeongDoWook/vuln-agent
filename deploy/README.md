@@ -127,21 +127,26 @@ crontab -e
 
 컴플라이언스 감사 §7-3(ISMS-P 2.6.3 세션 · 2.5.1 / N2SF SN·AC) 대응으로 로그인 세션과
 API/에이전트 토큰에 만료가 생겼다. **`.env` 나 컨테이너 환경변수로 바꾸는 값이 아니다** —
-아래처럼 소스 상수 또는 화면에서 정한다(설정 화면 이관은 예정 상태다).
+세션 만료는 **웹 화면(관리 → 설정)** 에서, 나머지는 아래 표대로 정한다.
 
 | 무엇 | 지금 값 | 어디서 바꾸나 |
 |---|---|---|
-| 세션 **유휴** 만료 | 30분 | `server/src/auth.php:18` `VG_SESSION_IDLE_SECONDS` |
-| 세션 **절대** 만료 | 12시간(유휴와 무관) | `server/src/auth.php:19` `VG_SESSION_ABSOLUTE_SECONDS` |
+| 세션 **유휴** 만료 | 30분 | **웹 화면** 관리 → 설정(`session.idle_minutes`, 5~720분) |
+| 세션 **절대** 만료 | 12시간(유휴와 무관) | **웹 화면** 관리 → 설정(`session.absolute_minutes`, 30~1440분) |
 | 토큰 유효기간 선택지 | 무기한 / 30일 / 90일 / 1년 | 발급은 **웹 화면**(API 키·에이전트 키), 선택지 자체는 `server/src/tokenexpiry.php:15` |
-| “만료 임박” 표시 기준 | 잔여 7일 | `server/src/tokenexpiry.php:18` `VG_TOKEN_EXPIRY_SOON_DAYS` |
+| “만료 임박” 표시 기준 | 잔여 7일 | `server/src/tokenexpiry.php:18` `VG_TOKEN_EXPIRY_SOON_DAYS`(목록 뱃지 표시용 — 인증 판정과 무관해 설정으로 빼지 않았다) |
+
+- 설정을 저장하지 않으면(빈 `tb_setting`) `server/src/auth.php` 의 상수
+  `VG_SESSION_IDLE_SECONDS`(1800초)·`VG_SESSION_ABSOLUTE_SECONDS`(43200초)를 그대로 쓴다 —
+  마이그레이션이 안 든 DB 에서도 동작이 같다. 범위를 벗어난 값은 읽을 때도 잘라 쓰므로
+  DB 를 직접 고쳐도 만료를 0 이나 무한으로 만들 수 없다.
 
 - 세션 만료 판정 기준 시각(`login_at`·`last_activity`)은 **세션에만** 둔다 — 요청마다 DB 쓰기가
   생기지 않는다. 만료되면 감사로그(`session_expire`)가 남고, 로그인 화면이 "다른 곳에서
   로그인됨"과 "시간 초과"를 다른 문구로 안내한다.
 - PHP 기본 `session.gc_maxlifetime`(1440초 = 24분)이 유휴 30분보다 짧아 PHP 가 먼저 세션을
-  날리던 문제는 코드에서 `ini_set` 으로 정책값에 맞춰 뒀다. **PHP 상수를 손으로 만질 필요 없다** —
-  위 상수만 바꾸면 따라온다.
+  날리던 문제는 코드에서 `ini_set` 으로 맞춰 뒀다(설정 가능한 절대 만료의 **상한**인 1440분 기준
+  — 어떤 설정값이어도 GC 가 먼저 세션을 지우지 않는다). **PHP 설정을 손으로 만질 필요 없다.**
 - 토큰은 `tb_api_token`·`tb_agent_token` 의 `expires_at`(NULL = 무기한)으로 관리한다.
   **이 변경 이전에 발급된 토큰은 NULL 이라 그대로 무기한**이고, 만료된 토큰은 인증 실패(401)로
   처리되며 `api_token_expired` / `agent_token_expired` 감사로그가 남는다. **자동 갱신·재발급은

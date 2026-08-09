@@ -19,13 +19,20 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/setting.php';   // vg_setting_int (미사용 판정일은 조직 규정이라 설정)
 
 // ── 임계값 ────────────────────────────────────────────────────────────────
-//   설정 이관 예정(tb_setting) — 지금은 설정 테이블이 없어 상수로 모아 둔다.
 //   임계값을 화면·판정 로직에 흩뿌리지 않으려고 여기 한 곳에만 둔다.
-const VG_ACCOUNT_STALE_LOGIN_DAYS = 90;   // 이 일수 이상 미로그인 = 미사용 계정
+//   미사용 판정일만 설정(tb_setting)으로 뺀다 — 조직 규정마다 30/60/90일로 갈린다.
+//   UID 경계 둘은 리눅스 관례(login.defs SYS_UID_MAX·nobody)라 조직이 바꿀 값이 아니다(YAGNI).
+const VG_ACCOUNT_STALE_LOGIN_DAYS = 90;   // 이 일수 이상 미로그인 = 미사용 계정(설정 없을 때의 폴백)
 const VG_ACCOUNT_SYSTEM_UID_MAX   = 999;  // 이 값 이하 UID = 시스템 계정(데몬용)
 const VG_ACCOUNT_NOBODY_UID_MIN   = 65534; // nobody/nogroup 대역도 시스템 계정으로 본다
+
+/** 미사용 계정 판정 기준일. 설정이 없으면 VG_ACCOUNT_STALE_LOGIN_DAYS. */
+function vg_account_stale_login_days(): int {
+    return vg_setting_int('account.stale_login_days', VG_ACCOUNT_STALE_LOGIN_DAYS);
+}
 
 // 공유·그룹 계정으로 **추정**되는 이름들. 단정 금지 — 근거는 "이름이 개인을 특정하지 않는다"뿐이다.
 const VG_ACCOUNT_SHARED_NAMES = [
@@ -286,7 +293,7 @@ function vg_account_judgments(array $rows): array
     }
 
     $now  = time();
-    $days = VG_ACCOUNT_STALE_LOGIN_DAYS;
+    $days = vg_account_stale_login_days();
 
     // ── 1) 90일 이상 미로그인 계정 (ISMS-P 2.5.1·2.5.6 / N2SF AC-1(2)·AC-1(3)) ──
     if (!$hasLastlog) {

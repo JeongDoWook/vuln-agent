@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../server/src/ui_config.php';
 require_once __DIR__ . '/../server/src/audit.php';
 require_once __DIR__ . '/../server/src/distro.php';
+require_once __DIR__ . '/../server/src/setting.php';
 
 $fail = 0;
 $eq = static function (string $label, $got, $want) use (&$fail): void {
@@ -56,6 +57,31 @@ $eq('폐기는 DELETE', vg_activity_action('token_revoke'), 'DELETE');
 $eq('발급은 CREATE', vg_activity_action('agent_token_issue'), 'CREATE');
 $eq('내보내기는 EXPORT', vg_activity_action('export_data'), 'EXPORT');
 $eq('모르는 코드는 OTHER', vg_activity_action('무슨_이벤트'), 'OTHER');
+
+// ── 운영 설정(tb_setting) ─────────────────────────────────────────────────
+//   이 테스트는 DB 없는 컨테이너에서 돈다 → vg_settings_all() 이 빈 배열이라
+//   "설정을 저장하지 않은 상태"를 그대로 재현한다. 가장 중요한 회귀는 이것이다:
+//   **설정이 비어 있으면 호출부 상수(폴백)가 그대로 나와야 한다.**
+$eq('설정 없으면 유휴 만료 폴백(30분)', vg_setting_int('session.idle_minutes', 30), 30);
+$eq('설정 없으면 절대 만료 폴백(720분)', vg_setting_int('session.absolute_minutes', 720), 720);
+$eq('설정 없으면 미사용 판정 폴백(90일)', vg_setting_int('account.stale_login_days', 90), 90);
+$eq('설정 없으면 문자열도 기본값', vg_setting('없는.키', '기본'), '기본');
+
+// 만료를 0·무한으로 만들 수 없어야 한다 — 읽을 때도 정의 범위로 자른다.
+$eq('유휴 만료 하한 클램프', vg_setting_int('session.idle_minutes', 0), 5);
+$eq('절대 만료 상한 클램프', vg_setting_int('session.absolute_minutes', 999999), 1440);
+$eq('미사용 판정 하한 클램프', vg_setting_int('account.stale_login_days', 1), 7);
+$eq('정의 없는 키는 클램프 대상 아님', vg_setting_int('없는.키', 999999), 999999);
+$eq('상한 조회', vg_setting_max('session.absolute_minutes', 0), 1440);
+$eq('정의 없는 키의 상한은 기본값', vg_setting_max('없는.키', 42), 42);
+
+// 정의 자체의 무결성 — min>max 나 빈 라벨이면 설정 화면이 조용히 망가진다.
+foreach (vg_setting_defs() as $key => $def) {
+    $eq("정의 min<max ($key)", $def['min'] < $def['max'], true);
+    $eq("정의 라벨 있음 ($key)", $def['label'] !== '', true);
+    $eq("정의 설명 있음 ($key)", $def['desc'] !== '', true);
+    $eq("정의 타입 int ($key)", $def['type'], 'int');
+}
 
 putenv('UI_PER_PAGE_OPTIONS');
 putenv('UI_PER_PAGE_DEFAULT');
