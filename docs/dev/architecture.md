@@ -1,6 +1,6 @@
 # vuln-agent 아키텍처
 
-> 현행 기준: 2026-08-09 · 에이전트 3.10 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고,
+> 현행 기준: 2026-08-09 · 에이전트 3.11 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고,
 > 계정 인벤토리·자산 등급·의존성 그래프(수집·조회 화면), 컴플라이언스 스냅샷 포함.
 
 지금까지 확정·구현된 구조를 그림으로 정리한다.
@@ -122,6 +122,24 @@ REVIEW(사람이 확인)다.
 어려워 상세에서 한 대씩이다. 여러 업무정보 등급이 한 시스템에 있으면 **가장 높은 등급을 승계**한다
 (C > S > O).
 
+초안 분류기는 에이전트가 저장한 노출 의미를 그대로 따른다. 원격 로그 수신 근거로 인정하는 범위는
+비루프백 도달/바인딩을 뜻하는 `EXTERNAL`·`LAN`·`BOUND`뿐이며, 방화벽 차단 `FILTERED`, 루프백
+`LOCAL`, 미지정·알 수 없는 범위는 원격 수신으로 표현하지 않는다. 로그·백업 프로세스도
+서버·저장소(강한 S 근거), 전달자·클라이언트(검토 근거), 일회성 도구(약한 근거)로 구분한다.
+한 스캔의 일치 근거는 모두 모아 결정적인 255자 이내 설명으로 만들고, S와 외부노출 O가 함께 있으면
+S가 우선하되 O 근거도 설명에 남긴다. 어느 경우에도 초안이 사람의 확정 등급을 대신하지 않는다.
+
+제안은 수집 때마다 `tb_asset_grade_suggestion_history` 에 **append-only 로 관찰 기록**된다
+(`src/assetgrade_history.php` 의 `vg_asset_grade_observe()`, ingest 트랜잭션 안). 같은 스캔·같은
+결과의 재전송은 `(host_id, scan_id, result_fingerprint)` 로 한 줄만 남고, 결과가 바뀌면 새 줄이
+쌓인다. 판정 상태는 셋이다 — 근거를 찾은 `SUGGESTED`, 근거가 없는 `NO_MATCH`, 그리고 그 판정에
+필요한 수집 단계(로그 수신 근거면 `network_exposure`, 프로세스 근거면 `runtime_processes`,
+그 밖에는 둘 다)가 `MISSING` 이라 **판정 자체를 못 한** `NOT_EVALUATED`. 판정 불가일 때는 현재
+제안 컬럼(`tb_host.grade_suggested`)을 지우지 않는다 — 수집이 한 번 빠졌다고 기존 제안이
+사라지면 "근거가 없어졌다"와 구별되지 않기 때문이다. 지연 도착한 과거 스캔도 이력엔 남기되
+더 새로운 관찰이 있으면 현재 제안 컬럼을 되돌리지 않는다. 이 경로는 확정값(`grade`·`approved_*`)을
+절대 쓰지 않는다.
+
 **패키지 의존성 그래프**는 SBOM(CycloneDX `dependencies` · SPDX `relationships`)과 pom.xml 최상위
 `<dependencies>` 에서 부모→자식 엣지를 뽑아 `tb_package_dependency` 에 넣는다(`src/ingest_store.php`).
 SPDX 는 `DEPENDS_ON`(정방향)과 `DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역방향)만 의존으로 채택한다 —
@@ -156,11 +174,15 @@ permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결
 **KISA ISMS-P·ISO 27001 컴플라이언스 판정**의 로직은 `src/compliance.php` 에 있다(웹·CLI 공용).
 화면(`public/compliance.php`)은 이걸로 "지금"을 렌더하고 스케줄러는 같은 함수로 증적을 적재한다 —
 판정 로직이 두 벌이면 화면과 증적이 서로 다른 답을 내기 시작한다. findings(severity·in_kev·
-no_fix·needs_restart)·자산 연결상태·`tb_cce_finding`(설정 취약) 등 기존 판정 결과만 다시 읽어
-통제 3개(`patch`/`asset`/`secops` — `VG_COMPLIANCE_CONTROLS` 가 SSOT)를 SLA 기준일 대비 위반
-건수로 판정한다. **정책·승인이력처럼 vuln-agent 가 갖고 있지 않은 근거가 필요한 통제는 판정하지
-않고 체크리스트로만 노출한다** — 자동판정 3개가 전부이고 나머지는 사람이 직접 심사해야 한다는 게
-이 화면의 의도적 한계다.
+no_fix·needs_restart)·자산 연결상태·`tb_cce_finding`(설정 취약)·`tb_host_account`(계정 인벤토리)·
+`tb_activity_review`(접속기록 점검 이력) 등 기존 판정 결과만 다시 읽어 통제 5개
+(`patch`/`asset`/`secops`/`account`/`access_review` — `VG_COMPLIANCE_CONTROLS` 가 SSOT)를
+판정한다. `account` 는 판정 로직을 새로 만들지 않고 `vg_account_judgments()`(host.php 계정 탭이
+쓰는 것)를 재사용해 집계만 한다. `patch` 는 통제 전체가 아니라 **버킷(KEV/CRITICAL/HIGH)별로**
+판정한다 — 이력이 짧아 판정 불가인 버킷 하나가 잘 지킨 나머지 버킷까지 회색으로 누르지 않게.
+**정책·승인이력처럼 vuln-agent 가 갖고 있지 않은 근거가 필요한 통제는 판정하지 않고 체크리스트로만
+노출한다** — 남은 3개(정책문서·사고대응·재해복구)는 증적이 제품 밖에 있어 사람이 직접 심사해야
+한다는 게 이 화면의 의도적 한계다.
 
 **판정 어휘는 4종이다 — 준수 / 판정 불가 / 부분준수 / 미준수**(`vg_compliance_status()` 가 SSOT).
 위반 0건이라고 무조건 "준수"로 쓰지 않는다: 볼 수 있는 근거가 모자라서 0건인 것을 준수로 표기하면

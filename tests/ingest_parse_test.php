@@ -10,6 +10,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../server/src/ingest_parse.php';
+require_once __DIR__ . '/../server/src/assetgrade.php';
 require_once __DIR__ . '/../server/src/license_risk.php';
 
 date_default_timezone_set('UTC');   // collected_at 변환이 TZ 에 의존하므로 환경과 무관하게 고정
@@ -310,7 +311,7 @@ $eq('flavor(rpm) — 아키만',       vg_kernel_flavor('5.14.0-503.11.1.el9_5.x
 
 // ── 내용 해시 ──────────────────────────────────────────────────────────────
 $commonArgs = static fn(array $pkgRows, array $expRows) => vg_ingest_content_hash(
-    $pkgRows, 'rpm', [], $expRows, [], [], [], [],
+    $pkgRows, 'rpm', [], $expRows, [], [], [], [], [],
     '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0']
 );
 $hashA = $commonArgs([['openssl', '1.0']], [['1201', 'nginx', 'tcp', '0.0.0.0', '443', 'EXTERNAL', 'nginx', 'openssl']]);
@@ -321,12 +322,27 @@ if ($hashA === $hashC) {
     printf("  ✗ [해시: 패키지 버전이 다르면 달라야 함] 두 해시가 같음\n");
     $fail++;
 }
+$withProcesses = static fn(array $procRows) => vg_ingest_content_hash(
+    [], 'rpm', [], [], vg_asset_grade_relevant_process_rows($procRows), [], [], [], [],
+    '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0']
+);
+$procA = $withProcesses([['101', 'restic', 'root', '/usr/bin/restic', 'restic']]);
+$procPidOnly = $withProcesses([['999', 'restic', 'root', '/usr/bin/restic', 'restic']]);
+$eq('해시: 프로세스 PID 만 다르면 동일해야 함', $procA, $procPidOnly);
+$eq('해시: 저장하지 않는 프로세스 잉여 필드는 무시', $procA,
+    $withProcesses([['101', 'restic', 'root', '/usr/bin/restic', 'restic', 'attacker-nonce']]));
+if ($procA === $withProcesses([])) {
+    printf("  ✗ [해시: 역할 프로세스 시작·종료가 다르면 달라야 함] 두 해시가 같음\n");
+    $fail++;
+}
+$eq('등급 무관 일시 프로세스는 스냅샷을 늘리지 않음',
+    vg_asset_grade_relevant_process_rows([['1', 'cron', 'root', '', '']]), []);
 
 // **출처(origin)가 바뀌면 해시도 바뀌어야 한다.** 안 그러면 "변경 없음" 으로 스캔을 재사용하고
 //   tb_package 를 다시 쓰지 않아, 에이전트가 고쳐 보낸 출처가 DB 에 영원히 안 들어간다
 //   (실측: 에이전트 2.2 가 curl→Debian 으로 고쳤는데 DB 엔 LOCAL 이 그대로였다).
 $withOrigin = static fn(array $originMap) => vg_ingest_content_hash(
-    [['openssl', '1.0']], 'rpm', [], [], [], [], [], [],
+    [['openssl', '1.0']], 'rpm', [], [], [], [], [], [], [],
     '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0'], $originMap
 );
 if ($withOrigin(['openssl' => 'LOCAL']) === $withOrigin(['openssl' => 'Debian'])) {
@@ -337,7 +353,7 @@ if ($withOrigin(['openssl' => 'LOCAL']) === $withOrigin(['openssl' => 'Debian'])
 // **라이선스가 바뀌면 해시도 바뀌어야 한다.** 안 그러면 라이선스만 바뀐 재스캔이 "변경 없음"으로
 //   스킵돼 스캔 재사용 시 라이선스 변경이 구조적으로 누락된다(출처 필드와 동일 유형의 사고).
 $withLangLicense = static fn(string $lic) => vg_ingest_content_hash(
-    [], 'rpm', [['pip', 'requests', '2.19.1', $lic]], [], [], [], [], [],
+    [], 'rpm', [['pip', 'requests', '2.19.1', $lic]], [], [], [], [], [], [],
     '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0']
 );
 if ($withLangLicense('MIT') === $withLangLicense('Apache-2.0')) {
@@ -345,7 +361,7 @@ if ($withLangLicense('MIT') === $withLangLicense('Apache-2.0')) {
     $fail++;
 }
 $withCtrPkgLicense = static fn(string $lic) => vg_ingest_content_hash(
-    [], 'rpm', [], [], [], [['ctr-a', 'maven', 'log4j-core', '2.14.1', '', $lic]], [], [],
+    [], 'rpm', [], [], [], [], [['ctr-a', 'maven', 'log4j-core', '2.14.1', '', $lic]], [], [],
     '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0']
 );
 if ($withCtrPkgLicense('MIT') === $withCtrPkgLicense('Apache-2.0')) {
@@ -725,7 +741,7 @@ $eq('SPDX 스코프 이름: 잘린 이름(pkg·scope/pkg)으로 저장하지 않
 //   안 넣으면 그래프만 바뀐 재전송이 "변경 없음"으로 스킵돼 tb_package_dependency 가
 //   영구히 비게 된다(PR#399 리뷰 지적 — 이번 재작업의 핵심 반영사항 중 하나).
 $withPomDeps = static fn(array $pomDepRows) => vg_ingest_content_hash(
-    [], 'rpm', [], [], [], [], [], [],
+    [], 'rpm', [], [], [], [], [], [], [],
     '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0'], [], $pomDepRows
 );
 if ($withPomDeps([]) === $withPomDeps([['maven', 'org.example:demo', '1.0.0']])) {
@@ -733,7 +749,7 @@ if ($withPomDeps([]) === $withPomDeps([['maven', 'org.example:demo', '1.0.0']]))
     $fail++;
 }
 $withSbomDeps = static fn(array $sbomDepRows) => vg_ingest_content_hash(
-    [], 'rpm', [], [], [], [], [], [],
+    [], 'rpm', [], [], [], [], [], [], [],
     '5.14.0', '5.14.0', 0, ['distro_id' => 'rocky'], ['kernel_release' => '5.14.0'], [], [], $sbomDepRows
 );
 if ($withSbomDeps([]) === $withSbomDeps([['ctr-a', 'npm', 'root', '1.0.0', 'npm', 'child', '2.0.0']])) {
