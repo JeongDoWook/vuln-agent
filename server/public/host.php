@@ -542,6 +542,38 @@ function vg_host_load_packages_tab(PDO $pdo, int $scanId, int $perPage, int $off
 }
 
 /**
+ * 컨테이너 탭 — 이 스캔이 찾아낸 컨테이너 대장.
+ *   에이전트는 k8s 위치(namespace/pod/container)·워크로드 참조·이미지 다이제스트·SBOM 까지 보내지만
+ *   **도커 단독 호스트에서는 이 값들이 전부 비어 있다.** 그래서 열로 세우지 않고, 값이 있는 행에서만
+ *   셀 안에 한 줄로 덧붙인다(렌더 쪽) — 빈칸만 늘어선 표를 만들지 않기 위해서다.
+ */
+function vg_host_load_containers_tab(PDO $pdo, int $scanId, int $perPage, int $offset, string $q): array {
+    $where  = 'scan_id = ? AND is_deleted = 0';
+    $params = [$scanId];
+    if ($q !== '') {
+        $where .= ' AND (cid LIKE ? OR name LIKE ? OR image LIKE ?
+                         OR k8s_namespace LIKE ? OR k8s_pod LIKE ? OR workload_ref LIKE ?)';
+        $like = '%' . $q . '%';
+        array_push($params, $like, $like, $like, $like, $like, $like);
+    }
+
+    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_container WHERE $where");
+    $st->execute($params);
+    $total = (int) $st->fetchColumn();
+
+    // ORDER BY cid — uq_container(scan_id, cid) 좌측 접두가 scan_id 라 정렬까지 인덱스가 받는다.
+    $st = $pdo->prepare(
+        "SELECT cid, name, image, image_digest, k8s_namespace, k8s_pod, k8s_container,
+                workload_ref, runtime_state, sbom_format, sbom_hash,
+                os_id, os_version, manager, pkg_count
+           FROM tb_container WHERE $where
+          ORDER BY cid LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute($params);
+    return ['total' => $total, 'rows' => $st->fetchAll()];
+}
+
+/**
  * 계정 탭 — 이 스캔의 계정 대장 + 파생 컴플라이언스 판정.
  *   판정은 목록 한 페이지가 아니라 **전 계정**을 봐야 한다(90일 미로그인 계정이 3페이지에 있어도
  *   판정은 나와야 한다) → 판정용으로 계정 전체를 따로 읽는다. 호스트당 계정은 수십 개 규모지만
@@ -620,7 +652,7 @@ $exposureCount = 0; $processCount = 0; $runtimeTotal = 0; $cceFail = 0; $suppres
 $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
-$accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0;
+$accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0; $containerTotal = 0;
 $q = trim((string) ($_GET['q'] ?? ''));
 // 계정 탭 필터(?acc=). 화이트리스트 밖 값은 전체로 떨군다 — 값이 그대로 SQL 로 가지 않는다.
 $accFilter = (string) ($_GET['acc'] ?? '');
@@ -762,8 +794,11 @@ try {
         $st = $pdo->prepare('SELECT COUNT(*) FROM tb_host_account WHERE scan_id = ? AND is_deleted = 0');
         $st->execute([$sid]); $accountTotal = (int) $st->fetchColumn();
 
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_container WHERE scan_id = ? AND is_deleted = 0');
+        $st->execute([$sid]); $containerTotal = (int) $st->fetchColumn();
+
         // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
-        $validTabs = ['vuln', 'packages', 'runtime', 'cce', 'accounts'];
+        $validTabs = ['vuln', 'packages', 'containers', 'runtime', 'cce', 'accounts'];
         if ($suppressedCount > 0) { $validTabs[] = 'suppressed'; }
         $validTabs[] = 'scans';
         $tab = (string) ($_GET['tab'] ?? 'vuln');
@@ -780,6 +815,9 @@ try {
         } elseif ($tab === 'packages') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_packages_tab($pdo, $sid, $perPage, $offset, $q);
+        } elseif ($tab === 'containers') {
+            ['total' => $total, 'rows' => $rows]
+                = vg_host_load_containers_tab($pdo, $sid, $perPage, $offset, $q);
         } elseif ($tab === 'runtime') {
             ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows, 'ePage' => $ePage]
                 = vg_host_load_runtime_tab($pdo, $sid, $perPage, $offset, $ePage, $q);
@@ -846,6 +884,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     $tabDefs = [
         'vuln'    => ['label' => '취약점',    'n' => $vulnTotal],
         'packages'=> ['label' => '설치 패키지', 'n' => $packageTotal],
+        // 컨테이너 대장 — 호스트와 OS 가 다를 수 있는 별도 자산이라 목록을 따로 준다.
+        'containers'=> ['label' => '컨테이너', 'n' => $containerTotal],
         // 이 탭은 노출 소켓과 실행 프로세스 두 목록을 함께 제공하므로 둘의 합계를 표시한다.
         'runtime' => ['label' => '런타임',    'n' => $runtimeTotal],
         'cce'     => ['label' => '보안 설정', 'n' => $cceFail],
@@ -1135,6 +1175,97 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                   'origin' => fn($p) => $p['origin']
                       ? vg_h((string)$p['origin'])
                       : (!empty($p['vendor']) ? vg_h((string)$p['vendor']) : '<span class="why">–</span>'),
+              ],
+          ]
+      );
+      ?>
+      </div>
+    </div>
+    <?php vg_page_nav($total, $perPage, $page); ?>
+
+  <?php elseif ($tab === 'containers'): ?>
+    <?php vg_toolbar([
+        ['type' => 'search', 'name' => 'q', 'placeholder' => '컨테이너·이미지·네임스페이스 검색', 'value' => $q],
+        ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
+        ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
+    ]); ?>
+    <div class="card">
+      <strong>컨테이너</strong>
+      <span class="why"> · 최신 수집 기준 <?= number_format($containerTotal) ?>개 · 컨테이너는 호스트와 OS 가 다를 수 있습니다</span>
+      <div class="card__body">
+      <?php
+      // 런타임 상태 톤 — dead 만 위험으로 올린다(멈춘 컨테이너는 위험이 아니라 사실).
+      $stateTone = ['running' => 'ok', 'restarting' => 'med', 'dead' => 'high'];
+      vg_table(
+          [
+              ['label' => '컨테이너', 'key' => 'cid', 'class' => 'col-id'],
+              ['label' => '이미지', 'key' => 'image'],
+              ['label' => '상태', 'key' => 'runtime_state'],
+              ['label' => 'OS', 'key' => 'os'],
+              ['label' => '관리자', 'key' => 'manager'],
+              ['label' => '패키지', 'key' => 'pkg_count', 'align' => 'right'],
+          ],
+          $rows,
+          [
+              'card' => false,
+              'empty' => $hasFilter
+                  ? [
+                      'icon' => '⌕',
+                      'title' => '검색 조건에 맞는 컨테이너가 없습니다.',
+                      'cta' => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
+                  ]
+                  : [
+                      'icon' => '□',
+                      'title' => '수집된 컨테이너가 없습니다.',
+                      'hint' => '이 호스트에서 실행 중인 컨테이너를 찾지 못했습니다.',
+                  ],
+              'cell' => [
+                  // k8s 위치·워크로드는 쿠버네티스 위에서만 채워진다 — 비면 줄 자체를 그리지 않는다.
+                  'cid' => function ($c) {
+                      $h = '<strong>' . vg_h((string) $c['cid']) . '</strong>';
+                      if (!empty($c['name']) && (string) $c['name'] !== (string) $c['cid']) {
+                          $h .= ' <span class="why">' . vg_h((string) $c['name']) . '</span>';
+                      }
+                      $k8s = array_filter(
+                          [$c['k8s_namespace'] ?? null, $c['k8s_pod'] ?? null, $c['k8s_container'] ?? null],
+                          fn($v) => (string) $v !== ''
+                      );
+                      if ($k8s) {
+                          $h .= '<div class="why">k8s ' . vg_h(implode(' / ', $k8s)) . '</div>';
+                      }
+                      if (!empty($c['workload_ref'])) {
+                          $h .= '<div class="why">워크로드 ' . vg_h((string) $c['workload_ref']) . '</div>';
+                      }
+                      return $h;
+                  },
+                  // 다이제스트·SBOM 해시는 길어서 표를 밀어낸다 → 앞부분만, 전체는 title 로(vg_trunc).
+                  'image' => function ($c) {
+                      $img = (string) ($c['image'] ?? '');
+                      $h = $img !== '' ? vg_trunc($img, 48) : '<span class="why">–</span>';
+                      if (!empty($c['image_digest'])) {
+                          $h .= '<div class="why">' . vg_trunc((string) $c['image_digest'], 24) . '</div>';
+                      }
+                      $sbom = [];
+                      if (!empty($c['sbom_format'])) { $sbom[] = vg_h((string) $c['sbom_format']); }
+                      if (!empty($c['sbom_hash']))   { $sbom[] = vg_trunc((string) $c['sbom_hash'], 20); }
+                      if ($sbom) {
+                          $h .= '<div class="why">SBOM ' . implode(' ', $sbom) . '</div>';
+                      }
+                      return $h;
+                  },
+                  'runtime_state' => function ($c) use ($stateTone) {
+                      $s = (string) ($c['runtime_state'] ?? '');
+                      if ($s === '') { return '<span class="why">–</span>'; }
+                      return vg_badge($s, $stateTone[$s] ?? 'muted');
+                  },
+                  'os' => function ($c) {
+                      $os = trim((string) ($c['os_id'] ?? '') . ' ' . (string) ($c['os_version'] ?? ''));
+                      return $os !== '' ? vg_h($os) : '<span class="why">–</span>';
+                  },
+                  'manager' => fn($c) => !empty($c['manager'])
+                      ? '<code>' . vg_h((string) $c['manager']) . '</code>'
+                      : '<span class="why">–</span>',
+                  'pkg_count' => fn($c) => number_format((int) $c['pkg_count']),
               ],
           ]
       );
