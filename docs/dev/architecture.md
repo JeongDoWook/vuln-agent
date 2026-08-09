@@ -122,11 +122,14 @@ REVIEW(사람이 확인)다.
 어려워 상세에서 한 대씩이다. 여러 업무정보 등급이 한 시스템에 있으면 **가장 높은 등급을 승계**한다
 (C > S > O).
 
-**패키지 의존성 그래프**는 SBOM(CycloneDX) `dependencies` 와 pom.xml 최상위 `<dependencies>` 에서
-부모→자식 엣지를 뽑아 `tb_package_dependency` 에 넣는다(`src/ingest_store.php`). 엣지 유일성은
+**패키지 의존성 그래프**는 SBOM(CycloneDX `dependencies` · SPDX `relationships`)과 pom.xml 최상위
+`<dependencies>` 에서 부모→자식 엣지를 뽑아 `tb_package_dependency` 에 넣는다(`src/ingest_store.php`).
+SPDX 는 `DEPENDS_ON`(정방향)과 `DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역방향)만 의존으로 채택한다 —
+`CONTAINS` 까지 엣지로 보면 이미지의 모든 패키지가 루트의 직접 의존이 되어 직접/전이 구분이 사라진다
+(`src/ingest_parse.php` 의 `VG_SPDX_REL_FORWARD`/`REVERSE`). 엣지 유일성은
 9개 컬럼 복합키가 InnoDB 인덱스 상한(3,072바이트)을 넘겨 **해시 생성컬럼**(`edge_hash`)으로 건다 —
 접두 길이 방식은 접두가 겹치는 서로 다른 패키지를 같은 키로 묶어 정상 엣지를 조용히 버린다.
-UI·전이 표시·SPDX relationships 는 다음 단계다.
+UI·전이 표시는 다음 단계다.
 
 **미조치 사유·승인자**(`src/remediation_note.php` → `tb_remediation_note`)는 억제와 **다른 축**이다.
 억제는 매처의 자동 판정이고, 이건 사람이 남기는 메모다 — "왜 지금 고치지 않는가"와 "누가 언제

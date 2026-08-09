@@ -615,6 +615,112 @@ $sbomMany = vg_ingest_parse_sbom('ctr-many|cyclonedx|' . base64_encode($cdxManyD
 $eq('SBOM deps 상한: 상한까지만 저장', count($sbomMany['deps']), VG_SBOM_DEP_EDGE_MAX);
 $eq('SBOM deps 상한: 초과분은 dropped 로 집계', $sbomMany['deps_dropped'], 19);
 
+// ── SPDX relationships → 의존 엣지 (이슈 #516) ─────────────────────────────
+//   CycloneDX 와 **같은 규약**을 내야 한다: 루트 표식행은 parent 3필드 전부 NULL,
+//   루트를 parent 로 갖는 엣지의 child 가 직접 의존, 그 아래가 전이.
+$spdxPkg = static fn(string $id, string $name, string $ver, string $type = 'npm') => [
+    'SPDXID' => $id, 'name' => $name, 'versionInfo' => $ver,
+    'externalRefs' => [['referenceType' => 'purl', 'referenceLocator' => "pkg:$type/$name@$ver"]],
+];
+$spdxRel = static fn(string $from, string $type, string $to) => [
+    'spdxElementId' => $from, 'relationshipType' => $type, 'relatedSpdxElement' => $to,
+];
+
+$spdxDeps = json_encode(['spdxVersion' => 'SPDX-2.3', 'SPDXID' => 'SPDXRef-DOCUMENT',
+    'packages' => [
+        $spdxPkg('SPDXRef-Pkg-root', 'my-app', '1.0.0'),
+        $spdxPkg('SPDXRef-Pkg-a', 'compA', '1.0.0'),
+        $spdxPkg('SPDXRef-Pkg-b', 'compB', '2.0.0'),
+        $spdxPkg('SPDXRef-Pkg-c', 'compC', '3.0.0'),
+        $spdxPkg('SPDXRef-Pkg-t', 'compTest', '4.0.0'),
+    ],
+    'relationships' => [
+        $spdxRel('SPDXRef-DOCUMENT', 'DESCRIBES', 'SPDXRef-Pkg-root'),   // 루트 표식(엣지 아님)
+        $spdxRel('SPDXRef-Pkg-root', 'DEPENDS_ON', 'SPDXRef-Pkg-a'),     // 직접
+        $spdxRel('SPDXRef-Pkg-a', 'DEPENDS_ON', 'SPDXRef-Pkg-b'),        // 전이
+        $spdxRel('SPDXRef-Pkg-c', 'DEPENDENCY_OF', 'SPDXRef-Pkg-a'),     // 역방향 → parent=compA
+        $spdxRel('SPDXRef-Pkg-root', 'CONTAINS', 'SPDXRef-Pkg-t'),       // 채택 안 함
+        $spdxRel('SPDXRef-Pkg-t', 'TEST_DEPENDENCY_OF', 'SPDXRef-Pkg-root'), // 채택 안 함
+    ],
+]);
+$sd = vg_ingest_parse_sbom('ctr-spdx|spdx|' . base64_encode($spdxDeps));
+$eq('SPDX deps: 루트 표식 + 직접1 + 전이2 = 4건', count($sd['deps']), 4);
+$sdByChild = [];
+foreach ($sd['deps'] as $d) { $sdByChild[$d[5]] = $d; }
+$eq('SPDX deps: 루트 표식 행(parent NULL)', array_key_exists('my-app', $sdByChild) ? $sdByChild['my-app'][1] : 'MISSING', null);
+$eq('SPDX deps: 루트→compA 직접(parent=루트)', $sdByChild['compA'][2] ?? null, 'my-app');
+$eq('SPDX deps: compA→compB 전이(parent=compA)', $sdByChild['compB'][2] ?? null, 'compA');
+$eq('SPDX deps: DEPENDENCY_OF 는 부모/자식을 뒤집는다', $sdByChild['compC'][2] ?? null, 'compA');
+$eq('SPDX deps: CONTAINS/TEST_DEPENDENCY_OF 는 엣지가 아니다', isset($sdByChild['compTest']) ? 'EDGE' : 'none', 'none');
+$eq('SPDX deps: 되짚을 수 있는 관계뿐이면 unresolved 0', $sd['deps_unresolved'], 0);
+
+// documentDescribes[] 만으로도 루트 표식행이 나와야 한다(DESCRIBES 관계를 안 쓰는 도구 대응).
+$spdxDescribes = json_encode(['spdxVersion' => 'SPDX-2.3',
+    'documentDescribes' => ['SPDXRef-Pkg-root'],
+    'packages' => [$spdxPkg('SPDXRef-Pkg-root', 'my-app', '1.0.0')],
+    'relationships' => [],
+]);
+$sdDesc = vg_ingest_parse_sbom('ctr-spdx-desc|spdx|' . base64_encode($spdxDescribes));
+$eq('SPDX deps: documentDescribes 로도 루트 표식 1건', count($sdDesc['deps']), 1);
+$eq('SPDX deps: documentDescribes 루트는 parent NULL', isset($sdDesc['deps'][0]) ? $sdDesc['deps'][0][1] : 'MISSING', null);
+
+// relationships 가 아예 없는 문서 — 패키지는 그대로 뽑되 엣지는 0건이어야 한다(에러 아님).
+$spdxNoRel = json_encode(['spdxVersion' => 'SPDX-2.3',
+    'packages' => [$spdxPkg('SPDXRef-Pkg-a', 'compA', '1.0.0')]]);
+$sdNoRel = vg_ingest_parse_sbom('ctr-spdx-norel|spdx|' . base64_encode($spdxNoRel));
+$eq('SPDX deps: relationships 없으면 엣지 0건', count($sdNoRel['deps']), 0);
+$eq('SPDX deps: relationships 없어도 패키지는 뽑는다', count($sdNoRel['packages']), 1);
+
+// 알 수 없는 SPDXRef(packages[] 에 없음·외부문서 참조·문서 자신)는 엣지를 버리고 **집계**한다.
+$spdxDangling = json_encode(['spdxVersion' => 'SPDX-2.3',
+    'packages' => [$spdxPkg('SPDXRef-Pkg-a', 'compA', '1.0.0')],
+    'relationships' => [
+        $spdxRel('SPDXRef-Pkg-a', 'DEPENDS_ON', 'SPDXRef-Pkg-없음'),
+        $spdxRel('DocumentRef-ext:SPDXRef-Pkg-x', 'DEPENDS_ON', 'SPDXRef-Pkg-a'),
+        $spdxRel('SPDXRef-Pkg-a', 'DEPENDS_ON', 'NOASSERTION'),
+    ],
+]);
+$sdDangling = vg_ingest_parse_sbom('ctr-spdx-dangling|spdx|' . base64_encode($spdxDangling));
+$eq('SPDX deps: 알 수 없는 SPDXRef 는 버림', count($sdDangling['deps']), 0);
+$eq('SPDX deps: 버린 건수를 조용히 삼키지 않고 집계', $sdDangling['deps_unresolved'], 3);
+
+// 순환 참조 — 엣지 저장은 그래프 순회가 아니므로 양방향 2건이 그대로 남고 멈춰야 한다(무한루프 없음).
+$spdxCycle = json_encode(['spdxVersion' => 'SPDX-2.3',
+    'packages' => [$spdxPkg('SPDXRef-Pkg-a', 'compA', '1.0.0'), $spdxPkg('SPDXRef-Pkg-b', 'compB', '2.0.0')],
+    'relationships' => [
+        $spdxRel('SPDXRef-Pkg-a', 'DEPENDS_ON', 'SPDXRef-Pkg-b'),
+        $spdxRel('SPDXRef-Pkg-b', 'DEPENDS_ON', 'SPDXRef-Pkg-a'),
+        $spdxRel('SPDXRef-Pkg-b', 'DEPENDENCY_OF', 'SPDXRef-Pkg-a'),   // 첫 엣지와 같은 사실 → dedup
+    ],
+]);
+$sdCycle = vg_ingest_parse_sbom('ctr-spdx-cycle|spdx|' . base64_encode($spdxCycle));
+$eq('SPDX deps: 순환 참조는 양방향 2건(중복 표기는 dedup)', count($sdCycle['deps']), 2);
+
+// npm 스코프 패키지(@scope/pkg) — 이름을 **잘라먹지 않는다**. 지금은 양쪽 경로 모두
+//   vg_pkg_ident_valid('@…') 에서 걸려 엣지가 통째로 버려진다(미해결 이슈 #481, 이번 스코프 밖).
+//   여기서 못박는 것은 "SPDX 가 CycloneDX 와 **같게** 동작하고, 잘린 이름이 저장되지 않는다" 다 —
+//   #481 을 고치면 두 경로가 함께 바뀌므로 이 비교는 그때도 유효하다.
+$scopedCdx = json_encode(['bomFormat' => 'CycloneDX',
+    'metadata' => ['component' => ['name' => 'my-app', 'version' => '1.0.0', 'bom-ref' => 'root-ref', 'purl' => 'pkg:npm/my-app@1.0.0']],
+    'components' => [['name' => 'pkg', 'version' => '1.0.0', 'bom-ref' => 's-ref', 'purl' => 'pkg:npm/%40scope/pkg@1.0.0']],
+    'dependencies' => [['ref' => 'root-ref', 'dependsOn' => ['s-ref']]],
+]);
+$scopedSpdx = json_encode(['spdxVersion' => 'SPDX-2.3',
+    'documentDescribes' => ['SPDXRef-Pkg-root'],
+    'packages' => [
+        $spdxPkg('SPDXRef-Pkg-root', 'my-app', '1.0.0'),
+        ['SPDXID' => 'SPDXRef-Pkg-s', 'name' => 'pkg', 'versionInfo' => '1.0.0',
+         'externalRefs' => [['referenceType' => 'purl', 'referenceLocator' => 'pkg:npm/%40scope/pkg@1.0.0']]],
+    ],
+    'relationships' => [$spdxRel('SPDXRef-Pkg-root', 'DEPENDS_ON', 'SPDXRef-Pkg-s')],
+]);
+$stripCid = static fn(array $deps) => array_map(static fn($d) => array_slice($d, 1), $deps);
+$scopedC = vg_ingest_parse_sbom('ctr-scope-c|cyclonedx|' . base64_encode($scopedCdx));
+$scopedS = vg_ingest_parse_sbom('ctr-scope-s|spdx|' . base64_encode($scopedSpdx));
+$eq('SPDX 스코프 이름: CycloneDX 경로와 같은 엣지를 낸다', $stripCid($scopedS['deps']), $stripCid($scopedC['deps']));
+$mangled = array_values(array_filter($scopedS['deps'], static fn($d) => in_array($d[5], ['pkg', 'scope/pkg'], true)));
+$eq('SPDX 스코프 이름: 잘린 이름(pkg·scope/pkg)으로 저장하지 않는다', count($mangled), 0);
+
 // ── content_hash: 의존성 그래프가 바뀌면 해시도 바뀌어야 한다 ───────────────
 //   안 넣으면 그래프만 바뀐 재전송이 "변경 없음"으로 스킵돼 tb_package_dependency 가
 //   영구히 비게 된다(PR#399 리뷰 지적 — 이번 재작업의 핵심 반영사항 중 하나).
