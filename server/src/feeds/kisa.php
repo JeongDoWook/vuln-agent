@@ -137,9 +137,8 @@ final class VgKisaConnector implements VgFeedConnector {
                 if ($ts !== false) { $pub = date('Y-m-d', $ts); }
             }
             $titleCves = vg_extract_cve_ids($title);
-            $cveIds    = $titleCves ? implode(',', $titleCves) : null;
             // 신규·수정만 upserted 로 집계(unchanged 는 제외). 제목 정규화는 upsert 가 담당.
-            if (vg_upsert_advisory($pdo, $source, $title, $link, $pub, $cveIds) !== 'unchanged') {
+            if (vg_upsert_advisory($pdo, $source, $title, $link, $pub, $titleCves) !== 'unchanged') {
                 $up++;
             }
             // 제목에 CVE 가 있으면 cves 에도 등록(국내공지 근거 확보)

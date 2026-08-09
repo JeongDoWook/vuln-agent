@@ -246,8 +246,7 @@ package "CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)" {
         title : string
         url : string <<UK>>
         published : date
-        cve_ids : string
-        ' CSV - 호환용 유지, 읽기 정본은 junction
+        ' 관련 CVE 는 tb_advisory_cve 정션에만 있다(옛 cve_ids CSV 드롭)
         is_deleted : bool
     }
 
