@@ -350,7 +350,9 @@ assert_contains "$resp" '"exposures":5' "노출 5건 저장"
 assert_contains "$resp" '"langpkgs":4' "언어 패키지 4건 저장(pip/npm)"
 # 컨테이너 내부 패키지 — 호스트 스캔에서 빠져 통째로 미탐이던 영역.
 assert_contains "$resp" '"containers":5'   "컨테이너 5개 저장(apk/dpkg/DB없음/Go/업스트림)"
-assert_contains "$resp" '"ctr_packages":5' "컨테이너 내부 패키지 5건(apk/dpkg + Go + 업스트림 nginx)"
+#   5건(apk 2 + dpkg 1 + Go 1 + 업스트림 nginx 1) + api 컨테이너 SBOM 컴포넌트 3건 = 8건.
+#   SBOM 은 의존성 그래프 화면(depgraph.php)의 회귀 근거라 픽스처에 함께 들어 있다.
+assert_contains "$resp" '"ctr_packages":8' "컨테이너 내부 패키지 8건(apk/dpkg + Go + 업스트림 nginx + SBOM 3)"
 # 컨테이너 런타임 증거 — 이게 없으면 컨테이너 취약점은 근거가 "설치만 됨" 뿐이라 전부 LOW 로 깔린다.
 assert_contains "$resp" '"ctr_processes":2' "컨테이너 프로세스 2건 저장"
 assert_contains "$resp" '"ctr_exposures":1' "컨테이너 노출 1건 저장(api:8443 EXTERNAL)"
@@ -542,6 +544,37 @@ assert_contains "$packagebody" '설치 패키지' "자산 상세 설치 패키�
 assert_contains "$packagebody" 'glibc' "최신 스캔의 설치 패키지 전체 목록 조회"
 if [ -n "$WEB02_ID" ]; then ok "web02 호스트 id 확인 (=$WEB02_ID)"; else no "web02 호스트를 자산 목록에서 못 찾음"; WEB02_ID=1; fi
 if [ -n "$WEB03_ID" ]; then ok "web03 호스트 id 확인 (=$WEB03_ID)"; else no "web03 호스트를 자산 목록에서 못 찾음"; WEB03_ID=1; fi
+
+# --- 패키지 의존성 그래프(depgraph.php) -------------------------------------
+# 에이전트가 보낸 SBOM/pom 엣지는 저장만 되고 읽는 화면이 없었다. "무엇이 이 패키지를
+#   끌어왔나" 가 루트 → 직접 → 전이 순으로 실제로 펼쳐지는지, 엣지가 없는 자산의 빈 상태가
+#   빈 화면이 아니라 설명으로 뜨는지를 고정한다.
+assert_contains "$packagebody" 'depgraph.php?id=' "설치 패키지 탭에서 의존성 그래프로 진입"
+depbody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID")
+assert_contains "$depbody" '무엇이 이 패키지를 끌어왔나' "의존성 그래프 화면 표시"
+# 호스트(cid=0) 단위는 pom.xml 직접 선언 — 부모가 없어 트리 대신 목록으로 나온다.
+assert_contains "$depbody" 'pom.xml 직접 선언' "pom.xml 직접선언이 별도 목록으로 구분됨"
+assert_contains "$depbody" 'com.myco:myco-common' "pom 직접선언 패키지 표시"
+# SBOM 엣지는 컨테이너 단위에 있다 — 조회 단위 링크에서 컨테이너 container_id 를 집는다.
+DEP_CID=$(grep -oE 'depgraph\.php\?id='"$WEB01_ID"'&amp;cid=[0-9]+' <<<"$depbody" | grep -oE '[0-9]+$' | grep -v '^0$' | head -1)
+if [ -n "$DEP_CID" ]; then ok "SBOM 엣지를 가진 컨테이너 조회 단위 노출 (cid=$DEP_CID)"; else no "SBOM 컨테이너 조회 단위를 못 찾음"; DEP_CID=0; fi
+ctrdep=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID&cid=$DEP_CID")
+assert_contains "$ctrdep" '루트' "SBOM 루트 표식행이 루트로 표시됨"
+assert_contains "$ctrdep" 'myco-web' "루트(최상위 프로젝트) 표시"
+assert_contains "$ctrdep" 'myco-http' "직접 의존 표시"
+assert_contains "$ctrdep" 'myco-utf8' "전이 의존(3단계)까지 펼쳐짐"
+# 역추적 — 전이 의존에서 루트까지의 경로가 나와야 "무엇이 끌어왔나" 에 답이 된다.
+frombody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID&cid=$DEP_CID&mgr=npm&name=myco-utf8&ver=0.9.1&tab=from")
+assert_contains "$frombody" '이 패키지를 끌어온 경로' "역추적 탭 표시"
+assert_contains "$frombody" 'myco-parser' "역추적 경로에 중간 부모 포함"
+assert_contains "$frombody" 'myco-web' "역추적 경로가 루트까지 도달"
+# 그래프에 없는 패키지를 지정하면 조용히 빈 화면이 아니라 이유를 밝혀야 한다.
+missbody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID&cid=$DEP_CID&mgr=npm&name=nosuchpkg&ver=9.9.9&tab=from")
+assert_contains "$missbody" '요청한 패키지가 이 조회 단위의 엣지에 없습니다' "없는 패키지 지정 시 이유 표시"
+# 빈 상태 — SBOM·pom 이 없는 자산은 이 화면이 비는 것이 정상이고, 그렇게 설명해야 한다.
+emptydep=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB02_ID")
+assert_contains "$emptydep" '의존성 엣지가 없습니다' "엣지 없는 자산의 빈 상태 안내"
+assert_not_contains "$emptydep" 'depgraph.php?id='"$WEB02_ID"'&amp;cid=' "엣지 없는 자산엔 조회 단위 선택지도 없다"
 
 # 에이전트 진행 heartbeat — 바인딩 토큰이 자기 호스트의 pending 명령만 running으로 바꿔야 한다.
 PROGRESS_CMD=$(docker exec "$WEB_CONTAINER" php -r \

@@ -619,7 +619,7 @@ $exposureCount = 0; $processCount = 0; $runtimeTotal = 0; $cceFail = 0; $suppres
 $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
-$accountTotal = 0; $accountJudgments = []; $accountAllCount = 0;
+$accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0;
 $q = trim((string) ($_GET['q'] ?? ''));
 // 계정 탭 필터(?acc=). 화이트리스트 밖 값은 전체로 떨군다 — 값이 그대로 SQL 로 가지 않는다.
 $accFilter = (string) ($_GET['acc'] ?? '');
@@ -753,6 +753,11 @@ try {
                               WHERE scan_id = ? AND container_id = 0 AND manager IN ('dpkg','rpm','apk')");
         $st->execute([$sid]); $packageTotal = (int) $st->fetchColumn();
 
+        // 의존성 그래프(depgraph.php) 진입 여부 — 엣지가 있는 자산에만 링크를 건다.
+        //   uk_pkg_dep_edge 좌측 접두가 (scan_id, container_id)라 scan_id 만으로도 인덱스 레인지다.
+        $st = $pdo->prepare('SELECT COUNT(*) FROM tb_package_dependency WHERE scan_id = ?');
+        $st->execute([$sid]); $depEdgeTotal = (int) $st->fetchColumn();
+
         $st = $pdo->prepare('SELECT COUNT(*) FROM tb_host_account WHERE scan_id = ? AND is_deleted = 0');
         $st->execute([$sid]); $accountTotal = (int) $st->fetchColumn();
 
@@ -863,6 +868,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       '<a href="' . vg_h(vg_qs(['tab' => 'packages', 'page' => null, 'q' => null])) . '">패키지 '
           . number_format($packageTotal) . '개</a>',
   ];
+  // 의존성 엣지가 있는 자산만 — 없는 자산에 링크를 걸면 빈 화면으로 보내게 된다.
+  if ($depEdgeTotal > 0) {
+      $meta[] = '<a href="/depgraph.php?id=' . (int) $hostId . '">의존성 그래프 '
+          . number_format($depEdgeTotal) . '엣지</a>';
+  }
   if (!empty($host['last_seen_ip'])) { $meta[] = 'IP ' . vg_h($host['last_seen_ip']); }
   $meta[] = '<a href="/">대시보드</a>';
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
@@ -1089,6 +1099,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     <div class="card">
       <strong>설치 패키지</strong>
       <span class="why"> · 최신 수집 기준 호스트 운영체제 패키지 <?= number_format($packageTotal) ?>개</span>
+      <?php if ($depEdgeTotal > 0): ?>
+        <span class="why"> · <a href="/depgraph.php?id=<?= (int) $hostId ?>">무엇이 이 패키지를 끌어왔나(의존성 그래프)</a></span>
+      <?php endif; ?>
       <div class="card__body">
       <?php
       vg_table(
