@@ -17,7 +17,10 @@ vg_require_menu('findings');
 
 $notes = [];   // 이 페이지 행들의 미조치 사유 메모 (자연키 → 메모)
 
-$unsupHosts = [];   // 취약점 0건이 "안전"이 아니라 "판정 불가"인 대상(호스트 + 컨테이너)
+// 취약점 0건이 "안전"이 아니라 "판정 불가"인 대상(호스트 + 컨테이너). 사유별로 묶는다 —
+//   대상마다 사유를 통째로 반복하면(운영 실측 41줄, 그중 20줄이 같은 100자 문장) 경고가
+//   길어서 아무도 안 읽는다. 사유 한 줄 + 그 사유에 걸린 대상 목록이면 정보량은 같다.
+$unsupBy = [];      // 사유 => [대상명, …]
 
 $sevOptions = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 $stOptions  = ['EXTERNAL', 'LAN', 'FILTERED', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
@@ -67,7 +70,7 @@ try {
         }
         // 피드가 지원하지 않는 배포판은 매칭 후보가 없어 0건으로 뜬다 → 목록에 모아 경고한다.
         $reason = vg_distro_unsupported($h['os_id'] ?? null, $h['os_version'] ?? null);
-        if ($reason !== null) { $unsupHosts[] = $h['fqdn'] . ' (' . $reason . ')'; }
+        if ($reason !== null) { $unsupBy[$reason][] = (string) $h['fqdn']; }
     }
 
     // 컨테이너도 같은 이유로 0건이 된다 — 특히 **패키지 DB 가 없는 이미지**(Calico 등)는
@@ -91,7 +94,7 @@ try {
             $c['manager'] ?? null, (int) ($c['pkg_count'] ?? 0)
         );
         if ($reason !== null) {
-            $unsupHosts[] = $c['fqdn'] . ' · 컨테이너 ' . $c['cid'] . ' (' . $reason . ')';
+            $unsupBy[$reason][] = $c['fqdn'] . ' · 컨테이너 ' . $c['cid'];
         }
     }
 
@@ -226,19 +229,19 @@ vg_header('탐지 결과', 'findings');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
-  <?php if ($unsupHosts): ?>
-    <?php vg_alert([
-        'type'  => 'warn',
-        'title' => '일부 대상은 취약점 매칭이 수행되지 않습니다',
-        'hints' => array_merge(
-            [
-                '피드가 모르는 배포판이거나, 패키지 DB 가 없어 무엇이 깔렸는지 알 수 없습니다.',
-                '이 대상들의 취약점 0건은 "안전함"이 아니라 "판정 불가"입니다.',
-            ],
-            $unsupHosts
-        ),
-    ]); ?>
-  <?php endif; ?>
+  <?php if ($unsupBy):
+      // 사유 한 줄에 그 사유가 걸린 대상을 모아 붙인다. 사유 자체가 이미 "왜 판정할 수 없는가"를
+      //   말하므로, 예전에 앞에 두던 총론 한 줄("피드가 모르는 배포판이거나…")은 뺐다.
+      $hints = [];
+      foreach ($unsupBy as $reason => $names) {
+          $hints[] = $reason . ' (' . count($names) . ') — ' . implode(', ', $names);
+      }
+      vg_alert([
+          'type'  => 'warn',
+          'title' => '일부 대상은 취약점 매칭이 수행되지 않습니다 — 0건은 "안전"이 아니라 "판정 불가"입니다',
+          'hints' => $hints,
+      ]);
+  endif; ?>
 
   <div class="cards">
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>

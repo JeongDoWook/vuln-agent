@@ -220,11 +220,14 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
     <?php endforeach; ?>
   </div>
 
-  <?php vg_toolbar([
+  <?php
+  // 위험도는 바로 위 KPI 카드가 토글한다(누르면 걸리고 다시 누르면 풀린다) — 같은 필터에
+  //   컨트롤이 둘이면 어느 쪽이 이겼는지 헷갈린다(cves.php 의 KEV 탭·셀렉트 정리와 같은 판단).
+  //   셀렉트는 빼되, 검색·매니저를 제출해도 선택이 풀리지 않게 hidden 으로 싣는다.
+  vg_toolbar([
       ['type' => 'select', 'name' => 'manager', 'selected' => $manager,
        'empty_label' => '전체 매니저', 'options' => $managerOptions],
-      ['type' => 'select', 'name' => 'risk', 'selected' => $risk,
-       'empty_label' => '전체 위험도', 'options' => $riskOptions],
+      ['type' => 'hidden', 'name' => 'risk', 'value' => $risk, 'reset' => true],
       ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명 검색', 'value' => $q],
       ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
   ]); ?>

@@ -20,6 +20,10 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';           // vg_log_activity
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_frameworks, vg_control_framework_param
+// 인가 게이트. 이게 없어서 **비로그인 상태로도 200 + CCE 점검 결과 전량**이 나갔다(실측:
+//   빈 쿠키로 curl 하면 다른 화면은 302 login 인데 여기만 200). 상세인 control.php 는 처음부터
+//   갖고 있었다 — 목록만 빠져 있었다. 같은 데이터를 여는 두 URL 은 같은 게이트를 지나야 한다.
+vg_require_menu('findings');
 
 $err = null;
 $fw = vg_control_framework_param($_GET['fw'] ?? null);   // 화이트리스트 검증(SSOT)
@@ -111,9 +115,17 @@ vg_header('통제 기준 매핑', 'control_mapping');
 ?>
   <?php vg_page_title(
       '통제 기준 매핑', 'CONTROL MAPPING',
-      '같은 보안설정 점검(CCE) 결과를 ISMS-P · 기반시설 U-코드 · N2SF 중 고른 기준의 통제로 묶어 봅니다.',
+      '같은 보안설정 점검(CCE) 결과를 고른 기준의 통제로 묶어 셉니다. 준수 여부는 판정하지 않습니다.',
       ['count' => $total]
   ); ?>
+  <?php
+  // 컴플라이언스 매핑과 이름이 겹쳐 보여 나란히 세운다 — 저기는 준수/미준수까지 **판정**하고,
+  //   여기는 같은 점검 결과를 기준별로 **묶어 세기만** 한다(compliance.php 쪽 주석과 한 쌍).
+  vg_subtabs([
+      'compliance'      => ['label' => '컴플라이언스 매핑', 'href' => '/compliance.php'],
+      'control_mapping' => ['label' => '통제 기준 매핑',   'href' => '/control_mapping.php'],
+  ], 'control_mapping');
+  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -141,7 +153,8 @@ vg_header('통제 기준 매핑', 'control_mapping');
           ['label' => '통제명'],
           ['label' => '점검 항목', 'width' => '20%'],
           // 'PASS n · NA n · n건' 이 9rem 에서 두 줄로 접혔다 — 한 줄에 들어오게 넓힌다.
-          ['label' => '결과', 'width' => '11rem'],
+          //   11rem 도 세 자리 수가 겹치면 여전히 접혀서(실측 'PASS 176 · NA 484 · 740건') 13rem.
+          ['label' => '결과', 'width' => '13rem'],
           ['label' => '위반', 'width' => '6rem', 'align' => 'right'],
       ],
       $rows,
