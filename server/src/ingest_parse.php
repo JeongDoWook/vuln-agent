@@ -16,6 +16,25 @@ require_once __DIR__ . '/license_risk.php'; // vg_license_normalize_token — pk
 const VG_SBOM_DEP_EDGE_MAX = 5000;
 const VG_POM_DEP_EDGE_MAX  = 2000;
 
+// ── SPDX relationshipType 중 "의존 엣지"로 채택하는 것 ─────────────────────
+//   SPDX 2.3 은 관계 종류가 40여 개다. **전부 엣지로 삼으면 그래프가 의미를 잃는다** —
+//   특히 syft/trivy 가 컨테이너 이미지 SBOM 에 쏟아내는 CONTAINS(이미지→모든 패키지)를 엣지로
+//   보면 설치된 패키지 전부가 루트의 "직접 의존"이 되어 직접/전이 구분이 통째로 사라진다.
+//   그래서 **의존 관계를 직접 뜻하는 것만** 채택한다.
+//     · 정방향 DEPENDS_ON        : A 가 B 에 의존 → parent=A, child=B
+//     · 역방향 DEPENDENCY_OF     : A 가 B 의 의존 → parent=B, child=A (같은 사실의 반대 표기)
+//              RUNTIME_DEPENDENCY_OF : 런타임 의존. pom 경로가 scope=test/provided 만 버리고
+//                                      런타임 의존은 담는 것과 같은 기준이다.
+//   버리는 것과 이유:
+//     · CONTAINS/CONTAINED_BY          — 파일·아카이브 포함 관계. 위 이유로 그래프를 망친다.
+//     · DESCRIBES/DESCRIBED_BY         — 문서가 무엇을 기술하는지. 엣지가 아니라 **루트 표식**이라
+//                                        아래에서 루트 표식행 생성에만 쓴다.
+//     · BUILD_/DEV_/TEST_/OPTIONAL_DEPENDENCY_OF — 런타임에 적재되지 않는 의존. pom 경로가
+//                                        scope=test/provided 를 버리는 것과 같은 기준.
+//     · GENERATED_FROM·PATCH_FOR·그 외 — 의존이 아니다.
+const VG_SPDX_REL_FORWARD = ['DEPENDS_ON'];
+const VG_SPDX_REL_REVERSE = ['DEPENDENCY_OF', 'RUNTIME_DEPENDENCY_OF'];
+
 // ── 패키지 의존성 그래프 그룹/이름/버전 문자셋 검증 ─────────────────────────
 //   PR#399 리뷰: 문자셋 검증 없이 저장하면 저장형 XSS 사전조건이 된다. vg_h() 출력 이스케이프는
 //   유지하되 저장 단계에서부터 거른다 — 첫 글자는 영숫자만 허용(특수문자로 시작하는 값 배제).
@@ -281,14 +300,32 @@ function vg_ingest_parse_container_list(string $listText): array
 /** Parse externally supplied CycloneDX/SPDX SBOM lines: cid|format|base64(json). */
 function vg_ingest_parse_sbom(string $text): array
 {
-    $packages=[]; $meta=[]; $deps=[]; $depsSeen=[]; $depsDropped=0;
+    $packages=[]; $meta=[]; $deps=[]; $depsSeen=[]; $depsDropped=0; $depsUnresolved=0;
+    // 엣지 하나를 검증·dedup·상한 확인 후 담는다. CycloneDX 루트 표식 / CycloneDX dependencies /
+    //   SPDX relationships 세 곳이 같은 규칙을 쓰므로 여기 한 곳에 둔다(DRY — 3번째에 추출).
+    //   $parent 가 null 이면 루트 표식행(parent 3필드 전부 NULL) — DB 규약은
+    //   db/migrations/20260806141456_package_dependency_graph.sql 주석 참고.
+    $pushEdge = static function (string $cid, ?array $parent, array $child)
+        use (&$deps, &$depsSeen, &$depsDropped): void {
+        foreach ($parent === null ? $child : array_merge($parent, $child) as $v) {
+            if (!vg_pkg_ident_valid($v)) { return; }   // 정체를 알 수 없는 부모/자식은 저장하지 않는다
+        }
+        $k = $cid . '|' . ($parent === null ? 'root' : implode('|', $parent)) . '|' . implode('|', $child);
+        if (isset($depsSeen[$k])) { return; }
+        if (count($deps) >= VG_SBOM_DEP_EDGE_MAX) { $depsDropped++; return; }
+        $depsSeen[$k] = true;
+        $deps[] = $parent === null
+            ? [$cid, null, null, null, $child[0], $child[1], $child[2]]
+            : [$cid, $parent[0], $parent[1], $parent[2], $child[0], $child[1], $child[2]];
+    };
     foreach (preg_split('/\r?\n/', $text) as $line) {
         $f=explode('|',$line,3); if(count($f)!==3||$f[0]==='')continue;
         $raw=base64_decode($f[2],true); $doc=$raw!==false?json_decode($raw,true):null; if(!is_array($doc))continue;
         $cid=mb_strimwidth($f[0],0,255,''); $format=strtolower($f[1]); $meta[$cid]=[$format,hash('sha256',$raw)];
         $items=$format==='spdx'?($doc['packages']??[]):($doc['components']??[]);
-        // ref(bom-ref, 없으면 purl) → [manager,name,version] — CycloneDX dependencies[] 엣지 해석용.
-        //   SPDX relationships 는 이번 스코프 밖(Phase 2)이라 여기선 CycloneDX 만 다룬다.
+        // 참조 → [manager,name,version] — 엣지의 양끝을 실제 패키지로 되짚는 매핑.
+        //   CycloneDX 는 dependencies[].ref(bom-ref, 없으면 purl), SPDX 는 relationships 의
+        //   SPDXID(SPDXRef-…) 로 참조한다.
         $refMap=[];
         foreach($items as $item){
             $name=trim((string)($item['name']??''));$ver=trim((string)($item['version']??$item['versionInfo']??''));$purl=(string)($item['purl']??'');
@@ -321,11 +358,10 @@ function vg_ingest_parse_sbom(string $text): array
                 } elseif ($packages[$pkey][5]===''&&$lic!==''){
                     $packages[$pkey][5]=mb_strimwidth($lic,0,255,'');
                 }
-                // dependencies[].ref 는 보통 bom-ref, 없으면 컴포넌트 자신의 purl 로 참조한다.
-                if ($format !== 'spdx') {
-                    $ref = (string) ($item['bom-ref'] ?? $purl);
-                    if ($ref !== '') { $refMap[$ref] = [$mgr, mb_strimwidth($name,0,255,''), mb_strimwidth($ver,0,255,'')]; }
-                }
+                // CycloneDX: dependencies[].ref 는 보통 bom-ref, 없으면 컴포넌트 자신의 purl.
+                // SPDX:      relationships 는 패키지의 SPDXID 로 참조한다.
+                $ref = $format === 'spdx' ? (string) ($item['SPDXID'] ?? '') : (string) ($item['bom-ref'] ?? $purl);
+                if ($ref !== '') { $refMap[$ref] = [$mgr, mb_strimwidth($name,0,255,''), mb_strimwidth($ver,0,255,'')]; }
             }
         }
         // metadata.component — BOM 이 기술하는 대상(스캔된 프로젝트/이미지) 자신. components[] 에는
@@ -351,36 +387,55 @@ function vg_ingest_parse_sbom(string $text): array
         //   가리키면 그 엣지는 버린다(정체를 알 수 없는 부모/자식을 저장하지 않는다).
         if ($format !== 'spdx' && isset($doc['dependencies']) && is_array($doc['dependencies'])) {
             $rootRef = (string) ($doc['metadata']['component']['bom-ref'] ?? $doc['metadata']['component']['purl'] ?? '');
-            if ($rootRef !== '' && isset($refMap[$rootRef])) {
-                [$rm, $rn, $rv] = $refMap[$rootRef];
-                if (vg_pkg_ident_valid($rm) && vg_pkg_ident_valid($rn) && vg_pkg_ident_valid($rv)) {
-                    $k = "$cid|root|$rm|$rn|$rv";
-                    if (!isset($depsSeen[$k]) && count($deps) < VG_SBOM_DEP_EDGE_MAX) {
-                        $depsSeen[$k] = true;
-                        $deps[] = [$cid, null, null, null, $rm, $rn, $rv];
-                    }
-                }
-            }
+            if ($rootRef !== '' && isset($refMap[$rootRef])) { $pushEdge($cid, null, $refMap[$rootRef]); }
             foreach ($doc['dependencies'] as $dep) {
                 $ref = (string) ($dep['ref'] ?? '');
                 if ($ref === '' || !isset($refMap[$ref])) { continue; }
-                [$pm, $pn, $pv] = $refMap[$ref];
-                if (!vg_pkg_ident_valid($pm) || !vg_pkg_ident_valid($pn) || !vg_pkg_ident_valid($pv)) { continue; }
                 foreach ((array) ($dep['dependsOn'] ?? []) as $childRef) {
                     $childRef = (string) $childRef;
                     if (!isset($refMap[$childRef])) { continue; }
-                    [$cm, $cn, $cv] = $refMap[$childRef];
-                    if (!vg_pkg_ident_valid($cm) || !vg_pkg_ident_valid($cn) || !vg_pkg_ident_valid($cv)) { continue; }
-                    $k = "$cid|$pm|$pn|$pv|$cm|$cn|$cv";
-                    if (isset($depsSeen[$k])) { continue; }
-                    if (count($deps) >= VG_SBOM_DEP_EDGE_MAX) { $depsDropped++; continue; }
-                    $depsSeen[$k] = true;
-                    $deps[] = [$cid, $pm, $pn, $pv, $cm, $cn, $cv];
+                    $pushEdge($cid, $refMap[$ref], $refMap[$childRef]);
                 }
             }
         }
+        // SPDX relationships → 부모→자식 엣지. 채택/기각한 relationshipType 과 그 근거는
+        //   VG_SPDX_REL_FORWARD/REVERSE 상수 위 주석에 있다. 루트 표식행은 CycloneDX 경로와
+        //   **같은 규약**(parent 3필드 전부 NULL)으로 만든다 — 같은 화면이 둘 다 읽는다.
+        if ($format === 'spdx' && (isset($doc['relationships']) || isset($doc['documentDescribes']))) {
+            $rels = is_array($doc['relationships'] ?? null) ? $doc['relationships'] : [];
+            // 루트: documentDescribes[] 또는 DESCRIBES/DESCRIBED_BY 관계가 가리키는 요소.
+            //   CycloneDX 의 metadata.component 자리다. 패키지로 되짚을 수 없으면(예: syft 가
+            //   이미지 자체를 기술할 때) 루트 표식행은 만들지 않는다 — 없는 게 틀린 것보다 낫다.
+            $described = [];
+            foreach ((array) ($doc['documentDescribes'] ?? []) as $r) {
+                if (is_string($r) && $r !== '') { $described[$r] = true; }
+            }
+            foreach ($rels as $rel) {
+                if (!is_array($rel)) { continue; }
+                $type = strtoupper(trim((string) ($rel['relationshipType'] ?? '')));
+                if ($type === 'DESCRIBES')    { $described[(string) ($rel['relatedSpdxElement'] ?? '')] = true; }
+                if ($type === 'DESCRIBED_BY') { $described[(string) ($rel['spdxElementId'] ?? '')]      = true; }
+            }
+            foreach (array_keys($described) as $rootId) {
+                if (isset($refMap[$rootId])) { $pushEdge($cid, null, $refMap[$rootId]); }
+            }
+            foreach ($rels as $rel) {
+                if (!is_array($rel)) { continue; }
+                $type = strtoupper(trim((string) ($rel['relationshipType'] ?? '')));
+                $fwd  = in_array($type, VG_SPDX_REL_FORWARD, true);
+                if (!$fwd && !in_array($type, VG_SPDX_REL_REVERSE, true)) { continue; }
+                $from = (string) ($rel['spdxElementId'] ?? '');
+                $to   = (string) ($rel['relatedSpdxElement'] ?? '');
+                // 되짚을 수 없는 SPDXRef(문서 자신·외부문서 참조 DocumentRef-…·NOASSERTION·
+                //   packages[] 에 없는 id)는 엣지를 버리되 **조용히 삼키지 않고** 집계한다.
+                if (!isset($refMap[$from]) || !isset($refMap[$to])) { $depsUnresolved++; continue; }
+                // 역방향 타입은 "A 는 B 의 의존" 이므로 부모/자식을 뒤집어야 같은 사실이 된다.
+                $pushEdge($cid, $fwd ? $refMap[$from] : $refMap[$to], $fwd ? $refMap[$to] : $refMap[$from]);
+            }
+        }
     }
-    return ['packages'=>array_values($packages),'meta'=>$meta,'deps'=>$deps,'deps_dropped'=>$depsDropped];
+    return ['packages'=>array_values($packages),'meta'=>$meta,'deps'=>$deps,
+            'deps_dropped'=>$depsDropped,'deps_unresolved'=>$depsUnresolved];
 }
 // ── pom.xml 최상위 <dependencies> 직접 선언 (best-effort, mvn 미호출) ────────
 //   에이전트가 올린 형식: path|base64(pom.xml 원문). 옛 PR#399 는 awk 한 줄 파싱으로
