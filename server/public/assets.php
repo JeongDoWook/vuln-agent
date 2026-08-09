@@ -206,11 +206,16 @@ $ingest = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'local
 vg_header('자산', 'assets');
 ?>
   <?php
+  /* 상태 판정 기준. 예전엔 제목 옆 '?' 로 띄웠는데, 정작 궁금해지는 자리는 '상태' 열이다.
+   *   같은 문구를 두 곳에 두지 않고 그 열의 머리글 범례로만 단다(등급 열과 같은 방식). */
   $stateHelp = '상태는 수집 주기가 아니라 10초 poll 통신 기준입니다. '
       . '1분 초과 시 지연, 5분 초과 시 오프라인이며 최신 수집 시각은 별도로 표시합니다.';
   ?>
-  <?php vg_page_title('자산', 'ASSETS', '호스트별 수집 상태와 탐지 결과를 확인합니다.', [
-      'suffix_html' => vg_help($stateHelp),
+  <?php /* 제목 옆 '?' 는 이 화면 전체에 걸리는 규칙만 담는다 — 열별 기준은 각 열 머리글이 갖는다.
+           등급 확정 경계는 관리자용 일괄 확정 카드 밖에는 적혀 있지 않아 여기로 올린다. */ ?>
+  <?php vg_page_title('자산', 'ASSETS', '에이전트가 등록한 호스트별 수집 상태와 탐지 결과입니다.', [
+      'suffix_html' => vg_help('자산 등급은 사람이 확정합니다 — 시스템 제안값은 초안이며 확정이 아닙니다. '
+          . '확정 해제는 자산 상세에서 한 대씩 합니다.'),
       'actions' => vg_capture(static function (): void {
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
@@ -219,7 +224,6 @@ vg_header('자산', 'assets');
       'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
       'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],
   ], 'assets'); ?>
-  <div class="sub">에이전트가 등록한 호스트 · 최신 수집 상태와 취약점 요약</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err !== null ? '오류 · ' . $err : null); ?>
 
@@ -280,7 +284,7 @@ vg_header('자산', 'assets');
   $headers = array_merge($headers, [
       // '노출' 열을 걷어내며 그 폭을 여기로 옮겼다(이 파일의 폭 배분 원칙: 남는 폭은 식별자가 갖는다).
       ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '22%'],
-      ['label' => '상태', 'key' => 'state', 'width' => '5.5rem'],
+      ['label' => '상태', 'key' => 'state', 'width' => '5.5rem', 'title' => $stateHelp],
       // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
       //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
       //   C/S/O 기호만 떠 있으면 뜻을 알 수 없어 열 이름에 한 줄 범례를 단다(어휘는 assetgrade.php 소유).
@@ -292,7 +296,9 @@ vg_header('자산', 'assets');
        *   자리인데, 소켓 개수는 그 판단에 못 쓴다. 3개든 30개든 위험은 **어느 범위로 열렸는가**
        *   (EXTERNAL/LAN/…)에서 갈리고 그 값은 여기 없다. 위험은 옆의 '심각도' 열이 말하고,
        *   범위별 목록은 호스트 상세의 런타임 탭이 답한다. */
-      ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '5%'],
+      // 값은 짧은 숫자지만 **열 이름**('패키지', 약 45px)이 줄바꿈 불가라 폭 기준은 그쪽이다 —
+      //   5%(1440px 에서 66px)면 칸 여백(.6rem×2 ≈ 19px)까지 못 담아 머리글이 '패키 / 지' 로 접혔다.
+      ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '4.5rem'],
       ['label' => '심각도', 'key' => 'sev', 'width' => '13%'],
       ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '12%', 'nowrap' => true],
   ]);
@@ -376,14 +382,14 @@ vg_header('자산', 'assets');
   <?php if ($canConfirm && $rows): ?>
     <div class="card mt-lg">
       <strong>선택 자산 등급 일괄 확정</strong>
-      <span class="why"> · N2SF 보안등급 <?= vg_h(vg_asset_grade_legend()) ?>.
-        시스템 제안값은 미리 채우지 않습니다 — 확정은 사람의 판정입니다.
-        확정 해제는 자산 상세에서 한 대씩 합니다.</span>
       <div class="card__body">
-        <div class="setting-form">
-          <label class="field" for="bulk-pick-all">
-            <span>이 페이지의 자산 전체 선택</span>
+        <?php /* 컨트롤이 넷뿐이라 세로 스택(.setting-form)은 화면 높이만 먹는다 — 한 줄로 흐르고
+                 좁아지면 접히는 .form-bar 를 쓴다. 전체 선택은 체크박스라 라벨과 같은 줄이어야
+                 해서 이 저장소에 이미 있는 label.inline 패턴을 그대로 따른다(connectors.php). */ ?>
+        <div class="form-bar">
+          <label class="inline" for="bulk-pick-all">
             <input id="bulk-pick-all" type="checkbox" data-checkall="host_ids[]">
+            <span>이 페이지 전체 선택</span>
           </label>
 
           <label class="field" for="bulk-criticality">중요도
@@ -404,15 +410,25 @@ vg_header('자산', 'assets');
             </select>
           </label>
 
-          <label class="field" for="bulk-grade-reason">확정 근거
+          <label class="field field--grow" for="bulk-grade-reason">확정 근거
             <input id="bulk-grade-reason" type="text" name="grade_reason" maxlength="255"
                    placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유">
           </label>
 
-          <div class="actions">
-            <button class="btn btn--primary" type="submit" data-loading="확정 중…">선택 자산 등급 확정</button>
-          </div>
+          <button class="btn btn--primary" type="submit" data-loading="확정 중…">선택 자산 등급 확정</button>
         </div>
+
+        <?php /* 판정 기준은 산문이 아니라 정의목록으로 준다 — 등급 어휘는 assetgrade.php 가 소유하고
+                 (같은 문자열을 화면마다 다시 적지 않는다), 나머지는 이 폼이 실제로 하는 일이다. */ ?>
+        <dl class="criteria">
+          <dt>보안등급</dt>
+          <dd>N2SF <?= vg_h(vg_asset_grade_legend()) ?> — 「정보공개법」 제9조 비공개 대상정보 해당 여부로 가릅니다.
+            등급 확정은 기관의 법적 처분이라 시스템이 대신하지 않습니다.</dd>
+          <dt>중요도</dt>
+          <dd>상 / 중 / 하 — 등급과 별개로 사람이 지정합니다. ‘변경 안 함’ 이면 지금 값을 그대로 둡니다.</dd>
+          <dt>확정 범위</dt>
+          <dd>지금 보고 있는 페이지에서 고른 자산만, 한 번에 500대까지. 자산마다 확정자·시각이 감사로그에 남습니다.</dd>
+        </dl>
       </div>
     </div>
   <?php endif; ?>
