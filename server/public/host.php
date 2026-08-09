@@ -70,50 +70,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!vg_has_role('admin')) {
                     throw new RuntimeException('자산 등급을 확정할 권한이 없습니다.');
                 }
+                // 검증·기록·감사로그는 assetgrade.php 가 한다 — 자산 목록의 일괄 확정과 **같은 함수**다.
+                //   이 폼은 중요도를 늘 함께 보내므로 빈 값이면 "미지정으로 지움"이 맞다(null 이 아니다).
                 $newGrade = (string) ($_POST['grade'] ?? '');
-                $newCrit  = (string) ($_POST['criticality'] ?? '');
-                if ($newGrade !== '' && !isset(VG_ASSET_GRADES[$newGrade])) {
-                    throw new RuntimeException('알 수 없는 등급입니다.');
-                }
-                if ($newCrit !== '' && !isset(VG_ASSET_CRITICALITY[$newCrit])) {
-                    throw new RuntimeException('알 수 없는 중요도입니다.');
-                }
-                $reason = mb_strimwidth(trim((string) ($_POST['grade_reason'] ?? '')), 0, 255, '');
-
-                $st = $pdo->prepare('SELECT fqdn FROM tb_host WHERE host_id = ? AND is_deleted = 0');
-                $st->execute([$postHostId]);
-                $fqdn = $st->fetchColumn();
-                if ($fqdn === false) {
-                    throw new RuntimeException('호스트를 찾을 수 없습니다.');
-                }
-
-                // 등급을 비우면 "확정 해제" — 승인 이력도 함께 지운다(확정이 없는데 확정자가
-                //   남아 있으면 감사 때 누가 무엇을 승인했는지 읽을 수 없다). 해제 사실 자체는
-                //   아래 감사로그가 남긴다.
-                $isClear = $newGrade === '';
-                $st = $pdo->prepare(
-                    'UPDATE tb_host
-                        SET criticality = ?, grade = ?, grade_reason = ?,
-                            approved_by = ?, approved_at = ' . ($isClear ? 'NULL' : 'NOW()') . '
-                      WHERE host_id = ? AND is_deleted = 0'
-                );
-                $st->execute([
-                    $newCrit !== '' ? $newCrit : null,
-                    $isClear ? null : $newGrade,
-                    ($isClear || $reason === '') ? null : $reason,
-                    $isClear ? null : ($me['id'] ?? null),
+                vg_asset_grade_confirm(
+                    $pdo,
                     $postHostId,
-                ]);
-
-                vg_log_activity(
-                    $pdo, 'HOST', $postHostId, 'host_set_grade',
-                    $isClear
-                        ? "자산 등급 확정 해제: $fqdn"
-                        : "자산 등급 확정: $fqdn → $newGrade"
-                           . ($newCrit !== '' ? ' (중요도 ' . VG_ASSET_CRITICALITY[$newCrit] . ')' : ''),
-                    ['grade' => $isClear ? null : $newGrade, 'criticality' => $newCrit ?: null, 'reason' => $reason]
+                    $newGrade,
+                    (string) ($_POST['criticality'] ?? ''),
+                    (string) ($_POST['grade_reason'] ?? ''),
+                    $me['id'] ?? null
                 );
-                $agentMsg = $isClear
+                $agentMsg = $newGrade === ''
                     ? '자산 등급 확정을 해제했습니다.'
                     : "자산 등급을 {$newGrade} 로 확정했습니다.";
             } elseif ($action === 'host_delete') {

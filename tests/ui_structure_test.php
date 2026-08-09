@@ -15,7 +15,10 @@ foreach ($phpFiles as $file) {
     $name = basename($file);
     $check(!preg_match('/<(?:table|dialog)\b/i', $source), "$name 직접 table/dialog 금지");
     $check(!preg_match('/\s(?:onclick|onsubmit)\s*=/i', $source), "$name 인라인 이벤트 금지");
-    $check(!str_contains($source, 'confirm('), "$name 브라우저 confirm 금지");
+    // 브라우저 confirm() 금지(확인은 app.js 의 data-confirm 모달이 한다). 문자열 포함으로만 보면
+    //   이름이 'confirm' 으로 끝나는 서버측 함수 호출(vg_asset_grade_confirm(...))까지 걸린다 —
+    //   앞 글자가 식별자 문자면 그 함수의 일부이므로 제외한다. window.confirm( 은 '.' 이 앞이라 그대로 걸린다.
+    $check(!preg_match('/(?<![\w$])confirm\s*\(/', $source), "$name 브라우저 confirm 금지");
     $check(!preg_match('/\sstyle="/i', $source), "$name 인라인 style 금지");
 }
 

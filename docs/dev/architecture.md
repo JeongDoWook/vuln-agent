@@ -114,8 +114,11 @@ REVIEW(사람이 확인)다.
 확정은 기관의 법적 처분이라 시스템이 대신할 수 없다. 그래서 사람이 확정한 값(`grade`·
 `grade_reason`·`approved_by`·`approved_at`)과 시스템 초안(`grade_suggested`·
 `grade_suggested_reason`)을 **다른 컬럼에** 담고, 제안 함수는 확정값을 절대 쓰지 않는다. 확정은
-`host.php` 의 관리자 폼이 사람 손으로만 한다. 여러 업무정보 등급이 한 시스템에 있으면 **가장 높은
-등급을 승계**한다(C > S > O).
+사람 손으로만 하며 — 호스트 상세(`host.php`)의 관리자 폼과 자산 목록(`assets.php`)의 일괄 확정이
+`vg_asset_grade_confirm()` **한 함수**를 공유한다(두 벌이면 화면마다 검증과 감사 증적이 갈린다).
+일괄 확정은 지금 보고 있는 페이지에서 고른 자산만 대상으로 하고 **확정만** 한다 — 해제는 되돌리기
+어려워 상세에서 한 대씩이다. 여러 업무정보 등급이 한 시스템에 있으면 **가장 높은 등급을 승계**한다
+(C > S > O).
 
 **패키지 의존성 그래프**는 SBOM(CycloneDX) `dependencies` 와 pom.xml 최상위 `<dependencies>` 에서
 부모→자식 엣지를 뽑아 `tb_package_dependency` 에 넣는다(`src/ingest_store.php`). 엣지 유일성은
