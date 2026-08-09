@@ -15,6 +15,19 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 
+/**
+ * (호스트, 컨테이너, CVE, 패키지) 한 조합의 상세(= finding_history.php) URL.
+ *   findings.php·host.php 가 각자 같은 문자열을 조립하고 있던 걸 한 곳으로 모은다(DRY).
+ *   container_id 는 0 이 "호스트 자신" 이라 null 도 0 으로 눕힌다(tb_finding.container_id 규약).
+ *   반환값은 **이스케이프 전 URL** 이다 — HTML 속성에 넣을 땐 호출부가 vg_h() 로 감싼다.
+ */
+function vg_finding_history_url(int $hostId, ?int $containerId, string $cveId, string $packageName): string {
+    return '/finding_history.php?id=' . $hostId
+         . '&cid=' . (int) ($containerId ?? 0)
+         . '&cve=' . urlencode($cveId)
+         . '&pkg=' . urlencode($packageName);
+}
+
 /** container_id → 그 컨테이너의 이름(cid). 0 이하(호스트 자신)면 null. */
 function vg__finding_history_resolve_container_cid(PDO $pdo, int $containerId): ?string {
     if ($containerId <= 0) {
@@ -77,8 +90,10 @@ function vg_finding_history_count(PDO $pdo, int $hostId): int {
 }
 
 /**
+ * container_id 는 **그 스캔에서의** 컨테이너 PK 다(스캔마다 값이 달라진다 — 파일 상단 주석).
+ *   호출부가 그 스캔의 판정 상세를 다시 집어오려면 이 값이 필요하다(vg_finding_current_detail).
  * @return array<int, array{
- *   scan_id: int, collected_at: ?string, status: string,
+ *   scan_id: int, collected_at: ?string, container_id: int, status: string,
  *   severity: ?string, version: ?string, reason: ?string
  * }>
  */
@@ -133,6 +148,7 @@ function vg_finding_history(PDO $pdo, int $hostId, int $containerId, string $cve
         $rows[] = [
             'scan_id'      => (int) $r['scan_id'],
             'collected_at' => $r['collected_at'],
+            'container_id' => $resolved ? (int) ($r['resolved_container_id'] ?? 0) : ($containerId > 0 ? $containerId : 0),
             'status'       => $status,
             'severity'     => $severity,
             'version'      => $version,
@@ -163,4 +179,29 @@ function vg_finding_history_summary(PDO $pdo, int $hostId, int $containerId, str
         'foundCount'   => (int) ($r['found_count'] ?? 0),
         'firstFoundAt' => $r['first_found_at'] ?? null,
     ];
+}
+
+/**
+ * "현재 상태" 카드에 쓸 판정 상세 한 건 — findings.php 목록이 보여주는 값(CVSS·EPSS·KEV·
+ *   노출 상태·수정 버전·판정 출처)을 상세에서도 볼 수 있게 한다. 대상 스캔·컨테이너는 이미
+ *   vg_finding_history() 가 골라 준 최신 1행이라, 여기선 그 한 행만 조인해 집어온다(N+1 아님).
+ *   해당 스캔에 finding 이 없으면(억제·해당없음) null — 없는 값을 옛 스캔에서 끌어오지 않는다.
+ * @return array<string, mixed>|null
+ */
+function vg_finding_current_detail(PDO $pdo, int $scanId, int $containerId, string $cveId, string $packageName): ?array {
+    $sql = "SELECT f.severity, f.installed_version, f.runtime_status, f.exposure_scope,
+                   f.cvss, f.in_kev, f.no_fix, f.needs_restart,
+                   cv.epss, cv.epss_percentile, cv.ref_urls_json,
+                   fe.match_source, fe.fixed_version AS evidence_fixed_version,
+                   " . VG_FIXED_VERSION_SUBQ . "
+              FROM tb_finding f
+              LEFT JOIN tb_cve cv ON cv.cve_id = f.cve_id
+              LEFT JOIN tb_finding_evidence fe ON fe.finding_id = f.finding_id
+             WHERE f.scan_id = ? AND f.container_id = ?
+               AND f.cve_id = ? AND f.package_name = ? AND f.is_deleted = 0
+             LIMIT 1";
+    $st = $pdo->prepare($sql);
+    $st->execute([$scanId, $containerId, $cveId, $packageName]);
+    $row = $st->fetch();
+    return $row !== false ? $row : null;
 }

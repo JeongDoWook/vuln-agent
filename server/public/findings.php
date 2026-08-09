@@ -13,6 +13,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
 require_once __DIR__ . '/../src/remediation_note.php';   // 미조치 사유 + 승인자(최소 필드)
+require_once __DIR__ . '/../src/finding_history.php';    // vg_finding_history_url — 행별 상세 진입로
 vg_require_menu('findings');
 
 $notes = [];   // 이 페이지 행들의 미조치 사유 메모 (자연키 → 메모)
@@ -372,6 +373,12 @@ vg_header('탐지 결과', 'findings');
               // 표가 화면을 넘겨서 정작 제일 중요한 '조치' 가 밖으로 밀려난다.
               // 요약은 일반적인 CVE 설명이라 상세 페이지에 있고, 근거는 이 제품만의 판정 이유다.
               // 마우스를 올리면 title 로 요약을 볼 수 있게만 남긴다.
+              // 이 칸에 링크가 둘이다 — 둘의 대상이 다르므로 라벨로 구분한다.
+              //   CVE-XXXX(=취약점 자체의 일반 설명, cve.php) / '이 자산 판정'(=이 호스트·패키지에서
+              //   왜 그렇게 판정됐고 스캔마다 어땠는지, finding_history.php).
+              //   진입로를 이 칸의 둘째 줄에 두는 이유: 행 높이는 '근거' 칸(clamp-2 = 두 줄)이
+              //   결정하는데(아래 rationale 주석), CVE 칸은 보통 한 줄이라 여기 한 줄을 더해도
+              //   행이 안 높아진다. '조치' 칸에 넣으면 조치 알약(clamp-2)이 이미 두 줄일 때 세 줄이 된다.
               'cve_id' => function ($r) {
                   $t = $r['summary'] ? ' title="' . vg_h($r['summary']) . '"' : '';
                   $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '"' . $t . '>'
@@ -383,6 +390,12 @@ vg_header('탐지 결과', 'findings');
                   if (!empty($r['no_fix'])) {
                       $html .= ' <span class="why" title="벤더 수정본이 없어 패치가 존재하지 않는다">조치 불가</span>';
                   }
+                  $href = vg_finding_history_url(
+                      (int) $r['host_id'], $r['container_id'] === null ? 0 : (int) $r['container_id'],
+                      (string) $r['cve_id'], (string) $r['package_name']
+                  );
+                  $html .= '<div class="why"><a href="' . vg_h($href) . '"'
+                         . ' title="이 자산에서의 판정 근거 전문·위험도·수정 버전과 스캔별 이력">이 자산 판정 →</a></div>';
                   return $html;
               },
               // 패키지 — 이름 + 설치 버전(아래줄).
@@ -420,6 +433,9 @@ vg_header('탐지 결과', 'findings');
               //   "설치 → 고침" 을 다 넣으니 알약이 세 줄이 되어 행 높이를 결정해 버렸다.
               // 조치 + 사람이 남긴 "미조치 사유" 표식. 사유 전문·승인자·승인일시는 이력 화면에 있다
               //   (좁은 칸에 사유 문장을 그대로 풀면 행 높이가 다시 근거 칸처럼 튄다 — title 로만 준다).
+              //   예전엔 이 표식이 상세로 가는 링크였는데, 이제 CVE 칸의 '이 자산 판정 →' 가 모든 행에서
+              //   같은 곳으로 간다 — 한 행에 같은 대상 링크가 둘이면 어느 쪽을 눌러야 하는지 헷갈린다.
+              //   그래서 여기는 링크를 떼고 표식(뱃지)으로만 남긴다.
               'fix'       => function ($r) use ($notes) {
                   $html = vg_fix_cell($r['evidence_fixed_version'] ?? ($r['fixed_version'] ?? null), $r['ref_urls_json'] ?? null);
                   $note = $notes[vg_remediation_note_key(
@@ -427,14 +443,11 @@ vg_header('탐지 결과', 'findings');
                       (string) $r['cve_id'], (string) $r['package_name']
                   )] ?? null;
                   if ($note !== null) {
-                      $href = '/finding_history.php?id=' . (int) $r['host_id']
-                            . '&cid=' . (int) ($r['container_id'] ?? 0)
-                            . '&cve=' . urlencode((string) $r['cve_id'])
-                            . '&pkg=' . urlencode((string) $r['package_name']);
                       $title = '미조치 사유: ' . (string) $note['reason']
                              . ' (승인 ' . (string) ($note['approved_by_name'] ?? '-')
-                             . ' · ' . (string) ($note['approved_at'] ?? '-') . ')';
-                      $html .= ' <a class="badge tone-info" href="' . vg_h($href) . '" title="' . vg_h($title) . '">미조치 사유</a>';
+                             . ' · ' . (string) ($note['approved_at'] ?? '-') . ')'
+                             . ' — 전문은 CVE 칸의 "이 자산 판정" 에서';
+                      $html .= ' ' . vg_badge('미조치 사유', 'info', $title);
                   }
                   return $html;
               },
