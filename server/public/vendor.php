@@ -273,15 +273,27 @@ vg_header('판정 근거', 'vendor');
   vg_toolbar($toolbar);
 
   $hasFilter = $q !== '' || $rel !== '' || $src !== '';
+
+  // 소스 칸은 탭으로 한 소스를 고르면 **모든 행이 같은 값**이다 — 탭이 이미 굵게 말하고 있는 걸
+  //   행마다 다시 찍는 셈이라 그때는 뺀다. 폭은 남은 '상태' 칸이 가져간다.
+  $showSrc = $src === '';
+  $srcCell = function ($r) {
+      $d = VG_VENDOR_SRC[$r['src']] ?? null;
+      return '<span class="pill" title="' . vg_h($d !== null ? $d['label'] . ' — ' . $d['desc'] : '')
+           . '">' . vg_h((string) $r['src']) . '</span>';
+  };
+
   vg_table(
-      [
-          ['label' => '소스', 'width' => '11%'],
-          ['label' => '벤더/릴리스', 'width' => '12%'],
-          ['label' => '패키지', 'width' => '15%', 'class' => 'col-id'],
-          ['label' => 'CVE', 'width' => '14%', 'nowrap' => true],
-          ['label' => '고친 버전', 'width' => '17%'],
-          ['label' => '상태'],
-      ],
+      array_merge(
+          $showSrc ? [['label' => '소스', 'width' => '11%']] : [],
+          [
+              ['label' => '벤더/릴리스', 'width' => '12%'],
+              ['label' => '패키지', 'width' => '15%', 'class' => 'col-id'],
+              ['label' => 'CVE', 'width' => '14%', 'nowrap' => true],
+              ['label' => '고친 버전', 'width' => '17%'],
+              ['label' => '상태'],
+          ]
+      ),
       $rows,
       [
           'empty' => $hasFilter
@@ -297,21 +309,16 @@ vg_header('판정 근거', 'vendor');
                   'hint'  => '벤더 판정 커넥터 5종(데비안 트래커·RHEL OVAL·Red Hat 미수정·우분투 OVAL·커널 CNA)이 한 번은 돌아야 합니다.',
                   'cta'   => vg_connectors_empty_cta(),
               ]),
-          'cell' => [
-              0 => function ($r) {
-                  $d = VG_VENDOR_SRC[$r['src']] ?? null;
-                  return '<span class="pill" title="' . vg_h($d !== null ? $d['label'] . ' — ' . $d['desc'] : '')
-                       . '">' . vg_h((string) $r['src']) . '</span>';
-              },
-              1 => fn($r) => vg_h((string) $r['vendor']) . '<span class="why">/</span>' . vg_h((string) $r['rel']),
+          'cell' => array_merge($showSrc ? [$srcCell] : [], [
+              fn($r) => vg_h((string) $r['vendor']) . '<span class="why">/</span>' . vg_h((string) $r['rel']),
               // 패키지명 → 취약점 현황에서 그 패키지만 걸러 본다(packages.php 와 같은 연결).
-              2 => fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['pkg']) . '">'
+              fn($r) => '<a href="/findings.php?q=' . urlencode((string) $r['pkg']) . '">'
                              . vg_trunc((string) $r['pkg'], 32) . '</a>',
               // cve.php 가 '/^CVE-\d{4}-\d+$/i' 아니면 오류로 튕긴다(정상 동작). 데비안 트래커의
               //   TEMP-<날짜>-<해시> 같은 정식 CVE 미배정 식별자는 링크 없이 텍스트로만 보여준다.
               //   이 컬럼은 5개 소스가 섞인 결과라, debtracker 가 아닌 소스에서 비정형 식별자가
               //   와도 "데비안" 이라고 단정하지 않도록 소스별로 문구를 나눈다.
-              3 => function ($r) {
+              function ($r) {
                   // 커넥터가 넣은 원본에 앞뒤 공백·개행이 섞이면 앵커 매칭이 실패해 멀쩡한 CVE 도
                   //   임시 식별자 취급을 받는다 — 판정·출력 모두 trim() 한 값을 쓴다.
                   $cveId = trim((string) $r['cve_id']);
@@ -346,7 +353,7 @@ vg_header('판정 근거', 'vendor');
               },
               // 고친 버전. rhunfixed 는 **고친 버전이 없는 게 핵심**이라(수정본 자체가 없다)
               //   그 자리에 조치 상태를 뱃지로 둔다 — 이게 "조치 불가" 의 근거다.
-              4 => function ($r) {
+              function ($r) {
                   if ($r['src'] === 'rhunfixed') {
                       $st = (string) $r['state'];
                       return vg_badge($st, VG_VENDOR_FIXSTATE_TONE[$st] ?? 'warn', '벤더 조치 상태 · 수정본 없음');
@@ -366,7 +373,7 @@ vg_header('판정 근거', 'vendor');
                   return '<span class="pill"' . $tipAttr . '>' . vg_h((string) $r['fixed']) . '</span>';
               },
               // 상태 — 소스마다 답의 성격이 다르다. 억지로 한 어휘로 접지 않고 각자의 말을 보여준다.
-              5 => function ($r) {
+              function ($r) {
                   $state = (string) ($r['state'] ?? '');
                   $note  = (string) ($r['note'] ?? '');
                   switch ($r['src']) {
@@ -414,7 +421,7 @@ vg_header('판정 근거', 'vendor');
                           return $out !== '' ? $out : '<span class="why">–</span>';
                   }
               },
-          ],
+          ]),
       ]
   );
   if ($rows) { vg_page_nav($total, $perPage, $page); }

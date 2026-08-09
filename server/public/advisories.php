@@ -119,13 +119,16 @@ try {
 
 vg_header('보안 공지', 'advisories');
 ?>
-  <?php vg_page_title('보안 공지', 'KISA', '국내 보안공지와 관련 CVE를 확인합니다.'); ?>
+  <?php // 건수는 다른 목록 화면과 같은 자리에 둔다 — 여기만 없어서 페이지네이션까지 내려가야 보였다. ?>
+  <?php vg_page_title('보안 공지', 'KISA', '국내 보안공지와 관련 CVE를 확인합니다.', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php vg_toolbar([
-      ['type' => 'search', 'name' => 'q', 'placeholder' => '제목 또는 CVE 검색', 'value' => $q],
+      // 실제 검색 범위는 제목·본문·CVE 셋 다인데 placeholder 가 둘만 말해서, 빈 결과 안내가
+      //   "본문도 검색합니다" 를 뒤늦게 알려주고 있었다 — 입력칸에서 먼저 밝힌다.
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '제목·본문·CVE 검색', 'value' => $q],
   ]); ?>
 
   <?php
@@ -142,7 +145,7 @@ vg_header('보안 공지', 'advisories');
               ? [
                   'icon'  => '🔍',
                   'title' => '조건에 맞는 공지가 없습니다.',
-                  'hint'  => '제목·CVE·본문을 모두 검색합니다. 다른 검색어를 써 보세요.',
+                  'hint'  => '다른 검색어를 써 보세요.',
                   'cta'   => ['href' => '/advisories.php', 'label' => '검색 초기화'],
               ]
               : array_filter([

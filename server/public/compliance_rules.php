@@ -128,7 +128,10 @@ vg_header('보안 설정', 'compliance');
                   return vg_badge($s, vg_sev_tone($s));
               },
               3 => fn($r) => vg_ssg_refs_line((string) ($r['refs_json'] ?? '')),
-              4 => fn($r) => vg_trunc((string) $r['rationale'], 96),
+              // SSG 원문 근거는 XHTML 조각이라 <tt>/<br> 같은 태그가 섞여 있다. 그대로 이스케이프하면
+              //   화면에 "The <tt>/etc/sysconfig/sshd</tt> file …" 처럼 태그가 글자로 보인다(실측).
+              //   태그를 먼저 걷어내고 자른다 — vg_trunc 가 남은 텍스트를 이스케이프한다.
+              4 => fn($r) => vg_trunc(strip_tags((string) $r['rationale']), 96),
           ],
       ]
   );

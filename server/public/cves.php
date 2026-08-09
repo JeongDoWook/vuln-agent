@@ -180,13 +180,20 @@ vg_header('CVE', 'cves');
       ]);
   vg_table(
       [
-          ['label' => 'CVE', 'width' => '16%', 'nowrap' => true],
+          // nowrap 이 아니다 — CVE-ID 뒤에 KEV 뱃지가 붙는데 nowrap 이면 한 줄을 넘겨 말줄임에
+          //   먹혀 뱃지가 통째로 사라진다(실측: 1440px 에서 "CVE-2023-4911 …" 로만 보였다).
+          //   findings.php 의 CVE 칸이 nowrap 을 안 쓰는 것과 같은 이유.
+          ['label' => 'CVE', 'width' => '16%'],
           // 심각도 뱃지(CRITICAL 69px)는 줄바꿈이 안 되는 고정 크기라 % 로 주면 표가 좁아질 때
           //   덮는다 — 870px 에서 45.8px 를 CVSS 열 위에 그렸다. 값 69 + 칸 여백 32 = 101 → 6.5rem.
           ['label' => '심각도', 'width' => '6.5rem'],
-          ['label' => 'CVSS', 'align' => 'right', 'width' => '6%'],
-          ['label' => 'EPSS', 'align' => 'right', 'width' => '10%'],
-          ['label' => '공개일', 'width' => '9%', 'nowrap' => true],
+          // CVSS(얼마나 심한가)와 EPSS(실제로 악용될 확률)는 같이 봐야 뜻이 생긴다 — 칸을 둘로
+          //   나눠 두면 좁은 폭에서 각각 줄바꿈만 하고 요약 칸을 밀어냈다. findings.php 의
+          //   '위험도' 칸과 같은 형태로 합친다(같은 뜻은 화면마다 같은 모양으로).
+          ['label' => '위험도', 'align' => 'right', 'width' => '13%'],
+          // 날짜는 길이가 고정(YYYY-MM-DD)이라 % 가 아니라 rem 으로 준다 — % 로 두니 요약 칸이
+          //   넓어진 만큼 여기가 줄어 "2023-10-…" 로 잘렸다(실측 1440px).
+          ['label' => '공개일', 'width' => '6.5rem', 'nowrap' => true],
           ['label' => '요약'],
       ],
       $rows,
@@ -207,12 +214,18 @@ vg_header('CVE', 'cves');
                   if ($sev === '') { return '<span class="why">–</span>'; }
                   return vg_sev_badge(strtoupper($sev));   // 톤 매핑은 대문자 키를 받는다
               },
-              2 => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '<span class="why">–</span>',
-              3 => fn($r) => vg_epss_cell($r['epss'], $r['epss_percentile']),
-              4 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
+              2 => function ($r) {
+                  $cvss = $r['cvss'] !== null
+                      ? 'CVSS <strong>' . vg_h((string) $r['cvss']) . '</strong>'
+                      : '<span class="why">CVSS –</span>';
+                  // 백분위("상위 N%")는 좁은 칸에서 세 줄로 접혀 행 높이를 혼자 끌어올린다 —
+                  //   findings.php 위험도 칸과 같이 목록에선 빼고 상세(cve.php)에 남긴다.
+                  return $cvss . '<div class="why">EPSS ' . vg_epss_cell($r['epss'], null) . '</div>';
+              },
+              3 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
               // 요약은 이 표에서 유일하게 여러 줄이 되는 칸이다 — 기본은 두 줄까지만 보이고(clamp-2)
               //   잘린 뒷부분은 title 에 그대로 남는다(findings.php 의 근거 칸과 같은 규칙).
-              5 => function ($r) {
+              4 => function ($r) {
                   $s = (string) ($r['summary'] ?? '');
                   if ($s === '') { return '<span class="why">–</span>'; }
                   return '<div class="clamp-2" title="' . vg_h($s) . '">' . vg_h($s) . '</div>';

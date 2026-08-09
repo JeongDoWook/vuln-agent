@@ -53,8 +53,16 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
 ?>
   <?php vg_page_title(
       '컴플라이언스 매핑', 'COMPLIANCE',
-      'KISA ISMS-P · ISO 27001 공통 통제항목을 vuln-agent 가 이미 수집한 데이터로 자동 판정합니다.'
+      'ISMS-P · ISO 27001 통제를 수집 데이터로 준수/미준수까지 판정합니다. 판정 시각 ' . $judgedAt
   ); ?>
+  <?php
+  // 이름이 비슷해 헷갈리는 두 화면을 나란히 세운다 — 여기는 **판정**(준수/미준수/판정 불가),
+  //   통제 기준 매핑은 같은 CCE 점검 결과를 기준별 통제로 **묶어 보기만** 한다(판정 안 함).
+  vg_subtabs([
+      'compliance'      => ['label' => '컴플라이언스 매핑', 'href' => '/compliance.php'],
+      'control_mapping' => ['label' => '통제 기준 매핑',   'href' => '/control_mapping.php'],
+  ], 'compliance');
+  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -86,10 +94,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sPatch['label'], $sPatch['tone']) ?>
       </div>
+      <?php // 건수·판정 시각은 위 KPI 카드와 페이지 부제가 이미 말한다 — 여기는 "무엇을 셌는가"만. ?>
       <p class="why">패치가 있는 CRITICAL·HIGH 중 SLA 초과분(KEV <?= (int) $policy['kev'] ?>일 ·
-        CRITICAL <?= (int) $policy['crit'] ?>일 · HIGH <?= (int) $policy['high'] ?>일).
-        위반 <?= number_format($patch['total']) ?>건 ·
-        판정 불가 <?= number_format($patch['unjudged']) ?>건 · 판정 시각 <?= vg_h($judgedAt) ?></p>
+        CRITICAL <?= (int) $policy['crit'] ?>일 · HIGH <?= (int) $policy['high'] ?>일)</p>
       <?php
       // 판정 불가 사유를 그대로 노출한다 — "위반 0건"이 왜 준수를 뜻하지 않는지 화면에서 설명하지
       //   않으면, 근거가 모자란 0건이 다시 준수처럼 읽힌다(허위 안심).
@@ -108,7 +115,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
           }
           vg_alert([
               'type'  => 'warn',
-              'title' => '판정 불가 ' . number_format($patch['unjudged']) . '건 — 위반 0건이 곧 준수를 뜻하지 않습니다',
+              // 예전 문구는 "위반 0건이 곧 준수를 뜻하지 않습니다" 였는데, 위반이 3건일 때도 그대로
+              //   떠서 화면과 어긋났다(실측). 위반 건수와 무관하게 참인 말로 바꾼다.
+              'title' => '판정 불가 ' . number_format($patch['unjudged']) . '건 — 아래 위반 건수만으로는 준수를 판단할 수 없습니다',
               'hints' => $hints,
           ]);
       endif; ?>
@@ -155,8 +164,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         <?= vg_badge($sAsset['label'], $sAsset['tone']) ?>
       </div>
       <p class="why">등록 자산 <?= number_format($asset['totalHosts']) ?>대 중 오프라인·수집없음이거나
-        OS·IP 가 누락된 자산. 위반 <?= number_format($asset['total']) ?>건 · 판정 불가 <?= number_format($asset['unjudged']) ?>건 ·
-        판정 시각 <?= vg_h($judgedAt) ?></p>
+        OS·IP 가 누락된 자산</p>
       <?php if ($asset['unjudged'] > 0):
           $hints = [];
           foreach ($asset['unjudged_rows'] as $u) { $hints[] = $u['fqdn'] . ' — ' . $u['reason']; }
@@ -199,8 +207,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sSec['label'], $sSec['tone']) ?>
       </div>
-      <p class="why">최신 스캔의 SCAP "설정 취약" 건수. 위반 <?= number_format($secconfig['total']) ?>건 ·
-        판정 시각 <?= vg_h($judgedAt) ?></p>
+      <p class="why">최신 스캔의 SCAP "설정 취약" 건수</p>
       <?php if ($secconfig['violations']):
           $shown = array_slice($secconfig['violations'], 0, $previewLimit);
       ?>
