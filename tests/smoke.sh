@@ -271,6 +271,9 @@ run_phpunit "distro_test.php" "distro" "distro 단위 테스트 (출처·커널 
 # 수집 주기가 길어도 10초 poll 이 살아 있으면 자산 연결 상태는 정상이어야 한다.
 run_phpunit "asset_state_test.php" "asset_state" "자산 연결 상태 단위 테스트 (poll·수집 주기 분리)" "자산 연결 상태 단위 테스트"
 
+# 자산 등급 초안은 scope·역할별 근거를 과장하지 않고 사람 확정값과 격리해야 한다.
+run_phpunit "assetgrade_test.php" "assetgrade" "자산 등급 초안 분류 단위 테스트 (scope·역할·근거 격리)"
+
 printf "\n[file_to_pkg_cache]\n"
 if bash "$ROOT/tests/file_to_pkg_cache_test.sh"; then
   ok "런타임 파일→패키지 조회를 서브셸 간 1회로 캐시"

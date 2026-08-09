@@ -63,22 +63,28 @@ final class VgAssetGradeHistoryFakeStatement extends PDOStatement
         }
         return true;
     }
-    public function fetch(int $mode = PDO::FETCH_DEFAULT, int $cursorOrientation = PDO::FETCH_ORI_NEXT, int $cursorOffset = 0): mixed
-    {
-        if (str_contains($this->sql, 'FROM tb_exposure') && str_contains($this->sql, 'proc IN')) {
-            return $this->pdo->logListener ? ['proc' => 'rsyslogd', 'port' => 514] : false;
-        }
-        return false;
-    }
     public function fetchColumn(int $column = 0): mixed
     {
-        if (str_contains($this->sql, 'FROM tb_process')) {
-            return $this->pdo->suggestion === 'S' ? 'restic' : false;
+        if (str_contains($this->sql, 'listener_evidence')) {
+            return $this->pdo->logListener ? 1 : 0;
         }
         if (str_contains($this->sql, "scope = 'EXTERNAL'")) {
             return $this->pdo->suggestion === 'O' ? 1 : 0;
         }
         return false;
+    }
+    public function fetchAll(int $mode = PDO::FETCH_DEFAULT, mixed ...$args): array
+    {
+        if (str_contains($this->sql, 'FROM tb_process')) {
+            return $this->pdo->suggestion === 'S' ? ['restic'] : [];
+        }
+        if (str_contains($this->sql, 'FROM tb_exposure')) {
+            return $this->pdo->logListener
+                ? [['proc' => 'rsyslogd', 'proto' => 'tcp', 'bind_addr' => '10.0.0.1',
+                    'port' => 514, 'scope' => 'LAN']]
+                : [];
+        }
+        return [];
     }
 }
 
@@ -118,8 +124,9 @@ $eq('지연 도착한 과거 관찰은 최신 제안을 되돌리지 않음', $p
 $source = file_get_contents(__DIR__ . '/../server/src/assetgrade_history.php');
 $eq('지연 replay가 최신값을 되돌리지 않는 guard', str_contains($source, 'newer.effective_at'), true);
 $eq('중복 외 DB 오류를 숨기지 않음', str_contains($source, 'ON DUPLICATE KEY UPDATE'), true);
-$eq('동일 결과 replay의 마지막 관찰 시각 갱신', str_contains($source, 'last_observed_at = GREATEST'), true);
-$eq('판정불가 관찰은 최신 유효 제안을 차단하지 않음', str_contains($source, 'evaluation_status <>'), true);
+// 제안 반영은 확정값(grade/grade_reason/approved_*)을 절대 쓰지 않는다 — 확정은 confirm() 전용.
+preg_match('/UPDATE tb_host SET (.*?)\n/s', $source, $setClause);
+$eq('제안 반영은 제안 컬럼만 쓴다', trim($setClause[1] ?? ''), 'grade_suggested = ?, grade_suggested_reason = ?');
 $eq('동일 스캔·결과 replay 식별키', str_contains(file_get_contents(__DIR__ . '/../db/migrations/20260809184905_asset_grade_suggestion_history.sql'), '(host_id, scan_id, result_fingerprint)'), true);
 
 $pdo->inTx = false;
