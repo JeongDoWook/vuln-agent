@@ -63,7 +63,7 @@ sudo bash install-agent.sh
 |---|---|---|
 | 전송 수단(`curl` 또는 `wget`) 없음 | **중단**. 설치기는 대상 서버에 아무것도 설치하지 않는다 | — |
 | 중앙이 **자체서명**(Caddy `tls internal`) | 스크립트 옆의 `caddy-root.crt` 를 신뢰 저장소에 등록 | `--ca-file PATH` |
-| 도메인이 **공인 IP** 로 풀려 내부망에서 못 붙음(헤어핀 NAT) | 중앙의 내부 IP 를 묻고 `/etc/hosts` 에 이름을 묶음 | `--host-ip 10.3.142.200` |
+| 도메인이 **공인 IP** 로 풀려 내부망에서 못 붙음(헤어핀 NAT) | 중앙의 내부 IP 를 묻고 `/etc/hosts` 에 이름을 묶음 | `--host-ip 10.0.0.200` |
 
 ### 대상 서버 요구사항 — 아무것도 설치하지 않는다
 
@@ -193,7 +193,7 @@ root 소유 폴더 한 곳에만 남는다.
 master 처럼 **노드들에 SSH 로 닿는 곳**에서 한 줄이면 된다:
 
 ```bash
-bash deploy/agent_push.sh 10.3.142.100 10.3.142.101 10.3.142.102
+bash deploy/agent_push.sh 10.0.0.100 10.0.0.101 10.0.0.102
 ```
 
 각 노드의 `<prefix>/bin/vuln-inventory-agent.sh` 를 덮고 **즉시 1회 수집·전송해 결과(HTTP)까지
@@ -256,8 +256,8 @@ poll 루프가 없는 노드는 웹에서 주기를 바꿔도 반영할 방법�
 master 처럼 **노드들에 SSH 로 닿는 곳**에서 CLI 로 바꾼다:
 
 ```bash
-bash deploy/agent_schedule.sh daily 10.3.142.100 10.3.142.101        # 셋 다 daily
-bash deploy/agent_schedule.sh hourly 10.3.142.100 10.3.142.101='*:0/30'  # 노드별로 다르게
+bash deploy/agent_schedule.sh daily 10.0.0.100 10.0.0.101 10.0.0.102   # 셋 다 daily
+bash deploy/agent_schedule.sh hourly 10.0.0.100 10.0.0.101='*:0/30'  # 노드별로 다르게
 ```
 
 첫 인자가 기본 주기, 뒤는 노드 목록이다. `<노드>=<주기>` 로 주면 그 노드만 개별 주기를 쓴다.

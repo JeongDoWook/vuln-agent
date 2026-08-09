@@ -28,10 +28,10 @@
 #   - cron 폴백 노드는 hourly/daily 만 매핑한다(커스텀 OnCalendar 는 cron 표현 불가 → 건너뜀).
 #
 # 사용:
-#   bash deploy/agent_schedule.sh daily 10.3.142.100 10.3.142.101      # 셋 다 daily
-#   bash deploy/agent_schedule.sh hourly 10.3.142.100 10.3.142.101='*:0/30'  # 노드별 주기
-#   AGENT_SSH_USER=pi bash deploy/agent_schedule.sh daily 10.3.142.103
-#   AGENT_PREFIX=/apps/vulnagent bash deploy/agent_schedule.sh hourly 10.3.142.200
+#   bash deploy/agent_schedule.sh daily 10.0.0.100 10.0.0.101 10.0.0.102   # 셋 다 daily
+#   bash deploy/agent_schedule.sh hourly 10.0.0.100 10.0.0.101='*:0/30'  # 노드별 주기
+#   AGENT_SSH_USER=pi bash deploy/agent_schedule.sh daily 10.0.0.103
+#   AGENT_PREFIX=/apps/vulnagent bash deploy/agent_schedule.sh hourly 10.0.0.200
 #
 #   주기 값: 'hourly' · 'daily' · systemd OnCalendar('*:0/30'=30분마다 등).
 #   노드별로 다르게 하려면 <노드>=<주기> 로 준다. 그냥 <노드> 만 주면 첫 인자(기본 주기)를 쓴다.
