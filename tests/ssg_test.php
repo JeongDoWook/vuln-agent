@@ -79,7 +79,18 @@ $eq('SSH 빈 패스워드',   $map['CCE-SSH-EMPTYPW'] ?? null, 'sshd_disable_emp
 $eq('passwd 파일 권한',  $map['CCE-FILE-PASSWD'] ?? null, 'file_permissions_etc_passwd');
 $eq('UID 0 중복',        $map['CCE-ACC-UID0']    ?? null, 'accounts_no_uid_except_zero');
 $eq('SELinux 상태',      $map['CCE-SEC-MODULE']  ?? null, 'selinux_state');
-$eq('매핑 개수(27개)',   count($map), 27);
+// #519 에서 전수 대조로 추가한 4개.
+$eq('시간 동기화',       $map['CCE-TIME-SYNC']         ?? null, 'chronyd_sync_clock');
+$eq('원격 로그 전송',    $map['CCE-LOG-REMOTE']        ?? null, 'rsyslog_remote_loghost');
+$eq('디스크 암호화',     $map['CCE-CRYPTO-DISK']       ?? null, 'encrypt_partitions');
+$eq('SSH 취약 알고리즘', $map['CCE-CRYPTO-SSH-CIPHER'] ?? null, 'sshd_use_strong_ciphers');
+// 대응 룰이 **없어서** 자체 기준으로 남기기로 한 항목들. 나중에 "비슷해 보인다"는 이유로
+//   끼워 넣는 것을 막는다 — 근거는 cce.php 의 vg_cce_ssg_map() 주석에 남겼다.
+foreach (['CCE-TIME-OFFSET', 'CCE-LOG-RETENTION', 'CCE-CRYPTO-KCMVP', 'CCE-SSH-PWAUTH',
+          'CCE-FILE-HOSTS', 'CCE-FILE-SERVICES', 'CCE-FILE-SYSLOG', 'CCE-FILE-XINETD'] as $c) {
+    $eq('자체 기준 유지: ' . $c, isset($map[$c]), false);
+}
+$eq('매핑 개수(31개)',   count($map), 31);
 
 if ($fail === 0) {
     echo "ssg: 모든 검사 통과\n";
