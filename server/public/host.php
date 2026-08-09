@@ -565,7 +565,7 @@ function vg_host_load_accounts_tab(PDO $pdo, int $scanId, int $perPage, int $off
     } elseif ($filter === 'stale') {
         // 미로그인 = 로그인 이력이 없거나 임계일을 넘긴 것. 시스템 계정은 애초에 로그인하지 않는다.
         $where .= ' AND is_system = 0 AND (never_logged_in = 1 OR last_login_at < DATE_SUB(NOW(), INTERVAL ? DAY))';
-        $params[] = VG_ACCOUNT_STALE_LOGIN_DAYS;
+        $params[] = vg_account_stale_login_days();
     }
 
     $st = $pdo->prepare("SELECT COUNT(*) FROM tb_host_account WHERE $where");
@@ -1353,7 +1353,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
              'human'  => '사람 계정(시스템 제외)',
              'sudo'   => 'sudo 권한 보유',
              'locked' => '잠긴 계정',
-             'stale'  => VG_ACCOUNT_STALE_LOGIN_DAYS . '일 이상 미로그인',
+             'stale'  => vg_account_stale_login_days() . '일 이상 미로그인',
          ]],
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
         ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
@@ -1403,8 +1403,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                       $ts = strtotime((string) $a['last_login_at']);
                       $age = $ts ? (int) floor((time() - $ts) / 86400) : null;
                       $txt = vg_h(substr((string) $a['last_login_at'], 0, 16));
-                      return $age !== null && $age >= VG_ACCOUNT_STALE_LOGIN_DAYS
-                          ? $txt . ' ' . vg_badge($age . '일', 'warn', VG_ACCOUNT_STALE_LOGIN_DAYS . '일 이상 미로그인')
+                      return $age !== null && $age >= vg_account_stale_login_days()
+                          ? $txt . ' ' . vg_badge($age . '일', 'warn', vg_account_stale_login_days() . '일 이상 미로그인')
                           : $txt;
                   },
                   // shadow 를 못 읽었으면(is_locked 가 NULL) 정책 필드 전체가 NA 다.

@@ -42,6 +42,21 @@ function vg_setting_defs(): array {
             'label' => '이력 역산 여유일', 'type' => 'int', 'min' => 0, 'max' => 365,
             'desc'  => '최초 발견 시각을 되짚는 구간 = 가장 긴 조치 기한 + 이 여유일.',
         ],
+        // 세션 만료는 **보안 통제**다. 단위를 분으로 둔 것은 관리자가 다루는 단위라서고,
+        //   min 은 "설정으로 통제를 무력화할 수 없게" 하는 하한이다 — 0·1초 만료(로그인 불가)나
+        //   무한 세션(만료 없음)을 저장할 수 있으면 그 자체가 장애·보안사고다.
+        'session.idle_minutes' => [
+            'label' => '세션 유휴 만료(분)', 'type' => 'int', 'min' => 5, 'max' => 720,
+            'desc'  => '마지막 활동 이후 이 시간이 지나면 자동 로그아웃합니다(ISMS-P 2.6.3).',
+        ],
+        'session.absolute_minutes' => [
+            'label' => '세션 절대 만료(분)', 'type' => 'int', 'min' => 30, 'max' => 1440,
+            'desc'  => '유휴와 무관하게 로그인 시점부터 이 시간이 지나면 자동 로그아웃합니다.',
+        ],
+        'account.stale_login_days' => [
+            'label' => '계정 미사용 판정(일)', 'type' => 'int', 'min' => 7, 'max' => 1095,
+            'desc'  => '이 일수 이상 로그인하지 않은 대화형 계정을 미사용으로 판정합니다(ISMS-P 2.5.1·2.5.6).',
+        ],
     ];
 }
 
@@ -86,4 +101,14 @@ function vg_setting_int(string $key, int $default): int {
         $v = max((int) $def['min'], min((int) $def['max'], $v));
     }
     return $v;
+}
+
+/**
+ * 정의상 이 키가 가질 수 있는 최댓값. 정의가 없으면 $default.
+ *   "설정이 어떤 값이든 안전하도록" 여유를 잡아야 하는 곳이 쓴다 — 예: auth.php 의
+ *   session.gc_maxlifetime 은 DB 를 읽지 않고도 절대 만료 상한보다 길어야 한다.
+ */
+function vg_setting_max(string $key, int $default): int {
+    $def = vg_setting_defs()[$key] ?? null;
+    return $def !== null ? (int) $def['max'] : $default;
 }

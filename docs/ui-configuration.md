@@ -72,14 +72,15 @@ LOGIN_LOCK_MINUTES=15
 
 `LOGIN_MAX_FAILS` 는 코드에서 범위 검사를 하지 않는다 — `0` 이하로 두면 **첫 실패에 바로 잠긴다.**
 
-**세션 만료와 토큰 유효기간은 환경변수가 아니다.** 조직마다 바꿀 값이 아니라고 보고 코드 상수로 둔다.
+**세션 만료와 토큰 유효기간은 환경변수가 아니다.** 세션 만료는 조직 규정이라 DB 설정(아래
+[운영 설정](#운영-설정-db--tb_setting))으로 뺐고, 나머지는 코드 상수다.
 
-| 값 | 상수 | 위치 | 비고 |
+| 값 | 기본값 | 위치 | 비고 |
 |---|---:|---|---|
-| 세션 유휴 만료 | `1800`초(30분) | `VG_SESSION_IDLE_SECONDS`(`server/src/auth.php`) | 마지막 활동 기준 |
-| 세션 절대 만료 | `43200`초(12시간) | `VG_SESSION_ABSOLUTE_SECONDS`(같은 파일) | 유휴와 무관하게 로그인 시점 기준 |
+| 세션 유휴 만료 | `1800`초(30분) | 설정 `session.idle_minutes` · 폴백 상수 `VG_SESSION_IDLE_SECONDS`(`server/src/auth.php`) | 마지막 활동 기준 |
+| 세션 절대 만료 | `43200`초(12시간) | 설정 `session.absolute_minutes` · 폴백 상수 `VG_SESSION_ABSOLUTE_SECONDS`(같은 파일) | 유휴와 무관하게 로그인 시점 기준 |
 | 토큰 유효기간 선택지 | 무기한 / 30 / 90 / 365일 | `VG_TOKEN_EXPIRY_OPTIONS`(`server/src/tokenexpiry.php`) | API 키·에이전트 키 공통. `0`=무기한 |
-| 만료 임박 표시 | `7`일 | `VG_TOKEN_EXPIRY_SOON_DAYS`(같은 파일) | 목록에 '만료 임박' 뱃지 |
+| 만료 임박 표시 | `7`일 | `VG_TOKEN_EXPIRY_SOON_DAYS`(같은 파일) | 목록 뱃지 표시용. 인증 판정과 무관해 설정으로 빼지 않았다 |
 
 세션이 만료되면 `session_expire` 감사로그를 남기고 `tb_user.session_token` 을 지운다. 만료된 토큰은
 인증 실패로 처리되고 `api_token_expired`/`agent_token_expired` 로 기록된다(자동 갱신 없음).
@@ -113,6 +114,9 @@ SLA 기준일은 업계 관행값이 아니라 **조직 내부 규정**이라 �
 | `compliance.sla_high_days` | `60` | 1~365 | HIGH 취약점 조치 기한(일) |
 | `compliance.partial_max` | `5` | 1~1000 | 부분준수 상한(건). 위반 1~이 값이면 부분준수, 초과면 미준수 |
 | `compliance.history_lookback_margin_days` | `14` | 0~365 | 최초 발견 시각 역산 구간의 **여유일**. 실제 구간 = 가장 긴 조치 기한 + 이 값 |
+| `session.idle_minutes` | `30`분 | 5~720 | 마지막 활동 이후 자동 로그아웃까지의 시간(ISMS-P 2.6.3) |
+| `session.absolute_minutes` | `720`분(12시간) | 30~1440 | 로그인 시점부터의 최대 세션 수명(유휴와 무관) |
+| `account.stale_login_days` | `90`일 | 7~1095 | 미사용 계정 판정 기준일(ISMS-P 2.5.1·2.5.6) |
 
 - **기본값은 폴백 상수다.** 설정 행이 없거나 테이블을 못 읽으면 `server/src/compliance.php` 의
   상수(`VG_COMPLIANCE_SLA_*` 등)를 그대로 쓴다 — 마이그레이션이 아직 안 든 DB 에서도 동작이 같아야
@@ -123,8 +127,19 @@ SLA 기준일은 업계 관행값이 아니라 **조직 내부 규정**이라 �
 - 화면(`compliance.php`)과 스케줄러의 스냅샷 적재가 같은 `vg_compliance_policy()` 를 쓴다 —
   한쪽만 상수를 쓰면 화면과 증적의 기준이 갈라진다.
 
-설정으로 아직 빼지 않은 판정 임계값도 있다(계정 미사용 판정 90일 `VG_ACCOUNT_STALE_LOGIN_DAYS`,
-시스템 계정 UID 상한 999 등 — `server/src/account_inventory.php`). 이관 전까지는 코드 상수다.
+- **세션 만료는 보안 통제라 min 이 하한선이다.** 5분 미만(사실상 로그인 불가)이나 무한 세션을
+  저장할 수 없고, DB 를 직접 고쳐도 읽을 때 잘린다. 값이 없으면 더 짧은 쪽(기존 상수)으로 간다.
+- `session.gc_maxlifetime` 은 설정을 읽지 않고 `session.absolute_minutes` 의 **상한**(1440분)으로
+  고정한다 — 매 요청 include 시점에 DB 를 열지 않으면서도, 어떤 설정값에서든 PHP GC 가 우리
+  만료 판정보다 먼저 세션을 지우지 않는다.
+
+일부러 설정으로 빼지 않은 임계값도 있다 — 조직이 바꿀 값이 아니라고 봤다(YAGNI).
+
+| 값 | 상수 | 왜 코드에 두나 |
+|---|---|---|
+| 시스템 계정 UID 상한 `999` | `VG_ACCOUNT_SYSTEM_UID_MAX`(`server/src/account_inventory.php`) | 리눅스 관례(`login.defs` 의 `SYS_UID_MAX`). 배포판이 정하는 값이지 조직 규정이 아니다 |
+| nobody UID 하한 `65534` | `VG_ACCOUNT_NOBODY_UID_MIN`(같은 파일) | 위와 같음 |
+| 만료 임박 표시 `7`일 | `VG_TOKEN_EXPIRY_SOON_DAYS`(`server/src/tokenexpiry.php`) | 목록 뱃지 색만 바꾸는 표시 기준. 인증 판정·차단과 무관하다 |
 
 ## 여기서 다루지 않는 것
 

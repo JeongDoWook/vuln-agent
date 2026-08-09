@@ -10,19 +10,38 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';   // vg_env / vg_secret 정의
 require_once __DIR__ . '/db.php';       // vg_pdo
 require_once __DIR__ . '/audit.php';    // vg_log_activity
+require_once __DIR__ . '/setting.php';  // vg_setting_int / vg_setting_max (운영 설정)
 
 /* --- 세션 만료 정책 -------------------------------------------------------
  * 유휴(마지막 활동 이후) · 절대(로그인 이후) 두 축으로 만료시킨다.
  * 대응 기준: ISMS-P 2.6.3(접근통제 — 세션) · 2.5.1 / N2SF 제4장 SN 세션 · AC-1(4).
- * 설정 이관 예정(tb_setting) — 다른 워커가 그 테이블을 만드는 중이라 지금은 상수로 둔다. */
+ *
+ * 실제 값은 tb_setting(관리 → 설정)에서 오고, 아래 상수는 **설정이 없을 때의 폴백**이다
+ * — 마이그레이션이 안 든 DB·빈 설정에서도 동작이 지금과 완전히 같아야 한다. 설정값이
+ * 범위를 벗어나면 vg_setting_int() 가 vg_setting_defs() 의 min/max 로 잘라 쓴다(만료를
+ * 0 이나 무한으로 만들 수 없다). */
 const VG_SESSION_IDLE_SECONDS     = 1800;    // 유휴 30분
 const VG_SESSION_ABSOLUTE_SECONDS = 43200;   // 절대 12시간 (유휴와 무관하게 만료)
+
+/** 유휴 만료(초). 설정 없으면 VG_SESSION_IDLE_SECONDS. */
+function vg_session_idle_seconds(): int {
+    return vg_setting_int('session.idle_minutes', intdiv(VG_SESSION_IDLE_SECONDS, 60)) * 60;
+}
+
+/** 절대 만료(초). 설정 없으면 VG_SESSION_ABSOLUTE_SECONDS. */
+function vg_session_absolute_seconds(): int {
+    return vg_setting_int('session.absolute_minutes', intdiv(VG_SESSION_ABSOLUTE_SECONDS, 60)) * 60;
+}
 
 if (session_status() === PHP_SESSION_NONE) {
     // PHP 기본 gc_maxlifetime 은 1440초(24분)라 유휴 타임아웃(30분)보다 짧다 — 그대로 두면
     // 우리 검사가 돌기 전에 PHP 가 세션 파일을 먼저 지워, 만료 안내 대신 그냥 로그아웃된 것처럼
     // 보인다. 정책값과 앞뒤가 맞도록 절대 타임아웃까지 살려둔다(만료 판정은 아래 코드가 한다).
-    ini_set('session.gc_maxlifetime', (string) VG_SESSION_ABSOLUTE_SECONDS);
+    //   설정으로 뺀 뒤에도 여기서 DB 를 읽지 않는다 — 이 줄은 모든 요청의 include 시점에 도는데
+    //   그때마다 접속을 열 이유가 없다. 대신 **설정이 가질 수 있는 최댓값**을 쓴다: 어떤 설정값에
+    //   대해서도 GC 가 먼저 세션을 지우지 않고(정책값 ≤ GC 수명), 만료 판정 자체는 아래 코드가
+    //   하므로 GC 수명이 길어도 만료된 세션이 되살아나지는 않는다.
+    ini_set('session.gc_maxlifetime', (string) (vg_setting_max('session.absolute_minutes', intdiv(VG_SESSION_ABSOLUTE_SECONDS, 60)) * 60));
     // HTTPS(또는 리버스프록시 X-Forwarded-Proto)면 Secure 쿠키
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
           || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
@@ -170,10 +189,10 @@ function vg_session_expired_reason(): ?string {
     $now = time();
     if (empty($_SESSION['login_at']))      { $_SESSION['login_at'] = $now; }
     if (empty($_SESSION['last_activity'])) { $_SESSION['last_activity'] = $now; }
-    if ($now - (int) $_SESSION['login_at'] >= VG_SESSION_ABSOLUTE_SECONDS) {
+    if ($now - (int) $_SESSION['login_at'] >= vg_session_absolute_seconds()) {
         return 'absolute';
     }
-    if ($now - (int) $_SESSION['last_activity'] >= VG_SESSION_IDLE_SECONDS) {
+    if ($now - (int) $_SESSION['last_activity'] >= vg_session_idle_seconds()) {
         return 'idle';
     }
     return null;

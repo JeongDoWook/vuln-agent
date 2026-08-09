@@ -306,8 +306,8 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 다이어그램: [`docs/specs/diagrams/사이트맵.puml`](../specs/diagrams/사이트맵.puml)
 
 - **세션 인증**(`tb_user`) : 웹 화면 전부. 역할은 **`admin` / `operator` / `user`** 3단계.
-  세션은 **유휴 30분·절대 12시간**에 만료된다(`VG_SESSION_IDLE_SECONDS`/`VG_SESSION_ABSOLUTE_SECONDS`,
-  `src/auth.php`). 만료되면 `session_expire` 감사로그를 남기고 `tb_user.session_token` 을 지운 뒤
+  세션은 기본 **유휴 30분·절대 12시간**에 만료된다(관리 → 설정의 `session.idle_minutes`/
+  `session.absolute_minutes`, 설정이 없으면 `src/auth.php` 의 동명 상수로 폴백). 만료되면 `session_expire` 감사로그를 남기고 `tb_user.session_token` 을 지운 뒤
   로그인 화면에 사유를 안내한다. 활성 세션은 계정당 1개라 다른 곳에서 로그인하면 앞의 세션이 끊긴다
   (`session_token` 을 덮어쓰는 것 자체가 무효화다).
 - **설정형 RBAC**: `admin` 은 코드에서 항상 전체 허용(잠금 방지)이라 권한 행을 두지 않는다.
