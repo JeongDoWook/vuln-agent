@@ -56,6 +56,9 @@ $eq('폐기는 DELETE', vg_activity_action('token_revoke'), 'DELETE');
 $eq('발급은 CREATE', vg_activity_action('agent_token_issue'), 'CREATE');
 $eq('내보내기는 EXPORT', vg_activity_action('export_data'), 'EXPORT');
 $eq('모르는 코드는 OTHER', vg_activity_action('무슨_이벤트'), 'OTHER');
+$eq('자산 등급 확정은 UPDATE', vg_activity_action('host_set_grade'), 'UPDATE');
+$eq('자산 검토 저장은 UPDATE', vg_activity_action('host_grade_review_save'), 'UPDATE');
+$eq('자산 검토 삭제는 DELETE', vg_activity_action('host_grade_review_clear'), 'DELETE');
 
 // ── 운영 설정(tb_setting) ─────────────────────────────────────────────────
 //   이 테스트는 DB 없는 컨테이너에서 돈다 → vg_settings_all() 이 빈 배열이라

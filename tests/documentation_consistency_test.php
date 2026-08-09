@@ -17,20 +17,23 @@ $fail = static function (string $message): never {
 
 preg_match_all('/^\| \[(tb_[a-z_]+)\]/m', $dbDoc, $docMatches);
 $documented = array_values(array_unique($docMatches[1]));
-if (count($documented) !== 51) {
-    $fail('데이터베이스 요약은 운영 테이블 51개를 각각 한 번씩 열거해야 합니다: ' . count($documented));
+if (count($documented) !== 52) {
+    $fail('데이터베이스 요약은 운영 테이블 52개를 각각 한 번씩 열거해야 합니다: ' . count($documented));
 }
 
 preg_match_all('/^\s*entity (tb_[a-z_]+)/m', $erd, $erdMatches);
 $entities = array_values(array_unique($erdMatches[1]));
-if (count($entities) !== 50 || in_array('tb_schema_migrations', $entities, true)) {
-    $fail('ERD는 마이그레이션 이력 테이블을 뺀 도메인 엔티티 50개여야 합니다');
+if (count($entities) !== 51 || in_array('tb_schema_migrations', $entities, true)) {
+    $fail('ERD는 마이그레이션 이력 테이블을 뺀 도메인 엔티티 51개여야 합니다');
 }
 
-foreach (['tb_scan_run', 'tb_agent_command'] as $table) {
+foreach (['tb_scan_run', 'tb_agent_command', 'tb_asset_grade_review'] as $table) {
     if (!in_array($table, $documented, true) || !in_array($table, $entities, true)) {
         $fail("최근 실행 제어 테이블 {$table}이 DB 문서 또는 ERD에서 빠졌습니다");
     }
+}
+if (!preg_match('/entity tb_asset_grade_review[\s\S]+article9_reference\s*:\s*string/', $erd)) {
+    $fail('ERD의 자산 등급 검토 엔티티에 조문·판단 참조 컬럼이 없습니다');
 }
 
 foreach (['/assets.php', '/asset-packages.php', '/agent-poll.php', '/agent-progress.php'] as $route) {
