@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity — auth.php 가 이미 로드했을 수 있다
 vg_require_menu('findings');
 
 const VG_SEV_RANK = ['LOW' => 1, 'MEDIUM' => 2, 'HIGH' => 3, 'CRITICAL' => 4];
@@ -199,6 +200,12 @@ try {
             $trendSummary = $trendData['summary'];
         }
     }
+
+    /* 열람 감사 — 이 화면은 자산별 CVE·패키지 변경 이력을 보여준다. 같은 성격의
+     *   nofix-packages.php 는 남기는데 여기만 빠져 있어서, "누가 어느 자산의 변화를 봤나"가
+     *   기록되지 않았다. scope_id 는 비운다(scope 가 'PAGE' 인데 host_id 를 넣으면 페이지 id 로 읽힌다). */
+    vg_log_activity($pdo, 'PAGE', null, 'view_changes', '변화 추적 조회',
+        ['tab' => $tab, 'host_id' => $hostId, 'type' => $type, 'q' => $q]);
 } catch (Throwable $e) {
     error_log('[changes] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';
@@ -370,11 +377,13 @@ vg_header('변화 추적', 'findings');
 ?>
   <?php vg_page_title('변화 추적', 'CHANGES', '새로 생긴 위험과 해결된 항목, 등급 변화를 한눈에 비교합니다.', ['hint' => '(최근 2스캔 비교)', 'suffix_html' => vg_info_icon('지난 수집 대비 무엇이 달라졌는지 보여줍니다.')]); ?>
 
-  <nav class="subtabs">
-    <a href="/findings.php">현황</a>
-    <a class="on" href="/changes.php">변화</a>
-    <a href="/nofix-packages.php">제거 권고</a>
-  </nav>
+  <?php /* 취약점 계열 세 화면(현황·변화·제거 권고)의 갈래. 사이드바엔 '현황' 하나만 있고
+           나머지 둘은 이 줄로만 들어온다 — 그래서 세 화면이 같은 줄을 그려야 한다. */ ?>
+  <?php vg_subtabs([
+      'findings' => ['label' => '현황', 'href' => '/findings.php'],
+      'changes'  => ['label' => '변화', 'href' => '/changes.php'],
+      'nofix'    => ['label' => '제거 권고', 'href' => '/nofix-packages.php'],
+  ], 'changes'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

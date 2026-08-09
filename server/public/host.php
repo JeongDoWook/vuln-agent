@@ -20,6 +20,14 @@ require_once __DIR__ . '/../src/assetgrade.php';       // 자산 중요도·N2SF
 require_once __DIR__ . '/../src/account_inventory.php';   // 계정 인벤토리 판정(vg_account_judgments)
 vg_require_menu('findings');
 
+/* '리소스' 탭은 '스캔 이력' 탭으로 흡수됐다 — 둘 다 tb_scan_run 하나를 읽었고(회차별 메모리·CPU),
+ *   한쪽은 표, 다른 쪽은 같은 값의 추이 차트였다. 탭을 나눠 두면 "이 자산의 수집이 어땠나"를
+ *   두 군데서 이어 붙여 읽어야 한다. 기존 링크·북마크를 살리려고 302 로 넘긴다(나머지 쿼리는 유지). */
+if (($_GET['tab'] ?? '') === 'resources') {
+    header('Location: /host.php' . vg_qs(['tab' => 'scans', 'page' => null]), true, 302);
+    exit;
+}
+
 // --- 수집 제어 POST 처리 (즉시실행/예약실행/주기변경) — GET 렌더보다 먼저, 헤더 출력 전 ---
 //   자산관리(assets)와 같은 인가 범위를 쓴다 — 새 메뉴 코드를 만들지 않는다(YAGNI).
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -310,7 +318,6 @@ function vg_host_render_agent_control(
       <div class="agent-control__heading">
         <div>
           <strong id="agent-control-title">수집 제어</strong>
-          <p class="why">에이전트의 실행 시점과 반복 수집 주기를 관리합니다.</p>
         </div>
         <span class="agent-control__status"><span aria-hidden="true"></span>다음 poll 반영</span>
       </div>
@@ -353,7 +360,9 @@ function vg_host_render_agent_control(
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_run_now">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label><strong>즉시 실행</strong><span>다음 poll에서 바로 시작합니다.</span></label>
+            <?php /* 각 조작의 반영 시점은 카드 머리의 '다음 poll 반영' 배지가 한 번에 말한다 —
+                     줄마다 되풀이하면 정작 다른 제약(최소 1분 등)이 묻힌다. */ ?>
+            <label><strong>즉시 실행</strong></label>
             <button class="btn btn--sm btn--primary">지금 실행</button>
           </form>
 
@@ -361,7 +370,7 @@ function vg_host_render_agent_control(
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label for="agent-run-at"><strong>예약 실행</strong><span>원하는 날짜와 시간을 선택하세요.</span></label>
+            <label for="agent-run-at"><strong>예약 실행</strong></label>
             <input id="agent-run-at" type="datetime-local" name="run_at" min="<?= date('Y-m-d\TH:i') ?>" placeholder="날짜와 시간 선택" required>
             <button class="btn btn--sm btn--ghost">등록</button>
           </form>
@@ -370,7 +379,7 @@ function vg_host_render_agent_control(
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_set_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label for="agent-schedule-minutes"><strong>수집 주기</strong><span>최소 1분 단위로 설정합니다.</span></label>
+            <label for="agent-schedule-minutes"><strong>수집 주기</strong><span>최소 1분</span></label>
             <div class="agent-control__number"><input id="agent-schedule-minutes" type="number" name="schedule_minutes" min="1" value="<?= $curMinutes ?>" required><span>분</span></div>
             <button class="btn btn--sm btn--ghost">저장</button>
           </form>
@@ -379,7 +388,7 @@ function vg_host_render_agent_control(
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_set_speed_tier">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label for="agent-speed-tier"><strong>속도 티어</strong><span>변경은 다음 poll/다음 수집 시작부터 반영됩니다.</span></label>
+            <label for="agent-speed-tier"><strong>속도 티어</strong></label>
             <select id="agent-speed-tier" name="agent_speed_tier">
               <?php foreach ($speedTierLabels as $v => $label): ?>
                 <option value="<?= vg_h($v) ?>"<?= $curSpeedTier === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
@@ -427,26 +436,20 @@ function vg_host_render_grade(int $hostId, array $host, string $csrf, ?string $a
       <strong id="asset-grade-title">자산 등급</strong>
       <span class="why"> · N2SF 보안등급 <?= vg_h(vg_asset_grade_legend()) ?></span>
       <div class="card__body">
+        <?php /* 여섯 항목 모두 "이 자산 등급의 현재 사실" 이다 — 뒤에 산문 문단으로 매달지 않고
+                 같은 정의목록 안에 둔다. 제안값은 여기서도 '제안' 꼬리표를 달아 확정과 갈라 둔다. */ ?>
         <dl class="fact-grid">
           <div><dt>확정 등급</dt><dd><?= vg_asset_grade_badge($curGrade !== '' ? $curGrade : null, false, (string) ($host['grade_reason'] ?? '')) ?></dd></div>
           <div><dt>중요도</dt><dd><?= $curCrit !== '' ? vg_h(VG_ASSET_CRITICALITY[$curCrit] ?? $curCrit) : '<span class="why">–</span>' ?></dd></div>
           <div><dt>확정자</dt><dd><?= $approver !== null ? vg_h($approver) : '<span class="why">–</span>' ?></dd></div>
           <div><dt>확정 시각</dt><dd><?= !empty($host['approved_at']) ? vg_h((string) $host['approved_at']) : '<span class="why">–</span>' ?></dd></div>
+          <div><dt>확정 근거</dt><dd><?= $curGrade !== '' && !empty($host['grade_reason'])
+              ? vg_h((string) $host['grade_reason'])
+              : '<span class="why">–</span>' ?></dd></div>
+          <div><dt>시스템 초안</dt><dd><?= $sugGrade !== null
+              ? vg_asset_grade_badge((string) $sugGrade, true, $sugReason) . ' <span class="why">' . vg_h($sugReason) . '</span>'
+              : '<span class="why">근거 부족 — 제안 없음</span>' ?></dd></div>
         </dl>
-
-        <p class="why mt">
-          <strong>시스템 초안 제안</strong> —
-          <?php if ($sugGrade !== null): ?>
-            <?= vg_asset_grade_badge((string) $sugGrade, true, $sugReason) ?>
-            <?= vg_h($sugReason) ?>
-          <?php else: ?>
-            수집 데이터에서 확실한 근거를 찾지 못해 제안하지 않습니다.
-          <?php endif; ?>
-        </p>
-
-        <?php if ($curGrade !== '' && !empty($host['grade_reason'])): ?>
-          <p class="why"><strong>확정 근거</strong> — <?= vg_h((string) $host['grade_reason']) ?></p>
-        <?php endif; ?>
 
         <?php if ($canEdit): ?>
           <form class="setting-form mt-lg" method="post"
@@ -491,9 +494,12 @@ function vg_host_render_grade(int $hostId, array $host, string $csrf, ?string $a
     <?php
 }
 
-function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
-    // 새 수집·새 컬럼 없이 스캔 이력 탭과 같은 데이터를 시간순으로만 가져온다.
-    //   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
+/**
+ * 스캔 이력 탭의 리소스 추이 — 표와 같은 tb_scan_run 을 시간순으로만 다시 읽는다.
+ *   최신 N건을 DESC 로 뽑은 뒤 뒤집는다 — 표는 최신이 위, 차트는 최신이 오른쪽이라 방향이 반대다.
+ *   (표는 페이지네이션되므로 차트가 그 페이지에 종속되면 안 된다 → 별도 조회다.)
+ */
+function vg_host_load_resource_trend(PDO $pdo, int $hostId): array {
     $st = $pdo->prepare(
         'SELECT collected_at, peak_rss_mb, cpu_seconds, mem_total_mb, cpu_cores, elapsed_seconds
            FROM tb_scan_run WHERE host_id = ? ORDER BY scan_run_id DESC LIMIT ' . vg_ui_trend_limit()
@@ -510,7 +516,7 @@ function vg_host_load_resources_tab(PDO $pdo, int $hostId): array {
     }
     unset($s);
 
-    return ['resourceScans' => $resourceScans];
+    return $resourceScans;
 }
 
 function vg_host_load_packages_tab(PDO $pdo, int $scanId, int $perPage, int $offset, string $q): array {
@@ -600,7 +606,12 @@ function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perP
     foreach ($rows as $s) { $ids[] = (int) $s['scan_id']; }
     $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
 
-    return ['total' => $total, 'rows' => $rows, 'sevByScan' => $sevByScan];
+    return [
+        'total' => $total,
+        'rows' => $rows,
+        'sevByScan' => $sevByScan,
+        'resourceScans' => vg_host_load_resource_trend($pdo, $hostId),
+    ];
 }
 
 $counts =['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
@@ -748,7 +759,6 @@ try {
         // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
         $validTabs = ['vuln', 'packages', 'runtime', 'cce', 'accounts'];
         if ($suppressedCount > 0) { $validTabs[] = 'suppressed'; }
-        $validTabs[] = 'resources';
         $validTabs[] = 'scans';
         $tab = (string) ($_GET['tab'] ?? 'vuln');
         if (!in_array($tab, $validTabs, true)) { $tab = 'vuln'; }
@@ -779,10 +789,8 @@ try {
         } elseif ($tab === 'suppressed') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_suppressed_tab($pdo, $sid, $suppressedCount, $perPage, $offset, $q);
-        } elseif ($tab === 'resources') {
-            ['resourceScans' => $resourceScans] = vg_host_load_resources_tab($pdo, $hostId);
-        } else { // scans
-            ['total' => $total, 'rows' => $rows, 'sevByScan' => $sevByScan]
+        } else { // scans — 회차 표 + 같은 회차들의 리소스 추이
+            ['total' => $total, 'rows' => $rows, 'sevByScan' => $sevByScan, 'resourceScans' => $resourceScans]
                 = vg_host_load_scans_tab($pdo, $hostId, $scanTotal, $perPage, $offset);
         }
     }
@@ -839,7 +847,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         'accounts'=> ['label' => '계정',      'n' => $accountTotal],
     ];
     if ($suppressedCount > 0) { $tabDefs['suppressed'] = ['label' => '억제', 'n' => $suppressedCount]; }
-    $tabDefs['resources'] = ['label' => '리소스', 'n' => null];
+    // 스캔 이력 = 회차 표 + 그 회차들의 에이전트 리소스 추이(예전 '리소스' 탭을 흡수).
     $tabDefs['scans'] = ['label' => '스캔 이력', 'n' => $scanTotal];
 ?>
   <?php
@@ -1468,34 +1476,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
 
-  <?php elseif ($tab === 'resources'):
-    $latestResourceScan = $resourceScans ? end($resourceScans) : null;
-  ?>
-    <div class="card">
-      <strong>에이전트 메모리 사용률</strong>
-      <span class="why">— 수집 실행별 피크 RSS의 호스트 총 메모리 대비 %
-        <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
-          · 현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?>
-        <?php endif; ?>
-      </span>
-      <div class="card__body">
-      <?php vg_resource_trend($resourceScans, 'mem_pct', '%', 1, 'mem'); ?>
-      </div>
-    </div>
-
-    <div class="card mt-lg">
-      <strong>에이전트 CPU 사용률</strong>
-      <span class="why">— 수집 실행별 CPU 시간의 호스트 코어 용량 대비 %
-        <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
-          · 현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?>
-        <?php endif; ?>
-      </span>
-      <div class="card__body">
-      <?php vg_resource_trend($resourceScans, 'cpu_pct', '%', 1, 'cpu'); ?>
-      </div>
-    </div>
-
-  <?php else: /* scans */ ?>
+  <?php else: /* scans — 회차 표 + 같은 회차들의 에이전트 리소스 추이 */ ?>
     <div class="card">
       <strong>스캔 이력</strong> <span class="why">— 회차를 눌러 그 시점의 취약점을 본다</span>
       <div class="card__body">
@@ -1539,6 +1520,36 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       </div>
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
+
+    <?php
+    /* 위 표와 같은 회차들을 추이로 — 표는 회차별 절대치(MB·초), 차트는 호스트 스펙 대비 비율이다.
+     *   비율이 필요한 이유: 512MB 짜리 노드의 40MB 와 64GB 노드의 40MB 는 같은 숫자지만 다른 부담이다.
+     *   표가 페이지네이션돼도 차트는 최근 구간 전체를 본다(별도 조회). */
+    $latestResourceScan = $resourceScans ? end($resourceScans) : null;
+    ?>
+    <div class="card mt-lg">
+      <strong>에이전트 메모리 사용률</strong>
+      <span class="why">— 회차별 피크 RSS의 호스트 총 메모리 대비 %
+        <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
+          · 현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?>
+        <?php endif; ?>
+      </span>
+      <div class="card__body">
+      <?php vg_resource_trend($resourceScans, 'mem_pct', '%', 1, 'mem'); ?>
+      </div>
+    </div>
+
+    <div class="card mt-lg">
+      <strong>에이전트 CPU 사용률</strong>
+      <span class="why">— 회차별 CPU 시간의 호스트 코어 용량 대비 %
+        <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
+          · 현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?>
+        <?php endif; ?>
+      </span>
+      <div class="card__body">
+      <?php vg_resource_trend($resourceScans, 'cpu_pct', '%', 1, 'cpu'); ?>
+      </div>
+    </div>
   <?php endif; ?>
 
   <?php vg_host_render_grade($hostId, $host, $agentCsrf, $approver, vg_has_role('admin')); ?>

@@ -48,6 +48,8 @@ function vg_activity_type_labels(): array {
         'view_compliance_rule' => '보안설정 룰 상세 조회',
         'view_compliance'      => '컴플라이언스 매핑 조회',
         'view_nofix_packages'  => '제거·대체 검토 권고 조회',
+        'view_changes'         => '변화 추적 조회',
+        'view_asset_packages'  => '전체 설치 패키지 조회',
         'view_control_mapping' => '통제 기준 매핑 조회',
         'view_control'         => '통제 상세 조회',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김.

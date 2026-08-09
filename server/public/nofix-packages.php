@@ -72,11 +72,11 @@ vg_header('제거 권고', 'findings');
       'count_label' => '개 패키지',
   ]); ?>
 
-  <nav class="subtabs">
-    <a href="/findings.php">현황</a>
-    <a href="/changes.php">변화</a>
-    <a class="on" href="/nofix-packages.php">제거 권고</a>
-  </nav>
+  <?php vg_subtabs([
+      'findings' => ['label' => '현황', 'href' => '/findings.php'],
+      'changes'  => ['label' => '변화', 'href' => '/changes.php'],
+      'nofix'    => ['label' => '제거 권고', 'href' => '/nofix-packages.php'],
+  ], 'nofix'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

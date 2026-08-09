@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity — auth.php 가 이미 로드했을 수 있다
 vg_require_menu('assets');
 
 $err = null;
@@ -65,6 +66,11 @@ try {
     );
     $st->execute($params);
     $rows = $st->fetchAll();
+
+    /* 열람 감사 — 전 자산의 설치 패키지 목록은 host.php 상세와 같은 등급의 인프라 정보다.
+     *   상세는 view_host 로 남는데 이 통합 조회만 빠져 있었다(원칙 7). */
+    vg_log_activity($pdo, 'PAGE', null, 'view_asset_packages', '전체 설치 패키지 조회',
+        ['host_id' => $hostId, 'manager' => $manager, 'q' => $q, 'matched' => $total]);
 } catch (Throwable $e) {
     error_log('[asset-packages] ' . $e->getMessage());
     $err = '설치 패키지를 불러오는 중 오류가 발생했습니다.';
