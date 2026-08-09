@@ -18,6 +18,7 @@ require_once __DIR__ . '/../src/finding_history.php';   // vg_finding_history_ur
 require_once __DIR__ . '/../src/agentcommand.php';   // 수집 제어(즉시/예약 실행·주기 변경)
 require_once __DIR__ . '/../src/agentspeedtier.php';   // 속도 티어 라벨(agent-poll.php 와 공유 정의)
 require_once __DIR__ . '/../src/assetgrade.php';       // 자산 중요도·N2SF 등급 어휘와 초안 제안
+require_once __DIR__ . '/../src/asset_grade_review.php'; // 단일 자산의 구조화된 사람 검토 정보
 require_once __DIR__ . '/../src/account_inventory.php';   // 계정 인벤토리 판정(vg_account_judgments)
 vg_require_menu('findings');
 
@@ -79,15 +80,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!vg_has_role('admin')) {
                     throw new RuntimeException('자산 등급을 확정할 권한이 없습니다.');
                 }
-                // 검증·기록·감사로그는 assetgrade.php 가 한다 — 자산 목록의 일괄 확정과 **같은 함수**다.
+                // 등급 검증·기록은 assetgrade.php 의 공통 함수를 재사용하고, 전용 모듈이 구조화
+                // 검토 정보까지 같은 트랜잭션으로 묶는다. 일괄 확정은 호스트별 검토 정보에 손대지 않는다.
                 //   이 폼은 중요도를 늘 함께 보내므로 빈 값이면 "미지정으로 지움"이 맞다(null 이 아니다).
                 $newGrade = (string) ($_POST['grade'] ?? '');
-                vg_asset_grade_confirm(
+                vg_asset_grade_review_confirm(
                     $pdo,
                     $postHostId,
                     $newGrade,
                     (string) ($_POST['criticality'] ?? ''),
                     (string) ($_POST['grade_reason'] ?? ''),
+                    $_POST,
                     $me['id'] ?? null
                 );
                 $agentMsg = $newGrade === ''
@@ -124,7 +127,7 @@ $agentMsg = $agentFlash['agentMsg'] ?? null;
 $agentErr = $agentFlash['agentErr'] ?? null;
 $agentCsrf = vg_csrf_token();
 
-$err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null; $approver = null;
+$err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null; $approver = null; $gradeReview = [];
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 $missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단계(한글 라벨)
 
@@ -427,11 +430,12 @@ function vg_host_render_agent_control(
  *
  *   $canEdit=false 면 읽기 전용으로 현재 값만 보여준다(확정은 관리자만).
  */
-function vg_host_render_grade(int $hostId, array $host, string $csrf, ?string $approver, bool $canEdit): void {
+function vg_host_render_grade(int $hostId, array $host, array $review, string $csrf, ?string $approver, bool $canEdit): void {
     $curGrade = (string) ($host['grade'] ?? '');
     $curCrit  = (string) ($host['criticality'] ?? '');
     $sugGrade = $host['grade_suggested'] ?? null;
     $sugReason = (string) ($host['grade_suggested_reason'] ?? '');
+    $missingReview = vg_asset_grade_review_missing($review);
     ?>
     <section class="card mt-lg" aria-labelledby="asset-grade-title">
       <strong id="asset-grade-title">자산 등급</strong>
@@ -452,12 +456,35 @@ function vg_host_render_grade(int $hostId, array $host, string $csrf, ?string $a
               : '<span class="why">근거 부족 — 제안 없음</span>' ?></dd></div>
         </dl>
 
+        <p class="why mt-lg">정보공개법 제9조 해당 여부는 C/S/O 판단 근거 중 하나이며, 법률이 C/S/O 등급을 정의하는 것은 아닙니다.</p>
+        <?php if ($canEdit && !empty($review['is_stale'])): ?>
+          <p class="why">⚠ 일괄 등급 변경 뒤 구조화 검토 정보가 재확인되지 않았습니다. 현재 등급에 맞게 다시 검토해 저장하세요.</p>
+        <?php elseif ($canEdit && vg_asset_grade_review_overdue($review)): ?>
+          <p class="why">⚠ 다음 검토일이 지났습니다. 현재 등급과 구조화 검토 정보를 다시 확인하세요.</p>
+        <?php elseif ($canEdit && $curGrade !== '' && $missingReview): ?>
+          <p class="why">⚠ 검토 정보 누락: <?= vg_h(implode(', ', $missingReview)) ?></p>
+        <?php endif; ?>
+        <?php if ($canEdit): ?>
+        <dl class="fact-grid">
+          <div><dt>제9조 해당 호</dt><dd><?= vg_h(VG_ASSET_REVIEW_ARTICLE9_ITEMS[(string) ($review['article9_item'] ?? '')] ?? '–') ?></dd></div>
+          <div><dt>조문·판단 참조</dt><dd><?= vg_h((string) ($review['article9_reference'] ?? '–')) ?></dd></div>
+          <div><dt>업무 유형</dt><dd><?= vg_h((string) ($review['business_category'] ?? '–')) ?></dd></div>
+          <div><dt>데이터 유형</dt><dd><?= vg_h((string) ($review['data_category'] ?? '–')) ?></dd></div>
+          <div><dt>소유 부서</dt><dd><?= vg_h((string) ($review['owning_department'] ?? '–')) ?></dd></div>
+          <div><dt>외부 공개 상태</dt><dd><?= vg_h(VG_ASSET_REVIEW_PUBLICATION_STATES[(string) ($review['external_publication_state'] ?? '')] ?? '–') ?></dd></div>
+          <div><dt>검토 문서·티켓</dt><dd><?= vg_h((string) ($review['review_reference'] ?? '–')) ?></dd></div>
+          <div><dt>다음 검토일</dt><dd><?= vg_h((string) ($review['next_review_date'] ?? '–')) ?></dd></div>
+        </dl>
+        <?php endif; ?>
+
         <?php if ($canEdit): ?>
           <form class="setting-form mt-lg" method="post"
                 data-confirm="이 자산의 등급을 확정할까요? 확정자와 시각이 감사로그에 기록됩니다.">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="host_set_grade">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
+            <input type="hidden" name="review_version" value="<?= (int) ($review['review_version'] ?? 0) ?>">
+            <input type="hidden" name="grade_version" value="<?= (int) ($host['grade_version'] ?? 0) ?>">
 
             <label class="field" for="asset-criticality">중요도
               <select id="asset-criticality" name="criticality">
@@ -481,6 +508,41 @@ function vg_host_render_grade(int $hostId, array $host, string $csrf, ?string $a
               <input id="asset-grade-reason" type="text" name="grade_reason" maxlength="255"
                      placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유"
                      value="<?= vg_h((string) ($host['grade_reason'] ?? '')) ?>">
+            </label>
+
+            <label class="field" for="asset-article9-item">정보공개법 제9조 해당 호
+              <select id="asset-article9-item" name="article9_item">
+                <option value="">미검토</option>
+                <?php foreach (VG_ASSET_REVIEW_ARTICLE9_ITEMS as $v => $label): ?>
+                  <option value="<?= vg_h((string) $v) ?>"<?= ($review['article9_item'] ?? null) === (string) $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+            <label class="field" for="asset-article9-reference">조문·판단 참조
+              <input id="asset-article9-reference" name="article9_reference" maxlength="255" value="<?= vg_h((string) ($review['article9_reference'] ?? '')) ?>">
+            </label>
+            <label class="field" for="asset-business-category">업무 유형
+              <input id="asset-business-category" name="business_category" maxlength="100" value="<?= vg_h((string) ($review['business_category'] ?? '')) ?>">
+            </label>
+            <label class="field" for="asset-data-category">데이터 유형
+              <input id="asset-data-category" name="data_category" maxlength="100" value="<?= vg_h((string) ($review['data_category'] ?? '')) ?>">
+            </label>
+            <label class="field" for="asset-owning-department">소유 부서
+              <input id="asset-owning-department" name="owning_department" maxlength="120" value="<?= vg_h((string) ($review['owning_department'] ?? '')) ?>">
+            </label>
+            <label class="field" for="asset-publication-state">외부 공개 상태
+              <select id="asset-publication-state" name="external_publication_state">
+                <option value="">미검토</option>
+                <?php foreach (VG_ASSET_REVIEW_PUBLICATION_STATES as $v => $label): ?>
+                  <option value="<?= vg_h($v) ?>"<?= ($review['external_publication_state'] ?? null) === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+            <label class="field" for="asset-review-reference">검토 문서·티켓 참조
+              <input id="asset-review-reference" name="review_reference" maxlength="255" placeholder="문서 내용 대신 식별자 또는 위치만 입력" value="<?= vg_h((string) ($review['review_reference'] ?? '')) ?>">
+            </label>
+            <label class="field" for="asset-next-review-date">다음 검토일
+              <input id="asset-next-review-date" type="date" name="next_review_date" value="<?= vg_h((string) ($review['next_review_date'] ?? '')) ?>">
             </label>
 
             <div class="actions">
@@ -668,6 +730,7 @@ try {
     $pendingCommands = [];
 
     if ($host) {
+        $gradeReview = vg_has_role('admin') ? vg_asset_grade_review_load($pdo, $hostId) : [];
         // 호스트 상세(설치 패키지·노출 포트·실행 프로세스 등 인프라 민감정보) 열람 감사로그.
         vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null),
             subject: (string) ($host['fqdn'] ?? ''), action: 'READ');
@@ -872,7 +935,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php if (vg_can('assets')): ?>
     <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
   <?php endif; ?>
-  <?php vg_host_render_grade($hostId, $host, $agentCsrf, $approver, vg_has_role('admin')); ?>
+  <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
   <div class="card"><?php vg_empty(['icon' => '📭', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
@@ -1692,7 +1755,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
   <?php endif; ?>
 
-  <?php vg_host_render_grade($hostId, $host, $agentCsrf, $approver, vg_has_role('admin')); ?>
+  <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
 
   <?php if (vg_has_role('admin', 'operator')): ?>
     <div class="card mt-lg">

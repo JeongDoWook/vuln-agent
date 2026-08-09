@@ -319,6 +319,7 @@ run_phpunit "schedule_test.php" "schedule" "schedule 단위 테스트"
 
 # --- UI 설정·감사 마스킹 단위 테스트 -----------------------------------------
 run_phpunit "ui_config_test.php" "ui_config" "UI 설정 범위·감사정보 마스킹 단위 테스트"
+run_phpunit "asset_grade_review_test.php" "asset_grade_review" "자산 등급 구조화 검토 단위 테스트"
 
 # --- UI 공통 구조 회귀 테스트 -----------------------------------------------
 run_phpunit "ui_structure_test.php" "ui_structure" "UI 공통 컴포넌트·검색·인라인 이벤트 회귀 테스트"

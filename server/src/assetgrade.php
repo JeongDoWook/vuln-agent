@@ -176,7 +176,8 @@ function vg_asset_grade_confirm(
     string $grade,
     ?string $criticality,
     string $reason,
-    ?int $userId
+    ?int $userId,
+    bool $invalidateStructuredReview = true
 ): string {
     if ($grade !== '' && !isset(VG_ASSET_GRADES[$grade])) {
         throw new RuntimeException('알 수 없는 등급입니다.');
@@ -206,12 +207,20 @@ function vg_asset_grade_confirm(
     $set[] = 'grade_reason = ?';   $args[] = ($isClear || $reason === '') ? null : $reason;
     $set[] = 'approved_by = ?';    $args[] = $isClear ? null : $userId;
     $set[] = 'approved_at = ' . ($isClear ? 'NULL' : 'NOW()');
+    $set[] = 'grade_version = grade_version + 1';
     $args[] = $hostId;
 
     $st = $pdo->prepare(
         'UPDATE tb_host SET ' . implode(', ', $set) . ' WHERE host_id = ? AND is_deleted = 0'
     );
     $st->execute($args);
+
+    // 일괄 확정은 호스트별 구조화 근거를 복제하거나 지우지 않고 "재검토 필요"로 무효화한다.
+    // 단일 호스트 경로는 같은 트랜잭션에서 새 검토 정보를 저장하며 이 표식을 다시 0으로 만든다.
+    if ($invalidateStructuredReview) {
+        $st = $pdo->prepare('UPDATE tb_asset_grade_review SET is_stale = 1, review_version = review_version + 1 WHERE host_id = ?');
+        $st->execute([$hostId]);
+    }
 
     $critLabel = ($criticality !== null && $criticality !== '')
         ? ' (중요도 ' . VG_ASSET_CRITICALITY[$criticality] . ')' : '';
@@ -220,7 +229,12 @@ function vg_asset_grade_confirm(
         $isClear
             ? "자산 등급 확정 해제: $fqdn"
             : "자산 등급 확정: $fqdn → $grade" . $critLabel,
-        ['grade' => $isClear ? null : $grade, 'criticality' => ($criticality ?: null), 'reason' => $reason]
+        // 확정 근거 원문은 업무·법률 문서 내용을 포함할 수 있어 감사로그에 복제하지 않는다.
+        // DB의 grade_reason 호환성은 유지하고, 로그에는 근거 입력 여부만 남긴다.
+        ['grade' => $isClear ? null : $grade, 'criticality' => ($criticality ?: null),
+         'reason' => (!$isClear && $reason !== '') ? '[REDACTED]' : null,
+         'reason_present' => !$isClear && $reason !== ''],
+        strict: true
     );
 
     return (string) $fqdn;

@@ -43,7 +43,25 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         os_id : string
         last_seen_ip : string
         poll_schedule_seconds : int
+        grade_version : bigint
         is_deleted : bool
+    }
+
+    entity tb_asset_grade_review {
+        host_id : bigint <<PK>><<FK>>
+        --
+        article9_item : enum
+        article9_reference : string
+        business_category : string
+        data_category : string
+        owning_department : string
+        external_publication_state : enum
+        review_reference : string
+        next_review_date : date
+        is_stale : bool
+        review_version : bigint
+        reviewed_by : bigint <<FK>>
+        reviewed_at : datetime
     }
 
     entity tb_scan {
@@ -603,6 +621,7 @@ tb_host ||--o{ tb_scan_run : "실제 실행 이력"
 tb_host ||--o{ tb_agent_command : "수집 명령"
 tb_host ||--o{ tb_host_account : "계정 인벤토리"
 tb_host ||--o{ tb_remediation_note : "미조치 사유 메모"
+tb_host ||--o| tb_asset_grade_review : "최신 등급 검토"
 
 tb_scan ||--o{ tb_package : "설치 패키지"
 tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
@@ -626,6 +645,7 @@ tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별 조치버전"
 tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
 tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
 tb_user ||--o{ tb_api_token : "발급(Export API)"
+tb_user |o--o{ tb_asset_grade_review : "등급 검토자"
 tb_agent_token ||--o{ tb_agent_replay_nonce : "소진된 nonce"
 
 ' ── FK 없는 관계(점선) — 자연키 애플리케이션 조인 ─────
