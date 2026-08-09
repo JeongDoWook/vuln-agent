@@ -131,7 +131,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
                 ['label' => '패키지'],
                 ['label' => '등급', 'width' => '6.5rem'],
                 ['label' => '최초 발견'],
-                ['label' => '경과/기준'],
+                ['label' => '경과/기준', 'align' => 'right'],   // "12일 / 30일" — 숫자 칸
             ],
             $shown,
             [

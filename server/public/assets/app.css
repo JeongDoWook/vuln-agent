@@ -1238,8 +1238,6 @@ input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
 /* 색 채운 변형은 밝은/어두운 테마 모두 흰 글자로 고정(기본 글자색이 테마별로 달라서) */
-.btn--ok      { background: var(--ok);     color: #fff; }
-.btn--ok:hover{ background: var(--ok-hover); filter: none; }
 .btn--primary { background: var(--accent); color: #fff; box-shadow: 0 5px 12px rgb(49 130 246 / .18); }
 .btn--danger  { background: var(--danger); color: #fff; }
 .btn--warn    { background: var(--med);    color: #3a2b00; }
@@ -1270,6 +1268,12 @@ form.card .btn--block { margin-top: 1.1rem; }
   border-radius: var(--r-xs);
 }
 .actions input[type=password] { width: 120px; }
+
+/* 작업 열의 정렬은 열 스펙이 정한다 — vg_table() 의 'align' => 'right' 가 th·td 양쪽에 .right 를
+ * 붙이므로 헤더와 버튼이 같이 움직인다. .actions 는 display:flex 라 td.right 의 text-align 이
+ * 안 먹어서 이 한 줄이 필요하다. 전엔 페이지 이름을 나열한 하드코딩(.page--connectors .actions …)이
+ * 셀만 오른쪽으로 밀어 헤더와 어긋났다. */
+td.right .actions { justify-content: flex-end; }
 
 /* 세로로 쌓는 액션 폼 묶음 — user.php 계정관리처럼 폼 여러 개를 나란히 두면 각 폼의
  * <label>(display:block)이 인라인 흐름 속에서 위로 뜨는 것처럼 보인다. 방향만 바꾸고
@@ -1770,10 +1774,9 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--host .stat, .page--cve .stat, .page--compliance_rule .stat,
 .page--control .stat { padding: 1rem 1.15rem; border-right: 1px solid var(--line); }
 
-/* 관리 화면: 액션은 분명하되 신원·상태보다 뒤로 물러난다. */
+/* 관리 화면: 열이 많아 본문 폭을 넓게 쓴다(작업 열 정렬은 위 td.right .actions 가 소유한다). */
 .page--connectors .page__main, .page--users .page__main, .page--permissions .page__main,
 .page--agent-tokens .page__main, .page--api-tokens .page__main { max-width: 1520px; }
-.page--connectors .actions, .page--users .actions, .page--agent-tokens .actions, .page--api-tokens .actions { justify-content: flex-end; }
 .page--profile .page__main { max-width: 720px; margin-inline: auto; }
 .page--profile .card--sm { max-width: 520px; }
 
@@ -1832,7 +1835,6 @@ form.card .btn--primary:active { transform: translateY(0); }
   .page--assets .data-table td::before { content: attr(data-label); color: var(--muted); font-size: .72rem; font-weight: 650; }
   .page--assets .data-table td:not([data-label]) { display: flex; justify-content: flex-end; padding-top: .65rem; }
   .page--assets .data-table td:not([data-label])::before { display: none; }
-  .page--assets .data-table .actions { justify-content: flex-end; }
 }
 
 /* 좁은 화면: 사이드바를 서랍(drawer)으로 바꾼다 — 햄버거로 열고 backdrop 으로 닫는다.

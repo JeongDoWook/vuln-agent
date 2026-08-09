@@ -166,7 +166,7 @@ vg_header('에이전트 키', 'agenttokens');
           ['label' => '유효기간', 'width' => '13rem'],
           ['label' => '마지막 수신', 'width' => '11rem'],
           ['label' => '발급일', 'width' => '11rem'],
-          ['label' => '', 'width' => '5rem'],
+          ['label' => '', 'width' => '5rem', 'align' => 'right'],   // 폐기·삭제 버튼
       ],
       $tokens,
       [

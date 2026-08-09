@@ -290,7 +290,8 @@ vg_header('탐지 결과', 'findings');
       //   폭이 고정된 표에서 nowrap 이면 칸을 뚫고 나가 표가 가로로 넘친다.
       ['label' => 'CVE',   'key' => 'cve_id',         'width' => '13%'],
       ['label' => '패키지', 'key' => 'package_name',  'width' => '10.5%', 'class' => 'col-id'],
-      ['label' => '위험도', 'key' => 'risk',          'width' => '8%', 'nowrap' => true],
+      // CVSS+EPSS 숫자 칸 — cves.php 의 같은 '위험도' 칸과 같은 정렬로 맞춘다.
+      ['label' => '위험도', 'key' => 'risk',          'width' => '8%', 'nowrap' => true, 'align' => 'right'],
       ['label' => '근거 (왜 위험한가)', 'key' => 'rationale'],
       ['label' => '조치',  'key' => 'fix',            'width' => '13.5%'],
   ]);
