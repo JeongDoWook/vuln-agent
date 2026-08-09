@@ -91,7 +91,6 @@ CREATE TABLE IF NOT EXISTS tb_findings (
   cvss              DECIMAL(3,1) NULL,
   severity          VARCHAR(12) NOT NULL,           -- CRITICAL|HIGH|MEDIUM|LOW
   rationale         VARCHAR(512) NULL,              -- 왜 이 등급인지(설명가능성)
-  matched_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   is_deleted        TINYINT(1) NOT NULL DEFAULT 0,

@@ -83,12 +83,6 @@ function vg_settings_all(): array {
     return $cache;
 }
 
-/** 문자열 설정값. 없거나 빈 값이면 $default. */
-function vg_setting(string $key, string $default): string {
-    $v = vg_settings_all()[$key] ?? '';
-    return $v !== '' ? $v : $default;
-}
-
 /**
  * 정수 설정값. 숫자가 아니면 $default, 정의된 min/max 를 벗어나면 그 범위로 클램프한다
  * (화면에서 이미 검증하지만, DB 를 직접 고친 값이 판정을 망가뜨리지 않게 읽을 때도 막는다).

@@ -38,7 +38,6 @@ CREATE TABLE IF NOT EXISTS tb_suppressed_findings (
   cvss              DECIMAL(3,1) NULL,
   base_severity     VARCHAR(12) NOT NULL,           -- 억제 안 됐다면 받았을 등급
   suppress_reason   VARCHAR(512) NULL,              -- 왜 무해로 판정했나(백포트 근거)
-  matched_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   is_deleted        TINYINT(1) NOT NULL DEFAULT 0,
