@@ -214,7 +214,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 |---|---|---|
 | 소스 | `./server` 라이브 마운트 | `../server` 읽기전용 마운트(PHP 는 배포=`git pull`, 무중단) |
 | DB 포트 | 노출(3307) | 미노출(내부망만) |
-| 웹 접속 | `http://localhost:8000` (평문) | `https://<운영-도메인>` (`.env.prod` 의 `PROD_DOMAIN` · Caddy, 현재 자체서명 · 평문 80 은 308 리다이렉트 · `:8080` 도 계속 동작) |
+| 웹 접속 | `http://localhost:8000` (평문) | `https://<운영-도메인>` (`.env.prod` 의 `PROD_DOMAIN` · Caddy, 자체서명 · 평문 80 은 308 리다이렉트 · `:8080` 도 계속 동작) |
 | my.cnf | 미적용(기본값) | 적용(charset/보안 튜닝) |
 | 프로젝트 | `vulnagent-dev`(메인) · `vulnagent-dev-<워크트리>`(web+scheduler) | `vulnagent` |
 
@@ -233,9 +233,10 @@ snippet → 각 사이트 블록에서 `import`). 사이트마다 복붙하지 �
 의존성이 0개라 가능하다) 이고, `Server`/`X-Powered-By` 는 지운다. CSP 에 `'unsafe-inline'` 이 남은
 이유는 실측으로 확인한 인라인 사용처(테마 초기화 스크립트·인라인 핸들러·`process.html` 의 `<style>`)
 때문이다 — 그걸 걷어내기 전에 지우면 화면이 통째로 깨진다.
-**HSTS 는 일부러 꺼 두었다. 켜지 말 것.** 현재 TLS 가 `tls internal`(자체서명)이라 브라우저가 이미
-인증서 오류를 내는데, HSTS 를 보내면 그 호스트에서 **인증서 예외를 아예 허용하지 않아** 접속 수단이
-사라지고 max-age 만료 전엔 되돌릴 방법도 없다. 신뢰되는 CA 로 전환한 뒤에 주석을 푼다.
+**HSTS 는 붙이지 않는다.** TLS 는 `tls internal`(자체서명)이고 정식 인증서 전환은 하지 않기로
+확정했다(2026-08-09, 이슈 #518 — 자세한 이유는 `deploy/caddy/README.md`). 자체서명이라 브라우저가
+이미 인증서 오류를 내는데, HSTS 를 보내면 그 호스트에서 **인증서 예외를 아예 허용하지 않아**
+접속 수단이 사라지고 max-age 만료 전엔 되돌릴 방법도 없다.
 
 **스키마 적용**은 `deploy/migrate.sh` 가 맡는다 — `db/migrations/*.sql` 중 아직 안 든 것만
 **파일명 사전순**으로 db 컨테이너에 파이프하고 `tb_schema_migrations(filename, applied_at)` 에

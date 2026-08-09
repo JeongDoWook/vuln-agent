@@ -28,11 +28,10 @@ package "Docker Secrets (txt)" as Secrets {
     rectangle "mysql_root_password" as S1
     rectangle "mysql_password" as S2
     rectangle "admin_password" as S4
-    rectangle "duckdns_token (prod 전용)" as S5
 }
 
 package "실행 컨테이너 (prod)" as Stack {
-    rectangle "caddy\n443→호스트 ${WEB_PORT:-8080}\n보안 응답 헤더(CSP·nosniff·X-Frame-Options)\nHSTS 는 자체서명이라 보류" as CADDY #8250df
+    rectangle "caddy · tls internal(자체서명)\n443→호스트 ${WEB_PORT:-8080}\n보안 응답 헤더(CSP·nosniff·X-Frame-Options)\nHSTS 는 붙이지 않음(자체서명 확정)" as CADDY #8250df
     rectangle "web · php:8.3-apache\n내부 80만(외부 비노출)" as WC #238636
     rectangle "scheduler · php-cli\n(피드 주기 실행)" as SCH #a371f7
     database "db · mysql:8.0\n내부망만" as DC #1f6feb
@@ -55,7 +54,6 @@ R2 --> FP
 
 F0 --> Stack
 
-S5 --> CADDY
 S2 --> WC
 S4 --> WC
 S2 --> SCH

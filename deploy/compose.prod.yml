@@ -69,7 +69,7 @@ services:
       - ../server:/var/www/html:ro
 
   # --- Caddy: HTTPS 종료 리버스 프록시 -------------------------------------
-  #   인증서는 DNS-01(또는 현재처럼 내부 CA)로 발급하므로 인바운드 80 은 발급에 쓰이지 않는다.
+  #   인증서는 Caddy 내부 CA 자체서명이라 인바운드 80 은 발급에 쓰이지 않는다.
   #   호스트 80/443/${WEB_PORT} → 컨테이너 80(리다이렉트)·443(TLS) → 내부 web:80.
   caddy:
     container_name: vulnagent-caddy
@@ -109,17 +109,11 @@ services:
       #   Caddy 가 빈 주소로 파싱해 "unrecognized global option: encode" 로 죽는데, 그 메시지만
       #   보고 원인이 .env.prod 라는 걸 알아채기 어렵다. 여기서 먼저 걸리는 편이 낫다.
       PROD_DOMAIN: ${PROD_DOMAIN:?deploy/.env.prod 에 PROD_DOMAIN=운영도메인 을 추가하세요 (Caddy TLS 사이트 주소)}
-    secrets:
-      - duckdns_token
     volumes:
-      - caddy_data:/data      # 발급 인증서 영속화(재시작해도 재발급 안 함)
+      - caddy_data:/data      # 내부 CA·발급 인증서 영속화(재시작해도 재발급 안 함)
       - caddy_config:/config
     networks:
       - vulnagent
-
-secrets:
-  duckdns_token:
-    file: ../secrets/duckdns_token.txt
 
 volumes:
   caddy_data:

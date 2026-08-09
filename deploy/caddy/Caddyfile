@@ -1,5 +1,5 @@
 # Caddy 리버스 프록시 — vuln-agent 앞단 TLS 종료.
-#   Let's Encrypt 인증서를 DuckDNS DNS-01 챌린지로 발급 → 인바운드 80/443 불필요.
+#   인증서는 Caddy 내부 CA 자체서명(`tls internal`)이다 — 발급에 인바운드 80 을 쓰지 않는다.
 #   Caddy 가 https 를 받아 내부 web:80(Apache/PHP) 으로 프록시한다.
 #
 # 사이트 주소는 환경변수 PROD_DOMAIN 으로 받는다(.env.prod → compose.prod.yml → 이 파일).
@@ -20,7 +20,7 @@
 	#   실측: 그 경로의 응답만 보안헤더가 하나도 없고 `Server: Caddy` 까지 그대로 나갔다
 	#   (`curl -sI -H 'Host: <운영도메인>' http://…:80/login.php`). 진입 경로에 따라 헤더가
 	#   있다 없다 하는 상태가 제일 나쁘다 — 자동 리다이렉트를 끄고 한 블록으로 통일한다.
-	#   끄는 건 "리다이렉트"뿐이고 인증서 자동관리는 그대로다. 발급도 DNS-01/내부CA 라 80 을 안 쓴다.
+	#   끄는 건 "리다이렉트"뿐이고 인증서 자동관리는 그대로다. 발급도 내부 CA 라 80 을 안 쓴다.
 	auto_https disable_redirects
 }
 
@@ -52,15 +52,8 @@
 		#     (app.css:1382, 1471). object-src/base-uri/form-action 은 인라인과 무관하게 조일 수 있다.
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
-		# HSTS — **지금은 일부러 끈다. 켜지 말 것.**
-		#   현재 TLS 가 `tls internal`(Caddy 내부 CA 자체서명)이라 브라우저가 이미
-		#   ERR_CERT_AUTHORITY_INVALID 를 낸다. 이 상태에서 HSTS 를 보내면 브라우저가 그 호스트를
-		#   HSTS 목록에 넣고, HSTS 호스트에서는 **인증서 예외("고급 → 계속 진행")를 아예 허용하지
-		#   않는다**. 즉 접속 수단이 사라지고, max-age 가 만료되기 전엔 사용자가 되돌릴 방법도 없다
-		#   (브라우저 내부 설정에서 HSTS 항목을 손으로 지워야 한다).
-		#   → Let's Encrypt(신뢰되는 CA)로 전환한 뒤에 아래 한 줄의 주석을 푼다. 절차는 파일 하단
-		#     "[정식으로 전환 시]" 주석과 deploy/README.md 참조.
-		# Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# HSTS 는 붙이지 않는다 — 자체서명(`tls internal`) + HSTS 는 브라우저의 인증서 예외를
+		#   막아 접속 수단 자체가 사라지고, max-age 만료 전엔 되돌릴 수도 없다.
 
 		# 서버 정보 노출 제거 — 버전 핑거프린팅 표면을 줄인다.
 		#   Server 는 Caddy 가, X-Powered-By 는 뒷단 PHP 가 붙인다(둘 다 여기서 지운다).
@@ -74,26 +67,12 @@
 
 	import security_headers
 
-	# [현재] 자체서명(Caddy 내부 CA). 토큰/도메인소유 불필요, 즉시 HTTPS(브라우저 경고 뜸).
+	# 자체서명(Caddy 내부 CA)을 쓴다 — **확정된 결정이다(2026-08-09).**
+	#   2026-07-12 에 Let's Encrypt(DuckDNS DNS-01)로 전환하려다 실패했다(DuckDNS 가 KO 반환 —
+	#   토큰이 그 도메인을 소유한 계정 것이 아니었다). 그 계정을 확보할 수 없어 재추진하지 않는다.
+	#   대가는 브라우저 인증서 경고와, 에이전트가 이 내부 CA 를 신뢰하도록 배포마다 루트 CA 를
+	#   꺼내 배포하는 절차다(`agent-ca/` · deploy/README.md "에이전트 CA 준비"). 그건 유지한다.
 	tls internal
-
-	# [정식으로 전환 시] 위 한 줄을 지우고 아래 블록으로 교체.
-	#   단, 이 도메인을 소유한 DuckDNS 계정의 토큰이 secrets/duckdns_token.txt 에 있어야 함.
-	#   ⚠ 2026-07-12 전환 시도 실패: DuckDNS 가 KO 반환(토큰이 이 도메인 계정 게 아님) →
-	#     Caddy 가 cert 를 못 받아 HTTPS 다운. 올바른 토큰 확인 전엔 다시 켜지 말 것.
-	#
-	#   전환 절차(사람이 해야 하는 일 — 에이전트가 대신 못 한다):
-	#     1. https://www.duckdns.org 에 **이 도메인을 소유한 계정**으로 로그인해 token 을 복사한다.
-	#        (2026-07-12 실패 원인이 바로 이 "다른 계정 토큰"이었다.)
-	#     2. 운영 서버에서  printf %s '<토큰>' > secrets/duckdns_token.txt
-	#     3. 이 파일에서 `tls internal` 을 지우고 아래 tls 블록의 주석을 푼다.
-	#     4. ./compose_runner.sh prod up -d --build  → docker compose -p vulnagent logs -f caddy
-	#        에서 "certificate obtained successfully" 를 확인한다.
-	#     5. 자물쇠(경고 없음)가 확인된 **뒤에야** 위 security_headers 의
-	#        Strict-Transport-Security 주석을 푼다. 순서를 바꾸면 접속이 막힌다.
-	# tls {
-	# 	dns duckdns {env.DUCKDNS_TOKEN}
-	# }
 
 	reverse_proxy web:80 {
 		# 뒷단 PHP 가 원 프로토콜/호스트를 알도록 표준 헤더 전달.

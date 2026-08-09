@@ -2,14 +2,13 @@
 
 > 문서 기준: 2026-08-09.
 >
-> **현재 인증서는 자체서명이다** — `Caddyfile` 이 `tls internal`(Caddy 내부 CA)로 떠 있고,
-> Let's Encrypt(DuckDNS DNS-01) 블록은 주석 처리돼 있다. 2026-07-12 전환 시도가 실패했고
-> (토큰이 그 도메인 소유 계정 것이 아니었다) 그 뒤로 되돌린 상태다. 아래 "정식 인증서로 전환"
-> 절차를 밟기 전까지 브라우저는 인증서 경고를 낸다 — 그래서 HSTS 도 꺼 두었다.
+> **인증서는 자체서명이다 — 확정된 설계 결정이다.** `Caddyfile` 이 `tls internal`(Caddy 내부 CA)로
+> 뜬다. 2026-07-12 에 Let's Encrypt(DuckDNS DNS-01)로 전환하려다 실패했고(토큰이 그 도메인을
+> 소유한 계정 것이 아니었다), 그 계정을 확보할 수 없어 **재추진하지 않기로 했다**(2026-08-09, 이슈 #518).
+> 그래서 브라우저는 인증서 경고를 내고, HSTS 도 붙이지 않는다(아래 "HSTS 를 붙이지 않는 이유").
 
-vuln-agent 웹을 **HTTPS**로 감싸는 앞단 프록시. 자체서명이든 Let's Encrypt 든
-**인증서 발급에 인바운드 80 을 쓰지 않는다**(HTTP-01 챌린지를 쓰지 않고, 전환 후에도
-DuckDNS DNS-01 챌린지를 쓴다).
+vuln-agent 웹을 **HTTPS**로 감싸는 앞단 프록시. 인증서는 내부 CA 가 즉시 만들므로
+**발급에 인바운드 80 을 쓰지 않는다**(HTTP-01 챌린지 없음).
 
 다만 **접속 경로로는 80·443 을 연다** — 포트 없는 깔끔한 주소(443)를 쓰고, 평문 80 으로
 들어온 요청을 https 로 리다이렉트하기 위해서다. 기존 8080 포워딩도 하위호환으로 유지한다.
@@ -29,17 +28,16 @@ DuckDNS DNS-01 챌린지를 쓴다).
 그 주소로 등록돼 있어 하위호환으로 계속 열어 둔다(`compose.prod.yml` 의 caddy `ports` 참고).
 
 ## 구성 파일
-- `Dockerfile` — DuckDNS 플러그인을 넣어 Caddy 를 빌드(공식 이미지엔 없음)
-- `Caddyfile` — 도메인 1개(`{$PROD_DOMAIN}` — `.env.prod` 에서 온다), `tls internal`(전환 시
-  `tls { dns duckdns }` 로 교체), `reverse_proxy web:80`, 평문 80 catch-all, `(security_headers)` snippet
-- `entrypoint.sh` — docker secret 의 토큰을 `DUCKDNS_TOKEN` env 로 노출 후 Caddy 실행
+- `Dockerfile` — 공식 `caddy:2` 에 `Caddyfile` 만 얹는다. 플러그인·커스텀 진입점 없음
+- `Caddyfile` — 도메인 1개(`{$PROD_DOMAIN}` — `.env.prod` 에서 온다), `tls internal`,
+  `reverse_proxy web:80`, 평문 80 catch-all, `(security_headers)` snippet
 
 > `PROD_DOMAIN` 은 **기본값이 없다.** 비어 있으면 compose 가 `${PROD_DOMAIN:?…}` 로 기동을
 > 거부하고, 그걸 뚫어도 Caddy 가 빈 주소를 전역 옵션 블록으로 읽어
 > `unrecognized global option: encode` 로 죽는다. 폴백을 두면 엉뚱한 이름으로 조용히 떠서
 > **HTTPS 가 깨진 걸 아무도 모르기 때문에** 일부러 시끄럽게 죽게 뒀다.
 
-## 배포 (서버에서 — 현재 구성)
+## 배포 (서버에서)
 
 1. 기동/갱신 (`deploy/` 에서):
    ```bash
@@ -57,16 +55,24 @@ DuckDNS DNS-01 챌린지를 쓴다).
 
 인증서는 `caddy_data` 볼륨에 영속화되어 재시작해도 재발급하지 않는다(내부 CA 루트는 10년짜리).
 
-## 정식 인증서로 전환 (Let's Encrypt · 사람이 하는 작업)
+## 자체서명을 쓰는 이유 (2026-08-09 확정 · 이슈 #518)
 
-1. **이 도메인을 소유한 DuckDNS 계정**으로 로그인해 token 을 복사한다 — 2026-07-12 실패 원인이
-   바로 "다른 계정 토큰"이었다. 도메인 목록에 그 도메인이 보이는지부터 확인한다.
-2. `printf %s 'DuckDNS-토큰' > ../secrets/duckdns_token.txt`
-3. `Caddyfile` 에서 `tls internal` 을 지우고 아래 `tls { dns duckdns … }` 블록의 주석을 푼다.
-4. `./compose_runner.sh prod up -d --build` → `docker compose -p vulnagent logs -f caddy` 에서
-   `certificate obtained successfully` 확인.
-5. 브라우저에서 **경고 없는 자물쇠**를 확인한 **뒤에야** `security_headers` 의
-   `Strict-Transport-Security` 주석을 푼다. 순서를 바꾸면 접속 수단이 사라진다.
+정식 인증서(Let's Encrypt)를 받으려면 이 도메인을 소유한 DuckDNS 계정의 토큰이 필요한데,
+2026-07-12 시도에서 DuckDNS 가 `KO` 를 반환했다 — 쓴 토큰이 그 도메인 소유 계정 것이 아니었다.
+그 계정을 확보할 수 없어 **전환을 재추진하지 않기로 했다.** 그래서 `tls internal` 이 정식 구성이다.
+
+대가는 두 가지고, 둘 다 감수하기로 한 것이다.
+
+- **브라우저 인증서 경고** — 사람이 접속할 때는 예외 처리(고급 → 계속)로 넘어간다.
+- **에이전트가 내부 CA 를 신뢰해야 한다** — 배포마다 Caddy 루트 CA 를 꺼내
+  `agent-ca/` 에 두고 에이전트에 배포한다(`agent-dl.php` 의 `caddy-root.crt`).
+  절차는 [`../README.md`](../README.md) "에이전트 CA 준비". **이 절차는 계속 필요하다.**
+
+### HSTS 를 붙이지 않는 이유
+
+자체서명 + HSTS 는 **브라우저의 인증서 예외를 아예 막는다** — 접속 수단이 사라지고,
+`max-age` 가 만료되기 전엔 사용자가 브라우저 내부 설정에서 HSTS 항목을 손으로 지우는 것 말고는
+되돌릴 방법이 없다. 신뢰되는 CA 로 가지 않는 한 켜지 않는다.
 
 ## 롤백 (HTTPS 끄고 평문 8080 으로 복귀)
 `compose.prod.yml` 에서 caddy 서비스를 지우고 web 에 `ports: ["${WEB_PORT:-8080}:80"]` 를
@@ -81,8 +87,7 @@ DuckDNS DNS-01 챌린지를 쓴다).
   보안 응답 헤더가 안 붙고 `Server: Caddy` 가 그대로 나갔기 때문이다 — 동작(308 + Location)은
   그대로다.
 - **보안 응답 헤더는 `(security_headers)` snippet 한 곳에만 있다.** 사이트 블록마다 복붙하지 않고
-  `import security_headers` 로 쓴다. 목록·근거·HSTS 를 아직 끈 이유는 Caddyfile 주석과
-  `deploy/README.md` 의 2026-08-08 항목에 있다.
-- 인증서 발급(DNS-01)에는 여전히 80 을 쓰지 않는다 — 80 은 오직 리다이렉트 진입점이다.
+  `import security_headers` 로 쓴다. 목록·근거는 Caddyfile 주석과 `deploy/README.md` 의
+  2026-08-08 항목에 있다.
+- 인증서 발급에는 80 을 쓰지 않는다(내부 CA) — 80 은 오직 리다이렉트 진입점이다.
 - `:8080` 은 지우지 않는다. 설치된 에이전트들이 그 주소로 등록돼 있다.
-- 토큰이 틀리면 인증서 발급이 실패하고 사이트가 안 뜬다 → 로그로 확인 후 토큰 교정.

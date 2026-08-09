@@ -50,8 +50,8 @@ scheduler 사이드카가 매 1분 due 커넥터를 조회해 KEV·OSV·NVD·EPS
 
 `compose_runner.sh` 의 dev(메인 트리 / 워크트리)·prod 실행이 각각 어떤 compose 레이어를 겹쳐 쓰는지,
 Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·web·scheduler·db 가 어떤 포트·내부망으로
-붙는지를 보여준다. caddy 가 붙이는 보안 응답 헤더(CSP·nosniff·X-Frame-Options — HSTS 는 자체서명이라
-보류)도 그 노드에 적어 두었다.
+붙는지를 보여준다. caddy 가 붙이는 보안 응답 헤더(CSP·nosniff·X-Frame-Options — HSTS 는 자체서명 확정이라
+붙이지 않는다)도 그 노드에 적어 두었다.
 
 스택이 안 뜨거나, 어떤 compose 파일을 고쳐야 할지 헷갈릴 때 본다.
 

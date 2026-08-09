@@ -12,7 +12,10 @@ DB 비밀번호 등 배포 비밀값을 담는 **Docker Secrets** 디렉토리.
 | `mysql_root_password.txt` | MySQL root 비밀번호 |
 | `mysql_password.txt`      | 앱 DB 유저(`vulnagent`) 비밀번호 |
 | `admin_password.txt`      | 웹 최초 관리자(admin) 비밀번호 (users 비었을 때 부트스트랩) |
-| `duckdns_token.txt`       | **prod 전용** — Caddy 가 Let's Encrypt DNS-01 로 인증서를 받을 때 쓰는 DuckDNS 계정 토큰 (랜덤 생성 아님, 본인 계정 값) |
+
+> Caddy 는 시크릿을 쓰지 않는다 — TLS 는 자체서명(`tls internal`)이라 외부 DNS 토큰이 필요 없다
+> (2026-08-09 확정, `deploy/caddy/README.md`). 예전의 `duckdns_token.txt` 는 더 이상 쓰이지 않으므로
+> 남아 있다면 지워도 된다.
 
 > Export API 토큰은 여기 두지 않는다 — 웹(`/api-tokens.php`)에서 발급하고 DB 에 해시로만 저장한다.
 

@@ -30,7 +30,7 @@ say() { printf "\n${C}== %s${N}\n" "$*"; }
 #                         예전엔 이게 재빌드 목록에 있어서, 러너 한 줄 고친 배포가 수십 초 다운타임을 먹었다.
 # README 같은 운영 문서는 이미지 입력이 아니다. 디렉터리 전체를 잡으면 문서 수정만으로도
 # 웹·Caddy를 재생성한다. 실제 Docker build context에서 COPY/RUN하는 파일만 열거한다.
-BUILD_RE='^(server/Dockerfile|deploy/caddy/(Dockerfile|Caddyfile|entrypoint\.sh))$'
+BUILD_RE='^(server/Dockerfile|deploy/caddy/(Dockerfile|Caddyfile))$'
 RECREATE_RE='^deploy/(compose[^/]*\.yml|config/)'
 DB_RE='^db/'
 # deploy/config/mysql/my.cnf 는 db 컨테이너에 바인드마운트(:ro)되지만, docker compose 의
