@@ -155,6 +155,16 @@ function vg_asset_grade_max(array $grades): ?array
     ];
 }
 
+/**
+ * 등급 범례 한 줄("C · 기밀 / S · 민감 / O · 공개").
+ *   화면에 C/S/O 라는 글자만 뜨면 처음 보는 사람은 뜻을 알 수 없다. 어휘를 화면마다 다시 적지 않도록
+ *   VG_ASSET_GRADES 에서 만들어 쓴다(하드코딩 분류표를 늘리지 않는다).
+ */
+function vg_asset_grade_legend(): string
+{
+    return implode(' / ', VG_ASSET_GRADES);
+}
+
 /** 등급 뱃지. 확정값과 제안값을 눈으로 구분해야 하므로 제안값은 '제안' 꼬리표를 단다. */
 function vg_asset_grade_badge(?string $grade, bool $suggested = false, string $reason = ''): string
 {
