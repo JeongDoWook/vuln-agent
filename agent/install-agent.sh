@@ -18,7 +18,7 @@
 #   sudo bash install-agent.sh --server ... --token ... --schedule daily
 #   sudo bash install-agent.sh --server ... --token ... --schedule '*:0/30'   # 30분마다
 #   sudo bash install-agent.sh --server ... --token ... --prefix /apps/vulnagent
-#   sudo bash install-agent.sh --server ... --token ... --host-ip 10.3.142.200  # 이름을 이 IP 로
+#   sudo bash install-agent.sh --server ... --token ... --host-ip 10.0.0.200  # 이름을 이 IP 로
 #   sudo bash install-agent.sh --server ... --token ... --ca-file ./caddy-root.crt
 #   sudo bash install-agent.sh --uninstall [--prefix 설치경로]
 #

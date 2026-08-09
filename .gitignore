@@ -18,6 +18,10 @@ secrets/*.txt
 # 배포별 Caddy 루트 CA(공개 인증서지만 배포마다 다른 값 → 레포엔 안 넣는다). .gitkeep 만 커밋.
 agent-ca/*.crt
 
+# 에이전트 배포 대상 노드 목록. 비밀값은 아니지만 적히면 내부망 인벤토리가 된다
+#   (이 저장소는 공개돼 있다). .template 만 커밋한다.
+deploy/agent_nodes.txt
+
 # --- PHP ---
 /vendor/
 composer.lock
@@ -61,6 +65,11 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# 로컬 전용 산출물: 브라우저 인증 상태(.playwright-auth)와 UI 감사 결과(.ui-audit).
+# 지금은 빈 디렉터리지만 내용이 생기면 이 머신에서만 의미 있는 데이터다.
+.playwright-auth/
+.ui-audit/
 
 # go_deps_extract_test.sh 임시 fixture(trap 정상 종료 시 자동 삭제 — 비정상 종료 대비 안전망)
 tests/.tmp-go-deps.*

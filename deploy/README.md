@@ -65,13 +65,16 @@ curl -s http://127.0.0.1:8081/agent-dl.php?f=caddy-root.crt | head -1
 ## 에이전트 일괄 설치·갱신 (`install_staged_agents.sh`)
 
 노드들에 SSH 로 닿는 곳(master)에서 저장소의 최신 `agent/vuln-inventory-agent.sh` 를 여러 노드에
-한 번에 밀어 넣고 재시작·버전 확인까지 한다. 대상을 안 주면 스크립트 상단의 기본 노드 목록을 쓴다.
+한 번에 밀어 넣고 재시작·버전 확인까지 한다. 대상을 안 주면 `deploy/agent_nodes.txt` 의 목록을 쓴다.
 
 ```bash
-bash deploy/install_staged_agents.sh                       # 기본 노드 전체
-bash deploy/install_staged_agents.sh 10.3.142.105 worker@10.3.142.201   # 대상 지정
+bash deploy/install_staged_agents.sh                       # agent_nodes.txt 의 노드 전체
+bash deploy/install_staged_agents.sh 10.0.0.105 user@10.0.0.201   # 대상 지정
 ```
 
+- 노드 목록은 저장소에 두지 않는다(내부망 인벤토리이므로 `.gitignore`). 처음 쓸 때
+  `cp deploy/agent_nodes.txt.template deploy/agent_nodes.txt` 로 만들고 대상을 적는다 —
+  파일이 없으면 스크립트가 안내 후 종료한다.
 - SSH 사용자·설치 경로는 `AGENT_SSH_USER`·`AGENT_PREFIX` 환경변수로 바꾼다.
 - **신규 설치·토큰 발급은 하지 않는다** — 그건 그 서버에서 `install-agent.sh` 를 돌리는 일이다.
   한 노드만 본체를 갱신할 땐 `agent_push.sh` 를 쓴다([`../agent/README.md`](../agent/README.md) "갱신").

@@ -22,10 +22,10 @@
 #   웹앱이 한 번 뚫리면 전 노드 root 장악으로 번진다. 사람의 SSH 키로 CLI 에서 돈다.
 #
 # 사용:
-#   bash deploy/agent_push.sh 10.3.142.100 10.3.142.101 10.3.142.102
-#   bash deploy/agent_push.sh worker@10.3.142.100 dwjung@10.3.142.200   # 계정을 섞어 쓸 때
-#   AGENT_SSH_USER=pi bash deploy/agent_push.sh 10.3.142.103            # 기본 계정 바꾸기
-#   AGENT_PREFIX=/apps/vulnagent bash deploy/agent_push.sh 10.3.142.200 # 설치 경로가 다를 때
+#   bash deploy/agent_push.sh 10.0.0.100 10.0.0.101 10.0.0.102
+#   bash deploy/agent_push.sh user@10.0.0.100 deploy@10.0.0.200   # 계정을 섞어 쓸 때
+#   AGENT_SSH_USER=pi bash deploy/agent_push.sh 10.0.0.103            # 기본 계정 바꾸기
+#   AGENT_PREFIX=/apps/vulnagent bash deploy/agent_push.sh 10.0.0.200 # 설치 경로가 다를 때
 # =============================================================================
 set -euo pipefail
 

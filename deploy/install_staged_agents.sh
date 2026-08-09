@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 저장소의 최신 에이전트를 중앙 서버와 원격 노드에 전송한 뒤 설치·재시작·버전 확인한다.
-# 사용: bash deploy/install_staged_agents.sh
-#       bash deploy/install_staged_agents.sh 10.3.142.105 worker@10.3.142.201
+# 사용: bash deploy/install_staged_agents.sh                     # deploy/agent_nodes.txt 의 목록
+#       bash deploy/install_staged_agents.sh 10.0.0.105 user@10.0.0.201   # 대상 직접 지정
 set -uo pipefail
 
 PREFIX="${AGENT_PREFIX:-/opt/vuln-agent}"
@@ -9,17 +9,29 @@ SSH_USER="${AGENT_SSH_USER:-worker}"
 STAGED=".vuln-agent-push.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../agent" && pwd)/vuln-inventory-agent.sh"
-DEFAULT_TARGETS=(
-  10.3.142.100 10.3.142.101 10.3.142.102
-  10.3.142.103 10.3.142.104 10.3.142.105
-  10.3.142.106 10.3.142.107 10.3.142.108
-  10.3.142.201
-)
+# 배포 대상 노드는 저장소에 두지 않는다 — 내부망 인벤토리가 그대로 공개되기 때문이다.
+# 형식은 deploy/agent_nodes.txt.template 참고(한 줄에 하나, '#' 주석·빈 줄 허용).
+NODES_FILE="${AGENT_NODES_FILE:-$SCRIPT_DIR/agent_nodes.txt}"
 
 if [ $# -gt 0 ]; then
   TARGETS=("$@")
 else
-  TARGETS=("${DEFAULT_TARGETS[@]}")
+  if [ ! -f "$NODES_FILE" ]; then
+    echo "노드 목록 파일이 없습니다: $NODES_FILE" >&2
+    echo "deploy/agent_nodes.txt.template 을 복사해 대상 노드를 적으세요." >&2
+    exit 1
+  fi
+  TARGETS=()
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    line="$(echo "$line" | tr -d '[:space:]')"
+    [ -n "$line" ] && TARGETS+=("$line")
+  done < "$NODES_FILE"
+  if [ ${#TARGETS[@]} -eq 0 ]; then
+    echo "노드 목록이 비어 있습니다: $NODES_FILE" >&2
+    echo "deploy/agent_nodes.txt.template 을 참고해 대상 노드를 적으세요." >&2
+    exit 1
+  fi
 fi
 
 [ -f "$SRC" ] || { echo "에이전트 원본이 없습니다: $SRC" >&2; exit 1; }
