@@ -65,11 +65,16 @@ function vg_asset_grade_observe(
 
     // 수집 불완전은 관찰만 남기고 현재 제안을 지우지 않는다. 지연 도착한 과거 스캔도
     // 이력에는 남기되 현재 호환 컬럼을 과거 상태로 되돌리지 않는다.
+    // 확정값(grade/grade_reason/approved_*)은 이 UPDATE 가 절대 건드리지 않는다 — 확정은
+    //   vg_asset_grade_confirm() 한 곳의 책임이다.
     if ($status === 'NOT_EVALUATED') { return; }
     $st = $pdo->prepare(
         'UPDATE tb_host SET grade_suggested = ?, grade_suggested_reason = ?
           WHERE host_id = ?
-            AND NOT (grade_suggested <=> ? AND grade_suggested_reason <=> ?)
+            AND (
+              COALESCE(grade_suggested, \'\') <> COALESCE(?, \'\')
+              OR COALESCE(grade_suggested_reason, \'\') <> COALESCE(?, \'\')
+            )
             AND NOT EXISTS (
                 SELECT 1 FROM tb_asset_grade_suggestion_history newer
                  WHERE newer.host_id = ?
