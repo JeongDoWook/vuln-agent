@@ -20,6 +20,8 @@ final class VgAssetGradeHistoryFakePdo extends PDO
     public ?string $latestGrade = null;
     public ?string $latestReason = null;
     public ?string $confirmedGrade = 'C';
+    /** 서버 관찰 시각(NOW()) 대역. INSERT 마다 단조 증가시켜 replay 순서를 흉내낸다. */
+    public int $clock = 0;
     /** @var array<string,array<string,mixed>> */
     public array $history = [];
 
@@ -48,17 +50,35 @@ final class VgAssetGradeHistoryFakeStatement extends PDOStatement
         if (str_starts_with(trim($this->sql), 'UPDATE tb_host')) {
             $sourceAt = (string) ($this->params[6] ?? '');
             foreach ($this->pdo->history as $row) {
+                // 판정 불가 관찰은 등급을 담지 않으므로 최신 제안의 반영을 막지 않는다(SQL 과 동일).
+                if ((string) ($row['status'] ?? '') === 'NOT_EVALUATED') { continue; }
                 if ((string) ($row['observed_at'] ?? '') > $sourceAt) { return true; }
             }
             $this->pdo->latestGrade = $this->params[0];
             $this->pdo->latestReason = $this->params[1];
         } elseif (str_starts_with(trim($this->sql), 'INSERT INTO tb_asset_grade_suggestion_history')) {
             $key = $this->params[0] . '|' . $this->params[1] . '|' . bin2hex($this->params[6]);
-            $this->pdo->history[$key] ??= [
+            $now = ++$this->pdo->clock;
+            if (isset($this->pdo->history[$key])) {
+                // ON DUPLICATE KEY UPDATE — 행은 늘지 않고 마지막 관찰만 앞으로 간다.
+                $prev = $this->pdo->history[$key];
+                $incoming = $this->params[8];
+                if ($incoming !== null
+                    && ($prev['last_source_collected_at'] === null
+                        || $incoming > $prev['last_source_collected_at'])) {
+                    $this->pdo->history[$key]['last_source_collected_at'] = $incoming;
+                }
+                $this->pdo->history[$key]['last_observed_at']
+                    = max((int) $prev['last_observed_at'], $now);
+                return true;
+            }
+            $this->pdo->history[$key] = [
                 'host_id' => $this->params[0], 'scan_id' => $this->params[1],
                 'grade' => $this->params[2], 'reason' => $this->params[3],
                 'status' => $this->params[4], 'evidence' => $this->params[5],
                 'observed_at' => $this->params[7],
+                'last_source_collected_at' => $this->params[8],
+                'last_observed_at' => $now,
             ];
         }
         return true;
@@ -147,6 +167,52 @@ vg_asset_grade_observe($coveragePdo, 8, 22, '2026-08-09 11:05:00', [
     ['runtime_processes', 'MISSING', 0], ['network_exposure', 'COMPLETE', 1],
 ]);
 $eq('상위 S 근거를 못 본 O는 판정불가', array_values($coveragePdo->history)[0]['status'], 'NOT_EVALUATED');
+
+// --- #542 후속: replay 관찰시각 보존 -----------------------------------------
+$replayPdo = new VgAssetGradeHistoryFakePdo();
+vg_asset_grade_observe($replayPdo, 9, 31, '2026-08-09 12:00:00', $complete);
+$first = array_values($replayPdo->history)[0];
+vg_asset_grade_observe($replayPdo, 9, 31, '2026-08-09 12:30:00', $complete);
+$after = array_values($replayPdo->history)[0];
+$eq('동일 결과 replay 는 행을 늘리지 않음', count($replayPdo->history), 1);
+$eq('replay 는 마지막 서버 관찰 시각을 갱신', $after['last_observed_at'] > $first['last_observed_at'], true);
+$eq('replay 는 마지막 수집 시각을 갱신', $after['last_source_collected_at'], '2026-08-09 12:30:00');
+
+vg_asset_grade_observe($replayPdo, 9, 31, '2026-08-09 11:00:00', $complete);
+$after2 = array_values($replayPdo->history)[0];
+$eq('뒤늦게 온 과거 수집 시각은 마지막 수집 시각을 되돌리지 않음',
+    $after2['last_source_collected_at'], '2026-08-09 12:30:00');
+$eq('최초 수집 시각은 replay 로 바뀌지 않음', $after2['observed_at'], '2026-08-09 12:00:00');
+
+// --- 판정 불가 관찰은 유효 제안의 반영을 막지 않는다 --------------------------
+$notEvalPdo = new VgAssetGradeHistoryFakePdo();
+vg_asset_grade_observe($notEvalPdo, 10, 41, '2026-08-09 13:00:00', [['runtime_processes', 'MISSING', 0]]);
+$eq('수집 누락은 판정 불가로 남는다', array_values($notEvalPdo->history)[0]['status'], 'NOT_EVALUATED');
+$eq('판정 불가는 제안 컬럼을 쓰지 않음', $notEvalPdo->latestGrade, null);
+vg_asset_grade_observe($notEvalPdo, 10, 42, '2026-08-09 12:00:00', $complete);
+$eq('판정 불가 행은 더 이른 유효 제안의 반영을 막지 않음', $notEvalPdo->latestGrade, 'S');
+
+// --- 요구 단계 스냅샷: 안 들어온 단계도 MISSING 으로 명시 ---------------------
+$stagePdo = new VgAssetGradeHistoryFakePdo();
+$stagePdo->suggestion = null;   // 근거 없음 → 두 수집 단계 모두가 판정에 필요하다
+vg_asset_grade_observe($stagePdo, 11, 51, '2026-08-09 14:00:00', [['runtime_processes', 'COMPLETE', 3]]);
+$snapshot = json_decode((string) array_values($stagePdo->history)[0]['evidence'], true);
+$eq('요구 단계는 빠짐없이 스냅샷에 남는다',
+    array_keys($snapshot['required_stages']), ['runtime_processes', 'network_exposure']);
+$eq('아예 안 들어온 단계는 MISSING·0 으로 명시',
+    $snapshot['required_stages']['network_exposure'], ['status' => 'MISSING', 'item_count' => 0]);
+$eq('들어온 단계는 실제 건수를 보존',
+    $snapshot['required_stages']['runtime_processes'], ['status' => 'COMPLETE', 'item_count' => 3]);
+
+// --- 신선도 클램프: PHP 상수와 두 SQL 정의가 어긋나면 실패 -------------------
+$clamp = 'INTERVAL ' . VG_ASSET_GRADE_RECENCY_CLAMP_DAYS . ' DAY';
+$eq('클램프 상수와 마이그레이션 생성컬럼 일치', str_contains(
+    file_get_contents(__DIR__ . '/../db/migrations/20260809220000_asset_grade_history_replay_recency.sql'),
+    $clamp), true);
+$eq('클램프 상수와 initdb 생성컬럼 일치', str_contains(
+    file_get_contents(__DIR__ . '/../db/19-asset-grade-suggestion-history.sql'), $clamp), true);
+$eq('replay 마지막 관찰 시각 보존 ODKU', str_contains($source, 'last_observed_at = GREATEST'), true);
+$eq('판정 불가는 최신 제안 판단에서 제외', str_contains($source, 'newer.evaluation_status <>'), true);
 
 if ($fail > 0) { printf("assetgrade_history_test: %d건 실패\n", $fail); exit(1); }
 echo "assetgrade_history_test: 전부 통과\n";
