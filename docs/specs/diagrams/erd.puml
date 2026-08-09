@@ -346,6 +346,25 @@ package "벤더·기준 카탈로그 — 배포판·커널·보안설정 기준"
         control_name : string
         ' UK(rule_code, framework, control_id)
     }
+
+    entity tb_control_guide {
+        control_guide_id : bigint <<PK>>
+        --
+        framework : string
+        control_id : string
+        ' UK(framework, control_id)
+        description : text
+        ' 이 통제가 무엇을 요구하는가
+    }
+
+    entity tb_cce_rule_guide {
+        cce_rule_guide_id : bigint <<PK>>
+        --
+        rule_code : string <<UK>>
+        summary : string
+        remediation : text
+        ' 조치 방법(파일·지시어 수준)
+    }
 }
 
 package "판정 결과 — 우리 기여(런타임 상태·억제)" {
@@ -622,6 +641,8 @@ tb_cve_affected_package }o..|| tb_package_summary : "사전집계(OSV 실행 시
 tb_container ||..o{ tb_package : "컨테이너 내부 패키지(container_id)"
 tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"
 tb_cce_finding }o..o{ tb_control_mapping : "기준별 통제(rule_code = code)"
+tb_control_mapping }o..o| tb_control_guide : "통제 설명(framework, control_id)"
+tb_control_mapping }o..o| tb_cce_rule_guide : "룰 조치(rule_code)"
 tb_remediation_note ||..o{ tb_finding : "자연키(host+cid+cve+package)로 붙는 사람 메모"
 
 ' 벤더 판정 소스는 매처가 참조만 한다(스캔에 매달리지 않음).

@@ -63,4 +63,51 @@ if (!function_exists('vg_control_frameworks')) {
         }
         return $out;
     }
+
+    /**
+     * 통제 하나의 설명(tb_control_guide). 없으면 null — 화면은 "설명 준비 중"으로 비운다.
+     *   가이드가 없는 통제가 있는 게 정상이다(근거 없으면 시드 행을 만들지 않는다).
+     */
+    function vg_control_guide(PDO $pdo, string $fw, string $controlId): ?array {
+        $st = $pdo->prepare(
+            'SELECT description, updated_at FROM tb_control_guide
+              WHERE framework = ? AND control_id = ? AND is_deleted = 0 LIMIT 1'
+        );
+        $st->execute([$fw, $controlId]);
+        return $st->fetch() ?: null;
+    }
+
+    /**
+     * 룰코드 배열 → [rule_code] = ['summary'=>…, 'remediation'=>…].
+     *   IN 절 배치 조회 1회 — 룰마다 물어보면 N+1 이 된다(vg_control_mapping_for 와 같은 이유).
+     *
+     * @param string[] $ruleCodes
+     * @return array<string, array{summary: string, remediation: string}>
+     */
+    function vg_cce_rule_guides(array $ruleCodes): array {
+        $codes = [];
+        foreach ($ruleCodes as $c) {
+            $c = trim((string) $c);
+            if ($c !== '') { $codes[$c] = true; }
+        }
+        if (!$codes) { return []; }
+        $codes = array_keys($codes);
+
+        $in = implode(',', array_fill(0, count($codes), '?'));
+        $st = vg_pdo()->prepare(
+            "SELECT rule_code, summary, remediation
+               FROM tb_cce_rule_guide
+              WHERE is_deleted = 0 AND rule_code IN ($in)"
+        );
+        $st->execute($codes);
+
+        $out = [];
+        foreach ($st->fetchAll() as $r) {
+            $out[(string) $r['rule_code']] = [
+                'summary'     => (string) $r['summary'],
+                'remediation' => (string) $r['remediation'],
+            ];
+        }
+        return $out;
+    }
 }

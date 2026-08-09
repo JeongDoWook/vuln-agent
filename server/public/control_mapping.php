@@ -3,7 +3,11 @@ declare(strict_types=1);
 
 /**
  * control_mapping.php — 보안설정 점검(CCE) 결과를 "기준"으로 바꿔 끼워 보는 화면. 로그인 필요.
- *   ?fw=ISMS_P|KISA_U|N2SF  ·  ?control=<통제 ID>(드릴다운)  ·  ?page=N/?per_page=N
+ *   ?fw=ISMS_P|KISA_U|N2SF  ·  ?page=N/?per_page=N
+ *
+ * 통제 하나의 상세는 control.php 가 갖는다 — 이 파일은 목록만(SRP). 예전 `?control=` 드릴다운
+ *   URL 은 아래에서 그 주소로 302 한다(링크만 갈아끼우면 이미 공유·북마크된 주소가 목록으로
+ *   되돌아가 "눌렀는데 아무 일도 안 일어난다"가 된다).
  *
  * 왜 새 화면인가: compliance_rules.php/compliance_rule.php 는 SSG(SCAP) 룰 카탈로그이지 CCE
  *   점검 결과 목록이 아니고, compliance.php 는 통제 3종을 자동판정하는 화면이다(판정 로직은
@@ -19,12 +23,17 @@ require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_frameworks, 
 
 $err = null;
 $fw = vg_control_framework_param($_GET['fw'] ?? null);   // 화이트리스트 검증(SSOT)
-$control = trim((string) ($_GET['control'] ?? ''));
 $frameworks = vg_control_frameworks();
 
-$rows = [];            // 통제별 집계(또는 드릴다운 시 점검 결과)
+// 옛 드릴다운 URL 호환 — 상세는 control.php 로 이관했다.
+$legacyControl = trim((string) ($_GET['control'] ?? ''));
+if ($legacyControl !== '') {
+    header('Location: /control.php?fw=' . urlencode($fw) . '&control=' . urlencode($legacyControl), true, 302);
+    exit;
+}
+
+$rows = [];            // 통제별 집계
 $total = 0;            // 페이지네이션 대상 총건수
-$controlName = '';     // 드릴다운 대상 통제명
 $uncovered = [];       // 매핑은 있으나 아직 점검 결과가 없는 통제
 $mappedRules = 0;      // 이 기준에 매핑된 CCE 룰 수
 $findingTotal = 0;     // 이 기준으로 묶인 점검 결과 총건수
@@ -33,10 +42,7 @@ $perPage = vg_perpage();
 
 try {
     $pdo = vg_pdo();
-    vg_log_activity(
-        $pdo, 'PAGE', null, 'view_control_mapping',
-        '통제 기준 매핑 조회 · ' . $fw . ($control !== '' ? ' / ' . $control : '')
-    );
+    vg_log_activity($pdo, 'PAGE', null, 'view_control_mapping', '통제 기준 매핑 조회 · ' . $fw);
     session_write_close();   // 인가·감사로그 이후 집계 전 세션락 해제(compliance.php 선례)
 
     // 호스트별 최신 스캔의 CCE 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다.
@@ -61,64 +67,40 @@ try {
 
     $offset = ($page - 1) * $perPage;
 
-    if ($control !== '') {
-        // ── 드릴다운: 이 통제에 걸린 점검 결과 목록 ──
-        $st = $pdo->prepare(
-            'SELECT control_name FROM tb_control_mapping
-              WHERE framework = ? AND control_id = ? AND is_deleted = 0 LIMIT 1'
-        );
-        $st->execute([$fw, $control]);
-        $controlName = (string) ($st->fetchColumn() ?: '');
+    // ── 기준의 통제 ID 로 그룹핑 ──
+    $groupSql =
+        "SELECT m.control_id, m.control_name,
+                COUNT(*) AS finding_cnt,
+                SUM(cf.result = 'FAIL') AS fail_cnt,
+                SUM(cf.result = 'PASS') AS pass_cnt,
+                SUM(cf.result = 'NA')   AS na_cnt,
+                COUNT(DISTINCT cf.code) AS rule_cnt,
+                GROUP_CONCAT(DISTINCT cf.code ORDER BY cf.code SEPARATOR ', ') AS codes
+         $baseSql
+          GROUP BY m.control_id, m.control_name";
 
-        $st = $pdo->prepare("SELECT COUNT(*) $baseSql AND m.control_id = ?");
-        $st->execute([$fw, $control]);
-        $total = (int) $st->fetchColumn();
+    $st = $pdo->prepare("SELECT COUNT(*) FROM ($groupSql) g");
+    $st->execute([$fw]);
+    $total = (int) $st->fetchColumn();
 
-        $st = $pdo->prepare(
-            "SELECT h.host_id, h.fqdn, cf.code, cf.title, cf.result, cf.severity, cf.rationale
-             $baseSql AND m.control_id = ?
-              ORDER BY FIELD(cf.result,'FAIL','NA','PASS'),
-                       FIELD(cf.severity,'HIGH','MEDIUM','LOW'), h.fqdn, cf.code
-              LIMIT $perPage OFFSET $offset"
-        );
-        $st->execute([$fw, $control]);
-        $rows = $st->fetchAll();
-    } else {
-        // ── 기준의 통제 ID 로 그룹핑 ──
-        $groupSql =
-            "SELECT m.control_id, m.control_name,
-                    COUNT(*) AS finding_cnt,
-                    SUM(cf.result = 'FAIL') AS fail_cnt,
-                    SUM(cf.result = 'PASS') AS pass_cnt,
-                    SUM(cf.result = 'NA')   AS na_cnt,
-                    COUNT(DISTINCT cf.code) AS rule_cnt,
-                    GROUP_CONCAT(DISTINCT cf.code ORDER BY cf.code SEPARATOR ', ') AS codes
-             $baseSql
-              GROUP BY m.control_id, m.control_name";
+    $st = $pdo->prepare("$groupSql ORDER BY fail_cnt DESC, m.control_id LIMIT $perPage OFFSET $offset");
+    $st->execute([$fw]);
+    $rows = $st->fetchAll();
 
-        $st = $pdo->prepare("SELECT COUNT(*) FROM ($groupSql) g");
-        $st->execute([$fw]);
-        $total = (int) $st->fetchColumn();
+    // 매핑은 돼 있는데 아직 점검 결과가 하나도 없는 통제 — "안 걸린 것"과 "아직 못 본 것"을
+    //   구분해 보여준다(못 채운 걸 준수로 위장하지 않는다). 기준당 통제 수가 수십 개라 전량 조회.
+    $st = $pdo->prepare(
+        'SELECT DISTINCT control_id, control_name FROM tb_control_mapping
+          WHERE framework = ? AND is_deleted = 0 ORDER BY control_id'
+    );
+    $st->execute([$fw]);
+    $all = $st->fetchAll();
 
-        $st = $pdo->prepare("$groupSql ORDER BY fail_cnt DESC, m.control_id LIMIT $perPage OFFSET $offset");
-        $st->execute([$fw]);
-        $rows = $st->fetchAll();
-
-        // 매핑은 돼 있는데 아직 점검 결과가 하나도 없는 통제 — "안 걸린 것"과 "아직 못 본 것"을
-        //   구분해 보여준다(못 채운 걸 준수로 위장하지 않는다). 기준당 통제 수가 수십 개라 전량 조회.
-        $st = $pdo->prepare(
-            'SELECT DISTINCT control_id, control_name FROM tb_control_mapping
-              WHERE framework = ? AND is_deleted = 0 ORDER BY control_id'
-        );
-        $st->execute([$fw]);
-        $all = $st->fetchAll();
-
-        $st = $pdo->prepare("SELECT DISTINCT m.control_id $baseSql");
-        $st->execute([$fw]);
-        $covered = array_flip(array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN)));
-        foreach ($all as $c) {
-            if (!isset($covered[(string) $c['control_id']])) { $uncovered[] = $c; }
-        }
+    $st = $pdo->prepare("SELECT DISTINCT m.control_id $baseSql");
+    $st->execute([$fw]);
+    $covered = array_flip(array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN)));
+    foreach ($all as $c) {
+        if (!isset($covered[(string) $c['control_id']])) { $uncovered[] = $c; }
     }
 } catch (Throwable $e) {
     error_log('[control_mapping] ' . $e->getMessage());
@@ -148,100 +130,61 @@ vg_header('통제 기준 매핑', 'control_mapping');
     <div class="kpi kpi--sm"><b><?= number_format($findingTotal) ?></b><span>최신 스캔 점검 결과</span></div>
   </div>
 
-  <?php if ($control !== ''): ?>
-    <div class="card">
-      <strong><?= vg_h($control) ?></strong>
-      <span class="why">— <?= vg_h($controlName !== '' ? $controlName : '이 기준에 없는 통제') ?> ·
-        <?= vg_h($frameworks[$fw]) ?></span>
+  <?php
+  // 통제 ID·통제명 모두 상세로 들어가는 링크다 — "누르면 들어간다"가 요구사항이라
+  //   누르는 면적을 ID 한 조각으로 좁혀 두지 않는다.
+  $detailHref = fn(array $r): string => '/control.php?fw=' . urlencode($fw)
+      . '&amp;control=' . urlencode((string) $r['control_id']);
+  vg_table(
+      [
+          ['label' => '통제 ID', 'width' => '9rem', 'class' => 'col-id'],
+          ['label' => '통제명'],
+          ['label' => '점검 항목', 'width' => '20%'],
+          // 'PASS n · NA n · n건' 이 9rem 에서 두 줄로 접혔다 — 한 줄에 들어오게 넓힌다.
+          ['label' => '결과', 'width' => '11rem'],
+          ['label' => '위반', 'width' => '6rem', 'align' => 'right'],
+      ],
+      $rows,
+      [
+          'empty' => [
+              'icon'  => '🧭',
+              'title' => '이 기준으로 묶인 점검 결과가 없습니다.',
+              'hint'  => '에이전트 수집이 한 번은 돌아야 보안설정 점검 결과가 생깁니다.',
+              'cta'   => ['href' => '/assets.php', 'label' => '자산 확인'],
+          ],
+          'cell' => [
+              0 => fn($r) => '<a href="' . $detailHref($r) . '">'
+                           . '<code class="why">' . vg_h((string) $r['control_id']) . '</code></a>',
+              1 => fn($r) => '<a class="control-name" href="' . $detailHref($r) . '">'
+                           . vg_h((string) $r['control_name']) . '</a>',
+              2 => fn($r) => '<span class="why">' . vg_trunc((string) ($r['codes'] ?? ''), 60) . '</span>',
+              3 => fn($r) => '<span class="why">'
+                           . 'PASS ' . number_format((int) $r['pass_cnt'])
+                           . ' · NA ' . number_format((int) $r['na_cnt'])
+                           . ' · ' . number_format((int) $r['finding_cnt']) . '건</span>',
+              4 => function ($r) {
+                  $fail = (int) $r['fail_cnt'];
+                  return vg_badge(number_format($fail) . '건', $fail > 0 ? 'crit' : 'ok');
+              },
+          ],
+      ]
+  );
+  if ($rows) { vg_page_nav($total, $perPage, $page); }
+  ?>
+
+  <?php if ($uncovered): ?>
+    <div class="card mt-lg">
       <div class="card__body">
-        <p class="why">이 통제에 걸린 점검 결과 <?= number_format($total) ?>건 (호스트별 최신 스캔 기준).
-          <a href="/control_mapping.php?fw=<?= urlencode($fw) ?>">← 통제 목록으로</a></p>
-        <?php
-        vg_table(
-            [
-                ['label' => '호스트'],
-                ['label' => '점검 항목'],
-                ['label' => '결과', 'key' => 'result', 'width' => '6rem'],
-                ['label' => '판정 사유'],
-            ],
-            $rows,
-            [
-                'card'  => false,
-                'empty' => [
-                    'icon'  => '📭',
-                    'title' => '이 통제에 걸린 점검 결과가 없습니다.',
-                    'hint'  => '에이전트가 해당 항목을 점검한 뒤 다시 확인해 주세요.',
-                ],
-                'cell' => [
-                    0 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '&amp;tab=cce">'
-                                 . vg_h((string) $r['fqdn']) . '</a>',
-                    1 => fn($r) => vg_h((string) $r['title'])
-                                 . ' <code class="why">' . vg_h((string) $r['code']) . '</code>',
-                    'result' => function ($r) {
-                        $tone = $r['result'] === 'FAIL' ? vg_sev_tone((string) $r['severity'])
-                              : ($r['result'] === 'PASS' ? 'low' : 'muted');
-                        return vg_badge((string) $r['result'], $tone);
-                    },
-                    3 => fn($r) => '<span class="why">' . vg_trunc((string) ($r['rationale'] ?? ''), 80) . '</span>',
-                ],
-            ]
-        );
-        if ($rows) { vg_page_nav($total, $perPage, $page); }
-        ?>
+        <strong>아직 점검 결과가 없는 통제</strong>
+        <p class="why">매핑은 돼 있지만 최신 스캔에 해당 점검 결과가 없는 통제입니다.
+          준수로 간주하지 않습니다 — 수집 범위(비-root 실행 등)를 먼저 확인해 주세요.</p>
+        <ul class="hint-list">
+          <?php foreach ($uncovered as $c): ?>
+            <li><a class="control-name" href="/control.php?fw=<?= urlencode($fw) ?>&amp;control=<?= urlencode((string) $c['control_id']) ?>"><?= vg_h((string) $c['control_id']) ?> · <?= vg_h((string) $c['control_name']) ?></a></li>
+          <?php endforeach; ?>
+        </ul>
       </div>
     </div>
-  <?php else: ?>
-    <?php
-    vg_table(
-        [
-            ['label' => '통제 ID', 'width' => '9rem', 'class' => 'col-id'],
-            ['label' => '통제명'],
-            ['label' => '점검 항목', 'width' => '20%'],
-            ['label' => '결과', 'width' => '9rem'],
-            ['label' => '위반', 'width' => '6rem', 'align' => 'right'],
-        ],
-        $rows,
-        [
-            'empty' => [
-                'icon'  => '🧭',
-                'title' => '이 기준으로 묶인 점검 결과가 없습니다.',
-                'hint'  => '에이전트 수집이 한 번은 돌아야 보안설정 점검 결과가 생깁니다.',
-                'cta'   => ['href' => '/assets.php', 'label' => '자산 확인'],
-            ],
-            'cell' => [
-                0 => fn($r) => '<a href="/control_mapping.php?fw=' . urlencode($fw)
-                             . '&amp;control=' . urlencode((string) $r['control_id']) . '">'
-                             . '<code class="why">' . vg_h((string) $r['control_id']) . '</code></a>',
-                1 => fn($r) => vg_h((string) $r['control_name']),
-                2 => fn($r) => '<span class="why">' . vg_trunc((string) ($r['codes'] ?? ''), 60) . '</span>',
-                3 => fn($r) => '<span class="why">'
-                             . 'PASS ' . number_format((int) $r['pass_cnt'])
-                             . ' · NA ' . number_format((int) $r['na_cnt'])
-                             . ' · 총 ' . number_format((int) $r['finding_cnt']) . '건</span>',
-                4 => function ($r) {
-                    $fail = (int) $r['fail_cnt'];
-                    return vg_badge(number_format($fail) . '건', $fail > 0 ? 'crit' : 'ok');
-                },
-            ],
-        ]
-    );
-    if ($rows) { vg_page_nav($total, $perPage, $page); }
-    ?>
-
-    <?php if ($uncovered): ?>
-      <div class="card mt-lg">
-        <div class="card__body">
-          <strong>아직 점검 결과가 없는 통제</strong>
-          <p class="why">매핑은 돼 있지만 최신 스캔에 해당 점검 결과가 없는 통제입니다.
-            준수로 간주하지 않습니다 — 수집 범위(비-root 실행 등)를 먼저 확인해 주세요.</p>
-          <ul class="hint-list">
-            <?php foreach ($uncovered as $c): ?>
-              <li><?= vg_h((string) $c['control_id']) ?> · <?= vg_h((string) $c['control_name']) ?></li>
-            <?php endforeach; ?>
-          </ul>
-        </div>
-      </div>
-    <?php endif; ?>
   <?php endif; ?>
 <?php endif; ?>
 <?php vg_footer();
