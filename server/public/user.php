@@ -125,7 +125,7 @@ vg_header($user['username'] ?? '사용자', 'users');
 
   <div class="card">
     <strong>계정 관리</strong>
-    <span class="why">— 역할 변경 · 비밀번호 초기화 · 삭제. 자기 자신은 역할변경·삭제를 할 수 없습니다.</span>
+    <span class="why">— 역할 변경 · 비밀번호 초기화 · 삭제</span>
     <div class="card__body">
       <div class="actions actions--stack">
         <?php if ($isLocked): ?>

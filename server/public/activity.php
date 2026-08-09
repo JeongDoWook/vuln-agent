@@ -197,7 +197,7 @@ $csrf = vg_csrf_token();
 
 vg_header('감사 로그', 'activity');
 ?>
-  <?php vg_page_title('감사 로그', 'AUDIT', '접속기록 5요소(식별자·접속일시·접속지 IP·처리 대상·수행업무)를 기록하고 월 1회 점검합니다.'); ?>
+  <?php vg_page_title('감사 로그', 'AUDIT', '접속기록 5요소를 기록하고 월 1회 점검합니다.'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -214,7 +214,7 @@ vg_header('감사 로그', 'activity');
 
   <div class="card">
     <strong>월 1회 접속기록 점검</strong>
-    <span class="why">— 점검 대상 기간·수행자·결과를 기록합니다. 같은 기간을 다시 기록하면 최신 내용으로 갱신됩니다.</span>
+    <span class="why">— 점검 대상 기간·수행자·결과를 기록합니다.</span>
     <div class="card__body">
       <form method="post" class="actions">
         <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">

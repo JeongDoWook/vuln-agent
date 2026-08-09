@@ -378,7 +378,7 @@ vg_header('탐지 결과', 'findings');
                   // 뱃지 두 개가 겹쳐 시끄러워지는 걸 피하려고, 우선순위가 더 높은 KEV 만
                   // 뱃지로 두드러지게 하고 이건 평범한 텍스트(.why 톤)로 낮춘다 — 정보는 그대로.
                   if (!empty($r['no_fix'])) {
-                      $html .= ' <span class="why" title="벤더가 수정본을 내지 않았다(미수정·수정 보류·수정 안 함) — 패치가 존재하지 않는다">조치 불가</span>';
+                      $html .= ' <span class="why" title="벤더 수정본이 없어 패치가 존재하지 않는다">조치 불가</span>';
                   }
                   return $html;
               },
