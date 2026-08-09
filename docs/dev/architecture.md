@@ -1,6 +1,7 @@
 # vuln-agent 아키텍처
 
-> 현행 기준: 2026-08-04 · 에이전트 3.8 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고 포함.
+> 현행 기준: 2026-08-09 · 에이전트 3.8 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고,
+> 계정 인벤토리·자산 등급·의존성 그래프 수집, 컴플라이언스 스냅샷 포함.
 
 지금까지 확정·구현된 구조를 그림으로 정리한다.
 다이어그램은 [`docs/specs/diagrams/`](../specs/diagrams/) 에 PlantUML(`.puml`)로 분리해 두었다.
@@ -95,6 +96,38 @@ stale 값이 영구히 남는다).
 **보안설정 점검(CCE)** 은 별도 경로다. 같은 수집물의 `security`/`users` 섹션을 `src/cce.php` 가
 판정해 `tb_cce_finding`(PASS/FAIL/NA)에 저장한다 — CVE 가 아니라 **설정**(SSH root 로그인,
 패스워드 인증, UID 0 계정, SELinux/AppArmor, 방화벽)을 본다. 신규 수집은 하지 않는다.
+한 점검 결과가 **어느 기준의 증적인가**는 `tb_control_mapping`(U-코드/ISMS-P/N2SF 다중 매핑)이
+정본이다 — 예전엔 이 지식이 `cce.php` 주석과 화면 문자열에 흩어져 있어 같은 결과를 다른 기준으로
+볼 수 없었다. 조회는 `src/control_mapping.php`, 화면은 `/control_mapping.php`. 매핑 행 자체가
+마이그레이션 시드이고, **근거가 없으면 행을 만들지 않는다**(억지 매핑 금지).
+
+**계정 인벤토리**도 같은 수집물에서 나온다. 에이전트의 `users` 섹션(`account_passwd`·
+`account_shadow`·`account_lastlog`·`account_sudoers`·`sudo_group`)을 `src/account_inventory.php` 가
+계정 1행으로 조립해 `tb_host_account` 에 저장하고 파생 판정을 계산한다. 지금까지는 계정 "설정
+정책"만 봤고 **실제 계정 목록**은 안 봐서 ISMS-P 2.5.x·N2SF AC 계정관리가 통째로 공백이었다.
+원칙은 CCE 와 같다 — **패스워드 해시는 받지도 저장하지도 않고**, `/etc/shadow`·sudoers 를 못 읽은
+값(NULL)은 정상(PASS)이 아니라 **판정 불가(NA)** 이며, 공유계정·퇴직자 계정 추정은 FAIL 이 아니라
+REVIEW(사람이 확인)다.
+
+**자산 중요도·N2SF 보안등급**(`src/assetgrade.php`)은 `tb_host` 에 붙는다. 지키는 경계는 하나 —
+**판정은 사람이, 초안은 시스템이.** 등급 기준은 「정보공개법」 제9조 호 매핑이고 업무정보 등급
+확정은 기관의 법적 처분이라 시스템이 대신할 수 없다. 그래서 사람이 확정한 값(`grade`·
+`grade_reason`·`approved_by`·`approved_at`)과 시스템 초안(`grade_suggested`·
+`grade_suggested_reason`)을 **다른 컬럼에** 담고, 제안 함수는 확정값을 절대 쓰지 않는다. 확정은
+`host.php` 의 관리자 폼이 사람 손으로만 한다. 여러 업무정보 등급이 한 시스템에 있으면 **가장 높은
+등급을 승계**한다(C > S > O).
+
+**패키지 의존성 그래프**는 SBOM(CycloneDX) `dependencies` 와 pom.xml 최상위 `<dependencies>` 에서
+부모→자식 엣지를 뽑아 `tb_package_dependency` 에 넣는다(`src/ingest_store.php`). 엣지 유일성은
+9개 컬럼 복합키가 InnoDB 인덱스 상한(3,072바이트)을 넘겨 **해시 생성컬럼**(`edge_hash`)으로 건다 —
+접두 길이 방식은 접두가 겹치는 서로 다른 패키지를 같은 키로 묶어 정상 엣지를 조용히 버린다.
+UI·전이 표시·SPDX relationships 는 다음 단계다.
+
+**미조치 사유·승인자**(`src/remediation_note.php` → `tb_remediation_note`)는 억제와 **다른 축**이다.
+억제는 매처의 자동 판정이고, 이건 사람이 남기는 메모다 — "왜 지금 고치지 않는가"와 "누가 언제
+그렇게 판단했는가"만 붙들고 결재선·상태 전이·기한은 두지 않는다. 키는 스캔이 바뀌어도 유지되는
+자연키(호스트 + 컨테이너 **이름** + CVE + 패키지명)다. 본격 조치 워크플로는 이 메모를
+`export.php` 로 가져가는 외부 시스템의 몫이다(`docs/dev/export-api.md`).
 
 **SCA 라이선스 식별** 은 CVE 매칭과 별개 축이다. 에이전트가 SBOM(CycloneDX/SPDX, `SBOM_DIR`
 오프라인 입력)·pip `METADATA`·composer `installed.json` 에서 라이선스 문자열을 수집해 보내면,
@@ -108,13 +141,37 @@ permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결
 `tb_package` 를 화면 요청마다 직접 GROUP BY 하면 packages.php 40초 사고(92만 행 무인덱스 재집계)와
 같은 문제가 재현된다.
 
-**KISA ISMS-P·ISO 27001 컴플라이언스 매핑**(`compliance.php`)은 매칭 결과를 저장하지 않고
-**그때그때 조회만** 하는 화면이다 — 새 테이블도, ingest 변경도 없다. findings(severity·in_kev·
+**KISA ISMS-P·ISO 27001 컴플라이언스 판정**의 로직은 `src/compliance.php` 에 있다(웹·CLI 공용).
+화면(`public/compliance.php`)은 이걸로 "지금"을 렌더하고 스케줄러는 같은 함수로 증적을 적재한다 —
+판정 로직이 두 벌이면 화면과 증적이 서로 다른 답을 내기 시작한다. findings(severity·in_kev·
 no_fix·needs_restart)·자산 연결상태·`tb_cce_finding`(설정 취약) 등 기존 판정 결과만 다시 읽어
-통제 3개를 SLA 기준일 대비 위반 건수로 판정한다(패치관리: KEV 15일·CRITICAL 30일·HIGH 60일,
-정보자산 식별: 자산 연결상태·OS/IP 누락, 보안시스템 운영: CCE FAIL 건수). **정책·승인이력처럼
-vuln-agent 가 갖고 있지 않은 근거가 필요한 통제는 판정하지 않고 체크리스트로만 노출한다** —
-자동판정 3개가 전부이고 나머지는 사람이 직접 심사해야 한다는 게 이 화면의 의도적 한계다.
+통제 3개(`patch`/`asset`/`secops` — `VG_COMPLIANCE_CONTROLS` 가 SSOT)를 SLA 기준일 대비 위반
+건수로 판정한다. **정책·승인이력처럼 vuln-agent 가 갖고 있지 않은 근거가 필요한 통제는 판정하지
+않고 체크리스트로만 노출한다** — 자동판정 3개가 전부이고 나머지는 사람이 직접 심사해야 한다는 게
+이 화면의 의도적 한계다.
+
+**판정 어휘는 4종이다 — 준수 / 판정 불가 / 부분준수 / 미준수**(`vg_compliance_status()` 가 SSOT).
+위반 0건이라고 무조건 "준수"로 쓰지 않는다: 볼 수 있는 근거가 모자라서 0건인 것을 준수로 표기하면
+심사 증빙에 **허위 안심**을 싣게 된다. 보유한 스캔 이력이 SLA 보다 짧아 위반을 검출할 방법 자체가
+없는 호스트, 최초 발견 시각을 못 찾은 건, 에이전트가 비-root 라 외부노출을 부분 수집한 호스트는
+전부 판정 불가로 **따로 센다**(예전엔 조용히 넘겨 "준수" 쪽에 흡수됐다). CCE 가 이미 지키는
+원칙("NA 를 PASS 와 구분한다")을 컴플라이언스 판정에도 똑같이 적용한 것이다.
+
+**SLA 기준일과 컷라인은 설정값이다**(`tb_setting` ← `src/setting.php`). SLA 는 업계 관행값이 아니라
+조직 내부 규정이라 코드를 고쳐야 바꿀 수 있으면 제품으로 쓸 수 없다. 코드의 상수
+(KEV 15일·CRITICAL 30일·HIGH 60일, 부분준수 상한 5건)는 지우지 않고 **설정 행이 없을 때의
+폴백**으로 남는다 — 마이그레이션이 아직 안 든 DB 에서도 동작이 같아야 한다. 최초 발견 시각을 되짚는
+구간은 절대 일수가 아니라 "가장 긴 SLA + 여유일"로 묶어 둔다: SLA 만 올리고 구간이 그대로면 경과일이
+구간 길이에서 잘려 위반이 아예 검출되지 않는다(허위 안심이 설정 실수로 재현된다).
+
+**판정은 스냅샷으로 쌓인다.** 심사 증적의 본질은 시점이 아니라 시계열인데 그동안은 저장이 없어
+"작년 심사 시점엔 어땠나"에 답할 수 없었다. 스케줄러(`bin/scheduler.php`)가 due 커넥터 유무와
+무관하게 하루 1건씩 `tb_compliance_snapshot`(+`_control`)에 통제별 판정을 남긴다 — 커넥터가 없는
+날에도 증적은 남아야 한다. 오늘 것이 이미 있으면 건너뛰고, UPSERT 라 두 번 돌아도 행이 늘지 않는다.
+스냅샷은 위반 건수뿐 아니라 **판정 불가 건수(`unjudged_count`)까지** 저장한다(안 그러면 나중에
+"위반 0건 = 준수"로 되읽는다). 근거 JSON 은 500건 상한이고 넘으면 **잘렸다는 사실 자체**를
+`truncated=true` 로 남긴다. 스냅샷도 화면과 같은 `vg_compliance_policy()`(=`tb_setting` 반영)를
+쓴다 — 스케줄러만 상수를 쓰면 설정을 바꾼 조직에서 화면과 증적의 기준이 갈라진다(증적 오염).
 
 ---
 
@@ -160,6 +217,17 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 정기수집만 가능)한다. 중앙 서버 자신을 스캔하는 로컬 에이전트만 루프백(`8081`)
 평문 경로를 쓰고, 그 외 원격 서버 에이전트는 모두 Caddy 의 HTTPS 엔드포인트로 전송한다.
 
+**보안 응답 헤더는 Caddy 가 한 곳에서 붙인다**(`deploy/caddy/Caddyfile` 의 `(security_headers)`
+snippet → 각 사이트 블록에서 `import`). 사이트마다 복붙하지 않는다. 현재 세트는
+`X-Content-Type-Options: nosniff` · `X-Frame-Options: DENY` ·
+`Referrer-Policy: strict-origin-when-cross-origin` · CSP(`default-src 'self'` 기준, 서드파티 런타임
+의존성이 0개라 가능하다) 이고, `Server`/`X-Powered-By` 는 지운다. CSP 에 `'unsafe-inline'` 이 남은
+이유는 실측으로 확인한 인라인 사용처(테마 초기화 스크립트·인라인 핸들러·`process.html` 의 `<style>`)
+때문이다 — 그걸 걷어내기 전에 지우면 화면이 통째로 깨진다.
+**HSTS 는 일부러 꺼 두었다. 켜지 말 것.** 현재 TLS 가 `tls internal`(자체서명)이라 브라우저가 이미
+인증서 오류를 내는데, HSTS 를 보내면 그 호스트에서 **인증서 예외를 아예 허용하지 않아** 접속 수단이
+사라지고 max-age 만료 전엔 되돌릴 방법도 없다. 신뢰되는 CA 로 전환한 뒤에 주석을 푼다.
+
 **스키마 적용**은 `deploy/migrate.sh` 가 맡는다 — `db/migrations/*.sql` 중 아직 안 든 것만
 **파일명 사전순**으로 db 컨테이너에 파이프하고 `tb_schema_migrations(filename, applied_at)` 에
 기록한다. 파일명은 타임스탬프(`YYYYMMDDHHMMSS_이름.sql`)다 — 연번은 동시에 작업하는 브랜치들이
@@ -177,7 +245,7 @@ claude-pipeline 의 Connector/CollectionLog 패턴을 참고. UI에서 소스를
 
 다이어그램: [`docs/specs/diagrams/erd.puml`](../specs/diagrams/erd.puml)
 
-**범위**: 도메인 엔티티 **40개 전부**(= 전체 41테이블 − `tb_schema_migrations`)를 그린다.
+**범위**: 도메인 엔티티 **48개 전부**(= 전체 49테이블 − `tb_schema_migrations`)를 그린다.
 `tb_schema_migrations` 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
 엔티티가 많아 영역별 `package` 로 묶었다 — 수집·인벤토리 / CVE 도메인 / 벤더 판정 소스 /
 판정 결과 / 피드 운영·인증·감사. **실선은 FK 가 실제로 걸린 관계, 점선은 FK 없이
@@ -208,6 +276,11 @@ tb_host_account 는 **계정 인벤토리**(스캔별 계정 대장 — 계정�
 "판정 불가"다(비-root 실행이면 /etc/shadow·sudoers 를 못 읽는다) — ISMS-P 2.5.x·N2SF AC 통제의 근거 데이터.
 tb_agent_replay_nonce 는 에이전트 재전송 공격 방지.
 tb_package_license_summary 는 SCA 라이선스 위험도 사전집계(tb_package.license 기반, tb_package_summary 와 같은 패턴).
+tb_package_dependency 는 패키지 의존성 엣지(SBOM/pom, 스캔에 CASCADE).
+tb_remediation_note 는 미조치 사유·승인자 메모(자연키라 스캔이 바뀌어도 유지).
+tb_control_mapping 은 CCE 룰 ↔ U-코드/ISMS-P/N2SF 다중 매핑,
+tb_compliance_snapshot/tb_compliance_snapshot_control 은 하루 1건 컴플라이언스 판정 증적,
+tb_activity_review 는 접속기록 월 1회 점검 이력, tb_setting 은 SLA 등 전역 운영 설정.
 스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh) — ERD 범위 밖.*
 *모든 테이블에 감사 4컬럼(`created_at`/`updated_at`/`is_deleted`/`deleted_at`)이 통일되어 있다
 (다이어그램엔 `is_deleted` 만 표기, 나머지 생략). 삭제는 하드삭제 대신 `vg_soft_delete()` 로
@@ -220,20 +293,25 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 
 ## 6. 웹 화면 구성 (사이트맵 · 인증)
 
-좌측 사이드바는 바로가기(대시보드/자산/데이터 수집), 취약점(탐지 결과/CVE/패키지/판정 근거/보안 설정/보안 공지/컴플라이언스 매핑), 관리(사용자/권한/에이전트 키/API 키/감사 로그)로 묶고, **역할×메뉴 권한**에서
+좌측 사이드바는 바로가기(대시보드/자산/데이터 수집), 취약점(탐지 결과/CVE/패키지/판정 근거/보안 설정/보안 공지/컴플라이언스 매핑/통제 기준 매핑), 관리(사용자/권한/에이전트 키/API 키/감사 로그/설정)로 묶고, **역할×메뉴 권한**에서
 허용된 링크만 렌더한다(링크가 하나도 안 남은 섹션은 라벨째 숨김). 대분류·링크 구성의 SSOT 는
 `server/src/view/nav.php` 의 `vg_nav_sections()` 하나이며, 사이드바와 브레드크럼이 같이 참조한다.
 
 다이어그램: [`docs/specs/diagrams/사이트맵.puml`](../specs/diagrams/사이트맵.puml)
 
 - **세션 인증**(`tb_user`) : 웹 화면 전부. 역할은 **`admin` / `operator` / `user`** 3단계.
+  세션은 **유휴 30분·절대 12시간**에 만료된다(`VG_SESSION_IDLE_SECONDS`/`VG_SESSION_ABSOLUTE_SECONDS`,
+  `src/auth.php`). 만료되면 `session_expire` 감사로그를 남기고 `tb_user.session_token` 을 지운 뒤
+  로그인 화면에 사유를 안내한다. 활성 세션은 계정당 1개라 다른 곳에서 로그인하면 앞의 세션이 끊긴다
+  (`session_token` 을 덮어쓰는 것 자체가 무효화다).
 - **설정형 RBAC**: `admin` 은 코드에서 항상 전체 허용(잠금 방지)이라 권한 행을 두지 않는다.
   `operator`·`user` 는 **역할 × 메뉴코드**(dashboard/findings/advisories/assets/connectors/
-  users/permissions/agenttokens/apitokens/activity) 허용 여부를 `tb_role_permission` 에 두고 `/permissions.php`
+  users/permissions/agenttokens/apitokens/activity/settings) 허용 여부를 `tb_role_permission` 에 두고 `/permissions.php`
   에서 켜고 끈다. 각 페이지 가드는 `vg_require_menu('<메뉴코드>')` 하나로 통일.
   메뉴코드 정본은 `vg_menus()`(`server/src/auth.php`) 이고 `nav.php` 의 `'perm'` 과 반드시 일치해야
-  한다(어긋나면 사이드바에 보이는데 눌러보면 403 나는 링크가 생긴다). 단 **`permissions`·`apitokens`
-  둘은 admin 전용이라 `/permissions.php` 매트릭스에서 제외**된다 — 정본에는 남기되 화면에서 켤 수
+  한다(어긋나면 사이드바에 보이는데 눌러보면 403 나는 링크가 생긴다). 단 **`permissions`·`apitokens`·
+  `settings` 셋은 admin 전용이라 `/permissions.php` 매트릭스에서 제외**된다(`settings` 는 판정
+  기준값을 바꾸는 화면이다) — 정본에는 남기되 화면에서 켤 수
   없고, 시드 행이 없어 `vg_can()` 의 기본 거부로 operator·user 는 항상 불가다.
   기본 시드 — operator: 대시보드/취약점/공지/자산/수집과 에이전트 키 허용, 사용자·권한·감사 로그 불가.
   user: 대시보드/취약점/공지만.
@@ -245,9 +323,22 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
     활성 토큰은 호스트당 하나(재발급 시 기존분 자동 폐기). 공유 수집 토큰은 허용하지 않는다.
   - 외부 시스템 → `export.php` : 웹에서 발급하는 **읽기 전용** API 토큰(`X-API-Token`, 또는
     `Authorization: Bearer`). DB 엔 SHA-256 해시만 저장(원문은 발급 시 1회 표시), 폐기는 소프트삭제.
+  - **두 토큰 모두 유효기간을 갖는다**(`expires_at`). 발급 선택지는 무기한/30일/90일/1년이고
+    **NULL = 무기한**이라 기존 발급분은 그대로 쓰인다(하위호환). 만료된 토큰은 검증 경로가 인증
+    실패로 처리하고 `api_token_expired`/`agent_token_expired` 감사로그를 남긴다. 어휘·판정의 SSOT 는
+    `src/tokenexpiry.php` 하나다(둘로 흩어지면 조용히 어긋난다). 자동 갱신·자동 재발급은 두지
+    않는다 — 만료되면 사람이 새로 발급한다. 대응 기준: ISMS-P 2.5.1 · N2SF AC-1(4).
 - 최초 admin 은 `secrets/admin_password` 로 부트스트랩.
 - **감사 로깅**: 로그인·커넥터 저장/토글/삭제·사용자 추가/삭제·ingest 수신이 `tb_activity_log` 에
   자동 기록된다(`server/src/audit.php` 의 `vg_log_activity()`, 각 페이지가 require 해서 호출).
   `/activity.php` 에서 scope 필터 + 페이지네이션으로 조회한다.
+- **접속기록 5요소**(ISMS-P 2.9.4): 식별자·접속일시·접속지 IP·처리한 정보주체·수행업무를 각각
+  독립 컬럼으로 갖는다. 앞의 셋은 원래 있었고, `subject`(처리 대상)와 `action`(수행업무 정규화
+  동사 — READ/CREATE/UPDATE/DELETE/EXPORT/LOGIN/EXECUTE/OTHER, 어휘는 `vg_activity_action()`)만
+  나중에 붙였다(일부가 `data` JSON 안에 묻혀 정렬·조회가 안 됐다). 이 제품은 개인정보를 처리하지
+  않으므로 "처리한 정보주체" 자리에는 그 행위가 다룬 **대상 자원**(호스트 FQDN·CVE·패키지·계정)을 담는다.
+- **접속기록 점검**(ISMS-P 2.9.5): 월 1회 점검했다는 사실 자체를 `tb_activity_review` 에 남긴다
+  (대상 기간·수행자·결과 OK/FINDING/NA). 기간은 UNIQUE 라 같은 달을 두 번 기록할 수 없고, 수행자
+  아이디를 스냅샷으로 함께 박아 계정이 지워져도 점검 이력이 남는다.
 - **소프트 삭제**: `vg_soft_delete()` 가 하드 DELETE 대신 `is_deleted/deleted_at` 를 세운다.
   화이트리스트 대상: `tb_user`/`tb_feed_connector`/`tb_advisory`/`tb_host`/`tb_scan`.
