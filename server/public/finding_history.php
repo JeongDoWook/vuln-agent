@@ -7,12 +7,17 @@ declare(strict_types=1);
  *
  * host.php 의 "스캔" 탭은 스캔별 심각도 분포만, changes.php 는 최근 스캔 2개 비교만 보여준다.
  * 이 페이지가 그 사이 빈틈 — 하나의 (호스트,CVE,패키지) 조합을 호스트의 전체 스캔 이력에 걸쳐
- * 이어 보여준다. host.php 취약점 탭의 각 행에서 "이력" 링크로 들어온다.
+ * 이어 보여준다. host.php 취약점 탭의 "이력" 링크와 findings.php 각 행의 "이 자산 판정" 링크로
+ * 들어온다(URL 조립은 src/finding_history.php 의 vg_finding_history_url 하나로 모여 있다).
+ *
+ * 책임 경계: 여기는 "**이 자산에서** 왜/얼마나 위험하고 무엇을 하면 되는가" 만 다룬다.
+ *   CVE 자체의 설명·CVSS 벡터 해설·참조 링크는 cve.php 가 정본이라 복제하지 않는다.
  */
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';       // vg_log_activity
+require_once __DIR__ . '/../src/distro.php';      // vg_is_kernel_code_pkg — 재시작/재부팅 구분
 require_once __DIR__ . '/../src/finding_history.php';
 require_once __DIR__ . '/../src/remediation_note.php';   // 미조치 사유 + 승인자(최소 필드)
 vg_require_menu('findings');
@@ -88,7 +93,7 @@ $noteErr = $noteFlash['noteErr'] ?? null;
 $csrf = vg_csrf_token();
 
 $err = null; $host = null; $rows = []; $total = 0; $summary = null; $current = null;
-$note = null;
+$note = null; $detail = null;   // $detail = 최신 스캔 판정의 위험도·조치 상세(FOUND 일 때만)
 $hostId = (int) ($_GET['id'] ?? 0);
 $containerId = (int) ($_GET['cid'] ?? 0);
 $cveId = trim((string) ($_GET['cve'] ?? ''));
@@ -124,6 +129,13 @@ try {
         $summary = vg_finding_history_summary($pdo, $hostId, $containerId, $cveId, $packageName);
         // "현재 상태" 는 항상 최신 스캔(1건) 기준 — 조회 중인 페이지가 1페이지가 아니어도 동일해야 한다.
         $current = ($page === 1 && $rows) ? $rows[0] : (vg_finding_history($pdo, $hostId, $containerId, $cveId, $packageName, 1, 0)[0] ?? null);
+        // 목록(findings.php)이 보여주는 위험도·수정 버전·판정 출처를 상세에서도 볼 수 있게 한다.
+        //   그 스캔에 실제 판정이 있을 때(FOUND)만 조회한다 — 억제·해당없음이면 값이 없는 게 맞다.
+        if ($current !== null && $current['status'] === 'FOUND') {
+            $detail = vg_finding_current_detail(
+                $pdo, (int) $current['scan_id'], (int) ($current['container_id'] ?? 0), $cveId, $packageName
+            );
+        }
     }
 } catch (Throwable $e) {
     error_log('[finding_history] ' . $e->getMessage());
@@ -148,7 +160,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
   <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif ($cveId === '' || $packageName === ''): ?>
   <?php vg_page_title('취약점 이력', 'FINDING HISTORY'); ?>
-  <div class="card"><?php vg_empty(['icon' => '⚠️', 'title' => 'CVE·패키지 정보가 없습니다.', 'hint' => 'host.php 취약점 탭의 "이력" 링크로 들어와 주세요.']); ?></div>
+  <div class="card"><?php vg_empty(['icon' => '⚠️', 'title' => 'CVE·패키지 정보가 없습니다.', 'hint' => '탐지 결과 목록의 "이 자산 판정" 또는 호스트 상세 취약점 탭의 "이력" 링크로 들어와 주세요.']); ?></div>
 <?php else: ?>
   <?php
   $meta = [
@@ -180,6 +192,55 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
         <dt>판정</dt>
         <dd><?= $current !== null ? vg_badge($statusLabel[$curStatus] ?? (string) $curStatus, $curTone) : '<span class="why">–</span>' ?>
             <?php if ($note !== null): ?><?= vg_badge('미조치 사유 있음', 'info', '사람이 남긴 미조치 사유 메모가 있습니다 — 아래 참조') ?><?php endif; ?></dd>
+        <dt>등급 · 노출</dt>
+        <dd><?php
+            // 목록(findings.php)의 '등급'·'상태' 열과 같은 값. 등급은 히어로의 판정 뱃지 색으로만
+            //   암시돼 있었고, 노출 상태는 상세에 아예 없었다.
+            if ($detail !== null) {
+                echo vg_sev_badge((string) $detail['severity']), ' ', vg_status_badge($detail['runtime_status']);
+                if (!empty($detail['needs_restart'])) {
+                    echo ' ', vg_badge(
+                        vg_is_kernel_code_pkg($packageName) ? '재부팅 필요' : '재시작 필요', 'high',
+                        '패치는 됐지만 옛 코드를 쓰는 중 — 적용하려면 재시작·재부팅이 필요합니다'
+                    );
+                }
+            } else {
+                echo '<span class="why">–</span>';
+            }
+        ?></dd>
+        <dt>위험도</dt>
+        <dd><?php
+            // CVSS(얼마나 심한가) + EPSS(실제로 악용될 확률) + KEV(이미 악용된 적이 있는가).
+            //   CVE 자체의 해설·벡터 분해는 여기 복제하지 않는다 — cve.php 가 정본이다.
+            if ($detail !== null) {
+                echo 'CVSS <strong>', $detail['cvss'] !== null ? vg_h((string) $detail['cvss']) : '–', '</strong>',
+                     ' · EPSS ', vg_epss_cell($detail['epss'], $detail['epss_percentile']);
+                if (!empty($detail['in_kev'])) {
+                    echo ' ', vg_badge('KEV', 'crit', '악용이 확인된 취약점 — CISA KEV 등재');
+                }
+            } else {
+                echo '<span class="why">–</span>';
+            }
+        ?></dd>
+        <dt>수정 버전</dt>
+        <dd><?php
+            if ($detail !== null) {
+                echo vg_fix_cell(
+                    $detail['evidence_fixed_version'] ?? ($detail['fixed_version'] ?? null),
+                    $detail['ref_urls_json'] ?? null,
+                    $detail['installed_version'] ?? null
+                );
+                if (!empty($detail['no_fix'])) {
+                    echo ' ', vg_badge('조치 불가', 'warn', '벤더 수정본이 없어 패치가 존재하지 않는다 — 완화·격리·제거가 답이다');
+                }
+            } else {
+                echo '<span class="why">–</span>';
+            }
+        ?></dd>
+        <dt>판정 출처</dt>
+        <dd><?= $detail !== null
+            ? vg_badge((string) ($detail['match_source'] ?? 'catalog'), 'muted', '이 판정을 만든 근거 데이터의 출처')
+            : '<span class="why">–</span>' ?></dd>
         <dt>기준 스캔</dt>
         <dd><?= $current !== null
             ? '<a href="/findings.php?scan_id=' . (int) $current['scan_id'] . '">#' . (int) $current['scan_id'] . '</a>'

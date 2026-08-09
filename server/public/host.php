@@ -14,6 +14,7 @@ require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/matcher.php';
+require_once __DIR__ . '/../src/finding_history.php';   // vg_finding_history_url — 이력 링크 조립
 require_once __DIR__ . '/../src/agentcommand.php';   // 수집 제어(즉시/예약 실행·주기 변경)
 require_once __DIR__ . '/../src/agentspeedtier.php';   // 속도 티어 라벨(agent-poll.php 와 공유 정의)
 require_once __DIR__ . '/../src/assetgrade.php';       // 자산 중요도·N2SF 등급 어휘와 초안 제안
@@ -958,10 +959,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         6 => fn($f) => !empty($f['needs_restart'])
                        ? '<span class="pill">' . (vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅' : '프로세스 재시작') . '</span>'
                        : vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null, $f['installed_version'] ?? null),
-        7 => fn($f) => '<a class="pill" href="/finding_history.php?id=' . (int) $hostId
-                       . '&amp;cid=' . (int) $f['container_id']
-                       . '&amp;cve=' . urlencode((string) $f['cve_id'])
-                       . '&amp;pkg=' . urlencode((string) $f['package_name'])
+        7 => fn($f) => '<a class="pill" href="'
+                       . vg_h(vg_finding_history_url($hostId, (int) $f['container_id'], (string) $f['cve_id'], (string) $f['package_name']))
                        . '" title="스캔별 이력 보기">🕘 이력</a>',
     ];
     $findingRowAttrs = function (array $f) use ($hostId): array {
@@ -978,10 +977,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         } else {
             $action = '공식 패치 또는 벤더 권고를 확인하세요.';
         }
-        $historyUrl = '/finding_history.php?id=' . (int) $hostId
-            . '&cid=' . (int) $f['container_id']
-            . '&cve=' . urlencode((string) $f['cve_id'])
-            . '&pkg=' . urlencode((string) $f['package_name']);
+        $historyUrl = vg_finding_history_url($hostId, (int) $f['container_id'], (string) $f['cve_id'], (string) $f['package_name']);
         $detail = [
             'severity' => (string) $f['severity'],
             'status' => vg_status_label($f['runtime_status'] ?? null),
