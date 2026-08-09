@@ -80,7 +80,7 @@ vg_header('사용자', 'users');
       'count' => $total, 'count_label' => '명',
       'actions' => vg_capture(static fn() => vg_modal_btn('addUser', '+ 사용자 추가')),
   ]); ?>
-  <div class="sub">admin 전용 · 계정 추가 · 역할 변경/초기화/삭제는 상세 페이지에서</div>
+  <div class="sub">admin 전용 · 역할 변경·비밀번호 초기화·삭제는 아이디를 눌러 상세에서</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 

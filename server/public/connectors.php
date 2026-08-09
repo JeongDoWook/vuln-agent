@@ -94,8 +94,19 @@ if (isset($_GET['edit'])) {
 $econn = $edit ? vg_json_col($edit['connection_json']) : [];
 $esched = $edit ? vg_json_col($edit['schedule_json']) : [];
 
-// 수집 상태 → 뱃지 톤(색은 CSS 가 결정).
-$statusTone = ['success' => 'ok', 'error' => 'danger', 'running' => 'warn', 'never' => 'muted'];
+/* 수집 상태 → 한글 라벨 + 뱃지 톤(색은 CSS 가 결정).
+ * 라벨과 톤을 한 표에 둔다 — 전엔 톤만 있고 뱃지 글자는 DB 값(success/never)이 그대로 나갔다. */
+const VG_COLLECT_STATUS = [
+    'success' => ['성공', 'ok'], 'error' => ['실패', 'danger'],
+    'running' => ['수집 중', 'warn'], 'never' => ['미실행', 'muted'],
+];
+$statusBadge = static function (?string $s): string {
+    $s = (string) ($s ?: 'never');
+    [$label, $tone] = VG_COLLECT_STATUS[$s] ?? [$s, 'muted'];
+    return vg_badge($label, $tone);
+};
+// 실행 계기 — DB 값(manual/schedule)을 그대로 보여주지 않는다.
+const VG_COLLECT_TRIGGER = ['manual' => '직접 실행', 'schedule' => '예약'];
 
 vg_header('데이터 수집', 'connectors');
 ?>
@@ -112,7 +123,18 @@ vg_header('데이터 수집', 'connectors');
       $sc = vg_json_col($c['schedule_json']);
       $mode = $sc['mode'] ?? 'manual';
       switch ($mode) {
-          case 'interval': $c['_sched_label'] = '매 ' . (int) ($sc['interval_minutes'] ?? 0) . '분'; break;
+          case 'interval':
+              // 분으로만 적으면 "매 10080분" 처럼 사람이 계산해야 읽힌다 — 나누어떨어지는 단위로 올린다.
+              $m = (int) ($sc['interval_minutes'] ?? 0);
+              if ($m >= 1440 && $m % 1440 === 0) {
+                  $d = intdiv($m, 1440);
+                  $c['_sched_label'] = $d === 1 ? '매일' : '매 ' . $d . '일';
+              } elseif ($m >= 60 && $m % 60 === 0) {
+                  $c['_sched_label'] = '매 ' . intdiv($m, 60) . '시간';
+              } else {
+                  $c['_sched_label'] = '매 ' . $m . '분';
+              }
+              break;
           case 'daily':    $c['_sched_label'] = '매일 ' . ($sc['time'] ?? '?'); break;
           case 'cron':     $c['_sched_label'] = 'cron: ' . ($sc['expr'] ?? '?'); break;
           default:         $c['_sched_label'] = '수동';
@@ -149,12 +171,11 @@ vg_header('데이터 수집', 'connectors');
       1 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
       2 => fn($c) => '<span class="why">최근 ' . vg_h($c['last_run_at'] ?? '–')
           . '<br>다음 ' . vg_h($c['_next_run'] ?: '–') . '</span>',
-      3 => function ($c) use ($csrf, $statusTone) {
-          $status = (string) ($c['last_status'] ?? 'never');
+      3 => function ($c) use ($csrf, $statusBadge) {
           return '<div class="stack-sm"><form method="post">'
           . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['feed_connector_id'] . '">'
           . '<button class="btn btn--sm ' . ($c['enabled'] ? 'btn--ok' : 'btn--ghost') . '">' . ($c['enabled'] ? '사용' : '중지') . '</button></form>'
-          . vg_badge($status, $statusTone[$status] ?? 'muted') . '</div>';
+          . $statusBadge($c['last_status'] !== null ? (string) $c['last_status'] : null) . '</div>';
       },
       4 => function ($c) use ($csrf, $logCountByConn) {
           $html = '';
@@ -355,14 +376,15 @@ vg_header('데이터 수집', 'connectors');
   /* 수집 이력 표 — 커넥터 하나에 대한 것. 모달(최근 8건)과 ?conn=N 전체보기가 공유한다. */
   $logHeaders = [
       ['label' => '상태',      'width' => '7rem',  'nowrap' => true],
-      ['label' => '트리거',    'width' => '7rem'],
+      ['label' => '실행 계기', 'width' => '7rem'],
       ['label' => '수집/저장', 'width' => '9rem'],
       ['label' => '메시지'],
       ['label' => '시각',      'width' => '11rem', 'nowrap' => true],
   ];
   $logCells = [
-      0 => fn($l) => vg_badge((string) $l['status'], $statusTone[$l['status']] ?? 'muted'),
-      1 => fn($l) => '<span class="why">' . vg_h((string) $l['trigger_by']) . '</span>',
+      0 => fn($l) => $statusBadge($l['status'] !== null ? (string) $l['status'] : null),
+      1 => fn($l) => '<span class="why">'
+          . vg_h(VG_COLLECT_TRIGGER[(string) $l['trigger_by']] ?? (string) $l['trigger_by']) . '</span>',
       2 => fn($l) => '<span class="why">' . ($l['items_fetched'] !== null
               ? number_format((int) $l['items_fetched']) . ' / ' . number_format((int) $l['items_upserted'])
               : '–') . '</span>',
@@ -373,7 +395,7 @@ vg_header('데이터 수집', 'connectors');
   $logEmpty = [
       'icon'  => '🕘',
       'title' => '아직 실행 이력이 없습니다.',
-      'hint'  => '[지금 실행]을 누르거나 스케줄이 돌면 여기에 쌓입니다.',
+      'hint'  => '[실행]을 누르거나 예약 시각이 되면 여기에 쌓입니다.',
   ];
   ?>
 

@@ -81,7 +81,7 @@ vg_header('설정', 'settings');
     <?php vg_page_title('설정', 'SETTINGS', '조직 기준에 맞춰 판정 기준값을 조정합니다.', [
         'actions' => '<button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button>',
     ]); ?>
-    <div class="sub">admin 전용 · 값을 비워 두면 코드 기본값으로 판정합니다 · 변경 이력은 감사 로그에 남습니다</div>
+    <div class="sub">admin 전용 · 비워 두면 기본값으로 판정 · 변경은 감사 로그에 남습니다</div>
 
     <?php
     vg_alert($msg, 'ok');

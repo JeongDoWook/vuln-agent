@@ -64,7 +64,10 @@ vg_header('권한', 'permissions');
     <?php vg_page_title('권한', 'ACCESS', '역할별 메뉴 접근 범위를 설정합니다.', [
         'actions' => '<button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button>',
     ]); ?>
-    <div class="sub">admin 전용 · 운영자·사용자가 접근할 수 있는 메뉴를 체크로 설정 · 관리자는 항상 전체 허용</div>
+    <?php /* 예전엔 같은 설명이 세 겹이었다(제목 밑 문구·이 줄·표 아래 안내 카드). 한 줄로 합치고,
+             "관리자는 항상 허용" 은 표의 [✔ 항상] 뱃지가 이미 말하므로 뺐다.
+             관리자 전용 메뉴가 표에 없는 것은 여기서만 밝힌다 — 옛 안내는 '권한설정' 하나만 적어 틀렸다. */ ?>
+    <div class="sub">admin 전용 · 관리자 전용 메뉴(권한·API 키·설정)는 위임할 수 없어 표에서 빠집니다</div>
 
     <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
@@ -87,11 +90,4 @@ vg_header('권한', 'permissions');
       ]);
     ?>
   </form>
-
-  <div class="card permission-note">
-    <div class="sub">
-      · <strong>권한설정</strong> 메뉴 자체는 관리자 전용이라 목록에서 제외됩니다.<br>
-      · 관리자 계정은 어떤 설정과 무관하게 모든 메뉴에 접근합니다(잠금방지).
-    </div>
-  </div>
 <?php vg_footer();
