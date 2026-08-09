@@ -275,8 +275,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   <div class="card mt-lg">
     <div class="card__body">
       <strong>수동 확인 필요</strong>
-      <p class="why">자동판정 대상이 아닌 정책·승인이력류 통제입니다.
-        판정 조건·근거는 저장소 문서 <code>docs/dev/화면-안내.md</code> 참고.</p>
+      <p class="why">자동판정 대상이 아닌 정책·승인이력류 통제입니다.</p>
       <ul class="hint-list">
         <?php foreach (VG_COMPLIANCE_MANUAL_CHECKLIST as $item): ?>
           <li><?= vg_h($item['ismsp']) ?> · <?= vg_h($item['iso']) ?><br>
