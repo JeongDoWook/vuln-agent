@@ -1,6 +1,6 @@
 # deploy — 배포 인프라
 
-> 문서 기준: 2026-08-04 · 운영 배포는 `update.sh`, 에이전트 일괄 설치는 `install_staged_agents.sh`가 정본이다.
+> 문서 기준: 2026-08-09 · 운영 배포는 `update.sh`, 에이전트 일괄 설치는 `install_staged_agents.sh`가 정본이다.
 
 중앙 서버(대시보드 + 수집 API)를 컨테이너로 띄우는 곳이다. compose 파일·러너·Caddy(HTTPS
 리버스 프록시)·마이그레이션 러너가 모두 여기 있다. **모든 명령은 `cd deploy` 후 실행한다.**
@@ -59,6 +59,24 @@ curl -s http://127.0.0.1:8081/agent-dl.php?f=caddy-root.crt | head -1
 ```
 
 준비 전이면 다운로드 버튼은 추출 명령을 알려주며 503 을 낸다(설치가 조용히 깨지지 않게).
+
+---
+
+## 에이전트 일괄 설치·갱신 (`install_staged_agents.sh`)
+
+노드들에 SSH 로 닿는 곳(master)에서 저장소의 최신 `agent/vuln-inventory-agent.sh` 를 여러 노드에
+한 번에 밀어 넣고 재시작·버전 확인까지 한다. 대상을 안 주면 스크립트 상단의 기본 노드 목록을 쓴다.
+
+```bash
+bash deploy/install_staged_agents.sh                       # 기본 노드 전체
+bash deploy/install_staged_agents.sh 10.3.142.105 worker@10.3.142.201   # 대상 지정
+```
+
+- SSH 사용자·설치 경로는 `AGENT_SSH_USER`·`AGENT_PREFIX` 환경변수로 바꾼다.
+- **신규 설치·토큰 발급은 하지 않는다** — 그건 그 서버에서 `install-agent.sh` 를 돌리는 일이다.
+  한 노드만 본체를 갱신할 땐 `agent_push.sh` 를 쓴다([`../agent/README.md`](../agent/README.md) "갱신").
+- 웹 버튼으로 만들지 않는 이유도 같다: PHP 컨테이너가 전 노드 root SSH 키를 들면 웹앱 침해가
+  전 노드 장악으로 번진다. 보는 건 웹, 미는 건 CLI.
 
 ---
 
@@ -196,14 +214,6 @@ curl -sI  -H "Host: $PROD_DOMAIN" http://127.0.0.1:80/login.php   # 평문 진�
 손으로 지우는 것 말고는 되돌릴 방법이 없다. 그래서 **정식 인증서로 전환한 뒤에** 켠다.
 
 전환은 **사람이 해야 하는 작업**이다(2026-07-12 시도가 실패해 되돌린 상태 — DuckDNS 가 `KO` 를
-반환했고, 원인은 토큰이 이 도메인을 소유한 계정의 것이 아니었기 때문이다):
-
-1. https://www.duckdns.org 에 **이 도메인을 소유한 계정**으로 로그인해 `token` 을 복사한다.
-   (실패 원인이 바로 이 "다른 계정 토큰"이었으니, 도메인 목록에 그 도메인이 보이는지부터 확인한다.)
-2. 운영 서버에서 토큰을 넣는다 — `printf %s '<토큰>' > /apps/vulnagent/app/secrets/duckdns_token.txt`
-3. `deploy/caddy/Caddyfile` 에서 `tls internal` 을 지우고 바로 아래 `tls { dns duckdns … }` 블록의
-   주석을 푼다.
-4. `./compose_runner.sh prod up -d --build` 후
-   `docker compose -p vulnagent logs -f caddy` 에서 `certificate obtained successfully` 확인.
-5. 브라우저에서 **경고 없는 자물쇠**를 확인한 **뒤에야** Caddyfile 의
-   `Strict-Transport-Security` 한 줄의 주석을 풀고 다시 기동한다. 순서를 바꾸면 접속이 막힌다.
+반환했고, 원인은 토큰이 이 도메인을 소유한 계정의 것이 아니었기 때문이다).
+절차는 한 곳에만 둔다 → [`caddy/README.md`](caddy/README.md) **"정식 인증서로 전환"**.
+HSTS 주석을 푸는 것은 **경고 없는 자물쇠를 확인한 뒤**의 마지막 단계다.
