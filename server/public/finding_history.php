@@ -171,8 +171,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
   </div>
   <div class="card">
     <strong>미조치 사유</strong>
-    <span class="why">— 지금 조치하지 않는 이유와 그 판단을 누가 언제 했는지만 남깁니다.
-      결재선·담당자·기한은 두지 않습니다(조치 워크플로는 export API 로 외부 시스템이 가져갑니다).</span>
+    <span class="why">— 조치하지 않는 이유와 그 판단 주체·시점만 남깁니다.</span>
     <div class="card__body">
       <?php if ($note !== null): ?>
         <dl class="kv">

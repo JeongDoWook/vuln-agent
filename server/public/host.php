@@ -457,8 +457,7 @@ function vg_host_render_grade(int $hostId, array $host, string $csrf, ?string $a
     ?>
     <section class="card mt-lg" aria-labelledby="asset-grade-title">
       <strong id="asset-grade-title">자산 등급</strong>
-      <span class="why"> · N2SF 보안등급 <?= vg_h(vg_asset_grade_legend()) ?>. 업무 중요도와 함께 기록합니다.
-        등급 확정은 기관의 판정이며 시스템은 초안만 제안합니다.</span>
+      <span class="why"> · N2SF 보안등급 <?= vg_h(vg_asset_grade_legend()) ?></span>
       <div class="card__body">
         <dl class="fact-grid">
           <div><dt>확정 등급</dt><dd><?= vg_asset_grade_badge($curGrade !== '' ? $curGrade : null, false, (string) ($host['grade_reason'] ?? '')) ?></dd></div>
@@ -1166,7 +1165,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
     ]); ?>
     <div class="card">
-      <strong>런타임 노출</strong> <span class="why">— 어떤 프로세스가 무슨 포트를 열고 어떤 라이브러리를 로드했나</span>
+      <strong>런타임 노출</strong> <span class="why">— 프로세스별 열린 포트와 로드한 라이브러리</span>
       <div class="card__body">
       <?php
       vg_table(
@@ -1209,7 +1208,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     <?php vg_page_nav($exposureTotal, $perPage, $ePage, 'epage'); ?>
 
     <div class="card mt-lg">
-      <strong>실행 프로세스</strong> <span class="why">— 실행 중인 프로그램과 소속 패키지(=실행중), 로드한 라이브러리(=사용중)</span>
+      <strong>실행 프로세스</strong> <span class="why">— 실행 중 프로그램의 소속 패키지·로드한 라이브러리</span>
       <div class="card__body">
       <?php
       vg_table(
@@ -1385,7 +1384,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     ]); ?>
     <div class="card mt-lg">
       <strong>계정 목록</strong>
-      <span class="why">— 최신 수집 기준 <?= number_format($accountTotal) ?>개 · 패스워드 해시는 수집·저장하지 않습니다</span>
+      <span class="why">— 최신 수집 기준 <?= number_format($accountTotal) ?>개 · 패스워드 해시는 수집하지 않습니다</span>
       <div class="card__body">
       <?php
       vg_table(
@@ -1506,7 +1505,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   ?>
     <div class="card">
       <strong>에이전트 메모리 사용률</strong>
-      <span class="why">— 각 수집 실행의 프로세스 트리 피크 RSS를 호스트 총 메모리 대비 %로 표시합니다.
+      <span class="why">— 수집 실행별 피크 RSS의 호스트 총 메모리 대비 %
         <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
           · 현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?>
         <?php endif; ?>
@@ -1518,7 +1517,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
 
     <div class="card mt-lg">
       <strong>에이전트 CPU 사용률</strong>
-      <span class="why">— 각 수집 실행에서 에이전트와 자식 프로세스가 사용한 CPU 시간을 호스트 전체 코어 용량 대비 %로 표시합니다.
+      <span class="why">— 수집 실행별 CPU 시간의 호스트 코어 용량 대비 %
         <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
           · 현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?>
         <?php endif; ?>
@@ -1579,7 +1578,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php if (vg_has_role('admin', 'operator')): ?>
     <div class="card mt-lg">
       <strong>자산 관리</strong>
-      <span class="why"> · 목록과 집계에서 이 자산을 제외합니다. 수집 이력은 보존되며 에이전트가 다시 전송하면 재등록됩니다.</span>
+      <span class="why"> · 목록·집계에서만 제외합니다(수집 이력 보존)</span>
       <div class="card__body">
         <form method="post" class="actions" data-confirm="<?= vg_h((string)$host['fqdn']) ?> 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.">
           <input type="hidden" name="csrf" value="<?= vg_h($agentCsrf) ?>">

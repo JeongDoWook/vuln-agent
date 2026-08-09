@@ -138,7 +138,7 @@ vg_hero($title, $rule ? ['<code class="why">' . vg_h($ruleId) . '</code>'] : [],
 <section id="refs">
   <div class="card">
     <strong>참조 매핑</strong>
-    <span class="why">— 이 룰이 근거로 삼는 모든 기준(CIS/NIST/STIG/PCI-DSS 등)</span>
+    <span class="why">— 이 룰이 근거로 삼는 기준</span>
     <div class="card__body">
       <?php $refs = vg_json_col($rule['refs_json'] ?? null); ?>
       <?php if ($refs): ?>

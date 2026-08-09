@@ -176,8 +176,7 @@ vg_header('통제 기준 매핑', 'control_mapping');
     <div class="card mt-lg">
       <div class="card__body">
         <strong>아직 점검 결과가 없는 통제</strong>
-        <p class="why">매핑은 돼 있지만 최신 스캔에 해당 점검 결과가 없는 통제입니다.
-          준수로 간주하지 않습니다 — 수집 범위(비-root 실행 등)를 먼저 확인해 주세요.</p>
+        <p class="why">최신 스캔에 점검 결과가 없습니다 — 준수로 간주하지 않습니다.</p>
         <ul class="hint-list">
           <?php foreach ($uncovered as $c): ?>
             <li><a class="control-name" href="/control.php?fw=<?= urlencode($fw) ?>&amp;control=<?= urlencode((string) $c['control_id']) ?>"><?= vg_h((string) $c['control_id']) ?> · <?= vg_h((string) $c['control_name']) ?></a></li>

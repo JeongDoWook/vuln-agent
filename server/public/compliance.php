@@ -86,10 +86,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sPatch['label'], $sPatch['tone']) ?>
       </div>
-      <p class="why">CRITICAL·HIGH 이면서 조치 가능(패치 존재)한데 SLA 기준일(KEV <?= (int) $policy['kev'] ?>일 ·
-        CRITICAL <?= (int) $policy['crit'] ?>일 · HIGH <?= (int) $policy['high'] ?>일)을 넘겨 미조치 상태인 건수.
-        위반 <?= number_format($patch['total']) ?>건 · 판정 불가 <?= number_format($patch['unjudged']) ?>건 ·
-        판정 시각 <?= vg_h($judgedAt) ?></p>
+      <p class="why">SLA 기준일 KEV <?= (int) $policy['kev'] ?>일 · CRITICAL <?= (int) $policy['crit'] ?>일 ·
+        HIGH <?= (int) $policy['high'] ?>일. 위반 <?= number_format($patch['total']) ?>건 ·
+        판정 불가 <?= number_format($patch['unjudged']) ?>건 · 판정 시각 <?= vg_h($judgedAt) ?></p>
       <?php
       // 판정 불가 사유를 그대로 노출한다 — "위반 0건"이 왜 준수를 뜻하지 않는지 화면에서 설명하지
       //   않으면, 근거가 모자란 0건이 다시 준수처럼 읽힌다(허위 안심).
@@ -154,9 +153,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sAsset['label'], $sAsset['tone']) ?>
       </div>
-      <p class="why">등록 자산 <?= number_format($asset['totalHosts']) ?>대 중 오프라인·수집없음이거나 필수 자산정보(OS·IP)가
-        누락된 자산 건수. 위반 <?= number_format($asset['total']) ?>건 ·
-        판정 불가 <?= number_format($asset['unjudged']) ?>건 · 판정 시각 <?= vg_h($judgedAt) ?></p>
+      <p class="why">등록 자산 <?= number_format($asset['totalHosts']) ?>대 기준.
+        위반 <?= number_format($asset['total']) ?>건 · 판정 불가 <?= number_format($asset['unjudged']) ?>건 ·
+        판정 시각 <?= vg_h($judgedAt) ?></p>
       <?php if ($asset['unjudged'] > 0):
           $hints = [];
           foreach ($asset['unjudged_rows'] as $u) { $hints[] = $u['fqdn'] . ' — ' . $u['reason']; }
@@ -199,7 +198,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sSec['label'], $sSec['tone']) ?>
       </div>
-      <p class="why">최신 스캔 기준 보안설정 점검(SCAP) "설정 취약" 판정 건수. 위반 <?= number_format($secconfig['total']) ?>건 ·
+      <p class="why">최신 스캔의 SCAP "설정 취약" 건수. 위반 <?= number_format($secconfig['total']) ?>건 ·
         판정 시각 <?= vg_h($judgedAt) ?></p>
       <?php if ($secconfig['violations']):
           $shown = array_slice($secconfig['violations'], 0, $previewLimit);
@@ -234,13 +233,13 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   <div class="card mt-lg">
     <div class="card__body">
       <strong>판정 추이</strong>
-      <p class="why">스케줄러가 하루 1건 저장한 통제별 판정 스냅샷입니다. 심사 시점의 준수 상태를 그대로 되짚을 수 있습니다.
+      <p class="why">하루 1건 저장되는 통제별 판정 스냅샷입니다.
         <?php if ($trend): ?>최근 <?= count($trend) ?>일치 · 최신 기록 <?= vg_h($trend[0]['taken_at']) ?><?php endif; ?></p>
       <?php if (!$trend): ?>
         <?php vg_empty([
             'icon'  => '🗓',
             'title' => '아직 저장된 판정 스냅샷이 없습니다.',
-            'hint'  => '스케줄러가 하루 1회 자동으로 남깁니다. 첫 기록이 쌓이면 여기에 날짜별 추이가 표시됩니다.',
+            'hint'  => '스케줄러가 하루 1회 자동으로 남깁니다.',
         ]); ?>
       <?php else: ?>
         <?php
@@ -268,7 +267,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   <div class="card mt-lg">
     <div class="card__body">
       <strong>수동 확인 필요</strong>
-      <p class="why">vuln-agent 가 자동판정할 수 없는 정책·승인이력류 통제입니다. 상태 판정 없이 점검 항목만 안내합니다.</p>
+      <p class="why">자동판정 대상이 아닌 정책·승인이력류 통제입니다.
+        판정 조건·근거는 저장소 문서 <code>docs/dev/화면-안내.md</code> 참고.</p>
       <ul class="hint-list">
         <?php foreach (VG_COMPLIANCE_MANUAL_CHECKLIST as $item): ?>
           <li><?= vg_h($item['ismsp']) ?> · <?= vg_h($item['iso']) ?><br>
