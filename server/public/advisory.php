@@ -3,8 +3,12 @@ declare(strict_types=1);
 
 /**
  * advisory.php — 국내 보안공지 상세. 로그인 필요.
- *   ?id=N. 저장된 본문을 그대로 보여주고, 원문 링크는 이 안에서만 연다.
+ *   ?id=N  ·  ?cpage=N/?cper_page=N (관련 CVE 표)
  *   본문은 평문으로 저장돼 있다(feeds.php · vg_kisa_parse_content).
+ *
+ * 구성은 다른 상세 화면과 같다: 히어로(식별 + 무게) → 핵심 지표(stat-grid) → 앵커 내비 →
+ *   관련 CVE → 본문 → 원문·수집 정보. 관련 CVE 는 알약처럼 이름만 늘어놓지 않고 등급·EPSS·KEV
+ *   까지 붙인 표로 낸다 — 패치데이 공지는 CVE 가 수백 건이라(실측 793건) 페이지네이션이 필수다.
  */
 
 require __DIR__ . '/../src/auth.php';
@@ -13,6 +17,8 @@ require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('advisories');
 
 $err = null; $adv = null; $cves = [];
+$cveTotal = 0; $kevTotal = 0; $maxCvss = null;
+$cPage = vg_page('cpage'); $cPerPage = vg_perpage(null, 'cper_page');
 
 try {
     $id = (int) ($_GET['id'] ?? 0);
@@ -21,7 +27,8 @@ try {
     } else {
         $pdo = vg_pdo();
         $stmt = $pdo->prepare(
-            'SELECT advisory_id, source, title, url, published, content, content_fetched_at
+            'SELECT advisory_id, source, title, url, published, content, content_fetched_at,
+                    created_at, updated_at, CHAR_LENGTH(content) AS content_len
              FROM tb_advisory WHERE advisory_id = ? AND is_deleted = 0'
         );
         $stmt->execute([$id]);
@@ -34,9 +41,36 @@ try {
                 subject: (string) ($adv['title'] ?? ''), action: 'READ');
 
             // cve_ids CSV 대신 정규화된 junction 에서 조회(tb_advisory_cve).
-            $cst = $pdo->prepare('SELECT cve_id FROM tb_advisory_cve WHERE advisory_id = ? AND is_deleted = 0 ORDER BY cve_id');
+            //   총건수·KEV 포함 건수·최고 CVSS 를 한 번에 — 화면 상단 지표가 이 셋뿐이라
+            //   쿼리를 셋으로 쪼갤 이유가 없다.
+            $cst = $pdo->prepare(
+                'SELECT COUNT(*) AS n, SUM(k.cve_id IS NOT NULL) AS kev_cnt, MAX(c.cvss) AS max_cvss
+                   FROM tb_advisory_cve ac
+                   LEFT JOIN tb_cve c ON c.cve_id = ac.cve_id AND c.is_deleted = 0
+                   LEFT JOIN tb_kev_catalog k ON k.cve_id = ac.cve_id AND k.is_deleted = 0
+                  WHERE ac.advisory_id = ? AND ac.is_deleted = 0'
+            );
             $cst->execute([$id]);
-            $cves = $cst->fetchAll(PDO::FETCH_COLUMN);
+            $agg = $cst->fetch() ?: [];
+            $cveTotal = (int) ($agg['n'] ?? 0);
+            $kevTotal = (int) ($agg['kev_cnt'] ?? 0);
+            $maxCvss  = $agg['max_cvss'] ?? null;
+
+            // 표에 낼 한 페이지분만. 아직 수집 안 된 CVE 는 tb_cve 에 없으므로 LEFT JOIN 이다
+            //   — 공지가 먼저 오고 NVD 수집이 나중인 경우가 흔하다.
+            $cOffset = ($cPage - 1) * $cPerPage;
+            $cst = $pdo->prepare(
+                "SELECT ac.cve_id, c.cvss, c.epss, c.epss_percentile, c.published,
+                        (c.cve_id IS NOT NULL) AS collected, (k.cve_id IS NOT NULL) AS is_kev
+                   FROM tb_advisory_cve ac
+                   LEFT JOIN tb_cve c ON c.cve_id = ac.cve_id AND c.is_deleted = 0
+                   LEFT JOIN tb_kev_catalog k ON k.cve_id = ac.cve_id AND k.is_deleted = 0
+                  WHERE ac.advisory_id = ? AND ac.is_deleted = 0
+                  ORDER BY c.cvss IS NULL, c.cvss DESC, ac.cve_id
+                  LIMIT $cPerPage OFFSET $cOffset"
+            );
+            $cst->execute([$id]);
+            $cves = $cst->fetchAll();
         }
     }
 } catch (Throwable $e) {
@@ -52,36 +86,127 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
   <div class="sub"><a href="/advisories.php">← 공지 목록으로</a></div>
 <?php else: ?>
   <?php
+  // url 은 KISA RSS/operator 피드에서 온 외부 입력이다. vg_h() 는 HTML 이스케이프만 할 뿐
+  // javascript:/data: 같은 스킴은 막지 못하므로, http/https 스킴일 때만 링크로 낸다.
+  $advUrl = (string) $adv['url'];
+  $advUrlSafe = vg_is_safe_http_url($advUrl);
+
+  $maxSev = vg_cvss_sev($maxCvss === null ? null : (string) $maxCvss);
+
   // 다른 상세 페이지(호스트·CVE)와 같은 히어로 패턴. 관련 CVE 수가 이 공지의 무게다.
   $meta = [
       vg_h((string) $adv['source']),
-      '발행일 ' . vg_h($adv['published'] ?? '–'),
-      '<a href="/advisories.php">보안 공지</a>',
+      '발행일 ' . vg_h((string) ($adv['published'] ?? '–')),
+      '공지 #' . (int) $adv['advisory_id'],
+      '<a href="/advisories.php">← 공지 목록</a>',
   ];
   vg_hero(
       vg_h((string) $adv['title']),
       $meta,
-      $cves ? 'CVE ' . count($cves) . '건' : 'CVE 없음',
-      $cves ? 'info' : 'muted',
+      $cveTotal ? 'CVE ' . number_format($cveTotal) . '건' : 'CVE 없음',
+      $cveTotal ? ($kevTotal > 0 ? 'crit' : 'info') : 'muted',
       '관련 취약점',
       'ADVISORY DETAIL'
   );
   ?>
 
-  <?php if ($cves): ?>
-  <div class="card">
-    <strong>관련 CVE</strong>
-    <span class="why">— 누르면 그 CVE 의 상세와 영향받는 자산을 봅니다</span>
-    <div class="card__body">
-      <?php foreach ($cves as $cv): ?>
-        <a class="pill" href="/cve.php?cve=<?= urlencode($cv) ?>"><?= vg_h($cv) ?></a>
-      <?php endforeach; ?>
+<div class="card">
+  <strong>핵심 지표</strong>
+  <span class="why">— 이 공지가 무엇을 다루고 어디까지 수집됐는가</span>
+  <div class="card__body stat-grid">
+    <div class="stat">
+      <span class="stat__val"><?= number_format($cveTotal) ?>건</span>
+      <div class="why">관련 CVE</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= $kevTotal > 0 ? vg_badge(number_format($kevTotal) . '건', 'crit', '실제 악용이 확인된 취약점(CISA KEV)이 포함됨') : vg_badge('없음', 'muted') ?></span>
+      <div class="why">KEV 포함</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= $maxCvss !== null
+          ? vg_h((string) $maxCvss) . ' ' . vg_sev_badge(strtoupper($maxSev))
+          : '<span class="why">–</span>' ?></span>
+      <div class="why">최고 CVSS</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= vg_h((string) ($adv['published'] ?? '–')) ?></span>
+      <div class="why">발행일</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= !empty($adv['content'])
+          ? number_format((int) $adv['content_len']) . '자'
+          : vg_badge('미수집', 'warn') ?></span>
+      <div class="why">본문</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= vg_h((string) $adv['source']) ?></span>
+      <div class="why">출처 피드</div>
     </div>
   </div>
-  <?php endif; ?>
+</div>
 
+<nav class="subtabs subtabs--sticky">
+  <a href="#cves">관련 CVE<span class="n"><?= number_format($cveTotal) ?></span></a>
+  <a href="#content">본문</a>
+  <a href="#origin">원문·수집 정보</a>
+</nav>
+
+<section id="cves">
+  <div class="card">
+    <strong>관련 CVE</strong>
+    <span class="why">— 누르면 그 CVE 의 상세와 영향받는 자산을 봅니다(CVSS 높은 순)</span>
+    <div class="card__body">
+    <?php
+    vg_table(
+        [
+            ['label' => 'CVE', 'key' => 'cve_id', 'nowrap' => true],
+            ['label' => '등급', 'width' => '6rem'],
+            ['label' => 'CVSS', 'align' => 'right', 'width' => '5rem'],
+            ['label' => 'EPSS', 'align' => 'right', 'width' => '8rem'],
+            ['label' => '공개일', 'nowrap' => true, 'width' => '8rem'],
+        ],
+        $cves,
+        [
+            'card'  => false,
+            'empty' => [
+                'icon'  => '□',
+                'title' => '이 공지에서 추출된 CVE 가 없습니다.',
+                'hint'  => '제목·본문에 CVE 번호가 없는 공지(경보단계·일반 안내)입니다.',
+            ],
+            'row_class' => fn($r) => vg_sev_row(strtoupper(vg_cvss_sev(
+                $r['cvss'] === null ? null : (string) $r['cvss']
+            ))),
+            'cell' => [
+                'cve_id' => function ($r) {
+                    $out = '<a href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
+                         . vg_h((string) $r['cve_id']) . '</a>';
+                    return $out . (!empty($r['is_kev']) ? ' ' . vg_badge('KEV', 'crit', '악용이 확인된 취약점 — CISA KEV 등재') : '');
+                },
+                1 => function ($r) {
+                    if (empty($r['collected'])) {
+                        return vg_badge('미수집', 'muted', 'NVD 커넥터가 아직 이 CVE 를 가져오지 않았습니다');
+                    }
+                    $sev = vg_cvss_sev($r['cvss'] === null ? null : (string) $r['cvss']);
+                    return $sev !== '' ? vg_sev_badge(strtoupper($sev)) : '<span class="why">–</span>';
+                },
+                2 => fn($r) => $r['cvss'] !== null ? vg_h((string) $r['cvss']) : '<span class="why">–</span>',
+                3 => fn($r) => vg_epss_cell($r['epss'] ?? null, $r['epss_percentile'] ?? null),
+                4 => fn($r) => !empty($r['published'])
+                    ? '<span class="why">' . vg_h((string) $r['published']) . '</span>'
+                    : '<span class="why">–</span>',
+            ],
+        ]
+    );
+    if ($cves) { vg_page_nav($cveTotal, $cPerPage, $cPage, 'cpage', 'cper_page'); }
+    ?>
+    </div>
+  </div>
+</section>
+
+<section id="content">
   <div class="card">
     <strong>본문</strong>
+    <span class="why">— 원문에서 옮겨온 평문(표·이미지는 옮겨오지 않습니다)</span>
     <?php if (!empty($adv['content'])): ?>
       <p class="why prose"><?= vg_h($adv['content']) ?></p>
     <?php elseif (!empty($adv['content_fetched_at'])): ?>
@@ -103,28 +228,32 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
       </div>
     <?php endif; ?>
   </div>
+</section>
 
-  <?php
-  // url 은 KISA RSS/operator 피드에서 온 외부 입력이다. vg_h() 는 HTML 이스케이프만 할 뿐
-  // javascript:/data: 같은 스킴은 막지 못하므로, http/https 스킴일 때만 링크로 낸다.
-  $advUrl = (string) $adv['url'];
-  $advUrlSafe = preg_match('#^https?://#i', $advUrl) === 1;
-  ?>
+<section id="origin">
   <div class="card">
-    <strong>원문</strong>
-    <div class="why card__body">
-      보호나라 원문 페이지입니다. 첨부파일·표 서식은 원문에서만 볼 수 있습니다.
-    </div>
-    <div class="actions card__body">
-      <?php if ($advUrlSafe): ?>
-        <a class="btn btn--sm btn--ghost" href="<?= vg_h($advUrl) ?>" target="_blank" rel="noopener noreferrer">원문 열기 ↗</a>
-      <?php else: ?>
-        <span class="why">원문 링크가 안전하지 않은 형식이라 표시하지 않습니다.</span>
-      <?php endif; ?>
-      <?php if (!empty($adv['content_fetched_at'])): ?>
-        <span class="why">본문 수집 <?= vg_h((string) $adv['content_fetched_at']) ?></span>
-      <?php endif; ?>
+    <strong>원문·수집 정보</strong>
+    <span class="why">— 첨부파일·표 서식은 원문에서만 볼 수 있습니다</span>
+    <div class="card__body">
+      <dl class="kv">
+        <dt>공지 번호</dt><dd>#<?= (int) $adv['advisory_id'] ?></dd>
+        <dt>출처 피드</dt><dd><?= vg_h((string) $adv['source']) ?></dd>
+        <dt>발행일</dt><dd><?= vg_h((string) ($adv['published'] ?? '–')) ?></dd>
+        <dt>목록 수집</dt><dd><?= vg_h((string) $adv['created_at']) ?></dd>
+        <dt>본문 수집</dt>
+        <dd><?= !empty($adv['content_fetched_at']) ? vg_h((string) $adv['content_fetched_at']) : '<span class="why">미수집</span>' ?></dd>
+        <dt>마지막 갱신</dt><dd><?= vg_h((string) $adv['updated_at']) ?></dd>
+      </dl>
+      <div class="actions mt">
+        <?php if ($advUrlSafe): ?>
+          <a class="btn btn--sm btn--ghost" href="<?= vg_h($advUrl) ?>" target="_blank" rel="noopener noreferrer">보호나라 원문 열기 ↗</a>
+          <?php vg_copy_btn($advUrl, '원문 주소 복사'); ?>
+        <?php else: ?>
+          <span class="why">원문 링크가 안전하지 않은 형식이라 표시하지 않습니다.</span>
+        <?php endif; ?>
+      </div>
     </div>
   </div>
+</section>
 <?php endif; ?>
 <?php vg_footer();
