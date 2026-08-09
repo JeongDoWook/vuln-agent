@@ -10,9 +10,11 @@ skinparam shadowing false
 
 rectangle "/login.php\n세션 로그인 · CSRF" as LOGIN #1f6feb
 rectangle "/ 대시보드\n호스트별 최신스캔 · 심각도 KPI" as DASH
-rectangle "/host.php\n호스트 상세 · 노출·프로세스·취약점\n+ CCE 점검 · 백포트 억제 내역" as HOST
+rectangle "/host.php\n호스트 상세 · 탭: 취약점·설치 패키지·컨테이너\n런타임·보안 설정(CCE)·계정·억제·스캔 이력" as HOST
 ' 사이드바 밖 — 상단바 사용자 메뉴. 로그인 사용자 전원(메뉴 권한 없음).
 rectangle "/profile.php\n내 프로필 · 본인 비밀번호 변경" as PROF
+' 사이드바에 없다 — 엣지가 (스캔 × 컨테이너) 단위라 자산 상세에서만 들어간다.
+rectangle "/depgraph.php\n패키지 의존성 그래프\n역추적 · 정방향 · 트리" as DEP
 
 package "취약점 (perm: findings / advisories)" as Vuln {
     rectangle "/findings.php\n탐지 결과 · 검색/필터" as FIND
@@ -67,8 +69,9 @@ ASSETS --> APKG : 설치 패키지 탭
 HOST --> FIND
 FIND --> CVE
 FIND --> CHG : 서브탭
-FIND --> FHIST : 행별 "이력"
+FIND --> FHIST : 모든 행의 "이 자산 판정"
 HOST --> FHIST
+HOST --> DEP : 의존성 엣지가 있는 자산만
 FIND --> NOFIX : 벤더 미수정 모아보기
 PKG --> NOFIX
 HOST --> CRULE : CCE 근거 배지

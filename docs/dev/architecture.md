@@ -1,7 +1,7 @@
 # vuln-agent 아키텍처
 
 > 현행 기준: 2026-08-09 · 에이전트 3.10 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고,
-> 계정 인벤토리·자산 등급·의존성 그래프 수집, 컴플라이언스 스냅샷 포함.
+> 계정 인벤토리·자산 등급·의존성 그래프(수집·조회 화면), 컴플라이언스 스냅샷 포함.
 
 지금까지 확정·구현된 구조를 그림으로 정리한다.
 다이어그램은 [`docs/specs/diagrams/`](../specs/diagrams/) 에 PlantUML(`.puml`)로 분리해 두었다.
@@ -129,7 +129,11 @@ SPDX 는 `DEPENDS_ON`(정방향)과 `DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역�
 (`src/ingest_parse.php` 의 `VG_SPDX_REL_FORWARD`/`REVERSE`). 엣지 유일성은
 9개 컬럼 복합키가 InnoDB 인덱스 상한(3,072바이트)을 넘겨 **해시 생성컬럼**(`edge_hash`)으로 건다 —
 접두 길이 방식은 접두가 겹치는 서로 다른 패키지를 같은 키로 묶어 정상 엣지를 조용히 버린다.
-UI·전이 표시는 다음 단계다.
+조회 화면은 `/depgraph.php`(읽기 전용 헬퍼 `src/packagedep.php`) — 대상 패키지를 지정하면 역추적
+("무엇이 끌어왔나")·정방향·트리 탭이 열린다. 진입은 자산 상세(`host.php`)에서만 한다: `uk_pkg_dep_edge`
+좌측 접두가 (`scan_id`, `container_id`)라 그 둘로 좁혀야 인덱스를 타고 패키지명 전역 검색은 풀스캔이
+된다. 엣지는 그 단위로 한 번에 읽어 메모리에서 조립하고(재귀 SQL 은 깊이만큼 N+1), 상한에 걸리면
+**잘린 사실을 화면에 밝힌다**. 그래프 라이브러리는 들이지 않는다(접이식 목록으로 충분 — KISS).
 
 **미조치 사유·승인자**(`src/remediation_note.php` → `tb_remediation_note`)는 억제와 **다른 축**이다.
 억제는 매처의 자동 판정이고, 이건 사람이 남기는 메모다 — "왜 지금 고치지 않는가"와 "누가 언제
@@ -339,7 +343,7 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
     `src/tokenexpiry.php` 하나다(둘로 흩어지면 조용히 어긋난다). 자동 갱신·자동 재발급은 두지
     않는다 — 만료되면 사람이 새로 발급한다. 대응 기준: ISMS-P 2.5.1 · N2SF AC-1(4).
 - 최초 admin 은 `secrets/admin_password` 로 부트스트랩.
-- **감사 로깅**: 로그인·커넥터 저장/토글/삭제·사용자 추가/삭제·ingest 수신이 `tb_activity_log` 에
+- **감사 로깅**: 로그인·커넥터 저장/삭제/실행·사용자 추가/삭제·ingest 수신이 `tb_activity_log` 에
   자동 기록된다(`server/src/audit.php` 의 `vg_log_activity()`, 각 페이지가 require 해서 호출).
   `/activity.php` 에서 scope 필터 + 페이지네이션으로 조회한다.
 - **접속기록 5요소**(ISMS-P 2.9.4): 식별자·접속일시·접속지 IP·처리한 정보주체·수행업무를 각각
