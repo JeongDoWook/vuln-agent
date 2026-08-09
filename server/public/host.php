@@ -927,7 +927,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         ['label' => '등급', 'key' => 'severity'],
         ['label' => '상태', 'key' => 'runtime_status'],
         ['label' => 'CVE'],
-        ['label' => 'EPSS'],
+        ['label' => 'EPSS', 'align' => 'right'],   // 확률(%) — advisory·package·cves 화면과 같은 정렬
         ['label' => '패키지'],
         ['label' => '근거'],
         ['label' => '조치'],

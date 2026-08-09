@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 /**
  * connectors.php — CVE 피드 커넥터 관리 (admin 전용).
- *   목록/추가/편집/삭제, 즉시 실행(수동), 활성 토글, 최근 수집 이력.
+ *   목록/추가/편집/삭제, 즉시 실행(수동), 최근 수집 이력.
+ *   활성 여부는 편집 폼의 '활성' 체크박스 하나로만 바꾼다.
  */
 
 require_once __DIR__ . '/../src/auth.php';
@@ -11,7 +12,7 @@ require_once __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/feeds.php';
 require_once __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_soft_delete / vg_log_activity
-require_once __DIR__ . '/../src/connector_actions.php';   // POST 액션(save/run/toggle/delete) 처리
+require_once __DIR__ . '/../src/connector_actions.php';   // POST 액션(save/run/delete) 처리
 vg_require_menu('connectors');   // 피드 커넥터: 설정형 권한
 
 // 범용 API 커넥터(generic_api)의 역할 라벨 — 단일 소스. <select id="gRole"> 옵션과
@@ -164,17 +165,19 @@ vg_header('데이터 수집', 'connectors');
 
   $tableHeaders = [
       ['label' => '소스'], ['label' => '주기'], ['label' => '실행 시각', 'nowrap' => true],
-      ['label' => '상태'], ['label' => '작업'],
+      ['label' => '상태'], ['label' => '작업', 'align' => 'right'],
   ];
   $tableCells = [
       0 => fn($c) => '<strong>' . vg_h($c['name']) . '</strong>',
       1 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
       2 => fn($c) => '<span class="why">최근 ' . vg_h($c['last_run_at'] ?? '–')
           . '<br>다음 ' . vg_h($c['_next_run'] ?: '–') . '</span>',
-      3 => function ($c) use ($csrf, $statusBadge) {
-          return '<div class="stack-sm"><form method="post">'
-          . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="toggle"><input type="hidden" name="id" value="' . (int) $c['feed_connector_id'] . '">'
-          . '<button class="btn btn--sm ' . ($c['enabled'] ? 'btn--ok' : 'btn--ghost') . '">' . ($c['enabled'] ? '사용' : '중지') . '</button></form>'
+      // 상태 칸은 "지금 어떤 상태인가" 만 보여준다 — 켜기/끄기는 편집 폼의 '활성' 체크박스 하나로
+      //   한다(전엔 여기 토글 버튼이 하나 더 있어 같은 일을 하는 경로가 둘이었다).
+      //   꺼진 커넥터는 수집 결과 뱃지만 보면 "왜 안 도는지" 를 알 수 없으므로 '중지' 를 앞에 붙인다.
+      3 => function ($c) use ($statusBadge) {
+          return '<div class="stack-sm">'
+          . ($c['enabled'] ? '' : vg_badge('중지', 'muted', '이 데이터 소스는 꺼져 있어 예약 수집이 돌지 않습니다.'))
           . $statusBadge($c['last_status'] !== null ? (string) $c['last_status'] : null) . '</div>';
       },
       4 => function ($c) use ($csrf, $logCountByConn) {
@@ -377,7 +380,7 @@ vg_header('데이터 수집', 'connectors');
   $logHeaders = [
       ['label' => '상태',      'width' => '7rem',  'nowrap' => true],
       ['label' => '실행 계기', 'width' => '7rem'],
-      ['label' => '수집/저장', 'width' => '9rem'],
+      ['label' => '수집/저장', 'width' => '9rem', 'align' => 'right'],
       ['label' => '메시지'],
       ['label' => '시각',      'width' => '11rem', 'nowrap' => true],
   ];

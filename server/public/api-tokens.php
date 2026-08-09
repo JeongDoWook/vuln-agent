@@ -135,7 +135,7 @@ vg_header('API 키', 'apitokens');
           ['label' => '마지막 사용', 'width' => '11rem'],
           ['label' => '발급자', 'width' => '8rem'],
           ['label' => '발급일', 'width' => '11rem'],
-          ['label' => '', 'width' => '5rem'],
+          ['label' => '', 'width' => '5rem', 'align' => 'right'],   // 폐기 버튼
       ],
       $tokens,
       [

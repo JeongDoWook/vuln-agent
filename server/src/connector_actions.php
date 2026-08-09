@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 /**
  * connector_actions.php — CVE 피드 커넥터 관리 페이지의 POST 액션 처리 —
- *   save/run/toggle/delete. HTML 출력 없음, DB 조작만.
+ *   save/run/delete. HTML 출력 없음, DB 조작만.
+ *   활성 여부(enabled)는 save 가 폼의 체크박스로 함께 저장한다 — 목록의 토글 버튼은 걷어냈다.
  */
 
 require_once __DIR__ . '/db.php';      // vg_json_col — feeds.php 가 이미 물고 오지만 직접 쓰므로 명시
@@ -153,11 +154,6 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
             } else {
                 $err = "실행 실패: {$r['error']}";
             }
-        } elseif ($action === 'toggle') {
-            $id = (int) ($post['id'] ?? 0);
-            $pdo->prepare('UPDATE tb_feed_connector SET enabled = 1 - enabled WHERE feed_connector_id = ?')->execute([$id]);
-            vg_log_activity($pdo, 'CONNECTOR', $id, 'connector_toggle', '활성 상태 변경');
-            $msg = '활성 상태 변경됨.';
         } elseif ($action === 'delete') {
             $id = (int) ($post['id'] ?? 0);
             vg_soft_delete($pdo, 'tb_feed_connector', $id);
