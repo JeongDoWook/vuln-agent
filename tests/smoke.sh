@@ -216,6 +216,7 @@ run_phpunit "matcher_suppress_test.php" "matcher_suppress" "매처 억제 게이
 # server/src/ingest_parse.php 로 뽑아냈다. 예전엔 이 파싱 로직에 단위테스트가 0개였다 —
 # vercmp 처럼 서버 없이 도는 정적 검사라 스모크 앞단에 묶는다.
 run_phpunit "ingest_parse_test.php" "ingest_parse" "ingest_parse 단위 테스트"
+run_phpunit "assetgrade_history_test.php" "assetgrade_history" "자산등급 제안 이력 단위 테스트"
 
 # --- 계정 인벤토리 단위 테스트 -------------------------------------------------
 # 계정 판정은 "판정 불가(NA)"가 "정상(PASS)"으로 새는 순간 감사에서 거짓 안심이 된다
@@ -410,9 +411,20 @@ if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백�
 #   같은 내용을 다시 보내면 새 스캔을 만들지 않는다(수집시각만 갱신). 패키지가 바뀌면 새 스냅샷 +
 #   변경이력. 매시간 수집이 대부분 "직전과 동일"이라 이게 없으면 데이터가 무한히 불어난다.
 printf "\n[변경 추적]\n"
+docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $s=vg_pdo()->prepare("UPDATE tb_host SET grade=\"C\" WHERE fqdn=?"); $s->execute([$argv[1]]);' "$FQDN_WEB01"
 run_count_before=$(docker exec "$WEB_CONTAINER" php -r \
   '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
    $s=vg_pdo()->prepare("SELECT COUNT(*) FROM tb_scan_run r JOIN tb_host h ON h.host_id=r.host_id WHERE h.fqdn=?");
+   $s->execute([$argv[1]]); echo $s->fetchColumn();' "$FQDN_WEB01")
+grade_history_before=$(docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $s=vg_pdo()->prepare("SELECT COUNT(*) FROM tb_asset_grade_suggestion_history g JOIN tb_host h ON h.host_id=g.host_id WHERE h.fqdn=?");
+   $s->execute([$argv[1]]); echo $s->fetchColumn();' "$FQDN_WEB01")
+confirmed_grade_before=$(docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $s=vg_pdo()->prepare("SELECT COALESCE(grade, \"NULL\") FROM tb_host WHERE fqdn=?");
    $s->execute([$argv[1]]); echo $s->fetchColumn();' "$FQDN_WEB01")
 resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 assert_contains "$resp" '"changed":false' "동일 내용 재전송 → 새 스냅샷 안 만듦"
@@ -421,6 +433,17 @@ run_count_after=$(docker exec "$WEB_CONTAINER" php -r \
    $s=vg_pdo()->prepare("SELECT COUNT(*) FROM tb_scan_run r JOIN tb_host h ON h.host_id=r.host_id WHERE h.fqdn=?");
    $s->execute([$argv[1]]); echo $s->fetchColumn();' "$FQDN_WEB01")
 assert_eq "$run_count_after" "$((run_count_before + 1))" "동일 내용이어도 수집 실행 이력 1건 누적"
+grade_history_after=$(docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $s=vg_pdo()->prepare("SELECT COUNT(*) FROM tb_asset_grade_suggestion_history g JOIN tb_host h ON h.host_id=g.host_id WHERE h.fqdn=?");
+   $s->execute([$argv[1]]); echo $s->fetchColumn();' "$FQDN_WEB01")
+confirmed_grade_after=$(docker exec "$WEB_CONTAINER" php -r \
+  '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
+   $s=vg_pdo()->prepare("SELECT COALESCE(grade, \"NULL\") FROM tb_host WHERE fqdn=?");
+   $s->execute([$argv[1]]); echo $s->fetchColumn();' "$FQDN_WEB01")
+if [ "$grade_history_before" -ge 1 ]; then ok "시스템 등급 제안 관찰 이력 생성"; else no "시스템 등급 제안 관찰 이력 없음"; fi
+assert_eq "$grade_history_after" "$grade_history_before" "동일 scan·결과 replay는 제안 이력 중복 없음"
+assert_eq "$confirmed_grade_after" "$confirmed_grade_before" "ingest 제안 관찰은 사람 확정 grade를 변경하지 않음"
 
 UPG="$(mktemp)"; sed 's/0:2.34-60.el9_2.3/0:2.34-83.el9_3.7/' "$SAMPLE" > "$UPG"
 resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$UPG")

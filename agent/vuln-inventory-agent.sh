@@ -1760,9 +1760,8 @@ put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
   echo "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs"
   collect_exposure
 } > "$TMP/exposure__correlation.txt" 2>/dev/null || true
-# 헤더만 있고 데이터 없으면(2줄 미만) 제거
-[ "$(wc -l < "$TMP/exposure__correlation.txt" 2>/dev/null || echo 0)" -ge 2 ] \
-  || rm -f "$TMP/exposure__correlation.txt"
+# 헤더만인 파일도 보낸다. 중앙은 섹션 존재를 "수집 완료·0건(EMPTY)" 증거로 쓰며,
+# 파일 자체가 없는 구버전/누락 payload만 MISSING으로 구분한다.
 
 # 10-c) 실행 프로세스 인벤토리 (실행중/사용중 구분용) — 포트 없어도 잡음
 {

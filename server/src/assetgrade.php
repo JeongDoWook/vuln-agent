@@ -55,12 +55,29 @@ const VG_ASSET_LOGBACKUP_PROCS = [
 ];
 
 /**
+ * 스냅샷 identity에 넣을 등급 분류 관련 프로세스 정규형.
+ * 전체 프로세스를 해시하면 cron/ssh 같은 일시적 실행마다 무거운 새 스캔이 생긴다.
+ */
+function vg_asset_grade_relevant_process_rows(array $rows): array
+{
+    $out = [];
+    foreach ($rows as $row) {
+        $comm = (string) ($row[1] ?? '');
+        if (!in_array($comm, VG_ASSET_LOGBACKUP_PROCS, true)) { continue; }
+        $key = implode('|', [$comm, (string) ($row[2] ?? ''), (string) ($row[3] ?? ''), (string) ($row[4] ?? '')]);
+        $out[$key] = [$comm, (string) ($row[2] ?? ''), (string) ($row[3] ?? ''), (string) ($row[4] ?? '')];
+    }
+    ksort($out);
+    return array_values($out);
+}
+
+/**
  * 이 스캔의 수집 데이터만 보고 **초안 등급을 제안**한다. 확신이 없으면 제안하지 않는다.
  *
  * 우선순위: 로그·백업(S) > 외부노출(O). 둘 다 해당하면 보호수준이 높은 S 를 제안한다
  *   — 외부에 열려 있다는 사실이 "공개해도 되는 정보"를 뜻하지는 않기 때문이다.
  *
- * @return array{grade:string,reason:string}|null 제안이 없으면 null
+ * @return array{grade:string,source:string,reason:string}|null 제안이 없으면 null
  */
 function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
 {
@@ -76,6 +93,7 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
     if ($logListener !== false) {
         return [
             'grade'  => 'S',
+            'source' => 'log_listener',
             'reason' => '원격 로그 수신 추정 — ' . (string) $logListener['proc']
                       . ' 이(가) 포트 ' . (int) $logListener['port'] . ' 를 열고 있습니다.'
                       . ' (「정보공개법」 제9조 기타 "로그 및 임시백업 등" → S)',
@@ -92,6 +110,7 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
     if ($proc !== false) {
         return [
             'grade'  => 'S',
+            'source' => 'process',
             'reason' => '로그·백업 처리 역할 추정 — 프로세스 ' . (string) $proc . ' 실행 중.'
                       . ' (「정보공개법」 제9조 기타 "로그 및 임시백업 등" → S)',
         ];
@@ -106,29 +125,12 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
     if ($ext > 0) {
         return [
             'grade'  => 'O',
+            'source' => 'external_exposure',
             'reason' => '외부 노출 포트 ' . $ext . '개 — 개방형(O) 영역 후보입니다.',
         ];
     }
 
     return null;   // 근거 없음 → 제안하지 않는다
-}
-
-/**
- * 제안값을 tb_host 에 반영한다. **확정값(grade)은 건드리지 않는다.**
- *   수집 때마다 불리므로 값이 같으면 UPDATE 자체를 하지 않는다.
- */
-function vg_asset_grade_refresh(PDO $pdo, int $hostId, int $scanId): void
-{
-    $s = vg_asset_grade_suggest($pdo, $scanId);
-    $grade  = $s['grade'] ?? null;
-    $reason = $s === null ? null : mb_strimwidth($s['reason'], 0, 255, '');
-
-    $st = $pdo->prepare(
-        'UPDATE tb_host SET grade_suggested = ?, grade_suggested_reason = ?
-          WHERE host_id = ?
-            AND NOT (grade_suggested <=> ? AND grade_suggested_reason <=> ?)'
-    );
-    $st->execute([$grade, $reason, $hostId, $grade, $reason]);
 }
 
 /**
