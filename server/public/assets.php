@@ -209,7 +209,8 @@ vg_header('자산', 'assets');
       ['label' => '상태', 'key' => 'state', 'width' => '5.5rem'],
       // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
       //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
-      ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem'],
+      //   C/S/O 기호만 떠 있으면 뜻을 알 수 없어 열 이름에 한 줄 범례를 단다(어휘는 assetgrade.php 소유).
+      ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem', 'title' => vg_asset_grade_legend()],
       ['label' => 'OS', 'key' => 'os', 'width' => '9%'],
       ['label' => 'IP', 'key' => 'ip', 'width' => '9%', 'nowrap' => true],
       ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],

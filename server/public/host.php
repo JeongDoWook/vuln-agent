@@ -457,7 +457,7 @@ function vg_host_render_grade(int $hostId, array $host, string $csrf, ?string $a
     ?>
     <section class="card mt-lg" aria-labelledby="asset-grade-title">
       <strong id="asset-grade-title">자산 등급</strong>
-      <span class="why"> · 업무 중요도와 N2SF 보안등급(C/S/O)을 기록합니다.
+      <span class="why"> · N2SF 보안등급 <?= vg_h(vg_asset_grade_legend()) ?>. 업무 중요도와 함께 기록합니다.
         등급 확정은 기관의 판정이며 시스템은 초안만 제안합니다.</span>
       <div class="card__body">
         <dl class="fact-grid">
