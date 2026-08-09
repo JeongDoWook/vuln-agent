@@ -100,13 +100,6 @@ vg_asset_grade_observe($pdo, 7, 11, '2026-08-09 10:05:00', $complete);
 $eq('같은 scan 재평가 결과 변화 보존', count($pdo->history), 2);
 $eq('최신 호환 컬럼 O', $pdo->latestGrade, 'O');
 
-$externalOnly = new VgAssetGradeHistoryFakePdo();
-$externalOnly->suggestion = 'O';
-vg_asset_grade_observe($externalOnly, 8, 20, '2026-08-09 10:06:00', [
-    ['runtime_processes', 'MISSING', 0], ['network_exposure', 'COMPLETE', 1],
-]);
-$eq('외부노출 O는 프로세스 수집 누락과 무관하게 제안', array_values($externalOnly->history)[0]['status'], 'SUGGESTED');
-
 $pdo->suggestion = null;
 vg_asset_grade_observe($pdo, 7, 12, '2026-08-09 10:10:00', $complete);
 $eq('null/no-suggestion 관찰도 기록', count($pdo->history), 3);
@@ -144,7 +137,7 @@ $coveragePdo->suggestion = 'O';
 vg_asset_grade_observe($coveragePdo, 8, 22, '2026-08-09 11:05:00', [
     ['runtime_processes', 'MISSING', 0], ['network_exposure', 'COMPLETE', 1],
 ]);
-$eq('외부노출 O는 프로세스 누락과 무관하게 유지', array_values($coveragePdo->history)[0]['status'], 'SUGGESTED');
+$eq('상위 S 근거를 못 본 O는 판정불가', array_values($coveragePdo->history)[0]['status'], 'NOT_EVALUATED');
 
 if ($fail > 0) { printf("assetgrade_history_test: %d건 실패\n", $fail); exit(1); }
 echo "assetgrade_history_test: 전부 통과\n";

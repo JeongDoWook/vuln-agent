@@ -32,7 +32,6 @@ function vg_asset_grade_observe(
     $required = match ($source) {
         'log_listener' => ['network_exposure'],
         'process' => ['runtime_processes'],
-        'external_exposure' => ['network_exposure'],
         default => ['runtime_processes', 'network_exposure'],
     };
     $missing = array_values(array_filter($required, static function (string $code) use ($stages): bool {
