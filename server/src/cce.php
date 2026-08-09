@@ -609,9 +609,19 @@ if (!function_exists('vg_sshd_val')) {
      * 매핑은 **추측하지 않았다** — SSG 룰 2,493개의 ID 를 실제로 검색해 대응하는 것만 적었다.
      *   대응하는 SSG 룰이 없는 항목(KISA 가이드 고유 등)은 여기 없다 → 화면에서 "자체 기준" 으로 뜬다.
      *
-     *   시간동기화·로그설정·암호화(CCE-TIME-*·CCE-LOG-*·CCE-CRYPTO-*)는 여기 없다.
-     *   SSG 에 유사 룰이 있을 수는 있으나 **ID 를 실제로 대조하지 않았으므로 적지 않는다** —
-     *   추측 매핑은 화면이 남의 근거를 잘못 인용하게 만든다. 확인되면 그때 추가한다.
+     *   #519 에서 나머지 12개를 `tb_compliance_rule` 전수 대조했다(v0.1.81, 2,493룰).
+     *   4개만 대응 룰이 있었고 8개는 **정말로 없어서** 자체 기준으로 남는다:
+     *     · CCE-TIME-OFFSET  — SSG 는 maxpoll·RootDistanceMaxSec 같은 *설정값*만 본다.
+     *                          실측 오차(chronyc offset)를 판정하는 룰은 없다.
+     *     · CCE-LOG-RETENTION — 보존기간 룰은 auditd 전용(num_logs·max_log_file)뿐이고,
+     *                          journald MaxRetentionSec/logrotate 보존일수 룰은 없다.
+     *     · CCE-CRYPTO-KCMVP — SSG 의 검증 개념은 FIPS 140 이다. 국내 KCMVP 는 다른 제도라
+     *                          FIPS 룰에 묶으면 없는 근거를 인용하게 된다.
+     *     · CCE-SSH-PWAUTH   — PasswordAuthentication 을 다루는 룰이 없다.
+     *                          sshd_enable_pubkey_auth 는 *다른 설정*이라 대체할 수 없다.
+     *     · CCE-FILE-HOSTS/SERVICES/SYSLOG/XINETD — file_permissions_* 에 /etc/hosts·
+     *                          /etc/services·/etc/rsyslog.conf·/etc/xinetd.conf 가 없다
+     *                          (hosts.allow/deny 는 다른 파일, xinetd 는 제거·비활성 룰만 있다).
      */
     function vg_cce_ssg_map(): array { return [
         // SSH (sshd -T 실효값으로 판정)
@@ -646,6 +656,16 @@ if (!function_exists('vg_sshd_val')) {
         'CCE-SVC-LEGACY'    => 'service_telnetd_disabled',
         'CCE-SEC-MODULE'    => 'selinux_state',
         'CCE-SEC-FW'        => 'service_firewalld_enabled',
+        // 시간 동기화 — 룰 ID 는 chrony 네임스페이스지만 제목·근거가 서비스 중립이다
+        //   ("Synchronize internal information system clocks" / 로그 상관분석 근거).
+        //   우리 점검도 chrony·ntpd·timesyncd 를 가리지 않고 동기화 여부만 본다.
+        'CCE-TIME-SYNC'         => 'chronyd_sync_clock',
+        // 로그·암호화
+        'CCE-LOG-REMOTE'        => 'rsyslog_remote_loghost',
+        'CCE-CRYPTO-DISK'       => 'encrypt_partitions',
+        // Ciphers/MACs/Kex 를 한 항목에서 함께 보지만, 대표 룰은 CBC 취약성을 다루는 이것이다
+        //   (sshd_use_strong_macs·sshd_use_strong_kex 도 있으나 매핑은 코드당 1개다).
+        'CCE-CRYPTO-SSH-CIPHER' => 'sshd_use_strong_ciphers',
     ]; }
 
     /**
