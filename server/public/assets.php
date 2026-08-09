@@ -142,8 +142,8 @@ try {
     $offset = ($page - 1) * $perPage;
 
     $st = $pdo->prepare(
-        "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.last_seen_ip, h.first_seen,
-                s.scan_id, s.collected_at, s.package_count, s.exposure_count, s.agent_version,
+        "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.last_seen_ip,
+                s.scan_id, s.collected_at, s.package_count, s.agent_version,
                 h.poll_schedule_seconds,
                 h.criticality, h.grade, h.grade_reason,
                 h.grade_suggested, h.grade_suggested_reason,
@@ -278,7 +278,8 @@ vg_header('자산', 'assets');
       $headers[] = ['label' => '', 'key' => 'pick', 'width' => '2.5rem', 'align' => 'center'];
   }
   $headers = array_merge($headers, [
-      ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '18%'],
+      // '노출' 열을 걷어내며 그 폭을 여기로 옮겼다(이 파일의 폭 배분 원칙: 남는 폭은 식별자가 갖는다).
+      ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '22%'],
       ['label' => '상태', 'key' => 'state', 'width' => '5.5rem'],
       // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
       //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
@@ -287,8 +288,11 @@ vg_header('자산', 'assets');
       ['label' => 'OS', 'key' => 'os', 'width' => '9%'],
       ['label' => 'IP', 'key' => 'ip', 'width' => '9%', 'nowrap' => true],
       ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],
+      /* '노출'(리스닝 소켓 개수) 열은 뺐다 — 이 목록은 "어느 자산을 먼저 볼 것인가" 를 정하는
+       *   자리인데, 소켓 개수는 그 판단에 못 쓴다. 3개든 30개든 위험은 **어느 범위로 열렸는가**
+       *   (EXTERNAL/LAN/…)에서 갈리고 그 값은 여기 없다. 위험은 옆의 '심각도' 열이 말하고,
+       *   범위별 목록은 호스트 상세의 런타임 탭이 답한다. */
       ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '5%'],
-      ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right', 'width' => '4.5%'],
       ['label' => '심각도', 'key' => 'sev', 'width' => '13%'],
       ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '12%', 'nowrap' => true],
   ]);
@@ -356,9 +360,6 @@ vg_header('자산', 'assets');
               },
               'package_count' => fn($r) => $r['scan_id'] !== null
                   ? '<a href="/host.php?id=' . (int)$r['host_id'] . '&amp;tab=packages">' . number_format((int)$r['package_count']) . '</a>'
-                  : '<span class="why">–</span>',
-              'exposure_count'=> fn($r) => $r['scan_id'] !== null
-                  ? '<a href="/host.php?id=' . (int)$r['host_id'] . '&amp;tab=runtime">' . number_format((int)$r['exposure_count']) . '</a>'
                   : '<span class="why">–</span>',
               // 뱃지를 누르면 그 호스트·등급의 취약점 목록으로.
               'sev' => fn($r) => vg_sev_counts(

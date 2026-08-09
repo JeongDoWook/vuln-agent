@@ -526,7 +526,17 @@ assert_contains "$badtabbody" 'class="on" href="?tab=os">OS 패키지' "잘못�
 hostmanage=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_contains "$hostmanage" 'name="action" value="host_delete"' "자산 상세에 관리자 삭제 작업 표시"
 assert_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=packages" "자산 목록 패키지 수가 설치 패키지 탭에 연결"
-assert_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=runtime" "자산 목록 노출 수가 런타임 탭에 연결"
+# '노출'(리스닝 소켓 수) 열은 자산 목록에서 걷어냈다 — 개수로는 우선순위를 못 정하고,
+#   범위(EXTERNAL/LAN/…)별 목록은 호스트 상세의 런타임 탭이 답한다. 그 탭 자체는 그대로 산다.
+assert_not_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=runtime" "자산 목록에 노출 수 열이 없다"
+# '리소스' 탭은 '스캔 이력' 탭으로 흡수됐다 — 옛 URL 은 302 로 그 탭에 떨군다(북마크 보존).
+resredir=$(curl_ -s -i -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=resources")
+assert_contains "$resredir" "302" "옛 리소스 탭 URL 이 302 로 응답"
+assert_contains "$resredir" "tab=scans" "옛 리소스 탭 URL 이 스캔 이력 탭으로 이동"
+scansbody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=scans")
+assert_contains "$scansbody" "스캔 이력" "스캔 이력 탭 표시"
+assert_contains "$scansbody" "에이전트 메모리 사용률" "스캔 이력 탭이 리소스 추이를 함께 보여준다"
+assert_not_contains "$scansbody" 'href="?tab=resources"' "리소스 탭이 탭 줄에서 사라졌다"
 packagebody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=packages")
 assert_contains "$packagebody" '설치 패키지' "자산 상세 설치 패키지 탭 표시"
 assert_contains "$packagebody" 'glibc' "최신 스캔의 설치 패키지 전체 목록 조회"
