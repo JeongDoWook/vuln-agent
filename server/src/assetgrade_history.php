@@ -43,8 +43,12 @@ function vg_asset_grade_observe(
         $reason = null;
     }
 
+    $requiredStages = [];
+    foreach ($required as $code) {
+        $requiredStages[$code] = $stages[$code] ?? ['status' => 'MISSING', 'item_count' => 0];
+    }
     $evidence = json_encode(
-        ['source' => $source, 'required_stages' => $stages, 'missing_stages' => $missing],
+        ['source' => $source, 'required_stages' => $requiredStages, 'missing_stages' => $missing],
         JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
     );
     $fingerprint = hash('sha256', json_encode(
@@ -57,11 +61,19 @@ function vg_asset_grade_observe(
     $st = $pdo->prepare(
         'INSERT INTO tb_asset_grade_suggestion_history
             (host_id, scan_id, suggested_grade, suggested_reason, evaluation_status,
-             evidence_snapshot, result_fingerprint, source_collected_at, observed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
-         ON DUPLICATE KEY UPDATE result_fingerprint = VALUES(result_fingerprint)'
+             evidence_snapshot, result_fingerprint, source_collected_at, observed_at,
+             last_source_collected_at, last_observed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           last_source_collected_at = CASE
+             WHEN VALUES(last_source_collected_at) IS NULL THEN last_source_collected_at
+             WHEN last_source_collected_at IS NULL
+               OR VALUES(last_source_collected_at) > last_source_collected_at
+             THEN VALUES(last_source_collected_at) ELSE last_source_collected_at END,
+           last_observed_at = GREATEST(last_observed_at, VALUES(last_observed_at))'
     );
-    $st->execute([$hostId, $scanId, $grade, $reason, $status, $evidence, $fingerprint, $sourceCollectedAt]);
+    $st->execute([$hostId, $scanId, $grade, $reason, $status, $evidence, $fingerprint,
+        $sourceCollectedAt, $sourceCollectedAt]);
 
     // 수집 불완전은 관찰만 남기고 현재 제안을 지우지 않는다. 지연 도착한 과거 스캔도
     // 이력에는 남기되 현재 호환 컬럼을 과거 상태로 되돌리지 않는다.
@@ -73,8 +85,10 @@ function vg_asset_grade_observe(
             AND NOT EXISTS (
                 SELECT 1 FROM tb_asset_grade_suggestion_history newer
                  WHERE newer.host_id = ?
-                   AND (newer.effective_at > LEAST(COALESCE(?, NOW()), NOW())
-                        OR (newer.effective_at = LEAST(COALESCE(?, NOW()), NOW()) AND newer.scan_id > ?))
+                   AND newer.evaluation_status <> \'NOT_EVALUATED\'
+                   AND (newer.effective_at > LEAST(GREATEST(COALESCE(?,NOW()),DATE_SUB(NOW(),INTERVAL 7 DAY)),NOW())
+                        OR (newer.effective_at = LEAST(GREATEST(COALESCE(?,NOW()),DATE_SUB(NOW(),INTERVAL 7 DAY)),NOW())
+                            AND (newer.last_observed_at > NOW() OR newer.scan_id > ?)))
             )'
     );
     $st->execute([$grade, $reason, $hostId, $grade, $reason, $hostId, $sourceCollectedAt, $sourceCollectedAt, $scanId]);
@@ -86,11 +100,11 @@ function vg_asset_grade_history_recent(PDO $pdo, int $hostId, int $limit = 8): a
     $limit = max(1, min(25, $limit));
     $st = $pdo->prepare(
         'SELECT h.scan_id, h.suggested_grade, h.suggested_reason, h.evaluation_status,
-                h.source_collected_at, h.observed_at
+                h.evidence_snapshot, h.effective_at, h.observed_at, h.last_observed_at
            FROM tb_asset_grade_suggestion_history h
            JOIN tb_scan s ON s.scan_id = h.scan_id AND s.is_deleted = 0
           WHERE h.host_id = ?
-          ORDER BY h.effective_at DESC, h.suggestion_history_id DESC
+          ORDER BY h.effective_at DESC, h.last_observed_at DESC, h.suggestion_history_id DESC
           LIMIT ' . $limit
     );
     $st->execute([$hostId]);
@@ -113,15 +127,23 @@ function vg_asset_grade_history_render(array $rows): void
             $reason = (string) ($row['suggested_reason'] ?? '');
             $status = (string) ($row['evaluation_status'] ?? '');
             $statusLabel = ['SUGGESTED' => '제안', 'NO_MATCH' => '근거 없음', 'NOT_EVALUATED' => '판정 불가'][$status] ?? $status;
+            $evidence = json_decode((string) ($row['evidence_snapshot'] ?? ''), true);
+            $missingLabels = ['runtime_processes' => '실행 프로세스', 'network_exposure' => '네트워크 노출'];
+            $missingText = [];
+            foreach (($evidence['missing_stages'] ?? []) as $code) {
+                $missingText[] = $missingLabels[(string) $code] ?? (string) $code;
+            }
         ?>
           <tr>
-            <td><?= vg_h((string) ($row['observed_at'] ?? '')) ?></td>
+            <td><?= vg_h((string) ($row['effective_at'] ?? '')) ?>
+              <span class="why">(서버 마지막 관찰 <?= vg_h((string) ($row['last_observed_at'] ?? $row['observed_at'] ?? '')) ?>)</span></td>
             <td>#<?= (int) ($row['scan_id'] ?? 0) ?></td>
             <td><?= $grade !== null
                 ? vg_asset_grade_badge((string) $grade, true, $reason)
                 : '<span class="why">제안 없음</span>' ?></td>
             <td><?= vg_badge($statusLabel, $status === 'SUGGESTED' ? 'med' : 'muted') ?></td>
-            <td><?= $reason !== '' ? vg_h($reason) : '<span class="why">–</span>' ?></td>
+            <td><?= $reason !== '' ? vg_h($reason)
+                : ($missingText ? vg_h('수집 누락: ' . implode(', ', $missingText)) : '<span class="why">–</span>') ?></td>
           </tr>
         <?php endforeach; ?>
         </tbody>

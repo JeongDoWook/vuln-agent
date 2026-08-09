@@ -13,12 +13,15 @@ CREATE TABLE IF NOT EXISTS tb_asset_grade_suggestion_history (
   result_fingerprint     BINARY(32) NOT NULL,
   source_collected_at     DATETIME NULL,
   observed_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_source_collected_at DATETIME NULL,
+  last_observed_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   effective_at           DATETIME GENERATED ALWAYS AS
-                           (LEAST(COALESCE(source_collected_at, observed_at), observed_at)) STORED,
+                           (LEAST(GREATEST(COALESCE(last_source_collected_at,last_observed_at),
+                             DATE_SUB(last_observed_at, INTERVAL 7 DAY)),last_observed_at)) STORED,
   created_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (suggestion_history_id),
   UNIQUE KEY uq_asset_grade_suggestion_observation (host_id, scan_id, result_fingerprint),
-  KEY idx_asset_grade_suggestion_host_time (host_id, effective_at, suggestion_history_id),
+  KEY idx_asset_grade_suggestion_host_time (host_id, effective_at, last_observed_at, suggestion_history_id),
   KEY idx_asset_grade_suggestion_scan (scan_id),
   CONSTRAINT fk_asset_grade_suggestion_host FOREIGN KEY (host_id) REFERENCES tb_hosts(id) ON DELETE CASCADE,
   CONSTRAINT fk_asset_grade_suggestion_scan FOREIGN KEY (scan_id) REFERENCES tb_scans(id) ON DELETE CASCADE
