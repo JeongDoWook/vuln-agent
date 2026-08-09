@@ -38,6 +38,10 @@ function vg_setting_defs(): array {
             'label' => '부분준수 상한(건)', 'type' => 'int', 'min' => 1, 'max' => 1000,
             'desc'  => '위반 1~이 값이면 부분준수, 초과하면 미준수로 판정합니다.',
         ],
+        'compliance.access_review_interval_days' => [
+            'label' => '접근권한 검토 주기(일)', 'type' => 'int', 'min' => 7, 'max' => 730,
+            'desc'  => '이 주기 안에 접근권한·접속기록 검토 기록이 없으면 위반으로 판정합니다(ISMS-P 2.5.3).',
+        ],
         'compliance.history_lookback_margin_days' => [
             'label' => '이력 역산 여유일', 'type' => 'int', 'min' => 0, 'max' => 365,
             'desc'  => '최초 발견 시각을 되짚는 구간 = 가장 긴 조치 기한 + 이 여유일.',

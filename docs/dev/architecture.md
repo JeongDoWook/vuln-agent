@@ -163,11 +163,15 @@ permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결
 **KISA ISMS-P·ISO 27001 컴플라이언스 판정**의 로직은 `src/compliance.php` 에 있다(웹·CLI 공용).
 화면(`public/compliance.php`)은 이걸로 "지금"을 렌더하고 스케줄러는 같은 함수로 증적을 적재한다 —
 판정 로직이 두 벌이면 화면과 증적이 서로 다른 답을 내기 시작한다. findings(severity·in_kev·
-no_fix·needs_restart)·자산 연결상태·`tb_cce_finding`(설정 취약) 등 기존 판정 결과만 다시 읽어
-통제 3개(`patch`/`asset`/`secops` — `VG_COMPLIANCE_CONTROLS` 가 SSOT)를 SLA 기준일 대비 위반
-건수로 판정한다. **정책·승인이력처럼 vuln-agent 가 갖고 있지 않은 근거가 필요한 통제는 판정하지
-않고 체크리스트로만 노출한다** — 자동판정 3개가 전부이고 나머지는 사람이 직접 심사해야 한다는 게
-이 화면의 의도적 한계다.
+no_fix·needs_restart)·자산 연결상태·`tb_cce_finding`(설정 취약)·`tb_host_account`(계정 인벤토리)·
+`tb_activity_review`(접속기록 점검 이력) 등 기존 판정 결과만 다시 읽어 통제 5개
+(`patch`/`asset`/`secops`/`account`/`access_review` — `VG_COMPLIANCE_CONTROLS` 가 SSOT)를
+판정한다. `account` 는 판정 로직을 새로 만들지 않고 `vg_account_judgments()`(host.php 계정 탭이
+쓰는 것)를 재사용해 집계만 한다. `patch` 는 통제 전체가 아니라 **버킷(KEV/CRITICAL/HIGH)별로**
+판정한다 — 이력이 짧아 판정 불가인 버킷 하나가 잘 지킨 나머지 버킷까지 회색으로 누르지 않게.
+**정책·승인이력처럼 vuln-agent 가 갖고 있지 않은 근거가 필요한 통제는 판정하지 않고 체크리스트로만
+노출한다** — 남은 3개(정책문서·사고대응·재해복구)는 증적이 제품 밖에 있어 사람이 직접 심사해야
+한다는 게 이 화면의 의도적 한계다.
 
 **판정 어휘는 4종이다 — 준수 / 판정 불가 / 부분준수 / 미준수**(`vg_compliance_status()` 가 SSOT).
 위반 0건이라고 무조건 "준수"로 쓰지 않는다: 볼 수 있는 근거가 모자라서 0건인 것을 준수로 표기하면

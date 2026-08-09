@@ -20,9 +20,13 @@ require_once __DIR__ . '/../src/compliance.php';   // 판정 로직(웹·CLI 공
 vg_require_menu('findings');
 
 $err = null;
-$patch = ['violations' => [], 'total' => 0, 'unjudged' => 0, 'na' => [], 'na_unknown' => 0];
+$patch = ['violations' => [], 'total' => 0, 'unjudged' => 0, 'na' => [], 'na_unknown' => 0, 'buckets' => []];
 $asset = ['violations' => [], 'total' => 0, 'totalHosts' => 0, 'unjudged' => 0, 'unjudged_rows' => []];
 $secconfig = ['violations' => [], 'total' => 0];
+$account = ['violations' => [], 'total' => 0, 'totalHosts' => 0, 'unjudged' => 0,
+            'unjudged_rows' => [], 'pending_hosts' => 0];
+$review = ['violations' => [], 'total' => 0, 'unjudged' => 0,
+           'interval_days' => VG_COMPLIANCE_ACCESS_REVIEW_DAYS, 'last' => null, 'days_since' => null];
 $policy = ['kev' => VG_COMPLIANCE_SLA_KEV_DAYS, 'crit' => VG_COMPLIANCE_SLA_CRIT_DAYS,
            'high' => VG_COMPLIANCE_SLA_HIGH_DAYS, 'partial_max' => VG_COMPLIANCE_PARTIAL_MAX,
            'margin' => VG_COMPLIANCE_HISTORY_MARGIN_DAYS];
@@ -43,6 +47,11 @@ try {
         $asset = vg_compliance_load_asset($pdo, $previewLimit);
     }
     $secconfig = vg_compliance_load_secconfig($pdo, $previewLimit);
+    // 계정 정보는 자산 인벤토리보다 민감하다(계정명·sudo 권한자 목록) — 자산과 같은 게이트를 건다.
+    if ($canViewAssets) {
+        $account = vg_compliance_load_account($pdo, $previewLimit);
+    }
+    $review = vg_compliance_load_access_review($pdo);
     $trend = vg_compliance_trend($pdo, vg_ui_trend_limit());
 } catch (Throwable $e) {
     error_log('[compliance] ' . $e->getMessage());
@@ -53,7 +62,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
 ?>
   <?php vg_page_title(
       '컴플라이언스 매핑', 'COMPLIANCE',
-      '수집 데이터로 ISMS-P·ISO 27001 통제 3종을 판정합니다 · ' . $judgedAt
+      '수집 데이터로 ISMS-P·ISO 27001 통제 5종을 판정합니다 · ' . $judgedAt
   ); ?>
   <?php
   // 이름이 비슷해 헷갈리는 두 화면을 나란히 세운다 — 여기는 **판정**(준수/미준수/판정 불가),
@@ -70,6 +79,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     $sPatch = vg_compliance_status($patch['total'], $patch['unjudged'] > 0, $policy['partial_max']);
     $sAsset = vg_compliance_status($asset['total'], $asset['unjudged'] > 0, $policy['partial_max']);
     $sSec   = vg_compliance_status($secconfig['total'], false, $policy['partial_max']);
+    $sAcct  = vg_compliance_status($account['total'], $account['unjudged'] > 0, $policy['partial_max']);
+    $sRev   = vg_compliance_status($review['total'], false, $policy['partial_max']);
 ?>
   <?php
   // KPI 의 숫자는 "위반 건수"다. 위반 0건이어도 판정 불가가 남아 있으면 그 사실을 라벨에 함께
@@ -83,6 +94,10 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       <div class="kpi kpi--sm tone-<?= vg_h($sAsset['tone']) ?>"><b><?= $asset['total'] ?></b><span>자산식별 위반<?= vg_h($naSuffix($sAsset, (int) $asset['unjudged'])) ?></span></div>
     <?php endif; ?>
     <div class="kpi kpi--sm tone-<?= vg_h($sSec['tone']) ?>"><b><?= $secconfig['total'] ?></b><span>보안설정 위반</span></div>
+    <?php if ($canViewAssets): ?>
+      <div class="kpi kpi--sm tone-<?= vg_h($sAcct['tone']) ?>"><b><?= $account['total'] ?></b><span>계정관리 위반<?= vg_h($naSuffix($sAcct, (int) $account['unjudged'])) ?></span></div>
+    <?php endif; ?>
+    <div class="kpi kpi--sm tone-<?= vg_h($sRev['tone']) ?>"><b><?= $review['total'] ?></b><span>권한검토 위반</span></div>
   </div>
 
   <div class="card">
@@ -95,32 +110,57 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         <?= vg_badge($sPatch['label'], $sPatch['tone']) ?>
       </div>
       <?php // 건수·판정 시각은 위 KPI 카드와 페이지 부제가 이미 말한다 — 여기는 "무엇을 셌는가"만. ?>
-      <p class="why">조치 가능한 CRITICAL·HIGH 취약점의 SLA 초과분(KEV <?= (int) $policy['kev'] ?>일 ·
-        CRITICAL <?= (int) $policy['crit'] ?>일 · HIGH <?= (int) $policy['high'] ?>일)</p>
+      <p class="why">조치 가능한 CRITICAL·HIGH 취약점의 SLA 초과분. 버킷별로 따로 판정합니다.</p>
       <?php
-      // 판정 불가 사유를 그대로 노출한다 — "위반 0건"이 왜 준수를 뜻하지 않는지 화면에서 설명하지
-      //   않으면, 근거가 모자란 0건이 다시 준수처럼 읽힌다(허위 안심).
-      if ($patch['unjudged'] > 0):
-          $hints = [];
-          foreach ($patch['na'] as $b) {
-              $hints[] = sprintf(
-                  '%s SLA %d일 · 보유 이력 최대 %d일 → 판정 불가 %s건%s',
-                  $b['label'], (int) $b['sla_days'], (int) $b['max_history_days'], number_format((int) $b['count']),
-                  $b['judgeable_from'] !== null ? ' (' . $b['judgeable_from'] . ' 이후 판정 가능)' : ''
-              );
-          }
-          if ($patch['na_unknown'] > 0) {
-              $hints[] = sprintf('최초 발견 시각을 확인할 수 없는 %s건 — 경과일을 계산할 수 없어 판정 불가',
-                  number_format((int) $patch['na_unknown']));
-          }
-          vg_alert([
-              'type'  => 'warn',
-              // 예전 문구는 "위반 0건이 곧 준수를 뜻하지 않습니다" 였는데, 위반이 3건일 때도 그대로
-              //   떠서 화면과 어긋났다(실측). 위반 건수와 무관하게 참인 말로 바꾼다.
-              'title' => '판정 불가 ' . number_format($patch['unjudged']) . '건 · 위반 건수만으로 준수를 판단할 수 없습니다',
-              'hints' => $hints,
-          ]);
-      endif; ?>
+      // 버킷 3행을 각각 판정한다. 예전엔 통제 전체에 뱃지 하나만 달아, 이력이 짧아 판정 불가인
+      //   HIGH 하나가 잘 지킨 KEV·CRITICAL 까지 회색으로 눌렀다(운영 실측).
+      //   같은 말을 하던 노란 경고 박스는 이 표로 대체됐다 — 설명 두 벌은 화면만 길게 만든다.
+      vg_table(
+          [
+              ['label' => '버킷', 'width' => '7rem'],
+              ['label' => 'SLA', 'width' => '5rem', 'align' => 'right'],
+              ['label' => '판정', 'width' => '7rem'],
+              ['label' => '위반', 'width' => '5rem', 'align' => 'right'],
+              ['label' => '판정 불가', 'width' => '6rem', 'align' => 'right'],
+              ['label' => '근거'],
+          ],
+          $patch['buckets'],
+          [
+              'card' => false,
+              'cell' => [
+                  0 => fn($b) => vg_h((string) $b['label']),
+                  1 => fn($b) => (int) $b['sla_days'] . '일',
+                  2 => static function ($b) use ($policy) {
+                      // 대상이 0건이면 준수도 위반도 아니다 — "대상 없음"으로 따로 말한다.
+                      if ((int) $b['targets'] === 0) { return vg_badge('대상 없음', 'muted'); }
+                      $s = vg_compliance_status((int) $b['violations'], (int) $b['unjudged'] > 0, $policy['partial_max']);
+                      return vg_badge($s['label'], $s['tone']);
+                  },
+                  3 => fn($b) => number_format((int) $b['violations']) . '건',
+                  4 => fn($b) => number_format((int) $b['unjudged']) . '건',
+                  5 => static function ($b) {
+                      $sla = max(1, (int) $b['sla_days']);
+                      if ((int) $b['targets'] === 0) {
+                          $restart = (int) $b['restart_excluded'];
+                          return '<span class="why">판정 대상 없음'
+                              . ($restart > 0 ? ' · 재시작 대기 ' . number_format($restart) . '건 제외' : '')
+                              . '</span>';
+                      }
+                      if ((int) $b['unjudged'] > 0) {
+                          // 이력이 SLA 에 얼마나 찼는지를 게이지로 — "언제부터 판정되는가"가 사용자의 질문이다.
+                          $hist = (int) $b['max_history_days'];
+                          $txt = '보유 이력 최대 ' . $hist . '일 / SLA ' . $sla . '일'
+                               . ($b['judgeable_from'] !== null ? ' · ' . $b['judgeable_from'] . ' 이후 판정 가능' : '');
+                          return vg_meter('med', $hist / $sla * 100, $txt) . '<span class="why">' . vg_h($txt) . '</span>';
+                      }
+                      return '<span class="why">판정 대상 ' . number_format((int) $b['targets']) . '건'
+                          . ((int) $b['restart_excluded'] > 0
+                              ? ' · 재시작 대기 ' . number_format((int) $b['restart_excluded']) . '건 제외' : '')
+                          . '</span>';
+                  },
+              ],
+          ]
+      ); ?>
       <?php if ($patch['violations']):
           $shown = array_slice($patch['violations'], 0, $previewLimit);
       ?>
@@ -229,6 +269,87 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     </div>
   </div>
 
+  <?php if ($canViewAssets): ?>
+  <div class="card mt-lg">
+    <div class="card__body">
+      <div class="compliance-control__head">
+        <div>
+          <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['account']['label']) ?></strong>
+          <span class="why"> — <?= vg_h(VG_COMPLIANCE_CONTROLS['account']['framework']) ?></span>
+        </div>
+        <?= vg_badge($sAcct['label'], $sAcct['tone']) ?>
+      </div>
+      <p class="why">호스트 <?= number_format($account['totalHosts']) ?>대의 최신 계정 인벤토리 판정입니다.</p>
+      <?php
+      // REVIEW(추정)·NA(원자료 미수집)·수집 대기는 준수로 흡수하지 않는다 — 계정 목록이 아직
+      //   안 들어온 호스트를 준수로 세면 그 자체가 허위 안심이다.
+      if ($account['unjudged'] > 0):
+          $hints = [];
+          foreach ($account['unjudged_rows'] as $u) {
+              $hints[] = $u['fqdn'] . ' · ' . $u['title'] . '(' . $u['result'] . ') — ' . $u['reason'];
+          }
+          if ($account['unjudged'] > count($account['unjudged_rows'])) {
+              $hints[] = sprintf('외 %s건', number_format($account['unjudged'] - count($account['unjudged_rows'])));
+          }
+          vg_alert([
+              'type'  => 'warn',
+              'title' => '판정 불가 ' . number_format($account['unjudged']) . '건'
+                       . ($account['pending_hosts'] > 0
+                          ? ' · 계정 수집 대기 ' . number_format($account['pending_hosts']) . '대' : ''),
+              'hints' => $hints,
+          ]);
+      endif; ?>
+      <?php if ($account['violations']):
+          $shown = array_slice($account['violations'], 0, $previewLimit);
+      ?>
+        <?php vg_table(
+            [['label' => '호스트'], ['label' => '점검 항목'], ['label' => '결과', 'width' => '6rem'], ['label' => '근거']],
+            $shown,
+            [
+                'cell' => [
+                    0 => fn($v) => '<a href="/host.php?id=' . (int) $v['host_id'] . '&amp;tab=account">' . vg_h($v['fqdn']) . '</a>',
+                    1 => fn($v) => vg_h($v['title']) . ' <span class="why">' . vg_h($v['code']) . '</span>',
+                    2 => fn($v) => vg_badge($v['result'], 'crit'),
+                    // 계정명 등 근거 문자열. 패스워드 해시·비밀값은 수집·저장 자체를 하지 않는다.
+                    3 => fn($v) => vg_trunc(implode(', ', $v['names']), 80),
+                ],
+            ]
+        ); ?>
+        <?php if ($account['total'] > count($shown)): ?>
+          <p class="why">상위 <?= count($shown) ?>건만 표시 · 전체 <?= number_format($account['total']) ?>건은
+            호스트 상세의 계정 탭에서 확인</p>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div>
+  </div>
+  <?php endif; ?>
+
+  <div class="card mt-lg">
+    <div class="card__body">
+      <div class="compliance-control__head">
+        <div>
+          <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['access_review']['label']) ?></strong>
+          <span class="why"> — <?= vg_h(VG_COMPLIANCE_CONTROLS['access_review']['framework']) ?></span>
+        </div>
+        <?= vg_badge($sRev['label'], $sRev['tone']) ?>
+      </div>
+      <p class="why">검토 주기 <?= (int) $review['interval_days'] ?>일 · 접속기록 점검 이력으로 판정합니다.</p>
+      <?php if ($review['last'] !== null): ?>
+        <p class="why">최근 검토 <?= vg_h($review['last']['reviewed_at']) ?>
+          (<?= vg_h($review['last']['period_start']) ?> ~ <?= vg_h($review['last']['period_end']) ?>)
+          · <?= (int) $review['days_since'] ?>일 경과</p>
+      <?php endif; ?>
+      <?php if ($review['violations']): ?>
+        <?php vg_table(
+            [['label' => '사유'], ['label' => '근거']],
+            $review['violations'],
+            ['cell' => [0 => fn($v) => vg_h($v['reason']), 1 => fn($v) => '<span class="why">' . vg_h($v['detail']) . '</span>']]
+        ); ?>
+      <?php endif; ?>
+      <p class="why"><a href="/activity.php">접속기록 화면에서 점검 기록 남기기</a></p>
+    </div>
+  </div>
+
   <?php
   // --- 판정 추이(스냅샷) ---------------------------------------------------
   // 위 카드들은 "지금"만 말한다. 심사에서 필요한 건 "그 시점엔 어땠나" 라서, 스케줄러가
@@ -236,6 +357,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $trendControls = ['patch'];
   if ($canViewAssets) { $trendControls[] = 'asset'; }   // 자산정보는 assets 권한자에게만(위 카드와 동일 게이트)
   $trendControls[] = 'secops';
+  if ($canViewAssets) { $trendControls[] = 'account'; } // 계정 통제도 같은 게이트
+  $trendControls[] = 'access_review';
   ?>
   <div class="card mt-lg">
     <div class="card__body">
@@ -272,14 +395,16 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
 
   <div class="card mt-lg">
     <div class="card__body">
-      <strong>수동 확인 필요</strong>
-      <p class="why">자동판정 대상이 아닌 정책·승인이력류 통제입니다.</p>
-      <ul class="hint-list">
-        <?php foreach (VG_COMPLIANCE_MANUAL_CHECKLIST as $item): ?>
-          <li><?= vg_h($item['ismsp']) ?> · <?= vg_h($item['iso']) ?><br>
-            <span class="why"><?= vg_h($item['desc']) ?></span></li>
-        <?php endforeach; ?>
-      </ul>
+      <?php // 증적이 제품 밖(문서·절차)에 있는 항목만 남았다 — 기본은 접어 두고 요약 줄만 보인다. ?>
+      <details>
+        <summary>수동 확인 필요 <?= count(VG_COMPLIANCE_MANUAL_CHECKLIST) ?>건 — 정책·절차 문서(자동판정 불가)</summary>
+        <ul class="hint-list">
+          <?php foreach (VG_COMPLIANCE_MANUAL_CHECKLIST as $item): ?>
+            <li><?= vg_h($item['ismsp']) ?> · <?= vg_h($item['iso']) ?><br>
+              <span class="why"><?= vg_h($item['desc']) ?></span></li>
+          <?php endforeach; ?>
+        </ul>
+      </details>
     </div>
   </div>
 <?php endif; ?>
