@@ -17,7 +17,7 @@ package "수집 대상 서버들 (Linux)" as Servers {
 }
 
 package "중앙 서버 · Docker" as Central {
-    rectangle "Caddy\n(HTTPS 종료 · 자체서명/DNS-01)" as CADDY #8250df
+    rectangle "Caddy\n(HTTPS 종료 · tls internal 자체서명 — 확정)" as CADDY #8250df
     rectangle "ingest.php\n(수신 API · 토큰 인증)" as ING #238636
     database "MySQL\n자산·스냅샷·실행 이력·명령 큐·취약점\n계정 인벤토리 · 패키지 의존성 그래프" as DB
     rectangle "매처 (PHP)\nexposure + pkg × CVE" as MAT #a371f7

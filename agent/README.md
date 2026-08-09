@@ -349,7 +349,9 @@ OS/커널/CPE, 설치 패키지(호스트는 dpkg/rpm — NEVRA·소스패키지
 **내부 패키지 인벤토리**를 뜬다(dpkg·apk 는 텍스트 DB 라 어디서든, rpm 은 호스트에 rpm 이 있을
 때만. 호스트 패키지와는 `container_id` 로 구분해 저장). docker CLI 에
 의존하지 않으므로 podman·containerd 도 잡힌다(이름·이미지만 CLI 로 보강). 컨테이너 안은
-호스트 스캔에서 통째로 빠지던 미탐 영역이었다.
+호스트 스캔에서 통째로 빠지던 미탐 영역이었다. 함께 보내는 k8s 위치(네임스페이스/파드/컨테이너)·
+워크로드 참조·이미지 다이제스트·런타임 상태·SBOM 은 중앙 웹의 **호스트 상세 → 컨테이너 탭**에서
+보고, 의존성 엣지는 같은 화면에서 들어가는 **의존성 그래프**(`depgraph.php`)가 읽는다.
 
 > **프로세스 인벤토리는 호스트 것만** 뜬다(`collect_processes` 는 다른 mount namespace 를
 > 건너뛴다) — 컨테이너 오버레이 경로를 `dpkg -S`/`rpm -qf` 로 전수조사하다 멈추는 문제 때문.
@@ -390,8 +392,9 @@ ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을
 - pom 은 왜 원문인가: 옛 awk 한 줄 파싱이 `<exclusions>`·`<dependencyManagement>`·한 줄
   `<parent>` 를 구조적으로 구분하지 못해 오탐/0건이 났다. 중앙이 DOMDocument·XPath 로 최상위
   `<dependencies>` 만 골라낸다.
-- 전이 의존은 CycloneDX 의 `dependencies[]` 에서 온다(부모→자식 엣지). SPDX
-  `relationships` 는 아직 대상이 아니다.
+- 전이 의존은 CycloneDX 의 `dependencies[]` 와 SPDX 의 `relationships` 에서 온다(부모→자식 엣지).
+  SPDX 는 `DEPENDS_ON`(정방향)·`DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역방향)만 채택한다 —
+  `CONTAINS` 까지 엣지로 보면 이미지의 모든 패키지가 루트의 직접 의존이 되어 직접/전이 구분이 사라진다.
 - 언어패키지 인벤토리와 **예산이 분리돼 있다**(원문 전송이 요약 스트림보다 무거워 서로를
   갉아먹지 않게). 전체 스캔은 `PROJECT_SCAN_TIMEOUT`(기본 300초)·`SCAN_MAX_FILES`(3000)·
   `SCAN_MAX_DEPTH`(8)로 캡핑된다.
