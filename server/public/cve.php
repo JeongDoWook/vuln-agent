@@ -226,7 +226,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
     <div class="stat">
       <?php if ($cvss !== null): ?>
         <div class="score tone-<?= vg_h($tone) ?>"><?= vg_h((string) $cvss) ?><small> / 10</small></div>
-        <?= vg_meter($tone, (float) $cvss * 10) ?>
+        <?= vg_meter($tone, (float) $cvss * 10, 'CVSS 기본점수 ' . $cvss . ' / 10') ?>
       <?php else: ?>
         <span class="stat__val"><span class="why">–</span></span>
       <?php endif; ?>
