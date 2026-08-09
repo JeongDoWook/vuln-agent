@@ -1652,18 +1652,11 @@ form.card .btn--primary:active { transform: translateY(0); }
 .setting-form { display: grid; gap: 1rem; }
 .setting-form .field { display: grid; gap: .45rem; max-width: 760px; color: var(--text-2); font-size: .84rem; font-weight: 650; }
 
-/* 가로 폼 바 — 컨트롤 몇 개와 버튼 하나로 끝나는 **일괄 조작** 폼(자산 등급 일괄 확정).
- *   .setting-form 으로 세우면 셀렉트 2개 + 텍스트 + 버튼이 네 줄이 되어 목록 아래를 화면
- *   한 판만큼 밀어낸다 — 한 줄로 흐르게 두고 폭이 모자랄 때만 접는다(flex-wrap).
- *   라벨과 컨트롤은 여전히 세로 한 쌍이므로 .field 는 여기서도 grid 다(정의는 이 파일 한 곳). */
-.form-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .7rem .9rem; }
-.form-bar .field { display: grid; gap: .35rem; min-width: 0; color: var(--text-2); font-size: .8rem; font-weight: 650; }
-/* 자유 입력(확정 근거)만 남는 폭을 갖는다. 셀렉트는 값이 짧아 늘릴 이유가 없다. */
-.form-bar .field--grow { flex: 1 1 20rem; }
-.form-bar .field select, .form-bar .field input { width: 100%; }
-/* 체크박스는 라벨과 같은 줄이어야 한다 — 저장소 공통 패턴(label.inline)을 그대로 쓰되,
- *   그 규칙의 세로 여백(세로 폼용)만 바 안에서 걷어낸다. */
-.form-bar label.inline { margin-top: 0; align-self: center; font-size: .82rem; }
+/* 가로 조작 바 — 표 바로 위에서 버튼 하나와 한 줄 설명으로 끝나는 **일괄 조작**(자산 등급
+ *   일괄 확정). 입력(등급·중요도·근거)은 이 바가 여는 모달이 갖는다 — 예전엔 입력까지 이
+ *   바에 늘어놓고 목록·페이지네이션 **아래**에 뒀는데, 체크는 표에서 하고 버튼은 저 아래라
+ *   그 사이를 페이저가 끊었다. 폭이 모자라면 접힌다(flex-wrap). */
+.form-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; margin-bottom: .2rem; }
 
 /* 판정 기준 정의목록 — 화면의 값이 무슨 기준으로 정해지는지 한 쌍씩. 산문을 늘리는 대신 쓴다.
  *   .kv 를 안 쓰는 이유: .kv 는 열 폭이 max-content 라 한 문장짜리 값이 카드를 넘친다. */

@@ -277,7 +277,14 @@ vg_header('자산', 'assets');
   $headers = [];
   if ($canConfirm) {
       // 체크박스만 담는 열이라 폭이 늘 같다 → % 가 아니라 rem(아래 폭 배분 기준 그대로).
-      $headers[] = ['label' => '', 'key' => 'pick', 'width' => '2.5rem', 'align' => 'center'];
+      //   머리글은 글자가 아니라 **이 페이지 전체 선택** 체크박스다 — 무엇을 고르는 건지는
+      //   고르는 자리(표 머리)에서 읽혀야 한다. 예전엔 목록·페이지네이션 아래 카드에 있어서
+      //   체크는 위에서 하고 전체선택은 저 아래에 있었다.
+      $headers[] = [
+          'label' => '', 'key' => 'pick', 'width' => '2.5rem', 'align' => 'center',
+          'label_html' => '<input type="checkbox" data-checkall="host_ids[]"'
+              . ' aria-label="이 페이지 전체 선택" title="이 페이지 전체 선택">',
+      ];
   }
   $headers = array_merge($headers, [
       // '노출' 열을 걷어내며 그 폭을 여기로 옮겼다(이 파일의 폭 배분 원칙: 남는 폭은 식별자가 갖는다).
@@ -304,13 +311,35 @@ vg_header('자산', 'assets');
   //   비율로 주면 표가 좁아질 때 버튼보다 좁아진다 — 실제로 900px 에서 9%(=51px)가 68px 버튼을
   //   못 담아 카드를 16.7px 밀어냈다(가로 스크롤). 5rem 이면 어느 폭에서도 버튼이 들어간다.
 
-  /* 표 전체를 일괄 확정 폼으로 감싼다 — 행의 체크박스와 아래 확정 바가 한 폼이어야 같이 전송된다.
+  /* 표 전체를 일괄 확정 폼으로 감싼다 — 행의 체크박스와 확정 입력창이 한 폼이어야 같이 전송된다.
    *   선택은 **지금 보고 있는 페이지** 안에서만 유효하다(페이지를 넘기면 체크가 풀린다).
-   *   "필터에 걸린 전체"를 대상으로 삼지 않는 건 의도다 — 눈에 안 보이는 자산까지 확정되면 안 된다. */
+   *   "필터에 걸린 전체"를 대상으로 삼지 않는 건 의도다 — 눈에 안 보이는 자산까지 확정되면 안 된다.
+   *
+   *   확정 조작은 **표 위**에 둔다 — 체크는 표에서 하는데 버튼이 페이지네이션 아래에 있으면
+   *   고른 것과 누르는 것 사이를 페이저가 끊는다. 여기 있는 건 모달을 여는 버튼뿐이고,
+   *   실제 입력(등급·중요도·근거)과 제출 버튼은 폼 안의 모달(vg_modal_open)에 있다.
+   *   data-confirm 은 걷어냈다 — 모달 자체가 대상 목록을 보여주는 확인 단계다(확인창 위에
+   *   확인창을 또 띄우지 않는다). 감사로그는 그대로 vg_asset_grade_confirm() 이 남긴다. */
   if ($canConfirm) {
-      echo '<form method="post" data-confirm="선택한 자산의 등급을 확정할까요? 자산마다 확정자와 시각이 감사로그에 기록됩니다.">';
+      echo '<form method="post">';
       echo '<input type="hidden" name="csrf" value="' . vg_h(vg_csrf_token()) . '">';
   }
+  if ($canConfirm && $rows): ?>
+    <div class="form-bar">
+      <?php /* 선택 0개면 비활성 — 예전엔 아무것도 안 고르고 눌러도 서버까지 갔다가 오류로 돌아왔다.
+               개수 갱신·활성화는 app.js 의 위임 핸들러가 한다(인라인 onclick 을 쓰지 않는다). */ ?>
+      <?php /* 개수는 라벨 틀({n})로 준다 — .btn 은 display:flex 라 개수만 <span> 으로 감싸면
+               그게 별개 플렉스 항목이 되어 gap 만큼 '선택 3 개' 로 벌어진다(실측). */ ?>
+      <button type="button" class="btn btn--primary" data-modal="bulkGrade"
+              data-bulk-open="host_ids[]" data-bulk-label="선택 {n}개 등급 확정" disabled>선택 0개 등급 확정</button>
+      <span class="why">표에서 등급을 확정할 자산을 고르세요. 선택은 지금 보고 있는 페이지 안에서만 유효합니다.</span>
+      <noscript>
+        <span class="why">이 브라우저는 스크립트가 꺼져 있어 일괄 확정 창을 열 수 없습니다 —
+          호스트 이름을 눌러 상세 화면에서 한 대씩 확정하세요.</span>
+      </noscript>
+    </div>
+  <?php endif; ?>
+  <?php
 
   vg_table(
       $headers,
@@ -330,9 +359,10 @@ vg_header('자산', 'assets');
                   'hint'  => '자산은 에이전트가 수집을 보내면 자동 등록됩니다. 상단의 [에이전트 설치 안내]를 따르세요.',
               ],
           'cell' => [
-              // 일괄 확정 대상 선택. 아래 폼 안에 표가 들어 있어 그대로 같이 전송된다.
+              // 일괄 확정 대상 선택. 폼 안에 표가 들어 있어 그대로 같이 전송된다.
+              //   data-name 은 모달의 "무엇을 확정하는가" 요약이 읽는다(app.js 가 textContent 로만 쓴다).
               'pick' => fn($r) => '<input type="checkbox" name="host_ids[]" value="' . (int) $r['host_id']
-                  . '" aria-label="' . vg_h($r['fqdn']) . ' 선택">',
+                  . '" data-name="' . vg_h($r['fqdn']) . '" aria-label="' . vg_h($r['fqdn']) . ' 선택">',
               // 칸을 넘치는 긴 FQDN 은 col-id 가 말줄임으로 접는다 — 전체 이름은 title 로 남긴다.
               'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a></strong>',
               'state' => fn($r) => vg_asset_state(
@@ -378,57 +408,45 @@ vg_header('자산', 'assets');
   ?>
 
   <?php if ($canConfirm && $rows): ?>
-    <div class="card mt-lg">
-      <strong>선택 자산 등급 일괄 확정</strong>
-      <div class="card__body">
-        <?php /* 컨트롤이 넷뿐이라 세로 스택(.setting-form)은 화면 높이만 먹는다 — 한 줄로 흐르고
-                 좁아지면 접히는 .form-bar 를 쓴다. 전체 선택은 체크박스라 라벨과 같은 줄이어야
-                 해서 이 저장소에 이미 있는 label.inline 패턴을 그대로 따른다(connectors.php). */ ?>
-        <div class="form-bar">
-          <label class="inline" for="bulk-pick-all">
-            <input id="bulk-pick-all" type="checkbox" data-checkall="host_ids[]">
-            <span>이 페이지 전체 선택</span>
-          </label>
+    <?php /* 확정 입력창. **폼 안**에 둔다 — 네이티브 dialog 는 렌더링만 top-layer 로 올라가고
+             DOM 상 폼 소속은 그대로라, 표의 host_ids[] 와 이 안의 등급·근거가 한 번에 전송된다.
+             (밖에 두면 체크한 자산이 하나도 안 실려 간다.) */ ?>
+    <?php vg_modal_open('bulkGrade', '선택 자산 등급 일괄 확정'); ?>
+      <p class="why" data-bulk-summary>선택한 자산이 없습니다.</p>
 
-          <label class="field" for="bulk-criticality">중요도
-            <select id="bulk-criticality" name="criticality">
-              <option value="">변경 안 함</option>
-              <?php foreach (VG_ASSET_CRITICALITY as $v => $label): ?>
-                <option value="<?= vg_h($v) ?>"><?= vg_h($label) ?></option>
-              <?php endforeach; ?>
-            </select>
-          </label>
+      <label for="bulk-criticality">중요도</label>
+      <select id="bulk-criticality" name="criticality">
+        <option value="">변경 안 함</option>
+        <?php foreach (VG_ASSET_CRITICALITY as $v => $label): ?>
+          <option value="<?= vg_h($v) ?>"><?= vg_h($label) ?></option>
+        <?php endforeach; ?>
+      </select>
 
-          <label class="field" for="bulk-grade">보안등급 (N2SF)
-            <select id="bulk-grade" name="grade" required>
-              <option value="">고르세요</option>
-              <?php foreach (VG_ASSET_GRADES as $v => $label): ?>
-                <option value="<?= vg_h($v) ?>"><?= vg_h($label) ?></option>
-              <?php endforeach; ?>
-            </select>
-          </label>
+      <label for="bulk-grade">보안등급 (N2SF)</label>
+      <select id="bulk-grade" name="grade" required>
+        <option value="">고르세요</option>
+        <?php foreach (VG_ASSET_GRADES as $v => $label): ?>
+          <option value="<?= vg_h($v) ?>"><?= vg_h($label) ?></option>
+        <?php endforeach; ?>
+      </select>
 
-          <label class="field field--grow" for="bulk-grade-reason">확정 근거
-            <input id="bulk-grade-reason" type="text" name="grade_reason" maxlength="255"
-                   placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유">
-          </label>
+      <label for="bulk-grade-reason">확정 근거</label>
+      <input id="bulk-grade-reason" type="text" name="grade_reason" maxlength="255"
+             placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유">
 
-          <button class="btn btn--primary" type="submit" data-loading="확정 중…">선택 자산 등급 확정</button>
-        </div>
-
-        <?php /* 판정 기준은 산문이 아니라 정의목록으로 준다 — 등급 어휘는 assetgrade.php 가 소유하고
-                 (같은 문자열을 화면마다 다시 적지 않는다), 나머지는 이 폼이 실제로 하는 일이다. */ ?>
-        <dl class="criteria">
-          <dt>보안등급</dt>
-          <dd>N2SF <?= vg_h(vg_asset_grade_legend()) ?> — 「정보공개법」 제9조 비공개 대상정보 해당 여부로 가릅니다.
-            등급 확정은 기관의 법적 처분이라 시스템이 대신하지 않습니다.</dd>
-          <dt>중요도</dt>
-          <dd>상 / 중 / 하 — 등급과 별개로 사람이 지정합니다. ‘변경 안 함’ 이면 지금 값을 그대로 둡니다.</dd>
-          <dt>확정 범위</dt>
-          <dd>지금 보고 있는 페이지에서 고른 자산만, 한 번에 500대까지. 자산마다 확정자·시각이 감사로그에 남습니다.</dd>
-        </dl>
-      </div>
-    </div>
+      <?php /* 판정 기준은 산문이 아니라 정의목록으로 준다 — 등급 어휘는 assetgrade.php 가 소유하고
+               (같은 문자열을 화면마다 다시 적지 않는다), 나머지는 이 폼이 실제로 하는 일이다. */ ?>
+      <dl class="criteria">
+        <dt>보안등급</dt>
+        <dd>N2SF <?= vg_h(vg_asset_grade_legend()) ?> — 「정보공개법」 제9조 비공개 대상정보 해당 여부로 가릅니다.
+          등급 확정은 기관의 법적 처분이라 시스템이 대신하지 않습니다.</dd>
+        <dt>중요도</dt>
+        <dd>상 / 중 / 하 — 등급과 별개로 사람이 지정합니다. ‘변경 안 함’ 이면 지금 값을 그대로 둡니다.</dd>
+        <dt>확정 범위</dt>
+        <dd>지금 보고 있는 페이지에서 고른 자산만, 한 번에 500대까지. 자산마다 확정자·시각이 감사로그에 남습니다.</dd>
+      </dl>
+      <?php vg_modal_foot('등급 확정', ['loading' => '확정 중…', 'cancel' => '취소']); ?>
+    <?php vg_modal_close(); ?>
   <?php endif; ?>
   <?php if ($canConfirm) { echo '</form>'; } ?>
 

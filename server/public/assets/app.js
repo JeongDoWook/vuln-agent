@@ -212,6 +212,50 @@
     });
   });
 
+  // 일괄 조작 바: data-bulk-open="<체크박스 name>" 을 단 **모달 여는 버튼**이 같은 폼 안의
+  // 선택 개수를 싣는다. 0개면 비활성 — 안 그러면 아무것도 안 고르고 눌러 서버까지 갔다가
+  // 오류로 돌아온다. 이름 목록은 textContent 로만 넣는다(HTML 로 조립하지 않는다).
+  function syncBulkBar(form) {
+    var btn = form.querySelector('[data-bulk-open]');
+    if (!btn) { return; }
+    var name = btn.getAttribute('data-bulk-open');
+    var sel = 'input[type=checkbox][name="' + name + '"]';
+    var total = form.querySelectorAll(sel).length;
+    var picked = form.querySelectorAll(sel + ':checked');
+    btn.disabled = picked.length === 0;
+
+    // 라벨은 서버가 준 틀({n} = 개수)로만 만든다 — 문구를 여기 적어두면 화면과 갈린다.
+    var label = btn.getAttribute('data-bulk-label');
+    if (label) { btn.textContent = label.replace('{n}', String(picked.length)); }
+
+    var summary = form.querySelector('[data-bulk-summary]');
+    if (summary) {
+      summary.textContent = picked.length
+        ? picked.length + '대를 확정합니다: ' + Array.prototype.map.call(picked, function (box) {
+            return box.getAttribute('data-name') || box.value;
+          }).join(', ')
+        : '선택한 자산이 없습니다.';
+    }
+    // 일부만 고른 상태를 전체선택 체크박스가 그대로 말한다(체크도 해제도 아닌 중간 표시).
+    var all = form.querySelector('input[data-checkall="' + name + '"]');
+    if (all) {
+      all.checked = total > 0 && picked.length === total;
+      all.indeterminate = picked.length > 0 && picked.length < total;
+    }
+  }
+
+  // 위의 data-checkall 핸들러보다 **뒤에** 붙는다 — 같은 change 에서 전체선택이 먼저 반영돼야
+  // 여기서 세는 개수가 맞다(문서 리스너는 등록 순서대로 불린다).
+  document.addEventListener('change', function (e) {
+    if (!e.target.matches('input[type=checkbox]') || !e.target.form) { return; }
+    syncBulkBar(e.target.form);
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-bulk-open]').forEach(function (btn) {
+      if (btn.form) { syncBulkBar(btn.form); }
+    });
+  });
+
   // 필터 셀렉트: 고르는 즉시 폼 제출. requestSubmit() 은 submit 이벤트를 쏘므로
   // 위의 제출 핸들러가 진행바·검색버튼 스피너를 그대로 붙여준다(form.submit() 은 안 쏜다).
   // 폼에 page 필드가 없으니 제출하면 자연히 1페이지로 돌아간다.
