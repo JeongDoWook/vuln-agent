@@ -156,18 +156,59 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
       $containerId > 0 ? '컨테이너 ' . vg_h($containerName ?? ('#' . $containerId)) : '호스트 자신',
       '<a href="/host.php?id=' . (int) $hostId . '">' . vg_h($host['fqdn']) . '</a>',
   ];
-  vg_hero(vg_h($cveId), $meta, null, 'muted', '스캔별 이력', 'FINDING HISTORY');
+  // 히어로 오른쪽 위험도 칸에 "지금 이 조합의 상태" 를 둔다 — 다른 상세 화면(cve.php 의 등급,
+  //   control.php 의 위반 건수)과 같은 자리에 같은 크기로 온다.
+  $curStatus = $current['status'] ?? null;
+  $curTone   = $curStatus === 'FOUND' ? vg_sev_tone((string) $current['severity'])
+             : ($curStatus === 'SUPPRESSED' ? 'warn' : 'muted');
+  vg_hero(
+      vg_h($cveId),
+      $meta,
+      $curStatus !== null ? ($statusLabel[$curStatus] ?? $curStatus) : '이력 없음',
+      $curTone,
+      '최신 스캔 기준',
+      'FINDING HISTORY'
+  );
   vg_alert($noteMsg, 'ok');
   vg_alert($noteErr);
   ?>
   <div class="card">
-    <strong>현재 상태:</strong>
-    <?php if ($note !== null): ?><?= vg_badge('미조치 사유 있음', 'info', '사람이 남긴 미조치 사유 메모가 있습니다 — 아래 참조') ?><?php endif; ?>
-    <?= $current !== null ? vg_badge($statusLabel[$current['status']] ?? $current['status'], $current['status'] === 'FOUND' ? vg_sev_tone((string) $current['severity']) : ($current['status'] === 'SUPPRESSED' ? 'warn' : 'muted')) : '<span class="why">–</span>' ?>
-    <span class="why">
-      · 총 <?= number_format($total) ?>회 스캔 중 <?= number_format($summary['foundCount'] ?? 0) ?>회 발견됨
-      · 최초 발견: <?= $summary && $summary['firstFoundAt'] !== null ? vg_h((string) $summary['firstFoundAt']) : '없음' ?>
-    </span>
+    <strong>현재 상태</strong>
+    <span class="why">— 최신 스캔 1건에서 이 조합이 어떻게 판정됐는가</span>
+    <div class="card__body">
+      <dl class="kv">
+        <dt>판정</dt>
+        <dd><?= $current !== null ? vg_badge($statusLabel[$curStatus] ?? (string) $curStatus, $curTone) : '<span class="why">–</span>' ?>
+            <?php if ($note !== null): ?><?= vg_badge('미조치 사유 있음', 'info', '사람이 남긴 미조치 사유 메모가 있습니다 — 아래 참조') ?><?php endif; ?></dd>
+        <dt>기준 스캔</dt>
+        <dd><?= $current !== null
+            ? '<a href="/findings.php?scan_id=' . (int) $current['scan_id'] . '">#' . (int) $current['scan_id'] . '</a>'
+              . ' <span class="why">' . vg_h((string) ($current['collected_at'] ?? '')) . '</span>'
+            : '<span class="why">–</span>' ?></dd>
+        <dt>설치 버전</dt>
+        <dd><?= $current !== null && $current['version'] !== null
+            ? '<code>' . vg_h((string) $current['version']) . '</code>'
+            : '<span class="why">–</span>' ?></dd>
+        <dt>판정 근거</dt>
+        <dd><?= $current !== null && $current['reason'] !== null
+            ? vg_h((string) $current['reason'])
+            : '<span class="why">–</span>' ?></dd>
+        <dt>발견 횟수</dt>
+        <dd>총 <?= number_format($total) ?>회 스캔 중 <?= number_format($summary['foundCount'] ?? 0) ?>회</dd>
+        <dt>최초 발견</dt>
+        <dd><?= $summary && $summary['firstFoundAt'] !== null
+            ? vg_h((string) $summary['firstFoundAt'])
+            : '<span class="why">없음</span>' ?></dd>
+        <dt>대상</dt>
+        <dd><?= vg_h($packageName) ?> ·
+            <?= $containerId > 0 ? '컨테이너 ' . vg_h($containerName ?? ('#' . $containerId)) : '호스트 자신' ?> ·
+            <a href="/host.php?id=<?= (int) $hostId ?>"><?= vg_h((string) $host['fqdn']) ?></a></dd>
+      </dl>
+      <div class="actions mt">
+        <a class="btn btn--sm btn--ghost" href="/cve.php?cve=<?= urlencode($cveId) ?>">CVE 상세</a>
+        <a class="btn btn--sm btn--ghost" href="/host.php?id=<?= (int) $hostId ?>">호스트 상세</a>
+      </div>
+    </div>
   </div>
   <div class="card">
     <strong>미조치 사유</strong>

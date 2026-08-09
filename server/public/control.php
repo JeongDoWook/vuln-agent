@@ -30,6 +30,7 @@ $ruleCodes = [];                                      // 이 통제에 매핑된
 $ruleRows = [];                                       // 룰코드 + 점검 제목 + 가이드
 $counts = ['FAIL' => 0, 'PASS' => 0, 'NA' => 0];
 $hostCount = 0;
+$lastCheckedAt = null;                                // 이 통제로 점검된 가장 최근 수집 시각
 $rows = [];
 $total = 0;
 $page = vg_page();
@@ -82,9 +83,12 @@ try {
 
         // 호스트별 최신 스캔의 CCE 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다
         //   (control_mapping.php 드릴다운이 쓰던 쿼리를 그대로 옮겼다).
+        //   tb_scan 조인은 PK 단건 조회라 싸다 — "언제 점검한 결과인가" 를 행마다 밝히려고 붙였다
+        //   (compliance_rule.php 의 수집일 컬럼과 같은 사실).
         $baseSql =
             "FROM tb_cce_finding cf
                JOIN " . vg_latest_scan_subq() . " t ON t.mid = cf.scan_id
+               JOIN tb_scan s ON s.scan_id = cf.scan_id
                JOIN tb_host h ON h.host_id = t.host_id AND h.is_deleted = 0
                JOIN tb_control_mapping m ON m.rule_code = cf.code AND m.framework = ? AND m.is_deleted = 0
               WHERE cf.is_deleted = 0 AND m.control_id = ?";
@@ -96,13 +100,15 @@ try {
         }
         $total = array_sum($counts);
 
-        $st = $pdo->prepare("SELECT COUNT(DISTINCT h.host_id) $baseSql");
+        $st = $pdo->prepare("SELECT COUNT(DISTINCT h.host_id) AS hosts, MAX(s.collected_at) AS last_at $baseSql");
         $st->execute([$fw, $control]);
-        $hostCount = (int) $st->fetchColumn();
+        $agg = $st->fetch() ?: [];
+        $hostCount = (int) ($agg['hosts'] ?? 0);
+        $lastCheckedAt = $agg['last_at'] ?? null;
 
         $offset = ($page - 1) * $perPage;
         $st = $pdo->prepare(
-            "SELECT h.host_id, h.fqdn, cf.code, cf.title, cf.result, cf.severity, cf.rationale
+            "SELECT h.host_id, h.fqdn, cf.code, cf.title, cf.result, cf.severity, cf.rationale, s.collected_at
              $baseSql
               ORDER BY FIELD(cf.result,'FAIL','NA','PASS'),
                        FIELD(cf.severity,'HIGH','MEDIUM','LOW'), h.fqdn, cf.code
@@ -180,6 +186,10 @@ vg_hero(
       <span class="stat__val"><?= number_format(count($ruleCodes)) ?></span>
       <div class="why">매핑된 점검 항목</div>
     </div>
+    <div class="stat">
+      <span class="stat__val"><?= $lastCheckedAt !== null ? vg_h((string) $lastCheckedAt) : '<span class="why">–</span>' ?></span>
+      <div class="why">최근 점검</div>
+    </div>
   </div>
 </div>
 
@@ -187,6 +197,7 @@ vg_hero(
   <a href="#guide">기준 설명</a>
   <a href="#rules">점검 항목과 조치<span class="n"><?= number_format(count($ruleCodes)) ?></span></a>
   <a href="#hosts">해당 자산<span class="n"><?= number_format($total) ?></span></a>
+  <a href="#origin">식별과 출처</a>
 </nav>
 
 <section id="guide">
@@ -255,6 +266,7 @@ vg_hero(
             ['label' => '점검 항목'],
             ['label' => '결과', 'key' => 'result', 'width' => '6rem'],
             ['label' => '판정 사유'],
+            ['label' => '수집일', 'nowrap' => true, 'width' => '11rem'],
         ],
         $rows,
         [
@@ -275,11 +287,36 @@ vg_hero(
                     return vg_badge((string) $r['result'], $tone);
                 },
                 3 => fn($r) => '<span class="why">' . vg_trunc((string) ($r['rationale'] ?? ''), 80) . '</span>',
+                4 => fn($r) => '<span class="why">' . vg_h((string) ($r['collected_at'] ?? '')) . '</span>',
             ],
         ]
     );
     if ($rows) { vg_page_nav($total, $perPage, $page); }
     ?>
+    </div>
+  </div>
+</section>
+
+<section id="origin">
+  <div class="card">
+    <strong>식별과 출처</strong>
+    <span class="why">— 이 통제가 무엇이고 어디까지 점검됐는가</span>
+    <div class="card__body">
+      <dl class="kv">
+        <dt>기준</dt><dd><?= vg_h($frameworks[$fw]) ?></dd>
+        <dt>통제 ID</dt><dd><code><?= vg_h($control) ?></code></dd>
+        <dt>통제명</dt><dd><?= vg_h($controlName) ?></dd>
+        <dt>매핑 점검 항목</dt><dd><?= number_format(count($ruleCodes)) ?>개(CCE 룰코드)</dd>
+        <dt>점검 결과</dt>
+        <dd>자산 <?= number_format($hostCount) ?>대 · 결과 <?= number_format($total) ?>건(FAIL <?= number_format($counts['FAIL']) ?>)</dd>
+        <dt>최근 점검</dt>
+        <dd><?= $lastCheckedAt !== null ? vg_h((string) $lastCheckedAt) : '<span class="why">점검 이력 없음</span>' ?></dd>
+        <dt>집계 기준</dt><dd>호스트별 최신 스캔 1건</dd>
+      </dl>
+      <div class="actions mt">
+        <?php vg_copy_btn($control, '통제 ID 복사'); ?>
+        <a class="btn btn--sm btn--ghost" href="<?= vg_h($listUrl) ?>">통제 목록으로</a>
+      </div>
     </div>
   </div>
 </section>

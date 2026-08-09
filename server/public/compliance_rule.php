@@ -16,6 +16,7 @@ require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('findings');
 
 $err = null; $ruleId = ''; $rule = null; $rows = []; $total = 0;
+$hostCount = 0; $failHosts = 0;
 $counts = ['PASS' => 0, 'FAIL' => 0, 'NA' => 0];
 $page = vg_page(); $perPage = vg_perpage();
 
@@ -41,9 +42,18 @@ try {
                    ON latest.host_id = s.host_id AND latest.mid = s.scan_id
                  WHERE f.ssg_rule_id = ?";
 
-            $stmt = $pdo->prepare("SELECT COUNT(*) $hostSql");
+            // 총건수와 함께 "몇 대에서" 도 같은 쿼리로 센다 — 한 호스트가 여러 행을 만들 수
+            //   있으므로 행 수를 자산 수로 읽으면 위험 범위가 부풀려진다(cve.php 의 같은 교훈).
+            $stmt = $pdo->prepare(
+                "SELECT COUNT(*) AS n, COUNT(DISTINCT h.host_id) AS hosts,
+                        COUNT(DISTINCT CASE WHEN f.result = 'FAIL' THEN h.host_id END) AS fail_hosts
+                 $hostSql"
+            );
             $stmt->execute([$ruleId]);
-            $total = (int) $stmt->fetchColumn();
+            $agg = $stmt->fetch() ?: [];
+            $total     = (int) ($agg['n'] ?? 0);
+            $hostCount = (int) ($agg['hosts'] ?? 0);
+            $failHosts = (int) ($agg['fail_hosts'] ?? 0);
 
             $stmt = $pdo->prepare("SELECT f.result, COUNT(*) AS c $hostSql GROUP BY f.result");
             $stmt->execute([$ruleId]);
@@ -78,8 +88,17 @@ if ($err !== null) {
 $sevUp = $rule ? mb_strtoupper((string) $rule['severity']) : null;
 $tone  = $sevUp !== null ? vg_sev_tone($sevUp) : 'muted';
 
-$title = vg_h($ruleId);
-vg_hero($title, $rule ? ['<code class="why">' . vg_h($ruleId) . '</code>'] : [], $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
+$title = $rule ? vg_h((string) $rule['title']) : vg_h($ruleId);
+$heroMeta = ['<a href="/compliance_rules.php">← 룰셋 목록</a>'];
+if ($rule) {
+    array_unshift(
+        $heroMeta,
+        '<code class="why">' . vg_h($ruleId) . '</code>',
+        'SSG ' . vg_h((string) ($rule['ssg_version'] ?? '버전 미상')),
+        '점검된 자산 ' . number_format($hostCount) . '대'
+    );
+}
+vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
 ?>
 
 <?php if ($rule === null): ?>
@@ -113,6 +132,10 @@ vg_hero($title, $rule ? ['<code class="why">' . vg_h($ruleId) . '</code>'] : [],
       <div class="why">NA(미수집)</div>
     </div>
     <div class="stat">
+      <span class="stat__val"><?= number_format($failHosts) ?>대</span>
+      <div class="why">위반 자산 · 점검 <?= number_format($hostCount) ?>대</div>
+    </div>
+    <div class="stat">
       <span class="stat__val"><?= !empty($rule['ssg_version']) ? vg_h((string) $rule['ssg_version']) : '<span class="why">–</span>' ?></span>
       <div class="why">SSG 버전</div>
     </div>
@@ -122,6 +145,7 @@ vg_hero($title, $rule ? ['<code class="why">' . vg_h($ruleId) . '</code>'] : [],
 <nav class="subtabs subtabs--sticky">
   <a href="#rationale">근거</a>
   <a href="#refs">참조 매핑</a>
+  <a href="#origin">식별과 출처</a>
   <a href="#hosts">점검된 호스트<span class="n"><?= number_format($total) ?></span></a>
 </nav>
 
@@ -151,12 +175,32 @@ vg_hero($title, $rule ? ['<code class="why">' . vg_h($ruleId) . '</code>'] : [],
       <?php else: ?>
         <div class="why">참조 매핑 정보가 없습니다.</div>
       <?php endif; ?>
-      <dl class="kv mt">
+    </div>
+  </div>
+</section>
+
+<section id="origin">
+  <div class="card">
+    <strong>식별과 출처</strong>
+    <span class="why">— 이 룰이 무엇이고 언제 수집된 것인가</span>
+    <div class="card__body">
+      <dl class="kv">
+        <dt>룰 ID</dt><dd><code><?= vg_h($ruleId) ?></code></dd>
+        <dt>제목</dt><dd><?= vg_h((string) $rule['title']) ?></dd>
+        <dt>SSG 심각도</dt><dd><?= vg_badge((string) $sevUp, $tone) ?></dd>
+        <dt>SSG 버전</dt>
+        <dd><?= !empty($rule['ssg_version']) ? vg_h((string) $rule['ssg_version']) : '<span class="why">–</span>' ?></dd>
         <dt>수집일</dt>
         <dd><?= !empty($rule['created_at']) ? vg_h((string) $rule['created_at']) : '<span class="why">–</span>' ?></dd>
         <dt>갱신일</dt>
         <dd><?= !empty($rule['updated_at']) ? vg_h((string) $rule['updated_at']) : '<span class="why">–</span>' ?></dd>
+        <dt>점검 결과</dt>
+        <dd>자산 <?= number_format($hostCount) ?>대 · 결과 <?= number_format($total) ?>건(FAIL <?= number_format($counts['FAIL']) ?>)</dd>
       </dl>
+      <div class="actions mt">
+        <?php vg_copy_btn($ruleId, '룰 ID 복사'); ?>
+        <a class="btn btn--sm btn--ghost" href="/compliance_rules.php?q=<?= urlencode($ruleId) ?>">룰셋 목록에서 보기</a>
+      </div>
     </div>
   </div>
 </section>

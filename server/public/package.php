@@ -1,7 +1,14 @@
 <?php
 declare(strict_types=1);
 
-/** 취약 영향 패키지 카탈로그의 패키지·생태계별 관련 CVE 상세. */
+/**
+ * package.php — 취약 영향 패키지 카탈로그의 패키지·생태계별 관련 CVE 상세. 로그인 필요.
+ *   ?name=<패키지명>&eco=<생태계>  ·  ?page=N/?per_page=N (관련 CVE)
+ *
+ * 화면 골격은 다른 상세 화면(control.php·cve.php)과 같다: 히어로 → 핵심 지표(stat-grid) →
+ *   앵커 내비 → 섹션. 예전엔 이 화면만 vg_page_title + kpi 카드를 써서 상세 화면들 사이에서
+ *   혼자 다른 모양이었다.
+ */
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';
@@ -17,6 +24,7 @@ $total = 0;
 $page = vg_page();
 $perPage = vg_perpage();
 $nofixGroups = [];   // 이 패키지가 실제 자산에서 "벤더 미수정 집중" 으로 관측된 조합
+$kevTotal = 0;       // 관련 CVE 중 KEV 등재 건수
 
 if ($name === '') {
     $err = '패키지명이 필요합니다.';
@@ -27,7 +35,7 @@ if ($name === '') {
         //   tb_package_summary.ecosystem 은 OSV 원본 접미사가 붙어 저장될 수 있다('Ubuntu:24.04:LTS').
         //   정확일치 대신 매처와 같은 기준(vg_eco_matches, distro.php:234)의 접두 일치로 실제 저장값을 찾는다.
         $st = $pdo->prepare(
-            'SELECT package_name,ecosystem,cve_cnt,max_epss,fix_cnt,max_fixed
+            'SELECT package_name,ecosystem,cve_cnt,max_epss,fix_cnt,max_fixed,updated_at
                FROM tb_package_summary WHERE package_name=?'
         );
         $st->execute([$name]);
@@ -50,9 +58,17 @@ if ($name === '') {
                      JOIN tb_cve c ON c.cve_id=a.cve_id AND c.is_deleted=0';
             $where = 'a.is_deleted=0 AND a.package_name=? AND a.ecosystem=?';
             $params = [$name, $ecosystem];
-            $st = $pdo->prepare("SELECT COUNT(*) $from WHERE $where");
+            // 총건수와 KEV 등재 건수를 한 번에 — 상단 지표가 이 둘뿐이라 쿼리를 쪼개지 않는다.
+            $st = $pdo->prepare(
+                "SELECT COUNT(*) AS n, SUM(k.cve_id IS NOT NULL) AS kev_cnt
+                 $from
+                 LEFT JOIN tb_kev_catalog k ON k.cve_id=a.cve_id AND k.is_deleted=0
+                 WHERE $where"
+            );
             $st->execute($params);
-            $total = (int)$st->fetchColumn();
+            $agg = $st->fetch() ?: [];
+            $total    = (int) ($agg['n'] ?? 0);
+            $kevTotal = (int) ($agg['kev_cnt'] ?? 0);
 
             $offset = ($page - 1) * $perPage;
             $st = $pdo->prepare(
@@ -89,54 +105,143 @@ if ($name === '') {
 }
 
 vg_header($name !== '' ? $name : '패키지 상세', 'packages');
-?>
-  <?php if ($summary !== null): ?>
-    <?php vg_page_title($name, '', '취약 영향 패키지 카탈로그의 관련 CVE와 수정 버전입니다.', [
-        'count' => $total,
-        'hint' => $ecosystem !== '' ? vg_h($ecosystem) : '생태계 미지정',
-        'actions' => '<a class="btn btn--sm btn--ghost" href="/packages.php">패키지 목록</a>'
-            . ' <a class="btn btn--sm btn--ghost" href="/asset-packages.php?q=' . urlencode($name)
-            . '">설치된 자산 보기</a>',
-    ]); ?>
-    <div class="cards">
-      <div class="kpi kpi--sm"><b><?= number_format($total) ?></b><span>관련 CVE</span></div>
-      <div class="kpi kpi--sm"><b><?= number_format((int)$summary['fix_cnt']) ?></b><span>수정 버전 확인</span></div>
-      <div class="kpi kpi--sm"><b><?= vg_h(number_format((float)($summary['max_epss'] ?? 0) * 100, 1)) ?>%</b><span>최고 EPSS</span></div>
-    </div>
-  <?php else: ?>
-    <?php vg_page_title('패키지를 찾을 수 없습니다', '', $err ?? '존재하지 않는 패키지입니다.', [
+
+if ($summary === null) {
+    vg_page_title('패키지를 찾을 수 없습니다', '', $err ?? '존재하지 않는 패키지입니다.', [
         'actions' => '<a class="btn btn--sm btn--ghost" href="/packages.php">패키지 목록</a>',
-    ]); ?>
-  <?php endif; ?>
+    ]);
+    vg_footer();
+    return;
+}
 
-  <?php if ($nofixGroups): ?>
+$maxEpss = (float) ($summary['max_epss'] ?? 0);
+vg_hero(
+    vg_h($name),
+    [
+        $ecosystem !== '' ? vg_h($ecosystem) : '생태계 미지정',
+        '<a href="/packages.php">← 패키지 목록</a>',
+        '<a href="/asset-packages.php?q=' . urlencode($name) . '">설치된 자산 보기</a>',
+    ],
+    number_format($maxEpss * 100, 1) . '%',
+    vg_epss_tone($maxEpss),
+    '최고 EPSS(악용확률)',
+    'PACKAGE DETAIL'
+);
+?>
+
+<div class="card">
+  <strong>핵심 지표</strong>
+  <span class="why">— 카탈로그 기준(설치 여부와 무관한 전역 정보)</span>
+  <div class="card__body stat-grid">
+    <div class="stat">
+      <span class="stat__val"><?= number_format($total) ?>건</span>
+      <div class="why">관련 CVE</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= $kevTotal > 0 ? vg_badge(number_format($kevTotal) . '건', 'crit', '실제 악용이 확인된 취약점(CISA KEV)') : vg_badge('없음', 'muted') ?></span>
+      <div class="why">KEV 등재</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= number_format((int) $summary['fix_cnt']) ?>건</span>
+      <div class="why">수정 버전 확인<?= $total > 0 ? ' · ' . number_format((int) $summary['fix_cnt'] / max(1, $total) * 100, 0) . '%' : '' ?></div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= !empty($summary['max_fixed'])
+          ? '<span class="pill">' . vg_h((string) $summary['max_fixed']) . ' 이상</span>'
+          : '<span class="why">미확인</span>' ?></span>
+      <div class="why">가장 높은 수정 버전</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= $ecosystem !== '' ? vg_h($ecosystem) : '<span class="why">미지정</span>' ?></span>
+      <div class="why">생태계</div>
+    </div>
+    <div class="stat">
+      <span class="stat__val"><?= vg_h((string) $summary['updated_at']) ?></span>
+      <div class="why">집계 갱신</div>
+    </div>
+  </div>
+</div>
+
+<nav class="subtabs subtabs--sticky">
+  <?php if ($nofixGroups): ?><a href="#nofix">벤더 미수정 관측<span class="n"><?= number_format(count($nofixGroups)) ?></span></a><?php endif; ?>
+  <a href="#cves">관련 CVE<span class="n"><?= number_format($total) ?></span></a>
+</nav>
+
+<?php if ($nofixGroups): ?>
+<section id="nofix">
+  <?php
+  // 관측 + 권고. "EOL 이다" 라고 단정하지 않는다 — 우리가 아는 건 숫자뿐이다.
+  vg_alert([
+      'type'  => 'warn',
+      'title' => '조치 = 패치 아님, 제거 또는 대체 검토',
+      'hints' => [
+          '아래 자산에서 이 패키지의 CVE 대부분이 벤더 미수정입니다 — 패치를 기다려도 오지 않습니다.',
+          'EOL(지원 종료) 확정이 아니라 관측입니다.',
+      ],
+  ]);
+  ?>
+  <div class="card">
+    <strong>벤더 미수정이 몰린 자산</strong>
+    <span class="why">— 호스트별 최신 스캔 기준 · <?= vg_nofix_badge() ?></span>
+    <div class="card__body">
     <?php
-    // 관측 + 권고. "EOL 이다" 라고 단정하지 않는다 — 우리가 아는 건 숫자뿐이다.
-    $hints = ['이 패키지는 아래 자산에서 벤더 미수정 CVE 가 몰려 있습니다 — 패치를 기다려도 오지 않습니다.'];
-    foreach ($nofixGroups as $g) {
-        // 같은 호스트의 호스트 자신·컨테이너가 나란히 오면 fqdn 만으론 구분이 안 된다.
-        $where = $g['fqdn'] . (!empty($g['container_cid']) ? ' · 컨테이너 ' . $g['container_cid'] : '');
-        $hints[] = $where . ' · ' . vg_nofix_reason($g);
-    }
-    $hints[] = 'EOL(지원 종료) 확정이 아니라 관측입니다. 조치는 패치가 아니라 제거 또는 대체 검토입니다.';
-    vg_alert(['type' => 'warn', 'title' => '조치 = 패치 아님, 제거 또는 대체 검토', 'hints' => $hints]);
+    vg_table(
+        [
+            ['label' => '자산'],
+            ['label' => '위치'],
+            ['label' => '미수정 / 전체', 'align' => 'right', 'width' => '9rem'],
+            ['label' => 'KEV', 'align' => 'right', 'width' => '5rem'],
+            ['label' => '최고 등급', 'width' => '7rem'],
+            ['label' => '런타임 상태', 'width' => '8rem'],
+        ],
+        $nofixGroups,
+        [
+            'card' => false,
+            'cell' => [
+                0 => fn($g) => vg_h((string) $g['fqdn']),
+                // 같은 호스트의 호스트 자신·컨테이너가 나란히 오면 fqdn 만으론 구분이 안 된다.
+                1 => fn($g) => !empty($g['container_cid'])
+                    ? '<span class="why">컨테이너 ' . vg_h((string) $g['container_cid']) . '</span>'
+                    : '<span class="why">호스트</span>',
+                2 => fn($g) => number_format((int) $g['nofix_cnt']) . '<span class="why"> / '
+                    . number_format((int) $g['cve_cnt']) . '</span>',
+                3 => fn($g) => ((int) ($g['kev_cnt'] ?? 0)) > 0
+                    ? vg_badge(number_format((int) $g['kev_cnt']), 'crit')
+                    : '<span class="why">–</span>',
+                4 => fn($g) => !empty($g['severity'])
+                    ? vg_sev_badge((string) $g['severity'])
+                    : '<span class="why">–</span>',
+                5 => fn($g) => !empty($g['runtime_status'])
+                    ? vg_status_badge((string) $g['runtime_status'])
+                    : '<span class="why">–</span>',
+            ],
+        ]
+    );
     ?>
-    <p class="why"><?= vg_nofix_badge() ?>
-      <a href="/nofix-packages.php?q=<?= urlencode($name) ?>">제거 권고 목록에서 보기 →</a></p>
-  <?php endif; ?>
+      <p class="why mt"><a href="/nofix-packages.php?q=<?= urlencode($name) ?>">제거 권고 목록에서 보기 →</a></p>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
 
-  <?php if ($summary !== null): ?>
+<section id="cves">
+  <div class="card">
+    <strong>관련 CVE</strong>
+    <span class="why">— 이 패키지에 영향을 주는 취약점과 수정 버전(CVSS 높은 순)</span>
+    <div class="card__body">
     <?php vg_table(
         [
             ['label' => 'CVE', 'key' => 'cve_id', 'nowrap' => true],
-            ['label' => '등급', 'key' => 'severity'],
-            ['label' => 'CVSS', 'key' => 'cvss', 'align' => 'right'],
-            ['label' => 'EPSS', 'key' => 'epss', 'align' => 'right'],
+            ['label' => '등급', 'key' => 'severity', 'width' => '6rem'],
+            ['label' => 'CVSS', 'key' => 'cvss', 'align' => 'right', 'width' => '5rem'],
+            ['label' => 'EPSS', 'key' => 'epss', 'align' => 'right', 'width' => '8rem'],
+            ['label' => '공개일', 'key' => 'published', 'nowrap' => true, 'width' => '8rem'],
             ['label' => '수정 버전', 'key' => 'fixed_version'],
             ['label' => '요약', 'key' => 'summary'],
         ],
         $rows,
         [
+            'card'  => false,
             'empty' => ['icon' => '□', 'title' => '관련 CVE가 없습니다.'],
             'row_class' => fn($r) => vg_sev_row(strtoupper(vg_cvss_sev(
                 $r['cvss'] === null ? null : (string)$r['cvss']
@@ -145,7 +250,7 @@ vg_header($name !== '' ? $name : '패키지 상세', 'packages');
                 'cve_id' => function ($r) {
                     $out = '<a href="/cve.php?cve=' . urlencode((string)$r['cve_id']) . '">'
                         . vg_h((string)$r['cve_id']) . '</a>';
-                    return $out . (!empty($r['is_kev']) ? ' ' . vg_badge('KEV', 'crit') : '');
+                    return $out . (!empty($r['is_kev']) ? ' ' . vg_badge('KEV', 'crit', '악용이 확인된 취약점 — CISA KEV 등재') : '');
                 },
                 'severity' => function ($r) {
                     $sev = vg_cvss_sev($r['cvss'] === null ? null : (string)$r['cvss']);
@@ -153,6 +258,9 @@ vg_header($name !== '' ? $name : '패키지 상세', 'packages');
                 },
                 'cvss' => fn($r) => $r['cvss'] !== null ? vg_h((string)$r['cvss']) : '<span class="why">–</span>',
                 'epss' => fn($r) => vg_epss_cell($r['epss'], $r['epss_percentile']),
+                'published' => fn($r) => !empty($r['published'])
+                    ? '<span class="why">' . vg_h((string) $r['published']) . '</span>'
+                    : '<span class="why">–</span>',
                 'fixed_version' => fn($r) => !empty($r['fixed_version'])
                     ? '<span class="pill">' . vg_h((string)$r['fixed_version']) . ' 이상</span>'
                     : '<span class="why">수정 버전 미확인</span>',
@@ -162,6 +270,8 @@ vg_header($name !== '' ? $name : '패키지 상세', 'packages');
             ],
         ]
     ); ?>
-    <?php vg_page_nav($total, $perPage, $page); ?>
-  <?php endif; ?>
+    <?php if ($rows) { vg_page_nav($total, $perPage, $page); } ?>
+    </div>
+  </div>
+</section>
 <?php vg_footer();
