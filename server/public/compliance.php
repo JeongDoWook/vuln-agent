@@ -86,8 +86,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sPatch['label'], $sPatch['tone']) ?>
       </div>
-      <p class="why">SLA 기준일 KEV <?= (int) $policy['kev'] ?>일 · CRITICAL <?= (int) $policy['crit'] ?>일 ·
-        HIGH <?= (int) $policy['high'] ?>일. 위반 <?= number_format($patch['total']) ?>건 ·
+      <p class="why">패치가 있는 CRITICAL·HIGH 중 SLA 초과분(KEV <?= (int) $policy['kev'] ?>일 ·
+        CRITICAL <?= (int) $policy['crit'] ?>일 · HIGH <?= (int) $policy['high'] ?>일).
+        위반 <?= number_format($patch['total']) ?>건 ·
         판정 불가 <?= number_format($patch['unjudged']) ?>건 · 판정 시각 <?= vg_h($judgedAt) ?></p>
       <?php
       // 판정 불가 사유를 그대로 노출한다 — "위반 0건"이 왜 준수를 뜻하지 않는지 화면에서 설명하지
@@ -153,8 +154,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         </div>
         <?= vg_badge($sAsset['label'], $sAsset['tone']) ?>
       </div>
-      <p class="why">등록 자산 <?= number_format($asset['totalHosts']) ?>대 기준.
-        위반 <?= number_format($asset['total']) ?>건 · 판정 불가 <?= number_format($asset['unjudged']) ?>건 ·
+      <p class="why">등록 자산 <?= number_format($asset['totalHosts']) ?>대 중 오프라인·수집없음이거나
+        OS·IP 가 누락된 자산. 위반 <?= number_format($asset['total']) ?>건 · 판정 불가 <?= number_format($asset['unjudged']) ?>건 ·
         판정 시각 <?= vg_h($judgedAt) ?></p>
       <?php if ($asset['unjudged'] > 0):
           $hints = [];
