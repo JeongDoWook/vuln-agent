@@ -56,11 +56,13 @@
     "list": "cid|name|image|os_id|os_version|manager|pkg_count\napi|api|myco/api:1.4|alpine|3.19.1|apk|2\nlegacy|legacy|debian:12|debian|12|dpkg|1\nnodb|nodb|tigera/typha:v3.28|rhel|9.7||0\ngosvc|gosvc|quay.io/calico/node:v3.31|rhel|9.7|go|0\nupsvc|upsvc|quay.io/calico/whisker:v3.31|rhel|9.7|upstream|1",
     "packages": "cid|manager|name|version|source\napi|apk|openssl|3.1.4-r2|openssl\napi|apk|busybox|1.36.1-r15|busybox\nlegacy|dpkg|curl|7.88.1-10+deb12u5|curl\ngosvc|go|golang.org/x/net|v0.20.0|\nupsvc|upstream|nginx|1.24.0|",
     "processes": "cid|pid|comm|user|exe_pkg|loaded_pkgs\napi|2100|nginx|root|nginx|openssl,busybox\nlegacy|2200|cron|root|cron|",
-    "exposure": "cid|pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\napi|2100|nginx|tcp|0.0.0.0|8443|EXTERNAL|nginx|openssl,busybox"
+    "exposure": "cid|pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\napi|2100|nginx|tcp|0.0.0.0|8443|EXTERNAL|nginx|openssl,busybox",
+    "sbom": "api|cyclonedx|eyJib21Gb3JtYXQiOiJDeWNsb25lRFgiLCJzcGVjVmVyc2lvbiI6IjEuNSIsIm1ldGFkYXRhIjp7ImNvbXBvbmVudCI6eyJib20tcmVmIjoicGtnOm5wbS9teWNvLXdlYkAxLjAuMCIsInR5cGUiOiJhcHBsaWNhdGlvbiIsIm5hbWUiOiJteWNvLXdlYiIsInZlcnNpb24iOiIxLjAuMCIsInB1cmwiOiJwa2c6bnBtL215Y28td2ViQDEuMC4wIn19LCJjb21wb25lbnRzIjpbeyJib20tcmVmIjoicGtnOm5wbS9teWNvLWh0dHBAMi4wLjAiLCJ0eXBlIjoibGlicmFyeSIsIm5hbWUiOiJteWNvLWh0dHAiLCJ2ZXJzaW9uIjoiMi4wLjAiLCJwdXJsIjoicGtnOm5wbS9teWNvLWh0dHBAMi4wLjAifSx7ImJvbS1yZWYiOiJwa2c6bnBtL215Y28tcGFyc2VyQDMuMS4wIiwidHlwZSI6ImxpYnJhcnkiLCJuYW1lIjoibXljby1wYXJzZXIiLCJ2ZXJzaW9uIjoiMy4xLjAiLCJwdXJsIjoicGtnOm5wbS9teWNvLXBhcnNlckAzLjEuMCJ9LHsiYm9tLXJlZiI6InBrZzpucG0vbXljby11dGY4QDAuOS4xIiwidHlwZSI6ImxpYnJhcnkiLCJuYW1lIjoibXljby11dGY4IiwidmVyc2lvbiI6IjAuOS4xIiwicHVybCI6InBrZzpucG0vbXljby11dGY4QDAuOS4xIn1dLCJkZXBlbmRlbmNpZXMiOlt7InJlZiI6InBrZzpucG0vbXljby13ZWJAMS4wLjAiLCJkZXBlbmRzT24iOlsicGtnOm5wbS9teWNvLWh0dHBAMi4wLjAiXX0seyJyZWYiOiJwa2c6bnBtL215Y28taHR0cEAyLjAuMCIsImRlcGVuZHNPbiI6WyJwa2c6bnBtL215Y28tcGFyc2VyQDMuMS4wIl19LHsicmVmIjoicGtnOm5wbS9teWNvLXBhcnNlckAzLjEuMCIsImRlcGVuZHNPbiI6WyJwa2c6bnBtL215Y28tdXRmOEAwLjkuMSJdfV19"
   },
   "langpkg": {
     "pip": "requests==2.19.1\nurllib3==2.0.7",
-    "npm_global": "/usr/local/lib\n+-- corepack@0.34.6\n`-- npm@10.8.2"
+    "npm_global": "/usr/local/lib\n+-- corepack@0.34.6\n`-- npm@10.8.2",
+    "pom_deps": "/srv/myco-batch/pom.xml|PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHByb2plY3QgeG1sbnM9Imh0dHA6Ly9tYXZlbi5hcGFjaGUub3JnL1BPTS80LjAuMCI+CiAgPGdyb3VwSWQ+Y29tLm15Y288L2dyb3VwSWQ+PGFydGlmYWN0SWQ+bXljby1iYXRjaDwvYXJ0aWZhY3RJZD48dmVyc2lvbj4xLjIuMDwvdmVyc2lvbj4KICA8ZGVwZW5kZW5jaWVzPgogICAgPGRlcGVuZGVuY3k+PGdyb3VwSWQ+Y29tLm15Y288L2dyb3VwSWQ+PGFydGlmYWN0SWQ+bXljby1jb21tb248L2FydGlmYWN0SWQ+PHZlcnNpb24+NC41LjA8L3ZlcnNpb24+PC9kZXBlbmRlbmN5PgogICAgPGRlcGVuZGVuY3k+PGdyb3VwSWQ+Y29tLm15Y288L2dyb3VwSWQ+PGFydGlmYWN0SWQ+bXljby1qc29uPC9hcnRpZmFjdElkPjx2ZXJzaW9uPjIuMi4xPC92ZXJzaW9uPjwvZGVwZW5kZW5jeT4KICA8L2RlcGVuZGVuY2llcz4KPC9wcm9qZWN0Pgo="
   },
   "runtime": {
     "processes": "pid|comm|user|exe_pkg|loaded_pkgs\n1201|nginx|root|nginx|openssl,glibc,curl\n980|sshd|root|openssh-server|openssl,glibc",

@@ -1948,3 +1948,18 @@ form.card .btn--primary:active { transform: translateY(0); }
   .kpi:not(.kpi--sm) b, .kpi:not(.kpi--sm) strong { font-size: 1.65rem; }
   .page--login form.card { padding: 2rem 1.35rem 1.6rem; }
 }
+
+/* depgraph-view — 패키지 의존성 그래프(depgraph.php)의 접이식 트리·경로 목록 */
+/*   그래프 라이브러리를 들이지 않고 <ul>/<details> 로만 계층을 낸다(YAGNI/KISS).
+     들여쓰기 왼쪽의 세로선이 "이 가지가 어디에 매달렸는지" 를 대신한다. */
+.dep-tree { margin: 0; padding-left: 1.1rem; list-style: none; }
+.dep-tree .dep-tree { margin-top: .3rem; border-left: 1px solid var(--line); }
+.dep-tree li { padding: .18rem 0; line-height: 1.5; }
+.dep-tree summary { cursor: pointer; }
+.dep-tree summary::marker { color: var(--muted); }
+/* 경로 목록: 루트 → … → 대상 을 한 줄로 잇는다. 화살표는 CSS 가 그린다(마크업엔 없다). */
+.dep-paths { margin: 0; padding-left: 1.2rem; }
+.dep-paths > li { padding: .35rem 0; border-top: 1px solid var(--line); }
+.dep-paths > li:first-child { border-top: 0; }
+.dep-path { display: flex; flex-wrap: wrap; gap: .3rem .55rem; margin: 0; padding: 0; list-style: none; }
+.dep-path li + li::before { content: "→"; margin-right: .4rem; color: var(--muted); }
