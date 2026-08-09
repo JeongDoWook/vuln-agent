@@ -101,7 +101,7 @@ NTP 가 안 맞는 망에서 수집이 거부되면 이 값을 올린다(그만�
 
 ## 운영 설정 (DB · `tb_setting`)
 
-읽는 곳: `server/src/setting.php`(`vg_setting_int()`/`vg_setting()`), 정의 SSOT 는 `vg_setting_defs()`.
+읽는 곳: `server/src/setting.php`(`vg_setting_int()`), 정의 SSOT 는 `vg_setting_defs()`.
 바꾸는 곳: 웹 **관리 → 설정**(`/settings.php`, admin 전용).
 
 SLA 기준일은 업계 관행값이 아니라 **조직 내부 규정**이라 환경변수가 아닌 DB 설정으로 뺐다 —

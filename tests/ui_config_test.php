@@ -29,7 +29,6 @@ putenv('UI_FILTER_OPTION_LIMIT=99999');
 $eq('필터 선택지 한도 상한', vg_ui_filter_option_limit(), 2000);
 putenv('UI_DASHBOARD_ACTIONABLE_STATUSES=external,loaded,installed,bad');
 $eq('긴급 상태 화이트리스트', vg_ui_dashboard_actionable_statuses(), ['EXTERNAL', 'LOADED']);
-$eq('긴급 상태 SQL도 검증된 값만 사용', vg_ui_dashboard_actionable_statuses_sql(), "'EXTERNAL','LOADED'");
 $eq('Wolfi OSV 생태계', vg_osv_ecosystem('wolfi', '20230201'), 'Wolfi');
 $eq('Wolfi는 판정 가능', vg_distro_unsupported('wolfi', '20230201'), null);
 
@@ -65,7 +64,6 @@ $eq('모르는 코드는 OTHER', vg_activity_action('무슨_이벤트'), 'OTHER'
 $eq('설정 없으면 유휴 만료 폴백(30분)', vg_setting_int('session.idle_minutes', 30), 30);
 $eq('설정 없으면 절대 만료 폴백(720분)', vg_setting_int('session.absolute_minutes', 720), 720);
 $eq('설정 없으면 미사용 판정 폴백(90일)', vg_setting_int('account.stale_login_days', 90), 90);
-$eq('설정 없으면 문자열도 기본값', vg_setting('없는.키', '기본'), '기본');
 
 // 만료를 0·무한으로 만들 수 없어야 한다 — 읽을 때도 정의 범위로 자른다.
 $eq('유휴 만료 하한 클램프', vg_setting_int('session.idle_minutes', 0), 5);

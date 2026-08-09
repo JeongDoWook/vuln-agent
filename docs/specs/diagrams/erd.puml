@@ -592,8 +592,6 @@ package "피드 운영 · 인증 · 감사" {
         --
         setting_key : string <<UK>>
         setting_value : string
-        value_type : string
-        ' int string
         description : string
     }
 }

@@ -27,8 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $changed = [];
             $rejected = [];
             $up = $pdo->prepare(
-                'INSERT INTO tb_setting (setting_key, setting_value, value_type, description)
-                 VALUES (?,?,?,?)
+                'INSERT INTO tb_setting (setting_key, setting_value, description)
+                 VALUES (?,?,?)
                  ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), is_deleted = 0, deleted_at = NULL'
             );
             foreach ($defs as $key => $def) {
@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $rejected[] = sprintf('%s — %d~%d 사이의 정수만 가능합니다.', $def['label'], $def['min'], $def['max']);
                     continue;
                 }
-                $up->execute([$key, (string) $int, (string) $def['type'], (string) $def['desc']]);
+                $up->execute([$key, (string) $int, (string) $def['desc']]);
                 $changed[$key] = $int;
             }
             if ($changed) {

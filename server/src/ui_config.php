@@ -53,14 +53,6 @@ function vg_ui_dashboard_actionable_statuses(): array {
     return array_values(array_unique($values)) ?: $allowed;
 }
 
-/** 화이트리스트의 값만 SQL 리터럴로 변환한다. */
-function vg_ui_dashboard_actionable_statuses_sql(): string {
-    return implode(',', array_map(
-        static fn(string $status): string => "'" . $status . "'",
-        vg_ui_dashboard_actionable_statuses()
-    ));
-}
-
 function vg_ui_detail_preview_limit(): int {
     return vg_ui_int('UI_DETAIL_PREVIEW_LIMIT', 10, 5, 100);
 }
