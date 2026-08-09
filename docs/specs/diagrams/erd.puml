@@ -3,10 +3,10 @@
 ' 원본: docs/dev/architecture.md §5
 ' 테이블별 전체 컬럼·책임·정규화 현황은 docs/dev/데이터베이스.md 참고.
 '
-' 범위: 도메인 엔티티 39개 전부(= 전체 40테이블 - tb_schema_migrations).
+' 범위: 도메인 엔티티 48개 전부(= 전체 49테이블 - tb_schema_migrations).
 '      tb_schema_migrations 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
-'      영역이 한눈에 안 잡히던 문제는 package 로 묶어 해결한다(수집 / CVE / 벤더판정 / 판정결과 /
-'      조치 / 운영).
+'      영역이 한눈에 안 잡히던 문제는 package 로 묶어 해결한다(수집 / CVE / 벤더·기준 카탈로그 /
+'      판정결과 / 운영).
 '
 ' 표기: · 감사 4컬럼(created_at/updated_at/is_deleted/deleted_at)은 대부분의 테이블에 통일되어
 '        있으나 이 다이어그램엔 생략한다(엔티티 39개에 4줄씩 붙으면 읽을 수 없다).
@@ -152,6 +152,38 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         old_version : string
         new_version : string
     }
+
+    entity tb_host_account {
+        host_account_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        scan_id : bigint <<FK>>
+        username : string
+        ' UK(scan_id, username)
+        uid : int
+        shell : string
+        is_locked : bool
+        ' NULL 이면 shadow 미수집
+        is_sudoer : bool
+        is_system : bool
+        pw_max_days : int
+        last_login_at : datetime
+        never_logged_in : bool
+    }
+
+    entity tb_package_dependency {
+        package_dependency_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        container_id : bigint
+        source : string
+        ' sbom pom
+        parent_manager/name/version : string
+        ' 전부 NULL = 루트 표식·pom 직접선언
+        child_manager/name/version : string
+        edge_hash : binary(32)
+        ' 생성컬럼 - UK(scan_id, container_id, edge_hash)
+    }
 }
 
 package "CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)" {
@@ -228,7 +260,7 @@ package "CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)" {
     }
 }
 
-package "벤더 판정 소스 — 배포판·커널의 중앙 카탈로그" {
+package "벤더·기준 카탈로그 — 배포판·커널·보안설정 기준" {
 
     entity tb_debian_tracker {
         debian_tracker_id : bigint <<PK>>
@@ -301,6 +333,18 @@ package "벤더 판정 소스 — 배포판·커널의 중앙 카탈로그" {
         severity : string
         refs_json : json
         ' CIS NIST STIG PCI-DSS 참조
+    }
+
+    entity tb_control_mapping {
+        control_mapping_id : bigint <<PK>>
+        --
+        rule_code : string
+        ' tb_cce_finding.code
+        framework : string
+        ' KISA_U ISMS_P N2SF
+        control_id : string
+        control_name : string
+        ' UK(rule_code, framework, control_id)
     }
 }
 
@@ -390,6 +434,45 @@ package "판정 결과 — 우리 기여(런타임 상태·억제)" {
         ' PASS FAIL NA
         severity : string
     }
+
+    entity tb_remediation_note {
+        remediation_note_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        cid : string
+        ' 컨테이너 이름. '' = 호스트 자신
+        cve_id : string
+        package : string
+        ' UK(host_id, cve_id, package, cid)
+        reason : text
+        ' 사람이 쓴 미조치 사유
+        approved_by : bigint
+        approved_at : datetime
+        is_deleted : bool
+    }
+
+    entity tb_compliance_snapshot {
+        compliance_snapshot_id : bigint <<PK>>
+        --
+        snapshot_date : date <<UK>>
+        ' 판정 기준일 - 하루 1건
+        taken_at : datetime
+        is_deleted : bool
+    }
+
+    entity tb_compliance_snapshot_control {
+        compliance_snapshot_control_id : bigint <<PK>>
+        --
+        compliance_snapshot_id : bigint <<FK>>
+        control_key : string
+        ' patch asset secops
+        framework_ids : string
+        status_label : string
+        ' 준수 판정불가 부분준수 미준수
+        violation_count : int
+        unjudged_count : int
+        evidence : json
+    }
 }
 
 package "피드 운영 · 인증 · 감사" {
@@ -463,8 +546,37 @@ package "피드 운영 · 인증 · 감사" {
         scope : string
         scope_id : bigint
         activity_type : string
+        subject : string
+        ' 처리 대상 자원 - ISMS-P 5요소
+        action : string
+        ' READ CREATE UPDATE DELETE EXPORT LOGIN EXECUTE OTHER
         data : json
         ip_address : string
+    }
+
+    entity tb_activity_review {
+        activity_review_id : bigint <<PK>>
+        --
+        period_start : date
+        period_end : date
+        ' UK(period_start, period_end)
+        reviewed_by : bigint
+        reviewer_name : string
+        ' 계정 삭제 후에도 남는 스냅샷
+        reviewed_at : datetime
+        result : string
+        ' OK FINDING NA
+        note : text
+    }
+
+    entity tb_setting {
+        setting_id : bigint <<PK>>
+        --
+        setting_key : string <<UK>>
+        setting_value : string
+        value_type : string
+        ' int string
+        description : string
     }
 }
 
@@ -473,6 +585,8 @@ tb_host ||--o{ tb_scan : "수집 이력"
 tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
 tb_host ||--o{ tb_scan_run : "실제 실행 이력"
 tb_host ||--o{ tb_agent_command : "수집 명령"
+tb_host ||--o{ tb_host_account : "계정 인벤토리"
+tb_host ||--o{ tb_remediation_note : "미조치 사유 메모"
 
 tb_scan ||--o{ tb_package : "설치 패키지"
 tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
@@ -487,8 +601,11 @@ tb_scan ||--o{ tb_applied_errata : "억제 근거③"
 tb_scan ||--o{ tb_debsecan : "억제 근거④"
 tb_scan ||--o{ tb_stale_lib : "억제 취소 — 재시작 필요"
 tb_scan ||--o{ tb_cce_finding : "보안설정 점검"
+tb_scan ||--o{ tb_host_account : "그 스냅샷의 계정 목록"
+tb_scan ||--o{ tb_package_dependency : "의존성 엣지(SBOM·pom)"
 
 tb_finding ||--o| tb_finding_evidence : "판정 근거(1:1)"
+tb_compliance_snapshot ||--o{ tb_compliance_snapshot_control : "통제별 판정 결과"
 tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별 조치버전"
 tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
 tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
@@ -504,6 +621,8 @@ tb_cve ||..o{ tb_advisory_cve : "CVE → 공지 역조회"
 tb_cve_affected_package }o..|| tb_package_summary : "사전집계(OSV 실행 시 재생성)"
 tb_container ||..o{ tb_package : "컨테이너 내부 패키지(container_id)"
 tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"
+tb_cce_finding }o..o{ tb_control_mapping : "기준별 통제(rule_code = code)"
+tb_remediation_note ||..o{ tb_finding : "자연키(host+cid+cve+package)로 붙는 사람 메모"
 
 ' 벤더 판정 소스는 매처가 참조만 한다(스캔에 매달리지 않음).
 tb_debian_tracker }o..|| tb_finding : "데비안 백포트 판정"
@@ -516,6 +635,13 @@ tb_kernel_cve }o..|| tb_finding : "커널 CVE 판정"
 ' tb_advisory       : CVE 와 느슨한 연계(제목의 CVE best-effort)라 FK 없음. 정본은 junction.
 ' tb_activity_log   : user_id 가 NULL 가능(SYSTEM 행위, 예: ingest 수신)이라 FK 없이 논리적 연계만.
 ' tb_role_permission: 역할(role) 문자열 기준 설정형 RBAC — FK 없음.
+' tb_setting       : 전역 운영 설정(key-value). 어느 엔티티에도 매달리지 않는다.
+' tb_activity_review: 월 1회 접속기록 점검 이력. 기간(period_start~period_end)으로 tb_activity_log 를
+'                     훑을 뿐 행 단위 FK 는 없다. reviewed_by 도 FK 없음(계정이 지워져도 점검 이력은 남아야 한다).
+' tb_compliance_snapshot : 그날의 findings/tb_host/tb_scan 을 읽어 판정한 결과의 스냅샷이라 원본 행과
+'                     FK 로 묶지 않는다(원본이 지워져도 증적은 남아야 한다). 근거는 evidence JSON 에 담는다.
+' tb_package_dependency : parent/child 는 값(manager+name+version)으로만 이어지는 자기참조라
+'                     FK 를 걸 수 없다 — 자식이 tb_package 에 없을 수도 있다(전이 의존성).
 ' tb_schema_migrations : 마이그레이션 러너의 인프라 테이블 — 도메인 엔티티가 아니라 이 ERD 에서 제외.
 
 @enduml

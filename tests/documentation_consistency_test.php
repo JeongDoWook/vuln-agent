@@ -23,8 +23,8 @@ if (count($documented) !== 49) {
 
 preg_match_all('/^\s*entity (tb_[a-z_]+)/m', $erd, $erdMatches);
 $entities = array_values(array_unique($erdMatches[1]));
-if (count($entities) !== 40 || in_array('tb_schema_migrations', $entities, true)) {
-    $fail('ERD는 마이그레이션 이력 테이블을 뺀 도메인 엔티티 40개여야 합니다');
+if (count($entities) !== 48 || in_array('tb_schema_migrations', $entities, true)) {
+    $fail('ERD는 마이그레이션 이력 테이블을 뺀 도메인 엔티티 48개여야 합니다');
 }
 
 foreach (['tb_scan_run', 'tb_agent_command'] as $table) {
