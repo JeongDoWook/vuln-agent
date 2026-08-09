@@ -43,16 +43,48 @@ const VG_ASSET_CRITICALITY = ['HIGH' => '상', 'MEDIUM' => '중', 'LOW' => '하'
 const VG_ASSET_LOG_LISTENERS = ['rsyslogd', 'syslog-ng', 'syslogd'];
 
 /**
- * 로그 수집기·백업 데몬 — 이름 자체가 역할을 특정하는 것만 넣는다.
- *   journald·cron 처럼 모든 호스트에 있는 것은 넣지 않는다(전 함대가 S 제안을 받게 된다).
+ * 원격에서 닿을 수 있거나 특정 비루프백 주소에 바인딩된 scope.
+ * FILTERED 는 방화벽이 막은 소켓이고 LOCAL 은 루프백 전용이다. '-' 및 알 수 없는 미래 값도
+ * 도달 가능하다고 추측하지 않는다.
  */
-const VG_ASSET_LOGBACKUP_PROCS = [
-    // 로그 수집·전송
-    'fluentd', 'fluent-bit', 'logstash', 'filebeat', 'promtail',
-    // 백업
-    'bacula-fd', 'bacula-sd', 'bacula-dir', 'bareos-fd', 'bareos-sd', 'bareos-dir',
-    'borg', 'restic', 'duplicity', 'rsnapshot', 'barman', 'amandad',
+const VG_ASSET_REACHABLE_SCOPES = ['EXTERNAL', 'LAN', 'BOUND'];
+
+/**
+ * 로그·백업 프로세스 역할. 이름만으로 확정하지 않고 S 초안을 뒷받침하는 강도를 보존한다.
+ * journald·cron 처럼 거의 모든 호스트에 있는 프로세스는 넣지 않는다.
+ */
+const VG_ASSET_LOGBACKUP_ROLES = [
+    'server' => [
+        'label' => '서버·저장소',
+        'processes' => ['logstash', 'bacula-sd', 'bacula-dir', 'bareos-sd', 'bareos-dir', 'barman', 'amandad'],
+    ],
+    'forwarder' => [
+        'label' => '전달자·클라이언트(검토)',
+        'processes' => ['fluentd', 'fluent-bit', 'filebeat', 'promtail', 'bacula-fd', 'bareos-fd'],
+    ],
+    'transient' => [
+        'label' => '일회성 도구(약함)',
+        'processes' => ['borg', 'restic', 'duplicity', 'rsnapshot'],
+    ],
 ];
+
+/** 결정적인 짧은 근거를 만든다(DB 컬럼과 공개 반환값 모두 255자 이내). */
+function vg_asset_grade_reason(array $parts): string
+{
+    return mb_strimwidth(implode(' ', $parts), 0, 255, '…');
+}
+
+/** 모든 일치 건수는 보존하되 대표 항목만 실어 뒤쪽 근거 범주가 잘리지 않게 한다. */
+function vg_asset_grade_evidence(string $label, array $items, int $sampleSize = 1, ?int $total = null): string
+{
+    $sample = array_map(static function (string $item): string {
+        return mb_strimwidth($item, 0, 48, '…');
+    }, array_slice($items, 0, $sampleSize));
+    $total = $total ?? count($items);
+    $remaining = $total - count($sample);
+    return $label . ' ' . $total . '건(' . implode(', ', $sample)
+        . ($remaining > 0 ? ' 외 ' . $remaining . '건' : '') . ').';
+}
 
 /**
  * 이 스캔의 수집 데이터만 보고 **초안 등급을 제안**한다. 확신이 없으면 제안하지 않는다.
@@ -64,37 +96,57 @@ const VG_ASSET_LOGBACKUP_PROCS = [
  */
 function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
 {
-    // ① 로그 수신 — 로그 데몬이 포트를 열고 있는가(루프백만 여는 경우는 자기 호스트용이라 제외).
+    $sEvidence = [];
+
+    // ① 로그 수신 — 저장소 의미론에서 실제 비루프백 도달 가능성이 있는 scope 만 채택한다.
     $ph = implode(',', array_fill(0, count(VG_ASSET_LOG_LISTENERS), '?'));
+    $scopePh = implode(',', array_fill(0, count(VG_ASSET_REACHABLE_SCOPES), '?'));
+    // BOUND는 에이전트가 '특정 IP'로 분류하지만 구형 수집물의 127/8 오분류도 중앙에서 방어한다.
+    $listenerWhere = "scan_id = ? AND scope IN ($scopePh) AND proc IN ($ph)
+          AND NOT (scope = 'BOUND' AND (bind_addr LIKE '127.%' OR bind_addr IN ('::1', '[::1]')))";
+    $params = array_merge([$scanId], VG_ASSET_REACHABLE_SCOPES, VG_ASSET_LOG_LISTENERS);
     $st = $pdo->prepare(
-        "SELECT proc, port FROM tb_exposure
-          WHERE scan_id = ? AND scope <> 'LOCAL' AND proc IN ($ph)
-          ORDER BY port LIMIT 1"
+        "SELECT COUNT(*) FROM (
+           SELECT 1 FROM tb_exposure WHERE $listenerWhere
+           GROUP BY proc, proto, bind_addr, port, scope
+         ) AS listener_evidence"
     );
-    $st->execute(array_merge([$scanId], VG_ASSET_LOG_LISTENERS));
-    $logListener = $st->fetch();
-    if ($logListener !== false) {
-        return [
-            'grade'  => 'S',
-            'reason' => '원격 로그 수신 추정 — ' . (string) $logListener['proc']
-                      . ' 이(가) 포트 ' . (int) $logListener['port'] . ' 를 열고 있습니다.'
-                      . ' (「정보공개법」 제9조 기타 "로그 및 임시백업 등" → S)',
-        ];
+    $st->execute($params);
+    $listenerCount = (int) $st->fetchColumn();
+    if ($listenerCount > 0) {
+        $st = $pdo->prepare(
+            "SELECT proc, proto, bind_addr, port, scope FROM tb_exposure
+          WHERE $listenerWhere
+          GROUP BY proc, proto, bind_addr, port, scope
+          ORDER BY proc, port, proto, bind_addr, scope
+          LIMIT 1"
+        );
+        $st->execute($params);
+        $listeners = $st->fetchAll(PDO::FETCH_ASSOC);
+        $items = array_map(static function (array $r): string {
+            return (string) $r['proc'] . ':' . (int) $r['port'] . '/' . (string) $r['proto']
+                . '@' . (string) $r['bind_addr'] . '/' . (string) $r['scope'];
+        }, $listeners);
+        $sEvidence[] = vg_asset_grade_evidence('원격 로그 수신', $items, 1, $listenerCount);
     }
 
-    // ② 로그 수집기·백업 데몬이 돌고 있는가.
-    $ph = implode(',', array_fill(0, count(VG_ASSET_LOGBACKUP_PROCS), '?'));
+    // ② 역할별 프로세스 증거를 전부 모은다. 같은 comm 의 여러 PID는 설명에서 한 번만 센다.
+    // 전달자·일회성 도구도 S '초안'의 검토 신호지만 라벨로 약도를 보존하며 법적 확정은 하지 않는다.
+    $roleProcessLists = array_column(VG_ASSET_LOGBACKUP_ROLES, 'processes');
+    $allProcs = array_values(array_unique(array_merge(...$roleProcessLists)));
+    $ph = implode(',', array_fill(0, count($allProcs), '?'));
     $st = $pdo->prepare(
-        "SELECT comm FROM tb_process WHERE scan_id = ? AND comm IN ($ph) ORDER BY comm LIMIT 1"
+        "SELECT DISTINCT LOWER(comm) AS comm FROM tb_process
+          WHERE scan_id = ? AND LOWER(comm) IN ($ph) ORDER BY comm"
     );
-    $st->execute(array_merge([$scanId], VG_ASSET_LOGBACKUP_PROCS));
-    $proc = $st->fetchColumn();
-    if ($proc !== false) {
-        return [
-            'grade'  => 'S',
-            'reason' => '로그·백업 처리 역할 추정 — 프로세스 ' . (string) $proc . ' 실행 중.'
-                      . ' (「정보공개법」 제9조 기타 "로그 및 임시백업 등" → S)',
-        ];
+    $st->execute(array_merge([$scanId], $allProcs));
+    $running = $st->fetchAll(PDO::FETCH_COLUMN);
+    foreach (VG_ASSET_LOGBACKUP_ROLES as $role) {
+        $names = $role['processes'];
+        $matched = array_values(array_intersect($names, $running));
+        sort($matched, SORT_STRING);
+        if (!$matched) { continue; }
+        $sEvidence[] = vg_asset_grade_evidence($role['label'], $matched);
     }
 
     // ③ 외부 노출 — 인터넷에서 닿는 포트가 있으면 O 영역 후보.
@@ -103,10 +155,18 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
     );
     $st->execute([$scanId]);
     $ext = (int) $st->fetchColumn();
+    $oEvidence = $ext > 0 ? 'O 외부노출 ' . $ext . '개.' : null;
+
+    if ($sEvidence) {
+        if ($oEvidence !== null) { array_splice($sEvidence, 1, 0, [$oEvidence]); }
+        array_unshift($sEvidence, 'S 초안(사람 확인 전 미확정).');
+        return ['grade' => 'S', 'reason' => vg_asset_grade_reason($sEvidence)];
+    }
+
     if ($ext > 0) {
         return [
             'grade'  => 'O',
-            'reason' => '외부 노출 포트 ' . $ext . '개 — 개방형(O) 영역 후보입니다.',
+            'reason' => vg_asset_grade_reason([$oEvidence, '사람 확인 전에는 확정되지 않습니다.']),
         ];
     }
 
@@ -126,7 +186,10 @@ function vg_asset_grade_refresh(PDO $pdo, int $hostId, int $scanId): void
     $st = $pdo->prepare(
         'UPDATE tb_host SET grade_suggested = ?, grade_suggested_reason = ?
           WHERE host_id = ?
-            AND NOT (grade_suggested <=> ? AND grade_suggested_reason <=> ?)'
+            AND (
+              COALESCE(grade_suggested, \'\') <> COALESCE(?, \'\')
+              OR COALESCE(grade_suggested_reason, \'\') <> COALESCE(?, \'\')
+            )'
     );
     $st->execute([$grade, $reason, $hostId, $grade, $reason]);
 }

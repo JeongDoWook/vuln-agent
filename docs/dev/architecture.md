@@ -122,6 +122,13 @@ REVIEW(사람이 확인)다.
 어려워 상세에서 한 대씩이다. 여러 업무정보 등급이 한 시스템에 있으면 **가장 높은 등급을 승계**한다
 (C > S > O).
 
+초안 분류기는 에이전트가 저장한 노출 의미를 그대로 따른다. 원격 로그 수신 근거로 인정하는 범위는
+비루프백 도달/바인딩을 뜻하는 `EXTERNAL`·`LAN`·`BOUND`뿐이며, 방화벽 차단 `FILTERED`, 루프백
+`LOCAL`, 미지정·알 수 없는 범위는 원격 수신으로 표현하지 않는다. 로그·백업 프로세스도
+서버·저장소(강한 S 근거), 전달자·클라이언트(검토 근거), 일회성 도구(약한 근거)로 구분한다.
+한 스캔의 일치 근거는 모두 모아 결정적인 255자 이내 설명으로 만들고, S와 외부노출 O가 함께 있으면
+S가 우선하되 O 근거도 설명에 남긴다. 어느 경우에도 초안이 사람의 확정 등급을 대신하지 않는다.
+
 **패키지 의존성 그래프**는 SBOM(CycloneDX `dependencies` · SPDX `relationships`)과 pom.xml 최상위
 `<dependencies>` 에서 부모→자식 엣지를 뽑아 `tb_package_dependency` 에 넣는다(`src/ingest_store.php`).
 SPDX 는 `DEPENDS_ON`(정방향)과 `DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역방향)만 의존으로 채택한다 —
