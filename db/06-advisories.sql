@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS tb_advisories (
   title      VARCHAR(512) NOT NULL,
   url        VARCHAR(768) NOT NULL,
   published  DATE NULL,
-  cve_ids    TEXT NULL,                               -- 제목+본문에서 추출한 CVE(쉼표). 패치데이 공지는 263개까지 나온다
+  -- 관련 CVE 는 아래 정션(tb_advisory_cves)이 유일한 정본이다. 예전엔 여기 cve_ids CSV 가
+  -- 함께 있었지만 같은 사실이 두 곳에 있어 갈라졌다 → 드롭(db/migrations/20260809151827_*).
   content    MEDIUMTEXT NULL,                         -- 본문 평문(태그 제거). NULL=미수집
   content_fetched_at DATETIME NULL,                   -- 본문 수집 시각
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -22,8 +23,8 @@ CREATE TABLE IF NOT EXISTS tb_advisories (
   INDEX idx_advisories_is_deleted (is_deleted)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- CVE 정규화 정션(1NF) — tb_advisories.cve_ids CSV 는 그대로 두고(호환), 이 테이블을
---   CVE→공지 역조회·인덱스 조회용 정본으로 쓴다. 빈 볼륨은 이 파일(initdb),
+-- CVE 정규화 정션(1NF) — 공지↔CVE 의 유일한 정본. CVE→공지 역조회·인덱스 조회를
+--   여기서 한다. 빈 볼륨은 이 파일(initdb),
 --   기존 볼륨은 db/migrations/20260713192700_advisory_cves.sql.
 CREATE TABLE IF NOT EXISTS tb_advisory_cves (
   id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

@@ -40,7 +40,7 @@ try {
             vg_log_activity($pdo, 'ADVISORY', $id, 'view_advisory', (string) ($adv['title'] ?? null),
                 subject: (string) ($adv['title'] ?? ''), action: 'READ');
 
-            // cve_ids CSV 대신 정규화된 junction 에서 조회(tb_advisory_cve).
+            // 관련 CVE 는 정규화된 junction(tb_advisory_cve)에서 조회한다.
             //   총건수·KEV 포함 건수·최고 CVSS 를 한 번에 — 화면 상단 지표가 이 셋뿐이라
             //   쿼리를 셋으로 쪼갤 이유가 없다.
             $cst = $pdo->prepare(

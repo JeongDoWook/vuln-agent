@@ -23,7 +23,7 @@ try {
     $params = [];
     if ($q !== '') {
         // 본문까지 검색 대상(수집된 건에 한함). 2천여 행이라 LIKE 스캔으로 충분.
-        // CVE 검색은 cve_ids CSV 대신 정규화된 junction(tb_advisory_cve)을 본다.
+        // CVE 검색은 정규화된 junction(tb_advisory_cve)을 본다 — 인덱스가 걸린 유일한 정본.
         $where .= ' AND (title LIKE ? OR content LIKE ? OR EXISTS (
             SELECT 1 FROM tb_advisory_cve ac
              WHERE ac.advisory_id = tb_advisory.advisory_id AND ac.is_deleted = 0 AND ac.cve_id LIKE ?
