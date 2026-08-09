@@ -30,7 +30,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.10"
+SCRIPT_VERSION="3.11"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
@@ -1760,9 +1760,8 @@ put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
   echo "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs"
   collect_exposure
 } > "$TMP/exposure__correlation.txt" 2>/dev/null || true
-# 헤더만 있고 데이터 없으면(2줄 미만) 제거
-[ "$(wc -l < "$TMP/exposure__correlation.txt" 2>/dev/null || echo 0)" -ge 2 ] \
-  || rm -f "$TMP/exposure__correlation.txt"
+# 헤더만인 파일도 보낸다. 중앙은 섹션 존재를 "수집 완료·0건(EMPTY)" 증거로 쓰며,
+# 파일 자체가 없는 구버전/누락 payload만 MISSING으로 구분한다.
 
 # 10-c) 실행 프로세스 인벤토리 (실행중/사용중 구분용) — 포트 없어도 잡음
 {

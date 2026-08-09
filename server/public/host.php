@@ -18,6 +18,7 @@ require_once __DIR__ . '/../src/finding_history.php';   // vg_finding_history_ur
 require_once __DIR__ . '/../src/agentcommand.php';   // 수집 제어(즉시/예약 실행·주기 변경)
 require_once __DIR__ . '/../src/agentspeedtier.php';   // 속도 티어 라벨(agent-poll.php 와 공유 정의)
 require_once __DIR__ . '/../src/assetgrade.php';       // 자산 중요도·N2SF 등급 어휘와 초안 제안
+require_once __DIR__ . '/../src/assetgrade_history.php'; // 시스템 제안 관찰 이력 조회·표시
 require_once __DIR__ . '/../src/account_inventory.php';   // 계정 인벤토리 판정(vg_account_judgments)
 vg_require_menu('findings');
 
@@ -653,6 +654,7 @@ $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
 $accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0; $containerTotal = 0;
+$gradeSuggestionHistory = [];
 $q = trim((string) ($_GET['q'] ?? ''));
 // 계정 탭 필터(?acc=). 화이트리스트 밖 값은 전체로 떨군다 — 값이 그대로 SQL 로 가지 않는다.
 $accFilter = (string) ($_GET['acc'] ?? '');
@@ -668,6 +670,7 @@ try {
     $pendingCommands = [];
 
     if ($host) {
+        $gradeSuggestionHistory = vg_asset_grade_history_recent($pdo, $hostId);
         // 호스트 상세(설치 패키지·노출 포트·실행 프로세스 등 인프라 민감정보) 열람 감사로그.
         vg_log_activity($pdo, 'HOST', $hostId, 'view_host', (string) ($host['fqdn'] ?? null),
             subject: (string) ($host['fqdn'] ?? ''), action: 'READ');
@@ -873,6 +876,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
   <?php endif; ?>
   <?php vg_host_render_grade($hostId, $host, $agentCsrf, $approver, vg_has_role('admin')); ?>
+  <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
   <div class="card"><?php vg_empty(['icon' => '📭', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
@@ -1693,6 +1697,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php endif; ?>
 
   <?php vg_host_render_grade($hostId, $host, $agentCsrf, $approver, vg_has_role('admin')); ?>
+  <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
 
   <?php if (vg_has_role('admin', 'operator')): ?>
     <div class="card mt-lg">

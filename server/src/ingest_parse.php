@@ -601,6 +601,7 @@ function vg_ingest_content_hash(
     string $manager,
     array $langRows,
     array $expRows,
+    array $procRows,
     array $staleRows,
     array $ctrPkgRows,
     array $ctrRows,
@@ -614,7 +615,9 @@ function vg_ingest_content_hash(
     array $pomDepRows = [],
     array $sbomDepRows = []
 ): string {
-    $hashParts = [];
+    // v2는 프로세스 행을 해시에 포함한다. salt가 없으면 배포 직후 프로세스 수집이 비어 있는
+    // payload가 구버전 해시와 같아져 stale tb_process가 든 옛 스캔을 재사용할 수 있다.
+    $hashParts = ['schema|2'];
     // **저장하는 값 전부**를 해시에 넣는다(이름·버전만 넣으면 안 된다).
     //   예전엔 이름·버전만 봤다. 그래서 에이전트가 **출처(origin) 판정을 고쳐서 보내도** 패키지·버전이
     //   그대로면 "변경 없음" 으로 스캔을 재사용했고, tb_package 를 다시 쓰지 않아 옛 출처가 영원히
@@ -628,6 +631,9 @@ function vg_ingest_content_hash(
     //   스킵돼 스캔 재사용 시 라이선스 변경이 구조적으로 누락된다(출처 필드 실사고와 동일 유형).
     foreach ($langRows as $r) { $hashParts[] = "l|{$r[0]}|{$r[1]}|{$r[2]}|" . ($r[3] ?? ''); }
     foreach ($expRows as $f)  { $hashParts[] = 'e|' . implode('|', array_slice($f, 1, 7)); }   // pid 제외
+    // 자산등급 제안은 프로세스 comm을 읽는다. PID는 실행마다 달라질 수 있으므로 제외하되,
+    // 역할 프로세스의 시작/종료는 반드시 새 스냅샷과 제안 재평가를 만들게 한다.
+    foreach ($procRows as $r) { $hashParts[] = 'r|' . implode('|', $r); }
     foreach ($staleRows as $r) { $hashParts[] = "s|{$r[2]}|{$r[3]}"; }
     foreach ($ctrPkgRows as $r) { $hashParts[] = "c|{$r[0]}|{$r[1]}|{$r[2]}|{$r[3]}|" . ($r[5] ?? ''); }
     foreach ($ctrRows as $r)    { $hashParts[] = "C|{$r[0]}|{$r[2]}|{$r[3]}|{$r[4]}"; }   // cid|image|os

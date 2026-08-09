@@ -18,6 +18,7 @@ require __DIR__ . '/../src/rpmdb.php';        // vg_ingest_rpmdb_rows (컨테이
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/agenttoken.php';  // vg_agent_token_verify (호스트 바인딩)
 require_once __DIR__ . '/../src/ingest_parse.php';  // vg_ingest_parse_* (순수 변환, DB 비의존)
+require_once __DIR__ . '/../src/assetgrade.php';  // 등급 관련 프로세스만 content hash에 정규화
 require_once __DIR__ . '/../src/ingest_store.php';  // vg_ingest_store (트랜잭션 저장)
 require_once __DIR__ . '/../src/account_inventory.php';  // vg_ingest_accounts (계정 인벤토리)
 
@@ -108,6 +109,8 @@ $langCount = count($langRows);
 // ── 노출 상관 파싱 (pipe 구분, 첫 줄은 헤더) ─────────────────
 $expRows = !empty($exp['correlation']) ? vg_ingest_parse_exposures((string) $exp['correlation']) : [];
 $expCount = count($expRows);
+$exposureProvided = array_key_exists('exposure', $data)
+    && is_array($exp) && array_key_exists('correlation', $exp);
 
 // ── 실행 프로세스 파싱 (pipe, 첫 줄 헤더) — 실행중/사용중 구분용 ──
 $rt = $data['runtime'] ?? [];
@@ -176,8 +179,8 @@ $ctrExpCount  = count($ctrExpRows);
 $collectionStages = [
     ['packages', $pkgCount > 0 ? 'COMPLETE' : 'MISSING', $pkgCount],
     ['language_packages', $langCount > 0 ? 'COMPLETE' : 'EMPTY', $langCount],
-    ['runtime_processes', $procCount > 0 ? 'COMPLETE' : 'MISSING', $procCount],
-    ['network_exposure', $expCount > 0 ? 'COMPLETE' : 'EMPTY', $expCount],
+    ['runtime_processes', $procCount > 0 && empty($meta['processes_truncated']) ? 'COMPLETE' : 'MISSING', $procCount],
+    ['network_exposure', !$exposureProvided ? 'MISSING' : ($expCount > 0 ? 'COMPLETE' : 'EMPTY'), $expCount],
     ['containers', $ctrCount > 0 ? 'COMPLETE' : 'EMPTY', $ctrCount],
 ];
 
@@ -193,7 +196,7 @@ $kernelReboot  = $kernelInfo['reboot_needed'];
 // ── 내용 해시 — "바뀔 때만 스냅샷" 판정 ────────────────────────
 //   수집 내용이 직전과 같으면 새 스캔을 만들지 않는다(대부분의 수집이 여기 해당한다).
 $contentHash = vg_ingest_content_hash(
-    $pkgRows, $manager, $langRows, $expRows, $staleRows,
+    $pkgRows, $manager, $langRows, $expRows, vg_asset_grade_relevant_process_rows($procRows), $staleRows,
     $ctrPkgRows, $ctrRows, $ctrExpRows,
     $runningKernel, $kernelLatest, $kernelReboot,
     $vm, $sys, $originMap, $pomDepRows, $sbomDepRows

@@ -81,13 +81,12 @@ $o = vg_asset_grade_suggest($pdo, 60);
 same('O', $o['grade'] ?? null, 'external-only suggests O');
 same(null, vg_asset_grade_suggest($pdo, 61), 'no evidence means no suggestion');
 
-$pdo->exec("INSERT INTO tb_host (host_id, fqdn, grade, grade_reason, approved_by, approved_at) VALUES (1, 'fixed.example', 'C', 'human decision', 7, '2026-08-09')");
-vg_asset_grade_refresh($pdo, 1, 60);
-$host = $pdo->query('SELECT grade, grade_reason, approved_by, approved_at, grade_suggested FROM tb_host WHERE host_id = 1')->fetch(PDO::FETCH_ASSOC);
-same('C', $host['grade'], 'refresh preserves confirmed grade');
-same('human decision', $host['grade_reason'], 'refresh preserves confirmed reason');
-same(7, (int) $host['approved_by'], 'refresh preserves approver');
-same('2026-08-09', $host['approved_at'], 'refresh preserves approval time');
-same('O', $host['grade_suggested'], 'refresh writes only suggestion');
+same('external_exposure', $o['source'] ?? null, 'external-only suggestion reports its source');
+same('log_listener', vg_asset_grade_suggest($pdo, 50)['source'] ?? null, 'listener outranks process as source');
+same('process', vg_asset_grade_suggest($pdo, 42)['source'] ?? null, 'process-only suggestion reports its source');
+
+// 제안값 반영은 vg_asset_grade_observe()(assetgrade_history.php)가 맡는다 — 확정값을 건드리지
+//   않는다는 불변식은 tests/assetgrade_history_test.php 가 그쪽에서 검증한다.
+truth(!function_exists('vg_asset_grade_refresh'), 'suggestion write lives only in the history observer');
 
 echo "assetgrade tests: ok\n";

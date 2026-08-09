@@ -86,17 +86,52 @@ function vg_asset_grade_evidence(string $label, array $items, int $sampleSize = 
         . ($remaining > 0 ? ' 외 ' . $remaining . '건' : '') . ').';
 }
 
+/** 역할 구분 없이 로그·백업 프로세스 이름만 평평하게 편다(질의·해시 대상 목록). */
+function vg_asset_logbackup_procs(): array
+{
+    return array_values(array_unique(array_merge(
+        ...array_column(VG_ASSET_LOGBACKUP_ROLES, 'processes')
+    )));
+}
+
+/**
+ * 스냅샷 identity에 넣을 등급 분류 관련 프로세스 정규형.
+ * 전체 프로세스를 해시하면 cron/ssh 같은 일시적 실행마다 무거운 새 스캔이 생긴다.
+ */
+function vg_asset_grade_relevant_process_rows(array $rows): array
+{
+    $procs = vg_asset_logbackup_procs();
+    $out = [];
+    foreach ($rows as $row) {
+        // 제안 질의가 LOWER(comm) 로 맞추므로 identity 도 같은 기준이어야 한다 —
+        //   'Filebeat' 가 제안엔 잡히는데 스냅샷엔 안 잡히면 그 프로세스의 기동·종료가
+        //   재평가를 못 일으킨다.
+        $comm = mb_strtolower((string) ($row[1] ?? ''));
+        if (!in_array($comm, $procs, true)) { continue; }
+        $key = implode('|', [$comm, (string) ($row[2] ?? ''), (string) ($row[3] ?? ''), (string) ($row[4] ?? '')]);
+        $out[$key] = [$comm, (string) ($row[2] ?? ''), (string) ($row[3] ?? ''), (string) ($row[4] ?? '')];
+    }
+    ksort($out);
+    return array_values($out);
+}
+
 /**
  * 이 스캔의 수집 데이터만 보고 **초안 등급을 제안**한다. 확신이 없으면 제안하지 않는다.
  *
  * 우선순위: 로그·백업(S) > 외부노출(O). 둘 다 해당하면 보호수준이 높은 S 를 제안한다
  *   — 외부에 열려 있다는 사실이 "공개해도 되는 정보"를 뜻하지는 않기 때문이다.
  *
- * @return array{grade:string,reason:string}|null 제안이 없으면 null
+ * source 는 이 제안을 **처음 뒷받침한** 근거의 종류다(우선순위대로 log_listener > process >
+ *   external_exposure). 이력 기록이 "그 근거를 만든 수집 단계가 실제로 들어왔는가"를 판정해
+ *   수집 누락과 근거 없음을 구분하는 데 쓴다 — 근거를 여러 개 모아도 판정에 필요한 단계는
+ *   가장 먼저 성립한 근거의 단계다.
+ *
+ * @return array{grade:string,source:string,reason:string}|null 제안이 없으면 null
  */
 function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
 {
     $sEvidence = [];
+    $sSource = null;
 
     // ① 로그 수신 — 저장소 의미론에서 실제 비루프백 도달 가능성이 있는 scope 만 채택한다.
     $ph = implode(',', array_fill(0, count(VG_ASSET_LOG_LISTENERS), '?'));
@@ -128,12 +163,12 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
                 . '@' . (string) $r['bind_addr'] . '/' . (string) $r['scope'];
         }, $listeners);
         $sEvidence[] = vg_asset_grade_evidence('원격 로그 수신', $items, 1, $listenerCount);
+        $sSource = 'log_listener';
     }
 
     // ② 역할별 프로세스 증거를 전부 모은다. 같은 comm 의 여러 PID는 설명에서 한 번만 센다.
     // 전달자·일회성 도구도 S '초안'의 검토 신호지만 라벨로 약도를 보존하며 법적 확정은 하지 않는다.
-    $roleProcessLists = array_column(VG_ASSET_LOGBACKUP_ROLES, 'processes');
-    $allProcs = array_values(array_unique(array_merge(...$roleProcessLists)));
+    $allProcs = vg_asset_logbackup_procs();
     $ph = implode(',', array_fill(0, count($allProcs), '?'));
     $st = $pdo->prepare(
         "SELECT DISTINCT LOWER(comm) AS comm FROM tb_process
@@ -147,6 +182,7 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
         sort($matched, SORT_STRING);
         if (!$matched) { continue; }
         $sEvidence[] = vg_asset_grade_evidence($role['label'], $matched);
+        $sSource = $sSource ?? 'process';
     }
 
     // ③ 외부 노출 — 인터넷에서 닿는 포트가 있으면 O 영역 후보.
@@ -160,38 +196,22 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
     if ($sEvidence) {
         if ($oEvidence !== null) { array_splice($sEvidence, 1, 0, [$oEvidence]); }
         array_unshift($sEvidence, 'S 초안(사람 확인 전 미확정).');
-        return ['grade' => 'S', 'reason' => vg_asset_grade_reason($sEvidence)];
+        return [
+            'grade'  => 'S',
+            'source' => (string) $sSource,
+            'reason' => vg_asset_grade_reason($sEvidence),
+        ];
     }
 
     if ($ext > 0) {
         return [
             'grade'  => 'O',
+            'source' => 'external_exposure',
             'reason' => vg_asset_grade_reason([$oEvidence, '사람 확인 전에는 확정되지 않습니다.']),
         ];
     }
 
     return null;   // 근거 없음 → 제안하지 않는다
-}
-
-/**
- * 제안값을 tb_host 에 반영한다. **확정값(grade)은 건드리지 않는다.**
- *   수집 때마다 불리므로 값이 같으면 UPDATE 자체를 하지 않는다.
- */
-function vg_asset_grade_refresh(PDO $pdo, int $hostId, int $scanId): void
-{
-    $s = vg_asset_grade_suggest($pdo, $scanId);
-    $grade  = $s['grade'] ?? null;
-    $reason = $s === null ? null : mb_strimwidth($s['reason'], 0, 255, '');
-
-    $st = $pdo->prepare(
-        'UPDATE tb_host SET grade_suggested = ?, grade_suggested_reason = ?
-          WHERE host_id = ?
-            AND (
-              COALESCE(grade_suggested, \'\') <> COALESCE(?, \'\')
-              OR COALESCE(grade_suggested_reason, \'\') <> COALESCE(?, \'\')
-            )'
-    );
-    $st->execute([$grade, $reason, $hostId, $grade, $reason]);
 }
 
 /**
