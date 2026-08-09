@@ -1744,23 +1744,31 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--assets .card > table:only-child td:last-child { padding-right: .9rem; }
 .page--assets .card > table:only-child tbody tr[class*="sev-"] td:first-child { padding-left: calc(.9rem - 3px); }
 
+/* 통제 기준 매핑: 통제명이 표 기본 .92rem 이라 이웃 칸(.why, .82rem)보다 혼자 커 보여
+ * 표가 한 톤으로 읽히지 않았다. 같은 크기로 낮추되 링크라는 건 색으로 남긴다. */
+.page--control_mapping .control-name { font-size: .82rem; }
+
 /* 상세 화면: 서술은 읽기 좋은 길이로, 증거 표는 폭을 그대로 쓴다. */
 .page--host .page__main, .page--cve .page__main, .page--compliance_rule .page__main,
-.page--advisory .page__main, .page--user .page__main { max-width: 1480px; }
+.page--advisory .page__main, .page--user .page__main, .page--control .page__main { max-width: 1480px; }
 .page--host .hero, .page--cve .hero, .page--user .hero { background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--info-bg) 45%, var(--surface))); }
-.page--advisory .prose, .page--cve .prose, .page--compliance_rule .prose { max-width: 78ch; line-height: 1.75; }
+.page--advisory .prose, .page--cve .prose, .page--compliance_rule .prose,
+.page--control .prose { max-width: 78ch; line-height: 1.75; }
 .page--host .subtabs, .page--cve .subtabs { border: 1px solid var(--line); border-radius: 14px; padding: .25rem; background: var(--surface); box-shadow: var(--shadow); }
 .page--host .subtabs a, .page--cve .subtabs a { border: 0; border-radius: 10px; margin: 0; }
 .page--host .subtabs a.on, .page--cve .subtabs a.on { background: var(--info-bg); color: var(--accent-2); }
 /* 요약 먼저, 증거 다음, 원문 참조는 맨 뒤 — 섹션 사이를 선으로 끊는다. */
-.page--cve section, .page--compliance_rule section { margin: 2.2rem 0 0; padding-top: .2rem; }
-.page--cve section + section, .page--compliance_rule section + section { border-top: 1px solid var(--line); padding-top: 1.5rem; }
+.page--cve section, .page--compliance_rule section, .page--control section { margin: 2.2rem 0 0; padding-top: .2rem; }
+.page--cve section + section, .page--compliance_rule section + section,
+.page--control section + section { border-top: 1px solid var(--line); padding-top: 1.5rem; }
 .page--host section > h2, .page--cve section > h2 { display: flex; align-items: center; gap: .45rem; }
 .page--cve section > h2, .page--compliance_rule section > h2 { margin-top: 0; font-size: 1.12rem; }
 .page--cve #summary .card, .page--compliance_rule #rationale .card { font-size: .98rem; line-height: 1.75; }
 .page--cve #references, .page--compliance_rule #refs { color: var(--text-2); }
-.page--host .stat-grid, .page--cve .stat-grid, .page--compliance_rule .stat-grid { gap: 0; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--surface); }
-.page--host .stat, .page--cve .stat, .page--compliance_rule .stat { padding: 1rem 1.15rem; border-right: 1px solid var(--line); }
+.page--host .stat-grid, .page--cve .stat-grid, .page--compliance_rule .stat-grid,
+.page--control .stat-grid { gap: 0; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--surface); }
+.page--host .stat, .page--cve .stat, .page--compliance_rule .stat,
+.page--control .stat { padding: 1rem 1.15rem; border-right: 1px solid var(--line); }
 
 /* 관리 화면: 액션은 분명하되 신원·상태보다 뒤로 물러난다. */
 .page--connectors .page__main, .page--users .page__main, .page--permissions .page__main,
