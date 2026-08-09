@@ -13,12 +13,18 @@ CREATE TABLE IF NOT EXISTS tb_asset_grade_suggestion_history (
   result_fingerprint     BINARY(32) NOT NULL,
   source_collected_at     DATETIME NULL,
   observed_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- 같은 결과 replay 는 유일키로 행이 늘지 않으므로, "마지막으로 다시 본 시각"을 따로 둔다.
+  last_source_collected_at DATETIME NULL,
+  last_observed_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- 7일 클램프의 근거는 db/migrations/20260809220000_asset_grade_history_replay_recency.sql 주석 참고
+  -- (에이전트가 보고한 수집 시각은 신뢰 경계 밖이라 하한을 둔다).
   effective_at           DATETIME GENERATED ALWAYS AS
-                           (LEAST(COALESCE(source_collected_at, observed_at), observed_at)) STORED,
+                           (LEAST(GREATEST(COALESCE(last_source_collected_at, last_observed_at),
+                             DATE_SUB(last_observed_at, INTERVAL 7 DAY)), last_observed_at)) STORED,
   created_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (suggestion_history_id),
   UNIQUE KEY uq_asset_grade_suggestion_observation (host_id, scan_id, result_fingerprint),
-  KEY idx_asset_grade_suggestion_host_time (host_id, effective_at, suggestion_history_id),
+  KEY idx_asset_grade_suggestion_host_time (host_id, effective_at, last_observed_at, suggestion_history_id),
   KEY idx_asset_grade_suggestion_scan (scan_id),
   CONSTRAINT fk_asset_grade_suggestion_host FOREIGN KEY (host_id) REFERENCES tb_hosts(id) ON DELETE CASCADE,
   CONSTRAINT fk_asset_grade_suggestion_scan FOREIGN KEY (scan_id) REFERENCES tb_scans(id) ON DELETE CASCADE
