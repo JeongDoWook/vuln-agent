@@ -396,7 +396,10 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
         $thClass = $thClasses ? ' class="' . vg_h(implode(' ', $thClasses)) . '"' : '';
         // 'title' — 열 이름만으로 뜻이 안 잡히는 열(약어·등급 기호)의 짧은 범례 자리. 한 줄로 끝낸다.
         $thTitle = is_array($h) && !empty($h['title']) ? ' title="' . vg_h((string) $h['title']) . '"' : '';
-        echo '<th' . $thClass . $style . $thTitle . '>' . vg_h($label) . '</th>';
+        // 'label_html' — 머리글이 글자가 아니라 조작부인 열(선택 열의 전체선택 체크박스).
+        //   이미 이스케이프된 HTML 을 그대로 넣는다. 'label' 은 그대로 두어야 한다(칸의 data-label).
+        $thHtml = is_array($h) && isset($h['label_html']) ? (string) $h['label_html'] : vg_h($label);
+        echo '<th' . $thClass . $style . $thTitle . '>' . $thHtml . '</th>';
     }
     echo '</tr></thead><tbody>';
     foreach ($rows as $row) {
