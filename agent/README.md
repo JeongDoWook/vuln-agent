@@ -1,6 +1,6 @@
 # vuln-agent 에이전트 — 설치·운영 가이드
 
-> 현행 버전: 3.13 (문서 기준 2026-08-10). 실제 값은 `vuln-inventory-agent.sh:37` 의
+> 현행 버전: 3.13 (문서 기준 2026-08-11). 실제 값은 `vuln-inventory-agent.sh:37` 의
 > `SCRIPT_VERSION` 이 정본이다. 기본 경로 IP 보고, 장시간 단계 heartbeat, 웹 중단 요청을 지원하고,
 > 3.9 에서 cgroup 재실행 가드를, 3.10 에서 meta 3필드(`elapsed_seconds`·`peak_rss_mb`·`cpu_seconds`)
 > 누락을 고쳤다. 3.11 부터 **헤더만 있는 섹션 파일도 그대로 전송한다** — 중앙이 "수집했고 0건"과
@@ -384,7 +384,7 @@ Go 바이너리 탐색은 비용이 커서 3중으로 캡핑한다 — `GO_BIN_M
 ### 계정 인벤토리 — 계정명·마지막 로그인이 중앙으로 간다 (개인정보 고지)
 
 ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을 보낸다(그전엔 설정 정책만
-봤다). 원자료는 `vuln-inventory-agent.sh:2091-2101` 의 네 키다 — 전부 읽기 전용이고
+봤다). 원자료는 `vuln-inventory-agent.sh:2193-2203` 의 네 키다 — 전부 읽기 전용이고
 `getent`/`awk` 수준이라 가볍다(파일시스템 전수 `find` 는 하지 않는다).
 
 | 페이로드 키 | 무엇을 읽나 | 무엇을 보내나 |
@@ -410,7 +410,7 @@ ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을
 
 | 페이로드 키 | 수집 함수 | 보내는 것 |
 |---|---|---|
-| `langpkg.pom_deps` | `collect_pom_direct_deps` (`vuln-inventory-agent.sh:1637`) | `PROJECT_SCAN_ROOTS` 아래 `pom.xml` 을 `경로\|base64` 로. 파일당 128KB(`POM_DEP_FILE_MAX_BYTES`) 초과분은 건너뛴다 |
+| `langpkg.pom_deps` | `collect_pom_direct_deps` (`vuln-inventory-agent.sh:1739`) | `PROJECT_SCAN_ROOTS` 아래 `pom.xml` 을 `경로\|base64` 로. 파일당 128KB(`POM_DEP_FILE_MAX_BYTES`) 초과분은 건너뛴다 |
 | `containers.sbom` | `collect_sbom` (`vuln-inventory-agent.sh:843`) | `/opt/vuln-agent/sbom/*.json`(CycloneDX·SPDX)을 `이름\|형식\|base64` 로. 파일당 2MB 상한 |
 
 - pom 은 왜 원문인가: 옛 awk 한 줄 파싱이 `<exclusions>`·`<dependencyManagement>`·한 줄
@@ -419,6 +419,10 @@ ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을
 - 전이 의존은 CycloneDX 의 `dependencies[]` 와 SPDX 의 `relationships` 에서 온다(부모→자식 엣지).
   SPDX 는 `DEPENDS_ON`(정방향)·`DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역방향)만 채택한다 —
   `CONTAINS` 까지 엣지로 보면 이미지의 모든 패키지가 루트의 직접 의존이 되어 직접/전이 구분이 사라진다.
+- 중앙은 이 엣지로 그래프 화면(`depgraph.php`)만 그리는 게 아니라, **취약점 행이 전이 의존성인지**
+  판정해 조치 문구를 "직접 조치 불가 — X 가 끌어옴"으로 바꾸고 **부모별로 묶어 "이 하나를 올리면
+  N건 해결"** 을 자산 상세 취약점 탭에 올린다. 즉 SBOM·pom 을 안 올리는 노드는 이 판정 자체가
+  생기지 않는다(화면엔 아무것도 표시되지 않는다 — "모름"으로 도배하지 않는다).
 - 언어패키지 인벤토리와 **예산이 분리돼 있다**(원문 전송이 요약 스트림보다 무거워 서로를
   갉아먹지 않게). 전체 스캔은 `PROJECT_SCAN_TIMEOUT`(기본 300초)·`SCAN_MAX_FILES`(3000)·
   `SCAN_MAX_DEPTH`(8)로 캡핑된다.
@@ -447,7 +451,7 @@ ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을
 > 공백 없는 패턴만 매칭해 **조용히 아무것도 못 바꿨다**(awk `sub` 은 매치 실패해도 오류가
 > 없다). jq 가 깔린 거의 모든 호스트에서 재현됐고 운영 DB 에서 해당 필드가 전부 NULL 로
 > 확인됐다. 지금은 `jq -sc` + 공백을 허용하는 정규식 양쪽으로 막았다
-> (`vuln-inventory-agent.sh:2157`·`2202`). 값이 계속 비는 노드는 `agent_push.sh` 로 본체를
+> (`vuln-inventory-agent.sh:2259`·`2306`). 값이 계속 비는 노드는 `agent_push.sh` 로 본체를
 > 올리면 다음 수집부터 채워진다.
 
 ## 실행 옵션
