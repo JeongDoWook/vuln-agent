@@ -1487,6 +1487,95 @@ emit_gemspec_name() {
   done
 }
 
+# yarn.lock 에서 해결된 버전을 뽑는다. 출력: npm|이름|버전
+#   v1(Classic)  : `lodash@^4.17.20:` 헤더 + 들여쓴 `version "4.17.21"`
+#   v2+(Berry)   : `"lodash@npm:^4.17.20":` 헤더 + 들여쓴 `version: 4.17.21`
+#   두 형식의 차이는 "헤더 따옴표 / 값 따옴표 / npm: 프로토콜 접두" 뿐이라 한 awk 로 처리한다(KISS).
+#   · 헤더에 `"@babel/core@^7.0.0, @babel/core@^7.1.0":` 처럼 범위가 여러 개 붙는다 → 첫 조각만 본다
+#     (어느 조각이든 이름은 같다).
+#   · 스코프 패키지 `@scope/name` 의 선두 `@` 와 범위 구분자 `@` 를 혼동하면 이름이 통째로 깨진다
+#     → **마지막 `@`** 기준으로 가른다.
+#   · 범위가 workspace:/link:/file:/patch:/git 등이면 레지스트리 패키지가 아니다(자기 자신·로컬 경로).
+#     버전이 `0.0.0-use.local` 같은 가짜값이라 인벤토리에 넣으면 오탐만 만든다 → 버린다.
+#   · 이름이 npm 명명규칙에서 벗어나면(확신 불가) 아무것도 내지 않는다.
+emit_yarn_lock() {
+  awk '
+    /^[^ \t#].*:[ \t]*$/ {                          # 들여쓴 줄·주석은 헤더가 아니다
+      hdr = $0; sub(/:[ \t]*$/, "", hdr)
+      gsub(/"/, "", hdr)
+      sub(/,.*$/, "", hdr)                          # 첫 범위 조각만
+      gsub(/^[ \t]+|[ \t]+$/, "", hdr)
+      at = 0
+      for (i = length(hdr); i > 1; i--) if (substr(hdr, i, 1) == "@") { at = i; break }
+      name = ""; want = 0
+      if (at > 1) {
+        name = substr(hdr, 1, at - 1)
+        spec = substr(hdr, at + 1)
+        if (name ~ /^(@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+$/ &&
+            spec !~ /^(workspace|link|portal|file|patch|exec|git|https?|ssh):/ && spec !~ /git\+/) want = 1
+      }
+      next
+    }
+    want && /^[ \t]+version[ \t:]/ {
+      v = $0
+      sub(/^[ \t]+version[ \t]*:?[ \t]*/, "", v)
+      gsub(/"/, "", v); gsub(/^[ \t]+|[ \t]+$/, "", v)
+      if (v ~ /^[0-9]/) print "npm|" name "|" v
+      want = 0
+    }
+  ' "$1"
+}
+
+# pnpm-lock.yaml 의 `packages:` 블록 키에서 이름·버전을 뽑는다. 출력: npm|이름|버전
+#   YAML 파서(yq)를 필수 의존으로 만들지 않는다 — 최소 호스트엔 없다. 키 한 줄만 읽으면 충분하다.
+#   lockfileVersion 별 표기: v5 `/lodash/4.17.21:` · v6 `/lodash@4.17.21:` · v9 `lodash@4.17.21:`
+#   피어 접미사(`(react@18.0.0)`)와 v5 의 `_peer` 접미사는 잘라낸다.
+#   `snapshots:`(v9) 는 packages 와 같은 키를 중복해 갖고 있어 읽지 않는다 — packages 만으로 충분.
+#   확신할 수 없는 줄(버전이 숫자로 시작하지 않거나 이름이 규칙 밖)은 버린다.
+emit_pnpm_lock() {
+  awk '
+    /^[^ \t#]/ { inpkgs = ($0 ~ /^packages:[ \t]*$/); next }   # 최상위 키 경계
+    !inpkgs { next }
+    /^  [^ \t]/ {
+      k = $0; sub(/:[ \t]*$/, "", k)
+      gsub(/"|'"'"'/, "", k); gsub(/^[ \t]+|[ \t]+$/, "", k)
+      sub(/\(.*$/, "", k)                          # 피어 접미사 (react@18.0.0)
+      sub(/^\//, "", k)
+      if (k ~ /(^|\/)(file|link):/) next
+      # ① v6+ 의 `이름@버전` 으로 먼저 가른다(마지막 @ 기준 — 스코프 선두 @ 와 헷갈리면 안 된다).
+      at = 0
+      for (i = length(k); i > 1; i--) if (substr(k, i, 1) == "@") { at = i; break }
+      if (at > 1 && emit(substr(k, 1, at - 1), substr(k, at + 1))) next
+      # ② 아니면 v5 의 `/이름/버전` 이다. 이 표기에서만 `_react@17.0.2` 피어 접미사가 붙는데,
+      #    버전 쪽에만 잘라낸다 — 이름엔 `_` 가 정상으로 쓰인다(@types/babel__core).
+      sl = 0
+      for (i = length(k); i > 1; i--) if (substr(k, i, 1) == "/") { sl = i; break }
+      if (sl < 2) next
+      ver = substr(k, sl + 1); sub(/_.*$/, "", ver)
+      emit(substr(k, 1, sl - 1), ver)
+    }
+    function emit(name, ver) {
+      # 스코프는 반드시 `@` 로 시작한다 — 이 조건이 없으면 v5 의 `react-dom/17.0.2_react` 가
+      #   이름으로 통과해 `react-dom/17.0.2_react` 라는 없는 패키지가 잡힌다.
+      if (name !~ /^(@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+$/ || ver !~ /^[0-9]/) return 0
+      print "npm|" name "|" ver
+      return 1
+    }
+  ' "$1"
+}
+
+# poetry.lock 의 `[[package]]` 블록에서 name/version 을 뽑는다. 출력: pip|이름|버전
+#   Cargo.lock 분기와 구조는 같지만 그쪽은 헤더를 안 본다 — poetry 는 `[package.dependencies]`·
+#   `[package.extras]` 같은 하위 테이블이 뒤따라서, 헤더를 보지 않으면 거기 값을 패키지로 오인한다.
+emit_poetry_lock() {
+  awk '
+    /^\[/ { inpkg = ($0 ~ /^\[\[package\]\]/); n = ""; next }
+    !inpkg { next }
+    /^name = / { n = $0; gsub(/^name = "|"$/, "", n); next }
+    /^version = / { v = $0; gsub(/^version = "|"$/, "", v); if (n != "" && v ~ /^[0-9]/) print "pip|" n "|" v }
+  ' "$1"
+}
+
 # 설치본에서 직접 읽는 고신뢰 소스 — METADATA/lock/jar. 출력: manager|name|version
 # 파일 수·깊이는 SCAN_MAX_FILES/SCAN_MAX_DEPTH 로 제한한다. sort 로 출력 순서를 고정해
 # 파일시스템 탐색 순서가 달라져도 같은 결과가 나오게 한다(content_hash 처닝 방지).
@@ -1497,11 +1586,24 @@ collect_project_deps_installed() {
     while IFS= read -r f; do
       count=$((count+1)); [ "$count" -le "$SCAN_MAX_FILES" ] || break 2
       case "$f" in
-        */METADATA) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);lic=$(sed -n 's/^License: //p' "$f"|head -1);[ -n "$name" ]&&[ -n "$ver" ]&&{ printf 'pip|%s|%s\n' "$name" "$ver"; [ -n "$lic" ]&&[ "$lic" != "UNKNOWN" ]&&printf 'pip|%s|%s|%s\n' "$name" "$ver" "$lic" >&3; };;
+        # egg-info/PKG-INFO 는 구식(setuptools) 파이썬 패키지가 남기는 메타로, dist-info/METADATA 와
+        #   `Name:`/`Version:`/`License:` 필드 구조가 같다 → 같은 분기에 태운다(DRY). 라이선스 fd 3
+        #   경로도 그대로 탄다 — 여기만 빼면 같은 파이썬 패키지인데 소스에 따라 라이선스가 비게 된다.
+        */METADATA|*.egg-info/PKG-INFO) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);lic=$(sed -n 's/^License: //p' "$f"|head -1);[ -n "$name" ]&&[ -n "$ver" ]&&{ printf 'pip|%s|%s\n' "$name" "$ver"; [ -n "$lic" ]&&[ "$lic" != "UNKNOWN" ]&&printf 'pip|%s|%s|%s\n' "$name" "$ver" "$lic" >&3; };;
         */Cargo.lock) awk 'BEGIN{n=""}/^name = /{gsub(/^name = "|"$/,"",$0);n=$0}/^version = /{gsub(/^version = "|"$/,"",$0);if(n!="")print "cargo|"n"|"$0}' "$f";;
         */Gemfile.lock) emit_gemfile_lock "$f";;
         */specifications/*.gemspec) emit_gemspec_name "$(basename "$f")";;
         */package-lock.json) have jq&&jq -r '.packages//{}|to_entries[]|select(.value.name and .value.version)|"npm|\(.value.name)|\(.value.version)"' "$f" 2>/dev/null;;
+        # yarn/pnpm 을 쓰는 프로젝트엔 package-lock.json 이 아예 없다 — 이 둘이 없으면 앱 의존성이
+        #   통째로 0건이 된다(npm ls -g 는 전역 설치만 보므로 대신하지 못한다).
+        */yarn.lock) emit_yarn_lock "$f";;
+        */pnpm-lock.yaml) emit_pnpm_lock "$f";;
+        */poetry.lock) emit_poetry_lock "$f";;
+        # Pipfile.lock 은 JSON 이라 jq 가 가장 단순하다(기존 package-lock.json 과 같은 have jq 가드).
+        #   `develop`(개발 의존성)은 담지 않는다 — 운영 자산에 실제로 깔려 도는 건 `default` 쪽이고,
+        #   develop 까지 넣으면 배포본에 없는 패키지의 취약점이 그 호스트 몫으로 잡힌다(오탐).
+        #   version 값은 `"==1.2.3"` 형태라 `==` 를 뗀다.
+        */Pipfile.lock) have jq&&jq -r '.default//{}|to_entries[]|select(.value.version)|"pip|\(.key)|\(.value.version|sub("^==";""))"' "$f" 2>/dev/null;;
         # composer 는 설치본 메타(installed.json)에 license 필드를 그대로 담고 있다 — 배열이면
         #   "OR" 로 이어붙인다(SPDX 복수라이선스 표기 관례). 라이선스 없는 패키지는 조용히 건너뛴다.
         */composer/installed.json) have jq&&{ jq -r '(.packages//.)[]?|select(.name and .version)|"composer|\(.name)|\(.version|sub("^v";""))"' "$f" 2>/dev/null; jq -r '(.packages//.)[]?|select(.name and .version and .license)|"composer|\(.name)|\(.version|sub("^v";""))|\(if (.license|type)=="array" then (.license|join(" OR ")) else .license end)"' "$f" 2>/dev/null >&3; };;
@@ -1509,7 +1611,7 @@ collect_project_deps_installed() {
         *.jar) emit_jar_meta "$f" "$(basename "$f")"; emit_nested_jars "$f";;
         *.war|*.ear) emit_nested_jars "$f";;
       esac
-    done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name Gemfile.lock -o -path '*/specifications/*.gemspec' -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -"$SCAN_MAX_FILES")
+    done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -path '*.egg-info/PKG-INFO' -o -name Cargo.lock -o -name Gemfile.lock -o -path '*/specifications/*.gemspec' -o -name package-lock.json -o -name yarn.lock -o -name pnpm-lock.yaml -o -name poetry.lock -o -name Pipfile.lock -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -"$SCAN_MAX_FILES")
   done | sort -u
 }
 
