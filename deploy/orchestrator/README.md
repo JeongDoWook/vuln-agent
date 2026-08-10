@@ -1,6 +1,6 @@
 # orchestrator — 마일스톤 세션 + 병렬 워커 세션
 
-> 문서 기준: 2026-08-04. 이 도구는 선택적 개발 보조이며 제품 런타임과 무관하다.
+> 문서 기준: 2026-08-11. 이 도구는 선택적 개발 보조이며 제품 런타임과 무관하다.
 
 한 세션(**마일스톤/메인**)이 계획만 들고, 실제 작업은 **독립 claude 세션**을 창마다
 띄워서 시킨다. Windows PowerShell 전용 — tmux/cmux 불필요.
@@ -108,8 +108,8 @@ GitLab 이슈 연동·Gate 승인·spec/qa/push/done 나머지 단계는 과설�
 | `status.ps1` | 워커 감독 — 결과 파일·git·PR 상태 한눈에 (`-Watch` 주기 갱신) |
 | `watch-workers.ps1` | **자동 이어받기** — 전원이 끝날 때까지 대기했다가 취합 리포트 후 종료 |
 | `merge-milestone.ps1` | **마일스톤 통합 PR(옵션 B)** — 전원 완료를 기다렸다가 워커 브랜치들을 로컬 병합해 PR 1개로 낸다 |
-| `stop-worker.ps1` | 워커 정리 — 워크트리 제거 + 매니페스트 삭제 |
-| `reap-merged.ps1` | **병합 자동정리** — PR 이 main 에 병합된 워커를 감지해 stop-worker 실행(gh 필요) |
+| `stop-worker.ps1` | 워커 정리 — 워크트리 제거 + 매니페스트 삭제. 결과·로그(`.omc/results`·`.omc/logs`)는 남기고, `-Purge` 를 주면 그것까지 지운다 |
+| `reap-merged.ps1` | **병합 자동정리** — PR 이 main 에 병합된 워커를 감지해 stop-worker 실행(gh 필요, `-Purge` 는 그대로 전달) |
 | `worker-stop-hook.ps1` | **완료 자동기록** — 워커 세션이 idle 될 때 git 상태로 결과 파일을 갱신(spawn 이 주입) |
 | `history-log.ps1` | 이벤트 히스토리 기록 헬퍼(dot-source) — 아래 "히스토리" 참고 |
 | `native-call.ps1` | 네이티브 exe 호출 래퍼 `Invoke-Native`(dot-source) — 아래 "PS 5.1 stderr 승격" 참고 |
