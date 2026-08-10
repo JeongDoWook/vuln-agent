@@ -72,11 +72,8 @@ vg_header('제거 권고', 'nofix_packages');
       'count_label' => '개 패키지',
   ]); ?>
 
-  <?php vg_subtabs([
-      'findings' => ['label' => '현황', 'href' => '/findings.php'],
-      'changes'  => ['label' => '변화', 'href' => '/changes.php'],
-      'nofix'    => ['label' => '제거 권고', 'href' => '/nofix-packages.php'],
-  ], 'nofix'); ?>
+  <?php /* 탐지 결과 계열의 갈래 — 정의는 nav.php 의 vg_findings_subtabs() 한 곳에만 있다. */ ?>
+  <?php vg_findings_subtabs('nofix'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
