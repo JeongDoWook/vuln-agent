@@ -203,6 +203,31 @@ function vg_scope_label(?string $s): string {
     return $m[$s ?? ''] ?? (string) $s;
 }
 
+/* 패키지 무결성 플래그(rpm -Va / dpkg --verify 원본) → 사람이 읽는 설명.
+ *   ★ 어휘는 **단정하지 않는다** — "변조됨"이 아니라 "패키지 원본과 다름(관측)"이다.
+ *     운영자가 직접 바꾼 파일일 수 있고, 우리가 아는 건 "설치 기록과 다르다"는 사실뿐이다.
+ *   dpkg 는 판정하지 못한 항목을 '?' 로 준다 — 알 수 없는 자리는 설명하지 않는다. */
+const VG_INTEGRITY_FLAG_LABEL = [
+    '5' => '내용 다름',
+    'S' => '크기 다름',
+    'M' => '권한 다름',
+    'U' => '소유자 다름',
+    'G' => '그룹 다름',
+    'L' => '링크 대상 다름',
+    'D' => '장치번호 다름',
+    'T' => '수정시각 다름',
+    'P' => '권한(capability) 다름',
+];
+
+function vg_integrity_flag_label(string $flags): string {
+    if (strcasecmp(trim($flags), 'missing') === 0) { return '파일 없음'; }
+    $out = [];
+    foreach (str_split($flags) as $ch) {
+        if (isset(VG_INTEGRITY_FLAG_LABEL[$ch])) { $out[$ch] = VG_INTEGRITY_FLAG_LABEL[$ch]; }
+    }
+    return $out ? implode(' · ', $out) : '차이 있음';
+}
+
 /* 수집 단계(tb_collection_stage.stage_code) → 한글 라벨.
  *   ingest.php 가 스캔마다 이 5종만 기록한다(고정된 알려진 구조라 하드코딩이 맞다 — 새 단계는
  *   생산자와 함께 여기 한 줄을 늘린다). 모르는 코드가 오면 코드 원문을 그대로 보여준다. */

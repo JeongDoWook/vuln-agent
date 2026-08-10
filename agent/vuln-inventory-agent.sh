@@ -19,6 +19,10 @@
 #    sudo ./vuln-inventory-agent.sh            # cgroup CPU/메모리 상한이 기본 적용
 #    ./vuln-inventory-agent.sh --no-changelog  # 가장 무거운 단계 생략
 #    ./vuln-inventory-agent.sh --timeout 10    # 명령별 타임아웃(초)
+#    ./vuln-inventory-agent.sh --verify-files  # 패키지 무결성 검증(rpm -Va / dpkg --verify)
+#        # 기본 꺼짐. 설치된 모든 패키지의 모든 파일을 해시하므로 수 분 + 무거운 디스크 IO 다.
+#        # 상한은 --verify-timeout(기본 300초). 잘리면 "부분 결과"로 표시해 보낸다.
+#    ./vuln-inventory-agent.sh --verify-files --verify-timeout 600
 #    ./vuln-inventory-agent.sh \
 #        --send http://SERVER:8080/ingest.php \
 #        --token 호스트별토큰                   # 수집 후 중앙 서버로 전송(파일 저장은 유지)
@@ -30,7 +34,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.11"
+SCRIPT_VERSION="3.12"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
@@ -42,6 +46,12 @@ SCAN_MAX_FILES="${SCAN_MAX_FILES:-3000}"     # 프로젝트 의존성 스캔 파
 SCAN_MAX_DEPTH="${SCAN_MAX_DEPTH:-8}"        # 프로젝트 의존성 스캔 디렉터리 깊이 상한
 PROJECT_SCAN_TIMEOUT="${PROJECT_SCAN_TIMEOUT:-300}" # 프로젝트 의존성 스캔 전체 상한(초)
 DO_CHANGELOG=1                        # 핵심 패키지 CVE changelog 수집 여부
+# 패키지 무결성 검증(rpm -Va / dpkg --verify) — **기본 꺼짐**. 설치된 모든 패키지의 모든 파일을
+#   해시하므로 시스템에 따라 수 분 + 무거운 디스크 IO 다. "대상 서버에 무리를 주지 않는다"는
+#   이 에이전트의 대전제와 정면으로 부딪히므로 `--verify-files` 를 준 실행에서만 돈다.
+DO_VERIFY=0
+VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-300}"      # 무결성 검증 단독 상한(초). CMD_TIMEOUT(20초)로는 무조건 잘린다.
+VERIFY_MAX_LINES="${VERIFY_MAX_LINES:-500}"  # 전송할 위반 줄 수 상한(피크 메모리가 페이로드 크기에 비례)
 DO_LIMIT="${AGENT_LIMIT:-1}"          # 기본 cgroup 리밋 사용(AGENT_LIMIT=0 으로만 해제)
 OUT=""
 SEND_URL="${SEND_URL:-}"             # --send : 중앙 수신 API(ingest.php) URL
@@ -62,6 +72,8 @@ while [ $# -gt 0 ]; do
     -o|--output)     OUT="$2"; shift 2 ;;
     --limit)         DO_LIMIT=1; shift ;;
     --no-changelog)  DO_CHANGELOG=0; shift ;;
+    --verify-files)  DO_VERIFY=1; shift ;;
+    --verify-timeout) VERIFY_TIMEOUT="$2"; shift 2 ;;
     --timeout)       CMD_TIMEOUT="$2"; shift 2 ;;
     --send)          SEND_URL="$2"; shift 2 ;;
     --token)         SEND_TOKEN="$2"; shift 2 ;;
@@ -78,6 +90,9 @@ if [ -n "$COMMAND_ID" ]; then
     ''|*[!0-9]*) echo "--command-id 는 숫자여야 합니다: $COMMAND_ID" >&2; exit 1 ;;
   esac
 fi
+case "$VERIFY_TIMEOUT" in
+  ''|*[!0-9]*|0) echo "--verify-timeout 은 1 이상의 숫자여야 합니다: $VERIFY_TIMEOUT" >&2; exit 1 ;;
+esac
 
 have()    { command -v "$1" >/dev/null 2>&1; }
 is_root() { [ "$(id -u)" -eq 0 ]; }
@@ -227,6 +242,9 @@ if [ "$DO_LIMIT" = 1 ] && [ "$_RELAUNCHED" != 1 ] && is_root && have systemd-run
   relaunch_args=(--relaunched --timeout "$CMD_TIMEOUT")
   [ -n "$OUT" ]                && relaunch_args+=(-o "$OUT")
   [ "$DO_CHANGELOG" = 0 ]      && relaunch_args+=(--no-changelog)
+  # 무결성 검증도 여기서 다시 붙인다 — 안 붙이면 --limit 과 함께 준 --verify-files 가
+  #   재실행 때 통째로 사라져 "켰는데 아무것도 안 오는" 상태가 된다(위 사고와 같은 클래스).
+  [ "$DO_VERIFY" = 1 ]         && relaunch_args+=(--verify-files --verify-timeout "$VERIFY_TIMEOUT")
   [ -n "$SEND_URL" ]           && relaunch_args+=(--send "$SEND_URL")
   [ -n "$SEND_TOKEN" ]         && relaunch_args+=(--token "$SEND_TOKEN")
   [ -n "$COMMAND_ID" ]         && relaunch_args+=(--command-id "$COMMAND_ID")
@@ -1590,6 +1608,79 @@ elif have dpkg-query; then
   cap pkg count  'dpkg-query -W 2>/dev/null | wc -l'
   cap pkg recent 'grep -E " (install|upgrade) " /var/log/dpkg.log 2>/dev/null | tail -n 50'
   cap pkg holds  'apt-mark showhold 2>/dev/null'
+fi
+
+# ==================================================================
+# 3-b) 패키지 무결성 검증 (기본 꺼짐 — `--verify-files` 일 때만)
+#   패키지 관리자는 설치 시 파일마다 digest·권한·소유자를 기록해 둔다. 그걸 현재 디스크와
+#   대조하면 "설치 이후 파일이 바뀌었다"를 잡는다(N2SF IN 구성요소 무결성).
+#     rpm  : rpm -Va --nomtime --nouser --nogroup  → "SM5....T c /etc/…"
+#     dpkg : dpkg --verify                         → "??5?????? /usr/…"(md5sums 기반)
+#   ★ 비용: 설치된 **모든 패키지의 모든 파일**을 해시한다 → 수 분 + 무거운 디스크 IO.
+#     그래서 기본 꺼짐 + 전용 상한(VERIFY_TIMEOUT). nice 19/ionice idle 은 위에서 이 프로세스에
+#     이미 걸려 있어 자식인 rpm/dpkg 도 그대로 상속한다.
+#   ★ 잘렸으면 반드시 partial 로 알린다 — 중앙이 "위반 0건 = 깨끗함"으로 오독하면 안 된다.
+#   ★ `c`(설정파일) 줄은 버린다 — 관리자가 고치는 게 정상이라 전부 노이즈다.
+#   ※ GPG 서명 검증은 여기 범위가 아니다(파일 무결성만).
+collect_integrity() {
+  local raw="$TMP/.integrity-raw" parsed="$TMP/.integrity-parsed" totf="$TMP/.integrity-total"
+  local cmd="" rc=0 total=0 fl pa pkg
+  if have rpm; then
+    cmd='rpm -Va --nomtime --nouser --nogroup'
+  elif have dpkg; then
+    cmd='dpkg --verify'
+  else
+    return 0            # 지원하는 패키지 관리자가 없으면 "검사함"조차 기록하지 않는다
+  fi
+  timeout -k 5 "$VERIFY_TIMEOUT" bash -c "$cmd" > "$raw" 2>/dev/null || rc=$?
+  put integrity checked "1"
+  # rpm -Va·dpkg --verify 는 **위반이 있으면 정상 동작이어도 종료코드가 0 이 아니다.**
+  #   그래서 실패로 볼 수 있는 건 timeout 이 끊은 경우(124, KILL 은 137)뿐이다.
+  case "$rc" in 124|137) put integrity partial "1" ;; esac
+
+  # 플래그/파일종류/경로 분해. 경로에 공백이 있을 수 있어 필드 분할 대신 앞에서부터 깎는다.
+  awk -v max="$VERIFY_MAX_LINES" -v totf="$totf" '
+    {
+      line = $0
+      n = index(line, " ")
+      if (n == 0) next
+      flags = substr(line, 1, n - 1)
+      rest  = substr(line, n + 1)
+      sub(/^[ \t]+/, "", rest)
+      # 파일종류 한 글자(c/d/g/l/r) 필드는 있을 수도 없을 수도 있다. 경로는 항상 "/" 로
+      #   시작하므로 "한 글자 + 공백" 이면 종류 필드로 본다(오인 위험 없음).
+      if (rest ~ /^[a-zA-Z][ \t]/) { ftype = substr(rest, 1, 1); rest = substr(rest, 2); sub(/^[ \t]+/, "", rest) }
+      else                         { ftype = "" }
+      if (ftype == "c") next                      # 설정파일 = 정상적인 변경, 버린다
+      if (substr(rest, 1, 1) != "/") next         # 경로가 아닌 잡음 줄
+      gsub(/\|/, "_", flags); gsub(/\|/, "_", rest)   # 구분자 오염 방지
+      total++
+      if (total <= max) { printf "%s|%s\n", flags, rest }
+    }
+    END { printf "%d", total + 0 > totf }
+  ' "$raw" > "$parsed"
+
+  total="$(cat "$totf" 2>/dev/null || echo 0)"
+  put integrity total "$total"
+  # 상한을 넘겼으면 "잘렸다"는 사실을 total 과 함께 보낸다(목록만 보고 전수로 읽지 않게).
+  [ "$total" -gt "$VERIFY_MAX_LINES" ] && put integrity truncated "1"
+
+  # 위반 파일이 속한 패키지는 rpm -Va/dpkg --verify 가 알려주지 않는다 → 조회한다.
+  #   상한(VERIFY_MAX_LINES)만큼만 도므로 조회 비용도 그 상한에 묶인다.
+  {
+    echo "package|flags|path"
+    while IFS='|' read -r fl pa; do
+      [ -n "$pa" ] || continue
+      pkg="$(file_to_pkg "$pa")"
+      printf '%s|%s|%s\n' "${pkg:-미상}" "$fl" "$pa"
+    done < "$parsed"
+  } > "$TMP/integrity__files.txt"
+  # 헤더만 남아도 지우지 않는다 — 섹션 존재 자체가 "검사했고 0건"의 증거다(노출 섹션과 같은 규약).
+  rm -f "$raw" "$parsed" "$totf"
+}
+if [ "$DO_VERIFY" = 1 ]; then
+  progress_report integrity 33 '패키지 무결성을 검증하고 있습니다.'
+  collect_integrity
 fi
 
 # ==================================================================

@@ -20,6 +20,9 @@
 #   sudo bash install-agent.sh --server ... --token ... --prefix /apps/vulnagent
 #   sudo bash install-agent.sh --server ... --token ... --host-ip 10.0.0.200  # 이름을 이 IP 로
 #   sudo bash install-agent.sh --server ... --token ... --ca-file ./caddy-root.crt
+#   sudo bash install-agent.sh --server ... --token ... --verify-files
+#       # 패키지 무결성 검증(rpm -Va / dpkg --verify)을 매 수집마다 켠다. **기본 꺼짐** —
+#       # 설치된 모든 패키지의 모든 파일을 해시해 수 분 + 무거운 디스크 IO 가 든다.
 #   sudo bash install-agent.sh --uninstall [--prefix 설치경로]
 #
 #   sudo 만 있으면 된다 — chmod/chown 불필요(`bash <파일>` 로 실행하므로 실행권한이 필요없고,
@@ -46,7 +49,7 @@
 set -euo pipefail
 
 SERVER=""; TOKEN=""; SCHEDULE=""; UNINSTALL=0; PREFIX=/opt/vuln-agent
-CA_FILE=""; HOST_IP=""
+CA_FILE=""; HOST_IP=""; VERIFY_FILES=0
 ORIG_ARGS="$*"   # root 안내 메시지에 원래 인자를 그대로 되돌려주기 위해 보관
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -56,6 +59,7 @@ while [ $# -gt 0 ]; do
     --prefix)    PREFIX="$2"; shift 2 ;;
     --ca-file)   CA_FILE="$2"; shift 2 ;;
     --host-ip)   HOST_IP="$2"; shift 2 ;;
+    --verify-files) VERIFY_FILES=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     -h|--help)   grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "알 수 없는 옵션: $1" >&2; exit 1 ;;
@@ -219,6 +223,7 @@ cat > "$ETC/agent.env" <<EOF
 SEND_URL=$SERVER
 SEND_TOKEN=$TOKEN
 SCHEDULE=$SCHEDULE
+VERIFY_FILES=$VERIFY_FILES
 EOF
 chmod 600 "$ETC/agent.env"
 
@@ -308,6 +313,9 @@ run_scan() {
   local cmd_id="\$1"
   local args=(-o "\$LOG_DIR/last.json" --send "\$SEND_URL" --token "\$SEND_TOKEN")
   [ -n "\$cmd_id" ] && args+=(--command-id "\$cmd_id")
+  # 패키지 무결성 검증 — 설치 시 --verify-files 를 준 노드에서만 1 이다(기본 꺼짐).
+  #   구버전 agent.env 에는 이 키가 없으므로 :-0 으로 안전하게 꺼진 상태를 유지한다.
+  [ "\${VERIFY_FILES:-0}" = 1 ] && args+=(--verify-files)
   log "수집 시작\${cmd_id:+ (명령#\$cmd_id 처리 포함)}"
   # 호스트별 속도 티어(agent-poll.php 의 cpu_quota_percent/packaging_timeout_seconds) 를
   #   env override 로 넘긴다 — vuln-inventory-agent.sh 상단이 이미 CPU_QUOTA/PACKAGING_TIMEOUT
