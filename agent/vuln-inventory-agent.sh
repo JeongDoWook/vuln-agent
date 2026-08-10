@@ -1437,6 +1437,51 @@ emit_nested_jars() {
   done < <(unzip -Z1 "$archive" 2>/dev/null|grep -E '(^|/)(BOOT-INF/lib|WEB-INF/lib|lib)/[^/]*\.jar$'|head -200)
 }
 
+# Gemfile.lock 의 GEM 섹션에서 해결된 gem 버전을 뽑는다. 출력: gem|이름|버전
+#   · 들여쓰기 4칸이 패키지, 6칸은 그 패키지의 "의존성 선언"이라 버린다 — 6칸을 패키지로 오인하면
+#     `(= 7.0.4)` 같은 제약 표현이 버전으로 들어가 통째로 오탐이 된다.
+#   · PATH(로컬 gem)·GIT(git 소스) 섹션도 specs: 를 갖지만 읽지 않는다. git 소스는 버전 문자열이
+#     실제 릴리스와 달라 매칭에 오탐만 만든다(YAGNI).
+#   · `nokogiri (1.13.8-x86_64-linux)` 처럼 플랫폼이 붙는 경우가 있어 하이픈 뒤는 떼어낸다
+#     (Gem::Version 자체엔 하이픈이 없다 — 하이픈은 곧 플랫폼 구분자다).
+emit_gemfile_lock() {
+  awk '
+    /^[A-Z]/ { ingem = ($0 == "GEM"); inspecs = 0; next }   # 최상위 섹션 경계
+    ingem && /^  specs:[ \t]*$/ { inspecs = 1; next }
+    inspecs {
+      if ($0 ~ /^    [^ ]/) {
+        if ($0 ~ /^    [A-Za-z0-9_.-]+ \([^()]+\)$/) {
+          line = $0; sub(/^    /, "", line)
+          n  = index(line, " ")
+          nm = substr(line, 1, n - 1)
+          vr = substr(line, n + 2); sub(/\)$/, "", vr); sub(/-.*$/, "", vr)
+          if (nm != "" && vr ~ /^[0-9]/) print "gem|" nm "|" vr
+        }
+      } else if ($0 !~ /^      /) { inspecs = 0 }           # specs 블록 종료
+    }
+  ' "$1"
+}
+
+# vendored gem 의 `specifications/이름-버전[-플랫폼].gemspec` 파일명을 이름·버전으로 가른다.
+#   gemspec 본문은 루비 코드라 제대로 읽으려면 루비가 필요하다 → 파일명만 본다(KISS).
+#   왼쪽부터 조각을 훑다가 "버전처럼 생긴 첫 조각"(숫자로 시작, 점으로만 이어짐)을 버전으로 보고
+#   그 뒤는 플랫폼 접미사로 버린다. 확신이 안 서면 아무것도 내지 않는다 — 틀린 값은 없는 값보다 나쁘다.
+emit_gemspec_name() {
+  local rest="${1%.gemspec}" name="" seg ver plat
+  while [ -n "$rest" ]; do
+    case "$rest" in *-*) seg="${rest%%-*}" ;; *) seg="$rest" ;; esac
+    if [ -n "$name" ] && [[ "$seg" =~ ^[0-9]+(\.[0-9A-Za-z]+)*$ ]]; then
+      ver="$seg"; plat="${rest#"$seg"}"; plat="${plat#-}"
+      if [ -z "$plat" ] || [[ "$plat" =~ ^[0-9A-Za-z_.-]+$ ]]; then
+        printf 'gem|%s|%s\n' "${name%-}" "$ver"
+      fi
+      return 0
+    fi
+    name="$name$seg-"
+    case "$rest" in *-*) rest="${rest#*-}" ;; *) rest="" ;; esac
+  done
+}
+
 # 설치본에서 직접 읽는 고신뢰 소스 — METADATA/lock/jar. 출력: manager|name|version
 # 파일 수·깊이는 SCAN_MAX_FILES/SCAN_MAX_DEPTH 로 제한한다. sort 로 출력 순서를 고정해
 # 파일시스템 탐색 순서가 달라져도 같은 결과가 나오게 한다(content_hash 처닝 방지).
@@ -1449,6 +1494,8 @@ collect_project_deps_installed() {
       case "$f" in
         */METADATA) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);lic=$(sed -n 's/^License: //p' "$f"|head -1);[ -n "$name" ]&&[ -n "$ver" ]&&{ printf 'pip|%s|%s\n' "$name" "$ver"; [ -n "$lic" ]&&[ "$lic" != "UNKNOWN" ]&&printf 'pip|%s|%s|%s\n' "$name" "$ver" "$lic" >&3; };;
         */Cargo.lock) awk 'BEGIN{n=""}/^name = /{gsub(/^name = "|"$/,"",$0);n=$0}/^version = /{gsub(/^version = "|"$/,"",$0);if(n!="")print "cargo|"n"|"$0}' "$f";;
+        */Gemfile.lock) emit_gemfile_lock "$f";;
+        */specifications/*.gemspec) emit_gemspec_name "$(basename "$f")";;
         */package-lock.json) have jq&&jq -r '.packages//{}|to_entries[]|select(.value.name and .value.version)|"npm|\(.value.name)|\(.value.version)"' "$f" 2>/dev/null;;
         # composer 는 설치본 메타(installed.json)에 license 필드를 그대로 담고 있다 — 배열이면
         #   "OR" 로 이어붙인다(SPDX 복수라이선스 표기 관례). 라이선스 없는 패키지는 조용히 건너뛴다.
@@ -1457,7 +1504,7 @@ collect_project_deps_installed() {
         *.jar) emit_jar_meta "$f" "$(basename "$f")"; emit_nested_jars "$f";;
         *.war|*.ear) emit_nested_jars "$f";;
       esac
-    done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -"$SCAN_MAX_FILES")
+    done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -name Cargo.lock -o -name Gemfile.lock -o -path '*/specifications/*.gemspec' -o -name package-lock.json -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -"$SCAN_MAX_FILES")
   done | sort -u
 }
 

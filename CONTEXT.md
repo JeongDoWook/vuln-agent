@@ -91,7 +91,7 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 - `system` — OS/커널/CPE (어떤 OVAL로 대조할지 힌트)
 - **언어 패키지** — pip/npm/gem/composer/maven/nuget/cargo/go 8개 생태계. 설치본 고신뢰 소스
   (`site-packages/*.dist-info/METADATA`·`composer/installed.json`·`Cargo.lock`·`package-lock.json`·
-  `*.jar/war/ear`)에 더해, 선언 파일 `go.mod`/`requirements.txt`/`pom.xml` 을 직접 파싱해 보충한다
+  `Gemfile.lock`·`specifications/*.gemspec`·`*.jar/war/ear`)에 더해, 선언 파일 `go.mod`/`requirements.txt`/`pom.xml` 을 직접 파싱해 보충한다
   (설치본이 없거나 못 읽는 환경 대응). OSV 커넥터(`vg_osv_lang_queries`)가 이 8개 생태계 전부를
   자기 ecosystem 으로 조회해 CVE 매칭한다 — 매니페스트 직접 파싱은 go.mod/requirements.txt/pom.xml
   3종뿐이고 npm/gem/maven/nuget/cargo 는 설치본(lock 파일·jar 등) 스캔만 한다.
