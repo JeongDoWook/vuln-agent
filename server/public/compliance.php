@@ -64,14 +64,6 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       '컴플라이언스 매핑', 'COMPLIANCE',
       '수집 데이터로 ISMS-P·ISO 27001 통제 5종을 판정합니다 · ' . $judgedAt
   ); ?>
-  <?php
-  // 이름이 비슷해 헷갈리는 두 화면을 나란히 세운다 — 여기는 **판정**(준수/미준수/판정 불가),
-  //   통제 기준 매핑은 같은 CCE 점검 결과를 기준별 통제로 **묶어 보기만** 한다(판정 안 함).
-  vg_subtabs([
-      'compliance'      => ['label' => '컴플라이언스 매핑', 'href' => '/compliance.php'],
-      'control_mapping' => ['label' => '통제 기준 매핑',   'href' => '/control_mapping.php'],
-  ], 'compliance');
-  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -355,4 +347,12 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     </div>
   </div>
 <?php endif; ?>
+
+  <?php
+  // 통제 기준 매핑은 상시로 볼 화면이 아니다(판정 없이 같은 CCE 결과를 기준별로 묶어 세기만 한다)
+  //   — 서브탭에서 내리고 이 한 줄만 남긴다. 화면은 그대로 살아 있으므로 링크까지 지워
+  //   고아 페이지로 만들지는 않는다. 위치가 아래인 것도 의도다(발견성을 낮춘다).
+  ?>
+  <p class="why mt-lg">같은 점검 결과를 기준별 통제로 묶어 보려면 →
+    <a href="/control_mapping.php">통제 기준 매핑</a></p>
 <?php vg_footer();

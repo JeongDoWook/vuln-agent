@@ -115,10 +115,10 @@ function vg_nav_sections(): array {
         ],
         '보안 기준' => [
             ['perm' => 'findings', 'href' => '/compliance_rules.php', 'label' => '보안 설정', 'key' => 'compliance'],
-            // 두 매핑 화면은 페이지 안 탭으로 오간다. 사이드바는 대표 링크 하나만 두되
-            // 어느 탭에 있어도 같은 항목을 활성화해 현재 위치를 잃지 않게 한다.
+            // 통제 기준 매핑(control_mapping)은 서브탭에서 내려 본문 링크로만 들어간다 —
+            // 탭이 없어졌으니 그 키로 이 항목이 활성화될 일도 없다(화면 자체는 살아 있다).
             ['perm' => 'findings', 'href' => '/compliance.php', 'label' => '컴플라이언스·통제',
-             'key' => 'compliance_mapping', 'active_keys' => ['compliance_mapping', 'control_mapping']],
+             'key' => 'compliance_mapping'],
         ],
         '관리' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],
