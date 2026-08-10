@@ -83,34 +83,106 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     $sRev   = vg_compliance_status($review['total'], false, $policy['partial_max']);
 ?>
   <?php
-  // KPI 의 숫자는 "위반 건수"다. 위반 0건이어도 판정 불가가 남아 있으면 그 사실을 라벨에 함께
-  //   적는다 — 숫자 0 만 보고 준수로 읽히면 안 된다(톤도 ok=초록이 아니라 med=주의로 바뀐다).
-  $naSuffix = static fn(array $s, int $unjudged): string =>
-      $s['label'] === '판정 불가' ? ' · 판정 불가 ' . number_format($unjudged) . '건' : '';
-  ?>
-  <div class="cards">
-    <div class="kpi kpi--sm tone-<?= vg_h($sPatch['tone']) ?>"><b><?= $patch['total'] ?></b><span>패치관리 위반<?= vg_h($naSuffix($sPatch, (int) $patch['unjudged'])) ?></span></div>
-    <?php if ($canViewAssets): ?>
-      <div class="kpi kpi--sm tone-<?= vg_h($sAsset['tone']) ?>"><b><?= $asset['total'] ?></b><span>자산식별 위반<?= vg_h($naSuffix($sAsset, (int) $asset['unjudged'])) ?></span></div>
-    <?php endif; ?>
-    <div class="kpi kpi--sm tone-<?= vg_h($sSec['tone']) ?>"><b><?= $secconfig['total'] ?></b><span>보안설정 위반</span></div>
-    <?php if ($canViewAssets): ?>
-      <div class="kpi kpi--sm tone-<?= vg_h($sAcct['tone']) ?>"><b><?= $account['total'] ?></b><span>계정관리 위반<?= vg_h($naSuffix($sAcct, (int) $account['unjudged'])) ?></span></div>
-    <?php endif; ?>
-    <div class="kpi kpi--sm tone-<?= vg_h($sRev['tone']) ?>"><b><?= $review['total'] ?></b><span>권한검토 위반</span></div>
-  </div>
+  // 첫 화면은 **통제 5종 × 한 줄**. 예전엔 통제마다 호스트별 위반을 10건씩 미리 깔아서,
+  //   정작 "무엇이 준수이고 무엇이 아닌가"가 스크롤 아래로 밀렸다. 전체를 보려면 어차피
+  //   그 근거만 보여주는 다른 화면으로 가야 하므로, 여기서는 판정만 세우고 근거는 링크로 보낸다.
+  //   판정·건수는 위 vg_compliance_status() 결과 그대로다(요약 방식만 바뀐다).
+  // 위반 0건과 판정 불가를 한 칸에 뭉개지 않는다 — 뭉개는 순간 허위 안심이 된다(건수를 따로 적는다).
+  $naText = static fn(int $n, string $unit = '건'): string =>
+      $n > 0 ? ' · <span class="why">판정 불가 ' . number_format($n) . vg_h($unit) . '</span>' : '';
+  // 요약 칸: 첫 줄은 건수, 둘째 줄(작게)은 "무엇을 셌는가".
+  $sumCell = static fn(string $head, string $why): string =>
+      $head . '<br><span class="why">' . vg_h($why) . '</span>';
+  // assets 권한이 없으면 자산·계정 통제는 **건수까지 감춘다**(위반 수 자체가 자산 정보다).
+  //   줄을 통째로 빼지 않는 이유: 이 화면의 존재 이유가 "통제 5종 ↔ 조항" 매핑이라,
+  //   권한에 따라 통제가 3종으로 보이면 매핑 자체를 잘못 읽게 된다.
+  $deniedRow = static fn(string $key): array => [
+      'key' => $key, 'badge' => vg_badge('권한 없음', 'muted'),
+      'summary' => '<span class="why">자산 열람 권한이 필요합니다</span>', 'link' => '',
+  ];
 
-  <div class="card">
+  // 계정 통제의 접힘 상세를 실제로 그리는가 — 요약 줄의 앵커 링크와 조건이 어긋나면
+  //   눌러도 아무 데도 안 가는 링크가 된다(그래서 한 변수로 묶어 둔다).
+  $acctDetails = $canViewAssets
+      && ($account['violations'] || $account['unjudged'] > 0 || $account['pending_hosts'] > 0);
+
+  $summaryRows = [];
+  $summaryRows[] = [
+      'key' => 'patch', 'badge' => vg_badge($sPatch['label'], $sPatch['tone']),
+      'summary' => $sumCell(
+          '위반 ' . number_format((int) $patch['total']) . '건' . $naText((int) $patch['unjudged']),
+          '조치 가능한 CRITICAL·HIGH 취약점의 SLA 초과분 · 버킷별로 따로 판정'
+      ),
+      // 이 통제가 센 것 = 조치 가능한 미조치 취약점. findings 의 fx=action 이 같은 모집단이다
+      //   (SLA 초과 필터는 없으므로 건수는 여기가 더 적다 — 링크 라벨을 "근거"로만 둔다).
+      'link' => '<a href="/findings.php?type=cve&amp;fx=action">근거 →</a>',
+  ];
+  $summaryRows[] = $canViewAssets ? [
+      'key' => 'asset', 'badge' => vg_badge($sAsset['label'], $sAsset['tone']),
+      'summary' => $sumCell(
+          '위반 ' . number_format((int) $asset['total']) . '건' . $naText((int) $asset['unjudged'], '대'),
+          '등록 ' . number_format((int) $asset['totalHosts']) . '대 중 오프라인·수집 없음 또는 OS·IP 누락'
+      ),
+      'link' => '<a href="/assets.php">근거 →</a>',
+  ] : $deniedRow('asset');
+  $summaryRows[] = [
+      'key' => 'secops', 'badge' => vg_badge($sSec['label'], $sSec['tone']),
+      'summary' => $sumCell('위반 ' . number_format((int) $secconfig['total']) . '건',
+                            '최신 스캔에서 FAIL 로 판정된 보안 설정'),
+      // 보안설정(CCE) 위반 목록 전용 탭. 기본 필터가 res=FAIL 이라 이 통제가 센 것과 같다.
+      'link' => '<a href="/findings.php?type=cce">근거 →</a>',
+  ];
+  $summaryRows[] = $canViewAssets ? [
+      'key' => 'account', 'badge' => vg_badge($sAcct['label'], $sAcct['tone']),
+      'summary' => $sumCell(
+          '위반 ' . number_format((int) $account['total']) . '건' . $naText((int) $account['unjudged']),
+          '호스트 ' . number_format((int) $account['totalHosts']) . '대의 최신 계정 인벤토리 판정'
+          . ($account['pending_hosts'] > 0
+             ? ' · 계정 수집 대기 ' . number_format((int) $account['pending_hosts']) . '대' : '')
+      ),
+      // 전 호스트 계정 위반을 한 번에 보는 화면은 없다(호스트별로만 있다). 없는 화면을
+      //   만들어 링크하지 않고, 이 통제만 아래 접힘 블록에 호스트별 링크를 둔다.
+      'link' => $acctDetails ? '<a href="#compliance-account">호스트별 ↓</a>' : '',
+  ] : $deniedRow('account');
+  $summaryRows[] = [
+      'key' => 'access_review', 'badge' => vg_badge($sRev['label'], $sRev['tone']),
+      'summary' => $sumCell(
+          '위반 ' . number_format((int) $review['total']) . '건',
+          ($review['last'] === null
+            ? '수행 이력 0건'
+            : '최근 검토 ' . $review['last']['reviewed_at'] . ' · ' . (int) $review['days_since'] . '일 경과')
+          . ' · 검토 주기 ' . (int) $review['interval_days'] . '일'
+      ),
+      'link' => '<a href="/activity.php">기록 →</a>',
+  ];
+
+  vg_table(
+      [
+          ['label' => '통제'],
+          ['label' => '판정', 'width' => '7rem'],
+          ['label' => '요약'],
+          // 링크 라벨은 짧다 — 접히면 화살표가 다음 줄로 떨어져 링크로 안 보인다.
+          ['label' => '근거', 'width' => '7rem', 'nowrap' => true],
+      ],
+      $summaryRows,
+      [
+          'cell' => [
+              // 조항 번호(ISMS-P/ISO)는 이 화면의 존재 이유다 — 작게 내릴 뿐 지우지 않는다.
+              0 => fn($r) => '<strong>' . vg_h(VG_COMPLIANCE_CONTROLS[$r['key']]['label']) . '</strong>'
+                           . '<br><span class="why">' . vg_h(VG_COMPLIANCE_CONTROLS[$r['key']]['framework']) . '</span>',
+              1 => fn($r) => $r['badge'],
+              2 => fn($r) => $r['summary'],
+              3 => fn($r) => $r['link'],
+          ],
+      ]
+  );
+  ?>
+
+  <div class="card mt-lg">
     <div class="card__body">
-      <div class="compliance-control__head">
-        <div>
-          <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['patch']['label']) ?></strong>
-          <span class="why"> — <?= vg_h(VG_COMPLIANCE_CONTROLS['patch']['framework']) ?></span>
-        </div>
-        <?= vg_badge($sPatch['label'], $sPatch['tone']) ?>
-      </div>
-      <?php // 건수·판정 시각은 위 KPI 카드와 페이지 부제가 이미 말한다 — 여기는 "무엇을 셌는가"만. ?>
-      <p class="why">조치 가능한 CRITICAL·HIGH 취약점의 SLA 초과분. 버킷별로 따로 판정합니다.</p>
+      <?php // 버킷별 판정은 이 화면에만 있는 정보라 링크로 보낼 곳이 없다 — 접어서 남긴다. ?>
+      <details>
+        <summary><?= vg_h(VG_COMPLIANCE_CONTROLS['patch']['label']) ?> 버킷별 판정 — KEV·CRITICAL·HIGH</summary>
       <?php
       // 버킷 3행을 각각 판정한다. 예전엔 통제 전체에 뱃지 하나만 달아, 이력이 짧아 판정 불가인
       //   HIGH 하나가 잘 지킨 KEV·CRITICAL 까지 회색으로 눌렀다(운영 실측).
@@ -161,125 +233,22 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
               ],
           ]
       ); ?>
-      <?php if ($patch['violations']):
-          $shown = array_slice($patch['violations'], 0, $previewLimit);
-      ?>
-        <?php vg_table(
-            [
-                ['label' => '호스트'],
-                ['label' => 'CVE'],
-                ['label' => '패키지'],
-                ['label' => '등급', 'width' => '6.5rem'],
-                ['label' => '최초 발견'],
-                ['label' => '경과/기준', 'align' => 'right'],   // "12일 / 30일" — 숫자 칸
-            ],
-            $shown,
-            [
-                'cell' => [
-                    0 => fn($v) => '<a href="/host.php?id=' . (int) $v['host_id'] . '">' . vg_h($v['fqdn']) . '</a>',
-                    1 => fn($v) => '<a href="/cve.php?cve=' . urlencode($v['cve_id']) . '">' . vg_h($v['cve_id']) . '</a>',
-                    2 => fn($v) => vg_h($v['package']),
-                    3 => fn($v) => vg_sev_badge($v['severity']) . ($v['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
-                    4 => fn($v) => '<span class="why">' . vg_h((string) $v['first_seen']) . '</span>',
-                    5 => fn($v) => $v['days'] . '일 / ' . $v['sla_days'] . '일',
-                ],
-            ]
-        ); ?>
-        <?php if ($patch['total'] > count($shown)): ?>
-          <p class="why">상위 <?= count($shown) ?>건만 표시 · 전체 <?= number_format($patch['total']) ?>건은
-            <a href="/findings.php?sev=CRITICAL">탐지 결과에서 확인</a></p>
-        <?php endif; ?>
-      <?php endif; ?>
+      <?php // 호스트별 위반 목록은 근거 링크(findings.php) 가 전부 보여준다 — 여기서 미리 깔지 않는다. ?>
+      </details>
     </div>
   </div>
 
-  <?php if ($canViewAssets): ?>
+  <?php if ($acctDetails): ?>
   <div class="card mt-lg">
     <div class="card__body">
-      <div class="compliance-control__head">
-        <div>
-          <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['asset']['label']) ?></strong>
-          <span class="why"> — <?= vg_h(VG_COMPLIANCE_CONTROLS['asset']['framework']) ?></span>
-        </div>
-        <?= vg_badge($sAsset['label'], $sAsset['tone']) ?>
-      </div>
-      <p class="why">등록 <?= number_format($asset['totalHosts']) ?>대 중 오프라인·수집 없음 또는 OS·IP 누락 자산</p>
-      <?php if ($asset['unjudged'] > 0):
-          $hints = [];
-          foreach ($asset['unjudged_rows'] as $u) { $hints[] = $u['fqdn'] . ' — ' . $u['reason']; }
-          if ($asset['unjudged'] > count($asset['unjudged_rows'])) {
-              $hints[] = sprintf('외 %s대', number_format($asset['unjudged'] - count($asset['unjudged_rows'])));
-          }
-          vg_alert([
-              'type'  => 'warn',
-              'title' => '판정 불가 ' . number_format($asset['unjudged']) . '대 · 부분 수집으로 식별 근거가 부족합니다',
-              'hints' => $hints,
-          ]);
-      endif; ?>
-      <?php if ($asset['violations']):
-          $shown = array_slice($asset['violations'], 0, $previewLimit);
+      <?php
+      // 계정 통제만 접힘 상세를 남긴다 — 전 호스트 계정 위반을 한 번에 보는 화면이 없어서
+      //   요약 줄의 "근거 →" 가 갈 곳이 없기 때문이다. 새 화면을 만드는 대신 호스트별
+      //   계정 탭으로 보내는 링크를 여기 접어 둔다.
       ?>
-        <?php vg_table(
-            [['label' => '호스트'], ['label' => '사유']],
-            $shown,
-            [
-                'cell' => [
-                    0 => fn($v) => '<a href="/host.php?id=' . (int) $v['host_id'] . '">' . vg_h($v['fqdn']) . '</a>',
-                    1 => fn($v) => implode(' · ', array_map('vg_h', $v['reasons'])),
-                ],
-            ]
-        ); ?>
-        <?php if ($asset['total'] > count($shown)): ?>
-          <p class="why">상위 <?= count($shown) ?>건만 표시 · 전체는 <a href="/assets.php">자산 화면에서 확인</a></p>
-        <?php endif; ?>
-      <?php endif; ?>
-    </div>
-  </div>
-  <?php endif; ?>
-
-  <div class="card mt-lg">
-    <div class="card__body">
-      <div class="compliance-control__head">
-        <div>
-          <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['secops']['label']) ?></strong>
-          <span class="why"> — <?= vg_h(VG_COMPLIANCE_CONTROLS['secops']['framework']) ?></span>
-        </div>
-        <?= vg_badge($sSec['label'], $sSec['tone']) ?>
-      </div>
-      <p class="why">최신 스캔에서 FAIL로 판정된 보안 설정</p>
-      <?php if ($secconfig['violations']):
-          $shown = array_slice($secconfig['violations'], 0, $previewLimit);
-      ?>
-        <?php vg_table(
-            [['label' => '호스트'], ['label' => '항목'], ['label' => '등급', 'width' => '6.5rem'], ['label' => '근거']],
-            $shown,
-            [
-                'cell' => [
-                    0 => fn($v) => '<a href="/host.php?id=' . (int) $v['host_id'] . '&amp;tab=cce">' . vg_h($v['fqdn']) . '</a>',
-                    1 => fn($v) => vg_h($v['title']) . ' <span class="why">' . vg_h($v['code']) . '</span>',
-                    2 => fn($v) => vg_sev_badge($v['severity']),
-                    3 => fn($v) => vg_trunc($v['rationale'], 80),
-                ],
-            ]
-        ); ?>
-        <?php if ($secconfig['total'] > count($shown)): ?>
-          <p class="why">상위 <?= count($shown) ?>건만 표시</p>
-        <?php endif; ?>
-      <?php endif; ?>
-    </div>
-  </div>
-
-  <?php if ($canViewAssets): ?>
-  <div class="card mt-lg">
-    <div class="card__body">
-      <div class="compliance-control__head">
-        <div>
-          <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['account']['label']) ?></strong>
-          <span class="why"> — <?= vg_h(VG_COMPLIANCE_CONTROLS['account']['framework']) ?></span>
-        </div>
-        <?= vg_badge($sAcct['label'], $sAcct['tone']) ?>
-      </div>
-      <p class="why">호스트 <?= number_format($account['totalHosts']) ?>대의 최신 계정 인벤토리 판정입니다.</p>
+      <details id="compliance-account">
+        <summary><?= vg_h(VG_COMPLIANCE_CONTROLS['account']['label']) ?> — 호스트별 근거
+          (위반 <?= number_format((int) $account['total']) ?>건<?php if ($account['unjudged'] > 0): ?> · 판정 불가 <?= number_format((int) $account['unjudged']) ?>건<?php endif; ?>)</summary>
       <?php
       // REVIEW(추정)·NA(원자료 미수집)·수집 대기는 준수로 흡수하지 않는다 — 계정 목록이 아직
       //   안 들어온 호스트를 준수로 세면 그 자체가 허위 안심이다.
@@ -306,6 +275,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
             [['label' => '호스트'], ['label' => '점검 항목'], ['label' => '결과', 'width' => '6rem'], ['label' => '근거']],
             $shown,
             [
+                'card' => false,
                 'cell' => [
                     0 => fn($v) => '<a href="/host.php?id=' . (int) $v['host_id'] . '&amp;tab=account">' . vg_h($v['fqdn']) . '</a>',
                     1 => fn($v) => vg_h($v['title']) . ' <span class="why">' . vg_h($v['code']) . '</span>',
@@ -320,35 +290,10 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
             호스트 상세의 계정 탭에서 확인</p>
         <?php endif; ?>
       <?php endif; ?>
+      </details>
     </div>
   </div>
   <?php endif; ?>
-
-  <div class="card mt-lg">
-    <div class="card__body">
-      <div class="compliance-control__head">
-        <div>
-          <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['access_review']['label']) ?></strong>
-          <span class="why"> — <?= vg_h(VG_COMPLIANCE_CONTROLS['access_review']['framework']) ?></span>
-        </div>
-        <?= vg_badge($sRev['label'], $sRev['tone']) ?>
-      </div>
-      <p class="why">검토 주기 <?= (int) $review['interval_days'] ?>일 · 접속기록 점검 이력으로 판정합니다.</p>
-      <?php if ($review['last'] !== null): ?>
-        <p class="why">최근 검토 <?= vg_h($review['last']['reviewed_at']) ?>
-          (<?= vg_h($review['last']['period_start']) ?> ~ <?= vg_h($review['last']['period_end']) ?>)
-          · <?= (int) $review['days_since'] ?>일 경과</p>
-      <?php endif; ?>
-      <?php if ($review['violations']): ?>
-        <?php vg_table(
-            [['label' => '사유'], ['label' => '근거']],
-            $review['violations'],
-            ['cell' => [0 => fn($v) => vg_h($v['reason']), 1 => fn($v) => '<span class="why">' . vg_h($v['detail']) . '</span>']]
-        ); ?>
-      <?php endif; ?>
-      <p class="why"><a href="/activity.php">접속기록 화면에서 점검 기록 남기기</a></p>
-    </div>
-  </div>
 
   <?php
   // --- 판정 추이(스냅샷) ---------------------------------------------------
@@ -362,8 +307,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   ?>
   <div class="card mt-lg">
     <div class="card__body">
-      <strong>판정 추이</strong>
-      <p class="why">일별 판정 스냅샷<?php if ($trend): ?> · 최근 <?= count($trend) ?>일 · 최신 <?= vg_h($trend[0]['taken_at']) ?><?php endif; ?></p>
+      <?php // 추이는 "지금"이 아니라 "그 시점"을 묻는 사람만 본다 — 요약을 밀지 않게 접어 둔다. ?>
+      <details>
+        <summary>판정 추이 — 일별 판정 스냅샷<?php if ($trend): ?> · 최근 <?= count($trend) ?>일 · 최신 <?= vg_h($trend[0]['taken_at']) ?><?php endif; ?></summary>
       <?php if (!$trend): ?>
         <?php vg_empty([
             'icon'  => '🗓',
@@ -390,6 +336,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         vg_table($headers, $trend, ['cell' => $cells, 'card' => false]);
         ?>
       <?php endif; ?>
+      </details>
     </div>
   </div>
 
