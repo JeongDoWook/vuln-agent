@@ -2,11 +2,17 @@
 declare(strict_types=1);
 
 /**
- * findings.php — 매처 판정 결과(우선순위 취약점). 로그인 필요.
+ * findings.php — 탐지 결과 한 화면. 로그인 필요.
+ *   세 유형을 탭으로 담는다(?type=): cve(기본) / cce(보안설정 점검) / exposure(런타임 노출).
  *   기본  : 전 호스트의 "각 호스트 최신 스캔" 을 통합해서 보여준다(호스트 컬럼 표시).
  *   ?host=N     : 그 호스트의 최신 스캔만.
  *   ?scan_id=N  : 특정 스캔 하나만(대시보드·호스트 상세에서 넘어오는 링크). 이때만 부제에 scan# 표시.
- *   검색(q)/등급(sev)/상태(st) 필터 + 페이지네이션.
+ *   검색(q)/등급(sev) + 탭별 필터(cve: st·fx / cce: res / exposure: scope) + 페이지네이션.
+ *
+ *   세 표(tb_finding·tb_cce_finding·tb_exposure)를 UNION 하지 않는다 — tb_finding 이 큰 표라
+ *   합쳐서 정렬·페이징하면 인덱스가 죽는다(대시보드 파생테이블 리라이트로 235ms→42초가 된
+ *   운영 실측이 있다). 탭마다 자기 쿼리 하나가 정답이다. 화면 구성은 packages.php 의
+ *   ?tab=os/lang 패턴을 그대로 따른다(vg_subtabs + 툴바에 탭 hidden).
  */
 
 require __DIR__ . '/../src/auth.php';
@@ -16,6 +22,20 @@ require_once __DIR__ . '/../src/remediation_note.php';   // 미조치 사유 + �
 require_once __DIR__ . '/../src/finding_history.php';    // vg_finding_history_url — 행별 상세 진입로
 vg_require_menu('findings');
 
+/**
+ * 탐지 유형 탭. "세 유형" 이라는 사실을 여기 하나로만 둔다 — 화이트리스트 검증·탭 렌더·
+ *   툴바 hidden 값이 전부 이 상수를 참조한다. 'clear' 는 다른 탭으로 넘어갈 때 비울
+ *   그 탭 전용 파라미터다(호스트·스캔·검색어·등급은 공통 축이라 유지한다).
+ */
+const VG_FINDING_TYPES = [
+    'cve'      => ['label' => '취약점(CVE)',   'clear' => ['st', 'fx', 'ctr']],
+    'cce'      => ['label' => '보안설정(CCE)', 'clear' => ['res']],
+    'exposure' => ['label' => '노출',          'clear' => ['scope']],
+];
+
+$type = (string) ($_GET['type'] ?? 'cve');
+if (!isset(VG_FINDING_TYPES[$type])) { $type = 'cve'; }
+
 $notes = [];   // 이 페이지 행들의 미조치 사유 메모 (자연키 → 메모)
 
 // 취약점 0건이 "안전"이 아니라 "판정 불가"인 대상(호스트 + 컨테이너). 사유별로 묶는다 —
@@ -23,17 +43,35 @@ $notes = [];   // 이 페이지 행들의 미조치 사유 메모 (자연키 →
 //   길어서 아무도 안 읽는다. 사유 한 줄 + 그 사유에 걸린 대상 목록이면 정보량은 같다.
 $unsupBy = [];      // 사유 => [대상명, …]
 
-$sevOptions = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+// 등급 어휘는 탭마다 다르다 — CCE 판정에는 CRITICAL 이 없다(cce.php 가 HIGH/MEDIUM/LOW 만 준다).
+//   탭별 화이트리스트로 검증하므로, 탭을 옮기며 sev 를 들고 가도 그 탭에 없는 값이면 자동으로 풀린다.
+$sevOptions = $type === 'cce' ? ['HIGH', 'MEDIUM', 'LOW'] : ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 $stOptions  = ['EXTERNAL', 'LAN', 'FILTERED', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
+// 노출 범위(tb_exposure.scope) — 표시 라벨은 vg_scope_label() 이 갖는다(format.php).
+//   '-'(bind 주소를 못 읽은 소켓)까지 포함해야 카드 합계가 목록 건수와 맞는다 — 빼면
+//   "카드 어디에도 없는 행" 이 표에만 남아 숫자가 안 맞는 것처럼 보인다.
+$scopeOptions = ['EXTERNAL', 'LAN', 'BOUND', 'FILTERED', 'LOCAL', '-'];
+// CCE 판정 결과. 기본은 위반(FAIL)만 본다 — 'ALL' 이어야 PASS·NA 까지 함께 나온다.
+$resOptions = ['FAIL', 'PASS', 'NA', 'ALL'];
 
 $err = null; $scan = null; $rows = []; $total = 0; $perPage = vg_perpage();
 $scanIds = []; $hostOptions = []; $hostFound = false; $hostOptionCount = 0;
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
+// 탭 머리의 유형별 건수(대상 스캔 기준 — 탭 자체가 필터라는 걸 눈으로 알게 한다).
+//   현재 탭 것은 그 탭이 이미 집계한 값을 재사용하고, 나머지 둘만 값싼 COUNT 로 채운다.
+$typeCounts = ['cve' => null, 'cce' => null, 'exposure' => null];
+$cceResultCounts = ['FAIL'=>0, 'PASS'=>0, 'NA'=>0];   // cce 탭 카드
+$scopeCounts = [];                                    // exposure 탭 카드 (scope => 건수)
+$expCveCounts = [];                                   // 노출 행 → 그 실행 패키지에 걸린 CVE 건수
 
 $q   = trim((string) ($_GET['q'] ?? ''));
 $sev = (string) ($_GET['sev'] ?? '');
 $st  = (string) ($_GET['st'] ?? '');
 $fx  = (string) ($_GET['fx'] ?? '');
+$res = (string) ($_GET['res'] ?? '');
+$scope = (string) ($_GET['scope'] ?? '');
+if (!in_array($res, $resOptions, true)) { $res = 'FAIL'; }
+if (!in_array($scope, $scopeOptions, true)) { $scope = ''; }
 if (!in_array($sev, $sevOptions, true)) { $sev = ''; }
 if (!in_array($st, $stOptions, true)) { $st = ''; }
 // 조치 가능성: '' 전체 / action 조치 가능 / nofix 조치 불가(벤더가 수정본을 안 냈다)
@@ -76,7 +114,9 @@ try {
 
     // 컨테이너도 같은 이유로 0건이 된다 — 특히 **패키지 DB 가 없는 이미지**(Calico 등)는
     //   rhel 로 잡혀 "미지원 배포판" 경고에도 안 걸린 채 조용히 0건으로 지나갔다(운영 실측 9개).
-    $ctrs = $pdo->query(
+    // CVE 탭 전용이다 — 이 경고는 "취약점 매칭이 안 됐다" 는 뜻이라 CCE·노출 탭에는 해당이 없다.
+    //   다른 탭에서는 이 쿼리를 아예 돌리지 않는다(안 쓰는 집계를 매 요청에 붙이지 않는다).
+    $ctrs = $type === 'cve' ? $pdo->query(
         'SELECT h.fqdn, c.cid, c.os_id, c.os_version, c.manager,
                 CASE WHEN EXISTS (
                     SELECT 1 FROM tb_package p
@@ -88,7 +128,7 @@ try {
            JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.scan_id
           WHERE h.is_deleted = 0
           ORDER BY h.fqdn, c.cid'
-    )->fetchAll();
+    )->fetchAll() : [];
     foreach ($ctrs as $c) {
         $reason = vg_container_unjudgeable(
             $c['os_id'] ?? null, $c['os_version'] ?? null,
@@ -114,13 +154,20 @@ try {
         }
     }
 
-    if ($scanIds) {
-        $in = implode(',', array_fill(0, count($scanIds), '?'));
+    // 대상 스캔 집합은 세 탭이 공유한다(같은 자산·같은 시점을 본다는 뜻).
+    $in = $scanIds ? implode(',', array_fill(0, count($scanIds), '?')) : '';
 
+    if ($scanIds && $type === 'cve') {
         // KPI 는 필터 무관 — 대상 스캔 전체 기준
+        $typeCounts['cve'] = 0;
         $stmt = $pdo->prepare("SELECT severity, COUNT(*) c FROM tb_finding WHERE scan_id IN ($in) GROUP BY severity");
         $stmt->execute($scanIds);
-        foreach ($stmt->fetchAll() as $r) { if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; } }
+        foreach ($stmt->fetchAll() as $r) {
+            // 탭 뱃지의 CVE 건수는 이 집계를 그대로 합쳐 쓴다(같은 값을 두 번 세지 않는다).
+            //   등급 카드는 알려진 4종만 세지만, 뱃지는 그 밖의 등급이 와도 빠지지 않게 전부 더한다.
+            $typeCounts['cve'] = (int) ($typeCounts['cve'] ?? 0) + (int) $r['c'];
+            if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; }
+        }
 
         // 필터 WHERE 조립 (COUNT 와 목록 쿼리에 동일하게 사용)
         $where  = "f.scan_id IN ($in)";
@@ -194,23 +241,177 @@ try {
         }
         $notes = vg_remediation_notes_map($pdo, $noteKeys);
     }
+
+    if ($scanIds && $type === 'cce') {
+        // 결과 분포는 필터 무관 — 대상 스캔 전체 기준(CVE 탭의 등급 KPI 와 같은 자리·같은 성격).
+        //   NA 를 PASS 와 섞지 않는다: 위반 0건이 "준수" 로 읽히는 걸 이 제품은 반복해서 경계해 왔다.
+        //   uq_cce(scan_id, code) 가 scan_id 선두라 IN 범위를 그대로 탄다.
+        $stmt = $pdo->prepare("SELECT result, COUNT(*) c FROM tb_cce_finding WHERE scan_id IN ($in) GROUP BY result");
+        $stmt->execute($scanIds);
+        foreach ($stmt->fetchAll() as $r) {
+            if (isset($cceResultCounts[$r['result']])) { $cceResultCounts[$r['result']] = (int) $r['c']; }
+        }
+        // 탭 뱃지는 이 탭의 기본값(위반)을 센다 — 탭을 눌렀을 때 보게 될 숫자와 같아야 한다.
+        $typeCounts['cce'] = $cceResultCounts['FAIL'];
+
+        $where  = "f.scan_id IN ($in)";
+        $params = $scanIds;
+        if ($res !== 'ALL') {
+            $where .= ' AND f.result = ?';
+            $params[] = $res;
+        }
+        if ($sev !== '') {
+            $where .= ' AND f.severity = ?';
+            $params[] = $sev;
+        }
+        if ($q !== '') {
+            $where .= ' AND (f.code LIKE ? OR f.title LIKE ? OR f.ssg_rule_id LIKE ?)';
+            $like = '%' . addcslashes($q, '%_\\') . '%';
+            $params[] = $like; $params[] = $like; $params[] = $like;
+        }
+
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_finding f WHERE $where");
+        $stmt->execute($params);
+        $total = (int) $stmt->fetchColumn();
+        if ($total > 0) { $page = min($page, (int) ceil($total / $perPage)); }
+        $offset = ($page - 1) * $perPage;
+
+        // 룰 상세는 compliance_rule.php 가 이미 갖고 있다 — 여기서는 기준 참조(CIS/NIST/STIG)만
+        //   함께 읽어 근거를 인용하고 링크로 보낸다(host.php 의 CCE 탭과 같은 조인).
+        $stmt = $pdo->prepare(
+            "SELECT f.code, f.ssg_rule_id, f.title, f.result, f.severity, f.evidence, f.rationale,
+                    h.host_id, h.fqdn, r.refs_json
+               FROM tb_cce_finding f
+               JOIN tb_scan s ON s.scan_id = f.scan_id
+               JOIN tb_host h ON h.host_id = s.host_id
+               LEFT JOIN tb_compliance_rule r ON r.rule_id = f.ssg_rule_id AND r.is_deleted = 0
+              WHERE $where
+              ORDER BY FIELD(f.result,'FAIL','NA','PASS'), FIELD(f.severity,'HIGH','MEDIUM','LOW'), h.fqdn, f.code
+              LIMIT $perPage OFFSET $offset"
+        );
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+    }
+
+    if ($scanIds && $type === 'exposure') {
+        // 범위 분포 — EXTERNAL 이 몇 건인지가 이 탭의 첫 질문이다. idx_exp_scan(scan_id) 범위 집계.
+        //   scope 는 NULL 을 허용하는 컬럼이라 '-'(범위 미상)로 접어 센다 — 접지 않으면 카드
+        //   어디에도 없는 행이 표에만 남아 합계가 안 맞는 것처럼 보인다. 아래 필터도 같은 식이다.
+        $stmt = $pdo->prepare("SELECT COALESCE(scope, '-') sc, COUNT(*) c FROM tb_exposure WHERE scan_id IN ($in) GROUP BY sc");
+        $stmt->execute($scanIds);
+        $typeCounts['exposure'] = 0;
+        foreach ($stmt->fetchAll() as $r) {
+            $scopeCounts[(string) $r['sc']] = (int) $r['c'];
+            $typeCounts['exposure'] += (int) $r['c'];
+        }
+
+        $where  = "e.scan_id IN ($in)";
+        $params = $scanIds;
+        if ($scope !== '') {
+            $where .= " AND COALESCE(e.scope, '-') = ?";
+            $params[] = $scope;
+        }
+        if ($q !== '') {
+            $where .= ' AND (e.proc LIKE ? OR e.exe_pkg LIKE ?)';
+            $like = '%' . addcslashes($q, '%_\\') . '%';
+            $params[] = $like; $params[] = $like;
+        }
+
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_exposure e WHERE $where");
+        $stmt->execute($params);
+        $total = (int) $stmt->fetchColumn();
+        if ($total > 0) { $page = min($page, (int) ceil($total / $perPage)); }
+        $offset = ($page - 1) * $perPage;
+
+        // 정렬은 host.php 의 노출 표와 같은 FIELD 순서 — EXTERNAL 이 맨 위다.
+        $stmt = $pdo->prepare(
+            "SELECT e.scan_id, e.container_id, e.proc, e.proto, e.bind_addr, e.port, e.scope,
+                    e.exe_pkg, e.loaded_pkgs, h.host_id, h.fqdn, IFNULL(c.cid, '') AS ctr
+               FROM tb_exposure e
+               JOIN tb_scan s ON s.scan_id = e.scan_id
+               JOIN tb_host h ON h.host_id = s.host_id
+               LEFT JOIN tb_container c ON c.container_id = e.container_id
+              WHERE $where
+              ORDER BY FIELD(e.scope,'EXTERNAL','LAN','BOUND','FILTERED','LOCAL','-'), h.fqdn, e.port
+              LIMIT $perPage OFFSET $offset"
+        );
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        // "이 리스너에 걸린 CVE 건수" — 노출과 취약점을 잇는 게 이 제품의 축이다.
+        //   행마다 세면 N+1 이라, **이 페이지에 보이는 행들**의 (스캔·컨테이너·실행패키지)만
+        //   한 번의 GROUP BY 로 읽는다. 인덱스는 uq_find(scan_id, container_id, …) 의 앞 두 컬럼까지
+        //   타고 package_name 은 그 범위 안에서 걸러진다 — 대상 스캔이 이미 CVE 탭 COUNT 와
+        //   같은 범위라 비용이 그 이상으로 커지지 않는다.
+        $expScans = []; $expCtrs = []; $expPkgs = [];
+        foreach ($rows as $r) {
+            if (($r['exe_pkg'] ?? '') === '') { continue; }
+            $expScans[] = (int) $r['scan_id'];
+            $expCtrs[]  = (int) $r['container_id'];
+            // 값 목록으로 모은다(키로 모으면 숫자로만 된 패키지명이 int 키가 되어 int 로 바인딩된다).
+            $expPkgs[]  = (string) $r['exe_pkg'];
+        }
+        $expScans = array_values(array_unique($expScans));
+        $expCtrs  = array_values(array_unique($expCtrs));
+        $expPkgs  = array_values(array_unique($expPkgs));
+        if ($expPkgs) {
+            $ph = static fn(array $a): string => implode(',', array_fill(0, count($a), '?'));
+            $stmt = $pdo->prepare(
+                'SELECT scan_id, container_id, package_name, COUNT(*) c
+                   FROM tb_finding
+                  WHERE scan_id IN (' . $ph($expScans) . ')
+                    AND container_id IN (' . $ph($expCtrs) . ')
+                    AND package_name IN (' . $ph($expPkgs) . ')
+                  GROUP BY scan_id, container_id, package_name'
+            );
+            $stmt->execute(array_merge($expScans, $expCtrs, $expPkgs));
+            foreach ($stmt->fetchAll() as $r) {
+                $expCveCounts[$r['scan_id'] . '|' . $r['container_id'] . '|' . $r['package_name']] = (int) $r['c'];
+            }
+        }
+    }
+
+    // 지금 탭이 아닌 유형의 건수 — 탭 머리에 붙는 요약이다. 각각 인덱스 선두(scan_id) 범위
+    //   COUNT 하나뿐이라 값싸다(현재 탭 것은 위에서 이미 집계했으므로 다시 세지 않는다).
+    if ($scanIds) {
+        if ($typeCounts['cve'] === null) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_finding WHERE scan_id IN ($in)");
+            $stmt->execute($scanIds);
+            $typeCounts['cve'] = (int) $stmt->fetchColumn();
+        }
+        if ($typeCounts['cce'] === null) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_finding WHERE scan_id IN ($in) AND result = 'FAIL'");
+            $stmt->execute($scanIds);
+            $typeCounts['cce'] = (int) $stmt->fetchColumn();
+        }
+        if ($typeCounts['exposure'] === null) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_exposure WHERE scan_id IN ($in)");
+            $stmt->execute($scanIds);
+            $typeCounts['exposure'] = (int) $stmt->fetchColumn();
+        }
+    }
 } catch (Throwable $e) {
     error_log('[findings] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('탐지 결과', 'findings');
+// 탭을 제목에 싣는다 — vg_header() 안의 vg_log_page_view() 가 이 제목을 감사로그 메시지로
+//   남기므로, 이것만으로 "누가 어느 유형의 목록을 봤나"가 접속기록에서 구분된다(쿼리 키도 함께
+//   기록된다). CVE 탭은 지금까지와 완전히 같은 제목을 유지한다(기존 로그와의 연속성).
+vg_header($type === 'cve' ? '탐지 결과' : '탐지 결과 · ' . VG_FINDING_TYPES[$type]['label'], 'findings');
+// 컨텍스트(호스트·스캔)를 벗어나는 링크의 목적지 — 지금 보고 있는 탭은 유지한다.
+$typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
 ?>
   <div class="page-title page-title--stack"><div><h1>탐지 결과</h1>
   <div class="sub">
     <?php if ($scan): ?>
       호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['scan_id'] ?> · <?= vg_h($scan['collected_at']) ?>
-      · <a href="/findings.php">전체 호스트 보기 →</a>
+      · <a href="<?= vg_h($typeHome) ?>">전체 호스트 보기 →</a>
     <?php elseif ($scanId > 0): ?>
-      스캔 #<?= $scanId ?> 을(를) 찾을 수 없습니다. · <a href="/findings.php">전체 호스트 보기 →</a>
+      스캔 #<?= $scanId ?> 을(를) 찾을 수 없습니다. · <a href="<?= vg_h($typeHome) ?>">전체 호스트 보기 →</a>
     <?php elseif ($hostId > 0): ?>
       호스트 <strong><?= vg_h($hostOptions[$hostId]) ?></strong> · 최신 스캔 기준
-      · <a href="/findings.php">전체 호스트 보기 →</a>
+      · <a href="<?= vg_h($typeHome) ?>">전체 호스트 보기 →</a>
     <?php elseif ($hostOptions): ?>
       전체 호스트 <?= count($hostOptions) ?>대 · 각 호스트의 최신 스캔 기준
     <?php else: ?>스캔 없음<?php endif; ?>
@@ -221,17 +422,32 @@ vg_header('탐지 결과', 'findings');
     <?php endif; ?>
   </div></div>
 
-  <nav class="subtabs">
-    <a class="on" href="/findings.php">현황</a>
-    <a href="/changes.php">변화</a>
-    <!-- 같은 패키지의 '조치 불가' 가 이 목록에선 CVE 수십 줄로 흩어진다 —
-         (호스트×패키지) 로 묶어 보는 진입점. 목록 구조는 그대로 둔다. -->
-    <a href="/nofix-packages.php">제거 권고</a>
-  </nav>
+  <?php
+  // 탐지 유형 세 개가 앞에 서고, 그 뒤로 기존의 다른 화면(변화·제거 권고)이 이어진다.
+  //   세 유형은 같은 대상 스캔을 다른 눈으로 보는 것이라 한 줄에 나란히 둔다. 뱃지 숫자는
+  //   대상 스캔 기준 건수(CCE 는 그 탭의 기본인 위반 건수) — 탭이 곧 필터라는 걸 눈으로 알린다.
+  //   탭을 옮길 때 그 탭 전용 필터만 비우고(호스트·스캔·검색어·등급은 공통 축이라 유지),
+  //   페이지 번호는 항상 지운다(2페이지에서 탭을 바꾸면 없는 페이지가 된다).
+  $typeTabs = [];
+  foreach (VG_FINDING_TYPES as $key => $def) {
+      $overrides = ['page' => null];
+      foreach (VG_FINDING_TYPES as $other => $otherDef) {
+          if ($other === $key) { continue; }
+          foreach ($otherDef['clear'] as $name) { $overrides[$name] = null; }
+      }
+      // 기본 탭은 type 파라미터를 붙이지 않는다 — /findings.php 라는 기존 주소를 정본으로 남긴다.
+      $overrides['type'] = $key === 'cve' ? null : $key;
+      $typeTabs[$key] = ['label' => $def['label'], 'href' => vg_qs($overrides), 'n' => $typeCounts[$key]];
+  }
+  $typeTabs['changes'] = ['label' => '변화', 'href' => '/changes.php'];
+  // 같은 패키지의 '조치 불가' 가 CVE 목록에선 수십 줄로 흩어진다 — (호스트×패키지) 로 묶어 보는 진입점.
+  $typeTabs['nofix'] = ['label' => '제거 권고', 'href' => '/nofix-packages.php'];
+  vg_subtabs($typeTabs, $type);
+  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
-<?php else: ?>
+<?php elseif ($type === 'cve'): ?>
   <?php if ($unsupBy):
       // 사유 한 줄에 그 사유가 걸린 대상을 모아 붙인다. 사유 자체가 이미 "왜 판정할 수 없는가"를
       //   말하므로, 예전에 앞에 두던 총론 한 줄("피드가 모르는 배포판이거나…")은 뺐다.
@@ -455,6 +671,234 @@ vg_header('탐지 결과', 'findings');
                   }
                   return $html;
               },
+          ],
+      ]
+  );
+  if ($rows) { vg_page_nav($total, $perPage, $page); }
+  ?>
+
+<?php elseif ($type === 'cce'): ?>
+  <?php
+  // 위반 0건이 "준수" 로 읽히는 걸 막는다 — 판정 불가(NA)가 있으면 그 사실을 먼저 알린다.
+  //   CVE 탭의 "0건은 안전이 아니라 판정 불가" 경고와 같은 자리·같은 역할이다.
+  if ($cceResultCounts['NA'] > 0) {
+      vg_alert([
+          'type'  => 'warn',
+          'title' => '판정 불가(NA) ' . number_format($cceResultCounts['NA']) . '건 — 위반 0건이 "준수"를 뜻하지 않습니다',
+          'hints' => ['NA 는 점검에 필요한 설정값을 수집하지 못한 항목입니다.'],
+      ]);
+  }
+  ?>
+
+  <div class="cards">
+    <?php
+    // 결과 카드가 res 필터를 토글한다(다시 누르면 전체). CVE 탭의 등급 카드와 같은 조작이다.
+    //   NA 는 PASS 와 절대 같은 색을 쓰지 않는다 — 회색(판정 불가)과 초록(양호)은 다른 사실이다.
+    $cceCardTone = ['FAIL' => 'high', 'NA' => 'muted', 'PASS' => 'low'];
+    $cceCardLabel = ['FAIL' => '위반', 'NA' => '판정 불가', 'PASS' => '양호'];
+    foreach (['FAIL', 'NA', 'PASS'] as $rk): ?>
+      <a href="<?= vg_h(vg_qs(['res' => $res === $rk ? 'ALL' : $rk, 'page' => 1])) ?>"
+         class="kpi kpi--sm tone-<?= $cceCardTone[$rk] ?><?= $res === $rk ? ' is-selected' : '' ?>">
+        <b><?= number_format($cceResultCounts[$rk]) ?></b><span><?= $cceCardLabel[$rk] ?>(<?= $rk ?>)</span>
+      </a>
+    <?php endforeach; ?>
+  </div>
+
+  <?php
+  // 툴바 구성은 세 탭이 같다: 자산 → 등급 → (카드로 고른 필터를 hidden 으로) → 검색.
+  $toolbar = $scan
+      ? [['type' => 'hidden', 'name' => 'scan_id', 'value' => (string) $scan['scan_id']]]
+      : [['type' => 'select', 'name' => 'host', 'empty_label' => '전체 호스트',
+          'selected' => $hostId > 0 ? (string) $hostId : '', 'options' => $hostOptions]];
+  vg_toolbar(array_merge($toolbar, [
+      ['type' => 'select', 'name' => 'sev', 'empty_label' => '전체 등급', 'selected' => $sev,
+          'options' => array_combine($sevOptions, $sevOptions)],
+      // 결과는 바로 위 카드가 토글한다 — 검색을 제출해도 선택이 풀리지 않게 hidden 으로 싣는다.
+      ['type' => 'hidden', 'name' => 'res', 'value' => $res === 'FAIL' ? '' : $res, 'reset' => true],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '코드·점검항목·SSG 룰 검색', 'value' => $q],
+      ['type' => 'hidden', 'name' => 'type', 'value' => $type],
+  ]));
+
+  $hasAnyFilter = $q !== '' || $sev !== '' || $res !== 'FAIL';
+  $filterCta = ['href' => vg_qs(['q' => '', 'sev' => '', 'res' => '', 'page' => 1]), 'label' => '필터 초기화'];
+  if (!$hostOptions) {
+      $emptySpec = [
+          'icon'  => '📭',
+          'title' => '아직 수집된 스캔이 없습니다.',
+          'hint'  => '에이전트가 자산을 최소 한 번은 수집해야 이 화면에 판정이 뜹니다.',
+      ];
+  } elseif ($cceResultCounts['FAIL'] + $cceResultCounts['PASS'] + $cceResultCounts['NA'] === 0) {
+      // 점검 자체가 없는 것과 "위반이 없는 것" 은 다르다 — 여기서 "안전" 이라고 말하지 않는다.
+      $emptySpec = [
+          'icon'  => '📭',
+          'title' => '아직 보안설정 점검 결과가 없습니다.',
+          'hint'  => '에이전트가 설정값을 수집하고 서버가 판정해야 이 목록이 채워집니다.',
+      ];
+  } elseif ($res === 'FAIL' && !$hasAnyFilter) {
+      $emptySpec = [
+          'icon'  => '🔍',
+          'title' => '위반(FAIL) 0건입니다 — 점검된 항목 기준입니다.',
+          'hint'  => '판정 불가(NA) ' . number_format($cceResultCounts['NA']) . '건은 수집이 안 된 항목입니다.',
+          'cta'   => ['href' => vg_qs(['res' => 'ALL', 'page' => 1]), 'label' => '전체 결과 보기'],
+      ];
+  } else {
+      $emptySpec = [
+          'icon'  => '🔍',
+          'title' => '조건에 맞는 점검 결과가 없습니다.',
+          'hint'  => '등급·결과 필터나 검색어를 넓혀 보세요.',
+          'cta'   => $filterCta,
+      ];
+  }
+
+  // 컬럼 순서는 CVE 탭과 같은 뼈대다 — 자산이 첫 칸, 그 다음이 판정(결과·등급), 마지막이 근거.
+  //   노출 축(runtime_status)은 여기 없다: 설정 점검에는 리스닝·외부노출 개념이 없어서
+  //   억지로 만들면 없는 걸 있는 척하는 게 된다. 빈 칸을 만들지 않고 컬럼 자체를 두지 않는다.
+  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
+  $headers = array_merge($headers, [
+      ['label' => '결과',  'key' => 'result',   'width' => '8%',  'nowrap' => true],
+      ['label' => '등급',  'key' => 'severity', 'width' => '9%',  'nowrap' => true],
+      ['label' => '점검 항목', 'key' => 'title', 'width' => '24%'],
+      ['label' => '기준(코드 · SSG 룰)', 'key' => 'code', 'width' => '17%', 'class' => 'col-id'],
+      ['label' => '근거 (무엇을 보고 그렇게 판정했나)', 'key' => 'evidence'],
+  ]);
+
+  vg_table(
+      $headers,
+      $rows,
+      [
+          'empty' => $emptySpec,
+          'row_class' => fn($r) => $r['result'] === 'FAIL' ? vg_sev_row((string) $r['severity']) : '',
+          'cell' => [
+              'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a>',
+              // 결과 → 톤: FAIL 은 위험도색, PASS 는 low(초록), NA 는 muted(회색). host.php 와 같은 규칙.
+              'result' => fn($r) => vg_badge(
+                  (string) $r['result'],
+                  $r['result'] === 'FAIL' ? vg_sev_tone((string) $r['severity'])
+                      : ($r['result'] === 'PASS' ? 'low' : 'muted')
+              ),
+              // 등급은 위반일 때만 뜻이 있다 — PASS·NA 에 등급 뱃지를 붙이면 없는 위험을 있는 것처럼 만든다.
+              'severity' => fn($r) => $r['result'] === 'FAIL'
+                  ? vg_sev_badge((string) $r['severity'])
+                  : '<span class="why">–</span>',
+              'title' => fn($r) => '<div class="clamp-2">' . vg_h((string) $r['title']) . '</div>',
+              // 룰 상세 화면은 이미 compliance_rule.php 가 갖고 있다 — 새로 만들지 않고 링크한다.
+              'code' => function ($r) {
+                  $html = '<code>' . vg_h((string) $r['code']) . '</code>';
+                  if (empty($r['ssg_rule_id'])) {
+                      return $html . '<div class="why">자체 기준(대응 SSG 룰 없음)</div>';
+                  }
+                  $ruleId = (string) $r['ssg_rule_id'];
+                  $html .= '<div class="why"><a href="/compliance_rule.php?rule=' . urlencode($ruleId) . '">'
+                        . vg_h(vg_trunc($ruleId, 28)) . ' →</a></div>';
+                  return $html;
+              },
+              'evidence' => function ($r) {
+                  $why = trim((string) ($r['rationale'] ?? ''));
+                  $ev  = trim((string) ($r['evidence'] ?? ''));
+                  $html = '<div class="why clamp-2">' . ($why !== '' ? vg_h($why) : '<span class="why">판정 사유 없음</span>') . '</div>';
+                  if ($ev !== '') {
+                      $html .= '<div class="why clamp-2"><code>' . vg_h($ev) . '</code></div>';
+                  }
+                  return $html;
+              },
+          ],
+      ]
+  );
+  if ($rows) { vg_page_nav($total, $perPage, $page); }
+  ?>
+
+<?php else: ?>
+  <div class="cards">
+    <?php
+    // 범위 카드가 scope 필터를 토글한다. 톤은 host.php 의 $scopeTone 과 같은 매핑이다.
+    $scopeTone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'BOUND' => 'med', 'FILTERED' => 'muted', 'LOCAL' => 'muted', '-' => 'muted'];
+    foreach ($scopeOptions as $sc): ?>
+      <a href="<?= vg_h(vg_qs(['scope' => $scope === $sc ? '' : $sc, 'page' => 1])) ?>"
+         class="kpi kpi--sm tone-<?= $scopeTone[$sc] ?><?= $scope === $sc ? ' is-selected' : '' ?>">
+        <b><?= number_format((int) ($scopeCounts[$sc] ?? 0)) ?></b><span><?= vg_h(vg_scope_label($sc)) ?></span>
+      </a>
+    <?php endforeach; ?>
+  </div>
+
+  <?php
+  $toolbar = $scan
+      ? [['type' => 'hidden', 'name' => 'scan_id', 'value' => (string) $scan['scan_id']]]
+      : [['type' => 'select', 'name' => 'host', 'empty_label' => '전체 호스트',
+          'selected' => $hostId > 0 ? (string) $hostId : '', 'options' => $hostOptions]];
+  vg_toolbar(array_merge($toolbar, [
+      // 범위는 위 카드가 토글한다(같은 필터에 컨트롤을 둘 두지 않는다) — 검색 제출 시 유지되게 hidden.
+      ['type' => 'hidden', 'name' => 'scope', 'value' => $scope, 'reset' => true],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => '프로세스 또는 실행 패키지 검색', 'value' => $q],
+      ['type' => 'hidden', 'name' => 'type', 'value' => $type],
+  ]));
+
+  $hasAnyFilter = $q !== '' || $scope !== '';
+  if (!$hostOptions) {
+      $emptySpec = [
+          'icon'  => '📭',
+          'title' => '아직 수집된 스캔이 없습니다.',
+          'hint'  => '에이전트가 자산을 최소 한 번은 수집해야 이 화면에 노출이 뜹니다.',
+      ];
+  } elseif ($hasAnyFilter) {
+      $emptySpec = [
+          'icon'  => '🔍',
+          'title' => '조건에 맞는 리스닝 소켓이 없습니다.',
+          'hint'  => '범위 필터나 검색어를 넓혀 보세요.',
+          'cta'   => ['href' => vg_qs(['q' => '', 'scope' => '', 'page' => 1]), 'label' => '필터 초기화'],
+      ];
+  } else {
+      // 0건을 "안전" 으로 말하지 않는다 — 구버전 에이전트·수집 실패면 열린 포트가 있어도 0건이다.
+      $emptySpec = [
+          'icon'  => '📭',
+          'title' => '수집된 네트워크 노출이 없습니다.',
+          'hint'  => '에이전트가 리스닝 소켓을 수집해야 이 목록이 채워집니다 — 0건이 "열린 포트 없음"을 보장하지 않습니다.',
+      ];
+  }
+
+  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
+  $headers = array_merge($headers, [
+      // 노출 근거(범위)가 이 탭의 판정 축이다 — CVE 탭의 '상태' 칸과 같은 자리다.
+      ['label' => '범위',   'key' => 'scope',   'width' => '11%', 'nowrap' => true],
+      ['label' => '프로세스', 'key' => 'proc',  'width' => '16%', 'class' => 'col-id'],
+      ['label' => '포트',   'key' => 'port',    'width' => '11%', 'nowrap' => true],
+      ['label' => '실행 패키지', 'key' => 'exe_pkg', 'width' => '18%', 'class' => 'col-id'],
+      ['label' => '로드한 패키지', 'key' => 'loaded_pkgs'],
+  ]);
+
+  vg_table(
+      $headers,
+      $rows,
+      [
+          'empty' => $emptySpec,
+          // 외부노출 행은 CVE 표의 CRITICAL 행과 같은 강조를 준다(같은 화면에서 같은 뜻의 색).
+          'row_class' => fn($r) => $r['scope'] === 'EXTERNAL' ? vg_sev_row('CRITICAL') : '',
+          // 범위는 NULL 도 '-'(범위 미상)로 접어 카드·필터와 같은 값으로 다룬다.
+          'cell' => [
+              'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a>',
+              // 톤 매핑은 위 카드와 같은 $scopeTone 하나를 쓴다(같은 값이 카드와 표에서 다른 색이면 안 된다).
+              'scope' => function ($r) use ($scopeTone) {
+                  $sc = ((string) ($r['scope'] ?? '')) !== '' ? (string) $r['scope'] : '-';
+                  return vg_badge(vg_scope_label($sc), $scopeTone[$sc] ?? 'muted');
+              },
+              // 컨테이너의 nginx 를 호스트의 nginx 로 착각하지 않게 위치를 함께 적는다(host.php 와 같은 판단).
+              'proc' => fn($r) => vg_h((string) ($r['proc'] ?? ''))
+                  . '<div class="why">' . ($r['ctr'] !== '' ? '컨테이너 ' . vg_h((string) $r['ctr']) : '호스트') . '</div>',
+              'port' => fn($r) => vg_h((string) ($r['proto'] ?? '')) . '/' . (int) $r['port']
+                  . '<div class="why">' . vg_h((string) ($r['bind_addr'] ?? '')) . '</div>',
+              // 이 리스너에 걸린 CVE 건수 — 누르면 CVE 탭에서 같은 자산·같은 패키지로 좁혀 본다.
+              //   노출과 취약점을 잇는 자리라 이 제품의 축이 한 줄에서 완성된다.
+              'exe_pkg' => function ($r) use ($expCveCounts) {
+                  $pkg = (string) ($r['exe_pkg'] ?? '');
+                  if ($pkg === '') { return '<span class="why">–</span>'; }
+                  $html = vg_h($pkg);
+                  $n = $expCveCounts[$r['scan_id'] . '|' . $r['container_id'] . '|' . $pkg] ?? 0;
+                  if ($n > 0) {
+                      $href = '/findings.php?host=' . (int) $r['host_id'] . '&amp;q=' . urlencode($pkg);
+                      $html .= '<div class="why"><a href="' . $href . '">CVE ' . number_format($n) . '건 →</a></div>';
+                  }
+                  return $html;
+              },
+              'loaded_pkgs' => fn($r) => '<span class="why">' . vg_trunc($r['loaded_pkgs'], 80) . '</span>',
           ],
       ]
   );

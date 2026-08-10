@@ -189,7 +189,7 @@ function vg_status_badge(?string $s): string {
     return vg_badge(vg_status_label($s), $tone[$s ?? ''] ?? 'muted');
 }
 
-// 노출 범위(tb_exposure.scope: EXTERNAL/LAN/BOUND/FILTERED/LOCAL).
+// 노출 범위(tb_exposure.scope: EXTERNAL/LAN/BOUND/FILTERED/LOCAL/-).
 //   문구는 matcher.php vg_classify()/agent 판정 주석과 통일(같은 값을 두 곳에서 다르게 부르지 않게).
 //   톤(색) 매핑은 host.php 의 $scopeTone 이 계속 갖는다 — 여기는 라벨 텍스트만.
 function vg_scope_label(?string $s): string {
@@ -199,6 +199,9 @@ function vg_scope_label(?string $s): string {
         'BOUND'    => '특정 IP 바인딩',
         'FILTERED' => '방화벽 차단',
         'LOCAL'    => '로컬 전용',
+        // 에이전트가 bind 주소를 못 읽은 소켓(vuln-inventory-agent.sh 의 scope="-").
+        //   "로컬 전용" 으로 낙관하지 않는다 — 모르는 것은 모른다고 적는다.
+        '-'        => '범위 미상',
     ];
     return $m[$s ?? ''] ?? (string) $s;
 }
