@@ -128,13 +128,11 @@ vg_header('통제 기준 매핑', 'control_mapping');
       ['count' => $total]
   ); ?>
   <?php
-  // 컴플라이언스 매핑과 이름이 겹쳐 보여 나란히 세운다 — 저기는 준수/미준수까지 **판정**하고,
-  //   여기는 같은 점검 결과를 기준별로 **묶어 세기만** 한다(compliance.php 쪽 주석과 한 쌍).
-  vg_subtabs([
-      'compliance'      => ['label' => '컴플라이언스 매핑', 'href' => '/compliance.php'],
-      'control_mapping' => ['label' => '통제 기준 매핑',   'href' => '/control_mapping.php'],
-  ], 'control_mapping');
+  // 이 화면은 컴플라이언스 매핑의 서브탭에서 내려왔다(강등이지 삭제가 아니다) — 저기는
+  //   준수/미준수까지 **판정**하고, 여기는 같은 점검 결과를 기준별로 **묶어 세기만** 한다.
+  //   탭바는 "동급 화면"이라는 뜻이 돼 저쪽에서 뺀 것과 어긋나므로, 돌아가는 링크 한 줄만 남긴다.
   ?>
+  <p class="why"><a href="/compliance.php">← 컴플라이언스 매핑</a> · 이 화면은 판정하지 않습니다</p>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
