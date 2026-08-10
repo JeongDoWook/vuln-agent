@@ -197,9 +197,13 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
     return ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows];
 }
 
-/** 취약점 행 → 의존성 판정 캐시의 키. 판정은 (컨테이너, 패키지, 설치버전) 단위다. */
+/** 취약점 행 → 의존성 판정 캐시의 키. 형식의 정본은 packagedep.php 다(집계도 같은 키를 쓴다). */
 function vg_host_dep_key(array $f): string {
-    return (int) ($f['container_id'] ?? 0) . '|' . (string) ($f['package_name'] ?? '') . '|' . (string) ($f['installed_version'] ?? '');
+    return vg_pkgdep_finding_key(
+        (int) ($f['container_id'] ?? 0),
+        (string) ($f['package_name'] ?? ''),
+        (string) ($f['installed_version'] ?? '')
+    );
 }
 
 /** 손댈 대상(부모) 라벨 — "이름 버전 이 끌어옴 [외 N개]". 이스케이프 전의 평문이다. */
@@ -225,49 +229,17 @@ function vg_host_dep_origin_cell(array $o, int $hostId): string {
 }
 
 /**
- * 화면에 뜬 취약점 행들의 "직접/전이" 판정을 한 번에 계산한다.
- *   반환: ['origins' => [vg_host_dep_key() => vg_pkgdep_origin() 결과 + container_id],
- *          'edge_truncated' => 엣지 상한에 걸렸나, 'path_truncated' => 경로 상한에 걸렸나]
- *
- *   ── 호출 조건: 이 스캔에 의존성 엣지가 하나라도 있을 때만(host.php 의 $depEdgeTotal 게이트).
- *   엣지가 없는 자산에서는 이 함수 자체가 호출되지 않으므로 **쿼리가 한 건도 늘지 않는다.**
- *
- *   ── 쿼리 수: vg_pkgdep_containers() 2건 + 엣지가 있는 컨테이너 단위마다 vg_pkgdep_load() 1건.
- *   행마다 조회하면 N+1 이라, 단위별로 **한 번 적재해 메모리에서** 전 행을 판정한다.
- *   uk_pkg_dep_edge 좌측 접두가 (scan_id, container_id)라 이 단위 조회만 인덱스를 탄다 —
- *   그래서 이 기능은 자산 하나의 최신 스캔(host.php) 안에서만 붙고, 전 호스트 통합
- *   목록(findings.php)에는 붙이지 않는다(행마다 그래프 적재 = 성능 사고).
+ * 손댈 대상(부모) 요약 표의 한 행 → 이름·버전 + 의존성 그래프 링크.
+ *   링크는 "무엇을 끌어오나"(tab=to) 로 건다 — 이 부모를 올리면 무엇이 함께 바뀌는지가
+ *   여기서 궁금한 것이다(행 단위 셀의 링크는 반대로 "무엇이 끌어왔나"였다).
  */
-function vg_host_load_dep_origins(PDO $pdo, int $sid, array $rows): array {
-    $out = ['origins' => [], 'edge_truncated' => false, 'path_truncated' => false];
-    if (!$rows) { return $out; }
-
-    $groups = vg_pkgdep_containers($pdo, $sid);
-    if (!$groups) { return $out; }
-
-    // 화면에 뜬 행이 속한 단위 중, 실제로 엣지가 있는 단위만 적재한다.
-    $cids = [];
-    foreach ($rows as $f) {
-        $cid = (int) ($f['container_id'] ?? 0);
-        if (isset($groups[$cid])) { $cids[$cid] = true; }
-    }
-    foreach (array_keys($cids) as $cid) {
-        $load = vg_pkgdep_load($pdo, $sid, $cid);
-        if ($load['truncated']) { $out['edge_truncated'] = true; }
-        $graph = vg_pkgdep_build($load['edges']);
-        $index = vg_pkgdep_index($graph);
-
-        foreach ($rows as $f) {
-            if ((int) ($f['container_id'] ?? 0) !== $cid) { continue; }
-            $key = vg_host_dep_key($f);
-            if (isset($out['origins'][$key])) { continue; }
-            $o = vg_pkgdep_origin($graph, $index, (string) ($f['package_name'] ?? ''), (string) ($f['installed_version'] ?? ''));
-            if ($o['truncated']) { $out['path_truncated'] = true; }
-            // unknown 은 담지 않는다 — 화면이 "모름"으로 도배되지 않게 아무것도 표시하지 않는다.
-            if ($o['verdict'] === 'transitive') { $out['origins'][$key] = $o + ['container_id' => $cid]; }
-        }
-    }
-    return $out;
+function vg_host_dep_rollup_target(array $p, int $hostId): string {
+    $t = vg_pkgdep_parts((string) $p['key']);
+    $url = '/depgraph.php?id=' . $hostId . '&cid=' . (int) $p['container_id']
+         . '&mgr=' . urlencode($t['manager']) . '&name=' . urlencode($t['name'])
+         . '&ver=' . urlencode($t['version']) . '&tab=to';
+    return '<strong>' . vg_h($t['name']) . '</strong> <span class="why">' . vg_h($t['version']) . '</span>'
+        . ' <a class="pill" href="' . vg_h($url) . '">의존성 그래프</a>';
 }
 
 function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset, int $ePage, ?string $q = null): array {
@@ -794,7 +766,9 @@ $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
 $accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0; $containerTotal = 0;
-$depOrigins = ['origins' => [], 'edge_truncated' => false, 'path_truncated' => false];  // 전이 의존성 판정
+// 전이 의존성 판정 + 손댈 대상(부모)별 묶음. 엣지가 없는 자산에선 이 기본값 그대로다.
+$depOrigins = ['origins' => [], 'parents' => [], 'finding_total' => 0, 'finding_truncated' => false,
+               'edge_truncated' => false, 'path_truncated' => false];
 $gradeSuggestionHistory = [];
 $q = trim((string) ($_GET['q'] ?? ''));
 // 계정 탭 필터(?acc=). 화이트리스트 밖 값은 전체로 떨군다 — 값이 그대로 SQL 로 가지 않는다.
@@ -958,10 +932,12 @@ try {
         if ($tab === 'vuln') {
             ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows]
                 = vg_host_load_vuln_tab($pdo, $sid, $critHighTotal, $perPage, $offset, $q);
-            // 전이 의존성은 그 패키지만 갈아끼울 수 없다 — 손댈 대상(부모)을 찾아 조치 문구를 바꾼다.
+            // 전이 의존성은 그 패키지만 갈아끼울 수 없다 — 손댈 대상(부모)을 찾아 조치 문구를 바꾸고,
+            //   부모별로 묶어 "이 하나를 올리면 N건" 을 탭 상단에 보여준다.
+            //   판정 대상은 **스캔 전체**다(페이지마다 답이 달라지면 우선순위가 아니다).
             //   $depEdgeTotal 은 위에서 이미 센 값이다. 0이면 여기서 끝나 쿼리가 늘지 않는다.
             if ($depEdgeTotal > 0) {
-                $depOrigins = vg_host_load_dep_origins($pdo, $sid, array_merge($rows, $restartRows));
+                $depOrigins = vg_pkgdep_scan_rollup($pdo, $sid);
             }
         } elseif ($tab === 'packages') {
             ['total' => $total, 'rows' => $rows]
@@ -1215,8 +1191,12 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         'cell'      => $vulnCells,
     ];
     // 그래프가 상한에서 잘렸으면 밝힌다 — 조용히 자르면 "전이 아님"이 사실처럼 보인다.
-    if ($depOrigins['edge_truncated'] || $depOrigins['path_truncated']) {
+    if ($depOrigins['edge_truncated'] || $depOrigins['path_truncated'] || $depOrigins['finding_truncated']) {
         $depHints = [];
+        if ($depOrigins['finding_truncated']) {
+            $depHints[] = '집계에 쓴 취약점이 상한(' . number_format(VG_PKGDEP_ROLLUP_FINDING_MAX)
+                . '건)에서 잘렸습니다 — 아래 "먼저 올릴 대상"의 건수는 전수가 아닙니다.';
+        }
         if ($depOrigins['edge_truncated']) {
             $depHints[] = '엣지가 상한(' . number_format(VG_PKGDEP_EDGE_MAX) . '개)에서 잘렸습니다 — 그 뒤의 의존성은 보지 않았습니다.';
         }
@@ -1227,6 +1207,50 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         vg_alert(['type' => 'warn', 'title' => '의존성 판정이 일부만 반영됐습니다', 'hints' => $depHints]);
     }
   ?>
+    <?php
+    /* ── 손댈 대상(부모)별 묶음 — "이 하나를 올리면 N건" ────────────────────────
+     *   행 단위로만 보면 "그래서 뭐부터 올리지?" 에 답이 안 나온다. 같은 부모가 여러
+     *   취약점을 끌어오는 건 흔해서, 그 묶음을 먼저 보여주는 것이 조치 순서를 바꾼다.
+     *   집계는 **스캔 전체** 기준이라 페이지를 넘겨도 값이 변하지 않는다.
+     *   전이 취약점이 없으면 이 요약 자체를 그리지 않는다 — 빈 카드는 잡음이다. */
+    if ($depOrigins['parents']):
+        $rollupAll = $depOrigins['parents'];
+        $rollupTop = array_slice($rollupAll, 0, VG_PKGDEP_ROLLUP_TOP);
+        $rollupHeaders = [
+            ['label' => '먼저 올릴 대상'],
+            ['label' => '최고 등급', 'key' => 'severity'],
+            ['label' => '해결 건수', 'align' => 'right', 'nowrap' => true],
+            ['label' => '끌어오는 취약 패키지'],
+        ];
+        $rollupOpts = [
+            'card'      => false,
+            'row_class' => fn($p) => vg_sev_row((string) $p['severity']),
+            'cell'      => [
+                0 => fn($p) => vg_host_dep_rollup_target($p, $hostId),
+                'severity' => fn($p) => vg_sev_badge((string) $p['severity']),
+                2 => fn($p) => '<strong>' . number_format((int) $p['count']) . '</strong>건',
+                3 => function ($p) {
+                    $shown = array_slice($p['packages'], 0, VG_PKGDEP_ROLLUP_PKG_TOP);
+                    $more  = count($p['packages']) - count($shown);
+                    return '<span class="why">' . vg_h(implode(', ', $shown))
+                        . ($more > 0 ? ' 외 ' . $more . '개' : '') . '</span>';
+                },
+            ],
+        ];
+    ?>
+    <div class="card">
+      <strong>먼저 올릴 대상 <span class="hint">(<?= number_format(count($rollupAll)) ?>개)</span></strong>
+      <span class="why">— 이 부모를 올리면 그 아래 취약점이 함께 해결됩니다. 스캔 전체 기준이라 페이지를 넘겨도 값이 변하지 않습니다.
+        <?php if (count($rollupAll) > count($rollupTop)): ?>
+          · <?= number_format(count($rollupAll)) ?>개 중 상위 <?= count($rollupTop) ?>개
+        <?php endif; ?>
+        · 올릴 버전은 제시하지 않습니다 — 부모의 다른 버전이 무엇을 끌어오는지는 수집된 정보로 알 수 없습니다.
+      </span>
+      <div class="card__body">
+      <?php vg_table($rollupHeaders, $rollupTop, $rollupOpts); ?>
+      </div>
+    </div>
+    <?php endif; ?>
     <?php vg_toolbar([
         ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
