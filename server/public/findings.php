@@ -26,11 +26,13 @@ vg_require_menu('findings');
  * 탐지 유형 탭. "세 유형" 이라는 사실을 여기 하나로만 둔다 — 화이트리스트 검증·탭 렌더·
  *   툴바 hidden 값이 전부 이 상수를 참조한다. 'clear' 는 다른 탭으로 넘어갈 때 비울
  *   그 탭 전용 파라미터다(호스트·스캔·검색어·등급은 공통 축이라 유지한다).
+ *   라벨은 여기 없다 — 세 화면이 함께 그리는 탭 줄이라 nav.php 의
+ *   vg_findings_subtab_labels() 가 정본이다.
  */
 const VG_FINDING_TYPES = [
-    'cve'      => ['label' => '취약점(CVE)',   'clear' => ['st', 'fx', 'ctr']],
-    'cce'      => ['label' => '보안설정(CCE)', 'clear' => ['res']],
-    'exposure' => ['label' => '노출',          'clear' => ['scope']],
+    'cve'      => ['clear' => ['st', 'fx', 'ctr']],
+    'cce'      => ['clear' => ['res']],
+    'exposure' => ['clear' => ['scope']],
 ];
 
 $type = (string) ($_GET['type'] ?? 'cve');
@@ -398,7 +400,7 @@ try {
 // 탭을 제목에 싣는다 — vg_header() 안의 vg_log_page_view() 가 이 제목을 감사로그 메시지로
 //   남기므로, 이것만으로 "누가 어느 유형의 목록을 봤나"가 접속기록에서 구분된다(쿼리 키도 함께
 //   기록된다). CVE 탭은 지금까지와 완전히 같은 제목을 유지한다(기존 로그와의 연속성).
-vg_header($type === 'cve' ? '탐지 결과' : '탐지 결과 · ' . VG_FINDING_TYPES[$type]['label'], 'findings');
+vg_header($type === 'cve' ? '탐지 결과' : '탐지 결과 · ' . vg_findings_subtab_labels()[$type], 'findings');
 // 컨텍스트(호스트·스캔)를 벗어나는 링크의 목적지 — 지금 보고 있는 탭은 유지한다.
 $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
 ?>
@@ -428,21 +430,21 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   //   대상 스캔 기준 건수(CCE 는 그 탭의 기본인 위반 건수) — 탭이 곧 필터라는 걸 눈으로 알린다.
   //   탭을 옮길 때 그 탭 전용 필터만 비우고(호스트·스캔·검색어·등급은 공통 축이라 유지),
   //   페이지 번호는 항상 지운다(2페이지에서 탭을 바꾸면 없는 페이지가 된다).
-  $typeTabs = [];
+  //   탭 줄 자체(라벨·순서·목적지)는 nav.php 의 vg_findings_subtabs() 가 정본이고, 여기서는
+  //   이 화면에서만 의미 있는 것 — 뱃지 숫자와 필터를 이어받는 href — 만 얹는다.
+  //   변화·제거 권고 탭은 이어받을 필터가 없어 기본 href 그대로 둔다.
+  $tabOverrides = [];
   foreach (VG_FINDING_TYPES as $key => $def) {
-      $overrides = ['page' => null];
+      $qs = ['page' => null];
       foreach (VG_FINDING_TYPES as $other => $otherDef) {
           if ($other === $key) { continue; }
-          foreach ($otherDef['clear'] as $name) { $overrides[$name] = null; }
+          foreach ($otherDef['clear'] as $name) { $qs[$name] = null; }
       }
       // 기본 탭은 type 파라미터를 붙이지 않는다 — /findings.php 라는 기존 주소를 정본으로 남긴다.
-      $overrides['type'] = $key === 'cve' ? null : $key;
-      $typeTabs[$key] = ['label' => $def['label'], 'href' => vg_qs($overrides), 'n' => $typeCounts[$key]];
+      $qs['type'] = $key === 'cve' ? null : $key;
+      $tabOverrides[$key] = ['href' => vg_qs($qs), 'n' => $typeCounts[$key]];
   }
-  $typeTabs['changes'] = ['label' => '변화', 'href' => '/changes.php'];
-  // 같은 패키지의 '조치 불가' 가 CVE 목록에선 수십 줄로 흩어진다 — (호스트×패키지) 로 묶어 보는 진입점.
-  $typeTabs['nofix'] = ['label' => '제거 권고', 'href' => '/nofix-packages.php'];
-  vg_subtabs($typeTabs, $type);
+  vg_findings_subtabs($type, $tabOverrides);
   ?>
 
 <?php if ($err !== null): ?>

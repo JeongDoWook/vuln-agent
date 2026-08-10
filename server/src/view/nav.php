@@ -9,6 +9,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../format.php';
+require_once __DIR__ . '/components.php';   // vg_subtabs() — vg_findings_subtabs() 가 쓴다.
 
 /**
  * 활동 로그 activity_type → 한글 라벨(SSOT). activity.php(전체 로그) 와 user.php(사용자별
@@ -96,20 +97,19 @@ function vg_nav_sections(): array {
             ['perm' => 'dashboard', 'href' => '/', 'label' => '대시보드', 'key' => 'dashboard'],
         ],
         '바로가기' => [
-            ['perm' => 'assets',     'href' => '/assets.php',     'label' => '자산',        'key' => 'assets'],
-            // 자산 바로 아래 — 권한이 assets 라 자산 계열이고, 특정 호스트가 아니라
-            // 전체 설치 패키지를 한 번에 보는 화면이라 자산 목록과 형제로 둔다.
-            ['perm' => 'assets',     'href' => '/asset-packages.php', 'label' => '전체 설치 패키지', 'key' => 'asset_packages'],
+            // 전체 설치 패키지는 자산 목록의 서브탭으로만 들어온다 — 사이드바엔 대표 링크
+            // 하나만 두되, 그 탭에 있어도 같은 항목을 활성화해 현재 위치를 잃지 않게 한다.
+            ['perm' => 'assets',     'href' => '/assets.php',     'label' => '자산',        'key' => 'assets',
+             'active_keys' => ['assets', 'asset_packages']],
             ['perm' => 'connectors', 'href' => '/connectors.php', 'label' => '데이터 수집', 'key' => 'connectors'],
         ],
         '취약점' => [
-            ['perm' => 'findings',   'href' => '/findings.php',   'label' => '탐지 결과', 'key' => 'findings'],
-            // 탐지 결과의 시계열 뷰 — 같은 findings 권한이라 탐지 결과 바로 다음에 둔다.
-            ['perm' => 'findings',   'href' => '/changes.php',    'label' => '변화 추적', 'key' => 'changes'],
+            // 변화 추적·제거 권고는 vg_findings_subtabs() 의 서브탭으로만 들어온다 —
+            // 어느 탭에 있어도 이 항목이 활성이어야 현재 위치를 잃지 않는다.
+            ['perm' => 'findings',   'href' => '/findings.php',   'label' => '탐지 결과', 'key' => 'findings',
+             'active_keys' => ['findings', 'changes', 'nofix_packages']],
             ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE',       'key' => 'cves'],
             ['perm' => 'findings',   'href' => '/packages.php',   'label' => '패키지',    'key' => 'packages'],
-            // 패키지에서 파생되는 조치 권고라 패키지 다음.
-            ['perm' => 'findings',   'href' => '/nofix-packages.php', 'label' => '제거·대체 권고', 'key' => 'nofix_packages'],
             ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '판정 근거', 'key' => 'vendor'],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
         ],
@@ -132,6 +132,48 @@ function vg_nav_sections(): array {
 }
 
 /**
+ * 탐지 결과 계열 서브탭의 SSOT — 라벨·순서·목적지가 여기 한 곳에만 있다.
+ *   같은 줄을 findings.php(조립) · changes.php(하드코딩) · nofix-packages.php(하드코딩) 세 곳이
+ *   각자 그리다가 개수(3개 vs 5개)와 라벨('현황' vs '취약점(CVE)')이 어긋났다. 사이드바엔
+ *   '탐지 결과' 하나만 있고 변화·제거 권고는 이 줄로만 들어오므로, 세 화면이 글자 그대로
+ *   같은 줄을 그려야 사용자가 위치를 잃지 않는다. 내비게이션 정의가 사는 nav.php 에 둔다.
+ */
+function vg_findings_subtab_labels(): array {
+    return [
+        'cve'      => '취약점(CVE)',
+        'cce'      => '보안설정(CCE)',
+        'exposure' => '노출',
+        'changes'  => '변화',
+        'nofix'    => '제거 권고',
+    ];
+}
+
+/**
+ * 위 정의를 vg_subtabs() 로 그린다. $active 는 현재 화면의 탭 키.
+ *   $overrides 는 findings.php 전용 보강분이다 — 탭 키별로 ['href'=>…, 'n'=>…] 을 준다.
+ *   그 화면에서만 뱃지 숫자를 붙이고 vg_qs() 로 필터를 이어받기 때문이며, 안 주면 필터
+ *   컨텍스트가 없는 changes.php·nofix-packages.php 처럼 단순 href 로 떨어진다.
+ */
+function vg_findings_subtabs(string $active, array $overrides = []): void {
+    $hrefs = [
+        'cve'      => '/findings.php',
+        'cce'      => '/findings.php?type=cce',
+        'exposure' => '/findings.php?type=exposure',
+        'changes'  => '/changes.php',
+        'nofix'    => '/nofix-packages.php',
+    ];
+    $tabs = [];
+    foreach (vg_findings_subtab_labels() as $key => $label) {
+        $tabs[$key] = [
+            'label' => $label,
+            'href'  => $overrides[$key]['href'] ?? $hrefs[$key],
+            'n'     => $overrides[$key]['n'] ?? null,
+        ];
+    }
+    vg_subtabs($tabs, $active);
+}
+
+/**
  * 사이드바 메뉴 아이콘 — 단색 라인 SVG. stroke=currentColor 라 링크 색을 그대로
  * 상속한다(테마·활성 상태에 자동으로 따라간다). key 는 vg_nav_sections() 의 것과 맞춘다.
  * 이미 이스케이프가 필요 없는 정적 마크업이라 그대로 돌려준다.
@@ -143,10 +185,6 @@ function vg_nav_icon(string $key): string {
         'changes'     => '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
         'cves'        => '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
         'packages'    => '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22" x2="12" y2="12"/>',
-        // 제거·대체 권고 — 상자 + 금지 표시: 벤더 수정이 없어 "쓰지 말라" 를 권고한다는 뜻.
-        'nofix_packages' => '<rect x="2" y="4" width="11" height="11" rx="2"/><circle cx="18.5" cy="18.5" r="4.5"/><line x1="15.3" y1="21.7" x2="21.7" y2="15.3"/>',
-        // 전체 설치 패키지 — 여러 겹 모양: 호스트 하나가 아니라 전체 설치분을 겹쳐 본다는 뜻.
-        'asset_packages' => '<path d="M3 8.5 12 4l9 4.5-9 4.5z"/><polyline points="3 12.5 12 17 21 12.5"/><polyline points="3 16.5 12 21 21 16.5"/>',
         // 벤더 판정 — 검인(도장) 모양: 벤더가 "고쳤다/안 고쳤다" 를 확인해 준 것이라는 뜻.
         'vendor'      => '<circle cx="12" cy="9" r="6"/><polyline points="9.3 9 11.2 10.9 14.9 7.2"/><path d="M8.5 14.4 7.4 21l4.6-2.3 4.6 2.3-1.1-6.6"/>',
         // 보안설정 룰셋 — 체크리스트 모양: 기준(CIS/NIST/STIG)에 맞나 항목별로 확인한다는 뜻.

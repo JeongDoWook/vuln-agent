@@ -425,13 +425,9 @@ vg_header('변화 추적', 'changes');
 ?>
   <?php vg_page_title('변화 추적', 'CHANGES', '직전 수집과 비교해 신규·해결·등급 변화를 보여줍니다.'); ?>
 
-  <?php /* 취약점 계열 세 화면(현황·변화·제거 권고)의 갈래. 사이드바엔 '현황' 하나만 있고
-           나머지 둘은 이 줄로만 들어온다 — 그래서 세 화면이 같은 줄을 그려야 한다. */ ?>
-  <?php vg_subtabs([
-      'findings' => ['label' => '현황', 'href' => '/findings.php'],
-      'changes'  => ['label' => '변화', 'href' => '/changes.php'],
-      'nofix'    => ['label' => '제거 권고', 'href' => '/nofix-packages.php'],
-  ], 'changes'); ?>
+  <?php /* 탐지 결과 계열의 갈래 — 정의는 nav.php 의 vg_findings_subtabs() 한 곳에만 있다.
+           사이드바엔 '탐지 결과' 하나만 있고 이 화면은 이 줄로만 들어온다. */ ?>
+  <?php vg_findings_subtabs('changes'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
