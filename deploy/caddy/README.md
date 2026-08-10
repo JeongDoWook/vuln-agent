@@ -1,6 +1,6 @@
 # Caddy — HTTPS 리버스 프록시 (운영 전용)
 
-> 문서 기준: 2026-08-09.
+> 문서 기준: 2026-08-11.
 >
 > **인증서는 자체서명이다 — 확정된 설계 결정이다.** `Caddyfile` 이 `tls internal`(Caddy 내부 CA)로
 > 뜬다. 2026-07-12 에 Let's Encrypt(DuckDNS DNS-01)로 전환하려다 실패했고(토큰이 그 도메인을
@@ -33,8 +33,9 @@ vuln-agent 웹을 **HTTPS**로 감싸는 앞단 프록시. 인증서는 내부 C
   `reverse_proxy web:80`, 평문 80 catch-all, `(security_headers)` snippet
 
 > `PROD_DOMAIN` 은 **기본값이 없다.** 비어 있으면 compose 가 `${PROD_DOMAIN:?…}` 로 기동을
-> 거부하고, 그걸 뚫어도 Caddy 가 빈 주소를 전역 옵션 블록으로 읽어
-> `unrecognized global option: encode` 로 죽는다. 폴백을 두면 엉뚱한 이름으로 조용히 떠서
+> 거부하고, 그걸 뚫어도 Caddy 가 빈 주소를 전역 옵션 블록으로 읽어 죽는다
+> (2026-08-08 이후 메시지: `server block without any key is global configuration, and if
+> used, it must be first`. 그 전엔 `unrecognized global option: encode` 였다). 폴백을 두면 엉뚱한 이름으로 조용히 떠서
 > **HTTPS 가 깨진 걸 아무도 모르기 때문에** 일부러 시끄럽게 죽게 뒀다.
 
 ## 배포 (서버에서)

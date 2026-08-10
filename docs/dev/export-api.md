@@ -1,8 +1,12 @@
 # Export API — 스캔 취약점 결과 내보내기
 
-> 문서 기준: 2026-08-09.
+> 문서 기준: 2026-08-11.
 
 외부 시스템(예: Python AI 보고서 생성기)이 스캔 결과를 JSON/XML 로 가져가는 읽기 전용 API.
+
+> **부품표(SBOM)는 형제 엔드포인트가 따로 있다** — `GET /sbom.php`(CycloneDX 1.5 / SPDX 2.3).
+> 여기 토큰을 그대로 쓰고 자산 하나당 문서 하나를 낸다(`host` 또는 `scan_id` 필수).
+> 이 문서가 다루는 `export.php` 는 **취약점 판정 결과**만 내보낸다.
 
 - **엔드포인트**: `GET /export.php`
 - **인증**: 헤더 `X-API-Token: <토큰>` (또는 `Authorization: Bearer <토큰>`). ingest(쓰기) 토큰과 분리된 전용 읽기 토큰.
