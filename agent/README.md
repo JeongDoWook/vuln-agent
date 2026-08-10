@@ -6,7 +6,8 @@
 > 누락을 고쳤다. 3.11 부터 **헤더만 있는 섹션 파일도 그대로 전송한다** — 중앙이 "수집했고 0건"과
 > "아예 안 왔다"를 구분해 자산등급 제안을 판정불가로 분리하기 때문이다. 3.12 에서 패키지 무결성
 > 검증(`--verify-files`, 기본 꺼짐)을, 3.13 에서 **호스트 Go 바이너리 buildinfo** 수집을 더했고,
-> 같은 3.13 에서 Ruby 앱 의존성(`Gemfile.lock`·vendored `*.gemspec`)이 붙었다.
+> 같은 3.13 에서 Ruby 앱 의존성(`Gemfile.lock`·vendored `*.gemspec`)과 Node/Python 보조 lock
+> (`yarn.lock`·`pnpm-lock.yaml`·`poetry.lock`·`Pipfile.lock`·`*.egg-info/PKG-INFO`)이 붙었다.
 
 대상 리눅스 서버에서 **자산·취약노출 정보를 수집해 중앙 서버로 전송**하는 에이전트다.
 스캐너를 각 서버에 심는 방식이 아니라, 가벼운 셸 스크립트가 주기적으로 인벤토리를
@@ -371,6 +372,8 @@ OS/커널/CPE, 설치 패키지(호스트는 dpkg/rpm — NEVRA·소스패키지
 |---|---|---|
 | 설치본 | `site-packages/*.dist-info/METADATA` · `composer/installed.json` · `Cargo.lock` · `package-lock.json` · `*.deps.json` · `*.jar/war/ear` | pip · composer · cargo · npm · nuget · maven |
 | 설치본 | `Gemfile.lock`(GEM 섹션의 해결된 버전) · vendored `specifications/*.gemspec`(파일명만 — 본문은 루비 코드다) | gem |
+| 설치본 | `yarn.lock`(v1 Classic·v2+ Berry 두 형식) · `pnpm-lock.yaml`(v5/v6/v9 키 표기) — yarn·pnpm 프로젝트엔 `package-lock.json` 이 아예 없어서, 이 둘이 없으면 앱 의존성이 통째로 0건이 된다 | npm |
+| 설치본 | `poetry.lock`(`[[package]]` 블록) · `Pipfile.lock`(`default` 만 — `develop` 은 배포본에 없어 오탐이 된다) · `*.egg-info/PKG-INFO`(구식 setuptools 메타 — `METADATA` 와 필드 구조가 같아 같은 분기로 처리, 라이선스도 함께 나간다) | pip |
 | 설치본 | **Go 바이너리 buildinfo**(`collect_go_binary_deps`) — `go.mod` 가 없는 배포 바이너리에서 모듈·버전을 직접 뽑는다 | go |
 | 선언 | `go.mod` · `requirements.txt` · `pom.xml` | go · pip · maven |
 

@@ -170,7 +170,8 @@ SPDX 는 `DEPENDS_ON`(정방향)과 `DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역�
 `export.php` 로 가져가는 외부 시스템의 몫이다(`docs/dev/export-api.md`).
 
 **SCA 라이선스 식별** 은 CVE 매칭과 별개 축이다. 에이전트가 SBOM(CycloneDX/SPDX, `SBOM_DIR`
-오프라인 입력)·pip `METADATA`·composer `installed.json` 에서 라이선스 문자열을 수집해 보내면,
+오프라인 입력)·pip `METADATA`(구식 `*.egg-info/PKG-INFO` 포함 — 같은 필드 구조라 같은 경로로
+수집된다)·composer `installed.json` 에서 라이선스 문자열을 수집해 보내면,
 `src/license_risk.php`(`vg_license_classify`)가 SPDX 식별자·자유서술 별칭·복합 표현식(`OR`/`AND`)을
 permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결과를 `/packages.php?tab=lang`
 (언어 패키지·라이선스 탭)에 보여준다. **npm/gem/maven/nuget/cargo 매니페스트 직접 파싱이나 시그니처·바이너리 스캔으로는
