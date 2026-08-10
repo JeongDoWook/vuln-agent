@@ -21,6 +21,7 @@ require_once __DIR__ . '/../src/assetgrade.php';       // 자산 중요도·N2SF
 require_once __DIR__ . '/../src/assetgrade_history.php'; // 시스템 제안 관찰 이력 조회·표시
 require_once __DIR__ . '/../src/asset_grade_review.php'; // 단일 자산의 구조화된 사람 검토 정보
 require_once __DIR__ . '/../src/account_inventory.php';   // 계정 인벤토리 판정(vg_account_judgments)
+require_once __DIR__ . '/../src/packagedep.php';   // 의존성 그래프 — 취약점의 직접/전이 판정
 vg_require_menu('findings');
 
 /* '리소스' 탭은 '스캔 이력' 탭으로 흡수됐다 — 둘 다 tb_scan_run 하나를 읽었고(회차별 메모리·CPU),
@@ -194,6 +195,79 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
     $restartRows = $st->fetchAll();
 
     return ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows];
+}
+
+/** 취약점 행 → 의존성 판정 캐시의 키. 판정은 (컨테이너, 패키지, 설치버전) 단위다. */
+function vg_host_dep_key(array $f): string {
+    return (int) ($f['container_id'] ?? 0) . '|' . (string) ($f['package_name'] ?? '') . '|' . (string) ($f['installed_version'] ?? '');
+}
+
+/** 손댈 대상(부모) 라벨 — "이름 버전 이 끌어옴 [외 N개]". 이스케이프 전의 평문이다. */
+function vg_host_dep_parent_label(array $o): string {
+    $p = vg_pkgdep_parts((string) $o['parents'][0]);
+    $more = count($o['parents']) - 1;
+    return $p['name'] . ' ' . $p['version'] . ' 이 끌어옴' . ($more > 0 ? ' 외 ' . $more . '개' : '');
+}
+
+/**
+ * 전이 의존성일 때의 조치 셀 — "직접 조치 불가" + 손댈 대상 + 의존성 경로 링크.
+ *   **버전은 제안하지 않는다.** 설치되지 않은 부모 버전이 무엇을 끌어오는지 우리는 모른다
+ *   (그걸 알려면 업스트림 버전별 의존성 DB 가 필요하다). 틀린 조치 제안은 없는 것보다 나쁘다.
+ */
+function vg_host_dep_origin_cell(array $o, int $hostId): string {
+    $t = vg_pkgdep_parts((string) $o['key']);
+    $url = '/depgraph.php?id=' . $hostId . '&cid=' . (int) $o['container_id']
+         . '&mgr=' . urlencode($t['manager']) . '&name=' . urlencode($t['name'])
+         . '&ver=' . urlencode($t['version']) . '&tab=from';
+    return '<span class="pill">직접 조치 불가</span>'
+        . '<div class="why">' . vg_h(vg_host_dep_parent_label($o))
+        . ' · <a href="' . vg_h($url) . '">의존성 경로</a></div>';
+}
+
+/**
+ * 화면에 뜬 취약점 행들의 "직접/전이" 판정을 한 번에 계산한다.
+ *   반환: ['origins' => [vg_host_dep_key() => vg_pkgdep_origin() 결과 + container_id],
+ *          'edge_truncated' => 엣지 상한에 걸렸나, 'path_truncated' => 경로 상한에 걸렸나]
+ *
+ *   ── 호출 조건: 이 스캔에 의존성 엣지가 하나라도 있을 때만(host.php 의 $depEdgeTotal 게이트).
+ *   엣지가 없는 자산에서는 이 함수 자체가 호출되지 않으므로 **쿼리가 한 건도 늘지 않는다.**
+ *
+ *   ── 쿼리 수: vg_pkgdep_containers() 2건 + 엣지가 있는 컨테이너 단위마다 vg_pkgdep_load() 1건.
+ *   행마다 조회하면 N+1 이라, 단위별로 **한 번 적재해 메모리에서** 전 행을 판정한다.
+ *   uk_pkg_dep_edge 좌측 접두가 (scan_id, container_id)라 이 단위 조회만 인덱스를 탄다 —
+ *   그래서 이 기능은 자산 하나의 최신 스캔(host.php) 안에서만 붙고, 전 호스트 통합
+ *   목록(findings.php)에는 붙이지 않는다(행마다 그래프 적재 = 성능 사고).
+ */
+function vg_host_load_dep_origins(PDO $pdo, int $sid, array $rows): array {
+    $out = ['origins' => [], 'edge_truncated' => false, 'path_truncated' => false];
+    if (!$rows) { return $out; }
+
+    $groups = vg_pkgdep_containers($pdo, $sid);
+    if (!$groups) { return $out; }
+
+    // 화면에 뜬 행이 속한 단위 중, 실제로 엣지가 있는 단위만 적재한다.
+    $cids = [];
+    foreach ($rows as $f) {
+        $cid = (int) ($f['container_id'] ?? 0);
+        if (isset($groups[$cid])) { $cids[$cid] = true; }
+    }
+    foreach (array_keys($cids) as $cid) {
+        $load = vg_pkgdep_load($pdo, $sid, $cid);
+        if ($load['truncated']) { $out['edge_truncated'] = true; }
+        $graph = vg_pkgdep_build($load['edges']);
+        $index = vg_pkgdep_index($graph);
+
+        foreach ($rows as $f) {
+            if ((int) ($f['container_id'] ?? 0) !== $cid) { continue; }
+            $key = vg_host_dep_key($f);
+            if (isset($out['origins'][$key])) { continue; }
+            $o = vg_pkgdep_origin($graph, $index, (string) ($f['package_name'] ?? ''), (string) ($f['installed_version'] ?? ''));
+            if ($o['truncated']) { $out['path_truncated'] = true; }
+            // unknown 은 담지 않는다 — 화면이 "모름"으로 도배되지 않게 아무것도 표시하지 않는다.
+            if ($o['verdict'] === 'transitive') { $out['origins'][$key] = $o + ['container_id' => $cid]; }
+        }
+    }
+    return $out;
 }
 
 function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset, int $ePage, ?string $q = null): array {
@@ -720,6 +794,7 @@ $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
 $accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0; $containerTotal = 0;
+$depOrigins = ['origins' => [], 'edge_truncated' => false, 'path_truncated' => false];  // 전이 의존성 판정
 $gradeSuggestionHistory = [];
 $q = trim((string) ($_GET['q'] ?? ''));
 // 계정 탭 필터(?acc=). 화이트리스트 밖 값은 전체로 떨군다 — 값이 그대로 SQL 로 가지 않는다.
@@ -883,6 +958,11 @@ try {
         if ($tab === 'vuln') {
             ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows]
                 = vg_host_load_vuln_tab($pdo, $sid, $critHighTotal, $perPage, $offset, $q);
+            // 전이 의존성은 그 패키지만 갈아끼울 수 없다 — 손댈 대상(부모)을 찾아 조치 문구를 바꾼다.
+            //   $depEdgeTotal 은 위에서 이미 센 값이다. 0이면 여기서 끝나 쿼리가 늘지 않는다.
+            if ($depEdgeTotal > 0) {
+                $depOrigins = vg_host_load_dep_origins($pdo, $sid, array_merge($rows, $restartRows));
+            }
         } elseif ($tab === 'packages') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_packages_tab($pdo, $sid, $perPage, $offset, $q);
@@ -1075,22 +1155,33 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                           : ''),
         5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
         // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
-        6 => fn($f) => !empty($f['needs_restart'])
-                       ? '<span class="pill">' . (vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅' : '프로세스 재시작') . '</span>'
-                       : vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null, $f['installed_version'] ?? null),
+        //   전이 의존성이면 "이 버전으로 올려라"도 틀린다 — 부모가 끌어오는 것이라 혼자 못 바꾼다.
+        6 => function ($f) use ($depOrigins, $hostId) {
+            if (!empty($f['needs_restart'])) {
+                return '<span class="pill">' . (vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅' : '프로세스 재시작') . '</span>';
+            }
+            $o = $depOrigins['origins'][vg_host_dep_key($f)] ?? null;
+            if ($o !== null) { return vg_host_dep_origin_cell($o, $hostId); }
+            return vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null, $f['installed_version'] ?? null);
+        },
         7 => fn($f) => '<a class="pill" href="'
                        . vg_h(vg_finding_history_url($hostId, (int) $f['container_id'], (string) $f['cve_id'], (string) $f['package_name']))
                        . '" title="스캔별 이력 보기">🕘 이력</a>',
     ];
-    $findingRowAttrs = function (array $f) use ($hostId): array {
+    $findingRowAttrs = function (array $f) use ($hostId, $depOrigins): array {
         $epss = ($f['epss'] ?? null) === null ? '–' : number_format((float) $f['epss'] * 100, 1) . '%';
         if (($f['epss_percentile'] ?? null) !== null) {
             $top = max(0.01, (1.0 - (float) $f['epss_percentile']) * 100);
             $epss .= ' · 상위 ' . number_format($top, $top < 1 ? 2 : ($top < 10 ? 1 : 0)) . '%';
         }
         $isKernel = vg_is_kernel_code_pkg((string) ($f['package_name'] ?? ''));
+        $depOrigin = $depOrigins['origins'][vg_host_dep_key($f)] ?? null;
         if (!empty($f['needs_restart'])) {
             $action = $isKernel ? '패치된 커널을 적용하려면 호스트를 재부팅하세요.' : '패치된 라이브러리를 적용하려면 관련 프로세스를 재시작하세요.';
+        } elseif ($depOrigin !== null) {
+            // 전이 의존성 — 이 패키지만 갈아끼우면 부모가 깨진다. 부모를 올리는 것이 조치다.
+            $action = '직접 조치 불가 — ' . vg_host_dep_parent_label($depOrigin)
+                    . '. 이 패키지만 바꾸면 부모가 깨집니다. 부모를 올려 안전한 자식을 끌어오게 하세요.';
         } elseif (!empty($f['fixed_version'])) {
             $action = (string) ($f['installed_version'] ?? '') . ' → ' . (string) $f['fixed_version'] . ' 이상으로 업데이트';
         } else {
@@ -1123,6 +1214,18 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         'row_attrs' => $findingRowAttrs,
         'cell'      => $vulnCells,
     ];
+    // 그래프가 상한에서 잘렸으면 밝힌다 — 조용히 자르면 "전이 아님"이 사실처럼 보인다.
+    if ($depOrigins['edge_truncated'] || $depOrigins['path_truncated']) {
+        $depHints = [];
+        if ($depOrigins['edge_truncated']) {
+            $depHints[] = '엣지가 상한(' . number_format(VG_PKGDEP_EDGE_MAX) . '개)에서 잘렸습니다 — 그 뒤의 의존성은 보지 않았습니다.';
+        }
+        if ($depOrigins['path_truncated']) {
+            $depHints[] = '경로가 상한(깊이 ' . VG_PKGDEP_DEPTH_MAX . ' · ' . VG_PKGDEP_PATH_MAX . '개)에서 끊겼습니다 — 손댈 대상이 더 있을 수 있습니다.';
+        }
+        $depHints[] = '전체 구조는 의존성 그래프 화면에서 확인하세요.';
+        vg_alert(['type' => 'warn', 'title' => '의존성 판정이 일부만 반영됐습니다', 'hints' => $depHints]);
+    }
   ?>
     <?php vg_toolbar([
         ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],

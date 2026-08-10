@@ -139,6 +139,92 @@ function vg_pkgdep_build(array $edges): array
     return $g;
 }
 
+/**
+ * 버전 문자열의 **표기 차이만** 지운다(값 자체는 바꾸지 않는다).
+ *   · rpm 의 epoch 접두(`1:3.0.7-24.el9` → `3.0.7-24.el9`) — SBOM 도구는 보통 epoch 을 안 붙인다.
+ *   · 빌드 메타데이터(`1.2.3+build.5` → `1.2.3`) — 같은 산출물의 표기 흔들림.
+ *   이 이상은 자르지 않는다. `3.1.4-r2` 와 `3.0.7-24.el9` 는 표기 차이가 아니라 **다른 패키지**다.
+ */
+function vg_pkgdep_version_norm(string $v): string
+{
+    $v = strtolower(trim($v));
+    $v = (string) preg_replace('/^\d+:/', '', $v);
+    $plus = strpos($v, '+');
+    return ($plus !== false && $plus > 0) ? substr($v, 0, $plus) : $v;
+}
+
+/**
+ * 이름·버전으로 노드를 찾기 위한 색인. 그래프 1개당 1회만 만든다(행마다 만들면 O(N²)).
+ *   반환: ['by_name_ver' => ['이름|버전' => [키…]], 'by_name_norm' => ['이름|정규화버전' => [키…]]]
+ *
+ *   왜 manager 를 빼고 색인하나: tb_finding 에는 manager 컬럼이 **없다**(package_name·
+ *   installed_version 뿐). 그래프 키는 manager|name|version 이라 취약점 행에서 곧장 키를
+ *   조립할 수 없어, 이름+버전으로 좁힌 뒤 후보를 본다.
+ */
+function vg_pkgdep_index(array $g): array
+{
+    $idx = ['by_name_ver' => [], 'by_name_norm' => []];
+    foreach (array_keys($g['nodes']) as $key) {
+        $p = vg_pkgdep_parts($key);
+        $idx['by_name_ver'][$p['name'] . '|' . $p['version']][] = $key;
+        $idx['by_name_norm'][$p['name'] . '|' . vg_pkgdep_version_norm($p['version'])][] = $key;
+    }
+    return $idx;
+}
+
+/**
+ * 취약점 행(패키지 이름·설치버전) → 그 패키지를 **직접 손댈 수 있는가** 판정.
+ *   반환: ['verdict' => 'direct'|'transitive'|'unknown',
+ *          'key' => 매칭된 그래프 노드 키(unknown 이면 ''),
+ *          'parents' => 전이일 때 실제로 손댈 대상(루트 바로 아래 조상) 키 목록,
+ *          'truncated' => 경로 탐색이 상한에 걸려 부모 목록이 전부가 아닐 수 있나]
+ *
+ *   · direct     = pom 직접선언이거나, SBOM 루트 자신 / 루트의 직속 자식
+ *   · transitive = 루트에서 두 단계 이상 떨어져 있다 — 이 패키지만 갈아끼우면 부모가 깨진다
+ *   · unknown    = 그래프에 없다. **이게 다수이며 정상이다**(SBOM·pom 이 없는 자산이 대부분).
+ *
+ *   ── 버전 표기 완화 ────────────────────────────────────────────────────────
+ *   설치버전 문자열은 그래프 노드의 버전과 정확히 같지 않을 수 있다(rpm 의 EVR epoch,
+ *   빌드 메타데이터). 그래서 (이름+버전) 정확 일치를 먼저 보고, 없으면
+ *   vg_pkgdep_version_norm() 으로 **표기 차이만 지운** 뒤 다시 본다.
+ *   **이름만으로 맞추지는 않는다.** 실측(dev): 같은 스캔에 `openssl 3.1.4-r2`(alpine)와
+ *   `openssl 1:3.0.7-24.el9`(rpm)가 함께 있다 — 이름만 보면 alpine 쪽이 rpm 그래프의 부모를
+ *   물려받아 **틀린 조치**가 나간다. 틀린 조치 제안은 없는 것보다 나쁘다(purl.php 와 같은 원칙).
+ */
+function vg_pkgdep_origin(array $g, array $idx, string $name, string $version): array
+{
+    $none = ['verdict' => 'unknown', 'key' => '', 'parents' => [], 'truncated' => false];
+    if ($name === '') { return $none; }
+
+    $cands = $idx['by_name_ver'][$name . '|' . $version]
+        ?? ($idx['by_name_norm'][$name . '|' . vg_pkgdep_version_norm($version)] ?? []);
+    if (!$cands) { return $none; }
+    sort($cands);
+
+    $parents = [];
+    $truncated = false;
+    foreach ($cands as $key) {
+        // pom 직접선언·루트 자신은 부모를 따질 것도 없이 직접 대상이다.
+        if (in_array($key, $g['pom'], true) || in_array($key, $g['roots'], true)) {
+            return ['verdict' => 'direct', 'key' => $key, 'parents' => [], 'truncated' => false];
+        }
+        $r = vg_pkgdep_paths($g, $key);
+        $truncated = $truncated || $r['truncated'];
+        foreach ($r['paths'] as $path) {
+            // [루트, 대상] 처럼 두 칸 이하면 루트의 직속 자식 = 직접 의존성이다.
+            if (count($path) <= 2) {
+                return ['verdict' => 'direct', 'key' => $key, 'parents' => [], 'truncated' => false];
+            }
+            $parents[$path[1]] = true;   // 루트 바로 아래 조상 = 실제로 올려야 할 대상
+        }
+    }
+    if (!$parents) { return $none; }
+
+    $keys = array_keys($parents);
+    sort($keys);
+    return ['verdict' => 'transitive', 'key' => $cands[0], 'parents' => $keys, 'truncated' => $truncated];
+}
+
 /** 그 노드의 자식 키 목록(정렬). 없으면 빈 배열. */
 function vg_pkgdep_children(array $g, string $key): array
 {
