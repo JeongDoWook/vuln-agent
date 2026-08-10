@@ -228,6 +228,35 @@ function vg_ingest_parse_stale(string $staleText): array
     return $rows;
 }
 
+// ── 패키지 무결성 (pipe, 첫 줄 헤더) ──────────────────────────────────────
+//   package|flags|path   (rpm -Va / dpkg --verify 원본 플래그를 그대로 보존한다 — 해석은 중앙)
+//   에이전트가 `c`(설정파일) 줄은 이미 버리고 보낸다.
+//   상한(VG_INTEGRITY_MAX_ROWS)은 에이전트가 이미 줄 수를 줄여 보내는 것과 별개의 이중 방어다 —
+//   구버전·조작된 페이로드가 수십만 줄을 밀어 넣어도 여기서 멈춘다. 전체 건수는 total 로 따로 온다.
+const VG_INTEGRITY_MAX_ROWS = 1000;
+
+function vg_ingest_parse_integrity(string $integrityText): array
+{
+    $rows = [];
+    foreach (preg_split('/\r?\n/', $integrityText) as $line) {
+        if ($line === '') { continue; }
+        if (strncmp($line, 'package|flags|path', 18) === 0) { continue; }
+        // limit=3: path 는 파일 경로라 '|' 가 섞이면 필드가 밀린다. 필드 수를 고정해
+        //   경로 안의 구분자가 앞 필드를 오염시키지 못하게 한다(에이전트측 치환과 이중 방어).
+        $f = explode('|', $line, 3);
+        if (count($f) !== 3) { continue; }
+        [$pkg, $flags, $path] = array_map('trim', $f);
+        if ($path === '' || $flags === '' || $path[0] !== '/') { continue; }
+        $rows[] = [
+            mb_strimwidth($pkg, 0, 255, ''),
+            mb_strimwidth($flags, 0, 32, ''),
+            mb_strimwidth($path, 0, 512, ''),
+        ];
+        if (count($rows) >= VG_INTEGRITY_MAX_ROWS) { break; }
+    }
+    return $rows;
+}
+
 // ── changelog CVE (패키지명 => changelog 텍스트) ──────────────────────────
 function vg_ingest_parse_changelog(array $clog): array
 {

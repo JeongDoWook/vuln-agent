@@ -131,6 +131,10 @@ $agentCsrf = vg_csrf_token();
 $err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null; $approver = null; $gradeReview = [];
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 $missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단계(한글 라벨)
+$integrityRows = [];     // 패키지 원본과 다른 파일(상위 일부만 — 전체 건수는 tb_scan 에 있다)
+
+// 무결성 목록은 "상태를 알리는 미리보기"다. 전체 목록 화면은 만들지 않는다(YAGNI).
+const VG_HOST_INTEGRITY_TOP = 20;
 
 // 재시작·재부팅 표에 보여줄 최대 건수. 나머지는 취약점 현황(fx=restart)으로 넘긴다.
 
@@ -771,6 +775,7 @@ try {
         // 컬럼을 못 박는 이유: tb_scan.raw_json 은 호스트당 MB 단위(실측 3.14MB)라
         // SELECT * 로 끌면 ORDER BY 의 정렬 버퍼(운영 sort_buffer_size=2M)를 한 행만으로도 넘겨 1038 이 난다.
         $st = $pdo->prepare('SELECT scan_id, collected_at, package_count,
+                                    integrity_checked, integrity_partial, integrity_total,
                                     TIMESTAMPDIFF(MINUTE, collected_at, NOW()) AS age_min
                                FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT 1');
         $st->execute([$hostId]);
@@ -881,6 +886,13 @@ try {
         } elseif ($tab === 'packages') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_packages_tab($pdo, $sid, $perPage, $offset, $q);
+            // 패키지 무결성 — 상태 한 줄 + 상위 목록만(전체 표는 만들지 않는다). 이 탭에서만 조회한다.
+            //   digest 불일치(5)를 먼저 보여준다 — 권한·소유자 차이보다 무거운 관측이다.
+            $st = $pdo->prepare('SELECT package_name, flags, file_path FROM tb_package_integrity
+                                  WHERE scan_id = ? ORDER BY INSTR(flags, \'5\') = 0, package_integrity_id
+                                  LIMIT ' . VG_HOST_INTEGRITY_TOP);
+            $st->execute([$sid]);
+            $integrityRows = $st->fetchAll();
         } elseif ($tab === 'containers') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_containers_tab($pdo, $sid, $perPage, $offset, $q);
@@ -1199,6 +1211,64 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
         ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
     ]); ?>
+    <?php
+    // ── 패키지 무결성(관측) ─────────────────────────────────────────────
+    //   "미수행"과 "0건"을 절대 합치지 않는다 — 합치면 검사도 안 한 자산이 "정상"으로 보인다.
+    //   어휘도 단정하지 않는다: 운영자가 직접 고친 파일일 수 있으므로 "변조됨"이 아니라
+    //   "패키지 원본과 다름(관측)" 이다(nofix.php 의 EOL 표현과 같은 원칙).
+    $integChecked = !empty($scan['integrity_checked']);
+    $integTotal   = (int) ($scan['integrity_total'] ?? 0);
+    $integPartial = !empty($scan['integrity_partial']);
+    if (!$integChecked) {
+        $integTone = 'muted';
+        $integText = '미수행 — 에이전트를 <code>--verify-files</code> 로 실행해야 검사합니다(비용 때문에 기본 꺼짐).';
+    } elseif ($integTotal === 0) {
+        $integTone = 'ok';
+        $integText = '패키지 원본과 다른 파일이 관측되지 않았습니다.';
+    } else {
+        $integTone = 'high';
+        $integText = '패키지 원본과 다른 파일 ' . number_format($integTotal) . '건이 관측되었습니다. '
+            . '운영자가 직접 바꾼 파일일 수도 있어 변조로 단정하지 않습니다.';
+    }
+    ?>
+    <div class="card">
+      <strong>패키지 무결성</strong>
+      <?= vg_badge($integChecked ? ($integTotal === 0 ? '정상' : '원본과 다름 ' . number_format($integTotal) . '건') : '미수행', $integTone) ?>
+      <?php if ($integPartial): ?><?= vg_badge('부분 결과', 'med', '제한시간·줄수 상한으로 잘렸습니다. 0건이 "깨끗함"을 뜻하지 않습니다.') ?><?php endif; ?>
+      <span class="why"> · <?= $integText ?></span>
+      <?php if ($integPartial): ?>
+        <span class="why"> · 검사가 도중에 잘렸습니다 — 아래 목록과 건수는 전수가 아닙니다.</span>
+      <?php endif; ?>
+      <?php if ($integrityRows): ?>
+        <div class="card__body">
+        <?php
+        vg_table(
+            [
+                ['label' => '파일', 'key' => 'file_path', 'class' => 'col-id'],
+                ['label' => '관측된 차이', 'key' => 'flags'],
+                ['label' => '패키지', 'key' => 'package_name'],
+            ],
+            $integrityRows,
+            [
+                'card' => false,
+                'cell' => [
+                    'file_path' => fn($r) => '<code>' . vg_h((string) $r['file_path']) . '</code>',
+                    'flags' => fn($r) => vg_h(vg_integrity_flag_label((string) $r['flags']))
+                        . ' <span class="why">' . vg_h((string) $r['flags']) . '</span>',
+                    'package_name' => fn($r) => ($r['package_name'] ?? '') !== ''
+                        ? vg_h((string) $r['package_name'])
+                        : '<span class="why">미상</span>',
+                ],
+            ]
+        );
+        ?>
+        </div>
+        <?php if ($integTotal > count($integrityRows)): ?>
+          <span class="why">상위 <?= count($integrityRows) ?>건만 표시합니다(전체 <?= number_format($integTotal) ?>건).</span>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div>
+
     <div class="card">
       <strong>설치 패키지</strong>
       <span class="why"> · 최신 수집 기준 호스트 운영체제 패키지 <?= number_format($packageTotal) ?>개</span>

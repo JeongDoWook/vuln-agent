@@ -53,6 +53,14 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     $staleRows  = $parsed['stale_rows'];
     $staleCount = (int) $parsed['stale_count'];
 
+    // 패키지 무결성 — 스냅샷 내용(content_hash)에는 안 들어간다. 같은 스냅샷을 재사용하는
+    //   경우에도 최신 검사 결과로 덮어써야 하므로 아래에서 두 분기 밖에서 갱신한다
+    //   (tb_collection_stage 와 같은 취급).
+    $integChecked = !empty($parsed['integrity_checked']);
+    $integPartial = !empty($parsed['integrity_partial']);
+    $integTotal   = (int) ($parsed['integrity_total'] ?? 0);
+    $integRows    = $parsed['integrity_rows'] ?? [];
+
     $debsecanRows  = $parsed['debsecan_rows'];
     $debsecanCount = (int) $parsed['debsecan_count'];
 
@@ -409,6 +417,23 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     }
 
     }   // ← 변경 있음(새 스냅샷) 분기 끝
+
+    // 패키지 무결성 — 스냅샷 재사용 여부와 무관하게 **이번 수집이 실제로 본 것**으로 덮어쓴다.
+    //   무결성 결과는 패키지 목록이 그대로여도 바뀔 수 있고(파일만 변조), 반대로 이번 실행이
+    //   검사를 안 했다면 지난 결과를 그대로 남겨 두는 쪽이 더 위험하다 — 오래된 "정상"을
+    //   최신 수집시각과 함께 보여주게 되기 때문이다. 그래서 미수행이면 0 으로 되돌린다.
+    $pdo->prepare('DELETE FROM tb_package_integrity WHERE scan_id = ?')->execute([$scanId]);
+    if ($integChecked && $integRows) {
+        $ins = $pdo->prepare(
+            'INSERT INTO tb_package_integrity (scan_id, package_name, flags, file_path) VALUES (?, ?, ?, ?)'
+        );
+        foreach ($integRows as $r) {
+            $ins->execute([$scanId, ($r[0] !== '' ? $r[0] : null), $r[1], $r[2]]);
+        }
+    }
+    $pdo->prepare(
+        'UPDATE tb_scan SET integrity_checked = ?, integrity_partial = ?, integrity_total = ? WHERE scan_id = ?'
+    )->execute([$integChecked ? 1 : 0, $integPartial ? 1 : 0, $integChecked ? $integTotal : 0, $scanId]);
 
     // 동일 스냅샷 재전송이어도 수집기 완전성은 최신 상태로 갱신한다.
     if ($collectionStages) {

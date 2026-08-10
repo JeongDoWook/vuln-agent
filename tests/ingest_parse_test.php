@@ -220,6 +220,25 @@ $stale = vg_ingest_parse_stale(
 $eq('stale pkg 없는 행 제외 → 1건', count($stale), 1);
 $eq('stale pkg명', $stale[0][2], 'curl');
 
+// ── 패키지 무결성 (rpm -Va / dpkg --verify) ────────────────────────────────
+$integ = vg_ingest_parse_integrity(
+    "package|flags|path\n"
+    . "gzip-1.12-1.el9.x86_64|S.5......|/usr/bin/gzip\n"   // rpm
+    . "coreutils|??5??????|/bin/ls\n"                      // dpkg
+    . "filesystem|missing|/boot\n"
+    . "foo|.M.......|상대경로아님\n"                        // 절대경로 아님 → 버림
+    . "bar||/usr/bin/baz\n"                                // 플래그 없음 → 버림
+    . "필드부족\n"
+);
+$eq('무결성 정상 행만 3건', count($integ), 3);
+$eq('무결성 패키지명', $integ[0][0], 'gzip-1.12-1.el9.x86_64');
+$eq('무결성 원본 플래그 보존', $integ[1][1], '??5??????');
+$eq('무결성 경로', $integ[2][2], '/boot');
+// 경로에 '|' 가 섞여도 앞 필드를 밀지 않는다(limit=3 고정).
+$integPipe = vg_ingest_parse_integrity("package|flags|path\npkg|S.5......|/tmp/a|b");
+$eq('무결성 경로 안의 | 는 경로에 남는다', $integPipe[0][2], '/tmp/a|b');
+$eq('무결성 플래그는 오염 안 됨', $integPipe[0][1], 'S.5......');
+
 // ── changelog CVE ──────────────────────────────────────────────────────────
 $clog = vg_ingest_parse_changelog([
     'nginx' => "fix CVE-2024-1234 buffer overflow\nfix CVE-2024-1234 again (같은 CVE 중복)\nunrelated line",
