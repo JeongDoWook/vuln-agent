@@ -1,6 +1,6 @@
 # CONTEXT.md — 프로젝트 맥락 (Claude Code 최우선 참고)
 
-> 현행 기준: 2026-08-09 · 에이전트 3.10 · 계정 인벤토리·자산 등급(N2SF)·컴플라이언스 스냅샷 포함.
+> 현행 기준: 2026-08-10 · 에이전트 3.13 · 계정 인벤토리·자산 등급(N2SF)·컴플라이언스 스냅샷 포함.
 
 > 이 파일은 개발을 이어받는 사람(및 Claude Code)이 **가장 먼저 읽는** 요약이다.
 > 쉬운 설명은 `docs/dev/설명글.md`, 대회용 기획 문서는 `docs/dev/기획안_v1.0.html`
@@ -63,7 +63,7 @@ CVE와 매칭한다. 단순 스캐너와 다른 점은 **"이 취약점이 이 �
 
 ## 4. 이미 만들어진 것 (재사용)
 
-### `agent/vuln-inventory-agent.sh` (v3.10) — 수집 에이전트, 동작 검증 완료
+### `agent/vuln-inventory-agent.sh` (v3.13) — 수집 에이전트, 동작 검증 완료
 읽기 전용. 서버에 무리 안 감(nice 19 / ionice idle / 명령별 timeout).
 **피크 메모리는 실측 61.6MB**(Debian 12 · 91패키지 — 마지막에 jq 로 전 섹션을 한 번에 조립하는
 단계가 1등 요인이라 페이로드 크기에 비례한다). 수치·외삽·재측정법은
@@ -91,7 +91,10 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 - `system` — OS/커널/CPE (어떤 OVAL로 대조할지 힌트)
 - **언어 패키지** — pip/npm/gem/composer/maven/nuget/cargo/go 8개 생태계. 설치본 고신뢰 소스
   (`site-packages/*.dist-info/METADATA`·`composer/installed.json`·`Cargo.lock`·`package-lock.json`·
-  `Gemfile.lock`·`specifications/*.gemspec`·`*.jar/war/ear`)에 더해, 선언 파일 `go.mod`/`requirements.txt`/`pom.xml` 을 직접 파싱해 보충한다
+  `Gemfile.lock`·`specifications/*.gemspec`·`*.jar/war/ear`)와 **Go 바이너리 buildinfo**
+  (`collect_go_binary_deps` — `go.mod` 가 없는 배포 바이너리에서 모듈·버전을 직접 뽑는다.
+  크기·탐침·개수를 `GO_BIN_MIN_SIZE`/`GO_BIN_PROBE_BYTES`/`GO_BIN_SCAN_MAX` 로 캡핑)에 더해,
+  선언 파일 `go.mod`/`requirements.txt`/`pom.xml` 을 직접 파싱해 보충한다
   (설치본이 없거나 못 읽는 환경 대응). OSV 커넥터(`vg_osv_lang_queries`)가 이 8개 생태계 전부를
   자기 ecosystem 으로 조회해 CVE 매칭한다 — 매니페스트 직접 파싱은 go.mod/requirements.txt/pom.xml
   3종뿐이고 npm/gem/maven/nuget/cargo 는 설치본(lock 파일·jar 등) 스캔만 한다.
@@ -107,6 +110,10 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 - **패키지 의존성 그래프** — 직접/전이 의존 관계(`tb_package_dependency`). `pom.xml` 은 원문을
   base64 로 올려 중앙이 DOMDocument 로 파싱한다(에이전트 awk 파싱은 `<exclusions>`/`<parent>` 를
   구분 못 해 오탐이 났다). 조회 화면은 `depgraph.php`(자산 상세에서 진입).
+- **패키지 무결성**(`--verify-files`, **기본 꺼짐**) — `rpm -Va`/`dpkg --verify` 로 "설치 이후
+  파일이 바뀌었나"를 본다(N2SF IN 구성요소 무결성). 전 패키지 전 파일을 해시해 무거우므로
+  플래그를 준 실행에서만 돌고, 잘리면 `partial`/`truncated` 를 함께 보낸다 — 잘린 0건을
+  "깨끗함"으로 읽으면 안 된다. 설정파일(`c`) 줄은 정상 변경이라 버린다.
 - 그 외: 커널 CPU취약점 완화상태, 보안설정 등
 
 ### `agent/install-agent.sh` — 배포 설치기
@@ -151,7 +158,7 @@ vuln-agent/
 │   ├── src/      # 공용 라이브러리(URL 로 안 열린다): db·auth(RBAC·세션만료)·view/·matcher(+억제)
 │   │             #   · feeds/(커넥터 12종)·cce·compliance·account_inventory·assetgrade·setting 등
 │   └── bin/      # CLI 전용: scheduler.php(사이드카)·sync.php·backfill_*·rebuild_*
-├── db/           # 01~18 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
+├── db/           # 01~19 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
 │   └── migrations/    # YYYYMMDDHHMMSS_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
 │                      #   연번(0001…)은 금지 — 동시 브랜치가 같은 번호를 집는다. pre-push 가 막는다.
 │                      #   기존 0001~0020 은 그대로 둔다(사전순이라 옛 것이 먼저 돈다).
@@ -236,7 +243,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 
 ---
 
-## 8. 개발 현황 (2026-08-09 기준)
+## 8. 개발 현황 (2026-08-10 기준)
 
 파이프라인(수집→전송→저장→매칭→표시)·HTTPS·감사에 더해 오탐억제/CCE/변화추적/Export,
 그리고 컴플라이언스·계정 인벤토리·자산 등급까지 동작한다. 아래는 **무엇이 있는지**와
@@ -300,15 +307,25 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
   수집한다(docker CLI 비의존). 호스트 스캔에서 통째로 빠지던 미탐 영역이었다. 대장은 호스트 상세의
   **컨테이너 탭**(#536)에서 본다 — k8s 위치·워크로드 참조·이미지 다이제스트·SBOM 은 수집만 하고
   읽는 화면이 없었다. 도커 단독 호스트에선 이 값들이 비어 있어 열로 세우지 않고 값이 있는 행에만 붙인다.
+- **패키지 무결성 검증**(#553) — 에이전트가 `--verify-files` 로 모은 `rpm -Va`/`dpkg --verify`
+  결과를 `tb_package_integrity` 에 담고, 자산 상세의 설치 패키지 탭이 **"미수행 / 정상 / 원본과
+  다름 N건"** 으로 구분해 보여준다. "검사 여부·부분 결과·전체 건수"는 행이 아니라 스캔 단위 사실이라
+  `tb_scan.integrity_checked`/`_partial`/`_total` 에 둔다 — 행이 0개인 것만으로는 "검사했는데
+  깨끗함"과 "아예 검사 안 함"을 구분할 수 없다(`tb_collection_stage` 와 같은 취지).
 - **변화 추적**(`changes.php`) — 최근 2개 스캔의 `tb_finding` 만 비교한다(새 테이블 없이).
 - **벤더 판정 조회**(`vendor.php`) — 억제에만 쓰이던 벤더 원본을 사람이 확인할 수 있게 노출(설명가능성).
 - **보안설정 룰셋(SSG) 카탈로그** — `tb_compliance_rule`(약 2,493개) + 목록·상세 화면. FAIL 이 떠도
   무엇을 고쳐야 하는지 알려면 인용한 CIS/NIST/STIG 기준을 볼 수 있어야 한다.
-- **컴플라이언스**(ISMS-P·ISO 27001) — 자동판정 가능한 통제 3개(`patch`/`asset`/`secops`)만 SLA
-  기준일 대비 위반 건수로 판정하고, 정책·승인이력류는 체크리스트로만 둔다(못 채우는 걸 억지로
-  채우지 않는 의도적 한계). 판정 어휘는 **준수·판정 불가·부분준수·미준수** 4종 — 근거가 모자라
-  0건인 것을 준수로 쓰면 심사 증빙이 허위 안심이 된다(#493). 로직은 `src/compliance.php` 한 곳에
-  두어 화면과 스케줄러가 같은 함수를 쓰고, 스케줄러가 하루 1건 스냅샷을 남긴다(#498).
+- **컴플라이언스**(ISMS-P·ISO 27001) — 자동판정 통제는 5개다(`patch`/`asset`/`secops` +
+  #546 이 올린 `account`/`access_review`). 계정 인벤토리·접속기록 점검 이력이 제품 안에 생기면서
+  증적이 DB 에 있게 됐고, 체크리스트에는 증적이 **제품 밖**에 있는 3건(정책문서·사고대응·재해복구)만
+  남는다. `patch` 는 통제 전체가 아니라 **버킷(KEV/CRITICAL/HIGH)별로** 판정한다 — 이력이 짧아
+  판정 불가인 버킷 하나가 잘 지킨 나머지까지 회색으로 누르지 않게. 판정 어휘는 **준수·판정 불가·
+  부분준수·미준수** 4종 — 근거가 모자라 0건인 것을 준수로 쓰면 심사 증빙이 허위 안심이 된다(#493).
+  로직은 `src/compliance.php` 한 곳에 두어 화면과 스케줄러가 같은 함수를 쓰고, 스케줄러가 하루
+  1건 스냅샷을 남긴다(#498). 화면(#557)은 **요약 우선**이다 — 첫 화면은 통제 5종 × 한 줄
+  (통제·판정·요약·근거)이고 근거는 그 근거만 보여주는 화면으로 링크한다(예전엔 통제마다 위반을
+  10건씩 미리 깔아 "무엇이 준수인가"가 스크롤 아래로 밀렸다).
 - **통제 기준 매핑**(#499) + **통제 상세**(#509) — 같은 CCE 결과를 ISMS-P·U-코드·N2SF 중 어느 기준의
   증적으로 볼지 고르고, 통제가 무엇을 요구하고 어떻게 고치는지를 함께 본다. 긴 조치 원문은
   `docs/dev/보안설정-조치가이드.md`.
@@ -317,7 +334,13 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
   공백이었다. 패스워드 해시는 수집·저장·표시하지 않고, 열람은 감사로그 대상이다.
 - **자산 중요도·N2SF 보안등급**(#495, #510) — 확정값과 시스템 제안값을 **다른 컬럼**에 담는다(등급
   확정은 기관의 법적 처분이라 시스템이 대신할 수 없다). 목록에서 일괄 확정이 가능하되 해제는 상세에서
-  한 대씩이고, 여러 등급이 섞이면 가장 높은 등급을 승계한다.
+  한 대씩이고(#551 에서 표 위 버튼 + 모달로 옮겼다), 여러 등급이 섞이면 가장 높은 등급을 승계한다.
+  제안은 수집 때마다 `tb_asset_grade_suggestion_history` 에 **append-only 로 관찰 기록**된다
+  (#542/#547) — 판정 상태가 `SUGGESTED`/`NO_MATCH`/`NOT_EVALUATED` 셋이라 "근거가 없어졌다"와
+  "수집이 빠져 판정을 못 했다"를 구분하고, 후자일 때는 기존 제안 컬럼을 지우지 않는다. 지연 도착한
+  옛 스캔이 최신 제안을 되돌리지 않게 관찰시각을 보존하고 신선도를 클램프한다(#549).
+  확정 근거는 자유서술 대신 구조화 검토(`tb_asset_grade_review` — 제9조 호·업무/자료 범주·소관부서·
+  재검토일)로도 남길 수 있다 — 저장·표시 경로는 `host.php` 에 붙어 있다(#550, wip 로 병합됨).
 - **제거·대체 검토 권고**(#489) — 벤더 미수정이 한 패키지에 몰리면 CVE 수십 줄 대신 (호스트×패키지)로
   묶는다. 실측: 한 호스트의 `libqt5webkit5` 에 no_fix 43건, 실제 조치는 `apt purge` 한 번이었다.
   EOL 이라고 단정하지 않고 관측 + 권고만 한다.
@@ -325,6 +348,16 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
   키는 스캔이 바뀌어도 유지되는 자연키(`container_id` 는 스캔마다 재발급이라 못 쓴다).
 - **Export API** — `GET /export.php`(JSON/XML). 읽기 전용 토큰은 DB 에 해시만, 원문은 1회 표시.
   상세: `docs/dev/export-api.md`.
+- **SBOM 산출 API**(#554) — `GET /sbom.php`(CycloneDX 1.5 / SPDX 2.3, `src/purl.php` 가 purl 생성).
+  인증은 export.php 와 같은 읽기 토큰이고, **자산 하나당 문서 하나**다(여러 호스트를 한 문서에
+  담으면 어느 포맷에서도 의미가 없다). 호스트 자신의 패키지만 담고 의존 엣지는 넣지 않는다 —
+  호스트 패키지는 대부분 엣지가 비어 반쪽짜리 그래프가 나간다(#516). serialNumber 는 스캔 기준
+  결정적 UUIDv5 라 같은 스캔이면 항상 같다(SBOM diff 가 성립해야 한다).
+- **탐지 결과 한 화면**(#555) — CVE·보안설정(CCE)·노출을 `findings.php` 한 화면의 `?type=` 탭으로
+  묶었다. 세 표를 UNION 하지 않는다 — `tb_finding` 이 커서 합쳐 정렬·페이징하면 인덱스가 죽는다.
+  탭 라벨·순서의 정본은 `view/nav.php` 의 `vg_findings_subtab_labels()` 하나이고, 변화 추적·제거
+  권고도 같은 탭 줄로 들어온다(#556 — 세 화면이 각자 그리다가 개수·라벨이 어긋났다).
+  사이드바는 없던 화면 3개를 올리고(#552) 중복 3개를 걷어냈다(#556).
 - **SCA** — 8개 언어 생태계 매칭은 OSV 커넥터가 이미 하던 일이고, 여기에 `go.mod`/`requirements.txt`/
   `pom.xml` 직접 파싱(설치본이 없는 환경 보충)과 라이선스 식별(SBOM·pip METADATA·composer
   installed.json → permissive/copyleft/unknown)을 더했다. 목록·KPI 는 사전집계
