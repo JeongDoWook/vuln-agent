@@ -76,7 +76,7 @@ try {
     $err = '설치 패키지를 불러오는 중 오류가 발생했습니다.';
 }
 
-vg_header('전체 설치 패키지', 'assets');
+vg_header('전체 설치 패키지', 'asset_packages');
 ?>
   <?php vg_page_title('전체 설치 패키지', '', '모든 자산의 최신 수집에서 확인된 운영체제 패키지입니다.', [
       'count' => $total,

@@ -97,12 +97,19 @@ function vg_nav_sections(): array {
         ],
         '바로가기' => [
             ['perm' => 'assets',     'href' => '/assets.php',     'label' => '자산',        'key' => 'assets'],
+            // 자산 바로 아래 — 권한이 assets 라 자산 계열이고, 특정 호스트가 아니라
+            // 전체 설치 패키지를 한 번에 보는 화면이라 자산 목록과 형제로 둔다.
+            ['perm' => 'assets',     'href' => '/asset-packages.php', 'label' => '전체 설치 패키지', 'key' => 'asset_packages'],
             ['perm' => 'connectors', 'href' => '/connectors.php', 'label' => '데이터 수집', 'key' => 'connectors'],
         ],
         '취약점' => [
             ['perm' => 'findings',   'href' => '/findings.php',   'label' => '탐지 결과', 'key' => 'findings'],
+            // 탐지 결과의 시계열 뷰 — 같은 findings 권한이라 탐지 결과 바로 다음에 둔다.
+            ['perm' => 'findings',   'href' => '/changes.php',    'label' => '변화 추적', 'key' => 'changes'],
             ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE',       'key' => 'cves'],
             ['perm' => 'findings',   'href' => '/packages.php',   'label' => '패키지',    'key' => 'packages'],
+            // 패키지에서 파생되는 조치 권고라 패키지 다음.
+            ['perm' => 'findings',   'href' => '/nofix-packages.php', 'label' => '제거·대체 권고', 'key' => 'nofix_packages'],
             ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '판정 근거', 'key' => 'vendor'],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
         ],
@@ -136,6 +143,10 @@ function vg_nav_icon(string $key): string {
         'changes'     => '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
         'cves'        => '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
         'packages'    => '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22" x2="12" y2="12"/>',
+        // 제거·대체 권고 — 상자 + 금지 표시: 벤더 수정이 없어 "쓰지 말라" 를 권고한다는 뜻.
+        'nofix_packages' => '<rect x="2" y="4" width="11" height="11" rx="2"/><circle cx="18.5" cy="18.5" r="4.5"/><line x1="15.3" y1="21.7" x2="21.7" y2="15.3"/>',
+        // 전체 설치 패키지 — 여러 겹 모양: 호스트 하나가 아니라 전체 설치분을 겹쳐 본다는 뜻.
+        'asset_packages' => '<path d="M3 8.5 12 4l9 4.5-9 4.5z"/><polyline points="3 12.5 12 17 21 12.5"/><polyline points="3 16.5 12 21 21 16.5"/>',
         // 벤더 판정 — 검인(도장) 모양: 벤더가 "고쳤다/안 고쳤다" 를 확인해 준 것이라는 뜻.
         'vendor'      => '<circle cx="12" cy="9" r="6"/><polyline points="9.3 9 11.2 10.9 14.9 7.2"/><path d="M8.5 14.4 7.4 21l4.6-2.3 4.6 2.3-1.1-6.6"/>',
         // 보안설정 룰셋 — 체크리스트 모양: 기준(CIS/NIST/STIG)에 맞나 항목별로 확인한다는 뜻.
