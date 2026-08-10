@@ -34,7 +34,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.12"
+SCRIPT_VERSION="3.13"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
@@ -45,6 +45,11 @@ PROJECT_SCAN_ROOTS="${PROJECT_SCAN_ROOTS:-/opt /srv /app /usr/local /var/lib/tom
 SCAN_MAX_FILES="${SCAN_MAX_FILES:-3000}"     # 프로젝트 의존성 스캔 파일 상한(패스별로 각각 적용)
 SCAN_MAX_DEPTH="${SCAN_MAX_DEPTH:-8}"        # 프로젝트 의존성 스캔 디렉터리 깊이 상한
 PROJECT_SCAN_TIMEOUT="${PROJECT_SCAN_TIMEOUT:-300}" # 프로젝트 의존성 스캔 전체 상한(초)
+# 호스트 Go 바이너리 buildinfo 스캔 — 전체 strings 는 비싸다(149MB calico-node 에 1.34초).
+#   그래서 개수 상한을 따로 두고, 그 전에 값싼 선별(크기 → ELF 매직 → 앞부분 Go 표식)을 건다.
+GO_BIN_SCAN_MAX="${GO_BIN_SCAN_MAX:-40}"          # buildinfo 를 실제로 뽑을 Go 바이너리 개수 상한
+GO_BIN_MIN_SIZE="${GO_BIN_MIN_SIZE:-1M}"          # 이보다 작은 파일은 Go 바이너리가 아니다(hello world 도 1.5MB)
+GO_BIN_PROBE_BYTES="${GO_BIN_PROBE_BYTES:-65536}" # Go 표식을 찾을 앞부분 크기(전체 스캔 회피용)
 DO_CHANGELOG=1                        # 핵심 패키지 CVE changelog 수집 여부
 # 패키지 무결성 검증(rpm -Va / dpkg --verify) — **기본 꺼짐**. 설치된 모든 패키지의 모든 파일을
 #   해시하므로 시스템에 따라 수 분 + 무거운 디스크 IO 다. "대상 서버에 무리를 주지 않는다"는
@@ -1539,6 +1544,43 @@ collect_project_deps_declared() {
   done | sort -u
 }
 
+# 호스트 파일시스템의 Go 바이너리에서 buildinfo 의존성을 뽑는다. 출력: go|모듈|버전 (3필드)
+# go.mod 는 "선언"이라 weak 지만 바이너리 buildinfo 는 실제로 빌드에 들어간 결과물이라 weak 이 아니다
+# — collect_project_deps_installed 와 같은 급의 고신뢰 소스로 취급한다.
+# 추출 자체는 컨테이너 경로와 같은 헬퍼(go_deps_from_binary)를 쓴다. 그 헬퍼는 "cid|go|모듈|버전|"
+#   5필드로 내므로 cid 를 빈 값으로 주고 앞뒤 구분자만 벗겨 3필드로 맞춘다 — 헬퍼를 고치면
+#   컨테이너 경로(ctr_go_deps)의 출력이 바뀔 위험이 있어 손대지 않는다.
+# 비용이 이 패스의 전부다. `-type f -perm -u+x` 를 전부 strings 로 훑으면 터지므로 3단 선별을 건다:
+#   ① 크기(GO_BIN_MIN_SIZE) → ② ELF 매직 4바이트 → ③ 앞부분에 Go 표식이 있는지.
+#   ①②는 프로세스를 하나도 안 띄운다(bash 내장 read). ③만 head+grep 한 번이다.
+#   그러고도 실제 strings 대상은 GO_BIN_SCAN_MAX 개로 끊는다.
+collect_go_binary_deps() {
+  local root f magic probe count=0 scanned=0
+  for root in $PROJECT_SCAN_ROOTS; do
+    [ -d "$root" ] || continue
+    while IFS= read -r f; do
+      count=$((count+1)); [ "$count" -le "$SCAN_MAX_FILES" ] || break 2
+      [ -r "$f" ] || continue
+      # ELF 매직. `file` 에 의존하지 않는다 — 최소 호스트엔 없다. 내장 read 라 fork 가 없다.
+      magic=''; LC_ALL=C IFS= read -r -n 4 magic < "$f" 2>/dev/null
+      [ "$magic" = $'\177ELF' ] || continue
+      # Go 표식: `.note.go.buildid` 노트는 ELF 헤더 바로 뒤(실측 오프셋 0xf80)에 있고, 노트 이름
+      #   "Go" 뒤에 긴 빌드 ID 문자열이 곧바로 붙는다 → 앞 64KB 만 봐도 걸린다. NUL 을 지우고 봐야
+      #   이름과 ID 가 이어진다. 정본 표식인 `Go buildinf:` 는 파일 중간(2MB 바이너리에서 1.38MB,
+      #   13MB 에서 11.4MB)이라 앞부분 탐침으로 못 쓴다.
+      #   실측(golang:1.22 이미지의 1MB 초과 ELF 51개): Go 19개 전부 적중, 비Go 오탐 0, 탐침 2ms.
+      #   `grep -q ... || continue` 로 쓰면 안 된다 — 이 스크립트는 `set -o pipefail` 이라
+      #   grep 이 첫 매칭에서 먼저 끝나며 앞단(head/tr)이 SIGPIPE(141)로 죽고, 그 상태가
+      #   파이프라인 결과가 되어 **Go 바이너리를 전부 건너뛴다.** 결과 문자열로 판정한다.
+      probe=$(head -c "$GO_BIN_PROBE_BYTES" "$f" 2>/dev/null | LC_ALL=C tr -d '\000' \
+        | LC_ALL=C grep -aoEm1 'Go[A-Za-z0-9_/+=.-]{20,}')
+      [ -n "$probe" ] || continue
+      scanned=$((scanned+1)); [ "$scanned" -le "$GO_BIN_SCAN_MAX" ] || break 2
+      go_deps_from_binary "$f" '' | sed -e 's/^|//' -e 's/|$//'
+    done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f -perm -u+x -size +"$GO_BIN_MIN_SIZE" 2>/dev/null|head -"$SCAN_MAX_FILES")
+  done | sort -u
+}
+
 # 패키지 의존성 그래프용 — pom.xml 원문을 그대로(경로|base64) 올린다. 옛 awk 한 줄 파싱은
 # <exclusions>/<parent> 를 구조적으로 구분 못 해 오탐/0건이 났다(PR#399 리뷰) — 중앙이
 # DOMDocument 로 실제 XML 트리를 따라가 최상위 <dependencies> 만 정확히 골라낸다
@@ -1755,7 +1797,19 @@ have dotnet && cap langpkg nuget 'dotnet tool list -g 2>/dev/null | awk "NR>2 &&
 VG_INV="$TMP/langpkg__inventory.txt"
 VG_LIC="$TMP/langpkg__pkg_license.txt"
 export PROJECT_SCAN_ROOTS SCAN_MAX_FILES SCAN_MAX_DEPTH
+export CMD_TIMEOUT GO_BIN_SCAN_MAX GO_BIN_MIN_SIZE GO_BIN_PROBE_BYTES
 export -f have emit_jar_meta emit_nested_jars collect_project_deps_installed collect_project_deps_declared
+export -f go_deps_from_binary collect_go_binary_deps
+# 패스 하나를 "남은 예산 안에서만" VG_INV 에 덧붙인다. 한 스트림으로 이어 붙여 통째로 head -c 하면
+#   앞 패스가 큰 호스트에서 뒤 패스가 통째로 잘리므로 패스별로 자른다. head -c 가 줄 가운데를
+#   자를 수 있어(다음 패스 첫 줄과 붙어 엉뚱한 좌표가 된다) 개행도 채운다.
+vg_inv_append_pass() {   # $1=수집 함수 이름
+  local rest
+  rest=$(( MAX_BYTES - $(wc -c < "$VG_INV" 2>/dev/null || echo 0) ))
+  [ "$rest" -gt 0 ] || return 0
+  timeout -k 2 "$PROJECT_SCAN_TIMEOUT" bash -c "$1" 2>/dev/null | head -c "$rest" >> "$VG_INV" || true
+  if [ -s "$VG_INV" ] && [ -n "$(tail -c 1 "$VG_INV")" ]; then printf '\n' >> "$VG_INV"; fi
+}
 # METADATA/composer installed.json 안의 license 필드는 collect_project_deps_installed 가 같은
 #   find 패스 안에서 fd 3(=VG_LIC) 로 함께 뽑는다 — 파일 예산을 두 번 쓰지 않기 위함.
 #   "mgr|name|version|spdx" 4필드라 기존 3필드 inventory 스트림과 겹치지 않는다.
@@ -1763,11 +1817,10 @@ timeout -k 2 "$PROJECT_SCAN_TIMEOUT" bash -c 'exec 3>>"$1"; collect_project_deps
   | head -c "$MAX_BYTES" > "$VG_INV" || true
 # head -c 가 줄 가운데를 자를 수 있다 → 다음 패스 첫 줄과 붙어 엉뚱한 좌표가 되지 않게 개행을 채운다.
 if [ -s "$VG_INV" ] && [ -n "$(tail -c 1 "$VG_INV")" ]; then printf '\n' >> "$VG_INV"; fi
-VG_INV_REST=$(( MAX_BYTES - $(wc -c < "$VG_INV" 2>/dev/null || echo 0) ))
-if [ "$VG_INV_REST" -gt 0 ]; then
-  timeout -k 2 "$PROJECT_SCAN_TIMEOUT" bash -c collect_project_deps_declared 2>/dev/null \
-    | head -c "$VG_INV_REST" >> "$VG_INV" || true
-fi
+# Go 바이너리 buildinfo 는 실제 빌드 결과물이라 설치본과 같은 급이다 → 선언 파일(weak)보다 먼저 넣어
+#   예산이 모자랄 때 고신뢰 쪽이 남게 한다.
+vg_inv_append_pass collect_go_binary_deps
+vg_inv_append_pass collect_project_deps_declared
 [ -s "$VG_INV" ] || rm -f "$VG_INV"
 if [ -s "$VG_LIC" ]; then
   # fd3(VG_LIC) 는 collect_project_deps_installed 함수 마지막의 `| sort -u`(stdout 전용)를
