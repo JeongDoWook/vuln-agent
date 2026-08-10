@@ -16,6 +16,8 @@ declare(strict_types=1);
  *   상한에 걸리면 화면이 **잘렸다는 사실을 밝힌다**(조용히 자르지 않는다).
  */
 
+require_once __DIR__ . '/format.php';   // VG_TONE_SEV — 심각도 표기·정렬 순서의 정본
+
 // 한 화면이 메모리에 올리는 엣지 상한. 넘으면 잘린 사실을 화면에 표시한다.
 const VG_PKGDEP_EDGE_MAX = 20000;
 // 트리 전개 깊이 상한(루트=0). 넘는 가지는 "더 깊은 의존성 있음"으로 접어 둔다.
@@ -24,6 +26,12 @@ const VG_PKGDEP_DEPTH_MAX = 6;
 const VG_PKGDEP_NODE_MAX = 400;
 // 역추적("무엇이 끌어왔나")에서 보여주는 경로 개수 상한.
 const VG_PKGDEP_PATH_MAX = 20;
+// 부모별 묶음 집계가 읽는 취약점 행 상한. 넘으면 잘린 사실을 화면에 밝힌다(조용한 절단 금지).
+const VG_PKGDEP_ROLLUP_FINDING_MAX = 20000;
+// 화면에 보여주는 손댈 대상(부모) 개수 상한.
+const VG_PKGDEP_ROLLUP_TOP = 5;
+// 부모 하나가 끌어오는 취약 패키지를 몇 개까지 이름으로 보여줄지.
+const VG_PKGDEP_ROLLUP_PKG_TOP = 4;
 
 /** 노드 키 — manager|name|version. 세 값 모두 적재 전 vg_pkg_ident_valid() 로 검증돼 '|' 가 없다. */
 function vg_pkgdep_key(string $manager, string $name, string $version): string
@@ -223,6 +231,168 @@ function vg_pkgdep_origin(array $g, array $idx, string $name, string $version): 
     $keys = array_keys($parents);
     sort($keys);
     return ['verdict' => 'transitive', 'key' => $cands[0], 'parents' => $keys, 'truncated' => $truncated];
+}
+
+/** 취약점 행 → 판정 캐시의 키. 판정 단위는 (컨테이너, 패키지, 설치버전)이다. */
+function vg_pkgdep_finding_key(int $containerId, string $name, string $version): string
+{
+    return $containerId . '|' . $name . '|' . $version;
+}
+
+/**
+ * 심각도 순위(작을수록 위험). **정본은 VG_TONE_SEV 의 선언 순서**다 —
+ *   화면 표기·SQL 의 FIELD() 정렬과 같은 순서를 쓰려고 여기서 새로 정의하지 않는다.
+ *   모르는 값은 맨 뒤로 보낸다(등급이 비면 최고 심각도를 부풀리지 않는다).
+ */
+function vg_pkgdep_sev_rank(string $sev): int
+{
+    $i = array_search($sev, array_keys(VG_TONE_SEV), true);
+    return $i === false ? PHP_INT_MAX : (int) $i;
+}
+
+/**
+ * 손댈 대상(부모)별 묶음 — "이 하나를 올리면 N건이 함께 해결된다".
+ *   반환: ['origins' => [vg_pkgdep_finding_key() => 전이면 vg_pkgdep_origin() 결과 + container_id,
+ *                        아니면 null(=손댈 부모가 따로 없음)],
+ *          'parents' => [['key','container_id','count','severity','sev_rank','packages'], …] 정렬됨,
+ *          'finding_total' => 집계에 쓴 취약점 행 수, 'finding_truncated' => 행 상한에 걸렸나,
+ *          'edge_truncated' / 'path_truncated' => 그래프·경로 상한에 걸렸나]
+ *
+ *   ── 왜 화면의 행이 아니라 "스캔 전체" 인가 ──────────────────────────────────
+ *   지금 페이지에 뜬 행만 세면 **2페이지로 넘길 때마다 "N건 해결" 이 달라진다.**
+ *   운영자는 그 숫자로 조치 순서를 정하는데, 페이지마다 답이 다른 우선순위는 우선순위가
+ *   아니다. 그래서 취약점 행은 여기서 스캔 단위로 **따로 한 번** 읽는다(쿼리 1건).
+ *
+ *   ── 판정과 집계를 분리하는 이유 ─────────────────────────────────────────────
+ *   판정(direct/transitive)은 패키지 단위라 캐시해 한 번만 하고, 건수는 **행 단위**로 센다.
+ *   판정 캐시를 그대로 세면 같은 패키지의 취약점 여러 건이 1건으로 접혀 과소집계된다.
+ *
+ *   ── 호출 조건·비용 ─────────────────────────────────────────────────────────
+ *   host.php 의 $depEdgeTotal 게이트 안에서만 부른다 — 엣지가 없는 자산에서는 이 함수 자체가
+ *   호출되지 않아 쿼리가 한 건도 늘지 않는다. 안에서도 엣지가 있는 단위만 적재하며,
+ *   적재는 컨테이너 단위로 1회다(행마다 적재하면 N+1). uk_pkg_dep_edge 좌측 접두가
+ *   (scan_id, container_id)라 이 단위 조회만 인덱스를 탄다 — 그래서 전 호스트 통합
+ *   목록(findings.php)에는 붙이지 않는다.
+ *
+ *   **버전은 제안하지 않는다.** 설치되지 않은 부모 버전이 무엇을 끌어오는지 우리는 모른다.
+ *   여기서 내는 사실은 "이 부모를 올리면 N건이 함께 해결된다"까지다.
+ */
+function vg_pkgdep_scan_rollup(PDO $pdo, int $scanId): array
+{
+    $out = [
+        'origins'          => [],
+        'parents'          => [],
+        'finding_total'    => 0,
+        'finding_truncated' => false,
+        'edge_truncated'   => false,
+        'path_truncated'   => false,
+    ];
+
+    $groups = vg_pkgdep_containers($pdo, $scanId);
+    if (!$groups) { return $out; }
+
+    // 이 스캔의 취약점 전체(등급 무관 — 최고 심각도를 재려면 MEDIUM·LOW 도 봐야 한다).
+    //   화면의 정렬·페이지네이션과 무관해야 하므로 여기서 자체 조회한다.
+    $st = $pdo->prepare(
+        'SELECT container_id, package_name, installed_version, severity
+           FROM tb_finding WHERE scan_id = ?
+          LIMIT ' . VG_PKGDEP_ROLLUP_FINDING_MAX
+    );
+    $st->execute([$scanId]);
+    $findings = $st->fetchAll();
+    $out['finding_total']     = count($findings);
+    $out['finding_truncated'] = count($findings) >= VG_PKGDEP_ROLLUP_FINDING_MAX;
+
+    // 엣지가 있는 단위의 행만 남긴다 — 나머지는 판정할 그래프 자체가 없다.
+    $byCid = [];
+    foreach ($findings as $f) {
+        $cid = (int) ($f['container_id'] ?? 0);
+        if (isset($groups[$cid])) { $byCid[$cid][] = $f; }
+    }
+
+    $agg = [];
+    foreach ($byCid as $cid => $rows) {
+        $load = vg_pkgdep_load($pdo, $scanId, $cid);
+        if ($load['truncated']) { $out['edge_truncated'] = true; }
+        $graph = vg_pkgdep_build($load['edges']);
+        $index = vg_pkgdep_index($graph);
+
+        $u = vg_pkgdep_rollup_unit($graph, $index, $cid, $rows);
+        $out['origins'] += $u['origins'];
+        if ($u['path_truncated']) { $out['path_truncated'] = true; }
+        foreach ($u['agg'] as $ak => $a) { $agg[$ak] = $a; }   // 키에 container_id 가 들어 있어 안 겹친다
+    }
+
+    $out['parents'] = vg_pkgdep_rollup_sort($agg);
+    return $out;
+}
+
+/**
+ * 한 단위(컨테이너)의 그래프 + 그 단위의 취약점 행 → 판정 캐시와 부모별 집계.
+ *   반환: ['origins' => [키 => 전이면 판정결과+container_id, 아니면 null],
+ *          'agg' => [집계키 => ['key','container_id','count','severity','sev_rank','packages'=>set]],
+ *          'path_truncated' => 경로 상한에 걸렸나]
+ *   DB 를 안 보는 순수 함수다 — 그래서 서버 없이 단위테스트가 된다(tests/pkgdep_rollup_test.php).
+ */
+function vg_pkgdep_rollup_unit(array $g, array $idx, int $containerId, array $findings): array
+{
+    $origins = [];
+    $agg = [];
+    $pathTruncated = false;
+
+    foreach ($findings as $f) {
+        $name = (string) ($f['package_name'] ?? '');
+        $ver  = (string) ($f['installed_version'] ?? '');
+        $key  = vg_pkgdep_finding_key($containerId, $name, $ver);
+
+        // 판정은 패키지 단위로 한 번만(캐시). 건수는 아래에서 **행 단위**로 센다.
+        if (!array_key_exists($key, $origins)) {
+            $o = vg_pkgdep_origin($g, $idx, $name, $ver);
+            if ($o['truncated']) { $pathTruncated = true; }
+            // 전이가 아니면 null — 손댈 부모가 따로 없다(직접 조치 가능하거나 그래프에 없다).
+            $origins[$key] = $o['verdict'] === 'transitive' ? $o + ['container_id' => $containerId] : null;
+        }
+        $o = $origins[$key];
+        if ($o === null) { continue; }
+
+        foreach ($o['parents'] as $pkey) {
+            // 같은 이름의 부모라도 단위(호스트/컨테이너)가 다르면 손댈 대상이 다르다.
+            $ak = $containerId . '|' . $pkey;
+            if (!isset($agg[$ak])) {
+                $agg[$ak] = [
+                    'key' => $pkey, 'container_id' => $containerId, 'count' => 0,
+                    'severity' => '', 'sev_rank' => PHP_INT_MAX, 'packages' => [],
+                ];
+            }
+            $agg[$ak]['count']++;
+            $rank = vg_pkgdep_sev_rank((string) ($f['severity'] ?? ''));
+            if ($rank < $agg[$ak]['sev_rank']) {
+                $agg[$ak]['sev_rank'] = $rank;
+                $agg[$ak]['severity'] = (string) ($f['severity'] ?? '');
+            }
+            $agg[$ak]['packages'][$name . ' ' . $ver] = true;
+        }
+    }
+    return ['origins' => $origins, 'agg' => $agg, 'path_truncated' => $pathTruncated];
+}
+
+/**
+ * 집계 결과 → 조치 순서로 정렬된 목록.
+ *   **최고 심각도 → 건수** 순 = "가장 위험한 것을 가장 많이 없애는 순서".
+ *   둘이 같으면 키로 고정한다 — 정렬이 흔들리면 새로고침마다 조치 순서가 바뀐다.
+ */
+function vg_pkgdep_rollup_sort(array $agg): array
+{
+    $out = [];
+    foreach ($agg as $a) {
+        $pkgs = array_keys($a['packages']);
+        sort($pkgs);
+        $a['packages'] = $pkgs;
+        $out[] = $a;
+    }
+    usort($out, fn(array $x, array $y) =>
+        [$x['sev_rank'], -$x['count'], $x['key']] <=> [$y['sev_rank'], -$y['count'], $y['key']]);
+    return $out;
 }
 
 /** 그 노드의 자식 키 목록(정렬). 없으면 빈 배열. */
