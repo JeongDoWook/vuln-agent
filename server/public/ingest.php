@@ -123,6 +123,22 @@ $procCount = count($procRows);
 $staleRows = !empty($rt['stale']) ? vg_ingest_parse_stale((string) $rt['stale']) : [];
 $staleCount = count($staleRows);
 
+// ── 패키지 무결성 파싱 (rpm -Va / dpkg --verify) ──
+//   에이전트는 `--verify-files` 를 준 실행에서만 이 섹션을 보낸다(비용 때문에 기본 꺼짐).
+//   **섹션 없음(미수행)과 "검사했는데 0건"은 반드시 구분해서 저장한다** — 합치면
+//   "검사도 안 했는데 깨끗하다"로 읽힌다.
+$integ = $data['integrity'] ?? [];
+$integChecked = is_array($integ) && (string) ($integ['checked'] ?? '') === '1';
+$integRows    = $integChecked ? vg_ingest_parse_integrity((string) ($integ['files'] ?? '')) : [];
+// 잘린 결과를 "위반 0건 = 깨끗함"으로 읽지 않게 부분 결과 여부를 스캔에 남긴다.
+//   partial = 타임아웃으로 중간에 끊김, truncated = 줄 수 상한 초과.
+$integPartial = $integChecked
+    && ((string) ($integ['partial'] ?? '') === '1' || (string) ($integ['truncated'] ?? '') === '1');
+// total 은 상한에 잘리기 전 전체 건수. 없으면 실제 저장 행 수로 폴백한다.
+$integTotal = $integChecked
+    ? max((int) ($integ['total'] ?? 0), count($integRows))
+    : 0;
+
 // ── changelog CVE 파싱 — 패키지별 changelog 에 나온 CVE(백포트 근거) ──
 //   에이전트가 --no-changelog 로 돌면 이 섹션이 비어 clogCount=0 → 무해(억제 없음).
 $clog = $data['changelog'] ?? [];
@@ -244,6 +260,10 @@ try {
             'clog_count'     => $clogCount,
             'stale_rows'     => $staleRows,
             'stale_count'    => $staleCount,
+            'integrity_checked' => $integChecked,
+            'integrity_partial' => $integPartial,
+            'integrity_total'   => $integTotal,
+            'integrity_rows'    => $integRows,
             'debsecan_rows'  => $debsecanRows,
             'debsecan_count' => $debsecanCount,
             'errata_rows'    => $errataRows,
@@ -334,6 +354,8 @@ echo json_encode([
     'pkg_changes' => $chgCount,
     'exposures' => $expCount,
     'processes' => $procCount,
+    // 무결성은 "미수행"과 "0건"이 다르므로 응답에서도 checked 를 함께 준다.
+    'integrity' => ['checked' => $integChecked, 'total' => $integTotal, 'partial' => $integPartial],
     'findings'  => $findings,
     'cce'       => $cce,
     'accounts'  => $accounts,

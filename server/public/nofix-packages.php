@@ -65,7 +65,7 @@ try {
     $err = '제거 권고 목록을 불러오는 중 오류가 발생했습니다.';
 }
 
-vg_header('제거 권고', 'findings');
+vg_header('제거 권고', 'nofix_packages');
 ?>
   <?php vg_page_title('제거·대체 검토 권고', '', '벤더가 수정본을 내지 않은 CVE 가 한 패키지에 몰려 있는 조합입니다.', [
       'count' => $total,

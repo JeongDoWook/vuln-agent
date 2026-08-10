@@ -549,6 +549,12 @@ assert_contains "$allpackages" '실제 서버 설치 현황' "전체 설치 패�
 assert_contains "$allpackages" 'class="on" href="/asset-packages.php">전체 설치 패키지' "전체 설치 패키지 탭 활성 표시"
 assert_contains "$allpackages" 'glibc' "전체 호스트 설치 패키지 검색 결과 표시"
 assert_contains "$allpackages" "$FQDN_WEB01" "설치 패키지 검색 결과에 호스트 표시"
+# 변화 추적 — 사이드바에 올린 화면인데 스모크가 한 번도 치지 않아, 패키지 셀이 부르는
+#   vg_osv_ecosystem() 의 require 누락(distro.php)이 Fatal error 로 오래 남아 있었다.
+#   목록에 행이 있어야 그 코드 경로를 지나므로, 응답 본문에 표가 렌더됐는지까지 본다.
+changesbody=$(curl_ -s -b "$JAR" "$BASE/changes.php")
+assert_not_contains "$changesbody" 'Fatal error' "변화 추적 화면이 오류 없이 렌더됨"
+assert_contains "$changesbody" '변화 추적' "변화 추적 화면 제목 표시"
 catalogpackages=$(curl_ -s -b "$JAR" "$BASE/packages.php?q=glibc")
 assert_contains "$catalogpackages" '/package.php?name=glibc' "취약 영향 패키지가 패키지 상세에 연결"
 packageurl=$(grep -oE '/package.php\?name=glibc[^" ]*' <<<"$catalogpackages" | head -1 | sed 's/&amp;/\&/g')

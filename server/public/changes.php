@@ -13,6 +13,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity — auth.php 가 이미 로드했을 수 있다
+require_once __DIR__ . '/../src/distro.php'; // vg_osv_ecosystem — 패키지 상세 링크(아래 vg_package_detail_link)
 vg_require_menu('findings');
 
 const VG_SEV_RANK = ['LOW' => 1, 'MEDIUM' => 2, 'HIGH' => 3, 'CRITICAL' => 4];
@@ -420,7 +421,7 @@ function vg_attach_change_reason(PDO $pdo, array &$rows): void {
     unset($r);
 }
 
-vg_header('변화 추적', 'findings');
+vg_header('변화 추적', 'changes');
 ?>
   <?php vg_page_title('변화 추적', 'CHANGES', '직전 수집과 비교해 신규·해결·등급 변화를 보여줍니다.'); ?>
 
