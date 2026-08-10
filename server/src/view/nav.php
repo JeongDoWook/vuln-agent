@@ -44,6 +44,7 @@ function vg_activity_type_labels(): array {
         'user_delete'          => '사용자 삭제',
         'feed_run'             => '피드 실행',
         'export_data'          => '데이터 내보내기',
+        'export_sbom'          => 'SBOM 내보내기',
         'view_host'            => '호스트 상세 조회',
         'view_host_accounts'   => '호스트 계정 목록 조회',
         'view_depgraph'        => '패키지 의존성 그래프 조회',
