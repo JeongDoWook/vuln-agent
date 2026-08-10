@@ -302,6 +302,13 @@ else
   no "Ruby 의존성 파서 회귀"
 fi
 
+printf "\n[node_python_locks]\n"
+if bash "$ROOT/tests/node_python_locks_test.sh"; then
+  ok "yarn(v1/v2+)·pnpm·poetry·Pipfile·egg-info 파서 (스코프 이름·범위 유출)"
+else
+  no "Node/Python 보조 lock 파서 회귀"
+fi
+
 # --- debtracker 단위 테스트 ---------------------------------------------------
 # 데비안 보안 트래커 파서·판정(백포트 억제 근거). 느슨하면 오탐이 남고, 빡빡하면 진짜 취약점을
 # "고쳐졌다"고 지운다(미탐). 규칙을 debsecan 원본과 대조해 옮겼으므로 회귀를 여기서 막는다.
