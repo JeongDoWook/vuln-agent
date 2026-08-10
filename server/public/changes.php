@@ -420,7 +420,7 @@ function vg_attach_change_reason(PDO $pdo, array &$rows): void {
     unset($r);
 }
 
-vg_header('변화 추적', 'findings');
+vg_header('변화 추적', 'changes');
 ?>
   <?php vg_page_title('변화 추적', 'CHANGES', '직전 수집과 비교해 신규·해결·등급 변화를 보여줍니다.'); ?>
 
