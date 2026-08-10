@@ -17,7 +17,7 @@ rectangle "/profile.php\n내 프로필 · 본인 비밀번호 변경" as PROF
 rectangle "/depgraph.php\n패키지 의존성 그래프\n역추적 · 정방향 · 트리" as DEP
 
 package "취약점 (perm: findings / advisories)" as Vuln {
-    rectangle "/findings.php\n탐지 결과 · 검색/필터" as FIND
+    rectangle "/findings.php\n탐지 결과 한 화면 · ?type= 탭\nCVE · 보안설정(CCE) · 노출" as FIND
     rectangle "/changes.php\n변화 추적 · 신규/해결/등급변경" as CHG
     rectangle "/finding_history.php\n(호스트,컨테이너,CVE,패키지) 스캔별 이력\n+ 미조치 사유·승인자 메모" as FHIST
     rectangle "/cves.php\nCVE 목록 · 탭(전체/KEV/EPSS 상위)" as CVES
@@ -27,7 +27,7 @@ package "취약점 (perm: findings / advisories)" as Vuln {
     rectangle "/vendor.php\n판정 근거 · 소스 필터" as VEND
     rectangle "/compliance_rules.php\n보안 설정 기준" as CRULES
     rectangle "/compliance_rule.php\nSSG 룰 상세 · 점검/조치 근거" as CRULE
-    rectangle "/compliance.php\n컴플라이언스 매핑 · 자동판정 + 스냅샷 추이" as CMAP
+    rectangle "/compliance.php\n컴플라이언스 매핑 · 통제 5종 요약 한 줄\n+ 스냅샷 추이(접힘)" as CMAP
     rectangle "/control_mapping.php\n통제 기준 매핑 · CCE 결과를\nKISA U-코드/ISMS-P/N2SF 로" as CTRL
     rectangle "/control.php\n통제 상세 · 기준 설명 · 점검별 조치\n+ 해당 자산(호스트)" as CDET
     rectangle "/advisories.php · /advisory.php\n보안 공지(KISA) 목록·상세" as ADV
@@ -52,6 +52,7 @@ package "인증: 토큰(사람 로그인과 분리)" as API {
     rectangle "/ingest.php\n수집 수신 · X-Agent-Token" as ING #238636
     rectangle "/agent-poll.php · /agent-progress.php\n명령 pull · 진행/heartbeat/중단 확인" as APOLL #238636
     rectangle "/export.php\n결과 내보내기 JSON/XML · X-API-Token" as EXP #238636
+    rectangle "/sbom.php\n자산별 SBOM CycloneDX 1.5 / SPDX 2.3\n· export.php 와 같은 읽기 토큰" as SBOM #238636
 }
 
 ' 화면이 아니라 화면이 부르는 엔드포인트다. 사람이 주소창에 치는 곳이 아니라서 사이드바에 없다.

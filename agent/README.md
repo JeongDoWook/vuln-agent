@@ -1,10 +1,12 @@
 # vuln-agent 에이전트 — 설치·운영 가이드
 
-> 현행 버전: 3.11 (문서 기준 2026-08-09). 실제 값은 `vuln-inventory-agent.sh:33` 의
+> 현행 버전: 3.13 (문서 기준 2026-08-10). 실제 값은 `vuln-inventory-agent.sh:37` 의
 > `SCRIPT_VERSION` 이 정본이다. 기본 경로 IP 보고, 장시간 단계 heartbeat, 웹 중단 요청을 지원하고,
 > 3.9 에서 cgroup 재실행 가드를, 3.10 에서 meta 3필드(`elapsed_seconds`·`peak_rss_mb`·`cpu_seconds`)
 > 누락을 고쳤다. 3.11 부터 **헤더만 있는 섹션 파일도 그대로 전송한다** — 중앙이 "수집했고 0건"과
-> "아예 안 왔다"를 구분해 자산등급 제안을 판정불가로 분리하기 때문이다.
+> "아예 안 왔다"를 구분해 자산등급 제안을 판정불가로 분리하기 때문이다. 3.12 에서 패키지 무결성
+> 검증(`--verify-files`, 기본 꺼짐)을, 3.13 에서 **호스트 Go 바이너리 buildinfo** 수집을 더했고,
+> 같은 3.13 에서 Ruby 앱 의존성(`Gemfile.lock`·vendored `*.gemspec`)이 붙었다.
 
 대상 리눅스 서버에서 **자산·취약노출 정보를 수집해 중앙 서버로 전송**하는 에이전트다.
 스캐너를 각 서버에 심는 방식이 아니라, 가벼운 셸 스크립트가 주기적으로 인벤토리를
@@ -210,14 +212,14 @@ bash deploy/agent_push.sh 10.0.0.100 10.0.0.101 10.0.0.102
 - 2026-08-06: `install-agent.sh` 가 생성하는 `run.sh` 가 poll 응답의 `cpu_quota_percent`·
   `packaging_timeout_seconds`·`mem_max_mb`(호스트별 속도 티어)를 읽어 `vuln-inventory-agent.sh`
   에 env(`CPU_QUOTA`·`PACKAGING_TIMEOUT`·`MEM_MAX`)로 넘긴다
-  (`install-agent.sh:275-319`) — **이미 설치된 노드는 재설치 전까지 이 값을 무시하고 스크립트
+  (`install-agent.sh:280-328`) — **이미 설치된 노드는 재설치 전까지 이 값을 무시하고 스크립트
   자체 기본값(CPU 10% / 120초 / 300M)으로만 돈다.** 속도 티어를 실제로 적용하려면 해당
   노드에서 `install-agent.sh` 를 다시 돌려야 한다.
 - **재실행하면 `run.sh` 가 확실히 갱신된다(2026-08-06 수정).** 예전엔 마지막 단계가
   `systemctl enable --now` 여서, 유닛이 이미 active 인 노드에서는 **재시작이 일어나지 않아**
   방금 디스크에 쓴 새 `run.sh` 를 옛 프로세스가 계속 메모리에 물고 돌았다(속도 티어를 넣어도
   반영 안 되는 원인이었다). 지금은 `daemon-reload` → `enable`(활성화만) → `restart`(무조건
-  재기동) 순서다(`install-agent.sh:390-391`).
+  재기동) 순서다(`install-agent.sh:398-399`).
 - **웹에서 누르는 버튼으로 만들지 않는다.** 그러려면 PHP 컨테이너가 전 노드에 root 로 설치할 수
   있는 SSH 키를 들어야 하고, 웹앱이 한 번 뚫리면 전 노드 root 장악으로 번진다. 보는 건 웹(자산
   화면의 `meta.agent_version`), 미는 건 CLI.
@@ -341,8 +343,9 @@ sudo bash install-agent.sh --uninstall [--prefix 설치경로]
 OS/커널/CPE, 설치 패키지(호스트는 dpkg/rpm — NEVRA·소스패키지·**출처**), 실행 중 프로세스와
 리스닝 포트(외부노출 판정), 보안설정(sshd·계정·파일권한·SELinux/AppArmor·방화벽·시간동기화·
 로그·암호화 → 서버가 CCE 점검), 언어 패키지(pip/npm/gem/composer/maven/nuget/cargo/go 8개
-생태계), **계정 인벤토리**(아래 별도 절 — 개인정보성 항목이 포함된다),
-**패키지 의존성 그래프**(직접·전이). 이 원자료가 중앙에서 CVE 미러(NVD·OSV·KISA)와 매칭되고, 런타임
+생태계 — 아래 별도 절), **계정 인벤토리**(아래 별도 절 — 개인정보성 항목이 포함된다),
+**패키지 의존성 그래프**(직접·전이), 그리고 플래그를 준 실행에서만 **패키지 무결성 검증**
+(`--verify-files`). 이 원자료가 중앙에서 CVE 미러(NVD·OSV·KISA)와 매칭되고, 런타임
 노출·EPSS·KEV 가중이 얹혀 최종 우선순위가 된다. 피드 소스별 역할은
 [`docs/dev/피드소스-역할.md`](../docs/dev/피드소스-역할.md) 참고.
 
@@ -358,10 +361,27 @@ OS/커널/CPE, 설치 패키지(호스트는 dpkg/rpm — NEVRA·소스패키지
 > 건너뛴다) — 컨테이너 오버레이 경로를 `dpkg -S`/`rpm -qf` 로 전수조사하다 멈추는 문제 때문.
 > "컨테이너를 안 본다"는 뜻이 아니다. 패키지는 위처럼 따로 수집한다.
 
+### 언어 패키지 — 어디서 읽나 (설치본 우선, 선언 파일은 보충)
+
+전역 CLI 목록(`pip3 list`·`npm ls -g`·`gem list`·`composer global show`·`cargo install --list`·
+`dotnet tool list -g`)에 더해 `PROJECT_SCAN_ROOTS` 아래를 훑는다. **설치본이 먼저 나가고 선언
+파일이 뒤에 붙는다** — 예산(`MAX_BYTES`)이 모자라면 고신뢰 쪽이 남아야 하기 때문이다.
+
+| 신뢰도 | 읽는 것 | 생태계 |
+|---|---|---|
+| 설치본 | `site-packages/*.dist-info/METADATA` · `composer/installed.json` · `Cargo.lock` · `package-lock.json` · `*.deps.json` · `*.jar/war/ear` | pip · composer · cargo · npm · nuget · maven |
+| 설치본 | `Gemfile.lock`(GEM 섹션의 해결된 버전) · vendored `specifications/*.gemspec`(파일명만 — 본문은 루비 코드다) | gem |
+| 설치본 | **Go 바이너리 buildinfo**(`collect_go_binary_deps`) — `go.mod` 가 없는 배포 바이너리에서 모듈·버전을 직접 뽑는다 | go |
+| 선언 | `go.mod` · `requirements.txt` · `pom.xml` | go · pip · maven |
+
+Go 바이너리 탐색은 비용이 커서 3중으로 캡핑한다 — `GO_BIN_MIN_SIZE`(기본 1M, 이보다 작으면 Go
+바이너리가 아니다) 로 후보를 거르고, 앞 `GO_BIN_PROBE_BYTES`(기본 64KB)만 읽어 Go 표식을 찾고,
+실제 buildinfo 추출은 `GO_BIN_SCAN_MAX`(기본 40개)까지만 한다.
+
 ### 계정 인벤토리 — 계정명·마지막 로그인이 중앙으로 간다 (개인정보 고지)
 
 ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을 보낸다(그전엔 설정 정책만
-봤다). 원자료는 `vuln-inventory-agent.sh:1901-1911` 의 네 키다 — 전부 읽기 전용이고
+봤다). 원자료는 `vuln-inventory-agent.sh:2091-2101` 의 네 키다 — 전부 읽기 전용이고
 `getent`/`awk` 수준이라 가볍다(파일시스템 전수 `find` 는 하지 않는다).
 
 | 페이로드 키 | 무엇을 읽나 | 무엇을 보내나 |
@@ -387,8 +407,8 @@ ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을
 
 | 페이로드 키 | 수집 함수 | 보내는 것 |
 |---|---|---|
-| `langpkg.pom_deps` | `collect_pom_direct_deps` (`vuln-inventory-agent.sh:1530`) | `PROJECT_SCAN_ROOTS` 아래 `pom.xml` 을 `경로\|base64` 로. 파일당 128KB(`POM_DEP_FILE_MAX_BYTES`) 초과분은 건너뛴다 |
-| `containers.sbom` | `collect_sbom` (`vuln-inventory-agent.sh:820`) | `/opt/vuln-agent/sbom/*.json`(CycloneDX·SPDX)을 `이름\|형식\|base64` 로. 파일당 2MB 상한 |
+| `langpkg.pom_deps` | `collect_pom_direct_deps` (`vuln-inventory-agent.sh:1637`) | `PROJECT_SCAN_ROOTS` 아래 `pom.xml` 을 `경로\|base64` 로. 파일당 128KB(`POM_DEP_FILE_MAX_BYTES`) 초과분은 건너뛴다 |
+| `containers.sbom` | `collect_sbom` (`vuln-inventory-agent.sh:843`) | `/opt/vuln-agent/sbom/*.json`(CycloneDX·SPDX)을 `이름\|형식\|base64` 로. 파일당 2MB 상한 |
 
 - pom 은 왜 원문인가: 옛 awk 한 줄 파싱이 `<exclusions>`·`<dependencyManagement>`·한 줄
   `<parent>` 를 구조적으로 구분하지 못해 오탐/0건이 났다. 중앙이 DOMDocument·XPath 로 최상위
@@ -424,7 +444,7 @@ ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을
 > 공백 없는 패턴만 매칭해 **조용히 아무것도 못 바꿨다**(awk `sub` 은 매치 실패해도 오류가
 > 없다). jq 가 깔린 거의 모든 호스트에서 재현됐고 운영 DB 에서 해당 필드가 전부 NULL 로
 > 확인됐다. 지금은 `jq -sc` + 공백을 허용하는 정규식 양쪽으로 막았다
-> (`vuln-inventory-agent.sh:1967`·`2014`). 값이 계속 비는 노드는 `agent_push.sh` 로 본체를
+> (`vuln-inventory-agent.sh:2157`·`2202`). 값이 계속 비는 노드는 `agent_push.sh` 로 본체를
 > 올리면 다음 수집부터 채워진다.
 
 ## 실행 옵션

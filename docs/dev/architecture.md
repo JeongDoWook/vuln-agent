@@ -1,7 +1,8 @@
 # vuln-agent 아키텍처
 
-> 현행 기준: 2026-08-09 · 에이전트 3.11 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고,
-> 계정 인벤토리·자산 등급·의존성 그래프(수집·조회 화면), 컴플라이언스 스냅샷 포함.
+> 현행 기준: 2026-08-10 · 에이전트 3.13 · pull 명령 큐, 진행 heartbeat/취소, 관리 IP 보고,
+> 계정 인벤토리·자산 등급(제안 이력 포함)·의존성 그래프(수집·조회 화면), 컴플라이언스 스냅샷,
+> 패키지 무결성 검증, SBOM 산출 API 포함.
 
 지금까지 확정·구현된 구조를 그림으로 정리한다.
 다이어그램은 [`docs/specs/diagrams/`](../specs/diagrams/) 에 PlantUML(`.puml`)로 분리해 두었다.
@@ -96,7 +97,7 @@ stale 값이 영구히 남는다).
 **보안설정 점검(CCE)** 은 별도 경로다. 같은 수집물의 `security`/`users` 섹션을 `src/cce.php` 가
 판정해 `tb_cce_finding`(PASS/FAIL/NA)에 저장한다 — CVE 가 아니라 **설정**을 본다(현재 39개 항목:
 SSH·계정·패스워드 정책·파일 권한·MAC/방화벽 + 시간동기화 `CCE-TIME-*`·로그설정 `CCE-LOG-*`·
-암호화 `CCE-CRYPTO-*`). 그중 27개는 SSG 룰 ID 에 묶여 있고 나머지는 화면에서 "자체 기준"으로
+암호화 `CCE-CRYPTO-*`). 그중 31개는 SSG 룰 ID 에 묶여 있고 나머지 8개는 화면에서 "자체 기준"으로
 드러낸다(`vg_cce_ssg_map()`). 신규 수집은 하지 않는다.
 한 점검 결과가 **어느 기준의 증적인가**는 `tb_control_mapping`(U-코드/ISMS-P/N2SF 다중 매핑)이
 정본이다 — 예전엔 이 지식이 `cce.php` 주석과 화면 문자열에 흩어져 있어 같은 결과를 다른 기준으로
@@ -152,6 +153,15 @@ SPDX 는 `DEPENDS_ON`(정방향)과 `DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역�
 좌측 접두가 (`scan_id`, `container_id`)라 그 둘로 좁혀야 인덱스를 타고 패키지명 전역 검색은 풀스캔이
 된다. 엣지는 그 단위로 한 번에 읽어 메모리에서 조립하고(재귀 SQL 은 깊이만큼 N+1), 상한에 걸리면
 **잘린 사실을 화면에 밝힌다**. 그래프 라이브러리는 들이지 않는다(접이식 목록으로 충분 — KISS).
+
+**패키지 무결성 검증**은 CVE 판정과 별개 축이다 — "설치 이후 파일이 바뀌었나"(N2SF 제6장 IN
+구성요소 무결성)를 본다. 에이전트가 `--verify-files`(기본 꺼짐)로 `rpm -Va`/`dpkg --verify` 를
+돌린 결과만 들어오고, 행은 `tb_package_integrity`(스캔 CASCADE)에, **검사 여부·부분 결과·전체
+건수는 `tb_scan.integrity_checked`/`_partial`/`_total`** 에 나눠 담는다. 행이 0개라는 사실만으로는
+"검사했는데 깨끗함"과 "아예 검사 안 함(기본 꺼짐·구버전 에이전트)"을 구분할 수 없고, 둘을 합치면
+"검사도 안 했는데 깨끗하다"로 읽힌다 — `tb_collection_stage`·자산등급 제안 이력과 같은 취지다.
+플래그 문자열은 rpm/dpkg 원문 그대로 저장하고 해석은 화면이 한다(`vg_integrity_flag_label()`).
+어휘도 "변조됨"이 아니라 **"패키지 원본과 다름(관측)"** 이다 — 운영자가 직접 바꾼 파일일 수 있다.
 
 **미조치 사유·승인자**(`src/remediation_note.php` → `tb_remediation_note`)는 억제와 **다른 축**이다.
 억제는 매처의 자동 판정이고, 이건 사람이 남기는 메모다 — "왜 지금 고치지 않는가"와 "누가 언제
@@ -281,7 +291,7 @@ snippet → 각 사이트 블록에서 `import`). 사이트마다 복붙하지 �
 
 다이어그램: [`docs/specs/diagrams/erd.puml`](../specs/diagrams/erd.puml)
 
-**범위**: 도메인 엔티티 **50개 전부**(= 전체 51테이블 − `tb_schema_migrations`)를 그린다.
+**범위**: 도메인 엔티티 **53개 전부**(= 전체 54테이블 − `tb_schema_migrations`)를 그린다.
 `tb_schema_migrations` 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
 엔티티가 많아 영역별 `package` 로 묶었다 — 수집·인벤토리 / CVE 도메인 / 벤더 판정 소스 /
 판정 결과 / 피드 운영·인증·감사. **실선은 FK 가 실제로 걸린 관계, 점선은 FK 없이
@@ -317,6 +327,9 @@ tb_remediation_note 는 미조치 사유·승인자 메모(자연키라 스캔�
 tb_control_mapping 은 CCE 룰 ↔ U-코드/ISMS-P/N2SF 다중 매핑,
 tb_compliance_snapshot/tb_compliance_snapshot_control 은 하루 1건 컴플라이언스 판정 증적,
 tb_activity_review 는 접속기록 월 1회 점검 이력, tb_setting 은 SLA 등 전역 운영 설정.
+tb_asset_grade_review 는 자산 등급 확정의 **구조화된 사람 검토**(호스트당 1행),
+tb_asset_grade_suggestion_history 는 **시스템 제안의 append-only 관찰 이력**(제안값은 확정값이 아니다),
+tb_package_integrity 는 패키지 원본과 다른 파일 목록(스캔 단위 사실은 tb_scan 의 integrity_* 3컬럼).
 스키마 적용 이력은 `tb_schema_migrations`(deploy/migrate.sh) — ERD 범위 밖.*
 *모든 테이블에 감사 4컬럼(`created_at`/`updated_at`/`is_deleted`/`deleted_at`)이 통일되어 있다
 (다이어그램엔 `is_deleted` 만 표기, 나머지 생략). 삭제는 하드삭제 대신 `vg_soft_delete()` 로
@@ -329,9 +342,18 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 
 ## 6. 웹 화면 구성 (사이트맵 · 인증)
 
-좌측 사이드바는 바로가기(대시보드/자산/데이터 수집), 취약점(탐지 결과/CVE/패키지/판정 근거/보안 설정/보안 공지/컴플라이언스 매핑/통제 기준 매핑), 관리(사용자/권한/에이전트 키/API 키/감사 로그/설정)로 묶고, **역할×메뉴 권한**에서
+좌측 사이드바는 대시보드(단독), 바로가기(자산/데이터 수집), 취약점(탐지 결과/CVE/패키지/판정 근거/
+보안 공지), 보안 기준(보안 설정/컴플라이언스·통제), 관리(사용자/권한/에이전트 키/API 키/감사 로그/
+설정)로 묶고, **역할×메뉴 권한**에서
 허용된 링크만 렌더한다(링크가 하나도 안 남은 섹션은 라벨째 숨김). 대분류·링크 구성의 SSOT 는
 `server/src/view/nav.php` 의 `vg_nav_sections()` 하나이며, 사이드바와 브레드크럼이 같이 참조한다.
+
+**사이드바에 항목을 늘리지 않고 서브탭으로 들어오는 화면들이 있다.** 변화 추적(`changes.php`)·
+제거 권고(`nofix-packages.php`)는 '탐지 결과' 의 탭 줄로, 전체 설치 패키지(`asset-packages.php`)는
+'자산' 의 탭으로, 통제 기준 매핑(`control_mapping.php`)은 '컴플라이언스·통제' 의 탭으로 들어온다.
+어느 탭에 있어도 대표 항목이 활성으로 남도록 링크마다 `active_keys` 를 둔다(안 그러면 사용자가
+현재 위치를 잃는다). 탭 줄의 라벨·순서·목적지는 `vg_findings_subtab_labels()`/`vg_findings_subtabs()`
+한 곳이 정본이다 — 예전엔 세 화면이 각자 그려 개수(3 vs 5)와 라벨이 어긋났다.
 
 다이어그램: [`docs/specs/diagrams/사이트맵.puml`](../specs/diagrams/사이트맵.puml)
 
@@ -359,6 +381,11 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
     활성 토큰은 호스트당 하나(재발급 시 기존분 자동 폐기). 공유 수집 토큰은 허용하지 않는다.
   - 외부 시스템 → `export.php` : 웹에서 발급하는 **읽기 전용** API 토큰(`X-API-Token`, 또는
     `Authorization: Bearer`). DB 엔 SHA-256 해시만 저장(원문은 발급 시 1회 표시), 폐기는 소프트삭제.
+  - 외부 SBOM 도구 → `sbom.php` : **같은 읽기 토큰**을 쓴다(별도 토큰 종류를 늘리지 않는다).
+    `?host=` 또는 `?scan_id=` + `?format=cyclonedx|spdx` 로 자산 하나의 부품표를 CycloneDX 1.5 /
+    SPDX 2.3 으로 내보낸다. purl 생성은 `src/purl.php`, serialNumber 는 스캔 기준 결정적 UUIDv5 라
+    같은 스캔이면 문서가 항상 같다(매 호출 난수면 SBOM diff 가 성립하지 않는다). 열람은
+    `export_sbom` 으로 감사로그에 남는다.
   - **두 토큰 모두 유효기간을 갖는다**(`expires_at`). 발급 선택지는 무기한/30일/90일/1년이고
     **NULL = 무기한**이라 기존 발급분은 그대로 쓰인다(하위호환). 만료된 토큰은 검증 경로가 인증
     실패로 처리하고 `api_token_expired`/`agent_token_expired` 감사로그를 남긴다. 어휘·판정의 SSOT 는

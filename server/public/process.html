@@ -269,11 +269,13 @@ KEV/EPSS를 함께 판단해 우선순위를 정하고 근거를 남긴다. 담�
 </div>
 
 <!-- 10. Export API -->
-<h2><span class="n">10</span>Export API</h2>
-<p class="lead">외부 시스템이 스캔 결과를 가져갈 수 있는 읽기 전용 API다.</p>
+<h2><span class="n">10</span>Export · SBOM API</h2>
+<p class="lead">외부 시스템이 스캔 결과와 자산별 부품표를 가져갈 수 있는 읽기 전용 API다.</p>
 <div class="card">
   <code class="i">GET /export.php</code> — JSON/XML, 호스트·심각도·KEV·EPSS 필터 지원<br>
-  인증: <code class="i">X-API-Token</code> 또는 <code class="i">Authorization: Bearer</code><br>
+  <code class="i">GET /sbom.php?host=&lt;fqdn&gt;&amp;format=cyclonedx|spdx</code> — 자산 하나의 SBOM
+  (CycloneDX 1.5 / SPDX 2.3). 같은 스캔이면 문서가 항상 같다(결정적 serialNumber).<br>
+  인증: 두 API 모두 같은 읽기 토큰 — <code class="i">X-API-Token</code> 또는 <code class="i">Authorization: Bearer</code><br>
   토큰은 <code class="i">/api-tokens.php</code>에서 발급하며, 원문은 발급 시 한 번만 표시한다.
 </div>
 

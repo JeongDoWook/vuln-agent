@@ -17,17 +17,18 @@ $fail = static function (string $message): never {
 
 preg_match_all('/^\| \[(tb_[a-z_]+)\]/m', $dbDoc, $docMatches);
 $documented = array_values(array_unique($docMatches[1]));
-if (count($documented) !== 52) {
-    $fail('데이터베이스 요약은 운영 테이블 52개를 각각 한 번씩 열거해야 합니다: ' . count($documented));
+if (count($documented) !== 54) {
+    $fail('데이터베이스 요약은 운영 테이블 54개를 각각 한 번씩 열거해야 합니다: ' . count($documented));
 }
 
 preg_match_all('/^\s*entity (tb_[a-z_]+)/m', $erd, $erdMatches);
 $entities = array_values(array_unique($erdMatches[1]));
-if (count($entities) !== 51 || in_array('tb_schema_migrations', $entities, true)) {
-    $fail('ERD는 마이그레이션 이력 테이블을 뺀 도메인 엔티티 51개여야 합니다');
+if (count($entities) !== 53 || in_array('tb_schema_migrations', $entities, true)) {
+    $fail('ERD는 마이그레이션 이력 테이블을 뺀 도메인 엔티티 53개여야 합니다');
 }
 
-foreach (['tb_scan_run', 'tb_agent_command', 'tb_asset_grade_review'] as $table) {
+foreach (['tb_scan_run', 'tb_agent_command', 'tb_asset_grade_review',
+          'tb_asset_grade_suggestion_history', 'tb_package_integrity'] as $table) {
     if (!in_array($table, $documented, true) || !in_array($table, $entities, true)) {
         $fail("최근 실행 제어 테이블 {$table}이 DB 문서 또는 ERD에서 빠졌습니다");
     }

@@ -64,6 +64,33 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         reviewed_at : datetime
     }
 
+    entity tb_asset_grade_suggestion_history {
+        suggestion_history_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        scan_id : bigint <<FK>>
+        suggested_grade : char
+        ' 시스템 제안 - 확정값(tb_host.grade)이 아니다
+        suggested_reason : string
+        evaluation_status : enum
+        ' SUGGESTED / NO_MATCH / NOT_EVALUATED
+        evidence_snapshot : json
+        result_fingerprint : binary <<UK>>
+        last_observed_at : datetime
+        effective_at : datetime
+        ' 생성컬럼 - 관찰시각 기준 최대 7일까지만 과거로 클램프
+    }
+
+    entity tb_package_integrity {
+        package_integrity_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        package_name : string
+        flags : string
+        ' rpm/dpkg 원본 플래그 그대로 (5=digest, M=권한, missing=없음)
+        file_path : string
+    }
+
     entity tb_scan {
         scan_id : bigint <<PK>>
         --
@@ -73,6 +100,10 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         exposure_count : int
         match_fingerprint : string
         ' 판정 결과 지문 - 같으면 재작성 안 함
+        integrity_checked : bool
+        integrity_partial : bool
+        integrity_total : int
+        ' 무결성 "검사 여부·부분결과·전체건수" 는 행이 아니라 스캔 단위 사실
         is_deleted : bool
     }
 
@@ -622,6 +653,7 @@ tb_host ||--o{ tb_agent_command : "수집 명령"
 tb_host ||--o{ tb_host_account : "계정 인벤토리"
 tb_host ||--o{ tb_remediation_note : "미조치 사유 메모"
 tb_host ||--o| tb_asset_grade_review : "최신 등급 검토"
+tb_host ||--o{ tb_asset_grade_suggestion_history : "등급 제안 관찰 이력"
 
 tb_scan ||--o{ tb_package : "설치 패키지"
 tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
@@ -638,6 +670,8 @@ tb_scan ||--o{ tb_stale_lib : "억제 취소 — 재시작 필요"
 tb_scan ||--o{ tb_cce_finding : "보안설정 점검"
 tb_scan ||--o{ tb_host_account : "그 스냅샷의 계정 목록"
 tb_scan ||--o{ tb_package_dependency : "의존성 엣지(SBOM·pom)"
+tb_scan ||--o{ tb_package_integrity : "원본과 다른 파일"
+tb_scan ||--o{ tb_asset_grade_suggestion_history : "그 스캔의 제안 관찰"
 
 tb_finding ||--o| tb_finding_evidence : "판정 근거(1:1)"
 tb_compliance_snapshot ||--o{ tb_compliance_snapshot_control : "통제별 판정 결과"
