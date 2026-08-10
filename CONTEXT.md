@@ -90,7 +90,8 @@ jq 있으면 JSON, 없으면 섹션 텍스트로 출력. RHEL/Debian 계열 자�
 - `net` / `services` — 포트, 실행 서비스/프로세스
 - `system` — OS/커널/CPE (어떤 OVAL로 대조할지 힌트)
 - **언어 패키지** — pip/npm/gem/composer/maven/nuget/cargo/go 8개 생태계. 설치본 고신뢰 소스
-  (`site-packages/*.dist-info/METADATA`·`composer/installed.json`·`Cargo.lock`·`package-lock.json`·
+  (`site-packages/*.dist-info/METADATA`·`*.egg-info/PKG-INFO`·`composer/installed.json`·`Cargo.lock`·
+  `package-lock.json`·`yarn.lock`·`pnpm-lock.yaml`·`poetry.lock`·`Pipfile.lock`·
   `Gemfile.lock`·`specifications/*.gemspec`·`*.jar/war/ear`)와 **Go 바이너리 buildinfo**
   (`collect_go_binary_deps` — `go.mod` 가 없는 배포 바이너리에서 모듈·버전을 직접 뽑는다.
   크기·탐침·개수를 `GO_BIN_MIN_SIZE`/`GO_BIN_PROBE_BYTES`/`GO_BIN_SCAN_MAX` 로 캡핑)에 더해,
