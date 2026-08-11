@@ -245,6 +245,27 @@ function vg_change_tone(string $type): string {
     return ['new' => 'crit', 'up' => 'high', 'down' => 'muted', 'resolved' => 'ok'][$type] ?? 'muted';
 }
 
+/**
+ * 이 화면 안의 갈래(취약점 변화 · 패키지 변경 · 추이).
+ *   위의 '탐지 결과' 줄(vg_findings_subtabs → .subtabs, 밑줄형)은 **화면을 바꾸는** 내비이고,
+ *   이 줄은 **같은 화면 안에서 무엇을 볼지** 고르는 것이다. 둘 다 vg_subtabs() 로 그리던 동안엔
+ *   탭 줄이 두 개 똑같이 생겨 어느 쪽이 상위인지 화면에서 안 읽혔다 — 그래서 이 줄만
+ *   알약형(.tabs/.pill, cves.php·vendor.php 의 화면 내 선택과 같은 컴포넌트)으로 내려 그린다.
+ *   ?tab= 키 이름은 그대로 둔다(다른 화면에서 들어오는 링크가 깨지지 않게).
+ */
+function vg_change_tabs(array $tabs, string $active): void {
+    echo '<div class="tabs">';
+    foreach ($tabs as $key => $def) {
+        $on = $active === (string) $key;
+        echo '<a class="pill' . ($on ? ' pill--on' : '') . '"'
+            . ' href="' . vg_h(vg_qs(['tab' => $key, 'page' => null])) . '">'
+            . vg_h((string) $def['label'])
+            . (isset($def['n']) ? ' ' . number_format((int) $def['n']) : '')
+            . '</a>';
+    }
+    echo '</div>';
+}
+
 /** 실제 스캔 대상의 OS 생태계가 식별되는 패키지만 상세 링크로 만든다. */
 function vg_package_detail_link(array $row): string {
     $name = (string) $row['package_name'];
@@ -270,17 +291,35 @@ function vg_change_package_cell(array $row): string {
     return $out;
 }
 
-/** 취약점 변화·추이의 등급 셀. 이전 등급·노출·변화 사유 표시 규칙을 공유한다. */
+/**
+ * 취약점 변화·추이의 등급 셀 — 등급(+이전 등급)과 외부노출까지. **가로로** 눕힌다.
+ *   예전엔 여기에 변화 사유까지 얹혀 6.5rem 칸 안에서 세 값이 세로로 쌓였고(한 행이 3줄),
+ *   사유는 그 좁은 칸에서 잘려 문장이 끊겼다. 사유는 '변화' 칸으로 옮겼다(변화와 그 이유는
+ *   같이 읽는 값이다). 이 칸의 폭(10rem)은 'MEDIUM → [HIGH] [외부노출]' 이 한 줄에 들어가는 값.
+ */
 function vg_change_severity_cell(array $row): string {
     $severity = vg_sev_badge((string) $row['severity']);
     if (!empty($row['from_sev'])) {
         $severity = '<span class="why">' . vg_h((string) $row['from_sev']) . ' →</span> ' . $severity;
     }
     if (!empty($row['exposed'])) { $severity .= ' ' . vg_badge('외부노출', 'high'); }
-    if (($row['reason'] ?? '') !== '') {
-        $severity .= '<br><span class="why">' . vg_h((string) $row['reason']) . '</span>';
-    }
     return $severity;
+}
+
+/** 수집 시각 셀 — 분까지만 보이고 전체 값은 title 로 남긴다(좁은 칸에서 잘리지 않게). */
+function vg_change_when_cell(array $row): string {
+    $when = (string) ($row['when'] ?? '');
+    if ($when === '') { return '<span class="why">–</span>'; }
+    return '<span class="why" title="' . vg_h($when) . '">' . vg_h(substr($when, 0, 16)) . '</span>';
+}
+
+/** 변화 유형 + 그렇게 된 이유. 사유는 문장이라 이 칸에서 접히게 둔다(잘리지 않는다). */
+function vg_change_type_cell(array $row): string {
+    $out = vg_badge(VG_CHANGE_TYPES[$row['type']], vg_change_tone((string) $row['type']));
+    if (($row['reason'] ?? '') !== '') {
+        $out .= '<div class="why">' . vg_h((string) $row['reason']) . '</div>';
+    }
+    return $out;
 }
 
 /** tb_pkg_change 대조 결과(없으면 null)로 변화 사유 문구를 만든다. 추측성 사유는 만들지 않는다. */
@@ -434,27 +473,36 @@ vg_header('변화 추적', 'changes');
 <?php else: ?>
 
   <?php
-  /* 요약 KPI. 예전엔 .card 를 인라인 style 로 KPI 처럼 꾸며 썼는데(디자인 규칙 위반),
-   * 이제 .kpi 를 그대로 쓴다 — 눌러서 그 변화유형만 거를 수 있게 링크로. */
-  $changeTone = ['new' => 'crit', 'up' => 'high', 'down' => 'low', 'resolved' => 'ok'];
-  ?>
-  <div class="cards">
-    <?php foreach (VG_CHANGE_TYPES as $k => $lbl): ?>
-      <a class="kpi kpi--sm tone-<?= vg_h($changeTone[$k]) ?><?= $type === $k ? ' is-selected' : '' ?>"
-         href="<?= vg_h(vg_qs(['type' => $type === $k ? '' : $k, 'tab' => 'vuln', 'page' => 1])) ?>">
-        <b><?= (int) $summary[$k] ?></b><span><?= vg_h($lbl) ?></span>
-      </a>
-    <?php endforeach; ?>
-  </div>
-
-  <?php
+  /* 두 단의 탭을 시각적으로 가른다 — 위 줄(.subtabs)은 화면 전환, 이 줄(.tabs/.pill)은
+   * 이 화면 안의 갈래. 그리고 요약 KPI 는 두 탭 줄 **사이**에 두지 않는다(예전엔 거기 끼어
+   * 있어서 "지금 어디에 있는지" 를 잃었다). KPI 는 '취약점 변화' 탭의 내용이라 그 탭 안으로
+   * 내렸다 — 실제로 그 4개는 취약점 변화 목록의 type 필터이기도 하다. */
   $total = count($changes);
-  vg_subtabs([
+  vg_change_tabs([
       'vuln'  => ['label' => '취약점 변화', 'n' => $total],
       'pkg'   => ['label' => '패키지 변경', 'n' => $pkgTotal],
       'trend' => ['label' => '추이'],
   ], $tab);
+  ?>
 
+  <?php if ($tab === 'vuln'): ?>
+    <?php
+    /* 요약 KPI — '취약점 변화' 탭의 내용이다(다른 탭에선 뜻이 없다). 눌러서 그 변화유형만
+     *   거른다(다시 누르면 풀린다). 0건이면 톤을 뺀다 — "신규 0건" 은 좋은 소식인데 붉은
+     *   테두리가 붙으면 경고로 읽힌다. */
+    $changeTone = ['new' => 'crit', 'up' => 'high', 'down' => 'low', 'resolved' => 'ok'];
+    ?>
+    <div class="cards">
+      <?php foreach (VG_CHANGE_TYPES as $k => $lbl): ?>
+        <a class="kpi kpi--sm<?= $summary[$k] > 0 ? ' tone-' . vg_h($changeTone[$k]) : '' ?><?= $type === $k ? ' is-selected' : '' ?>"
+           href="<?= vg_h(vg_qs(['type' => $type === $k ? '' : $k, 'tab' => 'vuln', 'page' => 1])) ?>">
+          <b><?= (int) $summary[$k] ?></b><span><?= vg_h($lbl) ?></span>
+        </a>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
+
+  <?php
   // 변화유형 필터는 취약점 변화 탭에만, 구간 필터는 추이 탭에만 뜻이 있다.
   //   추이 탭엔 검색어(q)도 뜻이 없다 — 회차 전체를 보는 화면이라.
   $filters = [];
@@ -501,15 +549,27 @@ vg_header('변화 추적', 'changes');
         [
             // 폭은 머리글 글자까지 담아야 한다 — th 는 nowrap 이라 좁으면 옆 열을 덮고,
             //   맨 끝 열('수집 시각')이 넘치면 표가 카드 밖으로 밀린다(861px 에서 1px 넘쳤다).
-            //   남는 폭은 자유폭인 '호스트'·'패키지' 가 나눠 갖는다.
-            ['label' => '변화', 'width' => '9%', 'nowrap' => true],
+            //   남는 폭은 자유폭인 '호스트'·'패키지' 가 나눠 갖는다 — 열을 새로 늘리지 않은 이유가
+            //   이것이다: 열이 하나 늘면 그 폭은 결국 식별자(호스트·패키지)에서 빠져 나온다.
+            // 변화 뱃지 + 그 이유(문장)를 한 칸에 담는다. 사유는 nowrap 을 주지 않아 접힌다.
+            ['label' => '변화 · 사유', 'width' => '16%',
+             'title' => '무엇이 달라졌는지와, 왜 그렇게 됐는지(패키지 변경 이력 대조 결과)'],
             ['label' => '호스트'],
-            ['label' => 'CVE', 'width' => '16%', 'nowrap' => true],
+            // 'CVE-2023-44487' + KEV 뱃지 + 칸 여백이 들어가야 한다 — 16%(1030px 표에서 165px)는
+            //   nowrap·말줄임이라 KEV 뱃지가 잘려 나갔다. 1440px 에서 이 칸의 실측 필요폭은
+            //   180px(값 + 뱃지 + 칸 여백 35) → 11.5rem.
+            ['label' => 'CVE', 'width' => '11.5rem', 'nowrap' => true],
             ['label' => '패키지'],
             // 등급 뱃지도 고정 크기다 — 12% 는 870px 에서 66px 라 CRITICAL 뱃지가 18.3px 넘쳤다.
-            //   값 69 + 칸 여백 32 = 101 → 6.5rem(cves.php·compliance_rules.php 와 같은 기준).
-            ['label' => '등급', 'width' => '6.5rem'],
-            ['label' => '수집 시각', 'width' => '14%', 'nowrap' => true],
+            //   여기엔 이전 등급·외부노출까지 가로로 눕혀 담는다:
+            //   'MEDIUM →' + 뱃지 + '외부노출' 셋이 동시에 오는 건 등급 변화 행뿐이다. 흔한 조합
+            //   (등급 뱃지 + 외부노출)이 한 줄에 들어가는 값으로 잡는다 — 10rem(160px)에선 실측
+            //   4px 이 모자라 두 줄로 접혔다 → 11rem.
+            ['label' => '등급 · 노출', 'width' => '11rem'],
+            // 'YYYY-MM-DD HH:MM:SS'(19자)는 이 폭에 안 들어가 말줄임으로 잘렸다 —
+            //   열을 넓히는 대신 분까지만 보이고(초는 이 목록의 판단에 안 쓴다) 전체는 title 로.
+            //   그렇게 줄인 값의 실측 필요폭이 143px 이다 → 9rem.
+            ['label' => '수집 시각', 'width' => '9rem', 'nowrap' => true],
         ],
         $paged,
         [
@@ -527,13 +587,13 @@ vg_header('변화 추적', 'changes');
                 ],
             'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
             'cell' => [
-                0 => fn($r) => vg_badge(VG_CHANGE_TYPES[$r['type']], vg_change_tone($r['type'])),
+                0 => fn($r) => vg_change_type_cell($r),
                 1 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
                 2 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
                               . ($r['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
                 3 => fn($r) => vg_change_package_cell($r),
                 4 => fn($r) => vg_change_severity_cell($r),
-                5 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
+                5 => fn($r) => vg_change_when_cell($r),
             ],
         ]
     );
@@ -545,11 +605,14 @@ vg_header('변화 추적', 'changes');
     <?php
     vg_table(
         [
-            ['label' => '변화', 'width' => '9%', 'nowrap' => true],
+            // 변화유형 뱃지는 고정 크기다 — 9%(1110px 표에서 100px)는 '다운그레이드' 뱃지(실측
+            //   136px)를 못 담아 말줄임으로 잘렸다("다운그레이…"). 값 136 + 여백 → 8.5rem.
+            ['label' => '변화', 'width' => '8.5rem', 'nowrap' => true],
             ['label' => '호스트'],
             ['label' => '패키지'],
             ['label' => '버전'],
-            ['label' => '시각', 'width' => '12%', 'nowrap' => true],
+            // 취약점 변화 표와 같은 기준 — 분까지만 보이고(vg_change_when_cell) 폭은 그 값에 맞춘다.
+            ['label' => '시각', 'width' => '9rem', 'nowrap' => true],
         ],
         $pkgChanges,
         [
@@ -567,7 +630,7 @@ vg_header('변화 추적', 'changes');
                 3 => fn($r) => $r['old_version'] !== null && $r['new_version'] !== null
                               ? '<span class="why">' . vg_h($r['old_version']) . ' →</span> ' . vg_h($r['new_version'])
                               : vg_h((string) ($r['new_version'] ?? $r['old_version'])),
-                4 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
+                4 => fn($r) => vg_change_when_cell($r),
             ],
         ]
     );
@@ -589,11 +652,17 @@ vg_header('변화 추적', 'changes');
       ]); ?>
     <?php else: ?>
       <?php $trendLatest = $trendRounds[count($trendRounds) - 1]; ?>
+      <?php /* 0건이면 톤을 뺀다(위 취약점 변화 KPI 와 같은 판단 — 0 은 경고가 아니다). */
+      $trendKpi = [
+          ['new', '신규', 'crit'], ['up', '등급 상승', 'high'], ['down', '등급 하락', 'low'],
+          ['resolved', '해결', 'ok'],
+      ]; ?>
       <div class="cards">
-        <div class="kpi kpi--sm tone-crit"><b><?= number_format($trendSummary['new']) ?></b><span>신규</span></div>
-        <div class="kpi kpi--sm tone-high"><b><?= number_format($trendSummary['up']) ?></b><span>등급 상승</span></div>
-        <div class="kpi kpi--sm tone-low"><b><?= number_format($trendSummary['down']) ?></b><span>등급 하락</span></div>
-        <div class="kpi kpi--sm tone-ok"><b><?= number_format($trendSummary['resolved']) ?></b><span>해결</span></div>
+        <?php foreach ($trendKpi as [$key, $label, $tone]): ?>
+          <div class="kpi kpi--sm<?= $trendSummary[$key] > 0 ? ' tone-' . vg_h($tone) : '' ?>">
+            <b><?= number_format($trendSummary[$key]) ?></b><span><?= vg_h($label) ?></span>
+          </div>
+        <?php endforeach; ?>
         <div class="kpi kpi--sm tone-muted"><b><?= number_format($trendLatest['unresolved']) ?></b><span>현재 잔존</span></div>
       </div>
 
@@ -641,13 +710,15 @@ vg_header('변화 추적', 'changes');
       }
       vg_table(
           [
-              ['label' => '회차', 'width' => '7%', 'align' => 'center'],
-              ['label' => '변화', 'width' => '9%', 'nowrap' => true],
+              // 위 '취약점 변화' 표와 같은 셀 함수를 쓰므로 열 구성·폭 기준도 그대로 맞춘다.
+              ['label' => '회차', 'width' => '4rem', 'align' => 'center'],
+              ['label' => '변화 · 사유', 'width' => '15%',
+               'title' => '무엇이 달라졌는지와, 왜 그렇게 됐는지(패키지 변경 이력 대조 결과)'],
               ['label' => '호스트'],
-              ['label' => 'CVE', 'width' => '16%', 'nowrap' => true],
+              ['label' => 'CVE', 'width' => '11.5rem', 'nowrap' => true],
               ['label' => '패키지'],
-              ['label' => '등급', 'width' => '6.5rem'],
-              ['label' => '수집 시각', 'width' => '14%', 'nowrap' => true],
+              ['label' => '등급 · 노출', 'width' => '11rem'],
+              ['label' => '수집 시각', 'width' => '9rem', 'nowrap' => true],
           ],
           $trendResolvedPaged,
           [
@@ -659,13 +730,13 @@ vg_header('변화 추적', 'changes');
               'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
               'cell' => [
                   0 => fn($r) => (string) $r['round'],
-                  1 => fn($r) => vg_badge(VG_CHANGE_TYPES[$r['type']], vg_change_tone($r['type'])),
+                  1 => fn($r) => vg_change_type_cell($r),
                   2 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
                   3 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
                                 . ($r['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
                   4 => fn($r) => vg_change_package_cell($r),
                   5 => fn($r) => vg_change_severity_cell($r),
-                  6 => fn($r) => '<span class="why">' . vg_h($r['when'] ?: '–') . '</span>',
+                  6 => fn($r) => vg_change_when_cell($r),
               ],
           ]
       );

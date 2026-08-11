@@ -233,9 +233,14 @@ vg_header('자산', 'assets');
   ?>
   <div class="cards">
     <div class="kpi kpi--sm"><b><?= number_format($totalHosts) ?></b><span>전체 자산</span></div>
-    <?php /* 정보시스템 등급 — 확정 등급의 최고값 승계. 확정이 하나도 없으면 '미지정'. */ ?>
+    <?php /* 정보시스템 등급 — 확정 등급의 최고값 승계. 확정이 하나도 없으면 값이 대시 하나뿐인데,
+             그것만 떠 있으면 "미설정인지 권한이 없어 못 보는 것인지" 를 알 수 없다.
+             왜 비었는지를 카드 안에 적는다(권한 문제는 아니다 — 이 화면 자체가 assets 권한이다). */ ?>
     <div class="kpi kpi--sm" title="<?= $systemGrade !== null ? '확정 자산 중 최고 등급' : '확정 등급 없음' ?>">
       <b><?= vg_h($systemGrade['grade'] ?? '–') ?></b><span>정보시스템 등급</span>
+      <?php if ($systemGrade === null): ?>
+        <span>확정된 자산 등급이 없어 승계할 값이 없습니다</span>
+      <?php endif; ?>
     </div>
     <?php /* 미확정 — 눌러서 그 자산만 거른다(등급 필터의 '미지정'과 같은 조건). 0 이면 톤을 뺀다. */ ?>
     <a class="kpi kpi--sm<?= $unconfirmed > 0 ? ' tone-med' : '' ?><?= $grade === 'none' ? ' is-selected' : '' ?>"
@@ -243,8 +248,12 @@ vg_header('자산', 'assets');
        href="<?= vg_h(vg_qs(['grade' => $grade === 'none' ? '' : 'none', 'page' => null])) ?>">
       <b><?= number_format($unconfirmed) ?></b><span>등급 미확정</span>
     </a>
+    <?php /* 0건이면 톤을 뺀다 — '지연 0 · 오프라인 0 · 수집없음 0' 은 **좋은 소식**인데
+             강조 테두리가 붙으면 경고로 읽힌다(등급 미확정 카드가 이미 쓰던 판단과 같다).
+             새 클래스(.kpi--zero)를 붙이지 않은 건 app.css 가 다른 워커 소유라 정의를 넣을 수
+             없고, ui_lint 가 정의 없는 클래스를 죽은 클래스로 잡아 게이트에서 막기 때문이다. */ ?>
     <?php foreach (VG_ASSET_STATES as $key => $label): ?>
-      <a class="kpi kpi--sm tone-<?= vg_h($stateTone[$key]) ?><?= $state === $key ? ' is-selected' : '' ?>"
+      <a class="kpi kpi--sm<?= $stateCounts[$key] > 0 ? ' tone-' . vg_h($stateTone[$key]) : '' ?><?= $state === $key ? ' is-selected' : '' ?>"
          href="<?= vg_h(vg_qs(['state' => $state === $key ? '' : $key, 'page' => null])) ?>">
         <b><?= number_format($stateCounts[$key]) ?></b><span><?= vg_h($label) ?></span>
       </a>
@@ -295,7 +304,11 @@ vg_header('자산', 'assets');
       //   C/S/O 기호만 떠 있으면 뜻을 알 수 없어 열 이름에 한 줄 범례를 단다(어휘는 assetgrade.php 소유).
       ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem'],
       ['label' => 'OS', 'key' => 'os', 'width' => '9%'],
-      ['label' => 'IP', 'key' => 'ip', 'width' => '9%', 'nowrap' => true],
+      /* IP 도 '줄바꿈 불가 고정 크기 값' 열이다(위 폭 배분 원칙) — 이 표에서만 <code> 를 칸 안에서
+       *   접게 뒀기 때문에(app.css 의 .page--assets .data-table td code) 9%(1061px 에서 76px)로는
+       *   IPv4 15자(약 105px)가 안 들어가 '10.3.142.20' 이 두 줄로 깨졌다. IP 는 식별자라
+       *   접히면 못 읽는다: 값 105 + 칸 여백(.6rem×2 ≈ 19) → 8rem. */
+      ['label' => 'IP', 'key' => 'ip', 'width' => '8rem', 'nowrap' => true],
       ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],
       /* '노출'(리스닝 소켓 개수) 열은 뺐다 — 이 목록은 "어느 자산을 먼저 볼 것인가" 를 정하는
        *   자리인데, 소켓 개수는 그 판단에 못 쓴다. 3개든 30개든 위험은 **어느 범위로 열렸는가**
@@ -330,7 +343,10 @@ vg_header('자산', 'assets');
                개수 갱신·활성화는 app.js 의 위임 핸들러가 한다(인라인 onclick 을 쓰지 않는다). */ ?>
       <?php /* 개수는 라벨 틀({n})로 준다 — .btn 은 display:flex 라 개수만 <span> 으로 감싸면
                그게 별개 플렉스 항목이 되어 gap 만큼 '선택 3 개' 로 벌어진다(실측). */ ?>
-      <button type="button" class="btn btn--primary" data-modal="bulkGrade"
+      <?php /* 처음엔 선택이 0개라 비활성이므로 ghost 톤으로 낸다 — 비활성인데 primary(파란) 톤이면
+               opacity 만 낮아진 채 여전히 눌릴 것처럼 보인다. 고른 것이 생기면 app.js 가
+               primary 로 올린다(같은 함수가 disabled·라벨도 함께 갱신한다). */ ?>
+      <button type="button" class="btn btn--ghost" data-modal="bulkGrade"
               data-bulk-open="host_ids[]" data-bulk-label="선택 {n}개 등급 확정" disabled>선택 0개 등급 확정</button>
       <span class="why">표에서 등급을 확정할 자산을 고르세요. 선택은 지금 보고 있는 페이지 안에서만 유효합니다.</span>
       <noscript>
@@ -400,7 +416,14 @@ vg_header('자산', 'assets');
                   $sevByScan[(int) $r['scan_id']] ?? [],
                   fn(string $s) => '/findings.php?host=' . (int) $r['host_id'] . '&sev=' . $s
               ),
-              'collected_at' => fn($r) => $r['collected_at'] ? '<span class="why">' . vg_h($r['collected_at']) . '</span>' : '<span class="why">–</span>',
+              /* 12% 로는 'YYYY-MM-DD HH:MM:SS'(19자)가 안 들어가 '2026-08-11 23:2…' 로 잘려
+               *   시각을 못 읽었다. 열을 넓히는 대신 **형식을 줄인다** — 이 목록에서 필요한 건
+               *   분까지고(초 단위 판단을 여기서 하지 않는다), 전체 값은 title 로 남긴다. */
+              'collected_at' => function ($r) {
+                  $at = (string) ($r['collected_at'] ?? '');
+                  if ($at === '') { return '<span class="why">–</span>'; }
+                  return '<span class="why" title="' . vg_h($at) . '">' . vg_h(substr($at, 0, 16)) . '</span>';
+              },
           ],
       ]
   );

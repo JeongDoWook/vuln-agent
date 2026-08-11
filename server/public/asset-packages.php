@@ -146,7 +146,13 @@ vg_header('전체 설치 패키지', 'asset_packages');
                 'origin' => fn($p) => $p['origin']
                     ? vg_h((string)$p['origin'])
                     : (!empty($p['vendor']) ? vg_h((string)$p['vendor']) : '<span class="why">–</span>'),
-                'collected_at' => fn($p) => '<span class="why">' . vg_h((string)$p['collected_at']) . '</span>',
+                /* 자산 목록(assets.php)의 '최신 수집' 과 같은 이유로 분까지만 보인다 — 8열 표에서
+                 *   이 열에 돌아오는 폭은 19자를 못 담아 말줄임으로 잘렸다. 전체 값은 title 로. */
+                'collected_at' => function ($p) {
+                    $at = (string) ($p['collected_at'] ?? '');
+                    if ($at === '') { return '<span class="why">–</span>'; }
+                    return '<span class="why" title="' . vg_h($at) . '">' . vg_h(substr($at, 0, 16)) . '</span>';
+                },
             ],
         ]
     ); ?>

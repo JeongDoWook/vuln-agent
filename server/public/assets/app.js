@@ -224,6 +224,11 @@
     var picked = form.querySelectorAll(sel + ':checked');
     btn.disabled = picked.length === 0;
 
+    // 누를 수 없는 버튼은 누를 수 있는 것처럼 보이지 않게 한다 — 비활성인데 primary(파란) 톤이면
+    // opacity 만 낮아진 채 여전히 "이걸 누르라" 고 읽힌다. 고른 게 있을 때만 primary 로 올린다.
+    btn.classList.toggle('btn--primary', !btn.disabled);
+    btn.classList.toggle('btn--ghost', btn.disabled);
+
     // 라벨은 서버가 준 틀({n} = 개수)로만 만든다 — 문구를 여기 적어두면 화면과 갈린다.
     var label = btn.getAttribute('data-bulk-label');
     if (label) { btn.textContent = label.replace('{n}', String(picked.length)); }
