@@ -28,45 +28,55 @@
  * ========================================================================== */
 :root {
   color-scheme: light;
+  /* rem 의 기준. 이 파일의 크기·여백은 대부분 rem 이라, 여기 한 줄이 화면 전체 밀도를 정한다
+   * (브라우저 기본 16px → 15px). 본문 표는 .92rem 이라 13.8px 이 된다. */
+  font-size: 15px;
 
   /* 표면 */
-  --bg:        #f6f7f9;
+  --bg:        #f4f6f8;
   --surface:   #ffffff;
-  --surface-2: #f2f4f6;
-  --sunken:    #f7f8fa;
-  --line:      #edf0f3;
-  --line-2:    #dfe3e8;
+  --surface-2: #eef1f5;
+  --sunken:    #f6f8fa;
+  /* 경계선은 "보이라고" 있는 것이다 — 예전 #edf0f3 은 흰 면(--surface) 위에서 사실상 무색이라
+   * 표의 행 경계·카드 경계가 뭉개졌다(1440px 실측). 한 단 진하게 올려 격자가 읽히게 한다. */
+  --line:      #e2e8f0;
+  --line-2:    #cbd5e1;
 
   /* 글자 */
   --text:      #191f28;
-  --text-2:    #4e5968;
-  --muted:     #6b7684;
-  --muted-2:   #9aa4b2;
+  --text-2:    #45505f;
+  /* .why(근거)·표의 보조 문구가 이 색이다 — 한 단 진하게 해야 본문 옆에서 읽힌다 */
+  --muted:     #5b6673;
+  --muted-2:   #808b99;
 
   /* 강조 */
   --accent:    #3182f6;
   --accent-2:  #1b64da;
 
-  /* 톤 */
-  --crit:      #e5484d;
-  --crit-fg:   #c62a2f;
-  --crit-bg:   rgb(229 72 77 / .10);
-  --crit-bd:   rgb(229 72 77 / .28);
+  /* 톤 — 심각도 4색은 채도를 계단으로 준다. CRITICAL 이 가장 강하고 LOW 가 가장 물러난다.
+   *   왜: LOW 는 건수가 압도적으로 많아(운영 실측 34,184 대 1) 면적이 넓다. 예전 LOW(#5580b4)는
+   *   채도 높은 파랑이라 그 면적만으로 화면을 지배해 CRITICAL 1건보다 먼저 읽혔다 — 서열이 뒤집혔다.
+   *   이 4색은 도넛·누적막대·뱃지·행 강조가 전부 공유하므로 여기만 고치면 전 화면이 따라온다. */
+  --crit:      #dc2b32;
+  --crit-fg:   #b81f26;
+  --crit-bg:   rgb(220 43 50 / .10);
+  --crit-bd:   rgb(220 43 50 / .32);
 
-  --high:      #e07b1a;
-  --high-fg:   #b45f09;
-  --high-bg:   rgb(224 123 26 / .12);
-  --high-bd:   rgb(224 123 26 / .30);
+  --high:      #dd7112;
+  --high-fg:   #ab5406;
+  --high-bg:   rgb(221 113 18 / .12);
+  --high-bd:   rgb(221 113 18 / .32);
 
-  --med:       #d19a06;
-  --med-fg:    #986f00;
-  --med-bg:    rgb(209 154 6 / .13);
-  --med-bd:    rgb(209 154 6 / .32);
+  --med:       #c99206;
+  --med-fg:    #8c6500;
+  --med-bg:    rgb(201 146 6 / .13);
+  --med-bd:    rgb(201 146 6 / .30);
 
-  --low:       #5580b4;
-  --low-fg:    #3f6392;
-  --low-bg:    rgb(85 128 180 / .12);
-  --low-bd:    rgb(85 128 180 / .30);
+  /* 채도를 걷어낸 회청 — 같은 면적에서 위 셋보다 확실히 뒤로 물러난다 */
+  --low:       #7d8b9c;
+  --low-fg:    #5c6a7b;
+  --low-bg:    rgb(125 139 156 / .12);
+  --low-bd:    rgb(125 139 156 / .28);
 
   --ok:        #1f9d47;
   --ok-fg:     #157a35;
@@ -94,18 +104,38 @@
   --btn-fg:    #26313f;
   --btn-hover: #dbe1ea;
 
-  /* 형태 */
-  --r-lg: 20px;
-  --r-md: 14px;
-  --r-sm: 10px;
-  --r-xs: 8px;
+  /* 형태 — 라운드를 한 단씩 줄인다. 20px 라운드는 카드가 여러 개 겹치면 각 카드가 실제보다
+   * 크게 보여 세로 공간을 먹는다. 밀도를 올리는 리스킨이라 모서리도 같이 조인다. */
+  --r-lg: 14px;
+  --r-md: 10px;
+  --r-sm: 8px;
+  --r-xs: 6px;
 
-  --ring: 0 0 0 3px rgb(49 130 246 / .18);
-  --shadow: 0 1px 2px rgb(0 0 0 / .02), 0 4px 12px rgb(0 0 0 / .025);
+  /* 간격 계단 — 카드 패딩·블록 사이 여백이 화면마다 제각각(1.35rem/1.5rem/1.25rem…)이던 것을
+   * 한 축으로 모은다. 값을 조일 때 여기 한 곳만 고치면 전체 밀도가 같이 움직인다. */
+  --sp-1: .25rem;
+  --sp-2: .5rem;
+  --sp-3: .75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.4rem;
+  --sp-6: 2rem;
+
+  /* 타이포 스케일 — 화면 곳곳의 .72/.78/.82/.85/.88rem 을 다섯 단으로 모은다. */
+  --fs-xs: .72rem;   /* 10.8px — 라벨·캡션 */
+  --fs-sm: .8rem;    /* 12px    — 보조 문구(.why, 뱃지) */
+  --fs-md: .92rem;   /* 13.8px  — 본문·표 */
+  --fs-lg: 1.05rem;  /* 15.8px  — 카드 제목 */
+  --fs-xl: 1.5rem;   /* 22.5px  — 페이지 제목 */
+
+  --ring: 0 0 0 3px rgb(49 130 246 / .28);
+  --shadow: 0 1px 2px rgb(0 0 0 / .03), 0 3px 8px rgb(0 0 0 / .035);
   --shadow-lg: 0 24px 64px rgb(0 0 0 / .18);
 
-  --ctl-h: 2.25rem;  /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
-  --topbar-h: 64px;  /* .topbar 의 min-height 와 공유 — sticky 내비 top·scroll-margin 이 같이 따라간다 */
+  --ctl-h: 2.05rem;  /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
+  --topbar-h: 56px;  /* .topbar 의 min-height 와 공유 — sticky 내비 top·scroll-margin 이 같이 따라간다 */
+  /* 목록 화면의 sticky 필터 툴바 높이. 표의 sticky 머리글이 이 아래에 정확히 붙어야 하므로
+   * 값을 고정해 두 sticky 가 서로를 가리지 않게 한다(.toolbar 의 min-height 와 공유). */
+  --toolbar-h: 3.15rem;
 }
 
 /* --- 다크 테마 오버라이드 (토글 시 <html data-theme="dark">) --------------
@@ -116,14 +146,15 @@
 
   --bg:        #0e1116;
   --surface:   #161a21;
-  --surface-2: #1d222c;
+  --surface-2: #1e232d;
   --sunken:    #11151b;
-  --line:      #232833;
-  --line-2:    #333a47;
+  /* 라이트와 같은 비율로 한 단 올린다 — 어두운 면 위에서도 표의 격자가 보여야 한다 */
+  --line:      #262c36;
+  --line-2:    #39414f;
 
   --text:      #eaeef4;
-  --text-2:    #b3bcc9;
-  --muted:     #8d96a5;
+  --text-2:    #b8c1ce;
+  --muted:     #949dab;
   --muted-2:   #7b8494;
 
   /* 라이트와 같은 파랑(#3182f6) 계열을 어두운 면 위에서 읽히도록 한 단 밝힌다.
@@ -147,10 +178,11 @@
   --med-bg:    rgb(227 179 65 / .14);
   --med-bd:    rgb(227 179 65 / .40);
 
-  --low:       #6e8fb5;
-  --low-fg:    #a6c8e8;
-  --low-bg:    rgb(110 143 181 / .16);
-  --low-bd:    rgb(110 143 181 / .42);
+  /* 라이트와 같은 의도 — 채도를 걷어낸 회청이라 건수가 많아도 화면을 지배하지 않는다 */
+  --low:       #78899c;
+  --low-fg:    #aab7c6;
+  --low-bg:    rgb(120 137 156 / .16);
+  --low-bd:    rgb(120 137 156 / .40);
 
   --ok:        #2ea043;
   --ok-fg:     #7ee787;
@@ -191,8 +223,13 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  line-height: 1.55;
+  /* 밀도 리스킨의 기준선 — :root 15px 기준 13.8px. 줄간격도 1.55 → 1.45 로 조인다. */
+  font-size: var(--fs-md);
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  /* 숫자 폭 고정 — 자릿수가 다른 값(1 vs 34,184)이 나란히 놓여도 폭 착시가 생기지 않는다.
+   * 표·KPI·차트가 전부 숫자를 늘어놓는 제품이라 전역 규칙으로 둔다. */
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- 스크롤바 ------------------------------------------------------------
@@ -270,9 +307,11 @@ body.is-busy { cursor: progress; }
 body { display: flex; min-height: 100vh; }
 
 /* 대분류(.grp) → 중분류(a.link) 2단 */
+/* 폭 248 → 216px, 항목 높이도 한 단 줄인다 — 메뉴가 한 화면에 안 들어와 "관리" 그룹이
+ * 잘리던 것(1440×675 실측)을 폭·높이 양쪽을 조여 해결한다. */
 .side {
-  flex: 0 0 248px;
-  width: 248px;
+  flex: 0 0 216px;
+  width: 216px;
   height: 100vh;
   position: sticky;
   top: 0;
@@ -286,20 +325,20 @@ body { display: flex; min-height: 100vh; }
 .side .brand {
   display: flex;
   align-items: center;
-  gap: .7rem;
+  gap: .55rem;
   font-weight: 800;
-  font-size: 1.05rem;
+  font-size: var(--fs-lg);
   color: var(--text);
-  padding: 1.15rem 1.2rem 1rem;
+  padding: .8rem .85rem .7rem;
   white-space: nowrap;
 }
 /* 브랜드 머리글자 타일 */
 .brand__mark {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
   background: var(--accent);
   color: #fff;
   font-size: .86rem;
@@ -307,14 +346,14 @@ body { display: flex; min-height: 100vh; }
   box-shadow: 0 6px 14px rgb(49 130 246 / .22);
 }
 .side a.brand:hover { text-decoration: none; opacity: .85; }
-.side .menu { flex: 1; padding: .7rem .7rem 1rem; }
+.side .menu { flex: 1; padding: .35rem .55rem .7rem; }
 
 /* 대분류(.grp = 접이식 그룹의 <summary>) — 이전엔 uppercase + letter-spacing 으로만
  * 구분했는데, 한글엔 uppercase 가 아무 효과가 없어서 결국 "작고 흐린 회색 글자" 로만 남았다
  * (중분류와 안 갈라지던 원인). 구분선 + 명도 + 여백으로 위계를 만든다.
  * 이제 각 그룹은 <details class="nav-grp"> 로 감싸 헤더 클릭으로 접었다 편다(아코디언). */
 .side details.nav-grp {
-  margin-top: .85rem;
+  margin-top: .5rem;
   border-top: 1px solid var(--line);
 }
 .side .menu > details.nav-grp:first-child { margin-top: .2rem; border-top: none; }
@@ -325,9 +364,9 @@ body { display: flex; min-height: 100vh; }
   gap: .4rem;
   cursor: pointer;
   color: var(--muted);
-  font-size: .73rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
-  padding: .5rem .6rem .35rem;
+  padding: .38rem .5rem .28rem;
   list-style: none;                 /* Firefox 기본 disclosure 삼각형 제거 */
   -webkit-user-select: none;
   user-select: none;
@@ -354,18 +393,18 @@ body { display: flex; min-height: 100vh; }
 .side a.link {
   display: flex;
   align-items: center;
-  gap: .55rem;
+  gap: .5rem;
   position: relative;
-  padding: .56rem .6rem .56rem 1.05rem;
-  margin-left: .3rem;
+  padding: .38rem .5rem .38rem .85rem;
+  margin-left: .25rem;
   border-left: 1px solid var(--line);
   border-radius: 0 var(--r-sm) var(--r-sm) 0;
   color: var(--text-2);
-  font-size: .88rem;
+  font-size: var(--fs-md);
 }
 .side a.link--root {
   margin-left: 0;
-  padding-left: .75rem;
+  padding-left: .6rem;
   border-left: 0;
   border-radius: var(--r-sm);
 }
@@ -380,13 +419,26 @@ body { display: flex; min-height: 100vh; }
   border-left-color: var(--line-2);
   text-decoration: none;
 }
+/* 활성 항목 — 예전엔 옅은 배경뿐이라 스크롤된 메뉴에서 "지금 어디" 가 잘 안 잡혔다.
+ * 좌측 인디케이터(굵은 강조색 띠) + 배경 두 신호를 같이 준다. 띠는 ::before 로 그려
+ * border-left 를 대체하지 않는다(그 자리는 그룹 소속을 보이는 가이드선이라 남긴다). */
 .side a.link.active {
-  background: rgb(49 130 246 / .10);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent-2);
-  font-weight: 600;
-  border-left: 2px solid transparent;
-  padding-left: 1.05rem;
+  font-weight: 650;
+  border-left-color: transparent;
 }
+.side a.link.active::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: .25rem;
+  bottom: .25rem;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.side a.link--root.active::before { left: 0; }
 
 /* 대분류가 없는 단독 항목(대시보드)은 들여쓰기·가이드선 없이 최상위로 */
 .side .menu > a.link:first-child {
@@ -399,9 +451,9 @@ body { display: flex; min-height: 100vh; }
   padding-left: .6rem;
   border-left: 0;
 }
-.side .foot { border-top: 1px solid var(--line); padding: 1rem 1.2rem; }
-.side .who { display: block; color: var(--muted); font-size: .8rem; margin-bottom: .45rem; }
-.side .foot a { color: var(--text-2); font-size: .82rem; margin-right: .7rem; }
+.side .foot { border-top: 1px solid var(--line); padding: .7rem .85rem; }
+.side .who { display: block; color: var(--muted); font-size: var(--fs-sm); margin-bottom: .3rem; }
+.side .foot a { color: var(--text-2); font-size: var(--fs-sm); margin-right: .7rem; }
 .side .foot a.active { color: var(--text); font-weight: 600; }
 
 /* min-width:0 이 없으면 넓은 표가 사이드바를 밀어낸다(flex 자식 기본 min-width:auto) */
@@ -419,7 +471,7 @@ body { display: flex; min-height: 100vh; }
   justify-content: space-between;
   gap: 1rem;
   min-height: var(--topbar-h);
-  padding: .65rem 2rem;
+  padding: .5rem 1.25rem;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   backdrop-filter: blur(18px);
   border-bottom: 1px solid var(--line);
@@ -475,15 +527,17 @@ body { display: flex; min-height: 100vh; }
 .topbar__who { display: flex; flex-direction: column; line-height: 1.15; font-size: .82rem; color: var(--text); }
 .topbar__who i { font-style: normal; font-size: .72rem; color: var(--muted); }
 
-main { padding: 2.3rem 2.2rem 3.5rem; max-width: 1680px; margin: 0 auto; width: 100%; }
+/* 1440px 실측에서 좌우 2.2rem + 상단 2.3rem 여백이 표가 쓸 폭·높이를 크게 깎았다.
+ * 데이터가 주인공인 제품이라 바깥 여백을 줄이고 그 폭을 표에 돌려준다. */
+main { padding: 1.2rem 1.25rem 2.5rem; max-width: 1680px; margin: 0 auto; width: 100%; }
 
 /* 좁은 화면 전용 부품 — 넓은 화면에선 없는 셈 친다(반응형 절에서 켠다) */
 .nav-toggle, .nav-backdrop { display: none; }
 
-h1 { font-size: clamp(1.45rem, 2vw, 1.8rem); letter-spacing: -.035em; margin: 0 0 .35rem; }
-h1 .hint { font-size: .8rem; color: var(--muted); font-weight: 400; }
-.sub { color: var(--muted); font-size: .85rem; line-height: 1.6; margin-bottom: 1.3rem; }
-h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
+h1 { font-size: var(--fs-xl); letter-spacing: -.03em; margin: 0 0 .2rem; }
+h1 .hint { font-size: var(--fs-sm); color: var(--muted); font-weight: 400; }
+.sub { color: var(--muted); font-size: var(--fs-sm); line-height: 1.55; margin-bottom: var(--sp-4); }
+h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(--sp-2); }
 
 /* --- 짧은 도움말 트리거 + 공통 툴팁 --------------------------------------- */
 .info-icon, .help {
@@ -504,7 +558,7 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   max-width: min(26rem, calc(100vw - 24px));
   padding: .62rem .78rem;
   border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line-2));
-  border-radius: 10px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--surface) 96%, var(--accent) 4%);
   box-shadow: var(--shadow-lg);
   color: var(--text-2);
@@ -545,9 +599,9 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
-  padding: 1.35rem 1.5rem;
+  padding: var(--sp-4) 1.15rem;
   overflow-x: auto;
-  margin-bottom: 1.25rem;
+  margin-bottom: var(--sp-3);
 }
 .card:hover { border-color: var(--line); }
 .card strong { color: var(--text); }
@@ -558,10 +612,47 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
 .card__body { margin-top: .6rem; }
 
 /* 카드 본문 안의 접이식 블록(<details>) — 표 셀 안의 것(td summary)과 달리 카드에서는
- * 제목처럼 보여야 한다. compliance.php 의 "수동 확인 필요"가 기본 닫힘으로 이걸 쓴다. */
-.card__body > details > summary { cursor: pointer; font-weight: 700; color: var(--text); width: fit-content; }
+ * 제목처럼 보여야 한다. compliance.php 의 "수동 확인 필요"가 기본 닫힘으로 이걸 쓴다.
+ *
+ * 닫혀 있어도 "안에 내용이 있다"가 보여야 한다 — 예전엔 닫힌 <details> 4개가 나란히 있으면
+ * 회색 띠 네 줄만 남아 빈 화면처럼 읽혔다(컴플라이언스 본문). 세 가지로 고친다:
+ *   ① 면(--sunken)과 테두리로 "상자"임을 보이고, ② 좌측 chevron 이 펼침 상태를 회전으로 알리고,
+ *   ③ 요약줄 오른쪽에 건수 뱃지(.badge)가 들어갈 자리를 비워 둔다(페이지가 채운다). */
+.card__body > details {
+  margin-top: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+}
+.card__body > details > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  padding: .5rem .7rem;
+  font-weight: 700;
+  color: var(--text);
+  list-style: none;                 /* Firefox 기본 삼각형 제거 — chevron 을 직접 그린다 */
+}
+.card__body > details > summary::-webkit-details-marker { display: none; }
+/* 텍스트 ▶ 대신 CSS 로 그린 chevron — 펼치면 회전한다(글꼴에 따라 크기가 널뛰지 않는다) */
+.card__body > details > summary::before {
+  content: "";
+  flex: none;
+  width: .4rem;
+  height: .4rem;
+  margin-left: .1rem;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  transform: rotate(-45deg);
+  transition: transform .15s ease;
+}
+.card__body > details[open] > summary::before { transform: rotate(45deg); }
 .card__body > details > summary:hover { color: var(--accent-2); }
-.card__body > details[open] > summary { margin-bottom: .5rem; }
+/* 요약줄 오른쪽 끝 — 건수 뱃지 자리. 페이지가 <span class="badge">12</span> 를 넣으면 여기로 간다. */
+.card__body > details > summary > .badge { margin-left: auto; }
+.card__body > details[open] > summary { border-bottom: 1px solid var(--line); }
+.card__body > details > :not(summary) { padding: .7rem; }
 
 /* 여백 유틸 — PHP 에 style="margin-top:…" 을 쓰지 않기 위한 최소한의 유틸.
  * 색·레이아웃은 CSS 가 소유한다는 규칙을 지키되, 클래스를 남발하지 않도록 둘만 둔다. */
@@ -585,7 +676,7 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
  *   (예전엔 이 절제를 대시보드 줄(.cards--grid)에만 예외로 걸어 화면마다 KPI 가
  *    달라 보였다 — 예외를 없애고 전 화면이 이 한 벌을 쓴다.)
  * 크기 차이는 변형 클래스 .kpi--sm 하나로만 낸다(.btn--sm·.card--sm 선례). */
-.cards { display: flex; gap: .85rem; margin-bottom: 1.3rem; flex-wrap: wrap; }
+.cards { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
 /* 격자 정렬 KPI 줄 — 카드 폭이 라벨 길이에 따라 제각각이던 것을 열 단위로 맞춘다.
  * 기존 .cards(flex)는 다른 화면(assets/changes/findings/host)이 그대로 쓰므로
  * 건드리지 않고, 정렬이 필요한 줄에만 opt-in 하는 변형으로 둔다. */
@@ -596,9 +687,9 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-width: 116px;
-  min-height: 112px;
-  padding: 1rem 1.15rem;
+  min-width: 108px;
+  min-height: 84px;
+  padding: .7rem .85rem;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface);
@@ -606,24 +697,27 @@ h2 { font-size: 1.12rem; letter-spacing: -.02em; margin: 1.8rem 0 .6rem; }
   box-shadow: var(--shadow);
   transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-/* 숫자는 <b> 또는 <strong> 으로 올 수 있어 둘을 같이 잡는다. */
+/* 숫자는 <b> 또는 <strong> 으로 올 수 있어 둘을 같이 잡는다.
+ * 크기는 **자릿수와 무관하게 고정**이고 폭도 tabular-nums 로 고정한다 — 예전엔 `LOW 34,184` 가
+ * `CRITICAL 1` 보다 훨씬 크게 읽혔는데(자릿수 폭 착시), 눈이 제일 안 급한 걸 먼저 잡는 건 서열이
+ * 뒤집힌 것이다. 서열은 크기가 아니라 아래 톤 규칙(채움 vs 아웃라인)이 만든다. */
 .kpi b, .kpi strong {
-  font-size: 2rem;
+  font-size: 1.7rem;
   font-weight: 700;
   display: block;
-  line-height: 1.15;
-  letter-spacing: -.04em;
-  font-variant-numeric: tabular-nums;   /* 숫자 폭 고정 — 값이 바뀌어도 안 흔들린다 */
+  line-height: 1.1;
+  letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
 }
 .kpi span {
-  font-size: .72rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--muted);
   letter-spacing: .02em;
 }
 /* 목록 화면 위에 얹는 작은 변형 — 그 화면의 주인공은 아래 표라 KPI 는 한 단계 물러난다 */
-.kpi--sm { min-height: 0; padding: .7rem .95rem; }
-.kpi--sm b, .kpi--sm strong { font-size: 1.5rem; }
+.kpi--sm { min-height: 0; padding: .5rem .75rem; }
+.kpi--sm b, .kpi--sm strong { font-size: 1.3rem; }
 a.kpi { transition: border-color .12s ease-out, background .12s ease-out; }
 a.kpi:hover {
   text-decoration: none;
@@ -635,14 +729,56 @@ a.kpi:hover {
 a.kpi:not([class*="tone-"]):hover { border-color: var(--line-2); }
 a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 
-.kpi.tone-crit { border-color: var(--crit-bd); color: var(--crit-fg); }
-.kpi.tone-high { border-color: var(--high-bd); color: var(--high-fg); }
+/* 톤 서열: 급한 둘(CRITICAL·HIGH)은 **채워진 톤**(옅은 배경 틴트 + 진한 테두리), 안 급한 둘
+ * (MEDIUM·LOW)은 **아웃라인**. 크기가 아니라 이 차이가 "무엇을 먼저 보는가" 를 정한다. */
+.kpi.tone-crit { border-color: var(--crit-bd); background: var(--crit-bg); color: var(--crit-fg); }
+.kpi.tone-high { border-color: var(--high-bd); background: var(--high-bg); color: var(--high-fg); }
 .kpi.tone-med  { border-color: var(--med-bd);  color: var(--med-fg); }
 .kpi.tone-low  { border-color: var(--low-bd);  color: var(--low-fg); }
 .kpi.tone-ok   { border-color: var(--ok-bd);   color: var(--ok-fg); }
 .kpi.tone-muted{ border-color: var(--muted-bd);color: var(--muted-fg); }
 /* 숫자는 톤 색으로, 라벨은 항상 차분하게 — 라벨까지 물들면 다시 균일해진다 */
 .kpi[class*="tone-"] b, .kpi[class*="tone-"] strong { color: inherit; }
+/* 값이 0이면 강조를 걷는다 — `0 오프라인` 이 빨간 테두리로 강조돼 있는 건 거짓 경보다.
+ * 톤 클래스보다 뒤에 와야 이긴다(같은 특이도라 순서로 결정). 페이지가 값 0일 때 이 클래스를
+ * 덧붙이면 된다: class="kpi tone-crit kpi--zero". */
+.kpi.kpi--zero { border-color: var(--line); background: var(--surface); color: var(--muted); }
+.kpi.kpi--zero b, .kpi.kpi--zero strong { color: var(--muted-2); }
+
+/* --- 결론 배너(.verdict) --------------------------------------------------
+ * "그래서 이 화면이 무엇을 증명하는가" 를 한 줄로 세운다. 표·KPI 는 값을 보여줄 뿐 결론을
+ * 말하지 않아서, 화면을 열어도 "뭐가 된다는 거지" 가 남았다 — 그 자리를 이 배너가 채운다.
+ * 카드보다 강한 존재감(왼쪽 4px 톤 띠 + 옅은 톤 배경)을 갖고 제목 바로 아래 한 번만 온다.
+ * 톤 색은 토큰(--X-bg/-bd/-fg)만 쓰므로 다크에서도 배경이 뜨지 않는다. */
+.verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-6);
+  margin: 0 0 var(--sp-3);
+  padding: .8rem 1rem;
+  border: 1px solid var(--muted-bd);
+  border-left: 4px solid var(--muted);
+  border-radius: var(--r-md);
+  background: var(--muted-bg);
+}
+.verdict__main { flex: 1 1 22rem; min-width: 0; }
+.verdict__headline { display: block; font-size: var(--fs-lg); font-weight: 700; color: var(--text); letter-spacing: -.02em; }
+.verdict__note { display: block; margin-top: .2rem; color: var(--text-2); font-size: var(--fs-sm); }
+/* 통계는 KPI 보다 크다 — 이 배너가 화면의 결론이고 KPI 는 그 내역이다 */
+.verdict__stats { display: flex; flex-wrap: wrap; gap: var(--sp-3) var(--sp-5); }
+.verdict__stat { min-width: 3.5rem; }
+.verdict__stat b { display: block; font-size: 2rem; font-weight: 750; line-height: 1.05; letter-spacing: -.04em; color: var(--text); }
+.verdict__stat span { display: block; font-size: var(--fs-xs); font-weight: 650; color: var(--muted); }
+.verdict--ok    { border-color: var(--ok-bd);   border-left-color: var(--ok);   background: var(--ok-bg); }
+.verdict--warn  { border-color: var(--med-bd);  border-left-color: var(--med);  background: var(--med-bg); }
+.verdict--crit  { border-color: var(--crit-bd); border-left-color: var(--crit); background: var(--crit-bg); }
+.verdict--muted { border-color: var(--muted-bd);border-left-color: var(--muted-2); background: var(--muted-bg); }
+.verdict__stat--ok b    { color: var(--ok-fg); }
+.verdict__stat--warn b  { color: var(--med-fg); }
+.verdict__stat--crit b  { color: var(--crit-fg); }
+.verdict__stat--muted b { color: var(--muted-fg); }
+@media (max-width: 700px) { .verdict__stat b { font-size: 1.6rem; } }
 
 /* --- 자산 상세: 히어로(식별 + 최고 위험도) + 섹션 탭 ---------------------- */
 .hero {
@@ -654,8 +790,8 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
   border: 1px solid var(--line);
   border-left: 4px solid var(--line-2);   /* 왼쪽 띠 색으로 최고 위험도를 표시 */
   border-radius: var(--r-lg);
-  padding: 1.35rem 1.5rem;
-  margin-bottom: 1.2rem;
+  padding: .9rem 1.1rem;
+  margin-bottom: var(--sp-3);
 }
 .hero--crit  { border-left-color: var(--crit); }
 .hero--high  { border-left-color: var(--high); }
@@ -674,7 +810,7 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .badge--lg { font-size: 1rem; padding: .35rem 1.1rem; }
 
 /* 섹션 탭(호스트 상세). cves.php 의 필터 프리셋(.tabs/.pill)과 달리 밑줄형 주요 내비. */
-.subtabs { display: flex; flex-wrap: wrap; gap: .1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.3rem; }
+.subtabs { display: flex; flex-wrap: wrap; gap: .1rem; border-bottom: 1px solid var(--line); margin-bottom: var(--sp-3); }
 /* .cards 뒤에 곧바로 subtabs 가 오면(changes.php, host.php) 두 블록의 1.3rem 여백이
  * 각자 그대로 남아 표/필터 시작 위치가 subtabs 없는 다른 리스트 페이지보다 눈에 띄게 밀린다. */
 .cards + .subtabs { margin-top: -.8rem; }
@@ -815,6 +951,83 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .riskbar .tone-high { background: var(--high); }
 .riskbar .tone-med  { background: var(--med); }
 .riskbar .tone-low  { background: var(--low); }
+/* 표 셀이 아니라 카드 안에서 "구성"을 보여줄 때 쓰는 큰 변형(vg_stacked_bar).
+ * 색·구조는 위 .riskbar 정의를 그대로 쓰고 크기만 바꾼다 — 누적막대를 두 벌 만들지 않는다. */
+.riskbar--lg { height: 12px; max-width: none; gap: 1px; margin-bottom: .5rem; }
+.riskbar--lg i { border-radius: 3px; }
+
+/* 도넛 옆 범례(.legend)를 한 줄로 눕힌 변형 — 누적막대 아래처럼 가로로 놓일 때 쓴다.
+ * 톤 색은 아래 .legend .tone-* 정의를 그대로 상속한다(색 정의를 다시 만들지 않는다). */
+.legend--inline { display: flex; flex-wrap: wrap; gap: .2rem .9rem; margin-top: 0; }
+.legend--inline .n { margin-left: .2rem; }
+
+/* --- 가로 막대 랭킹(vg_rank_bars) -----------------------------------------
+ * "어느 자산이 / 어느 패키지가 제일 나쁜가" 를 순서로 말한다. 도넛·추이선과 달리 SVG 가
+ * 아니라 HTML 이다 — SVG 는 폭에 맞춰 통째로 늘어나 좁은 카드에서 라벨 글자까지 줄어든다.
+ * 라벨이 주인공인 차트라 진짜 텍스트로 두고 말줄임·링크를 CSS 가 처리한다. 막대 폭만 인라인 %. */
+.rank { display: grid; gap: .3rem; }
+.rank__row {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) minmax(3rem, 1fr) max-content;
+  align-items: center;
+  gap: .6rem;
+  padding: .15rem .1rem;
+  border-radius: var(--r-xs);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.rank__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank__track { height: 10px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
+.rank__bar { display: block; height: 100%; border-radius: 999px; background: var(--muted-2); }
+.rank__bar.tone-crit  { background: var(--crit); }
+.rank__bar.tone-high  { background: var(--high); }
+.rank__bar.tone-med   { background: var(--med); }
+.rank__bar.tone-low   { background: var(--low); }
+.rank__bar.tone-ok    { background: var(--ok); }
+.rank__bar.tone-muted { background: var(--muted-2); }
+.rank__bar.tone-info  { background: var(--accent); }
+.rank__value { color: var(--text); font-weight: 700; }
+@media (max-width: 700px) { .rank__row { grid-template-columns: minmax(0, 7rem) minmax(2rem, 1fr) max-content; } }
+
+/* --- 반원 게이지(vg_gauge) -------------------------------------------------
+ * 단일 비율 지표("SLA 준수율 82%")를 한눈에. .meter 는 표 셀 안의 6px 막대(값 옆에 붙는 보조
+ * 표시)라 역할이 다르다 — 이건 카드 하나를 채우는 주 지표다. 그래서 둘 다 남긴다. */
+/* 폭 상한이 없으면 카드 폭만큼 커진다 — 단일 지표 하나짜리 그림이 화면을 다 먹지 않게 묶는다. */
+.gauge { display: block; width: 100%; max-width: 200px; margin-inline: auto; }
+.gauge svg { width: 100%; height: auto; display: block; }
+.gauge__track { stroke: var(--sunken); }
+.gauge__arc { transition: stroke-dasharray .2s ease-out; }
+.gauge__arc.tone-crit  { stroke: var(--crit); }
+.gauge__arc.tone-high  { stroke: var(--high); }
+.gauge__arc.tone-med   { stroke: var(--med); }
+.gauge__arc.tone-low   { stroke: var(--low); }
+.gauge__arc.tone-ok    { stroke: var(--ok); }
+.gauge__arc.tone-muted { stroke: var(--muted-2); }
+.gauge__arc.tone-info  { stroke: var(--accent); }
+.gauge__val { fill: var(--text); font-size: 15px; font-weight: 750; text-anchor: middle; }
+.gauge__lbl { fill: var(--muted); font-size: 8px; text-anchor: middle; }
+
+/* --- 초소형 추이선(vg_sparkline) ------------------------------------------
+ * 표 셀 안에 들어가는 축·라벨 없는 선. "늘고 있나 줄고 있나" 하나만 말한다. */
+.spark { display: inline-block; width: 4.5rem; height: 1.35rem; vertical-align: middle; }
+.spark svg { width: 100%; height: 100%; display: block; }
+.spark__line { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.spark__line.tone-crit  { stroke: var(--crit); }
+.spark__line.tone-high  { stroke: var(--high); }
+.spark__line.tone-med   { stroke: var(--med); }
+.spark__line.tone-low   { stroke: var(--low); }
+.spark__line.tone-ok    { stroke: var(--ok); }
+.spark__line.tone-muted { stroke: var(--muted-2); }
+.spark__line.tone-info  { stroke: var(--accent); }
+.spark__dot { fill: currentColor; }
+.spark__dot.tone-crit  { fill: var(--crit); }
+.spark__dot.tone-high  { fill: var(--high); }
+.spark__dot.tone-med   { fill: var(--med); }
+.spark__dot.tone-low   { fill: var(--low); }
+.spark__dot.tone-ok    { fill: var(--ok); }
+.spark__dot.tone-muted { fill: var(--muted-2); }
+.spark__dot.tone-info  { fill: var(--accent); }
 
 /* KPI 증감 칩 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전 대비를 같이 준다.
  * 방향은 색만으로 말하지 않는다(▲/▼ 기호가 같이 간다).
@@ -882,18 +1095,28 @@ td details[open] summary { margin-bottom: .35rem; }
 .stat > .why { display: block; }
 
 /* --- 표 ------------------------------------------------------------------ */
-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
-th, td { text-align: left; padding: .82rem 1rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-thead { background: var(--sunken); }
+/* 이 제품의 주인공은 표다. 행 높이를 줄여 한 화면에 더 담고, 경계·머리글을 또렷하게 세운다. */
+table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead { background: var(--surface-2); }
 th {
-  color: var(--muted);
-  font-weight: 650;
-  font-size: .76rem;
+  color: var(--text-2);
+  font-weight: 700;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
-  letter-spacing: .01em;
+  letter-spacing: .02em;
   white-space: nowrap;
-  background: var(--sunken);   /* 머리글 밴드 — 본문 행과 시각적으로 갈라준다 */
+  background: var(--surface-2);   /* 머리글 밴드 — 본문 행과 시각적으로 갈라준다 */
+  box-shadow: inset 0 -2px 0 var(--line-2);   /* 2px 하단 경계 — 본문 첫 행과 확실히 갈라진다 */
 }
+/* 머리글 고정(sticky)은 **긴 목록 화면에서만** 켠다 — 아래 '목록 화면' 절이 그 화면들의
+ * 카드를 스크롤 컨테이너가 아니게(overflow-x:clip) 만들어 두기 때문이다. 그 전제가 없는
+ * 카드(대시보드의 6행짜리 표처럼 .card 기본 overflow-x:auto)에 sticky 를 걸면 머리글이
+ * 뷰포트가 아니라 카드를 기준으로 잡혀 표 안에 떠서 첫 행을 덮는다 — 실제로 그렇게 됐다. */
+/* 숫자 열의 머리글도 값과 같은 쪽으로 정렬한다 — vg_table() 이 align:'right' 를 th·td 양쪽에
+ * .right 로 붙이는데, th 안에서 정렬이 어긋나 보이던 경우를 여기서 못박는다. */
+th.right { text-align: right; }
+th.center { text-align: center; }
 td.nowrap, td code { white-space: nowrap; }
 /* 주 식별자 열(호스트명·패키지명) — 하이픈·점마다 접혀 한 이름이 세 줄로 쪼개지는 걸 막는다.
  * 칸을 넘치면 말줄임으로 접고 전체 값은 title 로 남긴다(지우는 게 아니라 접는 것).
@@ -910,6 +1133,15 @@ td.col-id { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 tr:last-child td { border-bottom: none; }
 tbody tr { transition: background-color .12s ease; }
+/* zebra — 열이 10개를 넘는 표에서 눈이 행을 따라가게 한다. 등급 배경(sev-crit)·hover 는
+ * 이 뒤에 오는 규칙이라 같은 특이도에서 순서로 이긴다. */
+tbody tr:nth-child(even) { background: var(--sunken); }
+
+/* 식별자(CVE-ID·패키지명·IP·버전)는 줄바꿈하지 않는다 — `libpolkit-agent-1-0` 이 하이픈마다
+ * 접혀 3줄이 되면 세로 공간만 먹고 정보량은 그대로다. 값을 지우는 게 아니라 접는 것이라,
+ * 넘치면 말줄임하고 전체 값은 title 로 남긴다(td.col-id·td.nowrap 규칙이 이미 그 짝이다).
+ * 링크로 감싼 식별자(cves.php 의 CVE-ID)도 같이 잡는다 — 안쪽 <a> 가 다시 접히면 소용없다. */
+td.col-id a, td.nowrap a { white-space: nowrap; }
 
 /* 카드가 표 하나만 담을 때(툴바·페이저는 카드 밖에 있다) 표를 카드 모서리까지
  * 채워서 머리글 밴드가 가장자리까지 이어지게 한다 — 참고 디자인의 깔끔한 표 느낌.
@@ -918,11 +1150,11 @@ tbody tr { transition: background-color .12s ease; }
  * :only-child 가 아니므로 손대지 않는다(기존 여백 유지). */
 .card:has(> table:only-child) { padding: 0; }
 .card > table:only-child th:first-child,
-.card > table:only-child td:first-child { padding-left: 1.4rem; }
+.card > table:only-child td:first-child { padding-left: 1rem; }
 .card > table:only-child th:last-child,
-.card > table:only-child td:last-child { padding-right: 1.4rem; }
+.card > table:only-child td:last-child { padding-right: 1rem; }
 /* 첫 칸에 심각도 띠가 붙는 표는 왼쪽 여백을 띠 두께만큼만 줄인다(열이 안 밀리게) */
-.card > table:only-child tbody tr[class*="sev-"] td:first-child { padding-left: calc(1.4rem - 3px); }
+.card > table:only-child tbody tr[class*="sev-"] td:first-child { padding-left: calc(1rem - 3px); }
 
 /* 행 심각도 강조 — 표를 훑을 때 눈이 "위험한 줄" 부터 잡게 한다.
  * 왼쪽 3px 띠로 등급을 알리고, CRITICAL·HIGH 만 배경까지 아주 옅게 물들인다.
@@ -930,7 +1162,7 @@ tbody tr { transition: background-color .12s ease; }
  * 띠 두께만큼 첫 칸 padding 을 줄여 열이 밀리지 않게 한다. */
 tbody tr[class*="sev-"] td:first-child {
   border-left: 3px solid transparent;
-  padding-left: calc(.9rem - 3px);
+  padding-left: calc(.7rem - 3px);
 }
 tbody tr.sev-crit td:first-child { border-left-color: var(--crit); }
 tbody tr.sev-high td:first-child { border-left-color: var(--high); }
@@ -939,14 +1171,28 @@ tbody tr.sev-low  td:first-child { border-left-color: var(--low); }
 
 /* HIGH 는 왼쪽 띠만으로 등급을 표시한다(배경 틴트는 뺐다) — CRITICAL 행 하나에
  * 띠+배경+KEV뱃지+기한초과뱃지까지 색이 겹치는 걸 줄인다. CRITICAL 배경은 남기되 더 옅게. */
-tbody tr.sev-crit { background: rgb(229 72 77 / .035); }
+/* CRITICAL 행 배경은 아주 옅게만 — 이 화면은 CRITICAL 만 필터링해 보는 일이 흔해서,
+ * 뱃지 수준의 틴트(--crit-bg)를 그대로 깔면 표 전체가 분홍 벽이 된다(실측). 등급은 왼쪽 띠가
+ * 이미 말하고 있고, 배경은 "이 줄이 그 등급"이라는 정도만 거들면 된다. */
+tbody tr.sev-crit { background: color-mix(in srgb, var(--crit) 5%, transparent); }
 
-/* hover 는 등급 배경보다 우선 — 어느 행에 커서가 있는지가 항상 먼저 읽혀야 한다.
+/* hover 는 등급 배경·zebra 보다 우선 — 어느 행에 커서가 있는지가 항상 먼저 읽혀야 한다.
  * 평범한 행은 강조색 틴트로, 등급 띠가 붙은 행은 중립 면(--surface-2)으로 뜬다
  * — 등급 색 위에 파란 틴트를 겹치면 두 색이 섞여 등급이 흐려진다. */
-tbody tr:hover { background: rgb(49 130 246 / .035); }
+tbody tr:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 tbody tr.sev-crit:hover,
 tbody tr.sev-high:hover { background: var(--surface-2); }
+
+/* 목록 본문을 감싼 링크(cves.php 의 요약 등)는 **본문 색**을 쓴다 — 링크라는 이유로 문장
+ * 전체가 파랑이 되면(특히 다크에서 --accent-2 가 밝아 더 심하다) 표가 파란 벽처럼 읽힌다.
+ * 링크성은 hover 의 밑줄·색으로 알린다. 제목·식별자 링크(col-id·nowrap 칸)는 강조색 유지. */
+td a.clamp-2, td a.body-link { color: inherit; }
+td a.clamp-2:hover, td a.body-link:hover { color: var(--accent-2); text-decoration: underline; }
+/* 숫자 칸(우측정렬 nowrap)은 가로 여백을 더 조인다 — `CVSS 5.3` 이 8% 폭 칸에서 여백 때문에
+ * `CVSS …` 로 잘려 정작 점수가 사라지던 자리다(findings.php 위험도 열). */
+td.nowrap.right { padding-inline: .45rem; }
+td .why a, td p a { color: inherit; text-decoration: underline dotted var(--line-2); }
+td .why a:hover, td p a:hover { color: var(--accent-2); text-decoration-style: solid; }
 
 /* --- 빈 상태 -------------------------------------------------------------
  * "데이터가 없습니다" 한 줄은 막다른 길이다. 왜 비었는지와 다음에 뭘 할지를 준다. */
@@ -1049,35 +1295,49 @@ a.pill--on:hover { background: var(--accent); }
 /* --- 모달 (네이티브 <dialog>) --------------------------------------------
  * 자주 안 쓰는 폼(추가·발급·설치안내)을 화면에 펼쳐두지 않고 버튼 뒤에 숨긴다.
  * showModal() 이 포커스 가둠·ESC·backdrop 을 다 해주므로 JS 는 열고 닫기만 한다. */
+/* 폭 프리셋은 세 단뿐이다: --sm(440) / 기본(560) / --wide(880).
+ * 확인창(.confirm-modal)이 따로 440 을 들고 있던 것을 --sm 으로 합쳤다(정의는 한 벌). */
 .modal {
   width: min(560px, calc(100vw - 2rem));
   max-height: calc(100vh - 4rem);
   padding: 0;
   border: 1px solid var(--line-2);
-  border-radius: 24px;
+  border-radius: var(--r-lg);
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-lg);
+  /* head/foot 을 sticky 로 두려면 이 요소가 스크롤 컨테이너가 아니어야 한다 —
+   * 스크롤은 .modal__body 가 갖는다(아래). 세로 flex 는 **열렸을 때만** 켠다(.modal[open]) —
+   * 여기에 display 를 주면 브라우저 기본값 display:none 을 덮어써서 닫힌 <dialog> 가
+   * 페이지에 그대로 펼쳐진다(실제로 그렇게 됐다: 확인창·수집현황이 대시보드 위에 겹쳐 떴다). */
   overflow: hidden;
 }
+.modal--sm   { width: min(440px, calc(100vw - 2rem)); }
 .modal--wide { width: min(880px, calc(100vw - 2rem)); }
 
-.modal::backdrop { background: rgb(15 23 42 / .48); backdrop-filter: blur(5px); }
+.modal::backdrop { background: rgb(9 13 20 / .55); backdrop-filter: blur(4px); }
 
 /* 열릴 때 살짝 떠오른다 — 모달이 화면에 "붙었다 떨어졌다" 하는 걸 눈이 따라가게 */
 @keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: none; } }
-.modal[open] { animation: modal-in .18s cubic-bezier(.2,.8,.2,1); }
+.modal[open] { display: flex; flex-direction: column; animation: modal-in .18s cubic-bezier(.2,.8,.2,1); }
 @media (prefers-reduced-motion: reduce) { .modal[open] { animation: none; } }
 
+/* 머리글·푸터는 고정, 본문만 스크롤 — 긴 폼에서 제목과 저장/닫기가 늘 손 닿는 곳에 있다.
+ * (예전엔 좁은 화면에서만 푸터를 sticky 로 뒀다. 넓은 화면도 같은 규칙을 쓴다.) */
 .modal__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.2rem 1.4rem;
+  padding: .8rem 1.1rem;
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
-.modal__head strong { font-size: 1.1rem; letter-spacing: -.02em; }
+.modal__head strong { font-size: var(--fs-lg); letter-spacing: -.02em; }
 
 .modal__x {
   border: none;
@@ -1091,11 +1351,12 @@ a.pill--on:hover { background: var(--accent); }
 }
 .modal__x:hover { background: var(--surface-2); color: var(--text); }
 
-/* 본문만 스크롤 — 머리글은 붙어 있게 */
+/* 본문만 스크롤 — 머리글·푸터는 붙어 있게 */
 .modal__body {
-  padding: 1.25rem 1.4rem 1.4rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 1rem 1.1rem 1.1rem;
   overflow-y: auto;
-  max-height: calc(100vh - 8rem);
 }
 /* 모달 안의 폼은 카드가 아니다 — form.card 의 가운데 정렬·여백을 물려받지 않게 */
 .modal__body form { margin: 0; max-width: none; }
@@ -1106,15 +1367,26 @@ a.pill--on:hover { background: var(--accent); }
  * 상쇄해 모달 가장자리까지 잇고 위에 구분선을 둔다(참고 디자인의 닫기/저장 바).
  * 폼 안에서 불러도 form{margin:0} 이라 폭이 딱 맞는다. */
 .modal__foot {
+  position: sticky;
+  bottom: -1.1rem;   /* body 의 아래 패딩만큼 끌어내려 바닥에 딱 붙인다 */
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: .5rem;
-  margin: 1.4rem -1.4rem -1.4rem;
-  padding: 1rem 1.4rem;
+  gap: var(--sp-2);
+  margin: 1.1rem -1.1rem -1.1rem;
+  padding: .75rem 1.1rem;
+  background: var(--surface);
   border-top: 1px solid var(--line);
 }
 .modal__foot .modal__foot__extra { margin-right: auto; }   /* 보조 버튼(미리보기 등)은 왼쪽으로 */
+
+/* 모달 안 2열 폼 — 짧은 입력(포트·주기·등급)이 한 줄을 통째로 먹어 모달이 세로로 길어지는 걸 막는다.
+ * 페이지가 <div class="form-grid"> 로 감싸면 자식 라벨/입력이 두 열로 나뉜다. 한 줄을 통째로
+ * 써야 하는 항목은 .form-grid__full 을 붙인다. 좁은 화면에선 자동으로 한 열이 된다. */
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--sp-4); }
+.form-grid__full { grid-column: 1 / -1; }
+@media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
 
 tr[data-finding-detail] { cursor: pointer; }
 tr[data-finding-detail]:focus-visible {
@@ -1178,30 +1450,31 @@ tr[data-finding-detail]:focus-visible {
   display: flex;
   flex-direction: column;
   gap: .2rem;
-  padding: .9rem 1rem;
-  border-radius: 14px;
-  margin-bottom: 1rem;
+  padding: .65rem .85rem;
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-3);
   border: 1px solid;
 }
-.alert strong { font-size: .9rem; }
+.alert strong { font-size: var(--fs-md); }
 .alert--err  { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
 .alert--ok   { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
 .alert--warn { background: var(--med-bg);  border-color: var(--med-bd);  color: var(--med-fg); }
 
 /* --- 폼 컨트롤 ----------------------------------------------------------- */
-label { display: block; font-size: .82rem; color: var(--text-2); margin: .8rem 0 .3rem; }
+/* 라벨 대비 상향 — 폼에서 "무엇을 넣는 칸인가" 가 값보다 흐리면 안 된다(--muted 계열 금지). */
+label { display: block; font-size: var(--fs-sm); font-weight: 650; color: var(--text); margin: .7rem 0 .25rem; }
 label.inline { display: flex; align-items: center; gap: .5rem; margin-top: 1rem; }
 label.inline input { width: auto; }
 
 input[type=text], input[type=password], input[type=search],
 input[type=datetime-local], input[type=date], input[type=number], select, textarea {
   width: 100%;
-  padding: .68rem .8rem;
+  padding: .45rem .6rem;
   background: var(--sunken);   /* 카드 표면보다 한 단 가라앉힌다 — 포커스 때 떠오른다 */
   border: 1px solid var(--line-2);
-  border-radius: 12px;
+  border-radius: var(--r-sm);
   color: var(--text);
-  font-size: .95rem;
+  font-size: var(--fs-md);
   font-family: inherit;
   transition: background .12s ease-out, border-color .12s ease-out, box-shadow .12s ease-out;
 }
@@ -1209,7 +1482,7 @@ input[type=datetime-local], input[type=date], input[type=number], select, textar
 input[type=text]:focus, input[type=password]:focus, input[type=search]:focus,
 input[type=datetime-local]:focus, input[type=date]:focus, input[type=number]:focus,
 select:focus, textarea:focus { background: var(--surface); border-color: var(--accent); }
-input[type=search], select { font-size: .85rem; }
+input[type=search], select { font-size: var(--fs-sm); }
 input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
 
 /* --- 버튼 ---------------------------------------------------------------- */
@@ -1218,11 +1491,11 @@ input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
   align-items: center;
   justify-content: center;
   gap: .25rem;
-  padding: .6rem 1rem;
-  border: none;
-  border-radius: 12px;
-  font-size: .95rem;
-  font-weight: 600;
+  padding: .45rem .85rem;
+  border: 1px solid transparent;   /* 테두리형 변형과 높이를 맞추려면 기본에도 자리가 있어야 한다 */
+  border-radius: var(--r-sm);
+  font-size: var(--fs-md);
+  font-weight: 650;
   font-family: inherit;
   line-height: 1;
   /* 글자를 접지 않는다 — 좁은 표의 액션 열(5rem)에서 "폐기" 가 두 줄로 쪼개져
@@ -1237,17 +1510,28 @@ input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
 .btn:active { transform: translateY(0); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
-/* 색 채운 변형은 밝은/어두운 테마 모두 흰 글자로 고정(기본 글자색이 테마별로 달라서) */
-.btn--primary { background: var(--accent); color: #fff; box-shadow: 0 5px 12px rgb(49 130 246 / .18); }
-.btn--danger  { background: var(--danger); color: #fff; }
-.btn--warn    { background: var(--med);    color: #3a2b00; }
+/* 계층: primary(채움) > secondary(테두리) > ghost(무테) > danger(파괴 — 평소엔 물러난다).
+ * 색 채운 변형은 밝은/어두운 테마 모두 흰 글자로 고정(기본 글자색이 테마별로 달라서). */
+.btn--primary { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 3px 8px rgb(49 130 246 / .18); }
+/* 보조 주작업 — 채우지 않고 강조색 테두리만. primary 옆에 놓여도 서열이 뒤집히지 않는다. */
+.btn--secondary { background: var(--surface); color: var(--accent-2); border-color: var(--accent); }
+.btn--secondary:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); filter: none; }
+/* **파괴 작업은 기본 상태에서 화면의 주인공이 될 수 없다.** connectors.php 표에서 행마다
+ * 빨간 `삭제` 가 3~4개씩 반복돼 주작업(`실행`)보다 강했다 — 평소엔 테두리형으로 물러나 있다가
+ * 커서·포커스가 닿을 때만 채워진 빨강이 된다("지금 누르면 지워진다"는 그때 말해도 늦지 않다). */
+.btn--danger  { background: transparent; color: var(--crit-fg); border-color: var(--crit-bd); }
+.btn--danger:hover, .btn--danger:focus-visible { background: var(--danger); color: #fff; border-color: var(--danger); filter: none; }
+.btn--warn    { background: var(--med-bg); color: var(--med-fg); border-color: var(--med-bd); }
+.btn--warn:hover { background: var(--med); color: #3a2b00; border-color: var(--med); filter: none; }
 /* 보조 버튼은 외곽선형 — 한 행에 여러 개(이력·편집·초기화)가 깔려도 시끄럽지 않고,
  * OFF 토글이 외곽선(비활성)으로 보여 ON(초록 채움)과 또렷이 갈린다. */
-.btn--ghost   { background: transparent; color: var(--text-2); border: 1px solid var(--line-2); }
+.btn--ghost   { background: transparent; color: var(--text-2); border-color: var(--line-2); }
 .btn--ghost:hover { background: var(--surface-2); color: var(--text); filter: none; }
 
 .btn--block { width: 100%; }
-.btn--sm    { height: var(--ctl-h); padding: .35rem .8rem; font-size: .82rem; font-weight: 600; }
+.btn--sm    { height: var(--ctl-h); padding: .3rem .7rem; font-size: var(--fs-sm); font-weight: 650; }
+/* 표 안의 액션 버튼 — 행 높이를 키우지 않는 가장 작은 단. 액션 열은 td.right .actions 가 우측 정렬한다. */
+.btn--xs    { height: 1.65rem; padding: .15rem .5rem; font-size: var(--fs-xs); font-weight: 650; border-radius: var(--r-xs); }
 .btn + .btn--block { margin-top: .5rem; }
 
 /* 복사 버튼 — 한 번만 보이는 값(토큰)을 손으로 긁게 두지 않는다.
@@ -1314,7 +1598,7 @@ td.right .actions { justify-content: flex-end; }
   margin: 1rem 0 .25rem;
   padding: .9rem 1rem;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
-  border-radius: 14px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
 }
 .agent-progress__top, .agent-progress__meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -1347,13 +1631,13 @@ td.right .actions { justify-content: flex-end; }
 .collection-status-btn.is-active .collection-status-btn__dot { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 15%, transparent); }
 .collection-status-btn b { min-width: 1.15rem; padding: .08rem .3rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .68rem; text-align: center; }
 .collection-overview__summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: .65rem; }
-.collection-overview__summary > div { padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--sunken); }
+.collection-overview__summary > div { padding: .85rem 1rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--sunken); }
 .collection-overview__summary span { display: block; color: var(--muted); font-size: .72rem; }
 .collection-overview__summary strong { display: block; margin-top: .2rem; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
 .collection-overview__hint { margin: .9rem 0; color: var(--muted); font-size: .75rem; }
 .collection-overview__list { display: grid; gap: .6rem; max-height: min(56vh, 540px); overflow: auto; }
-.collection-overview__empty { padding: 2.5rem 1rem; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); text-align: center; }
-.collection-item { position: relative; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.collection-overview__empty { padding: 2.5rem 1rem; border: 1px dashed var(--line); border-radius: var(--r-md); color: var(--muted); text-align: center; }
+.collection-item { position: relative; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
 .collection-item:hover { border-color: var(--accent); }
 .collection-item.is-stale, .collection-item.is-failed { border-color: var(--med-bd); background: var(--med-bg); }
 .collection-item__head, .collection-item__meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -1394,7 +1678,7 @@ td.right .actions { justify-content: flex-end; }
   background-repeat: no-repeat;
   background-position: right .8rem center;
   border: 1px solid var(--line-2);
-  border-radius: 12px;
+  border-radius: var(--r-sm);
   color: var(--text);
   font: inherit;
   font-size: .88rem;
@@ -1408,7 +1692,7 @@ td.right .actions { justify-content: flex-end; }
   width: 19.5rem;
   padding: .65rem;
   border: 1px solid var(--line-2);
-  border-radius: 16px;
+  border-radius: var(--r-md);
   background: var(--surface);
   box-shadow: 0 18px 45px rgb(15 23 42 / .18);
   color: var(--text);
@@ -1463,13 +1747,16 @@ span.flatpickr-weekday { color: var(--muted); font-size: .72rem; }
    우측 끝에 붙인다 — 필터가 짧아도 버튼이 항상 툴바 우측 상단에 정렬된다. */
 .toolbar {
   display: flex;
-  gap: .5rem;
+  gap: var(--sp-2);
   flex-wrap: wrap;
   align-items: center;
-  margin-bottom: 1rem;
-  padding: .65rem;
+  /* 높이를 고정한다 — 표의 sticky 머리글이 이 툴바 바로 아래에 붙어야 하는데, 높이가
+   * 유동적이면 둘 사이에 틈이 생기거나 서로를 가린다(--toolbar-h 를 양쪽이 공유한다). */
+  min-height: var(--toolbar-h);
+  margin-bottom: var(--sp-2);
+  padding: .35rem .5rem;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--r-md);
   background: var(--surface);
 }
 .toolbar > button[type="submit"] { margin-left: auto; }
@@ -1492,7 +1779,7 @@ span.flatpickr-weekday { color: var(--muted); font-size: .72rem; }
   padding: .42rem .7rem;
   min-width: 2.25rem;
   text-align: center;
-  border-radius: 10px;
+  border-radius: var(--r-sm);
   font-size: .82rem;
   border: 1px solid var(--line);
   color: var(--text-2);
@@ -1540,7 +1827,7 @@ form.card {
   max-width: 400px;
   margin: 3rem auto;
   padding: 2.4rem 2.2rem 2.2rem;
-  border-radius: 24px;
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow-lg);
 }
 form.card::before {
@@ -1617,29 +1904,32 @@ form.card .btn--primary:active { transform: translateY(0); }
  * 화면 단위 컴포넌트 — 제목 블록 · 밀도 토글 · 설정 폼 · 권한 매트릭스
  * ========================================================================== */
 
-/* 페이지 제목 블록 — 문구·건수·액션을 화면마다 직접 조립한다(PHP 가 authoring).
- * 아래 구분선 하나로 본문과 갈라지고, 배경은 표면색 그대로 둔다(면을 하나 더 쌓지 않는다). */
+/* 페이지 제목 — **카드가 아니라 헤더 줄이다.** 예전엔 흰 카드(테두리+20px 라운드+큰 패딩)라
+ * 제목 한 줄 + 설명 한 줄을 담는 데 세로 150px 를 썼다. 1440×675 첫 화면에서 대시보드는 표가
+ * 2행만 보이고 컴플라이언스는 판정 5행 중 마지막이 접혔다 — 그 150px 를 표에 돌려준다(약 60px).
+ * 면을 하나 더 쌓지 않고, 제목·설명·액션을 한 덩어리로 상단에 얇게 얹는다. */
 .page-title {
   display: flex;
-  align-items: flex-end;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 1.5rem;
-  margin: 0 0 1.35rem;
-  padding: 1.35rem 1.5rem 1.25rem;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background: var(--surface);
+  gap: var(--sp-4);
+  margin: 0 0 var(--sp-3);
+  padding: 0 0 var(--sp-2);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
 }
-.page-title > div:first-child { min-width: 0; }
-.page-title h1 { margin: 0; letter-spacing: -.035em; }
-.page-title p { margin: .35rem 0 0; max-width: 760px; color: var(--muted); font-size: .88rem; line-height: 1.65; }
-.page-title__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .55rem; }
+.page-title > div:first-child, .page-title__text { min-width: 0; }
+.page-title h1 { margin: 0; font-size: var(--fs-xl); letter-spacing: -.03em; }
+.page-title p { margin: .15rem 0 0; max-width: 90ch; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }
+.page-title__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--sp-2); }
 .page-title--actions { align-items: center; }
 .page-title--actions > h1 { flex: 1; }
 .page-title--actions .toolbar { flex: none; }
 .page-title--stack { display: block; }
 .page-title--stack .sub { margin: .4rem 0 0; }
-.page-title + .sub { margin-top: -.85rem; padding-inline: .2rem; }
+.page-title + .sub { margin-top: -.35rem; padding-inline: 0; }
 
 /* 반응형 표 — 좁은 화면에서 행을 카드로 접는다(td 의 data-label 이 머리글 노릇). */
 .data-table td, .data-table th { font-variant-numeric: tabular-nums; }
@@ -1662,8 +1952,8 @@ form.card .btn--primary:active { transform: translateY(0); }
 .criteria dd { margin: 0; color: var(--text-2); line-height: 1.65; word-break: keep-all; }
 @media (max-width: 700px) { .criteria { grid-template-columns: 1fr; row-gap: .15rem; } }
 
-/* 확인 모달(삭제·폐기 등) — 문구만 담는 좁은 모달 */
-.confirm-modal { width: min(440px, calc(100vw - 2rem)); }
+/* 확인 모달(삭제·폐기 등) — 문구만 담는 좁은 모달. 폭은 .modal--sm 프리셋이 준다
+ * (vg_confirm_dialog() 가 두 클래스를 같이 붙인다) — 여기서 440 을 또 선언하지 않는다. */
 .confirm-modal__message { margin: 0; color: var(--text-2); line-height: 1.7; white-space: pre-line; }
 .confirm-modal .modal__foot { margin-top: 1.25rem; }
 
@@ -1707,13 +1997,17 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--activity .toolbar, .page--advisories .toolbar, .page--assets .toolbar,
 .page--changes .toolbar, .page--compliance_rules .toolbar, .page--cves .toolbar,
 .page--findings .toolbar, .page--packages .toolbar, .page--vendor .toolbar {
-  position: sticky; top: calc(var(--topbar-h) + .75rem); z-index: 12;
+  position: sticky; top: calc(var(--topbar-h) + .4rem); z-index: 12;
 }
+/* 표를 담은 카드는 **스크롤 컨테이너가 아니어야** 한다 — .card 기본값(overflow-x:auto)이면
+ * sticky 머리글이 뷰포트가 아니라 카드를 기준으로 잡혀 표 위에 빈 띠가 생긴다(권한 매트릭스에서
+ * 겪은 그 문제). clip 은 모서리는 잘라 주면서 스크롤 컨테이너를 만들지 않는다. 목록 화면의 표는
+ * table-layout:fixed + 칸 안 줄바꿈이라 애초에 가로로 넘치지 않는다(아래 규칙). */
 .page--activity .card:has(> table), .page--advisories .card:has(> table),
 .page--assets .card:has(> table), .page--changes .card:has(> table),
 .page--compliance_rules .card:has(> table), .page--cves .card:has(> table),
 .page--findings .card:has(> table), .page--packages .card:has(> table),
-.page--vendor .card:has(> table) { margin-top: .9rem; }
+.page--vendor .card:has(> table) { margin-top: .5rem; overflow-x: clip; }
 .page--findings .cards, .page--assets .cards, .page--changes .cards { padding: .15rem 0; }
 /* 열 폭은 vg_table() 이 준 width 가 정한다. auto 레이아웃에선 '내용이 긴 칸' 이 폭을 가져가서,
  * 취약점 현황(1568px 실측)에서 한 줄짜리 '조치' 가 448px 를 먹는 동안 호스트명은 207px 안에서
@@ -1746,7 +2040,16 @@ form.card .btn--primary:active { transform: translateY(0); }
  * 괄호로 이어붙은 머리글은 공백이 없으므로 overflow-wrap 까지 있어야 실제로 접힌다. */
 .page--activity .data-table th, .page--advisories .data-table th, .page--assets .data-table th,
 .page--changes .data-table th, .page--compliance_rules .data-table th, .page--cves .data-table th,
-.page--findings .data-table th, .page--packages .data-table th, .page--vendor .data-table th { white-space: normal; overflow-wrap: anywhere; }
+.page--findings .data-table th, .page--packages .data-table th, .page--vendor .data-table th {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  /* 긴 목록에서 열 이름이 사라지지 않게 머리글을 고정한다. 상단바뿐 아니라 이 화면들의
+   * sticky 필터 툴바 아래에도 붙어야 한다 — 그러지 않으면 툴바(z-index 12)가 머리글을
+   * 덮어 열 이름이 안 보인다. 위 카드 규칙의 overflow-x:clip 이 이걸 가능하게 한다. */
+  position: sticky;
+  top: calc(var(--topbar-h) + .4rem + var(--toolbar-h));
+  z-index: 5;
+}
 /* 자산관리만 칸의 가로 여백을 줄인다. 12열이라 여백이 표 폭을 먹는 비율이 다른 화면과 다르다 —
  * 표 모드의 최소 폭(1061px)에서 표는 741px 인데 칸 여백만 12×32px=384px(52%)였다. 그래서
  * '상태' 열은 6.5%(48px)를 받고도 오프라인 뱃지(65px)를 담지 못해 OS 열을 32px 덮었다.
@@ -1772,8 +2075,8 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--host .hero, .page--cve .hero, .page--user .hero { background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--info-bg) 45%, var(--surface))); }
 .page--advisory .prose, .page--cve .prose, .page--compliance_rule .prose,
 .page--control .prose { max-width: 78ch; line-height: 1.75; }
-.page--host .subtabs, .page--cve .subtabs { border: 1px solid var(--line); border-radius: 14px; padding: .25rem; background: var(--surface); box-shadow: var(--shadow); }
-.page--host .subtabs a, .page--cve .subtabs a { border: 0; border-radius: 10px; margin: 0; }
+.page--host .subtabs, .page--cve .subtabs { border: 1px solid var(--line); border-radius: var(--r-md); padding: .25rem; background: var(--surface); box-shadow: var(--shadow); }
+.page--host .subtabs a, .page--cve .subtabs a { border: 0; border-radius: var(--r-sm); margin: 0; }
 .page--host .subtabs a.on, .page--cve .subtabs a.on { background: var(--info-bg); color: var(--accent-2); }
 /* 요약 먼저, 증거 다음, 원문 참조는 맨 뒤 — 섹션 사이를 선으로 끊는다. */
 .page--cve section, .page--compliance_rule section, .page--control section { margin: 2.2rem 0 0; padding-top: .2rem; }
@@ -1784,7 +2087,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--cve #summary .card, .page--compliance_rule #rationale .card { font-size: .98rem; line-height: 1.75; }
 .page--cve #references, .page--compliance_rule #refs { color: var(--text-2); }
 .page--host .stat-grid, .page--cve .stat-grid, .page--compliance_rule .stat-grid,
-.page--control .stat-grid { gap: 0; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--surface); }
+.page--control .stat-grid { gap: 0; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--surface); }
 .page--host .stat, .page--cve .stat, .page--compliance_rule .stat,
 .page--control .stat { padding: 1rem 1.15rem; border-right: 1px solid var(--line); }
 
@@ -1840,7 +2143,7 @@ form.card .btn--primary:active { transform: translateY(0); }
   .page--assets .data-table tr, .page--assets .data-table td { display: block; width: 100%; }
   .page--assets .data-table thead { display: none; }
   .page--assets .data-table tbody { display: grid; gap: .7rem; }
-  .page--assets .data-table tbody tr { padding: .75rem 1rem; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
+  .page--assets .data-table tbody tr { padding: .75rem 1rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow); }
   .page--assets .data-table tbody tr:hover { background: var(--surface); }
   .page--assets .data-table td { display: grid; grid-template-columns: minmax(5.5rem, 34%) minmax(0, 1fr); gap: .75rem; align-items: start; padding: .48rem 0; border: 0; text-align: left !important; white-space: normal; overflow-wrap: anywhere; }
   .page--assets .data-table td.col-id { white-space: normal; overflow: visible; }
@@ -1874,7 +2177,7 @@ form.card .btn--primary:active { transform: translateY(0); }
   .side details.nav-grp { display: block; }
   .side .grp { display: flex; }
   .side a.link.active { box-shadow: none; }
-  .nav-toggle { display: inline-flex; width: 38px; height: 38px; flex: none; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; border-radius: 12px; background: var(--surface-2); color: var(--text); cursor: pointer; }
+  .nav-toggle { display: inline-flex; width: 38px; height: 38px; flex: none; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); cursor: pointer; }
   .nav-toggle span { width: 17px; height: 2px; border-radius: 2px; background: currentColor; }
   .nav-backdrop { position: fixed; inset: 0; z-index: 50; width: 100%; height: 100%; border: 0; background: rgb(15 23 42 / .44); backdrop-filter: blur(2px); }
   body.nav-open .nav-backdrop { display: block; }
@@ -1889,6 +2192,10 @@ form.card .btn--primary:active { transform: translateY(0); }
   .page--activity .toolbar, .page--advisories .toolbar, .page--assets .toolbar,
   .page--changes .toolbar, .page--compliance_rules .toolbar, .page--cves .toolbar,
   .page--findings .toolbar, .page--packages .toolbar, .page--vendor .toolbar { position: static; }
+  /* 툴바가 static 이 되면 머리글이 그 아래 붙을 이유도 없다 — 상단바 바로 아래로 되돌린다. */
+  .page--activity .data-table th, .page--advisories .data-table th, .page--assets .data-table th,
+  .page--changes .data-table th, .page--compliance_rules .data-table th, .page--cves .data-table th,
+  .page--findings .data-table th, .page--packages .data-table th, .page--vendor .data-table th { top: var(--topbar-h); }
   .page--index .cards--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi:not(.kpi--sm) { min-height: 94px; }
   .page--host .subtabs, .page--cve .subtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
@@ -1906,7 +2213,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 }
 
 @media (max-width: 700px) {
-  .page-title { align-items: flex-start; flex-direction: column; padding: 1.15rem 1.15rem 1.25rem; border-radius: 16px; }
+  .page-title { align-items: flex-start; flex-direction: column; gap: var(--sp-2); }
   .page-title--actions .toolbar { width: 100%; }
   .page-title--actions .toolbar .btn { width: 100%; }
 }
@@ -1920,7 +2227,7 @@ form.card .btn--primary:active { transform: translateY(0); }
   .data-table, .data-table tbody, .data-table tr, .data-table td { display: block; width: 100%; }
   .data-table thead { display: none; }
   .data-table tbody { display: grid; gap: .7rem; }
-  .data-table tbody tr { padding: .75rem 1rem; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
+  .data-table tbody tr { padding: .75rem 1rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow); }
   .data-table tbody tr:hover { background: var(--surface); }
   .data-table tbody tr[class*="sev-"] { border-left-width: 3px; }
   .data-table td { display: grid; grid-template-columns: minmax(5.5rem, 34%) minmax(0, 1fr); gap: .75rem; align-items: start; padding: .48rem 0; border: 0; text-align: left !important; white-space: normal; overflow-wrap: anywhere; }
@@ -1945,7 +2252,6 @@ form.card .btn--primary:active { transform: translateY(0); }
   form.toolbar.has-filter-toggle.is-open { gap: .55rem; }
   form.toolbar.has-filter-toggle.is-open input, form.toolbar.has-filter-toggle.is-open select, form.toolbar.has-filter-toggle.is-open .btn { width: 100%; }
 
-  .page-title { gap: .75rem; padding-bottom: 1rem; }
   .page-title__actions, .page-title__actions .btn { width: 100%; }
 }
 
@@ -1953,13 +2259,11 @@ form.card .btn--primary:active { transform: translateY(0); }
   .topbar__right { gap: .35rem; }
   .seg__btn { padding: .28rem .5rem; font-size: 0; }
   .seg__btn::first-letter { font-size: .82rem; }
-  .card { padding: 1.1rem; border-radius: 16px; }
+  .card { padding: .85rem; }
   .cards--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi { min-width: 0; }
-  /* 모달 푸터는 화면 밑에 붙여 두고 노치 여백까지 감안한다 */
-  .modal__head { padding: 1rem 1.1rem; }
-  .modal__body { padding: 1rem 1.1rem 1.2rem; }
-  .modal__foot { position: sticky; bottom: -1.2rem; margin: 1.2rem -1.1rem -1.2rem; padding: .9rem 1.1rem max(.9rem, env(safe-area-inset-bottom)); background: var(--surface); }
+  /* 모달 푸터는 넓은 화면에서도 이미 sticky 다(위 .modal__foot). 여기서는 노치 여백만 더한다. */
+  .modal__foot { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
   .page--index .cards--grid .kpi:first-child { grid-column: 1/-1; }
   .kpi:not(.kpi--sm) b, .kpi:not(.kpi--sm) strong { font-size: 1.65rem; }
   .page--login form.card { padding: 2rem 1.35rem 1.6rem; }

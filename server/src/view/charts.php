@@ -144,6 +144,157 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
 }
 
 /**
+ * 가로 막대 랭킹 — "어느 자산이 / 어느 패키지가 제일 나쁜가" 를 순서로 말한다.
+ *   $items: [['label'=>'ubuntu', 'value'=>2237, 'tone'=>'high', 'href'=>'/host.php?id=2'], …]
+ *           'tone'·'href' 는 선택. 넘긴 순서를 그대로 쓰지 않고 값 내림차순으로 정렬한다
+ *           (랭킹이라는 이름값을 호출부마다 다시 지키게 하지 않는다).
+ *   $opts:  'top'(기본 8) · 'empty'(vg_empty 스펙) · 'unit'(값 뒤 단위, 기본 '')
+ *
+ * 여기만 SVG 가 아니라 HTML 이다(도넛·추이선은 SVG). 이유: SVG 는 폭에 맞춰 통째로 늘어나
+ * 좁은 카드에 들어가면 라벨 글자까지 같이 줄어 못 읽는다(실측 — 250px 카드에서 4px 글자가 됐다).
+ * 라벨이 주인공인 차트라 글자는 진짜 텍스트여야 한다: 말줄임·title·링크가 다 공짜로 따라온다.
+ * 막대 폭만 값이라 인라인 width:N% 로 준다 — .riskbar/vg_meter 와 같은 규약이고 색은 톤 클래스가 준다.
+ */
+function vg_rank_bars(array $items, array $opts = []): void {
+    $items = array_values(array_filter($items, static fn($i) => (float) ($i['value'] ?? 0) > 0));
+    if (!$items) {
+        vg_empty($opts['empty'] ?? ['icon' => '📊', 'title' => '순위를 매길 데이터가 없습니다.',
+                                    'hint'  => '수집이 한 번이라도 끝나면 여기에 상위 항목이 표시됩니다.']);
+        return;
+    }
+    usort($items, static fn($a, $b) => (float) $b['value'] <=> (float) $a['value']);
+    $top = max(1, (int) ($opts['top'] ?? 8));
+    $items = array_slice($items, 0, $top);
+    $unit = (string) ($opts['unit'] ?? '');
+
+    $max = 0.0;
+    foreach ($items as $i) { $max = max($max, (float) $i['value']); }
+
+    echo '<div class="rank">';
+    foreach ($items as $it) {
+        $v     = (float) $it['value'];
+        $tone  = (string) ($it['tone'] ?? 'info');
+        $label = (string) ($it['label'] ?? '');
+        $pct   = $max > 0 ? max(1.0, round($v / $max * 100, 2)) : 1.0;
+        $href  = (string) ($it['href'] ?? '');
+        $title = vg_h($label . ' · ' . number_format($v) . $unit);
+
+        $tag = $href !== '' ? 'a' : 'div';
+        echo '<' . $tag . ' class="rank__row"' . ($href !== '' ? ' href="' . vg_h($href) . '"' : '')
+            . ' title="' . $title . '">';
+        echo '<span class="rank__label">' . vg_h($label) . '</span>';
+        echo '<span class="rank__track"><i class="rank__bar tone-' . vg_h($tone) . '" style="width:' . $pct . '%"></i></span>';
+        echo '<b class="rank__value">' . vg_h(number_format($v) . $unit) . '</b>';
+        echo '</' . $tag . '>';
+    }
+    echo '</div>';
+}
+
+/**
+ * 가로 누적 막대 1줄 — 심각도 구성을 한 줄로 보여준다.
+ *   $counts: ['CRITICAL'=>3, 'HIGH'=>7, …] (vg_sev_donut 과 같은 입력)
+ *   $opts:   'legend'(기본 true) · 'empty'(vg_empty 스펙)
+ *
+ * SVG 로 새로 그리지 않는다 — 표 셀에서 쓰는 vg_sev_bar() 의 `.riskbar` 가 이미 같은 그림이라,
+ * 크기 변형(.riskbar--lg)과 범례만 얹어 **정의를 한 벌로 유지한다**(중복 정의를 만들지 않는다).
+ * 폭은 값이라 인라인 width:N% 로 준다(CSS 가 가질 수 없는 값 — vg_meter·vg_sev_bar 와 같은 규약).
+ */
+function vg_stacked_bar(array $counts, array $opts = []): void {
+    $total = 0;
+    foreach (VG_TONE_SEV as $sev => $tone) { $total += (int) ($counts[$sev] ?? 0); }
+    if ($total === 0) {
+        vg_empty($opts['empty'] ?? ['icon' => '📊', 'title' => '구성을 보여줄 건수가 없습니다.',
+                                    'hint'  => '해당 조건에 해당하는 취약점이 아직 없습니다.']);
+        return;
+    }
+
+    echo '<div class="riskbar riskbar--lg">';
+    foreach (VG_TONE_SEV as $sev => $tone) {
+        $n = (int) ($counts[$sev] ?? 0);
+        if ($n === 0) { continue; }
+        $pct = round($n / $total * 100, 2);
+        echo '<i class="tone-' . $tone . '" style="width:' . $pct . '%" title="'
+            . vg_h($sev . ' ' . number_format($n) . '건 (' . round($pct) . '%)') . '"></i>';
+    }
+    echo '</div>';
+
+    if ($opts['legend'] ?? true) {
+        echo '<div class="legend legend--inline">';
+        foreach (VG_TONE_SEV as $sev => $tone) {
+            $n = (int) ($counts[$sev] ?? 0);
+            if ($n === 0) { continue; }
+            echo '<div><i class="tone-' . $tone . '"></i>' . vg_h($sev)
+                . '<span class="n">' . number_format($n) . '</span></div>';
+        }
+        echo '</div>';
+    }
+}
+
+/**
+ * 반원 게이지 — "SLA 준수율 82%", "판정 가능 비율" 같은 **단일 비율 지표** 하나를 크게 세운다.
+ *   $pct: 0~100 (범위 밖은 잘라낸다) · $tone: 톤 어휘 · $label: 게이지 아래 한 줄 설명
+ *
+ * vg_meter() 와 겹치지 않는다: vg_meter 는 표 셀에서 값 옆에 붙는 6px 막대(보조 표시)고,
+ * 이건 카드 하나를 채우는 주 지표다. 크기·자리·역할이 달라 둘 다 남긴다.
+ */
+function vg_gauge(float $pct, string $tone, string $label): void {
+    $pct = max(0.0, min(100.0, $pct));
+    // 반지름 50 반원의 길이 = πr ≈ 157.08. dasharray 의 앞 값이 곧 채운 길이다.
+    $len = M_PI * 50;
+    $on  = round($len * $pct / 100, 2);
+
+    echo '<div class="gauge">';
+    echo '<svg viewBox="0 0 120 74" role="img" aria-label="' . vg_h($label . ' ' . round($pct, 1) . '%') . '">';
+    echo '<path class="gauge__track" d="M10 60 A50 50 0 0 1 110 60" fill="none" stroke-width="9" stroke-linecap="round"></path>';
+    // 0% 일 때 linecap=round 를 두면 길이 0 의 획이 **점 하나**로 찍힌다("0인데 뭔가 있다"로 읽힌다).
+    $cap = $on > 0 ? 'round' : 'butt';
+    echo '<path class="gauge__arc tone-' . vg_h($tone) . '" d="M10 60 A50 50 0 0 1 110 60" fill="none"'
+        . ' stroke-width="9" stroke-linecap="' . $cap . '" stroke-dasharray="' . $on . ' ' . round($len - $on, 2) . '"></path>';
+    echo '<text class="gauge__val" x="60" y="54">' . vg_h(number_format($pct, $pct < 10 ? 1 : 0) . '%') . '</text>';
+    echo '<text class="gauge__lbl" x="60" y="70">' . vg_h($label) . '</text>';
+    echo '</svg></div>';
+}
+
+/**
+ * 표 셀 안에 들어가는 초소형 추이선(축·라벨 없음) — "늘고 있나 줄고 있나" 하나만 말한다.
+ *   $values: 오래된→최신 순 숫자 배열. 마지막 점만 톤 색 점으로 찍는다.
+ *
+ * 다른 차트와 달리 **문자열을 돌려준다** — 쓰이는 자리가 vg_table() 의 셀 콜백이고, 그 콜백은
+ * 이스케이프된 HTML 문자열을 반환하는 규약이기 때문이다(vg_meter·vg_sev_bar 와 같은 형태).
+ * 값이 모자라면 카드 크기의 빈 상태(vg_empty)를 셀에 밀어 넣을 수 없으므로 '–' 한 글자로 빠진다.
+ */
+function vg_sparkline(array $values, string $tone = 'info'): string {
+    $vals = [];
+    foreach ($values as $v) {
+        if ($v === null || $v === '') { continue; }
+        $vals[] = (float) $v;
+    }
+    if (count($vals) < 2) { return '<span class="why">–</span>'; }
+
+    $W = 100.0; $H = 24.0; $pad = 3.0;
+    $min = min($vals); $max = max($vals);
+    $span = $max - $min;
+    $n = count($vals);
+
+    $pts = [];
+    foreach ($vals as $i => $v) {
+        $x = $pad + ($W - 2 * $pad) * $i / ($n - 1);
+        // 전 구간이 같은 값이면(변화 없음) 가운데 높이로 눕힌다 — 0으로 나누지 않는다.
+        $y = $span > 0 ? $pad + ($H - 2 * $pad) * (1 - ($v - $min) / $span) : $H / 2;
+        $pts[] = round($x, 1) . ',' . round($y, 1);
+    }
+    [$lastX, $lastY] = explode(',', $pts[$n - 1]);
+
+    $title = number_format($vals[0]) . ' → ' . number_format($vals[$n - 1]) . ' (' . $n . '회차)';
+    return '<span class="spark">'
+        . '<svg viewBox="0 0 ' . $W . ' ' . $H . '" preserveAspectRatio="none" role="img" aria-label="' . vg_h($title) . '">'
+        . '<title>' . vg_h($title) . '</title>'
+        . '<polyline class="spark__line tone-' . vg_h($tone) . '" points="' . implode(' ', $pts) . '"></polyline>'
+        . '<circle class="spark__dot tone-' . vg_h($tone) . '" cx="' . $lastX . '" cy="' . $lastY . '" r="2"></circle>'
+        . '</svg></span>';
+}
+
+/**
  * 보기 좋은 눈금 최댓값. raw 이상인 값 중 1/2/5/10 의 10^n 배수 가운데 가장 작은 것을 고른다
  * (예: 7→10, 23→50, 140→200). 0 이하면 최소 축(4)을 준다 — 변화가 전혀 없어도 축이 찌그러지지 않게.
  */
