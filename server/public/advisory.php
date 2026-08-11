@@ -246,9 +246,13 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
     vg_table(
         [
             ['label' => '호스트'],
-            ['label' => '위치', 'width' => '9rem'],
+            // 같은 이유로 nowrap — cve.php '발견 위치' 표의 같은 열과 규칙을 맞춘다.
+            ['label' => '위치', 'width' => '9rem', 'nowrap' => true],
             ['label' => 'CVE', 'nowrap' => true],
-            ['label' => '패키지'],
+            // key 를 준다 — 콜백도 key 도 없던 탓에 **패키지 칸이 통째로 빈칸으로 나왔다**
+            //   (vg_table 은 둘 다 없으면 빈 문자열을 그린다). 값이 사라진 자리라 링크·서식보다
+            //   먼저 값부터 되살린다.
+            ['label' => '패키지', 'key' => 'package_name'],
             ['label' => '설치 버전'],
             ['label' => '등급', 'width' => '6rem'],
             ['label' => '상태', 'width' => '7rem'],

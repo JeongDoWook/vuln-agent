@@ -134,7 +134,10 @@ vg_header('보안 공지', 'advisories');
   <?php
   vg_table(
       [
-          ['label' => '발행일', 'nowrap' => true, 'width' => '9%'],
+          // 날짜는 길이가 고정(YYYY-MM-DD)이라 % 가 아니라 rem 으로 준다 — 9% 는 첫 칸의 넉넉한
+          //   왼쪽 여백(1.4rem)까지 빼고 나면 61px 밖에 안 남아 '2026-08…' 로 잘렸다(실측 69px 필요).
+          //   cves.php 의 '공개일' 열이 같은 이유로 rem 을 쓴다.
+          ['label' => '발행일', 'nowrap' => true, 'width' => '7rem'],
           ['label' => '제목'],
           ['label' => '관련 CVE', 'width' => '30%'],
           ['label' => '영향 자산', 'nowrap' => true, 'width' => '10%'],
@@ -184,7 +187,9 @@ vg_header('보안 공지', 'advisories');
                   $aid = (int) $r['advisory_id'];
                   $a = $assetsByAdvisory[$aid] ?? ['hostCount' => 0, 'rows' => [], 'total' => 0];
                   if ($a['hostCount'] <= 0) {
-                      return '<span class="badge tone-muted">해당 자산 없음</span>';
+                      // '해당 자산 없음'(6글자 뱃지)은 10% 칸에 안 들어가 nowrap 말줄임에 잘렸다 —
+                      //   뱃지는 잘리면 어휘가 깨져서 못 읽는다. 짧게 쓰고 뜻은 title 로 남긴다.
+                      return vg_badge('없음', 'muted', '이 공지의 CVE 와 매칭되는 자산이 최신 스캔 기준으로 없습니다');
                   }
                   $payload = [
                       'title' => $r['title'],

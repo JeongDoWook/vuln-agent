@@ -409,7 +409,9 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
                 0 => function ($r) {
                     $d = VG_CVE_VENDOR_SRC[$r['src']] ?? null;
                     $label = $d !== null ? $d['label'] : (string) $r['src'];
-                    return '<span class="pill">' . vg_h($label) . '</span>';
+                    // 알약(.pill)은 파란 배경 + 강조색 글자라 링크로 보인다 — 이 값들은 링크가
+                    //   아니므로 중립 뱃지로 낮춘다(이 파일의 다른 세 자리도 같은 이유로 바꿨다).
+                    return vg_badge($label, 'muted');
                 },
                 1 => fn($r) => vg_h((string) $r['vendor']) . '<span class="why">/</span>' . vg_h((string) $r['rel']),
                 2 => fn($r) => '<a href="/packages.php?q=' . urlencode((string) $r['pkg']) . '">'
@@ -429,7 +431,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
                         if ($checkedAt !== '') { $tipParts[] = '확인일 ' . substr($checkedAt, 0, 10); }
                     }
                     if (!empty($r['fixed'])) {
-                        $body = '<span class="pill">' . vg_h((string) $r['fixed']) . ' 이상</span>';
+                        $body = vg_badge((string) $r['fixed'] . ' 이상', 'muted');
                     } else {
                         $state = trim((string) ($r['state'] ?? ''));
                         $body = $state !== ''
@@ -490,7 +492,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
                          . vg_h($name) . '</a>';
                 },
                 2 => fn($a) => !empty($a['fixed_version'])
-                    ? '<span class="pill">' . vg_h($a['fixed_version']) . ' 이상</span>'
+                    ? vg_badge((string) $a['fixed_version'] . ' 이상', 'muted')
                     : '<span class="why">수정 버전 미공개</span>',
             ],
         ]
@@ -510,7 +512,10 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
     vg_table(
         [
             ['label' => '호스트'],
-            ['label' => '위치'],
+            // nowrap 이 없으면 '호스트' 석 자가 '호스'/'트' 로 접힌다 — 이 표는 폭이 고정된
+            //   목록 표와 달리 auto 레이아웃이라, 옆의 긴 열들이 폭을 가져가면 이 칸이 두 글자까지
+            //   눌린다(실측 1440px). 세 글자짜리 값이 두 줄이 되면 행 높이만 늘고 읽히지도 않는다.
+            ['label' => '위치', 'nowrap' => true],
             ['label' => '등급', 'key' => 'severity', 'width' => '6rem'],
             ['label' => '상태', 'key' => 'runtime_status', 'width' => '7rem'],
             ['label' => '패키지', 'key' => 'package_name'],
@@ -540,18 +545,26 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
                         $action = vg_is_kernel_code_pkg((string) ($l['package_name'] ?? ''))
                             ? '재부팅'
                             : (!empty($l['ctr']) ? '컨테이너 재시작' : '프로세스 재시작');
-                        return '<span class="pill">' . $action . '</span>'
+                        // 이건 "해야 할 일" 이라 중립이 아니라 주의 톤을 준다 — 그래도 링크는 아니다.
+                        return vg_badge($action, 'warn')
                             . '<div class="why">패키지는 수정됨 · 현재 <code>' . vg_h($installed) . '</code></div>';
                     }
                     if (!empty($l['no_fix'])) {
                         return '<span class="why">수정본 미공개</span>'
                             . '<div class="why">완화·격리·제거 검토 · 현재 <code>' . vg_h($installed) . '</code></div>';
                     }
-                    return vg_fix_cell(
-                        $l['fixed_version'] ?? null,
-                        $cve['ref_urls_json'] ?? null,
-                        $installed
-                    );
+                    // 고친 버전이 있으면 여기서 그린다 — vg_fix_cell 은 그 경우에만 알약(.pill)을
+                    //   쓰는데, 링크가 아닌 값이 파랗게 뜬다. 대신 조치 버전을 중립 뱃지로 두고
+                    //   현재 버전을 아랫줄에 붙여 이 칸의 다른 두 갈래(재시작·미공개)와 모양을 맞춘다.
+                    //   나머지 갈래(참조 링크·평문)는 알약을 만들지 않으므로 공용 헬퍼에 그대로 맡긴다.
+                    $fixedVer = (string) ($l['fixed_version'] ?? '');
+                    if ($fixedVer !== '') {
+                        // '설치 → 고침' 한 줄은 이 칸의 계약이다(tests/smoke.sh 가 이 문자열을
+                        //   그대로 확인한다) — 문구는 그대로 두고 톤만 낮춘다.
+                        $plain = ($installed !== '' ? $installed . ' → ' : '') . $fixedVer . ' 이상';
+                        return vg_badge($plain, 'muted', $plain);
+                    }
+                    return vg_fix_cell(null, $cve['ref_urls_json'] ?? null, $installed);
                 },
                 6 => fn($l) => '<span class="why">' . vg_h($l['collected_at']) . '</span>',
             ],
