@@ -158,7 +158,7 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
      *   필터링하면 그 의도와 충돌한다.
      */
     $sel = "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
-                   f.needs_restart, f.container_id, c.epss, c.epss_percentile, c.ref_urls_json,
+                   f.needs_restart, f.container_id, f.in_kev, c.epss, c.epss_percentile, c.ref_urls_json,
                " . VG_FIXED_VERSION_SUBQ . "
               FROM tb_finding f LEFT JOIN tb_cve c ON c.cve_id = f.cve_id";
 
@@ -195,6 +195,43 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
     $restartRows = $st->fetchAll();
 
     return ['total' => $total, 'rows' => $rows, 'restartRows' => $restartRows];
+}
+
+/**
+ * 같은 패키지에서 나온 CRITICAL·HIGH 묶음 — "이 하나를 올리면 N건 해결".
+ *
+ *   왜 필요한가: 표를 행 단위로만 보면 libc6 하나가 만든 CVE 5건이 "서로 다른 다섯 문제"처럼
+ *   보인다. 근거 문장까지 사실상 같아서 화면이 반복으로 채워진다. 손댈 대상 기준으로 먼저
+ *   묶어 두면 "무엇부터 올리나"에 한 줄로 답한다.
+ *   의존성 부모별 묶음(vg_pkgdep_scan_rollup)과 같은 질문에 답하지만 대상이 다르다 —
+ *   저쪽은 **전이 의존성이 있는 자산**(언어 패키지), 이쪽은 **모든 자산**의 OS 패키지다.
+ *
+ *   집계는 스캔 전체 기준이라 페이지·검색을 넘겨도 값이 변하지 않는다.
+ *   2건 이상 묶이는 것만 남긴다(1건짜리는 묶음이 아니라 그냥 그 행이다).
+ */
+function vg_host_load_pkg_rollup(PDO $pdo, int $sid, int $limit): array {
+    // FIELD() 는 CRITICAL=1, HIGH=2 — MIN 이 그 묶음의 최고 등급이다.
+    //   상한+1 을 읽어 "더 있다"를 알 수 있게 한다 — 조용히 자르면 이게 전부처럼 보인다.
+    $st = $pdo->prepare(
+        "SELECT package_name, installed_version, COUNT(*) AS cnt,
+                MIN(FIELD(severity,'CRITICAL','HIGH')) AS sev_rank,
+                MAX(in_kev) AS kev, MAX(needs_restart) AS needs_restart
+           FROM tb_finding
+          WHERE scan_id = ? AND severity IN ('CRITICAL','HIGH')
+          GROUP BY package_name, installed_version
+         HAVING cnt > 1
+          ORDER BY cnt DESC, sev_rank, package_name
+          LIMIT " . ($limit + 1)
+    );
+    $st->execute([$sid]);
+    $rows = $st->fetchAll();
+    $truncated = count($rows) > $limit;
+    if ($truncated) { $rows = array_slice($rows, 0, $limit); }
+    foreach ($rows as &$r) {
+        $r['severity'] = ((int) $r['sev_rank']) === 1 ? 'CRITICAL' : 'HIGH';
+    }
+    unset($r);
+    return ['rows' => $rows, 'truncated' => $truncated];
 }
 
 /** 취약점 행 → 의존성 판정 캐시의 키. 형식의 정본은 packagedep.php 다(집계도 같은 키를 쓴다). */
@@ -763,7 +800,18 @@ function vg_host_load_scans_tab(PDO $pdo, int $hostId, int $scanTotal, int $perP
 $counts =['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $processCount = 0; $runtimeTotal = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
 $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
-$tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
+// 위험 요약(히어로 바로 아래) — 심각도 분포와 같은 한 번의 집계에서 함께 나온다.
+$kevCount = 0; $externalFindings = 0;
+// 같은 패키지에서 나온 취약점 묶음 — "이 하나를 올리면 N건". vuln 탭에서만 채운다.
+$pkgRollup = ['rows' => [], 'truncated' => false];
+// 상세 화면의 기본 페이지 크기는 목록 화면보다 크다(설정: UI_DETAIL_PER_PAGE_DEFAULT).
+//   127건을 10개씩 13페이지로 넘기게 하면 "이 자산이 얼마나 위험한가"를 셀 수가 없다.
+$tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(vg_ui_detail_per_page_default()); $total = 0; $exposureTotal = 0;
+/* 이 화면이 고른 크기를 요청 컨텍스트에도 반영한다. "N개씩 보기" 셀렉트(vg_perpage_select)와
+ *   툴바는 공용 컴포넌트라 **쿼리스트링만 보고** 현재 크기를 판단한다 — 그대로 두면 40개를
+ *   보여주면서 셀렉트는 "10개씩 보기" 가 선택된 채로 뜬다(사용자에겐 화면이 거짓말을 한다).
+ *   사용자가 고른 값이 있으면 건드리지 않는다. */
+if (!isset($_GET['per_page'])) { $_GET['per_page'] = (string) $perPage; }
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
 $accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0; $containerTotal = 0;
 // 전이 의존성 판정 + 손댈 대상(부모)별 묶음. 엣지가 없는 자산에선 이 기본값 그대로다.
@@ -869,9 +917,17 @@ try {
         }
 
         // --- 히어로/KPI 집계 (탭과 무관한 값싼 COUNT) ---
-        $st = $pdo->prepare('SELECT severity, COUNT(*) c FROM tb_finding WHERE scan_id = ? GROUP BY severity');
+        //   KEV(알려진 악용)·외부노출 건수는 심각도 분포와 같은 성격의 "위험 요약" 이라
+        //   쿼리를 늘리지 않고 같은 GROUP BY 에 집계를 얹어 가져온다.
+        $st = $pdo->prepare("SELECT severity, COUNT(*) c,
+                                    SUM(in_kev = 1) kev, SUM(runtime_status = 'EXTERNAL') ext
+                               FROM tb_finding WHERE scan_id = ? GROUP BY severity");
         $st->execute([$sid]);
-        foreach ($st->fetchAll() as $r) { if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; } }
+        foreach ($st->fetchAll() as $r) {
+            if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; }
+            $kevCount += (int) $r['kev'];
+            $externalFindings += (int) $r['ext'];
+        }
 
         $st = $pdo->prepare('SELECT COUNT(*) FROM tb_exposure WHERE scan_id = ?');
         $st->execute([$sid]); $exposureCount = (int) $st->fetchColumn();
@@ -921,6 +977,8 @@ try {
         $validTabs = ['vuln', 'packages', 'containers', 'runtime', 'cce', 'accounts'];
         if ($suppressedCount > 0) { $validTabs[] = 'suppressed'; }
         $validTabs[] = 'scans';
+        // 설정 탭(수집 제어·자산 등급·자산 삭제) — 조회할 목록이 없어 아래 데이터 로딩에 분기가 없다.
+        $validTabs[] = 'manage';
         $tab = (string) ($_GET['tab'] ?? 'vuln');
         if (!in_array($tab, $validTabs, true)) { $tab = 'vuln'; }
 
@@ -939,6 +997,11 @@ try {
             if ($depEdgeTotal > 0) {
                 $depOrigins = vg_pkgdep_scan_rollup($pdo, $sid);
             }
+            // 위 묶음은 **의존성 엣지가 있는 자산에만** 나온다(언어 패키지). dpkg/rpm 만 있는
+            //   자산에서도 "같은 패키지의 서로 다른 CVE" 는 행마다 같은 근거로 반복된다 —
+            //   같은 질문("무엇부터 올리나")에 같은 형태로 답한다.
+            $pkgRollup = vg_host_load_pkg_rollup($pdo, $sid, vg_ui_detail_preview_limit());
+
         } elseif ($tab === 'packages') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_packages_tab($pdo, $sid, $perPage, $offset, $q);
@@ -967,10 +1030,11 @@ try {
         } elseif ($tab === 'suppressed') {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_suppressed_tab($pdo, $sid, $suppressedCount, $perPage, $offset, $q);
-        } else { // scans — 회차 표 + 같은 회차들의 리소스 추이
+        } elseif ($tab === 'scans') { // 회차 표 + 같은 회차들의 리소스 추이
             ['total' => $total, 'rows' => $rows, 'sevByScan' => $sevByScan, 'resourceScans' => $resourceScans]
                 = vg_host_load_scans_tab($pdo, $hostId, $scanTotal, $perPage, $offset);
         }
+        // 'manage' 탭은 이미 읽은 호스트 정보(등급·명령 큐)만 쓰므로 여기서 조회할 것이 없다.
     }
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) { $pdo->rollBack(); }
@@ -1030,6 +1094,10 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     if ($suppressedCount > 0) { $tabDefs['suppressed'] = ['label' => '억제', 'n' => $suppressedCount]; }
     // 스캔 이력 = 회차 표 + 그 회차들의 에이전트 리소스 추이(예전 '리소스' 탭을 흡수).
     $tabDefs['scans'] = ['label' => '스캔 이력', 'n' => $scanTotal];
+    /* 자산 설정 = 수집 제어 + 자산 등급 + 자산 삭제. 위험을 읽는 탭들 뒤에 둔다.
+     *   등급 카드·삭제 카드는 예전엔 **모든 탭 아래**에 매번 붙어 있었다 — 취약점을 보러 온
+     *   사람이 탭을 옮길 때마다 열 칸짜리 등급 확정 폼을 지나쳐야 했다. 한 곳으로 모은다. */
+    $tabDefs['manage'] = ['label' => '자산 설정', 'n' => null];
 ?>
   <?php
   $meta = [
@@ -1050,12 +1118,18 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           . number_format($depEdgeTotal) . '엣지</a>';
   }
   if (!empty($host['last_seen_ip'])) { $meta[] = 'IP ' . vg_h($host['last_seen_ip']); }
+  /* 자산 등급은 설정 탭으로 내려갔지만 "이 자산이 무엇인가"의 일부라 식별부에 남긴다 —
+   *   옮기는 것이지 지우는 것이 아니다. 미확정이면 확정하러 갈 자리를 링크로 준다. */
+  $meta[] = ($host['grade'] ?? '') !== ''
+      ? '등급 ' . vg_asset_grade_badge((string) $host['grade'], false, (string) ($host['grade_reason'] ?? ''))
+      : '<a href="' . vg_h(vg_qs(['tab' => 'manage', 'page' => null, 'q' => null])) . '">등급 미확정</a>';
   $meta[] = '<a href="/">대시보드</a>';
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
   vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', '');
-  if (vg_can('assets')) {
-      vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr);
-  }
+  /* 수집 제어(즉시 실행·예약·주기·속도 티어)는 '자산 설정' 탭으로 내려갔다.
+   *   자산 상세를 여는 이유는 "이 서버가 얼마나 위험한가"이지 "수집 주기가 몇 분인가"가 아니다 —
+   *   첫 화면을 설정 폼이 통째로 차지하면 위험 요약과 취약점 목록이 스크롤 아래로 밀린다.
+   *   기능은 그대로 살아 있다(같은 폼·같은 action·같은 엔드포인트). */
 
   // CVE 피드가 지원하지 않는 배포판이면 매칭 후보가 아예 없어 **취약점이 0건으로 뜬다.**
   //   운영자는 "안전하다"고 읽는다 — 침묵하는 미탐이라 반드시 화면에 알린다.
@@ -1099,7 +1173,19 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
       <div class="kpi kpi--sm tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
     <?php endforeach; ?>
-    <div class="kpi kpi--sm"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
+    <?php /* 심각도 분포만으로는 "지금 당장 무엇이 무서운가"를 못 읽는다 — 실제로 악용되고 있고
+             (KEV) 밖에서 닿는(EXTERNAL) 건수를 같은 줄에 세운다. 둘 다 위 GROUP BY 한 번에서 나온다. */ ?>
+    <div class="kpi kpi--sm tone-<?= $kevCount > 0 ? 'crit' : 'muted' ?>"
+         title="KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)">
+      <b><?= number_format($kevCount) ?></b><span>KEV 악용확인</span>
+    </div>
+    <a class="kpi kpi--sm tone-<?= $externalFindings > 0 ? 'crit' : 'ok' ?>"
+       href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>&amp;st=EXTERNAL">
+      <b><?= number_format($externalFindings) ?></b><span>외부노출 취약점</span>
+    </a>
+    <a class="kpi kpi--sm" href="<?= vg_h(vg_qs(['tab' => 'runtime', 'page' => null, 'q' => null])) ?>">
+      <b><?= number_format($exposureCount) ?></b><span>노출 소켓</span>
+    </a>
     <a class="kpi kpi--sm tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>" href="<?= vg_h(vg_qs(['tab' => 'cce', 'page' => null])) ?>">
       <b><?= (int) $cceFail ?></b><span>설정 취약</span>
     </a>
@@ -1109,40 +1195,70 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
 
   <?php if ($tab === 'vuln'):
     // 두 표(CRITICAL·HIGH / 재시작·재부팅)는 열 구성이 같다 — 스펙을 한 번만 만들어 나눠 쓴다.
+    /* 열 구성의 기준: 식별자는 절대 접지 않고(CVE-2023-6780 이 세 줄로 쪼개지던 자리),
+     *   문장은 접되 뜻이 끊기지 않게 한다.
+     *   - '등급'·'상태' 를 한 칸에 겹쳤다 — 둘 다 뱃지 하나짜리라 열을 따로 세울 값이 아니었고,
+     *     열이 하나 줄어야 '근거' 가 문장으로 읽히는 폭을 갖는다. KEV 도 여기 붙는다.
+     *   - 'width' 는 %로 준다. rem 으로 주면 나머지 한 칸(근거)이 "남은 자리"만 받아
+     *     실측 1568px 에서 90px 까지 눌렸다 — 문장이 두 글자에서 끊긴다. 비율로 나누면
+     *     화면이 좁아져도 근거가 문장 폭을 유지한다.
+     *   - 근거는 **자르지 않고 접는다**(줄바꿈). vg_trunc(.trunc = 한 줄 nowrap · 최대 46vw)를
+     *     쓰면 그 칸이 46vw 를 요구해 표가 가로로 넘치고, 밀려난 CVE 열이 하이픈마다 접혔다.
+     *     .clamp-2 도 안 쓴다 — overflow:hidden 이라 이 칸의 최소폭이 0 이 되어(auto 레이아웃에서
+     *     항상 지는 칸이 된다) 실측 90px 까지 눌려 두 글자에서 끊겼다. 그냥 접히게 두면
+     *     max-content 가 가장 커서 남는 폭을 이 칸이 가장 많이 받는다 — 행은 높아지고 문장은 산다.
+     *     (전체 문장은 행을 눌러 여는 상세 모달에도 그대로 있다.) */
     $vulnHeaders = [
-        ['label' => '등급', 'key' => 'severity'],
-        ['label' => '상태', 'key' => 'runtime_status'],
-        ['label' => 'CVE'],
-        ['label' => 'EPSS', 'align' => 'right'],   // 확률(%) — advisory·package·cves 화면과 같은 정렬
-        ['label' => '패키지'],
-        ['label' => '근거'],
-        ['label' => '조치'],
-        ['label' => '이력'],
+        ['label' => '등급·상태', 'key' => 'severity', 'width' => '11%'],
+        ['label' => 'CVE', 'nowrap' => true, 'width' => '12%'],
+        ['label' => 'EPSS', 'align' => 'right', 'nowrap' => true, 'width' => '9%'],   // 확률(%) — advisory·package·cves 화면과 같은 정렬
+        ['label' => '패키지', 'width' => '14%'],
+        ['label' => '근거', 'width' => '34%'],
+        ['label' => '조치', 'width' => '20%'],
     ];
     $vulnCells = [
-        'severity'       => fn($f) => vg_sev_badge((string) $f['severity']),
-        'runtime_status' => fn($f) => vg_status_badge($f['runtime_status']),
-        2 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>',
-        3 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
-        // 커널은 재부팅해야 새 코드가 올라온다 — 프로세스 재시작으로는 안 고쳐진다.
-        4 => fn($f) => vg_h($f['package_name']) . ' <span class="why">' . vg_h($f['installed_version']) . '</span>'
+        // 등급·노출상태·KEV — 이 행이 얼마나 급한지를 한 칸에서 읽는다.
+        'severity' => fn($f) => vg_sev_badge((string) $f['severity'])
+                       . ' ' . vg_status_badge($f['runtime_status'])
+                       . (!empty($f['in_kev']) ? ' ' . vg_badge('KEV', 'crit', '실제 악용이 확인된 취약점') : ''),
+        // 이력은 열을 따로 세우지 않는다 — 뱃지 하나짜리 열이 근거 문장에서 폭을 가져갔다.
+        //   같은 CVE 를 가리키는 링크라 식별자 아래가 제자리다.
+        1 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>'
+                       . '<div><a class="pill" href="'
+                       . vg_h(vg_finding_history_url($hostId, (int) $f['container_id'], (string) $f['cve_id'], (string) $f['package_name']))
+                       . '" title="스캔별 이력 보기">🕘 이력</a></div>',
+        2 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
+        // 패키지명과 버전은 한 줄로 눕힌다(예전엔 'libc6 2.39-' / '0ubuntu8.8' 로 접혔다).
+        //   커널은 재부팅해야 새 코드가 올라온다 — 프로세스 재시작으로는 안 고쳐진다.
+        3 => fn($f) => '<strong>' . vg_h($f['package_name']) . '</strong> <code>' . vg_h($f['installed_version']) . '</code>'
                        . (!empty($f['needs_restart'])
                           ? ' ' . vg_badge(vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅 필요' : '재시작 필요', 'high')
                           : ''),
-        5 => fn($f) => '<span class="why">' . vg_trunc($f['rationale']) . '</span>',
+        4 => fn($f) => '<span class="why">' . vg_h((string) ($f['rationale'] ?? '')) . '</span>',
         // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
         //   전이 의존성이면 "이 버전으로 올려라"도 틀린다 — 부모가 끌어오는 것이라 혼자 못 바꾼다.
-        6 => function ($f) use ($depOrigins, $hostId) {
+        5 => function ($f) use ($depOrigins, $hostId) {
             if (!empty($f['needs_restart'])) {
                 return '<span class="pill">' . (vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅' : '프로세스 재시작') . '</span>';
             }
             $o = $depOrigins['origins'][vg_host_dep_key($f)] ?? null;
             if ($o !== null) { return vg_host_dep_origin_cell($o, $hostId); }
-            return vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null, $f['installed_version'] ?? null);
+            /* 버전 조치는 이 화면에서만 평문으로 눕힌다. vg_fix_cell 의 .pill 은 nowrap 이고
+             *   (app.css 소유 — 목록 화면들은 거기서 white-space:normal 로 풀어 준다)
+             *   이 표는 table-layout:auto 라, 접히지 않는 한 칸이 "0:2.34-60.el9_2.3 →
+             *   0:2.28-225.0.4.el8_8.6 이상" 만으로 표 폭의 38%(실측 466px)를 가져가
+             *   근거 문장이 100px 로 눌렸다. 조치 문구가 접히면 그 폭이 근거로 돌아온다.
+             *   조치버전이 없는 경우(참조 링크·평문)는 짧으므로 공용 헬퍼를 그대로 쓴다. */
+            $fixed = (string) ($f['fixed_version'] ?? '');
+            if ($fixed !== '') {
+                // 목표 버전이 먼저다(그게 조치다). 현재 버전은 아랫줄 — 두 버전을 한 줄에 이으면
+                //   그 줄 하나가 이 열의 폭을 결정한다(같은 이유로 위 근거가 눌렸다).
+                $installed = (string) ($f['installed_version'] ?? '');
+                return '<strong>→ ' . vg_h($fixed) . ' 이상</strong>'
+                    . ($installed !== '' ? '<div class="why">현재 ' . vg_h($installed) . '</div>' : '');
+            }
+            return vg_fix_cell(null, $f['ref_urls_json'] ?? null, $f['installed_version'] ?? null);
         },
-        7 => fn($f) => '<a class="pill" href="'
-                       . vg_h(vg_finding_history_url($hostId, (int) $f['container_id'], (string) $f['cve_id'], (string) $f['package_name']))
-                       . '" title="스캔별 이력 보기">🕘 이력</a>',
     ];
     $findingRowAttrs = function (array $f) use ($hostId, $depOrigins): array {
         $epss = ($f['epss'] ?? null) === null ? '–' : number_format((float) $f['epss'] * 100, 1) . '%';
@@ -1248,6 +1364,53 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       </span>
       <div class="card__body">
       <?php vg_table($rollupHeaders, $rollupTop, $rollupOpts); ?>
+      </div>
+    </div>
+    <?php endif; ?>
+    <?php
+    /* ── 같은 패키지에서 나온 묶음 ────────────────────────────────────────────
+     *   위 "먼저 올릴 대상" 은 전이 의존성이 있는 자산에만 나온다. dpkg/rpm 만 있는 자산에서는
+     *   libc6 하나가 만든 CVE 다섯 건이 근거까지 사실상 같은 다섯 행으로 화면을 채운다 —
+     *   같은 질문("무엇부터 올리나")에 같은 형태로 답한다.
+     *   묶임이 없으면(전부 1건씩) 이 카드는 아예 그리지 않는다 — 빈 요약은 잡음이다. */
+    if ($pkgRollup['rows']):
+        $pkgRollupHeaders = [
+            ['label' => '먼저 올릴 패키지'],
+            ['label' => '최고 등급', 'key' => 'severity', 'nowrap' => true, 'width' => '8rem'],
+            ['label' => '해결 건수', 'align' => 'right', 'nowrap' => true, 'width' => '7rem'],
+            ['label' => '비고'],
+        ];
+        $pkgRollupOpts = [
+            'card'      => false,
+            'row_class' => fn($p) => vg_sev_row((string) $p['severity']),
+            'cell'      => [
+                0 => fn($p) => '<strong>' . vg_h((string) $p['package_name']) . '</strong> '
+                    . '<code>' . vg_h((string) $p['installed_version']) . '</code> '
+                    . '<a class="pill" href="' . vg_h(vg_qs(['q' => (string) $p['package_name'], 'page' => null]))
+                    . '">이 패키지만 보기</a>',
+                'severity' => fn($p) => vg_sev_badge((string) $p['severity']),
+                2 => fn($p) => '<strong>' . number_format((int) $p['cnt']) . '</strong>건',
+                3 => function ($p) {
+                    $b = [];
+                    if (!empty($p['kev'])) { $b[] = vg_badge('KEV 포함', 'crit', '실제 악용이 확인된 취약점이 섞여 있습니다.'); }
+                    if (!empty($p['needs_restart'])) {
+                        $b[] = vg_badge(vg_is_kernel_code_pkg((string) $p['package_name']) ? '재부팅 필요 포함' : '재시작 필요 포함', 'high');
+                    }
+                    return $b ? implode(' ', $b) : '<span class="why">–</span>';
+                },
+            ],
+        ];
+    ?>
+    <div class="card">
+      <strong>같은 패키지에서 나온 취약점 <span class="hint">(<?= count($pkgRollup['rows']) ?>개 패키지)</span></strong>
+      <span class="why">— 이 패키지 하나를 올리면 그 아래 CRITICAL·HIGH 가 함께 해결됩니다.
+        스캔 전체 기준이라 페이지를 넘겨도 값이 변하지 않습니다. 2건 이상 묶인 것만 셉니다.
+        <?php if ($pkgRollup['truncated']): ?>
+          · 묶음이 더 있습니다 — 많이 묶인 순으로 <?= count($pkgRollup['rows']) ?>개만 보여줍니다.
+        <?php endif; ?>
+      </span>
+      <div class="card__body">
+      <?php vg_table($pkgRollupHeaders, $pkgRollup['rows'], $pkgRollupOpts); ?>
       </div>
     </div>
     <?php endif; ?>
@@ -1880,7 +2043,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
 
-  <?php else: /* scans — 회차 표 + 같은 회차들의 에이전트 리소스 추이 */ ?>
+  <?php elseif ($tab === 'scans'): /* 회차 표 + 같은 회차들의 에이전트 리소스 추이 */ ?>
     <div class="card">
       <strong>스캔 이력</strong> <span class="why">— 회차를 눌러 그 시점의 취약점을 본다</span>
       <div class="card__body">
@@ -1954,24 +2117,32 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       <?php vg_resource_trend($resourceScans, 'cpu_pct', '%', 1, 'cpu'); ?>
       </div>
     </div>
-  <?php endif; ?>
 
-  <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
-  <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
+  <?php else: /* manage — 이 자산의 설정: 수집 제어 · 등급 · 삭제 */ ?>
+    <?php if (vg_can('assets')): ?>
+      <?php /* 처리 결과(등급 확정 포함)는 이 카드 안에서 한 번만 알린다 — 두 군데서 그리면 중복된다. */ ?>
+      <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
+    <?php else: ?>
+      <?php /* 수집 제어 카드가 없는 역할(등급만 확정하는 관리자)도 처리 결과는 봐야 한다. */ ?>
+      <?php vg_alert($agentMsg, 'ok'); vg_alert($agentErr); ?>
+    <?php endif; ?>
+    <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
+    <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
 
-  <?php if (vg_has_role('admin', 'operator')): ?>
-    <div class="card mt-lg">
-      <strong>자산 관리</strong>
-      <span class="why"> · 목록·집계에서만 제외합니다(수집 이력 보존)</span>
-      <div class="card__body">
-        <form method="post" class="actions" data-confirm="<?= vg_h((string)$host['fqdn']) ?> 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.">
-          <input type="hidden" name="csrf" value="<?= vg_h($agentCsrf) ?>">
-          <input type="hidden" name="action" value="host_delete">
-          <input type="hidden" name="id" value="<?= (int)$host['host_id'] ?>">
-          <button type="submit" class="btn btn--sm btn--danger">자산 삭제</button>
-        </form>
+    <?php if (vg_has_role('admin', 'operator')): ?>
+      <div class="card mt-lg">
+        <strong>자산 관리</strong>
+        <span class="why"> · 목록·집계에서만 제외합니다(수집 이력 보존)</span>
+        <div class="card__body">
+          <form method="post" class="actions" data-confirm="<?= vg_h((string)$host['fqdn']) ?> 자산을 삭제할까요? 수집 이력은 남고 목록·집계에서만 제외됩니다.">
+            <input type="hidden" name="csrf" value="<?= vg_h($agentCsrf) ?>">
+            <input type="hidden" name="action" value="host_delete">
+            <input type="hidden" name="id" value="<?= (int)$host['host_id'] ?>">
+            <button type="submit" class="btn btn--sm btn--danger">자산 삭제</button>
+          </form>
+        </div>
       </div>
-    </div>
+    <?php endif; ?>
   <?php endif; ?>
 <?php endif; ?>
 <?php vg_footer();

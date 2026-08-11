@@ -595,8 +595,16 @@ langtabbody=$(curl_ -s -b "$JAR" "$BASE/packages.php?tab=lang")
 assert_contains "$langtabbody" "언어 패키지" "언어 탭 응답에 언어 패키지·라이선스 문구 포함"
 badtabbody=$(curl_ -s -b "$JAR" "$BASE/packages.php?tab=zzz")
 assert_contains "$badtabbody" 'class="on" href="?tab=os">OS 패키지' "잘못된 tab 값은 OS 탭으로 안전하게 폴백"
-hostmanage=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
-assert_contains "$hostmanage" 'name="action" value="host_delete"' "자산 상세에 관리자 삭제 작업 표시"
+# 설정류(수집 제어·자산 등급·자산 삭제)는 '자산 설정' 탭(?tab=manage)으로 내려갔다 —
+#   자산 상세의 첫 화면은 "이 서버가 얼마나 위험한가" 여야 한다. 기능은 그대로 살아 있다.
+hostmanage=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=manage")
+assert_contains "$hostmanage" 'name="action" value="host_delete"' "자산 설정 탭에 관리자 삭제 작업 표시"
+assert_contains "$hostmanage" 'name="action" value="agent_run_now"' "자산 설정 탭에 수집 즉시 실행 유지"
+assert_contains "$hostmanage" 'name="action" value="agent_set_schedule"' "자산 설정 탭에 수집 주기 변경 유지"
+assert_contains "$hostmanage" 'name="action" value="host_set_grade"' "자산 설정 탭에 자산 등급 확정 유지"
+hostvuln=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
+assert_not_contains "$hostvuln" 'name="action" value="agent_run_now"' "첫 화면(취약점 탭)엔 수집 설정 폼이 없다"
+assert_contains "$hostvuln" 'tab=manage' "첫 화면에서 자산 설정 탭으로 갈 수 있다"
 assert_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=packages" "자산 목록 패키지 수가 설치 패키지 탭에 연결"
 # '노출'(리스닝 소켓 수) 열은 자산 목록에서 걷어냈다 — 개수로는 우선순위를 못 정하고,
 #   범위(EXTERNAL/LAN/…)별 목록은 호스트 상세의 런타임 탭이 답한다. 그 탭 자체는 그대로 산다.
