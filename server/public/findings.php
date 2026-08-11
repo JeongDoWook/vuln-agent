@@ -465,10 +465,20 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   endif; ?>
 
   <div class="cards">
-    <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
+    <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s):
+      // 카드 크기·글자 크기는 CSS 가 전 등급에 똑같이 준다 — 그래서 자릿수가 많은 등급이 무조건
+      //   커 보인다(실측: 'LOW 34184' 가 'CRITICAL 1' 보다 크게 읽혔다). 마크업에서 할 수 있는
+      //   보정은 둘이다: (1) 천단위 구분으로 자릿수를 눈에 띄게 끊고(대시보드가 이미 '34,184' 로
+      //   쓴다 — 같은 값이 화면마다 다르게 표기되지 않게 통일), (2) 0건인 등급은 등급색을 걷어
+      //   중립(muted)으로 낮춘다. 0건은 "지금 볼 것이 없다" 는 뜻이라 색을 가져갈 이유가 없다.
+      //   새 클래스(.kpi--zero 등)를 만들지 않는 이유: 색은 app.css 가 소유하고 지금 다른 작업이
+      //   그 파일을 고치고 있다 — 이미 있는 tone-muted 로 같은 결과를 낸다.
+      $zero = ((int) $counts[$s]) === 0;
+    ?>
       <a href="<?= vg_h(vg_qs(['sev' => $sev === $s ? '' : $s, 'page' => 1])) ?>"
-         class="kpi kpi--sm tone-<?= vg_sev_tone($s) ?><?= $sev === $s ? ' is-selected' : '' ?>">
-        <b><?= (int) $counts[$s] ?></b><span><?= $s ?></span>
+         class="kpi kpi--sm tone-<?= $zero ? 'muted' : vg_sev_tone($s) ?><?= $sev === $s ? ' is-selected' : '' ?>"
+         title="<?= vg_h($s . ' ' . number_format((int) $counts[$s]) . '건' . ($sev === $s ? ' · 선택 해제' : ' 만 보기')) ?>">
+        <b><?= number_format((int) $counts[$s]) ?></b><span><?= $s ?></span>
       </a>
     <?php endforeach; ?>
   </div>
@@ -497,24 +507,40 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   // 값을 버리는 게 아니라 관련된 것끼리 한 칸에 쌓는다(패키지+버전, CVSS+EPSS+KEV).
   // 호스트 컬럼은 통합 모드에서만 — 단일 스캔 모드는 부제가 이미 호스트를 밝힌다.
   // 폭 배분: 목록 표는 table-layout:fixed 라(app.css 의 '목록 화면' 구역) 여기 적은 width 가
-  //   그대로 지켜진다. 짧은 값(등급·상태·위험도)은 내용 크기로 좁히고, 이름이 긴 주 식별자
+  //   그대로 지켜진다. 짧은 값(등급·상태·CVSS)은 내용 크기로 좁히고, 이름이 긴 주 식별자
   //   (호스트·CVE·패키지)에 폭을 몰아준다. 폭을 안 준 '근거' 가 남는 폭을 전부 갖는다.
-  //   단위가 rem 이 아니라 % 인 이유: fixed 에서 지정폭 합이 표 폭을 넘으면 폭 없는 열이 0 이 되고
-  //   표가 카드를 뚫어 가로 스크롤이 생긴다. % 는 어느 화면 폭에서도 합이 그대로라 그 일이 없다.
-  // 폭을 준 열들의 합을 79.5% 로 낮춘 이유: 남는 폭을 갖는 '근거' 칸 맨 앞에는 판정 출처 뱃지가
-  //   있는데(고정 크기 100px), 83.5% 였을 때 870px 에서 근거 칸이 83px 로 줄어 뱃지가 17.5px 넘쳤다.
-  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
+  // 단위: **내용 크기가 고정된 열은 rem, 이름이 늘어나는 열은 %** 다.
+  //   뱃지·점수는 화면이 좁아져도 안 줄어드는 고정 크기 덩어리라, % 로 주면 좁은 폭에서 칸보다
+  //   커져 옆 열을 덮는다(cves.php 의 '심각도' 열이 같은 이유로 6.5rem 이다). 실제로 '위험도'
+  //   8% 는 1440px 에서 'CVSS 9.8' 을 담지 못해 **점수가 화면에서 사라졌다.**
+  //   반대로 rem 만 쓰면 넓은 화면에서 남는 폭이 전부 '근거' 로 몰리므로 이름 열은 % 로 둔다.
+  //   합이 표 폭을 넘지 않게 유지한다 — 넘으면 폭 없는 '근거' 가 0 이 되고 표가 카드를 뚫는다
+  //   (% 합 52.5% + 고정 19.5rem = 312px. 1060px 실측에서 근거 191px·행 높이 두 줄로 안정,
+  //    가로 스크롤 없음).
+  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '14.5%', 'class' => 'col-id']];
   $headers = array_merge($headers, [
-      ['label' => '등급',  'key' => 'severity',       'width' => '9%',   'nowrap' => true],
-      ['label' => '상태',  'key' => 'runtime_status', 'width' => '8.5%', 'nowrap' => true],
+      // 뱃지 폭(CRITICAL 69px) + 칸 여백 32px = 101px → 6.5rem.
+      ['label' => '등급',  'key' => 'severity',       'width' => '6.5rem', 'nowrap' => true],
+      // 가장 긴 라벨이 '로컬 세그먼트 노출' 이라 등급보다 넓게 준다. 그래도 모자라면 잘리므로
+      //   칸 안에서 전체 문구를 title 로 남긴다(아래 셀 콜백).
+      ['label' => '상태',  'key' => 'runtime_status', 'width' => '7rem', 'nowrap' => true],
       // CVE 는 nowrap 이 아니다 — 링크 뒤에 KEV·조치불가 표식이 붙어 한 줄에 안 들어간다.
-      //   폭이 고정된 표에서 nowrap 이면 칸을 뚫고 나가 표가 가로로 넘친다.
-      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '13%'],
+      //   폭이 고정된 표에서 nowrap 이면 칸을 뚫고 나가 표가 가로로 넘친다. 대신 **식별자 자체가**
+      //   쪼개지지 않게 셀에서 <code> 로 감싼다(app.css: td code 는 nowrap) — 예전엔 폭이 모자라
+      //   'CVE-2023-' / '4911' 로 두 줄이 났다.
+      // 폭 16% 는 실측값이다: 둘째 줄(KEV 뱃지 39px + '이 자산 판정 →' 92px = 135px)이 접히지
+      //   않는 최소 폭(칸 여백 29px 포함 164px ≈ 15.5%)에 여유를 얹었다. 접히면 한 행이 세 줄이 된다.
+      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '16%'],
       ['label' => '패키지', 'key' => 'package_name',  'width' => '10.5%', 'class' => 'col-id'],
-      // CVSS+EPSS 숫자 칸 — cves.php 의 같은 '위험도' 칸과 같은 정렬로 맞춘다.
-      ['label' => '위험도', 'key' => 'risk',          'width' => '8%', 'nowrap' => true, 'align' => 'right'],
+      // 점수 칸 — cves.php 의 같은 칸과 같은 모양·같은 정렬로 맞춘다(같은 뜻은 화면마다 같은 모양).
+      //   6rem 은 둘째 줄 'EPSS 100.0%'(66px) + 칸 여백(29px) 기준이다.
+      ['label' => 'CVSS',  'key' => 'risk',           'width' => '6rem', 'nowrap' => true,
+          'align' => 'right', 'title' => 'CVSS 기본점수 · 아랫줄은 EPSS(30일 내 악용 확률)'],
       ['label' => '근거 (왜 위험한가)', 'key' => 'rationale'],
-      ['label' => '조치',  'key' => 'fix',            'width' => '13.5%'],
+      // 라벨에 '이 버전 이상' 을 못 담아 값 뒤에 '이상' 을 붙이던 것을 머리글로 올린다 —
+      //   좁은 칸에서는 그 두 글자가 정작 버전 문자열을 밀어냈다.
+      ['label' => '조치 · 올릴 버전', 'key' => 'fix', 'width' => '11.5%',
+          'title' => '이 버전 이상으로 올리면 해결됩니다'],
   ]);
 
   // 필터 초기화 CTA — vg_qs() 는 지금 $_GET 을 기준으로 넘겨받은 키만 비우므로, 단일 호스트
@@ -588,7 +614,11 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
               // 칸을 넘치는 긴 FQDN 은 col-id 가 말줄임으로 접는다 — 전체 이름은 title 로 남긴다.
               'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a>',
               'severity'       => fn($r) => vg_sev_badge((string) $r['severity']),
-              'runtime_status' => fn($r) => vg_status_badge($r['runtime_status']),
+              // 상태 라벨은 '로컬 세그먼트 노출' 처럼 길어서 좁은 칸에선 말줄임에 먹힌다
+              //   (td.nowrap 이 넘치는 값을 자른다 — app.css '목록 화면' 구역). 잘려도 뜻을
+              //   잃지 않게 전체 문구를 title 로 남긴다: 잘라야만 하는 열의 공통 규칙이다.
+              'runtime_status' => fn($r) => '<span title="' . vg_h(vg_status_label($r['runtime_status'])) . '">'
+                  . vg_status_badge($r['runtime_status']) . '</span>',
               // CVE — 링크 + KEV 뱃지(별도 컬럼이던 '✔' 를 여기로).
               // CVE 요약(summary)은 뺐다. 근거와 나란히 두면 긴 텍스트 컬럼이 둘이라
               // 표가 화면을 넘겨서 정작 제일 중요한 '조치' 가 밖으로 밀려난다.
@@ -600,20 +630,29 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
               //   결정하는데(아래 rationale 주석), CVE 칸은 보통 한 줄이라 여기 한 줄을 더해도
               //   행이 안 높아진다. '조치' 칸에 넣으면 조치 알약(clamp-2)이 이미 두 줄일 때 세 줄이 된다.
               'cve_id' => function ($r) {
-                  $html = '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">'
-                        . vg_h($r['cve_id']) . '</a></strong>';
-                  if ($r['in_kev']) { $html .= ' ' . vg_badge('KEV', 'crit', 'CISA KEV 등재'); }
+                  // 식별자는 줄바꿈하면 안 된다 — 'CVE-2023-' / '4911' 로 쪼개지면 검색도 대조도
+                  //   못 한다. <code> 는 app.css 에서 표 안 nowrap 이라(td code) 칸이 좁아도
+                  //   하이픈에서 접히지 않는다. 칸 자체를 nowrap 으로 만들지 않는 건 뒤에 붙는
+                  //   KEV·조치불가 표식이 잘려 사라지기 때문이다(cves.php 에 같은 기록이 있다).
+                  // 두 줄 구조를 **마크업으로 고정**한다: 첫 줄은 식별자만, 둘째 줄에 표식과
+                  //   진입로를 모은다. 예전처럼 식별자 옆에 뱃지를 흘려 두면 폭이 모자랄 때마다
+                  //   뱃지가 다음 줄로 밀려 한 행이 세 줄이 됐다(KEV 행이 목록 맨 위를 채우므로
+                  //   사실상 상단 전체가 세 줄이었다). 줄 수가 행마다 달라지지 않는 게 훑기에 낫다.
+                  $html = '<div><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">'
+                        . '<code>' . vg_h($r['cve_id']) . '</code></a></div>';
+                  $marks = '';
+                  if ($r['in_kev']) { $marks .= vg_badge('KEV', 'crit', 'CISA KEV 등재') . ' '; }
                   // 벤더가 수정본을 내지 않은 CVE — 패치로는 못 고친다(완화·격리·제거가 답).
                   // 뱃지 두 개가 겹쳐 시끄러워지는 걸 피하려고, 우선순위가 더 높은 KEV 만
                   // 뱃지로 두드러지게 하고 이건 평범한 텍스트(.why 톤)로 낮춘다 — 정보는 그대로.
                   if (!empty($r['no_fix'])) {
-                      $html .= ' <span class="why">조치 불가</span>';
+                      $marks .= '<span class="why">조치 불가</span> ';
                   }
                   $href = vg_finding_history_url(
                       (int) $r['host_id'], $r['container_id'] === null ? 0 : (int) $r['container_id'],
                       (string) $r['cve_id'], (string) $r['package_name']
                   );
-                  $html .= '<div class="why"><a href="' . vg_h($href) . '">이 자산 판정 →</a></div>';
+                  $html .= '<div class="why">' . $marks . '<a href="' . vg_h($href) . '">이 자산 판정 →</a></div>';
                   return $html;
               },
               // 패키지 — 이름 + 설치 버전(아래줄).
@@ -626,18 +665,28 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
                       $name = '<a href="/package.php?name=' . urlencode((string) $r['package_name'])
                           . '&amp;eco=' . urlencode($eco) . '">' . $name . '</a>';
                   }
-                  return $name
+                  // col-id 열이라 넘치는 값은 말줄임으로 잘린다 — 이름·버전·이미지를 한 문장으로
+                  //   모아 title 에 남긴다(호스트 칸과 같은 규칙).
+                  $full = (string) $r['package_name'] . ' ' . (string) $r['installed_version']
+                        . (!empty($r['container_cid']) ? ' · 컨테이너 ' . (string) $r['container_cid'] : '')
+                        . (!empty($r['container_image']) ? ' · ' . (string) $r['container_image'] : '');
+                  return '<span title="' . vg_h($full) . '">' . $name
                       . (!empty($r['container_cid']) ? ' ' . vg_badge('컨테이너 ' . $r['container_cid'], 'med') : '')
+                      . '</span>'
                       . '<div class="why"><code>' . vg_h($r['installed_version']) . '</code>'
                       . (!empty($r['container_image']) ? ' · ' . vg_h((string) $r['container_image']) : '')
                       . '</div>';
               },
               // 위험도 — CVSS(얼마나 심한가) + EPSS(실제로 악용될 확률). 다른 걸 재므로 같이 본다.
               //   백분위("상위 N%")는 여기선 뺀다 — 좁은 칸에서 4줄로 접힌다. 상세 페이지에 있다.
+              // 값 앞의 'CVSS' 다섯 글자를 뺀 이유: 이 칸에서 유일하게 안 잘려야 하는 건 **점수**인데,
+              //   접두어가 폭을 먼저 먹어 정작 숫자가 잘려 나갔다(실측 'CVSS …' — 점수가 화면에서
+              //   사라졌다). 무슨 숫자인지는 열 머리글('CVSS')이 말한다. EPSS 는 값이 둘째 줄이라
+              //   무엇인지 알 수 없으므로 라벨을 남긴다.
               'risk' => function ($r) {
                   $cvss = $r['cvss'] !== null
-                      ? 'CVSS <strong>' . vg_h((string) $r['cvss']) . '</strong>'
-                      : '<span class="why">CVSS –</span>';
+                      ? '<strong>' . vg_h((string) $r['cvss']) . '</strong>'
+                      : '<span class="why">–</span>';
                   $epss = $r['epss'] !== null && $r['epss'] !== ''
                       ? 'EPSS ' . vg_h(number_format((float) $r['epss'] * 100, 1)) . '%'
                       : 'EPSS –';
@@ -649,10 +698,14 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
               //   서버가 알 수 없기 때문이다 — 자르는 일은 폭을 아는 CSS 에 맡긴다.
               'rationale' => function ($r) {
                   $why = (string) ($r['rationale'] ?? '');
+                  $src = (string) ($r['match_source'] ?? 'catalog');
                   // 판정 출처 뱃지는 근거 문장 앞에 같이 흐른다 — 따로 한 줄을 차지하면
                   //   근거 칸이 이 표에서 가장 높은 칸이 되어 행 전체를 끌어올린다.
-                  return '<div class="why clamp-2">'
-                       . '<span class="badge tone-muted">' . vg_h((string) ($r['match_source'] ?? 'catalog')) . '</span> '
+                  // title 은 주석만 있고 실제로는 없었다 — 두 줄에서 잘린 뒤(clamp-2) 나머지를
+                  //   볼 방법이 아무 데도 없었다('(systemd:111 가 libc6 사용) -…'). 잘라야만 하는
+                  //   열은 전체 값을 title 로 남긴다는 규칙을 여기서도 실제로 지킨다.
+                  return '<div class="why clamp-2" title="' . vg_h($src . ' · ' . $why) . '">'
+                       . '<span class="badge tone-muted">' . vg_h($src) . '</span> '
                        . vg_h($why) . '</div>';
               },
               // 설치 버전을 조치 칸에 다시 싣지 않는다(같은 행 '패키지' 칸에 이미 있다) — 한 칸에
@@ -662,8 +715,28 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
               //   예전엔 이 표식이 상세로 가는 링크였는데, 이제 CVE 칸의 '이 자산 판정 →' 가 모든 행에서
               //   같은 곳으로 간다 — 한 행에 같은 대상 링크가 둘이면 어느 쪽을 눌러야 하는지 헷갈린다.
               //   그래서 여기는 링크를 떼고 표식(뱃지)으로만 남긴다.
+              // 값은 vg_fix_cell() 과 같지만 **모양은 이 표의 규칙**을 따른다. vg_fix_cell 의 알약
+              //   (.pill)은 파란 배경 + 강조색 글자라, 링크가 아닌 '2.38-1ubuntu6 이상' 이 목록에서
+              //   링크로 보였다(실측). 여기서는 중립 뱃지(tone-muted)로 낮추고, 이 칸에서 **진짜
+              //   링크인 참조 URL 만** 링크색을 갖게 한다. 공용 헬퍼를 고치지 않는 이유: 같은 함수를
+              //   폭이 다른 화면(host.php)이 함께 쓰고, 여기 필요한 건 이 표의 폭 규칙이라서다.
               'fix'       => function ($r) use ($notes) {
-                  $html = vg_fix_cell($r['evidence_fixed_version'] ?? ($r['fixed_version'] ?? null), $r['ref_urls_json'] ?? null);
+                  $fixed = (string) ($r['evidence_fixed_version'] ?? ($r['fixed_version'] ?? ''));
+                  if ($fixed !== '') {
+                      // 좁은 칸에서 rhel 모듈 버전(1:1.22.1-3.module+el9.2.0+…)은 뱃지를 칸 밖으로
+                      //   밀어낸다 — 잘라서 넣고 전체 값은 vg_trunc 이 title 에 남긴다.
+                      $html = '<span class="badge tone-muted">' . vg_trunc($fixed, 12) . '</span>';
+                  } else {
+                      $ref = vg_cve_first_ref($r['ref_urls_json'] ?? null);
+                      if ($ref === null) {
+                          $html = '<span class="why">패치 확인</span>';
+                      } else {
+                          $isPatch = in_array('Patch', $ref['tags'], true)
+                              || in_array('Vendor Advisory', $ref['tags'], true);
+                          $html = '<a class="why" href="' . vg_h($ref['url']) . '" target="_blank" rel="noopener noreferrer">'
+                                . ($isPatch ? '패치 확인 →' : '참고 링크 →') . '</a>';
+                      }
+                  }
                   $note = $notes[vg_remediation_note_key(
                       (int) $r['host_id'], (string) ($r['container_cid'] ?? ''),
                       (string) $r['cve_id'], (string) $r['package_name']

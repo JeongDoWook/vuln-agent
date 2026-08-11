@@ -183,14 +183,18 @@ vg_header('CVE', 'cves');
           // nowrap 이 아니다 — CVE-ID 뒤에 KEV 뱃지가 붙는데 nowrap 이면 한 줄을 넘겨 말줄임에
           //   먹혀 뱃지가 통째로 사라진다(실측: 1440px 에서 "CVE-2023-4911 …" 로만 보였다).
           //   findings.php 의 CVE 칸이 nowrap 을 안 쓰는 것과 같은 이유.
-          ['label' => 'CVE', 'width' => '16%'],
+          ['label' => 'CVE', 'width' => '16%', 'title' => '누르면 이 CVE 의 상세로 갑니다'],
           // 심각도 뱃지(CRITICAL 69px)는 줄바꿈이 안 되는 고정 크기라 % 로 주면 표가 좁아질 때
           //   덮는다 — 870px 에서 45.8px 를 CVSS 열 위에 그렸다. 값 69 + 칸 여백 32 = 101 → 6.5rem.
           ['label' => '심각도', 'width' => '6.5rem'],
           // CVSS(얼마나 심한가)와 EPSS(실제로 악용될 확률)는 같이 봐야 뜻이 생긴다 — 칸을 둘로
           //   나눠 두면 좁은 폭에서 각각 줄바꿈만 하고 요약 칸을 밀어냈다. findings.php 의
-          //   '위험도' 칸과 같은 형태로 합친다(같은 뜻은 화면마다 같은 모양으로).
-          ['label' => '위험도', 'align' => 'right', 'width' => '13%'],
+          //   같은 칸과 같은 형태로 합친다(같은 뜻은 화면마다 같은 모양으로).
+          // 머리글이 '위험도' 가 아니라 'CVSS' 인 이유: 값 앞에 붙이던 'CVSS' 접두어를 뺐기 때문이다
+          //   (좁은 칸에서 접두어가 정작 점수를 밀어냈다). 점수 미수집이 대다수인 목록이라,
+          //   빈 값은 'CVSS –' + 'EPSS –' 두 줄을 먹지 않고 한 줄로 접는다 — 아래 셀 콜백.
+          ['label' => 'CVSS', 'align' => 'right', 'width' => '9rem',
+              'title' => 'CVSS 기본점수 · 아랫줄은 EPSS(30일 내 악용 확률)'],
           // 날짜는 길이가 고정(YYYY-MM-DD)이라 % 가 아니라 rem 으로 준다 — % 로 두니 요약 칸이
           //   넓어진 만큼 여기가 줄어 "2023-10-…" 로 잘렸다(실측 1440px).
           ['label' => '공개일', 'width' => '6.5rem', 'nowrap' => true],
@@ -202,33 +206,51 @@ vg_header('CVE', 'cves');
           // 이 표엔 severity 컬럼이 없다 — CVSS 점수에서 등급을 파생시킨다(vg_cvss_sev 는 소문자를 준다).
           'row_class' => fn($r) => vg_sev_row(strtoupper(vg_cvss_sev($r['cvss'] === null ? null : (string) $r['cvss']))),
           'cell' => [
+              // 행 진입 링크는 이 칸이 담당한다(요약 칸은 본문 색으로 남긴다 — 아래 4번).
+              //   식별자는 <code> 로 감싸 줄바꿈을 막는다(app.css: td code 는 nowrap).
               0 => function ($r) {
-                  $html = '<a href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">' . vg_h((string) $r['cve_id']) . '</a>';
+                  $html = '<a href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
+                        . '<code>' . vg_h((string) $r['cve_id']) . '</code></a>';
                   if (!empty($r['is_kev'])) {
-                      $html .= ' ' . vg_badge('KEV', 'crit');
+                      $html .= ' ' . vg_badge('KEV', 'crit', '악용이 확인된 취약점 — CISA KEV 등재');
                   }
                   return $html;
               },
+              // 이 표의 심각도는 CVSS 에서 파생된다 — 점수가 없으면 등급이 '없는' 게 아니라
+              //   **아직 매겨지지 않은** 것이다. 둘 다 '–' 로 쓰면 "위험하지 않다" 로 읽힌다.
+              //   375,523건 중 대다수가 이 상태라 더욱 구분돼야 한다(advisory.php 가 같은 상황을
+              //   '미수집' 뱃지로 구분하는 것과 같은 어휘).
               1 => function ($r) {
                   $sev = vg_cvss_sev($r['cvss'] === null ? null : (string) $r['cvss']);
-                  if ($sev === '') { return '<span class="why">–</span>'; }
+                  if ($sev === '') {
+                      return vg_badge('미평가', 'muted', 'CVSS 점수가 아직 수집되지 않아 등급을 매길 수 없습니다 — "위험하지 않음"이 아닙니다');
+                  }
                   return vg_sev_badge(strtoupper($sev));   // 톤 매핑은 대문자 키를 받는다
               },
+              // 값이 있는 것만 보인다. 예전엔 없는 값도 'CVSS –' / 'EPSS –' 두 줄을 그대로 먹어서,
+              //   대다수가 미수집인 이 목록의 행 높이를 통째로 두 배로 만들었다.
+              //   백분위("상위 N%")는 좁은 칸에서 세 줄로 접혀 행 높이를 끌어올린다 — 상세(cve.php)에 남긴다.
               2 => function ($r) {
-                  $cvss = $r['cvss'] !== null
-                      ? 'CVSS <strong>' . vg_h((string) $r['cvss']) . '</strong>'
-                      : '<span class="why">CVSS –</span>';
-                  // 백분위("상위 N%")는 좁은 칸에서 세 줄로 접혀 행 높이를 혼자 끌어올린다 —
-                  //   findings.php 위험도 칸과 같이 목록에선 빼고 상세(cve.php)에 남긴다.
-                  return $cvss . '<div class="why">EPSS ' . vg_epss_cell($r['epss'], null) . '</div>';
+                  $has = false;
+                  $html = '';
+                  if ($r['cvss'] !== null) {
+                      $html .= '<strong>' . vg_h((string) $r['cvss']) . '</strong>';
+                      $has = true;
+                  }
+                  if ($r['epss'] !== null && $r['epss'] !== '') {
+                      $html .= '<div class="why">EPSS ' . vg_epss_cell($r['epss'], null) . '</div>';
+                      $has = true;
+                  }
+                  return $has ? $html : '<span class="why" title="CVSS·EPSS 모두 아직 수집되지 않았습니다">–</span>';
               },
               3 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
-              // 요약은 두 줄까지만 보이고, 전체 문장은 CVE 상세에서 읽는다.
+              // 요약은 두 줄까지만 보이고, 전체 문장은 CVE 상세에서 읽는다(잘린 부분은 title 에).
+              //   **링크로 감싸지 않는다** — 문장 전체가 강조색이 되면 다크 테마에서 본문이 통째로
+              //   파랗게 뜬다(실측). 행 진입로는 CVE-ID 칸 하나로 충분하다.
               4 => function ($r) {
                   $s = (string) ($r['summary'] ?? '');
                   if ($s === '') { return '<span class="why">–</span>'; }
-                  return '<a class="clamp-2" href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
-                       . vg_h($s) . '</a>';
+                  return '<div class="clamp-2" title="' . vg_h($s) . '">' . vg_h($s) . '</div>';
               },
           ],
       ]
