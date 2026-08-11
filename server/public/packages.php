@@ -111,6 +111,22 @@ try {
         $stmt->bindValue(count($params) + 2, $offset, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll();
+
+        /* kernel · kernel-core · kernel-abi-stablelists 처럼 **같은 소스 패키지에서 갈라진
+         * 바이너리**는 CVE 수·최고 EPSS·조치 수치가 글자 그대로 같다. 정렬이 CVE 많은순이라
+         * 목록 상단이 같은 값의 반복으로 채워지는데, 화면에는 "왜 같은지" 가 안 적혀 있어
+         * 세 행을 각각 읽어 보게 된다. 집계 기준·정렬은 그대로 두고(사전집계 tb_package_summary
+         * 를 건드리면 8초→0.05초 개선이 되돌아간다) 이어지는 같은 값에 꼬리표만 붙인다. */
+        $prevAgg = null;
+        foreach ($rows as $i => $r) {
+            $agg = implode('|', [
+                (string) ($r['ecosystem'] ?? ''), (string) $r['cve_cnt'],
+                (string) ($r['max_epss'] ?? ''), (string) $r['fix_cnt'],
+                (string) ($r['max_fixed'] ?? ''),
+            ]);
+            $rows[$i]['same_agg'] = ($prevAgg !== null && $agg === $prevAgg);
+            $prevAgg = $agg;
+        }
     } else {
         // KPI·위험도 집계는 사전집계 테이블에서만 읽는다(원본 tb_package 재집계 금지).
         // SUM(pkg_count) 를 쓴다 — COUNT(*) 는 (manager,name,license) 조합 종류 수라 목록 필터
@@ -297,8 +313,13 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
           ['label' => '패키지', 'width' => '30%', 'class' => 'col-id'],
           ['label' => '배포판', 'width' => '14%'],
           ['label' => 'CVE 수', 'align' => 'right', 'width' => '9%'],
-          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '15%'],
-          ['label' => '수정 버전·확인율', 'width' => '32%'],
+          /* 같은 행에 막대가 둘(EPSS·조치율) 있는데 모양이 같아, 어느 막대가 무엇인지 화면에
+           * 안 적혀 있었다. 열 머리글의 짧은 범례('title')로 각 막대가 무엇의 값인지 밝히고,
+           * 칸 안에서도 막대 바로 위 글자가 그 막대를 가리키게 둔다. */
+          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '15%',
+           'title' => '이 패키지의 CVE 중 가장 높은 악용 확률 — 막대 길이가 그 값입니다'],
+          ['label' => '수정 버전 · 조치율', 'width' => '32%',
+           'title' => '수정 버전이 확인된 CVE의 비율 — 막대 길이가 조치율입니다'],
       ],
       $rows,
       [
@@ -319,7 +340,12 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
               // 패키지명 → 취약점 현황에서 그 패키지만 검색
               0 => fn($r) => '<a href="/package.php?name=' . urlencode((string)$r['package_name'])
                              . '&amp;eco=' . urlencode((string)$r['ecosystem']) . '">'
-                             . vg_h((string) $r['package_name']) . '</a>',
+                             . vg_h((string) $r['package_name']) . '</a>'
+                             . (!empty($r['same_agg'])
+                                 // 라벨은 짧게 — 연속된 여러 행에 붙는 꼬리표라 길면 그 자체가 소음이 된다.
+                                 ? ' ' . vg_badge('동일 집계', 'muted',
+                                     '같은 소스 패키지에서 갈라진 바이너리라 CVE·EPSS·조치 수치가 앞 행과 같습니다')
+                                 : ''),
               1 => fn($r) => !empty($r['ecosystem'])
                              ? vg_h((string) $r['ecosystem'])
                              : '<span class="why">–</span>',
@@ -335,19 +361,29 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
                   return $txt . vg_meter(vg_epss_tone($e), $e * 100,
                       '최고 EPSS ' . number_format($e * 100, 1) . '% (악용 확률)');
               },
-              // 조치: fix_cnt/cve_cnt 진행바가 주된 시각요소. max_fixed 있으면 pill 로 함께.
-              //   cve_cnt=0 은 0 나눗셈 방지. 완료율 100% 는 low(ok) 톤, 그 외 med.
+              /* 조치: max_fixed(있으면) + 조치율. 막대 바로 위 글자가 그 막대의 라벨이다.
+               *   전건 조치(100%)는 **좋은 소식**이라 막대를 그리지 않고 ok 뱃지로 끝낸다 —
+               *   예전엔 100% 도 다른 진행바와 같은 색 막대라 "다 됐다" 가 읽히지 않았다.
+               *   cve_cnt=0 은 0 나눗셈 방지 + 비율 자체가 뜻이 없어 대시로 둔다. */
               4 => function ($r) {
-                  $cve   = (int) $r['cve_cnt'];
-                  $fix   = (int) $r['fix_cnt'];
-                  $ratio = $cve > 0 ? $fix / $cve : 0.0;
-                  $bar   = vg_meter($ratio >= 1.0 ? 'low' : 'med', $ratio * 100,
-                      '수정 버전 확인 ' . $fix . '/' . $cve . ' (' . number_format($ratio * 100, 1) . '%)');
-                  if (empty($r['max_fixed'])) {
-                      return '<span class="why">패치 확인 (조치 ' . $fix . '/' . $cve . ')</span>' . $bar;
+                  $cve = (int) $r['cve_cnt'];
+                  $fix = (int) $r['fix_cnt'];
+                  $head = !empty($r['max_fixed'])
+                      ? '<span class="pill">' . vg_h((string) $r['max_fixed']) . ' 이상</span> '
+                      : '';
+                  if ($cve <= 0) {
+                      return $head . '<span class="why">–</span>';
                   }
-                  return '<span class="pill">' . vg_h((string) $r['max_fixed']) . ' 이상</span>'
-                       . ' <span class="why">조치 ' . $fix . '/' . $cve . '</span>' . $bar;
+                  $ratio = $fix / $cve;
+                  if ($ratio >= 1.0) {
+                      return $head . vg_badge('조치 완료 ' . $fix . '/' . $cve, 'ok',
+                          '이 패키지의 CVE 전건에서 수정 버전이 확인됐습니다');
+                  }
+                  return $head
+                       . '<span class="why">조치율 ' . number_format($ratio * 100, 1) . '%'
+                       . ' (' . $fix . '/' . $cve . ')</span>'
+                       . vg_meter('med', $ratio * 100,
+                           '조치율 ' . number_format($ratio * 100, 1) . '% (수정 버전 확인 ' . $fix . '/' . $cve . ')');
               },
           ],
       ]
