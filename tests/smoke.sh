@@ -543,7 +543,10 @@ compliancebody=$(curl_ -s -b "$JAR" "$BASE/compliance.php")
 assert_contains "$compliancebody" "컴플라이언스 매핑" "컴플라이언스 매핑 페이지 200(인증됨)"
 assert_contains "$compliancebody" "ISMS-P 2.10.8" "패치관리 통제(ISMS-P 2.10.8) 표시"
 assert_contains "$compliancebody" "ISO 27001 A.5.9" "자산식별 통제(ISO 27001 A.5.9) 표시"
-assert_contains "$compliancebody" "수동 확인 필요" "자동판정 불가 항목은 체크리스트로만 노출"
+# 문구가 "수동 확인 필요(자동판정 불가)" 에서 바뀌었다 — 제품이 못 해서 빠진 것처럼 읽혀서다.
+#   검사하는 사실은 그대로다: 증적이 제품 밖에 있는 항목은 판정 없이 목록으로만 노출된다.
+assert_contains "$compliancebody" "정책·절차 문서 심사" "자동판정 대상이 아닌 항목은 체크리스트로만 노출"
+assert_contains "$compliancebody" "통제 종" "판정 결론(통제 종 수)이 첫 화면에 집계된다"
 # 호스트 id 를 하드코딩(=1)하면 빈 볼륨에서만 통과한다. 스택·DB 를 재사용하면 auto_increment 가
 # 밀려(삭제·재등록) id 가 6,7,11 처럼 바뀌고, 그때부터 아래 검사가 전부 "호스트 없음" 을 본다.
 # 자산 목록에서 web01 의 실제 id 를 찾아 쓴다 — 데이터가 어디서 시작하든 무관하게.

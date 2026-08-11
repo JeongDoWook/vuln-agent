@@ -475,15 +475,20 @@ function vg_compliance_load_asset(PDO $pdo, int $limit): array {
  * 통제 3: 보안시스템 운영(ISMS-P 2.10.1).
  *   판정: host.php 에 이미 있는 "설정 취약"(tb_cce_finding.result='FAIL') 판정을 최신 스캔
  *   기준으로 집계만 한다 — 판정 로직 자체는 새로 만들지 않는다(YAGNI).
- * @return array{violations: array<int, array<string, mixed>>, total: int}
+ *
+ *   checked 는 **표시용 분모**다(판정에는 안 쓴다). 위반 174건이 큰 수인지 작은 수인지는
+ *   전체 점검 항목 수를 모르면 읽을 수 없어서, 같은 조인으로 FAIL 필터만 뺀 총건수를 함께 센다.
+ * @return array{violations: array<int, array<string, mixed>>, total: int, checked: int}
  */
 function vg_compliance_load_secconfig(PDO $pdo, int $limit): array {
     $latestSubq = vg_latest_scan_subq();
-    $fromSql = "FROM tb_cce_finding cf
+    $scopeSql = "FROM tb_cce_finding cf
            JOIN $latestSubq t ON t.mid = cf.scan_id
            JOIN tb_host h ON h.host_id = t.host_id AND h.is_deleted = 0
-          WHERE cf.result = 'FAIL' AND cf.is_deleted = 0";
+          WHERE cf.is_deleted = 0";
+    $fromSql = $scopeSql . " AND cf.result = 'FAIL'";
     $total = (int) $pdo->query("SELECT COUNT(*) $fromSql")->fetchColumn();
+    $checked = (int) $pdo->query("SELECT COUNT(*) $scopeSql")->fetchColumn();
 
     $st = $pdo->prepare(
         "SELECT t.host_id, h.fqdn, cf.code, cf.title, cf.severity, cf.rationale
@@ -505,7 +510,7 @@ function vg_compliance_load_secconfig(PDO $pdo, int $limit): array {
             'rationale' => (string) ($r['rationale'] ?? ''),
         ];
     }
-    return ['violations' => $violations, 'total' => $total];
+    return ['violations' => $violations, 'total' => $total, 'checked' => $checked];
 }
 
 /**

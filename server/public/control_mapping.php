@@ -40,6 +40,9 @@ $rows = [];            // 매핑된 통제 전체(점검 결과 없는 통제 �
 $total = 0;            // 페이지네이션 대상 총건수
 $mappedRules = 0;      // 이 기준에 매핑된 CCE 룰 수
 $findingTotal = 0;     // 이 기준으로 묶인 점검 결과 총건수
+$failTotal = 0;        // 그중 FAIL 총건수(기준 전체 — 페이지가 아니다)
+$failControls = 0;     // FAIL 이 하나라도 있는 통제 수
+$noResultControls = 0; // 매핑은 있으나 점검 결과가 0건인 통제 수
 $page = vg_page();
 $perPage = vg_perpage();
 
@@ -113,6 +116,13 @@ try {
         ?: strnatcasecmp((string) $a['control_id'], (string) $b['control_id'])
     );
     $total = count($allRows);
+    // 결론 집계 — 페이지가 아니라 **기준 전체** 기준이다(1페이지만 세면 "위반 0" 이 거짓이 된다).
+    //   판정이 아니라 집계다: 이 화면은 위반 건수를 세기만 하고 준수/미준수를 말하지 않는다.
+    foreach ($allRows as $r) {
+        $failTotal += (int) $r['fail_cnt'];
+        if ((int) $r['fail_cnt'] > 0) { $failControls++; }
+        if ((int) $r['finding_cnt'] === 0) { $noResultControls++; }
+    }
     $offset = ($page - 1) * $perPage;
     $rows = array_slice($allRows, $offset, $perPage);
 } catch (Throwable $e) {
@@ -144,10 +154,20 @@ vg_header('통제 기준 매핑', 'control_mapping');
     <?php endforeach; ?>
   </div>
 
-  <div class="cards">
-    <div class="kpi kpi--sm"><b><?= number_format($mappedRules) ?></b><span>매핑된 점검 항목</span></div>
-    <div class="kpi kpi--sm"><b><?= number_format($findingTotal) ?></b><span>최신 스캔 점검 결과</span></div>
+  <?php
+  // 결론을 앞에 세운다(compliance.php 와 같은 원칙) — 예전엔 "매핑된 점검 항목 / 점검 결과"
+  //   두 숫자뿐이라, 표를 다 훑기 전엔 이 기준에서 무엇이 걸렸는지 알 수 없었다.
+  //   단위를 라벨에 붙인다: 건(점검 결과)과 종(통제 가짓수)이 한 줄에 섞여 있다.
+  ?>
+  <div class="cards cards--grid">
+    <div class="kpi kpi--sm tone-crit"><b><?= number_format($failTotal) ?></b><span>위반(FAIL) · 건</span></div>
+    <div class="kpi kpi--sm tone-high"><b><?= number_format($failControls) ?></b><span>위반 있는 통제 · 종</span></div>
+    <div class="kpi kpi--sm tone-muted"><b><?= number_format($noResultControls) ?></b><span>점검 결과 없음 · 종</span></div>
+    <div class="kpi kpi--sm"><b><?= number_format($mappedRules) ?></b><span>매핑된 점검 항목 · 개</span></div>
+    <div class="kpi kpi--sm"><b><?= number_format($findingTotal) ?></b><span>최신 스캔 점검 결과 · 건</span></div>
   </div>
+  <p class="sub">이 화면이 증명하는 것 — 같은 보안설정 점검 결과를 선택한 기준의 통제로 묶어
+    센 것입니다. 준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
 
   <?php
   // 통제 ID·통제명 모두 상세로 들어가는 링크다 — "누르면 들어간다"가 요구사항이라
@@ -180,9 +200,16 @@ vg_header('통제 기준 매핑', 'control_mapping');
                            . vg_trunc((string) ($r['codes'] ?? ''), 52) . '</span>',
               3 => function ($r) {
                   if ((int) $r['finding_cnt'] === 0) { return vg_badge('점검 결과 없음', 'muted'); }
-                  return '<span class="why">PASS ' . number_format((int) $r['pass_cnt'])
-                      . ' · 판정 불가 ' . number_format((int) $r['na_cnt'])
-                      . ' · 전체 ' . number_format((int) $r['finding_cnt']) . '건</span>';
+                  $cnt  = (int) $r['finding_cnt'];
+                  $fail = (int) $r['fail_cnt'];
+                  $why  = 'PASS ' . number_format((int) $r['pass_cnt'])
+                        . ' · 판정 불가 ' . number_format((int) $r['na_cnt'])
+                        . ' · 전체 ' . number_format($cnt) . '건';
+                  // 위반 비율 게이지 — 숫자 세 개만으로는 "FAIL 12" 가 12/13 인지 12/740 인지
+                  //   한눈에 안 잡힌다(분모가 글자에 묻힌다). meter 는 ok 톤이 없어 low 로 떨군다.
+                  $tone = $fail > 0 ? 'crit' : ((int) $r['na_cnt'] > 0 ? 'med' : 'low');
+                  return '<span class="why">' . vg_h($why) . '</span>'
+                      . vg_meter($tone, $fail / $cnt * 100, 'FAIL ' . number_format($fail) . ' / ' . $why);
               },
               4 => function ($r) {
                   if ((int) $r['finding_cnt'] === 0) { return '<span class="why">–</span>'; }
