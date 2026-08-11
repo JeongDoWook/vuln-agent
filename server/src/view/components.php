@@ -21,10 +21,15 @@ function vg_capture(callable $render): string {
     }
 }
 
-/** 목록 화면의 제목·설명·건수·우측 작업을 일관되게 렌더한다. */
+/**
+ * 화면 제목 — **카드가 아니라 얇은 헤더 줄이다.** 예전엔 흰 카드로 세로 150px 를 먹었는데
+ * 담긴 건 제목 + 설명 한 줄뿐이라, 1440×675 첫 화면에서 정작 표가 두 행밖에 안 보였다.
+ * 시그니처는 그대로 둔다(호출부 41곳) — 두 번째 인자 $eyebrow('OVERVIEW' 등)는 예전에도
+ * 화면에 안 그렸고 지금도 안 그린다. 자리만 지키는 인자다.
+ */
 function vg_page_title(string $title, string $eyebrow, string $description = '', array $opts = []): void {
     $class = trim('page-title ' . (!empty($opts['actions']) ? 'page-title--actions ' : '') . (string) ($opts['class'] ?? ''));
-    echo '<header class="' . vg_h($class) . '"><div><h1>' . vg_h($title);
+    echo '<header class="' . vg_h($class) . '"><div class="page-title__text"><h1>' . vg_h($title);
     if (array_key_exists('count', $opts)) { echo ' <span class="hint">(' . number_format((int) $opts['count']) . vg_h((string) ($opts['count_label'] ?? '건')) . ')</span>'; }
     if (!empty($opts['hint'])) { echo ' <span class="hint">' . vg_h((string) $opts['hint']) . '</span>'; }
     if (!empty($opts['suffix_html'])) { echo ' ' . (string) $opts['suffix_html']; }
@@ -33,6 +38,48 @@ function vg_page_title(string $title, string $eyebrow, string $description = '',
     echo '</div>';
     if (!empty($opts['actions'])) { echo '<div class="page-title__actions">' . $opts['actions'] . '</div>'; }
     echo '</header>';
+}
+
+/**
+ * 화면 결론 배너 — "이 화면이 무엇을 증명하는가" 를 수치와 함께 한 줄로 세운다.
+ *   표와 KPI 는 값을 보여줄 뿐 결론을 말하지 않는다. 그래서 화면을 열고도 "그래서 뭐가
+ *   된다는 거지" 가 남는다 — 그 한 줄을 화면 최상단(제목 바로 아래)에 놓는 자리다.
+ *
+ *   $tone     : ok|warn|crit|muted — 왼쪽 띠와 배경 톤
+ *   $headline : 결론 한 문장 (예: "통제 5종 중 1종 준수 · 2종 부분준수 · 1종 미준수")
+ *   $stats    : [['label'=>'준수','value'=>'1','tone'=>'ok'], …] — 큰 숫자로 나열(톤 생략 가능)
+ *   $note     : 판단 근거·기준시각 등 작은 보조 한 줄 (선택)
+ *
+ *   compliance.php 라면 이렇게 부른다:
+ *     vg_verdict('warn',
+ *         '통제 5종 중 1종 준수 · 2종 부분준수 · 1종 미준수 · 1종 판정불가',
+ *         [['label' => '준수', 'value' => '1', 'tone' => 'ok'],
+ *          ['label' => '부분준수', 'value' => '2', 'tone' => 'warn'],
+ *          ['label' => '미준수', 'value' => '1', 'tone' => 'crit'],
+ *          ['label' => '판정불가', 'value' => '1', 'tone' => 'muted']],
+ *         '기준: 2026-08-12 03:00 수집분 · 자산 12대 전수');
+ *
+ *   삽입은 각 화면(다음 작업)에서 한다 — 여기서는 컴포넌트와 표현만 정의한다.
+ */
+function vg_verdict(string $tone, string $headline, array $stats = [], string $note = ''): void {
+    $tone = in_array($tone, ['ok', 'warn', 'crit', 'muted'], true) ? $tone : 'muted';
+    echo '<div class="verdict verdict--' . vg_h($tone) . '" role="status">';
+    echo '<div class="verdict__main"><strong class="verdict__headline">' . vg_h($headline) . '</strong>';
+    if ($note !== '') {
+        echo '<span class="verdict__note">' . vg_h($note) . '</span>';
+    }
+    echo '</div>';
+    if ($stats) {
+        echo '<div class="verdict__stats">';
+        foreach ($stats as $s) {
+            $st = (string) ($s['tone'] ?? '');
+            $cls = 'verdict__stat' . (in_array($st, ['ok', 'warn', 'crit', 'muted'], true) ? ' verdict__stat--' . $st : '');
+            echo '<div class="' . vg_h($cls) . '"><b>' . vg_h((string) ($s['value'] ?? '–')) . '</b>'
+                . '<span>' . vg_h((string) ($s['label'] ?? '')) . '</span></div>';
+        }
+        echo '</div>';
+    }
+    echo '</div>';
 }
 
 /**
@@ -112,7 +159,8 @@ function vg_modal_close(): void {
  * 문구와 주작업 라벨만 바꿔 쓴다. JS 가 없으면 기존처럼 폼 자체는 그대로 제출된다.
  */
 function vg_confirm_dialog(): void {
-    vg_modal_open('vgConfirmDialog', '작업을 진행할까요?', 'confirm-modal');
+    // 폭은 모달 프리셋 --sm(440) 이 준다 — .confirm-modal 이 따로 440 을 들고 있지 않게 합쳤다.
+    vg_modal_open('vgConfirmDialog', '작업을 진행할까요?', 'confirm-modal modal--sm');
     echo '<p class="confirm-modal__message" data-confirm-message></p>'
         . '<div class="modal__foot">'
         . '<button type="button" class="btn btn--ghost" data-confirm-cancel>취소</button>'
