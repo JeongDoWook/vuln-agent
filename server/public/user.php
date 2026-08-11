@@ -134,8 +134,10 @@ vg_header($user['username'] ?? '사용자', 'users');
           <form method="post" data-confirm="잠금을 해제할까요? 로그인 실패 횟수도 함께 0 이 됩니다.">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="unlock">
+            <?php /* 잠금 해제는 이 화면에 왔을 때 하려던 주작업(복구)이다 — 경고 톤이 아니라
+                     주작업 톤으로 둔다. 경고·파괴 톤은 초기화·삭제 쪽에만 쓴다. */ ?>
             <label>계정 잠금</label>
-            <button class="btn btn--sm btn--warn">잠금 해제</button>
+            <button class="btn btn--sm btn--primary">잠금 해제</button>
           </form>
         <?php endif; ?>
 
@@ -170,8 +172,10 @@ vg_header($user['username'] ?? '사용자', 'users');
           <form method="post" data-confirm="이 사용자를 삭제할까요? 즉시 로그인이 막히며 활동 이력은 보존됩니다.">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="delete">
+            <?php /* 파괴작업은 색을 빼고(맨 아래 칸 + 중립 톤) 확인창으로 받는다 — 계정관리 카드에서
+                     가장 눈에 띄는 것이 '삭제' 이면 안 된다. 확인창은 data-confirm 으로 그대로다. */ ?>
             <label>삭제</label>
-            <button class="btn btn--sm btn--danger">사용자 삭제</button>
+            <button class="btn btn--sm btn--ghost">사용자 삭제</button>
           </form>
         <?php else: ?>
           <span class="why">본인 계정은 삭제할 수 없습니다.</span>

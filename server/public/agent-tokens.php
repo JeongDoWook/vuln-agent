@@ -126,10 +126,8 @@ vg_header('에이전트 키', 'agenttokens');
   ]); ?>
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
-  <?php vg_toolbar([
-      ['type' => 'search', 'name' => 'q', 'value' => $q, 'placeholder' => '호스트·용도·토큰 앞자리 검색'],
-  ]); ?>
-
+  <?php /* 발급 직후 한 번만 뜨는 카드다 — 검색 툴바 아래에 두면 "지금 복사하세요" 라는 알림과
+           실제 값 사이를 필터 줄이 갈라놓는다. 알림 바로 뒤에 붙인다. */ ?>
   <?php if ($newToken !== null):
     // 설치는 대화형을 1순위로 안내한다 — 토큰을 --token 인자로 주면 셸 히스토리에 남는다.
     //   대화형(인자 없이 실행 → 숨김 프롬프트)은 히스토리·ps 어디에도 토큰이 남지 않는다.
@@ -151,6 +149,10 @@ vg_header('에이전트 키', 'agenttokens');
       </div>
     </div>
   <?php endif; ?>
+
+  <?php vg_toolbar([
+      ['type' => 'search', 'name' => 'q', 'value' => $q, 'placeholder' => '호스트·용도·토큰 앞자리 검색'],
+  ]); ?>
 
   <?php
   vg_table(
@@ -193,17 +195,19 @@ vg_header('에이전트 키', 'agenttokens');
                   : '<span class="why">미수신</span>',
               6 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
               // 활성이면 [폐기], 폐기된 것이면 [삭제] — 폐기·재발급을 반복해 쌓인 죽은 행을 치운다.
+              //   둘 다 색을 빼고(btn--ghost) 확인창으로 받는다 — 행마다 빨간 버튼이 반복되면
+              //   목록에서 가장 강한 요소가 '되돌릴 수 없는 것' 이 된다.
               7 => fn($t) => (int) $t['is_revoked'] === 1
                   ? '<form method="post" data-confirm="이 토큰을 목록에서 지울까요? 이미 폐기되어 무효인 토큰입니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="delete">'
                       . '<input type="hidden" name="id" value="' . (int) $t['agent_token_id'] . '">'
-                      . '<button class="btn btn--sm btn--danger">삭제</button></form>'
+                      . '<button class="btn btn--sm btn--ghost">삭제</button></form>'
                   : '<form method="post" data-confirm="이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="revoke">'
                       . '<input type="hidden" name="id" value="' . (int) $t['agent_token_id'] . '">'
-                      . '<button class="btn btn--sm btn--danger">폐기</button></form>',
+                      . '<button class="btn btn--sm btn--ghost">폐기</button></form>',
           ],
       ]
   );
@@ -212,18 +216,21 @@ vg_header('에이전트 키', 'agenttokens');
   // 발급 폼은 가끔 쓰는 것 — 버튼 뒤 모달로. 실패하면 다시 연다.
   vg_modal_open('issueToken', '에이전트 토큰 발급', '', $issueFailed);
   ?>
-    <form method="post">
+    <form method="post" class="setting-form">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="create">
-      <label>호스트 (fqdn)</label>
-      <input type="text" name="fqdn" value="<?= vg_h($issueFqdn) ?>"
-             placeholder="예: web01.example.com" maxlength="255" required autocomplete="off">
-      <div class="why">이 호스트의 스캔만 갱신할 수 있습니다. 같은 호스트의 기존 활성 토큰은 자동 폐기됩니다.</div>
-      <label>용도 (선택)</label>
-      <input type="text" name="label" value="<?= vg_h($issueLabel) ?>"
-             placeholder="비우면 호스트명으로 자동 지정" maxlength="100" autocomplete="off">
-      <label>유효기간</label>
-      <?= vg_token_expiry_select($issueDays) ?>
+      <label class="field" for="issue-fqdn">호스트 (fqdn)
+        <input type="text" id="issue-fqdn" name="fqdn" value="<?= vg_h($issueFqdn) ?>"
+               placeholder="예: web01.example.com" maxlength="255" required autocomplete="off">
+        <span class="why">이 호스트의 스캔만 갱신할 수 있습니다. 같은 호스트의 기존 활성 토큰은 자동 폐기됩니다.</span>
+      </label>
+      <label class="field" for="issue-label">용도 (선택)
+        <input type="text" id="issue-label" name="label" value="<?= vg_h($issueLabel) ?>"
+               placeholder="비우면 호스트명으로 자동 지정" maxlength="100" autocomplete="off">
+      </label>
+      <label class="field">유효기간
+        <?= vg_token_expiry_select($issueDays) ?>
+      </label>
       <div class="why">만료 시 수집이 즉시 거부됩니다. 토큰 원문은 발급 직후 한 번만 표시됩니다.</div>
       <?php vg_modal_foot('발급', ['loading' => '발급 중…']); ?>
     </form>

@@ -109,13 +109,17 @@ vg_header('API 키', 'apitokens');
       'count' => $total, 'count_label' => '개',
       'actions' => vg_capture(static fn() => vg_modal_btn('issueToken', '+ 토큰 발급')),
   ]); ?>
-  <div class="sub"><code>GET /export.php</code> · <code>X-API-Token</code> 또는 Bearer 인증 · JSON/XML</div>
+  <?php /* 이 키로 무엇을 가져갈 수 있는지가 발급 전에 읽혀야 한다 — 엔드포인트 이름만 적어두면
+           "무엇이 나가는가" 를 코드를 열어야 알 수 있었다(내보내는 범위는 감사로그 대상이다). */ ?>
+  <div class="sub">
+    <code>GET /export.php</code> — 호스트별 최신 스캔의 취약점 결과(심각도·KEV·EPSS·조치 버전·미조치 사유) · JSON/XML<br>
+    <code>GET /sbom.php</code> — 자산 하나의 설치 패키지 목록(CycloneDX 1.5 / SPDX 2.3) · JSON<br>
+    인증은 <code>X-API-Token</code> 헤더 또는 <code>Authorization: Bearer</code>. 내려받은 내역은 감사 로그에 남습니다.
+  </div>
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
-  <?php vg_toolbar([
-      ['type' => 'search', 'name' => 'q', 'value' => $q, 'placeholder' => '용도·토큰 앞자리 검색'],
-  ]); ?>
-
+  <?php /* 발급 직후 한 번만 뜨는 카드다 — 검색 툴바 아래에 두면 "지금 복사하세요" 라는 알림과
+           실제 값 사이를 필터 줄이 갈라놓는다. 알림 바로 뒤에 붙인다. */ ?>
   <?php if ($newToken !== null): ?>
     <div class="card card--accent">
       <div class="card__body">
@@ -126,6 +130,10 @@ vg_header('API 키', 'apitokens');
       </div>
     </div>
   <?php endif; ?>
+
+  <?php vg_toolbar([
+      ['type' => 'search', 'name' => 'q', 'value' => $q, 'placeholder' => '용도·토큰 앞자리 검색'],
+  ]); ?>
 
   <?php
   vg_table(
@@ -159,11 +167,13 @@ vg_header('API 키', 'apitokens');
                   ? '<a href="/user.php?id=' . (int) $t['created_by_id'] . '">' . vg_h((string) $t['created_by']) . '</a>'
                   : '<span class="why">–</span>',
               5 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
+              // 파괴작업은 색을 빼고 확인창으로 받는다 — 행마다 빨간 버튼이 반복되면 화면에서
+              //   가장 강한 요소가 '되돌릴 수 없는 것' 이 된다(연결·사용자 화면과 같은 규칙).
               6 => fn($t) => '<form method="post" data-confirm="이 토큰을 폐기할까요? 즉시 무효가 됩니다.">'
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                   . '<input type="hidden" name="action" value="revoke">'
                   . '<input type="hidden" name="id" value="' . (int) $t['api_token_id'] . '">'
-                  . '<button class="btn btn--sm btn--danger">폐기</button></form>',
+                  . '<button class="btn btn--sm btn--ghost">폐기</button></form>',
           ],
       ]
   );
@@ -172,14 +182,16 @@ vg_header('API 키', 'apitokens');
   // 발급 폼은 가끔 쓰는 것 — 목록 위에 늘 펼쳐둘 이유가 없다. 실패하면 다시 연다.
   vg_modal_open('issueToken', 'API 토큰 발급', '', $issueFailed);
   ?>
-    <form method="post">
+    <form method="post" class="setting-form">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="create">
-      <label>토큰 용도</label>
-      <input type="text" name="label" value="<?= vg_h($issueLabel) ?>"
-             placeholder="예: AI 보고서 생성기" maxlength="100" required autocomplete="off">
-      <label>유효기간</label>
-      <?= vg_token_expiry_select($issueDays) ?>
+      <label class="field" for="issue-label">토큰 용도
+        <input type="text" id="issue-label" name="label" value="<?= vg_h($issueLabel) ?>"
+               placeholder="예: AI 보고서 생성기" maxlength="100" required autocomplete="off">
+      </label>
+      <label class="field">유효기간
+        <?= vg_token_expiry_select($issueDays) ?>
+      </label>
       <div class="why">만료 시 즉시 거부됩니다. 토큰 원문은 발급 직후 한 번만 표시됩니다.</div>
       <?php vg_modal_foot('발급', ['loading' => '발급 중…']); ?>
     </form>

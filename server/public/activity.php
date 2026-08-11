@@ -218,24 +218,33 @@ vg_header('감사 로그', 'activity');
              자동 기록되므로 설명할 것도 없다. 제목만 남긴다. */ ?>
     <strong>월 1회 접속기록 점검</strong>
     <div class="card__body">
-      <form method="post" class="actions">
+      <?php /* .actions(가로 flex)로 라벨·입력을 한 줄에 늘어놓았더니 라벨이 어느 입력의 것인지
+               눈으로 안 잡혔고, 좁아진 '비고' 칸에서 placeholder 가 '(선택' 에서 잘렸다.
+               host.php 자산등급 폼과 같은 .setting-form/.field 규약으로 짝을 묶는다. */ ?>
+      <form method="post" class="setting-form">
         <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-        <label>점검 대상 기간</label>
-        <select name="period">
-          <?php for ($i = 1; $i <= 12; $i++):
-              $m = date('Y-m', (int) strtotime("first day of -$i month")); ?>
-            <option value="<?= vg_h($m) ?>"><?= vg_h($m) ?></option>
-          <?php endfor; ?>
-        </select>
-        <label>결과</label>
-        <select name="result">
-          <?php foreach (VG_REVIEW_RESULTS as $code => $label): ?>
-            <option value="<?= vg_h($code) ?>"><?= vg_h($label) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <label>비고</label>
-        <input type="text" name="note" placeholder="점검 범위·확인 사항(선택)" maxlength="500">
-        <button class="btn btn--sm btn--primary" data-loading="기록 중…">점검 완료 기록</button>
+        <label class="field" for="review-period">점검 대상 기간
+          <select id="review-period" name="period">
+            <?php for ($i = 1; $i <= 12; $i++):
+                $m = date('Y-m', (int) strtotime("first day of -$i month")); ?>
+              <option value="<?= vg_h($m) ?>"><?= vg_h($m) ?></option>
+            <?php endfor; ?>
+          </select>
+        </label>
+        <label class="field" for="review-result">결과
+          <select id="review-result" name="result">
+            <?php foreach (VG_REVIEW_RESULTS as $code => $label): ?>
+              <option value="<?= vg_h($code) ?>"><?= vg_h($label) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <label class="field" for="review-note">비고 (선택)
+          <input type="text" id="review-note" name="note"
+                 placeholder="점검 범위·확인 사항" maxlength="500">
+        </label>
+        <div class="actions">
+          <button class="btn btn--sm btn--primary" data-loading="기록 중…">점검 완료 기록</button>
+        </div>
       </form>
     </div>
   </div>
@@ -249,8 +258,9 @@ vg_header('감사 로그', 'activity');
       ['label' => '결과',          'width' => '14%', 'nowrap' => true],
       ['label' => '비고'],
   ], $reviews, [
+      /* 아이콘을 빼 빈 상태 높이를 줄인다 — 바로 위 카드에 입력 양식이 있는데도 빈 표가
+         화면 한 판을 먹고 있었다(.empty 의 패딩은 app.css 소유라 여기선 내용으로만 줄인다). */
       'empty' => [
-          'icon'  => '🗓️',
           'title' => '점검 기록이 아직 없습니다.',
           'hint'  => '위 양식으로 지난달 접속기록 점검을 먼저 기록하세요.',
       ],
