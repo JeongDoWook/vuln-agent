@@ -166,9 +166,8 @@ vuln-agent/
 ├── tests/        # smoke.sh(API~로그인 curl) · e2e.sh+e2e/(브라우저, Playwright — 게이트 밖)
 │                 #   · ui_lint.sh(죽은 CSS·인라인 style) · vercmp_test.php(버전비교 단위)
 │                 #   · agent-bench.sh(에이전트 리소스 실측) · *_test.php/*_test.sh(단위·문서 일관성)
-├── docs/         # dev/(아키텍처·데이터베이스·피드소스-역할·설명글·화면-안내·조치가이드·리소스 프로파일)
-│                 #   · specs/diagrams/(PlantUML 6종 + 렌더 SVG) · ui-configuration.md
-└── shadow-ai/    # (사이드 PoC) 섀도우 AI DLP 크롬 확장 — 본 파이프라인과 독립
+└── docs/         # dev/(아키텍처·데이터베이스·피드소스-역할·설명글·화면-안내·조치가이드·리소스 프로파일)
+                  #   · specs/diagrams/(PlantUML 6종 + 렌더 SVG) · ui-configuration.md
 ```
 
 ---
@@ -399,4 +398,3 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 
 > 매칭 자체는 OSV 등 검증된 소스에서 상속. 우리 기여는 그 위 레이어(런타임 상태·백포트 억제·KEV/EPSS·설명가능성).
 > Python AI 문서생성은 본체 범위에서 제외 — Export API 로 결과만 넘긴다.
-> `shadow-ai/`(섀도우 AI DLP 크롬 확장)는 같은 저장소의 **사이드 PoC** 로, 위 파이프라인과 무관하게 독립 동작한다.
