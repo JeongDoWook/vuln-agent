@@ -48,15 +48,19 @@ vg_header('내 프로필', 'profile');
 
   <div class="card card--sm">
     <strong>비밀번호 변경</strong>
-    <form method="post" class="card__body">
+    <?php /* 라벨-입력 짝은 .setting-form/.field 규약으로 묶는다(다른 관리 화면과 동일). */ ?>
+    <form method="post" class="card__body setting-form">
       <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-      <label for="current">현재 비밀번호</label>
-      <input type="password" id="current" name="current" autocomplete="current-password" required>
-      <label for="new">새 비밀번호 (8자 이상)</label>
-      <input type="password" id="new" name="new" autocomplete="new-password" required>
-      <label for="confirm">새 비밀번호 확인</label>
-      <input type="password" id="confirm" name="confirm" autocomplete="new-password" required>
+      <label class="field" for="current">현재 비밀번호
+        <input type="password" id="current" name="current" autocomplete="current-password" required>
+      </label>
+      <label class="field" for="new">새 비밀번호 (8자 이상)
+        <input type="password" id="new" name="new" autocomplete="new-password" required>
+      </label>
+      <label class="field" for="confirm">새 비밀번호 확인
+        <input type="password" id="confirm" name="confirm" autocomplete="new-password" required>
+      </label>
       <button type="submit" class="btn btn--primary btn--block">변경</button>
     </form>
   </div>

@@ -206,14 +206,21 @@ vg_header('데이터 수집', 'connectors');
           }
           $id = (int) $c['feed_connector_id'];
           $n  = $logCountByConn[$id] ?? 0;
+          /* 버튼 서열: 주작업(실행)만 채운 색, 나머지는 외곽선. 파괴작업(삭제)은 색을 빼고
+           * 구분점 뒤로 밀어 자주 쓰는 것(실행·상세·편집)과 눈으로 갈리게 한다 — 확인창은
+           * data-confirm 으로 그대로 살아 있다. 예전엔 삭제가 화면에서 가장 강한 요소였고,
+           * 소스가 늘수록 빨간 점이 표를 덮었다.
+           * 개수는 <span> 으로 감싸지 않는다 — .btn 은 display:flex 라 별개 항목이 되어
+           * gap 만큼 '상세 149' 가 벌어져 이 버튼만 폭이 달라 보였다(assets.php 와 같은 함정). */
           return $html . '<div class="actions">'
               . '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="run"><input type="hidden" name="id" value="' . $id . '">'
               . '<button class="btn btn--sm btn--primary" data-loading="수집 중…">실행</button></form>'
               . '<a class="btn btn--sm btn--ghost" href="?conn=' . $id . '#collection-history">'
-              . '상세 <span class="why">' . number_format($n) . '</span></a>'
+              . '상세 ' . number_format($n) . '</a>'
               . '<a class="btn btn--sm btn--ghost" href="?edit=' . $id . '">편집</a>'
+              . '<span class="why" aria-hidden="true">·</span>'
               . '<form method="post" data-confirm="이 데이터 소스를 삭제할까요? 예약 수집은 중단되며 기존 이력은 남습니다."><input type="hidden" name="csrf" value="' . vg_h($csrf) . '"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
-              . '<button class="btn btn--sm btn--danger">삭제</button></form>'
+              . '<button class="btn btn--sm btn--ghost">삭제</button></form>'
               . '</div>';
       },
   ];
@@ -280,21 +287,32 @@ vg_header('데이터 수집', 'connectors');
   // 이 타입이 안 읽는 필드는 아예 숨긴다 — 예전엔 전 타입에 다 띄우고 라벨의 괄호로 변명했다.
   $fieldOn = fn(string $f): string => in_array($f, $curMeta['fields'], true) ? '' : ' hidden';
   ?>
-    <form id="connForm" method="post"
+    <?php /* .setting-form + .field — 라벨과 입력이 한 칸(.45rem) 안에서 붙고 항목끼리는 1rem 으로
+             벌어진다(host.php 자산등급 폼과 같은 규약). 두 가지를 지킨다:
+               · 라벨은 <label> 그대로 두고 감싸는 div 에만 .field 를 준다 — connectors.js 가
+                 #urlLabel 의 textContent 를 갈아치우므로 라벨이 입력을 품으면 그 순간 입력이 사라진다.
+               · JS/PHP 가 hidden 속성으로 껐다 켜는 상자(#stdFields·#genericFields·[data-field]·
+                 [data-schedule-field])에는 .field/.setting-form 을 주지 않는다 — app.css 에
+                 [hidden] 규칙이 없어서 display 를 정하는 클래스가 붙는 순간 hidden 이 무력해진다. */ ?>
+    <form id="connForm" method="post" class="setting-form"
           data-edit-generic="<?= ($edit['connector_type'] ?? '') === 'generic_api' ? vg_h(json_encode($econn)) : '' ?>"
           data-type-meta="<?= vg_h(json_encode($typeMeta, JSON_UNESCAPED_UNICODE)) ?>"
           data-role-labels="<?= vg_h(json_encode(VG_GENERIC_ROLE_LABELS, JSON_UNESCAPED_UNICODE)) ?>">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="save">
       <input type="hidden" name="id" value="<?= (int) ($edit['feed_connector_id'] ?? 0) ?>">
-      <label>이름</label>
-      <input type="text" name="name" value="<?= vg_h($edit['name'] ?? '') ?>" required>
-      <label>소스 종류</label>
-      <select name="connector_type" id="connType">
-        <?php foreach (VG_CONNECTOR_TYPES as $tv => $m): ?>
-          <option value="<?= vg_h($tv) ?>" <?= $curType===$tv?'selected':'' ?>><?= vg_h($m['label']) ?></option>
-        <?php endforeach; ?>
-      </select>
+      <div class="field">
+        <label for="connName">이름</label>
+        <input type="text" id="connName" name="name" value="<?= vg_h($edit['name'] ?? '') ?>" required>
+      </div>
+      <div class="field">
+        <label for="connType">소스 종류</label>
+        <select name="connector_type" id="connType">
+          <?php foreach (VG_CONNECTOR_TYPES as $tv => $m): ?>
+            <option value="<?= vg_h($tv) ?>" <?= $curType===$tv?'selected':'' ?>><?= vg_h($m['label']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
       <?php /* 수집 방식 — 이 커넥터가 데이터를 어떻게 가져오는가(역할이 아니다. 역할은 목록의 그룹 카드). */ ?>
       <div class="connmeta" id="connTransport">
         <?= vg_badge($curMeta['transport'], $curMeta['tone']) ?>
@@ -302,86 +320,106 @@ vg_header('데이터 수집', 'connectors');
       </div>
       <div id="stdFields">
         <div data-field="url"<?= $fieldOn('url') ?>>
-          <label id="urlLabel"><?= vg_h($curMeta['urlLabel'] ?: 'URL') ?></label>
-          <input type="text" name="url" value="<?= vg_h($econn['url'] ?? '') ?>" placeholder="비우면 기본 주소를 쓴다">
+          <label id="urlLabel" for="connUrl"><?= vg_h($curMeta['urlLabel'] ?: 'URL') ?></label>
+          <input type="text" id="connUrl" name="url" value="<?= vg_h($econn['url'] ?? '') ?>" placeholder="비우면 기본 주소를 씁니다">
         </div>
         <div data-field="api_key"<?= $fieldOn('api_key') ?>>
-          <label>API Key</label>
-          <input type="text" name="api_key" value="<?= vg_h($econn['api_key'] ?? '') ?>">
+          <label for="connApiKey">API Key</label>
+          <input type="text" id="connApiKey" name="api_key" value="<?= vg_h($econn['api_key'] ?? '') ?>">
         </div>
         <div data-field="ecosystem"<?= $fieldOn('ecosystem') ?>>
-          <label>Ecosystem</label>
-          <input type="text" name="ecosystem" value="<?= vg_h($econn['ecosystem'] ?? '') ?>" placeholder="예: Rocky Linux">
+          <label for="connEcosystem">Ecosystem</label>
+          <input type="text" id="connEcosystem" name="ecosystem" value="<?= vg_h($econn['ecosystem'] ?? '') ?>" placeholder="예: Rocky Linux">
         </div>
         <div data-field="days"<?= $fieldOn('days') ?>>
-          <label>최근 N일</label>
-          <input type="text" name="days" value="<?= vg_h((string) ($econn['days'] ?? '')) ?>" placeholder="7">
+          <label for="connDays">최근 N일</label>
+          <input type="text" id="connDays" name="days" value="<?= vg_h((string) ($econn['days'] ?? '')) ?>" placeholder="7">
         </div>
       </div>
       <div id="genericFields" hidden>
-        <label>역할</label>
-        <select id="gRole">
-          <?php foreach (VG_GENERIC_ROLE_LABELS as $rv => $rl): ?>
-            <option value="<?= vg_h($rv) ?>"><?= vg_h($rl) ?></option>
-          <?php endforeach; ?>
-        </select>
+        <div class="field">
+          <label for="gRole">역할</label>
+          <select id="gRole">
+            <?php foreach (VG_GENERIC_ROLE_LABELS as $rv => $rl): ?>
+              <option value="<?= vg_h($rv) ?>"><?= vg_h($rl) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
         <div class="alert alert--warn" id="gRoleNotice" hidden>
           <strong>기존 설정의 역할은 더 이상 지원하지 않습니다.</strong>
           <ul class="hint-list"><li>지원되는 역할을 다시 선택해야 저장할 수 있습니다.</li></ul>
         </div>
 
-        <label>HTTP 메서드</label>
-        <select id="gMethod">
-          <option value="GET">GET</option>
-          <option value="POST">POST</option>
-        </select>
+        <div class="field">
+          <label for="gMethod">HTTP 메서드</label>
+          <select id="gMethod">
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+          </select>
+        </div>
 
-        <label>URL 템플릿</label>
-        <input type="text" id="gUrlTemplate" placeholder="https://api.example.com/vulns?page={page}">
-        <div class="sub">플레이스홀더: <code>{page}</code>(1부터) · <code>{offset}</code>(0부터) · <code>{today}</code> · <code>{days_ago_N}</code></div>
+        <div class="field">
+          <label for="gUrlTemplate">URL 템플릿</label>
+          <input type="text" id="gUrlTemplate" placeholder="https://api.example.com/vulns?page={page}">
+          <div class="sub">플레이스홀더: <code>{page}</code>(1부터) · <code>{offset}</code>(0부터) · <code>{today}</code> · <code>{days_ago_N}</code></div>
+        </div>
 
-        <label>인증 헤더</label>
-        <div id="gHeaders" class="kvrows"></div>
-        <button type="button" class="btn btn--sm btn--ghost" id="gHeaderAdd">+ 헤더 추가</button>
+        <div class="field">
+          <label>인증 헤더</label>
+          <div id="gHeaders" class="kvrows"></div>
+          <div><button type="button" class="btn btn--sm btn--ghost" id="gHeaderAdd">+ 헤더 추가</button></div>
+        </div>
 
-        <label>페이징 타입</label>
-        <select id="gPageType">
-          <option value="none">없음</option>
-          <option value="offset">offset</option>
-        </select>
-        <label>페이지 크기</label>
-        <input type="text" id="gPageSize" placeholder="100">
-        <label>총 건수 경로 (선택)</label>
-        <input type="text" id="gTotalPath" placeholder="meta.total">
+        <div class="field">
+          <label for="gPageType">페이징 타입</label>
+          <select id="gPageType">
+            <option value="none">없음</option>
+            <option value="offset">offset</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="gPageSize">페이지 크기</label>
+          <input type="text" id="gPageSize" placeholder="100">
+        </div>
+        <div class="field">
+          <label for="gTotalPath">총 건수 경로 (선택)</label>
+          <input type="text" id="gTotalPath" placeholder="meta.total">
+        </div>
 
-        <label>응답 아이템 경로</label>
-        <input type="text" id="gItemsPath" placeholder="data.vulnerabilities">
-        <div class="sub">응답 JSON 안에서 목록 배열의 dot-notation 경로. 최상위 배열이면 비워둔다.</div>
+        <div class="field">
+          <label for="gItemsPath">응답 아이템 경로</label>
+          <input type="text" id="gItemsPath" placeholder="data.vulnerabilities">
+          <div class="sub">응답 JSON 안에서 목록 배열의 dot-notation 경로. 최상위 배열이면 비워둔다.</div>
+        </div>
 
-        <label>필드 매핑 <span id="gRoleLabel" class="why"></span></label>
-        <div id="gFieldMap" class="kvrows"></div>
-        <div class="sub">응답 JSON의 dot-notation 경로를 입력합니다. * 표시는 필수입니다.</div>
+        <div class="field">
+          <label>필드 매핑 <span id="gRoleLabel" class="why"></span></label>
+          <div id="gFieldMap" class="kvrows"></div>
+          <div class="sub">응답 JSON의 dot-notation 경로를 입력합니다. * 표시는 필수입니다.</div>
+        </div>
 
         <input type="hidden" name="g_config_json" id="gConfigJson">
       </div>
-      <label>스케줄</label>
       <?php $sm = $esched['mode'] ?? 'manual'; ?>
-      <select name="schedule_mode" id="connSchedule">
-        <?php foreach (['manual'=>'수동 (직접 실행)','interval'=>'주기 실행','daily'=>'매일 지정 시각','cron'=>'cron 표현식'] as $mv=>$ml): ?>
-          <option value="<?= $mv ?>" <?= $sm===$mv?'selected':'' ?>><?= $ml ?></option>
-        <?php endforeach; ?>
-      </select>
+      <div class="field">
+        <label for="connSchedule">스케줄</label>
+        <select name="schedule_mode" id="connSchedule">
+          <?php foreach (['manual'=>'수동 (직접 실행)','interval'=>'주기 실행','daily'=>'매일 지정 시각','cron'=>'cron 표현식'] as $mv=>$ml): ?>
+            <option value="<?= $mv ?>" <?= $sm===$mv?'selected':'' ?>><?= $ml ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
       <div data-schedule-field="interval"<?= $sm === 'interval' ? '' : ' hidden' ?>>
-        <label>주기(분)</label>
-        <input type="text" name="interval_minutes" value="<?= vg_h((string) ($esched['interval_minutes'] ?? '1440')) ?>">
+        <label for="connInterval">주기(분)</label>
+        <input type="text" id="connInterval" name="interval_minutes" value="<?= vg_h((string) ($esched['interval_minutes'] ?? '1440')) ?>">
       </div>
       <div data-schedule-field="daily"<?= $sm === 'daily' ? '' : ' hidden' ?>>
-        <label>시각 (HH:MM)</label>
-        <input type="text" name="schedule_time" value="<?= vg_h((string) ($esched['time'] ?? '03:00')) ?>" placeholder="03:00">
+        <label for="connTime">시각 (HH:MM)</label>
+        <input type="text" id="connTime" name="schedule_time" value="<?= vg_h((string) ($esched['time'] ?? '03:00')) ?>" placeholder="03:00">
       </div>
       <div data-schedule-field="cron"<?= $sm === 'cron' ? '' : ' hidden' ?>>
-        <label>cron (분 시 일 월 요일)</label>
-        <input type="text" name="schedule_cron" value="<?= vg_h((string) ($esched['expr'] ?? '')) ?>" placeholder="0 3 * * *">
+        <label for="connCron">cron (분 시 일 월 요일)</label>
+        <input type="text" id="connCron" name="schedule_cron" value="<?= vg_h((string) ($esched['expr'] ?? '')) ?>" placeholder="0 3 * * *">
       </div>
       <label class="inline">
         <input type="checkbox" name="enabled" value="1" <?= ($edit['enabled'] ?? 0) ? 'checked' : '' ?>> 활성

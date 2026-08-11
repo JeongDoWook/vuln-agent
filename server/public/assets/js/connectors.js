@@ -151,7 +151,13 @@ function vgRenderFieldMap(role, existingMapping) {
   var lbl = document.getElementById('gRoleLabel');
   if (lbl) { lbl.textContent = '(' + (VG_GENERIC_ROLE_LABELS[role] || role) + ')'; }
   var notice = document.getElementById('gRoleNotice');
-  if (notice) { notice.hidden = role === '' || Object.prototype.hasOwnProperty.call(VG_GENERIC_ROLE_LABELS, role); }
+  if (notice) {
+    notice.hidden = role === '' || Object.prototype.hasOwnProperty.call(VG_GENERIC_ROLE_LABELS, role);
+    // app.css 의 .alert 는 display:flex 라 작성자 스타일이 [hidden] 의 display:none 을 이긴다 —
+    //   hidden 만 세우면 "역할을 더 이상 지원하지 않습니다" 경고가 새 커넥터에도 늘 떠 있었다.
+    //   색·레이아웃은 여전히 app.css 소유이고, 여기서는 보임/숨김만 강제한다.
+    notice.style.display = notice.hidden ? 'none' : '';
+  }
 }
 
 function vgGenericCollect() {
@@ -196,6 +202,10 @@ function vgGenericSerialize() {
 function vgGenericInit() {
   var form = document.getElementById('connForm');
   if (!form) { return; }
+  // PHP 가 hidden 으로 그려 둔 역할 경고를 첫 화면에서도 실제로 감춘다 — .alert 의 display:flex 가
+  //   [hidden] 을 이기므로(위 vgRenderFieldMap 주석 참고) 처음부터 늘 떠 있었다.
+  var roleNotice0 = document.getElementById('gRoleNotice');
+  if (roleNotice0 && roleNotice0.hidden) { roleNotice0.style.display = 'none'; }
   var typeSel = document.getElementById('connType');
   var std = document.getElementById('stdFields');
   var generic = document.getElementById('genericFields');

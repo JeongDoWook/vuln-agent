@@ -134,19 +134,23 @@ vg_header('사용자', 'users');
   // 추가에 실패했으면(중복 아이디·짧은 비번) 다시 열어 준다 — 안 그러면 뭐가 틀렸는지 못 보고 입력도 잃는다.
   vg_modal_open('addUser', '사용자 추가', '', $addFailed);
   ?>
-    <form method="post">
+    <?php /* 라벨-입력 짝은 .setting-form/.field 규약으로 묶는다(host.php·activity.php 와 동일). */ ?>
+    <form method="post" class="setting-form">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="add">
-      <label>아이디</label>
-      <input type="text" name="username" value="<?= vg_h($addUsername) ?>" required autocomplete="off">
-      <label>비밀번호 <span class="why">(8자 이상)</span></label>
-      <input type="password" name="password" required autocomplete="new-password">
-      <label>역할</label>
-      <select name="role">
-        <?php foreach (VG_ROLES as $v): ?>
-          <option value="<?= vg_h($v) ?>"<?= $addRole === $v ? ' selected' : '' ?>><?= vg_h(vg_role_label($v) . ' (' . VG_ROLE_DESCRIPTIONS[$v] . ')') ?></option>
-        <?php endforeach; ?>
-      </select>
+      <label class="field" for="add-username">아이디
+        <input type="text" id="add-username" name="username" value="<?= vg_h($addUsername) ?>" required autocomplete="off">
+      </label>
+      <label class="field" for="add-password">비밀번호 <span class="why">(8자 이상)</span>
+        <input type="password" id="add-password" name="password" required autocomplete="new-password">
+      </label>
+      <label class="field" for="add-role">역할
+        <select id="add-role" name="role">
+          <?php foreach (VG_ROLES as $v): ?>
+            <option value="<?= vg_h($v) ?>"<?= $addRole === $v ? ' selected' : '' ?>><?= vg_h(vg_role_label($v) . ' (' . VG_ROLE_DESCRIPTIONS[$v] . ')') ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
       <?php vg_modal_foot('추가'); ?>
     </form>
   <?php vg_modal_close(); ?>
