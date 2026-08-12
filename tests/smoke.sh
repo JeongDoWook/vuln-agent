@@ -31,8 +31,19 @@ assert_eq() { if [ "$1" = "$2" ]; then ok "$3"; else no "$3  (기대=$2, 실제=
 #   141 이 된다. 공용 dev DB 가 자라 findings.php 응답이 64KB 를 넘긴 뒤로 '컨테이너 nodb' 검사가
 #   모든 워크트리에서 상시 실패했다(응답에는 그 문자열이 멀쩡히 있었다). here-string 은 파이프가
 #   아니라서 grep 의 종료코드가 그대로 결과가 된다.
-assert_contains() { if grep -q "$2" <<<"$1"; then ok "$3"; else no "$3  ('$2' 없음)"; fi; }
-assert_not_contains() { if grep -q "$2" <<<"$1"; then no "$3  ('$2' 있음)"; else ok "$3"; fi; }
+#
+# 이제 grep 자체를 쓰지 않는다 — **bash 내장 패턴 매칭**이라 프로세스도 파이프도 없다.
+#   따라서 위의 SIGPIPE(141) 함정은 구조적으로 사라졌다(기록으로 남겨 둔다: 다시 grep 으로
+#   되돌린다면 반드시 here-string 을 써야 한다).
+#   왜 바꿨나: Windows git-bash 에서 fork 한 번이 44~48ms 라, 서버를 치지도 않는 이 헬퍼가
+#   102회 호출에 7초를 썼다(스모크 [패키지 서브탭] 구간 11.4초 중 61%). 측정은
+#   docs/dev/packages-screen-profiling.md.
+#   의미 차이: grep 은 $2 를 정규식(BRE)으로 봤지만 `*"$2"*` 는 **리터럴 부분문자열**이다.
+#   전환 시 102개 단언을 전수 확인했다 — 메타문자는 `.` 뿐이었고 전부 실제 문자열의 일부
+#   (`2.10.8`·`host.php`·`pom.xml` 등)라 리터럴이 더 엄격할 뿐 결과가 같다. 일부러 정규식을
+#   쓴 단언은 없었다. 앞으로 정규식이 필요하면 이 헬퍼를 고치지 말고 별도 헬퍼를 만든다.
+assert_contains() { if [[ "$1" == *"$2"* ]]; then ok "$3"; else no "$3  ('$2' 없음)"; fi; }
+assert_not_contains() { if [[ "$1" == *"$2"* ]]; then no "$3  ('$2' 있음)"; else ok "$3"; fi; }
 
 # 아래 단위테스트 13개(vercmp~ui_structure)는 실행 방식(마운트·php:8.3-cli·리다이렉션)이 전부
 # 동일하고 파일명·라벨·메시지만 다르다 — DRY 로 묶는다. 각 테스트가 왜 존재하는지는
