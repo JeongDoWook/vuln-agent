@@ -1230,12 +1230,15 @@ td .why a:hover, td p a:hover { color: var(--accent-2); text-decoration-style: s
   background: var(--muted-bg);
   color: var(--muted-fg);
 }
+/* 아이콘은 인라인 SVG(stroke=currentColor) 라 칸의 톤 색을 그대로 상속한다.
+   글자였을 때는 폰트마다 광학 크기·베이스라인이 달라 네 칸이 나란히 서지 않았다 —
+   이제 크기가 SVG 로 고정이라 flex 로 가운데만 맞춰 준다. */
 .signal-slot__icon {
+  display: flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
   width: 1.2rem;
-  text-align: center;
-  font-size: var(--fs-lg);
-  line-height: 1;
 }
 .signal-slot__text { min-width: 0; }
 .signal-slot__text small,
@@ -2389,7 +2392,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 }
 
 /* --- 대시보드 퍼널(index.php) ---------------------------------------------
- * 전체 → High 이상 → 악용 확인(KEV) → KEV 중 외부 노출. 네 값의 관계는 나열이 아니라
+ * 전체 → High 이상 → 악용 확인(KEV) → KEV 중 기한 초과. 네 값의 관계는 나열이 아니라
  * **포함**이라, 같은 크기 카드로 늘어놓으면 자릿수 큰 쪽이 먼저 읽혀 서열이 뒤집힌다.
  * 오른쪽으로 갈수록 글자·테두리·색의 무게를 키워 마지막 칸이 "오늘 할 일" 로 읽히게 한다.
  * 색은 전부 톤 토큰(--muted/--high/--crit) — 여기서 새 색을 만들지 않는다. */
