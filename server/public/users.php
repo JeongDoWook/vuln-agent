@@ -138,19 +138,22 @@ vg_header('사용자', 'users');
     <form method="post" class="setting-form">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="add">
+      <?php /* 아이디·비밀번호는 짧아 나란히 두고, 역할 select 는 설명까지 들어가 한 줄을 다 쓴다. */ ?>
+      <div class="form-grid">
       <label class="field" for="add-username">아이디
         <input type="text" id="add-username" name="username" value="<?= vg_h($addUsername) ?>" required autocomplete="off">
       </label>
       <label class="field" for="add-password">비밀번호 <span class="why">(8자 이상)</span>
         <input type="password" id="add-password" name="password" required autocomplete="new-password">
       </label>
-      <label class="field" for="add-role">역할
+      <label class="field form-grid__full" for="add-role">역할
         <select id="add-role" name="role">
           <?php foreach (VG_ROLES as $v): ?>
             <option value="<?= vg_h($v) ?>"<?= $addRole === $v ? ' selected' : '' ?>><?= vg_h(vg_role_label($v) . ' (' . VG_ROLE_DESCRIPTIONS[$v] . ')') ?></option>
           <?php endforeach; ?>
         </select>
       </label>
+      </div>
       <?php vg_modal_foot('추가'); ?>
     </form>
   <?php vg_modal_close(); ?>

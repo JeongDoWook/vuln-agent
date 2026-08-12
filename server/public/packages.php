@@ -307,6 +307,42 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
   ]); ?>
 
   <?php
+  /* "어느 패키지가 제일 많은 CVE 를 물고 있나" — 표의 CVE 수 열은 숫자만 줘서, 1위가 2위의
+   * 몇 배인지가 안 읽힌다(실측: 상위 몇 종이 나머지를 합친 것보다 많은데 그게 안 보였다).
+   * **새로 집계하지 않는다** — 이 화면이 이미 들고 있는 $rows 를 그대로 그린다. 이 표는
+   * 사전집계(tb_package_summary)를 cve_cnt DESC 로 읽으므로, 정렬이 'CVE 많은순'이고
+   * 1페이지일 때 $rows 앞부분이 곧 (현재 필터 기준) 진짜 상위다. 그 조건이 아니면
+   * "상위"가 아닌 것을 상위라고 부르게 되므로 아예 그리지 않는다.
+   * 막대 색은 그 패키지의 최고 EPSS 구간(vg_epss_tone) — 건수만이 아니라 "얼마나 급한지"도 같이 말한다. */
+  /* '동일 집계' 행(kernel·kernel-core·kernel-debug…)을 그대로 그리면 길이가 똑같은 막대가
+   * 8줄 깔려 순위가 아무것도 말하지 않는다(실측: 상위 8종이 전부 3,246건). 표가 이미
+   * 계산해 둔 same_agg 로 대표 1종만 남긴다 — 새 집계 없이 그 플래그를 재사용한다. */
+  $rankItems = [];
+  if ($sort === 'cves' && $page === 1) {
+      foreach ($rows as $r) {
+          if (!empty($r['same_agg']) || (int) $r['cve_cnt'] <= 0) { continue; }
+          $e = ($r['max_epss'] === null || $r['max_epss'] === '') ? 0.0 : (float) $r['max_epss'];
+          $rankItems[] = [
+              'label' => (string) $r['package_name']
+                       . (!empty($r['ecosystem']) ? ' · ' . (string) $r['ecosystem'] : ''),
+              'value' => (int) $r['cve_cnt'],
+              'tone'  => $e > 0 ? vg_epss_tone($e) : 'info',
+              'href'  => '/package.php?name=' . urlencode((string) $r['package_name'])
+                       . '&eco=' . urlencode((string) $r['ecosystem']),
+          ];
+      }
+  }
+  // 막대 하나짜리 랭킹은 비교가 아니라 장식이다 — 2종 이상일 때만 그린다.
+  if (count($rankItems) >= 2): ?>
+    <div class="card">
+      <strong>CVE 를 가장 많이 물고 있는 패키지</strong>
+      <span class="why">— 현재 필터 기준 상위 · 막대 색은 그 패키지의 최고 EPSS 구간
+        · 같은 소스에서 갈라진 바이너리(표의 '동일 집계')는 대표 1종만</span>
+      <div class="card__body"><?php vg_rank_bars($rankItems, ['unit' => '건']); ?></div>
+    </div>
+  <?php endif; ?>
+
+  <?php
   $hasFilter = $q !== '' || $eco !== '';
   vg_table(
       [

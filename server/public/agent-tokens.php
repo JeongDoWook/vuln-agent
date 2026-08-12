@@ -202,12 +202,12 @@ vg_header('에이전트 키', 'agenttokens');
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="delete">'
                       . '<input type="hidden" name="id" value="' . (int) $t['agent_token_id'] . '">'
-                      . '<button class="btn btn--sm btn--ghost">삭제</button></form>'
+                      . '<button class="btn btn--xs btn--ghost">삭제</button></form>'
                   : '<form method="post" data-confirm="이 토큰을 폐기할까요? 해당 에이전트는 즉시 수신이 막힙니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="revoke">'
                       . '<input type="hidden" name="id" value="' . (int) $t['agent_token_id'] . '">'
-                      . '<button class="btn btn--sm btn--ghost">폐기</button></form>',
+                      . '<button class="btn btn--xs btn--ghost">폐기</button></form>',
           ],
       ]
   );
@@ -219,7 +219,9 @@ vg_header('에이전트 키', 'agenttokens');
     <form method="post" class="setting-form">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
       <input type="hidden" name="action" value="create">
-      <label class="field" for="issue-fqdn">호스트 (fqdn)
+      <?php /* 호스트는 주소라 길고 안내문까지 달려 한 줄을 다 쓴다. 용도·유효기간은 짧아 2열. */ ?>
+      <div class="form-grid">
+      <label class="field form-grid__full" for="issue-fqdn">호스트 (fqdn)
         <input type="text" id="issue-fqdn" name="fqdn" value="<?= vg_h($issueFqdn) ?>"
                placeholder="예: web01.example.com" maxlength="255" required autocomplete="off">
         <span class="why">이 호스트의 스캔만 갱신할 수 있습니다. 같은 호스트의 기존 활성 토큰은 자동 폐기됩니다.</span>
@@ -231,6 +233,7 @@ vg_header('에이전트 키', 'agenttokens');
       <label class="field">유효기간
         <?= vg_token_expiry_select($issueDays) ?>
       </label>
+      </div>
       <div class="why">만료 시 수집이 즉시 거부됩니다. 토큰 원문은 발급 직후 한 번만 표시됩니다.</div>
       <?php vg_modal_foot('발급', ['loading' => '발급 중…']); ?>
     </form>

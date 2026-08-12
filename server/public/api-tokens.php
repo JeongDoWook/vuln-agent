@@ -173,7 +173,7 @@ vg_header('API 키', 'apitokens');
                   . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                   . '<input type="hidden" name="action" value="revoke">'
                   . '<input type="hidden" name="id" value="' . (int) $t['api_token_id'] . '">'
-                  . '<button class="btn btn--sm btn--ghost">폐기</button></form>',
+                  . '<button class="btn btn--xs btn--ghost">폐기</button></form>',
           ],
       ]
   );

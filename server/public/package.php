@@ -267,8 +267,11 @@ vg_hero(
                 'fixed_version' => fn($r) => !empty($r['fixed_version'])
                     ? '<span class="pill">' . vg_h((string)$r['fixed_version']) . ' 이상</span>'
                     : '<span class="why">수정 버전 미확인</span>',
+                // 본문성 링크 — .body-link 로 통일한다(cves.php 요약 열과 같은 자리·같은 규약).
+                //   .clamp-2 만으로도 지금은 본문 색이 나오지만, 그건 잘림 처리의 부수효과일 뿐이라
+                //   "이건 본문 링크다" 는 뜻을 클래스로 남긴다.
                 'summary' => fn($r) => !empty($r['summary'])
-                    ? '<a class="clamp-2" href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
+                    ? '<a class="clamp-2 body-link" href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
                         . vg_h((string) $r['summary']) . '</a>'
                     : '<span class="why">–</span>',
             ],
