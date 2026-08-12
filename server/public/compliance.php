@@ -70,6 +70,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       . count(VG_COMPLIANCE_MANUAL_CHECKLIST) . '건은 자동판정 대상 아님(맨 아래)'
       // 판정 기준시각은 아래 결론 배너의 note 로 옮겼다 — 같은 화면에 두 번 적을 값이 아니다.
   ); ?>
+  <?php // 통제 기준 매핑은 사이드바에 없고 이 줄로만 들어온다(정의는 nav.php 한 곳). ?>
+  <?php vg_compliance_subtabs('mapping'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -472,11 +474,5 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   </div>
 <?php endif; ?>
 
-  <?php
-  // 통제 기준 매핑은 상시로 볼 화면이 아니다(판정 없이 같은 CCE 결과를 기준별로 묶어 세기만 한다)
-  //   — 서브탭에서 내리고 이 한 줄만 남긴다. 화면은 그대로 살아 있으므로 링크까지 지워
-  //   고아 페이지로 만들지는 않는다. 위치가 아래인 것도 의도다(발견성을 낮춘다).
-  ?>
-  <p class="why mt-lg">같은 점검 결과를 기준별 통제로 묶어 보려면 →
-    <a href="/control_mapping.php">통제 기준 매핑</a></p>
-<?php vg_footer();
+<?php // 통제 기준 매핑으로 가는 길은 상단 서브탭이 갖는다 — 본문 하단 링크는 그래서 없앴다.
+vg_footer();
