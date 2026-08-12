@@ -62,6 +62,7 @@ function vg_activity_type_labels(): array {
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김.
         'host_perimeter_update'=> '경계 방화벽 설정 변경',
         'page_view'            => '페이지 열람',
+        // 기능은 제거됐지만 과거 감사로그 표시용으로 남김(매핑을 지우면 원시 코드가 그대로 노출된다).
         'activity_review_save' => '접속기록 점검 기록',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김(매핑을 지우면 원시 코드가 그대로 노출된다).
         'saved_view_save'      => '저장된 보기 저장',
