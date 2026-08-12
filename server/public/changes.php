@@ -514,7 +514,7 @@ vg_header('변화 추적', 'changes');
   }
   if ($tab === 'trend') {
       $filters[] = ['type' => 'select', 'name' => 'window', 'selected' => $window,
-                    'empty_label' => '기본(최근 10회차)', 'options' => $windowOptions];
+                    'empty_label' => '최근 10회차(기본)', 'options' => $windowOptions];
   }
   if ($tab !== 'trend') {
       $filters[] = ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE·패키지명 검색', 'value' => $q];
@@ -642,7 +642,7 @@ vg_header('변화 추적', 'changes');
       <?php vg_empty([
           'icon'  => '📌',
           'title' => '호스트를 선택하면 추이를 볼 수 있습니다.',
-          'hint'  => '전체 자산 합산은 데이터가 많으면 무거워질 수 있어, 위 필터에서 호스트를 먼저 골라 주세요.',
+          'hint'  => '전체 자산 합산은 데이터가 많으면 무거워질 수 있어, 위 필터에서 호스트를 먼저 고르세요.',
       ]); ?>
     <?php elseif (!$trendRounds): ?>
       <?php vg_empty([

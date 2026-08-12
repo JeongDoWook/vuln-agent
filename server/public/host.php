@@ -497,7 +497,7 @@ function vg_host_render_agent_control(
             <input type="hidden" name="action" value="agent_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
             <label for="agent-run-at"><strong>예약 실행</strong></label>
-            <input id="agent-run-at" type="datetime-local" name="run_at" min="<?= date('Y-m-d\TH:i') ?>" placeholder="날짜와 시간 선택" required>
+            <input id="agent-run-at" type="datetime-local" name="run_at" min="<?= date('Y-m-d\TH:i') ?>" required>
             <button class="btn btn--sm btn--ghost">등록</button>
           </form>
 
@@ -619,7 +619,7 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
 
             <label class="field" for="asset-grade">보안등급 (N2SF)
               <select id="asset-grade" name="grade">
-                <option value="">미지정 (확정 해제)</option>
+                <option value="">미지정(확정 해제)</option>
                 <?php foreach (VG_ASSET_GRADES as $v => $label): ?>
                   <option value="<?= vg_h($v) ?>"<?= $curGrade === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
                 <?php endforeach; ?>
@@ -634,7 +634,7 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
 
             <label class="field" for="asset-article9-item">정보공개법 제9조 해당 호
               <select id="asset-article9-item" name="article9_item">
-                <option value="">미검토</option>
+                <option value="">미지정</option>
                 <?php foreach (VG_ASSET_REVIEW_ARTICLE9_ITEMS as $v => $label): ?>
                   <option value="<?= vg_h((string) $v) ?>"<?= ($review['article9_item'] ?? null) === (string) $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
                 <?php endforeach; ?>
@@ -654,14 +654,15 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
             </label>
             <label class="field" for="asset-publication-state">외부 공개 상태
               <select id="asset-publication-state" name="external_publication_state">
-                <option value="">미검토</option>
+                <option value="">미지정</option>
                 <?php foreach (VG_ASSET_REVIEW_PUBLICATION_STATES as $v => $label): ?>
                   <option value="<?= vg_h($v) ?>"<?= ($review['external_publication_state'] ?? null) === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
                 <?php endforeach; ?>
               </select>
             </label>
             <label class="field" for="asset-review-reference">검토 문서·티켓 참조
-              <input id="asset-review-reference" name="review_reference" maxlength="255" placeholder="문서 내용 대신 식별자 또는 위치만 입력" value="<?= vg_h((string) ($review['review_reference'] ?? '')) ?>">
+              <input id="asset-review-reference" name="review_reference" maxlength="255" placeholder="예: SEC-1234, 보안검토 회의록 2026-03" value="<?= vg_h((string) ($review['review_reference'] ?? '')) ?>">
+              <span class="why">문서 내용이 아니라 식별자나 위치만 남깁니다.</span>
             </label>
             <label class="field" for="asset-next-review-date">다음 검토일
               <input id="asset-next-review-date" type="date" name="next_review_date" value="<?= vg_h((string) ($review['next_review_date'] ?? '')) ?>">

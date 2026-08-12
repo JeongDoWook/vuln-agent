@@ -265,7 +265,7 @@ vg_header('판정 근거', 'vendor');
   }
 
   $toolbar = [
-      ['type' => 'select', 'name' => 'rel', 'selected' => $rel, 'empty_label' => '릴리스 전체',
+      ['type' => 'select', 'name' => 'rel', 'selected' => $rel, 'empty_label' => '전체 릴리스',
        'options' => $relOptions],
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지 검색 (예: CVE-2024, openssl)', 'value' => $q],
   ];

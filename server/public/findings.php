@@ -707,13 +707,13 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       ['type' => 'select', 'name' => 'fst', 'empty_label' => '전체 조치 상태', 'selected' => $fst,
           'options' => vg_finding_status_labels()],
       // 조치 가능성 — 벤더가 수정본을 안 낸 CVE 를 걸러 보거나, 그것만 모아 볼 수 있다.
-      ['type' => 'select', 'name' => 'fx', 'empty_label' => '전체(조치 가능성)', 'selected' => $fx,
+      ['type' => 'select', 'name' => 'fx', 'empty_label' => '전체 조치 가능성', 'selected' => $fx,
           'options' => ['action' => '조치 가능', 'nofix' => '조치 불가(벤더 미수정)',
                         'restart' => '재시작·재부팅만 하면 됨']],
       // 정렬은 표 머리글이 아니라 여기에 둔다 — vg_table 은 정렬 링크를 갖지 않는다(공용 표를
       //   이 화면 하나 때문에 바꾸지 않는다). 기한순은 최초 발견 시각을 되짚는 집계가 필요해
       //   기본값으로 두지 않는다.
-      ['type' => 'select', 'name' => 'sort', 'empty_label' => '기본 정렬(위험도순)', 'selected' => $sort,
+      ['type' => 'select', 'name' => 'sort', 'empty_label' => '위험도순(기본)', 'selected' => $sort,
           'options' => ['due' => '조치 기한 임박순']],
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
   ]));

@@ -240,7 +240,7 @@ vg_header('감사 로그', 'activity');
         </label>
         <label class="field" for="review-note">비고 (선택)
           <input type="text" id="review-note" name="note"
-                 placeholder="점검 범위·확인 사항" maxlength="500">
+                 placeholder="예: 지난달 접속기록 전건 확인, 이상 없음" maxlength="500">
         </label>
         <div class="actions">
           <button class="btn btn--sm btn--primary" data-loading="기록 중…">점검 완료 기록</button>
@@ -322,7 +322,7 @@ vg_header('감사 로그', 'activity');
   <?php vg_toolbar([
       ['type' => 'date',   'name' => 'from', 'value' => $fromDate, 'placeholder' => '시작일'],
       ['type' => 'date',   'name' => 'to',   'value' => $toDate,   'placeholder' => '종료일'],
-      ['type' => 'select', 'name' => 'action', 'empty_label' => '수행업무 전체', 'selected' => $action,
+      ['type' => 'select', 'name' => 'action', 'empty_label' => '전체 수행업무', 'selected' => $action,
           'options' => $actionLabels],
       ['type' => 'select', 'name' => 'scope', 'empty_label' => '전체 범위', 'selected' => $scope,
           'options' => array_combine($scopes, $scopes)],

@@ -215,7 +215,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
     <?php vg_empty([
         'icon'  => '📭',
         'title' => '이 CVE 는 아직 수집되지 않았습니다.',
-        'hint'  => 'NVD 커넥터가 수집한 뒤 다시 확인해 주세요.',
+        'hint'  => 'NVD 커넥터가 수집한 뒤 다시 확인하세요.',
     ]); ?>
   </div>
 <?php else: ?>

@@ -38,7 +38,7 @@ function vg_fh_container_name(PDO $pdo, int $containerId): string {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $noteMsg = null; $noteErr = null;
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
-        $noteErr = '세션이 만료되었습니다. 다시 시도해 주세요.';
+        $noteErr = '세션이 만료되었습니다. 다시 시도하세요.';
     } elseif (!vg_has_role('admin', 'operator')) {
         // 조회 권한만 있는 사용자가 승인 이력을 남길 수는 없다(승인자는 자동 기록되는 값이다).
         http_response_code(403);
@@ -160,7 +160,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
   <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif ($cveId === '' || $packageName === ''): ?>
   <?php vg_page_title('취약점 이력', 'FINDING HISTORY'); ?>
-  <div class="card"><?php vg_empty(['icon' => '⚠️', 'title' => 'CVE·패키지 정보가 없습니다.', 'hint' => '탐지 결과 목록의 "이 자산 판정" 또는 호스트 상세 취약점 탭의 "이력" 링크로 들어와 주세요.']); ?></div>
+  <div class="card"><?php vg_empty(['icon' => '⚠️', 'title' => 'CVE·패키지 정보가 없습니다.', 'hint' => '탐지 결과 목록의 "이 자산 판정" 또는 호스트 상세 취약점 탭의 "이력" 링크로 들어오세요.']); ?></div>
 <?php else: ?>
   <?php
   $meta = [
@@ -296,7 +296,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
           <label for="reason"><?= $note !== null ? '사유 수정' : '사유 입력' ?> (최대 <?= VG_REMEDIATION_REASON_MAX ?>자)</label>
           <textarea id="reason" name="reason" rows="3" required
                     maxlength="<?= VG_REMEDIATION_REASON_MAX ?>"
-                    placeholder="예) 해당 서비스는 내부망 전용이고 벤더 수정본이 없어 다음 정기점검까지 보류합니다."><?= $note !== null ? vg_h((string) $note['reason']) : '' ?></textarea>
+                    placeholder="예: 해당 서비스는 내부망 전용이고 벤더 수정본이 없어 다음 정기점검까지 보류합니다."><?= $note !== null ? vg_h((string) $note['reason']) : '' ?></textarea>
           <div class="actions">
             <button class="btn btn--sm btn--primary">저장</button>
             <span class="why">저장하면 승인자(<?= vg_h((string) (vg_current_user()['username'] ?? '-')) ?>)와 승인일시가 자동 기록됩니다.</span>

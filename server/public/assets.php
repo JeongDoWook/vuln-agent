@@ -483,7 +483,7 @@ vg_header('자산', 'assets');
 
       <label for="bulk-grade">보안등급 (N2SF)</label>
       <select id="bulk-grade" name="grade" required>
-        <option value="">고르세요</option>
+        <option value="">선택</option>
         <?php foreach (VG_ASSET_GRADES as $v => $label): ?>
           <option value="<?= vg_h($v) ?>"><?= vg_h($label) ?></option>
         <?php endforeach; ?>
@@ -514,7 +514,7 @@ vg_header('자산', 'assets');
   <?php
   /* 설치 안내는 자산을 처음 붙일 때 한 번 보는 것이다. 목록 아래 늘 펼쳐두면
    * 매일 보는 화면이 그만큼 길어진다 → 버튼 뒤 모달로. */
-  vg_modal_open('agentInstall', '에이전트 설치', 'modal--wide');
+  vg_modal_open('agentInstall', '에이전트 설치 안내', 'modal--wide');
   ?>
     <div class="why">자산은 에이전트가 수집을 보내면 <strong>자동 등록</strong>됩니다.
       중앙에서 대상 서버로 접속하지 않습니다(아웃바운드 push).</div>
