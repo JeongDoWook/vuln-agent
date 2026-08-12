@@ -196,7 +196,7 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'packages');
+vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지 카탈로그', 'packages');
 ?>
   <?php if ($tab === 'lang'): ?>
     <?php vg_page_title('언어 패키지 · 라이선스', 'SCA', 'pip/npm/gem/composer/maven/nuget/cargo/go 패키지의 라이선스를 확인합니다.', ['count' => $langTotal, 'count_label' => '건']); ?>
@@ -204,7 +204,7 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
     <div class="sub"><span class="why">집계 기준 <?= vg_h($langSummaryAt) ?> (OSV 수집 시 갱신) · 라이선스 값은 SBOM/METADATA/composer 소스에서만 채워집니다.</span></div>
     <?php endif; ?>
   <?php else: ?>
-    <?php vg_page_title('패키지', 'PACKAGES', '패키지별 CVE와 수정 버전을 확인합니다.', ['count' => $total, 'count_label' => '종']); ?>
+    <?php vg_page_title('패키지 카탈로그', 'PACKAGES', '수집한 패키지별 CVE 집계', ['count' => $total, 'count_label' => '종']); ?>
     <?php if ($summaryAt !== ''): ?>
     <div class="sub"><span class="why">집계 기준 <?= vg_h($summaryAt) ?> (OSV 수집 시 갱신)</span></div>
     <?php endif; ?>

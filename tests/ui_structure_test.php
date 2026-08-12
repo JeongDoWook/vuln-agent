@@ -66,9 +66,13 @@ $connectorJs = (string) file_get_contents($public . '/assets/js/connectors.js');
 $navPhp = (string) file_get_contents($root . '/server/src/view/nav.php');
 $check(str_contains($connectorPhp, 'data-feed-preview'), '커넥터 미리보기 data 속성');
 $check(str_contains($connectorJs, "closest('[data-feed-preview]')"), '커넥터 미리보기 이벤트 위임');
-$check(str_contains($navPhp, "'바로가기' =>"), '자산·데이터 수집 최상위 바로가기');
+$check(str_contains($navPhp, "'데이터' =>"), '참조 카탈로그는 데이터 그룹으로 분리');
 $check(str_contains($navPhp, "'관리' =>"), '관리 메뉴 통합');
+$check(!str_contains($navPhp, "'취약점' =>") && !str_contains($navPhp, "'보안 기준' =>")
+    && !str_contains($navPhp, "'바로가기' =>"),
+    '업무 화면은 라벨 없는 최상위 묶음으로 통합');
 $check(!str_contains($navPhp, "'계정' =>") && !str_contains($navPhp, "'연동' =>"), '잘게 나뉜 관리 그룹 제거');
+$check(str_contains($navPhp, 'function vg_compliance_subtabs('), '컴플라이언스 서브탭 정의는 nav.php 한 곳');
 $check(str_contains($connectorPhp, "['label' => '실행 시각'"), '커넥터 실행 시각 열 통합');
 $check(!str_contains($connectorPhp, "['label' => '마지막 실행'"), '커넥터 중복 시각 열 제거');
 
