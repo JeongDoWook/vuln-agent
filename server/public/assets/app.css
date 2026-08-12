@@ -665,7 +665,9 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 /* 카드 안 설명용 목록(왜 0건인가 등). 기본 ul 은 들여쓰기가 과하다. */
 /* 대상이 많으면(운영에서 실측 50+ 건) 목록이 화면 대부분을 차지해 정작 본문을 밀어낸다 —
  * 스크롤로 접어 둔다(사라지는 게 아니라 필요하면 계속 볼 수 있다). */
-.hint-list { margin: .4rem 0 0; padding-left: 1.1rem; max-height: 9rem; overflow-y: auto; }
+/* 상한이 9rem 일 때 경고 배너 하나가 화면 6줄을 먹었다(취약점 목록의 "판정 불가" 경고) —
+ * 정작 KPI·필터·표가 아래로 밀렸다. 요약은 3줄까지만 펴고 나머지는 스크롤·접힘 안으로 보낸다. */
+.hint-list { margin: .4rem 0 0; padding-left: 1.1rem; max-height: 4.6rem; overflow-y: auto; }
 
 /* --- KPI -----------------------------------------------------------------
  * 정본 한 벌: 흰 면 + 톤 색 숫자 + 톤 테두리. 배경 틴트는 쓰지 않는다.
@@ -1122,6 +1124,9 @@ td.nowrap, td code { white-space: nowrap; }
  * 칸을 넘치면 말줄임으로 접고 전체 값은 title 로 남긴다(지우는 게 아니라 접는 것).
  * 폭이 고정된 표(아래 '목록 화면' 의 table-layout:fixed)에서만 뜻이 있다. */
 td.col-id { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 식별자를 두 줄로 나눠 담는 칸(취약점 목록의 호스트 = 이름 + 도메인)의 둘째 줄도 같은 규칙을
+ * 받아야 한다 — 안쪽 블록은 칸의 말줄임을 물려받지 못해, 넘치는 부분이 잘린 티도 없이 사라진다. */
+td.col-id .why { overflow: hidden; text-overflow: ellipsis; }
 /* 여러 줄이 되는 설명 칸(근거·비고) — 기본은 두 줄까지만 보여 행 높이를 한 줄짜리 열에 맞춘다.
  * 잘린 뒷부분은 title 에 그대로 있다. */
 .clamp-2 {
@@ -1459,6 +1464,9 @@ tr[data-finding-detail]:focus-visible {
 .alert--err  { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
 .alert--ok   { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
 .alert--warn { background: var(--med-bg);  border-color: var(--med-bd);  color: var(--med-fg); }
+/* 경고에 딸린 긴 대상 목록은 접어 둔다(vg_alert 의 'details') — 배너는 요약만 펴 놓고 목록은
+ * 눌러서 본다. 색은 배너가 이미 정한 것을 그대로 물려받는다(톤을 새로 만들지 않는다). */
+.alert details > summary { cursor: pointer; font-size: var(--fs-sm); }
 
 /* --- 폼 컨트롤 ----------------------------------------------------------- */
 /* 라벨 대비 상향 — 폼에서 "무엇을 넣는 칸인가" 가 값보다 흐리면 안 된다(--muted 계열 금지). */
@@ -2025,6 +2033,11 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--activity .data-table .pill, .page--advisories .data-table .pill, .page--assets .data-table .pill,
 .page--changes .data-table .pill, .page--compliance_rules .data-table .pill, .page--cves .data-table .pill,
 .page--findings .data-table .pill, .page--packages .data-table .pill, .page--vendor .data-table .pill { white-space: normal; }
+/* 뱃지도 같은 예외가 필요한 칸이 하나 있다 — 취약점 목록의 '조치 · 올릴 버전'(td.col-fix).
+ * 값이 rpm 모듈 버전(1:1.22.1-3.module+el9.2.0+…)이면 nowrap 뱃지가 칸을 뚫고, 그렇다고 잘라
+ * 넣으면 "무엇으로 올려야 하는가" 라는 이 열의 존재 이유가 사라진다. 이 칸에서만 접게 둔다
+ * (td 의 overflow-wrap:anywhere 가 이미 끊을 자리를 준다). 공용 .badge 규칙은 그대로다. */
+.page--findings .data-table td.col-fix .badge { white-space: normal; }
 /* nowrap 칸은 접힐 수가 없으니 폭을 넘으면 표를 통째로 밀어낸다(가로 스크롤). 넘치면 잘라 둔다. */
 .page--activity .data-table td.nowrap, .page--advisories .data-table td.nowrap, .page--assets .data-table td.nowrap,
 .page--changes .data-table td.nowrap, .page--compliance_rules .data-table td.nowrap, .page--cves .data-table td.nowrap,

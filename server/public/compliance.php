@@ -149,9 +149,17 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   //   (2) 요약 칸에 3번째 줄로 넣으면 행이 85px 이 돼 통제 5종이 첫 화면 밖으로 밀린다.
   //   meter 는 톤이 crit/high/med/low 뿐이다(app.css) — 'ok' 는 low 로 떨군다. 준수면 채움이
   //   0% 라 색이 보이지도 않지만, 존재하지 않는 클래스를 만들지는 않는다.
-  $verdictCell = static function (array $s, ?float $pct, string $why): string {
-      return vg_badge($s['label'], $s['tone'])
-          . ($pct === null ? '' : vg_meter($s['tone'] === 'ok' ? 'low' : $s['tone'], $pct, $why));
+  // $what 은 **막대가 무엇의 비율인가** 를 말하는 짧은 라벨이다. 없을 때는 붉은 막대가 꽉 찬 행이
+  //   "위반율 100%" 인지 "판정 진행률" 인지 화면만 보고는 알 수 없었다(마우스를 올려야만 알았다).
+  //   막대 바로 위에 라벨+값을 적는다 — packages.php 의 EPSS·조치율 게이지, 아래 패치관리 버킷별
+  //   판정의 '보유 이력 최대 4일 / SLA 15일' 과 같은 규약이다(막대 위 글자가 그 막대의 라벨).
+  //   분모까지 담은 전체 문장은 지금처럼 vg_meter 의 title/aria-label 이 계속 갖는다.
+  $verdictCell = static function (array $s, ?float $pct, string $why, string $what = ''): string {
+      $badge = vg_badge($s['label'], $s['tone']);
+      if ($pct === null) { return $badge; }
+      $val = number_format($pct, 1) . '%';
+      return $badge . ' <span class="why">' . vg_h($what) . ' ' . vg_h($val) . '</span>'
+          . vg_meter($s['tone'] === 'ok' ? 'low' : $s['tone'], $pct, $what . ' ' . $val . ' · ' . $why);
   };
   // 통제별 분모. 판정 기준이 아니라 **표시용**이다(무엇이 위반인지는 그대로다).
   $patchTargets = 0;
@@ -177,7 +185,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $whyPatch = '조치 대상 ' . number_format($patchTargets) . '건 중 SLA 초과분';
   $summaryRows[] = [
       'key' => 'patch',
-      'badge' => $verdictCell($sPatch, $patchTargets > 0 ? $patch['total'] / $patchTargets * 100 : null, $whyPatch),
+      'badge' => $verdictCell($sPatch, $patchTargets > 0 ? $patch['total'] / $patchTargets * 100 : null,
+          $whyPatch, '위반율'),
       'summary' => $sumCell(
           '위반 ' . number_format((int) $patch['total']) . '건' . $naText((int) $patch['unjudged']),
           $whyPatch
@@ -190,7 +199,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $summaryRows[] = $canViewAssets ? [
       'key' => 'asset',
       'badge' => $verdictCell($sAsset,
-          $asset['totalHosts'] > 0 ? $asset['total'] / $asset['totalHosts'] * 100 : null, $whyAsset),
+          $asset['totalHosts'] > 0 ? $asset['total'] / $asset['totalHosts'] * 100 : null, $whyAsset, '위반율'),
       'summary' => $sumCell(
           '위반 ' . number_format((int) $asset['total']) . '건' . $naText((int) $asset['unjudged'], '대'),
           $whyAsset
@@ -201,7 +210,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $summaryRows[] = [
       'key' => 'secops',
       'badge' => $verdictCell($sSec,
-          $secconfig['checked'] > 0 ? $secconfig['total'] / $secconfig['checked'] * 100 : null, $whySec),
+          $secconfig['checked'] > 0 ? $secconfig['total'] / $secconfig['checked'] * 100 : null, $whySec, '위반율'),
       'summary' => $sumCell('위반 ' . number_format((int) $secconfig['total']) . '건', $whySec),
       // 보안설정(CCE) 위반 목록 전용 탭. 기본 필터가 res=FAIL 이라 이 통제가 센 것과 같다.
       'link' => '<a href="/findings.php?type=cce">근거 →</a>',
@@ -212,8 +221,12 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
               ? ' · 수집 대기 ' . number_format((int) $account['pending_hosts']) . '대' : '');
   $summaryRows[] = $canViewAssets ? [
       'key' => 'account',
+      // 이 통제만 게이지 분모가 **호스트 수**다(위반은 호스트당 여러 건 나온다) — 라벨도
+      //   '위반율' 이 아니라 '위반 호스트' 로 다르게 적는다. 같은 말로 적으면 옆 행과 같은
+      //   비율인 줄 읽힌다.
       'badge' => $verdictCell($sAcct,
-          $account['totalHosts'] > 0 ? $acctViolHosts / $account['totalHosts'] * 100 : null, $whyAcct),
+          $account['totalHosts'] > 0 ? $acctViolHosts / $account['totalHosts'] * 100 : null,
+          $whyAcct, '위반 호스트'),
       'summary' => $sumCell(
           '위반 ' . number_format((int) $account['total']) . '건' . $naText((int) $account['unjudged']),
           $whyAcct
@@ -232,7 +245,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       'key' => 'access_review',
       'badge' => $verdictCell($sRev,
           ($review['days_since'] !== null && $review['interval_days'] > 0)
-              ? (int) $review['days_since'] / (int) $review['interval_days'] * 100 : null, $whyRev),
+              ? (int) $review['days_since'] / (int) $review['interval_days'] * 100 : null,
+          $whyRev, '주기 경과'),
       'summary' => $sumCell('위반 ' . number_format((int) $review['total']) . '건', $whyRev),
       'link' => '<a href="/activity.php">기록 →</a>',
   ];
@@ -240,7 +254,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   vg_table(
       [
           ['label' => '통제'],
-          ['label' => '판정', 'width' => '9rem'],
+          // 13rem 은 실측값이다 — 9rem 은 물론 12rem 에서도 가장 긴 뱃지+라벨 조합
+          //   ('판정 불가' + '위반 호스트 0.0%')이 두 줄로 접혀 그 행만 20px 높아졌다.
+          ['label' => '판정', 'width' => '13rem'],
           ['label' => '요약'],
           // 링크 라벨은 짧다 — 접히면 화살표가 다음 줄로 떨어져 링크로 안 보인다.
           ['label' => '근거', 'width' => '7rem', 'nowrap' => true],
