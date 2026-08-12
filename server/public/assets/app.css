@@ -2299,3 +2299,12 @@ form.card .btn--primary:active { transform: translateY(0); }
 .dep-paths > li:first-child { border-top: 0; }
 .dep-path { display: flex; flex-wrap: wrap; gap: .3rem .55rem; margin: 0; padding: 0; list-style: none; }
 .dep-path li + li::before { content: "→"; margin-right: .4rem; color: var(--muted); }
+
+/* subtabs-sub — 자산 상세(host.php) 2단 탭의 아래 줄.
+     같은 .subtabs 를 두 줄 쌓으면 자산 상세에서는 카드형 상자(.page--host .subtabs)가 두 번
+     그려져 어느 쪽이 상위인지 안 읽힌다. 아래 줄은 상자를 벗겨 밑줄형으로 되돌린다 —
+     정의 위치가 .page--host 규칙보다 뒤라 같은 특정도에서 이 규칙이 이긴다. */
+.subtabs-sub .subtabs {
+  border: 0; border-radius: 0; padding: 0 .25rem; background: none; box-shadow: none;
+  margin-top: calc(var(--sp-3) * -0.5);
+}

@@ -1112,17 +1112,21 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       '<a href="' . vg_h(vg_qs(['tab' => 'packages', 'page' => null, 'q' => null])) . '">패키지 '
           . number_format($packageTotal) . '개</a>',
   ];
-  // 의존성 엣지가 있는 자산만 — 없는 자산에 링크를 걸면 빈 화면으로 보내게 된다.
-  if ($depEdgeTotal > 0) {
-      $meta[] = '<a href="/depgraph.php?id=' . (int) $hostId . '">의존성 그래프 '
-          . number_format($depEdgeTotal) . '엣지</a>';
-  }
+  /* 의존성 그래프 링크는 식별부에서 내렸다 — 자산 계열 화면(전체 설치 패키지·의존성 그래프)의
+   *   진입점은 '구성 > 설치 패키지' 탭 한 곳으로 모은다. 링크 자체는 그 탭에 그대로 있다
+   *   (엣지가 있는 자산에만 — 없는 자산에 걸면 빈 화면으로 보내게 된다). */
   if (!empty($host['last_seen_ip'])) { $meta[] = 'IP ' . vg_h($host['last_seen_ip']); }
   /* 자산 등급은 설정 탭으로 내려갔지만 "이 자산이 무엇인가"의 일부라 식별부에 남긴다 —
    *   옮기는 것이지 지우는 것이 아니다. 미확정이면 확정하러 갈 자리를 링크로 준다. */
   $meta[] = ($host['grade'] ?? '') !== ''
       ? '등급 ' . vg_asset_grade_badge((string) $host['grade'], false, (string) ($host['grade_reason'] ?? ''))
       : '<a href="' . vg_h(vg_qs(['tab' => 'manage', 'page' => null, 'q' => null])) . '">등급 미확정</a>';
+  /* 자산 설정(수집 제어·등급·삭제)은 '이력' 그룹의 두 번째 하위 탭이라 상위 탭 한 번으로는
+   *   닿지 않는다 — 첫 화면에서 한 번에 갈 자리를 식별부에 남긴다. 탭 줄에서 내린 것이지
+   *   기능을 숨긴 것이 아니다(폼은 그 탭에 그대로 있다). */
+  if (vg_can('assets')) {
+      $meta[] = '<a href="' . vg_h(vg_qs(['tab' => 'manage', 'page' => null, 'q' => null])) . '">자산 설정</a>';
+  }
   $meta[] = '<a href="/">대시보드</a>';
   if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
   vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', '');
@@ -1191,7 +1195,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </a>
   </div>
 
-  <?php vg_subtabs($tabDefs, $tab); ?>
+  <?php /* 2단 탭 — 상위 4개(위험·구성·준거·이력) + 그 그룹의 하위 탭. 매핑은 nav.php 소유.
+           $tab 키와 각 탭의 조회 분기는 그대로다(URL 하위호환 · 쿼리는 여전히 활성 탭 하나만 돈다). */ ?>
+  <?php vg_asset_tabs($tabDefs, $tab); ?>
 
   <?php if ($tab === 'vuln'):
     // 두 표(CRITICAL·HIGH / 재시작·재부팅)는 열 구성이 같다 — 스펙을 한 번만 만들어 나눠 쓴다.
@@ -1565,6 +1571,9 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       <?php if ($depEdgeTotal > 0): ?>
         <span class="why"> · <a href="/depgraph.php?id=<?= (int) $hostId ?>">무엇이 이 패키지를 끌어왔나(의존성 그래프)</a></span>
       <?php endif; ?>
+      <?php /* 전체 설치 패키지(asset-packages.php)는 자산을 고르지 않으면 함대 전체가 한 표에 쏟아진다 —
+               이 자산으로 필터한 링크를 주 진입점으로 둔다(화면 자체는 전역 검색용으로 남는다). */ ?>
+      <span class="why"> · <a href="/asset-packages.php?host=<?= (int) $hostId ?>">다른 자산과 나란히 보기(전체 설치 패키지)</a></span>
       <div class="card__body">
       <?php
       vg_table(

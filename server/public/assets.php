@@ -22,6 +22,10 @@ $state = trim((string) ($_GET['state'] ?? ''));
 // 등급 필터. 허용값은 VG_ASSET_GRADES(단일 출처) + 'none'(아직 확정 안 된 자산 찾기).
 $grade = trim((string) ($_GET['grade'] ?? ''));
 if ($grade !== 'none' && !isset(VG_ASSET_GRADES[$grade])) { $grade = ''; }
+/* 담당 부서 필터. 어휘를 코드에 박지 않는다 — 부서명은 기관마다 다르고 등급 검토 폼이
+ *   자유 입력으로 받는 값이라, 옵션은 **DB 에 실제로 들어 있는 값**에서만 뽑는다. */
+$dept = trim((string) ($_GET['dept'] ?? ''));
+$deptOptions = [];
 $systemGrade = null;   // 함대 전체를 하나의 정보시스템으로 볼 때의 승계 등급
 $unconfirmed = 0;      // 아직 사람이 등급을 확정하지 않은 자산 수
 $page  = vg_page();
@@ -45,7 +49,8 @@ $fromSql = 'FROM tb_host h
                   FROM tb_agent_token
                  WHERE is_revoked = 0 AND is_deleted = 0
                  GROUP BY host_fqdn
-            ) agent_seen ON agent_seen.host_fqdn = h.fqdn';
+            ) agent_seen ON agent_seen.host_fqdn = h.fqdn
+            LEFT JOIN tb_asset_grade_review gr ON gr.host_id = h.host_id';
 
 $pdo = vg_pdo();
 
@@ -104,6 +109,19 @@ $msg = $assetFlash['assetMsg'] ?? null;
 $err = $assetFlash['assetErr'] ?? null;
 
 try {
+    /* 부서 드롭다운 옵션 — 살아 있는 자산에 실제로 붙어 있는 값만. 검토 정보는 호스트당 1행이라
+     *   행 수가 자산 수를 넘지 않는다(별도 집계 테이블이 필요한 규모가 아니다). */
+    $deptOptions = $pdo->query(
+        'SELECT DISTINCT gr.owning_department
+           FROM tb_asset_grade_review gr
+           JOIN tb_host h ON h.host_id = gr.host_id AND h.is_deleted = 0
+          WHERE gr.owning_department IS NOT NULL AND gr.owning_department <> \'\'
+          ORDER BY gr.owning_department'
+    )->fetchAll(PDO::FETCH_COLUMN);
+    $deptOptions = array_combine($deptOptions, $deptOptions) ?: [];
+    // 목록에 없는 값이 오면 필터를 건 것으로 치지 않는다(조작된 쿼리스트링).
+    if ($dept !== '' && !isset($deptOptions[$dept])) { $dept = ''; }
+
     // KPI — 검색어·상태 필터와 무관하게 전체 기준(필터를 걸어도 전체 그림은 유지된다).
     $kpi = $pdo->query("SELECT $stateExpr AS st, COUNT(*) c $fromSql WHERE h.is_deleted = 0 GROUP BY st")->fetchAll();
     foreach ($kpi as $k) {
@@ -133,6 +151,10 @@ try {
         $where .= ' AND h.grade = ?';
         $params[] = $grade;
     }
+    if ($dept !== '') {
+        $where .= ' AND gr.owning_department = ?';
+        $params[] = $dept;
+    }
 
     // COUNT 도 목록과 같은 FROM 을 써야 한다. 상태 필터가 최신 스캔(s)을 참조하기 때문이다.
     $st = $pdo->prepare("SELECT COUNT(*) $fromSql WHERE $where");
@@ -146,6 +168,7 @@ try {
                 s.scan_id, s.collected_at, s.package_count, s.agent_version,
                 h.poll_schedule_seconds,
                 h.criticality, h.grade, h.grade_reason,
+                gr.owning_department,
                 h.grade_suggested, h.grade_suggested_reason,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
                 TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) AS poll_age_min
@@ -267,6 +290,10 @@ vg_header('자산', 'assets');
       // 등급 어휘는 VG_ASSET_GRADES 가 소유한다 + '미지정'(아직 확정 안 된 자산 찾기).
       ['type' => 'select', 'name' => 'grade', 'empty_label' => '전체 등급',
        'selected' => $grade, 'options' => VG_ASSET_GRADES + ['none' => '미지정']],
+      // 옵션은 DB 에서 뽑은 실제 값이다(위 $deptOptions) — 값이 하나도 없으면 선택지가 비어
+      //   고를 것이 없으므로 아예 내지 않는다.
+      ...($deptOptions ? [['type' => 'select', 'name' => 'dept', 'empty_label' => '전체 부서',
+       'selected' => $dept, 'options' => $deptOptions]] : []),
       ['type' => 'search', 'name' => 'q', 'placeholder' => '호스트명·IP·설치 패키지 검색', 'value' => $q],
   ]);
 
@@ -303,6 +330,11 @@ vg_header('자산', 'assets');
       //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
       //   C/S/O 기호만 떠 있으면 뜻을 알 수 없어 열 이름에 한 줄 범례를 단다(어휘는 assetgrade.php 소유).
       ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem'],
+      /* 담당 부서 — 등급 검토에서 이미 받고 있던 값인데 그 폼 안에서만 보여, 목록에서는
+       *   "이 자산은 누가 책임지나" 를 알 수 없었다. 등급 옆이 제자리다(같은 검토 정보다).
+       *   자유 입력 문자열이라 길면 접히게 두고 폭은 % 로 준다. */
+      ['label' => '담당 부서', 'key' => 'dept', 'width' => '9%',
+       'title' => '자산 등급 검토에 기록된 소유 부서입니다.'],
       ['label' => 'OS', 'key' => 'os', 'width' => '9%'],
       /* IP 도 '줄바꿈 불가 고정 크기 값' 열이다(위 폭 배분 원칙) — 이 표에서만 <code> 를 칸 안에서
        *   접게 뒀기 때문에(app.css 의 .page--assets .data-table td code) 9%(1061px 에서 76px)로는
@@ -362,11 +394,11 @@ vg_header('자산', 'assets');
       $rows,
       [
           // 빈 이유가 셋이라 메시지도 셋 — "필터 때문에 빈 것" 과 "자산이 없는 것" 은 다른 상황이다.
-          'empty' => ($q !== '' || $state !== '' || $grade !== '')
+          'empty' => ($q !== '' || $state !== '' || $grade !== '' || $dept !== '')
               ? [
                   'icon'  => '🔍',
                   'title' => '조건에 맞는 자산이 없습니다.',
-                  'hint'  => '검색어나 상태·등급 필터를 바꿔 보세요.',
+                  'hint'  => '검색어나 상태·등급·부서 필터를 바꿔 보세요.',
                   'cta'   => ['href' => '/assets.php', 'label' => '필터 초기화'],
               ]
               : [
@@ -394,6 +426,10 @@ vg_header('자산', 'assets');
                   : vg_asset_grade_badge(
                       $r['grade_suggested'], true, (string) ($r['grade_suggested_reason'] ?? '')
                   ),
+              // 값이 없으면 '—' 하나 — 아직 검토가 안 된 자산이라는 뜻이다.
+              'dept'          => fn($r) => ($r['owning_department'] ?? '') !== ''
+                  ? vg_h((string) $r['owning_department'])
+                  : '<span class="why">—</span>',
               'os'            => fn($r) => vg_h(trim($r['os_id'] . ' ' . $r['os_version'])) ?: '<span class="why">–</span>',
               'ip'            => fn($r) => !empty($r['last_seen_ip'])
                   ? '<code>' . vg_h((string) $r['last_seen_ip']) . '</code>'
