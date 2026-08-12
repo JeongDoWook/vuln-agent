@@ -82,6 +82,73 @@ function vg_verdict(string $tone, string $headline, array $stats = [], string $n
     echo '</div>';
 }
 
+/** 같은 화면의 KPI를 같은 간격·톤 규칙으로 렌더한다. */
+function vg_kpi_strip(array $items, array $opts = []): void {
+    $tones = ['crit', 'high', 'med', 'low', 'ok', 'muted'];
+    $classes = 'kpi-strip' . (!empty($opts['compact']) ? ' kpi-strip--compact' : '');
+    echo '<div class="' . vg_h($classes) . '" role="list">';
+    foreach ($items as $item) {
+        if (!is_array($item)) { continue; }
+        $value = (string) ($item['value'] ?? '–');
+        $label = (string) ($item['label'] ?? '');
+        $tone = (string) ($item['tone'] ?? 'muted');
+        $tone = in_array($tone, $tones, true) ? $tone : 'muted';
+        $numeric = str_replace(',', '', $value);
+        $zero = is_numeric($numeric) && (float) $numeric === 0.0;
+        $class = 'kpi' . (!empty($opts['compact']) ? ' kpi--sm' : '')
+            . ' tone-' . $tone . ($zero ? ' kpi--zero' : '')
+            . (!empty($item['selected']) ? ' is-selected' : '');
+        $title = !empty($item['title']) ? ' title="' . vg_h((string) $item['title']) . '"' : '';
+        $href = vg_local_href($item['href'] ?? null);
+        $tag = $href !== null ? 'a' : 'div';
+        echo '<' . $tag . ' class="' . vg_h($class) . '" role="listitem"'
+            . ($href !== null ? ' href="' . vg_h($href) . '"' : '') . $title . '>'
+            . '<b>' . vg_h($value) . '</b><span>' . vg_h($label) . '</span></' . $tag . '>';
+    }
+    echo '</div>';
+}
+
+/** 앱 내부 이동만 허용한다. 외부·스킴 상대·제어문자 URL은 링크로 만들지 않는다. */
+function vg_local_href($href): ?string {
+    if (!is_string($href) || $href === '' || str_contains($href, '\\')
+        || preg_match('/[\x00-\x20\x7f]/', $href) === 1) {
+        return null;
+    }
+    if ($href[0] === '?' || $href[0] === '#') { return $href; }
+    return str_starts_with($href, '/') && !str_starts_with($href, '//') ? $href : null;
+}
+
+/**
+ * 판단 신호를 노출→악용→등급→조치의 고정 네 칸으로 렌더한다.
+ * 값이 없는 도메인은 state=na, 아직 받은 값이 없으면 state=unknown을 쓴다.
+ */
+function vg_signal_slots(array $signals): void {
+    $axes = [
+        'exposure' => ['label' => '노출', 'icon' => '◎'],
+        'exploit'  => ['label' => '악용', 'icon' => '⚡'],
+        'severity' => ['label' => '등급', 'icon' => '◆'],
+        'action'   => ['label' => '조치', 'icon' => '↻'],
+    ];
+    $tones = ['crit', 'high', 'med', 'low', 'ok', 'muted'];
+    $states = ['value', 'na', 'unknown'];
+    echo '<div class="signal-slots" role="group" aria-label="판단 신호">';
+    foreach ($axes as $axis => $meta) {
+        $spec = is_array($signals[$axis] ?? null) ? $signals[$axis] : [];
+        $state = (string) ($spec['state'] ?? ($spec ? 'value' : 'unknown'));
+        $state = in_array($state, $states, true) ? $state : 'unknown';
+        $tone = (string) ($spec['tone'] ?? 'muted');
+        $tone = $state === 'value' && in_array($tone, $tones, true) ? $tone : 'muted';
+        $value = $state === 'na' ? '해당 없음' : ($state === 'unknown' ? '미제공' : (string) ($spec['value'] ?? '미제공'));
+        $icon = $meta['icon'];
+        echo '<span class="signal-slot signal-slot--' . vg_h($axis) . ' tone-' . vg_h($tone)
+            . '" data-axis="' . vg_h($axis) . '" data-state="' . vg_h($state) . '">'
+            . '<span class="signal-slot__icon" aria-hidden="true">' . vg_h($icon) . '</span>'
+            . '<span class="signal-slot__text"><small>' . vg_h($meta['label']) . '</small>'
+            . '<b>' . vg_h($value) . '</b></span></span>';
+    }
+    echo '</div>';
+}
+
 /**
  * 클립보드 복사 버튼. JS 가 죽어도 값 자체는 화면에 그대로 있으므로(선택해서 복사 가능)
  * 이 버튼은 편의일 뿐 필수 경로가 아니다 — 그래서 <button type=button>.
