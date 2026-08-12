@@ -1230,12 +1230,15 @@ td .why a:hover, td p a:hover { color: var(--accent-2); text-decoration-style: s
   background: var(--muted-bg);
   color: var(--muted-fg);
 }
+/* 아이콘은 인라인 SVG(stroke=currentColor) 라 칸의 톤 색을 그대로 상속한다.
+   글자였을 때는 폰트마다 광학 크기·베이스라인이 달라 네 칸이 나란히 서지 않았다 —
+   이제 크기가 SVG 로 고정이라 flex 로 가운데만 맞춰 준다. */
 .signal-slot__icon {
+  display: flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
   width: 1.2rem;
-  text-align: center;
-  font-size: var(--fs-lg);
-  line-height: 1;
 }
 .signal-slot__text { min-width: 0; }
 .signal-slot__text small,
