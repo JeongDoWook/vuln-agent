@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/finding_sla.php';   // 조치 기한 — 목록 화면과 같은 계산을 그대로 쓴다
 vg_require_menu('dashboard');
 
 /**
@@ -19,7 +20,8 @@ const VG_TREND_DAYS = 30;
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
-$kevCount = 0; $kevExtCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
+$kevCount = 0; $kevOverdue = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
+$kevSlaDays = 0;   // KEV 조치 기한(일) — 퍼널 4번 칸 라벨이 이 숫자를 그대로 말한다
 $delta = []; $trend = [];
 $page = vg_page();
 $perPage = vg_perpage();
@@ -47,7 +49,7 @@ try {
 
     /* KPI·퍼널 은 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
      *
-     * 퍼널의 네 칸(전체 → High 이상 → KEV → KEV 중 외부노출)은 **같은 모집단을 좁혀 가는**
+     * 퍼널의 네 칸(전체 → High 이상 → KEV → KEV 중 기한 초과)은 **같은 모집단을 좁혀 가는**
      * 수여야 의미가 있다. 그래서 KEV·외부노출도 별도 쿼리로 따로 세지 않고 이 한 번의
      * 스캔에서 함께 뽑는다 — 기준(tb_finding 행)이 하나로 고정되고, 예전에 KEV 만 자산·CVE·
      * 패키지로 묶어 세던 별도 쿼리(#354 에서 파생테이블로 최적화했던 것)도 사라진다.
@@ -60,9 +62,7 @@ try {
      */
     $totalsRows = $pdo->query(
         "SELECT f.severity, COUNT(*) c,
-                SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')) kev,
-                SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')
-                    AND f.runtime_status = 'EXTERNAL') kev_ext
+                SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')) kev
            FROM tb_finding f
            JOIN tb_scan s ON s.scan_id = f.scan_id
            JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
@@ -71,8 +71,53 @@ try {
     )->fetchAll();
     foreach ($totalsRows as $f) {
         if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; }
-        $kevCount    += (int) $f['kev'];
-        $kevExtCount += (int) $f['kev_ext'];
+        $kevCount += (int) $f['kev'];
+    }
+
+    /* 퍼널 4번 칸 — **KEV 중 조치 기한 초과**.
+     *
+     * 모집단은 3번 칸(High 이상 중 KEV)과 정확히 같다. 그 안에서 기한을 넘긴 것만 센다 —
+     * 퍼널이 포함관계를 그리는 그림이라, 4번 칸이 3번 칸의 부분집합이 아니게 되면 형태가
+     * 거짓말이 된다. 그래서 "전체 기한 초과" 가 아니라 KEV 안에서만 센다(라벨도 그렇게 적는다).
+     *
+     * 기한 계산은 finding_sla.php 것을 그대로 쓴다 — 대시보드가 따로 세면 목록의 남은 일수
+     * 뱃지와 숫자가 어긋난다(DRY). 완료·예외 처리된 건은 세지 않는 것도 목록과 같은 규칙
+     * (vg_finding_due_cell 이 그 둘을 '—' 로 둔다).
+     *
+     * 성능: 되짚을 대상은 최신 스캔의 KEV(High 이상)뿐이다 — 3번 칸의 값이 곧 그 상한이라
+     * 전체 탐지 건수(수십만)를 훑지 않는다. 최초 발견 시각은 목록 화면과 같은 배치 조회
+     * 한 번으로 받는다(N+1 없음).
+     */
+    $policy     = vg_compliance_policy();
+    $kevSlaDays = (int) vg_finding_sla_days(true, 'CRITICAL', $policy);   // KEV 기한이 등급보다 우선한다
+    $kevRows = $pdo->query(
+        "SELECT s.host_id, COALESCE(ctr.cid, '') AS cid, f.cve_id, f.package_name,
+                fst.status AS fix_status
+           FROM tb_finding f
+           JOIN tb_scan s ON s.scan_id = f.scan_id
+           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
+           $latestJoin
+           LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id
+           LEFT JOIN tb_finding_status fst ON fst.host_id = s.host_id
+                 AND fst.container_ref = COALESCE(ctr.cid, '')
+                 AND fst.cve_id = f.cve_id AND fst.package_name = f.package_name
+          WHERE f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH') AND f.is_deleted = 0"
+    )->fetchAll();
+    $kevKeys = [];
+    foreach ($kevRows as $r) {
+        $fixStatus = (string) ($r['fix_status'] ?? '');
+        if ($fixStatus === 'DONE' || $fixStatus === 'EXCEPTED') { continue; }
+        $kevKeys[] = [(int) $r['host_id'], (string) $r['cid'],
+                      (string) $r['cve_id'], (string) $r['package_name']];
+    }
+    if ($kevKeys) {
+        $kevFirstSeen = vg_finding_first_seen_map($pdo, $kevKeys, vg_finding_sla_lookback_days($policy));
+        foreach ($kevKeys as $k) {
+            $seen = $kevFirstSeen[vg_finding_status_key($k[0], $k[1], $k[2], $k[3])] ?? null;
+            // 최초 발견 시각을 못 찾은 건은 세지 않는다 — 모르는 것을 초과로 단정하지 않는다
+            //   (목록의 남은 일수 칸이 '–' 로 두는 것과 같은 판단).
+            if ($seen !== null && (int) $seen['days'] > $kevSlaDays) { $kevOverdue++; }
+        }
     }
 
     /* 최신 스캔의 실제 취약점 신호를 직접 보여준다.
@@ -257,13 +302,15 @@ vg_header('대시보드', 'dashboard');
    * 악용 확인(KEV)이 있고, 그 안에 외부 노출이 있다. 관계를 형태로 그리면 "가장 먼저
    * 조치할 대상입니다" 라는 배너 문장이 필요 없어져서, 그 배너는 지웠다.
    *
-   * 마지막 칸이 "오늘 할 일" 이다. 기한(SLA) 초과는 이 저장소에 아직 계산이 없으므로
-   * 만들어 내지 않고 **KEV 중 외부 노출**을 센다 — 사람 손을 안 탄, 지금 있는 신호다.
+   * 마지막 칸이 "오늘 할 일" 이다. 예전엔 KEV 중 외부 노출을 셌는데, 그건 기한 계산이
+   * 이 저장소에 없어서 고른 대체 신호였다. 지금은 finding_sla.php 가 조치 기한을 계산하므로
+   * 원래 의도대로 **KEV 중 기한 초과**를 센다 — "언제까지" 를 넘긴 것이 진짜 오늘 할 일이다.
+   * (외부 노출 신호는 아래 [주요 취약점 신호] 카드가 정렬 기준으로 계속 보여준다.)
    *
-   * 링크: findings.php 는 지금 다른 작업이 잡고 있어 이 브랜치에서 손대지 않는다. 그래서
-   *   그 화면이 **이미 가진 필터로만** 건다(등급). KEV 필터는 없으므로 KEV 두 칸은 같은
-   *   기준으로 정렬된 아래 [주요 취약점 신호] 카드로 보낸다(#signals) — 숫자만 있고 못
-   *   누르는 칸을 만들지 않는다.
+   * 링크: findings.php 에 KEV 필터도, 기한 초과 필터도 없다 — 있는 것은 기한 임박순
+   *   정렬(?sort=due)이고, 초과분이 그 목록 맨 위에 선다. 그래서 4번 칸은 그리로 보낸다
+   *   (가장 가까운 목적지다). KEV 칸은 KEV 우선 정렬인 아래 카드로 보낸다(#signals) —
+   *   숫자만 있고 못 누르는 칸을 만들지 않는다.
    */
   $crit = (int) $totals['CRITICAL'];
   $high = (int) $totals['HIGH'];
@@ -278,9 +325,9 @@ vg_header('대시보드', 'dashboard');
       ['n' => $kevCount, 'label' => '악용 확인(KEV)',
        'cap' => 'High 이상 중 · 실제 공격에 쓰임',
        'href' => '#signals', 'title' => 'KEV 순으로 정렬된 주요 취약점 신호'],
-      ['n' => $kevExtCount, 'label' => 'KEV 중 외부 노출',
-       'cap' => '오늘 먼저 조치할 대상',
-       'href' => '#signals', 'title' => '악용 확인 + 외부 노출로 정렬된 주요 취약점 신호'],
+      ['n' => $kevOverdue, 'label' => 'KEV 중 기한 초과',
+       'cap' => '조치 기한 ' . number_format($kevSlaDays) . '일 넘김 · 오늘 먼저 조치할 대상',
+       'href' => '/findings.php?sort=due', 'title' => '조치 기한이 급한 순으로 정렬된 탐지 결과 (초과분이 맨 위)'],
   ];
   ?>
   <div class="funnel">
