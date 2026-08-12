@@ -189,6 +189,28 @@ function vg_status_badge(?string $s): string {
     return vg_badge(vg_status_label($s), $tone[$s ?? ''] ?? 'muted');
 }
 
+/* 조치 상태(tb_finding_status.status) — 사람이 정하는 값이다.
+ *   바로 위 vg_status_label() 의 '상태'(런타임 노출 상태)와는 **다른 축**이다. 화면에서도
+ *   '노출 상태' / '조치 상태' 로 라벨을 갈라 부른다 — 한 화면에 둘이 같이 서기 때문이다.
+ *   행이 없는 조합(= 아직 아무도 손대지 않은 취약점)은 OPEN 으로 읽는다. 그래서 라벨을
+ *   찾을 때 null 도 OPEN 으로 눕힌다 — 화면마다 '값이 없으면 미조치' 를 다시 쓰지 않게.
+ *   값 4개와 순서(급한 것 → 끝난 것)의 정본이 여기 하나다: 필터 드롭다운·모달 셀렉트·
+ *   배지가 전부 이 표를 읽는다. */
+function vg_finding_status_labels(): array {
+    return ['OPEN' => '미조치', 'IN_PROGRESS' => '조치중', 'DONE' => '완료', 'EXCEPTED' => '예외'];
+}
+function vg_finding_status_label(?string $s): string {
+    $s = ($s === null || $s === '') ? 'OPEN' : $s;
+    return vg_finding_status_labels()[$s] ?? $s;
+}
+function vg_finding_status_badge(?string $s): string {
+    // 톤: 미조치는 '아직 남은 일' 이라 주의색, 조치중은 진행, 완료는 ok, 예외는 중립.
+    //   예외를 완료와 같은 초록으로 두지 않는다 — "고쳤다" 와 "안 고치기로 했다" 는 다른 사실이다.
+    $tone = ['OPEN' => 'high', 'IN_PROGRESS' => 'med', 'DONE' => 'ok', 'EXCEPTED' => 'muted'];
+    $s = ($s === null || $s === '') ? 'OPEN' : $s;
+    return vg_badge(vg_finding_status_label($s), $tone[$s] ?? 'muted');
+}
+
 // 노출 범위(tb_exposure.scope: EXTERNAL/LAN/BOUND/FILTERED/LOCAL/-).
 //   문구는 matcher.php vg_classify()/agent 판정 주석과 통일(같은 값을 두 곳에서 다르게 부르지 않게).
 //   톤(색) 매핑은 host.php 의 $scopeTone 이 계속 갖는다 — 여기는 라벨 텍스트만.

@@ -32,6 +32,7 @@ function vg_activity_type_labels(): array {
         'host_set_grade'       => '자산 등급 확정',
         'host_grade_review_save' => '자산 등급 검토 저장',
         'host_grade_review_clear'=> '자산 등급 검토 삭제',
+        'finding_set_status'   => '조치 상태 변경',
         'connector_save'       => '커넥터 저장',
         'connector_toggle'     => '커넥터 사용여부 전환',
         'connector_delete'     => '커넥터 삭제',
