@@ -67,7 +67,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   vg_page_title(
       '컴플라이언스 매핑', 'COMPLIANCE',
       'ISMS-P·ISO 27001 통제 ' . count(VG_COMPLIANCE_CONTROLS) . '종 자동 판정 결과 · 정책·절차 문서 '
-      . count(VG_COMPLIANCE_MANUAL_CHECKLIST) . '건은 자동판정 대상 아님(맨 아래) · ' . $judgedAt
+      . count(VG_COMPLIANCE_MANUAL_CHECKLIST) . '건은 자동판정 대상 아님(맨 아래)'
+      // 판정 기준시각은 아래 결론 배너의 note 로 옮겼다 — 같은 화면에 두 번 적을 값이 아니다.
   ); ?>
 
 <?php if ($err !== null): ?>
@@ -95,20 +96,37 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     foreach ($verdicts as $s) { $tally[$s['label']] = ($tally[$s['label']] ?? 0) + 1; }
     $denied = count(VG_COMPLIANCE_CONTROLS) - count($verdicts);
 ?>
-  <?php // kpi--sm: 이 줄이 결론이지만 주인공은 바로 아래 통제 5종 표다 — 큰 카드(112px)로
-        //   깔면 그 5행이 첫 화면 밖으로 밀린다(1440×675 실측). 숫자는 여전히 제일 크다. ?>
-  <div class="cards cards--grid">
-    <?php foreach ($tally as $label => $n): ?>
-      <div class="kpi kpi--sm tone-<?= vg_h(vg_compliance_tone_of($label)) ?>">
-        <b><?= number_format($n) ?></b><span><?= vg_h($label) ?> · 통제 종</span>
-      </div>
-    <?php endforeach; ?>
-    <?php if ($denied > 0): ?>
-      <div class="kpi kpi--sm tone-muted">
-        <b><?= number_format($denied) ?></b><span>권한 없음 · 통제 종</span>
-      </div>
-    <?php endif; ?>
-  </div>
+  <?php
+  // 결론 배너(vg_verdict) — 예전엔 KPI 카드 4장이 이 자리에 있었는데, 숫자 넷을 나란히
+  //   놓아도 "그래서 준수인가 아닌가"는 여전히 사용자가 세어야 했다. 배너는 그 한 문장을
+  //   먼저 말하고 숫자를 근거로 뒤에 붙인다. 화면에 하나만 둔다(role="status").
+  // 톤 어휘가 두 벌이 되지 않게, 배너 톤은 판정 톤(vg_compliance_tone_of — SSOT)에서 옮긴다.
+  //   판정 톤은 ok/high/crit/med 인데 배너는 ok/warn/crit/muted 라 어휘만 갈아 끼운다.
+  $toVerdictTone = ['ok' => 'ok', 'high' => 'warn', 'crit' => 'crit', 'med' => 'muted'];
+  $stats = [];
+  foreach ($tally as $label => $n) {
+      $stats[] = ['label' => $label, 'value' => number_format($n),
+                  'tone'  => $toVerdictTone[vg_compliance_tone_of($label)] ?? 'muted'];
+  }
+  if ($denied > 0) {
+      $stats[] = ['label' => '권한 없음', 'value' => number_format($denied), 'tone' => 'muted'];
+  }
+  $judged = count($verdicts);
+  if ($tally['미준수'] > 0) {
+      $banner = ['crit', '판정한 통제 ' . $judged . '종 중 ' . $tally['미준수'] . '종이 미준수입니다 — 즉시 조치가 필요합니다.'];
+  } elseif ($tally['부분준수'] > 0 || $tally['판정 불가'] > 0) {
+      $banner = ['warn', '판정한 통제 ' . $judged . '종 중 ' . $tally['준수'] . '종만 준수입니다 — 나머지는 부분준수·판정 불가입니다.'];
+  } else {
+      $banner = ['ok', '판정한 통제 ' . $judged . '종이 모두 준수입니다.'];
+  }
+  // 단위를 note 에 못박는다 — 숫자만 보면 "미준수 1" 이 1건인지 1종인지 못 읽는다
+  //   (예전 KPI 카드는 라벨마다 '· 통제 종' 을 붙여 이걸 해결했다. 배너는 한 줄로 끝낸다).
+  vg_verdict($banner[0], $banner[1], $stats,
+      '기준 ' . $judgedAt . ' 판정 · 집계 단위는 통제 종(위반 건수가 아니다) · '
+      . ($denied > 0
+          ? '자산 열람 권한이 없어 통제 ' . $denied . '종은 집계에서 제외'
+          : '통제 ' . count(VG_COMPLIANCE_CONTROLS) . '종 전수'));
+  ?>
 
   <?php
   // 첫 화면은 **통제 5종 × 한 줄**. 예전엔 통제마다 호스트별 위반을 10건씩 미리 깔아서,

@@ -164,6 +164,36 @@ vg_header('대시보드', 'dashboard');
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
+  <?php
+  // 결론 먼저 — KPI 줄은 값을 나열할 뿐 "그래서 지금 위험한가"를 말하지 않는다.
+  //   수치는 위에서 이미 집계한 것만 쓴다(새 쿼리 없음): $hostCount·$kevCount·$totals·$urgentTotal.
+  //   전 모집단 기준의 값만 쓴다 — $urgent 는 상위 N건만이라 "몇 대에서" 를 셀 수 없다.
+  $crit = (int) $totals['CRITICAL'];
+  $high = (int) $totals['HIGH'];
+  if ($kevCount > 0) {
+      $tone = 'crit';
+      $head = '자산 ' . number_format($hostCount) . '대에서 악용이 확인된(KEV) 취약점 '
+            . number_format($kevCount) . '건이 발견됐습니다 — 가장 먼저 조치할 대상입니다.';
+  } elseif ($crit > 0) {
+      $tone = 'crit';
+      $head = '악용 확인(KEV) 취약점은 없지만 CRITICAL ' . number_format($crit) . '건이 남아 있습니다.';
+  } elseif ($high > 0) {
+      $tone = 'warn';
+      $head = 'CRITICAL 은 없고 HIGH ' . number_format($high) . '건이 남아 있습니다.';
+  } else {
+      $tone = 'ok';
+      $head = '자산 ' . number_format($hostCount) . '대에서 KEV·CRITICAL·HIGH 취약점이 확인되지 않았습니다.';
+  }
+  vg_verdict($tone, $head, [
+      ['label' => '자산 · 대',        'value' => number_format($hostCount)],
+      ['label' => 'KEV 악용확인 · 건', 'value' => number_format($kevCount), 'tone' => $kevCount > 0 ? 'crit' : 'ok'],
+      ['label' => 'CRITICAL · 건',    'value' => number_format($crit),      'tone' => $crit > 0 ? 'crit' : 'ok'],
+      ['label' => 'HIGH · 건',        'value' => number_format($high),      'tone' => $high > 0 ? 'warn' : 'ok'],
+      // 여기에 "전체 N건"을 적지 않는다 — 아래 도넛의 '전체'(원시 행 수)와 급한 목록의
+      //   총건(자산·CVE·패키지로 묶은 수)이 서로 다른 수라, 같은 화면에 나란히 두면 어느 쪽이
+      //   맞는지 사용자가 판단해야 한다. 배너는 기준만 밝히고 내역은 아래 카드에 맡긴다.
+  ], '각 호스트의 최신 스캔 기준 · 등급별 내역은 아래 카드에서');
+  ?>
   <?php if ($nextFeed !== null):
     $secs = strtotime((string) $nextFeed['next_run_at']) - time();
     $rel  = $secs <= 0 ? '곧'

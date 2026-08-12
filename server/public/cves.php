@@ -245,12 +245,15 @@ vg_header('CVE', 'cves');
               },
               3 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
               // 요약은 두 줄까지만 보이고, 전체 문장은 CVE 상세에서 읽는다(잘린 부분은 title 에).
-              //   **링크로 감싸지 않는다** — 문장 전체가 강조색이 되면 다크 테마에서 본문이 통째로
-              //   파랗게 뜬다(실측). 행 진입로는 CVE-ID 칸 하나로 충분하다.
+              //   예전엔 아예 링크를 걷었다 — 문장 전체가 강조색이 되면 다크 테마에서 본문이
+              //   통째로 파랗게 떴기 때문이다(실측). 지금은 .body-link 가 그 문제만 없앤다:
+              //   본문 색을 그대로 쓰고, 링크라는 사실은 hover 의 밑줄·색으로 알린다.
+              //   덕분에 "읽던 문장을 그대로 눌러 상세로" 가 다시 가능해진다.
               4 => function ($r) {
                   $s = (string) ($r['summary'] ?? '');
                   if ($s === '') { return '<span class="why">–</span>'; }
-                  return '<div class="clamp-2" title="' . vg_h($s) . '">' . vg_h($s) . '</div>';
+                  return '<a class="clamp-2 body-link" href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '"'
+                      . ' title="' . vg_h($s) . '">' . vg_h($s) . '</a>';
               },
           ],
       ]
