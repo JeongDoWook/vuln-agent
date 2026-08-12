@@ -35,11 +35,6 @@ const VG_COMPLIANCE_PARTIAL_MAX = 5;   // 1~5건 = 부분준수, 6건 이상 = �
 //   항상 같거나 늦으므로 위반 판정이 과소평가되지 않는다).
 const VG_COMPLIANCE_HISTORY_MARGIN_DAYS = 14;
 
-// 접근권한 검토 주기(일)의 **폴백값**. 실제 판정은 tb_setting 의
-//   'compliance.access_review_interval_days' 를 쓴다 — 검토 주기는 조직 내부 규정이라
-//   분기(90일)·반기(180일)로 갈린다. ISMS-P 2.5.3 은 "주기적"이라고만 말한다.
-const VG_COMPLIANCE_ACCESS_REVIEW_DAYS = 90;
-
 /** 설정(tb_setting) + 폴백 상수로 조립한 판정 기준값 한 벌. 화면·스케줄러가 함께 쓴다. */
 function vg_compliance_policy(): array {
     return [
@@ -69,16 +64,16 @@ const VG_COMPLIANCE_CONTROLS = [
     'patch'   => ['label' => '패치관리',        'framework' => 'ISMS-P 2.10.8 / ISO 27001 A.8.8'],
     'asset'   => ['label' => '정보자산 식별',   'framework' => 'ISMS-P 1.2.1 / ISO 27001 A.5.9'],
     'secops'  => ['label' => '보안시스템 운영', 'framework' => 'ISMS-P 2.10.1'],
-    // 아래 둘은 예전엔 VG_COMPLIANCE_MANUAL_CHECKLIST(사람이 심사) 였다. 계정 인벤토리
-    //   (tb_host_account)와 접속기록 점검 이력(tb_activity_review)이 제품 안에 생기면서
-    //   증적이 DB 에 있으니 자동판정으로 올린다 — 수동 체크리스트에는 증적이 제품 밖에
-    //   있는 항목만 남긴다.
+    // 계정 관리는 예전엔 VG_COMPLIANCE_MANUAL_CHECKLIST(사람이 심사) 였다. 계정 인벤토리
+    //   (tb_host_account)가 제품 안에 생기면서 증적이 DB 에 있으니 자동판정으로 올렸다 —
+    //   수동 체크리스트에는 증적이 제품 밖에 있는 항목만 남긴다.
+    //   접근권한 검토(2.5.3)는 접속기록 점검 기능이 제거되면서 자동판정 근거(tb_activity_review)가
+    //   없어져 다시 수동 체크리스트로 내렸다 — 근거가 없는 통제를 준수로 찍지 않는다.
     'account'        => ['label' => '계정 관리',      'framework' => 'ISMS-P 2.5.1 / ISO 27001 A.9.2'],
-    'access_review'  => ['label' => '접근권한 검토',  'framework' => 'ISMS-P 2.5.3 / ISO 27001 A.9.2.5'],
 ];
 
 /**
- * 판정 결과 → ['label'=>..., 'tone'=>...]. 통제 5종이 공유하는 판정 어휘(SSOT).
+ * 판정 결과 → ['label'=>..., 'tone'=>...]. 자동판정 통제가 공유하는 판정 어휘(SSOT).
  *   $unjudged = 위반이 없는데도 **판정 자체가 불가능한 대상**이 남아있는가.
  *   위반 0건이라고 무조건 "준수"로 쓰지 않는 이유: 볼 수 있는 근거가 모자라서 0건인 것을
  *   준수로 표기하면 심사 증빙에 허위 안심(false assurance)을 싣게 된다. 이 제품이 CCE 에서
@@ -615,73 +610,15 @@ function vg_compliance_load_account(PDO $pdo, int $limit): array {
     ];
 }
 
-/**
- * 통제 5: 접근권한 검토(ISMS-P 2.5.3 / ISO 27001 A.9.2.5).
- *   판정: tb_activity_review(접속기록·권한 점검 이력)의 가장 최근 검토일로부터 경과일이
- *   검토 주기 안이면 준수, 넘겼으면 위반 1건.
- *
- *   **검토 기록이 아예 없으면 판정 불가가 아니라 위반**이다. 다른 통제의 "판정 불가"는
- *   근거 데이터를 못 걷어서 말할 수 없는 상태지만, 여기서는 "검토를 수행한 기록이 없다"는
- *   사실 자체가 확인된 것이다 — ISMS-P 가 요구하는 건 검토 수행이고, 안 했으면 미이행이다.
- * @return array{violations: array<int, array<string, mixed>>, total: int, unjudged: int,
- *               interval_days: int, last: array<string, mixed>|null, days_since: int|null}
- */
-function vg_compliance_load_access_review(PDO $pdo): array {
-    $interval = vg_setting_int('compliance.access_review_interval_days', VG_COMPLIANCE_ACCESS_REVIEW_DAYS);
-
-    // 경과일은 SQL 의 DATEDIFF 로 계산한다(패치관리와 같은 이유 — PHP 타임존·파싱 실패 회피).
-    //   "가장 최근 검토"는 대상 기간의 끝(period_end)이 가장 늦은 행. 같은 기간을 다시 점검한
-    //   경우가 있으므로 reviewed_at 으로 한 번 더 정렬한다.
-    $st = $pdo->query(
-        'SELECT period_start, period_end, reviewed_at, reviewer_name, result,
-                DATEDIFF(NOW(), reviewed_at) AS days_since
-           FROM tb_activity_review
-          WHERE is_deleted = 0
-          ORDER BY period_end DESC, reviewed_at DESC
-          LIMIT 1'
-    );
-    $row = $st->fetch();
-
-    if (!$row) {
-        return [
-            'violations' => [[
-                'reason' => '접근권한·접속기록 검토 기록이 없습니다',
-                'detail' => '검토 주기 ' . $interval . '일 · 수행 이력 0건',
-            ]],
-            'total' => 1, 'unjudged' => 0, 'interval_days' => $interval,
-            'last' => null, 'days_since' => null,
-        ];
-    }
-
-    $daysSince = (int) $row['days_since'];
-    $last = [
-        'period_start'  => (string) $row['period_start'],
-        'period_end'    => (string) $row['period_end'],
-        'reviewed_at'   => (string) $row['reviewed_at'],
-        'reviewer_name' => (string) ($row['reviewer_name'] ?? ''),
-        'result'        => (string) $row['result'],
-    ];
-    $violations = [];
-    if ($daysSince > $interval) {
-        $violations[] = [
-            'reason' => '최근 검토 이후 ' . $daysSince . '일 경과 — 검토 주기 ' . $interval . '일 초과',
-            'detail' => $last['period_start'] . ' ~ ' . $last['period_end'] . ' 기간 검토(' . $last['reviewed_at'] . ')',
-        ];
-    }
-
-    return [
-        'violations' => $violations, 'total' => count($violations), 'unjudged' => 0,
-        'interval_days' => $interval, 'last' => $last, 'days_since' => $daysSince,
-    ];
-}
-
 // 자동판정이 안 되는 통제 — 사람이 심사해야 하는 정책·승인이력류. 상태 판정 없이 항목명만.
-//   2.5.1(계정 관리)·2.5.3(접근권한 검토)은 여기서 뺐다 — tb_host_account·tb_activity_review 로
-//   자동판정 통제가 됐다(VG_COMPLIANCE_CONTROLS 의 account·access_review).
-//   남은 3개는 증적이 제품 밖(정책 문서·대응 절차·복구 계획)에 있어 원리적으로 자동판정이 안 된다.
+//   2.5.1(계정 관리)은 여기서 뺐다 — tb_host_account 로 자동판정 통제가 됐다
+//   (VG_COMPLIANCE_CONTROLS 의 account).
+//   나머지는 증적이 제품 밖(정책 문서·검토 승인이력·대응 절차·복구 계획)에 있어 자동판정이 안 된다.
 const VG_COMPLIANCE_MANUAL_CHECKLIST = [
     ['ismsp' => 'ISMS-P 1.1.1~1.1.6 관리체계 기반 마련', 'iso' => 'ISO 27001 A.5.1 정보보안 정책',
      'desc' => '정보보안 정책·관리체계 범위가 문서로 수립·승인되어 있는가'],
+    ['ismsp' => 'ISMS-P 2.5.3 접근권한 검토', 'iso' => 'ISO 27001 A.9.2.5 사용자 접근권한 검토',
+     'desc' => '접근권한을 주기적으로 검토하고 그 결과를 승인·보관하는가'],
     ['ismsp' => 'ISMS-P 2.11.1 사고 예방 및 대응체계 구축', 'iso' => 'ISO 27001 A.5.24~A.5.28 정보보안 사고 관리',
      'desc' => '침해사고 대응 절차·연락체계가 문서화되어 있는가'],
     ['ismsp' => 'ISMS-P 2.12.1 재해복구 체계 구축', 'iso' => 'ISO 27001 A.5.29~A.5.30 업무연속성 관리',
@@ -719,7 +656,7 @@ function vg_compliance_snapshot_exists(PDO $pdo, ?string $date = null): bool {
 }
 
 /**
- * 통제 5종을 판정해 그날짜 스냅샷으로 적재한다(UPSERT — 같은 날 두 번 돌아도 행이 안 늘어난다).
+ * 자동판정 통제(VG_COMPLIANCE_CONTROLS)를 판정해 그날짜 스냅샷으로 적재한다(UPSERT — 같은 날 두 번 돌아도 행이 안 늘어난다).
  *   무거운 집계이므로 웹 요청이 아니라 스케줄러/CLI 에서만 부른다.
  *
  *   판정 기준은 **화면과 같은 vg_compliance_policy()** 를 쓴다. 스케줄러가 상수를 따로 쓰면
@@ -738,7 +675,6 @@ function vg_compliance_take_snapshot(PDO $pdo, ?string $date = null, ?array $pol
     $asset = vg_compliance_load_asset($pdo, $cap);
     $sec   = vg_compliance_load_secconfig($pdo, $cap);
     $acct  = vg_compliance_load_account($pdo, $cap);
-    $rev   = vg_compliance_load_access_review($pdo);
 
     // 근거는 "무엇이 위반이었나"를 나중에 되짚을 최소 식별자만 남긴다(원문 전체를 복사하지 않는다).
     //   판정 불가 사유도 같은 evidence JSON 안에 둔다 — 건수만 있고 사유가 없으면 나중에
@@ -781,15 +717,6 @@ function vg_compliance_take_snapshot(PDO $pdo, ?string $date = null, ?array $pol
             ], array_slice($acct['violations'], 0, $cap)), $acct['total'])
                 + ['unjudged' => ['total' => (int) $acct['unjudged'], 'items' => $acct['unjudged_rows'],
                                   'pending_hosts' => (int) $acct['pending_hosts']]],
-        ],
-        'access_review' => [
-            'total'    => $rev['total'],
-            'unjudged' => 0,   // 검토 기록 없음은 판정 불가가 아니라 위반이다(함수 주석 참고)
-            'evidence' => vg_compliance_evidence(array_map(static fn($v) => [
-                'reason' => $v['reason'], 'detail' => $v['detail'],
-            ], $rev['violations']), $rev['total'])
-                + ['interval_days' => (int) $rev['interval_days'], 'last' => $rev['last'],
-                   'days_since' => $rev['days_since']],
         ],
     ];
 

@@ -2,8 +2,8 @@
 declare(strict_types=1);
 
 /**
- * activity.php — 감사로그(접속기록) 뷰 + 월 1회 점검 기록 (admin 전용).
- *   ISMS-P 2.9.4(접속기록 보관·5요소) · 2.9.5(로그 및 접속기록 점검)를 이 제품이 스스로 만족하게 하는 화면이다.
+ * activity.php — 감사로그(접속기록) 뷰 (admin 전용).
+ *   ISMS-P 2.9.4(접속기록 보관·5요소)를 이 제품이 스스로 만족하게 하는 화면이다.
  *   표는 5요소를 독립 컬럼으로 노출한다: 접속일시(created_at) · 식별자(user_name) ·
  *   접속지 IP(ip_address) · 처리 대상(subject) · 수행업무(action).
  *   필터는 기간·사용자·IP·수행업무(+기존 범위·자유검색). 다른 목록 화면과 같은 공용 표 모듈로 렌더한다.
@@ -15,65 +15,12 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-require_once __DIR__ . '/../src/audit.php';   // vg_log_activity / VG_ACTIVITY_ACTIONS
+require_once __DIR__ . '/../src/audit.php';   // VG_ACTIVITY_ACTIONS / vg_activity_*_labels()
 vg_require_menu('activity');
-
-// 점검 결과 3값(화이트리스트) — 코드 → 한글 라벨.
-const VG_REVIEW_RESULTS = ['OK' => '이상 없음', 'FINDING' => '이상징후 발견', 'NA' => '점검 대상 없음'];
-// 미점검 배너가 훑는 과거 개월 수(현재 달 제외). 월 1회 점검이므로 최근 3개월이면 충분하다.
-const VG_REVIEW_LOOKBACK_MONTHS = 3;
 
 $pdo = vg_pdo();
 
-/* ── 월 1회 점검 기록 저장 (admin 전용) ───────────────────────────────
- * vg_require_menu('activity') 는 "activity 메뉴 접근"만 보장한다(tb_role_permission 으로
- * operator/user 에게도 위임될 수 있다). 점검 기록은 통제 수행의 증거라 진짜 admin 만 남긴다. */
-$flash = vg_flash_take();
-$reviewMsg = $flash['reviewMsg'] ?? null;
-$reviewErr = $flash['reviewErr'] ?? null;
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!vg_has_role('admin')) {
-        vg_redirect_flash(['reviewErr' => '점검 기록은 관리자만 남길 수 있습니다.']);
-    }
-    if (!vg_csrf_check($_POST['csrf'] ?? null)) {
-        vg_redirect_flash(['reviewErr' => '세션이 만료되었습니다. 다시 시도하세요.']);
-    }
-    $period = (string) ($_POST['period'] ?? '');          // YYYY-MM
-    $result = (string) ($_POST['result'] ?? '');
-    // 비고는 사람이 쓰는 자유 텍스트다 — 실수로 자격증명을 적어도 평문으로 남지 않게
-    // 감사로그와 같은 마스킹을 태운다(입력 maxlength 와 같은 500자로 자른다).
-    $note   = vg_audit_redact_text((string) ($_POST['note'] ?? ''), 500);
-    if (preg_match('/^\d{4}-\d{2}$/', $period) !== 1 || !isset(VG_REVIEW_RESULTS[$result])) {
-        vg_redirect_flash(['reviewErr' => '점검 대상 기간과 결과를 올바르게 선택하세요.']);
-    }
-    $start = $period . '-01';
-    $end   = date('Y-m-t', (int) strtotime($start));
-    $me    = vg_current_user();
-    try {
-        // 같은 기간을 다시 점검하면 새 행이 아니라 그 행을 갱신한다(UNIQUE(period_start, period_end)).
-        $st = $pdo->prepare(
-            'INSERT INTO tb_activity_review (period_start, period_end, reviewed_by, reviewer_name, reviewed_at, result, note)
-             VALUES (?,?,?,?,NOW(),?,?)
-             ON DUPLICATE KEY UPDATE reviewed_by = VALUES(reviewed_by), reviewer_name = VALUES(reviewer_name),
-                                     reviewed_at = NOW(), result = VALUES(result), note = VALUES(note)'
-        );
-        $st->execute([$start, $end, $me['id'] ?? null, $me['username'] ?? null, $result, $note]);
-        vg_log_activity(
-            $pdo, 'ACTIVITY_REVIEW', null, 'activity_review_save',
-            "접속기록 점검 기록: {$period} · " . VG_REVIEW_RESULTS[$result],
-            ['period' => $period, 'result' => $result],
-            subject: $period, action: 'CREATE'
-        );
-        vg_redirect_flash(['reviewMsg' => "{$period} 접속기록 점검을 기록했습니다."]);
-    } catch (Throwable $e) {
-        error_log('[activity] review save: ' . $e->getMessage());
-        vg_redirect_flash(['reviewErr' => '점검 기록 저장에 실패했습니다.']);
-    }
-}
-
 $err = null; $rows = []; $total = 0; $scopes = []; $accessRows = [];
-$reviews = []; $reviewTotal = 0; $missingPeriods = [];
 
 // ── 필터: 5요소 기준(기간·사용자·접속지 IP·수행업무) + 기존 범위·자유검색 ──
 $scope    = trim((string) ($_GET['scope'] ?? ''));
@@ -90,8 +37,6 @@ if (!in_array($action, VG_ACTIVITY_ACTIONS, true)) { $action = ''; }
 
 $page = vg_page();
 $perPage = vg_perpage();
-$reviewPage = vg_page('rpage');
-$reviewPerPage = vg_perpage(null, 'rper_page');
 
 // 액션(activity_type) 코드 → 한글 라벨(SSOT: vg_activity_type_labels(), user.php 와 공유).
 $activityLabels = vg_activity_type_labels();
@@ -112,26 +57,6 @@ try {
               WHERE is_deleted = 0
               ORDER BY last_login IS NULL, last_login DESC"
         )->fetchAll();
-
-        // 점검 이력 + 미점검 기간(현재 달은 아직 끝나지 않았으므로 제외).
-        $reviewTotal = (int) $pdo->query('SELECT COUNT(*) FROM tb_activity_review WHERE is_deleted = 0')->fetchColumn();
-        $reviewOffset = ($reviewPage - 1) * $reviewPerPage;
-        $reviews = $pdo->query(
-            "SELECT period_start, period_end, reviewer_name, reviewed_at, result, note
-               FROM tb_activity_review
-              WHERE is_deleted = 0
-              ORDER BY period_start DESC
-              LIMIT $reviewPerPage OFFSET $reviewOffset"
-        )->fetchAll();
-
-        $done = $pdo->query(
-            "SELECT DATE_FORMAT(period_start, '%Y-%m') FROM tb_activity_review WHERE is_deleted = 0"
-        )->fetchAll(PDO::FETCH_COLUMN);
-        for ($i = 1; $i <= VG_REVIEW_LOOKBACK_MONTHS; $i++) {
-            $m = date('Y-m', (int) strtotime("first day of -$i month"));
-            if (!in_array($m, $done, true)) { $missingPeriods[] = $m; }
-        }
-        sort($missingPeriods);
     }
 
     $scopes = $pdo->query(
@@ -194,96 +119,14 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-$csrf = vg_csrf_token();
-
 vg_header('감사 로그', 'activity');
 ?>
-  <?php vg_page_title('감사 로그', 'AUDIT', '접속기록 5요소를 기록하고 월 1회 점검합니다.'); ?>
+  <?php vg_page_title('감사 로그', 'AUDIT', '접속기록 5요소를 기록합니다.'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php if (vg_has_role('admin')): ?>
-  <?php vg_alert($reviewMsg, 'ok'); vg_alert($reviewErr); ?>
-  <?php if ($missingPeriods): ?>
-    <?php vg_alert([
-        'type'  => 'warn',
-        'title' => '점검 기록이 없는 기간이 있습니다 — 접속기록은 월 1회 이상 점검해야 합니다.',
-        'hints' => array_map(static fn (string $m): string => $m . ' 점검 기록 없음', $missingPeriods),
-    ]); ?>
-  <?php endif; ?>
-
-  <div class="card">
-    <?php /* 부제가 바로 아래 입력 라벨(기간·결과·비고)을 그대로 되풀이했다 — 수행자는 로그인 계정으로
-             자동 기록되므로 설명할 것도 없다. 제목만 남긴다. */ ?>
-    <strong>월 1회 접속기록 점검</strong>
-    <div class="card__body">
-      <?php /* .actions(가로 flex)로 라벨·입력을 한 줄에 늘어놓았더니 라벨이 어느 입력의 것인지
-               눈으로 안 잡혔고, 좁아진 '비고' 칸에서 placeholder 가 '(선택' 에서 잘렸다.
-               host.php 자산등급 폼과 같은 .setting-form/.field 규약으로 짝을 묶는다. */ ?>
-      <form method="post" class="setting-form">
-        <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-        <label class="field" for="review-period">점검 대상 기간
-          <select id="review-period" name="period">
-            <?php for ($i = 1; $i <= 12; $i++):
-                $m = date('Y-m', (int) strtotime("first day of -$i month")); ?>
-              <option value="<?= vg_h($m) ?>"><?= vg_h($m) ?></option>
-            <?php endfor; ?>
-          </select>
-        </label>
-        <label class="field" for="review-result">결과
-          <select id="review-result" name="result">
-            <?php foreach (VG_REVIEW_RESULTS as $code => $label): ?>
-              <option value="<?= vg_h($code) ?>"><?= vg_h($label) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </label>
-        <label class="field" for="review-note">비고 (선택)
-          <input type="text" id="review-note" name="note"
-                 placeholder="예: 지난달 접속기록 전건 확인, 이상 없음" maxlength="500">
-        </label>
-        <div class="actions">
-          <button class="btn btn--sm btn--primary" data-loading="기록 중…">점검 완료 기록</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <h2>점검 이력</h2>
-  <?php
-  vg_table([
-      ['label' => '점검 대상 기간', 'width' => '20%', 'nowrap' => true],
-      ['label' => '수행자',        'width' => '14%', 'nowrap' => true],
-      ['label' => '점검 일시',     'width' => '18%', 'nowrap' => true],
-      ['label' => '결과',          'width' => '14%', 'nowrap' => true],
-      ['label' => '비고'],
-  ], $reviews, [
-      /* 아이콘을 빼 빈 상태 높이를 줄인다 — 바로 위 카드에 입력 양식이 있는데도 빈 표가
-         화면 한 판을 먹고 있었다(.empty 의 패딩은 app.css 소유라 여기선 내용으로만 줄인다). */
-      'empty' => [
-          'title' => '점검 기록이 아직 없습니다.',
-          'hint'  => '위 양식으로 지난달 접속기록 점검을 먼저 기록하세요.',
-      ],
-      'cell' => [
-          0 => static fn (array $r): string =>
-              vg_h((string) $r['period_start']) . ' ~ ' . vg_h((string) $r['period_end']),
-          1 => static fn (array $r): string => !empty($r['reviewer_name'])
-              ? vg_h((string) $r['reviewer_name'])
-              : '<span class="why">—</span>',
-          2 => static fn (array $r): string => vg_h(str_replace('T', ' ', substr((string) $r['reviewed_at'], 0, 19))),
-          3 => static function (array $r): string {
-              $code = (string) $r['result'];
-              $tone = $code === 'FINDING' ? 'high' : ($code === 'NA' ? 'muted' : 'ok');
-              return '<span class="badge tone-' . $tone . '">' . vg_h(VG_REVIEW_RESULTS[$code] ?? $code) . '</span>';
-          },
-          4 => static fn (array $r): string => !empty($r['note'])
-              ? vg_h((string) $r['note'])
-              : '<span class="why">—</span>',
-      ],
-  ]);
-  vg_page_nav($reviewTotal, $reviewPerPage, $reviewPage, 'rpage', 'rper_page');
-  ?>
-
   <h2>사용자별 접속 현황</h2>
   <?php
   vg_table([
