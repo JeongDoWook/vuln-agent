@@ -35,6 +35,14 @@ const VG_FINDING_TYPES = [
     'exposure' => ['clear' => ['scope']],
 ];
 
+/**
+ * "판정 불가" 경고에 펴 놓을 사유 줄 수. 나머지는 접힘(details) 안으로 간다.
+ *   배포판 종류가 많은 환경(dev 실측: 호스트 199대)에서는 사유만도 열 줄이 넘어, 상한이 없으면
+ *   요약으로 바꾼 의미가 없다. 3줄은 배너 전체(제목 1 + 요약 3 + 접힘 1)가 다섯 줄을 넘지
+ *   않게 잡은 값이다 — .hint-list 의 max-height 가 같은 기준으로 물리적 상한도 건다.
+ */
+const VG_UNSUP_HINT_PREVIEW = 3;
+
 $type = (string) ($_GET['type'] ?? 'cve');
 if (!isset(VG_FINDING_TYPES[$type])) { $type = 'cve'; }
 
@@ -532,16 +540,40 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif ($type === 'cve'): ?>
   <?php if ($unsupBy):
-      // 사유 한 줄에 그 사유가 걸린 대상을 모아 붙인다. 사유 자체가 이미 "왜 판정할 수 없는가"를
-      //   말하므로, 예전에 앞에 두던 총론 한 줄("피드가 모르는 배포판이거나…")은 뺐다.
-      $hints = [];
+      // 기본은 **사유별 대수 요약**만 펴 둔다. 예전엔 사유 한 줄에 그 사유가 걸린 대상 이름을
+      //   전부 이어 붙여서, 미지원 호스트가 199개인 환경에선 배너 혼자 화면 6줄을 먹고 KPI·필터·
+      //   표를 아래로 밀어냈다(실측). 대상 이름은 지우지 않고 접힘 안으로 내린다 — 닫혀 있어도
+      //   HTML 에는 그대로 있어 Ctrl+F 검색과 tests/smoke.sh 의 '컨테이너 nodb' 단언이 같이 산다.
+      // 경고 제목은 한 글자도 바꾸지 않았다: "0건 = 안전 아님" 은 이 제품이 허위 안심을 막는
+      //   핵심 문구이고 smoke 가 '판정 불가' 를 단언한다(tests/smoke.sh 의 [미지원 배포판 경고]).
+      $unsupTotal = 0;
+      foreach ($unsupBy as $names) { $unsupTotal += count($names); }
+      // 많은 사유부터 세운다 — 두세 대짜리 사유가 맨 위에 오면 요약이 대표성을 잃는다.
+      uasort($unsupBy, static fn(array $a, array $b): int => count($b) <=> count($a));
+      $hints = []; $unsupItems = [];
       foreach ($unsupBy as $reason => $names) {
-          $hints[] = $reason . ' (' . count($names) . ') — ' . implode(', ', $names);
+          $line = $reason . ' · ' . number_format(count($names)) . '개 대상';
+          if (count($hints) < VG_UNSUP_HINT_PREVIEW) {
+              // 요약 줄은 **한 줄**이어야 뜻이 있다 — 사유 중에는 괄호 안 설명까지 붙어 100자를
+              //   넘는 것이 있어(패키지 DB 없는 이미지) 좁은 폭에서 혼자 두 줄이 된다. 미리보기
+              //   에서만 줄이고, 온전한 문장은 바로 아래 접힘 안에 그대로 둔다.
+              //   vg_trunc 를 안 쓰는 이유: vg_alert 의 hints 는 순수 문자열이라 여기서 HTML 을
+              //   넘기면 vg_h() 로 다시 이스케이프돼 태그가 글자로 보인다.
+              $hints[] = mb_strimwidth($reason, 0, 60, '…') . ' · ' . number_format(count($names)) . '개 대상';
+          }
+          $unsupItems[] = $line . ' — ' . implode(', ', $names);
       }
+      $more = count($unsupItems) - count($hints);
+      if ($more > 0) { $hints[] = '외 ' . number_format($more) . '종 (아래 접힘에 전체가 있습니다)'; }
       vg_alert([
           'type'  => 'warn',
           'title' => '일부 대상은 취약점 매칭이 수행되지 않습니다 — 0건은 "안전"이 아니라 "판정 불가"입니다',
           'hints' => $hints,
+          'details' => [
+              'summary' => '판정 불가 대상 ' . number_format($unsupTotal) . '개 · 사유 '
+                         . number_format(count($unsupItems)) . '종 — 목록 보기',
+              'items'   => $unsupItems,
+          ],
       ]);
   endif; ?>
 
@@ -596,9 +628,13 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   //   8% 는 1440px 에서 'CVSS 9.8' 을 담지 못해 **점수가 화면에서 사라졌다.**
   //   반대로 rem 만 쓰면 넓은 화면에서 남는 폭이 전부 '근거' 로 몰리므로 이름 열은 % 로 둔다.
   //   합이 표 폭을 넘지 않게 유지한다 — 넘으면 폭 없는 '근거' 가 0 이 되고 표가 카드를 뚫는다
-  //   (% 합 52.5% + 고정 19.5rem = 312px. 1060px 실측에서 근거 191px·행 높이 두 줄로 안정,
+  //   (% 합 56.5% + 고정 19.5rem = 312px. 1060px 실측에서 근거 149px·행 높이 두 줄로 안정,
   //    가로 스크롤 없음).
-  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '14.5%', 'class' => 'col-id']];
+  // 폭을 호스트(14.5→17%)와 조치(11.5→14%)로 옮겼다: 둘 다 **식별자** 열인데 잘리고 있었고
+  //   (실측 'rollupchk.dep-rollup.example….', '1:1.22.1-3….'), 남는 폭을 전부 갖던 '근거' 는
+  //   원래 두 줄 말줄임(clamp-2 + title)이라 좁아져도 잃는 정보가 없다. 식별자는 잘리면
+  //   대조 자체가 불가능해진다 — 같은 폭이면 식별자에 준다.
+  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
   $headers = array_merge($headers, [
       // 뱃지 폭(CRITICAL 69px) + 칸 여백 32px = 101px → 6.5rem.
       ['label' => '등급',  'key' => 'severity',       'width' => '6.5rem', 'nowrap' => true],
@@ -617,10 +653,17 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       //   6rem 은 둘째 줄 'EPSS 100.0%'(66px) + 칸 여백(29px) 기준이다.
       ['label' => 'CVSS',  'key' => 'risk',           'width' => '6rem', 'nowrap' => true,
           'align' => 'right', 'title' => 'CVSS 기본점수 · 아랫줄은 EPSS(30일 내 악용 확률)'],
-      ['label' => '근거 (왜 위험한가)', 'key' => 'rationale'],
+      // 근거에도 폭을 준다. 폭을 안 주면 이 열이 "남는 폭" 을 갖는데, 사이드바가 붙어 있는
+      //   861~1060px 구간은 표가 쓸 수 있는 폭이 가장 좁아(1024px 뷰포트 → 692px) 남는 폭이
+      //   12px 이 됐다 — 머리글이 세로로 서고 근거가 사라졌다(실측). 폭을 명시하면 폭 합이
+      //   표보다 클 때 브라우저가 **모든 열을 비례로 줄이므로**, 한 열만 짜부라지지 않는다.
+      ['label' => '근거 (왜 위험한가)', 'key' => 'rationale', 'width' => '18%'],
       // 라벨에 '이 버전 이상' 을 못 담아 값 뒤에 '이상' 을 붙이던 것을 머리글로 올린다 —
       //   좁은 칸에서는 그 두 글자가 정작 버전 문자열을 밀어냈다.
-      ['label' => '조치 · 올릴 버전', 'key' => 'fix', 'width' => '11.5%',
+      // col-fix: 이 칸에서만 버전 문자열의 줄바꿈을 허용한다(app.css '목록 화면' 구역).
+      //   공용 .badge 는 nowrap 이라 rhel 모듈 버전이 12자에서 잘려 나갔는데, "무엇으로
+      //   올려야 하는가" 가 이 열의 존재 이유라 잘리면 열 자체가 무의미해진다.
+      ['label' => '조치 · 올릴 버전', 'key' => 'fix', 'width' => '14%', 'class' => 'col-fix',
           'title' => '이 버전 이상으로 올리면 해결됩니다'],
   ]);
 
@@ -692,8 +735,21 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
           'empty' => $emptySpec,
           'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
           'cell' => [
-              // 칸을 넘치는 긴 FQDN 은 col-id 가 말줄임으로 접는다 — 전체 이름은 title 로 남긴다.
-              'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a>',
+              // 호스트는 이 표의 **주 식별자**다 — 어느 서버 얘긴지 모르면 나머지 값이 다 무의미하다.
+              //   그런데 한 줄로 쓰면 칸 폭에 먹혀 'rollupchk.dep-rollup.example….' 로 끊겼다(실측).
+              //   호스트 이름(첫 라벨)과 도메인을 두 줄로 나누면 같은 폭에서 보이는 글자 수가 두 배가
+              //   되고, 이 표의 행은 이미 CVE·근거 칸 때문에 두 줄이라 행 높이도 안 는다.
+              //   그래도 도메인이 길면 말줄임이 남으므로 전체 값은 title 로 남긴다(잘리는 열의 공통 규칙).
+              'fqdn' => function ($r) {
+                  $fqdn = (string) $r['fqdn'];
+                  $dot  = strpos($fqdn, '.');
+                  $head = $dot === false ? $fqdn : substr($fqdn, 0, $dot);
+                  $rest = $dot === false ? '' : substr($fqdn, $dot);
+                  return '<a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($fqdn) . '">'
+                       . vg_h($head)
+                       . ($rest === '' ? '' : '<div class="why">' . vg_h($rest) . '</div>')
+                       . '</a>';
+              },
               'severity'       => fn($r) => vg_sev_badge((string) $r['severity']),
               // 상태 라벨은 '로컬 세그먼트 노출' 처럼 길어서 좁은 칸에선 말줄임에 먹힌다
               //   (td.nowrap 이 넘치는 값을 자른다 — app.css '목록 화면' 구역). 잘려도 뜻을
@@ -804,9 +860,13 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
               'fix'       => function ($r) use ($notes) {
                   $fixed = (string) ($r['evidence_fixed_version'] ?? ($r['fixed_version'] ?? ''));
                   if ($fixed !== '') {
-                      // 좁은 칸에서 rhel 모듈 버전(1:1.22.1-3.module+el9.2.0+…)은 뱃지를 칸 밖으로
-                      //   밀어낸다 — 잘라서 넣고 전체 값은 vg_trunc 이 title 에 남긴다.
-                      $html = '<span class="badge tone-muted">' . vg_trunc($fixed, 12) . '</span>';
+                      // 예전엔 12자에서 잘라 넣었다(vg_trunc) — rhel 모듈 버전
+                      //   '1:1.22.1-3.module+el9.2.0+…' 이 '1:1.22.1-3….' 이 되어, 화면만 보고는
+                      //   어느 버전으로 올려야 하는지 알 수 없었다. 자르는 대신 이 칸에서만
+                      //   줄바꿈을 허용해(col-fix) 전체를 보인다. title 은 그대로 남긴다 —
+                      //   줄바꿈된 값을 복사·대조할 때 원문 한 줄이 필요하다.
+                      $html = '<span class="badge tone-muted" title="' . vg_h($fixed) . '">'
+                            . vg_h($fixed) . '</span>';
                   } else {
                       $ref = vg_cve_first_ref($r['ref_urls_json'] ?? null);
                       if ($ref === null) {

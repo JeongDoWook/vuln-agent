@@ -194,6 +194,11 @@ function vg_flash_take(): array {
  * 성공/오류/경고 알림. $msg 가 null·빈문자면 아무것도 출력하지 않는다.
  *   문자열을 주면 기존처럼 한 줄만 출력(하위호환): vg_alert($msg, 'err'|'ok'|'warn')
  *   배열을 주면 제목+힌트 목록까지: vg_alert(['title'=>…, 'hints'=>[…], 'type'=>'warn'])
+ *
+ *   'details' => ['summary'=>…, 'items'=>[…]] 를 주면 그 목록을 **접어서** 붙인다(JS 없이 <details>).
+ *   경고에 딸린 대상 목록이 길 때 쓴다 — findings.php 의 "판정 불가" 경고가 미지원 배포판 호스트
+ *   199개를 전부 펴 놓아 배너 혼자 화면 6줄을 먹고 KPI·필터·표를 아래로 밀어냈다. 목록을 지우는
+ *   대신 접는다: 닫혀 있어도 HTML 에는 그대로 있어 검색(Ctrl+F)·스모크 단언이 같이 산다.
  */
 function vg_alert($msg, string $type = 'err'): void {
     if ($msg === null || $msg === '' || $msg === []) {
@@ -213,6 +218,16 @@ function vg_alert($msg, string $type = 'err'): void {
                 echo '<li>' . vg_h((string) $hint) . '</li>';
             }
             echo '</ul>';
+        }
+        $det   = is_array($msg['details'] ?? null) ? $msg['details'] : [];
+        $items = is_array($det['items'] ?? null) ? $det['items'] : [];
+        if ($items) {
+            echo '<details><summary>' . vg_h((string) ($det['summary'] ?? '전체 보기')) . '</summary>'
+               . '<ul class="hint-list">';
+            foreach ($items as $item) {
+                echo '<li>' . vg_h((string) $item) . '</li>';
+            }
+            echo '</ul></details>';
         }
         echo '</div>';
         return;
