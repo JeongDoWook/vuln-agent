@@ -25,8 +25,6 @@ $asset = ['violations' => [], 'total' => 0, 'totalHosts' => 0, 'unjudged' => 0, 
 $secconfig = ['violations' => [], 'total' => 0, 'checked' => 0];
 $account = ['violations' => [], 'total' => 0, 'totalHosts' => 0, 'unjudged' => 0,
             'unjudged_rows' => [], 'pending_hosts' => 0];
-$review = ['violations' => [], 'total' => 0, 'unjudged' => 0,
-           'interval_days' => VG_COMPLIANCE_ACCESS_REVIEW_DAYS, 'last' => null, 'days_since' => null];
 $policy = ['kev' => VG_COMPLIANCE_SLA_KEV_DAYS, 'crit' => VG_COMPLIANCE_SLA_CRIT_DAYS,
            'high' => VG_COMPLIANCE_SLA_HIGH_DAYS, 'partial_max' => VG_COMPLIANCE_PARTIAL_MAX,
            'margin' => VG_COMPLIANCE_HISTORY_MARGIN_DAYS];
@@ -51,7 +49,6 @@ try {
     if ($canViewAssets) {
         $account = vg_compliance_load_account($pdo, $previewLimit);
     }
-    $review = vg_compliance_load_access_review($pdo);
     $trend = vg_compliance_trend($pdo, vg_ui_trend_limit());
 } catch (Throwable $e) {
     error_log('[compliance] ' . $e->getMessage());
@@ -62,8 +59,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
 ?>
   <?php
   // 설명 한 줄이 "이 화면이 무엇을 증명하는가"를 말한다 — 예전엔 "판정합니다" 로만 끝나
-  //   자동판정 3건이 왜 빠졌는지가 화면 어디에도 없었다. 별도 문단으로 빼지 않는 이유는
-  //   첫 화면 세로 예산이다(통제 5종까지 675px 안에 들어와야 한다).
+  //   자동판정에서 빠진 항목이 왜 빠졌는지가 화면 어디에도 없었다. 별도 문단으로 빼지 않는 이유는
+  //   첫 화면 세로 예산이다(통제 목록까지 675px 안에 들어와야 한다).
   vg_page_title(
       '컴플라이언스 매핑', 'COMPLIANCE',
       'ISMS-P·ISO 27001 통제 ' . count(VG_COMPLIANCE_CONTROLS) . '종 자동 판정 결과 · 정책·절차 문서 '
@@ -80,19 +77,18 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     $sAsset = vg_compliance_status($asset['total'], $asset['unjudged'] > 0, $policy['partial_max']);
     $sSec   = vg_compliance_status($secconfig['total'], false, $policy['partial_max']);
     $sAcct  = vg_compliance_status($account['total'], $account['unjudged'] > 0, $policy['partial_max']);
-    $sRev   = vg_compliance_status($review['total'], false, $policy['partial_max']);
 
     // ── 결론 먼저 ──────────────────────────────────────────────────────────
-    // 예전 첫 화면은 판정 5행짜리 표 하나였다. 통제마다의 판정은 있는데 "그래서 결론이
+    // 예전 첫 화면은 판정 표 하나였다. 통제마다의 판정은 있는데 "그래서 결론이
     //   무엇인가"가 없어서, 사용자가 표를 다 읽고 스스로 세야 알 수 있었다(운영 피드백:
     //   "뭐가 된다는 거지, 뭘 증명한다는 거지").
     // 단위는 **통제 "종"** 이지 위반 건수가 아니다 — 같은 칸에 뭉개면 "미준수 1" 이 1건인지
     //   1종인지 못 읽는다. 그래서 라벨에 단위를 붙여 둔다.
     // 판정 어휘·색은 vg_compliance_status()/vg_compliance_tone_of() 가 SSOT 다(여기서 다시
     //   정하지 않는다 — 두 벌이 되면 표의 뱃지와 이 카드의 색이 갈라진다).
-    $verdicts = ['patch' => $sPatch, 'secops' => $sSec, 'access_review' => $sRev];
+    $verdicts = ['patch' => $sPatch, 'secops' => $sSec];
     // assets 권한이 없으면 자산·계정은 건수까지 감춘다(아래 $deniedRow 와 같은 게이트) —
-    //   집계에서도 빼고, 몇 종이 빠졌는지는 따로 밝힌다(5종 중 3종만 센 걸 숨기지 않는다).
+    //   집계에서도 빼고, 몇 종이 빠졌는지는 따로 밝힌다(일부만 센 걸 숨기지 않는다).
     if ($canViewAssets) { $verdicts['asset'] = $sAsset; $verdicts['account'] = $sAcct; }
     $tally = ['준수' => 0, '부분준수' => 0, '미준수' => 0, '판정 불가' => 0];
     foreach ($verdicts as $s) { $tally[$s['label']] = ($tally[$s['label']] ?? 0) + 1; }
@@ -131,7 +127,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   ?>
 
   <?php
-  // 첫 화면은 **통제 5종 × 한 줄**. 예전엔 통제마다 호스트별 위반을 10건씩 미리 깔아서,
+  // 첫 화면은 **통제 1종당 한 줄**. 예전엔 통제마다 호스트별 위반을 10건씩 미리 깔아서,
   //   정작 "무엇이 준수이고 무엇이 아닌가"가 스크롤 아래로 밀렸다. 전체를 보려면 어차피
   //   그 근거만 보여주는 다른 화면으로 가야 하므로, 여기서는 판정만 세우고 근거는 링크로 보낸다.
   //   판정·건수는 위 vg_compliance_status() 결과 그대로다(요약 방식만 바뀐다).
@@ -139,8 +135,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $naText = static fn(int $n, string $unit = '건'): string =>
       $n > 0 ? ' · <span class="why">판정 불가 ' . number_format($n) . vg_h($unit) . '</span>' : '';
   // 요약 칸: **한 줄**이다 — 건수 뒤에 작게 "몇 개 중에 셌는가"(분모)를 잇는다.
-  //   두 줄로 쓰면 행이 73px 이 되고, 통제 5종이 첫 화면(1440×675) 밖으로 밀린다(실측).
-  //   판정 5종을 한눈에 보는 것이 이 표의 목적이라 줄 수를 예산으로 잡고 문구를 줄였다.
+  //   두 줄로 쓰면 행이 73px 이 되고, 통제 목록이 첫 화면(1440×675) 밖으로 밀린다(실측).
+  //   판정 전종을 한눈에 보는 것이 이 표의 목적이라 줄 수를 예산으로 잡고 문구를 줄였다.
   //   구분자(—)가 없으면 "위반 3건 · 판정 불가 5,758건 조치 대상 5,761건" 처럼 두 수치가
   //   한 문장으로 붙어 읽힌다(실측). 색만으로는 경계가 안 잡힌다.
   $sumCell = static fn(string $head, string $why): string =>
@@ -148,7 +144,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   // 판정 칸: 뱃지 **아래에 비율 게이지**를 깐다. 게이지가 없으면 "위반 174건"이 큰 수인지
   //   작은 수인지 읽을 방법이 없었다(분모가 화면에 없었다). 요약 칸이 아니라 판정 칸에
   //   두는 건 두 가지 이유다 — (1) 게이지는 그 판정의 근거지 요약문의 일부가 아니고,
-  //   (2) 요약 칸에 3번째 줄로 넣으면 행이 85px 이 돼 통제 5종이 첫 화면 밖으로 밀린다.
+  //   (2) 요약 칸에 3번째 줄로 넣으면 행이 85px 이 돼 통제 목록이 첫 화면 밖으로 밀린다.
   //   meter 는 톤이 crit/high/med/low 뿐이다(app.css) — 'ok' 는 low 로 떨군다. 준수면 채움이
   //   0% 라 색이 보이지도 않지만, 존재하지 않는 클래스를 만들지는 않는다.
   // $what 은 **막대가 무엇의 비율인가** 를 말하는 짧은 라벨이다. 없을 때는 붉은 막대가 꽉 찬 행이
@@ -170,8 +166,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   //   "몇 대에서 위반이 나왔나"로 잡는다(건수를 호스트 수로 나누면 100% 를 넘는다).
   $acctViolHosts = count(array_unique(array_column($account['violations'], 'host_id')));
   // assets 권한이 없으면 자산·계정 통제는 **건수까지 감춘다**(위반 수 자체가 자산 정보다).
-  //   줄을 통째로 빼지 않는 이유: 이 화면의 존재 이유가 "통제 5종 ↔ 조항" 매핑이라,
-  //   권한에 따라 통제가 3종으로 보이면 매핑 자체를 잘못 읽게 된다.
+  //   줄을 통째로 빼지 않는 이유: 이 화면의 존재 이유가 "통제 ↔ 조항" 매핑이라,
+  //   권한에 따라 통제가 줄어 보이면 매핑 자체를 잘못 읽게 된다.
   $deniedRow = static fn(string $key): array => [
       'key' => $key, 'badge' => vg_badge('권한 없음', 'muted'),
       'summary' => '<span class="why">자산 열람 권한이 필요합니다</span>', 'link' => '',
@@ -237,21 +233,6 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       //   만들어 링크하지 않고, 이 통제만 아래 근거 블록에 호스트별 링크를 둔다.
       'link' => $acctDetails ? '<a href="#compliance-account">호스트별 ↓</a>' : '',
   ] : $deniedRow('account');
-  // 이 통제만 분모가 "건수"가 아니라 **주기**다 — 게이지는 검토 주기가 얼마나 찼는지를
-  //   보여준다(100% 를 넘으면 그 자체가 위반). 위반/대상 비율을 억지로 만들지 않는다.
-  $whyRev = ($review['last'] === null
-              ? '수행 이력 0건'
-              : '최근 검토 ' . $review['last']['reviewed_at'] . ' · ' . (int) $review['days_since'] . '일 경과')
-          . ' · 주기 ' . (int) $review['interval_days'] . '일';
-  $summaryRows[] = [
-      'key' => 'access_review',
-      'badge' => $verdictCell($sRev,
-          ($review['days_since'] !== null && $review['interval_days'] > 0)
-              ? (int) $review['days_since'] / (int) $review['interval_days'] * 100 : null,
-          $whyRev, '주기 경과'),
-      'summary' => $sumCell('위반 ' . number_format((int) $review['total']) . '건', $whyRev),
-      'link' => '<a href="/activity.php">기록 →</a>',
-  ];
 
   vg_table(
       [
@@ -268,7 +249,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
           'cell' => [
               // 조항 번호(ISMS-P/ISO)는 이 화면의 존재 이유다 — 작게 내릴 뿐 지우지 않는다.
               //   줄바꿈 없이 같은 줄에 잇는다: 통제명과 조항을 두 줄로 쌓으면 행이 두 줄이 되고,
-              //   요약 칸을 한 줄로 줄여도 5종이 첫 화면에 안 들어온다.
+              //   요약 칸을 한 줄로 줄여도 통제 목록이 첫 화면에 안 들어온다.
               0 => fn($r) => '<strong>' . vg_h(VG_COMPLIANCE_CONTROLS[$r['key']]['label']) . '</strong>'
                            . ' <span class="why">' . vg_h(VG_COMPLIANCE_CONTROLS[$r['key']]['framework']) . '</span>',
               1 => fn($r) => $r['badge'],
@@ -407,7 +388,6 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   if ($canViewAssets) { $trendControls[] = 'asset'; }   // 자산정보는 assets 권한자에게만(위 카드와 동일 게이트)
   $trendControls[] = 'secops';
   if ($canViewAssets) { $trendControls[] = 'account'; } // 계정 통제도 같은 게이트
-  $trendControls[] = 'access_review';
   ?>
   <div class="card mt-lg">
     <strong>판정 추이</strong>
