@@ -88,7 +88,7 @@ vg_header('사용자', 'users');
   $roleOptions = [];
   foreach (VG_ROLES as $roleCode) { $roleOptions[$roleCode] = vg_role_label($roleCode); }
   vg_toolbar([
-      ['type' => 'select', 'name' => 'role', 'selected' => $role, 'empty_label' => '역할 전체', 'options' => $roleOptions],
+      ['type' => 'select', 'name' => 'role', 'selected' => $role, 'empty_label' => '전체 역할', 'options' => $roleOptions],
       ['type' => 'search', 'name' => 'q', 'value' => $q, 'placeholder' => '아이디 검색'],
   ]);
   ?>

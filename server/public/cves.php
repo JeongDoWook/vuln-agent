@@ -153,13 +153,13 @@ vg_header('CVE 카탈로그', 'cves');
       // 탭 선택은 폼 밖에 있다 → 히든으로 실어야 검색·정렬 후에도 탭이 유지된다.
       ['type' => 'hidden', 'name' => 'kev',  'value' => $kev],
       ['type' => 'hidden', 'name' => 'epss', 'value' => $eTop],
-      ['type' => 'select', 'name' => 'sev', 'selected' => $sev, 'empty_label' => '심각도 전체',
+      ['type' => 'select', 'name' => 'sev', 'selected' => $sev, 'empty_label' => '전체 심각도',
        'options' => ['critical' => 'CRITICAL', 'high' => 'HIGH', 'medium' => 'MEDIUM', 'low' => 'LOW']],
-      ['type' => 'select', 'name' => 'year', 'selected' => $year, 'empty_label' => '연도 전체',
+      ['type' => 'select', 'name' => 'year', 'selected' => $year, 'empty_label' => '전체 연도',
        'options' => $years],
       // 기본값(공개일순)은 빈 값 옵션으로 표현 — 같은 항목이 두 번 뜨지 않게 한다.
       ['type' => 'select', 'name' => 'sort', 'selected' => $sort === 'published' ? '' : $sort,
-       'empty_label' => '공개일순', 'options' => ['cvss' => 'CVSS 높은순', 'epss' => 'EPSS 높은순']],
+       'empty_label' => '공개일순(기본)', 'options' => ['cvss' => 'CVSS 높은순', 'epss' => 'EPSS 높은순']],
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE-ID 또는 요약 검색', 'value' => $q],
   ]); ?>
 
@@ -175,7 +175,7 @@ vg_header('CVE 카탈로그', 'cves');
       : array_filter([
           'icon'  => '📭',
           'title' => '아직 수집된 CVE가 없습니다.',
-          'hint'  => '데이터 수집을 한 번 실행해 주세요.',
+          'hint'  => '데이터 수집을 한 번 실행하세요.',
           'cta'   => vg_connectors_empty_cta(),
       ]);
   vg_table(

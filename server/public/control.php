@@ -172,7 +172,7 @@ if (!$found) {
       <?php vg_empty([
           'icon'  => '🧭',
           'title' => '이 기준에 없는 통제입니다.',
-          'hint'  => '통제 ID 가 정확한지, 기준(ISMS-P · U-코드 · N2SF)을 맞게 골랐는지 확인해 주세요.',
+          'hint'  => '통제 ID 가 정확한지, 기준(ISMS-P · U-코드 · N2SF)을 맞게 골랐는지 확인하세요.',
           'cta'   => ['href' => $listUrl, 'label' => '통제 목록으로'],
       ]); ?>
     </div>
@@ -202,7 +202,7 @@ vg_hero(
 //   결론 한 줄을 히어로 바로 아래 세운다(control_mapping.php·compliance.php 와 같은 원칙).
 //   이 화면도 판정은 하지 않는다 — 그 사실을 여기서 분명히 한다.
 ?>
-<p class="sub">이 화면이 증명하는 것 — 이 통제에 매핑된 점검
+<p class="sub">이 통제에 매핑된 점검
   <?= number_format($total) ?>건 중 FAIL <?= number_format($counts['FAIL']) ?>건입니다.
   준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
 
@@ -250,7 +250,7 @@ vg_hero(
       <?php if ($guide !== null): ?>
         <p class="why"><?= vg_h((string) $guide['description']) ?></p>
       <?php else: ?>
-        <div class="why">설명이 아직 준비되지 않았습니다. 아래 점검 항목을 먼저 확인해 주세요.</div>
+        <div class="why">설명이 아직 준비되지 않았습니다. 아래 점검 항목을 먼저 확인하세요.</div>
       <?php endif; ?>
     </div>
   </div>

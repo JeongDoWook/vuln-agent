@@ -106,7 +106,7 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
     <?php vg_empty([
         'icon'  => '📋',
         'title' => '이 룰은 존재하지 않습니다.',
-        'hint'  => 'SSG(SCAP Security Guide) 커넥터가 수집한 룰 ID 인지 확인해 주세요.',
+        'hint'  => 'SSG(SCAP Security Guide) 커넥터가 수집한 룰 ID 인지 확인하세요.',
         'cta'   => ['href' => '/compliance_rules.php', 'label' => '룰셋 목록으로'],
     ]); ?>
   </div>
@@ -230,7 +230,7 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
             'empty' => [
                 'icon'  => '📭',
                 'title' => '아직 이 룰로 점검된 호스트가 없습니다.',
-                'hint'  => '에이전트가 이 항목을 점검한 뒤 다시 확인해 주세요.',
+                'hint'  => '에이전트가 이 항목을 점검한 뒤 다시 확인하세요.',
             ],
             'cell' => [
                 0 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',

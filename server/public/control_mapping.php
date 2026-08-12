@@ -163,8 +163,7 @@ vg_header('통제 기준 매핑', 'control_mapping');
     <div class="kpi kpi--sm"><b><?= number_format($mappedRules) ?></b><span>매핑된 점검 항목 · 개</span></div>
     <div class="kpi kpi--sm"><b><?= number_format($findingTotal) ?></b><span>최신 스캔 점검 결과 · 건</span></div>
   </div>
-  <p class="sub">이 화면이 증명하는 것 — 같은 보안설정 점검 결과를 선택한 기준의 통제로 묶어
-    센 것입니다. 준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
+  <p class="sub">같은 보안설정 점검 결과를 선택한 기준의 통제로 묶어 센 것입니다. 준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
 
   <?php
   // 통제 ID·통제명 모두 상세로 들어가는 링크다 — "누르면 들어간다"가 요구사항이라

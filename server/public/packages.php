@@ -298,10 +298,10 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지 카�
 <?php else: ?>
 
   <?php vg_toolbar([
-      ['type' => 'select', 'name' => 'eco', 'selected' => $eco, 'empty_label' => '배포판 전체',
+      ['type' => 'select', 'name' => 'eco', 'selected' => $eco, 'empty_label' => '전체 배포판',
        'options' => $ecoOptions],
       ['type' => 'select', 'name' => 'sort', 'selected' => $sort === 'cves' ? '' : $sort,
-       'empty_label' => 'CVE 많은순', 'options' => ['epss' => 'EPSS 높은순', 'package' => '패키지명순']],
+       'empty_label' => 'CVE 많은순(기본)', 'options' => ['epss' => 'EPSS 높은순', 'package' => '패키지명순']],
       ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명 검색', 'value' => $q],
       ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
   ]); ?>

@@ -130,7 +130,7 @@ const VG_COLLECT_TRIGGER = ['manual' => '직접 실행', 'schedule' => '예약']
 vg_header('데이터 수집', 'connectors');
 ?>
   <?php vg_page_title('데이터 수집', 'DATA SOURCES', '외부 취약점 데이터와 수집 상태를 관리합니다.', [
-      'actions' => vg_capture(static fn() => vg_modal_btn('connModal', '+ 데이터 소스')),
+      'actions' => vg_capture(static fn() => vg_modal_btn('connModal', '+ 데이터 소스 추가')),
   ]); ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
@@ -232,7 +232,7 @@ vg_header('데이터 수집', 'connectors');
       vg_table($tableHeaders, [], ['empty' => [
           'icon'  => '🔌',
           'title' => '등록된 데이터 소스가 없습니다.',
-          'hint'  => '[+ 데이터 소스]에서 수집 대상을 추가하세요.',
+          'hint'  => '[+ 데이터 소스 추가]에서 수집 대상을 등록합니다.',
       ]]);
   } else {
       // 타입 → 그룹 인덱스. 그룹에 담고, 매핑에 없는 타입은 '기타' 로.

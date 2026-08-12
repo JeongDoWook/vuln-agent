@@ -163,8 +163,8 @@ vg_header($user['username'] ?? '사용자', 'users');
         <form method="post" data-confirm="비밀번호를 초기화할까요? 기존 비밀번호는 즉시 사용할 수 없습니다.">
           <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
           <input type="hidden" name="action" value="reset">
-          <label>비밀번호 초기화</label>
-          <input type="password" name="password" placeholder="새 비번(8자+)" required>
+          <label>비밀번호 초기화 <span class="why">(8자 이상)</span></label>
+          <input type="password" name="password" required>
           <button class="btn btn--sm btn--warn">초기화</button>
         </form>
 

@@ -87,7 +87,7 @@ vg_header('보안 설정 룰', 'compliance');
 <?php else: ?>
   <?php
   vg_toolbar([
-      ['type' => 'select', 'name' => 'sev', 'selected' => $sev, 'empty_label' => '심각도 전체',
+      ['type' => 'select', 'name' => 'sev', 'selected' => $sev, 'empty_label' => '전체 심각도',
        'options' => $sevOptions],
       ['type' => 'search', 'name' => 'q', 'placeholder' => '룰 ID·제목·참조 검색', 'value' => $q],
   ]);
