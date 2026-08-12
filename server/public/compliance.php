@@ -17,7 +17,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';
 require_once __DIR__ . '/../src/compliance.php';   // 판정 로직(웹·CLI 공용)
-vg_require_menu('findings');
+vg_require_menu('compliance');
 
 $err = null;
 $patch = ['violations' => [], 'total' => 0, 'unjudged' => 0, 'na' => [], 'na_unknown' => 0, 'buckets' => []];

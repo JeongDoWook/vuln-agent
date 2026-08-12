@@ -5,7 +5,9 @@ declare(strict_types=1);
  * export.php — 스캔 취약점 결과를 외부 시스템이 가져가는 읽기 API (JSON / XML).
  *
  *   용도: Python AI 서비스가 결과를 받아 PDF 보고서 등을 생성한다.
- *   인증: 전용 읽기 토큰(헤더 X-API-Token 또는 Authorization: Bearer). 쓰기(ingest)와 분리.
+ *   인증: **웹 로그인 세션**(자산 메뉴 권한). 전용 API 토큰 체계는 폐지했다 — 결과를 가져가는
+ *         외부 시스템은 DB 를 직접 조회하기로 해서 토큰을 유지할 이유가 없어졌다.
+ *         미로그인이면 다른 화면과 똑같이 로그인 화면으로 보낸다.
  *   범위: 기본 = 호스트별 최신 스캔의 findings. host / scan_id / severity / kev / min_epss 로 좁힘.
  *   내용: 실행요약(심각도 집계) + 호스트 맥락(OS·커널·수집시각) + finding(CVE·심각도·KEV·EPSS·노출·조치)
  *         + 미조치 사유 3필드(사유·승인자·승인일시) — 조치 워크플로는 이 값을 가져가는 외부 시스템의 몫이다.
@@ -15,13 +17,11 @@ declare(strict_types=1);
  *     GET /export.php?format=json
  *     GET /export.php?format=xml&severity=critical,high&kev=1
  *     GET /export.php?host=web01.example.com
- *     curl -H "X-API-Token: <토큰>" "https://…/export.php?format=json&min_epss=0.5"
+ *     GET /export.php?format=json&min_epss=0.5   (브라우저에 로그인한 상태로 그대로 연다)
  */
 
-require __DIR__ . '/../src/config.php';   // vg_auth_token (요청 헤더 파싱 헬퍼)
-require __DIR__ . '/../src/db.php';
-require_once __DIR__ . '/../src/apitoken.php';
-require_once __DIR__ . '/../src/audit.php';    // vg_log_activity (apitoken.php 도 만료 기록에 쓴다)
+require __DIR__ . '/../src/auth.php';          // 세션·vg_require_menu (config/db/audit 를 함께 로드한다)
+vg_require_menu('assets');                     // SBOM·Export 는 자산 데이터다
 
 const VG_EXPORT_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
@@ -35,20 +35,6 @@ function vg_export_fail(int $http, string $msg, string $code): void {
 // ── 메서드 ────────────────────────────────────────────────────
 if (!in_array($_SERVER['REQUEST_METHOD'] ?? '', ['GET', 'HEAD'], true)) {
     vg_export_fail(405, 'GET only', 'method_not_allowed');
-}
-
-// ── 인증: 웹에서 발급한 읽기 토큰(DB, SHA-256 대조) ───────────
-//   토큰은 api-tokens.php 에서 발급/폐기한다. 폐기(soft-delete)된 토큰은 즉시 거부된다.
-$provided = vg_auth_token('X-API-Token');   // 커스텀 헤더 우선, 없으면 Authorization: Bearer
-$tokenId  = null;
-try {
-    $tokenId = vg_api_token_verify(vg_pdo(), (string) $provided);
-    if ($tokenId === null) {
-        vg_export_fail(401, 'unauthorized', 'unauthorized');
-    }
-} catch (Throwable $e) {
-    error_log('[export] auth ' . $e->getMessage());
-    vg_export_fail(500, 'internal error', 'internal_error');
 }
 
 // ── 파라미터 ──────────────────────────────────────────────────
@@ -201,15 +187,14 @@ $doc = [
     'hosts'        => array_values($hosts),
 ];
 
-// 누가(토큰)·언제·어떤 필터로·몇 건을 내보냈는지 감사로그. 실패해도 다운로드는 막지 않는다
-// (vg_log_activity 자체가 내부 try/catch).
+// 누가(로그인 사용자)·언제·어떤 필터로·몇 건을 내보냈는지 감사로그. 실패해도 다운로드는
+// 막지 않는다(vg_log_activity 자체가 내부 try/catch). user_id/user_name 은 세션에서 채워진다.
 vg_log_activity(
-    $pdo, 'API_TOKEN', $tokenId, 'export_data',
+    $pdo, 'EXPORT', null, 'export_data',
     "형식={$format} 건수={$summary['findings']}건 (호스트 {$summary['hosts']}개)",
     ['format' => $format, 'host' => $host, 'scan_id' => $scanId ?: null,
      'severity' => $sevFilter, 'kev' => $kevOnly, 'min_epss' => $minEpss,
      'findings' => $summary['findings'], 'hosts' => $summary['hosts']],
-    null, 'SYSTEM',
     // 처리 대상: 내보내기 범위(호스트 지정이 없으면 전체). 수행업무: 내보내기.
     subject: $host !== '' ? $host : '전체 호스트', action: 'EXPORT'
 );

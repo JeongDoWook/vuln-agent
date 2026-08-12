@@ -2,10 +2,11 @@
 declare(strict_types=1);
 
 /**
- * tokenexpiry.php — API 토큰·에이전트 토큰이 공유하는 유효기간 어휘.
- *   발급 화면(api-tokens.php / agent-tokens.php)과 검증 헬퍼(apitoken.php / agenttoken.php)가
- *   같은 선택지·같은 판정을 쓰도록 한 곳에 모은다(둘로 흩어지면 조용히 어긋난다).
+ * tokenexpiry.php — 에이전트 토큰의 유효기간 어휘.
+ *   발급 화면(agent-tokens.php)과 검증 헬퍼(agenttoken.php)가 같은 선택지·같은 판정을 쓰도록
+ *   한 곳에 모은다(둘로 흩어지면 조용히 어긋난다).
  *   자동 갱신·자동 재발급은 두지 않는다 — 만료되면 사람이 새로 발급한다.
+ *   예전엔 폐지된 Export API 토큰과 공용이었다(그래서 파일이 토큰 종류에 중립적이다).
  */
 
 require_once __DIR__ . '/format.php';   // vg_badge
@@ -67,7 +68,7 @@ function vg_token_expiry_badge(?string $expiresAt): string {
     return vg_badge($date, 'ok');
 }
 
-/** 발급 폼의 유효기간 select. 두 발급 화면이 같은 선택지를 쓰도록 여기서 그린다. */
+/** 발급 폼의 유효기간 select. 선택지 정의가 화면으로 새지 않게 여기서 그린다. */
 function vg_token_expiry_select(int $selected = 0): string {
     $out = '<select name="expires_days">';
     foreach (VG_TOKEN_EXPIRY_OPTIONS as $days => $label) {

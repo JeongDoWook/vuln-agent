@@ -11,7 +11,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-vg_require_menu('findings');
+vg_require_menu('catalog');
 
 /**
  * refs_json → "CIS 5.2.11 · NIST AC-17(a)" 형태. host.php 의 $refBadges 가 다루는 것과

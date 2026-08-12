@@ -3,12 +3,7 @@ declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../src/auth.php';
-vg_require_menu('findings');
-if (!vg_can('assets')) {
-    http_response_code(403);
-    echo json_encode(['ok' => false]);
-    exit;
-}
+vg_require_menu('assets');   // 수집 제어 현황: 자산관리와 같은 인가 범위(host.php POST 와 동일)
 
 $pdo = vg_pdo();
 $sql = <<<'SQL'

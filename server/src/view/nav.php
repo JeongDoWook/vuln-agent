@@ -26,8 +26,11 @@ function vg_activity_type_labels(): array {
         'agent_token_issue'    => '에이전트 토큰 발급',
         'agent_token_revoke'   => '에이전트 토큰 폐기',
         'agent_token_delete'   => '에이전트 토큰 삭제',
+        // API 토큰 인증은 폐지됐지만(export/sbom 은 로그인 세션으로 전환) 과거 감사로그 행이
+        // 이 코드로 남아 있다 — 매핑을 지우면 원시 코드가 화면에 그대로 노출된다.
         'token_issue'          => 'API 토큰 발급',
         'token_revoke'         => 'API 토큰 폐기',
+        'api_token_expired'    => '만료 API 토큰 접근 거부',
         'host_delete'          => '호스트 삭제',
         'host_set_grade'       => '자산 등급 확정',
         'host_grade_review_save' => '자산 등급 검토 저장',
@@ -90,7 +93,9 @@ function vg_activity_action_labels(): array {
  *   섹션 라벨이 '' 이면 라벨 없이 링크만 렌더한다(대시보드처럼 단독 항목).
  *   각 링크의 'perm' 은 vg_can() 메뉴코드, 'key' 는 vg_header($active) 와 맞춘다.
  *   'perm' 은 vg_menus() 의 코드와 반드시 일치해야 한다 — 어긋나면 사이드바에 보이는데
- *   눌러보면 403 나는 링크가 생긴다. 단, findings 처럼 코드 하나가 링크 둘을 열 수 있다.
+ *   눌러보면 403 나는 링크가 생긴다. 링크 ↔ 메뉴코드는 1:1 이다(카탈로그 5개만 성격이
+ *   같아 catalog 하나를 공유한다) — 예전처럼 findings 하나가 링크 6개를 열면 권한 화면에서
+ *   그 6개를 따로 끌 수 없다.
  */
 function vg_nav_sections(): array {
     return [
@@ -107,23 +112,22 @@ function vg_nav_sections(): array {
              'active_keys' => ['assets', 'asset_packages']],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
             // 통제 기준 매핑은 vg_compliance_subtabs() 의 서브탭으로만 들어온다(사이드바엔 없다).
-            ['perm' => 'findings',   'href' => '/compliance.php', 'label' => '컴플라이언스',
+            ['perm' => 'compliance', 'href' => '/compliance.php', 'label' => '컴플라이언스',
              'key' => 'compliance_mapping', 'active_keys' => ['compliance_mapping', 'control_mapping']],
         ],
         // 외부에서 받아온 참조 카탈로그 — 업무 화면이 아니라 "피드가 제대로 들어왔는지" 를
         //   확인하는 자리다. 개별 판정 근거는 CVE 상세·취약점 상세 모달에 이미 들어 있다.
         '데이터' => [
             ['perm' => 'connectors', 'href' => '/connectors.php',      'label' => '수집 상태',      'key' => 'connectors'],
-            ['perm' => 'findings',   'href' => '/cves.php',            'label' => 'CVE 카탈로그',   'key' => 'cves'],
-            ['perm' => 'findings',   'href' => '/packages.php',        'label' => '패키지 카탈로그', 'key' => 'packages'],
-            ['perm' => 'findings',   'href' => '/vendor.php',          'label' => '판정 근거',      'key' => 'vendor'],
-            ['perm' => 'findings',   'href' => '/compliance_rules.php','label' => '보안 설정 룰',   'key' => 'compliance'],
+            ['perm' => 'catalog',    'href' => '/cves.php',            'label' => 'CVE 카탈로그',   'key' => 'cves'],
+            ['perm' => 'catalog',    'href' => '/packages.php',        'label' => '패키지 카탈로그', 'key' => 'packages'],
+            ['perm' => 'catalog',    'href' => '/vendor.php',          'label' => '판정 근거',      'key' => 'vendor'],
+            ['perm' => 'catalog',    'href' => '/compliance_rules.php','label' => '보안 설정 룰',   'key' => 'compliance'],
         ],
         '관리' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],
             ['perm' => 'permissions', 'href' => '/permissions.php',  'label' => '권한',      'key' => 'permissions'],
             ['perm' => 'agenttokens', 'href' => '/agent-tokens.php', 'label' => '에이전트 키', 'key' => 'agenttokens'],
-            ['perm' => 'apitokens',   'href' => '/api-tokens.php',   'label' => 'API 키',    'key' => 'apitokens'],
             ['perm' => 'activity',    'href' => '/activity.php',     'label' => '감사 로그', 'key' => 'activity'],
             ['perm' => 'settings',    'href' => '/settings.php',     'label' => '설정',      'key' => 'settings'],
         ],
@@ -292,7 +296,6 @@ function vg_nav_icon(string $key): string {
         'users'       => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
         'permissions' => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
         'agenttokens' => '<path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><line x1="13" y1="5" x2="13" y2="19"/>',
-        'apitokens'   => '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
         'activity'    => '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
         // 설정 — 슬라이더 모양: 판정 기준값을 조직에 맞춰 조정한다는 뜻.
         'settings'    => '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.2"/><circle cx="15" cy="16" r="2.2"/>',

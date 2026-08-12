@@ -580,16 +580,6 @@ package "피드 운영 · 인증 · 감사" {
         allowed : bool
     }
 
-    entity tb_api_token {
-        api_token_id : bigint <<PK>>
-        --
-        label : string
-        token_hash : string <<UK>>
-        token_prefix : string
-        last_used_at : datetime
-        is_deleted : bool
-    }
-
     entity tb_agent_token {
         agent_token_id : bigint <<PK>>
         --
@@ -678,7 +668,6 @@ tb_compliance_snapshot ||--o{ tb_compliance_snapshot_control : "통제별 판정
 tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별 조치버전"
 tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
 tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
-tb_user ||--o{ tb_api_token : "발급(Export API)"
 tb_user |o--o{ tb_asset_grade_review : "등급 검토자"
 tb_agent_token ||--o{ tb_agent_replay_nonce : "소진된 nonce"
 

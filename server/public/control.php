@@ -16,7 +16,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';           // vg_log_activity
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_frameworks, vg_control_guide, vg_cce_rule_guides
-vg_require_menu('findings');
+vg_require_menu_any('compliance', 'findings');   // 통제 상세: 통제 기준 매핑·판정 이력·패키지 상세에서 함께 열린다
 
 $err = null;
 $fw = vg_control_framework_param($_GET['fw'] ?? null);   // 화이트리스트 검증(SSOT)

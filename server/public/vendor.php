@@ -19,7 +19,7 @@ require __DIR__ . '/../src/view.php';
 // view.php 가 format.php 를 이미 require 하지만, VG_VENDOR_SEV_TONE 정의가
 // VG_TONE_SEV(format.php) 를 직접 참조하므로 이 파일 스스로도 로드 순서를 보장해 둔다.
 require_once __DIR__ . '/../src/format.php';
-vg_require_menu('findings');
+vg_require_menu('catalog');
 
 /**
  * 소스별 SELECT — 공통 컬럼(src·vendor·rel·pkg·cve_id·fixed·state·note)으로 접는다.

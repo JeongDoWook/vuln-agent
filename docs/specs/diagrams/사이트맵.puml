@@ -45,7 +45,6 @@ package "관리" as Admin {
     rectangle "/users.php · /user.php\n사용자 목록 · 상세(역할변경·비번초기화·삭제)" as USERS
     rectangle "/permissions.php\n권한" as PERM #db6d28
     rectangle "/agent-tokens.php\n에이전트 키" as ATOK
-    rectangle "/api-tokens.php\nAPI 키" as TOK #db6d28
     rectangle "/activity.php\n감사 로그 · 접속기록 5요소\n+ 월 1회 점검 기록" as ACT
     rectangle "/settings.php\n운영 설정(SLA·판정 임계값)" as SET
 }
@@ -53,8 +52,8 @@ package "관리" as Admin {
 package "인증: 토큰(사람 로그인과 분리)" as API {
     rectangle "/ingest.php\n수집 수신 · X-Agent-Token" as ING #238636
     rectangle "/agent-poll.php · /agent-progress.php\n명령 pull · 진행/heartbeat/중단 확인" as APOLL #238636
-    rectangle "/export.php\n결과 내보내기 JSON/XML · X-API-Token" as EXP #238636
-    rectangle "/sbom.php\n자산별 SBOM CycloneDX 1.5 / SPDX 2.3\n· export.php 와 같은 읽기 토큰" as SBOM #238636
+    rectangle "/export.php\n결과 내보내기 JSON/XML · 로그인 세션(자산 권한)" as EXP #238636
+    rectangle "/sbom.php\n자산별 SBOM CycloneDX 1.5 / SPDX 2.3\n· export.php 와 같은 세션 인증" as SBOM #238636
 }
 
 ' 화면이 아니라 화면이 부르는 엔드포인트다. 사람이 주소창에 치는 곳이 아니라서 사이드바에 없다.

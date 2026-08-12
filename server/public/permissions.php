@@ -21,7 +21,6 @@ $msg = null; $err = null;
 const VG_PERM_ROLES = ['operator', 'user'];
 $menus = vg_menus();
 unset($menus['permissions']);   // 권한설정: admin 전용(코드에서 admin 만 true)
-unset($menus['apitokens']);     // Export API 토큰 발급: admin 전용(코드에서 admin 만 true)
 unset($menus['settings']);      // 운영 설정: admin 전용(판정 기준값을 바꾸는 화면)
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -67,7 +66,7 @@ vg_header('권한', 'permissions');
     <?php /* 예전엔 같은 설명이 세 겹이었다(제목 밑 문구·이 줄·표 아래 안내 카드). 한 줄로 합치고,
              "관리자는 항상 허용" 은 표의 [✔ 항상] 뱃지가 이미 말하므로 뺐다.
              관리자 전용 메뉴가 표에 없는 것은 여기서만 밝힌다 — 옛 안내는 '권한설정' 하나만 적어 틀렸다. */ ?>
-    <div class="sub">admin 전용 · 관리자 전용 메뉴(권한·API 키·설정)는 위임할 수 없어 표에서 빠집니다</div>
+    <div class="sub">admin 전용 · 관리자 전용 메뉴(권한·설정)는 위임할 수 없어 표에서 빠집니다</div>
 
     <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 

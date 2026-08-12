@@ -13,7 +13,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
-vg_require_menu('findings');
+vg_require_menu_any('catalog', 'compliance', 'findings');   // 룰 상세: 룰 카탈로그·컴플라이언스·탐지 결과에서 함께 열린다
 
 $err = null; $ruleId = ''; $rule = null; $rows = []; $total = 0;
 $hostCount = 0; $failHosts = 0;

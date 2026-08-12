@@ -607,6 +607,25 @@ assert_eq "$code" "200" "데이터 수집 페이지 200(관리자 권한)"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
 assert_eq "$code" "200" "보안 공지 페이지 200"
 
+# --- Export·SBOM: API 토큰 폐지 → 로그인 세션 인증 --------------------------
+#   전용 읽기 토큰(X-API-Token)과 발급 화면을 없앴다. 기능은 남기고 인증만 세션으로 옮겼으므로
+#   "미로그인은 로그인으로 튀고, 로그인하면 그대로 받아진다" 두 방향을 다 본다.
+printf "\n[export/sbom 세션 인증]\n"
+code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/api-tokens.php")
+assert_eq "$code" "404" "API 키 화면 제거"
+body=$(curl_ -s -b "$JAR" "$BASE/permissions.php")
+assert_not_contains "$body" "API 키" "권한 매트릭스에 API 키 행 없음"
+assert_contains "$body" "컴플라이언스" "권한 매트릭스에 컴플라이언스 메뉴 행"
+assert_contains "$body" "참조 카탈로그" "권한 매트릭스에 참조 카탈로그 메뉴 행"
+code=$(curl_ -s -o /dev/null -w '%{http_code}' "$BASE/export.php")
+assert_eq "$code" "302" "미인증 export → 302(로그인 리다이렉트)"
+code=$(curl_ -s -o /dev/null -w '%{http_code}' "$BASE/sbom.php?host=$FQDN_WEB01")
+assert_eq "$code" "302" "미인증 sbom → 302(로그인 리다이렉트)"
+exportbody=$(curl_ -s -b "$JAR" "$BASE/export.php?format=json&host=$FQDN_WEB01")
+assert_contains "$exportbody" '"ok": true' "로그인 세션으로 export JSON 수신"
+sbombody=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&format=cyclonedx")
+assert_contains "$sbombody" '"bomFormat": "CycloneDX"' "로그인 세션으로 SBOM(CycloneDX) 수신"
+
 # --- 컴플라이언스 매핑 ------------------------------------------------------
 printf "\n[compliance]\n"
 code=$(curl_ -s -o /dev/null -w '%{http_code}' "$BASE/compliance.php")

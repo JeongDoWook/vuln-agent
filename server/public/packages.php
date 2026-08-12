@@ -16,7 +16,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/license_summary.php';   // VG_LANG_MANAGERS, vg_license_risk_*
-vg_require_menu('findings');
+vg_require_menu('catalog');
 
 // 정렬 화이트리스트(OS 탭). 사용자 입력을 SQL 에 직접 넣지 않는다.
 const VG_PKG_SORTS = [

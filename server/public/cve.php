@@ -22,7 +22,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/distro.php'; // vg_is_kernel_code_pkg — 재시작/재부팅 안내 구분
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
-vg_require_menu('findings');
+vg_require_menu_any('findings', 'catalog', 'advisories');   // CVE 상세: 탐지 결과·CVE 카탈로그·보안 공지에서 함께 열린다
 
 /**
  * 벤더 판정 5종 — vendor.php 의 VG_VENDOR_SRC 를 이 CVE 하나로 좁혀 최소 재현한다
