@@ -2002,6 +2002,30 @@ form.card .btn--primary:active { transform: translateY(0); }
 .setting-form { display: grid; gap: 1rem; }
 .setting-form .field { display: grid; gap: .45rem; max-width: 760px; color: var(--text-2); font-size: var(--fs-sm); font-weight: 650; }
 
+/* 값이 짧은(숫자 한 칸) 설정을 카드 안에서 여러 열로 접는다 — settings.php 의 그룹 카드.
+ *   값이 긴 폼(위 기본형)과 달리 한 줄에 하나씩 쌓으면 카드가 세로로만 길어져서 그룹으로
+ *   나눈 의미가 없어진다. 좁아지면 auto-fit 이 알아서 1열로 떨어진다. */
+.setting-form--grid { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1.1rem 1.4rem; }
+.setting-form--grid .field { max-width: none; align-content: start; }
+.setting-form--grid .field input[type=number] { max-width: 11rem; }
+
+/* 지금 값이 기본값과 다를 때만 붙는 칩 — "무엇을 바꿔놨나"가 한눈에 보이게. */
+.field__default {
+  justify-self: start;
+  padding: .05rem .4rem;
+  border: 1px solid var(--muted-bd);
+  border-radius: var(--r-xs);
+  background: var(--muted-bg);
+  color: var(--muted-fg);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+}
+
+/* 검증 실패는 그 입력 자리에서 말한다(상단 요약만으로는 어느 칸인지 안 보인다). */
+.field--err > input { border-color: var(--crit-bd); background: var(--crit-bg); }
+.field--err > input:focus { border-color: var(--crit); background: var(--surface); }
+.field__err { color: var(--crit-fg); font-size: var(--fs-xs); font-weight: 650; }
+
 /* 가로 조작 바 — 표 바로 위에서 버튼 하나와 한 줄 설명으로 끝나는 **일괄 조작**(자산 등급
  *   일괄 확정). 입력(등급·중요도·근거)은 이 바가 여는 모달이 갖는다 — 예전엔 입력까지 이
  *   바에 늘어놓고 목록·페이지네이션 **아래**에 뒀는데, 체크는 표에서 하고 버튼은 저 아래라
