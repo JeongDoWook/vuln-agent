@@ -20,11 +20,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 curl_()  { curl --max-time 20 "$@"; }
 curl_i() { curl --max-time 30 "$@"; }
 
-GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
+GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; YELLOW='\033[0;33m'; NC='\033[0m'
 pass=0; fail=0
 ok() { printf "  ${GREEN}✓${NC} %s\n" "$1"; pass=$((pass+1)); }
 no() { printf "  ${RED}✗${NC} %s\n" "$1"; fail=$((fail+1)); }
 assert_eq() { if [ "$1" = "$2" ]; then ok "$3"; else no "$3  (기대=$2, 실제=$1)"; fi; }
+# 통과도 실패도 아닌 세 번째 상태 — **환경이 없어서 못 돈** 검사. 통과로 세면 거짓 초록불이고,
+# 실패로 세면 회귀도 아닌 것에 빨간불이 켜져 스모크를 못 믿게 된다. 그래서 눈에는 보이되
+# pass/fail 어느 쪽으로도 안 센다(요약에 건너뜀 개수로 따로 찍는다).
+# 지금 유일한 사용처는 go_buildinfo_host_test.sh 다(Go 툴체인 필요).
+skip=0
+sk() { printf "  ${YELLOW}-${NC} %s\n" "$1"; skip=$((skip+1)); }
 # 본문 검사는 **파이프로 넘기지 않는다** — `printf … | grep -q` 는 위의 `set -o pipefail` 과 만나면
 #   문자열이 있는데도 실패로 뒤집힌다: grep -q 는 첫 매치에서 즉시 끝나므로, 본문이 파이프
 #   버퍼(64KB)보다 크고 매치가 앞쪽이면 아직 쓰던 printf 가 SIGPIPE 로 죽어 파이프라인 종료코드가
@@ -320,6 +326,16 @@ else
   no "패키지 출처 판정  (자세히: bash tests/agent_origin_test.sh)"
 fi
 
+# --- 에이전트 방화벽 노출 판정 -------------------------------------------------
+# nft/iptables 파서가 틀리면 **외부 노출을 조용히 감춘다**(EXTERNAL 이어야 할 포트를 FILTERED 로).
+# 원칙은 "확신이 있을 때만 강등" 이다 — policy drop 을 확인 못 하거나 하위 체인 jump 로 accept 를
+# 따라갈 수 없으면 강등하지 않아야 한다. 그 경계를 22개 케이스로 고정한다.
+if bash "$ROOT/tests/fw_detect_test.sh" >/dev/null 2>&1; then
+  ok "방화벽 노출 판정 (nft·iptables 파서, 확신 없으면 강등 안 함)"
+else
+  no "방화벽 노출 판정  (자세히: bash tests/fw_detect_test.sh)"
+fi
+
 # --- ssg 단위 테스트 ----------------------------------------------------------
 # 보안설정 점검(CCE)을 검증된 룰셋(SCAP Security Guide)에 묶는다. 매핑에 오타가 나면 조용히
 # "자체 기준" 으로 떨어져 근거가 사라진다. 파서도 Jinja 섞인 실제 형식으로 고정한다.
@@ -363,6 +379,26 @@ if bash "$ROOT/tests/go_deps_extract_test.sh"; then
   ok "대형 Go 바이너리 의존성 고속 추출"
 else
   no "Go 바이너리 의존성 추출 회귀"
+fi
+
+# 위가 고정 픽스처(strings 파싱)라면 이건 **진짜 Go 바이너리**로 도는 e2e 다 — Go 툴체인이 필요해
+# Windows 개발머신에서는 못 돈다. 그래서 테스트 머리주석이 적어 둔 대로 golang 이미지 안에서 돌린다
+# (마운트 방식은 위 prerun_phpunit 과 같다). 이미지가 없으면 수백 MB 를 몰래 받지 않고 건너뛴다.
+printf "\n[go_buildinfo_host]\n"
+if ! command -v docker >/dev/null 2>&1 || ! docker image inspect golang:1.22 >/dev/null 2>&1; then
+  sk "호스트 Go buildinfo e2e 건너뜀 (golang:1.22 이미지 없음 — docker pull golang:1.22)"
+else
+  MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+    -w /w golang:1.22 bash tests/go_buildinfo_host_test.sh >/dev/null 2>&1
+  gbi=$?
+  if [ "$gbi" -eq 0 ]; then
+    ok "호스트 Go 바이너리 buildinfo 수집 (실제 빌드 바이너리 e2e)"
+  elif [ "$gbi" -eq 3 ]; then
+    # 테스트 자신의 SKIP 종료코드 — go build 가 네트워크 없이 모듈을 못 받은 경우다(회귀가 아니다).
+    sk "호스트 Go buildinfo e2e 건너뜀 (테스트가 SKIP — go build 실패, 네트워크?)"
+  else
+    no "호스트 Go buildinfo 수집 회귀  (자세히: MSYS_NO_PATHCONV=1 docker run --rm -v \"\$(pwd -W):/w\" -w /w golang:1.22 bash tests/go_buildinfo_host_test.sh)"
+  fi
 fi
 
 printf "\n[project_deps_parser]\n"
@@ -938,5 +974,7 @@ rm -f "$SPOOF"
 assert_my_stack "종료"
 
 # --- 요약 -------------------------------------------------------------------
-printf "\n${CYAN}== 결과: ${GREEN}%d 통과${NC}, ${RED}%d 실패${NC} ==\n" "$pass" "$fail"
+printf "\n${CYAN}== 결과: ${GREEN}%d 통과${NC}, ${RED}%d 실패${NC}" "$pass" "$fail"
+[ "$skip" -gt 0 ] && printf ", ${YELLOW}%d 건너뜀${NC}" "$skip"
+printf " ${CYAN}==${NC}\n"
 [ "$fail" -eq 0 ]
