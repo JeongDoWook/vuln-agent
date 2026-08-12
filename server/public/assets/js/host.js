@@ -46,6 +46,20 @@
     if (severity) {
       severity.className = 'badge tone-' + ({CRITICAL: 'crit', HIGH: 'high', MEDIUM: 'med', LOW: 'low'}[detail.severity] || 'muted');
     }
+    // 조치 상태 폼 — 어느 행을 눌렀는지에 따라 대상(자연키)과 현재 상태가 바뀐다.
+    //   폼이 없는 경우(권한 없는 역할)는 읽기 전용 라벨만 채운다.
+    var fixFields = {ref: 'container_ref', cve: 'cve', package: 'package'};
+    Object.keys(fixFields).forEach(function (name) {
+      var node = findingModal.querySelector('[data-finding-fix-' + name + ']');
+      if (node) { node.value = detail[fixFields[name]] || ''; }
+    });
+    var fixStatus = findingModal.querySelector('[data-finding-fix-status]');
+    if (fixStatus) { fixStatus.value = detail.fix_status || 'OPEN'; }
+    var fixNote = findingModal.querySelector('[data-finding-fix-note]');
+    if (fixNote) { fixNote.value = detail.fix_note || ''; }
+    var fixLabel = findingModal.querySelector('[data-finding-fix-status-label]');
+    if (fixLabel) { fixLabel.textContent = detail.fix_status_label || '미조치'; }
+
     var cveLink = findingModal.querySelector('[data-finding-cve-link]');
     var historyLink = findingModal.querySelector('[data-finding-history]');
     if (cveLink) { cveLink.setAttribute('href', detail.cve_url || '#'); }

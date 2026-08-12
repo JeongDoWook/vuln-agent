@@ -129,9 +129,9 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('CVE', 'cves');
+vg_header('CVE 카탈로그', 'cves');
 ?>
-  <?php vg_page_title('CVE', 'CATALOG', '수집된 CVE 정보와 위험 신호를 검색합니다.', ['count' => $total]); ?>
+  <?php vg_page_title('CVE 카탈로그', 'CATALOG', '수집한 전체 CVE — 내 자산 해당분은 탐지 결과에서', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

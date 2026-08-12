@@ -20,6 +20,8 @@ require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
 require_once __DIR__ . '/../src/remediation_note.php';   // 미조치 사유 + 승인자(최소 필드)
 require_once __DIR__ . '/../src/finding_history.php';    // vg_finding_history_url — 행별 상세 진입로
+require_once __DIR__ . '/../src/finding_status.php';     // 조치 상태(사람이 정하는 값) — 자연키 조인
+require_once __DIR__ . '/../src/finding_sla.php';        // 조치 기한 — 설정의 SLA 를 그대로 읽어 남은 일수
 vg_require_menu('findings');
 
 /**
@@ -30,7 +32,7 @@ vg_require_menu('findings');
  *   vg_findings_subtab_labels() 가 정본이다.
  */
 const VG_FINDING_TYPES = [
-    'cve'      => ['clear' => ['st', 'fx', 'ctr']],
+    'cve'      => ['clear' => ['st', 'fx', 'ctr', 'fst', 'sort']],
     'cce'      => ['clear' => ['res']],
     'exposure' => ['clear' => ['scope']],
 ];
@@ -47,6 +49,8 @@ $type = (string) ($_GET['type'] ?? 'cve');
 if (!isset(VG_FINDING_TYPES[$type])) { $type = 'cve'; }
 
 $notes = [];   // 이 페이지 행들의 미조치 사유 메모 (자연키 → 메모)
+$firstSeen = [];   // 이 페이지 행들의 최초 발견 경과일 (자연키 → ['first_seen','days'])
+$policy = null;    // 조치 기한(SLA) 기준일 — 설정값. vg_compliance_policy() 가 정본이다.
 
 // 취약점 0건이 "안전"이 아니라 "판정 불가"인 대상(호스트 + 컨테이너). 사유별로 묶는다 —
 //   대상마다 사유를 통째로 반복하면(운영 실측 41줄, 그중 20줄이 같은 100자 문장) 경고가
@@ -78,6 +82,11 @@ $q   = trim((string) ($_GET['q'] ?? ''));
 $sev = (string) ($_GET['sev'] ?? '');
 $st  = (string) ($_GET['st'] ?? '');
 $fx  = (string) ($_GET['fx'] ?? '');
+// 조치 상태(사람이 정한 값). 위의 $st(노출 상태)와는 **다른 축**이라 파라미터·라벨을 갈라 둔다.
+//   값 목록은 vg_finding_status_labels() 하나가 정본이다 — 여기서 다시 나열하지 않는다.
+$fst = (string) ($_GET['fst'] ?? '');
+// 정렬. 기본은 지금까지의 위험도 순서고, 'due' 일 때만 조치 기한이 임박한 순으로 세운다.
+$sort = (string) ($_GET['sort'] ?? '');
 $res = (string) ($_GET['res'] ?? '');
 $scope = (string) ($_GET['scope'] ?? '');
 if (!in_array($res, $resOptions, true)) { $res = 'FAIL'; }
@@ -87,6 +96,8 @@ if (!in_array($st, $stOptions, true)) { $st = ''; }
 // 조치 가능성: '' 전체 / action 조치 가능 / nofix 조치 불가(벤더가 수정본을 안 냈다)
 //              / restart 재시작·재부팅만 하면 됨(패치는 이미 됐다 — 자산 상세에서 넘어온다)
 if (!in_array($fx, ['action', 'nofix', 'restart'], true)) { $fx = ''; }
+if ($fst !== '' && !vg_finding_status_valid($fst)) { $fst = ''; }
+if ($sort !== 'due') { $sort = ''; }
 $page   = vg_page();
 $hostId = (int) ($_GET['host'] ?? 0);
 $scanId = (int) ($_GET['scan_id'] ?? 0);
@@ -149,18 +160,27 @@ try {
         }
     }
 
+    // 대상 스캔이 딸린 **호스트 집합**. 조치 기한 정렬이 최초 발견 시각을 되짚을 때, 되짚을
+    //   범위를 이 호스트들로 못 박는다(전 호스트를 훑지 않게).
+    $targetHostIds = [];
     if ($scanId > 0) {
         // 단일 스캔 모드 — 어느 호스트의 어느 시점인지 부제에 명시해야 한다.
         $stmt = $pdo->prepare(
-            'SELECT s.scan_id, s.collected_at, h.fqdn FROM tb_scan s JOIN tb_host h ON h.host_id = s.host_id WHERE s.scan_id = ?'
+            'SELECT s.scan_id, s.collected_at, s.host_id, h.fqdn FROM tb_scan s JOIN tb_host h ON h.host_id = s.host_id WHERE s.scan_id = ?'
         );
         $stmt->execute([$scanId]);
         $scan = $stmt->fetch() ?: null;
-        if ($scan) { $scanIds = [(int) $scan['scan_id']]; }
+        if ($scan) {
+            $scanIds = [(int) $scan['scan_id']];
+            $targetHostIds = [(int) $scan['host_id']];
+        }
     } else {
         if ($hostId > 0 && !$hostFound) { $hostId = 0; }   // 없는 호스트면 전체로
         foreach ($hosts as $h) {
-            if ($hostId === 0 || (int) $h['host_id'] === $hostId) { $scanIds[] = (int) $h['scan_id']; }
+            if ($hostId === 0 || (int) $h['host_id'] === $hostId) {
+                $scanIds[] = (int) $h['scan_id'];
+                $targetHostIds[] = (int) $h['host_id'];
+            }
         }
     }
 
@@ -217,11 +237,68 @@ try {
         // 재시작·재부팅만 하면 되는 것 — 자산 상세의 "전체 보기" 가 여기로 온다.
         if ($fx === 'restart') { $where .= ' AND f.needs_restart = 1'; }
 
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_finding f WHERE $where");
+        // 조치 상태는 스캔이 바뀌어도 유지되는 **자연키**로 붙는다(host_id·컨테이너 이름·CVE·패키지) —
+        //   tb_finding.finding_id 는 스캔마다 새로 발급되는 surrogate PK 라 붙일 수 없다.
+        //   조인은 한 번뿐이고, 목록은 이미 페이지네이션돼 있으므로 현재 페이지 범위만 걸린다.
+        //   uq_finding_status 가 host_id 선두라 이 조인은 그 유니크 인덱스를 탄다.
+        $statusJoin = "LEFT JOIN tb_finding_status fs
+                              ON fs.host_id = s.host_id
+                             AND fs.container_ref = COALESCE(ctr.cid, '')
+                             AND fs.cve_id = f.cve_id
+                             AND fs.package_name = f.package_name";
+        // 기록이 없는 조합은 행 자체가 없다 = 미조치(OPEN). 그래서 OPEN 필터만 NULL 을 함께 받는다
+        //   (3.8만 건에 OPEN 행을 미리 깔지 않는다는 설계의 대가를 여기서 한 줄로 치른다).
+        $countFrom = 'tb_finding f';
+        if ($fst !== '') {
+            // COUNT 는 평소 조인이 없다 — 상태 필터가 걸렸을 때만 같은 조인을 붙여 목록과 수를 맞춘다.
+            $countFrom = "tb_finding f
+                          JOIN tb_scan s ON s.scan_id = f.scan_id
+                          LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id
+                          $statusJoin";
+            $where .= $fst === 'OPEN' ? " AND (fs.status IS NULL OR fs.status = 'OPEN')" : ' AND fs.status = ?';
+            if ($fst !== 'OPEN') { $params[] = $fst; }
+        }
+
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM $countFrom WHERE $where");
         $stmt->execute($params);
         $total = (int) $stmt->fetchColumn();
 
         $offset = ($page - 1) * $perPage;
+
+        // 조치 기한 기준일은 설정값을 그대로 읽는다(compliance 화면과 같은 숫자여야 한다).
+        $policy = vg_compliance_policy();
+
+        /* 기한 임박순 정렬 — 남은 일수는 "최초 발견 시각 + 등급별 기한" 이라 컬럼 하나로는 못 센다.
+         *   그래서 이 정렬을 고른 경우에만, 대상 호스트의 역산 구간 안 스캔을 묶어 최초 시각을
+         *   집계한 파생표를 조인한다(기본 정렬에서는 아예 붙지 않는다 — 목록의 기본 응답을
+         *   무겁게 만들지 않는다). 화면에 찍는 값은 아래 페이지 단위 집계가 따로 준다. */
+        $dueJoin = ''; $dueParams = []; $selectParams = [];
+        $orderBy = "f.no_fix ASC, FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC, h.fqdn";
+        $slaCase = "CASE WHEN f.in_kev = 1 THEN ? WHEN f.severity = 'CRITICAL' THEN ?
+                         WHEN f.severity = 'HIGH' THEN ? ELSE NULL END";
+        if ($sort === 'due') {
+            $dueHostIds = $targetHostIds ?: [0];
+            $hostIn = implode(',', array_fill(0, count($dueHostIds), '?'));
+            $dueJoin = "LEFT JOIN (
+                            SELECT s2.host_id AS h_id, COALESCE(c2.cid, '') AS c_ref,
+                                   f2.cve_id AS c_cve, f2.package_name AS c_pkg,
+                                   MIN(COALESCE(s2.received_at, s2.collected_at)) AS first_seen
+                              FROM tb_finding f2
+                              JOIN tb_scan s2 ON s2.scan_id = f2.scan_id AND s2.is_deleted = 0
+                              LEFT JOIN tb_container c2 ON c2.container_id = f2.container_id
+                             WHERE f2.is_deleted = 0 AND s2.host_id IN ($hostIn)
+                               AND COALESCE(s2.received_at, s2.collected_at) >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                             GROUP BY s2.host_id, c_ref, f2.cve_id, f2.package_name
+                        ) fsn ON fsn.h_id = s.host_id AND fsn.c_ref = COALESCE(ctr.cid, '')
+                             AND fsn.c_cve = f.cve_id AND fsn.c_pkg = f.package_name";
+            $dueParams = array_merge($dueHostIds, [vg_finding_sla_lookback_days($policy)]);
+            // 기한 없는 등급(MEDIUM·LOW)과 최초 시각 미상은 맨 뒤로 — 알 수 없는 것을 급한 척하지 않는다.
+            $selectParams = [$policy['kev'], $policy['crit'], $policy['high']];
+            $orderBy = 'due_at IS NULL, due_at ASC, ' . $orderBy;
+        }
+        $dueSelect = $sort === 'due'
+            ? ", DATE_ADD(fsn.first_seen, INTERVAL $slaCase DAY) AS due_at"
+            : '';
 
         $stmt = $pdo->prepare(
             "SELECT f.*, h.host_id, h.fqdn, c.summary, c.epss, c.epss_percentile, c.ref_urls_json,
@@ -229,6 +306,8 @@ try {
                     CASE WHEN f.container_id = 0 THEN s.os_id ELSE ctr.os_id END AS package_os_id,
                     CASE WHEN f.container_id = 0 THEN s.os_version ELSE ctr.os_version END AS package_os_version,
                     fe.match_source, fe.fixed_version AS evidence_fixed_version,
+                    fs.status AS finding_status, fs.note AS finding_status_note
+                    $dueSelect,
                 " . VG_FIXED_VERSION_SUBQ . "
              FROM tb_finding f
              JOIN tb_scan s ON s.scan_id = f.scan_id
@@ -236,11 +315,13 @@ try {
              LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id
              LEFT JOIN tb_cve c ON c.cve_id = f.cve_id
              LEFT JOIN tb_finding_evidence fe ON fe.finding_id = f.finding_id
+             $statusJoin
+             $dueJoin
              WHERE $where
-             ORDER BY f.no_fix ASC, FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cvss DESC, h.fqdn
+             ORDER BY $orderBy
              LIMIT $perPage OFFSET $offset"
         );
-        $stmt->execute($params);
+        $stmt->execute(array_merge($selectParams, $dueParams, $params));
         $rows = $stmt->fetchAll();
 
         // 사람이 남긴 미조치 사유는 이 페이지에 보이는 행들만 한 번에 읽는다(N+1 방지).
@@ -250,6 +331,17 @@ try {
                            (string) $r['cve_id'], (string) $r['package_name']];
         }
         $notes = vg_remediation_notes_map($pdo, $noteKeys);
+
+        // 조치 기한의 기준일(최초 발견 시각)도 이 페이지에 보이는 행들만 한 번에 읽는다(N+1 방지).
+        //   기한이 있는 등급(KEV·CRITICAL·HIGH)만 물어본다 — MEDIUM·LOW 는 기한 자체가 없어
+        //   되짚을 이유가 없다(그만큼 조회 대상이 준다).
+        $slaKeys = [];
+        foreach ($rows as $r) {
+            if (vg_finding_sla_days((bool) $r['in_kev'], (string) $r['severity'], $policy) === null) { continue; }
+            $slaKeys[] = [(int) $r['host_id'], (string) ($r['container_cid'] ?? ''),
+                          (string) $r['cve_id'], (string) $r['package_name']];
+        }
+        $firstSeen = vg_finding_first_seen_map($pdo, $slaKeys, vg_finding_sla_lookback_days($policy));
     }
 
     if ($scanIds && $type === 'cce') {
@@ -607,12 +699,22 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       $toolbar[] = ['type' => 'hidden', 'name' => 'sev', 'value' => $sev, 'reset' => true];
   }
   vg_toolbar(array_merge($toolbar, [
-      ['type' => 'select', 'name' => 'st', 'empty_label' => '전체 상태', 'selected' => $st,
+      // '전체 상태' 였던 것을 '노출 상태' 로 못박는다 — 바로 옆에 사람이 정하는 '조치 상태'가
+      //   서기 때문에, 라벨이 둘 다 '상태' 면 어느 축인지 화면만 보고는 알 수 없다.
+      ['type' => 'select', 'name' => 'st', 'empty_label' => '전체 노출 상태', 'selected' => $st,
           'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
+      // 조치 상태 — 값 목록·라벨은 vg_finding_status_labels() 하나가 정본이다.
+      ['type' => 'select', 'name' => 'fst', 'empty_label' => '전체 조치 상태', 'selected' => $fst,
+          'options' => vg_finding_status_labels()],
       // 조치 가능성 — 벤더가 수정본을 안 낸 CVE 를 걸러 보거나, 그것만 모아 볼 수 있다.
       ['type' => 'select', 'name' => 'fx', 'empty_label' => '전체(조치 가능성)', 'selected' => $fx,
           'options' => ['action' => '조치 가능', 'nofix' => '조치 불가(벤더 미수정)',
                         'restart' => '재시작·재부팅만 하면 됨']],
+      // 정렬은 표 머리글이 아니라 여기에 둔다 — vg_table 은 정렬 링크를 갖지 않는다(공용 표를
+      //   이 화면 하나 때문에 바꾸지 않는다). 기한순은 최초 발견 시각을 되짚는 집계가 필요해
+      //   기본값으로 두지 않는다.
+      ['type' => 'select', 'name' => 'sort', 'empty_label' => '기본 정렬(위험도순)', 'selected' => $sort,
+          'options' => ['due' => '조치 기한 임박순']],
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
   ]));
 
@@ -634,21 +736,34 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   //   (실측 'rollupchk.dep-rollup.example….', '1:1.22.1-3….'), 남는 폭을 전부 갖던 '근거' 는
   //   원래 두 줄 말줄임(clamp-2 + title)이라 좁아져도 잃는 정보가 없다. 식별자는 잘리면
   //   대조 자체가 불가능해진다 — 같은 폭이면 식별자에 준다.
-  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
+  // 조치 상태·기한 두 칸이 늘면서 폭 예산을 다시 나눴다. 늘린 만큼은 **말줄임으로 잃는 정보가
+  //   가장 적은 열**에서 가져온다: 근거(18→12.5%)는 원래 두 줄 말줄임 + title 이라 좁아져도
+  //   전체 문장이 남고, 호스트·CVE·패키지 같은 식별자 열은 잘리면 대조 자체가 불가능해지므로
+  //   1~2%p 만 줄였다(기존 주석의 원칙 그대로다).
+  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '16%', 'class' => 'col-id']];
   $headers = array_merge($headers, [
       // 뱃지 폭(CRITICAL 69px) + 칸 여백 32px = 101px → 6.5rem.
       ['label' => '등급',  'key' => 'severity',       'width' => '6.5rem', 'nowrap' => true],
       // 가장 긴 라벨이 '로컬 세그먼트 노출' 이라 등급보다 넓게 준다. 그래도 모자라면 잘리므로
       //   칸 안에서 전체 문구를 title 로 남긴다(아래 셀 콜백).
-      ['label' => '상태',  'key' => 'runtime_status', 'width' => '7rem', 'nowrap' => true],
+      // '노출 상태' 로 이름을 못박는다 — 같은 표에 사람이 정하는 '조치 상태' 칸이 함께 서기 때문.
+      //   값과 톤은 그대로다(vg_status_badge).
+      ['label' => '노출 상태', 'key' => 'runtime_status', 'width' => '7rem', 'nowrap' => true,
+          'title' => '이 취약 패키지가 지금 어떻게 쓰이고 있는가(수집 결과)'],
+      // 사람이 정하는 값. 기록이 없으면 미조치다 — 빈 칸으로 두지 않는다.
+      ['label' => '조치 상태', 'key' => 'finding_status', 'width' => '5.5rem', 'nowrap' => true,
+          'title' => '담당자가 정한 조치 진행 상태 · 자산 상세의 취약점 상세에서 바꿉니다'],
+      // 남은 일수. 등급별 기한은 설정 화면(조치 기한)에서 바꾼다.
+      ['label' => '기한',  'key' => 'due',            'width' => '5.5rem', 'nowrap' => true,
+          'title' => '최초 발견 시각 + 등급별 조치 기한 · MEDIUM·LOW 는 기한이 없습니다'],
       // CVE 는 nowrap 이 아니다 — 링크 뒤에 KEV·조치불가 표식이 붙어 한 줄에 안 들어간다.
       //   폭이 고정된 표에서 nowrap 이면 칸을 뚫고 나가 표가 가로로 넘친다. 대신 **식별자 자체가**
       //   쪼개지지 않게 셀에서 <code> 로 감싼다(app.css: td code 는 nowrap) — 예전엔 폭이 모자라
       //   'CVE-2023-' / '4911' 로 두 줄이 났다.
       // 폭 16% 는 실측값이다: 둘째 줄(KEV 뱃지 39px + '이 자산 판정 →' 92px = 135px)이 접히지
       //   않는 최소 폭(칸 여백 29px 포함 164px ≈ 15.5%)에 여유를 얹었다. 접히면 한 행이 세 줄이 된다.
-      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '16%'],
-      ['label' => '패키지', 'key' => 'package_name',  'width' => '10.5%', 'class' => 'col-id'],
+      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '15%'],
+      ['label' => '패키지', 'key' => 'package_name',  'width' => '10%', 'class' => 'col-id'],
       // 점수 칸 — cves.php 의 같은 칸과 같은 모양·같은 정렬로 맞춘다(같은 뜻은 화면마다 같은 모양).
       //   6rem 은 둘째 줄 'EPSS 100.0%'(66px) + 칸 여백(29px) 기준이다.
       ['label' => 'CVSS',  'key' => 'risk',           'width' => '6rem', 'nowrap' => true,
@@ -657,13 +772,13 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       //   861~1060px 구간은 표가 쓸 수 있는 폭이 가장 좁아(1024px 뷰포트 → 692px) 남는 폭이
       //   12px 이 됐다 — 머리글이 세로로 서고 근거가 사라졌다(실측). 폭을 명시하면 폭 합이
       //   표보다 클 때 브라우저가 **모든 열을 비례로 줄이므로**, 한 열만 짜부라지지 않는다.
-      ['label' => '근거 (왜 위험한가)', 'key' => 'rationale', 'width' => '18%'],
+      ['label' => '근거 (왜 위험한가)', 'key' => 'rationale', 'width' => '12.5%'],
       // 라벨에 '이 버전 이상' 을 못 담아 값 뒤에 '이상' 을 붙이던 것을 머리글로 올린다 —
       //   좁은 칸에서는 그 두 글자가 정작 버전 문자열을 밀어냈다.
       // col-fix: 이 칸에서만 버전 문자열의 줄바꿈을 허용한다(app.css '목록 화면' 구역).
       //   공용 .badge 는 nowrap 이라 rhel 모듈 버전이 12자에서 잘려 나갔는데, "무엇으로
       //   올려야 하는가" 가 이 열의 존재 이유라 잘리면 열 자체가 무의미해진다.
-      ['label' => '조치 · 올릴 버전', 'key' => 'fix', 'width' => '14%', 'class' => 'col-fix',
+      ['label' => '조치 · 올릴 버전', 'key' => 'fix', 'width' => '12%', 'class' => 'col-fix',
           'title' => '이 버전 이상으로 올리면 해결됩니다'],
   ]);
 
@@ -677,8 +792,8 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   //   (같은 vg_qs() 를 KPI 카드처럼 직접 <a href=...> 를 만드는 코드에 쓸 땐, 그건 vg_empty() 를
   //   거치지 않으므로 그 호출부가 스스로 vg_h() 해야 한다 — 여기와는 다른 경로다.)
   //   tests/smoke.sh 가 임의 쿼리값 주입으로 이 전제를 회귀 검증한다.
-  $filterCta  = ['href' => vg_qs(['q' => '', 'sev' => '', 'st' => '', 'fx' => '', 'page' => 1]), 'label' => '필터 초기화'];
-  $hasAnyFilter = $q !== '' || $sev !== '' || $st !== '' || $fx !== '';
+  $filterCta  = ['href' => vg_qs(['q' => '', 'sev' => '', 'st' => '', 'fx' => '', 'fst' => '', 'page' => 1]), 'label' => '필터 초기화'];
+  $hasAnyFilter = $q !== '' || $sev !== '' || $st !== '' || $fx !== '' || $fst !== '';
   if ($scanId > 0 && !$scan) {
       // 단일 스캔 모드인데 그 스캔이 없는 경우(삭제됐거나 잘못된 id) — 필터 문제가 아니다.
       //   초기화 CTA 를 줘도 scan_id 는 그대로 유지돼(컨텍스트 보존이 이번 변경의 의도) 계속
@@ -756,6 +871,27 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
               //   잃지 않게 전체 문구를 title 로 남긴다: 잘라야만 하는 열의 공통 규칙이다.
               'runtime_status' => fn($r) => '<span title="' . vg_h(vg_status_label($r['runtime_status'])) . '">'
                   . vg_status_badge($r['runtime_status']) . '</span>',
+              // 조치 상태 — 행이 없으면 미조치다(vg_finding_status_badge 가 null 을 OPEN 으로 눕힌다).
+              //   메모가 있으면 title 로만 준다: 좁은 칸에 문장을 풀면 행 높이가 튄다(근거 칸의 교훈).
+              'finding_status' => function ($r) {
+                  $note = trim((string) ($r['finding_status_note'] ?? ''));
+                  $badge = vg_finding_status_badge($r['finding_status'] ?? null);
+                  return $note === ''
+                      ? $badge
+                      : '<span title="' . vg_h(mb_strimwidth($note, 0, 120, '…')) . '">' . $badge . '</span>';
+              },
+              // 남은 일수 — 계산·표기는 vg_finding_due_cell() 하나가 갖는다(화면마다 다시 세지 않게).
+              'due' => function ($r) use ($firstSeen, $policy) {
+                  $sla = vg_finding_sla_days((bool) $r['in_kev'], (string) $r['severity'], $policy);
+                  $seen = $firstSeen[vg_finding_status_key(
+                      (int) $r['host_id'], (string) ($r['container_cid'] ?? ''),
+                      (string) $r['cve_id'], (string) $r['package_name']
+                  )] ?? null;
+                  return vg_finding_due_cell(
+                      $seen === null ? null : (int) $seen['days'], $sla,
+                      $r['finding_status'] ?? null
+                  );
+              },
               // CVE — 링크 + KEV 뱃지(별도 컬럼이던 '✔' 를 여기로).
               // CVE 요약(summary)은 뺐다. 근거와 나란히 두면 긴 텍스트 컬럼이 둘이라
               // 표가 화면을 넘겨서 정작 제일 중요한 '조치' 가 밖으로 밀려난다.

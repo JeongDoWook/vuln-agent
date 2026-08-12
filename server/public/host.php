@@ -15,6 +15,7 @@ require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 �
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/matcher.php';
 require_once __DIR__ . '/../src/finding_history.php';   // vg_finding_history_url — 이력 링크 조립
+require_once __DIR__ . '/../src/finding_status.php';    // 조치 상태(사람이 정하는 값) 조회·저장
 require_once __DIR__ . '/../src/agentcommand.php';   // 수집 제어(즉시/예약 실행·주기 변경)
 require_once __DIR__ . '/../src/agentspeedtier.php';   // 속도 티어 라벨(agent-poll.php 와 공유 정의)
 require_once __DIR__ . '/../src/assetgrade.php';       // 자산 중요도·N2SF 등급 어휘와 초안 제안
@@ -37,16 +38,19 @@ if (($_GET['tab'] ?? '') === 'resources') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $agentMsg = null; $agentErr = null;
     $postHostId = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
+    $action = (string) ($_POST['action'] ?? '');
+    // 수집 제어·자산 등급·삭제는 자산관리(assets) 권한이고, 탐지 결과의 조치 상태는 이 화면과
+    //   같은 findings 권한이다 — 축이 다른 작업을 한 메뉴 권한에 묶지 않는다.
+    $postMenu = $action === 'finding_set_status' ? 'findings' : 'assets';
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
         $agentErr = '세션이 만료되었습니다.';
-    } elseif (!vg_can('assets')) {
+    } elseif (!vg_can($postMenu)) {
         http_response_code(403);
         echo 'forbidden';
         exit;
     } else {
         $pdo = vg_pdo();
         $me = vg_current_user();
-        $action = (string) ($_POST['action'] ?? '');
         try {
             if ($action === 'agent_run_now') {
                 vg_agent_command_create($pdo, $postHostId, null, $me['id'] ?? null);
@@ -98,6 +102,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $agentMsg = $newGrade === ''
                     ? '자산 등급 확정을 해제했습니다.'
                     : "자산 등급을 {$newGrade} 로 확정했습니다.";
+            } elseif ($action === 'finding_set_status') {
+                /* 탐지 결과 한 건의 조치 상태. 상태 4개와 메모 한 줄이 전부다 —
+                 * 담당자·결재선·재점검 확인은 만들지 않는다(마이그레이션 머리주석 참조).
+                 * 쓰기 작업이므로 역할을 서버측에서 확정한다(모달에서 폼을 숨긴 것은 통제가 아니다). */
+                if (!vg_has_role('admin', 'operator')) {
+                    throw new RuntimeException('조치 상태를 변경할 권한이 없습니다.');
+                }
+                $fsCve = trim((string) ($_POST['cve_id'] ?? ''));
+                $fsPkg = trim((string) ($_POST['package_name'] ?? ''));
+                if ($fsCve === '' || $fsPkg === '') {
+                    throw new RuntimeException('대상 취약점을 확인할 수 없습니다.');
+                }
+                $fsRef    = (string) ($_POST['container_ref'] ?? '');
+                $fsStatus = (string) ($_POST['status'] ?? '');
+                $fsNote   = (string) ($_POST['note'] ?? '');
+                vg_finding_status_save($pdo, $postHostId, $fsRef, $fsCve, $fsPkg, $fsStatus, $fsNote, $me['id'] ?? null);
+                // 누가 무엇을 어떤 상태로 바꿨는지 남긴다. 메모 원문은 메시지에 싣지 않는다 —
+                //   사람이 쓴 문장이라 길이를 예측할 수 없다(남긴 사실은 data 로 충분하다).
+                vg_log_activity($pdo, 'HOST', $postHostId, 'finding_set_status',
+                    "조치 상태 변경: $fsCve · $fsPkg → " . vg_finding_status_label($fsStatus),
+                    ['cve_id' => $fsCve, 'package_name' => $fsPkg, 'container_ref' => $fsRef,
+                     'status' => $fsStatus, 'note_len' => mb_strlen(trim($fsNote))],
+                    $me['id'] ?? null, subject: $fsCve, action: 'UPDATE');
+                $agentMsg = $fsCve . ' 의 조치 상태를 ' . vg_finding_status_label($fsStatus) . ' 로 저장했습니다.';
             } elseif ($action === 'host_delete') {
                 if (!vg_has_role('admin', 'operator')) {
                     throw new RuntimeException('자산을 삭제할 권한이 없습니다.');
@@ -157,10 +185,16 @@ function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perP
      * 검색(q)은 표1(주 목록)에만 적용한다 — 표2는 "상위 N건은 놓치지 않는다"가 목적이라
      *   필터링하면 그 의도와 충돌한다.
      */
+    /* 컨테이너 **이름**(cid)까지 함께 읽는다 — 조치 상태는 스캔이 바뀌어도 유지되는 자연키
+     *   (host_id, 컨테이너 이름, cve_id, 패키지명)로 붙기 때문이다. 숫자 container_id 는
+     *   스캔마다 새로 발급돼 그 키로 쓸 수 없다(finding_history.php 머리주석). */
     $sel = "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version, f.rationale,
                    f.needs_restart, f.container_id, f.in_kev, c.epss, c.epss_percentile, c.ref_urls_json,
+                   IFNULL(ctr.cid, '') AS container_cid,
                " . VG_FIXED_VERSION_SUBQ . "
-              FROM tb_finding f LEFT JOIN tb_cve c ON c.cve_id = f.cve_id";
+              FROM tb_finding f
+              LEFT JOIN tb_cve c ON c.cve_id = f.cve_id
+              LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id";
 
     $where = "f.scan_id = ? AND f.severity IN ('CRITICAL','HIGH')";
     $params = [$sid];
@@ -812,7 +846,8 @@ $tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(vg_ui_detail_per_pag
  *   보여주면서 셀렉트는 "10개씩 보기" 가 선택된 채로 뜬다(사용자에겐 화면이 거짓말을 한다).
  *   사용자가 고른 값이 있으면 건드리지 않는다. */
 if (!isset($_GET['per_page'])) { $_GET['per_page'] = (string) $perPage; }
-$rows = []; $exposures = []; $sevByScan = []; $resourceScans = [];
+$rows = []; $exposures = []; $sevByScan = []; $resourceScans = []; $restartRows = [];
+$findingStatuses = [];   // 취약점 탭 행들의 조치 상태(자연키 → 행). 없으면 미조치로 읽는다.
 $accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0; $containerTotal = 0;
 // 전이 의존성 판정 + 손댈 대상(부모)별 묶음. 엣지가 없는 자산에선 이 기본값 그대로다.
 $depOrigins = ['origins' => [], 'parents' => [], 'finding_total' => 0, 'finding_truncated' => false,
@@ -1001,6 +1036,14 @@ try {
             //   자산에서도 "같은 패키지의 서로 다른 CVE" 는 행마다 같은 근거로 반복된다 —
             //   같은 질문("무엇부터 올리나")에 같은 형태로 답한다.
             $pkgRollup = vg_host_load_pkg_rollup($pdo, $sid, vg_ui_detail_preview_limit());
+            // 이 화면에 보이는 행들의 조치 상태를 한 번에 읽는다(N+1 방지). 두 표(주 목록·재시작)를
+            //   한 번에 물어본다 — 같은 자산의 같은 축이라 쿼리를 나눌 이유가 없다.
+            $statusKeys = [];
+            foreach (array_merge($rows, $restartRows) as $f) {
+                $statusKeys[] = [$hostId, (string) ($f['container_cid'] ?? ''),
+                                 (string) $f['cve_id'], (string) $f['package_name']];
+            }
+            $findingStatuses = vg_finding_statuses_map($pdo, $statusKeys);
 
         } elseif ($tab === 'packages') {
             ['total' => $total, 'rows' => $rows]
@@ -1266,7 +1309,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
             return vg_fix_cell(null, $f['ref_urls_json'] ?? null, $f['installed_version'] ?? null);
         },
     ];
-    $findingRowAttrs = function (array $f) use ($hostId, $depOrigins): array {
+    $findingRowAttrs = function (array $f) use ($hostId, $depOrigins, $findingStatuses): array {
         $epss = ($f['epss'] ?? null) === null ? '–' : number_format((float) $f['epss'] * 100, 1) . '%';
         if (($f['epss_percentile'] ?? null) !== null) {
             $top = max(0.01, (1.0 - (float) $f['epss_percentile']) * 100);
@@ -1286,9 +1329,17 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
             $action = '공식 패치 또는 벤더 권고를 확인하세요.';
         }
         $historyUrl = vg_finding_history_url($hostId, (int) $f['container_id'], (string) $f['cve_id'], (string) $f['package_name']);
+        /* 조치 상태 — 모달의 상태 폼이 이 값으로 셀렉트를 맞추고, 저장 대상을 식별할 자연키
+         *   (컨테이너 이름·CVE·패키지)를 hidden 으로 채운다. 기록이 없으면 미조치(OPEN)다. */
+        $cref = (string) ($f['container_cid'] ?? '');
+        $fs = $findingStatuses[vg_finding_status_key($hostId, $cref, (string) $f['cve_id'], (string) $f['package_name'])] ?? null;
         $detail = [
             'severity' => (string) $f['severity'],
             'status' => vg_status_label($f['runtime_status'] ?? null),
+            'fix_status' => (string) ($fs['status'] ?? 'OPEN'),
+            'fix_status_label' => vg_finding_status_label($fs['status'] ?? null),
+            'fix_note' => (string) ($fs['note'] ?? ''),
+            'container_ref' => $cref,
             'cve' => (string) $f['cve_id'],
             'epss' => $epss,
             'package' => (string) $f['package_name'],
@@ -1471,7 +1522,23 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     </div>
 
     <?php
+    /* 조치 상태 변경은 **쓰기 작업**이다 — 조회(findings 메뉴)만으로는 못 한다. 자산 등급 확정이
+     *   관리자 전용인 것과 같은 기준으로, 상태는 실제 조치를 굴리는 운영자까지 허용한다
+     *   (자산 삭제·속도 티어와 동일). 인가는 아래 POST 분기에서 서버측으로 다시 확정한다 —
+     *   여기서 폼을 숨기는 것은 화면 정리일 뿐 통제가 아니다. */
+    $canFixStatus = vg_has_role('admin', 'operator');
     vg_modal_open('findingDetailModal', '취약점 상세', 'modal--wide finding-detail-modal');
+    if ($canFixStatus) {
+        // 폼이 모달 본문 전체를 감싼다 — 저장 버튼이 모달 푸터(오른쪽 아래)에 서야 하기 때문
+        //   (vg_modal_foot 은 본문 안에서 그려진다). 대상 식별자는 JS 가 행에서 받아 채운다.
+        echo '<form method="post">'
+           . '<input type="hidden" name="csrf" value="' . vg_h($agentCsrf) . '">'
+           . '<input type="hidden" name="action" value="finding_set_status">'
+           . '<input type="hidden" name="id" value="' . (int) $hostId . '">'
+           . '<input type="hidden" name="container_ref" data-finding-fix-ref value="">'
+           . '<input type="hidden" name="cve_id" data-finding-fix-cve value="">'
+           . '<input type="hidden" name="package_name" data-finding-fix-package value="">';
+    }
     ?>
       <div class="finding-detail__summary">
         <span class="badge" data-finding-severity></span>
@@ -1492,12 +1559,37 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         <strong>권장 조치</strong>
         <p data-finding-action></p>
       </section>
+      <section class="finding-detail__section">
+        <strong>조치 상태</strong>
+        <?php if ($canFixStatus): ?>
+          <div class="form-grid">
+            <label class="field" for="findingFixStatus">상태
+              <select id="findingFixStatus" name="status" data-finding-fix-status>
+                <?php foreach (vg_finding_status_labels() as $code => $label): ?>
+                  <option value="<?= vg_h($code) ?>"><?= vg_h($label) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+            <label class="field" for="findingFixNote">메모 (선택)
+              <input type="text" id="findingFixNote" name="note" data-finding-fix-note
+                     maxlength="<?= VG_FINDING_STATUS_NOTE_MAX ?>" autocomplete="off"
+                     placeholder="예: 다음 정기 점검 때 반영">
+            </label>
+          </div>
+          <span class="why">담당자 배정·결재선은 없습니다 — 상태와 메모 한 줄만 남습니다. 저장하면 접속기록에 남습니다.</span>
+        <?php else: ?>
+          <p data-finding-fix-status-label></p>
+          <span class="why">상태 변경은 관리자·운영자만 할 수 있습니다.</span>
+        <?php endif; ?>
+      </section>
     <?php
-    vg_modal_foot(null, [
+    vg_modal_foot($canFixStatus ? '상태 저장' : null, [
         'extra' => '<a class="btn btn--ghost" data-finding-history href="#">이력 보기</a>'
                  . '<a class="btn btn--primary" data-finding-cve-link href="#">CVE 상세</a>',
         'cancel' => '닫기',
+        'loading' => '저장 중…',
     ]);
+    if ($canFixStatus) { echo '</form>'; }
     vg_modal_close();
     ?>
 

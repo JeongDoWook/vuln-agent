@@ -32,6 +32,7 @@ function vg_activity_type_labels(): array {
         'host_set_grade'       => '자산 등급 확정',
         'host_grade_review_save' => '자산 등급 검토 저장',
         'host_grade_review_clear'=> '자산 등급 검토 삭제',
+        'finding_set_status'   => '조치 상태 변경',
         'connector_save'       => '커넥터 저장',
         'connector_toggle'     => '커넥터 사용여부 전환',
         'connector_delete'     => '커넥터 삭제',
@@ -93,32 +94,30 @@ function vg_activity_action_labels(): array {
  */
 function vg_nav_sections(): array {
     return [
+        // 라벨 없는 첫 묶음 = 업무 화면. "내 자산에 관한 사실"만 여기 온다.
         '' => [
-            ['perm' => 'dashboard', 'href' => '/', 'label' => '대시보드', 'key' => 'dashboard'],
-        ],
-        '바로가기' => [
-            // 전체 설치 패키지는 자산 목록의 서브탭으로만 들어온다 — 사이드바엔 대표 링크
-            // 하나만 두되, 그 탭에 있어도 같은 항목을 활성화해 현재 위치를 잃지 않게 한다.
-            ['perm' => 'assets',     'href' => '/assets.php',     'label' => '자산',        'key' => 'assets',
-             'active_keys' => ['assets', 'asset_packages']],
-            ['perm' => 'connectors', 'href' => '/connectors.php', 'label' => '데이터 수집', 'key' => 'connectors'],
-        ],
-        '취약점' => [
+            ['perm' => 'dashboard',  'href' => '/',               'label' => '대시보드',  'key' => 'dashboard'],
             // 변화 추적·제거 권고는 vg_findings_subtabs() 의 서브탭으로만 들어온다 —
             // 어느 탭에 있어도 이 항목이 활성이어야 현재 위치를 잃지 않는다.
             ['perm' => 'findings',   'href' => '/findings.php',   'label' => '탐지 결과', 'key' => 'findings',
              'active_keys' => ['findings', 'changes', 'nofix_packages']],
-            ['perm' => 'findings',   'href' => '/cves.php',       'label' => 'CVE',       'key' => 'cves'],
-            ['perm' => 'findings',   'href' => '/packages.php',   'label' => '패키지',    'key' => 'packages'],
-            ['perm' => 'findings',   'href' => '/vendor.php',     'label' => '판정 근거', 'key' => 'vendor'],
+            // 전체 설치 패키지는 자산 목록의 서브탭으로만 들어온다 — 사이드바엔 대표 링크
+            // 하나만 두되, 그 탭에 있어도 같은 항목을 활성화해 현재 위치를 잃지 않게 한다.
+            ['perm' => 'assets',     'href' => '/assets.php',     'label' => '자산',      'key' => 'assets',
+             'active_keys' => ['assets', 'asset_packages']],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
+            // 통제 기준 매핑은 vg_compliance_subtabs() 의 서브탭으로만 들어온다(사이드바엔 없다).
+            ['perm' => 'findings',   'href' => '/compliance.php', 'label' => '컴플라이언스',
+             'key' => 'compliance_mapping', 'active_keys' => ['compliance_mapping', 'control_mapping']],
         ],
-        '보안 기준' => [
-            ['perm' => 'findings', 'href' => '/compliance_rules.php', 'label' => '보안 설정', 'key' => 'compliance'],
-            // 통제 기준 매핑(control_mapping)은 서브탭에서 내려 본문 링크로만 들어간다 —
-            // 탭이 없어졌으니 그 키로 이 항목이 활성화될 일도 없다(화면 자체는 살아 있다).
-            ['perm' => 'findings', 'href' => '/compliance.php', 'label' => '컴플라이언스·통제',
-             'key' => 'compliance_mapping'],
+        // 외부에서 받아온 참조 카탈로그 — 업무 화면이 아니라 "피드가 제대로 들어왔는지" 를
+        //   확인하는 자리다. 개별 판정 근거는 CVE 상세·취약점 상세 모달에 이미 들어 있다.
+        '데이터' => [
+            ['perm' => 'connectors', 'href' => '/connectors.php',      'label' => '수집 상태',      'key' => 'connectors'],
+            ['perm' => 'findings',   'href' => '/cves.php',            'label' => 'CVE 카탈로그',   'key' => 'cves'],
+            ['perm' => 'findings',   'href' => '/packages.php',        'label' => '패키지 카탈로그', 'key' => 'packages'],
+            ['perm' => 'findings',   'href' => '/vendor.php',          'label' => '판정 근거',      'key' => 'vendor'],
+            ['perm' => 'findings',   'href' => '/compliance_rules.php','label' => '보안 설정 룰',   'key' => 'compliance'],
         ],
         '관리' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],
@@ -243,6 +242,31 @@ function vg_asset_tabs(array $tabDefs, string $tab): void {
 }
 
 /**
+ * 컴플라이언스 계열 서브탭의 SSOT — 라벨·순서·목적지가 여기 한 곳에만 있다.
+ *   사이드바엔 '컴플라이언스' 하나만 있고 통제 기준 매핑은 이 줄로만 들어온다.
+ *   두 화면이 각자 탭 줄을 그리면 개수·라벨이 어긋난다(vg_findings_subtab_labels() 의 전례).
+ */
+function vg_compliance_subtab_labels(): array {
+    return [
+        'mapping' => '컴플라이언스 매핑',
+        'control' => '통제 기준 매핑',
+    ];
+}
+
+// 위 정의를 vg_subtabs() 로 그린다. $active 는 현재 화면의 탭 키(mapping|control).
+function vg_compliance_subtabs(string $active): void {
+    $hrefs = [
+        'mapping' => '/compliance.php',
+        'control' => '/control_mapping.php',
+    ];
+    $tabs = [];
+    foreach (vg_compliance_subtab_labels() as $key => $label) {
+        $tabs[$key] = ['label' => $label, 'href' => $hrefs[$key]];
+    }
+    vg_subtabs($tabs, $active);
+}
+
+/**
  * 사이드바 메뉴 아이콘 — 단색 라인 SVG. stroke=currentColor 라 링크 색을 그대로
  * 상속한다(테마·활성 상태에 자동으로 따라간다). key 는 vg_nav_sections() 의 것과 맞춘다.
  * 이미 이스케이프가 필요 없는 정적 마크업이라 그대로 돌려준다.
@@ -297,8 +321,8 @@ function vg_nav(string $active): void {
         if (!$visible) {
             continue;
         }
-        // 대시보드와 자주 쓰는 바로가기는 아코디언 밖에 항상 노출한다.
-        if ($section === '' || $section === '바로가기') {
+        // 라벨 없는 묶음(업무 화면)은 아코디언 밖에 항상 노출한다.
+        if ($section === '') {
             foreach ($visible as $l) {
                 echo vg_nav_link($l, $active, true);
             }
@@ -354,7 +378,7 @@ function vg_breadcrumb(string $active, string $title): void {
     $leaf = $label ?? $title;
     echo '<nav class="crumbs" aria-label="위치">';
     echo '<a href="/">홈</a>';
-    if ($section !== null && $section !== '' && $section !== '바로가기') {
+    if ($section !== null && $section !== '') {
         echo '<span class="sep">›</span><span>' . vg_h($section) . '</span>';
     }
     echo '<span class="sep">›</span><span class="cur">' . vg_h($leaf) . '</span>';

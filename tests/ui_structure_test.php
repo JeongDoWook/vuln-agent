@@ -4,6 +4,7 @@ declare(strict_types=1);
 /** UI 공통 구조 회귀 테스트 — 서버나 DB 없이 소스 구조만 검사한다. */
 $root = dirname(__DIR__);
 $public = $root . '/server/public';
+require_once $root . '/server/src/view/components.php';
 $fail = 0;
 $check = static function (bool $ok, string $label) use (&$fail): void {
     if (!$ok) { printf("  ✗ %s\n", $label); $fail++; }
@@ -59,6 +60,41 @@ $check(str_contains($hostPhp, '$runtimeTotal = $exposureCount + $processCount;')
     && str_contains($hostPhp, "'runtime' => ['label' => '런타임',    'n' => \$runtimeTotal]"),
     '런타임 탭 건수에 노출 소켓과 실행 프로세스 모두 포함');
 $check(str_contains($componentsPhp, "!empty(\$h['class'])"), '공통 테이블 열 클래스 지원');
+$check(str_contains($componentsPhp, 'function vg_kpi_strip('), '공통 KPI 스트립 렌더러 제공');
+$check(str_contains($componentsPhp, "'exposure' =>") && str_contains($componentsPhp, "'exploit'  =>")
+    && str_contains($componentsPhp, "'severity' =>") && str_contains($componentsPhp, "'action'   =>"),
+    '판단 신호 4축 고정 순서');
+
+$render = static function (callable $fn): string {
+    ob_start();
+    $fn();
+    return (string) ob_get_clean();
+};
+$kpiHtml = $render(static fn() => vg_kpi_strip([
+    ['label' => '<전체>', 'value' => 0, 'tone' => 'crit', 'href' => '/assets.php?q=<x>'],
+    ['label' => '위험', 'value' => 2, 'tone' => 'evil', 'href' => 'javascript:alert(1)'],
+    ['label' => '우회', 'value' => 3, 'href' => '/\\evil.example'],
+]));
+$check(str_contains($kpiHtml, 'kpi--zero') && str_contains($kpiHtml, 'tone-muted'), 'KPI 0값과 tone 화이트리스트');
+$check(str_contains($kpiHtml, 'href="/assets.php?q=&lt;x&gt;"') && !str_contains($kpiHtml, 'javascript:')
+    && !str_contains($kpiHtml, 'evil.example'), 'KPI 내부 링크 이스케이프·위험 링크 거부');
+$check(str_contains($kpiHtml, '&lt;전체&gt;') && !str_contains($kpiHtml, '<전체>'), 'KPI 출력 이스케이프');
+
+$signalHtml = $render(static fn() => vg_signal_slots([
+    'exposure' => ['value' => '<외부>', 'tone' => 'evil'],
+    'exploit' => ['state' => 'na'],
+    'severity' => ['value' => 'HIGH', 'tone' => 'high'],
+    'action' => ['state' => 'unknown'],
+    'other' => ['value' => '출력 금지'],
+]));
+$positions = array_map(static fn(string $axis): int|false => strpos($signalHtml, 'data-axis="' . $axis . '"'),
+    ['exposure', 'exploit', 'severity', 'action']);
+$check(!in_array(false, $positions, true) && $positions === array_values($positions)
+    && $positions[0] < $positions[1] && $positions[1] < $positions[2] && $positions[2] < $positions[3],
+    '판단 신호 노출→악용→등급→조치 순서');
+$check(str_contains($signalHtml, '해당 없음') && str_contains($signalHtml, '미제공')
+    && !str_contains($signalHtml, '출력 금지'), '판단 신호 비해당·미제공·axis 화이트리스트');
+$check(str_contains($signalHtml, '&lt;외부&gt;') && !str_contains($signalHtml, 'tone-evil'), '판단 신호 이스케이프·tone 화이트리스트');
 $check(str_contains($chartsPhp, '$min = 0.0;') && str_contains($chartsPhp, '$max = 100.0;'),
     '에이전트 리소스 사용률 차트 0~100% 절대 축');
 $connectorPhp = (string) file_get_contents($public . '/connectors.php');
@@ -66,9 +102,13 @@ $connectorJs = (string) file_get_contents($public . '/assets/js/connectors.js');
 $navPhp = (string) file_get_contents($root . '/server/src/view/nav.php');
 $check(str_contains($connectorPhp, 'data-feed-preview'), '커넥터 미리보기 data 속성');
 $check(str_contains($connectorJs, "closest('[data-feed-preview]')"), '커넥터 미리보기 이벤트 위임');
-$check(str_contains($navPhp, "'바로가기' =>"), '자산·데이터 수집 최상위 바로가기');
+$check(str_contains($navPhp, "'데이터' =>"), '참조 카탈로그는 데이터 그룹으로 분리');
 $check(str_contains($navPhp, "'관리' =>"), '관리 메뉴 통합');
+$check(!str_contains($navPhp, "'취약점' =>") && !str_contains($navPhp, "'보안 기준' =>")
+    && !str_contains($navPhp, "'바로가기' =>"),
+    '업무 화면은 라벨 없는 최상위 묶음으로 통합');
 $check(!str_contains($navPhp, "'계정' =>") && !str_contains($navPhp, "'연동' =>"), '잘게 나뉜 관리 그룹 제거');
+$check(str_contains($navPhp, 'function vg_compliance_subtabs('), '컴플라이언스 서브탭 정의는 nav.php 한 곳');
 $check(str_contains($connectorPhp, "['label' => '실행 시각'"), '커넥터 실행 시각 열 통합');
 $check(!str_contains($connectorPhp, "['label' => '마지막 실행'"), '커넥터 중복 시각 열 제거');
 

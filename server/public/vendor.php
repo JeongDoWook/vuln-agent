@@ -244,7 +244,7 @@ try {
 
 vg_header('판정 근거', 'vendor');
 ?>
-  <?php vg_page_title('판정 근거', 'VENDOR DATA', '벤더의 수정 버전과 백포트 근거를 확인합니다.', ['count' => $total]); ?>
+  <?php vg_page_title('판정 근거', 'VENDOR DATA', '벤더·배포판이 발표한 수정 버전 원본', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

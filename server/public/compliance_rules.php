@@ -78,9 +78,9 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('보안 설정', 'compliance');
+vg_header('보안 설정 룰', 'compliance');
 ?>
-  <?php vg_page_title('보안 설정', 'SECURITY BASELINE', 'SSG 룰과 CIS·NIST·STIG 참조를 검색합니다.', ['count' => $total]); ?>
+  <?php vg_page_title('보안 설정 룰', 'SECURITY BASELINE', 'SSG·CIS·STIG 점검 항목 — 점검 결과는 탐지 결과에서', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

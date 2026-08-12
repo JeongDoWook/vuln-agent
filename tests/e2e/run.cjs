@@ -140,10 +140,10 @@ async function main() {
     check(title.indexOf('대시보드') >= 0, '대시보드 document.title', 'title=' + title);
     const rootNav = (await page.locator('.side a.link--root span').allTextContents()).map((v) => v.trim());
     const navGroups = (await page.locator('.side summary.grp').allTextContents()).map((v) => v.trim());
-    check(JSON.stringify(rootNav) === JSON.stringify(['대시보드', '자산', '데이터 수집']),
-      '자주 쓰는 메뉴 3개는 접지 않고 바로 노출', 'links=' + rootNav.join(','));
-    check(JSON.stringify(navGroups) === JSON.stringify(['취약점', '관리']),
-      '사이드바 접이식 그룹은 취약점·관리만 유지', 'groups=' + navGroups.join(','));
+    check(JSON.stringify(rootNav) === JSON.stringify(['대시보드', '탐지 결과', '자산', '보안 공지', '컴플라이언스']),
+      '업무 화면 5개는 접지 않고 바로 노출', 'links=' + rootNav.join(','));
+    check(JSON.stringify(navGroups) === JSON.stringify(['데이터', '관리']),
+      '사이드바 접이식 그룹은 데이터·관리만 유지', 'groups=' + navGroups.join(','));
 
     // --- 2) 테마 토글 지속성 -------------------------------------------------
     // 클릭 → 속성 적용 → 저장 → 다른 화면에서 복원 → 실제 CSS 변화까지 한 줄로 이어진다.

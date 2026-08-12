@@ -398,6 +398,82 @@ function vg_count_trend(array $rounds, string $tone = 'trend'): void {
 }
 
 /**
+ * 날짜별 추이선(대시보드 30일 추세) — vg_count_trend() 와 같은 눈금·area 패턴이지만
+ * x축이 **회차가 아니라 날짜**라 두 가지가 다르다:
+ *   · 점(circle)은 **그날 실제로 스캔이 있었던 날에만** 찍는다. 스캔은 바뀔 때만 저장돼
+ *     날짜가 듬성듬성한데, 이월(carry-forward)로 이어 그린 날까지 점을 찍으면 "그날 쟀다"는
+ *     거짓 신호가 된다. 선은 끊지 않는다 — 끊으면 이번엔 "그날 0건" 으로 읽힌다.
+ *   · x 라벨은 날짜(m/d)만 쓴다(시각은 하루 단위 집계에서 의미가 없다).
+ *   $days: 오래된→최신 순 [['d'=>'2026-08-12', 'v'=>1001, 'scanned'=>true], …]
+ */
+function vg_daily_trend(array $days, string $tone = 'trend'): void {
+    $pts = array_values(array_filter($days, static fn($p) => isset($p['d'], $p['v'])));
+    $n = count($pts);
+    if ($n < 2) {
+        vg_empty(['icon' => '📉', 'title' => '추세를 그리기엔 스캔 이력이 부족합니다.',
+                  'hint'  => '서로 다른 날짜의 수집이 2건 이상 쌓이면 여기에 추세가 표시됩니다.']);
+        return;
+    }
+
+    $W = 720; $H = 190;
+    $padL = 44; $padR = 8; $padT = 12; $padB = 26;
+    $plotW = $W - $padL - $padR;
+    $plotH = $H - $padT - $padB;
+
+    $rawMax = 0;
+    foreach ($pts as $p) { $rawMax = max($rawMax, (int) $p['v']); }
+    $max = (float) vg_nice_max($rawMax);
+
+    $xAt = static fn(int $i): float => $padL + $plotW * $i / ($n - 1);
+    $yAt = static fn(float $v): float => $padT + $plotH * (1 - $v / $max);
+    $baseY = $padT + $plotH;
+
+    static $seq = 0;
+    $gradId = 'chart-grad-day-' . vg_h($tone) . '-' . (++$seq);
+
+    echo '<div class="chart">';
+    echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="최근 ' . $n . '일 추세">';
+    echo '<defs><linearGradient id="' . $gradId . '" x1="0" y1="0" x2="0" y2="1">'
+        . '<stop class="chart__grad-0 tone-' . vg_h($tone) . '" offset="0"></stop>'
+        . '<stop class="chart__grad-1 tone-' . vg_h($tone) . '" offset="1"></stop>'
+        . '</linearGradient></defs>';
+
+    foreach ([0, 0.5, 1] as $f) {
+        $gy = $padT + $plotH * (1 - $f);
+        echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($gy, 1) . '"'
+            . ' x2="' . ($W - $padR) . '" y2="' . round($gy, 1) . '"></line>';
+        echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($gy + 3.5, 1) . '">'
+            . number_format((int) round($max * $f)) . '</text>';
+    }
+
+    $poly = [];
+    foreach ($pts as $i => $p) { $poly[] = round($xAt($i), 1) . ',' . round($yAt((float) $p['v']), 1); }
+
+    $xFirst = round($xAt(0), 1);
+    $xLast  = round($xAt($n - 1), 1);
+    echo '<polygon class="chart__area" fill="url(#' . $gradId . ')" points="'
+        . implode(' ', $poly) . ' ' . $xLast . ',' . round($baseY, 1)
+        . ' ' . $xFirst . ',' . round($baseY, 1) . '"></polygon>';
+    echo '<polyline class="chart__line tone-' . vg_h($tone) . '" points="' . implode(' ', $poly) . '"></polyline>';
+
+    foreach ($pts as $i => $p) {
+        $cx = round($xAt($i), 1); $cy = round($yAt((float) $p['v']), 1);
+        if (!empty($p['scanned'])) {
+            $last = $i === $n - 1 ? ' chart__pt--last' : '';
+            echo '<circle class="chart__pt tone-' . vg_h($tone) . $last . '" cx="' . $cx . '" cy="' . $cy . '" r="3">'
+                . '<title>' . vg_h($p['d'] . ' · ' . number_format((int) $p['v']) . '건 (이날 수집됨)') . '</title>'
+                . '</circle>';
+        }
+        if ($i === 0 || $i === $n - 1) {
+            $edge = $i === 0 ? 'start' : 'end';
+            echo '<text class="chart__lbl chart__lbl--' . $edge . '" x="' . $cx . '" y="' . ($H - 8) . '">'
+                . vg_h(date('n/j', strtotime((string) $p['d']))) . '</text>';
+        }
+    }
+    echo '</svg></div>';
+}
+
+/**
  * 회차별 신규(0 기준선 위)·해결(아래) 다이버징 막대차트 — vg_count_trend() 와 같은
  * grid/lbl 눈금 패턴 위에 막대만 얹은 변형. 첫 회차(비교 대상 없는 기준선)는
  * $rounds 에서 'new'===null 이므로 자동으로 빠진다.

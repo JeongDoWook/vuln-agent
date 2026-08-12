@@ -11,8 +11,18 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('advisories');
 
+/** '영향 자산' 칸의 툴팁에 넣을 자산 이름 수. 나머지는 "외 N대" 로 접고 전체는 모달이 갖는다. */
+const VG_ADVISORY_TIP_NAMES = 8;
+
 $err = null; $rows = []; $total = 0;
 $q = trim((string) ($_GET['q'] ?? ''));
+/* 기본 조회는 **내 자산에 영향 있는 공지**다.
+ *   전체를 기본으로 두면(예전) 목록 2,756건 중 자산에 걸리는 건 3건이라 '영향 자산' 칸이
+ *   화면 가득 '없음' 으로 채워졌다 — 참조 자료지 업무 화면이 아니었다. 전체를 보는 길은
+ *   없애지 않고 칩으로 남긴다(수집 자체가 됐는지 확인하는 경로라 지우면 안 된다).
+ */
+$scope = (string) ($_GET['scope'] ?? 'mine');
+if (!in_array($scope, ['mine', 'all'], true)) { $scope = 'mine'; }
 $page = vg_page();
 $perPage = vg_perpage();
 
@@ -21,6 +31,32 @@ try {
 
     $where = 'is_deleted = 0';
     $params = [];
+
+    /* '내 자산 영향' = 이 공지의 CVE 중 하나라도 **최신 스캔 기준** 판정에 잡힌 것.
+     *
+     * EXISTS 상관 서브쿼리로 매 공지 행마다 확인하지 않는다 — 영향 있는 advisory_id 집합을
+     * 한 번에 구해 값으로 펼쳐 넣는다(실측 dev: 이 한 쿼리 131ms, 상관 서브쿼리는 공지 수만큼
+     * 반복된다). tb_advisory_cve(작은 표)에서 출발해 idx_find_cve(cve_id)로 들어가는 방향이라
+     * tb_finding 42만 행을 통째로 훑지 않는다.
+     */
+    if ($scope === 'mine') {
+        $mineIds = $pdo->query(
+            'SELECT DISTINCT ac.advisory_id
+               FROM tb_advisory_cve ac
+               JOIN tb_finding f ON f.cve_id = ac.cve_id AND f.is_deleted = 0
+               JOIN tb_scan s ON s.scan_id = f.scan_id
+               JOIN ' . vg_latest_scan_subq() . ' latest
+                 ON latest.host_id = s.host_id AND latest.mid = s.scan_id
+               JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
+              WHERE ac.is_deleted = 0'
+        )->fetchAll(PDO::FETCH_COLUMN);
+        if ($mineIds) {
+            $where .= ' AND advisory_id IN (' . implode(',', array_map('intval', $mineIds)) . ')';
+        } else {
+            // 한 건도 없으면 "전부 보여주기" 로 흘러가지 않게 명시적으로 0건을 만든다.
+            $where .= ' AND 1 = 0';
+        }
+    }
     if ($q !== '') {
         // 본문까지 검색 대상(수집된 건에 한함). 2천여 행이라 LIKE 스캔으로 충분.
         // CVE 검색은 정규화된 junction(tb_advisory_cve)을 본다 — 인덱스가 걸린 유일한 정본.
@@ -100,12 +136,14 @@ try {
                 $detail = [];
                 foreach ($row['cve_id_list'] as $cv) {
                     foreach ($findingsByCve[$cv] ?? [] as $f) {
-                        $hostIds[(int) $f['host_id']] = true;
+                        // 이름은 host_id 로 묶어 담는다 — 같은 호스트가 CVE 수만큼 반복된다.
+                        $hostIds[(int) $f['host_id']] = (string) $f['fqdn'];
                         $detail[] = $f;
                     }
                 }
                 $assetsByAdvisory[$aid] = [
                     'hostCount' => count($hostIds),
+                    'names'     => array_values($hostIds),
                     'rows'      => array_slice($detail, 0, $detailLimit),
                     'total'     => count($detail),
                 ];
@@ -119,13 +157,26 @@ try {
 
 vg_header('보안 공지', 'advisories');
 ?>
-  <?php // 건수는 다른 목록 화면과 같은 자리에 둔다 — 여기만 없어서 페이지네이션까지 내려가야 보였다. ?>
-  <?php vg_page_title('보안 공지', 'KISA', '국내 보안공지와 관련 CVE를 확인합니다.', ['count' => $total]); ?>
+  <?php // 건수는 다른 목록 화면과 같은 자리에 둔다 — 여기만 없어서 페이지네이션까지 내려가야 보였다.
+        //   건수는 **지금 필터 기준**이다(예전엔 필터와 무관하게 늘 전체 2,756건이었다). ?>
+  <?php vg_page_title('보안 공지', 'KISA',
+      $scope === 'mine' ? '내 자산에 영향 있는 공지를 먼저 봅니다.' : '수집된 국내 보안공지 전체입니다.',
+      ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
+  <?php // 범위 칩 — cves.php 의 필터 프리셋(.tabs/.pill)과 같은 컴포넌트. 페이지 번호는 항상 지운다. ?>
+  <div class="tabs">
+    <?php foreach (['mine' => '내 자산 영향', 'all' => '전체 공지'] as $key => $label): ?>
+      <a class="pill<?= $scope === $key ? ' pill--on' : '' ?>"
+         href="<?= vg_h(vg_qs(['scope' => $key, 'page' => null])) ?>"><?= vg_h($label) ?></a>
+    <?php endforeach; ?>
+  </div>
+
   <?php vg_toolbar([
+      // 칩으로 고른 범위는 검색 폼 필드가 아니라, 폼 제출 시 사라지지 않도록 hidden 으로 함께 싣는다.
+      ['type' => 'hidden', 'name' => 'scope', 'value' => $scope],
       // 실제 검색 범위는 제목·본문·CVE 셋 다인데 placeholder 가 둘만 말해서, 빈 결과 안내가
       //   "본문도 검색합니다" 를 뒤늦게 알려주고 있었다 — 입력칸에서 먼저 밝힌다.
       ['type' => 'search', 'name' => 'q', 'placeholder' => '제목·본문·CVE 검색', 'value' => $q],
@@ -140,7 +191,9 @@ vg_header('보안 공지', 'advisories');
           ['label' => '발행일', 'nowrap' => true, 'width' => '7rem'],
           ['label' => '제목'],
           ['label' => '관련 CVE', 'width' => '30%'],
-          ['label' => '영향 자산', 'nowrap' => true, 'width' => '10%'],
+          // '내 자산 영향' 에서는 이 칸이 문장('없음')이 아니라 **자산 이름**이라 폭이 더 필요하다.
+          ['label' => '영향 자산', 'width' => $scope === 'mine' ? '18%' : '10%',
+              'nowrap' => $scope !== 'mine'],
       ],
       $rows,
       [
@@ -149,14 +202,22 @@ vg_header('보안 공지', 'advisories');
                   'icon'  => '🔍',
                   'title' => '조건에 맞는 공지가 없습니다.',
                   'hint'  => '다른 검색어를 써 보세요.',
-                  'cta'   => ['href' => '/advisories.php', 'label' => '검색 초기화'],
+                  'cta'   => ['href' => '/advisories.php?scope=' . $scope, 'label' => '검색 초기화'],
+              ]
+              : ($scope === 'mine'
+              ? [
+                  // 0건이 "공지가 없다" 로 읽히면 안 된다 — 여기서 0 은 **내 자산에 걸리는 게 없다** 는 뜻이다.
+                  'icon'  => '✅',
+                  'title' => '내 자산에 영향 있는 공지가 없습니다.',
+                  'hint'  => '수집된 공지 자체는 [전체 공지] 칩에서 볼 수 있습니다.',
+                  'cta'   => ['href' => vg_qs(['scope' => 'all', 'page' => null]), 'label' => '전체 공지 보기'],
               ]
               : array_filter([
                   'icon'  => '🇰🇷',
                   'title' => '아직 수집된 공지가 없습니다.',
                   'hint'  => 'KISA 보안공지 커넥터를 실행하면 여기에 쌓입니다.',
                   'cta'   => vg_connectors_empty_cta(),
-              ]),
+              ])),
           'cell' => [
               0 => fn($r) => '<span class="why">' . vg_h($r['published'] ?? '–') . '</span>',
               // 제목을 누르면 상세로. 원문은 상세 안의 [원문 열기] 버튼에서 연다.
@@ -183,9 +244,9 @@ vg_header('보안 공지', 'advisories');
               },
               // 배지 값 = 이 공지의 CVE 들과 매칭되는 distinct 호스트 수(컨테이너 포함).
               //   1건 이상이면 클릭 가능한 배지로 상세(호스트·패키지·버전·CVE·심각도)를 모달에 채운다.
-              3 => function ($r) use ($assetsByAdvisory) {
+              3 => function ($r) use ($assetsByAdvisory, $scope) {
                   $aid = (int) $r['advisory_id'];
-                  $a = $assetsByAdvisory[$aid] ?? ['hostCount' => 0, 'rows' => [], 'total' => 0];
+                  $a = $assetsByAdvisory[$aid] ?? ['hostCount' => 0, 'rows' => [], 'total' => 0, 'names' => []];
                   if ($a['hostCount'] <= 0) {
                       // '해당 자산 없음'(6글자 뱃지)은 10% 칸에 안 들어가 nowrap 말줄임에 잘렸다 —
                       //   뱃지는 잘리면 어휘가 깨져서 못 읽는다. 짧게 쓰고 뜻은 title 로 남긴다.
@@ -208,9 +269,25 @@ vg_header('보안 공지', 'advisories');
                       'detail_url' => '/advisory.php?id=' . $aid . '#assets',
                   ];
                   $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                  /* '내 자산 영향' 필터에서는 이 칸을 **자산 이름**으로 채운다. 그 필터의 모든 행이
+                   *   1대 이상이라 'N대' 만 반복되면 칸이 아무것도 구분해 주지 않는다 — 어느 자산인지가
+                   *   여기서 알고 싶은 값이다. 이름이 여럿이면 첫 이름 + '외 N대'(칸을 넘기지 않는 선).
+                   *   전체 공지 필터는 지금까지처럼 대수만 — 거기서는 '몇 대나 걸리나' 가 먼저다. */
+                  $label = number_format($a['hostCount']) . '대';
+                  if ($scope === 'mine' && $a['names']) {
+                      $label = $a['names'][0]
+                             . ($a['hostCount'] > 1 ? ' 외 ' . number_format($a['hostCount'] - 1) . '대' : '');
+                  }
+                  // title 은 마우스를 올렸을 때 뜨는 한 덩어리 텍스트다 — 이름을 전부 넣으면
+                  //   자산이 많은 공지에서 화면을 덮는다(실측 dev 70대). 앞 몇 개만 넣고 나머지는
+                  //   수로 말한다. 전체 목록은 배지를 눌러 여는 모달이 갖는다.
+                  $tipNames = array_slice($a['names'], 0, VG_ADVISORY_TIP_NAMES);
+                  $tipRest  = count($a['names']) - count($tipNames);
+                  $tip = implode(', ', $tipNames) . ($tipRest > 0 ? ' 외 ' . number_format($tipRest) . '대' : '');
                   return '<span class="badge tone-warn" data-advisory-assets="' . vg_h((string) $json) . '"'
-                       . ' tabindex="0" role="button" aria-label="영향 자산 ' . (int) $a['hostCount'] . '대 상세 보기">'
-                       . number_format($a['hostCount']) . '대</span>';
+                       . ' tabindex="0" role="button" aria-label="영향 자산 ' . (int) $a['hostCount'] . '대 상세 보기"'
+                       . ' title="' . vg_h($tip) . '">'
+                       . vg_h($label) . '</span>';
               },
           ],
       ]
