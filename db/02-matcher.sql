@@ -70,7 +70,13 @@ CREATE TABLE IF NOT EXISTS tb_package_summary (
   updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (package_name, ecosystem),
   KEY idx_psum_cve  (cve_cnt),
-  KEY idx_psum_epss (max_epss)
+  KEY idx_psum_epss (max_epss),
+  -- 목록 정렬 `ORDER BY <cve_cnt|max_epss> DESC, package_name ASC LIMIT 50` 전용.
+  -- 정렬 방향이 섞여 있어 **내림차순 복합**(MySQL 8.0)이어야 하고, 표시 컬럼까지 담아
+  -- 커버링으로 만들어야 저선택도 필터(배포판·검색어)에서 행 조회로 역전되지 않는다.
+  -- 기존 볼륨은 db/migrations/20260812221820_package_summary_sort_index.sql.
+  KEY idx_psum_cve_name  (cve_cnt DESC, package_name ASC, ecosystem, max_epss, fix_cnt, max_fixed),
+  KEY idx_psum_epss_name (max_epss DESC, package_name ASC, ecosystem, cve_cnt, fix_cnt, max_fixed)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ── 매처 판정 결과 : 스캔×CVE×패키지 1행. 노출/로드/KEV/등급/근거 ──────
