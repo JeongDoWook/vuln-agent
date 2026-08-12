@@ -109,6 +109,7 @@ DYNAMIC_PREFIXES=(
   'chart__lbl--'  # view/charts.php : 'chart__lbl--' . $edge (start|end)
   'verdict--'     # view/components.php vg_verdict() : 'verdict verdict--' . $tone
   'verdict__stat--' # view/components.php vg_verdict() : 'verdict__stat--' . $s['tone']
+  'funnel__step--'  # index.php 퍼널 : 'funnel__step--s' . ($i + 1) (칸 순서로 무게가 커진다)
 )
 
 # 정의: app.css 의 선택자에 나오는 클래스. 주석과 url(...) 은 걷어낸다 — 주석 속
