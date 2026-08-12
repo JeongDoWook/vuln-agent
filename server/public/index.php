@@ -10,10 +10,17 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 vg_require_menu('dashboard');
 
+/**
+ * 추세 창(窓) — 30일. "지난달보다 나아졌나" 에 답하는 최소 구간이다.
+ *   14일이었던 적이 있는데(#221 에서 제거) 그때는 등급별 누적 막대라 창이 넓어질수록
+ *   막대가 뭉갰다. 지금은 선 하나(High 이상)라 30일이 오히려 읽힌다.
+ */
+const VG_TREND_DAYS = 30;
+
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
-$kevCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
-$delta = [];
+$kevCount = 0; $kevExtCount = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
+$delta = []; $trend = [];
 $page = vg_page();
 $perPage = vg_perpage();
 try {
@@ -38,16 +45,35 @@ try {
     //   tb_scan 자체(작은 표, 아래 resKpi)에는 이 문제가 없어 IN(서브쿼리)를 그대로 둔다.
     $latestJoin = "JOIN " . vg_latest_scan_subq() . " latest ON latest.host_id = s.host_id AND latest.mid = s.scan_id";
 
-    // KPI 는 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
+    /* KPI·퍼널 은 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
+     *
+     * 퍼널의 네 칸(전체 → High 이상 → KEV → KEV 중 외부노출)은 **같은 모집단을 좁혀 가는**
+     * 수여야 의미가 있다. 그래서 KEV·외부노출도 별도 쿼리로 따로 세지 않고 이 한 번의
+     * 스캔에서 함께 뽑는다 — 기준(tb_finding 행)이 하나로 고정되고, 예전에 KEV 만 자산·CVE·
+     * 패키지로 묶어 세던 별도 쿼리(#354 에서 파생테이블로 최적화했던 것)도 사라진다.
+     * 이 값들은 findings.php 의 등급 카드와 같은 기준이라 링크를 눌렀을 때 숫자가 이어진다.
+     *
+     * KEV 를 **High 이상 안에서만** 세는 건 퍼널이 진짜로 포함관계여야 하기 때문이다.
+     * KEV 는 등급과 독립이라 MEDIUM 에도 붙는다(실측 dev 344건) — 전 등급으로 세면 3번째 칸이
+     * 2번째 칸의 부분집합이 아니게 되고, 좁혀지는 그림 자체가 거짓말이 된다. 등급이 낮은 KEV 는
+     * 아래 [주요 취약점 신호] 카드가 KEV 우선 정렬로 계속 보여준다(가려지지 않는다).
+     */
     $totalsRows = $pdo->query(
-        "SELECT f.severity, COUNT(*) c
+        "SELECT f.severity, COUNT(*) c,
+                SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')) kev,
+                SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')
+                    AND f.runtime_status = 'EXTERNAL') kev_ext
            FROM tb_finding f
            JOIN tb_scan s ON s.scan_id = f.scan_id
            JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
            $latestJoin
           GROUP BY f.severity"
     )->fetchAll();
-    foreach ($totalsRows as $f) { if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; } }
+    foreach ($totalsRows as $f) {
+        if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; }
+        $kevCount    += (int) $f['kev'];
+        $kevExtCount += (int) $f['kev_ext'];
+    }
 
     /* 최신 스캔의 실제 취약점 신호를 직접 보여준다.
      * 업무 상태나 내부 기한을 만들지 않고 KEV·외부 노출·런타임·심각도만으로 정렬한다.
@@ -75,15 +101,6 @@ try {
             GROUP BY f.cve_id,f.package_name,s.host_id,f.severity,f.runtime_status,f.in_kev
          ) current_findings"
     )->fetchColumn();
-    $kevCount = (int) $pdo->query(
-        "SELECT COUNT(*) FROM (
-           SELECT latest.host_id,f.cve_id,f.package_name
-             FROM " . vg_latest_scan_subq() . " latest
-             JOIN tb_finding f ON f.scan_id=latest.mid AND f.in_kev=1
-            GROUP BY latest.host_id,f.cve_id,f.package_name
-         ) kev_findings"
-    )->fetchColumn();
-
     /* KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
      *
      * 스캔은 **바뀔 때만** 저장된다(feat/change-tracking) — 날짜가 듬성듬성하다.
@@ -107,6 +124,75 @@ try {
         foreach ($weekAgo as $sev => $_) { $weekAgo[$sev] += (int) ($counts[$sev] ?? 0); }
     }
     foreach ($totals as $sev => $now) { $delta[$sev] = $now - $weekAgo[$sev]; }
+
+    /* 최근 VG_TREND_DAYS 일 추세 — 날짜별 "High 이상" 건수.
+     *
+     * 이월(carry-forward) 규칙은 위 KPI 증감과 같다: 스캔은 바뀔 때만 저장되므로 그날 스캔이
+     * 없는 호스트는 **직전 스캔 값을 이어 쓴다**(0 으로 떨구면 "취약점이 사라졌다"는 거짓말).
+     * 대신 그날 실제 수집이 있었는지는 따로 표시해서(scanned) 차트가 점을 그날에만 찍는다.
+     *
+     * 읽는 스캔은 두 묶음뿐이다 — 창 안의 스캔 + 각 호스트가 창 시작 전에 가진 마지막 스캔
+     * (이월의 출발점). 전체 스캔을 다 읽으면 이력이 쌓일수록 대시보드가 선형으로 느려진다.
+     *
+     * 사전집계 테이블을 새로 만들지 않았다: 기존 집계 자산(tb_package_summary·tb_scan_run)
+     * 어디에도 스캔별 심각도 건수가 없고, 실측(dev: 호스트 208 · 스캔 951 · finding 42만)에서
+     * 이 두 쿼리 합이 45ms 라 사전집계의 갱신 비용·정합성 부담을 살 이유가 없다(YAGNI).
+     * 단, scan_id 목록은 **PHP 가 값으로 펼쳐** 넘긴다 — IN (서브쿼리) 로 두면 옵티마이저가
+     * tb_finding 을 먼저 훑어 같은 결과에 2.06초가 걸렸다(실측).
+     */
+    $since = date('Y-m-d', strtotime('-' . (VG_TREND_DAYS - 1) . ' days'));
+    $trendScans = $pdo->query(
+        "SELECT s.scan_id AS id, s.host_id, DATE(s.collected_at) AS d
+           FROM tb_scan s
+           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
+          WHERE s.is_deleted = 0 AND DATE(s.collected_at) >= '$since'
+          UNION
+         SELECT s.scan_id, s.host_id, DATE(s.collected_at)
+           FROM tb_scan s
+           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
+           JOIN (SELECT host_id, MAX(scan_id) AS mid FROM tb_scan
+                  WHERE is_deleted = 0 AND DATE(collected_at) < '$since'
+                  GROUP BY host_id) b ON b.mid = s.scan_id"
+    )->fetchAll();
+
+    // 호스트별 (날짜, 스캔id) 를 id 순으로 — 이월은 "그날 이하의 마지막 스캔" 고르기다.
+    $trendByHost = []; $scannedDays = [];
+    foreach ($trendScans as $s) {
+        if ($s['d'] === null) { continue; }   // collected_at 이 비어 있으면 어느 날짜에도 못 건다
+        $trendByHost[(int) $s['host_id']][] = ['d' => (string) $s['d'], 'id' => (int) $s['id']];
+        $scannedDays[(string) $s['d']] = true;
+    }
+    foreach ($trendByHost as &$list) { usort($list, fn($a, $b) => $a['id'] <=> $b['id']); }
+    unset($list);
+
+    // 스캔별 High 이상 건수 — 퍼널 2번째 칸과 같은 기준(CRITICAL + HIGH).
+    $highByScan = [];
+    $trendIds = array_values(array_unique(array_map(fn($s) => (int) $s['id'], $trendScans)));
+    if ($trendIds) {
+        $in = implode(',', array_fill(0, count($trendIds), '?'));
+        $st = $pdo->prepare(
+            "SELECT scan_id, COUNT(*) c FROM tb_finding
+              WHERE scan_id IN ($in) AND severity IN ('CRITICAL','HIGH')
+              GROUP BY scan_id"
+        );
+        $st->execute($trendIds);
+        foreach ($st->fetchAll() as $r) { $highByScan[(int) $r['scan_id']] = (int) $r['c']; }
+    }
+
+    for ($i = VG_TREND_DAYS - 1; $i >= 0; $i--) {
+        $day = date('Y-m-d', strtotime("-$i days"));
+        $sum = 0; $any = false;
+        foreach ($trendByHost as $list) {
+            $pick = null;
+            foreach ($list as $s) { if ($s['d'] <= $day) { $pick = $s['id']; } }   // 그날까지의 최신
+            if ($pick === null) { continue; }   // 그날엔 아직 이 호스트가 없었다
+            $any = true;
+            $sum += (int) ($highByScan[$pick] ?? 0);
+        }
+        // 첫 수집 이전의 날은 "0건" 이 아니라 "아직 자료가 없음" 이다 — 선을 시작하지 않는다.
+        if (!$any) { continue; }
+        $trend[] = ['d' => $day, 'v' => $sum, 'scanned' => isset($scannedDays[$day])];
+    }
 
     // 목록 대상 = 최신 스캔이 있는 비삭제 호스트 수(페이지네이션 총건).
     $total = (int) $pdo->query(
@@ -165,35 +251,51 @@ vg_header('대시보드', 'dashboard');
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
   <?php
-  // 결론 먼저 — KPI 줄은 값을 나열할 뿐 "그래서 지금 위험한가"를 말하지 않는다.
-  //   수치는 위에서 이미 집계한 것만 쓴다(새 쿼리 없음): $hostCount·$kevCount·$totals·$urgentTotal.
-  //   전 모집단 기준의 값만 쓴다 — $urgent 는 상위 N건만이라 "몇 대에서" 를 셀 수 없다.
+  /* 상단은 결론 문장 + KPI 나열이 아니라 **좁혀지는 퍼널**이다.
+   *
+   * 이 숫자들의 실제 관계는 나열이 아니라 포함이다 — 전체 안에 High 이상이 있고, 그 안에
+   * 악용 확인(KEV)이 있고, 그 안에 외부 노출이 있다. 관계를 형태로 그리면 "가장 먼저
+   * 조치할 대상입니다" 라는 배너 문장이 필요 없어져서, 그 배너는 지웠다.
+   *
+   * 마지막 칸이 "오늘 할 일" 이다. 기한(SLA) 초과는 이 저장소에 아직 계산이 없으므로
+   * 만들어 내지 않고 **KEV 중 외부 노출**을 센다 — 사람 손을 안 탄, 지금 있는 신호다.
+   *
+   * 링크: findings.php 는 지금 다른 작업이 잡고 있어 이 브랜치에서 손대지 않는다. 그래서
+   *   그 화면이 **이미 가진 필터로만** 건다(등급). KEV 필터는 없으므로 KEV 두 칸은 같은
+   *   기준으로 정렬된 아래 [주요 취약점 신호] 카드로 보낸다(#signals) — 숫자만 있고 못
+   *   누르는 칸을 만들지 않는다.
+   */
   $crit = (int) $totals['CRITICAL'];
   $high = (int) $totals['HIGH'];
-  if ($kevCount > 0) {
-      $tone = 'crit';
-      $head = '자산 ' . number_format($hostCount) . '대에서 악용이 확인된(KEV) 취약점 '
-            . number_format($kevCount) . '건이 발견됐습니다 — 가장 먼저 조치할 대상입니다.';
-  } elseif ($crit > 0) {
-      $tone = 'crit';
-      $head = '악용 확인(KEV) 취약점은 없지만 CRITICAL ' . number_format($crit) . '건이 남아 있습니다.';
-  } elseif ($high > 0) {
-      $tone = 'warn';
-      $head = 'CRITICAL 은 없고 HIGH ' . number_format($high) . '건이 남아 있습니다.';
-  } else {
-      $tone = 'ok';
-      $head = '자산 ' . number_format($hostCount) . '대에서 KEV·CRITICAL·HIGH 취약점이 확인되지 않았습니다.';
-  }
-  vg_verdict($tone, $head, [
-      ['label' => '자산 · 대',        'value' => number_format($hostCount)],
-      ['label' => 'KEV 악용확인 · 건', 'value' => number_format($kevCount), 'tone' => $kevCount > 0 ? 'crit' : 'ok'],
-      ['label' => 'CRITICAL · 건',    'value' => number_format($crit),      'tone' => $crit > 0 ? 'crit' : 'ok'],
-      ['label' => 'HIGH · 건',        'value' => number_format($high),      'tone' => $high > 0 ? 'warn' : 'ok'],
-      // 여기에 "전체 N건"을 적지 않는다 — 아래 도넛의 '전체'(원시 행 수)와 급한 목록의
-      //   총건(자산·CVE·패키지로 묶은 수)이 서로 다른 수라, 같은 화면에 나란히 두면 어느 쪽이
-      //   맞는지 사용자가 판단해야 한다. 배너는 기준만 밝히고 내역은 아래 카드에 맡긴다.
-  ], '각 호스트의 최신 스캔 기준 · 등급별 내역은 아래 카드에서');
+  $allCount = array_sum($totals);
+  $funnelSteps = [
+      ['n' => $allCount, 'label' => '탐지된 전체',
+       'cap' => '자산 ' . number_format($hostCount) . '대 · 최신 스캔 기준',
+       'href' => '/findings.php', 'title' => '탐지 결과 전체 목록'],
+      ['n' => $crit + $high, 'label' => 'High 이상',
+       'cap' => 'CRITICAL ' . number_format($crit) . ' · HIGH ' . number_format($high),
+       'href' => '/findings.php?sev=HIGH', 'title' => 'HIGH 등급 목록 · CRITICAL 은 등급 카드에서'],
+      ['n' => $kevCount, 'label' => '악용 확인(KEV)',
+       'cap' => 'High 이상 중 · 실제 공격에 쓰임',
+       'href' => '#signals', 'title' => 'KEV 순으로 정렬된 주요 취약점 신호'],
+      ['n' => $kevExtCount, 'label' => 'KEV 중 외부 노출',
+       'cap' => '오늘 먼저 조치할 대상',
+       'href' => '#signals', 'title' => '악용 확인 + 외부 노출로 정렬된 주요 취약점 신호'],
+  ];
   ?>
+  <div class="funnel">
+    <?php foreach ($funnelSteps as $i => $s):
+      // 오른쪽으로 갈수록 무게가 커진다(s1 → s4). 다만 **0건이면 색을 걷는다** — 0 은
+      //   "지금 볼 것이 없다" 는 뜻이라 위험색을 가져갈 이유가 없다(findings.php 의 등급 카드와 같은 규칙).
+      $cls = 'funnel__step funnel__step--s' . ($i + 1) . ((int) $s['n'] === 0 ? ' funnel__step--zero' : '');
+    ?>
+      <a class="<?= $cls ?>" href="<?= vg_h($s['href']) ?>" title="<?= vg_h($s['title']) ?>">
+        <b><?= number_format((int) $s['n']) ?></b>
+        <span><?= vg_h($s['label']) ?></span>
+        <span class="funnel__cap"><?= vg_h($s['cap']) ?></span>
+      </a>
+    <?php endforeach; ?>
+  </div>
   <?php if ($nextFeed !== null):
     $secs = strtotime((string) $nextFeed['next_run_at']) - time();
     $rel  = $secs <= 0 ? '곧'
@@ -205,30 +307,90 @@ vg_header('대시보드', 'dashboard');
     <span class="why"><?= vg_h($rel) ?> · <?= vg_h($nextFeed['name']) ?> (<?= vg_h(strtoupper((string) $nextFeed['connector_type'])) ?>)</span></div>
   <?php endif; ?>
 
-  <div class="cards cards--grid">
-    <div class="kpi"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>
-    <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s):
+  <div class="card">
+    <strong>최근 <?= VG_TREND_DAYS ?>일 추세</strong>
+    <span class="why">— 날짜별 High 이상 건수 · 수집이 없는 날은 직전 값을 이어 그린다(점은 수집한 날에만)</span>
+    <div class="card__body"><?php vg_daily_trend($trend); ?></div>
+  </div>
+
+  <div class="card" id="signals">
+    <strong>주요 취약점 신호</strong>
+    <?php /* 정렬 기준과 "몇 건 중 몇 건" 이 각각 다른 why 로 붙어 제목 옆이 두 줄로 흘렀다 — 한 줄로 합친다.
+             정렬 기준의 근거(KEV·노출·심각도)는 아래 [탐지 신호] 열이 행마다 다시 보여준다. */ ?>
+    <span class="why">— KEV·노출·심각도 순<?php if ($urgentTotal > count($urgent)): ?>
+      · 상위 <?= count($urgent) ?>건 / 총 <?= number_format($urgentTotal) ?>건 ·
+      <a href="/findings.php">전체 보기 →</a><?php endif; ?></span>
+    <div class="card__body">
+    <?php
+    vg_table(
+        [
+            ['label' => '등급', 'key' => 'severity', 'width' => '6rem', 'nowrap' => true],
+            ['label' => 'CVE', 'width' => '13rem', 'nowrap' => true],
+            ['label' => '호스트'],
+            ['label' => '패키지'],
+            ['label' => '탐지 신호', 'width' => '15rem'],
+        ],
+        $urgent,
+        [
+            'card'  => false,
+            'empty' => [
+                'icon'  => '✅',
+                'title' => '급한 항목이 없습니다.',
+                'hint'  => '악용이 확인됐거나 외부에 노출된 취약점이 없습니다.',
+            ],
+            'row_class' => fn($u) => vg_sev_row((string) $u['severity']),
+            'cell' => [
+                'severity' => fn($u) => vg_sev_badge((string) $u['severity']),
+                1 => function ($u) {
+                    $html = '<strong><a href="/cve.php?cve=' . urlencode((string) $u['cve_id']) . '">'
+                          . vg_h((string) $u['cve_id']) . '</a></strong>';
+                    if ($u['in_kev']) { $html .= ' ' . vg_badge('KEV', 'crit'); }
+                    return $html;
+                },
+                2 => fn($u) => '<a href="/host.php?id=' . (int) $u['host_id'] . '">' . vg_h((string) $u['fqdn']) . '</a>',
+                3 => fn($u) => vg_h((string) $u['package_name']),
+                4 => function ($u) {
+                    if ($u['in_kev'] && $u['runtime_status'] === 'EXTERNAL') {
+                        return vg_badge('악용확인 + 외부노출', 'crit');
+                    }
+                    if ($u['in_kev']) {
+                        return vg_badge('악용확인', 'warn') . ' ' . vg_status_badge($u['runtime_status']);
+                    }
+                    return vg_status_badge($u['runtime_status']);
+                },
+            ],
+        ]
+    );
+    ?>
+    </div>
+  </div>
+
+  <?php /* 등급별 전체 분포와 도넛은 지우지 않고 **접어서** 퍼널 아래로 내린다.
+   * MEDIUM·LOW 는 "오늘 무엇을 할까" 를 바꾸지 않는 수라(실측 LOW 34,745) 상단에 두면
+   * 자릿수만으로 CRITICAL 을 덮는다. 필요할 때 펴 보는 자리가 맞다. */ ?>
+  <div class="card">
+    <strong>등급별 분포</strong> <span class="why">— 7일 전 대비 증감과 도넛</span>
+    <div class="card__body">
+      <details>
+        <summary>등급별 전체 분포 보기</summary>
+        <div class="cards cards--grid">
+          <div class="kpi"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>
+          <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s):
       // 증감은 방향을 색만으로 말하지 않는다 — ▲/▼ 기호를 같이 준다(색각 이상·흑백 출력).
       // 변화가 없으면(0) 칩 자체를 안 그린다 — "— 0" 은 알려주는 게 없이 카드만 시끄럽게 했다.
       $d = ($delta[$s] ?? 0) !== 0 ? $delta[$s] : null;
       $dir = $d === null ? '' : ($d > 0 ? 'up' : 'down');
       $dtxt = $d === null ? '' : ($d > 0 ? '▲ ' . number_format($d) : '▼ ' . number_format(abs($d)));
     ?>
-      <a class="kpi tone-<?= vg_sev_tone($s) ?>" href="/findings.php?sev=<?= $s ?>">
-        <b><?= number_format((int) $totals[$s]) ?></b><span><?= $s ?></span>
-        <?php if ($d !== null): ?>
-          <span class="kpi__delta <?= $dir ?>"><span class="sr-only">7일 전 대비 </span><?= vg_h($dtxt) ?></span>
-        <?php endif; ?>
-      </a>
-    <?php endforeach; ?>
-  </div>
-
-  <div class="split">
-    <div class="card">
-      <strong>심각도 분포</strong>
-      <div class="card__body center">
+          <a class="kpi tone-<?= vg_sev_tone($s) ?>" href="/findings.php?sev=<?= $s ?>">
+            <b><?= number_format((int) $totals[$s]) ?></b><span><?= $s ?></span>
+            <?php if ($d !== null): ?>
+              <span class="kpi__delta <?= $dir ?>"><span class="sr-only">7일 전 대비 </span><?= vg_h($dtxt) ?></span>
+            <?php endif; ?>
+          </a>
+        <?php endforeach; ?>
+        </div>
         <div class="donut-wrap">
-          <?php // 추세 카드가 빠져 도넛이 이 화면의 유일한 그래픽이 됐다 — 기본(132)보다 키운다. ?>
           <?php vg_sev_donut($totals, 152); ?>
           <div class="legend">
             <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
@@ -239,66 +401,12 @@ vg_header('대시보드', 'dashboard');
             <?php endforeach; ?>
           </div>
         </div>
-        <?php /* 예전엔 이 두 값이 상단 KPI 줄에 점선 카드(kpi--static)로 있었는데, 링크형
-         * 카드들 사이에서 톤이 안 맞아 붕 떠 보였다. 필터가 없는 "집계 전용" 값이라
-         * 여기(도넛 카드 바닥)가 오히려 제자리 — 옆 "대응 우선순위" 카드와 높이를 맞추며
-         * 생기는 여백도 이걸로 채운다. */ ?>
+        <?php /* 도넛 바닥의 KEV 요약. 퍼널 3번째 칸과 **같은 수**다(같은 쿼리에서 나온다) —
+                 접힌 안쪽에서 다시 세지 않는다. */ ?>
         <div class="donut-foot">
-          <?= vg_badge('KEV 악용확인 ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok') ?>
+          <?= vg_badge('High 이상 중 KEV ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok') ?>
         </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <strong>주요 취약점 신호</strong>
-      <?php /* 정렬 기준과 "몇 건 중 몇 건" 이 각각 다른 why 로 붙어 제목 옆이 두 줄로 흘렀다 — 한 줄로 합친다.
-               정렬 기준의 근거(KEV·노출·심각도)는 아래 [탐지 신호] 열이 행마다 다시 보여준다. */ ?>
-      <span class="why">— KEV·노출·심각도 순<?php if ($urgentTotal > count($urgent)): ?>
-        · 상위 <?= count($urgent) ?>건 / 총 <?= number_format($urgentTotal) ?>건 ·
-        <a href="/findings.php">전체 보기 →</a><?php endif; ?></span>
-      <div class="card__body">
-      <?php
-      vg_table(
-          [
-              ['label' => '등급', 'key' => 'severity', 'width' => '6rem', 'nowrap' => true],
-              ['label' => 'CVE', 'width' => '13rem', 'nowrap' => true],
-              ['label' => '호스트'],
-              ['label' => '패키지'],
-              ['label' => '탐지 신호', 'width' => '15rem'],
-          ],
-          $urgent,
-          [
-              'card'  => false,
-              'empty' => [
-                  'icon'  => '✅',
-                  'title' => '급한 항목이 없습니다.',
-                  'hint'  => '악용이 확인됐거나 외부에 노출된 취약점이 없습니다.',
-              ],
-              'row_class' => fn($u) => vg_sev_row((string) $u['severity']),
-              'cell' => [
-                  'severity' => fn($u) => vg_sev_badge((string) $u['severity']),
-                  1 => function ($u) {
-                      $html = '<strong><a href="/cve.php?cve=' . urlencode((string) $u['cve_id']) . '">'
-                            . vg_h((string) $u['cve_id']) . '</a></strong>';
-                      if ($u['in_kev']) { $html .= ' ' . vg_badge('KEV', 'crit'); }
-                      return $html;
-                  },
-                  2 => fn($u) => '<a href="/host.php?id=' . (int) $u['host_id'] . '">' . vg_h((string) $u['fqdn']) . '</a>',
-                  3 => fn($u) => vg_h((string) $u['package_name']),
-                  4 => function ($u) {
-                      if ($u['in_kev'] && $u['runtime_status'] === 'EXTERNAL') {
-                          return vg_badge('악용확인 + 외부노출', 'crit');
-                      }
-                      if ($u['in_kev']) {
-                          return vg_badge('악용확인', 'warn') . ' ' . vg_status_badge($u['runtime_status']);
-                      }
-                      return vg_status_badge($u['runtime_status']);
-                  },
-              ],
-          ]
-      );
-      ?>
-      </div>
+      </details>
     </div>
   </div>
 
