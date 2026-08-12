@@ -38,16 +38,72 @@ assert_not_contains() { if grep -q "$2" <<<"$1"; then no "$3  ('$2' 있음)"; el
 # 동일하고 파일명·라벨·메시지만 다르다 — DRY 로 묶는다. 각 테스트가 왜 존재하는지는
 # 호출부 바로 위 주석에 그대로 남아 있다(도메인 지식이라 이 헬퍼로 뭉개지 않는다).
 #   $1=tests/ 밑 파일명  $2=printf 라벨  $3=성공 메시지  $4=실패 메시지(생략 시 성공 메시지 재사용)
+#
+# 실행은 **호출 시점이 아니라 아래 prerun_phpunit() 에서 한 번에** 한다 — 예전엔 이 함수가
+#   호출될 때마다 `docker run` 을 새로 띄워서, 26개 × 기동 1.5초 ≈ 39초가 통째로 컨테이너를
+#   띄우는 데만 쓰였다(실제 PHP 실행은 파일당 수십 ms). 한 컨테이너에서 순차로 돌리면 ~7초다.
+#   호출부와 그 위의 도메인 주석은 제자리에 두고, 이 함수만 "실행" 에서 "결과 조회" 로 바꾼다.
 run_phpunit() {
   local file="$1" label="$2" okmsg="$3"
   local nomsg="${4:-$okmsg}"
   printf "\n[%s]\n" "$label"
-  if MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
-       -w /w php:8.3-cli php "tests/$file" >/dev/null 2>&1; then
+  # 키가 없으면(= PHPUNIT_FILES 목록에서 빠졌다) 조용히 통과시키지 않고 실패로 본다.
+  if [ "${PHPUNIT_RESULT[$file]:-MISSING}" = "PASS" ]; then
     ok "$okmsg"
   else
     no "$nomsg  (자세히: docker run --rm -v \$PWD:/w -w /w php:8.3-cli php tests/$file)"
   fi
+}
+
+# 위 26개 호출부가 참조하는 파일 목록 — **정본은 여기 하나뿐이다.**
+#   호출부에 있는데 여기 없으면 위 조회가 MISSING 으로 떨어져 빨간불이 된다(누락이 눈에 띈다).
+PHPUNIT_FILES=(
+  vercmp_test.php
+  osv_precision_test.php
+  pkgdep_rollup_test.php
+  matcher_suppress_test.php
+  ingest_parse_test.php
+  assetgrade_history_test.php
+  account_inventory_test.php
+  ssg_test.php
+  cce_new_rules_test.php
+  rhunfixed_test.php
+  rpmdb_test.php
+  distro_test.php
+  asset_state_test.php
+  assetgrade_test.php
+  debtracker_test.php
+  rhoval_test.php
+  ubuntuoval_test.php
+  kernelcve_test.php
+  schedule_test.php
+  ui_config_test.php
+  asset_grade_review_test.php
+  ui_structure_test.php
+  documentation_consistency_test.php
+  generic_api_config_test.php
+  finding_evidence_test.php
+  db_retry_test.php
+)
+declare -A PHPUNIT_RESULT=()
+
+# 26개를 **컨테이너 한 번**으로 몰아 돌리고 파일별 PASS/FAIL 을 연관배열에 담는다.
+#   · 컨테이너 안 루프는 if 로 종료코드를 받으므로 한 파일이 fatal 을 내도 나머지가 계속 돈다.
+#   · 출력은 파이프가 아니라 임시 파일로 받는다 — 위 assert_contains 주석의 SIGPIPE(141) 함정과 같은 자리다.
+#   · 마운트 경로 계산(MSYS_NO_PATHCONV=1 · pwd -W 폴백)은 기존 방식 그대로다.
+prerun_phpunit() {
+  local out st file
+  out="$(mktemp)"
+  MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$ROOT" && { pwd -W 2>/dev/null || pwd; }):/w" \
+    -w /w php:8.3-cli sh -c '
+      for f in "$@"; do
+        if php "tests/$f" >/dev/null 2>&1; then echo "PASS $f"; else echo "FAIL $f"; fi
+      done' _ "${PHPUNIT_FILES[@]}" >"$out" 2>/dev/null
+  while read -r st file; do
+    [ -n "$file" ] || continue
+    PHPUNIT_RESULT["$file"]="$st"
+  done < "$out"
+  rm -f "$out"
 }
 
 for f in "$ROOT/secrets/admin_password.txt"; do
@@ -196,6 +252,11 @@ fi
 if ! "$ROOT/tests/ui_lint.sh"; then
   fail=$((fail+1))
 fi
+
+# --- 단위테스트 선(先)실행 ---------------------------------------------------
+# 아래에 흩어져 있는 run_phpunit 호출 26개가 볼 결과를 여기서 한 번에 만든다(컨테이너 1회).
+# 호출부는 그대로 순서대로 결과만 조회하므로 출력 순서·라벨·메시지는 이전과 동일하다.
+prerun_phpunit
 
 # --- vercmp 단위 테스트 -----------------------------------------------------
 # 버전 비교는 매처 오탐의 1순위다(같은 패키지인데 이미 고친 버전을 취약하다고 부르는 것).
