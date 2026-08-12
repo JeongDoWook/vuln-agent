@@ -234,6 +234,77 @@ stack_down_if_serving() {
   fi
 }
 
+# --- 공용 dev DB 의 이 워크트리 e2e 잔재 정리 --------------------------------
+# tests/smoke.sh 는 공용 dev DB(vulnagent-db-dev)에 **워크트리 이름이 박힌** 데이터를 만든다:
+#   호스트 web01~03.<라벨>.example.com · 로그인 계정 admin-<라벨> (트리별 세션 격리용)
+# 그런데 워크트리를 지워도 DB 는 공용이라 그 데이터가 영원히 남는다 — 아무도 자기 것 말고는
+#   못 치운다. 2026-08-12 측정: 호스트 213대 중 118대가 이미 사라진 워크트리 것이었고, 딸려온
+#   tb_finding 이 40만 행까지 불어 compliance 화면 12.4초·web auth 6.4초가 나왔다(손으로 지운 뒤
+#   3.1초·2.2초). 워커 5개를 띄웠다 회수한 것만으로 15대가 다시 쌓였다 → 구조적으로 반복된다.
+#   그래서 "워크트리를 회수할 때 그 워크트리 것도 같이 회수한다".
+DEV_DB_CONTAINER="vulnagent-db-dev"   # 공용 dev DB 하나만 대상. prod 는 이 스크립트가 아예 모른다.
+
+# tests/smoke.sh 의 WT_LABEL 과 **같은 변환**이어야 한다(비-DNS 문자는 '-' 로). 정본은 smoke 쪽이다.
+wt_db_label() { printf '%s' "$1" | tr -c 'a-zA-Z0-9-' '-'; }
+
+# 컨테이너 안에서 root 로 mysql (deploy/migrate.sh 와 같은 방식 — 비번은 Docker Secret 파일).
+dev_db_mysql() {
+  docker exec -i "$DEV_DB_CONTAINER" sh -c \
+    'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot vulnagent "$@"' _ "$@" </dev/null
+}
+
+# $1 = 워크트리 이름. 이 워크트리 이름이 박힌 행만 지운다.
+#   지우는 곳은 tb_host 와 tb_user 두 곳뿐이다 — tb_host 의 FK 가 ON DELETE CASCADE 라
+#   tb_scan → tb_finding → tb_finding_evidence, tb_package·tb_container·tb_exposure 등이 따라 지워진다.
+#   실패는 절대 워크트리 제거를 막지 않는다(경고 한 줄) — 못 지운 워크트리를 사람이 손으로
+#   치우게 만드는 쪽이 훨씬 나쁘다. 그래서 이 함수는 언제나 0 으로 끝난다.
+db_cleanup_worktree() {
+  local name="${1:-}" label pattern user fqdn hosts n_host=0 n_user=0
+
+  # 가드 ①: 이름이 비었거나 메인 트리를 가리키면 **아무것도 하지 않는다.**
+  #   메인 트리의 web01~03.main.example.com 과 admin 계정은 상시 쓰는 데이터다.
+  case "$name" in ''|main|master) return 0 ;; esac
+  label="$(wt_db_label "$name")"
+  case "$label" in ''|main|master) return 0 ;; esac
+  # 가드 ②: 라벨은 [a-zA-Z0-9-] 만 남는 변환을 거쳤으므로 LIKE 와일드카드(% _)가 들어올 수 없다.
+  #   그래도 변환이 바뀌었을 때 남의 데이터를 긁지 않도록 명시적으로 확인하고, 아니면 건너뛴다.
+  case "$label" in *[!a-zA-Z0-9-]*) return 0 ;; esac
+
+  docker inspect "$DEV_DB_CONTAINER" >/dev/null 2>&1 || {
+    say "  ${YELLOW}⚠${NC} 공용 DB($DEV_DB_CONTAINER)가 없어 e2e 데이터 정리를 건너뜁니다(워크트리 제거는 완료)."
+    return 0
+  }
+
+  # 라벨은 점으로 감싸여 있고 라벨 안에는 점이 없다 → 이 패턴은 이 워크트리 fqdn 만 문다.
+  #   (web01~03 뿐 아니라 스모크가 남길 수 있는 다른 <무엇>.<라벨>.example.com 도 함께 걷는다.)
+  pattern="%.$label.example.com"
+  user="admin-$label"
+
+  # 한 트랜잭션에 몰아넣지 않는다 — 호스트 하나당 CASCADE 로 수천 행이 딸려가므로 끊어서 지운다.
+  hosts="$(dev_db_mysql -N -B -e "SELECT fqdn FROM tb_host WHERE fqdn LIKE '$pattern'" 2>/dev/null)" || {
+    say "  ${YELLOW}⚠${NC} 공용 DB 조회 실패 — e2e 데이터 정리를 건너뜁니다(워크트리 제거는 완료)."
+    return 0
+  }
+  while IFS= read -r fqdn; do
+    [ -n "$fqdn" ] || continue
+    if dev_db_mysql -e "DELETE FROM tb_host WHERE fqdn = '$fqdn'" >/dev/null 2>&1; then
+      n_host=$((n_host + 1))
+    else
+      say "  ${YELLOW}⚠${NC} 호스트 삭제 실패: $fqdn"
+    fi
+  done <<< "$hosts"
+
+  if dev_db_mysql -N -B -e "DELETE FROM tb_user WHERE username = '$user'; SELECT ROW_COUNT()" 2>/dev/null \
+       | grep -q '^1$'; then
+    n_user=1
+  fi
+
+  if [ "$n_host" -gt 0 ] || [ "$n_user" -gt 0 ]; then
+    say "  ${GREEN}✓${NC} 공용 DB 정리: 호스트 ${n_host}대(스캔·발견 CASCADE) · 계정 ${n_user}개 (${label} 것만)"
+  fi
+  return 0
+}
+
 # --- 병합 판정 ---------------------------------------------------------------
 # 이 저장소는 squash 머지를 쓴다(PR 하나 = 커밋 하나). squash 는 새 커밋 객체를 만들므로
 #   원래 브랜치 tip 은 영원히 origin/main 의 조상이 되지 않는다 → "tip 이 조상인가"(merge-base
@@ -352,6 +423,10 @@ cmd_rm() {
   git -C "$MAIN_ROOT" worktree remove --force "$dir"
   say "${GREEN}✓${NC} 제거: wt/$name"
 
+  # 워크트리를 실제로 지운 뒤에 DB 잔재를 걷는다 — 이 순서라면 DB 정리가 어떻게 실패해도
+  #   워크트리 제거는 이미 끝나 있다(안전 규칙: 정리 실패가 회수를 막지 않는다).
+  db_cleanup_worktree "$name"
+
   branch_cleanup "$branch" "$sha"
 }
 
@@ -460,6 +535,9 @@ cmd_sweep() {
       kept=$((kept+1)); failed=$((failed+1)); continue
     fi
     say "  ${GREEN}✓${NC} 제거: wt/$name"
+    # rm 과 같은 정리를 트리마다 한다. 이 함수는 실패해도 0 으로 끝나므로 한 트리가 잘못돼도
+    #   sweep 의 나머지 정리가 멈추지 않는다.
+    db_cleanup_worktree "$name"
     branch_cleanup "$branch" "$sha"
     removed=$((removed+1))
   done
