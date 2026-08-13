@@ -23,6 +23,19 @@ if (!function_exists('vg_control_frameworks')) {
         ];
     }
 
+    /**
+     * 같은 기준 코드의 **짧은 표기**. 뱃지처럼 한 줄에 여러 기준이 나란히 놓이는 자리에서
+     *   'ISMS-P 2.5.4' 처럼 식별자 앞에 붙인다 — 긴 라벨('ISMS-P 기준')을 그대로 쓰면
+     *   뱃지가 통제 번호보다 길어진다. 기준 이름을 화면마다 따로 적지 않도록 여기 둔다.
+     */
+    function vg_control_framework_short(): array {
+        return [
+            'ISMS_P' => 'ISMS-P',
+            'KISA_U' => 'KISA',
+            'N2SF'   => 'N2SF',
+        ];
+    }
+
     /** GET 파라미터 → 유효한 기준 코드. 알 수 없는 값이면 기본값(ISMS-P). */
     function vg_control_framework_param(?string $raw): string {
         $fw = (string) $raw;

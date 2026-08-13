@@ -669,6 +669,35 @@ if (!function_exists('vg_sshd_val')) {
     ]; }
 
     /**
+     * 점검 룰 카탈로그 — [코드 => ['title'=>…, 'severity'=>…, 'ssg_rule_id'=>…|null]].
+     *   cce-rules.php(CCE 카탈로그)가 "우리가 무엇을 점검하는가" 를 목록으로 보여줄 때 쓴다.
+     *
+     * 왜 목록을 따로 안 적나: 코드·제목·심각도를 화면이나 새 테이블에 복사하면 판정 로직과
+     *   반드시 어긋난다(항목을 하나 고치면 두 곳을 고쳐야 한다). 그래서 판정 함수를
+     *   **빈 수집값**으로 한 번 돌려 그 결과에서 메타만 뽑는다 — 이 파일이 SSOT 로 남는다.
+     *   수집값이 없으면 결과는 NA(설정 부재를 위반으로 보는 항목은 FAIL)로 떨어지지만,
+     *   코드·제목·심각도는 어느 분기로 가든 항목마다 하나로 고정돼 있어 그대로 쓸 수 있다.
+     *   판정 결과(3번째 값)는 여기서 버린다 — 카탈로그는 실제 판정을 말하지 않는다.
+     *
+     * @return array<string, array{title: string, severity: string, ssg_rule_id: ?string}>
+     */
+    function vg_cce_rules(): array {
+        static $rules = null;
+        if ($rules !== null) { return $rules; }
+
+        $ssg = vg_cce_ssg_map();
+        $out = [];
+        foreach (vg_cce_checks([]) as [$code, $title, , $severity]) {
+            $out[$code] = [
+                'title'       => $title,
+                'severity'    => $severity,
+                'ssg_rule_id' => $ssg[$code] ?? null,
+            ];
+        }
+        return $rules = $out;
+    }
+
+    /**
      * 한 스캔에 대해 CCE 점검 수행 → tb_cce_finding 재계산. 반환: 결과별 카운트.
      *   matcher 와 동일하게 스캔별 DELETE 후 재삽입, 자체 트랜잭션으로 원자성 보장.
      */
