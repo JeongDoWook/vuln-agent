@@ -68,6 +68,52 @@ const VG_ASSET_LOGBACKUP_ROLES = [
     ],
 ];
 
+/**
+ * 프로세스 이름으로 읽는 **역할 신호**(로그·백업 외). 이름만 보는 약한 근거라 여기서 나오는 것도
+ *   전부 `S` **초안**일 뿐이고, 확정은 사람이 한다 — 이 파일 첫머리의 경계와 같다.
+ *
+ *   왜 C 를 자동 제안하지 않나: C(기밀)는 「정보공개법」 제9조 비공개 대상정보에 해당한다는
+ *   **법적 판단**이라, "slapd 가 떠 있다" 같은 관측으로는 성립하지 않는다. 대신 자격증명·비밀을
+ *   보관하는 역할은 `note` 로 "C 검토 대상" 임을 사람에게 알리고, 제안 등급 자체는 S 에 둔다
+ *   (억지 제안 금지 — 확신이 없으면 올리지 않는다).
+ *
+ *   source 는 'process' 하나로 둔다. 이 값은 이력이 "수집 누락 vs 근거 없음" 을 가르는 데 쓰는
+ *   **수집 단계 식별자**이고(assetgrade_history.php), 이 신호들의 단계는 전부 runtime_processes 다.
+ *   근거 종류를 더 잘게 쪼개면 그 판정만 흐려진다.
+ */
+const VG_ASSET_DATA_ROLES = [
+    'datastore' => [
+        'label' => '업무 데이터 저장소',
+        'note'  => '업무정보를 실제로 보관하는 자산입니다. 저장 중인 정보의 등급을 따라가야 합니다.',
+        'processes' => [
+            'mysqld', 'mariadbd', 'postgres', 'mongod', 'redis-server', 'db2sysc', 'sqlservr',
+            'oracle', 'clickhouse-serv', 'influxd', 'cassandra', 'elasticsearch', 'etcd',
+        ],
+    ],
+    'identity' => [
+        'label' => '인증·비밀 관리(C 검토)',
+        'note'  => '자격증명·비밀을 보관하거나 발급하는 자산입니다. C(기밀) 해당 여부는 사람이 판단해야 합니다.',
+        'processes' => [
+            'slapd', 'ns-slapd', 'krb5kdc', 'kadmind', 'vault', 'keycloak', 'ipa-server',
+            'freeradius', 'radiusd', 'stepca',
+        ],
+    ],
+];
+
+/**
+ * 보호수준 판단을 뒷받침하는 **보조 신호**가 볼 CCE 코드 접두. 암호화·로그 통제의 FAIL 은
+ *   "이 자산이 지금 그 수준의 보호를 하고 있지 않다"는 사실이라 등급 확정 회의에 필요한 재료다.
+ *   접두로 두는 이유는 cce.php 가 코드 체계(CCE-CRYPTO-*, CCE-LOG-*)로 이미 묶어 두었기 때문이다.
+ */
+const VG_ASSET_PROTECTION_CCE_PREFIXES = ['CCE-CRYPTO-', 'CCE-LOG-'];
+
+/**
+ * 계정 인벤토리를 "검토 신호"로 볼 임계값. 이 수를 넘으면 사람이 한 번 봐야 한다는 뜻이지,
+ *   등급이 올라간다는 뜻이 아니다(보조 신호는 등급도 source 도 만들지 않는다).
+ */
+const VG_ASSET_ACCOUNT_REVIEW_MIN = 5;
+const VG_ASSET_SUDOER_REVIEW_MIN  = 3;
+
 /** 결정적인 짧은 근거를 만든다(DB 컬럼과 공개 반환값 모두 255자 이내). */
 function vg_asset_grade_reason(array $parts): string
 {
@@ -95,12 +141,25 @@ function vg_asset_logbackup_procs(): array
 }
 
 /**
+ * 등급 제안이 보는 **모든** 프로세스 이름(로그·백업 + 데이터 저장소 + 인증·비밀).
+ *   제안 질의와 스냅샷 identity 가 **같은 목록**을 봐야 한다 — 목록이 갈리면 새 신호에 해당하는
+ *   프로세스가 뜨고 꺼져도 재평가가 안 걸린다(기존 identity 주석과 같은 사고).
+ */
+function vg_asset_grade_watch_procs(): array
+{
+    return array_values(array_unique(array_merge(
+        vg_asset_logbackup_procs(),
+        ...array_column(VG_ASSET_DATA_ROLES, 'processes')
+    )));
+}
+
+/**
  * 스냅샷 identity에 넣을 등급 분류 관련 프로세스 정규형.
  * 전체 프로세스를 해시하면 cron/ssh 같은 일시적 실행마다 무거운 새 스캔이 생긴다.
  */
 function vg_asset_grade_relevant_process_rows(array $rows): array
 {
-    $procs = vg_asset_logbackup_procs();
+    $procs = vg_asset_grade_watch_procs();
     $out = [];
     foreach ($rows as $row) {
         // 제안 질의가 LOWER(comm) 로 맞추므로 identity 도 같은 기준이어야 한다 —
@@ -116,22 +175,20 @@ function vg_asset_grade_relevant_process_rows(array $rows): array
 }
 
 /**
- * 이 스캔의 수집 데이터만 보고 **초안 등급을 제안**한다. 확신이 없으면 제안하지 않는다.
+ * 이 스캔의 수집 데이터에서 **등급 판단 신호를 전부** 모은다. 제안(아래 vg_asset_grade_suggest)과
+ *   화면의 근거 칩(host.php 자산 등급 카드)이 **같은 출처**를 보게 하는 자리다 — 화면이 근거를
+ *   따로 조립하면 "제안은 S 인데 칩은 다른 얘기" 가 된다.
  *
- * 우선순위: 로그·백업(S) > 외부노출(O). 둘 다 해당하면 보호수준이 높은 S 를 제안한다
- *   — 외부에 열려 있다는 사실이 "공개해도 되는 정보"를 뜻하지는 않기 때문이다.
+ *   kind 는 두 종류다.
+ *     primary : 등급을 만드는 신호(grade·source 를 갖는다).
+ *     review  : 등급을 만들지 **않는** 보조 신호(사람이 확정할 때 볼 재료). 이 신호만 있으면
+ *               제안은 여전히 없다 — 근거 없이 등급을 찍지 않는다는 원칙 그대로다.
  *
- * source 는 이 제안을 **처음 뒷받침한** 근거의 종류다(우선순위대로 log_listener > process >
- *   external_exposure). 이력 기록이 "그 근거를 만든 수집 단계가 실제로 들어왔는가"를 판정해
- *   수집 누락과 근거 없음을 구분하는 데 쓴다 — 근거를 여러 개 모아도 판정에 필요한 단계는
- *   가장 먼저 성립한 근거의 단계다.
- *
- * @return array{grade:string,source:string,reason:string}|null 제안이 없으면 null
+ * @return list<array{key:string,kind:string,grade:?string,source:?string,label:string,tone:string,count:int,evidence:string,note:string}>
  */
-function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
+function vg_asset_grade_signals(PDO $pdo, int $scanId): array
 {
-    $sEvidence = [];
-    $sSource = null;
+    $signals = [];
 
     // ① 로그 수신 — 저장소 의미론에서 실제 비루프백 도달 가능성이 있는 scope 만 채택한다.
     $ph = implode(',', array_fill(0, count(VG_ASSET_LOG_LISTENERS), '?'));
@@ -162,13 +219,18 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
             return (string) $r['proc'] . ':' . (int) $r['port'] . '/' . (string) $r['proto']
                 . '@' . (string) $r['bind_addr'] . '/' . (string) $r['scope'];
         }, $listeners);
-        $sEvidence[] = vg_asset_grade_evidence('원격 로그 수신', $items, 1, $listenerCount);
-        $sSource = 'log_listener';
+        $signals[] = [
+            'key' => 'log_listener', 'kind' => 'primary', 'grade' => 'S', 'source' => 'log_listener',
+            'label' => '원격 로그 수신', 'tone' => 'high', 'count' => $listenerCount,
+            'evidence' => vg_asset_grade_evidence('원격 로그 수신', $items, 1, $listenerCount),
+            'note' => '다른 호스트의 로그를 받는 자산입니다 — 「기타: 로그 및 임시백업 등」이 명시적 S 입니다.',
+        ];
     }
 
     // ② 역할별 프로세스 증거를 전부 모은다. 같은 comm 의 여러 PID는 설명에서 한 번만 센다.
     // 전달자·일회성 도구도 S '초안'의 검토 신호지만 라벨로 약도를 보존하며 법적 확정은 하지 않는다.
-    $allProcs = vg_asset_logbackup_procs();
+    //   로그·백업과 데이터·인증 역할을 **한 질의로** 읽는다(같은 테이블·같은 스캔 — 쿼리를 나눌 이유가 없다).
+    $allProcs = vg_asset_grade_watch_procs();
     $ph = implode(',', array_fill(0, count($allProcs), '?'));
     $st = $pdo->prepare(
         "SELECT DISTINCT LOWER(comm) AS comm FROM tb_process
@@ -176,13 +238,30 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
     );
     $st->execute(array_merge([$scanId], $allProcs));
     $running = $st->fetchAll(PDO::FETCH_COLUMN);
-    foreach (VG_ASSET_LOGBACKUP_ROLES as $role) {
+    foreach (VG_ASSET_LOGBACKUP_ROLES as $roleKey => $role) {
         $names = $role['processes'];
         $matched = array_values(array_intersect($names, $running));
         sort($matched, SORT_STRING);
         if (!$matched) { continue; }
-        $sEvidence[] = vg_asset_grade_evidence($role['label'], $matched);
-        $sSource = $sSource ?? 'process';
+        $signals[] = [
+            'key' => 'logbackup_' . $roleKey, 'kind' => 'primary', 'grade' => 'S', 'source' => 'process',
+            'label' => $role['label'], 'tone' => 'med', 'count' => count($matched),
+            'evidence' => vg_asset_grade_evidence($role['label'], $matched),
+            'note' => '로그·백업을 처리하는 프로세스입니다. 이름만 본 약한 근거라 초안에만 씁니다.',
+        ];
+    }
+    // ②-b 이미 수집해 둔 프로세스로 읽는 나머지 역할(데이터 저장소 · 인증/비밀 관리).
+    //   새로 수집하는 항목이 없다 — 같은 tb_process 를 다르게 읽을 뿐이다.
+    foreach (VG_ASSET_DATA_ROLES as $roleKey => $role) {
+        $matched = array_values(array_intersect($role['processes'], $running));
+        sort($matched, SORT_STRING);
+        if (!$matched) { continue; }
+        $signals[] = [
+            'key' => 'role_' . $roleKey, 'kind' => 'primary', 'grade' => 'S', 'source' => 'process',
+            'label' => $role['label'], 'tone' => 'high', 'count' => count($matched),
+            'evidence' => vg_asset_grade_evidence($role['label'], $matched),
+            'note' => $role['note'],
+        ];
     }
 
     // ③ 외부 노출 — 인터넷에서 닿는 포트가 있으면 O 영역 후보.
@@ -191,9 +270,103 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
     );
     $st->execute([$scanId]);
     $ext = (int) $st->fetchColumn();
-    $oEvidence = $ext > 0 ? 'O 외부노출 ' . $ext . '개.' : null;
+    if ($ext > 0) {
+        $signals[] = [
+            'key' => 'external_exposure', 'kind' => 'primary', 'grade' => 'O', 'source' => 'external_exposure',
+            'label' => '외부 노출', 'tone' => 'crit', 'count' => $ext,
+            'evidence' => 'O 외부노출 ' . $ext . '개.',
+            'note' => '인터넷에서 닿는 포트가 있습니다. 열려 있다는 사실이 "공개해도 되는 정보"를 뜻하지는 않습니다.',
+        ];
+    }
+
+    // ④ 보조 신호 — 등급을 만들지 않는다. 사람이 확정 회의에서 볼 재료만 모은다.
+    //   전부 이미 수집된 표를 세는 값싼 COUNT 다(새 수집 항목을 만들지 않는다).
+    $st = $pdo->prepare(
+        'SELECT COUNT(*) AS people, SUM(is_sudoer = 1) AS sudoers
+           FROM tb_host_account WHERE scan_id = ? AND is_deleted = 0 AND is_system = 0'
+    );
+    $st->execute([$scanId]);
+    $acc = $st->fetchAll(PDO::FETCH_ASSOC)[0] ?? [];
+    $people  = (int) ($acc['people'] ?? 0);
+    $sudoers = (int) ($acc['sudoers'] ?? 0);
+    if ($people >= VG_ASSET_ACCOUNT_REVIEW_MIN || $sudoers >= VG_ASSET_SUDOER_REVIEW_MIN) {
+        $signals[] = [
+            'key' => 'accounts', 'kind' => 'review', 'grade' => null, 'source' => null,
+            'label' => '계정 인벤토리', 'tone' => 'muted', 'count' => $people,
+            'evidence' => '사람 계정 ' . $people . '명(sudo ' . $sudoers . '명).',
+            'note' => '사람이 여럿 붙는 자산입니다 — 접근통제 범위를 등급과 함께 검토하세요.',
+        ];
+    }
+
+    $ccePh = implode(' OR ', array_fill(0, count(VG_ASSET_PROTECTION_CCE_PREFIXES), 'code LIKE ?'));
+    $cceArgs = [$scanId];
+    foreach (VG_ASSET_PROTECTION_CCE_PREFIXES as $prefix) { $cceArgs[] = $prefix . '%'; }
+    $st = $pdo->prepare(
+        "SELECT COUNT(*) FROM tb_cce_finding
+          WHERE scan_id = ? AND result = 'FAIL' AND ($ccePh)"
+    );
+    $st->execute($cceArgs);
+    $cceFail = (int) $st->fetchColumn();
+    if ($cceFail > 0) {
+        $signals[] = [
+            'key' => 'protection_cce', 'kind' => 'review', 'grade' => null, 'source' => null,
+            'label' => '암호화·로그 통제 미흡', 'tone' => 'warn', 'count' => $cceFail,
+            'evidence' => '암호화·로그 통제 FAIL ' . $cceFail . '건.',
+            'note' => '지금 보호수준이 등급에 못 미칠 수 있습니다(FAIL 이 등급을 낮추는 근거는 아닙니다).',
+        ];
+    }
+
+    $st = $pdo->prepare('SELECT COUNT(*) FROM tb_container WHERE scan_id = ? AND is_deleted = 0');
+    $st->execute([$scanId]);
+    $ctr = (int) $st->fetchColumn();
+    if ($ctr > 0) {
+        $signals[] = [
+            'key' => 'containers', 'kind' => 'review', 'grade' => null, 'source' => null,
+            'label' => '컨테이너 워크로드', 'tone' => 'muted', 'count' => $ctr,
+            'evidence' => '컨테이너 ' . $ctr . '개.',
+            'note' => '여러 워크로드가 한 자산에 올라 있습니다 — 정보시스템 등급은 최고등급을 승계합니다.',
+        ];
+    }
+
+    return $signals;
+}
+
+/**
+ * 이 스캔의 수집 데이터만 보고 **초안 등급을 제안**한다. 확신이 없으면 제안하지 않는다.
+ *
+ * 우선순위: S 근거(로그·백업 / 데이터 저장소 / 인증·비밀) > 외부노출(O). 둘 다 해당하면
+ *   보호수준이 높은 S 를 제안한다 — 외부에 열려 있다는 사실이 "공개해도 되는 정보"를
+ *   뜻하지는 않기 때문이다. **C 는 자동으로 제안하지 않는다**(VG_ASSET_DATA_ROLES 주석 참고).
+ *
+ * source 는 이 제안을 **처음 뒷받침한** 근거의 종류다(우선순위대로 log_listener > process >
+ *   external_exposure). 이력 기록이 "그 근거를 만든 수집 단계가 실제로 들어왔는가"를 판정해
+ *   수집 누락과 근거 없음을 구분하는 데 쓴다 — 근거를 여러 개 모아도 판정에 필요한 단계는
+ *   가장 먼저 성립한 근거의 단계다. 보조 신호(kind=review)는 source 를 만들지 않는다:
+ *   그 신호만 있는 자산은 여전히 "근거 없음" 이지 "판정 불가" 가 아니다.
+ *
+ * @return array{grade:string,source:string,reason:string}|null 제안이 없으면 null
+ */
+function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
+{
+    $signals = vg_asset_grade_signals($pdo, $scanId);
+
+    $sEvidence = [];
+    $sSource = null;
+    $oEvidence = null;
+    $review = [];
+    foreach ($signals as $sig) {
+        if ($sig['kind'] === 'review') { $review[] = $sig['evidence']; continue; }
+        if ($sig['grade'] === 'S') {
+            $sEvidence[] = $sig['evidence'];
+            $sSource = $sSource ?? (string) $sig['source'];
+        } elseif ($sig['grade'] === 'O') {
+            $oEvidence = $sig['evidence'];
+        }
+    }
 
     if ($sEvidence) {
+        // 보조 신호는 **맨 뒤**에 붙인다 — 255자 상한에 잘리더라도 등급을 만든 근거가 먼저 남는다.
+        $sEvidence = array_merge($sEvidence, $review);
         if ($oEvidence !== null) { array_splice($sEvidence, 1, 0, [$oEvidence]); }
         array_unshift($sEvidence, 'S 초안(사람 확인 전 미확정).');
         return [
@@ -203,11 +376,13 @@ function vg_asset_grade_suggest(PDO $pdo, int $scanId): ?array
         ];
     }
 
-    if ($ext > 0) {
+    if ($oEvidence !== null) {
         return [
             'grade'  => 'O',
             'source' => 'external_exposure',
-            'reason' => vg_asset_grade_reason([$oEvidence, '사람 확인 전에는 확정되지 않습니다.']),
+            'reason' => vg_asset_grade_reason(
+                array_merge([$oEvidence, '사람 확인 전에는 확정되지 않습니다.'], $review)
+            ),
         ];
     }
 
