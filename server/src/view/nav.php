@@ -55,7 +55,8 @@ function vg_activity_type_labels(): array {
         'view_depgraph'        => '패키지 의존성 그래프 조회',
         'view_cve'             => '취약점 상세 조회',
         'view_advisory'        => '보안공지 상세 조회',
-        'view_compliance_rule' => '보안설정 룰 상세 조회',
+        'view_compliance_rule' => 'SSG 룰 상세 조회',
+        'view_cce_rule'        => 'CCE 점검 항목 상세 조회',
         'view_compliance'      => '컴플라이언스 매핑 조회',
         'view_nofix_packages'  => '제거·대체 검토 권고 조회',
         'view_changes'         => '변화 추적 조회',
@@ -123,7 +124,10 @@ function vg_nav_sections(): array {
             ['perm' => 'catalog',    'href' => '/cves.php',            'label' => 'CVE 카탈로그',   'key' => 'cves'],
             ['perm' => 'catalog',    'href' => '/packages.php',        'label' => '패키지 카탈로그', 'key' => 'packages'],
             ['perm' => 'catalog',    'href' => '/vendor.php',          'label' => '판정 근거',      'key' => 'vendor'],
-            ['perm' => 'catalog',    'href' => '/compliance_rules.php','label' => '보안 설정 룰',   'key' => 'compliance'],
+            // 이 자리엔 SSG 룰 카탈로그(/compliance_rules.php, 약 2,493건)가 있었다. 우리가
+            //   판정하지 않는 외부 참조 데이터라 사이드바에서 내리고, 실제로 판정하는 CCE 39개
+            //   항목을 세운다. SSG 화면은 지우지 않았다 — CCE 상세의 참조 근거로 계속 열린다.
+            ['perm' => 'catalog',    'href' => '/cce-rules.php',      'label' => 'CCE 카탈로그',   'key' => 'cce_rules'],
         ],
         '관리' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],
@@ -285,8 +289,11 @@ function vg_nav_icon(string $key): string {
         'packages'    => '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22" x2="12" y2="12"/>',
         // 벤더 판정 — 검인(도장) 모양: 벤더가 "고쳤다/안 고쳤다" 를 확인해 준 것이라는 뜻.
         'vendor'      => '<circle cx="12" cy="9" r="6"/><polyline points="9.3 9 11.2 10.9 14.9 7.2"/><path d="M8.5 14.4 7.4 21l4.6-2.3 4.6 2.3-1.1-6.6"/>',
-        // 보안설정 룰셋 — 체크리스트 모양: 기준(CIS/NIST/STIG)에 맞나 항목별로 확인한다는 뜻.
+        // SSG 룰셋 — 체크리스트 모양: 기준(CIS/NIST/STIG)에 맞나 항목별로 확인한다는 뜻.
+        //   사이드바에서는 내렸지만 compliance_rule(s).php 가 이 키로 헤더를 그린다.
         'compliance'  => '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+        // CCE 카탈로그 — 점검표(클립보드) 모양: 우리가 자산마다 들고 다니며 확인하는 항목표라는 뜻.
+        'cce_rules'   => '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 13l2 2 4-4"/>',
         // 컴플라이언스 매핑 — 방패 모양: 외부 기준(ISMS-P/ISO 27001)에 대한 준수 여부를 나타낸다.
         'compliance_mapping' => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
         // 통제 기준 매핑 — 나침반 모양: 같은 점검 결과를 어느 기준(ISMS-P/U-코드/N2SF)으로 볼지 고른다는 뜻.
