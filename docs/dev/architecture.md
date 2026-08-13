@@ -367,7 +367,7 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 ## 6. 웹 화면 구성 (사이트맵 · 인증)
 
 좌측 사이드바는 **업무 화면**(라벨 없는 최상위 묶음 — 대시보드/탐지 결과/자산/보안 공지/컴플라이언스),
-**데이터**(수집 상태/CVE 카탈로그/패키지 카탈로그/판정 근거/보안 설정 룰), 관리(사용자/권한/에이전트 키/
+**데이터**(수집 상태/CVE 카탈로그/패키지 카탈로그/판정 근거/CCE 카탈로그), 관리(사용자/권한/에이전트 키/
 감사 로그/설정)로 묶고, **역할×메뉴 권한**에서
 허용된 링크만 렌더한다(링크가 하나도 안 남은 섹션은 라벨째 숨김). 대분류·링크 구성의 SSOT 는
 `server/src/view/nav.php` 의 `vg_nav_sections()` 하나이며, 사이드바와 브레드크럼이 같이 참조한다.
@@ -378,6 +378,16 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 어느 탭에 있어도 대표 항목이 활성으로 남도록 링크마다 `active_keys` 를 둔다(안 그러면 사용자가
 현재 위치를 잃는다).
 
+**'데이터' 의 다섯 번째 자리는 SSG 룰 카탈로그에서 CCE 카탈로그(`cce-rules.php`)로 바뀌었다.**
+그 자리에 있던 `compliance_rules.php`(SSG 룰 약 2,493건)는 우리가 판정하지 않는 외부 참조
+데이터라, 실제로 판정하는 CCE 39개 항목을 대신 세웠다. SSG 화면 두 개는 **지우지 않았다** —
+CCE 상세(`cce-rule.php`)가 "참조 근거" 로 링크하므로 URL·인가·감사로그가 그대로 산다
+(사이드바에서만 내려온 강등이다. `control_mapping.php` 와 같은 처리).
+점검 항목의 목록·제목·심각도는 `server/src/cce.php` 의 `vg_cce_rules()` 가 정본이고
+(판정 함수에서 뽑아 쓴다 — 목록을 따로 적으면 판정 로직과 어긋난다), 기준 문자열(U-코드·
+ISMS-P·N2SF)의 정본은 `tb_control_mapping` 이다. `control.php` 와는 방향이 반대다 —
+저기는 "기준 하나 → 걸린 CCE 결과", 여기는 "CCE 하나 → 기준·위반 자산" 이고 서로 링크한다.
+
 **통제 기준 매핑(`control_mapping.php`)은 사이드바에 없고 '컴플라이언스' 의 서브탭으로만 들어온다.**
 `compliance.php`·`control_mapping.php` 두 화면이 `vg_compliance_subtabs()` 로 같은 줄을 그리고,
 사이드바 '컴플라이언스' 항목의 `active_keys` 가 `control_mapping` 을 포함해 어느 탭에 있어도 현재
@@ -386,6 +396,14 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 탭 줄의 라벨·순서·목적지는 `vg_findings_subtab_labels()`/`vg_findings_subtabs()`,
 `vg_compliance_subtab_labels()`/`vg_compliance_subtabs()` 한 곳이 정본이다 — 예전엔 세 화면이
 각자 그려 개수(3 vs 5)와 라벨이 어긋났다.
+
+**컨테이너 상세(`container.php`)도 사이드바에 없고 자산 상세의 컨테이너 탭에서만 들어온다.**
+컨테이너는 호스트에 딸린 자산이라 자기 목록 화면을 갖지 않는다 — 어느 호스트의 어느 스캔인지가
+정해져야 조회 단위가 성립한다(`tb_container` 의 자연키가 `(scan_id, cid)` 다). URL 도 그 자연키를
+쓴다(`?id=<host_id>&cid=<컨테이너 cid>`) — 숫자 `container_id` 는 스캔마다 새로 발급돼 북마크가
+다음 수집에서 깨진다. 인가는 자산 상세와 같은 `vg_require_menu_any('assets','findings')` 다.
+SBOM(`sbom.php`)은 호스트·컨테이너 두 범위를 지원하되 **한 문서에 섞지 않으며**, 자산 상세와
+컨테이너 상세 첫 화면에서 링크한다(예전엔 화면 링크가 하나도 없었다).
 
 다이어그램: [`docs/specs/diagrams/사이트맵.puml`](../specs/diagrams/사이트맵.puml)
 
