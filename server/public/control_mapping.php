@@ -23,7 +23,7 @@ require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_frameworks, 
 // 인가 게이트. 이게 없어서 **비로그인 상태로도 200 + CCE 점검 결과 전량**이 나갔다(실측:
 //   빈 쿠키로 curl 하면 다른 화면은 302 login 인데 여기만 200). 상세인 control.php 는 처음부터
 //   갖고 있었다 — 목록만 빠져 있었다. 같은 데이터를 여는 두 URL 은 같은 게이트를 지나야 한다.
-vg_require_menu('findings');
+vg_require_menu('compliance');
 
 $err = null;
 $fw = vg_control_framework_param($_GET['fw'] ?? null);   // 화이트리스트 검증(SSOT)

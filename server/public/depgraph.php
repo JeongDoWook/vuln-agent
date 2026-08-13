@@ -25,7 +25,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';       // vg_log_activity
 require_once __DIR__ . '/../src/packagedep.php';  // 조회·그래프 조립
-vg_require_menu('findings');
+vg_require_menu_any('assets', 'findings');   // 의존성 그래프: 자산 상세에서만 들어온다(자산 상세와 같은 범위)
 
 $hostId = (int) ($_GET['id'] ?? 0);
 $cid    = isset($_GET['cid']) ? (int) $_GET['cid'] : -1;

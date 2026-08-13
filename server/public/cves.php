@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-vg_require_menu('findings');
+vg_require_menu('catalog');
 
 // VG_SEV_RANGES · vg_cvss_sev() 는 format.php 에 있다 — cve.php 도 같은 구간을 쓴다.
 

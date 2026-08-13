@@ -5,24 +5,22 @@
 외부 시스템(예: Python AI 보고서 생성기)이 스캔 결과를 JSON/XML 로 가져가는 읽기 전용 API.
 
 > **부품표(SBOM)는 형제 엔드포인트가 따로 있다** — `GET /sbom.php`(CycloneDX 1.5 / SPDX 2.3).
-> 여기 토큰을 그대로 쓰고 자산 하나당 문서 하나를 낸다(`host` 또는 `scan_id` 필수).
+> 인증이 같고 자산 하나당 문서 하나를 낸다(`host` 또는 `scan_id` 필수).
 > 이 문서가 다루는 `export.php` 는 **취약점 판정 결과**만 내보낸다.
 
 - **엔드포인트**: `GET /export.php`
-- **인증**: 헤더 `X-API-Token: <토큰>` (또는 `Authorization: Bearer <토큰>`). ingest(쓰기) 토큰과 분리된 전용 읽기 토큰.
-- **토큰 발급**: 웹 관리자 메뉴 **관리 → API 키**(`/api-tokens.php`, admin 전용)에서 발급한다.
-  발급 시 원문을 **한 번만** 보여준다(DB 엔 SHA-256 해시만 저장). 잃어버리면 새로 발급.
-  더 안 쓰는 토큰은 같은 화면에서 **폐기**하면 즉시 무효가 된다.
-- **유효기간**: 발급 시 무기한/30일/90일/1년 중에서 고른다. 기간이 지난 토큰은 인증이 **401 로
-  거부**되고 `api_token_expired` 감사로그가 남는다. 자동 갱신·재발급은 없으므로 만료 전에 새 토큰을
-  발급해 교체한다(목록에 만료 7일 전부터 '만료 임박'으로 표시된다). 기존에 발급된 무기한 토큰은
-  그대로 계속 동작한다.
+- **인증**: **웹 로그인 세션**(자산 메뉴 권한 — `vg_require_menu('assets')`). 전용 API 토큰 체계는
+  폐지했다(2026-08-13) — 결과를 가져가는 쪽이 DB 를 직접 조회하기로 해서 토큰을 유지할 이유가
+  없어졌다. `/api-tokens.php` 화면과 `tb_api_token` 테이블도 함께 없앴다.
+- **부르는 법**: 웹에 로그인한 브라우저에서 URL 을 그대로 연다. 스크립트로 받을 때는 로그인
+  세션 쿠키를 함께 보낸다. 미로그인 요청은 다른 화면과 똑같이 `/login.php` 로 리다이렉트되고,
+  로그인은 됐지만 자산 메뉴 권한이 없으면 403 이다.
 
 **응답 실패**는 전부 JSON 이다(`format=xml` 이어도) — `{"ok":false,"error":…,"code":…,"ts":…}`.
-`code` 는 `method_not_allowed`(405, GET/HEAD 외) · `unauthorized`(401, 토큰 없음·폐기·만료) ·
-`internal_error`(500). 예외 원문은 응답에 싣지 않고 서버 로그로만 남긴다.
+`code` 는 `method_not_allowed`(405, GET/HEAD 외) · `internal_error`(500). 인증 실패는 JSON 이 아니라
+로그인 리다이렉트(302)이거나 403 이다 — 화면과 같은 게이트를 쓰기 때문이다. 예외 원문은 응답에 싣지 않고 서버 로그로만 남긴다.
 
-**감사 로그**: 호출 1회마다 누가(토큰)·언제·어떤 필터로·몇 건을 가져갔는지 `tb_activity_log` 에
+**감사 로그**: 호출 1회마다 누가(로그인 사용자)·언제·어떤 필터로·몇 건을 가져갔는지 `tb_activity_log` 에
 남는다(`activity_type=export_data`, `action=EXPORT`, 처리 대상은 `host` 지정이 없으면 "전체 호스트").
 감사 기록에 실패해도 다운로드는 막지 않는다.
 
@@ -87,15 +85,22 @@ XML 은 같은 구조를 요소로 표현한다: `<vulnExport><summary><bySeveri
 ## Python 예시
 
 ```python
+import re
 import requests
 
 # BASE 는 이 배포의 중앙서버 주소(운영 배포 시 정한 `<운영-도메인>`, 포트는 WEB_PORT).
 BASE = "https://<운영-도메인>:8080"
 
-r = requests.get(
+# 웹 로그인 세션으로 인증한다 — 로그인 폼의 CSRF 토큰을 먼저 받아 같은 세션으로 POST 한다.
+s = requests.Session()
+form = s.get(f"{BASE}/login.php", timeout=30).text
+csrf = re.search(r'name="csrf" value="([^"]+)"', form).group(1)
+s.post(f"{BASE}/login.php",
+       data={"csrf": csrf, "username": USER, "password": PASSWORD}, timeout=30)
+
+r = s.get(
     f"{BASE}/export.php",
     params={"format": "json", "severity": "critical,high"},
-    headers={"X-API-Token": EXPORT_TOKEN},
     timeout=30,
 )
 r.raise_for_status()

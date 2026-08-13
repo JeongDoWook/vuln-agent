@@ -24,7 +24,7 @@ foreach ($phpFiles as $file) {
 }
 
 $titlePages = [
-    'activity.php', 'advisories.php', 'agent-tokens.php', 'api-tokens.php', 'assets.php',
+    'activity.php', 'advisories.php', 'agent-tokens.php', 'assets.php',
     'changes.php', 'compliance_rules.php', 'connectors.php', 'cves.php', 'index.php',
     'packages.php', 'permissions.php', 'profile.php', 'users.php', 'vendor.php',
 ];
@@ -33,7 +33,7 @@ foreach ($titlePages as $name) {
     $check(str_contains($source, 'vg_page_title('), "$name 공통 페이지 제목 사용");
 }
 
-foreach (['agent-tokens.php', 'api-tokens.php', 'users.php'] as $name) {
+foreach (['agent-tokens.php', 'users.php'] as $name) {
     $source = (string) file_get_contents($public . '/' . $name);
     $check(str_contains($source, 'vg_toolbar('), "$name 검색 툴바 제공");
     $check(str_contains($source, 'prepare('), "$name 검색 SQL 바인딩");
@@ -109,6 +109,41 @@ $check(!str_contains($navPhp, "'취약점' =>") && !str_contains($navPhp, "'보�
     '업무 화면은 라벨 없는 최상위 묶음으로 통합');
 $check(!str_contains($navPhp, "'계정' =>") && !str_contains($navPhp, "'연동' =>"), '잘게 나뉜 관리 그룹 제거');
 $check(str_contains($navPhp, 'function vg_compliance_subtabs('), '컴플라이언스 서브탭 정의는 nav.php 한 곳');
+/* 메뉴코드 정본(vg_menus) ↔ 사이드바 'perm' ↔ 화면 가드(vg_require_menu[_any]) 대조.
+   셋이 어긋나면 "사이드바에 보이는데 눌러보면 403" 링크가 생긴다. auth.php 는 include 만 해도
+   세션을 열고 DB 를 잡으므로 실행하지 않고 소스만 읽는다(이 테스트는 서버 없이 돈다). */
+$authPhp = (string) file_get_contents($root . '/server/src/auth.php');
+preg_match('/function vg_menus\(\): array \{.*?\n\}/s', $authPhp, $menuBody);
+preg_match_all("/'([a-z]+)'\s*=>/", $menuBody[0] ?? '', $menuMatch);
+$menuCodes = $menuMatch[1];
+$check($menuCodes !== [], 'vg_menus() 메뉴코드 목록 파싱');
+preg_match_all("/'perm'\s*=>\s*'([a-z]+)'/", $navPhp, $permMatch);
+$unknownPerm = array_values(array_diff(array_unique($permMatch[1]), $menuCodes));
+$check($unknownPerm === [], '사이드바 perm 코드가 전부 vg_menus() 에 있음(' . implode(',', $unknownPerm) . ')');
+$guardCodes = [];
+foreach ($phpFiles as $file) {
+    preg_match_all("/vg_require_menu(?:_any)?\(([^)]*)\)/", (string) file_get_contents($file), $guardMatch);
+    foreach ($guardMatch[1] as $args) {
+        preg_match_all("/'([a-z]+)'/", $args, $one);
+        foreach ($one[1] as $code) { $guardCodes[$code] = basename($file); }
+    }
+}
+$unknownGuard = array_diff_key($guardCodes, array_flip($menuCodes));
+$check($unknownGuard === [], '화면 가드 메뉴코드가 전부 vg_menus() 에 있음(' . implode(',', array_keys($unknownGuard)) . ')');
+// 사이드바에 뜨는 화면은 그 링크의 perm 으로 열려야 한다(카탈로그 4종은 catalog 하나를 공유).
+foreach (['findings.php' => 'findings', 'assets.php' => 'assets', 'compliance.php' => 'compliance',
+          'cves.php' => 'catalog', 'packages.php' => 'catalog', 'vendor.php' => 'catalog',
+          'compliance_rules.php' => 'catalog'] as $page => $code) {
+    $check(str_contains((string) file_get_contents($public . '/' . $page), "vg_require_menu('$code')"),
+        "$page 가드는 $code");
+}
+// API 토큰 인증은 폐지됐다 — 화면·헬퍼·문서 어디에도 남기지 않는다(과거 감사로그 라벨은 예외).
+$check(!file_exists($public . '/api-tokens.php') && !file_exists($root . '/server/src/apitoken.php'),
+    'API 키 화면·헬퍼 제거');
+$check(!str_contains($navPhp, '/api-tokens.php') && !str_contains($authPhp, "'apitokens'"),
+    '사이드바·메뉴코드에 API 키 없음');
+$check(str_contains($navPhp, "'token_issue'"), '과거 API 토큰 감사로그 라벨 보존');
+
 $check(str_contains($connectorPhp, "['label' => '실행 시각'"), '커넥터 실행 시각 열 통합');
 $check(!str_contains($connectorPhp, "['label' => '마지막 실행'"), '커넥터 중복 시각 열 제거');
 

@@ -41,7 +41,7 @@ if (!function_exists('vg_request_header')) {
     }
 }
 
-// 인증 토큰 추출: 지정한 커스텀 헤더(X-API-Token 등) 우선, 없으면 Authorization: Bearer.
+// 인증 토큰 추출: 지정한 커스텀 헤더(X-Agent-Token) 우선, 없으면 Authorization: Bearer.
 //   Bearer 는 Apache 가 $_SERVER 에서 떨어뜨리므로 vg_request_header 의 getallheaders 폴백에 의존한다.
 if (!function_exists('vg_auth_token')) {
     function vg_auth_token(string $customHeader): string {

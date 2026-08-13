@@ -13,7 +13,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';
 require_once __DIR__ . '/../src/nofix.php';   // 벤더 미수정 집중 관측 — 조치가 패치가 아닌 경우
-vg_require_menu('findings');
+vg_require_menu_any('catalog', 'findings');   // 패키지 상세: 패키지 카탈로그·탐지 결과에서 함께 열린다
 
 $name = trim((string)($_GET['name'] ?? ''));
 $ecosystem = trim((string)($_GET['eco'] ?? ''));

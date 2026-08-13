@@ -4,8 +4,7 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 require __DIR__ . '/../src/auth.php';
 require_once __DIR__ . '/../src/agentcommand.php';
-vg_require_menu('findings');
-if (!vg_can('assets')) { http_response_code(403); echo json_encode(['ok'=>false]); exit; }
+vg_require_menu('assets');   // 수집 제어 상태: 자산관리와 같은 인가 범위(host.php POST 와 동일)
 
 $hostId = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
 if (!$hostId) { http_response_code(422); echo json_encode(['ok'=>false]); exit; }
