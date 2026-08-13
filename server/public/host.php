@@ -23,6 +23,7 @@ require_once __DIR__ . '/../src/assetgrade_history.php'; // 시스템 제안 관
 require_once __DIR__ . '/../src/asset_grade_review.php'; // 단일 자산의 구조화된 사람 검토 정보
 require_once __DIR__ . '/../src/account_inventory.php';   // 계정 인벤토리 판정(vg_account_judgments)
 require_once __DIR__ . '/../src/packagedep.php';   // 의존성 그래프 — 취약점의 직접/전이 판정
+require_once __DIR__ . '/../src/suppression.php';  // 억제 근거 겹 분류·원근거 조회·재시작 필요 목록
 vg_require_menu_any('assets', 'findings');   // 자산 상세: 자산 목록·탐지 결과에서 함께 열린다
 
 /* '리소스' 탭은 '스캔 이력' 탭으로 흡수됐다 — 둘 다 tb_scan_run 하나를 읽었고(회차별 메모리·CPU),
@@ -160,10 +161,18 @@ $agentCsrf = vg_csrf_token();
 $err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null; $approver = null; $gradeReview = [];
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 $missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단계(한글 라벨)
+$missingStageCodes = []; // 같은 것의 원본 코드 — 화면이 "이 항목이 미수집인가"를 물을 때 쓴다
 $integrityRows = [];     // 패키지 원본과 다른 파일(상위 일부만 — 전체 건수는 tb_scan 에 있다)
+$suppEvidence = ['errata' => [], 'changelog' => [], 'debsecan' => []];   // 억제 근거 원 데이터
+$suppLayers = [];        // 억제 근거 겹별 건수(스캔 전체)
+$staleLibs = ['total' => 0, 'rows' => []];   // 재시작 필요(옛 라이브러리를 물고 있는 프로세스)
+$gradeSignals = [];      // 등급 제안 근거 신호(자산 설정 탭에서만 계산한다)
 
 // 무결성 목록은 "상태를 알리는 미리보기"다. 전체 목록 화면은 만들지 않는다(YAGNI).
 const VG_HOST_INTEGRITY_TOP = 20;
+
+// 재시작 필요 목록도 같은 성격의 미리보기다(프로세스·패키지로 묶은 상위 일부 + 전체 건수).
+const VG_HOST_STALE_TOP = 20;
 
 // 재시작·재부팅 표에 보여줄 최대 건수. 나머지는 취약점 현황(fx=restart)으로 넘긴다.
 
@@ -365,7 +374,12 @@ function vg_host_load_runtime_tab(PDO $pdo, int $sid, int $perPage, int $offset,
     $st->execute($pParams);
     $rows = $st->fetchAll();
 
-    return ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows, 'ePage' => $ePage];
+    // 재시작 필요(옛 .so 를 물고 있는 프로세스)는 **억제를 취소하는** 신호라 런타임 축에 세운다.
+    //   검색어와 무관하게 상태를 보여준다 — "지금 재시작이 필요한가" 는 목록 필터의 결과가 아니다.
+    $stale = vg_stale_lib_summary($pdo, $sid, VG_HOST_STALE_TOP);
+
+    return ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal,
+            'rows' => $rows, 'ePage' => $ePage, 'stale' => $stale];
 }
 
 function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset, ?string $q = null): array {
@@ -424,7 +438,18 @@ function vg_host_load_suppressed_tab(PDO $pdo, int $sid, int $suppressedCount, i
     $st->execute($params);
     $rows = $st->fetchAll();
 
-    return ['total' => $total, 'rows' => $rows];
+    // 근거를 **행마다** 읽을 수 있게 한다: 어느 겹이 억제했는지(분류) + 그 겹의 원 데이터.
+    //   원 데이터는 이 페이지의 행들만 한 번에 읽는다(N+1 금지 — suppression.php 참고).
+    foreach ($rows as $i => $r) {
+        $rows[$i]['layer'] = vg_suppress_layer($r['suppress_reason'] ?? null);
+    }
+
+    return [
+        'total'    => $total,
+        'rows'     => $rows,
+        'evidence' => vg_suppress_evidence_map($pdo, $sid, $rows),
+        'layers'   => vg_suppress_layer_counts($pdo, $sid),
+    ];
 }
 
 /**
@@ -552,7 +577,7 @@ function vg_host_render_agent_control(
  *
  *   $canEdit=false 면 읽기 전용으로 현재 값만 보여준다(확정은 관리자만).
  */
-function vg_host_render_grade(int $hostId, array $host, array $review, string $csrf, ?string $approver, bool $canEdit): void {
+function vg_host_render_grade(int $hostId, array $host, array $review, string $csrf, ?string $approver, bool $canEdit, array $signals = []): void {
     $curGrade = (string) ($host['grade'] ?? '');
     $curCrit  = (string) ($host['criticality'] ?? '');
     $sugGrade = $host['grade_suggested'] ?? null;
@@ -577,6 +602,30 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
               ? vg_asset_grade_badge((string) $sugGrade, true, $sugReason) . ' <span class="why">' . vg_h($sugReason) . '</span>'
               : '<span class="why">근거 부족 — 제안 없음</span>' ?></dd></div>
         </dl>
+
+        <?php /* 제안 근거를 한 줄 문자열로만 두면 사람이 "무엇 때문에 S 인가"를 못 읽는다 —
+                 등급을 만든 신호와, 등급을 만들지는 않지만 확정 회의에서 볼 신호를 갈라 보여준다.
+                 목록의 정본은 assetgrade.php 의 상수다(화면에 분류표를 늘리지 않는다). */ ?>
+        <?php if ($signals): ?>
+          <p class="why mt-lg">시스템이 본 신호 — 이 근거들 때문에 위 초안이 나왔습니다. 확정은 사람이 합니다.</p>
+          <div class="badge-set">
+            <?php foreach ($signals as $sig): ?>
+              <?= vg_badge(
+                    ($sig['grade'] !== null ? $sig['grade'] . ' · ' : '검토 · ') . $sig['label'],
+                    (string) $sig['tone'],
+                    $sig['evidence'] . ' ' . $sig['note']
+                  ) ?>
+            <?php endforeach; ?>
+          </div>
+          <ul class="hint-list">
+            <?php foreach ($signals as $sig): ?>
+              <li><span class="why"><?= vg_h(($sig['grade'] !== null ? '[' . $sig['grade'] . ' 근거] ' : '[검토 신호] ')
+                  . $sig['evidence'] . ' ' . $sig['note']) ?></span></li>
+            <?php endforeach; ?>
+          </ul>
+        <?php elseif ($host['grade_suggested'] ?? null): ?>
+          <p class="why mt-lg">이 스캔에서는 제안 근거 신호를 다시 읽지 못했습니다 — 위 초안은 이전 관찰 결과입니다.</p>
+        <?php endif; ?>
 
         <p class="why mt-lg">정보공개법 제9조 해당 여부는 C/S/O 판단 근거 중 하나이며, 법률이 C/S/O 등급을 정의하는 것은 아닙니다.</p>
         <?php if ($canEdit && !empty($review['is_stale'])): ?>
@@ -949,6 +998,7 @@ try {
         $st->execute([$sid]);
         foreach ($st->fetchAll() as $r) {
             $code = (string) $r['stage_code'];
+            $missingStageCodes[] = $code;
             $missingStages[] = VG_COLLECTION_STAGE_LABEL[$code] ?? $code;   // 모르는 코드는 원문 그대로
         }
 
@@ -1060,7 +1110,8 @@ try {
             ['total' => $total, 'rows' => $rows]
                 = vg_host_load_containers_tab($pdo, $sid, $perPage, $offset, $q);
         } elseif ($tab === 'runtime') {
-            ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal, 'rows' => $rows, 'ePage' => $ePage]
+            ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal,
+             'rows' => $rows, 'ePage' => $ePage, 'stale' => $staleLibs]
                 = vg_host_load_runtime_tab($pdo, $sid, $perPage, $offset, $ePage, $q);
         } elseif ($tab === 'cce') {
             ['total' => $total, 'rows' => $rows]
@@ -1072,13 +1123,17 @@ try {
             vg_log_activity($pdo, 'HOST', $hostId, 'view_host_accounts',
                 '계정 인벤토리 열람: ' . (string) ($host['fqdn'] ?? ''), ['accounts' => $total]);
         } elseif ($tab === 'suppressed') {
-            ['total' => $total, 'rows' => $rows]
+            ['total' => $total, 'rows' => $rows, 'evidence' => $suppEvidence, 'layers' => $suppLayers]
                 = vg_host_load_suppressed_tab($pdo, $sid, $suppressedCount, $perPage, $offset, $q);
         } elseif ($tab === 'scans') { // 회차 표 + 같은 회차들의 리소스 추이
             ['total' => $total, 'rows' => $rows, 'sevByScan' => $sevByScan, 'resourceScans' => $resourceScans]
                 = vg_host_load_scans_tab($pdo, $hostId, $scanTotal, $perPage, $offset);
+        } elseif ($tab === 'manage') {
+            // 등급 제안 근거 칩 — 확정 화면(자산 설정)에서만 계산한다. 다른 탭의 쿼리를 늘리지 않는다.
+            //   제안 자체와 **같은 함수**를 쓴다(assetgrade.php) — 화면이 근거를 따로 조립하면
+            //   "제안은 S 인데 칩은 다른 얘기" 가 된다.
+            $gradeSignals = vg_asset_grade_signals($pdo, $sid);
         }
-        // 'manage' 탭은 이미 읽은 호스트 정보(등급·명령 큐)만 쓰므로 여기서 조회할 것이 없다.
     }
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) { $pdo->rollBack(); }
@@ -1809,7 +1864,66 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
         ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
     ]); ?>
+    <?php
+    // ── 재시작 필요(억제 취소 신호) ────────────────────────────────────────
+    //   패치는 끝났는데 프로세스가 옛 .so 를 메모리에 물고 있으면 **여전히 취약**하다.
+    //   오탐이 아니라 미탐 쪽이라(대시보드엔 "패치됨"으로 보인다) 억제 근거보다 세게 말한다.
+    //   0건을 '깨끗함'으로 쓰지 않는다 — 이 목록은 실행 프로세스 수집에서 나오므로,
+    //   그 단계가 없으면 "재시작 필요 없음"이 아니라 "알 수 없음"이다(NA ≠ PASS).
+    $staleCollected = !in_array('runtime_processes', $missingStageCodes, true);
+    $staleTotal = (int) ($staleLibs['total'] ?? 0);
+    if (!$staleCollected) {
+        $staleTone = 'muted';
+        $staleText = '실행 프로세스를 수집하지 못해 재시작 필요 여부를 판정할 수 없습니다(0건이 "없음"이 아닙니다).';
+        $staleLabel = '판정 불가';
+    } elseif ($staleTotal === 0) {
+        $staleTone = 'ok';
+        $staleText = '옛 라이브러리를 물고 있는 프로세스가 관측되지 않았습니다.';
+        $staleLabel = '해당 없음';
+    } else {
+        $staleTone = 'high';
+        $staleText = '패치는 적용됐지만 아래 프로세스가 교체 전 라이브러리를 아직 메모리에 물고 있습니다. '
+            . '조치는 업데이트가 아니라 재시작이며, 그동안 이 취약점은 억제되지 않습니다.';
+        $staleLabel = '재시작 필요 ' . number_format($staleTotal) . '건';
+    }
+    ?>
     <div class="card">
+      <strong>재시작 필요 (억제 취소 신호)</strong>
+      <?= vg_badge($staleLabel, $staleTone) ?>
+      <span class="why"> · <?= vg_h($staleText) ?></span>
+      <?php if ($staleLibs['rows']): ?>
+        <div class="card__body">
+        <?php
+        vg_table(
+            [
+                ['label' => '프로세스', 'key' => 'comm', 'class' => 'col-id'],
+                ['label' => '패키지', 'key' => 'package_name'],
+                ['label' => '옛 라이브러리'],
+                ['label' => '조치'],
+            ],
+            $staleLibs['rows'],
+            [
+                'card' => false,
+                'cell' => [
+                    'comm' => fn($s) => '<strong>' . vg_h((string) ($s['comm'] ?? '?')) . '</strong>'
+                        . ' <span class="why">PID ' . (int) $s['sample_pid']
+                        . ((int) $s['procs'] > 1 ? ' 외 ' . ((int) $s['procs'] - 1) . '개' : '') . '</span>',
+                    2 => fn($s) => '<code>' . vg_trunc((string) ($s['sample_lib'] ?? ''), 60) . '</code>'
+                        . ((int) $s['libs'] > 1 ? ' <span class="why">외 ' . ((int) $s['libs'] - 1) . '개</span>' : ''),
+                    3 => fn($s) => '<span class="why">해당 서비스 재시작(또는 재부팅)</span>',
+                ],
+            ]
+        );
+        ?>
+        </div>
+        <?php if ($staleTotal > count($staleLibs['rows'])): ?>
+          <span class="why">상위 <?= count($staleLibs['rows']) ?>건만 표시합니다(전체 <?= number_format($staleTotal) ?>건).</span>
+        <?php endif; ?>
+        <span class="why"> · 해당 취약점은 <a href="<?= vg_h(vg_qs(['tab' => 'vuln', 'page' => null, 'q' => null])) ?>">취약점 탭의 "재시작·재부팅" 표</a>에 그대로 남아 있습니다.</span>
+      <?php endif; ?>
+    </div>
+
+    <div class="card mt-lg">
       <strong>런타임 노출</strong> <span class="why">— 프로세스별 열린 포트와 로드한 라이브러리</span>
       <div class="card__body">
       <?php
@@ -2104,7 +2218,19 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
     ]); ?>
     <div class="card">
       <strong>백포트로 억제된 취약점</strong>
-      <span class="why">— 백포트로 이미 수정됨 · 오탐 제외 근거</span>
+      <span class="why">— 위험 집계에서 빠진 건들 · 근거는 숨기지 않고 그대로 보여줍니다</span>
+      <?php if ($suppLayers): ?>
+        <div class="card__body">
+          <?php /* 어느 겹이 얼마나 걷어냈나 — 표를 읽기 전에 "왜 이만큼이 빠졌는지"가 먼저 보여야 한다. */ ?>
+          <div class="badge-set">
+            <?php foreach ($suppLayers as $lk => $lc):
+                $meta = vg_suppress_layer_meta($lk); ?>
+              <?= vg_badge($meta['label'] . ' ' . number_format($lc) . '건', $meta['tone'], $meta['desc']) ?>
+            <?php endforeach; ?>
+          </div>
+          <p class="why">억제는 "안 봐도 된다"가 아니라 "이 근거로 지금은 해당 없음"입니다. 근거가 사라지면 다음 수집에서 다시 위험으로 올라옵니다.</p>
+        </div>
+      <?php endif; ?>
       <div class="card__body">
       <?php
       vg_table(
@@ -2136,7 +2262,36 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
                       . ((int) $r['in_kev'] === 1 ? ' ' . vg_badge('KEV', 'crit') : ''),
                   1 => fn($r) => '<strong><a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a></strong>',
                   3 => fn($r) => vg_h($r['package_name']) . ' <span class="why">' . vg_h($r['installed_version']) . '</span>',
-                  4 => fn($r) => '<span class="why">' . vg_trunc($r['suppress_reason'], 90) . '</span>',
+                  /* 근거 칸은 세 층이다: 어느 겹인가(뱃지) → 그 겹이 왜 억제하나(한 줄) →
+                   *   접으면 그 겹의 **원 데이터**(errata·changelog 행, 트래커에 남은 CVE 수).
+                   *   원 데이터가 있어야 "이 판정을 믿을지" 를 사람이 스스로 확인할 수 있다. */
+                  4 => function ($r) use ($suppEvidence) {
+                      $meta = vg_suppress_layer_meta((string) $r['layer']);
+                      $key = (string) $r['package_name'] . '|' . (string) $r['cve_id'];
+                      $raw = [];
+                      if (isset($suppEvidence['errata'][$key])) {
+                          $raw[] = 'tb_applied_errata · ' . ($suppEvidence['errata'][$key] !== ''
+                              ? (string) $suppEvidence['errata'][$key] : '권고가 이 빌드를 지목함');
+                      }
+                      if (isset($suppEvidence['changelog'][$key])) {
+                          $raw[] = 'tb_pkg_changelog_cve · ' . ($suppEvidence['changelog'][$key] !== ''
+                              ? (string) $suppEvidence['changelog'][$key] : 'changelog 에 CVE 기록');
+                      }
+                      if (($r['layer'] ?? '') === 'tracker' && !empty($suppEvidence['debsecan'][$r['package_name']])) {
+                          $raw[] = 'tb_debsecan · 같은 패키지에 아직 취약으로 남은 CVE '
+                              . (int) $suppEvidence['debsecan'][$r['package_name']] . '건'
+                              . ' — 판정이 실제로 수집됐다는 뜻입니다(이 CVE 만 해당 없음).';
+                      }
+                      $out = vg_badge($meta['label'], $meta['tone'], $meta['desc'])
+                          . ' <span class="why">' . vg_trunc($r['suppress_reason'], 90) . '</span>';
+                      $out .= '<details><summary>근거 상세</summary><div class="why">'
+                          . vg_h($meta['desc']) . '<br>' . vg_h((string) $r['suppress_reason']);
+                      foreach ($raw as $line) { $out .= '<br>' . vg_h($line); }
+                      if (!$raw) {
+                          $out .= '<br>' . vg_h('원 근거 행 없음 — 이 겹은 벤더 판정(' . $meta['source'] . ')으로만 성립합니다.');
+                      }
+                      return $out . '</div></details>';
+                  },
               ],
           ]
       );
@@ -2228,7 +2383,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       <?php /* 수집 제어 카드가 없는 역할(등급만 확정하는 관리자)도 처리 결과는 봐야 한다. */ ?>
       <?php vg_alert($agentMsg, 'ok'); vg_alert($agentErr); ?>
     <?php endif; ?>
-    <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
+    <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin'), $gradeSignals); ?>
     <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
 
     <?php if (vg_has_role('admin', 'operator')): ?>

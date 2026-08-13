@@ -57,7 +57,7 @@ assert_not_contains() { if [[ "$1" == *"$2"* ]]; then no "$3  ('$2' 있음)"; el
 #   $1=tests/ 밑 파일명  $2=printf 라벨  $3=성공 메시지  $4=실패 메시지(생략 시 성공 메시지 재사용)
 #
 # 실행은 **호출 시점이 아니라 아래 prerun_phpunit() 에서 한 번에** 한다 — 예전엔 이 함수가
-#   호출될 때마다 `docker run` 을 새로 띄워서, 26개 × 기동 1.5초 ≈ 39초가 통째로 컨테이너를
+#   호출될 때마다 `docker run` 을 새로 띄워서, 27개 × 기동 1.5초 ≈ 39초가 통째로 컨테이너를
 #   띄우는 데만 쓰였다(실제 PHP 실행은 파일당 수십 ms). 한 컨테이너에서 순차로 돌리면 ~7초다.
 #   호출부와 그 위의 도메인 주석은 제자리에 두고, 이 함수만 "실행" 에서 "결과 조회" 로 바꾼다.
 run_phpunit() {
@@ -72,13 +72,14 @@ run_phpunit() {
   fi
 }
 
-# 위 26개 호출부가 참조하는 파일 목록 — **정본은 여기 하나뿐이다.**
+# 위 27개 호출부가 참조하는 파일 목록 — **정본은 여기 하나뿐이다.**
 #   호출부에 있는데 여기 없으면 위 조회가 MISSING 으로 떨어져 빨간불이 된다(누락이 눈에 띈다).
 PHPUNIT_FILES=(
   vercmp_test.php
   osv_precision_test.php
   pkgdep_rollup_test.php
   matcher_suppress_test.php
+  suppression_test.php
   ingest_parse_test.php
   assetgrade_history_test.php
   account_inventory_test.php
@@ -104,7 +105,7 @@ PHPUNIT_FILES=(
 )
 declare -A PHPUNIT_RESULT=()
 
-# 26개를 **컨테이너 한 번**으로 몰아 돌리고 파일별 PASS/FAIL 을 연관배열에 담는다.
+# 27개를 **컨테이너 한 번**으로 몰아 돌리고 파일별 PASS/FAIL 을 연관배열에 담는다.
 #   · 컨테이너 안 루프는 if 로 종료코드를 받으므로 한 파일이 fatal 을 내도 나머지가 계속 돈다.
 #   · 출력은 파이프가 아니라 임시 파일로 받는다 — 위 assert_contains 주석의 SIGPIPE(141) 함정과 같은 자리다.
 #   · 마운트 경로 계산(MSYS_NO_PATHCONV=1 · pwd -W 폴백)은 기존 방식 그대로다.
@@ -271,7 +272,7 @@ if ! "$ROOT/tests/ui_lint.sh"; then
 fi
 
 # --- 단위테스트 선(先)실행 ---------------------------------------------------
-# 아래에 흩어져 있는 run_phpunit 호출 26개가 볼 결과를 여기서 한 번에 만든다(컨테이너 1회).
+# 아래에 흩어져 있는 run_phpunit 호출 27개가 볼 결과를 여기서 한 번에 만든다(컨테이너 1회).
 # 호출부는 그대로 순서대로 결과만 조회하므로 출력 순서·라벨·메시지는 이전과 동일하다.
 prerun_phpunit
 
@@ -293,6 +294,10 @@ run_phpunit "pkgdep_rollup_test.php" "pkgdep_rollup" "손댈 대상(부모)별 �
 # 눈으로 읽어선 회귀를 못 잡는다 — 실제로 changelog 억제가 서드파티 가드에 막혀 운영에서
 # 억제 0건이었다(docs/dev/changelog-억제층-실측.md). 계약을 테스트로 고정한다.
 run_phpunit "matcher_suppress_test.php" "matcher_suppress" "매처 억제 게이트 단위 테스트"
+
+# 억제 근거를 화면 어휘로 옮기는 표(server/src/suppression.php)가 판정 문구와 어긋나면,
+# 억제 목록이 통째로 '근거 미분류' 로 떨어진다 — 화면은 여전히 뜨므로 사람 눈엔 안 보인다.
+run_phpunit "suppression_test.php" "suppression" "억제 근거 겹 분류 단위 테스트"
 
 # --- ingest_parse 단위 테스트 -------------------------------------------------
 # ingest.php 의 순수 변환(패키지/노출/컨테이너/changelog 파싱, 내용해시, 패키지 diff)을
@@ -857,6 +862,27 @@ body=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=runtime")
 assert_contains "$body" "런타임 노출" "호스트 상세 · 런타임 탭(노출·프로세스)"
 # 컨테이너의 프로세스·포트는 호스트 것과 섞이면 안 된다 — 어느 쪽인지 표에 드러나야 한다.
 assert_contains "$body" "컨테이너 api" "런타임 탭이 컨테이너 출처를 구분해 표시"
+# 재시작 필요(tb_stale_lib)는 **억제를 취소하는** 신호라 런타임 축에 자기 자리가 있어야 한다.
+#   예전엔 이 표가 화면에 아예 없어서, 근거는 DB 에만 있고 사람은 못 봤다.
+assert_contains "$body" "재시작 필요 (억제 취소 신호)" "런타임 탭에 재시작 필요 목록"
+assert_contains "$body" "해당 서비스 재시작" "조치를 재시작으로 명시(업데이트로는 안 고쳐진다)"
+# 같은 표의 0건이 "깨끗함"으로 읽히면 안 된다 — 프로세스를 못 걷은 호스트는 판정 불가다(NA ≠ PASS).
+stalebody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB02_ID&tab=runtime")
+assert_contains "$stalebody" "재시작 필요 여부를 판정할 수 없습니다" "프로세스 미수집은 0건이 아니라 판정 불가"
+
+# 억제 근거 노출 — CONTEXT.md §7 의 "근거는 숨기지 않는다" 가 화면에 실제로 있는지 본다.
+#   근거 겹 분류가 어긋나면 전부 '근거 미분류' 로 떨어진다(suppression_test 가 문구를 고정한다).
+supev=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=suppressed")
+assert_contains "$supev" "근거 상세" "억제 행마다 근거 상세(접이식)를 제공"
+if grep -qE '① 버전 비교|② 배포판 보안 트래커|③ 벤더 권고|④ changelog 백포트' <<<"$supev"; then
+  ok "억제 근거를 겹(①~④)으로 분류해 표시"
+else
+  no "억제 근거 겹 뱃지가 없음 — 어느 겹이 억제했는지 화면에서 읽을 수 없다"
+fi
+
+# 등급 제안 근거 — 한 줄 문자열이 아니라 신호 목록으로 보여야 사람이 확정 근거로 쓴다.
+gradebody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=manage")
+assert_contains "$gradebody" "시스템이 본 신호" "자산 설정 탭에 등급 제안 근거 신호 노출"
 # redis 는 0.0.0.0:6379 지만 방화벽이 막는다 → EXTERNAL 이 아니라 FILTERED 로 분류돼야 한다.
 body=$(curl_ -s -b "$JAR" "$BASE/findings.php?host=$WEB01_ID&st=FILTERED")
 assert_contains "$body" "redis" "방화벽 차단(FILTERED) 분류 — redis 가 외부노출로 새지 않음"
