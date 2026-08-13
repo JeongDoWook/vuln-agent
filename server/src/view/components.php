@@ -368,6 +368,25 @@ function vg_connectors_empty_cta(): ?array {
 }
 
 /**
+ * SBOM 다운로드 줄 — CycloneDX / SPDX 두 형식.
+ *   자산 상세(호스트)와 컨테이너 상세가 같은 줄을 쓴다. 링크 형태·범위 규약(cid 를 주면
+ *   그 컨테이너 하나, 안 주면 호스트 자신)이 두 화면에서 어긋나지 않게 여기 한 곳에 둔다.
+ *   sbom.php 는 자산(assets) 권한이라 그 권한이 없는 사용자에겐 아예 그리지 않는다 —
+ *   눌러보면 403 인 버튼을 보여주지 않는다(인가 자체는 sbom.php 가 서버측에서 확정한다).
+ */
+function vg_sbom_links(string $fqdn, string $cid = ''): void {
+    if (!vg_can('assets')) { return; }
+    $base = '/sbom.php?host=' . urlencode($fqdn) . ($cid !== '' ? '&cid=' . urlencode($cid) : '');
+    $what = $cid !== '' ? '이 컨테이너' : '이 호스트';
+    echo '<div class="card"><strong>SBOM 내려받기</strong> <span class="why">— '
+        . vg_h($what) . '의 부품표를 표준 형식으로 저장합니다</span>'
+        . '<div class="card__body"><div class="links">'
+        . '<a href="' . vg_h($base . '&format=cyclonedx') . '">CycloneDX 1.5</a>'
+        . '<a href="' . vg_h($base . '&format=spdx') . '">SPDX 2.3</a>'
+        . '</div></div></div>';
+}
+
+/**
  * 상세 페이지 히어로 — "무엇을 보고 있나(좌) + 얼마나 위험한가(우)".
  * 왼쪽 띠 색이 위험도다. host.php 가 인라인으로 갖고 있던 것을 공용으로 뺐다.
  *   $title·$meta 는 이미 이스케이프된 HTML (호출부가 vg_h 책임 — 링크·뱃지를 섞어 넣어야 해서).

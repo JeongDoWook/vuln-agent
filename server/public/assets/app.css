@@ -2238,6 +2238,84 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--permissions .matrix input[type="checkbox"] { width: 1.2rem; height: 1.2rem; margin: 0; transform: none; accent-color: var(--accent); }
 /* screen-audit-admin: .permission-note 규칙 제거 — 중복 안내 카드를 지워 참조가 사라졌다(ui_lint 5번 경고). */
 
+/* ----------------------------------------------------------------------
+ * 컨테이너 계층 (자산 상세 > 컨테이너 탭)
+ *   호스트를 루트로 두고 그 아래 컨테이너를 카드로 펼친다. 표로 눕히면 "이 컨테이너 안에도
+ *   OS·패키지·프로세스가 따로 있다" 는 사실이 행 하나로 눌려 보이지 않는다.
+ *   색은 전부 토큰이라 다크 오버라이드(:root[data-theme="dark"])를 그대로 따라간다.
+ *   들여쓰기 선(::before)은 마크업이 아니라 CSS 가 그린다 — 값이 아니라 관계라서.
+ * ---------------------------------------------------------------------- */
+.ctree { display: block; }
+.ctree__root {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .7rem .9rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.ctree__icon { font-size: 1.25rem; line-height: 1; flex: none; }
+.ctree__rootid { min-width: 0; flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .6rem; }
+.ctree__rootid strong { overflow-wrap: anywhere; }
+
+/* 카드 목록. 좁아지면 1열로 접힌다(640px 이하는 아래 반응형 블록이 여백까지 줄인다). */
+.ctree__list {
+  list-style: none;
+  margin: 0;
+  padding: .9rem 0 0 1.4rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: .8rem;
+  position: relative;
+}
+/* 루트에서 내려오는 계통선 — 카드가 호스트에 딸려 있다는 것을 선 하나로 말한다. */
+.ctree__list::before {
+  content: "";
+  position: absolute;
+  left: .55rem;
+  top: 0;
+  bottom: 1.2rem;
+  width: 1px;
+  background: var(--line-2);
+}
+
+.ctrcard {
+  position: relative;
+  min-width: 0;
+  padding: .8rem .9rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+.ctrcard:hover { border-color: var(--line-2); box-shadow: var(--shadow); }
+/* 왼쪽 띠 = 이 컨테이너의 최고 위험 등급(히어로와 같은 어휘). */
+.ctrcard.tone-crit  { border-left-color: var(--crit); }
+.ctrcard.tone-high  { border-left-color: var(--high); }
+.ctrcard.tone-med   { border-left-color: var(--med); }
+.ctrcard.tone-low   { border-left-color: var(--low); }
+.ctrcard.tone-muted { border-left-color: var(--muted-2); }
+
+.ctrcard__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem; }
+.ctrcard__name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.ctrcard__name:hover { color: var(--accent-2); }
+/* 이미지 문자열은 식별자라 자르지 않고 접는다(레지스트리 경로가 길다). */
+.ctrcard__image code { overflow-wrap: anywhere; white-space: normal; }
+.ctrcard__facts { display: flex; flex-wrap: wrap; gap: .2rem .9rem; font-size: var(--fs-sm); color: var(--text-2); }
+.ctrcard__facts b { color: var(--text); font-variant-numeric: tabular-nums; }
+.ctrcard__risk .riskbar { max-width: none; }
+.ctrcard__more { display: flex; flex-direction: column; gap: .15rem; }
+.ctrcard .links { margin-top: auto; padding-top: .2rem; }
+
+@media (max-width: 640px) {
+  .ctree__list { grid-template-columns: 1fr; padding-left: .8rem; }
+  .ctree__list::before { left: .25rem; }
+}
+
 /* 로그인: 조용한 진입 화면 */
 .page--login .app { min-height: 100vh; display: grid; place-items: center; }
 .page--login .page__main { min-height: auto; width: 100%; padding: 1.25rem; }

@@ -781,6 +781,42 @@ emptydep=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB02_ID")
 assert_contains "$emptydep" '의존성 엣지가 없습니다' "엣지 없는 자산의 빈 상태 안내"
 assert_not_contains "$emptydep" 'depgraph.php?id='"$WEB02_ID"'&amp;cid=' "엣지 없는 자산엔 조회 단위 선택지도 없다"
 
+# --- 컨테이너 드릴다운(container.php) + 컨테이너 SBOM ------------------------
+# 컨테이너 안의 OS·패키지·프로세스·취약점은 처음부터 수집·저장되고 있었는데 읽는 화면이 없었다
+#   (자산 상세의 패키지 탭은 container_id = 0 으로 고정이었다). 계층 카드 → 상세 → 탭 →
+#   컨테이너 SBOM 까지 실제로 이어지는지, 그리고 범위가 호스트와 안 섞이는지를 고정한다.
+printf "\n[컨테이너 드릴다운]\n"
+ctrtab=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=containers")
+assert_not_contains "$ctrtab" 'Fatal error' "컨테이너 탭이 오류 없이 렌더됨"
+assert_contains "$ctrtab" 'class="ctree__root"' "컨테이너 탭이 호스트를 루트로 둔 계층으로 렌더"
+assert_contains "$ctrtab" 'class="ctrcard' "컨테이너가 카드로 펼쳐짐"
+assert_contains "$ctrtab" 'container.php?id='"$WEB01_ID" "카드에서 컨테이너 상세로 들어가는 링크"
+CTR_CID=$(grep -oE 'container\.php\?id='"$WEB01_ID"'&amp;cid=[A-Za-z0-9._%-]+' <<<"$ctrtab" | head -1 | sed 's/.*cid=//')
+if [ -n "$CTR_CID" ]; then ok "컨테이너 cid 확인 (=$CTR_CID)"; else no "컨테이너 카드에서 cid 를 못 찾음"; CTR_CID="api"; fi
+ctrbody=$(curl_ -s -b "$JAR" "$BASE/container.php?id=$WEB01_ID&cid=$CTR_CID")
+assert_not_contains "$ctrbody" 'Fatal error' "컨테이너 상세가 오류 없이 렌더됨"
+assert_contains "$ctrbody" '최고 위험도' "컨테이너 상세 히어로(위험도) 표시"
+assert_contains "$ctrbody" "host.php?id=$WEB01_ID&amp;tab=containers" "컨테이너 상세에 호스트로 돌아가는 브레드크럼"
+ctrpkg=$(curl_ -s -b "$JAR" "$BASE/container.php?id=$WEB01_ID&cid=$CTR_CID&tab=packages")
+assert_contains "$ctrpkg" '설치 패키지' "컨테이너 안 설치 패키지 탭 표시"
+assert_not_contains "$ctrpkg" 'Fatal error' "컨테이너 패키지 탭이 오류 없이 렌더됨"
+ctrrt=$(curl_ -s -b "$JAR" "$BASE/container.php?id=$WEB01_ID&cid=$CTR_CID&tab=runtime")
+assert_contains "$ctrrt" '실행 프로세스' "컨테이너 런타임 탭 표시"
+# 없는 컨테이너는 조용히 빈 화면이 아니라 이유를 밝힌다(호스트 화면으로 떨구지도 않는다).
+missctr=$(curl_ -s -b "$JAR" "$BASE/container.php?id=$WEB01_ID&cid=nosuchctr")
+assert_contains "$missctr" '최신 수집에 없습니다' "없는 컨테이너 지정 시 이유 표시"
+
+# SBOM — 화면 링크(예전엔 sbom.php 를 링크하는 화면이 0건이었다) + 컨테이너 범위.
+assert_contains "$hostvuln" 'sbom.php?host=' "자산 상세에 SBOM 내려받기 링크"
+assert_contains "$ctrbody" 'cid='"$CTR_CID"'&amp;format=cyclonedx' "컨테이너 상세에 그 컨테이너 SBOM 링크"
+ctrsbom=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&cid=$CTR_CID&format=cyclonedx")
+assert_contains "$ctrsbom" '"type": "container"' "컨테이너 SBOM 이 컨테이너를 대상으로 서술"
+ctrspdx=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&cid=$CTR_CID&format=spdx")
+assert_contains "$ctrspdx" '"spdxVersion": "SPDX-2.3"' "컨테이너 SBOM(SPDX) 수신"
+# 범위를 섞지 않는다 — 없는 컨테이너를 주면 호스트 SBOM 이 대신 나가면 안 된다(404).
+code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/sbom.php?host=$FQDN_WEB01&cid=nosuchctr")
+assert_eq "$code" "404" "없는 컨테이너 SBOM 은 호스트로 떨어지지 않고 404"
+
 # 에이전트 진행 heartbeat — 바인딩 토큰이 자기 호스트의 pending 명령만 running으로 바꿔야 한다.
 PROGRESS_CMD=$(docker exec "$WEB_CONTAINER" php -r \
   '$cfg=require "/var/www/html/src/config.php"; require "/var/www/html/src/db.php";
