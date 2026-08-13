@@ -72,11 +72,6 @@ function vg_setting_defs(): array {
             'group' => 'judgment', 'default_const' => 'VG_COMPLIANCE_PARTIAL_MAX',
             'desc'  => '위반 1~이 값이면 부분준수, 초과하면 미준수로 판정합니다.',
         ],
-        'compliance.access_review_interval_days' => [
-            'label' => '접근권한 검토 주기(일)', 'type' => 'int', 'min' => 7, 'max' => 730,
-            'group' => 'judgment', 'default_const' => 'VG_COMPLIANCE_ACCESS_REVIEW_DAYS',
-            'desc'  => '이 주기 안에 접근권한·접속기록 검토 기록이 없으면 위반으로 판정합니다(ISMS-P 2.5.3).',
-        ],
         'compliance.history_lookback_margin_days' => [
             'label' => '이력 역산 여유일', 'type' => 'int', 'min' => 0, 'max' => 365,
             'group' => 'judgment', 'default_const' => 'VG_COMPLIANCE_HISTORY_MARGIN_DAYS',

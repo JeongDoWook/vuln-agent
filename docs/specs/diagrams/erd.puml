@@ -580,16 +580,6 @@ package "피드 운영 · 인증 · 감사" {
         allowed : bool
     }
 
-    entity tb_api_token {
-        api_token_id : bigint <<PK>>
-        --
-        label : string
-        token_hash : string <<UK>>
-        token_prefix : string
-        last_used_at : datetime
-        is_deleted : bool
-    }
-
     entity tb_agent_token {
         agent_token_id : bigint <<PK>>
         --
@@ -619,21 +609,6 @@ package "피드 운영 · 인증 · 감사" {
         ' READ CREATE UPDATE DELETE EXPORT LOGIN EXECUTE OTHER
         data : json
         ip_address : string
-    }
-
-    entity tb_activity_review {
-        activity_review_id : bigint <<PK>>
-        --
-        period_start : date
-        period_end : date
-        ' UK(period_start, period_end)
-        reviewed_by : bigint
-        reviewer_name : string
-        ' 계정 삭제 후에도 남는 스냅샷
-        reviewed_at : datetime
-        result : string
-        ' OK FINDING NA
-        note : text
     }
 
     entity tb_setting {
@@ -678,7 +653,6 @@ tb_compliance_snapshot ||--o{ tb_compliance_snapshot_control : "통제별 판정
 tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별 조치버전"
 tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
 tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
-tb_user ||--o{ tb_api_token : "발급(Export API)"
 tb_user |o--o{ tb_asset_grade_review : "등급 검토자"
 tb_agent_token ||--o{ tb_agent_replay_nonce : "소진된 nonce"
 
@@ -708,8 +682,6 @@ tb_kernel_cve }o..|| tb_finding : "커널 CVE 판정"
 ' tb_activity_log   : user_id 가 NULL 가능(SYSTEM 행위, 예: ingest 수신)이라 FK 없이 논리적 연계만.
 ' tb_role_permission: 역할(role) 문자열 기준 설정형 RBAC — FK 없음.
 ' tb_setting       : 전역 운영 설정(key-value). 어느 엔티티에도 매달리지 않는다.
-' tb_activity_review: 월 1회 접속기록 점검 이력. 기간(period_start~period_end)으로 tb_activity_log 를
-'                     훑을 뿐 행 단위 FK 는 없다. reviewed_by 도 FK 없음(계정이 지워져도 점검 이력은 남아야 한다).
 ' tb_compliance_snapshot : 그날의 findings/tb_host/tb_scan 을 읽어 판정한 결과의 스냅샷이라 원본 행과
 '                     FK 로 묶지 않는다(원본이 지워져도 증적은 남아야 한다). 근거는 evidence JSON 에 담는다.
 ' tb_package_dependency : parent/child 는 값(manager+name+version)으로만 이어지는 자기참조라

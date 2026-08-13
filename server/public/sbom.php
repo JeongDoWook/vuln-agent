@@ -5,7 +5,8 @@ declare(strict_types=1);
  * sbom.php — 스캔 하나의 설치 패키지 목록을 표준 SBOM 문서로 내보내는 읽기 API.
  *
  *   용도: 외부 SBOM 도구(취약점 스캐너·라이선스 감사·공급망 검증)가 자산별 부품표를 가져간다.
- *   인증: export.php 와 같은 읽기 토큰(X-API-Token 또는 Authorization: Bearer).
+ *   인증: export.php 와 같은 **웹 로그인 세션**(자산 메뉴 권한). 전용 API 토큰 체계는 폐지했다 —
+ *         로그인한 사용자가 브라우저에서 이 URL 을 열면 그대로 파일로 내려받는다.
  *   범위: **자산 하나당 문서 하나.** host 또는 scan_id 를 반드시 지정한다 —
  *         여러 호스트를 한 문서에 담으면 CycloneDX/SPDX 어느 쪽으로도 의미가 없다.
  *         호스트 자신의 패키지(container_id = 0)만 담는다. 컨테이너별 SBOM 은 범위 밖.
@@ -16,14 +17,11 @@ declare(strict_types=1);
  *     GET /sbom.php?host=web01.example.com                  (기본 cyclonedx)
  *     GET /sbom.php?host=web01.example.com&format=spdx
  *     GET /sbom.php?scan_id=1234&format=cyclonedx
- *     curl -H "X-API-Token: <토큰>" "https://…/sbom.php?host=web01.example.com" -o sbom.json
  */
 
-require __DIR__ . '/../src/config.php';   // vg_auth_token
-require __DIR__ . '/../src/db.php';       // vg_pdo, vg_latest_scan_subq
-require_once __DIR__ . '/../src/apitoken.php';
-require_once __DIR__ . '/../src/audit.php';
+require __DIR__ . '/../src/auth.php';     // 세션·vg_require_menu (config/db/audit 를 함께 로드한다)
 require_once __DIR__ . '/../src/purl.php';
+vg_require_menu('assets');                // SBOM 은 자산의 부품표다
 
 const VG_SBOM_FORMATS       = ['cyclonedx', 'spdx'];
 const VG_SBOM_CDX_SPEC      = '1.5';
@@ -47,19 +45,6 @@ function vg_sbom_fail(int $http, string $msg, string $code): void {
 // ── 메서드 ────────────────────────────────────────────────────
 if (!in_array($_SERVER['REQUEST_METHOD'] ?? '', ['GET', 'HEAD'], true)) {
     vg_sbom_fail(405, 'GET only', 'method_not_allowed');
-}
-
-// ── 인증: export.php 와 같은 읽기 토큰 ────────────────────────
-$provided = vg_auth_token('X-API-Token');
-$tokenId  = null;
-try {
-    $tokenId = vg_api_token_verify(vg_pdo(), (string) $provided);
-    if ($tokenId === null) {
-        vg_sbom_fail(401, 'unauthorized', 'unauthorized');
-    }
-} catch (Throwable $e) {
-    error_log('[sbom] auth ' . $e->getMessage());
-    vg_sbom_fail(500, 'internal error', 'internal_error');
 }
 
 // ── 파라미터 ──────────────────────────────────────────────────
@@ -125,12 +110,11 @@ $doc = $format === 'spdx'
     ? vg_sbom_spdx($scan, $packages, $uuid, $created)
     : vg_sbom_cyclonedx($scan, $packages, $uuid, $created);
 
-// 누가(토큰)·어느 자산의·어떤 포맷 SBOM 을 몇 건으로 받아갔는지 감사로그.
+// 누가(로그인 사용자)·어느 자산의·어떤 포맷 SBOM 을 몇 건으로 받아갔는지 감사로그.
 vg_log_activity(
-    $pdo, 'API_TOKEN', $tokenId, 'export_sbom',
+    $pdo, 'EXPORT', null, 'export_sbom',
     '형식=' . $format . ' 자산=' . $fqdn . ' 컴포넌트 ' . count($packages) . '건 (스캔 #' . $scanNo . ')',
     ['format' => $format, 'host' => $fqdn, 'scan_id' => $scanNo, 'components' => count($packages)],
-    null, 'SYSTEM',
     subject: $fqdn, action: 'EXPORT'
 );
 

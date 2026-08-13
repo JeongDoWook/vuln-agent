@@ -112,7 +112,6 @@ function vg_soft_delete(PDO $pdo, string $table, int $id): void {
         'tb_advisory'       => 'advisory_id',
         'tb_host'           => 'host_id',
         'tb_scan'           => 'scan_id',
-        'tb_api_token'      => 'api_token_id',
     ];
     $pk = $allowed[$table] ?? null;
     if ($pk === null) {

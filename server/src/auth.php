@@ -313,24 +313,28 @@ const VG_ROLE_DESCRIPTIONS = ['admin' => '전체', 'operator' => '피드', 'user
 
 /**
  * 메뉴코드→한글라벨. 권한설정 화면(permissions.php)의 행 라벨 SSOT.
- *   사이드바 라벨은 vg_nav_sections() 가 따로 갖는다 — 코드 하나가 링크 둘을 여는
- *   경우(findings → 취약점 현황 + CVE 목록)가 있어 1:1 로 못 묶기 때문이다.
- *   그래서 여기 라벨은 "그 코드를 체크하면 열리는 메뉴들"을 그대로 적는다.
  *
  *   이 목록은 nav.php 의 'perm' 코드와 반드시 일치해야 하는 **메뉴코드 정본**이다 —
  *   어긋나면 사이드바에 보이는데 눌러보면 403 나는 링크가 생긴다. admin 전용 메뉴
- *   (permissions·apitokens)도 여기엔 남기고, 권한 매트릭스에서만 뺀다(permissions.php).
+ *   (permissions·settings)도 여기엔 남기고, 권한 매트릭스에서만 뺀다(permissions.php).
+ *
+ *   **사이드바 링크와 1:1 이다.** 예전엔 findings 코드 하나가 링크 6개(탐지 결과·
+ *   컴플라이언스·CVE/패키지 카탈로그·판정 근거·보안 설정 룰)를 한꺼번에 열어서,
+ *   "탐지 결과만 끄기"가 불가능했다(끄면 카탈로그까지 전부 꺼진다). 권한을 실제
+ *   메뉴 구조대로 나눌 수 있도록 compliance·catalog 를 별도 코드로 뽑았다.
+ *   카탈로그는 항목마다 쪼개지 않는다 — 성격이 같은 참조 데이터 묶음이다(KISS).
  */
 function vg_menus(): array {
     return [
         'dashboard'   => '대시보드',
         'assets'      => '자산',
-        'findings'    => '탐지 결과 · CVE',
+        'findings'    => '탐지 결과(CVE·CCE·노출·변화·제거 권고)',
         'advisories'  => '보안 공지',
+        'compliance'  => '컴플라이언스 · 통제 기준 매핑',
         'connectors'  => '데이터 수집',
+        'catalog'     => '참조 카탈로그(CVE·패키지·판정 근거·보안 설정 룰)',
         'users'       => '사용자',
         'agenttokens' => '에이전트 키',
-        'apitokens'   => 'API 키',
         'activity'    => '감사 로그',
         'permissions' => '권한',
         'settings'    => '설정',
@@ -371,12 +375,27 @@ function vg_can(string $menuCode): bool {
 
 // 로그인 확인 후, 메뉴 접근권한이 없으면 403 종료.
 function vg_require_menu(string $menuCode): void {
+    vg_require_menu_any($menuCode);
+}
+
+/**
+ * 여러 메뉴 중 **하나라도** 열 수 있으면 통과. 사이드바에 없는 상세 화면 전용이다.
+ *   메뉴코드를 사이드바 구조대로 쪼개면(findings/compliance/catalog) 상세 화면이
+ *   두 섹션에서 함께 열린다 — CVE 상세는 탐지 결과·CVE 카탈로그·보안 공지 모두에서
+ *   링크되고, 자산 상세는 자산 목록과 탐지 결과 양쪽에서 들어온다. 한 코드로 고정하면
+ *   반대편 섹션만 가진 사용자가 방금 본 목록의 행을 눌렀는데 403 을 받는다.
+ *   목록(사이드바에 뜨는 화면)은 항상 vg_require_menu() 로 코드 하나만 요구한다.
+ */
+function vg_require_menu_any(string ...$menuCodes): void {
     vg_require_login();
-    if (!vg_can($menuCode)) {
-        http_response_code(403);
-        echo 'forbidden';
-        exit;
+    foreach ($menuCodes as $code) {
+        if (vg_can($code)) {
+            return;
+        }
     }
+    http_response_code(403);
+    echo 'forbidden';
+    exit;
 }
 
 /**

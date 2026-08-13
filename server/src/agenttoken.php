@@ -5,7 +5,7 @@ declare(strict_types=1);
  * agenttoken.php — 에이전트별 개별 수집 토큰의 발급·검증·폐기.
  *   토큰은 발급 시 정한 host_fqdn 에 1:1 로 묶인다. ingest.php 가 이 바인딩을 강제해,
  *   침해된 대상 1대가 남의 fqdn 을 위조해 스캔을 덮어쓰는 것을 막는다.
- *   원문은 발급 시 1회만 노출하고 DB 엔 SHA-256 해시만 저장한다(api-tokens 와 같은 패턴).
+ *   원문은 발급 시 1회만 노출하고 DB 엔 SHA-256 해시만 저장한다.
  *   ingest.php(검증) 와 agent-tokens.php(발급/폐기) 가 공용으로 쓴다.
  */
 

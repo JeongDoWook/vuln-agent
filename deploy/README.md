@@ -150,9 +150,10 @@ API/에이전트 토큰에 만료가 생겼다. **`.env` 나 컨테이너 환경
 - PHP 기본 `session.gc_maxlifetime`(1440초 = 24분)이 유휴 30분보다 짧아 PHP 가 먼저 세션을
   날리던 문제는 코드에서 `ini_set` 으로 맞춰 뒀다(설정 가능한 절대 만료의 **상한**인 1440분 기준
   — 어떤 설정값이어도 GC 가 먼저 세션을 지우지 않는다). **PHP 설정을 손으로 만질 필요 없다.**
-- 토큰은 `tb_api_token`·`tb_agent_token` 의 `expires_at`(NULL = 무기한)으로 관리한다.
+- 토큰은 `tb_agent_token` 의 `expires_at`(NULL = 무기한)으로 관리한다(Export API 읽기 토큰과
+  `tb_api_token` 은 2026-08-13 폐지 — `export.php`·`sbom.php` 는 웹 로그인 세션 인증이다).
   **이 변경 이전에 발급된 토큰은 NULL 이라 그대로 무기한**이고, 만료된 토큰은 인증 실패(401)로
-  처리되며 `api_token_expired` / `agent_token_expired` 감사로그가 남는다. **자동 갱신·재발급은
+  처리되며 `agent_token_expired` 감사로그가 남는다. **자동 갱신·재발급은
   없다** — 만료되면 사람이 새로 발급하고 노드의 `agent.env` 를 갱신한다
   ([`../agent/README.md`](../agent/README.md) “주의점” 1번).
 - 스키마는 마이그레이션 `20260808105921_token_expires_at.sql` 이 멱등하게 얹는다 —

@@ -207,9 +207,9 @@ permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결
 **KISA ISMS-P·ISO 27001 컴플라이언스 판정**의 로직은 `src/compliance.php` 에 있다(웹·CLI 공용).
 화면(`public/compliance.php`)은 이걸로 "지금"을 렌더하고 스케줄러는 같은 함수로 증적을 적재한다 —
 판정 로직이 두 벌이면 화면과 증적이 서로 다른 답을 내기 시작한다. findings(severity·in_kev·
-no_fix·needs_restart)·자산 연결상태·`tb_cce_finding`(설정 취약)·`tb_host_account`(계정 인벤토리)·
-`tb_activity_review`(접속기록 점검 이력) 등 기존 판정 결과만 다시 읽어 통제 5개
-(`patch`/`asset`/`secops`/`account`/`access_review` — `VG_COMPLIANCE_CONTROLS` 가 SSOT)를
+no_fix·needs_restart)·자산 연결상태·`tb_cce_finding`(설정 취약)·`tb_host_account`(계정 인벤토리)
+등 기존 판정 결과만 다시 읽어 통제 4개
+(`patch`/`asset`/`secops`/`account` — `VG_COMPLIANCE_CONTROLS` 가 SSOT)를
 판정한다. `account` 는 판정 로직을 새로 만들지 않고 `vg_account_judgments()`(host.php 계정 탭이
 쓰는 것)를 재사용해 집계만 한다. `patch` 는 통제 전체가 아니라 **버킷(KEV/CRITICAL/HIGH)별로**
 판정한다 — 이력이 짧아 판정 불가인 버킷 하나가 잘 지킨 나머지 버킷까지 회색으로 누르지 않게.
@@ -331,7 +331,8 @@ snippet → 각 사이트 블록에서 `import`). 사이트마다 복붙하지 �
 4a 피드 커넥터(connector_type: kev/osv/nvd/kisa/epss/debtracker/rhoval/rhunfixed/ssg/kcve/
 ubuntuoval/generic_api), tb_advisory 는 4b KISA 국내공지,
 tb_user 는 3단계 인증, tb_activity_log 는 감사 추적, tb_cce_finding 은 보안설정 점검,
-tb_role_permission 은 설정형 RBAC, tb_api_token 은 Export API 에서 도입.
+tb_role_permission 은 설정형 RBAC.
+(tb_api_token 은 Export API 읽기 토큰이었으나 2026-08-13 폐지 — export/sbom 은 로그인 세션 인증.)
 **억제 계열**(§2): 근거는 tb_pkg_changelog_cve(②)·tb_applied_errata(③)·tb_debsecan(④),
 억제 결과는 tb_suppressed_finding, **억제를 취소**하는 신호가 tb_stale_lib(재시작 필요).
 tb_container 는 컨테이너 인벤토리이고 컨테이너 내부 패키지는 tb_package 에 `container_id>0` 으로
@@ -349,7 +350,7 @@ tb_package_dependency 는 패키지 의존성 엣지(SBOM/pom, 스캔에 CASCADE
 tb_remediation_note 는 미조치 사유·승인자 메모(자연키라 스캔이 바뀌어도 유지).
 tb_control_mapping 은 CCE 룰 ↔ U-코드/ISMS-P/N2SF 다중 매핑,
 tb_compliance_snapshot/tb_compliance_snapshot_control 은 하루 1건 컴플라이언스 판정 증적,
-tb_activity_review 는 접속기록 월 1회 점검 이력, tb_setting 은 SLA 등 전역 운영 설정.
+tb_setting 은 SLA 등 전역 운영 설정.
 tb_asset_grade_review 는 자산 등급 확정의 **구조화된 사람 검토**(호스트당 1행),
 tb_asset_grade_suggestion_history 는 **시스템 제안의 append-only 관찰 이력**(제안값은 확정값이 아니다),
 tb_package_integrity 는 패키지 원본과 다른 파일 목록(스캔 단위 사실은 tb_scan 의 integrity_* 3컬럼).
@@ -367,7 +368,7 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 
 좌측 사이드바는 **업무 화면**(라벨 없는 최상위 묶음 — 대시보드/탐지 결과/자산/보안 공지/컴플라이언스),
 **데이터**(수집 상태/CVE 카탈로그/패키지 카탈로그/판정 근거/보안 설정 룰), 관리(사용자/권한/에이전트 키/
-API 키/감사 로그/설정)로 묶고, **역할×메뉴 권한**에서
+감사 로그/설정)로 묶고, **역할×메뉴 권한**에서
 허용된 링크만 렌더한다(링크가 하나도 안 남은 섹션은 라벨째 숨김). 대분류·링크 구성의 SSOT 는
 `server/src/view/nav.php` 의 `vg_nav_sections()` 하나이며, 사이드바와 브레드크럼이 같이 참조한다.
 
@@ -394,32 +395,42 @@ API 키/감사 로그/설정)로 묶고, **역할×메뉴 권한**에서
   로그인 화면에 사유를 안내한다. 활성 세션은 계정당 1개라 다른 곳에서 로그인하면 앞의 세션이 끊긴다
   (`session_token` 을 덮어쓰는 것 자체가 무효화다).
 - **설정형 RBAC**: `admin` 은 코드에서 항상 전체 허용(잠금 방지)이라 권한 행을 두지 않는다.
-  `operator`·`user` 는 **역할 × 메뉴코드**(dashboard/findings/advisories/assets/connectors/
-  users/permissions/agenttokens/apitokens/activity/settings) 허용 여부를 `tb_role_permission` 에 두고 `/permissions.php`
-  에서 켜고 끈다. 각 페이지 가드는 `vg_require_menu('<메뉴코드>')` 하나로 통일.
+  `operator`·`user` 는 **역할 × 메뉴코드**(dashboard/assets/findings/advisories/compliance/
+  connectors/catalog/users/agenttokens/activity/permissions/settings) 허용 여부를 `tb_role_permission`
+  에 두고 `/permissions.php` 에서 켜고 끈다. 각 페이지 가드는 `vg_require_menu('<메뉴코드>')` 하나로 통일.
   메뉴코드 정본은 `vg_menus()`(`server/src/auth.php`) 이고 `nav.php` 의 `'perm'` 과 반드시 일치해야
-  한다(어긋나면 사이드바에 보이는데 눌러보면 403 나는 링크가 생긴다). 단 **`permissions`·`apitokens`·
-  `settings` 셋은 admin 전용이라 `/permissions.php` 매트릭스에서 제외**된다(`settings` 는 판정
+  한다(어긋나면 사이드바에 보이는데 눌러보면 403 나는 링크가 생긴다). 단 **`permissions`·`settings`
+  둘은 admin 전용이라 `/permissions.php` 매트릭스에서 제외**된다(`settings` 는 판정
   기준값을 바꾸는 화면이다) — 정본에는 남기되 화면에서 켤 수
   없고, 시드 행이 없어 `vg_can()` 의 기본 거부로 operator·user 는 항상 불가다.
   기본 시드 — operator: 대시보드/취약점/공지/자산/수집과 에이전트 키 허용, 사용자·권한·감사 로그 불가.
-  user: 대시보드/취약점/공지만.
+  user: 대시보드/취약점/공지만. `findings` 를 쪼갤 때 기존 배포본의 `findings` 허용값을
+  `compliance`·`catalog` 에도 복제해(마이그레이션) operator·user 가 보던 화면을 잃지 않게 했다.
+  **메뉴코드는 사이드바 링크와 1:1 이다.** 예전엔 `findings` 하나가 링크 6개(탐지 결과·컴플라이언스·
+  카탈로그 4종)를 함께 열어서 "탐지 결과만 끄기"가 불가능했다 — `compliance`·`catalog` 로 쪼갰다
+  (카탈로그 4종은 성격이 같아 한 코드를 공유한다). 사이드바에 없는 **상세 화면**은 두 섹션에서
+  함께 열리므로(CVE 상세 ← 탐지 결과·CVE 카탈로그·보안 공지, 자산 상세 ← 자산·탐지 결과)
+  `vg_require_menu_any('a','b')` 로 "하나라도 있으면 통과"를 쓴다 — 한 코드로 고정하면 반대편
+  섹션만 가진 사용자가 방금 본 목록의 행을 눌렀는데 403 을 받는다.
 - **토큰 인증**(사람 로그인과 분리):
   - 에이전트 → `ingest.php` : **호스트별 개별 토큰**(`X-Agent-Token`). `/agent-tokens.php` 에서
     호스트(fqdn)마다 발급하고, 토큰은 발급 시 정한 fqdn 만 갱신할 수 있다 — `ingest.php` 가
     바인딩을 강제해, 본문이 다른 호스트를 주장하면 **403 으로 거부**(침해된 대상 1대가 남의
     스캔을 위조·덮어쓰는 것을 차단). DB 엔 SHA-256 해시만 저장(원문 1회 표시), 폐기는 `is_revoked`.
     활성 토큰은 호스트당 하나(재발급 시 기존분 자동 폐기). 공유 수집 토큰은 허용하지 않는다.
-  - 외부 시스템 → `export.php` : 웹에서 발급하는 **읽기 전용** API 토큰(`X-API-Token`, 또는
-    `Authorization: Bearer`). DB 엔 SHA-256 해시만 저장(원문은 발급 시 1회 표시), 폐기는 소프트삭제.
-  - 외부 SBOM 도구 → `sbom.php` : **같은 읽기 토큰**을 쓴다(별도 토큰 종류를 늘리지 않는다).
+  - **`export.php`·`sbom.php` 는 토큰을 쓰지 않는다.** 전용 읽기 토큰(`X-API-Token`)과 발급 화면
+    (`/api-tokens.php`)·`tb_api_token` 은 2026-08-13 폐지했다 — 결과를 가져가는 외부 시스템이 DB 를
+    직접 조회하기로 해서 유지할 이유가 없어졌다. 두 엔드포인트는 이제 **웹 로그인 세션**
+    (`vg_require_menu('assets')`)으로 인증하고, 미로그인은 다른 화면과 같이 로그인으로 리다이렉트된다.
+    감사로그(`export_data`/`export_sbom`)에는 토큰 대신 실제 사용자 ID 가 찍힌다.
+    `sbom.php` 는
     `?host=` 또는 `?scan_id=` + `?format=cyclonedx|spdx` 로 자산 하나의 부품표를 CycloneDX 1.5 /
     SPDX 2.3 으로 내보낸다. purl 생성은 `src/purl.php`, serialNumber 는 스캔 기준 결정적 UUIDv5 라
     같은 스캔이면 문서가 항상 같다(매 호출 난수면 SBOM diff 가 성립하지 않는다). 열람은
     `export_sbom` 으로 감사로그에 남는다.
-  - **두 토큰 모두 유효기간을 갖는다**(`expires_at`). 발급 선택지는 무기한/30일/90일/1년이고
+  - **에이전트 토큰은 유효기간을 갖는다**(`expires_at`). 발급 선택지는 무기한/30일/90일/1년이고
     **NULL = 무기한**이라 기존 발급분은 그대로 쓰인다(하위호환). 만료된 토큰은 검증 경로가 인증
-    실패로 처리하고 `api_token_expired`/`agent_token_expired` 감사로그를 남긴다. 어휘·판정의 SSOT 는
+    실패로 처리하고 `agent_token_expired` 감사로그를 남긴다. 어휘·판정의 SSOT 는
     `src/tokenexpiry.php` 하나다(둘로 흩어지면 조용히 어긋난다). 자동 갱신·자동 재발급은 두지
     않는다 — 만료되면 사람이 새로 발급한다. 대응 기준: ISMS-P 2.5.1 · N2SF AC-1(4).
 - 최초 admin 은 `secrets/admin_password` 로 부트스트랩.
@@ -431,8 +442,5 @@ API 키/감사 로그/설정)로 묶고, **역할×메뉴 권한**에서
   동사 — READ/CREATE/UPDATE/DELETE/EXPORT/LOGIN/EXECUTE/OTHER, 어휘는 `vg_activity_action()`)만
   나중에 붙였다(일부가 `data` JSON 안에 묻혀 정렬·조회가 안 됐다). 이 제품은 개인정보를 처리하지
   않으므로 "처리한 정보주체" 자리에는 그 행위가 다룬 **대상 자원**(호스트 FQDN·CVE·패키지·계정)을 담는다.
-- **접속기록 점검**(ISMS-P 2.9.5): 월 1회 점검했다는 사실 자체를 `tb_activity_review` 에 남긴다
-  (대상 기간·수행자·결과 OK/FINDING/NA). 기간은 UNIQUE 라 같은 달을 두 번 기록할 수 없고, 수행자
-  아이디를 스냅샷으로 함께 박아 계정이 지워져도 점검 이력이 남는다.
 - **소프트 삭제**: `vg_soft_delete()` 가 하드 DELETE 대신 `is_deleted/deleted_at` 를 세운다.
   화이트리스트 대상: `tb_user`/`tb_feed_connector`/`tb_advisory`/`tb_host`/`tb_scan`.
