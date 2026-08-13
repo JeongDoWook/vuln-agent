@@ -15,31 +15,66 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 
 /**
- * 설정 항목 정의(SSOT) — 설정 화면의 행 목록이자 저장 시 검증 규칙.
- *   **기본값은 여기 두지 않는다.** 호출부가 자기 상수를 폴백으로 넘긴다
+ * 설정 항목의 묶음(SSOT) — 설정 화면이 이 순서대로 카드 하나씩 그린다.
+ *   성격이 다른 값(조치 기한 · 준수 판정 · 세션 · 계정)이 한 표에 섞여 있으면 무엇을
+ *   만지는지 안 보인다. 분류표를 화면에 하드코딩하지 않도록 라벨·설명까지 여기 둔다.
+ * @return array<string, array{label:string, desc:string}>
+ */
+function vg_setting_groups(): array {
+    return [
+        'sla' => [
+            'label' => '조치 기한(SLA)',
+            'desc'  => '취약점을 며칠 안에 조치해야 하는지. 기한을 넘기면 컴플라이언스 위반으로 셉니다.',
+        ],
+        'judgment' => [
+            'label' => '준수 판정 기준',
+            'desc'  => '위반 건수를 어디서 부분준수/미준수로 가를지, 어느 구간까지 되짚을지.',
+        ],
+        'session' => [
+            'label' => '세션 정책',
+            'desc'  => '로그인 세션이 언제 끊기는지. 보안 통제라 하한 아래로는 내릴 수 없습니다.',
+        ],
+        'account' => [
+            'label' => '계정 정책',
+            'desc'  => '수집된 대상 서버 계정을 어떤 기준으로 미사용으로 볼지.',
+        ],
+    ];
+}
+
+/**
+ * 설정 항목 정의(SSOT) — 설정 화면의 항목 목록이자 저장 시 검증 규칙.
+ *   **기본값 숫자는 여기 두지 않는다.** 호출부가 자기 상수를 폴백으로 넘긴다
  *   (예: compliance.php 의 VG_COMPLIANCE_SLA_KEV_DAYS) — 같은 숫자를 두 곳에 두면 갈라진다.
- * @return array<string, array{label:string, desc:string, type:string, min:int, max:int}>
+ *   화면이 "기본값 N" 을 보여줄 수 있게 **상수의 이름만** 적어 둔다(값은 vg_setting_default()가
+ *   그 상수에서 읽는다). default_div 는 상수 단위가 설정 단위와 다를 때의 나눗수다(초→분).
+ *   group 은 vg_setting_groups() 의 키다.
+ * @return array<string, array{label:string, desc:string, type:string, min:int, max:int, group:string, default_const:string, default_div?:int}>
  */
 function vg_setting_defs(): array {
     return [
         'compliance.sla_kev_days' => [
             'label' => 'KEV 조치 기한(일)', 'type' => 'int', 'min' => 1, 'max' => 365,
+            'group' => 'sla', 'default_const' => 'VG_COMPLIANCE_SLA_KEV_DAYS',
             'desc'  => 'KEV(실제 악용 확인) 등재 취약점을 조치해야 하는 기준 일수.',
         ],
         'compliance.sla_crit_days' => [
             'label' => 'CRITICAL 조치 기한(일)', 'type' => 'int', 'min' => 1, 'max' => 365,
+            'group' => 'sla', 'default_const' => 'VG_COMPLIANCE_SLA_CRIT_DAYS',
             'desc'  => 'CRITICAL 등급 취약점 조치 기준 일수.',
         ],
         'compliance.sla_high_days' => [
             'label' => 'HIGH 조치 기한(일)', 'type' => 'int', 'min' => 1, 'max' => 365,
+            'group' => 'sla', 'default_const' => 'VG_COMPLIANCE_SLA_HIGH_DAYS',
             'desc'  => 'HIGH 등급 취약점 조치 기준 일수.',
         ],
         'compliance.partial_max' => [
             'label' => '부분준수 상한(건)', 'type' => 'int', 'min' => 1, 'max' => 1000,
+            'group' => 'judgment', 'default_const' => 'VG_COMPLIANCE_PARTIAL_MAX',
             'desc'  => '위반 1~이 값이면 부분준수, 초과하면 미준수로 판정합니다.',
         ],
         'compliance.history_lookback_margin_days' => [
             'label' => '이력 역산 여유일', 'type' => 'int', 'min' => 0, 'max' => 365,
+            'group' => 'judgment', 'default_const' => 'VG_COMPLIANCE_HISTORY_MARGIN_DAYS',
             'desc'  => '최초 발견 시각을 되짚는 구간 = 가장 긴 조치 기한 + 이 여유일.',
         ],
         // 세션 만료는 **보안 통제**다. 단위를 분으로 둔 것은 관리자가 다루는 단위라서고,
@@ -47,17 +82,37 @@ function vg_setting_defs(): array {
         //   무한 세션(만료 없음)을 저장할 수 있으면 그 자체가 장애·보안사고다.
         'session.idle_minutes' => [
             'label' => '세션 유휴 만료(분)', 'type' => 'int', 'min' => 5, 'max' => 720,
+            'group' => 'session', 'default_const' => 'VG_SESSION_IDLE_SECONDS', 'default_div' => 60,
             'desc'  => '마지막 활동 이후 이 시간이 지나면 자동 로그아웃합니다(ISMS-P 2.6.3).',
         ],
         'session.absolute_minutes' => [
             'label' => '세션 절대 만료(분)', 'type' => 'int', 'min' => 30, 'max' => 1440,
+            'group' => 'session', 'default_const' => 'VG_SESSION_ABSOLUTE_SECONDS', 'default_div' => 60,
             'desc'  => '유휴와 무관하게 로그인 시점부터 이 시간이 지나면 자동 로그아웃합니다.',
         ],
         'account.stale_login_days' => [
             'label' => '계정 미사용 판정(일)', 'type' => 'int', 'min' => 7, 'max' => 1095,
+            'group' => 'account', 'default_const' => 'VG_ACCOUNT_STALE_LOGIN_DAYS',
             'desc'  => '이 일수 이상 로그인하지 않은 대화형 계정을 미사용으로 판정합니다(ISMS-P 2.5.1·2.5.6).',
         ],
     ];
+}
+
+/**
+ * 이 키의 기본값(= 설정 행이 없을 때 실제로 쓰이는 폴백). 정의의 default_const 가 가리키는
+ *   상수에서 읽는다 — 숫자를 여기 다시 적으면 폴백과 화면이 갈라진다.
+ *   **상수를 가진 파일이 로드돼 있어야 한다**(compliance.php·account_inventory.php·auth.php).
+ *   여기서 그 파일들을 require 하지는 않는다 — 이 파일은 모든 요청이 include 하는 경로에
+ *   걸려 있어서, 판정 로직 전체를 끌어오면 값 하나 읽자고 요청마다 비용을 문다. 로드돼 있지
+ *   않으면 null(= 기본값을 모른다)을 돌려주고 화면이 표시를 생략한다.
+ */
+function vg_setting_default(string $key): ?int {
+    $def = vg_setting_defs()[$key] ?? null;
+    $const = (string) ($def['default_const'] ?? '');
+    if ($const === '' || !defined($const)) {
+        return null;
+    }
+    return intdiv((int) constant($const), max(1, (int) ($def['default_div'] ?? 1)));
 }
 
 /**

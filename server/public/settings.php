@@ -3,29 +3,39 @@ declare(strict_types=1);
 
 /**
  * settings.php — 전역 운영 설정(tb_setting) 편집 (admin 전용).
- *   판정 기준값처럼 조직마다 달라지는 값만 다룬다. 표 + 인라인 입력 한 폼으로 최소화한다
- *   (permissions.php 매트릭스와 같은 구조 — 저장 버튼 하나로 전부 upsert).
- *   항목 목록·검증 범위는 vg_setting_defs() 가 정본이라 여기엔 문구를 다시 적지 않는다.
+ *   판정 기준값처럼 조직마다 달라지는 값만 다룬다. 폼 하나 · 저장 버튼 하나로 전부 upsert 한다
+ *   (permissions.php 매트릭스와 같은 구조).
+ *
+ *   화면은 vg_setting_groups() 순서대로 카드를 그리고, 각 카드는 자기 그룹의 항목만 담는다 —
+ *   예전엔 성격이 전혀 다른 값(조치 기한 · 세션 정책 · 계정 판정)이 표 3열에 통째로 섞여 있어
+ *   무엇을 만지는지 눈에 안 들어왔다. 항목 문구·범위·묶음은 vg_setting_defs()/vg_setting_groups()
+ *   가 정본이라 여기엔 다시 적지 않는다.
  */
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';    // vg_log_activity
-require_once __DIR__ . '/../src/setting.php';  // vg_setting_defs
+require_once __DIR__ . '/../src/setting.php';  // vg_setting_defs / vg_setting_groups / vg_setting_default
+// 기본값 상수(VG_COMPLIANCE_*·VG_ACCOUNT_STALE_LOGIN_DAYS)를 가진 파일. vg_setting_default() 가
+//   그 상수에서 기본값을 읽으므로 이 화면에서만 로드한다 — setting.php 는 모든 요청이 거치는
+//   경로라 거기서 require 하면 값 하나 때문에 판정 로직 전체를 요청마다 끌어오게 된다.
+//   (세션 상수는 auth.php 가 이미 정의했다.)
+require_once __DIR__ . '/../src/compliance.php';
 vg_require_menu('settings');
 
 $pdo = vg_pdo();
 $defs = vg_setting_defs();
 $msg = null; $err = null;
+$fieldErr = [];   // 키 => 그 입력 아래에 붙일 오류 문구
+$posted = [];     // 거절된 입력은 사용자가 친 값을 그대로 되돌려준다(고칠 수 있게)
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!vg_csrf_check($_POST['csrf'] ?? null)) {
         $err = '세션이 만료되었습니다. 다시 시도하세요.';
     } else {
         try {
-            $posted = $_POST['setting'] ?? [];
+            $posted = is_array($_POST['setting'] ?? null) ? $_POST['setting'] : [];
             $changed = [];
-            $rejected = [];
             $up = $pdo->prepare(
                 'INSERT INTO tb_setting (setting_key, setting_value, description)
                  VALUES (?,?,?)
@@ -36,7 +46,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $raw = trim((string) $posted[$key]);
                 $int = filter_var($raw, FILTER_VALIDATE_INT);
                 if ($int === false || $int < (int) $def['min'] || $int > (int) $def['max']) {
-                    $rejected[] = sprintf('%s — %d~%d 사이의 정수만 가능합니다.', $def['label'], $def['min'], $def['max']);
+                    // 문제가 난 입력 자체에 붙인다 — 상단에 문구만 모아 두면 항목이 아홉 개일 때
+                    //   어느 칸을 고쳐야 하는지 눈으로 되짚어야 했다.
+                    $fieldErr[$key] = sprintf('%d~%d 사이의 정수만 가능합니다.', (int) $def['min'], (int) $def['max']);
                     continue;
                 }
                 $up->execute([$key, (string) $int, (string) $def['desc']]);
@@ -48,8 +60,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 vg_log_activity($pdo, 'SETTING', null, 'setting_update', '운영 설정 변경', $changed);
                 $msg = count($changed) . '개 설정을 저장했습니다.';
             }
-            if ($rejected) {
-                $err = implode(' / ', $rejected);
+            if ($fieldErr) {
+                $err = count($fieldErr) . '개 항목을 저장하지 못했습니다. 아래 표시된 입력을 확인하세요.';
             } elseif (!$changed) {
                 $msg = '변경된 값이 없습니다.';
             }
@@ -73,6 +85,17 @@ try {
     $tableMissing = true;
 }
 
+// 그룹별로 항목을 담는다. 정의에 group 이 없거나 모르는 값이면 첫 그룹에 넣는다 —
+//   항목이 어느 카드에도 안 잡혀 화면에서 조용히 사라지는 일은 없어야 한다.
+$groups = vg_setting_groups();
+$byGroup = array_fill_keys(array_keys($groups), []);
+$firstGroup = (string) array_key_first($groups);
+foreach ($defs as $key => $def) {
+    $g = (string) ($def['group'] ?? '');
+    if (!isset($byGroup[$g])) { $g = $firstGroup; }
+    $byGroup[$g][$key] = $def;
+}
+
 $csrf = vg_csrf_token();
 vg_header('설정', 'settings');
 ?>
@@ -90,24 +113,41 @@ vg_header('설정', 'settings');
         vg_alert('설정 테이블을 읽을 수 없습니다. 마이그레이션 적용 여부를 확인하세요(기본값으로 판정 중).', 'warn');
     }
 
-    $rows = [];
-    foreach ($defs as $key => $def) { $rows[] = ['key' => $key] + $def; }
-    vg_table([
-        ['label' => '항목', 'width' => '32%'],
-        ['label' => '값', 'width' => '10rem'],
-        ['label' => '설명'],
-    ], $rows, [
-        'cell' => [
-            0 => static fn($r) => '<strong>' . vg_h((string) $r['label']) . '</strong>',
-            // 입력 스타일은 app.css 의 input[type=number] 가 이미 갖는다 — 클래스를 새로 만들지 않는다.
-            1 => static fn($r) => '<input type="number" name="setting[' . vg_h((string) $r['key']) . ']"'
-                . ' value="' . vg_h((string) ($cur[$r['key']] ?? '')) . '"'
-                . ' min="' . (int) $r['min'] . '" max="' . (int) $r['max'] . '" step="1"'
-                . ' aria-label="' . vg_h((string) $r['label']) . '">',
-            2 => static fn($r) => '<span class="why">' . vg_h((string) $r['desc'])
-                . ' (' . (int) $r['min'] . '~' . (int) $r['max'] . ')</span>',
-        ],
-    ]);
-    ?>
+    foreach ($groups as $gkey => $group):
+        if (!$byGroup[$gkey]) { continue; } ?>
+      <section class="card">
+        <strong><?= vg_h((string) $group['label']) ?></strong>
+        <p class="why"><?= vg_h((string) $group['desc']) ?></p>
+        <div class="card__body setting-form setting-form--grid">
+          <?php foreach ($byGroup[$gkey] as $key => $def):
+              $id  = 'set-' . str_replace('.', '-', $key);
+              $def_val = vg_setting_default($key);
+              // 저장된 값이 없으면 실제로 쓰이는 값(기본값)을 채운다 — 빈 칸으로 두면
+              //   저장 버튼 한 번에 전 항목이 "정수만 가능합니다"로 거절된다.
+              $val = $cur[$key] ?? ($def_val !== null ? (string) $def_val : '');
+              if (isset($fieldErr[$key])) { $val = trim((string) ($posted[$key] ?? '')); }
+              $isErr = isset($fieldErr[$key]);
+              $showDefault = $def_val !== null && $val !== (string) $def_val;
+          ?>
+            <label class="field<?= $isErr ? ' field--err' : '' ?>" for="<?= vg_h($id) ?>">
+              <?= vg_h((string) $def['label']) ?>
+              <input type="number" id="<?= vg_h($id) ?>" name="setting[<?= vg_h($key) ?>]"
+                     value="<?= vg_h($val) ?>"
+                     min="<?= (int) $def['min'] ?>" max="<?= (int) $def['max'] ?>" step="1"
+                     aria-describedby="<?= vg_h($id) ?>-why"<?= $isErr ? ' aria-invalid="true"' : '' ?>>
+              <span class="why" id="<?= vg_h($id) ?>-why">
+                <?= vg_h((string) $def['desc']) ?> (<?= (int) $def['min'] ?>~<?= (int) $def['max'] ?>)
+              </span>
+              <?php if ($showDefault): ?>
+                <span class="field__default">기본값 <?= (int) $def_val ?></span>
+              <?php endif; ?>
+              <?php if ($isErr): ?>
+                <span class="field__err" role="alert"><?= vg_h($fieldErr[$key]) ?></span>
+              <?php endif; ?>
+            </label>
+          <?php endforeach; ?>
+        </div>
+      </section>
+    <?php endforeach; ?>
   </form>
 <?php vg_footer();
