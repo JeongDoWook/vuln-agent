@@ -52,6 +52,7 @@ function vg_activity_type_labels(): array {
         'export_sbom'          => 'SBOM 내보내기',
         'view_host'            => '호스트 상세 조회',
         'view_host_accounts'   => '호스트 계정 목록 조회',
+        'view_container'       => '컨테이너 상세 조회',
         'view_depgraph'        => '패키지 의존성 그래프 조회',
         'view_cve'             => '취약점 상세 조회',
         'view_advisory'        => '보안공지 상세 조회',

@@ -387,6 +387,14 @@ tb_finding 등 재계산 캐시성 테이블은 소프트삭제 대상에서 제
 `vg_compliance_subtab_labels()`/`vg_compliance_subtabs()` 한 곳이 정본이다 — 예전엔 세 화면이
 각자 그려 개수(3 vs 5)와 라벨이 어긋났다.
 
+**컨테이너 상세(`container.php`)도 사이드바에 없고 자산 상세의 컨테이너 탭에서만 들어온다.**
+컨테이너는 호스트에 딸린 자산이라 자기 목록 화면을 갖지 않는다 — 어느 호스트의 어느 스캔인지가
+정해져야 조회 단위가 성립한다(`tb_container` 의 자연키가 `(scan_id, cid)` 다). URL 도 그 자연키를
+쓴다(`?id=<host_id>&cid=<컨테이너 cid>`) — 숫자 `container_id` 는 스캔마다 새로 발급돼 북마크가
+다음 수집에서 깨진다. 인가는 자산 상세와 같은 `vg_require_menu_any('assets','findings')` 다.
+SBOM(`sbom.php`)은 호스트·컨테이너 두 범위를 지원하되 **한 문서에 섞지 않으며**, 자산 상세와
+컨테이너 상세 첫 화면에서 링크한다(예전엔 화면 링크가 하나도 없었다).
+
 다이어그램: [`docs/specs/diagrams/사이트맵.puml`](../specs/diagrams/사이트맵.puml)
 
 - **세션 인증**(`tb_user`) : 웹 화면 전부. 역할은 **`admin` / `operator` / `user`** 3단계.
