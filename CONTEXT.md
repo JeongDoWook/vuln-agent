@@ -1,6 +1,6 @@
 # CONTEXT.md — 프로젝트 맥락 (Claude Code 최우선 참고)
 
-> 현행 기준: 2026-08-11 · 에이전트 3.13 · 계정 인벤토리·자산 등급(N2SF)·컴플라이언스 스냅샷 포함.
+> 현행 기준: 2026-08-15 · 에이전트 3.13 · 계정 인벤토리·자산 등급(N2SF)·컴플라이언스 스냅샷 포함.
 
 > 이 파일은 개발을 이어받는 사람(및 Claude Code)이 **가장 먼저 읽는** 요약이다.
 > 쉬운 설명은 `docs/dev/설명글.md`, 대회용 기획 문서는 `docs/dev/기획안_v1.0.html`
@@ -158,7 +158,7 @@ vuln-agent/
 │   │             #   화면 목록의 정본은 src/view/nav.php 의 vg_nav_sections() 와 사이트맵 다이어그램
 │   ├── src/      # 공용 라이브러리(URL 로 안 열린다): db·auth(RBAC·세션만료)·view/·matcher(+억제)
 │   │             #   · feeds/(커넥터 12종)·cce·compliance·account_inventory·assetgrade·setting 등
-│   └── bin/      # CLI 전용: scheduler.php(사이드카)·sync.php·backfill_*·rebuild_*
+│   └── bin/      # CLI 전용: scheduler.php(사이드카)·sync.php·backfill_*(nvd·kisa)
 ├── db/           # 01~19 *.sql (빈 볼륨 initdb 전용, tb_ 접두사+감사4컬럼)
 │   └── migrations/    # YYYYMMDDHHMMSS_*.sql — deploy/migrate.sh 가 자동 적용(tb_schema_migrations 기록)
 │                      #   연번(0001…)은 금지 — 동시 브랜치가 같은 번호를 집는다. pre-push 가 막는다.
@@ -166,7 +166,7 @@ vuln-agent/
 ├── tests/        # smoke.sh(API~로그인 curl) · e2e.sh+e2e/(브라우저, Playwright — 게이트 밖)
 │                 #   · ui_lint.sh(죽은 CSS·인라인 style) · vercmp_test.php(버전비교 단위)
 │                 #   · agent-bench.sh(에이전트 리소스 실측) · *_test.php/*_test.sh(단위·문서 일관성)
-└── docs/         # dev/(아키텍처·데이터베이스·피드소스-역할·설명글·화면-안내·조치가이드·리소스 프로파일)
+└── docs/         # dev/(아키텍처·데이터베이스·피드소스-역할·설명글·화면-안내·조치가이드·자산등급·리소스 프로파일)
                   #   · specs/diagrams/(PlantUML 6종 + 렌더 SVG) · ui-configuration.md
 ```
 
@@ -243,7 +243,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
 
 ---
 
-## 8. 개발 현황 (2026-08-11 기준)
+## 8. 개발 현황 (2026-08-15 기준)
 
 파이프라인(수집→전송→저장→매칭→표시)·HTTPS·감사에 더해 오탐억제/CCE/변화추적/Export,
 그리고 컴플라이언스·계정 인벤토리·자산 등급까지 동작한다. 아래는 **무엇이 있는지**와
@@ -341,6 +341,7 @@ ingest 응답과 취약점 화면에 **경고로 띄운다**. Oracle Linux는 OS
   옛 스캔이 최신 제안을 되돌리지 않게 관찰시각을 보존하고 신선도를 클램프한다(#549).
   확정 근거는 자유서술 대신 구조화 검토(`tb_asset_grade_review` — 제9조 호·업무/자료 범주·소관부서·
   재검토일)로도 남길 수 있다 — 저장·표시 경로는 `host.php` 에 붙어 있다(#550, wip 로 병합됨).
+  **제안 규칙·확정 절차·이력 판정의 정본은 `docs/dev/자산등급.md`** 다(코드는 `src/assetgrade.php`).
 - **제거·대체 검토 권고**(#489) — 벤더 미수정이 한 패키지에 몰리면 CVE 수십 줄 대신 (호스트×패키지)로
   묶는다. 실측: 한 호스트의 `libqt5webkit5` 에 no_fix 43건, 실제 조치는 `apt purge` 한 번이었다.
   EOL 이라고 단정하지 않고 관측 + 권고만 한다.
