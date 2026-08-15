@@ -495,14 +495,3 @@ function vg_help(string $text): string {
     return '<span class="help" data-tip="' . vg_h($text) . '" aria-label="' . vg_h($text)
         . '" tabindex="0" role="note">?</span>';
 }
-
-/**
- * ⓘ 인포팁. 제목·라벨 옆에 붙여 부연설명을 감춰 둔다(말풍선은 app.css 가 그린다).
- * 설명은 data-tip 으로 넘긴다 — title 로 주면 브라우저 기본 툴팁이 우리 말풍선과
- * 같이 떠서 두 개가 겹친다. 화면에 보이는 건 ⓘ 글자뿐이라 스크린리더가 읽을 게
- * 없으므로 aria-label 로 같은 문구를 준다.
- */
-function vg_info_icon(string $text): string {
-    return '<span class="info-icon" data-tip="' . vg_h($text) . '" aria-label="' . vg_h($text)
-        . '" tabindex="0" role="note">ⓘ</span>';
-}

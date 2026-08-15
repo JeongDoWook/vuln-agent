@@ -486,7 +486,7 @@
       }
       data.commands.forEach(function (command) { list.appendChild(renderCommand(command)); });
     }
-    function refresh(schedule) {
+    function refresh() {
       fetch('/agent-command-overview.php', {headers: {'Accept': 'application/json'}})
         .then(function (response) { if (!response.ok) { throw new Error('status'); } return response.json(); })
         .then(render)
@@ -495,12 +495,12 @@
         })
         .then(function () {
           window.clearTimeout(timer);
-          timer = window.setTimeout(function () { refresh(true); }, dialog.open ? 3000 : 15000);
+          timer = window.setTimeout(refresh, dialog.open ? 3000 : 15000);
         });
     }
-    dialog.addEventListener('close', function () { window.clearTimeout(timer); refresh(true); });
-    document.querySelector('[data-collection-status-open]').addEventListener('click', function () { refresh(true); });
-    refresh(true);
+    dialog.addEventListener('close', function () { window.clearTimeout(timer); refresh(); });
+    document.querySelector('[data-collection-status-open]').addEventListener('click', refresh);
+    refresh();
   });
 
   // 뒤로가기(bfcache)로 복귀하면 멈춰있던 스피너를 되돌린다.

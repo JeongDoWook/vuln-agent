@@ -54,7 +54,6 @@ LOGIN_LOCK_MINUTES=15
 | `UI_PER_PAGE_OPTIONS` | `10,20,40,60,100` | 각 항목 5~200 (범위 밖 항목은 버림) | 목록의 페이지 크기 선택지 |
 | `UI_PER_PAGE_DEFAULT` | `10` | 선택지 중 하나 (아니면 선택지의 최솟값) | 기본 페이지 크기 |
 | `UI_DASHBOARD_URGENT_LIMIT` | `6` | 3~30 | 대시보드 대응 우선순위 표시 건수 |
-| `UI_DASHBOARD_ACTIONABLE_STATUSES` | `EXTERNAL,LAN,LISTENING,RUNNING,LOADED` | 이 5종 중 일부 (그 밖의 값은 무시) | KEV 긴급 목록에 포함할 실제 사용 상태 |
 | `UI_DETAIL_PREVIEW_LIMIT` | `10` | 5~100 | 상세 화면 이력·프로세스 미리보기 건수 |
 | `UI_TREND_LIMIT` | `50` | 10~500 | 상세 화면 추이 데이터 수 |
 | `UI_FILTER_OPTION_LIMIT` | `300` | 50~2000 | 취약점 목록의 호스트 필터 선택지 최대 개수 (현재 선택된 호스트는 한도와 무관하게 항상 포함) |

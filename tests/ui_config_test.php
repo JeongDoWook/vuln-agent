@@ -27,8 +27,6 @@ putenv('UI_TREND_LIMIT=-1');
 $eq('추이 한도 하한', vg_ui_trend_limit(), 10);
 putenv('UI_FILTER_OPTION_LIMIT=99999');
 $eq('필터 선택지 한도 상한', vg_ui_filter_option_limit(), 2000);
-putenv('UI_DASHBOARD_ACTIONABLE_STATUSES=external,loaded,installed,bad');
-$eq('긴급 상태 화이트리스트', vg_ui_dashboard_actionable_statuses(), ['EXTERNAL', 'LOADED']);
 $eq('Wolfi OSV 생태계', vg_osv_ecosystem('wolfi', '20230201'), 'Wolfi');
 $eq('Wolfi는 판정 가능', vg_distro_unsupported('wolfi', '20230201'), null);
 
@@ -87,7 +85,6 @@ foreach (vg_setting_defs() as $key => $def) {
 putenv('UI_PER_PAGE_OPTIONS');
 putenv('UI_PER_PAGE_DEFAULT');
 putenv('UI_DASHBOARD_URGENT_LIMIT');
-putenv('UI_DASHBOARD_ACTIONABLE_STATUSES');
 putenv('UI_TREND_LIMIT');
 putenv('UI_FILTER_OPTION_LIMIT');
 

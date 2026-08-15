@@ -542,14 +542,12 @@ h1 .hint { font-size: var(--fs-sm); color: var(--muted); font-weight: 400; }
 h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(--sp-2); }
 
 /* --- 짧은 도움말 트리거 + 공통 툴팁 --------------------------------------- */
-.info-icon, .help {
+.help {
   cursor: help;
   color: var(--muted);
   margin-left: 4px;
   vertical-align: middle;
 }
-.info-icon { font-size: .9em; }
-.info-icon:hover, .info-icon:focus-visible,
 .help:hover, .help:focus-visible { color: var(--accent-2); }
 
 .info-tooltip {
@@ -966,11 +964,6 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .riskbar .tone-high { background: var(--high); }
 .riskbar .tone-med  { background: var(--med); }
 .riskbar .tone-low  { background: var(--low); }
-/* 표 셀이 아니라 카드 안에서 "구성"을 보여줄 때 쓰는 큰 변형(vg_stacked_bar).
- * 색·구조는 위 .riskbar 정의를 그대로 쓰고 크기만 바꾼다 — 누적막대를 두 벌 만들지 않는다. */
-.riskbar--lg { height: 12px; max-width: none; gap: 1px; margin-bottom: .5rem; }
-.riskbar--lg i { border-radius: 3px; }
-
 /* 도넛 옆 범례(.legend)를 한 줄로 눕힌 변형 — 누적막대 아래처럼 가로로 놓일 때 쓴다.
  * 톤 색은 아래 .legend .tone-* 정의를 그대로 상속한다(색 정의를 다시 만들지 않는다). */
 .legend--inline { display: flex; flex-wrap: wrap; gap: .2rem .9rem; margin-top: 0; }
@@ -1004,45 +997,6 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .rank__bar.tone-info  { background: var(--accent); }
 .rank__value { color: var(--text); font-weight: 700; }
 @media (max-width: 700px) { .rank__row { grid-template-columns: minmax(0, 7rem) minmax(2rem, 1fr) max-content; } }
-
-/* --- 반원 게이지(vg_gauge) -------------------------------------------------
- * 단일 비율 지표("SLA 준수율 82%")를 한눈에. .meter 는 표 셀 안의 6px 막대(값 옆에 붙는 보조
- * 표시)라 역할이 다르다 — 이건 카드 하나를 채우는 주 지표다. 그래서 둘 다 남긴다. */
-/* 폭 상한이 없으면 카드 폭만큼 커진다 — 단일 지표 하나짜리 그림이 화면을 다 먹지 않게 묶는다. */
-.gauge { display: block; width: 100%; max-width: 200px; margin-inline: auto; }
-.gauge svg { width: 100%; height: auto; display: block; }
-.gauge__track { stroke: var(--sunken); }
-.gauge__arc { transition: stroke-dasharray .2s ease-out; }
-.gauge__arc.tone-crit  { stroke: var(--crit); }
-.gauge__arc.tone-high  { stroke: var(--high); }
-.gauge__arc.tone-med   { stroke: var(--med); }
-.gauge__arc.tone-low   { stroke: var(--low); }
-.gauge__arc.tone-ok    { stroke: var(--ok); }
-.gauge__arc.tone-muted { stroke: var(--muted-2); }
-.gauge__arc.tone-info  { stroke: var(--accent); }
-.gauge__val { fill: var(--text); font-size: 15px; font-weight: 750; text-anchor: middle; }
-.gauge__lbl { fill: var(--muted); font-size: 8px; text-anchor: middle; }
-
-/* --- 초소형 추이선(vg_sparkline) ------------------------------------------
- * 표 셀 안에 들어가는 축·라벨 없는 선. "늘고 있나 줄고 있나" 하나만 말한다. */
-.spark { display: inline-block; width: 4.5rem; height: 1.35rem; vertical-align: middle; }
-.spark svg { width: 100%; height: 100%; display: block; }
-.spark__line { fill: none; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
-.spark__line.tone-crit  { stroke: var(--crit); }
-.spark__line.tone-high  { stroke: var(--high); }
-.spark__line.tone-med   { stroke: var(--med); }
-.spark__line.tone-low   { stroke: var(--low); }
-.spark__line.tone-ok    { stroke: var(--ok); }
-.spark__line.tone-muted { stroke: var(--muted-2); }
-.spark__line.tone-info  { stroke: var(--accent); }
-.spark__dot { fill: currentColor; }
-.spark__dot.tone-crit  { fill: var(--crit); }
-.spark__dot.tone-high  { fill: var(--high); }
-.spark__dot.tone-med   { fill: var(--med); }
-.spark__dot.tone-low   { fill: var(--low); }
-.spark__dot.tone-ok    { fill: var(--ok); }
-.spark__dot.tone-muted { fill: var(--muted-2); }
-.spark__dot.tone-info  { fill: var(--accent); }
 
 /* KPI 증감 칩 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전 대비를 같이 준다.
  * 방향은 색만으로 말하지 않는다(▲/▼ 기호가 같이 간다).
@@ -2214,7 +2168,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 
 /* 관리 화면: 열이 많아 본문 폭을 넓게 쓴다(작업 열 정렬은 위 td.right .actions 가 소유한다). */
 .page--connectors .page__main, .page--users .page__main, .page--permissions .page__main,
-.page--agent-tokens .page__main, .page--api-tokens .page__main { max-width: 1520px; }
+.page--agent-tokens .page__main { max-width: 1520px; }
 .page--profile .page__main { max-width: 720px; margin-inline: auto; }
 .page--profile .card--sm { max-width: 520px; }
 

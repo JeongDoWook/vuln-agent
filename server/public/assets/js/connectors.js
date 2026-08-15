@@ -161,7 +161,6 @@ function vgRenderFieldMap(role, existingMapping) {
 }
 
 function vgGenericCollect() {
-  var form = document.getElementById('connForm');
   var role = document.getElementById('gRole').value;
   var headers = {};
   document.querySelectorAll('#gHeaders .kvrow').forEach(function (row) {
