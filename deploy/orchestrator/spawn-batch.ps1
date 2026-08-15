@@ -9,7 +9,8 @@
   조립하지 않는다), 그 다음 이 스크립트 한 번으로 전부 스폰한다. spawn-worker.ps1 을
   파일마다 손으로 반복 호출하다 슬러그를 잘못 짝짓거나 하나를 빼먹는 실수를 없앤다.
 
-  스폰에 성공한 파일은 .omc/tasks/archive/ 로 옮긴다 — 재실행 시 이미 스폰한 작업을
+  스폰에 성공한 파일은 .omc/tasks/archive/ 로 옮겨진다(이동 주체는 spawn-worker.ps1 —
+  개별 스폰도 똑같이 아카이브하도록 그쪽으로 내렸다) — 재실행 시 이미 스폰한 작업을
   또 스폰하지 않는다(스폰 자체는 spawn-worker.ps1 이 기존 워크트리를 재사용하므로 멱등하지만,
   "무엇을 다음에 또 스폰할지" 목록이 지저분해지는 걸 막는다).
 
@@ -70,9 +71,9 @@ if ($DryRun) {
   exit 0
 }
 
+# 아카이브 이동은 spawn-worker.ps1 이 한다(개별 스폰도 같아야 하므로 그쪽으로 내렸다).
+# 여기서 또 옮기면 두 번째 Move-Item 이 '원본 없음' 으로 실패해 배치가 통째로 실패로 뒤집힌다.
 $spawnWorker = Join-Path $PSScriptRoot 'spawn-worker.ps1'
-$archiveDir = Join-Path $MainRoot '.omc/tasks/archive'
-if (-not (Test-Path $archiveDir)) { New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null }
 
 $results = @()
 foreach ($f in $files) {
@@ -82,7 +83,6 @@ foreach ($f in $files) {
   try {
     & $spawnWorker -Task $slug -PromptFile $f.FullName -Prefix $Prefix -Base $Base `
       -Permissions $Permissions -Launch $Launch -Finish $Finish
-    Move-Item -Path $f.FullName -Destination (Join-Path $archiveDir $f.Name) -Force
     $results += [pscustomobject]@{ Slug = $slug; Status = 'spawned' }
   }
   catch {
