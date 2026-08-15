@@ -202,7 +202,7 @@ async function main() {
     await go(page, '/assets.php');
 
     // 네이티브 title은 브라우저마다 오래 기다려야 하므로 app.js가 즉시 공통 tooltip로 바꾼다.
-    const assetHelp = page.locator('.page-title .help').first();
+    const assetHelp = page.locator('th[data-tip]:has-text("상태")').first();
     check(await assetHelp.count() === 1, '자산 상태 도움말 아이콘 제공');
     if (await assetHelp.count()) {
       await assetHelp.hover();
