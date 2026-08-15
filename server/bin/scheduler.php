@@ -1,6 +1,65 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/../src/schedule.php';
+
+$healthFile = getenv('SCHEDULER_HEALTH_FILE') ?: '/tmp/vulnagent-scheduler-health.json';
+$staleSeconds = max(1, (int) (getenv('SCHEDULER_STALE_SECONDS') ?: 600));
+
+$readHealth = static function () use ($healthFile): array {
+    $raw = @file_get_contents($healthFile);
+    if ($raw === false) { return []; }
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+};
+$writeHealth = static function (array $state) use ($healthFile): void {
+    $tmp = $healthFile . '.tmp.' . getmypid();
+    $json = json_encode($state, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if ($json === false || @file_put_contents($tmp, $json . "\n", LOCK_EX) === false || !@rename($tmp, $healthFile)) {
+        @unlink($tmp);
+        throw new RuntimeException('scheduler health state 기록 실패: ' . $healthFile);
+    }
+};
+
+// Compose healthcheck/운영자가 같은 JSON 판정을 소비한다. DB나 connector 코드는 로드하지 않는다.
+if (($argv[1] ?? '') === '--health') {
+    $state = $readHealth();
+    $health = vg_scheduler_health_status($state, null, $staleSeconds);
+    fwrite(STDOUT, json_encode($state + $health, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n");
+    exit($health['healthy'] ? 0 : 1);
+}
+
+$state = $readHealth();
+$state['last_started_at'] = date(DATE_ATOM);
+$state['running'] = true;
+$state['last_message'] = 'scheduler tick started';
+$writeHealth($state);
+
+$finished = false;
+$finish = static function (bool $success, string $message) use (&$finished, &$state, $writeHealth): void {
+    $now = date(DATE_ATOM);
+    $state['running'] = false;
+    $state['last_message'] = $message;
+    if ($success) {
+        $state['last_success_at'] = $now;
+    } else {
+        $state['last_failure_at'] = $now;
+        $state['last_failure_message'] = $message;
+    }
+    $writeHealth($state);
+    $finished = true;
+};
+register_shutdown_function(static function () use (&$finished, &$state, $writeHealth): void {
+    if ($finished) { return; }
+    $error = error_get_last();
+    $message = $error ? ($error['message'] . ' at ' . basename($error['file']) . ':' . $error['line']) : 'scheduler tick terminated unexpectedly';
+    $state['running'] = false;
+    $state['last_message'] = $message;
+    $state['last_failure_at'] = date(DATE_ATOM);
+    $state['last_failure_message'] = $message;
+    try { $writeHealth($state); } catch (Throwable $ignored) { error_log($ignored->getMessage()); }
+});
+
 // PHP 한도는 **반드시 이 프로세스가 도는 컨테이너의 mem_limit 보다 낮아야** 한다.
 //   여기는 scheduler 컨테이너(deploy/compose.common.yml: mem_limit 1g) → 768M.
 //   높으면(예전: PHP 1024M vs 컨테이너 384m) PHP 가 자기 한도에 닿기 전에 cgroup 이 SIGKILL 하고,
@@ -62,14 +121,17 @@ try {
 $due = vg_feed_due($pdo);
 if (!$due) {
     fwrite(STDOUT, '[' . date('c') . "] due 커넥터 없음\n");
+    $finish(true, 'scheduler tick succeeded: no due connector');
     exit(0);
 }
 
 $ok = 0; $okIds = []; $upserted = 0;
+$failedMessages = [];
 foreach ($due as $id) {
     $r = vg_feed_run($pdo, $id, 'schedule');
     fwrite(STDOUT, '[' . date('c') . "] connector #$id → " . ($r['ok'] ? "ok ({$r['upserted']} upserted)" : "error: {$r['error']}") . "\n");
     if (!empty($r['ok'])) { $ok++; $okIds[] = $id; $upserted += (int) ($r['upserted'] ?? 0); }
+    else { $failedMessages[] = "connector #$id: " . (string) ($r['error'] ?? 'unknown error'); }
 }
 
 // 성공 여부가 아니라 **실제 수집분**을 기준으로 재매칭한다. 커넥터가 ok 이기만 하면 돌리던
@@ -97,3 +159,10 @@ if ($upserted > 0) {
     // 조용히 건너뛰지 않는다 — 왜 재매칭이 안 돌았는지 로그로 드러나야 한다.
     fwrite(STDOUT, '[' . date('c') . "] 수집 0건 (커넥터 성공 {$ok}/" . count($due) . ") — 재매칭 생략\n");
 }
+
+if ($failedMessages) {
+    $message = implode('; ', $failedMessages);
+    $finish(false, $message);
+    exit(1);
+}
+$finish(true, "scheduler tick succeeded: connectors {$ok}/" . count($due));

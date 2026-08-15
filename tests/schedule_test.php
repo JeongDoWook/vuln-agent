@@ -100,6 +100,48 @@ $sch60   = ['mode' => 'interval', 'interval_minutes' => 60];
 $eq('reap: 간격 짧으면 next 는 과거(=지금 due)', strtotime((string) vg_schedule_next($sch60, strtotime($stale7h))) < $now, true);
 $eq('reap: 그때 due 판정도 true', vg_schedule_due($sch60, $stale7h, $now), true);
 
+// ── scheduler tick health ──────────────────────────────────────────────────────────────
+// 프로세스가 running 이어도 마지막 tick 이 오래됐거나 최신 tick 이 실패했으면
+// 정상으로 표시하지 않는다. 커넥터별 동시성과 무관한 순수 판정만 여기서 고정한다.
+$missingHealth = vg_scheduler_health_status([], $now, 180);
+$eq('health: 시작 증거 없음', $missingHealth['status'], 'unavailable');
+$eq('health: 시작 증거 없으면 unhealthy', $missingHealth['healthy'], false);
+
+$staleHealth = vg_scheduler_health_status([
+    'last_started_at' => date(DATE_ATOM, $now - 181),
+    'last_success_at' => date(DATE_ATOM, $now - 181),
+    'running' => false,
+], $now, 180);
+$eq('health: 마지막 시작이 오래되면 stale', $staleHealth['status'], 'stale');
+$eq('health: stale 은 unhealthy', $staleHealth['healthy'], false);
+
+$failedHealth = vg_scheduler_health_status([
+    'last_started_at' => date(DATE_ATOM, $now - 30),
+    'last_success_at' => date(DATE_ATOM, $now - 120),
+    'last_failure_at' => date(DATE_ATOM, $now - 20),
+    'last_failure_message' => 'connector #7 failed',
+    'running' => false,
+], $now, 180);
+$eq('health: 최신 결과가 실패면 failed', $failedHealth['status'], 'failed');
+$eq('health: 실패 메시지 보존', $failedHealth['message'], 'connector #7 failed');
+$eq('health: failed 는 unhealthy', $failedHealth['healthy'], false);
+
+$runningHealth = vg_scheduler_health_status([
+    'last_started_at' => date(DATE_ATOM, $now - 10),
+    'last_success_at' => date(DATE_ATOM, $now - 70),
+    'running' => true,
+], $now, 180);
+$eq('health: 최근 tick 실행 중', $runningHealth['status'], 'running');
+$eq('health: 최근 tick 실행 중은 healthy', $runningHealth['healthy'], true);
+
+$okHealth = vg_scheduler_health_status([
+    'last_started_at' => date(DATE_ATOM, $now - 60),
+    'last_success_at' => date(DATE_ATOM, $now - 55),
+    'running' => false,
+], $now, 180);
+$eq('health: 최근 성공', $okHealth['status'], 'healthy');
+$eq('health: 최근 성공은 healthy', $okHealth['healthy'], true);
+
 // ── 결과 ──────────────────────────────────────────────────────────────────
 if ($fail > 0) {
     printf("schedule_test: %d건 실패\n", $fail);

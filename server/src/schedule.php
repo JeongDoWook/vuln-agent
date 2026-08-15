@@ -85,3 +85,51 @@ function vg_schedule_next(array $schedule, ?int $fromTs = null): ?string {
             return null;
     }
 }
+
+/**
+ * scheduler sidecar tick state -> health 판정.
+ *
+ * 컨테이너의 running 상태와 실제 tick 성공은 다르다. 마지막 시작이 오래됐거나 최신 종료가
+ * 실패면 unhealthy 로 판정한다. 파일 I/O는 scheduler.php가 맡고 이 함수는 단위 테스트 가능한
+ * 순수 판정만 담당한다.
+ *
+ * @return array{status:string,healthy:bool,running:bool,stale:bool,message:string}
+ */
+function vg_scheduler_health_status(array $state, ?int $now = null, int $staleAfterSeconds = 600): array {
+    $now = $now ?? time();
+    $staleAfterSeconds = max(1, $staleAfterSeconds);
+    $started = !empty($state['last_started_at']) ? strtotime((string) $state['last_started_at']) : false;
+    $success = !empty($state['last_success_at']) ? strtotime((string) $state['last_success_at']) : false;
+    $failure = !empty($state['last_failure_at']) ? strtotime((string) $state['last_failure_at']) : false;
+    $running = !empty($state['running']);
+    $stale = $started === false || ($now - $started) > $staleAfterSeconds;
+    $message = (string) ($state['last_message'] ?? '');
+
+    if ($started === false) {
+        $status = 'unavailable';
+        $message = $message !== '' ? $message : 'scheduler tick evidence is unavailable';
+    } elseif ($stale) {
+        $status = 'stale';
+        $message = 'last scheduler tick is stale';
+    } elseif ($failure !== false && ($success === false || $failure > $success)) {
+        $status = 'failed';
+        $message = (string) ($state['last_failure_message'] ?? $message ?: 'last scheduler tick failed');
+    } elseif ($running) {
+        $status = 'running';
+        $message = $message !== '' ? $message : 'scheduler tick is running';
+    } elseif ($success !== false) {
+        $status = 'healthy';
+        $message = $message !== '' ? $message : 'last scheduler tick succeeded';
+    } else {
+        $status = 'unavailable';
+        $message = $message !== '' ? $message : 'scheduler has not completed a tick';
+    }
+
+    return [
+        'status' => $status,
+        'healthy' => $status === 'healthy' || $status === 'running',
+        'running' => $running,
+        'stale' => $stale,
+        'message' => $message,
+    ];
+}
