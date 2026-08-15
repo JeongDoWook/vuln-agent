@@ -51,6 +51,10 @@ vulninv-*.txt
 # 다른 위치에 작업공간을 만들 경우를 대비해 이름으로도 막는다.
 .ws-state.json
 
+# update.sh 의 배포 마커(마지막으로 배포에 성공한 커밋 SHA). 서버마다 다른 값이고,
+#   무엇보다 추적하면 update.sh [1/6] 의 `git status --porcelain` 이 더러워져 배포 자체가 막힌다.
+deploy/.deploy-state/
+
 # 오케스트레이터 워커가 워크트리에 남기는 실행 파일. 커밋하지 않는다.
 .initial-prompt
 .launch.ps1
@@ -75,4 +79,6 @@ Thumbs.db
 tests/.tmp-go-deps.*
 tests/.tmp-origin.*
 tests/.tmp-pkg-origins.*
+# update_sh_scenarios.sh 샌드박스(임시 git 저장소 + 스텁). trap 으로 정상 삭제되지만 안전망.
+tests/.tmp-update-sh.*
 

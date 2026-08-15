@@ -13,6 +13,13 @@
 #   db/migrations/          → 코드 반영 **전에** 자동 적용(스키마가 코드보다 먼저 와야 안전).
 #   최상위 db/*.sql         → 자동 적용하지 않는다(빈 볼륨 initdb 전용). 경고만 한다.
 #
+# 무엇과 비교하나 — **배포 마커**(deploy/.deploy-state/last-deployed).
+#   "이번 pull 이 무엇을 가져왔나(OLD→NEW)"가 아니라 "지금 돌고 있는 것과 무엇이 다른가"가
+#   배포가 답해야 할 질문이다. 코드가 다른 경로(운영에서 손으로 git pull, 다른 세션 배포)로
+#   먼저 도착하면 OLD = NEW 라 pull 델타가 비어, Dockerfile·Caddyfile 변경이 영영 안 구워졌다.
+#   그래서 [6/6]까지 전부 성공한 커밋을 마커에 적고, 다음 실행은 그 SHA 를 기준선으로 비교한다.
+#   마커가 없으면(첫 도입) 현재 체크아웃을 기준으로 삼는다 — 하위호환.
+#
 # .env.prod / secrets/*.txt 는 gitignore 라 pull 로 덮이지 않는다.
 # =============================================================================
 set -euo pipefail
@@ -22,6 +29,34 @@ C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 say() { printf "\n${C}== %s${N}\n" "$*"; }
 
 CURRENT_ROOT=$PWD
+
+# 운영 고정 경로 — 기본값이 곧 운영값이다. 환경변수는 시나리오 하네스(tests/update_sh_scenarios.sh)가
+# 실제 운영 디스크를 건드리지 않고 이 스크립트를 통째로 돌려보기 위한 것이다.
+BACKUP_DIR=${BACKUP_DIR:-/apps/vulnagent/backups}
+DB_DATA_DIR=${DB_DATA_DIR:-/apps/vulnagent/data/mysql}
+HEALTH_URL=${HEALTH_URL:-http://127.0.0.1:8081/}
+
+# 마지막으로 [6/6]까지 성공한 커밋. 재빌드/재생성 판단의 기준선(baseline)이다.
+# 저장소 밖 상태가 아니라 저장소 안 경로지만 .gitignore 에 있다 — [1/6]의
+# `git status --porcelain` 을 더럽히면 배포가 아예 안 되기 때문이다.
+DEPLOY_STATE_DIR=${DEPLOY_STATE_DIR:-deploy/.deploy-state}
+DEPLOY_MARKER="$DEPLOY_STATE_DIR/last-deployed"
+
+# 마커를 읽는다. 없거나·깨졌거나·이 저장소에 없는 SHA 면 아무것도 출력하지 않는다(호출부가 폴백).
+read_deploy_marker() {
+  local sha
+  [ -f "$DEPLOY_MARKER" ] || return 0
+  sha=$(tr -dc '0-9a-f' < "$DEPLOY_MARKER" | head -c 40)
+  [ -n "$sha" ] || return 0
+  git cat-file -e "${sha}^{commit}" 2>/dev/null || return 0
+  printf '%s' "$sha"
+}
+
+write_deploy_marker() {
+  mkdir -p "$DEPLOY_STATE_DIR"
+  printf '%s\n' "$1" > "$DEPLOY_MARKER"
+}
+
 STAGED_BASE=""
 STAGED_ROOT=""
 cleanup_staged_release() {
@@ -50,9 +85,9 @@ prepare_staged_release() {
 # DDL 성공/이력 실패 뒤에는 migrate.sh를 같은 backup 증거로 재실행하면 멱등 복구된다.
 migrate_with_verified_backup() {
   local release_root="${1:-$CURRENT_ROOT}" latest
-  DB_CONTAINER=vulnagent-db BACKUP_DIR=/apps/vulnagent/backups \
+  DB_CONTAINER=vulnagent-db BACKUP_DIR="$BACKUP_DIR" \
     bash "$release_root/deploy/backup_db.sh"
-  latest=$(ls -1t /apps/vulnagent/backups/vulnagent_*.sql.gz 2>/dev/null | head -1)
+  latest=$(ls -1t "$BACKUP_DIR"/vulnagent_*.sql.gz 2>/dev/null | head -1)
   if [ -z "$latest" ]; then
     printf "${R}검증된 DB 백업을 찾을 수 없어 migration을 중단합니다.${N}\n" >&2
     return 1
@@ -107,21 +142,28 @@ if ! git merge-base --is-ancestor "$OLD" "$NEW"; then
   exit 1
 fi
 
-if [ "$OLD" = "$NEW" ] && [ "$MOUNTED" = "yes" ]; then
-  echo "  이미 최신입니다 ($(git log --oneline -1))"
-  # 코드가 다른 경로(직접 git pull·다른 세션 배포)로 먼저 도착해 마이그레이션만 밀렸을 수 있다.
-  # 그때 여기서 그냥 exit 하면 스키마가 영영 안 붙어 새 코드가 없는 테이블/컬럼을 찾아 500 이 난다
-  # (실제로 tb_package_summary 누락으로 packages.php 가 500 이었다). migrate.sh 는 파일명 기준
-  # 멱등이라 적용할 게 없으면 즉시 끝난다 → "최신"이어도 항상 미적용분을 적용하고 나간다.
-  if docker inspect vulnagent-db --format '{{.State.Status}}' 2>/dev/null | grep -q running; then
-    migrate_with_verified_backup "$CURRENT_ROOT"
-  fi
-  exit 0
+# git 이 이미 최신이어도 **여기서 나가지 않는다.** 예전엔 exit 0 이라, 코드가 다른 경로로 먼저
+# 도착한 경우 NEED_BUILD/NEED_RECREATE/NEED_DB_RECREATE 를 아예 평가하지 못했다 — Dockerfile·
+# Caddyfile 변경이 영영 안 구워졌다(실제로 PR #606 의 ETag·Cache-Control 수정이 그럴 뻔했다).
+# 마이그레이션도 그대로 아래 [4/6]에서 항상 돈다(코드 반영보다 먼저) — 옛 조기 종료 분기가
+# 지키던 성질이다(tb_package_summary 누락으로 packages.php 가 500 이던 사고, PR #159).
+if [ "$OLD" = "$NEW" ]; then
+  echo "  git 은 이미 최신입니다 ($(git log --oneline -1))"
+else
+  echo "  $(git rev-parse --short "$OLD") → $(git rev-parse --short "$NEW")"
 fi
-echo "  $(git rev-parse --short "$OLD") → $(git rev-parse --short "$NEW")"
 
-CHANGED=$(git diff --name-only "$OLD" "$NEW" || true)
-echo "  변경 파일 $(printf '%s' "$CHANGED" | grep -c . || true)개"
+# 비교 기준선: 마커가 있으면 마커 SHA, 없으면 현재 체크아웃(첫 도입 시 하위호환).
+BASE=$(read_deploy_marker)
+if [ -n "$BASE" ]; then
+  echo "  기준선: 배포 마커 $(git rev-parse --short "$BASE")"
+else
+  BASE=$OLD
+  echo "  기준선: 배포 마커 없음 → 현재 체크아웃 $(git rev-parse --short "$OLD") (첫 도입)"
+fi
+
+CHANGED=$(git diff --name-only "$BASE" "$NEW" || true)
+echo "  기준선 이후 변경 파일 $(printf '%s' "$CHANGED" | grep -c . || true)개"
 
 say "[3/6] 무엇을 해야 하나"
 NEED_BUILD=0
@@ -187,6 +229,8 @@ if [ "$NEED_BUILD" = 1 ]; then
 elif [ "$NEED_RECREATE" = 1 ]; then
   echo "  재생성만 (이미지는 그대로 — 바뀐 서비스만 몇 초 내려갔다 올라온다)"
   bash deploy/compose_runner.sh prod up -d
+elif [ -z "$CHANGED" ]; then
+  echo "  기준선 이후 변경 없음 → 반영할 것 없음(재빌드·재시작 없음)."
 else
   echo "  PHP 만 변경 → 재시작 없음. opcache 가 2초 안에 새 코드를 로드합니다."
   # 오래 도는 프로세스(백필 워커 등)는 이미 옛 코드를 메모리에 올렸다. 있으면 알려준다.
@@ -206,7 +250,7 @@ fi
 say "[6/6] 검증"
 DB_SRC=$(docker inspect vulnagent-db \
   --format '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Source}}{{end}}{{end}}')
-if [ "$DB_SRC" != "/apps/vulnagent/data/mysql" ]; then
+if [ "$DB_SRC" != "$DB_DATA_DIR" ]; then
   printf "  ${R}치명적: DB 가 바인드 마운트가 아닙니다 ($DB_SRC). 빈 DB 로 떴을 수 있습니다.${N}\n"
   exit 1
 fi
@@ -223,13 +267,17 @@ if [ "$MIGRATED" != 1 ]; then
   migrate_with_verified_backup "$CURRENT_ROOT"
 fi
 
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:8081/ || echo 000)
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "$HEALTH_URL" || echo 000)
 if [ "$code" = "302" ] || [ "$code" = "200" ]; then
   printf "  ${G}web(8081) HTTP %s${N}\n" "$code"
 else
   printf "  ${R}web 이상 (HTTP %s)${N}\n" "$code"
   exit 1
 fi
+
+# 마커는 여기서만 — 위 어느 단계든 실패하면(set -e) 기록되지 않아 다음 실행이 같은 일을 다시 한다.
+write_deploy_marker "$NEW"
+echo "  배포 마커 기록: $(git rev-parse --short "$NEW") → $DEPLOY_MARKER"
 
 echo "  적용된 커밋: $(git log --oneline -1)"
 printf "\n${G}>> 업데이트 완료.${N}\n"

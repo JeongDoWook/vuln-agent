@@ -25,13 +25,34 @@ cd deploy
 도 계속 동작한다 — 이미 설치된 에이전트들이 그 주소로 등록돼 있어 **하위호환**으로 열어 둔다.
 포트 구성·리다이렉트 상세는 [`caddy/README.md`](caddy/README.md).
 
-갱신은 서버에서 `bash deploy/update.sh` 한 줄 — 바뀐 파일을 보고 재빌드/pull 을 스스로 고른다.
+**갱신은 서버에서 `bash deploy/update.sh` 한 줄이 전부다.** 코드가 어떤 경로로 도착했든
+(이 스크립트의 `git pull`, 사람이 손으로 친 `git pull`, 다른 세션의 배포) 이 한 줄이 마이그레이션·
+재빌드·재생성을 빠짐없이 수행한다 — `compose_runner.sh` 를 따로 칠 일은 없다. 바뀐 파일을 보고
+재빌드/pull 을 스스로 고른다.
 스크립트는 `origin/main`을 임시 worktree에 먼저 checkout해 그 버전의 백업 복원 rehearsal과
 migration을 끝낸 뒤에만 운영 source를 fast-forward한다. 백업이 오래 걸려도 라이브 마운트에는
 기존 PHP가 남으므로 새 코드가 구 schema를 먼저 읽는 노출 창이 없다. 어느 단계든 실패하면 운영
 source는 기존 commit에 머물고 임시 worktree는 자동 정리된다.
 **운영 중인 서버를 업데이트한다면** 문서 끝 [“지난 변경 — 운영 서버에서 1회 조치가 필요했던 것”](#지난-변경--운영-서버에서-1회-조치가-필요했던-것)
 을 먼저 확인한다.
+
+### 배포 마커 — 무엇과 비교해 재빌드를 정하나
+
+`update.sh` 는 `[6/6]` 까지 전부 성공한 커밋 SHA 를 **`deploy/.deploy-state/last-deployed`**
+에 적고, 다음 실행은 그 SHA 를 기준선으로 `git diff` 해서 재빌드/재생성을 판단한다.
+배포가 답해야 할 질문은 “이번 pull 이 무엇을 가져왔나”가 아니라 **“지금 돌고 있는 것과 무엇이
+다른가”** 이기 때문이다. 예전엔 앞쪽(pull 델타)을 봤고, 그래서 코드가 손으로 먼저 pull 돼 있으면
+`이미 최신` 이라며 그냥 나가 `Dockerfile`·`Caddyfile` 변경이 **영영 안 구워졌다.**
+
+- 마커 파일은 **gitignore** 다. 추적하면 `[1/6] 사전 점검`의 `git status --porcelain` 이 더러워져
+  배포 자체가 막힌다.
+- 마커가 없으면(첫 도입·새 서버) 현재 체크아웃을 기준선으로 쓴다 — 종전과 같은 동작.
+- 중간 단계가 실패하면 마커를 안 쓴다 → 다음 실행이 같은 일을 다시 시도한다(멱등).
+- **한 번만 강제로 다시 굽고 싶다면** `rm deploy/.deploy-state/last-deployed` 대신
+  `printf '%s\n' <옛 SHA> > deploy/.deploy-state/last-deployed` 로 기준선을 뒤로 돌린다
+  (지우면 “현재 체크아웃 = 기준선” 이 되어 오히려 아무것도 안 바뀐 것으로 보인다).
+- 판단 로직 회귀는 `bash tests/update_sh_scenarios.sh` 가 검증한다(임시 저장소 + docker 스텁으로
+  `update.sh` 를 통째로 실행 — 운영 서버가 필요 없다).
 
 필수 운영 검증은 `bash deploy/run-gates.sh --profile central --json`으로 실행한다. 결과의 각
 check에는 `id`, `required`, `passed`, `duration_ms`, `evidence`가 있고, required 실패가 하나라도
