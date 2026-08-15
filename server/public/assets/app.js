@@ -503,9 +503,9 @@
     refresh();
   });
 
-  // 뒤로가기(bfcache)로 복귀하면 멈춰있던 스피너를 되돌린다.
-  window.addEventListener('pageshow', function (e) {
-    if (!e.persisted) { return; }
+  // 뒤로가기뿐 아니라 새 창 제출 등으로 기존 문서가 남았다 다시 표시되는 경우에도
+  // 멈춰 있던 스피너와 이중 제출 잠금을 되돌린다.
+  window.addEventListener('pageshow', function () {
     resetProgress();
     document.querySelectorAll('[aria-busy="true"]').forEach(idleButton);
     document.querySelectorAll('form[data-vg-submitting]').forEach(function (f) {
