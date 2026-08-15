@@ -15,7 +15,8 @@
 
 **비밀값은 환경변수로 두지 않는다.** 배포 비밀값(DB 비번, admin 초기 비번)은
 Docker Secrets(`secrets/*.txt`)로만 주입한다 → [`secrets/README.md`](../secrets/README.md).
-에이전트 수집 토큰·Export API 토큰은 시크릿 파일이 아니라 **웹에서 발급**하고 DB 엔 해시만 남는다.
+에이전트 수집 토큰은 시크릿 파일이 아니라 **웹에서 발급**하고 DB 엔 해시만 남는다
+(Export API 전용 토큰은 2026-08-13 폐지 — `export.php`·`sbom.php` 는 웹 로그인 세션으로 인증한다).
 
 ## 적용 위치
 
@@ -54,6 +55,7 @@ LOGIN_LOCK_MINUTES=15
 | `UI_PER_PAGE_OPTIONS` | `10,20,40,60,100` | 각 항목 5~200 (범위 밖 항목은 버림) | 목록의 페이지 크기 선택지 |
 | `UI_PER_PAGE_DEFAULT` | `10` | 선택지 중 하나 (아니면 선택지의 최솟값) | 기본 페이지 크기 |
 | `UI_DASHBOARD_URGENT_LIMIT` | `6` | 3~30 | 대시보드 대응 우선순위 표시 건수 |
+| `UI_DETAIL_PER_PAGE_DEFAULT` | `40` | 5~200 (선택지에 없으면 그보다 크지 않은 가장 큰 선택지) | 상세 화면(자산 상세 등) 목록의 기본 페이지 크기 — 목록 화면보다 크다 |
 | `UI_DETAIL_PREVIEW_LIMIT` | `10` | 5~100 | 상세 화면 이력·프로세스 미리보기 건수 |
 | `UI_TREND_LIMIT` | `50` | 10~500 | 상세 화면 추이 데이터 수 |
 | `UI_FILTER_OPTION_LIMIT` | `300` | 50~2000 | 취약점 목록의 호스트 필터 선택지 최대 개수 (현재 선택된 호스트는 한도와 무관하게 항상 포함) |
