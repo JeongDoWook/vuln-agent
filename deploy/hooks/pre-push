@@ -16,20 +16,15 @@
 #   - **스모크는 "이 트리 전용 컨테이너" 만 친다.** web+scheduler 는 워크트리별로 독립된
 #     컨테이너명(vulnagent-web-dev-<워크트리>, 메인 트리는 접미사 없음)을 쓰므로 애초에
 #     다른 트리 것과 겹치지 않는다 — 이 트리의 deploy/.env.dev 에서 WEB_PORT 를 읽어 자기
-#     컨테이너가 떠 있는지만 확인한다. 안 떠 있으면 **건너뛴다** — 남의 코드를 검사해
-#     초록불을 주느니 검사를 안 하는 편이 정직하다.
+#     컨테이너와 source mount를 확인한다. 없거나 불응이면 required failure다. 다른 tree를
+#     대신 검사해 초록불을 만들지 않는다.
 #
-# 우회(정말 필요할 때만):
-#   VG_SKIP_SMOKE=1 git push    스모크만 건너뜀
-#   VG_SKIP_HOOK=1  git push    전체 건너뜀
-#   VG_SMOKE_BASE=http://localhost:PORT git push   대상 스택 직접 지정
+# 대상 지정:
+#   VG_SMOKE_BASE=http://localhost:PORT git push   이 트리의 대상 스택 포트를 직접 지정
+# 필수 검사는 환경변수로 skip 하지 않는다. 긴급 우회는 로컬 훅을 끄는 별도 운영 판단이며,
+# gate 결과를 성공으로 위장하지 않는다.
 # =============================================================================
 set -uo pipefail
-
-if [ "${VG_SKIP_HOOK:-0}" = "1" ]; then
-  echo "pre-push: VG_SKIP_HOOK=1 — 검증 건너뜀" >&2
-  exit 0
-fi
 
 ZERO=0000000000000000000000000000000000000000
 fail=0
@@ -45,34 +40,6 @@ if [ "$(basename "$(dirname "$ROOT")")" = "wt" ]; then
   WT_NAME="$(basename "$ROOT")"
 fi
 WEB=${VG_WEB_CONTAINER:-vulnagent-web-dev${WT_NAME:+-$WT_NAME}}
-
-# 컨테이너가 떠 있어도(running) 응답을 못 하는 상태(불응)일 수 있다 — healthcheck 가 있으면
-# healthy 여부까지 본다. 없는 컨테이너(구 이미지)는 예전처럼 running 여부만 본다.
-#   (deploy/migrate.sh 의 이중 판정 패턴과 동일)
-container_ready() {  # $1 = 컨테이너명
-  st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Running}}{{end}}' "$1" 2>/dev/null)
-  case "$st" in healthy|true) return 0 ;; *) return 1 ;; esac
-}
-# 숨김 디렉터리 형태의 임시 worktree(.merge-main-final 등)는 기존 wt/<이름>
-# 판별에 걸리지 않는다. 실제 /var/www/html 마운트가 현재 트리인지 확인해
-# 다른 소스 트리의 결과로 push를 통과시키거나 차단하지 않는다.
-normalize_path() {
-  local path_value="$1"
-  if command -v cygpath >/dev/null 2>&1; then
-    path_value=$(cygpath -am "$path_value" 2>/dev/null || printf '%s' "$path_value")
-  elif command -v realpath >/dev/null 2>&1; then
-    path_value=$(realpath -m "$path_value" 2>/dev/null || printf '%s' "$path_value")
-  fi
-  printf '%s' "$path_value" | tr '\\' '/' | tr '[:upper:]' '[:lower:]' | sed 's:/*$::'
-}
-
-container_mounts_current_tree() { # $1 = 컨테이너명
-  local mounted expected
-  mounted=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' "$1" 2>/dev/null)
-  [ -n "$mounted" ] || return 1
-  expected="$ROOT/server"
-  [ "$(normalize_path "$mounted")" = "$(normalize_path "$expected")" ]
-}
 
 # 포트는 이 트리 자신의 deploy/.env.dev 에 있다(워크트리는 wt.sh add 가 만든 전용 파일,
 #   메인 트리는 init 이 만든 공용 파일 — 둘 다 자기 자신을 읽으면 된다).
@@ -200,36 +167,13 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
-# --- 스모크 (이 트리 전용 컨테이너가 떠 있을 때만) ----------------------------
-if [ "${VG_SKIP_SMOKE:-0}" = "1" ]; then
-  echo "pre-push: VG_SKIP_SMOKE=1 — 스모크 건너뜀" >&2
-elif [ ! -x tests/smoke.sh ]; then
-  echo "pre-push: ⚠ tests/smoke.sh 없음(또는 비실행) — 스모크 건너뜀" >&2
-elif [ -z "${VG_SMOKE_BASE:-}" ] && ! container_ready "$WEB"; then
-  # 이 트리 전용 컨테이너가 안 떠 있음 → 검사할 대상이 없다.
-  echo "pre-push: ⚠ 이 트리의 dev 컨테이너($WEB)가 떠 있지 않습니다 — 스모크 건너뜀." >&2
-  echo "           올리려면: ./deploy/compose_runner.sh dev up -d" >&2
-elif [ -z "${VG_SMOKE_BASE:-}" ] && ! container_mounts_current_tree "$WEB"; then
-  echo "pre-push: ⚠ $WEB 는 다른 소스 트리를 마운트하고 있습니다 — 잘못된 스모크를 건너뜁니다." >&2
-  echo "           현재 트리: $ROOT" >&2
-elif ! curl -fsS -o /dev/null --max-time 3 "$BASE/" 2>/dev/null; then
-  echo "pre-push: ⚠ dev 스택이 응답하지 않습니다($BASE) — 스모크 건너뜀." >&2
-  echo "           올리려면: ./deploy/compose_runner.sh dev up -d" >&2
-else
-  # 실행 중인 dev 스택이 새 코드보다 오래된 스키마일 수 있다. compose up 때만
-  # 마이그레이션하면 "코드만 바꾸고 push" 하는 가장 흔한 흐름에서 매처가 500으로 죽고,
-  # severity·억제·rematch 검사가 연쇄 실패한다. 스모크 직전에 미적용분을 멱등 적용한다.
-  DB_CONTAINER=${VG_DB_CONTAINER:-vulnagent-db-dev}
-  echo "pre-push: dev DB 마이그레이션 확인 ($DB_CONTAINER)"
-  if ! bash deploy/migrate.sh "$DB_CONTAINER"; then
-    echo "pre-push: ✗ dev DB 마이그레이션 실패 — push 중단" >&2
-    exit 1
-  fi
-  echo "pre-push: 스모크 실행 ($BASE${WT_NAME:+ · wt/$WT_NAME})"
-  if ! ./tests/smoke.sh "$BASE"; then
-    echo "pre-push: ✗ 스모크 실패 — push 중단" >&2
-    exit 1
-  fi
+# --- 공통 운영 게이트 -------------------------------------------------------
+# Docker/현재 tree stack/HTTP/migration/smoke 판정은 중앙 검증과 같은 manifest/runner가 한다.
+# required dependency가 없으면 그 뒤 check도 명시적 fail로 JSON에 남으며 non-zero로 끝난다.
+echo "pre-push: 공통 운영 게이트 실행 ($BASE${WT_NAME:+ · wt/$WT_NAME})"
+if ! bash deploy/run-gates.sh --profile pre-push --base "$BASE" --json; then
+  echo "pre-push: ✗ 필수 운영 게이트 실패 — push 중단" >&2
+  exit 1
 fi
 
 echo "pre-push: ✓ 게이트 통과"
