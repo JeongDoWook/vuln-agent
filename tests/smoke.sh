@@ -101,6 +101,7 @@ PHPUNIT_FILES=(
   documentation_consistency_test.php
   route_query_contract_test.php
   agent_api_contract_test.php
+  update_order_contract_test.php
   generic_api_config_test.php
   finding_evidence_test.php
   db_retry_test.php
@@ -464,6 +465,7 @@ run_phpunit "ui_structure_test.php" "ui_structure" "UI 공통 컴포넌트·검�
 run_phpunit "documentation_consistency_test.php" "documentation_consistency" "DB 명세·ERD·사이트맵 문서 일관성 테스트"
 run_phpunit "route_query_contract_test.php" "route_query_contract" "public route·query·redirect 계약 테스트"
 run_phpunit "agent_api_contract_test.php" "agent_api_contract" "설치 에이전트 poll·progress·ingest 계약 테스트"
+run_phpunit "update_order_contract_test.php" "update_order_contract" "운영 staged migration·live source 전환 순서 계약 테스트"
 
 # --- 범용 API 지원 역할 회귀 테스트 -----------------------------------------
 run_phpunit "generic_api_config_test.php" "generic_api_config" "범용 API 지원 역할 단위 테스트"

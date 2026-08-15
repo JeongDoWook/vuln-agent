@@ -21,18 +21,44 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."   # 저장소 루트
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 say() { printf "\n${C}== %s${N}\n" "$*"; }
 
+CURRENT_ROOT=$PWD
+STAGED_BASE=""
+STAGED_ROOT=""
+cleanup_staged_release() {
+  if [ -n "$STAGED_ROOT" ]; then
+    git worktree remove --force "$STAGED_ROOT" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$STAGED_BASE" ] && [ -d "$STAGED_BASE" ]; then
+    rmdir "$STAGED_BASE" >/dev/null 2>&1 || true
+  fi
+  STAGED_BASE=""
+  STAGED_ROOT=""
+}
+trap cleanup_staged_release EXIT
+
+# fetch한 커밋의 배포 도구와 migration을 현재 live source와 분리해 실행한다. 운영 web은
+# CURRENT_ROOT/server를 직접 마운트하므로 이 worktree에서 오래 걸리는 backup/restore rehearsal을
+# 수행해도 새 PHP가 먼저 노출되지 않는다.
+prepare_staged_release() {
+  local release_commit="$1"
+  STAGED_BASE=$(mktemp -d "${TMPDIR:-/tmp}/vulnagent-release.XXXXXX")
+  STAGED_ROOT="$STAGED_BASE/release"
+  git worktree add --quiet --detach "$STAGED_ROOT" "$release_commit"
+}
+
 # 운영 migration은 직전에 만든 백업이 disposable schema 복원까지 통과해야 시작한다.
 # DDL 성공/이력 실패 뒤에는 migrate.sh를 같은 backup 증거로 재실행하면 멱등 복구된다.
 migrate_with_verified_backup() {
-  local latest
-  DB_CONTAINER=vulnagent-db BACKUP_DIR=/apps/vulnagent/backups bash deploy/backup_db.sh
+  local release_root="${1:-$CURRENT_ROOT}" latest
+  DB_CONTAINER=vulnagent-db BACKUP_DIR=/apps/vulnagent/backups \
+    bash "$release_root/deploy/backup_db.sh"
   latest=$(ls -1t /apps/vulnagent/backups/vulnagent_*.sql.gz 2>/dev/null | head -1)
   if [ -z "$latest" ]; then
     printf "${R}검증된 DB 백업을 찾을 수 없어 migration을 중단합니다.${N}\n" >&2
     return 1
   fi
   MIGRATION_REQUIRE_BACKUP=1 MIGRATION_BACKUP_FILE="$latest" \
-    bash deploy/migrate.sh vulnagent-db
+    bash "$release_root/deploy/migrate.sh" vulnagent-db
 }
 
 # 반영 방법은 셋으로 갈린다 — 뭉뚱그리면 쉘 스크립트 한 줄 고치고도 운영이 재빌드된다.
@@ -72,8 +98,14 @@ fi
 say "[2/6] 최신 코드 받기"
 OLD=$(git rev-parse HEAD)
 git fetch --prune origin
-git merge --ff-only origin/main
-NEW=$(git rev-parse HEAD)
+NEW=$(git rev-parse origin/main)
+
+# backup/migration 뒤 merge가 실패하면 schema만 앞서간다. DB에 손대기 전에 fast-forward 가능성을
+# 먼저 고정하고, 이후에도 이동 가능한 동일한 commit SHA를 사용한다.
+if ! git merge-base --is-ancestor "$OLD" "$NEW"; then
+  printf "${R}origin/main으로 fast-forward할 수 없어 업데이트를 중단합니다.${N}\n" >&2
+  exit 1
+fi
 
 if [ "$OLD" = "$NEW" ] && [ "$MOUNTED" = "yes" ]; then
   echo "  이미 최신입니다 ($(git log --oneline -1))"
@@ -82,7 +114,7 @@ if [ "$OLD" = "$NEW" ] && [ "$MOUNTED" = "yes" ]; then
   # (실제로 tb_package_summary 누락으로 packages.php 가 500 이었다). migrate.sh 는 파일명 기준
   # 멱등이라 적용할 게 없으면 즉시 끝난다 → "최신"이어도 항상 미적용분을 적용하고 나간다.
   if docker inspect vulnagent-db --format '{{.State.Status}}' 2>/dev/null | grep -q running; then
-    migrate_with_verified_backup
+    migrate_with_verified_backup "$CURRENT_ROOT"
   fi
   exit 0
 fi
@@ -126,20 +158,29 @@ if printf '%s\n' "$CHANGED" | grep -qE "$DB_RE"; then
   fi
 fi
 
-say "[4/6] DB 마이그레이션 (코드 반영보다 **먼저**)"
-# 왜 먼저인가: [2/6] 의 git merge 로 새 PHP 코드는 **이미 디스크에 있다**. 소스가 라이브
-# 마운트라 opcache 가 2초 안에 새 코드를 로드한다. 스키마를 뒤에 올리면 그 사이(healthy
-# 대기까지 하면 수십 초) 들어온 수집이 "Unknown column …" 으로 500 이 난다 — 실제로 겪었다.
-# 반대로 스키마를 먼저 올리는 건 안전하다: 컬럼 추가·인덱스 확장은 옛 코드에 무해하다.
+say "[4/6] DB 마이그레이션 (live source 반영보다 **먼저**)"
+# fetch는 live worktree를 바꾸지 않는다. 새 commit은 별도 worktree에 checkout해 그 버전의
+# backup/migration 도구와 SQL을 실행하고, 전부 성공한 뒤 [5/6]에서만 CURRENT_ROOT를 fast-forward한다.
+# 따라서 restore rehearsal이 오래 걸려도 운영 web은 옛 코드+호환 schema 조합을 계속 제공한다.
 MIGRATED=0
+RELEASE_ROOT="$CURRENT_ROOT"
+if [ "$OLD" != "$NEW" ]; then
+  prepare_staged_release "$NEW"
+  RELEASE_ROOT="$STAGED_ROOT"
+  echo "  staged release: $(git -C "$RELEASE_ROOT" rev-parse --short HEAD)"
+fi
 if docker inspect vulnagent-db --format '{{.State.Status}}' 2>/dev/null | grep -q running; then
-  migrate_with_verified_backup
+  migrate_with_verified_backup "$RELEASE_ROOT"
   MIGRATED=1
 else
   echo "  DB 컨테이너가 아직 없음 → 반영 후에 적용합니다."
 fi
 
 say "[5/6] 반영"
+if [ "$OLD" != "$NEW" ]; then
+  git merge --ff-only "$NEW"
+  cleanup_staged_release
+fi
 if [ "$NEED_BUILD" = 1 ]; then
   echo "  재빌드 + 재생성 (다운타임 수십 초)"
   bash deploy/compose_runner.sh prod up -d --build
@@ -179,7 +220,7 @@ docker ps --format '  {{.Names}}\t{{.Status}}' | grep vulnagent
 
 # DB 컨테이너가 없어서 [4/6] 에서 못 돌린 경우(최초 기동)만 여기서 적용한다.
 if [ "$MIGRATED" != 1 ]; then
-  migrate_with_verified_backup
+  migrate_with_verified_backup "$CURRENT_ROOT"
 fi
 
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:8081/ || echo 000)

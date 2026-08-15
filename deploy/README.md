@@ -26,6 +26,10 @@ cd deploy
 포트 구성·리다이렉트 상세는 [`caddy/README.md`](caddy/README.md).
 
 갱신은 서버에서 `bash deploy/update.sh` 한 줄 — 바뀐 파일을 보고 재빌드/pull 을 스스로 고른다.
+스크립트는 `origin/main`을 임시 worktree에 먼저 checkout해 그 버전의 백업 복원 rehearsal과
+migration을 끝낸 뒤에만 운영 source를 fast-forward한다. 백업이 오래 걸려도 라이브 마운트에는
+기존 PHP가 남으므로 새 코드가 구 schema를 먼저 읽는 노출 창이 없다. 어느 단계든 실패하면 운영
+source는 기존 commit에 머물고 임시 worktree는 자동 정리된다.
 **운영 중인 서버를 업데이트한다면** 문서 끝 [“지난 변경 — 운영 서버에서 1회 조치가 필요했던 것”](#지난-변경--운영-서버에서-1회-조치가-필요했던-것)
 을 먼저 확인한다.
 
