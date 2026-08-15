@@ -102,7 +102,7 @@ vg_header('설정', 'settings');
   <form method="post">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
     <?php vg_page_title('설정', 'SETTINGS', '판정 기준값과 세션 정책을 관리합니다.', [
-        'actions' => '<button type="submit" class="btn btn--primary" data-loading="저장 중…">저장</button>',
+        'actions' => '<button type="submit" class="btn btn--sm btn--primary" data-loading="저장 중…">저장</button>',
     ]); ?>
     <div class="sub">admin 전용 · 변경 사항은 감사 로그에 기록됩니다</div>
 

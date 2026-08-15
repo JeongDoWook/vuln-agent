@@ -43,7 +43,7 @@ sk() { printf "  ${YELLOW}-${NC} %s\n" "$1"; skip=$((skip+1)); }
 #   되돌린다면 반드시 here-string 을 써야 한다).
 #   왜 바꿨나: Windows git-bash 에서 fork 한 번이 44~48ms 라, 서버를 치지도 않는 이 헬퍼가
 #   102회 호출에 7초를 썼다(스모크 [패키지 서브탭] 구간 11.4초 중 61%). 측정은
-#   docs/dev/packages-screen-profiling.md.
+#   docs/dev/archive/packages-screen-profiling.md.
 #   의미 차이: grep 은 $2 를 정규식(BRE)으로 봤지만 `*"$2"*` 는 **리터럴 부분문자열**이다.
 #   전환 시 102개 단언을 전수 확인했다 — 메타문자는 `.` 뿐이었고 전부 실제 문자열의 일부
 #   (`2.10.8`·`host.php`·`pom.xml` 등)라 리터럴이 더 엄격할 뿐 결과가 같다. 일부러 정규식을
@@ -295,7 +295,7 @@ run_phpunit "pkgdep_rollup_test.php" "pkgdep_rollup" "손댈 대상(부모)별 �
 # --- 매처 억제 게이트 단위 테스트 ---------------------------------------------
 # "어느 근거가 어느 가드에 막히는가" 는 오탐(잘못 뜸)과 미탐(잘못 숨김)이 직접 갈리는 자리인데
 # 눈으로 읽어선 회귀를 못 잡는다 — 실제로 changelog 억제가 서드파티 가드에 막혀 운영에서
-# 억제 0건이었다(docs/dev/changelog-억제층-실측.md). 계약을 테스트로 고정한다.
+# 억제 0건이었다(docs/dev/archive/changelog-억제층-실측.md). 계약을 테스트로 고정한다.
 run_phpunit "matcher_suppress_test.php" "matcher_suppress" "매처 억제 게이트 단위 테스트"
 
 # 억제 근거를 화면 어휘로 옮기는 표(server/src/suppression.php)가 판정 문구와 어긋나면,
