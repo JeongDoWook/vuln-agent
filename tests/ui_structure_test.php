@@ -42,10 +42,22 @@ foreach (['agent-tokens.php', 'users.php'] as $name) {
 $permissionsPhp = (string) file_get_contents($public . '/permissions.php');
 $appCss = (string) file_get_contents($public . '/assets/app.css');
 $appJs = (string) file_get_contents($public . '/assets/app.js');
+$loginPhp = (string) file_get_contents($public . '/login.php');
+$loginJs = (string) file_get_contents($public . '/assets/js/login.js');
 $hostJs = (string) file_get_contents($public . '/assets/js/host.js');
 $componentsPhp = (string) file_get_contents($root . '/server/src/view/components.php');
 $chartsPhp = (string) file_get_contents($root . '/server/src/view/charts.php');
 $hostPhp = (string) file_get_contents($public . '/host.php');
+$check(str_contains($loginPhp, 'id="loginForm"')
+    && str_contains($loginPhp, 'target="_self"')
+    && str_contains($loginPhp, 'formtarget="_self"'),
+    'login form and submitter stay in the current browsing context');
+$check(str_contains($loginJs, 'HTMLFormElement.prototype.submit.call(form)')
+    && str_contains($loginJs, "form.setAttribute('target', '_self')"),
+    'login submit neutralizes modifier or injected popup targets');
+$check(str_contains($appJs, "window.addEventListener('pageshow', function ()")
+    && !str_contains($appJs, "if (!e.persisted) { return; }"),
+    'pageshow always clears stale submitting state');
 $check(str_contains($permissionsPhp, 'class="permission-form"'), '권한 매트릭스 전용 레이아웃');
 $check(str_contains($permissionsPhp, "'class' => 'permission-role'"), '권한 역할 열 클래스');
 $check(str_contains($appCss, '.page--permissions .check-cell'), '권한 체크박스 중앙 정렬');

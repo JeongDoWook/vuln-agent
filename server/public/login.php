@@ -52,7 +52,7 @@ unset($_SESSION['login_kicked'], $_SESSION['login_expired']);
 
 vg_header('로그인');
 ?>
-  <form class="card" method="post" action="/login.php">
+  <form class="card" id="loginForm" method="post" action="/login.php" target="_self" data-same-context>
     <div class="login-badge" aria-hidden="true">V</div>
     <h1>vuln-agent</h1>
     <div class="sub">로그인이 필요합니다</div>
@@ -62,7 +62,7 @@ vg_header('로그인');
     <input type="text" id="username" name="username" autofocus autocomplete="username" required>
     <label for="password">비밀번호</label>
     <input type="password" id="password" name="password" autocomplete="current-password" required>
-    <button type="submit" class="btn btn--primary btn--block" data-loading="확인 중…">로그인</button>
+    <button type="submit" formtarget="_self" class="btn btn--primary btn--block" data-loading="확인 중…">로그인</button>
   </form>
 <?php
 vg_footer();

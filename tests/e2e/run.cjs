@@ -134,8 +134,10 @@ async function main() {
     await go(page, '/login.php');
     await page.fill('input[name=username]', USER);
     await page.fill('input[name=password]', PASS);
-    await page.click('button[type=submit]');
+    // Shift+click must still submit in this tab, never a popup window.
+    await page.click('button[type=submit]', { modifiers: ['Shift'] });
     await page.waitForURL((u) => new URL(String(u)).pathname === '/', { timeout: 20000 });
+    check(ctx.pages().length === 1, 'login modifier click stays in the current tab');
     check(new URL(page.url()).pathname === '/', '로그인 성공 → 대시보드(/)로 이동');
     const title = await page.title();
     check(title.indexOf('대시보드') >= 0, '대시보드 document.title', 'title=' + title);
