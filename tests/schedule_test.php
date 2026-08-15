@@ -126,6 +126,33 @@ $eq('health: 최신 결과가 실패면 failed', $failedHealth['status'], 'faile
 $eq('health: 실패 메시지 보존', $failedHealth['message'], 'connector #7 failed');
 $eq('health: failed 는 unhealthy', $failedHealth['healthy'], false);
 
+$killedState = vg_scheduler_record_exit([
+    'last_started_at' => date(DATE_ATOM, $now - 30),
+    'last_success_at' => date(DATE_ATOM, $now - 120),
+    'running' => true,
+], 137, $now - 20);
+$eq('health: SIGKILL exit code recorded', $killedState['last_exit_code'], 137);
+$eq('health: SIGKILL closes running state', $killedState['running'], false);
+
+$recordedFailure = vg_scheduler_record_exit([
+    'last_started_at' => date(DATE_ATOM, $now - 30),
+    'last_failure_at' => date(DATE_ATOM, $now - 20),
+    'last_failure_message' => 'connector #7 failed',
+    'running' => false,
+], 1, $now - 19);
+$eq('health: wrapper preserves PHP failure detail', $recordedFailure['last_failure_message'], 'connector #7 failed');
+$eq('health: wrapper still records observed exit', $recordedFailure['last_exit_code'], 1);
+
+// The next loop iteration may already be running, but the observed exit must stay
+// unhealthy until that later tick completes successfully.
+$nextTickState = $killedState;
+$nextTickState['last_started_at'] = date(DATE_ATOM, $now - 10);
+$nextTickState['running'] = true;
+$nextTickState['last_message'] = 'scheduler tick started';
+$nextTickHealth = vg_scheduler_health_status($nextTickState, $now, 180);
+$eq('health: next running tick does not mask SIGKILL', $nextTickHealth['status'], 'failed');
+$eq('health: SIGKILL remains unhealthy until success', $nextTickHealth['healthy'], false);
+
 $runningHealth = vg_scheduler_health_status([
     'last_started_at' => date(DATE_ATOM, $now - 10),
     'last_success_at' => date(DATE_ATOM, $now - 70),

@@ -84,7 +84,8 @@ services:
 
   # --- 스케줄러: 예약된 피드 커넥터를 주기 실행(사이드카) -------------------
   # 프로세스 running 과 tick 성공은 다르다. scheduler.php 가 마지막 시작/성공/실패를 JSON으로
-  # 남기고 --health가 실패·10분 지연을 구분한다. Docker health가 운영자에게 같은 판정을 보인다.
+  # 남기고 --health가 실패·10분 지연을 구분한다. SIGKILL/OOM처럼 PHP shutdown handler가 실행되지
+  # 못한 종료는 바깥 shell이 --record-exit로 남겨, 다음 tick의 running 상태가 실패를 가리지 않게 한다.
   scheduler:
     build: ../server
     image: vulnagent-app:${APP_TAG:-latest}
@@ -93,7 +94,7 @@ services:
         condition: service_healthy
     environment: *app-env
     secrets: *app-secrets
-    command: ["sh", "-c", "while true; do php /var/www/html/bin/scheduler.php; rc=$$?; if [ $$rc -ne 0 ]; then echo \"scheduler tick failed (exit=$$rc)\" >&2; fi; sleep 60; done"]
+    command: ["sh", "-c", "while true; do php /var/www/html/bin/scheduler.php; rc=$$?; if [ $$rc -ne 0 ]; then php /var/www/html/bin/scheduler.php --record-exit \"$$rc\" || echo \"scheduler failure state write failed (exit=$$rc)\" >&2; echo \"scheduler tick failed (exit=$$rc)\" >&2; fi; sleep 60; done"]
     healthcheck:
       test: ["CMD", "php", "/var/www/html/bin/scheduler.php", "--health"]
       interval: 30s

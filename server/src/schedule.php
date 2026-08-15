@@ -87,6 +87,35 @@ function vg_schedule_next(array $schedule, ?int $fromTs = null): ?string {
 }
 
 /**
+ * Record an abnormal scheduler process exit observed by the outer sidecar loop.
+ *
+ * SIGKILL/OOM cannot run PHP shutdown handlers, so the parent shell records the
+ * exit after wait(2) returns. The failure remains newer than the last success
+ * while a later tick is running and is cleared only by a completed success.
+ */
+function vg_scheduler_record_exit(array $state, int $exitCode, ?int $now = null): array {
+    $now = $now ?? time();
+    $at = date(DATE_ATOM, $now);
+    $message = 'scheduler tick exited abnormally (exit=' . $exitCode . ')';
+    $started = !empty($state['last_started_at']) ? strtotime((string) $state['last_started_at']) : false;
+    $failure = !empty($state['last_failure_at']) ? strtotime((string) $state['last_failure_at']) : false;
+
+    $state['last_exit_code'] = $exitCode;
+    if (empty($state['running']) && $failure !== false && ($started === false || $failure >= $started)) {
+        return $state; // Preserve the connector/fatal-error detail already written by PHP.
+    }
+
+    if (empty($state['last_started_at'])) {
+        $state['last_started_at'] = $at;
+    }
+    $state['running'] = false;
+    $state['last_message'] = $message;
+    $state['last_failure_at'] = $at;
+    $state['last_failure_message'] = $message;
+    return $state;
+}
+
+/**
  * scheduler sidecar tick state -> health 판정.
  *
  * 컨테이너의 running 상태와 실제 tick 성공은 다르다. 마지막 시작이 오래됐거나 최신 종료가

@@ -29,6 +29,18 @@ if (($argv[1] ?? '') === '--health') {
     exit($health['healthy'] ? 0 : 1);
 }
 
+// SIGKILL/OOM cannot run the shutdown handler. The long-lived Compose shell calls
+// this command after wait(2) reports a non-zero child exit, before starting another tick.
+if (($argv[1] ?? '') === '--record-exit') {
+    $exitCode = isset($argv[2]) ? (int) $argv[2] : 0;
+    if ($exitCode <= 0) {
+        fwrite(STDERR, "--record-exit requires a positive exit code\n");
+        exit(2);
+    }
+    $writeHealth(vg_scheduler_record_exit($readHealth(), $exitCode));
+    exit(0);
+}
+
 $state = $readHealth();
 $state['last_started_at'] = date(DATE_ATOM);
 $state['running'] = true;
