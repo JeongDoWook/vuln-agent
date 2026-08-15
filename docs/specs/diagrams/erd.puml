@@ -1,5 +1,5 @@
 @startuml
-' schema-docs: sha256:d31be5134ac174a5 generated_at=2026-08-13T00:18:10Z tables=53
+' schema-docs: sha256:d55056114703d764 generated_at=2026-08-13T00:18:10Z tables=53
 ' vuln-agent §5 데이터 모델 (ERD)
 ' 원본: docs/dev/architecture.md §5
 ' 테이블별 전체 컬럼·책임·정규화 현황은 docs/dev/데이터베이스.md 참고.

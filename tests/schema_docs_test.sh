@@ -3,7 +3,7 @@
 # schema document with that disposable database's information_schema.
 set -euo pipefail
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
 fail() { printf 'schema docs test: %s\n' "$*" >&2; exit 1; }
@@ -47,7 +47,7 @@ MSYS_NO_PATHCONV=1 docker run -d --name "$container" \
 ready=0
 for _ in $(seq 1 60); do
   if docker exec "$container" sh -c \
-      'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysqladmin -uroot ping --silent' >/dev/null 2>&1; then
+      'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot -N -B -e "SELECT 1"' >/dev/null 2>&1; then
     ready=1
     break
   fi
@@ -57,11 +57,13 @@ done
 
 # initdb DDL is already applied by the image. Apply the complete migration set
 # twice so the snapshot also covers the real runner's ordering/idempotency.
-bash deploy/migrate.sh "$container" >/dev/null
-bash deploy/migrate.sh "$container" >/dev/null
+MIGRATION_MIN_FREE_KB=131072 bash deploy/migrate.sh "$container" >/dev/null
+MIGRATION_MIN_FREE_KB=131072 bash deploy/migrate.sh "$container" >/dev/null
 
+mode_args=(--check)
+if [ "${SCHEMA_DOCS_UPDATE:-0}" = 1 ]; then mode_args=(); fi
 "$python_cmd" docs/specs/gen_table_spec.py \
-  --source information-schema --mysql-container "$container" --database vulnagent --check
+  --source information-schema --mysql-container "$container" --database vulnagent "${mode_args[@]}"
 "$python_cmd" docs/specs/gen_table_spec.py \
   --source information-schema --mysql-container "$container" --database vulnagent --check
 
