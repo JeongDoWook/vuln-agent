@@ -86,6 +86,15 @@ vg_header('보안 설정 룰', 'compliance');
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php
+  // 화면 오리엔테이션 도식 — 이 화면은 **외부 참조 데이터**다(우리가 판정하지 않는다).
+  //   마지막 칸을 is-todo(회색)로 떨어뜨려, 우리 판정 항목은 CCE 카탈로그라는 사실을 색으로 말한다.
+  vg_explain_flow([
+      ['icon' => 'feed',    'label' => 'SSG 룰셋',  'value' => number_format($total) . '개', 'state' => 'done'],
+      ['icon' => 'shield',  'label' => '참조 기준',  'state' => 'done'],
+      ['icon' => 'process', 'label' => '점검 근거',  'state' => 'active'],
+      ['icon' => 'block',   'label' => '자산 판정',  'state' => 'todo'],
+  ], ['label' => '보안 설정 룰 흐름']);
+
   vg_toolbar([
       ['type' => 'select', 'name' => 'sev', 'selected' => $sev, 'empty_label' => '전체 심각도',
        'options' => $sevOptions],
@@ -136,6 +145,13 @@ vg_header('보안 설정 룰', 'compliance');
           ],
       ]
   );
+  // 심각도 뱃지 색 범례 — 이 화면의 유일한 색 축이다(4단계, vg_sev_tone 과 같은 어휘).
+  vg_legend([
+      ['label' => 'HIGH',    'tone' => vg_sev_tone('HIGH')],
+      ['label' => 'MEDIUM',  'tone' => vg_sev_tone('MEDIUM')],
+      ['label' => 'LOW',     'tone' => vg_sev_tone('LOW')],
+      ['label' => 'UNKNOWN', 'tone' => 'muted'],
+  ], ['inline' => true, 'caption' => '심각도']);
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 <?php endif; ?>

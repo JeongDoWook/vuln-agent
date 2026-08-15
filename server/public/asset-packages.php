@@ -85,6 +85,15 @@ vg_header('전체 설치 패키지', 'asset_packages');
       'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
       'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],
   ], 'packages'); ?>
+  <?php
+  // 화면 오리엔테이션 도식 — 같은 '패키지' 라는 말이 카탈로그(packages.php)와 설치 현황(이 화면)
+  //   두 곳에서 쓰여 헷갈린다. 이 화면의 출처가 **자산의 최신 수집** 이라는 것을 먼저 세운다.
+  vg_explain_flow([
+      ['icon' => 'host',    'label' => '자산',      'value' => number_format(count($hostOptions)) . '대', 'state' => 'done'],
+      ['icon' => 'clock',   'label' => '최신 수집', 'state' => 'done'],
+      ['icon' => 'package', 'label' => '설치 패키지', 'value' => number_format($total) . '건', 'state' => 'active'],
+  ], ['label' => '설치 패키지 수집 흐름']);
+  ?>
   <div class="sub"><span class="why">취약 영향 패키지 카탈로그가 아닌 실제 서버 설치 현황입니다.</span></div>
 
   <?php vg_alert($err !== null ? '오류 · ' . $err : null); ?>
@@ -101,8 +110,11 @@ vg_header('전체 설치 패키지', 'asset_packages');
         [
             ['label' => '패키지', 'key' => 'name', 'class' => 'col-id'],
             ['label' => '호스트', 'key' => 'fqdn'],
+            // 8열이라 '수집 시각' 이 늘 잘렸다(아래 주석의 실측). 열 상한(7열)에 맞춰 '아키텍처'를
+            //   독립 열에서 뺀다 — 상세는 자산 상세의 설치 패키지 탭이 갖는다(host.php 의 '아키텍처' 열).
+            //   다만 값을 화면에서 지우지는 않는다: 같은 패키지가 아키텍처만 다르게 두 행 오는 일이
+            //   흔해서, 값이 사라지면 **똑같아 보이는 중복 행**이 된다. 버전 칸 옆에 작게 잇는다.
             ['label' => '설치 버전', 'key' => 'version'],
-            ['label' => '아키텍처', 'key' => 'arch'],
             ['label' => '관리자', 'key' => 'manager'],
             ['label' => '소스 패키지', 'key' => 'source_pkg'],
             ['label' => '출처', 'key' => 'origin'],
@@ -135,8 +147,8 @@ vg_header('전체 설치 패키지', 'asset_packages');
                 },
                 'fqdn' => fn($p) => '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages">'
                     . vg_h((string)$p['fqdn']) . '</a>',
-                'version' => fn($p) => '<code>' . vg_h((string)($p['version'] ?? '')) . '</code>',
-                'arch' => fn($p) => $p['arch'] ? vg_h((string)$p['arch']) : '<span class="why">–</span>',
+                'version' => fn($p) => '<code>' . vg_h((string)($p['version'] ?? '')) . '</code>'
+                    . (!empty($p['arch']) ? ' <span class="why">' . vg_h((string)$p['arch']) . '</span>' : ''),
                 'manager' => fn($p) => '<code>' . vg_h((string)$p['manager']) . '</code>',
                 'source_pkg' => function ($p) {
                     if (empty($p['source_pkg'])) { return '<span class="why">–</span>'; }
@@ -146,7 +158,7 @@ vg_header('전체 설치 패키지', 'asset_packages');
                 'origin' => fn($p) => $p['origin']
                     ? vg_h((string)$p['origin'])
                     : (!empty($p['vendor']) ? vg_h((string)$p['vendor']) : '<span class="why">–</span>'),
-                /* 자산 목록(assets.php)의 '최신 수집' 과 같은 이유로 분까지만 보인다 — 8열 표에서
+                /* 자산 목록(assets.php)의 '최신 수집' 과 같은 이유로 분까지만 보인다 — 예전 8열 표에서
                  *   이 열에 돌아오는 폭은 19자를 못 담아 말줄임으로 잘렸다. 전체 값은 title 로. */
                 'collected_at' => function ($p) {
                     $at = (string) ($p['collected_at'] ?? '');

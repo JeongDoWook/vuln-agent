@@ -316,10 +316,34 @@ function vg_change_when_cell(array $row): string {
 /** 변화 유형 + 그렇게 된 이유. 사유는 문장이라 이 칸에서 접히게 둔다(잘리지 않는다). */
 function vg_change_type_cell(array $row): string {
     $out = vg_badge(VG_CHANGE_TYPES[$row['type']], vg_change_tone((string) $row['type']));
+    // 사유는 문장이라 셀에 그대로 깔면 행 높이가 제각각이 된다(실측: '업그레이드로 신규 노출
+    //   (1.2.3 → 1.2.4)' 는 이 칸에서 세 줄로 접혔다). **짧은 라벨 뱃지로 접고 원문은 툴팁으로**
+    //   넘긴다 — title 은 app.js 가 CSS 툴팁(.info-tooltip)으로 승격하므로 브라우저 기본
+    //   툴팁의 1초 지연·OS 기본 모양을 타지 않는다(PR#225 와 같은 경로).
     if (($row['reason'] ?? '') !== '') {
-        $out .= '<div class="why">' . vg_h((string) $row['reason']) . '</div>';
+        $short = (string) ($row['reason_short'] ?? '');
+        $out .= ' ' . vg_badge($short !== '' ? $short : '사유', 'muted', (string) $row['reason']);
     }
     return $out;
+}
+
+/**
+ * 사유의 **짧은 라벨**(표 셀의 뱃지용). 원문은 vg_change_reason() 이 그대로 만들고 툴팁으로 붙는다.
+ *   두 함수는 같은 판정(type + tb_pkg_change 대조)을 보므로 분기를 나란히 둔다 — 한쪽만 고치면
+ *   뱃지와 툴팁이 서로 다른 말을 하게 된다.
+ */
+function vg_change_reason_short(string $type, ?array $pc): string {
+    if ($type === 'new') {
+        if ($pc && $pc['change_type'] === 'installed') { return '새 설치'; }
+        if ($pc && $pc['change_type'] === 'upgraded')  { return '버전 변경'; }
+        return '신규 공표';
+    }
+    if ($type === 'resolved') {
+        if ($pc && $pc['change_type'] === 'removed')  { return '제거됨'; }
+        if ($pc && $pc['change_type'] === 'upgraded') { return '패치 적용'; }
+        return '재판정';
+    }
+    return $pc && in_array($pc['change_type'], ['upgraded', 'downgraded'], true) ? '버전 변경' : '';
 }
 
 /** tb_pkg_change 대조 결과(없으면 null)로 변화 사유 문구를 만든다. 추측성 사유는 만들지 않는다. */
@@ -455,7 +479,9 @@ function vg_attach_change_reason(PDO $pdo, array &$rows): void {
     }
     foreach ($rows as &$r) {
         $key = $r['host_id'] . '|' . $r['package_name'] . '|' . $r['cur_scan_id'];
-        $r['reason'] = vg_change_reason($r['type'], $pkgByKey[$key] ?? null);
+        $pc = $pkgByKey[$key] ?? null;
+        $r['reason'] = vg_change_reason($r['type'], $pc);
+        $r['reason_short'] = vg_change_reason_short($r['type'], $pc);
     }
     unset($r);
 }
@@ -467,6 +493,18 @@ vg_header('변화 추적', 'changes');
   <?php /* 탐지 결과 계열의 갈래 — 정의는 nav.php 의 vg_findings_subtabs() 한 곳에만 있다.
            사이드바엔 '탐지 결과' 하나만 있고 이 화면은 이 줄로만 들어온다. */ ?>
   <?php vg_findings_subtabs('changes'); ?>
+
+  <?php
+  // 화면 오리엔테이션 도식 — 이 화면의 모든 수는 **두 수집 사이의 차이**다. 무엇과 무엇을
+  //   비교했는지가 안 보이면 "신규 12" 가 전체 12건인지 늘어난 12건인지 읽히지 않는다.
+  //   값은 '취약점 변화' 탭의 합계($summary)와 같은 것이다(탭을 옮겨도 비교 축은 그대로다).
+  vg_explain_flow([
+      ['icon' => 'clock', 'label' => '직전 수집', 'state' => 'done'],
+      ['icon' => 'clock', 'label' => '이번 수집', 'state' => 'active'],
+      ['icon' => 'warn',  'label' => '신규',      'value' => number_format((int) $summary['new'])],
+      ['icon' => 'check', 'label' => '해결',      'value' => number_format((int) $summary['resolved'])],
+  ], ['label' => '변화 비교 흐름']);
+  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -597,6 +635,14 @@ vg_header('변화 추적', 'changes');
             ],
         ]
     );
+    // 변화 종류의 색은 KPI 카드·행 뱃지·행 배경이 함께 쓴다 — 그 색이 무슨 뜻인지 한 줄로
+    //   못박는다(위 $changeTone 과 같은 어휘다. 여기서 색을 새로 만들지 않는다).
+    vg_legend([
+        ['label' => '신규',      'tone' => 'crit'],
+        ['label' => '등급 상승', 'tone' => 'high'],
+        ['label' => '등급 하락', 'tone' => 'low'],
+        ['label' => '해결',      'tone' => 'ok'],
+    ], ['inline' => true, 'caption' => '변화 종류']);
     if ($paged) { vg_page_nav($total, $perPage, $page); }
     ?>
 

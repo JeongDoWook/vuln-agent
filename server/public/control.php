@@ -352,6 +352,13 @@ vg_hero(
             ],
         ]
     );
+    // 결과 뱃지의 색 규칙을 한 줄로 — FAIL 은 그 점검 항목의 **심각도 색**을 그대로 쓴다
+    //   (위 셀 콜백의 vg_sev_tone). 그래서 같은 FAIL 이라도 색이 다르게 보인다.
+    vg_legend([
+        ['label' => 'FAIL(심각도 색)', 'tone' => 'crit'],
+        ['label' => 'PASS',            'tone' => 'low'],
+        ['label' => 'NA · 판정 불가',   'tone' => 'muted'],
+    ], ['inline' => true, 'caption' => '결과']);
     if ($rows) { vg_page_nav($total, $perPage, $page); }
     ?>
     </div>
