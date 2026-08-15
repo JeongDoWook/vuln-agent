@@ -175,7 +175,7 @@ check_schedule_unit() {
   if command -v "$PHP_BIN" >/dev/null 2>&1; then
     "$PHP_BIN" "$ROOT/tests/schedule_test.php"
   else
-    "$DOCKER_BIN" run --rm -v "$ROOT:/work:ro" -w /work "${VG_GATE_APP_IMAGE:-vulnagent-app:latest}" php tests/schedule_test.php
+    "$DOCKER_BIN" run --rm -v "$ROOT:/work:ro" -w /work "${VG_GATE_APP_IMAGE:-vulnagent-app:dev}" php tests/schedule_test.php
   fi
 }
 check_migration_rehearsal() {
@@ -268,7 +268,9 @@ while IFS='|' read -r id profile required deps _description; do
   if [ -n "$dependency_failure" ]; then
     printf 'dependency failed: %s\n' "$dependency_failure" > "$out"
     rc=1
-  elif run_check "$id" >"$out" 2>&1; then
+  # The manifest itself is this loop's stdin. A nested shell/test must never be
+  # allowed to consume the remaining gate rows and silently shorten the run.
+  elif run_check "$id" </dev/null >"$out" 2>&1; then
     rc=0
   else
     rc=$?
