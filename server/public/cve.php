@@ -210,6 +210,37 @@ if ($kev) {
 vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 현황에서 보기</a>'], $sevUp ?? '등급 미상', $tone, 'CVSS 등급', 'CVE DETAIL');
 ?>
 
+<?php
+/* 판단 신호 네 축 — 노출→악용→등급→조치. 순서는 vg_signal_slots() 가 고정한다.
+ *   값은 이 화면이 이미 들고 있는 것만 쓴다: 없는 축을 추정해 만들지 않는다.
+ *     노출 = 내 자산에 이 CVE 가 걸린 범위(발견 위치 집계) · 악용 = KEV 등재 여부와 EPSS ·
+ *     등급 = CVSS 파생 등급 · 조치 = KEV 조치 기한(연방기관 기준일). KEV 가 아니면 이 제품이
+ *     제시할 기한이 없으므로 unknown 으로 남긴다 — "기한 없음"이라고 단정하지 않는다.
+ *   이 화면은 이미 vg_decision_flow() 를 갖고 있어 vg_explain_flow() 는 두지 않는다
+ *   (docs/dev/ui-design-system.md — 두 도식을 한 화면에 겹치지 않는다). */
+$epssPct = ($cve['epss'] ?? null) !== null && $cve['epss'] !== ''
+    ? number_format((float) $cve['epss'] * 100, 1) . '%' : null;
+// 아직 수집되지 않은 CVE 면 네 칸이 전부 '미제공' 이라 그리지 않는다 — 빈 슬롯은 잡음이다.
+if ($cve !== null) {
+vg_signal_slots([
+    'exposure' => $locTotal > 0
+        ? ['value' => '내 자산 ' . number_format($assetTotal) . '대', 'tone' => 'crit']
+        : ['value' => '해당 자산 없음', 'tone' => 'ok'],
+    'exploit'  => $kev
+        ? ['value' => 'KEV 등재', 'tone' => 'crit']
+        : ($epssPct !== null
+            ? ['value' => 'EPSS ' . $epssPct, 'tone' => vg_epss_tone((float) $cve['epss'])]
+            : ['state' => 'unknown']),
+    'severity' => $sevUp !== null
+        ? ['value' => $sevUp, 'tone' => $tone]
+        : ['state' => 'unknown'],
+    'action'   => $kev && $due
+        ? ['value' => $overdue ? abs($dLeft) . '일 초과' : 'D-' . $dLeft, 'tone' => $overdue ? 'crit' : 'med']
+        : ['state' => 'unknown'],
+]);
+}
+?>
+
 <?php if ($cve === null): ?>
   <div class="card">
     <?php vg_empty([
