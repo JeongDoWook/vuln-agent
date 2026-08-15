@@ -74,6 +74,54 @@ vg_page_title('UI 디자인 시스템', 'SYSTEM', '공통 토큰과 판단 신�
 </section>
 
 <section class="styleguide-section">
+  <h2>숫자 스케일</h2>
+  <?php /* 화면의 주인공 숫자는 이 세 단만 쓴다. rem 을 직접 쓰는 자리가 생기면 여기 표에서 고른다. */ ?>
+  <div class="scale-grid">
+    <div class="scale-cell scale-cell--sm">
+      <b>1,204</b>
+      <code>--fs-num-sm</code>
+      <span>1.3rem · 보조 숫자 — 목록 위 KPI, 요약 블록</span>
+    </div>
+    <div class="scale-cell scale-cell--md">
+      <b>1,204</b>
+      <code>--fs-num</code>
+      <span>1.6rem · 기본 숫자 — 대시보드 KPI, 도넛 가운데, 통계 격자</span>
+    </div>
+    <div class="scale-cell scale-cell--lg">
+      <b>1,204</b>
+      <code>--fs-num-lg</code>
+      <span>2rem · 결론 숫자 — 판정 배너, 상세 사이드바 점수</span>
+    </div>
+  </div>
+</section>
+
+<section class="styleguide-section">
+  <h2>버튼 규격</h2>
+  <?php /* 색 계열은 서열을, 크기 클래스는 자리를 말한다. 자리가 같으면 크기도 같다. */ ?>
+  <?php vg_table(
+      [['label' => '자리', 'key' => 'place'], ['label' => '규격', 'key' => 'spec'], ['label' => '보기', 'key' => 'demo']],
+      [
+          ['place' => '페이지 머리글의 주 동작', 'spec' => 'btn btn--sm btn--primary',
+           'demo' => '<button type="button" class="btn btn--sm btn--primary">+ 사용자 추가</button>'],
+          ['place' => '툴바의 보조 동작', 'spec' => 'btn btn--sm btn--ghost',
+           'demo' => '<button type="button" class="btn btn--sm btn--ghost">초기화</button>'],
+          ['place' => '중간 서열(눌러 보라고 권하는 것)', 'spec' => 'btn btn--sm btn--secondary',
+           'demo' => '<button type="button" class="btn btn--sm btn--secondary">미리보기</button>'],
+          ['place' => '표 행 안의 인라인 동작', 'spec' => 'btn btn--xs btn--ghost',
+           'demo' => '<button type="button" class="btn btn--xs btn--ghost">이력</button>'
+                   . ' <button type="button" class="btn btn--xs btn--danger">삭제</button>'],
+          ['place' => '모달 푸터 · 폼 하나가 화면인 제출', 'spec' => 'btn btn--primary (크기 없음)',
+           'demo' => '<button type="button" class="btn btn--ghost">취소</button>'
+                   . ' <button type="button" class="btn btn--primary">저장</button>'],
+      ],
+      ['cell' => [
+          'spec' => static fn(array $row): string => '<code>' . vg_h((string) $row['spec']) . '</code>',
+          'demo' => static fn(array $row): string => (string) $row['demo'],
+      ]]
+  ); ?>
+</section>
+
+<section class="styleguide-section">
   <h2>KPI와 결론</h2>
   <?php vg_kpi_strip([
       ['label' => '전체 자산', 'value' => 11, 'href' => '/assets.php'],

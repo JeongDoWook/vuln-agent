@@ -365,7 +365,7 @@ vg_header('자산', 'assets');
       <?php /* 처음엔 선택이 0개라 비활성이므로 ghost 톤으로 낸다 — 비활성인데 primary(파란) 톤이면
                opacity 만 낮아진 채 여전히 눌릴 것처럼 보인다. 고른 것이 생기면 app.js 가
                primary 로 올린다(같은 함수가 disabled·라벨도 함께 갱신한다). */ ?>
-      <button type="button" class="btn btn--ghost" data-modal="bulkGrade"
+      <button type="button" class="btn btn--sm btn--ghost" data-modal="bulkGrade"
               data-bulk-open="host_ids[]" data-bulk-label="선택 {n}개 등급 확정" disabled>선택 0개 등급 확정</button>
       <span class="why">표에서 등급을 확정할 자산을 고르세요. 선택은 지금 보고 있는 페이지 안에서만 유효합니다.</span>
       <noscript>
@@ -524,7 +524,7 @@ vg_header('자산', 'assets');
         <h3>1. 호스트 전용 키 발급</h3>
         <p>대상 서버의 FQDN으로 <a href="/agent-tokens.php">에이전트 키</a>를 발급하고, 한 번만 보이는 원문을 복사합니다.</p>
         <p class="why"><strong>완료 조건:</strong> 토큰 원문을 안전한 임시 위치에 복사했습니다. 같은 FQDN의 기존 활성 키는 자동 폐기됩니다.</p>
-        <div class="actions"><a class="btn btn--ghost" href="/agent-tokens.php">키 발급 화면</a><button type="button" class="btn btn--primary" data-step-next="1">다음: 파일 받기</button></div>
+        <div class="actions"><a class="btn btn--sm btn--ghost" href="/agent-tokens.php">키 발급 화면</a><button type="button" class="btn btn--sm btn--primary" data-step-next="1">다음: 파일 받기</button></div>
       </section>
 
       <section id="agentInstallStep2" role="tabpanel" data-install-step-panel="2">
@@ -537,7 +537,7 @@ vg_header('자산', 'assets');
         </div>
         <pre class="code">scp install-agent.sh vuln-inventory-agent.sh caddy-root.crt 대상서버:~/</pre>
         <p class="why"><strong>완료 조건:</strong> 대상 서버의 같은 디렉터리에 세 파일이 있습니다. CA가 503이면 중앙 관리자에게 추출을 요청한 뒤 다시 시도합니다.</p>
-        <div class="actions"><button type="button" class="btn btn--ghost" data-step-prev="0">이전</button><button type="button" class="btn btn--primary" data-step-next="2">다음: 설치 실행</button></div>
+        <div class="actions"><button type="button" class="btn btn--sm btn--ghost" data-step-prev="0">이전</button><button type="button" class="btn btn--sm btn--primary" data-step-next="2">다음: 설치 실행</button></div>
       </section>
 
       <section id="agentInstallStep3" role="tabpanel" data-install-step-panel="3">
@@ -552,7 +552,7 @@ sudo bash install-agent.sh
         <div class="actions"><?php vg_copy_btn('sudo bash install-agent.sh', '실행 명령 복사'); ?></div>
         <p class="why"><strong>완료 조건:</strong> 설치기가 성공으로 끝났습니다. systemd는 10초마다 명령을 확인하며, systemd가 없으면 cron 정기수집만 지원합니다.</p>
         <p class="why">실패하면 파일·CA 위치와 중앙 주소를 확인하고 같은 명령으로 <strong>다시 시도</strong>합니다. 제거는 <code>sudo bash install-agent.sh --uninstall</code>입니다.</p>
-        <div class="actions"><button type="button" class="btn btn--ghost" data-step-prev="1">이전</button><button type="button" class="btn btn--primary" data-step-next="3">다음: 연결 확인</button></div>
+        <div class="actions"><button type="button" class="btn btn--sm btn--ghost" data-step-prev="1">이전</button><button type="button" class="btn btn--sm btn--primary" data-step-next="3">다음: 연결 확인</button></div>
       </section>
 
       <section id="agentInstallStep4" role="tabpanel" data-install-step-panel="4">
@@ -560,7 +560,7 @@ sudo bash install-agent.sh
         <p>이 모달을 닫고 자산 목록에서 FQDN을 검색합니다. <strong>최신 수집</strong> 시각과 첫 탐지 결과가 보이면 완료입니다.</p>
         <p class="why"><strong>완료 조건:</strong> 자산이 자동 등록되고 상태가 수집없음이 아니며 최신 수집 시각이 표시됩니다.</p>
         <p class="why">미수신이면 키의 FQDN·만료/폐기 상태, 대상 서버의 아웃바운드 HTTPS와 서비스 로그를 확인한 뒤 자산 스캔을 다시 시도합니다.</p>
-        <div class="actions"><button type="button" class="btn btn--ghost" data-step-prev="2">이전</button><a class="btn btn--primary" href="/assets.php">자산 목록에서 확인</a></div>
+        <div class="actions"><button type="button" class="btn btn--sm btn--ghost" data-step-prev="2">이전</button><a class="btn btn--sm btn--primary" href="/assets.php">자산 목록에서 확인</a></div>
       </section>
     </div>
     <?php vg_modal_foot(null); ?>
