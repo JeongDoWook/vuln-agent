@@ -4,7 +4,7 @@
 -- PK 명명규칙 통일(20260726115611)로 단수형이 된 옛 이름이거나, 이미 앞선
 -- 마이그레이션이 DROP 한 것이다(20260726110105 *_bak, 20260727104951 saved_view,
 -- 20260730120000 remediation/sla, 20260730173000 host_ext_port). 판별 근거는
--- docs/dev/cleanup-evidence.md 의 "2026-08-16 데드코드·DB 감사" 절에 표로 있다.
+-- docs/dev/archive/cleanup-evidence.md 의 "2026-08-16 데드코드·DB 감사" 절에 표로 있다.
 --
 -- tb_activity_review — 접속기록 "월 1회 점검" 기능과 함께 폐기됐다.
 --   폐기 자체는 20260813001657_drop_activity_review.sql 이 이미 했고 그 파일은 공용 dev DB 에
