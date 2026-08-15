@@ -10,13 +10,15 @@
 #   아니다. 기존 볼륨에 반영할 증분 변경은 전부 db/migrations/ 에 둔다.
 #
 #   호출: compose_runner.sh 가 `up` 뒤에, update.sh 가 배포 뒤에 자동 실행.
-#   수동: bash deploy/migrate.sh [db컨테이너명]   (기본 vulnagent-db)
+#   수동: bash deploy/migrate.sh [db컨테이너명] [--preflight]   (기본 vulnagent-db)
 # =============================================================================
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # 저장소 루트
 
 DB_CONTAINER="${1:-vulnagent-db}"
-MIG_DIR="db/migrations"
+PREFLIGHT_ONLY=0
+[ "${2:-}" = "--preflight" ] && PREFLIGHT_ONLY=1
+MIG_DIR="${MIG_DIR:-db/migrations}"
 
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 
@@ -55,18 +57,68 @@ if [ "$ok" != 1 ]; then
   exit 1
 fi
 
+# --- preflight: DB 이름/존재/공간/복구 지점 ---------------------------------
+# compose 의 MYSQL_DATABASE가 canonical이다. 예전 하드코딩(vulnagent)은 .env 값과 달라도
+# 다른 schema에 조용히 적용할 수 있었다. 호출자가 값을 줬다면 컨테이너 값과 정확히 같아야 한다.
+container_env=$(docker inspect "$DB_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}')
+CONTAINER_DB=$(printf '%s\n' "$container_env" | sed -n 's/^MYSQL_DATABASE=//p' | head -1)
+REQUESTED_DB="${MYSQL_DATABASE:-$CONTAINER_DB}"
+if [ -z "$CONTAINER_DB" ] || [ -z "$REQUESTED_DB" ]; then
+  printf "${R}마이그레이션 중단: 컨테이너 MYSQL_DATABASE를 확인할 수 없음${N}\n" >&2
+  exit 1
+fi
+if [ "$REQUESTED_DB" != "$CONTAINER_DB" ]; then
+  printf "${R}마이그레이션 중단: MYSQL_DATABASE 불일치(요청=%s, 컨테이너=%s)${N}\n" "$REQUESTED_DB" "$CONTAINER_DB" >&2
+  exit 1
+fi
+case "$CONTAINER_DB" in
+  ''|*[!A-Za-z0-9_]*) printf "${R}마이그레이션 중단: 안전하지 않은 MYSQL_DATABASE=%s${N}\n" "$CONTAINER_DB" >&2; exit 1 ;;
+esac
+DB_NAME=$CONTAINER_DB
+
 # 컨테이너 안에서 root 로 mysql. 인자·표준입력을 그대로 전달(파일 파이프 겸용).
-#   MYSQL_PWD 로 비번을 넘겨 "password on CLI" 경고를 피한다(-p 대신).
+# MYSQL_PWD 로 비번을 넘기고, 모든 schema 명령은 검증한 DB_NAME으로 고정한다.
+db_mysql_server() {
+  docker exec -i "$DB_CONTAINER" sh -c \
+    'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot "$@"' _ "$@"
+}
 db_mysql() {
   docker exec -i "$DB_CONTAINER" sh -c \
-    'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot vulnagent "$@"' _ "$@"
+    'db="$1"; shift; MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot --database="$db" "$@"' _ "$DB_NAME" "$@"
 }
+
+exists=$(db_mysql_server -N -B -e "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='$DB_NAME'")
+if [ "$exists" != 1 ]; then
+  printf "${R}마이그레이션 중단: database '%s' 없음${N}\n" "$DB_NAME" >&2
+  exit 1
+fi
+
+free_kb=$(docker exec "$DB_CONTAINER" sh -c "df -Pk /var/lib/mysql | tail -1 | tr -s ' ' | cut -d ' ' -f 4")
+min_free_kb=${MIGRATION_MIN_FREE_KB:-1048576}
+case "$free_kb:$min_free_kb" in *[!0-9:]*|:*) printf "${R}마이그레이션 중단: DB 여유 공간 판정 실패${N}\n" >&2; exit 1 ;; esac
+if [ "$free_kb" -lt "$min_free_kb" ]; then
+  printf "${R}마이그레이션 중단: DB 여유 공간 부족(%s KiB < %s KiB)${N}\n" "$free_kb" "$min_free_kb" >&2
+  exit 1
+fi
+
+if [ "${MIGRATION_REQUIRE_BACKUP:-0}" = 1 ]; then
+  backup=${MIGRATION_BACKUP_FILE:-}
+  if [ -z "$backup" ] || [ ! -s "$backup" ] || ! gzip -t "$backup" 2>/dev/null; then
+    printf "${R}마이그레이션 중단: 복원 가능한 gzip backup 증거 필요(MIGRATION_BACKUP_FILE)${N}\n" >&2
+    exit 1
+  fi
+fi
 
 # 추적 테이블 보장(멱등).
 db_mysql -e "CREATE TABLE IF NOT EXISTS tb_schema_migrations (
   filename   VARCHAR(191) NOT NULL PRIMARY KEY,
   applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+
+latest=$(db_mysql -N -B -e "SELECT COALESCE(MAX(filename), 'none') FROM tb_schema_migrations")
+printf "  ${C}preflight${N}: db=%s · schema_version=%s · free_kb=%s · backup=%s\n" \
+  "$DB_NAME" "${latest:-none}" "$free_kb" "${MIGRATION_BACKUP_FILE:-not-required}"
+if [ "$PREFLIGHT_ONLY" = 1 ]; then exit 0; fi
 
 applied=0; skipped=0
 shopt -s nullglob
@@ -84,10 +136,13 @@ for f in "$MIG_DIR"/*.sql; do
       "$name" "$applied" "$skipped"
     exit 1
   fi
-  # INSERT IGNORE: 락이 없는 환경에서 경쟁이 나더라도 여기서 죽지 않는다.
-  #   마이그레이션 파일은 멱등하게 쓰기로 돼 있으므로(db/migrations/README.md) 두 번 실행돼도
-  #   스키마는 안전하다. 죽어서 배포를 멈추는 것보다 낫다.
-  db_mysql -e "INSERT IGNORE INTO tb_schema_migrations (filename) VALUES ('$name')"
+  # DDL 성공과 이력 기록은 MySQL DDL 특성상 한 트랜잭션이 아니다. 이력 실패를 숨기면 다음
+  # 배포가 schema version을 잘못 읽는다. 명시적으로 실패시키고, 멱등 migration을 재실행해
+  # 복구할 수 있도록 파일명을 남긴다. 경쟁 insert는 ON DUPLICATE KEY로 성공 처리한다.
+  if ! db_mysql -e "INSERT INTO tb_schema_migrations (filename) VALUES ('$name') ON DUPLICATE KEY UPDATE filename=VALUES(filename)"; then
+    printf "${R}마이그레이션 이력 기록 실패${N}: %s (DDL은 적용됐을 수 있음; 같은 명령을 재실행해 멱등 복구)\n" "$name" >&2
+    exit 1
+  fi
   applied=$((applied + 1))
 done
 

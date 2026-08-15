@@ -321,13 +321,13 @@ vg_header('대시보드', 'dashboard');
        'href' => '/findings.php', 'title' => '탐지 결과 전체 목록'],
       ['n' => $crit + $high, 'label' => 'High 이상',
        'cap' => 'CRITICAL ' . number_format($crit) . ' · HIGH ' . number_format($high),
-       'href' => '/findings.php?sev=HIGH', 'title' => 'HIGH 등급 목록 · CRITICAL 은 등급 카드에서'],
+       'href' => '/findings.php?sev=HIGH%2B', 'title' => 'CRITICAL과 HIGH 전체 목록'],
       ['n' => $kevCount, 'label' => '악용 확인(KEV)',
        'cap' => 'High 이상 중 · 실제 공격에 쓰임',
-       'href' => '#signals', 'title' => 'KEV 순으로 정렬된 주요 취약점 신호'],
+       'href' => '/findings.php?sev=HIGH%2B&fx=kev', 'title' => 'High 이상 중 KEV 등재 목록'],
       ['n' => $kevOverdue, 'label' => 'KEV 중 기한 초과',
        'cap' => '조치 기한 ' . number_format($kevSlaDays) . '일 넘김 · 오늘 먼저 조치할 대상',
-       'href' => '/findings.php?sort=due', 'title' => '조치 기한이 급한 순으로 정렬된 탐지 결과 (초과분이 맨 위)'],
+       'href' => '/findings.php?sev=HIGH%2B&fx=overdue&sort=due', 'title' => 'High 이상 KEV 중 기한을 넘긴 미조치 목록'],
   ];
   ?>
   <div class="funnel">

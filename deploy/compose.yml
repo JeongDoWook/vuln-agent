@@ -14,7 +14,7 @@ x-app-env: &app-env
   # 이 프로젝트에서 안 띄우므로(공용 db 는 메인 트리 프로젝트 소유) compose_runner.sh 가
   # DB_HOST=vulnagent-db-dev 로 덮어써 공용 db 컨테이너명을 직접 가리키게 한다.
   DB_HOST: ${DB_HOST:-db}
-  DB_NAME: ${MYSQL_DATABASE}
+  DB_NAME: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
   DB_USER: ${MYSQL_USER}
   DB_PASS_FILE: /run/secrets/mysql_password
   ADMIN_PASSWORD_FILE: /run/secrets/admin_password
@@ -36,7 +36,7 @@ services:
     image: mysql:${MYSQL_VERSION:-8.0}
     environment:
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD_FILE: /run/secrets/mysql_password
       TZ: Asia/Seoul
@@ -83,9 +83,9 @@ services:
       - vulnagent
 
   # --- 스케줄러: 예약된 피드 커넥터를 주기 실행(사이드카) -------------------
-  # HTTP 서버가 아니라 while 루프라 HTTP healthcheck 를 붙일 대상이 없다. 컨테이너가
-  # running 이면 곧 다음 루프 턴이 돈다는 뜻이라 running=응답가능이 거의 그대로 성립하고,
-  # 억지로 헬스체크용 마커 파일 등을 새로 만드는 건 지금 요구가 없다(YAGNI) — 생략한다.
+  # 프로세스 running 과 tick 성공은 다르다. scheduler.php 가 마지막 시작/성공/실패를 JSON으로
+  # 남기고 --health가 실패·10분 지연을 구분한다. SIGKILL/OOM처럼 PHP shutdown handler가 실행되지
+  # 못한 종료는 바깥 shell이 --record-exit로 남겨, 다음 tick의 running 상태가 실패를 가리지 않게 한다.
   scheduler:
     build: ../server
     image: vulnagent-app:${APP_TAG:-latest}
@@ -94,7 +94,13 @@ services:
         condition: service_healthy
     environment: *app-env
     secrets: *app-secrets
-    command: ["sh", "-c", "while true; do php /var/www/html/bin/scheduler.php || true; sleep 60; done"]
+    command: ["sh", "-c", "while true; do php /var/www/html/bin/scheduler.php; rc=$$?; if [ $$rc -ne 0 ]; then php /var/www/html/bin/scheduler.php --record-exit \"$$rc\" || echo \"scheduler failure state write failed (exit=$$rc)\" >&2; echo \"scheduler tick failed (exit=$$rc)\" >&2; fi; sleep 60; done"]
+    healthcheck:
+      test: ["CMD", "php", "/var/www/html/bin/scheduler.php", "--health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
     networks:
       - vulnagent
 

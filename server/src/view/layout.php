@@ -46,7 +46,7 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
 </head>
 <body class="page page--<?= vg_h($pageJs !== '' ? $pageJs : 'default') ?><?= $user !== null ? ' is-authenticated' : ' is-guest' ?>">
 <?php if ($user !== null): ?>
-  <aside class="side">
+  <aside class="side" id="primaryNavigation">
     <?php if (vg_can('dashboard')): ?>
       <a class="brand" href="/" title="대시보드로 이동"><span class="brand__mark" aria-hidden="true">V</span><span>vuln-agent</span></a>
     <?php else: ?>
@@ -65,7 +65,7 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
 <div class="app">
 <?php if ($user !== null): ?>
   <header class="topbar">
-    <button type="button" class="nav-toggle" data-nav-toggle aria-label="메뉴 열기" aria-expanded="false">
+    <button type="button" class="nav-toggle" data-nav-toggle aria-label="메뉴 열기" aria-expanded="false" aria-controls="primaryNavigation">
       <span></span><span></span><span></span>
     </button>
     <?php vg_breadcrumb($active, $title); ?>

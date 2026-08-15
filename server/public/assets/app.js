@@ -298,14 +298,23 @@
 
   // --- 모달 ---------------------------------------------------------------
   // 네이티브 <dialog>. showModal() 이 포커스 가둠·ESC 닫기·backdrop 을 해주므로
-  // 여기서는 열고 닫기만 한다. 폼 자체는 평범한 POST 폼이라 JS 가 죽어도 서버는 동작한다.
+  // 여기서는 열기 전 포커스를 기억해 닫힐 때 돌려준다. 폼 자체는 평범한 POST 폼이라
+  // JS 가 죽어도 서버는 동작한다.
+  var modalOpeners = new WeakMap();
+  function openModal(dlg, opener) {
+    if (!dlg || typeof dlg.showModal !== 'function' || dlg.open) { return; }
+    if (opener) { modalOpeners.set(dlg, opener); }
+    dlg.showModal();
+    var first = dlg.querySelector('[autofocus], input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href]');
+    if (first) { first.focus(); }
+  }
   document.addEventListener('click', function (e) {
     var open = e.target.closest('[data-modal]');
     if (open) {
       var dlg = document.getElementById(open.getAttribute('data-modal'));
       if (dlg && typeof dlg.showModal === 'function') {
         e.preventDefault();
-        dlg.showModal();
+        openModal(dlg, open);
       }
       return;
     }
@@ -323,21 +332,55 @@
     if (e.target.tagName === 'DIALOG') { e.target.close(); }
   });
 
-  // 모달이 열리면 첫 입력에 커서를 둔다 — 열자마자 바로 타이핑할 수 있게.
-  document.addEventListener('click', function (e) {
-    var open = e.target.closest('[data-modal]');
-    if (!open) { return; }
-    var dlg = document.getElementById(open.getAttribute('data-modal'));
-    if (!dlg) { return; }
-    var first = dlg.querySelector('input:not([type=hidden]):not([disabled]), select, textarea');
-    if (first) { first.focus(); }
-  });
+  document.addEventListener('close', function (e) {
+    if (!e.target.matches || !e.target.matches('dialog')) { return; }
+    var opener = modalOpeners.get(e.target);
+    modalOpeners.delete(e.target);
+    if (opener && opener.isConnected) { opener.focus(); }
+  }, true);
 
   // 서버가 "이 모달을 다시 열어라" 고 표시한 경우(폼 검증 실패 등) — 뜨자마자 연다.
   // <dialog open> 속성은 backdrop 없는 인라인 표시라 모달이 아니다. showModal() 로 열어야 한다.
   document.addEventListener('DOMContentLoaded', function () {
     var auto = document.querySelector('dialog[data-modal-autoopen]');
-    if (auto && typeof auto.showModal === 'function' && !auto.open) { auto.showModal(); }
+    if (auto) { openModal(auto, null); }
+    if (window.location.hash) {
+      var hashModal = document.querySelector(window.location.hash);
+      if (hashModal && hashModal.matches('dialog')) { openModal(hashModal, null); }
+    }
+  });
+
+  // 설치 안내처럼 짧은 순서형 모달. JS가 없으면 네 패널이 모두 보이고, 있으면 한 단계씩 보인다.
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-stepper]').forEach(function (root) {
+      var panels = Array.from(root.querySelectorAll('[data-install-step-panel]'));
+      var tabs = Array.from(root.querySelectorAll('[data-install-step]'));
+      if (!panels.length || panels.length !== tabs.length) { return; }
+      function show(index, moveFocus) {
+        index = Math.max(0, Math.min(index, panels.length - 1));
+        tabs.forEach(function (tab, i) {
+          var on = i === index;
+          tab.setAttribute('aria-selected', on ? 'true' : 'false');
+          tab.setAttribute('tabindex', on ? '0' : '-1');
+          panels[i].hidden = !on;
+        });
+        if (moveFocus) { tabs[index].focus(); }
+      }
+      tabs.forEach(function (tab, i) {
+        tab.addEventListener('click', function () { show(i, false); });
+        tab.addEventListener('keydown', function (event) {
+          if (event.key === 'ArrowRight') { event.preventDefault(); show((i + 1) % tabs.length, true); }
+          if (event.key === 'ArrowLeft') { event.preventDefault(); show((i + tabs.length - 1) % tabs.length, true); }
+        });
+      });
+      root.addEventListener('click', function (event) {
+        var next = event.target.closest('[data-step-next]');
+        var prev = event.target.closest('[data-step-prev]');
+        if (next) { show(Number(next.getAttribute('data-step-next')), true); }
+        if (prev) { show(Number(prev.getAttribute('data-step-prev')), true); }
+      });
+      show(0, false);
+    });
   });
 
   // --- 전체 에이전트 수집 현황 ---------------------------------------------
@@ -443,7 +486,7 @@
       }
       data.commands.forEach(function (command) { list.appendChild(renderCommand(command)); });
     }
-    function refresh(schedule) {
+    function refresh() {
       fetch('/agent-command-overview.php', {headers: {'Accept': 'application/json'}})
         .then(function (response) { if (!response.ok) { throw new Error('status'); } return response.json(); })
         .then(render)
@@ -452,12 +495,12 @@
         })
         .then(function () {
           window.clearTimeout(timer);
-          timer = window.setTimeout(function () { refresh(true); }, dialog.open ? 3000 : 15000);
+          timer = window.setTimeout(refresh, dialog.open ? 3000 : 15000);
         });
     }
-    dialog.addEventListener('close', function () { window.clearTimeout(timer); refresh(true); });
-    document.querySelector('[data-collection-status-open]').addEventListener('click', function () { refresh(true); });
-    refresh(true);
+    dialog.addEventListener('close', function () { window.clearTimeout(timer); refresh(); });
+    document.querySelector('[data-collection-status-open]').addEventListener('click', refresh);
+    refresh();
   });
 
   // 뒤로가기(bfcache)로 복귀하면 멈춰있던 스피너를 되돌린다.
@@ -479,7 +522,9 @@
   function syncThemeButtons() {
     var t = currentTheme();
     document.querySelectorAll('[data-theme-set]').forEach(function (b) {
-      b.classList.toggle('on', b.getAttribute('data-theme-set') === t);
+      var selected = b.getAttribute('data-theme-set') === t;
+      b.classList.toggle('on', selected);
+      b.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
   }
   document.addEventListener('click', function (e) {
@@ -602,6 +647,7 @@
       }
       el.setAttribute('data-tip', message);
       el.removeAttribute('title');
+      if (!el.matches('a[href],button,input,select,textarea,[tabindex]')) { el.setAttribute('tabindex', '0'); }
     });
 
     var svgTitles = [];

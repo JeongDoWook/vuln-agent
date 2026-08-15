@@ -33,6 +33,12 @@
   }); }
 
   var findingModal = document.getElementById('findingDetailModal');
+  function syncFindingNoteRequired() {
+    var fixStatus = findingModal && findingModal.querySelector('[data-finding-fix-status]');
+    var fixNote = findingModal && findingModal.querySelector('[data-finding-fix-note]');
+    if (!fixStatus || !fixNote) { return; }
+    fixNote.required = fixStatus.value === 'EXCEPTED';
+  }
   function openFindingDetail(row) {
     if (!findingModal) { return; }
     var detail;
@@ -57,6 +63,7 @@
     if (fixStatus) { fixStatus.value = detail.fix_status || 'OPEN'; }
     var fixNote = findingModal.querySelector('[data-finding-fix-note]');
     if (fixNote) { fixNote.value = detail.fix_note || ''; }
+    syncFindingNoteRequired();
     var fixLabel = findingModal.querySelector('[data-finding-fix-status-label]');
     if (fixLabel) { fixLabel.textContent = detail.fix_status_label || '미조치'; }
 
@@ -66,6 +73,8 @@
     if (historyLink) { historyLink.setAttribute('href', detail.history_url || '#'); }
     if (typeof findingModal.showModal === 'function') { findingModal.showModal(); }
   }
+  var findingFixStatus = findingModal && findingModal.querySelector('[data-finding-fix-status]');
+  if (findingFixStatus) { findingFixStatus.addEventListener('change', syncFindingNoteRequired); }
   document.addEventListener('click', function (event) {
     var row = event.target.closest && event.target.closest('tr[data-finding-detail]');
     if (!row || event.target.closest('a, button, input, select, textarea, label')) { return; }

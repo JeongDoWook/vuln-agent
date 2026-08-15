@@ -1,6 +1,6 @@
 # 설정 레퍼런스 — 환경변수 · 운영 설정
 
-> 문서 기준: 2026-08-11.
+> 문서 기준: 2026-08-15.
 
 **운영자가 코드 수정 없이 조정할 수 있는 값 전체**를 모아 둔다. 조정 경로는 둘이고 성격이 다르다.
 
@@ -54,7 +54,6 @@ LOGIN_LOCK_MINUTES=15
 | `UI_PER_PAGE_OPTIONS` | `10,20,40,60,100` | 각 항목 5~200 (범위 밖 항목은 버림) | 목록의 페이지 크기 선택지 |
 | `UI_PER_PAGE_DEFAULT` | `10` | 선택지 중 하나 (아니면 선택지의 최솟값) | 기본 페이지 크기 |
 | `UI_DASHBOARD_URGENT_LIMIT` | `6` | 3~30 | 대시보드 대응 우선순위 표시 건수 |
-| `UI_DASHBOARD_ACTIONABLE_STATUSES` | `EXTERNAL,LAN,LISTENING,RUNNING,LOADED` | 이 5종 중 일부 (그 밖의 값은 무시) | KEV 긴급 목록에 포함할 실제 사용 상태 |
 | `UI_DETAIL_PREVIEW_LIMIT` | `10` | 5~100 | 상세 화면 이력·프로세스 미리보기 건수 |
 | `UI_TREND_LIMIT` | `50` | 10~500 | 상세 화면 추이 데이터 수 |
 | `UI_FILTER_OPTION_LIMIT` | `300` | 50~2000 | 취약점 목록의 호스트 필터 선택지 최대 개수 (현재 선택된 호스트는 한도와 무관하게 항상 포함) |
@@ -79,11 +78,11 @@ LOGIN_LOCK_MINUTES=15
 |---|---:|---|---|
 | 세션 유휴 만료 | `1800`초(30분) | 설정 `session.idle_minutes` · 폴백 상수 `VG_SESSION_IDLE_SECONDS`(`server/src/auth.php`) | 마지막 활동 기준 |
 | 세션 절대 만료 | `43200`초(12시간) | 설정 `session.absolute_minutes` · 폴백 상수 `VG_SESSION_ABSOLUTE_SECONDS`(같은 파일) | 유휴와 무관하게 로그인 시점 기준 |
-| 토큰 유효기간 선택지 | 무기한 / 30 / 90 / 365일 | `VG_TOKEN_EXPIRY_OPTIONS`(`server/src/tokenexpiry.php`) | API 키·에이전트 키 공통. `0`=무기한 |
+| 에이전트 키 유효기간 선택지 | 무기한 / 30 / 90 / 365일 | `VG_TOKEN_EXPIRY_OPTIONS`(`server/src/tokenexpiry.php`) | 호스트별 수집 키. `0`=무기한 |
 | 만료 임박 표시 | `7`일 | `VG_TOKEN_EXPIRY_SOON_DAYS`(같은 파일) | 목록 뱃지 표시용. 인증 판정과 무관해 설정으로 빼지 않았다 |
 
-세션이 만료되면 `session_expire` 감사로그를 남기고 `tb_user.session_token` 을 지운다. 만료된 토큰은
-인증 실패로 처리되고 `api_token_expired`/`agent_token_expired` 로 기록된다(자동 갱신 없음).
+세션이 만료되면 `session_expire` 감사로그를 남기고 `tb_user.session_token` 을 지운다. 만료된 에이전트
+키는 인증 실패로 처리되고 `agent_token_expired` 로 기록된다(자동 갱신 없음).
 
 페이지 열람 로그에는 페이지명·메뉴 코드·검색 쿼리의 **키만** 저장하고 값은 저장하지 않는다.
 공통 감사 모듈은 password/token/secret/csrf/authorization 계열 필드를 재귀적으로 마스킹한다.

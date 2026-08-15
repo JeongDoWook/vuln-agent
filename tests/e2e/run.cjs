@@ -52,6 +52,7 @@ function snapshot(page) {
       theme: document.documentElement.getAttribute('data-theme'),
       themeSaved: localStorage.getItem('vg-theme'),
       themeOn: on ? on.getAttribute('data-theme-set') : null,
+      themePressed: on ? on.getAttribute('aria-pressed') : null,
       bg: getComputedStyle(document.body).backgroundColor,
       density: document.documentElement.getAttribute('data-density'),
       densitySaved: localStorage.getItem('vg-density'),
@@ -155,6 +156,7 @@ async function main() {
     await page.click('[data-theme-set="dark"]');
     s = await snapshot(page);
     check(s.themeOn === 'dark', 'Dark 클릭 → .on 이 Dark 로 이동', 'on=' + s.themeOn);
+    check(s.themePressed === 'true', '선택한 테마 버튼 aria-pressed=true');
     check(s.theme === 'dark', "Dark 클릭 → documentElement data-theme='dark'", 'theme=' + s.theme);
     check(s.themeSaved === 'dark', "localStorage['vg-theme']='dark' 저장", 'saved=' + s.themeSaved);
     check(s.bg !== lightBg, '배경색이 실제로 바뀜(라이트와 다른 값)', 'light=' + lightBg + ' dark=' + s.bg);
@@ -175,6 +177,8 @@ async function main() {
 
     await toggle.click();
     check(await navOpen(page), '햄버거 클릭 → 사이드바 열림(body.nav-open)');
+    check(await page.evaluate(() => Boolean(document.activeElement && document.activeElement.closest('.side a.link'))),
+      '모바일 메뉴를 열면 첫 링크로 포커스 이동');
     check(await page.locator('.nav-backdrop').isVisible(), '열리면 백드롭이 보인다');
     check(await toggle.getAttribute('aria-expanded') === 'true', '햄버거 aria-expanded=true');
 
@@ -186,6 +190,7 @@ async function main() {
     await toggle.click();
     await page.keyboard.press('Escape');
     check(!(await navOpen(page)), 'Escape → 사이드바 닫힘');
+    check(await toggle.evaluate((el) => document.activeElement === el), 'Escape로 닫으면 햄버거로 포커스 복귀');
 
     // 같은 폭에서 검색·필터 토글은 보여야 한다(데스크톱 폭에선 display:none 이 정상이다 —
     // 모르고 데스크톱에서 클릭하면 30초 타임아웃으로 실패한다).
@@ -197,7 +202,7 @@ async function main() {
     await go(page, '/assets.php');
 
     // 네이티브 title은 브라우저마다 오래 기다려야 하므로 app.js가 즉시 공통 tooltip로 바꾼다.
-    const assetHelp = page.locator('.page-title .help').first();
+    const assetHelp = page.locator('th[data-tip]:has-text("상태")').first();
     check(await assetHelp.count() === 1, '자산 상태 도움말 아이콘 제공');
     if (await assetHelp.count()) {
       await assetHelp.hover();
@@ -212,7 +217,8 @@ async function main() {
       check(await tip.isVisible(), '키보드 focus로도 도움말 툴팁 표시');
     }
 
-    await page.click('[data-modal="agentInstall"]');
+    const installOpener = page.locator('[data-modal="agentInstall"]');
+    await installOpener.click();
     const installModal = page.locator('#agentInstall');
     check(await installModal.isVisible(), '에이전트 설치 안내 버튼 → 설치 모달 열림');
     const installText = (await installModal.textContent() || '').replace(/\s+/g, ' ');
@@ -220,7 +226,15 @@ async function main() {
       '설치 모달이 실제 필수·선택 명령을 구분');
     check(installText.includes('10초마다 명령을 확인') && installText.includes('cron 정기수집만 지원'),
       '설치 모달이 systemd 기능과 cron 폴백 제약을 구분');
+    check(await installModal.locator('[data-install-step]').count() === 4,
+      '설치 안내가 키·파일/CA·실행·연결 확인 4단계 제공');
+    check(await installModal.locator('[data-install-step-panel]:visible').count() === 1,
+      '설치 stepper는 현재 단계 하나만 표시');
+    await installModal.locator('[data-step-next="1"]').click();
+    check(await installModal.locator('#agentInstallStep2').isVisible(), '다음 버튼으로 파일·CA 단계 이동');
     await installModal.locator('[data-modal-close]').last().click();
+    check(await installOpener.evaluate((el) => document.activeElement === el),
+      '설치 모달을 닫으면 열기 버튼으로 포커스 복귀');
 
     const hostHref = await page.locator('a[href^="/host.php?id="]').first().getAttribute('href');
     check(Boolean(hostHref), '자산 목록에서 상세 화면 링크 확인');

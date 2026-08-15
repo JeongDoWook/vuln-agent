@@ -41,18 +41,6 @@ function vg_ui_dashboard_urgent_limit(): int {
     return vg_ui_int('UI_DASHBOARD_URGENT_LIMIT', 6, 3, 30);
 }
 
-/** @return string[] 실제 사용 중인 KEV만 긴급 목록에 올린다. */
-function vg_ui_dashboard_actionable_statuses(): array {
-    $allowed = ['EXTERNAL', 'LAN', 'LISTENING', 'RUNNING', 'LOADED'];
-    $raw = strtoupper((string) vg_env('UI_DASHBOARD_ACTIONABLE_STATUSES', implode(',', $allowed)));
-    $values = [];
-    foreach (explode(',', $raw) as $item) {
-        $status = trim($item);
-        if (in_array($status, $allowed, true)) { $values[] = $status; }
-    }
-    return array_values(array_unique($values)) ?: $allowed;
-}
-
 /**
  * 상세 화면(자산 상세 등)의 기본 페이지 크기. 목록 화면 기본값보다 크다 —
  *   자산 상세는 "이 자산 한 대의 전량"을 훑는 자리라 10개씩 13페이지로 넘기면 실측이 안 된다.

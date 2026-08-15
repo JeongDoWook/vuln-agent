@@ -1,6 +1,6 @@
 # 다이어그램
 
-> 문서 기준: 2026-08-11. 구조 변경 시 `.puml`과 렌더된 `.svg`를 함께 갱신한다.
+> 문서 기준: 2026-08-15. 구조 변경 시 `.puml`과 렌더된 `.svg`를 함께 갱신한다.
 
 `docs/dev/architecture.md` 의 구조를 그림으로 옮긴 PlantUML 다이어그램 6종이다.
 소스는 `.puml`, 같이 있는 `.svg` 는 그 렌더 결과다 — 아래 그림은 전부 그 `.svg` 이고, 클릭하면 원본이 열린다.
@@ -62,7 +62,7 @@ Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·we
 ## ERD
 
 `tb_host`→`tb_scan` 을 축으로 패키지·노출·프로세스·계정·의존성 그래프와 판정 결과, CVE 미러 쪽 테이블이
-어떻게 엮이는지다(도메인 엔티티 53개 = 전체 54테이블 − `tb_schema_migrations`).
+어떻게 엮이는지다(도메인 엔티티 52개 = 전체 53테이블 − `tb_schema_migrations`).
 감사 4컬럼 중 `is_deleted` 만 표기했고, FK 없이 애플리케이션 조인으로만 엮이는 테이블은 소스에 주석으로 적혀 있다.
 테이블명은 단수, 대리키 PK 는 `<단수 테이블명>_id`(`tb_host.host_id`)라 **조인 양쪽 이름이 같다**.
 테이블별 전체 컬럼과 명명규칙 예외는 [`docs/dev/데이터베이스.md`](../../dev/데이터베이스.md) 가 따로 다룬다.
@@ -80,8 +80,8 @@ Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·we
 ## 사이트맵
 
 로그인부터 대시보드·호스트 상세·취약점·자산·피드·관리 화면까지의 구성이다. 화면 묶음마다 필요한
-권한(`findings`·`assets`·`connectors` 등)이 붙어 있고, 전체 자산 설치 패키지 화면과 사람 로그인에서
-분리된 토큰 인증 API(`ingest.php`·`agent-poll.php`·`agent-progress.php`·`export.php`)도 같이 표시했다.
+권한(`findings`·`assets`·`connectors` 등)이 붙어 있고, 전체 자산 설치 패키지 화면과 에이전트 키 인증
+API(`ingest.php`·`agent-poll.php`·`agent-progress.php`), 세션 인증 내보내기(`export.php`·`sbom.php`)도 표시했다.
 사람이 주소창에 치는 화면은 아니지만 화면이 뒤에서 부르는 엔드포인트(`agent-command-overview.php`·
 `agent-command-status.php`·`feed_preview.php`)와 무인증 설치파일 배포(`agent-dl.php`)도 별도 묶음으로 두었다.
 

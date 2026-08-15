@@ -59,7 +59,7 @@ $unsupBy = [];      // 사유 => [대상명, …]
 
 // 등급 어휘는 탭마다 다르다 — CCE 판정에는 CRITICAL 이 없다(cce.php 가 HIGH/MEDIUM/LOW 만 준다).
 //   탭별 화이트리스트로 검증하므로, 탭을 옮기며 sev 를 들고 가도 그 탭에 없는 값이면 자동으로 풀린다.
-$sevOptions = $type === 'cce' ? ['HIGH', 'MEDIUM', 'LOW'] : ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+$sevOptions = $type === 'cce' ? ['HIGH', 'MEDIUM', 'LOW'] : ['CRITICAL', 'HIGH+', 'HIGH', 'MEDIUM', 'LOW'];
 $stOptions  = ['EXTERNAL', 'LAN', 'FILTERED', 'LISTENING', 'RUNNING', 'LOADED', 'INSTALLED'];
 // 노출 범위(tb_exposure.scope) — 표시 라벨은 vg_scope_label() 이 갖는다(format.php).
 //   '-'(bind 주소를 못 읽은 소켓)까지 포함해야 카드 합계가 목록 건수와 맞는다 — 빼면
@@ -77,6 +77,8 @@ $typeCounts = ['cve' => null, 'cce' => null, 'exposure' => null];
 $cceResultCounts = ['FAIL'=>0, 'PASS'=>0, 'NA'=>0];   // cce 탭 카드
 $scopeCounts = [];                                    // exposure 탭 카드 (scope => 건수)
 $expCveCounts = [];                                   // 노출 행 → 그 실행 패키지에 걸린 CVE 건수
+$actionCounts = ['high' => 0, 'kev' => 0, 'external' => 0, 'restart' => 0, 'overdue' => 0];
+$overdueFindingIds = [];
 
 $q   = trim((string) ($_GET['q'] ?? ''));
 $sev = (string) ($_GET['sev'] ?? '');
@@ -95,7 +97,7 @@ if (!in_array($sev, $sevOptions, true)) { $sev = ''; }
 if (!in_array($st, $stOptions, true)) { $st = ''; }
 // 조치 가능성: '' 전체 / action 조치 가능 / nofix 조치 불가(벤더가 수정본을 안 냈다)
 //              / restart 재시작·재부팅만 하면 됨(패치는 이미 됐다 — 자산 상세에서 넘어온다)
-if (!in_array($fx, ['action', 'nofix', 'restart'], true)) { $fx = ''; }
+if (!in_array($fx, ['action', 'nofix', 'restart', 'kev', 'overdue'], true)) { $fx = ''; }
 if ($fst !== '' && !vg_finding_status_valid($fst)) { $fst = ''; }
 if ($sort !== 'due') { $sort = ''; }
 $page   = vg_page();
@@ -188,6 +190,13 @@ try {
     $in = $scanIds ? implode(',', array_fill(0, count($scanIds), '?')) : '';
 
     if ($scanIds && $type === 'cve') {
+        $policy = vg_compliance_policy();
+        $statusJoin = "LEFT JOIN tb_finding_status fs
+                              ON fs.host_id = s.host_id
+                             AND fs.container_ref = COALESCE(ctr.cid, '')
+                             AND fs.cve_id = f.cve_id
+                             AND fs.package_name = f.package_name";
+
         // KPI 는 필터 무관 — 대상 스캔 전체 기준
         $typeCounts['cve'] = 0;
         $stmt = $pdo->prepare("SELECT severity, COUNT(*) c FROM tb_finding WHERE scan_id IN ($in) GROUP BY severity");
@@ -198,6 +207,51 @@ try {
             $typeCounts['cve'] = (int) ($typeCounts['cve'] ?? 0) + (int) $r['c'];
             if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; }
         }
+        $actionCounts['high'] = $counts['CRITICAL'] + $counts['HIGH'];
+
+        // 행동 큐의 신호는 모두 같은 대상 스캔 집합에서 센다. 기한 초과는 대시보드와 같은
+        // High 이상 KEV 모집단이며 DONE·EXCEPTED는 제외한다.
+        $stmt = $pdo->prepare(
+            "SELECT SUM(f.in_kev = 1) kev, SUM(f.runtime_status = 'EXTERNAL') external_cnt,
+                    SUM(f.needs_restart = 1) restart_cnt
+               FROM tb_finding f WHERE f.scan_id IN ($in) AND f.is_deleted = 0"
+        );
+        $stmt->execute($scanIds);
+        $queueAgg = $stmt->fetch() ?: [];
+        $actionCounts['kev'] = (int) ($queueAgg['kev'] ?? 0);
+        $actionCounts['external'] = (int) ($queueAgg['external_cnt'] ?? 0);
+        $actionCounts['restart'] = (int) ($queueAgg['restart_cnt'] ?? 0);
+
+        $stmt = $pdo->prepare(
+            "SELECT f.finding_id, s.host_id, COALESCE(ctr.cid, '') cid, f.cve_id, f.package_name,
+                    fs.status
+               FROM tb_finding f
+               JOIN tb_scan s ON s.scan_id = f.scan_id
+               LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id
+               $statusJoin
+              WHERE f.scan_id IN ($in) AND f.is_deleted = 0 AND f.in_kev = 1
+                AND f.severity IN ('CRITICAL','HIGH')"
+        );
+        $stmt->execute($scanIds);
+        $overdueCandidates = $stmt->fetchAll();
+        $overdueKeys = [];
+        foreach ($overdueCandidates as $candidate) {
+            if (in_array((string) ($candidate['status'] ?? ''), ['DONE', 'EXCEPTED'], true)) { continue; }
+            $overdueKeys[] = [(int) $candidate['host_id'], (string) $candidate['cid'],
+                              (string) $candidate['cve_id'], (string) $candidate['package_name']];
+        }
+        $overdueSeen = vg_finding_first_seen_map($pdo, $overdueKeys, vg_finding_sla_lookback_days($policy));
+        $kevDays = vg_finding_sla_days(true, 'CRITICAL', $policy);
+        foreach ($overdueCandidates as $candidate) {
+            if (in_array((string) ($candidate['status'] ?? ''), ['DONE', 'EXCEPTED'], true)) { continue; }
+            $key = vg_finding_status_key((int) $candidate['host_id'], (string) $candidate['cid'],
+                                         (string) $candidate['cve_id'], (string) $candidate['package_name']);
+            $days = $overdueSeen[$key]['days'] ?? null;
+            if ($days !== null && $kevDays !== null && (int) $days > $kevDays) {
+                $overdueFindingIds[] = (int) $candidate['finding_id'];
+            }
+        }
+        $actionCounts['overdue'] = count($overdueFindingIds);
 
         // 필터 WHERE 조립 (COUNT 와 목록 쿼리에 동일하게 사용)
         $where  = "f.scan_id IN ($in)";
@@ -222,8 +276,12 @@ try {
             $params[] = '%' . $q . '%';
         }
         if ($sev !== '') {
-            $where .= ' AND f.severity = ?';
-            $params[] = $sev;
+            if ($sev === 'HIGH+') {
+                $where .= " AND f.severity IN ('CRITICAL','HIGH')";
+            } else {
+                $where .= ' AND f.severity = ?';
+                $params[] = $sev;
+            }
         }
         if ($st !== '') {
             $where .= ' AND f.runtime_status = ?';
@@ -236,16 +294,17 @@ try {
         if ($fx === 'nofix')   { $where .= ' AND f.no_fix = 1'; }
         // 재시작·재부팅만 하면 되는 것 — 자산 상세의 "전체 보기" 가 여기로 온다.
         if ($fx === 'restart') { $where .= ' AND f.needs_restart = 1'; }
+        if ($fx === 'kev')     { $where .= ' AND f.in_kev = 1'; }
+        if ($fx === 'overdue') {
+            $where .= $overdueFindingIds
+                ? ' AND f.finding_id IN (' . implode(',', array_map('intval', $overdueFindingIds)) . ')'
+                : ' AND 1 = 0';
+        }
 
         // 조치 상태는 스캔이 바뀌어도 유지되는 **자연키**로 붙는다(host_id·컨테이너 이름·CVE·패키지) —
         //   tb_finding.finding_id 는 스캔마다 새로 발급되는 surrogate PK 라 붙일 수 없다.
         //   조인은 한 번뿐이고, 목록은 이미 페이지네이션돼 있으므로 현재 페이지 범위만 걸린다.
         //   uq_finding_status 가 host_id 선두라 이 조인은 그 유니크 인덱스를 탄다.
-        $statusJoin = "LEFT JOIN tb_finding_status fs
-                              ON fs.host_id = s.host_id
-                             AND fs.container_ref = COALESCE(ctr.cid, '')
-                             AND fs.cve_id = f.cve_id
-                             AND fs.package_name = f.package_name";
         // 기록이 없는 조합은 행 자체가 없다 = 미조치(OPEN). 그래서 OPEN 필터만 NULL 을 함께 받는다
         //   (3.8만 건에 OPEN 행을 미리 깔지 않는다는 설계의 대가를 여기서 한 줄로 치른다).
         $countFrom = 'tb_finding f';
@@ -266,8 +325,6 @@ try {
         $offset = ($page - 1) * $perPage;
 
         // 조치 기한 기준일은 설정값을 그대로 읽는다(compliance 화면과 같은 숫자여야 한다).
-        $policy = vg_compliance_policy();
-
         /* 기한 임박순 정렬 — 남은 일수는 "최초 발견 시각 + 등급별 기한" 이라 컬럼 하나로는 못 센다.
          *   그래서 이 정렬을 고른 경우에만, 대상 호스트의 역산 구간 안 스캔을 묶어 최초 시각을
          *   집계한 파생표를 조인한다(기본 정렬에서는 아예 붙지 않는다 — 목록의 기본 응답을
@@ -669,6 +726,25 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       ]);
   endif; ?>
 
+  <section class="action-queue" data-action-queue aria-labelledby="findingActionQueueTitle">
+    <div class="action-queue__head">
+      <strong id="findingActionQueueTitle">먼저 볼 작업</strong>
+      <span class="why">— 최신 자산 스캔 기준 · 누르면 같은 모집단으로 필터됩니다</span>
+    </div>
+    <?php vg_kpi_strip([
+        ['label' => 'High 이상', 'value' => number_format($actionCounts['high']), 'tone' => 'high',
+         'href' => vg_qs(['sev' => 'HIGH+', 'fx' => null, 'st' => null, 'page' => 1]), 'selected' => $sev === 'HIGH+'],
+        ['label' => '기한 초과', 'value' => number_format($actionCounts['overdue']), 'tone' => 'crit',
+         'href' => vg_qs(['sev' => 'HIGH+', 'fx' => 'overdue', 'sort' => 'due', 'st' => null, 'page' => 1]), 'selected' => $fx === 'overdue'],
+        ['label' => 'KEV 등재', 'value' => number_format($actionCounts['kev']), 'tone' => 'crit',
+         'href' => vg_qs(['sev' => null, 'fx' => 'kev', 'st' => null, 'page' => 1]), 'selected' => $fx === 'kev'],
+        ['label' => '외부 노출', 'value' => number_format($actionCounts['external']), 'tone' => 'high',
+         'href' => vg_qs(['sev' => null, 'fx' => null, 'st' => 'EXTERNAL', 'page' => 1]), 'selected' => $st === 'EXTERNAL'],
+        ['label' => '재시작 필요', 'value' => number_format($actionCounts['restart']), 'tone' => 'med',
+         'href' => vg_qs(['sev' => null, 'fx' => 'restart', 'st' => null, 'page' => 1]), 'selected' => $fx === 'restart'],
+    ], ['compact' => true]); ?>
+  </section>
+
   <div class="cards">
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s):
       // 카드 크기·글자 크기는 CSS 가 전 등급에 똑같이 준다 — 그래서 자릿수가 많은 등급이 무조건
@@ -699,23 +775,24 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       $toolbar[] = ['type' => 'hidden', 'name' => 'sev', 'value' => $sev, 'reset' => true];
   }
   vg_toolbar(array_merge($toolbar, [
+      ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
       // '전체 상태' 였던 것을 '노출 상태' 로 못박는다 — 바로 옆에 사람이 정하는 '조치 상태'가
       //   서기 때문에, 라벨이 둘 다 '상태' 면 어느 축인지 화면만 보고는 알 수 없다.
       ['type' => 'select', 'name' => 'st', 'empty_label' => '전체 노출 상태', 'selected' => $st,
-          'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
+          'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions)), 'advanced' => true],
       // 조치 상태 — 값 목록·라벨은 vg_finding_status_labels() 하나가 정본이다.
       ['type' => 'select', 'name' => 'fst', 'empty_label' => '전체 조치 상태', 'selected' => $fst,
-          'options' => vg_finding_status_labels()],
+          'options' => vg_finding_status_labels(), 'advanced' => true],
       // 조치 가능성 — 벤더가 수정본을 안 낸 CVE 를 걸러 보거나, 그것만 모아 볼 수 있다.
       ['type' => 'select', 'name' => 'fx', 'empty_label' => '전체 조치 가능성', 'selected' => $fx,
           'options' => ['action' => '조치 가능', 'nofix' => '조치 불가(벤더 미수정)',
-                        'restart' => '재시작·재부팅만 하면 됨']],
+                        'restart' => '재시작·재부팅만 하면 됨', 'kev' => 'KEV 등재',
+                        'overdue' => '기한 초과'], 'advanced' => true],
       // 정렬은 표 머리글이 아니라 여기에 둔다 — vg_table 은 정렬 링크를 갖지 않는다(공용 표를
       //   이 화면 하나 때문에 바꾸지 않는다). 기한순은 최초 발견 시각을 되짚는 집계가 필요해
       //   기본값으로 두지 않는다.
       ['type' => 'select', 'name' => 'sort', 'empty_label' => '위험도순(기본)', 'selected' => $sort,
-          'options' => ['due' => '조치 기한 임박순']],
-      ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
+          'options' => ['due' => '조치 기한 임박순'], 'advanced' => true],
   ]));
 
   // 컬럼 11개는 가로 스크롤을 만들어서, 정작 제일 중요한 "조치" 가 화면 밖으로 밀려났었다.
@@ -792,8 +869,8 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   //   (같은 vg_qs() 를 KPI 카드처럼 직접 <a href=...> 를 만드는 코드에 쓸 땐, 그건 vg_empty() 를
   //   거치지 않으므로 그 호출부가 스스로 vg_h() 해야 한다 — 여기와는 다른 경로다.)
   //   tests/smoke.sh 가 임의 쿼리값 주입으로 이 전제를 회귀 검증한다.
-  $filterCta  = ['href' => vg_qs(['q' => '', 'sev' => '', 'st' => '', 'fx' => '', 'fst' => '', 'page' => 1]), 'label' => '필터 초기화'];
-  $hasAnyFilter = $q !== '' || $sev !== '' || $st !== '' || $fx !== '' || $fst !== '';
+  $filterCta  = ['href' => vg_qs(['q' => '', 'sev' => '', 'st' => '', 'fx' => '', 'fst' => '', 'sort' => '', 'page' => 1]), 'label' => '필터 초기화'];
+  $hasAnyFilter = $q !== '' || $sev !== '' || $st !== '' || $fx !== '' || $fst !== '' || $sort !== '';
   if ($scanId > 0 && !$scan) {
       // 단일 스캔 모드인데 그 스캔이 없는 경우(삭제됐거나 잘못된 id) — 필터 문제가 아니다.
       //   초기화 CTA 를 줘도 scan_id 는 그대로 유지돼(컨텍스트 보존이 이번 변경의 의도) 계속
@@ -1135,7 +1212,9 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
               'title' => fn($r) => '<div class="clamp-2">' . vg_h((string) $r['title']) . '</div>',
               // 룰 상세 화면은 이미 compliance_rule.php 가 갖고 있다 — 새로 만들지 않고 링크한다.
               'code' => function ($r) {
-                  $html = '<code>' . vg_h((string) $r['code']) . '</code>';
+                  $code = (string) $r['code'];
+                  $html = '<a href="/cce-rule.php?code=' . urlencode($code) . '"><code>'
+                        . vg_h($code) . '</code></a>';
                   if (empty($r['ssg_rule_id'])) {
                       return $html . '<div class="why">자체 기준(대응 SSG 룰 없음)</div>';
                   }

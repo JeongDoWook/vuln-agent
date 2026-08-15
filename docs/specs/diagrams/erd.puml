@@ -1,4 +1,5 @@
-@startuml erd
+@startuml
+' schema-docs: sha256:d55056114703d764 generated_at=2026-08-13T00:18:10Z tables=53
 ' vuln-agent §5 데이터 모델 (ERD)
 ' 원본: docs/dev/architecture.md §5
 ' 테이블별 전체 컬럼·책임·정규화 현황은 docs/dev/데이터베이스.md 참고.
@@ -444,6 +445,21 @@ package "판정 결과 — 우리 기여(런타임 상태·억제)" {
         evidence_json : longtext
     }
 
+    entity tb_finding_status {
+        finding_status_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        container_ref : string
+        ' 컨테이너 이름. '' = 호스트 자신
+        cve_id : string
+        package_name : string
+        ' UK(host_id, container_ref, cve_id, package_name)
+        status : string
+        ' OPEN IN_PROGRESS DONE EXCEPTED
+        note : text
+        updated_user_id : bigint <<FK>>
+    }
+
     entity tb_suppressed_finding {
         suppressed_finding_id : bigint <<PK>>
         --
@@ -627,6 +643,7 @@ tb_host ||--o{ tb_scan_run : "실제 실행 이력"
 tb_host ||--o{ tb_agent_command : "수집 명령"
 tb_host ||--o{ tb_host_account : "계정 인벤토리"
 tb_host ||--o{ tb_remediation_note : "미조치 사유 메모"
+tb_host ||--o{ tb_finding_status : "조치 상태"
 tb_host ||--o| tb_asset_grade_review : "최신 등급 검토"
 tb_host ||--o{ tb_asset_grade_suggestion_history : "등급 제안 관찰 이력"
 
@@ -669,6 +686,7 @@ tb_cce_finding }o..o{ tb_control_mapping : "기준별 통제(rule_code = code)"
 tb_control_mapping }o..o| tb_control_guide : "통제 설명(framework, control_id)"
 tb_control_mapping }o..o| tb_cce_rule_guide : "룰 조치(rule_code)"
 tb_remediation_note ||..o{ tb_finding : "자연키(host+cid+cve+package)로 붙는 사람 메모"
+tb_finding_status ||..o{ tb_finding : "자연키(host+container+cve+package) 조치 상태"
 
 ' 벤더 판정 소스는 매처가 참조만 한다(스캔에 매달리지 않음).
 tb_debian_tracker }o..|| tb_finding : "데비안 백포트 판정"

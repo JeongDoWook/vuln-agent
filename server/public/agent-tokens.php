@@ -145,7 +145,8 @@ vg_header('에이전트 키', 'agenttokens');
           <?php vg_copy_btn($install, '빠른 설치 명령 복사'); ?>
         </div>
         <div class="why">대상 서버에서 <code>sudo bash install-agent.sh</code> 실행 후 숨김 프롬프트에 붙여넣는 방식을 권장합니다.
-          빠른 설치 명령은 자동화용이며 토큰이 셸 히스토리에 남을 수 있습니다. 스크립트는 <a href="/assets.php">자산</a>에서 받습니다.</div>
+          빠른 설치 명령은 자동화용이며 토큰이 셸 히스토리에 남을 수 있습니다.
+          복사했다면 <a href="/assets.php#agentInstall">설치 안내 2단계(파일·CA)</a>로 이어가세요.</div>
       </div>
     </div>
   <?php endif; ?>

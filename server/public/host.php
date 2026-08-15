@@ -174,12 +174,6 @@ const VG_HOST_INTEGRITY_TOP = 20;
 // 재시작 필요 목록도 같은 성격의 미리보기다(프로세스·패키지로 묶은 상위 일부 + 전체 건수).
 const VG_HOST_STALE_TOP = 20;
 
-// 재시작·재부팅 표에 보여줄 최대 건수. 나머지는 취약점 현황(fx=restart)으로 넘긴다.
-
-
-// 리소스 추이 차트에 그릴 최대 스캔 건수(최근 것부터).
-
-
 // --- 탭별 데이터 조회 (?tab= 에 따라 갈리는 SQL). 각자 {total, rows, ...} 형태의 배열을 반환한다. ---
 
 function vg_host_load_vuln_tab(PDO $pdo, int $sid, int $critHighTotal, int $perPage, int $offset, ?string $q = null): array {
@@ -1642,11 +1636,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
             <label class="field" for="findingFixStatus">상태
               <select id="findingFixStatus" name="status" data-finding-fix-status>
                 <?php foreach (vg_finding_status_labels() as $code => $label): ?>
-                  <option value="<?= vg_h($code) ?>"><?= vg_h($label) ?></option>
+                  <option value="<?= vg_h($code) ?>"><?= vg_h($label . ($code === 'EXCEPTED' ? ' (메모 필수)' : '')) ?></option>
                 <?php endforeach; ?>
               </select>
             </label>
-            <label class="field" for="findingFixNote">메모 (선택)
+            <label class="field" for="findingFixNote">메모 (예외 선택 시 필수)
               <input type="text" id="findingFixNote" name="note" data-finding-fix-note
                      maxlength="<?= VG_FINDING_STATUS_NOTE_MAX ?>" autocomplete="off"
                      placeholder="예: 다음 정기 점검 때 반영">

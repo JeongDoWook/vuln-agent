@@ -176,6 +176,13 @@ vg_hero(
   </div>
 </div>
 
+<?php vg_decision_flow([
+    ['label' => '점검 근거', 'hint' => '무엇을 보고 판정했나', 'href' => '#check'],
+    ['label' => '영향 대상', 'hint' => number_format($failHosts) . '대 위반', 'href' => '#hosts'],
+    ['label' => '조치', 'hint' => '기준값과 조치 방법', 'href' => '#check'],
+    ['label' => '재검증', 'hint' => '최신 자산 스캔 판정 확인', 'href' => '/findings.php?type=cce&q=' . urlencode($code) . '&res=ALL'],
+]); ?>
+
 <nav class="subtabs subtabs--sticky">
   <a href="#check">점검과 조치</a>
   <a href="#controls">기준 매핑<span class="n"><?= number_format(array_sum(array_map('count', $mapping))) ?></span></a>
