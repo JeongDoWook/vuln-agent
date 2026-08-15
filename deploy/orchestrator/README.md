@@ -99,12 +99,18 @@ GitLab 이슈 연동·Gate 승인·spec/qa/push/done 나머지 단계는 과설�
 하위작업이 1개뿐이면 `orchestrator-plan`/`spawn` 없이 `spawn-worker.ps1` 을 바로 써도 된다 —
 배치 처리는 하위작업이 여러 개일 때 반복 호출·슬러그 매칭 실수를 없애는 게 목적이다.
 
+**개별 스폰도 지시문을 아카이브한다.** `spawn-worker.ps1 -PromptFile .omc/tasks/<슬러그>.md` 로
+직접 띄워도 스폰에 성공하면 그 파일이 `.omc/tasks/archive/` 로 옮겨진다(`-DryRun` 은 안 옮긴다).
+예전엔 `spawn-batch.ps1` 만 옮겨서, 배치를 안 쓰면 이미 끝난 작업의 지시문이 계속 쌓였고
+나중에 `spawn-batch.ps1` 을 인자 없이 돌리면 그것들이 한꺼번에 재스폰될 위험이 있었다.
+`-PromptFile` 이 `.omc/tasks/` 밖의 경로면 옮기지 않는다 — 임의 경로의 파일을 건드리지 않는다.
+
 ## 파일
 
 | 스크립트 | 역할 |
 |---|---|
-| `spawn-worker.ps1` | 워커 1개 스폰 — 워크트리 생성 + `.initial-prompt` 주입 + claude 창 실행 |
-| `spawn-batch.ps1` | 워커 **여러 개** 스폰 — `.omc/tasks/*.md` 파일마다 `spawn-worker.ps1 -PromptFile` 자동 호출, 성공분은 `.omc/tasks/archive/` 로 이동 |
+| `spawn-worker.ps1` | 워커 1개 스폰 — 워크트리 생성 + `.initial-prompt` 주입 + claude 창 실행. `-PromptFile` 이 `.omc/tasks/` 아래 파일이면 스폰 성공 후 `.omc/tasks/archive/` 로 옮긴다 |
+| `spawn-batch.ps1` | 워커 **여러 개** 스폰 — `.omc/tasks/*.md` 파일마다 `spawn-worker.ps1 -PromptFile` 자동 호출(아카이브 이동은 spawn-worker 가 한다) |
 | `status.ps1` | 워커 감독 — 결과 파일·git·PR 상태 한눈에 (`-Watch` 주기 갱신) |
 | `watch-workers.ps1` | **자동 이어받기** — 전원이 끝날 때까지 대기했다가 취합 리포트 후 종료 |
 | `merge-milestone.ps1` | **마일스톤 통합 PR(옵션 B)** — 전원 완료를 기다렸다가 워커 브랜치들을 로컬 병합해 PR 1개로 낸다 |

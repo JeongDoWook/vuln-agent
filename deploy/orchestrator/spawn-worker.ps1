@@ -378,6 +378,9 @@ if ($PromptFile) {
   # 그대로 두면 오독한 글자를 아래 Set-Content 가 UTF-8 로 다시 써서 이중으로 깨진다
   # (실제 사고: 워커가 '理쒖긽??README.md' 같은 지시문을 받아 복원해 읽고서야 작업했다).
   $taskText = Get-Content $PromptFile -Raw -Encoding UTF8
+  # 아카이브 이동(파일 맨 끝)에서 쓸 절대경로를 지금 확정한다 — 뒤쪽에 Push-Location 구간이 있어
+  # 상대경로로 받은 값을 나중에 풀면 다른 디렉터리 기준으로 풀릴 수 있다.
+  $PromptFileFull = (Resolve-Path -LiteralPath $PromptFile).Path
 }
 elseif ($Prompt) {
   $taskText = $Prompt
@@ -644,3 +647,37 @@ $manifest | ConvertTo-Json | Set-Content -Path $manifestPath -Encoding utf8
 Add-OrchestratorHistory -MainRoot $MainRoot -Task $Task -Event 'spawn' -Detail "$branch ($eff/$Permissions)"
 
 Write-Host "  매니페스트: .omc/orchestrator/$Task.json" -ForegroundColor DarkGray
+
+# ── 지시문 아카이브 (.omc/tasks/<슬러그>.md → .omc/tasks/archive/) ────────────
+# 예전엔 spawn-batch.ps1 만 옮겼다. 그래서 배치를 안 쓰고 개별 스폰만 하면 이미 끝난 작업의
+# 지시문이 .omc/tasks/ 에 계속 쌓였고(실제로 병합된 12개가 껍데기로 남았다), 나중에 누가
+# spawn-batch.ps1 을 인자 없이 돌리면 그것들이 한꺼번에 재스폰될 뻔했다. 그래서 이동을
+# spawn-worker 쪽으로 내리고 배치의 중복 로직은 걷어냈다(둘 다 옮기면 두 번째가 '원본 없음'
+# 으로 실패해 배치가 통째로 실패로 뒤집힌다).
+#
+# 조건 셋을 모두 만족할 때만 옮긴다:
+#   · -PromptFile 로 받았을 때만(인라인 -Prompt 는 옮길 파일이 없다)
+#   · -DryRun 이 아닐 때만(미리보기가 파일을 옮기면 안 된다)
+#   · 그 파일이 실제로 .omc/tasks/ 바로 아래에 있을 때만 — -PromptFile 은 아무 경로나 받으므로
+#     저장소 밖 파일을 임의로 옮기지 않는다. (.omc/tasks/archive/ 안의 파일도 부모가 달라 제외된다.)
+#
+# 이동 실패는 스폰 실패로 취급하지 않는다 — 워커는 이미 떴는데 파일 이동이 안 됐다고 스크립트가
+# 죽으면 그게 더 나쁘다. 경고만 남기고 넘어간다.
+if ($PromptFileFull -and -not $DryRun) {
+  try {
+    $tasksDir = Join-Path $MainRoot '.omc\tasks'
+    if (Test-Path $tasksDir) {
+      $tasksDirFull = (Resolve-Path -LiteralPath $tasksDir).Path
+      if ((Split-Path $PromptFileFull -Parent) -eq $tasksDirFull) {
+        $archiveDir = Join-Path $tasksDirFull 'archive'
+        if (-not (Test-Path $archiveDir)) { New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null }
+        $promptName = Split-Path $PromptFileFull -Leaf
+        Move-Item -LiteralPath $PromptFileFull -Destination (Join-Path $archiveDir $promptName) -Force
+        Write-Host "  지시문 아카이브: .omc/tasks/archive/$promptName" -ForegroundColor DarkGray
+      }
+    }
+  }
+  catch {
+    Write-Host "⚠ 지시문 아카이브 실패(워커는 정상 스폰됨): $($_.Exception.Message)" -ForegroundColor Yellow
+  }
+}

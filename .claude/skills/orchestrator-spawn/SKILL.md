@@ -38,6 +38,9 @@ description: .omc/tasks/*.md 에 준비된 지시문 파일들로 워커를 실�
    자체를 아예 쓰지 않는다.
 
    스폰에 성공한 파일은 자동으로 `.omc/tasks/archive/` 로 옮겨진다(재실행 시 중복 스폰 방지).
+   이동은 `spawn-worker.ps1` 이 하므로 **배치든 개별 스폰이든 똑같이 아카이브된다** — 아래
+   "단일 하위작업일 때" 처럼 `spawn-worker.ps1 -PromptFile` 을 직접 불러도 마찬가지다.
+   (`-DryRun` 은 안 옮기고, `-PromptFile` 이 `.omc/tasks/` 밖의 경로면 건드리지 않는다.)
 
 3. **대기·취합**:
    ```powershell
