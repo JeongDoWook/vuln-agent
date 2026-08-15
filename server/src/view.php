@@ -5,6 +5,7 @@ declare(strict_types=1);
  * view.php — 렌더 헬퍼 aggregator. 21개 페이지가 전부 이 파일을 require 하므로,
  *   실제 구현은 server/src/view/ 아래 4개 파일로 나뉘어 있고 이 파일은 그걸 순서대로
  *   불러오기만 한다(호출부의 require 경로를 하나도 안 바꾸기 위함):
+ *     - view/icons.php      — 인라인 SVG 아이콘 데이터(vg_icon).
  *     - view/charts.php     — 차트(SVG): 심각도 도넛·리소스 추이·가로 막대.
  *     - view/nav.php        — 네비게이션: 사이드바·브레드크럼·활동로그 라벨.
  *     - view/components.php — 위젯: 모달·히어로·서브탭·빈상태·알림·테이블·툴바·페이지네이션.
@@ -16,6 +17,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/format.php';
 require_once __DIR__ . '/ui_config.php';
+require_once __DIR__ . '/view/icons.php';
 require_once __DIR__ . '/view/charts.php';
 require_once __DIR__ . '/view/nav.php';
 require_once __DIR__ . '/view/components.php';

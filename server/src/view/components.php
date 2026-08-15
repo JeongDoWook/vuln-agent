@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../format.php';
 require_once __DIR__ . '/../ui_config.php';
+require_once __DIR__ . '/icons.php';
 
 /** 출력형 공통 컴포넌트를 문자열 슬롯(actions 등)에 안전하게 담는다. */
 function vg_capture(callable $render): string {
@@ -532,6 +533,93 @@ function vg_page_nav(int $total, int $perPage, int $page, string $pageParam = 'p
     echo '<span class="muted">· 총 ' . number_format($total) . '건 · ' . $page . '/' . $totalPages . '페이지</span>';
     vg_perpage_select($pageParam, $perPageParam);
     echo '</nav>';
+}
+
+/**
+ * 화면 오리엔테이션 도식 — "이 화면이 무엇을 보여주나" 를 단어 3~5개와 화살표로 그린다.
+ *   예: 수집 → 매칭 → 판정 → 조치. 화면 맨 위(제목 바로 아래)에 **화면당 한 개만** 둔다.
+ *
+ *   바로 아래 vg_decision_flow() 와 역할이 다르다: 저건 "이 건이 왜 이렇게 판정됐나"(건별 근거,
+ *   각 칸이 링크), 이건 "이 화면이 무엇을 보여주나"(화면 전체의 오리엔테이션, 링크 아님).
+ *
+ *   $steps: [['icon'=>'feed', 'label'=>'수집', 'value'=>'11', 'state'=>'done'], …]
+ *     · icon  : vg_icon() 이름(icons.php). 없으면 아이콘 칸을 그리지 않는다.
+ *     · label : **단어 하나**. 문장을 넣지 않는다(디자인 시스템 텍스트 예산).
+ *     · value : 숫자 슬롯(선택). 이미 포맷된 문자열을 그대로 받는다(number_format 은 호출부).
+ *     · state : done|active|todo — 지금 어디까지 왔는지. 생략하면 중립.
+ *   $opts:  'label' — 이 도식 전체의 aria-label(기본 '화면 흐름').
+ *
+ *   입체감은 CSS 가 준다(--shadow + 위쪽 1px 하이라이트). transform: rotateX/Y 같은 실제 3D 는
+ *   쓰지 않는다 — 좁은 화면·다크·인쇄에서 깨지고 접근성 비용만 크다.
+ *
+ *   칸(라벨)은 SVG 가 아니라 진짜 텍스트다. 아이콘·화살표만 인라인 SVG 다 —
+ *   도식을 통째로 SVG 로 그리면 폭에 맞춰 글자까지 같이 줄어 못 읽는다
+ *   (vg_rank_bars() 주석의 실측 사고와 같은 이유: 250px 카드에서 4px 글자가 됐다).
+ */
+const VG_EXPLAIN_FLOW_MAX = 5;   // 칸이 더 늘면 도식이 아니라 목록이 된다 — 넘치는 건 자른다.
+
+function vg_explain_flow(array $steps, array $opts = []): void {
+    $steps = array_values(array_filter($steps, 'is_array'));
+    if (!$steps) { return; }
+    $steps = array_slice($steps, 0, VG_EXPLAIN_FLOW_MAX);
+    $states = ['done', 'active', 'todo'];
+
+    echo '<nav class="xflow" aria-label="' . vg_h((string) ($opts['label'] ?? '화면 흐름')) . '"><ol class="xflow__list">';
+    foreach ($steps as $i => $step) {
+        $state = (string) ($step['state'] ?? '');
+        $cls = 'xflow__step' . (in_array($state, $states, true) ? ' is-' . $state : '');
+        echo '<li class="' . vg_h($cls) . '">';
+        if ($i > 0) {
+            // 칸 사이의 방향. 마크업이 아니라 관계라서 화면 낭독에서는 뺀다(aria-hidden).
+            echo '<span class="xflow__arrow" aria-hidden="true">' . vg_icon('arrow') . '</span>';
+        }
+        if (!empty($step['icon'])) {
+            echo '<span class="xflow__icon" aria-hidden="true">' . vg_icon((string) $step['icon']) . '</span>';
+        }
+        echo '<span class="xflow__text"><span class="xflow__label">' . vg_h((string) ($step['label'] ?? '')) . '</span>';
+        if (($step['value'] ?? '') !== '') {
+            echo '<b class="xflow__value">' . vg_h((string) $step['value']) . '</b>';
+        }
+        echo '</span></li>';
+    }
+    echo '</ol></nav>';
+}
+
+/**
+ * 색 범례 — 화면의 색이 무슨 뜻인지 점과 단어로만 말한다(문장 금지).
+ *   심각도 4단계·노출 범위·PASS/FAIL 처럼 색으로 등급을 말하는 화면은 그 색을 처음 보는
+ *   사람이 읽을 수 없다. 그 한 줄을 채우는 자리다.
+ *
+ *   마크업·색은 도넛 옆 범례(.legend)를 그대로 쓴다 — 같은 것을 두 벌 만들지 않는다(DRY).
+ *   index.php·host.php 가 인라인으로 갖고 있는 같은 마크업은 다음 웨이브에서 이 헬퍼로 모은다.
+ *
+ *   $items: [['label'=>'CRITICAL', 'tone'=>'crit', 'n'=>12], …]  ('n' 은 선택 — 건수)
+ *   $opts:  'inline' — 한 줄로 눕힌다(.legend--inline). 'caption' — 앞에 붙는 짧은 제목('심각도').
+ *
+ *   새 색을 만들지 않는다: 톤 어휘(crit/high/med/low/ok/muted/info/purple)만 받고,
+ *   어휘 밖 값은 muted 로 눕힌다(vg_badge()·vg_sev_row() 와 같은 규칙).
+ */
+function vg_legend(array $items, array $opts = []): void {
+    $tones = ['crit', 'high', 'med', 'low', 'ok', 'muted', 'info', 'purple'];
+    $items = array_values(array_filter($items, 'is_array'));
+    if (!$items) { return; }
+
+    $class = 'legend' . (!empty($opts['inline']) ? ' legend--inline' : '');
+    $caption = (string) ($opts['caption'] ?? '');
+    echo '<div class="' . vg_h($class) . '" role="group" aria-label="' . vg_h($caption !== '' ? $caption . ' 범례' : '범례') . '">';
+    if ($caption !== '') {
+        echo '<span class="legend__cap">' . vg_h($caption) . '</span>';
+    }
+    foreach ($items as $item) {
+        $tone = (string) ($item['tone'] ?? 'muted');
+        $tone = in_array($tone, $tones, true) ? $tone : 'muted';
+        echo '<div><i class="tone-' . vg_h($tone) . '"></i><span>' . vg_h((string) ($item['label'] ?? '')) . '</span>';
+        if (($item['n'] ?? null) !== null) {
+            echo '<span class="n">' . number_format((int) $item['n']) . '</span>';
+        }
+        echo '</div>';
+    }
+    echo '</div>';
 }
 
 /** 위험/근거에서 재검증까지 이어지는 상세 화면의 공통 판단 순서. */
