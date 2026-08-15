@@ -250,6 +250,12 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
             ],
         ]
     );
+    // 결과 뱃지의 색 규칙(위 셀 콜백과 같다) — FAIL 은 그 룰의 심각도 색을 그대로 쓴다.
+    vg_legend([
+        ['label' => 'FAIL(심각도 색)', 'tone' => 'crit'],
+        ['label' => 'PASS',            'tone' => 'low'],
+        ['label' => 'NA · 판정 불가',   'tone' => 'muted'],
+    ], ['inline' => true, 'caption' => '결과']);
     if ($rows) { vg_page_nav($total, $perPage, $page); }
     ?>
     </div>
