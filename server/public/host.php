@@ -1636,11 +1636,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
             <label class="field" for="findingFixStatus">상태
               <select id="findingFixStatus" name="status" data-finding-fix-status>
                 <?php foreach (vg_finding_status_labels() as $code => $label): ?>
-                  <option value="<?= vg_h($code) ?>"><?= vg_h($label) ?></option>
+                  <option value="<?= vg_h($code) ?>"><?= vg_h($label . ($code === 'EXCEPTED' ? ' (메모 필수)' : '')) ?></option>
                 <?php endforeach; ?>
               </select>
             </label>
-            <label class="field" for="findingFixNote">메모 (선택)
+            <label class="field" for="findingFixNote">메모 (예외 선택 시 필수)
               <input type="text" id="findingFixNote" name="note" data-finding-fix-note
                      maxlength="<?= VG_FINDING_STATUS_NOTE_MAX ?>" autocomplete="off"
                      placeholder="예: 다음 정기 점검 때 반영">

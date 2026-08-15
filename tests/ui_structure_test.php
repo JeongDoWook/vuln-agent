@@ -42,6 +42,7 @@ foreach (['agent-tokens.php', 'users.php'] as $name) {
 $permissionsPhp = (string) file_get_contents($public . '/permissions.php');
 $appCss = (string) file_get_contents($public . '/assets/app.css');
 $appJs = (string) file_get_contents($public . '/assets/app.js');
+$hostJs = (string) file_get_contents($public . '/assets/js/host.js');
 $componentsPhp = (string) file_get_contents($root . '/server/src/view/components.php');
 $chartsPhp = (string) file_get_contents($root . '/server/src/view/charts.php');
 $hostPhp = (string) file_get_contents($public . '/host.php');
@@ -210,6 +211,12 @@ $check(substr_count($assetsPhp, 'data-install-step-panel=') === 4
     '에이전트 설치 4단계·완료 조건·복사/재시도·기존 route 제공');
 $check(str_contains($findingStatusPhp, "\$status === 'EXCEPTED' && \$note === ''"),
     'EXCEPTED 상태는 기존 note 필드에 사유가 있어야 저장');
+$check(str_contains($hostPhp, "\$code === 'EXCEPTED' ? ' (메모 필수)'")
+    && str_contains($hostPhp, '메모 (예외 선택 시 필수)'),
+    'EXCEPTED 선택지와 메모 입력에 필수 사유 계약 표시');
+$check(str_contains($hostJs, "fixNote.required = fixStatus.value === 'EXCEPTED'")
+    && str_contains($hostJs, "addEventListener('change', syncFindingNoteRequired)"),
+    'EXCEPTED 선택에 따라 메모 required 속성 동기화');
 $check(str_contains($componentsPhp, '<nav class="pager" aria-label="페이지 탐색">')
     && str_contains($componentsPhp, 'aria-current="page"'),
     '페이지네이션 nav·현재 페이지 접근성');
