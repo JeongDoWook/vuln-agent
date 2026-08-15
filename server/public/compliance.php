@@ -58,13 +58,14 @@ try {
 vg_header('컴플라이언스 매핑', 'compliance_mapping');
 ?>
   <?php
-  // 설명 한 줄이 "이 화면이 무엇을 증명하는가"를 말한다 — 예전엔 "판정합니다" 로만 끝나
-  //   자동판정에서 빠진 항목이 왜 빠졌는지가 화면 어디에도 없었다. 별도 문단으로 빼지 않는 이유는
-  //   첫 화면 세로 예산이다(통제 목록까지 675px 안에 들어와야 한다).
+  // 설명 줄은 **값만** 적는다 — 자동판정 몇 종, 문서 심사 몇 건. 예전엔 여기에
+  //   "…은 자동판정 대상 아님(맨 아래)" 처럼 화면 자체를 해설하는 절이 붙어 있었는데,
+  //   그 구분은 아래 흐름 도식의 회색 칸과 문서 심사 카드의 뱃지가 이미 말한다
+  //   (같은 말을 세 번 적으면 첫 화면 세로 예산만 먹는다).
   vg_page_title(
       '컴플라이언스 매핑', 'COMPLIANCE',
-      'ISMS-P·ISO 27001 통제 ' . count(VG_COMPLIANCE_CONTROLS) . '종 자동 판정 결과 · 정책·절차 문서 '
-      . count(VG_COMPLIANCE_MANUAL_CHECKLIST) . '건은 자동판정 대상 아님(맨 아래)'
+      '자동 판정 통제 ' . count(VG_COMPLIANCE_CONTROLS) . '종 · 문서 심사 '
+      . count(VG_COMPLIANCE_MANUAL_CHECKLIST) . '건 · ISMS-P·ISO 27001'
       // 판정 기준시각은 아래 결론 배너의 note 로 옮겼다 — 같은 화면에 두 번 적을 값이 아니다.
   ); ?>
   <?php // 통제 기준 매핑은 사이드바에 없고 이 줄로만 들어온다(정의는 nav.php 한 곳). ?>
@@ -131,11 +132,12 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   } else {
       $banner = ['ok', '판정한 통제 ' . $judged . '종이 모두 준수입니다.'];
   }
-  // 단위를 note 에 못박는다 — 숫자만 보면 "미준수 1" 이 1건인지 1종인지 못 읽는다
-  //   (예전 KPI 카드는 라벨마다 '· 통제 종' 을 붙여 이걸 해결했다. 배너는 한 줄로 끝낸다).
+  // 단위는 라벨로만 못박는다('집계 단위 통제 종') — 숫자만 보면 "미준수 1" 이 1건인지 1종인지
+  //   못 읽는다. 예전엔 '(위반 건수가 아니다)' 라는 해설 절이 붙어 있었는데, 그건 값이 아니라
+  //   화면 사용법이라 지웠다(같은 뜻을 배너 문장이 이미 "통제 N종 중" 으로 말한다).
   ?><section id="automatic" data-compliance-zone="automatic" aria-label="자동 판정과 조치 근거"><?php
   vg_verdict($banner[0], $banner[1], $stats,
-      '기준 ' . $judgedAt . ' 판정 · 집계 단위는 통제 종(위반 건수가 아니다) · '
+      '기준 ' . $judgedAt . ' 판정 · 집계 단위 통제 종 · '
       . ($denied > 0
           ? '자산 열람 권한이 없어 통제 ' . $denied . '종은 집계에서 제외'
           : '통제 ' . count(VG_COMPLIANCE_CONTROLS) . '종 전수'));
@@ -293,8 +295,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   //   지금 접혀 있는 건 판정 추이의 오래된 날짜뿐이다(스냅샷은 최대 50일까지 쌓인다).
   ?>
   <div class="card mt-lg">
+    <?php // 부제를 달지 않는다 — 버킷 이름(KEV·CRITICAL·HIGH)과 판정 불가 건수는 아래 표의 열이다. ?>
     <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['patch']['label']) ?> 버킷별 판정</strong>
-    <span class="why">— KEV·CRITICAL·HIGH · "판정 불가"의 이유가 여기 있다</span>
     <div class="card__body">
       <?php
       // 버킷 3행을 각각 판정한다. 예전엔 통제 전체에 뱃지 하나만 달아, 이력이 짧아 판정 불가인
@@ -361,23 +363,34 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     <div class="card__body">
       <?php
       // REVIEW(추정)·NA(원자료 미수집)·수집 대기는 준수로 흡수하지 않는다 — 계정 목록이 아직
-      //   안 들어온 호스트를 준수로 세면 그 자체가 허위 안심이다.
-      if ($account['unjudged'] > 0):
-          $hints = [];
-          foreach ($account['unjudged_rows'] as $u) {
-              $hints[] = $u['fqdn'] . ' · ' . $u['title'] . '(' . $u['result'] . ') — ' . $u['reason'];
-          }
-          if ($account['unjudged'] > count($account['unjudged_rows'])) {
-              $hints[] = sprintf('외 %s건', number_format($account['unjudged'] - count($account['unjudged_rows'])));
-          }
-          vg_alert([
-              'type'  => 'warn',
-              'title' => '판정 불가 ' . number_format($account['unjudged']) . '건'
-                       . ($account['pending_hosts'] > 0
-                          ? ' · 계정 수집 대기 ' . number_format($account['pending_hosts']) . '대' : ''),
-              'hints' => $hints,
-          ]);
-      endif; ?>
+      //   안 들어온 호스트를 준수로 세면 그 자체가 허위 안심이다. 그래서 **건수는 지우지 않는다**.
+      // 다만 목록은 접는다. 예전엔 노란 경고 박스가 이 자리에서 판정 불가를 문장으로 펴 놓아
+      //   ("deskmini-x300 · sudo 권한 보유자(REVIEW) — 4명이 관리자 권한을 가집니다 — 업무상
+      //   필요한 인원인지 주기적으로 검토하세요.") 25건이 화면 한 판을 통째로 먹었다. 같은 조치
+      //   안내가 행마다 반복되는 것도 정보가 아니다 — 값(호스트·항목·결과)만 표로 남기고
+      //   건수는 카드 부제와 이 summary 에 숫자로 둔다.
+      if ($account['unjudged'] > 0 && $account['unjudged_rows']): ?>
+        <details>
+          <summary>판정 불가 <?= number_format((int) $account['unjudged']) ?>건<?php
+            if ($account['pending_hosts'] > 0): ?> · 수집 대기 <?= number_format((int) $account['pending_hosts']) ?>대<?php endif; ?></summary>
+          <?php vg_table(
+              [['label' => '호스트'], ['label' => '점검 항목'], ['label' => '결과', 'width' => '6rem']],
+              $account['unjudged_rows'],
+              [
+                  'card' => false,
+                  'cell' => [
+                      0 => fn($u) => '<a href="/host.php?id=' . (int) $u['host_id'] . '&amp;tab=account">' . vg_h($u['fqdn']) . '</a>',
+                      1 => fn($u) => vg_h($u['title']) . ' <span class="why">' . vg_h($u['code']) . '</span>',
+                      // REVIEW(사람 확인 필요)·NA(원자료 없음) 둘 다 판정 불가 톤(med)으로 묶는다.
+                      2 => fn($u) => vg_badge((string) $u['result'], 'med'),
+                  ],
+              ]
+          ); ?>
+          <?php if ($account['unjudged'] > count($account['unjudged_rows'])): ?>
+            <p class="why">상위 <?= count($account['unjudged_rows']) ?>건만 표시 · 전체 <?= number_format((int) $account['unjudged']) ?>건</p>
+          <?php endif; ?>
+        </details>
+      <?php endif; ?>
       <?php if ($account['violations']):
           $shown = array_slice($account['violations'], 0, $previewLimit);
       ?>
@@ -415,8 +428,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   ?>
   <div class="card mt-lg" id="trend" data-compliance-zone="trend">
     <strong>판정 추이</strong>
-    <span class="why">— 일별 판정 스냅샷<?php if ($trend): ?> · 최근 <?= count($trend) ?>일 · 최신 <?= vg_h($trend[0]['taken_at']) ?><?php endif; ?>
-      · 심사에서 "그 시점엔 어땠나"의 근거</span>
+    <?php // 부제는 값만 — "심사에서 그 시점엔 어땠나의 근거" 같은 화면 해설은 docs/dev/화면-안내.md 에 있다. ?>
+    <span class="why">— 일별 스냅샷<?php if ($trend): ?> · 최근 <?= count($trend) ?>일 · 최신 <?= vg_h($trend[0]['taken_at']) ?><?php endif; ?></span>
     <div class="card__body">
       <?php if (!$trend): ?>
         <?php vg_empty([
@@ -461,12 +474,15 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
 
   <div class="card mt-lg" id="manual" data-compliance-zone="manual">
     <?php
-    // 예전 제목은 "수동 확인 필요 · 자동판정 불가" 였다 — 제품이 못 해서 빠진 것처럼 읽혀
-    //   오히려 신뢰도를 깎았다. 실제로는 증적이 제품 밖(정책·절차 문서)에 있어서 원리적으로
-    //   수집 대상이 아닌 항목이다. 그 사실을 제목에서 바로 말한다.
+    // 이 카드가 위 자동판정과 **축이 다르다**는 사실은 지우지 않는다 — 지우면 판정 4종에
+    //   포함된 것처럼 읽힌다. 다만 문장이 아니라 **뱃지**로 말한다: 예전 부제
+    //   ("증적이 제품 밖(문서·승인이력)에 있어 수집 대상이 아닌 항목 · 위 판정 4종에
+    //   포함되지 않는다")는 제목 뒤에 두 절을 이어 붙인 화면 해설이었다. 배경은
+    //   docs/dev/화면-안내.md 의 "정책·절차 문서 심사 카드" 절이 갖는다(화면에서 링크하지
+    //   않는다 — docs/ 는 웹으로 서빙되지 않아 404 다).
     ?>
     <strong>정책·절차 문서 심사 <?= count(VG_COMPLIANCE_MANUAL_CHECKLIST) ?>건</strong>
-    <span class="why">— 증적이 제품 밖(문서·승인이력)에 있어 수집 대상이 아닌 항목 · 위 판정 <?= count(VG_COMPLIANCE_CONTROLS) ?>종에 포함되지 않는다</span>
+    <?= vg_badge('자동판정 대상 아님', 'muted') ?>
     <div class="card__body">
       <ul class="hint-list">
         <?php foreach (VG_COMPLIANCE_MANUAL_CHECKLIST as $item): ?>
