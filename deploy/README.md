@@ -111,8 +111,10 @@ Caddy 루트는 10년짜리라 거의 바뀌지 않는다. `data`(caddy_data) �
 `deploy/backup_db.sh` 가 `vulnagent-db` 컨테이너 안에서 `mysqldump`(`--single-transaction
 --routines`)를 실행해 gzip 압축 후 `/apps/vulnagent/backups/vulnagent_YYYYMMDD_HHMMSS.sql.gz`
 로 저장한다. 비밀번호는 항상 컨테이너 안에서 `/run/secrets/mysql_root_password` 를 읽어 쓰고
-호스트엔 노출하지 않는다. 생성 직후 임시 `vg_restore_*` DB에 복원하고 `tb_host`·`tb_scan`
-sanity check를 통과한 경우에만 `restore=pass`로 기록한다. 설치는 운영 서버 crontab 에 한 줄:
+호스트엔 노출하지 않는다. 생성 직후 운영 DB와 network·volume·secret을 전혀 공유하지 않는
+`--network none`/tmpfs 일회용 MySQL 컨테이너에 복원한다. 현재 운영 schema에서 읽은 table/column
+manifest와 PK·FK·UNIQUE·NOT NULL 제약이 정확히 같고 `tb_host`·`tb_scan` 핵심 행 및 참조 무결성을
+통과한 경우에만 `restore=pass`로 기록한다. 설치는 운영 서버 crontab 에 한 줄:
 
 ```bash
 crontab -e
@@ -134,14 +136,19 @@ crontab -e
 ### 복원 rehearsal과 실패 복구
 
 ```bash
-# 기존 dump를 운영 DB에 덮어쓰지 않고 임시 DB로만 검증
+# 기존 dump는 source 컨테이너의 image만 재사용하는 일회용 격리 컨테이너에서 검증
 bash deploy/backup_db.sh --verify /apps/vulnagent/backups/vulnagent_YYYYMMDD_HHMMSS.sql.gz vulnagent-db
 ```
 
-성공 기준은 gzip 무결성, 임시 DB restore, 핵심 테이블 2개 확인, 임시 DB 삭제가 모두 통과하는
-것이다. 실패 dump는 정상 보관 패턴 밖의 `.failed` 파일로 0600 격리되고 자동 정리·복구 대상에
-들어가지 않는다. `backup.log`의 실패 시각과 격리 파일을 보존해 원인을 조사한 뒤, 마지막
-`restore=pass` 백업으로 새 DB에 복원한다. 운영 schema에 직접 시험 복원하지 않는다.
+성공 기준은 gzip 무결성, 격리 DB restore, 현재 table/column manifest의 완전 일치,
+PK·FK·UNIQUE·NOT NULL 제약 일치, `tb_host`·`tb_scan`의 비어 있지 않은 핵심 행과 orphan scan 0건,
+일회용 컨테이너 삭제가 모두 통과하는 것이다. dump SQL은 운영 MySQL root session에 입력되지
+않으며 일회용 컨테이너에는 운영 network·volume·secret이 연결되지 않는다.
+
+실패 dump는 정상 보관 패턴 밖의 `.failed` 파일로 0600 격리되고 자동 복구 대상에 들어가지 않는다.
+다만 민감한 DB 사본과 디스크가 무제한 누적되지 않도록 정상 백업 `KEEP`과 같은 최신 7개만 보존한다.
+`backup.log`의 실패 시각과 격리 파일을 확인해 원인을 조사한 뒤, 마지막 `restore=pass` 백업으로
+새 DB에 복원한다. 운영 schema에 직접 시험 복원하지 않는다.
 
 ### migration preflight와 부분 실패 복구
 
