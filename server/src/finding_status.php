@@ -92,6 +92,11 @@ function vg_finding_status_save(
         throw new RuntimeException('알 수 없는 조치 상태입니다.');
     }
     $note = mb_substr(trim($note), 0, VG_FINDING_STATUS_NOTE_MAX);
+    // EXCEPTED 는 취약점이 해결됐다는 뜻이 아니라, 담당자가 사유를 남기고 SLA 계산에서
+    // 제외한 상태다. 새 승인 workflow를 만들지 않고 기존 note 필드의 모순만 막는다.
+    if ($status === 'EXCEPTED' && $note === '') {
+        throw new RuntimeException('예외 처리 사유를 메모에 입력하세요.');
+    }
     $pdo->prepare(
         'INSERT INTO tb_finding_status
                 (host_id, container_ref, cve_id, package_name, status, note, updated_user_id)

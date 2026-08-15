@@ -2553,3 +2553,31 @@ form.card .btn--primary:active { transform: translateY(0); }
   /* 2열로 접히면 화살표가 줄 끝에서 엉뚱한 곳을 가리킨다 — 방향은 배치가 대신 말한다. */
   .funnel__step + .funnel__step::before { content: none; }
 }
+
+/* #599 — 판단·설치 흐름. 모두 기존 색 토큰을 써 두 테마에서 같은 의미를 유지한다. */
+.action-queue { margin-bottom: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.action-queue__head { display: flex; align-items: baseline; gap: .45rem; margin-bottom: .7rem; }
+.decision-flow { margin: 1rem 0 var(--sp-3); }
+.decision-flow ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .55rem; margin: 0; padding: 0; list-style: none; }
+.decision-flow a { display: grid; grid-template-columns: 1.65rem 1fr; gap: .1rem .45rem; min-height: 4.3rem; padding: .7rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--text); }
+.decision-flow a:hover { border-color: var(--accent); text-decoration: none; }
+.decision-flow b { grid-row: 1 / 3; display: grid; place-items: center; width: 1.65rem; height: 1.65rem; border-radius: 50%; background: var(--surface-2); color: var(--accent-2); }
+.decision-flow span { font-weight: 700; }
+.decision-flow small { color: var(--muted); line-height: 1.35; }
+.toolbar__advanced { flex: 1 1 100%; border-top: 1px solid var(--line); padding-top: .5rem; }
+.toolbar__advanced summary { width: max-content; color: var(--accent-2); font-weight: 700; cursor: pointer; }
+.toolbar__advanced-fields { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: .55rem; }
+.install-stepper { min-height: 24rem; }
+.install-stepper__tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .35rem; margin-bottom: 1rem; }
+.install-stepper__tabs button { min-height: 2.8rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-2); font: inherit; cursor: pointer; }
+.install-stepper__tabs button[aria-selected="true"] { border-color: var(--accent); background: var(--info-bg); color: var(--accent-2); font-weight: 700; }
+.install-stepper [role="tabpanel"] { padding: .2rem; }
+
+@media (max-width: 860px) {
+  .decision-flow ol { grid-template-columns: 1fr 1fr; }
+  .install-stepper { min-height: 0; }
+  .install-stepper__tabs { grid-template-columns: 1fr 1fr; }
+  .install-stepper__tabs button { min-height: 3rem; }
+  .action-queue__head { display: block; }
+  .toolbar__advanced-fields { display: grid; grid-template-columns: 1fr; }
+}

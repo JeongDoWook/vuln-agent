@@ -69,6 +69,12 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   ); ?>
   <?php // 통제 기준 매핑은 사이드바에 없고 이 줄로만 들어온다(정의는 nav.php 한 곳). ?>
   <?php vg_compliance_subtabs('mapping'); ?>
+  <?php vg_decision_flow([
+      ['label' => '자동 판정', 'hint' => '수집 데이터로 판정', 'href' => '#automatic'],
+      ['label' => '근거·조치', 'hint' => '위반 모집단 확인', 'href' => '#automatic'],
+      ['label' => '재검증', 'hint' => '일별 판정 추이', 'href' => '#trend'],
+      ['label' => '수동 증적', 'hint' => '정책·승인이력 확인', 'href' => '#manual'],
+  ]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -119,6 +125,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   }
   // 단위를 note 에 못박는다 — 숫자만 보면 "미준수 1" 이 1건인지 1종인지 못 읽는다
   //   (예전 KPI 카드는 라벨마다 '· 통제 종' 을 붙여 이걸 해결했다. 배너는 한 줄로 끝낸다).
+  ?><section id="automatic" data-compliance-zone="automatic" aria-label="자동 판정과 조치 근거"><?php
   vg_verdict($banner[0], $banner[1], $stats,
       '기준 ' . $judgedAt . ' 판정 · 집계 단위는 통제 종(위반 건수가 아니다) · '
       . ($denied > 0
@@ -259,6 +266,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       ]
   );
   ?>
+  </section>
 
   <?php
   // ── 접기 기준(이 화면 전체에 적용) ──────────────────────────────────────
@@ -389,7 +397,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $trendControls[] = 'secops';
   if ($canViewAssets) { $trendControls[] = 'account'; } // 계정 통제도 같은 게이트
   ?>
-  <div class="card mt-lg">
+  <div class="card mt-lg" id="trend" data-compliance-zone="trend">
     <strong>판정 추이</strong>
     <span class="why">— 일별 판정 스냅샷<?php if ($trend): ?> · 최근 <?= count($trend) ?>일 · 최신 <?= vg_h($trend[0]['taken_at']) ?><?php endif; ?>
       · 심사에서 "그 시점엔 어땠나"의 근거</span>
@@ -435,7 +443,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     </div>
   </div>
 
-  <div class="card mt-lg">
+  <div class="card mt-lg" id="manual" data-compliance-zone="manual">
     <?php
     // 예전 제목은 "수동 확인 필요 · 자동판정 불가" 였다 — 제품이 못 해서 빠진 것처럼 읽혀
     //   오히려 신뢰도를 깎았다. 실제로는 증적이 제품 밖(정책·절차 문서)에 있어서 원리적으로

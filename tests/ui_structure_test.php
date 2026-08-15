@@ -185,5 +185,50 @@ $check(str_contains($assetsPhp, 'POSIX <code>awk</code>') && str_contains($asset
     && str_contains($assetsPhp, '<code>jq</code>는 선택 사항'),
     '에이전트 설치 모달의 실제 선행 조건 안내');
 
+// #599 W3 — 기존 route/query 키를 유지한 행동 흐름·접근성 회귀.
+$indexPhp = (string) file_get_contents($public . '/index.php');
+$findingsPhp = (string) file_get_contents($public . '/findings.php');
+$cceRulePhp = (string) file_get_contents($public . '/cce-rule.php');
+$compliancePhp = (string) file_get_contents($public . '/compliance.php');
+$findingStatusPhp = (string) file_get_contents($root . '/server/src/finding_status.php');
+$layoutPhp = (string) file_get_contents($root . '/server/src/view/layout.php');
+
+$check(str_contains($indexPhp, "'/findings.php?sev=HIGH%2B'")
+    && str_contains($findingsPhp, "'HIGH+'")
+    && str_contains($findingsPhp, "f.severity IN ('CRITICAL','HIGH')"),
+    'High 이상 KPI가 CRITICAL+HIGH 모집단을 여는 canonical sev 값 사용');
+$check(str_contains($findingsPhp, 'data-action-queue')
+    && str_contains($findingsPhp, "'kev' => 'KEV 등재'")
+    && str_contains($findingsPhp, "'overdue' => '기한 초과'"),
+    '탐지 결과 첫 화면 행동 큐와 기존 fx 키 기반 우선순위 필터');
+$check(str_contains($findingsPhp, '/cce-rule.php?code=')
+    && str_contains($findingsPhp, '/compliance_rule.php?rule='),
+    'CCE FAIL 행의 직접 CCE 상세 링크와 SSG 보조 링크 보존');
+$check(substr_count($assetsPhp, 'data-install-step-panel=') === 4
+    && str_contains($assetsPhp, '완료 조건') && str_contains($assetsPhp, '다시 시도')
+    && str_contains($assetsPhp, '/agent-tokens.php') && str_contains($assetsPhp, '/agent-dl.php?f='),
+    '에이전트 설치 4단계·완료 조건·복사/재시도·기존 route 제공');
+$check(str_contains($findingStatusPhp, "\$status === 'EXCEPTED' && \$note === ''"),
+    'EXCEPTED 상태는 기존 note 필드에 사유가 있어야 저장');
+$check(str_contains($componentsPhp, '<nav class="pager" aria-label="페이지 탐색">')
+    && str_contains($componentsPhp, 'aria-current="page"'),
+    '페이지네이션 nav·현재 페이지 접근성');
+$check(str_contains($appJs, "setAttribute('aria-pressed'")
+    && str_contains($appJs, 'modalOpeners') && str_contains($appJs, "addEventListener('close'"),
+    '테마 aria-pressed 동기화와 dialog 닫힘 후 포커스 복귀');
+$check(str_contains($layoutPhp, 'aria-controls="primaryNavigation"')
+    && str_contains($layoutPhp, 'id="primaryNavigation"'),
+    '모바일 내비게이션 제어 대상 연결');
+$check(substr_count($processHtml, 'class="operator-step"') === 4
+    && str_contains($processHtml, '설치') && str_contains($processHtml, '피드 동기화')
+    && str_contains($processHtml, '자산 스캔') && str_contains($processHtml, '우선순위 확인')
+    && str_contains($processHtml, '조치') && str_contains($processHtml, 'https://github.com/JeongDoWook/vuln-agent/'),
+    'process.html 운영자 4단계·용어 구분·외부 개발자 문서 링크');
+$check(str_contains($cvePhp, 'vg_decision_flow(') && str_contains($cceRulePhp, 'vg_decision_flow(')
+    && str_contains($compliancePhp, 'data-compliance-zone="automatic"')
+    && str_contains($compliancePhp, 'data-compliance-zone="manual"')
+    && str_contains($compliancePhp, 'data-compliance-zone="trend"'),
+    'CVE/CCE 판단 흐름과 컴플라이언스 자동·수동·추이 구역');
+
 if ($fail > 0) { printf("ui_structure_test: %d건 실패\n", $fail); exit(1); }
 printf("ui_structure_test: 전부 통과\n");

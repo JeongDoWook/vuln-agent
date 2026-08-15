@@ -3,326 +3,74 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>vuln-agent · 전체 프로세스</title>
+<title>vuln-agent · 운영 흐름</title>
 <style>
-  /* 색 토큰은 app.css(로그인 후 화면)의 라이트 테마 값과 맞춘다 — 소개 페이지만 다른
-   * 팔레트를 쓰면 로그인 전/후 인상이 갈린다(같은 앱처럼 안 보인다). */
-  :root{
-    --bg:#f6f7f9; --card:#fff; --ink:#191f28; --muted:#6b7684; --line:#edf0f3;
-    --blue:#3182f6; --green:#1f9d47; --purple:#7b52dd; --orange:#e07b1a;
-    --crit:#e5484d; --high:#e07b1a; --med:#d19a06; --low:#5580b4;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);
-    font-family:system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif;line-height:1.6}
-  .wrap{max-width:1120px;margin:0 auto;padding:3rem 1.5rem 5rem}
-  header.top{background:linear-gradient(135deg,#fff,#f2f7ff);border:1px solid var(--line);border-radius:24px;padding:2rem 2.2rem;margin-bottom:2rem;box-shadow:0 12px 34px rgba(0,0,0,.05)}
-  header.top h1{margin:0 0 .35rem;font-size:clamp(1.8rem,4vw,2.45rem);letter-spacing:-.045em}
-  header.top .sub{color:var(--muted);font-size:1rem}
-  .tag{display:inline-block;background:#ddf4ff;color:var(--blue);border:1px solid #b6e3ff;
-    border-radius:999px;padding:.1rem .6rem;font-size:.78rem;font-weight:600;margin-right:.3rem}
-  h2{font-size:1.25rem;margin:2.4rem 0 .9rem;padding-top:.4rem;border-top:1px solid var(--line)}
-  h2 .n{display:inline-block;width:1.7rem;height:1.7rem;line-height:1.7rem;text-align:center;
-    background:var(--ink);color:#fff;border-radius:50%;font-size:.9rem;margin-right:.5rem;vertical-align:2px}
-  p.lead{color:var(--muted)}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:1.35rem 1.5rem;margin:1rem 0;
-    box-shadow:0 1px 2px rgba(0,0,0,.04)}
-  /* pipeline */
-  .pipe{display:flex;flex-wrap:wrap;gap:.5rem;align-items:stretch;margin:1rem 0}
-  .step{flex:1 1 150px;background:var(--card);border:1px solid var(--line);border-radius:12px;
-    padding:.8rem .9rem;position:relative;min-width:150px}
-  .step .k{font-size:.72rem;color:#fff;background:var(--blue);border-radius:6px;padding:.05rem .45rem;font-weight:700}
-  .step h4{margin:.5rem 0 .3rem;font-size:.98rem}
-  .step p{margin:0;font-size:.82rem;color:var(--muted)}
-  .step.g .k{background:var(--green)} .step.p .k{background:var(--purple)} .step.o .k{background:var(--orange)}
-  .arrow{align-self:center;color:var(--muted);font-size:1.3rem;font-weight:700}
-  table{width:100%;border-collapse:collapse;font-size:.9rem;margin:.4rem 0}
-  th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--line);vertical-align:top}
-  th{font-size:.78rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
-  td code,code.i{background:#eff1f3;border-radius:5px;padding:.05rem .35rem;font-size:.86em}
-  .badge{display:inline-block;color:#fff;border-radius:999px;padding:.08rem .5rem;font-size:.74rem;font-weight:700}
-  .b-crit{background:var(--crit)} .b-high{background:var(--high)} .b-med{background:var(--med)} .b-low{background:var(--low)}
-  .b-ext{background:var(--crit)} .b-lan{background:var(--med)} .b-fil{background:var(--muted)}
-  .b-lis{background:var(--high)} .b-run{background:var(--med)}
-  .b-loa{background:var(--purple)} .b-ins{background:var(--low)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:.9rem}
-  @media(max-width:720px){.grid2{grid-template-columns:1fr}.wrap{padding:1rem .75rem 3rem}header.top{padding:1.4rem 1.2rem;border-radius:18px}.pipe{display:grid;grid-template-columns:1fr}.arrow{transform:rotate(90deg);justify-self:center}.card{border-radius:16px;padding:1.1rem;overflow-x:auto}}
-  ul.tight{margin:.3rem 0;padding-left:1.2rem} ul.tight li{margin:.15rem 0}
-  .ok{color:var(--green);font-weight:700}
-  .note{background:#fff8c5;border:1px solid #eac54f;border-radius:8px;padding:.6rem .9rem;font-size:.88rem;margin:.7rem 0}
-  footer{margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.82rem}
-  .mono{font-family:ui-monospace,Consolas,monospace}
+  :root{color-scheme:light dark;--bg:#f4f6f8;--card:#fff;--text:#191f28;--muted:#5b6673;--line:#d9e0e8;--accent:#1b64da}
+  @media(prefers-color-scheme:dark){:root{--bg:#101318;--card:#181d24;--text:#eef2f7;--muted:#a8b1bd;--line:#303946;--accent:#7eb2ff}}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif}
+  main{max-width:980px;margin:auto;padding:clamp(1rem,4vw,3rem)} header{margin-bottom:2rem} h1{margin:.2rem 0;font-size:clamp(2rem,5vw,3rem);letter-spacing:-.04em} .lead,.muted{color:var(--muted)}
+  .flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem;list-style:none;margin:0;padding:0}.operator-step{padding:1rem;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+  .operator-step b{display:block;color:var(--accent);font-size:.82rem}.operator-step h2{margin:.25rem 0;font-size:1.12rem}.operator-step p{margin:.35rem 0;color:var(--muted);font-size:.92rem}
+  .card{margin-top:1.2rem;padding:1rem 1.2rem;border:1px solid var(--line);border-radius:14px;background:var(--card)} code{font-family:ui-monospace,Consolas,monospace;background:var(--bg);padding:.08rem .3rem;border-radius:5px} a{color:var(--accent)}
+  .links{display:flex;flex-wrap:wrap;gap:.7rem}.links a{padding:.5rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+  @media(max-width:760px){.flow{grid-template-columns:1fr}.operator-step{min-height:0}}
 </style>
 </head>
 <body>
-<div class="wrap">
+<main>
+  <header>
+    <p class="muted">vuln-agent 운영자 안내</p>
+    <h1>설치에서 재검증까지, 네 단계</h1>
+    <p class="lead">외부 취약점 정보의 <strong>피드 동기화</strong>와 각 서버의 <strong>자산 스캔</strong>은 서로 다른 작업입니다. 둘의 최신 상태를 확인한 뒤 실제 노출과 조치 가능성을 기준으로 대응합니다.</p>
+  </header>
 
-<header class="top">
-  <h1>🛡️ vuln-agent — 전체 프로세스</h1>
-  <div class="sub">런타임 노출 맥락으로 오탐을 줄이는 자율 취약점 진단 에이전트 · 2026 오픈소스 개발자대회</div>
-  <div style="margin-top:.7rem">
-    <span class="tag">Bash 에이전트</span><span class="tag">PHP + MySQL</span>
-    <span class="tag">Docker + HTTPS</span><span class="tag">OSV · KEV · EPSS</span>
-    <span class="tag">런타임·배포판 근거</span>
-  </div>
-</header>
+  <ol class="flow" aria-label="운영자 4단계 흐름">
+    <li class="operator-step">
+      <b>1 / 설치</b>
+      <h2>키·파일·CA 준비</h2>
+      <p>호스트 전용 키를 발급하고 설치 스크립트와 루트 CA를 받은 뒤 대상 Linux 서버에 설치합니다.</p>
+      <p><a href="/assets.php#agentInstall">에이전트 설치 안내</a></p>
+    </li>
+    <li class="operator-step">
+      <b>2 / 수집</b>
+      <h2>피드 동기화 + 자산 스캔</h2>
+      <p>커넥터는 CVE·KEV·EPSS·벤더 근거를 동기화합니다. 에이전트는 패키지·프로세스·노출·설정값을 자산 스캔으로 전송합니다.</p>
+      <p><a href="/connectors.php">피드 동기화</a> · <a href="/assets.php">자산 스캔 상태</a></p>
+    </li>
+    <li class="operator-step">
+      <b>3 / 우선순위 확인</b>
+      <h2>기한·KEV·노출 판단</h2>
+      <p>대시보드와 탐지 결과에서 기한 초과, KEV, 외부 노출, 재시작 필요 순으로 근거와 영향 대상을 확인합니다.</p>
+      <p><a href="/findings.php">탐지 결과</a></p>
+    </li>
+    <li class="operator-step">
+      <b>4 / 조치</b>
+      <h2>수정 후 다시 자산 스캔</h2>
+      <p>패치·완화·격리·재시작을 수행하고 다음 자산 스캔에서 판정과 컴플라이언스 추이가 바뀌었는지 재검증합니다.</p>
+      <p><a href="/compliance.php">컴플라이언스 재검증</a></p>
+    </li>
+  </ol>
 
-<p class="lead">
-각 서버의 패키지와 <b>런타임 상태</b>를 읽기 전용으로 수집한다. 중앙에서는 외부 노출·실행 여부와
-KEV/EPSS를 함께 판단해 우선순위를 정하고 근거를 남긴다. 담당자 배정·티켓·SLA 워크플로는 범위에 두지 않는다.
-</p>
-
-<!-- 1. 파이프라인 -->
-<h2><span class="n">1</span>전체 흐름 (수집 → 표시)</h2>
-<div class="pipe">
-  <div class="step"><span class="k">① 수집</span><h4>에이전트</h4><p>패키지·노출 포트·프로세스를 낮은 우선순위로 읽기 전용 수집</p></div>
-  <div class="arrow">→</div>
-  <div class="step g"><span class="k">② 전송</span><h4>push</h4><p>토큰 인증한 HTTPS로 전송. 설정 주기로 수집하고 10초마다 명령을 확인</p></div>
-  <div class="arrow">→</div>
-  <div class="step"><span class="k">③ 저장</span><h4>중앙 DB</h4><p>hosts·scans·packages·exposures·processes 로 <b>구분 저장</b></p></div>
-  <div class="arrow">→</div>
-  <div class="step p"><span class="k">④ 매핑</span><h4>CVE 조인</h4><p>OSV 매칭 후 KEV·EPSS·NVD 보강, 배포판 근거로 백포트 억제(§4)</p></div>
-  <div class="arrow">→</div>
-  <div class="step o"><span class="k">⑤ 우선순위</span><h4>매처</h4><p>런타임 상태 7단계 + KEV/EPSS 로 심각도 판정·정렬</p></div>
-  <div class="arrow">→</div>
-  <div class="step"><span class="k">⑥ 표시</span><h4>웹</h4><p>대시보드 → 호스트 상세 → 취약점(근거·수정 버전·판정 상태)</p></div>
-</div>
-
-<!-- 2. 구성요소 -->
-<h2><span class="n">2</span>구성요소</h2>
-<div class="grid2">
-  <div class="card">
-    <b>에이전트</b> (Bash, 각 대상 서버)
-    <ul class="tight">
-      <li><code class="i">vuln-inventory-agent.sh</code> — 수집 + <code class="i">--send</code> 전송</li>
-      <li><code class="i">install-agent.sh</code> — 배포·상시 poll 서비스(systemd, 불가능하면 정기수집 cron 폴백)</li>
-      <li>읽기 전용 · 자원 최저우선(nice19/ionice idle) · 명령별 timeout</li>
+  <section class="card">
+    <h2>완료를 판단하는 기준</h2>
+    <ul>
+      <li>설치: 자산 목록에 FQDN과 최신 수집 시각이 나타납니다.</li>
+      <li>피드 동기화: 커넥터의 마지막 성공 시각이 갱신됩니다.</li>
+      <li>자산 스캔: <code>tb_scan_run</code> 실행 이력과 필요 시 <code>tb_agent_command</code> 진행 상태가 남습니다.</li>
+      <li>조치: 새 자산 스캔에서 대상 판정이 해소되거나 남은 이유가 근거와 함께 표시됩니다.</li>
     </ul>
-  </div>
-  <div class="card">
-    <b>중앙 서버</b> (Docker Compose, dev/prod)
-    <ul class="tight">
-      <li><code class="i">caddy</code> — HTTPS 리버스 프록시(운영 전용, 내부 CA 자체서명)</li>
-      <li><code class="i">web</code> — PHP 8.3 / Apache (수신 API + 웹, 외부엔 caddy 통해서만)</li>
-      <li><code class="i">db</code> — MySQL 8 (수집·매칭 데이터, 내부망만)</li>
-      <li><code class="i">scheduler</code> — 사이드카(피드 주기 수집·재매칭)</li>
-      <li>비밀값은 Docker Secrets(txt) · dev/prod 분리</li>
-    </ul>
-  </div>
-</div>
+    <p class="muted">systemd 환경은 정기·즉시·예약 실행과 중단을 지원합니다. cron 폴백은 정기수집만 가능하며 즉시·예약·중단 명령은 지원하지 않는다.</p>
+  </section>
 
-<!-- 3. 런타임 상태 -->
-<h2><span class="n">3</span>런타임 상태 — 오탐 감소의 핵심</h2>
-<p class="lead">“설치=취약”으로 전부 올리지 않는다. exposures(포트) + processes(실행/로드) 를 합쳐
-각 취약점을 아래 7단계로 구분하고, 실제 노출/사용 여부로 우선순위를 가른다.</p>
-<div class="card">
-<table>
-  <thead><tr><th>상태</th><th>의미</th><th>기본 등급</th></tr></thead>
-  <tbody>
-    <tr><td><span class="badge b-ext">외부노출</span></td><td>외부(0.0.0.0) 오픈 포트로 노출 + 사용</td><td><span class="badge b-high">HIGH</span> <span style="color:var(--muted)">(+KEV → <span class="badge b-crit">CRITICAL</span>)</span></td></tr>
-    <tr><td><span class="badge b-lan">로컬 세그먼트 노출</span></td><td>mDNS 등 링크로컬 멀티캐스트 — 같은 세그먼트에만 닿고 라우터를 넘지 않음</td><td><span class="badge b-med">MEDIUM</span></td></tr>
-    <tr><td><span class="badge b-fil">방화벽 차단</span></td><td>전체 인터페이스에 리스닝하지만 방화벽이 막아 외부 도달 불가</td><td><span class="badge b-med">MEDIUM</span></td></tr>
-    <tr><td><span class="badge b-lis">로컬리스닝</span></td><td>리스닝하지만 127.0.0.1 만</td><td><span class="badge b-med">MEDIUM</span></td></tr>
-    <tr><td><span class="badge b-run">실행중</span></td><td>실행 중이나 포트 미개방</td><td><span class="badge b-med">MEDIUM</span></td></tr>
-    <tr><td><span class="badge b-loa">사용중</span></td><td>실행 프로세스가 라이브러리 로드</td><td><span class="badge b-med">MEDIUM</span></td></tr>
-    <tr><td><span class="badge b-ins">설치만</span></td><td>아무 프로세스도 안 씀</td><td><span class="badge b-low">LOW</span></td></tr>
-  </tbody>
-</table>
-</div>
-<div class="note">
-  <b>예:</b> 같은 <code class="i">openssl/glibc</code> 취약점도 외부 서비스가 쓰면
-  <span class="badge b-crit">CRITICAL</span>, 설치만 돼 있으면 <span class="badge b-low">LOW/MEDIUM</span>으로 갈린다.
-  KEV·EPSS와 배포판 수정 근거는 이 판단을 보강한다.
-</div>
-
-<!-- 4. 백포트 오탐 억제 -->
-<h2><span class="n">4</span>백포트 오탐 억제 — 버전 범위와 배포판 근거 교차 확인</h2>
-<p class="lead">배포판은 버전 번호를 그대로 두고 보안 패치만 이식(백포트)한다. 버전만 보는 스캐너는
-이를 “취약”으로 잘못 잡는다. 매처는 finding 을 만들기 전에 버전 범위와 배포판별 수정 근거를 교차 확인한다.</p>
-<div class="pipe">
-  <div class="step"><span class="k">범위</span><h4>OSV 버전 필터</h4><p>배포판 전체버전(NEVRA)과 OSV 영향 구간을 대조해 설치 버전에 실제 영향 없는 건을 제외</p></div>
-  <div class="arrow">→</div>
-  <div class="step p"><span class="k">근거</span><h4>배포판 수정 여부</h4><p>패키지 changelog·호스트 적용 errata와 중앙의 벤더 OVAL/errata·Debian tracker를 배포판에 맞게 확인</p></div>
-  <div class="arrow">→</div>
-  <div class="step o"><span class="k">분리</span><h4>tb_suppressed_finding</h4><p>위험 집계·화면에서는 빠지되, 숨기지 않고 <b>근거와 함께 호스트 상세에 표시</b>(설명가능성)</p></div>
-</div>
-<div class="note">
-  에이전트는 rpm/dpkg changelog의 CVE 줄만 전송한다. 비용이 큰 환경은
-  <code class="i">--no-changelog</code>로 끌 수 있으며, 억제 결과와 근거는 별도 보관한다.
-</div>
-
-<!-- 5. 보안설정 점검(CCE) -->
-<h2><span class="n">5</span>보안설정 점검 (CCE)</h2>
-<p class="lead">CVE가 아닌 <b>잘못된 설정</b>을 본다. 기존 수집물의 security/users 정보를 판정해
-호스트 상세에 PASS/FAIL/NA와 근거를 표시한다.</p>
-<div class="card">
-<table>
-  <thead><tr><th>계열</th><th>보는 것</th></tr></thead>
-  <tbody>
-    <tr><td>SSH (<code class="i">CCE-SSH-*</code>)</td><td><code class="i">sshd -T</code> 실효값 — root 로그인·패스워드 인증·인증 시도 횟수·X11·유휴 타임아웃 등</td></tr>
-    <tr><td>계정·패스워드 (<code class="i">CCE-ACC-* / CCE-PW-*</code>)</td><td>UID 0 중복·빈 패스워드·shadow 이전, 만료일·최소길이·품질·잠금 정책</td></tr>
-    <tr><td>파일 권한 (<code class="i">CCE-FILE-*</code>)</td><td><code class="i">/etc/passwd·shadow·group·gshadow</code>·crontab 등의 소유자·권한</td></tr>
-    <tr><td>시스템 (<code class="i">CCE-UMASK · CCE-SEC-* · CCE-SVC-* …</code>)</td><td>umask·root PATH·세션 타임아웃·SELinux/AppArmor·방화벽·레거시 서비스</td></tr>
-    <tr><td>시간·로그·암호화 (<code class="i">CCE-TIME-* / CCE-LOG-* / CCE-CRYPTO-*</code>)</td><td>시각 동기화와 오차, 로그 보존기간·원격 전송, SSH 알고리즘·디스크 암호화</td></tr>
-  </tbody>
-</table>
-</div>
-<p class="lead" style="font-size:.85rem;">
-  39개 항목을 <span class="badge" style="background:var(--green)">PASS</span>
-  / <span class="badge" style="background:var(--crit)">FAIL</span>
-  / <span class="badge" style="background:var(--low)">N/A</span>로 구분한다. 확인할 수 없는 값은 N/A이며,
-  SSG 연계 항목은 CIS·NIST·STIG 근거도 함께 보여준다.
-</p>
-
-<!-- 6. 데이터 수집 -->
-<h2><span class="n">6</span>데이터 수집</h2>
-<p class="lead">UI에서 고정 커넥터 11종과 범용 API를 설정·미리보기·예약한다.
-수집이 끝나면 매처가 기존 결과를 다시 계산한다.</p>
-<div class="card">
-<table>
-  <thead><tr><th>커넥터</th><th>역할</th><th>채우는 데이터</th></tr></thead>
-  <tbody>
-    <tr><td><b>NVD</b></td><td>CVE 설명과 CVSS를 수정일 기준으로 증분 수집</td><td>tb_cve</td></tr>
-    <tr><td><b>OSV</b></td><td>설치 패키지의 영향 여부와 확인된 수정 버전 탐지</td><td>tb_cve · tb_cve_affected_package</td></tr>
-    <tr><td><b>EPSS</b></td><td>CVE별 향후 악용 확률과 백분위 보강</td><td>tb_cve.epss</td></tr>
-    <tr><td><b>KEV</b></td><td>실제 악용이 확인된 취약점 보강</td><td>tb_kev_catalog</td></tr>
-    <tr><td><b>KISA</b></td><td>보호나라 국내 보안공지와 상세 본문 수집</td><td>tb_advisory</td></tr>
-    <tr><td><b>Debian</b></td><td>데비안 릴리스별 영향 여부·수정 가능 여부 판정</td><td>tb_debian_tracker</td></tr>
-    <tr><td><b>RHEL OVAL</b></td><td>Red Hat·AlmaLinux·Oracle의 벤더 수정 EVR 판정</td><td>tb_vendor_errata</td></tr>
-    <tr><td><b>Red Hat 미수정</b></td><td>Red Hat이 아직 수정본을 제공하지 않은 CVE 판정</td><td>tb_vendor_unfixed</td></tr>
-    <tr><td><b>Ubuntu OVAL</b></td><td>우분투 릴리스별 영향 여부와 수정 버전 판정</td><td>tb_ubuntu_oval</td></tr>
-    <tr><td><b>Kernel CNA</b></td><td>리눅스 커널 스트림별 영향·수정 버전 판정</td><td>tb_kernel_cve · tb_kernel_cve_fix</td></tr>
-    <tr><td><b>SSG</b></td><td>보안설정 룰의 근거와 CIS·NIST·STIG 기준 보강</td><td>tb_compliance_rule</td></tr>
-    <tr><td><b>범용 API</b></td><td>조직별 REST 소스를 탐지·우선순위·벤더 역할로 매핑</td><td>역할별 대상 테이블</td></tr>
-  </tbody>
-</table>
-</div>
-
-<!-- 7. 변화 추적 -->
-<h2><span class="n">7</span>변화 추적</h2>
-<p class="lead"><code class="i">/changes.php</code> 가 최근 2개 스캔의 <code class="i">tb_finding</code> 를
-<code class="i">(cve_id, package_name)</code> 기준으로 대조해 <b>신규 발생 · 해결됨 · 등급 상승/하락</b>을 보여준다.
-새 테이블 없이 기존 findings 비교만으로 동작한다.</p>
-
-<!-- 8. 데이터 모델 -->
-<h2><span class="n">8</span>데이터 모델</h2>
-<div class="grid2">
-  <div class="card">
-    <b>수집 데이터</b>
-    <ul class="tight">
-      <li><code class="i">tb_host</code> — 서버(fqdn, OS)</li>
-      <li><code class="i">tb_scan</code> — 내용이 달라질 때 생성하는 수집 스냅샷(원본 JSON 포함)</li>
-      <li><code class="i">tb_scan_run</code> — 실제 수집 실행 이력(동일 내용도 매 실행 누적)</li>
-      <li><code class="i">tb_agent_command</code> — 즉시·예약 실행, 진행률·heartbeat·중단 요청</li>
-      <li><code class="i">tb_package</code> — 패키지(버전·소스패키지·벤더)</li>
-      <li><code class="i">tb_exposure</code> — 노출 소켓(포트·scope·로드)</li>
-      <li><code class="i">tb_process</code> — 실행 프로세스(exe·로드)</li>
-    </ul>
-  </div>
-  <div class="card">
-    <b>취약점 · 판정 · 계정</b>
-    <ul class="tight">
-      <li><code class="i">tb_cve</code> — CVE(cvss·epss·요약)</li>
-      <li><code class="i">tb_kev_catalog</code> — KEV 등재</li>
-      <li><code class="i">tb_cve_affected_package</code> — 영향 패키지·수정 버전</li>
-      <li><code class="i">tb_finding</code> — 판정(등급·상태·근거)</li>
-      <li><code class="i">tb_advisory</code> — 국내 보안공지</li>
-      <li><code class="i">tb_feed_connector / _collection_log</code> — 커넥터·이력</li>
-      <li><code class="i">tb_user</code> — 웹 계정</li>
-      <li><code class="i">tb_activity_log</code> — 감사로그(로그인·CRUD·ingest 기록)</li>
-    </ul>
-  </div>
-  <div class="card">
-    <b>오탐억제 · 설정점검 · 권한</b>
-    <ul class="tight">
-      <li><code class="i">tb_pkg_changelog_cve</code> — changelog 의 CVE 수정 기록(백포트 근거)</li>
-      <li><code class="i">tb_suppressed_finding</code> — 백포트로 억제된 finding(근거 포함)</li>
-      <li><code class="i">tb_cce_finding</code> — 보안설정 점검 결과(PASS/FAIL/NA)</li>
-      <li><code class="i">tb_role_permission</code> — 역할×메뉴 허용 여부(설정형 RBAC)</li>
-      <li><code class="i">tb_agent_token</code> — 에이전트 전송 토큰(SHA-256 해시만 저장)</li>
-    </ul>
-  </div>
-</div>
-<p class="lead" style="font-size:.85rem;margin-top:.6rem;">
-  테이블은 <code class="i">tb_</code> 접두사를 통일하고, 독립 생명주기를 가진 주요 테이블은 감사 4컬럼(<code class="i">created_at/updated_at/is_deleted/deleted_at</code>)을 둔다.
-  삭제는 하드삭제 대신 소프트삭제(<code class="i">is_deleted=1</code>, findings 등 재계산 캐시 테이블은 예외).
-</p>
-
-<!-- 9. 배포 -->
-<h2><span class="n">9</span>배포 (agent-side push, HTTPS)</h2>
-<p class="lead">중앙이 호스트로 접속하지 않는다. 각 서버가 로컬에서 수집한 뒤 아웃바운드 HTTPS로 전송한다.</p>
-<div class="card">
-  <b>① 중앙 서버</b> (내부 서버, Docker + Caddy)
-  <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
-    ./compose_runner.sh init<br>./compose_runner.sh prod up -d --build
-  </div>
-  Caddy가 TLS를 종료하고 내부 <code class="i">web:80</code>으로 프록시한다.
-  <p><b>② 대상 서버</b> (에이전트 설치 + 호스트별 수집 주기)</p>
-  <div class="mono" style="background:#eff1f3;border-radius:8px;padding:.6rem .8rem;margin:.4rem 0;font-size:.85rem">
-    sudo bash install-agent.sh<br>
-    &nbsp;&nbsp;중앙 서버 주소 → https://&lt;운영-도메인&gt;:8080/ingest.php<br>
-    &nbsp;&nbsp;전송 토큰 → 에이전트 키 화면에서 호스트별 발급 · 수집 주기 → hourly
-  </div>
-  systemd 서비스는 명령을 poll하고 설정 주기로 수집한다. cron 폴백은 정기수집만 가능하며
-  즉시·예약·중단 명령은 지원하지 않는다. 토큰은 <code class="i">&lt;prefix&gt;/etc/agent.env</code>(600)에 저장한다.
-  <p><b>③ 웹</b> — 운영 도메인에서 취약점·상태·감사로그를 확인한다.</p>
-</div>
-
-<!-- 10. Export API -->
-<h2><span class="n">10</span>Export · SBOM API</h2>
-<p class="lead">외부 시스템이 스캔 결과와 자산별 부품표를 가져갈 수 있는 읽기 전용 API다.</p>
-<div class="card">
-  <code class="i">GET /export.php</code> — JSON/XML, 호스트·심각도·KEV·EPSS 필터 지원<br>
-  <code class="i">GET /sbom.php?host=&lt;fqdn&gt;&amp;format=cyclonedx|spdx</code> — 자산 하나의 SBOM
-  (CycloneDX 1.5 / SPDX 2.3). 같은 스캔이면 문서가 항상 같다(결정적 serialNumber).<br>
-  인증: 두 API 모두 웹 로그인 세션(자산 메뉴 권한)이다. 전용 API 토큰 체계는 폐지했다 —
-  로그인한 사용자가 브라우저에서 그대로 열어 내려받고, 누가 무엇을 가져갔는지는 감사로그에 남는다.
-</div>
-
-<!-- 11. 권한 -->
-<h2><span class="n">11</span>권한 (설정형 RBAC)</h2>
-<p class="lead">admin / operator / user 역할을 제공한다. admin은 전체 허용이며,
-operator·user의 메뉴 권한은 <code class="i">/permissions.php</code>에서 설정한다.</p>
-
-<!-- 12. 웹 화면 -->
-<h2><span class="n">12</span>웹 화면</h2>
-<div class="card">
-<table>
-  <thead><tr><th>화면</th><th>내용</th><th>접근</th></tr></thead>
-  <tbody>
-    <tr><td>로그인</td><td>세션 인증(users, bcrypt·CSRF)</td><td>-</td></tr>
-    <tr><td>탐지</td><td>대시보드·호스트·취약점·CVE·패키지 상세와 변화 추적</td><td>로그인</td></tr>
-    <tr><td>판정 근거</td><td>벤더 원본, 백포트 억제 근거, 보안 설정 룰</td><td>로그인</td></tr>
-    <tr><td>컴플라이언스</td><td>ISMS-P·ISO 27001 추이와 U-코드·N2SF 통제 상세</td><td>로그인</td></tr>
-    <tr><td>자산 · 수집</td><td>자산 속성, 커넥터 설정·미리보기·스케줄·실행 이력</td><td>assets / RBAC 권한</td></tr>
-    <tr><td>관리</td><td>사용자·권한·API/에이전트 키·조직별 설정</td><td>admin(기본)</td></tr>
-    <tr><td>감사 로그</td><td>접속기록 5요소와 월 1회 점검 기록</td><td>admin(기본)</td></tr>
-  </tbody>
-</table>
-</div>
-<p class="lead" style="font-size:.85rem;">
-  <b>감사로그:</b> 로그인·커넥터 저장/삭제/실행·사용자 추가/삭제·ingest 수신이 <code class="i">tb_activity_log</code> 에
-  자동 기록되고(<code class="i">vg_log_activity()</code>), <code class="i">activity.php</code>(admin 전용)에서 조회한다.
-</p>
-
-<!-- 13. 현황 -->
-<h2><span class="n">13</span>구현 현황</h2>
-<div class="card">
-  <ul class="tight">
-    <li><span class="ok">✓</span> 수집·전송·저장과 systemd/cron 배포</li>
-    <li><span class="ok">✓</span> CVE·런타임·KEV/EPSS 판정과 백포트 억제</li>
-    <li><span class="ok">✓</span> 보안 설정·컴플라이언스·자산·SCA 분석</li>
-    <li><span class="ok">✓</span> 웹 상세·감사·RBAC·읽기 전용 Export API</li>
-    <li><span class="ok">✓</span> SBOM 기반 패키지 의존성 그래프와 루트·직접·전이 경로 조회</li>
-    <li style="color:var(--muted)">◦ 알림 채널·조치 결재 워크플로는 제공하지 않는다</li>
-  </ul>
-</div>
-
-<footer>
-  vuln-agent · 라이선스 MIT · 저장소 github.com/JeongDoWook/vuln-agent<br>
-  자세한 다이어그램은 <code class="i">docs/dev/architecture.md</code>, 전략·현황은 <code class="i">CONTEXT.md</code> 참고.
-</footer>
-
-</div>
+  <section class="card">
+    <h2>개발자·배포 상세</h2>
+    <p class="muted">API, 데이터 모델, 배포 명령과 내부 파이프라인은 운영 첫 흐름에서 분리했습니다.</p>
+    <div class="links">
+      <a href="https://github.com/JeongDoWook/vuln-agent/" rel="noopener noreferrer">GitHub 저장소</a>
+      <a href="https://github.com/JeongDoWook/vuln-agent/blob/main/README.md" rel="noopener noreferrer">빠른 시작</a>
+      <a href="https://github.com/JeongDoWook/vuln-agent/tree/main/docs" rel="noopener noreferrer">기술 문서</a>
+    </div>
+  </section>
+</main>
 </body>
 </html>

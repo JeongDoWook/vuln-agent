@@ -492,9 +492,9 @@ function vg_page_nav(int $total, int $perPage, int $page, string $pageParam = 'p
     if ($page > $totalPages) { $page = $totalPages; }
 
     if ($totalPages === 1) {   // 페이지 링크는 필요없고 개수 셀렉트만
-        echo '<div class="pager"><span class="muted">· 총 ' . number_format($total) . '건</span>';
+        echo '<nav class="pager" aria-label="페이지 탐색"><span class="muted">· 총 ' . number_format($total) . '건</span>';
         vg_perpage_select($pageParam, $perPageParam);
-        echo '</div>';
+        echo '</nav>';
         return;
     }
 
@@ -506,7 +506,7 @@ function vg_page_nav(int $total, int $perPage, int $page, string $pageParam = 'p
     $show = array_values(array_unique($show));
     sort($show);
 
-    echo '<div class="pager">';
+    echo '<nav class="pager" aria-label="페이지 탐색">';
     if ($page > 1) {
         echo '<a href="' . vg_h(vg_qs([$pageParam => $page - 1])) . '">‹ 이전</a>';
     } else {
@@ -518,7 +518,7 @@ function vg_page_nav(int $total, int $perPage, int $page, string $pageParam = 'p
             echo '<span class="muted">…</span>';
         }
         if ($p === $page) {
-            echo '<span class="cur">' . $p . '</span>';
+            echo '<span class="cur" aria-current="page"><span class="sr-only">현재 페이지 </span>' . $p . '</span>';
         } else {
             echo '<a href="' . vg_h(vg_qs([$pageParam => $p])) . '">' . $p . '</a>';
         }
@@ -531,7 +531,19 @@ function vg_page_nav(int $total, int $perPage, int $page, string $pageParam = 'p
     }
     echo '<span class="muted">· 총 ' . number_format($total) . '건 · ' . $page . '/' . $totalPages . '페이지</span>';
     vg_perpage_select($pageParam, $perPageParam);
-    echo '</div>';
+    echo '</nav>';
+}
+
+/** 위험/근거에서 재검증까지 이어지는 상세 화면의 공통 판단 순서. */
+function vg_decision_flow(array $steps): void {
+    echo '<nav class="decision-flow" data-decision-flow aria-label="판단과 조치 순서"><ol>';
+    foreach (array_values($steps) as $i => $step) {
+        $href = vg_local_href($step['href'] ?? null) ?? '#';
+        echo '<li><a href="' . vg_h($href) . '"><b>' . number_format($i + 1) . '</b><span>'
+            . vg_h((string) ($step['label'] ?? '')) . '</span><small>'
+            . vg_h((string) ($step['hint'] ?? '')) . '</small></a></li>';
+    }
+    echo '</ol></nav>';
 }
 
 /**
@@ -632,6 +644,14 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
 function vg_toolbar(array $fields): void {
     $resetOverrides = ['page' => null];
     $hasValue = false;
+    $advancedActive = false;
+    foreach ($fields as $field) {
+        if (empty($field['advanced']) || ($field['type'] ?? '') === 'hidden') { continue; }
+        $current = (string) (($field['type'] ?? '') === 'select'
+            ? ($field['selected'] ?? '') : ($field['value'] ?? ''));
+        if ($current !== '') { $advancedActive = true; break; }
+    }
+    $advancedOpen = false;
 
     echo '<form class="toolbar" method="get">';
 
@@ -644,6 +664,13 @@ function vg_toolbar(array $fields): void {
         $type = $f['type'] ?? 'search';
         $name = (string) ($f['name'] ?? '');
         $value = (string) ($f['value'] ?? '');
+
+        if (!empty($f['advanced']) && !$advancedOpen) {
+            echo '<details class="toolbar__advanced"' . ($advancedActive ? ' open' : '') . '>'
+                . '<summary>고급 필터' . ($advancedActive ? ' · 적용 중' : '') . '</summary>'
+                . '<div class="toolbar__advanced-fields">';
+            $advancedOpen = true;
+        }
 
         if ($type === 'hidden') {
             $isReset = !empty($f['reset']);
@@ -686,6 +713,7 @@ function vg_toolbar(array $fields): void {
             $resetOverrides[$name] = null;
         }
     }
+    if ($advancedOpen) { echo '</div></details>'; }
     echo '<button type="submit" class="btn btn--sm btn--primary" data-loading="검색 중…">검색</button>';
     if ($hasValue) {
         echo '<a class="btn btn--sm btn--ghost" href="' . vg_h(vg_qs($resetOverrides)) . '">초기화</a>';
