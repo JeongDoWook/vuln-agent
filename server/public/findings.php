@@ -603,6 +603,41 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   }
   vg_findings_subtabs($type, $tabOverrides);
 
+  /* 이 화면이 무엇을 판단하는 자리인지를 도식 한 장으로 답한다 — 순서는 vg_signal_slots() 의
+   *   네 축(노출→악용→등급→조치)과 같다. 같은 판단 순서를 화면마다 다른 순서로 그리지 않는다.
+   *   숫자는 위 탭별 집계에서 이미 나온 값만 쓴다(새 쿼리 없음). CCE·노출 탭은 축이 다르므로
+   *   각자의 순서를 그린다 — 없는 축을 빈 칸으로 세워 두지 않는다. */
+  if ($err === null) {
+      if ($type === 'cve') {
+          /* 이 탭은 바로 아래 [먼저 볼 작업] 스트립이 같은 네 축의 **건수**를 이미 링크와 함께
+           *   보여준다 — 도식에까지 같은 숫자를 넣으면 한 화면에서 같은 값을 두 번 세게 된다.
+           *   그래서 여기서는 숫자를 빼고 **순서**만 말한다(표의 '신호' 칸도 이 순서를 따른다). */
+          vg_explain_flow([
+              ['icon' => 'port',   'label' => '노출',
+               'state' => $actionCounts['external'] > 0 ? 'active' : 'done'],
+              ['icon' => 'feed',   'label' => '악용', 'state' => 'done'],
+              ['icon' => 'warn',   'label' => '등급', 'state' => 'done'],
+              ['icon' => 'check',  'label' => '조치',
+               'state' => $actionCounts['overdue'] > 0 ? 'active' : 'done'],
+          ], ['label' => '취약점 판단 순서']);
+      } elseif ($type === 'cce') {
+          vg_explain_flow([
+              ['icon' => 'shield', 'label' => '점검', 'value' => number_format((int) $cceResultCounts['PASS'] + (int) $cceResultCounts['FAIL']), 'state' => 'done'],
+              ['icon' => 'warn',   'label' => '위반', 'value' => number_format((int) $cceResultCounts['FAIL']),
+               'state' => $cceResultCounts['FAIL'] > 0 ? 'active' : 'done'],
+              ['icon' => 'block',  'label' => '판정불가', 'value' => number_format((int) $cceResultCounts['NA']), 'state' => 'done'],
+              ['icon' => 'check',  'label' => '양호', 'value' => number_format((int) $cceResultCounts['PASS']), 'state' => 'done'],
+          ], ['label' => '보안설정 점검 순서']);
+      } else {
+          vg_explain_flow([
+              ['icon' => 'process', 'label' => '프로세스', 'state' => 'done'],
+              ['icon' => 'port',    'label' => '리스너', 'value' => number_format(array_sum(array_map('intval', $scopeCounts))), 'state' => 'done'],
+              ['icon' => 'feed',    'label' => vg_scope_label('EXTERNAL'), 'value' => number_format((int) ($scopeCounts['EXTERNAL'] ?? 0)),
+               'state' => ((int) ($scopeCounts['EXTERNAL'] ?? 0)) > 0 ? 'active' : 'done'],
+          ], ['label' => '노출 판단 순서']);
+      }
+  }
+
   // 결론 배너 — 카드와 표는 값을 보여줄 뿐이라, "지금 이 탭에서 무엇이 몇 건인가"는
   //   사용자가 직접 세어야 했다. 그 한 줄을 탭 바로 아래 한 번만 세운다(role="status").
   //   수치는 각 탭이 위에서 이미 집계한 값만 쓴다 — 새 쿼리를 추가하지 않는다.
@@ -821,18 +856,15 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   $headers = array_merge($headers, [
       // 뱃지 폭(CRITICAL 69px) + 칸 여백 32px = 101px → 6.5rem.
       ['label' => '등급',  'key' => 'severity',       'width' => '6.5rem', 'nowrap' => true],
-      // 가장 긴 라벨이 '로컬 세그먼트 노출' 이라 등급보다 넓게 준다. 그래도 모자라면 잘리므로
-      //   칸 안에서 전체 문구를 title 로 남긴다(아래 셀 콜백).
-      // '노출 상태' 로 이름을 못박는다 — 같은 표에 사람이 정하는 '조치 상태' 칸이 함께 서기 때문.
-      //   값과 톤은 그대로다(vg_status_badge).
-      ['label' => '노출 상태', 'key' => 'runtime_status', 'width' => '7rem', 'nowrap' => true,
-          'title' => '이 취약 패키지가 지금 어떻게 쓰이고 있는가(수집 결과)'],
-      // 사람이 정하는 값. 기록이 없으면 미조치다 — 빈 칸으로 두지 않는다.
-      ['label' => '조치 상태', 'key' => 'finding_status', 'width' => '5.5rem', 'nowrap' => true,
-          'title' => '담당자가 정한 조치 진행 상태 · 자산 상세의 취약점 상세에서 바꿉니다'],
-      // 남은 일수. 등급별 기한은 설정 화면(조치 기한)에서 바꾼다.
-      ['label' => '기한',  'key' => 'due',            'width' => '5.5rem', 'nowrap' => true,
-          'title' => '최초 발견 시각 + 등급별 조치 기한 · MEDIUM·LOW 는 기한이 없습니다'],
+      /* '노출 상태'·'조치 상태'·'기한' 세 열을 한 칸으로 합쳤다 — 셋 다 뱃지 하나짜리인데
+       *   열을 따로 세우니 표가 10열이 되어 정작 '조치·올릴 버전' 이 눌렸다. 칸 안의 순서는
+       *   vg_signal_slots() 의 축 순서(노출 → 조치)를 그대로 따르고 기한은 조치에 붙는다.
+       *   합친 건 **표시뿐이고 쿼리는 그대로다** — 세 값 모두 원래 쿼리가 이미 들고 있던
+       *   컬럼이라 SELECT·정렬·필터(st·fst·sort=due)는 한 글자도 바뀌지 않았다.
+       *   vg_signal_slots() 네 칸을 행 안에 넣지 않은 이유: .signal-slots 는 min-width 18rem 이라
+       *   폭이 고정된(table-layout:fixed) 이 표의 한 칸에 들어가면 표가 가로로 넘친다. */
+      ['label' => '신호', 'key' => 'signals', 'width' => '9.5rem',
+          'title' => '노출 상태(수집 결과) · 조치 상태와 남은 기한(사람이 정한 값)'],
       // CVE 는 nowrap 이 아니다 — 링크 뒤에 KEV·조치불가 표식이 붙어 한 줄에 안 들어간다.
       //   폭이 고정된 표에서 nowrap 이면 칸을 뚫고 나가 표가 가로로 넘친다. 대신 **식별자 자체가**
       //   쪼개지지 않게 셀에서 <code> 로 감싼다(app.css: td code 는 nowrap) — 예전엔 폭이 모자라
@@ -869,6 +901,13 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   //   (같은 vg_qs() 를 KPI 카드처럼 직접 <a href=...> 를 만드는 코드에 쓸 땐, 그건 vg_empty() 를
   //   거치지 않으므로 그 호출부가 스스로 vg_h() 해야 한다 — 여기와는 다른 경로다.)
   //   tests/smoke.sh 가 임의 쿼리값 주입으로 이 전제를 회귀 검증한다.
+  /* 표의 등급·노출 뱃지는 색으로 서열을 말하는데 그 색의 뜻이 화면에 없었다.
+   *   어휘·톤은 각각 vg_sev_tone()·$scopeTone(이 파일의 노출 탭)이 소유한다 — 새 색을 만들지 않는다. */
+  vg_legend(array_map(
+      fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $counts[$s]],
+      ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+  ), ['inline' => true, 'caption' => '심각도']);
+
   $filterCta  = ['href' => vg_qs(['q' => '', 'sev' => '', 'st' => '', 'fx' => '', 'fst' => '', 'sort' => '', 'page' => 1]), 'label' => '필터 초기화'];
   $hasAnyFilter = $q !== '' || $sev !== '' || $st !== '' || $fx !== '' || $fst !== '' || $sort !== '';
   if ($scanId > 0 && !$scan) {
@@ -943,31 +982,34 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
                        . '</a>';
               },
               'severity'       => fn($r) => vg_sev_badge((string) $r['severity']),
-              // 상태 라벨은 '로컬 세그먼트 노출' 처럼 길어서 좁은 칸에선 말줄임에 먹힌다
-              //   (td.nowrap 이 넘치는 값을 자른다 — app.css '목록 화면' 구역). 잘려도 뜻을
-              //   잃지 않게 전체 문구를 title 로 남긴다: 잘라야만 하는 열의 공통 규칙이다.
-              'runtime_status' => fn($r) => '<span title="' . vg_h(vg_status_label($r['runtime_status'])) . '">'
-                  . vg_status_badge($r['runtime_status']) . '</span>',
-              // 조치 상태 — 행이 없으면 미조치다(vg_finding_status_badge 가 null 을 OPEN 으로 눕힌다).
-              //   메모가 있으면 title 로만 준다: 좁은 칸에 문장을 풀면 행 높이가 튄다(근거 칸의 교훈).
-              'finding_status' => function ($r) {
-                  $note = trim((string) ($r['finding_status_note'] ?? ''));
-                  $badge = vg_finding_status_badge($r['finding_status'] ?? null);
-                  return $note === ''
-                      ? $badge
-                      : '<span title="' . vg_h(mb_strimwidth($note, 0, 120, '…')) . '">' . $badge . '</span>';
-              },
-              // 남은 일수 — 계산·표기는 vg_finding_due_cell() 하나가 갖는다(화면마다 다시 세지 않게).
-              'due' => function ($r) use ($firstSeen, $policy) {
-                  $sla = vg_finding_sla_days((bool) $r['in_kev'], (string) $r['severity'], $policy);
+              /* 신호 한 칸 — 노출(수집이 말하는 것) 윗줄, 조치와 기한(사람이 정하는 것) 아랫줄.
+               *   값·톤·계산은 셋 다 원래 쓰던 헬퍼 그대로다(새로 세지 않는다).
+               *   상태 라벨은 '로컬 세그먼트 노출' 처럼 길어 좁은 칸에선 말줄임에 먹히므로
+               *   전체 문구를 title 로 남긴다(잘라야만 하는 값의 공통 규칙).
+               *   조치 메모도 title 로만 준다 — 좁은 칸에 문장을 풀면 행 높이가 튄다. */
+              'signals' => function ($r) use ($firstSeen, $policy) {
+                  $exposure = '<span title="' . vg_h(vg_status_label($r['runtime_status'])) . '">'
+                      . vg_status_badge($r['runtime_status']) . '</span>';
+
+                  // 조치 상태 — 행이 없으면 미조치다(vg_finding_status_badge 가 null 을 OPEN 으로 눕힌다).
+                  $note  = trim((string) ($r['finding_status_note'] ?? ''));
+                  $fix   = vg_finding_status_badge($r['finding_status'] ?? null);
+                  if ($note !== '') {
+                      $fix = '<span title="' . vg_h(mb_strimwidth($note, 0, 120, '…')) . '">' . $fix . '</span>';
+                  }
+
+                  // 남은 일수 — 계산·표기는 vg_finding_due_cell() 하나가 갖는다(화면마다 다시 세지 않게).
+                  $sla  = vg_finding_sla_days((bool) $r['in_kev'], (string) $r['severity'], $policy);
                   $seen = $firstSeen[vg_finding_status_key(
                       (int) $r['host_id'], (string) ($r['container_cid'] ?? ''),
                       (string) $r['cve_id'], (string) $r['package_name']
                   )] ?? null;
-                  return vg_finding_due_cell(
+                  $due = vg_finding_due_cell(
                       $seen === null ? null : (int) $seen['days'], $sla,
                       $r['finding_status'] ?? null
                   );
+
+                  return '<div>' . $exposure . '</div><div>' . $fix . ' ' . $due . '</div>';
               },
               // CVE — 링크 + KEV 뱃지(별도 컬럼이던 '✔' 를 여기로).
               // CVE 요약(summary)은 뺐다. 근거와 나란히 두면 긴 텍스트 컬럼이 둘이라
@@ -1179,6 +1221,14 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       ];
   }
 
+  /* 결과 세 갈래(PASS/FAIL/NA)의 색 뜻. FAIL 은 등급색을 그대로 쓰므로 대표로 crit 을 세운다 —
+   *   실제 톤 매핑은 아래 'result' 셀이 갖는다(여기서 분류표를 새로 만들지 않는다). */
+  vg_legend([
+      ['label' => 'FAIL · 위반', 'tone' => 'crit', 'n' => (int) $cceResultCounts['FAIL']],
+      ['label' => 'PASS · 양호', 'tone' => 'low',  'n' => (int) $cceResultCounts['PASS']],
+      ['label' => 'NA · 판정 불가', 'tone' => 'muted', 'n' => (int) $cceResultCounts['NA']],
+  ], ['inline' => true, 'caption' => '점검 결과']);
+
   // 컬럼 순서는 CVE 탭과 같은 뼈대다 — 자산이 첫 칸, 그 다음이 판정(결과·등급), 마지막이 근거.
   //   노출 축(runtime_status)은 여기 없다: 설정 점검에는 리스닝·외부노출 개념이 없어서
   //   억지로 만들면 없는 걸 있는 척하는 게 된다. 빈 칸을 만들지 않고 컬럼 자체를 두지 않는다.
@@ -1285,6 +1335,14 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
           'hint'  => '에이전트가 리스닝 소켓을 수집해야 이 목록이 채워집니다 — 0건이 "열린 포트 없음"을 보장하지 않습니다.',
       ];
   }
+
+  /* 범위 뱃지의 색이 무슨 뜻인지 — 어휘는 vg_scope_label(), 톤은 위 카드와 같은 $scopeTone 이다.
+   *   이 화면에서 색으로 위험을 가르는 유일한 축이라 표 바로 위에 한 줄로 둔다. */
+  vg_legend(array_map(
+      fn(string $sc): array => ['label' => vg_scope_label($sc), 'tone' => $scopeTone[$sc] ?? 'muted',
+                                'n' => (int) ($scopeCounts[$sc] ?? 0)],
+      $scopeOptions
+  ), ['inline' => true, 'caption' => '노출 범위']);
 
   $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
   $headers = array_merge($headers, [

@@ -174,8 +174,9 @@ try {
         }
         $offset = ($page - 1) * $perPage;
         $st = $pdo->prepare(
+            // 수집 시각 열은 호스트 상세로 옮겼다 — 목록이 안 쓰는 값을 실어 오지 않는다.
             "SELECT h.host_id, h.fqdn, c.name AS container_name, p.manager, p.name, p.version, p.license,
-                    COALESCE(sm.risk, 'unknown') AS risk, s.collected_at
+                    COALESCE(sm.risk, 'unknown') AS risk
                $from WHERE $where
               ORDER BY p.name, h.fqdn, p.version, p.package_id
               LIMIT $perPage OFFSET $offset"
@@ -221,6 +222,28 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지 카�
       $pkgTabs[$key] = ['label' => $def['label'], 'href' => vg_qs($clear)];
   }
   vg_subtabs($pkgTabs, $tab);
+
+  /* 이 화면이 무엇을 보여주는지 — 패키지 하나가 어떤 CVE 범위에 걸리고, 어느 버전에서
+   *   고쳐지며, 그중 얼마가 실제로 확인됐는지(조치율)다. 언어 탭은 축이 달라(라이선스)
+   *   자기 흐름을 그린다. 숫자는 위에서 이미 센 값만 쓴다(새 쿼리 없음). */
+  if ($err === null) {
+      if ($tab === 'lang') {
+          vg_explain_flow([
+              ['icon' => 'package', 'label' => '패키지', 'value' => number_format($langTotal), 'state' => 'done'],
+              ['icon' => 'feed',    'label' => '라이선스', 'state' => 'done'],
+              ['icon' => 'warn',    'label' => '카피레프트', 'value' => number_format($riskCounts['copyleft']),
+               'state' => $riskCounts['copyleft'] > 0 ? 'active' : 'done'],
+              ['icon' => 'block',   'label' => '미상', 'value' => number_format($riskCounts['unknown']), 'state' => 'done'],
+          ], ['label' => '언어 패키지 라이선스 판정 순서']);
+      } else {
+          vg_explain_flow([
+              ['icon' => 'package', 'label' => '패키지', 'value' => number_format($total), 'state' => 'done'],
+              ['icon' => 'cve',     'label' => '취약범위', 'state' => 'done'],
+              ['icon' => 'check',   'label' => '수정버전', 'state' => 'done'],
+              ['icon' => 'shield',  'label' => '조치율', 'state' => 'active'],
+          ], ['label' => '패키지에서 조치까지의 흐름']);
+      }
+  }
   ?>
 
 <?php if ($err !== null): ?>
@@ -250,14 +273,22 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지 카�
 
   <?php
   $hasFilter = $q !== '' || $manager !== '' || $risk !== '';
+  /* 라이선스 위험도 색의 뜻. 어휘·톤은 vg_license_risk_label()/vg_license_risk_tone() 이 소유한다. */
+  vg_legend(array_map(
+      fn(string $rk): array => ['label' => vg_license_risk_label($rk), 'tone' => vg_license_risk_tone($rk),
+                                'n' => (int) $riskCounts[$rk]],
+      ['copyleft', 'permissive', 'unknown']
+  ), ['inline' => true, 'caption' => '라이선스 위험도']);
+  /* '수집 시각' 열은 상세로 보냈다 — 이 값은 그 행이 속한 호스트의 최신 스캔 시각이라 행마다
+   *   다르지 않고, 호스트 상세(host.php)의 식별부가 '최신 수집' 으로 이미 보여준다.
+   *   '위치' 는 남긴다: 같은 패키지가 자산마다 한 행씩 서므로 이 열이 곧 그 행의 정체다. */
   vg_table(
       [
-          ['label' => '패키지', 'width' => '22%', 'class' => 'col-id'],
-          ['label' => '매니저', 'width' => '10%'],
-          ['label' => '버전', 'width' => '12%'],
-          ['label' => '라이선스', 'width' => '20%'],
-          ['label' => '위치', 'width' => '20%'],
-          ['label' => '수집 시각', 'width' => '16%', 'nowrap' => true],
+          ['label' => '패키지', 'width' => '26%', 'class' => 'col-id'],
+          ['label' => '매니저', 'width' => '12%'],
+          ['label' => '버전', 'width' => '14%'],
+          ['label' => '라이선스', 'width' => '24%'],
+          ['label' => '위치', 'width' => '24%'],
       ],
       $langRows,
       [
@@ -288,7 +319,6 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지 카�
                   . urlencode((string) $r['name']) . '">'
                   . vg_h((string) $r['fqdn']) . '</a>'
                   . (!empty($r['container_name']) ? ' <span class="why">(' . vg_h((string) $r['container_name']) . ')</span>' : ''),
-              5 => fn($r) => '<span class="why">' . vg_h((string) $r['collected_at']) . '</span>',
           ],
       ]
   );

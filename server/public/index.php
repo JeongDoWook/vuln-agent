@@ -296,6 +296,19 @@ vg_header('대시보드', 'dashboard');
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
   <?php
+  /* 이 화면이 무엇을 보여주는지를 문장이 아니라 도식으로 답한다 — 에이전트가 걷은 것이
+   *   피드와 매칭돼 판정이 되고, 그 끝에 오늘 할 조치가 남는다. 아래 퍼널은 "얼마나 좁혀지나"
+   *   (건수)를 말하고 이 도식은 "그 숫자가 어디서 왔나"(단계)를 말한다 — 같은 값을 두 번
+   *   세지 않으려고 칸의 숫자는 이미 계산된 것만 그대로 쓴다.
+   *   조회가 실패한 화면에선 그리지 않는다 — 0 만 늘어선 도식은 "아무것도 없다"는 거짓말이 된다. */
+  vg_explain_flow([
+      ['icon' => 'host',    'label' => '수집', 'value' => number_format($hostCount) . '대', 'state' => 'done'],
+      ['icon' => 'feed',    'label' => '매칭', 'state' => 'done'],
+      ['icon' => 'shield',  'label' => '판정', 'value' => number_format(array_sum($totals)) . '건', 'state' => 'done'],
+      ['icon' => 'warn',    'label' => '조치', 'value' => number_format($kevOverdue) . '건', 'state' => 'active'],
+  ], ['label' => '수집에서 조치까지의 흐름']);
+  ?>
+  <?php
   /* 상단은 결론 문장 + KPI 나열이 아니라 **좁혀지는 퍼널**이다.
    *
    * 이 숫자들의 실제 관계는 나열이 아니라 포함이다 — 전체 안에 High 이상이 있고, 그 안에
@@ -439,14 +452,12 @@ vg_header('대시보드', 'dashboard');
         </div>
         <div class="donut-wrap">
           <?php vg_sev_donut($totals, 152); ?>
-          <div class="legend">
-            <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
-              <div>
-                <i class="tone-<?= vg_sev_tone($s) ?>"></i>
-                <span><?= $s ?></span>
-              </div>
-            <?php endforeach; ?>
-          </div>
+          <?php /* 인라인으로 갖고 있던 범례 마크업을 공용 헬퍼로 옮겼다(컴포넌트 주석의 예고대로) —
+                   같은 것을 두 벌 두지 않는다. 건수까지 같이 말하도록 'n' 을 준다. */ ?>
+          <?php vg_legend(array_map(
+              fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $totals[$s]],
+              ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+          ), ['caption' => '심각도']); ?>
         </div>
         <?php /* 도넛 바닥의 KEV 요약. 퍼널 3번째 칸과 **같은 수**다(같은 쿼리에서 나온다) —
                  접힌 안쪽에서 다시 세지 않는다. */ ?>
@@ -459,6 +470,12 @@ vg_header('대시보드', 'dashboard');
 
   <div class="card">
     <strong>호스트별 현황</strong> <span class="why">— 위험도 높은 순 · 각 호스트의 최신 스캔 기준</span>
+    <?php /* '심각도' 열의 막대는 색으로만 등급을 말한다 — 그 색이 무슨 뜻인지 이 화면 어디에도
+             적혀 있지 않았다(접힌 도넛 안에만 있었다). 표 바로 위에 한 줄로 둔다. */ ?>
+    <?php vg_legend(array_map(
+        fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s)],
+        ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+    ), ['inline' => true, 'caption' => '심각도']); ?>
     <div class="card__body">
   <?php
   vg_table(

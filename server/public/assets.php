@@ -164,11 +164,13 @@ try {
     $offset = ($page - 1) * $perPage;
 
     $st = $pdo->prepare(
-        "SELECT h.host_id, h.fqdn, h.os_id, h.os_version, h.last_seen_ip,
-                s.scan_id, s.collected_at, s.package_count, s.agent_version,
+        /* 목록에서 뺀 값(OS·IP·패키지 수·에이전트 버전·담당 부서)은 SELECT 에서도 뺀다 —
+         *   화면이 안 쓰는 값을 페이지마다 실어 오지 않는다. 검색·필터가 쓰는 컬럼
+         *   (h.last_seen_ip · gr.owning_department)은 WHERE 절에 그대로 남아 있어 영향이 없다. */
+        "SELECT h.host_id, h.fqdn,
+                s.scan_id, s.collected_at,
                 h.poll_schedule_seconds,
                 h.criticality, h.grade, h.grade_reason,
-                gr.owning_department,
                 h.grade_suggested, h.grade_suggested_reason,
                 TIMESTAMPDIFF(MINUTE, s.collected_at, NOW()) AS age_min,
                 TIMESTAMPDIFF(MINUTE, agent_seen.last_seen_at, NOW()) AS poll_age_min
@@ -185,17 +187,9 @@ try {
     foreach ($rows as $r) { if ($r['scan_id'] !== null) { $ids[] = (int) $r['scan_id']; } }
     $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
 
-    // 함대에서 가장 높은 에이전트 버전 — 이보다 낮은 호스트는 옛 에이전트가 돌고 있다.
-    //   중앙은 노드에 아무것도 내려보내지 않으므로(노드가 밀어 올리기만 한다) 에이전트를 고쳐도
-    //   **각 노드에 다시 깔 때까지 옛 코드가 계속 돈다.** 실제로 master 가 2.1 로 몇 주를 돌았는데
-    //   화면에 숫자만 있고 "이게 구버전" 이라는 신호가 없어 아무도 못 알아챘다.
-    //   기준을 코드에 박지 않고 **관측된 최댓값**으로 잡는다 — 웹 컨테이너는 agent/ 를 마운트하지
-    //   않으므로 저장소의 버전을 읽을 수 없고, 박아 두면 배포 때마다 두 곳을 고쳐야 한다.
-    //   (버전은 '2.10' > '2.9' 라 문자열 비교로는 틀린다 → version_compare)
-    $seen = $pdo->query(
-        "SELECT DISTINCT agent_version FROM tb_scan
-          WHERE agent_version IS NOT NULL AND agent_version <> '' AND is_deleted = 0"
-    )->fetchAll(PDO::FETCH_COLUMN);
+    /* 함대 최신 에이전트 버전 조회는 여기서 걷어냈다 — 에이전트 버전 열이 호스트 상세로
+     *   옮겨 갔고(vg_agent_fleet_latest() 를 그쪽에서 부른다), 목록이 안 쓰는 값을 위해
+     *   전 스캔의 DISTINCT 를 매 요청 돌릴 이유가 없다. '구버전' 신호 자체는 그대로 살아 있다. */
     /* 정보시스템 등급 — 여러 업무정보 등급이 한 시스템에 있으면 **최고등급을 승계**한다.
      *   여기서 "정보시스템"은 이 함대(자산 전체)다. 확정된 등급만 센다 — 제안값을 섞으면
      *   "시스템이 등급을 정했다"가 되어 사람 확정과의 경계가 무너진다.
@@ -212,10 +206,6 @@ try {
         'SELECT COUNT(*) FROM tb_host WHERE is_deleted = 0 AND grade IS NULL'
     )->fetchColumn();
 
-    $latestAgent = (string) array_reduce(
-        $seen,
-        static fn(?string $max, string $v) => ($max === null || version_compare($v, $max, '>')) ? $v : $max
-    );
 } catch (Throwable $e) {
     error_log('[assets] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';
@@ -241,6 +231,18 @@ vg_header('자산', 'assets');
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
   ]); ?>
+  <?php
+  /* 자산 한 대가 화면에 뜨기까지의 순서 — 에이전트가 붙고, 수집이 오고, 인벤토리가 쌓이고,
+   *   마지막에 사람이 등급을 확정한다. 마지막 칸만 사람 몫이라 그 칸을 active 로 세운다
+   *   (미확정이 0 이면 전부 끝난 것이므로 done). 숫자는 이미 위에서 센 값을 그대로 쓴다. */
+  vg_explain_flow([
+      ['icon' => 'feed',    'label' => '등록', 'state' => 'done'],
+      ['icon' => 'clock',   'label' => '수집', 'value' => number_format($stateCounts['ok']) . '대', 'state' => 'done'],
+      ['icon' => 'package', 'label' => '인벤토리', 'value' => number_format(array_sum($stateCounts)) . '대', 'state' => 'done'],
+      ['icon' => 'shield',  'label' => '등급', 'value' => $unconfirmed > 0 ? '미확정 ' . number_format($unconfirmed) : '확정 완료',
+       'state' => $unconfirmed > 0 ? 'active' : 'done'],
+  ], ['label' => '자산이 등록되어 등급이 확정되기까지']);
+  ?>
   <?php vg_subtabs([
       'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
       'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],
@@ -322,35 +324,20 @@ vg_header('자산', 'assets');
               . ' aria-label="이 페이지 전체 선택" title="이 페이지 전체 선택">',
       ];
   }
+  /* 열은 "이 행을 열어볼지 말지" 를 정하는 것만 남긴다(docs/dev/ui-design-system.md 의 목록·상세 분담).
+   *   여기서 뺀 다섯 열은 지운 게 아니라 호스트 상세(host.php)로 옮긴 것이다:
+   *     담당 부서 → 자산 설정 탭의 등급 검토 카드 · OS/IP/패키지 수/에이전트 버전 → 식별부(히어로) 메타.
+   *   에이전트 '구버전' 신호도 그 히어로 메타가 그대로 이어받는다(신호를 잃지 않는다). */
   $headers = array_merge($headers, [
-      // '노출' 열을 걷어내며 그 폭을 여기로 옮겼다(이 파일의 폭 배분 원칙: 남는 폭은 식별자가 갖는다).
-      ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '22%'],
+      // 뺀 열들의 폭은 남는 폭을 갖는 식별자(호스트)와 위험(심각도)이 가져간다.
+      ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '34%'],
       ['label' => '상태', 'key' => 'state', 'width' => '5.5rem', 'title' => $stateHelp],
       // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
       //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
       //   C/S/O 기호만 떠 있으면 뜻을 알 수 없어 열 이름에 한 줄 범례를 단다(어휘는 assetgrade.php 소유).
       ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem'],
-      /* 담당 부서 — 등급 검토에서 이미 받고 있던 값인데 그 폼 안에서만 보여, 목록에서는
-       *   "이 자산은 누가 책임지나" 를 알 수 없었다. 등급 옆이 제자리다(같은 검토 정보다).
-       *   자유 입력 문자열이라 길면 접히게 두고 폭은 % 로 준다. */
-      ['label' => '담당 부서', 'key' => 'dept', 'width' => '9%',
-       'title' => '자산 등급 검토에 기록된 소유 부서입니다.'],
-      ['label' => 'OS', 'key' => 'os', 'width' => '9%'],
-      /* IP 도 '줄바꿈 불가 고정 크기 값' 열이다(위 폭 배분 원칙) — 이 표에서만 <code> 를 칸 안에서
-       *   접게 뒀기 때문에(app.css 의 .page--assets .data-table td code) 9%(1061px 에서 76px)로는
-       *   IPv4 15자(약 105px)가 안 들어가 '10.3.142.20' 이 두 줄로 깨졌다. IP 는 식별자라
-       *   접히면 못 읽는다: 값 105 + 칸 여백(.6rem×2 ≈ 19) → 8rem. */
-      ['label' => 'IP', 'key' => 'ip', 'width' => '8rem', 'nowrap' => true],
-      ['label' => '에이전트', 'key' => 'agent_version', 'width' => '5rem'],
-      /* '노출'(리스닝 소켓 개수) 열은 뺐다 — 이 목록은 "어느 자산을 먼저 볼 것인가" 를 정하는
-       *   자리인데, 소켓 개수는 그 판단에 못 쓴다. 3개든 30개든 위험은 **어느 범위로 열렸는가**
-       *   (EXTERNAL/LAN/…)에서 갈리고 그 값은 여기 없다. 위험은 옆의 '심각도' 열이 말하고,
-       *   범위별 목록은 호스트 상세의 런타임 탭이 답한다. */
-      // 값은 짧은 숫자지만 **열 이름**('패키지', 약 45px)이 줄바꿈 불가라 폭 기준은 그쪽이다 —
-      //   5%(1440px 에서 66px)면 칸 여백(.6rem×2 ≈ 19px)까지 못 담아 머리글이 '패키 / 지' 로 접혔다.
-      ['label' => '패키지', 'key' => 'package_count', 'align' => 'right', 'width' => '4.5rem'],
-      ['label' => '심각도', 'key' => 'sev', 'width' => '13%'],
-      ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '12%', 'nowrap' => true],
+      ['label' => '심각도', 'key' => 'sev', 'width' => '22%'],
+      ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '14%', 'nowrap' => true],
   ]);
   // 액션 열만 % 가 아니라 rem 이다. 삭제 버튼은 폭이 늘 같은 고정 크기 조작부라 비율로 줄 이유가 없고,
   //   비율로 주면 표가 좁아질 때 버튼보다 좁아진다 — 실제로 900px 에서 9%(=51px)가 68px 버튼을
@@ -388,6 +375,18 @@ vg_header('자산', 'assets');
     </div>
   <?php endif; ?>
   <?php
+  /* 표의 '상태'·'등급' 열은 색으로 등급을 말하는데 그 색의 뜻이 화면 어디에도 없었다.
+   *   어휘는 VG_ASSET_STATES·VG_ASSET_GRADES 가 소유한다 — 여기서 분류표를 다시 적지 않는다.
+   *   톤은 위 KPI 카드($stateTone)·등급 뱃지와 같은 값을 쓴다(같은 값을 두 색으로 부르지 않는다). */
+  $gradeTone = ['C' => 'crit', 'S' => 'high', 'O' => 'low'];
+  vg_legend(array_map(
+      fn(string $k): array => ['label' => VG_ASSET_STATES[$k], 'tone' => $stateTone[$k]],
+      array_keys(VG_ASSET_STATES)
+  ), ['inline' => true, 'caption' => '수집 상태']);
+  vg_legend(array_map(
+      fn(string $g): array => ['label' => VG_ASSET_GRADES[$g], 'tone' => $gradeTone[$g]],
+      array_keys(VG_ASSET_GRADES)
+  ), ['inline' => true, 'caption' => '보안등급']);
 
   vg_table(
       $headers,
@@ -426,27 +425,6 @@ vg_header('자산', 'assets');
                   : vg_asset_grade_badge(
                       $r['grade_suggested'], true, (string) ($r['grade_suggested_reason'] ?? '')
                   ),
-              // 값이 없으면 '—' 하나 — 아직 검토가 안 된 자산이라는 뜻이다.
-              'dept'          => fn($r) => ($r['owning_department'] ?? '') !== ''
-                  ? vg_h((string) $r['owning_department'])
-                  : '<span class="why">—</span>',
-              'os'            => fn($r) => vg_h(trim($r['os_id'] . ' ' . $r['os_version'])) ?: '<span class="why">–</span>',
-              'ip'            => fn($r) => !empty($r['last_seen_ip'])
-                  ? '<code>' . vg_h((string) $r['last_seen_ip']) . '</code>'
-                  : '<span class="why">–</span>',
-              // 구버전 뱃지: 이 호스트만 옛 에이전트가 돈다는 뜻이다(중앙은 노드에 내려보내지 않는다).
-              //   갱신은 master 에서 `deploy/agent_push.sh <노드>` — 토큰·타이머는 건드리지 않는다.
-              'agent_version' => function ($r) use ($latestAgent) {
-                  if (!$r['agent_version']) { return '<span class="why">–</span>'; }
-                  $v   = (string) $r['agent_version'];
-                  $old = $latestAgent !== '' && version_compare($v, $latestAgent, '<');
-                  return '<code>' . vg_h($v) . '</code>'
-                       . ($old ? ' ' . vg_badge('구버전', 'med',
-                             "함대 최신은 {$latestAgent} — master 에서 deploy/agent_push.sh 로 갱신하세요") : '');
-              },
-              'package_count' => fn($r) => $r['scan_id'] !== null
-                  ? '<a href="/host.php?id=' . (int)$r['host_id'] . '&amp;tab=packages">' . number_format((int)$r['package_count']) . '</a>'
-                  : '<span class="why">–</span>',
               // 뱃지를 누르면 그 호스트·등급의 취약점 목록으로.
               'sev' => fn($r) => vg_sev_counts(
                   $sevByScan[(int) $r['scan_id']] ?? [],
@@ -473,6 +451,23 @@ vg_header('자산', 'assets');
     <?php vg_modal_open('bulkGrade', '선택 자산 등급 일괄 확정'); ?>
       <p class="why" data-bulk-summary>선택한 자산이 없습니다.</p>
 
+      <?php /* 등급 셋의 뜻은 문장이 아니라 세 칸으로 세운다 — 고르는 자리 바로 위에서
+               "무엇을 고르는 것인지" 가 색과 함께 읽혀야 한다. 칸의 순서 자체가 승계 규칙
+               (O < S < C — 오른쪽이 더 강한 보호)이고, 색은 등급 뱃지와 같은 톤을 쓴다.
+               어휘는 assetgrade.php(VG_ASSET_GRADES)가 소유한다 — 여기서 다시 적지 않는다.
+               두 번째 vg_explain_flow() 를 세우지 않는 건 도식은 화면당 하나라는 규칙 때문이다
+               (docs/dev/ui-design-system.md) — 상단 흐름 도식이 이미 이 화면의 하나다. */ ?>
+      <div class="cards">
+        <?php foreach (['O' => '공개해도 되는 정보', 'S' => '제한적으로 다루는 정보',
+                        'C' => '「정보공개법」 제9조 비공개 대상'] as $g => $note): ?>
+          <div class="kpi kpi--sm tone-<?= vg_h($gradeTone[$g]) ?>">
+            <b><?= vg_h($g) ?></b><span><?= vg_h(VG_ASSET_GRADES[$g]) ?></span>
+            <span class="why"><?= vg_h($note) ?></span>
+          </div>
+        <?php endforeach; ?>
+      </div>
+      <p class="why">한 정보시스템에 여러 등급이 섞이면 오른쪽(더 강한 보호)을 승계합니다.</p>
+
       <label for="bulk-criticality">중요도</label>
       <select id="bulk-criticality" name="criticality">
         <option value="">변경 안 함</option>
@@ -496,9 +491,10 @@ vg_header('자산', 'assets');
       <?php /* 판정 기준은 산문이 아니라 정의목록으로 준다 — 등급 어휘는 assetgrade.php 가 소유하고
                (같은 문자열을 화면마다 다시 적지 않는다), 나머지는 이 폼이 실제로 하는 일이다. */ ?>
       <dl class="criteria">
+        <?php /* 등급 어휘·기준은 바로 위 세 칸이 색과 함께 말한다 — 같은 말을 두 번 하지 않고,
+                 여기엔 그 칸에 못 담는 것(누가 확정하는가)만 남긴다. */ ?>
         <dt>보안등급</dt>
-        <dd>N2SF <?= vg_h(vg_asset_grade_legend()) ?> — 「정보공개법」 제9조 비공개 대상정보 해당 여부로 가릅니다.
-          등급 확정은 기관의 법적 처분이라 시스템이 대신하지 않습니다.</dd>
+        <dd>N2SF 등급 확정은 기관의 법적 처분이라 시스템이 대신하지 않습니다.</dd>
         <dt>중요도</dt>
         <dd>상 / 중 / 하 — 등급과 별개로 사람이 지정합니다. ‘변경 안 함’ 이면 지금 값을 그대로 둡니다.</dd>
         <dt>확정 범위</dt>

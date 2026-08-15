@@ -182,8 +182,19 @@ $check(!str_contains($assetsPhp, 'echo \'<a class="btn btn--sm btn--ghost" href=
 $ingestPhp = (string) file_get_contents($public . '/ingest.php');
 $caddyfile = (string) file_get_contents($root . '/deploy/caddy/Caddyfile');
 $agentSh = (string) file_get_contents($root . '/agent/vuln-inventory-agent.sh');
-$check(str_contains($assetsPhp, "['label' => 'IP'") && !str_contains($assetsPhp, "['label' => '스캔'"),
-    '자산 목록 IP 표시 및 스캔 열 제거');
+/* 목록은 "이 행을 열어볼지 말지" 를 정하는 열만 둔다(docs/dev/ui-design-system.md).
+ *   IP·OS·에이전트 버전·패키지 수·담당 부서는 **지운 게 아니라 호스트 상세로 옮겼다** —
+ *   목록에서 빠진 것과 상세에 있는 것을 한 쌍으로 확인한다(한쪽만 보면 값이 사라져도 통과한다). */
+$hostPhpSrc = (string) file_get_contents($public . '/host.php');
+$check(!str_contains($assetsPhp, "['label' => 'IP'") && !str_contains($assetsPhp, "['label' => '스캔'")
+    && !str_contains($assetsPhp, "['label' => 'OS'") && !str_contains($assetsPhp, "['label' => '에이전트'")
+    && !str_contains($assetsPhp, "['label' => '담당 부서'"),
+    '자산 목록에서 상세로 옮긴 열 제거(IP·OS·에이전트·담당 부서)');
+$check(str_contains($hostPhpSrc, "'IP ' . vg_h(\$host['last_seen_ip'])")
+    && str_contains($hostPhpSrc, "\$meta[] = '에이전트 <code>'")
+    && str_contains($hostPhpSrc, "vg_badge('구버전', 'med'")
+    && str_contains($hostPhpSrc, '<dt>소유 부서</dt>'),
+    '옮긴 값이 호스트 상세에 남아 있음(IP·OS·에이전트 구버전 신호·소유 부서)');
 $check(str_contains($ingestPhp, "vg_request_header('X-Real-IP')") && str_contains($caddyfile, 'header_up X-Real-IP {remote_host}'),
     'Caddy 원본 IP 전달과 ingest 저장 연계');
 $check(str_contains($agentSh, 'CPU_QUOTA="${CPU_QUOTA:-10%}"') && str_contains($agentSh, 'DO_LIMIT="${AGENT_LIMIT:-1}"'),
