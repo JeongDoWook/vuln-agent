@@ -19,6 +19,10 @@ set -eu
 case "${1:-}" in
   info) [ "${FAKE_DOCKER_UP:-1}" = 1 ] ;;
   inspect)
+    if [ -n "${EXPECTED_WEB_CONTAINER:-}" ] && [ "${*: -1}" != "$EXPECTED_WEB_CONTAINER" ]; then
+      echo "unexpected web container: ${*: -1}" >&2
+      exit 1
+    fi
     if printf '%s\n' "$*" | grep -q '/var/www/html'; then
       printf '%s/server\n' "$VG_GATE_ROOT"
     else
@@ -39,7 +43,12 @@ SH
 chmod +x "$TMP/bin/docker" "$TMP/bin/curl" "$TMP/pass.sh"
 
 run_gate() {
-  PATH="$TMP/bin:$PATH" VG_GATE_ROOT="$ROOT" VG_GATE_MIGRATE_SCRIPT="$TMP/pass.sh" \
+  local expected="vulnagent-web-dev"
+  if [ -f "$ROOT/.git" ]; then
+    gitdir=$(sed -n 's/^gitdir:[[:space:]]*//p' "$ROOT/.git" | tr '\\' '/')
+    case "$gitdir" in */worktrees/*) expected="$expected-$(basename "$gitdir")" ;; esac
+  fi
+  PATH="$TMP/bin:$PATH" EXPECTED_WEB_CONTAINER="$expected" VG_GATE_ROOT="$ROOT" VG_GATE_MIGRATE_SCRIPT="$TMP/pass.sh" \
     VG_GATE_SMOKE_SCRIPT="$TMP/pass.sh" VG_GATE_PHP_BIN=php \
     bash "$ROOT/deploy/run-gates.sh" --profile pre-push --json > "$TMP/result.json"
 }

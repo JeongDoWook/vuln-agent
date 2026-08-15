@@ -32,7 +32,15 @@ MIGRATION_TEST=${VG_GATE_MIGRATION_TEST:-$ROOT/tests/migration_rehearsal_test.sh
 BACKUP_TEST=${VG_GATE_BACKUP_TEST:-$ROOT/tests/backup_restore_test.sh}
 
 WT_NAME=""
-if [ "$(basename "$(dirname "$ROOT")")" = wt ]; then WT_NAME=$(basename "$ROOT"); fi
+# Docker Desktop에서 Git Bash의 pwd는 실제 Windows 경로 대신 내부 bind-mount
+# 경로로 보일 수 있다. linked worktree의 .git 파일은 이 경우에도 worktree
+# 이름을 안정적으로 보존하므로 그것을 우선 사용한다.
+if [ -f "$ROOT/.git" ]; then
+  gitdir=$(sed -n 's/^gitdir:[[:space:]]*//p' "$ROOT/.git" | tr '\\' '/')
+  case "$gitdir" in */worktrees/*) WT_NAME=$(basename "$gitdir") ;; esac
+elif [ "$(basename "$(dirname "$ROOT")")" = wt ]; then
+  WT_NAME=$(basename "$ROOT")
+fi
 WEB_CONTAINER=${VG_WEB_CONTAINER:-vulnagent-web-dev${WT_NAME:+-$WT_NAME}}
 DB_CONTAINER=${VG_DB_CONTAINER:-vulnagent-db-dev}
 if [ -z "$BASE" ]; then
@@ -57,14 +65,22 @@ normalize_path() {
 
 check_docker_engine() { "$DOCKER_BIN" info >/dev/null; }
 check_web_stack() {
-  local state mounted
+  local state mounted mounted_norm root_norm
   state=$("$DOCKER_BIN" inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Running}}{{end}}' "$WEB_CONTAINER") || return 1
   case "$state" in healthy|true) ;; *) echo "container $WEB_CONTAINER state=$state"; return 1 ;; esac
   mounted=$("$DOCKER_BIN" inspect -f '{{range .Mounts}}{{if eq .Destination "/var/www/html"}}{{.Source}}{{end}}{{end}}' "$WEB_CONTAINER") || return 1
   [ -n "$mounted" ] || { echo "container $WEB_CONTAINER has no /var/www/html mount"; return 1; }
-  [ "$(normalize_path "$mounted")" = "$(normalize_path "$ROOT/server")" ] || {
-    echo "container $WEB_CONTAINER mounts another tree: $mounted"; return 1;
-  }
+  mounted_norm=$(normalize_path "$mounted")
+  root_norm=$(normalize_path "$ROOT/server")
+  if [ "$mounted_norm" != "$root_norm" ]; then
+    # Docker Desktop가 같은 Windows 경로를 /mnt/c/... 와 내부 bind-mount
+    # 해시 경로 두 형태로 노출한다. 컨테이너명은 .git worktree id로 이미
+    # 고정했으므로 이 환경에서만 worktree/server 꼬리도 함께 대조한다.
+    case "$mounted_norm" in
+      */wt/"$WT_NAME"/server) [ -n "$WT_NAME" ] || return 1 ;;
+      *) echo "container $WEB_CONTAINER mounts another tree: $mounted"; return 1 ;;
+    esac
+  fi
   echo "container=$WEB_CONTAINER state=$state mount=$mounted"
 }
 check_web_http() {
