@@ -13,15 +13,72 @@
 #
 # 로컬 dev 에서 시험하려면:
 #   DB_CONTAINER=vulnagent-db-dev BACKUP_DIR=/tmp/vg-backup-test bash deploy/backup_db.sh
+# 기존 dump만 복원 검증하려면:
+#   bash deploy/backup_db.sh --verify /path/to/dump.sql.gz [db컨테이너명]
 # =============================================================================
 set -euo pipefail
 umask 077   # 이후 생성되는 모든 파일(LOCK, 덤프 .sql.gz)을 처음부터 소유자 전용 권한으로
 
-DB_CONTAINER="${DB_CONTAINER:-vulnagent-db}"
+VERIFY_FILE=""
+if [ "${1:-}" = "--verify" ]; then
+  VERIFY_FILE=${2:-}
+  [ -n "$VERIFY_FILE" ] || { echo "usage: backup_db.sh --verify DUMP [DB_CONTAINER]" >&2; exit 2; }
+  DB_CONTAINER=${3:-${DB_CONTAINER:-vulnagent-db}}
+else
+  DB_CONTAINER="${DB_CONTAINER:-vulnagent-db}"
+fi
 BACKUP_DIR="${BACKUP_DIR:-/apps/vulnagent/backups}"
 KEEP=7    # 매일 주기 기준 7일치 보관. vulnagent_*.sql.gz 패턴만 대상(수동 백업은 안 건드림).
           # 나이(mtime)가 아니라 **개수** 기준인 게 의도적이다 — 백업이 며칠 연속 실패해도
           # 마지막 7개는 남는다. 나이 기준이면 실패가 이어질 때 남은 것까지 다 지워 0개가 된다.
+
+container_database() {
+  local env_lines container_db requested
+  env_lines=$(docker inspect "$DB_CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}')
+  container_db=$(printf '%s\n' "$env_lines" | sed -n 's/^MYSQL_DATABASE=//p' | head -1)
+  requested=${MYSQL_DATABASE:-$container_db}
+  if [ -z "$container_db" ] || [ "$requested" != "$container_db" ]; then
+    echo "backup: MYSQL_DATABASE 불일치 또는 누락(요청=${requested:-none}, 컨테이너=${container_db:-none})" >&2
+    return 1
+  fi
+  case "$container_db" in ''|*[!A-Za-z0-9_]*) echo "backup: 안전하지 않은 MYSQL_DATABASE=$container_db" >&2; return 1 ;; esac
+  printf '%s\n' "$container_db"
+}
+
+root_mysql() {
+  docker exec -i "$DB_CONTAINER" sh -c \
+    'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot "$@"' _ "$@"
+}
+
+verify_restore() {
+  local dump="$1" source_db scratch core_count
+  [ -s "$dump" ] || { echo "backup verify: dump가 비었음($dump)" >&2; return 1; }
+  gzip -t "$dump" 2>/dev/null || { echo "backup verify: gzip 손상($dump)" >&2; return 1; }
+  source_db=$(container_database) || return 1
+  scratch="vg_restore_$(date +%Y%m%d%H%M%S)_$$"
+  root_mysql -e "CREATE DATABASE \`$scratch\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci" || return 1
+  if ! gzip -dc "$dump" | docker exec -i "$DB_CONTAINER" sh -c \
+      'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot "$1"' _ "$scratch"; then
+    root_mysql -e "DROP DATABASE IF EXISTS \`$scratch\`" >/dev/null 2>&1 || true
+    echo "backup verify: disposable DB restore 실패($scratch)" >&2
+    return 1
+  fi
+  core_count=$(root_mysql -N -B -e "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$scratch' AND TABLE_NAME IN ('tb_host','tb_scan')") || core_count=0
+  if ! root_mysql -e "DROP DATABASE IF EXISTS \`$scratch\`" >/dev/null; then
+    echo "backup verify: disposable DB cleanup 실패($scratch)" >&2
+    return 1
+  fi
+  if [ "$core_count" != 2 ]; then
+    echo "backup verify: core schema sanity 실패(tb_host/tb_scan=$core_count/2, source=$source_db)" >&2
+    return 1
+  fi
+  echo "backup verify: PASS dump=$(basename "$dump") disposable_db=$scratch core_tables=2/2"
+}
+
+if [ -n "$VERIFY_FILE" ]; then
+  verify_restore "$VERIFY_FILE"
+  exit $?
+fi
 
 mkdir -p "$BACKUP_DIR"
 
@@ -44,22 +101,30 @@ STAMP="$(date +%Y%m%d_%H%M%S)"
 OUT_FILE="$BACKUP_DIR/vulnagent_${STAMP}.sql.gz"
 
 fail() {
-  # 중간에 실패하면 쓰다 만 손상된 .sql.gz 가 남아 다음 정리 로직이 이걸 "최신 백업"으로
-  # 착각해 보관할 수 있다 — 실패 시에는 반드시 지운다.
-  rm -f "$OUT_FILE"
-  echo "$(date -Iseconds) FAIL $*" >> "$LOG_FILE"
+  # 실패 산출물은 정상 보관 패턴(vulnagent_*.sql.gz) 밖으로 격리한다. 자동 복구에는 쓰이지
+  # 않지만 restore 실패 원인 분석은 가능하고, 권한은 umask 077 그대로다.
+  failed_file=""
+  if [ -s "$OUT_FILE" ]; then
+    failed_file="$OUT_FILE.failed"
+    mv -f "$OUT_FILE" "$failed_file"
+  else
+    rm -f "$OUT_FILE"
+  fi
+  echo "$(date -Iseconds) FAIL $* quarantined=${failed_file:-none}" >> "$LOG_FILE"
   exit 1
 }
 
 trap 'fail "예상치 못한 오류(라인 $LINENO)"' ERR
 
+DB_NAME=$(container_database)
 docker exec "$DB_CONTAINER" sh -c \
-  'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysqldump --single-transaction --routines -uroot "$MYSQL_DATABASE"' \
+  'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysqldump --single-transaction --routines -uroot "$1"' _ "$DB_NAME" \
   | gzip > "$OUT_FILE"
 
 chmod 600 "$OUT_FILE"   # umask 077 로 이미 600 이지만 방어적으로 재확인
+verify_restore "$OUT_FILE" || fail "restore rehearsal 실패"
 SIZE=$(du -h "$OUT_FILE" | cut -f1)
-echo "$(date -Iseconds) OK size=$SIZE file=$(basename "$OUT_FILE")" >> "$LOG_FILE"
+echo "$(date -Iseconds) OK size=$SIZE file=$(basename "$OUT_FILE") restore=pass core_tables=2/2" >> "$LOG_FILE"
 
 # 보관 정책: vulnagent_*.sql.gz 중 최신 KEEP개만 남기고 삭제(수동 백업 pre_*.sql 은 패턴 밖).
 ls -1t "$BACKUP_DIR"/vulnagent_*.sql.gz 2>/dev/null | tail -n +$((KEEP + 1)) | while IFS= read -r old; do

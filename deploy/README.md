@@ -1,6 +1,6 @@
 # deploy — 배포 인프라
 
-> 문서 기준: 2026-08-09 · 운영 배포는 `update.sh`, 에이전트 일괄 설치는 `install_staged_agents.sh`가 정본이다.
+> 문서 기준: 2026-08-15 · 운영 배포는 `update.sh`, 에이전트 일괄 설치는 `install_staged_agents.sh`가 정본이다.
 
 중앙 서버(대시보드 + 수집 API)를 컨테이너로 띄우는 곳이다. compose 파일·러너·Caddy(HTTPS
 리버스 프록시)·마이그레이션 러너가 모두 여기 있다. **모든 명령은 `cd deploy` 후 실행한다.**
@@ -28,6 +28,11 @@ cd deploy
 갱신은 서버에서 `bash deploy/update.sh` 한 줄 — 바뀐 파일을 보고 재빌드/pull 을 스스로 고른다.
 **운영 중인 서버를 업데이트한다면** 문서 끝 [“지난 변경 — 운영 서버에서 1회 조치가 필요했던 것”](#지난-변경--운영-서버에서-1회-조치가-필요했던-것)
 을 먼저 확인한다.
+
+필수 운영 검증은 `bash deploy/run-gates.sh --profile central --json`으로 실행한다. 결과의 각
+check에는 `id`, `required`, `passed`, `duration_ms`, `evidence`가 있고, required 실패가 하나라도
+있으면 JSON의 `ok=false`와 종료코드 1이 함께 나온다. 로컬 pre-push도 같은 `deploy/gates.tsv`와
+runner를 사용하므로 Docker 미기동·현재 tree stack 불응·smoke 미실행을 성공 skip으로 바꾸지 않는다.
 
 ---
 
@@ -102,7 +107,8 @@ Caddy 루트는 10년짜리라 거의 바뀌지 않는다. `data`(caddy_data) �
 `deploy/backup_db.sh` 가 `vulnagent-db` 컨테이너 안에서 `mysqldump`(`--single-transaction
 --routines`)를 실행해 gzip 압축 후 `/apps/vulnagent/backups/vulnagent_YYYYMMDD_HHMMSS.sql.gz`
 로 저장한다. 비밀번호는 항상 컨테이너 안에서 `/run/secrets/mysql_root_password` 를 읽어 쓰고
-호스트엔 노출하지 않는다. 설치는 운영 서버 crontab 에 한 줄:
+호스트엔 노출하지 않는다. 생성 직후 임시 `vg_restore_*` DB에 복원하고 `tb_host`·`tb_scan`
+sanity check를 통과한 경우에만 `restore=pass`로 기록한다. 설치는 운영 서버 crontab 에 한 줄:
 
 ```bash
 crontab -e
@@ -120,6 +126,35 @@ crontab -e
 
 기존 수동 백업(`pre_content_*`, `pre_tb_*`)은 패턴이 달라 건드리지 않는다. 실행 결과는
 `$BACKUP_DIR/backup.log` 에 한 줄씩 쌓인다.
+
+### 복원 rehearsal과 실패 복구
+
+```bash
+# 기존 dump를 운영 DB에 덮어쓰지 않고 임시 DB로만 검증
+bash deploy/backup_db.sh --verify /apps/vulnagent/backups/vulnagent_YYYYMMDD_HHMMSS.sql.gz vulnagent-db
+```
+
+성공 기준은 gzip 무결성, 임시 DB restore, 핵심 테이블 2개 확인, 임시 DB 삭제가 모두 통과하는
+것이다. 실패 dump는 정상 보관 패턴 밖의 `.failed` 파일로 0600 격리되고 자동 정리·복구 대상에
+들어가지 않는다. `backup.log`의 실패 시각과 격리 파일을 보존해 원인을 조사한 뒤, 마지막
+`restore=pass` 백업으로 새 DB에 복원한다. 운영 schema에 직접 시험 복원하지 않는다.
+
+### migration preflight와 부분 실패 복구
+
+`deploy/migrate.sh`는 적용 전에 컨테이너의 `MYSQL_DATABASE`와 호출값 일치, DB 존재, 최소 1 GiB
+여유 공간, schema version을 확인한다. 운영 `update.sh`는 먼저 위 restore rehearsal을 통과한 새
+백업을 만들고 그 파일을 `MIGRATION_BACKUP_FILE`로 전달한다. 확인만 할 때는 다음처럼 실행한다.
+
+```bash
+MYSQL_DATABASE=vulnagent MIGRATION_REQUIRE_BACKUP=1 \
+MIGRATION_BACKUP_FILE=/apps/vulnagent/backups/vulnagent_YYYYMMDD_HHMMSS.sql.gz \
+bash deploy/migrate.sh vulnagent-db --preflight
+```
+
+DDL 적용 뒤 `tb_schema_migrations` 기록만 실패하면 스크립트는 성공으로 숨기지 않고 해당 파일명을
+출력한다. migration 파일은 `db/migrations/README.md` 규칙대로 멱등이므로 같은 명령을 재실행해
+DDL을 확인·재적용하고 이력을 기록한다. 재실행도 실패하거나 schema sanity가 맞지 않으면 서비스를
+확대 적용하지 말고, 직전 `restore=pass` 백업을 새 DB에 복원해 원인을 수정한 뒤 다시 진행한다.
 
 > cron 한 줄과 `KEEP` 은 **짝이다.** 한쪽만 바꾸면 보관 기간이 의도와 달라지므로
 > `deploy/backup_db.sh` 를 정답으로 보고 양쪽을 함께 맞춘다.

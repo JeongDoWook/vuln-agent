@@ -21,6 +21,20 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."   # 저장소 루트
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
 say() { printf "\n${C}== %s${N}\n" "$*"; }
 
+# 운영 migration은 직전에 만든 백업이 disposable schema 복원까지 통과해야 시작한다.
+# DDL 성공/이력 실패 뒤에는 migrate.sh를 같은 backup 증거로 재실행하면 멱등 복구된다.
+migrate_with_verified_backup() {
+  local latest
+  DB_CONTAINER=vulnagent-db BACKUP_DIR=/apps/vulnagent/backups bash deploy/backup_db.sh
+  latest=$(ls -1t /apps/vulnagent/backups/vulnagent_*.sql.gz 2>/dev/null | head -1)
+  if [ -z "$latest" ]; then
+    printf "${R}검증된 DB 백업을 찾을 수 없어 migration을 중단합니다.${N}\n" >&2
+    return 1
+  fi
+  MIGRATION_REQUIRE_BACKUP=1 MIGRATION_BACKUP_FILE="$latest" \
+    bash deploy/migrate.sh vulnagent-db
+}
+
 # 반영 방법은 셋으로 갈린다 — 뭉뚱그리면 쉘 스크립트 한 줄 고치고도 운영이 재빌드된다.
 #   1) 재빌드(--build)  : **이미지 안에 들어가는 것**만. Dockerfile, caddy(build: ./caddy).
 #   2) 재생성(up -d)    : compose 정의·바인드마운트되는 설정. 이미지는 그대로, 컨테이너만 다시.
@@ -68,7 +82,7 @@ if [ "$OLD" = "$NEW" ] && [ "$MOUNTED" = "yes" ]; then
   # (실제로 tb_package_summary 누락으로 packages.php 가 500 이었다). migrate.sh 는 파일명 기준
   # 멱등이라 적용할 게 없으면 즉시 끝난다 → "최신"이어도 항상 미적용분을 적용하고 나간다.
   if docker inspect vulnagent-db --format '{{.State.Status}}' 2>/dev/null | grep -q running; then
-    bash deploy/migrate.sh vulnagent-db
+    migrate_with_verified_backup
   fi
   exit 0
 fi
@@ -119,7 +133,7 @@ say "[4/6] DB 마이그레이션 (코드 반영보다 **먼저**)"
 # 반대로 스키마를 먼저 올리는 건 안전하다: 컬럼 추가·인덱스 확장은 옛 코드에 무해하다.
 MIGRATED=0
 if docker inspect vulnagent-db --format '{{.State.Status}}' 2>/dev/null | grep -q running; then
-  bash deploy/migrate.sh vulnagent-db
+  migrate_with_verified_backup
   MIGRATED=1
 else
   echo "  DB 컨테이너가 아직 없음 → 반영 후에 적용합니다."
@@ -165,7 +179,7 @@ docker ps --format '  {{.Names}}\t{{.Status}}' | grep vulnagent
 
 # DB 컨테이너가 없어서 [4/6] 에서 못 돌린 경우(최초 기동)만 여기서 적용한다.
 if [ "$MIGRATED" != 1 ]; then
-  bash deploy/migrate.sh vulnagent-db
+  migrate_with_verified_backup
 fi
 
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:8081/ || echo 000)
