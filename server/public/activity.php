@@ -122,6 +122,18 @@ try {
 vg_header('감사 로그', 'activity');
 ?>
   <?php vg_page_title('감사 로그', 'AUDIT', '접속기록 5요소를 기록합니다.'); ?>
+  <?php
+  // 접속기록 **5요소**는 규정 요건이고, 아래 표의 앞 다섯 열이 그 다섯 요소와 1:1 이다.
+  //   글로 "5요소를 기록합니다" 라고만 하면 어느 열이 무엇인지는 표를 읽어야 알 수 있었다 —
+  //   다섯 칸으로 세워 열 이름과 같은 말을 같은 순서로 보여준다(도식이 딱 맞는 유일한 화면).
+  vg_explain_flow([
+      ['icon' => 'clock',  'label' => '접속일시'],
+      ['icon' => 'shield', 'label' => '식별자'],
+      ['icon' => 'port',   'label' => '접속지 IP'],
+      ['icon' => 'host',   'label' => '처리 대상'],
+      ['icon' => 'check',  'label' => '수행업무'],
+  ], ['label' => '접속기록 5요소']);
+  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

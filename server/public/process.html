@@ -5,15 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>vuln-agent · 운영 흐름</title>
 <style>
+  /* 이 페이지는 로그인 없이 열리는 안내 화면이라 app.css 를 쓰지 않는다(세션·사이드바가 없다).
+     그래서 색·간격을 여기서 자급한다 — 대신 아이콘은 화면 안쪽(server/src/view/icons.php)과
+     같은 규약을 따른다: viewBox 0 0 24 24 · fill=none · stroke=currentColor · stroke-width 1.9.
+     currentColor 라 라이트/다크가 저절로 따라오고, 외부 폰트·스프라이트를 안 받는다(CSP·오프라인). */
   :root{color-scheme:light dark;--bg:#f4f6f8;--card:#fff;--text:#191f28;--muted:#5b6673;--line:#d9e0e8;--accent:#1b64da}
   @media(prefers-color-scheme:dark){:root{--bg:#101318;--card:#181d24;--text:#eef2f7;--muted:#a8b1bd;--line:#303946;--accent:#7eb2ff}}
   *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif}
   main{max-width:980px;margin:auto;padding:clamp(1rem,4vw,3rem)} header{margin-bottom:2rem} h1{margin:.2rem 0;font-size:clamp(2rem,5vw,3rem);letter-spacing:-.04em} .lead,.muted{color:var(--muted)}
-  .flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem;list-style:none;margin:0;padding:0}.operator-step{padding:1rem;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+  .flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem;list-style:none;margin:0;padding:0}
+  .operator-step{position:relative;padding:1rem;border:1px solid var(--line);border-radius:14px;background:var(--card)}
   .operator-step b{display:block;color:var(--accent);font-size:.82rem}.operator-step h2{margin:.25rem 0;font-size:1.12rem}.operator-step p{margin:.35rem 0;color:var(--muted);font-size:.92rem}
+  .ico{width:22px;height:22px;color:var(--accent);display:block;margin-bottom:.35rem}
+  /* 칸 사이의 화살표 — 관계지 내용이 아니라 낭독에서 뺀다(aria-hidden). 한 칸으로 접히는
+     좁은 화면에서는 방향이 세로로 바뀌므로 아예 숨긴다(가로 스크롤을 만들지 않는다). */
+  .arrow{position:absolute;left:-.62rem;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--muted)}
   .card{margin-top:1.2rem;padding:1rem 1.2rem;border:1px solid var(--line);border-radius:14px;background:var(--card)} code{font-family:ui-monospace,Consolas,monospace;background:var(--bg);padding:.08rem .3rem;border-radius:5px} a{color:var(--accent)}
   .links{display:flex;flex-wrap:wrap;gap:.7rem}.links a{padding:.5rem .7rem;border:1px solid var(--line);border-radius:8px;background:var(--card)}
-  @media(max-width:760px){.flow{grid-template-columns:1fr}.operator-step{min-height:0}}
+  .done{list-style:none;margin:0;padding:0}.done li{display:flex;gap:.6rem;align-items:flex-start;margin:.5rem 0}
+  .done .ico{flex:none;margin:.15rem 0 0}
+  @media(max-width:760px){.flow{grid-template-columns:1fr}.operator-step{min-height:0}.arrow{display:none}}
 </style>
 </head>
 <body>
@@ -26,40 +37,61 @@
 
   <ol class="flow" aria-label="운영자 4단계 흐름">
     <li class="operator-step">
+      <!-- 방패: 키·인증 -->
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5 4.5 5.8v5.5c0 4.6 3.2 8.9 7.5 10.2 4.3-1.3 7.5-5.6 7.5-10.2V5.8L12 2.5z"/></svg>
       <b>1 / 설치</b>
       <h2>키·파일·CA 준비</h2>
-      <p>호스트 전용 키를 발급하고 설치 스크립트와 루트 CA를 받은 뒤 대상 Linux 서버에 설치합니다.</p>
-      <p><a href="/assets.php#agentInstall">에이전트 설치 안내</a></p>
+      <p>호스트 전용 키를 발급하고 설치 스크립트와 루트 CA를 받아 대상 Linux 서버에 설치합니다. 키 원문은 발급 직후 한 번만 표시됩니다.</p>
+      <p><a href="/agent-tokens.php">에이전트 키 발급</a> · <a href="/assets.php#agentInstall">설치 안내</a></p>
     </li>
     <li class="operator-step">
+      <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 5 16 12 9 19"/></svg>
+      <!-- 바깥에서 흘러 들어오는 신호: 수집 -->
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5a8 8 0 0 1 8 8"/><path d="M4.5 4.5a15 15 0 0 1 15 15"/><circle cx="5.2" cy="18.8" r="1.6"/></svg>
       <b>2 / 수집</b>
       <h2>피드 동기화 + 자산 스캔</h2>
-      <p>커넥터는 CVE·KEV·EPSS·벤더 근거를 동기화합니다. 에이전트는 패키지·프로세스·노출·설정값을 자산 스캔으로 전송합니다.</p>
-      <p><a href="/connectors.php">피드 동기화</a> · <a href="/assets.php">자산 스캔 상태</a></p>
+      <p>커넥터는 CVE·KEV·EPSS·벤더 근거를 수집합니다. 에이전트는 패키지·프로세스·노출·설정값을 자산 스캔으로 전송합니다.</p>
+      <p><a href="/connectors.php">데이터 수집</a> · <a href="/assets.php">자산 스캔 상태</a></p>
     </li>
     <li class="operator-step">
+      <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 5 16 12 9 19"/></svg>
+      <!-- 경고 삼각형: 판정 결과 -->
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.29 3.86-8.4 14.55A2 2 0 0 0 3.62 21h16.76a2 2 0 0 0 1.73-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       <b>3 / 우선순위 확인</b>
       <h2>기한·KEV·노출 판단</h2>
-      <p>대시보드와 탐지 결과에서 기한 초과, KEV, 외부 노출, 재시작 필요 순으로 근거와 영향 대상을 확인합니다.</p>
-      <p><a href="/findings.php">탐지 결과</a></p>
+      <p>대시보드와 탐지 결과에서 기한 초과, KEV, 외부 노출, 재시작 필요 순으로 근거와 영향 대상을 확인합니다. 국내 공지는 보안 공지 화면이 내 자산 기준으로 먼저 보여 줍니다.</p>
+      <p><a href="/findings.php">탐지 결과</a> · <a href="/advisories.php">보안 공지</a></p>
     </li>
     <li class="operator-step">
+      <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 5 16 12 9 19"/></svg>
+      <!-- 체크: 조치·재검증 -->
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>
       <b>4 / 조치</b>
       <h2>수정 후 다시 자산 스캔</h2>
-      <p>패치·완화·격리·재시작을 수행하고 다음 자산 스캔에서 판정과 컴플라이언스 추이가 바뀌었는지 재검증합니다.</p>
-      <p><a href="/compliance.php">컴플라이언스 재검증</a></p>
+      <p>패치·완화·격리·재시작을 수행하고, 다음 자산 스캔에서 판정이 바뀌었는지 변화 추적과 컴플라이언스 추이로 재검증합니다.</p>
+      <p><a href="/changes.php">변화 추적</a> · <a href="/compliance.php">컴플라이언스</a></p>
     </li>
   </ol>
 
   <section class="card">
     <h2>완료를 판단하는 기준</h2>
-    <ul>
-      <li>설치: 자산 목록에 FQDN과 최신 수집 시각이 나타납니다.</li>
-      <li>피드 동기화: 커넥터의 마지막 성공 시각이 갱신됩니다.</li>
-      <li>자산 스캔: <code>tb_scan_run</code> 실행 이력과 필요 시 <code>tb_agent_command</code> 진행 상태가 남습니다.</li>
-      <li>조치: 새 자산 스캔에서 대상 판정이 해소되거나 남은 이유가 근거와 함께 표시됩니다.</li>
+    <ul class="done">
+      <li><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>
+        <span><strong>설치</strong> — 자산 목록에 FQDN과 최신 수집 시각이 나타나고, 에이전트 키의 마지막 수신 시각이 채워집니다.</span></li>
+      <li><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>
+        <span><strong>피드 동기화</strong> — 데이터 수집 화면에서 소스별 상태가 성공으로 바뀌고 다음 실행 시각이 갱신됩니다.</span></li>
+      <li><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>
+        <span><strong>자산 스캔</strong> — <code>tb_scan_run</code> 실행 이력이 남고, 필요하면 <code>tb_agent_command</code> 진행 상태로 확인합니다.</span></li>
+      <li><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>
+        <span><strong>조치</strong> — 새 자산 스캔에서 변화 추적에 '해결'로 잡히거나, 남은 이유가 근거와 함께 표시됩니다.</span></li>
     </ul>
     <p class="muted">systemd 환경은 정기·즉시·예약 실행과 중단을 지원합니다. cron 폴백은 정기수집만 가능하며 즉시·예약·중단 명령은 지원하지 않는다.</p>
+  </section>
+
+  <section class="card">
+    <h2>판정은 중앙에서 한다</h2>
+    <p class="muted">에이전트는 <strong>수집만</strong> 합니다. 취약 여부·심각도·조치 가능 여부는 중앙이 수집한 피드로 판정하므로, 대상 서버에 판정 기준을 배포하거나 맞출 필요가 없습니다. 그래서 2단계의 두 작업(피드 동기화·자산 스캔)이 모두 최신이어야 3단계의 판정이 최신입니다.</p>
+    <p class="muted">보안설정 점검(CCE)도 같습니다 — 자산에서 설정값을 수집하고, PASS·FAIL·NA 판정은 중앙의 점검 항목 정의가 내립니다. 수집이 안 된 항목은 PASS 가 아니라 NA(판정 불가)로 남습니다.</p>
   </section>
 
   <section class="card">

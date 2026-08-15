@@ -66,6 +66,15 @@ vg_header('권한', 'permissions');
     <?php /* 예전엔 같은 설명이 세 겹이었다(제목 밑 문구·이 줄·표 아래 안내 카드). 한 줄로 합치고,
              "관리자는 항상 허용" 은 표의 [✔ 항상] 뱃지가 이미 말하므로 뺐다.
              관리자 전용 메뉴가 표에 없는 것은 여기서만 밝힌다 — 옛 안내는 '권한설정' 하나만 적어 틀렸다. */ ?>
+    <?php
+    // 화면 오리엔테이션 도식 — 이 매트릭스가 정하는 것은 가운데 한 칸(역할 → 메뉴)뿐이다.
+    //   사용자에게 어느 역할을 줄지는 사용자 화면이 정한다. 두 화면의 경계를 먼저 세운다.
+    vg_explain_flow([
+        ['icon' => 'shield', 'label' => '사용자',   'state' => 'done'],
+        ['icon' => 'check',  'label' => '역할',     'value' => number_format(count(VG_PERM_ROLES) + 1) . '종', 'state' => 'done'],
+        ['icon' => 'block',  'label' => '메뉴 접근', 'value' => number_format(count($menus)) . '개', 'state' => 'active'],
+    ], ['label' => '접근권한 흐름']);
+    ?>
     <div class="sub">admin 전용 · 관리자 전용 메뉴(권한·설정)는 위임할 수 없어 표에서 빠집니다</div>
 
     <?php vg_alert($msg, 'ok'); vg_alert($err); ?>

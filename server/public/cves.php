@@ -148,7 +148,26 @@ vg_header('CVE 카탈로그', 'cves');
       echo '<a class="pill' . ($on ? ' pill--on' : '') . '" href="/cves.php' . $href . '">' . vg_h($label) . '</a>';
   }
   echo '</div>';
+
+  /* 이 목록의 CVE 가 어디서 와서 어디로 가는지 — 카탈로그는 '수집한 전부'이고, 내 자산에
+   *   해당하는 것만 탐지 결과로 넘어간다. 그 경계를 문장 대신 도식으로 세운다(부제는 그대로 짧게).
+   *   숫자는 이미 센 값($total)만 쓰고 새 쿼리를 만들지 않는다. */
+  vg_explain_flow([
+      ['icon' => 'cve',     'label' => '공개', 'state' => 'done'],
+      ['icon' => 'feed',    'label' => '수집', 'value' => number_format($total) . '건', 'state' => 'done'],
+      ['icon' => 'package', 'label' => '매칭', 'state' => 'todo'],
+      ['icon' => 'shield',  'label' => '판정', 'state' => 'todo'],
+  ], ['label' => 'CVE 가 공개되어 내 자산에 판정되기까지']);
   ?>
+  <?php /* 표의 심각도 뱃지는 CVSS 에서 파생된 색이다 — 그 색의 뜻과 '미평가'(점수 미수집)를
+           함께 세운다. 미평가는 "위험하지 않음"이 아니라 아직 등급을 못 매긴 상태다. */ ?>
+  <?php vg_legend(array_merge(
+      array_map(
+          fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s)],
+          ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+      ),
+      [['label' => '미평가 · 점수 미수집', 'tone' => 'muted']]
+  ), ['inline' => true, 'caption' => '심각도']); ?>
   <?php vg_toolbar([
       // 탭 선택은 폼 밖에 있다 → 히든으로 실어야 검색·정렬 후에도 탭이 유지된다.
       ['type' => 'hidden', 'name' => 'kev',  'value' => $kev],

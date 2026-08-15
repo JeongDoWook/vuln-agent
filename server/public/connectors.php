@@ -133,6 +133,17 @@ vg_header('데이터 수집', 'connectors');
       'actions' => vg_capture(static fn() => vg_modal_btn('connModal', '+ 데이터 소스 추가')),
   ]); ?>
 
+  <?php
+  // 화면 오리엔테이션 도식 — 이 화면의 표는 "소스" 목록이지 결과가 아니다. 수집한 것이
+  //   어디로 흘러가 무엇이 되는지(카탈로그)를 먼저 세워 두면, 왜 여기서 [실행]을 누르는지가 잡힌다.
+  vg_explain_flow([
+      ['icon' => 'feed',    'label' => '외부 피드', 'value' => number_format(count($connectors)) . '종', 'state' => 'done'],
+      ['icon' => 'clock',   'label' => '수집',      'state' => 'done'],
+      ['icon' => 'process', 'label' => '정규화',    'state' => 'done'],
+      ['icon' => 'cve',     'label' => '카탈로그',  'state' => 'active'],
+  ], ['label' => '데이터 수집 흐름']);
+  ?>
+
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <?php
@@ -288,6 +299,15 @@ vg_header('데이터 수집', 'connectors');
   $curMeta = $typeMeta[$curType];
   // 이 타입이 안 읽는 필드는 아예 숨긴다 — 예전엔 전 타입에 다 띄우고 라벨의 괄호로 변명했다.
   $fieldOn = fn(string $f): string => in_array($f, $curMeta['fields'], true) ? '' : ' hidden';
+
+  // 폼 위 한 줄 도식 — 이 모달이 무엇을 묻는 폼인지(주소·인증·매핑·주기) 필드보다 먼저 말한다.
+  //   필드는 타입에 따라 숨겨졌다 나타나서, 처음 여는 사람은 "지금 뭘 채우는 중인지" 를 잃는다.
+  vg_explain_flow([
+      ['icon' => 'feed',    'label' => '엔드포인트'],
+      ['icon' => 'shield',  'label' => '인증'],
+      ['icon' => 'process', 'label' => '매핑'],
+      ['icon' => 'clock',   'label' => '주기'],
+  ], ['label' => '데이터 소스 설정 순서']);
   ?>
     <?php /* .setting-form + .field — 라벨과 입력이 한 칸(.45rem) 안에서 붙고 항목끼리는 1rem 으로
              벌어진다(host.php 자산등급 폼과 같은 규약). 두 가지를 지킨다:

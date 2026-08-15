@@ -307,6 +307,24 @@ if (!empty($container['workload_ref'])) { $meta[] = '워크로드 ' . vg_h((stri
 $meta[] = '최신 수집 ' . vg_h((string) $scan['collected_at']);
 
 vg_hero(vg_h((string) $container['cid']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'CONTAINER');
+
+/* 이 컨테이너가 어디에 들어 있는지 — 호스트 안의 한 칸이고, 그 안에 패키지가 있고, 그중
+ *   일부가 취약점으로 판정되며, 일부만 밖에서 닿는다. 첫 칸이 부모(호스트) 자리라 host.php 의
+ *   같은 도식과 계층이 이어진다. 숫자는 위에서 이미 센 값만 쓴다. */
+vg_explain_flow([
+    ['icon' => 'host',      'label' => '호스트', 'state' => 'done'],
+    ['icon' => 'container', 'label' => '컨테이너', 'state' => 'active'],
+    ['icon' => 'package',   'label' => '패키지', 'value' => number_format($packageTotal), 'state' => 'done'],
+    ['icon' => 'cve',       'label' => '취약점', 'value' => number_format($vulnTotal), 'state' => 'done'],
+    ['icon' => 'port',      'label' => '노출', 'value' => number_format($exposureCount),
+     'state' => $externalFindings > 0 ? 'active' : 'done'],
+], ['label' => '호스트 안에서 이 컨테이너의 자리']);
+
+/* 심각도 색의 뜻 — 아래 KPI 카드와 취약점 표가 모두 이 색으로 서열을 말한다. */
+vg_legend(array_map(
+    fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $counts[$s]],
+    ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+), ['inline' => true, 'caption' => '심각도']);
 ?>
 
 <?php /* 이미지 다이제스트·SBOM 해시는 길어서 히어로 한 줄에 못 넣는다 — "이 이미지가 정확히
@@ -504,6 +522,11 @@ vg_toolbar([
   <div class="card">
     <strong>런타임 노출</strong>
     <span class="why">— 이 컨테이너가 연 포트. 호스트로 포워딩된 포트는 밖에서 그대로 닿는다</span>
+    <?php /* 범위 뱃지의 색 뜻 — 어휘는 vg_scope_label(), 톤은 위 $scopeTone(호스트 상세와 같은 표)이다. */ ?>
+    <?php vg_legend(array_map(
+        fn(string $sc): array => ['label' => vg_scope_label($sc), 'tone' => $scopeTone[$sc]],
+        array_keys($scopeTone)
+    ), ['inline' => true, 'caption' => '노출 범위']); ?>
     <div class="card__body">
     <?php
     vg_table(

@@ -21,6 +21,21 @@ RUN { \
       echo 'date.timezone=Asia/Seoul'; \
     } > /usr/local/etc/php/conf.d/vulnagent.ini
 
+# ETag 조건부 요청이 304 를 돌려주게 한다.
+#   기본값(DeflateAlterETag AddSuffix)은 gzip 응답의 ETag 에 "-gzip" 을 **붙여 내보내면서**
+#   If-None-Match 비교는 접미사 없는 원본 ETag 로 한다. 그래서 브라우저가 방금 받은 ETag 를
+#   그대로 되보내도 **절대 안 맞아 매번 200 + 본문 전체**가 나간다.
+#   실측(dev, Caddy 없이 Apache 단독, /assets/app.css):
+#     받은 ETag "234b6-659153d45a1d5-gzip" 그대로 재요청 → 200 OK (본문 41KB 재전송)
+#     "-gzip" 을 뗀 "234b6-659153d45a1d5" 로 재요청     → 304 Not Modified
+#     If-Modified-Since 는 원래부터 304 (즉 ETag 경로만 깨져 있었다)
+#   NoChange 로 두면 압축 여부와 무관하게 같은 ETag 를 쓰므로 매칭이 성립한다.
+#   표현이 달라도 ETag 가 같아지는 문제는 Apache 가 함께 내보내는 `Vary: Accept-Encoding`
+#   (실측 확인)이 중간 캐시에서 처리한다.
+RUN a2enmod deflate \
+ && { echo 'DeflateAlterETag NoChange'; } > /etc/apache2/conf-available/vulnagent-etag.conf \
+ && a2enconf vulnagent-etag
+
 # 실제 소스는 compose 의 볼륨 마운트로 덮어씌워지지만,
 # 볼륨 없이 이미지만으로도 동작하도록 복사해 둔다.
 COPY . /var/www/html/

@@ -80,7 +80,16 @@ vg_header('사용자', 'users');
       'count' => $total, 'count_label' => '명',
       'actions' => vg_capture(static fn() => vg_modal_btn('addUser', '+ 사용자 추가')),
   ]); ?>
-  <div class="sub">admin 전용 · 역할 변경·비밀번호 초기화·삭제는 아이디를 눌러 상세에서</div>
+  <?php
+  // 화면 오리엔테이션 도식 — 이 화면은 사용자를 만들 뿐이고, 그 사용자가 무엇을 볼 수 있는지는
+  //   역할이 정하고 역할별 메뉴는 권한 화면이 정한다. 세 화면의 관계를 여기서 한 줄로 세운다.
+  vg_explain_flow([
+      ['icon' => 'shield', 'label' => '사용자',   'value' => number_format($total) . '명', 'state' => 'active'],
+      ['icon' => 'check',  'label' => '역할',     'value' => number_format(count(VG_ROLES)) . '종', 'state' => 'done'],
+      ['icon' => 'block',  'label' => '메뉴 접근', 'state' => 'done'],
+  ], ['label' => '접근권한 흐름']);
+  ?>
+  <div class="sub">admin 전용 · 역할 변경·비밀번호 초기화·삭제는 아이디를 눌러 상세에서 · 역할별 메뉴 접근 범위는 권한 화면에서</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
@@ -133,6 +142,23 @@ vg_header('사용자', 'users');
   // 추가 폼은 자주 쓰는 게 아니라 목록 아래 펼쳐둘 이유가 없다 → 버튼 뒤 모달로.
   // 추가에 실패했으면(중복 아이디·짧은 비번) 다시 열어 준다 — 안 그러면 뭐가 틀렸는지 못 보고 입력도 잃는다.
   vg_modal_open('addUser', '사용자 추가', '', $addFailed);
+  /* 역할 3종의 접근 범위를 폼 위에 3칸 카드로 세운다. 예전엔 이 정보가 select 의
+     옵션 문구('운영자 (피드)') 안에만 있어서, 목록을 펼치기 전에는 셋의 차이를 비교할 수
+     없었다 — 고르기 전에 비교하는 값이라 폼 위에 펼쳐 둔다.
+     문구는 vg_role_label()/VG_ROLE_DESCRIPTIONS 가 SSOT 다(여기서 다시 쓰지 않는다).
+     .stat-grid 는 auto-fit 이라 좁은 화면에서 스스로 1~2칸으로 접힌다. */
+  $roleScope = [
+      'admin'    => '모든 화면과 설정 — 사용자·권한·판정 기준까지',
+      'operator' => '탐지·자산·수집 운영 — 사용자·권한 설정은 제외',
+      'user'     => '조회 전용 — 수집 실행이나 설정 변경은 불가',
+  ];
+  echo '<div class="stat-grid">';
+  foreach (VG_ROLES as $roleCode) {
+      echo '<div class="stat"><span class="stat__val">' . vg_h(vg_role_label($roleCode))
+         . ' <span class="why">' . vg_h(VG_ROLE_DESCRIPTIONS[$roleCode] ?? '') . '</span></span>'
+         . '<span class="why">' . vg_h($roleScope[$roleCode] ?? '') . '</span></div>';
+  }
+  echo '</div>';
   ?>
     <?php /* 라벨-입력 짝은 .setting-form/.field 규약으로 묶는다(host.php·activity.php 와 동일). */ ?>
     <form method="post" class="setting-form">

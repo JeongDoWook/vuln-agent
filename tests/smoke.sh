@@ -743,7 +743,11 @@ assert_contains "$hostmanage" 'name="action" value="host_set_grade"' "자산 설
 hostvuln=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 assert_not_contains "$hostvuln" 'name="action" value="agent_run_now"' "첫 화면(취약점 탭)엔 수집 설정 폼이 없다"
 assert_contains "$hostvuln" 'tab=manage' "첫 화면에서 자산 설정 탭으로 갈 수 있다"
-assert_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=packages" "자산 목록 패키지 수가 설치 패키지 탭에 연결"
+# 패키지 수 열도 상세로 내려갔다(목록은 열어볼지 말지를 정하는 열만 둔다) — 링크는 호스트
+#   상세 식별부의 '패키지 N개' 가 그대로 갖는다. 목록에서 뺀 값이 상세에 있는지 같이 확인한다.
+assert_not_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=packages" "자산 목록 패키지 수 열을 상세로 이동"
+assert_contains "$hostvuln" "tab=packages" "호스트 상세 식별부에 설치 패키지 진입 유지"
+assert_contains "$hostvuln" "에이전트 <code>" "호스트 상세에 에이전트 버전 표시(목록에서 옮겨온 값)"
 # '노출'(리스닝 소켓 수) 열은 자산 목록에서 걷어냈다 — 개수로는 우선순위를 못 정하고,
 #   범위(EXTERNAL/LAN/…)별 목록은 호스트 상세의 런타임 탭이 답한다. 그 탭 자체는 그대로 산다.
 assert_not_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=runtime" "자산 목록에 노출 수 열이 없다"

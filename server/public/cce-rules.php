@@ -139,8 +139,17 @@ vg_header('CCE 카탈로그', 'cce_rules');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
-  <p class="sub">점검 항목 <?= number_format($ruleTotal) ?>개 · 최신 스캔 기준으로 판정된 자산
-    <?= number_format($checkedHosts) ?>대입니다. 준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
+  <?php
+  // 화면 오리엔테이션 도식 — 항목 수·자산 수는 이 도식이 값 슬롯으로 갖는다(같은 수를
+  //   아래 문장에서 또 세지 않는다). 마지막 칸이 이 화면의 답이다: 자산별 PASS/FAIL/NA.
+  vg_explain_flow([
+      // value 슬롯은 큰 글씨(숫자용)라 긴 문자열을 넣지 않는다 — 기준 이름은 짧게 'SSG' 만.
+      ['icon' => 'shield', 'label' => '기준',      'value' => 'SSG', 'state' => 'done'],
+      ['icon' => 'check',  'label' => '점검 항목', 'value' => number_format($ruleTotal) . '개', 'state' => 'done'],
+      ['icon' => 'host',   'label' => '자산 판정', 'value' => number_format($checkedHosts) . '대', 'state' => 'active'],
+  ], ['label' => '보안설정 점검 흐름']);
+  ?>
+  <p class="sub">준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
   <?php
   $frameworks = vg_control_frameworks();
   $fwShort    = vg_control_framework_short();
@@ -159,7 +168,9 @@ vg_header('CCE 카탈로그', 'cce_rules');
           ['label' => 'CCE 코드', 'width' => '14%', 'class' => 'col-id'],
           ['label' => '점검 항목'],
           ['label' => '심각도', 'width' => '6.5rem'],
-          ['label' => '무엇을 보는가'],
+          // '무엇을 보는가'(점검 요약)는 **문장**이 들어가는 칸이라 표 셀 규칙을 깼다 — 행마다
+          //   높이가 달라지고 옆의 식별자·판정이 밀렸다. 목록에서 빼고 상세가 갖는다
+          //   (cce-rule.php 의 '무엇을 보는가' dt/dd). 검색 대상($haystack)에는 그대로 남는다.
           ['label' => '기준 매핑', 'width' => '18%'],
           ['label' => '현재 판정', 'width' => '15%'],
       ],
@@ -182,11 +193,8 @@ vg_header('CCE 카탈로그', 'cce_rules');
                             . '<code class="why">' . vg_h((string) $r['code']) . '</code></a>',
               1 => fn($r) => '<a href="' . vg_h($detailHref($r)) . '">' . vg_h((string) $r['title']) . '</a>',
               2 => fn($r) => vg_badge((string) $r['severity'], vg_sev_tone((string) $r['severity'])),
-              3 => fn($r) => '<span class="why">'
-                            . ($r['summary'] !== '' ? vg_h((string) $r['summary']) : '설명 준비 중')
-                            . '</span>',
               // 기준 문자열은 tb_control_mapping 이 정본이다 — 화면은 조회한 값만 찍는다.
-              4 => function ($r) use ($frameworks, $fwShort) {
+              3 => function ($r) use ($frameworks, $fwShort) {
                   if (!$r['mapping']) { return '<span class="why">자체 기준</span>'; }
                   $out = [];
                   foreach ($r['mapping'] as $fw => $items) {
@@ -201,7 +209,7 @@ vg_header('CCE 카탈로그', 'cce_rules');
                   }
                   return implode(' ', $out);
               },
-              5 => function ($r) {
+              4 => function ($r) {
                   if ((int) $r['result_cnt'] === 0) { return vg_badge('점검 결과 없음', 'muted'); }
                   $cnt  = (int) $r['result_cnt'];
                   $fail = (int) $r['fail_cnt'];
@@ -217,6 +225,14 @@ vg_header('CCE 카탈로그', 'cce_rules');
           ],
       ]
   );
+  // '현재 판정' 칸의 색이 무슨 뜻인지 한 줄로. 색 정의는 위 셀 콜백과 같은 규칙이다
+  //   (FAIL 있으면 crit · 없고 판정 불가만 있으면 med · 전건 PASS 면 ok · 결과 자체가 없으면 muted).
+  vg_legend([
+      ['label' => 'FAIL 있음',    'tone' => 'crit'],
+      ['label' => '판정 불가(NA)', 'tone' => 'med'],
+      ['label' => '전건 PASS',    'tone' => 'ok'],
+      ['label' => '점검 결과 없음', 'tone' => 'muted'],
+  ], ['inline' => true, 'caption' => '현재 판정']);
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 <?php endif; ?>

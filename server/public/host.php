@@ -159,6 +159,7 @@ $agentErr = $agentFlash['agentErr'] ?? null;
 $agentCsrf = vg_csrf_token();
 
 $err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null; $approver = null; $gradeReview = [];
+$latestAgent = '';   // 함대에서 관측된 최신 에이전트 버전('구버전' 판정 기준)
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 $missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단계(한글 라벨)
 $missingStageCodes = []; // 같은 것의 원본 코드 — 화면이 "이 항목이 미수집인가"를 물을 때 쓴다
@@ -965,12 +966,27 @@ try {
 
         // 컬럼을 못 박는 이유: tb_scan.raw_json 은 호스트당 MB 단위(실측 3.14MB)라
         // SELECT * 로 끌면 ORDER BY 의 정렬 버퍼(운영 sort_buffer_size=2M)를 한 행만으로도 넘겨 1038 이 난다.
-        $st = $pdo->prepare('SELECT scan_id, collected_at, package_count,
+        // agent_version 은 자산 목록에서 이 화면으로 옮겨 온 값이다(목록은 열어볼지 말지를
+        //   정하는 열만 둔다) — 식별부에서 '이 자산이 무엇인가'의 일부로 보여준다.
+        $st = $pdo->prepare('SELECT scan_id, collected_at, package_count, agent_version,
                                     integrity_checked, integrity_partial, integrity_total,
                                     TIMESTAMPDIFF(MINUTE, collected_at, NOW()) AS age_min
                                FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT 1');
         $st->execute([$hostId]);
         $scan = $st->fetch() ?: null;
+
+        /* 함대에서 관측된 가장 높은 에이전트 버전 — 이보다 낮으면 이 호스트만 옛 에이전트가
+         *   돈다는 뜻이다. 중앙은 노드에 내려보내지 않으므로(노드가 밀어 올리기만 한다) 에이전트를
+         *   고쳐도 각 노드에 다시 깔 때까지 옛 코드가 계속 돈다 — 실제로 몇 주를 못 알아챈 적이 있어
+         *   숫자만이 아니라 '구버전' 신호가 필요하다. 기준을 코드에 박지 않고 관측된 최댓값으로
+         *   잡는다(웹 컨테이너는 agent/ 를 마운트하지 않아 저장소 버전을 읽을 수 없다).
+         *   버전은 '2.10' > '2.9' 라 문자열 비교로는 틀린다 → version_compare. */
+        $latestAgent = (string) array_reduce(
+            $pdo->query("SELECT DISTINCT agent_version FROM tb_scan
+                          WHERE agent_version IS NOT NULL AND agent_version <> '' AND is_deleted = 0"
+            )->fetchAll(PDO::FETCH_COLUMN),
+            static fn(?string $max, string $v) => ($max === null || version_compare($v, $max, '>')) ? $v : $max
+        );
     }
 
     if ($scan) {
@@ -1224,6 +1240,15 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
    *   진입점은 '구성 > 설치 패키지' 탭 한 곳으로 모은다. 링크 자체는 그 탭에 그대로 있다
    *   (엣지가 있는 자산에만 — 없는 자산에 걸면 빈 화면으로 보내게 된다). */
   if (!empty($host['last_seen_ip'])) { $meta[] = 'IP ' . vg_h($host['last_seen_ip']); }
+  /* 에이전트 버전 — 자산 목록에서 내려온 값이다. 숫자만으론 그게 최신인지 알 수 없어
+   *   목록이 달고 있던 '구버전' 뱃지도 같이 가져온다(신호를 옮기는 것이지 없애는 게 아니다). */
+  if (!empty($scan['agent_version'])) {
+      $av  = (string) $scan['agent_version'];
+      $old = $latestAgent !== '' && version_compare($av, $latestAgent, '<');
+      $meta[] = '에이전트 <code>' . vg_h($av) . '</code>'
+          . ($old ? ' ' . vg_badge('구버전', 'med',
+                "함대 최신은 {$latestAgent} — master 에서 deploy/agent_push.sh 로 갱신하세요") : '');
+  }
   /* 자산 등급은 설정 탭으로 내려갔지만 "이 자산이 무엇인가"의 일부라 식별부에 남긴다 —
    *   옮기는 것이지 지우는 것이 아니다. 미확정이면 확정하러 갈 자리를 링크로 준다. */
   $meta[] = ($host['grade'] ?? '') !== ''
@@ -1284,6 +1309,21 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
           'hints' => $stageHints,
       ]);
   }
+  ?>
+
+  <?php
+  /* 이 화면이 무엇을 담고 있는지 — 호스트 안에 컨테이너가 있고, 그 안에 패키지가 있고,
+   *   그중 일부가 실제로 돌고 있으며(프로세스), 그중 일부만 밖에서 닿는다(노출).
+   *   아래 탭들이 그 순서 그대로 서 있다 — 도식은 탭의 지도이지 새 정보가 아니다.
+   *   숫자는 이미 센 값을 그대로 쓴다(다시 세지 않는다). */
+  vg_explain_flow([
+      ['icon' => 'host',      'label' => '호스트', 'state' => 'done'],
+      ['icon' => 'container', 'label' => '컨테이너', 'value' => number_format($containerTotal), 'state' => 'done'],
+      ['icon' => 'package',   'label' => '패키지', 'value' => number_format($packageTotal), 'state' => 'done'],
+      ['icon' => 'process',   'label' => '프로세스', 'value' => number_format($processCount), 'state' => 'done'],
+      ['icon' => 'port',      'label' => '노출', 'value' => number_format($exposureCount),
+       'state' => $externalFindings > 0 ? 'active' : 'done'],
+  ], ['label' => '호스트 안의 계층']);
   ?>
 
   <div class="cards">
@@ -1546,6 +1586,38 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
         ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
     ]); ?>
+    <?php
+    /* 이 자산의 판단 신호 네 축 — 노출→악용→등급→조치 순서는 vg_signal_slots() 가 고정한다.
+     *   값은 위에서 이미 센 것만 쓰고 **없는 축을 추정해 만들지 않는다**(수집이 없으면 unknown).
+     *   행마다 이 네 칸을 그리지 않는 이유: .signal-slots 는 min-width 18rem 이라 폭이 고정된
+     *   목록 표의 한 칸에 넣으면 표가 가로로 넘친다(app.css 는 이 작업에서 못 고친다).
+     *   그래서 축은 카드 하나로 자산 전체를 말하고, 행별 값은 아래 표의 '등급·상태' 칸이 말한다. */
+    $signalExposure = $externalFindings > 0
+        ? ['value' => '외부 ' . number_format($externalFindings) . '건', 'tone' => 'crit']
+        : ($exposureCount > 0
+            ? ['value' => '내부만', 'tone' => 'ok']
+            : ['value' => '노출 없음', 'tone' => 'ok']);
+    if ($vulnTotal === 0 && $exposureCount === 0) { $signalExposure = ['state' => 'unknown']; }
+    $signalAction = $restartTotal > 0
+        ? ['value' => '재시작 ' . number_format($restartTotal) . '건', 'tone' => 'med']
+        : ($critHighTotal > 0
+            ? ['value' => '업데이트 ' . number_format($critHighTotal) . '건', 'tone' => 'high']
+            : ['value' => '대기 없음', 'tone' => 'ok']);
+    vg_signal_slots([
+        'exposure' => $signalExposure,
+        'exploit'  => $kevCount > 0
+            ? ['value' => 'KEV ' . number_format($kevCount) . '건', 'tone' => 'crit']
+            : ['value' => '확인 안 됨', 'tone' => 'ok'],
+        'severity' => $worst !== null
+            ? ['value' => $worst, 'tone' => vg_sev_tone($worst)]
+            : ['value' => '양호', 'tone' => 'ok'],
+        'action'   => $signalAction,
+    ]);
+    ?>
+    <?php vg_legend(array_map(
+        fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $counts[$s]],
+        ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+    ), ['inline' => true, 'caption' => '심각도']); ?>
     <div class="card">
       <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
       <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>">전체 취약점 보기 →</a></span>
@@ -1615,6 +1687,23 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
         <span class="badge tone-muted" data-finding-status></span>
         <strong data-finding-cve></strong>
       </div>
+      <?php
+      /* 판정이 어떤 순서로 이뤄졌는지를 문장 대신 네 칸으로 세운다. 각 칸은 그 근거를 직접
+       *   확인할 수 있는 자리로 간다 — 상세가 "이렇게 판정했다"고 말만 하고 끝나지 않게.
+       *   칸의 대상은 이 자산 단위로 고정한다(건별 링크는 아래 푸터의 [이력 보기]·[CVE 상세]가
+       *   맡는다 — 그쪽은 열린 행에 맞춰 JS 가 주소를 채운다).
+       *   vg_decision_flow() 자체는 건드리지 않았다. */
+      vg_decision_flow([
+          ['label' => '노출', 'hint' => '어느 범위로 열려 있나',
+           'href' => vg_qs(['tab' => 'runtime', 'page' => null, 'q' => null])],
+          ['label' => '악용', 'hint' => 'KEV 등재 · EPSS',
+           'href' => '/findings.php?scan_id=' . (int) $scan['scan_id'] . '&fx=kev'],
+          ['label' => '등급', 'hint' => '심각도와 판정 근거',
+           'href' => vg_qs(['tab' => 'vuln', 'page' => null, 'q' => null])],
+          ['label' => '조치', 'hint' => '올릴 버전 · 재시작 여부',
+           'href' => '/findings.php?scan_id=' . (int) $scan['scan_id'] . '&fx=restart'],
+      ]);
+      ?>
       <dl class="finding-detail__grid">
         <div><dt>패키지</dt><dd data-finding-package></dd></div>
         <div><dt>설치 버전</dt><dd data-finding-installed></dd></div>
