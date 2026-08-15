@@ -1,22 +1,41 @@
 # -*- coding: utf-8 -*-
-"""docs/specs/테이블명세서.xlsx 생성기 — 외부 전달용 테이블 명세서를 스키마에서 재생성한다.
+"""DB Markdown/ERD/XLSX 정합성 생성기.
 
-실행(호스트에 python 이 없어도 되게 컨테이너로 돈다 — 저장소 루트에서):
-    MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/w" -w /w python:3.12-slim sh -c "pip install --quiet openpyxl && python docs/specs/gen_table_spec.py"
+필수 게이트는 tests/schema_docs_test.sh 이다. 초기 DDL과 전체 migration을 적용한
+disposable MySQL의 information_schema 한 snapshot을 읽어 세 산출물을 검사한다.
 
-언제 다시 돌리나: db/migrations/ 에 스키마 변경을 추가했을 때. 안 돌리면 명세서가 조용히 낡는다.
+Docker를 쓸 수 없는 편집 환경에서는 아래 fallback으로 parser와 추적 산출물을 점검할 수 있다.
+이 성공은 information_schema 게이트 성공으로 취급하지 않는다.
+    python docs/specs/gen_table_spec.py --source repository --check
 
-소스(전부 저장소 안 — 지어내는 문장이 없다):
-  · 컬럼/타입/제약   ← db/*.sql(초기) + db/migrations/*.sql(사전순) + deploy/migrate.sh
-                       를 정적으로 읽어 최종 컬럼 구성을 재구성(DB 컨테이너 없이).
+소스:
+  · 구조 정본         ← disposable DB information_schema
+  · 오프라인 fallback ← db/*.sql + db/migrations/*.sql을 실제 순서대로 재구성
   · 테이블 역할/영역 ← docs/dev/데이터베이스.md 요약표 문장 그대로.
   · 컬럼 설명       ← 데이터베이스.md 본문 불릿 > 스키마 SQL 주석 (있는 것만, 없으면 빈칸).
 """
-import io, re, glob
+import argparse
+import base64
+import datetime as dt
+import glob
+import hashlib
+import io
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import tempfile
+import zipfile
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
+
+sys.stdout.reconfigure(encoding='utf-8')
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 # ══ 1부. db/*.sql + migrations 정적 파싱 ═══════════════════════════════
@@ -107,90 +126,137 @@ def collect_sql_comments(sql, tables):
         tables.setdefault('__comments__', {}).setdefault(m.group(1), {})
         tables['__comments__'][m.group(1)].setdefault(m.group(2), m.group(3).strip())
 
+def sql_events(sql):
+    """Return top-level DDL and conditional DDL string literals in source order.
+
+    Migrations use ``SET @s := IF(..., 'ALTER/RENAME/DROP ...', 'DO 0')``.
+    Treating CREATE, RENAME and DROP as separate whole-file passes reorders those
+    operations and loses replacement tables such as tb_package_dependency.
+    """
+    cleaned = strip_comment_lines(sql)
+    events = []
+    start, quote, i = 0, None, 0
+    while i < len(cleaned):
+        ch = cleaned[i]
+        if quote:
+            if ch == quote:
+                if i + 1 < len(cleaned) and cleaned[i + 1] == quote:
+                    i += 2
+                    continue
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+        elif ch == ';':
+            stmt = cleaned[start:i].strip()
+            if re.match(r'^(CREATE|ALTER|RENAME|DROP)\s+TABLE\b', stmt, re.I):
+                events.append((start, stmt))
+            start = i + 1
+        i += 1
+    stmt = cleaned[start:].strip()
+    if re.match(r'^(CREATE|ALTER|RENAME|DROP)\s+TABLE\b', stmt, re.I):
+        events.append((start, stmt))
+
+    # Conditional migrations put the actual DDL inside a SQL string literal.
+    for m in re.finditer(r"'((?:[^']|'')*)'", cleaned, re.S):
+        literal = m.group(1).replace("''", "'").strip()
+        if re.match(r'^(CREATE|ALTER|RENAME|DROP)\s+TABLE\b', literal, re.I):
+            events.append((m.start(), literal))
+    return [stmt for _, stmt in sorted(events, key=lambda x: x[0])]
+
+
 def apply_sql(sql, tables):
     collect_sql_comments(sql, tables)
-    sql_nc = strip_comment_lines(sql)
-
-    # ── CREATE TABLE ──
-    for m in re.finditer(r'CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+`?(\w+)`?\s*\((.*?)\)\s*ENGINE',
-                         sql_nc, re.S | re.I):
-        tname, body = m.group(1), m.group(2)
-        if tname in tables:      # IF NOT EXISTS — 이미 있으면 초기 정의 유지
-            continue
-        cols, keys = [], []
-        for part in split_top(body):
-            if KEYWORDS.match(part):
-                keys.append(part); continue
-            cm = re.match(r'`?(\w+)`?\s+(.*)', part, re.S)
-            if not cm: continue
-            dtype, null, default = parse_col_def(cm.group(1), cm.group(2))
-            col = Col(cm.group(1), dtype, null, default)
-            # 컬럼 정의에 바로 붙은 PRIMARY KEY / UNIQUE (예: migrate.sh 의 tb_schema_migrations)
-            if re.search(r'\bPRIMARY\s+KEY\b', cm.group(2), re.I):
-                col.key = 'PK'
-            elif re.search(r'\bUNIQUE\b', cm.group(2), re.I):
-                col.key = 'UNI'
-            cols.append(col)
-        tables[tname] = {'cols': cols, 'keys': keys}
-
-    # ── ALTER TABLE (따옴표 안 포함) ──
-    # 멱등 마이그레이션은 'ALTER TABLE ...' 를 문자열로 감싸므로 원문 전체에서 훑는다.
-    for m in re.finditer(r"ALTER\s+TABLE\s+`?(\w+)`?\s+(.*?)(?=(?:'|;|\Z))", sql_nc, re.S | re.I):
-        tname, action = m.group(1), m.group(2).strip()
-        if tname not in tables:
-            continue
-        t = tables[tname]
-
-        a = re.match(r'ADD\s+(?:COLUMN\s+)?`?(\w+)`?\s+((?!KEY|INDEX|UNIQUE|CONSTRAINT|PRIMARY|FOREIGN)\S.*)',
-                     action, re.S | re.I)
-        if a:
-            cname, rest = a.group(1), a.group(2)
-            if any(c.name == cname for c in t['cols']):
+    for stmt in sql_events(sql):
+        # ── CREATE TABLE ──
+        m = re.match(r'CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+`?(\w+)`?\s*\((.*)\)\s*(?:ENGINE|$)',
+                     stmt, re.S | re.I)
+        if m:
+            tname, body = m.group(1), m.group(2)
+            if tname in tables:
                 continue
-            dtype, null, default = parse_col_def(cname, rest)
-            col = Col(cname, dtype, null, default)
-            after = re.search(r'\bAFTER\s+`?(\w+)`?', rest, re.I)
-            if after:
-                idx = next((i for i, c in enumerate(t['cols']) if c.name == after.group(1)), None)
-                if idx is not None:
-                    t['cols'].insert(idx + 1, col); continue
-            t['cols'].append(col); continue
-
-        mo = re.match(r'(?:MODIFY|CHANGE)\s+(?:COLUMN\s+)?`?(\w+)`?\s+(?:`?(\w+)`?\s+)?(.*)',
-                      action, re.S | re.I)
-        if mo and not re.match(r'(?:MODIFY|CHANGE)\s+(?:COLUMN\s+)?`?(KEY|INDEX)`?', action, re.I):
-            old, new, rest = mo.group(1), mo.group(2), mo.group(3)
-            target = new or old
-            for c in t['cols']:
-                if c.name == old:
-                    dtype, null, default = parse_col_def(target, rest)
-                    c.name, c.dtype, c.null, c.default = target, dtype, null, default
-                    break
+            cols, keys = [], []
+            for part in split_top(body):
+                if KEYWORDS.match(part):
+                    keys.append(part); continue
+                cm = re.match(r'`?(\w+)`?\s+(.*)', part, re.S)
+                if not cm: continue
+                dtype, null, default = parse_col_def(cm.group(1), cm.group(2))
+                col = Col(cm.group(1), dtype, null, default)
+                if re.search(r'\bPRIMARY\s+KEY\b', cm.group(2), re.I):
+                    col.key = 'PK'
+                elif re.search(r'\bUNIQUE\b', cm.group(2), re.I):
+                    col.key = 'UNI'
+                cols.append(col)
+            tables[tname] = {'cols': cols, 'keys': keys}
             continue
 
-        d = re.match(r'DROP\s+(?:COLUMN\s+)?`?(\w+)`?', action, re.I)
-        if d and not re.match(r'DROP\s+(?:INDEX|KEY|PRIMARY|FOREIGN|CONSTRAINT)\b', action, re.I):
-            t['cols'] = [c for c in t['cols'] if c.name != d.group(1)]
+        # ── ALTER TABLE ──
+        m = re.match(r"ALTER\s+TABLE\s+`?(\w+)`?\s+(.*)", stmt, re.S | re.I)
+        if m:
+            tname, actions = m.group(1), m.group(2).strip()
+            if tname not in tables:
+                continue
+            t = tables[tname]
+            for action in split_top(actions):
+                rc = re.match(r'RENAME\s+COLUMN\s+`?(\w+)`?\s+TO\s+`?(\w+)`?', action, re.I)
+                if rc:
+                    rename_col(tables, tname, rc.group(1), rc.group(2)); continue
+
+                rt = re.match(r'RENAME\s+TO\s+`?(\w+)`?', action, re.I)
+                if rt:
+                    rename_table(tables, tname, rt.group(1)); continue
+
+                if re.match(r'ADD\s+(?:UNIQUE|PRIMARY|KEY|INDEX|CONSTRAINT|FOREIGN)', action, re.I):
+                    t['keys'].append(re.sub(r'^ADD\s+', '', action, flags=re.I)); continue
+
+                a = re.match(r'ADD\s+(?:COLUMN\s+)?`?(\w+)`?\s+(.+)', action, re.S | re.I)
+                if a:
+                    cname, rest = a.group(1), a.group(2)
+                    if any(c.name == cname for c in t['cols']):
+                        continue
+                    dtype, null, default = parse_col_def(cname, rest)
+                    col = Col(cname, dtype, null, default)
+                    after = re.search(r'\bAFTER\s+`?(\w+)`?', rest, re.I)
+                    if re.search(r'\bFIRST\b', rest, re.I):
+                        t['cols'].insert(0, col); continue
+                    if after:
+                        idx = next((i for i, c in enumerate(t['cols']) if c.name == after.group(1)), None)
+                        if idx is not None:
+                            t['cols'].insert(idx + 1, col); continue
+                    t['cols'].append(col); continue
+
+                ch = re.match(r'CHANGE\s+(?:COLUMN\s+)?`?(\w+)`?\s+`?(\w+)`?\s+(.+)', action, re.S | re.I)
+                mo = re.match(r'MODIFY\s+(?:COLUMN\s+)?`?(\w+)`?\s+(.+)', action, re.S | re.I)
+                if ch or mo:
+                    old, new, rest = (ch.group(1), ch.group(2), ch.group(3)) if ch else (mo.group(1), mo.group(1), mo.group(2))
+                    for c in t['cols']:
+                        if c.name == old:
+                            dtype, null, default = parse_col_def(new, rest)
+                            c.name, c.dtype, c.null, c.default = new, dtype, null, default
+                            break
+                    continue
+
+                d = re.match(r'DROP\s+(?:COLUMN\s+)?`?(\w+)`?', action, re.I)
+                if d and not re.match(r'DROP\s+(?:INDEX|KEY|PRIMARY|FOREIGN|CONSTRAINT)\b', action, re.I):
+                    t['cols'] = [c for c in t['cols'] if c.name != d.group(1)]
             continue
 
-        if re.match(r'ADD\s+(UNIQUE|PRIMARY|KEY|INDEX|CONSTRAINT|FOREIGN)', action, re.I):
-            t['keys'].append(action)
+        # ── RENAME/DROP TABLE ──
+        m = re.match(r"RENAME\s+TABLE\s+(.+)", stmt, re.S | re.I)
+        if m:
+            for pair in split_top(m.group(1)):
+                p = re.match(r'`?(\w+)`?\s+TO\s+`?(\w+)`?', pair, re.I)
+                if p: rename_table(tables, p.group(1), p.group(2))
+            continue
 
-    # ── RENAME COLUMN / RENAME TABLE ──
-    # 명명규칙 통일(테이블 단수화 + PK `<단수 테이블명>_id`)이 rename 으로 들어온다.
-    # 이걸 안 따라가면 명세서가 옛 이름으로 조용히 낡는다.
-    for m in re.finditer(r"ALTER\s+TABLE\s+`?(\w+)`?\s+RENAME\s+COLUMN\s+`?(\w+)`?\s+TO\s+`?(\w+)`?",
-                         sql_nc, re.I):
-        rename_col(tables, m.group(1), m.group(2), m.group(3))
-
-    for m in re.finditer(r"RENAME\s+TABLE\s+`?(\w+)`?\s+TO\s+`?(\w+)`?", sql_nc, re.I):
-        rename_table(tables, m.group(1), m.group(2))
-
-    # ── DROP TABLE ──
-    # 이걸 안 따라가면 폐기된 테이블(예: *_ko_bak 백업본)이 명세서에 유령으로 남는다.
-    # CREATE 만 보고 DROP 을 무시하면 스키마엔 없는 테이블을 외부 전달 문서가 있다고 말하게 된다.
-    for m in re.finditer(r"DROP\s+TABLE(?:\s+IF\s+EXISTS)?\s+`?(\w+)`?", sql_nc, re.I):
-        drop_table(tables, m.group(1))
+        m = re.match(r"DROP\s+TABLE(?:\s+IF\s+EXISTS)?\s+(.+)", stmt, re.S | re.I)
+        if m:
+            for name in split_top(m.group(1)):
+                dm = re.match(r'`?(\w+)`?', name.strip())
+                if dm: drop_table(tables, dm.group(1))
+            continue
 
 def rename_col(tables, tname, old, new):
     t = tables.get(tname)
@@ -253,18 +319,122 @@ def build():
     tb_schema_migrations 만 db/ 밖(deploy/migrate.sh 안 CREATE TABLE)에 있어 같이 읽는다 —
     운영 DB 에 실재하는 테이블이라 명세서에서 빠지면 안 된다."""
     tables = {}
-    files = (sorted(glob.glob('db/*.sql')) + sorted(glob.glob('db/migrations/*.sql'))
+    files = ([str(p.relative_to(ROOT)) for p in sorted((ROOT / 'db').glob('*.sql'))]
+             + [str(p.relative_to(ROOT)) for p in sorted((ROOT / 'db/migrations').glob('*.sql'))]
              + ['deploy/migrate.sh'])
     for f in files:
-        apply_sql(io.open(f, encoding='utf-8').read(), tables)
+        path = ROOT / f
+        if path.exists():
+            apply_sql(io.open(path, encoding='utf-8').read(), tables)
+    # deploy/migrate.sh creates this infrastructure table through shell quoting,
+    # not as a top-level SQL statement. Keep the fallback honest and explicit.
+    apply_sql("""CREATE TABLE tb_schema_migrations (
+      filename VARCHAR(191) NOT NULL PRIMARY KEY,
+      applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB""", tables)
     assign_keys(tables)
     comments = tables.pop('__comments__', {})
     return tables, comments
 
 
+def mysql_rows(container, database, query):
+    """Read tab-separated information_schema rows from a disposable DB container."""
+    cmd = [
+        'docker', 'exec', container, 'sh', '-c',
+        'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" '
+        'mysql -uroot -N -B --raw "$1" -e "$2"',
+        'schema-docs', database, query,
+    ]
+    run = subprocess.run(cmd, cwd=ROOT, text=True, encoding='utf-8',
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if run.returncode:
+        raise RuntimeError('information_schema 조회 실패: ' + run.stderr.strip())
+    return [line.split('\t') for line in run.stdout.splitlines() if line]
+
+
+def build_from_information_schema(container, database):
+    """Build the canonical structure model from one disposable information_schema."""
+    cols_sql = """
+SELECT TABLE_NAME, ORDINAL_POSITION, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE,
+       REPLACE(TO_BASE64(COALESCE(COLUMN_DEFAULT, '')), '\n', ''), EXTRA,
+       REPLACE(TO_BASE64(COALESCE(COLUMN_COMMENT, '')), '\n', '')
+  FROM information_schema.COLUMNS
+ WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'tb\\_%'
+ ORDER BY TABLE_NAME, ORDINAL_POSITION
+""".strip()
+    idx_sql = """
+SELECT TABLE_NAME, INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME
+  FROM information_schema.STATISTICS
+ WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'tb\\_%'
+ ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX
+""".strip()
+    tables, comments = {}, {}
+    for row in mysql_rows(container, database, cols_sql):
+        if len(row) != 8:
+            raise RuntimeError('information_schema 컬럼 행 형식이 예상과 다릅니다')
+        table, _, name, dtype, nullable, default64, extra, comment64 = row
+        default = base64.b64decode(default64).decode('utf-8') if default64 else ''
+        if 'auto_increment' in extra.lower():
+            default = 'AUTO_INCREMENT'
+        if 'on update CURRENT_TIMESTAMP' in extra and default:
+            default += ' (ON UPDATE)'
+        tables.setdefault(table, {'cols': [], 'keys': []})['cols'].append(
+            Col(name, dtype.upper(), '예' if nullable == 'YES' else '아니오', default)
+        )
+        comment = base64.b64decode(comment64).decode('utf-8') if comment64 else ''
+        if comment:
+            comments.setdefault(table, {})[name] = comment
+
+    by_col = {t: {c.name: c for c in v['cols']} for t, v in tables.items()}
+    for row in mysql_rows(container, database, idx_sql):
+        if len(row) != 5:
+            raise RuntimeError('information_schema 인덱스 행 형식이 예상과 다릅니다')
+        table, index, non_unique, seq, column = row
+        col = by_col.get(table, {}).get(column)
+        if not col or index == 'PRIMARY' and col.key == 'PK':
+            continue
+        if index == 'PRIMARY':
+            col.key = 'PK'
+        elif seq == '1' and non_unique == '0' and col.key == '-':
+            col.key = 'UNI'
+        elif seq == '1' and col.key == '-':
+            col.key = 'MUL'
+    if not tables:
+        raise RuntimeError('information_schema에 tb_ 테이블이 없습니다')
+    return tables, comments
+
+
+def canonical_payload(tables):
+    return [
+        {
+            'table': name,
+            'columns': [
+                {'name': c.name, 'type': c.dtype, 'nullable': c.null,
+                 'default': c.default, 'key': c.key}
+                for c in tables[name]['cols']
+            ],
+        }
+        for name in sorted(tables)
+    ]
+
+
+def schema_metadata(tables):
+    raw = json.dumps(canonical_payload(tables), ensure_ascii=False,
+                     sort_keys=True, separators=(',', ':')).encode('utf-8')
+    migrations = [p.name for p in (ROOT / 'db' / 'migrations').glob('*.sql')]
+    stamps = [m[:14] for m in migrations if re.match(r'^\d{14}_', m)]
+    revision = max(stamps) if stamps else '00000000000000'
+    generated_at = (f'{revision[0:4]}-{revision[4:6]}-{revision[6:8]}T'
+                    f'{revision[8:10]}:{revision[10:12]}:{revision[12:14]}Z')
+    return 'sha256:' + hashlib.sha256(raw).hexdigest()[:16], generated_at
+
+
 # ══ 2부. 엑셀 생성 ════════════════════════════════════════════════════
 
-DOC = 'docs/dev/데이터베이스.md'
+DOC = ROOT / 'docs/dev/데이터베이스.md'
+ERD = ROOT / 'docs/specs/diagrams/erd.puml'
+ERD_SVG = ROOT / 'docs/specs/diagrams/erd.svg'
+XLSX = ROOT / 'docs/specs/테이블명세서.xlsx'
 
 # ── 1. 데이터베이스.md 요약표 → 테이블명/역할/소속영역 ──────────────
 def parse_summary(md):
@@ -297,9 +467,80 @@ def parse_col_notes(md):
 
 AUDIT = ['created_at', 'updated_at', 'is_deleted', 'deleted_at']
 
-def main():
-    tables, sqlcom = build()
-    md = io.open(DOC, encoding='utf-8').read()
+
+def sync_text_metadata(md, erd, tables):
+    version, generated_at = schema_metadata(tables)
+    count = len(tables)
+    marker = f'<!-- schema-docs: {version} generated_at={generated_at} tables={count} -->'
+    md = re.sub(r'<!-- schema-docs:.*?-->\n?', '', md)
+    md = re.sub(r'(^> 스키마 기준:.*$)', r'\1\n' + marker, md, count=1, flags=re.M)
+    md = re.sub(r'> 스키마 기준: [^\n]+',
+                f'> 스키마 기준: {generated_at[:10]} · 구조 모델 {count}개 테이블'
+                '(`tb_schema_migrations` 포함).', md, count=1)
+    md = re.sub(r'현재 \d+개 테이블\(`tb_schema_migrations` 포함\)',
+                f'현재 {count}개 테이블(`tb_schema_migrations` 포함)', md)
+    md = re.sub(r'## 전체 테이블 요약 \(\d+개\)',
+                f'## 전체 테이블 요약 ({count}개)', md)
+
+    erd = re.sub(r"^' schema-docs:.*\n?", '', erd, flags=re.M)
+    erd_marker = f"' schema-docs: {version} generated_at={generated_at} tables={count}"
+    erd = erd.replace('@startuml', '@startuml\n' + erd_marker)
+    return md, erd
+
+
+def artifact_sets(md, erd, svg):
+    documented = set(re.findall(r'^\|\s*\[(tb_[a-z_]+)\]', md, re.M))
+    entities = set(re.findall(r'^\s*entity\s+(tb_[a-z_]+)', erd, re.M))
+    rendered = set(re.findall(r'<!--class\s+(tb_[a-z_]+)-->', svg))
+    return documented, entities, rendered
+
+
+def validate_artifacts(md, erd, svg, tables):
+    model = set(tables)
+    domain = model - {'tb_schema_migrations'}
+    documented, entities, rendered = artifact_sets(md, erd, svg)
+    errors = []
+    if documented != model:
+        errors.append(f'Markdown table set mismatch: missing={sorted(model-documented)} extra={sorted(documented-model)}')
+    if entities != domain:
+        errors.append(f'ERD source table set mismatch: missing={sorted(domain-entities)} extra={sorted(entities-domain)}')
+    if rendered != domain:
+        errors.append(f'ERD SVG table set mismatch: missing={sorted(domain-rendered)} extra={sorted(rendered-domain)}')
+    retired = {'tb_api_token', 'tb_api_tokens', 'tb_activity_review'}
+    for label, names in [('Markdown', documented), ('ERD source', entities), ('ERD SVG', rendered)]:
+        stale = sorted(names & retired)
+        if stale:
+            errors.append(f'{label} contains retired tables: {stale}')
+    if errors:
+        raise RuntimeError('\n'.join(errors))
+
+
+def deterministic_xlsx(wb):
+    """Serialize openpyxl output with fixed core properties and ZIP timestamps."""
+    fixed = dt.datetime(2000, 1, 1, 0, 0, 0)
+    wb.properties.created = fixed
+    wb.properties.modified = fixed
+    raw = io.BytesIO()
+    wb.save(raw)
+    src, out = io.BytesIO(raw.getvalue()), io.BytesIO()
+    with zipfile.ZipFile(src, 'r') as zin, zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for name in sorted(zin.namelist()):
+            old = zin.getinfo(name)
+            info = zipfile.ZipInfo(name, (2000, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = old.external_attr
+            info.create_system = old.create_system
+            data = zin.read(name)
+            if name == 'docProps/core.xml':
+                data = re.sub(rb'<dcterms:modified\b[^>]*>.*?</dcterms:modified>',
+                              (b'<dcterms:modified xmlns:dcterms="http://purl.org/dc/terms/" '
+                               b'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+                               b'xsi:type="dcterms:W3CDTF">2000-01-01T00:00:00Z</dcterms:modified>'),
+                              data)
+            zout.writestr(info, data)
+    return out.getvalue()
+
+def render_xlsx(tables, sqlcom, md):
     summary = parse_summary(md)
     notes = parse_col_notes(md)
 
@@ -365,16 +606,76 @@ def main():
         row[1].font = Font(name='Consolas')
         row[6].alignment = wrap
 
-    out = 'docs/specs/테이블명세서.xlsx'
-    wb.save(out)
+    meta = wb.create_sheet('생성정보')
+    version, generated_at = schema_metadata(tables)
+    meta.append(['schema_version', version])
+    meta.append(['generated_at', generated_at])
+    meta.append(['table_count', len(tables)])
+    autosize(meta, [20, 32])
+    return deterministic_xlsx(wb), missing_doc, only_doc
 
-    print(f'저장: {out}')
-    print(f'  시트1 테이블목록: {ws1.max_row - 1} 테이블')
-    print(f'  시트2 컬럼상세  : {ws2.max_row - 1} 컬럼')
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='동일 스키마 모델로 DB 문서 산출물을 생성/검사합니다.')
+    parser.add_argument('--check', action='store_true', help='추적 산출물과 비교하고 쓰지 않습니다.')
+    parser.add_argument('--source', choices=['repository', 'information-schema'], default=None)
+    parser.add_argument('--mysql-container', help='disposable MySQL 컨테이너 이름')
+    parser.add_argument('--database', default='vulnagent')
+    parser.add_argument('--dump-json', metavar='PATH', help='canonical model JSON을 PATH 또는 - 로 출력')
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    source = args.source or ('information-schema' if args.mysql_container else 'repository')
+    if source == 'information-schema':
+        if not args.mysql_container:
+            raise SystemExit('--source information-schema에는 --mysql-container가 필요합니다.')
+        tables, sqlcom = build_from_information_schema(args.mysql_container, args.database)
+    else:
+        tables, sqlcom = build()
+        print('주의: repository DDL fallback입니다. live information_schema gate를 대신하지 않습니다.')
+
+    payload = canonical_payload(tables)
+    if args.dump_json:
+        data = json.dumps(payload, ensure_ascii=False, indent=2) + '\n'
+        if args.dump_json == '-':
+            print(data, end='')
+        else:
+            pathlib.Path(args.dump_json).write_text(data, encoding='utf-8')
+
+    md_current = DOC.read_text(encoding='utf-8')
+    erd_current = ERD.read_text(encoding='utf-8')
+    svg_current = ERD_SVG.read_text(encoding='utf-8')
+    md_wanted, erd_wanted = sync_text_metadata(md_current, erd_current, tables)
+    xlsx_wanted, missing_doc, only_doc = render_xlsx(tables, sqlcom, md_wanted)
+
+    # A write cannot invent human role text or a PlantUML layout. Require those
+    # reviewed sources to enumerate the canonical model before emitting files.
+    validate_artifacts(md_wanted, erd_wanted, svg_current, tables)
+
+    drift = []
+    if md_current.encode('utf-8') != md_wanted.encode('utf-8'):
+        drift.append(str(DOC.relative_to(ROOT)))
+    if erd_current.encode('utf-8') != erd_wanted.encode('utf-8'):
+        drift.append(str(ERD.relative_to(ROOT)))
+    if not XLSX.exists() or XLSX.read_bytes() != xlsx_wanted:
+        drift.append(str(XLSX.relative_to(ROOT)))
+
+    if args.check:
+        if drift:
+            raise SystemExit('schema docs drift: ' + ', '.join(drift))
+        print(f'schema docs check: ok ({source}, {len(tables)} tables)')
+        return
+
+    DOC.write_text(md_wanted, encoding='utf-8', newline='\n')
+    ERD.write_text(erd_wanted, encoding='utf-8', newline='\n')
+    XLSX.write_bytes(xlsx_wanted)
+    print(f'저장: {XLSX.relative_to(ROOT)} ({len(tables)} 테이블)')
     if missing_doc:
-        print(f'  ! 문서 요약표에 없으나 스키마에 실재 → 명세서엔 포함: {missing_doc}')
+        print(f'  ! 문서 요약표 누락: {missing_doc}')
     if only_doc:
-        print(f'  ! 문서엔 있으나 db/*.sql 밖에서 생성 → 명세서 제외: {only_doc}')
+        print(f'  ! 스키마에 없는 문서 항목: {only_doc}')
 
 if __name__ == '__main__':
     main()

@@ -314,7 +314,7 @@ snippet → 각 사이트 블록에서 `import`). 사이트마다 복붙하지 �
 
 다이어그램: [`docs/specs/diagrams/erd.puml`](../specs/diagrams/erd.puml)
 
-**범위**: 도메인 엔티티 **53개 전부**(= 전체 54테이블 − `tb_schema_migrations`)를 그린다.
+**범위**: 도메인 엔티티 **52개 전부**(= 전체 53테이블 − `tb_schema_migrations`)를 그린다.
 `tb_schema_migrations` 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
 엔티티가 많아 영역별 `package` 로 묶었다 — 수집·인벤토리 / CVE 도메인 / 벤더 판정 소스 /
 판정 결과 / 피드 운영·인증·감사. **실선은 FK 가 실제로 걸린 관계, 점선은 FK 없이
@@ -348,6 +348,8 @@ tb_agent_replay_nonce 는 에이전트 재전송 공격 방지.
 tb_package_license_summary 는 SCA 라이선스 위험도 사전집계(tb_package.license 기반, tb_package_summary 와 같은 패턴).
 tb_package_dependency 는 패키지 의존성 엣지(SBOM/pom, 스캔에 CASCADE).
 tb_remediation_note 는 미조치 사유·승인자 메모(자연키라 스캔이 바뀌어도 유지).
+tb_finding_status 는 같은 자연키에 조치 상태 4종과 메모만 보관한다. EXCEPTED 는 사람이 정한 상태이고
+tb_suppressed_finding 의 자동 억제와 다르며, 완료·예외는 SLA 남은 일수에서 제외된다.
 tb_control_mapping 은 CCE 룰 ↔ U-코드/ISMS-P/N2SF 다중 매핑,
 tb_compliance_snapshot/tb_compliance_snapshot_control 은 하루 1건 컴플라이언스 판정 증적,
 tb_setting 은 SLA 등 전역 운영 설정.
