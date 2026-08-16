@@ -358,11 +358,14 @@ try {
             : '';
 
         $stmt = $pdo->prepare(
-            "SELECT f.*, h.host_id, h.fqdn, c.summary, c.epss, c.epss_percentile, c.ref_urls_json,
+            // 목록이 안 쓰는 값은 실어 오지 않는다: 요약(summary)·EPSS 백분위·참조 URL(JSON)·
+            //   판정 출처(match_source)는 전부 상세(finding_history.php)가 보여준다.
+            //   특히 ref_urls_json 은 CVE 한 건당 수 KB 짜리 JSON 이라 페이지 크기에 그대로 실렸다.
+            "SELECT f.*, h.host_id, h.fqdn, c.epss,
                     ctr.cid AS container_cid, ctr.image AS container_image,
                     CASE WHEN f.container_id = 0 THEN s.os_id ELSE ctr.os_id END AS package_os_id,
                     CASE WHEN f.container_id = 0 THEN s.os_version ELSE ctr.os_version END AS package_os_version,
-                    fe.match_source, fe.fixed_version AS evidence_fixed_version,
+                    fe.fixed_version AS evidence_fixed_version,
                     fs.status AS finding_status, fs.note AS finding_status_note
                     $dueSelect,
                 " . VG_FIXED_VERSION_SUBQ . "
@@ -852,7 +855,15 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   //   가장 적은 열**에서 가져온다: 근거(18→12.5%)는 원래 두 줄 말줄임 + title 이라 좁아져도
   //   전체 문장이 남고, 호스트·CVE·패키지 같은 식별자 열은 잘리면 대조 자체가 불가능해지므로
   //   1~2%p 만 줄였다(기존 주석의 원칙 그대로다).
-  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '16%', 'class' => 'col-id']];
+  // 열 다이어트(2026-08): '근거' 열을 상세로 보냈다 — 판정 사유 문장과 판정 출처(match_source)는
+  //   목록에서 "이게 뭔지·급한지·눌러 들어갈지" 를 정하는 데 쓰이지 않고, 이 표에서 유일하게
+  //   여러 줄이 되는 칸이라 행 높이를 혼자 결정했다. 두 값 모두 finding_history.php 의
+  //   '현재 상태' 카드(판정 근거 · 판정 출처)와 '스캔별 상태 타임라인'(회차별 근거)에 이미 있고,
+  //   모든 행의 CVE 칸에 그리로 가는 '이 자산 판정 →' 링크가 있다.
+  //   비운 폭(12.5%)은 전부 **식별자 열**로 돌린다 — 잘리면 대조 자체가 불가능해지는 값이라
+  //   이 표에서 폭이 가장 아쉬운 곳이다(호스트 16→19 · CVE 15→17 · 패키지 10→14 · 조치 12→15.5).
+  //   % 합(65.5%)과 고정폭(22rem) 총합은 이전과 같으므로 기존 실측 폭 예산이 그대로 유지된다.
+  $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '19%', 'class' => 'col-id']];
   $headers = array_merge($headers, [
       // 뱃지 폭(CRITICAL 69px) + 칸 여백 32px = 101px → 6.5rem.
       ['label' => '등급',  'key' => 'severity',       'width' => '6.5rem', 'nowrap' => true],
@@ -871,23 +882,18 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       //   'CVE-2023-' / '4911' 로 두 줄이 났다.
       // 폭 16% 는 실측값이다: 둘째 줄(KEV 뱃지 39px + '이 자산 판정 →' 92px = 135px)이 접히지
       //   않는 최소 폭(칸 여백 29px 포함 164px ≈ 15.5%)에 여유를 얹었다. 접히면 한 행이 세 줄이 된다.
-      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '15%'],
-      ['label' => '패키지', 'key' => 'package_name',  'width' => '10%', 'class' => 'col-id'],
+      ['label' => 'CVE',   'key' => 'cve_id',         'width' => '17%'],
+      ['label' => '패키지', 'key' => 'package_name',  'width' => '14%', 'class' => 'col-id'],
       // 점수 칸 — cves.php 의 같은 칸과 같은 모양·같은 정렬로 맞춘다(같은 뜻은 화면마다 같은 모양).
       //   6rem 은 둘째 줄 'EPSS 100.0%'(66px) + 칸 여백(29px) 기준이다.
       ['label' => 'CVSS',  'key' => 'risk',           'width' => '6rem', 'nowrap' => true,
           'align' => 'right', 'title' => 'CVSS 기본점수 · 아랫줄은 EPSS(30일 내 악용 확률)'],
-      // 근거에도 폭을 준다. 폭을 안 주면 이 열이 "남는 폭" 을 갖는데, 사이드바가 붙어 있는
-      //   861~1060px 구간은 표가 쓸 수 있는 폭이 가장 좁아(1024px 뷰포트 → 692px) 남는 폭이
-      //   12px 이 됐다 — 머리글이 세로로 서고 근거가 사라졌다(실측). 폭을 명시하면 폭 합이
-      //   표보다 클 때 브라우저가 **모든 열을 비례로 줄이므로**, 한 열만 짜부라지지 않는다.
-      ['label' => '근거 (왜 위험한가)', 'key' => 'rationale', 'width' => '12.5%'],
       // 라벨에 '이 버전 이상' 을 못 담아 값 뒤에 '이상' 을 붙이던 것을 머리글로 올린다 —
       //   좁은 칸에서는 그 두 글자가 정작 버전 문자열을 밀어냈다.
       // col-fix: 이 칸에서만 버전 문자열의 줄바꿈을 허용한다(app.css '목록 화면' 구역).
       //   공용 .badge 는 nowrap 이라 rhel 모듈 버전이 12자에서 잘려 나갔는데, "무엇으로
       //   올려야 하는가" 가 이 열의 존재 이유라 잘리면 열 자체가 무의미해진다.
-      ['label' => '조치 · 올릴 버전', 'key' => 'fix', 'width' => '12%', 'class' => 'col-fix',
+      ['label' => '조치 · 올릴 버전', 'key' => 'fix', 'width' => '15.5%', 'class' => 'col-fix',
           'title' => '이 버전 이상으로 올리면 해결됩니다'],
   ]);
 
@@ -1084,22 +1090,6 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
                       : 'EPSS –';
                   return $cvss . '<div class="why">' . $epss . '</div>';
               },
-              // 근거는 이 표에서 유일하게 여러 줄이 되는 칸이라 행 높이를 혼자 끌어올렸다(실측 5줄·102px).
-              //   기본은 두 줄까지만 보이고(clamp-2), 잘린 뒷부분은 title 에 통째로 남는다.
-              //   글자수로 미리 자르지(vg_trunc) 않는 건, 칸 폭이 화면마다 달라 몇 자가 들어가는지
-              //   서버가 알 수 없기 때문이다 — 자르는 일은 폭을 아는 CSS 에 맡긴다.
-              'rationale' => function ($r) {
-                  $why = (string) ($r['rationale'] ?? '');
-                  $src = (string) ($r['match_source'] ?? 'catalog');
-                  // 판정 출처 뱃지는 근거 문장 앞에 같이 흐른다 — 따로 한 줄을 차지하면
-                  //   근거 칸이 이 표에서 가장 높은 칸이 되어 행 전체를 끌어올린다.
-                  // title 은 주석만 있고 실제로는 없었다 — 두 줄에서 잘린 뒤(clamp-2) 나머지를
-                  //   볼 방법이 아무 데도 없었다('(systemd:111 가 libc6 사용) -…'). 잘라야만 하는
-                  //   열은 전체 값을 title 로 남긴다는 규칙을 여기서도 실제로 지킨다.
-                  return '<div class="why clamp-2" title="' . vg_h($src . ' · ' . $why) . '">'
-                       . '<span class="badge tone-muted">' . vg_h($src) . '</span> '
-                       . vg_h($why) . '</div>';
-              },
               // 설치 버전을 조치 칸에 다시 싣지 않는다(같은 행 '패키지' 칸에 이미 있다) — 한 칸에
               //   "설치 → 고침" 을 다 넣으니 알약이 세 줄이 되어 행 높이를 결정해 버렸다.
               // 조치 + 사람이 남긴 "미조치 사유" 표식. 사유 전문·승인자·승인일시는 이력 화면에 있다
@@ -1123,15 +1113,13 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
                       $html = '<span class="badge tone-muted" title="' . vg_h($fixed) . '">'
                             . vg_h($fixed) . '</span>';
                   } else {
-                      $ref = vg_cve_first_ref($r['ref_urls_json'] ?? null);
-                      if ($ref === null) {
-                          $html = '<span class="why">패치 확인</span>';
-                      } else {
-                          $isPatch = in_array('Patch', $ref['tags'], true)
-                              || in_array('Vendor Advisory', $ref['tags'], true);
-                          $html = '<a class="why" href="' . vg_h($ref['url']) . '" target="_blank" rel="noopener noreferrer">'
-                                . ($isPatch ? '패치 확인 →' : '참고 링크 →') . '</a>';
-                      }
+                      // 참조 URL(벤더 어드바이저리·패치 링크)은 상세로 보냈다 — 목록의 이 칸이
+                      //   답해야 하는 건 "어느 버전으로 올리나" 하나이고, 외부 링크는 그 답이
+                      //   없을 때만 뜨는 곁가지였다. 같은 링크를 finding_history.php 의
+                      //   '수정 버전'(vg_fix_cell 이 ref_urls_json 을 그대로 편다)과 cve.php 의
+                      //   참조 목록이 이미 갖고 있고, 그 덕에 목록 쿼리에서 수 KB 짜리
+                      //   ref_urls_json 을 안 실어 온다.
+                      $html = '<span class="why">상세에서 확인</span>';
                   }
                   $note = $notes[vg_remediation_note_key(
                       (int) $r['host_id'], (string) ($r['container_cid'] ?? ''),

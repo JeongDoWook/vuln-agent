@@ -14,6 +14,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity — auth.php 가 이미 로드했을 수 있다
 require_once __DIR__ . '/../src/distro.php'; // vg_osv_ecosystem — 패키지 상세 링크(아래 vg_package_detail_link)
+require_once __DIR__ . '/../src/finding_history.php'; // vg_finding_history_url — 행별 상세(판정 근거) 진입로
 vg_require_menu('findings');
 
 const VG_SEV_RANK = ['LOW' => 1, 'MEDIUM' => 2, 'HIGH' => 3, 'CRITICAL' => 4];
@@ -128,13 +129,17 @@ try {
     //   인덱스 탐색 비용이 누적되는 게 원인 — 개선하려면 전용 커버링 인덱스나
     //   tb_pkg_change 처럼 변경 이력을 미리 적재해두는 테이블이 필요해, 이번 "경미한
     //   정리" 범위를 넘는다. 대신 실제 쓰지 않는 컬럼(cvss, exposure_scope)만 걷어낸다
-    //   (vg_change_row() 는 cve_id/package_name/severity/in_kev/exposed/rationale 만 쓴다).
+    //   (vg_change_row() 는 cve_id/package_name/severity/in_kev/exposed/container_id/
+    //    installed_version 만 쓴다).
     $bySc = [];
     if ($scanIds) {
         $in = implode(',', array_map('intval', $scanIds));
         $fst = $pdo->query(
+            // rationale(판정 근거 문장)은 더 이상 목록이 쓰지 않는다 — 접이식으로 행마다 달고
+            //   있던 것을 상세(finding_history.php)로 보냈다. 대신 그리로 갈 링크를 만들 수
+            //   있게 container_id 를 싣는다(int 하나 ↔ 문장 하나의 교환이다).
             "SELECT f.scan_id, f.cve_id, f.package_name, f.severity, f.in_kev, f.exposed,
-                    f.rationale, f.installed_version,
+                    f.container_id, f.installed_version,
                     CASE WHEN f.container_id = 0 THEN s.os_id ELSE ctr.os_id END AS package_os_id,
                     CASE WHEN f.container_id = 0 THEN s.os_version ELSE ctr.os_version END AS package_os_version
                FROM tb_finding f
@@ -232,7 +237,7 @@ function vg_change_row(string $type, int $hid, string $fqdn, string $when, array
         'from_sev'         => $from,
         'in_kev'           => (int) ($f['in_kev'] ?? 0),
         'exposed'          => (int) ($f['exposed'] ?? 0),
-        'rationale'        => (string) ($f['rationale'] ?? ''),
+        'container_id'     => (int) ($f['container_id'] ?? 0),
         'installed_version'=> (string) ($f['installed_version'] ?? ''),
         'package_os_id'     => $f['package_os_id'] ?? null,
         'package_os_version'=> $f['package_os_version'] ?? null,
@@ -275,19 +280,24 @@ function vg_package_detail_link(array $row): string {
          . vg_h($name) . '</a>';
 }
 
-/** 취약점 변화·추이의 패키지 셀. 두 목록이 같은 판정 근거를 빠뜨리지 않게 한곳에서 렌더한다. */
+/**
+ * 취약점 변화·추이의 패키지 셀. 두 목록이 같은 모양이 되게 한곳에서 렌더한다.
+ *   판정 근거 문장은 접이식(details)으로 여기 달려 있었다 — 목록에서 펴 보는 사람은 드문데
+ *   행마다 접이식이 하나씩 서서 표가 시끄러웠고, 쿼리는 행마다 문장 하나를 더 실어 왔다.
+ *   근거는 상세가 정본이다: finding_history.php 의 '현재 상태 · 판정 근거' 와
+ *   '스캔별 상태 타임라인'(회차별 근거 — 해결된 항목의 **직전** 근거도 여기서 보인다).
+ *   그래서 문장을 빼는 대신 **그리로 가는 링크를 이 칸에 남긴다**(정보를 없애지 않는다).
+ */
 function vg_change_package_cell(array $row): string {
     $out = vg_package_detail_link($row);
     if (($row['installed_version'] ?? '') !== '') {
         $out .= ' <span class="why">' . vg_h((string) $row['installed_version']) . '</span>';
     }
-
-    $rationale = trim((string) ($row['rationale'] ?? ''));
-    if ($rationale !== '') {
-        $label = ($row['type'] ?? '') === 'resolved' ? '직전 판정 근거' : '판정 근거';
-        $out .= '<details><summary>' . $label . '</summary><div class="why">'
-              . nl2br(vg_h($rationale)) . '</div></details>';
-    }
+    $href = vg_finding_history_url(
+        (int) $row['host_id'], (int) ($row['container_id'] ?? 0),
+        (string) $row['cve_id'], (string) $row['package_name']
+    );
+    $out .= '<div class="why"><a href="' . vg_h($href) . '">이 자산 판정 →</a></div>';
     return $out;
 }
 
@@ -402,7 +412,7 @@ function vg_trend_load(PDO $pdo, int $hostId, string $fqdn, int $limit): array {
     $in = implode(',', array_map('intval', $scanIds));
     $bySc = [];
     $fst = $pdo->query(
-        "SELECT scan_id, cve_id, package_name, severity, in_kev, exposed, rationale, installed_version
+        "SELECT scan_id, cve_id, package_name, severity, in_kev, exposed, container_id, installed_version
            FROM tb_finding WHERE scan_id IN ($in) AND is_deleted = 0"
     );
     foreach ($fst->fetchAll(PDO::FETCH_ASSOC) as $f) {
