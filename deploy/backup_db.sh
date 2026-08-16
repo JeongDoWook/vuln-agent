@@ -21,6 +21,8 @@
 #   VERIFY_TMPFS_SMALL_SIZE(64m)     /var/run/mysqld·/tmp tmpfs 상한(소켓·PID·임시파일 전용)
 #   VERIFY_DISK_HEADROOM_MULT(2)     복원에 필요한 디스크를 "원본 DB 크기 × 이 배수" 로 잡는다
 #   VERIFY_STALE_AGE_SECONDS(3600)   이보다 오래된 라벨 컨테이너를 잔재로 보고 걷는다
+#   VERIFY_INNODB_BUFFER_POOL(512M)  검증 DB 버퍼 풀. **올리면 호스트 RAM 을 그만큼 더 먹는다**
+#   VERIFY_INNODB_LOG_FILE_SIZE(512M) 검증 DB redo 로그 1개 크기(2개 = 디스크에 그 2배 선할당)
 #
 # 검증 DB(/var/lib/mysql)는 **디스크(익명 볼륨)** 다. RAM(tmpfs)이 아니다 — 아래 docker run
 # 주석 참고. 그래서 검증이 먹는 것은 메모리가 아니라 디스크이고, 부족하면 복원을 시작하기
@@ -64,6 +66,28 @@ VERIFY_DISK_HEADROOM_MULT="${VERIFY_DISK_HEADROOM_MULT:-2}"
 # docker ps 의 --filter until= 은 이 데몬에서 'invalid filter' 라 못 쓴다(prune 전용) — 그래서
 # 라벨로만 추리고 나이는 docker inspect 의 .Created 로 직접 잰다.
 VERIFY_STALE_AGE_SECONDS="${VERIFY_STALE_AGE_SECONDS:-3600}"
+# ---------- 검증 DB 복원 속도 튜닝 (아래 docker run 의 기동 인자로 들어간다) ----------
+# 복원은 `gzip -dc dump | mysql` 단일 스레드 논리 복원이다. 그건 구조상 어쩔 수 없지만,
+# 2026-08-17 운영 실측에서 이 인스턴스가 **내구성 옵션을 전부 켠 채로** 그걸 하고 있었다
+# (flush_log_at_trx_commit=1 · doublewrite=ON · buffer_pool=128MB · log_file=48MB).
+# 20분에 2,655MB = 약 2.2MB/s, 원본 5,395MB 기준 총 40분 안팎이 배포 시간에 그대로 붙었다.
+# 이 인스턴스는 `--network none` · 익명 볼륨 · `--rm` 로 **몇 초 뒤 버려진다.** 크래시 복구가
+# 아무 의미 없는데 크래시 안전성 비용을 전부 내고 있었다는 뜻이라 내구성 옵션을 끈다.
+#
+# ⚠ 버퍼 풀은 곧 RAM 이다. 2026-08-16 에 이 컨테이너가 tmpfs 때문에 5.6GB 를 RAM 에 물고
+# 운영 서버를 마비시켰다(#620 이 데이터를 디스크로 옮겨 685MB 로 내려왔다). 운영 호스트는
+# 15GiB 중 가용 2.4GiB 다 — **이 값을 올리면 호스트 RAM 을 그만큼 더 먹는다.** 512M 는
+# 128M 의 4배지만 컨테이너 총사용량이 1GB 안팎이라 가용 안에서 안전하다. 기본값을 1G 이상으로
+# 올리지 않는다. 급하면 그 실행에만 환경변수로 준다.
+# 실측(dev 430MB 덤프, 2026-08-17): 512M → 82s·최대 1000MiB / 256M → 80s·최대 724MiB.
+# 즉 **속도 이득은 버퍼 풀이 아니라 내구성 옵션·redo 크기에서 나온다.** 운영에서 RAM 이
+# 빠듯해지면 이 값부터 256M 로 내린다 — 속도를 거의 잃지 않고 276MB 를 돌려받는다.
+VERIFY_INNODB_BUFFER_POOL="${VERIFY_INNODB_BUFFER_POOL:-512M}"
+# redo 로그. 48M 면 5GB 를 밀어 넣는 동안 체크포인트가 쉬지 않고 걸린다. 512M × 2개(기본
+# innodb_log_files_in_group) = 디스크에 1GB 선할당이고, 디스크는 VERIFY_DISK_HEADROOM_MULT
+# 여유(운영 기준 10.5GB 요구 / 816GB 여유) 안에서 충분하다. RAM 이 아니라 디스크를 쓴다.
+# 선할당 때문에 컨테이너 기동이 몇 초 늘어난다 — 아주 큰 값을 주면 VERIFY_READY_TIMEOUT 도 같이 본다.
+VERIFY_INNODB_LOG_FILE_SIZE="${VERIFY_INNODB_LOG_FILE_SIZE:-512M}"
 
 case "$VERIFY_READY_TIMEOUT" in
   ''|*[!0-9]*|0) echo "backup: VERIFY_READY_TIMEOUT은 양의 정수여야 함" >&2; exit 2 ;;
@@ -76,6 +100,23 @@ if ! [[ "$VERIFY_TMPFS_SMALL_SIZE" =~ ^[1-9][0-9]*[kKmMgG]?$ ]]; then
   echo "backup: VERIFY_TMPFS_SMALL_SIZE 는 64m·2g 같은 크기 표기여야 함(현재=$VERIFY_TMPFS_SMALL_SIZE)" >&2
   exit 2
 fi
+# mysqld 기동 인자에 그대로 들어가므로 tmpfs 크기와 **같은 정규식**으로 "숫자+단위" 만 허용한다
+# (옵션 주입 차단). mysqld 도 K/M/G 접미사를 그대로 받는다.
+for _sz in VERIFY_INNODB_BUFFER_POOL VERIFY_INNODB_LOG_FILE_SIZE; do
+  if ! [[ "${!_sz}" =~ ^[1-9][0-9]*[kKmMgG]?$ ]]; then
+    echo "backup: $_sz 는 512M·1g 같은 크기 표기여야 함(현재=${!_sz})" >&2
+    exit 2
+  fi
+done
+unset _sz
+# redo 로그는 2개 파일(innodb_log_files_in_group 기본값)로 **선할당**된다. 디스크 사전 확인이
+# 이 새 소비자를 모르면 확인을 통과하고도 복원 중에 공간이 모자랄 수 있다 — KB 로 환산해 둔다.
+case "$VERIFY_INNODB_LOG_FILE_SIZE" in
+  *[kK]) VERIFY_REDO_TOTAL_KB=$(( ${VERIFY_INNODB_LOG_FILE_SIZE%?} * 2 )) ;;
+  *[mM]) VERIFY_REDO_TOTAL_KB=$(( ${VERIFY_INNODB_LOG_FILE_SIZE%?} * 1024 * 2 )) ;;
+  *[gG]) VERIFY_REDO_TOTAL_KB=$(( ${VERIFY_INNODB_LOG_FILE_SIZE%?} * 1048576 * 2 )) ;;
+  *)     VERIFY_REDO_TOTAL_KB=$(( VERIFY_INNODB_LOG_FILE_SIZE / 1024 * 2 )) ;;
+esac
 # 배수는 1.5 처럼 소수도 허용한다(계산은 awk 로 한다). 0 이나 문자는 사전 확인을 무력화한다.
 if ! [[ "$VERIFY_DISK_HEADROOM_MULT" =~ ^[0-9]+(\.[0-9]+)?$ ]] \
    || [ "$(awk -v m="$VERIFY_DISK_HEADROOM_MULT" 'BEGIN { print (m > 0) ? 1 : 0 }')" != 1 ]; then
@@ -286,12 +327,15 @@ check_verify_disk_space() {
       echo "backup verify: df 로 여유 공간을 못 읽어 디스크 사전 확인을 건너뛴다($root)" >&2
       return 0 ;;
   esac
-  need_kb=$(awk -v b="$bytes" -v m="$VERIFY_DISK_HEADROOM_MULT" 'BEGIN { printf "%.0f", b * m / 1024 }')
+  # 데이터(원본 크기 × 배수)에 redo 선할당분을 더한다. redo 는 데이터 크기와 무관한 고정분이다.
+  need_kb=$(awk -v b="$bytes" -v m="$VERIFY_DISK_HEADROOM_MULT" -v r="$VERIFY_REDO_TOTAL_KB" \
+    'BEGIN { printf "%.0f", b * m / 1024 + r }')
+  local detail="원본 DB $((bytes / 1048576))MB × ${VERIFY_DISK_HEADROOM_MULT}배 + redo $((VERIFY_REDO_TOTAL_KB / 1024))MB"
   if [ "$avail_kb" -lt "$need_kb" ]; then
-    echo "backup verify: 디스크 여유 부족 — 복원을 시작하지 않는다. 필요 $((need_kb / 1024))MB(원본 DB $((bytes / 1048576))MB × ${VERIFY_DISK_HEADROOM_MULT}배) > 여유 $((avail_kb / 1024))MB (docker 데이터 경로 $root). 디스크를 확보한다" >&2
+    echo "backup verify: 디스크 여유 부족 — 복원을 시작하지 않는다. 필요 $((need_kb / 1024))MB($detail) > 여유 $((avail_kb / 1024))MB (docker 데이터 경로 $root). 디스크를 확보한다" >&2
     return 1
   fi
-  echo "backup verify: 디스크 사전 확인 통과 — 필요 $((need_kb / 1024))MB(원본 DB $((bytes / 1048576))MB × ${VERIFY_DISK_HEADROOM_MULT}배) ≤ 여유 $((avail_kb / 1024))MB ($root)"
+  echo "backup verify: 디스크 사전 확인 통과 — 필요 $((need_kb / 1024))MB($detail) ≤ 여유 $((avail_kb / 1024))MB ($root)"
 }
 
 require_manifest_kinds() {
@@ -383,9 +427,14 @@ verify_restore() {
       --label "$VERIFY_LABEL" \
       --env MYSQL_ALLOW_EMPTY_PASSWORD=yes \
       --env "MYSQL_DATABASE=$source_db" \
-      "$source_image" --skip-log-bin --skip-name-resolve); then
+      "$source_image" --skip-log-bin --skip-name-resolve \
+      --innodb-flush-log-at-trx-commit=0 \
+      --innodb-doublewrite=0 \
+      --innodb-flush-method=O_DIRECT \
+      --innodb-log-file-size="$VERIFY_INNODB_LOG_FILE_SIZE" \
+      --innodb-buffer-pool-size="$VERIFY_INNODB_BUFFER_POOL"); then
     rm -rf "$verify_dir"
-    echo "backup verify: 격리 DB 시작 실패(image=$source_image)" >&2
+    echo "backup verify: 격리 DB 시작 실패(image=$source_image) — mysqld 가 위 튜닝 인자를 거부했을 수 있다(예: MySQL 8.4 는 innodb-log-file-size 를 제거했다). docker logs 로 확인한다" >&2
     return 1
   fi
 
@@ -448,7 +497,7 @@ verify_restore() {
 
   cleanup_verify_container
   rm -rf "$verify_dir"
-  echo "backup verify: PASS dump=$(basename "$dump") isolation=container/network-none storage=anon-volume(disk) manifest=current core_rows(source/restored)=$source_summary/$restored_summary constraints=PK,FK,UNIQUE,NOT_NULL"
+  echo "backup verify: PASS dump=$(basename "$dump") isolation=container/network-none storage=anon-volume(disk) manifest=current core_rows(source/restored)=$source_summary/$restored_summary constraints=PK,FK,UNIQUE,NOT_NULL tuning=buffer_pool=$VERIFY_INNODB_BUFFER_POOL,redo=$VERIFY_INNODB_LOG_FILE_SIZE,durability=off(일회용)"
 }
 
 if [ -n "$VERIFY_FILE" ]; then
