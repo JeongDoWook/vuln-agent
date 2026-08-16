@@ -550,14 +550,25 @@ h1 .hint { font-size: var(--fs-sm); color: var(--muted); font-weight: 400; }
 .sub { color: var(--muted); font-size: var(--fs-sm); line-height: 1.55; margin-bottom: var(--sp-4); }
 h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(--sp-2); }
 
-/* --- 짧은 도움말 트리거 + 공통 툴팁 --------------------------------------- */
+/* --- 짧은 도움말 트리거 + 공통 툴팁 ---------------------------------------
+ * 트리거(.help)는 이 한 곳에서만 선언한다 — 예전엔 여기와 '도움말 툴팁' 절 두 곳에
+ * 나뉘어 있어(모양은 아래, 색은 위) 어느 쪽을 고쳐야 하는지가 파일 안에서 갈렸다. */
 .help {
-  cursor: help;
-  color: var(--muted);
+  display: inline-grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
   margin-left: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
   vertical-align: middle;
+  cursor: help;
 }
-.help:hover, .help:focus-visible { color: var(--accent-2); }
+.help:hover, .help:focus-visible { border-color: var(--accent); color: var(--accent-2); }
 
 .info-tooltip {
   --tip-anchor: 50%;
@@ -612,7 +623,6 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
   overflow-x: auto;
   margin-bottom: var(--sp-3);
 }
-.card:hover { border-color: var(--line); }
 .card strong { color: var(--text); }
 .card--sm { max-width: 380px; }
 /* 방금 발급된 토큰처럼 "이번 한 번만 보여주는" 카드 — 테두리로 시선을 끈다 */
@@ -665,8 +675,8 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 
 /* 여백 유틸 — PHP 에 style="margin-top:…" 을 쓰지 않기 위한 최소한의 유틸.
  * 색·레이아웃은 CSS 가 소유한다는 규칙을 지키되, 클래스를 남발하지 않도록 둘만 둔다. */
-.mt    { margin-top: .8rem; }
-.mt-lg { margin-top: 1.2rem; }
+.mt    { margin-top: var(--sp-3); }
+.mt-lg { margin-top: var(--sp-5); }
 
 /* 전체 선택되게 — 토큰처럼 통째로 복사해야 하는 값 */
 .selectable { user-select: all; }
@@ -690,26 +700,28 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
  *   (예전엔 이 절제를 대시보드 줄(.cards--grid)에만 예외로 걸어 화면마다 KPI 가
  *    달라 보였다 — 예외를 없애고 전 화면이 이 한 벌을 쓴다.)
  * 크기 차이는 변형 클래스 .kpi--sm 하나로만 낸다(.btn--sm·.card--sm 선례). */
-.cards { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
-.kpi-strip {
+/* KPI 줄은 **격자**다. 예전엔 flex-wrap 이라 카드 폭이 라벨 길이에 따라 제각각이었다 —
+ * 자산관리 실측에서 `13 전체 자산`·`C 정보시스템 등급`·`0 정상` 일곱 칸의 폭이 전부 달라
+ * 한 줄이 계단처럼 보였다(같은 위계인데 크기가 다르면 서열이 있는 것처럼 읽힌다).
+ * auto-fill 이라 칸이 모자라면 빈 트랙을 남긴다 — 카드 셋뿐인 줄(패키지 라이선스 위험)이
+ * 화면을 가로지르며 늘어나지 않는다. 줄을 꽉 채워야 하는 줄은 아래 .cards--grid 로 opt-in 한다. */
+.cards, .kpi-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
   gap: var(--sp-2);
   margin-bottom: var(--sp-3);
 }
-.kpi-strip .kpi { min-width: 0; }
+/* 목록 화면의 KPI 줄 — 빈 트랙을 남긴다(auto-fill). 카드가 셋뿐이어도 늘어나지 않는다. */
+.cards     { grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); }
+/* 그 화면의 요약 그 자체인 줄 — 빈 트랙을 접어(auto-fit) 남는 폭을 카드가 나눠 갖는다. */
+.kpi-strip { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
 .kpi-strip--compact { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); }
-/* 격자 정렬 KPI 줄 — 카드 폭이 라벨 길이에 따라 제각각이던 것을 열 단위로 맞춘다.
- * 기존 .cards(flex)는 다른 화면(assets/changes/findings/host)이 그대로 쓰므로
- * 건드리지 않고, 정렬이 필요한 줄에만 opt-in 하는 변형으로 둔다. */
-.cards--grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
-.cards--grid .kpi { min-width: 0; }
+/* .cards 를 꽉 채우는 쪽으로 돌리는 opt-in — 개요 화면(대시보드·통제 기준 매핑)이 쓴다. */
+.cards--grid { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
 .kpi {
-  flex: 0 0 auto;          /* 늘리지 않는다 — 늘리면 값 하나에 카드가 화면을 가로지른다 */
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-width: 108px;
+  min-width: 0;          /* 격자 칸 안에서 줄어들 수 있어야 한다(트랙 폭은 부모가 정한다) */
   min-height: 84px;
   padding: var(--sp-3);
   border: 1px solid var(--line);
@@ -873,7 +885,7 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 
 .donut__mid { position: absolute; text-align: center; line-height: 1.15; }
 .donut__mid b { display: block; font-size: var(--fs-num); font-variant-numeric: tabular-nums; }
-.donut__mid span { font-size: .7rem; color: var(--muted); }
+.donut__mid span { font-size: var(--fs-xs); color: var(--muted); }
 
 /* 대시보드 상단: 도넛 + 급한 일 목록을 나란히.
  * align-items: stretch — 급한 목록 쪽이 더 길 때(행이 많을수록) 도넛 카드만 짧게 남아
@@ -1015,7 +1027,7 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .kpi .kpi__delta {
   display: block;
   margin-top: .2rem;
-  font-size: .7rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -1066,11 +1078,14 @@ td details[open] summary { margin-bottom: .35rem; }
 /* 통계 그리드(cve.php) — CVSS·EPSS·KEV·CWE·공개일·영향자산을 히어로 바로 아래 한 카드에
  * 모은다. 예전엔 이 값들이 사이드바/본문에 흩어져 있어 "한눈에 안 들어온다" 는 불만의 핵심이었다. */
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 1.1rem 1.6rem; }
-.stat { min-width: 0; }
+/* 값의 모양이 칸마다 다르다 — 점수는 아래 게이지를 달고, 어떤 값은 두 줄로 접힌다.
+ * 그대로 두면 값 아래 캡션(무슨 지표인가)이 칸마다 다른 높이에 서서 여섯 칸이 계단이 된다
+ * (CVE 상세 '핵심 지표' 실측). 칸을 세로 flex 로 두고 캡션을 바닥으로 밀어 한 선에 맞춘다. */
+.stat { min-width: 0; display: flex; flex-direction: column; }
 .stat .score { font-size: var(--fs-num); margin-bottom: .15rem; }
 .stat__val { display: block; font-size: var(--fs-lg); font-weight: 700; color: var(--text); margin-bottom: .15rem; }
 .stat__val.is-danger { color: var(--crit-fg); }
-.stat > .why { display: block; }
+.stat > .why { display: block; margin-top: auto; padding-top: .15rem; }
 
 /* --- 표 ------------------------------------------------------------------ */
 /* 이 제품의 주인공은 표다. 행 높이를 줄여 한 화면에 더 담고, 경계·머리글을 또렷하게 세운다. */
@@ -1219,7 +1234,10 @@ td .why a:hover, td p a:hover { color: var(--accent-2); text-decoration-style: s
 /* --- 빈 상태 -------------------------------------------------------------
  * "데이터가 없습니다" 한 줄은 막다른 길이다. 왜 비었는지와 다음에 뭘 할지를 준다. */
 .empty { color: var(--muted); padding: var(--sp-5) var(--sp-4); text-align: center; }
-.empty__icon { font-size: var(--fs-xl); opacity: .45; display: block; margin-bottom: var(--sp-2); }
+/* 아이콘은 인라인 SVG(vg_icon)다 — 이모지는 컬러 이모지 폰트로 렌더돼 currentColor 를
+ * 안 따라가서, 단색 화면에 이 자리만 색이 튀었다(#584 와 같은 이유). 크기는 여기서 정한다. */
+.empty__icon { display: block; margin-bottom: var(--sp-2); color: var(--muted-2); opacity: .8; }
+.empty__icon .vg-ico { width: 1.85rem; height: 1.85rem; }
 .empty__title { color: var(--text-2); font-weight: 600; font-size: var(--fs-md); display: block; }
 .empty__hint { display: block; margin-top: .35rem; font-size: var(--fs-sm); color: var(--muted-2); }
 .empty .btn { margin-top: .9rem; }
@@ -1299,11 +1317,11 @@ a.badge:hover { text-decoration: none; filter: brightness(1.18); }
   display: inline-block;
   padding: .1rem .5rem;
   border-radius: 999px;
-  background: rgb(31 111 235 / .13);
+  background: var(--info-bg);
   color: var(--accent-2);
   font-size: var(--fs-sm);
 }
-a.pill:hover { text-decoration: none; background: rgb(31 111 235 / .25); }
+a.pill:hover { text-decoration: none; background: color-mix(in srgb, var(--accent) 22%, transparent); }
 
 /* 필터 프리셋 탭(cves.php). 선택된 탭만 채워진 배경. */
 .tabs { display: flex; gap: .4rem; margin: 0 0 .9rem; flex-wrap: wrap; }
@@ -1451,21 +1469,6 @@ tr[data-finding-detail]:focus-visible {
 .finding-detail__section + .finding-detail__section { margin-top: .75rem; }
 .finding-detail__section p { margin: .45rem 0 0; color: var(--muted); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .fact-grid, .finding-detail__grid { grid-template-columns: 1fr; } }
-
-/* --- 도움말 툴팁 ----------------------------------------------------------
- * 본문에 늘어놓으면 화면이 무거워지는 부연설명을 즉시 뜨는 공통 레이어 뒤로 보낸다. */
-.help {
-  display: inline-grid;
-  place-items: center;
-  width: 1.05rem;
-  height: 1.05rem;
-  border: 1px solid var(--line-2);
-  border-radius: 50%;
-  background: var(--surface-2);
-  font-size: .66rem;
-  font-weight: 700;
-}
-.help:hover, .help:focus-visible { border-color: var(--accent); }
 
 /* --- 알림 ---------------------------------------------------------------- */
 .alert {
@@ -1654,7 +1657,7 @@ td.right .actions { justify-content: flex-end; }
 .collection-status-btn:hover { border-color: var(--accent); color: var(--accent-2); }
 .collection-status-btn__dot { width: .45rem; height: .45rem; border-radius: 50%; background: var(--muted); }
 .collection-status-btn.is-active .collection-status-btn__dot { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 15%, transparent); }
-.collection-status-btn b { min-width: 1.15rem; padding: .08rem .3rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .68rem; text-align: center; }
+.collection-status-btn b { min-width: 1.15rem; padding: .08rem .3rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: var(--fs-xs); text-align: center; }
 .collection-overview__summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: .65rem; }
 .collection-overview__summary > div { padding: .85rem 1rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--sunken); }
 .collection-overview__summary span { display: block; color: var(--muted); font-size: var(--fs-xs); }
@@ -2441,7 +2444,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 @media (max-width: 560px) {
   .topbar__right { gap: .35rem; }
   .seg__btn { padding: .28rem .5rem; font-size: 0; }
-  .seg__btn::first-letter { font-size: .82rem; }
+  .seg__btn::first-letter { font-size: var(--fs-sm); }
   .card { padding: var(--sp-3); }
   .cards--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi { min-width: 0; }
@@ -2509,8 +2512,8 @@ form.card .btn--primary:active { transform: translateY(0); }
   letter-spacing: -.03em;
   font-variant-numeric: tabular-nums;
 }
-.funnel__step > span { font-size: .82rem; color: var(--text-2); }
-.funnel__cap { font-size: .74rem; color: var(--muted); }
+.funnel__step > span { font-size: var(--fs-sm); color: var(--text-2); }
+.funnel__cap { font-size: var(--fs-xs); color: var(--muted); }
 /* 칸 사이의 좁혀지는 방향 — 마크업이 아니라 CSS 가 그린다(값이 아니라 관계라서). */
 .funnel__step + .funnel__step::before {
   content: "›";
@@ -2596,6 +2599,12 @@ form.card .btn--primary:active { transform: translateY(0); }
    * 빛이라 톤 토큰이 아니고, 다크에서는 아래 오버라이드가 세기를 낮춘다. */
   box-shadow: var(--shadow), inset 0 1px 0 rgb(255 255 255 / .55);
 }
+/* 값이 있는 칸(라벨+숫자 두 줄)과 없는 칸(라벨 한 줄)이 한 줄에 섞이면, 가운데 정렬이라
+ * 라벨 밑줄이 칸마다 다른 높이에 선다 — 대시보드의 `매칭`, 자산의 `등록`, 컴플라이언스의
+ * `수집 데이터`가 이웃 칸보다 반 줄씩 내려가 있었다. 값이 하나라도 있는 줄만 위 정렬로
+ * 바꿔 라벨을 한 선에 맞춘다(값이 아예 없는 줄 — 취약점 판단 순서 — 은 가운데 정렬 그대로). */
+.xflow__list:has(.xflow__value) .xflow__step { align-items: flex-start; }
+.xflow__list:has(.xflow__value) .xflow__icon { margin-top: .1rem; }
 .xflow__icon { display: flex; color: var(--muted); }
 .xflow__text { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
 .xflow__label { font-weight: 700; font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

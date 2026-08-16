@@ -157,10 +157,10 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
   <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif (!$host): ?>
   <?php vg_page_title('호스트를 찾을 수 없습니다', 'FINDING HISTORY'); ?>
-  <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
+  <div class="card"><?php vg_empty(['icon' => 'host', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif ($cveId === '' || $packageName === ''): ?>
   <?php vg_page_title('취약점 이력', 'FINDING HISTORY'); ?>
-  <div class="card"><?php vg_empty(['icon' => '⚠️', 'title' => 'CVE·패키지 정보가 없습니다.', 'hint' => '탐지 결과 목록의 "이 자산 판정" 또는 호스트 상세 취약점 탭의 "이력" 링크로 들어오세요.']); ?></div>
+  <div class="card"><?php vg_empty(['icon' => 'warn', 'title' => 'CVE·패키지 정보가 없습니다.', 'hint' => '탐지 결과 목록의 "이 자산 판정" 또는 호스트 상세 취약점 탭의 "이력" 링크로 들어오세요.']); ?></div>
 <?php else: ?>
   <?php
   $meta = [

@@ -122,7 +122,7 @@ if ($err !== null) {
 if (!$host) {
     vg_page_title('자산을 찾을 수 없습니다', 'DEPENDENCY GRAPH', '삭제되었거나 존재하지 않는 자산입니다.');
     echo '<div class="card">';
-    vg_empty(['icon' => '□', 'title' => '요청한 자산이 없습니다.', 'cta' => ['href' => '/assets.php', 'label' => '자산 목록']]);
+    vg_empty(['icon' => 'host', 'title' => '요청한 자산이 없습니다.', 'cta' => ['href' => '/assets.php', 'label' => '자산 목록']]);
     echo '</div>';
     vg_footer();
     return;
@@ -152,14 +152,14 @@ vg_explain_flow([
 
 <?php if (!$scan): ?>
   <div class="card"><?php vg_empty([
-      'icon' => '📭',
+      'icon' => 'feed',
       'title' => '아직 수집된 스캔이 없습니다.',
       'hint'  => '에이전트가 한 번이라도 수집해야 의존성 엣지가 생깁니다.',
       'cta'   => ['href' => '/host.php?id=' . (int) $hostId, 'label' => '자산 상세로'],
   ]); ?></div>
 <?php elseif (!$groups): ?>
   <div class="card"><?php vg_empty([
-      'icon' => '□',
+      'icon' => 'package',
       'title' => '이 자산의 최신 스캔에는 의존성 엣지가 없습니다.',
       'hint'  => '의존성은 SBOM(CycloneDX) 또는 pom.xml 에서만 나옵니다 — 둘 다 없는 자산은 이 화면이 비어 있는 것이 정상입니다.',
       'cta'   => ['href' => '/host.php?id=' . (int) $hostId . '&tab=packages', 'label' => '설치 패키지 보기'],
@@ -299,7 +299,7 @@ vg_explain_flow([
     <div class="card__body">
     <?php
     if (!vg_pkgdep_children($graph, $target)) {
-        vg_empty(['icon' => '□', 'title' => '이 패키지가 끌어오는 의존성이 없습니다(말단 노드).']);
+        vg_empty(['icon' => 'package', 'title' => '이 패키지가 끌어오는 의존성이 없습니다(말단 노드).']);
     } else {
         echo '<ul class="dep-tree">';
         $renderNode($target, 0, []);
@@ -316,7 +316,7 @@ vg_explain_flow([
     <div class="card__body">
     <?php
     if (!$graph['roots']) {
-        vg_empty(['icon' => '□', 'title' => '루트가 없습니다.', 'hint' => 'pom.xml 직접선언만 있으면 부모가 없어 트리가 만들어지지 않습니다 — 아래 목록을 보세요.']);
+        vg_empty(['icon' => 'package', 'title' => '루트가 없습니다.', 'hint' => 'pom.xml 직접선언만 있으면 부모가 없어 트리가 만들어지지 않습니다 — 아래 목록을 보세요.']);
     } else {
         echo '<ul class="dep-tree">';
         foreach ($graph['roots'] as $root) { $renderNode($root, 0, []); }

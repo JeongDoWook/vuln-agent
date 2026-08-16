@@ -356,7 +356,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif (!$host): ?>
   <?php vg_page_title('호스트를 찾을 수 없습니다', 'ASSET DETAIL', '삭제되었거나 존재하지 않는 자산입니다.'); ?>
-  <div class="card"><?php vg_empty(['icon' => '🖥️', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
+  <div class="card"><?php vg_empty(['icon' => 'host', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif (!$scan): ?>
   <?php
   $noScanMeta = [vg_h(trim($host['os_id'] . ' ' . $host['os_version']))];
@@ -369,7 +369,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   <?php endif; ?>
   <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
   <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
-  <div class="card"><?php vg_empty(['icon' => '📭', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
+  <div class="card"><?php vg_empty(['icon' => 'feed', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
     $worst = null;

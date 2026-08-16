@@ -172,7 +172,7 @@ vg_page_title('UI 디자인 시스템', 'SYSTEM', '공통 토큰과 판단 신�
       })]]
   ); ?>
   <div class="card styleguide-empty"><?php vg_empty([
-      'icon' => '◇', 'title' => '조건에 맞는 결과가 없습니다.',
+      'icon' => 'search', 'title' => '조건에 맞는 결과가 없습니다.',
       'hint' => '필터를 초기화하거나 수집 상태를 확인하세요.',
       'cta' => ['href' => '/findings.php', 'label' => '전체 결과'],
   ]); ?></div>

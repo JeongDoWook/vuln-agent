@@ -7,6 +7,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../../format.php';
+require_once __DIR__ . '/../icons.php';   // vg_empty() 의 아이콘
 
 /**
  * POST 처리 결과를 세션에 담고 같은 URL 로 303 리다이렉트한다(PRG).
@@ -77,7 +78,10 @@ function vg_alert($msg, string $type = 'err'): void {
 /**
  * 빈 상태. "데이터가 없습니다" 한 줄은 막다른 길이라, 왜 비었는지와 다음 행동을 준다.
  *   문자열을 주면 기존처럼 한 줄만 출력(하위호환 — 대부분의 vg_table 호출이 이 형태).
- *   배열을 주면 아이콘·제목·힌트·행동버튼까지: ['icon'=>'🔍','title'=>…,'hint'=>…,'cta'=>['href'=>…,'label'=>…]]
+ *   배열을 주면 아이콘·제목·힌트·행동버튼까지: ['icon'=>'search','title'=>…,'hint'=>…,'cta'=>['href'=>…,'label'=>…]]
+ *   'icon' 은 icons.php 의 아이콘 이름이다 — 이모지·기호 문자를 넣지 않는다. 그것들은 환경에
+ *   따라 컬러 이모지 폰트로 렌더돼 currentColor 를 안 따라가고(#584), 폰트에 없으면 두부(□)가
+ *   된다. 이름이 아닌 값이 오면 예전처럼 글자 그대로 두어 화면이 깨지지는 않게 한다.
  */
 function vg_empty($spec): void {
     if (!is_array($spec)) {
@@ -86,7 +90,9 @@ function vg_empty($spec): void {
     }
     echo '<div class="empty">';
     if (!empty($spec['icon'])) {
-        echo '<span class="empty__icon" aria-hidden="true">' . vg_h((string) $spec['icon']) . '</span>';
+        $icon = (string) $spec['icon'];
+        echo '<span class="empty__icon" aria-hidden="true">'
+            . (isset(VG_ICON_PATHS[$icon]) ? vg_icon($icon) : vg_h($icon)) . '</span>';
     }
     echo '<span class="empty__title">' . vg_h((string) ($spec['title'] ?? '데이터가 없습니다.')) . '</span>';
     if (!empty($spec['hint'])) {

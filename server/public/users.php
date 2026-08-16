@@ -116,11 +116,11 @@ vg_header('사용자', 'users');
       $users,
       [
           'empty' => ($q !== '' || $role !== '') ? [
-              'icon' => '🔍', 'title' => '조건에 맞는 사용자가 없습니다.',
+              'icon' => 'search', 'title' => '조건에 맞는 사용자가 없습니다.',
               'hint' => '아이디나 역할 필터를 바꿔 보세요.',
               'cta' => ['href' => '/users.php', 'label' => '필터 초기화'],
           ] : [
-              'icon' => '👤', 'title' => '등록된 사용자가 없습니다.',
+              'icon' => 'user', 'title' => '등록된 사용자가 없습니다.',
           ],
           'cell' => [
               0 => fn($u) => vg_h((string) $u['user_id']),
