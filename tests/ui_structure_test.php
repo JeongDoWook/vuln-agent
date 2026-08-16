@@ -132,7 +132,8 @@ $check(str_contains($signalHtml, '해당 없음') && str_contains($signalHtml, '
 $check(str_contains($signalHtml, '&lt;외부&gt;') && !str_contains($signalHtml, 'tone-evil'), '판단 신호 이스케이프·tone 화이트리스트');
 $check(str_contains($chartsPhp, '$min = 0.0;') && str_contains($chartsPhp, '$max = 100.0;'),
     '에이전트 리소스 사용률 차트 0~100% 절대 축');
-$connectorPhp = (string) file_get_contents($public . '/connectors.php');
+// connectors.php 는 자기 속을 server/src/connectors/** 로 나눠 뒀다 — 화면의 계약은 그 묶음 전체다.
+$connectorPhp = $splitSources($public, $root, 'connectors.php', 'connectors');
 $connectorJs = (string) file_get_contents($public . '/assets/js/connectors.js');
 $navPhp = (string) file_get_contents($root . '/server/src/view/nav.php');
 $check(str_contains($connectorPhp, 'data-feed-preview'), '커넥터 미리보기 data 속성');
@@ -195,7 +196,8 @@ $check(str_contains($vendorPhp, "preg_match('/^TEMP-/i") && str_contains($vendor
     'Debian TEMP 식별자를 CVE 미배정으로 표시');
 $check(str_contains($vendorPhp, "' · 원본 ' . \$cveId"), 'Debian TEMP 원본 식별자를 툴팁에 보존');
 
-$assetsPhp = (string) file_get_contents($public . '/assets.php');
+// assets.php 도 마찬가지로 server/src/assets/** 와 한 묶음이다(표·모달이 거기 있다).
+$assetsPhp = $splitSources($public, $root, 'assets.php', 'assets');
 $assetPackagesPhp = (string) file_get_contents($public . '/asset-packages.php');
 $check(str_contains($assetsPhp, "'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php']")
     && str_contains($assetPackagesPhp, "'assets' => ['label' => '자산 목록', 'href' => '/assets.php']"),
