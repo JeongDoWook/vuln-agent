@@ -49,12 +49,14 @@ $componentsPhp = (string) file_get_contents($root . '/server/src/view/components
 $chartsPhp = (string) file_get_contents($root . '/server/src/view/charts.php');
 /* 자기 속을 server/src/<화면>/ 로 나눠 둔 페이지는 파일 하나가 아니다 — 조회층·탭 렌더가
  *   거기 있다. "그 화면의 소스" 는 페이지 + 그 디렉터리 전체이고, 페이지 파일만 읽으면 코드가
- *   옮겨졌을 뿐인데 계약이 깨진다(host: #621 · findings: 이번 분리). */
+ *   옮겨졌을 뿐인데 계약이 깨진다(host: #621 · findings: 이번 분리).
+ *   탭이 아니라 섹션으로 나뉜 화면도 있다(cve: 한 화면에 섹션이 여럿) — sections/ 도 함께 읽는다. */
 $splitSources = static function (string $public, string $root, string $page, string $dir): string {
     $files = array_merge(
         [$public . '/' . $page],
         glob($root . '/server/src/' . $dir . '/*.php') ?: [],
-        glob($root . '/server/src/' . $dir . '/tabs/*.php') ?: []
+        glob($root . '/server/src/' . $dir . '/tabs/*.php') ?: [],
+        glob($root . '/server/src/' . $dir . '/sections/*.php') ?: []
     );
     return implode("\n", array_map(static fn(string $f): string => (string) file_get_contents($f), $files));
 };
@@ -173,7 +175,8 @@ $check(str_contains($navPhp, "'token_issue'"), '과거 API 토큰 감사로그 �
 $check(str_contains($connectorPhp, "['label' => '실행 시각'"), '커넥터 실행 시각 열 통합');
 $check(!str_contains($connectorPhp, "['label' => '마지막 실행'"), '커넥터 중복 시각 열 제거');
 
-$cvePhp = (string) file_get_contents($public . '/cve.php');
+// CVE 상세도 조회층·섹션 렌더가 server/src/cve/** 로 나뉘어 있다(위 $splitSources 주석).
+$cvePhp = $splitSources($public, $root, 'cve.php', 'cve');
 $vendorPhp = (string) file_get_contents($public . '/vendor.php');
 $check(str_contains($cvePhp, 'LEFT JOIN tb_finding_evidence fe'), 'CVE 위치별 수정 버전 근거 결합');
 $check(str_contains($cvePhp, "['label' => '현재 → 권장 조치'"), 'CVE 위치별 권장 조치 열 제공');
