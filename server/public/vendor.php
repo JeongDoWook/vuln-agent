@@ -191,17 +191,8 @@ try {
     //   COUNT 는 조기 종료가 없어(전건을 세야 한다) 이 페이지에서 제일 무거운 질의다. 그래서
     //   새 인덱스가 필터 컬럼(is_deleted·release_*)까지 담아 **인덱스만 읽고** 끝나게 했다 —
     //   원본을 행마다 뒤지지 않는다(실측 55만 행: 풀 테이블 스캔 3.23초 → 커버링 0.34초).
-    $countParts = []; $countParams = [];
-    foreach ($active as $def) {
-        $where = vg_vendor_where($def, $q, $rel, $countParams);
-        $countParts[] = "SELECT COUNT(*) AS n FROM {$def['from']} WHERE $where";
-    }
-    $stmt = $pdo->prepare('SELECT SUM(n) FROM (' . implode(' UNION ALL ', $countParts) . ') c');
-    $stmt->execute($countParams);
-    $total = (int) $stmt->fetchColumn();
-
-    // 소스별 요약 카드용 건수 — 무필터 진입 시 55만+ 행이 뒤섞여 막막한 문제의 진입점(작업 3).
-    //   src 선택과 무관하게 5종 전부 세되, q·rel 필터는 그대로 반영한다(N=5, COUNT 쿼리라 가볍다).
+    //   소스별 요약 카드용 건수 — 무필터 진입 시 55만+ 행이 뒤섞여 막막한 문제의 진입점(작업 3).
+    //   src 선택과 무관하게 5종 전부 세되, q·rel 필터는 그대로 반영한다.
     $srcCounts = [];
     foreach (VG_VENDOR_SRC as $srcKey => $srcDef) {
         $srcCountParams = [];
@@ -210,6 +201,15 @@ try {
         $stmt->execute($srcCountParams);
         $srcCounts[$srcKey] = (int) $stmt->fetchColumn();
     }
+
+    // 총건수는 **위 5개를 더해서 낸다 — 세는 질의를 따로 던지지 않는다.**
+    //   예전엔 같은 WHERE 로 UNION ALL COUNT 를 한 번 더 돌렸는데, $active 는 정의상
+    //   src 가 비면 5종 전부, 고르면 그 하나라 결과가 $srcCounts 의 부분합과 **항상 같다**
+    //   (둘 다 vg_vendor_where($def, $q, $rel) 로 조건을 만든다). 즉 같은 COUNT 를 두 번
+    //   센 것이고, 그 한 번이 dev 실측으로 186~227 ms 였다(570K행 tb_vendor_errata 를
+    //   포함해 5개 테이블을 다시 세는 질의라 조기 종료가 없다).
+    $total = 0;
+    foreach ($active as $srcKey => $_def) { $total += $srcCounts[$srcKey]; }
 
     $offset = ($page - 1) * $perPage;
 
