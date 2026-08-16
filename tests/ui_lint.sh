@@ -47,7 +47,10 @@ fi
 # 안 섞였는지까지 본다 — 'width:10px;color:red' 처럼 얹혀 오는 건 여전히 잡아야 하므로.
 #   공용 헬퍼(server/src/view.php 의 vg_table())도 style="…" 을 만들 수 있으므로 server/src 도 본다
 #   — 예전엔 $PUB 만 봐서 vg_table() 의 text-align 인라인 style 이 그대로 새고 있었다.
-inline=$(grep -nE 'style="' "$PUB"/*.php "$SRC"/*.php | grep -vE 'style="width:[^";]*;?"' || true)
+#   server/src 는 **하위 디렉터리까지** 본다 — view/·host/ 처럼 나뉜 뒤에도 검사가 따라가야 한다
+#   (한 층만 보면 화면 코드를 하위 폴더로 옮기는 순간 이 검사가 조용히 그 코드를 놓친다).
+inline=$(find "$PUB" "$SRC" -type f -name '*.php' -print0 \
+         | xargs -0 grep -nE 'style="' | grep -vE 'style="width:[^";]*;?"' || true)
 if [ -z "$inline" ]; then
   ok "PHP 안에 인라인 style 없음 (폭 계산 제외)"
 else

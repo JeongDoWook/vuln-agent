@@ -56,6 +56,16 @@ $extractMethods = static function (string $source): array {
 foreach (($contract['routes'] ?? []) as $route => $entry) {
     $path = $root . '/server/public/' . ltrim($route, '/');
     $source = is_file($path) ? (string) file_get_contents($path) : '';
+    /* 페이지가 자기 속을 server/src/host/** 로 나눠 뒀으면 그 파일들도 이 라우트의 소스다
+     *   (POST 처리·리다이렉트·탭 렌더가 거기 있다). 계약은 "이 URL 이 무엇을 하는가"이지
+     *   "어느 파일에 적혀 있는가"가 아니다. 나눠 둔 그 디렉터리만 따라간다 — 공용 src/*.php 까지
+     *   끌어오면 모든 라우트가 서로의 계약을 오염시킨다. */
+    if (str_contains($source, "/../src/host/")) {
+        foreach (array_merge(glob($root . '/server/src/host/*.php') ?: [],
+                             glob($root . '/server/src/host/tabs/*.php') ?: []) as $split) {
+            $source .= "\n" . (string) file_get_contents($split);
+        }
+    }
     $check($source !== '', "$route source exists");
     $check(($entry['methods'] ?? []) === $extractMethods($source), "$route method contract drifted");
     if (($entry['query_policy'] ?? '') !== 'passthrough_all') {
