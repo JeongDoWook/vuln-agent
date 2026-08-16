@@ -47,17 +47,18 @@ $loginJs = (string) file_get_contents($public . '/assets/js/login.js');
 $hostJs = (string) file_get_contents($public . '/assets/js/host.js');
 $componentsPhp = (string) file_get_contents($root . '/server/src/view/components.php');
 $chartsPhp = (string) file_get_contents($root . '/server/src/view/charts.php');
-/* 호스트 상세는 파일 하나가 아니다 — 조회층·탭 렌더가 server/src/host/** 로 나뉘어 있다.
- *   "상세 화면의 소스" 는 그 묶음 전체다. host.php 만 읽으면 코드가 옮겨졌을 뿐인데 계약이 깨진다. */
-$hostSources = static function (string $public, string $root): string {
+/* 자기 속을 server/src/<화면>/ 로 나눠 둔 페이지는 파일 하나가 아니다 — 조회층·탭 렌더가
+ *   거기 있다. "그 화면의 소스" 는 페이지 + 그 디렉터리 전체이고, 페이지 파일만 읽으면 코드가
+ *   옮겨졌을 뿐인데 계약이 깨진다(host: #621 · findings: 이번 분리). */
+$splitSources = static function (string $public, string $root, string $page, string $dir): string {
     $files = array_merge(
-        [$public . '/host.php'],
-        glob($root . '/server/src/host/*.php') ?: [],
-        glob($root . '/server/src/host/tabs/*.php') ?: []
+        [$public . '/' . $page],
+        glob($root . '/server/src/' . $dir . '/*.php') ?: [],
+        glob($root . '/server/src/' . $dir . '/tabs/*.php') ?: []
     );
     return implode("\n", array_map(static fn(string $f): string => (string) file_get_contents($f), $files));
 };
-$hostPhp = $hostSources($public, $root);
+$hostPhp = $splitSources($public, $root, 'host.php', 'host');
 $check(str_contains($loginPhp, 'id="loginForm"')
     && str_contains($loginPhp, 'target="_self"')
     && str_contains($loginPhp, 'formtarget="_self"'),
@@ -195,7 +196,7 @@ $agentSh = (string) file_get_contents($root . '/agent/vuln-inventory-agent.sh');
 /* 목록은 "이 행을 열어볼지 말지" 를 정하는 열만 둔다(docs/dev/ui-design-system.md).
  *   IP·OS·에이전트 버전·패키지 수·담당 부서는 **지운 게 아니라 호스트 상세로 옮겼다** —
  *   목록에서 빠진 것과 상세에 있는 것을 한 쌍으로 확인한다(한쪽만 보면 값이 사라져도 통과한다). */
-$hostPhpSrc = $hostSources($public, $root);   // host.php + server/src/host/**(위 주석 참고)
+$hostPhpSrc = $splitSources($public, $root, 'host.php', 'host');   // host.php + server/src/host/**(위 주석 참고)
 $check(!str_contains($assetsPhp, "['label' => 'IP'") && !str_contains($assetsPhp, "['label' => '스캔'")
     && !str_contains($assetsPhp, "['label' => 'OS'") && !str_contains($assetsPhp, "['label' => '에이전트'")
     && !str_contains($assetsPhp, "['label' => '담당 부서'"),
@@ -221,7 +222,8 @@ $check(str_contains($assetsPhp, 'POSIX <code>awk</code>') && str_contains($asset
 
 // #599 W3 — 기존 route/query 키를 유지한 행동 흐름·접근성 회귀.
 $indexPhp = (string) file_get_contents($public . '/index.php');
-$findingsPhp = (string) file_get_contents($public . '/findings.php');
+// 탐지 결과도 조회층·탭 렌더가 server/src/findings/** 로 나뉘어 있다(위 $splitSources 주석).
+$findingsPhp = $splitSources($public, $root, 'findings.php', 'findings');
 $cceRulePhp = (string) file_get_contents($public . '/cce-rule.php');
 $compliancePhp = (string) file_get_contents($public . '/compliance.php');
 $findingStatusPhp = (string) file_get_contents($root . '/server/src/finding_status.php');
