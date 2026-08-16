@@ -82,3 +82,8 @@ tests/.tmp-pkg-origins.*
 # update_sh_scenarios.sh 샌드박스(임시 git 저장소 + 스텁). trap 으로 정상 삭제되지만 안전망.
 tests/.tmp-update-sh.*
 
+
+# codelore 편집 훅 — 명령에 codelore 설치 경로(머신마다 다름)가 박히므로 저장소에 남기지 않는다.
+#   Claude Code 는 .claude/settings.local.json(전역 gitignore)에, Codex 는 이 파일에 둔다.
+#   저장소가 공유하는 것은 규약(AGENTS.md)과 에이전트 tools 목록까지다.
+.codex/hooks/hooks.json
