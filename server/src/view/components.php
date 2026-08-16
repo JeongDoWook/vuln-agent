@@ -732,14 +732,6 @@ function vg_table(array $headers, array $rows, array $opts = []): void {
 function vg_toolbar(array $fields): void {
     $resetOverrides = ['page' => null];
     $hasValue = false;
-    $advancedActive = false;
-    foreach ($fields as $field) {
-        if (empty($field['advanced']) || ($field['type'] ?? '') === 'hidden') { continue; }
-        $current = (string) (($field['type'] ?? '') === 'select'
-            ? ($field['selected'] ?? '') : ($field['value'] ?? ''));
-        if ($current !== '') { $advancedActive = true; break; }
-    }
-    $advancedOpen = false;
 
     echo '<form class="toolbar" method="get">';
 
@@ -752,13 +744,6 @@ function vg_toolbar(array $fields): void {
         $type = $f['type'] ?? 'search';
         $name = (string) ($f['name'] ?? '');
         $value = (string) ($f['value'] ?? '');
-
-        if (!empty($f['advanced']) && !$advancedOpen) {
-            echo '<details class="toolbar__advanced"' . ($advancedActive ? ' open' : '') . '>'
-                . '<summary>고급 필터' . ($advancedActive ? ' · 적용 중' : '') . '</summary>'
-                . '<div class="toolbar__advanced-fields">';
-            $advancedOpen = true;
-        }
 
         if ($type === 'hidden') {
             $isReset = !empty($f['reset']);
@@ -801,7 +786,6 @@ function vg_toolbar(array $fields): void {
             $resetOverrides[$name] = null;
         }
     }
-    if ($advancedOpen) { echo '</div></details>'; }
     echo '<button type="submit" class="btn btn--sm btn--primary" data-loading="검색 중…">검색</button>';
     if ($hasValue) {
         echo '<a class="btn btn--sm btn--ghost" href="' . vg_h(vg_qs($resetOverrides)) . '">초기화</a>';
