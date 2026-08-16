@@ -114,17 +114,6 @@ vg_header('변화 추적', 'changes');
            사이드바엔 '탐지 결과' 하나만 있고 이 화면은 이 줄로만 들어온다. */ ?>
   <?php vg_findings_subtabs('changes'); ?>
 
-  <?php
-  // 화면 오리엔테이션 도식 — 이 화면의 모든 수는 **두 수집 사이의 차이**다. 무엇과 무엇을
-  //   비교했는지가 안 보이면 "신규 12" 가 전체 12건인지 늘어난 12건인지 읽히지 않는다.
-  //   값은 '취약점 변화' 탭의 합계($summary)와 같은 것이다(탭을 옮겨도 비교 축은 그대로다).
-  vg_explain_flow([
-      ['icon' => 'clock', 'label' => '직전 수집', 'state' => 'done'],
-      ['icon' => 'clock', 'label' => '이번 수집', 'state' => 'active'],
-      ['icon' => 'warn',  'label' => '신규',      'value' => number_format((int) $summary['new'])],
-      ['icon' => 'check', 'label' => '해결',      'value' => number_format((int) $summary['resolved'])],
-  ], ['label' => '변화 비교 흐름']);
-  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

@@ -332,7 +332,7 @@ function vg_menus(): array {
         'advisories'  => '보안 공지',
         'compliance'  => '컴플라이언스 · 통제 기준 매핑',
         'connectors'  => '데이터 수집',
-        'catalog'     => '참조 카탈로그(CVE·패키지·판정 근거·보안 설정 룰)',
+        'catalog'     => '참조 데이터(CVE·패키지·판정 근거·보안 설정 룰)',
         'users'       => '사용자',
         'agenttokens' => '에이전트 키',
         'activity'    => '감사 로그',

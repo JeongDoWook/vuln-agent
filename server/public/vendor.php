@@ -250,14 +250,6 @@ vg_header('판정 근거', 'vendor');
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php
-  // 화면 오리엔테이션 도식 — 이 화면은 **원본 보관소**다. 여기 있는 '고친 버전'이 자산의
-  //   설치 버전과 비교되어 탐지 결과의 조치 칸이 된다는 것을, 표를 읽기 전에 세워 둔다.
-  vg_explain_flow([
-      ['icon' => 'feed',    'label' => '벤더 발표', 'state' => 'done'],
-      ['icon' => 'package', 'label' => '고친 버전', 'value' => number_format($total) . '건', 'state' => 'active'],
-      ['icon' => 'check',   'label' => '조치 판정', 'state' => 'todo'],
-  ], ['label' => '판정 근거 흐름']);
-
   // 소스별 진입점(작업 3) — 무필터로 들어왔을 때 5개 소스가 뒤섞인 채 페이지네이션만으로
   //   넘겨야 하는 막막함을 줄인다. 필터 프리셋 탭(cves.php)과 같은 .tabs/.pill 을 그대로 쓴다.
   echo '<div class="tabs">';

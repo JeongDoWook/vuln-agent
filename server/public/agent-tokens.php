@@ -124,16 +124,6 @@ vg_header('에이전트 키', 'agenttokens');
       'count' => $total, 'count_label' => '개',
       'actions' => vg_capture(static fn() => vg_modal_btn('issueToken', '+ 토큰 발급')),
   ]); ?>
-  <?php
-  // 화면 오리엔테이션 도식 — 키 한 개의 일생(발급 → 설치 → 수집 → 만료). 이 표의 '상태'·
-  //   '유효기간'·'마지막 수신' 열이 각각 그 중 어느 단계를 보는 값인지가 이걸로 잡힌다.
-  vg_explain_flow([
-      ['icon' => 'shield', 'label' => '키 발급', 'value' => number_format($total) . '개', 'state' => 'done'],
-      ['icon' => 'host',   'label' => '설치',    'state' => 'done'],
-      ['icon' => 'feed',   'label' => '수집',    'state' => 'active'],
-      ['icon' => 'clock',  'label' => '만료',    'state' => 'todo'],
-  ], ['label' => '에이전트 키 수명 흐름']);
-  ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
@@ -227,17 +217,6 @@ vg_header('에이전트 키', 'agenttokens');
 
   // 발급 폼은 가끔 쓰는 것 — 버튼 뒤 모달로. 실패하면 다시 연다.
   vg_modal_open('issueToken', '에이전트 토큰 발급', '', $issueFailed);
-  // 폼 위 한 줄 도식 — **'1회 표시' 칸이 이 모달의 경고다.** 지금까지 그 사실은 폼 아래
-  //   회색 한 줄(글자)뿐이라 발급을 누르고 나서야 알아채는 사람이 있었다. 되돌릴 수 없는 단계라
-  //   글이 아니라 칸(아이콘 + 값 슬롯)으로 세운다.
-  //   자물쇠 아이콘은 공용 아이콘 세트(server/src/view/icons.php)에 없고 이 작업은 공용 파일을
-  //   건드리지 않기로 했으므로, 같은 뜻의 shield(보호)와 warn(경고)로 대신한다.
-  vg_explain_flow([
-      ['icon' => 'shield', 'label' => '발급',    'state' => 'active'],
-      ['icon' => 'warn',   'label' => '원문 노출', 'value' => '1회만', 'state' => 'active'],
-      ['icon' => 'host',   'label' => '설치',    'state' => 'todo'],
-      ['icon' => 'clock',  'label' => '만료',    'state' => 'todo'],
-  ], ['label' => '토큰 발급 흐름']);
   ?>
     <form method="post" class="setting-form">
       <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">

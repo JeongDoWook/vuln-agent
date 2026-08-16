@@ -123,8 +123,8 @@ if ($rule === null) {
       <?php vg_empty([
           'icon'  => '📋',
           'title' => '이런 점검 항목은 없습니다.',
-          'hint'  => 'CCE 코드가 정확한지 확인하세요. 점검 항목은 카탈로그에서 모두 볼 수 있습니다.',
-          'cta'   => ['href' => '/cce-rules.php', 'label' => 'CCE 카탈로그로'],
+          'hint'  => 'CCE 코드가 정확한지 확인하세요. 점검 항목은 CCE 목록에서 모두 볼 수 있습니다.',
+          'cta'   => ['href' => '/cce-rules.php', 'label' => 'CCE 목록으로'],
       ]); ?>
     </div>
     <?php
@@ -138,7 +138,7 @@ vg_hero(
     [
         '<code class="why">' . vg_h($code) . '</code>',
         '점검된 자산 ' . number_format($hostCount) . '대',
-        '<a href="/cce-rules.php">← CCE 카탈로그</a>',
+        '<a href="/cce-rules.php">← CCE</a>',
     ],
     $sev,
     vg_sev_tone($sev),
@@ -339,7 +339,7 @@ vg_hero(
 
       <div class="actions mt">
         <?php vg_copy_btn($code, 'CCE 코드 복사'); ?>
-        <a class="btn btn--sm btn--ghost" href="/cce-rules.php?q=<?= urlencode($code) ?>">카탈로그에서 보기</a>
+        <a class="btn btn--sm btn--ghost" href="/cce-rules.php?q=<?= urlencode($code) ?>">CCE 목록에서 보기</a>
       </div>
     </div>
   </div>

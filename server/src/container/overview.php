@@ -39,18 +39,6 @@ function vg_container_render_overview(array $ctx): void {
 
     vg_hero(vg_h((string) $container['cid']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'CONTAINER');
 
-    /* 이 컨테이너가 어디에 들어 있는지 — 호스트 안의 한 칸이고, 그 안에 패키지가 있고, 그중
-     *   일부가 취약점으로 판정되며, 일부만 밖에서 닿는다. 첫 칸이 부모(호스트) 자리라 host.php 의
-     *   같은 도식과 계층이 이어진다. 숫자는 위에서 이미 센 값만 쓴다. */
-    vg_explain_flow([
-        ['icon' => 'host',      'label' => '호스트', 'state' => 'done'],
-        ['icon' => 'container', 'label' => '컨테이너', 'state' => 'active'],
-        ['icon' => 'package',   'label' => '패키지', 'value' => number_format($packageTotal), 'state' => 'done'],
-        ['icon' => 'cve',       'label' => '취약점', 'value' => number_format($vulnTotal), 'state' => 'done'],
-        ['icon' => 'port',      'label' => '노출', 'value' => number_format($exposureCount),
-         'state' => $externalFindings > 0 ? 'active' : 'done'],
-    ], ['label' => '호스트 안에서 이 컨테이너의 자리']);
-
     /* 심각도 색의 뜻 — 아래 KPI 카드와 취약점 표가 모두 이 색으로 서열을 말한다. */
     vg_legend(array_map(
         fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $counts[$s]],

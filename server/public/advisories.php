@@ -166,15 +166,6 @@ vg_header('보안 공지', 'advisories');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
-  <?php
-  // 화면 오리엔테이션 도식 — 이 목록의 마지막 칸('영향 자산')이 왜 거기 있는지를 먼저 말한다.
-  //   공지 자체는 남의 문서고, 우리 화면에서 뜻이 생기는 건 그 공지의 CVE 가 내 자산에 걸릴 때다.
-  vg_explain_flow([
-      ['icon' => 'feed',    'label' => 'KISA 공지', 'value' => number_format($total) . '건', 'state' => 'done'],
-      ['icon' => 'cve',     'label' => '관련 CVE',  'state' => 'done'],
-      ['icon' => 'host',    'label' => '영향 자산', 'state' => 'active'],
-  ], ['label' => '보안 공지 흐름']);
-  ?>
   <?php // 범위 칩 — cves.php 의 필터 프리셋(.tabs/.pill)과 같은 컴포넌트. 페이지 번호는 항상 지운다. ?>
   <div class="tabs">
     <?php foreach (['mine' => '내 자산 영향', 'all' => '전체 공지'] as $key => $label): ?>
@@ -306,13 +297,6 @@ vg_header('보안 공지', 'advisories');
 
   <?php
   vg_modal_open('advisoryAssetsModal', '영향 자산', 'modal--wide');
-  // 표 위 한 줄 도식 — 이 표의 행이 "공지 → CVE → 자산" 세 단계를 거쳐 나온 것임을 밝힌다.
-  //   표만 보면 호스트·패키지·CVE 가 나열돼 있어 무엇이 원인이고 무엇이 결과인지 안 보인다.
-  vg_explain_flow([
-      ['icon' => 'feed', 'label' => '공지', 'state' => 'done'],
-      ['icon' => 'cve',  'label' => 'CVE',  'state' => 'done'],
-      ['icon' => 'host', 'label' => '자산', 'state' => 'active'],
-  ], ['label' => '영향 자산 판정 흐름']);
   ?>
     <p class="why" data-advisory-assets-title></p>
     <div class="card__body" data-advisory-assets-body></div>

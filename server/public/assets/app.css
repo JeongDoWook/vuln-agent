@@ -2568,7 +2568,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 }
 
 /* ==========================================================================
- * 시각 설명 컴포넌트 — 화면 흐름 도식(vg_explain_flow) · 아이콘(vg_icon) · 범례(vg_legend)
+ * 시각 설명 컴포넌트 — 아이콘(vg_icon) · 범례(vg_legend)
  *   글로 설명하는 대신 그림으로 보이기 위한 최소 세트. 색은 전부 기존 토큰이고
  *   새 색을 만들지 않는다 — 라이트/다크가 자동으로 따라온다.
  * ========================================================================== */
@@ -2577,63 +2577,6 @@ form.card .btn--primary:active { transform: translateY(0); }
  * 사이드바의 .ico 와 클래스를 나눠 쓴다 — 그쪽은 마크업에 width/height 가 박혀 있어
  * 같은 클래스에 CSS 크기를 걸면 사이드바까지 같이 바뀐다. */
 .vg-ico { width: 1.05rem; height: 1.05rem; flex: none; }
-
-/* --- 화면 흐름 도식(vg_explain_flow) ---------------------------------------
- * 3~5칸을 화살표로 잇는다. 입체감은 그림자 + 위쪽 1px 하이라이트로만 준다 —
- * rotateX/Y 같은 실제 3D 변환은 좁은 화면·다크·인쇄에서 깨지므로 쓰지 않는다. */
-.xflow { margin: 0 0 var(--sp-4); }
-.xflow__list { display: flex; gap: .6rem; margin: 0; padding: 0; list-style: none; }
-.xflow__step {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .6rem .75rem;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  color: var(--text);
-  /* 얇은 두께감 — 아래로 떨어지는 그림자 + 윗면 1px 하이라이트. 하이라이트는 색이 아니라
-   * 빛이라 톤 토큰이 아니고, 다크에서는 아래 오버라이드가 세기를 낮춘다. */
-  box-shadow: var(--shadow), inset 0 1px 0 rgb(255 255 255 / .55);
-}
-/* 값이 있는 칸(라벨+숫자 두 줄)과 없는 칸(라벨 한 줄)이 한 줄에 섞이면, 가운데 정렬이라
- * 라벨 밑줄이 칸마다 다른 높이에 선다 — 대시보드의 `매칭`, 자산의 `등록`, 컴플라이언스의
- * `수집 데이터`가 이웃 칸보다 반 줄씩 내려가 있었다. 값이 하나라도 있는 줄만 위 정렬로
- * 바꿔 라벨을 한 선에 맞춘다(값이 아예 없는 줄 — 취약점 판단 순서 — 은 가운데 정렬 그대로). */
-.xflow__list:has(.xflow__value) .xflow__step { align-items: flex-start; }
-.xflow__list:has(.xflow__value) .xflow__icon { margin-top: .1rem; }
-.xflow__icon { display: flex; color: var(--muted); }
-.xflow__text { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
-.xflow__label { font-weight: 700; font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.xflow__value { font-size: var(--fs-lg); line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-/* 칸 사이 화살표 — 앞 칸과의 간격(.6rem) 한가운데에 놓는다. */
-.xflow__arrow { position: absolute; left: -.63rem; top: 50%; transform: translateY(-50%); display: flex; color: var(--muted-2); }
-.xflow__arrow .vg-ico { width: .8rem; height: .8rem; }
-
-/* 상태 — 지나온 칸 · 지금 칸 · 아직 안 온 칸. 세 단계가 색이 아니라 무게로도 갈린다. */
-.xflow__step.is-done { border-color: var(--ok-bd); background: var(--ok-bg); }
-.xflow__step.is-done .xflow__icon { color: var(--ok-fg); }
-.xflow__step.is-active { border-color: var(--accent); background: var(--info-bg); }
-.xflow__step.is-active .xflow__icon { color: var(--accent-2); }
-.xflow__step.is-active .xflow__label { color: var(--accent-2); }
-.xflow__step.is-todo { background: var(--surface-2); color: var(--muted); box-shadow: none; }
-.xflow__step.is-todo .xflow__icon { color: var(--muted-2); }
-
-:root[data-theme="dark"] .xflow__step { box-shadow: var(--shadow), inset 0 1px 0 rgb(255 255 255 / .07); }
-:root[data-theme="dark"] .xflow__step.is-todo { box-shadow: none; }
-
-@media (max-width: 860px) {
-  /* 2열로 접히면 화살표가 줄 끝에서 엉뚱한 곳을 가리킨다 — 방향은 배치가 대신 말한다
-   * (.funnel 과 같은 판단). */
-  .xflow__list { display: grid; grid-template-columns: 1fr 1fr; }
-  .xflow__arrow { display: none; }
-}
-@media (max-width: 520px) {
-  .xflow__list { grid-template-columns: 1fr; }
-}
 
 /* --- 범례(vg_legend) -------------------------------------------------------
  * 마크업·점 색은 도넛 옆 범례(.legend, 위쪽 정의)를 그대로 쓴다. 여기서는 톤 어휘 중

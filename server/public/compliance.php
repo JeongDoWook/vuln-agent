@@ -70,20 +70,6 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   ); ?>
   <?php // 통제 기준 매핑은 사이드바에 없고 이 줄로만 들어온다(정의는 nav.php 한 곳). ?>
   <?php vg_compliance_subtabs('mapping'); ?>
-  <?php
-  // 화면 오리엔테이션 도식 — "이 화면이 무엇을 보여주나" 한 줄. 예전엔 vg_decision_flow(앵커 4개)가
-  //   이 자리에 있었는데, 넷 중 둘이 같은 앵커(#automatic)라 이동 수단으로도 약했고 무엇보다
-  //   **자동판정과 문서 심사가 같은 무게로 나란히** 서 있었다. 그 오해가 이 화면에서 가장 비싸다:
-  //   자동판정은 통제 4종뿐이고 나머지는 원리적으로 수집 대상이 아닌 문서 증적이다(8a98af2d).
-  //   그래서 마지막 칸만 is-todo(회색)로 떨어뜨려 **축이 다르다는 사실을 색으로** 말한다.
-  vg_explain_flow([
-      ['icon' => 'shield',  'label' => '통제',      'value' => count(VG_COMPLIANCE_CONTROLS) . '종', 'state' => 'done'],
-      ['icon' => 'package', 'label' => '수집 데이터', 'state' => 'done'],
-      ['icon' => 'check',   'label' => '자동 판정',  'state' => 'active'],
-      ['icon' => 'warn',    'label' => '준수 판정',  'state' => 'active'],
-      ['icon' => 'block',   'label' => '문서 심사',  'value' => count(VG_COMPLIANCE_MANUAL_CHECKLIST) . '건', 'state' => 'todo'],
-  ], ['label' => '컴플라이언스 판정 흐름']);
-  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

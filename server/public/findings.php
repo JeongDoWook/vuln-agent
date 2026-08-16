@@ -263,10 +263,9 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
   }
   vg_findings_subtabs($type, $tabOverrides);
 
-  // 판단 순서 도식 + 결론 배너 — 세 탭이 같은 자리에 그리는 머리 두 줄(src/findings/summary.php).
+  // 결론 배너 — 세 탭이 같은 자리에 그리는 머리 한 줄(src/findings/summary.php).
   //   숫자는 위 탭별 집계에서 이미 나온 값만 쓴다(새 쿼리 없음).
   if ($err === null) {
-      vg_findings_explain_flow($type, $actionCounts, $cceResultCounts, $scopeCounts);
       vg_findings_verdict($type, $total, count($scanIds), $counts, $unsupBy, $cceResultCounts, $scopeCounts);
   }
   ?>

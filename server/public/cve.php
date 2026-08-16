@@ -110,8 +110,7 @@ vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 
  *     노출 = 내 자산에 이 CVE 가 걸린 범위(발견 위치 집계) · 악용 = KEV 등재 여부와 EPSS ·
  *     등급 = CVSS 파생 등급 · 조치 = KEV 조치 기한(연방기관 기준일). KEV 가 아니면 이 제품이
  *     제시할 기한이 없으므로 unknown 으로 남긴다 — "기한 없음"이라고 단정하지 않는다.
- *   이 화면은 이미 vg_decision_flow() 를 갖고 있어 vg_explain_flow() 는 두지 않는다
- *   (docs/dev/ui-design-system.md — 두 도식을 한 화면에 겹치지 않는다). */
+ *   이 화면의 판단 순서는 vg_decision_flow() 가 갖는다. */
 $epssPct = ($cve['epss'] ?? null) !== null && $cve['epss'] !== ''
     ? number_format((float) $cve['epss'] * 100, 1) . '%' : null;
 // 아직 수집되지 않은 CVE 면 네 칸이 전부 '미제공' 이라 그리지 않는다 — 빈 슬롯은 잡음이다.

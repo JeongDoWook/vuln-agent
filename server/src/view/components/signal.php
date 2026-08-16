@@ -2,14 +2,13 @@
 declare(strict_types=1);
 
 /**
- * components/signal.php — 지표·시각 설명: KPI 스트립·판단 신호 네 축·화면 흐름 도식·색 범례·
+ * components/signal.php — 지표·시각 설명: KPI 스트립·판단 신호 네 축·색 범례·
  *   판단 순서. 전부 "수치와 색이 무슨 뜻인지" 를 말하는 것들이라 한 파일에 둔다.
  *   아이콘은 인라인 SVG 다 — CSP 가 default-src 'self' 라 외부 아이콘 폰트를 못 쓰고,
  *   유니코드 문자는 컬러 이모지로 렌더돼 currentColor 를 안 따라간다(#584).
  */
 
 require_once __DIR__ . '/../../format.php';
-require_once __DIR__ . '/../icons.php';   // vg_explain_flow() 의 vg_icon()
 require_once __DIR__ . '/prop.php';       // vg_kpi_strip()·vg_decision_flow() 의 vg_local_href()
 
 /** 같은 화면의 KPI를 같은 간격·톤 규칙으로 렌더한다.
@@ -97,56 +96,6 @@ function vg_signal_slots(array $signals): void {
             . '<b>' . vg_h($value) . '</b></span></span>';
     }
     echo '</div>';
-}
-
-/**
- * 화면 오리엔테이션 도식 — "이 화면이 무엇을 보여주나" 를 단어 3~5개와 화살표로 그린다.
- *   예: 수집 → 매칭 → 판정 → 조치. 화면 맨 위(제목 바로 아래)에 **화면당 한 개만** 둔다.
- *
- *   바로 아래 vg_decision_flow() 와 역할이 다르다: 저건 "이 건이 왜 이렇게 판정됐나"(건별 근거,
- *   각 칸이 링크), 이건 "이 화면이 무엇을 보여주나"(화면 전체의 오리엔테이션, 링크 아님).
- *
- *   $steps: [['icon'=>'feed', 'label'=>'수집', 'value'=>'11', 'state'=>'done'], …]
- *     · icon  : vg_icon() 이름(icons.php). 없으면 아이콘 칸을 그리지 않는다.
- *     · label : **단어 하나**. 문장을 넣지 않는다(디자인 시스템 텍스트 예산).
- *     · value : 숫자 슬롯(선택). 이미 포맷된 문자열을 그대로 받는다(number_format 은 호출부).
- *     · state : done|active|todo — 지금 어디까지 왔는지. 생략하면 중립.
- *   $opts:  'label' — 이 도식 전체의 aria-label(기본 '화면 흐름').
- *
- *   입체감은 CSS 가 준다(--shadow + 위쪽 1px 하이라이트). transform: rotateX/Y 같은 실제 3D 는
- *   쓰지 않는다 — 좁은 화면·다크·인쇄에서 깨지고 접근성 비용만 크다.
- *
- *   칸(라벨)은 SVG 가 아니라 진짜 텍스트다. 아이콘·화살표만 인라인 SVG 다 —
- *   도식을 통째로 SVG 로 그리면 폭에 맞춰 글자까지 같이 줄어 못 읽는다
- *   (vg_rank_bars() 주석의 실측 사고와 같은 이유: 250px 카드에서 4px 글자가 됐다).
- */
-const VG_EXPLAIN_FLOW_MAX = 5;   // 칸이 더 늘면 도식이 아니라 목록이 된다 — 넘치는 건 자른다.
-
-function vg_explain_flow(array $steps, array $opts = []): void {
-    $steps = array_values(array_filter($steps, 'is_array'));
-    if (!$steps) { return; }
-    $steps = array_slice($steps, 0, VG_EXPLAIN_FLOW_MAX);
-    $states = ['done', 'active', 'todo'];
-
-    echo '<nav class="xflow" aria-label="' . vg_h((string) ($opts['label'] ?? '화면 흐름')) . '"><ol class="xflow__list">';
-    foreach ($steps as $i => $step) {
-        $state = (string) ($step['state'] ?? '');
-        $cls = 'xflow__step' . (in_array($state, $states, true) ? ' is-' . $state : '');
-        echo '<li class="' . vg_h($cls) . '">';
-        if ($i > 0) {
-            // 칸 사이의 방향. 마크업이 아니라 관계라서 화면 낭독에서는 뺀다(aria-hidden).
-            echo '<span class="xflow__arrow" aria-hidden="true">' . vg_icon('arrow') . '</span>';
-        }
-        if (!empty($step['icon'])) {
-            echo '<span class="xflow__icon" aria-hidden="true">' . vg_icon((string) $step['icon']) . '</span>';
-        }
-        echo '<span class="xflow__text"><span class="xflow__label">' . vg_h((string) ($step['label'] ?? '')) . '</span>';
-        if (($step['value'] ?? '') !== '') {
-            echo '<b class="xflow__value">' . vg_h((string) $step['value']) . '</b>';
-        }
-        echo '</span></li>';
-    }
-    echo '</ol></nav>';
 }
 
 /**

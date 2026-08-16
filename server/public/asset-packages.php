@@ -85,16 +85,10 @@ vg_header('전체 설치 패키지', 'asset_packages');
       'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
       'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],
   ], 'packages'); ?>
-  <?php
-  // 화면 오리엔테이션 도식 — 같은 '패키지' 라는 말이 카탈로그(packages.php)와 설치 현황(이 화면)
-  //   두 곳에서 쓰여 헷갈린다. 이 화면의 출처가 **자산의 최신 수집** 이라는 것을 먼저 세운다.
-  vg_explain_flow([
-      ['icon' => 'host',    'label' => '자산',      'value' => number_format(count($hostOptions)) . '대', 'state' => 'done'],
-      ['icon' => 'clock',   'label' => '최신 수집', 'state' => 'done'],
-      ['icon' => 'package', 'label' => '설치 패키지', 'value' => number_format($total) . '건', 'state' => 'active'],
-  ], ['label' => '설치 패키지 수집 흐름']);
-  ?>
-  <div class="sub"><span class="why">취약 영향 패키지 카탈로그가 아닌 실제 서버 설치 현황입니다.</span></div>
+  <?php // 자산 대수·최신 수집이라는 출처는 도식 대신 이 한 줄이 갖는다(같은 '패키지'라는 말이
+        //   패키지 화면(packages.php)과 이 화면에서 다른 뜻이라 출처를 밝혀 둔다). ?>
+  <div class="sub"><span class="why">자산 <?= number_format(count($hostOptions)) ?>대의 최신 수집 기준 —
+    취약 영향 패키지 목록이 아닌 실제 서버 설치 현황입니다.</span></div>
 
   <?php vg_alert($err !== null ? '오류 · ' . $err : null); ?>
   <?php if ($err === null): ?>

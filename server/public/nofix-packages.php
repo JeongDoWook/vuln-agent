@@ -78,16 +78,6 @@ vg_header('제거 권고', 'nofix_packages');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
-  <?php
-  // 화면 오리엔테이션 도식 — 이 목록의 행은 CVE 가 아니라 **패키지 조합**이다. 어떻게 여기까지
-  //   왔는지(수정본 없음 → 한 패키지에 몰림 → 제거·대체 검토)를 세워 두지 않으면, 왜 조치 칸에
-  //   패치 버전이 없는지가 안 읽힌다.
-  vg_explain_flow([
-      ['icon' => 'block',   'label' => '수정본 없음', 'state' => 'done'],
-      ['icon' => 'package', 'label' => '패키지 집중', 'value' => number_format($total) . '개', 'state' => 'active'],
-      ['icon' => 'warn',    'label' => '제거·대체',   'state' => 'todo'],
-  ], ['label' => '제거 권고 흐름']);
-  ?>
   <?php vg_alert(vg_nofix_notice()); ?>
   <?php if ($truncated): ?>
     <?php vg_alert('권고 대상이 ' . VG_NOFIX_MAX_GROUPS . '개를 넘어 앞쪽만 보여줍니다 — 호스트·패키지 필터로 좁혀 보세요.', 'warn'); ?>

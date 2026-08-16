@@ -98,21 +98,6 @@ function vg_host_render_hero(array $ctx): void {
   }
   ?>
 
-  <?php
-  /* 이 화면이 무엇을 담고 있는지 — 호스트 안에 컨테이너가 있고, 그 안에 패키지가 있고,
-   *   그중 일부가 실제로 돌고 있으며(프로세스), 그중 일부만 밖에서 닿는다(노출).
-   *   아래 탭들이 그 순서 그대로 서 있다 — 도식은 탭의 지도이지 새 정보가 아니다.
-   *   숫자는 이미 센 값을 그대로 쓴다(다시 세지 않는다). */
-  vg_explain_flow([
-      ['icon' => 'host',      'label' => '호스트', 'state' => 'done'],
-      ['icon' => 'container', 'label' => '컨테이너', 'value' => number_format($containerTotal), 'state' => 'done'],
-      ['icon' => 'package',   'label' => '패키지', 'value' => number_format($packageTotal), 'state' => 'done'],
-      ['icon' => 'process',   'label' => '프로세스', 'value' => number_format($processCount), 'state' => 'done'],
-      ['icon' => 'port',      'label' => '노출', 'value' => number_format($exposureCount),
-       'state' => $externalFindings > 0 ? 'active' : 'done'],
-  ], ['label' => '호스트 안의 계층']);
-  ?>
-
   <div class="cards">
     <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
       <div class="kpi kpi--sm tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>

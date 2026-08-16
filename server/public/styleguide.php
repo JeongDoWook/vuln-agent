@@ -9,21 +9,6 @@ vg_header('UI 디자인 시스템', 'dashboard');
 vg_page_title('UI 디자인 시스템', 'SYSTEM', '공통 토큰과 판단 신호를 한 화면에서 비교합니다.');
 ?>
 <section class="styleguide-section">
-  <h2>화면 흐름 도식</h2>
-  <?php vg_explain_flow([
-      ['icon' => 'feed', 'label' => '수집', 'value' => '11', 'state' => 'done'],
-      ['icon' => 'package', 'label' => '매칭', 'value' => '1,204', 'state' => 'done'],
-      ['icon' => 'shield', 'label' => '판정', 'value' => '37', 'state' => 'active'],
-      ['icon' => 'check', 'label' => '조치', 'value' => '0', 'state' => 'todo'],
-  ], ['label' => '취약점 처리 흐름']); ?>
-  <?php vg_explain_flow([
-      ['icon' => 'host', 'label' => '자산'],
-      ['icon' => 'port', 'label' => '노출'],
-      ['icon' => 'cve', 'label' => '취약점'],
-  ]); ?>
-</section>
-
-<section class="styleguide-section">
   <h2>아이콘</h2>
   <div class="icon-grid">
     <?php foreach (array_keys(VG_ICON_PATHS) as $name): ?>
