@@ -89,12 +89,12 @@ declare(strict_types=1);
               'card' => false,
               'empty' => $hasFilter
                   ? [
-                      'icon' => '⌕',
+                      'icon' => 'search',
                       'title' => '검색 조건에 맞는 설치 패키지가 없습니다.',
                       'cta' => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
                   ]
                   : [
-                      'icon' => '□',
+                      'icon' => 'package',
                       'title' => '수집된 운영체제 패키지가 없습니다.',
                   ],
               'cell' => [

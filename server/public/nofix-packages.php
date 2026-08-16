@@ -112,13 +112,13 @@ vg_header('제거 권고', 'nofix_packages');
       [
           'empty' => ($q !== '' || $hostId > 0)
               ? [
-                  'icon' => '🔍',
+                  'icon' => 'search',
                   'title' => '조건에 맞는 권고 대상이 없습니다.',
                   'hint' => '기준을 넘긴 패키지만 여기 뜹니다 — 개별 CVE 는 탐지 결과에서 보세요.',
                   'cta' => ['href' => '/nofix-packages.php', 'label' => '필터 초기화'],
               ]
               : [
-                  'icon' => '□',
+                  'icon' => 'package',
                   'title' => '제거·대체를 권고할 패키지가 없습니다.',
                   'hint' => '벤더 미수정 CVE 가 한 패키지에 몰린 조합이 아직 없습니다.',
                   'cta' => ['href' => '/findings.php?fx=nofix', 'label' => '조치 불가 CVE 보기'],

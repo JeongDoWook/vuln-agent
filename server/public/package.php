@@ -269,7 +269,7 @@ vg_explain_flow([
         $rows,
         [
             'card'  => false,
-            'empty' => ['icon' => '□', 'title' => '관련 CVE가 없습니다.'],
+            'empty' => ['icon' => 'cve', 'title' => '관련 CVE가 없습니다.'],
             'row_class' => fn($r) => vg_sev_row(strtoupper(vg_cvss_sev(
                 $r['cvss'] === null ? null : (string)$r['cvss']
             ))),

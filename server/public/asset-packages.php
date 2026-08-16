@@ -124,12 +124,12 @@ vg_header('전체 설치 패키지', 'asset_packages');
         [
             'empty' => ($q !== '' || $hostId > 0 || $manager !== '')
                 ? [
-                    'icon' => '⌕',
+                    'icon' => 'search',
                     'title' => '검색 조건에 맞는 설치 패키지가 없습니다.',
                     'cta' => ['href' => '/asset-packages.php', 'label' => '필터 초기화'],
                 ]
                 : [
-                    'icon' => '□',
+                    'icon' => 'package',
                     'title' => '수집된 설치 패키지가 없습니다.',
                 ],
             'cell' => [

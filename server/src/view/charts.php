@@ -60,13 +60,13 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
         $pts[] = ['t' => (string) $s['collected_at'], 'v' => (float) $s[$field]];
     }
     if (count($pts) === 0) {
-        vg_empty(['icon' => '📉', 'title' => '그래프를 그리기엔 스캔 이력이 부족합니다.',
+        vg_empty(['icon' => 'chart', 'title' => '그래프를 그리기엔 스캔 이력이 부족합니다.',
                   'hint'  => '메모리·CPU 값이 있는 스캔이 2건 이상 쌓이면 여기에 추이가 표시됩니다.']);
         return;
     }
     if (count($pts) === 1) {
         $when = date('n/j H:i', strtotime($pts[0]['t']));
-        vg_empty(['icon' => '📍',
+        vg_empty(['icon' => 'chart',
                   'title' => '현재 ' . number_format($pts[0]['v'], $decimals) . $unit . ' (' . $when . ')',
                   'hint'  => '스캔이 1건뿐이라 추이선은 아직 못 그립니다. 2건 이상 쌓이면 선으로 표시됩니다.']);
         return;
@@ -158,7 +158,7 @@ function vg_resource_trend(array $scans, string $field, string $unit, int $decim
 function vg_rank_bars(array $items, array $opts = []): void {
     $items = array_values(array_filter($items, static fn($i) => (float) ($i['value'] ?? 0) > 0));
     if (!$items) {
-        vg_empty($opts['empty'] ?? ['icon' => '📊', 'title' => '순위를 매길 데이터가 없습니다.',
+        vg_empty($opts['empty'] ?? ['icon' => 'chart', 'title' => '순위를 매길 데이터가 없습니다.',
                                     'hint'  => '수집이 한 번이라도 끝나면 여기에 상위 항목이 표시됩니다.']);
         return;
     }
@@ -220,13 +220,13 @@ function vg_count_trend(array $rounds, string $tone = 'trend'): void {
     }
     $n = count($pts);
     if ($n === 0) {
-        vg_empty(['icon' => '📉', 'title' => '그래프를 그리기엔 회차 이력이 부족합니다.',
+        vg_empty(['icon' => 'chart', 'title' => '그래프를 그리기엔 회차 이력이 부족합니다.',
                   'hint'  => '스캔이 쌓이면 여기에 추이가 표시됩니다.']);
         return;
     }
     if ($n === 1) {
         $when = date('n/j H:i', strtotime($pts[0]['t']));
-        vg_empty(['icon' => '📍',
+        vg_empty(['icon' => 'chart',
                   'title' => '현재 미해결 ' . number_format($pts[0]['v']) . '건 (' . $when . ')',
                   'hint'  => '회차가 1건뿐이라 추이선은 아직 못 그립니다. 2회차 이상 쌓이면 선으로 표시됩니다.']);
         return;
@@ -306,7 +306,7 @@ function vg_daily_trend(array $days, string $tone = 'trend'): void {
     $pts = array_values(array_filter($days, static fn($p) => isset($p['d'], $p['v'])));
     $n = count($pts);
     if ($n < 2) {
-        vg_empty(['icon' => '📉', 'title' => '추세를 그리기엔 스캔 이력이 부족합니다.',
+        vg_empty(['icon' => 'chart', 'title' => '추세를 그리기엔 스캔 이력이 부족합니다.',
                   'hint'  => '서로 다른 날짜의 수집이 2건 이상 쌓이면 여기에 추세가 표시됩니다.']);
         return;
     }
@@ -384,7 +384,7 @@ function vg_change_bars(array $rounds): void {
     ));
     $n = count($data);
     if ($n === 0) {
-        vg_empty(['icon' => '📊', 'title' => '비교할 회차가 아직 없습니다.',
+        vg_empty(['icon' => 'chart', 'title' => '비교할 회차가 아직 없습니다.',
                   'hint'  => '회차가 2개 이상 쌓이면 회차별 신규·해결이 표시됩니다.']);
         return;
     }

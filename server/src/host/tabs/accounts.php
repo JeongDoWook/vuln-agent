@@ -23,7 +23,7 @@ declare(strict_types=1);
           $accountJudgments,
           [
               'card'  => false,
-              'empty' => ['icon' => '🗂️', 'title' => '계정 인벤토리가 없습니다.',
+              'empty' => ['icon' => 'user', 'title' => '계정 인벤토리가 없습니다.',
                           'hint' => '구버전 에이전트로 수집된 스캔입니다. 다시 수집하면 채워집니다.'],
               'cell'  => [
                   0 => fn($j) => vg_badge($accLabel[$j['result']] ?? $j['result'], $accTone[$j['result']] ?? 'muted'),
@@ -72,9 +72,9 @@ declare(strict_types=1);
           [
               'card'  => false,
               'empty' => $hasFilter
-                  ? ['icon' => '🔍', 'title' => '조건에 맞는 계정이 없습니다.',
+                  ? ['icon' => 'search', 'title' => '조건에 맞는 계정이 없습니다.',
                      'cta' => ['href' => vg_qs(['q' => null, 'acc' => null, 'page' => null]), 'label' => '검색 초기화']]
-                  : ['icon' => '🗂️', 'title' => '수집된 계정이 없습니다.',
+                  : ['icon' => 'user', 'title' => '수집된 계정이 없습니다.',
                      'hint' => '/etc/passwd 를 수집하지 못했습니다 — 0건은 "계정 없음"이 아니라 "판정 불가"입니다.'],
               'cell' => [
                   'username' => fn($a) => '<strong>' . vg_h((string) $a['username']) . '</strong>',

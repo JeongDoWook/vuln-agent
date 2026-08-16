@@ -26,12 +26,12 @@ declare(strict_types=1);
         <?php if (!$rows): ?>
           <?php vg_empty($hasFilter
               ? [
-                  'icon' => '⌕',
+                  'icon' => 'search',
                   'title' => '검색 조건에 맞는 컨테이너가 없습니다.',
                   'cta' => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
               ]
               : [
-                  'icon' => '□',
+                  'icon' => 'container',
                   'title' => '수집된 컨테이너가 없습니다.',
                   'hint' => '이 호스트에서 실행 중인 컨테이너를 찾지 못했습니다.',
               ]); ?>
