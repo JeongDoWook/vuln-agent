@@ -94,7 +94,8 @@ $check(str_contains($appJs, "addEventListener('mouseover'") && str_contains($app
     && !str_contains($appJs, 'setTimeout(showInfoTip'),
     '툴팁을 지연 없이 hover·키보드 focus 모두에 표시');
 $check(str_contains($hostPhp, '$runtimeTotal = $exposureCount + $processCount;')
-    && str_contains($hostPhp, "'runtime' => ['label' => '런타임',    'n' => \$runtimeTotal]"),
+    // 탭 줄 정의는 server/src/host/tabs.php 로 옮겼다(숫자는 페이지가 센 값을 그대로 받는다).
+    && str_contains($hostPhp, "'runtime' => ['label' => '런타임',    'n' => \$n['runtimeTotal']]"),
     '런타임 탭 건수에 노출 소켓과 실행 프로세스 모두 포함');
 $check(str_contains($componentsPhp, "!empty(\$h['class'])"), '공통 테이블 열 클래스 지원');
 $check(str_contains($componentsPhp, 'function vg_kpi_strip('), '공통 KPI 스트립 렌더러 제공');
@@ -237,7 +238,8 @@ $check(str_contains($assetsPhp, 'POSIX <code>awk</code>') && str_contains($asset
     '에이전트 설치 모달의 실제 선행 조건 안내');
 
 // #599 W3 — 기존 route/query 키를 유지한 행동 흐름·접근성 회귀.
-$indexPhp = (string) file_get_contents($public . '/index.php');
+// 대시보드도 조회층·섹션 렌더가 server/src/dashboard/** 로 나뉘어 있다(위 $splitSources 주석).
+$indexPhp = $splitSources($public, $root, 'index.php', 'dashboard');
 // 탐지 결과도 조회층·탭 렌더가 server/src/findings/** 로 나뉘어 있다(위 $splitSources 주석).
 $findingsPhp = $splitSources($public, $root, 'findings.php', 'findings');
 $cceRulePhp = (string) file_get_contents($public . '/cce-rule.php');
