@@ -19,9 +19,14 @@ $eq = static function (string $label, $got, $want) use (&$fail): void {
 
 // ① 문구가 판정 코드에 실제로 있는가 — 정본은 matcher.php(+커널 CNA 는 kernelcve.php,
 //    벤더 OVAL 근거는 vendorerrata.php 가 만든다).
+//    매처가 자기 속을 server/src/matcher/** 로 나눠 뒀으므로(억제 게이트는 matcher/decide.php)
+//    그 디렉터리까지 따라간다 — 안 그러면 파일만 옮겨도 "문구가 사라졌다"고 오탐한다.
 $judge = file_get_contents(__DIR__ . '/../server/src/matcher.php')
        . file_get_contents(__DIR__ . '/../server/src/kernelcve.php')
        . file_get_contents(__DIR__ . '/../server/src/vendorerrata.php');
+foreach (glob(__DIR__ . '/../server/src/matcher/*.php') ?: [] as $split) {
+    $judge .= (string) file_get_contents($split);
+}
 foreach (VG_SUPPRESS_LAYERS as $key => $def) {
     $eq("[$key] 근거 문구가 판정 코드에 존재", str_contains($judge, $def['match']), true);
 }
