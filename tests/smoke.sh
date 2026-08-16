@@ -51,6 +51,53 @@ sk() { printf "  ${YELLOW}-${NC} %s\n" "$1"; skip=$((skip+1)); }
 assert_contains() { if [[ "$1" == *"$2"* ]]; then ok "$3"; else no "$3  ('$2' 없음)"; fi; }
 assert_not_contains() { if [[ "$1" == *"$2"* ]]; then no "$3  ('$2' 있음)"; else ok "$3"; fi; }
 
+# --- 구간별 소요시간 계측 (기본 꺼짐 · VG_SMOKE_TIMING=1 로 켠다) ----------------
+# 왜 있나: "스모크가 느리다" 를 추측으로 자르지 않기 위해서다. 이 저장소는 측정 없이 SQL 을
+#   리라이트했다가 235ms → 42초가 된 전례가 있다(docs/dev/archive/dashboard-*). 어디에 시간이
+#   가는지는 재야 안다. 그래서 이 계측은 임시가 아니라 **커밋에 남는다** — 다음에 또 잰다.
+# 왜 기본 꺼짐인가: 항상 켜면 출력이 시끄럽고, 계측 자체가 오버헤드다.
+# 왜 date 를 안 쓰나: Windows git-bash 는 fork 한 번이 44~48ms 라(PR #587) 구간마다 `date` 를
+#   부르면 재려는 대상을 재는 도구가 오염시킨다. bash 5 의 $EPOCHREALTIME 은 프로세스를
+#   안 띄운다. now_ms 도 명령치환($(...))을 쓰지 않고 전역 NOW_MS 에 담는다 — 명령치환은
+#   서브셸 fork 라 같은 함정이다.
+VG_TIMING="${VG_SMOKE_TIMING:-0}"
+NOW_MS=0
+now_ms() {
+  local e="${EPOCHREALTIME:-}"
+  if [ -n "$e" ]; then
+    e="${e/,/.}"                      # 로케일에 따라 소수점이 쉼표일 수 있다
+    NOW_MS=$(( ${e%%.*} * 1000 + 10#${e#*.} / 1000 ))
+  else
+    NOW_MS=$(( SECONDS * 1000 ))      # bash 4 폴백 — 1초 해상도
+  fi
+}
+PHASE_NAME=""; PHASE_T0=0; PHASE_C0=0; PHASE_T_FIRST=0
+TIMING_ROWS=()
+# 앞 구간을 닫고 새 구간을 연다. 계측이 꺼져 있으면 즉시 반환한다(비용 = 비교 1회).
+phase() {
+  [ "$VG_TIMING" = 1 ] || return 0
+  now_ms
+  if [ -n "$PHASE_NAME" ]; then
+    TIMING_ROWS+=("$((NOW_MS - PHASE_T0))|$PHASE_NAME|$((pass + fail + skip - PHASE_C0))")
+  else
+    PHASE_T_FIRST=$NOW_MS
+  fi
+  PHASE_NAME="$1"; PHASE_T0=$NOW_MS; PHASE_C0=$((pass + fail + skip))
+}
+# 마지막 구간을 닫고 표를 찍는다. 오래 걸린 순으로 정렬한다(sort 는 마지막에 1회뿐이라 무해).
+timing_report() {
+  [ "$VG_TIMING" = 1 ] || return 0
+  phase ""                            # 마지막 구간 닫기(빈 이름이라 새 구간은 안 열린다)
+  local total=$((NOW_MS - PHASE_T_FIRST))
+  [ "$total" -gt 0 ] || total=1
+  printf "\n${CYAN}== 구간별 소요시간 (총 %d.%03ds) ==${NC}\n" "$((total / 1000))" "$((total % 1000))"
+  printf "  %8s  %6s  %5s  %s\n" "소요(s)" "전체%" "검사수" "구간"
+  local row ms name cnt
+  while IFS='|' read -r ms name cnt; do
+    printf "  %5d.%03d  %5d%%  %5d  %s\n" "$((ms / 1000))" "$((ms % 1000))" "$((ms * 100 / total))" "$cnt" "$name"
+  done < <(printf '%s\n' "${TIMING_ROWS[@]}" | sort -t'|' -k1,1rn)
+}
+
 # 아래 단위테스트 13개(vercmp~ui_structure)는 실행 방식(마운트·php:8.3-cli·리다이렉션)이 전부
 # 동일하고 파일명·라벨·메시지만 다르다 — DRY 로 묶는다. 각 테스트가 왜 존재하는지는
 # 호출부 바로 위 주석에 그대로 남아 있다(도메인 지식이라 이 헬퍼로 뭉개지 않는다).
@@ -134,6 +181,7 @@ ADMPW="$(cat "$ROOT/secrets/admin_password.txt")"
 
 printf "${CYAN}== vuln-agent smoke test @ %s ==${NC}\n" "$BASE"
 
+phase "이 트리의 web 컨테이너가 떠 있나"
 # --- 이 트리의 web 컨테이너가 떠 있나 -----------------------------------------
 # web+scheduler 는 이제 워크트리별로 독립된 컨테이너명(vulnagent-web-dev-<워크트리>)을 쓴다
 #   (메인 트리는 접미사 없이 vulnagent-web-dev). 컨테이너명이 애초에 트리마다 겹치지 않으므로
@@ -177,6 +225,7 @@ assert_my_stack() {
 }
 assert_my_stack "시작"
 
+phase "이 트리 전용 fqdn"
 # --- 이 트리 전용 fqdn -------------------------------------------------------
 # dev DB 는 모든 워크트리가 공유하는 하나다(vulnagent-db-dev). 그런데 아래 e2e 는 호스트 레코드에
 #   상태를 쓰고 **바로 그 상태를 assert** 한다 — fqdn 이 고정이면 두 트리가 동시에 스모크를 돌 때
@@ -234,6 +283,7 @@ else
   no "호스트별 수집 토큰 준비 실패"
 fi
 
+phase "워크트리 전용 로그인 계정"
 # --- 워크트리 전용 로그인 계정 ------------------------------------------------
 # admin 은 DB 가 공용이라 전 워크트리가 같은 행을 쓴다. vg_login() 은 로그인마다
 #   session_token 을 덮어써 "새 로그인 = 이전 세션 강제종료"를 강제한다(auth.php) — 그래서
@@ -266,6 +316,7 @@ if [ -n "$WT_NAME" ] && command -v docker >/dev/null 2>&1; then
 fi
 
 
+phase "UI 정적 검사"
 # --- UI 정적 검사 -----------------------------------------------------------
 # 서버를 치기 전에 먼저 돈다(죽은 CSS 클래스·인라인 style·조용히 잘리는 목록).
 # 여기서 걸리면 화면은 200 을 주면서도 스타일이 안 입혀지거나 데이터가 잘려 나간다 —
@@ -274,11 +325,13 @@ if ! "$ROOT/tests/ui_lint.sh"; then
   fail=$((fail+1))
 fi
 
+phase "단위테스트 선(先)실행"
 # --- 단위테스트 선(先)실행 ---------------------------------------------------
 # 아래에 흩어져 있는 run_phpunit 호출 27개가 볼 결과를 여기서 한 번에 만든다(컨테이너 1회).
 # 호출부는 그대로 순서대로 결과만 조회하므로 출력 순서·라벨·메시지는 이전과 동일하다.
 prerun_phpunit
 
+phase "vercmp 단위 테스트"
 # --- vercmp 단위 테스트 -----------------------------------------------------
 # 버전 비교는 매처 오탐의 1순위다(같은 패키지인데 이미 고친 버전을 취약하다고 부르는 것).
 # 기대값을 dpkg/rpm 실측으로 뽑아 둔 테스트라 회귀를 정확히 잡는데, 예전엔 아무도 안 불러서
@@ -287,11 +340,13 @@ prerun_phpunit
 run_phpunit "vercmp_test.php" "vercmp" "vercmp 단위 테스트"
 run_phpunit "osv_precision_test.php" "osv_precision" "OSV 구간·소스 버전 정밀 매칭 단위 테스트"
 
+phase "손댈 대상(부모)별 묶음 집계 단위 테스트"
 # --- 손댈 대상(부모)별 묶음 집계 단위 테스트 ----------------------------------
 # "이 하나를 올리면 N건" 의 N 은 운영자가 조치 순서를 정하는 근거다. 판정 캐시(패키지 단위)와
 # 건수 집계(행 단위)를 섞으면 조용히 과소집계되고, 화면만 봐선 그게 틀렸는지 알 수 없다.
 run_phpunit "pkgdep_rollup_test.php" "pkgdep_rollup" "손댈 대상(부모)별 묶음 집계 단위 테스트"
 
+phase "매처 억제 게이트 단위 테스트"
 # --- 매처 억제 게이트 단위 테스트 ---------------------------------------------
 # "어느 근거가 어느 가드에 막히는가" 는 오탐(잘못 뜸)과 미탐(잘못 숨김)이 직접 갈리는 자리인데
 # 눈으로 읽어선 회귀를 못 잡는다 — 실제로 changelog 억제가 서드파티 가드에 막혀 운영에서
@@ -302,6 +357,7 @@ run_phpunit "matcher_suppress_test.php" "matcher_suppress" "매처 억제 게이
 # 억제 목록이 통째로 '근거 미분류' 로 떨어진다 — 화면은 여전히 뜨므로 사람 눈엔 안 보인다.
 run_phpunit "suppression_test.php" "suppression" "억제 근거 겹 분류 단위 테스트"
 
+phase "ingest_parse 단위 테스트"
 # --- ingest_parse 단위 테스트 -------------------------------------------------
 # ingest.php 의 순수 변환(패키지/노출/컨테이너/changelog 파싱, 내용해시, 패키지 diff)을
 # server/src/ingest_parse.php 로 뽑아냈다. 예전엔 이 파싱 로직에 단위테스트가 0개였다 —
@@ -309,12 +365,14 @@ run_phpunit "suppression_test.php" "suppression" "억제 근거 겹 분류 단�
 run_phpunit "ingest_parse_test.php" "ingest_parse" "ingest_parse 단위 테스트"
 run_phpunit "assetgrade_history_test.php" "assetgrade_history" "자산등급 제안 이력 단위 테스트"
 
+phase "계정 인벤토리 단위 테스트"
 # --- 계정 인벤토리 단위 테스트 -------------------------------------------------
 # 계정 판정은 "판정 불가(NA)"가 "정상(PASS)"으로 새는 순간 감사에서 거짓 안심이 된다
 # (비-root 로 돌면 /etc/shadow·sudoers 를 못 읽는다 — 그건 점검한 게 아니다).
 # 그 경계와 공유·퇴직자 계정이 **추정**임을 테스트로 고정한다.
 run_phpunit "account_inventory_test.php" "account_inventory" "계정 인벤토리 단위 테스트 (NA·PASS 구분)" "계정 인벤토리 단위 테스트"
 
+phase "에이전트 JSON 빌더"
 # --- 에이전트 JSON 빌더 -------------------------------------------------------
 # 에이전트는 대상 서버에 아무것도 요구하지 않는다 → jq 없이 awk 로 JSON 을 만든다.
 # 이스케이프를 한 글자라도 틀리면 중앙이 파싱에 실패해 전송이 통째로 죽는다. jq 출력과 대조한다.
@@ -325,6 +383,7 @@ else
   no "awk JSON 빌더  (자세히: bash tests/agent_json_test.sh)"
 fi
 
+phase "에이전트 패키지 출처"
 # --- 에이전트 패키지 출처 -----------------------------------------------------
 # 출처를 잘못 찍으면 중앙이 서드파티로 보고 "자동 판정 불가" 로 남긴다 — 억제도 조치 가능 여부도
 # 못 붙는다. 보안 업데이트에 뒤처진 데비안 패키지를 LOCAL(수동 설치)로 읽던 버그를 고정한다.
@@ -334,6 +393,7 @@ else
   no "패키지 출처 판정  (자세히: bash tests/agent_origin_test.sh)"
 fi
 
+phase "에이전트 방화벽 노출 판정"
 # --- 에이전트 방화벽 노출 판정 -------------------------------------------------
 # nft/iptables 파서가 틀리면 **외부 노출을 조용히 감춘다**(EXTERNAL 이어야 할 포트를 FILTERED 로).
 # 원칙은 "확신이 있을 때만 강등" 이다 — policy drop 을 확인 못 하거나 하위 체인 jump 로 accept 를
@@ -344,26 +404,31 @@ else
   no "방화벽 노출 판정  (자세히: bash tests/fw_detect_test.sh)"
 fi
 
+phase "ssg 단위 테스트"
 # --- ssg 단위 테스트 ----------------------------------------------------------
 # 보안설정 점검(CCE)을 검증된 룰셋(SCAP Security Guide)에 묶는다. 매핑에 오타가 나면 조용히
 # "자체 기준" 으로 떨어져 근거가 사라진다. 파서도 Jinja 섞인 실제 형식으로 고정한다.
 run_phpunit "ssg_test.php" "ssg" "ssg 단위 테스트 (룰 파싱 · CIS/NIST 매핑)" "ssg 단위 테스트"
 
+phase "CCE 신규 룰 단위 테스트"
 # --- CCE 신규 룰 단위 테스트 ---------------------------------------------------
 # 시간동기화·로그설정·암호화 룰. 가장 중요한 계약은 "수집값이 없으면 PASS 가 아니라 NA" 다 —
 # 비-root 실행에서 조용히 PASS 가 되면 점검을 안 한 서버가 통과한 것처럼 보인다.
 run_phpunit "cce_new_rules_test.php" "cce_new_rules" "CCE 신규 룰 단위 테스트 (시간·로그·암호화)" "CCE 신규 룰 단위 테스트"
 
+phase "rhunfixed 단위 테스트"
 # --- rhunfixed 단위 테스트 ----------------------------------------------------
 # Red Hat 미수정 CVE(조치 불가) 판정. 컴포넌트 매핑이나 릴리스 매칭이 틀리면 조용히 미탐이 된다
 # (바이너리 이름으로 물으면 API 가 0건을 주고, "Linux 1" 이 "Linux 10" 에 걸리면 남의 상태를 쓴다).
 run_phpunit "rhunfixed_test.php" "rhunfixed" "rhunfixed 단위 테스트 (컴포넌트·릴리스 판정)" "rhunfixed 단위 테스트"
 
+phase "rpmdb 단위 테스트"
 # --- rpmdb 단위 테스트 --------------------------------------------------------
 # 컨테이너의 rpm DB 를 중앙이 파싱한다 — 컨테이너에 rpm 바이너리가 없고 호스트에도 rpm 이 없으면
 # 이 경로 말고는 그 패키지를 볼 방법이 아예 없다. 파서가 틀리면 통째로 사라진다(미탐).
 run_phpunit "rpmdb_test.php" "rpmdb" "rpmdb 단위 테스트 (rpm 헤더 파싱)" "rpmdb 단위 테스트"
 
+phase "distro 단위 테스트"
 # --- distro 단위 테스트 -------------------------------------------------------
 # 패키지 출처·커널 판정(server/src/distro.php). 판정 하나가 findings 수천 건을 좌우한다 —
 # 커널 소스에서 나온 헤더·메타패키지 21개에 커널 CVE 369건이 곱해져 LOW 7,925건이 뜬 적이 있다.
@@ -375,6 +440,7 @@ run_phpunit "asset_state_test.php" "asset_state" "자산 연결 상태 단위 �
 # 자산 등급 초안은 scope·역할별 근거를 과장하지 않고 사람 확정값과 격리해야 한다.
 run_phpunit "assetgrade_test.php" "assetgrade" "자산 등급 초안 분류 단위 테스트 (scope·역할·근거 격리)"
 
+phase "file_to_pkg_cache"
 printf "\n[file_to_pkg_cache]\n"
 if bash "$ROOT/tests/file_to_pkg_cache_test.sh"; then
   ok "런타임 파일→패키지 조회를 서브셸 간 1회로 캐시"
@@ -382,6 +448,7 @@ else
   no "런타임 파일→패키지 조회 캐시 회귀"
 fi
 
+phase "go_deps_extract"
 printf "\n[go_deps_extract]\n"
 if bash "$ROOT/tests/go_deps_extract_test.sh"; then
   ok "대형 Go 바이너리 의존성 고속 추출"
@@ -392,6 +459,7 @@ fi
 # 위가 고정 픽스처(strings 파싱)라면 이건 **진짜 Go 바이너리**로 도는 e2e 다 — Go 툴체인이 필요해
 # Windows 개발머신에서는 못 돈다. 그래서 테스트 머리주석이 적어 둔 대로 golang 이미지 안에서 돌린다
 # (마운트 방식은 위 prerun_phpunit 과 같다). 이미지가 없으면 수백 MB 를 몰래 받지 않고 건너뛴다.
+phase "go_buildinfo_host"
 printf "\n[go_buildinfo_host]\n"
 if ! command -v docker >/dev/null 2>&1 || ! docker image inspect golang:1.22 >/dev/null 2>&1; then
   sk "호스트 Go buildinfo e2e 건너뜀 (golang:1.22 이미지 없음 — docker pull golang:1.22)"
@@ -409,6 +477,7 @@ else
   fi
 fi
 
+phase "project_deps_parser"
 printf "\n[project_deps_parser]\n"
 if bash "$ROOT/tests/project_deps_parser_test.sh"; then
   ok "go.mod·requirements.txt·pom.xml 파서 (exclusions·scope·--hash 배제)"
@@ -416,6 +485,7 @@ else
   no "프로젝트 선언 파일 파서 회귀"
 fi
 
+phase "ruby_deps_parser"
 printf "\n[ruby_deps_parser]\n"
 if bash "$ROOT/tests/ruby_deps_parser_test.sh"; then
   ok "Gemfile.lock·vendored gemspec 파서 (6칸 제약·PATH/GIT 배제, 플랫폼 접미사)"
@@ -423,6 +493,7 @@ else
   no "Ruby 의존성 파서 회귀"
 fi
 
+phase "node_python_locks"
 printf "\n[node_python_locks]\n"
 if bash "$ROOT/tests/node_python_locks_test.sh"; then
   ok "yarn(v1/v2+)·pnpm·poetry·Pipfile·egg-info 파서 (스코프 이름·범위 유출)"
@@ -430,36 +501,43 @@ else
   no "Node/Python 보조 lock 파서 회귀"
 fi
 
+phase "debtracker 단위 테스트"
 # --- debtracker 단위 테스트 ---------------------------------------------------
 # 데비안 보안 트래커 파서·판정(백포트 억제 근거). 느슨하면 오탐이 남고, 빡빡하면 진짜 취약점을
 # "고쳐졌다"고 지운다(미탐). 규칙을 debsecan 원본과 대조해 옮겼으므로 회귀를 여기서 막는다.
 run_phpunit "debtracker_test.php" "debtracker" "debtracker 단위 테스트 (데비안 백포트 판정)" "debtracker 단위 테스트"
 
+phase "rhoval 단위 테스트"
 # --- rhoval 단위 테스트 -------------------------------------------------------
 # RHEL 계열 OVAL 파서·백포트 판정. 같은 (패키지,CVE)가 마이너 스트림마다 다른 EVR 로 고쳐지는데
 # (el9_2 · el9_4), 스트림을 잘못 고르면 오탐(안 지움) 또는 미탐(잘못 지움)이 난다.
 run_phpunit "rhoval_test.php" "rhoval" "rhoval 단위 테스트 (OVAL 파싱·스트림 판정)" "rhoval 단위 테스트"
 
+phase "ubuntuoval 단위 테스트"
 # --- ubuntuoval 단위 테스트 ---------------------------------------------------
 # 우분투 OVAL 한 파일이 억제(조치 EVR)와 조치 불가(state 없는 테스트)를 동시에 만든다.
 # state 없는 테스트를 버리면 "아직 수정본 없음" 이 통째로 미탐이 된다 — 그걸 고정한다.
 run_phpunit "ubuntuoval_test.php" "ubuntuoval" "ubuntuoval 단위 테스트 (조치 EVR · 미수정 CVE · 코드명)" "ubuntuoval 단위 테스트"
 
+phase "kernelcve 단위 테스트"
 # --- kernelcve 단위 테스트 ----------------------------------------------------
 # 커널은 배포판이 아니라 업스트림(kernel.org CNA)이 판정한다. 스트림(6.1.y·6.18.y)을 잘못 고르면
 # 다른 스트림의 수정본을 내 것으로 읽어 진짜 커널 취약점을 조용히 지운다(미탐).
 run_phpunit "kernelcve_test.php" "kernelcve" "kernelcve 단위 테스트 (CNA 파싱 · 스트림 판정 · tar 스캔)" "kernelcve 단위 테스트"
 
+phase "schedule 단위 테스트"
 # --- schedule 단위 테스트 -----------------------------------------------------
 # feeds.php 의 cron 파싱·스케줄 계산(vg_cron_*/vg_schedule_*)을 server/src/schedule.php 로
 # 뽑아냈다 — 피드 실행과 무관한 순수 시간 계산이라 SRP 상 분리. ingest_parse 처럼 서버 없이
 # 도는 정적 검사라 스모크 앞단에 묶는다.
 run_phpunit "schedule_test.php" "schedule" "schedule 단위 테스트"
 
+phase "UI 설정·감사 마스킹 단위 테스트"
 # --- UI 설정·감사 마스킹 단위 테스트 -----------------------------------------
 run_phpunit "ui_config_test.php" "ui_config" "UI 설정 범위·감사정보 마스킹 단위 테스트"
 run_phpunit "asset_grade_review_test.php" "asset_grade_review" "자산 등급 구조화 검토 단위 테스트"
 
+phase "UI 공통 구조 회귀 테스트"
 # --- UI 공통 구조 회귀 테스트 -----------------------------------------------
 run_phpunit "ui_structure_test.php" "ui_structure" "UI 공통 컴포넌트·검색·인라인 이벤트 회귀 테스트"
 run_phpunit "documentation_consistency_test.php" "documentation_consistency" "DB 명세·ERD·사이트맵 문서 일관성 테스트"
@@ -467,12 +545,15 @@ run_phpunit "route_query_contract_test.php" "route_query_contract" "public route
 run_phpunit "agent_api_contract_test.php" "agent_api_contract" "설치 에이전트 poll·progress·ingest 계약 테스트"
 run_phpunit "update_order_contract_test.php" "update_order_contract" "운영 staged migration·live source 전환 순서 계약 테스트"
 
+phase "범용 API 지원 역할 회귀 테스트"
 # --- 범용 API 지원 역할 회귀 테스트 -----------------------------------------
 run_phpunit "generic_api_config_test.php" "generic_api_config" "범용 API 지원 역할 단위 테스트"
 
+phase "취약점 판정 출처·구조화 근거 회귀 테스트"
 # --- 취약점 판정 출처·구조화 근거 회귀 테스트 -------------------------------
 run_phpunit "finding_evidence_test.php" "finding_evidence" "취약점 판정 출처 단위 테스트"
 
+phase "DB 재시도 단위 테스트"
 # --- DB 재시도 단위 테스트 ----------------------------------------------------
 # 접속 실패(2002)·교착(1213) 재시도 판정과 vg_with_tx 의 재시도 흐름(server/src/db.php).
 # 판정이 넓어지면 인증 실패·DB 없음에도 매달려 배포가 늦고, 좁아지면 DB 재시작 때 스케줄러
@@ -480,6 +561,7 @@ run_phpunit "finding_evidence_test.php" "finding_evidence" "취약점 판정 출
 # 반쪽 커밋이 되므로 "소유할 때만 재시도" 안전조건도 여기서 잠근다.
 run_phpunit "db_retry_test.php" "db_retry" "DB 접속·교착 재시도 단위 테스트"
 
+phase "수신 API"
 # --- 수신 API ---------------------------------------------------------------
 printf "\n[ingest]\n"
 code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
@@ -528,6 +610,7 @@ if [ "$cceTotal" -ge 39 ]; then ok "CCE 39개 항목 판정 (총 $cceTotal)"; el
 if [ "${cceNa:-9}" -le 1 ]; then ok "CCE NA ≤1 (정보성 KCMVP 외에는 전부 판정) = ${cceNa:-?}"; else no "CCE NA=$cceNa (정상을 판정불가로 표시?)"; fi
 if [ "${cceFail:-0}" -ge 5 ]; then ok "CCE FAIL 검출 (shadow 640·hosts 644·MaxAuthTries 6 등) = $cceFail"; else no "CCE FAIL 미검출 (=${cceFail:-0})"; fi
 
+phase "데비안 호스트: debsecan 기반 백포트 억제"
 # --- 데비안 호스트: debsecan 기반 백포트 억제 --------------------------------
 #   web02(Debian 12)의 curl·openssl 은 둘 다 조치 버전보다 낮아 "버전만 보면" 취약하다.
 #   debsecan(데비안 보안 트래커)이 curl 만 지목했다 → openssl 은 백포트로 이미 고쳐진 것(억제).
@@ -549,6 +632,7 @@ if [ "${dsupp:-0}" -ge 1 ]; then ok "openssl 억제 (debsecan 미지목 → 백�
 # 억제 목록의 nginx 검사는 로그인 세션이 준비된 뒤 web auth 구간에서 수행한다.
 # 여기서 $JAR 를 쓰면 set -u 아래에서 로그인 전 미정의 변수로 중단된다.
 
+phase "바뀔 때만 스냅샷"
 # --- 바뀔 때만 스냅샷 --------------------------------------------------------
 #   같은 내용을 다시 보내면 새 스캔을 만들지 않는다(수집시각만 갱신). 패키지가 바뀌면 새 스냅샷 +
 #   변경이력. 매시간 수집이 대부분 "직전과 동일"이라 이게 없으면 데이터가 무한히 불어난다.
@@ -611,6 +695,7 @@ rm -f "$UPG"
 resp=$(curl_i -s -X POST "$BASE/ingest.php" -H "X-Agent-Token: $TOKEN" --data-binary @"$SAMPLE")
 SCAN_ID=$(printf '%s' "$resp" | grep -oE '"scan_id":[0-9]+' | grep -oE '[0-9]+$')
 
+phase "피드 미지원 배포판: 0건이 '안전'이 아니라 '판정 불가'"
 # --- 피드 미지원 배포판: 0건이 "안전"이 아니라 "판정 불가" -------------------
 #   Amazon Linux 는 OSV 생태계 목록에 없다(질의하면 INVALID_ARGUMENT). 매칭 후보가 아예 없어
 #   취약점이 0건으로 뜨는데, 운영자가 "안전하다"고 읽으면 침묵하는 미탐이 된다 → 명시적으로 알린다.
@@ -625,6 +710,7 @@ printf "\n[removed endpoint]\n"
 code=$(curl_i -s -o /dev/null -w '%{http_code}' "$BASE/rematch.php")
 assert_eq "$code" "404" "폐기된 공개 재매칭 API → 404"
 
+phase "웹 인증 흐름"
 # --- 웹 인증 흐름 -----------------------------------------------------------
 printf "\n[web auth]\n"
 JAR="$(mktemp)"   # 정리는 위 trap 이 샘플 사본과 함께 맡는다.
@@ -654,6 +740,7 @@ assert_eq "$code" "200" "데이터 수집 페이지 200(관리자 권한)"
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/advisories.php")
 assert_eq "$code" "200" "보안 공지 페이지 200"
 
+phase "Export·SBOM: API 토큰 폐지 → 로그인 세션 인증"
 # --- Export·SBOM: API 토큰 폐지 → 로그인 세션 인증 --------------------------
 #   전용 읽기 토큰(X-API-Token)과 발급 화면을 없앴다. 기능은 남기고 인증만 세션으로 옮겼으므로
 #   "미로그인은 로그인으로 튀고, 로그인하면 그대로 받아진다" 두 방향을 다 본다.
@@ -673,6 +760,7 @@ assert_contains "$exportbody" '"ok": true' "로그인 세션으로 export JSON �
 sbombody=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&format=cyclonedx")
 assert_contains "$sbombody" '"bomFormat": "CycloneDX"' "로그인 세션으로 SBOM(CycloneDX) 수신"
 
+phase "컴플라이언스 매핑"
 # --- 컴플라이언스 매핑 ------------------------------------------------------
 printf "\n[compliance]\n"
 code=$(curl_ -s -o /dev/null -w '%{http_code}' "$BASE/compliance.php")
@@ -721,6 +809,7 @@ packageurl=$(grep -oE '/package.php\?name=glibc[^" ]*' <<<"$catalogpackages" | h
 packagedetail=$(curl_ -s -b "$JAR" "$BASE$packageurl")
 assert_contains "$packagedetail" 'CVE-2023-4911' "패키지 상세에서 관련 CVE 조회"
 
+phase "패키지 화면 서브탭(os/lang)"
 # --- 패키지 화면 서브탭(os/lang) ---------------------------------------------
 #   language-packages.php 는 packages.php 의 언어 탭으로 흡수됐다 — 옛 링크는 쿼리스트링을
 #   유지한 채 302 리다이렉트돼야 하고, 잘못된 tab 값은 조용히 OS 탭으로 떨어져야 한다.
@@ -765,6 +854,7 @@ assert_contains "$packagebody" 'glibc' "최신 스캔의 설치 패키지 전체
 if [ -n "$WEB02_ID" ]; then ok "web02 호스트 id 확인 (=$WEB02_ID)"; else no "web02 호스트를 자산 목록에서 못 찾음"; WEB02_ID=1; fi
 if [ -n "$WEB03_ID" ]; then ok "web03 호스트 id 확인 (=$WEB03_ID)"; else no "web03 호스트를 자산 목록에서 못 찾음"; WEB03_ID=1; fi
 
+phase "패키지 의존성 그래프(depgraph.php)"
 # --- 패키지 의존성 그래프(depgraph.php) -------------------------------------
 # 에이전트가 보낸 SBOM/pom 엣지는 저장만 되고 읽는 화면이 없었다. "무엇이 이 패키지를
 #   끌어왔나" 가 루트 → 직접 → 전이 순으로 실제로 펼쳐지는지, 엣지가 없는 자산의 빈 상태가
@@ -796,6 +886,7 @@ emptydep=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB02_ID")
 assert_contains "$emptydep" '의존성 엣지가 없습니다' "엣지 없는 자산의 빈 상태 안내"
 assert_not_contains "$emptydep" 'depgraph.php?id='"$WEB02_ID"'&amp;cid=' "엣지 없는 자산엔 조회 단위 선택지도 없다"
 
+phase "컨테이너 드릴다운(container.php) + 컨테이너 SBOM"
 # --- 컨테이너 드릴다운(container.php) + 컨테이너 SBOM ------------------------
 # 컨테이너 안의 OS·패키지·프로세스·취약점은 처음부터 수집·저장되고 있었는데 읽는 화면이 없었다
 #   (자산 상세의 패키지 탭은 container_id = 0 으로 고정이었다). 계층 카드 → 상세 → 탭 →
@@ -998,6 +1089,7 @@ body=$(curl_ -s -b "$JAR2" -c "$JAR2" --data-urlencode "csrf=$csrf2" \
 assert_contains "$body" "올바르지 않습니다" "틀린 비밀번호 → 로그인 거부"
 rm -f "$JAR2"
 
+phase "에이전트 토큰: 호스트 바인딩 & 스푸핑 차단 (PR-4 보안)"
 # --- 에이전트 토큰: 호스트 바인딩 & 스푸핑 차단 (PR-4 보안) ------------------
 #   개별 토큰은 발급 시 정한 fqdn 만 갱신할 수 있다. 침해된 대상 1대가 그 토큰으로 다른 호스트를
 #   위조해 스캔을 덮어쓰는 것을 ingest.php 가 403 으로 막는지 회귀로 고정한다(HIGH-2).
@@ -1061,10 +1153,13 @@ code=$(curl_i -s -o /dev/null -w '%{http_code}' -X POST "$BASE/ingest.php" \
 assert_eq "$code" "403" "(b) 같은 토큰으로 다른 호스트 위조 → 403 (스푸핑 차단)"
 rm -f "$SPOOF"
 
+phase "종료 시 재확인: 스모크 도중 이 트리 전용 컨테이너가 내려갔으면 위 결과는 전부 무효다."
 # --- 종료 시 재확인: 스모크 도중 이 트리 전용 컨테이너가 내려갔으면 위 결과는 전부 무효다. ----
 assert_my_stack "종료"
 
+phase "요약"
 # --- 요약 -------------------------------------------------------------------
+timing_report
 printf "\n${CYAN}== 결과: ${GREEN}%d 통과${NC}, ${RED}%d 실패${NC}" "$pass" "$fail"
 [ "$skip" -gt 0 ] && printf ", ${YELLOW}%d 건너뜀${NC}" "$skip"
 printf " ${CYAN}==${NC}\n"
