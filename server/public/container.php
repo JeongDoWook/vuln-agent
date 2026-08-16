@@ -20,125 +20,22 @@ declare(strict_types=1);
  *   다른 값). 여기서 조회한 숫자 id 를 넘겨준다.
  *
  * 새 수집은 하지 않는다 — 이미 DB 에 있는 것만 보여준다(이미지 레이어 분석·레지스트리 조회 없음).
+ *
+ * 이 파일은 **무엇을 어떤 순서로 그리나**만 갖는다. 탭별 SQL 은 src/container/queries.php,
+ *   머리(히어로·식별·KPI)는 src/container/overview.php, 탭별 HTML 은 src/container/tabs/*.php 다.
+ *   페이저 파라미터 이름(page/epage)은 여기서만 정해 아래로 값만 넘긴다.
  */
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';        // vg_container_unjudgeable — 판정 불가 경고
 require_once __DIR__ . '/../src/audit.php';    // vg_log_activity
+require_once __DIR__ . '/../src/container/queries.php';   // vg_container_load_* — 활성 탭 하나의 조회
+require_once __DIR__ . '/../src/container/overview.php';  // vg_container_render_overview — 히어로·식별·KPI
+require_once __DIR__ . '/../src/container/tabs.php';      // vg_container_render_tab — 활성 탭 파일만 require
 // 자산 상세(host.php)에서만 들어오는 화면이라 인가 범위도 그쪽과 같다 —
 //   여기만 좁히면 탐지 결과에서 들어온 사용자에게 눌리는데 403 인 링크가 생긴다.
 vg_require_menu_any('assets', 'findings');
-
-// --- 탭별 데이터 조회. 각자 {total, rows, ...} 를 돌려준다(host.php 와 같은 규약). ---
-
-/**
- * 취약점 탭 — 이 컨테이너의 tb_finding.
- *   uq_find 좌측 접두가 (scan_id, container_id) 라 이 둘로 좁히면 인덱스를 그대로 탄다.
- *   호스트 화면과 달리 등급을 CRITICAL·HIGH 로 자르지 않는다 — 컨테이너 하나의 건수는
- *   자산 전체보다 작아 한 표에 담기고, 잘라 두면 "이미지에 무엇이 남아 있나" 를 못 센다.
- */
-function vg_container_load_vuln_tab(PDO $pdo, int $sid, int $ctrId, int $perPage, int $offset, string $q): array {
-    $where  = 'f.scan_id = ? AND f.container_id = ?';
-    $params = [$sid, $ctrId];
-    if ($q !== '') {
-        $where .= ' AND (f.cve_id LIKE ? OR f.package_name LIKE ?)';
-        $like = '%' . $q . '%';
-        array_push($params, $like, $like);
-    }
-
-    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_finding f WHERE $where");
-    $st->execute($params);
-    $total = (int) $st->fetchColumn();
-
-    $st = $pdo->prepare(
-        "SELECT f.severity, f.runtime_status, f.cve_id, f.package_name, f.installed_version,
-                f.rationale, f.needs_restart, f.in_kev, c.epss, c.epss_percentile, c.ref_urls_json,
-                " . VG_FIXED_VERSION_SUBQ . "
-           FROM tb_finding f
-           LEFT JOIN tb_cve c ON c.cve_id = f.cve_id
-          WHERE $where
-          ORDER BY FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'), c.epss DESC, f.cve_id
-          LIMIT $perPage OFFSET $offset"
-    );
-    $st->execute($params);
-    return ['total' => $total, 'rows' => $st->fetchAll()];
-}
-
-/** 패키지 탭 — 이 컨테이너 안에 설치된 것. 호스트 것(container_id = 0)과 섞지 않는다. */
-function vg_container_load_pkg_tab(PDO $pdo, int $sid, int $ctrId, int $perPage, int $offset, string $q): array {
-    $where  = 'scan_id = ? AND container_id = ? AND is_deleted = 0';
-    $params = [$sid, $ctrId];
-    if ($q !== '') {
-        $where .= ' AND (name LIKE ? OR source_pkg LIKE ? OR origin LIKE ? OR vendor LIKE ?)';
-        $like = '%' . $q . '%';
-        array_push($params, $like, $like, $like, $like);
-    }
-
-    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_package WHERE $where");
-    $st->execute($params);
-    $total = (int) $st->fetchColumn();
-
-    $st = $pdo->prepare(
-        "SELECT manager, name, version, arch, source_pkg, source_version, origin, vendor, license
-           FROM tb_package WHERE $where
-          ORDER BY name, arch, version LIMIT $perPage OFFSET $offset"
-    );
-    $st->execute($params);
-    return ['total' => $total, 'rows' => $st->fetchAll()];
-}
-
-/**
- * 런타임 탭 — 이 컨테이너 안에서 실제로 돌고 있는 것.
- *   노출(?epage=)과 프로세스(?page=)를 각자 페이지네이션한다(host.php 런타임 탭과 같은 규약).
- */
-function vg_container_load_runtime_tab(PDO $pdo, int $sid, int $ctrId, int $perPage, int $offset, int $ePage, string $q): array {
-    $eWhere  = 'scan_id = ? AND container_id = ?';
-    $eParams = [$sid, $ctrId];
-    if ($q !== '') {
-        $eWhere .= ' AND (proc LIKE ? OR exe_pkg LIKE ?)';
-        $like = '%' . $q . '%';
-        array_push($eParams, $like, $like);
-    }
-    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_exposure WHERE $eWhere");
-    $st->execute($eParams);
-    $exposureTotal = (int) $st->fetchColumn();
-
-    // 검색을 초기화해도 ?epage= 는 URL 에 남을 수 있다(vg_toolbar 의 초기화는 page 만 지운다).
-    //   그 값을 그대로 OFFSET 에 쓰면 총건수를 넘겨 빈 표가 뜬다 — 유효 범위로 접는다.
-    $eMaxPage = max(1, (int) ceil($exposureTotal / $perPage));
-    if ($ePage > $eMaxPage) { $ePage = $eMaxPage; }
-    $eOffset = ($ePage - 1) * $perPage;
-
-    $st = $pdo->prepare(
-        "SELECT proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs
-           FROM tb_exposure WHERE $eWhere
-          ORDER BY FIELD(scope,'EXTERNAL','LAN','BOUND','FILTERED','LOCAL','-'), port
-          LIMIT $perPage OFFSET $eOffset"
-    );
-    $st->execute($eParams);
-    $exposures = $st->fetchAll();
-
-    $pWhere  = 'scan_id = ? AND container_id = ?';
-    $pParams = [$sid, $ctrId];
-    if ($q !== '') {
-        $pWhere .= ' AND (comm LIKE ? OR username LIKE ? OR exe_pkg LIKE ?)';
-        $like = '%' . $q . '%';
-        array_push($pParams, $like, $like, $like);
-    }
-    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_process WHERE $pWhere");
-    $st->execute($pParams);
-    $total = (int) $st->fetchColumn();
-
-    $st = $pdo->prepare(
-        "SELECT pid, comm, username, exe_pkg, loaded_pkgs
-           FROM tb_process WHERE $pWhere ORDER BY comm LIMIT $perPage OFFSET $offset"
-    );
-    $st->execute($pParams);
-
-    return ['total' => $total, 'rows' => $st->fetchAll(), 'exposures' => $exposures,
-            'exposureTotal' => $exposureTotal, 'ePage' => $ePage];
-}
 
 $err = null; $host = null; $scan = null; $container = null;
 $counts = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0];
@@ -279,115 +176,17 @@ if (!$container) {
     return;
 }
 
-// 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok) — host.php 와 같은 규칙.
-$worst = null;
-foreach (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as $s) { if ($counts[$s] > 0) { $worst = $s; break; } }
-$heroTone = $worst ? vg_sev_tone($worst) : 'ok';
+// 컨테이너 OS 는 머리(히어로)와 설치 패키지 탭이 함께 쓴다 — 한 곳에서 만들어 둘 다에 넘긴다.
+$ctrOs = trim((string) ($container['os_id'] ?? '') . ' ' . (string) ($container['os_version'] ?? ''));
 
-$ctrOs   = trim((string) ($container['os_id'] ?? '') . ' ' . (string) ($container['os_version'] ?? ''));
-$image   = (string) ($container['image'] ?? '');
-$state   = (string) ($container['runtime_state'] ?? '');
-// 런타임 상태 톤 — dead 만 위험으로 올린다(멈춘 컨테이너는 위험이 아니라 사실).
-$stateTone = ['running' => 'ok', 'restarting' => 'med', 'dead' => 'high'];
+vg_container_render_overview([
+    'container' => $container, 'host' => $host, 'hostId' => $hostId, 'scan' => $scan,
+    'counts' => $counts, 'ctrOs' => $ctrOs, 'packageTotal' => $packageTotal,
+    'vulnTotal' => $vulnTotal, 'exposureCount' => $exposureCount,
+    'externalFindings' => $externalFindings, 'kevCount' => $kevCount,
+    'unjudgeable' => $unjudgeable,
+]);
 
-$meta = ['<a href="/host.php?id=' . (int) $hostId . '&amp;tab=containers">← ' . vg_h((string) $host['fqdn']) . '</a>'];
-if ($image !== '')   { $meta[] = '<code>' . vg_h($image) . '</code>'; }
-if ($state !== '')   { $meta[] = vg_badge($state, $stateTone[$state] ?? 'muted'); }
-$meta[] = $ctrOs !== '' ? vg_h($ctrOs) : 'OS 미상';
-$meta[] = !empty($container['manager'])
-    ? '<code>' . vg_h((string) $container['manager']) . '</code>'
-    : '<span class="why">패키지 관리자 미상</span>';
-$meta[] = '패키지 ' . number_format($packageTotal) . '개';
-$k8s = array_filter(
-    [$container['k8s_namespace'] ?? null, $container['k8s_pod'] ?? null, $container['k8s_container'] ?? null],
-    static fn($v) => (string) $v !== ''
-);
-if ($k8s) { $meta[] = 'k8s ' . vg_h(implode(' / ', $k8s)); }
-if (!empty($container['workload_ref'])) { $meta[] = '워크로드 ' . vg_h((string) $container['workload_ref']); }
-$meta[] = '최신 수집 ' . vg_h((string) $scan['collected_at']);
-
-vg_hero(vg_h((string) $container['cid']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'CONTAINER');
-
-/* 이 컨테이너가 어디에 들어 있는지 — 호스트 안의 한 칸이고, 그 안에 패키지가 있고, 그중
- *   일부가 취약점으로 판정되며, 일부만 밖에서 닿는다. 첫 칸이 부모(호스트) 자리라 host.php 의
- *   같은 도식과 계층이 이어진다. 숫자는 위에서 이미 센 값만 쓴다. */
-vg_explain_flow([
-    ['icon' => 'host',      'label' => '호스트', 'state' => 'done'],
-    ['icon' => 'container', 'label' => '컨테이너', 'state' => 'active'],
-    ['icon' => 'package',   'label' => '패키지', 'value' => number_format($packageTotal), 'state' => 'done'],
-    ['icon' => 'cve',       'label' => '취약점', 'value' => number_format($vulnTotal), 'state' => 'done'],
-    ['icon' => 'port',      'label' => '노출', 'value' => number_format($exposureCount),
-     'state' => $externalFindings > 0 ? 'active' : 'done'],
-], ['label' => '호스트 안에서 이 컨테이너의 자리']);
-
-/* 심각도 색의 뜻 — 아래 KPI 카드와 취약점 표가 모두 이 색으로 서열을 말한다. */
-vg_legend(array_map(
-    fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $counts[$s]],
-    ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
-), ['inline' => true, 'caption' => '심각도']);
-?>
-
-<?php /* 이미지 다이제스트·SBOM 해시는 길어서 히어로 한 줄에 못 넣는다 — "이 이미지가 정확히
-         무엇인가" 를 증명하는 값이라 접지 않고 자기 자리에서 통째로 보여준다(선택·복사 대상). */ ?>
-<?php if (!empty($container['image_digest']) || !empty($container['sbom_hash']) || !empty($container['name'])): ?>
-  <div class="card">
-    <strong>이미지 식별</strong>
-    <div class="card__body">
-      <dl class="kv">
-        <?php if (!empty($container['name']) && (string) $container['name'] !== (string) $container['cid']): ?>
-          <dt>컨테이너 이름</dt><dd><?= vg_h((string) $container['name']) ?></dd>
-        <?php endif; ?>
-        <?php if ($image !== ''): ?>
-          <dt>이미지</dt><dd class="selectable"><?= vg_h($image) ?></dd>
-        <?php endif; ?>
-        <?php if (!empty($container['image_digest'])): ?>
-          <dt>다이제스트</dt><dd class="selectable"><?= vg_h((string) $container['image_digest']) ?></dd>
-        <?php endif; ?>
-        <?php if (!empty($container['sbom_format']) || !empty($container['sbom_hash'])): ?>
-          <dt>수집 SBOM</dt>
-          <dd class="selectable">
-            <?= vg_h(trim((string) ($container['sbom_format'] ?? '') . ' ' . (string) ($container['sbom_hash'] ?? ''))) ?>
-          </dd>
-        <?php endif; ?>
-      </dl>
-    </div>
-  </div>
-<?php endif; ?>
-
-<?php
-// 이 컨테이너의 부품표. 호스트 SBOM 과 범위를 섞지 않는다(sbom.php 머리주석).
-vg_sbom_links((string) $host['fqdn'], (string) $container['cid']);
-
-// 취약점 0건이 "안전"으로 읽히면 안 되는 컨테이너는 그 이유를 화면에 적는다.
-if ($unjudgeable !== null) {
-    vg_alert([
-        'type'  => 'warn',
-        'title' => '이 컨테이너는 취약점 매칭이 수행되지 않습니다',
-        'hints' => [
-            $unjudgeable,
-            '취약점 0건은 "안전함"이 아니라 "판정 불가"입니다.',
-        ],
-    ]);
-}
-?>
-
-<div class="cards">
-  <?php foreach (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as $s): ?>
-    <div class="kpi kpi--sm tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
-  <?php endforeach; ?>
-  <div class="kpi kpi--sm tone-<?= $kevCount > 0 ? 'crit' : 'muted' ?>"
-       title="KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)">
-    <b><?= number_format($kevCount) ?></b><span>KEV 악용확인</span>
-  </div>
-  <div class="kpi kpi--sm tone-<?= $externalFindings > 0 ? 'crit' : 'ok' ?>"
-       title="이 컨테이너에서 밖으로 열린 포트를 통해 닿는 취약점">
-    <b><?= number_format($externalFindings) ?></b><span>외부노출 취약점</span>
-  </div>
-  <div class="kpi kpi--sm"><b><?= number_format($packageTotal) ?></b><span>설치 패키지</span></div>
-  <div class="kpi kpi--sm"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
-</div>
-
-<?php
 vg_subtabs([
     'vuln'     => ['label' => '취약점',   'n' => $vulnTotal,
                    'href' => vg_qs(['tab' => 'vuln', 'page' => null, 'epage' => null, 'q' => null])],
@@ -409,197 +208,16 @@ vg_toolbar([
     ['type' => 'hidden', 'name' => 'id',  'value' => (string) $hostId],
     ['type' => 'hidden', 'name' => 'cid', 'value' => (string) $container['cid']],
 ]);
-?>
 
-<?php if ($tab === 'vuln'): ?>
-  <div class="card">
-    <strong>취약점</strong>
-    <span class="why"> · 이 컨테이너 안에 설치된 패키지 기준 <?= number_format($vulnTotal) ?>건</span>
-    <div class="card__body">
-    <?php
-    vg_table(
-        [
-            ['label' => '등급·상태', 'key' => 'severity', 'width' => '13%'],
-            ['label' => 'CVE', 'nowrap' => true, 'width' => '13%'],
-            ['label' => 'EPSS', 'align' => 'right', 'nowrap' => true, 'width' => '10%'],
-            ['label' => '패키지', 'width' => '16%'],
-            ['label' => '근거', 'width' => '28%'],
-            ['label' => '조치', 'width' => '20%'],
-        ],
-        $rows,
-        [
-            'card' => false,
-            // 행 강조는 등급 문자열을 받는다 — 행 배열을 그대로 넘기면 안 된다(vg_table 은 행을 준다).
-            'row_class' => fn($f) => vg_sev_row((string) $f['severity']),
-            'empty' => $hasFilter
-                ? [
-                    'icon'  => '🔍',
-                    'title' => '검색 조건에 맞는 취약점이 없습니다.',
-                    'cta'   => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
-                ]
-                : [
-                    'icon'  => '✅',
-                    'title' => '이 컨테이너에서 판정된 취약점이 없습니다.',
-                    'hint'  => '설치 패키지 탭에서 실제로 무엇이 깔렸는지 확인할 수 있습니다.',
-                ],
-            'cell' => [
-                'severity' => fn($f) => vg_sev_badge((string) $f['severity'])
-                    . ' ' . vg_status_badge($f['runtime_status'])
-                    . (!empty($f['in_kev']) ? ' ' . vg_badge('KEV', 'crit', '실제 악용이 확인된 취약점') : ''),
-                1 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode((string) $f['cve_id']) . '">'
-                    . vg_h((string) $f['cve_id']) . '</a></strong>',
-                2 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
-                3 => fn($f) => '<strong>' . vg_h((string) $f['package_name']) . '</strong> <code>'
-                    . vg_h((string) $f['installed_version']) . '</code>'
-                    . (!empty($f['needs_restart']) ? ' ' . vg_badge('재시작 필요', 'high') : ''),
-                4 => fn($f) => '<span class="why">' . vg_h((string) ($f['rationale'] ?? '')) . '</span>',
-                // 컨테이너의 조치는 대개 "이미지를 다시 빌드" 다 — 그래도 목표 버전은 알려준다.
-                5 => fn($f) => vg_fix_cell($f['fixed_version'] ?? null, $f['ref_urls_json'] ?? null,
-                                           $f['installed_version'] ?? null),
-            ],
-        ]
-    );
-    ?>
-    </div>
-  </div>
-  <?php vg_page_nav($total, $perPage, $page); ?>
+/* 활성 탭 하나만 그린다. 페이저는 이 파일이 정한 값만 받는다 — 취약점·설치 패키지는
+ *   page/per_page, 런타임은 표가 둘이라 노출이 epage 를 따로 쓴다. */
+vg_container_render_tab($tab, [
+    'container' => $container, 'hostId' => $hostId, 'ctrOs' => $ctrOs,
+    'rows' => $rows, 'exposures' => $exposures, 'hasFilter' => $hasFilter,
+    'total' => $total, 'exposureTotal' => $exposureTotal,
+    'page' => $page, 'ePage' => $ePage, 'perPage' => $perPage,
+    'vulnTotal' => $vulnTotal, 'packageTotal' => $packageTotal,
+    'depEdgeTotal' => $depEdgeTotal, 'scopeTone' => $scopeTone,
+]);
 
-<?php elseif ($tab === 'packages'): ?>
-  <div class="card">
-    <strong>설치 패키지</strong>
-    <span class="why"> · 이 컨테이너 안 <?= number_format($packageTotal) ?>개
-      <?= $ctrOs !== '' ? '· ' . vg_h($ctrOs) : '' ?></span>
-    <?php if ($depEdgeTotal > 0): ?>
-      <span class="why"> · <a href="/depgraph.php?id=<?= (int) $hostId ?>&amp;cid=<?= (int) $container['container_id'] ?>">무엇이 이 패키지를 끌어왔나(의존성 그래프)</a></span>
-    <?php endif; ?>
-    <div class="card__body">
-    <?php
-    vg_table(
-        [
-            ['label' => '패키지', 'key' => 'name', 'class' => 'col-id'],
-            ['label' => '설치 버전', 'key' => 'version'],
-            ['label' => '아키텍처', 'key' => 'arch'],
-            ['label' => '관리자', 'key' => 'manager'],
-            ['label' => '소스 패키지', 'key' => 'source_pkg'],
-            ['label' => '출처', 'key' => 'origin'],
-        ],
-        $rows,
-        [
-            'card' => false,
-            'empty' => $hasFilter
-                ? [
-                    'icon'  => '🔍',
-                    'title' => '검색 조건에 맞는 패키지가 없습니다.',
-                    'cta'   => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
-                ]
-                : [
-                    'icon'  => '□',
-                    'title' => '이 컨테이너에서 수집된 패키지가 없습니다.',
-                    'hint'  => '패키지 DB 가 없는 이미지(distroless·scratch)이거나 수집이 실패한 경우입니다.',
-                ],
-            'cell' => [
-                'name'    => fn($p) => '<strong>' . vg_h((string) $p['name']) . '</strong>',
-                'version' => fn($p) => '<code>' . vg_h((string) ($p['version'] ?? '')) . '</code>',
-                'arch'    => fn($p) => $p['arch'] ? vg_h((string) $p['arch']) : '<span class="why">–</span>',
-                'manager' => fn($p) => '<code>' . vg_h((string) $p['manager']) . '</code>',
-                'source_pkg' => function ($p) {
-                    if (empty($p['source_pkg'])) { return '<span class="why">–</span>'; }
-                    return vg_h((string) $p['source_pkg'])
-                        . (!empty($p['source_version']) ? ' <span class="why">' . vg_h((string) $p['source_version']) . '</span>' : '');
-                },
-                'origin'  => fn($p) => $p['origin']
-                    ? vg_h((string) $p['origin'])
-                    : (!empty($p['vendor']) ? vg_h((string) $p['vendor']) : '<span class="why">–</span>'),
-            ],
-        ]
-    );
-    ?>
-    </div>
-  </div>
-  <?php vg_page_nav($total, $perPage, $page); ?>
-
-<?php else: ?>
-  <div class="card">
-    <strong>런타임 노출</strong>
-    <span class="why">— 이 컨테이너가 연 포트. 호스트로 포워딩된 포트는 밖에서 그대로 닿는다</span>
-    <?php /* 범위 뱃지의 색 뜻 — 어휘는 vg_scope_label(), 톤은 위 $scopeTone(호스트 상세와 같은 표)이다. */ ?>
-    <?php vg_legend(array_map(
-        fn(string $sc): array => ['label' => vg_scope_label($sc), 'tone' => $scopeTone[$sc]],
-        array_keys($scopeTone)
-    ), ['inline' => true, 'caption' => '노출 범위']); ?>
-    <div class="card__body">
-    <?php
-    vg_table(
-        [
-            ['label' => '범위'],
-            ['label' => '프로세스', 'key' => 'proc'],
-            ['label' => '포트'],
-            ['label' => '실행패키지', 'key' => 'exe_pkg'],
-            ['label' => '로드한 패키지'],
-        ],
-        $exposures,
-        [
-            'card' => false,
-            'empty' => $hasFilter
-                ? [
-                    'icon'  => '🔍',
-                    'title' => '검색 결과가 없습니다.',
-                    'cta'   => ['href' => vg_qs(['q' => null, 'page' => null, 'epage' => null]), 'label' => '검색 초기화'],
-                ]
-                : [
-                    'icon'  => '✅',
-                    'title' => '이 컨테이너에는 리스닝 소켓이 없습니다.',
-                ],
-            'cell' => [
-                0 => fn($e) => vg_badge(vg_scope_label((string) $e['scope']), $scopeTone[$e['scope']] ?? 'muted'),
-                2 => fn($e) => vg_h((string) $e['proto']) . '/' . (int) $e['port'],
-                4 => fn($e) => '<span class="why">' . vg_trunc($e['loaded_pkgs'], 60) . '</span>',
-            ],
-        ]
-    );
-    ?>
-    </div>
-  </div>
-  <?php vg_page_nav($exposureTotal, $perPage, $ePage, 'epage'); ?>
-
-  <div class="card mt-lg">
-    <strong>실행 프로세스</strong>
-    <span class="why">— 이 컨테이너 안에서 돌고 있는 프로그램과 그 소속 패키지</span>
-    <div class="card__body">
-    <?php
-    vg_table(
-        [
-            ['label' => 'PID'],
-            ['label' => '프로세스', 'key' => 'comm'],
-            ['label' => '사용자'],
-            ['label' => '실행 패키지', 'key' => 'exe_pkg'],
-            ['label' => '로드한 패키지'],
-        ],
-        $rows,
-        [
-            'card' => false,
-            'empty' => $hasFilter
-                ? [
-                    'icon'  => '🔍',
-                    'title' => '검색 결과가 없습니다.',
-                    'cta'   => ['href' => vg_qs(['q' => null, 'page' => null, 'epage' => null]), 'label' => '검색 초기화'],
-                ]
-                : [
-                    'icon'  => '🗂️',
-                    'title' => '이 컨테이너의 프로세스 정보가 없습니다.',
-                    'hint'  => '구버전 에이전트로 수집된 스캔이거나 컨테이너가 멈춘 상태입니다.',
-                ],
-            'cell' => [
-                0 => fn($pr) => '<span class="why">' . (int) $pr['pid'] . '</span>',
-                2 => fn($pr) => '<span class="why">' . vg_h((string) $pr['username']) . '</span>',
-                4 => fn($pr) => '<span class="why">' . vg_trunc($pr['loaded_pkgs'], 60) . '</span>',
-            ],
-        ]
-    );
-    ?>
-    </div>
-  </div>
-  <?php vg_page_nav($total, $perPage, $page); ?>
-<?php endif; ?>
-
-<?php vg_footer();
+vg_footer();
