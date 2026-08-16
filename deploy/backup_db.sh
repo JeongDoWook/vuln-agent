@@ -51,7 +51,9 @@ VERIFY_TMPFS_SMALL_SIZE="${VERIFY_TMPFS_SMALL_SIZE:-64m}"
 # 라벨로 남은 이전 검증 컨테이너를 걷는 기준 나이(초). **나이로 거르는 이유**: 컨테이너 이름의
 # PID($$) 로 자기 것만 제외하는 방식은 "남이 방금 띄운 검증"을 지켜주지 못한다(청소는 자기
 # 컨테이너를 만들기 전에 도니 애초에 제외할 자기 것도 없다). 정상 검증은 readiness 90s +
-# restore 로 끝나므로 1시간(3600s)을 넘긴 것은 확실한 잔재다.
+# restore 로 끝나므로 1시간(3600s)을 넘긴 것은 잔재로 본다. 단 나이만으로는 대용량 덤프
+# 복원이 이 상한을 넘겼을 때 남이 진행 중인 검증을 죽이므로, 이름 규격·소유 PID 생존까지
+# 함께 확인한다(reap_stale_verify_containers 참고).
 # docker ps 의 --filter until= 은 이 데몬에서 'invalid filter' 라 못 쓴다(prune 전용) — 그래서
 # 라벨로만 추리고 나이는 docker inspect 의 .Created 로 직접 잰다.
 VERIFY_STALE_AGE_SECONDS="${VERIFY_STALE_AGE_SECONDS:-3600}"
@@ -100,20 +102,42 @@ cleanup_verify_container() {
   fi
 }
 
+owner_alive() {
+  # 컨테이너 이름의 PID 접미사가 지금 살아 있는 프로세스인지 본다.
+  # /proc 이 있으면 그걸 보고(리눅스·git-bash 공통), 없으면 kill -0 로 떨어진다.
+  local pid="$1"
+  if [ -d /proc ]; then [ -e "/proc/$pid" ]; else kill -0 "$pid" 2>/dev/null; fi
+}
+
 reap_stale_verify_containers() {
   # 라벨을 붙여만 두고 읽는 곳이 없어, 한 번 누수되면 사람이 발견할 때까지 남았다.
   # 청소 실패가 백업 자체를 막으면 안 되므로 전부 흘리고 경고만 남긴다.
-  local candidates cid created created_epoch now count=0
+  local candidates cid name created created_epoch now count=0
   candidates=$(docker ps -aq --filter "label=$VERIFY_LABEL" 2>/dev/null || true)
   [ -n "$candidates" ] || return 0
   now=$(date +%s)
   for cid in $candidates; do
+    name=$(docker inspect "$cid" --format '{{.Name}}' 2>/dev/null || true)
+    name=${name#/}
+    # 라벨은 누구나 자기 컨테이너에 붙일 수 있는 값이라 그것만으로 rm -f 하지 않는다.
+    # 이 스크립트가 만든 이름 규격(:verify_name)까지 맞아야 대상으로 본다.
+    case "$name" in vg-backup-verify-*) ;; *) continue ;; esac
     created=$(docker inspect "$cid" --format '{{.Created}}' 2>/dev/null || true)
     [ -n "$created" ] || continue
     created_epoch=$(date -d "$created" +%s 2>/dev/null || true)
-    case "$created_epoch" in ''|*[!0-9]*) continue ;; esac
-    # 지금 돌고 있는 다른 백업 검증은 건드리지 않는다.
+    case "$created_epoch" in
+      ''|*[!0-9]*)
+        # 조용히 건너뛰면 이 기능이 고치려던 "무음 누적"이 그대로 재발한다.
+        echo "backup verify: $name 생성시각 파싱 실패(created=$created) — 잔재 판정 불가" >&2
+        continue ;;
+    esac
+    # 1차 안전장치: 나이. 정상 검증은 readiness + restore 로 끝난다.
     [ "$((now - created_epoch))" -gt "$VERIFY_STALE_AGE_SECONDS" ] || continue
+    # 2차 안전장치: 이름 끝의 PID 가 아직 살아 있으면 "지금 돌고 있는 검증"이므로 건드리지
+    # 않는다. 나이만 보면 대용량 덤프 복원이 상한을 넘겼을 때 남이 진행 중인 컨테이너를
+    # 죽인다(리뷰 지적). PID 가 재사용돼 오래된 잔재를 한 번 놓쳐도 다음 실행이 걷으므로
+    # 틀리는 방향이 안전하다.
+    if owner_alive "${name##*-}"; then continue; fi
     if docker rm -f "$cid" >/dev/null 2>&1; then
       count=$((count + 1))
     else
@@ -121,7 +145,7 @@ reap_stale_verify_containers() {
     fi
   done
   # 조용히 치우면 누수가 계속 나도 아무도 모른다. 몇 개를 걷었는지 반드시 남긴다.
-  [ "$count" -gt 0 ] && echo "backup verify: 잔재 컨테이너 ${count}개 정리(생성 ${VERIFY_STALE_AGE_SECONDS}s 초과, 라벨=$VERIFY_LABEL)"
+  [ "$count" -gt 0 ] && echo "backup verify: 잔재 컨테이너 ${count}개 정리(이름 vg-backup-verify-*, 생성 ${VERIFY_STALE_AGE_SECONDS}s 초과, 소유 프로세스 종료됨)"
   return 0
 }
 
