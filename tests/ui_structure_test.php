@@ -45,7 +45,16 @@ $appJs = (string) file_get_contents($public . '/assets/app.js');
 $loginPhp = (string) file_get_contents($public . '/login.php');
 $loginJs = (string) file_get_contents($public . '/assets/js/login.js');
 $hostJs = (string) file_get_contents($public . '/assets/js/host.js');
-$componentsPhp = (string) file_get_contents($root . '/server/src/view/components.php');
+/* 공용 컴포넌트도 파일 하나가 아니다 — 진입점(components.php)은 require 목록만 남고 구현은
+ *   server/src/view/components/** 에 있다. 진입점만 읽으면 코드가 옮겨졌을 뿐인데 아래 계약
+ *   검사가 통째로 통과해 버린다(host: #621 · findings: #624 의 $splitSources 와 같은 처리). */
+$componentsPhp = implode("\n", array_map(
+    static fn(string $f): string => (string) file_get_contents($f),
+    array_merge(
+        [$root . '/server/src/view/components.php'],
+        glob($root . '/server/src/view/components/*.php') ?: []
+    )
+));
 $chartsPhp = (string) file_get_contents($root . '/server/src/view/charts.php');
 /* 자기 속을 server/src/<화면>/ 로 나눠 둔 페이지는 파일 하나가 아니다 — 조회층·탭 렌더가
  *   거기 있다. "그 화면의 소스" 는 페이지 + 그 디렉터리 전체이고, 페이지 파일만 읽으면 코드가
