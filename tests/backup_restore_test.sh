@@ -158,6 +158,23 @@ case "$run_line" in
   *'--tmpfs /var/lib/mysql'*)
     echo "backup_restore_test: /var/lib/mysql 이 다시 tmpfs(RAM) 로 돌아감: $run_line" >&2; exit 1 ;;
 esac
+# 복원 속도 튜닝 인자(2026-08-17). 일회용 인스턴스라 내구성 비용을 낼 이유가 없다 —
+# 이게 빠지면 배포가 다시 40분짜리 단일 스레드 복원으로 돌아간다.
+for opt in '--innodb-flush-log-at-trx-commit=0' '--innodb-doublewrite=0' \
+           '--innodb-flush-method=O_DIRECT' '--innodb-log-file-size=' '--innodb-buffer-pool-size='; do
+  case "$run_line" in
+    *"$opt"*) ;;
+    *) echo "backup_restore_test: 복원 속도 튜닝 인자 누락($opt): $run_line" >&2; exit 1 ;;
+  esac
+done
+# 버퍼 풀 기본값은 곧 호스트 RAM 이다. 2026-08-16 에 이 컨테이너가 RAM 을 물어 운영 호스트를
+# 마비시킨 적이 있어, 기본값이 1G 이상으로 슬며시 올라가는 것을 여기서 막는다.
+default_pool=$(printf '%s\n' "$run_line" | sed -n 's/.*--innodb-buffer-pool-size=\([^ ]*\).*/\1/p')
+case "$default_pool" in
+  [1-9]*[mM]) [ "${default_pool%[mM]}" -le 1024 ] || { echo "backup_restore_test: 버퍼 풀 기본값이 너무 큼($default_pool)" >&2; exit 1; } ;;
+  *) echo "backup_restore_test: 버퍼 풀 기본값은 1024M 이하의 M 표기여야 함($default_pool)" >&2; exit 1 ;;
+esac
+
 # 익명 볼륨은 -v 없는 docker rm 으로 안 지워진다. 정리 경로가 rm -fv 인지 본다.
 if ! grep -q '^rm -fv ' "$MOCK_LOG"; then
   echo "backup_restore_test: 검증 컨테이너 정리가 rm -fv 가 아님(익명 볼륨이 디스크에 남는다)" >&2
