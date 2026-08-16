@@ -128,7 +128,16 @@ $ok(!str_contains((string) $auditText, '사람이 작성한 기존 근거'), '�
 $ok(!str_contains((string) $auditText, '화면에 남은 기존 근거'), '등급 해제 감사 payload에 지워진 근거 원문 미포함');
 $ok(str_contains((string) $auditText, 'cleared_fields'), '등급 해제 감사 payload에 삭제 필드명 포함');
 
-$hostSource = file_get_contents(__DIR__ . '/../server/public/host.php');
+/* 호스트 상세는 파일 하나가 아니다 — 수집 제어 POST·등급 카드는 server/src/host/** 에 있다.
+ *   "상세 화면의 소스" 는 그 묶음 전체다(코드가 옮겨졌을 뿐인데 계약이 깨지면 안 된다). */
+$hostSource = implode("\n", array_map(
+    static fn(string $f): string => (string) file_get_contents($f),
+    array_merge(
+        [__DIR__ . '/../server/public/host.php'],
+        glob(__DIR__ . '/../server/src/host/*.php') ?: [],
+        glob(__DIR__ . '/../server/src/host/tabs/*.php') ?: []
+    )
+));
 $assetsSource = file_get_contents(__DIR__ . '/../server/public/assets.php');
 $guardPos = strpos((string) $hostSource, "if (!vg_has_role('admin'))");
 $confirmPos = strpos((string) $hostSource, 'vg_asset_grade_review_confirm(');

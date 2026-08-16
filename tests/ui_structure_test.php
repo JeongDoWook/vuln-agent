@@ -47,7 +47,17 @@ $loginJs = (string) file_get_contents($public . '/assets/js/login.js');
 $hostJs = (string) file_get_contents($public . '/assets/js/host.js');
 $componentsPhp = (string) file_get_contents($root . '/server/src/view/components.php');
 $chartsPhp = (string) file_get_contents($root . '/server/src/view/charts.php');
-$hostPhp = (string) file_get_contents($public . '/host.php');
+/* 호스트 상세는 파일 하나가 아니다 — 조회층·탭 렌더가 server/src/host/** 로 나뉘어 있다.
+ *   "상세 화면의 소스" 는 그 묶음 전체다. host.php 만 읽으면 코드가 옮겨졌을 뿐인데 계약이 깨진다. */
+$hostSources = static function (string $public, string $root): string {
+    $files = array_merge(
+        [$public . '/host.php'],
+        glob($root . '/server/src/host/*.php') ?: [],
+        glob($root . '/server/src/host/tabs/*.php') ?: []
+    );
+    return implode("\n", array_map(static fn(string $f): string => (string) file_get_contents($f), $files));
+};
+$hostPhp = $hostSources($public, $root);
 $check(str_contains($loginPhp, 'id="loginForm"')
     && str_contains($loginPhp, 'target="_self"')
     && str_contains($loginPhp, 'formtarget="_self"'),
@@ -185,7 +195,7 @@ $agentSh = (string) file_get_contents($root . '/agent/vuln-inventory-agent.sh');
 /* 목록은 "이 행을 열어볼지 말지" 를 정하는 열만 둔다(docs/dev/ui-design-system.md).
  *   IP·OS·에이전트 버전·패키지 수·담당 부서는 **지운 게 아니라 호스트 상세로 옮겼다** —
  *   목록에서 빠진 것과 상세에 있는 것을 한 쌍으로 확인한다(한쪽만 보면 값이 사라져도 통과한다). */
-$hostPhpSrc = (string) file_get_contents($public . '/host.php');
+$hostPhpSrc = $hostSources($public, $root);   // host.php + server/src/host/**(위 주석 참고)
 $check(!str_contains($assetsPhp, "['label' => 'IP'") && !str_contains($assetsPhp, "['label' => '스캔'")
     && !str_contains($assetsPhp, "['label' => 'OS'") && !str_contains($assetsPhp, "['label' => '에이전트'")
     && !str_contains($assetsPhp, "['label' => '담당 부서'"),
