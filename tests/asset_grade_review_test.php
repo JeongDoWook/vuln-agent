@@ -138,7 +138,16 @@ $hostSource = implode("\n", array_map(
         glob(__DIR__ . '/../server/src/host/tabs/*.php') ?: []
     )
 ));
-$assetsSource = file_get_contents(__DIR__ . '/../server/public/assets.php');
+/* 자산 목록도 파일 하나가 아니다 — 일괄 확정 POST·확정 모달은 server/src/assets/** 에 있다.
+ *   호스트 상세와 같은 이유로 그 묶음 전체를 본다. */
+$assetsSource = implode("
+", array_map(
+    static fn(string $f): string => (string) file_get_contents($f),
+    array_merge(
+        [__DIR__ . '/../server/public/assets.php'],
+        glob(__DIR__ . '/../server/src/assets/*.php') ?: []
+    )
+));
 $guardPos = strpos((string) $hostSource, "if (!vg_has_role('admin'))");
 $confirmPos = strpos((string) $hostSource, 'vg_asset_grade_review_confirm(');
 $ok($guardPos !== false && $confirmPos !== false && $guardPos < $confirmPos
