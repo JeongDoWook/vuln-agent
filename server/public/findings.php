@@ -817,20 +817,20 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       // '전체 상태' 였던 것을 '노출 상태' 로 못박는다 — 바로 옆에 사람이 정하는 '조치 상태'가
       //   서기 때문에, 라벨이 둘 다 '상태' 면 어느 축인지 화면만 보고는 알 수 없다.
       ['type' => 'select', 'name' => 'st', 'empty_label' => '전체 노출 상태', 'selected' => $st,
-          'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions)), 'advanced' => true],
+          'options' => array_combine($stOptions, array_map('vg_status_label', $stOptions))],
       // 조치 상태 — 값 목록·라벨은 vg_finding_status_labels() 하나가 정본이다.
       ['type' => 'select', 'name' => 'fst', 'empty_label' => '전체 조치 상태', 'selected' => $fst,
-          'options' => vg_finding_status_labels(), 'advanced' => true],
+          'options' => vg_finding_status_labels()],
       // 조치 가능성 — 벤더가 수정본을 안 낸 CVE 를 걸러 보거나, 그것만 모아 볼 수 있다.
       ['type' => 'select', 'name' => 'fx', 'empty_label' => '전체 조치 가능성', 'selected' => $fx,
           'options' => ['action' => '조치 가능', 'nofix' => '조치 불가(벤더 미수정)',
                         'restart' => '재시작·재부팅만 하면 됨', 'kev' => 'KEV 등재',
-                        'overdue' => '기한 초과'], 'advanced' => true],
+                        'overdue' => '기한 초과']],
       // 정렬은 표 머리글이 아니라 여기에 둔다 — vg_table 은 정렬 링크를 갖지 않는다(공용 표를
       //   이 화면 하나 때문에 바꾸지 않는다). 기한순은 최초 발견 시각을 되짚는 집계가 필요해
       //   기본값으로 두지 않는다.
       ['type' => 'select', 'name' => 'sort', 'empty_label' => '위험도순(기본)', 'selected' => $sort,
-          'options' => ['due' => '조치 기한 임박순'], 'advanced' => true],
+          'options' => ['due' => '조치 기한 임박순']],
   ]));
 
   // 컬럼 11개는 가로 스크롤을 만들어서, 정작 제일 중요한 "조치" 가 화면 밖으로 밀려났었다.
