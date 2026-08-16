@@ -1,7 +1,7 @@
 ---
 name: design-runtime-trap
 description: Design-phase reviewer for defects that only surface at runtime (not caught by design review alone). Cross-checks design-regression-analyst's output and produces the final open-issue list for the caller. Read-only — never touches code.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__codelore__context_for_change, mcp__codelore__constraints, mcp__codelore__why, mcp__codelore__history, mcp__codelore__search
 model: opus
 ---
 

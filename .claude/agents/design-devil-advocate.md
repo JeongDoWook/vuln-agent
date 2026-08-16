@@ -1,7 +1,7 @@
 ---
 name: design-devil-advocate
 description: Design-phase adversary. Argues why the proposed direction fails, before implementation starts. Debates round 2 with design-regression-analyst via direct messaging, then reports a final consensus/open list to the caller. Read-only — never touches code.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__codelore__context_for_change, mcp__codelore__constraints, mcp__codelore__why, mcp__codelore__history, mcp__codelore__search
 model: opus
 ---
 

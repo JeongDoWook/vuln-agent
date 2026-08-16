@@ -1,0 +1,14 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": ".*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node \"C:\\APM\\Apache24\\htdocs\\codelore\\scripts\\codelore-guard.mjs\" --db \"C:\\APM\\Apache24\\htdocs\\codelore\\data\\codelore.db\"",
+          "timeout": 15
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 ---
 name: runtime-trap-hunter
 description: Adversarial reviewer for defects that pass CI but fail under real traffic. One of 5 perspectives dispatched in parallel by the code-review skill. The trap taxonomy below is an EXAMPLE (Java/Spring-shaped) — projects on a different stack must replace it via the adapter before use.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__codelore__context_for_change, mcp__codelore__constraints, mcp__codelore__why, mcp__codelore__history, mcp__codelore__search
 model: opus
 ---
 

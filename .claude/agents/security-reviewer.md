@@ -1,7 +1,7 @@
 ---
 name: security-reviewer
 description: Adversarial OWASP-focused security reviewer. One of 5 perspectives dispatched in parallel by the code-review skill. Runs in a separate context from the code's author.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__codelore__context_for_change, mcp__codelore__constraints, mcp__codelore__why, mcp__codelore__history, mcp__codelore__search
 model: opus
 ---
 
