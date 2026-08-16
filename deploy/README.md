@@ -133,7 +133,7 @@ Caddy 루트는 10년짜리라 거의 바뀌지 않는다. `data`(caddy_data) �
 --routines`)를 실행해 gzip 압축 후 `/apps/vulnagent/backups/vulnagent_YYYYMMDD_HHMMSS.sql.gz`
 로 저장한다. 비밀번호는 항상 컨테이너 안에서 `/run/secrets/mysql_root_password` 를 읽어 쓰고
 호스트엔 노출하지 않는다. 생성 직후 운영 DB와 network·volume·secret을 전혀 공유하지 않는
-`--network none`/tmpfs 일회용 MySQL 컨테이너에 복원한다. 현재 운영 schema에서 읽은 table/column
+`--network none` 일회용 MySQL 컨테이너에 복원한다. 현재 운영 schema에서 읽은 table/column
 manifest와 PK·FK·UNIQUE·NOT NULL 제약이 정확히 같고 `tb_host`·`tb_scan` 핵심 행 및 참조 무결성을
 통과한 경우에만 `restore=pass`로 기록한다. 설치는 운영 서버 crontab 에 한 줄:
 
@@ -165,6 +165,20 @@ bash deploy/backup_db.sh --verify /apps/vulnagent/backups/vulnagent_YYYYMMDD_HHM
 PK·FK·UNIQUE·NOT NULL 제약 일치, `tb_host`·`tb_scan`의 비어 있지 않은 핵심 행과 orphan scan 0건,
 일회용 컨테이너 삭제가 모두 통과하는 것이다. dump SQL은 운영 MySQL root session에 입력되지
 않으며 일회용 컨테이너에는 운영 network·volume·secret이 연결되지 않는다.
+
+**검증 DB 는 RAM 이 아니라 디스크다.** 일회용 컨테이너의 `/var/lib/mysql` 은 익명 볼륨(`-v
+/var/lib/mysql`)이고, `--rm`(정상 종료)·`docker rm -fv`(강제 정리·잔재 청소)가 컨테이너와 함께
+지운다. 예전엔 `--tmpfs /var/lib/mysql` 이라 복원 데이터가 **호스트 RAM** 을 DB 크기만큼 먹었고,
+2026-08-16 운영(DB 5.27GB, 가용 RAM 4.7GB, swap 0)에서 호스트를 마비시켰다. 상한(`VERIFY_TMPFS_SIZE`)을
+걸자 이번엔 `ERROR 1114 The table 'tb_finding' is full` 로 배포가 멈췄다 — 그래서 상한을 올리는
+대신 저장 위치를 디스크로 옮겼고, `VERIFY_TMPFS_SIZE` 는 제거됐다. `/var/run/mysqld`·`/tmp` 만
+tmpfs 로 남는다(소켓·PID·임시파일뿐, 64m).
+
+복원 전에 **디스크 여유를 먼저 확인**한다. 필요 용량은 덤프(압축) 크기가 아니라 원본 DB 의 실제
+크기(`information_schema` 의 데이터+인덱스 합계)에 `VERIFY_DISK_HEADROOM_MULT`(기본 2)를 곱해
+잡고, docker 데이터 경로(`docker info --format '{{.DockerRootDir}}'`)의 여유와 비교한다. 부족하면
+컨테이너를 띄우지 않고 `backup verify: 디스크 여유 부족 …` 으로 즉시 실패한다(다 채운 뒤
+`table is full` 로 죽는 것보다 낫다). 측정이 불가능한 환경에서는 경고만 남기고 진행한다.
 
 실패 dump는 정상 보관 패턴 밖의 `.failed` 파일로 0600 격리되고 자동 복구 대상에 들어가지 않는다.
 다만 민감한 DB 사본과 디스크가 무제한 누적되지 않도록 정상 백업 `KEEP`과 같은 최신 7개만 보존한다.

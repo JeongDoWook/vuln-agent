@@ -18,9 +18,13 @@
 #
 # 검증 컨테이너 관련 환경변수(전부 기본값 있음):
 #   VERIFY_READY_TIMEOUT(90)         격리 DB 기동 대기 초
-#   VERIFY_TMPFS_SIZE(2g)            /var/lib/mysql tmpfs 상한 — 덤프가 커져 실패하면 올린다
-#   VERIFY_TMPFS_SMALL_SIZE(64m)     /var/run/mysqld·/tmp tmpfs 상한
+#   VERIFY_TMPFS_SMALL_SIZE(64m)     /var/run/mysqld·/tmp tmpfs 상한(소켓·PID·임시파일 전용)
+#   VERIFY_DISK_HEADROOM_MULT(2)     복원에 필요한 디스크를 "원본 DB 크기 × 이 배수" 로 잡는다
 #   VERIFY_STALE_AGE_SECONDS(3600)   이보다 오래된 라벨 컨테이너를 잔재로 보고 걷는다
+#
+# 검증 DB(/var/lib/mysql)는 **디스크(익명 볼륨)** 다. RAM(tmpfs)이 아니다 — 아래 docker run
+# 주석 참고. 그래서 검증이 먹는 것은 메모리가 아니라 디스크이고, 부족하면 복원을 시작하기
+# 전에 명확히 실패한다(check_verify_disk_space).
 # =============================================================================
 set -euo pipefail
 umask 077   # 이후 생성되는 모든 파일(LOCK, 덤프 .sql.gz)을 처음부터 소유자 전용 권한으로
@@ -41,13 +45,16 @@ FAILED_KEEP=$KEEP  # 실패 dump도 조사에 필요한 최신 KEEP개만 보존
 VERIFY_READY_TIMEOUT="${VERIFY_READY_TIMEOUT:-90}"
 VERIFY_CONTAINER_ID=""
 VERIFY_LABEL="vuln-agent.backup-verify=true"
-# 격리 검증 컨테이너의 tmpfs 상한. size= 가 없으면 리눅스 기본값(호스트 RAM 의 50%)이 걸려,
-# 복원 데이터가 그만큼 호스트 메모리를 먹는다 — 2026-08-16 운영에서 이 컨테이너가 5.6GB 를
-# 물고 서버를 마비시켰다. 2g 근거: 운영 덤프가 압축 351MB(#342 실측)이고 InnoDB 로 적재해도
-# 1GB 내외라 여유 2배를 잡았다. 덤프가 커져 검증이 실패하면 이 값을 올린다.
-VERIFY_TMPFS_SIZE="${VERIFY_TMPFS_SIZE:-2g}"
 # 소켓·PID 파일(/var/run/mysqld)과 임시파일(/tmp)은 수 MB 면 충분하다. 넉넉히 잡아 64m.
+# 이 둘만 tmpfs 로 남긴다 — 데이터가 아니라서 RAM 사용량이 DB 크기에 비례하지 않는다.
 VERIFY_TMPFS_SMALL_SIZE="${VERIFY_TMPFS_SMALL_SIZE:-64m}"
+# 검증 복원에 필요한 디스크를 "원본 DB 크기 × 배수" 로 잡는다. 덤프(압축) 크기로 추정하지
+# 않는 이유: 674MB 짜리 gz 가 5.27GB 로 풀린다(2026-08-16 운영 실측) — 압축률은 데이터에
+# 따라 달라 안전한 하한이 못 된다. 2배 근거: mysqldump 를 다시 적재하면 InnoDB 페이지 여유·
+# secondary index 재구성·undo/redo 로 원본 information_schema 합계보다 커진다. 운영 기준
+# 5.27GB × 2 = 약 10.5GB 인데 디스크 여유가 816GB 라 넉넉하다. 모자라면 이 값을 낮추기 전에
+# 디스크를 확보하는 게 맞다 — 낮추면 "table is full" 로 죽는 옛 실패가 그대로 돌아온다.
+VERIFY_DISK_HEADROOM_MULT="${VERIFY_DISK_HEADROOM_MULT:-2}"
 # 라벨로 남은 이전 검증 컨테이너를 걷는 기준 나이(초). **나이로 거르는 이유**: 컨테이너 이름의
 # PID($$) 로 자기 것만 제외하는 방식은 "남이 방금 띄운 검증"을 지켜주지 못한다(청소는 자기
 # 컨테이너를 만들기 전에 도니 애초에 제외할 자기 것도 없다). 정상 검증은 readiness 90s +
@@ -64,14 +71,17 @@ esac
 case "$VERIFY_STALE_AGE_SECONDS" in
   ''|*[!0-9]*|0) echo "backup: VERIFY_STALE_AGE_SECONDS는 양의 정수(초)여야 함" >&2; exit 2 ;;
 esac
-for _size_var in VERIFY_TMPFS_SIZE VERIFY_TMPFS_SMALL_SIZE; do
-  # docker 의 tmpfs size= 에 그대로 들어가므로 "숫자+단위" 만 허용한다(옵션 주입 차단).
-  if ! [[ "${!_size_var}" =~ ^[1-9][0-9]*[kKmMgG]?$ ]]; then
-    echo "backup: $_size_var 는 64m·2g 같은 크기 표기여야 함(현재=${!_size_var})" >&2
-    exit 2
-  fi
-done
-unset _size_var
+# docker 의 tmpfs size= 에 그대로 들어가므로 "숫자+단위" 만 허용한다(옵션 주입 차단).
+if ! [[ "$VERIFY_TMPFS_SMALL_SIZE" =~ ^[1-9][0-9]*[kKmMgG]?$ ]]; then
+  echo "backup: VERIFY_TMPFS_SMALL_SIZE 는 64m·2g 같은 크기 표기여야 함(현재=$VERIFY_TMPFS_SMALL_SIZE)" >&2
+  exit 2
+fi
+# 배수는 1.5 처럼 소수도 허용한다(계산은 awk 로 한다). 0 이나 문자는 사전 확인을 무력화한다.
+if ! [[ "$VERIFY_DISK_HEADROOM_MULT" =~ ^[0-9]+(\.[0-9]+)?$ ]] \
+   || [ "$(awk -v m="$VERIFY_DISK_HEADROOM_MULT" 'BEGIN { print (m > 0) ? 1 : 0 }')" != 1 ]; then
+  echo "backup: VERIFY_DISK_HEADROOM_MULT 는 0보다 큰 수여야 함(현재=$VERIFY_DISK_HEADROOM_MULT)" >&2
+  exit 2
+fi
 
 container_database() {
   local env_lines container_db requested
@@ -97,7 +107,9 @@ verify_mysql() {
 
 cleanup_verify_container() {
   if [ -n "$VERIFY_CONTAINER_ID" ]; then
-    docker rm -f "$VERIFY_CONTAINER_ID" >/dev/null 2>&1 || true
+    # -v 를 반드시 붙인다. /var/lib/mysql 이 익명 볼륨이라, -v 없는 rm -f 는 컨테이너만
+    # 지우고 볼륨을 남긴다 — RAM 누수를 디스크 누수로 옮기는 것뿐이다.
+    docker rm -fv "$VERIFY_CONTAINER_ID" >/dev/null 2>&1 || true
     VERIFY_CONTAINER_ID=""
   fi
 }
@@ -138,14 +150,15 @@ reap_stale_verify_containers() {
     # 죽인다(리뷰 지적). PID 가 재사용돼 오래된 잔재를 한 번 놓쳐도 다음 실행이 걷으므로
     # 틀리는 방향이 안전하다.
     if owner_alive "${name##*-}"; then continue; fi
-    if docker rm -f "$cid" >/dev/null 2>&1; then
+    # -v: 잔재 컨테이너의 익명 볼륨(/var/lib/mysql)까지 같이 걷는다(cleanup 과 같은 이유).
+    if docker rm -fv "$cid" >/dev/null 2>&1; then
       count=$((count + 1))
     else
       echo "backup verify: 잔재 컨테이너 정리 실패($cid) — 백업은 계속한다" >&2
     fi
   done
   # 조용히 치우면 누수가 계속 나도 아무도 모른다. 몇 개를 걷었는지 반드시 남긴다.
-  [ "$count" -gt 0 ] && echo "backup verify: 잔재 컨테이너 ${count}개 정리(이름 vg-backup-verify-*, 생성 ${VERIFY_STALE_AGE_SECONDS}s 초과, 소유 프로세스 종료됨)"
+  [ "$count" -gt 0 ] && echo "backup verify: 잔재 컨테이너 ${count}개 정리(이름 vg-backup-verify-*, 생성 ${VERIFY_STALE_AGE_SECONDS}s 초과, 소유 프로세스 종료됨, 익명 볼륨 포함)"
   return 0
 }
 
@@ -231,6 +244,56 @@ SELECT metric, value FROM (
 ORDER BY metric"
 }
 
+db_size_sql() {
+  local db="$1"
+  # 복원본이 차지할 디스크의 기준값. 덤프(압축) 크기가 아니라 **원본 DB 의 실제 크기**를 쓴다.
+  # 별칭 db_size 는 이 쿼리를 식별하는 표식이기도 하다(tests/backup_restore_test.sh 의 mock).
+  printf '%s\n' "
+SELECT bytes FROM (
+  SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) AS bytes
+    FROM information_schema.TABLES
+   WHERE TABLE_SCHEMA = '$db' AND TABLE_TYPE = 'BASE TABLE'
+) AS db_size"
+}
+
+check_verify_disk_space() {
+  # 복원 데이터는 이제 디스크(익명 볼륨)에 쌓인다. 다 채운 뒤 'table is full' 로 죽는 것보다
+  # 시작 전에 명확히 실패하는 게 낫다 — 2026-08-16 운영 배포가 정확히 그렇게 멈췄다.
+  # 측정이 불가능한 환경(원격 docker 데몬 등)에서는 경고만 남기고 진행한다. 알 수 없다는
+  # 이유로 백업 자체를 막으면 얻는 것보다 잃는 게 크다.
+  local db="$1" bytes root avail_kb need_kb
+  bytes=$(root_mysql --batch --raw --skip-column-names -e "$(db_size_sql "$db")" 2>/dev/null | head -1)
+  case "$bytes" in
+    ''|*[!0-9]*)
+      echo "backup verify: 원본 DB 크기 조회 실패($db) — 디스크 사전 확인을 건너뛴다" >&2
+      return 0 ;;
+  esac
+  # 익명 볼륨은 docker 데이터 경로 아래에 만들어지므로 그 파일시스템의 여유를 본다.
+  root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null | head -1 || true)
+  if [ -z "$root" ] || [ ! -d "$root" ]; then
+    echo "backup verify: docker 데이터 경로를 호스트에서 볼 수 없어 디스크 사전 확인을 건너뛴다(root=${root:-none})" >&2
+    return 0
+  fi
+  # 열 번호($4)로 읽지 않는다 — 사용률("72%") 필드를 찾아 그 **앞** 칸을 Available 로 쓴다.
+  # 이유: 파일시스템 이름이 비거나(git-bash 의 df 는 /tmp 를 빈 칸으로 낸다) 길어서 줄이
+  # 접히면 열이 통째로 밀린다. 실제로 $4 가 "72%" 로 읽혀 사전 확인이 조용히 건너뛰어졌다.
+  # 마운트 경로에 공백이 있어도 사용률 필드보다 뒤라 영향이 없다.
+  avail_kb=$(df -Pk "$root" 2>/dev/null | awk 'NR > 1 {
+    for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { print $(i - 1); exit }
+  }')
+  case "$avail_kb" in
+    ''|*[!0-9]*)
+      echo "backup verify: df 로 여유 공간을 못 읽어 디스크 사전 확인을 건너뛴다($root)" >&2
+      return 0 ;;
+  esac
+  need_kb=$(awk -v b="$bytes" -v m="$VERIFY_DISK_HEADROOM_MULT" 'BEGIN { printf "%.0f", b * m / 1024 }')
+  if [ "$avail_kb" -lt "$need_kb" ]; then
+    echo "backup verify: 디스크 여유 부족 — 복원을 시작하지 않는다. 필요 $((need_kb / 1024))MB(원본 DB $((bytes / 1048576))MB × ${VERIFY_DISK_HEADROOM_MULT}배) > 여유 $((avail_kb / 1024))MB (docker 데이터 경로 $root). 디스크를 확보한다" >&2
+    return 1
+  fi
+  echo "backup verify: 디스크 사전 확인 통과 — 필요 $((need_kb / 1024))MB(원본 DB $((bytes / 1048576))MB × ${VERIFY_DISK_HEADROOM_MULT}배) ≤ 여유 $((avail_kb / 1024))MB ($root)"
+}
+
 require_manifest_kinds() {
   local manifest="$1" label="$2" kind
   for kind in TABLE COLUMN PRIMARY_KEY UNIQUE FOREIGN_KEY NOT_NULL; do
@@ -267,6 +330,8 @@ verify_restore() {
     return 1
   fi
   case "$source_image" in ''|*$'\n'*) echo "backup verify: 안전하지 않은 source DB image" >&2; return 1 ;; esac
+  # 컨테이너를 띄우기 전에 확인한다 — 여기서 막히면 정리할 컨테이너도 볼륨도 없다.
+  check_verify_disk_space "$source_db" || return 1
 
   if ! verify_dir=$(mktemp -d "${TMPDIR:-/tmp}/vg-backup-verify.XXXXXX"); then
     echo "backup verify: manifest 임시 디렉터리 생성 실패" >&2
@@ -292,13 +357,27 @@ verify_restore() {
   fi
 
   verify_name="vg-backup-verify-$(date +%Y%m%d%H%M%S)-$$"
-  # 검증 대상 SQL은 신뢰하지 않는다. 운영 컨테이너의 image만 재사용하고 network, volume,
-  # secret을 전혀 공유하지 않는 일회용 MySQL에 넣는다. /var/lib/mysql도 tmpfs라 종료 즉시 사라진다.
-  # tmpfs 에는 반드시 size= 를 준다 — 없으면 호스트 RAM 의 50% 까지 먹는다(위 상수 주석 참고).
-  if ! VERIFY_CONTAINER_ID=$(docker run --detach --rm \
+  # 검증 대상 SQL은 신뢰하지 않는다. 운영 컨테이너의 image만 재사용하고 network, 운영 volume,
+  # secret을 전혀 공유하지 않는 일회용 MySQL에 넣는다.
+  #
+  # /var/lib/mysql 은 **익명 볼륨(디스크)** 이다. 예전엔 tmpfs(=RAM)였는데 그건 DB 가 작을
+  # 때만 성립하는 설계였다 — 2026-08-16 운영 DB 5.27GB 를 복원하다 컨테이너가 RAM 을 그만큼
+  # 물어 호스트를 마비시켰고(가용 RAM 4.7GB·swap 0), 상한을 걸자 이번엔 'table is full' 로
+  # 배포가 멈췄다. 상한을 올리는 건 오답이다(그만큼의 RAM 이 애초에 없다). 디스크는 816GB 남는다.
+  #
+  # 호스트 임시 디렉터리 바인드(mktemp -d) 대신 익명 볼륨을 고른 이유:
+  #   · 정리가 --rm(정상 종료) / docker rm -fv(강제 정리) 로 끝난다 — 직접 지울 경로가 없다.
+  #   · 호스트 경로를 컨테이너에 노출하지 않는다(격리 유지).
+  #   · MySQL 이 쓰는 uid 의 퍼미션 문제가 없다(볼륨은 docker 가 소유권을 맞춰 준다).
+  # 대신 익명 볼륨은 -v 없는 docker rm 으로 안 지워지므로 정리 경로는 전부 `rm -fv` 다.
+  #
+  # MSYS_NO_PATHCONV=1 은 Windows git-bash 로 이 스크립트를 시험할 때(파일 상단 참고)만 의미가
+  # 있다. 없으면 MSYS 가 `-v /var/lib/mysql` 을 `C:/Program Files/Git/var/lib/mysql` 로 바꿔
+  # 엉뚱한 위치에 볼륨이 하나 더 붙는다(실측). 운영(리눅스)에서는 아무 영향이 없다.
+  if ! VERIFY_CONTAINER_ID=$(MSYS_NO_PATHCONV=1 docker run --detach --rm \
       --name "$verify_name" \
       --network none \
-      --tmpfs "/var/lib/mysql:rw,nosuid,nodev,size=$VERIFY_TMPFS_SIZE" \
+      -v /var/lib/mysql \
       --tmpfs "/var/run/mysqld:rw,nosuid,nodev,size=$VERIFY_TMPFS_SMALL_SIZE" \
       --tmpfs "/tmp:rw,nosuid,nodev,noexec,size=$VERIFY_TMPFS_SMALL_SIZE" \
       --label "$VERIFY_LABEL" \
@@ -326,14 +405,14 @@ verify_restore() {
   if [ "$ready" != 1 ]; then
     cleanup_verify_container
     rm -rf "$verify_dir"
-    echo "backup verify: 격리 DB readiness timeout(${VERIFY_READY_TIMEOUT}s) — tmpfs 상한(VERIFY_TMPFS_SIZE=$VERIFY_TMPFS_SIZE) 이 초기화 데이터보다 작아 기동에 실패했을 수 있음. 초과 시 VERIFY_TMPFS_SIZE 를 올린다" >&2
+    echo "backup verify: 격리 DB readiness timeout(${VERIFY_READY_TIMEOUT}s) — 초기화가 느리거나 docker 데이터 경로의 디스크가 부족할 수 있음. df 로 여유를 확인하고, 느린 디스크면 VERIFY_READY_TIMEOUT 을 올린다" >&2
     return 1
   fi
 
   if ! gzip -dc "$dump" | verify_mysql "$source_db"; then
     cleanup_verify_container
     rm -rf "$verify_dir"
-    echo "backup verify: 격리 DB restore 실패($verify_name) — tmpfs 상한(VERIFY_TMPFS_SIZE=$VERIFY_TMPFS_SIZE) 초과일 수 있음(디스크 부족/No space left). 초과 시 VERIFY_TMPFS_SIZE 를 올린다" >&2
+    echo "backup verify: 격리 DB restore 실패($verify_name) — 'table is full'/'No space left' 이면 docker 데이터 경로의 디스크 부족이다(검증 DB 는 익명 볼륨=디스크). df 로 여유를 확인하고 공간을 확보한다" >&2
     return 1
   fi
   if ! verify_mysql --batch --raw --skip-column-names -e "$(schema_manifest_sql "$source_db")" > "$verify_dir/restored.manifest"; then
@@ -369,7 +448,7 @@ verify_restore() {
 
   cleanup_verify_container
   rm -rf "$verify_dir"
-  echo "backup verify: PASS dump=$(basename "$dump") isolation=container/network-none manifest=current core_rows(source/restored)=$source_summary/$restored_summary constraints=PK,FK,UNIQUE,NOT_NULL"
+  echo "backup verify: PASS dump=$(basename "$dump") isolation=container/network-none storage=anon-volume(disk) manifest=current core_rows(source/restored)=$source_summary/$restored_summary constraints=PK,FK,UNIQUE,NOT_NULL"
 }
 
 if [ -n "$VERIFY_FILE" ]; then

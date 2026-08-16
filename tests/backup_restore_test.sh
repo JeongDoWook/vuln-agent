@@ -79,6 +79,10 @@ case "${1:-}" in
   run)
     printf 'abc123\n'
     ;;
+  info)
+    # 디스크 사전 확인이 보는 docker 데이터 경로. 실제로 존재하는 경로여야 df 가 돈다.
+    printf '%s\n' "$MOCK_STATE"
+    ;;
   rm)
     ;;
   exec)
@@ -94,6 +98,9 @@ case "${1:-}" in
     if [ "$target" = fake-db ]; then
       if printf '%s\n' "$command_line" | grep -q 'mysqldump'; then
         cat "$MOCK_DUMP_FILE"
+      elif printf '%s\n' "$command_line" | grep -q 'AS db_size'; then
+        # 원본 DB 크기(바이트). MOCK_DB_BYTES 를 키우면 디스크 사전 확인 실패를 재현한다.
+        printf '%s\n' "${MOCK_DB_BYTES:-1048576}"
       elif printf '%s\n' "$command_line" | grep -q 'AS manifest'; then
         # Source is the canonical current schema. It must never depend on the untrusted import marker.
         saved="$MOCK_STATE/import.sql"
@@ -142,9 +149,20 @@ if grep -q '^SOURCE_UNEXPECTED' "$MOCK_LOG"; then
 fi
 run_line=$(grep '^run ' "$MOCK_LOG" | head -1)
 case "$run_line" in
-  *'--network none'*'--tmpfs /var/lib/mysql:'*'--env MYSQL_ALLOW_EMPTY_PASSWORD=yes'*'mysql:test'*) ;;
+  *'--network none'*'-v /var/lib/mysql '*'--env MYSQL_ALLOW_EMPTY_PASSWORD=yes'*'mysql:test'*) ;;
   *) echo "backup_restore_test: disposable isolation 옵션 누락: $run_line" >&2; exit 1 ;;
 esac
+# 검증 DB 는 RAM(tmpfs)이 아니라 디스크여야 한다 — 운영 DB 크기만큼 RAM 을 먹어 호스트가
+# 마비된 2026-08-16 사고의 재발 방지선이다.
+case "$run_line" in
+  *'--tmpfs /var/lib/mysql'*)
+    echo "backup_restore_test: /var/lib/mysql 이 다시 tmpfs(RAM) 로 돌아감: $run_line" >&2; exit 1 ;;
+esac
+# 익명 볼륨은 -v 없는 docker rm 으로 안 지워진다. 정리 경로가 rm -fv 인지 본다.
+if ! grep -q '^rm -fv ' "$MOCK_LOG"; then
+  echo "backup_restore_test: 검증 컨테이너 정리가 rm -fv 가 아님(익명 볼륨이 디스크에 남는다)" >&2
+  exit 1
+fi
 if printf '%s\n' "$run_line" | grep -Eq 'fake-db|/run/secrets|vulnagent[_-]db'; then
   echo "backup_restore_test: disposable 컨테이너가 운영 DB/secret을 참조함: $run_line" >&2
   exit 1
@@ -166,6 +184,19 @@ if run_verify "$TMP/missing-constraint.sql.gz"; then
   echo "backup_restore_test: UNIQUE 제약 누락 dump 검증이 success 로 종료됨" >&2
   exit 1
 fi
+
+# 디스크 사전 확인: 여유보다 많이 요구하면 **컨테이너를 띄우기 전에** 실패해야 한다.
+# (다 채운 뒤 'table is full' 로 죽는 것보다 낫다 — 2026-08-16 운영 배포 중단의 교훈)
+: > "$MOCK_LOG"
+if VERIFY_DISK_HEADROOM_MULT=100000000 run_verify "$TMP/good.sql.gz"; then
+  echo "backup_restore_test: 디스크 부족인데 검증이 success 로 종료됨" >&2
+  exit 1
+fi
+if grep -q '^run ' "$MOCK_LOG"; then
+  echo "backup_restore_test: 디스크 사전 확인 실패인데 검증 컨테이너가 떴음" >&2
+  exit 1
+fi
+: > "$MOCK_LOG"
 
 # 실패 quarantine도 정상 백업 KEEP(7)과 같은 수만 남아야 한다. 기존 9개 + 새 실패 1개에서
 # 가장 오래된 3개가 제거되고, 실패한 새 dump는 정상 .sql.gz 패턴 밖에 남는지 함께 본다.
