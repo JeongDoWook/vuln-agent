@@ -12,37 +12,6 @@ declare(strict_types=1);
  *   네 축(노출→악용→등급→조치)과 같다. 같은 판단 순서를 화면마다 다른 순서로 그리지 않는다.
  *   숫자는 탭별 집계에서 이미 나온 값만 쓴다(새 쿼리 없음). CCE·노출 탭은 축이 다르므로
  *   각자의 순서를 그린다 — 없는 축을 빈 칸으로 세워 두지 않는다. */
-function vg_findings_explain_flow(string $type, array $actionCounts, array $cceResultCounts, array $scopeCounts): void {
-    if ($type === 'cve') {
-        /* 이 탭은 바로 아래 [먼저 볼 작업] 스트립이 같은 네 축의 **건수**를 이미 링크와 함께
-         *   보여준다 — 도식에까지 같은 숫자를 넣으면 한 화면에서 같은 값을 두 번 세게 된다.
-         *   그래서 여기서는 숫자를 빼고 **순서**만 말한다(표의 '신호' 칸도 이 순서를 따른다). */
-        vg_explain_flow([
-            ['icon' => 'port',   'label' => '노출',
-             'state' => $actionCounts['external'] > 0 ? 'active' : 'done'],
-            ['icon' => 'feed',   'label' => '악용', 'state' => 'done'],
-            ['icon' => 'warn',   'label' => '등급', 'state' => 'done'],
-            ['icon' => 'check',  'label' => '조치',
-             'state' => $actionCounts['overdue'] > 0 ? 'active' : 'done'],
-        ], ['label' => '취약점 판단 순서']);
-    } elseif ($type === 'cce') {
-        vg_explain_flow([
-            ['icon' => 'shield', 'label' => '점검', 'value' => number_format((int) $cceResultCounts['PASS'] + (int) $cceResultCounts['FAIL']), 'state' => 'done'],
-            ['icon' => 'warn',   'label' => '위반', 'value' => number_format((int) $cceResultCounts['FAIL']),
-             'state' => $cceResultCounts['FAIL'] > 0 ? 'active' : 'done'],
-            ['icon' => 'block',  'label' => '판정불가', 'value' => number_format((int) $cceResultCounts['NA']), 'state' => 'done'],
-            ['icon' => 'check',  'label' => '양호', 'value' => number_format((int) $cceResultCounts['PASS']), 'state' => 'done'],
-        ], ['label' => '보안설정 점검 순서']);
-    } else {
-        vg_explain_flow([
-            ['icon' => 'process', 'label' => '프로세스', 'state' => 'done'],
-            ['icon' => 'port',    'label' => '리스너', 'value' => number_format(array_sum(array_map('intval', $scopeCounts))), 'state' => 'done'],
-            ['icon' => 'feed',    'label' => vg_scope_label('EXTERNAL'), 'value' => number_format((int) ($scopeCounts['EXTERNAL'] ?? 0)),
-             'state' => ((int) ($scopeCounts['EXTERNAL'] ?? 0)) > 0 ? 'active' : 'done'],
-        ], ['label' => '노출 판단 순서']);
-    }
-}
-
 /* 결론 배너 — 카드와 표는 값을 보여줄 뿐이라, "지금 이 탭에서 무엇이 몇 건인가"는
  *   사용자가 직접 세어야 했다. 그 한 줄을 탭 바로 아래 한 번만 세운다(role="status").
  *   수치는 각 탭이 이미 집계한 값만 쓴다 — 새 쿼리를 추가하지 않는다.

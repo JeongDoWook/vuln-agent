@@ -35,11 +35,11 @@ package "업무 화면 (라벨 없는 최상위 묶음)" as Work {
 ' 외부에서 받아온 참조 카탈로그 — "피드가 제대로 들어왔는지" 를 보는 자리다(업무 화면이 아니다).
 package "데이터 (참조 카탈로그)" as Data {
     rectangle "/connectors.php\n수집 상태" as CONN
-    rectangle "/cves.php\nCVE 카탈로그 · 탭(전체/KEV/EPSS 상위)" as CVES
+    rectangle "/cves.php\nCVE · 탭(전체/KEV/EPSS 상위)" as CVES
     rectangle "/cve.php\nCVE 상세 · 영향패키지 · 발견 위치" as CVE
-    rectangle "/packages.php · /package.php\n패키지 카탈로그 × 배포판 · 패키지 상세\n(탭: 언어 패키지·라이선스)" as PKG
+    rectangle "/packages.php · /package.php\n패키지 × 배포판 · 패키지 상세\n(탭: 언어 패키지·라이선스)" as PKG
     rectangle "/vendor.php\n판정 근거 · 소스 필터" as VEND
-    rectangle "/cce-rules.php\nCCE 카탈로그 · 우리가 판정하는 39개 점검\n(코드·심각도·기준 매핑·판정 집계)" as CCER
+    rectangle "/cce-rules.php\nCCE · 우리가 판정하는 39개 점검\n(코드·심각도·기준 매핑·판정 집계)" as CCER
     rectangle "/cce-rule.php\nCCE 상세 · 점검/조치 · 기준 3종\n+ FAIL 자산 · 참조 근거(SSG)" as CCED
     rectangle "/compliance_rules.php\nSSG 룰셋(사이드바에서 내림)" as CRULES
     rectangle "/compliance_rule.php\nSSG 룰 상세 · 점검/조치 근거" as CRULE

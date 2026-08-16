@@ -132,23 +132,11 @@ vg_hero(
 ?>
 
 <?php
-/* 이 패키지가 어디까지 왔는지 — CVE 가 붙고, 그중 수정 버전이 확인된 것이 조치율이다.
- *   아래 '핵심 지표' 는 같은 값을 숫자로 말하고, 이 도식은 그 값들의 순서를 말한다.
- *   숫자는 이미 계산된 것만 쓴다(새 쿼리 없음). */
-$fixCnt = (int) $summary['fix_cnt'];
-vg_explain_flow([
-    ['icon' => 'package', 'label' => '패키지', 'state' => 'done'],
-    ['icon' => 'cve',     'label' => '취약범위', 'value' => number_format($total) . '건', 'state' => 'done'],
-    ['icon' => 'check',   'label' => '수정버전', 'value' => number_format($fixCnt) . '건', 'state' => 'done'],
-    ['icon' => 'shield',  'label' => '조치율',
-     'value' => $total > 0 ? number_format($fixCnt / $total * 100, 0) . '%' : '–',
-     'state' => $total > 0 && $fixCnt >= $total ? 'done' : 'active'],
-], ['label' => '패키지에서 조치까지의 흐름']);
 ?>
 
 <div class="card">
   <strong>핵심 지표</strong>
-  <span class="why">— 카탈로그 기준(설치 여부와 무관한 전역 정보)</span>
+  <span class="why">— 패키지 기준(설치 여부와 무관한 전역 정보)</span>
   <div class="card__body stat-grid">
     <div class="stat">
       <span class="stat__val"><?= number_format($total) ?>건</span>

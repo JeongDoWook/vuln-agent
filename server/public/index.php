@@ -52,7 +52,6 @@ vg_header('대시보드', 'dashboard');
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
-  <?php vg_dash_render_flow($hostCount, $totals, $kevOverdue); ?>
   <?php vg_dash_render_funnel($totals, $hostCount, $kevCount, $kevOverdue, $kevSlaDays); ?>
   <?php vg_dash_render_next_feed($nextFeed); ?>
 

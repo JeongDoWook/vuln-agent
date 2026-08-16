@@ -197,7 +197,7 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지 카탈로그', 'packages');
+vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'packages');
 ?>
   <?php if ($tab === 'lang'): ?>
     <?php vg_page_title('언어 패키지 · 라이선스', 'SCA', 'pip/npm/gem/composer/maven/nuget/cargo/go 패키지의 라이선스를 확인합니다.', ['count' => $langTotal, 'count_label' => '건']); ?>
@@ -205,7 +205,7 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지 카�
     <div class="sub"><span class="why">집계 기준 <?= vg_h($langSummaryAt) ?> (OSV 수집 시 갱신) · 라이선스 값은 SBOM/METADATA/composer 소스에서만 채워집니다.</span></div>
     <?php endif; ?>
   <?php else: ?>
-    <?php vg_page_title('패키지 카탈로그', 'PACKAGES', '수집한 패키지별 CVE 집계', ['count' => $total, 'count_label' => '종']); ?>
+    <?php vg_page_title('패키지', 'PACKAGES', '수집한 패키지별 CVE 집계', ['count' => $total, 'count_label' => '종']); ?>
     <?php if ($summaryAt !== ''): ?>
     <div class="sub"><span class="why">집계 기준 <?= vg_h($summaryAt) ?> (OSV 수집 시 갱신)</span></div>
     <?php endif; ?>
@@ -222,28 +222,6 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지 카�
       $pkgTabs[$key] = ['label' => $def['label'], 'href' => vg_qs($clear)];
   }
   vg_subtabs($pkgTabs, $tab);
-
-  /* 이 화면이 무엇을 보여주는지 — 패키지 하나가 어떤 CVE 범위에 걸리고, 어느 버전에서
-   *   고쳐지며, 그중 얼마가 실제로 확인됐는지(조치율)다. 언어 탭은 축이 달라(라이선스)
-   *   자기 흐름을 그린다. 숫자는 위에서 이미 센 값만 쓴다(새 쿼리 없음). */
-  if ($err === null) {
-      if ($tab === 'lang') {
-          vg_explain_flow([
-              ['icon' => 'package', 'label' => '패키지', 'value' => number_format($langTotal), 'state' => 'done'],
-              ['icon' => 'feed',    'label' => '라이선스', 'state' => 'done'],
-              ['icon' => 'warn',    'label' => '카피레프트', 'value' => number_format($riskCounts['copyleft']),
-               'state' => $riskCounts['copyleft'] > 0 ? 'active' : 'done'],
-              ['icon' => 'block',   'label' => '미상', 'value' => number_format($riskCounts['unknown']), 'state' => 'done'],
-          ], ['label' => '언어 패키지 라이선스 판정 순서']);
-      } else {
-          vg_explain_flow([
-              ['icon' => 'package', 'label' => '패키지', 'value' => number_format($total), 'state' => 'done'],
-              ['icon' => 'cve',     'label' => '취약범위', 'state' => 'done'],
-              ['icon' => 'check',   'label' => '수정버전', 'state' => 'done'],
-              ['icon' => 'shield',  'label' => '조치율', 'state' => 'active'],
-          ], ['label' => '패키지에서 조치까지의 흐름']);
-      }
-  }
   ?>
 
 <?php if ($err !== null): ?>

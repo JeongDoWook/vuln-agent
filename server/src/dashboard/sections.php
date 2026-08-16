@@ -12,7 +12,6 @@ declare(strict_types=1);
  *   (섹션이 자기 숫자를 다시 세면 같은 화면 안에서 값이 갈린다).
  */
 
-require_once __DIR__ . '/sections/flow.php';       // 수집→매칭→판정→조치 도식
 require_once __DIR__ . '/sections/funnel.php';     // 좁혀지는 퍼널 4칸
 require_once __DIR__ . '/sections/next_feed.php';  // 다음 수집 예정 한 줄
 require_once __DIR__ . '/sections/trend.php';      // 최근 N일 High 이상 추세

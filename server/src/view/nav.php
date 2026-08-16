@@ -122,13 +122,13 @@ function vg_nav_sections(): array {
         //   확인하는 자리다. 개별 판정 근거는 CVE 상세·취약점 상세 모달에 이미 들어 있다.
         '데이터' => [
             ['perm' => 'connectors', 'href' => '/connectors.php',      'label' => '수집 상태',      'key' => 'connectors'],
-            ['perm' => 'catalog',    'href' => '/cves.php',            'label' => 'CVE 카탈로그',   'key' => 'cves'],
-            ['perm' => 'catalog',    'href' => '/packages.php',        'label' => '패키지 카탈로그', 'key' => 'packages'],
+            ['perm' => 'catalog',    'href' => '/cves.php',            'label' => 'CVE',   'key' => 'cves'],
+            ['perm' => 'catalog',    'href' => '/packages.php',        'label' => '패키지', 'key' => 'packages'],
             ['perm' => 'catalog',    'href' => '/vendor.php',          'label' => '판정 근거',      'key' => 'vendor'],
             // 이 자리엔 SSG 룰 카탈로그(/compliance_rules.php, 약 2,493건)가 있었다. 우리가
             //   판정하지 않는 외부 참조 데이터라 사이드바에서 내리고, 실제로 판정하는 CCE 39개
             //   항목을 세운다. SSG 화면은 지우지 않았다 — CCE 상세의 참조 근거로 계속 열린다.
-            ['perm' => 'catalog',    'href' => '/cce-rules.php',      'label' => 'CCE 카탈로그',   'key' => 'cce_rules'],
+            ['perm' => 'catalog',    'href' => '/cce-rules.php',      'label' => 'CCE',   'key' => 'cce_rules'],
         ],
         '관리' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],

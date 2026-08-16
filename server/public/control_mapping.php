@@ -140,18 +140,6 @@ vg_header('통제 기준 매핑', 'control_mapping');
   <?php // 컴플라이언스 계열 서브탭(정의는 nav.php 한 곳) — 저쪽 화면과 같은 줄을 그린다.
         //   판정하지 않는다는 사실은 위 부제가 이미 말한다. ?>
   <?php vg_compliance_subtabs('control'); ?>
-  <?php
-  // 화면 오리엔테이션 도식 — 이 화면은 **묶기만** 한다(판정하지 않는다). 마지막 칸을
-  //   is-todo(회색)로 떨어뜨려 "여기서 준수 판정이 나오는 것이 아니다" 를 색으로 말한다.
-  vg_explain_flow([
-      // 기준 이름은 바로 아래 칩 줄이 이미 말한다 — 값 슬롯(큰 글씨)에 문자열을 넣지 않는다.
-      ['icon' => 'shield', 'label' => '기준',      'state' => 'done'],
-      ['icon' => 'check',  'label' => '통제',      'state' => 'done'],
-      ['icon' => 'process', 'label' => '점검 항목', 'state' => 'done'],
-      ['icon' => 'warn',   'label' => '위반 집계', 'state' => 'active'],
-      ['icon' => 'block',  'label' => '준수 판정', 'state' => 'todo'],
-  ], ['label' => '통제 기준 매핑 흐름']);
-  ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

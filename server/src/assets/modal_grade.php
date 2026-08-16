@@ -23,9 +23,7 @@ function vg_assets_render_grade_modal(array $gradeTone): void
       <?php /* 등급 셋의 뜻은 문장이 아니라 세 칸으로 세운다 — 고르는 자리 바로 위에서
                "무엇을 고르는 것인지" 가 색과 함께 읽혀야 한다. 칸의 순서 자체가 승계 규칙
                (O < S < C — 오른쪽이 더 강한 보호)이고, 색은 등급 뱃지와 같은 톤을 쓴다.
-               어휘는 assetgrade.php(VG_ASSET_GRADES)가 소유한다 — 여기서 다시 적지 않는다.
-               두 번째 vg_explain_flow() 를 세우지 않는 건 도식은 화면당 하나라는 규칙 때문이다
-               (docs/dev/ui-design-system.md) — 상단 흐름 도식이 이미 이 화면의 하나다. */ ?>
+               어휘는 assetgrade.php(VG_ASSET_GRADES)가 소유한다 — 여기서 다시 적지 않는다. */ ?>
       <div class="cards">
         <?php foreach (['O' => '공개해도 되는 정보', 'S' => '제한적으로 다루는 정보',
                         'C' => '「정보공개법」 제9조 비공개 대상'] as $g => $note): ?>

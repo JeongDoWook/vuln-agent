@@ -134,15 +134,6 @@ $meta = [
 if ($scan) { $meta[] = '최신 수집 ' . vg_h((string) $scan['collected_at']); }
 $meta[] = '엣지 ' . number_format($load['loaded']) . '개';
 vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH');
-
-// 화면 오리엔테이션 도식 — 이 화면의 계층(부모 → 전이 의존성 → 취약점)을 먼저 세운다.
-//   트리만 보면 들여쓰기가 무엇을 뜻하는지, 왜 여기서 취약점 이야기가 나오는지 안 잡힌다.
-//   '취약점' 칸이 todo(회색)인 것은 이 화면이 판정을 하지 않기 때문이다 — 판정은 자산 상세다.
-vg_explain_flow([
-    ['icon' => 'package', 'label' => '부모 패키지', 'state' => 'done'],
-    ['icon' => 'package', 'label' => '전이 의존성', 'value' => number_format($load['loaded']) . '개', 'state' => 'active'],
-    ['icon' => 'cve',     'label' => '취약점',      'state' => 'todo'],
-], ['label' => '의존성 계층']);
 ?>
 
 <div class="card">

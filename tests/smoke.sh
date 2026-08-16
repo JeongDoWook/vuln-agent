@@ -750,7 +750,7 @@ assert_eq "$code" "404" "API 키 화면 제거"
 body=$(curl_ -s -b "$JAR" "$BASE/permissions.php")
 assert_not_contains "$body" "API 키" "권한 매트릭스에 API 키 행 없음"
 assert_contains "$body" "컴플라이언스" "권한 매트릭스에 컴플라이언스 메뉴 행"
-assert_contains "$body" "참조 카탈로그" "권한 매트릭스에 참조 카탈로그 메뉴 행"
+assert_contains "$body" "참조 데이터" "권한 매트릭스에 참조 데이터(카탈로그 계열) 메뉴 행"
 code=$(curl_ -s -o /dev/null -w '%{http_code}' "$BASE/export.php")
 assert_eq "$code" "302" "미인증 export → 302(로그인 리다이렉트)"
 code=$(curl_ -s -o /dev/null -w '%{http_code}' "$BASE/sbom.php?host=$FQDN_WEB01")

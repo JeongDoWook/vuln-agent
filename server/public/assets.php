@@ -80,18 +80,6 @@ vg_header('자산', 'assets');
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
   ]); ?>
-  <?php
-  /* 자산 한 대가 화면에 뜨기까지의 순서 — 에이전트가 붙고, 수집이 오고, 인벤토리가 쌓이고,
-   *   마지막에 사람이 등급을 확정한다. 마지막 칸만 사람 몫이라 그 칸을 active 로 세운다
-   *   (미확정이 0 이면 전부 끝난 것이므로 done). 숫자는 이미 위에서 센 값을 그대로 쓴다. */
-  vg_explain_flow([
-      ['icon' => 'feed',    'label' => '등록', 'state' => 'done'],
-      ['icon' => 'clock',   'label' => '수집', 'value' => number_format($stateCounts['ok']) . '대', 'state' => 'done'],
-      ['icon' => 'package', 'label' => '인벤토리', 'value' => number_format(array_sum($stateCounts)) . '대', 'state' => 'done'],
-      ['icon' => 'shield',  'label' => '등급', 'value' => $unconfirmed > 0 ? '미확정 ' . number_format($unconfirmed) : '확정 완료',
-       'state' => $unconfirmed > 0 ? 'active' : 'done'],
-  ], ['label' => '자산이 등록되어 등급이 확정되기까지']);
-  ?>
   <?php vg_subtabs([
       'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
       'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],

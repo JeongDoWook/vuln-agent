@@ -80,15 +80,6 @@ vg_header('사용자', 'users');
       'count' => $total, 'count_label' => '명',
       'actions' => vg_capture(static fn() => vg_modal_btn('addUser', '+ 사용자 추가')),
   ]); ?>
-  <?php
-  // 화면 오리엔테이션 도식 — 이 화면은 사용자를 만들 뿐이고, 그 사용자가 무엇을 볼 수 있는지는
-  //   역할이 정하고 역할별 메뉴는 권한 화면이 정한다. 세 화면의 관계를 여기서 한 줄로 세운다.
-  vg_explain_flow([
-      ['icon' => 'shield', 'label' => '사용자',   'value' => number_format($total) . '명', 'state' => 'active'],
-      ['icon' => 'check',  'label' => '역할',     'value' => number_format(count(VG_ROLES)) . '종', 'state' => 'done'],
-      ['icon' => 'block',  'label' => '메뉴 접근', 'state' => 'done'],
-  ], ['label' => '접근권한 흐름']);
-  ?>
   <div class="sub">admin 전용 · 역할 변경·비밀번호 초기화·삭제는 아이디를 눌러 상세에서 · 역할별 메뉴 접근 범위는 권한 화면에서</div>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>

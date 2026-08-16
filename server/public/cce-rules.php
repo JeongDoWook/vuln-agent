@@ -24,7 +24,6 @@ $err = null;
 $rules = [];        // 화면에 뿌릴 행(필터·정렬 후 전체)
 $rows = [];         // 그중 이 페이지 몫
 $total = 0;         // 필터 결과 건수(페이지네이션 분모)
-$ruleTotal = 0;     // 점검 항목 전체 수(필터 무관)
 $checkedHosts = 0;  // 최신 스캔에 CCE 판정이 있는 자산 수
 $sevOptions = ['HIGH' => 'HIGH', 'MEDIUM' => 'MEDIUM', 'LOW' => 'LOW'];
 
@@ -37,7 +36,6 @@ $perPage = vg_perpage();
 try {
     $pdo = vg_pdo();
     $catalog = vg_cce_rules();
-    $ruleTotal = count($catalog);
     $codes = array_keys($catalog);
 
     // 판정 집계 — 호스트별 최신 스캔만 센다. 지난 스캔까지 세면 같은 위반이 중복 집계된다
@@ -127,10 +125,10 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header('CCE 카탈로그', 'cce_rules');
+vg_header('CCE', 'cce_rules');
 ?>
   <?php vg_page_title(
-      'CCE 카탈로그',
+      'CCE',
       'SECURITY CONFIG BASELINE',
       '우리가 직접 판정하는 보안설정 점검 항목 — 자산별 판정 결과는 탐지 결과에서',
       ['count' => $total]
@@ -139,17 +137,9 @@ vg_header('CCE 카탈로그', 'cce_rules');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
-  <?php
-  // 화면 오리엔테이션 도식 — 항목 수·자산 수는 이 도식이 값 슬롯으로 갖는다(같은 수를
-  //   아래 문장에서 또 세지 않는다). 마지막 칸이 이 화면의 답이다: 자산별 PASS/FAIL/NA.
-  vg_explain_flow([
-      // value 슬롯은 큰 글씨(숫자용)라 긴 문자열을 넣지 않는다 — 기준 이름은 짧게 'SSG' 만.
-      ['icon' => 'shield', 'label' => '기준',      'value' => 'SSG', 'state' => 'done'],
-      ['icon' => 'check',  'label' => '점검 항목', 'value' => number_format($ruleTotal) . '개', 'state' => 'done'],
-      ['icon' => 'host',   'label' => '자산 판정', 'value' => number_format($checkedHosts) . '대', 'state' => 'active'],
-  ], ['label' => '보안설정 점검 흐름']);
-  ?>
-  <p class="sub">준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
+  <?php // 기준(SSG)·판정된 자산 대수는 도식 대신 이 한 줄이 갖는다 — 항목 수는 제목의 건수와 같다. ?>
+  <p class="sub">SSG 기준 · 자산 <?= number_format($checkedHosts) ?>대에서 판정했습니다.
+    준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
   <?php
   $frameworks = vg_control_frameworks();
   $fwShort    = vg_control_framework_short();
