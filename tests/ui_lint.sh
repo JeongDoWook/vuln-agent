@@ -22,6 +22,11 @@ pass=0; fail=0
 ok() { printf "  ${GREEN}✓${NC} %s\n" "$1"; pass=$((pass+1)); }
 no() { printf "  ${RED}✗${NC} %s\n" "$1"; fail=$((fail+1)); }
 
+# 줄 목록("a\nb")을 " a b" 로 접는다. 결과는 전역 WS 에 담는다 — 명령치환($(...))은
+# 서브셸 fork 라, 아래 검사들이 프로세스 수를 줄이려는 마당에 다시 늘릴 이유가 없다.
+WS=""
+ws_list() { WS=""; local x; while read -r x; do [ -n "$x" ] && WS+=" $x"; done <<< "$1"; }
+
 printf "${CYAN}== UI 정적 검사 ==${NC}\n"
 
 [ -f "$CSS" ] || { echo "app.css 없음: $CSS"; exit 2; }
@@ -29,12 +34,17 @@ printf "${CYAN}== UI 정적 검사 ==${NC}\n"
 # --- 1) 죽은 클래스 --------------------------------------------------------
 # PHP 가 class="..." 로 쓰는데 app.css 에 정의가 없는 것. 화면이 조용히 안 입혀진다.
 #   .tone-* 은 톤 어휘라 tone-crit 등으로 조합돼 쓰인다 — CSS 에 개별 선택자가 있으므로 그대로 검사된다.
+#   구현: 클래스마다 grep 을 부르지 않고 **집합 차집합**으로 한 번에 낸다.
+#   왜: Windows git-bash 는 fork 한 번이 44~48ms 라, 125개 클래스 × grep = 6초가 통째로
+#   프로세스 기동에 쓰였다(PR #587 과 같은 함정). 측정은 docs/dev/smoke-timing-profiling.md.
+#   동치인 이유: 원래 정규식 `\.$c([^a-z0-9_-]|$)` 는 "c 가 CSS 안에서 점 뒤의 **온전한**
+#   토큰으로 나오는가" 다([a-z0-9_-] 가 이어지면 안 되므로). 아래 추출이 그 토큰 집합 자체다.
 dead=""
 classes=$(grep -ohE 'class="[a-z0-9 _-]+"' "$PUB"/*.php \
-          | sed 's/class="//; s/"//' | tr ' ' '\n' | sort -u | grep -vE '^$')
-for c in $classes; do
-  grep -qE "\.$c([^a-z0-9_-]|$)" "$CSS" || dead="$dead $c"
-done
+          | sed 's/class="//; s/"//' | tr ' ' '\n' | grep -vE '^$' | LC_ALL=C sort -u)
+css_tokens=$(grep -ohE '\.[A-Za-z0-9_][A-Za-z0-9_-]*' "$CSS" | tr -d '.' | LC_ALL=C sort -u)
+ws_list "$(LC_ALL=C comm -23 <(printf '%s\n' "$classes") <(printf '%s\n' "$css_tokens"))"
+dead="$WS"
 if [ -z "$dead" ]; then
   ok "죽은 CSS 클래스 없음 (PHP 가 쓰는 클래스는 전부 app.css 에 있다)"
 else
@@ -61,11 +71,11 @@ fi
 #   실제로: 리스킨 레이어가 var(--primary)·var(--line-strong) 을 썼는데 토큰명은
 #   --accent·--line-2 였다 — 권한설정 체크박스의 accent-color 가 무효가 돼 브라우저
 #   기본색으로 떴고, 아무도 못 알아챘다.
-undef=""
-declared=$(grep -oE '^[[:space:]]*--[a-z0-9-]+[[:space:]]*:' "$CSS" | tr -d ' :' | sort -u)
-for v in $(grep -oE 'var\([[:space:]]*--[a-z0-9-]+' "$CSS" | grep -oE '\-\-[a-z0-9-]+' | sort -u); do
-  printf '%s\n' "$declared" | grep -qx -- "$v" || undef="$undef $v"
-done
+#   구현은 1) 과 같은 이유로 집합 차집합이다(변수마다 grep 을 부르면 70×2 fork = 6초).
+declared=$(grep -oE '^[[:space:]]*--[a-z0-9-]+[[:space:]]*:' "$CSS" | tr -d ' :' | LC_ALL=C sort -u)
+used=$(grep -oE 'var\([[:space:]]*--[a-z0-9-]+' "$CSS" | grep -oE '\-\-[a-z0-9-]+' | LC_ALL=C sort -u)
+ws_list "$(LC_ALL=C comm -23 <(printf '%s\n' "$used") <(printf '%s\n' "$declared"))"
+undef="$WS"
 if [ -z "$undef" ]; then
   ok "정의되지 않은 CSS 변수 없음 (app.css 의 var(--…) 는 전부 선언돼 있다)"
 else
@@ -75,13 +85,15 @@ fi
 # --- 4) 조용히 잘리는 목록 --------------------------------------------------
 # LIMIT 을 쓰면서 OFFSET 도 vg_page_nav 도 없으면, 사용자는 "더 있다" 는 걸 알 수 없다.
 #   LIMIT 1 (단건 조회)과 상수 상한(VG_URGENT_TOP 처럼 이름 붙이고 총건수를 함께 보여주는 것)은 예외.
+#   구현: 파일마다 grep 3번(45파일 = 135 fork ≈ 6초) 대신 **전체 파일을 한 번씩 훑는
+#   grep -l 3회**로 목록 3개를 만들고 차집합을 낸다. 판정 논리는 파일별 검사와 동일하다.
+lim_hit=$(grep -lE 'LIMIT [0-9]{1,}' "$PUB"/*.php 2>/dev/null | LC_ALL=C sort -u || true)
+lim_ok=$( { grep -lE 'LIMIT 1\b|LIMIT \$|LIMIT " \. VG_|OFFSET' "$PUB"/*.php 2>/dev/null || true
+            grep -l 'vg_page_nav' "$PUB"/*.php 2>/dev/null || true; } | LC_ALL=C sort -u)
 silent=""
-for f in "$PUB"/*.php; do
-  grep -qE 'LIMIT [0-9]{1,}' "$f" || continue
-  grep -qE 'LIMIT 1\b|LIMIT \$|LIMIT " \. VG_|OFFSET' "$f" && continue
-  grep -q 'vg_page_nav' "$f" && continue
-  silent="$silent $(basename "$f")"
-done
+ws_list "$(LC_ALL=C comm -23 <(printf '%s\n' "$lim_hit") <(printf '%s\n' "$lim_ok") \
+           | sed 's#.*/##')"
+silent="$WS"
 if [ -z "$silent" ]; then
   ok "페이저 없이 잘리는 목록 없음"
 else
@@ -126,20 +138,37 @@ css_src=$(awk '
 
 # 사용: PHP·JS·HTML 어디든. vendor(flatpickr) JS 도 본다 — app.css 가 그 클래스를
 #   재스타일하므로 vendor 를 빼면 flatpickr-* 23개가 통째로 오탐이 된다.
-use_blob=$(mktemp)
-find "$PUB" "$SRC" -type f \( -name '*.php' -o -name '*.js' -o -name '*.html' \) \
-     ! -name 'app.css' -exec cat {} + > "$use_blob" 2>/dev/null
+# 여기가 이 스크립트에서 제일 비쌌다(전체 45초 중 30초). 두 가지가 겹쳐 있었다.
+#   ① 클래스 363개마다 합본 파일을 grep 으로 다시 훑었다 — fork 363회(git-bash 는 fork 1회가
+#      44~48ms, PR #587)에 총 835MB 재스캔.
+#   ② 그 합본을 임시 파일로 새로 만들어 읽었다 — **갓 쓴 임시 파일의 첫 읽기**가 Windows 에서
+#      1.9MB에 9.7초였다(백신 실시간 검사로 보인다). 두 번째 읽기부터는 0.3초다.
+#   그래서 합본을 만들지 않는다: 원본 파일들을 awk 한 번으로 훑어 **토큰 집합만** 뽑는다.
+#   원본은 앞 검사들이 이미 읽어 캐시가 더워져 있고, 출력도 35만 줄이 아니라 7천 줄이다.
+#   동치인 이유: 원래 정규식의 경계가 `[^A-Za-z0-9_-]` 였으므로 "그 문자집합으로 자른 온전한
+#   토큰인가" 와 같은 판정이다.
+use_files=()
+while IFS= read -r f; do use_files+=("$f"); done < <(
+  find "$PUB" "$SRC" -type f \( -name '*.php' -o -name '*.js' -o -name '*.html' \) ! -name 'app.css'
+)
+BLOB_TOK="$(mktemp)"
+awk '{ n = split($0, tok, /[^A-Za-z0-9_-]+/)
+       for (i = 1; i <= n; i++) if (tok[i] != "") seen[tok[i]] = 1 }
+     END { for (k in seen) print k }' "${use_files[@]}" 2>/dev/null \
+  | LC_ALL=C sort -u > "$BLOB_TOK"
 
-orphan=""
+# 동적 조립 클래스는 리터럴로 못 잡으므로 비교 전에 뺀다(bash 내장 — 프로세스 없음).
+cand=""
 for c in $css_src; do
   skip=""
   for p in "${DYNAMIC_PREFIXES[@]}"; do
     case "$c" in "$p"*) skip=1; break;; esac
   done
-  [ -n "$skip" ] && continue
-  grep -qE "(^|[^A-Za-z0-9_-])$c([^A-Za-z0-9_-]|$)" "$use_blob" || orphan="$orphan $c"
+  [ -n "$skip" ] || cand="$cand$c"$'\n'
 done
-rm -f "$use_blob"
+ws_list "$(LC_ALL=C comm -23 <(printf '%s' "$cand" | LC_ALL=C sort -u) "$BLOB_TOK")"
+orphan="$WS"
+rm -f "$BLOB_TOK"
 
 if [ -z "$orphan" ]; then
   ok "안 쓰이는 CSS 클래스 없음 (app.css 정의가 전부 코드에서 참조된다)"
