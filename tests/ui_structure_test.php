@@ -65,7 +65,9 @@ $splitSources = static function (string $public, string $root, string $page, str
         [$public . '/' . $page],
         glob($root . '/server/src/' . $dir . '/*.php') ?: [],
         glob($root . '/server/src/' . $dir . '/tabs/*.php') ?: [],
-        glob($root . '/server/src/' . $dir . '/sections/*.php') ?: []
+        glob($root . '/server/src/' . $dir . '/sections/*.php') ?: [],
+        // 조회층도 탭마다 파일 하나로 갈렸다(findings/queries/) — 탭별 SQL 이 여기 있다.
+        glob($root . '/server/src/' . $dir . '/queries/*.php') ?: []
     );
     return implode("\n", array_map(static fn(string $f): string => (string) file_get_contents($f), $files));
 };

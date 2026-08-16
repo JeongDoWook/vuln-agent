@@ -7,9 +7,28 @@ declare(strict_types=1);
  *   계산까지 하나의 트랜잭션으로 묶는다. 인증·파싱·응답 조립은 ingest.php 에 남는다.
  *   트랜잭션의 시작(beginTransaction)과 끝(commit)만 갖고, 실패 시 롤백/오류응답은
  *   호출자(ingest.php)의 책임이다 — 예외를 그대로 위로 던진다.
+ *
+ *   이 파일이 갖는 것은 **저장 1회의 실행 흐름**뿐이다: 트랜잭션 경계와 스트림 실행 순서.
+ *   실제 SQL 은 수집 스트림별로 server/src/ingest/store/ 아래에 나눠 뒀다(아래 require 블록).
+ *   호출부(ingest.php)는 예전처럼 이 파일만 require 하면 된다.
+ *
+ *   ⚠ 트랜잭션은 여기 하나뿐이다. 스트림 함수는 절대 begin/commit 하지 않는다 —
+ *     쪼개면 부분 저장이 생긴다. 실행 순서도 이 함수의 위→아래가 정본이다(선행 삽입 의존:
+ *     host_id → scan_id → container_id 순으로 아래가 위에 매달린다).
  */
 
 require_once __DIR__ . '/assetgrade_history.php';   // 최신 제안 + append-only 관찰 이력
+
+// 수집 스트림별 저장(순수 이동 — SQL·실행 순서 불변). 서로를 부르지 않으므로 require 순서에
+//   의존하지 않는다. 트랜잭션·분기·순서는 전부 아래 vg_ingest_store 가 갖는다.
+require_once __DIR__ . '/ingest/store/host.php';        // 호스트 upsert · 직전 스냅샷 조회
+require_once __DIR__ . '/ingest/store/scan.php';        // 스냅샷(tb_scan) · 실행 기록(scan_run·stage)
+require_once __DIR__ . '/ingest/store/packages.php';    // 설치/언어 패키지 · 의존 그래프
+require_once __DIR__ . '/ingest/store/containers.php';  // 컨테이너 목록 · 내부 패키지·프로세스·노출
+require_once __DIR__ . '/ingest/store/runtime.php';     // 호스트 노출 · 실행 프로세스
+require_once __DIR__ . '/ingest/store/evidence.php';    // changelog · 재시작 필요 · debsecan · errata
+require_once __DIR__ . '/ingest/store/changes.php';     // 직전 스냅샷 대비 패키지 변경 이력
+require_once __DIR__ . '/ingest/store/integrity.php';   // 패키지 무결성(두 분기 밖에서 항상 갱신)
 
 // $host  : ['fqdn','vm','meta','sys','raw','collected_at']
 // $parsed: 파싱된 각 섹션의 rows/count 및 manager·origin_map·커널 정보·content_hash
@@ -85,378 +104,106 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     $pdo->beginTransaction();
 
     // 호스트 upsert (fqdn 유니크). LAST_INSERT_ID 트릭으로 기존 host_id 회수.
-    $stmt = $pdo->prepare(
-        'INSERT INTO tb_host (fqdn, hostname, os_id, os_version, first_seen, last_seen, last_seen_ip)
-         VALUES (:fqdn, :hn, :osid, :osver, NOW(), NOW(), :ip)
-         ON DUPLICATE KEY UPDATE
-            hostname     = VALUES(hostname),
-            os_id        = VALUES(os_id),
-            os_version   = VALUES(os_version),
-            last_seen    = NOW(),
-            last_seen_ip = VALUES(last_seen_ip),
-            host_id      = LAST_INSERT_ID(host_id)'
-    );
-    $stmt->execute([
-        ':fqdn'  => $fqdn,
-        ':hn'    => $fqdn,
-        ':osid'  => ($vm['distro_id'] ?? '') ?: null,
-        ':osver' => ($vm['distro_version'] ?? '') ?: null,
-        ':ip'    => $remoteIp,
-    ]);
-    $hostId = (int) $pdo->lastInsertId();
+    $hostId = vg_ingest_store_host_upsert($pdo, $fqdn, $vm, $remoteIp);
 
     // 직전 스캔과 내용이 같으면 새 스냅샷을 만들지 않는다 — 수집시각만 갱신한다.
     //   호스트 생존 신호는 tb_host.last_seen 이 위에서 이미 갱신했으므로 잃는 정보가 없다.
     //   그 결과 스캔 목록 자체가 "변경 시점" 목록이 된다(changes.php 의 비교도 더 정확해진다).
-    $q = $pdo->prepare('SELECT scan_id, content_hash FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT 1');
-    $q->execute([$hostId]);
-    $prev = $q->fetch() ?: null;
+    $prev = vg_ingest_store_prev_scan($pdo, $hostId);
     $unchanged = $prev !== null && (string) $prev['content_hash'] === $contentHash;
 
     if ($unchanged) {
         $scanId = (int) $prev['scan_id'];
-        $pdo->prepare(
-            'UPDATE tb_scan SET collected_at = :ca, agent_version = :av, schedule = :sch,
-                                 elapsed_seconds = :el,
-                                 peak_rss_mb = :pk, cpu_seconds = :cpu,
-                                 mem_total_mb = :mem, cpu_cores = :cores WHERE scan_id = :sid'
-        )->execute([
-            ':ca' => $collectedAt,
-            ':av' => ($meta['agent_version'] ?? '') ?: null,
-            ':sch' => ($meta['schedule'] ?? '') ?: null,
-            ':el' => isset($meta['elapsed_seconds']) ? (int) $meta['elapsed_seconds'] : null,
-            ':pk' => isset($meta['peak_rss_mb']) ? (float) $meta['peak_rss_mb'] : null,
-            ':cpu' => isset($meta['cpu_seconds']) ? (float) $meta['cpu_seconds'] : null,
-            ':mem' => isset($meta['mem_total_mb']) ? (float) $meta['mem_total_mb'] : null,
-            ':cores' => isset($meta['nproc']) ? (int) $meta['nproc'] : null,
-            ':sid' => $scanId,
-        ]);
+        vg_ingest_store_scan_touch($pdo, $scanId, $collectedAt, $meta);
     } else {
-    // 스캔 1행
-    $stmt = $pdo->prepare(
-        'INSERT INTO tb_scan
-            (host_id, collected_at, agent_version, schedule, elapsed_seconds, peak_rss_mb, cpu_seconds,
-             mem_total_mb, cpu_cores,
-             os_id, os_version, kernel, running_kernel, kernel_latest, kernel_reboot_needed,
-             cpe, package_family, content_hash,
-             package_count, exposure_count, raw_json)
-         VALUES
-            (:h, :ca, :av, :sch, :el, :pk, :cpu, :mem, :cores, :osid, :osver, :kern, :rk, :kl, :krn, :cpe, :fam, :hash, :pc, :ec, :raw)'
-    );
-    $stmt->execute([
-        ':h'     => $hostId,
-        ':ca'    => $collectedAt,
-        ':av'    => ($meta['agent_version'] ?? '') ?: null,
-        ':sch'   => ($meta['schedule'] ?? '') ?: null,
-        ':el'    => isset($meta['elapsed_seconds']) ? (int) $meta['elapsed_seconds'] : null,
-        ':pk'    => isset($meta['peak_rss_mb']) ? (float) $meta['peak_rss_mb'] : null,
-        ':cpu'   => isset($meta['cpu_seconds']) ? (float) $meta['cpu_seconds'] : null,
-        ':mem'   => isset($meta['mem_total_mb']) ? (float) $meta['mem_total_mb'] : null,
-        ':cores' => isset($meta['nproc']) ? (int) $meta['nproc'] : null,
-        ':osid'  => ($vm['distro_id'] ?? '') ?: null,
-        ':osver' => ($vm['distro_version'] ?? '') ?: null,
-        ':kern'  => ($sys['kernel_release'] ?? ($sys['kernel'] ?? '')) ?: null,
-        ':rk'    => $runningKernel ?: null,
-        ':kl'    => $kernelLatest ?: null,
-        ':krn'   => $kernelReboot,
-        ':cpe'   => ($vm['cpe_name'] ?? '') ?: null,
-        ':fam'   => ($vm['package_family'] ?? '') ?: null,
-        ':hash'  => $contentHash,
-        ':pc'    => $pkgCount,
-        ':ec'    => $expCount,
-        ':raw'   => $raw,
-    ]);
-    $scanId = (int) $pdo->lastInsertId();
-
-    // 패키지 벌크
-    if ($pkgCount > 0) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_package (scan_id, manager, name, version, arch, source_pkg, source_version, vendor, origin)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        // 스캔 1행
+        $scanId = vg_ingest_store_scan_insert(
+            $pdo, $hostId, $collectedAt, $meta, $vm, $sys,
+            $runningKernel, $kernelLatest, $kernelReboot,
+            $contentHash, $pkgCount, $expCount, $raw
         );
-        foreach ($pkgRows as $r) {
-            // 출처: dpkg 는 apt Origin 라벨, rpm 은 VENDOR($r[5]).
-            $origin = $manager === 'rpm'
-                ? (($r[5] ?? '') !== '' ? $r[5] : null)
-                : ($originMap[$r[0]] ?? null);
-            $ins->execute([$scanId, $manager, $r[0], $r[1], $r[2], $r[3], $r[4], $r[5], $origin]);
-        }
-    }
 
-    // 컨테이너 + 그 안의 패키지.
-    //   컨테이너는 호스트와 OS 가 다를 수 있어(호스트 Rocky + 컨테이너 Debian) os 를 따로 갖는다.
-    //   패키지는 같은 tb_package 에 container_id 를 달아 넣는다(0 = 호스트).
-    $ctrIds = [];   // cid => tb_container.container_id
-    if ($ctrCount > 0) {
-        $insC = $pdo->prepare(
-            'INSERT INTO tb_container (scan_id,cid,name,image,image_digest,k8s_namespace,k8s_pod,k8s_container,workload_ref,runtime_state,sbom_format,sbom_hash,os_id,os_version,manager,pkg_count)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-        );   // ← 컨테이너 자체 메타. 안의 패키지(license 포함)는 tb_package 벌크(아래)에 들어간다.
-        foreach ($ctrRows as $cid => $f) {
-            $insC->execute([
-                $scanId, $cid,
-                ($f[1] !== '' ? $f[1] : null), ($f[2] !== '' ? $f[2] : null),
-                (($f[7] ?? '') !== '' ? $f[7] : null), (($f[8] ?? '') !== '' ? $f[8] : null),
-                (($f[9] ?? '') !== '' ? $f[9] : null), (($f[10] ?? '') !== '' ? $f[10] : null),
-                (($f[11] ?? '') !== '' ? $f[11] : null), (($f[12] ?? '') !== '' ? $f[12] : 'running'),
-                (($f[13] ?? '') !== '' ? $f[13] : null), (($f[14] ?? '') !== '' ? $f[14] : null),
-                ($f[3] !== '' ? $f[3] : null), ($f[4] !== '' ? $f[4] : null),
-                ($f[5] !== '' ? $f[5] : null), (int) $f[6],
-            ]);
-            $ctrIds[$cid] = (int) $pdo->lastInsertId();
-        }
-    }
-    if ($ctrPkgCount > 0) {
-        // license(6번째 필드)는 SBOM 경로(vg_ingest_parse_sbom)만 채운다 — rpm/apk 목록·rpmdb
-        //   경로는 이 자리가 비어 null 로 저장된다(OS 패키지 라이선스는 이번 라운드 scope_out).
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_package (scan_id, container_id, manager, name, version, source_pkg, license)
-             VALUES (?, ?, ?, ?, ?, ?, ?)'
-        );
-        $storedCtrPkgCounts = [];
-        foreach ($ctrPkgRows as $r) {
-            $cidKey = $r[0];
-            if (!isset($ctrIds[$cidKey])) { continue; }   // 목록에 없는 컨테이너의 패키지는 버린다
-            $ins->execute([
-                $scanId, $ctrIds[$cidKey], $r[1], $r[2], $r[3],
-                (($r[4] ?? '') !== '' ? $r[4] : null),
-                (($r[5] ?? '') !== '' ? $r[5] : null),
-            ]);
-            $storedCtrPkgCounts[$cidKey] = ($storedCtrPkgCounts[$cidKey] ?? 0) + 1;
+        // 패키지 벌크
+        if ($pkgCount > 0) {
+            vg_ingest_store_packages($pdo, $scanId, $manager, $pkgRows, $originMap);
         }
 
-        // 에이전트가 컨테이너 안에서 rpm 명령을 실행하지 못하면 목록의 pkg_count는 0이다.
-        // 이 경우에도 중앙이 업로드된 RPM DB를 파싱해 패키지를 저장하므로, 실제 저장 건수로
-        // 컨테이너 요약을 보정해야 UI가 이를 "패키지 없음/판정 불가"로 오인하지 않는다.
-        if ($storedCtrPkgCounts) {
-            $updCtrPkgCount = $pdo->prepare('UPDATE tb_container SET pkg_count = ? WHERE container_id = ?');
-            foreach ($storedCtrPkgCounts as $cidKey => $storedCount) {
-                $updCtrPkgCount->execute([$storedCount, $ctrIds[$cidKey]]);
-            }
+        // 컨테이너 + 그 안의 패키지.
+        //   컨테이너 목록이 먼저 들어가야 cid → container_id 지도가 생긴다(아래가 전부 이걸 쓴다).
+        $ctrIds = [];   // cid => tb_container.container_id
+        if ($ctrCount > 0) {
+            $ctrIds = vg_ingest_store_containers($pdo, $scanId, $ctrRows);
         }
-    }
+        if ($ctrPkgCount > 0) {
+            vg_ingest_store_container_packages($pdo, $scanId, $ctrPkgRows, $ctrIds);
+        }
 
-    // 컨테이너 런타임 증거 — 호스트와 같은 테이블에 container_id 를 달아 넣는다(0 = 호스트).
-    //   이게 있어야 매처가 컨테이너 패키지에도 "로드됨/외부노출" 을 적용해 등급을 매길 수 있다.
-    if ($ctrProcCount > 0) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_process (scan_id, container_id, pid, comm, username, exe_pkg, loaded_pkgs)
-             VALUES (?, ?, ?, ?, ?, ?, ?)'
-        );
-        foreach ($ctrProcRows as $f) {
-            if (!isset($ctrIds[$f[0]])) { continue; }   // 목록에 없는 컨테이너 것은 버린다
-            $ins->execute([
-                $scanId, $ctrIds[$f[0]],
-                ($f[1] !== '' ? (int) $f[1] : null),
-                $f[2], $f[3], $f[4], $f[5],
-            ]);
+        // 컨테이너 런타임 증거 — 매처가 컨테이너 패키지에도 "로드됨/외부노출" 을 적용하는 근거.
+        if ($ctrProcCount > 0) {
+            vg_ingest_store_container_processes($pdo, $scanId, $ctrProcRows, $ctrIds);
         }
-    }
-    if ($ctrExpCount > 0) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_exposure
-                (scan_id, container_id, pid, proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        );
-        foreach ($ctrExpRows as $f) {
-            if (!isset($ctrIds[$f[0]])) { continue; }
-            $ins->execute([
-                $scanId, $ctrIds[$f[0]],
-                ($f[1] !== '' ? (int) $f[1] : null),
-                $f[2], $f[3], $f[4],
-                ($f[5] !== '' ? (int) $f[5] : null),
-                $f[6], $f[7], $f[8],
-            ]);
+        if ($ctrExpCount > 0) {
+            vg_ingest_store_container_exposures($pdo, $scanId, $ctrExpRows, $ctrIds);
         }
-    }
 
-    // 패키지 의존성 그래프 벌크 — pom.xml 직접 선언(호스트, container_id=0) + SBOM 의존성 엣지.
-    //   저장 전 문자셋 검증·dedup·상한은 파싱 단계(vg_ingest_parse_pom_deps/vg_ingest_parse_sbom)에서
-    //   이미 끝났다 — 여기서는 SBOM 엣지의 cid → container_id 매핑만 한다.
-    if ($pomDepRows || $sbomDepRows) {
-        $insDep = $pdo->prepare(
-            'INSERT IGNORE INTO tb_package_dependency
-                (scan_id, container_id, source, parent_manager, parent_name, parent_version,
-                 child_manager, child_name, child_version)
-             VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?)'
-        );
-        foreach ($pomDepRows as $r) {
-            $insDep->execute([$scanId, 'pom', null, null, null, $r[0], $r[1], $r[2]]);
+        // 패키지 의존성 그래프 벌크 — pom.xml 직접 선언(호스트) + SBOM 의존성 엣지.
+        if ($pomDepRows || $sbomDepRows) {
+            vg_ingest_store_package_deps($pdo, $scanId, $pomDepRows, $sbomDepRows, $ctrIds);
         }
-        $insSbomDep = $pdo->prepare(
-            'INSERT IGNORE INTO tb_package_dependency
-                (scan_id, container_id, source, parent_manager, parent_name, parent_version,
-                 child_manager, child_name, child_version)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        );
-        foreach ($sbomDepRows as $r) {
-            $cidKey = $r[0];
-            if (!isset($ctrIds[$cidKey])) { continue; }   // 목록에 없는 컨테이너의 엣지는 버린다
-            $insSbomDep->execute([
-                $scanId, $ctrIds[$cidKey], 'sbom',
-                $r[1], $r[2], $r[3],
-                $r[4], $r[5], $r[6],
-            ]);
-        }
-    }
 
-    // 언어 패키지 벌크 — 같은 tb_package 에 manager=pip|npm|gem|composer 로 넣는다.
-    //   매처가 manager 로 생태계(PyPI/npm/…)를 정해 OS 패키지와 섞이지 않게 매칭한다.
-    if ($langCount > 0) {
-        // license(4번째 필드)는 SBOM/METADATA/composer 유래일 때만 채워진다(vg_ingest_attach_pkg_license).
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_package (scan_id, manager, name, version, license) VALUES (?, ?, ?, ?, ?)'
-        );
-        foreach ($langRows as $r) {
-            $ins->execute([$scanId, $r[0], $r[1], $r[2], (($r[3] ?? '') !== '' ? $r[3] : null)]);
+        // 언어 패키지 벌크
+        if ($langCount > 0) {
+            vg_ingest_store_lang_packages($pdo, $scanId, $langRows);
         }
-    }
 
-    // 노출 벌크
-    if ($expCount > 0) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_exposure
-                (scan_id, pid, proc, proto, bind_addr, port, scope, exe_pkg, loaded_pkgs)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        );
-        foreach ($expRows as $f) {
-            $ins->execute([
-                $scanId,
-                ($f[0] !== '' ? (int) $f[0] : null),
-                $f[1], $f[2], $f[3],
-                ($f[4] !== '' ? (int) $f[4] : null),
-                $f[5], $f[6], $f[7],
-            ]);
+        // 노출 벌크
+        if ($expCount > 0) {
+            vg_ingest_store_exposures($pdo, $scanId, $expRows);
         }
-    }
 
-    // 실행 프로세스 벌크
-    if ($procCount > 0) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_process (scan_id, pid, comm, username, exe_pkg, loaded_pkgs)
-             VALUES (?, ?, ?, ?, ?, ?)'
-        );
-        foreach ($procRows as $f) {
-            $ins->execute([
-                $scanId,
-                ($f[0] !== '' ? (int) $f[0] : null),
-                $f[1], $f[2], $f[3], $f[4],
-            ]);
+        // 실행 프로세스 벌크
+        if ($procCount > 0) {
+            vg_ingest_store_processes($pdo, $scanId, $procRows);
         }
-    }
 
-    // changelog CVE 벌크 (백포트 근거 — 매처가 억제 판정에 사용)
-    if ($clogCount > 0) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_pkg_changelog_cve (scan_id, package_name, cve_id, evidence)
-             VALUES (?, ?, ?, ?)'
-        );
-        foreach ($clogRows as $r) {
-            $ins->execute([$scanId, $r[0], $r[1], $r[2]]);
+        // changelog CVE 벌크 (백포트 근거 — 매처가 억제 판정에 사용)
+        if ($clogCount > 0) {
+            vg_ingest_store_changelog_cves($pdo, $scanId, $clogRows);
         }
-    }
 
-    // 재시작 필요 벌크 (옛 라이브러리 상주 — 매처가 억제를 막는 근거로 사용)
-    if ($staleCount > 0) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_stale_lib (scan_id, pid, comm, package_name, lib_path)
-             VALUES (?, ?, ?, ?, ?)'
-        );
-        foreach ($staleRows as $r) {
-            $ins->execute([$scanId, (int) $r[0], $r[1], $r[2], mb_strimwidth((string) $r[3], 0, 512, '')]);
+        // 재시작 필요 벌크 (옛 라이브러리 상주 — 매처가 억제를 막는 근거로 사용)
+        if ($staleCount > 0) {
+            vg_ingest_store_stale_libs($pdo, $scanId, $staleRows);
         }
-    }
 
-    // debsecan 벌크 (데비안 트래커가 "아직 취약"이라 본 CVE — 매처가 나머지를 억제하는 근거)
-    if ($debsecanCount > 0) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_debsecan (scan_id, cve_id, package_name) VALUES (?, ?, ?)'
-        );
-        foreach ($debsecanRows as $r) {
-            $ins->execute([$scanId, $r[0], $r[1]]);
+        // debsecan 벌크 (데비안 트래커가 "아직 취약"이라 본 CVE)
+        if ($debsecanCount > 0) {
+            vg_ingest_store_debsecan($pdo, $scanId, $debsecanRows);
         }
-    }
 
-    // errata CVE 벌크 (벤더가 "이 빌드에서 고쳤다"고 확인한 CVE — 매처가 억제 판정에 사용)
-    if ($errataCount > 0) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_applied_errata (scan_id, package_name, cve_id, evidence)
-             VALUES (?, ?, ?, ?)'
-        );
-        foreach ($errataRows as $r) {
-            $ins->execute([$scanId, $r[0], $r[1], $r[2]]);
+        // errata CVE 벌크 (벤더가 "이 빌드에서 고쳤다"고 확인한 CVE)
+        if ($errataCount > 0) {
+            vg_ingest_store_errata($pdo, $scanId, $errataRows);
         }
-    }
 
-    // 패키지 변경 이력 — 직전 스냅샷과 무엇이 달라졌나(설치/제거/업그레이드/다운그레이드).
-    //   첫 수집(직전 스냅샷 없음)은 전부 "설치"로 기록하지 않는다 — 의미 없는 폭증만 만든다.
-    if ($prev !== null) {
-        // 호스트 패키지만 비교한다(container_id=0). 컨테이너 것까지 섞으면 컨테이너 패키지가
-        // 전부 "제거됨"으로 잘못 기록된다 — $curPkgs 에는 호스트·언어 패키지만 담기기 때문이다.
-        $q = $pdo->prepare('SELECT manager, name, version FROM tb_package WHERE scan_id = ? AND container_id = 0');
-        $q->execute([(int) $prev['scan_id']]);
-        $prevPkgs = [];
-        foreach ($q->fetchAll() as $r) {
-            $prevPkgs[$r['manager'] . '|' . $r['name']] = (string) $r['version'];
+        // 패키지 변경 이력 — 직전 스냅샷이 있을 때만(첫 수집은 기록하지 않는다).
+        if ($prev !== null) {
+            $chgCount = vg_ingest_store_pkg_changes(
+                $pdo, $hostId, $scanId, (int) $prev['scan_id'], $manager, $pkgRows, $langRows
+            );
         }
-        $curPkgs = vg_ingest_build_pkg_map($manager, $pkgRows, $langRows);
-        // 배포판 규칙으로 비교해야 승강을 정확히 가른다(1:1.1 > 2.0 같은 epoch 사례).
-        $pkgChanges = vg_ingest_diff_packages($prevPkgs, $curPkgs, 'vg_ver_cmp');
-
-        $insChg = $pdo->prepare(
-            'INSERT INTO tb_pkg_change (host_id, scan_id, manager, package_name, change_type, old_version, new_version)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE change_type=VALUES(change_type),
-               old_version=VALUES(old_version), new_version=VALUES(new_version)'
-        );
-        foreach ($pkgChanges as [$key, $type, $old, $new]) {
-            [$mgr, $name] = explode('|', $key, 2);
-            $insChg->execute([$hostId, $scanId, $mgr, $name, $type, $old, $new]);
-            $chgCount++;
-        }
-    }
-
     }   // ← 변경 있음(새 스냅샷) 분기 끝
 
     // 패키지 무결성 — 스냅샷 재사용 여부와 무관하게 **이번 수집이 실제로 본 것**으로 덮어쓴다.
-    //   무결성 결과는 패키지 목록이 그대로여도 바뀔 수 있고(파일만 변조), 반대로 이번 실행이
-    //   검사를 안 했다면 지난 결과를 그대로 남겨 두는 쪽이 더 위험하다 — 오래된 "정상"을
-    //   최신 수집시각과 함께 보여주게 되기 때문이다. 그래서 미수행이면 0 으로 되돌린다.
-    $pdo->prepare('DELETE FROM tb_package_integrity WHERE scan_id = ?')->execute([$scanId]);
-    if ($integChecked && $integRows) {
-        $ins = $pdo->prepare(
-            'INSERT INTO tb_package_integrity (scan_id, package_name, flags, file_path) VALUES (?, ?, ?, ?)'
-        );
-        foreach ($integRows as $r) {
-            $ins->execute([$scanId, ($r[0] !== '' ? $r[0] : null), $r[1], $r[2]]);
-        }
-    }
-    $pdo->prepare(
-        'UPDATE tb_scan SET integrity_checked = ?, integrity_partial = ?, integrity_total = ? WHERE scan_id = ?'
-    )->execute([$integChecked ? 1 : 0, $integPartial ? 1 : 0, $integChecked ? $integTotal : 0, $scanId]);
+    vg_ingest_store_integrity($pdo, $scanId, $integChecked, $integPartial, $integTotal, $integRows);
 
     // 동일 스냅샷 재전송이어도 수집기 완전성은 최신 상태로 갱신한다.
     if ($collectionStages) {
-        $stage = $pdo->prepare('INSERT INTO tb_collection_stage (scan_id,stage_code,status,item_count) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status),item_count=VALUES(item_count),created_at=NOW()');
-        foreach ($collectionStages as $r) { $stage->execute([$scanId, $r[0], $r[1], $r[2]]); }
+        vg_ingest_store_stages($pdo, $scanId, $collectionStages);
     }
 
     // 수집 결과가 같아 기존 스냅샷을 재사용하더라도 실행 사실과 실행별 자원값은 항상 남긴다.
-    $pdo->prepare(
-        'INSERT INTO tb_scan_run
-            (host_id, scan_id, collected_at, content_changed, package_count, exposure_count,
-             agent_version, schedule, elapsed_seconds, peak_rss_mb, cpu_seconds, mem_total_mb, cpu_cores)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    )->execute([
-        $hostId, $scanId, $collectedAt, $unchanged ? 0 : 1, $pkgCount, $expCount,
-        ($meta['agent_version'] ?? '') ?: null,
-        ($meta['schedule'] ?? '') ?: null,
-        isset($meta['elapsed_seconds']) ? (int) $meta['elapsed_seconds'] : null,
-        isset($meta['peak_rss_mb']) ? (float) $meta['peak_rss_mb'] : null,
-        isset($meta['cpu_seconds']) ? (float) $meta['cpu_seconds'] : null,
-        isset($meta['mem_total_mb']) ? (float) $meta['mem_total_mb'] : null,
-        isset($meta['nproc']) ? (int) $meta['nproc'] : null,
-    ]);
+    vg_ingest_store_scan_run($pdo, $hostId, $scanId, $collectedAt, $unchanged, $pkgCount, $expCount, $meta);
 
     // 자산 등급 **초안 제안** 갱신 — 확정값(grade)은 건드리지 않는다("판정은 사람이, 초안은 시스템이").
     //   노출·프로세스가 이미 이 트랜잭션에 들어와 있으므로 여기서 계산해야 최신 데이터를 본다.
