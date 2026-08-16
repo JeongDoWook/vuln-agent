@@ -15,6 +15,12 @@
 #   DB_CONTAINER=vulnagent-db-dev BACKUP_DIR=/tmp/vg-backup-test bash deploy/backup_db.sh
 # 기존 dump만 격리 복원 검증하려면(운영 DB에는 읽기 전용 metadata query만 실행):
 #   bash deploy/backup_db.sh --verify /path/to/dump.sql.gz [db컨테이너명]
+#
+# 검증 컨테이너 관련 환경변수(전부 기본값 있음):
+#   VERIFY_READY_TIMEOUT(90)         격리 DB 기동 대기 초
+#   VERIFY_TMPFS_SIZE(2g)            /var/lib/mysql tmpfs 상한 — 덤프가 커져 실패하면 올린다
+#   VERIFY_TMPFS_SMALL_SIZE(64m)     /var/run/mysqld·/tmp tmpfs 상한
+#   VERIFY_STALE_AGE_SECONDS(3600)   이보다 오래된 라벨 컨테이너를 잔재로 보고 걷는다
 # =============================================================================
 set -euo pipefail
 umask 077   # 이후 생성되는 모든 파일(LOCK, 덤프 .sql.gz)을 처음부터 소유자 전용 권한으로
@@ -34,10 +40,36 @@ KEEP=7    # 매일 주기 기준 7일치 보관. vulnagent_*.sql.gz 패턴만 �
 FAILED_KEEP=$KEEP  # 실패 dump도 조사에 필요한 최신 KEEP개만 보존(민감정보·디스크 무제한 누적 방지).
 VERIFY_READY_TIMEOUT="${VERIFY_READY_TIMEOUT:-90}"
 VERIFY_CONTAINER_ID=""
+VERIFY_LABEL="vuln-agent.backup-verify=true"
+# 격리 검증 컨테이너의 tmpfs 상한. size= 가 없으면 리눅스 기본값(호스트 RAM 의 50%)이 걸려,
+# 복원 데이터가 그만큼 호스트 메모리를 먹는다 — 2026-08-16 운영에서 이 컨테이너가 5.6GB 를
+# 물고 서버를 마비시켰다. 2g 근거: 운영 덤프가 압축 351MB(#342 실측)이고 InnoDB 로 적재해도
+# 1GB 내외라 여유 2배를 잡았다. 덤프가 커져 검증이 실패하면 이 값을 올린다.
+VERIFY_TMPFS_SIZE="${VERIFY_TMPFS_SIZE:-2g}"
+# 소켓·PID 파일(/var/run/mysqld)과 임시파일(/tmp)은 수 MB 면 충분하다. 넉넉히 잡아 64m.
+VERIFY_TMPFS_SMALL_SIZE="${VERIFY_TMPFS_SMALL_SIZE:-64m}"
+# 라벨로 남은 이전 검증 컨테이너를 걷는 기준 나이(초). **나이로 거르는 이유**: 컨테이너 이름의
+# PID($$) 로 자기 것만 제외하는 방식은 "남이 방금 띄운 검증"을 지켜주지 못한다(청소는 자기
+# 컨테이너를 만들기 전에 도니 애초에 제외할 자기 것도 없다). 정상 검증은 readiness 90s +
+# restore 로 끝나므로 1시간(3600s)을 넘긴 것은 확실한 잔재다.
+# docker ps 의 --filter until= 은 이 데몬에서 'invalid filter' 라 못 쓴다(prune 전용) — 그래서
+# 라벨로만 추리고 나이는 docker inspect 의 .Created 로 직접 잰다.
+VERIFY_STALE_AGE_SECONDS="${VERIFY_STALE_AGE_SECONDS:-3600}"
 
 case "$VERIFY_READY_TIMEOUT" in
   ''|*[!0-9]*|0) echo "backup: VERIFY_READY_TIMEOUT은 양의 정수여야 함" >&2; exit 2 ;;
 esac
+case "$VERIFY_STALE_AGE_SECONDS" in
+  ''|*[!0-9]*|0) echo "backup: VERIFY_STALE_AGE_SECONDS는 양의 정수(초)여야 함" >&2; exit 2 ;;
+esac
+for _size_var in VERIFY_TMPFS_SIZE VERIFY_TMPFS_SMALL_SIZE; do
+  # docker 의 tmpfs size= 에 그대로 들어가므로 "숫자+단위" 만 허용한다(옵션 주입 차단).
+  if ! [[ "${!_size_var}" =~ ^[1-9][0-9]*[kKmMgG]?$ ]]; then
+    echo "backup: $_size_var 는 64m·2g 같은 크기 표기여야 함(현재=${!_size_var})" >&2
+    exit 2
+  fi
+done
+unset _size_var
 
 container_database() {
   local env_lines container_db requested
@@ -68,9 +100,38 @@ cleanup_verify_container() {
   fi
 }
 
+reap_stale_verify_containers() {
+  # 라벨을 붙여만 두고 읽는 곳이 없어, 한 번 누수되면 사람이 발견할 때까지 남았다.
+  # 청소 실패가 백업 자체를 막으면 안 되므로 전부 흘리고 경고만 남긴다.
+  local candidates cid created created_epoch now count=0
+  candidates=$(docker ps -aq --filter "label=$VERIFY_LABEL" 2>/dev/null || true)
+  [ -n "$candidates" ] || return 0
+  now=$(date +%s)
+  for cid in $candidates; do
+    created=$(docker inspect "$cid" --format '{{.Created}}' 2>/dev/null || true)
+    [ -n "$created" ] || continue
+    created_epoch=$(date -d "$created" +%s 2>/dev/null || true)
+    case "$created_epoch" in ''|*[!0-9]*) continue ;; esac
+    # 지금 돌고 있는 다른 백업 검증은 건드리지 않는다.
+    [ "$((now - created_epoch))" -gt "$VERIFY_STALE_AGE_SECONDS" ] || continue
+    if docker rm -f "$cid" >/dev/null 2>&1; then
+      count=$((count + 1))
+    else
+      echo "backup verify: 잔재 컨테이너 정리 실패($cid) — 백업은 계속한다" >&2
+    fi
+  done
+  # 조용히 치우면 누수가 계속 나도 아무도 모른다. 몇 개를 걷었는지 반드시 남긴다.
+  [ "$count" -gt 0 ] && echo "backup verify: 잔재 컨테이너 ${count}개 정리(생성 ${VERIFY_STALE_AGE_SECONDS}s 초과, 라벨=$VERIFY_LABEL)"
+  return 0
+}
+
 trap cleanup_verify_container EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+# SIGHUP(=ssh 세션 끊김)이 가장 현실적인 누수 경로인데 여태 안 잡혔다. 운영 배포는 ssh 로
+# 하므로 세션이 끊기면 부모 셸만 죽고 --rm 컨테이너는 계속 돌아 지워지지 않았다.
+# 129 = 128+1 (기존 INT 130·TERM 143 과 같은 규칙). 이어서 EXIT trap 이 청소한다.
+trap 'exit 129' HUP
 
 schema_manifest_sql() {
   local db="$1"
@@ -173,6 +234,7 @@ validate_core_data() {
 verify_restore() {
   local dump="$1" source_db source_image verify_name verify_dir ready i
   local source_core restored_core source_summary restored_summary
+  reap_stale_verify_containers
   [ -s "$dump" ] || { echo "backup verify: dump가 비었음($dump)" >&2; return 1; }
   gzip -t "$dump" 2>/dev/null || { echo "backup verify: gzip 손상($dump)" >&2; return 1; }
   source_db=$(container_database) || return 1
@@ -208,13 +270,14 @@ verify_restore() {
   verify_name="vg-backup-verify-$(date +%Y%m%d%H%M%S)-$$"
   # 검증 대상 SQL은 신뢰하지 않는다. 운영 컨테이너의 image만 재사용하고 network, volume,
   # secret을 전혀 공유하지 않는 일회용 MySQL에 넣는다. /var/lib/mysql도 tmpfs라 종료 즉시 사라진다.
+  # tmpfs 에는 반드시 size= 를 준다 — 없으면 호스트 RAM 의 50% 까지 먹는다(위 상수 주석 참고).
   if ! VERIFY_CONTAINER_ID=$(docker run --detach --rm \
       --name "$verify_name" \
       --network none \
-      --tmpfs /var/lib/mysql:rw,nosuid,nodev \
-      --tmpfs /var/run/mysqld:rw,nosuid,nodev \
-      --tmpfs /tmp:rw,nosuid,nodev,noexec \
-      --label vuln-agent.backup-verify=true \
+      --tmpfs "/var/lib/mysql:rw,nosuid,nodev,size=$VERIFY_TMPFS_SIZE" \
+      --tmpfs "/var/run/mysqld:rw,nosuid,nodev,size=$VERIFY_TMPFS_SMALL_SIZE" \
+      --tmpfs "/tmp:rw,nosuid,nodev,noexec,size=$VERIFY_TMPFS_SMALL_SIZE" \
+      --label "$VERIFY_LABEL" \
       --env MYSQL_ALLOW_EMPTY_PASSWORD=yes \
       --env "MYSQL_DATABASE=$source_db" \
       "$source_image" --skip-log-bin --skip-name-resolve); then
@@ -239,14 +302,14 @@ verify_restore() {
   if [ "$ready" != 1 ]; then
     cleanup_verify_container
     rm -rf "$verify_dir"
-    echo "backup verify: 격리 DB readiness timeout(${VERIFY_READY_TIMEOUT}s)" >&2
+    echo "backup verify: 격리 DB readiness timeout(${VERIFY_READY_TIMEOUT}s) — tmpfs 상한(VERIFY_TMPFS_SIZE=$VERIFY_TMPFS_SIZE) 이 초기화 데이터보다 작아 기동에 실패했을 수 있음. 초과 시 VERIFY_TMPFS_SIZE 를 올린다" >&2
     return 1
   fi
 
   if ! gzip -dc "$dump" | verify_mysql "$source_db"; then
     cleanup_verify_container
     rm -rf "$verify_dir"
-    echo "backup verify: 격리 DB restore 실패($verify_name)" >&2
+    echo "backup verify: 격리 DB restore 실패($verify_name) — tmpfs 상한(VERIFY_TMPFS_SIZE=$VERIFY_TMPFS_SIZE) 초과일 수 있음(디스크 부족/No space left). 초과 시 VERIFY_TMPFS_SIZE 를 올린다" >&2
     return 1
   fi
   if ! verify_mysql --batch --raw --skip-column-names -e "$(schema_manifest_sql "$source_db")" > "$verify_dir/restored.manifest"; then
