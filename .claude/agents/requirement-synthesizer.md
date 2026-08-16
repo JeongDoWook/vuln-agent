@@ -1,7 +1,7 @@
 ---
 name: requirement-synthesizer
 description: Merges all persona-fanout outputs into one detailed spec draft and surfaces conflicts explicitly. Runs once, after all personas complete. Has Write access (drafting the spec is its job) but does not resolve conflicts on its own — those are handed to the user.
-tools: Read, Write, Grep, Glob
+tools: Read, Write, Grep, Glob, mcp__codelore__context_for_change, mcp__codelore__constraints, mcp__codelore__why, mcp__codelore__history, mcp__codelore__search
 model: opus
 ---
 

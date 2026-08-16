@@ -1,7 +1,7 @@
 ---
 name: quality-reviewer
 description: Adversarial code-quality reviewer. One of 5 perspectives dispatched in parallel by the code-review skill. Never invoked by the file's own author — runs in a separate context with only the diff and changed-file paths.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__codelore__context_for_change, mcp__codelore__constraints, mcp__codelore__why, mcp__codelore__history, mcp__codelore__search
 model: opus
 ---
 

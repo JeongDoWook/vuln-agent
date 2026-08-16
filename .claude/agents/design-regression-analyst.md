@@ -1,7 +1,7 @@
 ---
 name: design-regression-analyst
 description: Design-phase reviewer for backward-compatibility and blast-radius risk. Receives design-devil-advocate's findings, judges affected scope/severity, rebuts, and forwards a consolidated risk set to design-runtime-trap. Read-only — never touches code.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__codelore__context_for_change, mcp__codelore__constraints, mcp__codelore__why, mcp__codelore__history, mcp__codelore__search
 model: opus
 ---
 

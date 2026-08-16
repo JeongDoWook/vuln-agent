@@ -1,7 +1,7 @@
 ---
 name: persona-fanout
 description: Requirement elicitation from ONE stakeholder persona. Dispatched once per persona defined in the adapter's `personas` list (parallel, one instance per persona) by the requirement-fanout skill. Does not judge the overall design — only states what this one persona needs, worries about, and would refuse to accept. Read-only.
-tools: Read
+tools: Read, mcp__codelore__context_for_change, mcp__codelore__constraints, mcp__codelore__why, mcp__codelore__history, mcp__codelore__search
 model: opus
 ---
 

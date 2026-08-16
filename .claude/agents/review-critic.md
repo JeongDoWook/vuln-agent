@@ -1,7 +1,7 @@
 ---
 name: review-critic
 description: Independent triage of the 5-perspective adversarial review's findings. Filters false positives before the human sees them. Dispatched in background by the code-review skill immediately after the review HTML is generated. Has NO write tools — a triager that can edit code stops being a triager.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, mcp__codelore__context_for_change, mcp__codelore__constraints, mcp__codelore__why, mcp__codelore__history, mcp__codelore__search
 model: opus
 ---
 
