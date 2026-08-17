@@ -29,10 +29,11 @@ cd deploy
 (이 스크립트의 `git pull`, 사람이 손으로 친 `git pull`, 다른 세션의 배포) 이 한 줄이 마이그레이션·
 재빌드·재생성을 빠짐없이 수행한다 — `compose_runner.sh` 를 따로 칠 일은 없다. 바뀐 파일을 보고
 재빌드/pull 을 스스로 고른다.
-스크립트는 `origin/main`을 임시 worktree에 먼저 checkout해 그 버전의 백업 복원 rehearsal과
-migration을 끝낸 뒤에만 운영 source를 fast-forward한다. 백업이 오래 걸려도 라이브 마운트에는
-기존 PHP가 남으므로 새 코드가 구 schema를 먼저 읽는 노출 창이 없다. 어느 단계든 실패하면 운영
-source는 기존 commit에 머물고 임시 worktree는 자동 정리된다.
+스크립트는 `origin/main`을 임시 worktree에 먼저 checkout해 그 버전의 migration을 끝낸 뒤에만
+운영 source를 fast-forward한다. migration이 오래 걸려도 라이브 마운트에는 기존 PHP가 남으므로
+새 코드가 구 schema를 먼저 읽는 노출 창이 없다. 어느 단계든 실패하면 운영 source는 기존
+commit에 머물고 임시 worktree는 자동 정리된다.
+**배포는 백업을 만들지 않는다** — 아래 [“배포는 백업하지 않는다 — 사라진 안전망”](#배포는-백업하지-않는다--사라진-안전망)을 반드시 읽는다.
 **운영 중인 서버를 업데이트한다면** 문서 끝 [“지난 변경 — 운영 서버에서 1회 조치가 필요했던 것”](#지난-변경--운영-서버에서-1회-조치가-필요했던-것)
 을 먼저 확인한다.
 
@@ -154,6 +155,34 @@ crontab -e
 기존 수동 백업(`pre_content_*`, `pre_tb_*`)은 패턴이 달라 건드리지 않는다. 실행 결과는
 `$BACKUP_DIR/backup.log` 에 한 줄씩 쌓인다.
 
+### 배포는 백업하지 않는다 — 사라진 안전망
+
+**`deploy/update.sh` 는 백업을 만들지 않는다.** 마이그레이션 직전에 덤프를 뜨고 격리 복원까지
+대조하던 단계는 배포 경로에서 완전히 제거됐다(20분 넘던 배포 시간의 대부분이 그것이었다).
+`deploy/backup_db.sh` 는 그대로 남아 있고 **위 04:00 cron 만** 그것을 쓴다.
+
+대가는 분명하다. 숨기지 않고 적는다.
+
+- **마이그레이션 직전 스냅샷이 없다.** 되돌릴 지점은 **그날 04:00 cron 백업**뿐이다.
+- DDL 이 데이터를 잘못 건드리면 **그날 04:00 이후 수집분은 복구할 수 없다.**
+  (에이전트 수집 결과·스캔·활동로그 등 그 사이에 들어온 모든 행)
+- 마이그레이션이 실패하면 배포는 그 자리에서 멈추고 코드는 반영되지 않는다(옛 코드 + 그
+  시점 schema 로 계속 서비스한다). 하지만 **이미 적용된 DDL 을 되돌려 주지는 않는다.**
+
+**그래서 위험한 마이그레이션을 배포할 때는 사람이 먼저 백업을 돌린다.** 대량 `DELETE`·`DROP
+TABLE`·`DROP COLUMN`·조건 없는 `UPDATE` 처럼 **데이터를 지우거나 덮어쓰는** 변경이 여기 해당한다
+(컬럼 추가·인덱스 추가는 해당 없음).
+
+```bash
+# 운영 서버에서, 배포 **전에**. restore=pass 가 찍힐 때까지 기다린 뒤 update.sh 를 돌린다.
+bash /apps/vulnagent/app/deploy/backup_db.sh
+tail -1 /apps/vulnagent/backups/backup.log     # restore=pass 확인
+bash /apps/vulnagent/app/deploy/update.sh
+```
+
+되돌릴 때는 그 백업(또는 마지막 `restore=pass` 백업)을 **새 DB 에 복원**한다 — 운영 schema 에
+직접 시험 복원하지 않는다(아래 “복원 rehearsal과 실패 복구”).
+
 ### 복원 rehearsal과 실패 복구
 
 ```bash
@@ -188,8 +217,9 @@ tmpfs 로 남는다(소켓·PID·임시파일뿐, 64m).
 ### migration preflight와 부분 실패 복구
 
 `deploy/migrate.sh`는 적용 전에 컨테이너의 `MYSQL_DATABASE`와 호출값 일치, DB 존재, 최소 1 GiB
-여유 공간, schema version을 확인한다. 운영 `update.sh`는 먼저 위 restore rehearsal을 통과한 새
-백업을 만들고 그 파일을 `MIGRATION_BACKUP_FILE`로 전달한다. 확인만 할 때는 다음처럼 실행한다.
+여유 공간, schema version을 확인한다. 운영 `update.sh`는 백업을 만들지 않으므로
+`MIGRATION_REQUIRE_BACKUP`을 **주지 않는다** — 백업 증거 요구는 사람이 손으로 백업을 떠 두고
+그 파일을 지정해 돌릴 때만 쓴다. 확인만 할 때는 다음처럼 실행한다.
 
 ```bash
 MYSQL_DATABASE=vulnagent MIGRATION_REQUIRE_BACKUP=1 \

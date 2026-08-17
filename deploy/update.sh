@@ -32,7 +32,6 @@ CURRENT_ROOT=$PWD
 
 # 운영 고정 경로 — 기본값이 곧 운영값이다. 환경변수는 시나리오 하네스(tests/update_sh_scenarios.sh)가
 # 실제 운영 디스크를 건드리지 않고 이 스크립트를 통째로 돌려보기 위한 것이다.
-BACKUP_DIR=${BACKUP_DIR:-/apps/vulnagent/backups}
 DB_DATA_DIR=${DB_DATA_DIR:-/apps/vulnagent/data/mysql}
 HEALTH_URL=${HEALTH_URL:-http://127.0.0.1:8081/}
 
@@ -72,8 +71,7 @@ cleanup_staged_release() {
 trap cleanup_staged_release EXIT
 
 # fetch한 커밋의 배포 도구와 migration을 현재 live source와 분리해 실행한다. 운영 web은
-# CURRENT_ROOT/server를 직접 마운트하므로 이 worktree에서 오래 걸리는 backup/restore rehearsal을
-# 수행해도 새 PHP가 먼저 노출되지 않는다.
+# CURRENT_ROOT/server를 직접 마운트하므로, migration 이 도는 동안에도 새 PHP가 먼저 노출되지 않는다.
 prepare_staged_release() {
   local release_commit="$1"
   STAGED_BASE=$(mktemp -d "${TMPDIR:-/tmp}/vulnagent-release.XXXXXX")
@@ -81,62 +79,20 @@ prepare_staged_release() {
   git worktree add --quiet --detach "$STAGED_ROOT" "$release_commit"
 }
 
-# 운영 migration은 직전에 만든 백업이 disposable schema 복원까지 통과해야 시작한다.
-# DDL 성공/이력 실패 뒤에는 migrate.sh를 같은 backup 증거로 재실행하면 멱등 복구된다.
-migrate_with_verified_backup() {
-  local release_root="${1:-$CURRENT_ROOT}" latest
-  DB_CONTAINER=vulnagent-db BACKUP_DIR="$BACKUP_DIR" \
-    bash "$release_root/deploy/backup_db.sh"
-  latest=$(ls -1t "$BACKUP_DIR"/vulnagent_*.sql.gz 2>/dev/null | head -1)
-  if [ -z "$latest" ]; then
-    printf "${R}검증된 DB 백업을 찾을 수 없어 migration을 중단합니다.${N}\n" >&2
-    return 1
-  fi
-  MIGRATION_REQUIRE_BACKUP=1 MIGRATION_BACKUP_FILE="$latest" \
-    bash "$release_root/deploy/migrate.sh" vulnagent-db
-}
-
-# 미적용 마이그레이션 목록을 migrate.sh 에 물어본다 — 판정 기준은 저쪽 하나뿐이다(`--pending`).
-#   stdout = 미적용 파일명 목록 · stderr = preflight/경고/오류(사람에게 그대로 보여준다).
-# "이번 pull 에 db/migrations/ 변경이 있었나"로 판단하면 **틀린다**: 앞선 배포가 중간에 죽어
-# 미적용분이 남아 있으면 파일 변경이 없다는 이유로 영영 안 걸린다. 그래서 git diff 가 아니라
-# DB 상태(tb_schema_migrations)로 본다.
-MIGRATION_PENDING=""      # 미적용 파일명(줄바꿈 구분)
-MIGRATION_LAST=""         # 마지막으로 적용된 파일명(preflight 의 schema_version)
-MIGRATION_PROBE_RC=0      # 0 이 아니면 판정 실패 → 백업하는 쪽으로 기운다
-probe_pending_migrations() {
-  local release_root="$1" err
-  err=$(mktemp "${TMPDIR:-/tmp}/vulnagent-pending.XXXXXX")
-  MIGRATION_PENDING=""
-  MIGRATION_LAST=""
-  MIGRATION_PROBE_RC=0
-  MIGRATION_PENDING=$(bash "$release_root/deploy/migrate.sh" vulnagent-db --pending 2>"$err") \
-    || MIGRATION_PROBE_RC=$?
-  cat "$err" >&2
-  MIGRATION_LAST=$(sed -n 's/.*schema_version=\([^ ]*\).*/\1/p' "$err" | head -1)
-  rm -f "$err"
-}
-
-# 미적용분이 있을 때만 백업·검증·마이그레이션을 돌린다.
-# 마이그레이션이 없는 배포(코드만 바뀐 패치)에서 682MB 덤프 + 일회용 DB 복원 대조까지 도는 게
-# 20분 넘는 배포의 대부분이었다 — DB 를 건드리지도 않을 배포에 되돌림 수단을 준비할 이유가 없다.
-# **판정이 실패하면 백업하는 쪽으로 기운다**(모르면 안전한 쪽). 조용히 건너뛰지 않는다.
+# 마이그레이션만 돌린다. **배포는 더 이상 백업을 만들지 않는다.**
+# 백업은 운영 crontab 의 `0 4 * * * deploy/backup_db.sh`(KEEP=7)가 담당한다 — 배포가 682MB 덤프와
+# 일회용 DB 복원 대조를 기다리던 것이 20분 넘는 배포의 대부분이었고, 그 대가로 되돌릴 지점은
+# **그날 04:00 백업**까지만 남는다(deploy/README.md "사라진 안전망" 참조).
+#
+# `--pending` 사전 판정(#638)도 같이 걷어냈다. 그 판정의 유일한 용도가 "백업을 돌릴까" 였는데,
+# 판정 자체가 migrate.sh 를 한 번 더 띄우는 일(컨테이너 health 대기 + preflight 질의)이라
+# 백업이 사라진 지금은 같은 비용을 두 번 내고 얻는 게 없다. migrate.sh 는 멱등이라 미적용분이
+# 없으면 스킵만 하고 끝나며, 무슨 일이 있었는지는 그쪽 로그가 그대로 말한다
+# (`preflight: schema_version=…` · `적용: <파일>` · `마이그레이션 완료 — 적용 N · 스킵 M`).
 run_migration_stage() {
-  local release_root="$1" pending_n
-  probe_pending_migrations "$release_root"
-  pending_n=$(printf '%s' "$MIGRATION_PENDING" | grep -c . || true)
-  if [ "$MIGRATION_PROBE_RC" != 0 ]; then
-    printf "  ${Y}미적용 마이그레이션 판정 실패(rc=%s) → 백업·검증을 그대로 수행합니다(안전한 쪽).${N}\n" \
-      "$MIGRATION_PROBE_RC"
-    migrate_with_verified_backup "$release_root"
-  elif [ "${pending_n:-0}" -gt 0 ]; then
-    printf "  적용 대기 %s건 → 백업·검증 후 적용합니다:\n" "$pending_n"
-    printf '%s\n' "$MIGRATION_PENDING" | sed 's/^/    /'
-    migrate_with_verified_backup "$release_root"
-  else
-    echo "  미적용 마이그레이션 없음 → 백업·검증·마이그레이션 건너뜀(코드만 배포)."
-    printf '    적용 대기 0건 · 마지막 적용 %s\n' "${MIGRATION_LAST:-none}"
-  fi
+  local release_root="$1"
+  echo "  백업은 만들지 않습니다(정기 백업은 매일 04:00 cron) → 마이그레이션만 적용합니다."
+  bash "$release_root/deploy/migrate.sh" vulnagent-db
 }
 
 # 반영 방법은 셋으로 갈린다 — 뭉뚱그리면 쉘 스크립트 한 줄 고치고도 운영이 재빌드된다.
@@ -178,7 +134,7 @@ OLD=$(git rev-parse HEAD)
 git fetch --prune origin
 NEW=$(git rev-parse origin/main)
 
-# backup/migration 뒤 merge가 실패하면 schema만 앞서간다. DB에 손대기 전에 fast-forward 가능성을
+# migration 뒤 merge가 실패하면 schema만 앞서간다. DB에 손대기 전에 fast-forward 가능성을
 # 먼저 고정하고, 이후에도 이동 가능한 동일한 commit SHA를 사용한다.
 if ! git merge-base --is-ancestor "$OLD" "$NEW"; then
   printf "${R}origin/main으로 fast-forward할 수 없어 업데이트를 중단합니다.${N}\n" >&2
@@ -243,11 +199,11 @@ if printf '%s\n' "$CHANGED" | grep -qE "$DB_RE"; then
   fi
 fi
 
-say "[4/6] DB 마이그레이션 (live source 반영보다 **먼저**)"
+say "[4/6] DB 마이그레이션 (live source 반영보다 **먼저**, 백업 없음)"
 # fetch는 live worktree를 바꾸지 않는다. 새 commit은 별도 worktree에 checkout해 그 버전의
-# backup/migration 도구와 SQL을 실행하고, 전부 성공한 뒤 [5/6]에서만 CURRENT_ROOT를 fast-forward한다.
-# 따라서 restore rehearsal이 오래 걸려도 운영 web은 옛 코드+호환 schema 조합을 계속 제공한다.
-MIGRATION_HANDLED=0   # 여기서 판정까지 마쳤나(적용했든, 미적용 0건이라 건너뛰었든)
+# migration 도구와 SQL을 실행하고, 전부 성공한 뒤 [5/6]에서만 CURRENT_ROOT를 fast-forward한다.
+# 따라서 migration 이 오래 걸려도 운영 web은 옛 코드+호환 schema 조합을 계속 제공한다.
+MIGRATION_HANDLED=0   # 여기서 마이그레이션을 돌렸나(DB 컨테이너가 없으면 [6/6]으로 미룬다)
 RELEASE_ROOT="$CURRENT_ROOT"
 if [ "$OLD" != "$NEW" ]; then
   prepare_staged_release "$NEW"
@@ -306,9 +262,8 @@ done
 docker ps --format '  {{.Names}}\t{{.Status}}' | grep vulnagent
 
 # DB 컨테이너가 없어서 [4/6] 에서 못 돌린 경우(최초 기동)만 여기서 적용한다.
-# 여기도 같은 판정을 쓴다. 이 경로에 오면 [5/6]의 `compose_runner.sh prod up -d` 가 이미
-# migrate.sh 를 한 번 돌린 뒤라 대개 미적용 0건이고, 빈 DB 최초 기동이면 백업할 내용도 없다.
-# 반대로 그 실행이 실패해 미적용분이 남았다면 목록이 나오므로 예전처럼 백업·검증 후 적용한다.
+# 이 경로에 오면 [5/6]의 `compose_runner.sh prod up -d` 가 이미 migrate.sh 를 한 번 돌린 뒤라
+# 대개 미적용 0건이지만, 그 실행이 실패해 미적용분이 남았을 수 있으므로 멱등하게 한 번 더 돌린다.
 if [ "$MIGRATION_HANDLED" != 1 ]; then
   run_migration_stage "$CURRENT_ROOT"
 fi
