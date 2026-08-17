@@ -73,7 +73,7 @@ if (!function_exists('vg_load_suppression_evidence')) {
         foreach ($debsecan as $ctrId => $map) { $trackerLabel[(int) $ctrId] = '데비안 보안 트래커'; }
 
         // 우분투도 같은 축을 갖는다(tb_ubuntu_oval). 데비안엔 트래커, RHEL 엔 OVAL 이 있는데
-        //   우분투만 벤더 판정이 없어 백포트 오탐이 그대로 남았다(실측 deskmini: 억제 765건 —
+        //   우분투만 벤더 판정이 없어 백포트 오탐이 그대로 남았다(실측: 억제 765건 —
         //   비슷한 규모의 데비안 호스트는 4,135건). 맵 모양이 같아 같은 억제 경로를 탄다.
         //   대상(호스트·컨테이너)이 겹치지 않는다 — 한 대상의 OS 는 하나다.
         foreach (vg_ubuntu_evidence(

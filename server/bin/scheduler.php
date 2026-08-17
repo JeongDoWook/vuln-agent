@@ -77,8 +77,8 @@ register_shutdown_function(static function () use (&$finished, &$state, $writeHe
 //   높으면(예전: PHP 1024M vs 컨테이너 384m) PHP 가 자기 한도에 닿기 전에 cgroup 이 SIGKILL 하고,
 //   그러면 잡히는 PHP 오류가 없어 vg_feed_run() 의 catch 가 못 돈다 → 로그가 'running' 으로 굳고
 //   6시간 뒤 vg_feed_reap_stale() 이 마감한 것만 화면에 error 로 보인다.
-//   실측(2026-07): RHEL OVAL(52만 행 + 대용량 XML)이 schedule 로만 6일 연속 실패했고
-//   `docker inspect vulnagent-scheduler` 가 Memory=402653184(384m)·OOMKilled=true 였다.
+//   실측(2026-07): RHEL OVAL(52만 행 + 대용량 XML)은 384m 한도에서 schedule 실행이 실패하고
+//   `docker inspect vulnagent-scheduler` 가 Memory=402653184(384m)·OOMKilled=true 를 보인다.
 //   같은 커넥터가 web 컨테이너(768m)에서 도는 수동 실행에서는 매번 성공했다 — 피크는 384M~768M 사이.
 //   compose.common.yml 의 scheduler mem_limit 을 내리면 이 값도 함께 내려야 한다(짝).
 ini_set('memory_limit', '768M');

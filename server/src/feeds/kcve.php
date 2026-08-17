@@ -154,7 +154,7 @@ final class VgKcveConnector implements VgFeedConnector {
                 foreach ($rec['streams'] as $stream => $fixed) {
                     $insFix->execute([$rec['cve'], mb_substr((string) $stream, 0, 16), mb_substr($fixed, 0, 32)]);
                 }
-                // 커밋을 끊어 준다 — 12,000건을 한 트랜잭션에 담으면 락 대기로 죽는다(OVAL 때 겪었다).
+                // 커밋을 끊어 준다 — 12,000건을 한 트랜잭션에 담으면 락 대기가 길어진다(OVAL 적재에서 확인).
                 if (++$upserted % 500 === 0) { $pdo->commit(); $pdo->beginTransaction(); }
             });
             $pdo->commit();

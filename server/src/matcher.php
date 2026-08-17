@@ -85,7 +85,7 @@ if (!function_exists('vg_match_fingerprint')) {
         $procLoadedPkgs  = $sig['procLoadedPkgs'];
 
         // 카탈로그는 **이 스캔이 실제로 가진 패키지**만 읽는다(이름 + 소스패키지 둘 다 조회한다).
-        //   전부 읽으면 RHEL OVAL 이 들어온 뒤 50만 행이라 메모리가 터진다(운영에서 실제로 죽었다).
+        //   전부 읽으면 RHEL OVAL 이 들어온 뒤 50만 행이라 메모리 한도를 초과한다.
         $pkgNames = [];
         foreach ($packages as $pp) {
             $pkgNames[(string) $pp['name']] = true;

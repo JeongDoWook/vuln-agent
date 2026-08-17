@@ -4,9 +4,8 @@ declare(strict_types=1);
 /**
  * 운영 배포가 새 PHP를 migration보다 먼저 노출하지 않는 순서 계약.
  *
- * 배포는 백업을 만들지 않는다(정기 백업은 매일 04:00 cron 의 deploy/backup_db.sh).
- * 그래서 이 계약은 "백업이 migration 보다 먼저인가"가 아니라 **"배포 경로에 백업이 다시
- * 끼어들지 않았는가"** 를 단언한다 — 20분 넘던 배포의 원인이 그것이었다.
+ * 배포는 백업을 만들지 않는다 — 정기 백업은 매일 04:00 cron 의 deploy/backup_db.sh 가 맡는다.
+ * 그래서 이 계약은 배포 경로에 백업 호출이 끼어들지 않았는가도 함께 단언한다.
  */
 $root = dirname(__DIR__);
 $source = (string) file_get_contents($root . '/deploy/update.sh');
@@ -21,7 +20,7 @@ $ordered = [
     'NEW=$(git rev-parse origin/main)' => 'fetched commit pin',
     'git merge-base --is-ancestor "$OLD" "$NEW"' => 'fast-forward preflight',
     'prepare_staged_release "$NEW"' => 'isolated release checkout',
-    // 백업 없이 마이그레이션만 도는 단계(staged release 의 migrate.sh 를 쓴다).
+    // 마이그레이션 단계(staged release 의 migrate.sh 를 쓴다).
     'run_migration_stage "$RELEASE_ROOT"' => 'migration stage',
     'git merge --ff-only "$NEW"' => 'live source fast-forward',
 ];
@@ -39,9 +38,8 @@ $check(strpos($source, 'git merge --ff-only origin/main') === false,
     '검증 전 origin/main 직접 merge가 다시 생김');
 $check(strpos($source, 'bash "$release_root/deploy/migrate.sh"') !== false,
     'staged release의 migration 도구를 실행해야 함');
-// 배포 경로에는 백업이 없다. backup_db.sh 는 cron 전용이고, 여기서 다시 부르면 배포가 다시
-// 덤프+복원 대조를 기다리게 된다(#638 이전의 20분 배포). 주석은 그 사실을 설명하느라 파일명을
-// 언급하므로, 단언은 **주석을 뺀 실행 코드**만 본다.
+// backup_db.sh 는 cron 전용이다. 여기서 부르면 배포가 덤프+복원 대조를 기다리게 된다.
+// 주석이 파일명을 언급할 수 있으므로 단언은 **주석을 뺀 실행 코드**만 본다.
 $code = preg_replace('/^\s*#.*$/m', '', $source);
 $check(strpos($code, 'backup_db') === false,
     '배포 경로에 백업 호출이 다시 생김(백업은 04:00 cron 전용)');

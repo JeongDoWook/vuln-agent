@@ -167,7 +167,7 @@ SPDX 는 `DEPENDS_ON`(정방향)과 `DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역�
 끌어오는지는 수집물로 알 수 없다(purl 과 같은 원칙 — 틀린 제안은 없는 것보다 나쁘다).
 이 둘은 **`host.php` 에만 붙고 `findings.php` 전역 목록에는 없다** — 위 유니크 키 제약 때문에
 (스캔, 컨테이너) 단위 조회만 인덱스를 타므로, 전 호스트 목록에 붙이면 행마다 그래프를 적재하게
-되어 성능 사고가 난다. 호출도 `$depEdgeTotal > 0` 게이트 안에서만 하므로 엣지가 없는 자산에서는
+되어 성능 회귀가 난다. 호출도 `$depEdgeTotal > 0` 게이트 안에서만 하므로 엣지가 없는 자산에서는
 쿼리가 한 건도 늘지 않는다.
 
 > **회귀 방어의 빈 곳(알려진 한계).** 집계 로직 자체는 `tests/pkgdep_rollup_test.php`(DB 없이 도는
@@ -201,7 +201,7 @@ permissive/copyleft/unknown 3단계로 판정해 `tb_package.license`/판정 결
 `tb_package_license_summary`(`src/license_summary.php`, 스케줄러가 매 틱 무조건 재구성 — OSV 게이트와
 무관하다. tb_package_summary 와 달리 OSV 실행에 안 묶은 이유는 라이선스 데이터가 OSV 가 아니라
 에이전트 ingest 로 들어오기 때문이다)만 읽는다 —
-`tb_package` 를 화면 요청마다 직접 GROUP BY 하면 packages.php 40초 사고(92만 행 무인덱스 재집계)와
+`tb_package` 를 화면 요청마다 직접 GROUP BY 하면 packages.php 40초 성능 회귀(92만 행 무인덱스 재집계)와
 같은 문제가 재현된다.
 
 **KISA ISMS-P·ISO 27001 컴플라이언스 판정**의 로직은 `src/compliance.php` 에 있다(웹·CLI 공용).

@@ -13,7 +13,7 @@ declare(strict_types=1);
  *   Rocky 는 OSV(Rocky Linux:N)가 조치 버전을 이미 준다 → 중복 수집하지 않는다.
  *
  * Oracle Linux 는 **OSV 에 아예 없다** → 이 OVAL 이 유일한 판정 소스다(억제 + 취약 후보 둘 다).
- *   실측(deskmini): ol 9.7 컨테이너의 패키지 117개에 findings 가 0 이었다 — 통째로 미탐이었다.
+ *   실측: ol 9.7 컨테이너의 패키지 117개에 findings 가 0 이었다 — 통째로 미탐이었다.
  *   전 릴리스가 한 파일이라 정의의 <platform>Oracle Linux 9</platform> 로 릴리스를 갈라야 한다.
  *
  * OVAL 구조(실물 대조: rhel-9.oval.xml, 압축 해제 25MB):

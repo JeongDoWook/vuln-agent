@@ -288,7 +288,7 @@ if (!function_exists('vg_osv_ecosystem')) {
             case 'rhel': case 'redhat':  return $major ? "Red Hat:$major" : null;
             // Oracle Linux 는 OSV 에 없다. 우리가 ELSA OVAL 을 직접 받아 이 표기로 카탈로그에 넣는다
             //   (rhoval 커넥터). 이 매핑이 없으면 매처가 "생태계 미지원" 으로 보고 컨테이너 패키지를
-            //   통째로 건너뛴다 — 실측(deskmini): ol 9.7 컨테이너 117개 패키지에 findings 0 이었다.
+            //   통째로 건너뛴다 — 실측: ol 9.7 컨테이너 117개 패키지에 findings 0 이었다.
             case 'ol': case 'oraclelinux': return $major ? "Oracle Linux:$major" : null;
             default:                     return null;
         }

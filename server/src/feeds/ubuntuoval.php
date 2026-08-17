@@ -7,7 +7,7 @@ declare(strict_types=1);
  *
  * 왜: 우분투만 벤더 판정이 없었다. 우분투도 백포트를 하므로(1.2-3ubuntu0.1) 버전만 보면 오탐이
  *   남고, "벤더가 아직 안 고쳤나"(조치 불가)도 알 수 없었다.
- *   실측(deskmini-x300, Ubuntu 24.04): 억제 765건 — 같은 규모의 데비안 호스트는 4,135건이었다.
+ *   실측(Ubuntu 24.04 호스트): 억제 765건 — 같은 규모의 데비안 호스트는 4,135건이었다.
  *
  * 소스: https://security-metadata.canonical.com/oval/com.ubuntu.<코드명>.cve.oval.xml.bz2
  *   (noble 7.4MB bz2 → 129MB XML. XMLReader 로 스트리밍한다.)
@@ -256,7 +256,7 @@ final class VgUbuntuOvalConnector implements VgFeedConnector {
                         )->execute(array_merge(...$b));
                     };
 
-                    // 배치 INSERT + 주기적 커밋 — 한 트랜잭션에 수십만 행을 담으면 락 대기로 죽는다(OVAL 때 겪었다).
+                    // 배치 INSERT + 주기적 커밋 — 한 트랜잭션에 수십만 행을 담으면 락 대기가 길어진다(OVAL 적재에서 확인).
                     $pdo->beginTransaction();
                     foreach ($rows as $i => $r) {
                         $batch[] = [

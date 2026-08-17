@@ -6,7 +6,7 @@ declare(strict_types=1);
  *   재구성한다. package_summary.php(tb_package_summary)와 같은 패턴: 매 로드마다 tb_package를
  *   재집계하지 않고 이 요약 테이블만 읽게 한다. OSV 커넥터 실행 직후에만 호출된다.
  *   tb_package 는 스캔마다 누적되는 원본이라, 여기 무인덱스 필터/KPI 를 직접 걸면
- *   packages 40초 사고(사전집계 없이 92만 행 재집계)가 재현된다 — 반드시 이 요약을 거친다.
+ *   packages 40초 성능 회귀(사전집계 없이 92만 행 재집계)가 재현된다 — 반드시 이 요약을 거친다.
  */
 
 require_once __DIR__ . '/db.php';            // vg_with_tx, vg_latest_scan_subq

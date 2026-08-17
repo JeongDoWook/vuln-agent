@@ -151,7 +151,7 @@ try {
             // LIKE 메타문자(%, _, \) 를 이스케이프해 사용자가 입력한 문자 그대로 매칭한다.
             // MySQL LIKE 의 기본 이스케이프 문자가 backslash 라 addcslashes 만으로 충분하다.
             // 접두 검색(뒤쪽 % 만)으로 제한해 idx_package_manager_name(manager, name) 을 탄다 —
-            // 앞쪽 와일드카드는 인덱스를 못 써 packages 40초 사고와 같은 무인덱스 스캔이 된다.
+            // 앞쪽 와일드카드는 인덱스를 못 써 packages 40초 성능 회귀와 같은 무인덱스 스캔이 된다.
             $where .= ' AND p.name LIKE ?';
             $params[] = addcslashes($q, '%_\\') . '%';
         }

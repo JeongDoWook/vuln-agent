@@ -109,7 +109,7 @@ function vg_nvd_extract_ref_urls(array $references): ?string {
 /**
  * NVD 페이지 1건을 가져온다. 일시적 오류는 지수 백오프로 재시도한다.
  *
- * 실제로 겪은 실패(2026-07-09, 24워커 병렬 백필):
+ * 관측된 실패(2026-07-09, 24워커 병렬 백필):
  *   "NVD fetch 실패 (HTTP 200) HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR"
  *   → 응답이 중간에 끊겨 code=200 인데 JSON 이 없다. 그래서 code 만 보면 안 된다.
  *
