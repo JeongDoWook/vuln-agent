@@ -45,7 +45,7 @@ function vg_connectors_render_history(
   <?php if ($connFilter > 0 && $connName !== '' && $connDetail !== null): ?>
     <div class="card" id="collection-history">
       <strong><?= vg_h($connName) ?> · 상세</strong>
-      <span class="why">— <?= vg_h(VG_CONNECTOR_TYPES[(string) $connDetail['connector_type']]['label'] ?? (string) $connDetail['connector_type']) ?>
+      <span class="why"><?= vg_h(VG_CONNECTOR_TYPES[(string) $connDetail['connector_type']]['label'] ?? (string) $connDetail['connector_type']) ?>
         · <?= $connDetail['enabled'] ? '활성' : '중지' ?>
         · <?= vg_h((string) $connDetail['_sched_label']) ?>
         · <a href="?edit=<?= $connFilter ?>">설정 편집</a>

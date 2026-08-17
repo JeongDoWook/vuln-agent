@@ -17,27 +17,16 @@ require_once __DIR__ . '/db.php';
 /**
  * 설정 항목의 묶음(SSOT) — 설정 화면이 이 순서대로 카드 하나씩 그린다.
  *   성격이 다른 값(조치 기한 · 준수 판정 · 세션 · 계정)이 한 표에 섞여 있으면 무엇을
- *   만지는지 안 보인다. 분류표를 화면에 하드코딩하지 않도록 라벨·설명까지 여기 둔다.
- * @return array<string, array{label:string, desc:string}>
+ *   만지는지 안 보인다. 분류표를 화면에 하드코딩하지 않도록 라벨을 여기 둔다.
+ *   그룹 설명문(desc)은 없앴다 — 카드 제목과 각 항목의 라벨이 이미 말한다.
+ * @return array<string, array{label:string}>
  */
 function vg_setting_groups(): array {
     return [
-        'sla' => [
-            'label' => '조치 기한(SLA)',
-            'desc'  => '취약점을 며칠 안에 조치해야 하는지. 기한을 넘기면 컴플라이언스 위반으로 셉니다.',
-        ],
-        'judgment' => [
-            'label' => '준수 판정 기준',
-            'desc'  => '위반 건수를 어디서 부분준수/미준수로 가를지, 어느 구간까지 되짚을지.',
-        ],
-        'session' => [
-            'label' => '세션 정책',
-            'desc'  => '로그인 세션이 언제 끊기는지. 보안 통제라 하한 아래로는 내릴 수 없습니다.',
-        ],
-        'account' => [
-            'label' => '계정 정책',
-            'desc'  => '수집된 대상 서버 계정을 어떤 기준으로 미사용으로 볼지.',
-        ],
+        'sla'      => ['label' => '조치 기한(SLA)'],
+        'judgment' => ['label' => '준수 판정 기준'],
+        'session'  => ['label' => '세션 정책'],
+        'account'  => ['label' => '계정 정책'],
     ];
 }
 

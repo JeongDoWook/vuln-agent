@@ -97,7 +97,7 @@ $csrf = vg_csrf_token();
 vg_header($user['username'] ?? '사용자', 'users');
 ?>
 <?php if (!$user): ?>
-  <?php vg_page_title('사용자를 찾을 수 없습니다', 'USER DETAIL', '삭제되었거나 존재하지 않는 계정입니다.'); ?>
+  <?php vg_page_title('사용자를 찾을 수 없습니다', 'USER DETAIL'); ?>
   <div class="card">
     <?php vg_empty([
         'icon'  => '📭',
@@ -186,7 +186,7 @@ vg_header($user['username'] ?? '사용자', 'users');
 
   <div class="card mt-lg">
     <strong>최근 활동</strong>
-    <span class="why">— 최근 <?= $userActivityLimit ?>건 ·
+    <span class="why">최근 <?= $userActivityLimit ?>건 ·
       <a href="/activity.php?q=<?= urlencode($user['username']) ?>">전체 보기 →</a></span>
     <div class="card__body">
       <?php

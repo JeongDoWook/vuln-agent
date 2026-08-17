@@ -78,18 +78,13 @@ try {
 
 vg_header('전체 설치 패키지', 'asset_packages');
 ?>
-  <?php vg_page_title('전체 설치 패키지', '', '', [
+  <?php vg_page_title('전체 설치 패키지', '', [
       'count' => $total,
   ]); ?>
   <?php vg_subtabs([
       'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
       'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],
   ], 'packages'); ?>
-  <?php // 자산 대수·최신 수집이라는 출처는 도식 대신 이 한 줄이 갖는다(같은 '패키지'라는 말이
-        //   패키지 화면(packages.php)과 이 화면에서 다른 뜻이라 출처를 밝혀 둔다). ?>
-  <div class="sub"><span class="why">자산 <?= number_format(count($hostOptions)) ?>대의 최신 수집 기준 —
-    취약 영향분이 아닌 실제 서버 설치 현황</span></div>
-
   <?php vg_alert($err !== null ? '오류 · ' . $err : null); ?>
   <?php if ($err === null): ?>
     <?php vg_toolbar([

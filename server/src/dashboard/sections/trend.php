@@ -9,7 +9,6 @@ function vg_dash_render_trend(array $trend, int $days): void {
   ?>
   <div class="card">
     <strong>최근 <?= $days ?>일 추세</strong>
-    <span class="why">— 날짜별 High 이상 건수 · 수집이 없는 날은 직전 값을 이어 그린다(점은 수집한 날에만)</span>
     <div class="card__body"><?php vg_daily_trend($trend); ?></div>
   </div>
 <?php

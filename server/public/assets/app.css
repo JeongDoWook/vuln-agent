@@ -136,7 +136,7 @@
    * 새 숫자를 그릴 때 rem 을 직접 쓰지 말고 아래 셋 중 하나를 고른다. */
   --fs-num-sm: 1.3rem;  /* 19.5px — 보조 숫자(kpi--sm, 요약 strong) */
   --fs-num:    1.6rem;  /* 24px   — 기본 숫자(kpi, 도넛 가운데, 통계 격자) */
-  --fs-num-lg: 2rem;    /* 30px   — 결론 숫자(verdict 배너, 사이드바 점수) */
+  --fs-num-lg: 2rem;    /* 30px   — 큰 숫자(상세 사이드바 점수·퍼널 마지막 칸) */
 
   --ring: 0 0 0 3px rgb(49 130 246 / .28);
   --shadow: 0 1px 2px rgb(0 0 0 / .03), 0 3px 8px rgb(0 0 0 / .035);
@@ -778,41 +778,6 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
  * 덧붙이면 된다: class="kpi tone-crit kpi--zero". */
 .kpi.kpi--zero { border-color: var(--line); background: var(--surface); color: var(--muted); }
 .kpi.kpi--zero b, .kpi.kpi--zero strong { color: var(--muted-2); }
-
-/* --- 결론 배너(.verdict) --------------------------------------------------
- * "그래서 이 화면이 무엇을 증명하는가" 를 한 줄로 세운다. 표·KPI 는 값을 보여줄 뿐 결론을
- * 말하지 않아서, 화면을 열어도 "뭐가 된다는 거지" 가 남았다 — 그 자리를 이 배너가 채운다.
- * 카드보다 강한 존재감(왼쪽 4px 톤 띠 + 옅은 톤 배경)을 갖고 제목 바로 아래 한 번만 온다.
- * 톤 색은 토큰(--X-bg/-bd/-fg)만 쓰므로 다크에서도 배경이 뜨지 않는다. */
-.verdict {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-3) var(--sp-6);
-  margin: 0 0 var(--sp-3);
-  padding: .8rem 1rem;
-  border: 1px solid var(--muted-bd);
-  border-left: 4px solid var(--muted);
-  border-radius: var(--r-md);
-  background: var(--muted-bg);
-}
-.verdict__main { flex: 1 1 22rem; min-width: 0; }
-.verdict__headline { display: block; font-size: var(--fs-lg); font-weight: 700; color: var(--text); letter-spacing: -.02em; }
-.verdict__note { display: block; margin-top: .2rem; color: var(--text-2); font-size: var(--fs-sm); }
-/* 통계는 KPI 보다 크다 — 이 배너가 화면의 결론이고 KPI 는 그 내역이다 */
-.verdict__stats { display: flex; flex-wrap: wrap; gap: var(--sp-3) var(--sp-5); }
-.verdict__stat { min-width: 3.5rem; }
-.verdict__stat b { display: block; font-size: var(--fs-num-lg); font-weight: 750; line-height: 1.05; letter-spacing: -.04em; color: var(--text); }
-.verdict__stat span { display: block; font-size: var(--fs-xs); font-weight: 650; color: var(--muted); }
-.verdict--ok    { border-color: var(--ok-bd);   border-left-color: var(--ok);   background: var(--ok-bg); }
-.verdict--warn  { border-color: var(--med-bd);  border-left-color: var(--med);  background: var(--med-bg); }
-.verdict--crit  { border-color: var(--crit-bd); border-left-color: var(--crit); background: var(--crit-bg); }
-.verdict--muted { border-color: var(--muted-bd);border-left-color: var(--muted-2); background: var(--muted-bg); }
-.verdict__stat--ok b    { color: var(--ok-fg); }
-.verdict__stat--warn b  { color: var(--med-fg); }
-.verdict__stat--crit b  { color: var(--crit-fg); }
-.verdict__stat--muted b { color: var(--muted-fg); }
-@media (max-width: 700px) { .verdict__stat b { font-size: var(--fs-num); } }
 
 /* --- 자산 상세: 히어로(식별 + 최고 위험도) + 섹션 탭 ---------------------- */
 .hero {
@@ -2502,7 +2467,6 @@ form.card .btn--primary:active { transform: translateY(0); }
   font-variant-numeric: tabular-nums;
 }
 .funnel__step > span { font-size: var(--fs-sm); color: var(--text-2); }
-.funnel__cap { font-size: var(--fs-xs); color: var(--muted); }
 /* 칸 사이의 좁혀지는 방향 — 마크업이 아니라 CSS 가 그린다(값이 아니라 관계라서). */
 .funnel__step + .funnel__step::before {
   content: "›";

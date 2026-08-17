@@ -131,7 +131,7 @@ try {
 
 vg_header('CVE', 'cves');
 ?>
-  <?php vg_page_title('CVE', 'CATALOG', '수집한 전체 CVE — 내 자산 해당분은 탐지 결과에서', ['count' => $total]); ?>
+  <?php vg_page_title('CVE', 'CATALOG', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

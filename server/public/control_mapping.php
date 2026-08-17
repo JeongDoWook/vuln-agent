@@ -132,11 +132,7 @@ try {
 
 vg_header('통제 기준 매핑', 'control_mapping');
 ?>
-  <?php vg_page_title(
-      '통제 기준 매핑', 'CONTROL MAPPING',
-      '통제로 묶어 센 것 · 준수 판정은 컴플라이언스 매핑에서',
-      ['count' => $total]
-  ); ?>
+  <?php vg_page_title('통제 기준 매핑', 'CONTROL MAPPING', ['count' => $total]); ?>
   <?php // 컴플라이언스 계열 서브탭(정의는 nav.php 한 곳) — 저쪽 화면과 같은 줄을 그린다.
         //   판정하지 않는다는 사실은 위 부제가 이미 말한다. ?>
   <?php vg_compliance_subtabs('control'); ?>

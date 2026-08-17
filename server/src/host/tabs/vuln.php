@@ -171,9 +171,8 @@ declare(strict_types=1);
     ?>
     <div class="card">
       <strong>먼저 올릴 대상 <span class="hint">(<?= number_format(count($rollupAll)) ?>개)</span></strong>
-      <?php /* 카드 제목이 "먼저 올릴 대상" 이라 "이 부모를 올리면 함께 해결된다" 는 해설은 걷었다.
-               남는 건 집계 범위와 **못 하는 것**(버전 미제시)뿐이다 — 둘 다 값이다. */ ?>
-      <span class="why">— 스캔 전체 기준(페이지 무관)
+      <?php /* 집계 범위 같은 해설은 걷었다 — 남는 건 절단 고지(상위 몇 개만 보여주는가)뿐이다. */ ?>
+      <span class="why">
         <?php if (count($rollupAll) > count($rollupTop)): ?>
           · <?= number_format(count($rollupAll)) ?>개 중 상위 <?= count($rollupTop) ?>개
         <?php endif; ?>
@@ -220,7 +219,7 @@ declare(strict_types=1);
     ?>
     <div class="card">
       <strong>같은 패키지에서 나온 취약점 <span class="hint">(<?= count($pkgRollup['rows']) ?>개 패키지)</span></strong>
-      <span class="why">— CRITICAL·HIGH 기준 · 스캔 전체 기준(페이지 무관) · 2건 이상 묶인 것만
+      <span class="why">
         <?php if ($pkgRollup['truncated']): ?>
           · 묶음이 더 있습니다 — 많이 묶인 순으로 <?= count($pkgRollup['rows']) ?>개만 보여줍니다.
         <?php endif; ?>
@@ -269,7 +268,7 @@ declare(strict_types=1);
     ), ['inline' => true, 'caption' => '심각도']); ?>
     <div class="card">
       <strong>우선순위 취약점 (CRITICAL·HIGH)</strong>
-      <span class="why">— <a href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>">전체 취약점 보기 →</a></span>
+      <span class="why"><a href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>">전체 취약점 보기 →</a></span>
       <div class="card__body">
       <?php
       vg_table($vulnHeaders, $rows, $vulnOpts + [
@@ -293,7 +292,7 @@ declare(strict_types=1);
 
     <div class="card mt-lg">
       <strong>재시작·재부팅 필요 <span class="hint">(<?= number_format($restartTotal) ?>건)</span></strong>
-      <span class="why">— 패치 완료, 재시작 전까지 옛 코드 실행 중
+      <span class="why">
         <?php if ($restartTotal > count($restartRows)): ?>
           · 상위 <?= count($restartRows) ?>건 ·
           <a href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>&amp;fx=restart">전체 보기 →</a>

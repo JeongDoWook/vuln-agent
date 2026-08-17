@@ -8,7 +8,6 @@ declare(strict_types=1);
     ]); ?>
     <div class="card">
       <strong>보안 설정 점검 (CCE)</strong>
-      <span class="why">— 버전이 아닌 설정 점검 · NA=미수집</span>
       <div class="card__body">
       <?php
       // 결과 → 톤: FAIL 은 위험도색, PASS 는 low(초록), NA 는 muted.

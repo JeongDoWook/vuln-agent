@@ -6,18 +6,8 @@
  *     $q $sev $res $sevOptions $type
  */
 ?>
-  <?php
-  // 위반 0건이 "준수" 로 읽히는 걸 막는다 — 판정 불가(NA)가 있으면 그 사실을 먼저 알린다.
-  //   CVE 탭의 "0건은 안전이 아니라 판정 불가" 경고와 같은 자리·같은 역할이다.
-  if ($cceResultCounts['NA'] > 0) {
-      vg_alert([
-          'type'  => 'warn',
-          'title' => '판정 불가(NA) ' . number_format($cceResultCounts['NA']) . '건 — 위반 0건이 "준수"를 뜻하지 않습니다',
-          'hints' => ['NA 는 점검에 필요한 설정값을 수집하지 못한 항목입니다.'],
-      ]);
-  }
-  ?>
-
+  <?php // 판정 불가(NA) 해설 배너는 걷었다 — 건수는 바로 아래 결과 카드(NA)와 범례가 갖고,
+        //   그 카드를 누르면 NA 만 걸러 볼 수 있다(배너는 같은 수를 문장으로 되풀이했다). ?>
   <div class="cards">
     <?php
     // 결과 카드가 res 필터를 토글한다(다시 누르면 전체). CVE 탭의 등급 카드와 같은 조작이다.
@@ -95,7 +85,7 @@
       ['label' => '등급',  'key' => 'severity', 'width' => '9%',  'nowrap' => true],
       ['label' => '점검 항목', 'key' => 'title', 'width' => '24%'],
       ['label' => '기준(코드 · SSG 룰)', 'key' => 'code', 'width' => '17%', 'class' => 'col-id'],
-      ['label' => '근거 (무엇을 보고 그렇게 판정했나)', 'key' => 'evidence'],
+      ['label' => '근거', 'key' => 'evidence'],
   ]);
 
   vg_table(

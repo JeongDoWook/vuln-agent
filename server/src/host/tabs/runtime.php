@@ -66,7 +66,7 @@ declare(strict_types=1);
     </div>
 
     <div class="card mt-lg">
-      <strong>런타임 노출</strong> <span class="why">— 프로세스별 열린 포트와 로드한 라이브러리</span>
+      <strong>런타임 노출</strong>
       <div class="card__body">
       <?php
       vg_table(
@@ -109,7 +109,7 @@ declare(strict_types=1);
     <?php vg_page_nav($exposureTotal, $perPage, $ePage, 'epage'); ?>
 
     <div class="card mt-lg">
-      <strong>실행 프로세스</strong> <span class="why">— 실행 중 프로그램의 소속 패키지·로드한 라이브러리</span>
+      <strong>실행 프로세스</strong>
       <div class="card__body">
       <?php
       vg_table(

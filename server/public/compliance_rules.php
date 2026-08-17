@@ -80,7 +80,7 @@ try {
 
 vg_header('보안 설정 룰', 'compliance');
 ?>
-  <?php vg_page_title('보안 설정 룰', 'SECURITY BASELINE', 'SSG·CIS·STIG 점검 항목 — 점검 결과는 탐지 결과에서', ['count' => $total]); ?>
+  <?php vg_page_title('보안 설정 룰', 'SECURITY BASELINE', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

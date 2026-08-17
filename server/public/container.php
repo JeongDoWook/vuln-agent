@@ -154,14 +154,13 @@ $hasFilter = $q !== '';
 vg_header(($container['cid'] ?? '컨테이너') . ' · ' . ($host['fqdn'] ?? ''), 'assets');
 
 if ($err !== null) {
-    vg_page_title('컨테이너 상세', 'CONTAINER', '');
+    vg_page_title('컨테이너 상세', 'CONTAINER');
     vg_alert('오류 · ' . $err);
     vg_footer();
     return;
 }
 if (!$container) {
-    vg_page_title('컨테이너를 찾을 수 없습니다', 'CONTAINER',
-        '최신 스캔에 이 컨테이너가 없습니다 — 이미 내려갔거나, 자산이 삭제되었을 수 있습니다.');
+    vg_page_title('컨테이너를 찾을 수 없습니다', 'CONTAINER');
     echo '<div class="card">';
     vg_empty([
         'icon'  => '📦',

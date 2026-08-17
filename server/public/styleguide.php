@@ -75,7 +75,7 @@ vg_page_title('UI 디자인 시스템', 'SYSTEM');
     <div class="scale-cell scale-cell--lg">
       <b>1,204</b>
       <code>--fs-num-lg</code>
-      <span>2rem · 결론 숫자 — 판정 배너, 상세 사이드바 점수</span>
+      <span>2rem · 가장 큰 숫자 — 상세 사이드바 점수, 퍼널 마지막 칸</span>
     </div>
   </div>
 </section>
@@ -107,18 +107,14 @@ vg_page_title('UI 디자인 시스템', 'SYSTEM');
 </section>
 
 <section class="styleguide-section">
-  <h2>KPI와 결론</h2>
+  <h2>KPI</h2>
+  <?php // 결론 배너(vg_verdict)는 없앴다 — 화면의 결론은 KPI·뱃지 같은 값이 말한다. ?>
   <?php vg_kpi_strip([
       ['label' => '전체 자산', 'value' => 11, 'href' => '/assets.php'],
       ['label' => 'CRITICAL', 'value' => 1, 'tone' => 'crit'],
       ['label' => 'HIGH', 'value' => '1,000', 'tone' => 'high'],
       ['label' => '미조치', 'value' => 0, 'tone' => 'crit'],
   ], ['compact' => true]); ?>
-  <?php vg_verdict('crit', '외부 노출된 CRITICAL 1건을 먼저 조치하세요.', [
-      ['label' => '대상 자산', 'value' => 1, 'tone' => 'crit'],
-      ['label' => 'KEV', 'value' => 1, 'tone' => 'crit'],
-      ['label' => '재시작', 'value' => 1, 'tone' => 'warn'],
-  ]); ?>
 </section>
 
 <section class="styleguide-section">

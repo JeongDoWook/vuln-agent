@@ -7,7 +7,6 @@ declare(strict_types=1);
 <section id="locations">
   <div class="card">
     <strong>이 CVE 가 발견된 위치</strong>
-    <span class="why">— 실제 설치 확인된 위치(호스트별 최신 스캔 기준)</span>
     <div class="card__body">
     <?php
     vg_table(

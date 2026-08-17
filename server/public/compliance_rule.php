@@ -146,7 +146,6 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
 <section id="rationale">
   <div class="card">
     <strong>판정 근거</strong>
-    <span class="why">— SSG가 제공한 항목 설명</span>
     <div class="card__body">
       <?php
       // SSG 원문은 XHTML 조각이다. 태그를 단순 제거하면 <br> 양쪽 문장이 붙으므로 줄바꿈을
@@ -162,7 +161,6 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
 <section id="refs">
   <div class="card">
     <strong>참조 매핑</strong>
-    <span class="why">— 이 룰이 근거로 삼는 기준</span>
     <div class="card__body">
       <?php $refs = vg_json_col($rule['refs_json'] ?? null); ?>
       <?php if ($refs): ?>
@@ -192,7 +190,6 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
 <section id="origin">
   <div class="card">
     <strong>식별과 출처</strong>
-    <span class="why">— 이 룰이 무엇이고 언제 수집된 것인가</span>
     <div class="card__body">
       <dl class="kv">
         <dt>룰 ID</dt><dd><code><?= vg_h($ruleId) ?></code></dd>
@@ -214,7 +211,6 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
 <section id="hosts">
   <div class="card">
     <strong>이 룰로 점검된 호스트</strong>
-    <span class="why">— 호스트별 최신 스캔 기준 · NA는 판정 불가</span>
     <div class="card__body">
     <?php
     vg_table(

@@ -67,7 +67,7 @@ try {
 
 vg_header('제거 권고', 'nofix_packages');
 ?>
-  <?php vg_page_title('제거·대체 검토 권고', '', '벤더 미수정 CVE 가 몰린 패키지 · 조치는 패치가 아니라 제거·대체', [
+  <?php vg_page_title('제거·대체 검토 권고', '', [
       'count' => $total,
       'count_label' => '개 패키지',
   ]); ?>
@@ -98,7 +98,7 @@ vg_header('제거 권고', 'nofix_packages');
           ['label' => '등급', 'key' => 'severity', 'width' => '9%', 'nowrap' => true],
           ['label' => '상태', 'key' => 'runtime_status', 'width' => '10%', 'nowrap' => true],
           // 권고 임계값은 수치 기준이라 정보다 — 배너를 걷으면서 이 열 머리글로 내렸다.
-          ['label' => '관측 (왜 권고인가)', 'key' => 'reason', 'title' => vg_nofix_threshold_help()],
+          ['label' => '관측', 'key' => 'reason', 'title' => vg_nofix_threshold_help()],
           ['label' => '조치', 'key' => 'advice', 'width' => '17%'],
       ],
       $pageRows,

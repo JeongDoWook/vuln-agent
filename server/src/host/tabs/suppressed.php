@@ -8,7 +8,6 @@ declare(strict_types=1);
     ]); ?>
     <div class="card">
       <strong>백포트로 억제된 취약점</strong>
-      <span class="why">— 위험 집계에서 빠진 건들 · 근거는 숨기지 않고 그대로 보여줍니다</span>
       <?php if ($suppLayers): ?>
         <div class="card__body">
           <?php /* 어느 겹이 얼마나 걷어냈나 — 표를 읽기 전에 "왜 이만큼이 빠졌는지"가 먼저 보여야 한다. */ ?>

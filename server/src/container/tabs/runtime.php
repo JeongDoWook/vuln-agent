@@ -6,7 +6,6 @@ declare(strict_types=1);
 ?>
   <div class="card">
     <strong>런타임 노출</strong>
-    <span class="why">— 이 컨테이너가 연 포트. 호스트로 포워딩된 포트는 밖에서 그대로 닿는다</span>
     <?php /* 범위 뱃지의 색 뜻 — 어휘는 vg_scope_label(), 톤은 $scopeTone(호스트 상세와 같은 표)이다. */ ?>
     <?php vg_legend(array_map(
         fn(string $sc): array => ['label' => vg_scope_label($sc), 'tone' => $scopeTone[$sc]],
@@ -49,7 +48,6 @@ declare(strict_types=1);
 
   <div class="card mt-lg">
     <strong>실행 프로세스</strong>
-    <span class="why">— 이 컨테이너 안에서 돌고 있는 프로그램과 그 소속 패키지</span>
     <div class="card__body">
     <?php
     vg_table(

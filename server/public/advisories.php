@@ -160,7 +160,7 @@ vg_header('보안 공지', 'advisories');
   <?php // 건수는 다른 목록 화면과 같은 자리에 둔다 — 여기만 없어서 페이지네이션까지 내려가야 보였다.
         //   건수는 **지금 필터 기준**이다(예전엔 필터와 무관하게 늘 전체 2,756건이었다). ?>
   <?php /* 범위(전체/내 자산)는 바로 아래 칩이 말한다 — 부제로 한 번 더 적지 않는다. */ ?>
-  <?php vg_page_title('보안 공지', 'KISA', '', ['count' => $total]); ?>
+  <?php vg_page_title('보안 공지', 'KISA', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

@@ -767,12 +767,16 @@ code=$(curl_ -s -o /dev/null -w '%{http_code}' "$BASE/compliance.php")
 assert_eq "$code" "302" "미인증 컴플라이언스 매핑 → 302(로그인 리다이렉트)"
 compliancebody=$(curl_ -s -b "$JAR" "$BASE/compliance.php")
 assert_contains "$compliancebody" "컴플라이언스 매핑" "컴플라이언스 매핑 페이지 200(인증됨)"
-assert_contains "$compliancebody" "ISMS-P 2.10.8" "패치관리 통제(ISMS-P 2.10.8) 표시"
-assert_contains "$compliancebody" "ISO 27001 A.5.9" "자산식별 통제(ISO 27001 A.5.9) 표시"
+# 조항 번호(ISMS-P 2.10.8 …)는 목록에서 걷었다 — 통제명과 판정만 세운다.
+#   조항 자체는 스냅샷(tb_compliance_snapshot.framework_ids)에 그대로 저장된다.
+assert_contains "$compliancebody" "패치관리" "패치관리 통제 행 표시"
+assert_contains "$compliancebody" "정보자산 식별" "정보자산 식별 통제 행 표시"
 # 문구가 "수동 확인 필요(자동판정 불가)" 에서 바뀌었다 — 제품이 못 해서 빠진 것처럼 읽혀서다.
 #   검사하는 사실은 그대로다: 증적이 제품 밖에 있는 항목은 판정 없이 목록으로만 노출된다.
 assert_contains "$compliancebody" "정책·절차 문서 심사" "자동판정 대상이 아닌 항목은 체크리스트로만 노출"
-assert_contains "$compliancebody" "통제 종" "판정 결론(통제 종 수)이 첫 화면에 집계된다"
+assert_contains "$compliancebody" "근거 →" "통제마다 근거 화면으로 가는 링크"
+# 결론 배너는 없앴다 — 판정은 표의 뱃지가 말한다. 다시 자라면 여기서 걸린다.
+assert_not_contains "$compliancebody" 'class="verdict' "결론 배너 없음(값은 표가 갖는다)"
 # 호스트 id 를 하드코딩(=1)하면 빈 볼륨에서만 통과한다. 스택·DB 를 재사용하면 auto_increment 가
 # 밀려(삭제·재등록) id 가 6,7,11 처럼 바뀌고, 그때부터 아래 검사가 전부 "호스트 없음" 을 본다.
 # 자산 목록에서 web01 의 실제 id 를 찾아 쓴다 — 데이터가 어디서 시작하든 무관하게.
@@ -793,7 +797,7 @@ assert_contains "$assetpkgsearch" 'host.php?id=' "자산 목록에서 설치 패
 assert_contains "$assetbody" 'class="on" href="/assets.php">자산 목록' "자산 목록 탭 활성 표시"
 assert_contains "$assetbody" 'href="/asset-packages.php">전체 설치 패키지' "자산 목록에 전체 설치 패키지 탭 표시"
 allpackages=$(curl_ -s -b "$JAR" "$BASE/asset-packages.php?q=glibc")
-assert_contains "$allpackages" '실제 서버 설치 현황' "전체 설치 패키지 화면이 취약 패키지 카탈로그와 구분됨"
+# 두 '패키지' 화면의 구분은 부제 문장이 아니라 활성 탭이 말한다(아래 단언) — 부제는 걷었다.
 assert_contains "$allpackages" 'class="on" href="/asset-packages.php">전체 설치 패키지' "전체 설치 패키지 탭 활성 표시"
 assert_contains "$allpackages" 'glibc' "전체 호스트 설치 패키지 검색 결과 표시"
 assert_contains "$allpackages" "$FQDN_WEB01" "설치 패키지 검색 결과에 호스트 표시"

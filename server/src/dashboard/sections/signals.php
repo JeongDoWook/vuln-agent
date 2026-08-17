@@ -9,11 +9,12 @@ function vg_dash_render_signals(array $urgent, int $urgentTotal): void {
   ?>
   <div class="card" id="signals">
     <strong>주요 취약점 신호</strong>
-    <?php /* 정렬 기준과 "몇 건 중 몇 건" 이 각각 다른 why 로 붙어 제목 옆이 두 줄로 흘렀다 — 한 줄로 합친다.
-             정렬 기준의 근거(KEV·노출·심각도)는 아래 [탐지 신호] 열이 행마다 다시 보여준다. */ ?>
-    <span class="why">— KEV·노출·심각도 순<?php if ($urgentTotal > count($urgent)): ?>
-      · 상위 <?= count($urgent) ?>건 / 총 <?= number_format($urgentTotal) ?>건 ·
-      <a href="/findings.php">전체 보기 →</a><?php endif; ?></span>
+    <?php /* 정렬 기준(KEV·노출·심각도)은 아래 [탐지 신호] 열이 행마다 보여준다 — 제목 옆에
+             적지 않는다. 남는 건 "몇 건 중 몇 건" 과 전체 목록으로 가는 링크뿐이다. */ ?>
+    <?php if ($urgentTotal > count($urgent)): ?>
+    <span class="why">상위 <?= count($urgent) ?>건 / 총 <?= number_format($urgentTotal) ?>건 ·
+      <a href="/findings.php">전체 보기 →</a></span>
+    <?php endif; ?>
     <div class="card__body">
     <?php
     vg_table(
