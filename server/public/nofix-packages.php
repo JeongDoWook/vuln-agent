@@ -67,7 +67,7 @@ try {
 
 vg_header('제거 권고', 'nofix_packages');
 ?>
-  <?php vg_page_title('제거·대체 검토 권고', '', '벤더가 수정본을 내지 않은 CVE 가 한 패키지에 몰려 있는 조합입니다.', [
+  <?php vg_page_title('제거·대체 검토 권고', '', '벤더 미수정 CVE 가 몰린 패키지 · 조치는 패치가 아니라 제거·대체', [
       'count' => $total,
       'count_label' => '개 패키지',
   ]); ?>
@@ -78,7 +78,9 @@ vg_header('제거 권고', 'nofix_packages');
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
-  <?php vg_alert(vg_nofix_notice()); ?>
+  <?php /* 상단 해설 배너(제목 + 불릿 4줄)는 걷었다 — 화면 읽는 법을 설명하는 줄이었다.
+           남길 값은 옮겼다: 조치 성격은 부제로, 권고 임계값은 '관측' 열 머리글 title 로,
+           "관측이지 EOL 확정이 아니다" 는 행마다 붙는 vg_nofix_badge() 의 title 로. */ ?>
   <?php if ($truncated): ?>
     <?php vg_alert('권고 대상이 ' . VG_NOFIX_MAX_GROUPS . '개를 넘어 앞쪽만 보여줍니다 — 호스트·패키지 필터로 좁혀 보세요.', 'warn'); ?>
   <?php endif; ?>
@@ -95,7 +97,8 @@ vg_header('제거 권고', 'nofix_packages');
           ['label' => '패키지', 'key' => 'package_name', 'width' => '18%', 'class' => 'col-id'],
           ['label' => '등급', 'key' => 'severity', 'width' => '9%', 'nowrap' => true],
           ['label' => '상태', 'key' => 'runtime_status', 'width' => '10%', 'nowrap' => true],
-          ['label' => '관측 (왜 권고인가)', 'key' => 'reason'],
+          // 권고 임계값은 수치 기준이라 정보다 — 배너를 걷으면서 이 열 머리글로 내렸다.
+          ['label' => '관측 (왜 권고인가)', 'key' => 'reason', 'title' => vg_nofix_threshold_help()],
           ['label' => '조치', 'key' => 'advice', 'width' => '17%'],
       ],
       $pageRows,
@@ -130,7 +133,8 @@ vg_header('제거 권고', 'nofix_packages');
               // 조치는 "패치" 가 아니다 — 배지로 그 사실을 먼저 말하고, 개별 CVE 로 내려가는 길을 준다.
               //   ctr 로 이 행의 스코프(호스트 자신=0 / 그 컨테이너)까지 넘긴다 — 안 넘기면 같은
               //   호스트의 다른 컨테이너 판정까지 섞여 건수가 안 맞는다.
-              'advice' => fn($r) => vg_badge('제거·대체 검토', 'high')
+              // 배지는 vg_nofix_badge() 를 그대로 쓴다 — "관측이지 EOL 확정이 아니다" 를 title 로 달고 있다.
+              'advice' => fn($r) => vg_nofix_badge()
                   . '<div class="why"><a href="/findings.php?host=' . (int) $r['host_id']
                   . '&amp;ctr=' . (int) $r['container_id']
                   . '&amp;q=' . urlencode((string) $r['package_name']) . '&amp;fx=nofix">상세 CVE '

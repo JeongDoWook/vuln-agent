@@ -250,7 +250,7 @@ vg_hero(
       <?php if ($guide !== null): ?>
         <p class="why"><?= vg_h((string) $guide['description']) ?></p>
       <?php else: ?>
-        <div class="why">설명이 아직 준비되지 않았습니다. 아래 점검 항목을 먼저 확인하세요.</div>
+        <div class="why">설명이 아직 준비되지 않았습니다.</div>
       <?php endif; ?>
     </div>
   </div>

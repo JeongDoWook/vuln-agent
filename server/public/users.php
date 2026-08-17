@@ -136,7 +136,7 @@ vg_header('사용자', 'users');
   /* 역할 3종의 접근 범위를 폼 위에 3칸 카드로 세운다. 예전엔 이 정보가 select 의
      옵션 문구('운영자 (피드)') 안에만 있어서, 목록을 펼치기 전에는 셋의 차이를 비교할 수
      없었다 — 고르기 전에 비교하는 값이라 폼 위에 펼쳐 둔다.
-     문구는 vg_role_label()/VG_ROLE_DESCRIPTIONS 가 SSOT 다(여기서 다시 쓰지 않는다).
+     역할 이름은 vg_role_label() 이 SSOT 다(여기서 다시 쓰지 않는다).
      .stat-grid 는 auto-fit 이라 좁은 화면에서 스스로 1~2칸으로 접힌다. */
   $roleScope = [
       'admin'    => '모든 화면과 설정 — 사용자·권한·판정 기준까지',
@@ -145,8 +145,9 @@ vg_header('사용자', 'users');
   ];
   echo '<div class="stat-grid">';
   foreach (VG_ROLES as $roleCode) {
-      echo '<div class="stat"><span class="stat__val">' . vg_h(vg_role_label($roleCode))
-         . ' <span class="why">' . vg_h(VG_ROLE_DESCRIPTIONS[$roleCode] ?? '') . '</span></span>'
+      /* 역할 하나에 설명이 둘이었다 — VG_ROLE_DESCRIPTIONS('조회')와 $roleScope('조회 전용 — …')가
+       *   같은 말을 두 번 했다. 범위를 온전히 말하는 쪽만 남긴다. */
+      echo '<div class="stat"><span class="stat__val">' . vg_h(vg_role_label($roleCode)) . '</span>'
          . '<span class="why">' . vg_h($roleScope[$roleCode] ?? '') . '</span></div>';
   }
   echo '</div>';

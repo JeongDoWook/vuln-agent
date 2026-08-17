@@ -175,14 +175,8 @@ vg_hero(
 <?php if ($nofixGroups): ?>
 <section id="nofix">
   <?php
-  // 관측 + 권고. "EOL 이다" 라고 단정하지 않는다 — 우리가 아는 건 숫자뿐이다.
-  vg_alert([
-      'type'  => 'warn',
-      'title' => '제거 또는 대체 검토',
-      'hints' => [
-          '아래 자산에서 CVE 대부분의 수정본이 확인되지 않았습니다. EOL 확정이 아닌 현재 관측입니다.',
-      ],
-  ]);
+  /* 배너를 두지 않는다 — 같은 말("제거·대체 검토 · EOL 확정이 아닌 관측")을 바로 아래
+   *   카드 머리의 vg_nofix_badge() 가 라벨과 title 로 이미 하고 있었다(같은 화면에 두 번). */
   ?>
   <div class="card">
     <strong>벤더 미수정이 몰린 자산</strong>

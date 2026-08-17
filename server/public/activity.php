@@ -121,7 +121,7 @@ try {
 
 vg_header('감사 로그', 'activity');
 ?>
-  <?php vg_page_title('감사 로그', 'AUDIT', '접속기록 5요소를 기록합니다.'); ?>
+  <?php vg_page_title('감사 로그', 'AUDIT', '접속기록 5요소'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>

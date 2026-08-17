@@ -4,7 +4,7 @@
  *   쓰는 값(changes.php 가 $ctx 로 넘긴다): $pkgChanges $pkgTotal $page $perPage
  */
 ?>
-    <div class="sub">직전 수집 이후 실제로 달라진 패키지만 표시합니다.</div>
+<?php /* "직전 수집과 비교" 는 화면 부제가 이미 말한다(changes.php) — 탭마다 다시 적지 않는다. */ ?>
     <?php
     vg_table(
         [

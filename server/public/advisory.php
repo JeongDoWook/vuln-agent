@@ -292,7 +292,7 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 <section id="content">
   <div class="card">
     <strong>본문</strong>
-    <span class="why">— 원문에서 옮겨온 평문(표·이미지는 옮겨오지 않습니다)</span>
+    <span class="why">— 원문에서 옮겨온 평문(표·이미지 제외)</span>
     <?php if (!empty($adv['content'])): ?>
       <p class="why prose"><?= vg_h($adv['content']) ?></p>
     <?php elseif (!empty($adv['content_fetched_at'])): ?>
@@ -319,7 +319,7 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 <section id="origin">
   <div class="card">
     <strong>원문·수집 정보</strong>
-    <span class="why">— 첨부파일·표 서식은 원문에서만 볼 수 있습니다</span>
+    <span class="why">— 첨부파일·표 서식은 원문에만 있다</span>
     <div class="card__body">
       <dl class="kv">
         <dt>공지 번호</dt><dd>#<?= (int) $adv['advisory_id'] ?></dd>

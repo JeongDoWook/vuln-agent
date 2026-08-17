@@ -60,7 +60,7 @@ vg_header('권한', 'permissions');
 ?>
   <form method="post" class="permission-form">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-    <?php vg_page_title('권한', 'ACCESS', '역할별 메뉴 접근 범위를 설정합니다.', [
+    <?php vg_page_title('권한', 'ACCESS', '', [
         'actions' => '<button type="submit" class="btn btn--sm btn--primary" data-loading="저장 중…">저장</button>',
     ]); ?>
     <?php /* 예전엔 같은 설명이 세 겹이었다(제목 밑 문구·이 줄·표 아래 안내 카드). 한 줄로 합치고,

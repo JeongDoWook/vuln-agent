@@ -120,7 +120,7 @@ if ($issueFqdn === '') { $issueFqdn = trim((string) ($_GET['fqdn'] ?? '')); }
 
 vg_header('에이전트 키', 'agenttokens');
 ?>
-  <?php vg_page_title('에이전트 키', 'AGENT ACCESS', '호스트별 수집 인증 키를 발급하고 관리합니다.', [
+  <?php vg_page_title('에이전트 키', 'AGENT ACCESS', '', [
       'count' => $total, 'count_label' => '개',
       'actions' => vg_capture(static fn() => vg_modal_btn('issueToken', '+ 토큰 발급')),
   ]); ?>
@@ -145,9 +145,9 @@ vg_header('에이전트 키', 'agenttokens');
           <?php vg_copy_btn($newToken, '토큰 복사'); ?>
           <?php vg_copy_btn($install, '빠른 설치 명령 복사'); ?>
         </div>
-        <div class="why">대상 서버에서 <code>sudo bash install-agent.sh</code> 실행 후 숨김 프롬프트에 붙여넣는 방식을 권장합니다.
-          빠른 설치 명령은 자동화용이며 토큰이 셸 히스토리에 남을 수 있습니다.
-          복사했다면 <a href="/assets.php#agentInstall">설치 안내 2단계(파일·CA)</a>로 이어가세요.</div>
+        <?php /* 남길 값은 "빠른 설치 명령은 토큰이 셸 히스토리에 남는다" 는 보안 사실과 다음 단계 링크뿐이다. */ ?>
+        <div class="why">빠른 설치 명령은 토큰이 셸 히스토리에 남는다 — 자동화가 아니면 <code>sudo bash install-agent.sh</code>
+          의 숨김 프롬프트에 붙여넣는다. <a href="/assets.php#agentInstall">설치 안내 2단계(파일·CA)</a></div>
       </div>
     </div>
   <?php endif; ?>
@@ -226,7 +226,7 @@ vg_header('에이전트 키', 'agenttokens');
       <label class="field form-grid__full" for="issue-fqdn">호스트 (fqdn)
         <input type="text" id="issue-fqdn" name="fqdn" value="<?= vg_h($issueFqdn) ?>"
                placeholder="예: web01.example.com" maxlength="255" required autocomplete="off">
-        <span class="why">이 호스트의 스캔만 갱신할 수 있습니다. 같은 호스트의 기존 활성 토큰은 자동 폐기됩니다.</span>
+        <span class="why">이 호스트 전용 · 같은 호스트의 기존 활성 토큰은 자동 폐기</span>
       </label>
       <label class="field" for="issue-label">용도 (선택)
         <input type="text" id="issue-label" name="label" value="<?= vg_h($issueLabel) ?>"

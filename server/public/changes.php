@@ -108,7 +108,7 @@ try {
 
 vg_header('변화 추적', 'changes');
 ?>
-  <?php vg_page_title('변화 추적', 'CHANGES', '직전 수집과 비교해 신규·해결·등급 변화를 보여줍니다.'); ?>
+  <?php vg_page_title('변화 추적', 'CHANGES', '직전 수집과 비교'); ?>
 
   <?php /* 탐지 결과 계열의 갈래 — 정의는 nav.php 의 vg_findings_subtabs() 한 곳에만 있다.
            사이드바엔 '탐지 결과' 하나만 있고 이 화면은 이 줄로만 들어온다. */ ?>
