@@ -120,7 +120,7 @@ if ($issueFqdn === '') { $issueFqdn = trim((string) ($_GET['fqdn'] ?? '')); }
 
 vg_header('에이전트 키', 'agenttokens');
 ?>
-  <?php vg_page_title('에이전트 키', 'AGENT ACCESS', '', [
+  <?php vg_page_title('에이전트 키', 'AGENT ACCESS', [
       'count' => $total, 'count_label' => '개',
       'actions' => vg_capture(static fn() => vg_modal_btn('issueToken', '+ 토큰 발급')),
   ]); ?>

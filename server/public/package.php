@@ -109,9 +109,11 @@ if ($name === '') {
 vg_header($name !== '' ? $name : '패키지 상세', 'packages');
 
 if ($summary === null) {
-    vg_page_title('패키지를 찾을 수 없습니다', '', $err ?? '존재하지 않는 패키지입니다.', [
+    vg_page_title('패키지를 찾을 수 없습니다', '', [
         'actions' => '<a class="btn btn--sm btn--ghost" href="/packages.php">패키지 목록</a>',
     ]);
+    // 조회가 실패한 것과 애초에 없는 것은 다르다 — 실패했을 때만 그 사실을 알린다(제목은 둘을 못 가른다).
+    if ($err !== null) { vg_alert('오류 · ' . $err); }
     vg_footer();
     return;
 }

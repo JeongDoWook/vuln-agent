@@ -60,14 +60,9 @@ vg_header('권한', 'permissions');
 ?>
   <form method="post" class="permission-form">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-    <?php vg_page_title('권한', 'ACCESS', '', [
+    <?php vg_page_title('권한', 'ACCESS', [
         'actions' => '<button type="submit" class="btn btn--sm btn--primary" data-loading="저장 중…">저장</button>',
     ]); ?>
-    <?php /* 예전엔 같은 설명이 세 겹이었다(제목 밑 문구·이 줄·표 아래 안내 카드). 한 줄로 합치고,
-             "관리자는 항상 허용" 은 표의 [✔ 항상] 뱃지가 이미 말하므로 뺐다.
-             관리자 전용 메뉴가 표에 없는 것은 여기서만 밝힌다 — 옛 안내는 '권한설정' 하나만 적어 틀렸다. */ ?>
-    <div class="sub">admin 전용 · 관리자 전용 메뉴(권한·설정)는 위임할 수 없어 표에서 빠집니다</div>
-
     <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
     <?php

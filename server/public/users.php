@@ -76,12 +76,10 @@ $csrf = vg_csrf_token();
 
 vg_header('사용자', 'users');
 ?>
-  <?php vg_page_title('사용자', 'ACCOUNTS', '', [
+  <?php vg_page_title('사용자', 'ACCOUNTS', [
       'count' => $total, 'count_label' => '명',
       'actions' => vg_capture(static fn() => vg_modal_btn('addUser', '+ 사용자 추가')),
   ]); ?>
-  <div class="sub">admin 전용 · 역할 변경·비밀번호 초기화·삭제는 아이디를 눌러 상세에서 · 역할별 메뉴 접근 범위는 권한 화면에서</div>
-
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
 
   <?php

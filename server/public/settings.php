@@ -101,10 +101,9 @@ vg_header('설정', 'settings');
 ?>
   <form method="post">
     <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-    <?php vg_page_title('설정', 'SETTINGS', '', [
+    <?php vg_page_title('설정', 'SETTINGS', [
         'actions' => '<button type="submit" class="btn btn--sm btn--primary" data-loading="저장 중…">저장</button>',
     ]); ?>
-    <div class="sub">admin 전용 · 변경 사항은 감사 로그에 기록됩니다</div>
 
     <?php
     vg_alert($msg, 'ok');

@@ -67,7 +67,7 @@ try {
 
 vg_header('제거 권고', 'nofix_packages');
 ?>
-  <?php vg_page_title('제거·대체 검토 권고', '', '벤더 미수정 CVE 가 몰린 패키지 · 조치는 패치가 아니라 제거·대체', [
+  <?php vg_page_title('제거·대체 검토 권고', '', [
       'count' => $total,
       'count_label' => '개 패키지',
   ]); ?>

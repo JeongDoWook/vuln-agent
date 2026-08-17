@@ -42,14 +42,14 @@ $page = vg_page();
 $perPage = vg_perpage();
 
 // ---- OS 패키지(tab=os) 상태 ----
-$rows = []; $total = 0; $ecos = []; $summaryAt = '';
+$rows = []; $total = 0; $ecos = [];
 $q    = trim((string) ($_GET['q'] ?? ''));
 $eco  = trim((string) ($_GET['eco'] ?? ''));
 $sort = (string) ($_GET['sort'] ?? '');
 if (!isset(VG_PKG_SORTS[$sort])) { $sort = 'cves'; }
 
 // ---- 언어 패키지·라이선스(tab=lang) 상태 ----
-$langRows = []; $langTotal = 0; $langSummaryAt = '';
+$langRows = []; $langTotal = 0;
 $riskCounts = ['permissive' => 0, 'copyleft' => 0, 'unknown' => 0];
 $manager = trim((string) ($_GET['manager'] ?? ''));
 $risk    = trim((string) ($_GET['risk'] ?? ''));
@@ -70,9 +70,6 @@ try {
         )->fetchAll(PDO::FETCH_COLUMN);
         $ecoOptions = array_combine($ecos, $ecos) ?: [];
         if ($eco !== '' && !in_array($eco, $ecos, true)) { $eco = ''; }
-
-        // 집계 기준 시각(요약을 마지막으로 다시 만든 때) — 목록이 언제 기준인지 화면에 밝힌다.
-        $summaryAt = (string) ($pdo->query('SELECT MAX(updated_at) FROM tb_package_summary')->fetchColumn() ?: '');
 
         $where  = '1=1';
         $params = [];
@@ -132,7 +129,6 @@ try {
         // SUM(pkg_count) 를 쓴다 — COUNT(*) 는 (manager,name,license) 조합 종류 수라 목록 필터
         // 건수(설치 인스턴스 수, SUM(pkg_count) 기준)와 단위가 달라 KPI 와 목록이 서로 다른
         // 숫자를 보여줬다. pkg_count 컬럼을 여기서 실제로 사용해 통일한다.
-        $langSummaryAt = (string) ($pdo->query('SELECT MAX(updated_at) FROM tb_package_license_summary')->fetchColumn() ?: '');
         foreach ($pdo->query('SELECT risk, SUM(pkg_count) AS c FROM tb_package_license_summary GROUP BY risk') as $r) {
             if (isset($riskCounts[$r['risk']])) { $riskCounts[$r['risk']] = (int) $r['c']; }
         }
@@ -200,15 +196,9 @@ try {
 vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'packages');
 ?>
   <?php if ($tab === 'lang'): ?>
-    <?php vg_page_title('언어 패키지 · 라이선스', 'SCA', 'pip · npm · gem · composer · maven · nuget · cargo · go', ['count' => $langTotal, 'count_label' => '건']); ?>
-    <?php if ($langSummaryAt !== ''): ?>
-    <div class="sub"><span class="why">집계 기준 <?= vg_h($langSummaryAt) ?> (OSV 수집 시 갱신) · 라이선스 값은 SBOM/METADATA/composer 소스에서만 채워집니다.</span></div>
-    <?php endif; ?>
+    <?php vg_page_title('언어 패키지 · 라이선스', 'SCA', ['count' => $langTotal, 'count_label' => '건']); ?>
   <?php else: ?>
-    <?php vg_page_title('패키지', 'PACKAGES', '수집한 패키지별 CVE 집계', ['count' => $total, 'count_label' => '종']); ?>
-    <?php if ($summaryAt !== ''): ?>
-    <div class="sub"><span class="why">집계 기준 <?= vg_h($summaryAt) ?> (OSV 수집 시 갱신)</span></div>
-    <?php endif; ?>
+    <?php vg_page_title('패키지', 'PACKAGES', ['count' => $total, 'count_label' => '종']); ?>
   <?php endif; ?>
 
   <?php

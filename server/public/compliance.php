@@ -29,7 +29,6 @@ $policy = ['kev' => VG_COMPLIANCE_SLA_KEV_DAYS, 'crit' => VG_COMPLIANCE_SLA_CRIT
            'high' => VG_COMPLIANCE_SLA_HIGH_DAYS, 'partial_max' => VG_COMPLIANCE_PARTIAL_MAX,
            'margin' => VG_COMPLIANCE_HISTORY_MARGIN_DAYS];
 $trend = [];
-$judgedAt = date('Y-m-d H:i');
 $previewLimit = vg_ui_detail_preview_limit();
 // findings 메뉴 권한만으로는 자산 인벤토리(assets 메뉴 전용 정보)를 우회 열람할 수 없게 별도 게이트.
 $canViewAssets = vg_can('assets');
@@ -57,17 +56,7 @@ try {
 
 vg_header('컴플라이언스 매핑', 'compliance_mapping');
 ?>
-  <?php
-  // 설명 줄은 **값만** 적는다 — 자동판정 몇 종, 문서 심사 몇 건. 예전엔 여기에
-  //   "…은 자동판정 대상 아님(맨 아래)" 처럼 화면 자체를 해설하는 절이 붙어 있었는데,
-  //   그 구분은 아래 흐름 도식의 회색 칸과 문서 심사 카드의 뱃지가 이미 말한다
-  //   (같은 말을 세 번 적으면 첫 화면 세로 예산만 먹는다).
-  vg_page_title(
-      '컴플라이언스 매핑', 'COMPLIANCE',
-      '자동 판정 통제 ' . count(VG_COMPLIANCE_CONTROLS) . '종 · 문서 심사 '
-      . count(VG_COMPLIANCE_MANUAL_CHECKLIST) . '건 · ISMS-P·ISO 27001'
-      // 판정 기준시각은 아래 결론 배너의 note 로 옮겼다 — 같은 화면에 두 번 적을 값이 아니다.
-  ); ?>
+  <?php vg_page_title('컴플라이언스 매핑', 'COMPLIANCE'); ?>
   <?php // 통제 기준 매핑은 사이드바에 없고 이 줄로만 들어온다(정의는 nav.php 한 곳). ?>
   <?php vg_compliance_subtabs('mapping'); ?>
 
@@ -79,54 +68,12 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     $sSec   = vg_compliance_status($secconfig['total'], false, $policy['partial_max']);
     $sAcct  = vg_compliance_status($account['total'], $account['unjudged'] > 0, $policy['partial_max']);
 
-    // ── 결론 먼저 ──────────────────────────────────────────────────────────
-    // 예전 첫 화면은 판정 표 하나였다. 통제마다의 판정은 있는데 "그래서 결론이
-    //   무엇인가"가 없어서, 사용자가 표를 다 읽고 스스로 세야 알 수 있었다(운영 피드백:
-    //   "뭐가 된다는 거지, 뭘 증명한다는 거지").
-    // 단위는 **통제 "종"** 이지 위반 건수가 아니다 — 같은 칸에 뭉개면 "미준수 1" 이 1건인지
-    //   1종인지 못 읽는다. 그래서 라벨에 단위를 붙여 둔다.
-    // 판정 어휘·색은 vg_compliance_status()/vg_compliance_tone_of() 가 SSOT 다(여기서 다시
-    //   정하지 않는다 — 두 벌이 되면 표의 뱃지와 이 카드의 색이 갈라진다).
-    $verdicts = ['patch' => $sPatch, 'secops' => $sSec];
-    // assets 권한이 없으면 자산·계정은 건수까지 감춘다(아래 $deniedRow 와 같은 게이트) —
-    //   집계에서도 빼고, 몇 종이 빠졌는지는 따로 밝힌다(일부만 센 걸 숨기지 않는다).
-    if ($canViewAssets) { $verdicts['asset'] = $sAsset; $verdicts['account'] = $sAcct; }
-    $tally = ['준수' => 0, '부분준수' => 0, '미준수' => 0, '판정 불가' => 0];
-    foreach ($verdicts as $s) { $tally[$s['label']] = ($tally[$s['label']] ?? 0) + 1; }
-    $denied = count(VG_COMPLIANCE_CONTROLS) - count($verdicts);
 ?>
   <?php
-  // 결론 배너(vg_verdict) — 예전엔 KPI 카드 4장이 이 자리에 있었는데, 숫자 넷을 나란히
-  //   놓아도 "그래서 준수인가 아닌가"는 여전히 사용자가 세어야 했다. 배너는 그 한 문장을
-  //   먼저 말하고 숫자를 근거로 뒤에 붙인다. 화면에 하나만 둔다(role="status").
-  // 톤 어휘가 두 벌이 되지 않게, 배너 톤은 판정 톤(vg_compliance_tone_of — SSOT)에서 옮긴다.
-  //   판정 톤은 ok/high/crit/med 인데 배너는 ok/warn/crit/muted 라 어휘만 갈아 끼운다.
-  $toVerdictTone = ['ok' => 'ok', 'high' => 'warn', 'crit' => 'crit', 'med' => 'muted'];
-  $stats = [];
-  foreach ($tally as $label => $n) {
-      $stats[] = ['label' => $label, 'value' => number_format($n),
-                  'tone'  => $toVerdictTone[vg_compliance_tone_of($label)] ?? 'muted'];
-  }
-  if ($denied > 0) {
-      $stats[] = ['label' => '권한 없음', 'value' => number_format($denied), 'tone' => 'muted'];
-  }
-  $judged = count($verdicts);
-  if ($tally['미준수'] > 0) {
-      $banner = ['crit', '판정한 통제 ' . $judged . '종 중 ' . $tally['미준수'] . '종이 미준수입니다 — 즉시 조치가 필요합니다.'];
-  } elseif ($tally['부분준수'] > 0 || $tally['판정 불가'] > 0) {
-      $banner = ['warn', '판정한 통제 ' . $judged . '종 중 ' . $tally['준수'] . '종만 준수입니다 — 나머지는 부분준수·판정 불가입니다.'];
-  } else {
-      $banner = ['ok', '판정한 통제 ' . $judged . '종이 모두 준수입니다.'];
-  }
-  // 단위는 라벨로만 못박는다('집계 단위 통제 종') — 숫자만 보면 "미준수 1" 이 1건인지 1종인지
-  //   못 읽는다. 예전엔 '(위반 건수가 아니다)' 라는 해설 절이 붙어 있었는데, 그건 값이 아니라
-  //   화면 사용법이라 지웠다(같은 뜻을 배너 문장이 이미 "통제 N종 중" 으로 말한다).
+  // 결론 배너는 걷었다 — "통제 4종 중 1종이 미준수입니다" 는 바로 아래 표가 통제마다
+  //   뱃지로 이미 말하던 것을 문장으로 되풀이한 줄이었다. 권한 때문에 빠진 통제도 표의
+  //   '권한 없음' 행이 그대로 말한다(일부만 센 걸 숨기지 않는다는 원칙은 그 행이 지킨다).
   ?><section id="automatic" data-compliance-zone="automatic" aria-label="자동 판정과 조치 근거"><?php
-  vg_verdict($banner[0], $banner[1], $stats,
-      '기준 ' . $judgedAt . ' 판정 · 집계 단위 통제 종 · '
-      . ($denied > 0
-          ? '자산 열람 권한이 없어 통제 ' . $denied . '종은 집계에서 제외'
-          : '통제 ' . count(VG_COMPLIANCE_CONTROLS) . '종 전수'));
   ?>
 
   <?php
@@ -137,13 +84,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   // 위반 0건과 판정 불가를 한 칸에 뭉개지 않는다 — 뭉개는 순간 허위 안심이 된다(건수를 따로 적는다).
   $naText = static fn(int $n, string $unit = '건'): string =>
       $n > 0 ? ' · <span class="why">판정 불가 ' . number_format($n) . vg_h($unit) . '</span>' : '';
-  // 요약 칸: **한 줄**이다 — 건수 뒤에 작게 "몇 개 중에 셌는가"(분모)를 잇는다.
-  //   두 줄로 쓰면 행이 73px 이 되고, 통제 목록이 첫 화면(1440×675) 밖으로 밀린다(실측).
-  //   판정 전종을 한눈에 보는 것이 이 표의 목적이라 줄 수를 예산으로 잡고 문구를 줄였다.
-  //   구분자(—)가 없으면 "위반 3건 · 판정 불가 5,758건 조치 대상 5,761건" 처럼 두 수치가
-  //   한 문장으로 붙어 읽힌다(실측). 색만으로는 경계가 안 잡힌다.
-  $sumCell = static fn(string $head, string $why): string =>
-      $head . ' <span class="why">— ' . vg_h($why) . '</span>';
+  // 요약 칸은 **건수만** 적는다. 뒤에 잇던 분모 설명("— 조치 대상 232건 중 SLA 초과분")은
+  //   무엇을 셌는지 풀어 쓴 문장이라 걷었다 — 그 분모는 옆 판정 칸 게이지의 title 이 그대로
+  //   갖고 있고, 더 필요하면 '근거 →' 가 가리키는 상세 화면이 답한다.
   // 판정 칸: 뱃지 **아래에 비율 게이지**를 깐다. 게이지가 없으면 "위반 174건"이 큰 수인지
   //   작은 수인지 읽을 방법이 없었다(분모가 화면에 없었다). 요약 칸이 아니라 판정 칸에
   //   두는 건 두 가지 이유다 — (1) 게이지는 그 판정의 근거지 요약문의 일부가 아니고,
@@ -152,8 +95,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   //   0% 라 색이 보이지도 않지만, 존재하지 않는 클래스를 만들지는 않는다.
   // $what 은 **막대가 무엇의 비율인가** 를 말하는 짧은 라벨이다. 없을 때는 붉은 막대가 꽉 찬 행이
   //   "위반율 100%" 인지 "판정 진행률" 인지 화면만 보고는 알 수 없었다(마우스를 올려야만 알았다).
-  //   막대 바로 위에 라벨+값을 적는다 — packages.php 의 EPSS·조치율 게이지, 아래 패치관리 버킷별
-  //   판정의 '보유 이력 최대 4일 / SLA 15일' 과 같은 규약이다(막대 위 글자가 그 막대의 라벨).
+  //   막대 바로 위에 라벨+값을 적는다 — packages.php 의 EPSS·조치율 게이지와 같은 규약이다
+  //   (막대 위 글자가 그 막대의 라벨).
   //   분모까지 담은 전체 문장은 지금처럼 vg_meter 의 title/aria-label 이 계속 갖는다.
   $verdictCell = static function (array $s, ?float $pct, string $why, string $what = ''): string {
       $badge = vg_badge($s['label'], $s['tone']);
@@ -182,16 +125,13 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       && ($account['violations'] || $account['unjudged'] > 0 || $account['pending_hosts'] > 0);
 
   $summaryRows = [];
-  // 분모 문구는 짧게 — 한 줄에 건수와 같이 들어가야 한다(아래 버킷 표가 상세를 갖는다).
+  // $why 는 화면에 문장으로 안 나온다 — 게이지의 title/aria-label 이 갖는 분모다.
   $whyPatch = '조치 대상 ' . number_format($patchTargets) . '건 중 SLA 초과분';
   $summaryRows[] = [
       'key' => 'patch',
       'badge' => $verdictCell($sPatch, $patchTargets > 0 ? $patch['total'] / $patchTargets * 100 : null,
           $whyPatch, '위반율'),
-      'summary' => $sumCell(
-          '위반 ' . number_format((int) $patch['total']) . '건' . $naText((int) $patch['unjudged']),
-          $whyPatch
-      ),
+      'summary' => '위반 ' . number_format((int) $patch['total']) . '건' . $naText((int) $patch['unjudged']),
       // 이 통제가 센 것 = 조치 가능한 미조치 취약점. findings 의 fx=action 이 같은 모집단이다
       //   (SLA 초과 필터는 없으므로 건수는 여기가 더 적다 — 링크 라벨을 "근거"로만 둔다).
       'link' => '<a href="/findings.php?type=cve&amp;fx=action">근거 →</a>',
@@ -201,10 +141,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       'key' => 'asset',
       'badge' => $verdictCell($sAsset,
           $asset['totalHosts'] > 0 ? $asset['total'] / $asset['totalHosts'] * 100 : null, $whyAsset, '위반율'),
-      'summary' => $sumCell(
-          '위반 ' . number_format((int) $asset['total']) . '건' . $naText((int) $asset['unjudged'], '대'),
-          $whyAsset
-      ),
+      'summary' => '위반 ' . number_format((int) $asset['total']) . '건' . $naText((int) $asset['unjudged'], '대'),
       'link' => '<a href="/assets.php">근거 →</a>',
   ] : $deniedRow('asset');
   $whySec = '최신 스캔 점검 ' . number_format((int) $secconfig['checked']) . '건 중 FAIL 판정';
@@ -212,7 +149,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       'key' => 'secops',
       'badge' => $verdictCell($sSec,
           $secconfig['checked'] > 0 ? $secconfig['total'] / $secconfig['checked'] * 100 : null, $whySec, '위반율'),
-      'summary' => $sumCell('위반 ' . number_format((int) $secconfig['total']) . '건', $whySec),
+      'summary' => '위반 ' . number_format((int) $secconfig['total']) . '건',
       // 보안설정(CCE) 위반 목록 전용 탭. 기본 필터가 res=FAIL 이라 이 통제가 센 것과 같다.
       'link' => '<a href="/findings.php?type=cce">근거 →</a>',
   ];
@@ -228,10 +165,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       'badge' => $verdictCell($sAcct,
           $account['totalHosts'] > 0 ? $acctViolHosts / $account['totalHosts'] * 100 : null,
           $whyAcct, '위반 호스트'),
-      'summary' => $sumCell(
-          '위반 ' . number_format((int) $account['total']) . '건' . $naText((int) $account['unjudged']),
-          $whyAcct
-      ),
+      'summary' => '위반 ' . number_format((int) $account['total']) . '건' . $naText((int) $account['unjudged']),
       // 전 호스트 계정 위반을 한 번에 보는 화면은 없다(호스트별로만 있다). 없는 화면을
       //   만들어 링크하지 않고, 이 통제만 아래 근거 블록에 호스트별 링크를 둔다.
       'link' => $acctDetails ? '<a href="#compliance-account">호스트별 ↓</a>' : '',
@@ -250,11 +184,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       $summaryRows,
       [
           'cell' => [
-              // 조항 번호(ISMS-P/ISO)는 이 화면의 존재 이유다 — 작게 내릴 뿐 지우지 않는다.
-              //   줄바꿈 없이 같은 줄에 잇는다: 통제명과 조항을 두 줄로 쌓으면 행이 두 줄이 되고,
-              //   요약 칸을 한 줄로 줄여도 통제 목록이 첫 화면에 안 들어온다.
-              0 => fn($r) => '<strong>' . vg_h(VG_COMPLIANCE_CONTROLS[$r['key']]['label']) . '</strong>'
-                           . ' <span class="why">' . vg_h(VG_COMPLIANCE_CONTROLS[$r['key']]['framework']) . '</span>',
+              // 조항 번호(ISMS-P 2.10.8 / ISO 27001 A.8.8)는 통제 상세(control.php)가 갖는다 —
+              //   목록에서 통제명마다 잇던 줄은 걷었다. 여기서 고르는 축은 통제이지 조항이 아니다.
+              0 => fn($r) => '<strong>' . vg_h(VG_COMPLIANCE_CONTROLS[$r['key']]['label']) . '</strong>',
               1 => fn($r) => $r['badge'],
               2 => fn($r) => $r['summary'],
               3 => fn($r) => $r['link'],
@@ -280,64 +212,6 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   //   4줄(내용 0)이었다 — "판정 불가 203건"의 이유가 그 안에 있는데도 안 보였다.
   //   지금 접혀 있는 건 판정 추이의 오래된 날짜뿐이다(스냅샷은 최대 50일까지 쌓인다).
   ?>
-  <div class="card mt-lg">
-    <?php // 부제를 달지 않는다 — 버킷 이름(KEV·CRITICAL·HIGH)과 판정 불가 건수는 아래 표의 열이다. ?>
-    <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['patch']['label']) ?> 버킷별 판정</strong>
-    <div class="card__body">
-      <?php
-      // 버킷 3행을 각각 판정한다. 예전엔 통제 전체에 뱃지 하나만 달아, 이력이 짧아 판정 불가인
-      //   HIGH 하나가 잘 지킨 KEV·CRITICAL 까지 회색으로 눌렀다(운영 실측).
-      //   같은 말을 하던 노란 경고 박스는 이 표로 대체됐다 — 설명 두 벌은 화면만 길게 만든다.
-      vg_table(
-          [
-              ['label' => '버킷', 'width' => '7rem'],
-              ['label' => 'SLA', 'width' => '5rem', 'align' => 'right'],
-              ['label' => '판정', 'width' => '7rem'],
-              ['label' => '위반', 'width' => '5rem', 'align' => 'right'],
-              ['label' => '판정 불가', 'width' => '6rem', 'align' => 'right'],
-              ['label' => '근거'],
-          ],
-          $patch['buckets'],
-          [
-              'card' => false,
-              'cell' => [
-                  0 => fn($b) => vg_h((string) $b['label']),
-                  1 => fn($b) => (int) $b['sla_days'] . '일',
-                  2 => static function ($b) use ($policy) {
-                      // 대상이 0건이면 준수도 위반도 아니다 — "대상 없음"으로 따로 말한다.
-                      if ((int) $b['targets'] === 0) { return vg_badge('대상 없음', 'muted'); }
-                      $s = vg_compliance_status((int) $b['violations'], (int) $b['unjudged'] > 0, $policy['partial_max']);
-                      return vg_badge($s['label'], $s['tone']);
-                  },
-                  3 => fn($b) => number_format((int) $b['violations']) . '건',
-                  4 => fn($b) => number_format((int) $b['unjudged']) . '건',
-                  5 => static function ($b) {
-                      $sla = max(1, (int) $b['sla_days']);
-                      if ((int) $b['targets'] === 0) {
-                          $restart = (int) $b['restart_excluded'];
-                          return '<span class="why">판정 대상 없음'
-                              . ($restart > 0 ? ' · 재시작 대기 ' . number_format($restart) . '건 제외' : '')
-                              . '</span>';
-                      }
-                      if ((int) $b['unjudged'] > 0) {
-                          // 이력이 SLA 에 얼마나 찼는지를 게이지로 — "언제부터 판정되는가"가 사용자의 질문이다.
-                          $hist = (int) $b['max_history_days'];
-                          $txt = '보유 이력 최대 ' . $hist . '일 / SLA ' . $sla . '일'
-                               . ($b['judgeable_from'] !== null ? ' · ' . $b['judgeable_from'] . ' 이후 판정 가능' : '');
-                          return vg_meter('med', $hist / $sla * 100, $txt) . '<span class="why">' . vg_h($txt) . '</span>';
-                      }
-                      return '<span class="why">판정 대상 ' . number_format((int) $b['targets']) . '건'
-                          . ((int) $b['restart_excluded'] > 0
-                              ? ' · 재시작 대기 ' . number_format((int) $b['restart_excluded']) . '건 제외' : '')
-                          . '</span>';
-                  },
-              ],
-          ]
-      ); ?>
-      <?php // 호스트별 위반 목록은 근거 링크(findings.php) 가 전부 보여준다 — 여기서 미리 깔지 않는다. ?>
-    </div>
-  </div>
-
   <?php if ($acctDetails): ?>
   <div class="card mt-lg" id="compliance-account">
     <?php

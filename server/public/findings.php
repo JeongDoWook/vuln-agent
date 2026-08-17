@@ -14,9 +14,9 @@ declare(strict_types=1);
  *   운영 실측이 있다). 탭마다 자기 쿼리 하나가 정답이다. 화면 구성은 packages.php 의
  *   ?tab=os/lang 패턴을 그대로 따른다(vg_subtabs + 툴바에 탭 hidden).
  *
- *   이 파일은 요청 처리 · 활성 탭 결정 · 화면 머리(부제·탭 줄·도식·결론 배너) · 탭 디스패치만
- *   갖는다. 탭별 조회는 src/findings/queries.php, 머리 두 줄은 src/findings/summary.php,
- *   탭 본문은 src/findings/tabs/<탭>.php 다(활성 탭 것 하나만 읽는다).
+ *   이 파일은 요청 처리 · 활성 탭 결정 · 화면 머리(범위 줄·탭 줄) · 탭 디스패치만 갖는다.
+ *   탭별 조회는 src/findings/queries.php, 탭 본문은 src/findings/tabs/<탭>.php 다
+ *   (활성 탭 것 하나만 읽는다). 건수·분포는 각 탭이 자기 KPI·범례로 말한다.
  */
 
 require __DIR__ . '/../src/auth.php';
@@ -27,7 +27,6 @@ require_once __DIR__ . '/../src/finding_history.php';    // vg_finding_history_u
 require_once __DIR__ . '/../src/finding_status.php';     // 조치 상태(사람이 정하는 값) — 자연키 조인
 require_once __DIR__ . '/../src/finding_sla.php';        // 조치 기한 — 설정의 SLA 를 그대로 읽어 남은 일수
 require_once __DIR__ . '/../src/findings/queries.php';   // 탭별 조회(합치지 않는다 — 그 파일 머리주석)
-require_once __DIR__ . '/../src/findings/summary.php';   // 판단 순서 도식 + 결론 배너(세 탭 공통 머리)
 require_once __DIR__ . '/../src/findings/tabs.php';      // vg_findings_render_tab — 활성 탭 파일 하나만 require
 vg_require_menu('findings');
 
@@ -221,7 +220,15 @@ vg_header($type === 'cve' ? '탐지 결과' : '탐지 결과 · ' . vg_findings_
 // 컨텍스트(호스트·스캔)를 벗어나는 링크의 목적지 — 지금 보고 있는 탭은 유지한다.
 $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
 ?>
+  <?php
+  // 이 줄은 **좁혀 본 범위**만 말한다 — 안 좁혔을 때(전체 호스트·최신 스캔)는 아무것도 적지
+  //   않는다. "전체 호스트 11대 · 각 호스트의 최신 스캔 기준" 은 기본값을 설명하는 줄이라
+  //   화면 해설이지 값이 아니었다. 좁혀 본 상태·스캔 없음·컨테이너 기준은 그대로 남긴다
+  //   (숨기면 0건이 "안전" 으로 읽힌다).
+  $hasScopeLine = $scan || $scanId > 0 || $hostId > 0 || !$hostOptions || $ctrLabel !== null;
+  ?>
   <div class="page-title page-title--stack"><div><h1>탐지 결과</h1>
+  <?php if ($hasScopeLine): ?>
   <div class="sub">
     <?php if ($scan): ?>
       호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['scan_id'] ?> · <?= vg_h($scan['collected_at']) ?>
@@ -231,15 +238,15 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
     <?php elseif ($hostId > 0): ?>
       호스트 <strong><?= vg_h($hostOptions[$hostId]) ?></strong> · 최신 스캔 기준
       · <a href="<?= vg_h($typeHome) ?>">전체 호스트 보기 →</a>
-    <?php elseif ($hostOptions): ?>
-      전체 호스트 <?= count($hostOptions) ?>대 · 각 호스트의 최신 스캔 기준
-    <?php else: ?>스캔 없음<?php endif; ?>
+    <?php elseif (!$hostOptions): ?>스캔 없음<?php endif; ?>
     <?php if ($ctrLabel !== null): ?>
       <?php // 스코프를 숨기면 0건이 "안전" 으로 읽힌다 — 무엇으로 좁혀 봤는지 밝히고 해제 링크를 준다. ?>
       · <strong><?= vg_h($ctrLabel) ?></strong> 기준
       · <a href="<?= vg_h(vg_qs(['ctr' => null, 'page' => 1])) ?>">이 호스트 전체 보기 →</a>
     <?php endif; ?>
-  </div></div>
+  </div>
+  <?php endif; ?>
+  </div>
 
   <?php
   // 탐지 유형 세 개가 앞에 서고, 그 뒤로 기존의 다른 화면(변화·제거 권고)이 이어진다.
@@ -262,12 +269,6 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       $tabOverrides[$key] = ['href' => vg_qs($qs), 'n' => $typeCounts[$key]];
   }
   vg_findings_subtabs($type, $tabOverrides);
-
-  // 결론 배너 — 세 탭이 같은 자리에 그리는 머리 한 줄(src/findings/summary.php).
-  //   숫자는 위 탭별 집계에서 이미 나온 값만 쓴다(새 쿼리 없음).
-  if ($err === null) {
-      vg_findings_verdict($type, $total, count($scanIds), $counts, $unsupBy, $cceResultCounts, $scopeCounts);
-  }
   ?>
 
 <?php if ($err !== null): ?>

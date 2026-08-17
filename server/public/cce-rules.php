@@ -24,7 +24,6 @@ $err = null;
 $rules = [];        // 화면에 뿌릴 행(필터·정렬 후 전체)
 $rows = [];         // 그중 이 페이지 몫
 $total = 0;         // 필터 결과 건수(페이지네이션 분모)
-$checkedHosts = 0;  // 최신 스캔에 CCE 판정이 있는 자산 수
 $sevOptions = ['HIGH' => 'HIGH', 'MEDIUM' => 'MEDIUM', 'LOW' => 'LOW'];
 
 $q   = trim((string) ($_GET['q'] ?? ''));
@@ -60,15 +59,6 @@ try {
             'NA'   => (int) $r['na_cnt'],
         ];
     }
-
-    $st = $pdo->query(
-        "SELECT COUNT(DISTINCT t.host_id)
-           FROM tb_cce_finding cf
-           JOIN " . vg_latest_scan_subq() . " t ON t.mid = cf.scan_id
-           JOIN tb_host h ON h.host_id = t.host_id AND h.is_deleted = 0
-          WHERE cf.is_deleted = 0"
-    );
-    $checkedHosts = (int) $st->fetchColumn();
 
     // 요약·기준 매핑도 각각 IN 절 한 번씩(N+1 금지) — 기존 헬퍼를 그대로 쓴다.
     $guides   = vg_cce_rule_guides($codes);
@@ -127,19 +117,11 @@ try {
 
 vg_header('CCE', 'cce_rules');
 ?>
-  <?php vg_page_title(
-      'CCE',
-      'SECURITY CONFIG BASELINE',
-      '우리가 직접 판정하는 보안설정 점검 항목 — 자산별 판정 결과는 탐지 결과에서',
-      ['count' => $total]
-  ); ?>
+  <?php vg_page_title('CCE', 'SECURITY CONFIG BASELINE', ['count' => $total]); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
-  <?php // 기준(SSG)·판정된 자산 대수는 도식 대신 이 한 줄이 갖는다 — 항목 수는 제목의 건수와 같다. ?>
-  <p class="sub">SSG 기준 · 자산 <?= number_format($checkedHosts) ?>대에서 판정했습니다.
-    준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
   <?php
   $frameworks = vg_control_frameworks();
   $fwShort    = vg_control_framework_short();

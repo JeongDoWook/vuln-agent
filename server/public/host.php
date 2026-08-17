@@ -228,10 +228,10 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
 <link rel="stylesheet" href="<?= vg_asset('/assets/vendor/flatpickr/flatpickr.min.css') ?>">
 <script src="<?= vg_asset('/assets/vendor/flatpickr/flatpickr.min.js') ?>"></script>
 <?php if ($err !== null): ?>
-  <?php vg_page_title('호스트 상세', 'ASSET DETAIL', '호스트 정보를 불러오지 못했습니다.'); ?>
+  <?php vg_page_title('호스트 상세', 'ASSET DETAIL'); ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif (!$host): ?>
-  <?php vg_page_title('호스트를 찾을 수 없습니다', 'ASSET DETAIL', '삭제되었거나 존재하지 않는 자산입니다.'); ?>
+  <?php vg_page_title('호스트를 찾을 수 없습니다', 'ASSET DETAIL'); ?>
   <div class="card"><?php vg_empty(['icon' => 'host', 'title' => '요청한 호스트 정보가 없습니다.', 'cta' => ['href' => '/', 'label' => '← 대시보드']]); ?></div>
 <?php elseif (!$scan): ?>
   <?php

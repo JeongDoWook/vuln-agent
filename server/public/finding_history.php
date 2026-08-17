@@ -153,7 +153,7 @@ $statusLabel = [
 vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
 ?>
 <?php if ($err !== null): ?>
-  <?php vg_page_title('취약점 이력', 'FINDING HISTORY', '이력을 불러오지 못했습니다.'); ?>
+  <?php vg_page_title('취약점 이력', 'FINDING HISTORY'); ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php elseif (!$host): ?>
   <?php vg_page_title('호스트를 찾을 수 없습니다', 'FINDING HISTORY'); ?>

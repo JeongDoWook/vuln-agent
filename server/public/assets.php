@@ -74,7 +74,7 @@ vg_header('자산', 'assets');
   ?>
   <?php /* 제목 옆 '?' 는 이 화면 전체에 걸리는 규칙만 담는다 — 열별 기준은 각 열 머리글이 갖는다.
            등급 확정 경계는 관리자용 일괄 확정 카드 밖에는 적혀 있지 않아 여기로 올린다. */ ?>
-  <?php vg_page_title('자산', 'ASSETS', '', [
+  <?php vg_page_title('자산', 'ASSETS', [
       'suffix_html' => vg_help('시스템 제안은 초안이며, 자산 등급은 사람이 확정합니다.'),
       'actions' => vg_capture(static function (): void {
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');

@@ -114,13 +114,13 @@ $nodeLabel = function (string $key) use ($linkFor, $target, $graph): string {
 vg_header($host['fqdn'] ?? '의존성 그래프', 'assets');
 
 if ($err !== null) {
-    vg_page_title('의존성 그래프', 'DEPENDENCY GRAPH', '');
+    vg_page_title('의존성 그래프', 'DEPENDENCY GRAPH');
     vg_alert('오류 · ' . $err);
     vg_footer();
     return;
 }
 if (!$host) {
-    vg_page_title('자산을 찾을 수 없습니다', 'DEPENDENCY GRAPH', '삭제되었거나 존재하지 않는 자산입니다.');
+    vg_page_title('자산을 찾을 수 없습니다', 'DEPENDENCY GRAPH');
     echo '<div class="card">';
     vg_empty(['icon' => 'host', 'title' => '요청한 자산이 없습니다.', 'cta' => ['href' => '/assets.php', 'label' => '자산 목록']]);
     echo '</div>';

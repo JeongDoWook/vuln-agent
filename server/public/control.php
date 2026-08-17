@@ -197,15 +197,6 @@ vg_hero(
 );
 ?>
 
-<?php
-// 히어로는 FAIL 건수만 크게 말한다 — 분모가 없으면 그 수가 큰지 작은지 못 읽는다.
-//   결론 한 줄을 히어로 바로 아래 세운다(control_mapping.php·compliance.php 와 같은 원칙).
-//   이 화면도 판정은 하지 않는다 — 그 사실을 여기서 분명히 한다.
-?>
-<p class="sub">이 통제에 매핑된 점검
-  <?= number_format($total) ?>건 중 FAIL <?= number_format($counts['FAIL']) ?>건입니다.
-  준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
-
 <div class="card">
   <div class="card__body stat-grid">
     <div class="stat">

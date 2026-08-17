@@ -36,15 +36,25 @@ $csrf = vg_csrf_token();
 $st = $pdo->prepare('SELECT user_id, username, role, created_at, last_login FROM tb_user WHERE user_id = ? AND is_deleted = 0');
 $st->execute([(int) $me['id']]);
 $profile = $st->fetch() ?: $me;
-$profileSummary = (string) ($profile['username'] ?? $me['username'])
-    . ' · ' . vg_role_label((string) ($profile['role'] ?? vg_role()))
-    . ' · 계정 #' . (int) ($profile['user_id'] ?? $me['id'])
-    . ' · 생성 ' . (string) ($profile['created_at'] ?? '–')
-    . ' · 최근 로그인 ' . (string) ($profile['last_login'] ?? '–');
 
 vg_header('내 프로필', 'profile');
 ?>
-  <?php vg_page_title('내 프로필', 'MY ACCOUNT', $profileSummary); ?>
+  <?php vg_page_title('내 프로필', 'MY ACCOUNT'); ?>
+
+  <?php /* 계정 값은 부제 한 줄로 이어 붙여 뒀는데, 부제는 화면 해설 자리라 값이 거기 얹혀
+           있었다. 값은 값 자리(.kv)로 내린다 — 사용자 상세(user.php)가 같은 값을 세우는 방식이다. */ ?>
+  <div class="card card--sm">
+    <strong>계정</strong>
+    <div class="card__body">
+      <dl class="kv">
+        <dt>아이디</dt><dd><?= vg_h((string) ($profile['username'] ?? $me['username'])) ?></dd>
+        <dt>역할</dt><dd><?= vg_h(vg_role_label((string) ($profile['role'] ?? vg_role()))) ?></dd>
+        <dt>계정 번호</dt><dd>#<?= (int) ($profile['user_id'] ?? $me['id']) ?></dd>
+        <dt>생성</dt><dd><?= vg_h((string) ($profile['created_at'] ?? '–')) ?></dd>
+        <dt>최근 로그인</dt><dd><?= vg_h((string) ($profile['last_login'] ?? '–')) ?></dd>
+      </dl>
+    </div>
+  </div>
 
   <div class="card card--sm">
     <strong>비밀번호 변경</strong>
