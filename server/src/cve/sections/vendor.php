@@ -8,7 +8,6 @@ declare(strict_types=1);
 <section id="vendor">
   <div class="card">
     <strong>벤더 판정</strong>
-    <span class="why">— 벤더별 패치 여부 원본(5개 소스)</span>
     <div class="card__body">
     <?php
     vg_table(

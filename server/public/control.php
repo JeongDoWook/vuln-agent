@@ -236,7 +236,7 @@ vg_hero(
 <section id="guide">
   <div class="card">
     <strong>이 통제가 요구하는 것</strong>
-    <span class="why">— <?= vg_h($frameworks[$fw]) ?> · <?= vg_h($control) ?></span>
+    <span class="why"><?= vg_h($frameworks[$fw]) ?> · <?= vg_h($control) ?></span>
     <div class="card__body">
       <?php if ($guide !== null): ?>
         <p class="why"><?= vg_h((string) $guide['description']) ?></p>
@@ -250,7 +250,6 @@ vg_hero(
 <section id="rules">
   <div class="card">
     <strong>점검 항목과 조치 방법</strong>
-    <span class="why">— 이 통제에 매핑된 보안설정 점검(CCE)</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -309,7 +308,6 @@ vg_hero(
 <section id="hosts">
   <div class="card">
     <strong>해당 자산(호스트)</strong>
-    <span class="why">— 호스트별 최신 스캔 기준 · NA는 판정 불가</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -359,7 +357,6 @@ vg_hero(
 <section id="origin">
   <div class="card">
     <strong>식별과 출처</strong>
-    <span class="why">— 이 통제가 무엇이고 어디까지 점검됐는가</span>
     <div class="card__body">
       <dl class="kv">
         <dt>기준</dt><dd><?= vg_h($frameworks[$fw]) ?></dd>

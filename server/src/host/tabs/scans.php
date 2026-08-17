@@ -2,7 +2,7 @@
 declare(strict_types=1);
 /* 스캔 이력 탭 — 회차 표 + 같은 회차들의 에이전트 리소스 추이. */ ?>
     <div class="card">
-      <strong>스캔 이력</strong> <span class="why">— 회차를 눌러 그 시점의 취약점을 본다</span>
+      <strong>스캔 이력</strong>
       <div class="card__body">
       <?php
       vg_table(
@@ -53,11 +53,9 @@ declare(strict_types=1);
     ?>
     <div class="card mt-lg">
       <strong>에이전트 메모리 사용률</strong>
-      <span class="why">— 회차별 피크 RSS의 호스트 총 메모리 대비 %
-        <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
-          · 현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?>
-        <?php endif; ?>
-      </span>
+      <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
+        <span class="why">현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?></span>
+      <?php endif; ?>
       <div class="card__body">
       <?php vg_resource_trend($resourceScans, 'mem_pct', '%', 1, 'mem'); ?>
       </div>
@@ -65,11 +63,9 @@ declare(strict_types=1);
 
     <div class="card mt-lg">
       <strong>에이전트 CPU 사용률</strong>
-      <span class="why">— 회차별 CPU 시간의 호스트 코어 용량 대비 %
-        <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
-          · 현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?>
-        <?php endif; ?>
-      </span>
+      <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
+        <span class="why">현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?></span>
+      <?php endif; ?>
       <div class="card__body">
       <?php vg_resource_trend($resourceScans, 'cpu_pct', '%', 1, 'cpu'); ?>
       </div>

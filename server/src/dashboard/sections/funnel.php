@@ -25,18 +25,16 @@ function vg_dash_render_funnel(array $totals, int $hostCount, int $kevCount, int
   $high = (int) $totals['HIGH'];
   $allCount = array_sum($totals);
   $funnelSteps = [
+      // 타일 밑 설명 줄(cap)은 걷었다 — 숫자와 라벨이 이미 말하고, 기준·분포는 누르면 가는
+      //   목록이 그대로 보여준다. 무엇을 세는지는 title(툴팁)이 계속 갖는다.
       ['n' => $allCount, 'label' => '탐지된 전체',
-       'cap' => '자산 ' . number_format($hostCount) . '대 · 최신 스캔 기준',
-       'href' => '/findings.php', 'title' => '탐지 결과 전체 목록'],
+       'href' => '/findings.php', 'title' => '자산 ' . number_format($hostCount) . '대의 최신 스캔 · 탐지 결과 전체 목록'],
       ['n' => $crit + $high, 'label' => 'High 이상',
-       'cap' => 'CRITICAL ' . number_format($crit) . ' · HIGH ' . number_format($high),
-       'href' => '/findings.php?sev=HIGH%2B', 'title' => 'CRITICAL과 HIGH 전체 목록'],
+       'href' => '/findings.php?sev=HIGH%2B', 'title' => 'CRITICAL ' . number_format($crit) . ' · HIGH ' . number_format($high)],
       ['n' => $kevCount, 'label' => '악용 확인(KEV)',
-       'cap' => 'High 이상 중 · 실제 공격에 쓰임',
-       'href' => '/findings.php?sev=HIGH%2B&fx=kev', 'title' => 'High 이상 중 KEV 등재 목록'],
+       'href' => '/findings.php?sev=HIGH%2B&fx=kev', 'title' => 'High 이상 중 실제 공격에 쓰인 것(KEV 등재)'],
       ['n' => $kevOverdue, 'label' => 'KEV 중 기한 초과',
-       'cap' => '조치 기한 ' . number_format($kevSlaDays) . '일 넘김 · 오늘 먼저 조치할 대상',
-       'href' => '/findings.php?sev=HIGH%2B&fx=overdue&sort=due', 'title' => 'High 이상 KEV 중 기한을 넘긴 미조치 목록'],
+       'href' => '/findings.php?sev=HIGH%2B&fx=overdue&sort=due', 'title' => '조치 기한 ' . number_format($kevSlaDays) . '일을 넘긴 KEV 미조치'],
   ];
   ?>
   <div class="funnel">
@@ -48,7 +46,6 @@ function vg_dash_render_funnel(array $totals, int $hostCount, int $kevCount, int
       <a class="<?= $cls ?>" href="<?= vg_h($s['href']) ?>" title="<?= vg_h($s['title']) ?>">
         <b><?= number_format((int) $s['n']) ?></b>
         <span><?= vg_h($s['label']) ?></span>
-        <span class="funnel__cap"><?= vg_h($s['cap']) ?></span>
       </a>
     <?php endforeach; ?>
   </div>

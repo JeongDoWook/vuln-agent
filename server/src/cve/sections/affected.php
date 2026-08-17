@@ -5,7 +5,6 @@ declare(strict_types=1);
 <section id="affected">
   <div class="card">
     <strong>영향 패키지</strong>
-    <span class="why">— 이 CVE 의 전역 영향 범위(설치 여부 무관)</span>
     <div class="card__body">
     <?php
     vg_table(

@@ -219,7 +219,6 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
     //   요약 줄의 "근거 →" 가 갈 곳이 없다. 표시되는 행은 미리보기 상한 이하라 펼쳐 둔다.
     ?>
     <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['account']['label']) ?> — 호스트별 근거</strong>
-    <span class="why">— 위반 <?= number_format((int) $account['total']) ?>건<?php if ($account['unjudged'] > 0): ?> · 판정 불가 <?= number_format((int) $account['unjudged']) ?>건<?php endif; ?></span>
     <div class="card__body">
       <?php
       // REVIEW(추정)·NA(원자료 미수집)·수집 대기는 준수로 흡수하지 않는다 — 계정 목록이 아직
@@ -288,8 +287,10 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   ?>
   <div class="card mt-lg" id="trend" data-compliance-zone="trend">
     <strong>판정 추이</strong>
-    <?php // 부제는 값만 — "심사에서 그 시점엔 어땠나의 근거" 같은 화면 해설은 docs/dev/화면-안내.md 에 있다. ?>
-    <span class="why">— 일별 스냅샷<?php if ($trend): ?> · 최근 <?= count($trend) ?>일 · 최신 <?= vg_h($trend[0]['taken_at']) ?><?php endif; ?></span>
+    <?php // 제목 옆에는 값만 둔다 — 무엇을 세는 표인지는 아래 열 머리글이 말한다. ?>
+    <?php if ($trend): ?>
+    <span class="why">최근 <?= count($trend) ?>일 · 최신 <?= vg_h($trend[0]['taken_at']) ?></span>
+    <?php endif; ?>
     <div class="card__body">
       <?php if (!$trend): ?>
         <?php vg_empty([

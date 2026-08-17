@@ -9,7 +9,6 @@ declare(strict_types=1);
     ?>
     <div class="card">
       <strong>계정 컴플라이언스 판정</strong>
-      <span class="why">— 실제 계정 목록에서 파생 · 추정 항목은 "검토 필요" · 원자료 미수집은 "판정 불가"</span>
       <div class="card__body">
       <?php
       vg_table(
@@ -54,7 +53,7 @@ declare(strict_types=1);
     ]); ?>
     <div class="card mt-lg">
       <strong>계정 목록</strong>
-      <span class="why">— 최신 수집 기준 <?= number_format($accountTotal) ?>개 · 패스워드 해시는 수집하지 않습니다</span>
+      <span class="why"><?= number_format($accountTotal) ?>개 · 패스워드 해시는 수집하지 않습니다</span>
       <div class="card__body">
       <?php
       vg_table(

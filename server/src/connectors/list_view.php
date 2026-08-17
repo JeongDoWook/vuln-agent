@@ -137,7 +137,7 @@ function vg_connectors_render_list(array $connectors, string $csrf, array $logCo
         foreach ($roleGroups as $gi => $g) {
             if (empty($grouped[$gi])) { continue; }
             echo '<div class="card"><strong>' . vg_h($g['title']) . '</strong>'
-               . ' <span class="why">— ' . vg_h($g['desc']) . '</span>'
+               . ''
                . '<div class="card__body">';
             vg_table($tableHeaders, $grouped[$gi], ['card' => false, 'cell' => $tableCells]);
             echo '</div></div>';

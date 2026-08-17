@@ -335,8 +335,6 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
   if (count($rankItems) >= 2): ?>
     <div class="card">
       <strong>CVE 를 가장 많이 물고 있는 패키지</strong>
-      <span class="why">— 현재 필터 기준 상위 · 막대 색은 그 패키지의 최고 EPSS 구간
-        · 같은 소스에서 갈라진 바이너리(표의 '동일 집계')는 대표 1종만</span>
       <div class="card__body"><?php vg_rank_bars($rankItems, ['unit' => '건']); ?></div>
     </div>
   <?php endif; ?>

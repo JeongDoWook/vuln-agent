@@ -5,7 +5,6 @@ declare(strict_types=1);
 <section id="references">
   <div class="card">
     <strong>참조 자료</strong>
-    <span class="why">— 원본·벤더 패치·공지 링크</span>
     <div class="card__body">
       <div class="links">
         <a href="https://nvd.nist.gov/vuln/detail/<?= urlencode($cveId) ?>" target="_blank" rel="noopener">NVD</a>

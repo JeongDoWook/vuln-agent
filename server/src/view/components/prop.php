@@ -60,9 +60,7 @@ function vg_connectors_empty_cta(): ?array {
 function vg_sbom_links(string $fqdn, string $cid = ''): void {
     if (!vg_can('assets')) { return; }
     $base = '/sbom.php?host=' . urlencode($fqdn) . ($cid !== '' ? '&cid=' . urlencode($cid) : '');
-    $what = $cid !== '' ? '이 컨테이너' : '이 호스트';
-    echo '<div class="card"><strong>SBOM 내려받기</strong> <span class="why">— '
-        . vg_h($what) . '의 부품표를 표준 형식으로 저장합니다</span>'
+    echo '<div class="card"><strong>SBOM 내려받기</strong>'
         . '<div class="card__body"><div class="links">'
         . '<a href="' . vg_h($base . '&format=cyclonedx') . '">CycloneDX 1.5</a>'
         . '<a href="' . vg_h($base . '&format=spdx') . '">SPDX 2.3</a>'

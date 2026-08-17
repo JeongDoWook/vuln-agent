@@ -186,7 +186,6 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
   ?>
   <div class="card">
     <strong>현재 상태</strong>
-    <span class="why">— 최신 스캔 1건에서 이 조합이 어떻게 판정됐는가</span>
     <div class="card__body">
       <dl class="kv">
         <dt>판정</dt>
@@ -273,7 +272,6 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
   </div>
   <div class="card">
     <strong>미조치 사유</strong>
-    <span class="why">— 조치하지 않는 이유와 그 판단 주체·시점만 남깁니다.</span>
     <div class="card__body">
       <?php if ($note !== null): ?>
         <dl class="kv">
@@ -321,7 +319,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
 
   <div class="card">
     <strong>스캔별 상태 타임라인</strong>
-    <span class="why">— 최신 스캔부터, 이 페이지에 <?= count($rows) ?>건</span>
+    <span class="why"><?= count($rows) ?>건</span>
     <div class="card__body">
     <?php
     vg_table(

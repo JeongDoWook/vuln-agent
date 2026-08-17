@@ -8,7 +8,7 @@ declare(strict_types=1);
 function vg_dash_render_hosts(array $rows, array $sevByScan, int $total, int $perPage, int $page): void {
   ?>
   <div class="card">
-    <strong>호스트별 현황</strong> <span class="why">— 위험도 높은 순 · 각 호스트의 최신 스캔 기준</span>
+    <strong>호스트별 현황</strong>
     <?php /* '심각도' 열의 막대는 색으로만 등급을 말한다 — 그 색이 무슨 뜻인지 이 화면 어디에도
              적혀 있지 않았다(접힌 도넛 안에만 있었다). 표 바로 위에 한 줄로 둔다. */ ?>
     <?php vg_legend(array_map(

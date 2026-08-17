@@ -11,7 +11,6 @@ declare(strict_types=1);
   <?php if ($cve !== null): ?>
     <div class="card">
       <strong>식별과 출처</strong>
-      <span class="why">— 이 화면의 값이 언제 어디서 온 것인가</span>
       <div class="card__body">
         <dl class="kv">
           <dt>CVE ID</dt><dd><code><?= vg_h($cveId) ?></code></dd>
@@ -23,7 +22,7 @@ declare(strict_types=1);
           <dt>마지막 갱신</dt><dd><?= vg_h((string) ($cve['updated_at'] ?? '–')) ?></dd>
           <dt>EPSS 백분위</dt>
           <dd><?= $cve['epss_percentile'] !== null
-              ? vg_h(number_format((float) $cve['epss_percentile'] * 100, 1)) . '% — 전체 CVE 중 이만큼보다 악용확률이 높다'
+              ? vg_h(number_format((float) $cve['epss_percentile'] * 100, 1)) . '%'
               : '<span class="why">미수집</span>' ?></dd>
           <dt>벤더 판정</dt>
           <dd><?= $vendorTotal > 0
@@ -47,7 +46,6 @@ declare(strict_types=1);
   <?php if ($kev): ?>
     <div class="card">
       <strong>CISA KEV</strong>
-      <span class="why">— 실제 악용 확인 · 최우선 대응 대상</span>
       <div class="card__body">
         <dl class="kv">
           <dt>등재일</dt>

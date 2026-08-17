@@ -138,7 +138,6 @@ vg_hero(
 
 <div class="card">
   <strong>핵심 지표</strong>
-  <span class="why">— 패키지 기준(설치 여부와 무관한 전역 정보)</span>
   <div class="card__body stat-grid">
     <div class="stat">
       <span class="stat__val"><?= number_format($total) ?>건</span>
@@ -182,7 +181,7 @@ vg_hero(
   ?>
   <div class="card">
     <strong>벤더 미수정이 몰린 자산</strong>
-    <span class="why">— 호스트별 최신 스캔 기준 · <?= vg_nofix_badge() ?></span>
+    <span class="why"><?= vg_nofix_badge() ?></span>
     <div class="card__body">
     <?php
     vg_table(
@@ -229,7 +228,6 @@ vg_hero(
 <section id="cves">
   <div class="card">
     <strong>관련 CVE</strong>
-    <span class="why">— 이 패키지에 영향을 주는 취약점과 수정 버전(CVSS 높은 순)</span>
     <?php /* 표의 등급 뱃지는 CVSS 에서 파생된 색이다 — 색의 뜻을 표 바로 위에 세운다.
              점수가 없으면 등급이 '없는' 게 아니라 아직 안 매겨진 것이다(cves.php 와 같은 어휘). */ ?>
     <?php vg_legend(array_merge(

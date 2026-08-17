@@ -116,7 +116,6 @@ vg_header('설정', 'settings');
         if (!$byGroup[$gkey]) { continue; } ?>
       <section class="card">
         <strong><?= vg_h((string) $group['label']) ?></strong>
-        <p class="why"><?= vg_h((string) $group['desc']) ?></p>
         <div class="card__body setting-form setting-form--grid">
           <?php foreach ($byGroup[$gkey] as $key => $def):
               $id  = 'set-' . str_replace('.', '-', $key);

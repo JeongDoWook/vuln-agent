@@ -193,7 +193,6 @@ vg_hero(
 <section id="check">
   <div class="card">
     <strong>무엇을 점검하고 어떻게 고치나</strong>
-    <span class="why">— 판정 로직과 같은 기준(server/src/cce.php)</span>
     <div class="card__body">
       <dl class="kv">
         <dt>무엇을 보는가</dt>
@@ -210,7 +209,6 @@ vg_hero(
 <section id="controls">
   <div class="card">
     <strong>이 점검이 증적이 되는 기준</strong>
-    <span class="why">— 매핑의 정본은 통제 기준 매핑(tb_control_mapping)</span>
     <div class="card__body">
     <?php
     $mapRows = [];
@@ -255,7 +253,6 @@ vg_hero(
 <section id="hosts">
   <div class="card">
     <strong>이 점검에서 FAIL 인 자산</strong>
-    <span class="why">— 호스트별 최신 스캔 기준</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -296,7 +293,6 @@ vg_hero(
 <section id="origin">
   <div class="card">
     <strong>식별과 출처</strong>
-    <span class="why">— 이 점검이 무엇이고 근거를 어디서 가져오는가</span>
     <div class="card__body">
       <dl class="kv">
         <dt>CCE 코드</dt><dd><code><?= vg_h($code) ?></code></dd>

@@ -186,7 +186,7 @@ vg_header($user['username'] ?? '사용자', 'users');
 
   <div class="card mt-lg">
     <strong>최근 활동</strong>
-    <span class="why">— 최근 <?= $userActivityLimit ?>건 ·
+    <span class="why">최근 <?= $userActivityLimit ?>건 ·
       <a href="/activity.php?q=<?= urlencode($user['username']) ?>">전체 보기 →</a></span>
     <div class="card__body">
       <?php

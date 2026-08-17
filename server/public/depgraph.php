@@ -138,7 +138,6 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
 
 <div class="card">
   <strong>무엇이 이 패키지를 끌어왔나</strong>
-  <span class="why">— SBOM·pom.xml 수집 기준</span>
 </div>
 
 <?php if (!$scan): ?>
@@ -160,7 +159,6 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
   <?php if (count($groups) > 1): ?>
   <div class="card">
     <strong>조회 단위</strong>
-    <span class="why">— 의존 정보가 있는 호스트·컨테이너만 표시</span>
     <div class="card__body">
       <nav class="subtabs">
       <?php foreach ($groups as $gid => $g): ?>
@@ -250,7 +248,6 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
   <?php if ($tab === 'from'): ?>
   <div class="card">
     <strong>이 패키지를 끌어온 경로</strong>
-    <span class="why">— 루트에서 대상까지의 모든 수집 경로</span>
     <div class="card__body">
     <?php
     $r = vg_pkgdep_paths($graph, $target);
@@ -286,7 +283,6 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
   <?php elseif ($tab === 'to'): ?>
   <div class="card">
     <strong>이 패키지가 끌어오는 의존성</strong>
-    <span class="why">— 직접·전이 의존성</span>
     <div class="card__body">
     <?php
     if (!vg_pkgdep_children($graph, $target)) {
@@ -303,7 +299,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
   <?php else: ?>
   <div class="card">
     <strong>전체 트리</strong>
-    <span class="why">— 루트 <?= number_format(count($graph['roots'])) ?>개 · 노드 <?= number_format(count($graph['nodes'])) ?>개</span>
+    <span class="why">루트 <?= number_format(count($graph['roots'])) ?>개 · 노드 <?= number_format(count($graph['nodes'])) ?>개</span>
     <div class="card__body">
     <?php
     if (!$graph['roots']) {
@@ -323,7 +319,6 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
   <?php if ($graph['pom']): ?>
   <div class="card">
     <strong>pom.xml 직접 선언</strong>
-    <span class="why">— <code>&lt;dependencies&gt;</code> 최상위 선언(best-effort). 부모가 없어 트리에 걸리지 않는다.</span>
     <div class="card__body">
       <ul class="dep-tree">
       <?php foreach ($graph['pom'] as $k): ?>

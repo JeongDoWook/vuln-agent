@@ -48,7 +48,6 @@
   <section class="action-queue" data-action-queue aria-labelledby="findingActionQueueTitle">
     <div class="action-queue__head">
       <strong id="findingActionQueueTitle">먼저 볼 작업</strong>
-      <span class="why">— 최신 자산 스캔 기준</span>
     </div>
     <?php vg_kpi_strip([
         ['label' => 'High 이상', 'value' => number_format($actionCounts['high']), 'tone' => 'high',

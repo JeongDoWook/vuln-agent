@@ -11,7 +11,6 @@ declare(strict_types=1);
   <?php if ($parts): ?>
     <div class="card">
       <strong>공격 벡터</strong>
-      <span class="why">— 붉은 값이 공격자에게 유리한 조건이다</span>
       <div class="card__body">
         <dl class="kv">
           <?php foreach ($parts as $p): ?>

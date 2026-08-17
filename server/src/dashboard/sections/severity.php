@@ -10,7 +10,7 @@ function vg_dash_render_severity(array $totals, array $delta, int $hostCount, in
    * MEDIUM·LOW 는 "오늘 무엇을 할까" 를 바꾸지 않는 수라(실측 LOW 34,745) 상단에 두면
    * 자릿수만으로 CRITICAL 을 덮는다. 필요할 때 펴 보는 자리가 맞다. */ ?>
   <div class="card">
-    <strong>등급별 분포</strong> <span class="why">— 7일 전 대비 증감</span>
+    <strong>등급별 분포</strong>
     <div class="card__body">
       <?php /* 여는 줄에 카드 제목("등급별 전체 분포 보기")을 다시 적지 않는다 — 바로 위 줄이다. */ ?>
       <details>

@@ -141,7 +141,6 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 
 <div class="card">
   <strong>핵심 지표</strong>
-  <span class="why">— 이 공지가 무엇을 다루고 어디까지 수집됐는가</span>
   <div class="card__body stat-grid">
     <div class="stat">
       <span class="stat__val"><?= number_format($cveTotal) ?>건</span>
@@ -188,7 +187,6 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 <section id="cves">
   <div class="card">
     <strong>관련 CVE</strong>
-    <span class="why">— 누르면 그 CVE 의 상세와 영향받는 자산을 봅니다(CVSS 높은 순)</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -240,7 +238,6 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 <section id="assets">
   <div class="card">
     <strong>영향 자산</strong>
-    <span class="why">— 공지의 CVE가 발견된 최신 스캔</span>
     <div class="card__body">
     <?php
     vg_table(
@@ -292,7 +289,6 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 <section id="content">
   <div class="card">
     <strong>본문</strong>
-    <span class="why">— 원문에서 옮겨온 평문(표·이미지 제외)</span>
     <?php if (!empty($adv['content'])): ?>
       <p class="why prose"><?= vg_h($adv['content']) ?></p>
     <?php elseif (!empty($adv['content_fetched_at'])): ?>
@@ -319,7 +315,6 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 <section id="origin">
   <div class="card">
     <strong>원문·수집 정보</strong>
-    <span class="why">— 첨부파일·표 서식은 원문에만 있다</span>
     <div class="card__body">
       <dl class="kv">
         <dt>공지 번호</dt><dd>#<?= (int) $adv['advisory_id'] ?></dd>

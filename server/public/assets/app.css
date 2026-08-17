@@ -2467,7 +2467,6 @@ form.card .btn--primary:active { transform: translateY(0); }
   font-variant-numeric: tabular-nums;
 }
 .funnel__step > span { font-size: var(--fs-sm); color: var(--text-2); }
-.funnel__cap { font-size: var(--fs-xs); color: var(--muted); }
 /* 칸 사이의 좁혀지는 방향 — 마크업이 아니라 CSS 가 그린다(값이 아니라 관계라서). */
 .funnel__step + .funnel__step::before {
   content: "›";
