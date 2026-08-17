@@ -10,14 +10,22 @@
 #   아니다. 기존 볼륨에 반영할 증분 변경은 전부 db/migrations/ 에 둔다.
 #
 #   호출: compose_runner.sh 가 `up` 뒤에, update.sh 가 배포 뒤에 자동 실행.
-#   수동: bash deploy/migrate.sh [db컨테이너명] [--preflight]   (기본 vulnagent-db)
+#   수동: bash deploy/migrate.sh [db컨테이너명] [--preflight|--pending]   (기본 vulnagent-db)
+#
+#   --pending: 아무것도 적용하지 않고 **미적용 파일명만** 한 줄씩 stdout 에 낸다(사람용 줄은
+#     전부 stderr). update.sh 가 "백업·검증이 필요한 배포인가"를 이걸로 판정한다 — 판정 기준을
+#     호출자에 복사하면 두 벌이 되어 갈라지므로, 기준은 이 파일의 pending_names() 하나뿐이다.
 # =============================================================================
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # 저장소 루트
 
 DB_CONTAINER="${1:-vulnagent-db}"
 PREFLIGHT_ONLY=0
-[ "${2:-}" = "--preflight" ] && PREFLIGHT_ONLY=1
+PENDING_ONLY=0
+case "${2:-}" in
+  --preflight) PREFLIGHT_ONLY=1 ;;
+  --pending)   PENDING_ONLY=1 ;;
+esac
 MIG_DIR="${MIG_DIR:-db/migrations}"
 
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; N='\033[0m'
@@ -116,17 +124,46 @@ db_mysql -e "CREATE TABLE IF NOT EXISTS tb_schema_migrations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
 
 latest=$(db_mysql -N -B -e "SELECT COALESCE(MAX(filename), 'none') FROM tb_schema_migrations")
+# --pending 모드에서 stdout 은 "미적용 목록" 전용이다 — 사람이 읽는 줄은 fd 3(=stderr)로 보낸다.
+# (bare `exec` 리다이렉션이 문제가 됐던 건 `2>/dev/null` 로 오류를 **버릴** 때였다. 여기는
+#  fd 3 을 여는 것뿐이라 stderr 는 그대로 살아 있다.)
+if [ "$PENDING_ONLY" = 1 ]; then exec 3>&2; else exec 3>&1; fi
 printf "  ${C}preflight${N}: db=%s · schema_version=%s · free_kb=%s · backup=%s\n" \
-  "$DB_NAME" "${latest:-none}" "$free_kb" "${MIGRATION_BACKUP_FILE:-not-required}"
+  "$DB_NAME" "${latest:-none}" "$free_kb" "${MIGRATION_BACKUP_FILE:-not-required}" >&3
 if [ "$PREFLIGHT_ONLY" = 1 ]; then exit 0; fi
 
-applied=0; skipped=0
+# --- 미적용 판정 (SSOT) ------------------------------------------------------
+# db/migrations/*.sql 중 tb_schema_migrations 에 없는 파일명을 한 줄씩 낸다.
+# 적용 루프도, update.sh 의 `--pending` 조회도 전부 이 함수만 쓴다 — 기준이 갈라지면
+# "백업을 건너뛰었는데 사실은 적용할 게 있었다" 가 된다.
+# 파일마다 SELECT 하지 않고 적용 목록을 **한 번에** 받아 비교한다(질의 1회).
+pending_names() {
+  local applied_rows f name
+  applied_rows="$(db_mysql -N -B -e "SELECT filename FROM tb_schema_migrations")"
+  for f in "$MIG_DIR"/*.sql; do
+    name="$(basename "$f")"
+    case "$name" in *\'*) printf "${Y}건너뜀(파일명에 따옴표): %s${N}\n" "$name" >&2; continue ;; esac
+    printf '%s\n' "$applied_rows" | grep -qxF -- "$name" || printf '%s\n' "$name"
+  done
+}
+
 shopt -s nullglob
-for f in "$MIG_DIR"/*.sql; do
-  name="$(basename "$f")"
-  case "$name" in *\'*) printf "${Y}건너뜀(파일명에 따옴표): %s${N}\n" "$name"; continue ;; esac
-  done_row="$(db_mysql -N -B -e "SELECT 1 FROM tb_schema_migrations WHERE filename='$name' LIMIT 1")"
-  if [ -n "$done_row" ]; then skipped=$((skipped + 1)); continue; fi
+PENDING=()
+while IFS= read -r name; do
+  PENDING+=("$name")
+done < <(pending_names)
+
+# 빈 배열 전개는 옛 bash + `set -u` 에서 unbound 로 죽는다 → ${arr[@]+"${arr[@]}"} 로 감싼다.
+if [ "$PENDING_ONLY" = 1 ]; then
+  if [ "${#PENDING[@]}" -gt 0 ]; then printf '%s\n' "${PENDING[@]}"; fi
+  exit 0
+fi
+
+total=0
+for f in "$MIG_DIR"/*.sql; do total=$((total + 1)); done
+applied=0; skipped=$((total - ${#PENDING[@]}))
+for name in ${PENDING[@]+"${PENDING[@]}"}; do
+  f="$MIG_DIR/$name"
   printf "  ${C}적용${N}: %s\n" "$name"
   # 파일 실행(실패하면 여기서 중단 → 기록 안 함). mysql 의 상세 오류는 stderr 로 그대로 나가고,
   # 그와 별개로 "어느 파일에서 멈췄는지"를 stdout 에도 한 줄 남긴다 — stderr 를 버리는 호출자
