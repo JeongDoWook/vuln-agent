@@ -565,7 +565,7 @@ fw_detect() {
 #   방화벽을 판정할 수 없으면(FW_KIND=none) 0(허용)을 돌려 강등을 막는다.
 fw_port_allowed() {
   # proto 는 기본 tcp. set -u 라 "$2" 를 그냥 쓰면, 호출부가 인자를 빠뜨렸을 때
-  # 이 함수가 **에이전트 전체를 죽인다**(실제로 그렇게 죽었다). 기본값으로 그 사고를 막는다.
+  # 이 함수가 **에이전트 전체를 종료시킨다**. 기본값으로 그것을 막는다.
   local p="$1" proto="${2:-tcp}" e pp lo hi
   [ "$FW_KIND" = "none" ] && return 0
   for e in $FW_ALLOW; do
@@ -1233,7 +1233,7 @@ ctr_exposure() {   # $1=cid $2=대표pid $3=pidns $4=pkgs파일
 
       # 호스트로 게시된 포트인가 → 게시됐으면 호스트 방화벽까지 본다.
       #   fw_port_allowed 는 **<포트> <proto> 두 인자**를 받는다. 하나만 넘기면 set -u 가
-      #   "$2: unbound variable" 로 **에이전트를 통째로 죽인다**(운영에서 실제로 죽었다).
+      #   "$2: unbound variable" 로 **에이전트를 통째로 종료시킨다**.
       #   /proc/net 의 proto 는 tcp/tcp6 인데 방화벽 규칙은 tcp 로 적히므로 6 을 떼고 넘긴다.
       scope="LOCAL"
       hostport=$(printf '%s\n' "$pub" | awk -v p="$port" -F' -> ' \

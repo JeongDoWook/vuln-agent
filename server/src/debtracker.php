@@ -68,8 +68,8 @@ function vg_debtracker_evidence(PDO $pdo, int $scanId, string $hostCodename): ar
     if (!$relOf) { return []; }
 
     // 2) 이 스캔의 dpkg 패키지를 먼저 읽는다 — 트래커는 **그 패키지들 것만** 조회한다.
-    //    예전엔 릴리스 전량(코드명당 6만 행)을 배열에 올렸다. RHEL OVAL 까지 들어오자 매처가
-    //    메모리 512MB 를 넘겨 운영에서 죽었다. 스캔 하나가 보는 패키지는 수백 개뿐이다.
+    //    릴리스 전량(코드명당 6만 행)을 배열에 올리면, RHEL OVAL 까지 들어왔을 때 매처가
+    //    메모리 512MB 를 초과해 프로세스가 종료된다. 스캔 하나가 보는 패키지는 수백 개뿐이다.
     $ids = array_keys($relOf);
     $inC = implode(',', array_fill(0, count($ids), '?'));
     $ps  = $pdo->prepare(

@@ -79,19 +79,11 @@ prepare_staged_release() {
   git worktree add --quiet --detach "$STAGED_ROOT" "$release_commit"
 }
 
-# 마이그레이션만 돌린다. **배포는 더 이상 백업을 만들지 않는다.**
-# 백업은 운영 crontab 의 `0 4 * * * deploy/backup_db.sh`(KEEP=7)가 담당한다 — 배포가 682MB 덤프와
-# 일회용 DB 복원 대조를 기다리던 것이 20분 넘는 배포의 대부분이었고, 그 대가로 되돌릴 지점은
-# **그날 04:00 백업**까지만 남는다(deploy/README.md "사라진 안전망" 참조).
-#
-# `--pending` 사전 판정(#638)도 같이 걷어냈다. 그 판정의 유일한 용도가 "백업을 돌릴까" 였는데,
-# 판정 자체가 migrate.sh 를 한 번 더 띄우는 일(컨테이너 health 대기 + preflight 질의)이라
-# 백업이 사라진 지금은 같은 비용을 두 번 내고 얻는 게 없다. migrate.sh 는 멱등이라 미적용분이
-# 없으면 스킵만 하고 끝나며, 무슨 일이 있었는지는 그쪽 로그가 그대로 말한다
-# (`preflight: schema_version=…` · `적용: <파일>` · `마이그레이션 완료 — 적용 N · 스킵 M`).
+# migrate.sh 는 멱등이라 미적용분이 없으면 스킵만 하고 끝난다. 무슨 일이 있었는지는 그쪽 로그가
+# 그대로 말한다(`preflight: schema_version=…` · `적용: <파일>` · `마이그레이션 완료 — 적용 N · 스킵 M`).
 run_migration_stage() {
   local release_root="$1"
-  echo "  백업은 만들지 않습니다(정기 백업은 매일 04:00 cron) → 마이그레이션만 적용합니다."
+  echo "  마이그레이션을 적용합니다."
   bash "$release_root/deploy/migrate.sh" vulnagent-db
 }
 
@@ -199,7 +191,7 @@ if printf '%s\n' "$CHANGED" | grep -qE "$DB_RE"; then
   fi
 fi
 
-say "[4/6] DB 마이그레이션 (live source 반영보다 **먼저**, 백업 없음)"
+say "[4/6] DB 마이그레이션 (live source 반영보다 **먼저**)"
 # fetch는 live worktree를 바꾸지 않는다. 새 commit은 별도 worktree에 checkout해 그 버전의
 # migration 도구와 SQL을 실행하고, 전부 성공한 뒤 [5/6]에서만 CURRENT_ROOT를 fast-forward한다.
 # 따라서 migration 이 오래 걸려도 운영 web은 옛 코드+호환 schema 조합을 계속 제공한다.

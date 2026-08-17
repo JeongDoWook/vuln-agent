@@ -51,7 +51,7 @@ function vg_ubuntu_version_of(string $codename): string {
 /**
  * 이 스캔의 **우분투 호스트와 우분투 컨테이너**에 OVAL 을 적용해 "아직 취약" 맵을 만든다.
  *   조회는 이 스캔이 실제로 가진 패키지 이름으로 한정한다 — 릴리스 전량(수십만 행)을 배열에
- *   올리면 매처 메모리가 터진다(운영에서 실제로 겪었다).
+ *   올리면 매처가 메모리 한도를 초과한다.
  *
  * @return array<int, array<string, array<string,int>>>  ctrId => [pkg => [cve => has_fix]]
  */

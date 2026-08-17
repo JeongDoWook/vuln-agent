@@ -146,7 +146,7 @@ vg_page_title('UI 디자인 시스템', 'SYSTEM');
   <h2>표와 빈 상태</h2>
   <?php vg_table(
       [['label' => '대상', 'key' => 'target', 'class' => 'col-id'], ['label' => '판단 신호', 'key' => 'signals']],
-      [['target' => 'deskmini-x300', 'signals' => '']],
+      [['target' => 'web-01', 'signals' => '']],
       ['cell' => ['signals' => static fn(array $row): string => vg_capture(static function (): void {
           vg_signal_slots([
               'exposure' => ['value' => '외부 노출', 'tone' => 'high'],

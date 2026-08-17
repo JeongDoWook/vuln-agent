@@ -300,10 +300,10 @@ function Start-TermkeepWorker {
     #
     # ⚠ 셸이 powershell 이라고 가정하지 않는다. 실측(2026-07-27) 새 세션은 **cmd.exe** 로 떴다.
     # 그래서 프롬프트 패턴이 둘이다:
-    #   powershell → 'PS C:\...>'    ·    cmd → 'C:\Users\정도욱>'
+    #   powershell → 'PS C:\...>'    ·    cmd → 'C:\Users\<사용자>>'
     # cmd 쪽에 줄머리 앵커('(?m)^')를 붙이면 안 된다 — 실제 바이트를 떠 보면 프롬프트 앞에
     # 커서이동 시퀀스가 붙어 같은 줄에 이어 온다:
-    #   …(c) Microsoft Corporation. All rights reserved.<ESC>[4;1HC:\Users\정도욱><ESC>[?25h
+    #   …(c) Microsoft Corporation. All rights reserved.<ESC>[4;1HC:\Users\<사용자>><ESC>[?25h
     # 앵커를 붙인 '(?m)^[A-Za-z]:\\[^\r\n]*>' 가 실패했던 이유가 이것이다. 대신 ESC 를 문자
     # 클래스에서 빼서(\x1b) 앞선 OSC 타이틀('<ESC>]0;C:\WINDOWS\system32\cmd.exe<BEL>')이
     # 뒤 문장까지 삼켜 오검출되는 일을 막는다.
@@ -353,7 +353,7 @@ function Start-TermkeepWorker {
     $cmdText = "powershell -NoProfile -ExecutionPolicy Bypass -File `"$LaunchPs1`"" + "`r"
 
     # data 는 base64 로 인코딩된 바이트다(데몬이 디코드해 PTY 에 그대로 쓴다).
-    # UTF-8 바이트로 인코딩해야 한다 — 경로에 한글이 들어간다(사용자 홈이 C:\Users\정도욱).
+    # UTF-8 바이트로 인코딩해야 한다 — 경로에 한글이 들어간다(사용자 홈이 C:\Users\<사용자>).
     $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($cmdText))
     $inputMsg = ([ordered]@{ type = 'SendInput'; session_id = $sid; data = $b64 } | ConvertTo-Json -Compress)
     $writer.Write($inputMsg + "`n")   # 성공 시 무응답이라 읽지 않는다

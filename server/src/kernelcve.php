@@ -61,7 +61,7 @@ function vg_kernel_cve_verdict(?string $introduced, ?string $mainline, array $st
 /**
  * 구동 커널 기준으로 "이미 수정됨/해당 없음" 인 CVE 집합.
  *   반환: cve_id => 억제 사유(사람이 읽는 문장)
- *   대상 CVE 만 조회한다(스캔 하나가 보는 커널 CVE 는 수백 건 — 전량 적재 금지, 매처 메모리 사고 재발 방지).
+ *   대상 CVE 만 조회한다(스캔 하나가 보는 커널 CVE 는 수백 건 — 전량 적재 금지, 매처 메모리 초과 방지).
  *
  * @param string[] $cveIds
  * @return array<string,string>

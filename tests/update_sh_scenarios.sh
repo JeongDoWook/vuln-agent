@@ -10,10 +10,10 @@
 #   2. OLD = NEW + PHP·문서만 변경                    → 재빌드/재생성 없음
 #   3. 정상 pull(OLD ≠ NEW) + Caddyfile 변경          → 기존과 동일하게 재빌드
 #   4. 같은 상태에서 연속 2회 실행                     → 2회차는 할 일 없음(멱등)
-#   5. 미적용 마이그레이션 0건                         → 백업 없음. migrate.sh 는 돌지만 적용 0건(멱등 스킵)
-#   6. 미적용 1건 이상                                 → 적용은 하되 **백업은 만들지 않는다**(이번 변경의 핵심)
+#   5. 미적용 마이그레이션 0건                         → migrate.sh 는 돌지만 적용 0건(멱등 스킵)
+#   6. 미적용 1건 이상                                 → 적용은 하되 백업은 만들지 않는다
 #   7. 파일 변경 0 + 미적용 1건(앞선 배포가 중단됨)    → 건너뛰지 않고 적용(git diff 로 보면 틀리는 케이스)
-#   8. DB 상태가 이상해도                              → 백업으로 도피하지 않는다(백업 경로 자체가 없다)
+#   8. 마이그레이션이 실패해도                          → 백업 경로 자체가 없다
 #
 # 실행: bash tests/update_sh_scenarios.sh
 # =============================================================================
@@ -211,7 +211,7 @@ expect_rc0; expect_no_build; expect_no_compose; expect_no_backup; expect_clean
 out | grep -q '반영할 것 없음' && ok "2회차: 반영할 것 없음" || { bad "2회차가 할 일을 찾았다"; out | tail -30; }
 expect_migrate_first                                   # 마이그레이션은 멱등이라 2회차에도 돈다
 
-head2 "시나리오 5 — 미적용 0건 → 백업 없음, migrate.sh 는 돌되 적용 0건(멱등 스킵)"
+head2 "시나리오 5 — 미적용 0건 → migrate.sh 는 돌되 적용 0건(멱등 스킵)"
 seed_repo
 set_pending                                            # 미적용 0건
 STUB_LAST_APPLIED=20260816230500_perf_distinct_lookup_indexes.sql
@@ -220,12 +220,12 @@ BEFORE=$(count_backups)
 run_update
 expect_rc0; expect_no_backup; expect_migrate_noop; expect_marker; expect_clean
 [ "$(count_backups)" = "$BEFORE" ] && ok "백업 파일이 새로 안 생김($BEFORE개 그대로)" || bad "백업 파일이 늘었다($BEFORE → $(count_backups))"
-out | grep -q '백업은 만들지 않습니다' && ok "백업을 안 한다는 사실을 로그에 분명히 남긴다" || { bad "백업 없음 문구가 없다"; out | tail -30; }
+out | grep -q '마이그레이션을 적용합니다' && ok "마이그레이션 단계임을 로그가 말한다" || { bad "마이그레이션 단계 문구가 없다"; out | tail -30; }
 out | grep -q "schema_version=$STUB_LAST_APPLIED" && ok "마지막 적용 파일명을 같이 보여준다" || bad "마지막 적용 표기가 없다"
 out | grep -q '마이그레이션 완료 — 적용 0' && ok "적용 0건임을 로그가 말한다" || { bad "적용 0건 표기가 없다"; out | tail -30; }
 STUB_LAST_APPLIED=none
 
-head2 "시나리오 6 — 미적용 1건 이상 → 적용은 하되 **백업은 안 만든다**(이번 변경의 핵심)"
+head2 "시나리오 6 — 미적용 1건 이상 → 적용은 하되 백업은 안 만든다"
 seed_repo
 set_pending 20260817090000_add_col.sql 20260817091000_add_idx.sql
 push_commit db/migrations/20260817090000_add_col.sql 'ALTER TABLE t ADD COLUMN c INT;' '마이그레이션 추가'
@@ -245,7 +245,7 @@ expect_rc0; expect_no_backup; expect_migrate_applied; expect_marker; expect_clea
 [ "$(count_backups)" = "$BEFORE" ] && ok "백업 파일이 새로 안 생김($BEFORE개 그대로)" || bad "백업 파일이 늘었다($BEFORE → $(count_backups))"
 out | grep -q '반영할 것 없음' && ok "코드 변경은 0건인 상태가 맞다" || { bad "코드 변경 0건 상태가 아니다"; out | tail -30; }
 
-head2 "시나리오 8 — 마이그레이션 실패 → 배포 중단(백업으로 도피하지 않는다)"
+head2 "시나리오 8 — 마이그레이션 실패 → 배포 중단"
 seed_repo
 STUB_MIGRATE_FAIL=1
 push_commit server/public/index.php '// php 수정' 'php 변경'
