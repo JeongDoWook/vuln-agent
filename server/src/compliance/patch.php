@@ -131,8 +131,8 @@ function vg_compliance_load_patch(PDO $pdo, array $policy): array {
     // 최초 발견 시각 배치 조회 — tb_finding 을 host_id 로 훑으면 옵티마이저가 그걸 드라이빙으로
     //   안 써 전체스캔한다(실측: type=ALL, Using temporary). 대신 대상 호스트의 scan_id 목록을
     //   먼저 작은 tb_scan 에서 좁게 뽑아, 그 scan_id 리스트로 tb_finding 을 걸러
-    //   idx_find_scan_sev(scan_id,severity) 를 태운다. 조회 구간은 VG_COMPLIANCE_HISTORY_LOOKBACK_DAYS
-    //   로 제한한다 — 전체 스캔 이력을 다 훑을 이유가 없다.
+    //   idx_find_scan_sev(scan_id,severity) 를 태운다. 조회 구간은 아래 $lookbackDays(가장 긴 SLA
+    //   + VG_COMPLIANCE_HISTORY_MARGIN_DAYS)로 제한한다 — 전체 스캔 이력을 다 훑을 이유가 없다.
     $hostIds = array_values(array_unique(array_map(static fn($r) => (int) $r['host_id'], $active)));
     $in = implode(',', array_fill(0, count($hostIds), '?'));
 
