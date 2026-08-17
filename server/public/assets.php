@@ -74,7 +74,7 @@ vg_header('자산', 'assets');
   ?>
   <?php /* 제목 옆 '?' 는 이 화면 전체에 걸리는 규칙만 담는다 — 열별 기준은 각 열 머리글이 갖는다.
            등급 확정 경계는 관리자용 일괄 확정 카드 밖에는 적혀 있지 않아 여기로 올린다. */ ?>
-  <?php vg_page_title('자산', 'ASSETS', '에이전트가 등록한 호스트별 수집 상태와 탐지 결과입니다.', [
+  <?php vg_page_title('자산', 'ASSETS', '', [
       'suffix_html' => vg_help('시스템 제안은 초안이며, 자산 등급은 사람이 확정합니다.'),
       'actions' => vg_capture(static function (): void {
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
@@ -98,14 +98,10 @@ vg_header('자산', 'assets');
   ?>
   <div class="cards">
     <div class="kpi kpi--sm"><b><?= number_format($totalHosts) ?></b><span>전체 자산</span></div>
-    <?php /* 정보시스템 등급 — 확정 등급의 최고값 승계. 확정이 하나도 없으면 값이 대시 하나뿐인데,
-             그것만 떠 있으면 "미설정인지 권한이 없어 못 보는 것인지" 를 알 수 없다.
-             왜 비었는지를 카드 안에 적는다(권한 문제는 아니다 — 이 화면 자체가 assets 권한이다). */ ?>
-    <div class="kpi kpi--sm" title="<?= $systemGrade !== null ? '확정 자산 중 최고 등급' : '확정 등급 없음' ?>">
+    <?php /* 정보시스템 등급 — 확정 등급의 최고값 승계. 확정이 하나도 없으면 값은 대시 하나다.
+             "왜 비었는가" 는 타일 안에 문장으로 두지 않고 title 로 내린다(타일은 값 자리다). */ ?>
+    <div class="kpi kpi--sm" title="<?= $systemGrade !== null ? '확정 자산 중 최고 등급' : '확정된 자산 등급이 없어 승계할 값이 없다' ?>">
       <b><?= vg_h($systemGrade['grade'] ?? '–') ?></b><span>정보시스템 등급</span>
-      <?php if ($systemGrade === null): ?>
-        <span>확정된 자산 등급이 없어 승계할 값이 없습니다</span>
-      <?php endif; ?>
     </div>
     <?php /* 미확정 — 눌러서 그 자산만 거른다(등급 필터의 '미지정'과 같은 조건). 0 이면 톤을 뺀다. */ ?>
     <a class="kpi kpi--sm<?= $unconfirmed > 0 ? ' tone-med' : '' ?><?= $grade === 'none' ? ' is-selected' : '' ?>"
@@ -167,12 +163,14 @@ vg_header('자산', 'assets');
       <?php /* 처음엔 선택이 0개라 비활성이므로 ghost 톤으로 낸다 — 비활성인데 primary(파란) 톤이면
                opacity 만 낮아진 채 여전히 눌릴 것처럼 보인다. 고른 것이 생기면 app.js 가
                primary 로 올린다(같은 함수가 disabled·라벨도 함께 갱신한다). */ ?>
+      <?php /* "표에서 고르라" 는 버튼 라벨이 이미 말한다 — 옆에 안내문을 두지 않는다.
+               남길 값은 **선택 범위가 이 페이지뿐** 이라는 사실뿐이라 버튼 title 로 내린다. */ ?>
       <button type="button" class="btn btn--sm btn--ghost" data-modal="bulkGrade"
+              title="선택은 지금 보고 있는 페이지 안에서만 유효하다"
               data-bulk-open="host_ids[]" data-bulk-label="선택 {n}개 등급 확정" disabled>선택 0개 등급 확정</button>
-      <span class="why">표에서 등급을 확정할 자산을 고르세요. 선택은 지금 보고 있는 페이지 안에서만 유효합니다.</span>
       <noscript>
-        <span class="why">이 브라우저는 스크립트가 꺼져 있어 일괄 확정 창을 열 수 없습니다 —
-          호스트 이름을 눌러 상세 화면에서 한 대씩 확정하세요.</span>
+        <?php /* 스크립트가 꺼져 있으면 이 버튼이 아예 안 먹는다 — 대체 경로는 값이라 남긴다. */ ?>
+        <span class="why">스크립트가 꺼져 있어 일괄 확정을 쓸 수 없다 — 호스트 상세에서 한 대씩 확정한다.</span>
       </noscript>
     </div>
   <?php endif; ?>

@@ -171,11 +171,13 @@ declare(strict_types=1);
     ?>
     <div class="card">
       <strong>먼저 올릴 대상 <span class="hint">(<?= number_format(count($rollupAll)) ?>개)</span></strong>
-      <span class="why">— 이 부모를 올리면 그 아래 취약점이 함께 해결됩니다. 스캔 전체 기준이라 페이지를 넘겨도 값이 변하지 않습니다.
+      <?php /* 카드 제목이 "먼저 올릴 대상" 이라 "이 부모를 올리면 함께 해결된다" 는 해설은 걷었다.
+               남는 건 집계 범위와 **못 하는 것**(버전 미제시)뿐이다 — 둘 다 값이다. */ ?>
+      <span class="why">— 스캔 전체 기준(페이지 무관)
         <?php if (count($rollupAll) > count($rollupTop)): ?>
           · <?= number_format(count($rollupAll)) ?>개 중 상위 <?= count($rollupTop) ?>개
         <?php endif; ?>
-        · 올릴 버전은 제시하지 않습니다 — 부모의 다른 버전이 무엇을 끌어오는지는 수집된 정보로 알 수 없습니다.
+        · 올릴 버전은 제시하지 않는다(부모의 다른 버전이 무엇을 끌어오는지 수집된 정보로 알 수 없다)
       </span>
       <div class="card__body">
       <?php vg_table($rollupHeaders, $rollupTop, $rollupOpts); ?>
@@ -218,8 +220,7 @@ declare(strict_types=1);
     ?>
     <div class="card">
       <strong>같은 패키지에서 나온 취약점 <span class="hint">(<?= count($pkgRollup['rows']) ?>개 패키지)</span></strong>
-      <span class="why">— 이 패키지 하나를 올리면 그 아래 CRITICAL·HIGH 가 함께 해결됩니다.
-        스캔 전체 기준이라 페이지를 넘겨도 값이 변하지 않습니다. 2건 이상 묶인 것만 셉니다.
+      <span class="why">— CRITICAL·HIGH 기준 · 스캔 전체 기준(페이지 무관) · 2건 이상 묶인 것만
         <?php if ($pkgRollup['truncated']): ?>
           · 묶음이 더 있습니다 — 많이 묶인 순으로 <?= count($pkgRollup['rows']) ?>개만 보여줍니다.
         <?php endif; ?>
@@ -383,7 +384,8 @@ declare(strict_types=1);
                      placeholder="예: 다음 정기 점검 때 반영">
             </label>
           </div>
-          <span class="why">담당자 배정·결재선은 없습니다 — 상태와 메모 한 줄만 남습니다. 저장하면 접속기록에 남습니다.</span>
+          <?php /* 남길 값은 감사 고지 한 줄뿐이다 — "담당자·결재선이 없다" 는 폼이 이미 보여준다. */ ?>
+          <span class="why">저장하면 접속기록에 남습니다.</span>
         <?php else: ?>
           <p data-finding-fix-status-label></p>
           <span class="why">상태 변경은 관리자·운영자만 할 수 있습니다.</span>

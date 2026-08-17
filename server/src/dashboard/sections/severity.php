@@ -10,10 +10,11 @@ function vg_dash_render_severity(array $totals, array $delta, int $hostCount, in
    * MEDIUM·LOW 는 "오늘 무엇을 할까" 를 바꾸지 않는 수라(실측 LOW 34,745) 상단에 두면
    * 자릿수만으로 CRITICAL 을 덮는다. 필요할 때 펴 보는 자리가 맞다. */ ?>
   <div class="card">
-    <strong>등급별 분포</strong> <span class="why">— 7일 전 대비 증감과 도넛</span>
+    <strong>등급별 분포</strong> <span class="why">— 7일 전 대비 증감</span>
     <div class="card__body">
+      <?php /* 여는 줄에 카드 제목("등급별 전체 분포 보기")을 다시 적지 않는다 — 바로 위 줄이다. */ ?>
       <details>
-        <summary>등급별 전체 분포 보기</summary>
+        <summary>펼치기</summary>
         <div class="cards cards--grid">
           <div class="kpi"><b><?= number_format($hostCount) ?></b><span>호스트</span></div>
           <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s):
@@ -33,18 +34,15 @@ function vg_dash_render_severity(array $totals, array $delta, int $hostCount, in
         </div>
         <div class="donut-wrap">
           <?php vg_sev_donut($totals, 152); ?>
-          <?php /* 인라인으로 갖고 있던 범례 마크업을 공용 헬퍼로 옮겼다(컴포넌트 주석의 예고대로) —
-                   같은 것을 두 벌 두지 않는다. 건수까지 같이 말하도록 'n' 을 준다. */ ?>
+          <?php /* 범례는 색의 뜻만 말한다 — 'n'(건수)은 걷었다. 바로 위 KPI 카드 네 장이 같은
+                   네 수를 이미 보여주고 있어, 한 화면에 같은 값이 두 번 있었다. */ ?>
           <?php vg_legend(array_map(
-              fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $totals[$s]],
+              fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s)],
               ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
           ), ['caption' => '심각도']); ?>
         </div>
-        <?php /* 도넛 바닥의 KEV 요약. 퍼널 3번째 칸과 **같은 수**다(같은 쿼리에서 나온다) —
-                 접힌 안쪽에서 다시 세지 않는다. */ ?>
-        <div class="donut-foot">
-          <?= vg_badge('High 이상 중 KEV ' . number_format($kevCount) . '건', $kevCount > 0 ? 'crit' : 'ok') ?>
-        </div>
+        <?php /* 도넛 바닥의 KEV 요약은 걷었다 — 퍼널 3번째 칸이 같은 쿼리의 같은 수를
+                 이미 화면 위에서 보여준다($kevCount 는 그래서 이 함수에서 안 쓴다). */ ?>
       </details>
     </div>
   </div>

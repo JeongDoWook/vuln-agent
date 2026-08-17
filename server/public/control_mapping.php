@@ -134,7 +134,7 @@ vg_header('통제 기준 매핑', 'control_mapping');
 ?>
   <?php vg_page_title(
       '통제 기준 매핑', 'CONTROL MAPPING',
-      '보안설정 점검 결과를 선택한 기준의 통제로 묶어 봅니다. 준수 여부는 판정하지 않습니다.',
+      '통제로 묶어 센 것 · 준수 판정은 컴플라이언스 매핑에서',
       ['count' => $total]
   ); ?>
   <?php // 컴플라이언스 계열 서브탭(정의는 nav.php 한 곳) — 저쪽 화면과 같은 줄을 그린다.
@@ -163,7 +163,7 @@ vg_header('통제 기준 매핑', 'control_mapping');
     <div class="kpi kpi--sm"><b><?= number_format($mappedRules) ?></b><span>매핑된 점검 항목 · 개</span></div>
     <div class="kpi kpi--sm"><b><?= number_format($findingTotal) ?></b><span>최신 스캔 점검 결과 · 건</span></div>
   </div>
-  <p class="sub">같은 보안설정 점검 결과를 선택한 기준의 통제로 묶어 센 것입니다. 준수/미준수 판정은 하지 않습니다(판정은 컴플라이언스 매핑 화면).</p>
+<?php /* 같은 말이 부제에 이미 있다 — 여기서 한 번 더 적지 않는다(부제가 정본). */ ?>
 
   <?php
   // 통제 ID·통제명 모두 상세로 들어가는 링크다 — "누르면 들어간다"가 요구사항이라

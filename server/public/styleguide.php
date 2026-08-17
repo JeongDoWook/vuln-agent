@@ -6,7 +6,7 @@ require __DIR__ . '/../src/view.php';
 vg_require_menu('dashboard');
 
 vg_header('UI 디자인 시스템', 'dashboard');
-vg_page_title('UI 디자인 시스템', 'SYSTEM', '공통 토큰과 판단 신호를 한 화면에서 비교합니다.');
+vg_page_title('UI 디자인 시스템', 'SYSTEM');
 ?>
 <section class="styleguide-section">
   <h2>아이콘</h2>

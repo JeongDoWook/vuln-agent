@@ -64,7 +64,7 @@ $esched = $edit ? vg_json_col($edit['schedule_json']) : [];
 vg_header('데이터 수집', 'connectors');
 ?>
   <?php // 소스 종수는 도식이 갖고 있던 값이다 — 제목의 건수 슬롯으로 옮긴다. ?>
-  <?php vg_page_title('데이터 수집', 'DATA SOURCES', '외부 취약점 데이터와 수집 상태를 관리합니다.', [
+  <?php vg_page_title('데이터 수집', 'DATA SOURCES', '', [
       'count' => count($connectors), 'count_label' => '종',
       'actions' => vg_capture(static fn() => vg_modal_btn('connModal', '+ 데이터 소스 추가')),
   ]); ?>

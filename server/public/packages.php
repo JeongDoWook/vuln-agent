@@ -200,7 +200,7 @@ try {
 vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'packages');
 ?>
   <?php if ($tab === 'lang'): ?>
-    <?php vg_page_title('언어 패키지 · 라이선스', 'SCA', 'pip/npm/gem/composer/maven/nuget/cargo/go 패키지의 라이선스를 확인합니다.', ['count' => $langTotal, 'count_label' => '건']); ?>
+    <?php vg_page_title('언어 패키지 · 라이선스', 'SCA', 'pip · npm · gem · composer · maven · nuget · cargo · go', ['count' => $langTotal, 'count_label' => '건']); ?>
     <?php if ($langSummaryAt !== ''): ?>
     <div class="sub"><span class="why">집계 기준 <?= vg_h($langSummaryAt) ?> (OSV 수집 시 갱신) · 라이선스 값은 SBOM/METADATA/composer 소스에서만 채워집니다.</span></div>
     <?php endif; ?>
@@ -293,8 +293,9 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
                   return vg_h((string) $r['license']) . ' '
                       . vg_badge(vg_license_risk_label((string) $r['risk']), vg_license_risk_tone((string) $r['risk']));
               },
-              4 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '&amp;tab=packages&amp;q='
-                  . urlencode((string) $r['name']) . '">'
+              // 호스트 열은 자산의 설치 패키지 탭으로만 간다 — 패키지명 열이 이미 같은 URL(q= 필터까지)을
+              //   갖고 있어, 예전엔 한 행의 링크 둘이 글자만 다르고 목적지가 완전히 같았다.
+              4 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '&amp;tab=packages">'
                   . vg_h((string) $r['fqdn']) . '</a>'
                   . (!empty($r['container_name']) ? ' <span class="why">(' . vg_h((string) $r['container_name']) . ')</span>' : ''),
           ],

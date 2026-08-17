@@ -47,7 +47,7 @@ try {
 
 vg_header('대시보드', 'dashboard');
 ?>
-  <?php vg_page_title('대시보드', 'OVERVIEW', '전체 자산의 최신 탐지 결과를 요약합니다.'); ?>
+  <?php vg_page_title('대시보드', 'OVERVIEW'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>

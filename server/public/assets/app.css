@@ -896,8 +896,8 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
 
 /* 도넛 카드 — .split 이 stretch 로 옆 카드(지금 급한 것)와 높이를 맞추면 도넛+범례만으로는
- * 아래가 빈다. 카드 자체를 세로 flex 로 바꾸고 .card__body.center 를 flex:1 로 늘려,
- * 늘어난 여백은 .donut-foot(KEV·기한초과 요약)이 맨 아래로 밀려 채운다.
+ * 아래가 빈다. 카드 자체를 세로 flex 로 바꾸고 .card__body.center 를 flex:1 로 늘려
+ * 남는 여백을 도넛·범례가 나눠 갖게 한다.
  * 조합 셀렉터(.card__body.center)라 이 카드 외 다른 화면(th.center 등)엔 영향 없다. */
 .card:has(> .card__body.center) { display: flex; flex-direction: column; }
 .card__body.center {
@@ -909,19 +909,8 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 }
 .donut-wrap { display: flex; flex-direction: column; align-items: center; }
 
-/* 도넛 카드 바닥의 요약 뱃지 — 예전엔 상단 KPI 줄에 점선 카드(kpi--static)로 있었는데
- * 링크형 카드들 사이에서 톤이 안 맞아 붕 떠 보였다. 필터가 없는 "집계 전용" 값이라
- * 여기(도넛 카드 안, 여백을 채우는 자리)가 오히려 제자리다. */
-.donut-foot {
-  display: flex;
-  gap: .5rem;
-  flex-wrap: wrap;
-  justify-content: center;
-  width: 100%;
-  margin-top: 1.1rem;
-  padding-top: .9rem;
-  border-top: 1px solid var(--line);
-}
+/* .donut-foot(도넛 바닥의 KEV 요약 뱃지)은 지웠다 — 그 수는 상단 퍼널 3번째 칸과 같은
+ * 쿼리의 같은 값이라 한 화면에 두 번 있었다(#639). 쓰는 곳이 없어진 규칙은 남기지 않는다. */
 
 /* 도넛 옆 범례 */
 .legend { display: grid; gap: .3rem; font-size: var(--fs-sm); margin-top: .9rem; }

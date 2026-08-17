@@ -145,8 +145,9 @@ vg_header('사용자', 'users');
   ];
   echo '<div class="stat-grid">';
   foreach (VG_ROLES as $roleCode) {
-      echo '<div class="stat"><span class="stat__val">' . vg_h(vg_role_label($roleCode))
-         . ' <span class="why">' . vg_h(VG_ROLE_DESCRIPTIONS[$roleCode] ?? '') . '</span></span>'
+      /* 역할 하나에 설명이 둘이었다 — VG_ROLE_DESCRIPTIONS('조회')와 $roleScope('조회 전용 — …')가
+       *   같은 말을 두 번 했다. 범위를 온전히 말하는 쪽만 남긴다. */
+      echo '<div class="stat"><span class="stat__val">' . vg_h(vg_role_label($roleCode)) . '</span>'
          . '<span class="why">' . vg_h($roleScope[$roleCode] ?? '') . '</span></div>';
   }
   echo '</div>';

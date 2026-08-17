@@ -209,21 +209,16 @@ function vg_nofix_badge(): string {
     );
 }
 
-/** 화면 상단에 공통으로 붙이는 안내(관측 + 권고 + 한계). vg_alert() 스펙 배열. */
-function vg_nofix_notice(): array {
-    return [
-        'type'  => 'warn',
-        'title' => '조치는 패치가 아니라 제거 또는 대체 검토입니다',
-        'hints' => [
-            '아래 패키지들은 CVE 대부분이 벤더 미수정(no_fix)입니다 — 기다려도 패치가 오지 않습니다.',
-            '이건 "벤더가 안 고치고 있다" 는 관측이지 EOL(지원 종료) 확정이 아닙니다. '
-            . '제거·대체 여부는 실제 사용 여부를 확인하고 판단하세요.',
-            '런타임 상태가 "설치만" 이면 위험은 낮지만, 쓰는 프로세스가 없다는 뜻이라 제거는 오히려 쉽습니다.',
-            sprintf(
-                '권고 기준: 벤더 미수정 %d건 이상이면서 그 패키지 CVE 의 %d%% 이상.',
-                VG_NOFIX_ADVICE['min_cnt'],
-                (int) round(VG_NOFIX_ADVICE['min_ratio'] * 100)
-            ),
-        ],
-    ];
+/**
+ * 권고 임계값 한 줄 — 표의 '관측' 열 머리글 title 에 단다.
+ *   예전엔 화면 상단에 제목 + 불릿 4줄짜리 해설 배너가 있었는데, 넷 중 셋은 화면 읽는 법을
+ *   설명하는 산문이었다(#639). 값이 남는 건 이 수치 기준뿐이라 그 열 옆으로 내렸다 —
+ *   "관측이지 EOL 확정이 아니다" 는 vg_nofix_badge() 의 title 이 행마다 이미 말한다.
+ */
+function vg_nofix_threshold_help(): string {
+    return sprintf(
+        '권고 기준: 벤더 미수정 %d건 이상이면서 그 패키지 CVE 의 %d%% 이상',
+        VG_NOFIX_ADVICE['min_cnt'],
+        (int) round(VG_NOFIX_ADVICE['min_ratio'] * 100)
+    );
 }
