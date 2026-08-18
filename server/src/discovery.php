@@ -21,13 +21,18 @@ declare(strict_types=1);
  *   완료를 기다린다. 프로세스를 여러 개 띄우는 것보다 단순하고, 소켓 회수 지점이 한 곳이다.
  *
  * ## 하지 않는 것
- *   배너/서비스·OS 추정·UDP·재시도·TLS 핸드셰이크. 이 제품의 원칙은 "수집만 하고 능동
- *   접속은 최소" 라, connect 성공/실패 판정 이상으로 상대에게 말을 걸지 않는다.
+ *   OS 추정·UDP 스캔·재시도. 이 제품의 원칙은 "수집만 하고 능동 접속은 최소" 라,
+ *   포트 판정 이상으로 상대에게 말을 걸지 않는다 — **단 하나의 예외가 정체 파악이다**:
+ *   살아있는 IP 의 역DNS 와, 웹 포트 한정의 가벼운 배너(HTTP Server 헤더 · TLS 인증서 CN)는
+ *   discovery_enrich.php 가 수집한다. IP 와 포트 번호만으로는 "이게 뭔지" 를 사람이 매번
+ *   손으로 조사해야 했기 때문이다. MAC 은 수집하지 않는다(컨테이너에서 구조적으로 불가 —
+ *   discovery_enrich.php 참고).
  */
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/setting.php';
 require_once __DIR__ . '/audit.php';
+require_once __DIR__ . '/discovery_enrich.php';   // 역DNS·서비스 힌트·배너(정체 파악)
 
 /**
  * 기본값 — 전부 tb_setting 으로 덮을 수 있다(코드에 박아두지 않는다는 원칙).
@@ -327,6 +332,20 @@ function vg_discovery_scan_cidr(string $cidr, ?string $portSpec, ?array $cfg = n
         if ($r['state'] !== 'timeout') { $results[] = $r; }
     }
 
+    // 3단계 — 정체 파악. 살아있는 IP 의 역DNS 와, 웹 포트에 한한 배너.
+    //   실패는 전부 빈 값으로 흡수된다(강화는 부가정보라 스캔을 실패시키지 않는다).
+    //   결과는 results 옆의 **선택 키** enrich 로 나른다 — results 의 모양(cscan v0.4)을
+    //   바꾸면 원격 스캐너가 보내는 문서와 갈라지므로, 스키마 버전은 그대로 두고 더하기만 한다.
+    $enrichCfg = vg_discovery_enrich_config();
+    $openMap   = [];
+    foreach ($results as $r) {
+        if ($r['state'] === 'open') { $openMap[$r['host']][(int) $r['port']] = $r['protocol']; }
+    }
+    $enrich = [
+        'hostnames' => vg_discovery_reverse_dns(array_keys($alive), $enrichCfg),
+        'banners'   => vg_discovery_collect_banners($openMap, $enrichCfg),
+    ];
+
     return [
         'schema_version' => VG_DISCOVERY_SCHEMA_VERSION,
         'scan'  => ['type' => 'tcp-connect', 'timeout_ms' => $cfg['timeout_ms']],
@@ -336,6 +355,7 @@ function vg_discovery_scan_cidr(string $cidr, ?string $portSpec, ?array $cfg = n
             'port_checked' => $checked,
         ],
         'results' => $results,
+        'enrich'  => $enrich,
     ];
 }
 
@@ -350,7 +370,10 @@ function vg_discovery_scan_cidr(string $cidr, ?string $portSpec, ?array $cfg = n
  *   - tb_discovered_port 에는 open 만 넣는다(closed/timeout 은 집계 port_checked 로만).
  *   - tb_discovered_asset 은 (target, ip) 로 upsert — 대역 기준 누적이라 run 마다 갈아엎지 않는다.
  *   - state='ignored' 는 사람이 정한 값이라 자동 판정이 덮지 않는다.
- * @return array{ip_alive:int, open_total:int, port_checked:int, ip_total:int, matched:int}
+ *   - 강화값(enrich)은 **선택**이다. 원격 스캐너(cscan)가 안 보내면 그냥 비어 있다.
+ *     호스트명은 **빈 값으로 덮지 않는다** — 이번에 DNS 가 안 떴다고 지난번에 얻은 이름을
+ *     지우면 정보가 사라진다(COALESCE).
+ * @return array{ip_alive:int, open_total:int, port_checked:int, ip_total:int, matched:int, hostnames:int, banners:int}
  */
 function vg_discovery_store_results(PDO $pdo, int $runId, array $doc): array {
     if ((int) ($doc['schema_version'] ?? 0) !== VG_DISCOVERY_SCHEMA_VERSION) {
@@ -379,6 +402,26 @@ function vg_discovery_store_results(PDO $pdo, int $runId, array $doc): array {
         if ($state === 'open') { $open[$ip][$port] = substr($proto, 0, 8) ?: 'tcp'; }
     }
 
+    /* 강화값 — 문서가 주는 대로 받되 이 자리에서 형식을 확정한다(원격 스캐너도 같은 함수로
+     *   들어오므로, 여기가 신뢰 경계다). 유효하지 않은 값은 조용히 버린다. */
+    $hostnames = [];
+    foreach ((array) (($doc['enrich']['hostnames'] ?? [])) as $ip => $name) {
+        $ip   = (string) $ip;
+        $name = trim((string) $name);
+        if (!isset($alive[$ip]) || $name === '') { continue; }
+        if (!vg_discovery_valid_hostname($name, $ip)) { continue; }
+        $hostnames[$ip] = mb_substr($name, 0, 255);
+    }
+    $banners = [];
+    foreach ((array) (($doc['enrich']['banners'] ?? [])) as $ip => $ports) {
+        foreach ((array) $ports as $port => $banner) {
+            $port   = (int) $port;
+            $banner = vg_discovery_clean_banner((string) $banner);
+            if (!isset($open[(string) $ip][$port]) || $banner === '') { continue; }
+            $banners[(string) $ip][$port] = $banner;
+        }
+    }
+
     // stats 가 있으면 그것이 정확하다(문서에 안 담은 2단계 타임아웃까지 센 값).
     $stats       = (array) ($doc['stats'] ?? []);
     $ipTotal     = (int) ($stats['ip_total'] ?? count($alive));
@@ -391,16 +434,17 @@ function vg_discovery_store_results(PDO $pdo, int $runId, array $doc): array {
     try {
         $up = $pdo->prepare(
             'INSERT INTO tb_discovered_asset
-                (discovery_target_id, ip, first_seen, last_seen, last_run_id)
-             VALUES (?,?,?,?,?)
+                (discovery_target_id, ip, hostname, first_seen, last_seen, last_run_id)
+             VALUES (?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE
                 last_seen   = VALUES(last_seen),
                 last_run_id = VALUES(last_run_id),
+                hostname    = COALESCE(VALUES(hostname), hostname),
                 is_deleted  = 0,
                 deleted_at  = NULL'
         );
         foreach (array_keys($alive) as $ip) {
-            $up->execute([$targetId, $ip, $now, $now, $runId]);
+            $up->execute([$targetId, $ip, $hostnames[$ip] ?? null, $now, $now, $runId]);
         }
 
         // 방금 upsert 한 행은 전부 last_run_id 가 이 run 이다 — IN 절 없이 한 번에 집는다.
@@ -414,15 +458,26 @@ function vg_discovery_store_results(PDO $pdo, int $runId, array $doc): array {
             $assetId[(string) $row['ip']] = (int) $row['discovered_asset_id'];
         }
 
+        /* 같은 run 을 다시 저장하면(재시도) 힌트·배너는 **채워진 값만** 갱신한다 —
+         *   INSERT IGNORE 였다면 두 번째 저장이 통째로 버려져 배너가 영영 안 붙는다. */
         $ins = $pdo->prepare(
-            'INSERT IGNORE INTO tb_discovered_port
-                (discovered_asset_id, discovery_run_id, port, proto)
-             VALUES (?,?,?,?)'
+            'INSERT INTO tb_discovered_port
+                (discovered_asset_id, discovery_run_id, port, proto, service_hint, banner)
+             VALUES (?,?,?,?,?,?)
+             ON DUPLICATE KEY UPDATE
+                service_hint = VALUES(service_hint),
+                banner       = COALESCE(VALUES(banner), banner),
+                is_deleted   = 0,
+                deleted_at   = NULL'
         );
         foreach ($open as $ip => $ports) {
             if (!isset($assetId[$ip])) { continue; }
             foreach ($ports as $port => $proto) {
-                $ins->execute([$assetId[$ip], $runId, $port, $proto]);
+                $ins->execute([
+                    $assetId[$ip], $runId, $port, $proto,
+                    vg_discovery_service_hint((int) $port),
+                    $banners[$ip][$port] ?? null,
+                ]);
             }
         }
 
@@ -465,12 +520,17 @@ function vg_discovery_store_results(PDO $pdo, int $runId, array $doc): array {
         throw $e;
     }
 
+    $bannerCount = 0;
+    foreach ($banners as $ports) { $bannerCount += count($ports); }
+
     return [
         'ip_total'     => $ipTotal,
         'ip_alive'     => count($alive),
         'port_checked' => $portChecked,
         'open_total'   => $openTotal,
         'matched'      => $matched,
+        'hostnames'    => count($hostnames),
+        'banners'      => $bannerCount,
     ];
 }
 
