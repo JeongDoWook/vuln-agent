@@ -333,7 +333,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
         [
             'card'  => false,
             'empty' => [
-                'icon'  => '🕘',
+                'icon'  => 'clock',
                 'title' => '스캔 이력이 없습니다.',
             ],
             'cell' => [

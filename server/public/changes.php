@@ -145,7 +145,7 @@ vg_header('변화 추적', 'changes');
       <?php foreach (VG_CHANGE_TYPES as $k => $lbl): ?>
         <a class="kpi kpi--sm<?= $summary[$k] > 0 ? ' tone-' . vg_h($changeTone[$k]) : '' ?><?= $type === $k ? ' is-selected' : '' ?>"
            href="<?= vg_h(vg_qs(['type' => $type === $k ? '' : $k, 'tab' => 'vuln', 'page' => 1])) ?>">
-          <b><?= (int) $summary[$k] ?></b><span><?= vg_h($lbl) ?></span>
+          <b><?= number_format((int) $summary[$k]) ?></b><span><?= vg_h($lbl) ?></span>
         </a>
       <?php endforeach; ?>
     </div>
