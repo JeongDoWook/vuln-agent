@@ -836,6 +836,32 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .kpi.kpi--zero { border-color: var(--line); background: var(--surface); color: var(--muted); }
 .kpi.kpi--zero b, .kpi.kpi--zero strong { color: var(--muted-2); }
 
+/* 아이콘 타일 — 1단계(#663)가 세운 --tile/--tile-r/--tile-ico 토큰을 처음 쓰는 자리.
+ * item 에 icon 이 없으면 .kpi--icon 자체가 안 붙어 지금까지와 같은 숫자+라벨만 그려진다. */
+.kpi--icon { flex-direction: row; align-items: center; gap: var(--sp-3); }
+.kpi__tile {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tile);
+  height: var(--tile);
+  border-radius: var(--tile-r);
+  background: var(--muted-bg);
+  color: var(--muted-fg);
+}
+.kpi__tile svg { width: var(--tile-ico); height: var(--tile-ico); }
+.kpi__body { min-width: 0; }
+/* 타일 배경·전경은 새 색이 아니라 카드와 같은 톤 쌍(--X-bg/--X-fg)을 쓴다 — 그 쌍 자체가
+ * 다크에서 갈아끼워지므로 여기 다크 전용 블록은 따로 두지 않는다. */
+.kpi.tone-crit  .kpi__tile { background: var(--crit-bg);  color: var(--crit-fg); }
+.kpi.tone-high  .kpi__tile { background: var(--high-bg);  color: var(--high-fg); }
+.kpi.tone-med   .kpi__tile { background: var(--med-bg);   color: var(--med-fg); }
+.kpi.tone-low   .kpi__tile { background: var(--low-bg);   color: var(--low-fg); }
+.kpi.tone-ok    .kpi__tile { background: var(--ok-bg);    color: var(--ok-fg); }
+.kpi.tone-muted .kpi__tile { background: var(--muted-bg); color: var(--muted-fg); }
+.kpi.kpi--zero  .kpi__tile { background: var(--muted-bg); color: var(--muted-2); }
+
 /* --- 자산 상세: 히어로(식별 + 최고 위험도) + 섹션 탭 ---------------------- */
 .hero {
   display: flex;

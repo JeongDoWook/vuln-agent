@@ -50,15 +50,15 @@
       <strong id="findingActionQueueTitle">먼저 볼 작업</strong>
     </div>
     <?php vg_kpi_strip([
-        ['label' => 'High 이상', 'value' => number_format($actionCounts['high']), 'tone' => 'high',
+        ['label' => 'High 이상', 'value' => number_format($actionCounts['high']), 'tone' => 'high', 'icon' => 'severity',
          'href' => vg_qs(['sev' => 'HIGH+', 'fx' => null, 'st' => null, 'page' => 1]), 'selected' => $sev === 'HIGH+'],
-        ['label' => '기한 초과', 'value' => number_format($actionCounts['overdue']), 'tone' => 'crit',
+        ['label' => '기한 초과', 'value' => number_format($actionCounts['overdue']), 'tone' => 'crit', 'icon' => 'action',
          'href' => vg_qs(['sev' => 'HIGH+', 'fx' => 'overdue', 'sort' => 'due', 'st' => null, 'page' => 1]), 'selected' => $fx === 'overdue'],
-        ['label' => 'KEV 등재', 'value' => number_format($actionCounts['kev']), 'tone' => 'crit',
+        ['label' => 'KEV 등재', 'value' => number_format($actionCounts['kev']), 'tone' => 'crit', 'icon' => 'exploit',
          'href' => vg_qs(['sev' => null, 'fx' => 'kev', 'st' => null, 'page' => 1]), 'selected' => $fx === 'kev'],
-        ['label' => '외부 노출', 'value' => number_format($actionCounts['external']), 'tone' => 'high',
+        ['label' => '외부 노출', 'value' => number_format($actionCounts['external']), 'tone' => 'high', 'icon' => 'exposure',
          'href' => vg_qs(['sev' => null, 'fx' => null, 'st' => 'EXTERNAL', 'page' => 1]), 'selected' => $st === 'EXTERNAL'],
-        ['label' => '재시작 필요', 'value' => number_format($actionCounts['restart']), 'tone' => 'med',
+        ['label' => '재시작 필요', 'value' => number_format($actionCounts['restart']), 'tone' => 'med', 'icon' => 'action',
          'href' => vg_qs(['sev' => null, 'fx' => 'restart', 'st' => null, 'page' => 1]), 'selected' => $fx === 'restart'],
     ], ['compact' => true]); ?>
   </section>
