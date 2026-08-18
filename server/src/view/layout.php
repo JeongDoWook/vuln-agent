@@ -33,6 +33,9 @@ function vg_header(string $title, string $active = ''): void {
 <?php // 테마 초기화 — 저장된 선택(없으면 OS 설정)을 첫 페인트 전에 적용해 깜빡임을 막는다.
       //   defer 되는 app.js 로는 늦다(스타일이 먼저 그려진다). 그래서 인라인·즉시 실행. ?>
 <script>(function(){try{var t=localStorage.getItem('vg-theme');if(t!=='dark'&&t!=='light'){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<?php // 밀도 초기화 — 테마와 같은 이유로 첫 페인트 전에 적용한다(표 행 높이가 바뀌므로
+      //   나중에 적용하면 목록이 눈앞에서 다시 접힌다). 기본은 '표준' 이라 속성을 안 붙인다. ?>
+<script>(function(){try{if(localStorage.getItem('vg-density')==='compact'){document.documentElement.setAttribute('data-density','compact');}}catch(e){}})();</script>
 <link rel="stylesheet" href="<?= vg_asset('/assets/app.css') ?>">
 <script src="<?= vg_asset('/assets/app.js') ?>" defer></script>
 <?php
@@ -77,6 +80,11 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
           <b data-collection-status-count hidden>0</b>
         </button>
       <?php endif; ?>
+      <?php // 밀도 전환 — 바꾸는 것은 표의 행 높이(세로)다. 가로 여백은 화면이 각자 정한다. ?>
+      <div class="seg seg--density" role="group" aria-label="표 밀도 전환">
+        <button type="button" class="seg__btn" data-density-set="standard" aria-label="표준 밀도">표준</button>
+        <button type="button" class="seg__btn" data-density-set="compact" aria-label="압축 밀도">압축</button>
+      </div>
       <div class="seg" role="group" aria-label="테마 전환">
         <button type="button" class="seg__btn" data-theme-set="light" aria-label="밝은 테마">☀ Light</button>
         <button type="button" class="seg__btn" data-theme-set="dark" aria-label="어두운 테마">☾ Dark</button>

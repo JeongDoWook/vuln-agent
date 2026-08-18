@@ -2,13 +2,17 @@
 declare(strict_types=1);
 
 /**
- * charts.php — 순수 SVG 차트 렌더. 심각도 도넛·리소스 추이 라인차트.
- *   차트 라이브러리를 들이지 않고 <svg> 를 직접 그린다. 색은 app.css 의 CSS 변수/클래스를
- *   그대로 참조하므로 팔레트를 바꾸면 차트도 같이 바뀐다.
+ * charts.php — 차트 렌더. 색은 전부 app.css 의 토큰을 참조하므로 팔레트를 바꾸면 차트도 따라온다.
+ *   ① 형태가 고정된 차트(심각도 도넛·리소스 추이 라인·순위 막대)는 <svg> 를 직접 그린다.
+ *   ② 축·범례·툴팁이 필요한 일반 차트는 vg_chart() 로 Chart.js(vendor/) 에 넘긴다.
+ *   ②의 색·다크 대응은 assets/js/chart-kit.js 한 곳이 갖는다(파일 아래 주석 참조).
  */
 
 require_once __DIR__ . '/../format.php';
 require_once __DIR__ . '/components.php';
+// vg_chart_assets() 가 vg_asset() 을 쓴다. 로드 순서에 우연히 얹히지 않도록 명시한다
+//   (#271 때 view.php 를 쪼개며 format.php 의존을 선언하지 않아 겪은 그 문제).
+require_once __DIR__ . '/layout.php';
 
 /**
  * 심각도 도넛 (순수 SVG — 차트 라이브러리를 들이지 않는다).
@@ -436,4 +440,62 @@ function vg_change_bars(array $rounds): void {
         }
     }
     echo '</svg></div>';
+}
+
+/* ==========================================================================
+ * Chart.js 기반 차트 — 위 SVG 차트들이 못 그리는 형태(범주형 도넛·다계열 막대 등)용.
+ *
+ * 왜 라이브러리인가: 위 함수들은 "심각도 도넛" 처럼 **형태가 고정된** 차트다. 축·범례·툴팁·
+ *   반응형이 필요한 일반 차트를 SVG 로 계속 늘리면 그때부터는 우리가 차트 라이브러리를
+ *   직접 만드는 셈이 된다. Chart.js(MIT, 208KB·gzip 70KB)를 vendor 로 들인다.
+ * 왜 CDN 이 아닌가: 대상 환경(주요정보통신기반시설·전자금융)은 폐쇄망이 흔해 CDN 을 물면
+ *   그 환경에서 화면이 통째로 깨진다. flatpickr(host.php)가 이미 같은 방식이다.
+ * 왜 헬퍼 하나인가: 팔레트·격자색·툴팁·다크 대응이 화면마다 갈라지지 않게 하기 위해서다.
+ *   색은 assets/js/chart-kit.js 한 곳에서만 정하고, 화면은 데이터와 형태만 말한다.
+ * ========================================================================== */
+
+/**
+ * 차트 자산(vendor + chart-kit)을 이 페이지에 붙인다. **차트를 그리는 화면만** 부른다 —
+ *   전 화면에 70KB 를 물리지 않기 위해 layout.php 에 넣지 않았다.
+ *   호출 위치는 vg_header() 직후(본문 시작 지점)다. chart-kit.js 는 defer 라 문서 순서대로
+ *   실행되고, vendor 는 동기 로드라 그 전에 window.Chart 가 준비된다(host.php 의 flatpickr 와 같은 순서).
+ *   여러 번 불러도 한 번만 나간다.
+ */
+function vg_chart_assets(): void {
+    static $emitted = false;
+    if ($emitted) {
+        return;
+    }
+    $emitted = true;
+    echo '<script src="' . vg_asset('/assets/vendor/chartjs/chart.umd.js') . '"></script>' . "\n";
+    echo '<script src="' . vg_asset('/assets/js/chart-kit.js') . '" defer></script>' . "\n";
+}
+
+/**
+ * 차트 하나를 그린다. 실제 렌더는 chart-kit.js 가 한다 — 여기서는 사양을 data 속성에 실어
+ *   넘길 뿐이다(CSP 가 default-src 'self' 라 인라인 <script> 를 못 쓴다).
+ *
+ * $type  : 'doughnut'|'bar'|'line' … (Chart.js 타입)
+ * $data  : ['labels' => [...], 'datasets' => [['label'=>…, 'data'=>[…]], …]]
+ *          색을 주지 않으면 chart-kit 이 범주형 팔레트(--cat-1..6)를 순서대로 배정한다.
+ *          심각도처럼 의미가 고정된 색을 직접 줄 때는 데이터셋에 'vgKeepColors' => true 를 함께 준다.
+ * $opts  : ['size' => 'sm'|'md'|'lg', 'alt' => 대체 텍스트, 'options' => Chart.js options 덮어쓰기]
+ *
+ * 높이는 클래스로만 준다(인라인 style 금지 — app.css 가 크기를 소유한다).
+ * <canvas> 안의 글은 캔버스를 못 그리는 환경에서 읽히는 대체 텍스트다.
+ */
+function vg_chart(string $type, array $data, array $opts = []): void {
+    $sizes = ['sm' => 'chart-js--sm', 'md' => 'chart-js--md', 'lg' => 'chart-js--lg'];
+    $size  = $sizes[(string) ($opts['size'] ?? 'md')] ?? $sizes['md'];
+    $alt   = (string) ($opts['alt'] ?? '차트');
+
+    $spec = ['type' => $type, 'data' => $data];
+    if (!empty($opts['options'])) {
+        $spec['options'] = $opts['options'];
+    }
+    $json = json_encode($spec, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    echo '<div class="chart-js ' . $size . '">'
+        . '<canvas role="img" aria-label="' . vg_h($alt) . '" data-vg-chart="' . vg_h((string) $json) . '">'
+        . vg_h($alt) . '</canvas></div>';
 }
