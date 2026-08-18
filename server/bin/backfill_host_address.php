@@ -65,9 +65,17 @@ try {
     ));
     if ($total === 0) { exit(0); }
 
-    // 호스트별 최신 스캔 1건의 raw_json.
-    $scanQ = $pdo->prepare(
-        'SELECT scan_id, raw_json FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT 1'
+    // 호스트별 최신 스캔 1건의 raw_json — **두 단계로 나눠 읽는다.**
+    //   한 쿼리로 `SELECT scan_id, raw_json ... ORDER BY scan_id DESC LIMIT 1` 을 치면 MySQL 이
+    //   정렬 버퍼에 raw_json(호스트당 수십 MB)까지 얹어야 해서 sort_buffer_size 를 넘기고
+    //   `1038 Out of sort memory` 로 즉사한다(운영 실측 2026-08 — LIMIT 1 이어도 filesort 가 먼저다).
+    //   ① 정렬에는 작은 컬럼(scan_id)만 올리고 ② 큰 컬럼은 그 한 건을 PK 로 따로 읽는다(정렬 없음).
+    //   DB 설정(sort_buffer_size)을 키우는 방향은 데이터가 커지면 또 터지므로 쓰지 않는다.
+    $scanIdQ = $pdo->prepare(
+        'SELECT scan_id FROM tb_scan WHERE host_id = ? ORDER BY scan_id DESC LIMIT 1'
+    );
+    $rawQ = $pdo->prepare(
+        'SELECT raw_json FROM tb_scan WHERE scan_id = ?'
     );
 
     $done = 0; $withIp = 0; $rowsTotal = 0; $noScan = 0; $noIface = 0; $lastId = $startHostId;
@@ -78,12 +86,18 @@ try {
         $lastId = $hostId;
         $done++;
 
-        $scanQ->execute([$hostId]);
-        $scan = $scanQ->fetch();
-        if (!$scan || (string) $scan['raw_json'] === '') {
+        $scanIdQ->execute([$hostId]);
+        $scanId = $scanIdQ->fetchColumn();
+        $raw = '';
+        if ($scanId !== false) {
+            $rawQ->execute([(int) $scanId]);
+            $raw = (string) ($rawQ->fetchColumn() ?: '');
+            $rawQ->closeCursor();   // 버퍼된 결과에 raw_json 이 그대로 남는다 — 바로 놓는다
+        }
+        if ($raw === '') {
             $noScan++;
         } else {
-            $data = json_decode((string) $scan['raw_json'], true);
+            $data = json_decode($raw, true);
             $iface = is_array($data) ? (string) ($data['net']['interfaces'] ?? '') : '';
             $rows  = $iface !== '' ? vg_ingest_parse_host_addresses($iface) : [];
             if ($rows === []) {
@@ -102,7 +116,7 @@ try {
                     implode(', ', array_map(static fn($r) => ($r[0] ?? '?') . '=' . $r[1], $rows))
                 ));
             }
-            unset($data, $scan);   // raw_json 은 수십 MB 도 된다 — 호스트마다 바로 놓는다
+            unset($data, $raw);   // raw_json 은 수십 MB 도 된다 — 호스트마다 바로 놓는다
         }
 
         if ($done % 50 === 0) {
