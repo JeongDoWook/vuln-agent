@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 /* 취약점 탭 — 먼저 올릴 대상·같은 패키지 묶음·우선순위 표·재시작 표·상세 모달. */
+    require_once __DIR__ . '/../rationale.php';   // 표에 실을 때만 근거 문장의 중복을 접는다
     // 두 표(CRITICAL·HIGH / 재시작·재부팅)는 열 구성이 같다 — 스펙을 한 번만 만들어 나눠 쓴다.
     /* 열 구성의 기준: 식별자는 절대 접지 않고(CVE-2023-6780 이 세 줄로 쪼개지던 자리),
      *   문장은 접되 뜻이 끊기지 않게 한다.
@@ -15,13 +16,19 @@ declare(strict_types=1);
      *     항상 지는 칸이 된다) 실측 90px 까지 눌려 두 글자에서 끊겼다. 그냥 접히게 두면
      *     max-content 가 가장 커서 남는 폭을 이 칸이 가장 많이 받는다 — 행은 높아지고 문장은 산다.
      *     (전체 문장은 행을 눌러 여는 상세 모달에도 그대로 있다.) */
+    /*   - 열 키는 **문자열**로 준다(0,1,2… 가 아니라). 값이 한 종류뿐인 열('등급·상태')을 표에서
+     *     빼려면 헤더 하나를 지워야 하는데, 인덱스로 묶어 두면 그 순간 나머지 칸이 한 칸씩
+     *     밀린다(vg_table 은 위치로 콜백을 찾는다). 키로 묶으면 빼도 제자리에 그려진다. */
     $vulnHeaders = [
-        ['label' => '등급·상태', 'key' => 'severity', 'width' => '11%'],
-        ['label' => 'CVE', 'nowrap' => true, 'width' => '12%'],
-        ['label' => 'EPSS', 'align' => 'right', 'nowrap' => true, 'width' => '9%'],   // 확률(%) — advisory·package·cves 화면과 같은 정렬
-        ['label' => '패키지', 'width' => '14%'],
-        ['label' => '근거', 'width' => '34%'],
-        ['label' => '조치', 'width' => '20%'],
+        'severity' => ['label' => '등급·상태', 'key' => 'severity', 'width' => '11%'],
+        'cve'      => ['label' => 'CVE', 'key' => 'cve', 'nowrap' => true, 'width' => '12%'],
+        'epss'     => ['label' => 'EPSS', 'key' => 'epss', 'align' => 'right', 'nowrap' => true, 'width' => '9%'],   // 확률(%) — advisory·package·cves 화면과 같은 정렬
+        'package'  => ['label' => '패키지', 'key' => 'package', 'width' => '14%'],
+        // 출처 부기(어느 피드가 그렇게 판정했나)는 46행이 통째로 반복하던 문구다 — 열 머리글에서
+        //   한 번만 말하고, 원문 전체는 행을 눌러 여는 상세 모달의 '판정 근거'가 갖는다.
+        'why'      => ['label' => '근거', 'key' => 'why', 'width' => '34%',
+                       'title' => '등급·KEV·출처는 다른 칸과 상세 모달이 말한다 — 여기엔 이 행에만 해당하는 사실만 남긴다'],
+        'fix'      => ['label' => '조치', 'key' => 'fix', 'width' => '20%'],
     ];
     $vulnCells = [
         // 등급·노출상태·KEV — 이 행이 얼마나 급한지를 한 칸에서 읽는다.
@@ -30,21 +37,24 @@ declare(strict_types=1);
                        . (!empty($f['in_kev']) ? ' ' . vg_badge('KEV', 'crit', '실제 악용이 확인된 취약점') : ''),
         // 이력은 열을 따로 세우지 않는다 — 뱃지 하나짜리 열이 근거 문장에서 폭을 가져갔다.
         //   같은 CVE 를 가리키는 링크라 식별자 아래가 제자리다.
-        1 => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>'
+        //   '이력' 글자는 걷었다(시계 아이콘이 곧 그 뜻이다). 화면에 안 보이는 사람을 위해
+        //   aria-label 은 남긴다 — 아이콘만 남은 링크는 라벨이 없으면 읽히지 않는다.
+        'cve' => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>'
                        . '<div><a class="pill" href="'
                        . vg_h(vg_finding_history_url($hostId, (int) $f['container_id'], (string) $f['cve_id'], (string) $f['package_name']))
-                       . '" title="스캔별 이력 보기">🕘 이력</a></div>',
-        2 => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
+                       . '" title="스캔별 이력 보기" aria-label="스캔별 이력 보기">🕘</a></div>',
+        'epss' => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
         // 패키지명과 버전은 한 줄로 눕힌다(예전엔 'libc6 2.39-' / '0ubuntu8.8' 로 접혔다).
         //   커널은 재부팅해야 새 코드가 올라온다 — 프로세스 재시작으로는 안 고쳐진다.
-        3 => fn($f) => '<strong>' . vg_h($f['package_name']) . '</strong> <code>' . vg_h($f['installed_version']) . '</code>'
+        'package' => fn($f) => '<strong>' . vg_h($f['package_name']) . '</strong> <code>' . vg_h($f['installed_version']) . '</code>'
                        . (!empty($f['needs_restart'])
                           ? ' ' . vg_badge(vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅 필요' : '재시작 필요', 'high')
                           : ''),
-        4 => fn($f) => '<span class="why">' . vg_h((string) ($f['rationale'] ?? '')) . '</span>',
+        // 등급·KEV·출처 부기는 같은 행의 다른 칸이 이미 말한다 — 표에서는 접는다(원문은 모달).
+        'why' => fn($f) => '<span class="why">' . vg_h(vg_host_rationale_brief($f['rationale'] ?? null)) . '</span>',
         // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
         //   전이 의존성이면 "이 버전으로 올려라"도 틀린다 — 부모가 끌어오는 것이라 혼자 못 바꾼다.
-        5 => function ($f) use ($depOrigins, $hostId) {
+        'fix' => function ($f) use ($depOrigins, $hostId) {
             if (!empty($f['needs_restart'])) {
                 return '<span class="pill">' . (vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅' : '프로세스 재시작') . '</span>';
             }
@@ -58,11 +68,9 @@ declare(strict_types=1);
              *   조치버전이 없는 경우(참조 링크·평문)는 짧으므로 공용 헬퍼를 그대로 쓴다. */
             $fixed = (string) ($f['fixed_version'] ?? '');
             if ($fixed !== '') {
-                // 목표 버전이 먼저다(그게 조치다). 현재 버전은 아랫줄 — 두 버전을 한 줄에 이으면
-                //   그 줄 하나가 이 열의 폭을 결정한다(같은 이유로 위 근거가 눌렸다).
-                $installed = (string) ($f['installed_version'] ?? '');
-                return '<strong>→ ' . vg_h($fixed) . ' 이상</strong>'
-                    . ($installed !== '' ? '<div class="why">현재 ' . vg_h($installed) . '</div>' : '');
+                // 목표 버전만 쓴다. '현재 <버전>' 은 같은 행의 '패키지' 칸이 이미 글자까지 똑같이
+                //   갖고 있던 값이라 걷었다(설치 버전은 상세 모달에도 항목으로 있다).
+                return '<strong>→ ' . vg_h($fixed) . ' 이상</strong>';
             }
             return vg_fix_cell(null, $f['ref_urls_json'] ?? null, $f['installed_version'] ?? null);
         },
@@ -121,6 +129,27 @@ declare(strict_types=1);
         'row_attrs' => $findingRowAttrs,
         'cell'      => $vulnCells,
     ];
+    /* 값이 한 종류뿐인 열은 열이 아니라 한 줄이다.
+     *   '우선순위 취약점' 표는 CRITICAL·HIGH 만 담는데, 실측 자산에서 46행이 전부
+     *   'HIGH 외부노출' 이라 '등급·상태' 칸이 46번 같은 뱃지를 반복했다 — 열 하나가 통째로
+     *   상수면 읽을 것이 없고, 그 폭은 행마다 다른 값(근거·조치)에서 가져온 것이다.
+     *   **값이 섞이는 순간 다시 열로 선다**(한 종류일 때만 접는다) — 두 표에 같은 규칙을 쓴다. */
+    $renderVulnTable = function (array $rows, array $opts) use ($vulnHeaders, $vulnOpts, $vulnCells): void {
+        $headers  = $vulnHeaders;
+        $constant = null;
+        if ($rows) {
+            $sev   = $vulnCells['severity'];
+            $first = $sev($rows[0]);
+            $same  = true;
+            foreach ($rows as $r) { if ($sev($r) !== $first) { $same = false; break; } }
+            if ($same) { $constant = $first; unset($headers['severity']); }
+        }
+        if ($constant !== null) {
+            // 뱃지 HTML 은 콜백이 이미 이스케이프한 값이다(vg_table 의 셀 규약과 같다).
+            echo '<div class="why">이 표 ' . number_format(count($rows)) . '행이 모두 ' . $constant . '</div>';
+        }
+        vg_table($headers, $rows, $vulnOpts + $opts);
+    };
     // 그래프가 상한에서 잘렸으면 밝힌다 — 조용히 자르면 "전이 아님"이 사실처럼 보인다.
     if ($depOrigins['edge_truncated'] || $depOrigins['path_truncated'] || $depOrigins['finding_truncated']) {
         $depHints = [];
@@ -190,30 +219,37 @@ declare(strict_types=1);
      *   같은 질문("무엇부터 올리나")에 같은 형태로 답한다.
      *   묶임이 없으면(전부 1건씩) 이 카드는 아예 그리지 않는다 — 빈 요약은 잡음이다. */
     if ($pkgRollup['rows']):
+        /* '비고' 는 KEV·재시작이 섞였을 때만 값을 갖는다 — 실측에선 8행 전부 '–' 였다.
+         *   빈 열은 표의 폭만 먹으므로, 붙일 뱃지가 한 행도 없으면 열 자체를 세우지 않는다. */
+        $pkgRollupNote = function (array $p): string {
+            $b = [];
+            if (!empty($p['kev'])) { $b[] = vg_badge('KEV 포함', 'crit', '실제 악용이 확인된 취약점이 섞여 있습니다.'); }
+            if (!empty($p['needs_restart'])) {
+                $b[] = vg_badge(vg_is_kernel_code_pkg((string) $p['package_name']) ? '재부팅 필요 포함' : '재시작 필요 포함', 'high');
+            }
+            return implode(' ', $b);
+        };
+        $pkgRollupHasNote = false;
+        foreach ($pkgRollup['rows'] as $p) {
+            if ($pkgRollupNote($p) !== '') { $pkgRollupHasNote = true; break; }
+        }
         $pkgRollupHeaders = [
-            ['label' => '먼저 올릴 패키지'],
-            ['label' => '최고 등급', 'key' => 'severity', 'nowrap' => true, 'width' => '8rem'],
-            ['label' => '해결 건수', 'align' => 'right', 'nowrap' => true, 'width' => '7rem'],
-            ['label' => '비고'],
+            'pkg'      => ['label' => '먼저 올릴 패키지', 'key' => 'pkg'],
+            'severity' => ['label' => '최고 등급', 'key' => 'severity', 'nowrap' => true, 'width' => '8rem'],
+            'cnt'      => ['label' => '해결 건수', 'key' => 'cnt', 'align' => 'right', 'nowrap' => true, 'width' => '7rem'],
         ];
+        if ($pkgRollupHasNote) { $pkgRollupHeaders['note'] = ['label' => '비고', 'key' => 'note']; }
         $pkgRollupOpts = [
             'card'      => false,
             'row_class' => fn($p) => vg_sev_row((string) $p['severity']),
             'cell'      => [
-                0 => fn($p) => '<strong>' . vg_h((string) $p['package_name']) . '</strong> '
-                    . '<code>' . vg_h((string) $p['installed_version']) . '</code> '
-                    . '<a class="pill" href="' . vg_h(vg_qs(['q' => (string) $p['package_name'], 'page' => null]))
-                    . '">이 패키지만 보기</a>',
+                // 패키지명 자체가 '이 패키지만 보기' 링크다 — 8행이 같은 문구를 반복할 이유가 없다.
+                'pkg' => fn($p) => '<strong><a href="' . vg_h(vg_qs(['q' => (string) $p['package_name'], 'page' => null]))
+                    . '" title="이 패키지의 취약점만 보기">' . vg_h((string) $p['package_name']) . '</a></strong> '
+                    . '<code>' . vg_h((string) $p['installed_version']) . '</code>',
                 'severity' => fn($p) => vg_sev_badge((string) $p['severity']),
-                2 => fn($p) => '<strong>' . number_format((int) $p['cnt']) . '</strong>건',
-                3 => function ($p) {
-                    $b = [];
-                    if (!empty($p['kev'])) { $b[] = vg_badge('KEV 포함', 'crit', '실제 악용이 확인된 취약점이 섞여 있습니다.'); }
-                    if (!empty($p['needs_restart'])) {
-                        $b[] = vg_badge(vg_is_kernel_code_pkg((string) $p['package_name']) ? '재부팅 필요 포함' : '재시작 필요 포함', 'high');
-                    }
-                    return $b ? implode(' ', $b) : '<span class="why">–</span>';
-                },
+                'cnt'  => fn($p) => '<strong>' . number_format((int) $p['cnt']) . '</strong>건',
+                'note' => $pkgRollupNote,
             ],
         ];
     ?>
@@ -235,32 +271,12 @@ declare(strict_types=1);
         ['type' => 'hidden', 'name' => 'id', 'value' => (string) $hostId],
     ]); ?>
     <?php
-    /* 이 자산의 판단 신호 네 축 — 노출→악용→등급→조치 순서는 vg_signal_slots() 가 고정한다.
-     *   값은 위에서 이미 센 것만 쓰고 **없는 축을 추정해 만들지 않는다**(수집이 없으면 unknown).
-     *   행마다 이 네 칸을 그리지 않는 이유: .signal-slots 는 min-width 18rem 이라 폭이 고정된
-     *   목록 표의 한 칸에 넣으면 표가 가로로 넘친다(app.css 는 이 작업에서 못 고친다).
-     *   그래서 축은 카드 하나로 자산 전체를 말하고, 행별 값은 아래 표의 '등급·상태' 칸이 말한다. */
-    $signalExposure = $externalFindings > 0
-        ? ['value' => '외부 ' . number_format($externalFindings) . '건', 'tone' => 'crit']
-        : ($exposureCount > 0
-            ? ['value' => '내부만', 'tone' => 'ok']
-            : ['value' => '노출 없음', 'tone' => 'ok']);
-    if ($vulnTotal === 0 && $exposureCount === 0) { $signalExposure = ['state' => 'unknown']; }
-    $signalAction = $restartTotal > 0
-        ? ['value' => '재시작 ' . number_format($restartTotal) . '건', 'tone' => 'med']
-        : ($critHighTotal > 0
-            ? ['value' => '업데이트 ' . number_format($critHighTotal) . '건', 'tone' => 'high']
-            : ['value' => '대기 없음', 'tone' => 'ok']);
-    vg_signal_slots([
-        'exposure' => $signalExposure,
-        'exploit'  => $kevCount > 0
-            ? ['value' => 'KEV ' . number_format($kevCount) . '건', 'tone' => 'crit']
-            : ['value' => '확인 안 됨', 'tone' => 'ok'],
-        'severity' => $worst !== null
-            ? ['value' => $worst, 'tone' => vg_sev_tone($worst)]
-            : ['value' => '양호', 'tone' => 'ok'],
-        'action'   => $signalAction,
-    ]);
+    /* 판단 신호 네 칸(노출·악용·등급·조치)은 여기서 걷었다 — 네 값 중 셋이 이 페이지가
+     *   이미 말하고 있던 것과 글자까지 같았다: 노출=머리 KPI '외부노출 취약점', 악용=KPI 'KEV
+     *   악용확인', 등급=히어로의 '최고 위험도'. 남은 조치 축(재시작 N건 / 업데이트 N건)도
+     *   아래 두 표의 제목이 건수로 말한다. 축 자체를 없앤 게 아니라(vg_signal_slots 는
+     *   cve.php 가 그대로 쓴다) 같은 화면에서 두 번 그리던 것을 한 번으로 줄인 것이다.
+     *   판정 순서(노출→악용→등급→조치)는 상세 모달의 vg_decision_flow 가 계속 세운다. */
     ?>
     <?php vg_legend(array_map(
         fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $counts[$s]],
@@ -271,19 +287,15 @@ declare(strict_types=1);
       <span class="why"><a href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>">전체 취약점 보기 →</a></span>
       <div class="card__body">
       <?php
-      vg_table($vulnHeaders, $rows, $vulnOpts + [
+      /* 빈 상태는 한 줄이다. 0건을 아이콘·제목·해설 세 줄로 설명하면 "없다"는 사실보다
+       *   설명이 길어진다 — 다음 행동이 있는 경우(검색 초기화)만 버튼을 남긴다. */
+      $renderVulnTable($rows, [
           'empty' => $hasFilter
               ? [
-                  'icon'  => '🔍',
                   'title' => '검색 결과가 없습니다.',
-                  'hint'  => '검색어를 확인하거나 초기화해 보세요.',
                   'cta'   => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
               ]
-              : [
-                  'icon'  => '✅',
-                  'title' => 'CRITICAL·HIGH 가 없습니다.',
-                  'hint'  => '아래의 재시작·재부팅 필요 항목은 등급이 낮아도 확인하세요.',
-              ],
+              : 'CRITICAL·HIGH 가 없습니다.',
       ]);
       ?>
       </div>
@@ -300,13 +312,7 @@ declare(strict_types=1);
       </span>
       <div class="card__body">
       <?php
-      vg_table($vulnHeaders, $restartRows, $vulnOpts + [
-          'empty' => [
-              'icon'  => '✅',
-              'title' => '재시작·재부팅이 필요한 항목이 없습니다.',
-              'hint'  => '패치된 라이브러리를 옛 프로세스가 물고 있는 경우가 없습니다.',
-          ],
-      ]);
+      $renderVulnTable($restartRows, ['empty' => '재시작·재부팅이 필요한 항목이 없습니다.']);
       ?>
       </div>
     </div>

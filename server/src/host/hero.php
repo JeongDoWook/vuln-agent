@@ -47,8 +47,8 @@ function vg_host_render_hero(array $ctx): void {
   if (vg_can('assets')) {
       $meta[] = '<a href="' . vg_h(vg_qs(['tab' => 'manage', 'page' => null, 'q' => null])) . '">자산 설정</a>';
   }
-  $meta[] = '<a href="/">대시보드</a>';
-  if (vg_can('assets')) { $meta[] = '<a href="/assets.php">자산관리</a>'; }
+  /* '대시보드'·'자산관리' 링크는 걷었다 — 둘 다 사이드바(vg_nav_sections)에 늘 서 있는 항목이라
+   *   식별부에서 한 번 더 말하면 메타 줄만 길어진다(같은 자리로 가는 두 번째 문). */
   vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', '');
   /* 수집 제어(즉시 실행·예약·주기·속도 티어)는 '자산 설정' 탭으로 내려갔다.
    *   자산 상세를 여는 이유는 "이 서버가 얼마나 위험한가"이지 "수집 주기가 몇 분인가"가 아니다 —
@@ -99,11 +99,10 @@ function vg_host_render_hero(array $ctx): void {
   ?>
 
   <div class="cards">
-    <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s): ?>
-      <div class="kpi kpi--sm tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
-    <?php endforeach; ?>
-    <?php /* 심각도 분포만으로는 "지금 당장 무엇이 무서운가"를 못 읽는다 — 실제로 악용되고 있고
-             (KEV) 밖에서 닿는(EXTERNAL) 건수를 같은 줄에 세운다. 둘 다 위 GROUP BY 한 번에서 나온다. */ ?>
+    <?php /* 심각도 분포(CRITICAL/HIGH/MEDIUM/LOW 네 칸)는 여기서 내렸다 — 취약점 탭의 필터 바로
+             아래 범례(vg_legend)가 같은 값을 같은 순서로 그리고 있었다. 둘 중 목록을 읽는 자리에
+             붙은 쪽을 남긴다. 이 줄엔 분포로는 못 읽는 축(악용·노출·설정)만 세운다.
+             $counts 는 히어로 톤·'최고 위험도' 뱃지가 계속 쓴다. */ ?>
     <div class="kpi kpi--sm tone-<?= $kevCount > 0 ? 'crit' : 'muted' ?>"
          title="KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)">
       <b><?= number_format($kevCount) ?></b><span>KEV 악용확인</span>

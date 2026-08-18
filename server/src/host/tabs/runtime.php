@@ -83,16 +83,10 @@ declare(strict_types=1);
               'card' => false,
               'empty' => $hasFilter
                   ? [
-                      'icon'  => '🔍',
                       'title' => '검색 결과가 없습니다.',
-                      'hint'  => '검색어를 확인하거나 초기화해 보세요.',
                       'cta'   => ['href' => vg_qs(['q' => null, 'page' => null, 'epage' => null]), 'label' => '검색 초기화'],
                   ]
-                  : [
-                      'icon'  => '✅',
-                      'title' => '리스닝 소켓이 없습니다.',
-                      'hint'  => '외부·내부 포함 열린 포트가 없습니다.',
-                  ],
+                  : '리스닝 소켓이 없습니다(외부·내부 포함).',
               'cell' => [
                   0 => fn($e) => vg_badge(vg_scope_label((string) $e['scope']), $scopeTone[$e['scope']] ?? 'muted'),
                   1 => fn($e) => $e['ctr'] !== ''
@@ -126,9 +120,7 @@ declare(strict_types=1);
               'card' => false,
               'empty' => $hasFilter
                   ? [
-                      'icon'  => '🔍',
                       'title' => '검색 결과가 없습니다.',
-                      'hint'  => '검색어를 확인하거나 초기화해 보세요.',
                       'cta'   => ['href' => vg_qs(['q' => null, 'page' => null, 'epage' => null]), 'label' => '검색 초기화'],
                   ]
                   : [
