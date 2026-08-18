@@ -27,17 +27,25 @@ function vg_kpi_strip(array $items, array $opts = []): void {
         $label = (string) ($item['label'] ?? '');
         $tone = (string) ($item['tone'] ?? 'muted');
         $tone = in_array($tone, $tones, true) ? $tone : 'muted';
+        $icon = (string) ($item['icon'] ?? '');
         $numeric = str_replace(',', '', $value);
         $zero = is_numeric($numeric) && (float) $numeric === 0.0;
         $class = 'kpi' . (!empty($opts['compact']) ? ' kpi--sm' : '')
+            . ($icon !== '' ? ' kpi--icon' : '')
             . ' tone-' . $tone . ($zero ? ' kpi--zero' : '')
             . (!empty($item['selected']) ? ' is-selected' : '');
         $title = !empty($item['title']) ? ' title="' . vg_h((string) $item['title']) . '"' : '';
         $href = vg_local_href($item['href'] ?? null);
         $tag = $href !== null ? 'a' : 'div';
+        // icon 이 없으면 지금까지와 같은 숫자+라벨만 그린다(하위호환) — 기존 호출부는 안 고쳐도 된다.
+        // 아이콘은 vg_signal_icon() 이 이미 갖고 있는 세트를 그대로 재사용한다(새 아이콘 세트 금지).
+        $body = $icon !== ''
+            ? '<span class="kpi__tile" aria-hidden="true">' . vg_signal_icon($icon) . '</span>'
+                . '<span class="kpi__body"><b>' . vg_h($value) . '</b><span>' . vg_h($label) . '</span></span>'
+            : '<b>' . vg_h($value) . '</b><span>' . vg_h($label) . '</span>';
         echo '<' . $tag . ' class="' . vg_h($class) . '"'
             . ($href !== null ? ' href="' . vg_h($href) . '"' : '') . $title . '>'
-            . '<b>' . vg_h($value) . '</b><span>' . vg_h($label) . '</span></' . $tag . '>';
+            . $body . '</' . $tag . '>';
     }
     echo '</div>';
 }
