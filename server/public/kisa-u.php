@@ -140,7 +140,8 @@ $coveragePct = $catalogTotal > 0 ? $coveredTotal / $catalogTotal * 100 : 0.0;
 
 vg_header('기반시설 U-코드 커버리지', 'control_mapping');
 ?>
-  <?php vg_page_title('기반시설 U-코드 커버리지', 'KISA U COVERAGE', ['count' => $total]); ?>
+  <?php vg_page_title('컴플라이언스', 'KISA U COVERAGE', ['count' => $total]); ?>
+  <?php vg_compliance_subtabs('kisa_u'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
