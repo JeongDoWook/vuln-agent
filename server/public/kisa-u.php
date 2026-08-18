@@ -164,12 +164,30 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
       ['type' => 'select', 'name' => 'category', 'options' => $categories,  'selected' => $category,
        'empty_label' => '전체 분류'],
   ]);
+  ?>
+  <p class="why">점검하는 항목은 코드·항목명을 눌러 상세로 들어갑니다.
+    미점검 항목은 대응 점검이 없어 상세가 없습니다.</p>
+  <?php
+
+  // 이 표에서 상세(control.php)로 들어간다. 예전엔 어느 칸도 안 걸려 있어서, 무엇이 되고
+  //   무엇이 안 됐는지 보려면 통제 기준 매핑 화면으로 돌아가야 했다. 코드·항목명 둘 다 건다
+  //   — 누르는 면적을 한 조각으로 좁히지 않는다(control_mapping.php 와 같은 규약).
+  //   미점검 항목은 tb_control_mapping 에 행 자체가 없어 상세가 빈 화면이다 → 링크하지 않는다.
+  $detailLink = function (array $r, string $inner): string {
+      if ($r['mapped_rule_cnt'] === null) { return $inner; }
+      return '<a href="/control.php?fw=' . urlencode(VG_KISA_U_FW)
+           . '&amp;control=' . urlencode((string) $r['control_id']) . '">' . $inner . '</a>';
+  };
 
   // 판정 칸 — 매핑이 없으면 '미점검', 매핑은 있는데 결과가 없으면 '점검 결과 없음'.
   //   둘은 다른 상태다: 앞은 우리가 점검 자체를 안 만든 것이고, 뒤는 아직 안 돌았거나
   //   해당 호스트가 없는 것이다. 하나로 뭉치면 미점검 규모가 가려진다.
   $verdictCell = function (array $r) use ($verdicts): string {
-      if ($r['mapped_rule_cnt'] === null) { return vg_badge('미점검', 'high'); }
+      // 미점검은 상세로 갈 수 없다 — 대응 점검(CCE)이 없으니 볼 판정도 없다.
+      //   왜 못 누르는지를 이 뱃지가 그 자리에서 말한다(빈 링크를 두지 않는다).
+      if ($r['mapped_rule_cnt'] === null) {
+          return vg_badge('미점검', 'high', '대응 점검이 없어 상세가 없습니다');
+      }
       $v = $verdicts[(string) $r['control_id']] ?? null;
       if ($v === null || (int) $v['finding_cnt'] === 0) { return vg_badge('점검 결과 없음', 'muted'); }
       $cnt  = (int) $v['finding_cnt'];
@@ -206,10 +224,10 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
               'hint'  => '분류·상태 필터를 바꿔 보세요.',
           ],
           'cell' => [
-              0 => fn($r) => '<code class="why">' . vg_h((string) $r['control_id']) . '</code>',
+              0 => fn($r) => $detailLink($r, '<code class="why">' . vg_h((string) $r['control_id']) . '</code>'),
               // 명칭을 확인하지 못한 항목은 비워 둔다 — 자리표시 문구로 채우면 확인된 것처럼 읽힌다.
               1 => fn($r) => $r['control_name'] !== null && $r['control_name'] !== ''
-                  ? vg_h((string) $r['control_name']) : '',
+                  ? $detailLink($r, vg_h((string) $r['control_name'])) : '',
               2 => fn($r) => $r['category'] !== null ? '<span class="why">' . vg_h((string) $r['category']) . '</span>' : '',
               3 => fn($r) => $r['severity'] !== null ? vg_badge((string) $r['severity'], vg_kisa_u_sev_tone((string) $r['severity'])) : '',
               4 => function ($r) {

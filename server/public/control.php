@@ -164,7 +164,9 @@ if ($err !== null) {
     return;
 }
 
-$listUrl = '/control_mapping.php?fw=' . urlencode($fw);
+// 돌아갈 목록. U-코드는 control_mapping.php 가 kisa-u.php 로 302 하므로 곧장 그리로 보낸다
+//   (한 번 튀는 대신 바로 간다 — 목적지는 같다).
+$listUrl = $fw === 'KISA_U' ? '/kisa-u.php' : '/control_mapping.php?fw=' . urlencode($fw);
 
 if (!$found) {
     ?>

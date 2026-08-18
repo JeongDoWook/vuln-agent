@@ -20,6 +20,13 @@ require_once __DIR__ . '/../src/cce.php';             // vg_cce_rules — 점검
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_mapping_for, vg_cce_rule_guides
 vg_require_menu('catalog');   // 카탈로그 계열과 같은 메뉴코드(cves.php·packages.php 와 동일)
 
+/**
+ * 기준을 화면에 세우는 순서. 사용자는 주요정보통신기반시설 심사를 받는 쪽이고 그 자리에서
+ *   쓰는 말은 U-코드다 — U-코드를 먼저, ISMS-P·N2SF 를 뒤로 놓는다. 매핑에 없는 기준을
+ *   여기서 만들지는 않는다(정렬 키일 뿐 목록이 아니다). cce-rule.php 상세도 같은 순서다.
+ */
+const VG_CCE_FW_ORDER = ['KISA_U' => 0, 'ISMS_P' => 1, 'N2SF' => 2];
+
 $err = null;
 $rules = [];        // 화면에 뿌릴 행(필터·정렬 후 전체)
 $rows = [];         // 그중 이 페이지 몫
@@ -67,6 +74,8 @@ try {
     foreach ($catalog as $code => $meta) {
         $c = $counts[$code] ?? ['FAIL' => 0, 'PASS' => 0, 'NA' => 0];
         $mapped = $mappings[$code] ?? [];
+        uksort($mapped, static fn(string $a, string $b): int =>
+            (VG_CCE_FW_ORDER[$a] ?? 9) <=> (VG_CCE_FW_ORDER[$b] ?? 9));
         // 검색 대상에 기준 식별자(U-01·2.5.4·AP)까지 넣는다 — 감사 대응 중에는 점검 이름보다
         //   기준 번호로 찾는 일이 더 많다.
         $haystack = $code . ' ' . $meta['title'] . ' ' . ($guides[$code]['summary'] ?? '')

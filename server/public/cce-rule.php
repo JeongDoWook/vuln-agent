@@ -21,6 +21,13 @@ require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_frameworks, 
 // 카탈로그에서도, 통제 상세·탐지 결과에서도 열린다 — compliance_rule.php 와 같은 이유로 넓게 연다.
 vg_require_menu_any('catalog', 'compliance', 'findings');
 
+/**
+ * 기준을 화면에 세우는 순서. 이 제품의 사용자는 주요정보통신기반시설 심사를 받는 쪽이고,
+ *   그 자리에서 쓰는 말은 U-코드다 — 그래서 U-코드가 먼저, ISMS-P·N2SF 가 뒤다.
+ *   매핑에 없는 기준을 여기서 만들어내지는 않는다(정렬 키일 뿐 목록이 아니다).
+ */
+const VG_CCE_FW_ORDER = ['KISA_U' => 0, 'ISMS_P' => 1, 'N2SF' => 2];
+
 $err = null;
 $code = trim((string) ($_GET['code'] ?? ''));
 $rule = null;                                   // 점검 항목 메타(코드·제목·심각도·SSG 룰)
@@ -50,6 +57,8 @@ try {
 
         $guide   = vg_cce_rule_guides([$code])[$code] ?? $guide;
         $mapping = vg_control_mapping_for([$code])[$code] ?? [];
+        uksort($mapping, static fn(string $a, string $b): int =>
+            (VG_CCE_FW_ORDER[$a] ?? 9) <=> (VG_CCE_FW_ORDER[$b] ?? 9));
 
         // 호스트별 최신 스캔의 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다
         //   (control.php·control_mapping.php 와 같은 기준).
@@ -133,9 +142,33 @@ if ($rule === null) {
 }
 
 $sev = (string) $rule['severity'];
+
+/** 기준 통제 하나를 상세로 가는 뱃지 링크로. 라벨은 짧은 표기(SSOT)를 쓴다. */
+$fwChips = static function (string $fw, array $items) use ($fwShort): string {
+    $out = [];
+    foreach ($items as $it) {
+        $out[] = '<a href="/control.php?fw=' . urlencode($fw)
+               . '&amp;control=' . urlencode((string) $it['control_id']) . '">'
+               . vg_badge(($fwShort[$fw] ?? $fw) . ' ' . $it['control_id'], 'muted') . '</a>';
+    }
+    return implode(' ', $out);
+};
+
+// 머리에는 심사에서 부르는 이름(U-코드)을 세운다. 39개 중 18개는 대응 U-코드가 없다 —
+//   그런 항목에 빈 자리를 남기거나 U-코드를 지어내지 않고, 실제 근거인 ISMS-P 조항을,
+//   그것도 없으면 '자체 기준' 임을 그대로 적는다.
+if (!empty($mapping['KISA_U'])) {
+    $stdMeta = $fwChips('KISA_U', $mapping['KISA_U']);
+} elseif (!empty($mapping['ISMS_P'])) {
+    $stdMeta = $fwChips('ISMS_P', $mapping['ISMS_P']);
+} else {
+    $stdMeta = '<span class="why">자체 기준 · 대응 U-코드 없음</span>';
+}
+
 vg_hero(
     vg_h((string) $rule['title']),
     [
+        $stdMeta,
         '<code class="why">' . vg_h($code) . '</code>',
         '점검된 자산 ' . number_format($hostCount) . '대',
         '<a href="/cce-rules.php">← CCE</a>',
@@ -304,7 +337,9 @@ vg_hero(
       </dl>
 
       <details>
-        <summary>참조 근거 · SSG 룰<?= $ssgRule !== null ? ' ' . vg_h((string) $ssgRule['rule_id']) : '' ?></summary>
+        <?php // SSG 는 외국(SCAP) 기준의 참조 근거다 — 심사에서 부르는 이름이 아니라서
+              //   접힌 채로 이 아래에 둔다. 지우지는 않는다(근거 링크가 여기서만 열린다). ?>
+        <summary>참조 근거(외국 기준) · SSG 룰<?= $ssgRule !== null ? ' ' . vg_h((string) $ssgRule['rule_id']) : '' ?></summary>
         <?php if ($rule['ssg_rule_id'] === null): ?>
           <p class="why">대응하는 SSG(SCAP Security Guide) 룰이 없는 자체 기준 항목입니다.
             KISA 가이드 고유 항목이거나, SSG 가 같은 대상을 다루지 않는 경우입니다.</p>
