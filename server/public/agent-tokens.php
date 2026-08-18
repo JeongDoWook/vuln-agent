@@ -181,8 +181,13 @@ vg_header('에이전트 키', 'agenttokens');
               0 => fn($t) => !empty($t['host_id'])
                   ? '<a href="/host.php?id=' . (int) $t['host_id'] . '"><code>' . vg_h((string) $t['host_fqdn']) . '</code></a>'
                   : '<code>' . vg_h((string) $t['host_fqdn']) . '</code>',
-              1 => fn($t) => vg_h((string) $t['label'])
-                  . '<div class="why">발급자 ' . vg_h((string) ($t['created_by'] ?? '–')) . '</div>',
+              // 발급자를 모르는 토큰(스크립트 발급·옛 기록)은 '발급자 –' 로 채우지 않는다 —
+              //   행마다 같은 자리표시가 서서 정작 아는 발급자를 못 알아보게 했다.
+              1 => function ($t) {
+                  $by = trim((string) ($t['created_by'] ?? ''));
+                  return vg_h((string) $t['label'])
+                      . ($by !== '' ? '<div class="why">발급자 ' . vg_h($by) . '</div>' : '');
+              },
               2 => fn($t) => '<code>' . vg_h((string) $t['token_prefix']) . '…</code>',
               // 폐기 > 만료 > 활성 순으로 판정 — 만료된 토큰이 '활성' 으로 보이면 안 된다.
               3 => fn($t) => (int) $t['is_revoked'] === 1

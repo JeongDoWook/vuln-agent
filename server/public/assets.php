@@ -118,8 +118,11 @@ vg_header('자산', 'assets');
 
   <?php
   vg_toolbar([
-      ['type' => 'select', 'name' => 'state', 'empty_label' => '전체 상태',
-       'selected' => $state, 'options' => VG_ASSET_STATES],
+      /* 수집 상태는 위 KPI 카드가 소유한다 — 같은 4값을 드롭다운으로 한 벌 더 두지 않는다.
+       *   카드는 건수까지 갖고 누르면 그대로 필터가 걸리므로 드롭다운은 역할이 겹칠 뿐이었다.
+       *   대신 hidden 으로 실어 보낸다 — 안 그러면 카드로 고른 상태가 검색 한 번에 풀린다.
+       *   reset=>true 라 '초기화' 링크는 이 값도 지운다(폼 밖 필터 운반용 규약, table.php 머리주석). */
+      ['type' => 'hidden', 'name' => 'state', 'value' => $state, 'reset' => true],
       // 등급 어휘는 VG_ASSET_GRADES 가 소유한다 + '미지정'(아직 확정 안 된 자산 찾기).
       ['type' => 'select', 'name' => 'grade', 'empty_label' => '전체 등급',
        'selected' => $grade, 'options' => VG_ASSET_GRADES + ['none' => '미지정']],

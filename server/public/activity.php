@@ -244,9 +244,11 @@ vg_header('감사 로그', 'activity');
               $code  = (string) $r['activity_type'];
               $label = $activityLabels[$code] ?? $code;
               $msg   = trim((string) ($r['message'] ?? ''));
-              $out   = '<strong>' . vg_h($label) . '</strong>';
+              // 원본 코드(activity_type)는 라벨 밑에 한 줄로 또 적지 않는다 — 라벨이 그 코드의
+              //   번역이라 행마다 같은 사실이 두 번 서 있었고, 라벨이 없는 코드는 아예 같은
+              //   문자열이 두 줄이 됐다. 근거는 지우지 않고 title 로 내린다.
+              $out   = '<strong title="' . vg_h($code) . '">' . vg_h($label) . '</strong>';
               if ($msg !== '') { $out .= ' ' . vg_h($msg); }
-              $out .= '<div class="why">' . vg_h($code) . '</div>';
               if (!empty($r['data'])) {
                   $decoded = json_decode((string) $r['data'], true);
                   $pretty  = $decoded !== null

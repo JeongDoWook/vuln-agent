@@ -199,10 +199,8 @@ vg_hero(
 
 <div class="card">
   <div class="card__body stat-grid">
-    <div class="stat">
-      <span class="stat__val"><?= number_format($counts['FAIL']) ?></span>
-      <div class="why">FAIL</div>
-    </div>
+    <?php /* FAIL 타일은 걷었다 — 바로 위 히어로가 같은 수를 같은 라벨('FAIL')로 이미 세워 두었다.
+             여기 남는 것은 그 옆에 놓고 봐야 뜻이 생기는 값들(PASS·NA·자산·항목 수)이다. */ ?>
     <div class="stat">
       <span class="stat__val"><?= number_format($counts['PASS']) ?></span>
       <div class="why">PASS</div>
@@ -236,7 +234,8 @@ vg_hero(
 <section id="guide">
   <div class="card">
     <strong>이 통제가 요구하는 것</strong>
-    <span class="why"><?= vg_h($frameworks[$fw]) ?> · <?= vg_h($control) ?></span>
+    <?php /* '기준 · 통제 ID' 부제는 걷었다 — 화면 제목이 통제 ID 이고 그 부제가 기준이라,
+             한 화면에서 세 번째로 같은 말을 하는 자리였다(식별과 출처 절이 정본으로 갖는다). */ ?>
     <div class="card__body">
       <?php if ($guide !== null): ?>
         <p class="why"><?= vg_h((string) $guide['description']) ?></p>
@@ -282,21 +281,23 @@ vg_hero(
                     $cnt  = (int) $r['result_cnt'];
                     $fail = (int) $r['fail_cnt'];
                     $tone = $fail > 0 ? 'crit' : ((int) $r['na_cnt'] > 0 ? 'med' : 'ok');
-                    $why  = 'PASS ' . number_format((int) $r['pass_cnt'])
-                          . ' · 판정 불가 ' . number_format((int) $r['na_cnt']);
+                    // 0 인 항목은 적지 않는다 — 신호는 FAIL 하나뿐인데 'PASS 0' 이 행마다 서서
+                    //   읽어야 할 값을 덮었다(cce-rules.php·kisa-u.php 와 같은 어휘).
+                    $parts = [];
+                    if ((int) $r['pass_cnt'] > 0) { $parts[] = 'PASS ' . number_format((int) $r['pass_cnt']); }
+                    if ((int) $r['na_cnt'] > 0)   { $parts[] = '판정 불가 ' . number_format((int) $r['na_cnt']); }
+                    $why  = implode(' · ', $parts);
                     // 항목별 위반 비율 — 자산 수가 제각각이라 "FAIL 3" 만으로는 크기를 못 읽는다.
                     //   meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. 0% 라 색은 안 보인다.
                     return vg_badge('FAIL ' . number_format($fail), $tone)
-                         . '<br><span class="why">' . vg_h($why) . '</span>'
+                         . ($why === '' ? '' : '<br><span class="why">' . vg_h($why) . '</span>')
                          . vg_meter($tone === 'ok' ? 'low' : $tone, $fail / $cnt * 100,
                                     'FAIL ' . number_format($fail) . ' / 점검 ' . number_format($cnt) . '건');
                 },
-                2 => fn($r) => '<span class="why">'
-                             . ($r['summary'] !== '' ? vg_h((string) $r['summary']) : '설명 준비 중')
-                             . '</span>',
-                3 => fn($r) => '<span class="why">'
-                             . ($r['remediation'] !== '' ? vg_h((string) $r['remediation']) : '조치 방법 준비 중')
-                             . '</span>',
+                // 없는 설명·조치는 '준비 중' 으로 채우지 않는다 — 빈 칸이 '아직 없다' 를 그대로 말하고,
+                //   자리표시 문구는 실제로 적힌 설명과 같은 무게로 읽혀 훑을 때 걸린다.
+                2 => fn($r) => $r['summary'] !== ''     ? '<span class="why">' . vg_h((string) $r['summary']) . '</span>' : '',
+                3 => fn($r) => $r['remediation'] !== '' ? '<span class="why">' . vg_h((string) $r['remediation']) . '</span>' : '',
             ],
         ]
     );

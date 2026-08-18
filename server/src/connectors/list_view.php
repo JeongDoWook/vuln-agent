@@ -50,18 +50,10 @@ function vg_connectors_render_list(array $connectors, string $csrf, array $logCo
     //   타입 → 그룹 매핑은 아래 목록이 유일한 근거다(새 타입은 여기 한 줄 추가). 목록에 없는
     //   타입은 맨 아래 '기타' 로 떨어져 화면에서 사라지지 않는다.
     $roleGroups = [
-        ['title' => '취약점 정보',
-         'desc'  => 'CVE 설명, CVSS, 영향 버전의 기준 데이터입니다.',
-         'types' => ['nvd', 'osv', 'kisa']],
-        ['title' => '위험 신호',
-         'desc'  => 'KEV의 실제 악용 여부와 EPSS 악용 확률입니다.',
-         'types' => ['kev', 'epss']],
-        ['title' => '벤더 판정',
-         'desc'  => '배포판별 수정 버전과 미수정 상태를 확인합니다.',
-         'types' => ['debtracker', 'rhoval', 'rhunfixed', 'ubuntuoval', 'kcve']],
-        ['title' => '보안 기준',
-         'desc'  => 'CIS·NIST·STIG 기반의 보안 설정 점검 기준입니다.',
-         'types' => ['ssg']],
+        ['title' => '취약점 정보', 'types' => ['nvd', 'osv', 'kisa']],
+        ['title' => '위험 신호', 'types' => ['kev', 'epss']],
+        ['title' => '벤더 판정', 'types' => ['debtracker', 'rhoval', 'rhunfixed', 'ubuntuoval', 'kcve']],
+        ['title' => '보안 기준', 'types' => ['ssg']],
     ];
 
     $tableHeaders = [
@@ -72,8 +64,16 @@ function vg_connectors_render_list(array $connectors, string $csrf, array $logCo
         0 => fn($c) => '<strong><a href="?conn=' . (int) $c['feed_connector_id']
             . '#collection-history">' . vg_h($c['name']) . '</a></strong>',
         1 => fn($c) => '<span class="why">' . vg_h($c['_sched_label']) . '</span>',
-        2 => fn($c) => '<span class="why">최근 ' . vg_h($c['last_run_at'] ?? '–')
-            . '<br>다음 ' . vg_h($c['_next_run'] ?: '–') . '</span>',
+        // 없는 시각은 '–' 로 채우지 않는다 — 한 번도 안 돈 수동 소스가 '최근 – / 다음 –' 두 줄을
+        //   차지했는데, 그 사실은 '주기: 수동' 과 상태 칸의 '미실행' 이 이미 말한다.
+        2 => function ($c) {
+            $parts = [];
+            if (($c['last_run_at'] ?? '') !== '') { $parts[] = '최근 ' . vg_h((string) $c['last_run_at']); }
+            if (($c['_next_run'] ?? '–') !== '–' && ($c['_next_run'] ?? '') !== '') {
+                $parts[] = '다음 ' . vg_h((string) $c['_next_run']);
+            }
+            return $parts ? '<span class="why">' . implode('<br>', $parts) . '</span>' : '';
+        },
         // 상태 칸은 "지금 어떤 상태인가" 만 보여준다 — 켜기/끄기는 편집 폼의 '활성' 체크박스 하나로
         //   한다(전엔 여기 토글 버튼이 하나 더 있어 같은 일을 하는 경로가 둘이었다).
         //   꺼진 커넥터는 수집 결과 뱃지만 보면 "왜 안 도는지" 를 알 수 없으므로 '중지' 를 앞에 붙인다.
@@ -137,7 +137,6 @@ function vg_connectors_render_list(array $connectors, string $csrf, array $logCo
         foreach ($roleGroups as $gi => $g) {
             if (empty($grouped[$gi])) { continue; }
             echo '<div class="card"><strong>' . vg_h($g['title']) . '</strong>'
-               . ''
                . '<div class="card__body">';
             vg_table($tableHeaders, $grouped[$gi], ['card' => false, 'cell' => $tableCells]);
             echo '</div></div>';

@@ -369,7 +369,9 @@ vg_header('판정 근거', 'vendor');
                       $tip = implode(' · ', $tipParts);
                   }
                   if (empty($r['fixed'])) {
-                      $out = '<span class="why">수정본 없음</span>';
+                      // 데비안은 바로 옆 '상태' 칸이 '수정본 없음/있음' 을 뱃지로 말한다 — 같은 행에
+                      //   같은 문구를 두 번 세우지 않는다. 다른 소스의 상태 칸은 심각도라 여기 남긴다.
+                      $out = $r['src'] === 'debtracker' ? '' : '<span class="why">수정본 없음</span>';
                   } else {
                       $out = '<span class="pill">' . vg_h((string) $r['fixed']) . '</span>';
                   }

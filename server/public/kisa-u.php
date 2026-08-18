@@ -172,13 +172,21 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
       if ($r['mapped_rule_cnt'] === null) { return vg_badge('미점검', 'high'); }
       $v = $verdicts[(string) $r['control_id']] ?? null;
       if ($v === null || (int) $v['finding_cnt'] === 0) { return vg_badge('점검 결과 없음', 'muted'); }
+      $cnt  = (int) $v['finding_cnt'];
       $fail = (int) $v['fail_cnt'];
       $tone = $fail > 0 ? 'crit' : ((int) $v['na_cnt'] > 0 ? 'med' : 'ok');
-      $why = 'PASS ' . number_format((int) $v['pass_cnt'])
-           . ' · 판정 불가 ' . number_format((int) $v['na_cnt'])
-           . ' · 전체 ' . number_format((int) $v['finding_cnt']) . '건';
-      return vg_badge('FAIL ' . number_format($fail) . '건', $tone, $why)
-          . ' <span class="why">' . vg_h($why) . '</span>';
+      // 0 인 항목은 적지 않는다 — 신호는 FAIL 하나뿐인데 모든 행이 'PASS 0 · 판정 불가 0' 으로
+      //   채워져 정작 읽어야 할 값을 덮었다. 전체 건수는 호스트 수라 행마다 같은 값이 반복되므로
+      //   본문에서 빼고 미터 툴팁이 갖는다(근거를 지우는 게 아니라 접는다). cce-rules.php 와 같은 어휘.
+      $parts = [];
+      if ((int) $v['pass_cnt'] > 0) { $parts[] = 'PASS ' . number_format((int) $v['pass_cnt']); }
+      if ((int) $v['na_cnt'] > 0)   { $parts[] = '판정 불가 ' . number_format((int) $v['na_cnt']); }
+      $why = implode(' · ', $parts);
+      // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. 0% 라 색은 안 보인다.
+      return vg_badge('FAIL ' . number_format($fail), $tone)
+          . ($why === '' ? '' : '<br><span class="why">' . vg_h($why) . '</span>')
+          . vg_meter($tone === 'ok' ? 'low' : $tone, $cnt > 0 ? $fail / $cnt * 100 : 0.0,
+                     'FAIL ' . number_format($fail) . ' / 점검 ' . number_format($cnt) . '건');
   };
 
   vg_table(

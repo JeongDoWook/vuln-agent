@@ -70,14 +70,15 @@ vg_header('권한', 'permissions');
       foreach ($menus as $code => $label) { $permissionRows[] = ['code' => $code, 'label' => $label]; }
       vg_table([
           ['label' => '메뉴', 'key' => 'label', 'class' => 'permission-menu'],
-          ['label' => '관리자', 'align' => 'center', 'class' => 'permission-role'],
+          ['label' => '관리자 (항상)', 'align' => 'center', 'class' => 'permission-role'],
           ['label' => '운영자', 'align' => 'center', 'class' => 'permission-role'],
           ['label' => '사용자', 'align' => 'center', 'class' => 'permission-role'],
       ], $permissionRows, [
           'class' => 'matrix',
           'cell' => [
               0 => static fn($row) => '<strong>' . vg_h($row['label']) . '</strong>',
-              1 => static fn() => vg_badge('✔ 항상', 'ok'),
+              // '항상' 은 머리글이 한 번 말한다 — 전 행이 같은 값인 열에 같은 낱말을 11번 세우지 않는다.
+              1 => static fn() => vg_badge('✔', 'ok', '관리자는 모든 메뉴에 항상 접근합니다'),
               2 => static fn($row) => '<label class="check-cell"><input type="checkbox" name="perm[operator][' . vg_h($row['code']) . ']" value="1"' . (!empty($cur['operator'][$row['code']]) ? ' checked' : '') . '><span class="sr-only">운영자 ' . vg_h($row['label']) . ' 접근 허용</span></label>',
               3 => static fn($row) => '<label class="check-cell"><input type="checkbox" name="perm[user][' . vg_h($row['code']) . ']" value="1"' . (!empty($cur['user'][$row['code']]) ? ' checked' : '') . '><span class="sr-only">사용자 ' . vg_h($row['label']) . ' 접근 허용</span></label>',
           ],
