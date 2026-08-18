@@ -270,10 +270,15 @@
                   $exposure = '<span title="' . vg_h(vg_status_label($r['runtime_status'])) . '">'
                       . vg_status_badge($r['runtime_status']) . '</span>';
 
-                  // 조치 상태 — 행이 없으면 미조치다(vg_finding_status_badge 가 null 을 OPEN 으로 눕힌다).
+                  /* 조치 상태 — **사람이 실제로 정한 값이 있을 때만** 적는다. 기록이 없는 조합은
+                   *   미조치(OPEN)인데, 예전엔 그 없음을 '미조치' 뱃지로 채워 넣어 전 행에 같은
+                   *   글자가 박혔다(dev 실측 5,752행 전부 — tb_finding_status 는 0행이다). 없음을
+                   *   빈 칸으로 두는 건 이 표의 '조치 · 올릴 버전' 칸이 이미 쓰는 규칙이다.
+                   *   미조치만 골라 보는 길은 툴바의 '조치 상태' 필터가 그대로 갖고 있다. */
                   $note  = trim((string) ($r['finding_status_note'] ?? ''));
-                  $fix   = vg_finding_status_badge($r['finding_status'] ?? null);
-                  if ($note !== '') {
+                  $status = (string) ($r['finding_status'] ?? '');
+                  $fix = $status === '' ? '' : vg_finding_status_badge($status);
+                  if ($fix !== '' && $note !== '') {
                       $fix = '<span title="' . vg_h(mb_strimwidth($note, 0, 120, '…')) . '">' . $fix . '</span>';
                   }
 
@@ -283,12 +288,16 @@
                       (int) $r['host_id'], (string) ($r['container_cid'] ?? ''),
                       (string) $r['cve_id'], (string) $r['package_name']
                   )] ?? null;
-                  $due = vg_finding_due_cell(
+                  /* 기한이 아예 없는 등급(MEDIUM·LOW)은 빈 칸으로 둔다 — vg_finding_due_cell 은
+                   *   그 경우 '—' 를 채우는데, 대상 스캔의 83%(dev 실측 5,752행 중 4,764행)가
+                   *   MEDIUM·LOW 라 이 칸이 대시로 도배됐다. 기한이 있는 등급만 값을 갖는다. */
+                  $due = $sla === null ? '' : vg_finding_due_cell(
                       $seen === null ? null : (int) $seen['days'], $sla,
                       $r['finding_status'] ?? null
                   );
 
-                  return '<div>' . $exposure . '</div><div>' . $fix . ' ' . $due . '</div>';
+                  $second = trim($fix . ' ' . $due);
+                  return '<div>' . $exposure . '</div>' . ($second === '' ? '' : '<div>' . $second . '</div>');
               },
               // CVE — 링크 + KEV 뱃지(별도 컬럼이던 '✔' 를 여기로).
               // CVE 요약(summary)은 뺐다. 근거와 나란히 두면 긴 텍스트 컬럼이 둘이라
@@ -354,14 +363,14 @@
               //   접두어가 폭을 먼저 먹어 정작 숫자가 잘려 나갔다(실측 'CVSS …' — 점수가 화면에서
               //   사라졌다). 무슨 숫자인지는 열 머리글('CVSS')이 말한다. EPSS 는 값이 둘째 줄이라
               //   무엇인지 알 수 없으므로 라벨을 남긴다.
+              // 없는 점수는 **적지 않는다** — 예전엔 '–'·'EPSS –' 로 칸을 채웠는데, 그건 값이
+              //   아니라 값이 없다는 말이라 훑을 때 눈만 잡았다(빈 칸이 같은 말을 한다).
               'risk' => function ($r) {
-                  $cvss = $r['cvss'] !== null
-                      ? '<strong>' . vg_h((string) $r['cvss']) . '</strong>'
-                      : '<span class="why">–</span>';
-                  $epss = $r['epss'] !== null && $r['epss'] !== ''
-                      ? 'EPSS ' . vg_h(number_format((float) $r['epss'] * 100, 1)) . '%'
-                      : 'EPSS –';
-                  return $cvss . '<div class="why">' . $epss . '</div>';
+                  $html = $r['cvss'] !== null ? '<strong>' . vg_h((string) $r['cvss']) . '</strong>' : '';
+                  if ($r['epss'] !== null && $r['epss'] !== '') {
+                      $html .= '<div class="why">EPSS ' . vg_h(number_format((float) $r['epss'] * 100, 1)) . '%</div>';
+                  }
+                  return $html;
               },
               // 설치 버전을 조치 칸에 다시 싣지 않는다(같은 행 '패키지' 칸에 이미 있다) — 한 칸에
               //   "설치 → 고침" 을 다 넣으니 알약이 세 줄이 되어 행 높이를 결정해 버렸다.

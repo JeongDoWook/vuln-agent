@@ -9,7 +9,7 @@ declare(strict_types=1);
 /**
  * 노출 탭 — 범위 분포 + 목록 + 행별 CVE 건수.
  *   $f: q scope page perPage
- *   반환: scopeCounts typeCount total page rows cveCounts
+ *   반환: scopeCounts total page rows cveCounts
  */
 function vg_findings_load_exposure(PDO $pdo, array $scanIds, array $f): array {
     $q = (string) $f['q']; $scope = (string) $f['scope'];
@@ -24,10 +24,8 @@ function vg_findings_load_exposure(PDO $pdo, array $scanIds, array $f): array {
     //   어디에도 없는 행이 표에만 남아 합계가 안 맞는 것처럼 보인다. 아래 필터도 같은 식이다.
     $stmt = $pdo->prepare("SELECT COALESCE(scope, '-') sc, COUNT(*) c FROM tb_exposure WHERE scan_id IN ($in) GROUP BY sc");
     $stmt->execute($scanIds);
-    $typeCount = 0;
     foreach ($stmt->fetchAll() as $r) {
         $scopeCounts[(string) $r['sc']] = (int) $r['c'];
-        $typeCount += (int) $r['c'];
     }
 
     $where  = "e.scan_id IN ($in)";
@@ -95,6 +93,6 @@ function vg_findings_load_exposure(PDO $pdo, array $scanIds, array $f): array {
         }
     }
 
-    return ['scopeCounts' => $scopeCounts, 'typeCount' => $typeCount, 'total' => $total,
+    return ['scopeCounts' => $scopeCounts, 'total' => $total,
             'page' => $page, 'rows' => $rows, 'cveCounts' => $expCveCounts];
 }

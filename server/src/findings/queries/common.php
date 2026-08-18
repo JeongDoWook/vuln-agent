@@ -2,9 +2,12 @@
 declare(strict_types=1);
 
 /**
- * findings/queries/common.php — 세 탭이 공유하는 것만: 대상 집합과 탭 머리 건수.
- *   대상 스캔 집합(호스트별 최신 스캔)은 어느 탭이든 첫 재료이고, 탭 머리 뱃지는 지금 탭이
- *   아닌 유형까지 세야 하므로 특정 탭에 둘 수 없다. 탭 고유 조회는 옆 파일들이 갖는다.
+ * findings/queries/common.php — 세 탭이 공유하는 것: 대상 스캔 집합과 그 위의 컨테이너.
+ *   어느 탭이든 첫 재료라 특정 탭에 둘 수 없다. 탭 고유 조회는 옆 파일들이 갖는다.
+ *
+ *   여기 있던 vg_findings_type_counts() 는 걷었다 — 탭 줄의 건수 뱃지 하나 때문에 지금 탭이
+ *   아닌 두 유형까지 매 요청에 COUNT 했고(tb_finding 은 만 단위 표다), 그 뱃지는 각 탭의
+ *   카드·'총 N건' 페이지네이션과 같은 말을 되풀이했다.
  */
 
 /** 호스트별 최신 스캔 (삭제된 호스트 제외) — 통합 뷰의 대상 스캔 집합. */
@@ -36,28 +39,4 @@ function vg_findings_load_containers(PDO $pdo): array {
           WHERE h.is_deleted = 0
           ORDER BY h.fqdn, c.cid'
     )->fetchAll();
-}
-
-/**
- * 지금 탭이 아닌 유형의 건수 — 탭 머리에 붙는 요약이다. 각각 인덱스 선두(scan_id) 범위
- *   COUNT 하나뿐이라 값싸다(현재 탭 것은 이미 집계됐으므로 null 이 아니면 다시 세지 않는다).
- */
-function vg_findings_type_counts(PDO $pdo, array $scanIds, array $typeCounts): array {
-    $in = implode(',', array_fill(0, count($scanIds), '?'));
-    if ($typeCounts['cve'] === null) {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_finding WHERE scan_id IN ($in)");
-        $stmt->execute($scanIds);
-        $typeCounts['cve'] = (int) $stmt->fetchColumn();
-    }
-    if ($typeCounts['cce'] === null) {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_finding WHERE scan_id IN ($in) AND result = 'FAIL'");
-        $stmt->execute($scanIds);
-        $typeCounts['cce'] = (int) $stmt->fetchColumn();
-    }
-    if ($typeCounts['exposure'] === null) {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_exposure WHERE scan_id IN ($in)");
-        $stmt->execute($scanIds);
-        $typeCounts['exposure'] = (int) $stmt->fetchColumn();
-    }
-    return $typeCounts;
 }

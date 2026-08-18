@@ -11,7 +11,7 @@ declare(strict_types=1);
 /**
  * CVE 탭 — 등급 KPI · 행동 큐 · 목록.
  *   $f: q sev st fx fst sort ctrId page perPage (findings.php 가 검증한 값)
- *   반환: counts actionCounts overdueFindingIds total rows notes firstSeen policy ctrLabel typeCount
+ *   반환: counts actionCounts overdueFindingIds total rows notes firstSeen policy ctrLabel
  */
 function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, array $f): array {
     $q = (string) $f['q']; $sev = (string) $f['sev']; $st = (string) $f['st'];
@@ -32,13 +32,9 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
                          AND fs.package_name = f.package_name";
 
     // KPI 는 필터 무관 — 대상 스캔 전체 기준
-    $typeCount = 0;
     $stmt = $pdo->prepare("SELECT severity, COUNT(*) c FROM tb_finding WHERE scan_id IN ($in) GROUP BY severity");
     $stmt->execute($scanIds);
     foreach ($stmt->fetchAll() as $r) {
-        // 탭 뱃지의 CVE 건수는 이 집계를 그대로 합쳐 쓴다(같은 값을 두 번 세지 않는다).
-        //   등급 카드는 알려진 4종만 세지만, 뱃지는 그 밖의 등급이 와도 빠지지 않게 전부 더한다.
-        $typeCount = (int) $typeCount + (int) $r['c'];
         if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; }
     }
     $actionCounts['high'] = $counts['CRITICAL'] + $counts['HIGH'];
@@ -240,5 +236,5 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
     return ['counts' => $counts, 'actionCounts' => $actionCounts,
             'overdueFindingIds' => $overdueFindingIds, 'total' => $total, 'rows' => $rows,
             'notes' => $notes, 'firstSeen' => $firstSeen, 'policy' => $policy,
-            'ctrLabel' => $ctrLabel, 'typeCount' => $typeCount];
+            'ctrLabel' => $ctrLabel];
 }

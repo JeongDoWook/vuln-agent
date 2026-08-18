@@ -159,9 +159,13 @@ function vg_findings_subtab_labels(): array {
 
 /**
  * 위 정의를 vg_subtabs() 로 그린다. $active 는 현재 화면의 탭 키.
- *   $overrides 는 findings.php 전용 보강분이다 — 탭 키별로 ['href'=>…, 'n'=>…] 을 준다.
- *   그 화면에서만 뱃지 숫자를 붙이고 vg_qs() 로 필터를 이어받기 때문이며, 안 주면 필터
- *   컨텍스트가 없는 changes.php·nofix-packages.php 처럼 단순 href 로 떨어진다.
+ *   $overrides 는 findings.php 전용 보강분이다 — 탭 키별로 ['href'=>…] 을 준다.
+ *   그 화면에서만 vg_qs() 로 필터를 이어받기 때문이며, 안 주면 필터 컨텍스트가 없는
+ *   changes.php·nofix-packages.php 처럼 단순 href 로 떨어진다.
+ *
+ *   **건수 뱃지는 붙이지 않는다.** 탭 줄은 "어디로 갈 수 있나" 만 말한다 — 건수는 각 탭 안의
+ *   카드·페이지네이션('총 N건')이 이미 갖고 있고, 여기 숫자를 세우려면 지금 탭이 아닌 유형까지
+ *   매 요청에 COUNT 해야 했다(tb_finding 은 만 단위 표다).
  */
 function vg_findings_subtabs(string $active, array $overrides = []): void {
     $hrefs = [
@@ -176,7 +180,6 @@ function vg_findings_subtabs(string $active, array $overrides = []): void {
         $tabs[$key] = [
             'label' => $label,
             'href'  => $overrides[$key]['href'] ?? $hrefs[$key],
-            'n'     => $overrides[$key]['n'] ?? null,
         ];
     }
     vg_subtabs($tabs, $active);

@@ -9,7 +9,7 @@ declare(strict_types=1);
 /**
  * 보안설정(CCE) 탭 — 결과 분포 + 목록.
  *   $f: q sev res page perPage
- *   반환: resultCounts typeCount total page rows
+ *   반환: resultCounts total page rows
  */
 function vg_findings_load_cce(PDO $pdo, array $scanIds, array $f): array {
     $q = (string) $f['q']; $sev = (string) $f['sev']; $res = (string) $f['res'];
@@ -26,8 +26,6 @@ function vg_findings_load_cce(PDO $pdo, array $scanIds, array $f): array {
     foreach ($stmt->fetchAll() as $r) {
         if (isset($cceResultCounts[$r['result']])) { $cceResultCounts[$r['result']] = (int) $r['c']; }
     }
-    // 탭 뱃지는 이 탭의 기본값(위반)을 센다 — 탭을 눌렀을 때 보게 될 숫자와 같아야 한다.
-    $typeCount = $cceResultCounts['FAIL'];
 
     $where  = "f.scan_id IN ($in)";
     $params = $scanIds;
@@ -67,6 +65,6 @@ function vg_findings_load_cce(PDO $pdo, array $scanIds, array $f): array {
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
-    return ['resultCounts' => $cceResultCounts, 'typeCount' => $typeCount,
+    return ['resultCounts' => $cceResultCounts,
             'total' => $total, 'page' => $page, 'rows' => $rows];
 }

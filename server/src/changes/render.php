@@ -98,7 +98,7 @@ function vg_change_severity_cell(array $row): string {
 /** 수집 시각 셀 — 분까지만 보이고 전체 값은 title 로 남긴다(좁은 칸에서 잘리지 않게). */
 function vg_change_when_cell(array $row): string {
     $when = (string) ($row['when'] ?? '');
-    if ($when === '') { return '<span class="why">–</span>'; }
+    if ($when === '') { return ''; }   // 없는 시각은 '–' 로 채우지 않는다 — 빈 칸이 같은 말을 한다
     return '<span class="why" title="' . vg_h($when) . '">' . vg_h(substr($when, 0, 16)) . '</span>';
 }
 
