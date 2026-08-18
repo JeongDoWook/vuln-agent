@@ -23,6 +23,7 @@ require_once __DIR__ . '/ingest/vendor_evidence.php'; // changelog · errata · 
 require_once __DIR__ . '/ingest/container.php';       // 컨테이너 목록 · 내부 패키지 · 프로세스 · 노출
 require_once __DIR__ . '/ingest/sbom.php';            // CycloneDX/SPDX SBOM · pom.xml → 패키지 + 의존 그래프
 require_once __DIR__ . '/ingest/kernel.php';          // 실행/설치 커널 → 재부팅 필요
+require_once __DIR__ . '/ingest/network.php';        // 호스트 인터페이스 IPv4(자산 IP 대조의 좌변)
 require_once __DIR__ . '/ingest/snapshot.php';        // 내용 해시 · 패키지 맵 · 스냅샷 간 변경 목록
 
 // ── collected_at (ISO-8601) → MySQL DATETIME ──────────────────────────────

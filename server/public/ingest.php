@@ -112,6 +112,12 @@ $expCount = count($expRows);
 $exposureProvided = array_key_exists('exposure', $data)
     && is_array($exp) && array_key_exists('correlation', $exp);
 
+// ── 호스트 IPv4 파싱 (ip -o addr / ifconfig -a 원문) ──
+//   에이전트는 예전부터 이 값을 보냈는데 raw_json 안에만 남고 어떤 테이블로도 안 들어갔다.
+//   자산 탐색이 발견한 IP 를 기존 자산과 대조하려면 이 좌변이 필요하다.
+$net      = $data['net'] ?? [];
+$addrRows = vg_ingest_parse_host_addresses((string) ($net['interfaces'] ?? ''));
+
 // ── 실행 프로세스 파싱 (pipe, 첫 줄 헤더) — 실행중/사용중 구분용 ──
 $rt = $data['runtime'] ?? [];
 $procRows = !empty($rt['processes']) ? vg_ingest_parse_processes((string) $rt['processes']) : [];
@@ -254,6 +260,7 @@ try {
             'lang_count'     => $langCount,
             'exp_rows'       => $expRows,
             'exp_count'      => $expCount,
+            'addr_rows'      => $addrRows,
             'proc_rows'      => $procRows,
             'proc_count'     => $procCount,
             'clog_rows'      => $clogRows,
