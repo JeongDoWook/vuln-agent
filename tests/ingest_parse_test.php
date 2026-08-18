@@ -756,6 +756,69 @@ $eq('SPDX 스코프 이름: CycloneDX 경로와 같은 엣지를 낸다', $strip
 $mangled = array_values(array_filter($scopedS['deps'], static fn($d) => in_array($d[5], ['pkg', 'scope/pkg'], true)));
 $eq('SPDX 스코프 이름: 잘린 이름(pkg·scope/pkg)으로 저장하지 않는다', count($mangled), 0);
 
+// ── 호스트 IPv4 (net.interfaces) ───────────────────────────────────────────
+//   정규식 파싱은 조용히 틀리기 쉽고, 틀리면 기존 자산이 전부 "섀도우 IT" 로 뜬다.
+$ipo = "1: lo    inet 127.0.0.1/8 scope host lo
+"
+     . "2: eth0    inet 10.3.142.200/24 brd 10.3.142.255 scope global eth0
+"
+     . "2: eth0    inet6 fe80::1/64 scope link 
+"
+     . "3: wlan0    inet 192.168.0.5/24 brd 192.168.0.255 scope global dynamic wlan0
+"
+     . "4: veth9    inet 169.254.10.2/16 scope link veth9";
+$ipoRows = vg_ingest_parse_host_addresses($ipo);
+$eq('ip -o addr: 전역 IPv4 2건만', count($ipoRows), 2);
+$eq('ip -o addr: 인터페이스명', $ipoRows[0][0], 'eth0');
+$eq('ip -o addr: IP', $ipoRows[0][1], '10.3.142.200');
+$eq('ip -o addr: 두번째 IP', $ipoRows[1][1], '192.168.0.5');
+
+$ifc = "eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+"
+     . "        inet 10.3.142.200  netmask 255.255.255.0  broadcast 10.3.142.255
+"
+     . "        inet6 fe80::42:acff:fe11:2  prefixlen 64  scopeid 0x20<link>
+"
+     . "lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+"
+     . "        inet 127.0.0.1  netmask 255.0.0.0
+"
+     . "docker0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
+"
+     . "        inet 172.17.0.1  netmask 255.255.0.0  broadcast 172.17.255.255";
+$ifcRows = vg_ingest_parse_host_addresses($ifc);
+$eq('ifconfig: 루프백 제외 2건', count($ifcRows), 2);
+$eq('ifconfig: 인터페이스명', $ifcRows[0][0], 'eth0');
+$eq('ifconfig: IP', $ifcRows[0][1], '10.3.142.200');
+$eq('ifconfig: docker0', $ifcRows[1][0], 'docker0');
+$eq('ifconfig: docker0 IP', $ifcRows[1][1], '172.17.0.1');
+
+// net-tools 1.x (inet addr:) 형식도 같은 결과를 내야 한다.
+$ifcOld = "eth0      Link encap:Ethernet  HWaddr 00:11:22:33:44:55
+"
+        . "          inet addr:10.0.0.7  Bcast:10.0.0.255  Mask:255.255.255.0
+"
+        . "lo        Link encap:Local Loopback
+"
+        . "          inet addr:127.0.0.1  Mask:255.0.0.0";
+$oldRows = vg_ingest_parse_host_addresses($ifcOld);
+$eq('ifconfig 구형: 1건', count($oldRows), 1);
+$eq('ifconfig 구형: iface', $oldRows[0][0], 'eth0');
+$eq('ifconfig 구형: IP', $oldRows[0][1], '10.0.0.7');
+
+// 같은 IP 가 두 번 나와도 행은 하나 — 유니크 키가 (host_id, ip) 다.
+$dup = "2: eth0    inet 10.1.1.1/24 scope global eth0
+"
+     . "3: eth0:1    inet 10.1.1.1/24 scope global secondary eth0:1";
+$eq('중복 IP 는 1건', count(vg_ingest_parse_host_addresses($dup)), 1);
+
+// 값 없음/형식 모름 → 빈 배열. 추측해서 채우지 않는다.
+$eq('빈 입력', vg_ingest_parse_host_addresses(''), []);
+$eq('알 수 없는 형식', vg_ingest_parse_host_addresses("command not found
+<html>nope</html>"), []);
+$eq('IPv6 전용', vg_ingest_parse_host_addresses("2: eth0    inet6 2001:db8::1/64 scope global eth0"), []);
+$eq('형식만 그럴듯한 값', vg_ingest_parse_host_addresses("2: eth0    inet 10.3.142.300/24 scope global eth0"), []);
+
 // ── content_hash: 의존성 그래프가 바뀌면 해시도 바뀌어야 한다 ───────────────
 //   안 넣으면 그래프만 바뀐 재전송이 "변경 없음"으로 스킵돼 tb_package_dependency 가
 //   영구히 비게 된다(PR#399 리뷰 지적 — 이번 재작업의 핵심 반영사항 중 하나).
