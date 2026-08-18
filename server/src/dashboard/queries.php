@@ -21,7 +21,7 @@ declare(strict_types=1);
 const VG_TREND_DAYS = 30;
 
 /**
- * 전 호스트의 "최신 스캔" 집합 — KPI·도넛·급한목록이 모두 이 기준을 쓴다.
+ * 전 호스트의 "최신 스캔" 집합 — 퍼널·주요 신호·호스트 목록이 모두 이 기준을 쓴다.
  *   tb_finding 을 조인하는 쿼리들은 WHERE scan_id IN(이 서브쿼리) 대신 JOIN 으로
  *   표현한다(cve.php·compliance_rule.php 와 동일 패턴). IN(서브쿼리) 로 두면 옵티마이저가
  *   호스트당 "최신 스캔 하나"가 아니라 tb_scan 전체(변경시에만 저장되지만 이력이 계속
@@ -36,18 +36,6 @@ function vg_dash_latest_join(): string {
 
 function vg_dash_host_count(PDO $pdo): int {
     return (int) $pdo->query('SELECT COUNT(*) FROM tb_host WHERE is_deleted = 0')->fetchColumn();
-}
-
-/**
- * 다음 수집 예정 — enabled·비manual 커넥터 중 next_run_at 이 가장 이른 하나.
- *   manual 커넥터는 next_run_at 이 NULL 이라 자연히 제외된다(connectors.php 가 그렇게 저장).
- */
-function vg_dash_next_feed(PDO $pdo): ?array {
-    return $pdo->query(
-        "SELECT name, connector_type, next_run_at FROM tb_feed_connector
-          WHERE enabled = 1 AND is_deleted = 0 AND next_run_at IS NOT NULL
-          ORDER BY next_run_at ASC LIMIT 1"
-    )->fetch() ?: null;
 }
 
 /**
@@ -175,39 +163,10 @@ function vg_dash_urgent(PDO $pdo): array {
 }
 
 /**
- * KPI 증감 — "지금 몇 건" 만으로는 나아지는지 알 수 없다. 7일 전과 비교한다.
- *
- * 스캔은 **바뀔 때만** 저장된다(feat/change-tracking) — 날짜가 듬성듬성하다.
- * 그래서 "7일 전 그날의 스캔" 만 보면 그날 스캔이 없는 호스트가 0건으로 세어져
- * "일주일 새 확 늘었다"는 거짓말이 된다. 호스트별로 **7일 전까지의 최신 스캔을
- * 이월(carry-forward)** 해서 합산한다 = 호스트별 MAX(scan_id) WHERE 날짜 <= 7일 전.
- */
-function vg_dash_week_delta(PDO $pdo, array $totals): array {
-    $weekAgoDay = date('Y-m-d', strtotime('-7 days'));
-    $weekAgoScans = $pdo->query(
-        "SELECT MAX(s.scan_id) AS mid
-           FROM tb_scan s
-           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
-          WHERE s.is_deleted = 0 AND DATE(s.collected_at) <= '$weekAgoDay'
-          GROUP BY s.host_id"
-    )->fetchAll();
-
-    // 7일 전에 스캔이 하나도 없었으면 전부 0 — 그때 대비 지금 건수가 그대로 증가분이다.
-    $weekAgo = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0];
-    $sevOfScan = vg_sev_by_scan_ids($pdo, array_map(fn($s) => (int) $s['mid'], $weekAgoScans));
-    foreach ($sevOfScan as $counts) {
-        foreach ($weekAgo as $sev => $_) { $weekAgo[$sev] += (int) ($counts[$sev] ?? 0); }
-    }
-    $delta = [];
-    foreach ($totals as $sev => $now) { $delta[$sev] = $now - $weekAgo[$sev]; }
-    return $delta;
-}
-
-/**
  * 최근 $days 일 추세 — 날짜별 "High 이상" 건수.
  *
- * 이월(carry-forward) 규칙은 KPI 증감과 같다: 스캔은 바뀔 때만 저장되므로 그날 스캔이
- * 없는 호스트는 **직전 스캔 값을 이어 쓴다**(0 으로 떨구면 "취약점이 사라졌다"는 거짓말).
+ * 이월(carry-forward): 스캔은 바뀔 때만 저장되므로 그날 스캔이 없는 호스트는
+ * **직전 스캔 값을 이어 쓴다**(0 으로 떨구면 "취약점이 사라졌다"는 거짓말).
  * 대신 그날 실제 수집이 있었는지는 따로 표시해서(scanned) 차트가 점을 그날에만 찍는다.
  *
  * 읽는 스캔은 두 묶음뿐이다 — 창 안의 스캔 + 각 호스트가 창 시작 전에 가진 마지막 스캔

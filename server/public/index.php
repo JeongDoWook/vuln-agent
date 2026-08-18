@@ -20,21 +20,19 @@ vg_require_menu('dashboard');
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
-$kevCount = 0; $kevOverdue = 0; $urgent = []; $urgentTotal = 0; $nextFeed = null;
+$kevCount = 0; $kevOverdue = 0; $urgent = []; $urgentTotal = 0;
 $kevSlaDays = 0;   // KEV 조치 기한(일) — 퍼널 4번 칸 라벨이 이 숫자를 그대로 말한다
-$delta = []; $trend = [];
+$trend = [];
 $page = vg_page();
 $perPage = vg_perpage();
 try {
     $pdo = vg_pdo();
     $hostCount = vg_dash_host_count($pdo);
-    $nextFeed  = vg_dash_next_feed($pdo);
 
     ['totals' => $totals, 'kev' => $kevCount] = vg_dash_severity_totals($pdo);
     ['overdue' => $kevOverdue, 'slaDays' => $kevSlaDays] = vg_dash_kev_overdue($pdo);
     ['rows' => $urgent, 'total' => $urgentTotal] = vg_dash_urgent($pdo);
 
-    $delta = vg_dash_week_delta($pdo, $totals);
     $trend = vg_dash_trend($pdo, VG_TREND_DAYS);
 
     $total  = vg_dash_host_total($pdo);
@@ -52,14 +50,13 @@ vg_header('대시보드', 'dashboard');
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
+  <?php /* 순서가 곧 위계다 — "지금 무엇부터 손대야 하나" 에 답하는 것(퍼널 · 주요 신호)이 위,
+           배경(추세)과 전수 목록(호스트)이 아래다. */ ?>
   <?php vg_dash_render_funnel($totals, $hostCount, $kevCount, $kevOverdue, $kevSlaDays); ?>
-  <?php vg_dash_render_next_feed($nextFeed); ?>
-
-  <?php vg_dash_render_trend($trend, VG_TREND_DAYS); ?>
 
   <?php vg_dash_render_signals($urgent, $urgentTotal); ?>
 
-  <?php vg_dash_render_severity($totals, $delta); ?>
+  <?php vg_dash_render_trend($trend, VG_TREND_DAYS); ?>
 
   <?php vg_dash_render_hosts($rows, $sevByScan, $total, $perPage, $page); ?>
 <?php endif; ?>
