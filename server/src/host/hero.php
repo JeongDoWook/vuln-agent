@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * host/hero.php — 자산 상세의 **머리**(탭 줄 위) 렌더 하나.
- *   식별부 히어로 + SBOM 링크 + "판정 불가/수집 실패" 경고 + 계층 도식 + 위험 요약 KPI 줄.
+ *   식별부 히어로 + 즉시 스캔 버튼 + "판정 불가/수집 실패" 경고 + 위험 요약 KPI 줄.
  *   전부 탭과 무관하게 늘 같은 자리에 서는 것이라 한 파일로 묶는다(탭 본문은 tabs/*.php).
  *
  *   조회는 하지 않는다 — 쓰는 값은 전부 호출부가 $ctx 로 열거해 넘긴 것뿐이다
@@ -20,9 +20,9 @@ function vg_host_render_hero(array $ctx): void {
           (int) ($host['poll_schedule_seconds'] ?? 3600)
       ),
       '최신 수집 ' . vg_h($scan['collected_at']),
-      '<a href="' . vg_h(vg_qs(['tab' => 'packages', 'page' => null, 'q' => null])) . '">패키지 '
-          . number_format($packageTotal) . '개</a>',
   ];
+  /* '패키지 N개' 링크는 걷었다 — 탭 줄이 1단으로 내려오면서 '설치 패키지 N' 이 같은 숫자로
+   *   바로 아래에 서게 됐다(같은 곳으로 가는 두 번째 문). $packageTotal 은 그 탭이 계속 쓴다. */
   /* 의존성 그래프 링크는 식별부에서 내렸다 — 자산 계열 화면(전체 설치 패키지·의존성 그래프)의
    *   진입점은 '구성 > 설치 패키지' 탭 한 곳으로 모은다. 링크 자체는 그 탭에 그대로 있다
    *   (엣지가 있는 자산에만 — 없는 자산에 걸면 빈 화면으로 보내게 된다). */
@@ -41,12 +41,8 @@ function vg_host_render_hero(array $ctx): void {
   $meta[] = ($host['grade'] ?? '') !== ''
       ? '등급 ' . vg_asset_grade_badge((string) $host['grade'], false, (string) ($host['grade_reason'] ?? ''))
       : '<a href="' . vg_h(vg_qs(['tab' => 'manage', 'page' => null, 'q' => null])) . '">등급 미확정</a>';
-  /* 자산 설정(수집 제어·등급·삭제)은 '이력' 그룹의 두 번째 하위 탭이라 상위 탭 한 번으로는
-   *   닿지 않는다 — 첫 화면에서 한 번에 갈 자리를 식별부에 남긴다. 탭 줄에서 내린 것이지
-   *   기능을 숨긴 것이 아니다(폼은 그 탭에 그대로 있다). */
-  if (vg_can('assets')) {
-      $meta[] = '<a href="' . vg_h(vg_qs(['tab' => 'manage', 'page' => null, 'q' => null])) . '">자산 설정</a>';
-  }
+  /* '자산 설정' 링크도 걷었다 — 2단 탭에서는 하위 탭이라 한 번에 못 닿아 여기 지름길을 뒀는데,
+   *   지금은 탭 줄에 직접 서 있다(같은 자리로 가는 두 번째 문). */
   /* '대시보드'·'자산관리' 링크는 걷었다 — 둘 다 사이드바(vg_nav_sections)에 늘 서 있는 항목이라
    *   식별부에서 한 번 더 말하면 메타 줄만 길어진다(같은 자리로 가는 두 번째 문). */
   vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', '');
@@ -55,10 +51,42 @@ function vg_host_render_hero(array $ctx): void {
    *   첫 화면을 설정 폼이 통째로 차지하면 위험 요약과 취약점 목록이 스크롤 아래로 밀린다.
    *   기능은 그대로 살아 있다(같은 폼·같은 action·같은 엔드포인트). */
 
-  /* SBOM 다운로드. 지금까지 sbom.php 는 만들어 두고 **화면 어디에서도 링크하지 않아**,
-   *   URL 을 아는 사람만 쓸 수 있었다(grep 결과 링크 0건). 부품표는 자산의 속성이라
-   *   자산 상세 첫 화면이 제자리다. 컨테이너별 SBOM 은 컨테이너 상세에 같은 줄로 있다. */
-  vg_sbom_links((string) $host['fqdn']);
+  /* 취약점 스캔(즉시 실행)은 이 화면에서 가장 자주 누르는 동작인데 가장 깊은 곳에 있었다
+   *   ('자산 설정' 탭 → 수집 제어 카드 → 즉시 실행 = 4단계). 식별부로 올린다 —
+   *   폼·action·엔드포인트는 수집 제어 카드의 것과 **같은 것**이다(POST 처리는 한 곳뿐).
+   *   예약 실행·수집 주기·속도 티어는 자주 쓰지 않아 설정 탭에 그대로 둔다.
+   *   이미 대기·실행 중인 명령이 있으면 버튼 대신 그 상태를 말한다 — 같은 명령을 두 번
+   *   넣어도 큐에 두 줄이 쌓일 뿐이라, 누르기 전에 "이미 돌고 있다"를 먼저 보여준다. */
+  /* 처리 결과(등록/중단/오류)는 '자산 설정' 탭의 수집 제어 카드가 그린다 — 그런데 이 버튼은
+   *   어느 탭에서든 눌리고, 리다이렉트는 누른 그 탭으로 돌아온다. 그 탭이 결과를 안 그리면
+   *   플래시가 소비만 되고 사라져 "눌렀는데 아무 일도 안 일어난 것처럼" 보인다.
+   *   설정 탭에서는 그리지 않는다 — 같은 메시지를 두 번 띄우게 된다. */
+  if (($tab ?? '') !== 'manage') {
+      vg_alert($agentMsg ?? null, 'ok');
+      vg_alert($agentErr ?? null);
+  }
+  if (vg_can('assets')) {
+      $running = $pendingCommands[0] ?? null;
+      echo '<div class="actions">';
+      if ($running !== null) {
+          $label = ($running['status'] ?? '') === 'running' ? '수집 진행 중' : '실행 대기 중';
+          echo '<a class="btn btn--sm btn--ghost" href="'
+              . vg_h(vg_qs(['tab' => 'manage', 'page' => null, 'q' => null])) . '">'
+              . vg_h($label) . ' · 진행 보기</a>';
+      } else {
+          echo '<form method="post" data-confirm="지금 이 호스트의 취약점 스캔을 실행할까요?">'
+              . '<input type="hidden" name="csrf" value="' . vg_h($agentCsrf) . '">'
+              . '<input type="hidden" name="action" value="agent_run_now">'
+              . '<input type="hidden" name="id" value="' . (int) $hostId . '">'
+              . '<button class="btn btn--sm btn--primary" type="submit"'
+              . ' title="에이전트가 다음 poll(10초 이내)에서 실행합니다">지금 스캔</button>'
+              . '</form>';
+      }
+      echo '</div>';
+  }
+  /* SBOM 내려받기는 여기서 내렸다 — 첫 화면 한 칸을 카드가 통째로 차지했는데, 자주 쓰는
+   *   동작이 아니다. 부품표는 곧 설치 패키지 목록이라 '설치 패키지' 탭 아래가 제자리다
+   *   (기능·URL 은 그대로다 — tabs/packages.php 가 같은 vg_sbom_links() 를 부른다). */
 
   // CVE 피드가 지원하지 않는 배포판이면 매칭 후보가 아예 없어 **취약점이 0건으로 뜬다.**
   //   운영자는 "안전하다"고 읽는다 — 침묵하는 미탐이라 반드시 화면에 알린다.

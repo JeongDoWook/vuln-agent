@@ -76,11 +76,9 @@ declare(strict_types=1);
         },
     ];
     $findingRowAttrs = function (array $f) use ($hostId, $depOrigins, $findingStatuses): array {
-        $epss = ($f['epss'] ?? null) === null ? '–' : number_format((float) $f['epss'] * 100, 1) . '%';
-        if (($f['epss_percentile'] ?? null) !== null) {
-            $top = max(0.01, (1.0 - (float) $f['epss_percentile']) * 100);
-            $epss .= ' · 상위 ' . number_format($top, $top < 1 ? 2 : ($top < 10 ? 1 : 0)) . '%';
-        }
+        /* 표의 EPSS 칸과 **같은 헬퍼**를 쓴다. 예전엔 여기서만 확률+백분위를 따로 조립해
+         *   같은 값이 표와 모달에서 다른 문장으로 나왔다(표는 vg_epss_cell, 여기는 인라인). */
+        $epss = vg_epss_pct($f['epss'] ?? null);
         $isKernel = vg_is_kernel_code_pkg((string) ($f['package_name'] ?? ''));
         $depOrigin = $depOrigins['origins'][vg_host_dep_key($f)] ?? null;
         if (!empty($f['needs_restart'])) {
@@ -265,6 +263,8 @@ declare(strict_types=1);
       </div>
     </div>
     <?php endif; ?>
+    <?php /* 억제됨은 탭이 아니라 이 탭의 보기 하나다 — 억제가 0건이면 그리지 않는다. */ ?>
+    <?php vg_host_render_risk_views($tab, $vulnTotal, $suppressedCount); ?>
     <?php vg_toolbar([
         ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],

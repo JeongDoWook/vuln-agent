@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
-/* 억제 탭 — 백포트 등으로 억제된 취약점과 그 근거 원 데이터. */ ?>
+/* 억제 보기 — 백포트 등으로 억제된 취약점과 그 근거 원 데이터.
+   탭이 아니라 '취약점' 탭의 두 번째 보기다(?tab=suppressed 는 URL 하위호환으로 살아 있다). */ ?>
+    <?php vg_host_render_risk_views($tab, $vulnTotal, $suppressedCount); ?>
     <?php vg_toolbar([
         ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지명 검색', 'value' => $q],
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
