@@ -771,9 +771,12 @@ assert_contains "$compliancebody" "컴플라이언스 매핑" "컴플라이언�
 #   조항 자체는 스냅샷(tb_compliance_snapshot.framework_ids)에 그대로 저장된다.
 assert_contains "$compliancebody" "패치관리" "패치관리 통제 행 표시"
 assert_contains "$compliancebody" "정보자산 식별" "정보자산 식별 통제 행 표시"
-# 문구가 "수동 확인 필요(자동판정 불가)" 에서 바뀌었다 — 제품이 못 해서 빠진 것처럼 읽혀서다.
-#   검사하는 사실은 그대로다: 증적이 제품 밖에 있는 항목은 판정 없이 목록으로만 노출된다.
-assert_contains "$compliancebody" "정책·절차 문서 심사" "자동판정 대상이 아닌 항목은 체크리스트로만 노출"
+# 정책·절차 문서 심사 체크리스트는 화면에서 내렸다 — 증적이 제품 밖에 있어 이 화면이
+#   확인해 줄 수 있는 게 없는 항목이다. 이 화면은 체크되는 것만 보여준다. 다시 자라면 여기서 걸린다.
+assert_not_contains "$compliancebody" "정책·절차 문서 심사" "자동판정 대상 아닌 체크리스트는 화면에 없음"
+# 판정 어휘는 그대로다 — 화면에서 걷은 건 "판정 불가 N건" 부기이지 판정 자체가 아니다.
+assert_contains "$compliancebody" "판정 불가" "판정 어휘 4종은 범례·뱃지에 그대로"
+assert_not_contains "$compliancebody" 'class="why">판정 불가' "판정 불가 건수 부기는 없음"
 assert_contains "$compliancebody" "근거 →" "통제마다 근거 화면으로 가는 링크"
 # 결론 배너는 없앴다 — 판정은 표의 뱃지가 말한다. 다시 자라면 여기서 걸린다.
 assert_not_contains "$compliancebody" 'class="verdict' "결론 배너 없음(값은 표가 갖는다)"
