@@ -10,7 +10,7 @@ function vg_dash_render_hosts(array $rows, array $sevByScan, int $total, int $pe
   <div class="card">
     <strong>호스트별 현황</strong>
     <?php /* '심각도' 열의 막대는 색으로만 등급을 말한다 — 그 색이 무슨 뜻인지 이 화면 어디에도
-             적혀 있지 않았다(접힌 도넛 안에만 있었다). 표 바로 위에 한 줄로 둔다. */ ?>
+             적혀 있지 않다. 표 바로 위에 한 줄로 둔다. */ ?>
     <?php vg_legend(array_map(
         fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s)],
         ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
@@ -20,8 +20,6 @@ function vg_dash_render_hosts(array $rows, array $sevByScan, int $total, int $pe
   vg_table(
       [
           ['label' => '호스트'],
-          ['label' => 'OS'],
-          ['label' => '패키지', 'align' => 'right'],
           ['label' => '노출', 'align' => 'right'],
           ['label' => '심각도'],
           ['label' => '수집시각', 'nowrap' => true],
@@ -37,16 +35,16 @@ function vg_dash_render_hosts(array $rows, array $sevByScan, int $total, int $pe
           ],
           'cell' => [
               0 => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a></strong>',
-              1 => fn($r) => vg_h($r['os_id']) . ' ' . vg_h($r['os_version']),
-              2 => fn($r) => vg_h((string) (int) $r['package_count']),
-              3 => fn($r) => vg_h((string) (int) $r['exposure_count']),
+              // OS·패키지 수는 걷었다 — "이 행을 열어볼지" 를 정하지 않는 값이고(docs/dev/ui-design-system.md
+              //   §목록과 상세의 분담), 지운 게 아니라 호스트 상세(히어로의 OS · 수집 이력의 패키지 수)에 있다.
+              1 => fn($r) => vg_h((string) (int) $r['exposure_count']),
               // 막대 + 숫자 뱃지 — 막대로 "누가 더 나쁜지" 를 눈이 먼저 잡고, 숫자가 확인해준다.
-              4 => function ($r) use ($sevByScan) {
+              2 => function ($r) use ($sevByScan) {
                   $c = $sevByScan[(int) $r['scan_id']] ?? [];
                   return vg_sev_bar($c) . vg_sev_counts($c);
               },
-              5 => fn($r) => '<span class="why">' . vg_h($r['collected_at']) . '</span>',
-              6 => fn($r) => '<a href="/findings.php?scan_id=' . (int) $r['scan_id'] . '">취약점 →</a>',
+              3 => fn($r) => '<span class="why">' . vg_h($r['collected_at']) . '</span>',
+              4 => fn($r) => '<a href="/findings.php?scan_id=' . (int) $r['scan_id'] . '">취약점 →</a>',
           ],
       ]
   );
