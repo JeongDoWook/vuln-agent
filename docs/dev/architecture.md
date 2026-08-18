@@ -148,6 +148,11 @@ SPDX 는 `DEPENDS_ON`(정방향)과 `DEPENDENCY_OF`/`RUNTIME_DEPENDENCY_OF`(역�
 (`src/ingest_parse.php` 의 `VG_SPDX_REL_FORWARD`/`REVERSE`). 엣지 유일성은
 9개 컬럼 복합키가 InnoDB 인덱스 상한(3,072바이트)을 넘겨 **해시 생성컬럼**(`edge_hash`)으로 건다 —
 접두 길이 방식은 접두가 겹치는 서로 다른 패키지를 같은 키로 묶어 정상 엣지를 조용히 버린다.
+SBOM 은 파일명(`SBOM_DIR/*.json`)이 곧 대상이다: 예약 이름 `_host`(`VG_SBOM_HOST_CID`)는 **호스트
+자신**(`container_id = 0`)이고, 그 외는 컨테이너 cid/이름이다 — 매핑은 `vg_ingest_ctr_ids_with_host()`
+한 곳에서만 한다(패키지·엣지 저장 양쪽이 그 지도를 쓴다). 어느 쪽도 아닌 SBOM 은 붙을 곳이 없어
+버리되 `error_log` + ingest 응답 `sbom_dropped` 로 드러낸다 — 매칭 실패를 호스트로 떨어뜨리는
+폴백은 두지 않는다(사라진 컨테이너의 SBOM 이 호스트 것으로 둔갑한다).
 조회 화면은 `/depgraph.php`(읽기 전용 헬퍼 `src/packagedep.php`) — 대상 패키지를 지정하면 역추적
 ("무엇이 끌어왔나")·정방향·트리 탭이 열린다. 진입은 자산 상세(`host.php`)에서만 한다: `uk_pkg_dep_edge`
 좌측 접두가 (`scan_id`, `container_id`)라 그 둘로 좁혀야 인덱스를 타고 패키지명 전역 검색은 풀스캔이

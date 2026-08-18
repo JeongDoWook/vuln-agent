@@ -9,6 +9,21 @@ declare(strict_types=1);
  *   못 찾는다. 지도에 없는 cid 의 행은 원래부터 버린다 — 그 규칙도 그대로 옮겼다.
  */
 
+require_once __DIR__ . '/../sbom.php';   // VG_SBOM_HOST_CID (예약 cid = 호스트 자신)
+
+/**
+ * cid → container_id 지도에 **예약 cid** 를 더한다: `_host` → 0(호스트 자신).
+ *   이 한 곳만 고치면 컨테이너 패키지 저장(vg_ingest_store_container_packages)과 SBOM 엣지
+ *   저장(vg_ingest_store_package_deps)이 둘 다 호스트 SBOM 을 받아들인다 — 두 곳의 `continue`
+ *   가드를 각각 고치지 않는다(DRY).
+ *   예약 이름이 **항상 이긴다**: 실제 컨테이너가 같은 cid 를 주장해도(런타임 이름 규칙상
+ *   불가능하지만, 페이로드는 조작될 수 있다) 호스트 매핑을 덮어쓰지 못한다.
+ */
+function vg_ingest_ctr_ids_with_host(array $ctrIds): array
+{
+    return [VG_SBOM_HOST_CID => 0] + $ctrIds;
+}
+
 /**
  * 컨테이너 자체 메타. 안의 패키지(license 포함)는 tb_package 벌크에 들어간다.
  *   컨테이너는 호스트와 OS 가 다를 수 있어(호스트 Rocky + 컨테이너 Debian) os 를 따로 갖는다.
@@ -64,6 +79,9 @@ function vg_ingest_store_container_packages(PDO $pdo, int $scanId, array $ctrPkg
     if ($storedCtrPkgCounts) {
         $updCtrPkgCount = $pdo->prepare('UPDATE tb_container SET pkg_count = ? WHERE container_id = ?');
         foreach ($storedCtrPkgCounts as $cidKey => $storedCount) {
+            // container_id = 0 은 컨테이너가 아니라 호스트 자신이다(예약 cid `_host`).
+            //   tb_container 에 그런 행은 없어 no-op 이지만, 의도를 코드로 남긴다.
+            if ($ctrIds[$cidKey] === 0) { continue; }
             $updCtrPkgCount->execute([$storedCount, $ctrIds[$cidKey]]);
         }
     }

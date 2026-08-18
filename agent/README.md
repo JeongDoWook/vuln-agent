@@ -415,8 +415,15 @@ ISMS-P 2.5.x / N2SF AC 계정관리 판정을 위해 **실제 계정 목록**을
 | 페이로드 키 | 수집 함수 | 보내는 것 |
 |---|---|---|
 | `langpkg.pom_deps` | `collect_pom_direct_deps` (`vuln-inventory-agent.sh:1739`) | `PROJECT_SCAN_ROOTS` 아래 `pom.xml` 을 `경로\|base64` 로. 파일당 128KB(`POM_DEP_FILE_MAX_BYTES`) 초과분은 건너뛴다 |
-| `containers.sbom` | `collect_sbom` (`vuln-inventory-agent.sh:843`) | `/opt/vuln-agent/sbom/*.json`(CycloneDX·SPDX)을 `이름\|형식\|base64` 로. 파일당 2MB 상한 |
+| `containers.sbom` | `collect_sbom` (`vuln-inventory-agent.sh`) | `/opt/vuln-agent/sbom/*.json`(CycloneDX·SPDX)을 `이름\|형식\|base64` 로. 파일당 2MB 상한. 파일명이 대상이다 — `_host.json` 은 호스트 자신, 그 외는 컨테이너 cid/이름 |
 
+- **호스트 자신의 SBOM 은 `/opt/vuln-agent/sbom/_host.json` 으로 둔다.** SBOM 파일명이 곧 대상이라
+  예전에는 컨테이너에만 붙일 수 있었고, 호스트를 기술하는 SBOM 은 붙을 곳이 없어 **조용히 버려졌다**
+  (docker 가 없는 노드는 통째로). `_host` 는 예약 이름이라 중앙이 `container_id = 0`(호스트 자신)으로
+  저장한다 — 컨테이너 이름 규칙상 만들 수 없는 이름이라 실제 컨테이너와 충돌하지 않는다.
+  이름이 예약어도 아니고 수집된 컨테이너도 아니면 여전히 버려지지만, 이제는 `error_log` 와
+  ingest 응답의 `sbom_dropped`(cid·패키지/엣지 건수)로 **드러난다**. 매칭 실패를 호스트로 떨어뜨리는
+  폴백은 없다 — 사라진 컨테이너의 SBOM 이 호스트 것으로 둔갑하면 그게 오탐이다.
 - pom 은 왜 원문인가: 옛 awk 한 줄 파싱이 `<exclusions>`·`<dependencyManagement>`·한 줄
   `<parent>` 를 구조적으로 구분하지 못해 오탐/0건이 났다. 중앙이 DOMDocument·XPath 로 최상위
   `<dependencies>` 만 골라낸다.

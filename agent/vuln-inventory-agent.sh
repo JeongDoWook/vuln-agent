@@ -839,7 +839,11 @@ ctr_upstream_bins() {   # $1=대표pid $2=cid
   done | sort -u
 }
 
-# Optional offline SBOM import. Filename (without .json) must match container cid/name.
+# Optional offline SBOM import. The filename (without .json) is the target:
+#   _host.json          -> the host itself (server stores it with container_id=0)
+#   <cid|name>.json     -> that container (must match collect_containers output)
+# Anything else is dropped by the server and reported back in the ingest response
+# (sbom_dropped) -- it is never silently attached to the host.
 collect_sbom() {
   [ -d "$SBOM_DIR" ] || return 0
   local f cid format size

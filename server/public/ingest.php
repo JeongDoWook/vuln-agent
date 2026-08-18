@@ -178,6 +178,15 @@ $sbomDepRows = $sbom['deps'];
 if ($sbom['deps_dropped'] > 0) {
     error_log("[ingest] SBOM 의존성 엣지 상한 초과로 {$sbom['deps_dropped']}건 버림");
 }
+// 예약 cid(_host = 호스트 자신)도 아니고 수집된 컨테이너도 아닌 SBOM 은 붙을 곳이 없어 저장
+//   단계에서 통째로 버려진다. 그 실패를 조용히 삼키지 않는다 — 로그 + 응답으로 드러내
+//   "내가 넣은 SBOM 이 안 들어갔다"를 에이전트 로그에서 바로 알 수 있게 한다.
+$sbomDropped = vg_ingest_sbom_dropped($sbom, $ctrRows);
+foreach ($sbomDropped as $droppedCid => $n) {
+    error_log("[ingest] SBOM '{$droppedCid}' 은 컨테이너 목록에 없어 버림"
+        . " (패키지 {$n['packages']}건·엣지 {$n['edges']}건)."
+        . " 호스트 자신의 SBOM 이면 파일명을 " . VG_SBOM_HOST_CID . ".json 으로 둔다");
+}
 
 // ── pom.xml 최상위 <dependencies> 직접 선언 → 패키지 의존성 그래프(host, container_id=0) ──
 $pomDeps = vg_ingest_parse_pom_deps((string) ($lang['pom_deps'] ?? ''));
@@ -356,6 +365,9 @@ echo json_encode([
     'ctr_packages'  => $ctrPkgCount,
     'ctr_processes' => $ctrProcCount,
     'ctr_exposures' => $ctrExpCount,
+    // 붙을 컨테이너가 없어 버린 SBOM — 0건이 "안전"으로 보이지 않도록 cid 와 건수를 돌려준다.
+    //   호스트 자신의 SBOM 은 파일명을 `_host.json`(VG_SBOM_HOST_CID) 으로 두면 된다.
+    'sbom_dropped'  => $sbomDropped,
     // 직전 수집과 내용이 같으면 새 스냅샷을 만들지 않는다(changed=false). 바뀐 패키지 수도 알려준다.
     'changed'     => !$unchanged,
     'pkg_changes' => $chgCount,

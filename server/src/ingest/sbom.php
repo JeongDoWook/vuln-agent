@@ -10,6 +10,13 @@ declare(strict_types=1);
  * ingest_parse.php 가 require 한다.
  */
 
+// ── SBOM 예약 cid — 호스트 자신 ────────────────────────────────────────────
+//   SBOM 파일명이 곧 cid 다(agent/vuln-inventory-agent.sh 의 collect_sbom). 이 값만은
+//   컨테이너가 아니라 **호스트 자신**(container_id = 0, db/01-schema.sql 규약)을 가리킨다.
+//   밑줄로 시작하는 이름은 docker/podman 이름 규칙(`[a-zA-Z0-9][a-zA-Z0-9_.-]*`)상 만들 수 없어
+//   실제 컨테이너와 충돌이 구조적으로 불가능하다. 매핑은 vg_ingest_ctr_ids_with_host() 한 곳에서만 한다.
+const VG_SBOM_HOST_CID = '_host';
+
 // ── 패키지 의존성 그래프(tb_package_dependency) 저장 상한 ──────────────────
 //   PR#399 리뷰: dedup/상한 없는 SBOM dependencies 배열이 자원 소진(DoS)로 실측됨.
 //   스캔(컨테이너 SBOM 1개 또는 호스트 pom.xml 전체) 당 상한 — 초과분은 버리고 로그만 남긴다.
@@ -183,6 +190,31 @@ function vg_ingest_parse_sbom(string $text): array
     return ['packages'=>array_values($packages),'meta'=>$meta,'deps'=>$deps,
             'deps_dropped'=>$depsDropped,'deps_unresolved'=>$depsUnresolved];
 }
+
+/**
+ * 붙을 곳이 없어 버려질 SBOM 을 집계한다 — 예약 cid(_host)도 아니고 수집된 컨테이너 목록에도
+ *   없는 cid. 이런 SBOM 은 저장 단계에서 패키지도 엣지도 통째로 버려지는데, 그 실패가
+ *   "0건이라 안전"으로 보이면 안 된다(미지원 배포판 경고와 같은 취지). 매칭 실패를 호스트로
+ *   떨어뜨리는 폴백은 **만들지 않는다** — 사라진 컨테이너의 SBOM 이 호스트 것으로 둔갑한다.
+ *   반환: cid => ['packages'=>n, 'edges'=>m] (버려질 것이 없으면 빈 배열)
+ */
+function vg_ingest_sbom_dropped(array $sbom, array $ctrRows): array
+{
+    $dropped = [];
+    foreach (array_keys($sbom['meta'] ?? []) as $cid) {
+        if ($cid === VG_SBOM_HOST_CID || isset($ctrRows[$cid])) { continue; }
+        $dropped[$cid] = ['packages' => 0, 'edges' => 0];
+    }
+    if (!$dropped) { return []; }
+    foreach ($sbom['packages'] ?? [] as $r) {
+        if (isset($dropped[$r[0]])) { $dropped[$r[0]]['packages']++; }
+    }
+    foreach ($sbom['deps'] ?? [] as $r) {
+        if (isset($dropped[$r[0]])) { $dropped[$r[0]]['edges']++; }
+    }
+    return $dropped;
+}
+
 // ── pom.xml 최상위 <dependencies> 직접 선언 (best-effort, mvn 미호출) ────────
 //   에이전트가 올린 형식: path|base64(pom.xml 원문). 옛 PR#399 는 awk 한 줄 파싱으로
 //   <exclusions> 블록·한 줄 <parent> 를 잘못 잡아 오탐/0건이 났다 — DOMDocument 로 실제
