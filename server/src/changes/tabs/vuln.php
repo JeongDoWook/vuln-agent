@@ -67,12 +67,4 @@ vg_table(
         ],
     ]
 );
-// 변화 종류의 색은 KPI 카드·행 뱃지·행 배경이 함께 쓴다 — 그 색이 무슨 뜻인지 한 줄로
-//   못박는다(changes.php 의 $changeTone 과 같은 어휘다. 여기서 색을 새로 만들지 않는다).
-vg_legend([
-    ['label' => '신규',      'tone' => 'crit'],
-    ['label' => '등급 상승', 'tone' => 'high'],
-    ['label' => '등급 하락', 'tone' => 'low'],
-    ['label' => '해결',      'tone' => 'ok'],
-], ['inline' => true, 'caption' => '변화 종류']);
 if ($paged) { vg_page_nav($total, $perPage, $page); }

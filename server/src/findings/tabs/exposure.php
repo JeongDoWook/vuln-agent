@@ -53,14 +53,6 @@
       ];
   }
 
-  /* 범위 뱃지의 색이 무슨 뜻인지 — 어휘는 vg_scope_label(), 톤은 위 카드와 같은 $scopeTone 이다.
-   *   이 화면에서 색으로 위험을 가르는 유일한 축이라 표 바로 위에 한 줄로 둔다. */
-  vg_legend(array_map(
-      fn(string $sc): array => ['label' => vg_scope_label($sc), 'tone' => $scopeTone[$sc] ?? 'muted',
-                                'n' => (int) ($scopeCounts[$sc] ?? 0)],
-      $scopeOptions
-  ), ['inline' => true, 'caption' => '노출 범위']);
-
   $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
   $headers = array_merge($headers, [
       // 노출 근거(범위)가 이 탭의 판정 축이다 — CVE 탭의 '상태' 칸과 같은 자리다.

@@ -187,13 +187,6 @@
   //   (같은 vg_qs() 를 KPI 카드처럼 직접 <a href=...> 를 만드는 코드에 쓸 땐, 그건 vg_empty() 를
   //   거치지 않으므로 그 호출부가 스스로 vg_h() 해야 한다 — 여기와는 다른 경로다.)
   //   tests/smoke.sh 가 임의 쿼리값 주입으로 이 전제를 회귀 검증한다.
-  /* 표의 등급·노출 뱃지는 색으로 서열을 말하는데 그 색의 뜻이 화면에 없었다.
-   *   어휘·톤은 각각 vg_sev_tone()·$scopeTone(노출 탭)이 소유한다 — 새 색을 만들지 않는다. */
-  vg_legend(array_map(
-      fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $counts[$s]],
-      ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
-  ), ['inline' => true, 'caption' => '심각도']);
-
   $filterCta  = ['href' => vg_qs(['q' => '', 'sev' => '', 'st' => '', 'fx' => '', 'fst' => '', 'sort' => '', 'page' => 1]), 'label' => '필터 초기화'];
   $hasAnyFilter = $q !== '' || $sev !== '' || $st !== '' || $fx !== '' || $fst !== '' || $sort !== '';
   if ($scanId > 0 && !$scan) {
@@ -393,20 +386,21 @@
                       $html = '<span class="badge tone-muted" title="' . vg_h($fixed) . '">'
                             . vg_h($fixed) . '</span>';
                   } else {
-                      // 참조 URL(벤더 어드바이저리·패치 링크)은 상세로 보냈다 — 목록의 이 칸이
-                      //   답해야 하는 건 "어느 버전으로 올리나" 하나이고, 외부 링크는 그 답이
-                      //   없을 때만 뜨는 곁가지였다. 같은 링크를 finding_history.php 의
-                      //   '수정 버전'(vg_fix_cell 이 ref_urls_json 을 그대로 편다)과 cve.php 의
-                      //   참조 목록이 이미 갖고 있고, 그 덕에 목록 쿼리에서 수 KB 짜리
-                      //   ref_urls_json 을 안 실어 온다.
-                      $html = '<span class="why">상세에서 확인</span>';
+                      // 올릴 버전이 없으면 **아무것도 적지 않는다.** 예전엔 '상세에서 확인' 을
+                      //   채웠는데, 벤더가 수정본을 안 낸 CVE 가 다수라 열 전체가 그 문구로 도배됐고
+                      //   (실측 10행 중 8행) 정작 버전이 있는 행이 묻혔다. 빈 칸이 "올릴 버전 없음"
+                      //   을 그대로 말한다 — 의존성 그래프의 unknown 을 안 그리는 것과 같은 규칙이다
+                      //   (docs/dev/architecture.md). 조치 불가라는 사실은 같은 행 CVE 칸의
+                      //   '조치 불가' 표식이, 참조 URL·판정 근거는 '이 자산 판정 →' 가 갖는다.
+                      $html = '';
                   }
                   $note = $notes[vg_remediation_note_key(
                       (int) $r['host_id'], (string) ($r['container_cid'] ?? ''),
                       (string) $r['cve_id'], (string) $r['package_name']
                   )] ?? null;
                   if ($note !== null) {
-                      $html .= ' ' . vg_badge('미조치 사유', 'info');
+                      // 버전 뱃지가 없으면 앞 공백을 붙이지 않는다(빈 칸이 공백 하나로 시작하지 않게).
+                      $html .= ($html === '' ? '' : ' ') . vg_badge('미조치 사유', 'info');
                   }
                   return $html;
               },

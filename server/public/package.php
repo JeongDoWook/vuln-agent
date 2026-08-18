@@ -228,15 +228,6 @@ vg_hero(
 <section id="cves">
   <div class="card">
     <strong>관련 CVE</strong>
-    <?php /* 표의 등급 뱃지는 CVSS 에서 파생된 색이다 — 색의 뜻을 표 바로 위에 세운다.
-             점수가 없으면 등급이 '없는' 게 아니라 아직 안 매겨진 것이다(cves.php 와 같은 어휘). */ ?>
-    <?php vg_legend(array_merge(
-        array_map(
-            fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s)],
-            ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
-        ),
-        [['label' => '– · 점수 미수집', 'tone' => 'muted']]
-    ), ['inline' => true, 'caption' => '심각도']); ?>
     <div class="card__body">
     <?php vg_table(
         [
@@ -270,9 +261,12 @@ vg_hero(
                 'published' => fn($r) => !empty($r['published'])
                     ? '<span class="why">' . vg_h((string) $r['published']) . '</span>'
                     : '<span class="why">–</span>',
+                // 수정 버전이 없으면 비워 둔다 — 열 이름이 '수정 버전' 이라 빈 칸이 곧 "아직 없음"
+                //   이고, '미확인' 을 채우면 정작 버전이 있는 행이 그 문구 사이에 묻힌다
+                //   (findings.php 의 '조치 · 올릴 버전' 칸과 같은 규칙).
                 'fixed_version' => fn($r) => !empty($r['fixed_version'])
                     ? '<span class="pill">' . vg_h((string)$r['fixed_version']) . ' 이상</span>'
-                    : '<span class="why">수정 버전 미확인</span>',
+                    : '',
                 // 본문성 링크 — .body-link 로 통일한다(cves.php 요약 열과 같은 자리·같은 규약).
                 //   .clamp-2 만으로도 지금은 본문 색이 나오지만, 그건 잘림 처리의 부수효과일 뿐이라
                 //   "이건 본문 링크다" 는 뜻을 클래스로 남긴다.

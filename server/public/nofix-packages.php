@@ -80,7 +80,7 @@ vg_header('제거 권고', 'nofix_packages');
 <?php else: ?>
   <?php /* 상단 해설 배너(제목 + 불릿 4줄)는 걷었다 — 화면 읽는 법을 설명하는 줄이었다.
            남길 값은 옮겼다: 조치 성격은 부제로, 권고 임계값은 '관측' 열 머리글 title 로,
-           "관측이지 EOL 확정이 아니다" 는 행마다 붙는 vg_nofix_badge() 의 title 로. */ ?>
+           "관측이지 EOL 확정이 아니다" 는 '조치' 열 머리글 title 로. */ ?>
   <?php if ($truncated): ?>
     <?php vg_alert('권고 대상이 ' . VG_NOFIX_MAX_GROUPS . '개를 넘어 앞쪽만 보여줍니다 — 호스트·패키지 필터로 좁혀 보세요.', 'warn'); ?>
   <?php endif; ?>
@@ -99,7 +99,12 @@ vg_header('제거 권고', 'nofix_packages');
           ['label' => '상태', 'key' => 'runtime_status', 'width' => '10%', 'nowrap' => true],
           // 권고 임계값은 수치 기준이라 정보다 — 배너를 걷으면서 이 열 머리글로 내렸다.
           ['label' => '관측', 'key' => 'reason', 'title' => vg_nofix_threshold_help()],
-          ['label' => '조치', 'key' => 'advice', 'width' => '17%'],
+          // 권고 자체는 전 행이 같다(이 화면에 뜬 게 곧 '제거·대체 검토' 대상이다) — 행마다
+          //   같은 뱃지를 되풀이하는 대신 열 머리글 하나로 올린다. 행이 갖는 건 그 행에만 있는
+          //   값, 즉 근거가 되는 개별 CVE 로 내려가는 진입로다.
+          ['label' => '조치', 'key' => 'advice', 'width' => '17%',
+           'title' => '벤더 미수정 CVE 가 이 패키지에 몰려 있습니다 — 관측이지 EOL 확정이 아닙니다. '
+                    . '패치로는 해소되지 않으므로 제거 또는 대체를 검토하세요.'],
       ],
       $pageRows,
       [
@@ -130,25 +135,16 @@ vg_header('제거 권고', 'nofix_packages');
                   ? vg_status_badge((string) $r['runtime_status'])
                   : '<span class="why">–</span>',
               'reason' => fn($r) => '<div class="why">' . vg_h(vg_nofix_reason($r)) . '</div>',
-              // 조치는 "패치" 가 아니다 — 배지로 그 사실을 먼저 말하고, 개별 CVE 로 내려가는 길을 준다.
-              //   ctr 로 이 행의 스코프(호스트 자신=0 / 그 컨테이너)까지 넘긴다 — 안 넘기면 같은
-              //   호스트의 다른 컨테이너 판정까지 섞여 건수가 안 맞는다.
-              // 배지는 vg_nofix_badge() 를 그대로 쓴다 — "관측이지 EOL 확정이 아니다" 를 title 로 달고 있다.
-              'advice' => fn($r) => vg_nofix_badge()
-                  . '<div class="why"><a href="/findings.php?host=' . (int) $r['host_id']
+              // 개별 CVE 로 내려가는 길. ctr 로 이 행의 스코프(호스트 자신=0 / 그 컨테이너)까지
+              //   넘긴다 — 안 넘기면 같은 호스트의 다른 컨테이너 판정까지 섞여 건수가 안 맞는다.
+              //   "패치가 아니라 제거·대체" 라는 사실은 이 열의 머리글 title 이 갖는다.
+              'advice' => fn($r) => '<a href="/findings.php?host=' . (int) $r['host_id']
                   . '&amp;ctr=' . (int) $r['container_id']
                   . '&amp;q=' . urlencode((string) $r['package_name']) . '&amp;fx=nofix">상세 CVE '
-                  . number_format((int) $r['nofix_cnt']) . '건 →</a></div>',
+                  . number_format((int) $r['nofix_cnt']) . '건 →</a>',
           ],
       ]
   ); ?>
-  <?php // 등급 뱃지와 행 배경색이 같은 4단계 어휘를 쓴다 — 그 색이 무슨 뜻인지 한 줄로.
-  vg_legend([
-      ['label' => 'CRITICAL', 'tone' => vg_sev_tone('CRITICAL')],
-      ['label' => 'HIGH',     'tone' => vg_sev_tone('HIGH')],
-      ['label' => 'MEDIUM',   'tone' => vg_sev_tone('MEDIUM')],
-      ['label' => 'LOW',      'tone' => vg_sev_tone('LOW')],
-  ], ['inline' => true, 'caption' => '등급']); ?>
   <?php vg_page_nav($total, $perPage, $page); ?>
 <?php endif; ?>
 <?php vg_footer();

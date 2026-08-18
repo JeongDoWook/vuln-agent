@@ -149,15 +149,6 @@ vg_header('CVE', 'cves');
   }
   echo '</div>';
   ?>
-  <?php /* 표의 심각도 뱃지는 CVSS 에서 파생된 색이다 — 그 색의 뜻과 '미평가'(점수 미수집)를
-           함께 세운다. 미평가는 "위험하지 않음"이 아니라 아직 등급을 못 매긴 상태다. */ ?>
-  <?php vg_legend(array_merge(
-      array_map(
-          fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s)],
-          ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
-      ),
-      [['label' => '미평가 · 점수 미수집', 'tone' => 'muted']]
-  ), ['inline' => true, 'caption' => '심각도']); ?>
   <?php vg_toolbar([
       // 탭 선택은 폼 밖에 있다 → 히든으로 실어야 검색·정렬 후에도 탭이 유지된다.
       ['type' => 'hidden', 'name' => 'kev',  'value' => $kev],
