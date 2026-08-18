@@ -287,14 +287,16 @@ function vg_compliance_subtab_labels(): array {
     return [
         'mapping' => '컴플라이언스 매핑',
         'control' => '통제 기준 매핑',
+        'kisa_u'  => '기반시설 U-코드',
     ];
 }
 
-// 위 정의를 vg_subtabs() 로 그린다. $active 는 현재 화면의 탭 키(mapping|control).
+// 위 정의를 vg_subtabs() 로 그린다. $active 는 현재 화면의 탭 키(mapping|control|kisa_u).
 function vg_compliance_subtabs(string $active): void {
     $hrefs = [
         'mapping' => '/compliance.php',
         'control' => '/control_mapping.php',
+        'kisa_u'  => '/kisa-u.php',
     ];
     $tabs = [];
     foreach (vg_compliance_subtab_labels() as $key => $label) {
