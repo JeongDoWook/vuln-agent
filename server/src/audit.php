@@ -112,6 +112,7 @@ function vg_soft_delete(PDO $pdo, string $table, int $id): void {
         'tb_advisory'       => 'advisory_id',
         'tb_host'           => 'host_id',
         'tb_scan'           => 'scan_id',
+        'tb_discovery_target' => 'discovery_target_id',   // 자산 탐색 대역(discovery.php)
     ];
     $pk = $allowed[$table] ?? null;
     if ($pk === null) {

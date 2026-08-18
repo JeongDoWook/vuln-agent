@@ -81,10 +81,7 @@ vg_header('전체 설치 패키지', 'asset_packages');
   <?php vg_page_title('전체 설치 패키지', '', [
       'count' => $total,
   ]); ?>
-  <?php vg_subtabs([
-      'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
-      'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],
-  ], 'packages'); ?>
+  <?php vg_asset_subtabs('packages'); ?>
   <?php vg_alert($err !== null ? '오류 · ' . $err : null); ?>
   <?php if ($err === null): ?>
     <?php vg_toolbar([

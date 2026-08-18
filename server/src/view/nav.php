@@ -112,7 +112,7 @@ function vg_nav_sections(): array {
             // 전체 설치 패키지는 자산 목록의 서브탭으로만 들어온다 — 사이드바엔 대표 링크
             // 하나만 두되, 그 탭에 있어도 같은 항목을 활성화해 현재 위치를 잃지 않게 한다.
             ['perm' => 'assets',     'href' => '/assets.php',     'label' => '자산',      'key' => 'assets',
-             'active_keys' => ['assets', 'asset_packages']],
+             'active_keys' => ['assets', 'asset_packages', 'discovery']],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
             // 통제 기준 매핑은 vg_compliance_subtabs() 의 서브탭으로만 들어온다(사이드바엔 없다).
             ['perm' => 'compliance', 'href' => '/compliance.php', 'label' => '컴플라이언스',
@@ -249,6 +249,33 @@ function vg_asset_tabs(array $tabDefs, string $tab): void {
         vg_subtabs($subs, $tab);
         echo '</div>';
     }
+}
+
+/**
+ * 자산 계열 서브탭의 SSOT — 라벨·순서·목적지가 여기 한 곳에만 있다.
+ *   사이드바엔 '자산' 하나만 있고 전체 설치 패키지·자산 탐색은 이 줄로만 들어온다.
+ *   세 화면이 각자 탭 줄을 그리면 개수·라벨이 어긋난다(#556 — vg_findings_subtab_labels() 의 전례).
+ */
+function vg_asset_subtab_labels(): array {
+    return [
+        'assets'    => '자산 목록',
+        'packages'  => '전체 설치 패키지',
+        'discovery' => '자산 탐색',
+    ];
+}
+
+// 위 정의를 vg_subtabs() 로 그린다. $active 는 현재 화면의 탭 키(assets|packages|discovery).
+function vg_asset_subtabs(string $active): void {
+    $hrefs = [
+        'assets'    => '/assets.php',
+        'packages'  => '/asset-packages.php',
+        'discovery' => '/discovery.php',
+    ];
+    $tabs = [];
+    foreach (vg_asset_subtab_labels() as $key => $label) {
+        $tabs[$key] = ['label' => $label, 'href' => $hrefs[$key]];
+    }
+    vg_subtabs($tabs, $active);
 }
 
 /**

@@ -133,8 +133,7 @@ vg_header('에이전트 키', 'agenttokens');
     // 설치는 대화형을 1순위로 안내한다 — 토큰을 --token 인자로 주면 셸 히스토리에 남는다.
     //   대화형(인자 없이 실행 → 숨김 프롬프트)은 히스토리·ps 어디에도 토큰이 남지 않는다.
     //   빠른 설치 명령은 자동화(무인) 편의를 위해 그대로 두되, 위험을 문구로 밝힌다.
-    $scheme  = (($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') ? 'https' : 'http';
-    $ingest  = $scheme . '://' . (string) ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/ingest.php';
+    $ingest  = vg_ingest_url();   // 계산은 format/links.php 가 소유한다(설치 안내와 같은 값).
     $install = 'sudo bash install-agent.sh --server ' . $ingest . ' --token ' . $newToken;
   ?>
     <div class="card card--accent">
