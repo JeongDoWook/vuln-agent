@@ -17,6 +17,7 @@ declare(strict_types=1);
  *   인가 경계 두 단:
  *     · 대역 등록·수정·삭제 · 스캔 실행  → **admin** (남의 대역을 훑는 것은 관리 행위다)
  *     · 제외 표시·메모                   → **admin·operator** (매일 도는 분류 작업)
+ *   제외·메모는 행마다 입력창을 세우지 않고 **표에서 고른 뒤 모달**로 한꺼번에 건다.
  *   화면에서 버튼을 감추는 건 인가가 아니다 — 판정은 아래 POST 처리부가 한다.
  */
 
@@ -33,6 +34,11 @@ const VG_DISCOVERY_STATES = ['new' => '미관리', 'known' => '관리 중', 'ign
 const VG_DISCOVERY_TONES = ['new' => 'crit', 'known' => 'ok', 'ignored' => 'muted'];
 /** 한 행에 펼치는 열린 포트 수. 넘으면 "+N" 으로 접는다 — 포트 40개짜리 행이 표를 무너뜨린다. */
 const VG_DISCOVERY_PORTS_SHOWN = 6;
+/* 정리(제외·메모) 조작 어휘 — 모달의 선택지·감사로그 문구·POST 검증이 이 하나만 본다.
+ *   '제외 해제' 를 따로 두는 건 여러 건을 한 번에 걸 때 토글이 행마다 다르게 튀기 때문이다. */
+const VG_DISCOVERY_TRIAGE_OPS = ['ignore' => '제외로 표시', 'unignore' => '제외 해제', 'note' => '메모 저장'];
+/** 한 번에 정리할 수 있는 발견 자산 수. 한 페이지 최대치(100)보다 넉넉하되 무한 POST 는 막는다. */
+const VG_DISCOVERY_TRIAGE_MAX = 500;
 
 /** CIDR 표기(IPv4/IPv6 + 프리픽스)인가. 대역은 사람이 손으로 넣는 값이라 형식을 먼저 막는다. */
 function vg_discovery_valid_cidr(string $cidr): bool
@@ -178,36 +184,58 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             vg_redirect_flash(['msg' => '스캔을 대기열에 넣었습니다: ' . $target['cidr'] . ' (집행기가 순서대로 처리합니다)']);
 
         } elseif ($action === 'asset_triage') {
+            /* 제외·메모는 **표에서 고른 자산에 한꺼번에** 건다(행마다 입력창을 세우지 않는다 —
+             *   자산 목록의 등급 일괄 확정과 같은 방식). 조작은 셋으로 나뉜다:
+             *     ignore/unignore = 상태만, note = 메모만. 예전의 toggle 은 여러 건을 한 번에
+             *     걸 때 "지금 상태의 반대" 가 행마다 달라져 결과를 예측할 수 없어 갈랐다. */
             if (!$canTriage) { throw new RuntimeException('발견 자산을 정리할 권한이 없습니다.'); }
-            $id   = (int) ($_POST['discovered_asset_id'] ?? 0);
-            $op   = (string) ($_POST['op'] ?? 'note');
+            $op = (string) ($_POST['op'] ?? '');
+            if (!isset(VG_DISCOVERY_TRIAGE_OPS[$op])) { throw new RuntimeException('알 수 없는 정리 작업입니다.'); }
+            $ids = array_values(array_unique(array_filter(
+                array_map('intval', (array) ($_POST['discovered_asset_ids'] ?? [])),
+                static fn(int $id): bool => $id > 0
+            )));
+            if (!$ids) { throw new RuntimeException('정리할 발견 자산을 표에서 고르세요.'); }
+            if (count($ids) > VG_DISCOVERY_TRIAGE_MAX) {
+                throw new RuntimeException('한 번에 ' . VG_DISCOVERY_TRIAGE_MAX . '건까지 정리할 수 있습니다.');
+            }
             $note = mb_substr(trim((string) ($_POST['note'] ?? '')), 0, 500);
+
+            // 감사로그에 IP 를 남겨야 하므로 대상부터 확인한다(없는 id 는 여기서 걸러진다).
+            $in = implode(',', array_fill(0, count($ids), '?'));
             $st = $pdo->prepare(
-                'SELECT ip, state FROM tb_discovered_asset WHERE discovered_asset_id = ? AND is_deleted = 0'
+                "SELECT discovered_asset_id, ip FROM tb_discovered_asset
+                  WHERE discovered_asset_id IN ($in) AND is_deleted = 0"
             );
-            $st->execute([$id]);
-            $asset = $st->fetch();
-            if (!$asset) { throw new RuntimeException('발견 자산을 찾을 수 없습니다.'); }
-            if ($op === 'toggle') {
+            $st->execute($ids);
+            $assets = $st->fetchAll();
+            if (!$assets) { throw new RuntimeException('발견 자산을 찾을 수 없습니다.'); }
+            $ids = array_map(static fn(array $a): int => (int) $a['discovered_asset_id'], $assets);
+            $in  = implode(',', array_fill(0, count($ids), '?'));
+
+            if ($op === 'ignore') {
+                $pdo->prepare("UPDATE tb_discovered_asset SET state = 'ignored' WHERE discovered_asset_id IN ($in)")
+                    ->execute($ids);
+            } elseif ($op === 'unignore') {
                 /* 해제하면 자동 판정 자리로 되돌린다 — host_id 가 있으면 관리 중, 없으면 미관리.
                  *   반대로 ignored 는 사람이 정한 값이라 집행기의 자동 판정이 덮지 않는다(스키마 주석). */
-                $sql = (string) $asset['state'] === 'ignored'
-                    ? "UPDATE tb_discovered_asset
-                          SET state = IF(host_id IS NULL, 'new', 'known'), note = ?
-                        WHERE discovered_asset_id = ?"
-                    : "UPDATE tb_discovered_asset SET state = 'ignored', note = ? WHERE discovered_asset_id = ?";
-                $pdo->prepare($sql)->execute([$note !== '' ? $note : null, $id]);
-                $msg = (string) $asset['state'] === 'ignored'
-                    ? '제외를 해제했습니다: ' . $asset['ip']
-                    : '제외로 표시했습니다: ' . $asset['ip'];
+                $pdo->prepare(
+                    "UPDATE tb_discovered_asset SET state = IF(host_id IS NULL, 'new', 'known')
+                      WHERE discovered_asset_id IN ($in) AND state = 'ignored'"
+                )->execute($ids);
             } else {
-                $pdo->prepare('UPDATE tb_discovered_asset SET note = ? WHERE discovered_asset_id = ?')
-                    ->execute([$note !== '' ? $note : null, $id]);
-                $msg = '메모를 저장했습니다: ' . $asset['ip'];
+                $pdo->prepare("UPDATE tb_discovered_asset SET note = ? WHERE discovered_asset_id IN ($in)")
+                    ->execute(array_merge([$note !== '' ? $note : null], $ids));
             }
-            vg_log_activity($pdo, 'DISCOVERED_ASSET', $id, 'discovered_asset_triage', $msg,
-                ['ip' => $asset['ip'], 'op' => $op], subject: (string) $asset['ip'], action: 'UPDATE');
-            vg_redirect_flash(['msg' => $msg]);
+
+            $label = $op === 'note' && $note === '' ? '메모 삭제' : VG_DISCOVERY_TRIAGE_OPS[$op];
+            // 감사로그는 자산마다 남긴다 — "어느 IP 를 누가 제외했나" 가 이 기능의 기록이다.
+            foreach ($assets as $a) {
+                vg_log_activity($pdo, 'DISCOVERED_ASSET', (int) $a['discovered_asset_id'], 'discovered_asset_triage',
+                    $label . ': ' . $a['ip'], ['ip' => $a['ip'], 'op' => $op],
+                    subject: (string) $a['ip'], action: 'UPDATE');
+            }
+            vg_redirect_flash(['msg' => $label . ' — 발견 자산 ' . count($ids) . '건']);
         }
         vg_redirect_flash(['err' => '알 수 없는 요청입니다.']);
     } catch (Throwable $e) {
@@ -464,33 +492,42 @@ vg_header('자산 탐색', 'discovery');
 
   <?php
   $filtered = ($q !== '' || $state !== '' || $targetId > 0);
+  /* 열은 'key' 로 찾는다 — 정리 권한이 있으면 앞에 선택 열이 붙는데, 인덱스로 맞춰 두면
+   *   그때마다 칸 콜백이 한 칸씩 밀린다(자산 목록의 표도 같은 이유로 key 를 쓴다). */
   $headers = [
-      ['label' => 'IP', 'width' => '10rem'],
-      ['label' => '상태', 'width' => '6rem'],
-      ['label' => '열린 포트 · 서비스(추측)'],
-      ['label' => '최초 발견', 'width' => '9rem', 'nowrap' => true],
-      ['label' => '최근 발견', 'width' => '9rem', 'nowrap' => true],
-      ['label' => '연결된 자산', 'width' => '14rem'],
+      ['label' => 'IP', 'key' => 'ip', 'width' => '10rem'],
+      ['label' => '상태', 'key' => 'state', 'width' => '6rem'],
+      ['label' => '열린 포트 · 서비스(추측)', 'key' => 'ports'],
+      ['label' => '최초 발견', 'key' => 'first_seen', 'width' => '9rem', 'nowrap' => true],
+      ['label' => '최근 발견', 'key' => 'last_seen', 'width' => '9rem', 'nowrap' => true],
+      ['label' => '연결된 자산', 'key' => 'host', 'width' => '14rem'],
   ];
   $cells = [
       /* IP 아래 두 번째 줄에 역DNS 호스트명을 붙인다 — **열을 늘리지 않는다**(화면 정리 국면).
        *   호스트명이 없으면 지금까지처럼 대역만 보인다(빈 자리표시를 만들지 않는다). */
-      0 => function ($r): string {
+      'ip' => function ($r): string {
           $html = '<code>' . vg_h((string) $r['ip']) . '</code>';
           $hostname = trim((string) ($r['hostname'] ?? ''));
           if ($hostname !== '') {
               $html .= '<div class="why">' . vg_trunc($hostname, 28) . '</div>';
           }
-          return $html . '<div class="why">' . vg_h((string) $r['cidr']) . '</div>';
+          $html .= '<div class="why">' . vg_h((string) $r['cidr']) . '</div>';
+          /* 메모는 사람이 "이게 무엇인가" 를 적어 둔 값이라 정체를 말하는 IP 칸에 붙인다.
+           *   열을 따로 세우지 않는다 — 메모가 있는 행은 드물고, 있을 때만 한 줄 늘어난다. */
+          $note = trim((string) ($r['note'] ?? ''));
+          if ($note !== '') {
+              $html .= '<div class="why" title="' . vg_h($note) . '">메모 · ' . vg_trunc($note, 28) . '</div>';
+          }
+          return $html;
       },
-      1 => fn($r) => vg_badge(
+      'state' => fn($r) => vg_badge(
           VG_DISCOVERY_STATES[(string) $r['state']] ?? (string) $r['state'],
           VG_DISCOVERY_TONES[(string) $r['state']] ?? 'muted'
       ),
       /* 포트 옆의 서비스는 **포트 번호 관례에서 유추한 추측**이다(22 가 항상 SSH 는 아니다).
        *   그래서 '?' 를 붙이고 열 제목에도 그 사실을 적는다 — 단정형으로 쓰면 사람이 확인을 건너뛴다.
        *   배너(HTTP Server 헤더·TLS 인증서 CN)는 열로 늘리지 않고 있을 때만 한 줄 덧붙인다. */
-      2 => function ($r) use ($portsByAsset): string {
+      'ports' => function ($r) use ($portsByAsset): string {
           $ports = $portsByAsset[(int) $r['discovered_asset_id']] ?? [];
           if (!$ports) { return '<span class="why">열린 포트 없음</span>'; }
           $label = static fn(array $p): string => $p['port'] . '/' . $p['proto']
@@ -512,11 +549,11 @@ vg_header('자산 탐색', 'discovery');
           }
           return $html;
       },
-      3 => fn($r) => '<span class="why">' . vg_h(substr((string) $r['first_seen'], 0, 16)) . '</span>',
-      4 => fn($r) => '<span class="why">' . vg_h(substr((string) $r['last_seen'], 0, 16)) . '</span>',
+      'first_seen' => fn($r) => '<span class="why">' . vg_h(substr((string) $r['first_seen'], 0, 16)) . '</span>',
+      'last_seen'  => fn($r) => '<span class="why">' . vg_h(substr((string) $r['last_seen'], 0, 16)) . '</span>',
       /* 이 열이 이 기능의 결론 동선이다 — 모르는 자산을 찾았으면 에이전트를 깔고 취약점
        *   스캔으로 넘어간다. 그래서 연결이 없을 때 막다른 칸이 아니라 설치 안내로 잇는다. */
-      5 => function ($r): string {
+      'host' => function ($r): string {
           if ((int) ($r['host_id'] ?? 0) > 0 && $r['fqdn'] !== null) {
               return '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h((string) $r['fqdn']) . '</a>';
           }
@@ -526,23 +563,39 @@ vg_header('자산 탐색', 'discovery');
           });
       },
   ];
+  /* 정리 조작은 **행이 아니라 선택**에 붙는다 — 예전엔 모든 행에 메모 입력창과 버튼 둘이
+   *   상시로 붙어 있어, 10행이면 입력창 10개·버튼 20개가 표 오른쪽을 채웠다.
+   *   여기 남는 건 체크박스 한 칸뿐이고, 입력(메모)과 제출은 표 위 버튼이 여는 모달이 갖는다. */
   if ($canTriage) {
-      $headers[] = ['label' => '제외 · 메모', 'width' => '18rem', 'align' => 'right'];
-      $cells[6] = function ($r) use ($csrf): string {
-          $id = (int) $r['discovered_asset_id'];
-          $isIgnored = (string) $r['state'] === 'ignored';
-          return '<div class="actions"><form method="post">'
-              . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
-              . '<input type="hidden" name="action" value="asset_triage">'
-              . '<input type="hidden" name="discovered_asset_id" value="' . $id . '">'
-              . '<input type="text" name="note" maxlength="500" value="' . vg_h((string) ($r['note'] ?? ''))
-              . '" placeholder="메모(프린터·스위치 등)" aria-label="메모">'
-              . '<button name="op" value="note" class="btn btn--xs btn--ghost">저장</button>'
-              . '<button name="op" value="toggle" class="btn btn--xs btn--ghost">'
-              . ($isIgnored ? '제외 해제' : '제외') . '</button>'
-              . '</form></div>';
-      };
+      array_unshift($headers, [
+          'label' => '', 'key' => 'pick', 'width' => '2.5rem', 'align' => 'center',
+          'label_html' => '<input type="checkbox" data-checkall="discovered_asset_ids[]"'
+              . ' aria-label="이 페이지 전체 선택" title="이 페이지 전체 선택">',
+      ]);
+      $cells['pick'] = fn($r) => '<input type="checkbox" name="discovered_asset_ids[]" value="'
+          . (int) $r['discovered_asset_id'] . '" aria-label="' . vg_h((string) $r['ip']) . ' 선택">';
   }
+
+  /* 표와 모달을 한 폼으로 감싼다 — 네이티브 dialog 는 렌더링만 top-layer 로 올라가고 DOM 상
+   *   폼 소속은 그대로라, 표의 체크박스와 모달의 메모가 한 번에 전송된다(자산 목록과 같은 구조). */
+  if ($canTriage) {
+      echo '<form method="post">';
+      echo '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">';
+      echo '<input type="hidden" name="action" value="asset_triage">';
+  }
+  if ($canTriage && $rows): ?>
+    <div class="form-bar">
+      <?php /* 선택 0개면 비활성. 개수 갱신·활성화·톤 전환은 app.js 의 위임 핸들러가 한다. */ ?>
+      <button type="button" class="btn btn--sm btn--ghost" data-modal="discoveryTriage"
+              title="선택은 지금 보고 있는 페이지 안에서만 유효하다"
+              data-bulk-open="discovered_asset_ids[]" data-bulk-label="선택 {n}개 정리" disabled>선택 0개 정리</button>
+      <noscript>
+        <?php /* 스크립트가 꺼져 있으면 모달이 안 열린다 — 대체 경로는 값이라 남긴다. */ ?>
+        <span class="why">스크립트가 꺼져 있어 제외·메모를 쓸 수 없다.</span>
+      </noscript>
+    </div>
+  <?php endif; ?>
+  <?php
   vg_table($headers, $rows, [
       'empty' => $filtered ? [
           'icon' => 'search', 'title' => '조건에 맞는 발견 자산이 없습니다.',
@@ -554,6 +607,36 @@ vg_header('자산 탐색', 'discovery');
       'cell' => $cells,
   ]);
   if ($rows) { vg_page_nav($total, $perPage, $page); }
+
+  /* 정리 모달 — 폼 **안**이라야 표의 체크박스가 같이 실려 간다(밖에 두면 0건으로 간다). */
+  if ($canTriage && $rows) {
+      vg_modal_open('discoveryTriage', '선택 발견 자산 정리');
+      ?>
+      <p class="why">표에서 고른 자산에만 적용합니다 — 선택은 지금 보고 있는 페이지 안에서만 유효합니다.</p>
+
+      <label for="triage-op">할 일</label>
+      <?php /* 어휘는 VG_DISCOVERY_TRIAGE_OPS 가 소유한다 — 선택지 문구를 여기서 다시 적지 않는다. */ ?>
+      <select id="triage-op" name="op" required>
+        <?php foreach (VG_DISCOVERY_TRIAGE_OPS as $v => $opLabel): ?>
+          <option value="<?= vg_h($v) ?>"><?= vg_h($opLabel) ?></option>
+        <?php endforeach; ?>
+      </select>
+
+      <label for="triage-note">메모</label>
+      <input id="triage-note" type="text" name="note" maxlength="500"
+             placeholder="예: 프린터 · 스위치 · 게이트웨이">
+      <dl class="criteria">
+        <dt>제외</dt>
+        <dd>에이전트를 깔 수 없는 장비(게이트웨이·프린터·가상 IP)를 커버리지 분모에서 뺍니다. ‘제외 해제’ 는 다시 관리 대상으로 되돌립니다.</dd>
+        <dt>메모</dt>
+        <dd>‘메모 저장’ 을 골랐을 때만 위 값으로 덮어씁니다(비우면 지웁니다). 제외·해제는 메모를 건드리지 않습니다.</dd>
+        <dt>적용 범위</dt>
+        <dd>지금 보고 있는 페이지에서 고른 자산만, 한 번에 <?= VG_DISCOVERY_TRIAGE_MAX ?>건까지. 자산마다 감사로그가 남습니다.</dd>
+      </dl>
+      <?php vg_modal_foot('적용', ['loading' => '적용 중…', 'cancel' => '취소']);
+      vg_modal_close();
+  }
+  if ($canTriage) { echo '</form>'; }
   ?>
 
   <?php if ($canManage): ?>
