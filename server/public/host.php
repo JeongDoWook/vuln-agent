@@ -267,11 +267,17 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       'counts' => $counts, 'kevCount' => $kevCount, 'externalFindings' => $externalFindings,
       'exposureCount' => $exposureCount, 'cceFail' => $cceFail, 'processCount' => $processCount,
       'packageTotal' => $packageTotal, 'containerTotal' => $containerTotal,
+      // 즉시 실행 버튼(식별부) — 폼이므로 CSRF 토큰과 대상 자산이 필요하다.
+      //   대기 중인 명령이 있으면 버튼 대신 그 상태를 말한다(같은 명령을 두 번 넣지 않게).
+      'hostId' => $hostId, 'agentCsrf' => $agentCsrf, 'pendingCommands' => $pendingCommands,
+      // 눌린 결과(플래시)는 활성 탭이 설정 탭이 아닐 때만 머리가 그린다(설정 탭은 자기 카드가 그린다).
+      'tab' => $tab, 'agentMsg' => $agentMsg, 'agentErr' => $agentErr,
   ]); ?>
 
-  <?php /* 2단 탭 — 상위 4개(위험·구성·준거·이력) + 그 그룹의 하위 탭. 매핑은 nav.php 소유.
+  <?php /* 탭 줄은 한 줄(1단)이다 — 2단(위험·구성·준거·이력 + 하위 탭)은 "탭을 타고 타고" 들어가야
+           해서 오히려 멀어졌다. 억제를 취약점 탭의 필터로 내려 탭 수를 늘리지 않고 깊이만 줄인다.
            $tab 키와 각 탭의 조회 분기는 그대로다(URL 하위호환 · 쿼리는 여전히 활성 탭 하나만 돈다). */ ?>
-  <?php vg_asset_tabs($tabDefs, $tab); ?>
+  <?php vg_host_render_tabline($tabDefs, $tab); ?>
 
   <?php
   /* 활성 탭 하나만 그린다(host/tabs/<탭>.php). 조회가 활성 탭 것만 도는 것과 같은 이유로,
@@ -290,6 +296,8 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       'vulnTotal' => $vulnTotal, 'critHighTotal' => $critHighTotal, 'restartTotal' => $restartTotal,
       'packageTotal' => $packageTotal, 'containerTotal' => $containerTotal,
       'accountTotal' => $accountTotal, 'depEdgeTotal' => $depEdgeTotal,
+      // 억제 건수는 취약점 탭의 보기 전환(취약점 ↔ 억제됨)이 읽는다 — 탭 줄이 아니라 필터다.
+      'suppressedCount' => $suppressedCount,
       'missingStageCodes' => $missingStageCodes,
       // 활성 탭에서만 채워지는 값
       'restartRows' => $restartRows, 'depOrigins' => $depOrigins, 'pkgRollup' => $pkgRollup,

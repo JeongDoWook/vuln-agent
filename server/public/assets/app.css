@@ -2544,3 +2544,11 @@ form.card .btn--primary:active { transform: translateY(0); }
 .icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); gap: var(--sp-2); }
 .icon-cell { display: flex; flex-direction: column; align-items: center; gap: .35rem; padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text-2); font-size: var(--fs-xs); }
 .icon-cell .vg-ico { width: 1.5rem; height: 1.5rem; }
+
+/* --- 자산 등급의 구조화 검토 근거(host/grade.php) ---------------------------
+ * 아홉 칸짜리 근거 폼은 등급을 **확정할 때만** 쓴다(대부분 비어 있다). 늘 펼쳐 두면
+ * 자산 설정 탭을 이 폼이 통째로 차지해, 정작 위의 확정 등급·시스템 초안이 밀린다.
+ * 접이식 본문은 폼(.setting-form)과 같은 간격으로 쌓아 접기 전후로 줄 간격이 안 바뀌게 한다. */
+.grade-review > summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 650; }
+.grade-review > summary:hover { color: var(--accent-2); }
+.grade-review__body { display: grid; gap: 1rem; margin-top: .9rem; }

@@ -21,25 +21,34 @@ function vg_epss_tone(float $epss): string {
 }
 
 /**
- * EPSS 셀 — 악용확률과 백분위를 함께.
+ * EPSS 값 — 평문(뱃지·태그 없이). 모달·툴팁처럼 HTML 을 못 싣는 자리에서 쓴다.
+ *   값이 없으면(1999년대 CVE 등 FIRST 가 점수를 안 매기는 건) 대시.
+ */
+function vg_epss_pct($epss): string {
+    if ($epss === null || $epss === '') { return '–'; }
+    return number_format((float) $epss * 100, 1) . '%';
+}
+
+/**
+ * EPSS 셀 — **악용확률 하나만** 쓴다.
  *
- * 확률만 보면 크기 감이 안 온다. EPSS 는 절대다수가 1% 미만이라 "2.7%" 도 실은 상위권이다.
- * FIRST 가 같이 주는 백분위(epss_percentile)를 "상위 N%" 로 뒤집어 붙여 맥락을 준다.
- *   epss=0.02719, percentile=0.97281  →  "2.7% 상위 2.7%"
- * 값이 없으면(1999년대 CVE 등 FIRST 가 점수를 안 매기는 건) 대시.
+ * 예전엔 백분위를 "상위 N%" 로 뒤집어 나란히 붙였다("2.7% 상위 2.7%") — 확률만으론 크기 감이
+ * 안 온다는 이유였다. 그런데 한 칸에 뜻이 다른 두 수가 서면 사용자는 어느 쪽을 읽어야 할지
+ * 모른다(실제 피드백: "머야 이게"). 하나만 남긴다.
+ *
+ * 남긴 쪽이 확률인 이유: **화면과 정렬이 같은 값을 말해야 한다.** 목록은 전부 `c.epss DESC`
+ * 로 줄을 세우고(host·container·package·cves), 게이지 톤(VG_EPSS_RANGES)도, export 의
+ * `epss` 필드도 확률이다. 여기만 백분위를 보이면 "정렬 기준이 화면에 없는" 표가 된다.
+ * 백분위가 필요한 자리는 따로 있다 — cves.php 의 'EPSS 상위 1%' 필터와 cve.php 상세의
+ * 'EPSS 백분위' 항목이 그 값을 이름을 붙여 보여준다.
+ *
+ * $percentile 은 받기만 하고 그리지 않는다 — 호출부 8곳의 시그니처를 그대로 두기 위한 것이다.
  */
 function vg_epss_cell($epss, $percentile = null): string {
     if ($epss === null || $epss === '') {
         return '<span class="why">–</span>';
     }
-    $out = vg_h(number_format((float) $epss * 100, 1)) . '%';
-    if ($percentile !== null && $percentile !== '') {
-        $top = (1.0 - (float) $percentile) * 100;
-        if ($top < 0.01) { $top = 0.01; }   // percentile=1.0 이 "상위 0%" 로 보이지 않게
-        $dec = $top < 1 ? 2 : ($top < 10 ? 1 : 0);
-        $out .= ' <span class="why">상위 ' . vg_h(number_format($top, $dec)) . '%</span>';
-    }
-    return $out;
+    return vg_h(vg_epss_pct($epss));
 }
 
 /**

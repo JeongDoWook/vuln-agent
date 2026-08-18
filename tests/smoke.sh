@@ -866,7 +866,11 @@ assert_contains "$hostmanage" 'name="action" value="agent_run_now"' "자산 설�
 assert_contains "$hostmanage" 'name="action" value="agent_set_schedule"' "자산 설정 탭에 수집 주기 변경 유지"
 assert_contains "$hostmanage" 'name="action" value="host_set_grade"' "자산 설정 탭에 자산 등급 확정 유지"
 hostvuln=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
-assert_not_contains "$hostvuln" 'name="action" value="agent_run_now"' "첫 화면(취약점 탭)엔 수집 설정 폼이 없다"
+# 즉시 실행만은 첫 화면으로 되올렸다 — 자산 상세에서 가장 자주 누르는 동작인데 '자산 설정 탭 →
+#   수집 제어 카드 → 즉시 실행' 으로 가장 깊었다. 예약·주기·속도 티어는 자주 쓰지 않아 그대로 둔다.
+assert_contains "$hostvuln" 'name="action" value="agent_run_now"' "첫 화면에 즉시 스캔 버튼"
+assert_not_contains "$hostvuln" 'name="action" value="agent_set_schedule"' "첫 화면엔 수집 주기 폼이 없다"
+assert_not_contains "$hostvuln" 'name="action" value="agent_set_speed_tier"' "첫 화면엔 속도 티어 폼이 없다"
 assert_contains "$hostvuln" 'tab=manage' "첫 화면에서 자산 설정 탭으로 갈 수 있다"
 # 패키지 수 열도 상세로 내려갔다(목록은 열어볼지 말지를 정하는 열만 둔다) — 링크는 호스트
 #   상세 식별부의 '패키지 N개' 가 그대로 갖는다. 목록에서 뺀 값이 상세에 있는지 같이 확인한다.
@@ -949,7 +953,11 @@ missctr=$(curl_ -s -b "$JAR" "$BASE/container.php?id=$WEB01_ID&cid=nosuchctr")
 assert_contains "$missctr" '최신 수집에 없습니다' "없는 컨테이너 지정 시 이유 표시"
 
 # SBOM — 화면 링크(예전엔 sbom.php 를 링크하는 화면이 0건이었다) + 컨테이너 범위.
-assert_contains "$hostvuln" 'sbom.php?host=' "자산 상세에 SBOM 내려받기 링크"
+# SBOM 카드는 첫 화면에서 '설치 패키지' 탭으로 내렸다 — 부품표는 곧 그 패키지 목록이고,
+#   자주 쓰지 않는 동작이 첫 화면 한 칸을 통째로 차지하고 있었다(기능·URL 은 그대로).
+hostpkgtab=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=packages")
+assert_contains "$hostpkgtab" 'sbom.php?host=' "설치 패키지 탭에 SBOM 내려받기 링크"
+assert_not_contains "$hostvuln" 'sbom.php?host=' "첫 화면엔 SBOM 카드가 없다"
 assert_contains "$ctrbody" 'cid='"$CTR_CID"'&amp;format=cyclonedx' "컨테이너 상세에 그 컨테이너 SBOM 링크"
 ctrsbom=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&cid=$CTR_CID&format=cyclonedx")
 assert_contains "$ctrsbom" '"type": "container"' "컨테이너 SBOM 이 컨테이너를 대상으로 서술"

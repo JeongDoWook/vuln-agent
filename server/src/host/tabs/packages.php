@@ -117,4 +117,8 @@ declare(strict_types=1);
       </div>
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
+    <?php /* SBOM 내려받기 — 부품표는 곧 이 패키지 목록이라 여기가 제자리다.
+             예전엔 식별부 바로 아래(첫 화면)에 카드로 서서, 자주 쓰지도 않으면서 위험 요약을
+             밀어냈다. 카드 자체는 공용 헬퍼 그대로다(컨테이너 상세도 같은 것을 쓴다). */ ?>
+    <?php vg_sbom_links((string) $host['fqdn']); ?>
 

@@ -75,18 +75,9 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
         <?php elseif ($canEdit && $curGrade !== '' && $missingReview): ?>
           <p class="why">⚠ 검토 정보 누락: <?= vg_h(implode(', ', $missingReview)) ?></p>
         <?php endif; ?>
-        <?php if ($canEdit): ?>
-        <dl class="fact-grid">
-          <div><dt>제9조 해당 호</dt><dd><?= vg_h(VG_ASSET_REVIEW_ARTICLE9_ITEMS[(string) ($review['article9_item'] ?? '')] ?? '–') ?></dd></div>
-          <div><dt>조문·판단 참조</dt><dd><?= vg_h((string) ($review['article9_reference'] ?? '–')) ?></dd></div>
-          <div><dt>업무 유형</dt><dd><?= vg_h((string) ($review['business_category'] ?? '–')) ?></dd></div>
-          <div><dt>데이터 유형</dt><dd><?= vg_h((string) ($review['data_category'] ?? '–')) ?></dd></div>
-          <div><dt>소유 부서</dt><dd><?= vg_h((string) ($review['owning_department'] ?? '–')) ?></dd></div>
-          <div><dt>외부 공개 상태</dt><dd><?= vg_h(VG_ASSET_REVIEW_PUBLICATION_STATES[(string) ($review['external_publication_state'] ?? '')] ?? '–') ?></dd></div>
-          <div><dt>검토 문서·티켓</dt><dd><?= vg_h((string) ($review['review_reference'] ?? '–')) ?></dd></div>
-          <div><dt>다음 검토일</dt><dd><?= vg_h((string) ($review['next_review_date'] ?? '–')) ?></dd></div>
-        </dl>
-        <?php endif; ?>
+        <?php /* 여덟 항목을 읽기 전용 정의목록으로 한 번 더 보여주던 자리였다 — 바로 아래 폼의
+                 입력칸이 **같은 값을 같은 순서로** 이미 담고 있고(둘 다 관리자에게만 보였다),
+                 대부분 비어 있어 '–' 여덟 줄이 화면만 먹었다. 값은 아래 폼에서 읽고 고친다. */ ?>
 
         <?php if ($canEdit): ?>
           <form class="setting-form mt-lg" method="post"
@@ -115,47 +106,61 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
               </select>
             </label>
 
-            <label class="field" for="asset-grade-reason">확정 근거
-              <input id="asset-grade-reason" type="text" name="grade_reason" maxlength="255"
-                     placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유"
-                     value="<?= vg_h((string) ($host['grade_reason'] ?? '')) ?>">
-            </label>
+            <?php /* 확정 근거 아홉 칸은 **등급을 확정할 때만** 쓴다. 늘 펼쳐 두면 대부분 비어 있는
+                     입력이 자산 설정 탭의 첫 화면을 통째로 차지한다 — 접어 두되 지우지 않는다.
+                     이 값들은 tb_asset_grade_review 에 남는 구조화 검토 근거이고, 등급 확정은
+                     기관의 법적 처분이라 근거를 남기는 것이 이 기능의 목적이다(#550).
+                     열어 두는 조건은 위 경고 세 줄과 **같다** — 경고가 뜬 자산에서만 펼친다.
+                     채워야 하는 사람에게는 접힌 폼이 곧 못 본 폼이기 때문이다. 반대로 아직 등급을
+                     확정하지 않은 자산은 항목이 비어 있는 게 정상이라 접어 둔다(그 조건까지 열면
+                     대다수 자산에서 늘 펼쳐져 접은 의미가 없다). */ ?>
+            <details class="grade-review"<?= (!empty($review['is_stale']) || vg_asset_grade_review_overdue($review)
+                    || ($curGrade !== '' && $missingReview)) ? ' open' : '' ?>>
+              <summary>확정 근거 · 구조화 검토 정보 (9개 항목)</summary>
+              <div class="grade-review__body">
+              <label class="field" for="asset-grade-reason">확정 근거
+                <input id="asset-grade-reason" type="text" name="grade_reason" maxlength="255"
+                       placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유"
+                       value="<?= vg_h((string) ($host['grade_reason'] ?? '')) ?>">
+              </label>
 
-            <label class="field" for="asset-article9-item">정보공개법 제9조 해당 호
-              <select id="asset-article9-item" name="article9_item">
-                <option value="">미지정</option>
-                <?php foreach (VG_ASSET_REVIEW_ARTICLE9_ITEMS as $v => $label): ?>
-                  <option value="<?= vg_h((string) $v) ?>"<?= ($review['article9_item'] ?? null) === (string) $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-            <label class="field" for="asset-article9-reference">조문·판단 참조
-              <input id="asset-article9-reference" name="article9_reference" maxlength="255" value="<?= vg_h((string) ($review['article9_reference'] ?? '')) ?>">
-            </label>
-            <label class="field" for="asset-business-category">업무 유형
-              <input id="asset-business-category" name="business_category" maxlength="100" value="<?= vg_h((string) ($review['business_category'] ?? '')) ?>">
-            </label>
-            <label class="field" for="asset-data-category">데이터 유형
-              <input id="asset-data-category" name="data_category" maxlength="100" value="<?= vg_h((string) ($review['data_category'] ?? '')) ?>">
-            </label>
-            <label class="field" for="asset-owning-department">소유 부서
-              <input id="asset-owning-department" name="owning_department" maxlength="120" value="<?= vg_h((string) ($review['owning_department'] ?? '')) ?>">
-            </label>
-            <label class="field" for="asset-publication-state">외부 공개 상태
-              <select id="asset-publication-state" name="external_publication_state">
-                <option value="">미지정</option>
-                <?php foreach (VG_ASSET_REVIEW_PUBLICATION_STATES as $v => $label): ?>
-                  <option value="<?= vg_h($v) ?>"<?= ($review['external_publication_state'] ?? null) === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-            <label class="field" for="asset-review-reference">검토 문서·티켓 참조
-              <input id="asset-review-reference" name="review_reference" maxlength="255" placeholder="예: SEC-1234, 보안검토 회의록 2026-03" value="<?= vg_h((string) ($review['review_reference'] ?? '')) ?>">
-              <span class="why">문서 내용이 아니라 식별자나 위치만 남깁니다.</span>
-            </label>
-            <label class="field" for="asset-next-review-date">다음 검토일
-              <input id="asset-next-review-date" type="date" name="next_review_date" value="<?= vg_h((string) ($review['next_review_date'] ?? '')) ?>">
-            </label>
+              <label class="field" for="asset-article9-item">정보공개법 제9조 해당 호
+                <select id="asset-article9-item" name="article9_item">
+                  <option value="">미지정</option>
+                  <?php foreach (VG_ASSET_REVIEW_ARTICLE9_ITEMS as $v => $label): ?>
+                    <option value="<?= vg_h((string) $v) ?>"<?= ($review['article9_item'] ?? null) === (string) $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
+              <label class="field" for="asset-article9-reference">조문·판단 참조
+                <input id="asset-article9-reference" name="article9_reference" maxlength="255" value="<?= vg_h((string) ($review['article9_reference'] ?? '')) ?>">
+              </label>
+              <label class="field" for="asset-business-category">업무 유형
+                <input id="asset-business-category" name="business_category" maxlength="100" value="<?= vg_h((string) ($review['business_category'] ?? '')) ?>">
+              </label>
+              <label class="field" for="asset-data-category">데이터 유형
+                <input id="asset-data-category" name="data_category" maxlength="100" value="<?= vg_h((string) ($review['data_category'] ?? '')) ?>">
+              </label>
+              <label class="field" for="asset-owning-department">소유 부서
+                <input id="asset-owning-department" name="owning_department" maxlength="120" value="<?= vg_h((string) ($review['owning_department'] ?? '')) ?>">
+              </label>
+              <label class="field" for="asset-publication-state">외부 공개 상태
+                <select id="asset-publication-state" name="external_publication_state">
+                  <option value="">미지정</option>
+                  <?php foreach (VG_ASSET_REVIEW_PUBLICATION_STATES as $v => $label): ?>
+                    <option value="<?= vg_h($v) ?>"<?= ($review['external_publication_state'] ?? null) === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
+              <label class="field" for="asset-review-reference">검토 문서·티켓 참조
+                <input id="asset-review-reference" name="review_reference" maxlength="255" placeholder="예: SEC-1234, 보안검토 회의록 2026-03" value="<?= vg_h((string) ($review['review_reference'] ?? '')) ?>">
+                <span class="why">문서 내용이 아니라 식별자나 위치만 남깁니다.</span>
+              </label>
+              <label class="field" for="asset-next-review-date">다음 검토일
+                <input id="asset-next-review-date" type="date" name="next_review_date" value="<?= vg_h((string) ($review['next_review_date'] ?? '')) ?>">
+              </label>
+              </div>
+            </details>
 
             <div class="actions">
               <button type="submit" class="btn btn--sm btn--primary">등급 확정</button>
