@@ -130,10 +130,11 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
 
         // 컨테이너 + 그 안의 패키지.
         //   컨테이너 목록이 먼저 들어가야 cid → container_id 지도가 생긴다(아래가 전부 이걸 쓴다).
-        $ctrIds = [];   // cid => tb_container.container_id
-        if ($ctrCount > 0) {
-            $ctrIds = vg_ingest_store_containers($pdo, $scanId, $ctrRows);
-        }
+        //   컨테이너가 하나도 없어도 예약 cid(`_host` → 0)는 항상 있다 — docker 가 없는
+        //   호스트도 자기 SBOM(/opt/vuln-agent/sbom/_host.json)을 넣을 수 있어야 한다.
+        $ctrIds = vg_ingest_ctr_ids_with_host(
+            $ctrCount > 0 ? vg_ingest_store_containers($pdo, $scanId, $ctrRows) : []
+        );   // cid => tb_container.container_id (0 = 호스트 자신)
         if ($ctrPkgCount > 0) {
             vg_ingest_store_container_packages($pdo, $scanId, $ctrPkgRows, $ctrIds);
         }

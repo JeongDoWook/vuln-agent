@@ -128,6 +128,7 @@ PHPUNIT_FILES=(
   matcher_suppress_test.php
   suppression_test.php
   ingest_parse_test.php
+  sbom_host_import_test.php
   assetgrade_history_test.php
   account_inventory_test.php
   ssg_test.php
@@ -363,6 +364,9 @@ phase "ingest_parse 단위 테스트"
 # server/src/ingest_parse.php 로 뽑아냈다. 예전엔 이 파싱 로직에 단위테스트가 0개였다 —
 # vercmp 처럼 서버 없이 도는 정적 검사라 스모크 앞단에 묶는다.
 run_phpunit "ingest_parse_test.php" "ingest_parse" "ingest_parse 단위 테스트"
+# SBOM 파일명(cid)이 어디에 붙는지 — 예약 `_host` 는 호스트(container_id=0), 그 외는 컨테이너.
+# 예전엔 호스트 SBOM 이 붙을 곳이 없어 패키지도 엣지도 **조용히** 버려졌다(0건 = 안전으로 보였다).
+run_phpunit "sbom_host_import_test.php" "sbom_host_import" "SBOM 호스트 임포트 단위 테스트"
 run_phpunit "assetgrade_history_test.php" "assetgrade_history" "자산등급 제안 이력 단위 테스트"
 
 phase "계정 인벤토리 단위 테스트"
