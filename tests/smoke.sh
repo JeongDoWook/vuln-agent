@@ -808,6 +808,31 @@ allpackages=$(curl_ -s -b "$JAR" "$BASE/asset-packages.php?q=glibc")
 assert_contains "$allpackages" 'class="on" href="/asset-packages.php">전체 설치 패키지' "전체 설치 패키지 탭 활성 표시"
 assert_contains "$allpackages" 'glibc' "전체 호스트 설치 패키지 검색 결과 표시"
 assert_contains "$allpackages" "$FQDN_WEB01" "설치 패키지 검색 결과에 호스트 표시"
+
+# --- 자산 탐색(섀도우 IT) ------------------------------------------------------
+#   화면은 스캔을 직접 돌리지 않는다 — tb_discovery_run 에 pending 을 만들고 bin/discover.php 가
+#   집행한다. 그래서 여기서 확인하는 것은 "대기열에 들어갔는가"까지다.
+#   대역 CIDR 은 유니크라 두 번째 실행부터는 등록이 거부된다 — 그래서 결과 화면에 그 대역이
+#   보이는지로 단언한다(처음 만들었든 이미 있든 같은 결론이라 반복 실행에 안전하다).
+assert_contains "$assetbody" 'href="/discovery.php">자산 탐색' "자산 목록에 자산 탐색 탭 표시"
+DISC_CIDR="10.244.0.0/24"
+disccsrf=$(curl_ -s -b "$JAR" "$BASE/discovery.php" | grep -oE 'name="csrf" value="[a-f0-9]+"' | grep -oE '[a-f0-9]{32}' | head -1)
+curl_ -s -b "$JAR" -o /dev/null --data-urlencode "csrf=$disccsrf" --data-urlencode "action=target_save"   --data-urlencode "discovery_target_id=0" --data-urlencode "cidr=$DISC_CIDR"   --data-urlencode "label=smoke" --data-urlencode "ports=22,80,443" --data-urlencode "enabled=1"   "$BASE/discovery.php"
+discbody=$(curl_ -s -b "$JAR" "$BASE/discovery.php")
+assert_contains "$discbody" "$DISC_CIDR" "자산 탐색: 대역 등록 결과가 목록에 보인다"
+assert_contains "$discbody" '에이전트 커버리지' "자산 탐색: 커버리지 KPI 표시"
+# 잘못된 CIDR 은 화면에서 막는다(집행기까지 안 내려간다).
+badcidr=$(curl_ -s -b "$JAR" -L --data-urlencode "csrf=$disccsrf" --data-urlencode "action=target_save"   --data-urlencode "cidr=not-a-cidr" "$BASE/discovery.php")
+assert_contains "$badcidr" 'CIDR 표기' "자산 탐색: 잘못된 대역 표기 거부"
+# 스캔 요청 → 그 대역이 대기/진행 상태로 보인다. 이미 대기 중이면 두 번째 요청은 거부된다.
+# 표 전체가 한 줄로 나오므로, 그 대역 뒤에 처음 오는 hidden 값이 그 행의 대역 id 다
+#   (문서 끝의 등록 모달은 value="0" 이라 그냥 tail 로 집으면 0 을 집는다).
+DISC_TID=$(sed "s#.*$DISC_CIDR##" <<<"$discbody" | grep -oE 'name="discovery_target_id" value="[0-9]+"' | head -1 | grep -oE '[0-9]+')
+curl_ -s -b "$JAR" -o /dev/null --data-urlencode "csrf=$disccsrf" --data-urlencode "action=scan"   --data-urlencode "discovery_target_id=$DISC_TID" "$BASE/discovery.php"
+discafter=$(curl_ -s -b "$JAR" "$BASE/discovery.php")
+assert_contains "$discafter" '대기 중' "자산 탐색: 스캔 요청이 대기열에 들어간다(집행은 bin/discover.php)"
+dupscan=$(curl_ -s -b "$JAR" -L --data-urlencode "csrf=$disccsrf" --data-urlencode "action=scan"   --data-urlencode "discovery_target_id=$DISC_TID" "$BASE/discovery.php")
+assert_contains "$dupscan" '진행 중인 스캔' "자산 탐색: 중복 스캔 요청 차단"
 # 변화 추적 — 사이드바에 올린 화면인데 스모크가 한 번도 치지 않아, 패키지 셀이 부르는
 #   vg_osv_ecosystem() 의 require 누락(distro.php)이 Fatal error 로 오래 남아 있었다.
 #   목록에 행이 있어야 그 코드 경로를 지나므로, 응답 본문에 표가 렌더됐는지까지 본다.

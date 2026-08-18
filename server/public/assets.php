@@ -60,10 +60,8 @@ try {
 ['deptOptions' => $deptOptions, 'stateCounts' => $stateCounts, 'rows' => $rows, 'total' => $total,
  'sevByScan' => $sevByScan, 'systemGrade' => $systemGrade, 'unconfirmed' => $unconfirmed] = $assetData;
 
-// 에이전트가 POST 할 수집 엔드포인트(현재 접속 주소 기준).
-$https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-       || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
-$ingest = ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/ingest.php';
+// 에이전트가 POST 할 수집 엔드포인트(현재 접속 주소 기준) — 계산은 format/links.php 가 소유한다.
+$ingest = vg_ingest_url();
 
 vg_header('자산', 'assets');
 ?>
@@ -80,10 +78,7 @@ vg_header('자산', 'assets');
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
   ]); ?>
-  <?php vg_subtabs([
-      'assets' => ['label' => '자산 목록', 'href' => '/assets.php'],
-      'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php'],
-  ], 'assets'); ?>
+  <?php vg_asset_subtabs('assets'); ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err !== null ? '오류 · ' . $err : null); ?>
 

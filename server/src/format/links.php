@@ -99,3 +99,14 @@ function vg_vendor_cve_url(string $src, string $cveId): ?string {
         default: return null;
     }
 }
+
+/**
+ * 에이전트가 POST 할 수집 엔드포인트(현재 접속 주소 기준). 설치 안내가 이 값을 그대로 보여준다.
+ *   프로토콜 판정은 리버스프록시(Caddy) 뒤를 전제로 X-Forwarded-Proto 도 본다.
+ *   같은 계산이 assets.php·agent-tokens.php 에 각자 있었고 discovery.php 가 세 번째라 여기로 모았다.
+ */
+function vg_ingest_url(): string {
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+          || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/ingest.php';
+}

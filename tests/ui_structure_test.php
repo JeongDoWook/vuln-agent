@@ -202,9 +202,16 @@ $check(str_contains($vendorPhp, "' · 원본 ' . \$cveId"), 'Debian TEMP 원본 
 // assets.php 도 마찬가지로 server/src/assets/** 와 한 묶음이다(표·모달이 거기 있다).
 $assetsPhp = $splitSources($public, $root, 'assets.php', 'assets');
 $assetPackagesPhp = (string) file_get_contents($public . '/asset-packages.php');
-$check(str_contains($assetsPhp, "'packages' => ['label' => '전체 설치 패키지', 'href' => '/asset-packages.php']")
-    && str_contains($assetPackagesPhp, "'assets' => ['label' => '자산 목록', 'href' => '/assets.php']"),
-    '자산 목록과 전체 설치 패키지를 상호 이동 탭으로 제공');
+// 탭 줄의 정의는 nav.php 의 vg_asset_subtab_labels() 하나뿐이다 — 세 화면은 부르기만 한다.
+//   예전엔 화면마다 배열 리터럴을 갖고 있어 라벨·개수가 어긋날 수 있었다(#556).
+$navPhp = (string) file_get_contents($root . '/server/src/view/nav.php');
+$discoveryPhp = (string) file_get_contents($public . '/discovery.php');
+$check(str_contains($navPhp, "'packages'  => '전체 설치 패키지'")
+    && str_contains($navPhp, "'discovery' => '자산 탐색'")
+    && str_contains($assetsPhp, "vg_asset_subtabs('assets')")
+    && str_contains($assetPackagesPhp, "vg_asset_subtabs('packages')")
+    && str_contains($discoveryPhp, "vg_asset_subtabs('discovery')"),
+    '자산 목록·전체 설치 패키지·자산 탐색을 상호 이동 탭으로 제공');
 $check(!str_contains($assetsPhp, 'echo \'<a class="btn btn--sm btn--ghost" href="/asset-packages.php"'),
     '자산 제목의 중복 설치 패키지 버튼 제거');
 $ingestPhp = (string) file_get_contents($public . '/ingest.php');
