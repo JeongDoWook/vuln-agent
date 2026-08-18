@@ -819,6 +819,54 @@ $eq('알 수 없는 형식', vg_ingest_parse_host_addresses("command not found
 $eq('IPv6 전용', vg_ingest_parse_host_addresses("2: eth0    inet6 2001:db8::1/64 scope global eth0"), []);
 $eq('형식만 그럴듯한 값', vg_ingest_parse_host_addresses("2: eth0    inet 10.3.142.300/24 scope global eth0"), []);
 
+// ── 라우팅 테이블 (net.routes) ──────────────────────────────────────────────
+//   세그먼트 맵의 데이터 원천 — 정규식 파싱이 조용히 틀리면 대역·게이트웨이가 통째로 빠진다.
+$ipRoute = "default via 10.3.142.1 dev enp1s0 proto dhcp src 10.3.142.200 metric 100
+10.3.142.0/24 dev enp1s0 proto kernel scope link src 10.3.142.200
+172.17.0.0/16 dev docker0 proto kernel scope link src 172.17.0.1
+10.244.0.0/24 dev cni0 proto kernel scope link src 10.244.0.1";
+$ipR = vg_ingest_parse_host_routes($ipRoute);
+$eq('ip route: 게이트웨이 IP', $ipR['gateway']['ip'] ?? null, '10.3.142.1');
+$eq('ip route: 게이트웨이 iface', $ipR['gateway']['iface'] ?? null, 'enp1s0');
+$eq('ip route: 가상 인터페이스(docker0·cni0) 서브넷 제외 후 1건', count($ipR['subnets']), 1);
+$eq('ip route: 직결 서브넷 CIDR', $ipR['subnets'][0]['cidr'] ?? null, '10.3.142.0/24');
+$eq('ip route: 직결 서브넷 iface', $ipR['subnets'][0]['iface'] ?? null, 'enp1s0');
+
+$routeN = "Destination     Gateway         Genmask         Flags Iface
+0.0.0.0         10.3.142.1      0.0.0.0         UG    enp1s0
+10.3.142.0      0.0.0.0         255.255.255.0   U     enp1s0
+172.17.0.0      0.0.0.0         255.255.0.0     U     docker0";
+$rn = vg_ingest_parse_host_routes($routeN);
+$eq('route -n: 게이트웨이 IP', $rn['gateway']['ip'] ?? null, '10.3.142.1');
+$eq('route -n: 게이트웨이 iface', $rn['gateway']['iface'] ?? null, 'enp1s0');
+$eq('route -n: 가상 인터페이스(docker0) 서브넷 제외 후 1건', count($rn['subnets']), 1);
+$eq('route -n: 직결 서브넷 CIDR(Genmask→prefix 환산)', $rn['subnets'][0]['cidr'] ?? null, '10.3.142.0/24');
+
+// 게이트웨이 자체가 가상 인터페이스에 물려 있으면 채택하지 않는다(null) — 추측해서 채우지 않는다.
+$virtGw = vg_ingest_parse_host_routes('default via 172.18.0.1 dev docker0');
+$eq('게이트웨이가 가상 인터페이스면 null', $virtGw['gateway'], null);
+
+// 게이트웨이 없이 직결 서브넷만 있는 경우(라우터 자신 등) — 정상.
+$noGw = vg_ingest_parse_host_routes('10.3.142.0/24 dev enp1s0 proto kernel scope link src 10.3.142.200');
+$eq('게이트웨이 없이 직결 서브넷만', $noGw['gateway'], null);
+$eq('게이트웨이 없이 직결 서브넷만: 서브넷 1건', count($noGw['subnets']), 1);
+
+// 값 없음/형식 모름 → 게이트웨이 null·서브넷 빈 배열. 추측해서 채우지 않는다.
+$emptyRoutes = vg_ingest_parse_host_routes('');
+$eq('빈 입력: 게이트웨이 없음', $emptyRoutes['gateway'], null);
+$eq('빈 입력: 서브넷 없음', $emptyRoutes['subnets'], []);
+$unknown = vg_ingest_parse_host_routes("command not found
+<html>nope</html>");
+$eq('알 수 없는 형식: 게이트웨이 없음', $unknown['gateway'], null);
+$eq('알 수 없는 형식: 서브넷 없음', $unknown['subnets'], []);
+
+// 같은 CIDR 이 두 번 나와도 서브넷 행은 하나.
+$dupRoute = vg_ingest_parse_host_routes(
+    "10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.5\n"
+    . "10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.5"
+);
+$eq('중복 CIDR 은 1건', count($dupRoute['subnets']), 1);
+
 // ── content_hash: 의존성 그래프가 바뀌면 해시도 바뀌어야 한다 ───────────────
 //   안 넣으면 그래프만 바뀐 재전송이 "변경 없음"으로 스킵돼 tb_package_dependency 가
 //   영구히 비게 된다(PR#399 리뷰 지적 — 이번 재작업의 핵심 반영사항 중 하나).

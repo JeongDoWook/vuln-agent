@@ -22,7 +22,7 @@ require_once __DIR__ . '/assetgrade_history.php';   // 최신 제안 + append-on
 // 수집 스트림별 저장(순수 이동 — SQL·실행 순서 불변). 서로를 부르지 않으므로 require 순서에
 //   의존하지 않는다. 트랜잭션·분기·순서는 전부 아래 vg_ingest_store 가 갖는다.
 require_once __DIR__ . '/ingest/store/host.php';        // 호스트 upsert · 직전 스냅샷 조회
-require_once __DIR__ . '/ingest/store/network.php';     // 호스트 IPv4 (자산 탐색 대조의 좌변)
+require_once __DIR__ . '/ingest/store/network.php';     // 호스트 IPv4·라우팅 (자산 탐색·세그먼트 맵)
 require_once __DIR__ . '/ingest/store/scan.php';        // 스냅샷(tb_scan) · 실행 기록(scan_run·stage)
 require_once __DIR__ . '/ingest/store/packages.php';    // 설치/언어 패키지 · 의존 그래프
 require_once __DIR__ . '/ingest/store/containers.php';  // 컨테이너 목록 · 내부 패키지·프로세스·노출
@@ -100,6 +100,8 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     // 호스트 IPv4 — 스냅샷 내용(content_hash)에 안 들어간다. 패키지가 그대로여도 IP 는 바뀌므로
     //   무결성과 같이 두 분기 밖에서 항상 갱신한다.
     $addrRows = $parsed['addr_rows'] ?? [];
+    // 라우팅(게이트웨이·직결 서브넷)도 같은 이유로 스냅샷 재사용 여부와 무관하게 항상 갱신한다.
+    $parsedRoutes = $parsed['parsed_routes'] ?? ['gateway' => null, 'subnets' => []];
 
     $contentHash = (string) $parsed['content_hash'];
     $collectionStages = $parsed['collection_stages'] ?? [];
@@ -114,6 +116,9 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     // 호스트 IPv4 누적 — host_id 만 있으면 되고, 스냅샷 재사용 여부와 무관하게 항상 갱신한다.
     //   (에이전트가 net.interfaces 를 못 보냈으면 빈 배열이라 무동작 — 기존 행은 그대로 남는다.)
     vg_ingest_store_host_addresses($pdo, $hostId, $addrRows);
+
+    // 라우팅 누적 — 같은 이유(에이전트가 net.routes 를 못 보냈으면 무동작).
+    vg_ingest_store_host_routes($pdo, $hostId, $parsedRoutes);
 
     // 직전 스캔과 내용이 같으면 새 스냅샷을 만들지 않는다 — 수집시각만 갱신한다.
     //   호스트 생존 신호는 tb_host.last_seen 이 위에서 이미 갱신했으므로 잃는 정보가 없다.
