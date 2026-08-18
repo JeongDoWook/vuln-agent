@@ -186,25 +186,21 @@ vg_header('CCE', 'cce_rules');
                   $cnt  = (int) $r['result_cnt'];
                   $fail = (int) $r['fail_cnt'];
                   $tone = $fail > 0 ? 'crit' : ((int) $r['na_cnt'] > 0 ? 'med' : 'ok');
-                  $why  = 'PASS ' . number_format((int) $r['pass_cnt'])
-                        . ' · 판정 불가 ' . number_format((int) $r['na_cnt']);
+                  // 0 인 항목은 적지 않는다 — 신호는 FAIL 하나뿐인데 모든 행이 'PASS 0 · 판정 불가 0'
+                  //   으로 채워져 정작 읽어야 할 값을 덮었다(값이 없는 걸 0 으로 쓰지 않는다).
+                  $parts = [];
+                  if ((int) $r['pass_cnt'] > 0) { $parts[] = 'PASS ' . number_format((int) $r['pass_cnt']); }
+                  if ((int) $r['na_cnt'] > 0)   { $parts[] = '판정 불가 ' . number_format((int) $r['na_cnt']); }
+                  $why  = implode(' · ', $parts);
                   // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. 0% 라 색은 안 보인다.
                   return vg_badge('FAIL ' . number_format($fail), $tone)
-                       . '<br><span class="why">' . vg_h($why) . '</span>'
+                       . ($why === '' ? '' : '<br><span class="why">' . vg_h($why) . '</span>')
                        . vg_meter($tone === 'ok' ? 'low' : $tone, $fail / $cnt * 100,
                                   'FAIL ' . number_format($fail) . ' / 점검 ' . number_format($cnt) . '건');
               },
           ],
       ]
   );
-  // '현재 판정' 칸의 색이 무슨 뜻인지 한 줄로. 색 정의는 위 셀 콜백과 같은 규칙이다
-  //   (FAIL 있으면 crit · 없고 판정 불가만 있으면 med · 전건 PASS 면 ok · 결과 자체가 없으면 muted).
-  vg_legend([
-      ['label' => 'FAIL 있음',    'tone' => 'crit'],
-      ['label' => '판정 불가(NA)', 'tone' => 'med'],
-      ['label' => '전건 PASS',    'tone' => 'ok'],
-      ['label' => '점검 결과 없음', 'tone' => 'muted'],
-  ], ['inline' => true, 'caption' => '현재 판정']);
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 <?php endif; ?>

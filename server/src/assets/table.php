@@ -2,14 +2,17 @@
 declare(strict_types=1);
 
 /**
- * assets/table.php — 자산 목록 표(머리글 폭 배분·범례·셀 렌더)만 갖는다.
- *   조회는 assets/queries.php, 색 어휘(톤)는 화면(assets.php)이 정해 넘긴다 —
- *   KPI 카드와 표 범례가 같은 값을 두 색으로 부르지 않게 하기 위해서다.
+ * assets/table.php — 자산 목록 표(머리글 폭 배분·셀 렌더)만 갖는다.
+ *   조회는 assets/queries.php, 색 어휘(톤)는 화면(assets.php)이 정해 넘긴다.
+ *   표 아래 색 범례는 걷었다 — '정상·지연·오프라인'·'C · 기밀' 처럼 뱃지가 이미 글자를 달고 있어
+ *   색→이름 대응을 따로 설명할 자리가 아니었다.
  */
 
 /**
  * @param bool $canConfirm 관리자면 체크박스 열이 붙는다(인가 자체는 POST 처리부가 정한다).
  * @param bool $filtered   검색·필터가 걸린 상태인가(빈 목록 안내 문구가 갈린다).
+ * @param array $stateTone,$gradeTone 색 어휘 — 지금 이 표는 쓰지 않는다(범례를 걷었다).
+ *        같은 값을 KPI 카드·등급 모달이 계속 쓰므로 호출부 계약은 그대로 둔다.
  */
 function vg_assets_render_table(
     array $rows,
@@ -54,26 +57,17 @@ function vg_assets_render_table(
         ['label' => '상태', 'key' => 'state', 'width' => '5.5rem', 'title' => $stateHelp],
         // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
         //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
-        //   C/S/O 기호만 떠 있으면 뜻을 알 수 없어 열 이름에 한 줄 범례를 단다(어휘는 assetgrade.php 소유).
-        ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem'],
+        //   확정된 자산의 뱃지는 'C · 기밀' 로 스스로 말하지만, 확정 전 뱃지는 'C 제안' 이라
+        //   문자만 남는다 — 그 뜻을 표 아래 범례가 아니라 **열 머리글의 툴팁**으로 붙인다
+        //   (어휘는 VG_ASSET_GRADES 가 소유한다. 여기서 분류표를 다시 적지 않는다).
+        ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem',
+         'title' => implode(' / ', VG_ASSET_GRADES)],
         ['label' => '심각도', 'key' => 'sev', 'width' => '22%'],
         ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '14%', 'nowrap' => true],
     ]);
     // 액션 열만 % 가 아니라 rem 이다. 삭제 버튼은 폭이 늘 같은 고정 크기 조작부라 비율로 줄 이유가 없고,
     //   비율로 주면 표가 좁아질 때 버튼보다 좁아진다 — 실제로 900px 에서 9%(=51px)가 68px 버튼을
     //   못 담아 카드를 16.7px 밀어냈다(가로 스크롤). 5rem 이면 어느 폭에서도 버튼이 들어간다.
-
-    /* 표의 '상태'·'등급' 열은 색으로 등급을 말하는데 그 색의 뜻이 화면 어디에도 없었다.
-     *   어휘는 VG_ASSET_STATES·VG_ASSET_GRADES 가 소유한다 — 여기서 분류표를 다시 적지 않는다.
-     *   톤은 KPI 카드($stateTone)·등급 뱃지와 같은 값을 쓴다(같은 값을 두 색으로 부르지 않는다). */
-    vg_legend(array_map(
-        fn(string $k): array => ['label' => VG_ASSET_STATES[$k], 'tone' => $stateTone[$k]],
-        array_keys(VG_ASSET_STATES)
-    ), ['inline' => true, 'caption' => '수집 상태']);
-    vg_legend(array_map(
-        fn(string $g): array => ['label' => VG_ASSET_GRADES[$g], 'tone' => $gradeTone[$g]],
-        array_keys(VG_ASSET_GRADES)
-    ), ['inline' => true, 'caption' => '보안등급']);
 
     vg_table(
         $headers,

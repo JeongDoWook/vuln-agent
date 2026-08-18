@@ -39,11 +39,6 @@ function vg_container_render_overview(array $ctx): void {
 
     vg_hero(vg_h((string) $container['cid']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'CONTAINER');
 
-    /* 심각도 색의 뜻 — 아래 KPI 카드와 취약점 표가 모두 이 색으로 서열을 말한다. */
-    vg_legend(array_map(
-        fn(string $s): array => ['label' => $s, 'tone' => vg_sev_tone($s), 'n' => (int) $counts[$s]],
-        ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
-    ), ['inline' => true, 'caption' => '심각도']);
     ?>
 
 <?php /* 이미지 다이제스트·SBOM 해시는 길어서 히어로 한 줄에 못 넣는다 — "이 이미지가 정확히

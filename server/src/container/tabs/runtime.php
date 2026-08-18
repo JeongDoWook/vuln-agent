@@ -6,11 +6,6 @@ declare(strict_types=1);
 ?>
   <div class="card">
     <strong>런타임 노출</strong>
-    <?php /* 범위 뱃지의 색 뜻 — 어휘는 vg_scope_label(), 톤은 $scopeTone(호스트 상세와 같은 표)이다. */ ?>
-    <?php vg_legend(array_map(
-        fn(string $sc): array => ['label' => vg_scope_label($sc), 'tone' => $scopeTone[$sc]],
-        array_keys($scopeTone)
-    ), ['inline' => true, 'caption' => '노출 범위']); ?>
     <div class="card__body">
     <?php
     vg_table(

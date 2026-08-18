@@ -241,12 +241,6 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
 
   <?php
   $hasFilter = $q !== '' || $manager !== '' || $risk !== '';
-  /* 라이선스 위험도 색의 뜻. 어휘·톤은 vg_license_risk_label()/vg_license_risk_tone() 이 소유한다. */
-  vg_legend(array_map(
-      fn(string $rk): array => ['label' => vg_license_risk_label($rk), 'tone' => vg_license_risk_tone($rk),
-                                'n' => (int) $riskCounts[$rk]],
-      ['copyleft', 'permissive', 'unknown']
-  ), ['inline' => true, 'caption' => '라이선스 위험도']);
   /* '수집 시각' 열은 상세로 보냈다 — 이 값은 그 행이 속한 호스트의 최신 스캔 시각이라 행마다
    *   다르지 않고, 호스트 상세(host.php)의 식별부가 '최신 수집' 으로 이미 보여준다.
    *   '위치' 는 남긴다: 같은 패키지가 자산마다 한 행씩 서므로 이 열이 곧 그 행의 정체다. */

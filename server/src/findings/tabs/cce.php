@@ -68,14 +68,6 @@
       ];
   }
 
-  /* 결과 세 갈래(PASS/FAIL/NA)의 색 뜻. FAIL 은 등급색을 그대로 쓰므로 대표로 crit 을 세운다 —
-   *   실제 톤 매핑은 아래 'result' 셀이 갖는다(여기서 분류표를 새로 만들지 않는다). */
-  vg_legend([
-      ['label' => 'FAIL · 위반', 'tone' => 'crit', 'n' => (int) $cceResultCounts['FAIL']],
-      ['label' => 'PASS · 양호', 'tone' => 'low',  'n' => (int) $cceResultCounts['PASS']],
-      ['label' => 'NA · 판정 불가', 'tone' => 'muted', 'n' => (int) $cceResultCounts['NA']],
-  ], ['inline' => true, 'caption' => '점검 결과']);
-
   // 컬럼 순서는 CVE 탭과 같은 뼈대다 — 자산이 첫 칸, 그 다음이 판정(결과·등급), 마지막이 근거.
   //   노출 축(runtime_status)은 여기 없다: 설정 점검에는 리스닝·외부노출 개념이 없어서
   //   억지로 만들면 없는 걸 있는 척하는 게 된다. 빈 칸을 만들지 않고 컬럼 자체를 두지 않는다.
