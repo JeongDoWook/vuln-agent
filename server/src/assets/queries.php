@@ -11,6 +11,8 @@ declare(strict_types=1);
  *   그대로 내보내 옛 동작을 보존한다.
  */
 
+require_once __DIR__ . '/../netiface.php';   // vg_iface_is_virtual() — 대표 IP 정렬용
+
 /**
  * 목록 화면이 쓰는 값을 모두 읽는다. 예외는 삼키지 않고 호출부(assets.php)로 올린다 —
  *   사용자에게 보일 문구와 error_log 태그는 화면이 정한다.
@@ -173,14 +175,10 @@ function vg_assets_load(
     }
 }
 
-/* 대표 IP 를 고를 때 뒤로 미는 인터페이스 접두사. 컨테이너·가상 브리지·오버레이가 만든
- *   주소는 **어느 호스트에나 비슷하게 있고 밖에서 그 주소로 그 자산에 닿지도 않는다** —
- *   실측(deskmini-x300)에서 IP 6개 중 5개가 이 부류였다(docker0·브리지 3개·calico).
- *   목록에 하나만 세울 자리라 물리 NIC(enp1s0 등)를 앞에 둔다.
- *   이름으로 거른다(대역이 아니라): 172.17/16 은 도커 기본값이지만 사내에서 실제로 쓰는
- *   기관도 있어 대역으로 자르면 진짜 주소를 숨기게 된다. */
-const VG_ASSET_VIRTUAL_IFACES = ['docker', 'br-', 'virbr', 'veth', 'cali', 'cni', 'flannel',
-                                 'vxlan', 'kube', 'tun', 'tap', 'lo'];
+/* 대표 IP 를 고를 때 뒤로 미는 인터페이스는 **가상 부류**다. 판단 규칙(접두사 목록과
+ *   그렇게 고른 이유)은 src/netiface.php 가 갖는다 — 라우팅 파싱(ingest/network.php)이
+ *   같은 판단을 하므로 규칙이 두 벌이면 한쪽만 고쳐져 어긋난다.
+ *   목록에 하나만 세울 자리라 물리 NIC(enp1s0 등)를 앞에 둔다. */
 
 /**
  * 이 페이지 호스트들의 IP 를 한 번에 읽어 host_id 로 묶는다. 각 호스트의 목록은 **대표 IP 가
@@ -212,7 +210,7 @@ function vg_assets_load_addresses(PDO $pdo, array $hostIds): array
 /**
  * 대표 IP 가 맨 앞에 오도록 정렬한다. 기준은 두 단계뿐이다(단순하게 — 여기서 대역 정책을
  *   만들지 않는다):
- *     1) 물리 인터페이스(VG_ASSET_VIRTUAL_IFACES 로 시작하지 않는 것)가 앞.
+ *     1) 물리 인터페이스(vg_iface_is_virtual() 이 false 인 것)가 앞.
  *     2) 같은 등급이면 IP 문자열 오름차순 — **정렬이 결정적이어야** 새로고침마다 대표가
  *        바뀌지 않는다(MySQL 은 ORDER BY 없이 순서를 보장하지 않는다).
  *   iface 가 NULL 인 옛 백필 행은 물리로 본다 — 가상이라는 근거가 없는데 뒤로 미는 것은
@@ -221,14 +219,7 @@ function vg_assets_load_addresses(PDO $pdo, array $hostIds): array
 function vg_assets_sort_addresses(array $addrs): array
 {
     usort($addrs, static function (array $a, array $b): int {
-        $rank = static function (array $x): int {
-            $iface = strtolower((string) ($x['iface'] ?? ''));
-            if ($iface === '') { return 0; }
-            foreach (VG_ASSET_VIRTUAL_IFACES as $prefix) {
-                if (strncmp($iface, $prefix, strlen($prefix)) === 0) { return 1; }
-            }
-            return 0;
-        };
+        $rank = static fn(array $x): int => vg_iface_is_virtual($x['iface'] ?? null) ? 1 : 0;
         return [$rank($a), $a['ip']] <=> [$rank($b), $b['ip']];
     });
     return $addrs;

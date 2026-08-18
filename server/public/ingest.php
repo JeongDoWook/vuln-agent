@@ -118,6 +118,9 @@ $exposureProvided = array_key_exists('exposure', $data)
 $net      = $data['net'] ?? [];
 $addrRows = vg_ingest_parse_host_addresses((string) ($net['interfaces'] ?? ''));
 
+// ── 라우팅 테이블 파싱 (ip route / route -n 원문) — 세그먼트 맵(망 구조 화면)의 원천 ──
+$parsedRoutes = vg_ingest_parse_host_routes((string) ($net['routes'] ?? ''));
+
 // ── 실행 프로세스 파싱 (pipe, 첫 줄 헤더) — 실행중/사용중 구분용 ──
 $rt = $data['runtime'] ?? [];
 $procRows = !empty($rt['processes']) ? vg_ingest_parse_processes((string) $rt['processes']) : [];
@@ -270,6 +273,7 @@ try {
             'exp_rows'       => $expRows,
             'exp_count'      => $expCount,
             'addr_rows'      => $addrRows,
+            'parsed_routes'  => $parsedRoutes,
             'proc_rows'      => $procRows,
             'proc_count'     => $procCount,
             'clog_rows'      => $clogRows,

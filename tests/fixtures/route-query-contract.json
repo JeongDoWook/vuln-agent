@@ -44,6 +44,7 @@
     "/permissions.php": {"methods":["GET","POST"],"auth":"menu:permissions","query_keys":[],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},
     "/profile.php": {"methods":["GET","POST"],"auth":"login","query_keys":[],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},
     "/sbom.php": {"methods":["GET","HEAD"],"auth":"menu:assets","query_keys":["cid","format","host","scan_id"],"response":"json_download","in_repo_callers":["server/public/host.php","server/public/container.php"],"external_consumers":["sbom_client","browser_bookmark"]},
+    "/segment-map.php": {"methods":["GET"],"auth":"menu:assets","query_keys":[],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},
     "/settings.php": {"methods":["GET","POST"],"auth":"menu:settings","query_keys":[],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},
     "/styleguide.php": {"methods":["GET"],"auth":"menu:dashboard","query_keys":[],"response":"html","in_repo_callers":[],"external_consumers":["unknown"]},
     "/user.php": {"methods":["GET","POST"],"auth":"menu:users","query_keys":["id"],"response":"html","redirects":[{"when_post":"delete","target":"/users.php","status":302,"preserve_query":[]}],"in_repo_callers":["server/public/users.php"],"external_consumers":["browser_bookmark"]},

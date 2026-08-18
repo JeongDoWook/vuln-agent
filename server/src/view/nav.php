@@ -62,6 +62,7 @@ function vg_activity_type_labels(): array {
         'view_nofix_packages'  => '제거·대체 검토 권고 조회',
         'view_changes'         => '변화 추적 조회',
         'view_asset_packages'  => '전체 설치 패키지 조회',
+        'view_segment_map'     => '세그먼트 맵 조회',
         'view_control_mapping' => '통제 기준 매핑 조회',
         'view_control'         => '통제 상세 조회',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김.
@@ -112,7 +113,7 @@ function vg_nav_sections(): array {
             // 전체 설치 패키지는 자산 목록의 서브탭으로만 들어온다 — 사이드바엔 대표 링크
             // 하나만 두되, 그 탭에 있어도 같은 항목을 활성화해 현재 위치를 잃지 않게 한다.
             ['perm' => 'assets',     'href' => '/assets.php',     'label' => '자산',      'key' => 'assets',
-             'active_keys' => ['assets', 'asset_packages', 'discovery']],
+             'active_keys' => ['assets', 'asset_packages', 'discovery', 'segment_map']],
             ['perm' => 'advisories', 'href' => '/advisories.php', 'label' => '보안 공지', 'key' => 'advisories'],
             // 통제 기준 매핑은 vg_compliance_subtabs() 의 서브탭으로만 들어온다(사이드바엔 없다).
             ['perm' => 'compliance', 'href' => '/compliance.php', 'label' => '컴플라이언스',
@@ -195,15 +196,17 @@ function vg_asset_subtab_labels(): array {
         'assets'    => '자산 목록',
         'packages'  => '전체 설치 패키지',
         'discovery' => '자산 탐색',
+        'segment_map' => '세그먼트 맵',
     ];
 }
 
-// 위 정의를 vg_subtabs() 로 그린다. $active 는 현재 화면의 탭 키(assets|packages|discovery).
+// 위 정의를 vg_subtabs() 로 그린다. $active 는 현재 화면의 탭 키(assets|packages|discovery|segment_map).
 function vg_asset_subtabs(string $active): void {
     $hrefs = [
-        'assets'    => '/assets.php',
-        'packages'  => '/asset-packages.php',
-        'discovery' => '/discovery.php',
+        'assets'      => '/assets.php',
+        'packages'    => '/asset-packages.php',
+        'discovery'   => '/discovery.php',
+        'segment_map' => '/segment-map.php',
     ];
     $tabs = [];
     foreach (vg_asset_subtab_labels() as $key => $label) {
