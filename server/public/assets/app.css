@@ -2536,3 +2536,12 @@ form.card .btn--primary:active { transform: translateY(0); }
 .grade-review > summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 650; }
 .grade-review > summary:hover { color: var(--accent-2); }
 .grade-review__body { display: grid; gap: 1rem; margin-top: .9rem; }
+
+/* --- 모달 2열 폼의 칸 정렬(.form-grid 안의 .field) --------------------------
+ * 두 칸 중 하나에만 도움말(.why)이 붙으면 그 칸만 세로로 길어지는 게 아니라, **반대쪽 칸의
+ * 입력이 그만큼 늘어난다** — .field 는 grid 인데 그리드 항목은 기본이 stretch 라, 남는 높이가
+ * 라벨·입력 행에 나뉘어 들어가기 때문이다(대역 등록 모달의 '라벨' 과 '포트' 가 그랬다).
+ * 행을 위로 붙여 두 칸이 같은 줄에서 시작하게 하고, 입력 높이는 인라인 컨트롤 공통 토큰으로
+ * 못박는다 — 새 값을 만들지 않고 --ctl-h 를 그대로 쓴다. 도움말은 아래로 밀려 정렬을 안 깬다. */
+.form-grid > .field { align-content: start; }
+.form-grid > .field > input { height: var(--ctl-h); }
