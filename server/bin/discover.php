@@ -81,8 +81,10 @@ function vg_discover_line(array $r): string {
         return sprintf("run %d [%s] 실패 — %s\n", $r['run_id'], $r['cidr'], (string) ($r['error'] ?? ''));
     }
     return sprintf(
-        "run %d [%s] 완료 — IP %d개 중 살아있음 %d · 시도 %d조합 · 열린포트 %d · 기존자산 매칭 %d · %.2fs\n",
+        "run %d [%s] 완료 — IP %d개 중 살아있음 %d · 시도 %d조합 · 열린포트 %d · 기존자산 매칭 %d"
+        . " · 호스트명 %d · 배너 %d · %.2fs\n",
         $r['run_id'], $r['cidr'], $r['ip_total'], $r['ip_alive'],
-        $r['port_checked'], $r['open_total'], $r['matched'], $r['elapsed']
+        $r['port_checked'], $r['open_total'], $r['matched'],
+        (int) ($r['hostnames'] ?? 0), (int) ($r['banners'] ?? 0), $r['elapsed']
     );
 }

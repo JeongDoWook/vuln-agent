@@ -273,7 +273,11 @@ try {
 
     // 목록 — 위 조건에 상태·IP 검색을 더한다.
     if ($state !== '') { $where .= ' AND da.state = ?'; $params[] = $state; }
-    if ($q !== '')     { $where .= ' AND da.ip LIKE ?'; $params[] = '%' . $q . '%'; }
+    if ($q !== '')     {
+        $where .= ' AND (da.ip LIKE ? OR da.hostname LIKE ?)';
+        $params[] = '%' . $q . '%';
+        $params[] = '%' . $q . '%';
+    }
 
     $cnt = $pdo->prepare("SELECT COUNT(*) FROM tb_discovered_asset da WHERE $where");
     $cnt->execute($params);
@@ -283,7 +287,7 @@ try {
     /* 호스트·대역은 각각 한 번의 LEFT JOIN 으로 붙인다(행마다 다시 묻지 않는다 — N+1 금지).
      *   LIMIT/OFFSET 은 화이트리스트로 검증된 정수라 문자열로 넣어도 주입면이 없다. */
     $lst = $pdo->prepare(
-        "SELECT da.discovered_asset_id, da.ip, da.state, da.note, da.first_seen, da.last_seen,
+        "SELECT da.discovered_asset_id, da.ip, da.hostname, da.state, da.note, da.first_seen, da.last_seen,
                 da.host_id, da.last_run_id, h.fqdn, t.cidr
            FROM tb_discovered_asset da
            JOIN tb_discovery_target t ON t.discovery_target_id = da.discovery_target_id
@@ -302,7 +306,7 @@ try {
     if ($ids) {
         $in = implode(',', array_fill(0, count($ids), '?'));
         $ps = $pdo->prepare(
-            "SELECT dp.discovered_asset_id, dp.port, dp.proto
+            "SELECT dp.discovered_asset_id, dp.port, dp.proto, dp.service_hint, dp.banner
                FROM tb_discovered_port dp
                JOIN tb_discovered_asset da ON da.discovered_asset_id = dp.discovered_asset_id
                                           AND da.last_run_id = dp.discovery_run_id
@@ -311,7 +315,12 @@ try {
         );
         $ps->execute($ids);
         foreach ($ps->fetchAll() as $p) {
-            $portsByAsset[(int) $p['discovered_asset_id']][] = (int) $p['port'] . '/' . (string) $p['proto'];
+            $portsByAsset[(int) $p['discovered_asset_id']][] = [
+                'port'   => (int) $p['port'],
+                'proto'  => (string) $p['proto'],
+                'hint'   => $p['service_hint'] !== null ? (string) $p['service_hint'] : '',
+                'banner' => $p['banner'] !== null ? (string) $p['banner'] : '',
+            ];
         }
     }
 
@@ -450,7 +459,7 @@ vg_header('자산 탐색', 'discovery');
        'selected' => $state, 'options' => VG_DISCOVERY_STATES],
       ...($targetOptions ? [['type' => 'select', 'name' => 'target', 'empty_label' => '전체 대역',
        'selected' => $targetId > 0 ? (string) $targetId : '', 'options' => $targetOptions]] : []),
-      ['type' => 'search', 'name' => 'q', 'placeholder' => 'IP 검색', 'value' => $q],
+      ['type' => 'search', 'name' => 'q', 'placeholder' => 'IP · 호스트명 검색', 'value' => $q],
   ]); ?>
 
   <?php
@@ -458,26 +467,48 @@ vg_header('자산 탐색', 'discovery');
   $headers = [
       ['label' => 'IP', 'width' => '10rem'],
       ['label' => '상태', 'width' => '6rem'],
-      ['label' => '열린 포트'],
+      ['label' => '열린 포트 · 서비스(추측)'],
       ['label' => '최초 발견', 'width' => '9rem', 'nowrap' => true],
       ['label' => '최근 발견', 'width' => '9rem', 'nowrap' => true],
       ['label' => '연결된 자산', 'width' => '14rem'],
   ];
   $cells = [
-      0 => fn($r) => '<code>' . vg_h((string) $r['ip']) . '</code>'
-          . '<div class="why">' . vg_h((string) $r['cidr']) . '</div>',
+      /* IP 아래 두 번째 줄에 역DNS 호스트명을 붙인다 — **열을 늘리지 않는다**(화면 정리 국면).
+       *   호스트명이 없으면 지금까지처럼 대역만 보인다(빈 자리표시를 만들지 않는다). */
+      0 => function ($r): string {
+          $html = '<code>' . vg_h((string) $r['ip']) . '</code>';
+          $hostname = trim((string) ($r['hostname'] ?? ''));
+          if ($hostname !== '') {
+              $html .= '<div class="why">' . vg_trunc($hostname, 28) . '</div>';
+          }
+          return $html . '<div class="why">' . vg_h((string) $r['cidr']) . '</div>';
+      },
       1 => fn($r) => vg_badge(
           VG_DISCOVERY_STATES[(string) $r['state']] ?? (string) $r['state'],
           VG_DISCOVERY_TONES[(string) $r['state']] ?? 'muted'
       ),
+      /* 포트 옆의 서비스는 **포트 번호 관례에서 유추한 추측**이다(22 가 항상 SSH 는 아니다).
+       *   그래서 '?' 를 붙이고 열 제목에도 그 사실을 적는다 — 단정형으로 쓰면 사람이 확인을 건너뛴다.
+       *   배너(HTTP Server 헤더·TLS 인증서 CN)는 열로 늘리지 않고 있을 때만 한 줄 덧붙인다. */
       2 => function ($r) use ($portsByAsset): string {
           $ports = $portsByAsset[(int) $r['discovered_asset_id']] ?? [];
           if (!$ports) { return '<span class="why">열린 포트 없음</span>'; }
+          $label = static fn(array $p): string => $p['port'] . '/' . $p['proto']
+              . ($p['hint'] !== '' ? ' ' . mb_strimwidth($p['hint'], 0, 20, '…') . '?' : '');
           $shown = array_slice($ports, 0, VG_DISCOVERY_PORTS_SHOWN);
-          $html  = '<code>' . vg_h(implode(' ', $shown)) . '</code>';
+          $html  = '<code>' . vg_h(implode(' · ', array_map($label, $shown))) . '</code>';
           $rest  = count($ports) - count($shown);
           if ($rest > 0) {
-              $html .= ' <span class="why" title="' . vg_h(implode(' ', $ports)) . '">+' . $rest . '</span>';
+              $html .= ' <span class="why" title="' . vg_h(implode(' · ', array_map($label, $ports)))
+                  . '">+' . $rest . '</span>';
+          }
+          $banners = [];
+          foreach ($ports as $p) {
+              if ($p['banner'] !== '') { $banners[] = $p['port'] . ' ' . $p['banner']; }
+          }
+          if ($banners) {
+              $full = implode(' · ', $banners);
+              $html .= '<div class="why">배너 ' . vg_trunc($full, 44) . '</div>';
           }
           return $html;
       },
