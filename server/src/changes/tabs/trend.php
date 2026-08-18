@@ -11,13 +11,13 @@
 ?>
     <?php if ($trendNeedsHost): ?>
       <?php vg_empty([
-          'icon'  => '📌',
+          'icon'  => 'host',
           'title' => '호스트를 선택하면 추이를 볼 수 있습니다.',
           'hint'  => '전체 자산 합산은 데이터가 많으면 무거워질 수 있어, 위 필터에서 호스트를 먼저 고르세요.',
       ]); ?>
     <?php elseif (!$trendRounds): ?>
       <?php vg_empty([
-          'icon'  => '📉',
+          'icon'  => 'chart',
           'title' => '아직 비교할 수집 이력이 없습니다.',
           'hint'  => '이 호스트의 스캔 이력이 쌓이면 회차별 추이가 표시됩니다.',
       ]); ?>
@@ -94,7 +94,7 @@
           $trendResolvedPaged,
           [
               'empty' => [
-                  'icon'  => '📉',
+                  'icon'  => 'check',
                   'title' => '이 구간엔 해결된 항목이 없습니다.',
                   'hint'  => '구간(호스트·최근 N회차)을 넓혀 보세요.',
               ],

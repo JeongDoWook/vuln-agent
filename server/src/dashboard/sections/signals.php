@@ -29,7 +29,7 @@ function vg_dash_render_signals(array $urgent, int $urgentTotal): void {
         [
             'card'  => false,
             'empty' => [
-                'icon'  => '✅',
+                'icon'  => 'check',
                 'title' => '급한 항목이 없습니다.',
                 'hint'  => '악용이 확인됐거나 외부에 노출된 취약점이 없습니다.',
             ],

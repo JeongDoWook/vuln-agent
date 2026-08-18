@@ -29,7 +29,7 @@ function vg_dash_render_hosts(array $rows, array $sevByScan, int $total, int $pe
       [
           'card'  => false,
           'empty' => [
-              'icon'  => '🖥️',
+              'icon'  => 'host',
               'title' => '아직 수집된 스캔이 없습니다.',
               'hint'  => '에이전트를 --send 로 실행하면 여기에 나타납니다.',
           ],

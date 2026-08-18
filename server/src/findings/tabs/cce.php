@@ -41,27 +41,27 @@
   $filterCta = ['href' => vg_qs(['q' => '', 'sev' => '', 'res' => '', 'page' => 1]), 'label' => '필터 초기화'];
   if (!$hostOptions) {
       $emptySpec = [
-          'icon'  => '📭',
+          'icon'  => 'host',
           'title' => '아직 수집된 스캔이 없습니다.',
           'hint'  => '에이전트가 자산을 최소 한 번은 수집해야 이 화면에 판정이 뜹니다.',
       ];
   } elseif ($cceResultCounts['FAIL'] + $cceResultCounts['PASS'] + $cceResultCounts['NA'] === 0) {
       // 점검 자체가 없는 것과 "위반이 없는 것" 은 다르다 — 여기서 "안전" 이라고 말하지 않는다.
       $emptySpec = [
-          'icon'  => '📭',
+          'icon'  => 'shield',
           'title' => '아직 보안설정 점검 결과가 없습니다.',
           'hint'  => '에이전트가 설정값을 수집하고 서버가 판정해야 이 목록이 채워집니다.',
       ];
   } elseif ($res === 'FAIL' && !$hasAnyFilter) {
       $emptySpec = [
-          'icon'  => '🔍',
+          'icon'  => 'search',
           'title' => '위반(FAIL) 0건입니다 — 점검된 항목 기준입니다.',
           'hint'  => '판정 불가(NA) ' . number_format($cceResultCounts['NA']) . '건은 수집이 안 된 항목입니다.',
           'cta'   => ['href' => vg_qs(['res' => 'ALL', 'page' => 1]), 'label' => '전체 결과 보기'],
       ];
   } else {
       $emptySpec = [
-          'icon'  => '🔍',
+          'icon'  => 'search',
           'title' => '조건에 맞는 점검 결과가 없습니다.',
           'hint'  => '등급·결과 필터나 검색어를 넓혀 보세요.',
           'cta'   => $filterCta,

@@ -33,13 +33,13 @@
   $hasAnyFilter = $q !== '' || $scope !== '';
   if (!$hostOptions) {
       $emptySpec = [
-          'icon'  => '📭',
+          'icon'  => 'host',
           'title' => '아직 수집된 스캔이 없습니다.',
           'hint'  => '에이전트가 자산을 최소 한 번은 수집해야 이 화면에 노출이 뜹니다.',
       ];
   } elseif ($hasAnyFilter) {
       $emptySpec = [
-          'icon'  => '🔍',
+          'icon'  => 'search',
           'title' => '조건에 맞는 리스닝 소켓이 없습니다.',
           'hint'  => '범위 필터나 검색어를 넓혀 보세요.',
           'cta'   => ['href' => vg_qs(['q' => '', 'scope' => '', 'page' => 1]), 'label' => '필터 초기화'],
@@ -47,7 +47,7 @@
   } else {
       // 0건을 "안전" 으로 말하지 않는다 — 구버전 에이전트·수집 실패면 열린 포트가 있어도 0건이다.
       $emptySpec = [
-          'icon'  => '📭',
+          'icon'  => 'port',
           'title' => '수집된 네트워크 노출이 없습니다.',
           'hint'  => '에이전트가 리스닝 소켓을 수집해야 이 목록이 채워집니다 — 0건이 "열린 포트 없음"을 보장하지 않습니다.',
       ];
