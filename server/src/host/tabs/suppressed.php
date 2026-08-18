@@ -35,16 +35,10 @@ declare(strict_types=1);
               'card' => false,
               'empty' => $hasFilter
                   ? [
-                      'icon'  => '🔍',
                       'title' => '검색 결과가 없습니다.',
-                      'hint'  => '검색어를 확인하거나 초기화해 보세요.',
                       'cta'   => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
                   ]
-                  : [
-                      'icon'  => '✅',
-                      'title' => '억제된 취약점이 없습니다.',
-                      'hint'  => '백포트로 억제 처리된 항목이 없습니다.',
-                  ],
+                  : '억제된 취약점이 없습니다.',
               'row_class' => fn($r) => vg_sev_row((string) $r['base_severity']),
               'cell' => [
                   'base_severity' => fn($r) => vg_sev_badge((string) $r['base_severity'])
