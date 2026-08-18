@@ -218,10 +218,12 @@ function vg_asset_subtabs(string $active): void {
  *   두 화면이 각자 탭 줄을 그리면 개수·라벨이 어긋난다(vg_findings_subtab_labels() 의 전례).
  */
 function vg_compliance_subtab_labels(): array {
+    // 국내 심사에서 부르는 이름(U-코드)이 앞이다. '통제 기준 매핑' 은 같은 결과를 ISMS-P·
+    //   N2SF 로 바꿔 끼워 보는 자리라 뒤에 둔다(U-코드는 저기서 kisa-u.php 로 302 한다).
     return [
         'mapping' => '컴플라이언스 매핑',
-        'control' => '통제 기준 매핑',
         'kisa_u'  => '기반시설 U-코드',
+        'control' => '통제 기준 매핑',
     ];
 }
 

@@ -36,6 +36,16 @@ if ($legacyControl !== '') {
     exit;
 }
 
+// U-코드는 이 화면이 답하지 않는다. 여기는 **매핑된 통제**만 나열해서 위반이 있는 21개만
+//   보였고, kisa-u.php 는 가이드 전체 72개를 분모로 놓아 미점검 51개와 커버리지까지 답한다
+//   — 뒤가 앞을 포함한다. 같은 질문에 두 화면이 따로 답하는 상태를 남기지 않으려고 U-코드는
+//   kisa-u.php 하나로 모으고, 이미 공유·북마크된 이 주소는 302 로 그리로 보낸다(칩만 지우면
+//   "눌렀는데 아무 일도 안 일어난다"가 된다 — 옛 ?control= 을 이관할 때와 같은 이유).
+if ($fw === 'KISA_U') {
+    header('Location: /kisa-u.php', true, 302);
+    exit;
+}
+
 $rows = [];            // 매핑된 통제 전체(점검 결과 없는 통제 포함)
 $total = 0;            // 페이지네이션 대상 총건수
 $mappedRules = 0;      // 이 기준에 매핑된 CCE 룰 수
@@ -142,11 +152,15 @@ vg_header('통제 기준 매핑', 'control_mapping');
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <div class="tabs">
+    <?php // U-코드 칩은 없다 — 위 서브탭 '기반시설 U-코드' 가 그 기준의 정본 화면이다. ?>
     <?php foreach ($frameworks as $code => $label): ?>
+      <?php if ($code === 'KISA_U') { continue; } ?>
       <a class="pill<?= $code === $fw ? ' pill--on' : '' ?>"
          href="/control_mapping.php?fw=<?= urlencode($code) ?>"><?= vg_h($label) ?></a>
     <?php endforeach; ?>
   </div>
+  <p class="why">기반시설 U-코드는 위 <a href="/kisa-u.php">기반시설 U-코드</a> 탭이 정본입니다.
+    거기는 가이드 전체 항목을 분모로 놓아 미점검 항목까지 보입니다.</p>
 
   <?php
   // 결론을 앞에 세운다(compliance.php 와 같은 원칙) — 예전엔 "매핑된 점검 항목 / 점검 결과"
