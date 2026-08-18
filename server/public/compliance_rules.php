@@ -30,7 +30,7 @@ function vg_ssg_refs_line(string $refsJson): string {
             $parts[] = 'STIG ' . $v;
         }
     }
-    return $parts ? vg_h(implode(' · ', $parts)) : '<span class="why">–</span>';
+    return $parts ? '<span class="why">' . vg_h(implode(' · ', $parts)) . '</span>' : '<span class="why">–</span>';
 }
 
 $err = null; $rows = []; $total = 0; $sevOptions = [];
