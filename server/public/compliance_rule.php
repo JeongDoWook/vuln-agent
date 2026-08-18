@@ -233,7 +233,10 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
                 'result' => function ($r) {
                     $tone = $r['result'] === 'FAIL' ? vg_sev_tone((string) $r['severity'])
                           : ($r['result'] === 'PASS' ? 'low' : 'muted');
-                    return vg_badge((string) $r['result'], $tone);
+                    // FAIL 의 색은 그 룰의 심각도다 — 표 아래 범례 대신 뱃지가 title 로 말한다
+                    //   (control.php 와 같은 어휘).
+                    $title = $r['result'] === 'FAIL' ? '심각도 ' . (string) $r['severity'] : '';
+                    return vg_badge((string) $r['result'], $tone, $title);
                 },
                 // 상세 화면에서는 목록처럼 근거를 자르지 않는다. 사용자는 여기서 실제 판정값을
                 //   확인하고, 긴 값은 표 셀 안에서 자연스럽게 줄바꿈한다.
@@ -246,12 +249,8 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
             ],
         ]
     );
-    // 결과 뱃지의 색 규칙(위 셀 콜백과 같다) — FAIL 은 그 룰의 심각도 색을 그대로 쓴다.
-    vg_legend([
-        ['label' => 'FAIL(심각도 색)', 'tone' => 'crit'],
-        ['label' => 'PASS',            'tone' => 'low'],
-        ['label' => 'NA · 판정 불가',   'tone' => 'muted'],
-    ], ['inline' => true, 'caption' => '결과']);
+    // 결과 범례는 걷었다 — 뱃지가 FAIL·PASS·NA 를 글자로 달고, 'NA(판정 불가)' 는 위
+    //   요약 타일이 이미 풀어 쓴다. 색이 더 말하던 심각도는 셀 콜백의 title 로 옮겼다.
     if ($rows) { vg_page_nav($total, $perPage, $page); }
     ?>
     </div>

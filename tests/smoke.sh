@@ -778,9 +778,12 @@ assert_contains "$compliancebody" "정보자산 식별" "정보자산 식별 통
 # 정책·절차 문서 심사 체크리스트는 화면에서 내렸다 — 증적이 제품 밖에 있어 이 화면이
 #   확인해 줄 수 있는 게 없는 항목이다. 이 화면은 체크되는 것만 보여준다. 다시 자라면 여기서 걸린다.
 assert_not_contains "$compliancebody" "정책·절차 문서 심사" "자동판정 대상 아닌 체크리스트는 화면에 없음"
-# 판정 어휘는 그대로다 — 화면에서 걷은 건 "판정 불가 N건" 부기이지 판정 자체가 아니다.
-assert_contains "$compliancebody" "판정 불가" "판정 어휘 4종은 범례·뱃지에 그대로"
+# 판정 어휘는 그대로다 — 화면에서 걷은 건 "판정 불가 N건" 부기와 색 범례이지 판정 자체가 아니다.
+#   이제 이 어휘를 화면에 세우는 건 판정 칸의 뱃지뿐이다(범례를 걷었으므로).
+assert_contains "$compliancebody" "판정 불가" "판정 어휘 4종은 뱃지에 그대로"
 assert_not_contains "$compliancebody" 'class="why">판정 불가' "판정 불가 건수 부기는 없음"
+# 판정 범례는 걷었다 — 뱃지가 이미 글자로 판정을 달고 있다. 다시 자라면 여기서 걸린다.
+assert_not_contains "$compliancebody" 'class="legend' "판정 색 범례 없음(판정은 뱃지가 말한다)"
 assert_contains "$compliancebody" "근거 →" "통제마다 근거 화면으로 가는 링크"
 # 결론 배너는 없앴다 — 판정은 표의 뱃지가 말한다. 다시 자라면 여기서 걸린다.
 assert_not_contains "$compliancebody" 'class="verdict' "결론 배너 없음(값은 표가 갖는다)"

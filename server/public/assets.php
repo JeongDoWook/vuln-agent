@@ -58,7 +58,8 @@ try {
 }
 // 조회가 중간에 실패해도 그때까지 읽은 값이 그대로 온다(queries.php 머리주석).
 ['deptOptions' => $deptOptions, 'stateCounts' => $stateCounts, 'rows' => $rows, 'total' => $total,
- 'sevByScan' => $sevByScan, 'systemGrade' => $systemGrade, 'unconfirmed' => $unconfirmed] = $assetData;
+ 'sevByScan' => $sevByScan, 'ipsByHost' => $ipsByHost,
+ 'systemGrade' => $systemGrade, 'unconfirmed' => $unconfirmed] = $assetData;
 
 // 에이전트가 POST 할 수집 엔드포인트(현재 접속 주소 기준) — 계산은 format/links.php 가 소유한다.
 $ingest = vg_ingest_url();
@@ -173,7 +174,8 @@ vg_header('자산', 'assets');
     </div>
   <?php endif; ?>
   <?php
-  vg_assets_render_table($rows, $sevByScan, $canConfirm, $filtered, $stateHelp, $stateTone, $gradeTone);
+  vg_assets_render_table($rows, $sevByScan, $ipsByHost, $canConfirm, $filtered, $stateHelp,
+      $stateTone, $gradeTone);
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 

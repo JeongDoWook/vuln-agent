@@ -8,15 +8,22 @@ declare(strict_types=1);
  *   색→이름 대응을 따로 설명할 자리가 아니었다.
  */
 
+/* IP 툴팁에 나열하는 주소 개수 상한. 호스트가 신고할 수 있는 주소는 최대 256개다
+ *   (ingest/network.php 의 VG_HOST_ADDR_MAX_ROWS) — 그대로 이으면 툴팁이 화면을 덮는다.
+ *   전체 목록은 자산 상세가 갖는다. */
+const VG_ASSET_IP_TITLE_MAX = 8;
+
 /**
  * @param bool $canConfirm 관리자면 체크박스 열이 붙는다(인가 자체는 POST 처리부가 정한다).
  * @param bool $filtered   검색·필터가 걸린 상태인가(빈 목록 안내 문구가 갈린다).
+ * @param array $ipsByHost host_id => 주소 목록(대표가 맨 앞). queries.php 가 조회 한 번으로 묶어 준다.
  * @param array $stateTone,$gradeTone 색 어휘 — 지금 이 표는 쓰지 않는다(범례를 걷었다).
  *        같은 값을 KPI 카드·등급 모달이 계속 쓰므로 호출부 계약은 그대로 둔다.
  */
 function vg_assets_render_table(
     array $rows,
     array $sevByScan,
+    array $ipsByHost,
     bool $canConfirm,
     bool $filtered,
     string $stateHelp,
@@ -53,7 +60,14 @@ function vg_assets_render_table(
      *   에이전트 '구버전' 신호도 그 히어로 메타가 그대로 이어받는다(신호를 잃지 않는다). */
     $headers = array_merge($headers, [
         // 뺀 열들의 폭은 남는 폭을 갖는 식별자(호스트)와 위험(심각도)이 가져간다.
-        ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '34%'],
+        //   IP 열이 서면서 34% → 24% 로 줄었다. 줄인 폭을 여기서만 낸 이유: 이 열은
+        //   col-id 라 넘치면 말줄임+title 로 접히지만(값을 잃지 않는다), 심각도·상태·등급은
+        //   고정 크기 뱃지라 좁히면 옆 열 위에 그려진다(이 파일 위 폭 배분 기준).
+        ['label' => '호스트', 'key' => 'fqdn', 'class' => 'col-id', 'width' => '24%'],
+        /* IP 는 <code> 로 그리는 고정 크기 값이라 % 가 아니라 rem 이다(위 폭 배분 기준).
+         *   'xxx.xxx.xxx.xxx'(≈105px) + ' +5'(≈24px) + 칸 여백(.6rem×2 ≈ 19px) → 9.5rem. */
+        ['label' => 'IP', 'key' => 'ip', 'width' => '9.5rem', 'nowrap' => true,
+         'title' => '호스트가 신고한 IPv4 — 대표 1개, 나머지는 +N'],
         ['label' => '상태', 'key' => 'state', 'width' => '5.5rem', 'title' => $stateHelp],
         // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
         //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
@@ -93,6 +107,34 @@ function vg_assets_render_table(
                     . '" data-name="' . vg_h($r['fqdn']) . '" aria-label="' . vg_h($r['fqdn']) . ' 선택">',
                 // 칸을 넘치는 긴 FQDN 은 col-id 가 말줄임으로 접는다 — 전체 이름은 title 로 남긴다.
                 'fqdn'  => fn($r) => '<strong><a href="/host.php?id=' . (int) $r['host_id'] . '" title="' . vg_h($r['fqdn']) . '">' . vg_h($r['fqdn']) . '</a></strong>',
+                /* IP — 호스트당 여러 개다(실측: 물리 NIC 1 + docker0·브리지·calico 5).
+                 *   전부 세우면 이 열 하나가 표를 밀어내므로 대표 하나만 세우고 나머지는
+                 *   '+N' 으로 접는다. 접은 값은 버리는 게 아니라 title 로 남는다 —
+                 *   자산 상세(host.php)에 가지 않아도 "왜 이 IP 로 검색됐나"가 여기서 읽힌다.
+                 *   대표 선정 기준은 queries.php 의 vg_assets_sort_addresses() 가 갖는다. */
+                'ip' => function ($r) use ($ipsByHost) {
+                    $addrs = $ipsByHost[(int) $r['host_id']] ?? [];
+                    // 백필 전 자산·수집 이력이 없는 자산은 주소가 없다 — 빈 칸을 자리표시
+                    //   문구로 채우지 않는다(다른 열의 '–' 와 같은 어휘).
+                    if ($addrs === []) { return '<span class="why">–</span>'; }
+                    /* 툴팁에 전부 나열하지 않는다 — 주소는 호스트당 최대 256행까지 들어올 수
+                     *   있어(ingest/network.php 의 상한) 그대로 이으면 툴팁이 화면을 덮는다. */
+                    $all = [];
+                    foreach (array_slice($addrs, 0, VG_ASSET_IP_TITLE_MAX) as $a) {
+                        $iface = (string) ($a['iface'] ?? '');
+                        $all[] = $a['ip'] . ($iface !== '' ? ' (' . $iface . ')' : '');
+                    }
+                    $title = implode(' · ', $all)
+                        . (count($addrs) > VG_ASSET_IP_TITLE_MAX ? ' … 외 '
+                            . (count($addrs) - VG_ASSET_IP_TITLE_MAX) . '개' : '');
+                    $html = '<code title="' . vg_h($title) . '">' . vg_h($addrs[0]['ip']) . '</code>';
+                    $rest = count($addrs) - 1;
+                    if ($rest > 0) {
+                        // 숫자만 남는 자리라 title 로 무엇을 세는지 밝힌다(접근성).
+                        $html .= ' <span class="why" title="' . vg_h($title) . '">+' . $rest . '</span>';
+                    }
+                    return $html;
+                },
                 'state' => fn($r) => vg_asset_state(
                     $r['scan_id'] !== null,
                     $r['poll_age_min'],

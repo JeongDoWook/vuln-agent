@@ -213,13 +213,9 @@ vg_header('통제 기준 매핑', 'control_mapping');
           ],
       ]
   );
-  // '결과'·'위반' 칸의 색이 무슨 뜻인지 한 줄로(위 셀 콜백과 같은 규칙 — 색을 새로 만들지 않는다).
-  vg_legend([
-      ['label' => 'FAIL 있음',    'tone' => 'crit'],
-      ['label' => '판정 불가(NA)', 'tone' => 'med'],
-      ['label' => '전건 PASS',    'tone' => 'ok'],
-      ['label' => '점검 결과 없음', 'tone' => 'muted'],
-  ], ['inline' => true, 'caption' => '결과']);
+  // 결과 범례는 걷었다 — 네 상태를 '결과' 칸이 이미 **글자로** 말한다('점검 결과 없음'
+  //   뱃지 / 'PASS n · 판정 불가 n · 전체 n건'). 옆 '위반' 칸의 색은 그 글자를 되풀이하는
+  //   두 번째 표기라, 범례를 지우면서 잃는 사실이 없다.
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 

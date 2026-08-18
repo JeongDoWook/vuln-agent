@@ -16,7 +16,7 @@ declare(strict_types=1);
  *   사용자에게 보일 문구와 error_log 태그는 화면이 정한다.
  *
  * @param string $dept 목록에 없는 값이면 '' 로 되돌린다(조작된 쿼리스트링) — 그래서 참조다.
- * @param array  $out  {deptOptions, stateCounts, rows, total, sevByScan, systemGrade, unconfirmed}
+ * @param array  $out  {deptOptions, stateCounts, rows, total, sevByScan, ipsByHost, systemGrade, unconfirmed}
  */
 function vg_assets_load(
     PDO $pdo,
@@ -31,6 +31,7 @@ function vg_assets_load(
     $deptOptions = [];
     $stateCounts = ['ok' => 0, 'stale' => 0, 'offline' => 0, 'none' => 0];
     $rows = []; $total = 0; $sevByScan = [];
+    $ipsByHost = [];       // host_id => [[iface, ip], ...] (대표 IP 가 맨 앞)
     $systemGrade = null;   // 함대 전체를 하나의 정보시스템으로 볼 때의 승계 등급
     $unconfirmed = 0;      // 아직 사람이 등급을 확정하지 않은 자산 수
 
@@ -74,14 +75,23 @@ function vg_assets_load(
         $where  = 'h.is_deleted = 0';
         $params = [];
         if ($q !== '') {
+            /* IP 검색은 두 곳을 본다. h.last_seen_ip 는 **서버가 수집 요청을 받은 주소** 하나뿐이라
+             *   NAT·게이트웨이 뒤에서는 호스트가 실제로 가진 주소와 다르고, 화면의 IP 열은
+             *   tb_host_address(호스트가 신고한 전 인터페이스)에서 그린다 — 여기를 안 보면
+             *   **표에 보이는 IP 로 검색했는데 0건**이 된다(검색창은 이미 'IP 검색' 이라 적고 있다).
+             *   tb_host_address 는 호스트당 몇 행짜리 작은 표라 EXISTS 한 번이 붙는 비용뿐이다. */
             $where .= " AND (h.fqdn LIKE ? OR h.last_seen_ip LIKE ? OR EXISTS (
+                SELECT 1 FROM tb_host_address search_addr
+                 WHERE search_addr.host_id=h.host_id AND search_addr.is_deleted=0
+                   AND search_addr.ip LIKE ?
+            ) OR EXISTS (
                 SELECT 1 FROM tb_package search_pkg
                  WHERE search_pkg.scan_id=s.scan_id AND search_pkg.is_deleted=0
                    AND search_pkg.container_id=0 AND search_pkg.manager IN ('dpkg','rpm','apk')
                    AND (search_pkg.name LIKE ? OR search_pkg.source_pkg LIKE ?)
             ))";
             $like = '%' . $q . '%';
-            array_push($params, $like, $like, $like, $like);
+            array_push($params, $like, $like, $like, $like, $like);
         }
         if ($state !== '') {
             // KPI 와 같은 식을 쓴다 — 다른 식을 쓰면 "지연 3대" 를 눌렀는데 2대가 나오는 일이 생긴다.
@@ -107,9 +117,11 @@ function vg_assets_load(
         $offset = ($page - 1) * $perPage;
 
         $st = $pdo->prepare(
-            /* 목록에서 뺀 값(OS·IP·패키지 수·에이전트 버전·담당 부서)은 SELECT 에서도 뺀다 —
+            /* 목록에서 뺀 값(OS·패키지 수·에이전트 버전·담당 부서)은 SELECT 에서도 뺀다 —
              *   화면이 안 쓰는 값을 페이지마다 실어 오지 않는다. 검색·필터가 쓰는 컬럼
-             *   (h.last_seen_ip · gr.owning_department)은 WHERE 절에 그대로 남아 있어 영향이 없다. */
+             *   (h.last_seen_ip · gr.owning_department)은 WHERE 절에 그대로 남아 있어 영향이 없다.
+             *   IP 열은 여기서 안 읽는다 — 호스트당 여러 행이라 조인하면 목록이 뻥튀기된다.
+             *   별도 조회 한 번(vg_assets_load_addresses)으로 읽어 메모리에서 묶는다. */
             "SELECT h.host_id, h.fqdn,
                     s.scan_id, s.collected_at,
                     h.poll_schedule_seconds,
@@ -129,6 +141,10 @@ function vg_assets_load(
         $ids = [];
         foreach ($rows as $r) { if ($r['scan_id'] !== null) { $ids[] = (int) $r['scan_id']; } }
         $sevByScan = vg_sev_by_scan_ids($pdo, $ids);
+
+        /* 이 페이지에 보이는 호스트들의 IP — **조회 한 번**으로 전부 읽고 메모리에서 묶는다.
+         *   행마다 부르면 페이지당 25번(N+1)이 된다. */
+        $ipsByHost = vg_assets_load_addresses($pdo, array_column($rows, 'host_id'));
 
         /* 함대 최신 에이전트 버전 조회는 여기서 걷어냈다 — 에이전트 버전 열이 호스트 상세로
          *   옮겨 갔고(vg_host_load_latest_agent_version() 을 그쪽에서 부른다), 목록이 안 쓰는 값을 위해
@@ -151,7 +167,69 @@ function vg_assets_load(
     } finally {
         // 예외가 나도 **그때까지 읽은 값**을 그대로 내보낸다(위 머리주석의 이유).
         $out = compact(
-            'deptOptions', 'stateCounts', 'rows', 'total', 'sevByScan', 'systemGrade', 'unconfirmed'
+            'deptOptions', 'stateCounts', 'rows', 'total', 'sevByScan', 'ipsByHost',
+            'systemGrade', 'unconfirmed'
         );
     }
+}
+
+/* 대표 IP 를 고를 때 뒤로 미는 인터페이스 접두사. 컨테이너·가상 브리지·오버레이가 만든
+ *   주소는 **어느 호스트에나 비슷하게 있고 밖에서 그 주소로 그 자산에 닿지도 않는다** —
+ *   실측(deskmini-x300)에서 IP 6개 중 5개가 이 부류였다(docker0·브리지 3개·calico).
+ *   목록에 하나만 세울 자리라 물리 NIC(enp1s0 등)를 앞에 둔다.
+ *   이름으로 거른다(대역이 아니라): 172.17/16 은 도커 기본값이지만 사내에서 실제로 쓰는
+ *   기관도 있어 대역으로 자르면 진짜 주소를 숨기게 된다. */
+const VG_ASSET_VIRTUAL_IFACES = ['docker', 'br-', 'virbr', 'veth', 'cali', 'cni', 'flannel',
+                                 'vxlan', 'kube', 'tun', 'tap', 'lo'];
+
+/**
+ * 이 페이지 호스트들의 IP 를 한 번에 읽어 host_id 로 묶는다. 각 호스트의 목록은 **대표 IP 가
+ *   맨 앞**이 되도록 정렬해 둔다(vg_assets_sort_addresses 의 기준). 화면은 [0] 만 세우고
+ *   나머지는 '+N' 으로 접는다.
+ *
+ * @param  array $hostIds 이 페이지 행들의 host_id
+ * @return array host_id(int) => [['iface' => ?string, 'ip' => string], ...]
+ */
+function vg_assets_load_addresses(PDO $pdo, array $hostIds): array
+{
+    if ($hostIds === []) { return []; }
+    $ids = array_map('intval', $hostIds);
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $st = $pdo->prepare(
+        "SELECT host_id, ip, iface FROM tb_host_address
+          WHERE is_deleted = 0 AND host_id IN ($in)"
+    );
+    $st->execute($ids);
+
+    $by = [];
+    foreach ($st->fetchAll() as $r) {
+        $by[(int) $r['host_id']][] = ['iface' => $r['iface'], 'ip' => (string) $r['ip']];
+    }
+    foreach ($by as $hostId => $addrs) { $by[$hostId] = vg_assets_sort_addresses($addrs); }
+    return $by;
+}
+
+/**
+ * 대표 IP 가 맨 앞에 오도록 정렬한다. 기준은 두 단계뿐이다(단순하게 — 여기서 대역 정책을
+ *   만들지 않는다):
+ *     1) 물리 인터페이스(VG_ASSET_VIRTUAL_IFACES 로 시작하지 않는 것)가 앞.
+ *     2) 같은 등급이면 IP 문자열 오름차순 — **정렬이 결정적이어야** 새로고침마다 대표가
+ *        바뀌지 않는다(MySQL 은 ORDER BY 없이 순서를 보장하지 않는다).
+ *   iface 가 NULL 인 옛 백필 행은 물리로 본다 — 가상이라는 근거가 없는데 뒤로 미는 것은
+ *   추측이고, 백필된 행이야말로 그 호스트의 유일한 주소인 경우가 많다.
+ */
+function vg_assets_sort_addresses(array $addrs): array
+{
+    usort($addrs, static function (array $a, array $b): int {
+        $rank = static function (array $x): int {
+            $iface = strtolower((string) ($x['iface'] ?? ''));
+            if ($iface === '') { return 0; }
+            foreach (VG_ASSET_VIRTUAL_IFACES as $prefix) {
+                if (strncmp($iface, $prefix, strlen($prefix)) === 0) { return 1; }
+            }
+            return 0;
+        };
+        return [$rank($a), $a['ip']] <=> [$rank($b), $b['ip']];
+    });
+    return $addrs;
 }
