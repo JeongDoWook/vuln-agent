@@ -79,9 +79,6 @@ $resOptions = ['FAIL', 'PASS', 'NA', 'ALL'];
 $err = null; $scan = null; $rows = []; $total = 0; $perPage = vg_perpage();
 $scanIds = []; $hostOptions = []; $hostFound = false; $hostOptionCount = 0;
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
-// 탭 머리의 유형별 건수(대상 스캔 기준 — 탭 자체가 필터라는 걸 눈으로 알게 한다).
-//   현재 탭 것은 그 탭이 이미 집계한 값을 재사용하고, 나머지 둘만 값싼 COUNT 로 채운다.
-$typeCounts = ['cve' => null, 'cce' => null, 'exposure' => null];
 $cceResultCounts = ['FAIL'=>0, 'PASS'=>0, 'NA'=>0];   // cce 탭 카드
 $scopeCounts = [];                                    // exposure 탭 카드 (scope => 건수)
 $expCveCounts = [];                                   // 노출 행 → 그 실행 패키지에 걸린 CVE 건수
@@ -185,7 +182,7 @@ try {
         $rows = $r['rows']; $total = $r['total'];
         $counts = $r['counts']; $actionCounts = $r['actionCounts'];
         $notes = $r['notes']; $firstSeen = $r['firstSeen']; $policy = $r['policy'];
-        $ctrLabel = $r['ctrLabel']; $typeCounts['cve'] = $r['typeCount'];
+        $ctrLabel = $r['ctrLabel'];
     }
 
     if ($scanIds && $type === 'cce') {
@@ -193,7 +190,7 @@ try {
             'q' => $q, 'sev' => $sev, 'res' => $res, 'page' => $page, 'perPage' => $perPage,
         ]);
         $rows = $r['rows']; $total = $r['total']; $page = $r['page'];
-        $cceResultCounts = $r['resultCounts']; $typeCounts['cce'] = $r['typeCount'];
+        $cceResultCounts = $r['resultCounts'];
     }
 
     if ($scanIds && $type === 'exposure') {
@@ -202,12 +199,8 @@ try {
         ]);
         $rows = $r['rows']; $total = $r['total']; $page = $r['page'];
         $scopeCounts = $r['scopeCounts']; $expCveCounts = $r['cveCounts'];
-        $typeCounts['exposure'] = $r['typeCount'];
     }
 
-    if ($scanIds) {
-        $typeCounts = vg_findings_type_counts($pdo, $scanIds, $typeCounts);
-    }
 } catch (Throwable $e) {
     error_log('[findings] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';
@@ -250,12 +243,13 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
 
   <?php
   // 탐지 유형 세 개가 앞에 서고, 그 뒤로 기존의 다른 화면(변화·제거 권고)이 이어진다.
-  //   세 유형은 같은 대상 스캔을 다른 눈으로 보는 것이라 한 줄에 나란히 둔다. 뱃지 숫자는
-  //   대상 스캔 기준 건수(CCE 는 그 탭의 기본인 위반 건수) — 탭이 곧 필터라는 걸 눈으로 알린다.
+  //   세 유형은 같은 대상 스캔을 다른 눈으로 보는 것이라 한 줄에 나란히 둔다.
   //   탭을 옮길 때 그 탭 전용 필터만 비우고(호스트·스캔·검색어·등급은 공통 축이라 유지),
   //   페이지 번호는 항상 지운다(2페이지에서 탭을 바꾸면 없는 페이지가 된다).
   //   탭 줄 자체(라벨·순서·목적지)는 nav.php 의 vg_findings_subtabs() 가 정본이고, 여기서는
-  //   이 화면에서만 의미 있는 것 — 뱃지 숫자와 필터를 이어받는 href — 만 얹는다.
+  //   이 화면에서만 의미 있는 것 — 필터를 이어받는 href — 만 얹는다. 건수 뱃지는 달지 않는다:
+  //   각 탭이 자기 카드와 '총 N건' 페이지네이션으로 이미 말하고, 뱃지 하나 때문에 지금 탭이
+  //   아닌 유형까지 매 요청에 COUNT 해야 했다.
   //   변화·제거 권고 탭은 이어받을 필터가 없어 기본 href 그대로 둔다.
   $tabOverrides = [];
   foreach (VG_FINDING_TYPES as $key => $def) {
@@ -266,7 +260,7 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       }
       // 기본 탭은 type 파라미터를 붙이지 않는다 — /findings.php 라는 기존 주소를 정본으로 남긴다.
       $qs['type'] = $key === 'cve' ? null : $key;
-      $tabOverrides[$key] = ['href' => vg_qs($qs), 'n' => $typeCounts[$key]];
+      $tabOverrides[$key] = ['href' => vg_qs($qs)];
   }
   vg_findings_subtabs($type, $tabOverrides);
   ?>

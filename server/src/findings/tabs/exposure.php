@@ -54,9 +54,13 @@
   }
 
   $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
+  // 노출 근거(범위)가 이 탭의 판정 축이다 — CVE 탭의 '상태' 칸과 같은 자리다. 다만 카드로
+  //   한 범위를 고른 뷰에서는 전 행이 그 값이라 열을 세우지 않는다(무엇을 골랐는지는 카드의
+  //   선택 표시가 말한다). 카드를 다시 눌러 선택을 풀면 값이 섞이므로 열이 돌아온다.
+  if ($scope === '') {
+      $headers[] = ['label' => '범위', 'key' => 'scope', 'width' => '11%', 'nowrap' => true];
+  }
   $headers = array_merge($headers, [
-      // 노출 근거(범위)가 이 탭의 판정 축이다 — CVE 탭의 '상태' 칸과 같은 자리다.
-      ['label' => '범위',   'key' => 'scope',   'width' => '11%', 'nowrap' => true],
       ['label' => '프로세스', 'key' => 'proc',  'width' => '16%', 'class' => 'col-id'],
       ['label' => '포트',   'key' => 'port',    'width' => '11%', 'nowrap' => true],
       ['label' => '실행 패키지', 'key' => 'exe_pkg', 'width' => '18%', 'class' => 'col-id'],
@@ -78,16 +82,18 @@
                   $sc = ((string) ($r['scope'] ?? '')) !== '' ? (string) $r['scope'] : '-';
                   return vg_badge(vg_scope_label($sc), $scopeTone[$sc] ?? 'muted');
               },
-              // 컨테이너의 nginx 를 호스트의 nginx 로 착각하지 않게 위치를 함께 적는다(host.php 와 같은 판단).
+              // 컨테이너의 nginx 를 호스트의 nginx 로 착각하지 않게, **컨테이너일 때만** 위치를 적는다.
+              //   예전엔 호스트 소켓에도 '호스트' 를 적어 dev 실측 66행 중 55행에 같은 두 글자가
+              //   깔렸다 — 빈 줄이 곧 호스트다(CVE 탭의 패키지 칸이 이미 쓰는 규칙).
               'proc' => fn($r) => vg_h((string) ($r['proc'] ?? ''))
-                  . '<div class="why">' . ($r['ctr'] !== '' ? '컨테이너 ' . vg_h((string) $r['ctr']) : '호스트') . '</div>',
+                  . ($r['ctr'] !== '' ? '<div class="why">컨테이너 ' . vg_h((string) $r['ctr']) . '</div>' : ''),
               'port' => fn($r) => vg_h((string) ($r['proto'] ?? '')) . '/' . (int) $r['port']
                   . '<div class="why">' . vg_h((string) ($r['bind_addr'] ?? '')) . '</div>',
               // 이 리스너에 걸린 CVE 건수 — 누르면 CVE 탭에서 같은 자산·같은 패키지로 좁혀 본다.
               //   노출과 취약점을 잇는 자리라 이 제품의 축이 한 줄에서 완성된다.
               'exe_pkg' => function ($r) use ($expCveCounts) {
                   $pkg = (string) ($r['exe_pkg'] ?? '');
-                  if ($pkg === '') { return '<span class="why">–</span>'; }
+                  if ($pkg === '') { return ''; }   // 없는 값은 '–' 로 채우지 않는다
                   $html = vg_h($pkg);
                   $n = $expCveCounts[$r['scan_id'] . '|' . $r['container_id'] . '|' . $pkg] ?? 0;
                   if ($n > 0) {

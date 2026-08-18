@@ -71,9 +71,16 @@
   // 컬럼 순서는 CVE 탭과 같은 뼈대다 — 자산이 첫 칸, 그 다음이 판정(결과·등급), 마지막이 근거.
   //   노출 축(runtime_status)은 여기 없다: 설정 점검에는 리스닝·외부노출 개념이 없어서
   //   억지로 만들면 없는 걸 있는 척하는 게 된다. 빈 칸을 만들지 않고 컬럼 자체를 두지 않는다.
+  // '결과' 열은 **결과가 섞여 있을 때만** 세운다. 이 탭의 기본은 위반(FAIL)만 보는 것이고,
+  //   그때 이 열은 전 행이 'FAIL' 이라 폭만 먹었다(dev 실측 기본 뷰 105행 전부 FAIL).
+  //   지금 무엇을 보고 있는지는 바로 위 결과 카드의 선택 표시가 말한다 — 카드를 눌러
+  //   res=ALL 로 넓히면 값이 섞이므로 열이 다시 선다.
+  $showResult = $res === 'ALL';
   $headers = $scan ? [] : [['label' => '호스트', 'key' => 'fqdn', 'width' => '17%', 'class' => 'col-id']];
+  if ($showResult) {
+      $headers[] = ['label' => '결과', 'key' => 'result', 'width' => '8%', 'nowrap' => true];
+  }
   $headers = array_merge($headers, [
-      ['label' => '결과',  'key' => 'result',   'width' => '8%',  'nowrap' => true],
       ['label' => '등급',  'key' => 'severity', 'width' => '9%',  'nowrap' => true],
       ['label' => '점검 항목', 'key' => 'title', 'width' => '24%'],
       ['label' => '기준(코드 · SSG 룰)', 'key' => 'code', 'width' => '17%', 'class' => 'col-id'],
@@ -94,19 +101,19 @@
                   $r['result'] === 'FAIL' ? vg_sev_tone((string) $r['severity'])
                       : ($r['result'] === 'PASS' ? 'low' : 'muted')
               ),
-              // 등급은 위반일 때만 뜻이 있다 — PASS·NA 에 등급 뱃지를 붙이면 없는 위험을 있는 것처럼 만든다.
-              'severity' => fn($r) => $r['result'] === 'FAIL'
-                  ? vg_sev_badge((string) $r['severity'])
-                  : '<span class="why">–</span>',
+              // 등급은 위반일 때만 뜻이 있다 — PASS·NA 에 등급 뱃지를 붙이면 없는 위험을 있는 것처럼
+              //   만든다. 그렇다고 '–' 로 칸을 채우지도 않는다(없다는 말은 빈 칸이 이미 한다).
+              'severity' => fn($r) => $r['result'] === 'FAIL' ? vg_sev_badge((string) $r['severity']) : '',
               'title' => fn($r) => '<div class="clamp-2">' . vg_h((string) $r['title']) . '</div>',
               // 룰 상세 화면은 이미 compliance_rule.php 가 갖고 있다 — 새로 만들지 않고 링크한다.
               'code' => function ($r) {
                   $code = (string) $r['code'];
                   $html = '<a href="/cce-rule.php?code=' . urlencode($code) . '"><code>'
                         . vg_h($code) . '</code></a>';
-                  if (empty($r['ssg_rule_id'])) {
-                      return $html . '<div class="why">자체 기준(대응 SSG 룰 없음)</div>';
-                  }
+                  // 대응 SSG 룰이 없으면 둘째 줄을 아예 만들지 않는다 — '자체 기준(대응 SSG 룰 없음)'
+                  //   이라는 문구가 dev 실측 1,092행 중 224행에 같은 모양으로 깔렸고, 그 문장은
+                  //   링크가 없다는 사실을 되풀이할 뿐이었다.
+                  if (empty($r['ssg_rule_id'])) { return $html; }
                   $ruleId = (string) $r['ssg_rule_id'];
                   $html .= '<div class="why"><a href="/compliance_rule.php?rule=' . urlencode($ruleId) . '">'
                         . vg_h(vg_trunc($ruleId, 28)) . ' →</a></div>';
@@ -115,7 +122,7 @@
               'evidence' => function ($r) {
                   $why = trim((string) ($r['rationale'] ?? ''));
                   $ev  = trim((string) ($r['evidence'] ?? ''));
-                  $html = '<div class="why clamp-2">' . ($why !== '' ? vg_h($why) : '<span class="why">판정 사유 없음</span>') . '</div>';
+                  $html = $why !== '' ? '<div class="why clamp-2">' . vg_h($why) . '</div>' : '';
                   if ($ev !== '') {
                       $html .= '<div class="why clamp-2"><code>' . vg_h($ev) . '</code></div>';
                   }
