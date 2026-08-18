@@ -93,6 +93,7 @@ require __DIR__ . '/../src/feeds.php';
 require __DIR__ . '/../src/matcher.php';
 require __DIR__ . '/../src/license_summary.php';   // vg_rebuild_license_summary
 require __DIR__ . '/../src/compliance.php';        // vg_compliance_take_snapshot
+require __DIR__ . '/../src/discovery.php';         // vg_discovery_reap_stale / vg_discovery_run_pending
 
 $pdo = vg_pdo();
 
@@ -128,6 +129,37 @@ try {
     // 스냅샷 실패가 피드 실행을 막지 않게 한다 — 조용히 넘기지는 않는다.
     fwrite(STDOUT, '[' . date('c') . '] 컴플라이언스 스냅샷 실패: ' . $e->getMessage() . "\n");
     error_log('[compliance] 스냅샷 실패: ' . $e->getMessage());
+}
+
+// 자산 탐색 — 화면이 만든 pending run 을 여기서 집행한다. 이 호출이 없으면 "지금 스캔" 은
+//   pending 행만 만들고 영원히 실행되지 않는다(bin/discover.php --pending 을 부르는 곳이 없었다).
+//   ★ due 커넥터 유무와 무관해야 하므로 라이선스 요약과 같이 조기 종료 **앞**에 둔다.
+//   ★ 한 틱이 집행할 run 수·시간에 상한이 있다(vg_discovery_run_pending 기본 1건·45초) —
+//     스캔이 길어져도 아래 피드 수집이 밀리지 않게 한다. 남은 pending 은 다음 틱이 집는다.
+//   ★ 스캔 실패는 tb_discovery_run.status='failed' 로 끝난다. 여기서 예외를 밖으로 던지면
+//     compose 의 rc!=0 경로가 스케줄러 전체를 불건강으로 기록하므로, 스캔 하나의 실패로
+//     그렇게 만들지 않는다(피드 수집은 아직 시작도 안 했다).
+try {
+    $reapedRuns = vg_discovery_reap_stale($pdo);
+    if ($reapedRuns > 0) {
+        fwrite(STDOUT, '[' . date('c') . "] 중단된 자산 탐색 {$reapedRuns}건 정리\n");
+    }
+    $disc = vg_discovery_run_pending($pdo);
+    if ($disc['executed'] > 0 || $disc['skipped'] > 0 || $disc['deferred'] > 0) {
+        foreach ($disc['results'] as $r) {
+            fwrite(STDOUT, '[' . date('c') . '] 자산 탐색 run ' . $r['run_id'] . ' ['
+                . (string) ($r['cidr'] ?? '') . '] '
+                . (!empty($r['ok'])
+                    ? sprintf('완료 — 살아있음 %d · 열린포트 %d · %.2fs', $r['ip_alive'], $r['open_total'], $r['elapsed'])
+                    : '실패 — ' . (string) ($r['error'] ?? ''))
+                . "\n");
+        }
+        fwrite(STDOUT, '[' . date('c') . "] 자산 탐색 집행 {$disc['ok']}건 성공 · {$disc['failed']}건 실패"
+            . " · 건너뜀 {$disc['skipped']} · 다음 틱으로 {$disc['deferred']}\n");
+    }
+} catch (Throwable $e) {
+    fwrite(STDOUT, '[' . date('c') . '] 자산 탐색 집행 실패: ' . $e->getMessage() . "\n");
+    error_log('[discovery] 스케줄러 집행 실패: ' . $e->getMessage());
 }
 
 $due = vg_feed_due($pdo);

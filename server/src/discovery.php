@@ -6,7 +6,8 @@ declare(strict_types=1);
  *   살아있는 IP 와 열린 포트를 모은다. 취약점 파이프라인(에이전트·매처)과 접점이 없다 —
  *   유일한 접점은 발견 IP 를 tb_host_address 와 대조하는 한 곳뿐이다.
  *
- *   공용 라이브러리라 URL 로 열리지 않는다. 실행은 server/bin/discover.php(CLI)만 한다 —
+ *   공용 라이브러리라 URL 로 열리지 않는다. 실행은 스케줄러 틱(server/bin/scheduler.php)과
+ *   수동 CLI(server/bin/discover.php)만 하고, 둘 다 vg_discovery_run_pending() 한 곳을 쓴다 —
  *   수백 소켓을 수십 초 동안 드는 작업이라 웹 요청에서 돌리면 요청이 그만큼 묶인다.
  *
  * ## 왜 2단계인가 (성능의 전부)
@@ -38,6 +39,23 @@ const VG_DISCOVERY_TIMEOUT_MS  = 1000;   // connect 타임아웃. LAN RTT 는 1m
                                          //   총 시간은 '죽은 IP 가 이 값을 다 쓰는 것'이 지배한다
 const VG_DISCOVERY_MIN_PREFIX  = 22;     // 허용 최소 프리픽스 = 최대 대역 크기(/22 = 1,022 IP)
 const VG_DISCOVERY_MAX_PORTS   = 1024;   // 대역당 2단계 포트 수 상한
+
+/**
+ * 스케줄러 틱 한 번이 집행할 자산 탐색 상한. 스캔은 대역 크기에 비례해 길어지므로
+ *   (실측: /24 × 포트 100개 = 4.1초, /22 는 그 4배) 상한이 없으면 pending 이 쌓인 만큼
+ *   한 틱이 길어져 같은 프로세스의 피드 수집이 그만큼 밀린다.
+ *   둘 다 tb_setting 으로 덮을 수 있고, 0 이면 무제한이다(수동 CLI 가 그렇게 쓴다).
+ */
+const VG_DISCOVERY_TICK_MAX_RUNS   = 1;    // 한 틱에 집행할 run 수
+const VG_DISCOVERY_TICK_BUDGET_SEC = 45;   // 한 틱의 집행 시간 예산(초)
+
+/**
+ * 'running' 으로 굳은 run 을 실패로 마감하는 임계시간(분).
+ *   스캔 도중 프로세스가 죽으면(OOM·컨테이너 재기동) catch 가 못 돌아 run 이 영원히
+ *   'running' 으로 남고, 선점 조건이 pending 이라 그 대역은 다시는 집행되지 않는다.
+ *   피드 로그의 vg_feed_reap_stale() 과 같은 해법이다(단위만 분 — 스캔은 분 단위로 끝난다).
+ */
+const VG_DISCOVERY_STALE_MINUTES = 30;
 
 /** select(2) 의 FD_SETSIZE. 이 수를 넘는 fd 가 집합에 들어가면 stream_select 가 조용히 오동작한다. */
 const VG_DISCOVERY_FD_SETSIZE = 1024;
@@ -496,6 +514,70 @@ function vg_discovery_pending_run_ids(PDO $pdo): array {
           WHERE status = 'pending' AND is_deleted = 0 ORDER BY discovery_run_id"
     )->fetchAll();
     return array_map(static fn(array $r): int => (int) $r['discovery_run_id'], $rows);
+}
+
+/**
+ * 시작 후 임계시간을 넘긴 'running' run 을 실패로 마감한다.
+ *   반환값은 마감한 건수. 스케줄러 틱이 집행 전에 부른다 — 회수하지 않으면 그 대역은
+ *   pending 선점 조건(status='pending')에 영원히 걸리지 않아 다시는 스캔되지 않는다.
+ */
+function vg_discovery_reap_stale(PDO $pdo, ?int $minutes = null): int {
+    // SQL 의 INTERVAL 에 직접 넣으므로 정수로 못박는다(vg_feed_reap_stale 과 같은 이유).
+    $minutes = max(1, $minutes ?? vg_setting_int('discovery.stale_minutes', VG_DISCOVERY_STALE_MINUTES));
+    $st = $pdo->prepare(
+        "UPDATE tb_discovery_run
+            SET status = 'failed', finished_at = NOW(), error_text = ?
+          WHERE status = 'running' AND is_deleted = 0
+            AND started_at IS NOT NULL AND started_at < NOW() - INTERVAL $minutes MINUTE"
+    );
+    $st->execute(["중단된 스캔으로 판단해 정리(시작 후 {$minutes}분 초과)"]);
+    return $st->rowCount();
+}
+
+/**
+ * 대기 중인 run 을 상한 안에서 집행한다 — **스케줄러 틱과 CLI(--pending)가 같이 쓰는 한 곳**이다.
+ *   집행 로직을 두 벌로 만들면 한쪽만 고쳐져 화면과 수동 실행이 다르게 동작한다.
+ *
+ *   $maxRuns·$budgetSec 은 null 이면 설정(tb_setting)에서 읽고, **0 이면 무제한**이다.
+ *   시간 예산은 run 을 **시작하기 전**에만 본다 — 스캔 도중에 끊으면 그 run 이 어중간하게
+ *   남으므로, 시작한 것은 끝까지 돌린다(예산은 초과할 수 있고, 초과분은 다음 틱으로 밀린다).
+ *
+ * @return array{executed:int, ok:int, failed:int, skipped:int, deferred:int, results:array<int,array>}
+ */
+function vg_discovery_run_pending(PDO $pdo, ?int $maxRuns = null, ?int $budgetSec = null): array {
+    $maxRuns   = max(0, $maxRuns   ?? vg_setting_int('discovery.tick_max_runs', VG_DISCOVERY_TICK_MAX_RUNS));
+    $budgetSec = max(0, $budgetSec ?? vg_setting_int('discovery.tick_budget_sec', VG_DISCOVERY_TICK_BUDGET_SEC));
+
+    $t0  = microtime(true);
+    $out = ['executed' => 0, 'ok' => 0, 'failed' => 0, 'skipped' => 0, 'deferred' => 0, 'results' => []];
+
+    foreach (vg_discovery_pending_run_ids($pdo) as $runId) {
+        if ($maxRuns > 0 && $out['executed'] >= $maxRuns) { $out['deferred']++; continue; }
+        if ($budgetSec > 0 && (microtime(true) - $t0) >= $budgetSec) { $out['deferred']++; continue; }
+        // 선점 실패 = 다른 프로세스(수동 CLI 등)가 이미 집어갔다. 조용히 넘기지 않고 센다.
+        if (!vg_discovery_claim_run($pdo, $runId)) { $out['skipped']++; continue; }
+
+        $out['executed']++;
+        try {
+            $r = vg_discovery_execute_run($pdo, $runId);
+        } catch (Throwable $e) {
+            // execute_run 은 스캔 실패를 스스로 닫지만, run 행 자체가 사라진 경우 등은 던진다.
+            //   한 run 의 실패가 남은 run 과 호출자(스케줄러 틱)를 죽이면 안 된다.
+            error_log('[discovery] run ' . $runId . ' 집행 예외: ' . $e->getMessage());
+            $r = ['ok' => false, 'run_id' => $runId, 'cidr' => '', 'error' => '스캔을 집행할 수 없습니다.'];
+            try {
+                $pdo->prepare(
+                    "UPDATE tb_discovery_run SET status = 'failed', finished_at = NOW(), error_text = ?
+                      WHERE discovery_run_id = ?"
+                )->execute([$r['error'], $runId]);
+            } catch (Throwable $e2) {
+                error_log('[discovery] run ' . $runId . ' 상태 기록 실패: ' . $e2->getMessage());
+            }
+        }
+        $out['results'][] = $r;
+        if (!empty($r['ok'])) { $out['ok']++; } else { $out['failed']++; }
+    }
+    return $out;
 }
 
 /**

@@ -10,7 +10,8 @@ declare(strict_types=1);
  *   두 파이프라인의 접점은 IP 대조 한 곳뿐 — tb_discovered_asset.host_id.
  *
  *   ★ 웹은 스캔을 직접 돌리지 않는다. 이 화면은 tb_discovery_run 에 status='pending' 행을
- *     만들기만 하고 집행은 `php bin/discover.php --pending` 이 한다(CLAUDE.md 원칙 6 —
+ *     만들기만 하고, 집행은 스케줄러 틱(bin/scheduler.php, 1분마다)이 한다. 수동으로는
+ *     `php bin/discover.php --pending` 이 같은 함수를 부른다(CLAUDE.md 원칙 6 —
  *     무거운 작업은 bin/ 으로). 화면은 status 를 읽어 보여준다.
  *
  *   인가 경계 두 단:

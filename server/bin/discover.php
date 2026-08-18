@@ -32,23 +32,20 @@ try {
     $pdo = vg_pdo();
 
     if ($arg === '--pending') {
-        $ids = vg_discovery_pending_run_ids($pdo);
-        if ($ids === []) {
+        // 상한 없이(0,0) 집행한다 — 사람이 직접 부르는 경로라 한 틱 예산에 묶일 이유가 없다.
+        //   집행 자체는 스케줄러와 **같은 함수**를 쓴다(로직을 두 벌로 만들지 않는다).
+        $sum = vg_discovery_run_pending($pdo, 0, 0);
+        if ($sum['executed'] === 0 && $sum['skipped'] === 0) {
             fwrite(STDOUT, "집행할 스캔이 없습니다.\n");
             exit(0);
         }
-        $fail = 0;
-        foreach ($ids as $runId) {
-            // 선점에 실패하면 다른 프로세스가 이미 집어간 것이다 — 조용히 건너뛰지 말고 남긴다.
-            if (!vg_discovery_claim_run($pdo, $runId)) {
-                fwrite(STDOUT, "run $runId — 다른 프로세스가 집행 중, 건너뜀\n");
-                continue;
-            }
-            $r = vg_discovery_execute_run($pdo, $runId);
+        foreach ($sum['results'] as $r) {
             fwrite(STDOUT, vg_discover_line($r));
-            if (empty($r['ok'])) { $fail++; }
         }
-        exit($fail > 0 ? 1 : 0);
+        if ($sum['skipped'] > 0) {
+            fwrite(STDOUT, "다른 프로세스가 집행 중이라 건너뜀 {$sum['skipped']}건\n");
+        }
+        exit($sum['failed'] > 0 ? 1 : 0);
     }
 
     if (!preg_match('/^\d+$/', $arg)) {
