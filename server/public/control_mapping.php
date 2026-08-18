@@ -132,7 +132,8 @@ try {
 
 vg_header('통제 기준 매핑', 'control_mapping');
 ?>
-  <?php vg_page_title('통제 기준 매핑', 'CONTROL MAPPING', ['count' => $total]); ?>
+  <?php // 제목은 계열 이름만 — 어느 화면인지는 바로 아래 서브탭이 말한다(compliance.php 와 같은 규약). ?>
+  <?php vg_page_title('컴플라이언스', 'CONTROL MAPPING', ['count' => $total]); ?>
   <?php // 컴플라이언스 계열 서브탭(정의는 nav.php 한 곳) — 저쪽 화면과 같은 줄을 그린다.
         //   판정하지 않는다는 사실은 위 부제가 이미 말한다. ?>
   <?php vg_compliance_subtabs('control'); ?>
