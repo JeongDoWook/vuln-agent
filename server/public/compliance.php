@@ -198,14 +198,10 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
           ],
       ]
   );
-  // 판정 칸의 색이 무슨 뜻인지 한 줄로. 어휘·톤은 vg_compliance_tone_of() 가 SSOT 라
-  //   여기서 색을 새로 정하지 않는다(같은 말이 두 벌이 되면 표와 범례가 갈라진다).
-  vg_legend([
-      ['label' => '준수',      'tone' => vg_compliance_tone_of('준수')],
-      ['label' => '부분준수',   'tone' => vg_compliance_tone_of('부분준수')],
-      ['label' => '미준수',     'tone' => vg_compliance_tone_of('미준수')],
-      ['label' => '판정 불가',  'tone' => vg_compliance_tone_of('판정 불가')],
-  ], ['inline' => true, 'caption' => '판정']);
+  // 판정 범례는 걷었다 — 판정 칸의 뱃지가 '준수'·'부분준수'·'미준수'·'판정 불가' 를
+  //   **글자로** 달고 있어 색→이름 대응을 따로 설명할 자리가 아니었다(1차 정리에서 다른
+  //   화면의 범례를 전수 제거한 것과 같은 기준). **판정 어휘 4종은 그대로다** — 뱃지·추이
+  //   표·스냅샷 증적이 계속 같은 말을 쓴다. 톤 SSOT 도 vg_compliance_tone_of() 그대로다.
   ?>
   </section>
 

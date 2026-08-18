@@ -136,13 +136,8 @@ vg_header('보안 설정 룰', 'compliance');
           ],
       ]
   );
-  // 심각도 뱃지 색 범례 — 이 화면의 유일한 색 축이다(4단계, vg_sev_tone 과 같은 어휘).
-  vg_legend([
-      ['label' => 'HIGH',    'tone' => vg_sev_tone('HIGH')],
-      ['label' => 'MEDIUM',  'tone' => vg_sev_tone('MEDIUM')],
-      ['label' => 'LOW',     'tone' => vg_sev_tone('LOW')],
-      ['label' => 'UNKNOWN', 'tone' => 'muted'],
-  ], ['inline' => true, 'caption' => '심각도']);
+  // 심각도 범례는 걷었다 — 뱃지가 HIGH·MEDIUM·LOW·UNKNOWN 을 그대로 글자로 달고 있어
+  //   색→이름 대응을 설명할 것이 없었다(같은 네 값이 위 심각도 필터에도 서 있다).
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 <?php endif; ?>

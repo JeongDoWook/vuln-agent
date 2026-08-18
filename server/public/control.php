@@ -224,27 +224,29 @@ vg_hero(
   </div>
 </div>
 
+<?php /* 설명이 없는 통제는 '기준 설명' 절을 아예 세우지 않는다 — 예전엔 "설명이 아직
+         준비되지 않았습니다" 한 줄짜리 카드가 첫 화면 한 판을 먹고, 위 서브탭은 그 빈 카드로
+         내려가는 링크였다. 없는 설명을 자리표시 문구로 채우지 않는 건 이 화면이 이미 점검
+         항목 표에서 쓰던 기준이다(빈 칸이 '아직 없다'를 그대로 말한다). */ ?>
 <nav class="subtabs subtabs--sticky">
-  <a href="#guide">기준 설명</a>
+  <?php if ($guide !== null): ?><a href="#guide">기준 설명</a><?php endif; ?>
   <a href="#rules">점검 항목과 조치<span class="n"><?= number_format(count($ruleCodes)) ?></span></a>
   <a href="#hosts">해당 자산<span class="n"><?= number_format($total) ?></span></a>
   <a href="#origin">식별과 출처</a>
 </nav>
 
+<?php if ($guide !== null): ?>
 <section id="guide">
   <div class="card">
     <strong>이 통제가 요구하는 것</strong>
     <?php /* '기준 · 통제 ID' 부제는 걷었다 — 화면 제목이 통제 ID 이고 그 부제가 기준이라,
              한 화면에서 세 번째로 같은 말을 하는 자리였다(식별과 출처 절이 정본으로 갖는다). */ ?>
     <div class="card__body">
-      <?php if ($guide !== null): ?>
-        <p class="why"><?= vg_h((string) $guide['description']) ?></p>
-      <?php else: ?>
-        <div class="why">설명이 아직 준비되지 않았습니다.</div>
-      <?php endif; ?>
+      <p class="why"><?= vg_h((string) $guide['description']) ?></p>
     </div>
   </div>
 </section>
+<?php endif; ?>
 
 <section id="rules">
   <div class="card">
@@ -335,20 +337,19 @@ vg_hero(
                 'result' => function ($r) {
                     $tone = $r['result'] === 'FAIL' ? vg_sev_tone((string) $r['severity'])
                           : ($r['result'] === 'PASS' ? 'low' : 'muted');
-                    return vg_badge((string) $r['result'], $tone);
+                    /* FAIL 은 그 점검 항목의 **심각도 색**을 쓴다 — 같은 FAIL 이라도 색이 다르다.
+                     *   그 사실을 표 아래 범례로 설명하던 줄은 걷고, 뱃지 자신이 title 로 말하게
+                     *   한다(색만으로 남는 정보를 없애지 않으면서 범례 한 줄을 던다). */
+                    $title = $r['result'] === 'FAIL' ? '심각도 ' . (string) $r['severity'] : '';
+                    return vg_badge((string) $r['result'], $tone, $title);
                 },
                 3 => fn($r) => '<span class="why">' . vg_trunc((string) ($r['rationale'] ?? ''), 80) . '</span>',
                 4 => fn($r) => '<span class="why">' . vg_h((string) ($r['collected_at'] ?? '')) . '</span>',
             ],
         ]
     );
-    // 결과 뱃지의 색 규칙을 한 줄로 — FAIL 은 그 점검 항목의 **심각도 색**을 그대로 쓴다
-    //   (위 셀 콜백의 vg_sev_tone). 그래서 같은 FAIL 이라도 색이 다르게 보인다.
-    vg_legend([
-        ['label' => 'FAIL(심각도 색)', 'tone' => 'crit'],
-        ['label' => 'PASS',            'tone' => 'low'],
-        ['label' => 'NA · 판정 불가',   'tone' => 'muted'],
-    ], ['inline' => true, 'caption' => '결과']);
+    // 결과 범례는 걷었다 — 뱃지가 FAIL·PASS·NA 를 글자로 달고 있고, 색이 더 말하던
+    //   심각도는 위 셀 콜백이 뱃지 title 로 옮겨 갔다.
     if ($rows) { vg_page_nav($total, $perPage, $page); }
     ?>
     </div>
@@ -359,13 +360,13 @@ vg_hero(
   <div class="card">
     <strong>식별과 출처</strong>
     <div class="card__body">
+      <?php /* 이 목록에서 네 줄(기준·통제명·매핑 점검 항목·최근 점검)을 걷었다 — 전부 이 화면
+               위쪽이 이미 말하던 값이다: 기준·통제명은 히어로 메타, 매핑 점검 항목 수는 서브탭
+               숫자와 요약 타일, 최근 점검은 요약 타일. 같은 사실을 한 화면에서 두 번 적지 않는다.
+               남긴 둘은 여기서만 말하는 것이다 — 통제 ID 는 아래 복사 버튼이 무엇을 복사하는지
+               가리키고, 집계 기준은 이 화면의 모든 숫자가 무엇을 센 것인지 밝힌다. */ ?>
       <dl class="kv">
-        <dt>기준</dt><dd><?= vg_h($frameworks[$fw]) ?></dd>
         <dt>통제 ID</dt><dd><code><?= vg_h($control) ?></code></dd>
-        <dt>통제명</dt><dd><?= vg_h($controlName) ?></dd>
-        <dt>매핑 점검 항목</dt><dd><?= number_format(count($ruleCodes)) ?>개(CCE 룰코드)</dd>
-        <dt>최근 점검</dt>
-        <dd><?= $lastCheckedAt !== null ? vg_h((string) $lastCheckedAt) : '<span class="why">점검 이력 없음</span>' ?></dd>
         <dt>집계 기준</dt><dd>호스트별 최신 스캔 1건</dd>
       </dl>
       <div class="actions mt">

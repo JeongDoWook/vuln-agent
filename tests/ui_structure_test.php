@@ -218,13 +218,22 @@ $ingestPhp = (string) file_get_contents($public . '/ingest.php');
 $caddyfile = (string) file_get_contents($root . '/deploy/caddy/Caddyfile');
 $agentSh = (string) file_get_contents($root . '/agent/vuln-inventory-agent.sh');
 /* 목록은 "이 행을 열어볼지 말지" 를 정하는 열만 둔다(docs/dev/ui-design-system.md).
- *   IP·OS·에이전트 버전·패키지 수·담당 부서는 **지운 게 아니라 호스트 상세로 옮겼다** —
- *   목록에서 빠진 것과 상세에 있는 것을 한 쌍으로 확인한다(한쪽만 보면 값이 사라져도 통과한다). */
+ *   OS·에이전트 버전·패키지 수·담당 부서는 **지운 게 아니라 호스트 상세로 옮겼다** —
+ *   목록에서 빠진 것과 상세에 있는 것을 한 쌍으로 확인한다(한쪽만 보면 값이 사라져도 통과한다).
+ *   IP 는 그 뒤 목록으로 **되돌아왔다**: 검색창이 'IP 검색' 이라 적고 실제로 IP 로 걸리는데
+ *   표에 IP 가 없어 왜 걸렸는지 안 보였다(사용자 지시). 값의 출처도 바뀌었다 —
+ *   호스트가 신고한 전 인터페이스(tb_host_address) 중 대표 하나이지, 상세가 쓰는
+ *   last_seen_ip(서버가 수집 요청을 받은 주소) 한 개가 아니다. */
 $hostPhpSrc = $splitSources($public, $root, 'host.php', 'host');   // host.php + server/src/host/**(위 주석 참고)
-$check(!str_contains($assetsPhp, "['label' => 'IP'") && !str_contains($assetsPhp, "['label' => '스캔'")
+$check(!str_contains($assetsPhp, "['label' => '스캔'")
     && !str_contains($assetsPhp, "['label' => 'OS'") && !str_contains($assetsPhp, "['label' => '에이전트'")
     && !str_contains($assetsPhp, "['label' => '담당 부서'"),
-    '자산 목록에서 상세로 옮긴 열 제거(IP·OS·에이전트·담당 부서)');
+    '자산 목록에서 상세로 옮긴 열 제거(OS·에이전트·담당 부서)');
+/* IP 열은 조회 한 번으로 묶은 값을 쓴다(N+1 금지) — 행마다 조회하면 페이지당 25번이 된다. */
+$check(str_contains($assetsPhp, "['label' => 'IP'")
+    && str_contains($assetsPhp, 'vg_assets_load_addresses($pdo, array_column($rows,')
+    && str_contains($assetsPhp, '$ipsByHost[(int) $r[\'host_id\']]'),
+    '자산 목록 IP 열은 조회 한 번으로 묶은 대표 IP 를 쓴다');
 $check(str_contains($hostPhpSrc, "'IP ' . vg_h(\$host['last_seen_ip'])")
     && str_contains($hostPhpSrc, "\$meta[] = '에이전트 <code>'")
     && str_contains($hostPhpSrc, "vg_badge('구버전', 'med'")
