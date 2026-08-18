@@ -142,10 +142,8 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 <div class="card">
   <strong>핵심 지표</strong>
   <div class="card__body stat-grid">
-    <div class="stat">
-      <span class="stat__val"><?= number_format($cveTotal) ?>건</span>
-      <div class="why">관련 CVE</div>
-    </div>
+    <?php /* 관련 CVE 총건수 타일은 걷었다 — 바로 위 히어로 뱃지('CVE N건')와 아래 서브탭 앵커가
+             같은 수를 이미 두 번 말한다. 이 절에 남길 값은 그 수를 나눠 보는 것들이다. */ ?>
     <div class="stat">
       <span class="stat__val"><?= $kevTotal > 0 ? vg_badge(number_format($kevTotal) . '건', 'crit', '실제 악용이 확인된 취약점(CISA KEV)이 포함됨') : vg_badge('없음', 'muted') ?></span>
       <div class="why">KEV 포함</div>
@@ -160,19 +158,13 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
       <span class="stat__val"><?= number_format($assetHostTotal) ?>대</span>
       <div class="why">영향 자산<?= $assetTotal > $assetHostTotal ? ' · 발견 ' . number_format($assetTotal) . '건' : '' ?></div>
     </div>
-    <div class="stat">
-      <span class="stat__val"><?= vg_h((string) ($adv['published'] ?? '–')) ?></span>
-      <div class="why">발행일</div>
-    </div>
+    <?php /* 발행일·출처 피드 타일도 걷었다 — 제목 아래 히어로 부제가 '<출처> · 발행일 <날짜>' 로
+             둘 다 달고 있고, 정본은 아래 [원문·수집 정보] 절이 갖는다. */ ?>
     <div class="stat">
       <span class="stat__val"><?= !empty($adv['content'])
           ? number_format((int) $adv['content_len']) . '자'
           : vg_badge('미수집', 'warn') ?></span>
       <div class="why">본문</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= vg_h((string) $adv['source']) ?></span>
-      <div class="why">출처 피드</div>
     </div>
   </div>
 </div>

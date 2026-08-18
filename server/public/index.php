@@ -59,7 +59,7 @@ vg_header('대시보드', 'dashboard');
 
   <?php vg_dash_render_signals($urgent, $urgentTotal); ?>
 
-  <?php vg_dash_render_severity($totals, $delta, $hostCount, $kevCount); ?>
+  <?php vg_dash_render_severity($totals, $delta); ?>
 
   <?php vg_dash_render_hosts($rows, $sevByScan, $total, $perPage, $page); ?>
 <?php endif; ?>

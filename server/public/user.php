@@ -211,7 +211,8 @@ vg_header($user['username'] ?? '사용자', 'users');
                   1 => static function (array $r) use ($activityLabels): string {
                       $code = (string) $r['activity_type'];
                       $label = $activityLabels[$code] ?? $code;
-                      return vg_h($label) . '<div class="why">' . vg_h($code) . '</div>';
+                      // 코드는 라벨 밑에 또 적지 않는다 — 라벨이 그 코드의 번역이다(activity.php 와 같은 처리).
+                      return '<span title="' . vg_h($code) . '">' . vg_h($label) . '</span>';
                   },
                   2 => static function (array $r): string {
                       $msg = trim((string) ($r['message'] ?? ''));

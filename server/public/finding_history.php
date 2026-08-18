@@ -259,10 +259,9 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
         <dd><?= $summary && $summary['firstFoundAt'] !== null
             ? vg_h((string) $summary['firstFoundAt'])
             : '<span class="why">없음</span>' ?></dd>
-        <dt>대상</dt>
-        <dd><?= vg_h($packageName) ?> ·
-            <?= $containerId > 0 ? '컨테이너 ' . vg_h($containerName ?? ('#' . $containerId)) : '호스트 자신' ?> ·
-            <a href="/host.php?id=<?= (int) $hostId ?>"><?= vg_h((string) $host['fqdn']) ?></a></dd>
+        <?php /* '대상' 줄은 걷었다 — 히어로 부제($meta)가 같은 세 값(패키지 · 컨테이너/호스트 자신 ·
+                 호스트 링크)을 같은 순서로 이미 달고 있어 글자 하나까지 같은 줄이었다.
+                 호스트로 가는 길은 아래 [호스트 상세] 버튼이 그대로 갖는다. */ ?>
       </dl>
       <div class="actions mt">
         <a class="btn btn--sm btn--ghost" href="/cve.php?cve=<?= urlencode($cveId) ?>">CVE 상세</a>

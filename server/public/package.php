@@ -139,10 +139,9 @@ vg_hero(
 <div class="card">
   <strong>핵심 지표</strong>
   <div class="card__body stat-grid">
-    <div class="stat">
-      <span class="stat__val"><?= number_format($total) ?>건</span>
-      <div class="why">관련 CVE</div>
-    </div>
+    <?php /* '관련 CVE' 총건수 타일은 걷었다 — 같은 수를 아래 서브탭 앵커(관련 CVE N)와 그 절의
+             페이지네이션('총 N건')이 이미 두 번 더 말한다. 여기 남는 것은 그 수로 무엇을 아는지
+             (KEV 등재·수정 버전 확인 비율)이고, 비율의 분모는 옆 타일의 '· N%' 가 갖는다. */ ?>
     <div class="stat">
       <span class="stat__val"><?= $kevTotal > 0 ? vg_badge(number_format($kevTotal) . '건', 'crit', '실제 악용이 확인된 취약점(CISA KEV)') : vg_badge('없음', 'muted') ?></span>
       <div class="why">KEV 등재</div>
@@ -157,10 +156,8 @@ vg_hero(
           : '<span class="why">미확인</span>' ?></span>
       <div class="why">가장 높은 수정 버전</div>
     </div>
-    <div class="stat">
-      <span class="stat__val"><?= $ecosystem !== '' ? vg_h($ecosystem) : '<span class="why">미지정</span>' ?></span>
-      <div class="why">생태계</div>
-    </div>
+    <?php /* 생태계 타일도 걷었다 — 제목 바로 아래 히어로 부제가 같은 값을 이미 달고 있다
+             (값이 없으면 '생태계 미지정' 으로도 거기서 말한다). */ ?>
     <div class="stat">
       <span class="stat__val"><?= vg_h((string) $summary['updated_at']) ?></span>
       <div class="why">집계 갱신</div>
