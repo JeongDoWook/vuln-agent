@@ -18,20 +18,9 @@ declare(strict_types=1);
      *   JS·차트 라이브러리는 쓰지 않는다(CSP·오프라인 배포). 전부 CSS 와 게이지 폭 계산뿐이다. */
     // 런타임 상태 톤 — dead 만 위험으로 올린다(멈춘 컨테이너는 위험이 아니라 사실).
     $stateTone = ['running' => 'ok', 'restarting' => 'med', 'dead' => 'high'];
-    // 카드가 24개씩 늘어서면 다 똑같아 보인다 — 심각도 높은 컨테이너부터 스캔되게
-    // 페이지 안에서만 재정렬한다(SQL 정렬·페이지네이션은 그대로 cid 순, uq_container 인덱스 유지).
-    $sevRank = ['CRITICAL' => 4, 'HIGH' => 3, 'MEDIUM' => 2, 'LOW' => 1];
-    usort($rows, function (array $a, array $b) use ($sevByContainer, $sevRank): int {
-        $sa = $sevByContainer[(int) $a['container_id']] ?? [];
-        $sb = $sevByContainer[(int) $b['container_id']] ?? [];
-        $wa = 0;
-        $wb = 0;
-        foreach ($sevRank as $s => $r) {
-            if ($wa === 0 && ($sa[$s] ?? 0) > 0) { $wa = $r; }
-            if ($wb === 0 && ($sb[$s] ?? 0) > 0) { $wb = $r; }
-        }
-        return $wa !== $wb ? $wb - $wa : array_sum($sb) - array_sum($sa);
-    });
+    // 심각도 높은 컨테이너부터 보여준다 — 정렬은 SQL 단(vg_host_load_containers_tab, LIMIT/OFFSET 전)
+    // 에서 전수 기준으로 이미 끝났다. 여기서 다시 정렬하면 이 페이지 안에서만 재배열되어
+    // 뒷페이지에 남은 CRITICAL 을 못 끌어오므로, 이 뷰는 받은 순서를 그대로 그린다.
     ?>
     <div class="card">
       <strong>컨테이너</strong>
@@ -85,7 +74,7 @@ declare(strict_types=1);
               </div>
 
               <?php /* 1차 정보: 이 카드에서 가장 먼저 봐야 하는 한 가지 — 심각도.
-               * 게이트 폭(width:N%)은 vg_sev_bar() 가 계산한다(인라인 style 예외). */ ?>
+               * 게이지 폭(width:N%)은 vg_sev_bar() 가 계산한다(인라인 style 예외). */ ?>
               <div class="ctrcard__risk">
                 <?php if ($sevSum > 0): ?>
                   <?= vg_sev_bar($sev) ?>
@@ -116,7 +105,6 @@ declare(strict_types=1);
                   <span><?= !empty($c['manager'])
                           ? '<code>' . vg_h((string) $c['manager']) . '</code>'
                           : '<span class="why">패키지 DB 없음</span>' ?></span>
-                  <span>패키지 <b><?= number_format((int) $c['pkg_count']) ?></b></span>
                 </div>
 
                 <?php if ($k8s || !empty($c['workload_ref']) || !empty($c['image_digest']) || !empty($c['sbom_hash'])): ?>
