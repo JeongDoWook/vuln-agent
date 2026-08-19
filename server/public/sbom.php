@@ -73,14 +73,14 @@ try {
     // 스캔 스코프: export.php 와 같은 규칙(scan_id 지정 우선, 아니면 그 호스트의 최신 스캔).
     if ($scanId > 0) {
         $scanSql = 'SELECT s.scan_id, s.collected_at, s.os_id, s.os_version, s.kernel,
-                           s.agent_version, h.fqdn
+                           s.agent_version, h.host_id, h.fqdn
                       FROM tb_scan s
                       JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
                      WHERE s.is_deleted = 0 AND s.scan_id = ?';
         $scanParams = [$scanId];
     } else {
         $scanSql = 'SELECT s.scan_id, s.collected_at, s.os_id, s.os_version, s.kernel,
-                           s.agent_version, h.fqdn
+                           s.agent_version, h.host_id, h.fqdn
                       FROM tb_scan s
                       JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
                       JOIN ' . vg_latest_scan_subq() . ' t ON t.mid = s.scan_id
@@ -126,6 +126,7 @@ try {
 }
 
 $fqdn    = (string) $scan['fqdn'];
+$hostId  = (int) $scan['host_id'];
 $scanNo  = (int) $scan['scan_id'];
 $uuid    = vg_sbom_uuid($scanNo, $fqdn, $cid);
 // 문서 시각은 "SBOM 을 만든 시각"이 아니라 스캔 수집 시각으로 고정한다 — 같은 스캔을 두 번
@@ -154,14 +155,22 @@ $subject = $container !== null
 if ($view === 'html') {
     require_once __DIR__ . '/../src/view.php';
     require_once __DIR__ . '/../src/license_risk.php';
-    vg_log_activity(
-        $pdo, 'PAGE', null, 'view_sbom',
-        '자산=' . $subject['ref'] . ' 컴포넌트 ' . count($packages) . '건 (스캔 #' . $scanNo . ')',
-        ['host' => $fqdn, 'container' => $cid !== '' ? $cid : null,
-         'scan_id' => $scanNo, 'components' => count($packages)],
-        subject: $subject['ref'], action: 'READ'
-    );
-    vg_sbom_render_html($subject, $packages, $fqdn, $cid, $scanNo);
+    // GET 요청에서만 남긴다(vg_log_page_view 와 같은 방침, audit.php:184). CSRF 토큰이 없고
+    //   쿠키가 SameSite=Lax 인 GET/HEAD 는 공격자가 보낸 링크를 클릭하게만 해도 발생한다 —
+    //   HEAD 는 실제 열람 없이도(프리페치·링크 미리보기) 걸릴 수 있어 아예 기록에서 뺀다.
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+        vg_log_activity(
+            $pdo, 'HOST', $hostId, 'view_sbom',
+            '자산=' . $subject['ref'] . ' 컴포넌트 ' . count($packages) . '건 (스캔 #' . $scanNo . ')',
+            ['host' => $fqdn, 'container' => $cid !== '' ? $cid : null,
+             'scan_id' => $scanNo, 'components' => count($packages)],
+            subject: $subject['ref'], action: 'READ'
+        );
+    }
+    // 위에서 이미 이 열람을 구체적으로 기록했다(또는 GET 이 아니라서 아예 안 남겼다) —
+    //   vg_header() 가 여는 범용 page_view 로그가 같은 열람을 또 남기지 않게 막는다.
+    $GLOBALS['vg_suppress_page_view'] = true;
+    vg_sbom_render_html($subject, $packages, $fqdn, $cid, $scanNo, (string) ($scan['collected_at'] ?? ''));
     exit;
 }
 
@@ -364,28 +373,43 @@ function vg_sbom_spdx(array $scan, array $subject, array $packages, string $uuid
  *   나눈다 — "이 자산에 뭐가 얼마나 있나" 를 flat JSON 한 덩어리보다 먼저 보여준다.
  *   진짜 의존성 그래프(누가 누구를 끌어왔나)는 host.php 의 depgraph.php 링크가 이미 담당한다.
  */
-function vg_sbom_render_html(array $subject, array $packages, string $fqdn, string $cid, int $scanNo): void {
+function vg_sbom_render_html(array $subject, array $packages, string $fqdn, string $cid, int $scanNo, string $collectedAt = ''): void {
     $total = count($packages);
 
-    // 관리자(생태계)별 묶음 — 카드/트리의 뿌리.
+    // 관리자(생태계)별 묶음 — 도넛차트·KPI 는 전건 기준(페이지가 바뀌어도 분포는 그대로 보여야 한다).
     $byManager = [];
     foreach ($packages as $p) {
         $byManager[(string) $p['manager']][] = $p;
     }
     ksort($byManager);
 
-    // 라이선스 위험도 집계(packages.php 의 언어 탭과 같은 순수함수 — 별도 사전집계 없이 즉산).
+    // 라이선스 위험도 집계(packages.php 의 언어 탭과 같은 순수함수 — 별도 사전집계 없이 즉산). 전건 기준.
     $riskCounts = ['permissive' => 0, 'copyleft' => 0, 'unknown' => 0];
     foreach ($packages as $p) {
         $risk = vg_license_classify($p['license'] ?? null);
         $riskCounts[$risk]++;
     }
 
+    // 컴포넌트 표는 페이지네이션한다 — 운영 서버는 수백~수천 건이 정상이라(dev DB 는 최대
+    //   116건이라 스모크에 안 걸림) 전건을 한 화면에 뿌리면 브라우저가 무거워진다. 정렬이
+    //   manager,name,version(SQL ORDER BY) 이라 슬라이스해도 관리자별 묶음이 페이지 경계에서만
+    //   갈릴 뿐 뒤섞이지 않는다.
+    $page    = vg_page();
+    $perPage = vg_perpage();
+    $pageItems = array_slice($packages, ($page - 1) * $perPage, $perPage);
+    $byManagerPage = [];
+    foreach ($pageItems as $p) {
+        $byManagerPage[(string) $p['manager']][] = $p;
+    }
+    ksort($byManagerPage);
+
     $title = (string) $subject['name'] !== '' ? (string) $subject['name'] : $fqdn;
     vg_header('SBOM · ' . $title, 'assets');
     vg_chart_assets();
     ?>
     <?php vg_page_title($title . ' SBOM', '', ['count' => $total, 'count_label' => '개 컴포넌트']); ?>
+    <?php // 지금 보고 있는 스캔 회차 — 과거 스캔을 view=html 로 열었을 때 최신인 줄 착각하지 않도록. ?>
+    <p class="why">스캔 #<?= $scanNo ?><?= $collectedAt !== '' ? ' · ' . vg_h($collectedAt) . ' 수집' : '' ?></p>
 
     <div class="cards">
       <div class="kpi kpi--sm"><b><?= number_format($total) ?></b><span>컴포넌트</span></div>
@@ -426,16 +450,16 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
       </div>
     <?php endif; ?>
 
-    <?php if (!$byManager): ?>
+    <?php if (!$byManagerPage): ?>
       <?php vg_empty(['icon' => 'package', 'title' => '이 대상에서 수집된 컴포넌트가 없습니다.']); ?>
     <?php else: ?>
-      <?php foreach ($byManager as $manager => $pkgs): ?>
+      <?php foreach ($byManagerPage as $manager => $pkgs): ?>
         <div class="card">
           <div class="ctree__root">
             <span class="ctree__icon" aria-hidden="true"><?= vg_icon('package') ?></span>
             <div class="ctree__rootid">
-              <strong><?= vg_h($manager !== '' ? $manager : '미상') ?></strong>
-              <span class="why"><?= number_format(count($pkgs)) ?>개 컴포넌트</span>
+              <strong><?= vg_h(vg_strip_ctrl($manager !== '' ? $manager : '미상')) ?></strong>
+              <span class="why"><?= number_format(count($byManager[$manager] ?? $pkgs)) ?>개 컴포넌트</span>
             </div>
           </div>
           <div class="card__body">
@@ -451,15 +475,15 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
                 [
                     'card' => false,
                     'cell' => [
-                        0 => static fn($p) => '<strong>' . vg_h((string) $p['name']) . '</strong>',
+                        0 => static fn($p) => '<strong>' . vg_h(vg_strip_ctrl((string) $p['name'])) . '</strong>',
                         1 => static fn($p) => '<code>' . vg_h((string) ($p['version'] ?? '')) . '</code>',
                         2 => static function ($p) {
-                            $lic = trim((string) ($p['license'] ?? ''));
+                            $lic = trim(vg_strip_ctrl((string) ($p['license'] ?? '')));
                             if ($lic === '') { return '<span class="why">–</span>'; }
                             $risk = vg_license_classify($lic);
                             return vg_h($lic) . ' ' . vg_badge(vg_license_risk_label($risk), vg_license_risk_tone($risk));
                         },
-                        3 => static fn($p) => !empty($p['vendor']) ? vg_h((string) $p['vendor']) : '<span class="why">–</span>',
+                        3 => static fn($p) => !empty($p['vendor']) ? vg_h(vg_strip_ctrl((string) $p['vendor'])) : '<span class="why">–</span>',
                     ],
                 ]
             );
@@ -468,7 +492,8 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
         </div>
       <?php endforeach; ?>
     <?php endif; ?>
+    <?php vg_page_nav($total, $perPage, $page); ?>
 
-    <?php vg_sbom_links($fqdn, $cid); ?>
+    <?php vg_sbom_links($fqdn, $cid, $scanNo); ?>
     <?php vg_footer();
 }
