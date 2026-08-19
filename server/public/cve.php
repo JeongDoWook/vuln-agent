@@ -32,6 +32,7 @@ require_once __DIR__ . '/../src/cve/sections.php';  // vg_cve_render_section —
 vg_require_menu_any('findings', 'catalog', 'advisories');   // CVE 상세: 탐지 결과·CVE 카탈로그·보안 공지에서 함께 열린다
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = []; $vendorRows = [];
+$verMap = [];
 $locTotal = 0; $assetTotal = 0; $page = vg_page(); $perPage = vg_perpage();
 $vendorTotal = 0; $vPage = vg_page('vpage'); $vPerPage = vg_perpage(null, 'vper_page');
 $affectedTotal = 0; $aPage = vg_page('apage'); $aPerPage = vg_perpage(null, 'aper_page');
@@ -64,6 +65,8 @@ try {
 
         ['total' => $locTotal, 'assetTotal' => $assetTotal, 'rows' => $locations]
             = vg_cve_load_locations($pdo, $cveId, $page, $perPage);
+
+        $verMap = vg_cve_load_version_map($pdo, $cveId);
     }
 } catch (Throwable $e) {
     error_log('[cve] ' . $e->getMessage());
@@ -181,8 +184,7 @@ vg_cve_render_section('affected', [
 ]);
 
 vg_cve_render_section('assetmap', [
-    'locations' => $locations, 'locTotal' => $locTotal,
-    'page' => $page, 'perPage' => $perPage,
+    'verMap' => $verMap, 'locTotal' => $locTotal,
 ]);
 
 vg_cve_render_section('locations', [

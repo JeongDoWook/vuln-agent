@@ -157,3 +157,26 @@ function vg_cve_load_locations(PDO $pdo, string $cveId, int $page, int $perPage)
 
     return ['total' => $locTotal, 'assetTotal' => $assetTotal, 'rows' => $stmt->fetchAll()];
 }
+
+/**
+ * 영향받는 버전 맵(assetmap.php) 전용 집계 — "패키지 @ 설치 버전" 별 전체 자산 수.
+ *   vg_cve_load_locations() 의 $locations 는 발견 위치 표의 현재 페이지 결과라, 그걸로 카드를
+ *   묶으면 같은 패키지@버전 카드가 페이지마다 쪼개지거나 중복 등장한다. 이 함수는 페이지와
+ *   무관하게 이 CVE 전체를 한 번에 GROUP BY 해 카드 하나당 정확한 전체 호스트 수를 준다.
+ */
+function vg_cve_load_version_map(PDO $pdo, string $cveId): array {
+    $stmt = $pdo->prepare(
+        "SELECT f.package_name, f.installed_version, COUNT(DISTINCT h.host_id) AS host_count
+         FROM tb_finding f
+         JOIN tb_scan s ON s.scan_id = f.scan_id
+         JOIN tb_host h ON h.host_id = s.host_id
+         JOIN " . vg_latest_scan_subq() . " latest
+           ON latest.host_id = s.host_id AND latest.mid = s.scan_id
+         WHERE f.cve_id = ?
+         GROUP BY f.package_name, f.installed_version
+         ORDER BY f.package_name, f.installed_version"
+    );
+    $stmt->execute([$cveId]);
+
+    return $stmt->fetchAll();
+}
