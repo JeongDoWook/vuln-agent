@@ -323,23 +323,27 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
     <?php if (!$rows): ?>
       <?php vg_empty(['icon' => 'clock', 'title' => '스캔 이력이 없습니다.']); ?>
     <?php else: ?>
-      <ol class="timeline">
-        <?php foreach ($rows as $r):
+      <ul class="timeline">
+        <?php
+        $isLastPage = ($page * $perPage) >= $total;
+        $lastIdx = count($rows) - 1;
+        foreach ($rows as $i => $r):
             $tone = $r['status'] === 'FOUND' ? vg_sev_tone((string) $r['severity'])
                   : ($r['status'] === 'SUPPRESSED' ? 'warn' : 'muted');
+            $itemClass = 'timeline__item' . ($isLastPage && $i === $lastIdx ? ' timeline__item--end' : '');
         ?>
-        <li class="timeline__item">
+        <li class="<?= $itemClass ?>">
           <span class="timeline__dot tone-<?= vg_h($tone) ?>"></span>
           <div class="timeline__row">
             <a class="timeline__scan" href="/findings.php?scan_id=<?= (int) $r['scan_id'] ?>">#<?= (int) $r['scan_id'] ?></a>
-            <span class="why"><?= $r['collected_at'] !== null ? vg_h((string) $r['collected_at']) : '–' ?></span>
+            <span class="why">수집 <?= $r['collected_at'] !== null ? vg_h((string) $r['collected_at']) : '–' ?></span>
             <?= vg_badge($statusLabel[$r['status']] ?? $r['status'], $tone) ?>
-            <?php if ($r['version'] !== null): ?><span class="why"><?= vg_h((string) $r['version']) ?></span><?php endif; ?>
+            <span class="why">버전 <?= $r['version'] !== null ? '<code>' . vg_h((string) $r['version']) . '</code>' : '–' ?></span>
           </div>
-          <?php if ($r['reason'] !== null): ?><div class="timeline__reason why"><?= vg_h((string) $r['reason']) ?></div><?php endif; ?>
+          <div class="timeline__reason why">근거 <?= $r['reason'] !== null ? vg_h((string) $r['reason']) : '–' ?></div>
         </li>
         <?php endforeach; ?>
-      </ol>
+      </ul>
     <?php endif; ?>
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>

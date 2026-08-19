@@ -1055,13 +1055,13 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .rank__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rank__track { height: 10px; border-radius: 999px; background: var(--sunken); overflow: hidden; }
 .rank__bar { display: block; height: 100%; border-radius: 999px; background: var(--muted-2); }
-.rank__bar.tone-crit  { background: var(--crit); }
-.rank__bar.tone-high  { background: var(--high); }
-.rank__bar.tone-med   { background: var(--med); }
-.rank__bar.tone-low   { background: var(--low); }
-.rank__bar.tone-ok    { background: var(--ok); }
-.rank__bar.tone-muted { background: var(--muted-2); }
-.rank__bar.tone-info  { background: var(--accent); }
+.rank__bar.tone-crit,  .timeline__dot.tone-crit  { background: var(--crit); }
+.rank__bar.tone-high,  .timeline__dot.tone-high  { background: var(--high); }
+.rank__bar.tone-med,   .timeline__dot.tone-med,
+.timeline__dot.tone-warn { background: var(--med); }
+.rank__bar.tone-low,   .timeline__dot.tone-low   { background: var(--low); }
+.rank__bar.tone-ok,    .timeline__dot.tone-ok    { background: var(--ok); }
+.rank__bar.tone-info,  .timeline__dot.tone-info  { background: var(--accent); }
 .rank__value { color: var(--text); font-weight: 700; }
 @media (max-width: 700px) { .rank__row { grid-template-columns: minmax(0, 7rem) minmax(2rem, 1fr) max-content; } }
 
@@ -1091,15 +1091,9 @@ td details[open] summary { margin-bottom: .35rem; }
  * 순수 CSS(왼쪽 세로선 + 점 마커) — 새 JS 라이브러리 불필요. finding_history.php 가 첫 사용처. */
 .timeline { list-style: none; margin: 0; padding: 0; }
 .timeline__item { position: relative; padding: 0 0 1rem 1.1rem; border-left: 2px solid var(--line); }
-.timeline__item:last-child { padding-bottom: 0; border-left-color: transparent; }
+.timeline__item:last-child { padding-bottom: 0; }
+.timeline__item--end { border-left-color: transparent; }
 .timeline__dot { position: absolute; left: -6px; top: .2rem; width: 10px; height: 10px; border-radius: 50%; background: var(--muted-2); border: 2px solid var(--surface); }
-.timeline__dot.tone-crit { background: var(--crit); }
-.timeline__dot.tone-high { background: var(--high); }
-.timeline__dot.tone-med,
-.timeline__dot.tone-warn { background: var(--med); }
-.timeline__dot.tone-low  { background: var(--low); }
-.timeline__dot.tone-ok   { background: var(--ok); }
-.timeline__dot.tone-muted{ background: var(--muted-2); }
 .timeline__row { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
 .timeline__scan { font-weight: 600; }
 .timeline__reason { margin-top: .2rem; }
