@@ -16,6 +16,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';           // vg_log_activity
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_frameworks, vg_control_guide, vg_cce_rule_guides
+require_once __DIR__ . '/../src/compliance/policy.php'; // vg_compliance_status, vg_compliance_tone_of — 판정 어휘 SSOT
 vg_require_menu_any('compliance', 'findings');   // 통제 상세: 통제 기준 매핑·판정 이력·패키지 상세에서 함께 열린다
 
 $err = null;
@@ -51,13 +52,14 @@ try {
         if ($controlName === '') { $controlName = (string) $m['control_name']; }
     }
 
-    // 상세 열람은 감사 대상이다(CLAUDE.md 원칙 7). 통제 ID 는 정수 PK 가 아니라 message·subject 로
-    //   남긴다 — compliance_rule.php 의 view_compliance_rule 과 같은 형태.
-    $subject = $fw . '/' . $control;
-    vg_log_activity($pdo, 'CONTROL', null, 'view_control', $subject, subject: $subject, action: 'READ');
-    session_write_close();   // 인가·감사로그 이후 집계 전 세션락 해제(control_mapping.php 선례)
-
     if ($found) {
+        // 상세 열람은 감사 대상이다(CLAUDE.md 원칙 7). 통제 ID 는 정수 PK 가 아니라 message·subject 로
+        //   남긴다 — compliance_rule.php 의 view_compliance_rule 과 같은 형태. 존재 검증(위 $found) 뒤에
+        //   남긴다 — cce-rule.php 와 같은 순서(임의 ?control= 값이 그대로 감사로그에 찍히지 않게).
+        $subject = $fw . '/' . $control;
+        vg_log_activity($pdo, 'CONTROL', null, 'view_control', $subject, subject: $subject, action: 'READ');
+        session_write_close();   // 인가·감사로그 이후 집계 전 세션락 해제(control_mapping.php 선례)
+
         $guide = vg_control_guide($pdo, $fw, $control);
 
         // 점검 제목·SSG 룰 ID 는 판정 결과에 붙어 있다(cce.php 가 코드마다 같은 값을 쓴다).
@@ -183,8 +185,12 @@ if (!$found) {
     return;
 }
 
-$failTone = $counts['FAIL'] > 0 ? 'crit'
-          : ($counts['NA'] > 0 ? 'med' : ($total > 0 ? 'ok' : 'muted'));
+// 판정 어휘는 compliance.php 와 같은 함수로 뽑는다(SSOT) — 위반 건수만으로 crit 을 매기던
+//   예전 계산을 걷어내고, 1~5건(부분준수)·6건 이상(미준수)을 구분하는 기존 컷라인을 그대로 탄다.
+$policy = vg_compliance_policy();
+$status = $total > 0
+    ? vg_compliance_status($counts['FAIL'], $counts['NA'] > 0, $policy['partial_max'])
+    : ['label' => '점검 결과 없음', 'tone' => 'muted'];
 vg_hero(
     vg_h($control),
     [
@@ -193,35 +199,42 @@ vg_hero(
         '<a href="' . vg_h($listUrl) . '">통제 목록으로</a>',
     ],
     number_format($counts['FAIL']) . '건',
-    $failTone,
-    'FAIL',
+    $status['tone'],
+    $status['label'],
     'CONTROL DETAIL'
 );
 ?>
 
-<div class="card">
-  <div class="card__body stat-grid">
-    <?php /* FAIL 타일은 걷었다 — 바로 위 히어로가 같은 수를 같은 라벨('FAIL')로 이미 세워 두었다.
-             여기 남는 것은 그 옆에 놓고 봐야 뜻이 생기는 값들(PASS·NA·자산·항목 수)이다. */ ?>
-    <div class="stat">
-      <span class="stat__val"><?= number_format($counts['PASS']) ?></span>
-      <div class="why">PASS</div>
+<div class="split">
+  <div class="card">
+    <strong>판정 분포</strong>
+    <div class="card__body center">
+      <?php vg_result_donut([
+          ['tone' => 'crit',  'label' => 'FAIL',    'n' => $counts['FAIL']],
+          ['tone' => 'ok',    'label' => 'PASS',    'n' => $counts['PASS']],
+          ['tone' => 'muted', 'label' => '판정 불가', 'n' => $counts['NA']],
+      ], 132, '이 통제의 판정 분포'); ?>
+      <div class="legend">
+        <div><i class="tone-crit"></i>FAIL<span class="n"><?= number_format($counts['FAIL']) ?></span></div>
+        <div><i class="tone-ok"></i>PASS<span class="n"><?= number_format($counts['PASS']) ?></span></div>
+        <div><i class="tone-muted"></i>판정 불가<span class="n"><?= number_format($counts['NA']) ?></span></div>
+      </div>
     </div>
-    <div class="stat">
-      <span class="stat__val"><?= number_format($counts['NA']) ?></span>
-      <div class="why">NA(판정 불가)</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= number_format($hostCount) ?></span>
-      <div class="why">해당 자산</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= number_format(count($ruleCodes)) ?></span>
-      <div class="why">매핑된 점검 항목</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= $lastCheckedAt !== null ? vg_h((string) $lastCheckedAt) : '<span class="why">–</span>' ?></span>
-      <div class="why">최근 점검</div>
+  </div>
+  <div class="card">
+    <div class="card__body stat-grid">
+      <div class="stat">
+        <span class="stat__val"><?= number_format($hostCount) ?></span>
+        <div class="why">해당 자산</div>
+      </div>
+      <div class="stat">
+        <span class="stat__val"><?= number_format(count($ruleCodes)) ?></span>
+        <div class="why">매핑된 점검 항목</div>
+      </div>
+      <div class="stat">
+        <span class="stat__val"><?= $lastCheckedAt !== null ? vg_h((string) $lastCheckedAt) : '<span class="why">–</span>' ?></span>
+        <div class="why">최근 점검</div>
+      </div>
     </div>
   </div>
 </div>

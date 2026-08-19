@@ -940,10 +940,12 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .donut__track { stroke: var(--sunken); }
 .donut__arc { transition: stroke-width .12s ease-out; }
 .donut__arc:hover { stroke-width: 5.5; }
-.donut__arc.tone-crit { stroke: var(--crit); }
-.donut__arc.tone-high { stroke: var(--high); }
-.donut__arc.tone-med  { stroke: var(--med); }
-.donut__arc.tone-low  { stroke: var(--low); }
+.donut__arc.tone-crit  { stroke: var(--crit); }
+.donut__arc.tone-high  { stroke: var(--high); }
+.donut__arc.tone-med   { stroke: var(--med); }
+.donut__arc.tone-low   { stroke: var(--low); }
+.donut__arc.tone-ok    { stroke: var(--ok); }
+.donut__arc.tone-muted { stroke: var(--muted-2); }
 
 .donut__mid { position: absolute; text-align: center; line-height: 1.15; }
 .donut__mid b { display: block; font-size: var(--fs-num); font-variant-numeric: tabular-nums; }
@@ -2234,10 +2236,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--assets .card > table:only-child td:last-child { padding-right: .9rem; }
 .page--assets .card > table:only-child tbody tr[class*="sev-"] td:first-child { padding-left: calc(.9rem - 3px); }
 
-/* 통제 기준 매핑: 통제명이 표 기본 .92rem 이라 이웃 칸(.why, .82rem)보다 혼자 커 보여
- * 표가 한 톤으로 읽히지 않았다. 같은 크기로 낮추되 링크라는 건 색으로 남긴다. */
-.page--control_mapping .control-name { font-size: var(--fs-sm); }
-
 /* CCE 상세: '참조 근거 · SSG 룰' 의 근거는 SSG 원문(영문 장문) 한 덩어리다. .kv 는 값 열이
  * max-content 라 그 한 줄이 카드를 뚫고 나가 페이지에 가로 스크롤이 생겼다
  * (재현: /cce-rule.php?code=CCE-CRYPTO-SSH-CIPHER · 1440px). 값 열을 남는 폭으로 접히게 하고
@@ -2389,6 +2387,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctrcard.tone-med,   .u-card.tone-med   { border-left-color: var(--med); }
 .ctrcard.tone-muted, .u-card.tone-muted { border-left-color: var(--muted-2); }
 .ctrcard.tone-low   { border-left-color: var(--low); } /* u-card 엔 없는 톤(가이드 위험도는 상/중/하뿐) */
+.ctrcard.tone-ok    { border-left-color: var(--ok); } /* u-card 엔 없는 톤(컴플라이언스 준수 전용) */
 
 .ctrcard__head, .u-card__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem; }
 .ctrcard__name, .u-card__name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
@@ -2405,6 +2404,18 @@ form.card .btn--primary:active { transform: translateY(0); }
   .ctree__list { grid-template-columns: 1fr; padding-left: .8rem; }
   .ctree__list::before { left: .25rem; }
 }
+
+/* 카드 그리드 — .ctree__list 와 같은 반응형 카드 배치이지만 계통선(::before)이 없는 목록에서
+ * 쓴다(통제 기준 매핑·CCE 카탈로그). 카드 자체는 .ctrcard 를 그대로 재사용한다. */
+.ctrcard-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: .8rem;
+}
+@media (max-width: 640px) { .ctrcard-grid { grid-template-columns: 1fr; } }
 
 /* ----------------------------------------------------------------------
  * kisa-u.php · U-코드 카드 그리드
