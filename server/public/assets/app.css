@@ -2389,6 +2389,11 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctrcard.tone-low   { border-left-color: var(--low); } /* u-card 엔 없는 톤(가이드 위험도는 상/중/하뿐) */
 .ctrcard.tone-ok    { border-left-color: var(--ok); } /* u-card 엔 없는 톤(컴플라이언스 준수 전용) */
 
+/* depgraph.php 의 루트/대상 역할 표시 — tone-* 축은 위험 등급 전용(.u-card 와 공유)이라
+ * "루트/대상/기타"라는 다른 축을 여기 얹지 않는다. 색이 필요하면 이렇게 별도 modifier 로 둔다. */
+.ctrcard--dep-root   { border-left-color: var(--accent); }
+.ctrcard--dep-target { border-left-color: var(--accent-2); }
+
 .ctrcard__head, .u-card__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem; }
 .ctrcard__name, .u-card__name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
 .ctrcard__name:hover, .u-card__name:hover { color: var(--accent-2); }
