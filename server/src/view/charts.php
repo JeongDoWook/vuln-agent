@@ -51,6 +51,40 @@ function vg_sev_donut(array $counts, int $size = 132): void {
 }
 
 /**
+ * 임의 판정 분포 도넛(PASS/FAIL/NA 등) — vg_sev_donut() 과 같은 SVG 패턴이지만 톤·라벨을
+ *   호출부가 직접 정한다(심각도처럼 어휘가 고정돼 있지 않은 화면들이 쓴다: control.php 의
+ *   PASS/FAIL/판정불가, cce-rule.php 등).
+ *   $segments: [['tone'=>'crit', 'label'=>'FAIL', 'n'=>3], …] — 0건인 조각은 그리지 않는다.
+ */
+function vg_result_donut(array $segments, int $size = 132, string $alt = '판정 분포'): void {
+    $total = 0;
+    foreach ($segments as $seg) { $total += (int) $seg['n']; }
+
+    $r = 15.9155;   // 둘레가 정확히 100 이 되는 반지름 (2πr = 100)
+    echo '<div class="donut">';
+    echo '<svg viewBox="0 0 42 42" width="' . $size . '" height="' . $size . '" role="img" aria-label="' . vg_h($alt) . '">';
+    echo '<circle class="donut__track" cx="21" cy="21" r="' . $r . '" fill="none" stroke-width="4.5"></circle>';
+
+    if ($total > 0) {
+        $offset = 25;   // 12시 방향에서 시작(기본은 3시 방향)
+        foreach ($segments as $seg) {
+            $n = (int) $seg['n'];
+            if ($n === 0) { continue; }
+            $pct = $n / $total * 100;
+            echo '<circle class="donut__arc tone-' . vg_h((string) $seg['tone']) . '" cx="21" cy="21" r="' . $r . '"'
+                . ' fill="none" stroke-width="4.5"'
+                . ' stroke-dasharray="' . round($pct, 2) . ' ' . round(100 - $pct, 2) . '"'
+                . ' stroke-dashoffset="' . round($offset, 2) . '">'
+                . '<title>' . vg_h((string) $seg['label'] . ' ' . number_format($n) . '건') . '</title></circle>';
+            $offset -= $pct;   // 시계방향으로 이어 붙인다
+        }
+    }
+    echo '</svg>';
+    echo '<div class="donut__mid"><b>' . number_format($total) . '</b><span>전체</span></div>';
+    echo '</div>';
+}
+
+/**
  * 스캔별 리소스(메모리/CPU) 추이 라인차트 — app.css 의 chart__grid/tick/lbl
  * 눈금 위에 area 채움(세로 그라데이션) + 폴리라인 + 포인트로 그린다.
  *   $scans: host.php 가 이미 들고 있는 tb_scan 행(oldest→newest 순으로 넘긴다 — 차트는 좌→우).

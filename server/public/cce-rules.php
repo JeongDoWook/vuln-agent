@@ -18,6 +18,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/cce.php';             // vg_cce_rules — 점검 룰 메타의 SSOT
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_mapping_for, vg_cce_rule_guides
+require_once __DIR__ . '/../src/compliance/policy.php'; // vg_compliance_status — 판정 어휘 SSOT
 vg_require_menu('catalog');   // 카탈로그 계열과 같은 메뉴코드(cves.php·packages.php 와 동일)
 
 /**
@@ -143,74 +144,76 @@ vg_header('CCE', 'cce_rules');
 
   $hasFilter = $q !== '' || $sev !== '';
   $detailHref = fn(array $r): string => '/cce-rule.php?code=' . urlencode((string) $r['code']);
-
-  vg_table(
-      [
-          ['label' => 'CCE 코드', 'width' => '14%', 'class' => 'col-id'],
-          ['label' => '점검 항목'],
-          ['label' => '심각도', 'width' => '6.5rem'],
-          // '무엇을 보는가'(점검 요약)는 **문장**이 들어가는 칸이라 표 셀 규칙을 깼다 — 행마다
-          //   높이가 달라지고 옆의 식별자·판정이 밀렸다. 목록에서 빼고 상세가 갖는다
-          //   (cce-rule.php 의 '무엇을 보는가' dt/dd). 검색 대상($haystack)에는 그대로 남는다.
-          ['label' => '기준 매핑', 'width' => '18%'],
-          ['label' => '현재 판정', 'width' => '15%'],
-      ],
-      $rows,
-      [
-          'empty' => $hasFilter
-              ? [
-                  'icon'  => '🔍',
-                  'title' => '조건에 맞는 점검 항목이 없습니다.',
-                  'hint'  => '검색어나 심각도 필터를 확인해 보세요.',
-                  'cta'   => ['href' => '/cce-rules.php', 'label' => '필터 초기화'],
-              ]
-              : [
-                  'icon'  => '📋',
-                  'title' => '점검 항목을 읽지 못했습니다.',
-                  'hint'  => '점검 정의는 서버 코드가 갖고 있습니다 — 관리자에게 문의하세요.',
-              ],
-          'cell' => [
-              0 => fn($r) => '<a href="' . vg_h($detailHref($r)) . '" title="' . vg_h((string) $r['code']) . '">'
-                            . '<code class="why">' . vg_h((string) $r['code']) . '</code></a>',
-              1 => fn($r) => '<a href="' . vg_h($detailHref($r)) . '">' . vg_h((string) $r['title']) . '</a>',
-              2 => fn($r) => vg_badge((string) $r['severity'], vg_sev_tone((string) $r['severity'])),
-              // 기준 문자열은 tb_control_mapping 이 정본이다 — 화면은 조회한 값만 찍는다.
-              3 => function ($r) use ($frameworks, $fwShort) {
-                  if (!$r['mapping']) { return '<span class="why">자체 기준</span>'; }
-                  $out = [];
-                  foreach ($r['mapping'] as $fw => $items) {
-                      foreach ($items as $it) {
-                          $label = ($fwShort[$fw] ?? $fw) . ' ' . $it['control_id'];
-                          $out[] = '<a href="/control.php?fw=' . urlencode((string) $fw)
-                                 . '&amp;control=' . urlencode((string) $it['control_id']) . '">'
-                                 . vg_badge($label, 'muted',
-                                            ($frameworks[$fw] ?? $fw) . ' · ' . $it['control_name'])
-                                 . '</a>';
-                      }
-                  }
-                  return implode(' ', $out);
-              },
-              4 => function ($r) {
-                  if ((int) $r['result_cnt'] === 0) { return vg_badge('점검 결과 없음', 'muted'); }
-                  $cnt  = (int) $r['result_cnt'];
-                  $fail = (int) $r['fail_cnt'];
-                  $tone = $fail > 0 ? 'crit' : ((int) $r['na_cnt'] > 0 ? 'med' : 'ok');
-                  // 0 인 항목은 적지 않는다 — 신호는 FAIL 하나뿐인데 모든 행이 'PASS 0 · 판정 불가 0'
-                  //   으로 채워져 정작 읽어야 할 값을 덮었다(값이 없는 걸 0 으로 쓰지 않는다).
-                  $parts = [];
-                  if ((int) $r['pass_cnt'] > 0) { $parts[] = 'PASS ' . number_format((int) $r['pass_cnt']); }
-                  if ((int) $r['na_cnt'] > 0)   { $parts[] = '판정 불가 ' . number_format((int) $r['na_cnt']); }
-                  $why  = implode(' · ', $parts);
-                  // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. 0% 라 색은 안 보인다.
-                  return vg_badge('FAIL ' . number_format($fail), $tone)
-                       . ($why === '' ? '' : '<br><span class="why">' . vg_h($why) . '</span>')
-                       . vg_meter($tone === 'ok' ? 'low' : $tone, $fail / $cnt * 100,
-                                  'FAIL ' . number_format($fail) . ' / 점검 ' . number_format($cnt) . '건');
-              },
-          ],
-      ]
-  );
-  if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
+  <div class="card">
+    <div class="card__body">
+      <?php if (!$rows): ?>
+        <?php vg_empty($hasFilter
+            ? [
+                'icon'  => '🔍',
+                'title' => '조건에 맞는 점검 항목이 없습니다.',
+                'hint'  => '검색어나 심각도 필터를 확인해 보세요.',
+                'cta'   => ['href' => '/cce-rules.php', 'label' => '필터 초기화'],
+            ]
+            : [
+                'icon'  => '📋',
+                'title' => '점검 항목을 읽지 못했습니다.',
+                'hint'  => '점검 정의는 서버 코드가 갖고 있습니다 — 관리자에게 문의하세요.',
+            ]); ?>
+      <?php else: ?>
+        <ul class="ctrcard-grid">
+        <?php foreach ($rows as $r):
+            $cnt  = (int) $r['result_cnt'];
+            $fail = (int) $r['fail_cnt'];
+            $na   = (int) $r['na_cnt'];
+            $status = $cnt === 0
+                ? ['label' => '점검 결과 없음', 'tone' => 'muted']
+                : vg_compliance_status($fail, $na > 0);
+            // 카드 왼쪽 띠는 심각도(이 점검이 얼마나 나쁜가) — containers.php 의 위험 카드와
+            //   같은 규약이다. 판정 결과(지금 상태)는 안쪽 배지가 말한다.
+            $sevTone = vg_sev_tone((string) $r['severity']);
+        ?>
+          <li class="ctrcard tone-<?= vg_h($sevTone) ?>">
+            <div class="ctrcard__head">
+              <a class="ctrcard__name" href="<?= vg_h($detailHref($r)) ?>" title="<?= vg_h((string) $r['code']) ?>">
+                <?= vg_h((string) $r['title']) ?>
+              </a>
+              <?= vg_badge((string) $r['severity'], $sevTone) ?>
+              <?= vg_badge($status['label'], $status['tone']) ?>
+            </div>
+            <div class="ctrcard__facts">
+              <code class="why"><?= vg_h((string) $r['code']) ?></code>
+            </div>
+            <?php // 기준 문자열은 tb_control_mapping 이 정본이다 — 화면은 조회한 값만 찍는다. ?>
+            <div class="ctrcard__facts">
+              <?php if (!$r['mapping']): ?>
+                <span class="why">자체 기준</span>
+              <?php else: foreach ($r['mapping'] as $fw => $items): foreach ($items as $it): ?>
+                <a href="/control.php?fw=<?= urlencode((string) $fw) ?>&amp;control=<?= urlencode((string) $it['control_id']) ?>">
+                  <?= vg_badge(($fwShort[$fw] ?? $fw) . ' ' . $it['control_id'], 'muted',
+                               ($frameworks[$fw] ?? $fw) . ' · ' . $it['control_name']) ?>
+                </a>
+              <?php endforeach; endforeach; endif; ?>
+            </div>
+            <?php if ($cnt > 0):
+                $parts = [];
+                if ((int) $r['pass_cnt'] > 0) { $parts[] = 'PASS ' . number_format((int) $r['pass_cnt']); }
+                if ($na > 0)                  { $parts[] = '판정 불가 ' . number_format($na); }
+                $why = implode(' · ', $parts);
+            ?>
+              <div class="ctrcard__risk">
+                <span class="why">FAIL <b><?= number_format($fail) ?></b><?= $why !== '' ? ' · ' . vg_h($why) : '' ?></span>
+                <?php // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. ?>
+                <?= vg_meter($status['tone'] === 'ok' ? 'low' : $status['tone'], $fail / $cnt * 100,
+                             'FAIL ' . number_format($fail) . ' / 점검 ' . number_format($cnt) . '건') ?>
+              </div>
+            <?php endif; ?>
+          </li>
+        <?php endforeach; ?>
+        </ul>
+      <?php endif; ?>
+      <?php if ($rows) { vg_page_nav($total, $perPage, $page); } ?>
+    </div>
+  </div>
 <?php endif; ?>
 <?php vg_footer();

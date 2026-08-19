@@ -18,6 +18,7 @@ require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';           // vg_log_activity
 require_once __DIR__ . '/../src/cce.php';             // vg_cce_rules
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_frameworks, vg_control_mapping_for, vg_cce_rule_guides
+require_once __DIR__ . '/../src/compliance/policy.php'; // vg_compliance_status — 판정 어휘 SSOT
 // 카탈로그에서도, 통제 상세·탐지 결과에서도 열린다 — compliance_rule.php 와 같은 이유로 넓게 연다.
 vg_require_menu_any('catalog', 'compliance', 'findings');
 
@@ -180,31 +181,44 @@ vg_hero(
 );
 ?>
 
-<div class="card">
-  <div class="card__body stat-grid">
-    <div class="stat">
-      <span class="stat__val"><?= number_format($counts['FAIL']) ?></span>
-      <div class="why">FAIL</div>
+<?php
+// 판정 어휘는 control.php·control_mapping.php 와 같은 함수로 뽑는다(SSOT).
+$judgedTotal = $counts['FAIL'] + $counts['PASS'] + $counts['NA'];
+$status = $judgedTotal > 0
+    ? vg_compliance_status($counts['FAIL'], $counts['NA'] > 0)
+    : ['label' => '점검 결과 없음', 'tone' => 'muted'];
+?>
+<div class="split">
+  <div class="card">
+    <strong>판정 분포</strong>
+    <div class="card__body center">
+      <?php vg_result_donut([
+          ['tone' => 'crit',  'label' => 'FAIL', 'n' => $counts['FAIL']],
+          ['tone' => 'ok',    'label' => 'PASS', 'n' => $counts['PASS']],
+          ['tone' => 'muted', 'label' => '판정 불가', 'n' => $counts['NA']],
+      ], 132, '이 점검의 판정 분포'); ?>
+      <div class="legend">
+        <div><i class="tone-crit"></i>FAIL<span class="n"><?= number_format($counts['FAIL']) ?></span></div>
+        <div><i class="tone-ok"></i>PASS<span class="n"><?= number_format($counts['PASS']) ?></span></div>
+        <div><i class="tone-muted"></i>판정 불가<span class="n"><?= number_format($counts['NA']) ?></span></div>
+      </div>
+      <?= vg_badge($status['label'], $status['tone']) ?>
     </div>
-    <div class="stat">
-      <span class="stat__val"><?= number_format($counts['PASS']) ?></span>
-      <div class="why">PASS</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= number_format($counts['NA']) ?></span>
-      <div class="why">NA(판정 불가)</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= number_format($hostCount) ?>대</span>
-      <div class="why">점검 자산</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= number_format($failHosts) ?>대</span>
-      <div class="why">위반 자산</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= $lastCheckedAt !== null ? vg_h((string) $lastCheckedAt) : '<span class="why">–</span>' ?></span>
-      <div class="why">최근 점검</div>
+  </div>
+  <div class="card">
+    <div class="card__body stat-grid">
+      <div class="stat">
+        <span class="stat__val"><?= number_format($hostCount) ?>대</span>
+        <div class="why">점검 자산</div>
+      </div>
+      <div class="stat">
+        <span class="stat__val"><?= number_format($failHosts) ?>대</span>
+        <div class="why">위반 자산</div>
+      </div>
+      <div class="stat">
+        <span class="stat__val"><?= $lastCheckedAt !== null ? vg_h((string) $lastCheckedAt) : '<span class="why">–</span>' ?></span>
+        <div class="why">최근 점검</div>
+      </div>
     </div>
   </div>
 </div>

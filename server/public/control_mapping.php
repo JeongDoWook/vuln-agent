@@ -20,6 +20,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';           // vg_log_activity
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_frameworks, vg_control_framework_param
+require_once __DIR__ . '/../src/compliance/policy.php'; // vg_compliance_status — 판정 어휘 SSOT
 // 인가 게이트. 이게 없어서 **비로그인 상태로도 200 + CCE 점검 결과 전량**이 나갔다(실측:
 //   빈 쿠키로 curl 하면 다른 화면은 302 login 인데 여기만 200). 상세인 control.php 는 처음부터
 //   갖고 있었다 — 목록만 빠져 있었다. 같은 데이터를 여는 두 URL 은 같은 게이트를 지나야 한다.
@@ -181,57 +182,60 @@ vg_header('통제 기준 매핑', 'control_mapping');
   //   누르는 면적을 ID 한 조각으로 좁혀 두지 않는다.
   $detailHref = fn(array $r): string => '/control.php?fw=' . urlencode($fw)
       . '&amp;control=' . urlencode((string) $r['control_id']);
-  vg_table(
-      [
-          ['label' => '통제 ID', 'width' => '9rem', 'class' => 'col-id'],
-          ['label' => '통제명'],
-          ['label' => '매핑 점검 항목', 'width' => '20%'],
-          // 'PASS n · NA n · n건' 이 9rem 에서 두 줄로 접혔다 — 한 줄에 들어오게 넓힌다.
-          //   11rem 도 세 자리 수가 겹치면 여전히 접혀서(실측 'PASS 176 · NA 484 · 740건') 13rem.
-          ['label' => '결과', 'width' => '13rem'],
-          ['label' => '위반', 'width' => '6rem', 'align' => 'right'],
-      ],
-      $rows,
-      [
-          'empty' => [
-              'icon'  => '🧭',
-              'title' => '이 기준에 매핑된 통제가 없습니다.',
-              'hint'  => '근거가 확인된 통제 매핑이 등록되면 이 목록에 표시됩니다.',
-          ],
-          'cell' => [
-              0 => fn($r) => '<a href="' . $detailHref($r) . '">'
-                           . '<code class="why">' . vg_h((string) $r['control_id']) . '</code></a>',
-              1 => fn($r) => '<a class="control-name" href="' . $detailHref($r) . '">'
-                           . vg_h((string) $r['control_name']) . '</a>',
-              2 => fn($r) => '<span class="why">' . number_format((int) $r['mapped_rule_cnt']) . '개 · '
-                           . vg_trunc((string) ($r['codes'] ?? ''), 52) . '</span>',
-              3 => function ($r) {
-                  if ((int) $r['finding_cnt'] === 0) { return vg_badge('점검 결과 없음', 'muted'); }
-                  $cnt  = (int) $r['finding_cnt'];
-                  $fail = (int) $r['fail_cnt'];
-                  $why  = 'PASS ' . number_format((int) $r['pass_cnt'])
-                        . ' · 판정 불가 ' . number_format((int) $r['na_cnt'])
-                        . ' · 전체 ' . number_format($cnt) . '건';
-                  // 위반 비율 게이지 — 숫자 세 개만으로는 "FAIL 12" 가 12/13 인지 12/740 인지
-                  //   한눈에 안 잡힌다(분모가 글자에 묻힌다). meter 는 ok 톤이 없어 low 로 떨군다.
-                  $tone = $fail > 0 ? 'crit' : ((int) $r['na_cnt'] > 0 ? 'med' : 'low');
-                  return '<span class="why">' . vg_h($why) . '</span>'
-                      . vg_meter($tone, $fail / $cnt * 100, 'FAIL ' . number_format($fail) . ' / ' . $why);
-              },
-              4 => function ($r) {
-                  if ((int) $r['finding_cnt'] === 0) { return '<span class="why">–</span>'; }
-                  $fail = (int) $r['fail_cnt'];
-                  $tone = $fail > 0 ? 'crit' : ((int) $r['na_cnt'] > 0 ? 'med' : 'ok');
-                  return vg_badge(number_format($fail) . '건', $tone);
-              },
-          ],
-      ]
-  );
-  // 결과 범례는 걷었다 — 네 상태를 '결과' 칸이 이미 **글자로** 말한다('점검 결과 없음'
-  //   뱃지 / 'PASS n · 판정 불가 n · 전체 n건'). 옆 '위반' 칸의 색은 그 글자를 되풀이하는
-  //   두 번째 표기라, 범례를 지우면서 잃는 사실이 없다.
-  if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
+  <div class="card">
+    <div class="card__body">
+      <?php if (!$rows): ?>
+        <?php vg_empty([
+            'icon'  => '🧭',
+            'title' => '이 기준에 매핑된 통제가 없습니다.',
+            'hint'  => '근거가 확인된 통제 매핑이 등록되면 이 목록에 표시됩니다.',
+        ]); ?>
+      <?php else: ?>
+        <ul class="ctrcard-grid">
+        <?php foreach ($rows as $r):
+            $findingCnt = (int) $r['finding_cnt'];
+            $failCnt    = (int) $r['fail_cnt'];
+            $naCnt      = (int) $r['na_cnt'];
+            // 판정 어휘는 control.php·compliance.php 와 같은 함수로 뽑는다(SSOT) — 0건을
+            //   준수로 찍지 않는다는 원칙이 카드 톤에도 그대로 적용된다.
+            $status = $findingCnt === 0
+                ? ['label' => '점검 결과 없음', 'tone' => 'muted']
+                : vg_compliance_status($failCnt, $naCnt > 0);
+        ?>
+          <li class="ctrcard tone-<?= vg_h($status['tone']) ?>">
+            <div class="ctrcard__head">
+              <a class="ctrcard__name" href="<?= $detailHref($r) ?>">
+                <code class="why"><?= vg_h((string) $r['control_id']) ?></code>
+              </a>
+              <?= vg_badge($status['label'], $status['tone']) ?>
+            </div>
+            <a href="<?= $detailHref($r) ?>"><?= vg_h((string) $r['control_name']) ?></a>
+            <div class="ctrcard__facts">
+              <span>매핑 점검 항목 <b><?= number_format((int) $r['mapped_rule_cnt']) ?></b>개</span>
+              <span class="why"><?= vg_trunc((string) ($r['codes'] ?? ''), 52) ?></span>
+            </div>
+            <div class="ctrcard__risk">
+              <?php if ($findingCnt === 0): ?>
+                <span class="why">아직 점검된 결과가 없습니다.</span>
+              <?php else:
+                  $why = 'PASS ' . number_format((int) $r['pass_cnt'])
+                       . ' · 판정 불가 ' . number_format($naCnt)
+                       . ' · 전체 ' . number_format($findingCnt) . '건';
+              ?>
+                <span class="why">FAIL <b><?= number_format($failCnt) ?></b> · <?= vg_h($why) ?></span>
+                <?php // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. ?>
+                <?= vg_meter($status['tone'] === 'ok' ? 'low' : $status['tone'], $failCnt / $findingCnt * 100,
+                             'FAIL ' . number_format($failCnt) . ' / ' . $why) ?>
+              <?php endif; ?>
+            </div>
+          </li>
+        <?php endforeach; ?>
+        </ul>
+      <?php endif; ?>
+      <?php if ($rows) { vg_page_nav($total, $perPage, $page); } ?>
+    </div>
+  </div>
 
 <?php endif; ?>
 <?php vg_footer();
