@@ -206,45 +206,55 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
           . vg_meter($tone === 'ok' ? 'low' : $tone, $cnt > 0 ? $fail / $cnt * 100 : 0.0,
                      'FAIL ' . number_format($fail) . ' / 점검 ' . number_format($cnt) . '건');
   };
-
-  vg_table(
-      [
-          ['label' => 'U-코드', 'width' => '6rem', 'class' => 'col-id'],
-          ['label' => '항목명'],
-          ['label' => '분류', 'width' => '10rem'],
-          ['label' => '위험도', 'width' => '5rem', 'align' => 'center'],
-          ['label' => '우리 점검', 'width' => '22%'],
-          ['label' => '판정', 'width' => '16rem'],
-      ],
-      $rows,
-      [
-          'empty' => [
-              'icon'  => '🧭',
-              'title' => '조건에 맞는 항목이 없습니다.',
-              'hint'  => '분류·상태 필터를 바꿔 보세요.',
-          ],
-          'cell' => [
-              0 => fn($r) => $detailLink($r, '<code class="why">' . vg_h((string) $r['control_id']) . '</code>'),
-              // 명칭을 확인하지 못한 항목은 비워 둔다 — 자리표시 문구로 채우면 확인된 것처럼 읽힌다.
-              1 => fn($r) => $r['control_name'] !== null && $r['control_name'] !== ''
-                  ? $detailLink($r, vg_h((string) $r['control_name'])) : '',
-              2 => fn($r) => $r['category'] !== null ? '<span class="why">' . vg_h((string) $r['category']) . '</span>' : '',
-              3 => fn($r) => $r['severity'] !== null ? vg_badge((string) $r['severity'], vg_kisa_u_sev_tone((string) $r['severity'])) : '',
-              4 => function ($r) {
-                  if ($r['mapped_rule_cnt'] === null) { return ''; }
-                  $links = [];
-                  foreach (explode(',', (string) $r['codes']) as $code) {
-                      $code = trim($code);
-                      if ($code === '') { continue; }
-                      $links[] = '<a href="/cce-rule.php?code=' . urlencode($code) . '">'
-                               . '<code class="why">' . vg_h($code) . '</code></a>';
-                  }
-                  return implode(' ', $links);
-              },
-              5 => $verdictCell,
-          ],
-      ]
-  );
+  ?>
+  <?php
+  // 표 대신 카드 그리드 — 예전엔 6개 열(코드/항목명/분류/위험도/참조 매핑/판정) 중 판정 칸이
+  //   가장 넓어(FAIL 배지+미터+PASS/판정불가 부연) 표에서 다른 좁은 열과 나란히 눌려 잘렸다
+  //   (control_mapping.php 가 같은 문제로 폭을 세 번 늘린 이력이 있다). 항목당 세로 공간을
+  //   갖는 카드는 그 문제가 구조적으로 없다. 새 문구를 추가하는 게 아니라 이미 표에 있던
+  //   같은 6개 값을 카드 한 장 안에 다시 배치한 것뿐이다.
+  if (!$rows): ?>
+    <?php vg_empty([
+        'icon'  => '🧭',
+        'title' => '조건에 맞는 항목이 없습니다.',
+        'hint'  => '분류·상태 필터를 바꿔 보세요.',
+    ]); ?>
+  <?php else: ?>
+  <div class="u-grid">
+    <?php foreach ($rows as $r):
+        $covered = $r['mapped_rule_cnt'] !== null;
+        $sevTone = $r['severity'] !== null ? vg_kisa_u_sev_tone((string) $r['severity']) : 'muted';
+    ?>
+    <div class="u-card tone-<?= vg_h($sevTone) ?><?= $covered ? '' : ' u-card--uncovered' ?>">
+      <div class="u-card__head">
+        <?= $detailLink($r, '<code class="why">' . vg_h((string) $r['control_id']) . '</code>') ?>
+        <?php if ($r['severity'] !== null): ?>
+          <?= vg_badge((string) $r['severity'], $sevTone) ?>
+        <?php endif; ?>
+      </div>
+      <?php // 명칭을 확인하지 못한 항목은 비워 둔다 — 자리표시 문구로 채우면 확인된 것처럼 읽힌다. ?>
+      <?php if ($r['control_name'] !== null && $r['control_name'] !== ''): ?>
+        <div class="u-card__name"><?= $detailLink($r, vg_h((string) $r['control_name'])) ?></div>
+      <?php endif; ?>
+      <?php if ($r['category'] !== null): ?>
+        <div class="u-card__facts"><span class="why"><?= vg_h((string) $r['category']) ?></span></div>
+      <?php endif; ?>
+      <?php if ($covered):
+          $links = [];
+          foreach (explode(',', (string) $r['codes']) as $code) {
+              $code = trim($code);
+              if ($code === '') { continue; }
+              $links[] = '<a href="/cce-rule.php?code=' . urlencode($code) . '">'
+                       . '<code class="why">' . vg_h($code) . '</code></a>';
+          }
+      ?>
+        <div class="u-card__map"><span class="why">참조 매핑</span> <?= implode(' ', $links) ?></div>
+      <?php endif; ?>
+      <div class="u-card__verdict"><?= $verdictCell($r) ?></div>
+    </div>
+    <?php endforeach; ?>
+  </div>
+  <?php endif;
   if ($rows) { vg_page_nav($total, $perPage, $page); }
   ?>
 <?php endif; ?>

@@ -2370,6 +2370,51 @@ form.card .btn--primary:active { transform: translateY(0); }
   .ctree__list::before { left: .25rem; }
 }
 
+/* ----------------------------------------------------------------------
+ * kisa-u.php · U-코드 카드 그리드
+ *   표는 판정 칸(FAIL 배지+미터+PASS/판정불가 부연)이 가장 넓은데 다른 좁은 열과
+ *   나란히 눌려 잘렸다(control_mapping.php 가 같은 문제로 '결과' 열 폭을 세 번 늘린
+ *   이력과 같다). 항목당 세로 공간을 갖는 카드로 바꾸면 이 문제가 구조적으로 없다.
+ *   .ctrcard(컨테이너 계층)와 같은 뼈대 — 왼쪽 띠로 위험도를, 위 칸으로 코드·항목명을 준다.
+ * ---------------------------------------------------------------------- */
+.u-grid {
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: .8rem;
+}
+.u-card {
+  min-width: 0;
+  padding: .8rem .9rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+.u-card:hover { border-color: var(--line-2); box-shadow: var(--shadow); }
+/* 왼쪽 띠 = 가이드 위험도(상/중/하). 히어로·표 배지와 같은 어휘를 재사용한다. */
+.u-card.tone-crit  { border-left-color: var(--crit); }
+.u-card.tone-high  { border-left-color: var(--high); }
+.u-card.tone-med   { border-left-color: var(--med); }
+.u-card.tone-muted { border-left-color: var(--muted-2); }
+/* 미점검 카드는 채움이 아니라 대비를 낮춰 표시한다 — 회색으로 죽이면 미점검 규모가
+ * 가려진다는 원칙(위 PHP 주석)을 카드에서도 지킨다. 판정 뱃지가 이미 '미점검'을 말한다. */
+.u-card--uncovered { background: var(--sunken); }
+.u-card__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem; }
+.u-card__name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.u-card__name:hover { color: var(--accent-2); }
+.u-card__facts { font-size: var(--fs-sm); color: var(--text-2); }
+.u-card__map { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.u-card__verdict { margin-top: auto; padding-top: .2rem; }
+
+@media (max-width: 640px) {
+  .u-grid { grid-template-columns: 1fr; }
+}
+
 /* 로그인: 조용한 진입 화면 */
 .page--login .app { min-height: 100vh; display: grid; place-items: center; }
 .page--login .page__main { min-height: auto; width: 100%; padding: 1.25rem; }
