@@ -16,27 +16,32 @@ declare(strict_types=1);
  *   숫자는 이미 센 값($n)을 그대로 받는다 — 탭 줄을 그리려고 다시 세지 않는다.
  *   여기 담긴 키가 곧 탭 줄에 서는 탭이다. host.php 의 $validTabs 는 그보다 넓다 —
  *   'suppressed' 는 URL 로는 유효하지만 탭이 아니라 취약점 탭의 필터로 그려진다.
+ *
+ *   'icon' 은 icons.php 의 이름, 'group' 은 vg_subtabs() 가 인접 탭과 비교해 구분선을 넣는
+ *   묶음 키다(사용자 피드백 — "탭이 그냥 막 나열되어 있는 느낌"). 8개를 셋으로 나눈다:
+ *   위협(취약점·보안 설정) · 자산 구성(패키지·컨테이너·런타임·계정) · 이력/관리(스캔 이력·자산 설정).
+ *   탭이 가리키는 조회·URL 은 그대로다 — 순서와 시각 묶음만 더한다.
  */
 function vg_host_tab_defs(array $n): array {
     $tabDefs = [
-        'vuln'    => ['label' => '취약점',    'n' => $n['vulnTotal']],
-        'packages'=> ['label' => '설치 패키지', 'n' => $n['packageTotal']],
+        'vuln'    => ['label' => '취약점',    'n' => $n['vulnTotal'], 'icon' => 'cve', 'group' => 'threat'],
+        'cce'     => ['label' => '보안 설정', 'n' => $n['cceFail'], 'icon' => 'shield', 'group' => 'threat'],
+        'packages'=> ['label' => '설치 패키지', 'n' => $n['packageTotal'], 'icon' => 'package', 'group' => 'asset'],
         // 컨테이너 대장 — 호스트와 OS 가 다를 수 있는 별도 자산이라 목록을 따로 준다.
-        'containers'=> ['label' => '컨테이너', 'n' => $n['containerTotal']],
+        'containers'=> ['label' => '컨테이너', 'n' => $n['containerTotal'], 'icon' => 'container', 'group' => 'asset'],
         // 이 탭은 노출 소켓과 실행 프로세스 두 목록을 함께 제공하므로 둘의 합계를 표시한다.
-        'runtime' => ['label' => '런타임',    'n' => $n['runtimeTotal']],
-        'cce'     => ['label' => '보안 설정', 'n' => $n['cceFail']],
+        'runtime' => ['label' => '런타임',    'n' => $n['runtimeTotal'], 'icon' => 'process', 'group' => 'asset'],
         // 계정 대장 — "설정 정책"이 아니라 실제로 존재하는 계정(ISMS-P 2.5.x · N2SF AC).
-        'accounts'=> ['label' => '계정',      'n' => $n['accountTotal']],
+        'accounts'=> ['label' => '계정',      'n' => $n['accountTotal'], 'icon' => 'user', 'group' => 'asset'],
     ];
     /* '억제' 는 탭이 아니다 — 취약점 탭 안의 **보기 필터**다(vg_host_render_risk_views).
      *   ?tab=suppressed 는 URL 로 그대로 살아 있지만(북마크·기존 링크) 탭 줄에는 서지 않는다. */
     // 스캔 이력 = 회차 표 + 그 회차들의 에이전트 리소스 추이(예전 '리소스' 탭을 흡수).
-    $tabDefs['scans'] = ['label' => '스캔 이력', 'n' => $n['scanTotal']];
+    $tabDefs['scans'] = ['label' => '스캔 이력', 'n' => $n['scanTotal'], 'icon' => 'clock', 'group' => 'meta'];
     /* 자산 설정 = 수집 제어 + 자산 등급 + 자산 삭제. 위험을 읽는 탭들 뒤에 둔다.
      *   등급 카드·삭제 카드는 예전엔 **모든 탭 아래**에 매번 붙어 있었다 — 취약점을 보러 온
      *   사람이 탭을 옮길 때마다 열 칸짜리 등급 확정 폼을 지나쳐야 했다. 한 곳으로 모은다. */
-    $tabDefs['manage'] = ['label' => '자산 설정', 'n' => null];
+    $tabDefs['manage'] = ['label' => '자산 설정', 'n' => null, 'icon' => 'settings', 'group' => 'meta'];
     return $tabDefs;
 }
 

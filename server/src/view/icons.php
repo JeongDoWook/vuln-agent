@@ -52,6 +52,8 @@ const VG_ICON_PATHS = [
     'key'       => '<circle cx="8" cy="12" r="4"/><line x1="12" y1="12" x2="21" y2="12"/><line x1="18" y1="12" x2="18" y2="15.5"/><line x1="21" y1="12" x2="21" y2="16.5"/>',
     // 사람 — 사용자·계정
     'user'      => '<circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+    // 설정 — 슬라이더(사이드바 vg_nav_icon 의 'settings' 와 같은 모양 — 같은 뜻은 같은 모양)
+    'settings'  => '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.2"/><circle cx="15" cy="16" r="2.2"/>',
 ];
 
 /**

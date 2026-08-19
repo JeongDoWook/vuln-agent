@@ -95,7 +95,7 @@ $check(str_contains($appJs, "addEventListener('mouseover'") && str_contains($app
     '툴팁을 지연 없이 hover·키보드 focus 모두에 표시');
 $check(str_contains($hostPhp, '$runtimeTotal = $exposureCount + $processCount;')
     // 탭 줄 정의는 server/src/host/tabs.php 로 옮겼다(숫자는 페이지가 센 값을 그대로 받는다).
-    && str_contains($hostPhp, "'runtime' => ['label' => '런타임',    'n' => \$n['runtimeTotal']]"),
+    && str_contains($hostPhp, "'runtime' => ['label' => '런타임',    'n' => \$n['runtimeTotal'], 'icon' => 'process', 'group' => 'asset']"),
     '런타임 탭 건수에 노출 소켓과 실행 프로세스 모두 포함');
 $check(str_contains($componentsPhp, "!empty(\$h['class'])"), '공통 테이블 열 클래스 지원');
 $check(str_contains($componentsPhp, 'function vg_kpi_strip('), '공통 KPI 스트립 렌더러 제공');
