@@ -193,14 +193,25 @@ try {
     //   원본을 행마다 뒤지지 않는다(실측 55만 행: 풀 테이블 스캔 3.23초 → 커버링 0.34초).
     //   소스별 요약 카드용 건수 — 무필터 진입 시 55만+ 행이 뒤섞여 막막한 문제의 진입점(작업 3).
     //   src 선택과 무관하게 5종 전부 세되, q·rel 필터는 그대로 반영한다.
-    $srcCounts = [];
+    //   패키지·CVE distinct 건수도 같은 질의에 얹는다 — cve/pkg 컬럼은 이미 커버링 인덱스
+    //   (cve_id, pkg_name, is_deleted, release_*) 안에 있어 COUNT(DISTINCT ..) 도 원본 조회 없이
+    //   같은 인덱스만 읽는다(왕복을 늘리지 않고 카드용 미니바 데이터를 얻는다).
+    $srcCounts = []; $srcPkgCounts = []; $srcCveCounts = [];
     foreach (VG_VENDOR_SRC as $srcKey => $srcDef) {
         $srcCountParams = [];
         $srcWhere = vg_vendor_where($srcDef, $q, $rel, $srcCountParams);
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$srcDef['from']} WHERE $srcWhere");
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) AS n, COUNT(DISTINCT {$srcDef['pkg']}) AS pkgs,"
+            . " COUNT(DISTINCT {$srcDef['cve']}) AS cves FROM {$srcDef['from']} WHERE $srcWhere"
+        );
         $stmt->execute($srcCountParams);
-        $srcCounts[$srcKey] = (int) $stmt->fetchColumn();
+        $agg = $stmt->fetch() ?: [];
+        $srcCounts[$srcKey]    = (int) ($agg['n'] ?? 0);
+        $srcPkgCounts[$srcKey] = (int) ($agg['pkgs'] ?? 0);
+        $srcCveCounts[$srcKey] = (int) ($agg['cves'] ?? 0);
     }
+    $maxSrcPkg = max($srcPkgCounts) ?: 1;
+    $maxSrcCve = max($srcCveCounts) ?: 1;
 
     // 총건수는 **위 5개를 더해서 낸다 — 세는 질의를 따로 던지지 않는다.**
     //   예전엔 같은 WHERE 로 UNION ALL COUNT 를 한 번 더 돌렸는데, $active 는 정의상
@@ -251,18 +262,24 @@ vg_header('판정 근거', 'vendor');
 <?php else: ?>
   <?php
   // 소스별 진입점(작업 3) — 무필터로 들어왔을 때 5개 소스가 뒤섞인 채 페이지네이션만으로
-  //   넘겨야 하는 막막함을 줄인다. 필터 프리셋 탭(cves.php)과 같은 .tabs/.pill 을 그대로 쓴다.
-  echo '<div class="tabs">';
+  //   넘겨야 하는 막막함을 줄인다. 카드마다 건수 옆에 패키지·CVE distinct 건수를 미니바로
+  //   얹어, 표로 내려가지 않아도 소스별 무게를 가늠할 수 있게 한다(카드 자체가 필터 진입점).
+  echo '<div class="cards">';
   foreach (VG_VENDOR_SRC as $k => $d) {
-       $on = $src === $k;
-       echo '<a class="pill' . ($on ? ' pill--on' : '') . '" href="/vendor.php' . vg_qs(['src' => $on ? null : $k, 'page' => null])
-         . '">' . vg_h($d['label'])
-         . ' <span class="why">' . number_format($srcCounts[$k]) . '건</span></a>';
+      $on = $src === $k;
+      $href = '/vendor.php' . vg_qs(['src' => $on ? null : $k, 'page' => null]);
+      $pkgPct = $srcPkgCounts[$k] / $maxSrcPkg * 100;
+      $cvePct = $srcCveCounts[$k] / $maxSrcCve * 100;
+      echo '<div class="card' . ($on ? ' card--accent' : '') . '">'
+         . '<a href="' . vg_h($href) . '"><strong>' . vg_h($d['label']) . '</strong></a>'
+         . '<span class="why">' . vg_h($d['desc']) . '</span>'
+         . '<div class="card__body">'
+         . '<div>' . number_format($srcCounts[$k]) . '건</div>'
+         . vg_meter('low', $pkgPct, '패키지 ' . number_format($srcPkgCounts[$k]) . '종')
+         . vg_meter('med', $cvePct, 'CVE ' . number_format($srcCveCounts[$k]) . '건')
+         . '</div></div>';
   }
   echo '</div>';
-  if ($src !== '') {
-      echo '<div class="sub"><span class="why">' . vg_h(VG_VENDOR_SRC[$src]['desc']) . '</span></div>';
-  }
 
   $toolbar = [
       ['type' => 'select', 'name' => 'rel', 'selected' => $rel, 'empty_label' => '전체 릴리스',

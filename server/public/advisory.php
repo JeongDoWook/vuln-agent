@@ -17,7 +17,7 @@ require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('advisories');
 
 $err = null; $adv = null; $cves = []; $assets = [];
-$cveTotal = 0; $kevTotal = 0; $maxCvss = null;
+$cveTotal = 0; $kevTotal = 0; $maxCvss = null; $sevCounts = [];
 $assetTotal = 0; $assetHostTotal = 0;
 $cPage = vg_page('cpage'); $cPerPage = vg_perpage(null, 'cper_page');
 $aPage = vg_page('apage'); $aPerPage = vg_perpage(null, 'aper_page');
@@ -45,8 +45,14 @@ try {
             // 관련 CVE 는 정규화된 junction(tb_advisory_cve)에서 조회한다.
             //   총건수·KEV 포함 건수·최고 CVSS 를 한 번에 — 화면 상단 지표가 이 셋뿐이라
             //   쿼리를 셋으로 쪼갤 이유가 없다.
+            // 등급 분포(CRITICAL/HIGH/MEDIUM/LOW) 카운트도 같은 질의에 얹는다 — 경계값은
+            //   format/severity.php 의 VG_SEV_RANGES 와 동일하게 맞춘다(정본 이원화 금지).
             $cst = $pdo->prepare(
-                'SELECT COUNT(*) AS n, SUM(k.cve_id IS NOT NULL) AS kev_cnt, MAX(c.cvss) AS max_cvss
+                'SELECT COUNT(*) AS n, SUM(k.cve_id IS NOT NULL) AS kev_cnt, MAX(c.cvss) AS max_cvss,
+                        SUM(c.cvss BETWEEN 9.0 AND 10.0) AS n_crit,
+                        SUM(c.cvss BETWEEN 7.0 AND 8.9)  AS n_high,
+                        SUM(c.cvss BETWEEN 4.0 AND 6.9)  AS n_med,
+                        SUM(c.cvss BETWEEN 0.1 AND 3.9)  AS n_low
                    FROM tb_advisory_cve ac
                    LEFT JOIN tb_cve c ON c.cve_id = ac.cve_id AND c.is_deleted = 0
                    LEFT JOIN tb_kev_catalog k ON k.cve_id = ac.cve_id AND k.is_deleted = 0
@@ -57,6 +63,12 @@ try {
             $cveTotal = (int) ($agg['n'] ?? 0);
             $kevTotal = (int) ($agg['kev_cnt'] ?? 0);
             $maxCvss  = $agg['max_cvss'] ?? null;
+            $sevCounts = [
+                'CRITICAL' => (int) ($agg['n_crit'] ?? 0),
+                'HIGH'     => (int) ($agg['n_high'] ?? 0),
+                'MEDIUM'   => (int) ($agg['n_med'] ?? 0),
+                'LOW'      => (int) ($agg['n_low'] ?? 0),
+            ];
 
             // 표에 낼 한 페이지분만. 아직 수집 안 된 CVE 는 tb_cve 에 없으므로 LEFT JOIN 이다
             //   — 공지가 먼저 오고 NVD 수집이 나중인 경우가 흔하다.
@@ -179,7 +191,11 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 <section id="cves">
   <div class="card">
     <strong>관련 CVE</strong>
-    <div class="card__body">
+    <div class="card__body<?= $cveTotal > 0 ? ' split' : '' ?>">
+    <?php if ($cveTotal > 0): ?>
+      <div><?php vg_sev_donut($sevCounts); ?></div>
+    <?php endif; ?>
+    <div>
     <?php
     vg_table(
         [
@@ -223,6 +239,7 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
     );
     if ($cves) { vg_page_nav($cveTotal, $cPerPage, $cPage, 'cpage', 'cper_page'); }
     ?>
+    </div>
     </div>
   </div>
 </section>

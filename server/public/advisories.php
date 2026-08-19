@@ -14,7 +14,7 @@ vg_require_menu('advisories');
 /** '영향 자산' 칸의 툴팁에 넣을 자산 이름 수. 나머지는 "외 N대" 로 접고 전체는 모달이 갖는다. */
 const VG_ADVISORY_TIP_NAMES = 8;
 
-$err = null; $rows = []; $total = 0;
+$err = null; $rows = []; $total = 0; $srcSummary = [];
 $q = trim((string) ($_GET['q'] ?? ''));
 /* 기본 조회는 **내 자산에 영향 있는 공지**다.
  *   전체를 기본으로 두면(예전) 목록 2,756건 중 자산에 걸리는 건 3건이라 '영향 자산' 칸이
@@ -72,6 +72,14 @@ try {
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_advisory WHERE $where");
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
+
+    // 소스별 요약(작업 2) — tb_advisory.source 는 KISA 게시판 3종(보안공지·취약점정보·경보단계)이
+    //   섞여 있다(server/bin/backfill_kisa.php:29-31). 지금 필터(scope·q) 기준으로 몇 건씩인지
+    //   카드 미니바로 보여준다. 이 테이블은 2천여 행이라 GROUP BY 비용이 미미하다(위 count 주석과 동일 근거).
+    $stmt = $pdo->prepare("SELECT source, COUNT(*) AS n FROM tb_advisory WHERE $where GROUP BY source ORDER BY n DESC");
+    $stmt->execute($params);
+    $srcSummary = $stmt->fetchAll();
+    $maxSrcN = $srcSummary ? max(array_column($srcSummary, 'n')) : 1;
 
     $offset = ($page - 1) * $perPage;
 
@@ -172,6 +180,21 @@ vg_header('보안 공지', 'advisories');
          href="<?= vg_h(vg_qs(['scope' => $key, 'page' => null])) ?>"><?= vg_h($label) ?></a>
     <?php endforeach; ?>
   </div>
+
+  <?php if ($srcSummary): ?>
+  <div class="cards">
+    <?php foreach ($srcSummary as $s): ?>
+      <div class="card">
+        <strong><?= vg_h((string) $s['source']) ?></strong>
+        <div class="card__body">
+          <div><?= number_format((int) $s['n']) ?>건</div>
+          <?= vg_meter('low', (int) $s['n'] / $maxSrcN * 100,
+              (string) $s['source'] . ' ' . number_format((int) $s['n']) . '건') ?>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  </div>
+  <?php endif; ?>
 
   <?php vg_toolbar([
       // 칩으로 고른 범위는 검색 폼 필드가 아니라, 폼 제출 시 사라지지 않도록 hidden 으로 함께 싣는다.
