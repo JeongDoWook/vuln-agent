@@ -249,6 +249,7 @@ LAST_SCAN_FILE="\$LOG_DIR/last_scan_at"
 POLL_STATE_FILE="\$LOG_DIR/poll_interval"
 UPDATE_REPORT_FILE="\$LOG_DIR/update_report"       # 다음 poll 때 보낼 "직전 업데이트 결과" 1줄
 UPDATE_PENDING_FILE="\$LOG_DIR/update_pending_verify"  # 교체 직후 ~ 첫 실행 검증 전까지만 존재
+UPDATE_FAILED_VERSION_FILE="\$LOG_DIR/update_failed_version"  # 롤백된 버전 기억 — 같은 버전 재시도 방지(스래싱 차단)
 ONCE=0
 [ "\${1:-}" = "--once" ] && ONCE=1
 
@@ -267,16 +268,34 @@ log()  { echo "[\$(date -Is 2>/dev/null || date)] \$*" >&2; }
 # do_poll : agent-poll.php GET → POLL_SCHEDULE / DUE_CMD / UPDATE_* 채움. 성공(0)/실패(1).
 #   agent_version 을 같이 보내 서버가 최신인지 판단하게 하고, 직전 업데이트 결과(있으면)도
 #   같은 GET 에 실어 보고한다 — 새 인바운드 경로를 만들지 않고 기존 폴링을 재사용한다.
+urlencode() {
+  # 순수 bash RFC3986 퍼센트인코딩(영숫자·-_.~ 만 그대로) — run.sh 는 bash 전용이라 awk 이식성을
+  #   고민할 필요가 없다. 쿼리스트링에 실을 값은 전부 이걸 거친다.
+  local s="\$1" out="" i c
+  for (( i = 0; i < \${#s}; i++ )); do
+    c="\${s:i:1}"
+    case "\$c" in
+      [A-Za-z0-9._~-]) out+="\$c" ;;
+      *) out+=\$(printf '%%%02X' "'\$c") ;;
+    esac
+  done
+  printf '%s' "\$out"
+}
+
 do_poll() {
   local resp="" qs cur_version report
   cur_version=\$(sed -n 's/^SCRIPT_VERSION="\(.*\)"/\1/p' "\$AGENT_BIN" 2>/dev/null | head -n1)
-  qs="agent_version=\${cur_version}"
+  qs="agent_version=\$(urlencode "\$cur_version")"
   if [ -f "\$UPDATE_REPORT_FILE" ]; then
     report=\$(cat "\$UPDATE_REPORT_FILE" 2>/dev/null)
     # 형식: "<result> <from> <to>" (do_update 가 기록). 필드가 깨져 있으면 그냥 흘려보낸다.
+    # set -f 로 워드스플릿 결과의 글롭 확장(*·? 등)을 막는다 — report 는 로컬에서 쓴 값이라
+    # 공격면은 작지만, 다음 poll 쿼리스트링에 그대로 실리므로 방어적으로 막아 둔다.
+    set -f
     set -- \$report
+    set +f
     if [ -n "\${1:-}" ]; then
-      qs="\${qs}&update_result=\${1}&update_from=\${2:-}&update_to=\${3:-}"
+      qs="\${qs}&update_result=\$(urlencode "\${1}")&update_from=\$(urlencode "\${2:-}")&update_to=\$(urlencode "\${3:-}")"
     fi
   fi
   if have curl; then
@@ -288,7 +307,6 @@ do_poll() {
     return 1
   fi
   [ -z "\$resp" ] && return 1
-  rm -f "\$UPDATE_REPORT_FILE"   # 이번 poll 로 서버에 실어 보냈으니 다음 poll 에 다시 보내지 않는다
   if have jq; then
     printf '%s' "\$resp" | jq -e . >/dev/null 2>&1 || return 1
     POLL_SCHEDULE=\$(printf '%s' "\$resp" | jq -r '.poll_schedule_seconds // empty')
@@ -331,6 +349,9 @@ do_poll() {
   if [ -n "\$POLL_MEM_MAX" ] && { [ "\$POLL_MEM_MAX" -lt 64 ] || [ "\$POLL_MEM_MAX" -gt 8192 ]; }; then
     POLL_MEM_MAX=""
   fi
+  # 응답 검증을 전부 통과한 뒤에만 지운다 — 서버가 오류/깨진 응답을 주면 이번 poll 은 실패로
+  # 끝나고(위 return 1 들) 리포트 파일이 남아 다음 poll 에 다시 보고된다(유실 방지).
+  rm -f "\$UPDATE_REPORT_FILE"
   return 0
 }
 
@@ -339,9 +360,36 @@ do_poll() {
 #   실패해도(다운로드/체크섬/문법) 조용히 넘기지 않고 UPDATE_REPORT_FILE 에 남겨 다음 poll 에
 #   보고한다 — 다음 poll 에서 서버가 여전히 구버전으로 보면 자동으로 다시 시도된다(재시도는
 #   "포기하지 않음" 자체가 목적이라 별도 백오프를 두지 않는다. YAGNI).
+#   단, 같은 버전이 한 번 롤백된 적이 있으면(UPDATE_FAILED_VERSION_FILE) 재시도하지 않는다 —
+#   그게 없으면 롤백 → pending 소멸 → 다음 poll 서버가 같은 버전을 또 제안 → 재적용 → 재실패
+#   → 재롤백이 무한 반복된다(실제 결함).
 do_update() {
   local new_version="\$1" new_sha256="\$2" dl_path="\$3"
   local old_version dl_url tmp got_sha256
+
+  case "\$SEND_URL" in
+    https://*) ;;
+    *)
+      log "HTTP 연결이라 자동 업데이트를 건너뜁니다(HTTPS 필요): \$SEND_URL"
+      return 1
+      ;;
+  esac
+
+  if [ -f "\$UPDATE_PENDING_FILE" ]; then
+    log "직전 업데이트가 아직 검증 대기 중 — 새 업데이트는 이번 poll 에 적용하지 않고 다음으로 미룹니다."
+    return 1
+  fi
+
+  if [ -f "\$UPDATE_FAILED_VERSION_FILE" ]; then
+    local failed_version
+    failed_version=\$(cat "\$UPDATE_FAILED_VERSION_FILE" 2>/dev/null)
+    if [ -n "\$failed_version" ] && [ "\$failed_version" = "\$new_version" ]; then
+      log "버전 \$new_version 은 이전에 롤백된 적이 있어 재시도하지 않습니다 — 서버에 실패로 보고만 합니다."
+      echo "skipped_known_bad \${failed_version} \$new_version" > "\$UPDATE_REPORT_FILE"
+      return 1
+    fi
+  fi
+
   old_version=\$(sed -n 's/^SCRIPT_VERSION="\(.*\)"/\1/p' "\$AGENT_BIN" 2>/dev/null | head -n1)
   dl_url="\${SEND_URL%ingest.php}\${dl_path}"
   tmp="\$LOG_DIR/vuln-inventory-agent.sh.new"
@@ -380,7 +428,12 @@ do_update() {
     rm -f "\$tmp"
     return 1
   fi
-  cp -p "\$AGENT_BIN" "\$AGENT_BIN.bak" 2>/dev/null || true
+  if ! cp -p "\$AGENT_BIN" "\$AGENT_BIN.bak"; then
+    log "백업 실패 — 업데이트를 적용하지 않습니다(롤백할 원본을 남길 수 없음)."
+    echo "backup_failed \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp"
+    return 1
+  fi
   chmod 0755 "\$tmp"
   mv -f "\$tmp" "\$AGENT_BIN"   # 같은 파일시스템 안 rename = 원자적 교체
   # 다음 실행이 실패하면 run_scan 이 .bak 으로 롤백하도록 표시만 해 둔다 — 지금 여기서
@@ -392,6 +445,28 @@ do_update() {
 
 run_scan() {
   local cmd_id="\$1"
+  # 업데이트 후 첫 실행이면, 실제 수집을 시작하기 전에 새 스크립트 자체를 먼저 점검한다 —
+  #   bash -n(문법) + --help(로드·인자파싱까지 실제로 실행, 부작용 없음). 이 자기점검 결과로만
+  #   롤백 여부를 정한다. 예전엔 뒤이은 수집(vuln-inventory-agent.sh 전체 실행)의 종료코드로
+  #   판단해서, 중앙 서버 오류·네트워크 타임아웃처럼 업데이트와 무관한 정상 운영 중 실패까지
+  #   "업데이트 실패"로 오판해 롤백했다(실제 결함).
+  if [ -f "\$UPDATE_PENDING_FILE" ]; then
+    local ov nv
+    read -r ov nv < "\$UPDATE_PENDING_FILE" 2>/dev/null || true
+    if bash -n "\$AGENT_BIN" 2>/dev/null && "\$AGENT_BIN" --help >/dev/null 2>&1; then
+      log "업데이트 자기점검 통과(\${ov:-?} → \${nv:-?}) — 적용 확정"
+      echo "ok \${ov:-unknown} \${nv:-unknown}" > "\$UPDATE_REPORT_FILE"
+      rm -f "\$UPDATE_PENDING_FILE" "\$AGENT_BIN.bak"
+    else
+      log "업데이트 자기점검 실패 — 이전 버전(\${ov:-?})으로 롤백하고 이 버전은 다시 시도하지 않습니다"
+      if [ -f "\$AGENT_BIN.bak" ]; then
+        mv -f "\$AGENT_BIN.bak" "\$AGENT_BIN"
+      fi
+      [ -n "\${nv:-}" ] && echo "\$nv" > "\$UPDATE_FAILED_VERSION_FILE"
+      echo "rollback \${ov:-unknown} \${nv:-unknown}" > "\$UPDATE_REPORT_FILE"
+      rm -f "\$UPDATE_PENDING_FILE"
+    fi
+  fi
   local args=(-o "\$LOG_DIR/last.json" --send "\$SEND_URL" --token "\$SEND_TOKEN")
   [ -n "\$cmd_id" ] && args+=(--command-id "\$cmd_id")
   # 패키지 무결성 검증 — 설치 시 --verify-files 를 준 노드에서만 1 이다(기본 꺼짐).
@@ -410,23 +485,6 @@ run_scan() {
   #   "\${tier_env[@]+"\${tier_env[@]}"}" 는 배열이 비어 있으면 통째로 없던 걸로 취급해 안전하다.
   env \${tier_env[@]+"\${tier_env[@]}"} "\$AGENT_BIN" "\${args[@]}"
   local rc=\$?
-  # 방금 실행이 "업데이트 후 첫 실행"이면 성공/실패로 검증을 마감한다 — 실패면 .bak 으로
-  # 되돌리고(간단한 롤백), 성공이면 .bak 을 지워 다음 실패는 이 업데이트 탓이 아니게 한다.
-  if [ -f "\$UPDATE_PENDING_FILE" ]; then
-    local ov nv
-    read -r ov nv < "\$UPDATE_PENDING_FILE" 2>/dev/null || true
-    if [ "\$rc" = 0 ]; then
-      echo "ok \${ov:-unknown} \${nv:-unknown}" > "\$UPDATE_REPORT_FILE"
-      rm -f "\$UPDATE_PENDING_FILE" "\$AGENT_BIN.bak"
-    else
-      log "업데이트 후 첫 실행 실패(rc=\$rc) — 이전 버전(\${ov:-?})으로 롤백"
-      if [ -f "\$AGENT_BIN.bak" ]; then
-        mv -f "\$AGENT_BIN.bak" "\$AGENT_BIN"
-      fi
-      echo "rollback \${ov:-unknown} \${nv:-unknown}" > "\$UPDATE_REPORT_FILE"
-      rm -f "\$UPDATE_PENDING_FILE"
-    fi
-  fi
   return \$rc
 }
 

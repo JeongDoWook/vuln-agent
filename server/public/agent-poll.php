@@ -58,10 +58,13 @@ $host = $st->fetch();
 
 // 직전 폴링에서 받은 업데이트를 에이전트가 적용해 본 결과 보고(선택) — 새 요청·새 인바운드
 //   경로를 만들지 않고 기존 폴링 GET 에 실어 보내는 방식을 재사용한다.
-$updateResult = trim((string) ($_GET['update_result'] ?? ''));
+// 감사로그에 실기 전에 화이트리스트·길이 제한을 건다 — 이 값들은 원격 노드(에이전트)가 채운
+//   자유 문자열이라, 제한 없이 그대로 저장하면 감사로그 폭주로 디스크를 채울 수 있다
+//   (이 저장소는 실제 binlog 디스크풀 장애 이력이 있다).
+$updateResult = vg_audit_redact_text(trim((string) ($_GET['update_result'] ?? '')), 32) ?? '';
 if ($updateResult !== '') {
-    $fromV = trim((string) ($_GET['update_from'] ?? ''));
-    $toV   = trim((string) ($_GET['update_to'] ?? ''));
+    $fromV = vg_audit_redact_text(trim((string) ($_GET['update_from'] ?? '')), 32) ?? '';
+    $toV   = vg_audit_redact_text(trim((string) ($_GET['update_to'] ?? ''))  , 32) ?? '';
     $ok    = $updateResult === 'ok';
     vg_log_activity(
         $pdo, 'HOST', $host ? (int) $host['host_id'] : null, 'agent_auto_update',

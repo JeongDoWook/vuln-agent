@@ -32,9 +32,15 @@ function vg_host_render_hero(array $ctx): void {
   if (!empty($scan['agent_version'])) {
       $av  = (string) $scan['agent_version'];
       $old = $latestAgent !== '' && version_compare($av, $latestAgent, '<');
+      // "다음 poll 때 자동으로 갱신됩니다"는 run.sh 에 자동 업데이트 로직이 있는 노드에서만
+      //   참이다(2026-08-19 이전에 설치된 run.sh 는 이 기능 자체를 모른다 — 재설치 전엔 정보만
+      //   받고 무시한다). poll 여부를 직접 아는 필드가 없어 $pollAge(최근 poll 관측)를 근사
+      //   신호로 쓴다 — poll 이 아예 없는 노드(cron 폴백)에는 이 문구를 보여주지 않는다.
+      $oldTip = $pollAge !== null
+          ? "함대 최신은 {$latestAgent} — 다음 poll 때 자동으로 갱신됩니다(2026-08-19 이전 설치는 재설치 필요)"
+          : "함대 최신은 {$latestAgent} — 이 노드는 poll 이력이 없어(cron 폴백 등) 자동 갱신되지 않습니다. install-agent.sh 재실행 또는 deploy/agent_push.sh 로 갱신하세요";
       $meta[] = '에이전트 <code>' . vg_h($av) . '</code>'
-          . ($old ? ' ' . vg_badge('구버전', 'med',
-                "함대 최신은 {$latestAgent} — 다음 poll 때 자동으로 갱신됩니다") : '');
+          . ($old ? ' ' . vg_badge('구버전', 'med', $oldTip) : '');
   }
   /* 자산 등급은 설정 탭으로 내려갔지만 "이 자산이 무엇인가"의 일부라 식별부에 남긴다 —
    *   옮기는 것이지 지우는 것이 아니다. 미확정이면 확정하러 갈 자리를 링크로 준다. */
