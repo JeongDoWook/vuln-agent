@@ -2236,12 +2236,12 @@ form.card .btn--primary:active { transform: translateY(0); }
  *      자산 설정) 묶음 경계에 옅은 세로선을 둬 "8개가 나열"이 아니라 "세 묶음"으로 읽히게 한다.
  *   ③ 위 KPI 줄(위험 요약)과 같은 면(--surface)·테두리(--line)·그림자(--shadow) 를 그대로
  *      써서 두 블록이 한 흐름으로 이어지는 것처럼 보이게 한다(새 토큰을 만들지 않는다). */
-.page--host .subtabs a { display: inline-flex; align-items: center; gap: .45rem; }
-.page--host .subtabs .vg-ico { color: var(--muted); transition: color .12s ease-out; }
-.page--host .subtabs a:hover .vg-ico { color: var(--text-2); }
-.page--host .subtabs a.on .vg-ico { color: var(--accent-2); }
-.page--host .subtabs a.subtabs__sep { margin-left: .6rem; position: relative; }
-.page--host .subtabs a.subtabs__sep::before {
+.subtabs a { display: inline-flex; align-items: center; gap: .45rem; }
+.subtabs .vg-ico { color: var(--muted); transition: color .12s ease-out; }
+.subtabs a:hover .vg-ico { color: var(--text-2); }
+.subtabs a.on .vg-ico { color: var(--accent-2); }
+.subtabs a.subtabs__sep { margin-left: .6rem; position: relative; }
+.subtabs a.subtabs__sep::before {
   content: '';
   position: absolute;
   left: -.35rem;

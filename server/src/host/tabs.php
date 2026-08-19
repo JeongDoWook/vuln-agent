@@ -90,9 +90,10 @@ function vg_host_render_risk_views(string $tab, int $vulnTotal, int $suppressedC
     echo '</div>';
 }
 
-function vg_host_render_tab(string $tab, array $ctx): void {
-    // $tab 은 host.php 가 화이트리스트($validTabs)로 확정한 값이지만, 경로 조립이므로 한 번 더 좁힌다.
-    if (preg_match('/^[a-z]+$/', $tab) !== 1) { return; }
+function vg_host_render_tab(string $tab, array $ctx, array $validTabs): void {
+    // $tab 은 host.php 가 화이트리스트($validTabs)로 이미 확정한 값이지만, 경로 조립이므로
+    //   그 화이트리스트를 여기서도 참조해 한 번 더 좁힌다 — 정규식만으로는 두 목록이 따로 논다.
+    if (!in_array($tab, $validTabs, true)) { return; }
     $file = __DIR__ . '/tabs/' . $tab . '.php';
     if (!is_file($file)) { return; }
     extract($ctx, EXTR_SKIP);
