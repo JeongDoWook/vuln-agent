@@ -246,11 +246,9 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
     <div class="u-card tone-<?= vg_h($sevTone) ?><?= $covered ? '' : ' u-card--uncovered' ?>">
       <div class="u-card__head">
         <?= $detailLink($r, '<code class="why">' . vg_h((string) $r['control_id']) . '</code>') ?>
-        <?php if ($r['severity'] !== null): ?>
-          <div class="u-card__badges">
-            <?= vg_badge((string) $r['severity'], $sevTone) ?>
-          </div>
-        <?php endif; ?>
+        <div class="u-card__badges">
+          <?php if ($r['severity'] !== null): ?><?= vg_badge((string) $r['severity'], $sevTone) ?><?php endif; ?>
+        </div>
       </div>
       <?php // 명칭을 확인하지 못한 항목은 비워 둔다 — 자리표시 문구로 채우면 확인된 것처럼 읽힌다. ?>
       <?php if ($r['control_name'] !== null && $r['control_name'] !== ''): ?>

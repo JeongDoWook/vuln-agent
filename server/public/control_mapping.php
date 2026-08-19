@@ -181,7 +181,7 @@ vg_header('통제 기준 매핑', 'control_mapping');
   // 통제 ID·통제명 모두 상세로 들어가는 링크다 — "누르면 들어간다"가 요구사항이라
   //   누르는 면적을 ID 한 조각으로 좁혀 두지 않는다.
   $detailHref = fn(array $r): string => '/control.php?fw=' . urlencode($fw)
-      . '&amp;control=' . urlencode((string) $r['control_id']);
+      . '&control=' . urlencode((string) $r['control_id']);
   $policy = vg_compliance_policy();
   ?>
   <div class="card">

@@ -20,7 +20,7 @@ require_once __DIR__ . '/../src/cce.php';             // vg_cce_rules — 점검
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_mapping_for, vg_cce_rule_guides
 require_once __DIR__ . '/../src/compliance/policy.php'; // vg_compliance_status — 판정 어휘 SSOT
 require_once __DIR__ . '/../src/audit.php';            // vg_log_activity
-vg_require_menu('catalog');   // 카탈로그 계열과 같은 메뉴코드(cves.php·packages.php 와 동일)
+vg_require_menu('compliance'); // 컴플라이언스 위반 현황(FAIL/PASS/NA)을 노출하므로 control_mapping.php·kisa-u.php 와 같은 권한을 요구한다
 
 /**
  * 기준을 화면에 세우는 순서. 사용자는 주요정보통신기반시설 심사를 받는 쪽이고 그 자리에서
