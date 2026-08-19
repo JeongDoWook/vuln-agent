@@ -900,6 +900,8 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .hero__id h1 { margin: 0 0 .4rem; letter-spacing: -.035em; }
 .hero__meta { color: var(--muted); font-size: var(--fs-sm); display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; }
 .hero__risk { flex: none; text-align: center; }
+.hero__actions { flex: none; }
+.hero__actions form { margin: 0; }
 .hero__risk .cap { display: block; margin-top: .4rem; font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 
 /* 큰 뱃지 — 히어로의 위험도 표시용(톤 색은 .badge.tone-* 이 그대로 결정) */

@@ -42,7 +42,7 @@ function vg_page_title(string $title, string $eyebrow, array $opts = []): void {
  *   $riskTone 은 톤 어휘(crit/high/med/low/ok/muted). 라벨과 톤을 분리한 건 "양호" 처럼
  *   심각도 어휘에 없는 라벨을 써야 할 때가 있기 때문이다(vg_sev_tone 은 그걸 muted 로 떨군다).
  */
-function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, string $riskTone = 'ok', string $riskCap = '최고 위험도', string $eyebrow = 'DETAIL'): void {
+function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, string $riskTone = 'ok', string $riskCap = '최고 위험도', string $eyebrow = 'DETAIL', ?string $actions = null): void {
     echo '<div class="hero hero--' . vg_h($riskLabel !== null ? $riskTone : 'ok') . '">';
     echo '<div class="hero__id"><h1>' . $title . '</h1>';
     if ($meta) {
@@ -52,6 +52,9 @@ function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, str
     if ($riskLabel !== null) {
         echo '<div class="hero__risk"><span class="badge tone-' . vg_h($riskTone) . ' badge--lg">' . vg_h($riskLabel) . '</span>'
             . '<span class="cap">' . vg_h($riskCap) . '</span></div>';
+    }
+    if ($actions !== null) {
+        echo '<div class="hero__actions">' . $actions . '</div>';
     }
     echo '</div>';
 }
