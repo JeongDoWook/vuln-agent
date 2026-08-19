@@ -320,36 +320,27 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
     <strong>스캔별 상태 타임라인</strong>
     <span class="why"><?= count($rows) ?>건</span>
     <div class="card__body">
-    <?php
-    vg_table(
-        [
-            ['label' => '스캔', 'key' => 'scan_id'],
-            ['label' => '수집시각', 'key' => 'collected_at'],
-            ['label' => '상태'],
-            ['label' => '버전'],
-            ['label' => '근거'],
-        ],
-        $rows,
-        [
-            'card'  => false,
-            'empty' => [
-                'icon'  => 'clock',
-                'title' => '스캔 이력이 없습니다.',
-            ],
-            'cell' => [
-                'scan_id'      => fn($r) => '<a href="/findings.php?scan_id=' . (int) $r['scan_id'] . '">#' . (int) $r['scan_id'] . '</a>',
-                'collected_at' => fn($r) => $r['collected_at'] !== null ? vg_h((string) $r['collected_at']) : '<span class="why">–</span>',
-                2 => function ($r) use ($statusLabel) {
-                    $tone = $r['status'] === 'FOUND' ? vg_sev_tone((string) $r['severity'])
-                          : ($r['status'] === 'SUPPRESSED' ? 'warn' : 'muted');
-                    return vg_badge($statusLabel[$r['status']] ?? $r['status'], $tone);
-                },
-                3 => fn($r) => $r['version'] !== null ? '<span class="why">' . vg_h((string) $r['version']) . '</span>' : '<span class="why">–</span>',
-                4 => fn($r) => $r['reason'] !== null ? '<span class="why">' . vg_h((string) $r['reason']) . '</span>' : '<span class="why">–</span>',
-            ],
-        ]
-    );
-    ?>
+    <?php if (!$rows): ?>
+      <?php vg_empty(['icon' => 'clock', 'title' => '스캔 이력이 없습니다.']); ?>
+    <?php else: ?>
+      <ol class="timeline">
+        <?php foreach ($rows as $r):
+            $tone = $r['status'] === 'FOUND' ? vg_sev_tone((string) $r['severity'])
+                  : ($r['status'] === 'SUPPRESSED' ? 'warn' : 'muted');
+        ?>
+        <li class="timeline__item">
+          <span class="timeline__dot tone-<?= vg_h($tone) ?>"></span>
+          <div class="timeline__row">
+            <a class="timeline__scan" href="/findings.php?scan_id=<?= (int) $r['scan_id'] ?>">#<?= (int) $r['scan_id'] ?></a>
+            <span class="why"><?= $r['collected_at'] !== null ? vg_h((string) $r['collected_at']) : '–' ?></span>
+            <?= vg_badge($statusLabel[$r['status']] ?? $r['status'], $tone) ?>
+            <?php if ($r['version'] !== null): ?><span class="why"><?= vg_h((string) $r['version']) ?></span><?php endif; ?>
+          </div>
+          <?php if ($r['reason'] !== null): ?><div class="timeline__reason why"><?= vg_h((string) $r['reason']) ?></div><?php endif; ?>
+        </li>
+        <?php endforeach; ?>
+      </ol>
+    <?php endif; ?>
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
   </div>
