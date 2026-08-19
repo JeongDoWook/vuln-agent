@@ -59,19 +59,36 @@ function vg_connectors_empty_cta(): ?array {
  *   $scanId 는 sbom.php 의 시각화 보기(view=html)가 지금 보고 있는 스캔을 그대로 넘길 때만
  *   쓴다(> 0). 과거 스캔을 보면서 다운로드는 최신 스캔 것을 받는 어긋남을 막는다 — 호스트·
  *   컨테이너 상세는 항상 최신을 보므로 안 넘겨도(0) 기존과 동일하게 "최신" 그대로다.
+ *   $withView 는 호출부가 "진입점"인지 "도착지"인지를 가른다 — 패키지 탭(host/tabs/packages.php)·
+ *   컨테이너 탭(container/overview.php)은 sbom.php 로 넘어가는 진입점이라 true(기본값)로
+ *   "부품표 보기"를 주 버튼으로 보여준다. 반면 sbom.php 자기 자신(view=html 화면)은 도착지라
+ *   그 버튼을 누르면 지금 보고 있는 페이지로 재이동하는 no-op 이 된다 — false 로 넘겨 숨기고,
+ *   그 화면에서 실제로 필요한 다운로드 링크를 주 버튼으로 승격한다.
  */
-function vg_sbom_links(string $fqdn, string $cid = '', int $scanId = 0): void {
+function vg_sbom_links(string $fqdn, string $cid = '', int $scanId = 0, bool $withView = true): void {
     if (!vg_can('assets')) { return; }
     $base = '/sbom.php?host=' . urlencode($fqdn) . ($cid !== '' ? '&cid=' . urlencode($cid) : '')
         . ($scanId > 0 ? '&scan_id=' . $scanId : '');
-    // 사람이 보는 주 화면(view=html)은 눈에 띄는 버튼으로, 표준 포맷 다운로드(외부 도구·감사
-    //   제출용 — route-query-contract.json 의 sbom_client/browser_bookmark)는 있다는 것만
-    //   알면 되는 보조 링크로 낮춘다. URL·쿼리는 그대로다.
+    $cycloneHref = vg_h($base . '&format=cyclonedx');
+    $spdxHref = vg_h($base . '&format=spdx');
+    if ($withView) {
+        // 사람이 보는 주 화면(view=html)은 눈에 띄는 버튼으로, 표준 포맷 다운로드(외부 도구·
+        //   감사 제출용 — route-query-contract.json 의 sbom_client/browser_bookmark)는 있다는
+        //   것만 알면 되는 보조 링크로 낮춘다. URL·쿼리는 그대로다.
+        echo '<div class="card"><strong>SBOM</strong>'
+            . '<div class="card__body">'
+            . '<div class="actions"><a class="btn btn--sm btn--primary" href="' . vg_h($base . '&view=html') . '">부품표 보기</a></div>'
+            . '<div class="links">'
+            . '<a href="' . $cycloneHref . '">CycloneDX 1.5 다운로드</a>'
+            . '<a href="' . $spdxHref . '">SPDX 2.3 다운로드</a>'
+            . '</div></div></div>';
+        return;
+    }
+    // 도착지(sbom.php 자신)에선 "부품표 보기"가 no-op 이라 빼고, 다운로드 링크를 주 버튼으로.
     echo '<div class="card"><strong>SBOM</strong>'
         . '<div class="card__body">'
-        . '<div class="actions"><a class="btn btn--sm btn--primary" href="' . vg_h($base . '&view=html') . '">부품표 보기</a></div>'
-        . '<div class="links">'
-        . '<a href="' . vg_h($base . '&format=cyclonedx') . '">CycloneDX 1.5 다운로드</a>'
-        . '<a href="' . vg_h($base . '&format=spdx') . '">SPDX 2.3 다운로드</a>'
+        . '<div class="actions">'
+        . '<a class="btn btn--sm btn--primary" href="' . $cycloneHref . '">CycloneDX 1.5 다운로드</a>'
+        . '<a class="btn btn--sm btn--ghost" href="' . $spdxHref . '">SPDX 2.3 다운로드</a>'
         . '</div></div></div>';
 }

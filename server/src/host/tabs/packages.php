@@ -20,7 +20,7 @@ declare(strict_types=1);
     $integPartial = !empty($scan['integrity_partial']);
     if (!$integChecked) {
         $integTone = 'muted';
-        $integText = '미수행 — 에이전트를 <code>--verify-files</code> 로 실행해야 검사합니다(비용 때문에 기본 꺼짐).';
+        $integText = '미수행 — 에이전트를 --verify-files 로 실행해야 검사합니다(비용 때문에 기본 꺼짐).';
     } elseif ($integTotal === 0) {
         $integTone = 'ok';
         $integText = '패키지 원본과 다른 파일이 관측되지 않았습니다.';
@@ -34,7 +34,7 @@ declare(strict_types=1);
       <strong>패키지 무결성</strong>
       <?= vg_badge($integChecked ? ($integTotal === 0 ? '정상' : '원본과 다름 ' . number_format($integTotal) . '건') : '미수행', $integTone) ?>
       <?php if ($integPartial): ?><?= vg_badge('부분 결과', 'med', '제한시간·줄수 상한으로 잘렸습니다. 0건이 "깨끗함"을 뜻하지 않습니다.') ?><?php endif; ?>
-      <span class="why"> · <?= $integText ?></span>
+      <span class="why"> · <?= vg_h($integText) ?></span>
       <?php if ($integPartial): ?>
         <span class="why"> · 검사가 도중에 잘렸습니다 — 아래 목록과 건수는 전수가 아닙니다.</span>
       <?php endif; ?>
