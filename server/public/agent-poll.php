@@ -13,6 +13,8 @@ require __DIR__ . '/../src/config.php';
 require __DIR__ . '/../src/db.php';
 require_once __DIR__ . '/../src/agenttoken.php';  // vg_agent_token_verify (호스트 바인딩)
 require_once __DIR__ . '/../src/agentspeedtier.php';  // VG_AGENT_SPEED_TIER_MAP (공용 정의 — host.php 와 공유)
+require_once __DIR__ . '/../src/agentupdate.php';  // vg_agent_release_info (파일 기반 최신 버전)
+require_once __DIR__ . '/../src/audit.php';        // vg_log_activity (업데이트 결과 보고)
 
 function respond_fail(int $httpCode, string $msg, string $code): void {
     http_response_code($httpCode);
@@ -33,10 +35,44 @@ if ($agentTok === null) {
 }
 $fqdn = $agentTok['fqdn'];
 
+// 에이전트 자동 업데이트 — Nexpose 방식: 폴링마다 자기 버전을 같이 보내고(agent_version),
+//   배포된 스크립트 파일(agent-src/vuln-inventory-agent.sh)의 버전보다 낮으면 응답에
+//   다운로드 경로 + sha256 을 실어 보낸다. 다운로드 경로는 이 서버의 정본 배포
+//   엔드포인트(agent-dl.php) 고정 — 에이전트가 임의 URL 을 받지 않는다.
+$reportedVersion = trim((string) ($_GET['agent_version'] ?? ''));
+$release = vg_agent_release_info();
+$updateFields = ['update_available' => false, 'update_version' => null, 'update_sha256' => null, 'update_download_path' => null];
+if ($release !== null && $reportedVersion !== '' && version_compare($reportedVersion, $release['version'], '<')) {
+    $updateFields = [
+        'update_available'      => true,
+        'update_version'        => $release['version'],
+        'update_sha256'         => $release['sha256'],
+        'update_download_path'  => 'agent-dl.php?f=vuln-inventory-agent.sh',
+    ];
+}
+
 // 호스트가 아직 한 번도 ingest 되지 않았으면 tb_host 행이 없을 수 있다 — 에러가 아니라 기본값.
 $st = $pdo->prepare('SELECT host_id, poll_schedule_seconds, agent_speed_tier FROM tb_host WHERE fqdn = ? AND is_deleted = 0 LIMIT 1');
 $st->execute([$fqdn]);
 $host = $st->fetch();
+
+// 직전 폴링에서 받은 업데이트를 에이전트가 적용해 본 결과 보고(선택) — 새 요청·새 인바운드
+//   경로를 만들지 않고 기존 폴링 GET 에 실어 보내는 방식을 재사용한다.
+// 감사로그에 실기 전에 화이트리스트·길이 제한을 건다 — 이 값들은 원격 노드(에이전트)가 채운
+//   자유 문자열이라, 제한 없이 그대로 저장하면 감사로그 폭주로 디스크를 채울 수 있다
+//   (이 저장소는 실제 binlog 디스크풀 장애 이력이 있다).
+$updateResult = vg_audit_redact_text(trim((string) ($_GET['update_result'] ?? '')), 32) ?? '';
+if ($updateResult !== '') {
+    $fromV = vg_audit_redact_text(trim((string) ($_GET['update_from'] ?? '')), 32) ?? '';
+    $toV   = vg_audit_redact_text(trim((string) ($_GET['update_to'] ?? ''))  , 32) ?? '';
+    $ok    = $updateResult === 'ok';
+    vg_log_activity(
+        $pdo, 'HOST', $host ? (int) $host['host_id'] : null, 'agent_auto_update',
+        ($ok ? '에이전트 자동 업데이트 성공' : "에이전트 자동 업데이트 실패({$updateResult})") . ": {$fromV} → {$toV}",
+        ['from' => $fromV, 'to' => $toV, 'result' => $updateResult], null, 'SYSTEM',
+        subject: $fqdn, action: 'UPDATE'
+    );
+}
 
 if (!$host) {
     $defaultTier = VG_AGENT_SPEED_TIER_MAP['normal'];
@@ -46,7 +82,7 @@ if (!$host) {
         'cpu_quota_percent'          => $defaultTier['cpu_quota_percent'],
         'packaging_timeout_seconds'  => $defaultTier['packaging_timeout_seconds'],
         'mem_max_mb'                 => $defaultTier['mem_max_mb'],
-    ], JSON_UNESCAPED_UNICODE);
+    ] + $updateFields, JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -69,4 +105,4 @@ echo json_encode([
     'cpu_quota_percent'          => $speedTier['cpu_quota_percent'],
     'packaging_timeout_seconds'  => $speedTier['packaging_timeout_seconds'],
     'mem_max_mb'                 => $speedTier['mem_max_mb'],
-], JSON_UNESCAPED_UNICODE);
+] + $updateFields, JSON_UNESCAPED_UNICODE);

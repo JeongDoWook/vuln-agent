@@ -41,6 +41,7 @@ function vg_activity_type_labels(): array {
         'connector_delete'     => '커넥터 삭제',
         'ingest'               => '수집 반영',
         'ingest_spoof_blocked' => '수집 위조 차단',
+        'agent_auto_update'    => '에이전트 자동 업데이트',
         'permission_update'    => '권한 변경',
         'setting_update'       => '운영 설정 변경',
         'user_add'             => '사용자 추가',
