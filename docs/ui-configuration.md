@@ -60,6 +60,9 @@ LOGIN_LOCK_MINUTES=15
 | `UI_FILTER_OPTION_LIMIT` | `300` | 50~2000 | 취약점 목록의 호스트 필터 선택지 최대 개수 (현재 선택된 호스트는 한도와 무관하게 항상 포함) |
 | `UI_ADVISORY_ASSET_LIMIT` | `200` | 20~2000 | 보안 공지 화면 "영향 자산" 모달의 상세 행 상한 (초과분은 "외 N건") |
 
+> **제거된 설정**: `UI_DETAIL_PER_PAGE_DEFAULT`(기본 `40`) — 자산 상세 목록도 이제
+> `UI_PER_PAGE_DEFAULT` 를 그대로 쓴다(PR #681). 기존 `.env` 에 남아 있어도 무시된다.
+
 ## 보안·인증
 
 읽는 곳: `server/src/auth.php`, `server/src/ui_config.php`(감사).
