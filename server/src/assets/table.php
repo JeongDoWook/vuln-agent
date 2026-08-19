@@ -117,18 +117,26 @@ function vg_assets_render_table(
                     // 백필 전 자산·수집 이력이 없는 자산은 주소가 없다 — 빈 칸을 자리표시
                     //   문구로 채우지 않는다(다른 열의 '–' 와 같은 어휘).
                     if ($addrs === []) { return '<span class="why">–</span>'; }
+                    /* 툴팁도 대표 IP 와 같은 기준을 쓴다 — docker0·br-·calico 등 가상
+                     *   인터페이스는 밖에서 그 주소로 자산에 닿지 않아 나열해도 소음이다.
+                     *   전부 가상이면(가상 인터페이스뿐인 호스트) 빈 툴팁보다는 원본이 낫다. */
+                    $physical = array_values(array_filter(
+                        $addrs,
+                        static fn(array $a): bool => !vg_iface_is_virtual($a['iface'] ?? null)
+                    ));
+                    $tipAddrs = $physical !== [] ? $physical : $addrs;
                     /* 툴팁에 전부 나열하지 않는다 — 주소는 호스트당 최대 256행까지 들어올 수
                      *   있어(ingest/network.php 의 상한) 그대로 이으면 툴팁이 화면을 덮는다. */
                     $all = [];
-                    foreach (array_slice($addrs, 0, VG_ASSET_IP_TITLE_MAX) as $a) {
+                    foreach (array_slice($tipAddrs, 0, VG_ASSET_IP_TITLE_MAX) as $a) {
                         $iface = (string) ($a['iface'] ?? '');
                         $all[] = $a['ip'] . ($iface !== '' ? ' (' . $iface . ')' : '');
                     }
                     $title = implode(' · ', $all)
-                        . (count($addrs) > VG_ASSET_IP_TITLE_MAX ? ' … 외 '
-                            . (count($addrs) - VG_ASSET_IP_TITLE_MAX) . '개' : '');
-                    $html = '<code title="' . vg_h($title) . '">' . vg_h($addrs[0]['ip']) . '</code>';
-                    $rest = count($addrs) - 1;
+                        . (count($tipAddrs) > VG_ASSET_IP_TITLE_MAX ? ' … 외 '
+                            . (count($tipAddrs) - VG_ASSET_IP_TITLE_MAX) . '개' : '');
+                    $html = '<code title="' . vg_h($title) . '">' . vg_h($tipAddrs[0]['ip']) . '</code>';
+                    $rest = count($tipAddrs) - 1;
                     if ($rest > 0) {
                         // 숫자만 남는 자리라 title 로 무엇을 세는지 밝힌다(접근성).
                         $html .= ' <span class="why" title="' . vg_h($title) . '">+' . $rest . '</span>';
