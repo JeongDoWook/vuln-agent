@@ -151,7 +151,9 @@ function vg_login(PDO $pdo, string $user, string $pass): ?string {
         )->execute([$token, $uid]);
         $pdo->commit();
         // 로그인 성공 감사로그(누가·언제·어디서).
-        vg_log_activity($pdo, 'USER', $uid, 'login', null, null, $uid, 'USER', $_SERVER['REMOTE_ADDR'] ?? null,
+        // REMOTE_ADDR 는 Caddy 컨테이너 내부 IP 로 찍힌다 — X-Real-IP 를 우선한다(server/src/audit.php 참고).
+        vg_log_activity($pdo, 'USER', $uid, 'login', null, null, $uid, 'USER',
+            $_SERVER['HTTP_X_REAL_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? null,
             subject: (string) $row['username'], action: 'LOGIN');
         return null;
     } catch (Throwable $e) {
