@@ -181,8 +181,10 @@ vg_header('CCE', 'cce_rules');
               <a class="ctrcard__name" href="<?= vg_h($detailHref($r)) ?>" title="<?= vg_h((string) $r['code']) ?>">
                 <?= vg_h((string) $r['title']) ?>
               </a>
-              <?= vg_badge((string) $r['severity'], $sevTone) ?>
-              <?= vg_badge($status['label'], $status['tone']) ?>
+              <div class="ctrcard__badges">
+                <?= vg_badge((string) $r['severity'], $sevTone) ?>
+                <?= vg_badge($status['label'], $status['tone']) ?>
+              </div>
             </div>
             <div class="ctrcard__facts">
               <code class="why"><?= vg_h((string) $r['code']) ?></code>

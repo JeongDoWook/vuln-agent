@@ -209,7 +209,9 @@ vg_header('통제 기준 매핑', 'control_mapping');
               <a class="ctrcard__name" href="<?= vg_h($detailHref($r)) ?>">
                 <code class="why"><?= vg_h((string) $r['control_id']) ?></code>
               </a>
-              <?= vg_badge($status['label'], $status['tone']) ?>
+              <div class="ctrcard__badges">
+                <?= vg_badge($status['label'], $status['tone']) ?>
+              </div>
             </div>
             <a href="<?= vg_h($detailHref($r)) ?>"><?= vg_h((string) $r['control_name']) ?></a>
             <div class="ctrcard__facts">

@@ -2389,7 +2389,11 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctrcard.tone-low   { border-left-color: var(--low); } /* u-card 엔 없는 톤(가이드 위험도는 상/중/하뿐) */
 .ctrcard.tone-ok    { border-left-color: var(--ok); } /* u-card 엔 없는 톤(컴플라이언스 준수 전용) */
 
-.ctrcard__head, .u-card__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem; }
+/* 제목 줄과 배지 줄을 분리된 flex 자식으로 고정한다 — 예전엔 이름·배지가 한 인라인 흐름에
+ * 있어서 제목 길이에 따라 배지가 같은 줄에 붙거나 다음 줄로 밀리며 위치가 들쭉날쭉했다.
+ * __title 은 항상 첫 줄, __badges 는 항상 그 아래 고정된 줄이다. */
+.ctrcard__head, .u-card__head { display: flex; flex-direction: column; gap: .3rem; }
+.ctrcard__badges, .u-card__badges { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; }
 .ctrcard__name, .u-card__name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
 .ctrcard__name:hover, .u-card__name:hover { color: var(--accent-2); }
 /* 이미지 문자열은 식별자라 자르지 않고 접는다(레지스트리 경로가 길다). */
