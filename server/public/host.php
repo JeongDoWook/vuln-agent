@@ -72,12 +72,10 @@ $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 $kevCount = 0; $externalFindings = 0;
 // 같은 패키지에서 나온 취약점 묶음 — "이 하나를 올리면 N건". vuln 탭에서만 채운다.
 $pkgRollup = ['rows' => [], 'truncated' => false];
-// 상세 화면의 기본 페이지 크기는 목록 화면보다 크다(설정: UI_DETAIL_PER_PAGE_DEFAULT).
-//   127건을 10개씩 13페이지로 넘기게 하면 "이 자산이 얼마나 위험한가"를 셀 수가 없다.
-$tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(vg_ui_detail_per_page_default()); $total = 0; $exposureTotal = 0;
+$tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(); $total = 0; $exposureTotal = 0;
 /* 이 화면이 고른 크기를 요청 컨텍스트에도 반영한다. "N개씩 보기" 셀렉트(vg_perpage_select)와
- *   툴바는 공용 컴포넌트라 **쿼리스트링만 보고** 현재 크기를 판단한다 — 그대로 두면 40개를
- *   보여주면서 셀렉트는 "10개씩 보기" 가 선택된 채로 뜬다(사용자에겐 화면이 거짓말을 한다).
+ *   툴바는 공용 컴포넌트라 **쿼리스트링만 보고** 현재 크기를 판단한다 — 그대로 두면 실제
+ *   보여주는 건수와 셀렉트 선택값이 어긋난 채로 뜬다(사용자에겐 화면이 거짓말을 한다).
  *   사용자가 고른 값이 있으면 건드리지 않는다. */
 if (!isset($_GET['per_page'])) { $_GET['per_page'] = (string) $perPage; }
 $rows = []; $exposures = []; $sevByScan = []; $resourceScans = []; $restartRows = [];
@@ -213,7 +211,9 @@ try {
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) { $pdo->rollBack(); }
     error_log('[host] ' . $e->getMessage());
-    $err = $e instanceof InvalidArgumentException || $e instanceof RuntimeException ? $e->getMessage() : '처리 중 오류가 발생했습니다.';
+    // PDOException 도 RuntimeException 을 상속하므로 instanceof 로는 DB 오류 원문(계정명·내부
+    //   IP·컬럼명)까지 걸러진다 — container.php 와 같이 항상 일반화된 메시지만 낸다.
+    $err = '처리 중 오류가 발생했습니다.';
 }
 
 // 노출 범위 → 뱃지 톤(색은 CSS 가 결정).

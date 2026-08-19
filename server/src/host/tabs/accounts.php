@@ -1,6 +1,13 @@
 <?php
 declare(strict_types=1);
-/* 계정 탭 — 계정 컴플라이언스 판정 + 계정 목록. */
+/* 계정 탭 — 계정 컴플라이언스 판정 + 계정 목록.
+ *   host.php: vg_require_menu_any('assets','findings') 라 findings 만 있는 계정도 이 탭
+ *   URL(?tab=accounts) 에 닿는다. 계정명·sudo·잠금 상태는 findings 권한 밖의 자산 인벤토리라
+ *   manage.php 의 등급 카드와 같은 방식으로 여기서 한 번 더 좁힌다. */
+if (!vg_can('assets')) {
+    vg_alert('이 탭을 볼 권한이 없습니다.');
+    return;
+}
     // 판정 결과 → 톤. NA 는 회색이다 — 정상(초록)과 절대 같은 색을 쓰지 않는다.
     $accTone = ['FAIL' => 'high', 'REVIEW' => 'warn', 'PASS' => 'ok', 'NA' => 'muted'];
     $accLabel = ['FAIL' => '위반', 'REVIEW' => '검토 필요', 'PASS' => '양호', 'NA' => '판정 불가'];

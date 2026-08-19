@@ -43,9 +43,9 @@ $kevCount = 0; $externalFindings = 0;
 $vulnTotal = 0; $packageTotal = 0; $exposureCount = 0; $processCount = 0; $runtimeTotal = 0;
 $depEdgeTotal = 0; $unjudgeable = null;
 $rows = []; $exposures = []; $total = 0; $exposureTotal = 0;
-$tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage(vg_ui_detail_per_page_default());
+$tab = 'vuln'; $page = 1; $ePage = 1; $perPage = vg_perpage();
 // 이 화면이 고른 페이지 크기를 요청 컨텍스트에도 반영한다 — 공용 툴바·"N개씩 보기" 셀렉트는
-//   쿼리스트링만 보고 현재 크기를 판단해서, 안 맞추면 40개를 보여주며 "10개씩"으로 표시된다.
+//   쿼리스트링만 보고 현재 크기를 판단해서, 안 맞추면 실제 건수와 셀렉트 표시가 어긋난다.
 if (!isset($_GET['per_page'])) { $_GET['per_page'] = (string) $perPage; }
 
 $hostId = (int) ($_GET['id'] ?? 0);

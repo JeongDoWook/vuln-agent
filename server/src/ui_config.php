@@ -41,21 +41,6 @@ function vg_ui_dashboard_urgent_limit(): int {
     return vg_ui_int('UI_DASHBOARD_URGENT_LIMIT', 6, 3, 30);
 }
 
-/**
- * 상세 화면(자산 상세 등)의 기본 페이지 크기. 목록 화면 기본값보다 크다 —
- *   자산 상세는 "이 자산 한 대의 전량"을 훑는 자리라 10개씩 13페이지로 넘기면 실측이 안 된다.
- *   선택지(vg_ui_per_page_options)에 없는 값이 설정되면 그보다 크지 않은 가장 큰 선택지로 접는다
- *   — 셀렉트에 없는 값이 현재값이면 "N개씩 보기" 가 아무것도 선택되지 않은 채로 뜬다.
- */
-function vg_ui_detail_per_page_default(): int {
-    $options = vg_ui_per_page_options();
-    $configured = vg_ui_int('UI_DETAIL_PER_PAGE_DEFAULT', 40, 5, 200);
-    if (in_array($configured, $options, true)) { return $configured; }
-    $fallback = $options[0];
-    foreach ($options as $n) { if ($n <= $configured) { $fallback = $n; } }
-    return $fallback;
-}
-
 function vg_ui_detail_preview_limit(): int {
     return vg_ui_int('UI_DETAIL_PREVIEW_LIMIT', 10, 5, 100);
 }
