@@ -207,40 +207,63 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
 
   <?php
   /**
-   * 접이식 트리 한 가지 — 깊이·노드 상한에 걸리면 그 자리에 "잘렸다"고 적는다.
-   *   $seen 은 **경로 단위** 방문 집합이다(순환 방지). 전역으로 두면 여러 부모가 공유하는
-   *   라이브러리가 처음 만난 가지에서만 펼쳐져 다른 가지가 통째로 비어 보인다.
+   * org-chart 카드 트리 — 각 노드를 .ctrcard 로 그리고, 자식이 있으면 그 안에 중첩
+   * .ctree__list 를 접이식(<details>)으로 담는다. 깊이·노드 상한에 걸리면 그 카드 안에
+   * "잘렸다"고 적는다. $seen 은 **경로 단위** 방문 집합이다(순환 방지) — 전역으로 두면
+   * 여러 부모가 공유하는 라이브러리가 처음 만난 가지에서만 펼쳐져 다른 가지가 통째로
+   * 비어 보인다.
    */
-  $renderNode = function (string $key, int $depth, array $seen) use (&$renderNode, $graph, $nodeLabel, &$nodeCount): void {
+  $renderCard = function (string $key, int $depth, array $seen) use (&$renderCard, $graph, $nodeLabel, $target, &$nodeCount): string {
       $kids = vg_pkgdep_children($graph, $key);
       $label = $nodeLabel($key);
       $nodeCount++;
 
+      $tone = ($graph !== null && in_array($key, $graph['roots'], true)) ? 'ok'
+          : (($key === $target) ? 'med' : 'muted');
+      $head = '<div class="ctrcard__head">' . $label . '</div>';
+
       if (!$kids) {
-          echo '<li>' . $label . '</li>';
-          return;
+          return '<li class="ctrcard tone-' . $tone . '">' . $head . '</li>';
       }
       if ($depth >= VG_PKGDEP_DEPTH_MAX) {
-          echo '<li>' . $label . ' <span class="why">— 깊이 상한('
-              . VG_PKGDEP_DEPTH_MAX . ')에서 접음 · 하위 ' . count($kids) . '개 미표시</span></li>';
-          return;
+          return '<li class="ctrcard tone-' . $tone . '">' . $head
+              . '<span class="why">깊이 상한(' . VG_PKGDEP_DEPTH_MAX . ')에서 접음 · 하위 '
+              . count($kids) . '개 미표시</span></li>';
       }
       if ($nodeCount >= VG_PKGDEP_NODE_MAX) {
-          echo '<li>' . $label . ' <span class="why">— 표시 상한('
-              . VG_PKGDEP_NODE_MAX . '개)에서 접음 · 하위 ' . count($kids) . '개 미표시</span></li>';
-          return;
+          return '<li class="ctrcard tone-' . $tone . '">' . $head
+              . '<span class="why">표시 상한(' . VG_PKGDEP_NODE_MAX . '개)에서 접음 · 하위 '
+              . count($kids) . '개 미표시</span></li>';
       }
       $seen[$key] = true;
-      echo '<li><details open><summary>' . $label
-          . ' <span class="why">의존 ' . count($kids) . '개</span></summary><ul class="dep-tree">';
+      $inner = '';
       foreach ($kids as $k) {
           if (isset($seen[$k])) {
-              echo '<li>' . $nodeLabel($k) . ' <span class="why">— 순환 참조라 더 펴지 않음</span></li>';
+              $inner .= '<li class="ctrcard tone-muted">' . '<div class="ctrcard__head">' . $nodeLabel($k)
+                  . ' <span class="why">— 순환 참조라 더 펴지 않음</span></div></li>';
               continue;
           }
-          $renderNode($k, $depth + 1, $seen);
+          $inner .= $renderCard($k, $depth + 1, $seen);
       }
-      echo '</ul></details></li>';
+      return '<li class="ctrcard tone-' . $tone . '">' . $head
+          . '<details open><summary>의존 ' . count($kids) . '개</summary><ul class="ctree__list">'
+          . $inner . '</ul></details></li>';
+  };
+  /** 루트(또는 대상) 하나의 .ctree 몸통 — .ctree__root 가 그 노드 자신, 자식은 카드 그리드. */
+  $renderTree = function (string $root) use ($renderCard, $graph, $nodeLabel, &$nodeCount): void {
+      $nodeCount++;
+      $kids = vg_pkgdep_children($graph, $root);
+      echo '<div class="ctree">';
+      echo '<div class="ctree__root"><span class="ctree__icon" aria-hidden="true">📦</span>'
+          . '<div class="ctree__rootid">' . $nodeLabel($root) . '</div></div>';
+      if ($kids) {
+          echo '<ul class="ctree__list">';
+          foreach ($kids as $k) { echo $renderCard($k, 1, [$root => true]); }
+          echo '</ul>';
+      } else {
+          echo '<p class="why">하위 의존성 없음</p>';
+      }
+      echo '</div>';
   };
   $nodeCount = 0;
   ?>
@@ -285,33 +308,36 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
     if (!vg_pkgdep_children($graph, $target)) {
         vg_empty(['icon' => 'package', 'title' => '이 패키지가 끌어오는 의존성이 없습니다(말단 노드).']);
     } else {
-        echo '<ul class="dep-tree">';
-        $renderNode($target, 0, []);
-        echo '</ul>';
+        $renderTree($target);
     }
     ?>
     </div>
   </div>
 
   <?php else: ?>
+  <?php if (!$graph['roots']): ?>
+  <div class="card">
+    <strong>전체 트리</strong>
+    <div class="card__body">
+    <?php vg_empty(['icon' => 'package', 'title' => '루트가 없습니다.', 'hint' => 'pom.xml 직접선언만 있으면 부모가 없어 트리가 만들어지지 않습니다 — 아래 목록을 보세요.']); ?>
+    </div>
+  </div>
+  <?php else: ?>
   <div class="card">
     <strong>전체 트리</strong>
     <span class="why">루트 <?= number_format(count($graph['roots'])) ?>개 · 노드 <?= number_format(count($graph['nodes'])) ?>개</span>
-    <div class="card__body">
-    <?php
-    if (!$graph['roots']) {
-        vg_empty(['icon' => 'package', 'title' => '루트가 없습니다.', 'hint' => 'pom.xml 직접선언만 있으면 부모가 없어 트리가 만들어지지 않습니다 — 아래 목록을 보세요.']);
-    } else {
-        echo '<ul class="dep-tree">';
-        foreach ($graph['roots'] as $root) { $renderNode($root, 0, []); }
-        echo '</ul>';
-        if ($nodeCount >= VG_PKGDEP_NODE_MAX) {
-            echo '<p class="why">표시 상한 ' . number_format(VG_PKGDEP_NODE_MAX) . '개에 걸려 일부 가지를 접었습니다 — 특정 패키지를 눌러 그 패키지 기준으로 다시 보세요.</p>';
-        }
-    }
-    ?>
-    </div>
   </div>
+  <?php foreach ($graph['roots'] as $root): ?>
+  <div class="card">
+    <div class="card__body"><?php $renderTree($root); ?></div>
+  </div>
+  <?php endforeach; ?>
+  <?php if ($nodeCount >= VG_PKGDEP_NODE_MAX): ?>
+  <div class="card">
+    <p class="why">표시 상한 <?= number_format(VG_PKGDEP_NODE_MAX) ?>개에 걸려 일부 가지를 접었습니다 — 특정 패키지를 눌러 그 패키지 기준으로 다시 보세요.</p>
+  </div>
+  <?php endif; ?>
+  <?php endif; ?>
 
   <?php if ($graph['pom']): ?>
   <div class="card">

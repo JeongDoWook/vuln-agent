@@ -2405,6 +2405,12 @@ form.card .btn--primary:active { transform: translateY(0); }
   .ctree__list::before { left: .25rem; }
 }
 
+/* depgraph.php 의 org-chart 카드 — .ctrcard 안에 중첩되는 하위 트리는 카드 자체가
+ * 이미 좁으므로(auto-fill 폭) 1열로 강제한다. 카드 뼈대·톤 색은 위 .ctrcard 그대로 쓴다. */
+.ctrcard > details > .ctree__list { grid-template-columns: 1fr; padding-left: .9rem; }
+.ctrcard > details > summary { cursor: pointer; font-size: var(--fs-sm); color: var(--muted); margin-top: .2rem; }
+.ctrcard > details > summary:hover { color: var(--accent-2); }
+
 /* 카드 그리드 — .ctree__list 와 같은 반응형 카드 배치이지만 계통선(::before)이 없는 목록에서
  * 쓴다(통제 기준 매핑·CCE 카탈로그). 카드 자체는 .ctrcard 를 그대로 재사용한다. */
 .ctrcard-grid {
