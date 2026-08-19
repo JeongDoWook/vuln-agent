@@ -47,21 +47,24 @@ function vg_host_load_unsupported_containers(PDO $pdo, int $sid): array {
  * 수집 단계 누락 — 배포판도 알고 이미지도 멀쩡한데 **에이전트가 그 항목을 아예 못 걷은** 경우.
  *   MISSING 만 모은다. EMPTY 는 "정상적으로 없음"(컨테이너를 안 쓰는 호스트, 언어 패키지가
  *   없는 호스트)이라 같이 경고하면 정상 호스트마다 경고가 떠서 아무도 안 보게 된다.
- *   item_count 는 안 읽는다 — MISSING 은 정의상 0건이라(ingest.php 생산자) 볼 값이 없다.
- *   반환: ['codes' => 원본 코드, 'labels' => 한글 라벨] — 화면은 라벨을, "이 항목이 미수집인가"를
- *   묻는 탭은 코드를 쓴다.
+ *   item_count 는 MISSING 이어도 0건이 아닐 수 있다 — runtime_processes 는 시간초과로 중간에
+ *   끊기면 그때까지 걷은 만큼(> 0)을 남기고 MISSING 으로 찍힌다(ingest.php: processes_truncated).
+ *   반대로 권한·환경 문제로 아예 못 걸으면 0건이다. 화면은 이 둘을 구분해 안내한다.
+ *   반환: ['codes' => 원본 코드, 'labels' => 한글 라벨, 'itemCounts' => 코드 => item_count]
+ *   — 화면은 라벨을, "이 항목이 미수집인가"를 묻는 탭은 코드를, 원인 구분은 itemCounts 를 쓴다.
  */
 function vg_host_load_missing_stages(PDO $pdo, int $sid): array {
-    $st = $pdo->prepare("SELECT stage_code FROM tb_collection_stage
+    $st = $pdo->prepare("SELECT stage_code, item_count FROM tb_collection_stage
                           WHERE scan_id = ? AND status = 'MISSING' ORDER BY stage_code");
     $st->execute([$sid]);
-    $codes = []; $labels = [];
+    $codes = []; $labels = []; $itemCounts = [];
     foreach ($st->fetchAll() as $r) {
         $code = (string) $r['stage_code'];
         $codes[] = $code;
         $labels[] = VG_COLLECTION_STAGE_LABEL[$code] ?? $code;   // 모르는 코드는 원문 그대로
+        $itemCounts[$code] = (int) ($r['item_count'] ?? 0);
     }
-    return ['codes' => $codes, 'labels' => $labels];
+    return ['codes' => $codes, 'labels' => $labels, 'itemCounts' => $itemCounts];
 }
 
 /**
