@@ -64,10 +64,14 @@ function vg_sbom_links(string $fqdn, string $cid = '', int $scanId = 0): void {
     if (!vg_can('assets')) { return; }
     $base = '/sbom.php?host=' . urlencode($fqdn) . ($cid !== '' ? '&cid=' . urlencode($cid) : '')
         . ($scanId > 0 ? '&scan_id=' . $scanId : '');
+    // 사람이 보는 주 화면(view=html)은 눈에 띄는 버튼으로, 표준 포맷 다운로드(외부 도구·감사
+    //   제출용 — route-query-contract.json 의 sbom_client/browser_bookmark)는 있다는 것만
+    //   알면 되는 보조 링크로 낮춘다. URL·쿼리는 그대로다.
     echo '<div class="card"><strong>SBOM</strong>'
-        . '<div class="card__body"><div class="links">'
-        . '<a href="' . vg_h($base . '&view=html') . '">부품표 보기</a>'
-        . '<a href="' . vg_h($base . '&format=cyclonedx') . '">CycloneDX 1.5</a>'
-        . '<a href="' . vg_h($base . '&format=spdx') . '">SPDX 2.3</a>'
+        . '<div class="card__body">'
+        . '<div class="actions"><a class="btn btn--sm btn--primary" href="' . vg_h($base . '&view=html') . '">부품표 보기</a></div>'
+        . '<div class="links">'
+        . '<a href="' . vg_h($base . '&format=cyclonedx') . '">CycloneDX 1.5 다운로드</a>'
+        . '<a href="' . vg_h($base . '&format=spdx') . '">SPDX 2.3 다운로드</a>'
         . '</div></div></div>';
 }
