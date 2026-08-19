@@ -23,31 +23,11 @@ require_once __DIR__ . '/layout.php';
  * 팔레트를 바꾸면 도넛도 같이 바뀐다.
  */
 function vg_sev_donut(array $counts, int $size = 132): void {
-    $total = 0;
-    foreach (VG_TONE_SEV as $sev => $tone) { $total += (int) ($counts[$sev] ?? 0); }
-
-    $r = 15.9155;   // 둘레가 정확히 100 이 되는 반지름 (2πr = 100)
-    echo '<div class="donut">';
-    echo '<svg viewBox="0 0 42 42" width="' . $size . '" height="' . $size . '" role="img" aria-label="심각도 분포">';
-    echo '<circle class="donut__track" cx="21" cy="21" r="' . $r . '" fill="none" stroke-width="4.5"></circle>';
-
-    if ($total > 0) {
-        $offset = 25;   // 12시 방향에서 시작(기본은 3시 방향)
-        foreach (VG_TONE_SEV as $sev => $tone) {
-            $n = (int) ($counts[$sev] ?? 0);
-            if ($n === 0) { continue; }
-            $pct = $n / $total * 100;
-            echo '<circle class="donut__arc tone-' . $tone . '" cx="21" cy="21" r="' . $r . '"'
-                . ' fill="none" stroke-width="4.5"'
-                . ' stroke-dasharray="' . round($pct, 2) . ' ' . round(100 - $pct, 2) . '"'
-                . ' stroke-dashoffset="' . round($offset, 2) . '">'
-                . '<title>' . vg_h($sev . ' ' . $n . '건') . '</title></circle>';
-            $offset -= $pct;   // 시계방향으로 이어 붙인다
-        }
+    $segments = [];
+    foreach (VG_TONE_SEV as $sev => $tone) {
+        $segments[] = ['tone' => $tone, 'label' => $sev, 'n' => (int) ($counts[$sev] ?? 0)];
     }
-    echo '</svg>';
-    echo '<div class="donut__mid"><b>' . number_format($total) . '</b><span>전체</span></div>';
-    echo '</div>';
+    vg_result_donut($segments, $size, '심각도 분포');
 }
 
 /**
