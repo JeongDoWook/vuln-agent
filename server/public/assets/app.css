@@ -687,6 +687,20 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 .card--accent:hover { border-color: var(--accent); }
 .card__body { margin-top: .6rem; }
 
+/* 자산 탐색(discovery.php) 대역 카드 — 표 한 줄이 아니라 카드 하나로 대역을 보여줘
+ * 상태 배지·스캔 결과를 표 열보다 눈에 띄게 비교한다(.ctree__list 와 같은 auto-fill 격자). */
+.discovery-targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+@media (max-width: 700px) { .discovery-targets { grid-template-columns: 1fr; } }
+.discovery-target { margin-bottom: 0; }
+.discovery-target__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.discovery-target__badges { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0; }
+.discovery-target__scan { margin: .3rem 0; }
+
 /* 카드 본문 안의 접이식 블록(<details>) — 표 셀 안의 것(td summary)과 달리 카드에서는
  * 제목처럼 보여야 한다. compliance.php 의 "수동 확인 필요"가 기본 닫힘으로 이걸 쓴다.
  *
