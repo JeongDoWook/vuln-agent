@@ -4,6 +4,8 @@ declare(strict_types=1);
 /**
  * dashboard/sections/funnel.php — 상단의 좁혀지는 퍼널 4칸.
  */
+require_once __DIR__ . '/../../view/components/signal.php';   // vg_signal_icon() — index.php 의 로드 순서에 우연히 기대지 않는다
+
 function vg_dash_render_funnel(array $totals, int $hostCount, int $kevCount, int $kevOverdue, int $kevSlaDays): void {
   /* 상단은 결론 문장 + KPI 나열이 아니라 **좁혀지는 퍼널**이다.
    *
@@ -27,13 +29,15 @@ function vg_dash_render_funnel(array $totals, int $hostCount, int $kevCount, int
   $funnelSteps = [
       // 타일 밑 설명 줄(cap)은 걷었다 — 숫자와 라벨이 이미 말하고, 기준·분포는 누르면 가는
       //   목록이 그대로 보여준다. 무엇을 세는지는 title(툴팁)이 계속 갖는다.
-      ['n' => $allCount, 'label' => '탐지된 전체',
+      // 아이콘은 vg_signal_icon() 이 이미 갖고 있는 4축 세트를 그대로 재사용한다(새 아이콘 없음).
+      //   1번 칸(전체)은 아이콘 없이 둔다 — 배경 수치라 강조할 축이 없다.
+      ['n' => $allCount, 'label' => '탐지된 전체', 'icon' => null,
        'href' => '/findings.php', 'title' => '자산 ' . number_format($hostCount) . '대의 최신 스캔 · 탐지 결과 전체 목록'],
-      ['n' => $crit + $high, 'label' => 'High 이상',
+      ['n' => $crit + $high, 'label' => 'High 이상', 'icon' => 'severity',
        'href' => '/findings.php?sev=HIGH%2B', 'title' => 'CRITICAL ' . number_format($crit) . ' · HIGH ' . number_format($high)],
-      ['n' => $kevCount, 'label' => '악용 확인(KEV)',
+      ['n' => $kevCount, 'label' => '악용 확인(KEV)', 'icon' => 'exploit',
        'href' => '/findings.php?sev=HIGH%2B&fx=kev', 'title' => 'High 이상 중 실제 공격에 쓰인 것(KEV 등재)'],
-      ['n' => $kevOverdue, 'label' => 'KEV 중 기한 초과',
+      ['n' => $kevOverdue, 'label' => 'KEV 중 기한 초과', 'icon' => 'action',
        'href' => '/findings.php?sev=HIGH%2B&fx=overdue&sort=due', 'title' => '조치 기한 ' . number_format($kevSlaDays) . '일을 넘긴 KEV 미조치'],
   ];
   ?>
@@ -45,7 +49,7 @@ function vg_dash_render_funnel(array $totals, int $hostCount, int $kevCount, int
     ?>
       <a class="<?= $cls ?>" href="<?= vg_h($s['href']) ?>" title="<?= vg_h($s['title']) ?>">
         <b><?= number_format((int) $s['n']) ?></b>
-        <span><?= vg_h($s['label']) ?></span>
+        <span><?php if ($s['icon'] !== null): ?><?= vg_signal_icon((string) $s['icon']) ?><?php endif; ?><?= vg_h($s['label']) ?></span>
       </a>
     <?php endforeach; ?>
   </div>

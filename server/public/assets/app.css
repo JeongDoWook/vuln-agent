@@ -2557,7 +2557,15 @@ form.card .btn--primary:active { transform: translateY(0); }
   letter-spacing: -.03em;
   font-variant-numeric: tabular-nums;
 }
-.funnel__step > span { font-size: var(--fs-sm); color: var(--text-2); }
+.funnel__step > span {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+/* 2~4번 칸의 축 아이콘(vg_signal_icon) — stroke=currentColor 라 라벨 색을 그대로 따라간다. */
+.funnel__step > span .ico { flex: none; opacity: .75; }
 /* 칸 사이의 좁혀지는 방향 — 마크업이 아니라 CSS 가 그린다(값이 아니라 관계라서). */
 .funnel__step + .funnel__step::before {
   content: "›";
