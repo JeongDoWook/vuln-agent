@@ -7,7 +7,8 @@ declare(strict_types=1);
  *   ?apage=N/?aper_page=N (영향 패키지)
  *
  * 구성: 히어로(식별 + 등급) → 통계 그리드(핵심 지표 한눈에) → 앵커 내비(sticky) →
- *   요약 → 공격 벡터 → (있으면) 벤더 판정 → 영향 패키지 → 발견 위치 → 참조 자료.
+ *   요약 → 공격 벡터 → (있으면) 벤더 판정 → 영향 패키지 → 영향받는 버전 맵(세그먼트 맵과 같은
+ *   카드 나열, #locations 와 같은 목록을 재사용) → 발견 위치 → 참조 자료.
  *   예전엔 탭 3개(개요/영향 패키지/발견 위치) 뒤에 숨기고 지표를 사이드바에 따로 뒀는데,
  *   "한눈에 안 들어온다" 는 사용자 피드백의 핵심 원인이었다 — 탭 전환 없이 스크롤 한 번으로
  *   전부 보이는 단일 페이지로 바꾼다. 세 섹션(벤더 판정·영향 패키지·발견 위치) 모두 같은 화면에
@@ -31,6 +32,7 @@ require_once __DIR__ . '/../src/cve/sections.php';  // vg_cve_render_section —
 vg_require_menu_any('findings', 'catalog', 'advisories');   // CVE 상세: 탐지 결과·CVE 카탈로그·보안 공지에서 함께 열린다
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = []; $vendorRows = [];
+$verMap = [];
 $locTotal = 0; $assetTotal = 0; $page = vg_page(); $perPage = vg_perpage();
 $vendorTotal = 0; $vPage = vg_page('vpage'); $vPerPage = vg_perpage(null, 'vper_page');
 $affectedTotal = 0; $aPage = vg_page('apage'); $aPerPage = vg_perpage(null, 'aper_page');
@@ -63,6 +65,8 @@ try {
 
         ['total' => $locTotal, 'assetTotal' => $assetTotal, 'rows' => $locations]
             = vg_cve_load_locations($pdo, $cveId, $page, $perPage);
+
+        $verMap = vg_cve_load_version_map($pdo, $cveId);
     }
 } catch (Throwable $e) {
     error_log('[cve] ' . $e->getMessage());
@@ -154,6 +158,7 @@ vg_decision_flow([
   <a href="#vector">공격 벡터</a>
   <?php if ($vendorTotal > 0): ?><a href="#vendor">벤더 판정<span class="n"><?= number_format($vendorTotal) ?></span></a><?php endif; ?>
   <a href="#affected">영향 패키지<span class="n"><?= number_format($affectedTotal) ?></span></a>
+  <a href="#assetmap">영향받는 버전 맵<span class="n"><?= number_format($locTotal) ?></span></a>
   <a href="#locations">발견 위치<span class="n"><?= number_format($locTotal) ?></span></a>
   <a href="#references">참조 자료</a>
 </nav>
@@ -176,6 +181,10 @@ vg_cve_render_section('vendor', [
 vg_cve_render_section('affected', [
     'affected' => $affected, 'affectedTotal' => $affectedTotal,
     'aPage' => $aPage, 'aPerPage' => $aPerPage,
+]);
+
+vg_cve_render_section('assetmap', [
+    'verMap' => $verMap, 'locTotal' => $locTotal,
 ]);
 
 vg_cve_render_section('locations', [
