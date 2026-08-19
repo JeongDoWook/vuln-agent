@@ -76,7 +76,7 @@ function vg_container_render_overview(array $ctx): void {
     if ($unjudgeable !== null) {
         vg_alert([
             'type'  => 'warn',
-            'title' => '이 컨테이너는 취약점 매칭이 수행되지 않습니다 — 0건은 "판정 불가"입니다',
+            'title' => '이 컨테이너는 취약점 매칭이 수행되지 않습니다 — 0건은 "안전함"이 아니라 "판정 불가"입니다',
             'hints' => [$unjudgeable],
         ]);
     }
