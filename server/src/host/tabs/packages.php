@@ -69,11 +69,11 @@ declare(strict_types=1);
       <span class="why"> · 최신 수집 기준 호스트 운영체제 패키지 <?= number_format($packageTotal) ?>개</span>
       <div class="actions">
       <?php if ($depEdgeTotal > 0): ?>
-        <a class="btn btn--xs btn--ghost" href="/depgraph.php?id=<?= (int) $hostId ?>"><?= vg_icon('chart') ?>의존성 그래프</a>
+        <a class="btn btn--sm btn--ghost" href="/depgraph.php?id=<?= (int) $hostId ?>" title="무엇이 이 패키지를 끌어왔나(의존성 그래프)"><?= vg_icon('chart') ?>의존성 그래프</a>
       <?php endif; ?>
       <?php /* 전체 설치 패키지(asset-packages.php)는 자산을 고르지 않으면 함대 전체가 한 표에 쏟아진다 —
                이 자산으로 필터한 링크를 주 진입점으로 둔다(화면 자체는 전역 검색용으로 남는다). */ ?>
-        <a class="btn btn--xs btn--ghost" href="/asset-packages.php?host=<?= (int) $hostId ?>"><?= vg_icon('host') ?>다른 자산과 비교</a>
+        <a class="btn btn--sm btn--ghost" href="/asset-packages.php?host=<?= (int) $hostId ?>" title="다른 자산과 나란히 보기(전체 설치 패키지)"><?= vg_icon('host') ?>다른 자산과 비교</a>
       </div>
       <div class="card__body">
       <?php
