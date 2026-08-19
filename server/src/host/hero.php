@@ -116,10 +116,12 @@ function vg_host_render_hero(array $ctx): void {
       $stageHints = [
           '해당 항목의 0건은 "없음"이 아니라 "수집 실패"입니다.',
       ];
-      // 'runtime_processes' 는 대부분 권한·환경 문제가 아니라 프로세스 스캔 시간 초과다
-      //   (agent PROC_SCAN_TIMEOUT — 프로세스 수가 많은 호스트는 기본 상한 안에 다 못 훑는다).
+      // 'runtime_processes' MISSING 은 원인이 둘이다 — item_count 로 구분한다.
+      //   > 0: 일부는 걷었는데 중간에 끊김 = 프로세스 스캔 시간 초과(agent PROC_SCAN_TIMEOUT).
+      //   0  : 한 건도 못 걸음 = 권한·환경 문제(스캔 자체가 안 됨) — 여기는 시간초과가 아니다.
       //   그 외 단계는 원인이 불명확하므로 기존의 일반 안내를 유지한다.
-      $stageHints[] = in_array('runtime_processes', $missingStageCodes ?? [], true)
+      $procItemCount = (int) ($missingStageItemCounts['runtime_processes'] ?? 0);
+      $stageHints[] = in_array('runtime_processes', $missingStageCodes ?? [], true) && $procItemCount > 0
           ? '프로세스 수가 많아 제한 시간 안에 전부 훑지 못했습니다.'
           : '에이전트 실행 권한·환경을 확인한 뒤 다시 수집하세요.';
       foreach ($missingStages as $s) { $stageHints[] = '수집 실패 — ' . $s; }

@@ -58,6 +58,7 @@ $latestAgent = '';   // 함대에서 관측된 최신 에이전트 버전('구�
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 $missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단계(한글 라벨)
 $missingStageCodes = []; // 같은 것의 원본 코드 — 화면이 "이 항목이 미수집인가"를 물을 때 쓴다
+$missingStageItemCounts = []; // 코드 => item_count. 0 이면 아예 못 걸음, > 0 이면 중간에 끊김
 $integrityRows = [];     // 패키지 원본과 다른 파일(상위 일부만 — 전체 건수는 tb_scan 에 있다)
 $suppEvidence = ['errata' => [], 'changelog' => [], 'debsecan' => []];   // 억제 근거 원 데이터
 $suppLayers = [];        // 억제 근거 겹별 건수(스캔 전체)
@@ -122,7 +123,7 @@ try {
 
         // 화면 머리의 두 경고("0건 = 안전"이 아닐 수 있다)가 읽는 근거.
         $unsupContainers = vg_host_load_unsupported_containers($pdo, $sid);
-        ['codes' => $missingStageCodes, 'labels' => $missingStages]
+        ['codes' => $missingStageCodes, 'labels' => $missingStages, 'itemCounts' => $missingStageItemCounts]
             = vg_host_load_missing_stages($pdo, $sid);
 
         // --- 히어로/KPI 집계 (탭과 무관한 값싼 COUNT) ---
@@ -265,6 +266,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       'latestAgent' => $latestAgent, 'worst' => $worst, 'heroTone' => $heroTone,
       'unsupContainers' => $unsupContainers, 'missingStages' => $missingStages,
       'missingStageCodes' => $missingStageCodes,
+      'missingStageItemCounts' => $missingStageItemCounts,
       'counts' => $counts, 'kevCount' => $kevCount, 'externalFindings' => $externalFindings,
       'exposureCount' => $exposureCount, 'cceFail' => $cceFail, 'processCount' => $processCount,
       'packageTotal' => $packageTotal, 'containerTotal' => $containerTotal,

@@ -38,6 +38,11 @@ SCRIPT_VERSION="3.13"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
+# 숫자가 아니거나 범위 밖이면 기본값으로 되돌린다(install-agent.sh 의 CPU_QUOTA/PACKAGING_TIMEOUT/
+#   MEM_MAX 와 같은 패턴). 검증 없이 두면 잘못된 값(예: "abc")이 [ "$SECONDS" -gt "$PROC_SCAN_TIMEOUT" ]
+#   에서 에러를 내고, 그 에러가 조용히 버려지면 컷오프가 무력화돼 탐지 회피에 악용될 수 있다.
+case "$PROC_SCAN_TIMEOUT" in ''|*[!0-9]*) PROC_SCAN_TIMEOUT=180 ;; esac
+if [ "$PROC_SCAN_TIMEOUT" -lt 30 ] || [ "$PROC_SCAN_TIMEOUT" -gt 3600 ]; then PROC_SCAN_TIMEOUT=180; fi
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-10%}"         # 기본 CPU 상한(4코어 호스트 전체 기준 최대 약 2.5%)
 MEM_MAX="${MEM_MAX:-300M}"             # 기본 메모리 상한
@@ -2068,7 +2073,7 @@ put exposure firewall "$FW_KIND${FW_ALLOW:+ (허용: $FW_ALLOW)}"
 } > "$TMP/runtime__processes.txt" 2>/dev/null || true
 [ "$(wc -l < "$TMP/runtime__processes.txt" 2>/dev/null || echo 0)" -ge 2 ] \
   || rm -f "$TMP/runtime__processes.txt"
-# 90초 컷오프로 순회가 중간에 끊겼으면 중앙이 이 스캔의 프로세스/재시작필요 판정이
+# PROC_SCAN_TIMEOUT 컷오프(기본 180초)로 순회가 중간에 끊겼으면 중앙이 이 스캔의 프로세스/재시작필요 판정이
 #   불완전할 수 있음을 알 수 있게 meta 로 남긴다(조용한 커버리지 축소 금지).
 [ "$PROC_SCAN_TRUNCATED" = "1" ] && put meta processes_truncated "1"
 
