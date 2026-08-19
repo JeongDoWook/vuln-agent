@@ -37,6 +37,7 @@ set -uo pipefail
 SCRIPT_VERSION="3.13"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
+PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
 MAX_BYTES="${MAX_BYTES:-524288}"      # 섹션당 출력 상한 (512KB)
 CPU_QUOTA="${CPU_QUOTA:-10%}"         # 기본 CPU 상한(4코어 호스트 전체 기준 최대 약 2.5%)
 MEM_MAX="${MEM_MAX:-300M}"             # 기본 메모리 상한
@@ -1268,7 +1269,7 @@ ctr_exposure() {   # $1=cid $2=대표pid $3=pidns $4=pkgs파일
 #   실측(컨테이너 370 pid 스냅샷): 원본 2-pass 평균 7.7초 → 병합 1-pass 평균 3.5초, 출력
 #   바이트단위 동일(diff 없음). 자세한 벤치마크는 PR 설명 참고.
 #   출력: pid|comm|user|exe_pkg|loaded_pkgs(,)
-PROC_SCAN_TRUNCATED=0   # 90초 컷오프로 /proc 순회가 중간에 끊겼는지 — meta__processes_truncated 로 노출
+PROC_SCAN_TRUNCATED=0   # PROC_SCAN_TIMEOUT 컷오프로 /proc 순회가 중간에 끊겼는지 — meta__processes_truncated 로 노출
 
 collect_processes() {
   local pid comm user exe exepkg loaded pns lib delf
@@ -1279,8 +1280,8 @@ collect_processes() {
   : > "$TMP/.stale-scan.txt"
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
     progress_heartbeat
-    if [ $((SECONDS - start)) -gt 90 ]; then
-      PROC_SCAN_TRUNCATED=1   # 90초 컷오프로 전체 pid 를 못 돌았다 — 프로세스/재시작필요
+    if [ $((SECONDS - start)) -gt "$PROC_SCAN_TIMEOUT" ]; then
+      PROC_SCAN_TRUNCATED=1   # PROC_SCAN_TIMEOUT 컷오프로 전체 pid 를 못 돌았다 — 프로세스/재시작필요
       break                    # 판정이 불완전할 수 있음을 meta__processes_truncated 로 알린다.
     fi
     pns=$(readlink /proc/$pid/ns/mnt 2>/dev/null)

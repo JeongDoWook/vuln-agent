@@ -264,6 +264,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       'host' => $host, 'scan' => $scan, 'pollAge' => $pollAge, 'scanAge' => $scanAge,
       'latestAgent' => $latestAgent, 'worst' => $worst, 'heroTone' => $heroTone,
       'unsupContainers' => $unsupContainers, 'missingStages' => $missingStages,
+      'missingStageCodes' => $missingStageCodes,
       'counts' => $counts, 'kevCount' => $kevCount, 'externalFindings' => $externalFindings,
       'exposureCount' => $exposureCount, 'cceFail' => $cceFail, 'processCount' => $processCount,
       'packageTotal' => $packageTotal, 'containerTotal' => $containerTotal,
