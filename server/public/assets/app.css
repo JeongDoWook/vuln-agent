@@ -2350,6 +2350,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctrcard.tone-high  { border-left-color: var(--high); }
 .ctrcard.tone-med   { border-left-color: var(--med); }
 .ctrcard.tone-low   { border-left-color: var(--low); }
+.ctrcard.tone-ok    { border-left-color: var(--ok); }
 .ctrcard.tone-muted { border-left-color: var(--muted-2); }
 
 .ctrcard__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem; }

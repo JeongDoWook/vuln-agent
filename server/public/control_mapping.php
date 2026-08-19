@@ -182,12 +182,13 @@ vg_header('통제 기준 매핑', 'control_mapping');
   //   누르는 면적을 ID 한 조각으로 좁혀 두지 않는다.
   $detailHref = fn(array $r): string => '/control.php?fw=' . urlencode($fw)
       . '&amp;control=' . urlencode((string) $r['control_id']);
+  $policy = vg_compliance_policy();
   ?>
   <div class="card">
     <div class="card__body">
       <?php if (!$rows): ?>
         <?php vg_empty([
-            'icon'  => '🧭',
+            'icon'  => 'chart',
             'title' => '이 기준에 매핑된 통제가 없습니다.',
             'hint'  => '근거가 확인된 통제 매핑이 등록되면 이 목록에 표시됩니다.',
         ]); ?>
@@ -201,16 +202,16 @@ vg_header('통제 기준 매핑', 'control_mapping');
             //   준수로 찍지 않는다는 원칙이 카드 톤에도 그대로 적용된다.
             $status = $findingCnt === 0
                 ? ['label' => '점검 결과 없음', 'tone' => 'muted']
-                : vg_compliance_status($failCnt, $naCnt > 0);
+                : vg_compliance_status($failCnt, $naCnt > 0, $policy['partial_max']);
         ?>
           <li class="ctrcard tone-<?= vg_h($status['tone']) ?>">
             <div class="ctrcard__head">
-              <a class="ctrcard__name" href="<?= $detailHref($r) ?>">
+              <a class="ctrcard__name" href="<?= vg_h($detailHref($r)) ?>">
                 <code class="why"><?= vg_h((string) $r['control_id']) ?></code>
               </a>
               <?= vg_badge($status['label'], $status['tone']) ?>
             </div>
-            <a href="<?= $detailHref($r) ?>"><?= vg_h((string) $r['control_name']) ?></a>
+            <a href="<?= vg_h($detailHref($r)) ?>"><?= vg_h((string) $r['control_name']) ?></a>
             <div class="ctrcard__facts">
               <span>매핑 점검 항목 <b><?= number_format((int) $r['mapped_rule_cnt']) ?></b>개</span>
               <span class="why"><?= vg_trunc((string) ($r['codes'] ?? ''), 52) ?></span>

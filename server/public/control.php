@@ -52,13 +52,14 @@ try {
         if ($controlName === '') { $controlName = (string) $m['control_name']; }
     }
 
-    // 상세 열람은 감사 대상이다(CLAUDE.md 원칙 7). 통제 ID 는 정수 PK 가 아니라 message·subject 로
-    //   남긴다 — compliance_rule.php 의 view_compliance_rule 과 같은 형태.
-    $subject = $fw . '/' . $control;
-    vg_log_activity($pdo, 'CONTROL', null, 'view_control', $subject, subject: $subject, action: 'READ');
-    session_write_close();   // 인가·감사로그 이후 집계 전 세션락 해제(control_mapping.php 선례)
-
     if ($found) {
+        // 상세 열람은 감사 대상이다(CLAUDE.md 원칙 7). 통제 ID 는 정수 PK 가 아니라 message·subject 로
+        //   남긴다 — compliance_rule.php 의 view_compliance_rule 과 같은 형태. 존재 검증(위 $found) 뒤에
+        //   남긴다 — cce-rule.php 와 같은 순서(임의 ?control= 값이 그대로 감사로그에 찍히지 않게).
+        $subject = $fw . '/' . $control;
+        vg_log_activity($pdo, 'CONTROL', null, 'view_control', $subject, subject: $subject, action: 'READ');
+        session_write_close();   // 인가·감사로그 이후 집계 전 세션락 해제(control_mapping.php 선례)
+
         $guide = vg_control_guide($pdo, $fw, $control);
 
         // 점검 제목·SSG 룰 ID 는 판정 결과에 붙어 있다(cce.php 가 코드마다 같은 값을 쓴다).
@@ -186,8 +187,9 @@ if (!$found) {
 
 // 판정 어휘는 compliance.php 와 같은 함수로 뽑는다(SSOT) — 위반 건수만으로 crit 을 매기던
 //   예전 계산을 걷어내고, 1~5건(부분준수)·6건 이상(미준수)을 구분하는 기존 컷라인을 그대로 탄다.
+$policy = vg_compliance_policy();
 $status = $total > 0
-    ? vg_compliance_status($counts['FAIL'], $counts['NA'] > 0)
+    ? vg_compliance_status($counts['FAIL'], $counts['NA'] > 0, $policy['partial_max'])
     : ['label' => '점검 결과 없음', 'tone' => 'muted'];
 vg_hero(
     vg_h($control),

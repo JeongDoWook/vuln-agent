@@ -19,6 +19,7 @@ require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/cce.php';             // vg_cce_rules — 점검 룰 메타의 SSOT
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_mapping_for, vg_cce_rule_guides
 require_once __DIR__ . '/../src/compliance/policy.php'; // vg_compliance_status — 판정 어휘 SSOT
+require_once __DIR__ . '/../src/audit.php';            // vg_log_activity
 vg_require_menu('catalog');   // 카탈로그 계열과 같은 메뉴코드(cves.php·packages.php 와 동일)
 
 /**
@@ -42,6 +43,7 @@ $perPage = vg_perpage();
 
 try {
     $pdo = vg_pdo();
+    vg_log_activity($pdo, 'PAGE', null, 'view_cce_rules', 'CCE 카탈로그 조회');
     $catalog = vg_cce_rules();
     $codes = array_keys($catalog);
 
@@ -144,19 +146,20 @@ vg_header('CCE', 'cce_rules');
 
   $hasFilter = $q !== '' || $sev !== '';
   $detailHref = fn(array $r): string => '/cce-rule.php?code=' . urlencode((string) $r['code']);
+  $policy = vg_compliance_policy();
   ?>
   <div class="card">
     <div class="card__body">
       <?php if (!$rows): ?>
         <?php vg_empty($hasFilter
             ? [
-                'icon'  => '🔍',
+                'icon'  => 'search',
                 'title' => '조건에 맞는 점검 항목이 없습니다.',
                 'hint'  => '검색어나 심각도 필터를 확인해 보세요.',
                 'cta'   => ['href' => '/cce-rules.php', 'label' => '필터 초기화'],
             ]
             : [
-                'icon'  => '📋',
+                'icon'  => 'chart',
                 'title' => '점검 항목을 읽지 못했습니다.',
                 'hint'  => '점검 정의는 서버 코드가 갖고 있습니다 — 관리자에게 문의하세요.',
             ]); ?>
@@ -168,7 +171,7 @@ vg_header('CCE', 'cce_rules');
             $na   = (int) $r['na_cnt'];
             $status = $cnt === 0
                 ? ['label' => '점검 결과 없음', 'tone' => 'muted']
-                : vg_compliance_status($fail, $na > 0);
+                : vg_compliance_status($fail, $na > 0, $policy['partial_max']);
             // 카드 왼쪽 띠는 심각도(이 점검이 얼마나 나쁜가) — containers.php 의 위험 카드와
             //   같은 규약이다. 판정 결과(지금 상태)는 안쪽 배지가 말한다.
             $sevTone = vg_sev_tone((string) $r['severity']);

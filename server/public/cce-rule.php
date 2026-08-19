@@ -184,8 +184,9 @@ vg_hero(
 <?php
 // 판정 어휘는 control.php·control_mapping.php 와 같은 함수로 뽑는다(SSOT).
 $judgedTotal = $counts['FAIL'] + $counts['PASS'] + $counts['NA'];
+$policy = vg_compliance_policy();
 $status = $judgedTotal > 0
-    ? vg_compliance_status($counts['FAIL'], $counts['NA'] > 0)
+    ? vg_compliance_status($counts['FAIL'], $counts['NA'] > 0, $policy['partial_max'])
     : ['label' => '점검 결과 없음', 'tone' => 'muted'];
 ?>
 <div class="split">
