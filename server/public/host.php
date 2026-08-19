@@ -313,7 +313,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       'agentMsg' => $agentMsg, 'agentErr' => $agentErr, 'pendingCommands' => $pendingCommands,
       'gradeReview' => $gradeReview, 'approver' => $approver,
       'gradeSuggestionHistory' => $gradeSuggestionHistory,
-  ]);
+  ], $validTabs);
   ?>
 <?php endif; ?>
 <?php vg_footer();

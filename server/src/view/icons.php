@@ -52,15 +52,20 @@ const VG_ICON_PATHS = [
     'key'       => '<circle cx="8" cy="12" r="4"/><line x1="12" y1="12" x2="21" y2="12"/><line x1="18" y1="12" x2="18" y2="15.5"/><line x1="21" y1="12" x2="21" y2="16.5"/>',
     // 사람 — 사용자·계정
     'user'      => '<circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+    // 설정 — 슬라이더(사이드바 vg_nav_icon 의 'settings' 와 같은 모양 — 같은 뜻은 같은 모양)
+    'settings'  => '<line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/><circle cx="9" cy="8" r="2.2"/><circle cx="15" cy="16" r="2.2"/>',
 ];
 
 /**
  * 이름으로 인라인 SVG 아이콘 마크업을 얻는다. 정적 마크업이라 이스케이프 없이 그대로 쓴다.
- * 모르는 이름이면 빈 동그라미 — 화면이 깨지는 대신 "자리는 있는데 뜻이 없다"로 보이게 한다.
+ * 모르는 이름이면 빈 문자열 — 이 함수는 화이트리스트(VG_ICON_PATHS) 밖의 이름을 받으면
+ * 아무것도 그리지 않는다. 호출부가 사용자 입력을 'icon' 값으로 그대로 넘기는 일은 지금 없지만
+ * (page.php 의 vg_subtabs 는 서버 코드가 정의한 탭 정의만 받는다), 그 경로가 생겨도
+ * 목록 밖 이름이 곧장 SVG 로 새지 않도록 여기서 한 번 더 막아 둔다.
  */
 function vg_icon(string $name): string {
-    $p = VG_ICON_PATHS[$name] ?? '<circle cx="12" cy="12" r="9"/>';
+    if (!isset(VG_ICON_PATHS[$name])) { return ''; }
     return '<svg class="vg-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
         . ' stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-        . $p . '</svg>';
+        . VG_ICON_PATHS[$name] . '</svg>';
 }

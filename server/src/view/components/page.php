@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../format.php';
 require_once __DIR__ . '/paging.php';   // vg_subtabs() 의 기본 href 가 vg_qs() 를 쓴다.
+require_once __DIR__ . '/../icons.php'; // vg_subtabs() 가 탭 정의의 선택적 'icon' 키를 vg_icon() 으로 그린다.
 
 /**
  * 화면 제목 — **카드가 아니라 얇은 헤더 줄이다.** 예전엔 흰 카드로 세로 150px 를 먹었는데
@@ -60,14 +61,25 @@ function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, str
  *   $tabs: ['vuln' => ['label'=>'취약점', 'n'=>12], 'runtime' => ['label'=>'런타임', 'n'=>null], …]
  *   'n' 이 null 이 아니면 라벨 옆에 건수를 붙인다. href 를 주면 별도 페이지로 이동하고,
  *   없으면 같은 페이지의 ?tab= 값을 바꾼다.
+ *   'icon' (선택) — icons.php 의 아이콘 이름. 없으면 지금까지처럼 아이콘 없이 그린다.
+ *   'group' (선택) — 인접한 두 탭의 group 이 서로 다르면 그 경계에 옅은 구분선을 넣는다
+ *   (host.php 의 "위협/자산 구성/이력" 묶음처럼 탭이 많은 화면에서만 쓴다 — 안 주면 지금까지의
+ *   화면(packages.php 등)은 구분선 없이 그대로다).
  */
 function vg_subtabs(array $tabs, string $active): void {
     echo '<nav class="subtabs">';
+    $prevGroup = null;
     foreach ($tabs as $key => $def) {
-        $cls = $active === (string) $key ? ' class="on"' : '';
+        $group = $def['group'] ?? null;
+        $classes = [];
+        if ($active === (string) $key) { $classes[] = 'on'; }
+        if ($group !== null && $prevGroup !== null && $group !== $prevGroup) { $classes[] = 'subtabs__sep'; }
+        if ($group !== null) { $prevGroup = $group; }
+        $cls = $classes ? ' class="' . vg_h(implode(' ', $classes)) . '"' : '';
         $href = (string) ($def['href'] ?? vg_qs(['tab' => $key, 'page' => null]));
-        echo '<a' . $cls . ' href="' . vg_h($href) . '">'
-            . vg_h((string) ($def['label'] ?? $key));
+        echo '<a' . $cls . ' href="' . vg_h($href) . '">';
+        if (!empty($def['icon'])) { echo vg_icon((string) $def['icon']); }
+        echo vg_h((string) ($def['label'] ?? $key));
         if (($def['n'] ?? null) !== null) {
             echo '<span class="n">' . number_format((int) $def['n']) . '</span>';
         }
