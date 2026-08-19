@@ -226,13 +226,43 @@ install -m 0755 "$SRC_DIR/vuln-inventory-agent.sh" "$BIN/vuln-inventory-agent.sh
 PUB_URL="${SERVER%ingest.php}agent-dl.php?f=vuln-inventory-agent.pub"
 PUB_TMP="$(mktemp)"
 if command -v curl >/dev/null 2>&1; then
-  curl -sS -m 15 -o "$PUB_TMP" "$PUB_URL" 2>/dev/null || true
+  # -f: HTTP 오류 응답(4xx/5xx 오류 페이지 본문)을 그대로 받지 않고 실패 처리한다 —
+  #   없으면 오류 페이지가 PUB_TMP 에 쓰이고 아래 PUBLIC KEY 텍스트 검사만으로는 못 걸러낼
+  #   수 있다(오류 페이지에 우연히 그 문자열이 섞이는 경우).
+  curl -sS -f -m 15 -o "$PUB_TMP" "$PUB_URL" 2>/dev/null || true
 else
   wget -qO "$PUB_TMP" --timeout=15 "$PUB_URL" 2>/dev/null || true
 fi
-if [ -s "$PUB_TMP" ] && grep -q 'PUBLIC KEY' "$PUB_TMP" 2>/dev/null; then
-  install -m 0600 "$PUB_TMP" "$ETC/agent-update.pub"
-  echo ">> 자동 업데이트 서명 공개키 고정: $ETC/agent-update.pub"
+# 텍스트 마커("PUBLIC KEY")만으로는 RSA/EC 등 다른 알고리즘의 공개키도 통과한다 —
+#   openssl 로 알고리즘까지 Ed25519 인지 확인한다(openssl 없으면 텍스트 검사만으로 폴백).
+PUB_IS_ED25519=1
+if [ -s "$PUB_TMP" ] && grep -q 'PUBLIC KEY' "$PUB_TMP" 2>/dev/null && command -v openssl >/dev/null 2>&1; then
+  openssl pkey -pubin -in "$PUB_TMP" -text -noout 2>/dev/null | grep -qi 'ed25519' || PUB_IS_ED25519=0
+fi
+if [ -s "$PUB_TMP" ] && grep -q 'PUBLIC KEY' "$PUB_TMP" 2>/dev/null && [ "$PUB_IS_ED25519" = 1 ]; then
+  if [ -s "$ETC/agent-update.pub" ]; then
+    # 이미 핀 고정된 공개키가 있다 — 재설치라고 무조건 덮어쓰지 않는다. 웹 티어가 침해되면
+    #   검증이 실패하도록 만들어 관리자가 "재설치하세요" 안내를 보고 재실행하게 유도한 뒤,
+    #   그 순간 공격자의 공개키로 갈아치우는 시나리오를 막기 위해서다. 지문이 같으면 그대로
+    #   두고(무해한 재설치), 다르면 경고만 남기고 기존 핀을 유지한다 — 의도적으로 키를 바꾸고
+    #   싶은 관리자는 $ETC/agent-update.pub 를 수동으로 지운 뒤 다시 실행해야 한다.
+    if command -v openssl >/dev/null 2>&1; then
+      OLD_FP="$(openssl pkey -pubin -in "$ETC/agent-update.pub" -outform DER 2>/dev/null | sha256sum 2>/dev/null | awk '{print $1}')"
+      NEW_FP="$(openssl pkey -pubin -in "$PUB_TMP" -outform DER 2>/dev/null | sha256sum 2>/dev/null | awk '{print $1}')"
+      if [ -n "$OLD_FP" ] && [ "$OLD_FP" = "$NEW_FP" ]; then
+        echo ">> 자동 업데이트 서명 공개키: 기존 핀과 동일 — 유지합니다."
+      else
+        echo ">> [경고] 서버가 내려준 서명 공개키가 기존에 고정된 핀과 다릅니다 — 덮어쓰지 않습니다." >&2
+        echo "   웹 티어 침해로 공개키가 바뀌었을 수 있습니다. 의도적으로 키를 교체하려면" >&2
+        echo "   $ETC/agent-update.pub 를 수동으로 지운 뒤 이 설치기를 다시 실행하세요." >&2
+      fi
+    else
+      echo ">> [안내] openssl 이 없어 기존 핀과 지문을 비교할 수 없습니다 — 기존 핀을 그대로 유지합니다."
+    fi
+  else
+    install -m 0600 "$PUB_TMP" "$ETC/agent-update.pub"
+    echo ">> 자동 업데이트 서명 공개키 고정: $ETC/agent-update.pub"
+  fi
 else
   echo ">> [안내] 서명 공개키를 받지 못했습니다 — 자동 업데이트 서명 검증 없이 시작합니다(자동 업데이트는 건너뜁니다)."
 fi
@@ -286,6 +316,18 @@ esac
 
 have() { command -v "\$1" >/dev/null 2>&1; }
 log()  { echo "[\$(date -Is 2>/dev/null || date)] \$*" >&2; }
+
+# fail_update : do_update() 실패 경로 공통 처리(로그 + UPDATE_REPORT_FILE 기록 + tmp 정리).
+#   do_update 안에서만 호출한다 — old_version/new_version/tmp 는 호출자(do_update)의 local
+#   변수를 그대로 참조한다(bash 는 함수 호출 스택을 따라 local 을 동적 스코프로 본다).
+#   호출 후에는 항상 caller 가 "return 1" 을 이어서 호출해야 한다(fail_update 자체는 caller 를
+#   되돌리지 않는다).
+fail_update() {
+  local token="\$1" msg="\$2"; shift 2
+  log "\$msg"
+  echo "\$token \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+  rm -f "\$tmp" "\$@"
+}
 
 # do_poll : agent-poll.php GET → POLL_SCHEDULE / DUE_CMD / UPDATE_* 채움. 성공(0)/실패(1).
 #   agent_version 을 같이 보내 서버가 최신인지 판단하게 하고, 직전 업데이트 결과(있으면)도
@@ -420,6 +462,19 @@ do_update() {
   fi
 
   old_version=\$(sed -n 's/^SCRIPT_VERSION="\(.*\)"/\1/p' "\$AGENT_BIN" 2>/dev/null | head -n1)
+
+  # 다운그레이드 방어 — 서버가 제안한 버전이 현재 버전보다 낮거나 같으면 거부한다. 서버 쪽
+  #   agent-poll.php 의 버전비교(agent_version < 배포버전)는 웹 티어가 침해되면 그 자체가
+  #   무의미해질 수 있으므로(공격자가 PHP 응답을 마음대로 구성), 클라이언트도 독립적으로
+  #   단조 증가만 허용한다 — 과거 정상 서명된 구버전 스크립트를 그대로 재생(replay)해도
+  #   여기서 막힌다(sort -V 로 버전 비교, 관리자의 의도적 다운그레이드는 poll 경로가 아니라
+  #   deploy/agent_push.sh 수동 CLI 로만 가능).
+  if [ -n "\$old_version" ] && [ "\$(printf '%s\n%s\n' "\$old_version" "\$new_version" | sort -V | tail -n1)" != "\$new_version" ]; then
+    log "다운그레이드 거부: \${old_version} → \${new_version} (자동 업데이트는 단조 증가만 허용합니다)"
+    echo "downgrade_rejected \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    return 1
+  fi
+
   dl_url="\${SEND_URL%ingest.php}\${dl_path}"
   tmp="\$LOG_DIR/vuln-inventory-agent.sh.new"
   log "에이전트 업데이트 발견: \${old_version:-?} → \$new_version — 내려받는 중"
@@ -430,9 +485,7 @@ do_update() {
     wget -qO "\$tmp" --timeout=60 --header="X-Agent-Token: \$SEND_TOKEN" "\$dl_url" 2>/dev/null
   fi
   if [ ! -s "\$tmp" ]; then
-    log "업데이트 다운로드 실패: \$dl_url"
-    echo "download_failed \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp"
+    fail_update download_failed "업데이트 다운로드 실패: \$dl_url"
     return 1
   fi
   if have sha256sum; then
@@ -440,15 +493,11 @@ do_update() {
   elif have shasum; then
     got_sha256=\$(shasum -a 256 "\$tmp" | awk '{print \$1}')
   else
-    log "sha256sum·shasum 이 모두 없어 무결성 검증을 할 수 없습니다 — 적용하지 않음."
-    echo "no_sha_tool \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp"
+    fail_update no_sha_tool "sha256sum·shasum 이 모두 없어 무결성 검증을 할 수 없습니다 — 적용하지 않음."
     return 1
   fi
   if [ "\$got_sha256" != "\$new_sha256" ]; then
-    log "업데이트 체크섬 불일치(기대 \$new_sha256 / 실제 \$got_sha256) — 적용하지 않음."
-    echo "checksum_mismatch \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp"
+    fail_update checksum_mismatch "업데이트 체크섬 불일치(기대 \$new_sha256 / 실제 \$got_sha256) — 적용하지 않음."
     return 1
   fi
   # 서명 검증 — sha256 통과와 별개로 반드시 통과해야 한다(위 함수 설명 참고). openssl 이
@@ -456,48 +505,50 @@ do_update() {
   #   않는다 — 침묵 스킵이 아니라 로그를 남기고 다음 poll 에 결과를 보고한다(sha256 도구가
   #   없을 때와 같은 패턴).
   if ! have openssl; then
-    log "openssl 이 없어 서명 검증을 할 수 없습니다 — 적용하지 않음."
-    echo "no_verify_tool \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp"
+    fail_update no_verify_tool "openssl 이 없어 서명 검증을 할 수 없습니다 — 적용하지 않음."
     return 1
   fi
-  if [ ! -s "\$PUB_KEY_FILE" ]; then
-    log "서명 공개키가 고정돼 있지 않습니다(\$PUB_KEY_FILE) — 적용하지 않음. install-agent.sh 를 다시 실행하면 받습니다."
-    echo "no_pinned_pubkey \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp"
-    return 1
+  # openssl pkeyutl -rawin(Ed25519 원본 메시지 서명 검증)은 OpenSSL 3.0+ 전용이다.
+  #   RHEL8/Ubuntu20.04/Debian10 등은 여전히 1.1.1 을 쓰므로, 버전을 감지 못하고 그대로
+  #   돌리면 이런 노드에서는 서명 검증이 **항상** 실패해 자동 업데이트가 영구히 막힌다.
+  #   1.1.1 대의 openssl CLI 로는 raw Ed25519 서명을 검증할 명령이 없으므로(3.0 전엔
+  #   pkeyutl 이 Ed25519 를 지원하지 않는다), 이런 노드는 명시적으로 로그를 남기고
+  #   sha256(위에서 이미 통과)만으로 진행한다 — 조용한 폴백이 아니라 보고되는 저하다.
+  OPENSSL_VER="\$(openssl version 2>/dev/null | awk '{print \$2}')"
+  case "\$OPENSSL_VER" in
+    [3-9]*) OPENSSL_SUPPORTS_ED25519_RAWIN=1 ;;
+    *)      OPENSSL_SUPPORTS_ED25519_RAWIN=0 ;;
+  esac
+  if [ "\$OPENSSL_SUPPORTS_ED25519_RAWIN" = 0 ]; then
+    log "OpenSSL \${OPENSSL_VER:-알수없음} 은 3.0 미만이라 Ed25519 서명 검증(pkeyutl -rawin)을 지원하지 않습니다 — 서명 검증을 건너뛰고 sha256 만으로 진행합니다(명시적 저하)."
+    echo "legacy_openssl_sha256_only \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+  else
+    if [ ! -s "\$PUB_KEY_FILE" ]; then
+      fail_update no_pinned_pubkey "서명 공개키가 고정돼 있지 않습니다(\$PUB_KEY_FILE) — 적용하지 않음. install-agent.sh 를 다시 실행하면 받습니다."
+      return 1
+    fi
+    if [ -z "\$new_sig_b64" ]; then
+      fail_update no_signature "서버 응답에 서명이 없습니다 — 적용하지 않음(아직 서명 안 된 배포이거나 구버전 서버)."
+      return 1
+    fi
+    if ! have base64; then
+      fail_update no_base64_tool "base64 명령이 없어 서명을 디코딩할 수 없습니다 — 적용하지 않음."
+      return 1
+    fi
+    sigfile="\$LOG_DIR/vuln-inventory-agent.sh.sig.new"
+    printf '%s' "\$new_sig_b64" | base64 -d > "\$sigfile" 2>/dev/null
+    if [ ! -s "\$sigfile" ] || ! openssl pkeyutl -verify -pubin -inkey "\$PUB_KEY_FILE" -rawin -in "\$tmp" -sigfile "\$sigfile" >/dev/null 2>&1; then
+      fail_update signature_invalid "업데이트 서명 검증 실패 — 적용하지 않음." "\$sigfile"
+      return 1
+    fi
+    rm -f "\$sigfile"
   fi
-  if [ -z "\$new_sig_b64" ]; then
-    log "서버 응답에 서명이 없습니다 — 적용하지 않음(아직 서명 안 된 배포이거나 구버전 서버)."
-    echo "no_signature \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp"
-    return 1
-  fi
-  if ! have base64; then
-    log "base64 명령이 없어 서명을 디코딩할 수 없습니다 — 적용하지 않음."
-    echo "no_base64_tool \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp"
-    return 1
-  fi
-  sigfile="\$LOG_DIR/vuln-inventory-agent.sh.sig.new"
-  printf '%s' "\$new_sig_b64" | base64 -d > "\$sigfile" 2>/dev/null
-  if [ ! -s "\$sigfile" ] || ! openssl pkeyutl -verify -pubin -inkey "\$PUB_KEY_FILE" -rawin -in "\$tmp" -sigfile "\$sigfile" >/dev/null 2>&1; then
-    log "업데이트 서명 검증 실패 — 적용하지 않음."
-    echo "signature_invalid \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp" "\$sigfile"
-    return 1
-  fi
-  rm -f "\$sigfile"
   if ! bash -n "\$tmp" 2>/dev/null; then
-    log "업데이트 문법 검사 실패 — 적용하지 않음."
-    echo "syntax_check_failed \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp"
+    fail_update syntax_check_failed "업데이트 문법 검사 실패 — 적용하지 않음."
     return 1
   fi
   if ! cp -p "\$AGENT_BIN" "\$AGENT_BIN.bak"; then
-    log "백업 실패 — 업데이트를 적용하지 않습니다(롤백할 원본을 남길 수 없음)."
-    echo "backup_failed \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
-    rm -f "\$tmp"
+    fail_update backup_failed "백업 실패 — 업데이트를 적용하지 않습니다(롤백할 원본을 남길 수 없음)."
     return 1
   fi
   chmod 0755 "\$tmp"

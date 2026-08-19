@@ -41,6 +41,19 @@ fi
 KEY="$1"
 [ -f "$KEY" ] || { echo "개인키를 찾을 수 없습니다: $KEY" >&2; exit 1; }
 
+# 개인키가 이 저장소 안에 있으면 거부한다 — 실수로 저장소 내부에 키를 만들고 서명한 뒤
+#   .gitignore 를 놓쳐 그대로 커밋되는 사고를 스크립트 단계에서 막는다. 저장소 루트는
+#   이 스크립트(deploy/) 의 부모 디렉터리다.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+KEY_ABS="$(cd "$(dirname "$KEY")" && pwd)/$(basename "$KEY")"
+case "$KEY_ABS" in
+  "$REPO_ROOT"/*|"$REPO_ROOT")
+    echo "개인키가 저장소 안에 있습니다: $KEY_ABS" >&2
+    echo "  저장소 밖(예: ~/agent-signing.key)에 두고 다시 실행하세요." >&2
+    exit 1
+    ;;
+esac
+
 AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../agent" && pwd)"
 SCRIPT="$AGENT_DIR/vuln-inventory-agent.sh"
 SIG="$SCRIPT.sig"
