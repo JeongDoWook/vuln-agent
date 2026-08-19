@@ -159,10 +159,9 @@ declare(strict_types=1);
             $depHints[] = '엣지가 상한(' . number_format(VG_PKGDEP_EDGE_MAX) . '개)에서 잘렸습니다 — 그 뒤의 의존성은 보지 않았습니다.';
         }
         if ($depOrigins['path_truncated']) {
-            $depHints[] = '경로가 상한(깊이 ' . VG_PKGDEP_DEPTH_MAX . ' · ' . VG_PKGDEP_PATH_MAX . '개)에서 끊겼습니다 — 전체 구조는 의존성 그래프에서 확인하세요.';
-        } else {
-            $depHints[] = '전체 구조는 의존성 그래프 화면에서 확인하세요.';
+            $depHints[] = '경로가 상한(' . VG_PKGDEP_DEPTH_MAX . ' · ' . VG_PKGDEP_PATH_MAX . '개)에서 끊겼습니다 — 손댈 대상이 더 있을 수 있습니다.';
         }
+        $depHints[count($depHints) - 1] .= ' 전체 구조는 의존성 그래프 화면에서 확인하세요.';
         vg_alert(['type' => 'warn', 'title' => '의존성 판정이 일부만 반영됐습니다', 'hints' => $depHints]);
     }
   ?>
