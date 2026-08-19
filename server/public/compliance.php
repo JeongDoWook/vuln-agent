@@ -206,12 +206,13 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   </section>
 
   <?php
-  // ── 접기 기준(이 화면 전체에 적용) ──────────────────────────────────────
-  // 접는 건 "행이 실제로 많아 아래 블록을 화면 밖으로 밀어낼 때"뿐이다. 즉 한 블록의
-  //   행 수가 미리보기 상한(vg_ui_detail_preview_limit(), 기본 10행)을 넘길 때만 접는다.
-  //   예전엔 3~5행짜리 블록까지 전부 <details> 로 닫혀 있어서, 화면 아래 절반이 회색 띠
+  // ── 미리보기 상한(이 화면 전체에 적용) ──────────────────────────────────
+  // 한 블록의 행 수가 미리보기 상한(vg_ui_detail_preview_limit(), 기본 10행)을 넘기면
+  //   상위 N건만 보여주고 나머지는 다른 화면(호스트 상세 등)으로 링크한다. 예전엔
+  //   3~5행짜리 블록까지 전부 <details> 로 닫혀 있어서, 화면 아래 절반이 회색 띠
   //   4줄(내용 0)이었다 — "판정 불가 203건"의 이유가 그 안에 있는데도 안 보였다.
-  //   지금 접혀 있는 건 판정 추이의 오래된 날짜뿐이다(스냅샷은 최대 50일까지 쌓인다).
+  //   판정 추이의 오래된 날짜를 접어 보여주던 이력 표는 완전히 제거했다(왜 있는지
+  //   알기 어렵다는 요청 — 오래된 스냅샷은 DB 에 그대로 남는다).
   ?>
   <?php if ($acctDetails): ?>
   <div class="card mt-lg" id="compliance-account">
@@ -304,20 +305,13 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
                     . vg_badge($c['label'], vg_compliance_tone_of($c['label']));
             };
         }
-        // 최근 며칠은 펼쳐 두고(심사에서 먼저 보는 구간), 그보다 오래된 날짜만 접는다 —
-        //   스냅샷은 최대 vg_ui_trend_limit()일(기본 50일)까지 쌓여서 전부 펼치면 이 표
-        //   하나가 화면을 몇 배로 늘린다. 위에 적어 둔 접기 기준(미리보기 상한 초과분)의
-        //   유일한 적용 대상이다. 잘라서 감추는 게 아니라 아래 접힘 블록에 그대로 있다.
+        // 최근 며칠만 보여준다(심사에서 먼저 보는 구간). 스냅샷은 최대 vg_ui_trend_limit()일
+        //   (기본 50일)까지 쌓이지만 그 이상은 화면에서 걷었다 — 접이식 이력 표(예전엔 여기
+        //   있었다)가 왜 있는지 알기 어렵다는 요청으로 완전히 제거했다. 오래된 스냅샷은
+        //   DB(tb_compliance_snapshot)에 그대로 남아 감사 목적으로 조회 가능하다.
         $recent = array_slice($trend, 0, $previewLimit);
-        $older  = array_slice($trend, $previewLimit);
         vg_table($headers, $recent, ['cell' => $cells, 'card' => false]);
         ?>
-        <?php if ($older): ?>
-          <details>
-            <summary>이전 <?= count($older) ?>일 더 보기 — <?= vg_h($older[count($older) - 1]['date']) ?> ~ <?= vg_h($older[0]['date']) ?></summary>
-            <?php vg_table($headers, $older, ['cell' => $cells, 'card' => false]); ?>
-          </details>
-        <?php endif; ?>
       <?php endif; ?>
     </div>
   </div>
