@@ -2251,9 +2251,9 @@ form.card .btn--primary:active { transform: translateY(0); }
   background: var(--line);
 }
 /* 요약 먼저, 증거 다음, 원문 참조는 맨 뒤 — 섹션 사이를 선으로 끊는다. */
-.page--cve section, .page--compliance_rule section, .page--control section { margin: 2.2rem 0 0; padding-top: .2rem; }
+.page--cve section, .page--compliance_rule section, .page--control section, .page--host section { margin: 2.2rem 0 0; padding-top: .2rem; }
 .page--cve section + section, .page--compliance_rule section + section,
-.page--control section + section { border-top: 1px solid var(--line); padding-top: 1.5rem; }
+.page--control section + section, .page--host section + section { border-top: 1px solid var(--line); padding-top: 1.5rem; }
 .page--host section > h2, .page--cve section > h2 { display: flex; align-items: center; gap: .45rem; }
 .page--cve section > h2, .page--compliance_rule section > h2 { margin-top: 0; font-size: var(--fs-lg); }
 .page--cve #summary .card, .page--compliance_rule #rationale .card { font-size: var(--fs-md); line-height: 1.75; }
