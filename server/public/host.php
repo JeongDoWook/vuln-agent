@@ -228,6 +228,14 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
 ?>
 <link rel="stylesheet" href="<?= vg_asset('/assets/vendor/flatpickr/flatpickr.min.css') ?>">
 <script src="<?= vg_asset('/assets/vendor/flatpickr/flatpickr.min.js') ?>"></script>
+<?php
+/* 수집 제어·조치 상태 저장 등 이 화면의 모든 POST 처리 결과는 여기서 한 번만 알린다.
+ *   활성 탭·assets 권한과 무관하게 항상 그려야 한다 — findings 권한만 있는 계정이 취약점 탭에서
+ *   조치 상태를 저장해도(finding_set_status 는 findings 메뉴로 허용된다) 이 알림은 봐야 한다.
+ *   카드별로 각자 그리면 그 카드를 볼 권한이 없는 사람에게는 결과가 아예 안 보인다. */
+vg_alert($agentMsg, 'ok');
+vg_alert($agentErr);
+?>
 <?php if ($err !== null): ?>
   <?php vg_page_title('호스트 상세', 'ASSET DETAIL'); ?>
   <?php vg_alert('오류 · ' . $err); ?>
@@ -243,9 +251,11 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   ?>
   <?php if (vg_can('assets')): ?>
     <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
+    <?php /* 등급 카드는 확정자·확정 근거 등 인사 정보를 담으므로, findings 만 있는 계정에는
+             내리지 않는다 — tabs/manage.php 가 쓰는 것과 같은 게이트(스캔 전 신규 자산도 예외 없음). */ ?>
+    <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
+    <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
   <?php endif; ?>
-  <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
-  <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
   <div class="card"><?php vg_empty(['icon' => 'feed', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
@@ -270,11 +280,6 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       'counts' => $counts, 'kevCount' => $kevCount, 'externalFindings' => $externalFindings,
       'exposureCount' => $exposureCount, 'cceFail' => $cceFail, 'processCount' => $processCount,
       'packageTotal' => $packageTotal, 'containerTotal' => $containerTotal,
-      // 즉시 실행 버튼(식별부) — 폼이므로 CSRF 토큰과 대상 자산이 필요하다.
-      //   대기 중인 명령이 있으면 버튼 대신 그 상태를 말한다(같은 명령을 두 번 넣지 않게).
-      'hostId' => $hostId, 'agentCsrf' => $agentCsrf, 'pendingCommands' => $pendingCommands,
-      // 눌린 결과(플래시)는 활성 탭이 설정 탭이 아닐 때만 머리가 그린다(설정 탭은 자기 카드가 그린다).
-      'tab' => $tab, 'agentMsg' => $agentMsg, 'agentErr' => $agentErr,
   ]); ?>
 
   <?php /* 수집 제어는 특정 탭에 묻히지 않고 어느 탭을 보든 상단에 뜬다 — '자산 설정' 탭

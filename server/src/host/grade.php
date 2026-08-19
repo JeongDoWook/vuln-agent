@@ -43,19 +43,26 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
               : '<span class="why">근거 부족 — 제안 없음</span>' ?></dd></div>
         </dl>
 
-        <?php /* 근거는 배지 하나로 압축한다 — 문장은 배지 title(tooltip)에 담아 정보 손실 없이
-                 서술형 나열만 없앤다. 목록의 정본은 assetgrade.php 의 상수다(분류표를 화면에 늘리지 않는다). */ ?>
+        <?php /* 근거 문장을 배지 title(tooltip)에만 담으면 터치·키보드·Ctrl+F·복사·인쇄에서
+                 사라진다 — 이 화면은 정보공개법 제9조 근거를 남기는 법적 증빙 화면이라 실질적
+                 정보 손실이다. 배지는 요약으로 그대로 두고, 문장은 이미 이 파일이 쓰는 <details>
+                 접기로 본문에 남긴다(접혀 있어도 펼치면 텍스트로 읽힌다). 목록의 정본은
+                 assetgrade.php 의 상수다(분류표를 화면에 늘리지 않는다). */ ?>
         <?php if ($signals): ?>
-          <p class="why mt-lg">시스템이 본 신호(근거는 각 배지 위에 hover)</p>
-          <div class="badge-set">
+          <div class="badge-set mt-lg">
             <?php foreach ($signals as $sig): ?>
-              <?= vg_badge(
-                    ($sig['grade'] !== null ? $sig['grade'] . ' · ' : '검토 · ') . $sig['label'],
-                    (string) $sig['tone'],
-                    $sig['evidence'] . ' ' . $sig['note']
-                  ) ?>
+              <?= vg_badge(($sig['grade'] !== null ? $sig['grade'] . ' · ' : '검토 · ') . $sig['label'], (string) $sig['tone']) ?>
             <?php endforeach; ?>
           </div>
+          <details class="grade-review">
+            <summary>시스템이 본 신호의 근거 (<?= count($signals) ?>건)</summary>
+            <ul class="why mt-lg">
+              <?php foreach ($signals as $sig): ?>
+                <li><?= vg_h(($sig['grade'] !== null ? $sig['grade'] . ' · ' : '검토 · ') . $sig['label']) ?>
+                  — <?= vg_h(trim($sig['evidence'] . ' ' . $sig['note'])) ?></li>
+              <?php endforeach; ?>
+            </ul>
+          </details>
         <?php elseif ($host['grade_suggested'] ?? null): ?>
           <p class="why mt-lg">이전 관찰로 만든 초안 — 이번 스캔의 근거 신호는 없음.</p>
         <?php endif; ?>
