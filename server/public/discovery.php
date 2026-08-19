@@ -262,7 +262,8 @@ $perPage  = vg_perpage();
 
 $targets = [];
 $targetOptions = [];
-$stateCounts = ['new' => 0, 'known' => 0, 'ignored' => 0];
+$stateCounts = array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
+$targetStateCounts = [];
 $rows = [];
 $portsByAsset = [];
 $total = 0;
@@ -288,6 +289,28 @@ try {
             (string) $t['cidr'] . ($t['label'] !== null && $t['label'] !== '' ? ' · ' . $t['label'] : '');
     }
     if ($targetId > 0 && !isset($targetOptions[(string) $targetId])) { $targetId = 0; }
+
+    /* 대역별 상태 배지 · 랭킹 차트가 쓰는 값 — 대역을 골랐으면 그 대역만, 아니면 화면에 남아
+     *   있는(is_deleted=0) 대역들로 좁힌다. 상단 KPI(307-313)와 같은 필터를 따라야 대역을
+     *   골랐을 때 KPI 는 줄고 카드·랭킹은 전체 그대로인 어긋남이 생기지 않는다. */
+    $targetIdsForCounts = $targetId > 0
+        ? [$targetId]
+        : array_map(static fn(array $t): int => (int) $t['discovery_target_id'], $targets);
+    if ($targetIdsForCounts) {
+        $tin = implode(',', array_fill(0, count($targetIdsForCounts), '?'));
+        $tsc = $pdo->prepare(
+            "SELECT discovery_target_id, state, COUNT(*) AS n FROM tb_discovered_asset
+              WHERE is_deleted = 0 AND discovery_target_id IN ($tin) GROUP BY discovery_target_id, state"
+        );
+        $tsc->execute($targetIdsForCounts);
+        foreach ($tsc->fetchAll() as $r) {
+            $tid = (int) $r['discovery_target_id'];
+            if (!isset($targetStateCounts[$tid])) { $targetStateCounts[$tid] = array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0); }
+            if (isset($targetStateCounts[$tid][(string) $r['state']])) {
+                $targetStateCounts[$tid][(string) $r['state']] = (int) $r['n'];
+            }
+        }
+    }
 
     // 상태별 건수(KPI). 대역을 고르면 idx_discovered_asset_state(discovery_target_id, state) 를 탄다.
     $where  = 'da.is_deleted = 0';
@@ -407,73 +430,127 @@ vg_header('자산 탐색', 'discovery');
 
   <?php /* ── 대역 · 스캔 ─────────────────────────────────────────────────── */ ?>
   <?php
-  vg_table(
-      [
-          ['label' => '대역(CIDR)', 'width' => '12rem'],
-          ['label' => '라벨'],
-          ['label' => '포트', 'width' => '12rem'],
-          ['label' => '사용', 'width' => '5rem'],
-          ['label' => '마지막 스캔'],
-          ['label' => '', 'width' => '13rem', 'align' => 'right'],
-      ],
-      $targets,
-      [
-          'empty' => $canManage ? [
-              'icon' => 'search', 'title' => '등록된 대역이 없습니다.',
-              'hint' => '훑을 대역을 등록하면 그 안의 살아있는 IP 를 모읍니다.',
-          ] : [
-              'icon' => 'search', 'title' => '등록된 대역이 없습니다.',
-              'hint' => '대역 등록은 관리자만 할 수 있습니다.',
-          ],
-          'cell' => [
-              0 => fn($t) => '<code>' . vg_h((string) $t['cidr']) . '</code>',
-              1 => fn($t) => $t['label'] !== null && $t['label'] !== ''
-                  ? vg_h((string) $t['label']) : '<span class="why">–</span>',
-              2 => fn($t) => $t['ports'] !== null && $t['ports'] !== ''
-                  ? '<code>' . vg_trunc((string) $t['ports'], 40) . '</code>'
-                  : '<span class="why">기본 세트</span>',
-              3 => fn($t) => (int) $t['enabled'] === 1 ? vg_badge('사용', 'ok') : vg_badge('중지', 'muted'),
-              /* 마지막 스캔 — 얼마나 걸렸는지가 운영자에게 중요하다(대역을 더 넓힐지 판단한다).
-               *   실패는 **일반화된 문구**만 낸다: error_text 원문에는 대상 주소·예외 원문이 섞인다. */
-              4 => function ($t): string {
-                  $status = (string) ($t['status'] ?? '');
-                  if ($status === '') { return '<span class="why">스캔 이력 없음</span>'; }
-                  if ($status === 'pending')  { return vg_badge('대기 중', 'med') . ' <span class="why">집행기 대기</span>'; }
-                  if ($status === 'running')  { return vg_badge('진행 중', 'high')
-                      . ' <span class="why">' . vg_h(substr((string) ($t['started_at'] ?? ''), 0, 16)) . ' 시작</span>'; }
-                  if ($status === 'failed')   { return vg_badge('실패', 'crit')
-                      . ' <span class="why">스캔이 실패했습니다. 서버 로그를 확인하세요.</span>'; }
-                  $at = substr((string) ($t['finished_at'] ?? ''), 0, 16);
-                  return vg_badge('완료', 'ok') . ' <span class="why">' . vg_h($at)
-                      . ' · 응답 IP ' . number_format((int) $t['ip_alive']) . '/' . number_format((int) $t['ip_total'])
-                      . ' · 포트 시도 ' . number_format((int) $t['port_checked'])
-                      . ' · 열린 포트 ' . number_format((int) $t['open_total'])
-                      . ($t['elapsed_seconds'] !== null ? ' · ' . vg_h((string) $t['elapsed_seconds']) . '초' : '')
-                      . '</span>';
-              },
-              5 => function ($t) use ($canManage, $csrf): string {
-                  if (!$canManage) { return ''; }
-                  $id = (int) $t['discovery_target_id'];
-                  $busy = in_array((string) ($t['status'] ?? ''), ['pending', 'running'], true);
-                  $scan = $busy
-                      ? '<button type="button" class="btn btn--xs btn--ghost" disabled'
-                        . ' title="이미 대기 중이거나 진행 중입니다">지금 스캔</button>'
-                      : '<form method="post"><input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
-                        . '<input type="hidden" name="action" value="scan">'
-                        . '<input type="hidden" name="discovery_target_id" value="' . $id . '">'
-                        . '<button class="btn btn--xs btn--primary" data-loading="요청 중…">지금 스캔</button></form>';
-                  return '<div class="actions">' . $scan
-                      . '<a class="btn btn--xs btn--ghost" href="' . vg_h(vg_qs(['edit' => $id])) . '">수정</a>'
-                      . '<form method="post" data-confirm="이 대역을 삭제할까요? 지금까지 발견한 자산 이력은 남습니다.">'
-                      . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
-                      . '<input type="hidden" name="action" value="target_delete">'
-                      . '<input type="hidden" name="discovery_target_id" value="' . $id . '">'
-                      . '<button class="btn btn--xs btn--ghost">삭제</button></form></div>';
-              },
-          ],
-      ]
-  );
-  ?>
+  /* 대역을 골랐으면 카드·랭킹도 그 대역만 보인다 — 상단 KPI 만 줄고 카드는 전체 그대로면
+   *   같은 화면에서 숫자가 어긋난다. */
+  $visibleTargets = $targetId > 0
+      ? array_values(array_filter($targets, static fn(array $t): bool => (int) $t['discovery_target_id'] === $targetId))
+      : $targets;
+
+  /* 대역별 발견 건수 랭킹 — 표 열로는 안 보이던 "어느 대역이 발견량 대부분을 차지하는가" 를
+   *   막대 길이로 비교한다(packages.php 의 패키지별 CVE 랭킹과 같은 패턴).
+   *   막대 하나짜리는 비교가 아니라 장식이라, 값이 있는 대역이 2곳 이상일 때만 그린다. */
+  $rankItems = [];
+  foreach ($visibleTargets as $t) {
+      $tid = (int) $t['discovery_target_id'];
+      $sc  = $targetStateCounts[$tid] ?? array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
+      $tf  = $sc['new'] + $sc['known'] + $sc['ignored'];
+      if ($tf > 0) {
+          $rankItems[] = [
+              'label' => (string) $t['cidr'] . ($t['label'] !== null && $t['label'] !== '' ? ' · ' . (string) $t['label'] : ''),
+              'value' => $tf,
+              'tone'  => $sc['new'] > 0 ? 'crit' : 'ok',
+              'href'  => vg_qs(['target' => $tid, 'page' => null, 'edit' => null]),
+          ];
+      }
+  }
+  if (count($rankItems) >= 2): ?>
+    <div class="card">
+      <strong>대역별 발견 자산</strong>
+      <div class="card__body"><?php vg_rank_bars($rankItems, ['unit' => '건']); ?></div>
+    </div>
+  <?php endif; ?>
+
+  <?php if (!$targets): ?>
+    <div class="card">
+      <?php vg_empty($canManage ? [
+          'icon' => 'search', 'title' => '등록된 대역이 없습니다.',
+          'hint' => '훑을 대역을 등록하면 그 안의 살아있는 IP 를 모읍니다.',
+      ] : [
+          'icon' => 'search', 'title' => '등록된 대역이 없습니다.',
+          'hint' => '대역 등록은 관리자만 할 수 있습니다.',
+      ]); ?>
+    </div>
+  <?php else: ?>
+    <div class="discovery-targets">
+      <?php foreach ($visibleTargets as $t):
+          $tid    = (int) $t['discovery_target_id'];
+          $sc     = $targetStateCounts[$tid] ?? array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
+          $status = (string) ($t['status'] ?? '');
+          $busy   = in_array($status, ['pending', 'running'], true);
+      ?>
+        <div class="card discovery-target">
+          <div class="discovery-target__head">
+            <code><?= vg_h((string) $t['cidr']) ?></code>
+            <?= (int) $t['enabled'] === 1 ? vg_badge('사용', 'ok') : vg_badge('중지', 'muted') ?>
+          </div>
+          <?php if ($t['label'] !== null && $t['label'] !== ''): ?>
+            <div class="why"><?= vg_h((string) $t['label']) ?></div>
+          <?php endif; ?>
+
+          <?php /* 이 대역의 발견 자산을 상태별로 몇 건씩 물고 있는지 — 0건인 상태는 뺀다(자산 목록
+                   KPI 와 같은 규칙: '미관리 0' 에 강조 테두리를 붙이면 경고로 잘못 읽힌다). */ ?>
+          <div class="discovery-target__badges">
+            <?php foreach (VG_DISCOVERY_STATES as $key => $label): ?>
+              <?php if ($sc[$key] > 0): ?>
+                <?= vg_badge(number_format($sc[$key]) . ' ' . $label, VG_DISCOVERY_TONES[$key]) ?>
+              <?php endif; ?>
+            <?php endforeach; ?>
+          </div>
+
+          <?php /* 마지막 스캔 — 얼마나 걸렸는지가 운영자에게 중요하다(대역을 더 넓힐지 판단한다).
+                   실패는 **일반화된 문구**만 낸다: error_text 원문에는 대상 주소·예외 원문이 섞인다. */ ?>
+          <div class="discovery-target__scan">
+            <?php
+            if ($status === '') { echo '<span class="why">스캔 이력 없음</span>'; }
+            elseif ($status === 'pending') { echo vg_badge('대기 중', 'med') . ' <span class="why">집행기 대기</span>'; }
+            elseif ($status === 'running') { echo vg_badge('진행 중', 'high')
+                . ' <span class="why">' . vg_h(substr((string) ($t['started_at'] ?? ''), 0, 16)) . ' 시작</span>'; }
+            elseif ($status === 'failed') { echo vg_badge('실패', 'crit')
+                . ' <span class="why">스캔이 실패했습니다. 서버 로그를 확인하세요.</span>'; }
+            else {
+                $at = substr((string) ($t['finished_at'] ?? ''), 0, 16);
+                echo vg_badge('완료', 'ok') . ' <span class="why">' . vg_h($at)
+                    . ' · 응답 IP ' . number_format((int) $t['ip_alive']) . '/' . number_format((int) $t['ip_total'])
+                    . ' · 포트 시도 ' . number_format((int) $t['port_checked'])
+                    . ' · 열린 포트 ' . number_format((int) $t['open_total'])
+                    . ($t['elapsed_seconds'] !== null ? ' · ' . vg_h((string) $t['elapsed_seconds']) . '초' : '')
+                    . '</span>';
+            }
+            ?>
+          </div>
+
+          <div class="why">포트 ·
+            <?= $t['ports'] !== null && $t['ports'] !== ''
+                ? '<code>' . vg_trunc((string) $t['ports'], 40) . '</code>'
+                : '기본 세트' ?>
+          </div>
+
+          <?php if ($canManage): ?>
+            <div class="actions mt">
+              <?php if ($busy): ?>
+                <button type="button" class="btn btn--xs btn--ghost" disabled
+                        title="이미 대기 중이거나 진행 중입니다">지금 스캔</button>
+              <?php else: ?>
+                <form method="post">
+                  <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+                  <input type="hidden" name="action" value="scan">
+                  <input type="hidden" name="discovery_target_id" value="<?= $tid ?>">
+                  <button class="btn btn--xs btn--primary" data-loading="요청 중…">지금 스캔</button>
+                </form>
+              <?php endif; ?>
+              <a class="btn btn--xs btn--ghost" href="<?= vg_h(vg_qs(['edit' => $tid])) ?>">수정</a>
+              <form method="post" data-confirm="이 대역을 삭제할까요? 지금까지 발견한 자산 이력은 남습니다.">
+                <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+                <input type="hidden" name="action" value="target_delete">
+                <input type="hidden" name="discovery_target_id" value="<?= $tid ?>">
+                <button class="btn btn--xs btn--ghost">삭제</button>
+              </form>
+            </div>
+          <?php endif; ?>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
 
   <?php if ($canManage): ?>
     <div class="form-bar">

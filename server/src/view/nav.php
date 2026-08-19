@@ -41,6 +41,7 @@ function vg_activity_type_labels(): array {
         'connector_delete'     => '커넥터 삭제',
         'ingest'               => '수집 반영',
         'ingest_spoof_blocked' => '수집 위조 차단',
+        'agent_auto_update'    => '에이전트 자동 업데이트',
         'permission_update'    => '권한 변경',
         'setting_update'       => '운영 설정 변경',
         'user_add'             => '사용자 추가',
@@ -65,6 +66,7 @@ function vg_activity_type_labels(): array {
         'view_segment_map'     => '세그먼트 맵 조회',
         'view_control_mapping' => '통제 기준 매핑 조회',
         'view_control'         => '통제 상세 조회',
+        'view_sbom'            => 'SBOM 시각화 조회',
         // 기능은 제거됐지만 과거 감사로그 표시용으로 남김.
         'host_perimeter_update'=> '경계 방화벽 설정 변경',
         'page_view'            => '페이지 열람',

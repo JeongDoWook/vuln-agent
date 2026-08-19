@@ -41,8 +41,14 @@ function vg_perpage(?int $default = null, string $param = 'per_page'): int {
 }
 
 // 현재 페이지 번호. ?page= 를 정수로 파싱해 1 미만이면 1로 올린다.
+//   상한도 여기서 함께 건다 — 호출부는 대개 (page-1)*perPage 로 OFFSET 을 바로 계산해
+//   SQL 문자열에 보간한다(PDO::ATTR_EMULATE_PREPARES=false 라 LIMIT/OFFSET 은 바인딩이 아닌
+//   보간을 쓴다). page 가 PHP_INT_MAX 근처면 그 곱셈이 float 로 오버플로해 "LIMIT 100 OFFSET
+//   9.2E+20" 같은 깨진 SQL 리터럴이 나간다(실측). 실사용 규모를 크게 넘는 상한이라 정상
+//   페이지네이션엔 영향이 없다.
+const VG_PAGE_MAX = 10_000_000;
 function vg_page(string $param = 'page'): int {
-    return max(1, (int) ($_GET[$param] ?? 1));
+    return min(max(1, (int) ($_GET[$param] ?? 1)), VG_PAGE_MAX);
 }
 
 // "페이지당 N개" 셀렉트. onchange 시 현재 쿼리스트링 유지한 채 per_page 변경 + page=1 로 이동.

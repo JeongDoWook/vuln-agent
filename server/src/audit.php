@@ -58,6 +58,7 @@ function vg_activity_action(string $type): string {
         'host_perimeter_update' => 'UPDATE',
         'agent_schedule_change' => 'UPDATE',
         'agent_speed_tier_change' => 'UPDATE',
+        'agent_auto_update'     => 'UPDATE',
         'export_data'           => 'EXPORT',
         'ingest'                => 'EXECUTE',
         'ingest_spoof_blocked'  => 'EXECUTE',
@@ -176,9 +177,16 @@ function vg_log_activity(
     }
 }
 
-/** 인증된 HTML 페이지 열람을 요청당 한 번 기록한다. 쿼리 값은 저장하지 않는다. */
+/**
+ * 인증된 HTML 페이지 열람을 요청당 한 번 기록한다. 쿼리 값은 저장하지 않는다.
+ *   $GLOBALS['vg_suppress_page_view'] 가 true 면 건너뛴다 — 그 페이지가 이미 더 구체적인
+ *   view_* 이벤트(호스트/컨테이너/자산 범위 포함)를 남겨서, 이 범용 기록이 같은 열람 1회를
+ *   2건으로 중복 기록하는 경우를 위한 탈출구다(sbom.php 시각화 보기). 기본은 false 라
+ *   기존 페이지 동작은 그대로다.
+ */
 function vg_log_page_view(PDO $pdo, string $page, string $title, string $menuCode): void {
     if (!vg_audit_page_views_enabled() || ($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') { return; }
+    if (!empty($GLOBALS['vg_suppress_page_view'])) { return; }
     static $logged = false;
     if ($logged) { return; }
     $logged = true;
