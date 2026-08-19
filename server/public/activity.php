@@ -21,6 +21,7 @@ vg_require_menu('activity');
 $pdo = vg_pdo();
 
 $err = null; $rows = []; $total = 0; $scopes = []; $accessRows = [];
+$hourlyLabels = []; $hourlyData = [];
 
 // ── 필터: 5요소 기준(기간·사용자·접속지 IP·수행업무) + 기존 범위·자유검색 ──
 $scope    = trim((string) ($_GET['scope'] ?? ''));
@@ -57,6 +58,23 @@ try {
               WHERE is_deleted = 0
               ORDER BY last_login IS NULL, last_login DESC"
         )->fetchAll();
+    }
+
+    // 최근 24시간 시간대별 활동량 — 필터와 무관한 개요라 목록 필터를 타지 않는다.
+    // 감사로그는 이벤트마다 실제 시각(created_at)이 있어(스캔 스냅샷과 달리 보간이 필요 없다) 그대로 집계한다.
+    $hourlyRows = $pdo->query(
+        "SELECT DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS hr, COUNT(*) c
+           FROM tb_activity_log
+          WHERE is_deleted = 0 AND created_at >= NOW() - INTERVAL 24 HOUR
+          GROUP BY hr"
+    )->fetchAll();
+    $hourlyByKey = [];
+    foreach ($hourlyRows as $r) { $hourlyByKey[(string) $r['hr']] = (int) $r['c']; }
+    $now = new DateTimeImmutable('now');
+    for ($i = 23; $i >= 0; $i--) {
+        $slot = $now->modify("-$i hours")->format('Y-m-d H:00:00');
+        $hourlyLabels[] = (new DateTimeImmutable($slot))->format('H시');
+        $hourlyData[] = $hourlyByKey[$slot] ?? 0;
     }
 
     $scopes = $pdo->query(
@@ -120,12 +138,25 @@ try {
 }
 
 vg_header('감사 로그', 'activity');
+vg_chart_assets();
 ?>
   <?php vg_page_title('감사 로그', 'AUDIT'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
+  <?php if (array_sum($hourlyData) > 0): ?>
+  <div class="card">
+    <strong>최근 24시간 활동량</strong>
+    <div class="card__body">
+      <?php vg_chart('bar', [
+          'labels' => $hourlyLabels,
+          'datasets' => [['label' => '활동', 'data' => $hourlyData]],
+      ], ['size' => 'sm', 'alt' => '최근 24시간 시간대별 활동량']); ?>
+    </div>
+  </div>
+  <?php endif; ?>
+
   <?php if (vg_has_role('admin')): ?>
   <h2>사용자별 접속 현황</h2>
   <?php
