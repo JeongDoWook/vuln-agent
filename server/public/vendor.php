@@ -19,6 +19,7 @@ require __DIR__ . '/../src/view.php';
 // view.php 가 format.php 를 이미 require 하지만, VG_VENDOR_SEV_TONE 정의가
 // VG_TONE_SEV(format.php) 를 직접 참조하므로 이 파일 스스로도 로드 순서를 보장해 둔다.
 require_once __DIR__ . '/../src/format.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('catalog');
 
 /**
@@ -126,16 +127,6 @@ function vg_vendor_sev_badge(?string $sev): string {
 }
 
 /**
- * 접두 일치 LIKE 패턴. 사용자가 넣은 %·_ 는 와일드카드가 아니라 글자로 다룬다.
- *   접두(`x%`)만 쓰는 이유: 부분일치(`%x%`)는 인덱스를 못 타 51만 행(rhoval)·43만 행(ubuntuoval)
- *   풀스캔이 된다. 접두 일치는 새 인덱스(is_deleted, cve_id, pkg_name)의 pkg_name 자리에서
- *   원본 조회 없이 걸러지고, CVE·릴리스 필터와 같이 쓰면 범위가 더 좁아진다.
- */
-function vg_like_prefix(string $s): string {
-    return addcslashes($s, '\\%_') . '%';
-}
-
-/**
  * 한 소스 갈래의 WHERE 절. $params 에 바인딩 값을 순서대로 쌓는다.
  *   $q 는 CVE 든 패키지든 하나만 넣으면 매칭되도록 (cve_id LIKE ? OR pkg_name LIKE ?) 로 OR 매칭한다.
  *   두 갈래 다 접두(prefix) LIKE 를 유지 — idx_*_cve(cve_id, pkg_name, is_deleted, release_*) 가
@@ -194,8 +185,14 @@ try {
     //   소스별 요약 카드용 건수 — 무필터 진입 시 55만+ 행이 뒤섞여 막막한 문제의 진입점(작업 3).
     //   src 선택과 무관하게 5종 전부 세되, q·rel 필터는 그대로 반영한다.
     //   패키지·CVE distinct 건수도 같은 질의에 얹는다 — cve/pkg 컬럼은 이미 커버링 인덱스
-    //   (cve_id, pkg_name, is_deleted, release_*) 안에 있어 COUNT(DISTINCT ..) 도 원본 조회 없이
-    //   같은 인덱스만 읽는다(왕복을 늘리지 않고 카드용 미니바 데이터를 얻는다).
+    //   (cve_id, pkg_name, is_deleted, release_*) 안이라 EXPLAIN 은 원본 조회 없이 "Using index"
+    //   만 나오지만(테이블 스캔은 없다), 두 COUNT(DISTINCT ..) 자체가 공짜는 아니다 — dev 무필터
+    //   실측(EXPLAIN + SHOW PROFILES, 570K행 tb_vendor_errata): COUNT(*) 단독 0.44s → 두 DISTINCT
+    //   추가 시 3.23s. 5개 테이블 합산 시 무필터 진입 한 번에 약 5s 가 더 걸린다(ubuntuoval 1.36s·
+    //   debtracker 0.49s·rhunfixed 0.01s 포함, kernel_cve_fix 는 소규모라 생략). 카드가 항상 5종
+    //   전부를 보여줘야 해서 src 필터로 이 비용을 피할 방법은 없다 — 사전집계 테이블(예:
+    //   packages.php 의 tb_package_summary 선례) 검토가 다음 단계다. 지금은 정확한 근거 없이
+    //   "인덱스만 읽어 싸다"고 적혀 있던 이전 주석을 실측치로 바로잡는다.
     $srcCounts = []; $srcPkgCounts = []; $srcCveCounts = [];
     foreach (VG_VENDOR_SRC as $srcKey => $srcDef) {
         $srcCountParams = [];
@@ -248,6 +245,11 @@ try {
     );
     $stmt->execute($listParams);
     $rows = $stmt->fetchAll();
+
+    // 벤더 판정 조회 감사로그 — 소스별 집계 카드가 이 화면의 진입점(작업 3)이라 무엇을
+    //   보고 있었는지(필터·건수)가 다른 목록 화면(discovery.php 등)과 같은 수준으로 남아야 한다.
+    vg_log_activity($pdo, 'PAGE', null, 'view_vendor', '벤더 판정 근거 조회',
+        ['q' => $q, 'rel' => $rel, 'src' => $src, 'matched' => $total], action: 'READ');
 } catch (Throwable $e) {
     error_log('[vendor] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';
@@ -271,8 +273,7 @@ vg_header('판정 근거', 'vendor');
       $pkgPct = $srcPkgCounts[$k] / $maxSrcPkg * 100;
       $cvePct = $srcCveCounts[$k] / $maxSrcCve * 100;
       echo '<div class="card' . ($on ? ' card--accent' : '') . '">'
-         . '<a href="' . vg_h($href) . '"><strong>' . vg_h($d['label']) . '</strong></a>'
-         . '<span class="why">' . vg_h($d['desc']) . '</span>'
+         . '<a href="' . vg_h($href) . '" title="' . vg_h($d['desc']) . '"><strong>' . vg_h($d['label']) . '</strong></a>'
          . '<div class="card__body">'
          . '<div>' . number_format($srcCounts[$k]) . '건</div>'
          . vg_meter('low', $pkgPct, '패키지 ' . number_format($srcPkgCounts[$k]) . '종')

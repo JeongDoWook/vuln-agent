@@ -45,30 +45,32 @@ try {
             // 관련 CVE 는 정규화된 junction(tb_advisory_cve)에서 조회한다.
             //   총건수·KEV 포함 건수·최고 CVSS 를 한 번에 — 화면 상단 지표가 이 셋뿐이라
             //   쿼리를 셋으로 쪼갤 이유가 없다.
-            // 등급 분포(CRITICAL/HIGH/MEDIUM/LOW) 카운트도 같은 질의에 얹는다 — 경계값은
-            //   format/severity.php 의 VG_SEV_RANGES 와 동일하게 맞춘다(정본 이원화 금지).
+            // 등급 분포(CRITICAL/HIGH/MEDIUM/LOW) 카운트도 같은 질의에 얹는다 — 경계값을 SQL 에
+            //   따로 적지 않고 format/severity.php 의 VG_SEV_RANGES 에서 바인딩 파라미터로 뽑는다
+            //   (표 쪽 vg_cvss_sev() 와 같은 정본을 쓰게 해 이원화를 구조적으로 막는다).
+            $sevSelect = []; $sevParams = [];
+            foreach (VG_SEV_RANGES as $name => [$lo, $hi]) {
+                $sevSelect[] = "SUM(c.cvss BETWEEN ? AND ?) AS n_$name";
+                $sevParams[] = $lo;
+                $sevParams[] = $hi;
+            }
             $cst = $pdo->prepare(
                 'SELECT COUNT(*) AS n, SUM(k.cve_id IS NOT NULL) AS kev_cnt, MAX(c.cvss) AS max_cvss,
-                        SUM(c.cvss BETWEEN 9.0 AND 10.0) AS n_crit,
-                        SUM(c.cvss BETWEEN 7.0 AND 8.9)  AS n_high,
-                        SUM(c.cvss BETWEEN 4.0 AND 6.9)  AS n_med,
-                        SUM(c.cvss BETWEEN 0.1 AND 3.9)  AS n_low
+                        ' . implode(",\n                        ", $sevSelect) . '
                    FROM tb_advisory_cve ac
                    LEFT JOIN tb_cve c ON c.cve_id = ac.cve_id AND c.is_deleted = 0
                    LEFT JOIN tb_kev_catalog k ON k.cve_id = ac.cve_id AND k.is_deleted = 0
                   WHERE ac.advisory_id = ? AND ac.is_deleted = 0'
             );
-            $cst->execute([$id]);
+            $cst->execute([...$sevParams, $id]);
             $agg = $cst->fetch() ?: [];
             $cveTotal = (int) ($agg['n'] ?? 0);
             $kevTotal = (int) ($agg['kev_cnt'] ?? 0);
             $maxCvss  = $agg['max_cvss'] ?? null;
-            $sevCounts = [
-                'CRITICAL' => (int) ($agg['n_crit'] ?? 0),
-                'HIGH'     => (int) ($agg['n_high'] ?? 0),
-                'MEDIUM'   => (int) ($agg['n_med'] ?? 0),
-                'LOW'      => (int) ($agg['n_low'] ?? 0),
-            ];
+            $sevCounts = [];
+            foreach (VG_SEV_RANGES as $name => $_range) {
+                $sevCounts[strtoupper($name)] = (int) ($agg["n_$name"] ?? 0);
+            }
 
             // 표에 낼 한 페이지분만. 아직 수집 안 된 CVE 는 tb_cve 에 없으므로 LEFT JOIN 이다
             //   — 공지가 먼저 오고 NVD 수집이 나중인 경우가 흔하다.

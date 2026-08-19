@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 vg_require_menu('advisories');
 
 /** '영향 자산' 칸의 툴팁에 넣을 자산 이름 수. 나머지는 "외 N대" 로 접고 전체는 모달이 갖는다. */
@@ -60,13 +61,17 @@ try {
     if ($q !== '') {
         // 본문까지 검색 대상(수집된 건에 한함). 2천여 행이라 LIKE 스캔으로 충분.
         // CVE 검색은 정규화된 junction(tb_advisory_cve)을 본다 — 인덱스가 걸린 유일한 정본.
+        // vg_like_prefix() 가 %·_ 를 이스케이프한 뒤 값 뒤에 '%' 를 붙여주므로, 앞에 '%' 하나만
+        //   더하면 부분일치 패턴이 된다(server/src/format/text.php) — 아래 GROUP BY 요약 질의도
+        //   이 $where/$params 를 그대로 재사용한다.
+        $like = '%' . vg_like_prefix($q);
         $where .= ' AND (title LIKE ? OR content LIKE ? OR EXISTS (
             SELECT 1 FROM tb_advisory_cve ac
              WHERE ac.advisory_id = tb_advisory.advisory_id AND ac.is_deleted = 0 AND ac.cve_id LIKE ?
         ))';
-        $params[] = '%' . $q . '%';
-        $params[] = '%' . $q . '%';
-        $params[] = '%' . $q . '%';
+        $params[] = $like;
+        $params[] = $like;
+        $params[] = $like;
     }
 
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM tb_advisory WHERE $where");
@@ -158,6 +163,11 @@ try {
             }
         }
     }
+
+    // 보안공지 목록 조회 감사로그 — 소스별 집계 카드가 새로 노출됐으니(작업 2) 다른 목록
+    //   화면(discovery.php 등)과 같은 수준으로 무엇을 보고 있었는지 남긴다.
+    vg_log_activity($pdo, 'PAGE', null, 'view_advisories', '보안 공지 목록 조회',
+        ['q' => $q, 'scope' => $scope, 'matched' => $total], action: 'READ');
 } catch (Throwable $e) {
     error_log('[advisories] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';

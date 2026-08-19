@@ -28,3 +28,12 @@ function vg_help(string $text): string {
     return '<span class="help" data-tip="' . vg_h($text) . '" aria-label="' . vg_h($text)
         . '" tabindex="0" role="note">?</span>';
 }
+
+/**
+ * 접두 일치(`x%`) LIKE 패턴. 사용자가 넣은 %·_ 는 와일드카드가 아니라 글자로 다룬다.
+ * 부분 일치(`%x%`)가 필요한 화면은 앞에 '%' 를 하나 더 붙여 쓴다(`'%' . vg_like_prefix($s)`) —
+ * 이 함수가 이미 값 뒤에 '%' 를 붙이므로 앞만 더하면 양끝 와일드카드가 된다.
+ */
+function vg_like_prefix(string $s): string {
+    return addcslashes($s, '\\%_') . '%';
+}
