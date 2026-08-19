@@ -217,7 +217,28 @@ echo ">> 중앙 연결 확인: HTTP $CODE"
 install -d "$BIN" "$ETC" "$LOG"
 install -m 0755 "$SRC_DIR/vuln-inventory-agent.sh" "$BIN/vuln-inventory-agent.sh"
 
-# 2) 설정(토큰) — 600 권한, env 로만 전달
+# 2) 자동 업데이트 서명 공개키 고정(pin) — agent-dl.php 는 무인증(공개키는 비밀이 아니다)이라
+#    토큰 없이 받는다. 최초 설치 시 한 번만 고정하고, 이후 poll 응답으로 이 키를 바꾸는 경로는
+#    만들지 않는다(그 경로가 있으면 서명 체계 자체가 무의미해진다 — 웹 티어 침해로 공개키까지
+#    바꿔치면 서명 검증이 우회된다). 못 받아도 설치를 중단하지 않는다 — 구버전 서버(아직 .pub 를
+#    서빙하지 않는 배포)일 수 있고, 없으면 run.sh 의 do_update() 가 서명 검증 불가로 보고
+#    자동 업데이트만 fail-safe 하게 건너뛴다(수집·poll 은 그대로 정상 동작).
+PUB_URL="${SERVER%ingest.php}agent-dl.php?f=vuln-inventory-agent.pub"
+PUB_TMP="$(mktemp)"
+if command -v curl >/dev/null 2>&1; then
+  curl -sS -m 15 -o "$PUB_TMP" "$PUB_URL" 2>/dev/null || true
+else
+  wget -qO "$PUB_TMP" --timeout=15 "$PUB_URL" 2>/dev/null || true
+fi
+if [ -s "$PUB_TMP" ] && grep -q 'PUBLIC KEY' "$PUB_TMP" 2>/dev/null; then
+  install -m 0600 "$PUB_TMP" "$ETC/agent-update.pub"
+  echo ">> 자동 업데이트 서명 공개키 고정: $ETC/agent-update.pub"
+else
+  echo ">> [안내] 서명 공개키를 받지 못했습니다 — 자동 업데이트 서명 검증 없이 시작합니다(자동 업데이트는 건너뜁니다)."
+fi
+rm -f "$PUB_TMP"
+
+# 3) 설정(토큰) — 600 권한, env 로만 전달
 umask 077
 cat > "$ETC/agent.env" <<EOF
 SEND_URL=$SERVER
@@ -227,7 +248,7 @@ VERIFY_FILES=$VERIFY_FILES
 EOF
 chmod 600 "$ETC/agent.env"
 
-# 3) 실행 래퍼 — env 로드 후 poll_and_maybe_scan 을 10초마다 반복하는 데몬(systemd Type=simple).
+# 4) 실행 래퍼 — env 로드 후 poll_and_maybe_scan 을 10초마다 반복하는 데몬(systemd Type=simple).
 #   agent-poll.php 를 10초마다 GET 해 (a) 정기수집 주기(poll_schedule_seconds)가 지났거나
 #   (b) 즉시/예약 명령(due_command_id)이 와 있으면 vuln-inventory-agent.sh 를 돌린다.
 #   changelog 수집은 백포트 오탐 제거(서버가 "이미 패치됨"을 증명)의 근거라 켜둔다.
@@ -243,6 +264,7 @@ set -uo pipefail
 
 BIN_DIR="$BIN"
 LOG_DIR="$LOG"
+PUB_KEY_FILE="$ETC/agent-update.pub"   # install-agent.sh 가 최초 설치 시 고정(pin). poll 로는 안 바뀐다.
 AGENT_BIN="\$BIN_DIR/vuln-inventory-agent.sh"
 POLL_URL="\${SEND_URL%ingest.php}agent-poll.php"
 LAST_SCAN_FILE="\$LOG_DIR/last_scan_at"
@@ -318,6 +340,7 @@ do_poll() {
     UPDATE_VERSION=\$(printf '%s' "\$resp" | jq -r '.update_version // empty')
     UPDATE_SHA256=\$(printf '%s' "\$resp" | jq -r '.update_sha256 // empty')
     UPDATE_PATH=\$(printf '%s' "\$resp" | jq -r '.update_download_path // empty')
+    UPDATE_SIGNATURE=\$(printf '%s' "\$resp" | jq -r '.update_signature // empty')
   else
     # 응답이 단순 flat JSON 필드뿐이라 grep -o/sed 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
     POLL_SCHEDULE=\$(printf '%s' "\$resp" | grep -o '"poll_schedule_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
@@ -330,6 +353,7 @@ do_poll() {
     UPDATE_VERSION=\$(printf '%s' "\$resp" | sed -n 's/.*"update_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
     UPDATE_SHA256=\$(printf '%s' "\$resp" | sed -n 's/.*"update_sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
     UPDATE_PATH=\$(printf '%s' "\$resp" | sed -n 's/.*"update_download_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    UPDATE_SIGNATURE=\$(printf '%s' "\$resp" | sed -n 's/.*"update_signature"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
   fi
   case "\$POLL_SCHEDULE" in ''|*[!0-9]*) return 1 ;; esac
   # POLL_CPU_QUOTA/POLL_PACKAGING_TIMEOUT 는 숫자+상식적 범위(CPU 1~100, 타임아웃 30~3600)
@@ -355,17 +379,22 @@ do_poll() {
   return 0
 }
 
-# do_update : 새 에이전트 스크립트를 받아 sha256 검증 후 원자적으로 교체한다.
-#   \$1=버전 \$2=기대 sha256 \$3=다운로드 경로(agent-poll.php 가 준, 이 서버 자체 경로 고정).
-#   실패해도(다운로드/체크섬/문법) 조용히 넘기지 않고 UPDATE_REPORT_FILE 에 남겨 다음 poll 에
+# do_update : 새 에이전트 스크립트를 받아 sha256 + Ed25519 서명 검증 후 원자적으로 교체한다.
+#   \$1=버전 \$2=기대 sha256 \$3=다운로드 경로(agent-poll.php 가 준, 이 서버 자체 경로 고정)
+#   \$4=서명(base64, agent-poll.php 가 준 update_signature — 없으면 빈 문자열).
+#   sha256 은 전송 중 손상만 잡는다 — 그 값 자체를 agent-poll.php(웹앱)가 즉석 계산해서
+#   응답에 실으므로, 웹 티어가 침해되면 공격자가 준비한 파일의 해시를 그대로 "검증 통과"로
+#   만들 수 있다. 서명은 그 두 값과 출처가 다르다(커밋 시점에 로컬 개인키로 만들어져 커밋되고,
+#   PHP 는 파일을 읽기만 한다) — 그래서 sha256 통과와 별개로 서명 검증도 반드시 통과해야 적용한다.
+#   실패해도(다운로드/체크섬/서명/문법) 조용히 넘기지 않고 UPDATE_REPORT_FILE 에 남겨 다음 poll 에
 #   보고한다 — 다음 poll 에서 서버가 여전히 구버전으로 보면 자동으로 다시 시도된다(재시도는
 #   "포기하지 않음" 자체가 목적이라 별도 백오프를 두지 않는다. YAGNI).
 #   단, 같은 버전이 한 번 롤백된 적이 있으면(UPDATE_FAILED_VERSION_FILE) 재시도하지 않는다 —
 #   그게 없으면 롤백 → pending 소멸 → 다음 poll 서버가 같은 버전을 또 제안 → 재적용 → 재실패
 #   → 재롤백이 무한 반복된다(실제 결함).
 do_update() {
-  local new_version="\$1" new_sha256="\$2" dl_path="\$3"
-  local old_version dl_url tmp got_sha256
+  local new_version="\$1" new_sha256="\$2" dl_path="\$3" new_sig_b64="\${4:-}"
+  local old_version dl_url tmp got_sha256 sigfile
 
   case "\$SEND_URL" in
     https://*) ;;
@@ -422,6 +451,43 @@ do_update() {
     rm -f "\$tmp"
     return 1
   fi
+  # 서명 검증 — sha256 통과와 별개로 반드시 통과해야 한다(위 함수 설명 참고). openssl 이
+  #   없거나, 공개키가 안 고정돼 있거나, 서버가 서명을 안 보내면 "검증 불가"로 보고 적용하지
+  #   않는다 — 침묵 스킵이 아니라 로그를 남기고 다음 poll 에 결과를 보고한다(sha256 도구가
+  #   없을 때와 같은 패턴).
+  if ! have openssl; then
+    log "openssl 이 없어 서명 검증을 할 수 없습니다 — 적용하지 않음."
+    echo "no_verify_tool \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp"
+    return 1
+  fi
+  if [ ! -s "\$PUB_KEY_FILE" ]; then
+    log "서명 공개키가 고정돼 있지 않습니다(\$PUB_KEY_FILE) — 적용하지 않음. install-agent.sh 를 다시 실행하면 받습니다."
+    echo "no_pinned_pubkey \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp"
+    return 1
+  fi
+  if [ -z "\$new_sig_b64" ]; then
+    log "서버 응답에 서명이 없습니다 — 적용하지 않음(아직 서명 안 된 배포이거나 구버전 서버)."
+    echo "no_signature \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp"
+    return 1
+  fi
+  if ! have base64; then
+    log "base64 명령이 없어 서명을 디코딩할 수 없습니다 — 적용하지 않음."
+    echo "no_base64_tool \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp"
+    return 1
+  fi
+  sigfile="\$LOG_DIR/vuln-inventory-agent.sh.sig.new"
+  printf '%s' "\$new_sig_b64" | base64 -d > "\$sigfile" 2>/dev/null
+  if [ ! -s "\$sigfile" ] || ! openssl pkeyutl -verify -pubin -inkey "\$PUB_KEY_FILE" -rawin -in "\$tmp" -sigfile "\$sigfile" >/dev/null 2>&1; then
+    log "업데이트 서명 검증 실패 — 적용하지 않음."
+    echo "signature_invalid \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp" "\$sigfile"
+    return 1
+  fi
+  rm -f "\$sigfile"
   if ! bash -n "\$tmp" 2>/dev/null; then
     log "업데이트 문법 검사 실패 — 적용하지 않음."
     echo "syntax_check_failed \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
@@ -502,7 +568,7 @@ poll_and_maybe_scan() {
   # 원자적이라 이미 fork 된 수집 프로세스에는 영향이 없지만, 순서를 단순하게 유지한다.
   if [ "\${UPDATE_AVAILABLE:-false}" = true ] && [ -n "\${UPDATE_VERSION:-}" ] \
      && [ -n "\${UPDATE_SHA256:-}" ] && [ -n "\${UPDATE_PATH:-}" ]; then
-    do_update "\$UPDATE_VERSION" "\$UPDATE_SHA256" "\$UPDATE_PATH" || true
+    do_update "\$UPDATE_VERSION" "\$UPDATE_SHA256" "\$UPDATE_PATH" "\${UPDATE_SIGNATURE:-}" || true
   fi
   local now last scheduled_due=0
   now=\$(date +%s)
@@ -533,7 +599,7 @@ done
 EOF
 chmod 0755 "$RUN"
 
-# 4) 상시 기동 등록 (systemd 상시 서비스 우선, 실패 시 cron 폴백)
+# 5) 상시 기동 등록 (systemd 상시 서비스 우선, 실패 시 cron 폴백)
 #   systemd 가 있으면 데몬(run.sh 의 while-loop)을 Type=simple 로 상시 기동한다 —
 #   10초마다 agent-poll.php 를 poll 하므로 더 이상 OS 스케줄러(timer)가 주기를 쥐지 않는다.
 #   cron 은 상시 프로세스를 못 돌리므로(주기 실행만 가능) 데몬화가 안 된다 — 이 경우 기존
