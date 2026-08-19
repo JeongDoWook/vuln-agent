@@ -18,6 +18,20 @@ declare(strict_types=1);
      *   JS·차트 라이브러리는 쓰지 않는다(CSP·오프라인 배포). 전부 CSS 와 게이지 폭 계산뿐이다. */
     // 런타임 상태 톤 — dead 만 위험으로 올린다(멈춘 컨테이너는 위험이 아니라 사실).
     $stateTone = ['running' => 'ok', 'restarting' => 'med', 'dead' => 'high'];
+    // 카드가 24개씩 늘어서면 다 똑같아 보인다 — 심각도 높은 컨테이너부터 스캔되게
+    // 페이지 안에서만 재정렬한다(SQL 정렬·페이지네이션은 그대로 cid 순, uq_container 인덱스 유지).
+    $sevRank = ['CRITICAL' => 4, 'HIGH' => 3, 'MEDIUM' => 2, 'LOW' => 1];
+    usort($rows, function (array $a, array $b) use ($sevByContainer, $sevRank): int {
+        $sa = $sevByContainer[(int) $a['container_id']] ?? [];
+        $sb = $sevByContainer[(int) $b['container_id']] ?? [];
+        $wa = 0;
+        $wb = 0;
+        foreach ($sevRank as $s => $r) {
+            if ($wa === 0 && ($sa[$s] ?? 0) > 0) { $wa = $r; }
+            if ($wb === 0 && ($sb[$s] ?? 0) > 0) { $wb = $r; }
+        }
+        return $wa !== $wb ? $wb - $wa : array_sum($sb) - array_sum($sa);
+    });
     ?>
     <div class="card">
       <strong>컨테이너</strong>
@@ -70,22 +84,8 @@ declare(strict_types=1);
                 <?php if ($rState !== ''): ?><?= vg_badge($rState, $stateTone[$rState] ?? 'muted') ?><?php endif; ?>
               </div>
 
-              <?php /* 이미지는 이 컨테이너가 무엇인지 그 자체다 — 길어도 접어서 다 보여준다. */ ?>
-              <div class="ctrcard__image">
-                <?= ((string) ($c['image'] ?? '')) !== ''
-                      ? '<code>' . vg_h((string) $c['image']) . '</code>'
-                      : '<span class="why">이미지 미상</span>' ?>
-              </div>
-
-              <div class="ctrcard__facts">
-                <span><?= $os !== '' ? vg_h($os) : '<span class="why">OS 미상</span>' ?></span>
-                <span><?= !empty($c['manager'])
-                        ? '<code>' . vg_h((string) $c['manager']) . '</code>'
-                        : '<span class="why">패키지 DB 없음</span>' ?></span>
-                <span>패키지 <b><?= number_format((int) $c['pkg_count']) ?></b></span>
-              </div>
-
-              <?php /* 심각도 분포 — 게이지 폭(width:N%)은 vg_sev_bar() 가 계산한다(인라인 style 예외). */ ?>
+              <?php /* 1차 정보: 이 카드에서 가장 먼저 봐야 하는 한 가지 — 심각도.
+               * 게이트 폭(width:N%)은 vg_sev_bar() 가 계산한다(인라인 style 예외). */ ?>
               <div class="ctrcard__risk">
                 <?php if ($sevSum > 0): ?>
                   <?= vg_sev_bar($sev) ?>
@@ -101,16 +101,35 @@ declare(strict_types=1);
                 <?php endif; ?>
               </div>
 
-              <?php if ($k8s || !empty($c['workload_ref']) || !empty($c['image_digest']) || !empty($c['sbom_hash'])): ?>
-                <div class="ctrcard__more">
-                  <?php if ($k8s): ?><span class="why">k8s <?= vg_h(implode(' / ', $k8s)) ?></span><?php endif; ?>
-                  <?php if (!empty($c['workload_ref'])): ?><span class="why">워크로드 <?= vg_h((string) $c['workload_ref']) ?></span><?php endif; ?>
-                  <?php if (!empty($c['image_digest'])): ?><span class="why"><?= vg_trunc((string) $c['image_digest'], 24) ?></span><?php endif; ?>
-                  <?php if (!empty($c['sbom_format']) || !empty($c['sbom_hash'])): ?>
-                    <span class="why">SBOM <?= vg_h((string) ($c['sbom_format'] ?? '')) ?> <?= vg_trunc((string) ($c['sbom_hash'] ?? ''), 20) ?></span>
-                  <?php endif; ?>
+              <?php /* 2차 정보: 이미지·OS·k8s·다이제스트·SBOM — 카드 정체성엔 필요하지만
+               * 심각도만큼 매번 볼 필요는 없다. 기본 접힘, 지우지 않고 펼치면 그대로 다 보인다. */ ?>
+              <details class="ctrcard__detail">
+                <summary>이미지 · 패키지 <?= number_format((int) $c['pkg_count']) ?>개</summary>
+                <div class="ctrcard__image">
+                  <?= ((string) ($c['image'] ?? '')) !== ''
+                        ? '<code>' . vg_h((string) $c['image']) . '</code>'
+                        : '<span class="why">이미지 미상</span>' ?>
                 </div>
-              <?php endif; ?>
+
+                <div class="ctrcard__facts">
+                  <span><?= $os !== '' ? vg_h($os) : '<span class="why">OS 미상</span>' ?></span>
+                  <span><?= !empty($c['manager'])
+                          ? '<code>' . vg_h((string) $c['manager']) . '</code>'
+                          : '<span class="why">패키지 DB 없음</span>' ?></span>
+                  <span>패키지 <b><?= number_format((int) $c['pkg_count']) ?></b></span>
+                </div>
+
+                <?php if ($k8s || !empty($c['workload_ref']) || !empty($c['image_digest']) || !empty($c['sbom_hash'])): ?>
+                  <div class="ctrcard__more">
+                    <?php if ($k8s): ?><span class="why">k8s <?= vg_h(implode(' / ', $k8s)) ?></span><?php endif; ?>
+                    <?php if (!empty($c['workload_ref'])): ?><span class="why">워크로드 <?= vg_h((string) $c['workload_ref']) ?></span><?php endif; ?>
+                    <?php if (!empty($c['image_digest'])): ?><span class="why"><?= vg_trunc((string) $c['image_digest'], 24) ?></span><?php endif; ?>
+                    <?php if (!empty($c['sbom_format']) || !empty($c['sbom_hash'])): ?>
+                      <span class="why">SBOM <?= vg_h((string) ($c['sbom_format'] ?? '')) ?> <?= vg_trunc((string) ($c['sbom_hash'] ?? ''), 20) ?></span>
+                    <?php endif; ?>
+                  </div>
+                <?php endif; ?>
+              </details>
 
               <div class="links">
                 <a href="<?= vg_h($href) ?>">상세 열기 →</a>

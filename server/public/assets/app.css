@@ -2400,6 +2400,22 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctrcard__more { display: flex; flex-direction: column; gap: .15rem; }
 .ctrcard .links { margin-top: auto; padding-top: .2rem; }
 
+/* 2차 정보(이미지·OS·k8s·다이제스트·SBOM) 접힘 — 심각도 바보다 눈에 덜 띄어야 한다.
+ * .card__body > details 는 direct child 전용이라 카드 안(li > details)엔 안 걸려 새로 정의한다. */
+.ctrcard__detail { font-size: var(--fs-sm); }
+.ctrcard__detail > summary {
+  cursor: pointer;
+  color: var(--muted);
+  list-style: none;
+  width: fit-content;
+}
+.ctrcard__detail > summary::-webkit-details-marker { display: none; }
+.ctrcard__detail > summary::before { content: "▸ "; }
+.ctrcard__detail[open] > summary::before { content: "▾ "; }
+.ctrcard__detail > summary:hover { color: var(--accent-2); }
+.ctrcard__detail[open] > summary { margin-bottom: .4rem; }
+.ctrcard__detail > :not(summary) + * { margin-top: .35rem; }
+
 @media (max-width: 640px) {
   .ctree__list { grid-template-columns: 1fr; padding-left: .8rem; }
   .ctree__list::before { left: .25rem; }
