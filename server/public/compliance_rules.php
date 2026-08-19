@@ -100,7 +100,10 @@ vg_header('보안 설정 룰', 'compliance');
           // 심각도 뱃지는 고정 크기라 % 가 아니라 rem 이다(cves.php 와 같은 이유 — 870px 에서
           //   44.5px 가 옆 열을 덮었다). 값 69 + 칸 여백 32 = 101 → 6.5rem.
           ['label' => '심각도', 'width' => '6.5rem'],
-          ['label' => '참조 기준', 'width' => '15%'],
+          // 이 열은 SSG 룰 자체의 외부 참조(CIS/NIST/STIG)일 뿐 CCE/U-코드 매핑이 아니다 —
+          //   "참조 기준"이라는 이름은 우리 판정 기준으로 오해를 살 수 있어(host.php CCE 탭·
+          //   compliance_rule.php 상세가 같은 데이터를 '참조 매핑'으로 부르는 것과 맞춘다).
+          ['label' => '참조 매핑', 'width' => '15%'],
           ['label' => '근거'],
       ],
       $rows,

@@ -46,7 +46,7 @@ declare(strict_types=1);
               ['label' => '결과', 'key' => 'result'],
               ['label' => '점검 항목', 'key' => 'title'],
               ['label' => '코드', 'key' => 'code'],
-              ['label' => '기준(SSG 룰 · CIS/NIST)'],
+              ['label' => '참조 매핑'],
               ['label' => '근거'],
               ['label' => '사유'],
           ],
