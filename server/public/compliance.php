@@ -48,7 +48,9 @@ try {
     if ($canViewAssets) {
         $account = vg_compliance_load_account($pdo, $previewLimit);
     }
-    $trend = vg_compliance_trend($pdo, vg_ui_trend_limit());
+    // 화면에 실제로 보여줄 만큼만 가져온다(아래 판정 추이 카드가 $previewLimit 행만 렌더) —
+    //   더 넉넉히 가져와 봐야 렌더 전에 잘려 나가 조회만 하는 죽은 여유분이 된다.
+    $trend = vg_compliance_trend($pdo, $previewLimit);
 } catch (Throwable $e) {
     error_log('[compliance] ' . $e->getMessage());
     $err = '처리 중 오류가 발생했습니다.';
@@ -305,12 +307,11 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
                     . vg_badge($c['label'], vg_compliance_tone_of($c['label']));
             };
         }
-        // 최근 며칠만 보여준다(심사에서 먼저 보는 구간). 스냅샷은 최대 vg_ui_trend_limit()일
-        //   (기본 50일)까지 쌓이지만 그 이상은 화면에서 걷었다 — 접이식 이력 표(예전엔 여기
-        //   있었다)가 왜 있는지 알기 어렵다는 요청으로 완전히 제거했다. 오래된 스냅샷은
-        //   DB(tb_compliance_snapshot)에 그대로 남아 감사 목적으로 조회 가능하다.
-        $recent = array_slice($trend, 0, $previewLimit);
-        vg_table($headers, $recent, ['cell' => $cells, 'card' => false]);
+        // 최근 며칠만 보여준다(심사에서 먼저 보는 구간) — $trend 자체가 이미 $previewLimit 행만
+        //   불러온 것이라 여기서 다시 자를 필요가 없다(접이식 이력 표는 왜 있는지 알기 어렵다는
+        //   요청으로 완전히 제거했다). 오래된 스냅샷은 DB(tb_compliance_snapshot)에 그대로 남아
+        //   감사 목적으로 조회 가능하다.
+        vg_table($headers, $trend, ['cell' => $cells, 'card' => false]);
         ?>
       <?php endif; ?>
     </div>

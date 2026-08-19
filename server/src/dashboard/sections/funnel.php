@@ -4,6 +4,8 @@ declare(strict_types=1);
 /**
  * dashboard/sections/funnel.php — 상단의 좁혀지는 퍼널 4칸.
  */
+require_once __DIR__ . '/../../view/components/signal.php';   // vg_signal_icon() — index.php 의 로드 순서에 우연히 기대지 않는다
+
 function vg_dash_render_funnel(array $totals, int $hostCount, int $kevCount, int $kevOverdue, int $kevSlaDays): void {
   /* 상단은 결론 문장 + KPI 나열이 아니라 **좁혀지는 퍼널**이다.
    *
