@@ -262,7 +262,8 @@ $perPage  = vg_perpage();
 
 $targets = [];
 $targetOptions = [];
-$stateCounts = ['new' => 0, 'known' => 0, 'ignored' => 0];
+$stateCounts = array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
+$targetStateCounts = [];
 $rows = [];
 $portsByAsset = [];
 $total = 0;
@@ -289,18 +290,25 @@ try {
     }
     if ($targetId > 0 && !isset($targetOptions[(string) $targetId])) { $targetId = 0; }
 
-    /* 대역별 상태 배지 · 랭킹 차트가 쓰는 값 — 필터와 무관하게 전체 기준(대역 카드는 필터 위 요약).
-     *   대역이 수십 건이라 group by 한 번으로 끝낸다(대역마다 다시 묻지 않는다). */
-    $targetStateCounts = [];
-    $tsc = $pdo->query(
-        'SELECT discovery_target_id, state, COUNT(*) AS n FROM tb_discovered_asset
-          WHERE is_deleted = 0 GROUP BY discovery_target_id, state'
-    )->fetchAll();
-    foreach ($tsc as $r) {
-        $tid = (int) $r['discovery_target_id'];
-        if (!isset($targetStateCounts[$tid])) { $targetStateCounts[$tid] = ['new' => 0, 'known' => 0, 'ignored' => 0]; }
-        if (isset($targetStateCounts[$tid][(string) $r['state']])) {
-            $targetStateCounts[$tid][(string) $r['state']] = (int) $r['n'];
+    /* 대역별 상태 배지 · 랭킹 차트가 쓰는 값 — 대역을 골랐으면 그 대역만, 아니면 화면에 남아
+     *   있는(is_deleted=0) 대역들로 좁힌다. 상단 KPI(307-313)와 같은 필터를 따라야 대역을
+     *   골랐을 때 KPI 는 줄고 카드·랭킹은 전체 그대로인 어긋남이 생기지 않는다. */
+    $targetIdsForCounts = $targetId > 0
+        ? [$targetId]
+        : array_map(static fn(array $t): int => (int) $t['discovery_target_id'], $targets);
+    if ($targetIdsForCounts) {
+        $tin = implode(',', array_fill(0, count($targetIdsForCounts), '?'));
+        $tsc = $pdo->prepare(
+            "SELECT discovery_target_id, state, COUNT(*) AS n FROM tb_discovered_asset
+              WHERE is_deleted = 0 AND discovery_target_id IN ($tin) GROUP BY discovery_target_id, state"
+        );
+        $tsc->execute($targetIdsForCounts);
+        foreach ($tsc->fetchAll() as $r) {
+            $tid = (int) $r['discovery_target_id'];
+            if (!isset($targetStateCounts[$tid])) { $targetStateCounts[$tid] = array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0); }
+            if (isset($targetStateCounts[$tid][(string) $r['state']])) {
+                $targetStateCounts[$tid][(string) $r['state']] = (int) $r['n'];
+            }
         }
     }
 
@@ -422,13 +430,19 @@ vg_header('자산 탐색', 'discovery');
 
   <?php /* ── 대역 · 스캔 ─────────────────────────────────────────────────── */ ?>
   <?php
+  /* 대역을 골랐으면 카드·랭킹도 그 대역만 보인다 — 상단 KPI 만 줄고 카드는 전체 그대로면
+   *   같은 화면에서 숫자가 어긋난다. */
+  $visibleTargets = $targetId > 0
+      ? array_values(array_filter($targets, static fn(array $t): bool => (int) $t['discovery_target_id'] === $targetId))
+      : $targets;
+
   /* 대역별 발견 건수 랭킹 — 표 열로는 안 보이던 "어느 대역이 발견량 대부분을 차지하는가" 를
    *   막대 길이로 비교한다(packages.php 의 패키지별 CVE 랭킹과 같은 패턴).
    *   막대 하나짜리는 비교가 아니라 장식이라, 값이 있는 대역이 2곳 이상일 때만 그린다. */
   $rankItems = [];
-  foreach ($targets as $t) {
+  foreach ($visibleTargets as $t) {
       $tid = (int) $t['discovery_target_id'];
-      $sc  = $targetStateCounts[$tid] ?? ['new' => 0, 'known' => 0, 'ignored' => 0];
+      $sc  = $targetStateCounts[$tid] ?? array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
       $tf  = $sc['new'] + $sc['known'] + $sc['ignored'];
       if ($tf > 0) {
           $rankItems[] = [
@@ -458,9 +472,9 @@ vg_header('자산 탐색', 'discovery');
     </div>
   <?php else: ?>
     <div class="discovery-targets">
-      <?php foreach ($targets as $t):
+      <?php foreach ($visibleTargets as $t):
           $tid    = (int) $t['discovery_target_id'];
-          $sc     = $targetStateCounts[$tid] ?? ['new' => 0, 'known' => 0, 'ignored' => 0];
+          $sc     = $targetStateCounts[$tid] ?? array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
           $status = (string) ($t['status'] ?? '');
           $busy   = in_array($status, ['pending', 'running'], true);
       ?>

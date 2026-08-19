@@ -695,6 +695,7 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
   gap: var(--sp-3);
   margin-bottom: var(--sp-3);
 }
+@media (max-width: 700px) { .discovery-targets { grid-template-columns: 1fr; } }
 .discovery-target { margin-bottom: 0; }
 .discovery-target__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .discovery-target__badges { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0; }
