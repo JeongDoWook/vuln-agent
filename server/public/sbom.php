@@ -53,6 +53,9 @@ if (!in_array($_SERVER['REQUEST_METHOD'] ?? '', ['GET', 'HEAD'], true)) {
 // ── 파라미터 ──────────────────────────────────────────────────
 $format = strtolower(trim((string) ($_GET['format'] ?? 'cyclonedx')));
 if (!in_array($format, VG_SBOM_FORMATS, true)) { $format = 'cyclonedx'; }
+// 시각화 보기. 켜져 있으면 아래 JSON 다운로드 경로 대신 화면을 그린다 — 외부 SBOM 도구가
+//   붙는 기본 계약(브라우저로 열면 파일로 내려받는다)은 이 파라미터가 없을 때 그대로다.
+$view = strtolower(trim((string) ($_GET['view'] ?? '')));
 
 $host   = trim((string) ($_GET['host'] ?? ''));
 $scanId = (int) ($_GET['scan_id'] ?? 0);
@@ -145,6 +148,22 @@ $subject = $container !== null
        'os_ver'  => $scan['os_version'] ?? null,
        'ref'     => $fqdn,
        'digest'  => ''];
+
+// 시각화 보기 — 다운로드가 아니라 화면. 조회도 자산 정보 열람이라 감사로그는 남기되
+//   실제로 파일을 내보낸 것은 아니므로 action 은 EXPORT 가 아니라 READ.
+if ($view === 'html') {
+    require_once __DIR__ . '/../src/view.php';
+    require_once __DIR__ . '/../src/license_risk.php';
+    vg_log_activity(
+        $pdo, 'PAGE', null, 'view_sbom',
+        '자산=' . $subject['ref'] . ' 컴포넌트 ' . count($packages) . '건 (스캔 #' . $scanNo . ')',
+        ['host' => $fqdn, 'container' => $cid !== '' ? $cid : null,
+         'scan_id' => $scanNo, 'components' => count($packages)],
+        subject: $subject['ref'], action: 'READ'
+    );
+    vg_sbom_render_html($subject, $packages, $fqdn, $cid, $scanNo);
+    exit;
+}
 
 $doc = $format === 'spdx'
     ? vg_sbom_spdx($scan, $subject, $packages, $uuid, $created)
@@ -336,4 +355,120 @@ function vg_sbom_spdx(array $scan, array $subject, array $packages, string $uuid
         'packages'          => $pkgs,
         'relationships'     => $rels,
     ];
+}
+
+/**
+ * SBOM 시각화 보기. 다운로드용 CycloneDX/SPDX 와 같은 조회($packages)를 화면으로 그린다 —
+ *   새로 집계하지 않는다. 의존 엣지는 이 화면도 다루지 않는다(sbom.php 머리주석 — 대부분 비어
+ *   있어 반쪽짜리 그래프가 된다). 대신 **패키지 관리자(생태계)** 를 뿌리로 묶어 카드/트리로
+ *   나눈다 — "이 자산에 뭐가 얼마나 있나" 를 flat JSON 한 덩어리보다 먼저 보여준다.
+ *   진짜 의존성 그래프(누가 누구를 끌어왔나)는 host.php 의 depgraph.php 링크가 이미 담당한다.
+ */
+function vg_sbom_render_html(array $subject, array $packages, string $fqdn, string $cid, int $scanNo): void {
+    $total = count($packages);
+
+    // 관리자(생태계)별 묶음 — 카드/트리의 뿌리.
+    $byManager = [];
+    foreach ($packages as $p) {
+        $byManager[(string) $p['manager']][] = $p;
+    }
+    ksort($byManager);
+
+    // 라이선스 위험도 집계(packages.php 의 언어 탭과 같은 순수함수 — 별도 사전집계 없이 즉산).
+    $riskCounts = ['permissive' => 0, 'copyleft' => 0, 'unknown' => 0];
+    foreach ($packages as $p) {
+        $risk = vg_license_classify($p['license'] ?? null);
+        $riskCounts[$risk]++;
+    }
+
+    $title = (string) $subject['name'] !== '' ? (string) $subject['name'] : $fqdn;
+    vg_header('SBOM · ' . $title, 'assets');
+    vg_chart_assets();
+    ?>
+    <?php vg_page_title($title . ' SBOM', '', ['count' => $total, 'count_label' => '개 컴포넌트']); ?>
+
+    <div class="cards">
+      <div class="kpi kpi--sm"><b><?= number_format($total) ?></b><span>컴포넌트</span></div>
+      <div class="kpi kpi--sm"><b><?= number_format(count($byManager)) ?></b><span>패키지 관리자</span></div>
+      <div class="kpi kpi--sm<?= $riskCounts['copyleft'] > 0 ? ' tone-high' : '' ?>">
+        <b><?= number_format($riskCounts['copyleft']) ?></b><span>카피레프트 라이선스</span>
+      </div>
+      <div class="kpi kpi--sm tone-muted">
+        <b><?= number_format($riskCounts['unknown']) ?></b><span>라이선스 미상</span>
+      </div>
+    </div>
+
+    <?php if ($total > 0): ?>
+      <div class="card">
+        <strong>생태계 분포</strong>
+        <div class="card__body">
+          <?php
+          $ecoLabels = array_keys($byManager);
+          $ecoData = array_map(static fn($m) => count($byManager[$m]), $ecoLabels);
+          vg_chart('doughnut', [
+              'labels'   => $ecoLabels,
+              'datasets' => [['data' => $ecoData]],
+          ], ['size' => 'md', 'alt' => '패키지 관리자별 컴포넌트 분포']);
+          ?>
+        </div>
+      </div>
+
+      <div class="card">
+        <strong>라이선스 위험도</strong>
+        <div class="card__body">
+          <?php
+          vg_chart('doughnut', [
+              'labels'   => [vg_license_risk_label('permissive'), vg_license_risk_label('copyleft'), vg_license_risk_label('unknown')],
+              'datasets' => [['data' => [$riskCounts['permissive'], $riskCounts['copyleft'], $riskCounts['unknown']]]],
+          ], ['size' => 'md', 'alt' => '라이선스 위험도 분포']);
+          ?>
+        </div>
+      </div>
+    <?php endif; ?>
+
+    <?php if (!$byManager): ?>
+      <?php vg_empty(['icon' => 'package', 'title' => '이 대상에서 수집된 컴포넌트가 없습니다.']); ?>
+    <?php else: ?>
+      <?php foreach ($byManager as $manager => $pkgs): ?>
+        <div class="card">
+          <div class="ctree__root">
+            <span class="ctree__icon" aria-hidden="true"><?= vg_icon('package') ?></span>
+            <div class="ctree__rootid">
+              <strong><?= vg_h($manager !== '' ? $manager : '미상') ?></strong>
+              <span class="why"><?= number_format(count($pkgs)) ?>개 컴포넌트</span>
+            </div>
+          </div>
+          <div class="card__body">
+            <?php
+            vg_table(
+                [
+                    ['label' => '컴포넌트', 'width' => '32%', 'class' => 'col-id'],
+                    ['label' => '버전', 'width' => '16%'],
+                    ['label' => '라이선스', 'width' => '30%'],
+                    ['label' => '공급자', 'width' => '22%'],
+                ],
+                $pkgs,
+                [
+                    'card' => false,
+                    'cell' => [
+                        0 => static fn($p) => '<strong>' . vg_h((string) $p['name']) . '</strong>',
+                        1 => static fn($p) => '<code>' . vg_h((string) ($p['version'] ?? '')) . '</code>',
+                        2 => static function ($p) {
+                            $lic = trim((string) ($p['license'] ?? ''));
+                            if ($lic === '') { return '<span class="why">–</span>'; }
+                            $risk = vg_license_classify($lic);
+                            return vg_h($lic) . ' ' . vg_badge(vg_license_risk_label($risk), vg_license_risk_tone($risk));
+                        },
+                        3 => static fn($p) => !empty($p['vendor']) ? vg_h((string) $p['vendor']) : '<span class="why">–</span>',
+                    ],
+                ]
+            );
+            ?>
+          </div>
+        </div>
+      <?php endforeach; ?>
+    <?php endif; ?>
+
+    <?php vg_sbom_links($fqdn, $cid); ?>
+    <?php vg_footer();
 }

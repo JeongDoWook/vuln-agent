@@ -60,8 +60,9 @@ function vg_connectors_empty_cta(): ?array {
 function vg_sbom_links(string $fqdn, string $cid = ''): void {
     if (!vg_can('assets')) { return; }
     $base = '/sbom.php?host=' . urlencode($fqdn) . ($cid !== '' ? '&cid=' . urlencode($cid) : '');
-    echo '<div class="card"><strong>SBOM 내려받기</strong>'
+    echo '<div class="card"><strong>SBOM</strong>'
         . '<div class="card__body"><div class="links">'
+        . '<a href="' . vg_h($base . '&view=html') . '">부품표 보기</a>'
         . '<a href="' . vg_h($base . '&format=cyclonedx') . '">CycloneDX 1.5</a>'
         . '<a href="' . vg_h($base . '&format=spdx') . '">SPDX 2.3</a>'
         . '</div></div></div>';
