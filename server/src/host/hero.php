@@ -82,7 +82,7 @@ function vg_host_render_hero(array $ctx): void {
               . '</form>';
       }
   }
-  vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', '', $actionsHtml);
+  vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', $actionsHtml);
   /* 처리 결과(등록/중단/오류)는 '자산 설정' 탭의 수집 제어 카드가 그린다 — 그런데 이 버튼은
    *   어느 탭에서든 눌리고, 리다이렉트는 누른 그 탭으로 돌아온다. 그 탭이 결과를 안 그리면
    *   플래시가 소비만 되고 사라져 "눌렀는데 아무 일도 안 일어난 것처럼" 보인다.

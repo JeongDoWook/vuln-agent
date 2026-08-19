@@ -900,7 +900,7 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 .hero__id h1 { margin: 0 0 .4rem; letter-spacing: -.035em; }
 .hero__meta { color: var(--muted); font-size: var(--fs-sm); display: flex; flex-wrap: wrap; gap: .3rem .5rem; align-items: center; }
 .hero__risk { flex: none; text-align: center; }
-.hero__actions { flex: none; }
+.hero__actions { flex: none; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .hero__actions form { margin: 0; }
 .hero__risk .cap { display: block; margin-top: .4rem; font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 

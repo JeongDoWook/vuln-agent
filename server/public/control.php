@@ -200,8 +200,7 @@ vg_hero(
     ],
     number_format($counts['FAIL']) . '건',
     $status['tone'],
-    $status['label'],
-    'CONTROL DETAIL'
+    $status['label']
 );
 ?>
 

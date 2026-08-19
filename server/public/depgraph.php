@@ -133,7 +133,7 @@ $meta = [
 ];
 if ($scan) { $meta[] = '최신 수집 ' . vg_h((string) $scan['collected_at']); }
 $meta[] = '엣지 ' . number_format($load['loaded']) . '개';
-vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH');
+vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
 ?>
 
 <div class="card">
