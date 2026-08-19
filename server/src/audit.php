@@ -58,6 +58,7 @@ function vg_activity_action(string $type): string {
         'host_perimeter_update' => 'UPDATE',
         'agent_schedule_change' => 'UPDATE',
         'agent_speed_tier_change' => 'UPDATE',
+        'agent_auto_update'     => 'UPDATE',
         'export_data'           => 'EXPORT',
         'ingest'                => 'EXECUTE',
         'ingest_spoof_blocked'  => 'EXECUTE',

@@ -243,9 +243,12 @@ set -uo pipefail
 
 BIN_DIR="$BIN"
 LOG_DIR="$LOG"
+AGENT_BIN="\$BIN_DIR/vuln-inventory-agent.sh"
 POLL_URL="\${SEND_URL%ingest.php}agent-poll.php"
 LAST_SCAN_FILE="\$LOG_DIR/last_scan_at"
 POLL_STATE_FILE="\$LOG_DIR/poll_interval"
+UPDATE_REPORT_FILE="\$LOG_DIR/update_report"       # 다음 poll 때 보낼 "직전 업데이트 결과" 1줄
+UPDATE_PENDING_FILE="\$LOG_DIR/update_pending_verify"  # 교체 직후 ~ 첫 실행 검증 전까지만 존재
 ONCE=0
 [ "\${1:-}" = "--once" ] && ONCE=1
 
@@ -261,18 +264,31 @@ esac
 have() { command -v "\$1" >/dev/null 2>&1; }
 log()  { echo "[\$(date -Is 2>/dev/null || date)] \$*" >&2; }
 
-# do_poll : agent-poll.php GET → POLL_SCHEDULE / DUE_CMD 채움. 성공(0)/실패(1).
+# do_poll : agent-poll.php GET → POLL_SCHEDULE / DUE_CMD / UPDATE_* 채움. 성공(0)/실패(1).
+#   agent_version 을 같이 보내 서버가 최신인지 판단하게 하고, 직전 업데이트 결과(있으면)도
+#   같은 GET 에 실어 보고한다 — 새 인바운드 경로를 만들지 않고 기존 폴링을 재사용한다.
 do_poll() {
-  local resp=""
+  local resp="" qs cur_version report
+  cur_version=\$(sed -n 's/^SCRIPT_VERSION="\(.*\)"/\1/p' "\$AGENT_BIN" 2>/dev/null | head -n1)
+  qs="agent_version=\${cur_version}"
+  if [ -f "\$UPDATE_REPORT_FILE" ]; then
+    report=\$(cat "\$UPDATE_REPORT_FILE" 2>/dev/null)
+    # 형식: "<result> <from> <to>" (do_update 가 기록). 필드가 깨져 있으면 그냥 흘려보낸다.
+    set -- \$report
+    if [ -n "\${1:-}" ]; then
+      qs="\${qs}&update_result=\${1}&update_from=\${2:-}&update_to=\${3:-}"
+    fi
+  fi
   if have curl; then
-    resp=\$(curl -sS -m 15 -H "X-Agent-Token: \$SEND_TOKEN" "\$POLL_URL" 2>/dev/null)
+    resp=\$(curl -sS -m 15 -H "X-Agent-Token: \$SEND_TOKEN" "\${POLL_URL}?\${qs}" 2>/dev/null)
   elif have wget; then
-    resp=\$(wget -qO- --timeout=15 --header="X-Agent-Token: \$SEND_TOKEN" "\$POLL_URL" 2>/dev/null)
+    resp=\$(wget -qO- --timeout=15 --header="X-Agent-Token: \$SEND_TOKEN" "\${POLL_URL}?\${qs}" 2>/dev/null)
   else
     log "curl·wget 이 모두 없어 poll 을 할 수 없습니다."
     return 1
   fi
   [ -z "\$resp" ] && return 1
+  rm -f "\$UPDATE_REPORT_FILE"   # 이번 poll 로 서버에 실어 보냈으니 다음 poll 에 다시 보내지 않는다
   if have jq; then
     printf '%s' "\$resp" | jq -e . >/dev/null 2>&1 || return 1
     POLL_SCHEDULE=\$(printf '%s' "\$resp" | jq -r '.poll_schedule_seconds // empty')
@@ -280,13 +296,22 @@ do_poll() {
     POLL_CPU_QUOTA=\$(printf '%s' "\$resp" | jq -r '.cpu_quota_percent // empty')
     POLL_PACKAGING_TIMEOUT=\$(printf '%s' "\$resp" | jq -r '.packaging_timeout_seconds // empty')
     POLL_MEM_MAX=\$(printf '%s' "\$resp" | jq -r '.mem_max_mb // empty')
+    UPDATE_AVAILABLE=\$(printf '%s' "\$resp" | jq -r '.update_available // false')
+    UPDATE_VERSION=\$(printf '%s' "\$resp" | jq -r '.update_version // empty')
+    UPDATE_SHA256=\$(printf '%s' "\$resp" | jq -r '.update_sha256 // empty')
+    UPDATE_PATH=\$(printf '%s' "\$resp" | jq -r '.update_download_path // empty')
   else
-    # 응답이 단순 flat JSON 필드뿐이라 grep -o 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
+    # 응답이 단순 flat JSON 필드뿐이라 grep -o/sed 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
     POLL_SCHEDULE=\$(printf '%s' "\$resp" | grep -o '"poll_schedule_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     DUE_CMD=\$(printf '%s' "\$resp" | grep -o '"due_command_id"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     POLL_CPU_QUOTA=\$(printf '%s' "\$resp" | grep -o '"cpu_quota_percent"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     POLL_PACKAGING_TIMEOUT=\$(printf '%s' "\$resp" | grep -o '"packaging_timeout_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     POLL_MEM_MAX=\$(printf '%s' "\$resp" | grep -o '"mem_max_mb"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
+    UPDATE_AVAILABLE=false
+    printf '%s' "\$resp" | grep -q '"update_available"[[:space:]]*:[[:space:]]*true' && UPDATE_AVAILABLE=true
+    UPDATE_VERSION=\$(printf '%s' "\$resp" | sed -n 's/.*"update_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    UPDATE_SHA256=\$(printf '%s' "\$resp" | sed -n 's/.*"update_sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    UPDATE_PATH=\$(printf '%s' "\$resp" | sed -n 's/.*"update_download_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
   fi
   case "\$POLL_SCHEDULE" in ''|*[!0-9]*) return 1 ;; esac
   # POLL_CPU_QUOTA/POLL_PACKAGING_TIMEOUT 는 숫자+상식적 범위(CPU 1~100, 타임아웃 30~3600)
@@ -309,6 +334,62 @@ do_poll() {
   return 0
 }
 
+# do_update : 새 에이전트 스크립트를 받아 sha256 검증 후 원자적으로 교체한다.
+#   \$1=버전 \$2=기대 sha256 \$3=다운로드 경로(agent-poll.php 가 준, 이 서버 자체 경로 고정).
+#   실패해도(다운로드/체크섬/문법) 조용히 넘기지 않고 UPDATE_REPORT_FILE 에 남겨 다음 poll 에
+#   보고한다 — 다음 poll 에서 서버가 여전히 구버전으로 보면 자동으로 다시 시도된다(재시도는
+#   "포기하지 않음" 자체가 목적이라 별도 백오프를 두지 않는다. YAGNI).
+do_update() {
+  local new_version="\$1" new_sha256="\$2" dl_path="\$3"
+  local old_version dl_url tmp got_sha256
+  old_version=\$(sed -n 's/^SCRIPT_VERSION="\(.*\)"/\1/p' "\$AGENT_BIN" 2>/dev/null | head -n1)
+  dl_url="\${SEND_URL%ingest.php}\${dl_path}"
+  tmp="\$LOG_DIR/vuln-inventory-agent.sh.new"
+  log "에이전트 업데이트 발견: \${old_version:-?} → \$new_version — 내려받는 중"
+  rm -f "\$tmp"
+  if have curl; then
+    curl -sS -m 60 -H "X-Agent-Token: \$SEND_TOKEN" -o "\$tmp" "\$dl_url" 2>/dev/null
+  elif have wget; then
+    wget -qO "\$tmp" --timeout=60 --header="X-Agent-Token: \$SEND_TOKEN" "\$dl_url" 2>/dev/null
+  fi
+  if [ ! -s "\$tmp" ]; then
+    log "업데이트 다운로드 실패: \$dl_url"
+    echo "download_failed \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp"
+    return 1
+  fi
+  if have sha256sum; then
+    got_sha256=\$(sha256sum "\$tmp" | awk '{print \$1}')
+  elif have shasum; then
+    got_sha256=\$(shasum -a 256 "\$tmp" | awk '{print \$1}')
+  else
+    log "sha256sum·shasum 이 모두 없어 무결성 검증을 할 수 없습니다 — 적용하지 않음."
+    echo "no_sha_tool \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp"
+    return 1
+  fi
+  if [ "\$got_sha256" != "\$new_sha256" ]; then
+    log "업데이트 체크섬 불일치(기대 \$new_sha256 / 실제 \$got_sha256) — 적용하지 않음."
+    echo "checksum_mismatch \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp"
+    return 1
+  fi
+  if ! bash -n "\$tmp" 2>/dev/null; then
+    log "업데이트 문법 검사 실패 — 적용하지 않음."
+    echo "syntax_check_failed \$old_version \$new_version" > "\$UPDATE_REPORT_FILE"
+    rm -f "\$tmp"
+    return 1
+  fi
+  cp -p "\$AGENT_BIN" "\$AGENT_BIN.bak" 2>/dev/null || true
+  chmod 0755 "\$tmp"
+  mv -f "\$tmp" "\$AGENT_BIN"   # 같은 파일시스템 안 rename = 원자적 교체
+  # 다음 실행이 실패하면 run_scan 이 .bak 으로 롤백하도록 표시만 해 둔다 — 지금 여기서
+  # 재실행하지 않는다(다음 정기/예약 실행부터 반영, 단순하게 — YAGNI).
+  echo "\$old_version \$new_version" > "\$UPDATE_PENDING_FILE"
+  log "업데이트 적용 완료: \${old_version:-?} → \$new_version (다음 실행에서 검증)"
+  return 0
+}
+
 run_scan() {
   local cmd_id="\$1"
   local args=(-o "\$LOG_DIR/last.json" --send "\$SEND_URL" --token "\$SEND_TOKEN")
@@ -327,7 +408,26 @@ run_scan() {
   [ -n "\${POLL_MEM_MAX:-}" ] && tier_env+=(MEM_MAX="\${POLL_MEM_MAX}M")
   # "set -u" 상태에서 빈 배열 "\${tier_env[@]}" 확장은 bash 4.3 이하에서 unbound variable 로 죽는다.
   #   "\${tier_env[@]+"\${tier_env[@]}"}" 는 배열이 비어 있으면 통째로 없던 걸로 취급해 안전하다.
-  env \${tier_env[@]+"\${tier_env[@]}"} "\$BIN_DIR/vuln-inventory-agent.sh" "\${args[@]}"
+  env \${tier_env[@]+"\${tier_env[@]}"} "\$AGENT_BIN" "\${args[@]}"
+  local rc=\$?
+  # 방금 실행이 "업데이트 후 첫 실행"이면 성공/실패로 검증을 마감한다 — 실패면 .bak 으로
+  # 되돌리고(간단한 롤백), 성공이면 .bak 을 지워 다음 실패는 이 업데이트 탓이 아니게 한다.
+  if [ -f "\$UPDATE_PENDING_FILE" ]; then
+    local ov nv
+    read -r ov nv < "\$UPDATE_PENDING_FILE" 2>/dev/null || true
+    if [ "\$rc" = 0 ]; then
+      echo "ok \${ov:-unknown} \${nv:-unknown}" > "\$UPDATE_REPORT_FILE"
+      rm -f "\$UPDATE_PENDING_FILE" "\$AGENT_BIN.bak"
+    else
+      log "업데이트 후 첫 실행 실패(rc=\$rc) — 이전 버전(\${ov:-?})으로 롤백"
+      if [ -f "\$AGENT_BIN.bak" ]; then
+        mv -f "\$AGENT_BIN.bak" "\$AGENT_BIN"
+      fi
+      echo "rollback \${ov:-unknown} \${nv:-unknown}" > "\$UPDATE_REPORT_FILE"
+      rm -f "\$UPDATE_PENDING_FILE"
+    fi
+  fi
+  return \$rc
 }
 
 # poll_and_maybe_scan : poll 1회 + 필요하면 수집. poll 자체의 성공/실패를 돌려준다(백오프 판단용).
@@ -340,6 +440,12 @@ poll_and_maybe_scan() {
     return 1
   fi
   echo "\$POLL_SCHEDULE" > "\$POLL_STATE_FILE"
+  # 업데이트는 실행 중인 수집과 겹치지 않게 poll 직후(수집 시작 전)에 처리한다 — mv 는
+  # 원자적이라 이미 fork 된 수집 프로세스에는 영향이 없지만, 순서를 단순하게 유지한다.
+  if [ "\${UPDATE_AVAILABLE:-false}" = true ] && [ -n "\${UPDATE_VERSION:-}" ] \
+     && [ -n "\${UPDATE_SHA256:-}" ] && [ -n "\${UPDATE_PATH:-}" ]; then
+    do_update "\$UPDATE_VERSION" "\$UPDATE_SHA256" "\$UPDATE_PATH" || true
+  fi
   local now last scheduled_due=0
   now=\$(date +%s)
   last=\$(cat "\$LAST_SCAN_FILE" 2>/dev/null || echo 0)

@@ -34,7 +34,7 @@ function vg_host_render_hero(array $ctx): void {
       $old = $latestAgent !== '' && version_compare($av, $latestAgent, '<');
       $meta[] = '에이전트 <code>' . vg_h($av) . '</code>'
           . ($old ? ' ' . vg_badge('구버전', 'med',
-                "함대 최신은 {$latestAgent} — master 에서 deploy/agent_push.sh 로 갱신하세요") : '');
+                "함대 최신은 {$latestAgent} — 다음 poll 때 자동으로 갱신됩니다") : '');
   }
   /* 자산 등급은 설정 탭으로 내려갔지만 "이 자산이 무엇인가"의 일부라 식별부에 남긴다 —
    *   옮기는 것이지 지우는 것이 아니다. 미확정이면 확정하러 갈 자리를 링크로 준다. */
