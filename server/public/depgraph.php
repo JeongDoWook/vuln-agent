@@ -255,10 +255,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
         vg_alert([
             'type'  => 'warn',
             'title' => '경로가 상한에서 잘렸습니다',
-            'hints' => [
-                '경로 ' . VG_PKGDEP_PATH_MAX . '개 · 깊이 ' . VG_PKGDEP_DEPTH_MAX . '단계까지만 보여줍니다.',
-                '순환 참조가 있으면 그 지점에서도 끊습니다.',
-            ],
+            'hints' => ['경로 ' . VG_PKGDEP_PATH_MAX . '개 · 깊이 ' . VG_PKGDEP_DEPTH_MAX . '단계까지, 순환 참조는 만나는 지점에서 끊습니다.'],
         ]);
     }
     if (count($r['paths']) === 1 && count($r['paths'][0]) === 1) {
