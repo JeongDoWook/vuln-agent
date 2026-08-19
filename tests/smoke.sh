@@ -869,11 +869,11 @@ assert_contains "$hostmanage" 'name="action" value="agent_run_now"' "자산 설�
 assert_contains "$hostmanage" 'name="action" value="agent_set_schedule"' "자산 설정 탭에 수집 주기 변경 유지"
 assert_contains "$hostmanage" 'name="action" value="host_set_grade"' "자산 설정 탭에 자산 등급 확정 유지"
 hostvuln=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
-# 즉시 실행만은 첫 화면으로 되올렸다 — 자산 상세에서 가장 자주 누르는 동작인데 '자산 설정 탭 →
-#   수집 제어 카드 → 즉시 실행' 으로 가장 깊었다. 예약·주기·속도 티어는 자주 쓰지 않아 그대로 둔다.
+# 수집 제어 카드는 탭에 묻히지 않고 어느 탭을 보든 히어로 바로 아래 상단에 뜬다 —
+#   즉시 실행뿐 아니라 예약·주기·속도 티어 폼도 첫 화면(취약점 탭)에 함께 보인다.
 assert_contains "$hostvuln" 'name="action" value="agent_run_now"' "첫 화면에 즉시 스캔 버튼"
-assert_not_contains "$hostvuln" 'name="action" value="agent_set_schedule"' "첫 화면엔 수집 주기 폼이 없다"
-assert_not_contains "$hostvuln" 'name="action" value="agent_set_speed_tier"' "첫 화면엔 속도 티어 폼이 없다"
+assert_contains "$hostvuln" 'name="action" value="agent_set_schedule"' "첫 화면에 수집 주기 폼(상단 공통 카드)"
+assert_contains "$hostvuln" 'name="action" value="agent_set_speed_tier"' "첫 화면에 속도 티어 폼(상단 공통 카드)"
 assert_contains "$hostvuln" 'tab=manage' "첫 화면에서 자산 설정 탭으로 갈 수 있다"
 # 패키지 수 열도 상세로 내려갔다(목록은 열어볼지 말지를 정하는 열만 둔다) — 링크는 호스트
 #   상세 식별부의 '패키지 N개' 가 그대로 갖는다. 목록에서 뺀 값이 상세에 있는지 같이 확인한다.

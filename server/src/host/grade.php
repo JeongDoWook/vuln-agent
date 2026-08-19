@@ -43,11 +43,10 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
               : '<span class="why">근거 부족 — 제안 없음</span>' ?></dd></div>
         </dl>
 
-        <?php /* 제안 근거를 한 줄 문자열로만 두면 사람이 "무엇 때문에 S 인가"를 못 읽는다 —
-                 등급을 만든 신호와, 등급을 만들지는 않지만 확정 회의에서 볼 신호를 갈라 보여준다.
-                 목록의 정본은 assetgrade.php 의 상수다(화면에 분류표를 늘리지 않는다). */ ?>
+        <?php /* 근거는 배지 하나로 압축한다 — 문장은 배지 title(tooltip)에 담아 정보 손실 없이
+                 서술형 나열만 없앤다. 목록의 정본은 assetgrade.php 의 상수다(분류표를 화면에 늘리지 않는다). */ ?>
         <?php if ($signals): ?>
-          <p class="why mt-lg">시스템이 본 신호 — 이 근거들 때문에 위 초안이 나왔습니다. 확정은 사람이 합니다.</p>
+          <p class="why mt-lg">시스템이 본 신호(근거는 각 배지 위에 hover)</p>
           <div class="badge-set">
             <?php foreach ($signals as $sig): ?>
               <?= vg_badge(
@@ -57,14 +56,8 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
                   ) ?>
             <?php endforeach; ?>
           </div>
-          <ul class="hint-list">
-            <?php foreach ($signals as $sig): ?>
-              <li><span class="why"><?= vg_h(($sig['grade'] !== null ? '[' . $sig['grade'] . ' 근거] ' : '[검토 신호] ')
-                  . $sig['evidence'] . ' ' . $sig['note']) ?></span></li>
-            <?php endforeach; ?>
-          </ul>
         <?php elseif ($host['grade_suggested'] ?? null): ?>
-          <p class="why mt-lg">이 스캔에서는 제안 근거 신호를 다시 읽지 못했습니다 — 위 초안은 이전 관찰 결과입니다.</p>
+          <p class="why mt-lg">이전 관찰로 만든 초안 — 이번 스캔의 근거 신호는 없음.</p>
         <?php endif; ?>
 
         <p class="why mt-lg">정보공개법 제9조 해당 여부는 C/S/O 판단 근거 중 하나이며, 법률이 C/S/O 등급을 정의하는 것은 아닙니다.</p>

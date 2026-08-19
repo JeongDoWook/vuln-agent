@@ -1,11 +1,10 @@
 <?php
 declare(strict_types=1);
 /* 자산 설정 탭 — 수집 제어 · 자산 등급 · 자산 삭제. */ ?>
-    <?php if (vg_can('assets')): ?>
-      <?php /* 처리 결과(등급 확정 포함)는 이 카드 안에서 한 번만 알린다 — 두 군데서 그리면 중복된다. */ ?>
-      <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
-    <?php else: ?>
-      <?php /* 수집 제어 카드가 없는 역할(등급만 확정하는 관리자)도 처리 결과는 봐야 한다. */ ?>
+    <?php /* 수집 제어 카드는 host.php 가 히어로 직후 상단에서 이미 그린다(어느 탭이든 공통) —
+             여기서 또 그리면 중복이다. 그 카드가 없는 역할(등급만 확정하는 관리자)만
+             처리 결과를 이 자리에서 알린다. */ ?>
+    <?php if (!vg_can('assets')): ?>
       <?php vg_alert($agentMsg, 'ok'); vg_alert($agentErr); ?>
     <?php endif; ?>
     <?php /* 자산 상세는 findings 권한만으로도 열린다(host.php: vg_require_menu_any('assets','findings')).

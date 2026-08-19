@@ -277,6 +277,12 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
       'tab' => $tab, 'agentMsg' => $agentMsg, 'agentErr' => $agentErr,
   ]); ?>
 
+  <?php /* 수집 제어는 특정 탭에 묻히지 않고 어느 탭을 보든 상단에 뜬다 — '자산 설정' 탭
+           안의 렌더는 중복이라 걷었다(tabs/manage.php). 인가는 그 파일이 갖던 것과 같다. */ ?>
+  <?php if (vg_can('assets')): ?>
+    <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
+  <?php endif; ?>
+
   <?php /* 탭 줄은 한 줄(1단)이다 — 2단(위험·구성·준거·이력 + 하위 탭)은 "탭을 타고 타고" 들어가야
            해서 오히려 멀어졌다. 억제를 취약점 탭의 필터로 내려 탭 수를 늘리지 않고 깊이만 줄인다.
            $tab 키와 각 탭의 조회 분기는 그대로다(URL 하위호환 · 쿼리는 여전히 활성 탭 하나만 돈다). */ ?>
