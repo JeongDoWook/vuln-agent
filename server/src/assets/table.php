@@ -8,6 +8,8 @@ declare(strict_types=1);
  *   색→이름 대응을 따로 설명할 자리가 아니었다.
  */
 
+require_once __DIR__ . '/../netiface.php';   // vg_iface_is_virtual() — IP 툴팁의 가상 인터페이스 필터링용
+
 /* IP 툴팁에 나열하는 주소 개수 상한. 호스트가 신고할 수 있는 주소는 최대 256개다
  *   (ingest/network.php 의 VG_HOST_ADDR_MAX_ROWS) — 그대로 이으면 툴팁이 화면을 덮는다.
  *   전체 목록은 자산 상세가 갖는다. */
@@ -67,7 +69,7 @@ function vg_assets_render_table(
         /* IP 는 <code> 로 그리는 고정 크기 값이라 % 가 아니라 rem 이다(위 폭 배분 기준).
          *   'xxx.xxx.xxx.xxx'(≈105px) + ' +5'(≈24px) + 칸 여백(.6rem×2 ≈ 19px) → 9.5rem. */
         ['label' => 'IP', 'key' => 'ip', 'width' => '9.5rem', 'nowrap' => true,
-         'title' => '호스트가 신고한 IPv4 — 대표 1개, 나머지는 +N'],
+         'title' => '호스트가 신고한 IPv4(가상 인터페이스 제외) — 대표 1개, 나머지는 +N'],
         ['label' => '상태', 'key' => 'state', 'width' => '5.5rem', 'title' => $stateHelp],
         // 등급 열도 뱃지(고정 크기)라 % 가 아니라 rem 이다 — 위 주석의 기준을 그대로 따른다.
         //   'C · 기밀'(약 62px) + 칸 여백(.6rem×2 ≈ 19px) → 5.5rem.
@@ -117,18 +119,30 @@ function vg_assets_render_table(
                     // 백필 전 자산·수집 이력이 없는 자산은 주소가 없다 — 빈 칸을 자리표시
                     //   문구로 채우지 않는다(다른 열의 '–' 와 같은 어휘).
                     if ($addrs === []) { return '<span class="why">–</span>'; }
+                    /* 툴팁도 대표 IP 와 같은 기준을 쓴다 — docker0·br-·calico 등 가상
+                     *   인터페이스는 밖에서 그 주소로 자산에 닿지 않아 나열해도 소음이다.
+                     *   전부 가상이면(가상 인터페이스뿐인 호스트) 빈 툴팁보다는 원본이 낫다. */
+                    $physical = array_values(array_filter(
+                        $addrs,
+                        static fn(array $a): bool => !vg_iface_is_virtual($a['iface'] ?? null)
+                    ));
+                    $tipAddrs = $physical !== [] ? $physical : $addrs;
+                    /* 대표 IP 는 $addrs[0] 이다 — queries.php 의 vg_assets_sort_addresses() 가
+                     *   이미 물리 인터페이스를 앞으로 정렬해 둔다. $tipAddrs 를 다시 뒤져
+                     *   대표를 고르면 같은 정책을 여기서 한 번 더 판정하는 셈이라 no-op 이고,
+                     *   대표 선정 정책은 queries.php 한 곳에만 둔다. */
                     /* 툴팁에 전부 나열하지 않는다 — 주소는 호스트당 최대 256행까지 들어올 수
                      *   있어(ingest/network.php 의 상한) 그대로 이으면 툴팁이 화면을 덮는다. */
                     $all = [];
-                    foreach (array_slice($addrs, 0, VG_ASSET_IP_TITLE_MAX) as $a) {
+                    foreach (array_slice($tipAddrs, 0, VG_ASSET_IP_TITLE_MAX) as $a) {
                         $iface = (string) ($a['iface'] ?? '');
                         $all[] = $a['ip'] . ($iface !== '' ? ' (' . $iface . ')' : '');
                     }
                     $title = implode(' · ', $all)
-                        . (count($addrs) > VG_ASSET_IP_TITLE_MAX ? ' … 외 '
-                            . (count($addrs) - VG_ASSET_IP_TITLE_MAX) . '개' : '');
+                        . (count($tipAddrs) > VG_ASSET_IP_TITLE_MAX ? ' … 외 '
+                            . (count($tipAddrs) - VG_ASSET_IP_TITLE_MAX) . '개' : '');
                     $html = '<code title="' . vg_h($title) . '">' . vg_h($addrs[0]['ip']) . '</code>';
-                    $rest = count($addrs) - 1;
+                    $rest = count($tipAddrs) - 1;
                     if ($rest > 0) {
                         // 숫자만 남는 자리라 title 로 무엇을 세는지 밝힌다(접근성).
                         $html .= ' <span class="why" title="' . vg_h($title) . '">+' . $rest . '</span>';
