@@ -1006,6 +1006,9 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
  * 좁아지면 도넛 아래로 목록이 내려간다(wrap) — 목록은 잘리면 안 되는 정보다. */
 .donut-kpi { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .donut--kpi { flex: none; }
+/* 그릴 조각이 0 일 때(심각도 도넛에서 조치 대상이 없을 때) 고리 대신 세우는 상태.
+ * 빈 고리는 "고장난 화면" 으로 읽힌다. 자리는 도넛과 같게 잡아 옆 목록이 위아래로 튀지 않게 한다. */
+.donut--none { min-width: 8.25rem; min-height: 8.25rem; padding: 0 var(--sp-2); }
 a.donut--kpi { text-decoration: none; color: inherit; }
 .donut-kpi__list { display: grid; gap: .15rem; flex: 1 1 9rem; min-width: 0; }
 .donut-kpi__seg {
@@ -1082,12 +1085,16 @@ a.donut-kpi__seg:hover { background: var(--surface-2); color: var(--text); }
 
 /* 심각도 구성 막대(가로 누적) — 표의 한 행에서 "누가 더 나쁜지" 를 눈으로 보게 한다.
  * 폭은 PHP 가 인라인 style="width:N%" 로 준다(값이라서 CSS 가 가질 수 없다). */
-.riskbar { display: flex; gap: 2px; height: 5px; margin-bottom: .35rem; max-width: 190px; }
+/* 바탕(트랙)이 있어야 "덜 찬 막대" 가 보인다 — 막대는 행 자기 합이 아니라 **표에서 가장 나쁜
+ * 행**을 100%로 잡으므로(vg_sev_bar), 남는 자리가 곧 "저 행보다 이만큼 낫다" 라는 정보다.
+ * 트랙은 --line-2 다 — --sunken(도넛 고리 바탕)은 다크에서 카드 배경과 거의 같은 값(#11151b)
+ * 이라 5px 짜리 이 막대에서는 아예 안 보였다(실측). 톤 색보다 확실히 뒤로 물러나되 보이긴 한다. */
+.riskbar { display: flex; gap: 2px; height: 5px; margin-bottom: .35rem; max-width: 190px;
+           background: var(--line-2); border-radius: 2px; }
 .riskbar i { border-radius: 2px; min-width: 3px; }
 .riskbar .tone-crit { background: var(--crit); }
 .riskbar .tone-high { background: var(--high); }
 .riskbar .tone-med  { background: var(--med); }
-.riskbar .tone-low  { background: var(--low); }
 /* 도넛 옆 범례(.legend)를 한 줄로 눕힌 변형 — 누적막대 아래처럼 가로로 놓일 때 쓴다.
  * 톤 색은 아래 .legend .tone-* 정의를 그대로 상속한다(색 정의를 다시 만들지 않는다). */
 .legend--inline { display: flex; flex-wrap: wrap; gap: .2rem .9rem; margin-top: 0; }

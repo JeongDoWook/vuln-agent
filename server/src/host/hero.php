@@ -120,22 +120,18 @@ function vg_host_render_hero(array $ctx): void {
    *     여기는 탭에 들어가기 전에 "얼마나 나쁜가"를 형태로 보는 자리다.
    *   오른쪽(카드 줄): 분포로는 못 읽는 축(악용·노출·설정) — 서로 모집단이 달라서
    *     한 도넛에 넣으면 구성이 아닌 것을 구성처럼 그리게 된다. 여기는 숫자와 링크로 둔다.
-   *   $counts 는 히어로 톤·'최고 위험도' 뱃지도 계속 쓴다. */
-  $heroSeverity = [];
-  foreach (VG_TONE_SEV as $heroSev => $heroTone2) {
-      $heroSeverity[] = [
-          'label' => $heroSev,
-          'value' => (int) ($counts[$heroSev] ?? 0),
-          'tone'  => $heroTone2,
-          'href'  => vg_qs(['tab' => 'vuln', 'sev' => $heroSev, 'page' => null, 'q' => null]),
-      ];
-  }
+   *   $counts 는 히어로 톤·'최고 위험도' 뱃지도 계속 쓴다.
+   *   고리는 조치 대상(C·H·M)만 그린다 — 이 자산 실측이 LOW 4,481 : HIGH 186 : MEDIUM 153
+   *     이라 같이 그리면 고리가 통째로 회색이었다(vg_sev_donut 주석). LOW 는 목록에 남는다. */
   ?>
   <div class="card">
     <div class="card__body split">
-      <?php vg_donut_kpi('이 자산의 등급 구성', $heroSeverity, [
-          'center_label' => '탐지 전체',
-          'href'         => vg_qs(['tab' => 'vuln', 'page' => null, 'q' => null]),
+      <?php vg_sev_donut($counts, 132, [
+          'title' => '이 자산의 등급 구성',
+          'href'  => vg_qs(['tab' => 'vuln', 'page' => null, 'q' => null]),
+          'seg'   => fn(string $heroSev): array => [
+              'href' => vg_qs(['tab' => 'vuln', 'sev' => $heroSev, 'page' => null, 'q' => null]),
+          ],
       ]); ?>
       <div class="cards">
         <div class="kpi kpi--sm tone-<?= $kevCount > 0 ? 'crit' : 'muted' ?>"

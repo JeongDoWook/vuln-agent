@@ -69,20 +69,18 @@
      *   보다 크게 읽혔다). 도넛은 **면적이 곧 건수**라 그 착시가 구조적으로 사라지고,
      *   서열은 색(LOW 는 채도 없는 회청)이 그대로 지킨다.
      * 0건인 등급도 목록에는 남는다 — 0건은 "안전"이 아니라 "지금 볼 것이 없음"이고,
-     *   그 자리가 사라지면 네 등급이 다 있는지조차 알 수 없다. */
-    $sevSegments = [];
-    foreach (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as $sevKey) {
-        $sevSegments[] = [
-            'label'    => $sevKey,
-            'value'    => (int) $counts[$sevKey],
-            'tone'     => vg_sev_tone($sevKey),
+     *   그 자리가 사라지면 네 등급이 다 있는지조차 알 수 없다.
+     * 고리는 조치 대상(C·H·M)만 그린다 — LOW 가 압도적이라 같이 그리면 나머지가 실오라기가
+     *   된다(vg_sev_donut 주석). LOW 는 목록 행으로 남고 전체 건수는 위 KPI 가 갖는다. */
+    vg_sev_donut($counts, 132, [
+        'title' => '등급 구성',
+        'seg'   => fn(string $sevKey, int $n): array => [
             'href'     => vg_qs(['sev' => $sev === $sevKey ? '' : $sevKey, 'page' => 1]),
             'selected' => $sev === $sevKey,
-            'title'    => $sevKey . ' ' . number_format((int) $counts[$sevKey]) . '건'
+            'title'    => $sevKey . ' ' . number_format($n) . '건'
                         . ($sev === $sevKey ? ' · 선택 해제' : ' 만 보기'),
-        ];
-    }
-    vg_donut_kpi('등급 구성', $sevSegments, ['center_label' => '탐지 전체']);
+        ],
+    ]);
     ?>
     </div>
   </div>

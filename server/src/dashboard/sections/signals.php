@@ -16,19 +16,7 @@ declare(strict_types=1);
  */
 function vg_dash_render_signals(array $totals, array $runtime, int $kevCount,
                                 int $kevOverdue, int $kevSlaDays): void {
-  $allCount  = array_sum($totals);
   $highPlus  = (int) $totals['CRITICAL'] + (int) $totals['HIGH'];
-
-  // ① 등급 구성 — 조각을 누르면 그 등급만 걸러 본다(숫자와 목적지가 이어진다).
-  $sevSegments = [];
-  foreach (VG_TONE_SEV as $sev => $tone) {
-      $sevSegments[] = [
-          'label' => $sev,
-          'value' => (int) ($totals[$sev] ?? 0),
-          'tone'  => $tone,
-          'href'  => '/findings.php?sev=' . urlencode($sev),
-      ];
-  }
 
   // ② 실행 상태 구성 — "깔려만 있는가" 와 "밖에서 닿는가" 는 같은 1건이 아니다.
   //    톤은 findings/tabs/exposure.php 의 범위 색과 같은 서열을 쓴다(화면마다 색이 갈리지 않게).
@@ -66,10 +54,13 @@ function vg_dash_render_signals(array $totals, array $runtime, int $kevCount,
     <span class="why">자산 전체의 최신 스캔 기준 · <a href="/findings.php">전체 목록 보기 →</a></span>
     <div class="card__body">
       <div class="kpi-donuts">
-        <?php vg_donut_kpi('등급 구성', $sevSegments, [
-            'center'       => number_format($allCount),
-            'center_label' => '탐지 전체',
-            'href'         => '/findings.php',
+        <?php /* ① 등급 구성 — 고리는 조치 대상(C·H·M)만 그린다(vg_sev_donut 주석 참조).
+                 LOW 는 오른쪽 목록에 건수로 남고, 전체 건수는 위 퍼널의 '탐지된 전체' 가 갖는다.
+                 조각을 누르면 그 등급만 걸러 본다(숫자와 목적지가 이어진다). */ ?>
+        <?php vg_sev_donut($totals, 132, [
+            'title' => '등급 구성',
+            'href'  => '/findings.php',
+            'seg'   => fn(string $sev): array => ['href' => '/findings.php?sev=' . urlencode($sev)],
         ]); ?>
         <?php vg_donut_kpi('실행 상태 구성', $rtSegments, [
             'center'       => number_format(array_sum($runtime)),

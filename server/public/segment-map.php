@@ -124,6 +124,9 @@ try {
     }
     $scanIds = array_values(array_unique(array_values($scanByHost)));
     $sevByScan = vg_sev_by_scan_ids($pdo, $scanIds);
+    // 위험 분포 막대의 공통 분모 — 이 화면에 그려지는 호스트 중 조치 대상이 가장 많은 값.
+    //   행(카드)마다 자기 합으로 잡으면 카드끼리 위험도가 비교되지 않는다(vg_sev_bar 주석).
+    $riskScale = vg_sev_bar_scale($sevByScan);
 
     // 외부노출(EXTERNAL) 건수도 배치로 — 호스트마다 따로 부르면 세그먼트 화면이 N+1 이 된다.
     $extByScan = [];
@@ -223,8 +226,10 @@ vg_header('세그먼트 맵', 'segment_map');
                       </div>
                     </div>
                     <div class="ctrcard__risk">
+                      <?php /* 막대는 조치 대상(C·H·M)만 그린다 — LOW 만 있는 호스트는
+                               vg_sev_bar 가 'LOW만' 로 돌려주므로 빈 막대가 되지 않는다. */ ?>
                       <?php if ($sevSum > 0): ?>
-                        <?= vg_sev_bar($sev) ?>
+                        <?= vg_sev_bar($sev, $riskScale) ?>
                       <?php else: ?>
                         <span class="why">판정된 취약점 없음</span>
                       <?php endif; ?>
