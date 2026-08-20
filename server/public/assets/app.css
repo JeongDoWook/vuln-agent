@@ -1520,9 +1520,8 @@ tr[data-finding-detail]:focus-visible {
   margin-bottom: 1rem;
 }
 .finding-detail__summary strong { font-size: var(--fs-lg); }
-/* 라벨-값 격자. 취약점 상세 모달에서 시작했지만 자산 등급 카드도 같은 모양이 필요해
- *   중립적인 이름(.fact-grid)을 정의로 두고 기존 이름을 별칭으로 남긴다(정의는 한 벌). */
-.fact-grid,
+/* 라벨-값 격자(취약점 상세 모달). 자산 등급 카드도 한때 같은 격자(.fact-grid 별칭)를 썼지만,
+ *   여섯 칸 중 다섯이 '–' 로 비는 자산이 대부분이라 한 줄 요약(.grade-summary)으로 접었다. */
 .finding-detail__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1533,16 +1532,15 @@ tr[data-finding-detail]:focus-visible {
   border-radius: var(--r-sm);
   background: var(--line);
 }
-.fact-grid > div,
 .finding-detail__grid > div { min-width: 0; padding: .85rem 1rem; background: var(--surface-2); }
-.fact-grid dt,
 .finding-detail__grid dt { margin-bottom: .3rem; color: var(--muted); font-size: var(--fs-sm); font-weight: 700; }
-.fact-grid dd,
 .finding-detail__grid dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
+/* 자산 등급의 현재 사실 한 줄 — 배지와 글자가 같은 줄에 선다(정의목록을 접은 자리). */
+.grade-summary { margin: 0 0 var(--sp-4); color: var(--text-2); font-size: var(--fs-md); line-height: 1.9; }
 .finding-detail__section { padding: 1rem; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .finding-detail__section + .finding-detail__section { margin-top: .75rem; }
 .finding-detail__section p { margin: .45rem 0 0; color: var(--muted); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .fact-grid, .finding-detail__grid { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .finding-detail__grid { grid-template-columns: 1fr; } }
 
 /* --- 알림 ---------------------------------------------------------------- */
 .alert {
@@ -1694,8 +1692,6 @@ td.right .actions { justify-content: flex-end; }
 }
 .agent-control__status span { width: .45rem; height: .45rem; border-radius: 50%; background: var(--ok); }
 .agent-control .card__body { padding: .25rem 1.35rem .4rem; }
-.agent-control__facts { display: flex; flex-wrap: wrap; gap: .45rem 1.25rem; padding: .75rem 0 .5rem; color: var(--muted); font-size: var(--fs-xs); }
-.agent-control__facts b { margin-right: .3rem; color: var(--text-2); }
 .agent-progress {
   margin: 1rem 0 .25rem;
   padding: .9rem 1rem;
@@ -1753,17 +1749,28 @@ td.right .actions { justify-content: flex-end; }
 .collection-item__stage { color: var(--text-2); font-weight: 650; }
 .collection-item__link { position: absolute; inset: 0; border-radius: inherit; }
 .collection-item__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.actions--stack > form.agent-control__row {
+/* 수집 제어 네 조작(즉시·예약·주기·티어) — 한 줄에 두 칸. 예전엕 .actions--stack 으로
+   한 조작이 한 줄을 통째로 썼는데, 입력 하나에 버튼 하나뿐이라 오른쪽 절반이 늘 비었다.
+   칸 안은 라벨이 윗줄, 그 아래가 [입력][버튼] 두 칸이다. */
+.agent-control__grid {
   display: grid;
-  grid-template-columns: minmax(11rem, 1fr) minmax(13rem, 17rem) 4.5rem;
-  align-items: center;
-  gap: 1rem;
-  min-height: 5.2rem;
-  padding: .8rem 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--sp-6);
+  padding: var(--sp-2) 0 var(--sp-1);
 }
-.agent-control__row label { margin: 0; min-width: 0; }
+.agent-control__grid > form.agent-control__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.5rem;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+  padding: var(--sp-4) 0;
+  border-top: 1px solid var(--line);
+}
+/* 첫 줄의 두 칸은 카드 머리 바로 아래라 구분선을 안 그린다. */
+.agent-control__grid > form.agent-control__row:nth-child(-n+2) { border-top: none; }
+.agent-control__row label { grid-column: 1 / -1; margin: 0; min-width: 0; }
 .agent-control__row label strong { display: block; color: var(--text); font-size: var(--fs-md); }
-.agent-control__row label span { display: block; margin-top: .25rem; color: var(--muted); font-size: var(--fs-sm); }
 .agent-control__row input:not([type=hidden]),
 .agent-control__row select,
 .agent-control__row .flatpickr-wrapper { width: 100%; max-width: none; }
@@ -1830,8 +1837,11 @@ span.flatpickr-weekday { color: var(--muted); font-size: var(--fs-xs); }
 @media (max-width: 640px) {
   .agent-control__heading { align-items: flex-start; }
   .agent-control__status { display: none; }
-  .actions--stack > form.agent-control__row { grid-template-columns: 1fr auto; gap: .65rem; padding: 1rem 0; }
-  .agent-control__row label { grid-column: 1 / -1; }
+  .agent-control__grid { grid-template-columns: 1fr; gap: 0; }
+  .agent-control__grid > form.agent-control__row { grid-template-columns: 1fr auto; gap: .65rem; padding: 1rem 0; }
+  /* 한 열에서는 두번째 칸도 윗 칸과 줄이 다르다 — 구분선을 돌려놓는다. */
+  .agent-control__grid > form.agent-control__row:nth-child(2) { border-top: 1px solid var(--line); }
+  .agent-control__grid > form.agent-control__row:first-child { border-top: none; }
   .agent-control__row .btn { width: auto; min-width: 4.5rem; }
   .agent-control__row:first-child .btn { grid-column: 2; }
   .agent-progress__meta { align-items: flex-start; flex-direction: column; gap: .25rem; }
@@ -2303,6 +2313,23 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--host .stat, .page--cve .stat, .page--compliance_rule .stat,
 .page--control .stat { padding: 1rem 1.15rem; border-right: 1px solid var(--line); }
 
+/* 우선순위 취약점 표(자산 상세 · 취약점 탭) — 칸마다 줄바꿈이 달라 행 높이가 1~3줄로
+ * 제각각이었다(패키지 버전이 접히고, 근거 한 칸이 세 줄을 먹었다). 폭을 열 머리가 준 비율로
+ * 고정하고 모든 칸을 한 줄로 눕힌다 — 넘치는 값은 말줄임하고 원문은 title 과 행을 눌러 여는
+ * 상세 모달이 갖는다. table-layout:fixed 라 칸끼리 남는 폭을 다투지 않으므로, 근거 칸이 두
+ * 글자에서 끊기던 옛 사고(auto 레이아웃에서 그 칸의 최소폭이 0 이 되던 것)가 재발하지 않는다. */
+.vuln-table { table-layout: fixed; }
+.vuln-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+
+/* 자산 설정 탭 머리 — 자산 삭제는 페이지 맨 아래 구석에 있어 안 보였다. 탭 상단 우측으로
+ * 올리되 위험 톤(.btn--danger)과 확인 대화상자(data-confirm)는 그대로 둔다. */
+.manage-head { display: flex; justify-content: flex-end; margin-bottom: var(--sp-3); }
+.manage-head form { margin: 0; }
+
+/* CVE 상세: 히어로와 바로 아래 판단 신호 네 칸이 붙어 보였다 — 이 화면에서만 한 단 벌린다
+ * (히어로 공통 여백 --sp-3 은 자산 상세처럼 뒤에 탭 줄이 오는 화면 기준이다). */
+.page--cve .hero { margin-bottom: var(--sp-5); }
+
 /* 관리 화면: 열이 많아 본문 폭을 넓게 쓴다(작업 열 정렬은 위 td.right .actions 가 소유한다). */
 .page--connectors .page__main, .page--users .page__main, .page--permissions .page__main,
 .page--agent-tokens .page__main { max-width: 1520px; }
@@ -2617,6 +2644,7 @@ form.card .btn--primary:active { transform: translateY(0); }
   /* 룰 ID 처럼 긴 <code> 는 nowrap 이면 카드를 뚫는다 — 카드형에선 접게 둔다(폭이 곧 화면 폭이라). */
   .data-table td code { white-space: normal; }
   .data-table .clamp-2 { display: block; overflow: visible; }
+  .vuln-table td { overflow: visible; vertical-align: baseline; }
   .data-table .pill.clamp-2 { display: inline-block; }   /* 알약은 카드형에서도 내용만큼만 */
   .data-table td + td { border-top: 1px solid var(--line); }
   .data-table td::before { content: attr(data-label); color: var(--muted); font-size: var(--fs-xs); font-weight: 650; }
