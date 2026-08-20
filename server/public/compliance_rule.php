@@ -98,7 +98,7 @@ if ($rule) {
         '점검된 자산 ' . number_format($hostCount) . '대'
     );
 }
-vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도', 'COMPLIANCE DETAIL');
+vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도');
 ?>
 
 <?php if ($rule === null): ?>

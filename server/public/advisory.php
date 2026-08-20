@@ -148,8 +148,7 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
       $meta,
       $cveTotal ? 'CVE ' . number_format($cveTotal) . '건' : 'CVE 없음',
       $cveTotal ? ($kevTotal > 0 ? 'crit' : 'info') : 'muted',
-      '관련 취약점',
-      'ADVISORY DETAIL'
+      '관련 취약점'
   );
   ?>
 

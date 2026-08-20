@@ -37,12 +37,15 @@ function vg_page_title(string $title, string $eyebrow, array $opts = []): void {
 /**
  * 상세 페이지 히어로 — "무엇을 보고 있나(좌) + 얼마나 위험한가(우)".
  * 왼쪽 띠 색이 위험도다. host.php 가 인라인으로 갖고 있던 것을 공용으로 뺐다.
- *   $title·$meta 는 이미 이스케이프된 HTML (호출부가 vg_h 책임 — 링크·뱃지를 섞어 넣어야 해서).
+ *   $title·$meta·$actions 는 이미 이스케이프된 HTML (호출부가 vg_h 책임 — 링크·뱃지·폼을
+ *   섞어 넣어야 해서). $actions 는 그대로 echo 되므로 호출부가 안전한 HTML 을 만들어
+ *   넘겨야 한다 — 사용자 입력을 그대로 흘리면 안 되고, 반드시 vg_h() 로 이스케이프한 뒤
+ *   조립한 문자열이어야 한다.
  *   $riskLabel 이 null 이면 위험도 칸 없이 식별부만.
  *   $riskTone 은 톤 어휘(crit/high/med/low/ok/muted). 라벨과 톤을 분리한 건 "양호" 처럼
  *   심각도 어휘에 없는 라벨을 써야 할 때가 있기 때문이다(vg_sev_tone 은 그걸 muted 로 떨군다).
  */
-function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, string $riskTone = 'ok', string $riskCap = '최고 위험도', string $eyebrow = 'DETAIL'): void {
+function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, string $riskTone = 'ok', string $riskCap = '최고 위험도', ?string $actions = null): void {
     echo '<div class="hero hero--' . vg_h($riskLabel !== null ? $riskTone : 'ok') . '">';
     echo '<div class="hero__id"><h1>' . $title . '</h1>';
     if ($meta) {
@@ -52,6 +55,9 @@ function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, str
     if ($riskLabel !== null) {
         echo '<div class="hero__risk"><span class="badge tone-' . vg_h($riskTone) . ' badge--lg">' . vg_h($riskLabel) . '</span>'
             . '<span class="cap">' . vg_h($riskCap) . '</span></div>';
+    }
+    if ($actions !== null) {
+        echo '<div class="hero__actions">' . $actions . '</div>';
     }
     echo '</div>';
 }
