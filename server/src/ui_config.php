@@ -37,6 +37,12 @@ function vg_ui_per_page_default(): int {
     return in_array($configured, $options, true) ? $configured : $options[0];
 }
 
+/**
+ * 대시보드 '주요 취약점 신호' 표시 건수. **지금은 부르는 곳이 없다** — 그 카드가 상위 N건
+ * 나열에서 구성(도넛 KPI)으로 바뀌면서 자를 목록 자체가 없어졌다. 설정과 테스트는 남긴다:
+ * 값의 범위 계약을 tests/ui_config_test.php 가 검증하고 있고, 목록형 카드가 다시 서면
+ * 그때 이 값을 그대로 쓴다. 정리할 거면 문서(docs/ui-configuration.md)·테스트와 함께 뺀다.
+ */
 function vg_ui_dashboard_urgent_limit(): int {
     return vg_ui_int('UI_DASHBOARD_URGENT_LIMIT', 6, 3, 30);
 }

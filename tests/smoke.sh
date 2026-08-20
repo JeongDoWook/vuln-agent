@@ -894,7 +894,8 @@ assert_contains "$resredir" "302" "옛 리소스 탭 URL 이 302 로 응답"
 assert_contains "$resredir" "tab=scans" "옛 리소스 탭 URL 이 스캔 이력 탭으로 이동"
 scansbody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=scans")
 assert_contains "$scansbody" "스캔 이력" "스캔 이력 탭 표시"
-assert_contains "$scansbody" "에이전트 메모리 사용률" "스캔 이력 탭이 리소스 추이를 함께 보여준다"
+# 메모리·CPU 는 한 차트 두 계열로 합쳤다(둘 다 단위가 %라 한 축에 얹어도 값이 안 거짓말한다).
+assert_contains "$scansbody" "에이전트 리소스 사용률" "스캔 이력 탭이 리소스 추이를 함께 보여준다"
 assert_not_contains "$scansbody" 'href="?tab=resources"' "리소스 탭이 탭 줄에서 사라졌다"
 packagebody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=packages")
 assert_contains "$packagebody" '설치 패키지' "자산 상세 설치 패키지 탭 표시"

@@ -20,7 +20,7 @@ vg_require_menu('dashboard');
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
-$kevCount = 0; $kevOverdue = 0; $urgent = []; $urgentTotal = 0;
+$kevCount = 0; $kevOverdue = 0; $runtime = [];
 $kevSlaDays = 0;   // KEV 조치 기한(일) — 퍼널 4번 칸 라벨이 이 숫자를 그대로 말한다
 $trend = [];
 $page = vg_page();
@@ -29,9 +29,8 @@ try {
     $pdo = vg_pdo();
     $hostCount = vg_dash_host_count($pdo);
 
-    ['totals' => $totals, 'kev' => $kevCount] = vg_dash_severity_totals($pdo);
+    ['totals' => $totals, 'kev' => $kevCount, 'runtime' => $runtime] = vg_dash_severity_totals($pdo);
     ['overdue' => $kevOverdue, 'slaDays' => $kevSlaDays] = vg_dash_kev_overdue($pdo);
-    ['rows' => $urgent, 'total' => $urgentTotal] = vg_dash_urgent($pdo);
 
     $trend = vg_dash_trend($pdo, VG_TREND_DAYS);
 
@@ -54,7 +53,7 @@ vg_header('대시보드', 'dashboard');
            배경(추세)과 전수 목록(호스트)이 아래다. */ ?>
   <?php vg_dash_render_funnel($totals, $hostCount, $kevCount, $kevOverdue, $kevSlaDays); ?>
 
-  <?php vg_dash_render_signals($urgent, $urgentTotal); ?>
+  <?php vg_dash_render_signals($totals, $runtime, $kevCount, $kevOverdue, $kevSlaDays); ?>
 
   <?php vg_dash_render_trend($trend, VG_TREND_DAYS); ?>
 

@@ -135,7 +135,11 @@ $check(!in_array(false, $positions, true) && $positions === array_values($positi
 $check(str_contains($signalHtml, '해당 없음') && str_contains($signalHtml, '미제공')
     && !str_contains($signalHtml, '출력 금지'), '판단 신호 비해당·미제공·axis 화이트리스트');
 $check(str_contains($signalHtml, '&lt;외부&gt;') && !str_contains($signalHtml, 'tone-evil'), '판단 신호 이스케이프·tone 화이트리스트');
-$check(str_contains($chartsPhp, '$min = 0.0;') && str_contains($chartsPhp, '$max = 100.0;'),
+/* 사용률 차트는 관측 구간으로 자동 확대하면 0.6%도 꼭대기에 붙어 실제 부하가 큰 것처럼
+ *   보인다 — 축을 0~100 으로 못박는 것이 이 차트의 계약이다. 추이가 Chart.js 로 옮겨간
+ *   뒤로는 화면이 y_max 를 주고(scans 탭) 차트 헬퍼가 그것을 축 상한으로 꽂는다. */
+$scansTabPhp = (string) file_get_contents($root . '/server/src/host/tabs/scans.php');
+$check(str_contains($scansTabPhp, "'y_max' => 100") && str_contains($chartsPhp, "\$yScale['max']"),
     '에이전트 리소스 사용률 차트 0~100% 절대 축');
 // connectors.php 는 자기 속을 server/src/connectors/** 로 나눠 뒀다 — 화면의 계약은 그 묶음 전체다.
 $connectorPhp = $splitSources($public, $root, 'connectors.php', 'connectors');

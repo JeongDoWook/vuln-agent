@@ -38,7 +38,28 @@
       </div>
 
       <div class="sub">① 미해결 취약점 수 추이</div>
-      <div class="card"><?php vg_count_trend($trendRounds); ?></div>
+      <div class="card"><div class="card__body">
+      <?php
+      /* x 라벨은 **회차 번호**다. 같은 날 여러 번 수집하는 자산이 흔해서 날짜를 라벨로 쓰면
+       *   두 회차가 한 점으로 합쳐진다(라벨이 곧 x 좌표다). 수집 시각은 아래 ③ 요약표가 갖는다.
+       * collected_at 이 NULL/빈값인 회차(에이전트 파싱 실패)는 건너뛴다 — 실제로 없는 시점을
+       *   이으면 없는 데이터가 있는 것처럼 보인다. */
+      $trendPoints = [];
+      foreach ($trendRounds as $r) {
+          if ($r['collected_at'] === null || $r['collected_at'] === '') { continue; }
+          $trendPoints[] = ['d' => (int) $r['round'] . '회차', 'v' => (int) $r['unresolved']];
+      }
+      vg_multi_trend([['name' => '미해결', 'points' => $trendPoints]], [
+          'unit'  => '건',
+          'alt'   => '회차별 미해결 취약점 수 추이',
+          'empty' => [
+              'icon'  => 'chart',
+              'title' => '그래프를 그리기엔 회차 이력이 부족합니다.',
+              'hint'  => '스캔이 2회차 이상 쌓이면 여기에 추이가 표시됩니다.',
+          ],
+      ]);
+      ?>
+      </div></div>
 
       <div class="sub">② 회차별 신규·해결</div>
       <div class="card"><?php vg_change_bars($trendRounds); ?></div>
