@@ -27,8 +27,14 @@ require_once __DIR__ . '/feeds/http.php';   // vg_http_json — 타임아웃·�
  *   운영 서버 실측(2026-08-20)에서 http://172.17.0.1:8000/health 만 200 이었다.
  */
 const VG_REPORT_API_BASE_URL = 'http://172.17.0.1:8000';
-const VG_REPORT_POLL_INTERVAL_SECONDS = 3;
-const VG_REPORT_POLL_MAX_ATTEMPTS = 60;
+/* 폴링 창(간격 × 최대 횟수)은 **보고서가 실제로 만들어지는 시간**에 맞춘다. AI 본문이 붙으면
+   생성에 몇 분씩 걸리므로 5초 × 720회 = 60분을 기본으로 잡는다(처음엔 3초 × 60회 = 3분이었는데,
+   그 시점엔 외부가 더미 응답을 5초에 돌려주고 있어서 실제 소요시간을 몰랐다).
+   간격을 3초가 아니라 5초로 둔 이유: 폴링 한 번이 우리 프록시를 거쳐 외부 API 를 친다.
+   같은 60분을 3초로 버티면 1200회를 치는데 5초면 720회로 줄고, 체감 지연은 2초만 늘어난다.
+   상한에 걸려도 job 은 서버에 남아 나중에 그 화면에서 이어 볼 수 있다(유실 아님). */
+const VG_REPORT_POLL_INTERVAL_SECONDS = 5;
+const VG_REPORT_POLL_MAX_ATTEMPTS = 720;
 
 /** 외부 API 한 번 호출의 응답 대기 상한(초). 화면이 프록시 응답을 기다리는 시간이라 짧게 잡는다. */
 const VG_REPORT_HTTP_TIMEOUT = 10;

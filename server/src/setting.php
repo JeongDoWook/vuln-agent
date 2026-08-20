@@ -98,7 +98,7 @@ function vg_setting_defs(): array {
             'desc'  => '보고서 생성 중일 때 화면이 상태를 다시 물어보는 간격.',
         ],
         'report.poll_max_attempts' => [
-            'label' => '진행 확인 최대 횟수', 'type' => 'int', 'min' => 1, 'max' => 600,
+            'label' => '진행 확인 최대 횟수', 'type' => 'int', 'min' => 1, 'max' => 2000,
             'group' => 'report', 'default_const' => 'VG_REPORT_POLL_MAX_ATTEMPTS',
             'desc'  => '이 횟수를 넘으면 확인을 멈춥니다(작업은 서버에 남아 나중에 다시 볼 수 있습니다).',
         ],
