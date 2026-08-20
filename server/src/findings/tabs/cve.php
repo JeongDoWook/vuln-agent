@@ -1,8 +1,8 @@
 <?php
 /**
- * findings/tabs/cve.php — CVE 탭(경고 · 행동 큐 · 등급 카드 · 툴바 · 표).
+ * findings/tabs/cve.php — CVE 탭(경고 · 등급·노출 도넛 · 조치 성격 · 툴바 · 표).
  *   쓰는 값(findings.php 가 $ctx 로 넘긴다):
- *     $unsupBy $actionCounts $counts $notes $firstSeen $policy
+ *     $unsupBy $actionCounts $runtimeCounts $counts $notes $firstSeen $policy
  *     $rows $total $page $perPage $scan $scanId $hostId $hostOptions
  *     $q $sev $st $fx $fst $sort $stOptions
  */
@@ -46,11 +46,12 @@
   endif; ?>
 
   <?php
-  /* 등급 도넛과 우선순위 필터를 **한 줄에 반반**으로 세운다.
-   *   예전엔 KPI 줄이 화면 폭을 통째로 한 줄, 등급 도넛 카드가 또 한 줄을 먹어서
-   *   목록이 두 칸 아래로 밀렸다(실측: 카드 5장 + 도넛 카드 = 2줄). 두 덩어리는 같은 질문
-   *   ("지금 무엇부터 보나")에 답하므로 같은 줄에 놓는 게 맞다 — .kpi-donuts 는 칸이
-   *   모자라면 알아서 아래로 접어(auto-fit) 좁은 화면에선 예전처럼 위아래로 선다.
+  /* 등급 도넛과 우선순위 필터를 **한 줄**에 세운다 — 등급 구성 도넛 · 노출 상태 도넛 ·
+   *   도넛으로 못 그리는 수치 목록. 셋 다 같은 질문("지금 무엇부터 보나")에 답한다.
+   *   예전엔 KPI 줄이 화면 폭을 통째로 한 줄, 등급 도넛 카드가 또 한 줄을 먹어서 목록이 두 칸
+   *   아래로 밀렸다(실측: 카드 5장 + 도넛 카드 = 2줄). 그 뒤 한 줄로 합쳤지만 **왼쪽은 도넛,
+   *   오른쪽은 네모 카드 5장**이라 한 줄에 어휘가 둘이었다 — 이번에 오른쪽을 도넛 어휘로 맞춘다.
+   *   .kpi-donuts 는 칸이 모자라면 알아서 아래로 접어(auto-fit) 좁은 화면에선 위아래로 선다.
    *   data-action-queue 는 계약이다(tests/ui_structure_test.php 가 이 자리를 확인한다). */
   ?>
   <section class="card" data-action-queue aria-label="우선순위 필터">
@@ -65,34 +66,67 @@
      * 0건인 등급도 목록에는 남는다 — 0건은 "안전"이 아니라 "지금 볼 것이 없음"이고,
      *   그 자리가 사라지면 네 등급이 다 있는지조차 알 수 없다.
      * 고리는 조치 대상(C·H·M)만 그린다 — LOW 가 압도적이라 같이 그리면 나머지가 실오라기가
-     *   된다(vg_sev_donut 주석). LOW 는 목록 행으로 남고 전체 건수는 옆 타일이 갖는다. */
+     *   된다(vg_sev_donut 주석). LOW 는 목록 행으로 남고 전체 건수는 아래 표의 총계가 갖는다.
+     * sev=HIGH+ 로 들어오면(대시보드 퍼널 2번 칸) CRITICAL·HIGH 두 줄을 **함께 선택 표시**한다 —
+     *   합산 필터가 걸린 것을 화면 어디서도 못 보면 "왜 918건만 나오지" 가 된다. 그 상태에서
+     *   한 줄을 누르면 그 등급으로 좁혀지고, 같은 줄을 다시 누르면 등급 필터가 풀린다. */
+    $sevPicked = fn(string $k): bool => $sev === $k
+        || ($sev === 'HIGH+' && ($k === 'CRITICAL' || $k === 'HIGH'));
     vg_sev_donut($counts, 132, [
         'title' => '등급 구성',
         'seg'   => fn(string $sevKey, int $n): array => [
             'href'     => vg_qs(['sev' => $sev === $sevKey ? '' : $sevKey, 'page' => 1]),
-            'selected' => $sev === $sevKey,
+            'selected' => $sevPicked($sevKey),
             'title'    => $sevKey . ' ' . number_format($n) . '건'
                         . ($sev === $sevKey ? ' · 선택 해제' : ' 만 보기'),
         ],
     ]);
-    /* 오른쪽 반쪽 — 도넛으로 못 그리는 축들이다. 넷은 서로 모집단이 달라(악용·노출·재시작은
-     *   등급과 독립) 한 도넛에 넣으면 구성이 아닌 것을 구성처럼 그리게 된다. 숫자 타일로 둔다.
-     * 'High 이상' 은 왼쪽 도넛의 CRITICAL+HIGH 와 같은 값이지만 **남긴다** — 이 화면에서
-     *   sev=HIGH+ 합산 필터로 가는 문이 여기 하나뿐이고(툴바의 sev 는 hidden 이다),
-     *   카드를 지우면 숫자가 아니라 **필터가** 사라진다. */
-    vg_kpi_strip([
-        ['label' => 'High 이상', 'value' => number_format($actionCounts['high']), 'tone' => 'high', 'icon' => 'severity',
-         'href' => vg_qs(['sev' => 'HIGH+', 'fx' => null, 'st' => null, 'page' => 1]), 'selected' => $sev === 'HIGH+'],
-        ['label' => '기한 초과', 'value' => number_format($actionCounts['overdue']), 'tone' => 'crit', 'icon' => 'action',
-         'href' => vg_qs(['sev' => 'HIGH+', 'fx' => 'overdue', 'sort' => 'due', 'st' => null, 'page' => 1]), 'selected' => $fx === 'overdue'],
-        ['label' => 'KEV 등재', 'value' => number_format($actionCounts['kev']), 'tone' => 'crit', 'icon' => 'exploit',
-         'href' => vg_qs(['sev' => null, 'fx' => 'kev', 'st' => null, 'page' => 1]), 'selected' => $fx === 'kev'],
-        ['label' => '외부 노출', 'value' => number_format($actionCounts['external']), 'tone' => 'high', 'icon' => 'exposure',
-         'href' => vg_qs(['sev' => null, 'fx' => null, 'st' => 'EXTERNAL', 'page' => 1]), 'selected' => $st === 'EXTERNAL'],
-        ['label' => '재시작 필요', 'value' => number_format($actionCounts['restart']), 'tone' => 'med', 'icon' => 'action',
-         'href' => vg_qs(['sev' => null, 'fx' => 'restart', 'st' => null, 'page' => 1]), 'selected' => $fx === 'restart'],
-    ], ['compact' => true]);
+    /* 오른쪽 반쪽 — **왼쪽과 같은 어휘(도넛)** 여야 한다. 예전엔 여기가 숫자 카드 5장이라
+     *   같은 줄에 도넛과 네모 카드가 섞여 있었고, 사용자가 "왼쪽이랑 통일되게" 를 두 번 요구했다.
+     * 다섯 값을 성격대로 갈랐다:
+     *   · '외부 노출' 은 **노출 축의 한 조각**이다 → 노출 상태 도넛의 EXTERNAL 조각으로 들어간다.
+     *     대시보드 [주요 취약점 신호] 의 같은 도넛과 같은 함수·같은 어휘를 쓴다(vg_runtime_donut).
+     *   · 'High 이상' 은 왼쪽 도넛의 CRITICAL+HIGH 와 **같은 수**라 뺐다 — 같은 화면에서 같은
+     *     수를 두 번 그리지 않는다. sev=HIGH+ 로 들어온 상태는 아래 seg 콜백이 왼쪽 도넛의
+     *     CRITICAL·HIGH 두 줄을 함께 선택 표시해 보여주고, 그 줄을 눌러 풀거나 좁힐 수 있다.
+     *     합산 필터로 **들어오는** 문은 대시보드 퍼널 2번 칸('High 이상')이 그대로 갖는다.
+     *   · 'KEV 등재'·'기한 초과'·'재시작 필요' 를 한 도넛('조치 성격')으로 묶는 것은 **데이터가
+     *     거부한다**. 도넛은 구성비라 조각이 서로 겹치면 안 되는데 셋은 겹친다: 기한 초과는
+     *     KEV 의 부분집합이고(기한 초과 ⊂ KEV), 재시작 필요는 KEV·기한 초과와 독립이라 같은
+     *     1건이 두 조각에 동시에 들어간다. 모집단도 갈린다 — 기한 초과만 High 이상 안에서
+     *     세고 나머지 둘은 전 등급이다(dev 실측: 전체 11,020 · KEV 144 · 재시작 7,329 ·
+     *     기한 초과 2). 그래서 셋은 그림이 아니라 **숫자**로 두되, 카드 격자가 아니라 도넛 옆
+     *     목록과 같은 어휘로 세운다(vg_donut_list — 같은 스와치·같은 행·같은 링크 계약). */
+    vg_runtime_donut($runtimeCounts, 132, [
+        'title' => '노출 상태 구성',
+        'seg'   => fn(string $key, int $n): array => [
+            // '미상' 은 툴바의 '노출 상태' 에도 없는 값이라 걸 필터가 없다 — 링크를 주지 않는다.
+            'href'     => $key === '미상' ? ''
+                        : vg_qs(['st' => $st === $key ? '' : $key, 'fx' => null, 'page' => 1]),
+            'selected' => $st === $key,
+        ],
+    ]);
     ?>
+        <?php /* 도넛으로 못 그리는 셋 — 그림은 없어도 **행 모양·스와치·링크 계약은 도넛 목록 그대로**다.
+                 격자의 세 번째 칸에 그대로 선다(옆 도넛들과 같은 줄·같은 시선 높이). */ ?>
+        <div class="donut-kpi">
+        <?php vg_donut_list([
+            ['label' => '기한 초과', 'value' => (int) $actionCounts['overdue'], 'tone' => 'crit',
+             'title' => 'KEV 중 조치 기한을 넘긴 미조치 · 기한 임박순으로 봅니다',
+             'href' => vg_qs(['sev' => 'HIGH+', 'fx' => 'overdue', 'sort' => 'due', 'st' => null, 'page' => 1]),
+             'selected' => $fx === 'overdue'],
+            ['label' => 'KEV 등재', 'value' => (int) $actionCounts['kev'], 'tone' => 'high',
+             'title' => '실제 악용이 확인된 취약점(CISA KEV) · 등급과 무관하게 셉니다',
+             'href' => vg_qs(['sev' => null, 'fx' => 'kev', 'st' => null, 'page' => 1]),
+             'selected' => $fx === 'kev'],
+            ['label' => '재시작 필요', 'value' => (int) $actionCounts['restart'], 'tone' => 'med',
+             'title' => '패치는 됐고 재시작·재부팅만 하면 해결되는 것',
+             'href' => vg_qs(['sev' => null, 'fx' => 'restart', 'st' => null, 'page' => 1]),
+             'selected' => $fx === 'restart'],
+        ], ['caption' => '조치 성격',
+             'caption_title' => '기한 초과는 KEV 안에서만 세므로 세 값은 서로 겹칩니다'
+                              . ' — 합이 전체가 아니라 도넛(구성비)으로 그리지 않습니다']); ?>
+        </div>
       </div>
     </div>
   </section>
@@ -103,7 +137,7 @@
       ? [['type' => 'hidden', 'name' => 'scan_id', 'value' => (string) $scan['scan_id']]]
       : [['type' => 'select', 'name' => 'host', 'empty_label' => '전체 호스트',
           'selected' => $hostId > 0 ? (string) $hostId : '', 'options' => $hostOptions]];
-  // KPI 카드로 고른 등급(sev)은 검색 폼 필드가 아니라, 폼 제출 시 사라지지 않도록 hidden 으로 함께 싣는다.
+  // 도넛에서 고른 등급(sev)은 검색 폼 필드가 아니라, 폼 제출 시 사라지지 않도록 hidden 으로 함께 싣는다.
   if ($sev !== '') {
       $toolbar[] = ['type' => 'hidden', 'name' => 'sev', 'value' => $sev, 'reset' => true];
   }
@@ -237,7 +271,7 @@
           'cta'   => $filterCta,
       ];
   } elseif ($hasAnyFilter) {
-      // 검색어 없이 등급·상태·조치 가능성만으로 0건 — KPI 카드 클릭으로 sev 가 걸린 경우
+      // 검색어 없이 등급·상태·조치 가능성만으로 0건 — 도넛 조각 클릭으로 sev 가 걸린 경우
       //   특히 눈치채기 어려우므로 초기화 CTA 를 준다.
       $emptySpec = [
           'icon'  => 'search',

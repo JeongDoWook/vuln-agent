@@ -55,22 +55,30 @@ function vg_dash_host_count(PDO $pdo): int {
  * 실행 상태(runtime_status) 구성도 **같은 쿼리에서** 함께 뽑는다. SUM(...) 표현식을 몇 개
  * 더 얹는 것은 이미 훑고 있는 행을 세는 것뿐이라 접근 경로(EXPLAIN)가 바뀌지 않는다 —
  * 별도 GROUP BY 쿼리를 하나 더 만드는 것과는 비용이 다르다(이 파일 머리주석의 회귀 이력).
- * runtime_status 는 VARCHAR NULL 이라 네 어휘 밖·NULL 이 남을 수 있어 '미상' 으로 받는다.
+ * runtime_status 는 VARCHAR NULL 이라 일곱 어휘 밖·NULL 이 남을 수 있어 '미상' 으로 받는다.
+ * 일곱을 **전부** 세는 이유: 예전엔 네 개(EXTERNAL·LISTENING·RUNNING·INSTALLED)만 세고
+ * 나머지를 '미상' 으로 흘렸는데, dev 실측에서 방화벽 차단 6,732 · 사용 중 792 가 통째로
+ * '상태 미상' 으로 찍혔다 — 모르는 게 아니라 **아는 값을 모른다고 적은 것**이다. 같은 도넛을
+ * 탐지 결과 화면도 같은 함수로 그리게 되면서(vg_runtime_donut) 두 화면이 같은 말을 해야 한다.
  *
  * 반환: ['totals' => [등급 => n], 'kev' => n, 'runtime' => [상태 => n]]
  */
 function vg_dash_severity_totals(PDO $pdo): array {
     $latestJoin = vg_dash_latest_join();
     $totals = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0];
-    $runtime = ['EXTERNAL' => 0, 'LISTENING' => 0, 'RUNNING' => 0, 'INSTALLED' => 0];
+    $runtime = ['EXTERNAL' => 0, 'LAN' => 0, 'LISTENING' => 0, 'RUNNING' => 0,
+                'LOADED' => 0, 'FILTERED' => 0, 'INSTALLED' => 0];
     $kevCount = 0;
     $allCount = 0;
     $totalsRows = $pdo->query(
         "SELECT f.severity, COUNT(*) c,
                 SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')) kev,
                 SUM(f.runtime_status = 'EXTERNAL')  rt_external,
+                SUM(f.runtime_status = 'LAN')       rt_lan,
                 SUM(f.runtime_status = 'LISTENING') rt_listening,
                 SUM(f.runtime_status = 'RUNNING')   rt_running,
+                SUM(f.runtime_status = 'LOADED')    rt_loaded,
+                SUM(f.runtime_status = 'FILTERED')  rt_filtered,
                 SUM(f.runtime_status = 'INSTALLED') rt_installed
            FROM tb_finding f
            JOIN tb_scan s ON s.scan_id = f.scan_id
@@ -83,8 +91,11 @@ function vg_dash_severity_totals(PDO $pdo): array {
         $kevCount += (int) $f['kev'];
         $allCount += (int) $f['c'];
         $runtime['EXTERNAL']  += (int) $f['rt_external'];
+        $runtime['LAN']       += (int) $f['rt_lan'];
         $runtime['LISTENING'] += (int) $f['rt_listening'];
         $runtime['RUNNING']   += (int) $f['rt_running'];
+        $runtime['LOADED']    += (int) $f['rt_loaded'];
+        $runtime['FILTERED']  += (int) $f['rt_filtered'];
         $runtime['INSTALLED'] += (int) $f['rt_installed'];
     }
     // 남은 것은 상태를 모르는 건이다 — 0 으로 감추면 도넛의 합이 전체와 안 맞는다.
