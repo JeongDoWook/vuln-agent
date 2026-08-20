@@ -8,9 +8,24 @@ trap 'rm -rf "$TMP"' EXIT
 FIXTURE="$TMP/gate-root"
 
 fail() { echo "gate_contract_test: FAIL: $*" >&2; exit 1; }
+
+# 인터프리터는 파일에서 한 번만 찾는다(assert_json 이 여러 번 불려도 command -v 를 다시 돌지 않는다).
+# 순서 이유: 리눅스 CI 에는 python3 만 있고 python 이 없는 경우가 흔해 python3 를 먼저 본다.
+# Windows git-bash 는 반대로 python3 가 없고 python/python.exe 만 있어 그다음으로 내려간다.
+# (tests/schema_docs_test.sh 는 Windows 개발 환경 전용이라 python 을 먼저 본다 — 전제가 다르다.)
+if command -v python3 >/dev/null 2>&1; then
+  python_cmd=python3
+elif command -v python >/dev/null 2>&1; then
+  python_cmd=python
+elif command -v python.exe >/dev/null 2>&1; then
+  python_cmd=python.exe
+else
+  fail 'python이 없어 게이트 계약 JSON 단언을 실행할 수 없습니다'
+fi
+
 assert_json() {
   local file="$1" expr="$2"
-  python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); raise SystemExit(0 if eval(sys.argv[2], {"d":d}) else 1)' "$file" "$expr" \
+  "$python_cmd" -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8")); raise SystemExit(0 if eval(sys.argv[2], {"d":d}) else 1)' "$file" "$expr" \
     || fail "JSON assertion: $expr"
 }
 
