@@ -61,6 +61,7 @@ $missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단�
 $missingStageCodes = []; // 같은 것의 원본 코드 — 화면이 "이 항목이 미수집인가"를 물을 때 쓴다
 $missingStageItemCounts = []; // 코드 => item_count. 0 이면 아예 못 걸음, > 0 이면 중간에 끊김
 $integrityRows = [];     // 패키지 원본과 다른 파일(상위 일부만 — 전체 건수는 tb_scan 에 있다)
+$verifySupport = null;   // 마지막 무결성 명령의 결과 — 노드가 그 기능을 지원하는지(미지원 표기 근거)
 $suppEvidence = ['errata' => [], 'changelog' => [], 'debsecan' => []];   // 억제 근거 원 데이터
 $suppLayers = [];        // 억제 근거 겹별 건수(스캔 전체)
 $staleLibs = ['total' => 0, 'rows' => []];   // 재시작 필요(옛 라이브러리를 물고 있는 프로세스)
@@ -184,6 +185,10 @@ try {
                 = vg_host_load_packages_tab($pdo, $sid, $perPage, $offset, $q);
             // 패키지 무결성 — 상태 한 줄 + 상위 목록만(전체 표는 만들지 않는다). 이 탭에서만 조회한다.
             $integrityRows = vg_host_load_integrity_rows($pdo, $sid);
+            // "요청했는데 결과가 없다"(= 노드의 에이전트가 미지원)를 가리기 위한 판정 근거.
+            //   최신 스캔이 아니라 **마지막 무결성 명령**을 본다 — 무결성은 명령으로만 켜지므로
+            //   그 뒤 정기수집이 한 번이라도 돌면 최신 스캔의 integrity_checked 는 정상적으로 0 이다.
+            $verifySupport = vg_host_load_verify_support($pdo, $hostId);
         } elseif ($tab === 'containers') {
             ['total' => $total, 'rows' => $rows, 'sevByContainer' => $sevByContainer]
                 = vg_host_load_containers_tab($pdo, $sid, $perPage, $offset, $q);
@@ -318,6 +323,7 @@ vg_alert($agentErr);
       // 활성 탭에서만 채워지는 값
       'restartRows' => $restartRows, 'depOrigins' => $depOrigins, 'pkgRollup' => $pkgRollup,
       'findingStatuses' => $findingStatuses, 'integrityRows' => $integrityRows,
+      'verifySupport' => $verifySupport,
       'sevByContainer' => $sevByContainer, 'sevByScan' => $sevByScan, 'resourceScans' => $resourceScans,
       'staleLibs' => $staleLibs, 'suppLayers' => $suppLayers, 'suppEvidence' => $suppEvidence,
       'accountJudgments' => $accountJudgments, 'gradeSignals' => $gradeSignals,

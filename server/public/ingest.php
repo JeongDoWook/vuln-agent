@@ -318,14 +318,17 @@ vg_log_activity($pdo, 'HOST', $hostId, 'ingest', '스캔 수신',
 // ── 명령 큐 완료 처리 (optional) ─────────────────────────────
 //   agent-poll.php 가 알려준 명령을 수행한 뒤 이 ingest 로 결과를 보고할 때 온다.
 //   host_id 소유 확인 실패(다른 호스트의 command_id 주장) · 이미 done/failed 는 조용히 무시(멱등).
+//   result_scan_id 를 같이 남긴다 — "이 명령이 무엇을 만들었나"를 나중에 되짚는 유일한 키다.
+//   무결성처럼 명령으로만 켜지는 수집은 이 연결이 없으면 "요청했는데 결과가 없다"를 판정할 수
+//   없어 조용한 실패가 된다(자산 상세의 '미지원' 표기가 이 값을 읽는다).
 $commandId = $data['command_id'] ?? null;
 if (is_int($commandId) || (is_string($commandId) && ctype_digit($commandId))) {
     $pdo->prepare(
         "UPDATE tb_agent_command SET status = 'done', progress_percent = 100,
                 progress_stage = 'complete', progress_message = '수집 완료',
-                heartbeat_at = NOW(), executed_at = NOW()
+                heartbeat_at = NOW(), executed_at = NOW(), result_scan_id = ?
           WHERE agent_command_id = ? AND host_id = ? AND status IN ('pending','running') AND is_deleted = 0"
-    )->execute([(int) $commandId, $hostId]);
+    )->execute([$scanId, (int) $commandId, $hostId]);
 }
 
 // 저장 성공 → 즉시 매칭(우선순위 산출). 실패해도 수집 자체는 성공으로 응답.
