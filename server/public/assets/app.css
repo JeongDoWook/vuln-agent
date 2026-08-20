@@ -2497,6 +2497,11 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--host .hero, .page--cve .hero, .page--user .hero { background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--info-bg) 45%, var(--surface))); }
 .page--advisory .prose, .page--cve .prose, .page--compliance_rule .prose,
 .page--control .prose { max-width: 78ch; line-height: 1.75; }
+/* 자산 상세 히어로의 위험 요약(.kpi-donuts) — 칸이 **둘뿐**이라 1fr 로 두면 넓은 화면에서
+ * 칸 하나가 본문의 절반이 된다(1440px 실측 572px). 목록의 값은 칸 오른쪽 끝에 붙는 규칙이라
+ * 그만큼 라벨과 숫자가 벌어져 어느 값이 어느 줄인지 눈으로 잇기 어려워진다.
+ * 칸 폭에 상한을 두고 **남는 폭은 양쪽 여백으로 흘린다** — 좁아지면 auto-fit 이 세로로 접는다. */
+.page--host .kpi-donuts { grid-template-columns: repeat(auto-fit, minmax(19rem, 27rem)); justify-content: center; }
 .page--host .subtabs, .page--cve .subtabs { border: 1px solid var(--line); border-radius: var(--r-md); padding: .25rem; background: var(--surface); box-shadow: var(--shadow); }
 .page--host .subtabs a, .page--cve .subtabs a { border: 0; border-radius: var(--r-sm); margin: 0; }
 .page--host .subtabs a.on, .page--cve .subtabs a.on { background: var(--info-bg); color: var(--accent-2); }
