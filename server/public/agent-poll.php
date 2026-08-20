@@ -80,6 +80,7 @@ if (!$host) {
     echo json_encode([
         'poll_schedule_seconds'      => 3600,
         'due_command_id'             => null,
+        'due_command_verify_files'   => 0,
         'cpu_quota_percent'          => $defaultTier['cpu_quota_percent'],
         'packaging_timeout_seconds'  => $defaultTier['packaging_timeout_seconds'],
         'mem_max_mb'                 => $defaultTier['mem_max_mb'],
@@ -92,17 +93,21 @@ $pollScheduleSeconds = (int) $host['poll_schedule_seconds'];
 $speedTier = VG_AGENT_SPEED_TIER_MAP[$host['agent_speed_tier']] ?? VG_AGENT_SPEED_TIER_MAP['normal'];
 
 $cmdSt = $pdo->prepare(
-    "SELECT agent_command_id FROM tb_agent_command
+    "SELECT agent_command_id, verify_files FROM tb_agent_command
       WHERE host_id = ? AND status = 'pending' AND is_deleted = 0
         AND (run_at IS NULL OR run_at <= NOW())
       ORDER BY COALESCE(run_at, created_at) ASC LIMIT 1"
 );
 $cmdSt->execute([$hostId]);
-$dueCommandId = $cmdSt->fetchColumn();
+$dueCommand = $cmdSt->fetch();
 
+// due_command_verify_files 는 "이번 명령에 한해 패키지 무결성 검사를 붙일지"다(0/1).
+//   필드 추가일 뿐 기존 필드의 의미는 그대로라, 이 값을 모르는 옛 에이전트는 종전과 똑같이
+//   동작한다(모르는 필드는 무시하고, 무결성은 노드 고정값 VERIFY_FILES 로만 켜진다).
 echo json_encode([
     'poll_schedule_seconds'      => $pollScheduleSeconds,
-    'due_command_id'             => $dueCommandId !== false ? (int) $dueCommandId : null,
+    'due_command_id'             => $dueCommand ? (int) $dueCommand['agent_command_id'] : null,
+    'due_command_verify_files'   => $dueCommand && (int) $dueCommand['verify_files'] === 1 ? 1 : 0,
     'cpu_quota_percent'          => $speedTier['cpu_quota_percent'],
     'packaging_timeout_seconds'  => $speedTier['packaging_timeout_seconds'],
     'mem_max_mb'                 => $speedTier['mem_max_mb'],
