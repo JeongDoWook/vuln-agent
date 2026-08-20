@@ -42,7 +42,7 @@ function vg_host_load_poll_age(PDO $pdo, string $fqdn): ?int {
 function vg_host_load_pending_commands(PDO $pdo, int $hostId): array {
     $st = $pdo->prepare(
         "SELECT agent_command_id, status, progress_percent, progress_stage, progress_message,
-                run_at, created_at, started_at, heartbeat_at, cancel_requested_at
+                run_at, verify_files, created_at, started_at, heartbeat_at, cancel_requested_at
            FROM tb_agent_command
           WHERE host_id = ? AND status IN ('pending','running') AND is_deleted = 0
           ORDER BY status = 'running' DESC, run_at IS NULL DESC, run_at, created_at"
