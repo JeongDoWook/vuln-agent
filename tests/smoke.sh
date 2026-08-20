@@ -908,7 +908,10 @@ phase "패키지 의존성 그래프(depgraph.php)"
 # 에이전트가 보낸 SBOM/pom 엣지는 저장만 되고 읽는 화면이 없었다. "무엇이 이 패키지를
 #   끌어왔나" 가 루트 → 직접 → 전이 순으로 실제로 펼쳐지는지, 엣지가 없는 자산의 빈 상태가
 #   빈 화면이 아니라 설명으로 뜨는지를 고정한다.
-assert_contains "$packagebody" 'depgraph.php?id=' "설치 패키지 탭에서 의존성 그래프로 진입"
+# 의존성은 이제 자산 상세의 탭이다 — 설치 패키지 탭은 전용 화면이 아니라 그 탭으로 보내고,
+#   라벨에 엣지 수를 담아 "이 자산엔 볼 게 있다"를 알린다.
+assert_contains "$packagebody" 'tab=depgraph' "설치 패키지 탭에서 의존성 탭으로 진입"
+assert_contains "$packagebody" '의존성 엣지 ' "설치 패키지 탭이 의존성 엣지 수를 노출"
 depbody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID")
 assert_contains "$depbody" '전체 트리' "의존성 그래프 화면 표시"
 # 호스트(cid=0) 단위는 pom.xml 직접 선언 — 부모가 없어 트리 대신 목록으로 나온다.
@@ -924,7 +927,10 @@ assert_contains "$ctrdep" 'myco-http' "직접 의존 표시"
 assert_contains "$ctrdep" 'myco-utf8' "전이 의존(3단계)까지 펼쳐짐"
 # 렌더 형태 고정 — 중첩 박스(.ctrcard 안의 .ctrcard)가 아니라 서버가 그린 가로 계층 트리다.
 assert_contains "$ctrdep" 'class="deptree__svg"' "의존성을 가로 계층 트리 SVG 로 그린다"
-assert_contains "$ctrdep" 'class="deptree__edge"' "부모→자식 연결선(곡선 엣지)이 실제로 그려진다"
+assert_contains "$ctrdep" 'class="deptree__edge ' "부모→자식 연결선(곡선 엣지)이 실제로 그려진다"
+# 색은 정보다 — 깊이별 엣지 클래스와 등급 틴트(조치 대상만)가 실제로 붙는지 고정한다.
+assert_contains "$ctrdep" 'deptree__edge--d0' "엣지 농도가 깊이별로 갈린다"
+assert_contains "$ctrdep" 'class="legend legend--inline"' "노드 색이 무슨 뜻인지 범례로 밝힌다"
 # 역추적 — 전이 의존에서 루트까지의 경로가 나와야 "무엇이 끌어왔나" 에 답이 된다.
 frombody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID&cid=$DEP_CID&mgr=npm&name=myco-utf8&ver=0.9.1&tab=from")
 assert_contains "$frombody" '이 패키지를 끌어온 경로' "역추적 탭 표시"
@@ -937,6 +943,19 @@ assert_contains "$missbody" '요청한 패키지가 이 조회 단위의 엣지�
 emptydep=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB02_ID")
 assert_contains "$emptydep" '의존성 엣지가 없습니다' "엣지 없는 자산의 빈 상태 안내"
 assert_not_contains "$emptydep" 'depgraph.php?id='"$WEB02_ID"'&amp;cid=' "엣지 없는 자산엔 조회 단위 선택지도 없다"
+
+# --- 자산 상세의 '의존성' 탭 ------------------------------------------------
+# 같은 트리를 자산 상세 안에서 본다(렌더는 src/deptree.php 하나를 두 화면이 공유한다).
+#   조회는 이 탭을 눌렀을 때만 돌아야 한다 — 다른 탭에 트리 SVG 가 새지 않는지도 함께 본다.
+hostdep=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=depgraph")
+assert_contains "$hostdep" '의존성 트리' "자산 상세에 의존성 탭이 열린다"
+assert_contains "$hostdep" 'class="deptree__svg"' "의존성 탭이 같은 가로 계층 트리를 그린다"
+assert_contains "$hostdep" 'myco-web' "의존성 탭에 루트(최상위 프로젝트) 표시"
+assert_contains "$hostdep" 'depgraph.php?id=' "더 깊은 조회는 전용 화면으로 넘긴다"
+assert_not_contains "$packagebody" 'class="deptree__svg"' "다른 탭에서는 의존성 트리를 그리지 않는다"
+# 엣지가 없는 자산에는 탭 자체가 서지 않는다(빈 탭을 남기지 않는다).
+emptyhostdep=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB02_ID")
+assert_not_contains "$emptyhostdep" 'tab=depgraph' "엣지 없는 자산엔 의존성 탭이 없다"
 
 phase "컨테이너 드릴다운(container.php) + 컨테이너 SBOM"
 # --- 컨테이너 드릴다운(container.php) + 컨테이너 SBOM ------------------------

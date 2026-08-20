@@ -45,8 +45,42 @@
       ]);
   endif; ?>
 
-  <section class="action-queue" data-action-queue aria-label="우선순위 필터">
-    <?php vg_kpi_strip([
+  <?php
+  /* 등급 도넛과 우선순위 필터를 **한 줄에 반반**으로 세운다.
+   *   예전엔 KPI 줄이 화면 폭을 통째로 한 줄, 등급 도넛 카드가 또 한 줄을 먹어서
+   *   목록이 두 칸 아래로 밀렸다(실측: 카드 5장 + 도넛 카드 = 2줄). 두 덩어리는 같은 질문
+   *   ("지금 무엇부터 보나")에 답하므로 같은 줄에 놓는 게 맞다 — .kpi-donuts 는 칸이
+   *   모자라면 알아서 아래로 접어(auto-fit) 좁은 화면에선 예전처럼 위아래로 선다.
+   *   data-action-queue 는 계약이다(tests/ui_structure_test.php 가 이 자리를 확인한다). */
+  ?>
+  <section class="card" data-action-queue aria-label="우선순위 필터">
+    <strong>등급 구성 · 우선순위</strong>
+    <div class="card__body">
+      <div class="kpi-donuts">
+    <?php
+    /* 예전엔 등급 네 칸을 숫자 카드로 나열했다. 카드 크기·글자 크기가 전 등급에 똑같이
+     *   주어져서 자릿수가 많은 등급이 무조건 커 보였다(실측: 'LOW 34,184' 가 'CRITICAL 1'
+     *   보다 크게 읽혔다). 도넛은 **면적이 곧 건수**라 그 착시가 구조적으로 사라지고,
+     *   서열은 색(LOW 는 채도 없는 회청)이 그대로 지킨다.
+     * 0건인 등급도 목록에는 남는다 — 0건은 "안전"이 아니라 "지금 볼 것이 없음"이고,
+     *   그 자리가 사라지면 네 등급이 다 있는지조차 알 수 없다.
+     * 고리는 조치 대상(C·H·M)만 그린다 — LOW 가 압도적이라 같이 그리면 나머지가 실오라기가
+     *   된다(vg_sev_donut 주석). LOW 는 목록 행으로 남고 전체 건수는 옆 타일이 갖는다. */
+    vg_sev_donut($counts, 132, [
+        'title' => '등급 구성',
+        'seg'   => fn(string $sevKey, int $n): array => [
+            'href'     => vg_qs(['sev' => $sev === $sevKey ? '' : $sevKey, 'page' => 1]),
+            'selected' => $sev === $sevKey,
+            'title'    => $sevKey . ' ' . number_format($n) . '건'
+                        . ($sev === $sevKey ? ' · 선택 해제' : ' 만 보기'),
+        ],
+    ]);
+    /* 오른쪽 반쪽 — 도넛으로 못 그리는 축들이다. 넷은 서로 모집단이 달라(악용·노출·재시작은
+     *   등급과 독립) 한 도넛에 넣으면 구성이 아닌 것을 구성처럼 그리게 된다. 숫자 타일로 둔다.
+     * 'High 이상' 은 왼쪽 도넛의 CRITICAL+HIGH 와 같은 값이지만 **남긴다** — 이 화면에서
+     *   sev=HIGH+ 합산 필터로 가는 문이 여기 하나뿐이고(툴바의 sev 는 hidden 이다),
+     *   카드를 지우면 숫자가 아니라 **필터가** 사라진다. */
+    vg_kpi_strip([
         ['label' => 'High 이상', 'value' => number_format($actionCounts['high']), 'tone' => 'high', 'icon' => 'severity',
          'href' => vg_qs(['sev' => 'HIGH+', 'fx' => null, 'st' => null, 'page' => 1]), 'selected' => $sev === 'HIGH+'],
         ['label' => '기한 초과', 'value' => number_format($actionCounts['overdue']), 'tone' => 'crit', 'icon' => 'action',
@@ -57,33 +91,11 @@
          'href' => vg_qs(['sev' => null, 'fx' => null, 'st' => 'EXTERNAL', 'page' => 1]), 'selected' => $st === 'EXTERNAL'],
         ['label' => '재시작 필요', 'value' => number_format($actionCounts['restart']), 'tone' => 'med', 'icon' => 'action',
          'href' => vg_qs(['sev' => null, 'fx' => 'restart', 'st' => null, 'page' => 1]), 'selected' => $fx === 'restart'],
-    ], ['compact' => true]); ?>
-  </section>
-
-  <div class="card">
-    <strong>등급 구성</strong>
-    <div class="card__body">
-    <?php
-    /* 예전엔 등급 네 칸을 숫자 카드로 나열했다. 카드 크기·글자 크기가 전 등급에 똑같이
-     *   주어져서 자릿수가 많은 등급이 무조건 커 보였다(실측: 'LOW 34,184' 가 'CRITICAL 1'
-     *   보다 크게 읽혔다). 도넛은 **면적이 곧 건수**라 그 착시가 구조적으로 사라지고,
-     *   서열은 색(LOW 는 채도 없는 회청)이 그대로 지킨다.
-     * 0건인 등급도 목록에는 남는다 — 0건은 "안전"이 아니라 "지금 볼 것이 없음"이고,
-     *   그 자리가 사라지면 네 등급이 다 있는지조차 알 수 없다.
-     * 고리는 조치 대상(C·H·M)만 그린다 — LOW 가 압도적이라 같이 그리면 나머지가 실오라기가
-     *   된다(vg_sev_donut 주석). LOW 는 목록 행으로 남고 전체 건수는 위 KPI 가 갖는다. */
-    vg_sev_donut($counts, 132, [
-        'title' => '등급 구성',
-        'seg'   => fn(string $sevKey, int $n): array => [
-            'href'     => vg_qs(['sev' => $sev === $sevKey ? '' : $sevKey, 'page' => 1]),
-            'selected' => $sev === $sevKey,
-            'title'    => $sevKey . ' ' . number_format($n) . '건'
-                        . ($sev === $sevKey ? ' · 선택 해제' : ' 만 보기'),
-        ],
-    ]);
+    ], ['compact' => true]);
     ?>
+      </div>
     </div>
-  </div>
+  </section>
 
   <?php
   // 단일 스캔 모드에선 scan_id 를 유지하고, 통합 모드에선 호스트 선택 드롭다운을 준다.

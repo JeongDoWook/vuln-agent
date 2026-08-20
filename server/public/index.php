@@ -53,7 +53,7 @@ vg_header('대시보드', 'dashboard');
            배경(추세)과 전수 목록(호스트)이 아래다. */ ?>
   <?php vg_dash_render_funnel($totals, $hostCount, $kevCount, $kevOverdue, $kevSlaDays); ?>
 
-  <?php vg_dash_render_signals($totals, $runtime, $kevCount, $kevOverdue, $kevSlaDays); ?>
+  <?php vg_dash_render_signals($totals, $runtime, $kevCount); ?>
 
   <?php vg_dash_render_trend($trend, VG_TREND_DAYS); ?>
 
