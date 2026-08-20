@@ -239,12 +239,13 @@
   <header>
     <div class="kicker"><span class="dot"></span> 2026 오픈소스 개발자대회 · 기획안 v1.0</div>
     <h1>취약점을 스스로 조사하고<br>판단하는 <span class="hl">자율 보안 에이전트</span></h1>
-    <p class="lede">단순 스캐너가 아니다. 검증된 공개 CVE 피드(OSV·NVD·KEV·EPSS·KISA)를 직접 조회해 매칭하고, 그 위에서 실제 서버의 런타임 노출 맥락으로 위험을 판단해, 조치안과 판단 근거까지 화면에 남긴다.</p>
+    <p class="lede">단순 스캐너가 아니다. 검증된 공개 CVE 피드(OSV·NVD·KEV·EPSS·KISA)를 직접 조회해 매칭하고, 그 위에서 실제 서버의 런타임 노출 맥락으로 위험을 판단해, 조치안과 판단 근거까지 화면에 남긴다. 에이전트가 <strong>안 깔린 서버</strong>는 관리 대역 스윕으로 직접 찾아낸다.</p>
     <div class="meta">
       <span class="chip">과제유형 <b>자유과제 / 보안·안전</b></span>
       <span class="chip">스택 <b>Bash 에이전트 · PHP · MySQL</b></span>
       <span class="chip">#AI에이전트</span>
       <span class="chip">#SCA</span>
+      <span class="chip">#섀도우IT</span>
       <span class="chip">#취약점대응</span>
     </div>
   </header>
@@ -267,7 +268,7 @@
     <div class="note alert"><span class="lbl">피해야 할 함정</span>
       "백포트·오탐을 잘 잡는 매칭을 직접 만들어 차별화"는 위험하다. <strong>Trivy·Grype·OpenSCAP는 이미</strong> 각 배포판 보안 피드(Red Hat OVAL, Ubuntu USN, Debian Tracker)로 백포트를 인식해 오탐을 억제한다. 이건 성숙한 도구의 기본기이지 신선한 기능이 아니며, 직접 만들면 오히려 오탐이 더 많을 수 있다.</div>
     <div class="note good"><span class="lbl">결정 (구현 결과)</span>
-      OS 패키지 취약점 매칭은 <strong>OSV.dev API 를 직접 조회</strong>해 검증된 공개 데이터에서 그 정확도를 상속받는다 — 당초 검토했던 Trivy·Grype 같은 스캐너 바이너리 호출 대신, API 직접 조회가 Docker 배포 구조에 더 단순했다(KISS). 오탐 억제는 <strong>OSV 버전필터 + 패키지 changelog 대조</strong>로 직접 구현해, 우리의 기여를 그 위 레이어(런타임 노출 상관·백포트 근거·KEV/EPSS 우선순위)에 둔다.</div>
+      OS 패키지 취약점 매칭은 <strong>OSV.dev API 를 직접 조회</strong>해 검증된 공개 데이터에서 그 정확도를 상속받는다 — 당초 검토했던 Trivy·Grype 같은 스캐너 바이너리 호출 대신, API 직접 조회가 Docker 배포 구조에 더 단순했다(KISS). 오탐 억제는 <strong>4겹</strong>(OSV 버전필터 → changelog → errata → debsecan 역방향)으로 직접 구현하고 RHEL 계열·우분투·커널은 각자의 벤더 피드로 따로 판정해, 우리의 기여를 그 위 레이어(런타임 노출 상관·백포트 근거·KEV/EPSS 우선순위·자산 탐색)에 둔다.</div>
   </section>
 
   <!-- 03 -->
@@ -278,10 +279,11 @@
     <div class="tbl">
       <div class="tbl-row head"><div class="k">구분</div><div class="old">기존 스캐너</div><div class="new">우리 에이전트</div></div>
       <div class="tbl-row"><div class="k">동작</div><div class="old">규칙대로 스캔 후 목록</div><div class="new">스스로 수집·매칭·판단해 근거와 함께 표시</div></div>
-      <div class="tbl-row"><div class="k">데이터 소스</div><div class="old">단일/소수 DB</div><div class="new">NVD + OSV + KEV + EPSS + 국내 KISA 에 배포판·커널 벤더 피드까지 (고정 11종 + 범용 API 커넥터)</div></div>
+      <div class="tbl-row"><div class="k">대상 범위</div><div class="old">에이전트를 깐 자산만</div><div class="new">관리 대역을 2단계 TCP 스윕해 <strong>에이전트가 안 깔린 IP</strong> 까지 목록에 올린다</div></div>
+      <div class="tbl-row"><div class="k">데이터 소스</div><div class="old">단일/소수 DB</div><div class="new">NVD + OSV + KEV + EPSS + 국내 KISA 에 배포판·커널 벤더 피드까지 (커넥터 12종 = 고정 11종 + 사용자 정의 API)</div></div>
       <div class="tbl-row"><div class="k">우선순위</div><div class="old">CVSS 점수 나열</div><div class="new">런타임 노출 + EPSS + KEV 맥락 추론</div></div>
-      <div class="tbl-row"><div class="k">조치</div><div class="old">(일부) 업그레이드 제안</div><div class="new">조치안 표시(OSV 수정버전 기준)</div></div>
-      <div class="tbl-row"><div class="k">결과물</div><div class="old">기술적 리포트</div><div class="new">웹 대시보드(근거·변화추적) + Export API(JSON/XML)</div></div>
+      <div class="tbl-row"><div class="k">조치</div><div class="old">(일부) 업그레이드 제안</div><div class="new">조치안 표시(OSV 수정버전 기준). 전이 의존은 "직접 조치 불가 — X 가 끌어옴"으로 부모별로 묶는다</div></div>
+      <div class="tbl-row"><div class="k">결과물</div><div class="old">기술적 리포트</div><div class="new">웹 대시보드(카드·차트·근거·변화추적) + Export API(JSON/XML) + SBOM(CycloneDX 1.5 / SPDX 2.3)</div></div>
     </div>
 
     <h3 class="mini">// 진짜 차별점 (강한 순서)</h3>
@@ -290,35 +292,42 @@
         <div class="rk">①</div>
         <div>
           <div class="rh">런타임 노출 상관 <span class="star">최우선</span></div>
-          <div class="rb">기존 스캐너는 아티팩트만 본다. 우리 에이전트는 <b>열린 포트·실행 서비스·프로세스를 이미 수집</b>한다. "openssl이 취약하다"가 아니라 "그걸 쓰는 nginx가 443으로 외부에 떠 있다"까지 말해 우선순위를 가른다. 추가 개발 거의 없음.</div>
+          <div class="rb">기존 스캐너는 아티팩트만 본다. 우리 에이전트는 <b>열린 포트·실행 서비스·프로세스를 이미 수집</b>한다. "openssl이 취약하다"가 아니라 "그걸 쓰는 nginx가 443으로 외부에 떠 있다"까지 말해 우선순위를 가른다. 방화벽 허용 포트와 대조해 <b>FILTERED</b>(떠 있지만 외부에서 못 닿음)를 따로 두는 <b>7단계</b> 판정이다 — 이게 없으면 방화벽 뒤 내부 서비스가 전부 HIGH 로 뜬다.</div>
+        </div>
+      </div>
+      <div class="ritem top">
+        <div class="rk">②</div>
+        <div>
+          <div class="rh">안 깔린 서버까지 본다 — 자산 탐색(섀도우 IT) <span class="star">신규</span></div>
+          <div class="rb">에이전트를 깐 서버만 보는 도구에서는 <b>안 깐 서버의 위험이 0으로 보인다</b> — 목록에 아예 없기 때문이다. 관리 대역(CIDR)을 등록하면 중앙이 <b>2단계 병렬 TCP 스윕</b>으로 살아있는 IP 를 찾아 수집된 자산 IP 와 대조하고, 역DNS 호스트명·서비스 힌트·가벼운 배너로 정체를 채운다. 호스트 라우팅 테이블로 그린 <b>세그먼트 맵</b>이 "그게 어느 대역에 있나"를 잇는다.</div>
         </div>
       </div>
       <div class="ritem">
-        <div class="rk">②</div>
+        <div class="rk">③</div>
         <div>
           <div class="rh">EPSS + CISA KEV 결합</div>
           <div class="rb">점수 나열 대신 <b>실제 악용 확률(EPSS)</b> + <b>실제 악용된 목록(KEV)</b>을 결합한다. "CVSS 9.8이나 악용확률 0.1%" vs "CVSS 6.5이나 현재 공격 중"을 구분. 둘 다 무료.</div>
         </div>
       </div>
       <div class="ritem">
-        <div class="rk">③</div>
-        <div>
-          <div class="rh">설명가능한 오탐 억제(백포트)</div>
-          <div class="rb">오탐을 숨기지 않고 <b>왜 안전한지 근거</b>를 제시한다. OSV 버전필터로 1차로 거르고, 통과한 건도 패키지 <b>changelog 의 CVE 수정 기록</b>이 있으면 <code>tb_suppressed_finding</code> 으로 분리한다 — 위험 집계는 그대로 두고 오탐만 빠지며, 억제 근거는 호스트 상세 화면에 그대로 노출된다.</div>
-        </div>
-      </div>
-      <div class="ritem">
         <div class="rk">④</div>
         <div>
-          <div class="rh">경량 상주 에이전트 + 시계열</div>
-          <div class="rb">CI/1회성이 아니라 <b>호스트별 주기의 상주 수집</b>(systemd 서비스, 기본 60분). "어제 안전 → 오늘 신규 CVE로 취약"을 스캔 대조로 추적하고 여러 서버를 한눈에 본다. 에이전트 자원은 실행별 프로세스 트리 기준으로 계측한다.</div>
+          <div class="rh">설명가능한 오탐 억제(백포트)</div>
+          <div class="rb">오탐을 숨기지 않고 <b>왜 안전한지 근거</b>를 제시한다. OSV 버전필터·changelog·errata·debsecan 역방향 <b>4겹</b>으로 거르고, 억제된 건은 <code>tb_suppressed_finding</code> 으로 분리한다 — 위험 집계에서만 빠지고 근거는 화면에 그대로 남는다. <b>억제를 취소하는 신호</b>도 둔다: 패치됐어도 프로세스가 옛 <code>.so</code> 를 물고 있거나 커널이 재부팅 전이면 억제하지 않는다("패치됨=안전"은 미탐이다).</div>
         </div>
       </div>
       <div class="ritem">
         <div class="rk">⑤</div>
         <div>
-          <div class="rh">KISA 국내 연동</div>
-          <div class="rb">해외 도구가 하지 않는 국내 보안공지 매칭. 보호나라 공식 RSS 3종을 수집하고 신규 공지는 <b>상세 본문까지</b> 저장해 그대로 보여준다. <b>신선함 + 사회적 기여</b> 포인트.</div>
+          <div class="rh">경량 상주 에이전트 + 무인 자동 업데이트</div>
+          <div class="rb">CI/1회성이 아니라 <b>상시 데몬</b>(10초 명령 poll)이라 즉시 실행·예약·주기 변경을 중앙 웹에서 한다(SSH 재설치 불필요). "어제 안전 → 오늘 신규 CVE로 취약"을 스캔 대조로 추적한다. 구버전이면 <b>스스로 갱신</b>하되, sha256 만으로는 웹 티어가 침해되면 악성 에이전트가 배포될 수 있어 <b>커밋 시점에 만든 Ed25519 서명</b>을 노드가 검증한다 — 검증 실패 시 자동 업데이트만 건너뛰고 수집은 계속한다.</div>
+        </div>
+      </div>
+      <div class="ritem">
+        <div class="rk">⑥</div>
+        <div>
+          <div class="rh">국내 기준 정면 대응 — KISA 공지 + 기반시설 U-코드</div>
+          <div class="rb">해외 도구가 하지 않는 국내 보안공지 매칭(보호나라 공식 RSS 3종, 신규 공지는 <b>상세 본문까지</b>). 여기에 <b>주요정보통신기반시설 U-코드 72개를 분모</b>로 세워 우리가 덮는 21개와 <b>비어 있는 51개</b>를 같이 보여준다. <b>신선함 + 사회적 기여</b> 포인트.</div>
         </div>
       </div>
     </div>
@@ -330,31 +339,35 @@
       <div><h2>시스템 구성</h2><div class="sub">에이전트 파이프라인</div></div>
     </div>
     <div class="pipe">
+      <div class="stage c-scan"><div class="name"><i></i>자산 탐색</div>
+        <div class="desc">관리 대역(CIDR)을 <code>2단계 TCP 스윕</code>해 에이전트 미설치 IP 를 찾고 역DNS·배너로 정체를 채운다 — 집행은 스케줄러 틱</div></div>
       <div class="stage c-scan"><div class="name"><i></i>수집 에이전트</div>
-        <div class="desc">패키지(NEVRA·소스패키지·벤더) + 런타임 노출(리스닝 포트)·실행 프로세스·changelog·보안설정 수집</div></div>
+        <div class="desc">패키지(NEVRA·소스패키지·벤더) + 런타임 노출(리스닝 포트)·실행 프로세스·changelog·보안설정·라우팅·컨테이너 내부까지 수집</div></div>
       <div class="stage c-accent"><div class="name"><i></i>매칭 (API 직접 조회)</div>
-        <div class="desc">CVE 피드(<code>NVD·OSV·KEV·EPSS·KISA</code> + 배포판·커널 벤더 소스)와 직접 대조, <code>OSV</code> 는 배포판 ecosystem 자동 판별</div></div>
+        <div class="desc">CVE 피드(<code>NVD·OSV·KEV·EPSS·KISA</code> + 배포판·커널 벤더 소스, 커넥터 12종)와 직접 대조, <code>OSV</code> 는 배포판과 언어 생태계 8종을 자동 판별</div></div>
       <div class="stage c-violet"><div class="name"><i></i>판단</div>
-        <div class="desc">백포트 억제 → 런타임 노출 5단계 + <code>EPSS</code>·<code>KEV</code>로 위험 우선순위 추론</div></div>
+        <div class="desc">억제 4겹 → 런타임 노출 <code>7단계</code> + <code>EPSS</code>·<code>KEV</code>로 위험 우선순위 추론</div></div>
       <div class="stage c-warn"><div class="name"><i></i>조치</div>
-        <div class="desc">OSV 수정버전(<code>fixed_version</code>) 기준 업그레이드안 표시</div></div>
+        <div class="desc">OSV 수정버전(<code>fixed_version</code>) 기준 업그레이드안 표시, 전이 의존은 끌어온 부모별로 묶는다</div></div>
       <div class="stage c-text"><div class="name"><i></i>표시</div>
-        <div class="desc">웹 대시보드(우선순위·변화추적·감사로그) + <code>Export API</code>(JSON/XML)</div></div>
+        <div class="desc">웹 대시보드(카드·차트·근거·변화추적·감사로그) + <code>Export API</code>(JSON/XML) + <code>SBOM</code>(CycloneDX·SPDX)</div></div>
     </div>
-
     <h3 class="mini">// 데이터 흐름 (구현 결과)</h3>
-    <div class="flow"><pre>[각 서버]                          [중앙 서버 · Docker]
+    <div class="flow"><pre>[각 서버]                              [중앙 서버 · Docker]
 <b>쉘 에이전트</b> ─10초 명령 poll·설정 주기 수집(systemd)─▶ <u>수신 API(HTTPS)</u> ──▶ MySQL
-(패키지·노출·프로세스·changelog)   JSON POST                       │
-                                                                 ▼
-                          CVE 피드(NVD·OSV·KEV·EPSS·KISA)와 매칭
-                          + 런타임 노출 상관 + 백포트 억제 + EPSS/KEV 가중
-                                                                 │
-                                                                 ▼
-                              <b>웹 대시보드</b> (우선순위·변화추적·조치안·감사로그)</pre></div>
-
+(패키지·노출·프로세스·changelog·라우팅)                                 │
+   ▲ 구버전이면 스스로 갱신                                            │
+   └─ poll 응답 + sha256 + <b>Ed25519 서명</b> 검증 ◀─────────────┤
+                                                                    │
+[에이전트 없는 IP] ◀─ 2단계 TCP 스윕 ─ <b>자산 탐색</b>(스케줄러 틱)  ─────▶│
+                                                                    ▼
+                    CVE 피드 12종(NVD·OSV·KEV·EPSS·KISA·벤더)와 매칭
+                    + 런타임 노출 7단계 + 억제 4겹 + EPSS/KEV 가중
+                                                                    │
+                                                                    ▼
+                  <b>웹 대시보드</b> (우선순위·변화추적·조치안·SBOM·감사로그)</pre></div>
     <div class="note"><span class="lbl">설계 원칙</span>
-      스캐너를 새로 만들지 않는다. OSV·NVD·KEV·EPSS·KISA 등 검증된 공개 CVE 피드를 API 로 직접 조회해 매칭 정확도를 상속받고, 그 위에서 자율 판단(런타임 노출·백포트 억제)하는 레이어가 우리의 기여다.</div>
+      스캐너를 새로 만들지 않는다. OSV·NVD·KEV·EPSS·KISA 등 검증된 공개 CVE 피드를 API 로 직접 조회해 매칭 정확도를 상속받고, 그 위에서 자율 판단(런타임 노출·백포트 억제)하는 레이어가 우리의 기여다. 에이전트가 안 깔린 자산도 범위 밖으로 두지 않되, 자산 탐색은 <strong>포트 판정과 가벼운 정체 파악까지</strong>이고 그 이상으로 상대에게 말을 걸지 않는다.</div>
   </section>
 
   <!-- 05 -->
@@ -366,8 +379,10 @@
       <div class="res-item"><div class="rn">피드 스케줄러 사이드카</div><div class="rd">CVE 피드를 중앙이 로컬 DB(<code>tb_cve</code> 등)로 당겨와 보관. 매칭은 로컬끼리 → 빠르고, <strong>대상 서버 에이전트는 CVE 소스에 직접 접속할 필요 없음</strong>. 스케줄러가 1분마다 due 커넥터만 실행하고 수집 후 전체 스캔을 재매칭한다.</div></div>
       <div class="res-item"><div class="rn">백포트 억제 2단계</div><div class="rd">OSV 버전필터로 먼저 걸러내고, 그걸 통과한 소수 건만 changelog 대조(가장 무거운 단계)로 넘긴다 → 불필요한 changelog 파싱을 줄인다. 수집 단계에서 <code>--no-changelog</code>로도 끌 수 있다.</div></div>
       <div class="res-item"><div class="rn">무중단 배포</div><div class="rd">운영은 <code>../server</code>를 읽기전용 마운트. PHP 만 바뀌면 <code>git pull</code> 한 줄로 반영(opcache 가 2초 내 갱신), Dockerfile·compose·caddy 변경 시에만 재빌드.</div></div>
-      <div class="res-item"><div class="rn">스키마 마이그레이션 자동화</div><div class="rd"><code>db/migrations/NNNN_*.sql</code> 중 미적용분만 번호순 자동 적용 → 스키마 변경이 파일 하나 추가로 끝난다.</div></div>
-      <div class="res-item"><div class="rn">에이전트 자원</div><div class="rd">nice 19 / ionice idle 최저 우선순위 + 명령별 타임아웃. 실행별 프로세스 트리의 피크 RSS와 CPU 시간을 호스트 용량 대비 비율로 기록한다.</div></div>
+      <div class="res-item"><div class="rn">스키마 마이그레이션 자동화</div><div class="rd"><code>db/migrations/YYYYMMDDHHMMSS_*.sql</code> 중 미적용분만 사전순 자동 적용 → 스키마 변경이 파일 하나 추가로 끝난다. 파일명이 타임스탬프인 건 동시에 도는 브랜치가 같은 연번을 집어 실제로 충돌했기 때문이다.</div></div>
+      <div class="res-item"><div class="rn">자산 탐색 2단계 스윕</div><div class="rd">총 실행시간은 <strong>죽은 IP 의 타임아웃이 지배한다</strong>. 1단계는 탐침 포트 몇 개로 살아있는 IP 만 추리고(/24 = 1,524 조합), 2단계는 그 IP 에만 전체 포트를 던진다 → 전부 던질 때의 25,400 조합이 한 자릿수 배로 준다. 웹은 스캔을 돌리지 않고 <code>pending</code> 으로 넣기만 하며 집행은 스케줄러가 한다.</div></div>
+      <div class="res-item"><div class="rn">사전집계와 재매칭 지문</div><div class="rd">패키지 집계는 사전집계 테이블로 옮겼다(92만 행 GROUP BY 8초 → 0.1초 미만). 재매칭은 결과 지문이 같으면 트랜잭션조차 열지 않는다 — 예전엔 1비트도 안 바뀐 스캔까지 통째 삭제·재삽입해 binlog 가 하루 20GB 씩 쌓였다.</div></div>
+      <div class="res-item"><div class="rn">에이전트 자원</div><div class="rd">nice 19 / ionice idle 최저 우선순위 + 명령별 타임아웃. 실행별 프로세스 트리의 피크 RSS와 CPU 시간을 호스트 용량 대비 비율로 기록한다. 피크 메모리 실측은 <strong>61.6MB</strong>(Debian 12 · 91패키지).</div></div>
     </div>
     <div class="note warn"><span class="lbl">간소화 결정 (YAGNI)</span>
       당초 검토했던 <strong>델타 수집·증분 매칭·조회 시점 매칭</strong>은 만들지 않았다. 매 수집 전량 전송 + ingest 시 매칭(및 피드 수집 후 전체 재매칭)만으로도 충분히 단순하고 빨라 실제 병목이 되지 않았다.</div>
@@ -411,11 +426,15 @@
         <div class="btop"><div class="bname"><span class="bnum">4</span>당초 계획에 없던 추가 구현</div>
           <span class="bmark">완료</span></div>
         <ul>
-          <li>백포트 오탐 억제(changelog 근거) · 보안설정 점검(CCE) · 변화 추적</li>
-          <li>자산 관리 + 설정형 RBAC(역할×메뉴 권한) · 감사로그 + 소프트삭제</li>
-          <li>Export API(JSON/XML) + API 토큰 발급 · HTTPS 배포(Caddy) · 스키마 마이그레이션 자동화</li>
+          <li>백포트 오탐 억제 4겹(OSV 버전필터·changelog·errata·debsecan 역방향) · 보안설정 점검(CCE <b>39개 항목</b>) · 변화 추적</li>
+          <li>컨테이너 rootfs 내부 패키지 수집 + SBOM(CycloneDX 1.5 / SPDX 2.3, 호스트 SBOM 임포트·브라우저 보기) · 의존성 그래프와 전이 조치 연결</li>
+          <li><b>자산 탐색(섀도우 IT)</b> + <b>세그먼트 맵</b> — 에이전트가 안 깔린 IP 와 우리 망의 대역 구조까지</li>
+          <li><b>기반시설 U-코드 72개 커버리지</b> · 컴플라이언스 자동판정 4종 · 자산 중요도/N2SF 등급 · 계정 인벤토리</li>
+          <li><b>에이전트 무인 자동 업데이트</b>(sha256 + 커밋 시점 <b>Ed25519</b> 서명 검증) · 웹에서 즉시 실행·예약·주기 변경</li>
+          <li>설정형 RBAC · 감사로그 + 소프트삭제 · Export API(JSON/XML) + API 토큰 · HTTPS 배포(Caddy) · 스키마 마이그레이션 자동화</li>
+          <li>화면 전면 재구성 — 목록·표 위주에서 <b>카드·도넛·랭킹 차트</b>로. Chart.js 를 <b>로컬 벤더링</b>해 CSP <code>default-src 'self'</code> 를 지킨다(CDN 미사용) + 디자인 토큰 체계</li>
         </ul>
-        <div class="out">→ 매칭 정확도로 경쟁하지 않기로 한 대신, 이 위 레이어를 계획보다 두껍게 쌓았다.</div>
+        <div class="out">→ 매칭 정확도로 경쟁하지 않기로 한 대신 이 위 레이어를 계획보다 두껍게 쌓았고, <b>안 깔린 서버와 못 덮는 기준까지 드러내는 방향</b>으로 범위가 넓어졌다.</div>
       </div>
     </div>
     <div class="note warn"><span class="lbl">핵심 전략</span>
@@ -435,6 +454,8 @@
     </ul>
     <div class="note good"><span class="lbl">구현 결과</span>
       3종 RSS 를 스케줄러가 주기 수집하고, 신규 공지는 상세 본문까지 저장해 <code>/advisory.php</code> 에서 그대로 보여준다. RSS 는 피드당 최신 10건만 주므로 과거 이력은 1회성 백필 스크립트(<code>bin/backfill_kisa.php</code>·<code>backfill_kisa_content.php</code>)로 채웠다.</div>
+    <div class="note good"><span class="lbl">기반시설 U-코드 커버리지 — 못 덮는 것까지 센다</span>
+      KISA 「주요정보통신기반시설 기술적 취약점 분석·평가 방법 상세가이드」(2021.03) UNIX 서버 부문 <strong>72개 항목(U-01~U-72)</strong>을 카탈로그로 세워 <strong>분모</strong>로 삼고, 우리 점검이 증적이 되는 <strong>21개</strong>를 왼쪽 조인해 <strong>비어 있는 51개</strong>까지 <code>/kisa-u.php</code> 에 그대로 드러낸다. 덮는 것만 보여주면 커버리지가 100%처럼 보인다 — <em>모른다를 괜찮다로 바꾸지 않는 것</em>이 이 제품의 설계 원칙이다. 항목 명칭·위험도는 서로 독립적인 공개 출처 2곳이 일치할 때만 넣었고, 확인 못 한 항목은 비워 둔다(지어내지 않는다).</div>
   </section>
 
   <!-- 08 -->
@@ -482,6 +503,8 @@
       <div class="res-item"><div class="rn">EPSS (FIRST.org)</div><div class="rd">CVE별 실제 악용 확률. 우선순위 가중에 사용, 무료.</div></div>
       <div class="res-item"><div class="rn">CISA KEV</div><div class="rd">실제 악용이 확인된 취약점 카탈로그, 무료 공개.</div></div>
       <div class="res-item"><div class="rn">KISA 보호나라 RSS</div><div class="rd">국내 보안공지·공지사항 공식 피드 3종. 신규 공지는 상세 본문까지 수집한다.</div></div>
+      <div class="res-item"><div class="rn">KISA 상세가이드 U-코드</div><div class="rd">주요정보통신기반시설 기술적 취약점 분석·평가 상세가이드(2021.03) UNIX 서버 72개 항목. 커버리지의 분모로 쓴다.</div></div>
+      <div class="res-item"><div class="rn">SCAP Security Guide</div><div class="rd">CCE 판정의 참조 근거로 룰 카탈로그(약 2,493건)를 수집한다. 우리가 실제로 판정하는 것은 39개 항목이고, SSG 는 그 근거를 잇는 외부 참조 데이터다.</div></div>
     </div>
     <div class="note"><span class="lbl">채택하지 않은 후보</span>
       Trivy·Grype·OpenSCAP·OSV-Scanner·CVE-bin-tool 은 검토했으나 쓰지 않았다 — 매칭을 OSV API 직접 조회로 단순화하면서 스캐너 바이너리 호출 자체가 필요 없어졌다(KISS).</div>
@@ -496,7 +519,10 @@
       <li><b>스택 확정</b> — Bash 수집 에이전트 + PHP/MySQL 중앙 서버(Docker). 당초 검토했던 Python 은 채택하지 않았다.</li>
       <li><b>매칭 방식 확정</b> — Trivy/Grype 같은 스캐너 도구 호출 대신 OSV.dev API 를 직접 조회하는 방식으로 단순화(KISS).</li>
       <li><b>AI 활용 범위 확정</b> — 판단·조치 로직엔 AI 모델을 넣지 않고 코드 작성 보조로만 사용. 리포트 생성은 Export API 로 경계 밖으로 분리.</li>
-      <li><b>배포 확정</b> — Docker Compose(dev/prod) + Caddy(HTTPS) + <code>agent/install-agent.sh</code>(systemd 상시 poll 서비스, 호스트별 수집 주기, cron 폴백).</li>
+      <li><b>범위 확정</b> — 에이전트를 깐 자산만이 아니라 <b>관리 대역 전체</b>를 본다. 자산 탐색은 IP·포트 판정과 가벼운 정체 파악까지이고, 취약점 판정 파이프라인과는 접점을 두지 않는다.</li>
+      <li><b>기준 커버리지 표기 확정</b> — 기반시설 U-코드 72개를 분모로 두고 덮지 않는 51개를 숨기지 않는다. 컴플라이언스 판정 어휘도 준수·부분준수·미준수·<b>판정 불가</b> 4종이다.</li>
+      <li><b>에이전트 갱신 확정</b> — 무인 자동 업데이트. 중앙→노드 인바운드 경로는 만들지 않고, 노드가 poll 로 당겨 sha256 + 커밋 시점 Ed25519 서명을 검증한 뒤 스스로 교체한다.</li>
+      <li><b>배포 확정</b> — Docker Compose(dev/prod) + Caddy(HTTPS) + <code>agent/install-agent.sh</code>(systemd 상시 데몬 10초 poll, 호스트별 수집 주기, cron 폴백). 화면 자산은 CDN 없이 로컬 벤더링해 CSP <code>default-src 'self'</code> 를 지킨다.</li>
     </ol>
   </section>
 
