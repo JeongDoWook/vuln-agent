@@ -2826,6 +2826,8 @@ form.card .btn--primary:active { transform: translateY(0); }
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* 결과가 파일 링크일 때 뜨는 [PDF 다운로드] 줄. 결과 상자와 같은 자리라 간격도 같다. */
+.report-job__download { margin: .75rem 0 0; }
 .report-job__table { margin-top: var(--sp-2); }
 
 /* 좁은 화면에선 제목과 버튼을 세로로 쌓는다(다른 카드 머리와 같은 분기점). */

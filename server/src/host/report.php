@@ -11,6 +11,11 @@ declare(strict_types=1);
  *   폴링 간격·최대 횟수는 설정값이라 마크업의 data-* 로 내려보낸다 — 화면 스크립트가
  *   자기 숫자를 갖지 않게 한다(매직넘버 금지). 결과 본문은 형식이 정해지지 않은 plain text 라
  *   HTML/마크다운으로 가정하지 않고 <pre> 에 그대로 넣는다(이스케이프는 vg_h / textContent).
+ *
+ *   결과가 **PDF 다운로드 링크**로 오면(외부 API 담당자 확인 2026-08-20) 본문 대신
+ *   [PDF 다운로드] 로 그린다 — 카드와 이력표 양쪽 모두. 링크는 우리 프록시
+ *   (report-download.php)를 가리킨다: 외부 API 는 사내 주소라 브라우저에서 못 닿는다.
+ *   지금은 아직 더미 텍스트가 오므로 두 경로가 모두 살아 있어야 한다.
  */
 
 require_once __DIR__ . '/../report_job.php';
@@ -61,6 +66,11 @@ function vg_host_render_report(int $hostId, string $csrf, array $jobs, ?array $a
           <span data-report-message>보고서를 만들고 있습니다.</span>
         </p>
         <pre class="report-job__result" data-report-result hidden></pre>
+        <?php /* 결과가 파일 링크면 본문 대신 이 버튼이 뜬다(스크립트가 href 를 채운다).
+                 링크는 **우리 프록시**를 가리킨다 — 외부 API 는 사내 주소라 브라우저에서 안 닿는다. */ ?>
+        <p class="report-job__download" hidden data-report-download>
+          <a class="btn btn--sm btn--primary" href="#" target="_blank" rel="noopener" data-report-download-link>PDF 다운로드</a>
+        </p>
 
         <?php
         vg_table(
@@ -87,6 +97,13 @@ function vg_host_render_report(int $hostId, string $csrf, array $jobs, ?array $a
                         return vg_h((string) ($r['username'] ?? '')) ?: '<span class="why">–</span>';
                     },
                     'result' => static function (array $r): string {
+                        // 결과가 파일 링크면 다운로드로, 아니면 예전처럼 본문 보기로 그린다.
+                        //   판단은 카드·프록시와 같은 함수(vg_report_download_url)가 한 곳에서 한다.
+                        if (vg_report_download_url($r['result_head'] ?? null) !== null) {
+                            return '<a class="btn btn--sm btn--primary" target="_blank" rel="noopener" href="'
+                                . vg_h(VG_REPORT_DOWNLOAD_PATH . '?job=' . (int) $r['report_job_id'])
+                                . '">PDF 다운로드</a>';
+                        }
                         if ((int) ($r['result_len'] ?? 0) > 0) {
                             return '<button type="button" class="btn btn--sm btn--ghost" data-report-view="'
                                 . (int) $r['report_job_id'] . '">결과 보기</button>';

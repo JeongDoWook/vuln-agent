@@ -362,9 +362,12 @@ function vg_http_download_many(array $urls, int $concurrency = 3, int $timeout =
     return $results;
 }
 
-// raw 응답 (XML/RSS 등 non-JSON 소스용)
-function vg_http_raw(string $method, string $url, array $headers = [], int $timeout = 60): array {
-    return vg_http_follow($url, [
+// raw 응답 (XML/RSS 등 non-JSON 소스용, AI 보고서 PDF 같은 바이너리 포함).
+// $maxBytes>0 이면 응답이 그 크기를 넘는 순간 전송을 중단한다(code=0 으로 돌아온다 — vg_http_json 과 같은 방식).
+// $allowInternal 은 vg_http_follow 로 그대로 넘어간다 — 사내 인프라를 일부러 부르는 호출 전용
+// (근거·범위는 vg_http_follow 주석). 피드 커넥터는 절대 켜지 않는다(URL 이 사용자 입력이다).
+function vg_http_raw(string $method, string $url, array $headers = [], int $timeout = 60, int $maxBytes = 0, bool $allowInternal = false): array {
+    $opt = [
         CURLOPT_RETURNTRANSFER   => true,
         CURLOPT_FOLLOWLOCATION   => false,  // vg_http_follow 가 SSRF 재검사하며 직접 따라간다
         CURLOPT_TIMEOUT          => $timeout,
@@ -374,5 +377,12 @@ function vg_http_raw(string $method, string $url, array $headers = [], int $time
         CURLOPT_PROTOCOLS        => CURLPROTO_HTTP | CURLPROTO_HTTPS,   // file://·gopher:// 등 차단
         CURLOPT_REDIR_PROTOCOLS  => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         CURLOPT_HTTPHEADER       => $headers,
-    ]);
+    ];
+    if ($maxBytes > 0) {
+        $opt[CURLOPT_NOPROGRESS]       = false;
+        $opt[CURLOPT_PROGRESSFUNCTION] = static function ($ch, $dltotal, $dlnow) use ($maxBytes) {
+            return ($dlnow > $maxBytes || $dltotal > $maxBytes) ? 1 : 0;   // 넘으면 중단
+        };
+    }
+    return vg_http_follow($url, $opt, 5, $allowInternal);
 }

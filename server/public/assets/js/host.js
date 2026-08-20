@@ -134,6 +134,8 @@
 //   외부 보고서 서비스는 망이 갈려 못 닿을 수 있다 — 그때 화면이 깨지지 않고 오류 배지로
 //   떨어지는 게 정상 경로다. 결과 본문은 형식이 정해지지 않은 plain text 라 textContent 로만
 //   넣는다(HTML 로 해석하지 않는다).
+//   결과가 PDF 링크면 서버가 download_url(우리 프록시 경로)을 함께 준다 — 그때는 본문 대신
+//   [PDF 다운로드] 를 보인다. blob 을 만들지 않는다: 평범한 <a> 로 충분하다.
 (function () {
   var card = document.querySelector('[data-report-job]');
   if (!card) { return; }
@@ -147,6 +149,8 @@
   var badge = card.querySelector('[data-report-badge]');
   var messageBox = card.querySelector('[data-report-message]');
   var resultBox = card.querySelector('[data-report-result]');
+  var downloadBox = card.querySelector('[data-report-download]');
+  var downloadLink = card.querySelector('[data-report-download-link]');
 
   function setStatus(tone, label, text) {
     if (!statusBox) { return; }
@@ -159,6 +163,13 @@
     if (!resultBox) { return; }
     resultBox.textContent = text || '';
     resultBox.hidden = !text;
+  }
+  // 결과가 파일이면 본문 대신 다운로드 버튼. href 는 **서버가 준 우리 프록시 경로**만 쓴다
+  //   (외부 주소는 애초에 화면으로 내려오지 않는다).
+  function showDownload(href) {
+    if (!downloadBox || !downloadLink) { return; }
+    if (href) { downloadLink.setAttribute('href', href); }
+    downloadBox.hidden = !href;
   }
   function busy(on) {
     if (createBtn) { createBtn.disabled = on; }
@@ -183,13 +194,15 @@
   function apply(job) {
     if (!job) { return false; }
     if (job.state === 'done') {
-      setStatus('ok', job.state_label, '보고서가 준비되었습니다.');
-      showResult(job.result || '(내용이 비어 있습니다)');
+      setStatus('ok', job.state_label, job.download_url ? '보고서 파일이 준비되었습니다.' : '보고서가 준비되었습니다.');
+      showDownload(job.download_url);
+      showResult(job.download_url ? '' : (job.result || '(내용이 비어 있습니다)'));
       return true;
     }
     if (job.state === 'failed') {
       setStatus('crit', job.state_label, job.error_message || '보고서 생성에 실패했습니다.');
       showResult('');
+      showDownload('');
       return true;
     }
     setStatus('info', job.state_label, '보고서를 만들고 있습니다.');
@@ -216,6 +229,7 @@
     createBtn.addEventListener('click', function () {
       busy(true);
       showResult('');
+      showDownload('');
       setStatus('info', '생성 중', '보고서 작업을 요청하고 있습니다.');
       var body = new URLSearchParams();
       body.append('csrf', csrf);
