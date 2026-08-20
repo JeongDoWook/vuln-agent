@@ -150,8 +150,8 @@ $subject = $container !== null
        'ref'     => $fqdn,
        'digest'  => ''];
 
-// 시각화 보기 — 다운로드가 아니라 화면. 조회도 자산 정보 열람이라 감사로그는 남기되
-//   실제로 파일을 내보낸 것은 아니므로 action 은 EXPORT 가 아니라 READ.
+// 시각화 보기 — 다운로드는 아니지만 전건을 조회해 렌더하는 건 JSON 다운로드와 같다.
+//   같은 데이터가 EXPORT 감사 없이 나가지 않도록 action 도 EXPORT 급으로 맞춘다.
 if ($view === 'html') {
     require_once __DIR__ . '/../src/view.php';
     require_once __DIR__ . '/../src/license_risk.php';
@@ -164,7 +164,7 @@ if ($view === 'html') {
             '자산=' . $subject['ref'] . ' 컴포넌트 ' . count($packages) . '건 (스캔 #' . $scanNo . ')',
             ['host' => $fqdn, 'container' => $cid !== '' ? $cid : null,
              'scan_id' => $scanNo, 'components' => count($packages)],
-            subject: $subject['ref'], action: 'READ'
+            subject: $subject['ref'], action: 'EXPORT'
         );
     }
     // 위에서 이미 이 열람을 구체적으로 기록했다(또는 GET 이 아니라서 아예 안 남겼다) —
@@ -494,6 +494,6 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
     <?php endif; ?>
     <?php vg_page_nav($total, $perPage, $page); ?>
 
-    <?php vg_sbom_links($fqdn, $cid, $scanNo); ?>
+    <?php vg_sbom_links($fqdn, $cid, $scanNo, withView: false); ?>
     <?php vg_footer();
 }
