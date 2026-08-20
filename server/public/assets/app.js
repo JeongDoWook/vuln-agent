@@ -118,6 +118,14 @@
     if (e.defaultPrevented) { return; }
     var form = e.target;
     var confirmMessage = form.getAttribute('data-confirm');
+    // data-confirm-if 가 있으면 그 선택자에 걸린 체크박스가 켜졌을 때만 확인창을 띄운다.
+    //   한 폼이 가벼운 동작과 무거운 옵션(예: 무결성 검사 포함 수집)을 함께 쏠 때, 옵션을
+    //   끈 채로 누른 사람까지 확인창으로 막지 않기 위한 것이다.
+    var confirmIf = form.getAttribute('data-confirm-if');
+    if (confirmMessage && confirmIf) {
+      var gate = form.querySelector(confirmIf);
+      if (!gate || !gate.checked) { confirmMessage = null; }
+    }
     if (confirmMessage && form.dataset.vgConfirmed !== '1') {
       e.preventDefault();
       var submitter = e.submitter;

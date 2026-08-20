@@ -1864,6 +1864,11 @@ td.right .actions { justify-content: flex-end; }
 .agent-control__row .flatpickr-wrapper { width: 100%; max-width: none; }
 .agent-control__row .btn { width: 4.5rem; }
 .agent-control__row:first-child .btn { grid-column: 3; }
+/* 즉시 실행 줄의 '무결성 검사 포함' 체크박스 — 다른 줄의 입력칸이 서는 첫 칸을 그대로 쓴다.
+   label.inline 을 재사용하되(가로 정렬), 이 그리드에서는 라벨이 한 줄을 통째로 먹지 않게
+   칸을 고정하고 입력 폭 100% 규칙에서 체크박스만 뺀다. */
+.agent-control__row label.inline { grid-column: 1; margin-top: 0; }
+.agent-control__row label.inline input[type=checkbox] { width: auto; }
 .agent-control__number { position: relative; }
 .agent-control__number input { padding-right: 2.5rem; }
 .agent-control__number span { position: absolute; right: .8rem; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: var(--fs-sm); pointer-events: none; }
