@@ -1,16 +1,16 @@
 @startuml
-' schema-docs: sha256:d55056114703d764 generated_at=2026-08-13T00:18:10Z tables=53
+' schema-docs: sha256:75518f32abc42923 generated_at=2026-08-19T01:38:30Z tables=60
 ' vuln-agent §5 데이터 모델 (ERD)
 ' 원본: docs/dev/architecture.md §5
 ' 테이블별 전체 컬럼·책임·정규화 현황은 docs/dev/데이터베이스.md 참고.
 '
 ' 범위: 도메인 엔티티 59개 전부(= 전체 60테이블 - tb_schema_migrations).
 '      tb_schema_migrations 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
-'      영역이 한눈에 안 잡히던 문제는 package 로 묶어 해결한다(수집 / 자산탐색 / CVE /
-'      벤더·기준 카탈로그 / 판정결과 / 운영).
+'      영역이 한눈에 안 잡히던 문제는 package 로 묶어 해결한다(수집 / CVE / 벤더·기준 카탈로그 /
+'      판정결과 / 운영 / 자산 탐색).
 '
 ' 표기: · 감사 4컬럼(created_at/updated_at/is_deleted/deleted_at)은 대부분의 테이블에 통일되어
-'        있으나 이 다이어그램엔 생략한다(엔티티마다 4줄씩 붙으면 읽을 수 없다).
+'        있으나 이 다이어그램엔 생략한다(엔티티 39개에 4줄씩 붙으면 읽을 수 없다).
 '      · 컬럼도 전부 적지 않는다 — PK/FK 와 그 테이블을 이해하는 데 필요한 것만.
 '      · 실선(--)은 FK 가 실제로 걸린 관계, 점선(..)은 FK 없이 애플리케이션이 조인하는 관계다.
 '
@@ -240,11 +240,10 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         --
         host_id : bigint <<FK>>
         ip : string
-        ' UK(host_id, ip) - IPv4 만. 자산 탐색 대조의 좌변
+        ' UK(host_id, ip) - 자산 탐색 IP 대조의 좌변
         iface : string
         first_seen : datetime
         last_seen : datetime
-        ' 사라져도 지우지 않는다(소프트삭제 관례)
     }
 
     entity tb_host_route {
@@ -252,72 +251,12 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         --
         host_id : bigint <<FK>>
         cidr : string
-        ' UK(host_id, cidr). 기본경로는 0.0.0.0/0
+        ' UK(host_id, cidr) - 0.0.0.0/0 이면 기본경로 행
         gateway_ip : string
         ' NULL = 직결 서브넷(scope link)
         iface : string
         first_seen : datetime
         last_seen : datetime
-    }
-}
-
-package "자산 탐색 — 중앙이 대역을 훑어 찾은 것(에이전트와 별개 파이프라인)" {
-
-    entity tb_discovery_target {
-        discovery_target_id : bigint <<PK>>
-        --
-        cidr : string <<UK>>
-        ports : string
-        ' NULL = 2단계 기본 포트 세트
-        label : string
-        enabled : bool
-        created_by : bigint
-        ' tb_user - FK 없음(사용자를 지워도 이력은 남는다)
-        is_deleted : bool
-    }
-
-    entity tb_discovery_run {
-        discovery_run_id : bigint <<PK>>
-        --
-        discovery_target_id : bigint <<FK>>
-        status : enum
-        ' pending running done failed
-        ip_total : int
-        ip_alive : int
-        port_checked : int
-        ' 실제 시도한 (IP,포트) 조합 - 성능 근거
-        open_total : int
-        elapsed_seconds : decimal
-    }
-
-    entity tb_discovered_asset {
-        discovered_asset_id : bigint <<PK>>
-        --
-        discovery_target_id : bigint <<FK>>
-        ip : string
-        ' UK(discovery_target_id, ip) - run 마다 갈아엎지 않고 누적
-        hostname : string
-        ' 역DNS(PTR). NULL = 조회 실패/미조회
-        last_run_id : bigint
-        ' tb_discovery_run - FK 없음
-        host_id : bigint <<FK>>
-        ' NULL = 섀도우 IT 후보
-        state : enum
-        ' new known ignored(사람 판단 - 집행기가 덮지 않는다)
-    }
-
-    entity tb_discovered_port {
-        discovered_port_id : bigint <<PK>>
-        --
-        discovered_asset_id : bigint <<FK>>
-        discovery_run_id : bigint <<FK>>
-        port : int
-        ' open 만 저장한다(닫힌 포트는 run 마다 수만 행)
-        proto : string
-        service_hint : string
-        ' 포트 관례에서 유추 - 추측이다
-        banner : string
-        ' HTTP Server 헤더 또는 TLS 인증서 CN
     }
 }
 
@@ -469,21 +408,6 @@ package "벤더·기준 카탈로그 — 배포판·커널·보안설정 기준"
         ' CIS NIST STIG PCI-DSS 참조
     }
 
-    entity tb_control_catalog {
-        control_catalog_id : bigint <<PK>>
-        --
-        framework : string
-        ' KISA_U
-        control_id : string
-        ' UK(framework, control_id) - U-01 …
-        control_name : string
-        ' 출처로 확인 못 한 항목은 NULL(지어내지 않는다)
-        category : string
-        severity : string
-        ' 가이드 위험도 상/중/하
-        sort_order : int
-    }
-
     entity tb_control_mapping {
         control_mapping_id : bigint <<PK>>
         --
@@ -494,6 +418,20 @@ package "벤더·기준 카탈로그 — 배포판·커널·보안설정 기준"
         control_id : string
         control_name : string
         ' UK(rule_code, framework, control_id)
+    }
+
+    entity tb_control_catalog {
+        control_catalog_id : bigint <<PK>>
+        --
+        framework : string
+        ' KISA_U (지금은 이 하나)
+        control_id : string
+        ' UK(framework, control_id)
+        control_name : string
+        ' 출처로 확인 못 한 항목은 NULL
+        category : string
+        severity : string
+        sort_order : int
     }
 
     entity tb_control_guide {
@@ -736,24 +674,81 @@ package "피드 운영 · 인증 · 감사" {
     }
 }
 
+package "자산 탐색 — 관리 대역 스윕(섀도우 IT)" {
+
+    ' 취약점 수집과 별개 파이프라인이다. 접점은 tb_discovered_asset.host_id 하나뿐.
+
+    entity tb_discovery_target {
+        discovery_target_id : bigint <<PK>>
+        --
+        cidr : string <<UK>>
+        ports : string
+        ' NULL = 기본 포트 세트
+        label : string
+        enabled : bool
+        created_by : bigint
+        ' tb_user.user_id - FK 없음(감사 관례)
+    }
+
+    entity tb_discovery_run {
+        discovery_run_id : bigint <<PK>>
+        --
+        discovery_target_id : bigint <<FK>>
+        status : enum
+        ' pending running done failed
+        started_at : datetime
+        finished_at : datetime
+        ip_total/ip_alive : int
+        port_checked/open_total : int
+        ' 닫힌 포트는 저장 안 함 - 집계로만
+        elapsed_seconds : decimal
+        error_text : text
+    }
+
+    entity tb_discovered_asset {
+        discovered_asset_id : bigint <<PK>>
+        --
+        discovery_target_id : bigint <<FK>>
+        ip : string
+        ' UK(discovery_target_id, ip) - 대역 기준 누적
+        hostname : string
+        ' 역DNS(PTR). NULL = 이번에 못 찾음
+        host_id : bigint <<FK>>
+        ' NULL = 섀도우 IT 후보
+        state : enum
+        ' new known ignored
+        first_seen : datetime
+        last_seen : datetime
+        last_run_id : bigint
+    }
+
+    entity tb_discovered_port {
+        discovered_port_id : bigint <<PK>>
+        --
+        discovered_asset_id : bigint <<FK>>
+        discovery_run_id : bigint <<FK>>
+        port : int
+        proto : string
+        ' UK(asset, run, port, proto)
+        service_hint : string
+        ' 포트 관례에서 유추 - 추측이다
+        banner : string
+        ' HTTP Server 헤더 또는 TLS CN
+    }
+}
+
 ' ── FK 가 실제로 걸린 관계 ────────────────────────────
 tb_host ||--o{ tb_scan : "수집 이력"
 tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
 tb_host ||--o{ tb_scan_run : "실제 실행 이력"
 tb_host ||--o{ tb_agent_command : "수집 명령"
 tb_host ||--o{ tb_host_account : "계정 인벤토리"
+tb_host ||--o{ tb_host_address : "호스트 IP(NIC 마다 1행)"
+tb_host ||--o{ tb_host_route : "라우팅 행 — 세그먼트 맵의 근거"
 tb_host ||--o{ tb_remediation_note : "미조치 사유 메모"
 tb_host ||--o{ tb_finding_status : "조치 상태"
 tb_host ||--o| tb_asset_grade_review : "최신 등급 검토"
 tb_host ||--o{ tb_asset_grade_suggestion_history : "등급 제안 관찰 이력"
-tb_host ||--o{ tb_host_address : "이 호스트의 IPv4"
-tb_host ||--o{ tb_host_route : "직결 서브넷·기본 게이트웨이"
-
-tb_discovery_target ||--o{ tb_discovery_run : "대역 스캔 1회"
-tb_discovery_target ||--o{ tb_discovered_asset : "그 대역에서 발견한 IP(누적)"
-tb_discovered_asset ||--o{ tb_discovered_port : "열린 포트"
-tb_discovery_run ||--o{ tb_discovered_port : "그 회차에 열려 있던 포트"
-tb_host |o--o{ tb_discovered_asset : "IP 대조 성공 = 관리 중(state=known)"
 
 tb_scan ||--o{ tb_package : "설치 패키지"
 tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
@@ -766,9 +761,7 @@ tb_scan ||--o{ tb_suppressed_finding : "억제된 건"
 tb_scan ||--o{ tb_pkg_changelog_cve : "억제 근거②"
 tb_scan ||--o{ tb_applied_errata : "억제 근거③"
 tb_scan ||--o{ tb_debsecan : "억제 근거④"
-' 라벨을 짧게 둔다 — 길게 적었더니 옆의 '억제 근거④' 와 같은 자리에 겹쳐 찍혔다(#219 와 같은 결함).
-'   무슨 뜻인지는 README 의 ERD 절이 갖는다.
-tb_scan ||--o{ tb_stale_lib : "억제 취소⑤"
+tb_scan ||--o{ tb_stale_lib : "억제 취소 — 재시작 필요"
 tb_scan ||--o{ tb_cce_finding : "보안설정 점검"
 tb_scan ||--o{ tb_host_account : "그 스냅샷의 계정 목록"
 tb_scan ||--o{ tb_package_dependency : "의존성 엣지(SBOM·pom)"
@@ -783,6 +776,12 @@ tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
 tb_user |o--o{ tb_asset_grade_review : "등급 검토자"
 tb_agent_token ||--o{ tb_agent_replay_nonce : "소진된 nonce"
 
+tb_discovery_target ||--o{ tb_discovery_run : "대역 스윕 실행 이력"
+tb_discovery_target ||--o{ tb_discovered_asset : "발견한 IP(대역 기준 누적)"
+tb_discovered_asset ||--o{ tb_discovered_port : "열린 포트만"
+tb_discovery_run ||--o{ tb_discovered_port : "그 실행에서 열려 있던 포트"
+tb_host |o--o{ tb_discovered_asset : "IP 대조로 붙은 기존 자산(없으면 NULL)"
+
 ' ── FK 없는 관계(점선) — 자연키 애플리케이션 조인 ─────
 ' CVE 도메인은 피드마다 수집 순서가 독립이라 FK 를 걸지 않는다(의도적 설계).
 tb_cve ||..o{ tb_cve_affected_package : "영향 패키지"
@@ -793,13 +792,13 @@ tb_cve_affected_package }o..|| tb_package_summary : "사전집계(OSV 실행 시
 tb_container ||..o{ tb_package : "컨테이너 내부 패키지(container_id)"
 tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"
 tb_cce_finding }o..o{ tb_control_mapping : "기준별 통제(rule_code = code)"
-' 라벨을 한 줄로 짧게 — 이 자리는 벤더 판정 점선들이 몰려 라벨이 서로 겹친다.
-'   분모/분자 설명은 README 의 ERD 절이 갖는다.
-tb_control_catalog |o..o{ tb_control_mapping : "U-코드 커버리지"
 tb_control_mapping }o..o| tb_control_guide : "통제 설명(framework, control_id)"
 tb_control_mapping }o..o| tb_cce_rule_guide : "룰 조치(rule_code)"
+tb_control_catalog |o..o{ tb_control_mapping : "기준 전체(분모) ↔ 우리가 덮는 항목(분자)"
 tb_remediation_note ||..o{ tb_finding : "자연키(host+cid+cve+package)로 붙는 사람 메모"
 tb_finding_status ||..o{ tb_finding : "자연키(host+container+cve+package) 조치 상태"
+
+tb_host_address }o..o| tb_discovered_asset : "IP 값 대조 — 두 파이프라인의 유일한 접점"
 
 ' 벤더 판정 소스는 매처가 참조만 한다(스캔에 매달리지 않음).
 tb_debian_tracker }o..|| tb_finding : "데비안 백포트 판정"
@@ -817,14 +816,6 @@ tb_kernel_cve }o..|| tb_finding : "커널 CVE 판정"
 '                     FK 로 묶지 않는다(원본이 지워져도 증적은 남아야 한다). 근거는 evidence JSON 에 담는다.
 ' tb_package_dependency : parent/child 는 값(manager+name+version)으로만 이어지는 자기참조라
 '                     FK 를 걸 수 없다 — 자식이 tb_package 에 없을 수도 있다(전이 의존성).
-' tb_control_catalog : 기반시설 U-코드 72개의 카탈로그(분모). tb_control_mapping 과 (framework, control_id)
-'                     자연키로만 만나고 FK 는 없다 — 매핑이 없는 항목(= 우리가 안 덮는 51개)이
-'                     드러나는 것이 이 표의 목적이라 매핑 쪽에 매달 수 없다.
-' tb_discovered_asset.last_run_id : tb_discovery_run 을 가리키지만 FK 가 없다(다른 세 FK 와 달리
-'                     "마지막으로 본 회차" 라는 캐시 성격이고, 저장 트랜잭션이 이 값으로 방금 upsert 한
-'                     행만 다시 집어내는 데 쓴다).
-' tb_discovery_target.created_by / tb_discovery_run.created_by : tb_user 를 가리키지만 FK 없음
-'                     (이 저장소 감사 관련 테이블 관례 — 사용자를 지워도 이력은 남는다).
 ' tb_schema_migrations : 마이그레이션 러너의 인프라 테이블 — 도메인 엔티티가 아니라 이 ERD 에서 제외.
 
 @enduml

@@ -6,6 +6,9 @@
 소스는 `.puml`, 같이 있는 `.svg` 는 그 렌더 결과다 — 아래 그림은 전부 그 `.svg` 이고, 클릭하면 원본이 열린다.
 소스를 고쳤으면 [`render.sh`](render.sh) 로 다시 뽑는다(docker 로 폴더의 `*.puml` 을 한 번에, 몇 번 돌려도 결과는 같다).
 
+**단 `erd.puml`·`erd.svg` 는 손으로 고치지 않는다** — 생성기가 소유하는 산출물이라 편집 경로가 다르다.
+이유와 갱신 방법은 [ERD](#erd) 절 첫머리에 적었다. 나머지 8종은 손으로 쓰고 `render.sh` 로 뽑는 것이 맞다.
+
 | 다이어그램 | 무슨 질문에 답하는가 | 소스 |
 |---|---|---|
 | [시스템 개요](#시스템-개요) | 에이전트가 보낸 JSON 이 어디를 거쳐 대시보드까지 가는가 | [`시스템개요.puml`](시스템개요.puml) |
@@ -78,6 +81,25 @@ Docker Secrets 가 어느 컨테이너로 들어가는지, prod 에서 caddy·we
 그림이 작아 안 보이면 클릭한다 — 원본 크기로 열린다.
 
 ## ERD
+
+> **이 그림은 손으로 고치지 않는다.** `erd.puml` 과 `erd.svg` 는
+> [`docs/dev/데이터베이스.md`](../../dev/데이터베이스.md)·[`docs/specs/테이블명세서.xlsx`](../테이블명세서.xlsx) 와 함께
+> [`docs/specs/gen_table_spec.py`](../gen_table_spec.py) 가 **한 묶음으로 관리하는 생성물**이다.
+> `erd.puml:2` 의 `' schema-docs: sha256:… tables=N` 마커도 생성기가 찍는다 — 본문만 PlantUML 로 고치면
+> 마커가 옛 값으로 남아 파일 하나가 스스로와 어긋난다.
+>
+> - **갱신**: `SCHEMA_DOCS_UPDATE=1 tests/schema_docs_test.sh`
+>   — disposable MySQL 에 초기 DDL 과 전체 마이그레이션을 적용하고, 그 information_schema 를 정본으로
+>   `데이터베이스.md`·`erd.puml`·`테이블명세서.xlsx` 를 다시 쓴다. `erd.svg` 는 그 다음 `render.sh` 로 뽑는다.
+> - **검사**: `python docs/specs/gen_table_spec.py --source repository --check`
+>   — docker 없이 도는 오프라인 fallback 이다. 생성기 docstring 이 밝히듯 아래 게이트를 대신하지는 못한다.
+>
+> 넷이 어긋난 채로 두면 `deploy/gates.tsv` 의 **`schema-docs`**(required)가 drift 로 잡는다. 그런데 이 게이트는
+> **`central` 프로파일 전용**이라 **개인 워크트리 pre-push 에는 없다** — 로컬은 전부 통과한 것처럼 보이다가
+> 중앙에서 처음 터진다. 실제로 이 함정을 밟아 본 뒤에 남기는 경고다.
+>
+> `render.sh` 는 폴더의 `*.puml` 을 전부 훑으므로 `erd.svg` 도 같이 다시 뽑힌다. `erd.puml` 을 생성기로
+> 갱신하지 않은 채 `render.sh` 만 돌렸다면 나온 `erd.svg` 는 되돌린다.
 
 `tb_host`→`tb_scan` 을 축으로 패키지·노출·프로세스·계정·의존성 그래프와 판정 결과, CVE 미러 쪽 테이블이
 어떻게 엮이는지다(도메인 엔티티 59개 = 전체 60테이블 − `tb_schema_migrations`).
