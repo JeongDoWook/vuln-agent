@@ -1,10 +1,11 @@
 # vuln-agent 에이전트 — 설치·운영 가이드
 
-> **현행 버전: 3.13** (문서 기준 2026-08-20). 실제 값은 `vuln-inventory-agent.sh` 의
+> **현행 버전: 3.14** (문서 기준 2026-08-20). 실제 값은 `vuln-inventory-agent.sh` 의
 > `SCRIPT_VERSION` 이 정본이다.
 
 | 버전 | 들어간 것 |
 |---|---|
+| 3.14 | pip 메타(`dist-info/METADATA`·`egg-info/PKG-INFO`) 라이선스에 **PEP 639 `License-Expression` 우선 적용 + Classifier 폴백** — 실측 커버리지 4/15 → 15/15 |
 | 3.13 | 호스트 **Go 바이너리 buildinfo** 수집, Ruby 앱 의존성(`Gemfile.lock`·vendored `*.gemspec`), Node/Python 보조 lock(`yarn.lock`·`pnpm-lock.yaml`·`poetry.lock`·`Pipfile.lock`·`*.egg-info/PKG-INFO`) |
 | 3.12 | 패키지 무결성 검증(`--verify-files`, 기본 꺼짐) |
 | 3.11 | **헤더만 있는 섹션 파일도 그대로 전송** — 중앙이 "수집했고 0건"과 "아예 안 왔다"를 구분해 자산등급 제안을 판정불가로 분리한다 |
