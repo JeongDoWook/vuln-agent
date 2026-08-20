@@ -1,6 +1,6 @@
 # deploy — 배포 인프라
 
-> 문서 기준: 2026-08-15 · 운영 배포는 `update.sh`, 에이전트 일괄 설치는 `install_staged_agents.sh`가 정본이다.
+> 문서 기준: 2026-08-20 · 운영 배포는 `update.sh`, 에이전트 일괄 설치는 `install_staged_agents.sh`가 정본이다.
 
 중앙 서버(대시보드 + 수집 API)를 컨테이너로 띄우는 곳이다. compose 파일·러너·Caddy(HTTPS
 리버스 프록시)·마이그레이션 러너가 모두 여기 있다. **모든 명령은 `cd deploy` 후 실행한다.**
@@ -54,10 +54,23 @@ commit에 머물고 임시 worktree는 자동 정리된다.
 - 판단 로직 회귀는 `bash tests/update_sh_scenarios.sh` 가 검증한다(임시 저장소 + docker 스텁으로
   `update.sh` 를 통째로 실행 — 운영 서버가 필요 없다).
 
+### 운영 게이트 (`run-gates.sh` · `gates.tsv`)
+
 필수 운영 검증은 `bash deploy/run-gates.sh --profile central --json`으로 실행한다. 결과의 각
 check에는 `id`, `required`, `passed`, `duration_ms`, `evidence`가 있고, required 실패가 하나라도
 있으면 JSON의 `ok=false`와 종료코드 1이 함께 나온다. 로컬 pre-push도 같은 `deploy/gates.tsv`와
 runner를 사용하므로 Docker 미기동·현재 tree stack 불응·smoke 미실행을 성공 skip으로 바꾸지 않는다.
+
+- 검사 목록·프로파일(`pre-push` / `central`)·required 여부·의존관계는 **`deploy/gates.tsv` 한
+  파일**이 정본이다. 검사를 늘리거나 required 를 바꾸려면 여기만 고친다.
+- **`migration-rehearsal` 은 이 브랜치가 `origin/main` 대비 `db/migrations`·`db/*.sql` 을
+  실제로 건드렸을 때만 돈다**(2026-08-20, #693). 안 건드렸으면 `db/ 변경 없음 — 스킵` 을
+  출력하고 통과한다 — 무거운 disposable MySQL 을 push 마다 띄우지 않기 위해서다.
+  merge-base 를 못 구하거나 diff 자체가 실패하면(얕은 clone, `origin/main` 없음) **스킵하지
+  않고 전체 rehearsal 로 폴백한다** — 속도보다 정확성이 기본값이다.
+- `pre-push` 훅은 게이트를 환경변수로 우회할 수 없다. `VG_GATE_*`·`VG_SMOKE_BASE` 등
+  내부 override 가 환경에 하나라도 있으면 push 자체를 거부한다(빈 manifest·exit-0 스크립트로
+  required 검사를 대체하는 false green 차단).
 
 ---
 
@@ -128,6 +141,10 @@ Caddy 루트는 10년짜리라 거의 바뀌지 않는다. `data`(caddy_data) �
 ---
 
 ## DB 백업
+
+> **배포(`update.sh`)는 백업을 만들지 않는다.** 예전엔 배포가 백업·검증까지 했지만 2026-08-17
+> (#640)에 **마이그레이션만 남기고 걷어냈다.** 백업은 아래 **crontab(매일)** 과, 데이터를 지우는
+> 마이그레이션 앞에서 **사람이 손으로 돌리는 것** 둘뿐이다.
 
 `deploy/backup_db.sh` 가 `vulnagent-db` 컨테이너 안에서 `mysqldump`(`--single-transaction
 --routines`)를 실행해 gzip 압축 후 `/apps/vulnagent/backups/vulnagent_YYYYMMDD_HHMMSS.sql.gz`
@@ -296,6 +313,14 @@ ETag 재검증(`If-None-Match` → `304`)은 Apache 쪽 `DeflateAlterETag NoChan
 **이미 돌고 있는 서버를 업데이트할 때만** 아래를 날짜 순으로 훑고, 아직 안 한 게 있으면
 `update.sh` **전에** 처리한다. 앞으로 같은 성격의 공지도 여기에 날짜별로 쌓는다.
 
+| 날짜 | 무엇 | 서버에서 할 일 |
+|---|---|---|
+| 2026-07-27 | `.env.prod` 에 `PROD_DOMAIN` 추가 | **있다** — 이 줄이 없으면 caddy 가 못 뜬다(= HTTPS 중단) |
+| 2026-08-08 | 보안 응답 헤더 추가(HSTS 제외) | 없음 — `update.sh` 가 caddy 를 재기동하면 적용된다 |
+
+<details>
+<summary>각 항목의 절차와 배경 (펼치기)</summary>
+
 ### 2026-07-27 — `.env.prod` 에 `PROD_DOMAIN` 추가
 
 Caddy 사이트 주소를 저장소에 박아 두지 않고 **환경변수 `PROD_DOMAIN`** 으로 뺐다
@@ -354,3 +379,5 @@ TLS 는 `tls internal`(Caddy 내부 CA 자체서명)이고, **이건 확정된 �
 
 자체서명을 쓰는 이유와 그 대가(에이전트 루트 CA 배포)는
 [`caddy/README.md`](caddy/README.md) **"자체서명을 쓰는 이유"** 한 곳에 둔다.
+
+</details>

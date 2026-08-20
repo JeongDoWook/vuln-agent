@@ -1,6 +1,6 @@
 # db/migrations — 자동 적용 마이그레이션
 
-> 문서 기준: 2026-08-11. 최신 마이그레이션은 파일명 사전순으로 판단한다.
+> 문서 기준: 2026-08-20. 최신 마이그레이션은 파일명 사전순으로 판단한다.
 
 `deploy/migrate.sh` 가 여기 있는 `*.sql` 을 **파일명 사전순으로**, **아직 안 든 것만**
 적용하고 `tb_schema_migrations` 에 기록한다. `compose_runner.sh up` 과 `update.sh` 가
@@ -35,6 +35,17 @@ echo "$(date +%Y%m%d%H%M%S)_무엇.sql"
 
 **기존 `0001~0020`(중복 번호 포함 22개) 은 그대로 둔다.** 사전순으로 `0…` 이 `2…` 보다 앞서므로 옛 파일이 먼저,
 새 파일이 나중에 도는 순서가 자연히 지켜진다. 섞여 있어도 안전하다.
+
+### 집행자는 `deploy/hooks/pre-push` — 규칙은 코드가 막는다
+
+| 검사 | 언제 도나 | 걸리면 |
+|---|---|---|
+| **파일명 타임스탬프** | 이 브랜치가 `db/migrations/` 에 **새로 만든** 파일만(`origin/main` 에 이미 있는 옛 연번 파일은 안 본다) | push 중단 + `git mv` 명령 안내 |
+| **`migration-rehearsal`** (일회용 MySQL 에 initdb + 전 마이그레이션 적용) | 이 브랜치가 `origin/main` 대비 `db/migrations`·`db/*.sql` 을 **실제로 건드렸을 때만**(2026-08-20, #693). 안 건드렸으면 `db/ 변경 없음 — 스킵` | push 중단 |
+
+`migration-rehearsal` 은 merge-base 를 못 구하거나 diff 가 실패하면(얕은 clone, `origin/main`
+없음) 스킵하지 않고 **전체 rehearsal 로 폴백**한다 — 속도보다 정확성이 기본값이다.
+검사 목록·required 여부는 `deploy/gates.tsv` 가 정본이다.
 
 ### 나머지
 - **한 번 병합된 파일명은 바꾸지 않는다.** 러너는 `tb_schema_migrations` 를 **파일명**으로
