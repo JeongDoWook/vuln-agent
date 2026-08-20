@@ -179,6 +179,19 @@ check_schedule_unit() {
   fi
 }
 check_migration_rehearsal() {
+  # 이 push(브랜치)가 origin/main 대비 db/ 스키마를 실제로 건드렸을 때만 무거운
+  # disposable MySQL rehearsal 을 돈다. base 를 못 구하거나 diff 자체가 실패하면
+  # (얕은 clone, origin/main 없음 등) 판단을 모호하게 두지 않고 항상 전체 rehearsal 로
+  # fallback 한다 — 속도보다 정확성을 기본값으로 둔다.
+  local base diff_rc
+  if base=$(git -C "$ROOT" merge-base HEAD origin/main 2>/dev/null) && [ -n "$base" ]; then
+    git -C "$ROOT" diff --quiet "$base" HEAD -- db/migrations 'db/*.sql' 2>/dev/null
+    diff_rc=$?
+    if [ "$diff_rc" -eq 0 ]; then
+      echo "migration-rehearsal: db/ 변경 없음 — 스킵 (base=$base)"
+      return 0
+    fi
+  fi
   [ -r "$MIGRATION_TEST" ] || { echo "migration rehearsal missing: $MIGRATION_TEST"; return 1; }
   bash "$MIGRATION_TEST"
 }
