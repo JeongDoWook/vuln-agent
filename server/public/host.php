@@ -113,6 +113,10 @@ try {
         // 대기 중인 수집 명령은 자산 설정 권한이 있는 사람에게만 보여준다(인가는 화면이 확정한다).
         if (vg_can('assets')) {
             $pendingCommands = vg_host_load_pending_commands($pdo, $hostId);
+            // AI 보고서 이력도 같은 인가 범위다. 스캔 이력이 없는 자산에서도 보고서 작업은
+            //   만들 수 있으므로, 최신 스캔 유무와 무관하게 여기서 읽는다 — 아래 if ($scan)
+            //   안에 두면 미수집 자산에서 진행 중 job 을 새로고침 뒤에 못 이어간다.
+            ['jobs' => $reportJobs, 'active' => $reportActive] = vg_host_load_report_jobs($pdo, $hostId);
         }
         $scan        = vg_host_load_latest_scan($pdo, $hostId);
         $latestAgent = vg_host_load_latest_agent_version($pdo);
@@ -121,11 +125,6 @@ try {
     if ($scan) {
         $sid = (int) $scan['scan_id'];
         $scanAge = $scan['age_min'];
-
-        // AI 보고서 카드는 자산관리 권한 뒤에 있다 — 볼 사람에게만 이력을 읽는다(쿼리도 그때만).
-        if (vg_can('assets')) {
-            ['jobs' => $reportJobs, 'active' => $reportActive] = vg_host_load_report_jobs($pdo, $hostId);
-        }
 
         // 화면 머리의 두 경고("0건 = 안전"이 아닐 수 있다)가 읽는 근거.
         $unsupContainers = vg_host_load_unsupported_containers($pdo, $sid);
