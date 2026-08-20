@@ -408,7 +408,14 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
     /* 이 화면의 도넛 둘이 순수 SVG(vg_donut_kpi)로 바뀌어 Chart.js 를 안 쓴다 —
      *   vendor 70KB 를 부르던 vg_chart_assets() 도 같이 걷는다. */
     ?>
-    <?php vg_page_title($title . ' SBOM', '', ['count' => $total, 'count_label' => '개 컴포넌트']); ?>
+    <?php /* 표준 포맷 다운로드는 페이지 끝의 카드 한 장이었다 — 버튼 둘뿐이라 카드가 통째로
+             빈 띠였다. 제목 줄 액션 자리로 올린다(인가 게이트는 vg_sbom_links 안에 그대로). */ ?>
+    <?php vg_page_title($title . ' SBOM', '', [
+        'count' => $total, 'count_label' => '개 컴포넌트',
+        'actions' => vg_capture(static function () use ($fqdn, $cid, $scanNo): void {
+            vg_sbom_links($fqdn, $cid, $scanNo, withView: false);
+        }),
+    ]); ?>
     <?php // 지금 보고 있는 스캔 회차 — 과거 스캔을 view=html 로 열었을 때 최신인 줄 착각하지 않도록. ?>
     <p class="why">스캔 #<?= $scanNo ?><?= $collectedAt !== '' ? ' · ' . vg_h($collectedAt) . ' 수집' : '' ?></p>
 
@@ -509,6 +516,5 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
     <?php endif; ?>
     <?php vg_page_nav($total, $perPage, $page); ?>
 
-    <?php vg_sbom_links($fqdn, $cid, $scanNo, withView: false); ?>
     <?php vg_footer();
 }

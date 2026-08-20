@@ -137,10 +137,25 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
   $maxSev = vg_cvss_sev($maxCvss === null ? null : (string) $maxCvss);
 
   // 다른 상세 페이지(호스트·CVE)와 같은 히어로 패턴. 관련 CVE 수가 이 공지의 무게다.
+  /* '핵심 지표' 카드(stat-grid 네 칸)를 이 줄로 접었다 — 네 값이 전부 짧은데(배지 하나·숫자
+     하나) .stat-grid 의 auto-fit 1fr 이 그 값을 본문 폭 전체로 늘려, 카드 하나가 한 줄을
+     통째로 쓰면서 칸 사이는 300px 씩 비어 있었다(1920px 실측). 히어로 부제는 이미 같은 성격의
+     식별값을 담는 자리이고 flex-wrap 이라 값이 늘어도 접힌다. **값은 그대로 넷 다 남는다.** */
   $meta = [
       vg_h((string) $adv['source']),
       '발행일 ' . vg_h((string) ($adv['published'] ?? '–')),
       '공지 #' . (int) $adv['advisory_id'],
+      'KEV ' . ($kevTotal > 0
+          ? vg_badge(number_format($kevTotal) . '건', 'crit', '실제 악용이 확인된 취약점(CISA KEV)이 포함됨')
+          : vg_badge('없음', 'muted')),
+      '최고 CVSS ' . ($maxCvss !== null
+          ? vg_h((string) $maxCvss) . ' ' . vg_sev_badge(strtoupper($maxSev))
+          : '–'),
+      '영향 자산 ' . number_format($assetHostTotal) . '대'
+          . ($assetTotal > $assetHostTotal ? ' · 발견 ' . number_format($assetTotal) . '건' : ''),
+      '본문 ' . (!empty($adv['content'])
+          ? number_format((int) $adv['content_len']) . '자'
+          : vg_badge('미수집', 'warn')),
       '<a href="/advisories.php">← 공지 목록</a>',
   ];
   vg_hero(
@@ -151,36 +166,6 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
       '관련 취약점'
   );
   ?>
-
-<div class="card">
-  <strong>핵심 지표</strong>
-  <div class="card__body stat-grid">
-    <?php /* 관련 CVE 총건수 타일은 걷었다 — 바로 위 히어로 뱃지('CVE N건')와 아래 서브탭 앵커가
-             같은 수를 이미 두 번 말한다. 이 절에 남길 값은 그 수를 나눠 보는 것들이다. */ ?>
-    <div class="stat">
-      <span class="stat__val"><?= $kevTotal > 0 ? vg_badge(number_format($kevTotal) . '건', 'crit', '실제 악용이 확인된 취약점(CISA KEV)이 포함됨') : vg_badge('없음', 'muted') ?></span>
-      <div class="why">KEV 포함</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= $maxCvss !== null
-          ? vg_h((string) $maxCvss) . ' ' . vg_sev_badge(strtoupper($maxSev))
-          : '<span class="why">–</span>' ?></span>
-      <div class="why">최고 CVSS</div>
-    </div>
-    <div class="stat">
-      <span class="stat__val"><?= number_format($assetHostTotal) ?>대</span>
-      <div class="why">영향 자산<?= $assetTotal > $assetHostTotal ? ' · 발견 ' . number_format($assetTotal) . '건' : '' ?></div>
-    </div>
-    <?php /* 발행일·출처 피드 타일도 걷었다 — 제목 아래 히어로 부제가 '<출처> · 발행일 <날짜>' 로
-             둘 다 달고 있고, 정본은 아래 [원문·수집 정보] 절이 갖는다. */ ?>
-    <div class="stat">
-      <span class="stat__val"><?= !empty($adv['content'])
-          ? number_format((int) $adv['content_len']) . '자'
-          : vg_badge('미수집', 'warn') ?></span>
-      <div class="why">본문</div>
-    </div>
-  </div>
-</div>
 
 <nav class="subtabs subtabs--sticky">
   <a href="#cves">관련 CVE</a>

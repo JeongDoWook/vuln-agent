@@ -99,23 +99,28 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
             <input type="hidden" name="review_version" value="<?= (int) ($review['review_version'] ?? 0) ?>">
             <input type="hidden" name="grade_version" value="<?= (int) ($host['grade_version'] ?? 0) ?>">
 
-            <label class="field" for="asset-criticality">중요도
-              <select id="asset-criticality" name="criticality">
-                <option value="">미지정</option>
-                <?php foreach (VG_ASSET_CRITICALITY as $v => $label): ?>
-                  <option value="<?= vg_h($v) ?>"<?= $curCrit === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
+            <?php /* 확정 입력 두 칸은 셀렉트 하나씩이라 한 줄씩 쌓으면 오른쪽 절반이 늘 빈다.
+                     수집 제어가 같은 이유로 두 칸 격자를 쓰고 있어 공용 헬퍼(.form-grid)로 맞춘다 —
+                     이 화면 전용 격자를 새로 만들지 않는다. 좁은 화면에선 .form-grid 가 알아서 한 열로 떨어진다. */ ?>
+            <div class="form-grid">
+              <label class="field" for="asset-criticality">중요도
+                <select id="asset-criticality" name="criticality">
+                  <option value="">미지정</option>
+                  <?php foreach (VG_ASSET_CRITICALITY as $v => $label): ?>
+                    <option value="<?= vg_h($v) ?>"<?= $curCrit === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
 
-            <label class="field" for="asset-grade">보안등급 (N2SF)
-              <select id="asset-grade" name="grade">
-                <option value="">미지정(확정 해제)</option>
-                <?php foreach (VG_ASSET_GRADES as $v => $label): ?>
-                  <option value="<?= vg_h($v) ?>"<?= $curGrade === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
+              <label class="field" for="asset-grade">보안등급 (N2SF)
+                <select id="asset-grade" name="grade">
+                  <option value="">미지정(확정 해제)</option>
+                  <?php foreach (VG_ASSET_GRADES as $v => $label): ?>
+                    <option value="<?= vg_h($v) ?>"<?= $curGrade === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
+            </div>
 
             <?php /* 확정 근거 아홉 칸은 **등급을 확정할 때만** 쓴다. 늘 펼쳐 두면 대부분 비어 있는
                      입력이 자산 설정 탭의 첫 화면을 통째로 차지한다 — 접어 두되 지우지 않는다.
@@ -128,8 +133,11 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
             <details class="grade-review"<?= (!empty($review['is_stale']) || vg_asset_grade_review_overdue($review)
                     || ($curGrade !== '' && $missingReview)) ? ' open' : '' ?>>
               <summary>확정 근거 · 구조화 검토 정보 (9개 항목)</summary>
-              <div class="grade-review__body">
-              <label class="field" for="asset-grade-reason">확정 근거
+              <?php /* 아홉 칸도 같은 이유로 두 칸씩 세운다 — 값이 짧은 항목이 대부분이라
+                       한 줄씩 쌓으면 펼쳤을 때만 세로로 아홉 줄이 된다. 긴 문장을 받는 두 칸
+                       (확정 근거·검토 문서 참조)만 .form-grid__full 로 한 줄을 그대로 쓴다. */ ?>
+              <div class="grade-review__body form-grid">
+              <label class="field form-grid__full" for="asset-grade-reason">확정 근거
                 <input id="asset-grade-reason" type="text" name="grade_reason" maxlength="255"
                        placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유"
                        value="<?= vg_h((string) ($host['grade_reason'] ?? '')) ?>">
@@ -163,7 +171,7 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
                   <?php endforeach; ?>
                 </select>
               </label>
-              <label class="field" for="asset-review-reference">검토 문서·티켓 참조
+              <label class="field form-grid__full" for="asset-review-reference">검토 문서·티켓 참조
                 <input id="asset-review-reference" name="review_reference" maxlength="255" placeholder="예: SEC-1234, 보안검토 회의록 2026-03" value="<?= vg_h((string) ($review['review_reference'] ?? '')) ?>">
                 <span class="why">문서 내용이 아니라 식별자나 위치만 남깁니다.</span>
               </label>
