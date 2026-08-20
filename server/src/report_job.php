@@ -34,8 +34,30 @@ const VG_REPORT_POLL_MAX_ATTEMPTS = 60;
 const VG_REPORT_HTTP_TIMEOUT = 10;
 
 /**
+ * 보고서 파일(PDF) 받아오기 — 상한과 대기시간.
+ *   본문 JSON 왕복(VG_REPORT_HTTP_TIMEOUT)보다 길게 잡는다(파일 전송이라 느릴 수 있다).
+ *   크기 상한은 vg_http_raw 의 $maxBytes 로 넘어가 **넘는 순간 전송을 끊는다** — 외부가
+ *   보내는 만큼 우리 메모리에 담기므로 상한이 없으면 이 요청 하나로 web 이 죽는다.
+ */
+const VG_REPORT_DOWNLOAD_TIMEOUT   = 60;
+const VG_REPORT_DOWNLOAD_MAX_BYTES = 20971520;   // 20MB
+
+/** 우리 다운로드 프록시의 경로. 화면(카드·이력표)과 JSON 응답이 같은 값을 쓴다. */
+const VG_REPORT_DOWNLOAD_PATH = '/report-download.php';
+
+/**
+ * 이력 목록이 함께 읽는 결과 본문의 앞부분 길이(자). 목록에서 "이 결과가 파일 링크인가" 를
+ *   판단할 만큼만 읽는다 — MEDIUMTEXT 전체를 목록에 싣지 않으려는 것이고, 실제 다운로드는
+ *   프록시가 **저장된 원문 전체**를 다시 읽어 판단하므로 여기서 잘려도 링크가 틀어지지 않는다.
+ */
+const VG_REPORT_RESULT_HEAD_CHARS = 1024;
+
+/**
  * 상태 어휘 — 외부가 주는 status 문자열 중 **완료로 볼 값 / 실패로 볼 값**.
- *   실측된 값은 'SUCCESS' 하나뿐이고 나머지는 미확인이다. 그래서 특정 문자열에 하드 매칭하는
+ *   외부 API 담당자에게 확정받은 값은 네 가지다(2026-08-20): PENDING · PROCESSING ·
+ *   SUCCESS · FAILED. 아래 목록은 그 넷을 이미 정확히 가른다(SUCCESS=완료, FAILED=실패,
+ *   나머지 둘은 어느 목록에도 없으므로 진행 중). 함께 담아 둔 Celery 계열 어휘는 확정 전에
+ *   넣어 둔 여분이라 무해해서 그대로 둔다. 그래서 특정 문자열에 하드 매칭하는
  *   대신 여기 두 목록만 두고, **어느 쪽에도 없는 값은 진행 중으로 읽는다**(모르는 값을 완료로
  *   읽으면 아직 안 끝난 job 의 빈 결과를 보여주게 된다). Celery 계열 워커가 쓰는 흔한 어휘를
  *   함께 담아 두지만, 늘리려면 이 두 줄만 고친다.
@@ -130,6 +152,104 @@ function vg_report_api_fetch(int $externalJobId): array {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// 결과(result) 해석 — 링크인가 텍스트인가
+// ─────────────────────────────────────────────────────────────────────────
+/**
+ * result 안에서 **다운로드 링크로 보이는 값**을 찾아 절대 URL 로 만든다. 아니면 null.
+ *
+ *   외부가 result 에 무엇을 넣을지는 아직 고정되지 않았다(담당자 확인 2026-08-20:
+ *   "result 에 보고서 다운받을 수 있는 api 링크 넣어두면"). 지금은 "Job 5 completed" 같은
+ *   더미 텍스트가 오므로 **두 경우가 모두 살아 있어야 한다** — 그래서 링크로 안 보이면
+ *   조용히 null 을 주고 화면은 예전처럼 본문을 그린다.
+ *
+ *   받아들이는 모양:
+ *     · 값 전체가 링크 하나       → 절대 URL(http/https) 또는 상대 경로(/files/5.pdf)
+ *     · 텍스트에 링크가 섞임      → **절대 URL 만** 줍는다. 산문 속의 '/…' 토큰까지 경로로
+ *       읽으면 "완료 12/30" 같은 평범한 문장이 링크로 뒤집힌다.
+ *   상대 경로는 설정된 API base 를 앞에 붙여 절대화한다. `//host/x`(프로토콜 상대)는
+ *   경로가 아니라 다른 호스트를 가리키므로 받지 않는다.
+ */
+function vg_report_result_url(?string $result): ?string {
+    $s = trim((string) $result);
+    if ($s === '') { return null; }
+    $tokens = preg_split('/\s+/', $s) ?: [];
+    $single = count($tokens) === 1;
+    foreach ($tokens as $tok) {
+        // 문장에 섞여 오면 따라붙는 문장부호를 턴다(<url>, "url", (url) 등).
+        $tok = trim($tok, "\"'<>()[]{},;");
+        if ($tok === '') { continue; }
+        if (preg_match('~^https?://~i', $tok)) {
+            $host = (string) (parse_url($tok, PHP_URL_HOST) ?? '');
+            if ($host !== '') { return $tok; }
+            continue;
+        }
+        if ($single && strlen($tok) > 1 && $tok[0] === '/' && $tok[1] !== '/') {
+            return vg_report_api_base() . $tok;
+        }
+    }
+    return null;
+}
+
+/**
+ * 이 URL 의 목적지가 **설정에 적힌 그 API 서버**인가(scheme+host+port 대조).
+ *   외부 응답이 조작되면 우리 서버가 내부 임의 주소를 대신 치게 된다(SSRF) — result 는
+ *   우리가 만든 값이 아니므로 저장돼 있다고 믿지 않는다. 목적지는 설정된 한 곳으로 고정한다.
+ */
+function vg_report_url_same_origin(string $url): bool {
+    $origin = static function (string $u): ?string {
+        $p = parse_url($u);
+        if (!is_array($p)) { return null; }
+        $scheme = strtolower((string) ($p['scheme'] ?? ''));
+        $host   = strtolower(trim((string) ($p['host'] ?? ''), '[]'));
+        if (!in_array($scheme, ['http', 'https'], true) || $host === '') { return null; }
+        $port = (int) ($p['port'] ?? ($scheme === 'https' ? 443 : 80));
+        return $scheme . '://' . $host . ':' . $port;
+    };
+    $a = $origin($url);
+    $b = $origin(vg_report_api_base());
+    return $a !== null && $b !== null && $a === $b;
+}
+
+/**
+ * 화면·프록시가 함께 쓰는 판정 한 곳 — result 가 **우리가 받아올 수 있는 파일 링크**면
+ *   절대 URL, 아니면 null. 둘이 서로 다른 판단을 하면 버튼은 떠 있는데 눌러도 거부되거나
+ *   그 반대가 된다.
+ */
+function vg_report_download_url(?string $result): ?string {
+    $url = vg_report_result_url($result);
+    return ($url !== null && vg_report_url_same_origin($url)) ? $url : null;
+}
+
+/**
+ * 내려줄 파일명. **우리가 조립한다** — 외부가 준 이름을 쓰면 헤더 인젝션·경로 조작이 된다.
+ *   ASCII 안전문자만 남긴다(자산명은 한글 fqdn 이 없지만 방어).
+ */
+function vg_report_download_filename(string $fqdn, int $reportJobId, ?string $when): string {
+    $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', $fqdn);
+    if ($safe === null || $safe === '') { $safe = 'host'; }
+    $ts = $when !== null && $when !== '' ? strtotime($when) : false;
+    return sprintf('report-%s-%d-%s.pdf', substr($safe, 0, 100), $reportJobId,
+                   date('Ymd', $ts !== false ? $ts : time()));
+}
+
+/**
+ * 보고서 파일을 외부에서 받아 **바이트 그대로** 돌려준다(저장하지 않는다 — 보존기간·저장경로를
+ *   정할 근거가 아직 없다).
+ *   호출자는 URL 을 만들지 않는다. 반드시 vg_report_download_url() 이 통과시킨 URL 만 넘긴다.
+ *   실패는 일반화된 메시지로만 알리고 URL·오류 원문은 error_log 로만 남긴다.
+ */
+function vg_report_download_fetch(string $url): string {
+    $r = vg_http_raw('GET', $url, ['Accept: application/pdf'],
+                     VG_REPORT_DOWNLOAD_TIMEOUT, VG_REPORT_DOWNLOAD_MAX_BYTES, true);
+    if ($r['code'] < 200 || $r['code'] >= 300 || $r['body'] === '') {
+        error_log(sprintf('[report_job] GET %s → HTTP %d %s (%dB)',
+                          $url, (int) $r['code'], (string) $r['error'], strlen((string) $r['body'])));
+        throw new RuntimeException('보고서 파일을 받지 못했습니다.');
+    }
+    return $r['body'];
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // 우리 표(tb_report_job)
 // ─────────────────────────────────────────────────────────────────────────
 /**
@@ -198,7 +318,8 @@ function vg_report_job_active(PDO $pdo, int $hostId): ?array {
 /**
  * 호스트별 보고서 이력(최신순, 상한 있음). 상한을 넘겨 잘린 건 총건수로 알린다 —
  *   목록이 조용히 잘리면 사용자는 더 있다는 걸 알 수 없다.
- *   결과 본문(MEDIUMTEXT)은 목록에 싣지 않는다. 길이만 세어 "결과 보기" 버튼 유무를 정한다.
+ *   결과 본문(MEDIUMTEXT)은 목록에 싣지 않는다. 길이만 세어 "결과 보기" 버튼 유무를 정하고,
+ *   "이 결과가 파일 링크인가" 를 가릴 앞부분만 VG_REPORT_RESULT_HEAD_CHARS 만큼 함께 읽는다.
  * @return array{rows: array<int,array>, total: int}
  */
 function vg_report_jobs_recent(PDO $pdo, int $hostId, int $limit): array {
@@ -207,7 +328,8 @@ function vg_report_jobs_recent(PDO $pdo, int $hostId, int $limit): array {
     $limit = max(1, min(200, $limit));
     $st = $pdo->prepare(
         'SELECT r.report_job_id, r.status, r.error_message, r.created_at, r.external_finished_at,
-                CHAR_LENGTH(COALESCE(r.result, "")) AS result_len, u.username
+                CHAR_LENGTH(COALESCE(r.result, "")) AS result_len,
+                LEFT(r.result, ' . VG_REPORT_RESULT_HEAD_CHARS . ') AS result_head, u.username
            FROM tb_report_job r
            LEFT JOIN tb_user u ON u.user_id = r.requested_user_id
           WHERE r.host_id = ?
@@ -258,6 +380,9 @@ function vg_report_job_public(array $row): array {
         'state_label'   => vg_report_state_label($state),
         'state_tone'    => vg_report_state_tone($state),
         'result'        => isset($row['result']) && $row['result'] !== null ? (string) $row['result'] : null,
+        // 결과가 파일 링크면 **우리 프록시 경로**만 내보낸다 — 외부 내부주소는 화면에 내리지 않는다.
+        'download_url'  => vg_report_download_url($row['result'] ?? null) !== null
+            ? VG_REPORT_DOWNLOAD_PATH . '?job=' . (int) $row['report_job_id'] : null,
         'error_message' => isset($row['error_message']) && $row['error_message'] !== null
             ? (string) $row['error_message'] : null,
     ];
