@@ -25,6 +25,15 @@
 | 피드 소스별 역할 | [`피드소스-역할.md`](피드소스-역할.md) |
 | 설정 항목 레퍼런스 | [`docs/ui-configuration.md`](../ui-configuration.md) |
 
+**절 목차** — 서브섹션까지 훑으려면 각 절 안을 본다.
+
+1. [시스템 개요 (데이터 흐름)](#1-시스템-개요-데이터-흐름)
+2. [매처 판정 로직 — "실제로 위험한가"](#2-매처-판정-로직--실제로-위험한가)
+3. [CVE 피드 커넥터 (외부 소스 수집)](#3-cve-피드-커넥터-외부-소스-수집)
+4. [배포 구성 (dev / prod)](#4-배포-구성-dev--prod)
+5. [데이터 모델 (ERD)](#5-데이터-모델-erd)
+6. [웹 화면 구성 (사이트맵 · 인증)](#6-웹-화면-구성-사이트맵--인증)
+
 ---
 
 ## 1. 시스템 개요 (데이터 흐름)
@@ -516,7 +525,8 @@ db 컨테이너에 파이프하고 `tb_schema_migrations(filename, applied_at)` 
 | 테이블 | 관계 안에서의 역할 | 쓰는 절 |
 |---|---|---|
 | `tb_host` · `tb_scan` | 자산 1대와 그 시점 스냅샷. 아래 대부분이 `scan_id` 로 매달린다 | 전체 |
-| `tb_scan_run` · `tb_collection_stage` | 수집 실행 기록 / **수집 단계 완전성** — 단계 누락을 미탐 대신 경고로 | §2.8 |
+| `tb_scan_run` | 에이전트가 완료한 **매 실행 1행**. 스냅샷이 같아도 실행 이력은 쌓인다 | §4.1 |
+| `tb_collection_stage` | **수집 단계 5종 전체의 완전성**(`packages`·`language_packages`·`runtime_processes`·`network_exposure`·`containers`) — 단계 누락을 미탐 대신 경고로. 자산등급 전용이 아니다 | [`데이터베이스.md`](데이터베이스.md#tb_collection_stage--수집-단계별-완전성) · 소비처 한 예가 §2.8 의 `NOT_EVALUATED` |
 | `tb_agent_command` | 예약 명령 큐("지금 수집" 등). poll 이 가져간다 | §4.1 |
 | `tb_package` | 설치·언어 패키지. 컨테이너 내부 패키지도 `container_id>0` 으로 같이 들어간다(호스트는 0) | §2 |
 | `tb_container` | 컨테이너 인벤토리. 자연키는 `(scan_id, cid)` | §6.3 |
