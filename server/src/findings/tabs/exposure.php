@@ -44,7 +44,7 @@
   if (!$hostOptions) {
       $emptySpec = [
           'icon'  => 'host',
-          'title' => '아직 수집된 스캔이 없습니다.',
+          'title' => '아직 수집 이력이 없습니다.',
           'hint'  => '에이전트가 자산을 최소 한 번은 수집해야 이 화면에 노출이 뜹니다.',
       ];
   } elseif ($hasAnyFilter) {

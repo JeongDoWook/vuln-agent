@@ -59,7 +59,7 @@ function vg_dash_render_signals(array $totals, array $runtime, int $kevCount): v
   ?>
   <section class="card" id="signals">
     <strong>주요 취약점 신호</strong>
-    <span class="why">자산 전체의 최신 스캔 기준 · <a href="/findings.php">전체 목록 보기 →</a></span>
+    <span class="why">자산 전체의 최신 수집 기준 · <a href="/findings.php">전체 목록 보기 →</a></span>
     <div class="card__body">
       <div class="kpi-donuts">
         <?php /* ① 등급 구성 — 고리는 조치 대상(C·H·M)만 그린다(vg_sev_donut 주석 참조).

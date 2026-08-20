@@ -9,12 +9,12 @@ declare(strict_types=1);
 ini_set('memory_limit', '512M');
 
 /**
- * discover.php — 자산 탐색 스캔 집행(CLI 전용).
+ * discover.php — 자산 탐색(대역 탐색) 집행(CLI 전용).
  *
- *   php bin/discover.php <discovery_target_id>   대역 1건을 즉시 스캔(run 을 만들고 바로 집행)
+ *   php bin/discover.php <discovery_target_id>   대역 1건을 즉시 탐색(run 을 만들고 바로 집행)
  *   php bin/discover.php --pending               status='pending' 인 run 을 전부 집행
  *
- *   웹 요청에서 스캔을 직접 돌리지 않는다 — 수백 소켓을 수십 초 드는 작업이라 요청이 묶인다.
+ *   웹 요청에서 탐색을 직접 돌리지 않는다 — 수백 소켓을 수십 초 드는 작업이라 요청이 묶인다.
  *   화면은 pending run 만 만들고, 집행은 이 CLI(수동 또는 스케줄러)가 한다.
  *
  *   종료코드: 0 정상 · 1 내부오류 · 2 인자오류
@@ -36,7 +36,7 @@ try {
         //   집행 자체는 스케줄러와 **같은 함수**를 쓴다(로직을 두 벌로 만들지 않는다).
         $sum = vg_discovery_run_pending($pdo, 0, 0);
         if ($sum['executed'] === 0 && $sum['skipped'] === 0) {
-            fwrite(STDOUT, "집행할 스캔이 없습니다.\n");
+            fwrite(STDOUT, "집행할 탐색이 없습니다.\n");
             exit(0);
         }
         foreach ($sum['results'] as $r) {
@@ -54,7 +54,7 @@ try {
     }
     $targetId = (int) $arg;
 
-    // 임의 CIDR 을 인자로 받지 않는다 — 스캔은 남의 네트워크에 흔적을 남기는 행위라
+    // 임의 CIDR 을 인자로 받지 않는다 — 탐색은 남의 네트워크에 흔적을 남기는 행위라
     //   등록·활성화된 대역(tb_discovery_target)만 대상으로 한다.
     $runId = vg_discovery_create_run($pdo, $targetId);
     if (!vg_discovery_claim_run($pdo, $runId)) {
@@ -71,7 +71,7 @@ try {
 } catch (Throwable $e) {
     // 그 밖의 예외는 원문을 표준에러로 흘리지 않는다 — 상세는 서버 로그에만 남는다.
     error_log('[discover] ' . $e->getMessage());
-    fwrite(STDERR, "스캔을 실행할 수 없습니다. 서버 로그를 확인하세요.\n");
+    fwrite(STDERR, "대역 탐색을 실행할 수 없습니다. 서버 로그를 확인하세요.\n");
     exit(1);
 }
 

@@ -20,7 +20,7 @@ skinparam shadowing false
 
 rectangle "/login.php\n세션 로그인 · CSRF" as LOGIN #1f6feb
 rectangle "/ 대시보드\n호스트별 최신스캔\n심각도 KPI" as DASH
-rectangle "/host.php\n«assets 또는 findings»\n호스트 상세 · 탭: 취약점\n설치 패키지·컨테이너 런타임\n보안 설정(CCE)·계정\n억제·스캔 이력" as HOST
+rectangle "/host.php\n«assets 또는 findings»\n호스트 상세 · 탭: 취약점\n설치 패키지·컨테이너 런타임\n보안 설정(CCE)·계정\n억제·수집 이력" as HOST
 ' 사이드바 밖 — 상단바 사용자 메뉴. 로그인 사용자 전원(메뉴 권한 없음).
 rectangle "/profile.php «로그인만»\n내 프로필\n본인 비밀번호 변경" as PROF
 ' 사이드바에 없다 — 엣지가 (스캔 × 컨테이너) 단위라 자산 상세에서만 들어간다.

@@ -30,8 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $me = vg_current_user();
         try {
             if ($action === 'agent_run_now') {
-                /* 무결성 검사는 별도 스캔이 아니라 이 수집 실행 안의 한 단계(옵션)다 — 그래서
-                 * 전용 action 을 두지 않고 '지금 스캔' 폼의 체크박스 하나로 받는다.
+                /* 무결성 검사는 별도 동작이 아니라 이 수집 실행 안의 한 단계(옵션)다 — 그래서
+                 * 전용 action 을 두지 않고 '지금 수집' 폼의 체크박스 하나로 받는다.
                  * 다만 rpm -Va / dpkg --verify 는 대상 서버에 수 분간 부하를 거는 동작이라
                  * 감사로그는 포함 여부를 계속 구분해 남긴다(vg_agent_command_create 가 붙인다).
                  * 인가는 위 vg_can('assets') 로 이미 서버측에서 확정됐다. */
@@ -197,7 +197,7 @@ function vg_host_render_agent_control(
                  좁은 화면(640px 이하)에서는 다시 한 열로 떨어진다. */ ?>
         <div class="agent-control__grid">
           <?php /* 확인 대화상자는 '무결성 검사 포함'을 켰을 때만 뜬다(data-confirm-if) —
-                   일반 스캔은 가벼워서 확인이 불필요하고, 무결성은 대상 서버에 수 분간 부하를
+                   일반 수집은 가벼워서 확인이 불필요하고, 무결성은 대상 서버에 수 분간 부하를
                    거는 되돌리기 어려운 동작이라 확인이 필요하다. 확인은 화면 편의일 뿐이고
                    인가는 위 POST 분기의 vg_can('assets') 가 서버측에서 확정한다. */ ?>
           <form class="agent-control__row" method="post"
@@ -208,7 +208,7 @@ function vg_host_render_agent_control(
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
             <?php /* 각 조작의 반영 시점은 카드 머리의 '다음 poll 반영' 배지가 한 번에 말한다.
                      입력 제약(최소 1분 등)도 칸 밑에 적지 않는다 — 틀리면 그때 오류로 알린다.
-                     무결성 검사는 별도 스캔이 아니라 이 실행 안의 한 단계라 버튼을 따로 두지
+                     무결성 검사는 별도 동작이 아니라 이 실행 안의 한 단계라 버튼을 따로 두지
                      않고 체크박스로 합쳤다(설치 패키지 탭의 단독 버튼은 그래서 없앴다).
                      기본은 꺼짐이다 — 매 수집마다 켜면 대상 서버에 무리를 준다. */ ?>
             <label><strong>즉시 실행</strong></label>
@@ -216,7 +216,7 @@ function vg_host_render_agent_control(
               <input id="agent-verify-files" type="checkbox" name="verify_files" value="1">
               무결성 검사 포함
             </label>
-            <button class="btn btn--sm btn--primary">지금 스캔</button>
+            <button class="btn btn--sm btn--primary">지금 수집</button>
           </form>
 
           <form class="agent-control__row" method="post">

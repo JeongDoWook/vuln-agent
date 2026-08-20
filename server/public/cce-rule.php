@@ -61,7 +61,7 @@ try {
         uksort($mapping, static fn(string $a, string $b): int =>
             (VG_CCE_FW_ORDER[$a] ?? 9) <=> (VG_CCE_FW_ORDER[$b] ?? 9));
 
-        // 호스트별 최신 스캔의 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다
+        // 호스트별 최신 수집의 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다
         //   (control.php·control_mapping.php 와 같은 기준).
         $baseSql =
             "FROM tb_cce_finding cf
@@ -224,7 +224,7 @@ $status = $judgedTotal > 0
     ['label' => '점검 근거', 'hint' => '무엇을 보고 판정했나', 'href' => '#check'],
     ['label' => '영향 대상', 'hint' => number_format($failHosts) . '대 위반', 'href' => '#hosts'],
     ['label' => '조치', 'hint' => '기준값과 조치 방법', 'href' => '#check'],
-    ['label' => '재검증', 'hint' => '최신 자산 스캔 판정 확인', 'href' => '/findings.php?type=cce&q=' . urlencode($code) . '&res=ALL'],
+    ['label' => '재검증', 'hint' => '최신 자산 수집 판정 확인', 'href' => '/findings.php?type=cce&q=' . urlencode($code) . '&res=ALL'],
 ]); ?>
 
 <nav class="subtabs subtabs--sticky">
@@ -343,7 +343,7 @@ $status = $judgedTotal > 0
         <dt>판정 주체</dt><dd>중앙 서버(에이전트는 수집만 한다)</dd>
         <dt>최근 점검</dt>
         <dd><?= $lastCheckedAt !== null ? vg_h((string) $lastCheckedAt) : '<span class="why">점검 이력 없음</span>' ?></dd>
-        <dt>집계 기준</dt><dd>호스트별 최신 스캔 1건</dd>
+        <dt>집계 기준</dt><dd>호스트별 최신 수집 1건</dd>
       </dl>
 
       <details>

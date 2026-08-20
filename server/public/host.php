@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * host.php — 호스트 상세(자산 상세). 로그인 필요.
- *   ?id=<host_id> 의 최신 스캔을 하나의 자산 화면으로 보여준다.
+ *   ?id=<host_id> 의 최신 수집을 하나의 자산 화면으로 보여준다.
  *   상단: 자산 식별 + 최고 위험도 히어로 + KPI.
  *   그 아래 섹션 탭(취약점 / 런타임 / 보안설정 / 억제 / 스캔이력) — 각 탭이 자기 데이터를
  *   서버 페이지네이션한다. ?tab= 이 활성 탭, ?page= 는 그 활성 탭에만 적용된다.
@@ -28,7 +28,7 @@ require_once __DIR__ . '/../src/suppression.php';  // 억제 근거 겹 분류·
 /* 자산 상세의 속을 책임별로 나눠 둔 것 — 식별부 조회 / 히어로·KPI 집계 / 탭별 조회 /
  *   묶음·의존성 / 등급 카드 / 탭 렌더 디스패처.
  *   수집 제어(agent_control.php)는 POST 를 처리하므로 아래 제자리에서 따로 읽는다. */
-require_once __DIR__ . '/../src/host/identity.php';  // 식별부 조회(호스트·최신 스캔·에이전트)
+require_once __DIR__ . '/../src/host/identity.php';  // 식별부 조회(호스트·최신 수집·에이전트)
 require_once __DIR__ . '/../src/host/summary.php';   // 히어로/KPI 집계 + 머리 경고의 근거 조회
 require_once __DIR__ . '/../src/host/queries.php';   // vg_host_load_*_tab — 활성 탭 하나의 조회
 require_once __DIR__ . '/../src/host/depgraph.php';  // 묶음 조회 + 전이 의존성 판정 셀
@@ -38,7 +38,7 @@ require_once __DIR__ . '/../src/host/report.php';    // AI 보고서 카드(생�
 require_once __DIR__ . '/../src/host/tabs.php';      // vg_host_render_tab — 활성 탭 파일만 require
 vg_require_menu_any('assets', 'findings');   // 자산 상세: 자산 목록·탐지 결과에서 함께 열린다
 
-/* '리소스' 탭은 '스캔 이력' 탭으로 흡수됐다 — 둘 다 tb_scan_run 하나를 읽었고(회차별 메모리·CPU),
+/* '리소스' 탭은 '수집 이력' 탭으로 흡수됐다 — 둘 다 tb_scan_run 하나를 읽었고(회차별 메모리·CPU),
  *   한쪽은 표, 다른 쪽은 같은 값의 추이 차트였다. 탭을 나눠 두면 "이 자산의 수집이 어땠나"를
  *   두 군데서 이어 붙여 읽어야 한다. 기존 링크·북마크를 살리려고 302 로 넘긴다(나머지 쿼리는 유지). */
 if (($_GET['tab'] ?? '') === 'resources') {
@@ -58,7 +58,7 @@ $agentCsrf = vg_csrf_token();
 $err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null; $approver = null; $gradeReview = [];
 $latestAgent = '';   // 함대에서 관측된 최신 에이전트 버전('구버전' 판정 기준)
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
-$missingStages = [];     // 최신 스캔에서 수집 자체가 실패한 단계(한글 라벨)
+$missingStages = [];     // 최신 수집에서 수집 자체가 실패한 단계(한글 라벨)
 $missingStageCodes = []; // 같은 것의 원본 코드 — 화면이 "이 항목이 미수집인가"를 물을 때 쓴다
 $missingStageItemCounts = []; // 코드 => item_count. 0 이면 아예 못 걸음, > 0 이면 중간에 끊김
 $integrityRows = [];     // 패키지 원본과 다른 파일(상위 일부만 — 전체 건수는 tb_scan 에 있다)
@@ -121,8 +121,8 @@ try {
         // 대기 중인 수집 명령은 자산 설정 권한이 있는 사람에게만 보여준다(인가는 화면이 확정한다).
         if (vg_can('assets')) {
             $pendingCommands = vg_host_load_pending_commands($pdo, $hostId);
-            // AI 보고서 이력도 같은 인가 범위다. 스캔 이력이 없는 자산에서도 보고서 작업은
-            //   만들 수 있으므로, 최신 스캔 유무와 무관하게 여기서 읽는다 — 아래 if ($scan)
+            // AI 보고서 이력도 같은 인가 범위다. 수집 이력이 없는 자산에서도 보고서 작업은
+            //   만들 수 있으므로, 최신 수집 유무와 무관하게 여기서 읽는다 — 아래 if ($scan)
             //   안에 두면 미수집 자산에서 진행 중 job 을 새로고침 뒤에 못 이어간다.
             ['jobs' => $reportJobs, 'active' => $reportActive] = vg_host_load_report_jobs($pdo, $hostId);
         }
@@ -306,7 +306,7 @@ vg_alert($agentErr);
     <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
     <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
   <?php endif; ?>
-  <div class="card"><?php vg_empty(['icon' => 'feed', 'title' => '아직 수집된 스캔이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
+  <div class="card"><?php vg_empty(['icon' => 'feed', 'title' => '아직 수집 이력이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
     // 최고 위험도 → 히어로 톤. 하나도 없으면 '양호'(ok).
     $worst = null;

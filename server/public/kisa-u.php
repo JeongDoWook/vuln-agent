@@ -112,7 +112,7 @@ try {
     $st->execute($args);
     $rows = $st->fetchAll();
 
-    // 매핑된 항목의 현재 판정 — 호스트별 최신 스캔의 CCE 결과만 본다(control_mapping.php 와 같은
+    // 매핑된 항목의 현재 판정 — 호스트별 최신 수집의 CCE 결과만 본다(control_mapping.php 와 같은
     //   기준). 지난 스캔까지 세면 같은 위반이 중복 집계된다. 목록과 별도 조회 1회로 끝낸다(N+1 금지).
     $st = $pdo->prepare(
         "SELECT m.control_id,
@@ -221,7 +221,7 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
           ['label' => '판정 불가', 'align' => 'right', 'width' => '6rem', 'nowrap' => true,
            'title' => '점검을 돌렸지만 판정할 수 없었던 건수(NA)'],
           ['label' => '미준수율', 'width' => '14%',
-           'title' => 'FAIL ÷ 최신 스캔 점검 결과. 판정이 아니라 집계다.'],
+           'title' => 'FAIL ÷ 최신 수집 점검 결과. 판정이 아니라 집계다.'],
       ],
       $covered,
       [

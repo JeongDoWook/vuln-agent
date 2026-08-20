@@ -129,7 +129,7 @@ declare(strict_types=1);
                   : [
                       'icon'  => '🗂️',
                       'title' => '실행 프로세스 데이터가 없습니다.',
-                      'hint'  => '구버전 에이전트로 수집된 스캔입니다.',
+                      'hint'  => '구버전 에이전트가 보낸 수집입니다.',
                   ],
               'cell' => [
                   0 => fn($pr) => '<span class="why">' . (int) $pr['pid'] . '</span>',

@@ -307,7 +307,7 @@ $check(str_contains($layoutPhp, 'aria-controls="primaryNavigation"')
     '모바일 내비게이션 제어 대상 연결');
 $check(substr_count($processHtml, 'class="operator-step"') === 4
     && str_contains($processHtml, '설치') && str_contains($processHtml, '피드 동기화')
-    && str_contains($processHtml, '자산 스캔') && str_contains($processHtml, '우선순위 확인')
+    && str_contains($processHtml, '자산 수집') && str_contains($processHtml, '우선순위 확인')
     && str_contains($processHtml, '조치') && str_contains($processHtml, 'https://github.com/JeongDoWook/vuln-agent/'),
     'process.html 운영자 4단계·용어 구분·외부 개발자 문서 링크');
 // 수동(문서 심사) 구역은 화면에서 내렸다 — 자동판정 근거가 제품 안에 없는 항목이라

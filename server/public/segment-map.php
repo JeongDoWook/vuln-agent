@@ -152,7 +152,7 @@ try {
           ORDER BY h.fqdn"
     )->fetchAll();
 
-    // 이 페이지에 실제로 올라간 호스트들의 최신 스캔 · 심각도 · 외부노출 건수 — 한 번에 배치 조회(N+1 방지).
+    // 이 페이지에 실제로 올라간 호스트들의 최신 수집 · 심각도 · 외부노출 건수 — 한 번에 배치 조회(N+1 방지).
     $allHostIds = [];
     foreach ($segments as $seg) { $allHostIds = array_merge($allHostIds, array_keys($seg['hosts'])); }
     $allHostIds = array_values(array_unique($allHostIds));
@@ -297,7 +297,7 @@ vg_header('세그먼트 맵', 'segment_map');
             $tip = [(string) $fqdn, '조치 대상 ' . number_format($act) . '건'];
             if ($low > 0) { $tip[] = 'LOW ' . number_format($low) . '건'; }
             if ($ext > 0) { $tip[] = '외부노출 ' . number_format($ext) . '건'; }
-            if ($scanId === null) { $tip[] = '수집된 스캔 없음'; }
+            if ($scanId === null) { $tip[] = '수집 이력 없음'; }
 
             $items[] = [
                 'label'   => (string) $fqdn,

@@ -131,7 +131,7 @@ try {
     error_log('[compliance] 스냅샷 실패: ' . $e->getMessage());
 }
 
-// 자산 탐색 — 화면이 만든 pending run 을 여기서 집행한다. 이 호출이 없으면 "지금 스캔" 은
+// 자산 탐색 — 화면이 만든 pending run 을 여기서 집행한다. 이 호출이 없으면 "대역 탐색" 은
 //   pending 행만 만들고 영원히 실행되지 않는다(bin/discover.php --pending 을 부르는 곳이 없었다).
 //   ★ due 커넥터 유무와 무관해야 하므로 라이선스 요약과 같이 조기 종료 **앞**에 둔다.
 //   ★ 한 틱이 집행할 run 수·시간에 상한이 있다(vg_discovery_run_pending 기본 1건·45초) —

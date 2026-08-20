@@ -41,7 +41,7 @@ function vg_dash_render_trend(array $trend, int $days): void {
           'alt'        => '자산별 최근 ' . $days . '일 High 이상 건수 추세',
           'empty'      => [
               'icon'  => 'chart',
-              'title' => '추세를 그리기엔 스캔 이력이 부족합니다.',
+              'title' => '추세를 그리기엔 수집 이력이 부족합니다.',
               'hint'  => '서로 다른 날짜의 수집이 2건 이상 쌓이면 여기에 자산별 추세가 표시됩니다.',
           ],
       ]); ?>

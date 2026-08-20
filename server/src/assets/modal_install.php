@@ -57,12 +57,12 @@ sudo bash install-agent.sh
       </section>
 
       <section id="agentInstallStep4" role="tabpanel" data-install-step-panel="4">
-        <h3>4. 연결과 첫 자산 스캔 확인</h3>
+        <h3>4. 연결과 첫 자산 수집 확인</h3>
         <?php /* '완료 조건' 한 줄은 걷었다 — 바로 위 문장이 이미 같은 조건(자동 등록 · 최신 수집
                  시각이 보이면 완료)을 말한다. 다른 단계의 '완료 조건' 은 그 위 문장에 없는 사실
                  (기존 키 자동 폐기 · CA 503 · systemd 유무)을 덧붙이므로 그대로 둔다. */ ?>
         <p>이 모달을 닫고 자산 목록에서 FQDN을 검색합니다. <strong>최신 수집</strong> 시각과 첫 탐지 결과가 보이면 완료입니다.</p>
-        <p class="why">미수신이면 키의 FQDN·만료/폐기 상태, 대상 서버의 아웃바운드 HTTPS와 서비스 로그를 확인한 뒤 자산 스캔을 다시 시도합니다.</p>
+        <p class="why">미수신이면 키의 FQDN·만료/폐기 상태, 대상 서버의 아웃바운드 HTTPS와 서비스 로그를 확인한 뒤 자산 수집을 다시 시도합니다.</p>
         <?php /* 이 모달은 자산 목록(assets.php) 위에서만 열린다 — '/assets.php' 로 거는 링크는
                  보고 있는 화면을 다시 부르는 두 번째 문이었다. 위 문장이 시키는 대로 닫기만 한다. */ ?>
         <div class="actions"><button type="button" class="btn btn--sm btn--ghost" data-step-prev="2">이전</button><button type="button" class="btn btn--sm btn--primary" data-modal-close>닫고 목록에서 확인</button></div>

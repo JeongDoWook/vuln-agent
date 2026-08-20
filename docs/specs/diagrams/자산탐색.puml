@@ -26,7 +26,7 @@ skinparam wrapWidth 340
 rectangle "관리자\n/discovery.php 에서 대역을 등록한다\n(CIDR · 2단계 포트 목록 · 사용여부)" as ADMIN #1f6feb
 database "tb_discovery_target\ncidr <<UK>> · enabled\nports(NULL=기본 세트)" as TGT
 
-rectangle "'지금 스캔' — 화면은\npending 행만 만든다\n(수백 소켓을 수십 초 드는 작업이라\n웹 요청에서 돌리지 않는다)" as ENQ
+rectangle "'대역 탐색' — 화면은\npending 행만 만든다\n(수백 소켓을 수십 초 드는 작업이라\n웹 요청에서 돌리지 않는다)" as ENQ
 database "tb_discovery_run\nstatus: pending → running\n→ done/failed" as RUN
 
 rectangle "scheduler 사이드카 · 매 1분 틱\n① 30분 넘게 running 인 run 회수\n② pending 집행(한 틱 1건 · 45초 예산)\n남은 것은 다음 틱이 집는다" as TICK #a371f7

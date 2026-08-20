@@ -133,7 +133,7 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
             if (!empty($r['ok']) && (int) $r['upserted'] > 0) {
                 $scans = vg_rematch_scan_ids($pdo);
                 foreach ($scans as $sid) { vg_match_scan($pdo, $sid); }
-                $msg = "실행 완료: {$r['upserted']} 건 수집 · 재매칭 " . count($scans) . ' 스캔.';
+                $msg = "실행 완료: {$r['upserted']} 건 수집 · 재매칭 " . count($scans) . '건 재매칭.';
                 // OSV 면 조치안(fixed_version)까지 이어서 보강한다(findings 를 읽으므로 재매칭 뒤에).
                 if (vg_feed_has_type($pdo, [$id], 'osv')) {
                     $s = vg_osv_enrich_fixed($pdo);

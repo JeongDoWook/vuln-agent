@@ -41,7 +41,7 @@ declare(strict_types=1);
         'cve' => fn($f) => '<strong><a href="/cve.php?cve=' . urlencode($f['cve_id']) . '">' . vg_h($f['cve_id']) . '</a></strong>'
                        . ' <a class="pill" href="'
                        . vg_h(vg_finding_history_url($hostId, (int) $f['container_id'], (string) $f['cve_id'], (string) $f['package_name']))
-                       . '" title="스캔별 이력 보기" aria-label="스캔별 이력 보기">🕘</a>',
+                       . '" title="수집별 이력 보기" aria-label="수집별 이력 보기">🕘</a>',
         'epss' => fn($f) => vg_epss_cell($f['epss'], $f['epss_percentile']),
         // 패키지명·버전·재시작 뱃지는 한 줄이다(예전엔 'libc6 2.39-' / '0ubuntu8.8' 로 접혔다).
         //   커널은 재부팅해야 새 코드가 올라온다 — 프로세스 재시작으로는 안 고쳐진다.

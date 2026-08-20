@@ -139,7 +139,7 @@ function vg_discovery_expand_cidr(string $cidr, int $minPrefix = VG_DISCOVERY_MI
     }
     if ($bits < $minPrefix) {
         throw new InvalidArgumentException(sprintf(
-            '대역이 너무 큽니다 — /%d 까지만 스캔합니다(요청: /%d).', $minPrefix, $bits
+            '대역이 너무 큽니다 — /%d 까지만 탐색합니다(요청: /%d).', $minPrefix, $bits
         ));
     }
     $net  = ip2long($base) & (($bits === 0) ? 0 : (-1 << (32 - $bits)));
@@ -178,7 +178,7 @@ function vg_discovery_parse_ports(string $spec, int $max = VG_DISCOVERY_MAX_PORT
             throw new InvalidArgumentException("포트 명세를 해석할 수 없습니다: $tok");
         }
         if (count($ports) > $max) {
-            throw new InvalidArgumentException("포트가 너무 많습니다 — 최대 {$max}개까지 스캔합니다.");
+            throw new InvalidArgumentException("포트가 너무 많습니다 — 최대 {$max}개까지 탐색합니다.");
         }
     }
     $list = array_keys($ports);
@@ -382,7 +382,7 @@ function vg_discovery_store_results(PDO $pdo, int $runId, array $doc): array {
     $st->execute([$runId]);
     $targetId = $st->fetchColumn();
     if ($targetId === false) {
-        throw new InvalidArgumentException('스캔 기록을 찾을 수 없습니다.');
+        throw new InvalidArgumentException('탐색 기록을 찾을 수 없습니다.');
     }
     $targetId = (int) $targetId;
 
@@ -545,7 +545,7 @@ function vg_discovery_create_run(PDO $pdo, int $targetId, ?int $userId = null): 
     );
     $st->execute([$targetId]);
     if ($st->fetchColumn() === false) {
-        throw new InvalidArgumentException('스캔할 수 있는 대역이 아닙니다(없거나 비활성).');
+        throw new InvalidArgumentException('탐색할 수 있는 대역이 아닙니다(없거나 비활성).');
     }
     $pdo->prepare(
         "INSERT INTO tb_discovery_run (discovery_target_id, status, created_by) VALUES (?, 'pending', ?)"
@@ -589,7 +589,7 @@ function vg_discovery_reap_stale(PDO $pdo, ?int $minutes = null): int {
           WHERE status = 'running' AND is_deleted = 0
             AND started_at IS NOT NULL AND started_at < NOW() - INTERVAL $minutes MINUTE"
     );
-    $st->execute(["중단된 스캔으로 판단해 정리(시작 후 {$minutes}분 초과)"]);
+    $st->execute(["중단된 탐색으로 판단해 정리(시작 후 {$minutes}분 초과)"]);
     return $st->rowCount();
 }
 
@@ -623,7 +623,7 @@ function vg_discovery_run_pending(PDO $pdo, ?int $maxRuns = null, ?int $budgetSe
             // execute_run 은 스캔 실패를 스스로 닫지만, run 행 자체가 사라진 경우 등은 던진다.
             //   한 run 의 실패가 남은 run 과 호출자(스케줄러 틱)를 죽이면 안 된다.
             error_log('[discovery] run ' . $runId . ' 집행 예외: ' . $e->getMessage());
-            $r = ['ok' => false, 'run_id' => $runId, 'cidr' => '', 'error' => '스캔을 집행할 수 없습니다.'];
+            $r = ['ok' => false, 'run_id' => $runId, 'cidr' => '', 'error' => '대역 탐색을 집행할 수 없습니다.'];
             try {
                 $pdo->prepare(
                     "UPDATE tb_discovery_run SET status = 'failed', finished_at = NOW(), error_text = ?
@@ -655,7 +655,7 @@ function vg_discovery_execute_run(PDO $pdo, int $runId, string $actorType = 'SYS
     $st->execute([$runId]);
     $row = $st->fetch();
     if ($row === false) {
-        throw new InvalidArgumentException('스캔 기록을 찾을 수 없습니다.');
+        throw new InvalidArgumentException('탐색 기록을 찾을 수 없습니다.');
     }
     $cidr = (string) $row['cidr'];
     $t0   = microtime(true);
@@ -677,7 +677,7 @@ function vg_discovery_execute_run(PDO $pdo, int $runId, string $actorType = 'SYS
 
         vg_log_activity(
             $pdo, 'DISCOVERY', $runId, 'discovery_scan',
-            sprintf('대역 스캔 완료 — %s', $cidr),
+            sprintf('대역 탐색 완료 — %s', $cidr),
             $counts + ['cidr' => $cidr, 'elapsed_seconds' => $elapsed],
             $userId, $actorType, null, $cidr, 'EXECUTE'
         );
@@ -689,7 +689,7 @@ function vg_discovery_execute_run(PDO $pdo, int $runId, string $actorType = 'SYS
         //   그 밖의 예외는 원문을 감춘다.
         $msg = $e instanceof InvalidArgumentException
             ? $e->getMessage()
-            : '스캔 중 오류가 발생했습니다. 서버 로그를 확인하세요.';
+            : '탐색 중 오류가 발생했습니다. 서버 로그를 확인하세요.';
         try {
             $pdo->prepare(
                 "UPDATE tb_discovery_run
@@ -701,7 +701,7 @@ function vg_discovery_execute_run(PDO $pdo, int $runId, string $actorType = 'SYS
         }
         vg_log_activity(
             $pdo, 'DISCOVERY', $runId, 'discovery_scan_fail',
-            sprintf('대역 스캔 실패 — %s', $cidr),
+            sprintf('대역 탐색 실패 — %s', $cidr),
             ['cidr' => $cidr, 'reason' => $msg],
             $userId, $actorType, null, $cidr, 'EXECUTE'
         );

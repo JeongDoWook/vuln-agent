@@ -4,8 +4,8 @@ declare(strict_types=1);
 /**
  * findings.php — 탐지 결과 한 화면. 로그인 필요.
  *   세 유형을 탭으로 담는다(?type=): cve(기본) / cce(보안설정 점검) / exposure(런타임 노출).
- *   기본  : 전 호스트의 "각 호스트 최신 스캔" 을 통합해서 보여준다(호스트 컬럼 표시).
- *   ?host=N     : 그 호스트의 최신 스캔만.
+ *   기본  : 전 호스트의 "각 호스트 최신 수집" 을 통합해서 보여준다(호스트 컬럼 표시).
+ *   ?host=N     : 그 호스트의 최신 수집만.
  *   ?scan_id=N  : 특정 스캔 하나만(대시보드·호스트 상세에서 넘어오는 링크). 이때만 부제에 scan# 표시.
  *   검색(q)/등급(sev) + 탭별 필터(cve: st·fx / cce: res / exposure: scope) + 페이지네이션.
  *
@@ -119,7 +119,7 @@ $ctrLabel = null;   // 부제에 뭘 보고 있는지 밝힌다(스코프를 숨
 try {
     $pdo = vg_pdo();
 
-    // 호스트별 최신 스캔 (삭제된 호스트 제외) — 통합 뷰의 대상 스캔 집합.
+    // 호스트별 최신 수집 (삭제된 호스트 제외) — 통합 뷰의 대상 스캔 집합.
     $hosts = vg_findings_load_hosts($pdo);
     foreach ($hosts as $h) {
         $hid = (int) $h['host_id'];
@@ -214,8 +214,8 @@ vg_header($type === 'cve' ? '탐지 결과' : '탐지 결과 · ' . vg_findings_
 $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
 ?>
   <?php
-  // 이 줄은 **좁혀 본 범위**만 말한다 — 안 좁혔을 때(전체 호스트·최신 스캔)는 아무것도 적지
-  //   않는다. "전체 호스트 11대 · 각 호스트의 최신 스캔 기준" 은 기본값을 설명하는 줄이라
+  // 이 줄은 **좁혀 본 범위**만 말한다 — 안 좁혔을 때(전체 호스트·최신 수집)는 아무것도 적지
+  //   않는다. "전체 호스트 11대 · 각 호스트의 최신 수집 기준" 은 기본값을 설명하는 줄이라
   //   화면 해설이지 값이 아니었다. 좁혀 본 상태·스캔 없음·컨테이너 기준은 그대로 남긴다
   //   (숨기면 0건이 "안전" 으로 읽힌다).
   $hasScopeLine = $scan || $scanId > 0 || $hostId > 0 || !$hostOptions || $ctrLabel !== null;
@@ -227,11 +227,11 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       호스트 <strong><?= vg_h($scan['fqdn']) ?></strong> · scan #<?= (int) $scan['scan_id'] ?> · <?= vg_h($scan['collected_at']) ?>
       · <a href="<?= vg_h($typeHome) ?>">전체 호스트 보기 →</a>
     <?php elseif ($scanId > 0): ?>
-      스캔 #<?= $scanId ?> 을(를) 찾을 수 없습니다. · <a href="<?= vg_h($typeHome) ?>">전체 호스트 보기 →</a>
+      수집 #<?= $scanId ?> 을(를) 찾을 수 없습니다. · <a href="<?= vg_h($typeHome) ?>">전체 호스트 보기 →</a>
     <?php elseif ($hostId > 0): ?>
-      호스트 <strong><?= vg_h($hostOptions[$hostId]) ?></strong> · 최신 스캔 기준
+      호스트 <strong><?= vg_h($hostOptions[$hostId]) ?></strong> · 최신 수집 기준
       · <a href="<?= vg_h($typeHome) ?>">전체 호스트 보기 →</a>
-    <?php elseif (!$hostOptions): ?>스캔 없음<?php endif; ?>
+    <?php elseif (!$hostOptions): ?>수집 없음<?php endif; ?>
     <?php if ($ctrLabel !== null): ?>
       <?php // 스코프를 숨기면 0건이 "안전" 으로 읽힌다 — 무엇으로 좁혀 봤는지 밝히고 해제 링크를 준다. ?>
       · <strong><?= vg_h($ctrLabel) ?></strong> 기준

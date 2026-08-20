@@ -47,7 +47,7 @@ try {
     $catalog = vg_cce_rules();
     $codes = array_keys($catalog);
 
-    // 판정 집계 — 호스트별 최신 스캔만 센다. 지난 스캔까지 세면 같은 위반이 중복 집계된다
+    // 판정 집계 — 호스트별 최신 수집만 센다. 지난 스캔까지 세면 같은 위반이 중복 집계된다
     //   (control_mapping.php·control.php 와 같은 기준). 룰마다 물어보면 39번 왕복이라
     //   한 번의 GROUP BY 로 끝낸다.
     $st = $pdo->query(
@@ -167,7 +167,7 @@ vg_header('CCE', 'cce_rules');
           ['label' => '판정',   'width' => '7rem', 'nowrap' => true],
           // 'FAIL n · PASS n · 판정 불가 n' 이 한 줄에 서야 행 높이가 안 늘어난다(실측 1440px).
           ['label' => '결과',   'width' => '17%',
-           'title' => '최신 스캔 기준 FAIL / 전체 점검 결과'],
+           'title' => '최신 수집 기준 FAIL / 전체 점검 결과'],
       ],
       $rows,
       [

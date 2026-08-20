@@ -150,7 +150,7 @@ vg_decision_flow([
     ['label' => '위험·근거', 'hint' => 'CVSS·EPSS·KEV와 원본', 'href' => '#summary'],
     ['label' => '영향 대상', 'hint' => number_format($assetTotal) . '대 · ' . number_format($locTotal) . '건', 'href' => '#locations'],
     ['label' => '조치', 'hint' => '자산별 현재 → 권장 조치', 'href' => '#locations'],
-    ['label' => '재검증', 'hint' => '다음 자산 스캔 결과 확인', 'href' => '/findings.php?q=' . urlencode($cveId)],
+    ['label' => '재검증', 'hint' => '다음 자산 수집 결과 확인', 'href' => '/findings.php?q=' . urlencode($cveId)],
 ]); ?>
 
 <nav class="subtabs subtabs--sticky">

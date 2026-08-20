@@ -74,7 +74,7 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
             </ul>
           </details>
         <?php elseif ($host['grade_suggested'] ?? null): ?>
-          <p class="why mt-lg">이전 관찰로 만든 초안 — 이번 스캔의 근거 신호는 없음.</p>
+          <p class="why mt-lg">이전 관찰로 만든 초안 — 이번 수집의 근거 신호는 없음.</p>
         <?php endif; ?>
 
         <?php /* '정보공개법 제9조 …' 해설 한 줄은 걷었다 — 아래 확정 폼의 '정보공개법 제9조 해당 호'

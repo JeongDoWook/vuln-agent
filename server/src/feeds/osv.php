@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * feeds/osv.php — OSV.dev 커넥터. 최신 스캔의 실제 패키지를 querybatch 로 조회해
+ * feeds/osv.php — OSV.dev 커넥터. 최신 수집의 실제 패키지를 querybatch 로 조회해
  *   취약 패키지 발굴 + 조치안(fixed_version). 배포판별 ecosystem 자동, deb/ubuntu 는
  *   source_pkg 로 조회, 설치버전으로 필터. 조치안 지연 보강(vg_osv_enrich_fixed) 포함.
  *   미리보기는 run 과 같은 querybatch 로 앞 100개를 실제 조회한다(같은 소스·같은 기준).
@@ -237,7 +237,7 @@ function vg_osv_container_queries(PDO $pdo, int $scanId): array {
     return $out;
 }
 
-// OSV.dev — 최신 스캔의 실제 패키지를 단건 /v1/query 로 조회해 취약 패키지 발굴 + 조치안.
+// OSV.dev — 최신 수집의 실제 패키지를 단건 /v1/query 로 조회해 취약 패키지 발굴 + 조치안.
 //   배포판별 ecosystem 자동, deb/ubuntu 는 source_pkg 로 조회, 설치버전으로 필터.
 //   단건 응답엔 summary·aliases·affected.ranges(고쳐진 버전) 가 있어 조치안까지 확보.
 final class VgOsvConnector implements VgFeedConnector {
@@ -340,7 +340,7 @@ final class VgOsvConnector implements VgFeedConnector {
         return ['fetched' => $fetched, 'upserted' => $up];
     }
 
-    // 미리보기: run 과 같은 querybatch 로 최신 스캔의 앞 100개를 실제 조회한다(같은 소스·같은 기준).
+    // 미리보기: run 과 같은 querybatch 로 최신 수집의 앞 100개를 실제 조회한다(같은 소스·같은 기준).
     //   패키지 1건만 단건 조회하면 대개 취약점이 없어 항상 "0건" 으로 보였다.
     public function preview(PDO $pdo, array $conn): array {
         $sc = $pdo->query(
@@ -349,7 +349,7 @@ final class VgOsvConnector implements VgFeedConnector {
              ORDER BY s.scan_id DESC LIMIT 1'
         )->fetch();
         if (!$sc) {
-            return ['ok' => false, 'error' => '수집된 스캔이 없어 미리보기 불가(에이전트 먼저 실행).'];
+            return ['ok' => false, 'error' => '수집 이력이 없어 미리보기 불가(에이전트 먼저 실행).'];
         }
         $eco = trim((string) ($conn['ecosystem'] ?? '')) ?: vg_osv_ecosystem($sc['os_id'], $sc['os_version']);
         if (!$eco) {
@@ -357,7 +357,7 @@ final class VgOsvConnector implements VgFeedConnector {
         }
         $queries = array_slice(vg_osv_queries($pdo, (int) $sc['scan_id'], $eco), 0, 100);
         if (!$queries) {
-            return ['ok' => false, 'error' => "최신 스캔(id={$sc['scan_id']})에 패키지가 없어 미리보기 불가."];
+            return ['ok' => false, 'error' => "최신 수집(id={$sc['scan_id']})에 패키지가 없어 미리보기 불가."];
         }
         $r = vg_http_json('POST', vg_osv_batch_url($conn),
             ['queries' => array_column($queries, 'q')], [], 90);

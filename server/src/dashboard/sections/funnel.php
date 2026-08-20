@@ -32,7 +32,7 @@ function vg_dash_render_funnel(array $totals, int $hostCount, int $kevCount, int
       // 아이콘은 vg_signal_icon() 이 이미 갖고 있는 4축 세트를 그대로 재사용한다(새 아이콘 없음).
       //   1번 칸(전체)은 아이콘 없이 둔다 — 배경 수치라 강조할 축이 없다.
       ['n' => $allCount, 'label' => '탐지된 전체', 'icon' => null,
-       'href' => '/findings.php', 'title' => '자산 ' . number_format($hostCount) . '대의 최신 스캔 · 탐지 결과 전체 목록'],
+       'href' => '/findings.php', 'title' => '자산 ' . number_format($hostCount) . '대의 최신 수집 · 탐지 결과 전체 목록'],
       ['n' => $crit + $high, 'label' => 'High 이상', 'icon' => 'severity',
        'href' => '/findings.php?sev=HIGH%2B', 'title' => 'CRITICAL ' . number_format($crit) . ' · HIGH ' . number_format($high)],
       ['n' => $kevCount, 'label' => '악용 확인(KEV)', 'icon' => 'exploit',

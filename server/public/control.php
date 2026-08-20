@@ -87,7 +87,7 @@ try {
 
         $guides = vg_cce_rule_guides($ruleCodes);
 
-        // 호스트별 최신 스캔의 CCE 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다
+        // 호스트별 최신 수집의 CCE 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다
         //   (control_mapping.php 드릴다운이 쓰던 쿼리를 그대로 옮겼다).
         //   tb_scan 조인은 PK 단건 조회라 싸다 — "언제 점검한 결과인가" 를 행마다 밝히려고 붙였다
         //   (compliance_rule.php 의 수집일 컬럼과 같은 사실).
@@ -378,7 +378,7 @@ vg_hero(
                가리키고, 집계 기준은 이 화면의 모든 숫자가 무엇을 센 것인지 밝힌다. */ ?>
       <dl class="kv">
         <dt>통제 ID</dt><dd><code><?= vg_h($control) ?></code></dd>
-        <dt>집계 기준</dt><dd>호스트별 최신 스캔 1건</dd>
+        <dt>집계 기준</dt><dd>호스트별 최신 수집 1건</dd>
       </dl>
       <div class="actions mt">
         <?php vg_copy_btn($control, '통제 ID 복사'); ?>
