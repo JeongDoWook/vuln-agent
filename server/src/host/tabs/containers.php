@@ -24,6 +24,10 @@ declare(strict_types=1);
 
     /** 이 컨테이너의 심각도 분포([등급=>건수]) — 표의 여러 칸이 같은 값을 다시 찾지 않게 한 번만 꺼낸다. */
     $sevOf = fn(array $c): array => $sevByContainer[(int) $c['container_id']] ?? [];
+    // 위험 분포 바의 공통 분모 — 이 스캔의 **전체 컨테이너** 중 조치 대상이 가장 많은 행(페이지 밖 포함).
+    //   행마다 자기 합을 100%로 잡으면 HIGH 14뿐인 컨테이너와 HIGH 34뿐인 컨테이너가 똑같이
+    //   꽉 찬 바가 되어 이 표의 목적(행끼리 비교)이 사라진다. 페이지가 바뀌어도 척도는 그대로다.
+    $riskScale = vg_sev_bar_scale($sevByContainer);
     /** 등급별 건수 칸. 0 은 지우지 않고 흐리게만 둔다 — 빈칸이면 "안 셌다"로 읽힌다. */
     $sevCell = function (string $sev) use ($sevOf): callable {
         return function (array $c) use ($sev, $sevOf): string {
@@ -96,8 +100,10 @@ declare(strict_types=1);
                     },
                     // 미터 바 — 세그먼트 사이 2px 간격은 .riskbar 가 갖는다(HIGH·MEDIUM 이 맞닿으면
                     //   색각이상 기준으로 구분이 안 된다). 폭 계산(width:N%)은 vg_sev_bar() 몫이다.
-                    2 => function (array $c) use ($sevOf): string {
-                        $bar = vg_sev_bar($sevOf($c));
+                    //   바는 조치 대상만 그리고 LOW 는 오른쪽 LOW 열이 갖는다. LOW 만 있는 행은
+                    //   'LOW만' 로, 아예 없는 행은 아래 문구로 갈린다("빈 바 = 데이터 없음" 오독 방지).
+                    2 => function (array $c) use ($sevOf, $riskScale): string {
+                        $bar = vg_sev_bar($sevOf($c), $riskScale);
                         return $bar !== '' ? $bar : '<span class="why">판정된 취약점 없음</span>';
                     },
                     3 => $sevCell('CRITICAL'),

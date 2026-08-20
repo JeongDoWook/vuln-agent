@@ -6,6 +6,9 @@ declare(strict_types=1);
  *   정렬은 이미 SQL 이 했다(조회층 주석 참고) — 이 함수는 순서를 다시 만들지 않는다.
  */
 function vg_dash_render_hosts(array $rows, array $sevByScan, int $total, int $perPage, int $page): void {
+  // 막대의 공통 분모 — 이 목록에서 조치 대상이 가장 많은 호스트. 행마다 자기 합으로 잡으면
+  //   HIGH 3뿐인 호스트와 HIGH 300인 호스트의 막대가 똑같아진다.
+  $riskScale = vg_sev_bar_scale($sevByScan);
   ?>
   <div class="card">
     <strong>호스트별 현황</strong>
@@ -39,9 +42,12 @@ function vg_dash_render_hosts(array $rows, array $sevByScan, int $total, int $pe
               //   §목록과 상세의 분담), 지운 게 아니라 호스트 상세(히어로의 OS · 수집 이력의 패키지 수)에 있다.
               1 => fn($r) => vg_h((string) (int) $r['exposure_count']),
               // 막대 + 숫자 뱃지 — 막대로 "누가 더 나쁜지" 를 눈이 먼저 잡고, 숫자가 확인해준다.
-              2 => function ($r) use ($sevByScan) {
+              //   막대는 조치 대상(C·H·M)만 그리고 이 목록에서 가장 많은 호스트를 100%로 잡는다
+              //   (LOW 를 같이 쌓으면 나머지가 실오라기가 된다 — vg_sev_bar 주석). LOW 건수는
+              //   옆의 등급별 뱃지가 그대로 갖는다.
+              2 => function ($r) use ($sevByScan, $riskScale) {
                   $c = $sevByScan[(int) $r['scan_id']] ?? [];
-                  return vg_sev_bar($c) . vg_sev_counts($c);
+                  return vg_sev_bar($c, $riskScale) . vg_sev_counts($c);
               },
               3 => fn($r) => '<span class="why">' . vg_h($r['collected_at']) . '</span>',
               4 => fn($r) => '<a href="/findings.php?scan_id=' . (int) $r['scan_id'] . '">취약점 →</a>',

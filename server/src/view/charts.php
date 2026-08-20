@@ -34,12 +34,19 @@ function vg_donut_tone(string $tone): string {
  *   $title    : 접근성 이름(SVG 의 aria-label). **눈에 보이는 제목은 그리지 않는다** —
  *               감싸는 카드의 <strong> 이 이미 갖고 있어서 두 번 적으면 같은 문구가 겹친다.
  *   $segments : [['label'=>'HIGH', 'value'=>968, 'tone'=>'high',
- *                 'href'=>'…', 'selected'=>bool, 'title'=>'…'], …]
+ *                 'href'=>'…', 'selected'=>bool, 'title'=>'…', 'arc'=>bool], …]
  *               값이 0 인 조각은 **목록에는 남기고 호(arc)만 그리지 않는다** — "그 등급이
  *               0건" 은 지워야 할 정보가 아니라 읽어야 할 사실이다(0건 = 안전 아님).
- *   $opts     : 'center'(중앙 숫자 — 기본은 조각 합) · 'center_label'(기본 '전체') ·
+ *               'arc'=>false 는 같은 처리를 **건수와 무관하게** 건다 — 한 조각이 고리를
+ *               통째로 먹어 나머지가 실오라기가 될 때 쓴다(심각도의 LOW: 운영 실측
+ *               LOW 38,797 : HIGH 962 라 고리의 89%가 회색 한 덩어리였다). 숫자를 지우는
+ *               게 아니라 **그림에서만 빼는 것**이라 목록 행은 그대로 남는다.
+ *   $opts     : 'center'(중앙 숫자 — 기본은 **호로 그린 것의 합**) · 'center_label'(기본 '전체'
+ *               — 목록 툴팁의 비율 분모 이름으로도 쓰인다) ·
  *               'href'(도넛 자체를 링크로) · 'size'(px, 기본 132) ·
- *               'max_segments'(상위 N + '기타' 로 접는다 — 0 이면 접지 않는다)
+ *               'max_segments'(상위 N + '기타' 로 접는다 — 0 이면 접지 않는다) ·
+ *               'none'(호로 그릴 게 0 일 때 고리 대신 세울 뱃지 — ['label'=>…, 'tone'=>…].
+ *                안 주면 예전처럼 빈 고리 + 중앙 숫자다)
  *
  * **조각 사이에 2px 간격을 둔다.** --high 와 --med 는 맞닿으면 색차가 정상 시야 10.4 ·
  *   색각이상 6.1 로 권장치(15)에 한참 못 미쳐 한 덩어리로 읽힌다. 토큰 값은 바꿀 수 없으므로
@@ -61,6 +68,8 @@ function vg_donut_kpi(string $title, array $segments, array $opts = []): void {
             'href'     => (string) ($s['href'] ?? ''),
             'selected' => !empty($s['selected']),
             'title'    => (string) ($s['title'] ?? ''),
+            // 기본은 true — 'arc' 를 모르는 기존 호출부는 예전과 똑같이 그려진다.
+            'arc'      => !array_key_exists('arc', $s) || (bool) $s['arc'],
         ];
     }
 
@@ -74,17 +83,26 @@ function vg_donut_kpi(string $title, array $segments, array $opts = []): void {
         $restSum = 0;
         foreach ($rest as $r) { $restSum += $r['value']; }
         $segs[] = ['label' => '기타', 'value' => $restSum, 'tone' => 'cat6',
-                   'href' => '', 'selected' => false,
+                   'href' => '', 'selected' => false, 'arc' => true,
                    'title' => '나머지 ' . number_format(count($rest)) . '종 합계'];
     }
 
-    $total = 0;
-    $drawn = 0;
-    foreach ($segs as $s) { $total += $s['value']; if ($s['value'] > 0) { $drawn++; } }
+    // 두 합을 따로 센다. $total 은 목록이 말하는 **전체**, $arcTotal 은 고리가 실제로 그린 것.
+    //   중앙 숫자는 $arcTotal 이어야 한다 — 그림과 숫자가 어긋나면 둘 다 못 믿게 된다.
+    //   'arc'=>false 가 하나도 없으면 두 값이 같아서 기존 호출부의 화면은 그대로다.
+    $total    = 0;
+    $arcTotal = 0;
+    $drawn    = 0;
+    foreach ($segs as $s) {
+        $total += $s['value'];
+        if ($s['arc'] && $s['value'] > 0) { $arcTotal += $s['value']; $drawn++; }
+    }
 
-    $center      = (string) ($opts['center'] ?? number_format($total));
+    $center      = (string) ($opts['center'] ?? number_format($arcTotal));
     $centerLabel = (string) ($opts['center_label'] ?? '전체');
     $href        = (string) ($opts['href'] ?? '');
+    // 고리가 통째로 비면 "고장난 화면" 으로 읽힌다. 부를 때 'none' 을 준 도넛만 상태로 바꾼다.
+    $none        = $arcTotal === 0 && is_array($opts['none'] ?? null) ? $opts['none'] : null;
 
     // 2px 을 viewBox 단위로. 조각이 하나뿐이면 간격을 두지 않는다 — 끊긴 고리가 된다.
     $gap = $drawn > 1 ? min(3.0, 2.0 * 42.0 / $size) : 0.0;
@@ -93,33 +111,40 @@ function vg_donut_kpi(string $title, array $segments, array $opts = []): void {
     echo '<div class="donut-kpi">';
 
     $figTag = $href !== '' ? 'a' : 'div';
-    echo '<' . $figTag . ' class="donut donut--kpi"'
+    echo '<' . $figTag . ' class="donut donut--kpi' . ($none !== null ? ' donut--none' : '') . '"'
         . ($href !== '' ? ' href="' . vg_h($href) . '"' : '') . '>';
-    echo '<svg viewBox="0 0 42 42" width="' . $size . '" height="' . $size . '"'
-        . ' role="img" aria-label="' . vg_h($title) . '">';
-    echo '<circle class="donut__track" cx="21" cy="21" r="' . $r . '" fill="none" stroke-width="4.5"></circle>';
-    if ($total > 0) {
-        $offset = 25;   // 12시 방향에서 시작(원의 기본 시작점은 3시 방향)
-        foreach ($segs as $s) {
-            if ($s['value'] <= 0) { continue; }
-            $pct = $s['value'] / $total * 100;
-            // 간격만큼 짧게 그린다(위치는 그대로 — offset 은 원래 몫만큼 밀어야 이어 붙는다).
-            //   0.6 아래로는 안 줄인다: 1건짜리 조각이 아예 사라지면 그림이 목록과 어긋난다.
-            $len = max(0.6, $pct - $gap);
-            echo '<circle class="donut__arc tone-' . vg_h($s['tone']) . '" cx="21" cy="21" r="' . $r . '"'
-                . ' fill="none" stroke-width="4.5"'
-                . ' stroke-dasharray="' . round($len, 2) . ' ' . round(100 - $len, 2) . '"'
-                . ' stroke-dashoffset="' . round($offset, 2) . '">'
-                . '<title>' . vg_h($s['label'] . ' ' . number_format($s['value'])
-                    . ' (' . number_format($pct, 1) . '%)') . '</title></circle>';
-            $offset -= $pct;   // 시계방향으로 이어 붙인다
+    if ($none !== null) {
+        // 그릴 게 없을 때는 빈 고리 대신 상태를 세운다. 값은 오른쪽 목록이 그대로 갖고 있다.
+        echo vg_badge((string) ($none['label'] ?? '표시할 항목 없음'),
+                      (string) ($none['tone'] ?? 'ok'),
+                      (string) ($none['title'] ?? $title));
+    } else {
+        echo '<svg viewBox="0 0 42 42" width="' . $size . '" height="' . $size . '"'
+            . ' role="img" aria-label="' . vg_h($title) . '">';
+        echo '<circle class="donut__track" cx="21" cy="21" r="' . $r . '" fill="none" stroke-width="4.5"></circle>';
+        if ($arcTotal > 0) {
+            $offset = 25;   // 12시 방향에서 시작(원의 기본 시작점은 3시 방향)
+            foreach ($segs as $s) {
+                if (!$s['arc'] || $s['value'] <= 0) { continue; }
+                $pct = $s['value'] / $arcTotal * 100;
+                // 간격만큼 짧게 그린다(위치는 그대로 — offset 은 원래 몫만큼 밀어야 이어 붙는다).
+                //   0.6 아래로는 안 줄인다: 1건짜리 조각이 아예 사라지면 그림이 목록과 어긋난다.
+                $len = max(0.6, $pct - $gap);
+                echo '<circle class="donut__arc tone-' . vg_h($s['tone']) . '" cx="21" cy="21" r="' . $r . '"'
+                    . ' fill="none" stroke-width="4.5"'
+                    . ' stroke-dasharray="' . round($len, 2) . ' ' . round(100 - $len, 2) . '"'
+                    . ' stroke-dashoffset="' . round($offset, 2) . '">'
+                    . '<title>' . vg_h($s['label'] . ' ' . number_format($s['value'])
+                        . ' (' . $centerLabel . '의 ' . number_format($pct, 1) . '%)') . '</title></circle>';
+                $offset -= $pct;   // 시계방향으로 이어 붙인다
+            }
         }
+        echo '</svg>';
+        // 라벨이 숫자 위에 온다 — 큰 숫자가 먼저 읽히고, 그게 무엇인지는 바로 위에서 받는다.
+        //   자릿수가 많으면(천단위 구분 포함 6자 이상) 고리 안쪽 구멍보다 넓어져 링 위로 걸친다.
+        $midCls = 'donut__mid' . (mb_strlen($center) >= 6 ? ' donut__mid--long' : '');
+        echo '<div class="' . $midCls . '"><span>' . vg_h($centerLabel) . '</span><b>' . vg_h($center) . '</b></div>';
     }
-    echo '</svg>';
-    // 라벨이 숫자 위에 온다 — 큰 숫자가 먼저 읽히고, 그게 무엇인지는 바로 위에서 받는다.
-    //   자릿수가 많으면(천단위 구분 포함 6자 이상) 고리 안쪽 구멍보다 넓어져 링 위로 걸친다.
-    $midCls = 'donut__mid' . (mb_strlen($center) >= 6 ? ' donut__mid--long' : '');
-    echo '<div class="' . $midCls . '"><span>' . vg_h($centerLabel) . '</span><b>' . vg_h($center) . '</b></div>';
     echo '</' . $figTag . '>';
 
     // 직접 라벨 — 색만으로 조각을 식별하게 두지 않는다(색각이상·흑백 인쇄·인접 색 문제).
@@ -128,9 +153,17 @@ function vg_donut_kpi(string $title, array $segments, array $opts = []): void {
         $tag  = $s['href'] !== '' ? 'a' : 'div';
         $cls  = 'donut-kpi__seg' . ($s['value'] === 0 ? ' donut-kpi__seg--zero' : '')
               . ($s['selected'] ? ' is-selected' : '');
+        // 비율의 분모를 조각마다 맞춘다 — 호로 그린 조각은 고리와 같은 분모($arcTotal),
+        //   그림에서 뺀 조각은 전체($total). 한 분모로 통일하면 "고리의 20%인데 툴팁은 2%"
+        //   처럼 그림과 글자가 어긋난다.
         $tip  = $s['title'] !== '' ? $s['title']
-              : $s['label'] . ' ' . number_format($s['value'])
-                . ($total > 0 ? ' (' . number_format($s['value'] / $total * 100, 1) . '%)' : '');
+              : ($s['arc']
+                  ? $s['label'] . ' ' . number_format($s['value'])
+                    . ($arcTotal > 0 ? ' (' . $centerLabel . '의 '
+                        . number_format($s['value'] / $arcTotal * 100, 1) . '%)' : '')
+                  : $s['label'] . ' ' . number_format($s['value'])
+                    . ($total > 0 ? ' (전체의 ' . number_format($s['value'] / $total * 100, 1) . '%)' : '')
+                    . ' · 도넛에는 그리지 않는다');
         echo '<' . $tag . ' class="' . vg_h($cls) . '"'
             . ($s['href'] !== '' ? ' href="' . vg_h($s['href']) . '"' : '')
             . ' title="' . vg_h($tip) . '">'
@@ -146,15 +179,40 @@ function vg_donut_kpi(string $title, array $segments, array $opts = []): void {
 
 /**
  * 심각도 도넛 — vg_donut_kpi() 로 그린다(도넛 구현은 이 저장소에 한 벌만 둔다).
- *   $counts: ['CRITICAL'=>3, 'HIGH'=>7, …]. 합이 0이면 빈 링 + "0" 이 된다.
- *   시그니처는 그대로 둔다 — 부르는 화면(advisory.php)을 고치지 않기 위해서다.
+ *   $counts: ['CRITICAL'=>3, 'HIGH'=>7, …].
+ *   $opts:   'title'(aria-label, 기본 '심각도 분포') · 'href'(도넛 자체를 링크로) ·
+ *            'seg'(등급마다 href/selected/title 을 얹는 콜백 — fn(string $sev, int $n): array).
+ *            나머지 키는 vg_donut_kpi 로 그대로 넘어간다.
+ *
+ * **고리는 조치 대상(CRITICAL·HIGH·MEDIUM)만 그린다.** LOW 는 목록에만 남는다(숫자는 안 지운다).
+ *   운영 실측이 LOW 38,797 : HIGH 962 : MEDIUM 3,927 : CRITICAL 0 이라 같이 그리면 고리의
+ *   89%가 회색 한 덩어리가 되고 조치할 등급이 실오라기가 됐다. 추세 차트가 이미 같은 이유로
+ *   C·H·M 만 그린다(#137) — 그때 "전체 구성은 도넛이 맡는다"고 미뤄둔 판단을 여기서 잇는다.
+ *   중앙 숫자도 따라서 **조치 대상 합**이다 — 전체 건수는 목록의 LOW 행과 화면 상단 KPI 가 갖는다.
+ *
+ * 심각도가 아닌 도넛(판정 PASS/FAIL·노출 범위·SBOM 생태계/라이선스)은 이 규칙과 무관하다 —
+ *   LOW 축이 없어서 뺄 것이 없다. 그쪽은 vg_donut_kpi 를 직접 부른다.
  */
-function vg_sev_donut(array $counts, int $size = 132): void {
+function vg_sev_donut(array $counts, int $size = 132, array $opts = []): void {
+    $seg   = $opts['seg'] ?? null;
+    $title = (string) ($opts['title'] ?? '심각도 분포');
+    unset($opts['seg'], $opts['title']);
+
     $segments = [];
     foreach (VG_TONE_SEV as $sev => $tone) {
-        $segments[] = ['tone' => $tone, 'label' => $sev, 'value' => (int) ($counts[$sev] ?? 0)];
+        $n     = (int) ($counts[$sev] ?? 0);
+        $extra = $seg !== null ? (array) $seg($sev, $n) : [];
+        // 왼쪽(호출부가 준 href·selected·title)이 이기고, 오른쪽은 이 함수가 정하는 계약이다.
+        $segments[] = $extra + ['tone' => $tone, 'label' => $sev, 'value' => $n, 'arc' => $sev !== 'LOW'];
     }
-    vg_donut_kpi('심각도 분포', $segments, ['size' => $size]);
+
+    vg_donut_kpi($title, $segments, $opts + [
+        'size'         => $size,
+        'center_label' => '조치 대상',
+        'none'         => ['label' => '조치 대상 없음', 'tone' => 'ok',
+                           'title' => 'CRITICAL·HIGH·MEDIUM 이 0건이라 고리를 그리지 않습니다'
+                                    . ' · 등급별 건수는 오른쪽 목록에 있습니다'],
+    ]);
 }
 
 /**

@@ -108,23 +108,69 @@ function vg_sev_counts(array $counts, ?callable $href = null): string {
     return $out ? implode(' ', $out) : '<span class="why">–</span>';
 }
 
+/** 지금 조치할 등급. LOW 는 여기 없다 — 그림(도넛·막대)은 이 셋만 그린다. */
+const VG_SEV_ACTIONABLE = ['CRITICAL', 'HIGH', 'MEDIUM'];
+
+/** 이 분포의 조치 대상 건수 합(CRITICAL+HIGH+MEDIUM). */
+function vg_sev_actionable(array $counts): int {
+    $n = 0;
+    foreach (VG_SEV_ACTIONABLE as $sev) { $n += (int) ($counts[$sev] ?? 0); }
+    return $n;
+}
+
+/**
+ * 표 전체의 공통 척도 — 조치 대상 합이 가장 큰 행의 값. vg_sev_bar() 의 $scale 로 넘긴다.
+ *   $countsList: [분포, 분포, …] (예: $sevByContainer, $sevByScan — 키는 안 본다)
+ */
+function vg_sev_bar_scale(array $countsList): int {
+    $max = 0;
+    foreach ($countsList as $c) {
+        if (is_array($c)) { $max = max($max, vg_sev_actionable($c)); }
+    }
+    return $max;
+}
+
 /**
  * 심각도 구성 막대(가로 누적). 숫자 뱃지만 있으면 호스트끼리 "누가 더 나쁜지"를
  * 머리로 더해야 한다 — 막대는 그걸 눈으로 보게 한다. 뱃지와 같이 쓴다(색만으로 말하지 않게).
  * 폭 계산(width:N%)은 app.css 로 옮길 수 없는 값이라 인라인 style 예외에 해당한다.
+ *
+ * **조치 대상(CRITICAL·HIGH·MEDIUM)만 그린다.** LOW 는 바에서 빠지고 표의 LOW 열이 계속 갖는다 —
+ *   운영 실측이 한 컨테이너에서 HIGH 14 : LOW 895 라 같이 그리면 색 세그먼트가 1px 이 돼
+ *   분포가 아예 안 읽혔다(도넛과 같은 이유·같은 처방 — vg_sev_donut 주석).
+ *
+ * $scale: 표 전체의 공통 분모(vg_sev_bar_scale()). 0 이면 자기 합을 분모로 쓴다.
+ *   **행마다 자기 합으로 잡으면 HIGH 14뿐인 행과 HIGH 34뿐인 행이 똑같이 꽉 찬 바가 되어
+ *   비교가 안 된다.** 가로 랭킹 막대(vg_rank_bars)가 최댓값을 100%로 잡는 것과 같은 방식이다.
+ *
+ * 조치 대상이 0인 행은 빈 바 대신 'LOW만' 로 둔다 — 빈 회색 바는 "데이터 없음"으로 오독된다.
+ *   LOW 도 0이면 빈 문자열이라, 호출부가 '판정된 취약점 없음' 같은 자기 문구를 그대로 쓴다.
  */
-function vg_sev_bar(array $counts): string {
-    $total = 0;
-    foreach (VG_TONE_SEV as $sev => $tone) { $total += (int) ($counts[$sev] ?? 0); }
-    if ($total === 0) { return ''; }
+function vg_sev_bar(array $counts, int $scale = 0): string {
+    $sum = vg_sev_actionable($counts);
+    if ($sum === 0) {
+        $low = (int) ($counts['LOW'] ?? 0);
+        return $low > 0
+            ? '<span class="why" title="' . vg_h('LOW ' . number_format($low)
+                . '건 · 조치 대상(CRITICAL·HIGH·MEDIUM) 없음') . '">LOW만</span>'
+            : '';
+    }
 
-    $out = '';
-    foreach (VG_TONE_SEV as $sev => $tone) {
+    // 공통 척도가 자기 합보다 작을 수는 없지만(최댓값이므로), 호출부가 안 주면 자기 합으로 눕는다.
+    $denom = max($scale, $sum);
+    $parts = [];
+    $out   = '';
+    foreach (VG_SEV_ACTIONABLE as $sev) {
         $n = (int) ($counts[$sev] ?? 0);
         if ($n === 0) { continue; }
-        $pct = round($n / $total * 100, 2);
-        $out .= '<i class="tone-' . $tone . '" style="width:' . $pct . '%" title="'
+        $parts[] = $sev . ' ' . number_format($n);
+        $pct = round($n / $denom * 100, 2);
+        $out .= '<i class="tone-' . vg_sev_tone($sev) . '" style="width:' . $pct . '%" title="'
               . vg_h($sev . ' ' . number_format($n) . '건') . '"></i>';
     }
-    return '<span class="riskbar">' . $out . '</span>';
+    $low = (int) ($counts['LOW'] ?? 0);
+    $tip = '조치 대상 ' . number_format($sum) . '건 (' . implode(' · ', $parts) . ')'
+         . ($low > 0 ? ' · LOW ' . number_format($low) . '건은 바에서 제외' : '')
+         . ($scale > 0 ? ' · 바 길이는 최다 행(' . number_format($denom) . '건) 대비' : '');
+    return '<span class="riskbar" title="' . vg_h($tip) . '">' . $out . '</span>';
 }
