@@ -32,6 +32,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($action === 'agent_run_now') {
                 vg_agent_command_create($pdo, $postHostId, null, $me['id'] ?? null);
                 $agentMsg = '즉시 실행 명령을 등록했습니다. 에이전트가 다음 poll 에서 실행합니다.';
+            } elseif ($action === 'agent_run_verify') {
+                /* 무결성 검사 포함 즉시 실행 — 설치 패키지 탭의 '무결성 검사' 버튼이 쏜다.
+                 * rpm -Va / dpkg --verify 는 대상 서버에 수 분간 부하를 거는 동작이라 즉시 실행
+                 * (agent_run_now)과 한 action 으로 합치지 않는다 — 확인 문구도 감사로그도 달라야 한다.
+                 * 인가는 위 vg_can('assets') 로 이미 서버측에서 확정됐다. */
+                vg_agent_command_create($pdo, $postHostId, null, $me['id'] ?? null, true);
+                $agentMsg = '무결성 검사를 포함한 즉시 실행 명령을 등록했습니다. 다음 수집 결과에 반영됩니다.';
             } elseif ($action === 'agent_cancel') {
                 vg_agent_command_cancel($pdo, $postHostId, (int) ($_POST['command_id'] ?? 0), $me['id'] ?? null);
                 $agentMsg = '수집 중단을 요청했습니다.';
