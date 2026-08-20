@@ -688,7 +688,7 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 .card__body { margin-top: .6rem; }
 
 /* 자산 탐색(discovery.php) 대역 카드 — 표 한 줄이 아니라 카드 하나로 대역을 보여줘
- * 상태 배지·스캔 결과를 표 열보다 눈에 띄게 비교한다(.ctree__list 와 같은 auto-fill 격자). */
+ * 상태 배지·스캔 결과를 표 열보다 눈에 띄게 비교한다(폭에 맞춰 접히는 auto-fill 격자). */
 .discovery-targets {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
@@ -1150,20 +1150,35 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 @media (max-width: 700px) { .rank__row { grid-template-columns: minmax(0, 7rem) minmax(2rem, 1fr) max-content; } }
 
 /* --- 가로 계층 트리(의존성 그래프) ----------------------------------------
- * depgraph.php 가 좌표를 서버에서 계산해 SVG 를 통째로 출력한다 — CSP(default-src 'self')가
+ * src/deptree.php 가 좌표를 서버에서 계산해 SVG 를 통째로 출력한다(depgraph.php 와
+ * 자산 상세의 '의존성' 탭이 같은 함수를 부른다) — CSP(default-src 'self')가
  * 인라인 <script> 를 막아 클라이언트 레이아웃을 쓸 수 없다(도넛·추이선과 같은 방식).
  * 다른 SVG 차트(.chart svg)와 달리 **폭에 맞춰 늘이지 않는다**: 늘리면 노드 글자까지 줄어
  * 이름이 안 읽힌다. 폭은 노드 수가 정하고, 넘치면 .deptree 안에서만 가로로 스크롤한다
  * (<body> 가 가로로 스크롤되면 안 된다). */
 .deptree { overflow-x: auto; overflow-y: hidden; }
 .deptree__svg { display: block; }
-/* 연결선은 뒤로 물러난다 — 주인공은 노드다(차트의 눈금과 같은 원칙). */
+/* 연결선은 뒤로 물러난다 — 주인공은 노드다(차트의 눈금과 같은 원칙).
+ * 색은 하나(--line-2)로 두고 **깊이만 농도로 말한다** — 루트에서 바로 나온 가지가 제일 진하다.
+ * 색상을 하나 더 쓰면 노드 면의 등급 축과 경쟁한다(색은 한 화면에서 한 가지만 말해야 한다). */
 .deptree__edge { fill: none; stroke: var(--line-2); stroke-width: 1.4; }
+.deptree__edge--d0 { stroke-width: 1.9; }
+.deptree__edge--d1 { opacity: .78; }
+.deptree__edge--d2 { opacity: .58; }
+.deptree__edge--d3 { opacity: .42; }
 .deptree__node { cursor: pointer; }
 .deptree__box { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+/* 면(배경·테두리)은 **취약점 등급 전용 축**이다. 칠하는 건 조치 대상(CRITICAL·HIGH·MEDIUM)뿐 —
+ * LOW·무취약 노드까지 칠하면 전부 색이라 아무것도 강조되지 않는다(심각도 도넛이 LOW 를 뺀 것과
+ * 같은 기준). --high(#f0883e)와 --med(#e3b341)는 맞닿으면 색각이상 기준 색차가 6.1 이라 면만으로는
+ * 안 갈리므로, 같은 톤의 **테두리를 굵게** 함께 준다 — 이웃해도 경계선이 먼저 보인다. */
+.deptree__box.tone-crit { fill: var(--crit-bg); stroke: var(--crit-bd); stroke-width: 1.6; }
+.deptree__box.tone-high { fill: var(--high-bg); stroke: var(--high-bd); stroke-width: 1.6; }
+.deptree__box.tone-med  { fill: var(--med-bg);  stroke: var(--med-bd);  stroke-width: 1.6; }
+/* 지금 보고 있는 패키지 — 테두리로만 구분한다(왼쪽 악센트 바는 위험 등급 축이라 겹치지 않게).
+ * 등급 톤보다 뒤에 두고 선택자를 같은 무게로 맞춘다 — 아니면 칠해진 노드에서 이 표시가 진다. */
+.deptree__box.deptree__box--on { stroke: var(--accent-2); stroke-width: 2; }
 .deptree__node:hover .deptree__box { fill: var(--surface-2); stroke: var(--accent); }
-/* 지금 보고 있는 패키지 — 테두리로만 구분한다(왼쪽 악센트 바는 위험 등급 축이라 겹치지 않게). */
-.deptree__box--on { stroke: var(--accent-2); stroke-width: 2; }
 /* 왼쪽 세로 악센트 바 = 이 노드의 위험 등급(뱃지·도넛과 같은 톤 어휘). 루트는 --accent. */
 .deptree__accent { stroke: none; }
 .deptree__accent.tone-crit  { fill: var(--crit); }
@@ -1189,6 +1204,65 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .deptree__pilltext.tone-high { fill: var(--high-fg); }
 .deptree__pilltext.tone-med  { fill: var(--med-fg); }
 .deptree__pilltext.tone-low  { fill: var(--low-fg); }
+
+/* --- 성형 토폴로지(세그먼트 맵) --------------------------------------------
+ * segment-map.php 가 대역마다 SVG 한 장을 서버에서 그린다 — 바로 위 트리와 같은 이유로
+ * (CSP default-src 'self') 좌표 계산은 PHP 몫이다. 어휘도 위 .deptree 를 그대로 가져왔다:
+ * 노드 박스 + 왼쪽 악센트 바 + 곡선 엣지 + 알약. 두 벌인 이유는 두 그림의 노드가 앞으로
+ * 따로 움직이기 때문이다 — 이쪽에만 허브(게이트웨이)와 '미관리 = 점선' 상태가 있다.
+ * .deptree 와 마찬가지로 **폭에 맞춰 늘이지 않는다**(늘리면 노드 글자가 줄어 이름이 안 읽힌다).
+ * 폭은 노드가 정하고, 넘치면 .segmap 안에서만 가로로 스크롤한다(<body> 가 아니라). */
+.segmap { overflow-x: auto; overflow-y: hidden; }
+.segmap__svg { display: block; }
+.segmap__edge { fill: none; stroke: var(--line-2); stroke-width: 1.4; }
+.segmap__node { cursor: pointer; }
+.segmap__box { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+.segmap__node:hover .segmap__box { fill: var(--surface-2); stroke: var(--accent); }
+/* 미관리(에이전트 없이 발견만 된) 자산 = 점선. 색과 별개로 **모양으로도** 말한다 —
+ * 빨간 톤은 CRITICAL 자산과 겹치므로 점선이 둘을 갈라 준다. */
+.segmap__box--gap { stroke-dasharray: 4 3; }
+/* 허브 = 이 대역의 기본 게이트웨이. 그림의 중심이라 자산 노드보다 진한 면과 악센트 테두리를 쓴다. */
+.segmap__hub { fill: var(--sunken); stroke: var(--accent); stroke-width: 1.5; }
+/* 게이트웨이를 못 찾은 대역 — 없는 것을 있는 것처럼 그리지 않는다(점선 + 무채색). */
+.segmap__hub--gap { stroke: var(--muted-2); stroke-dasharray: 4 3; }
+.segmap__hubip {
+  fill: var(--text); font-size: 13px; font-weight: 700;
+  text-anchor: middle; dominant-baseline: central;
+}
+.segmap__hubcidr {
+  fill: var(--muted); font-size: 11px; text-anchor: middle;
+  dominant-baseline: central; font-variant-numeric: tabular-nums;
+}
+/* 왼쪽 세로 악센트 바 = 이 자산의 최고 심각도(뱃지·도넛·의존성 트리와 같은 톤 어휘). */
+.segmap__accent { stroke: none; }
+.segmap__accent.tone-crit  { fill: var(--crit); }
+.segmap__accent.tone-high  { fill: var(--high); }
+.segmap__accent.tone-med   { fill: var(--med); }
+.segmap__accent.tone-low   { fill: var(--low); }
+.segmap__accent.tone-ok    { fill: var(--ok); }
+.segmap__accent.tone-muted { fill: var(--line-2); }
+.segmap__name { fill: var(--text); font-size: 12px; dominant-baseline: central; }
+/* 오른쪽 칸의 글자(미관리 등 상태) — 알약이 없는 노드가 쓴다. */
+.segmap__meta {
+  fill: var(--muted); font-size: 11px; text-anchor: end; dominant-baseline: central;
+}
+/* 알약 = 조치 대상 건수. 원색을 면으로 깔지 않고 톤 4종 세트(-bg/-fg)를 쓴다 — 다크에서
+ * 글자가 죽지 않게(.deptree__pill 과 같은 이유). */
+.segmap__pill { stroke: none; }
+.segmap__pill.tone-crit { fill: var(--crit-bg); }
+.segmap__pill.tone-high { fill: var(--high-bg); }
+.segmap__pill.tone-med  { fill: var(--med-bg); }
+.segmap__pill.tone-low  { fill: var(--low-bg); }
+.segmap__pill.tone-ok   { fill: var(--ok-bg); }
+.segmap__pilltext {
+  font-size: 10px; font-weight: 700; text-anchor: middle;
+  dominant-baseline: central; font-variant-numeric: tabular-nums;
+}
+.segmap__pilltext.tone-crit { fill: var(--crit-fg); }
+.segmap__pilltext.tone-high { fill: var(--high-fg); }
+.segmap__pilltext.tone-med  { fill: var(--med-fg); }
+.segmap__pilltext.tone-low  { fill: var(--low-fg); }
+.segmap__pilltext.tone-ok   { fill: var(--ok-fg); }
 
 /* KPI 증감 칩(.kpi__delta)은 지웠다 — 7일 전 대비를 붙이던 유일한 자리가 대시보드의
  * 등급별 분포 카드였고, 그 카드가 없어져 쓰는 곳이 남지 않았다. */
@@ -2468,11 +2542,14 @@ form.card .btn--primary:active { transform: translateY(0); }
 /* screen-audit-admin: .permission-note 규칙 제거 — 중복 안내 카드를 지워 참조가 사라졌다(ui_lint 5번 경고). */
 
 /* ----------------------------------------------------------------------
- * 컨테이너 계층 (자산 상세 > 컨테이너 탭)
- *   호스트를 루트로 두고 그 아래 컨테이너를 카드로 펼친다. 표로 눕히면 "이 컨테이너 안에도
- *   OS·패키지·프로세스가 따로 있다" 는 사실이 행 하나로 눌려 보이지 않는다.
+ * 계층 루트 줄 (.ctree)
+ *   "이 아래 것들이 무엇에 딸려 있나" 를 한 줄로 세우는 머리다. 지금 쓰는 곳은
+ *   sbom.php(패키지 관리자별 묶음)와 cve.php 의 영향 버전 맵 두 곳이다.
  *   색은 전부 토큰이라 다크 오버라이드(:root[data-theme="dark"])를 그대로 따라간다.
- *   들여쓰기 선(::before)은 마크업이 아니라 CSS 가 그린다 — 값이 아니라 관계라서.
+ *
+ *   아래로 카드를 펼치던 .ctree__list/.ctrcard 규칙은 지웠다 — 마지막 사용처였던
+ *   segment-map.php 가 SVG 토폴로지(.segmap)로 옮겨 가면서 참조가 남지 않았다
+ *   (ui_lint.sh 5번 경고. 화면이 없어져도 규칙만 남는 것이 app.css 가 불어난 원인이었다).
  * ---------------------------------------------------------------------- */
 .ctree { display: block; }
 .ctree__root {
@@ -2487,131 +2564,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctree__icon { font-size: 1.25rem; line-height: 1; flex: none; }
 .ctree__rootid { min-width: 0; flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .6rem; }
 .ctree__rootid strong { overflow-wrap: anywhere; }
-
-/* 카드 목록. 좁아지면 1열로 접힌다(640px 이하는 아래 반응형 블록이 여백까지 줄인다). */
-.ctree__list {
-  list-style: none;
-  margin: 0;
-  padding: .9rem 0 0 1.4rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
-  gap: .8rem;
-  position: relative;
-}
-/* 루트에서 내려오는 계통선 — 카드가 호스트에 딸려 있다는 것을 선 하나로 말한다. */
-.ctree__list::before {
-  content: "";
-  position: absolute;
-  left: .55rem;
-  top: 0;
-  bottom: 1.2rem;
-  width: 1px;
-  background: var(--line-2);
-}
-
-/* .ctrcard — 계층 카드(호스트 아래 컨테이너 트리 → 지금은 depgraph.php 의 의존성 org-chart).
- * kisa-u.php 의 .u-card 와 뼈대를 공유하던 규칙이었는데, 그 화면이 타일 히트맵(.u-heat)으로
- * 바뀌면서 이 선택자는 다시 .ctrcard 한 벌이다. */
-.ctrcard {
-  min-width: 0;
-  padding: .8rem .9rem;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--muted-2);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
-  gap: .45rem;
-}
-.ctrcard { position: relative; }
-.ctrcard:hover { border-color: var(--line-2); box-shadow: var(--shadow); }
-/* 왼쪽 띠 = 이 카드의 최고/가이드 위험 등급(히어로와 같은 어휘). */
-.ctrcard.tone-crit  { border-left-color: var(--crit); }
-.ctrcard.tone-high  { border-left-color: var(--high); }
-.ctrcard.tone-med   { border-left-color: var(--med); }
-.ctrcard.tone-muted { border-left-color: var(--muted-2); }
-.ctrcard.tone-low   { border-left-color: var(--low); }
-.ctrcard.tone-ok    { border-left-color: var(--ok); }
-
-
-/* 제목 줄과 배지 줄을 분리된 flex 자식으로 고정한다 — 예전엔 이름·배지가 한 인라인 흐름에
- * 있어서 제목 길이에 따라 배지가 같은 줄에 붙거나 다음 줄로 밀리며 위치가 들쭉날쭉했다.
- * __title 은 항상 첫 줄, __badges 는 항상 그 아래 고정된 줄이다. */
-.ctrcard__head { display: flex; flex-direction: column; gap: .3rem; }
-.ctrcard__badges { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; }
-/* 배지가 없는 카드도 __badges 래퍼는 항상 렌더한다(비우기만) — 조건부로 아예 안 그리면
- * __head 의 두 번째 줄이 없어져 카드 높이가 배지 유무에 따라 들쭉날쭉해진다. */
-.ctrcard__badges:empty { display: none; }
-.ctrcard__name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
-.ctrcard__name:hover { color: var(--accent-2); }
-.ctrcard__facts { display: flex; flex-wrap: wrap; gap: .2rem .9rem; font-size: var(--fs-sm); color: var(--text-2); }
-.ctrcard__facts b { color: var(--text); font-variant-numeric: tabular-nums; }
-.ctrcard__risk .riskbar { max-width: none; }
-.ctrcard .links { margin-top: auto; padding-top: .2rem; }
-
-/* 컨테이너 카드의 2차 정보 접힘(.ctrcard__detail)은 지웠다 — 그 카드가 표(컨테이너 탭)로
- * 바뀌면서 이미지·k8s·다이제스트·SBOM 은 상세(container.php)가 갖는다. */
-
-@media (max-width: 640px) {
-  .ctree__list { grid-template-columns: 1fr; padding-left: .8rem; }
-  .ctree__list::before { left: .25rem; }
-}
-
-/* depgraph.php 의 org-chart 카드 — .ctrcard 안에 중첩되는 하위 트리는 카드 자체가
- * 이미 좁으므로(auto-fill 폭) 1열로 강제한다. 카드 뼈대·톤 색은 위 .ctrcard 그대로 쓴다. */
-.ctrcard > details > .ctree__list { grid-template-columns: 1fr; padding-left: .9rem; }
-.ctrcard > details > summary { cursor: pointer; font-size: var(--fs-sm); color: var(--muted); margin-top: .2rem; }
-.ctrcard > details > summary:hover { color: var(--accent-2); }
-
-/* ----------------------------------------------------------------------
- * kisa-u.php · U-코드 타일 히트맵
- *   72개를 카드로 깔면 항목당 세 줄씩 차지해 1/8 페이지로 쪼개졌고, 정작 이 화면의 값인
- *   "어디가 비었나" 를 한눈에 볼 수 없었다. 한 항목 = 정사각 타일 하나로 줄여 **전 항목을
- *   한 화면에** 세운다(그래서 이 화면엔 페이지네이션이 없다).
- *   한 줄에 12개, 좁아지면 8 → 6 → 4개. 칸 수를 고정으로 적는 건 히트맵이 **격자 모양 자체로**
- *   읽히기 때문이다 — auto-fill 로 두면 폭에 따라 줄바꿈 위치가 달라져 같은 화면이 매번 다른
- *   모양이 된다.
- * ---------------------------------------------------------------------- */
-.u-heat {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: .4rem;
-  margin: 0 0 var(--sp-3);
-}
-/* 타일 = 코드(작게) + FAIL 건수(크게). 색은 미준수 비율이지만 **색만으로 말하지 않는다** —
- * 숫자가 항상 찍혀 있고 화면 아래 .legend 가 색의 뜻을 적는다. */
-.u-tile {
-  aspect-ratio: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: .1rem;
-  padding: .2rem;
-  border: 1px solid var(--line);
-  border-radius: var(--r-xs);
-  background: var(--surface-2);
-  color: var(--text);
-  text-align: center;
-  overflow: hidden;
-}
-.u-tile b { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .01em; }
-.u-tile span { font-size: var(--fs-num-sm); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-a.u-tile:hover { border-color: var(--line-2); box-shadow: var(--shadow); text-decoration: none; }
-/* 히트 단계 — 새 색을 만들지 않고 톤 4종 세트(-bg/-bd/-fg)를 그대로 쓴다. 두 테마 모두
- * 이 쌍이 대비를 보장한다(원색을 면으로 깔면 다크에서 글자가 죽는다). */
-.u-tile--h0 { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
-.u-tile--h1 { background: var(--med-bg);  border-color: var(--med-bd);  color: var(--med-fg); }
-.u-tile--h2 { background: var(--high-bg); border-color: var(--high-bd); color: var(--high-fg); }
-.u-tile--h3 { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
-/* 미점검·점검 결과 없음은 회색이다 — 가라앉히되 지우지 않는다(빈 칸이 보이는 게 이 화면의 값).
- * 점선(--gap)은 그중에서도 **대응 점검 자체가 없는** 항목, 즉 커버리지의 빈 칸이다. */
-.u-tile--none { background: var(--sunken); border-color: var(--muted-bd); color: var(--muted); }
-.u-tile--gap  { border-style: dashed; }
-
-@media (max-width: 1200px) { .u-heat { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
-@media (max-width: 760px)  { .u-heat { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
-@media (max-width: 480px)  { .u-heat { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 /* 로그인: 조용한 진입 화면 */
 .page--login .app { min-height: 100vh; display: grid; place-items: center; }
