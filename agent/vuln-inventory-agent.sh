@@ -1586,6 +1586,26 @@ emit_poetry_lock() {
   ' "$1"
 }
 
+# pip 메타(dist-info/METADATA·egg-info/PKG-INFO)에서 라이선스 한 줄을 뽑는다. PEP 639 우선순위:
+#   1) License-Expression — PEP 639 가 정한 정식 필드. 이미 검증된 SPDX 표현식이라 그대로 쓴다.
+#   2) License — 없을 때만. 자유서술이라 값이 지저분하지만 구식 패키지엔 이것뿐이다.
+#   3) Classifier: License :: OSI Approved :: X — 앞의 둘이 다 없을 때만. `OSI Approved :: ` 를
+#      떼면 "MIT License"·"Apache Software License" 가 되는데, 이건 중앙의 VG_LICENSE_ALIASES
+#      (server/src/license_risk.php)가 pip 의 `License:` 자유서술을 받으려고 이미 갖고 있는 표기다
+#      → 에이전트에 매핑표를 새로 두지 않는다. 실측 4종(MIT/BSD/Apache/MPL) 전부 별칭에 걸린다.
+#      `OSI Approved` 가 안 붙는 trove 값(Public Domain 등)은 안 받는다 — 표본에 없었고(YAGNI),
+#      받으면 `Classifier: License :: OSI Approved` 한 줄짜리 무의미한 값까지 같이 들어온다.
+#   조건이 셋이라 한 줄에 밀어 넣으면 읽을 수 없어 헬퍼로 뺀다(emit_poetry_lock 등과 같은 패턴).
+pip_meta_license() {
+  local lic
+  lic=$(sed -n 's/^License-Expression: //p' "$1"|head -1)
+  # UNKNOWN 은 setuptools 가 값이 없을 때 `License:` 에 채우는 자리표시자다 — 라이선스가 아니므로
+  #   "없음"으로 보고 다음 후보로 내려간다. 여기서 안 걸러내면 그 한 줄이 Classifier 폴백을 막는다.
+  [ -n "$lic" ] || lic=$(sed -n 's/^License: //p' "$1"|grep -vx UNKNOWN|head -1)
+  [ -n "$lic" ] || lic=$(sed -n 's/^Classifier: License :: OSI Approved :: //p' "$1"|head -1)
+  printf '%s\n' "$lic"
+}
+
 # 설치본에서 직접 읽는 고신뢰 소스 — METADATA/lock/jar. 출력: manager|name|version
 # 파일 수·깊이는 SCAN_MAX_FILES/SCAN_MAX_DEPTH 로 제한한다. sort 로 출력 순서를 고정해
 # 파일시스템 탐색 순서가 달라져도 같은 결과가 나오게 한다(content_hash 처닝 방지).
@@ -1597,9 +1617,9 @@ collect_project_deps_installed() {
       count=$((count+1)); [ "$count" -le "$SCAN_MAX_FILES" ] || break 2
       case "$f" in
         # egg-info/PKG-INFO 는 구식(setuptools) 파이썬 패키지가 남기는 메타로, dist-info/METADATA 와
-        #   `Name:`/`Version:`/`License:` 필드 구조가 같다 → 같은 분기에 태운다(DRY). 라이선스 fd 3
+        #   `Name:`/`Version:`/라이선스 필드 구조가 같다 → 같은 분기에 태운다(DRY). 라이선스 fd 3
         #   경로도 그대로 탄다 — 여기만 빼면 같은 파이썬 패키지인데 소스에 따라 라이선스가 비게 된다.
-        */METADATA|*.egg-info/PKG-INFO) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);lic=$(sed -n 's/^License: //p' "$f"|head -1);[ -n "$name" ]&&[ -n "$ver" ]&&{ printf 'pip|%s|%s\n' "$name" "$ver"; [ -n "$lic" ]&&[ "$lic" != "UNKNOWN" ]&&printf 'pip|%s|%s|%s\n' "$name" "$ver" "$lic" >&3; };;
+        */METADATA|*.egg-info/PKG-INFO) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);lic=$(pip_meta_license "$f");[ -n "$name" ]&&[ -n "$ver" ]&&{ printf 'pip|%s|%s\n' "$name" "$ver"; [ -n "$lic" ]&&printf 'pip|%s|%s|%s\n' "$name" "$ver" "$lic" >&3; };;
         */Cargo.lock) awk 'BEGIN{n=""}/^name = /{gsub(/^name = "|"$/,"",$0);n=$0}/^version = /{gsub(/^version = "|"$/,"",$0);if(n!="")print "cargo|"n"|"$0}' "$f";;
         */Gemfile.lock) emit_gemfile_lock "$f";;
         */specifications/*.gemspec) emit_gemspec_name "$(basename "$f")";;
