@@ -2,9 +2,11 @@
 # 스키마 문서 drift 사전검사 — docker 없이 git diff 만으로 1초 안에 끝난다.
 #
 # 왜 있나: 마이그레이션을 추가하면서 스키마 문서 산출물 4종을 같이 갱신하지 않는 사고가
-# #703(tb_report_job)·#706(verify_files)로 연달아 났다. 둘 다 중앙 `central` 프로파일 전용인
+# #703(tb_report_job)·#706(verify_files)로 연달아 났다. 둘 다 그때 중앙 `central` 프로파일 전용이던
 # 무거운 schema-docs 게이트(tests/schema_docs_test.sh — disposable MySQL, 실측 132초·126초)에서야
-# 뒤늦게 걸렸다. 로컬 pre-push 에는 그 게이트가 없어 전부 통과한 것처럼 보인다.
+# 뒤늦게 걸렸다. 그 시점엔 로컬 pre-push 에 그 게이트가 없어 전부 통과한 것처럼 보였다.
+# (#726 으로 schema-docs 도 pre-push 에 올렸지만 여전히 docker 가 필요하고 2분대다 — 그래서
+#  docker 없이 도는 이 사전검사가 manifest 에서 그 앞에 선다.)
 #
 # 무엇을 하나: base..HEAD 에 새 마이그레이션(또는 initdb db/*.sql 변경)이 있는데 산출물 4종이
 # 하나도 안 바뀌었으면 실패시킨다. 그게 전부다.

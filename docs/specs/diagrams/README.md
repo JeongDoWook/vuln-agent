@@ -71,9 +71,20 @@ dev(메인 트리 / 워크트리)·prod 가 각각 어떤 compose 레이어를 �
 > - **검사**: `python docs/specs/gen_table_spec.py --source repository --check`
 >   — docker 없이 도는 오프라인 fallback 이다. 생성기 docstring 이 밝히듯 아래 게이트를 대신하지는 못한다.
 >
-> 넷이 어긋난 채로 두면 `deploy/gates.tsv` 의 **`schema-docs`**(required)가 drift 로 잡는다. 그런데 이 게이트는
-> **`central` 프로파일 전용**이라 **개인 워크트리 pre-push 에는 없다** — 로컬은 전부 통과한 것처럼 보이다가
-> 중앙에서 처음 터진다. 실제로 이 함정을 밟아 본 뒤에 남기는 경고다.
+> 넷이 어긋난 채로 두면 `deploy/gates.tsv` 의 **`schema-docs`**(required)가 drift 로 잡는다. 이 게이트는
+> 예전엔 **`central` 프로파일 전용**이라, 로컬은 전부 통과한 것처럼 보이다가 중앙에서 처음 터졌다
+> (#703 `tb_report_job` · #706 `verify_files` 가 실제로 그렇게 샜다). 그래서 **`pre-push` 에도 올렸다**(#726).
+>
+> 지금 pre-push 에서 이 산출물 4종을 보는 게이트는 둘이다.
+>
+> - **`schema-docs-precheck`** — manifest 2번째, docker 없이 ~1초. `base..HEAD` 에 새 마이그레이션이나
+>   `db/*.sql` 변경이 있는데 산출물 4종이 **하나도 안 바뀌었으면** 실패한다. "아예 잊고 안 건드린 경우"를
+>   무거운 게이트 앞에서 값싸게 먼저 막는 게 전부다 — 내용이 실제 스키마와 맞는지는 **안 본다.**
+> - **`schema-docs`** — docker 필요, 실측 2분대. `tests/schema_docs_test.sh` 로 disposable MySQL 의
+>   information_schema 와 대조한다. `db/migrations`·`db/*.sql` **과 산출물 4종** 중 어느 것도 base 대비
+>   안 바뀌었으면 스킵하므로, 무관한 push 는 2분을 물지 않는다.
+>
+> 둘 다 로컬에서 도니 "로컬은 다 초록인데 중앙에서 처음 터지는" 함정은 없어졌다.
 >
 > `render.sh` 는 폴더의 `*.puml` 을 전부 훑으므로 `erd.svg` 도 같이 다시 뽑힌다. `erd.puml` 을 생성기로
 > 갱신하지 않은 채 `render.sh` 만 돌렸다면 나온 `erd.svg` 는 되돌린다.
