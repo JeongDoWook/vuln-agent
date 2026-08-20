@@ -27,8 +27,15 @@ foreach ($contract['install']['required_options'] as $option) {
 }
 $check(str_contains($sources['install'], '*/ingest.php)') && str_contains($sources['install'], 'SERVER="$SERVER/ingest.php"'),
     'installer must continue normalizing --server to /ingest.php');
-$check(str_contains($sources['install'], 'POLL_URL="\${SEND_URL%ingest.php}agent-poll.php"'),
-    'installer poll endpoint derivation drifted');
+// poll 응답의 소비자는 **본체**다(3.14). run.sh 는 --poll-once 를 부르기만 한다 —
+//   응답 파싱이 설치기 heredoc 안에 있으면 자동 업데이트로 노드에 도달하지 못해서,
+//   중앙이 켠 무결성 검사가 조용히 무시된 사고가 있었다. 그 구조를 계약으로 못 박는다.
+$check(str_contains($sources['agent'], 'poll_url="${SEND_URL%ingest.php}agent-poll.php"'),
+    'poll endpoint derivation drifted (agent --poll-once)');
+$check(str_contains($sources['install'], '--poll-once --state-dir'),
+    'run.sh no longer calls the agent --poll-once entry point');
+$check(str_contains($sources['agent'], '--poll-once)') && str_contains($sources['agent'], '--state-dir)'),
+    'agent --poll-once entry point removed');
 
 foreach (['poll', 'progress', 'ingest'] as $name) {
     $api = $contract[$name];
@@ -46,7 +53,7 @@ foreach (['poll', 'progress', 'ingest'] as $name) {
     }
 }
 
-$pollConsumer = $sources['install'];
+$pollConsumer = $sources['agent'];
 foreach ($contract['poll']['response_fields'] as $field) {
     $check(str_contains($pollConsumer, ".$field") && str_contains($pollConsumer, "\"$field\""),
         "installer no longer consumes poll field: $field");

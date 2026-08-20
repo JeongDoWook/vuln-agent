@@ -13,11 +13,18 @@
 #   결과(HTTP)를 확인한다. **토큰·URL·타이머는 건드리지 않는다** — 노드의 agent.env(600)에
 #   이미 있으므로 재입력이 필요 없고, 토큰이 이 스크립트를 거쳐 가지도 않는다.
 #
+# --with-runner (run.sh 도 같이 갱신):
+#   run.sh 는 install-agent.sh 가 만드는 파일이라 자동 업데이트 대상이 아니다 — 그래서 예전엔
+#   run.sh 가 바뀔 때마다 사람이 노드마다 들어가 설치기를 다시 돌려야 했다(실제로 그걸 안 해서,
+#   중앙이 켠 무결성 검사가 노드에 영원히 도달하지 못한 사고가 있었다). 이 옵션은 설치기를
+#   노드로 보내 `--runner-only` 로 돌린다 — run.sh 와 systemd 유닛만 다시 만들고
+#   **토큰·서버주소·CA·공개키는 건드리지 않는다**(그 파일들을 읽지도 쓰지도 않는다).
+#
 # 무엇을 안 하나:
 #   - 신규 설치를 하지 않는다. 안 깔린 노드는 건너뛰고 알려준다(정석은 그 서버에 들어가
 #     install-agent.sh 를 대화형으로 돌리는 것 — 토큰 발급이 사람 판단이라 그렇다).
-#   - 설치기(install-agent.sh)가 바뀐 경우(타이머·유닛·preflight)는 대상이 아니다.
-#     그건 노드에서 install-agent.sh 를 다시 돌려야 한다.
+#   - 설치기(install-agent.sh)의 나머지 변경(preflight·CA·토큰 처리)은 여전히 대상이 아니다.
+#     그건 노드에서 install-agent.sh 를 처음부터 다시 돌려야 한다.
 #
 # ⚠ 의도적 다운그레이드는 자동 업데이트가 즉시 되돌린다:
 #   장애 대응으로 이 스크립트를 써서 **구버전**을 밀어넣어도, agent-poll.php 는 "배포된
@@ -35,6 +42,7 @@
 #
 # 사용:
 #   bash deploy/agent_push.sh 10.0.0.100 10.0.0.101 10.0.0.102
+#   bash deploy/agent_push.sh --with-runner 10.0.0.100            # run.sh 도 같이 갱신
 #   bash deploy/agent_push.sh user@10.0.0.100 deploy@10.0.0.200   # 계정을 섞어 쓸 때
 #   AGENT_SSH_USER=pi bash deploy/agent_push.sh 10.0.0.103            # 기본 계정 바꾸기
 #   AGENT_PREFIX=/apps/vulnagent bash deploy/agent_push.sh 10.0.0.200 # 설치 경로가 다를 때
@@ -43,22 +51,39 @@ set -euo pipefail
 
 SSH_USER="${AGENT_SSH_USER:-worker}"
 PREFIX="${AGENT_PREFIX:-/opt/vuln-agent}"
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../agent" && pwd)/vuln-inventory-agent.sh"
+AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../agent" && pwd)"
+SRC="$AGENT_DIR/vuln-inventory-agent.sh"
+INSTALLER="$AGENT_DIR/install-agent.sh"
 
-if [ $# -eq 0 ]; then
+WITH_RUNNER=0
+NODES=()
+for a in "$@"; do
+  case "$a" in
+    --with-runner) WITH_RUNNER=1 ;;
+    -h|--help)     grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*)            echo "알 수 없는 옵션: $a" >&2; exit 1 ;;
+    *)             NODES+=("$a") ;;
+  esac
+done
+
+if [ ${#NODES[@]} -eq 0 ]; then
   grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 fi
 [ -f "$SRC" ] || { echo "에이전트 본체를 찾을 수 없습니다: $SRC" >&2; exit 1; }
+if [ "$WITH_RUNNER" = 1 ] && [ ! -f "$INSTALLER" ]; then
+  echo "설치기를 찾을 수 없습니다: $INSTALLER" >&2; exit 1
+fi
 
 VER="$(grep -m1 -E '^SCRIPT_VERSION=' "$SRC" | cut -d= -f2- | tr -d '"'"'" || true)"
 echo "== 에이전트 배포 : ${VER:-버전미상} =="
 echo "   원본: $SRC"
+[ "$WITH_RUNNER" = 1 ] && echo "   run.sh 도 갱신합니다(--with-runner) — 토큰·주소는 건드리지 않습니다."
 echo
 
 OK=(); FAIL=(); SKIP=()
 
-for target in "$@"; do
+for target in "${NODES[@]}"; do
   case "$target" in *@*) node="$target" ;; *) node="$SSH_USER@$target" ;; esac
   printf '%-28s ' "$node"
 
@@ -90,9 +115,28 @@ for target in "$@"; do
     FAIL+=("$node"); continue
   fi
 
-  # 3) 즉시 1회 수집·전송 — 새 에이전트는 전송을 못 하면 종료코드 1 이다(조용한 실패 방지).
+  # 3) (선택) run.sh 갱신 — 설치기를 보내 --runner-only 로 돌린다. agent.env 는 안 건드린다.
+  if [ "$WITH_RUNNER" = 1 ]; then
+    if ! scp -q -o BatchMode=yes "$INSTALLER" "$node:~/.vuln-agent-installer.sh" 2>/dev/null; then
+      echo "실패 (설치기 전송 불가 — SSH/scp 확인)"
+      FAIL+=("$node"); continue
+    fi
+    if ! ssh -o BatchMode=yes "$node" "sudo bash ~/.vuln-agent-installer.sh --runner-only --prefix '$PREFIX' >/dev/null && rm -f ~/.vuln-agent-installer.sh" 2>/dev/null; then
+      echo "실패 (run.sh 갱신 불가 — sudo 권한/설치 상태 확인)"
+      ssh -o BatchMode=yes "$node" 'rm -f ~/.vuln-agent-installer.sh' 2>/dev/null || true
+      FAIL+=("$node"); continue
+    fi
+    printf 'run.sh 갱신됨 → '
+  fi
+
+  # 4) 즉시 1회 수집·전송 — 새 에이전트는 전송을 못 하면 종료코드 1 이다(조용한 실패 방지).
+  #    run.sh 를 부르지 않는다: 그건 데몬(무한 while 루프)이라 이 ssh 가 영원히 안 끝나고
+  #    (예전엔 그렇게 불러 확인 단계에서 매달렸다), `--once` 를 줘도 정기수집 만기가
+  #    아니면 아무것도 안 돈다. install-agent.sh 의 마지막 확인과 같은 방식으로
+  #    본체를 직접 부른다 — agent.env 를 그 자리에서만 읽어 env 로 넘긴다(토큰은 argv 에 안 남는다).
   printf '교체됨 → 확인중… '
-  if out="$(ssh -o BatchMode=yes "$node" "sudo '$PREFIX/bin/run.sh'" 2>&1)"; then
+  verify_cmd="set -a; . '$PREFIX/etc/agent.env'; set +a; exec '$PREFIX/bin/vuln-inventory-agent.sh' -o '$PREFIX/logs/last.json'"
+  if out="$(ssh -o BatchMode=yes "$node" "sudo bash -c \"$verify_cmd\"" 2>&1)"; then
     echo "OK  $(printf '%s' "$out" | grep -m1 '전송 성공' || echo '전송 성공')"
     OK+=("$node")
   else

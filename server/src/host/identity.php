@@ -52,6 +52,38 @@ function vg_host_load_pending_commands(PDO $pdo, int $hostId): array {
 }
 
 /**
+ * 이 노드의 에이전트가 **패키지 무결성 검사를 지원하는가** — 마지막 무결성 명령의 결과로 판정한다.
+ *
+ *   중앙이 verify_files=1 로 명령을 걸었는데 그 명령이 만든 스캔의 integrity_checked 가 0 이면,
+ *   그 노드는 요청을 수행하지 못한 것이다(옛 run.sh 가 --verify-files 를 안 붙였다. rpm·dpkg 가
+ *   둘 다 없는 노드도 같은 상태가 된다). 그대로 두면 명령은 done 으로 닫히고 화면은 "미수행" 이라
+ *   **조용한 실패**가 된다 — 사용자는 왜 안 되는지 알 방법이 없다.
+ *
+ *   "가장 최근" 한 건만 본다. 노드를 갱신한 뒤 다시 걸면 그 건이 최신이 되므로 표시는 저절로
+ *   풀린다(별도의 해제 경로를 두지 않는다 — 상태를 따로 저장하지 않는 이유다).
+ *
+ *   반환: ['command_id'=>int, 'executed_at'=>string|null, 'supported'=>bool]
+ *         판정 근거가 없으면(무결성 명령을 건 적 없음·결과 스캔이 사라짐) null.
+ */
+function vg_host_load_verify_support(PDO $pdo, int $hostId): ?array {
+    $st = $pdo->prepare(
+        "SELECT c.agent_command_id, c.executed_at, s.integrity_checked
+           FROM tb_agent_command c
+           JOIN tb_scan s ON s.scan_id = c.result_scan_id
+          WHERE c.host_id = ? AND c.verify_files = 1 AND c.status = 'done' AND c.is_deleted = 0
+          ORDER BY c.agent_command_id DESC LIMIT 1"
+    );
+    $st->execute([$hostId]);
+    $row = $st->fetch();
+    if (!$row) { return null; }
+    return [
+        'command_id'  => (int) $row['agent_command_id'],
+        'executed_at' => $row['executed_at'],
+        'supported'   => (int) $row['integrity_checked'] === 1,
+    ];
+}
+
+/**
  * 이 호스트의 최신 스캔 한 행.
  *
  *   컬럼을 못 박는 이유: tb_scan.raw_json 은 호스트당 MB 단위(실측 3.14MB)라
