@@ -36,7 +36,7 @@ declare(strict_types=1);
     ?>
     <div class="card">
       <strong>컨테이너</strong>
-      <span class="why"> · 최신 수집 기준 <?= number_format($containerTotal) ?>개 · 컨테이너는 호스트와 OS 가 다를 수 있습니다</span>
+      <span class="why"> · 최신 수집 기준 <?= number_format($containerTotal) ?>개</span>
       <div class="card__body">
         <?php
         vg_table(

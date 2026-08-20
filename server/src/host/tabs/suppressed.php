@@ -19,7 +19,7 @@ declare(strict_types=1);
               <?= vg_badge($meta['label'] . ' ' . number_format($lc) . '건', $meta['tone'], $meta['desc']) ?>
             <?php endforeach; ?>
           </div>
-          <p class="why">억제는 "안 봐도 된다"가 아니라 "이 근거로 지금은 해당 없음"입니다. 근거가 사라지면 다음 수집에서 다시 위험으로 올라옵니다.</p>
+          <p class="why">근거가 사라지면 다음 수집에서 다시 위험으로 올라옵니다.</p>
         </div>
       <?php endif; ?>
       <div class="card__body">

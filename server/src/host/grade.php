@@ -80,9 +80,9 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
         <?php /* '정보공개법 제9조 …' 해설 한 줄은 걷었다 — 아래 확정 폼의 '정보공개법 제9조 해당 호'
                  셀렉트가 그 관계를 이미 자리로 보여준다(근거 항목의 하나일 뿐이라는 것). */ ?>
         <?php if ($canEdit && !empty($review['is_stale'])): ?>
-          <p class="why">⚠ 일괄 등급 변경 뒤 구조화 검토 정보가 재확인되지 않았습니다. 현재 등급에 맞게 다시 검토해 저장하세요.</p>
+          <p class="why">⚠ 일괄 등급 변경 뒤 구조화 검토 정보가 재확인되지 않았습니다.</p>
         <?php elseif ($canEdit && vg_asset_grade_review_overdue($review)): ?>
-          <p class="why">⚠ 다음 검토일이 지났습니다. 현재 등급과 구조화 검토 정보를 다시 확인하세요.</p>
+          <p class="why">⚠ 다음 검토일이 지났습니다.</p>
         <?php elseif ($canEdit && $curGrade !== '' && $missingReview): ?>
           <p class="why">⚠ 검토 정보 누락: <?= vg_h(implode(', ', $missingReview)) ?></p>
         <?php endif; ?>

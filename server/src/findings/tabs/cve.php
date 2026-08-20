@@ -62,7 +62,6 @@
 
   <div class="card">
     <strong>등급 구성</strong>
-    <span class="why">조각·항목을 누르면 그 등급만 걸러 봅니다(다시 누르면 해제).</span>
     <div class="card__body">
     <?php
     /* 예전엔 등급 네 칸을 숫자 카드로 나열했다. 카드 크기·글자 크기가 전 등급에 똑같이
