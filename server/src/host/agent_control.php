@@ -151,7 +151,9 @@ function vg_host_render_agent_control(
         <span class="agent-control__status"><span aria-hidden="true"></span>다음 poll 반영</span>
       </div>
       <div class="card__body">
-        <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
+        <?php /* 이 명령의 처리 결과(등록/중단/오류)는 이 카드가 아니라 host.php 가 페이지
+                 레벨에서 한 번만 알린다 — 이 카드를 볼 권한(assets)이 없는 계정도 자기 조작
+                 결과(예: 조치 상태 저장)는 봐야 하므로, 카드 안에 가둘 수 없다. */ ?>
         <div class="agent-control__facts">
           <span><b>통신 경로</b> <?= vg_h((string)($_SERVER['HTTP_HOST'] ?? '중앙 서버')) ?> · poll 10초</span>
           <span><b>정기 수집</b> <?= number_format($curMinutes) ?>분마다 · 에이전트 로컬 스케줄 기준</span>

@@ -54,43 +54,16 @@ function vg_host_render_hero(array $ctx): void {
   /* 수집 제어(즉시 실행·예약·주기·속도 티어)는 '자산 설정' 탭으로 내려갔다.
    *   자산 상세를 여는 이유는 "이 서버가 얼마나 위험한가"이지 "수집 주기가 몇 분인가"가 아니다 —
    *   첫 화면을 설정 폼이 통째로 차지하면 위험 요약과 취약점 목록이 스크롤 아래로 밀린다.
-   *   기능은 그대로 살아 있다(같은 폼·같은 action·같은 엔드포인트). */
-
-  /* 취약점 스캔(즉시 실행)은 이 화면에서 가장 자주 누르는 동작인데 가장 깊은 곳에 있었다
-   *   ('자산 설정' 탭 → 수집 제어 카드 → 즉시 실행 = 4단계). 식별부로 올린다 —
-   *   폼·action·엔드포인트는 수집 제어 카드의 것과 **같은 것**이다(POST 처리는 한 곳뿐).
-   *   예약 실행·수집 주기·속도 티어는 자주 쓰지 않아 설정 탭에 그대로 둔다.
-   *   이미 대기·실행 중인 명령이 있으면 버튼 대신 그 상태를 말한다 — 같은 명령을 두 번
-   *   넣어도 큐에 두 줄이 쌓일 뿐이라, 누르기 전에 "이미 돌고 있다"를 먼저 보여준다.
-   *   버튼은 히어로 뒤에 별도 블록으로 두지 않고 vg_hero() 의 $actions 슬롯으로 넘긴다 —
-   *   .hero 는 flex 라 세 번째 아이템으로 들어가면 KPI 타일과 줄을 나눠 먹지 않는다. */
-  $actionsHtml = null;
-  if (vg_can('assets')) {
-      $running = $pendingCommands[0] ?? null;
-      if ($running !== null) {
-          $label = ($running['status'] ?? '') === 'running' ? '수집 진행 중' : '실행 대기 중';
-          $actionsHtml = '<a class="btn btn--sm btn--ghost" href="'
-              . vg_h(vg_qs(['tab' => 'manage', 'page' => null, 'q' => null])) . '">'
-              . vg_h($label) . ' · 진행 보기</a>';
-      } else {
-          $actionsHtml = '<form method="post" data-confirm="지금 이 호스트의 취약점 스캔을 실행할까요?">'
-              . '<input type="hidden" name="csrf" value="' . vg_h($agentCsrf) . '">'
-              . '<input type="hidden" name="action" value="agent_run_now">'
-              . '<input type="hidden" name="id" value="' . (int) $hostId . '">'
-              . '<button class="btn btn--sm btn--primary" type="submit"'
-              . ' title="에이전트가 다음 poll(10초 이내)에서 실행합니다">지금 스캔</button>'
-              . '</form>';
-      }
-  }
-  vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', $actionsHtml);
-  /* 처리 결과(등록/중단/오류)는 '자산 설정' 탭의 수집 제어 카드가 그린다 — 그런데 이 버튼은
-   *   어느 탭에서든 눌리고, 리다이렉트는 누른 그 탭으로 돌아온다. 그 탭이 결과를 안 그리면
-   *   플래시가 소비만 되고 사라져 "눌렀는데 아무 일도 안 일어난 것처럼" 보인다.
-   *   설정 탭에서는 그리지 않는다 — 같은 메시지를 두 번 띄우게 된다. */
-  if (($tab ?? '') !== 'manage') {
-      vg_alert($agentMsg ?? null, 'ok');
-      vg_alert($agentErr ?? null);
-  }
+   *   기능은 그대로 살아 있다(같은 폼·같은 action·같은 엔드포인트).
+   *
+   *   즉시 실행 지름길 버튼은 한때 식별부에도 따로 있었지만 걷었다(#685 → #690) — 수집 제어
+   *   카드(host.php 가 히어로 직후 상단에 늘 그린다)가 바로 아래에 같은 폼·같은 버튼을 이미
+   *   보여주고 있어 두 문이 같은 자리로 겹쳐 섰다.
+   *
+   *   처리 결과(등록/중단/오류) 알림도 여기서 안 그린다 — 이 버튼은 예전엔 탭마다 눌리는
+   *   위치가 달라 "그 탭이 결과를 그리지 않으면 플래시가 소비만 되고 사라지는" 문제가 있었다
+   *   (#690). 지금은 host.php 가 탭·역할과 무관하게 페이지 레벨에서 한 곳에만 그린다. */
+  vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', '');
   /* SBOM 내려받기는 여기서 내렸다 — 첫 화면 한 칸을 카드가 통째로 차지했는데, 자주 쓰는
    *   동작이 아니다. 부품표는 곧 설치 패키지 목록이라 '설치 패키지' 탭 아래가 제자리다
    *   (기능·URL 은 그대로다 — tabs/packages.php 가 같은 vg_sbom_links() 를 부른다). */
