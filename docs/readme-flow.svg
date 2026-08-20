@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1060" viewBox="0 0 1000 1060" role="img" aria-labelledby="title desc">
   <title id="title">vuln-agent 취약점 수집과 판단 흐름</title>
-  <desc id="desc">에이전트가 깔린 서버와 에이전트가 없는 IP 양쪽에서 사실을 모으고, 실행 맥락을 연결한 뒤 벤더 근거와 SBOM·컴플라이언스 기준을 교차 검증해 우선순위와 조치를 제시하는 네 단계 흐름</desc>
+  <desc id="desc">에이전트가 있는 서버와 에이전트가 없는 IP 양쪽에서 사실을 모으고, 실행 맥락을 연결한 뒤 벤더 근거와 SBOM·컴플라이언스 기준을 교차 검증해 우선순위와 조치를 제시하는 네 단계를 2행 2열로 보여주는 흐름도</desc>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#f8fbff"/>
@@ -18,147 +18,113 @@
     </marker>
     <style>
       text { font-family: Pretendard, "Noto Sans KR", "Malgun Gothic", sans-serif; }
-      .card-title { font-size: 25px; font-weight: 700; fill: #17223b; }
+      .card-title { font-size: 26px; font-weight: 700; fill: #17223b; }
       .step { font-size: 16px; font-weight: 800; letter-spacing: 1.5px; }
       .body { font-size: 17px; fill: #4b5874; }
-      .chip { font-size: 15px; font-weight: 650; fill: #31405f; }
-      .lbl { font-size: 13px; font-weight: 700; fill: #8b96ad; letter-spacing: 0.6px; }
-      .foot { font-size: 14px; fill: #7a869f; }
+      .chip { font-size: 16px; font-weight: 650; fill: #31405f; }
+      .lbl { font-size: 14px; font-weight: 700; fill: #8b96ad; letter-spacing: 0.6px; }
+      .foot { font-size: 15px; fill: #7a869f; }
     </style>
   </defs>
 
-  <rect width="1400" height="900" rx="34" fill="url(#background)"/>
+  <rect width="1000" height="1060" rx="34" fill="url(#background)"/>
 
   <!-- Hero -->
-  <rect x="40" y="34" width="1320" height="104" rx="24" fill="url(#hero)"/>
-  <circle cx="91" cy="86" r="25" fill="#ffffff" fill-opacity="0.18"/>
-  <path d="M80 86l8 8 16-20" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="132" y="78" font-size="29" font-weight="800" fill="#fff">설치 여부를 넘어, 실제 위험과 조치까지 연결합니다</text>
-  <text x="132" y="111" font-size="16" fill="#eaf0ff">Bash 에이전트 → outbound HTTPS → 중앙 분석·웹 콘솔   ·   에이전트가 없는 IP 는 중앙이 대역을 훑어 찾습니다</text>
-  <rect x="1090" y="63" width="232" height="46" rx="23" fill="#fff" fill-opacity="0.14" stroke="#fff" stroke-opacity="0.28"/>
-  <text x="1206" y="92" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">에이전트는 아웃바운드 전용</text>
+  <rect x="36" y="28" width="928" height="124" rx="24" fill="url(#hero)"/>
+  <circle cx="84" cy="90" r="25" fill="#ffffff" fill-opacity="0.18"/>
+  <path d="M73 90l8 8 16-20" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="128" y="76" font-size="27" font-weight="800" fill="#fff">설치 여부를 넘어, 실제 위험과 조치까지 연결합니다</text>
+  <text x="128" y="106" font-size="16" fill="#eaf0ff">Bash 에이전트 → outbound HTTPS → 중앙 분석·웹 콘솔</text>
+  <text x="128" y="130" font-size="16" fill="#eaf0ff">에이전트가 없는 IP 는 중앙이 관리 대역을 훑어 찾습니다</text>
 
   <!-- Step 1 : 수집 -->
-  <g filter="url(#shadow)"><rect x="40" y="180" width="300" height="460" rx="24" fill="#fff" stroke="#dce5f7"/></g>
-  <rect x="64" y="204" width="83" height="32" rx="16" fill="#e9efff"/>
-  <text x="105" y="226" text-anchor="middle" class="step" fill="#315ce8">01 수집</text>
-  <circle cx="296" cy="220" r="24" fill="#eff4ff"/>
-  <path d="M284 220h24M288 212h16M292 204h8M288 228h16" stroke="#4169df" stroke-width="3" stroke-linecap="round"/>
-  <text x="64" y="278" class="card-title">서버의 사실을 수집</text>
-  <text x="64" y="308" class="body">깔린 것만 읽지 않습니다.</text>
+  <g filter="url(#shadow)"><rect x="36" y="184" width="440" height="390" rx="24" fill="#fff" stroke="#dce5f7"/></g>
+  <rect x="62" y="208" width="88" height="32" rx="16" fill="#e9efff"/>
+  <text x="106" y="230" text-anchor="middle" class="step" fill="#315ce8">01 수집</text>
+  <circle cx="434" cy="224" r="24" fill="#eff4ff"/>
+  <path d="M422 224h24M426 216h16M430 208h8M426 232h16" stroke="#4169df" stroke-width="3" stroke-linecap="round"/>
+  <text x="62" y="280" class="card-title">서버의 사실을 수집</text>
+  <text x="62" y="310" class="body">깔린 것만 읽지 않습니다.</text>
 
-  <text x="64" y="348" class="lbl">에이전트가 있는 서버</text>
-  <rect x="64" y="358" width="252" height="32" rx="11" fill="#f3f6fc"/>
-  <text x="190" y="379" text-anchor="middle" class="chip">패키지 · 버전 · 컨테이너</text>
-  <rect x="64" y="396" width="252" height="32" rx="11" fill="#f3f6fc"/>
-  <text x="190" y="417" text-anchor="middle" class="chip">프로세스 · 로드 라이브러리</text>
-  <rect x="64" y="434" width="252" height="32" rx="11" fill="#f3f6fc"/>
-  <text x="190" y="455" text-anchor="middle" class="chip">열린 포트 · 방화벽 · 계정</text>
+  <text x="62" y="350" class="lbl">에이전트가 있는 서버</text>
+  <rect x="62" y="360" width="388" height="36" rx="12" fill="#f3f6fc"/>
+  <text x="256" y="384" text-anchor="middle" class="chip">패키지 · 버전 · 컨테이너 · 프로세스</text>
+  <rect x="62" y="404" width="388" height="36" rx="12" fill="#f3f6fc"/>
+  <text x="256" y="428" text-anchor="middle" class="chip">열린 포트 · 방화벽 · 계정</text>
 
-  <text x="64" y="492" class="lbl">에이전트가 없는 IP — 자산 탐색</text>
-  <rect x="64" y="502" width="252" height="32" rx="11" fill="#eef4ff" stroke="#cfdcfa"/>
-  <text x="190" y="523" text-anchor="middle" class="chip" fill="#2e4c9c">관리 대역 TCP 스윕</text>
-  <rect x="64" y="540" width="252" height="32" rx="11" fill="#eef4ff" stroke="#cfdcfa"/>
-  <text x="190" y="561" text-anchor="middle" class="chip" fill="#2e4c9c">역DNS · 서비스 힌트 · 배너</text>
+  <text x="62" y="470" class="lbl">에이전트가 없는 IP — 자산 탐색</text>
+  <rect x="62" y="480" width="388" height="36" rx="12" fill="#eef4ff" stroke="#cfdcfa"/>
+  <text x="256" y="504" text-anchor="middle" class="chip" fill="#2e4c9c">관리 대역 TCP 스윕 · 역DNS 배너</text>
 
-  <text x="64" y="605" class="foot">읽기 전용 · 아웃바운드 HTTPS 전송</text>
+  <text x="62" y="546" class="foot">읽기 전용 · 아웃바운드 HTTPS 전송</text>
 
-  <path d="M348 400H375" stroke="#7180a7" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M484 379H514" stroke="#7180a7" stroke-width="3" marker-end="url(#arrow)"/>
 
   <!-- Step 2 : 연결 -->
-  <g filter="url(#shadow)"><rect x="380" y="180" width="300" height="460" rx="24" fill="#fff" stroke="#dce5f7"/></g>
-  <rect x="404" y="204" width="83" height="32" rx="16" fill="#e8f7f2"/>
-  <text x="445" y="226" text-anchor="middle" class="step" fill="#188866">02 연결</text>
-  <circle cx="636" cy="220" r="24" fill="#eaf8f3"/>
-  <circle cx="626" cy="214" r="5" fill="#239b78"/><circle cx="646" cy="214" r="5" fill="#239b78"/><circle cx="636" cy="230" r="5" fill="#239b78"/>
-  <path d="M630 217l4 9M642 217l-4 9M631 214h10" stroke="#239b78" stroke-width="2.5"/>
-  <text x="404" y="278" class="card-title">실행 맥락을 연결</text>
-  <text x="404" y="308" class="body">실제로 닿는 위험인지 봅니다.</text>
+  <g filter="url(#shadow)"><rect x="524" y="184" width="440" height="390" rx="24" fill="#fff" stroke="#dce5f7"/></g>
+  <rect x="550" y="208" width="88" height="32" rx="16" fill="#e8f7f2"/>
+  <text x="594" y="230" text-anchor="middle" class="step" fill="#188866">02 연결</text>
+  <circle cx="922" cy="224" r="24" fill="#eaf8f3"/>
+  <circle cx="912" cy="218" r="5" fill="#239b78"/><circle cx="932" cy="218" r="5" fill="#239b78"/><circle cx="922" cy="234" r="5" fill="#239b78"/>
+  <path d="M916 221l4 9M928 221l-4 9M917 218h10" stroke="#239b78" stroke-width="2.5"/>
+  <text x="550" y="280" class="card-title">실행 맥락을 연결</text>
+  <text x="550" y="310" class="body">실제로 닿는 위험인지 봅니다.</text>
 
-  <text x="404" y="348" class="lbl">무엇이 무엇을 쓰는가</text>
-  <rect x="404" y="358" width="252" height="38" rx="11" fill="#edf9f5"/>
-  <text x="530" y="382" text-anchor="middle" class="chip" fill="#247b65">취약 패키지 → 사용 프로세스</text>
-  <rect x="404" y="402" width="252" height="38" rx="11" fill="#edf9f5"/>
-  <text x="530" y="426" text-anchor="middle" class="chip" fill="#247b65">열린 포트 → 외부 도달 가능성</text>
-  <rect x="404" y="446" width="252" height="38" rx="11" fill="#edf9f5"/>
-  <text x="530" y="470" text-anchor="middle" class="chip" fill="#247b65">세그먼트 맵 → 망 구조 확인</text>
+  <text x="550" y="350" class="lbl">무엇이 무엇을 쓰는가</text>
+  <rect x="550" y="360" width="388" height="36" rx="12" fill="#edf9f5"/>
+  <text x="744" y="384" text-anchor="middle" class="chip" fill="#247b65">취약 패키지 → 사용 프로세스</text>
+  <rect x="550" y="404" width="388" height="36" rx="12" fill="#edf9f5"/>
+  <text x="744" y="428" text-anchor="middle" class="chip" fill="#247b65">열린 포트 · 망 세그먼트 → 도달 여부</text>
 
-  <text x="404" y="524" class="lbl">결과</text>
-  <rect x="404" y="534" width="252" height="38" rx="11" fill="#f3f6fc"/>
-  <text x="530" y="558" text-anchor="middle" class="chip">미실행 · 내부 · 외부 등 7단계</text>
+  <text x="550" y="470" class="lbl">결과</text>
+  <rect x="550" y="480" width="388" height="36" rx="12" fill="#f3f6fc"/>
+  <text x="744" y="504" text-anchor="middle" class="chip">미실행 · 내부 · 외부 등 노출 7단계</text>
 
-  <text x="404" y="605" class="foot">노출 상태가 위험 등급을 바꿉니다</text>
+  <text x="550" y="546" class="foot">노출 상태가 위험 등급을 바꿉니다</text>
 
-  <path d="M688 400H715" stroke="#7180a7" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M744 578V602H256V624" fill="none" stroke="#7180a7" stroke-width="3" marker-end="url(#arrow)"/>
 
   <!-- Step 3 : 검증 -->
-  <g filter="url(#shadow)"><rect x="720" y="180" width="300" height="460" rx="24" fill="#fff" stroke="#dce5f7"/></g>
-  <rect x="744" y="204" width="83" height="32" rx="16" fill="#fff4df"/>
-  <text x="785" y="226" text-anchor="middle" class="step" fill="#a66a00">03 검증</text>
-  <circle cx="976" cy="220" r="24" fill="#fff6e5"/>
-  <path d="M966 220l7 7 14-17" fill="none" stroke="#c5800c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="744" y="278" class="card-title">근거를 교차 검증</text>
-  <text x="744" y="308" class="body">버전 문자열만 믿지 않습니다.</text>
+  <g filter="url(#shadow)"><rect x="36" y="630" width="440" height="390" rx="24" fill="#fff" stroke="#dce5f7"/></g>
+  <rect x="62" y="654" width="88" height="32" rx="16" fill="#fff4df"/>
+  <text x="106" y="676" text-anchor="middle" class="step" fill="#a66a00">03 검증</text>
+  <circle cx="434" cy="670" r="24" fill="#fff6e5"/>
+  <path d="M424 670l7 7 14-17" fill="none" stroke="#c5800c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="62" y="726" class="card-title">근거를 교차 검증</text>
+  <text x="62" y="756" class="body">버전 문자열만 믿지 않습니다.</text>
 
-  <text x="744" y="348" class="lbl">벤더 근거 — 백포트 판별</text>
-  <rect x="744" y="358" width="252" height="32" rx="11" fill="#fff8e9"/>
-  <text x="870" y="379" text-anchor="middle" class="chip">OSV 영향 범위 · changelog</text>
-  <rect x="744" y="396" width="252" height="32" rx="11" fill="#fff8e9"/>
-  <text x="870" y="417" text-anchor="middle" class="chip">errata · 벤더 OVAL · 미수정 목록</text>
+  <text x="62" y="796" class="lbl">벤더 근거 — 백포트 판별</text>
+  <rect x="62" y="806" width="388" height="36" rx="12" fill="#fff8e9"/>
+  <text x="256" y="830" text-anchor="middle" class="chip">OSV 영향 범위 · changelog 대조</text>
+  <rect x="62" y="850" width="388" height="36" rx="12" fill="#fff8e9"/>
+  <text x="256" y="874" text-anchor="middle" class="chip">errata · 벤더 OVAL · 미수정 목록</text>
 
-  <text x="744" y="454" class="lbl">함께 대조하는 축</text>
-  <rect x="744" y="464" width="252" height="32" rx="11" fill="#f3f6fc"/>
-  <text x="870" y="485" text-anchor="middle" class="chip">SBOM · 의존성 8개 생태계</text>
-  <rect x="744" y="502" width="252" height="32" rx="11" fill="#f3f6fc"/>
-  <text x="870" y="523" text-anchor="middle" class="chip">U-코드 72 · ISMS-P · N2SF</text>
-  <rect x="744" y="540" width="252" height="32" rx="11" fill="#f3f6fc"/>
-  <text x="870" y="561" text-anchor="middle" class="chip">CCE 설정 점검 39종</text>
+  <text x="62" y="916" class="lbl">함께 대조하는 축 — ISMS-P · N2SF</text>
+  <rect x="62" y="926" width="388" height="36" rx="12" fill="#f3f6fc"/>
+  <text x="256" y="950" text-anchor="middle" class="chip">SBOM 8개 생태계 · U-코드 72 · CCE 39종</text>
 
-  <text x="744" y="605" class="foot">백포트 오탐 억제 · 근거 보존</text>
+  <text x="62" y="992" class="foot">백포트 오탐 억제 · 판정 근거 보존</text>
 
-  <path d="M1028 400H1055" stroke="#7180a7" stroke-width="3" marker-end="url(#arrow)"/>
+  <path d="M484 825H514" stroke="#7180a7" stroke-width="3" marker-end="url(#arrow)"/>
 
   <!-- Step 4 : 조치 -->
-  <g filter="url(#shadow)"><rect x="1060" y="180" width="300" height="460" rx="24" fill="#fff" stroke="#dce5f7"/></g>
-  <rect x="1084" y="204" width="83" height="32" rx="16" fill="#f6ecff"/>
-  <text x="1125" y="226" text-anchor="middle" class="step" fill="#7b45bd">04 조치</text>
-  <circle cx="1316" cy="220" r="24" fill="#f7efff"/>
-  <path d="M1305 220h22M1316 209v22" stroke="#8751c5" stroke-width="3.5" stroke-linecap="round"/>
-  <text x="1084" y="278" class="card-title">우선순위와 조치</text>
-  <text x="1084" y="308" class="body">무엇부터 할지 보여줍니다.</text>
+  <g filter="url(#shadow)"><rect x="524" y="630" width="440" height="390" rx="24" fill="#fff" stroke="#dce5f7"/></g>
+  <rect x="550" y="654" width="88" height="32" rx="16" fill="#f6ecff"/>
+  <text x="594" y="676" text-anchor="middle" class="step" fill="#7b45bd">04 조치</text>
+  <circle cx="922" cy="670" r="24" fill="#f7efff"/>
+  <path d="M911 670h22M922 659v22" stroke="#8751c5" stroke-width="3.5" stroke-linecap="round"/>
+  <text x="550" y="726" class="card-title">우선순위와 조치</text>
+  <text x="550" y="756" class="body">무엇부터 할지 보여줍니다.</text>
 
-  <text x="1084" y="348" class="lbl">무엇이 먼저인가</text>
-  <rect x="1084" y="358" width="252" height="38" rx="11" fill="#f8f1ff"/>
-  <text x="1210" y="382" text-anchor="middle" class="chip" fill="#7240ad">KEV · EPSS · 실행 위험</text>
-  <rect x="1084" y="402" width="252" height="38" rx="11" fill="#f8f1ff"/>
-  <text x="1210" y="426" text-anchor="middle" class="chip" fill="#7240ad">U-코드 커버리지의 빈칸</text>
+  <text x="550" y="796" class="lbl">무엇이 먼저인가</text>
+  <rect x="550" y="806" width="388" height="36" rx="12" fill="#f8f1ff"/>
+  <text x="744" y="830" text-anchor="middle" class="chip" fill="#7240ad">KEV · EPSS · 실행 위험 · 노출도</text>
+  <rect x="550" y="850" width="388" height="36" rx="12" fill="#f8f1ff"/>
+  <text x="744" y="874" text-anchor="middle" class="chip" fill="#7240ad">U-코드 커버리지의 빈칸</text>
 
-  <text x="1084" y="480" class="lbl">무엇을 하면 되는가</text>
-  <rect x="1084" y="490" width="252" height="38" rx="11" fill="#f8f1ff"/>
-  <text x="1210" y="514" text-anchor="middle" class="chip" fill="#7240ad">업데이트 · 재시작 · 재부팅</text>
-  <rect x="1084" y="534" width="252" height="38" rx="11" fill="#f8f1ff"/>
-  <text x="1210" y="558" text-anchor="middle" class="chip" fill="#7240ad">이미지 재빌드 · 부모 패키지</text>
+  <text x="550" y="916" class="lbl">무엇을 하면 되는가</text>
+  <rect x="550" y="926" width="388" height="36" rx="12" fill="#f8f1ff"/>
+  <text x="744" y="950" text-anchor="middle" class="chip" fill="#7240ad">업데이트 · 재시작 · 이미지 재빌드</text>
 
-  <text x="1084" y="598" class="foot">위험 · 억제 · 판정 불가를 구분</text>
-  <text x="1084" y="620" class="foot">에이전트 자동 업데이트</text>
-
-  <!-- Difference band -->
-  <rect x="40" y="690" width="1320" height="170" rx="24" fill="#17223b"/>
-  <text x="70" y="724" font-size="16" font-weight="800" fill="#9ba9c8" letter-spacing="1.3">WHY VULN-AGENT</text>
-
-  <rect x="70" y="736" width="380" height="52" rx="15" fill="#25324e"/>
-  <text x="92" y="769" font-size="16" fill="#c7d0e4">일반 목록</text>
-  <text x="186" y="769" font-size="18" font-weight="700" fill="#fff">설치됨 → 취약</text>
-  <path d="M468 762H494" stroke="#657393" stroke-width="3" marker-end="url(#arrow)"/>
-  <rect x="510" y="736" width="820" height="52" rx="15" fill="#253e81" stroke="#557cf0"/>
-  <text x="534" y="769" font-size="16" font-weight="700" fill="#a9c0ff">vuln-agent</text>
-  <text x="644" y="769" font-size="18" font-weight="750" fill="#fff">실제로 쓰는가?  외부에서 닿는가?  이미 패치됐는가?</text>
-
-  <rect x="70" y="796" width="380" height="52" rx="15" fill="#25324e"/>
-  <text x="92" y="829" font-size="16" fill="#c7d0e4">안 깔린 서버</text>
-  <text x="204" y="829" font-size="18" font-weight="700" fill="#fff">목록에 아예 없음</text>
-  <path d="M468 822H494" stroke="#657393" stroke-width="3" marker-end="url(#arrow)"/>
-  <rect x="510" y="796" width="820" height="52" rx="15" fill="#253e81" stroke="#557cf0"/>
-  <text x="534" y="829" font-size="16" font-weight="700" fill="#a9c0ff">vuln-agent</text>
-  <text x="644" y="829" font-size="18" font-weight="750" fill="#fff">관리 대역을 훑어 모르는 장비부터 셉니다</text>
+  <text x="550" y="992" class="foot">위험 · 억제 · 판정 불가 구분 · 에이전트 자동 업데이트</text>
 </svg>
