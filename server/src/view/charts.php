@@ -29,6 +29,51 @@ function vg_donut_tone(string $tone): string {
 }
 
 /**
+ * 도넛 옆 **직접 라벨 목록** 한 벌(스와치 · 라벨 · 값). vg_donut_kpi() 가 조각 목록을 그릴 때
+ * 쓰고, **도넛으로 그릴 수 없는 희소한 수치**를 도넛 옆에 세울 때도 같은 함수를 쓴다.
+ *
+ *   희소한 값(전체 대비 0.x%)은 도넛으로 그리면 거짓말이 된다 — 둘 다 그리면 고리가 통째로
+ *   한 색이고, 큰 쪽을 arc=false 로 빼면 조각이 하나만 남아 **꽉 찬 원**(=100%)이 된다.
+ *   그렇다고 카드 격자로 되돌리면 같은 줄에 어휘가 둘이 된다(도넛 옆에 네모 카드). 그래서
+ *   그림은 포기하되 **어휘는 도넛 목록 그대로** 쓴다 — 같은 스와치·같은 행·같은 링크 계약.
+ *
+ *   $items: [['label'=>…, 'value'=>int, 'tone'=>…, 'href'=>…, 'selected'=>bool, 'title'=>…], …]
+ *   $opts:  'caption' — 목록 위에 붙는 짧은 제목(무엇들의 묶음인지). 도넛의 목록은 옆의 고리가
+ *           이미 말해 주므로 안 쓰고, 홀로 서는 목록만 쓴다.
+ *           'caption_title' — 그 제목의 툴팁(왜 그림이 아닌지 같은 한 문장). 제목 줄에 풀어
+ *           쓰면 좁은 칸에서 두 줄이 되어 옆 도넛과 시선 높이가 어긋난다.
+ */
+function vg_donut_list(array $items, array $opts = []): void {
+    echo '<div class="donut-kpi__list">';
+    $caption = (string) ($opts['caption'] ?? '');
+    if ($caption !== '') {
+        $capTitle = (string) ($opts['caption_title'] ?? '');
+        echo '<span class="donut-kpi__caption"'
+            . ($capTitle !== '' ? ' title="' . vg_h($capTitle) . '"' : '') . '>'
+            . vg_h($caption) . '</span>';
+    }
+    foreach ($items as $s) {
+        if (!is_array($s)) { continue; }
+        $label = (string) ($s['label'] ?? '');
+        $value = (int) ($s['value'] ?? 0);
+        $tone  = vg_donut_tone((string) ($s['tone'] ?? 'muted'));
+        $href  = (string) ($s['href'] ?? '');
+        $title = (string) ($s['title'] ?? ($label . ' ' . number_format($value)));
+        $tag   = $href !== '' ? 'a' : 'div';
+        $cls   = 'donut-kpi__seg' . ($value === 0 ? ' donut-kpi__seg--zero' : '')
+               . (!empty($s['selected']) ? ' is-selected' : '');
+        echo '<' . $tag . ' class="' . vg_h($cls) . '"'
+            . ($href !== '' ? ' href="' . vg_h($href) . '"' : '')
+            . ' title="' . vg_h($title) . '">'
+            . '<i class="tone-' . vg_h($tone) . '"></i>'
+            . '<span>' . vg_h($label) . '</span>'
+            . '<b>' . number_format($value) . '</b>'
+            . '</' . $tag . '>';
+    }
+    echo '</div>';
+}
+
+/**
  * 중앙 총계 도넛 KPI — 순수 SVG(차트 라이브러리를 들이지 않는다). 왼쪽 도넛 + 오른쪽 조각 목록.
  *
  *   $title    : 접근성 이름(SVG 의 aria-label). **눈에 보이는 제목은 그리지 않는다** —
@@ -148,11 +193,9 @@ function vg_donut_kpi(string $title, array $segments, array $opts = []): void {
     echo '</' . $figTag . '>';
 
     // 직접 라벨 — 색만으로 조각을 식별하게 두지 않는다(색각이상·흑백 인쇄·인접 색 문제).
-    echo '<div class="donut-kpi__list">';
+    //   행 마크업은 vg_donut_list() 하나가 갖는다(도넛 없이 서는 목록과 같은 어휘여야 한다).
+    $rows = [];
     foreach ($segs as $s) {
-        $tag  = $s['href'] !== '' ? 'a' : 'div';
-        $cls  = 'donut-kpi__seg' . ($s['value'] === 0 ? ' donut-kpi__seg--zero' : '')
-              . ($s['selected'] ? ' is-selected' : '');
         // 비율의 분모를 조각마다 맞춘다 — 호로 그린 조각은 고리와 같은 분모($arcTotal),
         //   그림에서 뺀 조각은 전체($total). 한 분모로 통일하면 "고리의 20%인데 툴팁은 2%"
         //   처럼 그림과 글자가 어긋난다.
@@ -164,15 +207,10 @@ function vg_donut_kpi(string $title, array $segments, array $opts = []): void {
                   : $s['label'] . ' ' . number_format($s['value'])
                     . ($total > 0 ? ' (전체의 ' . number_format($s['value'] / $total * 100, 1) . '%)' : '')
                     . ' · 도넛에는 그리지 않는다');
-        echo '<' . $tag . ' class="' . vg_h($cls) . '"'
-            . ($s['href'] !== '' ? ' href="' . vg_h($s['href']) . '"' : '')
-            . ' title="' . vg_h($tip) . '">'
-            . '<i class="tone-' . vg_h($s['tone']) . '"></i>'
-            . '<span>' . vg_h($s['label']) . '</span>'
-            . '<b>' . number_format($s['value']) . '</b>'
-            . '</' . $tag . '>';
+        $rows[] = ['label' => $s['label'], 'value' => $s['value'], 'tone' => $s['tone'],
+                   'href' => $s['href'], 'selected' => $s['selected'], 'title' => $tip];
     }
-    echo '</div>';
+    vg_donut_list($rows);
 
     echo '</div>';
 }
@@ -212,6 +250,68 @@ function vg_sev_donut(array $counts, int $size = 132, array $opts = []): void {
         'none'         => ['label' => '조치 대상 없음', 'tone' => 'ok',
                            'title' => 'CRITICAL·HIGH·MEDIUM 이 0건이라 고리를 그리지 않습니다'
                                     . ' · 등급별 건수는 오른쪽 목록에 있습니다'],
+    ]);
+}
+
+/**
+ * 노출·실행 상태(runtime_status)의 어휘 정본 — [라벨, 톤, 고리에 그리는가].
+ *
+ *   순서가 곧 노출 강도다(밖에서 닿는 것 → 안에서 도는 것 → 안 도는 것 → 모르는 것).
+ *   고리에는 **실제로 노출·실행 중인 것만** 그린다. '설치만 됨' 이 압도적이라(dev 실측
+ *   162,100 : 나머지 42,977) 같이 그리면 고리의 79%가 한 색 덩어리가 되고, '방화벽 차단'·
+ *   '상태 미상' 도 같은 이유로 뺀다 — 심각도 도넛이 LOW 를 빼는 것과 같은 처방이다.
+ *   **숫자는 지우지 않는다**: 뺀 상태도 목록에 건수로 남고 링크도 산다.
+ *
+ *   톤은 vg_status_badge() 의 뱃지 색과 굳이 맞추지 않는다 — 저기는 값 하나를 뱃지로 말하는
+ *   자리고 여기는 여덟 값이 **한 목록에서 서로 갈려야** 하는 자리다(인접 스와치 색차 문제).
+ *   '방화벽 차단' 이 ok(초록)인 것도 그래서다: info(파랑)로 뒀더니 바로 윗줄 '사용 중'(accent)과
+ *   rgb(37,99,224) : rgb(49,130,246) 으로 사실상 같은 색이었다(브라우저 실측). 노출 축에서
+ *   '밖에서 못 닿는다' 는 실제로 안전한 쪽이라 초록이 뜻과도 맞는다.
+ */
+const VG_RUNTIME_DONUT = [
+    'EXTERNAL'  => ['외부 노출',         'crit',   true],
+    'LAN'       => ['로컬 세그먼트 노출', 'purple', true],
+    'LISTENING' => ['수신 대기',          'high',   true],
+    'RUNNING'   => ['실행 중',            'med',    true],
+    'LOADED'    => ['사용 중',            'accent', true],
+    'FILTERED'  => ['방화벽 차단',        'ok',     false],
+    'INSTALLED' => ['설치만 됨',          'low',    false],
+    '미상'      => ['상태 미상',          'muted',  false],
+];
+
+/**
+ * 노출·실행 상태 도넛 — 대시보드와 탐지 결과가 **같은 함수·같은 어휘**로 그린다.
+ *   같은 축(무엇이 밖에서 닿는가)을 화면마다 다른 라벨·다른 색으로 그리면 두 화면의 숫자를
+ *   이어서 읽을 수 없다. 어휘는 위 VG_RUNTIME_DONUT 하나가 갖는다.
+ *
+ *   $runtime: [상태키 => 건수]. **넘긴 키만** 그린다 — 화면마다 세는 상태의 폭이 다르다
+ *             (대시보드는 네 상태 + '미상', 탐지 결과는 툴바 필터와 같은 일곱 상태 + '미상').
+ *   $opts:    'seg' — fn(string $key, int $n): array 로 href/selected/title 을 얹는다
+ *             (심각도 도넛과 같은 계약). 나머지 키는 vg_donut_kpi 로 그대로 넘어간다.
+ */
+function vg_runtime_donut(array $runtime, int $size = 132, array $opts = []): void {
+    $seg   = $opts['seg'] ?? null;
+    $title = (string) ($opts['title'] ?? '노출·실행 상태 구성');
+    unset($opts['seg'], $opts['title']);
+
+    $segments = [];
+    $live     = 0;
+    foreach (VG_RUNTIME_DONUT as $key => [$label, $tone, $arc]) {
+        if (!array_key_exists($key, $runtime)) { continue; }
+        $n = (int) $runtime[$key];
+        if ($arc) { $live += $n; }
+        $extra = $seg !== null ? (array) $seg($key, $n) : [];
+        // 왼쪽(호출부가 준 href·selected·title)이 이기고, 오른쪽은 이 함수가 정하는 계약이다.
+        $segments[] = $extra + ['tone' => $tone, 'label' => $label, 'value' => $n, 'arc' => $arc];
+    }
+
+    vg_donut_kpi($title, $segments, $opts + [
+        'size'         => $size,
+        'center'       => number_format($live),
+        'center_label' => '노출·실행 중',
+        'none'         => ['label' => '노출·실행 중 없음', 'tone' => 'ok',
+                           'title' => '외부 노출·수신 대기·실행 중이 0건이라 고리를 그리지 않습니다'
+                                    . ' · 상태별 건수는 오른쪽 목록에 있습니다'],
     ]);
 }
 

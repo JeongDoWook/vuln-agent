@@ -3,15 +3,15 @@ declare(strict_types=1);
 
 /**
  * findings/queries/cve.php — CVE 탭의 조회 하나.
- *   등급 KPI · 행동 큐(KEV·외부노출·재시작·기한초과) · 필터 조립 · 목록 · 페이지 단위 부가정보
+ *   등급 KPI · 노출 상태 구성 · 행동 큐(KEV·재시작·기한초과) · 필터 조립 · 목록 · 페이지 단위 부가정보
  *   (미조치 사유·최초 발견 시각)까지 이 탭이 필요한 전부를 한 함수가 순서대로 읽는다.
  *   SQL·바인딩 순서·정렬은 findings.php 에 있던 것을 그대로 옮긴 것이다.
  */
 
 /**
- * CVE 탭 — 등급 KPI · 행동 큐 · 목록.
+ * CVE 탭 — 등급 KPI · 노출 상태 구성 · 행동 큐 · 목록.
  *   $f: q sev st fx fst sort ctrId page perPage (findings.php 가 검증한 값)
- *   반환: counts actionCounts overdueFindingIds total rows notes firstSeen policy ctrLabel
+ *   반환: counts actionCounts runtimeCounts overdueFindingIds total rows notes firstSeen policy ctrLabel
  */
 function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, array $f): array {
     $q = (string) $f['q']; $sev = (string) $f['sev']; $st = (string) $f['st'];
@@ -20,7 +20,9 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
 
     $in = implode(',', array_fill(0, count($scanIds), '?'));
     $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
-    $actionCounts = ['high' => 0, 'kev' => 0, 'external' => 0, 'restart' => 0, 'overdue' => 0];
+    $actionCounts = ['kev' => 0, 'restart' => 0, 'overdue' => 0];
+    // 키·순서·라벨의 정본은 VG_RUNTIME_DONUT 하나다 — 여기서 상태 목록을 다시 나열하지 않는다.
+    $runtimeCounts = array_fill_keys(array_keys(VG_RUNTIME_DONUT), 0);
     $overdueFindingIds = [];
     $ctrLabel = null;
 
@@ -37,20 +39,36 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
     foreach ($stmt->fetchAll() as $r) {
         if (isset($counts[$r['severity']])) { $counts[$r['severity']] = (int) $r['c']; }
     }
-    $actionCounts['high'] = $counts['CRITICAL'] + $counts['HIGH'];
-
     // 행동 큐의 신호는 모두 같은 대상 스캔 집합에서 센다. 기한 초과는 대시보드와 같은
     // High 이상 KEV 모집단이며 DONE·EXCEPTED는 제외한다.
+    //
+    // 노출 상태(runtime_status) 구성도 **이 한 쿼리에서** 같이 센다 — 이미 훑는 행에 SUM
+    // 표현식을 몇 개 더 얹는 것뿐이라 접근 경로가 바뀌지 않는다(대시보드 조회층과 같은 판단).
+    // 세는 어휘는 툴바의 '노출 상태' 필터 목록($stOptions)과 같은 일곱 가지다 — 화면이 거를 수
+    // 있는 값과 도넛이 그리는 값이 갈리면 "목록엔 있는데 그림엔 없는 상태" 가 생긴다.
+    // 어느 어휘에도 안 맞는 값·NULL 은 '미상' 으로 받는다(합이 전체와 어긋나지 않게).
     $stmt = $pdo->prepare(
-        "SELECT SUM(f.in_kev = 1) kev, SUM(f.runtime_status = 'EXTERNAL') external_cnt,
-                SUM(f.needs_restart = 1) restart_cnt
+        "SELECT SUM(f.in_kev = 1) kev, SUM(f.needs_restart = 1) restart_cnt, COUNT(*) all_cnt,
+                SUM(f.runtime_status = 'EXTERNAL')  rt_EXTERNAL,
+                SUM(f.runtime_status = 'LAN')       rt_LAN,
+                SUM(f.runtime_status = 'LISTENING') rt_LISTENING,
+                SUM(f.runtime_status = 'RUNNING')   rt_RUNNING,
+                SUM(f.runtime_status = 'LOADED')    rt_LOADED,
+                SUM(f.runtime_status = 'FILTERED')  rt_FILTERED,
+                SUM(f.runtime_status = 'INSTALLED') rt_INSTALLED
            FROM tb_finding f WHERE f.scan_id IN ($in) AND f.is_deleted = 0"
     );
     $stmt->execute($scanIds);
     $queueAgg = $stmt->fetch() ?: [];
     $actionCounts['kev'] = (int) ($queueAgg['kev'] ?? 0);
-    $actionCounts['external'] = (int) ($queueAgg['external_cnt'] ?? 0);
     $actionCounts['restart'] = (int) ($queueAgg['restart_cnt'] ?? 0);
+    $known = 0;
+    foreach ($runtimeCounts as $k => $_) {
+        if ($k === '미상') { continue; }
+        $runtimeCounts[$k] = (int) ($queueAgg['rt_' . $k] ?? 0);
+        $known += $runtimeCounts[$k];
+    }
+    $runtimeCounts['미상'] = max(0, (int) ($queueAgg['all_cnt'] ?? 0) - $known);
 
     $stmt = $pdo->prepare(
         "SELECT f.finding_id, s.host_id, COALESCE(ctr.cid, '') cid, f.cve_id, f.package_name,
@@ -233,7 +251,7 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
     }
     $firstSeen = vg_finding_first_seen_map($pdo, $slaKeys, vg_finding_sla_lookback_days($policy));
 
-    return ['counts' => $counts, 'actionCounts' => $actionCounts,
+    return ['counts' => $counts, 'actionCounts' => $actionCounts, 'runtimeCounts' => $runtimeCounts,
             'overdueFindingIds' => $overdueFindingIds, 'total' => $total, 'rows' => $rows,
             'notes' => $notes, 'firstSeen' => $firstSeen, 'policy' => $policy,
             'ctrLabel' => $ctrLabel];

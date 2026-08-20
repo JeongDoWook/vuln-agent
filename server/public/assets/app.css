@@ -1011,6 +1011,13 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 .donut--none { min-width: 8.25rem; min-height: 8.25rem; padding: 0 var(--sp-2); }
 a.donut--kpi { text-decoration: none; color: inherit; }
 .donut-kpi__list { display: grid; gap: .15rem; flex: 1 1 9rem; min-width: 0; }
+/* 홀로 서는 목록(도넛 없이 값만 세우는 칸)의 제목 — 옆 도넛에는 감싼 카드의 <strong> 이
+ * 제목 노릇을 하지만, 이 칸은 무엇들의 묶음인지 말해 줄 것이 없다. 한 줄로만 둔다(길면
+ * 옆 도넛과 시선 높이가 어긋난다) — 이유 같은 문장은 title 툴팁으로 내린다. */
+.donut-kpi__caption {
+  color: var(--muted); font-size: var(--fs-xs); padding: 0 .4rem .1rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .donut-kpi__seg {
   display: flex; align-items: center; gap: .5rem;
   padding: .16rem .4rem; border-radius: var(--r-sm);
@@ -1043,29 +1050,20 @@ a.donut-kpi__seg:hover { background: var(--surface-2); color: var(--text); }
 /* 지표 덩어리 여러 개를 한 줄에 — 대시보드 상단, 탐지 결과 첫 카드, 자산 상세 히어로.
  * 칸이 모자라면 자동으로 줄이 나뉜다(auto-fit) — 둘만 놓으면 넓은 화면에서 정확히 반반이다.
  * minmax 의 하한은 도넛(132px) + 목록이 겹치지 않는 최소 폭이다.
- * 도넛끼리만 서는 줄이 아니다: 한쪽이 KPI 타일 줄(.kpi-strip)이거나 비율 카드(.kpi-rate)여도
- * 같은 격자를 쓴다 — "도넛 옆에 지표" 를 화면마다 다시 배치하지 않기 위한 한 벌이다. */
+ * 도넛끼리만 서는 줄이 아니다: 한쪽이 KPI 타일 줄(.kpi-strip)이거나 도넛 없이 서는 값 목록
+ * (.donut-kpi 안의 .donut-kpi__list)이어도 같은 격자를 쓴다 — "도넛 옆에 지표" 를 화면마다
+ * 다시 배치하지 않기 위한 한 벌이다. */
 .kpi-donuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: var(--sp-3); }
+/* 칸이 **둘뿐**인 줄(대시보드 [주요 취약점 신호] — KEV 칸을 걷고 도넛 둘만 남았다).
+ * 1fr 로 두면 넓은 화면에서 칸 하나가 화면 절반이 되어, 도넛 옆 목록의 스와치와 숫자가
+ * 손가락 두 마디만큼 벌어진다(값이 칸 오른쪽 끝에 붙는 규칙이라 그렇다).
+ * 칸 폭에 상한을 두고 **남는 폭은 양쪽 여백으로 흘린다**(space-between 은 둘을 카드 양끝으로
+ * 밀어 가운데가 통째로 비었다 — 실측). 셋 이상인 줄은 원래대로 1fr 이라 이 규칙이 안 걸린다. */
+.kpi-donuts--pair { grid-template-columns: repeat(auto-fit, minmax(19rem, 27rem)); justify-content: center; }
 /* 이 격자 안의 타일 줄은 칸 하나를 채우는 내용물이다 — 바깥 줄에서 쓰던 아래 여백을 지우고,
  * 옆 도넛보다 짧으면 가운데로 모은다(위로 붙으면 도넛과 시선 높이가 어긋난다). */
 .kpi-donuts .kpi-strip { margin-bottom: 0; align-content: center; }
 
-/* 비율 카드 — **한 조각이 압도적이라 도넛이 뜻을 못 갖는** 값이 온다.
- * 대시보드의 KEV(High 이상 959건 중 3건, 0.3%)가 그렇다: 둘 다 그리면 고리가 통째로 회색이고,
- * 회색을 arc=false 로 빼면 조각이 하나만 남아 꽉 찬 원이 된다 — 어느 쪽도 부분/전체를 못 말한다.
- * 그래서 큰 숫자 + 진행바다. 진행바는 이미 있는 게이지(.meter, vg_meter())를 그대로 쓴다. */
-.kpi-rate { display: flex; flex-direction: column; justify-content: center; min-height: 8.25rem; }
-.kpi-rate > b { font-size: var(--fs-num); font-variant-numeric: tabular-nums; line-height: 1.1; }
-/* 큰 숫자도 목적지를 갖는다(도넛 조각이 곧 필터인 것과 같은 계약) — 다만 링크 색으로 튀지
- * 않게 글자색을 물려받고, 누를 수 있다는 사실은 hover 밑줄이 말한다. */
-.kpi-rate > b a { color: inherit; text-decoration: none; }
-.kpi-rate > b a:hover { text-decoration: underline; }
-/* 숫자에 톤을 싣는다 — .kpi 와 같은 규칙(색면을 켜지 않고 **숫자 색**으로 서열을 낸다).
- * 이 칸은 도넛 옆에 서므로 검정 숫자 하나로는 그림들 사이에서 신호로 안 읽힌다. */
-.kpi-rate.tone-crit > b { color: var(--crit-fg); }
-.kpi-rate.tone-ok   > b { color: var(--ok-fg); }
-.kpi-rate > span { color: var(--muted); font-size: var(--fs-sm); margin-top: .15rem; }
-.kpi-rate > small { color: var(--muted); font-size: var(--fs-xs); margin-top: .5rem; }
 
 /* --- 차트 공통 눈금 -------------------------------------------------------
  * 형태가 고정된 차트(심각도 도넛·추이·순위 막대)는 SVG 를 직접 그린다 — 논리좌표(720x190)로
