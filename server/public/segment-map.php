@@ -13,14 +13,16 @@ declare(strict_types=1);
  *     상대를 수집해야 하는 B단계이고, 이 화면은 그 데이터가 없어 만들지 않는다 — 없는 것을
  *     그럴듯하게 채우면 틀린 그림을 사실처럼 보여주게 된다.
  *
- *   ★ 그리는 방식: 노드-링크 그래프가 아니라 **대역별 카드 묶음**을 골랐다. 지금 데이터로는
- *     "게이트웨이 하나 아래 호스트 여럿"인 성형(star) 구조뿐이라, 대역마다 카드 하나 세우고
- *     그 안에 호스트를 늘어놓는 것으로 구조가 다 읽힌다. 새 그래프 레이아웃 엔진(d3-force·
- *     cytoscape)을 들이는 대신 자산 상세의 컨테이너 계층(.ctree/.ctrcard, host/tabs/containers.php)을
- *     그대로 재사용한다 — "루트 하나 아래 카드 여럿"이라는 같은 모양이고, 이미 다크·라이트
- *     양쪽에서 검증된 토큰이라 새 CSS를 안 만들어도 된다(CLAUDE.md — app.css 토큰 추가 금지).
+ *   ★ 그리는 방식: **대역마다 성형(star) 토폴로지 SVG 한 장**이다. 예전엔 대역 아래에 자산을
+ *     카드 격자로 깔았는데, 카드마다 미터 바·버튼이 붙어 세로로만 길어졌고 정작 이 화면이
+ *     답해야 할 "무엇이 무엇에 매달려 있나" 라는 **구조**가 안 보였다. 게이트웨이를 한가운데
+ *     두고 자산을 가지로 잇는 그림이 그 구조 자체다.
+ *     좌표 계산은 PHP 가 하고 SVG 만 내보낸다 — 이 서버의 CSP 는 default-src 'self' 라
+ *     인라인 <script> 를 못 쓴다(depgraph.php·vg_sev_donut() 과 같은 방식). 노드 박스·곡선
+ *     엣지·왼쪽 악센트 바라는 어휘도 depgraph.php 의 트리에서 그대로 가져왔다 — 같은 제품에서
+ *     그래프가 화면마다 다르게 생기면 안 된다. 그래프 라이브러리(d3 등)는 들이지 않는다(YAGNI/KISS).
  *
- *   ★ 에이전트 없는 발견 자산(tb_discovered_asset)도 같은 카드 안에 올린다 — 그 IP 가 이
+ *   ★ 에이전트 없는 발견 자산(tb_discovered_asset)도 같은 토폴로지에 올린다 — 그 IP 가 이
  *     대역의 CIDR 안에 들면 "관리 중이 아닌 자산"으로 표시한다. 대역 밖(알려진 CIDR에
  *     안 드는) 발견 IP 는 여기서 다루지 않는다 — 자산 탐색(discovery.php)이 이미 그 목록을 갖는다.
  */
@@ -43,6 +45,50 @@ function vg_segment_ip_in_cidr(string $ip, string $cidr): bool
     if ($bits > 32) { return false; }
     $mask = -1 << (32 - $bits);
     return (($base & $mask) === ($ipLong & $mask));
+}
+
+/* ── 성형(star) 토폴로지의 배치 상수(SVG 논리좌표, px) ──────────────────────
+ *   화면 코드에 숫자를 박지 않고 여기 한곳에서만 정한다(depgraph.php 의 VG_DEPTREE_* 와 같은 규약).
+ *   값을 바꾸면 대역 그림 전체가 따라온다. */
+const VG_SEGMAP_NODE_W    = 250;   // 자산 노드 박스 폭
+const VG_SEGMAP_NODE_H    = 30;    // 자산 노드 박스 높이
+const VG_SEGMAP_HUB_W     = 168;   // 게이트웨이(허브) 박스 폭
+const VG_SEGMAP_HUB_H     = 52;    // 게이트웨이 박스 높이 — IP 와 대역을 두 줄로 담는다
+const VG_SEGMAP_GAP_X     = 84;    // 허브와 자산 열 사이 = 엣지 곡선이 놓이는 폭
+const VG_SEGMAP_GAP_Y     = 8;     // 자산 노드 사이 세로 간격
+const VG_SEGMAP_PAD       = 12;    // SVG 바깥 여백
+const VG_SEGMAP_CHAR_W    = 6.4;   // 12px 글자 한 칸의 근사폭 — 이름 말줄임 계산용
+const VG_SEGMAP_META_W    = 46;    // 노드 오른쪽 칸(수치·상태 글자)의 폭
+const VG_SEGMAP_NODES_MAX = 40;    // 대역 하나에 그리는 노드 상한(넘치면 숫자로 밝힌다)
+
+/**
+ * 성형 토폴로지 배치 — 게이트웨이를 왼쪽 한가운데 두고 자산을 오른쪽 한 열로 쌓는다.
+ *   지금 데이터로 그릴 수 있는 구조가 "게이트웨이 하나 아래 호스트 여럿" 뿐이라(파일 머리말의
+ *   A단계) 힘 기반 배치가 필요 없다 — 자식 수만 알면 좌표가 나온다. 허브의 y 는 가지 전체의
+ *   가운데다(depgraph 의 tidy tree 가 부모를 자식들 가운데 두는 것과 같은 규칙).
+ *   반환: ['nodes' => [['x','y'], …], 'hub' => ['x','y'], 'w' => SVG 폭, 'h' => SVG 높이]
+ */
+function vg_segmap_layout(int $count): array
+{
+    $n     = max(1, $count);
+    $stack = $n * VG_SEGMAP_NODE_H + ($n - 1) * VG_SEGMAP_GAP_Y;
+    $h     = max($stack, VG_SEGMAP_HUB_H) + VG_SEGMAP_PAD * 2;
+    $top   = ($h - $stack) / 2;
+    $nodeX = VG_SEGMAP_PAD + VG_SEGMAP_HUB_W + VG_SEGMAP_GAP_X;
+
+    $nodes = [];
+    for ($i = 0; $i < $count; $i++) {
+        $nodes[] = [
+            'x' => $nodeX,
+            'y' => round($top + $i * (VG_SEGMAP_NODE_H + VG_SEGMAP_GAP_Y) + VG_SEGMAP_NODE_H / 2, 1),
+        ];
+    }
+    return [
+        'nodes' => $nodes,
+        'hub'   => ['x' => VG_SEGMAP_PAD, 'y' => round($h / 2, 1)],
+        'w'     => (int) (VG_SEGMAP_PAD * 2 + VG_SEGMAP_HUB_W + VG_SEGMAP_GAP_X + VG_SEGMAP_NODE_W),
+        'h'     => (int) ceil($h),
+    ];
 }
 
 $err = null;
@@ -124,9 +170,8 @@ try {
     }
     $scanIds = array_values(array_unique(array_values($scanByHost)));
     $sevByScan = vg_sev_by_scan_ids($pdo, $scanIds);
-    // 위험 분포 막대의 공통 분모 — 이 화면에 그려지는 호스트 중 조치 대상이 가장 많은 값.
-    //   행(카드)마다 자기 합으로 잡으면 카드끼리 위험도가 비교되지 않는다(vg_sev_bar 주석).
-    $riskScale = vg_sev_bar_scale($sevByScan);
+    // 위험 분포 막대(vg_sev_bar)의 공통 척도는 더 이상 안 쓴다 — 노드 하나에 미터 바를 넣으면
+    //   토폴로지가 다시 카드 격자가 된다. 노드가 담는 수치는 조치 대상 건수 하나뿐이다.
 
     // 외부노출(EXTERNAL) 건수도 배치로 — 호스트마다 따로 부르면 세그먼트 화면이 N+1 이 된다.
     $extByScan = [];
@@ -189,7 +234,103 @@ vg_header('세그먼트 맵', 'segment_map');
           'cta' => ['href' => '/assets.php', 'label' => '자산 목록으로'],
       ]); ?>
     <?php else: ?>
+      <?php
+      /**
+       * 노드 한 칸(SVG <a> 안의 rect·text) — 왼쪽 악센트 바 + 이름(왼쪽) + 핵심 수치 하나(오른쪽).
+       *   depgraph.php 의 노드와 같은 어휘다(박스·악센트 바·알약). 옛 카드가 달고 있던 미터 바·
+       *   '자산 상세 →' 버튼은 노드에서 뺐다 — 노드 자체가 링크라 버튼이 두 번 있을 이유가 없고,
+       *   막대까지 넣으면 노드가 다시 카드가 된다. 칸에 안 들어가는 사실(외부노출·LOW·호스트명)은
+       *   <title>(툴팁)로 넘긴다.
+       *   좌표·크기는 SVG 속성이라 CSS 가 가질 수 없다. 색은 전부 class 로만 준다(app.css 소유).
+       */
+      $svgNode = static function (array $pos, array $it): string {
+          $x   = (float) $pos['x'];
+          $y   = (float) $pos['y'];
+          $top = round($y - VG_SEGMAP_NODE_H / 2, 1);
+
+          // 오른쪽 칸: 관리 중이면 조치 대상 건수 알약, 미관리면 상태 글자.
+          $rightW = $it['value'] !== null
+              ? max(26.0, strlen($it['value']) * 7.2 + 16)
+              : (float) VG_SEGMAP_META_W;
+          $avail = VG_SEGMAP_NODE_W - 12 - 8 - $rightW - 10;
+          $name  = mb_strimwidth($it['label'], 0, max(4, (int) ($avail / VG_SEGMAP_CHAR_W)), '…');
+
+          $svg = '<a href="' . vg_h($it['href']) . '" class="segmap__node">'
+              . '<title>' . vg_h($it['title']) . '</title>'
+              // 미관리 자산은 점선 테두리다 — 에이전트가 없어 안을 못 본다는 사실을 모양으로 말한다.
+              . '<rect class="segmap__box' . ($it['managed'] ? '' : ' segmap__box--gap') . '"'
+              . ' x="' . $x . '" y="' . $top . '" width="' . VG_SEGMAP_NODE_W . '" height="' . VG_SEGMAP_NODE_H . '" rx="7"/>'
+              . '<rect class="segmap__accent tone-' . vg_h($it['tone']) . '"'
+              . ' x="' . ($x + 1.5) . '" y="' . ($top + 4) . '" width="3.5" height="' . (VG_SEGMAP_NODE_H - 8) . '" rx="2"/>'
+              . '<text class="segmap__name" x="' . ($x + 12) . '" y="' . $y . '">' . vg_h($name) . '</text>';
+
+          if ($it['value'] !== null) {
+              $px = round($x + VG_SEGMAP_NODE_W - 10 - $rightW, 1);
+              $svg .= '<rect class="segmap__pill tone-' . vg_h($it['tone']) . '" x="' . $px . '"'
+                  . ' y="' . round($y - 8, 1) . '" width="' . round($rightW, 1) . '" height="16" rx="8"/>'
+                  . '<text class="segmap__pilltext tone-' . vg_h($it['tone']) . '"'
+                  . ' x="' . round($px + $rightW / 2, 1) . '" y="' . $y . '">' . vg_h($it['value']) . '</text>';
+          } else {
+              $svg .= '<text class="segmap__meta" x="' . ($x + VG_SEGMAP_NODE_W - 10) . '" y="' . $y . '">'
+                  . vg_h($it['meta']) . '</text>';
+          }
+          return $svg . '</a>';
+      };
+      ?>
       <?php foreach ($segments as $cidr => $seg): ?>
+        <?php
+        /* 한 대역의 가지 = 관리 중 자산 + 그 대역 CIDR 안에서 발견된 미관리 자산.
+           노드는 관리 상태로 갈린다: 관리 중은 실선 + 최고 심각도 톤, 미관리는 점선 + 빨간 톤
+           (자산 탐색 화면이 쓰던 어휘 그대로다 — 두 화면에서 같은 것이 같은 색이어야 한다). */
+        $items = [];
+        foreach ($seg['hosts'] as $hostId => $fqdn) {
+            $scanId = $scanByHost[$hostId] ?? null;
+            $sev    = $scanId !== null ? ($sevByScan[$scanId] ?? []) : [];
+            $act    = vg_sev_actionable($sev);
+            $worst  = null;
+            foreach (VG_SEV_ACTIONABLE as $s) {
+                if (($sev[$s] ?? 0) > 0) { $worst = $s; break; }
+            }
+            $ext = $scanId !== null ? ($extByScan[$scanId] ?? 0) : 0;
+            $low = (int) ($sev['LOW'] ?? 0);
+
+            $tip = [(string) $fqdn, '조치 대상 ' . number_format($act) . '건'];
+            if ($low > 0) { $tip[] = 'LOW ' . number_format($low) . '건'; }
+            if ($ext > 0) { $tip[] = '외부노출 ' . number_format($ext) . '건'; }
+            if ($scanId === null) { $tip[] = '수집된 스캔 없음'; }
+
+            $items[] = [
+                'label'   => (string) $fqdn,
+                'href'    => '/host.php?id=' . (int) $hostId,
+                // 조치 대상이 없으면 초록(ok) — 회색으로 두면 '데이터 없음'과 구분이 안 된다.
+                'tone'    => $worst !== null ? vg_sev_tone($worst) : 'ok',
+                'value'   => number_format($act),
+                'meta'    => '',
+                'title'   => implode(' · ', $tip),
+                'managed' => true,
+            ];
+        }
+        foreach ($seg['discovered'] as $d) {
+            $state = (string) $d['state'];
+            $tip   = [(string) $d['ip'], $discoveryStateLabel[$state] ?? $state];
+            $tip[] = !empty($d['hostname']) ? (string) $d['hostname'] : '호스트명 미상 · 에이전트 미설치';
+            $items[] = [
+                'label'   => (string) $d['ip'],
+                'href'    => '/discovery.php',
+                'tone'    => $discoveryStateTone[$state] ?? 'muted',
+                'value'   => null,
+                'meta'    => $discoveryStateLabel[$state] ?? $state,
+                'title'   => implode(' · ', $tip),
+                'managed' => false,
+            ];
+        }
+
+        // 노드 상한 — 자산이 많은 대역에서 SVG 하나가 화면을 통째로 먹지 않게 자른다.
+        //   자른 사실은 카드 머리에 숫자로 밝힌다(depgraph.php 의 노드 예산과 같은 처리).
+        $skipped = max(0, count($items) - VG_SEGMAP_NODES_MAX);
+        if ($skipped > 0) { $items = array_slice($items, 0, VG_SEGMAP_NODES_MAX); }
+        $l = vg_segmap_layout(count($items));
+        ?>
         <div class="card">
           <strong><?= vg_h($cidr) ?></strong>
           <span class="why">
@@ -197,66 +338,56 @@ vg_header('세그먼트 맵', 'segment_map');
             · 자산 <?= number_format(count($seg['hosts'])) ?>대
             <?= $seg['discovered'] ? ' · 미관리 발견 ' . number_format(count($seg['discovered'])) . '건' : '' ?>
           </span>
+          <?php if ($skipped > 0): ?>
+            <span class="why"><?= vg_badge('노드 상한(' . number_format(VG_SEGMAP_NODES_MAX) . '개)에서 잘림 · 미표시 '
+                . number_format($skipped) . '개', 'warn') ?></span>
+          <?php endif; ?>
           <div class="card__body">
-            <div class="ctree">
-              <div class="ctree__root">
-                <span class="ctree__icon" aria-hidden="true">🛜</span>
-                <div class="ctree__rootid">
-                  <strong><?= $seg['gateway_ip'] !== null ? vg_h($seg['gateway_ip']) : '게이트웨이 미확인' ?></strong>
-                  <span class="why">이 대역의 기본 게이트웨이</span>
-                </div>
-                <span class="badge tone-muted"><?= vg_h($cidr) ?></span>
-              </div>
-              <ul class="ctree__list">
-                <?php foreach ($seg['hosts'] as $hostId => $fqdn):
-                    $scanId = $scanByHost[$hostId] ?? null;
-                    $sev = $scanId !== null ? ($sevByScan[$scanId] ?? []) : [];
-                    $sevSum = array_sum($sev);
-                    $worst = null;
-                    foreach (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as $s) {
-                        if (($sev[$s] ?? 0) > 0) { $worst = $s; break; }
-                    }
-                    $extCount = $scanId !== null ? ($extByScan[$scanId] ?? 0) : 0;
+            <div class="segmap">
+              <svg class="segmap__svg" width="<?= $l['w'] ?>" height="<?= $l['h'] ?>"
+                   viewBox="0 0 <?= $l['w'] ?> <?= $l['h'] ?>" role="img"
+                   aria-label="<?= vg_h($cidr . ' 대역 토폴로지 · 노드 ' . count($items) . '개') ?>">
+                <?php
+                // 허브 → 자산: 두 열의 가운데를 제어점으로 잡은 3차 베지에(depgraph 의 엣지와 같다).
+                $hx = VG_SEGMAP_PAD + VG_SEGMAP_HUB_W;
+                $hy = $l['hub']['y'];
+                foreach ($l['nodes'] as $pos) {
+                    $mid = round(($hx + $pos['x']) / 2, 1);
+                    echo '<path class="segmap__edge" d="M' . $hx . ',' . $hy . ' C' . $mid . ',' . $hy
+                        . ' ' . $mid . ',' . $pos['y'] . ' ' . $pos['x'] . ',' . $pos['y'] . '"/>';
+                }
+                // 허브(대역의 기본 게이트웨이) — 이 대역이 무엇에 매달려 있는지가 그림의 중심이다.
+                $hubTop = round($hy - VG_SEGMAP_HUB_H / 2, 1);
+                $hubCx  = VG_SEGMAP_PAD + VG_SEGMAP_HUB_W / 2;
+                echo '<rect class="segmap__hub' . ($seg['gateway_ip'] === null ? ' segmap__hub--gap' : '') . '"'
+                    . ' x="' . VG_SEGMAP_PAD . '" y="' . $hubTop . '" width="' . VG_SEGMAP_HUB_W . '"'
+                    . ' height="' . VG_SEGMAP_HUB_H . '" rx="9"/>';
+                echo '<text class="segmap__hubip" x="' . $hubCx . '" y="' . round($hy - 8, 1) . '">'
+                    . vg_h($seg['gateway_ip'] ?? '게이트웨이 미확인') . '</text>';
+                echo '<text class="segmap__hubcidr" x="' . $hubCx . '" y="' . round($hy + 11, 1) . '">'
+                    . vg_h($cidr) . '</text>';
+
+                foreach ($l['nodes'] as $i => $pos) { echo $svgNode($pos, $items[$i]); }
                 ?>
-                  <li class="ctrcard tone-<?= $worst !== null ? vg_h(vg_sev_tone($worst)) : 'muted' ?>">
-                    <div class="ctrcard__head">
-                      <a class="ctrcard__name" href="/host.php?id=<?= (int) $hostId ?>"><?= vg_h($fqdn) ?></a>
-                      <div class="ctrcard__badges">
-                        <?php if ($extCount > 0): ?><?= vg_badge('외부노출 ' . $extCount, 'high') ?><?php endif; ?>
-                      </div>
-                    </div>
-                    <div class="ctrcard__risk">
-                      <?php /* 막대는 조치 대상(C·H·M)만 그린다 — LOW 만 있는 호스트는
-                               vg_sev_bar 가 'LOW만' 로 돌려주므로 빈 막대가 되지 않는다. */ ?>
-                      <?php if ($sevSum > 0): ?>
-                        <?= vg_sev_bar($sev, $riskScale) ?>
-                      <?php else: ?>
-                        <span class="why">판정된 취약점 없음</span>
-                      <?php endif; ?>
-                    </div>
-                    <div class="links"><a href="/host.php?id=<?= (int) $hostId ?>">자산 상세 →</a></div>
-                  </li>
-                <?php endforeach; ?>
-                <?php foreach ($seg['discovered'] as $d):
-                    $state = (string) $d['state'];
-                    $tone = $discoveryStateTone[$state] ?? 'muted';
-                ?>
-                  <li class="ctrcard tone-<?= vg_h($tone) ?>">
-                    <div class="ctrcard__head">
-                      <span class="ctrcard__name"><?= vg_h((string) $d['ip']) ?></span>
-                      <div class="ctrcard__badges"><?= vg_badge($discoveryStateLabel[$state] ?? $state, $tone) ?></div>
-                    </div>
-                    <div class="ctrcard__facts">
-                      <span><?= !empty($d['hostname']) ? vg_h((string) $d['hostname']) : '<span class="why">호스트명 미상 · 에이전트 미설치</span>' ?></span>
-                    </div>
-                    <div class="links"><a href="/discovery.php">자산 탐색에서 보기 →</a></div>
-                  </li>
-                <?php endforeach; ?>
-              </ul>
+              </svg>
             </div>
+            <?php if (!$items): ?>
+              <span class="why">이 대역에 배치된 자산이 없습니다.</span>
+            <?php endif; ?>
           </div>
         </div>
       <?php endforeach; ?>
+      <?php
+      // 노드 색이 무슨 뜻인지 그 자리에서 말한다 — 색만으로 식별하게 두지 않는다(vg_legend 규약).
+      //   노드 안에도 숫자·상태 글자가 항상 찍혀 있어 색을 못 봐도 읽힌다.
+      vg_legend([
+          ['label' => 'CRITICAL', 'tone' => 'crit'],
+          ['label' => 'HIGH',     'tone' => 'high'],
+          ['label' => 'MEDIUM',   'tone' => 'med'],
+          ['label' => '조치 대상 없음', 'tone' => 'ok'],
+          ['label' => '미관리(에이전트 없음) · 점선 테두리', 'tone' => 'crit'],
+      ], ['inline' => true, 'caption' => '노드 왼쪽 띠 = 최고 심각도 · 알약 숫자 = 조치 대상 건수']);
+      ?>
     <?php endif; ?>
 
     <?php if ($unmatchedHosts): ?>
