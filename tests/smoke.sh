@@ -387,6 +387,20 @@ else
   no "awk JSON 빌더  (자세히: bash tests/agent_json_test.sh)"
 fi
 
+phase "에이전트 명령 처리"
+# --- 에이전트 명령 처리(폴링 → 지시문 → 수집 인자) ----------------------------
+# 중앙이 켠 무결성 검사가 노드에 도달하지 않아 **조용히** 무시된 사고가 있었다(명령은 done,
+# 화면은 미수행). 응답 파싱을 자동 업데이트되는 본체(--poll-once)로 옮겼으므로, 그 계약을
+# 여기서 고정한다 — jq 경로와 grep/sed 폴백 둘 다, 서버 없이(가짜 curl) 돈다.
+printf "
+[에이전트 명령]
+"
+if bash "$ROOT/tests/agent_poll_once_test.sh" >/dev/null 2>&1; then
+  ok "poll 지시문 계약 (verify_files 1/0/없음 · 정기수집 · 자동갱신)"
+else
+  no "poll 지시문 계약  (자세히: bash tests/agent_poll_once_test.sh)"
+fi
+
 phase "에이전트 패키지 출처"
 # --- 에이전트 패키지 출처 -----------------------------------------------------
 # 출처를 잘못 찍으면 중앙이 서드파티로 보고 "자동 판정 불가" 로 남긴다 — 억제도 조치 가능 여부도
