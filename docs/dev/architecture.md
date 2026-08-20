@@ -259,7 +259,7 @@ SBOM 과 pom.xml 에서 부모→자식 엣지를 뽑아 `tb_package_dependency`
 | 설계 결정 | 이유 |
 |---|---|
 | 엣지 유일성은 **해시 생성컬럼**(`edge_hash`) | 9개 컬럼 복합키가 InnoDB 인덱스 상한(3,072바이트)을 넘긴다. 접두 길이 방식은 접두가 겹치는 서로 다른 패키지를 같은 키로 묶어 정상 엣지를 조용히 버린다 |
-| SBOM 은 **파일명이 곧 대상**(`SBOM_DIR/*.json`) | 예약 이름 `_host`(`VG_SBOM_HOST_CID`)는 호스트 자신(`container_id = 0`), 그 외는 컨테이너 cid/이름. 매핑은 `vg_ingest_ctr_ids_with_host()` 한 곳에서만 한다 |
+| SBOM 은 **파일명이 곧 대상**(`SBOM_DIR/*.json`) | 예약 이름 `_host`(`VG_SBOM_HOST_CID`)는 호스트 자신(`container_id = 0`), 그 외는 **에이전트가 보고한 `cid` 문자열 그대로**여야 한다(이름으로 되짚는 경로는 없다 — `cid` 가 `tb_container` 의 자연키 축이고 이름은 유일하지 않다). 매핑은 `vg_ingest_ctr_ids_with_host()` 한 곳에서만 한다 |
 | 붙을 곳이 없는 SBOM 은 **버린다** | `error_log` + ingest 응답 `sbom_dropped` 로 드러낸다. 호스트로 떨어뜨리는 폴백은 두지 않는다 — 사라진 컨테이너의 SBOM 이 호스트 것으로 둔갑한다 |
 | 그래프 라이브러리(d3-force·cytoscape)를 **안 들인다** | 이 의존성 관계는 접이식 목록으로 충분하다(KISS). 이건 이 화면의 결정이지 차트 전반의 금지가 아니다 — 대시보드 차트는 `assets/vendor/chartjs`(로컬 서빙, `vg_chart()`)를 쓴다 |
 

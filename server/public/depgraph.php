@@ -17,127 +17,23 @@ declare(strict_types=1);
  *   uk_pkg_dep_edge 좌측 접두가 (scan_id, container_id)라 이 둘로 좁혀야 인덱스를 탄다.
  *   패키지명만으로 전역 검색하면 인덱스가 없어 풀스캔이 된다 — 그래서 패키지 카탈로그
  *   화면(package.php)이 아니라 자산 상세(host.php)에서 들어온다. 심각도 조회도 같은
- *   단위로 좁힌다(vg_depgraph_severity) — 이 화면은 조회 범위를 넓히지 않는다.
+ *   단위로 좁힌다(vg_deptree_severity) — 이 화면은 조회 범위를 넓히지 않는다.
  *
- * ── 왜 SVG 를 서버가 직접 그리나 ─────────────────────────────────────────
+ * ── 그림은 이 파일이 갖고 있지 않다 ──────────────────────────────────────
  *   중첩 박스(카드 안의 카드)로 그리던 것을 **가로 계층 트리**로 바꿨다. 깊이가 3단만
  *   넘어가도 무엇이 무엇에 매달렸는지 안 보이고 화면 폭을 계단식으로 먹었다.
- *   이 서버의 CSP 는 default-src 'self' 라 인라인 <script> 를 쓸 수 없으므로(charts.php
- *   vg_chart() 주석 참고) 좌표 계산은 PHP 가 하고 SVG 만 내보낸다 — vg_sev_donut() 과 같다.
- *   그래프 라이브러리(d3 등)는 들이지 않는다(YAGNI/KISS).
+ *   그 트리의 배치·SVG 출력은 **src/deptree.php** 가 소유한다 — 자산 상세의 '의존성' 탭이
+ *   같은 그림을 그리므로, 복사해 두면 한쪽만 고쳐진 채로 갈라진다(DRY).
+ *   이 파일에 남는 것은 이 화면만의 것뿐이다: 조회 단위 선택·대상 패키지 역추적 탭·
+ *   루트 페이지네이션·pom 직접선언 목록.
  */
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';       // vg_log_activity
 require_once __DIR__ . '/../src/packagedep.php';  // 조회·그래프 조립
+require_once __DIR__ . '/../src/deptree.php';     // 트리 배치·SVG 렌더(자산 상세 '의존성' 탭과 공유)
 vg_require_menu_any('assets', 'findings');   // 의존성 그래프: 자산 상세에서만 들어온다(자산 상세와 같은 범위)
-
-/* ── 가로 계층 트리의 배치 상수(SVG 논리좌표, px) ──────────────────────────
- *   화면 코드에 숫자를 박지 않고 여기 한곳에서만 정한다. 값을 바꾸면 트리 전체가 따라온다. */
-const VG_DEPTREE_ROOTS_PER_PAGE = 10;   // 한 페이지에 그리는 루트 수(?per_page 로 바꾼다)
-const VG_DEPTREE_NODE_W  = 280;         // 노드 박스 폭
-const VG_DEPTREE_NODE_H  = 30;          // 노드 박스 높이
-const VG_DEPTREE_GAP_X   = 56;          // 열(depth) 사이 가로 간격 = 엣지 곡선이 놓이는 폭
-const VG_DEPTREE_GAP_Y   = 8;           // 형제 사이 세로 간격
-const VG_DEPTREE_PAD     = 12;          // SVG 바깥 여백
-const VG_DEPTREE_CHAR_W  = 6.4;         // 12px 글자 한 칸의 근사폭 — 이름 말줄임 계산용
-const VG_DEPTREE_META_W  = 82;          // 노드 오른쪽 칸(버전/심각도 배지)의 폭
-
-/**
- * 이 조회 단위(스캔 × 컨테이너)의 취약점 → 그래프 노드 키별 **최고 심각도**.
- *   조회 범위를 넓히지 않는다: uq_find 좌측 접두가 (scan_id, container_id)라 엣지 조회와
- *   같은 단위로 좁혀야 인덱스를 탄다. 패키지명 전역 역추적은 인덱스가 없어 풀스캔이 된다.
- *   매칭은 vg_pkgdep_index() 의 이름+버전 색인을 그대로 쓴다 — **이름만으로는 맞추지 않는다**
- *   (같은 스캔에 alpine 의 openssl 과 rpm 의 openssl 이 함께 있으면 서로 물려받는다).
- */
-function vg_depgraph_severity(PDO $pdo, int $scanId, int $containerId, array $graph): array
-{
-    $st = $pdo->prepare(
-        'SELECT package_name, installed_version, severity
-           FROM tb_finding
-          WHERE scan_id = ? AND container_id = ? AND is_deleted = 0
-          LIMIT ' . VG_PKGDEP_ROLLUP_FINDING_MAX
-    );
-    $st->execute([$scanId, $containerId]);
-    $rows = $st->fetchAll();
-    if (!$rows) { return []; }
-
-    $idx = vg_pkgdep_index($graph);
-    $out = [];
-    foreach ($rows as $r) {
-        $name = (string) $r['package_name'];
-        $ver  = (string) $r['installed_version'];
-        $sev  = (string) $r['severity'];
-        $keys = $idx['by_name_ver'][$name . '|' . $ver]
-            ?? ($idx['by_name_norm'][$name . '|' . vg_pkgdep_version_norm($ver)] ?? []);
-        foreach ($keys as $k) {
-            if (!isset($out[$k]) || vg_pkgdep_sev_rank($sev) < vg_pkgdep_sev_rank($out[$k])) {
-                $out[$k] = $sev;
-            }
-        }
-    }
-    return $out;
-}
-
-/**
- * 가로 계층 트리 배치 — 루트 하나를 좌(부모)→우(자식) 열로 눕히고 형제는 위→아래로 쌓는다.
- *   고전적인 tidy tree: **리프를 순서대로 쌓고, 부모의 y 는 자식들 y 의 중앙**에 둔다.
- *   반환: ['nodes' => [['key','x','y','hidden'], …], 'edges' => [[x1,y1,x2,y2], …],
- *          'w' => SVG 폭, 'h' => SVG 높이, 'drawn' => 그린 노드 수]
- *   $budget 은 화면 전체가 나눠 쓰는 남은 노드 수다(참조로 깎는다) — 루트가 수십 개인
- *   자산에서 SVG 하나가 페이지를 통째로 먹지 않게 한다. 바닥나면 그 아래는 hidden 으로만 센다.
- *   $seen 은 **경로 단위** 방문 집합이다(순환 방지) — 전역으로 두면 여러 부모가 공유하는
- *   라이브러리가 처음 만난 가지에서만 펼쳐져 다른 가지가 통째로 비어 보인다.
- */
-function vg_deptree_layout(array $graph, string $root, int &$budget): array
-{
-    $nodes = [];
-    $edges = [];
-    $cursorY = VG_DEPTREE_PAD;   // 다음 리프가 놓일 위쪽 좌표
-    $maxDepth = 0;
-
-    $place = function (string $key, int $depth, array $seen) use (
-        &$place, $graph, &$nodes, &$edges, &$cursorY, &$maxDepth, &$budget
-    ): ?float {
-        if ($budget <= 0) { return null; }
-        $budget--;
-        if ($depth > $maxDepth) { $maxDepth = $depth; }
-
-        $kids = vg_pkgdep_children($graph, $key);
-        $seen[$key] = true;
-        $childY = [];
-        $hidden = 0;
-        if ($kids && $depth >= VG_PKGDEP_DEPTH_MAX) {
-            $hidden = count($kids);          // 깊이 상한 — 여기서 접는다
-        } else {
-            foreach ($kids as $k) {
-                if (isset($seen[$k])) { $hidden++; continue; }   // 순환 참조라 더 펴지 않는다
-                $y = $place($k, $depth + 1, $seen);
-                if ($y === null) { $hidden++; continue; }        // 노드 예산 소진
-                $childY[] = $y;
-            }
-        }
-
-        if ($childY) {
-            $y = ($childY[0] + $childY[count($childY) - 1]) / 2;
-        } else {
-            $y = $cursorY + VG_DEPTREE_NODE_H / 2;
-            $cursorY += VG_DEPTREE_NODE_H + VG_DEPTREE_GAP_Y;
-        }
-        $x = VG_DEPTREE_PAD + $depth * (VG_DEPTREE_NODE_W + VG_DEPTREE_GAP_X);
-        $nodes[] = ['key' => $key, 'x' => $x, 'y' => $y, 'hidden' => $hidden];
-        foreach ($childY as $cy) {
-            $edges[] = [$x + VG_DEPTREE_NODE_W, $y, $x + VG_DEPTREE_NODE_W + VG_DEPTREE_GAP_X, $cy];
-        }
-        return $y;
-    };
-    $place($root, 0, []);
-
-    $h = max($cursorY - VG_DEPTREE_GAP_Y + VG_DEPTREE_PAD, VG_DEPTREE_NODE_H + VG_DEPTREE_PAD * 2);
-    $w = VG_DEPTREE_PAD * 2 + ($maxDepth + 1) * VG_DEPTREE_NODE_W + $maxDepth * VG_DEPTREE_GAP_X;
-    return ['nodes' => $nodes, 'edges' => $edges, 'w' => (int) $w, 'h' => (int) ceil($h), 'drawn' => count($nodes)];
-}
 
 $hostId = (int) ($_GET['id'] ?? 0);
 $cid    = isset($_GET['cid']) ? (int) $_GET['cid'] : -1;
@@ -177,7 +73,7 @@ try {
         if ($groups) {
             $load  = vg_pkgdep_load($pdo, $scanId, $cid);
             $graph = vg_pkgdep_build($load['edges']);
-            $sevOf = vg_depgraph_severity($pdo, $scanId, $cid, $graph);
+            $sevOf = vg_deptree_severity($pdo, $scanId, $cid, $graph);
 
             if ($mgr !== '' && $pkg !== '' && $ver !== '') {
                 $key = vg_pkgdep_key($mgr, $pkg, $ver);
@@ -200,34 +96,25 @@ try {
 $tabs = $target !== '' ? ['from', 'to', 'tree'] : ['tree'];
 if (!in_array($tab, $tabs, true)) { $tab = $tabs[0]; }
 
-/** 이 화면 안에서만 쓰는 링크 조립 — 대상 패키지·컨테이너·탭을 한곳에서 만든다(DRY). */
+/** 이 화면의 링크 조립 — 자산 상세의 '의존성' 탭도 같은 URL 을 만드므로 정본은 deptree.php 다. */
 $linkFor = function (array $over) use ($hostId, $cid): string {
-    $q = ['id' => $hostId, 'cid' => $cid] + $over;
-    $parts = [];
-    foreach ($q as $k => $v) {
-        if ($v === null || $v === '') { continue; }
-        $parts[] = urlencode((string) $k) . '=' . urlencode((string) $v);
-    }
-    return '/depgraph.php?' . implode('&', $parts);
+    return vg_deptree_url($hostId, $cid, $over);
 };
 // $graph['roots'] 를 노드마다 in_array() 로 선형 탐색하면 O(N·R) 이 된다(목록 라벨·트리 노드
 // 양쪽에서 노드마다 최대 2회) — 해시화해서 isset() 으로 본다.
 $rootSet = $graph !== null ? array_fill_keys($graph['roots'], true) : [];
-/** 노드의 표시 역할(루트/대상/기타) 판정을 한곳으로 모은다 — 목록 라벨과 SVG 노드가 이걸 쓴다. */
-$roleOf = function (string $key) use ($rootSet, $target): string {
-    if (isset($rootSet[$key])) { return 'root'; }
-    if ($key === $target) { return 'target'; }
-    return 'other';
-};
+/* 트리 렌더가 받는 한 벌 — 노드 색(심각도)·역할 판정(루트/대상)·노드 링크.
+ *   목록 라벨(vg_deptree_role)과 SVG 노드가 **같은 배열**을 보므로 판정이 갈리지 않는다. */
+$treeCtx = ['sev' => $sevOf, 'roots' => $rootSet, 'target' => $target, 'link' => $linkFor];
 /** 노드 키 → 라벨(이름 @ 버전 + 관리자). 경로 목록·pom 목록처럼 SVG 가 아닌 자리에서 쓴다. */
-$nodeLabel = function (string $key) use ($linkFor, $target, $roleOf): string {
+$nodeLabel = function (string $key) use ($linkFor, $target, $treeCtx): string {
     $p = vg_pkgdep_parts($key);
     $html = '<a href="' . vg_h($linkFor([
         'mgr' => $p['manager'], 'name' => $p['name'], 'ver' => $p['version'], 'tab' => 'from',
     ])) . '">' . vg_h($p['name']) . '</a>'
         . ' <span class="why">' . vg_h($p['version']) . '</span>'
         . ' <code>' . vg_h($p['manager']) . '</code>';
-    if ($roleOf($key) === 'root') { $html .= ' ' . vg_badge('루트', 'ok'); }
+    if (vg_deptree_role($key, $treeCtx) === 'root') { $html .= ' ' . vg_badge('루트', 'ok'); }
     if ($key === $target) { $html .= ' ' . vg_badge('지금 보는 패키지', 'med'); }
     return $html;
 };
@@ -318,73 +205,10 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   <?php endif; ?>
 
   <?php
-  /**
-   * 노드 한 칸(SVG <a> 안의 rect·text) — 왼쪽 악센트 바 + 이름(왼쪽) + 버전/심각도(오른쪽)만.
-   *   악센트 색: 취약점이 있으면 그 심각도 톤, 루트면 --accent, 그 외는 --line-2.
-   *   관리자·잘린 전체 이름처럼 칸에 안 들어가는 사실은 <title>(툴팁)로 넘긴다.
-   *   좌표·크기는 SVG 속성이라 CSS 가 가질 수 없다. 색은 전부 class 로만 준다(app.css 소유).
-   */
-  $svgNode = function (array $n) use ($roleOf, $linkFor, $sevOf): string {
-      $p    = vg_pkgdep_parts($n['key']);
-      $sev  = (string) ($sevOf[$n['key']] ?? '');
-      $role = $roleOf($n['key']);
-      $tone = $sev !== '' ? vg_sev_tone($sev) : ($role === 'root' ? 'info' : 'muted');
-
-      $x   = (float) $n['x'];
-      $y   = round((float) $n['y'], 1);
-      $top = round($y - VG_DEPTREE_NODE_H / 2, 1);
-
-      // 오른쪽 칸: 취약점이 있으면 심각도 배지, 없으면 버전.
-      $rightW = $sev !== '' ? strlen($sev) * 5.6 + 14 : VG_DEPTREE_META_W;
-      $avail  = VG_DEPTREE_NODE_W - 12 - 8 - $rightW - 10;
-      $name   = mb_strimwidth($p['name'], 0, max(4, (int) ($avail / VG_DEPTREE_CHAR_W)), '…');
-
-      $href = $linkFor(['mgr' => $p['manager'], 'name' => $p['name'], 'ver' => $p['version'], 'tab' => 'from']);
-      $svg  = '<a href="' . vg_h($href) . '" class="deptree__node">'
-          . '<title>' . vg_h($p['name'] . ' ' . $p['version'] . ' · ' . $p['manager']
-              . ($sev !== '' ? ' · ' . $sev : '')) . '</title>'
-          . '<rect class="deptree__box' . ($role === 'target' ? ' deptree__box--on' : '') . '"'
-          . ' x="' . $x . '" y="' . $top . '" width="' . VG_DEPTREE_NODE_W . '" height="' . VG_DEPTREE_NODE_H . '" rx="7"/>'
-          . '<rect class="deptree__accent tone-' . $tone . '"'
-          . ' x="' . ($x + 1.5) . '" y="' . ($top + 4) . '" width="3.5" height="' . (VG_DEPTREE_NODE_H - 8) . '" rx="2"/>'
-          . '<text class="deptree__name" x="' . ($x + 12) . '" y="' . $y . '">' . vg_h($name) . '</text>';
-
-      if ($sev !== '') {
-          $px = round($x + VG_DEPTREE_NODE_W - 10 - $rightW, 1);
-          $svg .= '<rect class="deptree__pill tone-' . $tone . '" x="' . $px . '" y="' . round($y - 8, 1) . '"'
-              . ' width="' . round($rightW, 1) . '" height="16" rx="8"/>'
-              . '<text class="deptree__pilltext tone-' . $tone . '" x="' . round($px + $rightW / 2, 1) . '" y="' . $y . '">'
-              . vg_h($sev) . '</text>';
-      } else {
-          $svg .= '<text class="deptree__meta" x="' . ($x + VG_DEPTREE_NODE_W - 10) . '" y="' . $y . '">'
-              . vg_h(mb_strimwidth($p['version'], 0, (int) (VG_DEPTREE_META_W / VG_DEPTREE_CHAR_W), '…')) . '</text>';
-      }
-      // 접힌 자식(깊이·노드 상한, 순환)이 있으면 그 수를 노드 오른쪽에 남긴다 — 조용히 자르지 않는다.
-      if ($n['hidden'] > 0) {
-          $svg .= '<text class="deptree__more" x="' . ($x + VG_DEPTREE_NODE_W + 8) . '" y="' . $y . '">+'
-              . (int) $n['hidden'] . '</text>';
-      }
-      return $svg . '</a>';
-  };
-  /**
-   * 트리 한 장 — 좌표는 vg_deptree_layout() 이 계산하고 여기서는 그리기만 한다(SRP).
-   *   부모→자식은 3차 베지에로 잇는다(두 열의 가운데를 제어점으로 잡아 좌우로 흐르는 곡선).
-   *   SVG 폭은 노드가 정하므로 늘이지 않는다 — 넘치면 .deptree 안에서만 가로로 스크롤한다.
-   */
-  $drawTree = function (string $root) use ($graph, $svgNode, &$nodeBudget): void {
-      $l = vg_deptree_layout($graph, $root, $nodeBudget);
-      $p = vg_pkgdep_parts($root);
-      echo '<div class="deptree">';
-      echo '<svg class="deptree__svg" width="' . $l['w'] . '" height="' . $l['h'] . '"'
-          . ' viewBox="0 0 ' . $l['w'] . ' ' . $l['h'] . '" role="img"'
-          . ' aria-label="' . vg_h($p['name'] . ' 의존성 트리 · 노드 ' . $l['drawn'] . '개') . '">';
-      foreach ($l['edges'] as [$x1, $y1, $x2, $y2]) {
-          $mid = round(($x1 + $x2) / 2, 1);
-          echo '<path class="deptree__edge" d="M' . $x1 . ',' . round($y1, 1) . ' C' . $mid . ',' . round($y1, 1)
-              . ' ' . $mid . ',' . round($y2, 1) . ' ' . $x2 . ',' . round($y2, 1) . '"/>';
-      }
-      foreach ($l['nodes'] as $n) { echo $svgNode($n); }
-      echo '</svg></div>';
+  /* 트리 한 장은 deptree.php 가 그린다(자산 상세 '의존성' 탭과 같은 함수). 이 화면은
+   *   **어느 루트를 그릴지**와 남은 노드 예산만 정한다. */
+  $drawTree = function (string $root) use ($graph, $treeCtx, &$nodeBudget): void {
+      vg_deptree_render($graph, $root, $nodeBudget, $treeCtx);
   };
   $nodeBudget = VG_PKGDEP_NODE_MAX;   // 이 화면 전체가 나눠 쓰는 노드 예산
   ?>
@@ -424,6 +248,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
     if (!vg_pkgdep_children($graph, $target)) {
         vg_empty(['icon' => 'package', 'title' => '이 패키지가 끌어오는 의존성이 없습니다(말단 노드).']);
     } else {
+        vg_deptree_legend();
         $drawTree($target);
     }
     ?>
@@ -464,6 +289,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
     <strong>전체 트리</strong>
     <span class="why">루트 <?= number_format(count($rootsAll)) ?>개 중 <?= number_format($rootsShown) ?>개 표시
       · 노드 <?= number_format(count($graph['nodes'])) ?>개</span>
+    <?php vg_deptree_legend(); ?>
     <?php if ($rootsSkipped > 0): ?>
       <span class="why"><?= vg_badge('노드 상한(' . number_format(VG_PKGDEP_NODE_MAX) . '개)에서 잘림 · 이 페이지의 나머지 루트 ' . number_format($rootsSkipped) . '개 미표시', 'warn') ?></span>
     <?php endif; ?>

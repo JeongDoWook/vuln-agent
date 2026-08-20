@@ -96,7 +96,8 @@ vg_header('사용자', 'users');
 
   vg_table(
       [
-          ['label' => 'ID'],
+          // 숫자 열은 우측정렬이 전 화면 규약이다(CVSS·EPSS·건수와 같다).
+          ['label' => 'ID', 'align' => 'right', 'width' => '5rem'],
           ['label' => '아이디'],
           ['label' => '역할'],
           ['label' => '생성', 'nowrap' => true],

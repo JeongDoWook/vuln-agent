@@ -23,6 +23,7 @@ require_once __DIR__ . '/../src/assetgrade_history.php'; // 시스템 제안 관
 require_once __DIR__ . '/../src/asset_grade_review.php'; // 단일 자산의 구조화된 사람 검토 정보
 require_once __DIR__ . '/../src/account_inventory.php';   // 계정 인벤토리 판정(vg_account_judgments)
 require_once __DIR__ . '/../src/packagedep.php';   // 의존성 그래프 — 취약점의 직접/전이 판정
+require_once __DIR__ . '/../src/deptree.php';      // 의존성 탭의 트리 배치·SVG(depgraph.php 와 공유)
 require_once __DIR__ . '/../src/suppression.php';  // 억제 근거 겹 분류·원근거 조회·재시작 필요 목록
 /* 자산 상세의 속을 책임별로 나눠 둔 것 — 식별부 조회 / 히어로·KPI 집계 / 탭별 조회 /
  *   묶음·의존성 / 등급 카드 / 탭 렌더 디스패처.
@@ -86,6 +87,13 @@ $rows = []; $exposures = []; $sevByScan = []; $resourceScans = []; $restartRows 
 $findingStatuses = [];   // 취약점 탭 행들의 조치 상태(자연키 → 행). 없으면 미조치로 읽는다.
 $accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0; $containerTotal = 0;
 $sevByContainer = [];   // [container_id => [severity => n]] — 컨테이너 카드의 심각도 분포
+/* 의존성 탭이 쓰는 값 — **그 탭을 눌렀을 때만** 채워진다(자산 상세는 자주 열리는 화면이라
+ *   다른 탭에서 엣지 조회가 함께 돌면 안 된다). 조회 단위는 (스캔 × 컨테이너) 하나다. */
+$depUnits = [];        // [container_id => ['edges'=>n,'label'=>…]] — 엣지가 있는 단위만
+$depUnit  = 0;         // 트리를 그리는 단위. 0 = 호스트 자신
+$depLoad  = ['edges' => [], 'loaded' => 0, 'truncated' => false];
+$depGraph = null;      // vg_pkgdep_build() 결과
+$depSev   = [];        // 노드 키 => 최고 심각도(노드 색의 근거)
 // 전이 의존성 판정 + 손댈 대상(부모)별 묶음. 엣지가 없는 자산에선 이 기본값 그대로다.
 $depOrigins = ['origins' => [], 'parents' => [], 'finding_total' => 0, 'finding_truncated' => false,
                'edge_truncated' => false, 'path_truncated' => false];
@@ -145,6 +153,9 @@ try {
 
         // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
         $validTabs = ['vuln', 'packages', 'containers', 'runtime', 'cce', 'accounts'];
+        /* 의존성 탭은 **엣지가 있는 자산에만** 존재한다 — 대다수 자산은 언어 패키지 SBOM 이
+         *   없어 빈 탭만 남는다. 없는데 ?tab=depgraph 로 들어오면 아래에서 'vuln' 으로 떨어진다. */
+        if ($depEdgeTotal > 0) { $validTabs[] = 'depgraph'; }
         if ($suppressedCount > 0) { $validTabs[] = 'suppressed'; }
         $validTabs[] = 'scans';
         // 설정 탭(수집 제어·자산 등급·자산 삭제) — 조회할 목록이 없어 아래 데이터 로딩에 분기가 없다.
@@ -189,6 +200,41 @@ try {
             //   최신 스캔이 아니라 **마지막 무결성 명령**을 본다 — 무결성은 명령으로만 켜지므로
             //   그 뒤 정기수집이 한 번이라도 돌면 최신 스캔의 integrity_checked 는 정상적으로 0 이다.
             $verifySupport = vg_host_load_verify_support($pdo, $hostId);
+
+        } elseif ($tab === 'depgraph') {
+            /* 의존성 트리 — 조회 단위를 (스캔 × 컨테이너) 하나로 좁힌다. uk_pkg_dep_edge 의
+             *   좌측 접두가 그 둘이라 여기서 범위를 넓히면 인덱스를 못 탄다(패키지명에는
+             *   인덱스가 없어 전역 역추적은 풀스캔이다). 기본은 호스트 자신(0)이고, 호스트에
+             *   엣지가 없으면 엣지가 있는 첫 단위로 떨어진다 — 화면이 어느 단위인지 밝힌다.
+             *   다른 단위·대상 패키지 역추적은 depgraph.php 가 맡는다(탭은 넘기기만 한다). */
+            $depUnits = vg_pkgdep_containers($pdo, $sid);
+            if ($depUnits) {
+                $depUnit  = isset($depUnits[0]) ? 0 : (int) array_key_first($depUnits);
+                $depLoad  = vg_pkgdep_load($pdo, $sid, $depUnit);
+                $depGraph = vg_pkgdep_build($depLoad['edges']);
+                /* 호스트 단위에 루트가 없는 흔한 경우(pom.xml 직접 선언만 있는 자산)에는 그릴
+                 *   트리가 없다. 볼 게 있는데 빈 탭을 보여주는 대신 **엣지가 제일 많은 단위**로
+                 *   한 번 옮겨 간다 — 범위는 여전히 단위 하나다(인덱스를 그대로 탄다). */
+                if (!$depGraph['roots'] && count($depUnits) > 1) {
+                    $bestUnit = $depUnit; $bestEdges = -1;
+                    foreach ($depUnits as $uid => $u) {
+                        if ((int) $u['edges'] > $bestEdges) { $bestUnit = (int) $uid; $bestEdges = (int) $u['edges']; }
+                    }
+                    if ($bestUnit !== $depUnit) {
+                        $depUnit  = $bestUnit;
+                        $depLoad  = vg_pkgdep_load($pdo, $sid, $depUnit);
+                        $depGraph = vg_pkgdep_build($depLoad['edges']);
+                    }
+                }
+                $depSev   = vg_deptree_severity($pdo, $sid, $depUnit, $depGraph);
+                $total    = count($depGraph['roots']);   // 루트 단위로 페이지를 나눈다
+                // 어느 자산의 의존성 구조를 누가 봤는지는 그 자체로 감사 대상이다(원칙 7) —
+                //   depgraph.php 화면과 같은 행위이므로 같은 action 으로 남긴다.
+                vg_log_activity($pdo, 'HOST', $hostId, 'view_depgraph',
+                    '패키지 의존성 그래프 열람: ' . (string) ($host['fqdn'] ?? ''),
+                    ['container_id' => $depUnit, 'edges' => $depLoad['loaded']],
+                    subject: (string) ($host['fqdn'] ?? ''), action: 'READ');
+            }
         } elseif ($tab === 'containers') {
             ['total' => $total, 'rows' => $rows, 'sevByContainer' => $sevByContainer]
                 = vg_host_load_containers_tab($pdo, $sid, $perPage, $offset, $q);
@@ -275,6 +321,9 @@ vg_alert($agentErr);
 
     // 탭 줄 정의 — 순서·라벨은 host/tabs.php 가 갖는다(건수 배지는 그리지 않는다).
     $tabDefs = vg_host_tab_defs();
+    /* 의존성 탭은 볼 것이 있는 자산에만 세운다($validTabs 와 같은 기준) — 엣지가 없는 자산에
+     *   빈 탭을 남기면 탭 줄만 길어지고 누르면 아무것도 없다. */
+    if ($depEdgeTotal <= 0) { unset($tabDefs['depgraph']); }
 ?>
   <?php vg_host_render_hero([
       'host' => $host, 'scan' => $scan, 'pollAge' => $pollAge, 'scanAge' => $scanAge,
@@ -322,6 +371,8 @@ vg_alert($agentErr);
       'missingStageCodes' => $missingStageCodes,
       // 활성 탭에서만 채워지는 값
       'restartRows' => $restartRows, 'depOrigins' => $depOrigins, 'pkgRollup' => $pkgRollup,
+      'depUnits' => $depUnits, 'depUnit' => $depUnit, 'depLoad' => $depLoad,
+      'depGraph' => $depGraph, 'depSev' => $depSev,
       'findingStatuses' => $findingStatuses, 'integrityRows' => $integrityRows,
       'verifySupport' => $verifySupport,
       'sevByContainer' => $sevByContainer, 'sevByScan' => $sevByScan, 'resourceScans' => $resourceScans,

@@ -85,13 +85,11 @@ function vg_sbom_links(string $fqdn, string $cid = '', int $scanId = 0, bool $wi
             . '</div></div></div>';
         return;
     }
-    // 도착지(sbom.php 자신)에선 "부품표 보기"가 no-op 이라 빼고, 다운로드 링크를 주 버튼으로.
-    echo '<div class="card"><strong>SBOM</strong>'
-        . '<div class="card__body">'
-        . '<div class="actions">'
-        . '<a class="btn btn--sm btn--primary" href="' . $cycloneHref . '">CycloneDX 1.5 다운로드</a>'
-        . '<a class="btn btn--sm btn--ghost" href="' . $spdxHref . '">SPDX 2.3 다운로드</a>'
-        . '</div></div></div>';
+    /* 도착지(sbom.php 자신)에선 "부품표 보기"가 no-op 이라 빼고, 다운로드 링크를 주 버튼으로.
+     *   카드로 감싸지 않는다 — 버튼 둘뿐인데 카드를 두면 본문 폭 1611px 중 17% 만 쓰는
+     *   92px 짜리 띠가 페이지 끝에 하나 더 생긴다(실측). 호출부가 제목 줄의 액션 자리에 놓는다. */
+    echo '<a class="btn btn--sm btn--primary" href="' . $cycloneHref . '">CycloneDX 1.5 다운로드</a>'
+        . '<a class="btn btn--sm btn--ghost" href="' . $spdxHref . '">SPDX 2.3 다운로드</a>';
 }
 
 /** sbom.php 링크의 범위 규약(host·cid·scan_id)을 한 곳에 둔다 — 위 카드와 아래 버튼이 공유한다. */
