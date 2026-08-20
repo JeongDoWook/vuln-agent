@@ -111,7 +111,7 @@ dev(메인 트리 / 워크트리)·prod 가 각각 어떤 compose 레이어를 �
 이미 쌓여 있는 수집물이 통제 4종(패치관리 / 정보자산 식별 / 보안시스템 운영 / 계정 관리)으로 집계되고,
 판정 어휘 4종(준수 / 판정 불가 / 부분준수 / 미준수)을 거쳐 하루 1건 `tb_compliance_snapshot` 에 증적으로
 남기까지다. 화면(`/compliance.php`)과 스케줄러가 같은 함수·같은 기준값(`tb_setting`)을 쓴다는 것도 이
-그림의 요점이다. 판정 규칙은 [`architecture.md` §2.11](../../dev/architecture.md#211-컴플라이언스-판정-kisa-isms-p--iso-27001).
+그림의 요점이다. 판정 규칙은 [`architecture.md` §2.10](../../dev/architecture.md#210-컴플라이언스-판정-kisa-isms-p--iso-27001).
 
 [![컴플라이언스 판정](컴플라이언스판정.svg)](컴플라이언스판정.svg)
 
