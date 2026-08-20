@@ -20,7 +20,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/packagedep.php';   // 그래프 구조·키 형식의 정본
-require_once __DIR__ . '/view.php';         // vg_h · vg_sev_tone · vg_legend(범례 마크업의 정본)
+require_once __DIR__ . '/view.php';         // vg_h · vg_sev_tone
 
 /* ── 가로 계층 트리의 배치 상수(SVG 논리좌표, px) ──────────────────────────
  *   화면 코드에 숫자를 박지 않고 여기 한곳에서만 정한다. 값을 바꾸면 두 화면이 함께 따라온다. */
@@ -251,19 +251,4 @@ function vg_deptree_render(array $graph, string $root, int &$budget, array $ctx)
     }
     foreach ($l['nodes'] as $n) { echo vg_deptree_node_svg($n, $ctx); }
     echo '</svg></div>';
-}
-
-/**
- * 트리 위 한 줄 범례 — "노드 색이 무슨 뜻인가". 색을 정보로 쓰기로 한 이상 그 뜻을 밝힌다.
- *   마크업은 공용 vg_legend() 를 그대로 쓴다(새 CSS 없음). 칠하는 등급만 담는다 —
- *   범례에 없는 색(중립 박스)은 "조치 대상이 아님" 이라는 뜻이다.
- */
-function vg_deptree_legend(): void
-{
-    $labels = ['crit' => 'CRITICAL', 'high' => 'HIGH', 'med' => 'MEDIUM'];
-    $items = [];
-    foreach (VG_DEPTREE_FILL_TONES as $tone) {
-        $items[] = ['label' => $labels[$tone] ?? $tone, 'tone' => $tone];
-    }
-    vg_legend($items, ['inline' => true, 'caption' => '노드 색']);
 }

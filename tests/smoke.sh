@@ -952,7 +952,11 @@ assert_contains "$ctrdep" 'class="deptree__svg"' "의존성을 가로 계층 트
 assert_contains "$ctrdep" 'class="deptree__edge ' "부모→자식 연결선(곡선 엣지)이 실제로 그려진다"
 # 색은 정보다 — 깊이별 엣지 클래스와 등급 틴트(조치 대상만)가 실제로 붙는지 고정한다.
 assert_contains "$ctrdep" 'deptree__edge--d0' "엣지 농도가 깊이별로 갈린다"
-assert_contains "$ctrdep" 'class="legend legend--inline"' "노드 색이 무슨 뜻인지 범례로 밝힌다"
+# 범례는 걷어냈다(자리만 먹었다) — 대신 **노드 자신이** 색 말고도 말해야 한다: 등급 배지의
+# 글자(deptree__pilltext, 취약점이 있는 노드에만)와 모든 노드에 붙는 <title> 툴팁이다.
+# 픽스처의 의존성 트리에는 매칭되는 취약점이 없어 배지가 안 나오므로, 항상 있는 쪽을 고정한다.
+assert_contains "$ctrdep" '<title>myco-utf8 0.9.1 · npm</title>' "노드마다 이름·버전·관리자 툴팁(등급이 있으면 여기 함께 실린다)"
+assert_not_contains "$ctrdep" '노드 색' "트리 위 범례 블록은 걷어냈다"
 # 역추적 — 전이 의존에서 루트까지의 경로가 나와야 "무엇이 끌어왔나" 에 답이 된다.
 frombody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID&cid=$DEP_CID&mgr=npm&name=myco-utf8&ver=0.9.1&tab=from")
 assert_contains "$frombody" '이 패키지를 끌어온 경로' "역추적 탭 표시"
