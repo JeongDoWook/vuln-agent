@@ -6,16 +6,27 @@
  *     $scan $hostId $hostOptions $q $type
  */
 ?>
-  <div class="cards">
+  <div class="card">
+    <strong>노출 범위 구성</strong>
+    <span class="why">조각·항목을 누르면 그 범위만 걸러 봅니다(다시 누르면 해제).</span>
+    <div class="card__body">
     <?php
-    // 범위 카드가 scope 필터를 토글한다. 톤은 host.php 의 $scopeTone 과 같은 매핑이다.
-    $scopeTone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'BOUND' => 'med', 'FILTERED' => 'muted', 'LOCAL' => 'muted', '-' => 'muted'];
-    foreach ($scopeOptions as $sc): ?>
-      <a href="<?= vg_h(vg_qs(['scope' => $scope === $sc ? '' : $sc, 'page' => 1])) ?>"
-         class="kpi kpi--sm tone-<?= $scopeTone[$sc] ?><?= $scope === $sc ? ' is-selected' : '' ?>">
-        <b><?= number_format((int) ($scopeCounts[$sc] ?? 0)) ?></b><span><?= vg_h(vg_scope_label($sc)) ?></span>
-      </a>
-    <?php endforeach; ?>
+    // 톤은 host.php 의 $scopeTone 과 같은 매핑이다(같은 값이 화면마다 다른 색이 되지 않게).
+    $scopeTone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'BOUND' => 'med',
+                  'FILTERED' => 'muted', 'LOCAL' => 'muted', '-' => 'muted'];
+    $scopeSegments = [];
+    foreach ($scopeOptions as $sc) {
+        $scopeSegments[] = [
+            'label'    => vg_scope_label($sc),
+            'value'    => (int) ($scopeCounts[$sc] ?? 0),
+            'tone'     => $scopeTone[$sc] ?? 'muted',
+            'href'     => vg_qs(['scope' => $scope === $sc ? '' : $sc, 'page' => 1]),
+            'selected' => $scope === $sc,
+        ];
+    }
+    vg_donut_kpi('노출 범위 구성', $scopeSegments, ['center_label' => '노출 전체']);
+    ?>
+    </div>
   </div>
 
   <?php

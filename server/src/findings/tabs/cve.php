@@ -63,23 +63,32 @@
     ], ['compact' => true]); ?>
   </section>
 
-  <div class="cards">
-    <?php foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s):
-      // 카드 크기·글자 크기는 CSS 가 전 등급에 똑같이 준다 — 그래서 자릿수가 많은 등급이 무조건
-      //   커 보인다(실측: 'LOW 34184' 가 'CRITICAL 1' 보다 크게 읽혔다). 마크업에서 할 수 있는
-      //   보정은 둘이다: (1) 천단위 구분으로 자릿수를 눈에 띄게 끊고(대시보드가 이미 '34,184' 로
-      //   쓴다 — 같은 값이 화면마다 다르게 표기되지 않게 통일), (2) 0건인 등급은 등급색을 걷어
-      //   중립(muted)으로 낮춘다. 0건은 "지금 볼 것이 없다" 는 뜻이라 색을 가져갈 이유가 없다.
-      //   새 클래스(.kpi--zero 등)를 만들지 않는 이유: 색은 app.css 가 소유하고 지금 다른 작업이
-      //   그 파일을 고치고 있다 — 이미 있는 tone-muted 로 같은 결과를 낸다.
-      $zero = ((int) $counts[$s]) === 0;
+  <div class="card">
+    <strong>등급 구성</strong>
+    <span class="why">조각·항목을 누르면 그 등급만 걸러 봅니다(다시 누르면 해제).</span>
+    <div class="card__body">
+    <?php
+    /* 예전엔 등급 네 칸을 숫자 카드로 나열했다. 카드 크기·글자 크기가 전 등급에 똑같이
+     *   주어져서 자릿수가 많은 등급이 무조건 커 보였다(실측: 'LOW 34,184' 가 'CRITICAL 1'
+     *   보다 크게 읽혔다). 도넛은 **면적이 곧 건수**라 그 착시가 구조적으로 사라지고,
+     *   서열은 색(LOW 는 채도 없는 회청)이 그대로 지킨다.
+     * 0건인 등급도 목록에는 남는다 — 0건은 "안전"이 아니라 "지금 볼 것이 없음"이고,
+     *   그 자리가 사라지면 네 등급이 다 있는지조차 알 수 없다. */
+    $sevSegments = [];
+    foreach (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as $sevKey) {
+        $sevSegments[] = [
+            'label'    => $sevKey,
+            'value'    => (int) $counts[$sevKey],
+            'tone'     => vg_sev_tone($sevKey),
+            'href'     => vg_qs(['sev' => $sev === $sevKey ? '' : $sevKey, 'page' => 1]),
+            'selected' => $sev === $sevKey,
+            'title'    => $sevKey . ' ' . number_format((int) $counts[$sevKey]) . '건'
+                        . ($sev === $sevKey ? ' · 선택 해제' : ' 만 보기'),
+        ];
+    }
+    vg_donut_kpi('등급 구성', $sevSegments, ['center_label' => '탐지 전체']);
     ?>
-      <a href="<?= vg_h(vg_qs(['sev' => $sev === $s ? '' : $s, 'page' => 1])) ?>"
-         class="kpi kpi--sm tone-<?= $zero ? 'muted' : vg_sev_tone($s) ?><?= $sev === $s ? ' is-selected' : '' ?>"
-         title="<?= vg_h($s . ' ' . number_format((int) $counts[$s]) . '건' . ($sev === $s ? ' · 선택 해제' : ' 만 보기')) ?>">
-        <b><?= number_format((int) $counts[$s]) ?></b><span><?= $s ?></span>
-      </a>
-    <?php endforeach; ?>
+    </div>
   </div>
 
   <?php

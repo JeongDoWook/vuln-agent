@@ -1,7 +1,17 @@
 @startuml 사이트맵
 ' vuln-agent §6 웹 화면 구성 (사이트맵 · 인증)
 ' 원본: docs/dev/architecture.md §6 (mermaid flowchart TD)
+'
+' 배치: 묶음(package)을 옆으로 늘어놓으면 viewBox 폭이 4489 까지 벌어져
+' 문서 본문 폭(약 900px)에 인라인될 때 글자가 3px 로 줄어 못 읽는다.
+' → 묶음 안을 보이지 않는 배치용 선으로 1~2열까지 접고, 묶음끼리는 위아래로 쌓는다.
+'   업무·데이터는 서로 오가는 링크(PKG→NOFIX, CCED→HOST …)가 있어 같은 층에 걸치므로
+'   나란히 놓일 수밖에 없다 — 그래서 이 둘만 좌우로 두고 각각을 좁게 접었다.
+'   긴 라벨도 손으로 줄바꿈해 박스 폭을 깎는다(뜻은 그대로).
 
+skinparam wrapWidth 230
+skinparam nodesep 4
+skinparam ranksep 16
 skinparam rectangle {
     BackgroundColor #ffffff
     BorderColor #6e7681
@@ -9,144 +19,146 @@ skinparam rectangle {
 skinparam shadowing false
 
 rectangle "/login.php\n세션 로그인 · CSRF" as LOGIN #1f6feb
-rectangle "/ 대시보드\n호스트별 최신스캔 · 심각도 KPI" as DASH
-rectangle "/host.php «assets 또는 findings»\n호스트 상세 · 탭: 취약점·설치 패키지·컨테이너\n런타임·보안 설정(CCE)·계정·억제·스캔 이력" as HOST
+rectangle "/ 대시보드\n호스트별 최신스캔\n심각도 KPI" as DASH
+rectangle "/host.php\n«assets 또는 findings»\n호스트 상세 · 탭: 취약점\n설치 패키지·컨테이너 런타임\n보안 설정(CCE)·계정\n억제·스캔 이력" as HOST
 ' 사이드바 밖 — 상단바 사용자 메뉴. 로그인 사용자 전원(메뉴 권한 없음).
-rectangle "/profile.php «로그인만»\n내 프로필 · 본인 비밀번호 변경" as PROF
+rectangle "/profile.php «로그인만»\n내 프로필\n본인 비밀번호 변경" as PROF
 ' 사이드바에 없다 — 엣지가 (스캔 × 컨테이너) 단위라 자산 상세에서만 들어간다.
-rectangle "/depgraph.php «assets 또는 findings»\n패키지 의존성 그래프\n역추적 · 정방향 · 트리" as DEP
+rectangle "/depgraph.php\n«assets 또는 findings»\n패키지 의존성 그래프\n역추적 · 정방향 · 트리" as DEP
 ' 사이드바에 없다 — 호스트에 딸린 자산이라 자산 상세의 컨테이너 탭에서만 들어간다.
-rectangle "/container.php «assets 또는 findings»\n컨테이너 상세 · 탭: 취약점·설치 패키지·런타임\n이미지/다이제스트/OS · 컨테이너 SBOM" as CTR
+rectangle "/container.php\n«assets 또는 findings»\n컨테이너 상세 · 탭: 취약점\n설치 패키지·런타임\n이미지/다이제스트/OS\n컨테이너 SBOM" as CTR
 
 ' 내 자산에 관한 사실을 다루는 화면 — 사이드바에서 라벨 없이 항상 펼쳐져 있다.
 package "업무 화면 (라벨 없는 최상위 묶음)" as Work {
     rectangle "/findings.php «findings»\n탐지 결과 한 화면 · ?type= 탭\nCVE · 보안설정(CCE) · 노출" as FIND
-    rectangle "/changes.php «findings»\n변화 추적 · 신규/해결/등급변경" as CHG
-    rectangle "/finding_history.php «findings»\n(호스트,컨테이너,CVE,패키지) 스캔별 이력\n+ 미조치 사유·승인자 메모" as FHIST
-    rectangle "/nofix-packages.php «findings»\n벤더 미수정 집중 — 제거·대체 검토 권고" as NOFIX
+    rectangle "/changes.php «findings»\n변화 추적\n신규/해결/등급변경" as CHG
+    rectangle "/finding_history.php\n«findings»\n(호스트,컨테이너,CVE,패키지)\n스캔별 이력\n+ 미조치 사유·승인자 메모" as FHIST
+    rectangle "/nofix-packages.php\n«findings»\n벤더 미수정 집중\n제거·대체 검토 권고" as NOFIX
     rectangle "/assets.php «assets»\n자산 목록" as ASSETS
-    rectangle "/asset-packages.php «assets»\n전체 자산 설치 패키지" as APKG
-    rectangle "/discovery.php «assets»\n자산 탐색(섀도우 IT)\n대역 등록 · 미관리/관리중/제외 IP" as DISC
+    rectangle "/asset-packages.php\n«assets»\n전체 자산 설치 패키지" as APKG
+    rectangle "/discovery.php «assets»\n자산 탐색(섀도우 IT)\n대역 등록\n미관리/관리중/제외 IP" as DISC
     rectangle "/segment-map.php «assets»\n세그먼트 맵\n대역별 호스트 · 게이트웨이" as SEG
-    rectangle "/advisories.php · /advisory.php «advisories»\n보안 공지(KISA) 목록·상세" as ADV
-    rectangle "/compliance.php «compliance»\n컴플라이언스 매핑 · 자동판정 통제 4종 요약\n+ 스냅샷 추이(접힘)" as CMAP
-    rectangle "/kisa-u.php «compliance»\n기반시설 U-코드\n가이드 72개가 분모 · 덮는 항목이 분자" as KISAU
-    rectangle "/control_mapping.php «compliance»\n통제 기준 매핑 · CCE 결과를\nKISA U-코드/ISMS-P/N2SF 로" as CTRL
-    rectangle "/control.php «compliance 또는 findings»\n통제 상세 · 기준 설명 · 점검별 조치\n+ 해당 자산(호스트)" as CDET
+    rectangle "/advisories.php ·\n/advisory.php «advisories»\n보안 공지(KISA) 목록·상세" as ADV
+    rectangle "/compliance.php\n«compliance»\n컴플라이언스 매핑\n자동판정 통제 4종 요약\n+ 스냅샷 추이(접힘)" as CMAP
+    rectangle "/control_mapping.php\n«compliance»\n통제 기준 매핑 · CCE 결과를\nKISA U-코드/ISMS-P/N2SF 로" as CTRL
+    rectangle "/kisa-u.php «compliance»\n기반시설 U-코드\n가이드 72개가 분모\n덮는 항목이 분자" as KISAU
+    rectangle "/control.php\n«compliance 또는 findings»\n통제 상세 · 기준 설명\n점검별 조치\n+ 해당 자산(호스트)" as CDET
 }
 
 ' 외부에서 받아온 참조 카탈로그 — "피드가 제대로 들어왔는지" 를 보는 자리다(업무 화면이 아니다).
 package "데이터 (참조 카탈로그)" as Data {
-    rectangle "/connectors.php «connectors»\n수집 상태" as CONN
+    rectangle "/connectors.php\n«connectors»\n수집 상태" as CONN
     rectangle "/cves.php «catalog»\nCVE · 탭(전체/KEV/EPSS 상위)" as CVES
-    rectangle "/cve.php «findings·catalog·advisories 중 하나»\nCVE 상세 · 영향패키지 · 발견 위치" as CVE
-    rectangle "/packages.php «catalog» · /package.php «catalog 또는 findings»\n패키지 × 배포판 · 패키지 상세\n(탭: 언어 패키지·라이선스)" as PKG
+    rectangle "/packages.php «catalog»\n/package.php\n«catalog 또는 findings»\n패키지 × 배포판 · 패키지 상세\n(탭: 언어 패키지·라이선스)" as PKG
+    rectangle "/cve.php\n«findings·catalog·\nadvisories 중 하나»\nCVE 상세 · 영향패키지\n발견 위치" as CVE
     rectangle "/vendor.php «catalog»\n판정 근거 · 소스 필터" as VEND
-    rectangle "/cce-rules.php «compliance»\nCCE · 우리가 판정하는 39개 점검\n(코드·심각도·기준 매핑·판정 집계)" as CCER
-    rectangle "/cce-rule.php «catalog·compliance·findings 중 하나»\nCCE 상세 · 점검/조치 · 기준 3종\n+ FAIL 자산 · 참조 근거(SSG)" as CCED
-    rectangle "/compliance_rules.php «catalog»\nSSG 룰셋(사이드바에서 내림)" as CRULES
-    rectangle "/compliance_rule.php «catalog·compliance·findings 중 하나»\nSSG 룰 상세 · 점검/조치 근거" as CRULE
+    rectangle "/cce-rules.php\n«compliance»\nCCE · 우리가 판정하는\n39개 점검\n(코드·심각도·기준 매핑\n판정 집계)" as CCER
+    rectangle "/cce-rule.php\n«catalog·compliance·\nfindings 중 하나»\nCCE 상세 · 점검/조치\n기준 3종 + FAIL 자산\n참조 근거(SSG)" as CCED
+    rectangle "/compliance_rules.php\n«catalog»\nSSG 룰셋(사이드바에서 내림)" as CRULES
+    rectangle "/compliance_rule.php\n«catalog·compliance·\nfindings 중 하나»\nSSG 룰 상세\n점검/조치 근거" as CRULE
 }
 
 package "관리" as Admin {
-    rectangle "/users.php · /user.php «users»\n사용자 목록 · 상세(역할변경·비번초기화·삭제)" as USERS
-    rectangle "/permissions.php «permissions»\n권한" as PERM #db6d28
-    rectangle "/agent-tokens.php «agenttokens»\n에이전트 키" as ATOK
+    rectangle "/users.php · /user.php\n«users»\n사용자 목록 · 상세\n(역할변경·비번초기화·삭제)" as USERS
+    rectangle "/permissions.php\n«permissions»\n권한" as PERM #db6d28
+    rectangle "/agent-tokens.php\n«agenttokens»\n에이전트 키" as ATOK
     rectangle "/activity.php «activity»\n감사 로그 · 접속기록 5요소" as ACT
     rectangle "/settings.php «settings»\n운영 설정(SLA·판정 임계값)" as SET
 }
 
 package "인증: 토큰(사람 로그인과 분리)" as API {
     rectangle "/ingest.php\n수집 수신 · X-Agent-Token" as ING #238636
-    rectangle "/agent-poll.php · /agent-progress.php\n명령 pull · 진행/heartbeat/중단 확인" as APOLL #238636
-    rectangle "/export.php «assets»\n결과 내보내기 JSON/XML · 로그인 세션" as EXP #238636
-    rectangle "/sbom.php «assets»\n호스트·컨테이너별 SBOM CycloneDX 1.5 / SPDX 2.3\n?cid= 로 컨테이너 범위 · export.php 와 같은 세션 인증" as SBOM #238636
+    rectangle "/agent-poll.php ·\n/agent-progress.php\n명령 pull\n진행/heartbeat/중단 확인" as APOLL #238636
+    rectangle "/export.php «assets»\n결과 내보내기 JSON/XML\n로그인 세션" as EXP #238636
+    rectangle "/sbom.php «assets»\n호스트·컨테이너별 SBOM\nCycloneDX 1.5 / SPDX 2.3\n?cid= 로 컨테이너 범위\nexport.php 와 같은 세션 인증" as SBOM #238636
 }
 
 ' 화면이 아니라 화면이 부르는 엔드포인트다. 사람이 주소창에 치는 곳이 아니라서 사이드바에 없다.
 package "화면이 부르는 엔드포인트(세션 인증)" as Xhr {
-    rectangle "/agent-command-overview.php «assets»\n/agent-command-status.php «assets»\n수집 명령 진행 폴링 JSON" as ACMD
-    rectangle "/feed_preview.php «connectors»\n커넥터 설정값으로 10건 미리보기 JSON" as FPRE
-    rectangle "/agent-dl.php\n에이전트 설치 스크립트·루트 CA 배포\n(무인증 — 비밀 없음, 화이트리스트 고정)" as ADL #9e6a03
+    rectangle "/agent-command-overview.php\n/agent-command-status.php\n«assets»\n수집 명령 진행 폴링 JSON" as ACMD
+    rectangle "/feed_preview.php\n«connectors»\n커넥터 설정값으로\n10건 미리보기 JSON" as FPRE
+    rectangle "/agent-dl.php\n에이전트 설치 스크립트\n루트 CA 배포\n(무인증 — 비밀 없음\n화이트리스트 고정)" as ADL #9e6a03
 }
 
 LOGIN --> DASH : 인증 성공
 DASH --> PROF : 상단바 사용자 메뉴
 
 DASH --> HOST
-ASSETS --> APKG : 서브탭(전체 설치 패키지)
-ASSETS --> DISC : 서브탭(자산 탐색)
-ASSETS --> SEG  : 서브탭(세그먼트 맵)
-DISC ..> ADL : 미관리 IP 에 에이전트 설치 안내
+ASSETS --> APKG : 서브탭
+ASSETS --> DISC : 서브탭
+ASSETS --> SEG  : 서브탭
+DISC ..> ADL : 미관리 IP\n설치 안내
 HOST --> FIND
 FIND --> CVE
 FIND --> CHG : 서브탭
-FIND --> FHIST : 모든 행의 "이 자산 판정"
+FIND --> FHIST : 모든 행의\n"이 자산 판정"
 HOST --> FHIST
-HOST --> DEP : 의존성 엣지가 있는 자산만
-HOST --> CTR : 컨테이너 탭의 계층 카드
-CTR --> DEP : 그 컨테이너의 의존성 엣지가 있을 때만
-HOST ..> SBOM : 호스트 SBOM 내려받기
-CTR ..> SBOM : 컨테이너 SBOM 내려받기(?cid=)
-FIND --> NOFIX : 벤더 미수정 모아보기
+HOST --> DEP : 의존성 엣지가\n있는 자산만
+HOST --> CTR : 컨테이너 탭의\n계층 카드
+CTR --> DEP : 그 컨테이너의\n의존성 엣지만
+HOST ..> SBOM : 호스트 SBOM
+CTR ..> SBOM : 컨테이너 SBOM\n(?cid=)
+FIND --> NOFIX : 벤더 미수정
 PKG --> NOFIX
 HOST --> CRULE : CCE 근거 배지
 CRULES --> CRULE
 CCER --> CCED
 CCED --> CDET : 기준 통제 상세로
 CDET --> CCED : 점검 항목 상세로
-CCED --> CRULE : 참조 근거(SSG 룰, 접힘)
-CCED --> HOST : FAIL 자산의 CCE 탭으로
+CCED --> CRULE : 참조 근거(접힘)
+CCED --> HOST : FAIL 자산의\nCCE 탭으로
 PKG --> CVE
-CMAP --> KISAU : 서브탭(기반시설 U-코드)
-CMAP --> CTRL : 서브탭(통제 기준 매핑)
-CTRL ..> KISAU : ?fw=KISA_U 는 302 로 넘긴다
-CTRL --> CMAP : 서브탭(컴플라이언스 매핑)
-CTRL --> CDET : 통제를 누르면 상세로(옛 ?control= 은 302)
-CDET --> HOST : 해당 자산의 CCE 탭으로
-
-' 한 줄로 늘어놓으면 그림이 옆으로 길어진다 → 묶음마다 두 칸으로 접는다(보이지 않는 배치용 선).
-'   업무: 칸1 FIND-CHG-FHIST-NOFIX · 칸2 ASSETS-APKG-ADV-CMAP-CTRL-CDET
-FIND  -[hidden]down- CHG
-CHG   -[hidden]down- FHIST
-FHIST -[hidden]down- NOFIX
-ASSETS -[hidden]down- APKG
-APKG  -[hidden]down- DISC
-DISC  -[hidden]down- SEG
-SEG   -[hidden]down- ADV
-ADV   -[hidden]down- CMAP
-CMAP  -[hidden]down- KISAU
-KISAU -[hidden]down- CTRL
-CTRL  -[hidden]down- CDET
-'   데이터: 칸1 CONN-CVES-CVE · 칸2 PKG-VEND-CCER-CCED-CRULES-CRULE
-CONN -[hidden]down- CVES
-CVES -[hidden]down- CVE
-PKG  -[hidden]down- VEND
-VEND -[hidden]down- CCER
-CCER -[hidden]down- CCED
-CCED -[hidden]down- CRULES
-CRULES -[hidden]down- CRULE
-
-' 엔드포인트 3개도 한 줄로 두면 옆으로 길어진다 → 세로로 접는다.
-ACMD -[hidden]down- FPRE
-FPRE -[hidden]down- ADL
+CMAP --> KISAU : 서브탭
+CMAP --> CTRL : 서브탭
+CTRL ..> KISAU : ?fw=KISA_U 는\n302 로 넘긴다
+CTRL --> CMAP : 서브탭
+CTRL --> CDET : 통제 → 상세\n(옛 ?control= 은 302)
+CDET --> HOST : 해당 자산의\nCCE 탭으로
 
 DASH ..> Work
 DASH ..> Data
 DASH ..> Admin
 
-' 대분류를 한 줄로 늘어놓으면 그림이 화면 밖으로 나간다 → 아래 줄로 접는다.
-CDET  -[hidden]down- USERS
-CRULE -[hidden]down- ATOK
-CRULE -[hidden]down- ACT
-ACT   -[hidden]down- SET
+APOLL ..> ING : 같은 토큰 인증
 
-APOLL ..> ING : 동일한 에이전트 토큰 인증
-
-ASSETS ..> ACMD : 수집 진행률 폴링
+ASSETS ..> ACMD : 진행률 폴링
 HOST   ..> ACMD
-ASSETS ..> ADL : 설치 안내 모달의 다운로드
-CONN   ..> FPRE : 저장 전 미리보기
+ASSETS ..> ADL : 설치 안내
+CONN   ..> FPRE : 저장 전\n미리보기
+
+' ── 보이지 않는 배치용 선 ──────────────────────────────────
+'   업무: 칸1 FIND-CHG-FHIST-NOFIX-ADV-CMAP-CTRL-KISAU-CDET · 칸2 ASSETS-APKG-DISC-SEG
+CHG   -[hidden]down- FHIST
+FHIST -[hidden]down- NOFIX
+NOFIX -[hidden]down- ADV
+ADV   -[hidden]down- CMAP
+KISAU -[hidden]down- CDET
+APKG  -[hidden]down- DISC
+DISC  -[hidden]down- SEG
+'   데이터: 한 칸(CONN-CVES-PKG-CVE-VEND-CCER-CCED-CRULES-CRULE)
+CONN -[hidden]down- CVES
+CVES -[hidden]down- PKG
+CVE  -[hidden]down- VEND
+VEND -[hidden]down- CCER
+CCED -[hidden]down- CRULES
+'   업무·데이터 → 관리 → 토큰 인증 → 엔드포인트: 층으로 쌓는다
+CDET  -[hidden]down- HOST
+CRULE -[hidden]down- HOST
+HOST  -[hidden]down- USERS
+CRULE -[hidden]down- ATOK
+SEG   -[hidden]down- ACT
+'   관리: 칸1 USERS-PERM · 칸2 ATOK · 칸3 ACT-SET
+USERS -[hidden]down- PERM
+ACT   -[hidden]down- SET
+'   토큰 인증: 칸1 APOLL-ING · 칸2 EXP · 칸3 SBOM
+PERM -[hidden]down- APOLL
+ATOK -[hidden]down- EXP
+SET  -[hidden]down- SBOM
+APOLL -[hidden]down- ING
+'   엔드포인트: 칸1 ACMD · 칸2 FPRE · 칸3 ADL
+ING  -[hidden]down- ACMD
+EXP  -[hidden]down- FPRE
+SBOM -[hidden]down- ADL
 
 ' ── 사이트맵에 넣지 않은 URL ─────────────────────────────
 ' /index.php  : 대시보드(DASH) 그 자체다 — 같은 화면을 두 번 그리지 않는다.

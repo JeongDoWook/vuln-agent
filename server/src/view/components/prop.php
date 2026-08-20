@@ -59,16 +59,17 @@ function vg_connectors_empty_cta(): ?array {
  *   $scanId 는 sbom.php 의 시각화 보기(view=html)가 지금 보고 있는 스캔을 그대로 넘길 때만
  *   쓴다(> 0). 과거 스캔을 보면서 다운로드는 최신 스캔 것을 받는 어긋남을 막는다 — 호스트·
  *   컨테이너 상세는 항상 최신을 보므로 안 넘겨도(0) 기존과 동일하게 "최신" 그대로다.
- *   $withView 는 호출부가 "진입점"인지 "도착지"인지를 가른다 — 패키지 탭(host/tabs/packages.php)·
- *   컨테이너 탭(container/overview.php)은 sbom.php 로 넘어가는 진입점이라 true(기본값)로
- *   "부품표 보기"를 주 버튼으로 보여준다. 반면 sbom.php 자기 자신(view=html 화면)은 도착지라
- *   그 버튼을 누르면 지금 보고 있는 페이지로 재이동하는 no-op 이 된다 — false 로 넘겨 숨기고,
- *   그 화면에서 실제로 필요한 다운로드 링크를 주 버튼으로 승격한다.
+ *   $withView 는 호출부가 "진입점"인지 "도착지"인지를 가른다 — 컨테이너 탭
+ *   (container/overview.php)은 sbom.php 로 넘어가는 진입점이라 true(기본값)로 "부품표 보기"를
+ *   주 버튼으로 보여준다. 반면 sbom.php 자기 자신(view=html 화면)은 도착지라 그 버튼을 누르면
+ *   지금 보고 있는 페이지로 재이동하는 no-op 이 된다 — false 로 넘겨 숨기고, 그 화면에서 실제로
+ *   필요한 다운로드 링크를 주 버튼으로 승격한다.
+ *   호스트의 설치 패키지 탭은 이 카드를 안 쓴다 — 버튼 하나에 카드 하나가 아까워 아래
+ *   vg_sbom_view_button() 으로 그 탭의 액션 줄에 흡수했다.
  */
 function vg_sbom_links(string $fqdn, string $cid = '', int $scanId = 0, bool $withView = true): void {
     if (!vg_can('assets')) { return; }
-    $base = '/sbom.php?host=' . urlencode($fqdn) . ($cid !== '' ? '&cid=' . urlencode($cid) : '')
-        . ($scanId > 0 ? '&scan_id=' . $scanId : '');
+    $base = vg_sbom_url($fqdn, $cid, $scanId);
     $cycloneHref = vg_h($base . '&format=cyclonedx');
     $spdxHref = vg_h($base . '&format=spdx');
     if ($withView) {
@@ -91,4 +92,23 @@ function vg_sbom_links(string $fqdn, string $cid = '', int $scanId = 0, bool $wi
         . '<a class="btn btn--sm btn--primary" href="' . $cycloneHref . '">CycloneDX 1.5 다운로드</a>'
         . '<a class="btn btn--sm btn--ghost" href="' . $spdxHref . '">SPDX 2.3 다운로드</a>'
         . '</div></div></div>';
+}
+
+/** sbom.php 링크의 범위 규약(host·cid·scan_id)을 한 곳에 둔다 — 위 카드와 아래 버튼이 공유한다. */
+function vg_sbom_url(string $fqdn, string $cid = '', int $scanId = 0): string {
+    return '/sbom.php?host=' . urlencode($fqdn) . ($cid !== '' ? '&cid=' . urlencode($cid) : '')
+        . ($scanId > 0 ? '&scan_id=' . $scanId : '');
+}
+
+/**
+ * "부품표 보기" 버튼 하나만 — SBOM 카드를 따로 세우지 않고 남의 액션 줄에 얹을 때 쓴다.
+ *   설치 패키지 탭(host/tabs/packages.php)이 그렇다: 카드 하나가 버튼 하나 때문에 자리를
+ *   차지하던 것을 그 탭의 액션 줄로 흡수했다. 표준 포맷 다운로드는 감사 제출 같은 실제
+ *   요구가 없어 화면에서 내렸다 — 엔드포인트(sbom.php?format=…)는 그대로 살아 있다.
+ *   인가 게이트(assets)는 vg_sbom_links() 와 같다.
+ */
+function vg_sbom_view_button(string $fqdn, string $cid = '', int $scanId = 0): void {
+    if (!vg_can('assets')) { return; }
+    echo '<a class="btn btn--sm btn--ghost" href="' . vg_h(vg_sbom_url($fqdn, $cid, $scanId) . '&view=html')
+        . '" title="이 자산의 부품표(SBOM)를 표로 보기">' . vg_icon('package') . '부품표 보기</a>';
 }
