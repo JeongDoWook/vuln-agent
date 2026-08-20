@@ -9,8 +9,12 @@ declare(strict_types=1);
  */
 
 /**
- * 배포된 에이전트 스크립트의 버전·sha256 을 읽는다. 파일이 없거나 버전 문자열을 못 찾으면 null
- * (미설정 환경에서도 agent-poll.php 가 죽지 않고 "업데이트 없음"으로 넘어가게 하기 위해서다).
+ * 배포된 에이전트 스크립트의 버전·sha256·서명(base64, 있으면)을 읽는다. 파일이 없거나 버전
+ * 문자열을 못 찾으면 null(미설정 환경에서도 agent-poll.php 가 죽지 않고 "업데이트 없음"으로
+ * 넘어가게 하기 위해서다). 서명(.sig)이 없으면 signature 는 null 로 둔다 — 구버전 레포·서명
+ * 아직 안 한 커밋 상태에서도 poll 자체는 죽지 않고, 에이전트가 "서명 없음"으로 자동업데이트를
+ * fail-safe 하게 건너뛴다. 서명은 유지보수자가 로컬 개인키로 커밋 전에 만든다(deploy/agent_sign.sh)
+ * — PHP 는 여기서 파일을 읽기만 할 뿐 서명을 만들지 않는다(웹 티어 침해로는 위조 불가).
  */
 function vg_agent_release_info(): ?array {
     static $cache = false; // false=미계산, null=조회 실패, array=결과
@@ -28,9 +32,18 @@ function vg_agent_release_info(): ?array {
         $cache = null;
         return null;
     }
+    $signature = null;
+    $sigPath = $path . '.sig';
+    if (is_file($sigPath) && is_readable($sigPath)) {
+        $sigContent = file_get_contents($sigPath);
+        if ($sigContent !== false && $sigContent !== '') {
+            $signature = base64_encode($sigContent);
+        }
+    }
     $cache = [
-        'version' => $m[1],
-        'sha256'  => hash('sha256', $content),
+        'version'   => $m[1],
+        'sha256'    => hash('sha256', $content),
+        'signature' => $signature,
     ];
     return $cache;
 }

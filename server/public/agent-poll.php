@@ -41,13 +41,14 @@ $fqdn = $agentTok['fqdn'];
 //   엔드포인트(agent-dl.php) 고정 — 에이전트가 임의 URL 을 받지 않는다.
 $reportedVersion = trim((string) ($_GET['agent_version'] ?? ''));
 $release = vg_agent_release_info();
-$updateFields = ['update_available' => false, 'update_version' => null, 'update_sha256' => null, 'update_download_path' => null];
+$updateFields = ['update_available' => false, 'update_version' => null, 'update_sha256' => null, 'update_download_path' => null, 'update_signature' => null];
 if ($release !== null && $reportedVersion !== '' && version_compare($reportedVersion, $release['version'], '<')) {
     $updateFields = [
         'update_available'      => true,
         'update_version'        => $release['version'],
         'update_sha256'         => $release['sha256'],
         'update_download_path'  => 'agent-dl.php?f=vuln-inventory-agent.sh',
+        'update_signature'      => $release['signature'],
     ];
 }
 
