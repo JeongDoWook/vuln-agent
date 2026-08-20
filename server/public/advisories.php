@@ -33,7 +33,7 @@ try {
     $where = 'is_deleted = 0';
     $params = [];
 
-    /* '내 자산 영향' = 이 공지의 CVE 중 하나라도 **최신 스캔 기준** 판정에 잡힌 것.
+    /* '내 자산 영향' = 이 공지의 CVE 중 하나라도 **최신 수집 기준** 판정에 잡힌 것.
      *
      * EXISTS 상관 서브쿼리로 매 공지 행마다 확인하지 않는다 — 영향 있는 advisory_id 집합을
      * 한 번에 구해 값으로 펼쳐 넣는다(실측 dev: 이 한 쿼리 131ms, 상관 서브쿼리는 공지 수만큼
@@ -110,7 +110,7 @@ try {
         unset($row);
 
         // 영향 자산 배지 — 이 페이지에 걸린 전체 cve_id 집합을 한 번에 조회해(N+1 방지)
-        //   각 공지의 cve 목록으로 역매핑한다. 호스트는 항상 "최신 스캔" 기준(host.php/cve.php 와 동일).
+        //   각 공지의 cve 목록으로 역매핑한다. 호스트는 항상 "최신 수집" 기준(host.php/cve.php 와 동일).
         $allCves = [];
         foreach ($byAdvisory as $cveList) {
             foreach ($cveList as $cv) { $allCves[$cv] = true; }
@@ -259,7 +259,7 @@ vg_header('보안 공지', 'advisories');
                   if ($a['hostCount'] <= 0) {
                       // '해당 자산 없음'(6글자 뱃지)은 10% 칸에 안 들어가 nowrap 말줄임에 잘렸다 —
                       //   뱃지는 잘리면 어휘가 깨져서 못 읽는다. 짧게 쓰고 뜻은 title 로 남긴다.
-                      return vg_badge('없음', 'muted', '이 공지의 CVE 와 매칭되는 자산이 최신 스캔 기준으로 없습니다');
+                      return vg_badge('없음', 'muted', '이 공지의 CVE 와 매칭되는 자산이 최신 수집 기준으로 없습니다');
                   }
                   $payload = [
                       'title' => $r['title'],

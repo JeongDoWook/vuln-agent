@@ -62,7 +62,7 @@ try {
     vg_log_activity($pdo, 'PAGE', null, 'view_control_mapping', '통제 기준 매핑 조회 · ' . $fw);
     session_write_close();   // 인가·감사로그 이후 집계 전 세션락 해제(compliance.php 선례)
 
-    // 호스트별 최신 스캔의 CCE 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다.
+    // 호스트별 최신 수집의 CCE 결과만 본다 — 지난 스캔까지 세면 같은 위반이 중복 집계된다.
     $baseSql =
         "FROM tb_cce_finding cf
            JOIN " . vg_latest_scan_subq() . " t ON t.mid = cf.scan_id
@@ -172,7 +172,7 @@ vg_header('통제 기준 매핑', 'control_mapping');
       ['value' => number_format($failControls),     'label' => '위반 있는 통제 · 종',   'tone' => 'high'],
       ['value' => number_format($noResultControls), 'label' => '점검 결과 없음 · 종',   'tone' => 'muted'],
       ['value' => number_format($mappedRules),      'label' => '매핑된 점검 항목 · 개'],
-      ['value' => number_format($findingTotal),     'label' => '최신 스캔 점검 결과 · 건'],
+      ['value' => number_format($findingTotal),     'label' => '최신 수집 점검 결과 · 건'],
   ], ['compact' => true]);
   ?>
 <?php /* 같은 말이 부제에 이미 있다 — 여기서 한 번 더 적지 않는다(부제가 정본). */ ?>
@@ -207,7 +207,7 @@ vg_header('통제 기준 매핑', 'control_mapping');
              숫자는 180px 떨어진 오른쪽 끝에 서서 둘이 한 값이라는 게 안 읽힌다. 우측정렬 규약은
              '매핑 점검' 같은 맨숫자 칸이 지킨다. */
           ['label' => '미준수율', 'width' => '12%',
-           'title' => 'FAIL ÷ 최신 스캔 점검 결과. 판정이 아니라 집계다.'],
+           'title' => 'FAIL ÷ 최신 수집 점검 결과. 판정이 아니라 집계다.'],
       ],
       $rows,
       [

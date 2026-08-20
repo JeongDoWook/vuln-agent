@@ -15,7 +15,7 @@ declare(strict_types=1);
     <div class="card__body">
     <?php vg_empty([
         'icon'  => 'package',
-        'title' => '이 자산의 최신 스캔에는 그릴 의존성 트리가 없습니다.',
+        'title' => '이 자산의 최신 수집에는 그릴 의존성 트리가 없습니다.',
         'hint'  => '루트를 가진 SBOM 엣지가 있어야 트리가 그려집니다(pom.xml 직접 선언만 있으면 전용 화면에서 볼 수 있습니다).',
         'cta'   => ['href' => vg_deptree_url((int) $hostId, (int) $depUnit), 'label' => '의존성 그래프 화면으로'],
     ]); ?>

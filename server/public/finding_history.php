@@ -6,7 +6,7 @@ declare(strict_types=1);
  *   ?id=<host_id>&cid=<container_id, 0=호스트 자신>&cve=<cve_id>&pkg=<package_name>
  *
  * host.php 의 "스캔" 탭은 스캔별 심각도 분포만, changes.php 는 최근 스캔 2개 비교만 보여준다.
- * 이 페이지가 그 사이 빈틈 — 하나의 (호스트,CVE,패키지) 조합을 호스트의 전체 스캔 이력에 걸쳐
+ * 이 페이지가 그 사이 빈틈 — 하나의 (호스트,CVE,패키지) 조합을 호스트의 전체 수집 이력에 걸쳐
  * 이어 보여준다. host.php 취약점 탭의 "이력" 링크와 findings.php 각 행의 "이 자산 판정" 링크로
  * 들어온다(URL 조립은 src/finding_history.php 의 vg_finding_history_url 하나로 모여 있다).
  *
@@ -93,7 +93,7 @@ $noteErr = $noteFlash['noteErr'] ?? null;
 $csrf = vg_csrf_token();
 
 $err = null; $host = null; $rows = []; $total = 0; $summary = null; $current = null;
-$note = null; $detail = null;   // $detail = 최신 스캔 판정의 위험도·조치 상세(FOUND 일 때만)
+$note = null; $detail = null;   // $detail = 최신 수집 판정의 위험도·조치 상세(FOUND 일 때만)
 $hostId = (int) ($_GET['id'] ?? 0);
 $containerId = (int) ($_GET['cid'] ?? 0);
 $cveId = trim((string) ($_GET['cve'] ?? ''));
@@ -127,7 +127,7 @@ try {
         $total = vg_finding_history_count($pdo, $hostId);
         $rows = vg_finding_history($pdo, $hostId, $containerId, $cveId, $packageName, $perPage, ($page - 1) * $perPage);
         $summary = vg_finding_history_summary($pdo, $hostId, $containerId, $cveId, $packageName);
-        // "현재 상태" 는 항상 최신 스캔(1건) 기준 — 조회 중인 페이지가 1페이지가 아니어도 동일해야 한다.
+        // "현재 상태" 는 항상 최신 수집(1건) 기준 — 조회 중인 페이지가 1페이지가 아니어도 동일해야 한다.
         $current = ($page === 1 && $rows) ? $rows[0] : (vg_finding_history($pdo, $hostId, $containerId, $cveId, $packageName, 1, 0)[0] ?? null);
         // 목록(findings.php)이 보여주는 위험도·수정 버전·판정 출처를 상세에서도 볼 수 있게 한다.
         //   그 스캔에 실제 판정이 있을 때(FOUND)만 조회한다 — 억제·해당없음이면 값이 없는 게 맞다.
@@ -178,7 +178,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
       $meta,
       $curStatus !== null ? ($statusLabel[$curStatus] ?? $curStatus) : '이력 없음',
       $curTone,
-      '최신 스캔 기준'
+      '최신 수집 기준'
   );
   vg_alert($noteMsg, 'ok');
   vg_alert($noteErr);
@@ -239,7 +239,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
         <dd><?= $detail !== null
             ? vg_badge((string) ($detail['match_source'] ?? 'catalog'), 'muted', '이 판정을 만든 근거 데이터의 출처')
             : '<span class="why">–</span>' ?></dd>
-        <dt>기준 스캔</dt>
+        <dt>기준 수집</dt>
         <dd><?= $current !== null
             ? '<a href="/findings.php?scan_id=' . (int) $current['scan_id'] . '">#' . (int) $current['scan_id'] . '</a>'
               . ' <span class="why">' . vg_h((string) ($current['collected_at'] ?? '')) . '</span>'
@@ -253,7 +253,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
             ? vg_h((string) $current['reason'])
             : '<span class="why">–</span>' ?></dd>
         <dt>발견 횟수</dt>
-        <dd>총 <?= number_format($total) ?>회 스캔 중 <?= number_format($summary['foundCount'] ?? 0) ?>회</dd>
+        <dd>총 <?= number_format($total) ?>회 수집 중 <?= number_format($summary['foundCount'] ?? 0) ?>회</dd>
         <dt>최초 발견</dt>
         <dd><?= $summary && $summary['firstFoundAt'] !== null
             ? vg_h((string) $summary['firstFoundAt'])
@@ -316,11 +316,11 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
   </div>
 
   <div class="card">
-    <strong>스캔별 상태 타임라인</strong>
+    <strong>수집별 상태 타임라인</strong>
     <span class="why"><?= count($rows) ?>건</span>
     <div class="card__body">
     <?php if (!$rows): ?>
-      <?php vg_empty(['icon' => 'clock', 'title' => '스캔 이력이 없습니다.']); ?>
+      <?php vg_empty(['icon' => 'clock', 'title' => '수집 이력이 없습니다.']); ?>
     <?php else: ?>
       <ul class="timeline">
         <?php

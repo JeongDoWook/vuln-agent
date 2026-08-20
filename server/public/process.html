@@ -32,7 +32,7 @@
   <header>
     <p class="muted">vuln-agent 운영자 안내</p>
     <h1>설치에서 재검증까지, 네 단계</h1>
-    <p class="lead">외부 취약점 정보의 <strong>피드 동기화</strong>와 각 서버의 <strong>자산 스캔</strong>은 서로 다른 작업입니다. 둘의 최신 상태를 확인한 뒤 실제 노출과 조치 가능성을 기준으로 대응합니다.</p>
+    <p class="lead">외부 취약점 정보의 <strong>피드 동기화</strong>와 각 서버의 <strong>자산 수집</strong>은 서로 다른 작업입니다. 둘의 최신 상태를 확인한 뒤 실제 노출과 조치 가능성을 기준으로 대응합니다.</p>
   </header>
 
   <ol class="flow" aria-label="운영자 4단계 흐름">
@@ -49,9 +49,9 @@
       <!-- 바깥에서 흘러 들어오는 신호: 수집 -->
       <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5a8 8 0 0 1 8 8"/><path d="M4.5 4.5a15 15 0 0 1 15 15"/><circle cx="5.2" cy="18.8" r="1.6"/></svg>
       <b>2 / 수집</b>
-      <h2>피드 동기화 + 자산 스캔</h2>
-      <p>커넥터는 CVE·KEV·EPSS·벤더 근거를 수집합니다. 에이전트는 패키지·프로세스·노출·설정값을 자산 스캔으로 전송합니다.</p>
-      <p><a href="/connectors.php">데이터 수집</a> · <a href="/assets.php">자산 스캔 상태</a></p>
+      <h2>피드 동기화 + 자산 수집</h2>
+      <p>커넥터는 CVE·KEV·EPSS·벤더 근거를 수집합니다. 에이전트는 패키지·프로세스·노출·설정값을 자산 수집으로 전송합니다.</p>
+      <p><a href="/connectors.php">데이터 수집</a> · <a href="/assets.php">자산 수집 상태</a></p>
     </li>
     <li class="operator-step">
       <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 5 16 12 9 19"/></svg>
@@ -67,8 +67,8 @@
       <!-- 체크: 조치·재검증 -->
       <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>
       <b>4 / 조치</b>
-      <h2>수정 후 다시 자산 스캔</h2>
-      <p>패치·완화·격리·재시작을 수행하고, 다음 자산 스캔에서 판정이 바뀌었는지 변화 추적과 컴플라이언스 추이로 재검증합니다.</p>
+      <h2>수정 후 다시 자산 수집</h2>
+      <p>패치·완화·격리·재시작을 수행하고, 다음 자산 수집에서 판정이 바뀌었는지 변화 추적과 컴플라이언스 추이로 재검증합니다.</p>
       <p><a href="/changes.php">변화 추적</a> · <a href="/compliance.php">컴플라이언스</a></p>
     </li>
   </ol>
@@ -81,16 +81,16 @@
       <li><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>
         <span><strong>피드 동기화</strong> — 데이터 수집 화면에서 소스별 상태가 성공으로 바뀌고 다음 실행 시각이 갱신됩니다.</span></li>
       <li><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>
-        <span><strong>자산 스캔</strong> — <code>tb_scan_run</code> 실행 이력이 남고, 필요하면 <code>tb_agent_command</code> 진행 상태로 확인합니다.</span></li>
+        <span><strong>자산 수집</strong> — <code>tb_scan_run</code> 실행 이력이 남고, 필요하면 <code>tb_agent_command</code> 진행 상태로 확인합니다.</span></li>
       <li><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 12.5 9.5 18 20 6.5"/></svg>
-        <span><strong>조치</strong> — 새 자산 스캔에서 변화 추적에 '해결'로 잡히거나, 남은 이유가 근거와 함께 표시됩니다.</span></li>
+        <span><strong>조치</strong> — 새 자산 수집에서 변화 추적에 '해결'로 잡히거나, 남은 이유가 근거와 함께 표시됩니다.</span></li>
     </ul>
     <p class="muted">systemd 환경은 정기·즉시·예약 실행과 중단을 지원합니다. cron 폴백은 정기수집만 가능하며 즉시·예약·중단 명령은 지원하지 않는다.</p>
   </section>
 
   <section class="card">
     <h2>판정은 중앙에서 한다</h2>
-    <p class="muted">에이전트는 <strong>수집만</strong> 합니다. 취약 여부·심각도·조치 가능 여부는 중앙이 수집한 피드로 판정하므로, 대상 서버에 판정 기준을 배포하거나 맞출 필요가 없습니다. 그래서 2단계의 두 작업(피드 동기화·자산 스캔)이 모두 최신이어야 3단계의 판정이 최신입니다.</p>
+    <p class="muted">에이전트는 <strong>수집만</strong> 합니다. 취약 여부·심각도·조치 가능 여부는 중앙이 수집한 피드로 판정하므로, 대상 서버에 판정 기준을 배포하거나 맞출 필요가 없습니다. 그래서 2단계의 두 작업(피드 동기화·자산 수집)이 모두 최신이어야 3단계의 판정이 최신입니다.</p>
     <p class="muted">보안설정 점검(CCE)도 같습니다 — 자산에서 설정값을 수집하고, PASS·FAIL·NA 판정은 중앙의 점검 항목 정의가 내립니다. 수집이 안 된 항목은 PASS 가 아니라 NA(판정 불가)로 남습니다.</p>
   </section>
 

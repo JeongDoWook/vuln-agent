@@ -30,7 +30,7 @@ if (!vg_can('assets')) {
           [
               'card'  => false,
               'empty' => ['icon' => 'user', 'title' => '계정 인벤토리가 없습니다.',
-                          'hint' => '구버전 에이전트로 수집된 스캔입니다. 다시 수집하면 채워집니다.'],
+                          'hint' => '구버전 에이전트가 보낸 수집입니다. 다시 수집하면 채워집니다.'],
               'cell'  => [
                   0 => fn($j) => vg_badge($accLabel[$j['result']] ?? $j['result'], $accTone[$j['result']] ?? 'muted'),
                   2 => fn($j) => '<span class="why">' . vg_h((string) $j['detail']) . '</span>',

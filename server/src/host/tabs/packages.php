@@ -26,7 +26,7 @@ declare(strict_types=1);
     $verifyUnsupported = !$integChecked && is_array($verifySupport) && !$verifySupport['supported'];
     if (!$integChecked) {
         // 미수행일 때는 설명 대신 켜는 자리로 데려간다 — 이 탭의 단독 버튼은 없앴다(무결성은
-        //   별도 스캔이 아니라 수집 실행 안의 한 단계라, 진입점이 수집 제어 하나로 모였다).
+        //   별도 동작이 아니라 수집 실행 안의 한 단계라, 진입점이 수집 제어 하나로 모였다).
         //   단 '미지원'(걸었는데 노드가 못 함)은 안내가 다르다 — 앵커가 아니라 노드 갱신이 답이다.
         $integTone = $verifyUnsupported ? 'med' : 'muted';
         $integText = $verifyUnsupported
@@ -49,7 +49,7 @@ declare(strict_types=1);
     foreach ($pendingCommands as $pc) {
         if (!empty($pc['verify_files'])) { $verifyQueued = true; break; }
     }
-    // 검사 결과에는 "언제 것인지"가 붙어야 한다 — 무결성 값은 최신 스캔(tb_scan)에 실려 오므로
+    // 검사 결과에는 "언제 것인지"가 붙어야 한다 — 무결성 값은 최신 수집(tb_scan)에 실려 오므로
     //   그 수집 시각이 곧 검사 시각이다. 없는 값을 만들지 않는다(미수행이면 붙일 시각도 없다).
     $integAt = $integChecked ? (string) ($scan['collected_at'] ?? '') : '';
     ?>
@@ -67,14 +67,14 @@ declare(strict_types=1);
       <?php if ($integPartial): ?>
         <span class="why"> · 검사가 도중에 잘렸습니다 — 아래 목록과 건수는 전수가 아닙니다.</span>
       <?php endif; ?>
-      <?php /* 실행 진입점은 이 탭이 아니라 이 페이지 위쪽의 수집 제어다 — '지금 스캔' 의
+      <?php /* 실행 진입점은 이 탭이 아니라 이 페이지 위쪽의 수집 제어다 — '지금 수집' 의
                '무결성 검사 포함' 체크박스 하나로 합쳤다. 여기서는 상태만 말하고, 어디서
                켜는지 모르는 상태로 두지 않도록 그 카드로 가는 앵커만 남긴다(버튼 아님).
                앵커 대상(#agent-control)은 assets 권한이 있을 때만 그려지므로 같은 조건을 쓴다. */ ?>
       <?php if ($verifyQueued): ?>
         <span class="why"> · 무결성 검사 대기 중 — 다음 수집 결과에 반영됩니다.</span>
       <?php elseif (!$integChecked && vg_can('assets')): ?>
-        <span class="why"> · <a href="#agent-control">수집 제어</a> 의 '지금 스캔' 에서 '무결성 검사 포함' 을 켜면 다음 수집에 함께 돕니다.</span>
+        <span class="why"> · <a href="#agent-control">수집 제어</a> 의 '지금 수집' 에서 '무결성 검사 포함' 을 켜면 다음 수집에 함께 돕니다.</span>
       <?php endif; ?>
       <?php if ($integrityRows): ?>
         <div class="card__body">

@@ -70,7 +70,7 @@ $cid = trim((string) ($_GET['cid'] ?? ''));
 try {
     $pdo = vg_pdo();
 
-    // 스캔 스코프: export.php 와 같은 규칙(scan_id 지정 우선, 아니면 그 호스트의 최신 스캔).
+    // 스캔 스코프: export.php 와 같은 규칙(scan_id 지정 우선, 아니면 그 호스트의 최신 수집).
     if ($scanId > 0) {
         $scanSql = 'SELECT s.scan_id, s.collected_at, s.os_id, s.os_version, s.kernel,
                            s.agent_version, h.host_id, h.fqdn
@@ -161,7 +161,7 @@ if ($view === 'html') {
     if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
         vg_log_activity(
             $pdo, 'HOST', $hostId, 'view_sbom',
-            '자산=' . $subject['ref'] . ' 컴포넌트 ' . count($packages) . '건 (스캔 #' . $scanNo . ')',
+            '자산=' . $subject['ref'] . ' 컴포넌트 ' . count($packages) . '건 (수집 #' . $scanNo . ')',
             ['host' => $fqdn, 'container' => $cid !== '' ? $cid : null,
              'scan_id' => $scanNo, 'components' => count($packages)],
             subject: $subject['ref'], action: 'EXPORT'
@@ -182,7 +182,7 @@ $doc = $format === 'spdx'
 //   컨테이너 범위면 그 사실도 남긴다 — 같은 호스트라도 서로 다른 부품표를 받아간 것이다.
 vg_log_activity(
     $pdo, 'EXPORT', null, 'export_sbom',
-    '형식=' . $format . ' 자산=' . $subject['ref'] . ' 컴포넌트 ' . count($packages) . '건 (스캔 #' . $scanNo . ')',
+    '형식=' . $format . ' 자산=' . $subject['ref'] . ' 컴포넌트 ' . count($packages) . '건 (수집 #' . $scanNo . ')',
     ['format' => $format, 'host' => $fqdn, 'container' => $cid !== '' ? $cid : null,
      'scan_id' => $scanNo, 'components' => count($packages)],
     subject: $subject['ref'], action: 'EXPORT'
@@ -417,7 +417,7 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
         }),
     ]); ?>
     <?php // 지금 보고 있는 스캔 회차 — 과거 스캔을 view=html 로 열었을 때 최신인 줄 착각하지 않도록. ?>
-    <p class="why">스캔 #<?= $scanNo ?><?= $collectedAt !== '' ? ' · ' . vg_h($collectedAt) . ' 수집' : '' ?></p>
+    <p class="why">수집 #<?= $scanNo ?><?= $collectedAt !== '' ? ' · ' . vg_h($collectedAt) . ' 수집' : '' ?></p>
 
     <div class="cards">
       <div class="kpi kpi--sm"><b><?= number_format($total) ?></b><span>컴포넌트</span></div>

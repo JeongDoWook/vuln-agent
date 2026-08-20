@@ -88,7 +88,7 @@ try {
             $cst->execute([$id]);
             $cves = $cst->fetchAll();
 
-            // 목록의 빠른 모달은 일부 행만 보여주므로 상세에서는 최신 스캔의 전체 영향 범위를 제공한다.
+            // 목록의 빠른 모달은 일부 행만 보여주므로 상세에서는 최신 수집의 전체 영향 범위를 제공한다.
             $assetFrom = 'FROM tb_advisory_cve ac
                           JOIN tb_finding f ON f.cve_id = ac.cve_id AND f.is_deleted = 0
                           JOIN tb_scan s ON s.scan_id = f.scan_id
@@ -256,7 +256,7 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
             'empty' => [
                 'icon'  => '✅',
                 'title' => '이 공지에 노출된 자산이 없습니다.',
-                'hint'  => '최신 스캔 기준으로 관련 CVE가 발견되지 않았습니다.',
+                'hint'  => '최신 수집 기준으로 관련 CVE가 발견되지 않았습니다.',
             ],
             'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
             'cell' => [

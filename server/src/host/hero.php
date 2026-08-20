@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * host/hero.php — 자산 상세의 **머리**(탭 줄 위) 렌더 하나.
- *   식별부 히어로 + 즉시 스캔 버튼 + "판정 불가/수집 실패" 경고 + 위험 요약 KPI 줄.
+ *   식별부 히어로 + 즉시 수집 버튼 + "판정 불가/수집 실패" 경고 + 위험 요약 KPI 줄.
  *   전부 탭과 무관하게 늘 같은 자리에 서는 것이라 한 파일로 묶는다(탭 본문은 tabs/*.php).
  *
  *   조회는 하지 않는다 — 쓰는 값은 전부 호출부가 $ctx 로 열거해 넘긴 것뿐이다
@@ -107,7 +107,7 @@ function vg_host_render_hero(array $ctx): void {
       foreach ($missingStages as $s) { $stageHints[] = '수집 실패 — ' . $s; }
       vg_alert([
           'type'  => 'warn',
-          'title' => '이 스캔은 일부 항목을 수집하지 못했습니다',
+          'title' => '이번 수집에서 일부 항목을 수집하지 못했습니다',
           'hints' => $stageHints,
       ]);
   }

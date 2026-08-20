@@ -152,9 +152,9 @@ function vg_asset_grade_history_render(array $rows): void
     ?>
     <section class="card mt-lg" aria-labelledby="asset-grade-history-title">
       <strong id="asset-grade-history-title">최근 시스템 제안 관찰</strong>
-      <p class="why">스캔 데이터로 계산한 초안 관찰이며, 사람의 등급 승인·확정 이력이 아닙니다.</p>
+      <p class="why">수집 데이터로 계산한 초안 관찰이며, 사람의 등급 승인·확정 이력이 아닙니다.</p>
       <div class="table-wrap"><table>
-        <thead><tr><th>관찰 시각</th><th>스캔</th><th>시스템 제안</th><th>판정 상태</th><th>제안 근거</th></tr></thead>
+        <thead><tr><th>관찰 시각</th><th>수집</th><th>시스템 제안</th><th>판정 상태</th><th>제안 근거</th></tr></thead>
         <tbody>
         <?php foreach ($rows as $row):
             $grade = $row['suggested_grade'] ?? null;

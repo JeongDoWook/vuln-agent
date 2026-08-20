@@ -151,7 +151,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       'summary' => '위반 ' . number_format((int) $asset['total']) . '건',
       'link' => '<a href="/assets.php">근거 →</a>',
   ] : $deniedRow('asset');
-  $whySec = '최신 스캔 점검 ' . number_format((int) $secconfig['checked']) . '건 중 FAIL 판정';
+  $whySec = '최신 수집 점검 ' . number_format((int) $secconfig['checked']) . '건 중 FAIL 판정';
   $summaryRows[] = [
       'key' => 'secops',
       'badge' => $verdictCell($sSec,

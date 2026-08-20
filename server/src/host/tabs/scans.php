@@ -1,8 +1,8 @@
 <?php
 declare(strict_types=1);
-/* 스캔 이력 탭 — 회차 표 + 같은 회차들의 에이전트 리소스 추이. */ ?>
+/* 수집 이력 탭 — 회차 표 + 같은 회차들의 에이전트 리소스 추이. */ ?>
     <div class="card">
-      <strong>스캔 이력</strong>
+      <strong>수집 이력</strong>
       <div class="card__body">
       <?php
       vg_table(
@@ -22,7 +22,7 @@ declare(strict_types=1);
               'card' => false,
               'empty' => [
                   'icon'  => '🕘',
-                  'title' => '스캔 이력이 없습니다.',
+                  'title' => '수집 이력이 없습니다.',
               ],
               'cell' => [
                   'scan_id'        => fn($s) => '<a href="/findings.php?scan_id=' . (int) $s['scan_id'] . '">#' . (int) $s['scan_run_id'] . '</a>'
@@ -84,8 +84,8 @@ declare(strict_types=1);
           'alt'   => '에이전트 메모리·CPU 사용률 추이',
           'empty' => [
               'icon'  => 'chart',
-              'title' => '그래프를 그리기엔 스캔 이력이 부족합니다.',
-              'hint'  => '메모리·CPU 값이 있는 스캔이 2건 이상 쌓이면 여기에 추이가 표시됩니다.',
+              'title' => '그래프를 그리기엔 수집 이력이 부족합니다.',
+              'hint'  => '메모리·CPU 값이 있는 수집이 2건 이상 쌓이면 여기에 추이가 표시됩니다.',
           ],
       ]);
       ?>

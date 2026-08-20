@@ -113,7 +113,7 @@ function vg_finding_due_cell(?int $daysSince, ?int $slaDays, ?string $status): s
     }
     if ($daysSince === null) {
         return '<span class="why" title="최초 발견 시각을 확인할 수 없습니다('
-             . '보유한 스캔 이력이 짧으면 되짚을 수 없습니다)">–</span>';
+             . '보유한 수집 이력이 짧으면 되짚을 수 없습니다)">–</span>';
     }
     $left = $slaDays - $daysSince;
     $title = '기한 ' . $slaDays . '일 · 최초 발견 후 ' . max(0, $daysSince) . '일 경과';

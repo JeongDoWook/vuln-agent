@@ -311,7 +311,7 @@ try {
 }
 
 // 스캔 수신 감사로그(에이전트발 → SYSTEM).
-vg_log_activity($pdo, 'HOST', $hostId, 'ingest', '스캔 수신',
+vg_log_activity($pdo, 'HOST', $hostId, 'ingest', '수집 수신',
     ['packages' => $pkgCount, 'exposures' => $expCount, 'processes' => $procCount], null, 'SYSTEM',
     subject: $fqdn, action: 'EXECUTE');
 

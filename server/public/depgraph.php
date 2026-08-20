@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * depgraph.php — 패키지 의존성 그래프(무엇이 이 패키지를 끌어왔나). 로그인 필요.
- *   ?id=<host_id>            자산의 최신 스캔 기준
+ *   ?id=<host_id>            자산의 최신 수집 기준
  *   &cid=<container_id>      0=호스트 자신, 양수=그 컨테이너 (엣지가 있는 단위만 선택지에 뜬다)
  *   &mgr=&name=&ver=         대상 패키지를 지정하면 역추적/정방향 탭이 열린다
  *   &tab=from|to|tree        &page=&per_page= 는 전체 트리의 루트 페이지네이션
@@ -147,13 +147,13 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
 <?php if (!$scan): ?>
   <div class="card"><?php vg_empty([
       'icon' => 'feed',
-      'title' => '아직 수집된 스캔이 없습니다.',
+      'title' => '아직 수집 이력이 없습니다.',
       'cta'   => ['href' => '/host.php?id=' . (int) $hostId, 'label' => '자산 상세로'],
   ]); ?></div>
 <?php elseif (!$groups): ?>
   <div class="card"><?php vg_empty([
       'icon' => 'package',
-      'title' => '이 자산의 최신 스캔에는 의존성 엣지가 없습니다.',
+      'title' => '이 자산의 최신 수집에는 의존성 엣지가 없습니다.',
       'cta'   => ['href' => '/host.php?id=' . (int) $hostId . '&tab=packages', 'label' => '설치 패키지 보기'],
   ]); ?></div>
 <?php else: ?>

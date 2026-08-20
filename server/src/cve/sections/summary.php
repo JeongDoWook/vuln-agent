@@ -33,7 +33,7 @@ declare(strict_types=1);
           <dt>내 자산 노출</dt>
           <dd><?= $locTotal > 0
               ? '<a href="#locations">' . number_format($assetTotal) . '대 · 발견 ' . number_format($locTotal) . '건</a>'
-              : '<span class="why">없음(최신 스캔 기준)</span>' ?></dd>
+              : '<span class="why">없음(최신 수집 기준)</span>' ?></dd>
         </dl>
         <div class="actions mt">
           <?php vg_copy_btn($cveId, 'CVE ID 복사'); ?>

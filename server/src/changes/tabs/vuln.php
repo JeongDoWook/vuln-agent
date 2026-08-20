@@ -53,7 +53,7 @@ vg_table(
             : [
                 'icon'  => 'chart',
                 'title' => '아직 비교할 변화가 없습니다.',
-                'hint'  => '호스트마다 스캔이 2회 이상 쌓여야 직전과 비교할 수 있습니다.',
+                'hint'  => '호스트마다 수집이 2회 이상 쌓여야 직전과 비교할 수 있습니다.',
             ],
         'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
         'cell' => [

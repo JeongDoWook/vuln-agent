@@ -827,7 +827,7 @@ assert_contains "$allpackages" 'glibc' "전체 호스트 설치 패키지 검색
 assert_contains "$allpackages" "$FQDN_WEB01" "설치 패키지 검색 결과에 호스트 표시"
 
 # --- 자산 탐색(섀도우 IT) ------------------------------------------------------
-#   화면은 스캔을 직접 돌리지 않는다 — tb_discovery_run 에 pending 을 만들고 bin/discover.php 가
+#   화면은 대역 탐색을 직접 돌리지 않는다 — tb_discovery_run 에 pending 을 만들고 bin/discover.php 가
 #   집행한다. 그래서 여기서 확인하는 것은 "대기열에 들어갔는가"까지다.
 #   대역 CIDR 은 유니크라 두 번째 실행부터는 등록이 거부된다 — 그래서 결과 화면에 그 대역이
 #   보이는지로 단언한다(처음 만들었든 이미 있든 같은 결론이라 반복 실행에 안전하다).
@@ -838,18 +838,23 @@ curl_ -s -b "$JAR" -o /dev/null --data-urlencode "csrf=$disccsrf" --data-urlenco
 discbody=$(curl_ -s -b "$JAR" "$BASE/discovery.php")
 assert_contains "$discbody" "$DISC_CIDR" "자산 탐색: 대역 등록 결과가 목록에 보인다"
 assert_contains "$discbody" '에이전트 커버리지' "자산 탐색: 커버리지 KPI 표시"
+# 실행 버튼은 대역 카드 안이 아니라 제목 줄에 있다 — 이 화면의 주 동작이라 눈에 먼저 들어와야 한다.
+#   이름도 '지금 스캔' 이 아니라 '대역 탐색' 이다(에이전트 수집과 어휘를 갈라 놓았다).
+assert_contains "$discbody" '>대역 탐색</button>' "자산 탐색: 제목 줄에 '대역 탐색' 실행 버튼"
+assert_not_contains "$discbody" '지금 스캔' "자산 탐색: 옛 '지금 스캔' 라벨이 남아 있지 않다"
 # 잘못된 CIDR 은 화면에서 막는다(집행기까지 안 내려간다).
 badcidr=$(curl_ -s -b "$JAR" -L --data-urlencode "csrf=$disccsrf" --data-urlencode "action=target_save"   --data-urlencode "cidr=not-a-cidr" "$BASE/discovery.php")
 assert_contains "$badcidr" 'CIDR 표기' "자산 탐색: 잘못된 대역 표기 거부"
-# 스캔 요청 → 그 대역이 대기/진행 상태로 보인다. 이미 대기 중이면 두 번째 요청은 거부된다.
-# 표 전체가 한 줄로 나오므로, 그 대역 뒤에 처음 오는 hidden 값이 그 행의 대역 id 다
-#   (문서 끝의 등록 모달은 value="0" 이라 그냥 tail 로 집으면 0 을 집는다).
-DISC_TID=$(sed "s#.*$DISC_CIDR##" <<<"$discbody" | grep -oE 'name="discovery_target_id" value="[0-9]+"' | head -1 | grep -oE '[0-9]+')
+# 대역 탐색 요청 → 그 대역이 대기/진행 상태로 보인다. 이미 대기 중이면 두 번째 요청은 거부된다.
+# 대역 id 는 그 대역의 **카드 안**에서 집는다 — 카드는 CIDR 을 <code> 로 찍고 곧이어 삭제 폼의
+#   hidden 을 낸다. 제목 줄의 '대역 탐색' 폼과 문서 끝 등록 모달에도 같은 이름의 hidden 이 있어서,
+#   문서 전체에서 앞뒤로 집으면 남의 대역 id 나 0 을 집는다.
+DISC_TID=$(awk -v c="$DISC_CIDR</code>" 'index($0,c){f=1} f && match($0,/name="discovery_target_id" value="[0-9]+"/){print substr($0,RSTART,RLENGTH); exit}' <<<"$discbody" | grep -oE '[0-9]+')
 curl_ -s -b "$JAR" -o /dev/null --data-urlencode "csrf=$disccsrf" --data-urlencode "action=scan"   --data-urlencode "discovery_target_id=$DISC_TID" "$BASE/discovery.php"
 discafter=$(curl_ -s -b "$JAR" "$BASE/discovery.php")
-assert_contains "$discafter" '대기 중' "자산 탐색: 스캔 요청이 대기열에 들어간다(집행은 bin/discover.php)"
+assert_contains "$discafter" '대기 중' "자산 탐색: 대역 탐색 요청이 대기열에 들어간다(집행은 bin/discover.php)"
 dupscan=$(curl_ -s -b "$JAR" -L --data-urlencode "csrf=$disccsrf" --data-urlencode "action=scan"   --data-urlencode "discovery_target_id=$DISC_TID" "$BASE/discovery.php")
-assert_contains "$dupscan" '진행 중인 스캔' "자산 탐색: 중복 스캔 요청 차단"
+assert_contains "$dupscan" '진행 중인 탐색' "자산 탐색: 중복 대역 탐색 요청 차단"
 # 변화 추적 — 사이드바에 올린 화면인데 스모크가 한 번도 치지 않아, 패키지 셀이 부르는
 #   vg_osv_ecosystem() 의 require 누락(distro.php)이 Fatal error 로 오래 남아 있었다.
 #   목록에 행이 있어야 그 코드 경로를 지나므로, 응답 본문에 표가 렌더됐는지까지 본다.
@@ -888,7 +893,10 @@ hostvuln=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
 #   즉시 실행뿐 아니라 예약·주기·속도 티어 폼도 첫 화면(취약점 탭)에 함께 보인다.
 #   히어로의 즉시 실행 지름길 버튼은 걷었다(#690) — 카드가 바로 아래에서 같은 폼을 보여주므로
 #   카드 자체가 딱 한 번만(중복 없이) 그려지는지가 이 PR 의 목적이다.
-assert_contains "$hostvuln" 'name="action" value="agent_run_now"' "첫 화면에 즉시 스캔 버튼"
+assert_contains "$hostvuln" 'name="action" value="agent_run_now"' "첫 화면에 즉시 수집 버튼"
+# 수집 제어의 실행 버튼은 '지금 수집' 이다 — 자산 탐색의 '대역 탐색' 과 이름으로 갈린다.
+assert_contains "$hostvuln" '>지금 수집</button>' "수집 제어 실행 버튼 이름이 '지금 수집'"
+assert_contains "$hostvuln" 'name="verify_files"' "수집 제어에 무결성 검사 체크박스 유지"
 assert_contains "$hostvuln" 'name="action" value="agent_set_schedule"' "첫 화면에 수집 주기 폼(상단 공통 카드)"
 assert_contains "$hostvuln" 'name="action" value="agent_set_speed_tier"' "첫 화면에 속도 티어 폼(상단 공통 카드)"
 assert_contains "$hostvuln" 'tab=manage' "첫 화면에서 자산 설정 탭으로 갈 수 있다"
@@ -902,18 +910,18 @@ assert_contains "$hostvuln" "에이전트 <code>" "호스트 상세에 에이전
 # '노출'(리스닝 소켓 수) 열은 자산 목록에서 걷어냈다 — 개수로는 우선순위를 못 정하고,
 #   범위(EXTERNAL/LAN/…)별 목록은 호스트 상세의 런타임 탭이 답한다. 그 탭 자체는 그대로 산다.
 assert_not_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=runtime" "자산 목록에 노출 수 열이 없다"
-# '리소스' 탭은 '스캔 이력' 탭으로 흡수됐다 — 옛 URL 은 302 로 그 탭에 떨군다(북마크 보존).
+# '리소스' 탭은 '수집 이력' 탭으로 흡수됐다 — 옛 URL 은 302 로 그 탭에 떨군다(북마크 보존).
 resredir=$(curl_ -s -i -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=resources")
 assert_contains "$resredir" "302" "옛 리소스 탭 URL 이 302 로 응답"
-assert_contains "$resredir" "tab=scans" "옛 리소스 탭 URL 이 스캔 이력 탭으로 이동"
+assert_contains "$resredir" "tab=scans" "옛 리소스 탭 URL 이 수집 이력 탭으로 이동"
 scansbody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=scans")
-assert_contains "$scansbody" "스캔 이력" "스캔 이력 탭 표시"
+assert_contains "$scansbody" "수집 이력" "수집 이력 탭 표시"
 # 메모리·CPU 는 한 차트 두 계열로 합쳤다(둘 다 단위가 %라 한 축에 얹어도 값이 안 거짓말한다).
-assert_contains "$scansbody" "에이전트 리소스 사용률" "스캔 이력 탭이 리소스 추이를 함께 보여준다"
+assert_contains "$scansbody" "에이전트 리소스 사용률" "수집 이력 탭이 리소스 추이를 함께 보여준다"
 assert_not_contains "$scansbody" 'href="?tab=resources"' "리소스 탭이 탭 줄에서 사라졌다"
 packagebody=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=packages")
 assert_contains "$packagebody" '설치 패키지' "자산 상세 설치 패키지 탭 표시"
-assert_contains "$packagebody" 'glibc' "최신 스캔의 설치 패키지 전체 목록 조회"
+assert_contains "$packagebody" 'glibc' "최신 수집의 설치 패키지 전체 목록 조회"
 if [ -n "$WEB02_ID" ]; then ok "web02 호스트 id 확인 (=$WEB02_ID)"; else no "web02 호스트를 자산 목록에서 못 찾음"; WEB02_ID=1; fi
 if [ -n "$WEB03_ID" ]; then ok "web03 호스트 id 확인 (=$WEB03_ID)"; else no "web03 호스트를 자산 목록에서 못 찾음"; WEB03_ID=1; fi
 
@@ -1162,7 +1170,7 @@ if grep -qF '<script>alert(1)</script>' <<<"$xssbody"; then
 else
   ok "findings.php 검색어 XSS 이스케이프(vg_empty 의존)"
 fi
-assert_contains "$xssbody" '이 화면(실제 스캔·매칭된 현재 판정)에는 없습니다' "검색 0건 안내가 노출됨(빈 상태 분기 확인)"
+assert_contains "$xssbody" '이 화면(실제 수집·매칭된 현재 판정)에는 없습니다' "검색 0건 안내가 노출됨(빈 상태 분기 확인)"
 
 # 필터초기화 CTA 의 href(vg_qs() 결과) — q/sev/st/fx 는 지우지만, 목록에 없는 임의 쿼리값은
 #   그대로 실어 나른다. vg_qs() 의 urlencode() + vg_empty() 의 vg_h() 이중 이스케이프에

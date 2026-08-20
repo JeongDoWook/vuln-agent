@@ -6,16 +6,16 @@ declare(strict_types=1);
  *   이 화면이 답하는 질문은 하나다: **"내가 모르는 자산이 몇 대인가."**
  *   에이전트를 설치한 서버만 아는 상태로는 담당자가 엑셀에서 빠뜨린 자산을 구조적으로 못 찾는다.
  *
- *   취약점 스캔과 **별개 파이프라인**이다(Nexpose·Nessus 의 Discovery/Vulnerability 분리와 같은 구도).
+ *   취약점 수집과 **별개 파이프라인**이다(Nexpose·Nessus 의 Discovery/Vulnerability 분리와 같은 구도).
  *   두 파이프라인의 접점은 IP 대조 한 곳뿐 — tb_discovered_asset.host_id.
  *
- *   ★ 웹은 스캔을 직접 돌리지 않는다. 이 화면은 tb_discovery_run 에 status='pending' 행을
+ *   ★ 웹은 대역 탐색을 직접 돌리지 않는다. 이 화면은 tb_discovery_run 에 status='pending' 행을
  *     만들기만 하고, 집행은 스케줄러 틱(bin/scheduler.php, 1분마다)이 한다. 수동으로는
  *     `php bin/discover.php --pending` 이 같은 함수를 부른다(CLAUDE.md 원칙 6 —
  *     무거운 작업은 bin/ 으로). 화면은 status 를 읽어 보여준다.
  *
  *   인가 경계 두 단:
- *     · 대역 등록·수정·삭제 · 스캔 실행  → **admin** (남의 대역을 훑는 것은 관리 행위다)
+ *     · 대역 등록·수정·삭제 · 대역 탐색 실행  → **admin** (남의 대역을 훑는 것은 관리 행위다)
  *     · 제외 표시·메모                   → **admin·operator** (매일 도는 분류 작업)
  *   제외·메모는 행마다 입력창을 세우지 않고 **표에서 고른 뒤 모달**로 한꺼번에 건다.
  *   화면에서 버튼을 감추는 건 인가가 아니다 — 판정은 아래 POST 처리부가 한다.
@@ -82,6 +82,40 @@ function vg_discovery_normalize_ports(string $raw): ?string
     return $joined;
 }
 
+/**
+ * 제목 줄의 주 동작 — '대역 탐색'. 이 화면의 주 동작인데 예전에는 대역 카드 안에서 '수정·삭제'
+ *   와 같은 무게로 놓여 눈에 안 들어왔다(사용자 지적). 카드 안 버튼은 없애고 여기 하나만 둔다 —
+ *   버튼 수는 대역이 몇 개든 하나로 고정된다.
+ *   대역이 하나면 그대로 실행하고, 여럿이면 어느 대역인지 고르게 한다. 선택지는 **지금 실행할 수
+ *   있는 대역**만이다(사용 중지·이미 대기/진행 중인 대역은 어차피 POST 처리부가 거부한다).
+ */
+function vg_discovery_run_form(array $runnable, string $csrf): void
+{
+    if (!$runnable) {
+        echo '<button type="button" class="btn btn--sm btn--primary" disabled'
+            . ' title="지금 탐색할 수 있는 대역이 없습니다 — 사용 중지했거나 이미 대기·진행 중입니다.">대역 탐색</button>';
+        return;
+    }
+    $one = count($runnable) === 1 ? $runnable[0] : null;
+    ?>
+    <form method="post" class="actions">
+      <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+      <input type="hidden" name="action" value="scan">
+      <?php if ($one !== null): ?>
+        <input type="hidden" name="discovery_target_id" value="<?= (int) $one['discovery_target_id'] ?>">
+      <?php else: ?>
+        <select name="discovery_target_id" aria-label="탐색할 대역">
+          <?php foreach ($runnable as $t): ?>
+            <option value="<?= (int) $t['discovery_target_id'] ?>"><?= vg_h((string) $t['cidr']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      <?php endif; ?>
+      <button class="btn btn--sm btn--primary" data-loading="요청 중…"
+              title="<?= $one !== null ? vg_h((string) $one['cidr']) . ' 대역을 훑습니다' : '고른 대역을 훑습니다' ?>">대역 탐색</button>
+    </form>
+    <?php
+}
+
 $pdo = vg_pdo();
 
 /* ── POST 처리 — GET 렌더보다 먼저·헤더 출력 전이어야 한다(전부 PRG 로 끝난다). ───────── */
@@ -91,7 +125,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     }
     $action = (string) ($_POST['action'] ?? '');
     $me     = vg_current_user();
-    $canManage = vg_has_role('admin');                 // 대역·스캔
+    $canManage = vg_has_role('admin');                 // 대역·탐색
     $canTriage = vg_has_role('admin', 'operator');     // 제외·메모
     try {
         if ($action === 'target_save') {
@@ -152,7 +186,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             vg_redirect_flash(['msg' => '대역을 삭제했습니다: ' . $cidr . ' (발견 이력은 남습니다)']);
 
         } elseif ($action === 'scan') {
-            if (!$canManage) { throw new RuntimeException('스캔을 실행할 권한이 없습니다.'); }
+            if (!$canManage) { throw new RuntimeException('대역 탐색을 실행할 권한이 없습니다.'); }
             $id = (int) ($_POST['discovery_target_id'] ?? 0);
             $st = $pdo->prepare(
                 'SELECT cidr, enabled FROM tb_discovery_target WHERE discovery_target_id = ? AND is_deleted = 0'
@@ -160,7 +194,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $st->execute([$id]);
             $target = $st->fetch();
             if (!$target) { throw new RuntimeException('대역을 찾을 수 없습니다.'); }
-            if ((int) $target['enabled'] !== 1) { throw new RuntimeException('사용 안 함으로 둔 대역은 스캔하지 않습니다.'); }
+            if ((int) $target['enabled'] !== 1) { throw new RuntimeException('사용 안 함으로 둔 대역은 탐색하지 않습니다.'); }
             /* 중복 실행 방지 — 버튼은 진행 중이면 이미 막혀 있지만, 두 사람이 동시에 눌렀거나
              *   조작된 POST 가 오면 여기서 걸린다(화면 숨김은 인가가 아니다와 같은 이유). */
             $busy = $pdo->prepare(
@@ -169,19 +203,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             );
             $busy->execute([$id]);
             if ((int) $busy->fetchColumn() > 0) {
-                throw new RuntimeException('이미 대기 중이거나 진행 중인 스캔이 있습니다.');
+                throw new RuntimeException('이미 대기 중이거나 진행 중인 탐색이 있습니다.');
             }
             $ins = $pdo->prepare(
                 "INSERT INTO tb_discovery_run (discovery_target_id, status, created_by) VALUES (?, 'pending', ?)"
             );
             $ins->execute([$id, $me['id'] ?? null]);
             $runId = (int) $pdo->lastInsertId();
-            /* "누가 어느 대역을 스캔했나" 는 이 기능에서 가장 중요한 기록이다. */
+            /* "누가 어느 대역을 탐색했나" 는 이 기능에서 가장 중요한 기록이다. */
             vg_log_activity($pdo, 'DISCOVERY_RUN', $runId, 'discovery_scan_request',
-                '자산 탐색 스캔 요청: ' . $target['cidr'],
+                '대역 탐색 요청: ' . $target['cidr'],
                 ['cidr' => $target['cidr'], 'discovery_target_id' => $id],
                 subject: (string) $target['cidr'], action: 'EXECUTE');
-            vg_redirect_flash(['msg' => '스캔을 대기열에 넣었습니다: ' . $target['cidr'] . ' (집행기가 순서대로 처리합니다)']);
+            vg_redirect_flash(['msg' => '대역 탐색을 대기열에 넣었습니다: ' . $target['cidr'] . ' (집행기가 순서대로 처리합니다)']);
 
         } elseif ($action === 'asset_triage') {
             /* 제외·메모는 **표에서 고른 자산에 한꺼번에** 건다(행마다 입력창을 세우지 않는다 —
@@ -269,7 +303,7 @@ $portsByAsset = [];
 $total = 0;
 
 try {
-    /* 대역 + 그 대역의 **마지막 스캔**. 대역은 사람이 손으로 등록하는 것이라 수십 건 규모다
+    /* 대역 + 그 대역의 **마지막 탐색**. 대역은 사람이 손으로 등록하는 것이라 수십 건 규모다
      *   — 상관 서브쿼리가 대역마다 한 번 도는 것이 조인 후 집계보다 단순하고 인덱스도 탄다
      *   (PK + idx_discovery_run_target_time). */
     $targets = $pdo->query(
@@ -401,15 +435,25 @@ $scope    = $managed + $shadow;
 $coverage = $scope > 0 ? (int) round($managed * 100 / $scope) : 0;
 $found    = $scope + $stateCounts['ignored'];
 
+/* 제목 줄의 '대역 탐색' 이 고를 수 있는 대역 — 사용 중이고, 이미 대기·진행 중이 아닌 것.
+ *   판정 자체는 POST 처리부가 다시 한다(화면에서 고르는 것은 인가도 검증도 아니다). */
+$runnableTargets = array_values(array_filter($targets, static fn(array $t): bool =>
+    (int) $t['enabled'] === 1 && !in_array((string) ($t['status'] ?? ''), ['pending', 'running'], true)));
+
 vg_header('자산 탐색', 'discovery');
 ?>
-  <?php /* '+ 대역 등록' 은 대역 카드 아래에서 .form-bar 로 한 줄을 통째로 쓰던 버튼이다 —
-           버튼 하나뿐인 줄이라 그 폭이 전부 빈칸이었다. 제목 줄의 액션 자리로 올린다
-           (같은 화면의 '에이전트 설치 안내' 와 같은 성격 · 인가 조건은 그대로 $canManage). */ ?>
+  <?php /* 제목 줄이 이 화면의 액션 자리다 — '+ 대역 등록' 이 먼저 올라와 있었고(#733),
+           이 화면의 **주 동작**인 '대역 탐색' 을 그 앞에 같이 올린다. 예전엔 대역 카드 안에서
+           '수정·삭제' 옆에 있어 부수 동작과 같은 무게로 읽혔다(사용자 지적).
+           대역이 하나도 없으면 할 일은 등록뿐이라 그때만 등록이 강조된다.
+           인가 조건은 그대로 $canManage(대역·탐색은 admin). */ ?>
   <?php vg_page_title('자산 탐색', 'DISCOVERY', [
-      'suffix_html' => vg_help('대역을 훑어 살아있는 IP 를 모읍니다. 취약점 스캔과는 별개 파이프라인입니다.'),
-      'actions' => vg_capture(static function () use ($canManage): void {
-          if ($canManage) { vg_modal_btn('discoveryTarget', '+ 대역 등록', 'btn btn--sm btn--primary'); }
+      'suffix_html' => vg_help('대역을 훑어 살아있는 IP 를 모읍니다. 에이전트가 대상 서버 안을 읽는 취약점 수집과는 별개입니다.'),
+      'actions' => vg_capture(static function () use ($canManage, $targets, $runnableTargets, $csrf): void {
+          if ($canManage && $targets) { vg_discovery_run_form($runnableTargets, $csrf); }
+          if ($canManage) {
+              vg_modal_btn('discoveryTarget', '+ 대역 등록', 'btn btn--sm ' . ($targets ? 'btn--ghost' : 'btn--primary'));
+          }
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
   ]); ?>
@@ -432,7 +476,7 @@ vg_header('자산 탐색', 'discovery');
     </div>
   </div>
 
-  <?php /* ── 대역 · 스캔 ─────────────────────────────────────────────────── */ ?>
+  <?php /* ── 대역 · 탐색 ─────────────────────────────────────────────────── */ ?>
   <?php
   /* 대역을 골랐으면 카드·랭킹도 그 대역만 보인다 — 상단 KPI 만 줄고 카드는 전체 그대로면
    *   같은 화면에서 숫자가 어긋난다. */
@@ -480,7 +524,6 @@ vg_header('자산 탐색', 'discovery');
           $tid    = (int) $t['discovery_target_id'];
           $sc     = $targetStateCounts[$tid] ?? array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
           $status = (string) ($t['status'] ?? '');
-          $busy   = in_array($status, ['pending', 'running'], true);
       ?>
         <div class="card discovery-target">
           <div class="discovery-target__head">
@@ -501,16 +544,16 @@ vg_header('자산 탐색', 'discovery');
             <?php endforeach; ?>
           </div>
 
-          <?php /* 마지막 스캔 — 얼마나 걸렸는지가 운영자에게 중요하다(대역을 더 넓힐지 판단한다).
+          <?php /* 마지막 탐색 — 얼마나 걸렸는지가 운영자에게 중요하다(대역을 더 넓힐지 판단한다).
                    실패는 **일반화된 문구**만 낸다: error_text 원문에는 대상 주소·예외 원문이 섞인다. */ ?>
           <div class="discovery-target__scan">
             <?php
-            if ($status === '') { echo '<span class="why">스캔 이력 없음</span>'; }
+            if ($status === '') { echo '<span class="why">탐색 이력 없음</span>'; }
             elseif ($status === 'pending') { echo vg_badge('대기 중', 'med') . ' <span class="why">집행기 대기</span>'; }
             elseif ($status === 'running') { echo vg_badge('진행 중', 'high')
                 . ' <span class="why">' . vg_h(substr((string) ($t['started_at'] ?? ''), 0, 16)) . ' 시작</span>'; }
             elseif ($status === 'failed') { echo vg_badge('실패', 'crit')
-                . ' <span class="why">스캔이 실패했습니다. 서버 로그를 확인하세요.</span>'; }
+                . ' <span class="why">탐색이 실패했습니다. 서버 로그를 확인하세요.</span>'; }
             else {
                 $at = substr((string) ($t['finished_at'] ?? ''), 0, 16);
                 echo vg_badge('완료', 'ok') . ' <span class="why">' . vg_h($at)
@@ -529,19 +572,11 @@ vg_header('자산 탐색', 'discovery');
                 : '기본 세트' ?>
           </div>
 
+          <?php /* 실행은 카드가 아니라 제목 줄의 '대역 탐색' 이 갖는다 — 카드마다 버튼을 되살리면
+                   대역 수만큼 같은 버튼이 늘어나고, 주 동작이 다시 '수정·삭제' 와 같은 무게가 된다.
+                   진행 상태는 위의 뱃지(대기 중·진행 중·완료)가 그대로 말한다. */ ?>
           <?php if ($canManage): ?>
             <div class="actions mt">
-              <?php if ($busy): ?>
-                <button type="button" class="btn btn--xs btn--ghost" disabled
-                        title="이미 대기 중이거나 진행 중입니다">지금 스캔</button>
-              <?php else: ?>
-                <form method="post">
-                  <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-                  <input type="hidden" name="action" value="scan">
-                  <input type="hidden" name="discovery_target_id" value="<?= $tid ?>">
-                  <button class="btn btn--xs btn--primary" data-loading="요청 중…">지금 스캔</button>
-                </form>
-              <?php endif; ?>
               <a class="btn btn--xs btn--ghost" href="<?= vg_h(vg_qs(['edit' => $tid])) ?>">수정</a>
               <form method="post" data-confirm="이 대역을 삭제할까요? 지금까지 발견한 자산 이력은 남습니다.">
                 <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
@@ -627,7 +662,7 @@ vg_header('자산 탐색', 'discovery');
       'first_seen' => fn($r) => '<span class="why">' . vg_h(substr((string) $r['first_seen'], 0, 16)) . '</span>',
       'last_seen'  => fn($r) => '<span class="why">' . vg_h(substr((string) $r['last_seen'], 0, 16)) . '</span>',
       /* 이 열이 이 기능의 결론 동선이다 — 모르는 자산을 찾았으면 에이전트를 깔고 취약점
-       *   스캔으로 넘어간다. 그래서 연결이 없을 때 막다른 칸이 아니라 설치 안내로 잇는다. */
+       *   취약점 수집으로 넘어간다. 그래서 연결이 없을 때 막다른 칸이 아니라 설치 안내로 잇는다. */
       'host' => function ($r): string {
           if ((int) ($r['host_id'] ?? 0) > 0 && $r['fqdn'] !== null) {
               return '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h((string) $r['fqdn']) . '</a>';
@@ -677,7 +712,7 @@ vg_header('자산 탐색', 'discovery');
           'cta' => ['href' => '/discovery.php', 'label' => '필터 초기화'],
       ] : [
           'icon' => 'search', 'title' => '아직 발견된 자산이 없습니다.',
-          'hint' => '대역을 등록하고 "지금 스캔" 을 누르면 집행기가 순서대로 훑습니다.',
+          'hint' => '대역을 등록하고 "대역 탐색" 을 누르면 집행기가 순서대로 훑습니다.',
       ],
       'cell' => $cells,
   ]);
