@@ -1,6 +1,9 @@
 @startuml 시스템개요
 ' vuln-agent §1 시스템 개요 (데이터 흐름)
 ' 원본: docs/dev/architecture.md §1 (mermaid flowchart LR)
+'
+' 자산을 아는 길이 둘이다 — 에이전트가 밀어 넣는 갈래(왼쪽)와 중앙이 대역을 훑는
+' 갈래(아래). 후자는 에이전트가 없는 자산을 찾는 것이 목적이라 접점이 IP 대조 한 곳뿐이다.
 
 left to right direction
 skinparam rectangle {
@@ -16,23 +19,37 @@ package "수집 대상 서버들 (Linux)" as Servers {
     rectangle "에이전트" as A3
 }
 
+package "에이전트 없는 자산 (섀도우 IT)" as Shadow {
+    rectangle "관리 대역의 IP\n(에이전트 미설치)" as SHOST #9e6a03
+}
+
 package "중앙 서버 · Docker" as Central {
     rectangle "Caddy\n(HTTPS 종료 · tls internal 자체서명 — 확정)" as CADDY #8250df
     rectangle "ingest.php\n(수신 API · 토큰 인증)" as ING #238636
-    database "MySQL\n자산·스냅샷·실행 이력·명령 큐·취약점\n계정 인벤토리 · 패키지 의존성 그래프" as DB
+    rectangle "agent-poll.php / agent-dl.php\n명령 pull · 새 버전 배포(sha256 + Ed25519 서명)" as POLL #238636
+    database "MySQL\n자산·스냅샷·실행 이력·명령 큐·취약점\n계정 인벤토리 · 패키지 의존성 그래프\n호스트 IP·라우팅 · 발견 IP·열린 포트" as DB
     rectangle "매처 (PHP)\nexposure + pkg × CVE" as MAT #a371f7
+    rectangle "bin/discover.php\n대역 2단계 TCP 스윕(스케줄러 틱이 집행)" as DISC #9e6a03
     database "보안 피드 미러\nNVD·OSV·KEV·EPSS·KISA\nDebian·Ubuntu·RHEL·kernel.org·SSG" as CVE
-    rectangle "웹 대시보드\n우선순위·노출근거·억제근거·감사로그" as WEB #db6d28
+    rectangle "웹 대시보드\n우선순위·노출근거·억제근거·감사로그\n자산 탐색 · 세그먼트 맵 · 컴플라이언스" as WEB #db6d28
 }
 
 A1 --> CADDY : 상시 데몬(10초 명령 poll)\n설정 주기/즉시/예약 실행·진행·중단
 A2 --> CADDY
 A3 --> CADDY
 CADDY --> ING
+CADDY --> POLL
+POLL --> A1 : 구버전이면 새 스크립트\n(에이전트가 검증 후 자가 교체)
 ING --> DB
 DB --> MAT
 CVE --> MAT
 MAT --> DB : findings
 DB --> WEB
+
+' ── 중앙발 능동 스캔 — 에이전트가 없는 자산을 찾는 갈래 ──────────────
+DB --> DISC : 등록된 대역(tb_discovery_target)\n+ pending run
+DISC --> SHOST : TCP connect 스윕\n1단계 탐침 6포트 → 살아있는 IP\n2단계 그 IP × 상위 100포트
+SHOST --> DISC : 열린 포트 · 역DNS · 배너
+DISC --> DB : tb_discovered_asset / tb_discovered_port\ntb_host_address 와 IP 대조 → 미관리 IP 판정
 
 @enduml

@@ -70,4 +70,31 @@ LOCAL --> WC : 평문 127.0.0.1:8081
 WC --> DC : vulnagent 내부망
 SCH --> DC
 
+' ── 에이전트 배포·자동 업데이트 경로 ─────────────────────────────────
+'   두 마운트의 성격이 다르다: agent-src 는 git 추적(모든 배포가 같은 파일),
+'   agent-ca 는 gitignore(배포마다 다른 Caddy 루트 CA — 관리자가 최초 1회 추출).
+package "web 컨테이너의 읽기전용 마운트" as Mounts {
+    rectangle "../agent → /var/www/agent-src (ro, git 추적)\ninstall-agent.sh · vuln-inventory-agent.sh\nvuln-inventory-agent.sh.sig · vuln-inventory-agent.pub" as MSRC
+    rectangle "../agent-ca → /var/www/agent-ca (ro, gitignore)\ncaddy-root.crt" as MCA
+}
+
+rectangle "agent-dl.php (무인증 · 화이트리스트 4개)\n스크립트·공개키·루트 CA 배포" as ADL #9e6a03
+rectangle "agent-poll.php\n에이전트가 보낸 버전 < 배포 버전이면\nsha256 + 서명(base64)을 응답에 싣는다" as APOLL #238636
+
+MSRC --> ADL
+MCA  --> ADL
+MSRC --> APOLL : 파일에서 직접 읽는다\n(최신 버전을 DB 에 따로 두지 않는다)
+WC ..> ADL
+WC ..> APOLL
+
+REMOTE --> ADL : 최초 설치 — install-agent.sh + 루트 CA\n+ 공개키를 받아 노드에 고정(pin)
+APOLL --> REMOTE : 자동 업데이트 제안(update_available)
+ADL   --> REMOTE : 새 스크립트 본문
+
+rectangle "노드에서의 검증 (install-agent.sh do_update)\nHTTPS 전용 · 다운그레이드 거부(sort -V) · sha256 대조\nEd25519 서명 검증(설치 시 고정한 공개키) · bash -n\n.bak 백업 후 원자적 교체\n예외: OpenSSL 3.0 미만은 서명 검증을 건너뛰고 sha256 만(명시적 저하·서버에 보고)\n단계별 상세는 에이전트자동업데이트.puml" as VERIFY #da3633
+REMOTE --> VERIFY
+
+rectangle "서명 개인키 (유지보수자 로컬)\ndeploy/agent_sign.sh — 커밋 전에 서명한다\n★ 이 서버에 절대 오지 않는다" as SIGNKEY #1f6feb
+SIGNKEY ..> MSRC : .sig 를 커밋으로 실어 보낸다\n웹 티어가 침해돼도 위조 불가
+
 @enduml
