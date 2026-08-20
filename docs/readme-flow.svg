@@ -139,7 +139,8 @@
   <rect x="1084" y="534" width="252" height="38" rx="11" fill="#f8f1ff"/>
   <text x="1210" y="558" text-anchor="middle" class="chip" fill="#7240ad">이미지 재빌드 · 부모 패키지</text>
 
-  <text x="1084" y="605" class="foot">위험 · 억제 · 판정 불가를 구분</text>
+  <text x="1084" y="598" class="foot">위험 · 억제 · 판정 불가를 구분</text>
+  <text x="1084" y="620" class="foot">에이전트 자동 업데이트</text>
 
   <!-- Difference band -->
   <rect x="40" y="690" width="1320" height="170" rx="24" fill="#17223b"/>
