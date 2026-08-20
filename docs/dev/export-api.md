@@ -2,23 +2,19 @@
 
 > 문서 기준: 2026-08-20.
 
-외부 시스템(예: Python AI 보고서 생성기)이 스캔 결과를 JSON/XML 로 가져가는 읽기 전용 API.
-**부품표(SBOM)는 형제 엔드포인트**(`GET /sbom.php`, CycloneDX 1.5 / SPDX 2.3)가 따로 낸다 —
-여기 `export.php` 는 **취약점 판정 결과**만 내보낸다. 파라미터는 아래 §SBOM.
+외부 시스템(예: Python AI 보고서 생성기)이 스캔 결과를 JSON/XML 로 가져가는 읽기 전용 API — `export.php` 는
+**취약점 판정 결과**만 내보낸다. 부품표는 형제 엔드포인트 `GET /sbom.php`(CycloneDX 1.5 / SPDX 2.3, 아래 §SBOM).
 
 - **엔드포인트**: `GET /export.php`
-- **인증**: **웹 로그인 세션**(자산 메뉴 권한 — `vg_require_menu('assets')`). 전용 API 토큰 체계는
-  2026-08-13 폐지했다(`/api-tokens.php` 화면·`tb_api_token` 테이블도 함께).
-- **부르는 법**: 웹에 로그인한 브라우저에서 URL 을 그대로 연다. 스크립트로 받을 때는 로그인 세션
-  쿠키를 함께 보낸다. 미로그인은 `/login.php` 로 리다이렉트, 자산 메뉴 권한이 없으면 403.
+- **인증**: **웹 로그인 세션**(자산 메뉴 권한 — `vg_require_menu('assets')`). 전용 API 토큰은 2026-08-13 폐지.
+- **부르는 법**: 웹에 로그인한 브라우저에서 URL 을 그대로 연다. 스크립트로 받을 때는 로그인 세션 쿠키를 함께 보낸다.
 
-**응답 실패**는 전부 JSON 이다(`format=xml` 이어도) — `{"ok":false,"error":…,"code":…,"ts":…}`.
-`code` 는 `method_not_allowed`(405, GET/HEAD 외) · `internal_error`(500). 인증 실패는 화면과 같은
-게이트를 쓰므로 JSON 이 아니라 로그인 리다이렉트(302)이거나 403 이다. 예외 원문은 응답에 싣지 않는다.
+**응답 실패**는 전부 JSON 이다(`format=xml` 이어도) — `{"ok":false,"error":…,"code":…,"ts":…}`. `code` 는
+`method_not_allowed`(405, GET/HEAD 외) · `internal_error`(500). 인증 실패만은 화면과 같은 게이트라 JSON 이
+아니라 미로그인 302(`/login.php`) · 권한 없음 403 이다. 예외 원문은 응답에 싣지 않는다.
 
 **감사 로그**: 호출 1회마다 누가·언제·어떤 필터로·몇 건을 가져갔는지 `tb_activity_log` 에 남는다
-(`activity_type=export_data`, `action=EXPORT`, `host` 지정이 없으면 처리 대상은 "전체 호스트").
-감사 기록에 실패해도 다운로드는 막지 않는다.
+(`activity_type=export_data`, `action=EXPORT`, `host` 지정이 없으면 "전체 호스트"). 기록에 실패해도 다운로드는 막지 않는다.
 
 ## 파라미터
 
@@ -71,8 +67,7 @@
 }
 ```
 
-`remediation_*` 3필드는 사람이 남긴 **미조치 사유 메모**다(없으면 전부 `null`). 이 제품은 결재선·
-상태 전이 같은 조치 워크플로를 갖지 않는다 — 본격 워크플로는 이 API 를 가져가는 외부 시스템 몫이다.
+`remediation_*` 3필드는 사람이 남긴 **미조치 사유 메모**다(없으면 전부 `null`). 이 제품은 조치 워크플로를 갖지 않는다 — 본격 워크플로는 이 API 를 가져가는 외부 시스템 몫이다.
 
 XML 은 같은 구조를 요소로 표현한다: `<vulnExport><summary><bySeverity/></summary><hosts><host><findings><finding>…`.
 스칼라는 속성, 긴 텍스트(`rationale`·`summary`·`remediationReason`)는 자식 요소.
@@ -95,7 +90,7 @@ r.raise_for_status()
 data = r.json()
 ```
 
-설치 패키지 전체 목록은 포함하지 않는다(호스트당 수천 건 → 보고서엔 노이즈). 취약점 결과와 호스트 맥락만 내보낸다.
+설치 패키지 전체 목록은 포함하지 않는다(호스트당 수천 건 → 보고서엔 노이즈) — 취약점 결과와 호스트 맥락뿐이다.
 
 ## SBOM — `GET /sbom.php`
 
@@ -111,15 +106,13 @@ data = r.json()
 | `view` | `html` | — | **시각화 보기**(아래) |
 | `page` · `per_page` | 정수 | 목록 기본값 | `view=html` 의 컴포넌트 표 페이지네이션 |
 
-`cid` 가 숫자 `container_id` 가 아니라 **cid 문자열**인 것은 의도다 — 숫자 id 는 스캔마다 새로 발급돼
-북마크·스크립트가 다음 수집에서 깨진다. 의존 엣지(dependencies/relationships)는 넣지 않는다(호스트
-패키지는 대부분 엣지가 비어 있어 반쪽짜리 그래프가 나간다). 같은 스캔·같은 범위면 `serialNumber` 가
-항상 같다(결정적 UUIDv5) — 파일로 보관하고 diff 할 수 있게 한 것이라 매 호출 난수를 쓰지 않는다.
+`cid` 가 숫자 `container_id` 가 아닌 것은 의도다 — 숫자 id 는 스캔마다 새로 발급돼 북마크·스크립트가 다음
+수집에서 깨진다. 의존 엣지(dependencies/relationships)는 넣지 않고, 같은 스캔·같은 범위면 `serialNumber` 가
+항상 같다(결정적 UUIDv5 — 파일로 보관하고 diff 할 수 있게).
 
 ### 시각화 보기 (`view=html`)
 
-`view=html` 이면 파일을 내려받는 대신 **화면을 그린다** — 컴포넌트 수·패키지 관리자 수·카피레프트/
-미상 라이선스 KPI, 생태계 분포, 관리자별 컴포넌트 표다. 파라미터가 없을 때의 기본 계약(브라우저로
-열면 파일로 내려받는다)은 그대로라 외부 SBOM 도구가 안 깨진다. 감사로그는 갈린다 — 다운로드는
-`export_sbom`, 시각화 보기는 `view_sbom`(둘 다 `action=EXPORT`). `view_sbom` 은 **GET 일 때만**
-남긴다(HEAD 는 프리페치·링크 미리보기로 실제 열람 없이 걸릴 수 있다).
+`view=html` 이면 파일을 내려받는 대신 **화면을 그린다** — 컴포넌트 수·패키지 관리자 수·카피레프트/미상
+라이선스 KPI, 생태계 분포, 관리자별 컴포넌트 표다. 이 파라미터가 없을 때의 기본 계약(파일 다운로드)은
+그대로다. 감사로그는 갈린다 — 다운로드 `export_sbom`, 시각화 보기 `view_sbom`(둘 다 `action=EXPORT`).
+`view_sbom` 은 **GET 일 때만** 남긴다(HEAD 는 프리페치로 실제 열람 없이 걸릴 수 있다).

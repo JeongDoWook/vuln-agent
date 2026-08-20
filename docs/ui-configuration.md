@@ -10,10 +10,10 @@
 | 반영 시점 | 컨테이너 재기동 | 즉시 |
 | 성격 | 배포 환경 값(화면 크기·잠금 정책 등) | 조직마다 다른 **판정 기준**(SLA·컷라인) |
 
-환경변수는 값이 없거나 형식이 틀리면 코드의 기본값을 쓰고, 허용 범위를 벗어난 숫자는 범위 안으로
-잘라 쓴다(빈 문자열은 "미설정"과 같게 취급 — `vg_env()`). **비밀값은 환경변수로 두지 않는다** — 배포
-비밀값(DB 비번, admin 초기 비번)은 Docker Secrets(`secrets/*.txt`)로만 주입하고([`secrets/README.md`](../secrets/README.md)),
-에이전트 수집 토큰은 웹에서 발급해 DB 엔 해시만 남는다(`export.php`·`sbom.php` 는 웹 로그인 세션 인증).
+환경변수는 값이 없거나 형식이 틀리면 코드의 기본값을 쓰고, 허용 범위를 벗어난 숫자는 범위 안으로 잘라
+쓴다(빈 문자열은 "미설정"과 같게 취급 — `vg_env()`). **비밀값은 환경변수로 두지 않는다** — 배포 비밀값은
+Docker Secrets 로만([`secrets/README.md`](../secrets/README.md)), 에이전트 수집 토큰은 웹에서 발급해 DB 엔 해시만
+남는다(`export.php`·`sbom.php` 는 전용 토큰 없이 웹 로그인 세션으로 인증한다).
 
 ## 적용 위치
 
@@ -28,8 +28,7 @@ x-app-env: &app-env                              # deploy/compose.yml
 ```
 
 `${VAR:-기본값}` 의 실제 값은 `deploy/.env.dev`/`.env.prod`(둘 다 gitignore, `.template` 만 커밋)에 적는다.
-앵커에 실제로 있는 앱 설정값은 `LOGIN_MAX_FAILS`·`LOGIN_LOCK_MINUTES` 뿐이고, 나머지 `UI_*` 는 코드
-기본값으로 돌고 있어 필요할 때만 앵커에 추가한다.
+앵커에 있는 앱 설정값은 `LOGIN_MAX_FAILS`·`LOGIN_LOCK_MINUTES` 뿐이고, 나머지 `UI_*` 는 코드 기본값으로 돈다.
 
 ## UI 목록·표시
 
@@ -68,10 +67,9 @@ x-app-env: &app-env                              # deploy/compose.yml
 | 에이전트 키 유효기간 선택지 | 무기한 / 30 / 90 / 365일 | `VG_TOKEN_EXPIRY_OPTIONS`(`server/src/tokenexpiry.php`) | 호스트별 수집 키. `0`=무기한 |
 | 만료 임박 표시 | `7`일 | `VG_TOKEN_EXPIRY_SOON_DAYS`(같은 파일) | 목록 뱃지 표시용. 인증 판정과 무관해 설정으로 빼지 않았다 |
 
-세션이 만료되면 `session_expire` 감사로그를 남기고 `tb_user.session_token` 을 지운다. 만료된 에이전트
-키는 인증 실패로 처리되고 `agent_token_expired` 로 기록된다(자동 갱신 없음). 페이지 열람 로그는
-페이지명·메뉴 코드·검색 쿼리의 **키만** 저장하고, 감사 모듈이 password/token/secret/csrf/authorization
-계열 필드를 재귀적으로 마스킹한다.
+세션이 만료되면 `session_expire` 감사로그를 남기고 `tb_user.session_token` 을 지운다. 만료된 에이전트 키는
+인증 실패로 처리되고 `agent_token_expired` 로 기록된다(자동 갱신 없음). 페이지 열람 로그는 페이지명·메뉴
+코드·검색 쿼리의 **키만** 저장하고, password/token/secret/csrf/authorization 계열은 재귀적으로 마스킹한다.
 
 ## 수집·에이전트
 
@@ -103,26 +101,22 @@ x-app-env: &app-env                              # deploy/compose.yml
 - **기본값은 폴백 상수다.** 설정 행이 없거나 테이블을 못 읽으면 `server/src/compliance.php` 의
   상수(`VG_COMPLIANCE_SLA_*` 등)를 그대로 쓴다 — 그래서 `vg_setting_defs()` 에 다시 적지 않는다.
 - 범위를 벗어난 값은 **읽을 때도** 범위로 잘라 쓴다(DB 를 직접 고친 값이 판정을 망가뜨리지 않게).
-  역산 구간이 절대 일수가 아니라 "여유일"인 것도 같은 이유다 — 조치 기한만 늘리면 경과일이 구간
-  길이에서 잘려 **위반이 아예 검출되지 않는다.**
+  역산 구간이 절대 일수가 아니라 "여유일"인 것도 같은 이유다 — 조치 기한만 늘리면 경과일이 구간 길이에서
+  잘려 **위반이 아예 검출되지 않는다.**
 - 화면(`compliance.php`)과 스케줄러의 스냅샷 적재가 같은 `vg_compliance_policy()` 를 쓴다.
-- **세션 만료는 보안 통제라 min 이 하한선이다.** 5분 미만이나 무한 세션은 저장할 수 없고, DB 를
-  직접 고쳐도 읽을 때 잘린다. `session.gc_maxlifetime` 은 설정을 읽지 않고
-  `session.absolute_minutes` 의 **상한**(1440분)으로 고정한다 — 매 요청 include 시점에 DB 를 열지
-  않으면서도 PHP GC 가 우리 만료 판정보다 먼저 세션을 지우지 않게.
-
-일부러 설정으로 빼지 않은 임계값도 있다 — 조직이 바꿀 값이 아니라고 봤다(YAGNI).
-
-| 값 | 상수 | 왜 코드에 두나 |
-|---|---|---|
-| 시스템 계정 UID 상한 `999` | `VG_ACCOUNT_SYSTEM_UID_MAX`(`server/src/account_inventory.php`) | 리눅스 관례(`login.defs` 의 `SYS_UID_MAX`). 배포판이 정하는 값이지 조직 규정이 아니다 |
-| nobody UID 하한 `65534` | `VG_ACCOUNT_NOBODY_UID_MIN`(같은 파일) | 위와 같음 |
+- **세션 만료는 보안 통제라 min 이 하한선이다.** 5분 미만이나 무한 세션은 저장할 수 없고 DB 를 직접
+  고쳐도 읽을 때 잘린다. `session.gc_maxlifetime` 은 설정을 읽지 않고 `session.absolute_minutes` 의
+  **상한**(1440분)으로 고정한다 — 매 요청 include 시점에 DB 를 열지 않으면서도 PHP GC 가 우리 만료
+  판정보다 먼저 세션을 지우지 않게.
 
 ## 여기서 다루지 않는 것
 
 - **비밀값** — `secrets/*.txt`(Docker Secrets). 환경변수가 아니다 → [`secrets/README.md`](../secrets/README.md).
 - **DB 접속 정보**(`DB_HOST`/`DB_NAME`/`DB_USER`/`DB_PORT`) — compose 가 앵커에서 주입한다. 운영자가 직접 만질 값이 아니다.
 - **컨테이너 인프라 값**(`WEB_PORT`·`DB_PORT`·`DB_DATA`·`MYSQL_*`·`PROD_DOMAIN`) — `deploy/.env.{dev,prod}.template` 참고.
+- **설정으로 빼지 않은 임계값** — 시스템 계정 UID 상한 `999`(`VG_ACCOUNT_SYSTEM_UID_MAX`)·nobody UID
+  하한 `65534`(`VG_ACCOUNT_NOBODY_UID_MIN`, 둘 다 `server/src/account_inventory.php`). 리눅스
+  관례(`login.defs` 의 `SYS_UID_MAX`)라 조직이 바꿀 값이 아니다.
 - **에이전트 쪽 환경변수** — 이 표의 값은 전부 web·scheduler 컨테이너가 읽는 것이다. 수집 대상
   호스트에서 에이전트 자신이 읽는 값(속도 티어, `CPU_QUOTA`·`PACKAGING_TIMEOUT`·`MEM_MAX`, `/proc`
   순회 상한 `PROC_SCAN_TIMEOUT`)은 [`agent/README.md`](../agent/README.md) 가 정본이고 조정 경로도
