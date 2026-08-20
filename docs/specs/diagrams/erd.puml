@@ -14,13 +14,22 @@
 '      · 컬럼도 전부 적지 않는다 — PK/FK 와 그 테이블을 이해하는 데 필요한 것만.
 '      · 실선(--)은 FK 가 실제로 걸린 관계, 점선(..)은 FK 없이 애플리케이션이 조인하는 관계다.
 '
+' 배치: 이 그림은 문서 본문(폭 900px)에 인라인되므로 viewBox 폭이 곧 글자 크기다. 엔티티 59개를
+'      가로로 펼치면 폭이 8452 까지 벌어져 실효 글자가 1.5px — 아무것도 안 보인다. 그래서
+'      (a) left to right direction 으로 package 를 세로로 쌓고,
+'      (b) 한 부모에 자식이 몰려 한 열에 세로로 쌓이는 곳은 아래 '배치 전용 보조선'으로 다음 열에 민다.
+'      (c) linetype ortho 는 쓰지 않는다 — 직각 라우팅은 라벨 자리를 따로 잡지 않아, 폭을 좁히면
+'          관계 라벨이 엔티티 박스 글자 위에 겹쳐 찍힌다(좁힌 상태에서 실측 32곳). 곡선 라우팅은 잡아준다.
+'      (d) 긴 관계 라벨은 줄바꿈(\n)으로 접는다 — 라벨 폭이 열 간격을 그대로 벌린다.
+'      결과: 8452x1192 -> 2547x4124(실효 1.5px -> 4.9px).
+'
 ' 명명규칙: 테이블명은 단수, 대리키 PK 는 <단수 테이블명>_id, FK 는 부모 PK 이름을 그대로 쓴다
 '          (tb_host.host_id ← tb_scan.host_id — 조인 양쪽 이름이 같다).
 '          자연키·복합키·FK-as-PK 라 대리키를 두지 않는 예외(tb_cve/tb_kev_catalog 등)는
 '          docs/dev/데이터베이스.md 의 예외표 참고.
 
+left to right direction
 hide circle
-skinparam linetype ortho
 skinparam shadowing false
 skinparam nodesep 12
 skinparam ranksep 22
@@ -743,8 +752,8 @@ tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
 tb_host ||--o{ tb_scan_run : "실제 실행 이력"
 tb_host ||--o{ tb_agent_command : "수집 명령"
 tb_host ||--o{ tb_host_account : "계정 인벤토리"
-tb_host ||--o{ tb_host_address : "호스트 IP(NIC 마다 1행)"
-tb_host ||--o{ tb_host_route : "라우팅 행 — 세그먼트 맵의 근거"
+tb_host ||--o{ tb_host_address : "호스트 IP\n(NIC 마다 1행)"
+tb_host ||--o{ tb_host_route : "라우팅 행 —\n세그먼트 맵의 근거"
 tb_host ||--o{ tb_remediation_note : "미조치 사유 메모"
 tb_host ||--o{ tb_finding_status : "조치 상태"
 tb_host ||--o| tb_asset_grade_review : "최신 등급 검토"
@@ -755,32 +764,32 @@ tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
 tb_scan ||--o{ tb_process : "실행 프로세스"
 tb_scan ||--o{ tb_container : "컨테이너 인벤토리"
 tb_scan ||--o{ tb_collection_stage : "수집 단계 완전성"
-tb_scan ||--o{ tb_scan_run : "동일 스냅샷 재사용 가능"
+tb_scan ||--o{ tb_scan_run : "동일 스냅샷\n재사용 가능"
 tb_scan ||--o{ tb_finding : "매처 판정"
 tb_scan ||--o{ tb_suppressed_finding : "억제된 건"
 tb_scan ||--o{ tb_pkg_changelog_cve : "억제 근거②"
 tb_scan ||--o{ tb_applied_errata : "억제 근거③"
 tb_scan ||--o{ tb_debsecan : "억제 근거④"
-tb_scan ||--o{ tb_stale_lib : "억제 취소 — 재시작 필요"
+tb_scan ||--o{ tb_stale_lib : "억제 취소 —\n재시작 필요"
 tb_scan ||--o{ tb_cce_finding : "보안설정 점검"
 tb_scan ||--o{ tb_host_account : "그 스냅샷의 계정 목록"
-tb_scan ||--o{ tb_package_dependency : "의존성 엣지(SBOM·pom)"
+tb_scan ||--o{ tb_package_dependency : "의존성 엣지\n(SBOM·pom)"
 tb_scan ||--o{ tb_package_integrity : "원본과 다른 파일"
 tb_scan ||--o{ tb_asset_grade_suggestion_history : "그 스캔의 제안 관찰"
 
 tb_finding ||--o| tb_finding_evidence : "판정 근거(1:1)"
 tb_compliance_snapshot ||--o{ tb_compliance_snapshot_control : "통제별 판정 결과"
-tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별 조치버전"
+tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별\n조치버전"
 tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
 tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
 tb_user |o--o{ tb_asset_grade_review : "등급 검토자"
 tb_agent_token ||--o{ tb_agent_replay_nonce : "소진된 nonce"
 
 tb_discovery_target ||--o{ tb_discovery_run : "대역 스윕 실행 이력"
-tb_discovery_target ||--o{ tb_discovered_asset : "발견한 IP(대역 기준 누적)"
+tb_discovery_target ||--o{ tb_discovered_asset : "발견한 IP\n(대역 기준 누적)"
 tb_discovered_asset ||--o{ tb_discovered_port : "열린 포트만"
-tb_discovery_run ||--o{ tb_discovered_port : "그 실행에서 열려 있던 포트"
-tb_host |o--o{ tb_discovered_asset : "IP 대조로 붙은 기존 자산(없으면 NULL)"
+tb_discovery_run ||--o{ tb_discovered_port : "그 실행에서\n열려 있던 포트"
+tb_host |o--o{ tb_discovered_asset : "IP 대조로 붙은\n기존 자산(없으면 NULL)"
 
 ' ── FK 없는 관계(점선) — 자연키 애플리케이션 조인 ─────
 ' CVE 도메인은 피드마다 수집 순서가 독립이라 FK 를 걸지 않는다(의도적 설계).
@@ -788,17 +797,17 @@ tb_cve ||..o{ tb_cve_affected_package : "영향 패키지"
 tb_cve ||..o{ tb_finding : "취약점"
 tb_cve ||..o| tb_kev_catalog : "KEV 등재"
 tb_cve ||..o{ tb_advisory_cve : "CVE → 공지 역조회"
-tb_cve_affected_package }o..|| tb_package_summary : "사전집계(OSV 실행 시 재생성)"
-tb_container ||..o{ tb_package : "컨테이너 내부 패키지(container_id)"
+tb_cve_affected_package }o..|| tb_package_summary : "사전집계\n(OSV 실행 시 재생성)"
+tb_container ||..o{ tb_package : "컨테이너 내부\n패키지(container_id)"
 tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"
-tb_cce_finding }o..o{ tb_control_mapping : "기준별 통제(rule_code = code)"
-tb_control_mapping }o..o| tb_control_guide : "통제 설명(framework, control_id)"
+tb_cce_finding }o..o{ tb_control_mapping : "기준별 통제\n(rule_code = code)"
+tb_control_mapping }o..o| tb_control_guide : "통제 설명\n(framework, control_id)"
 tb_control_mapping }o..o| tb_cce_rule_guide : "룰 조치(rule_code)"
-tb_control_catalog |o..o{ tb_control_mapping : "기준 전체(분모) ↔ 우리가 덮는 항목(분자)"
-tb_remediation_note ||..o{ tb_finding : "자연키(host+cid+cve+package)로 붙는 사람 메모"
-tb_finding_status ||..o{ tb_finding : "자연키(host+container+cve+package) 조치 상태"
+tb_control_catalog |o..o{ tb_control_mapping : "기준 전체(분모) ↔\n우리가 덮는 항목(분자)"
+tb_remediation_note ||..o{ tb_finding : "자연키(host+cid+cve+package)로\n붙는 사람 메모"
+tb_finding_status ||..o{ tb_finding : "자연키(host+container+cve+package)\n조치 상태"
 
-tb_host_address }o..o| tb_discovered_asset : "IP 값 대조 — 두 파이프라인의 유일한 접점"
+tb_host_address }o..o| tb_discovered_asset : "IP 값 대조 —\n두 파이프라인의 유일한 접점"
 
 ' 벤더 판정 소스는 매처가 참조만 한다(스캔에 매달리지 않음).
 tb_debian_tracker }o..|| tb_finding : "데비안 백포트 판정"
@@ -806,6 +815,34 @@ tb_ubuntu_oval }o..|| tb_finding : "우분투 OVAL 판정"
 tb_vendor_errata }o..|| tb_finding : "RHEL 계열 조치 EVR"
 tb_vendor_unfixed }o..|| tb_finding : "조치 불가(no_fix)"
 tb_kernel_cve }o..|| tb_finding : "커널 CVE 판정"
+
+' ── 배치 전용 보조선 — 그려지지 않는다(레이아웃 전용) ──────
+' -[hidden]- 은 "오른쪽 것을 왼쪽 것보다 한 열 뒤에 둔다"는 배치 지시일 뿐 관계가 아니다.
+' 관계를 읽을 때는 이 블록을 통째로 무시한다. 한 부모에 자식이 열 개 넘게 매달리면 그 자식들이
+' 한 열에 세로로 쌓여 그림이 세로로만 길어지므로, 절반을 다음 열로 밀어 폭·높이를 맞춘다.
+tb_host_account -[hidden]- tb_package_dependency
+tb_scan_run -[hidden]- tb_package_integrity
+tb_exposure -[hidden]- tb_asset_grade_suggestion_history
+tb_process -[hidden]- tb_collection_stage
+tb_host_account -[hidden]- tb_container
+
+tb_control_catalog -[hidden]- tb_debian_tracker
+tb_compliance_rule -[hidden]- tb_vendor_unfixed
+tb_ubuntu_oval -[hidden]- tb_vendor_errata
+
+tb_cce_finding -[hidden]- tb_stale_lib
+tb_applied_errata -[hidden]- tb_debsecan
+tb_pkg_changelog_cve -[hidden]- tb_suppressed_finding
+tb_cce_finding -[hidden]- tb_finding_status
+tb_applied_errata -[hidden]- tb_remediation_note
+tb_pkg_changelog_cve -[hidden]- tb_compliance_snapshot
+
+tb_advisory -[hidden]- tb_package_license_summary
+tb_discovered_asset -[hidden]- tb_discovery_run
+
+tb_feed_connector -[hidden]- tb_activity_log
+tb_feed_collection_log -[hidden]- tb_role_permission
+tb_feed_collection_log -[hidden]- tb_setting
 
 ' ── 관계선을 두지 않은 테이블 ──────────────────────────
 ' tb_advisory       : CVE 와 느슨한 연계(제목의 CVE best-effort)라 FK 없음. 정본은 junction.
