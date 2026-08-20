@@ -142,8 +142,11 @@
 
   var hostId = card.getAttribute('data-host-id');
   var csrf = card.getAttribute('data-csrf');
-  var interval = Math.max(1, Number(card.getAttribute('data-poll-interval')) || 3) * 1000;
-  var maxAttempts = Math.max(1, Number(card.getAttribute('data-poll-max')) || 60);
+  // 아래 두 숫자는 data-* 가 없을 때만 쓰이는 최후 폴백이다(서버는 항상 내려준다).
+  //   그래도 report_job.php 의 기본값과 같은 값을 적어 둔다 — 갈라지면 폴백이 살아난 순간
+  //   폴링이 조용히 짧게 끝난다.
+  var interval = Math.max(1, Number(card.getAttribute('data-poll-interval')) || 5) * 1000;
+  var maxAttempts = Math.max(1, Number(card.getAttribute('data-poll-max')) || 720);
   var createBtn = card.querySelector('[data-report-create]');
   var statusBox = card.querySelector('[data-report-status]');
   var badge = card.querySelector('[data-report-badge]');
