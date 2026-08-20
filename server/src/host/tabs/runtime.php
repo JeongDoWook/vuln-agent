@@ -110,7 +110,8 @@ declare(strict_types=1);
       <?php
       vg_table(
           [
-              ['label' => 'PID'],
+              // 숫자 열은 우측정렬(전 화면 규약).
+              ['label' => 'PID', 'align' => 'right', 'width' => '6rem'],
               ['label' => '위치'],
               ['label' => '프로세스', 'key' => 'comm'],
               ['label' => '사용자'],

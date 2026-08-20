@@ -152,8 +152,12 @@
    * 박혀 있고 화면별로 갈라져(자산 .6rem · 권한 매트릭스 58px) 밀도를 한 번에 못 움직였다.
    * 간격을 --sp-* 로 모은 것과 같은 원칙을 표에도 준다 — 화면은 값을 덮지 말고 **토큰을
    * 갈아끼운다**(.page--assets { --cell-px: … } 처럼). 고밀도 표의 통용 치수는 표준 48~56px ·
-   * 압축 40~44px 이고 :root 가 15px 이므로 2.75rem = 41px 이 압축 상단에 해당한다. */
-  --row-h:   2.75rem;      /* 41px — 표의 한 행 최소 높이(내용이 길면 늘어난다) */
+   * 압축 40~44px 이다(:root 가 15px 기준). 이 값은 오래 2.75rem(41px) — 즉 **압축 대역** —
+   * 이었고, 한 줄짜리 값만 있는 표(SBOM 부품표·에이전트 키·사용자·자산 목록)가 전부 그 최소에
+   * 붙어 읽기 힘들다는 지적을 받았다. 표준 대역의 아래끝으로 올린다(사용자 지적 — "줄 간격
+   * 체크 필요 너무 붙어있어"). 내용이 두 줄인 표(취약점 58px·CVE 53px)는 이미 이 값보다 커서
+   * 영향이 없다 — 조여 있던 표만 올라온다. */
+  --row-h:   3.2rem;       /* 48px — 표의 한 행 최소 높이(내용이 길면 늘어난다) */
   --cell-py: var(--sp-2);  /* 칸 세로 여백 */
   --cell-px: var(--sp-3);  /* 칸 가로 여백 */
 
@@ -275,14 +279,6 @@
   --shadow-lg: 0 24px 64px rgb(0 0 0 / .6);
 }
 
-/* --- 표 밀도: 압축 --------------------------------------------------------
- * 상단바의 밀도 토글이 <html data-density="compact"> 를 붙인다(테마 토글과 같은 방식).
- * 여기서 갈아끼우는 건 **세로**다 — 가로를 줄이는 화면별 조정(.page--assets)은 그대로 산다.
- * 왜 세로인가: 표가 주인공인 제품에서 한 화면에 들어오는 행 수를 바꾸는 건 행 높이뿐이다. */
-:root[data-density="compact"] {
-  --row-h:   2.4rem;       /* 36px */
-  --cell-py: var(--sp-1);
-}
 
 * { box-sizing: border-box; }
 
@@ -1345,7 +1341,7 @@ table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
 th, td { text-align: left; padding: var(--cell-py) var(--cell-px); border-bottom: 1px solid var(--line); vertical-align: top; }
 /* 행 높이는 데이터 표(vg_table 이 붙이는 .data-table)에만 준다 — 카드 안 두세 줄짜리
  * 속성표까지 41px 로 벌리면 상세 화면이 헐거워진다. height 는 표에서 **최소**로 동작하므로
- * 내용이 길면 행은 그대로 늘어난다. 압축 밀도에서는 --row-h 가 갈아끼워진다. */
+ * 내용이 길면 행은 그대로 늘어난다. */
 .data-table tr { height: var(--row-h); }
 thead { background: var(--surface-2); }
 th {
@@ -1946,7 +1942,9 @@ td.right .actions { justify-content: flex-end; }
   align-items: center;
   gap: var(--sp-2) var(--sp-3);
   margin: 0;
-  padding: var(--sp-4) 0;
+  /* 두 칸 격자로 바꾼 뒤 위아래가 널널해져 카드가 필요 이상으로 높았다 — 한 칸 안이
+     [라벨]/[입력][버튼] 두 줄뿐이라 --sp-4 는 과했다(사용자 지적). */
+  padding: var(--sp-3) 0;
   border-top: 1px solid var(--line);
 }
 /* 첫 줄의 두 칸은 카드 머리 바로 아래라 구분선을 안 그린다. */
@@ -2205,7 +2203,7 @@ form.card .btn--primary:active { transform: translateY(0); }
 
 /* ======================================================================}
 
- * 화면 단위 컴포넌트 — 제목 블록 · 밀도 토글 · 설정 폼 · 권한 매트릭스
+ * 화면 단위 컴포넌트 — 제목 블록 · 설정 폼 · 권한 매트릭스
  * ========================================================================== */
 
 /* 페이지 제목 — **카드가 아니라 헤더 줄이다.** 예전엔 흰 카드(테두리+20px 라운드+큰 패딩)라
@@ -2305,13 +2303,20 @@ form.card .btn--primary:active { transform: translateY(0); }
 /* ======================================================================}
 
  * 페이지별 조정 — layout.php 가 <main> 에 page--<스크립트> 클래스를 붙인다.
- * 대시보드 · 목록 · 상세 · 관리 화면이 서로 다른 폭과 리듬을 갖는다.
+ * 여기서 정하는 건 **리듬**이지 폭이 아니다 — 본문 폭은 아래 한 줄이 전 화면에 하나로 준다.
  * ========================================================================== */
+/* 본문 폭 — **전 화면 한 값이다.** 예전엔 화면마다 max-width 를 다시 줘서 기본 1680 · 대시보드
+ * 1520 · 관리 4화면 1520 · 상세 6화면 1480 으로 갈렸고(그중 목록 9화면의 1680 은 기본값과 같은
+ * 죽은 규칙이었다), 옆 메뉴로 옮길 때마다 본문이 좌우로 흔들렸다(사용자 지적 — users.php 는
+ * 꽉 차는데 cce-rules.php 는 안 찬다). 좁게 둘 이유가 화면 성격에 있는 곳만 아래에서 예외로
+ * 선언하고, 그 이유를 그 자리에 적는다. 새 화면은 아무것도 안 적으면 이 값을 받는다. */
 .page__main { width: min(100%, 1680px); min-height: calc(100vh - var(--topbar-h)); margin-inline: auto; }
 .page__main > h1:first-child { margin-top: .15rem; }
 .page__main > h1:first-child + .sub { margin-top: .25rem; }
 
-/* 스타일가이드 — 공용 헬퍼와 토큰을 한 화면에서 비교하는 내부 페이지. */
+/* 스타일가이드 — 공용 헬퍼와 토큰을 한 화면에서 비교하는 내부 페이지.
+ * **본문 폭 예외**: 데이터 목록이 아니라 읽는 문서라, 1680 으로 늘리면 견본 한 줄이
+ * 눈이 따라가기 힘들 만큼 길어진다. 그래서 여기만 좁게 둔다. */
 .page--styleguide .page__main { max-width: 1120px; }
 .styleguide-section { margin-bottom: var(--sp-5); }
 .styleguide-section > h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-lg); }
@@ -2357,14 +2362,10 @@ form.card .btn--primary:active { transform: translateY(0); }
 
 /* 대시보드: 개요형. 여백을 넓게 쓴다. */
 /* KPI 격자·도넛 규칙은 등급별 분포 카드와 함께 걷었다 — 이 화면엔 그 마크업이 없다. */
-.page--index .page__main { max-width: 1520px; }
 .page--index .split { gap: 1.35rem; }
 .page--index .card > strong:first-child { font-size: var(--fs-lg); letter-spacing: -.02em; }
 
-/* 목록 화면: 필터는 스크롤해도 손 닿는 곳에 붙어 있고, 데이터가 폭을 다 쓴다. */
-.page--activity .page__main, .page--advisories .page__main, .page--assets .page__main,
-.page--changes .page__main, .page--compliance_rules .page__main, .page--cves .page__main,
-.page--findings .page__main, .page--packages .page__main, .page--vendor .page__main { max-width: 1680px; }
+/* 목록 화면: 필터는 스크롤해도 손 닿는 곳에 붙어 있고, 데이터가 폭을 다 쓴다(폭은 공통값). */
 .page--activity .toolbar, .page--advisories .toolbar, .page--assets .toolbar,
 .page--changes .toolbar, .page--compliance_rules .toolbar, .page--cves .toolbar,
 .page--findings .toolbar, .page--packages .toolbar, .page--vendor .toolbar {
@@ -2429,8 +2430,8 @@ form.card .btn--primary:active { transform: translateY(0); }
 /* 자산관리만 칸의 가로 여백을 줄인다. 12열이라 여백이 표 폭을 먹는 비율이 다른 화면과 다르다 —
  * 표 모드의 최소 폭(1061px)에서 표는 741px 인데 칸 여백만 12×32px=384px(52%)였다. 그래서
  * '상태' 열은 6.5%(48px)를 받고도 오프라인 뱃지(65px)를 담지 못해 OS 열을 32px 덮었다.
- * 이 화면이 손대는 건 가로뿐이다 — 세로(행 높이)는 --row-h 가 전 화면 공통으로 갖고,
- * 밀도 토글이 그 값을 갈아끼운다. 여기서는 --cell-px 만 한 단 좁힌다(.6rem → --sp-2). */
+ * 이 화면이 손대는 건 가로뿐이다 — 세로(행 높이)는 --row-h 가 전 화면 공통으로 갖는다.
+ * 여기서는 --cell-px 만 한 단 좁힌다(.6rem → --sp-2). */
 .page--assets .data-table { --cell-px: var(--sp-2); }
 /* 같은 이유로 이 표에서만 <code> 도 칸 안에서 접는다(.pill 을 접게 둔 것과 같은 결정).
  * '주기' 의 <code>하루 1회</code> 는 66px 인데, 12열 표에서 그 열에 줄 수 있는 폭은 그보다 좁다 —
@@ -2450,9 +2451,8 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--cce-rule .kv { grid-template-columns: max-content minmax(0, 1fr); }
 .page--cce-rule .kv dd { overflow-wrap: anywhere; }
 
-/* 상세 화면: 서술은 읽기 좋은 길이로, 증거 표는 폭을 그대로 쓴다. */
-.page--host .page__main, .page--cve .page__main, .page--compliance_rule .page__main,
-.page--advisory .page__main, .page--user .page__main, .page--control .page__main { max-width: 1480px; }
+/* 상세 화면: 서술은 읽기 좋은 길이로(.prose 가 78ch 로 잡는다), 증거 표는 폭을 그대로 쓴다.
+ * 본문 폭 자체는 목록과 같다 — 목록에서 한 줄을 눌러 들어왔는데 본문이 좁아지면 표가 접힌다. */
 .page--host .hero, .page--cve .hero, .page--user .hero { background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--info-bg) 45%, var(--surface))); }
 .page--advisory .prose, .page--cve .prose, .page--compliance_rule .prose,
 .page--control .prose { max-width: 78ch; line-height: 1.75; }
@@ -2517,10 +2517,10 @@ form.card .btn--primary:active { transform: translateY(0); }
  * (히어로 공통 여백 --sp-3 은 자산 상세처럼 뒤에 탭 줄이 오는 화면 기준이다). */
 .page--cve .hero { margin-bottom: var(--sp-5); }
 
-/* 관리 화면: 열이 많아 본문 폭을 넓게 쓴다(작업 열 정렬은 위 td.right .actions 가 소유한다). */
-.page--connectors .page__main, .page--users .page__main, .page--permissions .page__main,
-.page--agent-tokens .page__main { max-width: 1520px; }
-.page--profile .page__main { max-width: 720px; margin-inline: auto; }
+/* 관리 화면: 열이 많아 본문 폭을 넓게 쓴다(폭은 공통값 · 작업 열 정렬은 위 td.right .actions 가 소유한다). */
+/* 내 프로필 — **본문 폭 예외**: 목록이 없고 입력 대여섯 칸이 전부라, 공통 폭을 주면 라벨과
+ * 입력이 화면 양끝으로 갈라진다. 폼 한 장짜리 화면은 여기 하나뿐이라 화면 단위로 둔다. */
+.page--profile .page__main { max-width: 720px; }
 .page--profile .card--sm { max-width: 520px; }
 
 /* 권한 매트릭스: 열 폭을 고정하고 역할마다 가운데 정렬된 체크박스 하나만 둔다. */
@@ -2538,7 +2538,8 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--permissions .matrix .permission-menu { width: 46%; padding-left: 1.5rem; }
 .page--permissions .matrix .permission-role { width: 18%; text-align: center; }
 /* 체크박스 한 칸이 주인공이라 다른 표보다 행이 높다. 값을 박지 않고 토큰만 갈아끼운다 —
- * 그래야 밀도 토글이 이 표에도 같은 방식으로 닿는다(58px → 3.85rem, :root 15px 기준). */
+ * 전 화면 공통 규칙(.data-table tr { height: var(--row-h) })이 이 표에도 그대로 닿는다
+ * (58px → 3.85rem, :root 15px 기준). */
 .page--permissions .matrix { --row-h: 3.85rem; }
 .page--permissions .matrix th,
 .page--permissions .matrix td { vertical-align: middle; }
@@ -2671,9 +2672,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 
 @media (max-width: 680px) {
   .collection-status-btn > span:not(.collection-status-btn__dot) { display: none; }
-  /* 밀도 토글은 표 모드에서만 뜻이 있다 — 이 폭부터는 표가 행 단위 카드로 접혀
-     행 높이(--row-h)가 auto 로 돌아가므로, 눌러도 아무것도 안 바뀌는 버튼을 치운다. */
-  .seg--density { display: none; }
   .collection-overview__summary { grid-template-columns: repeat(2, 1fr); }
   .collection-item__meta { align-items: flex-start; flex-direction: column; gap: .2rem; }
   /* 표를 행 단위 카드로 접는다 — 카드가 표 자리를 대신하므로 감싼 .card 는 껍데기를 벗는다 */

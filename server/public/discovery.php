@@ -403,9 +403,13 @@ $found    = $scope + $stateCounts['ignored'];
 
 vg_header('자산 탐색', 'discovery');
 ?>
+  <?php /* '+ 대역 등록' 은 대역 카드 아래에서 .form-bar 로 한 줄을 통째로 쓰던 버튼이다 —
+           버튼 하나뿐인 줄이라 그 폭이 전부 빈칸이었다. 제목 줄의 액션 자리로 올린다
+           (같은 화면의 '에이전트 설치 안내' 와 같은 성격 · 인가 조건은 그대로 $canManage). */ ?>
   <?php vg_page_title('자산 탐색', 'DISCOVERY', [
       'suffix_html' => vg_help('대역을 훑어 살아있는 IP 를 모읍니다. 취약점 스캔과는 별개 파이프라인입니다.'),
-      'actions' => vg_capture(static function (): void {
+      'actions' => vg_capture(static function () use ($canManage): void {
+          if ($canManage) { vg_modal_btn('discoveryTarget', '+ 대역 등록', 'btn btn--sm btn--primary'); }
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
   ]); ?>
@@ -549,12 +553,6 @@ vg_header('자산 탐색', 'discovery');
           <?php endif; ?>
         </div>
       <?php endforeach; ?>
-    </div>
-  <?php endif; ?>
-
-  <?php if ($canManage): ?>
-    <div class="form-bar">
-      <?php vg_modal_btn('discoveryTarget', '+ 대역 등록', 'btn btn--sm btn--primary'); ?>
     </div>
   <?php endif; ?>
 
