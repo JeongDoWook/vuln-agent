@@ -15,6 +15,7 @@ eval "$(sed -n '/^emit_gemfile_lock() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^emit_gemspec_name() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^emit_jar_meta() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^emit_nested_jars() {$/,/^}$/p' "$AGENT")"
+eval "$(sed -n '/^pip_meta_license() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^collect_project_deps_installed() {$/,/^}$/p' "$AGENT")"
 SCAN_MAX_FILES=3000; SCAN_MAX_DEPTH=12
 
@@ -22,7 +23,10 @@ FIX=$(mktemp -d "tests/.fixtures-nplocks.XXXXXX") || exit 1
 LIC=$(mktemp "tests/.lic-nplocks.XXXXXX") || exit 1
 trap 'rm -rf "$FIX" "$LIC"' EXIT
 mkdir -p "$FIX/yarn1" "$FIX/yarn2" "$FIX/pnpm" "$FIX/poetry" "$FIX/pipenv" \
-         "$FIX/py/lib/python3.11/site-packages/oldpkg-1.4.2.egg-info"
+         "$FIX/py/lib/python3.11/site-packages/oldpkg-1.4.2.egg-info" \
+         "$FIX/py/lib/python3.11/site-packages/exprpkg-2.0.0.dist-info" \
+         "$FIX/py/lib/python3.11/site-packages/bothpkg-3.1.0.dist-info" \
+         "$FIX/py/lib/python3.11/site-packages/clspkg-0.9.0.dist-info"
 
 # 1) yarn v1(Classic) — 스코프 패키지의 다중 범위 헤더, 로컬(file:) 항목은 버려야 한다.
 cat > "$FIX/yarn1/yarn.lock" <<'EOF'
@@ -148,6 +152,37 @@ Summary: legacy package
 License: BSD-3-Clause
 EOF
 
+# 7) PEP 639 — `License-Expression:` 만 있는 패키지(요즘 배포판 다수). 복합 SPDX 표현식이 온다.
+cat > "$FIX/py/lib/python3.11/site-packages/exprpkg-2.0.0.dist-info/METADATA" <<'EOF'
+Metadata-Version: 2.4
+Name: exprpkg
+Version: 2.0.0
+License-Expression: Apache-2.0 OR BSD-2-Clause
+Summary: PEP 639 only
+EOF
+
+# 8) 둘 다 있는 패키지 — PEP 639 의 정식 필드인 License-Expression 이 이겨야 한다.
+cat > "$FIX/py/lib/python3.11/site-packages/bothpkg-3.1.0.dist-info/METADATA" <<'EOF'
+Metadata-Version: 2.4
+Name: bothpkg
+Version: 3.1.0
+License: MIT License
+License-Expression: MIT
+Classifier: License :: OSI Approved :: MIT License
+EOF
+
+# 9) Classifier 만 있는 패키지 — `OSI Approved :: ` 를 뗀 값을 낸다. 중앙(VG_LICENSE_ALIASES)이
+#    "BSD License" 를 BSD-3-Clause 로 정규화하므로 에이전트엔 매핑표를 두지 않는다.
+#    `License: UNKNOWN` 은 setuptools 자리표시자라 라이선스로 세면 안 된다 — 여기서 같이 검사한다.
+cat > "$FIX/py/lib/python3.11/site-packages/clspkg-0.9.0.dist-info/METADATA" <<'EOF'
+Metadata-Version: 2.1
+Name: clspkg
+Version: 0.9.0
+License: UNKNOWN
+Classifier: License :: OSI Approved
+Classifier: License :: OSI Approved :: BSD License
+EOF
+
 PROJECT_SCAN_ROOTS="$FIX"
 GOT=$(collect_project_deps_installed 3>>"$LIC")
 # Pipfile.lock 분기는 기존 package-lock.json 과 같이 `have jq` 가드가 걸려 있다 — jq 가 없는 환경에선
@@ -159,6 +194,9 @@ npm|chalk|5.1.2
 npm|lodash|4.17.21
 npm|react-dom|18.2.0
 npm|styled-components|5.3.6
+pip|bothpkg|3.1.0
+pip|clspkg|0.9.0
+pip|exprpkg|2.0.0
 pip|flask|2.2.2
 pip|jinja2|3.1.2
 pip|oldpkg|1.4.2
@@ -166,10 +204,10 @@ pip|requests|2.28.1
 pip|urllib3|1.26.13'
 
 rc=0
-n_want=12
+n_want=15
 if ! have jq; then
   WANT=$(printf '%s\n' "$WANT" | grep -vE '^pip\|(flask|jinja2)\|')
-  n_want=10
+  n_want=13
   echo "note node_python_locks: jq 없음 → Pipfile.lock 2건 제외하고 검사"
 fi
 
@@ -196,12 +234,26 @@ if printf '%s\n' "$GOT" | grep -qE 'pytest|should-not-appear|my-local|myapp|myli
   rc=1
 fi
 
-# egg-info 도 METADATA 와 동일하게 라이선스를 fd 3 으로 내보내야 한다.
-if ! grep -qx 'pip|oldpkg|1.4.2|BSD-3-Clause' "$LIC"; then
-  echo "FAIL node_python_locks: egg-info 라이선스가 fd 3 으로 안 나감"
-  cat "$LIC"
+# 라이선스 fd 3 — egg-info 의 `License:`(기존 동작)와 PEP 639 우선순위를 함께 검사한다.
+#   exprpkg: License-Expression 만 → 복합 SPDX 표현식이 그대로 나가야 한다.
+#   bothpkg: 둘 다 있음 → License(자유서술)가 아니라 License-Expression(MIT)이 이겨야 한다.
+#   clspkg : Classifier 만(License 는 UNKNOWN 자리표시자) → `OSI Approved :: ` 를 뗀 값.
+for want in 'pip|oldpkg|1.4.2|BSD-3-Clause' \
+            'pip|exprpkg|2.0.0|Apache-2.0 OR BSD-2-Clause' \
+            'pip|bothpkg|3.1.0|MIT' \
+            'pip|clspkg|0.9.0|BSD License'; do
+  if ! grep -qxF "$want" "$LIC"; then
+    echo "FAIL node_python_locks: 라이선스 fd 3 에 '$want' 없음"
+    cat "$LIC"
+    rc=1
+  fi
+done
+# UNKNOWN 자리표시자·`OSI Approved` 만 있는 불완전 Classifier 가 라이선스로 새면 안 된다.
+if grep -qE '\|(UNKNOWN|OSI Approved)$' "$LIC"; then
+  echo "FAIL node_python_locks: UNKNOWN/불완전 Classifier 가 라이선스로 유출됨"
+  grep -E '\|(UNKNOWN|OSI Approved)$' "$LIC"
   rc=1
 fi
 
-[ "$rc" -eq 0 ] && echo "OK  node_python_locks: ${n_want}건 일치 + 스코프/범위 유출 없음 + egg-info 라이선스 fd3"
+[ "$rc" -eq 0 ] && echo "OK  node_python_locks: ${n_want}건 일치 + 스코프/범위 유출 없음 + 라이선스 fd3(PEP 639 우선순위)"
 exit "$rc"
