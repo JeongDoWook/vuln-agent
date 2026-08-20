@@ -80,22 +80,21 @@ function vg_container_render_overview(array $ctx): void {
             'hints' => [$unjudgeable],
         ]);
     }
-    ?>
 
-<div class="cards">
-  <?php foreach (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as $s): ?>
-    <div class="kpi kpi--sm tone-<?= vg_sev_tone($s) ?>"><b><?= (int) $counts[$s] ?></b><span><?= $s ?></span></div>
-  <?php endforeach; ?>
-  <div class="kpi kpi--sm tone-<?= $kevCount > 0 ? 'crit' : 'muted' ?>"
-       title="KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)">
-    <b><?= number_format($kevCount) ?></b><span>KEV 악용확인</span>
-  </div>
-  <div class="kpi kpi--sm tone-<?= $externalFindings > 0 ? 'crit' : 'ok' ?>"
-       title="이 컨테이너에서 밖으로 열린 포트를 통해 닿는 취약점">
-    <b><?= number_format($externalFindings) ?></b><span>외부노출 취약점</span>
-  </div>
-  <div class="kpi kpi--sm"><b><?= number_format($packageTotal) ?></b><span>설치 패키지</span></div>
-  <div class="kpi kpi--sm"><b><?= number_format($exposureCount) ?></b><span>노출 소켓</span></div>
-</div>
-<?php
+    /* 지표 줄은 카드 격자를 손으로 짜지 않고 vg_kpi_strip() 에 맡긴다 — 같은 KPI 를 그리는
+     *   화면(kisa-u.php 등)과 간격·톤·0값 처리(kpi--zero) 규칙을 한 곳에서 공유한다.
+     *   여기는 항목을 나열하는 격자가 아니라 이 컨테이너의 **요약 지표**라 표로 바꾸지 않는다. */
+    $kpis = [];
+    foreach (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as $s) {
+        $kpis[] = ['value' => number_format((int) $counts[$s]), 'label' => $s, 'tone' => vg_sev_tone($s)];
+    }
+    $kpis[] = ['value' => number_format($kevCount), 'label' => 'KEV 악용확인',
+               'tone'  => $kevCount > 0 ? 'crit' : 'muted',
+               'title' => 'KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)'];
+    $kpis[] = ['value' => number_format($externalFindings), 'label' => '외부노출 취약점',
+               'tone'  => $externalFindings > 0 ? 'crit' : 'ok',
+               'title' => '이 컨테이너에서 밖으로 열린 포트를 통해 닿는 취약점'];
+    $kpis[] = ['value' => number_format($packageTotal), 'label' => '설치 패키지'];
+    $kpis[] = ['value' => number_format($exposureCount), 'label' => '노출 소켓'];
+    vg_kpi_strip($kpis, ['compact' => true]);
 }

@@ -725,10 +725,8 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
   list-style: none;                 /* Firefox 기본 삼각형 제거 — chevron 을 직접 그린다 */
 }
 .card__body > details > summary::-webkit-details-marker { display: none; }
-/* 텍스트 ▶ 대신 CSS 로 그린 chevron — 펼치면 회전한다(글꼴에 따라 크기가 널뛰지 않는다).
- * .ctrcard__detail(카드 안 li > details, direct child 밖이라 별도 지정 필요)도 같은 방식을 쓴다. */
-.card__body > details > summary::before,
-.ctrcard__detail > summary::before {
+/* 텍스트 ▶ 대신 CSS 로 그린 chevron — 펼치면 회전한다(글꼴에 따라 크기가 널뛰지 않는다). */
+.card__body > details > summary::before {
   content: "";
   flex: none;
   width: .4rem;
@@ -739,8 +737,7 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
   transform: rotate(-45deg);
   transition: transform .15s ease;
 }
-.card__body > details[open] > summary::before,
-.ctrcard__detail[open] > summary::before { transform: rotate(45deg); }
+.card__body > details[open] > summary::before { transform: rotate(45deg); }
 .card__body > details > summary:hover { color: var(--accent-2); }
 /* 요약줄 오른쪽 끝 — 건수 뱃지 자리. 페이지가 <span class="badge">12</span> 를 넣으면 여기로 간다. */
 .card__body > details > summary > .badge { margin-left: auto; }
@@ -771,14 +768,15 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
  *   표의 심각도 배지·행 강조와 같은 색을 쓴다. 위에 큰 색면 4개를 켜면 두 색 어휘가
  *   충돌해 정작 표의 강조가 죽는다. 숫자를 톤 색으로 크게 띄우면 대비도 잡히고
  *   뱃지와 같은 색 어휘를 쓰면서도 면은 조용하다.
- *   (예전엔 이 절제를 대시보드 줄(.cards--grid)에만 예외로 걸어 화면마다 KPI 가
- *    달라 보였다 — 예외를 없애고 전 화면이 이 한 벌을 쓴다.)
+ *   (예전엔 이 절제를 대시보드 줄에만 예외로 걸어 화면마다 KPI 가 달라 보였다 —
+ *    예외를 없애고 전 화면이 이 한 벌을 쓴다.)
  * 크기 차이는 변형 클래스 .kpi--sm 하나로만 낸다(.btn--sm·.card--sm 선례). */
 /* KPI 줄은 **격자**다. 예전엔 flex-wrap 이라 카드 폭이 라벨 길이에 따라 제각각이었다 —
  * 자산관리 실측에서 `13 전체 자산`·`C 정보시스템 등급`·`0 정상` 일곱 칸의 폭이 전부 달라
  * 한 줄이 계단처럼 보였다(같은 위계인데 크기가 다르면 서열이 있는 것처럼 읽힌다).
  * auto-fill 이라 칸이 모자라면 빈 트랙을 남긴다 — 카드 셋뿐인 줄(패키지 라이선스 위험)이
- * 화면을 가로지르며 늘어나지 않는다. 줄을 꽉 채워야 하는 줄은 아래 .cards--grid 로 opt-in 한다. */
+ * 화면을 가로지르며 늘어나지 않는다. 줄을 꽉 채우는 opt-in(.cards--grid)은 지웠다 —
+ * 마지막 사용처였던 통제 기준 매핑이 .kpi-strip 으로 옮겨 쓰는 화면이 남지 않았다. */
 .cards, .kpi-strip {
   display: grid;
   gap: var(--sp-2);
@@ -789,8 +787,6 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 /* 그 화면의 요약 그 자체인 줄 — 빈 트랙을 접어(auto-fit) 남는 폭을 카드가 나눠 갖는다. */
 .kpi-strip { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
 .kpi-strip--compact { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); }
-/* .cards 를 꽉 채우는 쪽으로 돌리는 opt-in — 개요 화면(대시보드·통제 기준 매핑)이 쓴다. */
-.cards--grid { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
 .kpi {
   display: flex;
   flex-direction: column;
@@ -2442,10 +2438,10 @@ form.card .btn--primary:active { transform: translateY(0); }
   background: var(--line-2);
 }
 
-/* .ctrcard(컨테이너 계층)와 .u-card(kisa-u.php U-코드 카드)는 뼈대가 같은 카드 시스템이다
- * — 공용 부분(박스 모델·hover·톤 색·헤드·이름)은 선택자를 묶어 두 벌 유지를 없앤다.
- * 화면별로 다른 부분(__facts·__risk·__image·--uncovered 등)만 각자 아래에 남긴다. */
-.ctrcard, .u-card {
+/* .ctrcard — 계층 카드(호스트 아래 컨테이너 트리 → 지금은 depgraph.php 의 의존성 org-chart).
+ * kisa-u.php 의 .u-card 와 뼈대를 공유하던 규칙이었는데, 그 화면이 타일 히트맵(.u-heat)으로
+ * 바뀌면서 이 선택자는 다시 .ctrcard 한 벌이다. */
+.ctrcard {
   min-width: 0;
   padding: .8rem .9rem;
   border: 1px solid var(--line);
@@ -2457,53 +2453,33 @@ form.card .btn--primary:active { transform: translateY(0); }
   gap: .45rem;
 }
 .ctrcard { position: relative; }
-.ctrcard:hover, .u-card:hover { border-color: var(--line-2); box-shadow: var(--shadow); }
+.ctrcard:hover { border-color: var(--line-2); box-shadow: var(--shadow); }
 /* 왼쪽 띠 = 이 카드의 최고/가이드 위험 등급(히어로와 같은 어휘). */
-.ctrcard.tone-crit,  .u-card.tone-crit  { border-left-color: var(--crit); }
-.ctrcard.tone-high,  .u-card.tone-high  { border-left-color: var(--high); }
-.ctrcard.tone-med,   .u-card.tone-med   { border-left-color: var(--med); }
-.ctrcard.tone-muted, .u-card.tone-muted { border-left-color: var(--muted-2); }
-.ctrcard.tone-low   { border-left-color: var(--low); } /* u-card 엔 없는 톤(가이드 위험도는 상/중/하뿐) */
-.ctrcard.tone-ok    { border-left-color: var(--ok); } /* u-card 엔 없는 톤(컴플라이언스 준수 전용) */
+.ctrcard.tone-crit  { border-left-color: var(--crit); }
+.ctrcard.tone-high  { border-left-color: var(--high); }
+.ctrcard.tone-med   { border-left-color: var(--med); }
+.ctrcard.tone-muted { border-left-color: var(--muted-2); }
+.ctrcard.tone-low   { border-left-color: var(--low); }
+.ctrcard.tone-ok    { border-left-color: var(--ok); }
 
 
 /* 제목 줄과 배지 줄을 분리된 flex 자식으로 고정한다 — 예전엔 이름·배지가 한 인라인 흐름에
  * 있어서 제목 길이에 따라 배지가 같은 줄에 붙거나 다음 줄로 밀리며 위치가 들쭉날쭉했다.
  * __title 은 항상 첫 줄, __badges 는 항상 그 아래 고정된 줄이다. */
-.ctrcard__head, .u-card__head { display: flex; flex-direction: column; gap: .3rem; }
-/* __title 은 이름(+보조 라벨) 여러 개를 한 줄에 흐르게 묶는 자리 — containers.php 처럼
- * 이름 옆에 별칭이 붙는 카드가 그 둘을 __head 의 같은 첫 줄에 두려면 이 래퍼가 필요하다. */
-.ctrcard__title, .u-card__title { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem; }
-.ctrcard__badges, .u-card__badges { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; }
+.ctrcard__head { display: flex; flex-direction: column; gap: .3rem; }
+.ctrcard__badges { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; }
 /* 배지가 없는 카드도 __badges 래퍼는 항상 렌더한다(비우기만) — 조건부로 아예 안 그리면
  * __head 의 두 번째 줄이 없어져 카드 높이가 배지 유무에 따라 들쭉날쭉해진다. */
-.ctrcard__badges:empty, .u-card__badges:empty { display: none; }
-.ctrcard__name, .u-card__name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
-.ctrcard__name:hover, .u-card__name:hover { color: var(--accent-2); }
-/* 이미지 문자열은 식별자라 자르지 않고 접는다(레지스트리 경로가 길다). */
-.ctrcard__image code { overflow-wrap: anywhere; white-space: normal; }
+.ctrcard__badges:empty { display: none; }
+.ctrcard__name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.ctrcard__name:hover { color: var(--accent-2); }
 .ctrcard__facts { display: flex; flex-wrap: wrap; gap: .2rem .9rem; font-size: var(--fs-sm); color: var(--text-2); }
 .ctrcard__facts b { color: var(--text); font-variant-numeric: tabular-nums; }
 .ctrcard__risk .riskbar { max-width: none; }
-.ctrcard__more { display: flex; flex-direction: column; gap: .15rem; }
 .ctrcard .links { margin-top: auto; padding-top: .2rem; }
 
-/* 2차 정보(이미지·OS·k8s·다이제스트·SBOM) 접힘 — 심각도 바보다 눈에 덜 띄어야 한다.
- * .card__body > details 는 direct child 전용이라 카드 안(li > details)엔 안 걸려 새로 정의한다. */
-.ctrcard__detail { font-size: var(--fs-sm); }
-.ctrcard__detail > summary {
-  cursor: pointer;
-  color: var(--muted);
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  width: fit-content;
-}
-.ctrcard__detail > summary::-webkit-details-marker { display: none; }
-.ctrcard__detail > summary:hover { color: var(--accent-2); }
-.ctrcard__detail[open] > summary { margin-bottom: .4rem; }
-.ctrcard__detail > :not(summary) + * { margin-top: .35rem; }
+/* 컨테이너 카드의 2차 정보 접힘(.ctrcard__detail)은 지웠다 — 그 카드가 표(컨테이너 탭)로
+ * 바뀌면서 이미지·k8s·다이제스트·SBOM 은 상세(container.php)가 갖는다. */
 
 @media (max-width: 640px) {
   .ctree__list { grid-template-columns: 1fr; padding-left: .8rem; }
@@ -2516,44 +2492,55 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctrcard > details > summary { cursor: pointer; font-size: var(--fs-sm); color: var(--muted); margin-top: .2rem; }
 .ctrcard > details > summary:hover { color: var(--accent-2); }
 
-/* 카드 그리드 — .ctree__list 와 같은 반응형 카드 배치이지만 계통선(::before)이 없는 목록에서
- * 쓴다(통제 기준 매핑·CCE 카탈로그). 카드 자체는 .ctrcard 를 그대로 재사용한다. */
-.ctrcard-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
-  gap: .8rem;
-}
-@media (max-width: 640px) { .ctrcard-grid { grid-template-columns: 1fr; } }
-
 /* ----------------------------------------------------------------------
- * kisa-u.php · U-코드 카드 그리드
- *   표는 판정 칸(FAIL 배지+미터+PASS/판정불가 부연)이 가장 넓은데 다른 좁은 열과
- *   나란히 눌려 잘렸다(control_mapping.php 가 같은 문제로 '결과' 열 폭을 세 번 늘린
- *   이력과 같다). 항목당 세로 공간을 갖는 카드로 바꾸면 이 문제가 구조적으로 없다.
- *   .ctrcard(컨테이너 계층)와 같은 뼈대 — 왼쪽 띠로 위험도를, 위 칸으로 코드·항목명을 준다.
+ * kisa-u.php · U-코드 타일 히트맵
+ *   72개를 카드로 깔면 항목당 세 줄씩 차지해 1/8 페이지로 쪼개졌고, 정작 이 화면의 값인
+ *   "어디가 비었나" 를 한눈에 볼 수 없었다. 한 항목 = 정사각 타일 하나로 줄여 **전 항목을
+ *   한 화면에** 세운다(그래서 이 화면엔 페이지네이션이 없다).
+ *   한 줄에 12개, 좁아지면 8 → 6 → 4개. 칸 수를 고정으로 적는 건 히트맵이 **격자 모양 자체로**
+ *   읽히기 때문이다 — auto-fill 로 두면 폭에 따라 줄바꿈 위치가 달라져 같은 화면이 매번 다른
+ *   모양이 된다.
  * ---------------------------------------------------------------------- */
-.u-grid {
-  margin: 0 0 var(--sp-3);
-  padding: 0;
+.u-heat {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
-  gap: .8rem;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: .4rem;
+  margin: 0 0 var(--sp-3);
 }
-/* 박스 모델·hover·톤 색·헤드·이름은 위 .ctrcard, .u-card 공용 규칙이 맡는다. */
-/* 미점검 카드는 표면을 한 단 가라앉혀(--sunken) 은근하게만 구분한다 — 색을 새로 만들거나
- * 진하게 죽이면 미점검 규모가 가려진다는 원칙(위 PHP 주석)을 카드에서도 지킨다.
- * 판정 뱃지가 이미 '미점검'을 말하므로 배경은 보조 신호일 뿐이다. */
-.u-card--uncovered { background: var(--sunken); }
-.u-card__facts { font-size: var(--fs-sm); color: var(--text-2); }
-.u-card__map { font-size: var(--fs-sm); overflow-wrap: anywhere; }
-.u-card__verdict { margin-top: auto; padding-top: .2rem; }
+/* 타일 = 코드(작게) + FAIL 건수(크게). 색은 미준수 비율이지만 **색만으로 말하지 않는다** —
+ * 숫자가 항상 찍혀 있고 화면 아래 .legend 가 색의 뜻을 적는다. */
+.u-tile {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .1rem;
+  padding: .2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: center;
+  overflow: hidden;
+}
+.u-tile b { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .01em; }
+.u-tile span { font-size: var(--fs-num-sm); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+a.u-tile:hover { border-color: var(--line-2); box-shadow: var(--shadow); text-decoration: none; }
+/* 히트 단계 — 새 색을 만들지 않고 톤 4종 세트(-bg/-bd/-fg)를 그대로 쓴다. 두 테마 모두
+ * 이 쌍이 대비를 보장한다(원색을 면으로 깔면 다크에서 글자가 죽는다). */
+.u-tile--h0 { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
+.u-tile--h1 { background: var(--med-bg);  border-color: var(--med-bd);  color: var(--med-fg); }
+.u-tile--h2 { background: var(--high-bg); border-color: var(--high-bd); color: var(--high-fg); }
+.u-tile--h3 { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
+/* 미점검·점검 결과 없음은 회색이다 — 가라앉히되 지우지 않는다(빈 칸이 보이는 게 이 화면의 값).
+ * 점선(--gap)은 그중에서도 **대응 점검 자체가 없는** 항목, 즉 커버리지의 빈 칸이다. */
+.u-tile--none { background: var(--sunken); border-color: var(--muted-bd); color: var(--muted); }
+.u-tile--gap  { border-style: dashed; }
 
-@media (max-width: 640px) {
-  .u-grid { grid-template-columns: 1fr; }
-}
+@media (max-width: 1200px) { .u-heat { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+@media (max-width: 760px)  { .u-heat { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 480px)  { .u-heat { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 /* 로그인: 조용한 진입 화면 */
 .page--login .app { min-height: 100vh; display: grid; place-items: center; }
@@ -2565,10 +2552,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 
  * 반응형 — 폭이 큰 것부터 작은 것 순. 같은 폭의 블록은 하나로 모은다.
  * ========================================================================== */
-@media (max-width: 1100px) {
-  .page--index .cards--grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
 /* 자산관리만 다른 목록보다 일찍 카드로 접는다 — 12열짜리 화면이라 표가 쓸 수 있는 폭이 모자란다.
  * 왜 하필 여기냐: 사이드바가 붙어 있는 861px 이상에서는 표에 남는 폭이 뷰포트보다 330px 쯤 적다.
  *   1024px 뷰포트 → 표 692px · 900px → 568px · 870px → 538px. 반대로 861px 아래는 사이드바가
@@ -2637,7 +2620,6 @@ form.card .btn--primary:active { transform: translateY(0); }
   .page--activity .data-table th, .page--advisories .data-table th, .page--assets .data-table th,
   .page--changes .data-table th, .page--compliance_rules .data-table th, .page--cves .data-table th,
   .page--findings .data-table th, .page--packages .data-table th, .page--vendor .data-table th { top: var(--topbar-h); }
-  .page--index .cards--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi:not(.kpi--sm) { min-height: 94px; }
   .page--host .subtabs, .page--cve .subtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .page--host .subtabs::-webkit-scrollbar, .page--cve .subtabs::-webkit-scrollbar { display: none; }
@@ -2706,11 +2688,9 @@ form.card .btn--primary:active { transform: translateY(0); }
   .seg__btn { padding: .28rem .5rem; font-size: 0; }
   .seg__btn::first-letter { font-size: var(--fs-sm); }
   .card { padding: var(--sp-3); }
-  .cards--grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi { min-width: 0; }
   /* 모달 푸터는 넓은 화면에서도 이미 sticky 다(위 .modal__foot). 여기서는 노치 여백만 더한다. */
   .modal__foot { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
-  .page--index .cards--grid .kpi:first-child { grid-column: 1/-1; }
   /* 좁은 화면용 1.65rem 분기는 없앴다 — 기본값이 --fs-num(1.6rem)으로 내려와 이미 이 값보다
    * 작다. 분기를 남기면 좁은 화면에서 오히려 커지는 역전이 생긴다. */
   .page--login form.card { padding: 2rem 1.35rem 1.6rem; }
