@@ -278,7 +278,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
       <nav class="subtabs">
       <?php foreach ($groups as $gid => $g): ?>
         <a<?= $gid === $cid ? ' class="on"' : '' ?> href="<?= vg_h('/depgraph.php?id=' . (int) $hostId . '&cid=' . (int) $gid) ?>">
-          <?= vg_h($g['label']) ?><span class="n"><?= number_format($g['edges']) ?></span></a>
+          <?= vg_h($g['label']) ?></a>
       <?php endforeach; ?>
       </nav>
     </div>
@@ -311,8 +311,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   <?php
   vg_subtabs([
       'from' => ['label' => '무엇이 끌어왔나', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'from'])],
-      'to'   => ['label' => '무엇을 끌어오나', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'to']),
-                 'n' => count(vg_pkgdep_children($graph, $target))],
+      'to'   => ['label' => '무엇을 끌어오나', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'to'])],
       'tree' => ['label' => '전체 트리', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'tree'])],
   ], $tab);
   ?>

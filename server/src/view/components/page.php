@@ -64,8 +64,10 @@ function vg_hero(string $title, array $meta = [], ?string $riskLabel = null, str
 
 /**
  * 섹션 탭(밑줄형). 첫 화면에 다 쏟지 않고 갈래로 나눠 담는 자리.
- *   $tabs: ['vuln' => ['label'=>'취약점', 'n'=>12], 'runtime' => ['label'=>'런타임', 'n'=>null], …]
- *   'n' 이 null 이 아니면 라벨 옆에 건수를 붙인다. href 를 주면 별도 페이지로 이동하고,
+ *   $tabs: ['vuln' => ['label'=>'취약점'], 'runtime' => ['label'=>'런타임'], …]
+ *   탭 줄은 "어디로 갈 수 있나" 만 말한다 — **라벨 옆 건수 배지는 그리지 않는다.**
+ *   건수는 각 탭 안의 카드·페이지네이션('총 N건')이 이미 갖고 있어 두 번 말하는 것이었다
+ *   (사용자 지적 — "글자·숫자가 너무 많다"). href 를 주면 별도 페이지로 이동하고,
  *   없으면 같은 페이지의 ?tab= 값을 바꾼다.
  *   'icon' (선택) — icons.php 의 아이콘 이름. 없으면 지금까지처럼 아이콘 없이 그린다.
  *   'group' (선택) — 인접한 두 탭의 group 이 서로 다르면 그 경계에 옅은 구분선을 넣는다
@@ -86,9 +88,6 @@ function vg_subtabs(array $tabs, string $active): void {
         echo '<a' . $cls . ' href="' . vg_h($href) . '">';
         if (!empty($def['icon'])) { echo vg_icon((string) $def['icon']); }
         echo vg_h((string) ($def['label'] ?? $key));
-        if (($def['n'] ?? null) !== null) {
-            echo '<span class="n">' . number_format((int) $def['n']) . '</span>';
-        }
         echo '</a>';
     }
     echo '</nav>';

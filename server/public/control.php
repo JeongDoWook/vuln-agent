@@ -241,8 +241,8 @@ vg_hero(
          항목 표에서 쓰던 기준이다(빈 칸이 '아직 없다'를 그대로 말한다). */ ?>
 <nav class="subtabs subtabs--sticky">
   <?php if ($guide !== null): ?><a href="#guide">기준 설명</a><?php endif; ?>
-  <a href="#rules">점검 항목과 조치<span class="n"><?= number_format(count($ruleCodes)) ?></span></a>
-  <a href="#hosts">해당 자산<span class="n"><?= number_format($total) ?></span></a>
+  <a href="#rules">점검 항목과 조치</a>
+  <a href="#hosts">해당 자산</a>
   <a href="#origin">식별과 출처</a>
 </nav>
 

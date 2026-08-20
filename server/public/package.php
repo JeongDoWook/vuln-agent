@@ -165,8 +165,8 @@ vg_hero(
 </div>
 
 <nav class="subtabs subtabs--sticky">
-  <?php if ($nofixGroups): ?><a href="#nofix">벤더 미수정 관측<span class="n"><?= number_format(count($nofixGroups)) ?></span></a><?php endif; ?>
-  <a href="#cves">관련 CVE<span class="n"><?= number_format($total) ?></span></a>
+  <?php if ($nofixGroups): ?><a href="#nofix">벤더 미수정 관측</a><?php endif; ?>
+  <a href="#cves">관련 CVE</a>
 </nav>
 
 <?php if ($nofixGroups): ?>

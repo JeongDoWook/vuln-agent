@@ -57,8 +57,6 @@ function vg_host_render_report(int $hostId, string $csrf, array $jobs, ?array $a
         <button class="btn btn--sm btn--primary" type="button" data-report-create>AI 보고서 생성</button>
       </div>
       <div class="card__body">
-        <p class="why">이 자산의 수집 결과를 외부 보고서 서비스에 넘겨 요약본을 만듭니다. 생성에는 시간이 걸릴 수 있고, 페이지를 떠나도 작업은 계속됩니다.</p>
-
         <?php /* 상태 줄과 결과 상자는 스크립트가 채운다. 진행 중인 job 이 있으면 화면을 열자마자
                  폴링이 이어지므로(새로고침해도 이어 보인다) 처음부터 펼쳐 둔다. */ ?>
         <p class="report-job__status"<?= $active === null ? ' hidden' : '' ?> data-report-status>

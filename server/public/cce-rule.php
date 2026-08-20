@@ -229,8 +229,8 @@ $status = $judgedTotal > 0
 
 <nav class="subtabs subtabs--sticky">
   <a href="#check">점검과 조치</a>
-  <a href="#controls">기준 매핑<span class="n"><?= number_format(array_sum(array_map('count', $mapping))) ?></span></a>
-  <a href="#hosts">위반 자산<span class="n"><?= number_format($total) ?></span></a>
+  <a href="#controls">기준 매핑</a>
+  <a href="#hosts">위반 자산</a>
   <a href="#origin">식별과 출처</a>
 </nav>
 

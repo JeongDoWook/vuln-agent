@@ -156,10 +156,10 @@ vg_decision_flow([
 <nav class="subtabs subtabs--sticky">
   <a href="#summary">요약</a>
   <a href="#vector">공격 벡터</a>
-  <?php if ($vendorTotal > 0): ?><a href="#vendor">벤더 판정<span class="n"><?= number_format($vendorTotal) ?></span></a><?php endif; ?>
-  <a href="#affected">영향 패키지<span class="n"><?= number_format($affectedTotal) ?></span></a>
-  <a href="#assetmap">영향받는 버전 맵<span class="n"><?= number_format($locTotal) ?></span></a>
-  <a href="#locations">발견 위치<span class="n"><?= number_format($locTotal) ?></span></a>
+  <?php if ($vendorTotal > 0): ?><a href="#vendor">벤더 판정</a><?php endif; ?>
+  <a href="#affected">영향 패키지</a>
+  <a href="#assetmap">영향받는 버전 맵</a>
+  <a href="#locations">발견 위치</a>
   <a href="#references">참조 자료</a>
 </nav>
 

@@ -270,13 +270,8 @@ vg_alert($agentErr);
     foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s) { if ($counts[$s] > 0) { $worst = $s; break; } }
     $heroTone = $worst ? vg_sev_tone($worst) : 'ok';
 
-    // 탭 줄 정의 — 숫자는 위에서 이미 센 값 그대로다(host/tabs.php 가 순서·라벨을 갖는다).
-    $tabDefs = vg_host_tab_defs([
-        'vulnTotal' => $vulnTotal, 'packageTotal' => $packageTotal,
-        'containerTotal' => $containerTotal, 'runtimeTotal' => $runtimeTotal,
-        'cceFail' => $cceFail, 'accountTotal' => $accountTotal,
-        'suppressedCount' => $suppressedCount, 'scanTotal' => $scanTotal,
-    ]);
+    // 탭 줄 정의 — 순서·라벨은 host/tabs.php 가 갖는다(건수 배지는 그리지 않는다).
+    $tabDefs = vg_host_tab_defs();
 ?>
   <?php vg_host_render_hero([
       'host' => $host, 'scan' => $scan, 'pollAge' => $pollAge, 'scanAge' => $scanAge,

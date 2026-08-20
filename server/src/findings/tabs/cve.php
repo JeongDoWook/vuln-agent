@@ -45,10 +45,7 @@
       ]);
   endif; ?>
 
-  <section class="action-queue" data-action-queue aria-labelledby="findingActionQueueTitle">
-    <div class="action-queue__head">
-      <strong id="findingActionQueueTitle">먼저 볼 작업</strong>
-    </div>
+  <section class="action-queue" data-action-queue aria-label="우선순위 필터">
     <?php vg_kpi_strip([
         ['label' => 'High 이상', 'value' => number_format($actionCounts['high']), 'tone' => 'high', 'icon' => 'severity',
          'href' => vg_qs(['sev' => 'HIGH+', 'fx' => null, 'st' => null, 'page' => 1]), 'selected' => $sev === 'HIGH+'],

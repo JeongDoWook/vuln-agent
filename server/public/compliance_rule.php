@@ -140,7 +140,7 @@ vg_hero($title, $heroMeta, $sevUp, $tone, 'SSG 심각도');
   <a href="#rationale">근거</a>
   <a href="#refs">참조 매핑</a>
   <a href="#origin">식별과 출처</a>
-  <a href="#hosts">점검된 호스트<span class="n"><?= number_format($total) ?></span></a>
+  <a href="#hosts">점검된 호스트</a>
 </nav>
 
 <section id="rationale">
