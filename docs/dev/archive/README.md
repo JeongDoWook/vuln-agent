@@ -12,3 +12,4 @@
 | [dashboard-index-profiling.md](dashboard-index-profiling.md) | 대시보드 1.92초의 진범(옵티마이저 인덱스 오선택)과 조치 결과 2,097→504ms | 2026-08-16 |
 | [web-perf-audit.md](web-perf-audit.md) | 전 화면 55개 응답시간. 느린 건 `vendor.php` 하나였고 인덱스 2개로 고쳤다 | 2026-08-16 |
 | [smoke-timing-profiling.md](smoke-timing-profiling.md) | 스모크 102.7초 중 45초가 `ui_lint.sh`. 고쳐서 54.7초 | 2026-08-16 |
+| [에이전트-수집속도-변경기록.md](에이전트-수집속도-변경기록.md) | 에이전트 수집 속도 변경 두 건(프로세스 스캔 컷오프 설정화 · 중복 순회 제거·하트비트)과 속도 티어 메모리 상한 도입. **리소스 프로파일 실측표에는 미반영** | 2026-08-06 · 08-19 |
