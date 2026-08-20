@@ -13,11 +13,10 @@ DB 비밀번호 등 배포 비밀값을 담는 **Docker Secrets** 디렉토리.
 | `mysql_password.txt`      | 앱 DB 유저(`vulnagent`) 비밀번호 |
 | `admin_password.txt`      | 웹 최초 관리자(admin) 비밀번호 (users 비었을 때 부트스트랩) |
 
-> Caddy 는 시크릿을 쓰지 않는다 — TLS 는 자체서명(`tls internal`)이라 외부 DNS 토큰이 필요 없다
-> (2026-08-09 확정, `deploy/caddy/README.md`). 예전의 `duckdns_token.txt` 는 더 이상 쓰이지 않으므로
-> 남아 있다면 지워도 된다.
-
-> Export·SBOM은 웹 로그인 세션으로 인증한다. 폐지된 전용 API 토큰 파일은 만들지 않는다.
+> 이 셋이 전부다. Caddy 는 시크릿을 쓰지 않고(TLS 가 자체서명 `tls internal` 이라 외부 DNS
+> 토큰이 필요 없다 — 2026-08-09 확정, `deploy/caddy/README.md`), Export·SBOM 은 웹 로그인
+> 세션으로 인증한다. 남아 있는 `duckdns_token.txt` 는 지워도 되고, 폐지된 전용 API 토큰
+> 파일은 만들지 않는다.
 
 ## 생성
 
