@@ -114,48 +114,75 @@ function vg_host_render_hero(array $ctx): void {
   ?>
 
   <?php
-  /* 이 자산의 위험을 두 조각으로 세운다.
-   *   왼쪽(도넛): **등급 구성** — 부분/전체라 도넛이 맞는 유일한 값이다. 취약점 탭의
-   *     범례가 같은 값을 목록으로 갖고 있었는데, 그건 목록을 읽는 자리에 붙은 설명이고
-   *     여기는 탭에 들어가기 전에 "얼마나 나쁜가"를 형태로 보는 자리다.
-   *   오른쪽(타일 줄): 분포로는 못 읽는 축(악용·노출·설정) — 서로 모집단이 달라서
-   *     한 도넛에 넣으면 구성이 아닌 것을 구성처럼 그리게 된다. 여기는 숫자와 링크로 둔다.
+  /* 이 자산의 위험을 두 조각으로 세운다 — 왼쪽·오른쪽이 **같은 어휘**(스와치·라벨·값·링크)다.
+   *   왼쪽(고리 + 목록): **등급 구성** — 부분/전체라 고리로 그릴 수 있는 유일한 값이다.
+   *   오른쪽(목록만): 등급 밖의 축(악용·노출·설정). 예전엔 여기가 네모 카드 격자(vg_kpi_strip)라
+   *     한 줄에 어휘가 둘이었다 — 사용자가 "오른쪽 왼쪽 동일하게" 라고 지적한 그것이다. 지금은
+   *     **같은 vg_donut_kpi() 를 arc=false 로** 불러 목록만 남긴다(마크업·색·링크 계약이 한 벌).
+   *
+   *   왜 오른쪽엔 고리를 안 그리나 — 네 값을 하나씩 실측해 정했다:
+   *     · 넷은 **모집단이 서로 다르다.** KEV·외부노출은 tb_finding, 노출 소켓은 tb_exposure,
+   *       설정 취약은 tb_cce_finding 이다. 한 고리에 넣으면 합이 거짓말이 된다.
+   *     · 그렇다고 값마다 도넛을 하나씩 만들면 조각 하나짜리 고리가 **꽉 찬 원**(=100%)으로
+   *       읽힌다(#728 이 대시보드 KEV 에서 내린 판단).
+   *     그래서 그림만 포기하고 어휘는 왼쪽에 맞춘다. 고리 자리에는 이 묶음이 무엇인지 말하는
+   *     상태 뱃지가 선다 — vg_donut_kpi 의 'none'(빈 고리를 세우지 않으려고 이미 있던 것)이다.
+   *
+   *   '외부노출 취약점' 은 지우지 않고 남긴다. 운영 실측에서 이 값이 HIGH 와 같은 수(142)라
+   *     중복처럼 보이지만 **같은 집계가 아니다** — 등급이 노출 상태에서 파생될 뿐이다
+   *     (matcher/classify.php: EXTERNAL → HIGH, KEV 가 얹히면 CRITICAL). KEV 가 0건인 자산에서만
+   *     두 집합이 결과적으로 겹친다. dev 실측은 EXTERNAL 90 vs HIGH 88 로 갈렸다(CRITICAL 2 가
+   *     EXTERNAL 이었다). 그래서 값은 남기고, 왜 같은 수로 보이는지를 툴팁이 말한다.
+   *
    *   $counts 는 히어로 톤·'최고 위험도' 뱃지도 계속 쓴다.
-   *   고리는 조치 대상(C·H·M)만 그린다 — 이 자산 실측이 LOW 4,481 : HIGH 186 : MEDIUM 153
+   *   왼쪽 고리는 조치 대상(C·H·M)만 그린다 — 이 자산 실측이 LOW 4,481 : HIGH 186 : MEDIUM 153
    *     이라 같이 그리면 고리가 통째로 회색이었다(vg_sev_donut 주석). LOW 는 목록에 남는다.
    *
    *   .split(320px + 나머지) 대신 .kpi-donuts 로 **반반**을 준다: .split 은 오른쪽이 남는 폭을
-   *     전부 가져가서 타일 넷이 가로로 한 줄을 통째로 먹었다(1440px 실측). 반반이면 같은 넷이
-   *     2×2 로 접혀 카드 높이는 그대로인데 도넛과 지표가 같은 무게로 선다.
-   *   타일은 손으로 쓰던 .kpi 마크업 대신 vg_kpi_strip() 으로 옮긴다 — 탐지 결과 탭이 쓰는
-   *     것과 같은 한 벌이라 아이콘·톤·0건 처리를 여기서 다시 정의하지 않는다(DRY). */
+   *     전부 가져간다(1440px 실측). 반반이면 도넛과 지표가 같은 무게로 선다. */
   ?>
   <div class="card">
     <div class="card__body">
       <div class="kpi-donuts">
-      <?php vg_sev_donut($counts, 132, [
+      <?php
+      $heroFindings = '/findings.php?scan_id=' . (int) $scan['scan_id'];
+      vg_sev_donut($counts, 132, [
           'title' => '이 자산의 등급 구성',
           'href'  => vg_qs(['tab' => 'vuln', 'page' => null, 'q' => null]),
           'seg'   => fn(string $heroSev): array => [
               'href' => vg_qs(['tab' => 'vuln', 'sev' => $heroSev, 'page' => null, 'q' => null]),
           ],
       ]);
-      /* KEV 타일에도 링크를 준다 — 예전엔 숫자만 있어 "3건이 있다"까지만 말하고 그게 무엇인지
-       *   보러 갈 문이 없었다. 목적지는 옆 타일과 같은 이 스캔의 탐지 결과다(fx=kev). */
-      vg_kpi_strip([
-          ['label' => 'KEV 악용확인', 'value' => number_format($kevCount),
-           'tone' => $kevCount > 0 ? 'crit' : 'muted', 'icon' => 'exploit',
-           'href' => '/findings.php?scan_id=' . (int) $scan['scan_id'] . '&fx=kev',
-           'title' => 'KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)'],
-          ['label' => '외부노출 취약점', 'value' => number_format($externalFindings),
-           'tone' => $externalFindings > 0 ? 'crit' : 'ok', 'icon' => 'exposure',
-           'href' => '/findings.php?scan_id=' . (int) $scan['scan_id'] . '&st=EXTERNAL'],
-          ['label' => '노출 소켓', 'value' => number_format($exposureCount), 'icon' => 'exposure',
-           'href' => vg_qs(['tab' => 'runtime', 'page' => null, 'q' => null])],
-          ['label' => '설정 취약', 'value' => number_format((int) $cceFail),
-           'tone' => $cceFail > 0 ? 'high' : 'ok', 'icon' => 'action',
-           'href' => vg_qs(['tab' => 'cce', 'page' => null])],
-      ], ['compact' => true]); ?>
+      /* 링크는 카드 시절 그대로다 — 이 줄은 각 축의 **진입점**이기도 하다(눌러서 확인).
+       *   0건인 값도 지우지 않는다: 'KEV 0' 은 "이 자산엔 KEV 가 없다"는 사실이라 목록에 남고,
+       *   vg_donut_kpi 가 --zero 로 뒤로 물릴 뿐이다. */
+      vg_donut_kpi('등급 밖의 신호 — 악용·노출·설정', [
+          ['label' => 'KEV 악용확인', 'value' => $kevCount, 'arc' => false,
+           'tone'  => $kevCount > 0 ? 'crit' : 'muted',
+           'href'  => $heroFindings . '&fx=kev',
+           'title' => 'KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)'
+                    . ' · 0건은 "안전"이 아니라 "이 자산엔 KEV 가 없다"는 뜻이다'],
+          ['label' => '외부노출 취약점', 'value' => $externalFindings, 'arc' => false,
+           'tone'  => $externalFindings > 0 ? 'high' : 'ok',
+           'href'  => $heroFindings . '&st=EXTERNAL',
+           'title' => '외부에서 닿는 서비스가 쓰는 패키지의 취약점(runtime_status=EXTERNAL)'
+                    . ' · 등급이 이 상태에서 파생되므로(EXTERNAL → HIGH, KEV 면 CRITICAL)'
+                    . ' KEV 가 없는 자산에서는 왼쪽 HIGH 와 같은 수가 된다'],
+          ['label' => '노출 소켓', 'value' => $exposureCount, 'arc' => false, 'tone' => 'muted',
+           'href'  => vg_qs(['tab' => 'runtime', 'page' => null, 'q' => null]),
+           'title' => '외부·로컬을 통틀어 열려 있는 소켓 수(tb_exposure)'
+                    . ' · 취약점이 아니라 노출면 자체의 크기라 등급이 붙지 않는다'],
+          ['label' => '설정 취약', 'value' => (int) $cceFail, 'arc' => false,
+           'tone'  => $cceFail > 0 ? 'high' : 'ok',
+           'href'  => vg_qs(['tab' => 'cce', 'page' => null]),
+           'title' => '보안 설정 점검에서 FAIL 로 판정된 항목(CCE) · 취약점과는 다른 축이다'],
+      ], [
+          // 'size' 는 안 준다 — 고리를 하나도 안 그리므로(전부 arc=false) 쓰이지 않는다.
+          //   자리 크기는 .donut--none 이 왼쪽 도넛과 같게(8.25rem) 잡는다.
+          'none' => ['label' => '등급 밖의 신호', 'tone' => 'muted',
+                     'title' => '악용(KEV)·노출·설정은 취약점 등급과 모집단이 서로 달라'
+                              . ' 한 고리로 그리면 합이 뜻을 잃습니다 — 값은 오른쪽 목록에 있습니다'],
+      ]); ?>
       </div>
     </div>
   </div>
