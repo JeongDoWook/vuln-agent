@@ -818,6 +818,10 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
   font-weight: 600;
   color: var(--muted);
   letter-spacing: .02em;
+  /* 한글은 글자 단위로 끊어도 되는 문자라 좁은 칸에서 낱말 한가운데가 갈린다
+   * (자산 상세 히어로가 반반으로 좁아지자 'KEV 악용확|인' 으로 잘렸다 — 실측).
+   * keep-all 은 띄어쓰기에서만 줄을 바꾼다 — 라벨을 줄이거나 칸을 넓히지 않고 고쳐진다. */
+  word-break: keep-all;
 }
 /* 목록 화면 위에 얹는 작은 변형 — 그 화면의 주인공은 아래 표라 KPI 는 한 단계 물러난다 */
 .kpi--sm { min-height: 0; padding: var(--sp-2) var(--sp-3); }
@@ -1040,14 +1044,30 @@ a.donut-kpi__seg:hover { background: var(--surface-2); color: var(--text); }
 .donut-kpi__seg i.tone-cat5 { background: var(--cat-5); }
 .donut-kpi__seg i.tone-cat6 { background: var(--cat-6); }
 
-/* 도넛 KPI 여러 장을 한 줄에 — 대시보드 상단. 칸이 좁아지면 자동으로 줄이 나뉜다.
- * minmax 의 하한은 도넛(132px) + 목록이 겹치지 않는 최소 폭이다. */
+/* 지표 덩어리 여러 개를 한 줄에 — 대시보드 상단, 탐지 결과 첫 카드, 자산 상세 히어로.
+ * 칸이 모자라면 자동으로 줄이 나뉜다(auto-fit) — 둘만 놓으면 넓은 화면에서 정확히 반반이다.
+ * minmax 의 하한은 도넛(132px) + 목록이 겹치지 않는 최소 폭이다.
+ * 도넛끼리만 서는 줄이 아니다: 한쪽이 KPI 타일 줄(.kpi-strip)이거나 비율 카드(.kpi-rate)여도
+ * 같은 격자를 쓴다 — "도넛 옆에 지표" 를 화면마다 다시 배치하지 않기 위한 한 벌이다. */
 .kpi-donuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: var(--sp-3); }
+/* 이 격자 안의 타일 줄은 칸 하나를 채우는 내용물이다 — 바깥 줄에서 쓰던 아래 여백을 지우고,
+ * 옆 도넛보다 짧으면 가운데로 모은다(위로 붙으면 도넛과 시선 높이가 어긋난다). */
+.kpi-donuts .kpi-strip { margin-bottom: 0; align-content: center; }
 
-/* 비율 카드 — 구성이 아니라 "얼마나 왔나" 라서 도넛이 아니라 큰 숫자 + 진행바다.
- * 진행바는 이미 있는 게이지(.meter, vg_meter())를 그대로 쓴다 — 두 벌 만들지 않는다. */
+/* 비율 카드 — **한 조각이 압도적이라 도넛이 뜻을 못 갖는** 값이 온다.
+ * 대시보드의 KEV(High 이상 959건 중 3건, 0.3%)가 그렇다: 둘 다 그리면 고리가 통째로 회색이고,
+ * 회색을 arc=false 로 빼면 조각이 하나만 남아 꽉 찬 원이 된다 — 어느 쪽도 부분/전체를 못 말한다.
+ * 그래서 큰 숫자 + 진행바다. 진행바는 이미 있는 게이지(.meter, vg_meter())를 그대로 쓴다. */
 .kpi-rate { display: flex; flex-direction: column; justify-content: center; min-height: 8.25rem; }
 .kpi-rate > b { font-size: var(--fs-num); font-variant-numeric: tabular-nums; line-height: 1.1; }
+/* 큰 숫자도 목적지를 갖는다(도넛 조각이 곧 필터인 것과 같은 계약) — 다만 링크 색으로 튀지
+ * 않게 글자색을 물려받고, 누를 수 있다는 사실은 hover 밑줄이 말한다. */
+.kpi-rate > b a { color: inherit; text-decoration: none; }
+.kpi-rate > b a:hover { text-decoration: underline; }
+/* 숫자에 톤을 싣는다 — .kpi 와 같은 규칙(색면을 켜지 않고 **숫자 색**으로 서열을 낸다).
+ * 이 칸은 도넛 옆에 서므로 검정 숫자 하나로는 그림들 사이에서 신호로 안 읽힌다. */
+.kpi-rate.tone-crit > b { color: var(--crit-fg); }
+.kpi-rate.tone-ok   > b { color: var(--ok-fg); }
 .kpi-rate > span { color: var(--muted); font-size: var(--fs-sm); margin-top: .15rem; }
 .kpi-rate > small { color: var(--muted); font-size: var(--fs-xs); margin-top: .5rem; }
 
@@ -2832,8 +2852,10 @@ a.u-tile:hover { border-color: var(--line-2); box-shadow: var(--shadow); text-de
   .funnel__step + .funnel__step::before { content: none; }
 }
 
-/* #599 — 판단·설치 흐름. 모두 기존 색 토큰을 써 두 테마에서 같은 의미를 유지한다. */
-.action-queue { margin-bottom: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+/* #599 — 판단·설치 흐름. 모두 기존 색 토큰을 써 두 테마에서 같은 의미를 유지한다.
+ * .action-queue 는 지웠다 — 탐지 결과의 우선순위 필터 줄이 등급 도넛과 한 카드(.card)로
+ * 합쳐지면서 이 상자를 쓰는 화면이 하나도 남지 않았다(`.card` 가 같은 면·테두리를 이미 갖는다).
+ * data-action-queue 속성은 그 자리를 가리키는 계약이라 그대로 있다. */
 .decision-flow { margin: 1rem 0 var(--sp-3); }
 .decision-flow ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .55rem; margin: 0; padding: 0; list-style: none; }
 .decision-flow a { display: grid; grid-template-columns: 1.65rem 1fr; gap: .1rem .45rem; min-height: 4.3rem; padding: .7rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--text); }
