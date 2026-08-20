@@ -1,0 +1,77 @@
+@startuml 자산탐색
+' vuln-agent 자산 탐색(섀도우 IT) — 중앙이 대역을 훑어 "에이전트가 없는 자산" 을 찾는 갈래
+' 코드: server/public/discovery.php(화면) · server/bin/scheduler.php(틱 집행) ·
+'       server/bin/discover.php(CLI) · server/src/discovery.php(스윕·저장) ·
+'       server/src/discovery_enrich.php(역DNS·서비스 힌트·배너)
+' 스키마: db/migrations/20260818205835_asset_discovery.sql · 20260819001225_discovery_enrich.sql
+'
+' 취약점 스캔과 **별개 파이프라인**이다(Nexpose·Nessus 의 Discovery Scan / Vulnerability Scan
+' 분리와 같은 구도). 두 파이프라인이 만나는 곳은 IP 대조 한 곳뿐이다.
+
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam databaseBackgroundColor #ffffff
+skinparam hexagonBackgroundColor #ffffff
+skinparam shadowing false
+
+rectangle "관리자\n/discovery.php 에서 대역을 등록한다\n(CIDR · 2단계 포트 목록 · 사용여부)" as ADMIN #1f6feb
+database "tb_discovery_target\ncidr <<UK>> · ports(NULL=기본 세트) · enabled" as TGT
+
+rectangle "'지금 스캔' — 화면은 pending 행만 만든다\n(수백 소켓을 수십 초 드는 작업이라 웹 요청에서 돌리지 않는다)" as ENQ
+database "tb_discovery_run\nstatus: pending → running → done/failed" as RUN
+
+rectangle "scheduler 사이드카 · 매 1분 틱\n① 30분 넘게 running 인 run 회수\n② pending 집행(한 틱 1건 · 45초 예산)\n남은 것은 다음 틱이 집는다" as TICK #a371f7
+rectangle "bin/discover.php\n사람이 직접 부르는 같은 함수(--pending / <대역 id>)" as CLI
+
+rectangle "1단계 — 대역 전체 × 탐침 6포트\n22 · 80 · 443 · 3389 · 445 · 8080\nopen 이든 closed 든 응답하면 '살아있음'" as ST1 #9e6a03
+rectangle "2단계 — 살아있는 IP × 상위 100포트\n(1단계에서 이미 본 포트는 뺀다)\n무응답 IP 는 2단계를 통째로 건너뛴다" as ST2 #9e6a03
+note bottom of ST1
+  동시 소켓 512(FD_SETSIZE 아래) · connect 타임아웃 1초
+  대역은 /22(1,022 IP)까지만 허용
+  2단계를 안 나누면 254×100=25,400 조합이 시간을 지배한다
+end note
+
+rectangle "enrich — '이게 뭔지' 를 채운다\n역DNS(PTR) · 포트 관례 서비스 힌트(추측)\nHTTP Server 헤더 / TLS 인증서 CN 배너\n전부 실패해도 스캔은 성공으로 끝난다(부가정보)" as ENR
+
+database "tb_discovered_asset\n(대역 × IP 로 **누적** — run 마다 갈아엎지 않는다)" as DA
+database "tb_discovered_port\n**열린 포트만** 저장 + 힌트·배너" as DP
+
+database "tb_host_address\n에이전트가 보낸 ip -o addr 를 ingest 가 파싱해 쌓은\n'우리가 아는 IP' — 대조의 좌변" as HA #238636
+hexagon "그 IP 가\ntb_host_address 에 있나?" as CMP
+
+rectangle "state = known · host_id 연결\n이미 관리 중인 자산이다" as KNOWN #238636
+rectangle "state = new\n**에이전트 미설치 = 섀도우 IT 후보**" as NEW #da3633
+rectangle "state = ignored\n사람이 '제외' 로 찍은 것\n(가상 IP·VIP 등 — 집행기가 덮지 않는다)" as IGN #6e7681
+
+rectangle "/discovery.php\n미관리 / 관리 중 / 제외 KPI · 대역별 표\n역DNS 이름 · 열린 포트 · 서비스 힌트" as SCR #db6d28
+rectangle "'에이전트 설치 안내' 모달 → agent-dl.php\n미관리 IP 를 관리 자산으로 편입한다" as INSTALL #9e6a03
+
+ADMIN --> TGT
+ADMIN --> ENQ
+TGT --> ENQ
+ENQ --> RUN : status=pending
+
+TICK --> RUN : 선점(claim) → running
+CLI  --> RUN
+RUN --> ST1
+ST1 --> ST2 : 살아있는 IP 만
+ST2 --> ENR
+ST1 --> ENR : 살아있는 IP 목록
+
+ENR --> DA : upsert(hostname 은 빈 값으로 덮지 않는다)
+ENR --> DP : open 만
+DA --> CMP
+HA --> CMP
+CMP --> KNOWN : 있다
+CMP --> NEW : 없다
+CMP ..> IGN : 사람이 이미 제외로 찍었으면\n자동 판정이 건드리지 않는다
+
+KNOWN --> SCR
+NEW --> SCR
+IGN --> SCR
+SCR --> INSTALL
+INSTALL ..> HA : 설치 후 첫 ingest 로 IP 가 등록되면\n다음 스캔에서 known 으로 넘어간다
+
+@enduml

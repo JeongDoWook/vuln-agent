@@ -1,0 +1,55 @@
+@startuml 에이전트자동업데이트
+' vuln-agent 에이전트 무인 자동 업데이트 — 커밋 시점 Ed25519 서명 검증까지
+' 코드: agent/install-agent.sh(do_update · run_scan 자기점검) ·
+'       server/public/agent-poll.php · server/src/agentupdate.php · server/public/agent-dl.php
+' 서명: deploy/agent_sign.sh 가 **유지보수자 로컬 개인키**로 커밋 전에 만든다.
+'       개인키는 중앙 서버에 오지 않는다 — 웹 티어가 침해돼도 악성 에이전트를 못 민다.
+
+skinparam shadowing false
+skinparam sequenceMessageAlign left
+
+participant "에이전트 데몬\n(대상 서버)" as AG
+participant "agent-poll.php" as POLL
+participant "agent-dl.php" as DL
+database "MySQL\ntb_activity_log" as DB
+
+AG -> POLL : GET ?agent_version=3.12\n(10초마다 · X-Agent-Token)\n+ 직전 결과 update_result/from/to
+POLL -> DB : 직전 결과가 있으면 감사로그\n(agent_auto_update)
+POLL -> POLL : agent-src/vuln-inventory-agent.sh 를 읽어\nSCRIPT_VERSION · sha256 · .sig(base64) 를 계산
+alt 보고 버전 < 배포 버전
+    POLL --> AG : update_available=true\nversion · sha256 · download_path(고정) · signature
+else 같거나 높음
+    POLL --> AG : update_available=false
+end
+
+group do_update — 하나라도 어긋나면 적용하지 않고 다음 poll 에 보고한다
+    AG -> AG : ① SEND_URL 이 https 인가?\n아니면 중단(HTTP 노드는 자동 업데이트가 꺼진다)
+    AG -> AG : ② 직전 업데이트가 검증 대기 중인가? → 이번엔 미룬다
+    AG -> AG : ③ 이 버전이 전에 롤백된 적 있나?(update_failed_version)\n→ 재시도 않고 실패로만 보고(스래싱 차단)
+    AG -> AG : ④ 다운그레이드 거부 — sort -V 로 단조 증가만 허용\n(서버가 침해돼 구버전을 재생해도 여기서 막힌다)
+    AG -> DL : GET agent-dl.php?f=vuln-inventory-agent.sh
+    DL --> AG : 스크립트 본문
+    AG -> AG : ⑤ sha256 대조 — 전송 중 손상만 잡는다\n(해시를 만든 곳이 웹 티어라 이것만으론 부족하다)
+    alt openssl 없음
+        AG -> AG : 적용하지 않음(no_verify_tool)
+    else OpenSSL 3.0 미만
+        AG -> AG : pkeyutl -rawin 이 없어 서명 검증 불가\n→ sha256 만으로 진행하고 **명시적 저하**로 보고\n(legacy_openssl_sha256_only)
+    else OpenSSL 3.0 이상
+        AG -> AG : ⑥ Ed25519 서명 검증\nopenssl pkeyutl -verify -rawin\n-inkey (설치 시 고정한 공개키)\n실패·서명 없음·공개키 미고정 → 적용하지 않음
+    end
+    AG -> AG : ⑦ bash -n 문법 검사
+    AG -> AG : ⑧ .bak 백업 → 같은 파일시스템 rename(원자적 교체)\nupdate_pending_verify 표시만 남기고 재실행하지 않는다
+end
+
+... 다음 정기·예약 실행 ...
+
+AG -> AG : ⑨ 자기점검 — bash -n + 새 스크립트 --help\n(수집 자체의 종료코드로 판단하지 않는다:\n 서버 오류·타임아웃을 업데이트 실패로 오판했던 결함)
+alt 자기점검 통과
+    AG -> AG : 적용 확정 · .bak 삭제\nupdate_report = "ok"
+else 자기점검 실패
+    AG -> AG : .bak 으로 롤백 + 이 버전을 known-bad 로 기억\nupdate_report = "rollback"
+end
+AG -> POLL : 다음 poll 에 결과를 실어 보고
+POLL -> DB : 감사로그(성공/실패 사유 · from → to)
+
+@enduml

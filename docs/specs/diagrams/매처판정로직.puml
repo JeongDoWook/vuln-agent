@@ -1,6 +1,8 @@
 @startuml 매처판정로직
 ' vuln-agent §2 매처 판정 로직 — "실제로 위험한가"
 ' 원본: docs/dev/architecture.md §2 (mermaid flowchart TD)
+' 코드: server/src/matcher/decide.php(억제 판정) · server/src/matcher/classify.php(vg_classify — 상태 7종·등급)
+'       matcher.php 는 이제 진입점이고 실제 로직은 matcher/ 아래로 갈라져 있다.
 
 skinparam rectangle {
     BackgroundColor #ffffff
@@ -13,29 +15,41 @@ hexagon "이미 패치됐다는 근거가 있나?\nchangelog · errata · debsec
 hexagon "그래도 옛 코드가 도는가?\n옛 .so 로드 중 · 커널 재부팅 전" as STALE
 rectangle "억제하지 않는다\n→ 조치: 프로세스 재시작 / 재부팅" as KEEP #8250df
 rectangle "백포트로 이미 패치됨\n→ tb_suppressed_finding\n(위험 집계 제외 · 근거 표시)" as SUP #1f6feb
-hexagon "외부(0.0.0.0)\n오픈 포트로 노출?" as EXT
-hexagon "방화벽이 그 포트를\n막고 있나?" as FW
+
+' ── 런타임 상태 7종 → 기본 단계(1~3). classify.php 의 vg_classify 그대로. ──
+hexagon "그 패키지를 쓰는\n리스닝 소켓이 있나?" as LE
+hexagon "그 소켓의 scope 는?" as SCOPE
+rectangle "EXTERNAL 외부노출\n(0.0.0.0 바인딩 · 방화벽도 안 막음)\n→ 3단계" as S3 #db6d28
+rectangle "LAN 링크로컬 멀티캐스트(mDNS 등)\nFILTERED 방화벽이 그 포트를 막음\nLISTENING 로컬 리스닝\n→ 2단계" as S2 #9e6a03
+hexagon "리스닝은 아니지만\n실행 중이거나 라이브러리로 로드됐나?" as USE
+rectangle "RUNNING 실행 중 · LOADED 사용 중\n→ 2단계" as S2B #9e6a03
+rectangle "INSTALLED 설치만 됨\n→ 1단계" as S1 #6e7681
+
+' ── KEV 가산은 상태와 무관하게 전 단계에 걸린다(예전 그림은 외부노출에만 붙였다). ──
 hexagon "CVE 가 KEV 등재?" as KEV
-rectangle "외부노출 + KEV\n→ CRITICAL" as CRIT #da3633
-rectangle "외부노출\n→ HIGH" as HIGH #db6d28
-rectangle "방화벽차단(FILTERED)\n→ MEDIUM" as FLT #9e6a03
-hexagon "리스닝(로컬)·\n실행중·라이브러리 로드\n중 하나라도?" as USE
-rectangle "로컬리스닝/실행중/사용중\n→ MEDIUM" as MED #9e6a03
-rectangle "설치만 됨\n→ LOW" as INS #6e7681
+rectangle "단계 +1 (상한 4)" as BUMP #da3633
+rectangle "1 LOW · 2 MEDIUM · 3 HIGH · 4 CRITICAL\n→ tb_finding.severity" as SEV
 
 START --> FIX
 FIX --> STALE : 예
 STALE --> KEEP : 예
 STALE --> SUP : 아니오
 FIX --> KEEP : 아니오
-KEEP --> EXT
-EXT --> FW : 예
-FW --> KEV : 아니오
-KEV --> CRIT : 예
-KEV --> HIGH : 아니오
-FW --> FLT : 예
-EXT --> USE : 아니오
-USE --> MED : 예
-USE --> INS : 아니오
+
+KEEP --> LE
+LE --> SCOPE : 예
+SCOPE --> S3 : EXTERNAL
+SCOPE --> S2 : LAN · FILTERED · 그 밖
+LE --> USE : 아니오
+USE --> S2B : 예
+USE --> S1 : 아니오
+
+S3  --> KEV
+S2  --> KEV
+S2B --> KEV
+S1  --> KEV
+KEV --> BUMP : 예
+BUMP --> SEV
+KEV --> SEV : 아니오
 
 @enduml
