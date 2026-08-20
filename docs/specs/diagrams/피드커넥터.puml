@@ -1,6 +1,10 @@
 @startuml 피드커넥터
 ' vuln-agent §3 CVE 피드 커넥터 (외부 소스 수집)
 ' 원본: docs/dev/architecture.md §3 (mermaid flowchart LR)
+'
+' 폭 주의: 이 그림은 문서 본문(약 900px)에 인라인되므로 viewBox 가 넓을수록 글자가 작아진다.
+' 그래서 라벨을 여러 줄로 접고 nodesep/ranksep/wrapWidth 로 폭을 눌러 놨다.
+' `left to right direction` 은 빼면 오히려 넓어진다(TB 로 두면 소스 7개가 한 줄에 늘어서 1294px).
 
 left to right direction
 skinparam rectangle {
@@ -9,9 +13,12 @@ skinparam rectangle {
 }
 skinparam databaseBackgroundColor #ffffff
 skinparam shadowing false
+skinparam nodesep 10
+skinparam ranksep 20
+skinparam wrapWidth 220
 
 package "웹 (admin)" as UI {
-    rectangle "connectors.php\n설정·스케줄·지금실행·미리보기" as CFG
+    rectangle "connectors.php\n설정·스케줄\n지금실행·미리보기" as CFG
 }
 
 package "scheduler 사이드카" as Sched {
@@ -24,16 +31,16 @@ package "외부 소스" as Sources {
     rectangle "NVD 2.0 API" as NVD
     rectangle "FIRST EPSS csv" as EPSS
     rectangle "KISA RSS" as KISA
-    rectangle "벤더 판정 소스(6종)\ndebtracker·rhoval·rhunfixed\nubuntuoval·kcve·ssg" as VENDOR
+    rectangle "벤더 판정 소스(6종)\ndebtracker·rhoval\nrhunfixed·ubuntuoval\nkcve·ssg" as VENDOR
     rectangle "범용 API(generic_api)\n사용자 등록 REST" as GAPI
 }
 
 database "tb_feed_connector\ntb_feed_collection_log" as DBc
-database "tb_cve · tb_kev_catalog\ntb_cve_affected_package · tb_advisory" as CVE
+database "tb_cve · tb_kev_catalog\ntb_cve_affected_package\ntb_advisory" as CVE
 rectangle "매처 재계산" as MAT #a371f7
 
 CFG --> DBc : 저장
-TICK --> DBc : enabled & next_run<=now
+TICK --> DBc : enabled &\nnext_run<=now
 
 TICK --> KEV
 TICK --> OSV
