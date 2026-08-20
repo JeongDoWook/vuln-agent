@@ -2198,13 +2198,20 @@ form.card .btn--primary:active { transform: translateY(0); }
 /* ======================================================================}
 
  * 페이지별 조정 — layout.php 가 <main> 에 page--<스크립트> 클래스를 붙인다.
- * 대시보드 · 목록 · 상세 · 관리 화면이 서로 다른 폭과 리듬을 갖는다.
+ * 여기서 정하는 건 **리듬**이지 폭이 아니다 — 본문 폭은 아래 한 줄이 전 화면에 하나로 준다.
  * ========================================================================== */
+/* 본문 폭 — **전 화면 한 값이다.** 예전엔 화면마다 max-width 를 다시 줘서 기본 1680 · 대시보드
+ * 1520 · 관리 4화면 1520 · 상세 6화면 1480 으로 갈렸고(그중 목록 9화면의 1680 은 기본값과 같은
+ * 죽은 규칙이었다), 옆 메뉴로 옮길 때마다 본문이 좌우로 흔들렸다(사용자 지적 — users.php 는
+ * 꽉 차는데 cce-rules.php 는 안 찬다). 좁게 둘 이유가 화면 성격에 있는 곳만 아래에서 예외로
+ * 선언하고, 그 이유를 그 자리에 적는다. 새 화면은 아무것도 안 적으면 이 값을 받는다. */
 .page__main { width: min(100%, 1680px); min-height: calc(100vh - var(--topbar-h)); margin-inline: auto; }
 .page__main > h1:first-child { margin-top: .15rem; }
 .page__main > h1:first-child + .sub { margin-top: .25rem; }
 
-/* 스타일가이드 — 공용 헬퍼와 토큰을 한 화면에서 비교하는 내부 페이지. */
+/* 스타일가이드 — 공용 헬퍼와 토큰을 한 화면에서 비교하는 내부 페이지.
+ * **본문 폭 예외**: 데이터 목록이 아니라 읽는 문서라, 1680 으로 늘리면 견본 한 줄이
+ * 눈이 따라가기 힘들 만큼 길어진다. 그래서 여기만 좁게 둔다. */
 .page--styleguide .page__main { max-width: 1120px; }
 .styleguide-section { margin-bottom: var(--sp-5); }
 .styleguide-section > h2 { margin: 0 0 var(--sp-2); font-size: var(--fs-lg); }
@@ -2250,14 +2257,10 @@ form.card .btn--primary:active { transform: translateY(0); }
 
 /* 대시보드: 개요형. 여백을 넓게 쓴다. */
 /* KPI 격자·도넛 규칙은 등급별 분포 카드와 함께 걷었다 — 이 화면엔 그 마크업이 없다. */
-.page--index .page__main { max-width: 1520px; }
 .page--index .split { gap: 1.35rem; }
 .page--index .card > strong:first-child { font-size: var(--fs-lg); letter-spacing: -.02em; }
 
-/* 목록 화면: 필터는 스크롤해도 손 닿는 곳에 붙어 있고, 데이터가 폭을 다 쓴다. */
-.page--activity .page__main, .page--advisories .page__main, .page--assets .page__main,
-.page--changes .page__main, .page--compliance_rules .page__main, .page--cves .page__main,
-.page--findings .page__main, .page--packages .page__main, .page--vendor .page__main { max-width: 1680px; }
+/* 목록 화면: 필터는 스크롤해도 손 닿는 곳에 붙어 있고, 데이터가 폭을 다 쓴다(폭은 공통값). */
 .page--activity .toolbar, .page--advisories .toolbar, .page--assets .toolbar,
 .page--changes .toolbar, .page--compliance_rules .toolbar, .page--cves .toolbar,
 .page--findings .toolbar, .page--packages .toolbar, .page--vendor .toolbar {
@@ -2343,9 +2346,8 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--cce-rule .kv { grid-template-columns: max-content minmax(0, 1fr); }
 .page--cce-rule .kv dd { overflow-wrap: anywhere; }
 
-/* 상세 화면: 서술은 읽기 좋은 길이로, 증거 표는 폭을 그대로 쓴다. */
-.page--host .page__main, .page--cve .page__main, .page--compliance_rule .page__main,
-.page--advisory .page__main, .page--user .page__main, .page--control .page__main { max-width: 1480px; }
+/* 상세 화면: 서술은 읽기 좋은 길이로(.prose 가 78ch 로 잡는다), 증거 표는 폭을 그대로 쓴다.
+ * 본문 폭 자체는 목록과 같다 — 목록에서 한 줄을 눌러 들어왔는데 본문이 좁아지면 표가 접힌다. */
 .page--host .hero, .page--cve .hero, .page--user .hero { background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--info-bg) 45%, var(--surface))); }
 .page--advisory .prose, .page--cve .prose, .page--compliance_rule .prose,
 .page--control .prose { max-width: 78ch; line-height: 1.75; }
@@ -2410,10 +2412,10 @@ form.card .btn--primary:active { transform: translateY(0); }
  * (히어로 공통 여백 --sp-3 은 자산 상세처럼 뒤에 탭 줄이 오는 화면 기준이다). */
 .page--cve .hero { margin-bottom: var(--sp-5); }
 
-/* 관리 화면: 열이 많아 본문 폭을 넓게 쓴다(작업 열 정렬은 위 td.right .actions 가 소유한다). */
-.page--connectors .page__main, .page--users .page__main, .page--permissions .page__main,
-.page--agent-tokens .page__main { max-width: 1520px; }
-.page--profile .page__main { max-width: 720px; margin-inline: auto; }
+/* 관리 화면: 열이 많아 본문 폭을 넓게 쓴다(폭은 공통값 · 작업 열 정렬은 위 td.right .actions 가 소유한다). */
+/* 내 프로필 — **본문 폭 예외**: 목록이 없고 입력 대여섯 칸이 전부라, 공통 폭을 주면 라벨과
+ * 입력이 화면 양끝으로 갈라진다. 폼 한 장짜리 화면은 여기 하나뿐이라 화면 단위로 둔다. */
+.page--profile .page__main { max-width: 720px; }
 .page--profile .card--sm { max-width: 520px; }
 
 /* 권한 매트릭스: 열 폭을 고정하고 역할마다 가운데 정렬된 체크박스 하나만 둔다. */
