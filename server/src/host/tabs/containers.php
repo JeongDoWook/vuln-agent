@@ -63,11 +63,15 @@ declare(strict_types=1);
           ?>
             <li class="ctrcard tone-<?= $ctrWorst !== null ? vg_h(vg_sev_tone($ctrWorst)) : 'muted' ?>">
               <div class="ctrcard__head">
-                <a class="ctrcard__name" href="<?= vg_h($href) ?>"><?= vg_h((string) $c['cid']) ?></a>
-                <?php if (!empty($c['name']) && (string) $c['name'] !== (string) $c['cid']): ?>
-                  <span class="why"><?= vg_h((string) $c['name']) ?></span>
-                <?php endif; ?>
-                <?php if ($rState !== ''): ?><?= vg_badge($rState, $stateTone[$rState] ?? 'muted') ?><?php endif; ?>
+                <div class="ctrcard__title">
+                  <a class="ctrcard__name" href="<?= vg_h($href) ?>"><?= vg_h((string) $c['cid']) ?></a>
+                  <?php if (!empty($c['name']) && (string) $c['name'] !== (string) $c['cid']): ?>
+                    <span class="why"><?= vg_h((string) $c['name']) ?></span>
+                  <?php endif; ?>
+                </div>
+                <div class="ctrcard__badges">
+                  <?php if ($rState !== ''): ?><?= vg_badge($rState, $stateTone[$rState] ?? 'muted') ?><?php endif; ?>
+                </div>
               </div>
 
               <?php /* 이미지는 이 컨테이너가 무엇인지 그 자체다 — 길어도 접어서 다 보여준다. */ ?>

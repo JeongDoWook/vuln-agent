@@ -2395,7 +2395,17 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctrcard.tone-low   { border-left-color: var(--low); } /* u-card 엔 없는 톤(가이드 위험도는 상/중/하뿐) */
 .ctrcard.tone-ok    { border-left-color: var(--ok); } /* u-card 엔 없는 톤(컴플라이언스 준수 전용) */
 
-.ctrcard__head, .u-card__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem; }
+/* 제목 줄과 배지 줄을 분리된 flex 자식으로 고정한다 — 예전엔 이름·배지가 한 인라인 흐름에
+ * 있어서 제목 길이에 따라 배지가 같은 줄에 붙거나 다음 줄로 밀리며 위치가 들쭉날쭉했다.
+ * __title 은 항상 첫 줄, __badges 는 항상 그 아래 고정된 줄이다. */
+.ctrcard__head, .u-card__head { display: flex; flex-direction: column; gap: .3rem; }
+/* __title 은 이름(+보조 라벨) 여러 개를 한 줄에 흐르게 묶는 자리 — containers.php 처럼
+ * 이름 옆에 별칭이 붙는 카드가 그 둘을 __head 의 같은 첫 줄에 두려면 이 래퍼가 필요하다. */
+.ctrcard__title, .u-card__title { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .5rem; }
+.ctrcard__badges, .u-card__badges { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; }
+/* 배지가 없는 카드도 __badges 래퍼는 항상 렌더한다(비우기만) — 조건부로 아예 안 그리면
+ * __head 의 두 번째 줄이 없어져 카드 높이가 배지 유무에 따라 들쭉날쭉해진다. */
+.ctrcard__badges:empty, .u-card__badges:empty { display: none; }
 .ctrcard__name, .u-card__name { font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
 .ctrcard__name:hover, .u-card__name:hover { color: var(--accent-2); }
 /* 이미지 문자열은 식별자라 자르지 않고 접는다(레지스트리 경로가 길다). */
