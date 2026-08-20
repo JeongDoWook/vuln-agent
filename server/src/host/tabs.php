@@ -18,8 +18,8 @@ declare(strict_types=1);
  *   'suppressed' 는 URL 로는 유효하지만 탭이 아니라 취약점 탭의 필터로 그려진다.
  *
  *   'icon' 은 icons.php 의 이름, 'group' 은 vg_subtabs() 가 인접 탭과 비교해 구분선을 넣는
- *   묶음 키다(사용자 피드백 — "탭이 그냥 막 나열되어 있는 느낌"). 8개를 셋으로 나눈다:
- *   위협(취약점·보안 설정) · 자산 구성(패키지·컨테이너·런타임·계정) · 이력/관리(스캔 이력·자산 설정).
+ *   묶음 키다(사용자 피드백 — "탭이 그냥 막 나열되어 있는 느낌"). 셋으로 나눈다:
+ *   위협(취약점·보안 설정) · 자산 구성(패키지·의존성·컨테이너·런타임·계정) · 이력/관리(스캔 이력·자산 설정).
  *   탭이 가리키는 조회·URL 은 그대로다 — 순서와 시각 묶음만 더한다.
  */
 function vg_host_tab_defs(): array {
@@ -27,6 +27,10 @@ function vg_host_tab_defs(): array {
         'vuln'    => ['label' => '취약점',    'icon' => 'cve', 'group' => 'threat'],
         'cce'     => ['label' => '보안 설정', 'icon' => 'shield', 'group' => 'threat'],
         'packages'=> ['label' => '설치 패키지', 'icon' => 'package', 'group' => 'asset'],
+        /* 의존성 트리 — 설치 패키지 옆이 제자리다("무엇이 깔려 있나" 다음에 오는 질문이
+         *   "그건 왜 깔려 있나"다). **엣지가 있는 자산에만 세운다** — host.php 가
+         *   $depEdgeTotal 로 이 키를 걷어낸다(대다수 자산은 언어 패키지 SBOM 이 없다). */
+        'depgraph'=> ['label' => '의존성',    'icon' => 'chart', 'group' => 'asset'],
         // 컨테이너 대장 — 호스트와 OS 가 다를 수 있는 별도 자산이라 목록을 따로 준다.
         'containers'=> ['label' => '컨테이너', 'icon' => 'container', 'group' => 'asset'],
         // 이 탭은 노출 소켓과 실행 프로세스 두 목록을 함께 제공한다.

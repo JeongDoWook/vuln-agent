@@ -98,7 +98,11 @@ declare(strict_types=1);
       <div class="actions">
       <?php vg_sbom_view_button((string) $host['fqdn']); ?>
       <?php if ($depEdgeTotal > 0): ?>
-        <a class="btn btn--sm btn--ghost" href="/depgraph.php?id=<?= (int) $hostId ?>"><?= vg_icon('chart') ?>의존성 그래프</a>
+        <?php /* 이제 '의존성' 탭이 있으므로 전용 화면이 아니라 그 탭으로 보낸다 — 자산 상세를
+                 벗어나지 않는다. 버튼은 늘리지 않고 **라벨에 엣지 수를 담아** "이 자산엔 볼 게
+                 있다"를 여기서 알린다(엣지가 0인 자산에는 탭도 이 버튼도 서지 않는다). */ ?>
+        <a class="btn btn--sm btn--ghost" href="<?= vg_h(vg_qs(['tab' => 'depgraph', 'page' => null, 'q' => null])) ?>"
+           title="이 자산의 패키지 의존성 트리"><?= vg_icon('chart') ?>의존성 엣지 <?= number_format($depEdgeTotal) ?>개</a>
       <?php endif; ?>
       <?php /* 전체 설치 패키지(asset-packages.php)는 자산을 고르지 않으면 함대 전체가 한 표에 쏟아진다 —
                이 자산으로 필터한 링크를 주 진입점으로 둔다(화면 자체는 전역 검색용으로 남는다). */ ?>
