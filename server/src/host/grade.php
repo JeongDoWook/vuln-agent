@@ -28,20 +28,27 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
       <strong id="asset-grade-title">자산 등급</strong>
       <span class="why"> · N2SF 보안등급 <?= vg_h(vg_asset_grade_legend()) ?></span>
       <div class="card__body">
-        <?php /* 여섯 항목 모두 "이 자산 등급의 현재 사실" 이다 — 뒤에 산문 문단으로 매달지 않고
-                 같은 정의목록 안에 둔다. 제안값은 여기서도 '제안' 꼬리표를 달아 확정과 갈라 둔다. */ ?>
-        <dl class="fact-grid">
-          <div><dt>확정 등급</dt><dd><?= vg_asset_grade_badge($curGrade !== '' ? $curGrade : null, false, (string) ($host['grade_reason'] ?? '')) ?></dd></div>
-          <div><dt>중요도</dt><dd><?= $curCrit !== '' ? vg_h(VG_ASSET_CRITICALITY[$curCrit] ?? $curCrit) : '<span class="why">–</span>' ?></dd></div>
-          <div><dt>확정자</dt><dd><?= $approver !== null ? vg_h($approver) : '<span class="why">–</span>' ?></dd></div>
-          <div><dt>확정 시각</dt><dd><?= !empty($host['approved_at']) ? vg_h((string) $host['approved_at']) : '<span class="why">–</span>' ?></dd></div>
-          <div><dt>확정 근거</dt><dd><?= $curGrade !== '' && !empty($host['grade_reason'])
-              ? vg_h((string) $host['grade_reason'])
-              : '<span class="why">–</span>' ?></dd></div>
-          <div><dt>시스템 초안</dt><dd><?= $sugGrade !== null
-              ? vg_asset_grade_badge((string) $sugGrade, true, $sugReason) . ' <span class="why">' . vg_h($sugReason) . '</span>'
-              : '<span class="why">근거 부족 — 제안 없음</span>' ?></dd></div>
-        </dl>
+        <?php
+        /* 여섯 항목(확정 등급·중요도·확정자·확정 시각·확정 근거·시스템 초안)을 2×3 정의목록으로
+         *   세우던 자리다. 확정 전 자산에서는 여섯 칸 중 다섯이 '–' 라 빈 칸이 화면만 먹었다 —
+         *   **사실을 지우는 게 아니라 한 줄로 접는다**: 확정된 자산은 확정 정보를, 미확정 자산은
+         *   시스템 초안을 그 한 줄에 담는다. 아래 폼이 같은 값을 입력칸으로 다시 보여준다. */
+        $gradeLine = [];
+        if ($curGrade !== '') {
+            $gradeLine[] = vg_asset_grade_badge($curGrade, false, (string) ($host['grade_reason'] ?? '')) . ' 확정';
+            if ($curCrit !== '') { $gradeLine[] = '중요도 ' . vg_h(VG_ASSET_CRITICALITY[$curCrit] ?? $curCrit); }
+            if ($approver !== null) { $gradeLine[] = vg_h($approver); }
+            if (!empty($host['approved_at'])) { $gradeLine[] = vg_h((string) $host['approved_at']); }
+            if (!empty($host['grade_reason'])) { $gradeLine[] = vg_trunc((string) $host['grade_reason'], 40); }
+        } else {
+            $gradeLine[] = '<strong>등급 미확정</strong>';
+            if ($curCrit !== '') { $gradeLine[] = '중요도 ' . vg_h(VG_ASSET_CRITICALITY[$curCrit] ?? $curCrit); }
+            $gradeLine[] = $sugGrade !== null
+                ? '시스템 초안 ' . vg_asset_grade_badge((string) $sugGrade, true, $sugReason)
+                : '시스템 초안 없음(근거 부족)';
+        }
+        ?>
+        <p class="grade-summary"><?= implode(' · ', $gradeLine) ?></p>
 
         <?php /* 근거 문장을 배지 title(tooltip)에만 담으면 터치·키보드·Ctrl+F·복사·인쇄에서
                  사라진다 — 이 화면은 정보공개법 제9조 근거를 남기는 법적 증빙 화면이라 실질적
@@ -56,10 +63,13 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
           </div>
           <details class="grade-review">
             <summary>시스템이 본 신호의 근거 (<?= count($signals) ?>건)</summary>
+            <?php /* 한 불릿이 두세 줄을 먹던 자리다 — 근거·비고는 한 줄로 줄이고 원문은 title 로
+                     남긴다(vg_trunc). 접혀 있어도 펼치면 텍스트로 읽히는 건 그대로다. */ ?>
             <ul class="why mt-lg">
               <?php foreach ($signals as $sig): ?>
+                <?php $sigWhy = trim($sig['evidence'] . ' ' . $sig['note']); ?>
                 <li><?= vg_h(($sig['grade'] !== null ? $sig['grade'] . ' · ' : '검토 · ') . $sig['label']) ?>
-                  — <?= vg_h(trim($sig['evidence'] . ' ' . $sig['note'])) ?></li>
+                  <?= $sigWhy !== '' ? '— ' . vg_trunc($sigWhy, 60) : '' ?></li>
               <?php endforeach; ?>
             </ul>
           </details>
@@ -67,7 +77,8 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
           <p class="why mt-lg">이전 관찰로 만든 초안 — 이번 스캔의 근거 신호는 없음.</p>
         <?php endif; ?>
 
-        <p class="why mt-lg">정보공개법 제9조 해당 여부는 C/S/O 판단 근거 중 하나이며, 법률이 C/S/O 등급을 정의하는 것은 아닙니다.</p>
+        <?php /* '정보공개법 제9조 …' 해설 한 줄은 걷었다 — 아래 확정 폼의 '정보공개법 제9조 해당 호'
+                 셀렉트가 그 관계를 이미 자리로 보여준다(근거 항목의 하나일 뿐이라는 것). */ ?>
         <?php if ($canEdit && !empty($review['is_stale'])): ?>
           <p class="why">⚠ 일괄 등급 변경 뒤 구조화 검토 정보가 재확인되지 않았습니다. 현재 등급에 맞게 다시 검토해 저장하세요.</p>
         <?php elseif ($canEdit && vg_asset_grade_review_overdue($review)): ?>

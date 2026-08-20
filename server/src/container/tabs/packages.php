@@ -7,7 +7,7 @@ declare(strict_types=1);
     <span class="why"> · 이 컨테이너 안 <?= number_format($packageTotal) ?>개
       <?= $ctrOs !== '' ? '· ' . vg_h($ctrOs) : '' ?></span>
     <?php if ($depEdgeTotal > 0): ?>
-      <span class="why"> · <a href="/depgraph.php?id=<?= (int) $hostId ?>&amp;cid=<?= (int) $container['container_id'] ?>">무엇이 이 패키지를 끌어왔나(의존성 그래프)</a></span>
+      <span class="why"> · <a href="/depgraph.php?id=<?= (int) $hostId ?>&amp;cid=<?= (int) $container['container_id'] ?>">의존성 그래프</a></span>
     <?php endif; ?>
     <div class="card__body">
     <?php
