@@ -949,7 +949,10 @@ assert_contains "$ctrdep" 'myco-http' "직접 의존 표시"
 assert_contains "$ctrdep" 'myco-utf8' "전이 의존(3단계)까지 펼쳐짐"
 # 렌더 형태 고정 — 중첩 박스(.ctrcard 안의 .ctrcard)가 아니라 서버가 그린 가로 계층 트리다.
 assert_contains "$ctrdep" 'class="deptree__svg"' "의존성을 가로 계층 트리 SVG 로 그린다"
-assert_contains "$ctrdep" 'class="deptree__edge ' "부모→자식 연결선(곡선 엣지)이 실제로 그려진다"
+assert_contains "$ctrdep" 'class="deptree__edge ' "부모→자식 연결선이 실제로 그려진다"
+# 선 모양 고정 — 직교(elbow) 라우팅이라 한 묶음의 d 에 세로 구간(V)과 둥근 모서리(Q)가 있다.
+#   한 점에서 모두 출발하던 3차 베지에(C …)로 되돌아가면 선이 다시 뭉친다.
+assert_contains "$ctrdep" 'class="deptree__edge deptree__edge--d0" d="M' "엣지 묶음이 부모 단위 path 하나로 나온다"
 # 색은 정보다 — 깊이별 엣지 클래스와 등급 틴트(조치 대상만)가 실제로 붙는지 고정한다.
 assert_contains "$ctrdep" 'deptree__edge--d0' "엣지 농도가 깊이별로 갈린다"
 # 범례는 걷어냈다(자리만 먹었다) — 대신 **노드 자신이** 색 말고도 말해야 한다: 등급 배지의
