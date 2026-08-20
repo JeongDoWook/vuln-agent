@@ -183,8 +183,8 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 </div>
 
 <nav class="subtabs subtabs--sticky">
-  <a href="#cves">관련 CVE<span class="n"><?= number_format($cveTotal) ?></span></a>
-  <a href="#assets">영향 자산<span class="n"><?= number_format($assetHostTotal) ?></span></a>
+  <a href="#cves">관련 CVE</a>
+  <a href="#assets">영향 자산</a>
   <a href="#content">본문</a>
   <a href="#origin">원문·수집 정보</a>
 </nav>

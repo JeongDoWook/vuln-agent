@@ -10,7 +10,6 @@
         //   그 카드를 누르면 NA 만 걸러 볼 수 있다(배너는 같은 수를 문장으로 되풀이했다). ?>
   <div class="card">
     <strong>판정 구성</strong>
-    <span class="why">조각·항목을 누르면 그 판정만 걸러 봅니다(다시 누르면 전체).</span>
     <div class="card__body">
     <?php
     // NA 는 PASS 와 절대 같은 색을 쓰지 않는다 — 회색(판정 불가)과 초록(양호)은 다른 사실이다.

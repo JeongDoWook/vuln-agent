@@ -229,8 +229,8 @@ $status = $judgedTotal > 0
 
 <nav class="subtabs subtabs--sticky">
   <a href="#check">점검과 조치</a>
-  <a href="#controls">기준 매핑<span class="n"><?= number_format(array_sum(array_map('count', $mapping))) ?></span></a>
-  <a href="#hosts">위반 자산<span class="n"><?= number_format($total) ?></span></a>
+  <a href="#controls">기준 매핑</a>
+  <a href="#hosts">위반 자산</a>
   <a href="#origin">식별과 출처</a>
 </nav>
 
@@ -245,7 +245,6 @@ $status = $judgedTotal > 0
         <dd><?= $guide['remediation'] !== '' ? vg_h($guide['remediation']) : '<span class="why">조치 방법 준비 중</span>' ?></dd>
         <dt>심각도</dt><dd><?= vg_badge($sev, vg_sev_tone($sev)) ?></dd>
       </dl>
-      <p class="why">수집값이 없으면 PASS 가 아니라 NA(판정 불가)로 남습니다 — 못 본 것을 괜찮다고 하지 않습니다.</p>
     </div>
   </div>
 </section>
@@ -352,8 +351,7 @@ $status = $judgedTotal > 0
               //   접힌 채로 이 아래에 둔다. 지우지는 않는다(근거 링크가 여기서만 열린다). ?>
         <summary>참조 근거(외국 기준) · SSG 룰<?= $ssgRule !== null ? ' ' . vg_h((string) $ssgRule['rule_id']) : '' ?></summary>
         <?php if ($rule['ssg_rule_id'] === null): ?>
-          <p class="why">대응하는 SSG(SCAP Security Guide) 룰이 없는 자체 기준 항목입니다.
-            KISA 가이드 고유 항목이거나, SSG 가 같은 대상을 다루지 않는 경우입니다.</p>
+          <p class="why">대응하는 SSG(SCAP Security Guide) 룰 없음 — 자체 기준 항목입니다.</p>
         <?php elseif ($ssgRule === null): ?>
           <p class="why">대응 룰은 <code><?= vg_h((string) $rule['ssg_rule_id']) ?></code> 이지만
             아직 수집되지 않았습니다 — SSG 커넥터가 한 번은 돌아야 합니다.</p>

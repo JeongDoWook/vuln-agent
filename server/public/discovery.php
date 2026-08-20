@@ -689,8 +689,6 @@ vg_header('자산 탐색', 'discovery');
   if ($canTriage && $rows) {
       vg_modal_open('discoveryTriage', '선택 발견 자산 정리');
       ?>
-      <p class="why">표에서 고른 자산에만 적용합니다 — 선택은 지금 보고 있는 페이지 안에서만 유효합니다.</p>
-
       <label for="triage-op">할 일</label>
       <?php /* 어휘는 VG_DISCOVERY_TRIAGE_OPS 가 소유한다 — 선택지 문구를 여기서 다시 적지 않는다. */ ?>
       <select id="triage-op" name="op" required>
@@ -704,9 +702,9 @@ vg_header('자산 탐색', 'discovery');
              placeholder="예: 프린터 · 스위치 · 게이트웨이">
       <dl class="criteria">
         <dt>제외</dt>
-        <dd>에이전트를 깔 수 없는 장비(게이트웨이·프린터·가상 IP)를 커버리지 분모에서 뺍니다. ‘제외 해제’ 는 다시 관리 대상으로 되돌립니다.</dd>
+        <dd>커버리지 분모에서 뺍니다. ‘제외 해제’ 로 되돌립니다.</dd>
         <dt>메모</dt>
-        <dd>‘메모 저장’ 을 골랐을 때만 위 값으로 덮어씁니다(비우면 지웁니다). 제외·해제는 메모를 건드리지 않습니다.</dd>
+        <dd>‘메모 저장’ 일 때만 덮어씁니다(비우면 지웁니다).</dd>
         <dt>적용 범위</dt>
         <dd>지금 보고 있는 페이지에서 고른 자산만, 한 번에 <?= VG_DISCOVERY_TRIAGE_MAX ?>건까지. 자산마다 감사로그가 남습니다.</dd>
       </dl>

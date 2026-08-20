@@ -187,11 +187,11 @@ vg_container_render_overview([
 ]);
 
 vg_subtabs([
-    'vuln'     => ['label' => '취약점',   'n' => $vulnTotal,
+    'vuln'     => ['label' => '취약점',
                    'href' => vg_qs(['tab' => 'vuln', 'page' => null, 'epage' => null, 'q' => null])],
-    'packages' => ['label' => '설치 패키지', 'n' => $packageTotal,
+    'packages' => ['label' => '설치 패키지',
                    'href' => vg_qs(['tab' => 'packages', 'page' => null, 'epage' => null, 'q' => null])],
-    'runtime'  => ['label' => '런타임',   'n' => $runtimeTotal,
+    'runtime'  => ['label' => '런타임',
                    'href' => vg_qs(['tab' => 'runtime', 'page' => null, 'epage' => null, 'q' => null])],
 ], $tab);
 

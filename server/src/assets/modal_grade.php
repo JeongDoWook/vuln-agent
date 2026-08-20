@@ -33,7 +33,6 @@ function vg_assets_render_grade_modal(array $gradeTone): void
           </div>
         <?php endforeach; ?>
       </div>
-      <p class="why">한 정보시스템에 여러 등급이 섞이면 오른쪽(더 강한 보호)을 승계합니다.</p>
 
       <label for="bulk-criticality">중요도</label>
       <select id="bulk-criticality" name="criticality">
@@ -58,16 +57,13 @@ function vg_assets_render_grade_modal(array $gradeTone): void
       <?php /* 판정 기준은 산문이 아니라 정의목록으로 준다 — 등급 어휘는 assetgrade.php 가 소유하고
                (같은 문자열을 화면마다 다시 적지 않는다), 나머지는 이 폼이 실제로 하는 일이다. */ ?>
       <dl class="criteria">
-        <?php /* 등급 어휘·기준은 바로 위 세 칸이 색과 함께 말한다 — 같은 말을 두 번 하지 않고,
-                 여기엔 그 칸에 못 담는 것(누가 확정하는가)만 남긴다. */ ?>
-        <dt>보안등급</dt>
-        <dd>N2SF 등급 확정은 기관의 법적 처분이라 시스템이 대신하지 않습니다.</dd>
-        <dt>중요도</dt>
-        <dd>상 / 중 / 하 — 등급과 별개로 사람이 지정합니다. ‘변경 안 함’ 이면 지금 값을 그대로 둡니다.</dd>
+        <?php /* 등급 어휘·기준은 바로 위 세 칸이 색과 함께 말한다. 셀렉트의 '변경 안 함' 처럼
+                 컨트롤이 스스로 말하는 것도 여기 다시 적지 않는다 — 남는 것은 되돌리기 어려운
+                 동작의 범위·부작용뿐이다. */ ?>
         <dt>확정 범위</dt>
         <dd>지금 보고 있는 페이지에서 고른 자산만, 한 번에 500대까지. 자산마다 확정자·시각이 감사로그에 남습니다.</dd>
         <dt>구조화 검토 정보</dt>
-        <dd>호스트마다 달라 일괄 입력하지 않습니다. 기존 정보는 재검토 필요 상태가 되며, 확정 후 각 자산 상세에서 제9조 해당 호, 업무·데이터 유형, 소유 부서, 공개 상태, 검토 문서와 재검토일을 다시 확인하세요.</dd>
+        <dd>호스트마다 달라 일괄 입력하지 않습니다. 기존 정보는 재검토 필요 상태가 됩니다.</dd>
       </dl>
       <?php vg_modal_foot('등급 확정', ['loading' => '확정 중…', 'cancel' => '취소']); ?>
     <?php vg_modal_close(); ?>

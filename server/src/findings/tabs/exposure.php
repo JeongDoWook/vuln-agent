@@ -8,7 +8,6 @@
 ?>
   <div class="card">
     <strong>노출 범위 구성</strong>
-    <span class="why">조각·항목을 누르면 그 범위만 걸러 봅니다(다시 누르면 해제).</span>
     <div class="card__body">
     <?php
     // 톤은 host.php 의 $scopeTone 과 같은 매핑이다(같은 값이 화면마다 다른 색이 되지 않게).

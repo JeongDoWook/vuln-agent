@@ -9,7 +9,6 @@ declare(strict_types=1);
 <section id="assetmap">
   <div class="card">
     <strong>영향받는 버전 맵</strong>
-    <span class="why"> · 이 CVE 의 영향 버전을 설치한 자산을 패키지·버전별로 묶어 보여줍니다</span>
     <?php if ($locTotal > 0): ?>
     <div class="card__body">
       <?php foreach ($verMap as $g): ?>

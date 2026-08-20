@@ -69,7 +69,7 @@ $reportJobs = ['rows' => [], 'total' => 0];   // AI 보고서 이력(최신순 �
 $reportActive = null;    // 아직 안 끝난 보고서 job — 있으면 화면이 열리자마자 폴링을 이어간다
 
 $counts =['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
-$exposureCount = 0; $processCount = 0; $runtimeTotal = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
+$exposureCount = 0; $processCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
 $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 // 위험 요약(히어로 바로 아래) — 심각도 분포와 같은 한 번의 집계에서 함께 나온다.
 $kevCount = 0; $externalFindings = 0;
@@ -141,8 +141,6 @@ try {
             'scanTotal' => $scanTotal, 'processCount' => $processCount, 'packageTotal' => $packageTotal,
             'depEdgeTotal' => $depEdgeTotal, 'accountTotal' => $accountTotal, 'containerTotal' => $containerTotal,
         ] = vg_host_load_kpi_counts($pdo, $sid, $hostId);
-        // 런타임 탭은 노출 소켓과 실행 프로세스 두 목록을 함께 담아 배지가 둘의 합이다.
-        $runtimeTotal = $exposureCount + $processCount;
 
         // --- 활성 탭 결정 (억제 탭은 건이 있을 때만 존재) ---
         $validTabs = ['vuln', 'packages', 'containers', 'runtime', 'cce', 'accounts'];
@@ -270,13 +268,8 @@ vg_alert($agentErr);
     foreach (['CRITICAL','HIGH','MEDIUM','LOW'] as $s) { if ($counts[$s] > 0) { $worst = $s; break; } }
     $heroTone = $worst ? vg_sev_tone($worst) : 'ok';
 
-    // 탭 줄 정의 — 숫자는 위에서 이미 센 값 그대로다(host/tabs.php 가 순서·라벨을 갖는다).
-    $tabDefs = vg_host_tab_defs([
-        'vulnTotal' => $vulnTotal, 'packageTotal' => $packageTotal,
-        'containerTotal' => $containerTotal, 'runtimeTotal' => $runtimeTotal,
-        'cceFail' => $cceFail, 'accountTotal' => $accountTotal,
-        'suppressedCount' => $suppressedCount, 'scanTotal' => $scanTotal,
-    ]);
+    // 탭 줄 정의 — 순서·라벨은 host/tabs.php 가 갖는다(건수 배지는 그리지 않는다).
+    $tabDefs = vg_host_tab_defs();
 ?>
   <?php vg_host_render_hero([
       'host' => $host, 'scan' => $scan, 'pollAge' => $pollAge, 'scanAge' => $scanAge,

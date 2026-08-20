@@ -93,12 +93,12 @@ $check(str_contains($appJs, "closest('[data-tip]')") && str_contains($appCss, '.
 $check(str_contains($appJs, "addEventListener('mouseover'") && str_contains($appJs, "addEventListener('focusin'")
     && !str_contains($appJs, 'setTimeout(showInfoTip'),
     '툴팁을 지연 없이 hover·키보드 focus 모두에 표시');
-$check(str_contains($hostPhp, '$runtimeTotal = $exposureCount + $processCount;')
-    // 탭 줄 정의는 server/src/host/tabs.php 로 옮겼다(숫자는 페이지가 센 값을 그대로 받는다).
-    // 공백·키 순서·icon/group 값은 이 불변식과 무관하므로, "runtime 탭의 n 이 $n['runtimeTotal']
-    // 을 쓴다"만 정규식으로 확인한다(리터럴 문자열 통째 비교는 아이콘만 추가해도 깨진다).
-    && preg_match("/'runtime'\s*=>\s*\[[^\]]*'n'\s*=>\s*\\\$n\['runtimeTotal'\]/", $hostPhp) === 1,
-    '런타임 탭 건수에 노출 소켓과 실행 프로세스 모두 포함');
+// 예전엔 이 자리에서 "runtime 탭 배지 = 노출 + 프로세스" 를 확인했다. 탭 건수 배지를 전 화면에서
+//   걷어내며($runtimeTotal 도 같이 죽었다) 지킬 대상이 배지가 아니라 **두 목록이 한 탭에 함께
+//   담긴다는 사실**로 남았다 — 그것을 그대로 검사한다.
+$check(str_contains($hostPhp, '<strong>런타임 노출</strong>')
+    && str_contains($hostPhp, '<strong>실행 프로세스</strong>'),
+    '런타임 탭이 노출 소켓과 실행 프로세스를 함께 담음');
 $check(str_contains($componentsPhp, "!empty(\$h['class'])"), '공통 테이블 열 클래스 지원');
 $check(str_contains($componentsPhp, 'function vg_kpi_strip('), '공통 KPI 스트립 렌더러 제공');
 $check(str_contains($componentsPhp, "'exposure' =>") && str_contains($componentsPhp, "'exploit'  =>")

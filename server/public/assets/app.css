@@ -921,8 +921,6 @@ a.kpi.is-selected { border-color: currentColor; box-shadow: var(--ring); }
 }
 .subtabs a:hover { color: var(--text); text-decoration: none; }
 .subtabs a.on { color: var(--text); border-bottom-color: var(--accent); }
-.subtabs .n { margin-left: .35rem; font-size: .82em; color: var(--muted); font-weight: 700; }
-.subtabs a.on .n { color: var(--accent-2); }
 
 /* 앵커 내비(cve.php) — 탭 전환이 아니라 같은 페이지 안 섹션으로 스크롤 점프한다.
  * sticky 로 스크롤 중에도 손 닿는 곳에 남긴다(상단바 바로 아래 — --topbar-h 로 값을 공유한다.
@@ -2829,7 +2827,6 @@ a.u-tile:hover { border-color: var(--line-2); box-shadow: var(--shadow); text-de
 
 /* #599 — 판단·설치 흐름. 모두 기존 색 토큰을 써 두 테마에서 같은 의미를 유지한다. */
 .action-queue { margin-bottom: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
-.action-queue__head { display: flex; align-items: baseline; gap: .45rem; margin-bottom: .7rem; }
 .decision-flow { margin: 1rem 0 var(--sp-3); }
 .decision-flow ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .55rem; margin: 0; padding: 0; list-style: none; }
 .decision-flow a { display: grid; grid-template-columns: 1.65rem 1fr; gap: .1rem .45rem; min-height: 4.3rem; padding: .7rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--text); }
@@ -2848,7 +2845,6 @@ a.u-tile:hover { border-color: var(--line-2); box-shadow: var(--shadow); text-de
   .install-stepper { min-height: 0; }
   .install-stepper__tabs { grid-template-columns: 1fr 1fr; }
   .install-stepper__tabs button { min-height: 3rem; }
-  .action-queue__head { display: block; }
 }
 
 /* ==========================================================================

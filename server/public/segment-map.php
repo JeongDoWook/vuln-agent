@@ -257,7 +257,7 @@ vg_header('세그먼트 맵', 'segment_map');
     <?php if ($unmatchedHosts): ?>
       <div class="card">
         <strong>게이트웨이 미확인 자산</strong>
-        <span class="why"> · 라우팅 정보가 없어 대역에 배치할 수 없습니다(에이전트가 net.routes 를 못 보냈거나, 인터페이스가 전부 가상입니다)</span>
+        <span class="why"> · 라우팅 정보가 없어 대역에 배치할 수 없습니다</span>
         <div class="card__body">
           <ul class="hint-list">
             <?php foreach ($unmatchedHosts as $h): ?>
