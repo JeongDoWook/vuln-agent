@@ -33,7 +33,8 @@ case "$PROFILE" in pre-push|central) ;; *) usage; exit 2 ;; esac
 PROTECTED_OVERRIDES=(
   VG_GATE_ROOT VG_GATE_MANIFEST VG_GATE_DOCKER_BIN VG_GATE_CURL_BIN VG_GATE_PHP_BIN
   VG_GATE_SMOKE_SCRIPT VG_GATE_MIGRATION_TEST VG_GATE_BACKUP_TEST
-  VG_GATE_SCHEMA_DOCS_TEST VG_GATE_APP_IMAGE VG_WEB_CONTAINER VG_DB_CONTAINER VG_SMOKE_BASE
+  VG_GATE_SCHEMA_DOCS_TEST VG_GATE_SCHEMA_DOCS_PRECHECK_SCRIPT
+  VG_GATE_APP_IMAGE VG_WEB_CONTAINER VG_DB_CONTAINER VG_SMOKE_BASE
 )
 
 canonical_dir() { (cd "$1" 2>/dev/null && pwd -P); }
@@ -75,12 +76,17 @@ if [ "$TEST_MODE" -eq 1 ]; then
   MIGRATION_TEST=${VG_GATE_MIGRATION_TEST:-}
   BACKUP_TEST=${VG_GATE_BACKUP_TEST:-}
   SCHEMA_DOCS_TEST=${VG_GATE_SCHEMA_DOCS_TEST:-}
+  # precheck 스크립트는 모든 fixture 가 주입하지는 않는다(주입 안 한 fixture 는 manifest 에
+  # 이 gate 행 자체가 없다). 그래서 필수 목록에 넣지 않고, 주입한 경우에만 다른 override 와
+  # 같은 규칙(디스크 존재·심링크 금지·disposable root 안)으로 검증한다.
+  SCHEMA_DOCS_PRECHECK=${VG_GATE_SCHEMA_DOCS_PRECHECK_SCRIPT:-}
   for item in \
     "manifest:$MANIFEST" "docker:$DOCKER_BIN" "curl:$CURL_BIN" "php:$PHP_BIN" \
     "smoke:$SMOKE_SCRIPT" "migration-test:$MIGRATION_TEST" \
     "backup-test:$BACKUP_TEST" "schema-docs-test:$SCHEMA_DOCS_TEST"; do
     require_test_path "${item%%:*}" "${item#*:}"
   done
+  [ -z "$SCHEMA_DOCS_PRECHECK" ] || require_test_path schema-docs-precheck "$SCHEMA_DOCS_PRECHECK"
 else
   for name in "${PROTECTED_OVERRIDES[@]}" VG_GATE_TEST_MODE; do
     if [ "${!name+x}" = x ]; then
@@ -96,6 +102,7 @@ else
   MIGRATION_TEST=$ROOT/tests/migration_rehearsal_test.sh
   BACKUP_TEST=$ROOT/tests/backup_restore_test.sh
   SCHEMA_DOCS_TEST=$ROOT/tests/schema_docs_test.sh
+  SCHEMA_DOCS_PRECHECK=$ROOT/tests/schema_docs_precheck.sh
 fi
 [ -r "$MANIFEST" ] || { echo "gate manifest unreadable: $MANIFEST" >&2; exit 2; }
 
@@ -178,19 +185,24 @@ check_schedule_unit() {
     "$DOCKER_BIN" run --rm -v "$ROOT:/work:ro" -w /work "${VG_GATE_APP_IMAGE:-vulnagent-app:dev}" php tests/schedule_test.php
   fi
 }
+# 이 push(브랜치)가 origin/main 대비 주어진 경로를 실제로 건드렸는지 본다. 무거운 게이트가
+# 자기와 무관한 push 를 붙잡지 않게 하는 용도다. base 를 못 구하거나 diff 자체가 실패하면
+# (얕은 clone, origin/main 없음 등) 판단을 모호하게 두지 않고 "바뀐 것으로" 보고 전체 실행에
+# fallback 한다 — 속도보다 정확성을 기본값으로 둔다.
+# 반환: 0=하나도 안 바뀜(스킵 가능) / 1=바뀌었거나 판단 불가(전체 실행). base 는 GATE_DIFF_BASE.
+GATE_DIFF_BASE=""
+gate_paths_unchanged() {
+  local base
+  base=$(git -C "$ROOT" merge-base HEAD origin/main 2>/dev/null) || return 1
+  [ -n "$base" ] || return 1
+  git -C "$ROOT" diff --quiet "$base" HEAD -- "$@" 2>/dev/null || return 1
+  GATE_DIFF_BASE=$base
+  return 0
+}
 check_migration_rehearsal() {
-  # 이 push(브랜치)가 origin/main 대비 db/ 스키마를 실제로 건드렸을 때만 무거운
-  # disposable MySQL rehearsal 을 돈다. base 를 못 구하거나 diff 자체가 실패하면
-  # (얕은 clone, origin/main 없음 등) 판단을 모호하게 두지 않고 항상 전체 rehearsal 로
-  # fallback 한다 — 속도보다 정확성을 기본값으로 둔다.
-  local base diff_rc
-  if base=$(git -C "$ROOT" merge-base HEAD origin/main 2>/dev/null) && [ -n "$base" ]; then
-    git -C "$ROOT" diff --quiet "$base" HEAD -- db/migrations 'db/*.sql' 2>/dev/null
-    diff_rc=$?
-    if [ "$diff_rc" -eq 0 ]; then
-      echo "migration-rehearsal: db/ 변경 없음 — 스킵 (base=$base)"
-      return 0
-    fi
+  if gate_paths_unchanged db/migrations 'db/*.sql'; then
+    echo "migration-rehearsal: db/ 변경 없음 — 스킵 (base=$GATE_DIFF_BASE)"
+    return 0
   fi
   [ -r "$MIGRATION_TEST" ] || { echo "migration rehearsal missing: $MIGRATION_TEST"; return 1; }
   bash "$MIGRATION_TEST"
@@ -200,8 +212,21 @@ check_backup_restore() {
   bash "$BACKUP_TEST"
 }
 check_schema_docs() {
+  # 트리거에 db/ 뿐 아니라 산출물 4종도 넣는다. db/ 를 안 건드리고 산출물만 손으로 고쳐
+  # erd.puml 의 마커가 옛 값으로 남고 xlsx 가 안 따라온 사고(7ea8b4d3)가 실제로 있었다 —
+  # db/ 만 조건으로 쓰면 그 사고를 그대로 통과시킨다.
+  if gate_paths_unchanged db/migrations 'db/*.sql' \
+      'docs/dev/데이터베이스.md' 'docs/specs/diagrams/erd.puml' \
+      'docs/specs/diagrams/erd.svg' 'docs/specs/테이블명세서.xlsx'; then
+    echo "schema-docs: db/ 와 스키마 문서 산출물 변경 없음 — 스킵 (base=$GATE_DIFF_BASE)"
+    return 0
+  fi
   [ -r "$SCHEMA_DOCS_TEST" ] || { echo "schema docs test missing: $SCHEMA_DOCS_TEST"; return 1; }
   bash "$SCHEMA_DOCS_TEST"
+}
+check_schema_docs_precheck() {
+  [ -r "$SCHEMA_DOCS_PRECHECK" ] || { echo "schema docs precheck missing: $SCHEMA_DOCS_PRECHECK"; return 1; }
+  bash "$SCHEMA_DOCS_PRECHECK"
 }
 
 run_check() {
@@ -215,6 +240,7 @@ run_check() {
     migration-rehearsal) check_migration_rehearsal ;;
     backup-restore) check_backup_restore ;;
     schema-docs) check_schema_docs ;;
+    schema-docs-precheck) check_schema_docs_precheck ;;
     *) echo "unknown gate id: $1"; return 1 ;;
   esac
 }
@@ -236,7 +262,7 @@ validate_manifest() {
     case "$profile" in pre-push|central) ;; *) echo "invalid gate profile at line $line: $profile" >&2; return 1 ;; esac
     case "$required" in true|false) ;; *) echo "invalid required flag at line $line: $required" >&2; return 1 ;; esac
     case "$id" in
-      source-state|docker-engine|web-stack|web-http|smoke|schedule-unit|migration-rehearsal|backup-restore|schema-docs) ;;
+      source-state|docker-engine|web-stack|web-http|smoke|schedule-unit|migration-rehearsal|backup-restore|schema-docs|schema-docs-precheck) ;;
       *) echo "unknown gate id at line $line: $id" >&2; return 1 ;;
     esac
     case "$deps" in
