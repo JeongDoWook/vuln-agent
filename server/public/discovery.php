@@ -82,6 +82,40 @@ function vg_discovery_normalize_ports(string $raw): ?string
     return $joined;
 }
 
+/**
+ * 제목 줄의 주 동작 — '대역 탐색'. 이 화면의 주 동작인데 예전에는 대역 카드 안에서 '수정·삭제'
+ *   와 같은 무게로 놓여 눈에 안 들어왔다(사용자 지적). 카드 안 버튼은 없애고 여기 하나만 둔다 —
+ *   버튼 수는 대역이 몇 개든 하나로 고정된다.
+ *   대역이 하나면 그대로 실행하고, 여럿이면 어느 대역인지 고르게 한다. 선택지는 **지금 실행할 수
+ *   있는 대역**만이다(사용 중지·이미 대기/진행 중인 대역은 어차피 POST 처리부가 거부한다).
+ */
+function vg_discovery_run_form(array $runnable, string $csrf): void
+{
+    if (!$runnable) {
+        echo '<button type="button" class="btn btn--sm btn--primary" disabled'
+            . ' title="지금 탐색할 수 있는 대역이 없습니다 — 사용 중지했거나 이미 대기·진행 중입니다.">대역 탐색</button>';
+        return;
+    }
+    $one = count($runnable) === 1 ? $runnable[0] : null;
+    ?>
+    <form method="post" class="actions">
+      <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+      <input type="hidden" name="action" value="scan">
+      <?php if ($one !== null): ?>
+        <input type="hidden" name="discovery_target_id" value="<?= (int) $one['discovery_target_id'] ?>">
+      <?php else: ?>
+        <select name="discovery_target_id" aria-label="탐색할 대역">
+          <?php foreach ($runnable as $t): ?>
+            <option value="<?= (int) $t['discovery_target_id'] ?>"><?= vg_h((string) $t['cidr']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      <?php endif; ?>
+      <button class="btn btn--sm btn--primary" data-loading="요청 중…"
+              title="<?= $one !== null ? vg_h((string) $one['cidr']) . ' 대역을 훑습니다' : '고른 대역을 훑습니다' ?>">대역 탐색</button>
+    </form>
+    <?php
+}
+
 $pdo = vg_pdo();
 
 /* ── POST 처리 — GET 렌더보다 먼저·헤더 출력 전이어야 한다(전부 PRG 로 끝난다). ───────── */
@@ -401,15 +435,25 @@ $scope    = $managed + $shadow;
 $coverage = $scope > 0 ? (int) round($managed * 100 / $scope) : 0;
 $found    = $scope + $stateCounts['ignored'];
 
+/* 제목 줄의 '대역 탐색' 이 고를 수 있는 대역 — 사용 중이고, 이미 대기·진행 중이 아닌 것.
+ *   판정 자체는 POST 처리부가 다시 한다(화면에서 고르는 것은 인가도 검증도 아니다). */
+$runnableTargets = array_values(array_filter($targets, static fn(array $t): bool =>
+    (int) $t['enabled'] === 1 && !in_array((string) ($t['status'] ?? ''), ['pending', 'running'], true)));
+
 vg_header('자산 탐색', 'discovery');
 ?>
-  <?php /* '+ 대역 등록' 은 대역 카드 아래에서 .form-bar 로 한 줄을 통째로 쓰던 버튼이다 —
-           버튼 하나뿐인 줄이라 그 폭이 전부 빈칸이었다. 제목 줄의 액션 자리로 올린다
-           (같은 화면의 '에이전트 설치 안내' 와 같은 성격 · 인가 조건은 그대로 $canManage). */ ?>
+  <?php /* 제목 줄이 이 화면의 액션 자리다 — '+ 대역 등록' 이 먼저 올라와 있었고(#733),
+           이 화면의 **주 동작**인 '대역 탐색' 을 그 앞에 같이 올린다. 예전엔 대역 카드 안에서
+           '수정·삭제' 옆에 있어 부수 동작과 같은 무게로 읽혔다(사용자 지적).
+           대역이 하나도 없으면 할 일은 등록뿐이라 그때만 등록이 강조된다.
+           인가 조건은 그대로 $canManage(대역·탐색은 admin). */ ?>
   <?php vg_page_title('자산 탐색', 'DISCOVERY', [
       'suffix_html' => vg_help('대역을 훑어 살아있는 IP 를 모읍니다. 에이전트가 대상 서버 안을 읽는 취약점 수집과는 별개입니다.'),
-      'actions' => vg_capture(static function () use ($canManage): void {
-          if ($canManage) { vg_modal_btn('discoveryTarget', '+ 대역 등록', 'btn btn--sm btn--primary'); }
+      'actions' => vg_capture(static function () use ($canManage, $targets, $runnableTargets, $csrf): void {
+          if ($canManage && $targets) { vg_discovery_run_form($runnableTargets, $csrf); }
+          if ($canManage) {
+              vg_modal_btn('discoveryTarget', '+ 대역 등록', 'btn btn--sm ' . ($targets ? 'btn--ghost' : 'btn--primary'));
+          }
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
   ]); ?>
@@ -480,7 +524,6 @@ vg_header('자산 탐색', 'discovery');
           $tid    = (int) $t['discovery_target_id'];
           $sc     = $targetStateCounts[$tid] ?? array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
           $status = (string) ($t['status'] ?? '');
-          $busy   = in_array($status, ['pending', 'running'], true);
       ?>
         <div class="card discovery-target">
           <div class="discovery-target__head">
@@ -529,19 +572,11 @@ vg_header('자산 탐색', 'discovery');
                 : '기본 세트' ?>
           </div>
 
+          <?php /* 실행은 카드가 아니라 제목 줄의 '대역 탐색' 이 갖는다 — 카드마다 버튼을 되살리면
+                   대역 수만큼 같은 버튼이 늘어나고, 주 동작이 다시 '수정·삭제' 와 같은 무게가 된다.
+                   진행 상태는 위의 뱃지(대기 중·진행 중·완료)가 그대로 말한다. */ ?>
           <?php if ($canManage): ?>
             <div class="actions mt">
-              <?php if ($busy): ?>
-                <button type="button" class="btn btn--xs btn--ghost" disabled
-                        title="이미 대기 중이거나 진행 중입니다">대역 탐색</button>
-              <?php else: ?>
-                <form method="post">
-                  <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-                  <input type="hidden" name="action" value="scan">
-                  <input type="hidden" name="discovery_target_id" value="<?= $tid ?>">
-                  <button class="btn btn--xs btn--primary" data-loading="요청 중…">대역 탐색</button>
-                </form>
-              <?php endif; ?>
               <a class="btn btn--xs btn--ghost" href="<?= vg_h(vg_qs(['edit' => $tid])) ?>">수정</a>
               <form method="post" data-confirm="이 대역을 삭제할까요? 지금까지 발견한 자산 이력은 남습니다.">
                 <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">

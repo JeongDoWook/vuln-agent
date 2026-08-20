@@ -824,16 +824,18 @@ curl_ -s -b "$JAR" -o /dev/null --data-urlencode "csrf=$disccsrf" --data-urlenco
 discbody=$(curl_ -s -b "$JAR" "$BASE/discovery.php")
 assert_contains "$discbody" "$DISC_CIDR" "자산 탐색: 대역 등록 결과가 목록에 보인다"
 assert_contains "$discbody" '에이전트 커버리지' "자산 탐색: 커버리지 KPI 표시"
-# 실행 버튼 이름은 '지금 스캔' 이 아니라 '대역 탐색' 이다 — 에이전트 수집('지금 수집')과 어휘를 갈라 놓았다.
-assert_contains "$discbody" '>대역 탐색</button>' "자산 탐색: 실행 버튼 이름이 '대역 탐색'"
+# 실행 버튼은 대역 카드 안이 아니라 제목 줄에 있다 — 이 화면의 주 동작이라 눈에 먼저 들어와야 한다.
+#   이름도 '지금 스캔' 이 아니라 '대역 탐색' 이다(에이전트 수집과 어휘를 갈라 놓았다).
+assert_contains "$discbody" '>대역 탐색</button>' "자산 탐색: 제목 줄에 '대역 탐색' 실행 버튼"
 assert_not_contains "$discbody" '지금 스캔' "자산 탐색: 옛 '지금 스캔' 라벨이 남아 있지 않다"
 # 잘못된 CIDR 은 화면에서 막는다(집행기까지 안 내려간다).
 badcidr=$(curl_ -s -b "$JAR" -L --data-urlencode "csrf=$disccsrf" --data-urlencode "action=target_save"   --data-urlencode "cidr=not-a-cidr" "$BASE/discovery.php")
 assert_contains "$badcidr" 'CIDR 표기' "자산 탐색: 잘못된 대역 표기 거부"
 # 대역 탐색 요청 → 그 대역이 대기/진행 상태로 보인다. 이미 대기 중이면 두 번째 요청은 거부된다.
-# 표 전체가 한 줄로 나오므로, 그 대역 뒤에 처음 오는 hidden 값이 그 행의 대역 id 다
-#   (문서 끝의 등록 모달은 value="0" 이라 그냥 tail 로 집으면 0 을 집는다).
-DISC_TID=$(sed "s#.*$DISC_CIDR##" <<<"$discbody" | grep -oE 'name="discovery_target_id" value="[0-9]+"' | head -1 | grep -oE '[0-9]+')
+# 대역 id 는 그 대역의 **카드 안**에서 집는다 — 카드는 CIDR 을 <code> 로 찍고 곧이어 삭제 폼의
+#   hidden 을 낸다. 제목 줄의 '대역 탐색' 폼과 문서 끝 등록 모달에도 같은 이름의 hidden 이 있어서,
+#   문서 전체에서 앞뒤로 집으면 남의 대역 id 나 0 을 집는다.
+DISC_TID=$(awk -v c="$DISC_CIDR</code>" 'index($0,c){f=1} f && match($0,/name="discovery_target_id" value="[0-9]+"/){print substr($0,RSTART,RLENGTH); exit}' <<<"$discbody" | grep -oE '[0-9]+')
 curl_ -s -b "$JAR" -o /dev/null --data-urlencode "csrf=$disccsrf" --data-urlencode "action=scan"   --data-urlencode "discovery_target_id=$DISC_TID" "$BASE/discovery.php"
 discafter=$(curl_ -s -b "$JAR" "$BASE/discovery.php")
 assert_contains "$discafter" '대기 중' "자산 탐색: 대역 탐색 요청이 대기열에 들어간다(집행은 bin/discover.php)"
