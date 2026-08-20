@@ -150,7 +150,12 @@ function vg_log_activity(
     try {
         $uid   = $userId ?? (isset($_SESSION['uid']) ? (int) $_SESSION['uid'] : null);
         $uname = isset($_SESSION['uname']) ? (string) $_SESSION['uname'] : null;
-        $ip    = $ip ?? ($_SERVER['REMOTE_ADDR'] ?? null);
+        // 뒷단 PHP 의 REMOTE_ADDR 는 항상 Caddy 컨테이너 내부 IP다(deploy/caddy/Caddyfile
+        // 참고). Caddy 가 직접 본 접속 원본을 X-Real-IP 로 덮어써 보내므로 그걸 우선한다.
+        // 로컬 에이전트의 loopback 직결(Caddy 미경유)엔 이 헤더가 없어 REMOTE_ADDR 로 폴백한다.
+        // vg_client_ip() 가 FILTER_VALIDATE_IP 로 검증하므로 위조·과도한 길이 값이
+        // ip_address(VARCHAR(45)) INSERT 실패로 이어지지 않는다.
+        $ip    = $ip ?? vg_client_ip();
         $dataJson = null;
         if (is_array($data)) {
             $dataJson = json_encode(vg_audit_sanitize($data), JSON_UNESCAPED_UNICODE);

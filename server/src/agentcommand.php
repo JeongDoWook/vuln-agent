@@ -21,6 +21,12 @@ const VG_AGENT_COMMAND_MIN_SCHEDULE_SECONDS = 30;
  * @return int 생성된 agent_command_id
  */
 function vg_agent_command_create(PDO $pdo, int $hostId, ?string $runAt, ?int $userId): int {
+    $st = $pdo->prepare('SELECT 1 FROM tb_host WHERE host_id = ? AND is_deleted = 0');
+    $st->execute([$hostId]);
+    if ($st->fetchColumn() === false) {
+        throw new RuntimeException('호스트를 찾을 수 없습니다.');
+    }
+
     $runAtNormalized = null;
     if ($runAt !== null && trim($runAt) !== '') {
         $ts = strtotime($runAt);

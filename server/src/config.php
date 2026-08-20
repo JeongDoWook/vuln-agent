@@ -53,6 +53,21 @@ if (!function_exists('vg_auth_token')) {
     }
 }
 
+// 접속자 실제 IP 조회: Caddy 가 덮어쓰는 X-Real-IP 를 우선하되 FILTER_VALIDATE_IP 로
+// 형식을 검증한다(위조·과도한 길이·빈 문자열 전부 걸러짐) — tb_activity_log.ip_address 가
+// VARCHAR(45)/STRICT 모드라 검증 없이 저장하면 INSERT 실패로 감사로그가 유실된다.
+// 검증 실패 시 REMOTE_ADDR 로 폴백(loopback 직결 등 헤더가 없는 경우 포함).
+if (!function_exists('vg_client_ip')) {
+    function vg_client_ip(): ?string {
+        $header = filter_var(vg_request_header('X-Real-IP'), FILTER_VALIDATE_IP);
+        if ($header !== false) {
+            return $header;
+        }
+        $remote = filter_var($_SERVER['REMOTE_ADDR'] ?? null, FILTER_VALIDATE_IP);
+        return $remote !== false ? $remote : null;
+    }
+}
+
 // 설정 배열 반환 (docker-compose 의 environment / secrets 로 주입됨)
 return [
     'db_host'      => vg_env('DB_HOST', 'db'),

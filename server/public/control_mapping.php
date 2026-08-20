@@ -181,7 +181,7 @@ vg_header('통제 기준 매핑', 'control_mapping');
   // 통제 ID·통제명 모두 상세로 들어가는 링크다 — "누르면 들어간다"가 요구사항이라
   //   누르는 면적을 ID 한 조각으로 좁혀 두지 않는다.
   $detailHref = fn(array $r): string => '/control.php?fw=' . urlencode($fw)
-      . '&amp;control=' . urlencode((string) $r['control_id']);
+      . '&control=' . urlencode((string) $r['control_id']);
   $policy = vg_compliance_policy();
   ?>
   <div class="card">
@@ -209,7 +209,9 @@ vg_header('통제 기준 매핑', 'control_mapping');
               <a class="ctrcard__name" href="<?= vg_h($detailHref($r)) ?>">
                 <code class="why"><?= vg_h((string) $r['control_id']) ?></code>
               </a>
-              <?= vg_badge($status['label'], $status['tone']) ?>
+              <div class="ctrcard__badges">
+                <?= vg_badge($status['label'], $status['tone']) ?>
+              </div>
             </div>
             <a href="<?= vg_h($detailHref($r)) ?>"><?= vg_h((string) $r['control_name']) ?></a>
             <div class="ctrcard__facts">

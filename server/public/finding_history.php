@@ -178,8 +178,7 @@ vg_header($cveId !== '' ? $cveId . ' 이력' : '취약점 이력', 'assets');
       $meta,
       $curStatus !== null ? ($statusLabel[$curStatus] ?? $curStatus) : '이력 없음',
       $curTone,
-      '최신 스캔 기준',
-      'FINDING HISTORY'
+      '최신 스캔 기준'
   );
   vg_alert($noteMsg, 'ok');
   vg_alert($noteErr);

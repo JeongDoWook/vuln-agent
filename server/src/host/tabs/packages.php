@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 /* 설치 패키지 탭 — 패키지 무결성(관측) + 호스트 OS 패키지 목록. */ ?>
+    <?php /* SBOM 진입점 — 탭 맨 위. 예전엔 패키지 목록 페이지네이션보다도 아래에 있어
+             찾으려면 목록을 끝까지 스크롤해야 했다. 부품표는 이 탭이 보여주는 패키지
+             목록 자체를 표준 포맷으로 내보내는 것이라 탭 상단이 제자리다. */ ?>
+    <?php vg_sbom_links((string) $host['fqdn']); ?>
     <?php vg_toolbar([
         ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명·소스·출처 검색', 'value' => $q],
         ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
@@ -16,7 +20,7 @@ declare(strict_types=1);
     $integPartial = !empty($scan['integrity_partial']);
     if (!$integChecked) {
         $integTone = 'muted';
-        $integText = '미수행 — 에이전트를 <code>--verify-files</code> 로 실행해야 검사합니다(비용 때문에 기본 꺼짐).';
+        $integText = '미수행 — 에이전트를 --verify-files 로 실행해야 검사합니다(비용 때문에 기본 꺼짐).';
     } elseif ($integTotal === 0) {
         $integTone = 'ok';
         $integText = '패키지 원본과 다른 파일이 관측되지 않았습니다.';
@@ -30,7 +34,7 @@ declare(strict_types=1);
       <strong>패키지 무결성</strong>
       <?= vg_badge($integChecked ? ($integTotal === 0 ? '정상' : '원본과 다름 ' . number_format($integTotal) . '건') : '미수행', $integTone) ?>
       <?php if ($integPartial): ?><?= vg_badge('부분 결과', 'med', '제한시간·줄수 상한으로 잘렸습니다. 0건이 "깨끗함"을 뜻하지 않습니다.') ?><?php endif; ?>
-      <span class="why"> · <?= $integText ?></span>
+      <span class="why"> · <?= vg_h($integText) ?></span>
       <?php if ($integPartial): ?>
         <span class="why"> · 검사가 도중에 잘렸습니다 — 아래 목록과 건수는 전수가 아닙니다.</span>
       <?php endif; ?>
@@ -119,8 +123,3 @@ declare(strict_types=1);
       </div>
     </div>
     <?php vg_page_nav($total, $perPage, $page); ?>
-    <?php /* SBOM 내려받기 — 부품표는 곧 이 패키지 목록이라 여기가 제자리다.
-             예전엔 식별부 바로 아래(첫 화면)에 카드로 서서, 자주 쓰지도 않으면서 위험 요약을
-             밀어냈다. 카드 자체는 공용 헬퍼 그대로다(컨테이너 상세도 같은 것을 쓴다). */ ?>
-    <?php vg_sbom_links((string) $host['fqdn']); ?>
-

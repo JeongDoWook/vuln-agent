@@ -171,12 +171,14 @@ foreach ($phpFiles as $file) {
 }
 $unknownGuard = array_diff_key($guardCodes, array_flip($menuCodes));
 $check($unknownGuard === [], '화면 가드 메뉴코드가 전부 vg_menus() 에 있음(' . implode(',', array_keys($unknownGuard)) . ')');
-// 사이드바에 뜨는 화면은 그 링크의 perm 으로 열려야 한다(카탈로그 4종은 catalog 하나를 공유).
+// 사이드바에 뜨는 화면은 그 링크의 perm 으로 열려야 한다(카탈로그 3종은 catalog 하나를 공유).
 //   compliance_rules.php(SSG 룰셋)는 사이드바에서 내렸지만 URL 은 살아 있다 — CCE 상세가
 //   참조 근거로 링크하므로 같은 가드를 계속 지켜야 한다.
+//   cce-rules.php 는 catalog 가 아니라 compliance 다 — FAIL/PASS/NA 위반 집계를 노출해서
+//   control_mapping.php·kisa-u.php 와 같은 권한이 필요하다.
 foreach (['findings.php' => 'findings', 'assets.php' => 'assets', 'compliance.php' => 'compliance',
           'cves.php' => 'catalog', 'packages.php' => 'catalog', 'vendor.php' => 'catalog',
-          'cce-rules.php' => 'catalog', 'compliance_rules.php' => 'catalog'] as $page => $code) {
+          'cce-rules.php' => 'compliance', 'compliance_rules.php' => 'catalog'] as $page => $code) {
     $check(str_contains((string) file_get_contents($public . '/' . $page), "vg_require_menu('$code')"),
         "$page 가드는 $code");
 }

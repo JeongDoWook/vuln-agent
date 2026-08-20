@@ -255,7 +255,7 @@ function vg_host_load_packages_tab(PDO $pdo, int $scanId, int $perPage, int $off
  *   셀 안에 한 줄로 덧붙인다(렌더 쪽) — 빈칸만 늘어선 표를 만들지 않기 위해서다.
  */
 function vg_host_load_containers_tab(PDO $pdo, int $scanId, int $perPage, int $offset, string $q): array {
-    $where  = 'scan_id = ? AND is_deleted = 0';
+    $where  = 'c.scan_id = ? AND c.is_deleted = 0';
     $params = [$scanId];
     // 대장(표·카드)과 별개로 컨테이너별 심각도 분포를 **한 번의 GROUP BY** 로 가져온다.
     //   행마다 세면 N+1 이 되고, 페이지 행에만 맞춰 세면 쿼리를 페이지마다 다시 조립해야 한다.
@@ -272,25 +272,40 @@ function vg_host_load_containers_tab(PDO $pdo, int $scanId, int $perPage, int $o
     }
 
     if ($q !== '') {
-        $where .= ' AND (cid LIKE ? OR name LIKE ? OR image LIKE ?
-                         OR k8s_namespace LIKE ? OR k8s_pod LIKE ? OR workload_ref LIKE ?)';
+        $where .= ' AND (c.cid LIKE ? OR c.name LIKE ? OR c.image LIKE ?
+                         OR c.k8s_namespace LIKE ? OR c.k8s_pod LIKE ? OR c.workload_ref LIKE ?)';
         $like = '%' . $q . '%';
         array_push($params, $like, $like, $like, $like, $like, $like);
     }
 
-    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_container WHERE $where");
+    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_container c WHERE $where");
     $st->execute($params);
     $total = (int) $st->fetchColumn();
 
-    // ORDER BY cid — uq_container(scan_id, cid) 좌측 접두가 scan_id 라 정렬까지 인덱스가 받는다.
+    // 정렬은 심각도(위험한 컨테이너부터) 우선, 동률이면 cid — 반드시 LIMIT/OFFSET **전**에 SQL 로 적용한다.
+    //   페이지 밖(뒷페이지)의 CRITICAL 이 앞으로 오려면 잘라내기 전 전수를 봐야 하므로, 뷰 레벨
+    //   usort(페이지 안 재정렬)로는 목적을 달성할 수 없다 — sev 서브쿼리를 조인해 ORDER BY 에 반영한다.
     $st = $pdo->prepare(
-        "SELECT container_id, cid, name, image, image_digest, k8s_namespace, k8s_pod, k8s_container,
-                workload_ref, runtime_state, sbom_format, sbom_hash,
-                os_id, os_version, manager, pkg_count
-           FROM tb_container WHERE $where
-          ORDER BY cid LIMIT $perPage OFFSET $offset"
+        "SELECT c.container_id, c.cid, c.name, c.image, c.image_digest, c.k8s_namespace, c.k8s_pod, c.k8s_container,
+                c.workload_ref, c.runtime_state, c.sbom_format, c.sbom_hash,
+                c.os_id, c.os_version, c.manager, c.pkg_count
+           FROM tb_container c
+           LEFT JOIN (
+               SELECT container_id,
+                      MAX(CASE severity
+                            WHEN 'CRITICAL' THEN 4 WHEN 'HIGH' THEN 3
+                            WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 1 ELSE 0 END) AS sev_rank,
+                      SUM(cnt) AS sev_sum
+                 FROM (SELECT container_id, severity, COUNT(*) cnt
+                         FROM tb_finding WHERE scan_id = ? AND container_id > 0
+                        GROUP BY container_id, severity) f
+                GROUP BY container_id
+           ) sv ON sv.container_id = c.container_id
+          WHERE $where
+          ORDER BY COALESCE(sv.sev_rank, 0) DESC, COALESCE(sv.sev_sum, 0) DESC, c.cid
+          LIMIT $perPage OFFSET $offset"
     );
-    $st->execute($params);
+    $st->execute(array_merge([$scanId], $params));
     return ['total' => $total, 'rows' => $st->fetchAll(), 'sevByContainer' => $sevByContainer];
 }
 

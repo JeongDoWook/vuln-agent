@@ -861,20 +861,25 @@ langtabbody=$(curl_ -s -b "$JAR" "$BASE/packages.php?tab=lang")
 assert_contains "$langtabbody" "언어 패키지" "언어 탭 응답에 언어 패키지·라이선스 문구 포함"
 badtabbody=$(curl_ -s -b "$JAR" "$BASE/packages.php?tab=zzz")
 assert_contains "$badtabbody" 'class="on" href="?tab=os">OS 패키지' "잘못된 tab 값은 OS 탭으로 안전하게 폴백"
-# 설정류(수집 제어·자산 등급·자산 삭제)는 '자산 설정' 탭(?tab=manage)으로 내려갔다 —
-#   자산 상세의 첫 화면은 "이 서버가 얼마나 위험한가" 여야 한다. 기능은 그대로 살아 있다.
+# 자산 등급·자산 삭제는 '자산 설정' 탭(?tab=manage)에 있다. 수집 제어(즉시 실행 등)는
+#   host-grade-agentcontrol-reposition(#690) 이후 상단 공통 카드로 올라와 이 탭에도, 다른
+#   탭에도 똑같이 뜬다 — 아래 host_delete/host_set_grade 만 이 탭 전용이다.
 hostmanage=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=manage")
 assert_contains "$hostmanage" 'name="action" value="host_delete"' "자산 설정 탭에 관리자 삭제 작업 표시"
 assert_contains "$hostmanage" 'name="action" value="agent_run_now"' "자산 설정 탭에 수집 즉시 실행 유지"
 assert_contains "$hostmanage" 'name="action" value="agent_set_schedule"' "자산 설정 탭에 수집 주기 변경 유지"
 assert_contains "$hostmanage" 'name="action" value="host_set_grade"' "자산 설정 탭에 자산 등급 확정 유지"
 hostvuln=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID")
-# 즉시 실행만은 첫 화면으로 되올렸다 — 자산 상세에서 가장 자주 누르는 동작인데 '자산 설정 탭 →
-#   수집 제어 카드 → 즉시 실행' 으로 가장 깊었다. 예약·주기·속도 티어는 자주 쓰지 않아 그대로 둔다.
+# 수집 제어 카드는 탭에 묻히지 않고 어느 탭을 보든 히어로 바로 아래 상단에 뜬다 —
+#   즉시 실행뿐 아니라 예약·주기·속도 티어 폼도 첫 화면(취약점 탭)에 함께 보인다.
+#   히어로의 즉시 실행 지름길 버튼은 걷었다(#690) — 카드가 바로 아래에서 같은 폼을 보여주므로
+#   카드 자체가 딱 한 번만(중복 없이) 그려지는지가 이 PR 의 목적이다.
 assert_contains "$hostvuln" 'name="action" value="agent_run_now"' "첫 화면에 즉시 스캔 버튼"
-assert_not_contains "$hostvuln" 'name="action" value="agent_set_schedule"' "첫 화면엔 수집 주기 폼이 없다"
-assert_not_contains "$hostvuln" 'name="action" value="agent_set_speed_tier"' "첫 화면엔 속도 티어 폼이 없다"
+assert_contains "$hostvuln" 'name="action" value="agent_set_schedule"' "첫 화면에 수집 주기 폼(상단 공통 카드)"
+assert_contains "$hostvuln" 'name="action" value="agent_set_speed_tier"' "첫 화면에 속도 티어 폼(상단 공통 카드)"
 assert_contains "$hostvuln" 'tab=manage' "첫 화면에서 자산 설정 탭으로 갈 수 있다"
+agentcontrol_count=$(grep -o 'id="agent-control-title"' <<<"$hostvuln" | wc -l | tr -d ' ')
+assert_eq "$agentcontrol_count" "1" "수집 제어 카드가 자산 상세 첫 화면에 딱 한 번만 렌더"
 # 패키지 수 열도 상세로 내려갔다(목록은 열어볼지 말지를 정하는 열만 둔다) — 링크는 호스트
 #   상세 식별부의 '패키지 N개' 가 그대로 갖는다. 목록에서 뺀 값이 상세에 있는지 같이 확인한다.
 assert_not_contains "$assetbody" "host.php?id=$WEB01_ID&amp;tab=packages" "자산 목록 패키지 수 열을 상세로 이동"

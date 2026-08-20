@@ -99,7 +99,7 @@ function vg_activity_action_labels(): array {
  *   섹션 라벨이 '' 이면 라벨 없이 링크만 렌더한다(대시보드처럼 단독 항목).
  *   각 링크의 'perm' 은 vg_can() 메뉴코드, 'key' 는 vg_header($active) 와 맞춘다.
  *   'perm' 은 vg_menus() 의 코드와 반드시 일치해야 한다 — 어긋나면 사이드바에 보이는데
- *   눌러보면 403 나는 링크가 생긴다. 링크 ↔ 메뉴코드는 1:1 이다(카탈로그 5개만 성격이
+ *   눌러보면 403 나는 링크가 생긴다. 링크 ↔ 메뉴코드는 1:1 이다(카탈로그 4개만 성격이
  *   같아 catalog 하나를 공유한다) — 예전처럼 findings 하나가 링크 6개를 열면 권한 화면에서
  *   그 6개를 따로 끌 수 없다.
  */
@@ -131,7 +131,9 @@ function vg_nav_sections(): array {
             // 이 자리엔 SSG 룰 카탈로그(/compliance_rules.php, 약 2,493건)가 있었다. 우리가
             //   판정하지 않는 외부 참조 데이터라 사이드바에서 내리고, 실제로 판정하는 CCE 39개
             //   항목을 세운다. SSG 화면은 지우지 않았다 — CCE 상세의 참조 근거로 계속 열린다.
-            ['perm' => 'catalog',    'href' => '/cce-rules.php',      'label' => 'CCE',   'key' => 'cce_rules'],
+            // perm 은 'catalog' 가 아니라 'compliance' 다 — 화면이 FAIL/PASS/NA 위반 집계를
+            //   노출해서(cce-rules.php) control_mapping.php·kisa-u.php 와 같은 권한이 필요하다.
+            ['perm' => 'compliance', 'href' => '/cce-rules.php',      'label' => 'CCE',   'key' => 'cce_rules'],
         ],
         '관리' => [
             ['perm' => 'users',       'href' => '/users.php',        'label' => '사용자',    'key' => 'users'],

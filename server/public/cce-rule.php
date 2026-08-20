@@ -176,8 +176,7 @@ vg_hero(
     ],
     $sev,
     vg_sev_tone($sev),
-    '점검 심각도',
-    'CCE DETAIL'
+    '점검 심각도'
 );
 ?>
 

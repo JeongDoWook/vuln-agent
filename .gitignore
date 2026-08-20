@@ -22,6 +22,10 @@ agent-ca/*.crt
 #   (이 저장소는 공개돼 있다). .template 만 커밋한다.
 deploy/agent_nodes.txt
 
+# 에이전트 자동 업데이트 서명용 Ed25519 개인키. 실수로도 커밋되면 안 된다 —
+#   agent/README.md 체크리스트대로 홈 디렉터리(~/agent-signing.key)에만 두고 저장소 밖에 둔다.
+*.key
+
 # --- PHP ---
 /vendor/
 composer.lock

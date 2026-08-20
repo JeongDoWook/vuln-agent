@@ -141,7 +141,7 @@ $meta = [
 ];
 if ($scan) { $meta[] = '최신 수집 ' . vg_h((string) $scan['collected_at']); }
 $meta[] = '엣지 ' . number_format($load['loaded']) . '개';
-vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH');
+vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
 ?>
 
 <div class="card">
@@ -218,7 +218,9 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
    *  여기 하나로 모은다. $note 가 있으면 헤드 아래에 별도 줄로 붙인다. */
   $renderLeaf = function (string $role, string $head, string $note = ''): string {
       $cls = 'ctrcard' . ($role === 'root' ? ' ctrcard--dep-root' : ($role === 'target' ? ' ctrcard--dep-target' : ''));
-      $html = '<li class="' . $cls . '"><div class="ctrcard__head">' . $head . '</div>';
+      // .ctrcard__head 는 카드 공용 규약(app.css)상 flex-column 이라, 이름·버전·관리자·역할뱃지가
+      //   한 인라인 흐름으로 보이려면 전부 __title 래퍼 하나에 담아야 한다(따로 두면 세로로 쌓인다).
+      $html = '<li class="' . $cls . '"><div class="ctrcard__head"><div class="ctrcard__title">' . $head . '</div></div>';
       if ($note !== '') { $html .= '<span class="why">' . $note . '</span>'; }
       return $html . '</li>';
   };
@@ -256,7 +258,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '', 'DEPENDENCY GRAPH')
           $inner .= $renderCard($k, $depth + 1, $seen);
       }
       return '<li class="ctrcard' . ($role === 'root' ? ' ctrcard--dep-root' : ($role === 'target' ? ' ctrcard--dep-target' : ''))
-          . '"><div class="ctrcard__head">' . $label . '</div>'
+          . '"><div class="ctrcard__head"><div class="ctrcard__title">' . $label . '</div></div>'
           . '<details open><summary>의존 ' . count($kids) . '개</summary><ul class="ctree__list">'
           . $inner . '</ul></details></li>';
   };

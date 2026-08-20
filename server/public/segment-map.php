@@ -218,7 +218,9 @@ vg_header('세그먼트 맵', 'segment_map');
                   <li class="ctrcard tone-<?= $worst !== null ? vg_h(vg_sev_tone($worst)) : 'muted' ?>">
                     <div class="ctrcard__head">
                       <a class="ctrcard__name" href="/host.php?id=<?= (int) $hostId ?>"><?= vg_h($fqdn) ?></a>
-                      <?php if ($extCount > 0): ?><?= vg_badge('외부노출 ' . $extCount, 'high') ?><?php endif; ?>
+                      <div class="ctrcard__badges">
+                        <?php if ($extCount > 0): ?><?= vg_badge('외부노출 ' . $extCount, 'high') ?><?php endif; ?>
+                      </div>
                     </div>
                     <div class="ctrcard__risk">
                       <?php if ($sevSum > 0): ?>
@@ -237,7 +239,7 @@ vg_header('세그먼트 맵', 'segment_map');
                   <li class="ctrcard tone-<?= vg_h($tone) ?>">
                     <div class="ctrcard__head">
                       <span class="ctrcard__name"><?= vg_h((string) $d['ip']) ?></span>
-                      <?= vg_badge($discoveryStateLabel[$state] ?? $state, $tone) ?>
+                      <div class="ctrcard__badges"><?= vg_badge($discoveryStateLabel[$state] ?? $state, $tone) ?></div>
                     </div>
                     <div class="ctrcard__facts">
                       <span><?= !empty($d['hostname']) ? vg_h((string) $d['hostname']) : '<span class="why">호스트명 미상 · 에이전트 미설치</span>' ?></span>
