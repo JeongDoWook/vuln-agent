@@ -20,8 +20,8 @@ declare(strict_types=1);
     $integTotal   = (int) ($scan['integrity_total'] ?? 0);
     $integPartial = !empty($scan['integrity_partial']);
     if (!$integChecked) {
-        // 미수행일 때는 설명 대신 실행 버튼을 준다 — 예전엔 "에이전트를 --verify-files 로
-        //   실행해야 합니다"라고 안내만 하고, 중앙에서 켤 방법이 없었다.
+        // 미수행일 때는 설명 대신 켜는 자리로 데려간다 — 이 탭의 단독 버튼은 없앴다(무결성은
+        //   별도 스캔이 아니라 수집 실행 안의 한 단계라, 진입점이 수집 제어 하나로 모였다).
         $integTone = 'muted';
         $integText = '';
     } elseif ($integTotal === 0) {
@@ -32,36 +32,34 @@ declare(strict_types=1);
         $integText = '패키지 원본과 다른 파일 ' . number_format($integTotal) . '건이 관측되었습니다. '
             . '운영자가 직접 바꾼 파일일 수도 있어 변조로 단정하지 않습니다.';
     }
-    // 이미 무결성 포함 명령이 큐에 있으면 버튼 대신 상태만 보여준다 — 수 분짜리 부하를 거는
-    //   동작이라 같은 자산에 두 번 쌓이지 않게 한다(중복 등록 자체는 서버가 막지 않는다).
+    // 이미 무결성 포함 명령이 큐에 있으면 그 사실을 알린다 — 수 분짜리 부하를 거는 동작이라
+    //   같은 자산에 두 번 걸지 않게 한다(중복 등록 자체는 서버가 막지 않는다).
     $verifyQueued = false;
     foreach ($pendingCommands as $pc) {
         if (!empty($pc['verify_files'])) { $verifyQueued = true; break; }
     }
+    // 검사 결과에는 "언제 것인지"가 붙어야 한다 — 무결성 값은 최신 스캔(tb_scan)에 실려 오므로
+    //   그 수집 시각이 곧 검사 시각이다. 없는 값을 만들지 않는다(미수행이면 붙일 시각도 없다).
+    $integAt = $integChecked ? (string) ($scan['collected_at'] ?? '') : '';
     ?>
     <div class="card">
       <strong>패키지 무결성</strong>
       <?= vg_badge($integChecked ? ($integTotal === 0 ? '정상' : '원본과 다름 ' . number_format($integTotal) . '건') : '미수행', $integTone) ?>
       <?php if ($integPartial): ?><?= vg_badge('부분 결과', 'med', '제한시간·줄수 상한으로 잘렸습니다. 0건이 "깨끗함"을 뜻하지 않습니다.') ?><?php endif; ?>
+      <?php if ($integAt !== ''): ?><span class="why" title="<?= vg_h($integAt) ?>"> · <?= vg_h(substr($integAt, 0, 16)) ?> 검사</span><?php endif; ?>
       <?php if ($integText !== ''): ?><span class="why"> · <?= vg_h($integText) ?></span><?php endif; ?>
       <?php if ($integPartial): ?>
         <span class="why"> · 검사가 도중에 잘렸습니다 — 아래 목록과 건수는 전수가 아닙니다.</span>
       <?php endif; ?>
-      <div class="actions">
+      <?php /* 실행 진입점은 이 탭이 아니라 이 페이지 위쪽의 수집 제어다 — '지금 스캔' 의
+               '무결성 검사 포함' 체크박스 하나로 합쳤다. 여기서는 상태만 말하고, 어디서
+               켜는지 모르는 상태로 두지 않도록 그 카드로 가는 앵커만 남긴다(버튼 아님).
+               앵커 대상(#agent-control)은 assets 권한이 있을 때만 그려지므로 같은 조건을 쓴다. */ ?>
       <?php if ($verifyQueued): ?>
-        <span class="why">무결성 검사 대기 중 · 다음 수집에 반영</span>
-      <?php elseif (vg_can('assets')): ?>
-        <?php /* 되돌리기 어려운(대상 서버에 수 분간 부하) 동작이라 확인을 붙인다 — 설명문이
-                 아니라 확인이다. 인가는 화면 숨김이 아니라 host/agent_control.php 의 POST
-                 분기에서 vg_can('assets') 로 서버측 확정된다. */ ?>
-        <form method="post" data-confirm="무결성 검사는 모든 패키지 파일을 해시합니다. 대상 서버에 수 분간 부하가 걸립니다. 실행할까요?">
-          <input type="hidden" name="csrf" value="<?= vg_h($agentCsrf) ?>">
-          <input type="hidden" name="action" value="agent_run_verify">
-          <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-          <button class="btn btn--sm btn--ghost" type="submit"><?= vg_icon('shield') ?>무결성 검사</button>
-        </form>
+        <span class="why"> · 무결성 검사 대기 중 — 다음 수집 결과에 반영됩니다.</span>
+      <?php elseif (!$integChecked && vg_can('assets')): ?>
+        <span class="why"> · <a href="#agent-control">수집 제어</a> 의 '지금 스캔' 에서 '무결성 검사 포함' 을 켜면 다음 수집에 함께 돕니다.</span>
       <?php endif; ?>
-      </div>
       <?php if ($integrityRows): ?>
         <div class="card__body">
         <?php

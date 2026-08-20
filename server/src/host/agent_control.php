@@ -30,15 +30,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $me = vg_current_user();
         try {
             if ($action === 'agent_run_now') {
-                vg_agent_command_create($pdo, $postHostId, null, $me['id'] ?? null);
-                $agentMsg = '즉시 실행 명령을 등록했습니다. 에이전트가 다음 poll 에서 실행합니다.';
-            } elseif ($action === 'agent_run_verify') {
-                /* 무결성 검사 포함 즉시 실행 — 설치 패키지 탭의 '무결성 검사' 버튼이 쏜다.
-                 * rpm -Va / dpkg --verify 는 대상 서버에 수 분간 부하를 거는 동작이라 즉시 실행
-                 * (agent_run_now)과 한 action 으로 합치지 않는다 — 확인 문구도 감사로그도 달라야 한다.
+                /* 무결성 검사는 별도 스캔이 아니라 이 수집 실행 안의 한 단계(옵션)다 — 그래서
+                 * 전용 action 을 두지 않고 '지금 스캔' 폼의 체크박스 하나로 받는다.
+                 * 다만 rpm -Va / dpkg --verify 는 대상 서버에 수 분간 부하를 거는 동작이라
+                 * 감사로그는 포함 여부를 계속 구분해 남긴다(vg_agent_command_create 가 붙인다).
                  * 인가는 위 vg_can('assets') 로 이미 서버측에서 확정됐다. */
-                vg_agent_command_create($pdo, $postHostId, null, $me['id'] ?? null, true);
-                $agentMsg = '무결성 검사를 포함한 즉시 실행 명령을 등록했습니다. 다음 수집 결과에 반영됩니다.';
+                $verifyFiles = !empty($_POST['verify_files']);
+                vg_agent_command_create($pdo, $postHostId, null, $me['id'] ?? null, $verifyFiles);
+                $agentMsg = $verifyFiles
+                    ? '무결성 검사를 포함한 즉시 실행 명령을 등록했습니다. 다음 수집 결과에 반영됩니다.'
+                    : '즉시 실행 명령을 등록했습니다. 에이전트가 다음 poll 에서 실행합니다.';
             } elseif ($action === 'agent_cancel') {
                 vg_agent_command_cancel($pdo, $postHostId, (int) ($_POST['command_id'] ?? 0), $me['id'] ?? null);
                 $agentMsg = '수집 중단을 요청했습니다.';
@@ -150,7 +151,9 @@ function vg_host_render_agent_control(
     $speedTierLabels = [];
     foreach (VG_AGENT_SPEED_TIERS as $t) { $speedTierLabels[$t] = vg_agent_speed_tier_label($t); }
     ?>
-    <section class="card agent-control" aria-labelledby="agent-control-title">
+    <?php /* id 는 앵커다 — 설치 패키지 탭의 무결성 상태가 "미수행"일 때 여기로 데려온다
+             (그 탭에서 버튼을 되살리지 않고, 켜는 자리를 한 곳으로 모은 결과다). */ ?>
+    <section id="agent-control" class="card agent-control" aria-labelledby="agent-control-title">
       <div class="agent-control__heading">
         <div>
           <strong id="agent-control-title">수집 제어</strong>
@@ -193,16 +196,26 @@ function vg_host_render_agent_control(
                  입력 하나에 버튼 하나가 전부인 줄이라 가로 공간이 절반씩 비어 있었다.
                  좁은 화면(640px 이하)에서는 다시 한 열로 떨어진다. */ ?>
         <div class="agent-control__grid">
-          <form class="agent-control__row" method="post" data-confirm="지금 이 호스트의 취약점 스캔을 실행할까요?">
+          <?php /* 확인 대화상자는 '무결성 검사 포함'을 켰을 때만 뜬다(data-confirm-if) —
+                   일반 스캔은 가벼워서 확인이 불필요하고, 무결성은 대상 서버에 수 분간 부하를
+                   거는 되돌리기 어려운 동작이라 확인이 필요하다. 확인은 화면 편의일 뿐이고
+                   인가는 위 POST 분기의 vg_can('assets') 가 서버측에서 확정한다. */ ?>
+          <form class="agent-control__row" method="post"
+                data-confirm="무결성 검사는 모든 패키지 파일을 해시합니다. 대상 서버에 수 분간 부하가 걸립니다. 실행할까요?"
+                data-confirm-if="[name=verify_files]">
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_run_now">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
             <?php /* 각 조작의 반영 시점은 카드 머리의 '다음 poll 반영' 배지가 한 번에 말한다.
                      입력 제약(최소 1분 등)도 칸 밑에 적지 않는다 — 틀리면 그때 오류로 알린다.
-                     라벨·확인문구는 히어로의 '지금 스캔' 버튼(host/hero.php)과 동일한 action 을
-                     쏘는 같은 동작이라 문구를 맞춘다 — 갈라져 있으면 같은 동작이 두 이름으로
-                     보인다. */ ?>
+                     무결성 검사는 별도 스캔이 아니라 이 실행 안의 한 단계라 버튼을 따로 두지
+                     않고 체크박스로 합쳤다(설치 패키지 탭의 단독 버튼은 그래서 없앴다).
+                     기본은 꺼짐이다 — 매 수집마다 켜면 대상 서버에 무리를 준다. */ ?>
             <label><strong>즉시 실행</strong></label>
+            <label class="inline" for="agent-verify-files">
+              <input id="agent-verify-files" type="checkbox" name="verify_files" value="1">
+              무결성 검사 포함
+            </label>
             <button class="btn btn--sm btn--primary">지금 스캔</button>
           </form>
 
