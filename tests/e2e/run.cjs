@@ -42,8 +42,7 @@ function safe(text) {
 }
 
 /**
- * 한 번에 읽는 화면 상태. 테마·밀도가 같은 방식(문서 속성 + localStorage + 실제 CSS)으로
- * 검증되므로 스냅샷 하나로 묶는다.
+ * 한 번에 읽는 화면 상태(테마 — 문서 속성 + localStorage + 실제 CSS).
  */
 function snapshot(page) {
   return page.evaluate(() => {
@@ -54,8 +53,6 @@ function snapshot(page) {
       themeOn: on ? on.getAttribute('data-theme-set') : null,
       themePressed: on ? on.getAttribute('aria-pressed') : null,
       bg: getComputedStyle(document.body).backgroundColor,
-      density: document.documentElement.getAttribute('data-density'),
-      densitySaved: localStorage.getItem('vg-density'),
     };
   });
 }

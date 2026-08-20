@@ -538,34 +538,6 @@
   });
   document.addEventListener('DOMContentLoaded', syncThemeButtons);
 
-  // --- 밀도 토글 (표준/압축) ----------------------------------------------
-  // 테마와 같은 방식이다: head 인라인 스크립트가 첫 페인트 전에 data-density 를 붙여 두고,
-  // 여기서는 버튼 클릭으로 전환·저장한다. 실제로 바뀌는 값은 app.css 의
-  // :root[data-density="compact"] 가 갈아끼우는 --row-h·--cell-py 뿐이다(세로 밀도).
-  function currentDensity() {
-    return document.documentElement.getAttribute('data-density') === 'compact' ? 'compact' : 'standard';
-  }
-  function syncDensityButtons() {
-    var d = currentDensity();
-    document.querySelectorAll('[data-density-set]').forEach(function (b) {
-      var selected = b.getAttribute('data-density-set') === d;
-      b.classList.toggle('on', selected);
-      b.setAttribute('aria-pressed', selected ? 'true' : 'false');
-    });
-  }
-  document.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-density-set]');
-    if (!b) { return; }
-    e.preventDefault();
-    var v = b.getAttribute('data-density-set');
-    // 표준은 속성을 지운다 — :root 기본값이 곧 표준이라 별도 값이 필요 없다.
-    if (v === 'compact') { document.documentElement.setAttribute('data-density', 'compact'); }
-    else { document.documentElement.removeAttribute('data-density'); }
-    try { localStorage.setItem('vg-density', v); } catch (err) {}
-    syncDensityButtons();
-  });
-  document.addEventListener('DOMContentLoaded', syncDensityButtons);
-
   // --- 모바일 내비게이션 -------------------------------------------------
   function setMobileNav(open, restoreFocus) {
     document.body.classList.toggle('nav-open', open);
