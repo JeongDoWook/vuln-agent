@@ -1,6 +1,6 @@
 # 설정 레퍼런스 — 환경변수 · 운영 설정
 
-> 문서 기준: 2026-08-15.
+> 문서 기준: 2026-08-20.
 
 **운영자가 코드 수정 없이 조정할 수 있는 값 전체**를 모아 둔다. 조정 경로는 둘이고 성격이 다르다.
 
@@ -149,3 +149,7 @@ SLA 기준일은 업계 관행값이 아니라 **조직 내부 규정**이라 �
 - **비밀값** — `secrets/*.txt`(Docker Secrets). 환경변수가 아니다 → [`secrets/README.md`](../secrets/README.md).
 - **DB 접속 정보**(`DB_HOST`/`DB_NAME`/`DB_USER`/`DB_PORT`) — compose 가 앵커에서 주입한다. 운영자가 직접 만질 값이 아니다.
 - **컨테이너 인프라 값**(`WEB_PORT`·`DB_PORT`·`DB_DATA`·`MYSQL_*`·`PROD_DOMAIN`) — `deploy/.env.{dev,prod}.template` 참고.
+- **에이전트 쪽 환경변수** — 이 표의 값은 전부 web·scheduler 컨테이너가 읽는 것이다. 수집 대상
+  호스트에서 에이전트 자신이 읽는 값(속도 티어, `CPU_QUOTA`·`PACKAGING_TIMEOUT`·`MEM_MAX`,
+  `/proc` 순회 상한 `PROC_SCAN_TIMEOUT`)은 여기가 아니라 [`agent/README.md`](../agent/README.md)
+  가 정본이다. 조정 경로도 다르다 — 컨테이너 앵커가 아니라 그 호스트의 에이전트 설정이다.

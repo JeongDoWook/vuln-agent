@@ -9,3 +9,6 @@
 | [changelog-억제층-실측.md](changelog-억제층-실측.md) | 운영 억제 144만 건 중 changelog 근거 억제가 0건이던 이유. 권고는 이미 적용됨(#371) | 2026-07-28 |
 | [packages-screen-profiling.md](packages-screen-profiling.md) | 스모크 `[패키지 서브탭]` 14초의 실제 출처. 화면은 91ms | 2026-08-12 |
 | [cleanup-evidence.md](cleanup-evidence.md) | 데드코드 제거(#599)의 제거 전 참조 증거 | 2026-08-15 |
+| [dashboard-index-profiling.md](dashboard-index-profiling.md) | 대시보드 1.92초의 진범(옵티마이저 인덱스 오선택)과 조치 결과 2,097→504ms | 2026-08-16 |
+| [web-perf-audit.md](web-perf-audit.md) | 전 화면 55개 응답시간. 느린 건 `vendor.php` 하나였고 인덱스 2개로 고쳤다 | 2026-08-16 |
+| [smoke-timing-profiling.md](smoke-timing-profiling.md) | 스모크 102.7초 중 45초가 `ui_lint.sh`. 고쳐서 54.7초 | 2026-08-16 |
