@@ -34,6 +34,7 @@ PROTECTED_OVERRIDES=(
   VG_GATE_ROOT VG_GATE_MANIFEST VG_GATE_DOCKER_BIN VG_GATE_CURL_BIN VG_GATE_PHP_BIN
   VG_GATE_SMOKE_SCRIPT VG_GATE_MIGRATION_TEST VG_GATE_BACKUP_TEST
   VG_GATE_SCHEMA_DOCS_TEST VG_GATE_SCHEMA_DOCS_PRECHECK_SCRIPT
+  VG_GATE_AGENT_SIGNATURE_SCRIPT
   VG_GATE_APP_IMAGE VG_WEB_CONTAINER VG_DB_CONTAINER VG_SMOKE_BASE
 )
 
@@ -80,6 +81,8 @@ if [ "$TEST_MODE" -eq 1 ]; then
   # 이 gate 행 자체가 없다). 그래서 필수 목록에 넣지 않고, 주입한 경우에만 다른 override 와
   # 같은 규칙(디스크 존재·심링크 금지·disposable root 안)으로 검증한다.
   SCHEMA_DOCS_PRECHECK=${VG_GATE_SCHEMA_DOCS_PRECHECK_SCRIPT:-}
+  # 에이전트 서명 검사도 같은 이유로 선택적이다 — 주입한 fixture 만 검증한다.
+  AGENT_SIGNATURE_CHECK=${VG_GATE_AGENT_SIGNATURE_SCRIPT:-}
   for item in \
     "manifest:$MANIFEST" "docker:$DOCKER_BIN" "curl:$CURL_BIN" "php:$PHP_BIN" \
     "smoke:$SMOKE_SCRIPT" "migration-test:$MIGRATION_TEST" \
@@ -87,6 +90,7 @@ if [ "$TEST_MODE" -eq 1 ]; then
     require_test_path "${item%%:*}" "${item#*:}"
   done
   [ -z "$SCHEMA_DOCS_PRECHECK" ] || require_test_path schema-docs-precheck "$SCHEMA_DOCS_PRECHECK"
+  [ -z "$AGENT_SIGNATURE_CHECK" ] || require_test_path agent-signature "$AGENT_SIGNATURE_CHECK"
 else
   for name in "${PROTECTED_OVERRIDES[@]}" VG_GATE_TEST_MODE; do
     if [ "${!name+x}" = x ]; then
@@ -103,6 +107,7 @@ else
   BACKUP_TEST=$ROOT/tests/backup_restore_test.sh
   SCHEMA_DOCS_TEST=$ROOT/tests/schema_docs_test.sh
   SCHEMA_DOCS_PRECHECK=$ROOT/tests/schema_docs_precheck.sh
+  AGENT_SIGNATURE_CHECK=$ROOT/tests/agent_signature_check.sh
 fi
 [ -r "$MANIFEST" ] || { echo "gate manifest unreadable: $MANIFEST" >&2; exit 2; }
 
@@ -228,6 +233,13 @@ check_schema_docs_precheck() {
   [ -r "$SCHEMA_DOCS_PRECHECK" ] || { echo "schema docs precheck missing: $SCHEMA_DOCS_PRECHECK"; return 1; }
   bash "$SCHEMA_DOCS_PRECHECK"
 }
+# agent/vuln-inventory-agent.sh 와 .sig 가 어긋난 채 push 되는 것을 막는다. 조건 없이 항상
+# 돈다 — openssl 만 쓰는 130ms 검사라 조건 분기가 이득이 없고, 이전 커밋이 깨뜨린 서명도
+# 다음 push 에서 그대로 잡혀야 한다(#735 는 그렇게 잠들어 있다가 #738 에서 장애가 됐다).
+check_agent_signature() {
+  [ -r "$AGENT_SIGNATURE_CHECK" ] || { echo "agent signature check missing: $AGENT_SIGNATURE_CHECK"; return 1; }
+  bash "$AGENT_SIGNATURE_CHECK"
+}
 
 run_check() {
   case "$1" in
@@ -241,6 +253,7 @@ run_check() {
     backup-restore) check_backup_restore ;;
     schema-docs) check_schema_docs ;;
     schema-docs-precheck) check_schema_docs_precheck ;;
+    agent-signature) check_agent_signature ;;
     *) echo "unknown gate id: $1"; return 1 ;;
   esac
 }
@@ -262,7 +275,7 @@ validate_manifest() {
     case "$profile" in pre-push|central) ;; *) echo "invalid gate profile at line $line: $profile" >&2; return 1 ;; esac
     case "$required" in true|false) ;; *) echo "invalid required flag at line $line: $required" >&2; return 1 ;; esac
     case "$id" in
-      source-state|docker-engine|web-stack|web-http|smoke|schedule-unit|migration-rehearsal|backup-restore|schema-docs|schema-docs-precheck) ;;
+      source-state|docker-engine|web-stack|web-http|smoke|schedule-unit|migration-rehearsal|backup-restore|schema-docs|schema-docs-precheck|agent-signature) ;;
       *) echo "unknown gate id at line $line: $id" >&2; return 1 ;;
     esac
     case "$deps" in
