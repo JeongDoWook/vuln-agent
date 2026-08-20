@@ -725,8 +725,10 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
   list-style: none;                 /* Firefox 기본 삼각형 제거 — chevron 을 직접 그린다 */
 }
 .card__body > details > summary::-webkit-details-marker { display: none; }
-/* 텍스트 ▶ 대신 CSS 로 그린 chevron — 펼치면 회전한다(글꼴에 따라 크기가 널뛰지 않는다) */
-.card__body > details > summary::before {
+/* 텍스트 ▶ 대신 CSS 로 그린 chevron — 펼치면 회전한다(글꼴에 따라 크기가 널뛰지 않는다).
+ * .ctrcard__detail(카드 안 li > details, direct child 밖이라 별도 지정 필요)도 같은 방식을 쓴다. */
+.card__body > details > summary::before,
+.ctrcard__detail > summary::before {
   content: "";
   flex: none;
   width: .4rem;
@@ -737,7 +739,8 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
   transform: rotate(-45deg);
   transition: transform .15s ease;
 }
-.card__body > details[open] > summary::before { transform: rotate(45deg); }
+.card__body > details[open] > summary::before,
+.ctrcard__detail[open] > summary::before { transform: rotate(45deg); }
 .card__body > details > summary:hover { color: var(--accent-2); }
 /* 요약줄 오른쪽 끝 — 건수 뱃지 자리. 페이지가 <span class="badge">12</span> 를 넣으면 여기로 간다. */
 .card__body > details > summary > .badge { margin-left: auto; }
@@ -2415,6 +2418,23 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctrcard__risk .riskbar { max-width: none; }
 .ctrcard__more { display: flex; flex-direction: column; gap: .15rem; }
 .ctrcard .links { margin-top: auto; padding-top: .2rem; }
+
+/* 2차 정보(이미지·OS·k8s·다이제스트·SBOM) 접힘 — 심각도 바보다 눈에 덜 띄어야 한다.
+ * .card__body > details 는 direct child 전용이라 카드 안(li > details)엔 안 걸려 새로 정의한다. */
+.ctrcard__detail { font-size: var(--fs-sm); }
+.ctrcard__detail > summary {
+  cursor: pointer;
+  color: var(--muted);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: fit-content;
+}
+.ctrcard__detail > summary::-webkit-details-marker { display: none; }
+.ctrcard__detail > summary:hover { color: var(--accent-2); }
+.ctrcard__detail[open] > summary { margin-bottom: .4rem; }
+.ctrcard__detail > :not(summary) + * { margin-top: .35rem; }
 
 @media (max-width: 640px) {
   .ctree__list { grid-template-columns: 1fr; padding-left: .8rem; }
