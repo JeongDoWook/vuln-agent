@@ -45,9 +45,17 @@ MSYS_NO_PATHCONV=1 docker run -d --name "$container" \
   mysql:8.0 >/dev/null
 
 ready=0
-for _ in $(seq 1 60); do
+# 60회에서 90회로 늘렸다. 아래 PID 1 가드 때문에 준비 판정이 임시 mysqld 구간만큼
+# 뒤로 밀리므로 여유를 준다 — tests/migration_rehearsal_test.sh 와 같은 90회(x2초)다.
+for _ in $(seq 1 90); do
+  # 이미지 초기화 중 entrypoint 는 임시 mysqld 를 먼저 띄우는데, 그 임시 서버도
+  # SELECT 1 에 답한다. 그것만 보고 준비 완료로 판정하면, 임시 서버가 내려가고
+  # 최종 mysqld 가 아직 안 뜬 구간에 migrate.sh 가 걸려 ERROR 2002 로 죽는다.
+  # PID 1 이 mysqld 인지 먼저 확인해 그 종료 구간을 건너뛴다 — 불필요한 검사가 아니다.
+  # 같은 가드가 tests/migration_rehearsal_test.sh 에도 있다(방식을 둘로 가르지 않는다).
   if docker exec "$container" sh -c \
-      'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot -N -B -e "SELECT 1"' >/dev/null 2>&1; then
+      'case "$(cat /proc/1/comm)" in mysqld*) ;; *) exit 1 ;; esac; MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot -N -B -e "SELECT 1"' \
+      >/dev/null 2>&1; then
     ready=1
     break
   fi

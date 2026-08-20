@@ -126,10 +126,16 @@ vg_header('설정', 'settings');
         vg_alert('설정 테이블을 읽을 수 없습니다. 마이그레이션 적용 여부를 확인하세요(기본값으로 판정 중).', 'warn');
     }
 
-    foreach ($groups as $gkey => $group):
-        if (!$byGroup[$gkey]) { continue; } ?>
+    ?>
+    <div class="setting-groups">
+    <?php foreach ($groups as $gkey => $group):
+        if (!$byGroup[$gkey]) { continue; }
+        // 그룹 한 줄 설명은 **제목 옆**에 붙인다(줄을 새로 쓰지 않는다). 항목마다 달려
+        //   있던 해설을 걷어낸 자리다 — ISMS-P 근거도 여기 있다(vg_setting_groups()).
+        $note = trim((string) ($group['note'] ?? '')); ?>
       <section class="card">
         <strong><?= vg_h((string) $group['label']) ?></strong>
+        <?php if ($note !== ''): ?><span class="why"><?= vg_h($note) ?></span><?php endif; ?>
         <div class="card__body setting-form setting-form--grid">
           <?php foreach ($byGroup[$gkey] as $key => $def):
               $id  = 'set-' . str_replace('.', '-', $key);
@@ -142,33 +148,39 @@ vg_header('설정', 'settings');
               if (isset($fieldErr[$key])) { $val = trim((string) ($posted[$key] ?? '')); }
               $isErr = isset($fieldErr[$key]);
               $showDefault = $def_val !== null && $val !== $def_val;
+              // 허용 범위는 **라벨 옆**에 접는다 — 벗어나면 저장이 실패하는 제약이라 지울 수
+              //   없지만, 그것 때문에 줄 하나를 통째로 쓸 이유도 없다. 주소 항목의 형식은
+              //   placeholder 로 준다(값이 차 있을 땐 자리를 안 먹는다). 그 주소 칸만 격자의
+              //   한 줄을 그대로 쓴다(field--wide) — 숫자 한 칸 폭에 URL 을 넣으면 끝이 잘린다.
+              $range = $isInt ? sprintf('%d~%d', (int) $def['min'], (int) $def['max']) : '';
+              // 보조 설명은 이제 오류 문구뿐이다. 예전엔 항상 있던 해설(.why)을 가리켰는데,
+              //   그 줄을 걷어낸 지금도 같은 id 를 가리키면 없는 요소를 참조하게 된다.
+              $descId = $isErr ? $id . '-err' : '';
           ?>
-            <label class="field<?= $isErr ? ' field--err' : '' ?>" for="<?= vg_h($id) ?>">
-              <?= vg_h((string) $def['label']) ?>
+            <label class="field<?= $isErr ? ' field--err' : '' ?><?= $isInt ? '' : ' field--wide' ?>" for="<?= vg_h($id) ?>">
+              <span class="field__name"><?= vg_h((string) $def['label']) ?><?php if ($range !== ''): ?> <span class="field__range">· <?= vg_h($range) ?></span><?php endif; ?></span>
               <?php if ($isInt): ?>
                 <input type="number" id="<?= vg_h($id) ?>" name="setting[<?= vg_h($key) ?>]"
                        value="<?= vg_h($val) ?>"
                        min="<?= (int) $def['min'] ?>" max="<?= (int) $def['max'] ?>" step="1"
-                       aria-describedby="<?= vg_h($id) ?>-why"<?= $isErr ? ' aria-invalid="true"' : '' ?>>
+                       <?= $descId !== '' ? 'aria-describedby="' . vg_h($descId) . '" aria-invalid="true"' : '' ?>>
               <?php else: ?>
                 <input type="url" id="<?= vg_h($id) ?>" name="setting[<?= vg_h($key) ?>]"
                        value="<?= vg_h($val) ?>" maxlength="<?= (int) $def['max'] ?>"
-                       aria-describedby="<?= vg_h($id) ?>-why"<?= $isErr ? ' aria-invalid="true"' : '' ?>>
+                       placeholder="https://호스트[:포트]"
+                       <?= $descId !== '' ? 'aria-describedby="' . vg_h($descId) . '" aria-invalid="true"' : '' ?>>
               <?php endif; ?>
-              <span class="why" id="<?= vg_h($id) ?>-why">
-                <?= vg_h((string) $def['desc']) ?>
-                <?= $isInt ? ' (' . (int) $def['min'] . '~' . (int) $def['max'] . ')' : '' ?>
-              </span>
               <?php if ($showDefault): ?>
                 <span class="field__default">기본값 <?= vg_h((string) $def_val) ?></span>
               <?php endif; ?>
               <?php if ($isErr): ?>
-                <span class="field__err" role="alert"><?= vg_h($fieldErr[$key]) ?></span>
+                <span class="field__err" id="<?= vg_h($id) ?>-err" role="alert"><?= vg_h($fieldErr[$key]) ?></span>
               <?php endif; ?>
             </label>
           <?php endforeach; ?>
         </div>
       </section>
     <?php endforeach; ?>
+    </div>
   </form>
 <?php vg_footer();

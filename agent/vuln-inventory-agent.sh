@@ -40,7 +40,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.15"
+SCRIPT_VERSION="3.16"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
@@ -2181,6 +2181,14 @@ export PROJECT_SCAN_ROOTS SCAN_MAX_FILES SCAN_MAX_DEPTH
 export CMD_TIMEOUT GO_BIN_SCAN_MAX GO_BIN_MIN_SIZE GO_BIN_PROBE_BYTES
 export -f have emit_jar_meta emit_nested_jars collect_project_deps_installed collect_project_deps_declared
 export -f go_deps_from_binary collect_go_binary_deps
+# 아래 수집 함수들은 전부 `timeout ... bash -c` 서브셸에서 돈다(바로 아래 2곳 + vg_inv_append_pass).
+#   서브셸이 볼 수 있는 함수는 `export -f` 로 내보낸 것뿐이라, 수집 함수 본문에서 부르는 헬퍼는
+#   **하나도 빠짐없이** 여기 있어야 한다. 빠지면 서브셸에서 `command not found` 가 되는데
+#   stderr 를 2>/dev/null 로 버리는 호출부라 조용히 "그 소스만 0건"이 된다 — 테스트는
+#   같은 셸에서 함수를 부르므로 못 잡는다(#735 가 그렇게 통과하고 운영에서 pip 라이선스가 비었다).
+#   collect_project_deps_installed 가 부르는 헬퍼: pip_meta_license(라이선스) ·
+#   emit_gemfile_lock/emit_gemspec_name(gem) · emit_yarn_lock/emit_pnpm_lock(node) · emit_poetry_lock(pip).
+export -f pip_meta_license emit_gemfile_lock emit_gemspec_name emit_yarn_lock emit_pnpm_lock emit_poetry_lock
 # 패스 하나를 "남은 예산 안에서만" VG_INV 에 덧붙인다. 한 스트림으로 이어 붙여 통째로 head -c 하면
 #   앞 패스가 큰 호스트에서 뒤 패스가 통째로 잘리므로 패스별로 자른다. head -c 가 줄 가운데를
 #   자를 수 있어(다음 패스 첫 줄과 붙어 엉뚱한 좌표가 된다) 개행도 채운다.

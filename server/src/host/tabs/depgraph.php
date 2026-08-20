@@ -46,21 +46,23 @@ declare(strict_types=1);
     ]); ?>
   <?php endif; ?>
 
-  <div class="card">
-    <strong>의존성 트리</strong>
-    <span class="why"> · 엣지 <?= number_format((int) $depLoad['loaded']) ?>개
-      · 루트 <?= number_format($total) ?>개 · 노드 <?= number_format(count($depGraph['nodes'])) ?>개</span>
-    <?php /* 어느 단위를 그리고 있는지 밝힌다 — 호스트에 엣지가 없으면 컨테이너로 떨어진다. */ ?>
-    <?php if (count($depUnits) > 1 || $depUnit !== 0): ?>
-      <?= vg_badge('조회 단위 · ' . (string) ($depUnits[$depUnit]['label'] ?? '호스트'), 'info') ?>
-    <?php endif; ?>
+  <?php /* 트리 위는 **한 줄**이다 — 사실(엣지·루트·노드 수)만 제목 옆에 접고, 전용 화면
+   *   링크는 이 카드의 유일한 액션이라 같은 줄 오른쪽에 둔다(버튼 하나 때문에 줄을 만들지
+   *   않는다). 걷어낸 것: '노드를 누르면 …' 안내문(커서가 이미 말한다)과 노드 색 범례
+   *   (등급은 노드의 배지 글자와 <title> 툴팁이 말한다 — 색은 보조 신호다). */ ?>
+  <div class="card deptree__head">
+    <div class="deptree__headline">
+      <strong>의존성 트리</strong>
+      <span class="why">엣지 <?= number_format((int) $depLoad['loaded']) ?>개
+        · 루트 <?= number_format($total) ?>개 · 노드 <?= number_format(count($depGraph['nodes'])) ?>개</span>
+      <?php /* 어느 단위를 그리고 있는지 밝힌다 — 호스트에 엣지가 없으면 컨테이너로 떨어진다. */ ?>
+      <?php if (count($depUnits) > 1 || $depUnit !== 0): ?>
+        <?= vg_badge('조회 단위 · ' . (string) ($depUnits[$depUnit]['label'] ?? '호스트'), 'info') ?>
+      <?php endif; ?>
+    </div>
     <div class="actions">
       <a class="btn btn--sm btn--ghost" href="<?= vg_h(vg_deptree_url((int) $hostId, (int) $depUnit)) ?>"
          title="대상 패키지 역추적·다른 조회 단위"><?= vg_icon('chart') ?>의존성 그래프 화면</a>
-    </div>
-    <div class="card__body">
-      <?php vg_deptree_legend(); ?>
-      <span class="why">노드를 누르면 그 패키지를 무엇이 끌어왔는지 볼 수 있습니다.</span>
     </div>
   </div>
 
