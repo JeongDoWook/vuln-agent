@@ -1,19 +1,19 @@
 # id|profile|required|depends_on|description
 source-state|pre-push|true|-|Pushed commit is HEAD and the bind-mounted worktree is clean
+schema-docs-precheck|pre-push|true|-|New migrations are accompanied by regenerated schema documents (git diff only)
 docker-engine|pre-push|true|source-state|Docker daemon is reachable
 web-stack|pre-push|true|docker-engine|Current worktree web container is healthy and mounts this tree
 web-http|pre-push|true|web-stack|Current worktree web endpoint responds
 migration-rehearsal|pre-push|true|docker-engine|Disposable MySQL initializes and applies every migration without touching the shared DB
 smoke|pre-push|true|web-http,migration-rehearsal|Required smoke suite executes successfully
 schedule-unit|pre-push|false|-|Pure scheduler health and schedule unit tests
-schema-docs-precheck|pre-push|true|-|New migrations are accompanied by regenerated schema documents (git diff only)
 schema-docs|pre-push|true|docker-engine|Tracked schema documents match disposable MySQL information_schema
+schema-docs-precheck|central|true|-|New migrations are accompanied by regenerated schema documents (git diff only)
 docker-engine|central|true|-|Docker daemon is reachable
 web-stack|central|true|docker-engine|Validation web container is healthy and mounts this tree
 web-http|central|true|web-stack|Validation web endpoint responds
 migration-rehearsal|central|true|docker-engine|Disposable MySQL initializes and applies every migration without touching the shared DB
 smoke|central|true|web-http,migration-rehearsal|Required smoke suite executes successfully
 schedule-unit|central|true|-|Pure scheduler health and schedule unit tests
-schema-docs-precheck|central|true|-|New migrations are accompanied by regenerated schema documents (git diff only)
 schema-docs|central|true|docker-engine|Tracked schema documents match disposable MySQL information_schema
 backup-restore|central|true|docker-engine|Backup restore accepts a valid dump and rejects a corrupt dump
