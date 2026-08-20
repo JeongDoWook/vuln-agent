@@ -40,7 +40,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.14"
+SCRIPT_VERSION="3.15"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
