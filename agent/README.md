@@ -1,10 +1,32 @@
 # vuln-agent 에이전트 — 설치·운영 가이드
 
-> **현행 버전: 3.14** (문서 기준 2026-08-20). 실제 값은 `vuln-inventory-agent.sh` 의
+> **현행 버전: 3.15** (문서 기준 2026-08-20). 실제 값은 `vuln-inventory-agent.sh` 의
 > `SCRIPT_VERSION` 이 정본이다.
+
+> ## ⚠ 3.15 로 올라갈 때는 **노드에서 한 번 갱신 작업이 필요하다**
+>
+> 3.15 는 중앙 응답 파싱·수집 인자 조립을 `run.sh` 에서 `vuln-inventory-agent.sh --poll-once`
+> 로 옮겼다. **`run.sh` 는 자동 업데이트 대상이 아니다**(자동 갱신은 본체 하나만 교체한다) —
+> 그래서 본체가 3.15 로 자동 갱신돼도, 옛 `run.sh` 는 `--poll-once` 를 부르지 않고 예전
+> 방식으로 계속 돈다. 즉 **이번 한 번은 사람이 `run.sh` 를 갱신해야 한다.**
+>
+> 둘 중 하나로 한다(둘 다 토큰·서버주소·CA·공개키는 건드리지 않는다):
+>
+> ```bash
+> bash deploy/agent_push.sh --with-runner 10.0.0.100 10.0.0.101   # 중앙에서 SSH 로 일괄
+> sudo bash install-agent.sh --runner-only                        # 그 노드에서 직접
+> ```
+>
+> **안 하면 무슨 증상이 나나** — 지금까지 나던 그 증상 그대로다: 중앙에서 "무결성 검사"를 걸면
+> 명령은 `done` 으로 닫히는데 결과는 `미수행` 이다(에이전트가 `--verify-files` 없이 돌았다).
+> 3.15 부터는 중앙이 이 상태를 **`미지원` 으로 화면에 표시**하므로, 어떤 노드가 안 갱신됐는지는
+> 자산 상세 → 설치 패키지 탭에서 바로 보인다.
+>
+> 이후로는 같은 일이 안 생긴다 — 앞으로 응답 필드가 늘어도 그 파싱은 자동 갱신되는 본체 안에 있다.
 
 | 버전 | 들어간 것 |
 |---|---|
+| 3.15 | **명령 처리 로직을 `run.sh` → 본체(`--poll-once`)로 이전** — 응답 파싱·수집 인자 조립이 자동 업데이트를 타게 됐다. `install-agent.sh --runner-only`, `agent_push.sh --with-runner` 추가 |
 | 3.14 | pip 메타(`dist-info/METADATA`·`egg-info/PKG-INFO`) 라이선스에 **PEP 639 `License-Expression` 우선 적용 + Classifier 폴백** — 실측 커버리지 4/15 → 15/15 |
 | 3.13 | 호스트 **Go 바이너리 buildinfo** 수집, Ruby 앱 의존성(`Gemfile.lock`·vendored `*.gemspec`), Node/Python 보조 lock(`yarn.lock`·`pnpm-lock.yaml`·`poetry.lock`·`Pipfile.lock`·`*.egg-info/PKG-INFO`) |
 | 3.12 | 패키지 무결성 검증(`--verify-files`, 기본 꺼짐) |
@@ -180,10 +202,26 @@ bash deploy/agent_push.sh 10.0.0.100 10.0.0.101 10.0.0.102
 | `install-agent.sh` 자신(타이머·유닛·preflight·자동 업데이트 로직)의 갱신 | 그 노드에서 설치기를 다시 돌린다 |
 | 웹 버튼으로 제공 | 하지 않는다 — PHP 컨테이너가 전 노드 root SSH 키를 들면 웹앱 침해가 전 노드 root 장악으로 번진다. **보는 건 웹**(자산 화면의 `meta.agent_version`), **미는 건 CLI** |
 
-**`run.sh` 자신은 설치기를 재실행해야 갱신된다.** 속도 티어 필드(`cpu_quota_percent`·
-`packaging_timeout_seconds`·`mem_max_mb`)를 읽는 버전이 아니면 그 노드는 스크립트 기본값
-(CPU 10% / 120초 / 300M)으로만 돈다. 재실행은 `daemon-reload` → `enable` → `restart` 라
-새 `run.sh` 가 확실히 물린다.
+### `run.sh` 도 같이 갱신 — `--with-runner`
+
+`run.sh` 는 설치기가 만드는 파일이라 **자동 업데이트 대상이 아니다.** 예전에는 이 파일이 바뀔
+때마다 사람이 노드마다 들어가 설치기를 처음부터(토큰 재입력 포함) 다시 돌려야 했고, 실제로
+그걸 안 해서 중앙이 켠 무결성 검사가 노드에 영원히 도달하지 못한 사고가 있었다. 지금은:
+
+```bash
+bash deploy/agent_push.sh --with-runner 10.0.0.100 10.0.0.101
+```
+
+설치기를 노드로 보내 `--runner-only` 로 돌린다 — **`run.sh` 와 systemd 유닛만** 다시 만들고
+`agent.env`(토큰·서버주소)·CA·서명 공개키는 읽지도 쓰지도 않는다. 재기동은
+`daemon-reload` → `enable` → `restart` 라 새 `run.sh` 가 확실히 물린다.
+그 노드에 직접 들어가 있다면 `sudo bash install-agent.sh --runner-only` 도 같은 일을 한다.
+
+**애초에 `run.sh` 에 로직을 두지 않는다.** 3.15 부터 응답 파싱·수집 인자 조립은
+`vuln-inventory-agent.sh --poll-once` 안에 있고, `run.sh` 는 그 지시문(`키=값` 줄들)을 실행만
+하는 얇은 래퍼다 — 그래서 새 응답 필드는 본체 자동 업데이트만으로 노드에 도달한다.
+`run.sh` 에 남긴 것은 갱신 대상 밖에 있어야 하는 것뿐이다: env 로드·데몬 루프·로그 경로,
+그리고 `do_update()`(자기를 갱신하는 코드는 갱신 대상 안에 있으면 안 된다 — 닭과 달걀).
 
 ## 자동 업데이트 — poll 이 구버전을 감지하면 스스로 갱신한다 (2026-08-19)
 
@@ -197,7 +235,10 @@ poll 로 보고돼 감사로그(`tb_activity_log`, `agent_auto_update`)에 남�
 막고 못 막는지·공개키 pin 의 설계 근거는
 [`docs/dev/architecture.md`](../docs/dev/architecture.md) §4.1.
 
-- 기존 노드의 `run.sh` 는 재설치 전까지 이 로직 자체를 모른다 — 받으려면 설치기를 한 번 더 돌린다.
+- 기존 노드의 `run.sh` 는 갱신 전까지 이 로직 자체를 모른다 — `agent_push.sh --with-runner`
+  또는 그 노드에서 `install-agent.sh --runner-only` 를 한 번 돌린다.
+- 자동 업데이트가 바꾸는 것은 **본체 하나뿐이다.** `run.sh` 는 바뀌지 않는다 — 그래서 3.15 는
+  로직을 본체로 옮겼다(위 ⚠ 참고).
 - 서명 공개키(`<prefix>/etc/agent-update.pub`)는 **최초 설치 때만 고정(pin)** 된다. 이미 핀이 있고
   서버 키가 다르면 설치기는 **경고만 남기고 기존 핀을 유지**한다 — 바꾸려면 그 파일을 지우고 재설치.
 
@@ -379,7 +420,8 @@ sudo bash install-agent.sh --uninstall [--prefix 설치경로]
 | `--timeout N` | 명령별 타임아웃 초(기본 20) |
 | `--verify-files` | 패키지 무결성 검증(`rpm -Va` / `dpkg --verify`) — **기본 꺼짐**. 아래 설명 |
 | `--verify-timeout N` | 무결성 검증 단독 상한 초(기본 300). `--timeout`(20초)로는 무조건 잘린다 |
-| `--command-id ID` | 중앙의 즉시/예약 명령 실행임을 표시(페이로드 최상위 `command_id`). `run.sh` 가 붙인다 |
+| `--command-id ID` | 중앙의 즉시/예약 명령 실행임을 표시(페이로드 최상위 `command_id`). `--poll-once` 가 붙인다 |
+| `--poll-once --state-dir DIR` | **수집하지 않는다.** `agent-poll.php` 를 한 번 GET 해 "이번에 무엇을 할지"를 정하고, `run.sh` 가 읽을 지시문(`키=값` 줄들)을 stdout 으로 낸다. `SEND_URL`·`SEND_TOKEN` 은 env(`agent.env`)에서 읽으므로 토큰이 인자·출력에 남지 않는다. 데몬 루프가 10초마다 이걸 부른다 |
 
 ### `--verify-files` — 패키지 무결성 검증 (기본 꺼짐)
 
@@ -396,7 +438,8 @@ GPG 서명 검증은 범위가 아니다 — 파일 무결성만 본다.
 | 시간 상한 | `--verify-timeout`(기본 300초). 잘리면 결과에 `partial` 을 실어 보내고 화면은 **"부분 결과"** 로 표시한다 — 잘린 결과의 0건을 "깨끗함"으로 읽으면 안 되기 때문 |
 | 줄 수 상한 | `VERIFY_MAX_LINES`(기본 500, 환경변수). 넘으면 `truncated` 와 함께 **잘리기 전 전체 건수**를 보낸다 |
 | 버리는 것 | 설정파일(`c` 플래그) 줄 — 관리자가 고치는 게 정상이라 전부 노이즈다 |
-| 화면 표기 | 자산 상세 → 설치 패키지 탭이 **"미수행 / 정상 / 원본과 다름 N건"** 을 구분한다. 이 플래그 없이 수집한 자산은 "정상"이 아니라 **"미수행"** |
+| 화면 표기 | 자산 상세 → 설치 패키지 탭이 **"미수행 / 미지원 / 부분 결과 / 정상 / 원본과 다름 N건"** 을 구분한다. 이 플래그 없이 수집한 자산은 "정상"이 아니라 **"미수행"** |
+| `미지원` 표기 | 중앙이 무결성 포함으로 명령을 걸었는데 **그 명령으로 생성된 스캔에 무결성 결과가 없을 때** 뜬다 — 노드의 `run.sh` 가 옛 버전이라 `--verify-files` 를 안 붙였다는 뜻이다(위 ⚠ 3.15 참고). `rpm`·`dpkg` 가 둘 다 없는 노드도 같은 상태가 된다 |
 | 어휘 | 잡힌 파일은 "변조됨"이 아니라 **"패키지 원본과 다름(관측)"** — 운영자가 직접 바꾼 파일일 수 있다 |
 
 켜는 길은 두 가지다. **매 수집마다** 켜려면 설치 때 `install-agent.sh --verify-files` 를 준다 —

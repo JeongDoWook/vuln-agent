@@ -29,12 +29,18 @@
 #    ./vuln-inventory-agent.sh --send ... --token ... --command-id 42
 #        # run.sh(데몬)가 agent-poll.php 의 due_command_id 를 넘길 때 사용 — POST 바디
 #        # 최상위에 command_id 필드가 실려 그 명령이 완료 처리된다.
+#    ./vuln-inventory-agent.sh --poll-once --state-dir /opt/vuln-agent/logs
+#        # 수집하지 않는다. agent-poll.php 를 한 번 GET 해 "이번에 무엇을 할지"를 정하고,
+#        # run.sh 가 읽을 지시문(키=값 줄들)을 stdout 으로 낸다. SEND_URL·SEND_TOKEN 은
+#        # env(agent.env)에서 읽는다 — 토큰은 인자로도 출력으로도 나가지 않는다.
+#        # run.sh(데몬 루프)가 10초마다 이걸 부른다. 응답 파싱·수집 인자 조립이 여기 있는
+#        # 이유는 아래 "--poll-once" 절 참고(자동 업데이트되는 파일이라야 노드에 도달한다).
 # ==================================================================
 
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.14"
+SCRIPT_VERSION="3.15"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
@@ -68,6 +74,8 @@ OUT=""
 SEND_URL="${SEND_URL:-}"             # --send : 중앙 수신 API(ingest.php) URL
 SEND_TOKEN="${SEND_TOKEN:-}"         # --token: 중앙에서 이 호스트에 발급한 인증 토큰
 COMMAND_ID=""                        # --command-id: agent-poll.php 의 due_command_id (완료 처리용)
+POLL_ONCE=0                          # --poll-once: 수집 대신 "중앙에 한 번 물어보고 할 일을 정한다"
+STATE_DIR="${STATE_DIR:-}"           # --state-dir: run.sh 의 로그/상태 디렉터리(--poll-once 전용)
 # _RELAUNCHED: cgroup 재실행 가드. env(export) 상속에만 기대지 않는다 — 일부 호스트(Jetson 계열
 # systemd-run)에서 export 로 세팅한 셸 환경변수가 D-Bus 로 시작되는 새 scope 에 전달되지 않아
 # export 만으로는 가드가 씹히고 무한 재귀 재실행에 빠지는 사례가 실측됐다. 그래서 --setenv 로도
@@ -89,6 +97,8 @@ while [ $# -gt 0 ]; do
     --send)          SEND_URL="$2"; shift 2 ;;
     --token)         SEND_TOKEN="$2"; shift 2 ;;
     --command-id)    COMMAND_ID="$2"; shift 2 ;;
+    --poll-once)     POLL_ONCE=1; shift ;;
+    --state-dir)     STATE_DIR="$2"; shift 2 ;;
     --relaunched)    _RELAUNCHED=1; shift ;;
     -h|--help)
       grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -107,6 +117,191 @@ esac
 
 have()    { command -v "$1" >/dev/null 2>&1; }
 is_root() { [ "$(id -u)" -eq 0 ]; }
+
+# ==================================================================
+# --poll-once : 중앙(agent-poll.php)에 한 번 물어보고 "이번에 무엇을 할지"를 정한다.
+# ==================================================================
+#   왜 여기(본체)에 있나 — 이 로직은 **응답 필드가 늘 때마다 바뀐다.** 예전엔 run.sh 안에
+#   있었는데, run.sh 는 install-agent.sh 가 heredoc 으로 만드는 파일이라 자동 업데이트
+#   대상이 아니다(do_update() 는 이 본체 하나만 교체한다). 그래서 응답에 필드를 추가해도
+#   기존 노드에는 영원히 도달하지 못했고, 명령은 done 으로 처리되는데 결과만 없는
+#   **조용한 실패**가 났다(실제 사고: due_command_verify_files → integrity_checked=0).
+#   자동 업데이트되는 이 파일로 옮기면 같은 사고가 구조적으로 안 생긴다.
+#
+#   run.sh 에 남는 것: env 로드 · 데몬 루프 · 로그 경로 · do_update()(자기 갱신 코드는
+#   갱신 대상 밖에 있어야 한다 — 닭과 달걀).
+#
+#   출력(stdout): run.sh 가 읽는 지시문. `키=값` 한 줄 하나, 값에 `=` 가 들어가도 안전하게
+#   **첫 `=` 에서만** 자른다. 모르는 키는 run.sh 가 무시하므로 필드를 늘려도 옛 run.sh 가
+#   깨지지 않는다(이 파일만 갱신되는 상황을 전제로 한 계약이다).
+#     poll_schedule=<초>                     정기수집 주기(참고용)
+#     update_version/sha256/path/signature   자동 업데이트 지시(값이 다 있을 때만)
+#     scan=scheduled|command                 수집을 돌려라(이유). 없으면 이번엔 안 돈다
+#     env=<KEY=VALUE>                        수집 프로세스에 줄 환경변수(속도 티어)
+#     arg=<인자>                             수집 인자 한 개(순서대로)
+#   토큰은 절대 싣지 않는다 — 자식 프로세스가 env 로 물려받는다(argv·파이프에 안 남긴다).
+#
+#   종료코드: 0=poll 성공, 1=실패(run.sh 가 백오프 판단에 쓴다).
+vg_poll_urlencode() {
+  # 순수 bash RFC3986 퍼센트인코딩(영숫자·-_.~ 만 그대로).
+  local s="$1" out="" i c
+  for (( i = 0; i < ${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      [A-Za-z0-9._~-]) out+="$c" ;;
+      *) out+=$(printf '%%%02X' "'$c") ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# 숫자 + 상식적 범위 밖이면 빈 값으로 떨군다 — 수집은 스크립트 기본값으로 안전하게 계속된다.
+vg_poll_num_in_range() {
+  local v="$1" lo="$2" hi="$3"
+  case "$v" in ''|*[!0-9]*) printf ''; return ;; esac
+  if [ "$v" -lt "$lo" ] || [ "$v" -gt "$hi" ]; then printf ''; return; fi
+  printf '%s' "$v"
+}
+
+vg_poll_once() {
+  local poll_url resp="" qs report state_dir
+  state_dir="$STATE_DIR"
+  if [ -z "$state_dir" ] || [ ! -d "$state_dir" ]; then
+    echo ">> --poll-once 에는 --state-dir <디렉터리> 가 필요합니다(현재: ${state_dir:-없음})" >&2
+    return 1
+  fi
+  if [ -z "$SEND_URL" ] || [ -z "$SEND_TOKEN" ]; then
+    echo ">> --poll-once 에는 SEND_URL·SEND_TOKEN 이 필요합니다(agent.env)." >&2
+    return 1
+  fi
+  poll_url="${SEND_URL%ingest.php}agent-poll.php"
+
+  local report_file="$state_dir/update_report"       # run.sh 의 do_update() 가 남긴 직전 결과 1줄
+  local last_scan_file="$state_dir/last_scan_at"
+  local poll_state_file="$state_dir/poll_interval"
+
+  # 현재 버전을 같이 보내 서버가 최신인지 판단하게 하고, 직전 업데이트 결과(있으면)도 같은
+  #   GET 에 실어 보고한다 — 새 인바운드 경로를 만들지 않고 기존 폴링을 재사용한다.
+  qs="agent_version=$(vg_poll_urlencode "$SCRIPT_VERSION")"
+  if [ -f "$report_file" ]; then
+    report=$(cat "$report_file" 2>/dev/null)
+    # 형식: "<result> <from> <to>". 필드가 깨져 있으면 그냥 흘려보낸다.
+    # set -f 로 워드스플릿 결과의 글롭 확장(*·? 등)을 막는다.
+    set -f; set -- $report; set +f
+    if [ -n "${1:-}" ]; then
+      qs="${qs}&update_result=$(vg_poll_urlencode "${1}")&update_from=$(vg_poll_urlencode "${2:-}")&update_to=$(vg_poll_urlencode "${3:-}")"
+    fi
+  fi
+
+  if have curl; then
+    resp=$(curl -sS -m 15 -H "X-Agent-Token: $SEND_TOKEN" "${poll_url}?${qs}" 2>/dev/null)
+  elif have wget; then
+    resp=$(wget -qO- --timeout=15 --header="X-Agent-Token: $SEND_TOKEN" "${poll_url}?${qs}" 2>/dev/null)
+  else
+    echo ">> curl·wget 이 모두 없어 poll 을 할 수 없습니다." >&2
+    return 1
+  fi
+  [ -z "$resp" ] && return 1
+
+  local poll_schedule due_cmd due_verify cpu_quota packaging_timeout mem_max
+  local update_available update_version update_sha256 update_path update_signature
+  # VG_FORCE_AWK=1 은 jq 가 있어도 폴백(grep/sed) 경로를 태운다 — 이 스크립트가 JSON 조립에서
+  #   이미 쓰는 것과 같은 스위치다(아래 JSON_ENGINE). 폴백은 정규식이라 깨지기 쉬워서
+  #   jq 가 깔린 개발/CI 환경에서도 반드시 한 번은 태워 봐야 한다(tests/agent_poll_once_test.sh).
+  if have jq && [ "${VG_FORCE_AWK:-0}" != 1 ]; then
+    printf '%s' "$resp" | jq -e . >/dev/null 2>&1 || return 1
+    poll_schedule=$(printf '%s' "$resp" | jq -r '.poll_schedule_seconds // empty')
+    due_cmd=$(printf '%s' "$resp" | jq -r '.due_command_id // empty')
+    due_verify=$(printf '%s' "$resp" | jq -r '.due_command_verify_files // empty')
+    cpu_quota=$(printf '%s' "$resp" | jq -r '.cpu_quota_percent // empty')
+    packaging_timeout=$(printf '%s' "$resp" | jq -r '.packaging_timeout_seconds // empty')
+    mem_max=$(printf '%s' "$resp" | jq -r '.mem_max_mb // empty')
+    update_available=$(printf '%s' "$resp" | jq -r '.update_available // false')
+    update_version=$(printf '%s' "$resp" | jq -r '.update_version // empty')
+    update_sha256=$(printf '%s' "$resp" | jq -r '.update_sha256 // empty')
+    update_path=$(printf '%s' "$resp" | jq -r '.update_download_path // empty')
+    update_signature=$(printf '%s' "$resp" | jq -r '.update_signature // empty')
+  else
+    # 응답이 단순 flat JSON 필드뿐이라 grep -o/sed 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
+    poll_schedule=$(printf '%s' "$resp" | grep -o '"poll_schedule_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
+    due_cmd=$(printf '%s' "$resp" | grep -o '"due_command_id"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
+    due_verify=$(printf '%s' "$resp" | grep -o '"due_command_verify_files"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
+    cpu_quota=$(printf '%s' "$resp" | grep -o '"cpu_quota_percent"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
+    packaging_timeout=$(printf '%s' "$resp" | grep -o '"packaging_timeout_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
+    mem_max=$(printf '%s' "$resp" | grep -o '"mem_max_mb"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
+    update_available=false
+    printf '%s' "$resp" | grep -q '"update_available"[[:space:]]*:[[:space:]]*true' && update_available=true
+    update_version=$(printf '%s' "$resp" | sed -n 's/.*"update_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    update_sha256=$(printf '%s' "$resp" | sed -n 's/.*"update_sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    update_path=$(printf '%s' "$resp" | sed -n 's/.*"update_download_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    update_signature=$(printf '%s' "$resp" | sed -n 's/.*"update_signature"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  fi
+
+  # poll_schedule 이 숫자가 아니면 응답 자체를 못 믿는다 → 이번 poll 은 실패로 끝낸다.
+  case "$poll_schedule" in ''|*[!0-9]*) return 1 ;; esac
+  # 무결성 검사 포함 여부(0/1). 구버전 서버는 이 필드를 안 주므로 빈 값 → 0 이다.
+  #   poll 마다 반드시 다시 계산된다 — 한 번 1 이 들어온 뒤 그대로 남아 다음 정기수집까지
+  #   무겁게 도는 일이 없게, "1 이 아니면 0" 으로 못 박는다.
+  case "$due_verify" in 1) due_verify=1 ;; *) due_verify=0 ;; esac
+  case "$due_cmd" in ''|*[!0-9]*) due_cmd="" ;; esac
+  cpu_quota="$(vg_poll_num_in_range "$cpu_quota" 1 100)"
+  packaging_timeout="$(vg_poll_num_in_range "$packaging_timeout" 30 3600)"
+  mem_max="$(vg_poll_num_in_range "$mem_max" 64 8192)"
+
+  # 응답 검증을 전부 통과한 뒤에만 지운다 — 서버가 오류/깨진 응답을 주면 이번 poll 은 실패로
+  # 끝나고(위 return 1 들) 리포트 파일이 남아 다음 poll 에 다시 보고된다(유실 방지).
+  rm -f "$report_file"
+  printf '%s\n' "$poll_schedule" > "$poll_state_file"
+  printf 'poll_schedule=%s\n' "$poll_schedule"
+
+  # 자동 업데이트 지시 — 값이 다 있을 때만 넘긴다(내려받기·검증·교체는 run.sh 의 do_update()).
+  if [ "$update_available" = true ] && [ -n "$update_version" ] && [ -n "$update_sha256" ] && [ -n "$update_path" ]; then
+    printf 'update_version=%s\n'   "$update_version"
+    printf 'update_sha256=%s\n'    "$update_sha256"
+    printf 'update_path=%s\n'      "$update_path"
+    printf 'update_signature=%s\n' "$update_signature"
+  fi
+
+  # 정기수집 만기 판단. 명령(due_cmd)으로 돌았다고 정기수집 타이머를 리셋하지 않는다 —
+  #   그러면 "예약 실행 걸었더니 다음 정기수집이 늦어졌다"는 혼란이 생긴다.
+  local now last scheduled_due=0
+  now=$(date +%s)
+  last=$(cat "$last_scan_file" 2>/dev/null || echo 0)
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  [ $(( now - last )) -ge "$poll_schedule" ] && scheduled_due=1
+
+  if [ "$scheduled_due" = 1 ] || [ -n "$due_cmd" ]; then
+    if [ "$scheduled_due" = 1 ]; then
+      printf '%s\n' "$now" > "$last_scan_file"
+      printf 'scan=scheduled\n'
+    else
+      printf 'scan=command\n'
+    fi
+    # 호스트별 속도 티어 — 이 스크립트 상단이 이미 CPU_QUOTA/PACKAGING_TIMEOUT/MEM_MAX
+    #   환경변수를 지원하므로 새 플래그 없이 env 로만 넘긴다. 비어 있으면(구버전 서버 등)
+    #   스크립트 자체 기본값(10%/120초/300M)이 그대로 쓰인다.
+    [ -n "$cpu_quota" ]         && printf 'env=CPU_QUOTA=%s%%\n' "$cpu_quota"
+    [ -n "$packaging_timeout" ] && printf 'env=PACKAGING_TIMEOUT=%s\n' "$packaging_timeout"
+    [ -n "$mem_max" ]           && printf 'env=MEM_MAX=%sM\n' "$mem_max"
+    printf 'arg=-o\narg=%s\n' "$state_dir/last.json"
+    [ -n "$due_cmd" ] && printf 'arg=--command-id\narg=%s\n' "$due_cmd"
+    # 패키지 무결성 검증 — 둘 중 하나라도 1 이면 붙인다(OR).
+    #   (a) VERIFY_FILES : 설치 시 --verify-files 를 준 노드 고정값(기본 꺼짐). 구버전
+    #       agent.env 에는 이 키가 없으므로 :-0 으로 안전하게 꺼진 상태를 유지한다.
+    #   (b) due_verify   : 중앙이 이번 명령에 한해 켠 값(due_command_verify_files).
+    #       명령 단위라 다음 정기수집에는 따라붙지 않는다 — 기본 꺼짐이라는 대전제는 그대로다.
+    #   --verify-timeout 은 무결성 검증 단독 상한. CMD_TIMEOUT(20초)로는 무조건 잘린다.
+    if [ "${VERIFY_FILES:-0}" = 1 ] || [ "$due_verify" = 1 ]; then
+      printf 'arg=--verify-files\narg=--verify-timeout\narg=%s\n' "$VERIFY_TIMEOUT"
+    fi
+  fi
+  return 0
+}
+
+if [ "$POLL_ONCE" = 1 ]; then
+  vg_poll_once
+  exit $?
+fi
 
 # ---------- 자기계측: 이 실행이 쓴 피크 메모리·CPU 를 잰다 (담당자 안심용) ----------
 #   1순위: 이번 실행 전용 systemd scope의 cgroup(memory.peak·cpu.stat).

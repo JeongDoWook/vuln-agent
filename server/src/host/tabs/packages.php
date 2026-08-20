@@ -16,14 +16,25 @@ declare(strict_types=1);
     //   "미수행"과 "0건"을 절대 합치지 않는다 — 합치면 검사도 안 한 자산이 "정상"으로 보인다.
     //   어휘도 단정하지 않는다: 운영자가 직접 고친 파일일 수 있으므로 "변조됨"이 아니라
     //   "패키지 원본과 다름(관측)" 이다(nofix.php 의 EOL 표현과 같은 원칙).
+    //   "미수행"(안 걸었음) · "미지원"(걸었는데 노드가 못 함) · "부분 결과"(잘림) 는 서로 다른
+    //   상태다. 셋을 뭉뚱그리면 각각의 대응(걸기 / 노드 갱신 / 상한 늘리기)이 사라진다.
     $integChecked = !empty($scan['integrity_checked']);
     $integTotal   = (int) ($scan['integrity_total'] ?? 0);
     $integPartial = !empty($scan['integrity_partial']);
+    // 미지원 = 마지막 무결성 명령이 done 인데 그 명령이 만든 스캔에 무결성 결과가 없다.
+    //   판정은 vg_host_load_verify_support()(명령↔스캔 연결)가 하고 여기서는 표기만 한다.
+    $verifyUnsupported = !$integChecked && is_array($verifySupport) && !$verifySupport['supported'];
     if (!$integChecked) {
         // 미수행일 때는 설명 대신 켜는 자리로 데려간다 — 이 탭의 단독 버튼은 없앴다(무결성은
         //   별도 스캔이 아니라 수집 실행 안의 한 단계라, 진입점이 수집 제어 하나로 모였다).
-        $integTone = 'muted';
-        $integText = '';
+        //   단 '미지원'(걸었는데 노드가 못 함)은 안내가 다르다 — 앵커가 아니라 노드 갱신이 답이다.
+        $integTone = $verifyUnsupported ? 'med' : 'muted';
+        $integText = $verifyUnsupported
+            ? '이 노드의 에이전트가 무결성 검사를 지원하지 않습니다 — 명령(#'
+                . (int) $verifySupport['command_id'] . ')은 수행됐지만 결과에 무결성이 없습니다. '
+                . '노드에서 install-agent.sh 를 다시 실행하면(또는 agent_push.sh --with-runner) 해결됩니다. '
+                . 'rpm·dpkg 가 둘 다 없는 노드도 같은 상태가 됩니다.'
+            : '';
     } elseif ($integTotal === 0) {
         $integTone = 'ok';
         $integText = '패키지 원본과 다른 파일이 관측되지 않았습니다.';
@@ -44,7 +55,12 @@ declare(strict_types=1);
     ?>
     <div class="card">
       <strong>패키지 무결성</strong>
-      <?= vg_badge($integChecked ? ($integTotal === 0 ? '정상' : '원본과 다름 ' . number_format($integTotal) . '건') : '미수행', $integTone) ?>
+      <?= vg_badge(
+            $integChecked ? ($integTotal === 0 ? '정상' : '원본과 다름 ' . number_format($integTotal) . '건')
+                          : ($verifyUnsupported ? '미지원' : '미수행'),
+            $integTone,
+            $verifyUnsupported ? '무결성 포함으로 실행했는데 결과가 오지 않았습니다 — 노드의 에이전트가 옛 버전입니다.' : ''
+        ) ?>
       <?php if ($integPartial): ?><?= vg_badge('부분 결과', 'med', '제한시간·줄수 상한으로 잘렸습니다. 0건이 "깨끗함"을 뜻하지 않습니다.') ?><?php endif; ?>
       <?php if ($integAt !== ''): ?><span class="why" title="<?= vg_h($integAt) ?>"> · <?= vg_h(substr($integAt, 0, 16)) ?> 검사</span><?php endif; ?>
       <?php if ($integText !== ''): ?><span class="why"> · <?= vg_h($integText) ?></span><?php endif; ?>
