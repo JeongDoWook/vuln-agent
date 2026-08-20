@@ -75,12 +75,31 @@ $eq('상한 조회', vg_setting_max('session.absolute_minutes', 0), 1440);
 $eq('정의 없는 키의 상한은 기본값', vg_setting_max('없는.키', 42), 42);
 
 // 정의 자체의 무결성 — min>max 나 빈 라벨이면 설정 화면이 조용히 망가진다.
+//   타입은 설정 화면이 아는 두 가지뿐이다(int=숫자 입력, url=주소 입력). 모르는 타입이 들어오면
+//   화면이 어떤 입력을 그릴지 못 정하므로 여기서 막는다.
 foreach (vg_setting_defs() as $key => $def) {
     $eq("정의 min<max ($key)", $def['min'] < $def['max'], true);
     $eq("정의 라벨 있음 ($key)", $def['label'] !== '', true);
     $eq("정의 설명 있음 ($key)", $def['desc'] !== '', true);
-    $eq("정의 타입 int ($key)", $def['type'], 'int');
+    $eq("정의 타입 허용값 ($key)", in_array($def['type'], ['int', 'url'], true), true);
 }
+
+// 주소 항목(type=url) — 여기서 통과한 값이 그대로 서버측 HTTP 호출의 목적지가 되므로,
+//   스킴·경로 검증이 무너지면 안 된다.
+$eq('빈 주소는 거절', vg_setting_url_error('', 255) !== null, true);
+$eq('http 주소 허용', vg_setting_url_error('http://172.17.0.1:8000', 255), null);
+$eq('https 주소 허용', vg_setting_url_error('https://reports.example.com', 255), null);
+$eq('끝 슬래시만 있는 것은 경로 아님', vg_setting_url_error('http://10.0.0.5:8000/', 255), null);
+$eq('다른 스킴은 거절', vg_setting_url_error('ftp://example.com', 255) !== null, true);
+$eq('스킴 없는 값은 거절', vg_setting_url_error('172.17.0.1:8000', 255) !== null, true);
+$eq('경로가 붙으면 거절', vg_setting_url_error('http://example.com/jobs', 255) !== null, true);
+$eq('질의문자열이 붙으면 거절', vg_setting_url_error('http://example.com?a=1', 255) !== null, true);
+$eq('길이 초과는 거절', vg_setting_url_error('http://' . str_repeat('a', 300), 255) !== null, true);
+
+// 문자열 설정 리더 — 저장된 값이 없으면 호출부 기본값이 그대로 나와야 한다(정수와 같은 규약).
+$eq('설정 없으면 문자열 폴백', vg_setting_str('report.api_base_url', 'http://fallback:1'), 'http://fallback:1');
+$eq('정수 항목 판별', vg_setting_is_int('report.poll_interval_seconds'), true);
+$eq('주소 항목 판별', vg_setting_is_int('report.api_base_url'), false);
 
 putenv('UI_PER_PAGE_OPTIONS');
 putenv('UI_PER_PAGE_DEFAULT');

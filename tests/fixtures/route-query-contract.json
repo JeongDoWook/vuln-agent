@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "snapshot": "2026-08-15",
+  "snapshot": "2026-08-20",
   "routes": {
     "/activity.php": {"methods":["GET"],"auth":"menu:activity","query_keys":["action","from","ip","page","per_page","q","scope","to","user"],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},
     "/advisories.php": {"methods":["GET"],"auth":"menu:advisories","query_keys":["page","per_page","q","scope"],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},
@@ -43,6 +43,8 @@
     "/packages.php": {"methods":["GET"],"auth":"menu:catalog","query_keys":["eco","manager","page","per_page","q","risk","sort","tab"],"response":"html","in_repo_callers":["server/src/view/nav.php","server/public/language-packages.php"],"external_consumers":["browser_bookmark"]},
     "/permissions.php": {"methods":["GET","POST"],"auth":"menu:permissions","query_keys":[],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},
     "/profile.php": {"methods":["GET","POST"],"auth":"login","query_keys":[],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},
+    "/report-job-create.php": {"methods":["POST"],"auth":"menu:assets","query_keys":[],"response":"json","in_repo_callers":["server/public/assets/js/host.js"],"external_consumers":["unknown"]},
+    "/report-job-status.php": {"methods":["GET"],"auth":"menu:assets","query_keys":["job"],"response":"json","in_repo_callers":["server/public/assets/js/host.js"],"external_consumers":["unknown"]},
     "/sbom.php": {"methods":["GET","HEAD"],"auth":"menu:assets","query_keys":["cid","format","host","page","per_page","scan_id","view"],"response":"json_download","in_repo_callers":["server/public/host.php","server/public/container.php"],"external_consumers":["sbom_client","browser_bookmark"]},
     "/segment-map.php": {"methods":["GET"],"auth":"menu:assets","query_keys":[],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},
     "/settings.php": {"methods":["GET","POST"],"auth":"menu:settings","query_keys":[],"response":"html","in_repo_callers":["server/src/view/nav.php"],"external_consumers":["browser_bookmark"]},

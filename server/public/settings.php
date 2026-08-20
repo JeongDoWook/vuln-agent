@@ -21,6 +21,8 @@ require_once __DIR__ . '/../src/setting.php';  // vg_setting_defs / vg_setting_g
 //   경로라 거기서 require 하면 값 하나 때문에 판정 로직 전체를 요청마다 끌어오게 된다.
 //   (세션 상수는 auth.php 가 이미 정의했다.)
 require_once __DIR__ . '/../src/compliance.php';
+// AI 보고서 기본값 상수(VG_REPORT_*). 같은 이유로 이 화면에서만 로드한다.
+require_once __DIR__ . '/../src/report_job.php';
 vg_require_menu('settings');
 
 $pdo = vg_pdo();
@@ -44,15 +46,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($defs as $key => $def) {
                 if (!array_key_exists($key, $posted)) { continue; }
                 $raw = trim((string) $posted[$key]);
-                $int = filter_var($raw, FILTER_VALIDATE_INT);
-                if ($int === false || $int < (int) $def['min'] || $int > (int) $def['max']) {
-                    // 문제가 난 입력 자체에 붙인다 — 상단에 문구만 모아 두면 항목이 아홉 개일 때
-                    //   어느 칸을 고쳐야 하는지 눈으로 되짚어야 했다.
-                    $fieldErr[$key] = sprintf('%d~%d 사이의 정수만 가능합니다.', (int) $def['min'], (int) $def['max']);
-                    continue;
+                if (vg_setting_is_int($key)) {
+                    $int = filter_var($raw, FILTER_VALIDATE_INT);
+                    if ($int === false || $int < (int) $def['min'] || $int > (int) $def['max']) {
+                        // 문제가 난 입력 자체에 붙인다 — 상단에 문구만 모아 두면 항목이 아홉 개일 때
+                        //   어느 칸을 고쳐야 하는지 눈으로 되짚어야 했다.
+                        $fieldErr[$key] = sprintf('%d~%d 사이의 정수만 가능합니다.', (int) $def['min'], (int) $def['max']);
+                        continue;
+                    }
+                    $value = (string) $int;
+                    $logged = $int;
+                } else {
+                    // 주소 항목(type=url). 여기서 거르는 값이 그대로 서버측 HTTP 호출의
+                    //   목적지가 되므로, 스킴을 http/https 로 못박고 경로·질의는 붙이지 못하게 한다
+                    //   (base URL 자리다 — 뒤에 '/jobs/' 를 우리가 붙인다).
+                    $err2 = vg_setting_url_error($raw, (int) $def['max']);
+                    if ($err2 !== null) { $fieldErr[$key] = $err2; continue; }
+                    $value = rtrim($raw, '/');
+                    $logged = $value;
                 }
-                $up->execute([$key, (string) $int, (string) $def['desc']]);
-                $changed[$key] = $int;
+                $up->execute([$key, $value, (string) $def['desc']]);
+                $changed[$key] = $logged;
             }
             if ($changed) {
                 // 무엇을 얼마로 바꿨는지까지 남긴다 — 판정 기준이 바뀌면 과거 판정 결과의
@@ -119,25 +133,34 @@ vg_header('설정', 'settings');
         <div class="card__body setting-form setting-form--grid">
           <?php foreach ($byGroup[$gkey] as $key => $def):
               $id  = 'set-' . str_replace('.', '-', $key);
-              $def_val = vg_setting_default($key);
+              // 정수든 주소든 화면은 문자열 하나를 그린다 — 기본값도 같은 모양으로 받는다.
+              $def_val = vg_setting_default_str($key);
+              $isInt = vg_setting_is_int($key);
               // 저장된 값이 없으면 실제로 쓰이는 값(기본값)을 채운다 — 빈 칸으로 두면
               //   저장 버튼 한 번에 전 항목이 "정수만 가능합니다"로 거절된다.
-              $val = $cur[$key] ?? ($def_val !== null ? (string) $def_val : '');
+              $val = $cur[$key] ?? ($def_val !== null ? $def_val : '');
               if (isset($fieldErr[$key])) { $val = trim((string) ($posted[$key] ?? '')); }
               $isErr = isset($fieldErr[$key]);
-              $showDefault = $def_val !== null && $val !== (string) $def_val;
+              $showDefault = $def_val !== null && $val !== $def_val;
           ?>
             <label class="field<?= $isErr ? ' field--err' : '' ?>" for="<?= vg_h($id) ?>">
               <?= vg_h((string) $def['label']) ?>
-              <input type="number" id="<?= vg_h($id) ?>" name="setting[<?= vg_h($key) ?>]"
-                     value="<?= vg_h($val) ?>"
-                     min="<?= (int) $def['min'] ?>" max="<?= (int) $def['max'] ?>" step="1"
-                     aria-describedby="<?= vg_h($id) ?>-why"<?= $isErr ? ' aria-invalid="true"' : '' ?>>
+              <?php if ($isInt): ?>
+                <input type="number" id="<?= vg_h($id) ?>" name="setting[<?= vg_h($key) ?>]"
+                       value="<?= vg_h($val) ?>"
+                       min="<?= (int) $def['min'] ?>" max="<?= (int) $def['max'] ?>" step="1"
+                       aria-describedby="<?= vg_h($id) ?>-why"<?= $isErr ? ' aria-invalid="true"' : '' ?>>
+              <?php else: ?>
+                <input type="url" id="<?= vg_h($id) ?>" name="setting[<?= vg_h($key) ?>]"
+                       value="<?= vg_h($val) ?>" maxlength="<?= (int) $def['max'] ?>"
+                       aria-describedby="<?= vg_h($id) ?>-why"<?= $isErr ? ' aria-invalid="true"' : '' ?>>
+              <?php endif; ?>
               <span class="why" id="<?= vg_h($id) ?>-why">
-                <?= vg_h((string) $def['desc']) ?> (<?= (int) $def['min'] ?>~<?= (int) $def['max'] ?>)
+                <?= vg_h((string) $def['desc']) ?>
+                <?= $isInt ? ' (' . (int) $def['min'] . '~' . (int) $def['max'] . ')' : '' ?>
               </span>
               <?php if ($showDefault): ?>
-                <span class="field__default">기본값 <?= (int) $def_val ?></span>
+                <span class="field__default">기본값 <?= vg_h((string) $def_val) ?></span>
               <?php endif; ?>
               <?php if ($isErr): ?>
                 <span class="field__err" role="alert"><?= vg_h($fieldErr[$key]) ?></span>

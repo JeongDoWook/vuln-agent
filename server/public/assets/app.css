@@ -2801,3 +2801,34 @@ form.card .btn--primary:active { transform: translateY(0); }
  * 못박는다 — 새 값을 만들지 않고 --ctl-h 를 그대로 쓴다. 도움말은 아래로 밀려 정렬을 안 깬다. */
 .form-grid > .field { align-content: start; }
 .form-grid > .field > input { height: var(--ctl-h); }
+
+/* --- AI 보고서 카드(server/src/host/report.php) ------------------------------
+ * 카드 머리(제목 + 생성 버튼) · 진행 상태 줄 · 결과 상자.
+ * 색은 전부 기존 토큰이라 다크 절이 값만 갈아끼운다 — 여기서 새 토큰을 선언하지 않는다.
+ * 결과 본문은 형식이 정해지지 않은 plain text 라 <pre> 로 그린다: 줄바꿈은 살리되
+ * 긴 줄은 접어서(pre-wrap + anywhere) 카드가 가로로 터지지 않게 한다. */
+.report-job__heading { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.report-job__heading strong { font-size: var(--fs-lg); }
+.report-job__status { display: flex; align-items: center; gap: .5rem; margin: .75rem 0 0; color: var(--text-2); font-size: var(--fs-sm); }
+/* display 를 주면 브라우저 기본 [hidden] 규칙(display:none)을 이 클래스가 이겨서, 숨겨 둔 상태 줄이
+ * 늘 보인다 — 실제로 완료된 job 만 있는 화면에 "생성 중" 이 떠 있었다. 명시적으로 되돌린다. */
+.report-job__status[hidden] { display: none; }
+.report-job__result {
+  margin: .75rem 0 0;
+  padding: var(--sp-2);
+  max-height: 22rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.report-job__table { margin-top: var(--sp-2); }
+
+/* 좁은 화면에선 제목과 버튼을 세로로 쌓는다(다른 카드 머리와 같은 분기점). */
+@media (max-width: 640px) {
+  .report-job__heading { flex-direction: column; align-items: flex-start; }
+}

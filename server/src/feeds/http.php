@@ -122,10 +122,17 @@ function vg_ssrf_guard_url(string $url): void {
  *   그렇다고 리다이렉트 자체를 끌 수도 없다 — EPSS 는 실제로 epss.cyentia.com 이
  *   epss.empiricalsecurity.com 으로 301 리다이렉트한다(2026-07-13 실측, 다른 4개 피드는 무리다이렉트).
  *   그래서 FOLLOWLOCATION 은 끄고 여기서 홉마다 vg_ssrf_guard_url 로 재검사하며 최대 5홉을 따라간다.
+ *
+ *   $allowInternal 은 **사내 인프라를 일부러 부르는 호출**을 위한 좁은 예외다(AI 보고서 API 는
+ *   도커 브리지 게이트웨이 172.17.0.1 에 있어 위 차단대역에 정확히 걸린다 — 운영 실측
+ *   2026-08-20). 목적지가 사용자 입력이 아니라 **관리자가 설정에 넣은 인프라 주소**일 때만
+ *   쓴다. 예외 범위를 최소로 두려고 이 모드에서는 **리다이렉트를 아예 따라가지 않는다** —
+ *   3xx 를 그대로 돌려주므로 요청은 설정된 그 호스트 하나로 끝난다(302 로 내부 다른 대상에
+ *   끌려갈 여지가 없다).
  * @return array{code:int,body:string,error:string}
  */
-function vg_http_follow(string $url, array $curlOpts, int $maxRedirects = 5): array {
-    vg_ssrf_guard_url($url);
+function vg_http_follow(string $url, array $curlOpts, int $maxRedirects = 5, bool $allowInternal = false): array {
+    if (!$allowInternal) { vg_ssrf_guard_url($url); }
     for ($hop = 0; ; $hop++) {
         $ch = curl_init($url);
         curl_setopt_array($ch, $curlOpts);
@@ -135,7 +142,7 @@ function vg_http_follow(string $url, array $curlOpts, int $maxRedirects = 5): ar
         $next = curl_getinfo($ch, CURLINFO_REDIRECT_URL);
         curl_close($ch);
 
-        if (in_array($code, [301, 302, 303, 307, 308], true) && $next) {
+        if (!$allowInternal && in_array($code, [301, 302, 303, 307, 308], true) && $next) {
             if ($hop >= $maxRedirects) {
                 return ['code' => 0, 'body' => '', 'error' => 'SSRF 방어: 리다이렉트 한도 초과'];
             }
@@ -148,7 +155,9 @@ function vg_http_follow(string $url, array $curlOpts, int $maxRedirects = 5): ar
 }
 
 // $maxBytes>0 이면 응답이 그 크기를 넘는 순간 전송을 중단한다(OSV 커널 등 거대 응답 OOM 방어).
-function vg_http_json(string $method, string $url, $body = null, array $headers = [], int $timeout = 90, int $maxBytes = 0): array {
+// $allowInternal 은 vg_http_follow 로 그대로 넘어간다 — 사내 인프라를 일부러 부르는 호출 전용
+// (근거·범위는 vg_http_follow 주석). 피드 커넥터는 절대 켜지 않는다(URL 이 사용자 입력이다).
+function vg_http_json(string $method, string $url, $body = null, array $headers = [], int $timeout = 90, int $maxBytes = 0, bool $allowInternal = false): array {
     $hdr = array_merge(['Accept: application/json'], $headers);
     $opt = [
         CURLOPT_RETURNTRANSFER  => true,
@@ -171,7 +180,7 @@ function vg_http_json(string $method, string $url, $body = null, array $headers 
         };
     }
     $opt[CURLOPT_HTTPHEADER] = $hdr;
-    $r = vg_http_follow($url, $opt);
+    $r = vg_http_follow($url, $opt, 5, $allowInternal);
     if ($maxBytes > 0 && $r['code'] === 0) {
         return ['code' => 0, 'json' => null, 'error' => $r['error'] !== '' ? $r['error'] : "응답이 상한({$maxBytes}B) 초과로 건너뜀"];
     }

@@ -33,6 +33,7 @@ require_once __DIR__ . '/../src/host/queries.php';   // vg_host_load_*_tab — �
 require_once __DIR__ . '/../src/host/depgraph.php';  // 묶음 조회 + 전이 의존성 판정 셀
 require_once __DIR__ . '/../src/host/hero.php';      // vg_host_render_hero — 탭 줄 위 머리 렌더
 require_once __DIR__ . '/../src/host/grade.php';     // vg_host_render_grade
+require_once __DIR__ . '/../src/host/report.php';    // AI 보고서 카드(생성·진행·이력)
 require_once __DIR__ . '/../src/host/tabs.php';      // vg_host_render_tab — 활성 탭 파일만 require
 vg_require_menu_any('assets', 'findings');   // 자산 상세: 자산 목록·탐지 결과에서 함께 열린다
 
@@ -64,6 +65,8 @@ $suppEvidence = ['errata' => [], 'changelog' => [], 'debsecan' => []];   // 억�
 $suppLayers = [];        // 억제 근거 겹별 건수(스캔 전체)
 $staleLibs = ['total' => 0, 'rows' => []];   // 재시작 필요(옛 라이브러리를 물고 있는 프로세스)
 $gradeSignals = [];      // 등급 제안 근거 신호(자산 설정 탭에서만 계산한다)
+$reportJobs = ['rows' => [], 'total' => 0];   // AI 보고서 이력(최신순 상한)
+$reportActive = null;    // 아직 안 끝난 보고서 job — 있으면 화면이 열리자마자 폴링을 이어간다
 
 $counts =['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $processCount = 0; $runtimeTotal = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
@@ -110,6 +113,10 @@ try {
         // 대기 중인 수집 명령은 자산 설정 권한이 있는 사람에게만 보여준다(인가는 화면이 확정한다).
         if (vg_can('assets')) {
             $pendingCommands = vg_host_load_pending_commands($pdo, $hostId);
+            // AI 보고서 이력도 같은 인가 범위다. 스캔 이력이 없는 자산에서도 보고서 작업은
+            //   만들 수 있으므로, 최신 스캔 유무와 무관하게 여기서 읽는다 — 아래 if ($scan)
+            //   안에 두면 미수집 자산에서 진행 중 job 을 새로고침 뒤에 못 이어간다.
+            ['jobs' => $reportJobs, 'active' => $reportActive] = vg_host_load_report_jobs($pdo, $hostId);
         }
         $scan        = vg_host_load_latest_scan($pdo, $hostId);
         $latestAgent = vg_host_load_latest_agent_version($pdo);
@@ -286,6 +293,8 @@ vg_alert($agentErr);
            안의 렌더는 중복이라 걷었다(tabs/manage.php). 인가는 그 파일이 갖던 것과 같다. */ ?>
   <?php if (vg_can('assets')): ?>
     <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>
+    <?php /* AI 보고서도 수집 제어와 같은 자리(탭과 무관한 자산 단위 작업)다. 인가 범위도 같다. */ ?>
+    <?php vg_host_render_report($hostId, $agentCsrf, $reportJobs, $reportActive); ?>
   <?php endif; ?>
 
   <?php /* 탭 줄은 한 줄(1단)이다 — 2단(위험·구성·준거·이력 + 하위 탭)은 "탭을 타고 타고" 들어가야

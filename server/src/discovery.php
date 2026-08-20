@@ -87,12 +87,11 @@ const VG_DISCOVERY_SCHEMA_VERSION = 1;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 문자열 설정값. setting.php 에는 정수 리더(vg_setting_int)만 있어서 포트 목록을 못 읽는다.
- *   전체 로드 캐시(vg_settings_all)는 그대로 재사용한다 — 여기서 따로 쿼리하지 않는다.
+ * 문자열 설정값. 예전엔 setting.php 에 정수 리더(vg_setting_int)밖에 없어서 여기 따로 있었다 —
+ *   지금은 같은 구현이 vg_setting_str() 로 올라갔으므로 호출부를 안 건드리고 위임만 한다.
  */
 function vg_discovery_setting_str(string $key, string $default): string {
-    $raw = trim((string) (vg_settings_all()[$key] ?? ''));
-    return $raw !== '' ? $raw : $default;
+    return vg_setting_str($key, $default);
 }
 
 /**
