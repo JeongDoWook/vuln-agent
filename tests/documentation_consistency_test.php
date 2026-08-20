@@ -108,8 +108,8 @@ foreach (['에이전트 키', 'caddy-root.crt', 'sudo bash install-agent.sh', '�
 }
 
 $readmeFlows = [
-    'docs/readme-flow.svg' => 'viewBox="0 0 1400 720"',
-    'docs/readme-flow-mobile.svg' => 'viewBox="0 0 720 1180"',
+    'docs/readme-flow.svg' => 'viewBox="0 0 1400 900"',
+    'docs/readme-flow-mobile.svg' => 'viewBox="0 0 720 1580"',
 ];
 foreach ($readmeFlows as $relativePath => $expectedViewBox) {
     $flowPath = $root . '/' . $relativePath;
