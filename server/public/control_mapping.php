@@ -160,85 +160,92 @@ vg_header('통제 기준 매핑', 'control_mapping');
          href="/control_mapping.php?fw=<?= urlencode($code) ?>"><?= vg_h($label) ?></a>
     <?php endforeach; ?>
   </div>
-  <p class="why">기반시설 U-코드는 위 <a href="/kisa-u.php">기반시설 U-코드</a> 탭이 정본입니다.
-    거기는 가이드 전체 항목을 분모로 놓아 미점검 항목까지 보입니다.</p>
-
   <?php
-  // 결론을 앞에 세운다(compliance.php 와 같은 원칙) — 예전엔 "매핑된 점검 항목 / 점검 결과"
-  //   두 숫자뿐이라, 표를 다 훑기 전엔 이 기준에서 무엇이 걸렸는지 알 수 없었다.
-  //   단위를 라벨에 붙인다: 건(점검 결과)과 종(통제 가짓수)이 한 줄에 섞여 있다.
+  /* 결론을 앞에 세운다(compliance.php 와 같은 원칙) — 예전엔 "매핑된 점검 항목 / 점검 결과"
+   *   두 숫자뿐이라, 표를 다 훑기 전엔 이 기준에서 무엇이 걸렸는지 알 수 없었다.
+   *   단위를 라벨에 붙인다: 건(점검 결과)과 종(통제 가짓수)이 한 줄에 섞여 있다.
+   *   격자를 손으로 짜지 않고 vg_kpi_strip() 에 맡긴다(kisa-u.php 와 같은 줄) — 항목을
+   *   나열하는 격자가 아니라 **요약 지표**라 표로 바꾸지 않는다. 나열이던 건 아래 통제
+   *   목록이고, 그쪽이 표가 됐다. */
+  vg_kpi_strip([
+      ['value' => number_format($failTotal),        'label' => '위반(FAIL) · 건',      'tone' => 'crit'],
+      ['value' => number_format($failControls),     'label' => '위반 있는 통제 · 종',   'tone' => 'high'],
+      ['value' => number_format($noResultControls), 'label' => '점검 결과 없음 · 종',   'tone' => 'muted'],
+      ['value' => number_format($mappedRules),      'label' => '매핑된 점검 항목 · 개'],
+      ['value' => number_format($findingTotal),     'label' => '최신 스캔 점검 결과 · 건'],
+  ], ['compact' => true]);
   ?>
-  <div class="cards cards--grid">
-    <div class="kpi kpi--sm tone-crit"><b><?= number_format($failTotal) ?></b><span>위반(FAIL) · 건</span></div>
-    <div class="kpi kpi--sm tone-high"><b><?= number_format($failControls) ?></b><span>위반 있는 통제 · 종</span></div>
-    <div class="kpi kpi--sm tone-muted"><b><?= number_format($noResultControls) ?></b><span>점검 결과 없음 · 종</span></div>
-    <div class="kpi kpi--sm"><b><?= number_format($mappedRules) ?></b><span>매핑된 점검 항목 · 개</span></div>
-    <div class="kpi kpi--sm"><b><?= number_format($findingTotal) ?></b><span>최신 스캔 점검 결과 · 건</span></div>
-  </div>
 <?php /* 같은 말이 부제에 이미 있다 — 여기서 한 번 더 적지 않는다(부제가 정본). */ ?>
 
   <?php
-  // 통제 ID·통제명 모두 상세로 들어가는 링크다 — "누르면 들어간다"가 요구사항이라
-  //   누르는 면적을 ID 한 조각으로 좁혀 두지 않는다.
   $detailHref = fn(array $r): string => '/control.php?fw=' . urlencode($fw)
       . '&control=' . urlencode((string) $r['control_id']);
   $policy = vg_compliance_policy();
+  // 판정 어휘는 control.php·compliance.php 와 같은 함수로 뽑는다(SSOT) — 0건을 준수로 찍지
+  //   않는다는 원칙이 표의 판정 뱃지·미준수율 톤에 그대로 적용된다.
+  $status = fn(array $r): array => (int) $r['finding_cnt'] === 0
+      ? ['label' => '점검 결과 없음', 'tone' => 'muted']
+      : vg_compliance_status((int) $r['fail_cnt'], (int) $r['na_cnt'] > 0, $policy['partial_max']);
   ?>
-  <div class="card">
-    <div class="card__body">
-      <?php if (!$rows): ?>
-        <?php vg_empty([
-            'icon'  => 'chart',
-            'title' => '이 기준에 매핑된 통제가 없습니다.',
-            'hint'  => '근거가 확인된 통제 매핑이 등록되면 이 목록에 표시됩니다.',
-        ]); ?>
-      <?php else: ?>
-        <ul class="ctrcard-grid">
-        <?php foreach ($rows as $r):
-            $findingCnt = (int) $r['finding_cnt'];
-            $failCnt    = (int) $r['fail_cnt'];
-            $naCnt      = (int) $r['na_cnt'];
-            // 판정 어휘는 control.php·compliance.php 와 같은 함수로 뽑는다(SSOT) — 0건을
-            //   준수로 찍지 않는다는 원칙이 카드 톤에도 그대로 적용된다.
-            $status = $findingCnt === 0
-                ? ['label' => '점검 결과 없음', 'tone' => 'muted']
-                : vg_compliance_status($failCnt, $naCnt > 0, $policy['partial_max']);
-        ?>
-          <li class="ctrcard tone-<?= vg_h($status['tone']) ?>">
-            <div class="ctrcard__head">
-              <a class="ctrcard__name" href="<?= vg_h($detailHref($r)) ?>">
-                <code class="why"><?= vg_h((string) $r['control_id']) ?></code>
-              </a>
-              <div class="ctrcard__badges">
-                <?= vg_badge($status['label'], $status['tone']) ?>
-              </div>
-            </div>
-            <a href="<?= vg_h($detailHref($r)) ?>"><?= vg_h((string) $r['control_name']) ?></a>
-            <div class="ctrcard__facts">
-              <span>매핑 점검 항목 <b><?= number_format((int) $r['mapped_rule_cnt']) ?></b>개</span>
-              <span class="why"><?= vg_trunc((string) ($r['codes'] ?? ''), 52) ?></span>
-            </div>
-            <div class="ctrcard__risk">
-              <?php if ($findingCnt === 0): ?>
-                <span class="why">아직 점검된 결과가 없습니다.</span>
-              <?php else:
-                  $why = 'PASS ' . number_format((int) $r['pass_cnt'])
-                       . ' · 판정 불가 ' . number_format($naCnt)
-                       . ' · 전체 ' . number_format($findingCnt) . '건';
-              ?>
-                <span class="why">FAIL <b><?= number_format($failCnt) ?></b> · <?= vg_h($why) ?></span>
-                <?php // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. ?>
-                <?= vg_meter($status['tone'] === 'ok' ? 'low' : $status['tone'], $failCnt / $findingCnt * 100,
-                             'FAIL ' . number_format($failCnt) . ' / ' . $why) ?>
-              <?php endif; ?>
-            </div>
-          </li>
-        <?php endforeach; ?>
-        </ul>
-      <?php endif; ?>
-      <?php if ($rows) { vg_page_nav($total, $perPage, $page); } ?>
-    </div>
-  </div>
-
+  <?php
+  /* 카드 격자 → **표**. 통제가 수십 종이면 카드는 스크롤만 길어지고 "어느 통제가 더 나쁜가" 를
+   *   나란히 비교할 수 없다(같은 이유로 컨테이너 탭·CCE 카탈로그도 표로 되돌렸다).
+   *   카드 안에 길게 깔리던 CCE 코드 목록(CCE-FILE-CRONTAB, CCE-FILE-GROUP, …)은 **개수만**
+   *   남기고 상세(control.php)로 내린다 — 그 목록이 카드 폭을 정하고 있었다. */
+  vg_table(
+      [
+          ['label' => '통제 코드', 'width' => '9%', 'class' => 'col-id'],
+          ['label' => '판정',     'width' => '7rem', 'nowrap' => true],
+          ['label' => '통제명'],
+          ['label' => '매핑 점검', 'align' => 'right', 'width' => '5.5rem', 'nowrap' => true,
+           'title' => '이 통제에 매핑된 CCE 점검 항목 수 — 코드 목록은 상세에 있습니다'],
+          // '결과' 는 세 값(FAIL·PASS·판정 불가)이 한 줄에 서야 행 높이가 안 늘어난다 —
+          //   18% 로 뒀더니 '판정 불가 455' 가 접혀 행이 3줄이 됐다(실측 1440px).
+          ['label' => '결과', 'width' => '23%'],
+          ['label' => '미준수율', 'width' => '12%',
+           'title' => 'FAIL ÷ 최신 스캔 점검 결과. 판정이 아니라 집계다.'],
+      ],
+      $rows,
+      [
+          'card'  => false,
+          'empty' => [
+              'icon'  => 'chart',
+              'title' => '이 기준에 매핑된 통제가 없습니다.',
+              'hint'  => '근거가 확인된 통제 매핑이 등록되면 이 목록에 표시됩니다.',
+          ],
+          'cell' => [
+              // 코드·통제명 둘 다에 링크를 건다 — "누르면 들어간다"가 요구사항이라 누르는
+              //   면적을 코드 한 조각으로 좁혀 두지 않는다(kisa-u.php 와 같은 규약).
+              0 => fn(array $r): string => '<a href="' . vg_h($detailHref($r)) . '"><code>'
+                  . vg_h((string) $r['control_id']) . '</code></a>',
+              1 => fn(array $r): string => vg_badge($status($r)['label'], $status($r)['tone']),
+              2 => fn(array $r): string => '<a class="body-link" href="' . vg_h($detailHref($r)) . '">'
+                  . vg_h((string) $r['control_name']) . '</a>',
+              3 => fn(array $r): string => number_format((int) $r['mapped_rule_cnt']),
+              // 0 인 값은 적지 않는다 — 신호는 FAIL 하나뿐인데 모든 행이 'PASS 0 · 판정 불가 0' 으로
+              //   채워지면 정작 읽어야 할 값을 덮는다(cce-rules.php·kisa-u.php 와 같은 어휘).
+              4 => function (array $r): string {
+                  if ((int) $r['finding_cnt'] === 0) { return '<span class="why">아직 점검된 결과가 없습니다.</span>'; }
+                  $parts = ['FAIL <b>' . number_format((int) $r['fail_cnt']) . '</b>'];
+                  if ((int) $r['pass_cnt'] > 0) { $parts[] = 'PASS ' . number_format((int) $r['pass_cnt']); }
+                  if ((int) $r['na_cnt'] > 0)   { $parts[] = '판정 불가 ' . number_format((int) $r['na_cnt']); }
+                  return implode(' <span class="why">·</span> ', $parts)
+                       . '<div class="why">전체 ' . number_format((int) $r['finding_cnt']) . '건</div>';
+              },
+              // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. 0% 라 색은 안 보인다.
+              5 => function (array $r) use ($status): string {
+                  $cnt = (int) $r['finding_cnt'];
+                  if ($cnt === 0) { return '<span class="why">–</span>'; }
+                  $fail = (int) $r['fail_cnt'];
+                  $tone = $status($r)['tone'];
+                  return vg_meter($tone === 'ok' ? 'low' : $tone, $fail / $cnt * 100,
+                                  'FAIL ' . number_format($fail) . ' / 전체 ' . number_format($cnt) . '건')
+                       . '<span class="why">' . number_format($fail / $cnt * 100, 1) . '%</span>';
+              },
+          ],
+      ]
+  );
+  if ($rows) { vg_page_nav($total, $perPage, $page); }
+  ?>
 <?php endif; ?>
 <?php vg_footer();

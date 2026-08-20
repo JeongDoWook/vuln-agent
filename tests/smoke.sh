@@ -910,7 +910,7 @@ phase "패키지 의존성 그래프(depgraph.php)"
 #   빈 화면이 아니라 설명으로 뜨는지를 고정한다.
 assert_contains "$packagebody" 'depgraph.php?id=' "설치 패키지 탭에서 의존성 그래프로 진입"
 depbody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID")
-assert_contains "$depbody" '무엇이 이 패키지를 끌어왔나' "의존성 그래프 화면 표시"
+assert_contains "$depbody" '전체 트리' "의존성 그래프 화면 표시"
 # 호스트(cid=0) 단위는 pom.xml 직접 선언 — 부모가 없어 트리 대신 목록으로 나온다.
 assert_contains "$depbody" 'pom.xml 직접 선언' "pom.xml 직접선언이 별도 목록으로 구분됨"
 assert_contains "$depbody" 'com.myco:myco-common' "pom 직접선언 패키지 표시"
@@ -922,6 +922,9 @@ assert_contains "$ctrdep" '루트' "SBOM 루트 표식행이 루트로 표시됨
 assert_contains "$ctrdep" 'myco-web' "루트(최상위 프로젝트) 표시"
 assert_contains "$ctrdep" 'myco-http' "직접 의존 표시"
 assert_contains "$ctrdep" 'myco-utf8' "전이 의존(3단계)까지 펼쳐짐"
+# 렌더 형태 고정 — 중첩 박스(.ctrcard 안의 .ctrcard)가 아니라 서버가 그린 가로 계층 트리다.
+assert_contains "$ctrdep" 'class="deptree__svg"' "의존성을 가로 계층 트리 SVG 로 그린다"
+assert_contains "$ctrdep" 'class="deptree__edge"' "부모→자식 연결선(곡선 엣지)이 실제로 그려진다"
 # 역추적 — 전이 의존에서 루트까지의 경로가 나와야 "무엇이 끌어왔나" 에 답이 된다.
 frombody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID&cid=$DEP_CID&mgr=npm&name=myco-utf8&ver=0.9.1&tab=from")
 assert_contains "$frombody" '이 패키지를 끌어온 경로' "역추적 탭 표시"
@@ -938,16 +941,20 @@ assert_not_contains "$emptydep" 'depgraph.php?id='"$WEB02_ID"'&amp;cid=' "엣지
 phase "컨테이너 드릴다운(container.php) + 컨테이너 SBOM"
 # --- 컨테이너 드릴다운(container.php) + 컨테이너 SBOM ------------------------
 # 컨테이너 안의 OS·패키지·프로세스·취약점은 처음부터 수집·저장되고 있었는데 읽는 화면이 없었다
-#   (자산 상세의 패키지 탭은 container_id = 0 으로 고정이었다). 계층 카드 → 상세 → 탭 →
+#   (자산 상세의 패키지 탭은 container_id = 0 으로 고정이었다). 목록 표 → 상세 → 탭 →
 #   컨테이너 SBOM 까지 실제로 이어지는지, 그리고 범위가 호스트와 안 섞이는지를 고정한다.
+#   목록은 계층 카드였다가 **조밀한 표**가 됐다 — 24개를 나란히 비교하는 게 이 탭의 목적이라
+#   행 하나에 컨테이너 하나를 놓는다(위험 분포 미터 + 등급별 건수 + 상세 링크 하나).
 printf "\n[컨테이너 드릴다운]\n"
 ctrtab=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=containers")
 assert_not_contains "$ctrtab" 'Fatal error' "컨테이너 탭이 오류 없이 렌더됨"
-assert_contains "$ctrtab" 'class="ctree__root"' "컨테이너 탭이 호스트를 루트로 둔 계층으로 렌더"
-assert_contains "$ctrtab" 'class="ctrcard' "컨테이너가 카드로 펼쳐짐"
-assert_contains "$ctrtab" 'container.php?id='"$WEB01_ID" "카드에서 컨테이너 상세로 들어가는 링크"
+assert_contains "$ctrtab" 'class="data-table' "컨테이너 탭이 표로 렌더"
+assert_contains "$ctrtab" 'data-label="위험 분포"' "행마다 위험 분포 칸이 있다"
+assert_contains "$ctrtab" 'class="riskbar"' "위험 분포가 세그먼트 미터로 그려짐"
+assert_contains "$ctrtab" '상세 →' "행마다 상세 링크 하나로 정리(버튼 3개 → 1개)"
+assert_contains "$ctrtab" 'container.php?id='"$WEB01_ID" "표에서 컨테이너 상세로 들어가는 링크"
 CTR_CID=$(grep -oE 'container\.php\?id='"$WEB01_ID"'&amp;cid=[A-Za-z0-9._%-]+' <<<"$ctrtab" | head -1 | sed 's/.*cid=//')
-if [ -n "$CTR_CID" ]; then ok "컨테이너 cid 확인 (=$CTR_CID)"; else no "컨테이너 카드에서 cid 를 못 찾음"; CTR_CID="api"; fi
+if [ -n "$CTR_CID" ]; then ok "컨테이너 cid 확인 (=$CTR_CID)"; else no "컨테이너 표에서 cid 를 못 찾음"; CTR_CID="api"; fi
 ctrbody=$(curl_ -s -b "$JAR" "$BASE/container.php?id=$WEB01_ID&cid=$CTR_CID")
 assert_not_contains "$ctrbody" 'Fatal error' "컨테이너 상세가 오류 없이 렌더됨"
 assert_contains "$ctrbody" '최고 위험도' "컨테이너 상세 히어로(위험도) 표시"

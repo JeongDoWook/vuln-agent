@@ -182,33 +182,21 @@ try {
     //   COUNT 는 조기 종료가 없어(전건을 세야 한다) 이 페이지에서 제일 무거운 질의다. 그래서
     //   새 인덱스가 필터 컬럼(is_deleted·release_*)까지 담아 **인덱스만 읽고** 끝나게 했다 —
     //   원본을 행마다 뒤지지 않는다(실측 55만 행: 풀 테이블 스캔 3.23초 → 커버링 0.34초).
-    //   소스별 요약 카드용 건수 — 무필터 진입 시 55만+ 행이 뒤섞여 막막한 문제의 진입점(작업 3).
+    //   소스별 건수 — 소스 셀렉트의 라벨(건수)과 아래 총건수 합산에 쓴다.
     //   src 선택과 무관하게 5종 전부 세되, q·rel 필터는 그대로 반영한다.
-    //   패키지·CVE distinct 건수도 같은 질의에 얹는다 — cve/pkg 컬럼은 이미 커버링 인덱스
-    //   (cve_id, pkg_name, is_deleted, release_*) 안이라 EXPLAIN 은 원본 조회 없이 "Using index"
-    //   만 나오지만(테이블 스캔은 없다), 두 COUNT(DISTINCT ..) 자체가 공짜는 아니다 — dev 무필터
-    //   실측(EXPLAIN + SHOW PROFILES, 570K행 tb_vendor_errata): COUNT(*) 단독 0.44s → 두 DISTINCT
-    //   추가 시 3.23s. 5개 테이블 합산 시 무필터 진입 한 번에 약 5s 가 더 걸린다(ubuntuoval 1.36s·
-    //   debtracker 0.49s·rhunfixed 0.01s 포함, kernel_cve_fix 는 소규모라 생략). 카드가 항상 5종
-    //   전부를 보여줘야 해서 src 필터로 이 비용을 피할 방법은 없다 — 사전집계 테이블(예:
-    //   packages.php 의 tb_package_summary 선례) 검토가 다음 단계다. 지금은 정확한 근거 없이
-    //   "인덱스만 읽어 싸다"고 적혀 있던 이전 주석을 실측치로 바로잡는다.
-    $srcCounts = []; $srcPkgCounts = []; $srcCveCounts = [];
+    //   **COUNT(*) 만 센다.** 예전엔 같은 질의에 COUNT(DISTINCT pkg)·COUNT(DISTINCT cve) 를
+    //   얹어 소스 카드의 미니바 두 줄을 그렸다. 그 두 DISTINCT 가 카드를 지운 지금 재실측
+    //   (SHOW PROFILES, 570,281행 tb_vendor_errata)에서도 **0.195s → 3.502s** 다 —
+    //   5개 테이블 합산이면 무필터 진입 한 번에 수 초를 카드 미니바에만 썼다는 뜻이다.
+    //   카드를 걷어내면서 그 비용도 같이 걷는다(무필터 진입 실측 0.33~0.64s).
+    $srcCounts = [];
     foreach (VG_VENDOR_SRC as $srcKey => $srcDef) {
         $srcCountParams = [];
         $srcWhere = vg_vendor_where($srcDef, $q, $rel, $srcCountParams);
-        $stmt = $pdo->prepare(
-            "SELECT COUNT(*) AS n, COUNT(DISTINCT {$srcDef['pkg']}) AS pkgs,"
-            . " COUNT(DISTINCT {$srcDef['cve']}) AS cves FROM {$srcDef['from']} WHERE $srcWhere"
-        );
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$srcDef['from']} WHERE $srcWhere");
         $stmt->execute($srcCountParams);
-        $agg = $stmt->fetch() ?: [];
-        $srcCounts[$srcKey]    = (int) ($agg['n'] ?? 0);
-        $srcPkgCounts[$srcKey] = (int) ($agg['pkgs'] ?? 0);
-        $srcCveCounts[$srcKey] = (int) ($agg['cves'] ?? 0);
+        $srcCounts[$srcKey] = (int) $stmt->fetchColumn();
     }
-    $maxSrcPkg = max($srcPkgCounts) ?: 1;
-    $maxSrcCve = max($srcCveCounts) ?: 1;
 
     // 총건수는 **위 5개를 더해서 낸다 — 세는 질의를 따로 던지지 않는다.**
     //   예전엔 같은 WHERE 로 UNION ALL COUNT 를 한 번 더 돌렸는데, $active 는 정의상
@@ -263,44 +251,34 @@ vg_header('판정 근거', 'vendor');
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php
-  // 소스별 진입점(작업 3) — 무필터로 들어왔을 때 5개 소스가 뒤섞인 채 페이지네이션만으로
-  //   넘겨야 하는 막막함을 줄인다. 카드마다 건수 옆에 패키지·CVE distinct 건수를 미니바로
-  //   얹어, 표로 내려가지 않아도 소스별 무게를 가늠할 수 있게 한다(카드 자체가 필터 진입점).
-  echo '<div class="cards">';
+  /* 소스 필터는 **셀렉트**다. 예전엔 목록 위에 소스 카드 5장을 깔고 그 카드가 곧 `?src=` 필터를
+   *   겸했는데(PR #474 가 그러면서 셀렉트를 지웠다), 카드 다섯 장이 화면 위쪽을 통째로 먹고도
+   *   하는 일은 필터 하나였다. 카드를 걷으면 필터가 통째로 사라지므로 **필터를 먼저 옮긴다** —
+   *   '전체 릴리스' 옆에 같은 툴바 컨트롤로 세우고, 카드가 갖고 있던 건수는 옵션 라벨이 받는다.
+   *   '전체 소스' 를 고르면 해제되므로(vg_toolbar 의 빈 옵션) 다시 눌러 푸는 토글과 결과가 같다. */
+  $srcOptions = [];
   foreach (VG_VENDOR_SRC as $k => $d) {
-      $on = $src === $k;
-      $href = '/vendor.php' . vg_qs(['src' => $on ? null : $k, 'page' => null]);
-      $pkgPct = $srcPkgCounts[$k] / $maxSrcPkg * 100;
-      $cvePct = $srcCveCounts[$k] / $maxSrcCve * 100;
-      echo '<div class="card' . ($on ? ' card--accent' : '') . '">'
-         . '<a href="' . vg_h($href) . '" title="' . vg_h($d['desc']) . '"><strong>' . vg_h($d['label']) . '</strong></a>'
-         . '<div class="card__body">'
-         . '<div>' . number_format($srcCounts[$k]) . '건</div>'
-         . vg_meter('low', $pkgPct, '패키지 ' . number_format($srcPkgCounts[$k]) . '종')
-         . vg_meter('med', $cvePct, 'CVE ' . number_format($srcCveCounts[$k]) . '건')
-         . '</div></div>';
+      $srcOptions[$k] = $d['label'] . ' · ' . number_format($srcCounts[$k]) . '건';
   }
-  echo '</div>';
-
-  $toolbar = [
+  vg_toolbar([
+      ['type' => 'select', 'name' => 'src', 'selected' => $src, 'empty_label' => '전체 소스',
+       'options' => $srcOptions],
       ['type' => 'select', 'name' => 'rel', 'selected' => $rel, 'empty_label' => '전체 릴리스',
        'options' => $relOptions],
       ['type' => 'search', 'name' => 'q', 'placeholder' => 'CVE 또는 패키지 검색 (예: CVE-2024, openssl)', 'value' => $q],
-  ];
-  // 탭으로 고른 소스(src)는 검색 폼 필드가 아니라, 폼 제출 시 사라지지 않도록 hidden 으로 함께 싣는다.
-  if ($src !== '') {
-      $toolbar[] = ['type' => 'hidden', 'name' => 'src', 'value' => $src, 'reset' => true];
-  }
-  vg_toolbar($toolbar);
+  ]);
 
   $hasFilter = $q !== '' || $rel !== '' || $src !== '';
 
   // 소스 칸은 탭으로 한 소스를 고르면 **모든 행이 같은 값**이다 — 탭이 이미 굵게 말하고 있는 걸
   //   행마다 다시 찍는 셈이라 그때는 뺀다. 폭은 남은 '상태' 칸이 가져간다.
   $showSrc = $src === '';
+  // 소스가 무엇을 답하는 데이터인지(VG_VENDOR_SRC 의 desc)는 카드 제목의 툴팁이 갖고 있었다 —
+  //   카드를 지우면서 그 한 줄을 이 칸의 툴팁으로 옮긴다(설명을 지우는 게 아니라 자리를 옮긴다).
   $srcCell = function ($r) {
       $d = VG_VENDOR_SRC[$r['src']] ?? null;
-      return '<span class="pill">' . vg_h($d !== null ? $d['label'] : (string) $r['src']) . '</span>';
+      return '<span class="pill"' . ($d !== null ? ' title="' . vg_h($d['desc']) . '"' : '') . '>'
+           . vg_h($d !== null ? $d['label'] : (string) $r['src']) . '</span>';
   };
 
   vg_table(

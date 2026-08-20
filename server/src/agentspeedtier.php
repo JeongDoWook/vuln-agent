@@ -25,15 +25,10 @@ const VG_AGENT_SPEED_TIER_NAME_KO = [
     'slow'      => '느림',
 ];
 
-/** 화면(host.php)의 <select> 옵션 라벨. CPU% 는 VG_AGENT_SPEED_TIER_MAP 에서 가져오므로
- *  매핑 값을 바꿔도 라벨이 손으로 복제한 숫자와 어긋나지 않는다. */
+/** 화면(host.php)의 <select> 옵션 라벨. 이름만 내보낸다 — 예전엔 괄호로 CPU%·MEM 까지
+ *  붙여 `매우 빠름 (CPU 80%·MEM 1024MB)` 처럼 셀렉트 한 칸이 통째로 높았는데,
+ *  고르는 사람이 보는 건 빠르냐 느리냐라 숫자는 읽힐 자리가 아니었다.
+ *  자원 배분의 정본은 그대로 VG_AGENT_SPEED_TIER_MAP 이다(정책은 안 바뀐다). */
 function vg_agent_speed_tier_label(string $tier): string {
-    $name = VG_AGENT_SPEED_TIER_NAME_KO[$tier] ?? $tier;
-    $cpu = VG_AGENT_SPEED_TIER_MAP[$tier]['cpu_quota_percent'] ?? null;
-    $mem = VG_AGENT_SPEED_TIER_MAP[$tier]['mem_max_mb'] ?? null;
-    $suffix = $tier === 'normal' ? ', 기본값' : '';
-    if ($cpu !== null && $mem !== null) {
-        return "{$name} (CPU {$cpu}%·MEM {$mem}MB{$suffix})";
-    }
-    return $cpu !== null ? "{$name} (CPU {$cpu}%{$suffix})" : $name;
+    return VG_AGENT_SPEED_TIER_NAME_KO[$tier] ?? $tier;
 }

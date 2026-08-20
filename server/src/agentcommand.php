@@ -18,9 +18,12 @@ const VG_AGENT_COMMAND_MIN_SCHEDULE_SECONDS = 30;
  * 즉시/예약 명령을 큐에 넣는다. $runAt 이 null 이면 즉시(다음 폴링 때 바로 수행 대상).
  *   과거 시각을 예약하면 거부한다 — 그런 명령은 "즉시"와 구별할 이유가 없고, 의도치 않은
  *   과거 입력을 조용히 즉시실행으로 흘리면 사용자가 예약이 걸렸다고 착각하게 된다.
+ *   $verifyFiles 는 이 실행 한 번에만 패키지 무결성 검사(rpm -Va / dpkg --verify)를 붙인다.
+ *   기본 false 다 — 설치된 모든 파일을 해시해 대상 서버에 수 분간 부하가 걸리므로, 켜는 것은
+ *   언제나 사람의 명시적 선택이어야 한다(에이전트의 대전제: 대상 서버에 무리를 주지 않는다).
  * @return int 생성된 agent_command_id
  */
-function vg_agent_command_create(PDO $pdo, int $hostId, ?string $runAt, ?int $userId): int {
+function vg_agent_command_create(PDO $pdo, int $hostId, ?string $runAt, ?int $userId, bool $verifyFiles = false): int {
     $st = $pdo->prepare('SELECT 1 FROM tb_host WHERE host_id = ? AND is_deleted = 0');
     $st->execute([$hostId]);
     if ($st->fetchColumn() === false) {
@@ -40,15 +43,18 @@ function vg_agent_command_create(PDO $pdo, int $hostId, ?string $runAt, ?int $us
     }
 
     $pdo->prepare(
-        'INSERT INTO tb_agent_command (host_id, run_at, created_by) VALUES (?, ?, ?)'
-    )->execute([$hostId, $runAtNormalized, $userId]);
+        'INSERT INTO tb_agent_command (host_id, run_at, verify_files, created_by) VALUES (?, ?, ?, ?)'
+    )->execute([$hostId, $runAtNormalized, $verifyFiles ? 1 : 0, $userId]);
     $commandId = (int) $pdo->lastInsertId();
 
+    // 무결성 포함 여부를 감사로그 메시지에 남긴다 — 대상 서버에 수 분간 부하를 거는 동작이라
+    //   누가 언제 걸었는지가 사후에 반드시 필요하다(data 에만 두면 목록에서 안 보인다).
+    $verifyNote = $verifyFiles ? ' · 무결성 검사 포함' : '';
     vg_log_activity(
         $pdo, 'HOST', $hostId,
         $runAtNormalized === null ? 'agent_command_immediate' : 'agent_command_scheduled',
-        $runAtNormalized === null ? '즉시 실행 명령 등록' : "예약 실행 명령 등록 ({$runAtNormalized})",
-        ['agent_command_id' => $commandId, 'run_at' => $runAtNormalized],
+        ($runAtNormalized === null ? '즉시 실행 명령 등록' : "예약 실행 명령 등록 ({$runAtNormalized})") . $verifyNote,
+        ['agent_command_id' => $commandId, 'run_at' => $runAtNormalized, 'verify_files' => $verifyFiles ? 1 : 0],
         $userId
     );
 
