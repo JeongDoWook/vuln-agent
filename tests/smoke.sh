@@ -927,7 +927,10 @@ assert_contains "$ctrdep" 'myco-http' "직접 의존 표시"
 assert_contains "$ctrdep" 'myco-utf8' "전이 의존(3단계)까지 펼쳐짐"
 # 렌더 형태 고정 — 중첩 박스(.ctrcard 안의 .ctrcard)가 아니라 서버가 그린 가로 계층 트리다.
 assert_contains "$ctrdep" 'class="deptree__svg"' "의존성을 가로 계층 트리 SVG 로 그린다"
-assert_contains "$ctrdep" 'class="deptree__edge"' "부모→자식 연결선(곡선 엣지)이 실제로 그려진다"
+assert_contains "$ctrdep" 'class="deptree__edge ' "부모→자식 연결선(곡선 엣지)이 실제로 그려진다"
+# 색은 정보다 — 깊이별 엣지 클래스와 등급 틴트(조치 대상만)가 실제로 붙는지 고정한다.
+assert_contains "$ctrdep" 'deptree__edge--d0' "엣지 농도가 깊이별로 갈린다"
+assert_contains "$ctrdep" 'class="legend legend--inline"' "노드 색이 무슨 뜻인지 범례로 밝힌다"
 # 역추적 — 전이 의존에서 루트까지의 경로가 나와야 "무엇이 끌어왔나" 에 답이 된다.
 frombody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID&cid=$DEP_CID&mgr=npm&name=myco-utf8&ver=0.9.1&tab=from")
 assert_contains "$frombody" '이 패키지를 끌어온 경로' "역추적 탭 표시"

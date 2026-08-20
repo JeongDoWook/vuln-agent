@@ -59,6 +59,7 @@ declare(strict_types=1);
          title="대상 패키지 역추적·다른 조회 단위"><?= vg_icon('chart') ?>의존성 그래프 화면</a>
     </div>
     <div class="card__body">
+      <?php vg_deptree_legend(); ?>
       <span class="why">노드를 누르면 그 패키지를 무엇이 끌어왔는지 볼 수 있습니다.</span>
     </div>
   </div>

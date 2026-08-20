@@ -248,6 +248,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
     if (!vg_pkgdep_children($graph, $target)) {
         vg_empty(['icon' => 'package', 'title' => '이 패키지가 끌어오는 의존성이 없습니다(말단 노드).']);
     } else {
+        vg_deptree_legend();
         $drawTree($target);
     }
     ?>
@@ -288,6 +289,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
     <strong>전체 트리</strong>
     <span class="why">루트 <?= number_format(count($rootsAll)) ?>개 중 <?= number_format($rootsShown) ?>개 표시
       · 노드 <?= number_format(count($graph['nodes'])) ?>개</span>
+    <?php vg_deptree_legend(); ?>
     <?php if ($rootsSkipped > 0): ?>
       <span class="why"><?= vg_badge('노드 상한(' . number_format(VG_PKGDEP_NODE_MAX) . '개)에서 잘림 · 이 페이지의 나머지 루트 ' . number_format($rootsSkipped) . '개 미표시', 'warn') ?></span>
     <?php endif; ?>

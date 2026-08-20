@@ -33,6 +33,18 @@ const VG_DEPTREE_PAD     = 12;          // SVG 바깥 여백
 const VG_DEPTREE_CHAR_W  = 6.4;         // 12px 글자 한 칸의 근사폭 — 이름 말줄임 계산용
 const VG_DEPTREE_META_W  = 82;          // 노드 오른쪽 칸(버전/심각도 배지)의 폭
 
+/* 깊이별 엣지 클래스 — 루트에서 멀어질수록 옅어져 흐름이 눈에 잡힌다(색이 아니라 농도).
+ *   문자열로 조립하지 않고 리터럴 배열로 둔다: ui_lint.sh 의 "아무도 안 쓰는 CSS 클래스"
+ *   검사는 리터럴 일치라, 접두사에 깊이를 붙여 만들면 정의만 있고 참조가 없어 보인다. */
+const VG_DEPTREE_EDGE_CLASS = [
+    'deptree__edge--d0', 'deptree__edge--d1', 'deptree__edge--d2', 'deptree__edge--d3',
+];
+
+/* 노드 **면**을 칠하는 등급 — 조치 대상(CRITICAL·HIGH·MEDIUM)만이다.
+ *   LOW 와 취약점 없는 노드는 중립으로 둔다(왼쪽 악센트 바·배지로는 여전히 구분된다) —
+ *   전부 칠하면 아무것도 강조되지 않는다. 심각도 도넛이 LOW 를 뺀 것과 같은 기준이다. */
+const VG_DEPTREE_FILL_TONES = ['crit', 'high', 'med'];
+
 /**
  * 이 조회 단위(스캔 × 컨테이너)의 취약점 → 그래프 노드 키별 **최고 심각도**.
  *   조회 범위를 넓히지 않는다: uq_find 좌측 접두가 (scan_id, container_id)라 엣지 조회와
@@ -99,7 +111,7 @@ function vg_deptree_role(string $key, array $ctx): string
 /**
  * 가로 계층 트리 배치 — 루트 하나를 좌(부모)→우(자식) 열로 눕히고 형제는 위→아래로 쌓는다.
  *   고전적인 tidy tree: **리프를 순서대로 쌓고, 부모의 y 는 자식들 y 의 중앙**에 둔다.
- *   반환: ['nodes' => [['key','x','y','hidden'], …], 'edges' => [[x1,y1,x2,y2], …],
+ *   반환: ['nodes' => [['key','x','y','hidden'], …], 'edges' => [[x1,y1,x2,y2,깊이], …],
  *          'w' => SVG 폭, 'h' => SVG 높이, 'drawn' => 그린 노드 수]
  *   $budget 은 화면 전체가 나눠 쓰는 남은 노드 수다(참조로 깎는다) — 루트가 수십 개인
  *   자산에서 SVG 하나가 페이지를 통째로 먹지 않게 한다. 바닥나면 그 아래는 hidden 으로만 센다.
@@ -144,7 +156,8 @@ function vg_deptree_layout(array $graph, string $root, int &$budget): array
         $x = VG_DEPTREE_PAD + $depth * (VG_DEPTREE_NODE_W + VG_DEPTREE_GAP_X);
         $nodes[] = ['key' => $key, 'x' => $x, 'y' => $y, 'hidden' => $hidden];
         foreach ($childY as $cy) {
-            $edges[] = [$x + VG_DEPTREE_NODE_W, $y, $x + VG_DEPTREE_NODE_W + VG_DEPTREE_GAP_X, $cy];
+            // 마지막 칸은 이 엣지가 나가는 쪽 깊이다 — 옅기(농도)를 그리는 쪽이 여기서 읽는다.
+            $edges[] = [$x + VG_DEPTREE_NODE_W, $y, $x + VG_DEPTREE_NODE_W + VG_DEPTREE_GAP_X, $cy, $depth];
         }
         return $y;
     };
@@ -157,7 +170,11 @@ function vg_deptree_layout(array $graph, string $root, int &$budget): array
 
 /**
  * 노드 한 칸(SVG <a> 안의 rect·text) — 왼쪽 악센트 바 + 이름(왼쪽) + 버전/심각도(오른쪽).
- *   악센트 색: 취약점이 있으면 그 심각도 톤, 루트면 --accent, 그 외는 --line-2.
+ *
+ *   **색은 정보다.** 면(박스 배경·테두리)은 취약점 등급 전용으로 쓰고, 조치 대상
+ *   (CRITICAL·HIGH·MEDIUM)만 옅게 칠한다 — LOW·무취약 노드까지 칠하면 강조가 사라진다.
+ *   맞닿은 HIGH(#f0883e)·MEDIUM(#e3b341) 은 색각이상 기준 색차가 6.1 로 면만으로는 안 갈리므로
+ *   같은 톤의 **테두리**(--*-bd)를 함께 준다 — 두 노드가 이웃해도 경계선이 먼저 보인다.
  *   관리자·잘린 전체 이름처럼 칸에 안 들어가는 사실은 <title>(툴팁)로 넘긴다.
  *   좌표·크기는 SVG 속성이라 CSS 가 가질 수 없다. 색은 전부 class 로만 준다(app.css 소유).
  *
@@ -169,6 +186,8 @@ function vg_deptree_node_svg(array $n, array $ctx): string
     $sev  = (string) ($ctx['sev'][$n['key']] ?? '');
     $role = vg_deptree_role((string) $n['key'], $ctx);
     $tone = $sev !== '' ? vg_sev_tone($sev) : ($role === 'root' ? 'info' : 'muted');
+    // 면을 칠하는 건 조치 대상 등급뿐이다(위 주석). 나머지는 지금까지처럼 중립 박스다.
+    $fill = in_array($tone, VG_DEPTREE_FILL_TONES, true) ? ' tone-' . $tone : '';
 
     $x   = (float) $n['x'];
     $y   = round((float) $n['y'], 1);
@@ -185,7 +204,7 @@ function vg_deptree_node_svg(array $n, array $ctx): string
     $svg  = '<a href="' . vg_h($href) . '" class="deptree__node">'
         . '<title>' . vg_h($p['name'] . ' ' . $p['version'] . ' · ' . $p['manager']
             . ($sev !== '' ? ' · ' . $sev : '')) . '</title>'
-        . '<rect class="deptree__box' . ($role === 'target' ? ' deptree__box--on' : '') . '"'
+        . '<rect class="deptree__box' . $fill . ($role === 'target' ? ' deptree__box--on' : '') . '"'
         . ' x="' . $x . '" y="' . $top . '" width="' . VG_DEPTREE_NODE_W . '" height="' . VG_DEPTREE_NODE_H . '" rx="7"/>'
         . '<rect class="deptree__accent tone-' . $tone . '"'
         . ' x="' . ($x + 1.5) . '" y="' . ($top + 4) . '" width="3.5" height="' . (VG_DEPTREE_NODE_H - 8) . '" rx="2"/>'
@@ -212,6 +231,7 @@ function vg_deptree_node_svg(array $n, array $ctx): string
 /**
  * 트리 한 장 — 좌표는 vg_deptree_layout() 이 계산하고 여기서는 그리기만 한다(SRP).
  *   부모→자식은 3차 베지에로 잇는다(두 열의 가운데를 제어점으로 잡아 좌우로 흐르는 곡선).
+ *   엣지는 깊이가 깊을수록 옅다 — 어느 가지가 루트에서 바로 나온 것인지가 먼저 읽힌다.
  *   SVG 폭은 노드가 정하므로 늘이지 않는다 — 넘치면 .deptree 안에서만 가로로 스크롤한다.
  */
 function vg_deptree_render(array $graph, string $root, int &$budget, array $ctx): void
@@ -222,12 +242,28 @@ function vg_deptree_render(array $graph, string $root, int &$budget, array $ctx)
     echo '<svg class="deptree__svg" width="' . $l['w'] . '" height="' . $l['h'] . '"'
         . ' viewBox="0 0 ' . $l['w'] . ' ' . $l['h'] . '" role="img"'
         . ' aria-label="' . vg_h($p['name'] . ' 의존성 트리 · 노드 ' . $l['drawn'] . '개') . '">';
-    foreach ($l['edges'] as [$x1, $y1, $x2, $y2]) {
+    $deepest = count(VG_DEPTREE_EDGE_CLASS) - 1;
+    foreach ($l['edges'] as [$x1, $y1, $x2, $y2, $depth]) {
         $mid = round(($x1 + $x2) / 2, 1);
-        echo '<path class="deptree__edge"'
-            . ' d="M' . $x1 . ',' . round($y1, 1) . ' C' . $mid . ',' . round($y1, 1)
+        echo '<path class="deptree__edge ' . VG_DEPTREE_EDGE_CLASS[min((int) $depth, $deepest)]
+            . '" d="M' . $x1 . ',' . round($y1, 1) . ' C' . $mid . ',' . round($y1, 1)
             . ' ' . $mid . ',' . round($y2, 1) . ' ' . $x2 . ',' . round($y2, 1) . '"/>';
     }
     foreach ($l['nodes'] as $n) { echo vg_deptree_node_svg($n, $ctx); }
     echo '</svg></div>';
+}
+
+/**
+ * 트리 위 한 줄 범례 — "노드 색이 무슨 뜻인가". 색을 정보로 쓰기로 한 이상 그 뜻을 밝힌다.
+ *   마크업은 공용 vg_legend() 를 그대로 쓴다(새 CSS 없음). 칠하는 등급만 담는다 —
+ *   범례에 없는 색(중립 박스)은 "조치 대상이 아님" 이라는 뜻이다.
+ */
+function vg_deptree_legend(): void
+{
+    $labels = ['crit' => 'CRITICAL', 'high' => 'HIGH', 'med' => 'MEDIUM'];
+    $items = [];
+    foreach (VG_DEPTREE_FILL_TONES as $tone) {
+        $items[] = ['label' => $labels[$tone] ?? $tone, 'tone' => $tone];
+    }
+    vg_legend($items, ['inline' => true, 'caption' => '노드 색']);
 }
