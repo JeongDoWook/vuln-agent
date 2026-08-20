@@ -128,8 +128,7 @@ vg_hero(
     ],
     number_format($maxEpss * 100, 1) . '%',
     vg_epss_tone($maxEpss),
-    '최고 EPSS(악용확률)',
-    'PACKAGE DETAIL'
+    '최고 EPSS(악용확률)'
 );
 ?>
 

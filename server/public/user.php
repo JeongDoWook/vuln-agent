@@ -119,7 +119,7 @@ vg_header($user['username'] ?? '사용자', 'users');
       $meta[] = '<span class="badge tone-crit">🔒 잠김 — ' . vg_h((string) $user['locked_until']) . '까지</span>';
   }
   $meta[] = '<a href="/users.php">← 사용자 목록</a>';
-  vg_hero(vg_h($user['username']) . ($isSelf ? ' <span class="why">(본인)</span>' : ''), $meta, null, 'ok', '계정 상태', 'USER DETAIL');
+  vg_hero(vg_h($user['username']) . ($isSelf ? ' <span class="why">(본인)</span>' : ''), $meta, null, 'ok', '계정 상태');
   ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>

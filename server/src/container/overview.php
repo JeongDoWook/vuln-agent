@@ -37,7 +37,7 @@ function vg_container_render_overview(array $ctx): void {
     if (!empty($container['workload_ref'])) { $meta[] = '워크로드 ' . vg_h((string) $container['workload_ref']); }
     $meta[] = '최신 수집 ' . vg_h((string) $scan['collected_at']);
 
-    vg_hero(vg_h((string) $container['cid']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', 'CONTAINER');
+    vg_hero(vg_h((string) $container['cid']), $meta, $worst ?? '양호', $heroTone, '최고 위험도');
 
     ?>
 

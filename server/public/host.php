@@ -239,7 +239,7 @@ vg_header($host['fqdn'] ?? '호스트', 'assets');
   $noScanMeta = [vg_h(trim($host['os_id'] . ' ' . $host['os_version']))];
   if (!empty($host['last_seen_ip'])) { $noScanMeta[] = 'IP ' . vg_h($host['last_seen_ip']); }
   $noScanMeta[] = '<a href="/">대시보드</a>';
-  vg_hero(vg_h($host['fqdn']), $noScanMeta, null, 'ok', '수집 상태', '');
+  vg_hero(vg_h($host['fqdn']), $noScanMeta, null, 'ok', '수집 상태');
   ?>
   <?php if (vg_can('assets')): ?>
     <?php vg_host_render_agent_control($hostId, $host, $agentCsrf, $pendingCommands, $agentMsg, $agentErr); ?>

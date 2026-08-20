@@ -105,7 +105,7 @@ if ($kev) {
     }
 }
 
-vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 현황에서 보기</a>'], $sevUp ?? '등급 미상', $tone, 'CVSS 등급', 'CVE DETAIL');
+vg_hero($title, ['<a href="/findings.php?q=' . urlencode($cveId) . '">취약점 현황에서 보기</a>'], $sevUp ?? '등급 미상', $tone, 'CVSS 등급');
 ?>
 
 <?php

@@ -51,7 +51,6 @@ function vg_host_render_hero(array $ctx): void {
    *   지금은 탭 줄에 직접 서 있다(같은 자리로 가는 두 번째 문). */
   /* '대시보드'·'자산관리' 링크는 걷었다 — 둘 다 사이드바(vg_nav_sections)에 늘 서 있는 항목이라
    *   식별부에서 한 번 더 말하면 메타 줄만 길어진다(같은 자리로 가는 두 번째 문). */
-  vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', '');
   /* 수집 제어(즉시 실행·예약·주기·속도 티어)는 '자산 설정' 탭으로 내려갔다.
    *   자산 상세를 여는 이유는 "이 서버가 얼마나 위험한가"이지 "수집 주기가 몇 분인가"가 아니다 —
    *   첫 화면을 설정 폼이 통째로 차지하면 위험 요약과 취약점 목록이 스크롤 아래로 밀린다.
@@ -62,25 +61,19 @@ function vg_host_render_hero(array $ctx): void {
    *   폼·action·엔드포인트는 수집 제어 카드의 것과 **같은 것**이다(POST 처리는 한 곳뿐).
    *   예약 실행·수집 주기·속도 티어는 자주 쓰지 않아 설정 탭에 그대로 둔다.
    *   이미 대기·실행 중인 명령이 있으면 버튼 대신 그 상태를 말한다 — 같은 명령을 두 번
-   *   넣어도 큐에 두 줄이 쌓일 뿐이라, 누르기 전에 "이미 돌고 있다"를 먼저 보여준다. */
-  /* 처리 결과(등록/중단/오류)는 '자산 설정' 탭의 수집 제어 카드가 그린다 — 그런데 이 버튼은
-   *   어느 탭에서든 눌리고, 리다이렉트는 누른 그 탭으로 돌아온다. 그 탭이 결과를 안 그리면
-   *   플래시가 소비만 되고 사라져 "눌렀는데 아무 일도 안 일어난 것처럼" 보인다.
-   *   설정 탭에서는 그리지 않는다 — 같은 메시지를 두 번 띄우게 된다. */
-  if (($tab ?? '') !== 'manage') {
-      vg_alert($agentMsg ?? null, 'ok');
-      vg_alert($agentErr ?? null);
-  }
+   *   넣어도 큐에 두 줄이 쌓일 뿐이라, 누르기 전에 "이미 돌고 있다"를 먼저 보여준다.
+   *   버튼은 히어로 뒤에 별도 블록으로 두지 않고 vg_hero() 의 $actions 슬롯으로 넘긴다 —
+   *   .hero 는 flex 라 세 번째 아이템으로 들어가면 KPI 타일과 줄을 나눠 먹지 않는다. */
+  $actionsHtml = null;
   if (vg_can('assets')) {
       $running = $pendingCommands[0] ?? null;
-      echo '<div class="actions">';
       if ($running !== null) {
           $label = ($running['status'] ?? '') === 'running' ? '수집 진행 중' : '실행 대기 중';
-          echo '<a class="btn btn--sm btn--ghost" href="'
+          $actionsHtml = '<a class="btn btn--sm btn--ghost" href="'
               . vg_h(vg_qs(['tab' => 'manage', 'page' => null, 'q' => null])) . '">'
               . vg_h($label) . ' · 진행 보기</a>';
       } else {
-          echo '<form method="post" data-confirm="지금 이 호스트의 취약점 스캔을 실행할까요?">'
+          $actionsHtml = '<form method="post" data-confirm="지금 이 호스트의 취약점 스캔을 실행할까요?">'
               . '<input type="hidden" name="csrf" value="' . vg_h($agentCsrf) . '">'
               . '<input type="hidden" name="action" value="agent_run_now">'
               . '<input type="hidden" name="id" value="' . (int) $hostId . '">'
@@ -88,7 +81,15 @@ function vg_host_render_hero(array $ctx): void {
               . ' title="에이전트가 다음 poll(10초 이내)에서 실행합니다">지금 스캔</button>'
               . '</form>';
       }
-      echo '</div>';
+  }
+  vg_hero(vg_h($host['fqdn']), $meta, $worst ?? '양호', $heroTone, '최고 위험도', $actionsHtml);
+  /* 처리 결과(등록/중단/오류)는 '자산 설정' 탭의 수집 제어 카드가 그린다 — 그런데 이 버튼은
+   *   어느 탭에서든 눌리고, 리다이렉트는 누른 그 탭으로 돌아온다. 그 탭이 결과를 안 그리면
+   *   플래시가 소비만 되고 사라져 "눌렀는데 아무 일도 안 일어난 것처럼" 보인다.
+   *   설정 탭에서는 그리지 않는다 — 같은 메시지를 두 번 띄우게 된다. */
+  if (($tab ?? '') !== 'manage') {
+      vg_alert($agentMsg ?? null, 'ok');
+      vg_alert($agentErr ?? null);
   }
   /* SBOM 내려받기는 여기서 내렸다 — 첫 화면 한 칸을 카드가 통째로 차지했는데, 자주 쓰는
    *   동작이 아니다. 부품표는 곧 설치 패키지 목록이라 '설치 패키지' 탭 아래가 제자리다
