@@ -1,6 +1,6 @@
 # 런타임 HTTP 계약 인벤토리
 
-기준일: 2026-08-15. 기계 판독 정본은 `tests/fixtures/route-query-contract.json`이고,
+기준일: 2026-08-20. 기계 판독 정본은 `tests/fixtures/route-query-contract.json`이고,
 `php tests/route_query_contract_test.php`가 `server/public/*.php` 전수, query key, 인증 가드,
 응답 유형과 redirect를 정적으로 대조한다. 아래 `unknown`은 미사용 판정이 아니라 저장소 밖
 소비자를 확인하지 못했다는 뜻이다.
@@ -15,7 +15,7 @@
 | `/agent-command-overview.php` | GET | assets | - | - | JSON | app.js / unknown |
 | `/agent-command-status.php` | GET | assets | id | - | JSON | host / unknown |
 | `/agent-dl.php` | GET | public | f | - | download | agent-tokens, assets / installer, CLI |
-| `/agent-poll.php` | GET | agent token | - | - | JSON | install-agent / installed agent |
+| `/agent-poll.php` | GET | agent token | agent_version, update_from, update_result, update_to | - | JSON | install-agent / installed agent |
 | `/agent-progress.php` | POST | agent token | - | - | JSON | inventory-agent / installed agent |
 | `/agent-tokens.php` | GET, POST | agenttokens | fqdn, page, per_page, q | - | HTML | nav, assets / bookmark |
 | `/asset-packages.php` | GET | assets | host, manager, page, per_page, q | - | HTML | assets / bookmark |
@@ -29,10 +29,11 @@
 | `/connectors.php` | GET, POST | connectors | conn, edit, page, per_page | - | HTML | nav / bookmark |
 | `/container.php` | GET | assets or findings | cid, epage, id, page, per_page, q, tab | - | HTML | host, findings / bookmark |
 | `/control.php` | GET | compliance or findings | control, fw, page, per_page | - | HTML | control_mapping / bookmark |
-| `/control_mapping.php` | GET | compliance | control, fw, page, per_page | `control` → `/control.php?fw=…&control=…` (302) | HTML | nav / legacy bookmark |
+| `/control_mapping.php` | GET | compliance | control, fw, page, per_page | `control` → `/control.php?fw=…&control=…` (302) · `fw=KISA_U` → `/kisa-u.php` (302) | HTML | nav / legacy bookmark |
 | `/cve.php` | GET | findings or catalog or advisories | cve, page/per_page, vpage/vper_page, apage/aper_page | - | HTML | findings, cves / bookmark |
 | `/cves.php` | GET | catalog | epss, kev, page, per_page, q, sev, sort, year | - | HTML | nav / bookmark |
 | `/depgraph.php` | GET | assets or findings | cid, id, mgr, name, tab, ver | - | HTML | host, container / bookmark |
+| `/discovery.php` | GET, POST | assets | edit, page, per_page, q, state, target | - | HTML | nav, assets / bookmark |
 | `/export.php` | GET, HEAD | assets | format, host, kev, min_epss, scan_id, severity | - | JSON/XML download | assets, host / reporting client |
 | `/feed_preview.php` | GET, POST | connectors | type + connector catalog fields | - | JSON | connectors.js / unknown |
 | `/finding_history.php` | GET, POST | findings | cid, cve, id, page, per_page, pkg | - | HTML | findings, host / bookmark |
@@ -40,6 +41,7 @@
 | `/host.php` | GET, POST | assets or findings | acc, epage, id, page, per_page, q, tab | `tab=resources` → `tab=scans` (302); delete → `/assets.php` (303) | HTML | assets, findings / bookmark |
 | `/index.php` | GET | dashboard | page, per_page | - | HTML | nav / browser root |
 | `/ingest.php` | POST | agent token | - | - | JSON | install-agent, inventory-agent, agent_push / installed agent, CLI |
+| `/kisa-u.php` | GET | compliance | category, page, per_page, state | - | HTML | nav, control_mapping / bookmark |
 | `/language-packages.php` | GET | public | all keys passthrough | `/packages.php?tab=lang` + original query (302) | redirect | none / legacy bookmark |
 | `/login.php` | GET, POST | public | kind, reason | authenticated/success → `/` (302) | HTML | auth / bookmark |
 | `/logout.php` | GET | session | - | `/login.php` (302) | redirect | nav / bookmark |
@@ -48,7 +50,8 @@
 | `/packages.php` | GET | catalog | eco, manager, page, per_page, q, risk, sort, tab | - | HTML | nav, language redirect / bookmark |
 | `/permissions.php` | GET, POST | permissions | - | - | HTML | nav / bookmark |
 | `/profile.php` | GET, POST | login | - | - | HTML | nav / bookmark |
-| `/sbom.php` | GET, HEAD | assets | cid, format, host, scan_id | - | JSON download | host, container / SBOM client |
+| `/sbom.php` | GET, HEAD | assets | cid, format, host, page, per_page, scan_id, view | - | JSON download (`view=html` 이면 HTML) | host, container / SBOM client |
+| `/segment-map.php` | GET | assets | - | - | HTML | nav / bookmark |
 | `/settings.php` | GET, POST | settings | - | - | HTML | nav / bookmark |
 | `/styleguide.php` | GET | dashboard | - | - | HTML | none / unknown |
 | `/user.php` | GET, POST | users | id | delete → `/users.php` (302) | HTML | users / bookmark |
@@ -64,7 +67,7 @@
 | flow | request | success response consumed by current agent | failures/status |
 |---|---|---|---|
 | install | `--server`, `--token`; server를 `/ingest.php`로 보정 | poll URL을 같은 base의 `/agent-poll.php`로 파생 | curl/wget 타임아웃과 실패 종료 유지 |
-| poll | GET + agent token | `poll_schedule_seconds`, `due_command_id`, `cpu_quota_percent`, `packaging_timeout_seconds`, `mem_max_mb` | 401, 405 |
+| poll | GET + agent token | `poll_schedule_seconds`, `due_command_id`, `cpu_quota_percent`, `packaging_timeout_seconds`, `mem_max_mb`, `update_available`, `update_version`, `update_sha256`, `update_download_path` | 401, 405 |
 | progress | POST form: `command_id`, `stage`, `percent`, `message`, `state` | `ok`, `cancel_requested`; state는 running/failed/cancelled | 401, 404, 405, 409, 422 |
 | ingest | POST JSON + token/timestamp/nonce; 최소 `meta`, `pkg`, optional `command_id` | `ok`, host/scan IDs, counts, changed, integrity, findings, CCE, accounts | 400, 401, 403, 405, 409, 500 |
 
