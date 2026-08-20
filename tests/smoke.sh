@@ -908,7 +908,10 @@ phase "패키지 의존성 그래프(depgraph.php)"
 # 에이전트가 보낸 SBOM/pom 엣지는 저장만 되고 읽는 화면이 없었다. "무엇이 이 패키지를
 #   끌어왔나" 가 루트 → 직접 → 전이 순으로 실제로 펼쳐지는지, 엣지가 없는 자산의 빈 상태가
 #   빈 화면이 아니라 설명으로 뜨는지를 고정한다.
-assert_contains "$packagebody" 'depgraph.php?id=' "설치 패키지 탭에서 의존성 그래프로 진입"
+# 의존성은 이제 자산 상세의 탭이다 — 설치 패키지 탭은 전용 화면이 아니라 그 탭으로 보내고,
+#   라벨에 엣지 수를 담아 "이 자산엔 볼 게 있다"를 알린다.
+assert_contains "$packagebody" 'tab=depgraph' "설치 패키지 탭에서 의존성 탭으로 진입"
+assert_contains "$packagebody" '의존성 엣지 ' "설치 패키지 탭이 의존성 엣지 수를 노출"
 depbody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID")
 assert_contains "$depbody" '전체 트리' "의존성 그래프 화면 표시"
 # 호스트(cid=0) 단위는 pom.xml 직접 선언 — 부모가 없어 트리 대신 목록으로 나온다.
@@ -937,6 +940,19 @@ assert_contains "$missbody" '요청한 패키지가 이 조회 단위의 엣지�
 emptydep=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB02_ID")
 assert_contains "$emptydep" '의존성 엣지가 없습니다' "엣지 없는 자산의 빈 상태 안내"
 assert_not_contains "$emptydep" 'depgraph.php?id='"$WEB02_ID"'&amp;cid=' "엣지 없는 자산엔 조회 단위 선택지도 없다"
+
+# --- 자산 상세의 '의존성' 탭 ------------------------------------------------
+# 같은 트리를 자산 상세 안에서 본다(렌더는 src/deptree.php 하나를 두 화면이 공유한다).
+#   조회는 이 탭을 눌렀을 때만 돌아야 한다 — 다른 탭에 트리 SVG 가 새지 않는지도 함께 본다.
+hostdep=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=depgraph")
+assert_contains "$hostdep" '의존성 트리' "자산 상세에 의존성 탭이 열린다"
+assert_contains "$hostdep" 'class="deptree__svg"' "의존성 탭이 같은 가로 계층 트리를 그린다"
+assert_contains "$hostdep" 'myco-web' "의존성 탭에 루트(최상위 프로젝트) 표시"
+assert_contains "$hostdep" 'depgraph.php?id=' "더 깊은 조회는 전용 화면으로 넘긴다"
+assert_not_contains "$packagebody" 'class="deptree__svg"' "다른 탭에서는 의존성 트리를 그리지 않는다"
+# 엣지가 없는 자산에는 탭 자체가 서지 않는다(빈 탭을 남기지 않는다).
+emptyhostdep=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB02_ID")
+assert_not_contains "$emptyhostdep" 'tab=depgraph' "엣지 없는 자산엔 의존성 탭이 없다"
 
 phase "컨테이너 드릴다운(container.php) + 컨테이너 SBOM"
 # --- 컨테이너 드릴다운(container.php) + 컨테이너 SBOM ------------------------

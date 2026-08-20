@@ -1130,7 +1130,8 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 @media (max-width: 700px) { .rank__row { grid-template-columns: minmax(0, 7rem) minmax(2rem, 1fr) max-content; } }
 
 /* --- 가로 계층 트리(의존성 그래프) ----------------------------------------
- * depgraph.php 가 좌표를 서버에서 계산해 SVG 를 통째로 출력한다 — CSP(default-src 'self')가
+ * src/deptree.php 가 좌표를 서버에서 계산해 SVG 를 통째로 출력한다(depgraph.php 와
+ * 자산 상세의 '의존성' 탭이 같은 함수를 부른다) — CSP(default-src 'self')가
  * 인라인 <script> 를 막아 클라이언트 레이아웃을 쓸 수 없다(도넛·추이선과 같은 방식).
  * 다른 SVG 차트(.chart svg)와 달리 **폭에 맞춰 늘이지 않는다**: 늘리면 노드 글자까지 줄어
  * 이름이 안 읽힌다. 폭은 노드 수가 정하고, 넘치면 .deptree 안에서만 가로로 스크롤한다
