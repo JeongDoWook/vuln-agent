@@ -6,7 +6,14 @@
 '
 ' 화면(지금)과 스케줄러(하루 1건 증적)가 **같은 함수**를 부른다 — 판정이 두 벌이면
 ' 화면과 증적이 서로 다른 답을 내기 시작한다.
+'
+' 배치: 묶음마다 노드를 한 줄에 4개씩 늘어놓으면 viewBox 폭이 2082 까지 벌어져
+' 문서 본문 폭(약 900px)에 인라인될 때 글자가 6px 로 줄어 못 읽는다.
+' → 보이지 않는 배치용 선으로 2열씩 접고, 긴 라벨은 손으로 줄바꿈한다(뜻은 그대로).
 
+skinparam wrapWidth 250
+skinparam nodesep 12
+skinparam ranksep 28
 skinparam rectangle {
     BackgroundColor #ffffff
     BorderColor #6e7681
@@ -15,13 +22,13 @@ skinparam databaseBackgroundColor #ffffff
 skinparam shadowing false
 
 package "수집물 — 이미 다른 파이프라인이 채워 둔 것" as Src {
-    database "tb_finding\n매처 판정(심각도·최초 발견 시각)" as F
-    database "tb_host · tb_scan\n연결상태 · OS/IP · 부분수집 여부" as H
-    database "tb_cce_finding\nCCE 39개 점검의 PASS/FAIL/NA" as C
-    database "tb_host_account\n계정 인벤토리(잠금·sudo·휴면·미로그인)" as A
+    database "tb_finding\n매처 판정\n(심각도·최초 발견 시각)" as F
+    database "tb_host · tb_scan\n연결상태 · OS/IP\n부분수집 여부" as H
+    database "tb_cce_finding\nCCE 39개 점검의\nPASS/FAIL/NA" as C
+    database "tb_host_account\n계정 인벤토리\n(잠금·sudo·휴면·미로그인)" as A
 }
 
-rectangle "compliance/policy.php — 기준값 SSOT\nSLA: KEV 15일 · CRITICAL 30일 · HIGH 60일\n컷라인: 1~5건 부분준수 · 6건 이상 미준수\n(전부 tb_setting 으로 조직별 조정, 여기 상수는 폴백)" as POL #1f6feb
+rectangle "compliance/policy.php — 기준값 SSOT\nSLA: KEV 15일 · CRITICAL 30일 · HIGH 60일\n컷라인: 1~5건 부분준수 · 6건 이상 미준수\n(전부 tb_setting 으로 조직별 조정,\n 여기 상수는 폴백)" as POL #1f6feb
 
 package "자동판정 통제 4종 — 판정을 새로 짜지 않고 집계만 한다" as Ctl {
     rectangle "① 패치관리\nISMS-P 2.10.8 / ISO A.8.8\nSLA 초과한 미조치 findings" as P1
@@ -33,24 +40,28 @@ package "자동판정 통제 4종 — 판정을 새로 짜지 않고 집계만 �
 rectangle "판정 어휘 4종 (vg_compliance_status)\n위반 0건 + 판정 불가 없음 → **준수**\n위반 0건 + 판정 불가 있음 → **판정 불가**\n위반 1~5건 → **부분준수**\n위반 6건 이상 → **미준수**" as VOCAB #db6d28
 note bottom of VOCAB
   위반 0건을 무조건 '준수' 로 쓰지 않는다.
-  근거를 못 걷어서 0건인 것을 준수로 표기하면
-  심사 증빙에 **허위 안심**을 싣게 된다
-  (CCE 가 NA 를 PASS 와 구분하는 것과 같은 원칙).
+  근거를 못 걷어서 0건인 것을
+  준수로 표기하면 심사 증빙에
+  **허위 안심**을 싣게 된다
+  (CCE 가 NA 를 PASS 와
+   구분하는 것과 같은 원칙).
 end note
 
 rectangle "/compliance.php — '지금'\n통제 4종 요약 + 호스트별 근거" as SCR #db6d28
 rectangle "scheduler 사이드카 · 매 1분 틱\n오늘 스냅샷이 없을 때만 판정한다" as TICK #a371f7
-database "tb_compliance_snapshot (하루 1건)\n└ tb_compliance_snapshot_control\n   control_key · status_label · violation_count\n   unjudged_count · evidence(JSON)" as SNAP #238636
+database "tb_compliance_snapshot (하루 1건)\n└ tb_compliance_snapshot_control\n   control_key · status_label\n   violation_count · unjudged_count\n   evidence(JSON)" as SNAP #238636
 note bottom of SNAP
-  FK 로 원본 행에 매달지 않는다 — 원본이 지워져도
-  증적은 남아야 한다. 근거는 evidence JSON 에 담되
-  최소 식별자만(원문 전체를 복사하지 않는다).
+  FK 로 원본 행에 매달지 않는다 —
+  원본이 지워져도 증적은 남아야 한다.
+  근거는 evidence JSON 에 담되
+  최소 식별자만
+  (원문 전체를 복사하지 않는다).
 end note
 
 package "기준별로 바꿔 끼워 보기 — 판정은 그대로, 이름표만 바뀐다" as Fw {
-    database "tb_control_mapping\nCCE 코드 → KISA U / ISMS-P / N2SF" as CM
-    database "tb_control_catalog\n기반시설 U-코드 **72개 = 분모**" as CC
-    rectangle "/kisa-u.php — U-코드 커버리지\n덮는 21개 vs 비는 51개\n빈 칸이 드러나는 것이 이 화면의 값이다" as KU #9e6a03
+    database "tb_control_mapping\nCCE 코드 →\nKISA U / ISMS-P / N2SF" as CM
+    database "tb_control_catalog\n기반시설 U-코드\n**72개 = 분모**" as CC
+    rectangle "/kisa-u.php — U-코드 커버리지\n덮는 21개 vs 비는 51개\n빈 칸이 드러나는 것이\n이 화면의 값이다" as KU #9e6a03
     rectangle "/control_mapping.php · /control.php\n통제 기준 매핑 · 통제 상세" as CMAP
 }
 
@@ -63,21 +74,33 @@ A --> P4
 POL --> P1
 POL --> P2
 POL --> P4
-POL --> VOCAB : 컷라인(partial_max)
+POL --> VOCAB : 컷라인
 
 P1 --> VOCAB
 P2 --> VOCAB
 P3 --> VOCAB
 P4 --> VOCAB
 
-VOCAB --> SCR : 화면은 같은 함수로 '지금' 을 렌더
+VOCAB --> SCR : 같은 함수로\n'지금' 을 렌더
 TICK --> VOCAB : 같은 함수 · 같은 기준값
 VOCAB --> SNAP : 통제별 1행
 
-C --> CM : rule_code = code (자연키)
+C --> CM : rule_code = code
 CM --> CMAP
 CM --> KU : 분자(덮는 항목)
 CC --> KU : 분모(가이드 전 항목)
-P3 ..> CMAP : 같은 CCE 결과를 기준 언어로 옮긴 것
+P3 ..> CMAP : 같은 CCE 결과의\n기준 언어 표기
+
+' ── 보이지 않는 배치용 선 — 한 줄에 4개씩 늘어서는 것을 2열로 접는다 ──
+F -[hidden]down- C
+H -[hidden]down- A
+C -[hidden]down- POL
+A -[hidden]down- POL
+P1 -[hidden]down- P3
+P2 -[hidden]down- P4
+SCR  -[hidden]down- CM
+SNAP -[hidden]down- CC
+CM -[hidden]down- KU
+CC -[hidden]down- CMAP
 
 @enduml
