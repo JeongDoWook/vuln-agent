@@ -98,7 +98,7 @@ declare(strict_types=1);
       <div class="actions">
       <?php vg_sbom_view_button((string) $host['fqdn']); ?>
       <?php if ($depEdgeTotal > 0): ?>
-        <a class="btn btn--sm btn--ghost" href="/depgraph.php?id=<?= (int) $hostId ?>" title="무엇이 이 패키지를 끌어왔나(의존성 그래프)"><?= vg_icon('chart') ?>의존성 그래프</a>
+        <a class="btn btn--sm btn--ghost" href="/depgraph.php?id=<?= (int) $hostId ?>"><?= vg_icon('chart') ?>의존성 그래프</a>
       <?php endif; ?>
       <?php /* 전체 설치 패키지(asset-packages.php)는 자산을 고르지 않으면 함대 전체가 한 표에 쏟아진다 —
                이 자산으로 필터한 링크를 주 진입점으로 둔다(화면 자체는 전역 검색용으로 남는다). */ ?>

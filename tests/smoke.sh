@@ -909,7 +909,7 @@ phase "패키지 의존성 그래프(depgraph.php)"
 #   빈 화면이 아니라 설명으로 뜨는지를 고정한다.
 assert_contains "$packagebody" 'depgraph.php?id=' "설치 패키지 탭에서 의존성 그래프로 진입"
 depbody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID")
-assert_contains "$depbody" '무엇이 이 패키지를 끌어왔나' "의존성 그래프 화면 표시"
+assert_contains "$depbody" '전체 트리' "의존성 그래프 화면 표시"
 # 호스트(cid=0) 단위는 pom.xml 직접 선언 — 부모가 없어 트리 대신 목록으로 나온다.
 assert_contains "$depbody" 'pom.xml 직접 선언' "pom.xml 직접선언이 별도 목록으로 구분됨"
 assert_contains "$depbody" 'com.myco:myco-common' "pom 직접선언 패키지 표시"
@@ -921,6 +921,9 @@ assert_contains "$ctrdep" '루트' "SBOM 루트 표식행이 루트로 표시됨
 assert_contains "$ctrdep" 'myco-web' "루트(최상위 프로젝트) 표시"
 assert_contains "$ctrdep" 'myco-http' "직접 의존 표시"
 assert_contains "$ctrdep" 'myco-utf8' "전이 의존(3단계)까지 펼쳐짐"
+# 렌더 형태 고정 — 중첩 박스(.ctrcard 안의 .ctrcard)가 아니라 서버가 그린 가로 계층 트리다.
+assert_contains "$ctrdep" 'class="deptree__svg"' "의존성을 가로 계층 트리 SVG 로 그린다"
+assert_contains "$ctrdep" 'class="deptree__edge"' "부모→자식 연결선(곡선 엣지)이 실제로 그려진다"
 # 역추적 — 전이 의존에서 루트까지의 경로가 나와야 "무엇이 끌어왔나" 에 답이 된다.
 frombody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID&cid=$DEP_CID&mgr=npm&name=myco-utf8&ver=0.9.1&tab=from")
 assert_contains "$frombody" '이 패키지를 끌어온 경로' "역추적 탭 표시"
