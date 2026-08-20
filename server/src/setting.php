@@ -27,6 +27,7 @@ function vg_setting_groups(): array {
         'judgment' => ['label' => '준수 판정 기준'],
         'session'  => ['label' => '세션 정책'],
         'account'  => ['label' => '계정 정책'],
+        'report'   => ['label' => 'AI 보고서'],
     ];
 }
 
@@ -84,6 +85,23 @@ function vg_setting_defs(): array {
             'group' => 'account', 'default_const' => 'VG_ACCOUNT_STALE_LOGIN_DAYS',
             'desc'  => '이 일수 이상 로그인하지 않은 대화형 계정을 미사용으로 판정합니다(ISMS-P 2.5.1·2.5.6).',
         ],
+        // AI 보고서 — 외부 작업큐 API 주소와 그 상태를 화면이 되묻는 방식. 기본값 상수는
+        //   server/src/report_job.php 가 갖는다(값을 여기 다시 적으면 폴백과 화면이 갈라진다).
+        'report.api_base_url' => [
+            'label' => '보고서 API 주소', 'type' => 'url', 'min' => 1, 'max' => 255,
+            'group' => 'report', 'default_const' => 'VG_REPORT_API_BASE_URL',
+            'desc'  => '보고서 작업큐 API 의 base URL(http:// 또는 https://). 경로는 붙이지 않습니다.',
+        ],
+        'report.poll_interval_seconds' => [
+            'label' => '진행 확인 간격(초)', 'type' => 'int', 'min' => 1, 'max' => 60,
+            'group' => 'report', 'default_const' => 'VG_REPORT_POLL_INTERVAL_SECONDS',
+            'desc'  => '보고서 생성 중일 때 화면이 상태를 다시 물어보는 간격.',
+        ],
+        'report.poll_max_attempts' => [
+            'label' => '진행 확인 최대 횟수', 'type' => 'int', 'min' => 1, 'max' => 600,
+            'group' => 'report', 'default_const' => 'VG_REPORT_POLL_MAX_ATTEMPTS',
+            'desc'  => '이 횟수를 넘으면 확인을 멈춥니다(작업은 서버에 남아 나중에 다시 볼 수 있습니다).',
+        ],
     ];
 }
 
@@ -102,6 +120,28 @@ function vg_setting_default(string $key): ?int {
         return null;
     }
     return intdiv((int) constant($const), max(1, (int) ($def['default_div'] ?? 1)));
+}
+
+/**
+ * 같은 기본값을 **표시용 문자열**로. 정수 항목은 vg_setting_default() 그대로고, 문자열 항목
+ *   (type=url 등)은 상수를 문자열로 읽는다 — 설정 화면은 어차피 <input value> 로 그리므로
+ *   타입마다 분기를 두지 않게 여기서 한 번만 좁힌다.
+ */
+function vg_setting_default_str(string $key): ?string {
+    $def = vg_setting_defs()[$key] ?? null;
+    $const = (string) ($def['default_const'] ?? '');
+    if ($const === '' || !defined($const)) {
+        return null;
+    }
+    if (vg_setting_is_int($key)) {
+        return (string) vg_setting_default($key);
+    }
+    return (string) constant($const);
+}
+
+/** 이 항목이 정수인가. 정의가 없으면 정수로 본다(기존 항목이 전부 정수였다). */
+function vg_setting_is_int(string $key): bool {
+    return (string) (vg_setting_defs()[$key]['type'] ?? 'int') === 'int';
 }
 
 /**
@@ -139,6 +179,39 @@ function vg_setting_int(string $key, int $default): int {
         $v = max((int) $def['min'], min((int) $def['max'], $v));
     }
     return $v;
+}
+
+/**
+ * 주소 항목(type=url)의 검증. 통과하면 null, 아니면 그 입력 아래에 붙일 한글 문구.
+ *   설정 화면이 저장 전에 부른다 — 여기서 통과한 값이 그대로 서버측 HTTP 호출의 목적지가
+ *   되므로, 스킴을 http/https 로 못박고 base URL 이 아닌 것(경로·질의·조각)을 거른다.
+ */
+function vg_setting_url_error(string $raw, int $maxLen): ?string {
+    if ($raw === '') {
+        return '주소를 입력하세요.';
+    }
+    if (mb_strlen($raw) > $maxLen) {
+        return sprintf('%d자 이내로 입력하세요.', $maxLen);
+    }
+    $p = parse_url($raw);
+    if ($p === false || !isset($p['scheme'], $p['host'])
+        || !in_array(strtolower((string) $p['scheme']), ['http', 'https'], true)
+        || (string) $p['host'] === '') {
+        return 'http:// 또는 https:// 로 시작하는 주소만 가능합니다.';
+    }
+    if (trim((string) ($p['path'] ?? ''), '/') !== '' || isset($p['query']) || isset($p['fragment'])) {
+        return '경로·질의문자열 없이 주소(호스트[:포트])까지만 입력하세요.';
+    }
+    return null;
+}
+
+/**
+ * 문자열 설정값. 비어 있으면 $default — 저장된 값이 빈 문자열이어도 호출부가 빈 주소로
+ *   나가지 않는다. 조회는 vg_settings_all() 의 요청당 캐시를 그대로 쓴다.
+ */
+function vg_setting_str(string $key, string $default): string {
+    $raw = trim((string) (vg_settings_all()[$key] ?? ''));
+    return $raw !== '' ? $raw : $default;
 }
 
 /**

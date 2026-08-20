@@ -127,3 +127,130 @@
   }
   window.setTimeout(pollProgress, 1000);
 })();
+
+// --- AI 보고서(host/report.php 카드) -----------------------------------------
+//   생성 버튼 → 프록시(POST /report-job-create.php) → 상태 폴링(GET /report-job-status.php).
+//   폴링 간격·상한은 **설정값**이라 카드의 data-* 로 내려온다(스크립트가 숫자를 갖지 않는다).
+//   외부 보고서 서비스는 망이 갈려 못 닿을 수 있다 — 그때 화면이 깨지지 않고 오류 배지로
+//   떨어지는 게 정상 경로다. 결과 본문은 형식이 정해지지 않은 plain text 라 textContent 로만
+//   넣는다(HTML 로 해석하지 않는다).
+(function () {
+  var card = document.querySelector('[data-report-job]');
+  if (!card) { return; }
+
+  var hostId = card.getAttribute('data-host-id');
+  var csrf = card.getAttribute('data-csrf');
+  var interval = Math.max(1, Number(card.getAttribute('data-poll-interval')) || 3) * 1000;
+  var maxAttempts = Math.max(1, Number(card.getAttribute('data-poll-max')) || 60);
+  var createBtn = card.querySelector('[data-report-create]');
+  var statusBox = card.querySelector('[data-report-status]');
+  var badge = card.querySelector('[data-report-badge]');
+  var messageBox = card.querySelector('[data-report-message]');
+  var resultBox = card.querySelector('[data-report-result]');
+
+  function setStatus(tone, label, text) {
+    if (!statusBox) { return; }
+    statusBox.hidden = false;
+    badge.className = 'badge tone-' + tone;
+    badge.textContent = label;
+    messageBox.textContent = text;
+  }
+  function showResult(text) {
+    if (!resultBox) { return; }
+    resultBox.textContent = text || '';
+    resultBox.hidden = !text;
+  }
+  function busy(on) {
+    if (createBtn) { createBtn.disabled = on; }
+  }
+  // 응답이 JSON 이 아닐 수도 있다(권한 거부의 평문 'forbidden' 등) — 본문을 먼저 읽고 판단한다.
+  function readJson(response) {
+    return response.text().then(function (body) {
+      var data = null;
+      try { data = JSON.parse(body); } catch (error) { data = null; }
+      if (!response.ok || !data || !data.ok) {
+        throw new Error((data && data.error) || '요청을 처리하지 못했습니다.');
+      }
+      return data;
+    });
+  }
+  function failed(error) {
+    setStatus('crit', '오류', (error && error.message) || '요청을 처리하지 못했습니다.');
+    busy(false);
+  }
+
+  // 화면이 아는 상태는 셋뿐이다(서버의 vg_report_state 와 같은 어휘). 완료·실패면 폴링을 멈춘다.
+  function apply(job) {
+    if (!job) { return false; }
+    if (job.state === 'done') {
+      setStatus('ok', job.state_label, '보고서가 준비되었습니다.');
+      showResult(job.result || '(내용이 비어 있습니다)');
+      return true;
+    }
+    if (job.state === 'failed') {
+      setStatus('crit', job.state_label, job.error_message || '보고서 생성에 실패했습니다.');
+      showResult('');
+      return true;
+    }
+    setStatus('info', job.state_label, '보고서를 만들고 있습니다.');
+    return false;
+  }
+
+  function poll(jobId, attempt) {
+    fetch('/report-job-status.php?job=' + encodeURIComponent(jobId), {headers: {'Accept': 'application/json'}})
+      .then(readJson)
+      .then(function (data) {
+        if (apply(data.job)) { busy(false); return; }
+        if (attempt >= maxAttempts) {
+          // 폴링은 무한이 아니다. 작업 자체는 서버에 남아 있으므로 나중에 이 화면에서 이어서 본다.
+          setStatus('med', '생성 중', '시간이 오래 걸립니다 — 나중에 이 페이지에서 다시 확인하세요.');
+          busy(false);
+          return;
+        }
+        window.setTimeout(function () { poll(jobId, attempt + 1); }, interval);
+      })
+      .catch(failed);
+  }
+
+  if (createBtn) {
+    createBtn.addEventListener('click', function () {
+      busy(true);
+      showResult('');
+      setStatus('info', '생성 중', '보고서 작업을 요청하고 있습니다.');
+      var body = new URLSearchParams();
+      body.append('csrf', csrf);
+      body.append('id', hostId);
+      fetch('/report-job-create.php', {
+        method: 'POST',
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body.toString()
+      })
+        .then(readJson)
+        .then(function (data) {
+          if (!data.job) { throw new Error('작업 번호를 받지 못했습니다.'); }
+          if (apply(data.job)) { busy(false); return; }
+          poll(data.job.report_job_id, 1);
+        })
+        .catch(failed);
+    });
+  }
+
+  // 이력의 '결과 보기' — 이미 끝난 작업이라 서버가 외부를 다시 부르지 않고 저장된 본문을 준다.
+  card.addEventListener('click', function (event) {
+    var btn = event.target.closest && event.target.closest('[data-report-view]');
+    if (!btn) { return; }
+    var jobId = btn.getAttribute('data-report-view');
+    setStatus('info', '불러오는 중', '저장된 보고서를 불러오고 있습니다.');
+    fetch('/report-job-status.php?job=' + encodeURIComponent(jobId), {headers: {'Accept': 'application/json'}})
+      .then(readJson)
+      .then(function (data) { apply(data.job); })
+      .catch(failed);
+  });
+
+  // 새로고침 전에 걸어 둔 작업이 아직 안 끝났으면 이어서 확인한다(서버가 그 사실을 알려준다).
+  var activeJob = card.getAttribute('data-active-job');
+  if (activeJob) {
+    busy(true);
+    poll(activeJob, 1);
+  }
+})();
