@@ -208,16 +208,13 @@ vg_hero(
   <div class="card">
     <strong>판정 분포</strong>
     <div class="card__body center">
+      <?php /* 도넛 옆 목록(vg_donut_kpi 의 직접 라벨)이 곧 범례다 — 예전엔 바로 아래에
+               같은 세 줄을 손으로 한 벌 더 그렸는데, 값이 두 곳에 적히면 언젠가 갈린다. */ ?>
       <?php vg_result_donut([
           ['tone' => 'crit',  'label' => 'FAIL',    'n' => $counts['FAIL']],
           ['tone' => 'ok',    'label' => 'PASS',    'n' => $counts['PASS']],
           ['tone' => 'muted', 'label' => '판정 불가', 'n' => $counts['NA']],
       ], 132, '이 통제의 판정 분포'); ?>
-      <div class="legend">
-        <div><i class="tone-crit"></i>FAIL<span class="n"><?= number_format($counts['FAIL']) ?></span></div>
-        <div><i class="tone-ok"></i>PASS<span class="n"><?= number_format($counts['PASS']) ?></span></div>
-        <div><i class="tone-muted"></i>판정 불가<span class="n"><?= number_format($counts['NA']) ?></span></div>
-      </div>
     </div>
   </div>
   <div class="card">

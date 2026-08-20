@@ -52,22 +52,42 @@ declare(strict_types=1);
     $latestResourceScan = $resourceScans ? end($resourceScans) : null;
     ?>
     <div class="card mt-lg">
-      <strong>에이전트 메모리 사용률</strong>
-      <?php if ($latestResourceScan && $latestResourceScan['mem_pct'] !== null): ?>
-        <span class="why">현재 <?= vg_resource_pct($latestResourceScan['mem_pct']) ?></span>
+      <strong>에이전트 리소스 사용률</strong>
+      <?php if ($latestResourceScan): ?>
+        <span class="why">현재
+          <?= $latestResourceScan['mem_pct'] !== null ? '메모리 ' . vg_resource_pct($latestResourceScan['mem_pct']) : '메모리 –' ?> ·
+          <?= $latestResourceScan['cpu_pct'] !== null ? 'CPU ' . vg_resource_pct($latestResourceScan['cpu_pct']) : 'CPU –' ?>
+        </span>
       <?php endif; ?>
       <div class="card__body">
-      <?php vg_resource_trend($resourceScans, 'mem_pct', '%', 1, 'mem'); ?>
+      <?php
+      /* 메모리와 CPU 를 **한 차트에** 둔다 — 둘 다 단위가 %(호스트 스펙 대비 사용률)라
+       *   같은 축에 얹어도 값이 서로 거짓말을 하지 않는다. 단위가 다른 지표였다면 이중축이
+       *   아니라 차트를 둘로 갈랐을 것이다(이중축은 눈금 두 개를 겹쳐 놓고 관계가 있는 것처럼
+       *   보이게 한다). 축은 0~100 으로 고정한다: 관측 구간으로 자동 확대하면 0.6% 도 차트
+       *   꼭대기에 붙어 실제 부하가 큰 것처럼 보인다(예전 SVG 차트가 그래서 절대 축이었다).
+       * 값이 없는(구버전 에이전트) 스캔은 그 계열에서 **건너뛴다** — 0 으로 이으면 실제로
+       *   없는 급락이 된다. 선은 vg_multi_trend() 가 spanGaps 로 이어 준다. */
+      $resLabel = static fn(array $s): string => date('n/j H:i', strtotime((string) $s['collected_at']));
+      $resSeries = [];
+      foreach (['mem_pct' => '메모리', 'cpu_pct' => 'CPU'] as $field => $name) {
+          $pts = [];
+          foreach ($resourceScans as $rs) {
+              if ($rs[$field] === null || $rs[$field] === '') { continue; }
+              $pts[] = ['d' => $resLabel($rs), 'v' => round((float) $rs[$field], 1)];
+          }
+          if ($pts) { $resSeries[] = ['name' => $name, 'points' => $pts]; }
+      }
+      vg_multi_trend($resSeries, [
+          'unit'  => '%',
+          'y_max' => 100,
+          'alt'   => '에이전트 메모리·CPU 사용률 추이',
+          'empty' => [
+              'icon'  => 'chart',
+              'title' => '그래프를 그리기엔 스캔 이력이 부족합니다.',
+              'hint'  => '메모리·CPU 값이 있는 스캔이 2건 이상 쌓이면 여기에 추이가 표시됩니다.',
+          ],
+      ]);
+      ?>
       </div>
     </div>
-
-    <div class="card mt-lg">
-      <strong>에이전트 CPU 사용률</strong>
-      <?php if ($latestResourceScan && $latestResourceScan['cpu_pct'] !== null): ?>
-        <span class="why">현재 <?= vg_resource_pct($latestResourceScan['cpu_pct']) ?></span>
-      <?php endif; ?>
-      <div class="card__body">
-      <?php vg_resource_trend($resourceScans, 'cpu_pct', '%', 1, 'cpu'); ?>
-      </div>
-    </div>
-

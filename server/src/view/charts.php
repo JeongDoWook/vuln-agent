@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 /**
  * charts.php — 차트 렌더. 색은 전부 app.css 의 토큰을 참조하므로 팔레트를 바꾸면 차트도 따라온다.
- *   ① 형태가 고정된 차트(심각도 도넛·리소스 추이 라인·순위 막대)는 <svg> 를 직접 그린다.
- *   ② 축·범례·툴팁이 필요한 일반 차트는 vg_chart() 로 Chart.js(vendor/) 에 넘긴다.
+ *   ① 형태가 고정된 차트(중앙 총계 도넛·순위 막대·다이버징 막대)는 <svg> 를 직접 그린다.
+ *   ② 축·범례·툴팁이 필요한 일반 차트(계열별 추세)는 vg_chart() 로 Chart.js(vendor/) 에 넘긴다.
  *   ②의 색·다크 대응은 assets/js/chart-kit.js 한 곳이 갖는다(파일 아래 주석 참조).
  */
 
@@ -15,150 +15,163 @@ require_once __DIR__ . '/components.php';
 require_once __DIR__ . '/layout.php';
 
 /**
- * 심각도 도넛 (순수 SVG — 차트 라이브러리를 들이지 않는다).
- *   $counts: ['CRITICAL'=>3, 'HIGH'=>7, …]. 합이 0이면 회색 빈 링 + "0" 을 그린다.
- *
- * stroke-dasharray 로 원호를 그린다: 둘레를 100 으로 잡으면 dasharray 가 곧 퍼센트다.
- * 조각마다 dashoffset 을 누적해 이어 붙인다. 색은 CSS 변수(--crit 등)를 그대로 참조하므로
- * 팔레트를 바꾸면 도넛도 같이 바뀐다.
+ * 톤 어휘 → 도넛 조각·스와치 색. app.css 의 토큰 이름과 1:1 이다(새 색을 만들지 않는다).
+ *   cat1..cat6 은 의미가 없는 범주용 팔레트(--cat-N)고, cat6 은 언제나 "기타" 자리다.
+ *   어휘 밖 값은 muted 로 눕힌다 — vg_badge()·vg_legend() 와 같은 규칙.
  */
-function vg_sev_donut(array $counts, int $size = 132): void {
-    $segments = [];
-    foreach (VG_TONE_SEV as $sev => $tone) {
-        $segments[] = ['tone' => $tone, 'label' => $sev, 'n' => (int) ($counts[$sev] ?? 0)];
-    }
-    vg_result_donut($segments, $size, '심각도 분포');
+const VG_DONUT_TONES = [
+    'crit', 'high', 'med', 'low', 'ok', 'accent', 'purple', 'info', 'muted',
+    'cat1', 'cat2', 'cat3', 'cat4', 'cat5', 'cat6',
+];
+
+function vg_donut_tone(string $tone): string {
+    return in_array($tone, VG_DONUT_TONES, true) ? $tone : 'muted';
 }
 
 /**
- * 임의 판정 분포 도넛(PASS/FAIL/NA 등) — vg_sev_donut() 과 같은 SVG 패턴이지만 톤·라벨을
- *   호출부가 직접 정한다(심각도처럼 어휘가 고정돼 있지 않은 화면들이 쓴다: control.php 의
- *   PASS/FAIL/판정불가, cce-rule.php 등).
- *   $segments: [['tone'=>'crit', 'label'=>'FAIL', 'n'=>3], …] — 0건인 조각은 그리지 않는다.
+ * 중앙 총계 도넛 KPI — 순수 SVG(차트 라이브러리를 들이지 않는다). 왼쪽 도넛 + 오른쪽 조각 목록.
+ *
+ *   $title    : 접근성 이름(SVG 의 aria-label). **눈에 보이는 제목은 그리지 않는다** —
+ *               감싸는 카드의 <strong> 이 이미 갖고 있어서 두 번 적으면 같은 문구가 겹친다.
+ *   $segments : [['label'=>'HIGH', 'value'=>968, 'tone'=>'high',
+ *                 'href'=>'…', 'selected'=>bool, 'title'=>'…'], …]
+ *               값이 0 인 조각은 **목록에는 남기고 호(arc)만 그리지 않는다** — "그 등급이
+ *               0건" 은 지워야 할 정보가 아니라 읽어야 할 사실이다(0건 = 안전 아님).
+ *   $opts     : 'center'(중앙 숫자 — 기본은 조각 합) · 'center_label'(기본 '전체') ·
+ *               'href'(도넛 자체를 링크로) · 'size'(px, 기본 132) ·
+ *               'max_segments'(상위 N + '기타' 로 접는다 — 0 이면 접지 않는다)
+ *
+ * **조각 사이에 2px 간격을 둔다.** --high 와 --med 는 맞닿으면 색차가 정상 시야 10.4 ·
+ *   색각이상 6.1 로 권장치(15)에 한참 못 미쳐 한 덩어리로 읽힌다. 토큰 값은 바꿀 수 없으므로
+ *   (전 화면이 그 색에 의존한다) **형태**로 가른다 — 간격 + 오른쪽 직접 라벨.
+ *   간격은 viewBox(42)를 실제 렌더 폭($size)으로 환산해 낸다. `.donut svg` 에는 width:100% 가
+ *   없어(그건 `.chart svg` 규칙이다) 렌더 폭이 곧 $size 라 이 환산이 정확하다.
  */
-function vg_result_donut(array $segments, int $size = 132, string $alt = '판정 분포'): void {
+function vg_donut_kpi(string $title, array $segments, array $opts = []): void {
+    $size = max(72, (int) ($opts['size'] ?? 132));
+
+    // 조각 정규화. 음수는 받지 않는다 — 도넛은 구성비라 음수가 뜻을 못 갖는다.
+    $segs = [];
+    foreach ($segments as $s) {
+        if (!is_array($s)) { continue; }
+        $segs[] = [
+            'label'    => (string) ($s['label'] ?? ''),
+            'value'    => max(0, (int) ($s['value'] ?? 0)),
+            'tone'     => vg_donut_tone((string) ($s['tone'] ?? 'muted')),
+            'href'     => (string) ($s['href'] ?? ''),
+            'selected' => !empty($s['selected']),
+            'title'    => (string) ($s['title'] ?? ''),
+        ];
+    }
+
+    // 상위 N + 기타 — 범주가 많은 도넛(생태계 분포 등)이 색만 다른 실오라기가 되지 않게.
+    //   '기타' 는 언제나 --cat-6 슬롯이다(app.css 범주형 팔레트 주석의 계약).
+    $maxSeg = max(0, (int) ($opts['max_segments'] ?? 0));
+    if ($maxSeg > 0 && count($segs) > $maxSeg) {
+        usort($segs, static fn(array $a, array $b): int => $b['value'] <=> $a['value']);
+        $rest = array_slice($segs, $maxSeg);
+        $segs = array_slice($segs, 0, $maxSeg);
+        $restSum = 0;
+        foreach ($rest as $r) { $restSum += $r['value']; }
+        $segs[] = ['label' => '기타', 'value' => $restSum, 'tone' => 'cat6',
+                   'href' => '', 'selected' => false,
+                   'title' => '나머지 ' . number_format(count($rest)) . '종 합계'];
+    }
+
     $total = 0;
-    foreach ($segments as $seg) { $total += (int) $seg['n']; }
+    $drawn = 0;
+    foreach ($segs as $s) { $total += $s['value']; if ($s['value'] > 0) { $drawn++; } }
 
-    $r = 15.9155;   // 둘레가 정확히 100 이 되는 반지름 (2πr = 100)
-    echo '<div class="donut">';
-    echo '<svg viewBox="0 0 42 42" width="' . $size . '" height="' . $size . '" role="img" aria-label="' . vg_h($alt) . '">';
+    $center      = (string) ($opts['center'] ?? number_format($total));
+    $centerLabel = (string) ($opts['center_label'] ?? '전체');
+    $href        = (string) ($opts['href'] ?? '');
+
+    // 2px 을 viewBox 단위로. 조각이 하나뿐이면 간격을 두지 않는다 — 끊긴 고리가 된다.
+    $gap = $drawn > 1 ? min(3.0, 2.0 * 42.0 / $size) : 0.0;
+    $r   = 15.9155;   // 둘레가 정확히 100 이 되는 반지름 (2πr = 100) — dasharray 가 곧 퍼센트다
+
+    echo '<div class="donut-kpi">';
+
+    $figTag = $href !== '' ? 'a' : 'div';
+    echo '<' . $figTag . ' class="donut donut--kpi"'
+        . ($href !== '' ? ' href="' . vg_h($href) . '"' : '') . '>';
+    echo '<svg viewBox="0 0 42 42" width="' . $size . '" height="' . $size . '"'
+        . ' role="img" aria-label="' . vg_h($title) . '">';
     echo '<circle class="donut__track" cx="21" cy="21" r="' . $r . '" fill="none" stroke-width="4.5"></circle>';
-
     if ($total > 0) {
-        $offset = 25;   // 12시 방향에서 시작(기본은 3시 방향)
-        foreach ($segments as $seg) {
-            $n = (int) $seg['n'];
-            if ($n === 0) { continue; }
-            $pct = $n / $total * 100;
-            echo '<circle class="donut__arc tone-' . vg_h((string) $seg['tone']) . '" cx="21" cy="21" r="' . $r . '"'
+        $offset = 25;   // 12시 방향에서 시작(원의 기본 시작점은 3시 방향)
+        foreach ($segs as $s) {
+            if ($s['value'] <= 0) { continue; }
+            $pct = $s['value'] / $total * 100;
+            // 간격만큼 짧게 그린다(위치는 그대로 — offset 은 원래 몫만큼 밀어야 이어 붙는다).
+            //   0.6 아래로는 안 줄인다: 1건짜리 조각이 아예 사라지면 그림이 목록과 어긋난다.
+            $len = max(0.6, $pct - $gap);
+            echo '<circle class="donut__arc tone-' . vg_h($s['tone']) . '" cx="21" cy="21" r="' . $r . '"'
                 . ' fill="none" stroke-width="4.5"'
-                . ' stroke-dasharray="' . round($pct, 2) . ' ' . round(100 - $pct, 2) . '"'
+                . ' stroke-dasharray="' . round($len, 2) . ' ' . round(100 - $len, 2) . '"'
                 . ' stroke-dashoffset="' . round($offset, 2) . '">'
-                . '<title>' . vg_h((string) $seg['label'] . ' ' . number_format($n) . '건') . '</title></circle>';
+                . '<title>' . vg_h($s['label'] . ' ' . number_format($s['value'])
+                    . ' (' . number_format($pct, 1) . '%)') . '</title></circle>';
             $offset -= $pct;   // 시계방향으로 이어 붙인다
         }
     }
     echo '</svg>';
-    echo '<div class="donut__mid"><b>' . number_format($total) . '</b><span>전체</span></div>';
+    // 라벨이 숫자 위에 온다 — 큰 숫자가 먼저 읽히고, 그게 무엇인지는 바로 위에서 받는다.
+    //   자릿수가 많으면(천단위 구분 포함 6자 이상) 고리 안쪽 구멍보다 넓어져 링 위로 걸친다.
+    $midCls = 'donut__mid' . (mb_strlen($center) >= 6 ? ' donut__mid--long' : '');
+    echo '<div class="' . $midCls . '"><span>' . vg_h($centerLabel) . '</span><b>' . vg_h($center) . '</b></div>';
+    echo '</' . $figTag . '>';
+
+    // 직접 라벨 — 색만으로 조각을 식별하게 두지 않는다(색각이상·흑백 인쇄·인접 색 문제).
+    echo '<div class="donut-kpi__list">';
+    foreach ($segs as $s) {
+        $tag  = $s['href'] !== '' ? 'a' : 'div';
+        $cls  = 'donut-kpi__seg' . ($s['value'] === 0 ? ' donut-kpi__seg--zero' : '')
+              . ($s['selected'] ? ' is-selected' : '');
+        $tip  = $s['title'] !== '' ? $s['title']
+              : $s['label'] . ' ' . number_format($s['value'])
+                . ($total > 0 ? ' (' . number_format($s['value'] / $total * 100, 1) . '%)' : '');
+        echo '<' . $tag . ' class="' . vg_h($cls) . '"'
+            . ($s['href'] !== '' ? ' href="' . vg_h($s['href']) . '"' : '')
+            . ' title="' . vg_h($tip) . '">'
+            . '<i class="tone-' . vg_h($s['tone']) . '"></i>'
+            . '<span>' . vg_h($s['label']) . '</span>'
+            . '<b>' . number_format($s['value']) . '</b>'
+            . '</' . $tag . '>';
+    }
+    echo '</div>';
+
     echo '</div>';
 }
 
 /**
- * 스캔별 리소스(메모리/CPU) 추이 라인차트 — app.css 의 chart__grid/tick/lbl
- * 눈금 위에 area 채움(세로 그라데이션) + 폴리라인 + 포인트로 그린다.
- *   $scans: host.php 가 이미 들고 있는 tb_scan 행(oldest→newest 순으로 넘긴다 — 차트는 좌→우).
- *   값이 없는(구버전 에이전트) 스캔은 건너뛴다 — 0으로 이으면 실제로 없는 급락처럼 보인다.
- *   $tone: 'mem'|'cpu' — app.css 의 .chart__line.tone-* 색만 다르다.
+ * 심각도 도넛 — vg_donut_kpi() 로 그린다(도넛 구현은 이 저장소에 한 벌만 둔다).
+ *   $counts: ['CRITICAL'=>3, 'HIGH'=>7, …]. 합이 0이면 빈 링 + "0" 이 된다.
+ *   시그니처는 그대로 둔다 — 부르는 화면(advisory.php)을 고치지 않기 위해서다.
  */
-function vg_resource_trend(array $scans, string $field, string $unit, int $decimals, string $tone): void {
-    $pts = [];
-    foreach ($scans as $s) {
-        if ($s[$field] === null || $s[$field] === '') { continue; }
-        $pts[] = ['t' => (string) $s['collected_at'], 'v' => (float) $s[$field]];
+function vg_sev_donut(array $counts, int $size = 132): void {
+    $segments = [];
+    foreach (VG_TONE_SEV as $sev => $tone) {
+        $segments[] = ['tone' => $tone, 'label' => $sev, 'value' => (int) ($counts[$sev] ?? 0)];
     }
-    if (count($pts) === 0) {
-        vg_empty(['icon' => 'chart', 'title' => '그래프를 그리기엔 스캔 이력이 부족합니다.',
-                  'hint'  => '메모리·CPU 값이 있는 스캔이 2건 이상 쌓이면 여기에 추이가 표시됩니다.']);
-        return;
+    vg_donut_kpi('심각도 분포', $segments, ['size' => $size]);
+}
+
+/**
+ * 임의 판정 분포 도넛(PASS/FAIL/NA 등) — 심각도처럼 어휘가 고정돼 있지 않은 화면들이 쓴다
+ *   (control.php 의 PASS/FAIL/판정불가, cce-rule.php 등).
+ *   $segments: [['tone'=>'crit', 'label'=>'FAIL', 'n'=>3], …] — 'n' 은 옛 계약이라 그대로 받는다.
+ */
+function vg_result_donut(array $segments, int $size = 132, string $alt = '판정 분포'): void {
+    $out = [];
+    foreach ($segments as $seg) {
+        $out[] = [
+            'tone'  => (string) ($seg['tone'] ?? 'muted'),
+            'label' => (string) ($seg['label'] ?? ''),
+            'value' => (int) ($seg['value'] ?? $seg['n'] ?? 0),
+        ];
     }
-    if (count($pts) === 1) {
-        $when = date('n/j H:i', strtotime($pts[0]['t']));
-        vg_empty(['icon' => 'chart',
-                  'title' => '현재 ' . number_format($pts[0]['v'], $decimals) . $unit . ' (' . $when . ')',
-                  'hint'  => '스캔이 1건뿐이라 추이선은 아직 못 그립니다. 2건 이상 쌓이면 선으로 표시됩니다.']);
-        return;
-    }
-
-    $W = 720; $H = 190;
-    $padL = 44; $padR = 8; $padT = 12; $padB = 26;
-    $plotW = $W - $padL - $padR;
-    $plotH = $H - $padT - $padB;
-    $n = count($pts);
-
-    // 관측 구간의 최소·최대로 자동 확대하면 0.6%도 차트 꼭대기에 붙어 실제 부하가 큰 것처럼
-    // 보인다. 사용률 차트는 언제나 같은 의미를 갖도록 0~100% 절대 축으로 고정한다.
-    $min = 0.0;
-    $max = 100.0;
-
-    $xAt = static fn(int $i): float => $padL + ($n === 1 ? 0.0 : $plotW * $i / ($n - 1));
-    $yAt = static fn(float $v): float => $padT + $plotH * (1 - ($v - $min) / ($max - $min));
-    $baseY = $padT + $plotH;   // area 를 닫는 바닥선(plot 하단)
-
-    // area 채움 그라데이션 id 는 인스턴스마다 고유해야 한다 — 한 화면(host.php 리소스 탭)에
-    // 이 차트가 4개 뜨는데, id 가 겹치면 브라우저가 첫 그라데이션으로만 그린다.
-    static $seq = 0;
-    $gradId = 'chart-grad-' . vg_h($tone) . '-' . (++$seq);
-
-    echo '<div class="chart">';
-    echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="' . vg_h($unit) . ' 추이(스캔 ' . $n . '건)">';
-
-    // 선 아래 area 를 채울 세로 그라데이션(선 근처 옅게 → 바닥으로 투명). stop 색은 app.css 가
-    // CSS 변수(--accent/--high)로 준다 — 색 하드코딩 없이 라이트/다크 모두 계열색을 탄다.
-    echo '<defs><linearGradient id="' . $gradId . '" x1="0" y1="0" x2="0" y2="1">'
-        . '<stop class="chart__grad-0 tone-' . vg_h($tone) . '" offset="0"></stop>'
-        . '<stop class="chart__grad-1 tone-' . vg_h($tone) . '" offset="1"></stop>'
-        . '</linearGradient></defs>';
-
-    // 눈금은 절대 축의 0%·100%만 표시한다.
-    foreach ([0, 1] as $f) {
-        $gy = $padT + $plotH * (1 - $f);
-        $gv = $min + ($max - $min) * $f;
-        echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($gy, 1) . '"'
-            . ' x2="' . ($W - $padR) . '" y2="' . round($gy, 1) . '"></line>';
-        echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($gy + 3.5, 1) . '">'
-            . number_format($gv, $decimals) . vg_h($unit) . '</text>';
-    }
-
-    $poly = [];
-    foreach ($pts as $i => $p) { $poly[] = round($xAt($i), 1) . ',' . round($yAt($p['v']), 1); }
-
-    // area — 선을 그대로 따라가다 양끝에서 바닥으로 떨어뜨려 닫는다(선 아래를 그라데이션으로 채움).
-    $xFirst = round($xAt(0), 1);
-    $xLast  = round($xAt($n - 1), 1);
-    echo '<polygon class="chart__area" fill="url(#' . $gradId . ')" points="'
-        . implode(' ', $poly) . ' ' . $xLast . ',' . round($baseY, 1)
-        . ' ' . $xFirst . ',' . round($baseY, 1) . '"></polygon>';
-
-    echo '<polyline class="chart__line tone-' . vg_h($tone) . '" points="' . implode(' ', $poly) . '"></polyline>';
-
-    foreach ($pts as $i => $p) {
-        $cx = round($xAt($i), 1); $cy = round($yAt($p['v']), 1);
-        // 마지막(현재) 점은 계열색으로 채워 강조한다.
-        $last = $i === $n - 1 ? ' chart__pt--last' : '';
-        echo '<circle class="chart__pt tone-' . vg_h($tone) . $last . '" cx="' . $cx . '" cy="' . $cy . '" r="3">'
-            . '<title>' . vg_h($p['t'] . ' · ' . number_format($p['v'], $decimals) . $unit) . '</title>'
-            . '</circle>';
-        // x축 라벨은 시작·끝만 — 과하게 붙이면 겹친다(작업 지침).
-        // 가운데 정렬(chart__lbl)로 두면 끝 라벨은 x=W-padR 에서 절반이 viewBox 밖으로
-        // 잘린다 — 위치별로 앵커를 안쪽(시작=start/끝=end)으로 튼다.
-        if ($i === 0 || $i === $n - 1) {
-            $edge = $i === 0 ? 'start' : 'end';
-            echo '<text class="chart__lbl chart__lbl--' . $edge . '" x="' . $cx . '" y="' . ($H - 8) . '">'
-                . vg_h(date('n/j H:i', strtotime($p['t']))) . '</text>';
-        }
-    }
-    echo '</svg></div>';
+    vg_donut_kpi($alt, $out, ['size' => $size]);
 }
 
 /**
@@ -224,172 +237,8 @@ function vg_nice_max(int $raw): int {
 }
 
 /**
- * 회차별 미해결(잔존) 건수 추이. vg_resource_trend() 와 같은 SVG 패턴이지만, 사용률처럼
- * 0~100% 로 고정할 수 없는 건수라 vg_nice_max() 로 데이터 범위에 맞춘 축을 잡는다.
- *   $rounds: changes.php 의 vg_trend_load() 결과(오래된→최신 순). 'collected_at'·'unresolved'·'round' 사용.
- */
-function vg_count_trend(array $rounds, string $tone = 'trend'): void {
-    // collected_at 이 NULL/빈값인 회차(에이전트 파싱 실패)는 건너뛴다 — vg_resource_trend() 와
-    // 같은 이유: 실제로 없는 시점을 0/오늘로 이으면 없는 데이터가 있는 것처럼 보인다.
-    $pts = [];
-    foreach ($rounds as $r) {
-        if ($r['collected_at'] === null || $r['collected_at'] === '') { continue; }
-        $pts[] = ['t' => (string) $r['collected_at'], 'v' => (int) $r['unresolved'], 'round' => (int) $r['round']];
-    }
-    $n = count($pts);
-    if ($n === 0) {
-        vg_empty(['icon' => 'chart', 'title' => '그래프를 그리기엔 회차 이력이 부족합니다.',
-                  'hint'  => '스캔이 쌓이면 여기에 추이가 표시됩니다.']);
-        return;
-    }
-    if ($n === 1) {
-        $when = date('n/j H:i', strtotime($pts[0]['t']));
-        vg_empty(['icon' => 'chart',
-                  'title' => '현재 미해결 ' . number_format($pts[0]['v']) . '건 (' . $when . ')',
-                  'hint'  => '회차가 1건뿐이라 추이선은 아직 못 그립니다. 2회차 이상 쌓이면 선으로 표시됩니다.']);
-        return;
-    }
-
-    $W = 720; $H = 190;
-    $padL = 44; $padR = 8; $padT = 12; $padB = 26;
-    $plotW = $W - $padL - $padR;
-    $plotH = $H - $padT - $padB;
-
-    $rawMax = 0;
-    foreach ($pts as $p) { $rawMax = max($rawMax, $p['v']); }
-    $niceMax = vg_nice_max($rawMax);
-    $min = 0.0; $max = (float) $niceMax;
-
-    $xAt = static fn(int $i): float => $padL + $plotW * $i / ($n - 1);
-    $yAt = static fn(float $v): float => $padT + $plotH * (1 - ($v - $min) / ($max - $min));
-    $baseY = $padT + $plotH;
-
-    static $seq = 0;
-    $gradId = 'chart-grad-cnt-' . vg_h($tone) . '-' . (++$seq);
-
-    echo '<div class="chart">';
-    echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="미해결 건수 추이(회차 ' . $n . '개)">';
-
-    echo '<defs><linearGradient id="' . $gradId . '" x1="0" y1="0" x2="0" y2="1">'
-        . '<stop class="chart__grad-0 tone-' . vg_h($tone) . '" offset="0"></stop>'
-        . '<stop class="chart__grad-1 tone-' . vg_h($tone) . '" offset="1"></stop>'
-        . '</linearGradient></defs>';
-
-    // 눈금은 0/25/50/75/100% 다섯 자리 — vg_nice_max() 로 반올림한 값 기준.
-    foreach ([0, 0.25, 0.5, 0.75, 1] as $f) {
-        $gy = $padT + $plotH * (1 - $f);
-        $gv = $min + ($max - $min) * $f;
-        echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($gy, 1) . '"'
-            . ' x2="' . ($W - $padR) . '" y2="' . round($gy, 1) . '"></line>';
-        echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($gy + 3.5, 1) . '">'
-            . number_format((int) round($gv)) . '</text>';
-    }
-
-    $poly = [];
-    foreach ($pts as $i => $p) { $poly[] = round($xAt($i), 1) . ',' . round($yAt($p['v']), 1); }
-
-    $xFirst = round($xAt(0), 1);
-    $xLast  = round($xAt($n - 1), 1);
-    echo '<polygon class="chart__area" fill="url(#' . $gradId . ')" points="'
-        . implode(' ', $poly) . ' ' . $xLast . ',' . round($baseY, 1)
-        . ' ' . $xFirst . ',' . round($baseY, 1) . '"></polygon>';
-
-    echo '<polyline class="chart__line tone-' . vg_h($tone) . '" points="' . implode(' ', $poly) . '"></polyline>';
-
-    foreach ($pts as $i => $p) {
-        $cx = round($xAt($i), 1); $cy = round($yAt($p['v']), 1);
-        $last = $i === $n - 1 ? ' chart__pt--last' : '';
-        echo '<circle class="chart__pt tone-' . vg_h($tone) . $last . '" cx="' . $cx . '" cy="' . $cy . '" r="3">'
-            . '<title>' . vg_h($p['round'] . '회차 · ' . $p['t'] . ' · ' . number_format($p['v']) . '건') . '</title>'
-            . '</circle>';
-        if ($i === 0 || $i === $n - 1) {
-            $edge = $i === 0 ? 'start' : 'end';
-            echo '<text class="chart__lbl chart__lbl--' . $edge . '" x="' . $cx . '" y="' . ($H - 8) . '">'
-                . vg_h(date('n/j H:i', strtotime($p['t']))) . '</text>';
-        }
-    }
-    echo '</svg></div>';
-}
-
-/**
- * 날짜별 추이선(대시보드 30일 추세) — vg_count_trend() 와 같은 눈금·area 패턴이지만
- * x축이 **회차가 아니라 날짜**라 두 가지가 다르다:
- *   · 점(circle)은 **그날 실제로 스캔이 있었던 날에만** 찍는다. 스캔은 바뀔 때만 저장돼
- *     날짜가 듬성듬성한데, 이월(carry-forward)로 이어 그린 날까지 점을 찍으면 "그날 쟀다"는
- *     거짓 신호가 된다. 선은 끊지 않는다 — 끊으면 이번엔 "그날 0건" 으로 읽힌다.
- *   · x 라벨은 날짜(m/d)만 쓴다(시각은 하루 단위 집계에서 의미가 없다).
- *   $days: 오래된→최신 순 [['d'=>'2026-08-12', 'v'=>1001, 'scanned'=>true], …]
- */
-function vg_daily_trend(array $days, string $tone = 'trend'): void {
-    $pts = array_values(array_filter($days, static fn($p) => isset($p['d'], $p['v'])));
-    $n = count($pts);
-    if ($n < 2) {
-        vg_empty(['icon' => 'chart', 'title' => '추세를 그리기엔 스캔 이력이 부족합니다.',
-                  'hint'  => '서로 다른 날짜의 수집이 2건 이상 쌓이면 여기에 추세가 표시됩니다.']);
-        return;
-    }
-
-    $W = 720; $H = 190;
-    $padL = 44; $padR = 8; $padT = 12; $padB = 26;
-    $plotW = $W - $padL - $padR;
-    $plotH = $H - $padT - $padB;
-
-    $rawMax = 0;
-    foreach ($pts as $p) { $rawMax = max($rawMax, (int) $p['v']); }
-    $max = (float) vg_nice_max($rawMax);
-
-    $xAt = static fn(int $i): float => $padL + $plotW * $i / ($n - 1);
-    $yAt = static fn(float $v): float => $padT + $plotH * (1 - $v / $max);
-    $baseY = $padT + $plotH;
-
-    static $seq = 0;
-    $gradId = 'chart-grad-day-' . vg_h($tone) . '-' . (++$seq);
-
-    echo '<div class="chart">';
-    echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="최근 ' . $n . '일 추세">';
-    echo '<defs><linearGradient id="' . $gradId . '" x1="0" y1="0" x2="0" y2="1">'
-        . '<stop class="chart__grad-0 tone-' . vg_h($tone) . '" offset="0"></stop>'
-        . '<stop class="chart__grad-1 tone-' . vg_h($tone) . '" offset="1"></stop>'
-        . '</linearGradient></defs>';
-
-    foreach ([0, 0.5, 1] as $f) {
-        $gy = $padT + $plotH * (1 - $f);
-        echo '<line class="chart__grid" x1="' . $padL . '" y1="' . round($gy, 1) . '"'
-            . ' x2="' . ($W - $padR) . '" y2="' . round($gy, 1) . '"></line>';
-        echo '<text class="chart__tick" x="' . ($padL - 6) . '" y="' . round($gy + 3.5, 1) . '">'
-            . number_format((int) round($max * $f)) . '</text>';
-    }
-
-    $poly = [];
-    foreach ($pts as $i => $p) { $poly[] = round($xAt($i), 1) . ',' . round($yAt((float) $p['v']), 1); }
-
-    $xFirst = round($xAt(0), 1);
-    $xLast  = round($xAt($n - 1), 1);
-    echo '<polygon class="chart__area" fill="url(#' . $gradId . ')" points="'
-        . implode(' ', $poly) . ' ' . $xLast . ',' . round($baseY, 1)
-        . ' ' . $xFirst . ',' . round($baseY, 1) . '"></polygon>';
-    echo '<polyline class="chart__line tone-' . vg_h($tone) . '" points="' . implode(' ', $poly) . '"></polyline>';
-
-    foreach ($pts as $i => $p) {
-        $cx = round($xAt($i), 1); $cy = round($yAt((float) $p['v']), 1);
-        if (!empty($p['scanned'])) {
-            $last = $i === $n - 1 ? ' chart__pt--last' : '';
-            echo '<circle class="chart__pt tone-' . vg_h($tone) . $last . '" cx="' . $cx . '" cy="' . $cy . '" r="3">'
-                . '<title>' . vg_h($p['d'] . ' · ' . number_format((int) $p['v']) . '건 (이날 수집됨)') . '</title>'
-                . '</circle>';
-        }
-        if ($i === 0 || $i === $n - 1) {
-            $edge = $i === 0 ? 'start' : 'end';
-            echo '<text class="chart__lbl chart__lbl--' . $edge . '" x="' . $cx . '" y="' . ($H - 8) . '">'
-                . vg_h(date('n/j', strtotime((string) $p['d']))) . '</text>';
-        }
-    }
-    echo '</svg></div>';
-}
-
-/**
- * 회차별 신규(0 기준선 위)·해결(아래) 다이버징 막대차트 — vg_count_trend() 와 같은
- * grid/lbl 눈금 패턴 위에 막대만 얹은 변형. 첫 회차(비교 대상 없는 기준선)는
+ * 회차별 신규(0 기준선 위)·해결(아래) 다이버징 막대차트 — 이 파일에 남은 마지막 SVG
+ * 눈금 차트다(grid/tick/lbl 규칙을 쓰는 곳도 여기뿐). 첫 회차(비교 대상 없는 기준선)는
  * $rounds 에서 'new'===null 이므로 자동으로 빠진다.
  *   $rounds: vg_trend_load() 결과(오래된→최신 순).
  */
@@ -499,6 +348,10 @@ function vg_chart_assets(): void {
  * <canvas> 안의 글은 캔버스를 못 그리는 환경에서 읽히는 대체 텍스트다.
  */
 function vg_chart(string $type, array $data, array $opts = []): void {
+    // 자산(vendor + chart-kit)은 여기서 붙인다 — 차트를 그리는 화면만 70KB 를 물게 하되,
+    //   화면마다 "부르는 걸 잊어 캔버스가 빈 채로 뜨는" 실수를 구조적으로 없앤다. 멱등이다.
+    vg_chart_assets();
+
     $sizes = ['sm' => 'chart-js--sm', 'md' => 'chart-js--md', 'lg' => 'chart-js--lg'];
     $size  = $sizes[(string) ($opts['size'] ?? 'md')] ?? $sizes['md'];
     $alt   = (string) ($opts['alt'] ?? '차트');
@@ -512,4 +365,133 @@ function vg_chart(string $type, array $data, array $opts = []): void {
     echo '<div class="chart-js ' . $size . '">'
         . '<canvas role="img" aria-label="' . vg_h($alt) . '" data-vg-chart="' . vg_h((string) $json) . '">'
         . vg_h($alt) . '</canvas></div>';
+}
+
+/**
+ * 자산(계열)별 멀티라인 추세 — Chart.js `line` 에 위임한다.
+ *
+ * 왜 SVG 가 아닌가: 계열이 여럿이면 범례·공통 x 툴팁·축이 필요하고, 그걸 SVG 로 계속 늘리면
+ *   우리가 차트 라이브러리를 직접 만드는 셈이 된다(이 파일 아래 Chart.js 절의 판단과 같다).
+ *
+ *   $series : [['name' => 'ubuntu-01', 'points' => [['d' => '8/20', 'v' => 412], …]], …]
+ *             'd' 는 **x축 라벨 문자열**이다(표시할 모양 그대로 넘긴다). 계열마다 점 개수가
+ *             달라도 라벨로 맞춰 꽂으므로, 빠진 라벨은 null 이 되어 선이 그 구간만 이어진다
+ *             (spanGaps). **없는 날을 0 으로 떨구지 않는다** — 이 스키마는 "바뀔 때만 스냅샷"
+ *             이라 0 으로 이으면 "취약점이 사라졌다"는 거짓말이 된다(이월은 호출부의 몫이다).
+ *   $opts   : 'unit'(툴팁 값 뒤에 붙는 단위) · 'max_series'(기본 5 — 넘으면 상위 N + '기타') ·
+ *             'y_max'(y 축 상한 고정 — 사용률처럼 0~100 이 절대 의미를 갖는 값에 준다) ·
+ *             'size'('sm'|'md'|'lg') · 'alt'(대체 텍스트) · 'fold'(false 면 접지 않고 자른다)
+ *
+ * 규모가 크게 다른 계열을 한 차트에 쌓으면 작은 계열이 1px 실선이 된다(PR #137 의 실측:
+ *   LOW 2,198 : CRITICAL 2). 그래서 **계열은 상위 N 으로 제한**하고, 전체 구성은 도넛
+ *   (vg_donut_kpi)이 맡는다. 호출부는 추세에 LOW 를 섞지 않는다.
+ */
+function vg_multi_trend(array $series, array $opts = []): void {
+    $unit  = (string) ($opts['unit'] ?? '');
+    $max   = max(1, (int) ($opts['max_series'] ?? 5));
+    $fold  = !isset($opts['fold']) || (bool) $opts['fold'];
+
+    // 점이 없는 계열은 애초에 그릴 것이 없다.
+    $clean = [];
+    foreach ($series as $s) {
+        if (!is_array($s) || empty($s['points']) || !is_array($s['points'])) { continue; }
+        $pts = [];
+        foreach ($s['points'] as $p) {
+            if (!is_array($p) || !isset($p['d'])) { continue; }
+            $pts[(string) $p['d']] = (float) ($p['v'] ?? 0);
+        }
+        if (!$pts) { continue; }
+        $clean[] = ['name' => (string) ($s['name'] ?? ''), 'points' => $pts];
+    }
+
+    // x 라벨 — 계열들이 준 순서를 처음 나온 순으로 이어 붙인다(정렬하지 않는다:
+    //   '8/9' 와 '8/20' 처럼 표시용 문자열은 사전순이 시간순과 다르다).
+    $labels = [];
+    foreach ($clean as $s) {
+        foreach (array_keys($s['points']) as $d) {
+            if (!isset($labels[$d])) { $labels[$d] = true; }
+        }
+    }
+    $labels = array_keys($labels);
+
+    if (!$clean || count($labels) < 2) {
+        vg_empty($opts['empty'] ?? [
+            'icon'  => 'chart',
+            'title' => '추세를 그리기엔 수집 이력이 부족합니다.',
+            'hint'  => '서로 다른 시점의 수집이 2건 이상 쌓이면 여기에 추세가 표시됩니다.',
+        ]);
+        return;
+    }
+
+    // 계열 순서 = 마지막 시점의 값이 큰 순. "지금 누가 제일 나쁜가" 가 범례의 순서가 된다.
+    $lastOf = static function (array $pts) use ($labels): float {
+        for ($i = count($labels) - 1; $i >= 0; $i--) {
+            if (isset($pts[$labels[$i]])) { return $pts[$labels[$i]]; }
+        }
+        return 0.0;
+    };
+    usort($clean, static fn(array $a, array $b): int => $lastOf($b['points']) <=> $lastOf($a['points']));
+
+    // 상위 N + '기타'. '기타' 는 --cat-6 고정 슬롯이라 vgCat 으로 못박는다 — max_series 를
+    //   바꿔도 "기타 = 회색" 이 흔들리지 않게(색이 의미를 갖는 유일한 자리다).
+    $others = [];
+    if (count($clean) > $max) {
+        $others = array_slice($clean, $max);
+        $clean  = array_slice($clean, 0, $max);
+    }
+    if ($others && $fold) {
+        $sum = [];
+        foreach ($others as $o) {
+            foreach ($o['points'] as $d => $v) { $sum[$d] = ($sum[$d] ?? 0.0) + $v; }
+        }
+        $clean[] = ['name' => '기타 ' . number_format(count($others)) . '개', 'points' => $sum, 'cat' => 6];
+    }
+
+    $lastIdx = count($labels) - 1;
+    $datasets = [];
+    foreach ($clean as $s) {
+        $data = [];
+        foreach ($labels as $d) { $data[] = array_key_exists($d, $s['points']) ? $s['points'][$d] : null; }
+        // 점 마커는 기본으로 숨기고 **마지막 점만** 남긴다 — 30일치 점이 전부 찍히면
+        //   시선을 점이 가져가 정작 선의 방향이 안 읽힌다(현행 화면의 실제 지적).
+        $radius = array_fill(0, count($labels), 0);
+        $radius[$lastIdx] = 3.5;
+        $ds = [
+            'label'            => $s['name'],
+            'data'             => $data,
+            'borderWidth'      => 2,
+            'tension'          => 0.25,
+            'fill'             => false,
+            'spanGaps'         => true,
+            'pointRadius'      => $radius,
+            'pointHoverRadius' => 4.5,
+            'pointHitRadius'   => 8,
+        ];
+        if (isset($s['cat'])) { $ds['vgCat'] = (int) $s['cat']; }
+        $datasets[] = $ds;
+    }
+
+    $yScale = ['beginAtZero' => true];
+    if (isset($opts['y_max'])) { $yScale['max'] = (float) $opts['y_max']; }
+
+    $options = [
+        // 범례는 Chart.js 기본 범례를 상단에 둔다 — 계열 이름이 곧 자산 이름이라 왼쪽 정렬.
+        'plugins'     => ['legend' => ['position' => 'top', 'align' => 'start']],
+        // 한 x 지점의 모든 계열을 한 툴팁에 모은다 — 계열이 여럿일 때 선마다 겨누게 하면 못 읽는다.
+        'interaction' => ['mode' => 'index', 'intersect' => false],
+        'scales'      => [
+            'y' => $yScale,
+            // 라벨이 30개면 x축이 글자로 메워진다. 개수를 줄이고 눕히지 않는다(기울인 글자는 못 읽는다).
+            'x' => ['ticks' => ['autoSkip' => true, 'maxTicksLimit' => 8, 'maxRotation' => 0]],
+        ],
+        // 값 뒤에 붙는 단위. Chart.js 는 콜백(함수)으로 받지만 CSP 상 인라인 <script> 를 못 쓰므로
+        //   문자열로 넘기고 chart-kit.js 가 콜백으로 바꿔 끼운다.
+        'vgUnit'      => $unit,
+    ];
+
+    vg_chart('line', ['labels' => $labels, 'datasets' => $datasets], [
+        'size'    => (string) ($opts['size'] ?? 'md'),
+        'alt'     => (string) ($opts['alt'] ?? ('계열 ' . count($datasets) . '개 추세')),
+        'options' => $options,
+    ]);
 }

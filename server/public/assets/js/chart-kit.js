@@ -54,7 +54,11 @@
         ds.borderColor = tok('--surface', '#fff');
         ds.borderWidth = 2;
       } else {
-        var c = pal[si % pal.length];
+        // vgCat(1~6)이 오면 그 슬롯을 그대로 쓴다 — '기타' 는 언제나 --cat-6 이어야 하는데
+        //   계열 수에 따라 인덱스가 밀리면 회색이 아닌 색을 받는다(app.css 팔레트 주석의 계약).
+        var slot = (typeof ds.vgCat === 'number' && ds.vgCat >= 1 && ds.vgCat <= pal.length)
+          ? ds.vgCat - 1 : (si % pal.length);
+        var c = pal[slot];
         ds.borderColor = c;
         ds.backgroundColor = spec.type === 'line' ? alpha(c, 0.16) : c;
       }
@@ -97,6 +101,20 @@
     return base;
   }
 
+  // 값 뒤에 붙는 단위('건'·'%'). Chart.js 는 함수(콜백)로 받는데 CSP 가 default-src 'self' 라
+  //   서버가 인라인 <script> 로 함수를 못 내려보낸다 — 문자열(options.vgUnit)로 받아 여기서
+  //   콜백으로 바꿔 끼운다. 색과 같은 이유로 이 파일이 유일한 자리다.
+  function unitTooltip(unit) {
+    return {
+      label: function (ctx) {
+        var v = ctx.parsed && ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed;
+        if (v === null || v === undefined) { return null; }
+        var n = typeof v === 'number' ? v.toLocaleString() : String(v);
+        return (ctx.dataset.label ? ctx.dataset.label + ': ' : '') + n + unit;
+      }
+    };
+  }
+
   // 얕은 병합 두 단계 — 화면이 준 options 가 이긴다. 이 정도면 충분하고,
   //   깊은 병합기를 들이면 그 자체가 유지보수 대상이 된다(KISS).
   function merge(base, extra) {
@@ -114,6 +132,16 @@
     return out;
   }
 
+  function optionsFor(spec) {
+    var opts = merge(surfaceOptions(spec.type), spec.options || {});
+    var unit = spec.options && typeof spec.options.vgUnit === 'string' ? spec.options.vgUnit : '';
+    if (unit !== '') {
+      opts.plugins = opts.plugins || {};
+      opts.plugins.tooltip = merge(opts.plugins.tooltip || {}, { callbacks: unitTooltip(unit) });
+    }
+    return opts;
+  }
+
   function draw(canvas) {
     var raw = canvas.getAttribute('data-vg-chart');
     if (!raw) { return; }
@@ -124,7 +152,7 @@
     var chart = new window.Chart(canvas, {
       type: spec.type,
       data: spec.data || {},
-      options: merge(surfaceOptions(spec.type), spec.options || {})
+      options: optionsFor(spec)
     });
     charts.push({ chart: chart, spec: spec });
   }
@@ -133,7 +161,7 @@
     charts.forEach(function (entry) {
       paint(entry.spec);
       entry.chart.data = entry.spec.data;
-      entry.chart.options = merge(surfaceOptions(entry.spec.type), entry.spec.options || {});
+      entry.chart.options = optionsFor(entry.spec);
       entry.chart.update('none');
     });
   }

@@ -113,25 +113,47 @@ function vg_host_render_hero(array $ctx): void {
   }
   ?>
 
-  <div class="cards">
-    <?php /* 심각도 분포(CRITICAL/HIGH/MEDIUM/LOW 네 칸)는 여기서 내렸다 — 취약점 탭의 필터 바로
-             아래 범례(vg_legend)가 같은 값을 같은 순서로 그리고 있었다. 둘 중 목록을 읽는 자리에
-             붙은 쪽을 남긴다. 이 줄엔 분포로는 못 읽는 축(악용·노출·설정)만 세운다.
-             $counts 는 히어로 톤·'최고 위험도' 뱃지가 계속 쓴다. */ ?>
-    <div class="kpi kpi--sm tone-<?= $kevCount > 0 ? 'crit' : 'muted' ?>"
-         title="KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)">
-      <b><?= number_format($kevCount) ?></b><span>KEV 악용확인</span>
+  <?php
+  /* 이 자산의 위험을 두 조각으로 세운다.
+   *   왼쪽(도넛): **등급 구성** — 부분/전체라 도넛이 맞는 유일한 값이다. 취약점 탭의
+   *     범례가 같은 값을 목록으로 갖고 있었는데, 그건 목록을 읽는 자리에 붙은 설명이고
+   *     여기는 탭에 들어가기 전에 "얼마나 나쁜가"를 형태로 보는 자리다.
+   *   오른쪽(카드 줄): 분포로는 못 읽는 축(악용·노출·설정) — 서로 모집단이 달라서
+   *     한 도넛에 넣으면 구성이 아닌 것을 구성처럼 그리게 된다. 여기는 숫자와 링크로 둔다.
+   *   $counts 는 히어로 톤·'최고 위험도' 뱃지도 계속 쓴다. */
+  $heroSeverity = [];
+  foreach (VG_TONE_SEV as $heroSev => $heroTone2) {
+      $heroSeverity[] = [
+          'label' => $heroSev,
+          'value' => (int) ($counts[$heroSev] ?? 0),
+          'tone'  => $heroTone2,
+          'href'  => vg_qs(['tab' => 'vuln', 'sev' => $heroSev, 'page' => null, 'q' => null]),
+      ];
+  }
+  ?>
+  <div class="card">
+    <div class="card__body split">
+      <?php vg_donut_kpi('이 자산의 등급 구성', $heroSeverity, [
+          'center_label' => '탐지 전체',
+          'href'         => vg_qs(['tab' => 'vuln', 'page' => null, 'q' => null]),
+      ]); ?>
+      <div class="cards">
+        <div class="kpi kpi--sm tone-<?= $kevCount > 0 ? 'crit' : 'muted' ?>"
+             title="KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)">
+          <b><?= number_format($kevCount) ?></b><span>KEV 악용확인</span>
+        </div>
+        <a class="kpi kpi--sm tone-<?= $externalFindings > 0 ? 'crit' : 'ok' ?>"
+           href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>&amp;st=EXTERNAL">
+          <b><?= number_format($externalFindings) ?></b><span>외부노출 취약점</span>
+        </a>
+        <a class="kpi kpi--sm" href="<?= vg_h(vg_qs(['tab' => 'runtime', 'page' => null, 'q' => null])) ?>">
+          <b><?= number_format($exposureCount) ?></b><span>노출 소켓</span>
+        </a>
+        <a class="kpi kpi--sm tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>" href="<?= vg_h(vg_qs(['tab' => 'cce', 'page' => null])) ?>">
+          <b><?= (int) $cceFail ?></b><span>설정 취약</span>
+        </a>
+      </div>
     </div>
-    <a class="kpi kpi--sm tone-<?= $externalFindings > 0 ? 'crit' : 'ok' ?>"
-       href="/findings.php?scan_id=<?= (int) $scan['scan_id'] ?>&amp;st=EXTERNAL">
-      <b><?= number_format($externalFindings) ?></b><span>외부노출 취약점</span>
-    </a>
-    <a class="kpi kpi--sm" href="<?= vg_h(vg_qs(['tab' => 'runtime', 'page' => null, 'q' => null])) ?>">
-      <b><?= number_format($exposureCount) ?></b><span>노출 소켓</span>
-    </a>
-    <a class="kpi kpi--sm tone-<?= $cceFail > 0 ? 'high' : 'ok' ?>" href="<?= vg_h(vg_qs(['tab' => 'cce', 'page' => null])) ?>">
-      <b><?= (int) $cceFail ?></b><span>설정 취약</span>
-    </a>
   </div>
 <?php
 }

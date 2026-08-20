@@ -405,7 +405,8 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
 
     $title = (string) $subject['name'] !== '' ? (string) $subject['name'] : $fqdn;
     vg_header('SBOM · ' . $title, 'assets');
-    vg_chart_assets();
+    /* 이 화면의 도넛 둘이 순수 SVG(vg_donut_kpi)로 바뀌어 Chart.js 를 안 쓴다 —
+     *   vendor 70KB 를 부르던 vg_chart_assets() 도 같이 걷는다. */
     ?>
     <?php vg_page_title($title . ' SBOM', '', ['count' => $total, 'count_label' => '개 컴포넌트']); ?>
     <?php // 지금 보고 있는 스캔 회차 — 과거 스캔을 view=html 로 열었을 때 최신인 줄 착각하지 않도록. ?>
@@ -427,12 +428,23 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
         <strong>생태계 분포</strong>
         <div class="card__body">
           <?php
-          $ecoLabels = array_keys($byManager);
-          $ecoData = array_map(static fn($m) => count($byManager[$m]), $ecoLabels);
-          vg_chart('doughnut', [
-              'labels'   => $ecoLabels,
-              'datasets' => [['data' => $ecoData]],
-          ], ['size' => 'md', 'alt' => '패키지 관리자별 컴포넌트 분포']);
+          /* 생태계는 의미가 고정된 어휘가 아니라(심각도와 다르다) 범주형 팔레트(--cat-N)를 쓴다.
+           *   여섯 종을 넘으면 상위 5 + '기타' 로 접는다 — 색이 돌아 같은 색 두 생태계가
+           *   생기면 범례를 읽어도 못 가른다(app.css 범주형 팔레트 주석의 규칙). */
+          $ecoSegments = [];
+          $ecoSlot = 0;
+          foreach ($byManager as $ecoName => $ecoPkgs) {
+              $ecoSlot++;
+              $ecoSegments[] = [
+                  'label' => (string) $ecoName,
+                  'value' => count($ecoPkgs),
+                  'tone'  => 'cat' . min(5, $ecoSlot),
+              ];
+          }
+          vg_donut_kpi('패키지 관리자별 컴포넌트 분포', $ecoSegments, [
+              'center_label' => '컴포넌트',
+              'max_segments' => 5,
+          ]);
           ?>
         </div>
       </div>
@@ -441,10 +453,13 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
         <strong>라이선스 위험도</strong>
         <div class="card__body">
           <?php
-          vg_chart('doughnut', [
-              'labels'   => [vg_license_risk_label('permissive'), vg_license_risk_label('copyleft'), vg_license_risk_label('unknown')],
-              'datasets' => [['data' => [$riskCounts['permissive'], $riskCounts['copyleft'], $riskCounts['unknown']]]],
-          ], ['size' => 'md', 'alt' => '라이선스 위험도 분포']);
+          /* 라이선스 위험도는 의미가 고정된 세 칸이라 범주형이 아니라 톤 어휘를 쓴다 —
+           *   카피레프트는 경고(주황), 미상은 회색(모른다는 사실이 초록이 되면 안 된다). */
+          vg_donut_kpi('라이선스 위험도 분포', [
+              ['label' => vg_license_risk_label('permissive'), 'value' => $riskCounts['permissive'], 'tone' => 'ok'],
+              ['label' => vg_license_risk_label('copyleft'),   'value' => $riskCounts['copyleft'],   'tone' => 'high'],
+              ['label' => vg_license_risk_label('unknown'),    'value' => $riskCounts['unknown'],    'tone' => 'muted'],
+          ], ['center_label' => '컴포넌트']);
           ?>
         </div>
       </div>

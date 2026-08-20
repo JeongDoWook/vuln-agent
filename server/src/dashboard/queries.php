@@ -52,15 +52,26 @@ function vg_dash_host_count(PDO $pdo): int {
  * 2번째 칸의 부분집합이 아니게 되고, 좁혀지는 그림 자체가 거짓말이 된다. 등급이 낮은 KEV 는
  * [주요 취약점 신호] 카드가 KEV 우선 정렬로 계속 보여준다(가려지지 않는다).
  *
- * 반환: ['totals' => [등급 => n], 'kev' => n]
+ * 실행 상태(runtime_status) 구성도 **같은 쿼리에서** 함께 뽑는다. SUM(...) 표현식을 몇 개
+ * 더 얹는 것은 이미 훑고 있는 행을 세는 것뿐이라 접근 경로(EXPLAIN)가 바뀌지 않는다 —
+ * 별도 GROUP BY 쿼리를 하나 더 만드는 것과는 비용이 다르다(이 파일 머리주석의 회귀 이력).
+ * runtime_status 는 VARCHAR NULL 이라 네 어휘 밖·NULL 이 남을 수 있어 '미상' 으로 받는다.
+ *
+ * 반환: ['totals' => [등급 => n], 'kev' => n, 'runtime' => [상태 => n]]
  */
 function vg_dash_severity_totals(PDO $pdo): array {
     $latestJoin = vg_dash_latest_join();
     $totals = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0];
+    $runtime = ['EXTERNAL' => 0, 'LISTENING' => 0, 'RUNNING' => 0, 'INSTALLED' => 0];
     $kevCount = 0;
+    $allCount = 0;
     $totalsRows = $pdo->query(
         "SELECT f.severity, COUNT(*) c,
-                SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')) kev
+                SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')) kev,
+                SUM(f.runtime_status = 'EXTERNAL')  rt_external,
+                SUM(f.runtime_status = 'LISTENING') rt_listening,
+                SUM(f.runtime_status = 'RUNNING')   rt_running,
+                SUM(f.runtime_status = 'INSTALLED') rt_installed
            FROM tb_finding f
            JOIN tb_scan s ON s.scan_id = f.scan_id
            JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
@@ -70,8 +81,15 @@ function vg_dash_severity_totals(PDO $pdo): array {
     foreach ($totalsRows as $f) {
         if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; }
         $kevCount += (int) $f['kev'];
+        $allCount += (int) $f['c'];
+        $runtime['EXTERNAL']  += (int) $f['rt_external'];
+        $runtime['LISTENING'] += (int) $f['rt_listening'];
+        $runtime['RUNNING']   += (int) $f['rt_running'];
+        $runtime['INSTALLED'] += (int) $f['rt_installed'];
     }
-    return ['totals' => $totals, 'kev' => $kevCount];
+    // 남은 것은 상태를 모르는 건이다 — 0 으로 감추면 도넛의 합이 전체와 안 맞는다.
+    $runtime['미상'] = max(0, $allCount - array_sum($runtime));
+    return ['totals' => $totals, 'kev' => $kevCount, 'runtime' => $runtime];
 }
 
 /**
@@ -129,45 +147,15 @@ function vg_dash_kev_overdue(PDO $pdo): array {
 }
 
 /**
- * 최신 스캔의 실제 취약점 신호를 직접 보여준다.
- * 업무 상태나 내부 기한을 만들지 않고 KEV·외부 노출·런타임·심각도만으로 정렬한다.
- *
- * 반환: ['rows' => 상위 N건, 'total' => 같은 기준의 전체 건수]
- */
-function vg_dash_urgent(PDO $pdo): array {
-    $latestJoin = vg_dash_latest_join();
-    $urgent = $pdo->query(
-        "SELECT MIN(f.finding_id) finding_id,f.cve_id,f.package_name,h.host_id,h.fqdn,
-                f.severity,f.runtime_status,f.in_kev
-           FROM tb_finding f
-           JOIN tb_scan s ON s.scan_id=f.scan_id
-           $latestJoin
-           JOIN tb_host h ON h.host_id=s.host_id AND h.is_deleted=0
-          GROUP BY f.cve_id,f.package_name,h.host_id,h.fqdn,f.severity,f.runtime_status,f.in_kev
-          ORDER BY (f.in_kev=1 AND f.runtime_status='EXTERNAL') DESC,f.in_kev DESC,
-                   FIELD(f.runtime_status,'EXTERNAL','LISTENING','RUNNING','INSTALLED'),
-                   FIELD(f.severity,'CRITICAL','HIGH','MEDIUM','LOW'),finding_id
-          LIMIT " . vg_ui_dashboard_urgent_limit()
-    )->fetchAll();
-    $urgentTotal = (int) $pdo->query(
-        "SELECT COUNT(*) FROM (
-           SELECT f.cve_id,f.package_name,s.host_id,f.severity,f.runtime_status,f.in_kev
-             FROM tb_finding f
-             JOIN tb_scan s ON s.scan_id=f.scan_id
-             JOIN " . vg_latest_scan_subq() . " latest ON latest.host_id=s.host_id AND latest.mid=s.scan_id
-             JOIN tb_host h ON h.host_id=s.host_id AND h.is_deleted=0
-            GROUP BY f.cve_id,f.package_name,s.host_id,f.severity,f.runtime_status,f.in_kev
-         ) current_findings"
-    )->fetchColumn();
-    return ['rows' => $urgent, 'total' => $urgentTotal];
-}
-
-/**
- * 최근 $days 일 추세 — 날짜별 "High 이상" 건수.
+ * 최근 $days 일 추세 — **자산별** 날짜별 "High 이상" 건수.
  *
  * 이월(carry-forward): 스캔은 바뀔 때만 저장되므로 그날 스캔이 없는 호스트는
  * **직전 스캔 값을 이어 쓴다**(0 으로 떨구면 "취약점이 사라졌다"는 거짓말).
- * 대신 그날 실제 수집이 있었는지는 따로 표시해서(scanned) 차트가 점을 그날에만 찍는다.
+ *
+ * 자산별로 나눠 담는 것 말고는 예전(전체 합산 한 줄)과 **쿼리가 같다** — 읽는 스캔도,
+ * 세는 기준도, 이월 규칙도 그대로다. 달라진 것은 이미 호스트별로 갖고 있던 중간 결과를
+ * 합치지 않고 그대로 돌려준다는 것뿐이라, 새 쿼리도 새 인덱스도 필요 없다.
+ * (호스트 이름은 이미 조인돼 있는 tb_host 에서 한 칸 더 읽는다 — 접근 경로가 안 바뀐다.)
  *
  * 읽는 스캔은 두 묶음뿐이다 — 창 안의 스캔 + 각 호스트가 창 시작 전에 가진 마지막 스캔
  * (이월의 출발점). 전체 스캔을 다 읽으면 이력이 쌓일수록 대시보드가 선형으로 느려진다.
@@ -177,17 +165,20 @@ function vg_dash_urgent(PDO $pdo): array {
  * 이 두 쿼리 합이 45ms 라 사전집계의 갱신 비용·정합성 부담을 살 이유가 없다(YAGNI).
  * 단, scan_id 목록은 **PHP 가 값으로 펼쳐** 넘긴다 — IN (서브쿼리) 로 두면 옵티마이저가
  * tb_finding 을 먼저 훑어 같은 결과에 2.06초가 걸렸다(실측).
+ *
+ * 반환: [['name' => 자산 이름, 'points' => [['d' => 'Y-m-d', 'v' => High 이상 건수], …]], …]
+ *   — vg_multi_trend() 의 계열 계약 그대로다. 상위 N + 기타로 접는 것은 그 함수가 한다
+ *     (여기서 미리 접으면 화면마다 다른 기준으로 접힌다).
  */
 function vg_dash_trend(PDO $pdo, int $days): array {
-    $trend = [];
     $since = date('Y-m-d', strtotime('-' . ($days - 1) . ' days'));
     $trendScans = $pdo->query(
-        "SELECT s.scan_id AS id, s.host_id, DATE(s.collected_at) AS d
+        "SELECT s.scan_id AS id, s.host_id, h.fqdn, DATE(s.collected_at) AS d
            FROM tb_scan s
            JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
           WHERE s.is_deleted = 0 AND DATE(s.collected_at) >= '$since'
           UNION
-         SELECT s.scan_id, s.host_id, DATE(s.collected_at)
+         SELECT s.scan_id, s.host_id, h.fqdn, DATE(s.collected_at)
            FROM tb_scan s
            JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
            JOIN (SELECT host_id, MAX(scan_id) AS mid FROM tb_scan
@@ -196,11 +187,12 @@ function vg_dash_trend(PDO $pdo, int $days): array {
     )->fetchAll();
 
     // 호스트별 (날짜, 스캔id) 를 id 순으로 — 이월은 "그날 이하의 마지막 스캔" 고르기다.
-    $trendByHost = []; $scannedDays = [];
+    $trendByHost = []; $hostName = [];
     foreach ($trendScans as $s) {
         if ($s['d'] === null) { continue; }   // collected_at 이 비어 있으면 어느 날짜에도 못 건다
-        $trendByHost[(int) $s['host_id']][] = ['d' => (string) $s['d'], 'id' => (int) $s['id']];
-        $scannedDays[(string) $s['d']] = true;
+        $hid = (int) $s['host_id'];
+        $trendByHost[$hid][] = ['d' => (string) $s['d'], 'id' => (int) $s['id']];
+        $hostName[$hid] = (string) ($s['fqdn'] ?? ('자산 #' . $hid));
     }
     foreach ($trendByHost as &$list) { usort($list, fn($a, $b) => $a['id'] <=> $b['id']); }
     unset($list);
@@ -219,21 +211,24 @@ function vg_dash_trend(PDO $pdo, int $days): array {
         foreach ($st->fetchAll() as $r) { $highByScan[(int) $r['scan_id']] = (int) $r['c']; }
     }
 
+    $points = [];   // hostId => [['d'=>…, 'v'=>…], …]
     for ($i = $days - 1; $i >= 0; $i--) {
         $day = date('Y-m-d', strtotime("-$i days"));
-        $sum = 0; $any = false;
-        foreach ($trendByHost as $list) {
+        foreach ($trendByHost as $hid => $list) {
             $pick = null;
             foreach ($list as $s) { if ($s['d'] <= $day) { $pick = $s['id']; } }   // 그날까지의 최신
-            if ($pick === null) { continue; }   // 그날엔 아직 이 호스트가 없었다
-            $any = true;
-            $sum += (int) ($highByScan[$pick] ?? 0);
+            // 첫 수집 이전의 날은 "0건" 이 아니라 "아직 자료가 없음" 이다 — 그 자산의
+            //   선을 아직 시작하지 않는다(0 으로 채우면 없던 개선처럼 보인다).
+            if ($pick === null) { continue; }
+            $points[$hid][] = ['d' => $day, 'v' => (int) ($highByScan[$pick] ?? 0)];
         }
-        // 첫 수집 이전의 날은 "0건" 이 아니라 "아직 자료가 없음" 이다 — 선을 시작하지 않는다.
-        if (!$any) { continue; }
-        $trend[] = ['d' => $day, 'v' => $sum, 'scanned' => isset($scannedDays[$day])];
     }
-    return $trend;
+
+    $series = [];
+    foreach ($points as $hid => $pts) {
+        $series[] = ['name' => $hostName[$hid] ?? ('자산 #' . $hid), 'points' => $pts];
+    }
+    return $series;
 }
 
 /** 목록 대상 = 최신 스캔이 있는 비삭제 호스트 수(페이지네이션 총건). */
