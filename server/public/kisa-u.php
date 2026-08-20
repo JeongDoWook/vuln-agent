@@ -20,15 +20,16 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';           // vg_log_activity
 require_once __DIR__ . '/../src/control_mapping.php'; // vg_control_frameworks (기준 라벨 SSOT)
+require_once __DIR__ . '/../src/compliance/policy.php'; // vg_compliance_status — 판정 어휘 SSOT
 // 같은 컴플라이언스 데이터를 여는 화면이라 control_mapping.php 와 같은 게이트를 쓴다.
 //   새 menu_code 를 만들면 권한 마이그레이션이 따로 필요해진다(YAGNI).
 vg_require_menu('compliance');
 
 const VG_KISA_U_FW = 'KISA_U';
 
-/* 가이드 위험도(상/중/하)를 톤으로 옮기던 vg_kisa_u_sev_tone() 은 지웠다 — 타일 색은
- *   가이드 위험도가 아니라 **우리 점검의 미준수 비율**이 정하고(그게 이 화면이 답하는 질문이다),
- *   위험도 값 자체는 타일 툴팁에 글자로 남는다. 색 축이 둘이면 무엇을 보는지 흐려진다. */
+/* 가이드 위험도(상/중/하)를 톤으로 옮기던 vg_kisa_u_sev_tone() 은 지웠다 — 색은 가이드
+ *   위험도가 아니라 **우리 점검의 미준수 비율**이 정하고(그게 이 화면이 답하는 질문이다),
+ *   위험도 값 자체는 상세(control.php)가 갖는다. 색 축이 둘이면 무엇을 보는지 흐려진다. */
 
 
 $err = null;
@@ -96,8 +97,9 @@ try {
     $st->execute($args);
     $total = (int) $st->fetchColumn();
 
-    // 페이지네이션이 없다 — 타일 격자는 **한 화면에 전부** 놓는 것이 목적이다(그래야 빈 칸이
-    //   보인다). 예전엔 1/8 페이지로 쪼개져 "몇 %를 덮나" 를 보려면 8번을 넘겨야 했다.
+    // 페이지네이션이 없다 — 이 화면은 72개를 **한 화면에 전부** 놓는 것이 목적이다(그래야
+    //   커버리지의 빈 칸이 보인다). 예전엔 1/8 페이지로 쪼개져 "몇 %를 덮나" 를 보려면 8번을
+    //   넘겨야 했다. 점검하는 21개는 표로, 미점검 51개는 접힘(<details>)으로 들어간다.
     //   무한정 커질 목록이 아니라서 상한 없이 읽는다: 이 카탈로그는 가이드 한 판(2021.03)의
     //   고정 항목(72종)이고, 늘어나는 건 개정판이 나올 때뿐이다(그때도 판을 섞지 않는다 —
     //   db/migrations/20260818221235_kisa_u_catalog.sql 의 출처·판 주석이 정본).
@@ -171,24 +173,33 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
   ]);
   ?>
   <?php
-  /* 카드 격자를 **정사각 타일 히트맵**으로 바꿨다. 72개를 카드로 깔면 항목당 세 줄씩 차지해
-   *   1/8 페이지로 쪼개졌고, 정작 이 화면의 값인 "어디가 비었나" 를 한눈에 볼 수 없었다.
-   *   타일에 남기는 건 **코드와 FAIL 건수뿐**이다 — 분류명·항목명·참조 매핑·PASS 수는
-   *   툴팁과 상세(control.php)로 내린다(지우는 게 아니라 접는 것).
-   *   색은 미준수 비율이고, **색만으로 식별하게 두지 않는다**: 숫자가 타일 안에 항상 찍히고
-   *   아래에 색 범례가 붙는다. 미점검은 회색 점선 — 빈 칸이 드러나는 게 이 화면의 값이라
-   *   가라앉히되 지우지 않는다.
+  /* 타일 히트맵을 **표 + 접힘**으로 바꿨다. 72개 중 51개(71%)가 미점검이라 히트맵은 화면
+   *   대부분이 빈 회색 타일이 됐다 — 빈 칸을 보이게 하려던 장치가 정작 **점검하는 21개를**
+   *   가려 버렸다. 그래서 판정 근거가 있는 21개만 표로 세우고(FAIL·PASS·판정 불가·미준수율을
+   *   나란히 비교할 수 있는 형태), 미점검 51개는 접어 둔다.
+   *   빈 칸을 숨기는 게 아니다: 접힌 채로도 **개수가 요약줄에 항상 보이고** 위 지표 4칸이
+   *   커버리지 29.2%를 계속 말한다. 펼치면 코드·항목명·분류가 그대로 나온다.
+   *
+   * 표 어휘(열 구성·0 은 안 적는다·미터 톤)는 control_mapping.php 의 통제 기준 매핑 표에서
+   *   가져왔다 — 같은 성격의 화면이 둘로 갈리면 안 된다.
    *
    * 코드·항목명은 2021.03 판 번호 체계 그대로다. 개정판은 번호가 다르므로 렌더를 바꾸면서
    *   "최신" 으로 고치지 않는다(판을 섞으면 매핑된 21종과 어긋난다). */
 
-  /** 미준수 비율 → 히트 단계. 0=준수(초록) · 낮음(노랑) · 중간(주황) · 높음(빨강). */
-  $heatStep = static function (float $pct): int {
-      if ($pct <= 0)  { return 0; }
-      if ($pct <= 33) { return 1; }
-      if ($pct <= 66) { return 2; }
-      return 3;
-  };
+  // 점검하는 항목과 미점검 항목은 답할 수 있는 것이 다르다(전자는 판정, 후자는 이름뿐) —
+  //   같은 표에 섞으면 열의 3/4 이 '–' 로 채워진다. 렌더 직전에 한 번만 가른다.
+  $covered = [];
+  $uncovered = [];
+  foreach ($rows as $r) {
+      if ($r['mapped_rule_cnt'] !== null) { $covered[] = $r; } else { $uncovered[] = $r; }
+  }
+
+  $detailHref = static fn(array $r): string => '/control.php?fw=' . urlencode(VG_KISA_U_FW)
+      . '&control=' . urlencode((string) $r['control_id']);
+  $policy = vg_compliance_policy();
+  // 판정 어휘는 control_mapping.php·control.php 와 같은 함수로 뽑는다(SSOT) — 0건을 준수로
+  //   찍지 않는다는 원칙이 미준수율 미터의 톤에 그대로 적용된다.
+  $vOf = static fn(array $r): ?array => $verdicts[(string) $r['control_id']] ?? null;
   ?>
   <?php if (!$rows): ?>
     <div class="card">
@@ -199,62 +210,100 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
       ]); ?>
     </div>
   <?php else: ?>
-  <div class="u-heat">
-    <?php foreach ($rows as $r):
-        $code    = (string) $r['control_id'];
-        $covered = $r['mapped_rule_cnt'] !== null;
-        $v       = $verdicts[$code] ?? null;
-        $cnt     = $covered && $v !== null ? (int) $v['finding_cnt'] : 0;
-        $fail    = $cnt > 0 ? (int) $v['fail_cnt'] : 0;
-
-        // 타일 클래스와 안에 찍는 값. 세 상태는 서로 다른 뜻이라 하나로 뭉치지 않는다:
-        //   미점검(대응 점검 자체가 없음) · 점검 결과 없음(아직 안 돌았거나 대상 호스트 없음) · 판정됨.
-        if (!$covered) {
-            $cls = 'u-tile--none u-tile--gap';
-            $num = '–';
-            $why = '미점검 — 대응 점검이 없어 상세가 없습니다';
-        } elseif ($cnt === 0) {
-            $cls = 'u-tile--none';
-            $num = '–';
-            $why = '점검 결과 없음 · 매핑 ' . number_format((int) $r['mapped_rule_cnt']) . '개';
-        } else {
-            $cls = 'u-tile--h' . $heatStep($fail / $cnt * 100);
-            $num = number_format($fail);
-            $why = 'FAIL ' . number_format($fail) . ' / 점검 ' . number_format($cnt) . '건'
-                 . ' · PASS ' . number_format((int) $v['pass_cnt'])
-                 . ' · 판정 불가 ' . number_format((int) $v['na_cnt'])
-                 . ' · 매핑 ' . number_format((int) $r['mapped_rule_cnt']) . '개';
-        }
-
-        // 툴팁이 카드에서 내린 값들을 그대로 받는다 — 분류·항목명·위험도·참조 매핑 수.
-        $tip = array_filter([
-            $code,
-            (string) ($r['category'] ?? ''),
-            (string) ($r['control_name'] ?? ''),
-            $r['severity'] !== null ? '위험도 ' . (string) $r['severity'] : '',
-            $why,
-        ], static fn(string $x): bool => $x !== '');
-        $tipAttr = ' title="' . vg_h(implode(' · ', $tip)) . '"';
-        $inner   = '<b>' . vg_h($code) . '</b><span>' . vg_h($num) . '</span>';
-    ?>
-      <?php if ($covered): ?>
-        <a class="u-tile <?= vg_h($cls) ?>"<?= $tipAttr ?>
-           href="/control.php?fw=<?= urlencode(VG_KISA_U_FW) ?>&amp;control=<?= urlencode($code) ?>"><?= $inner ?></a>
-      <?php else: ?>
-        <span class="u-tile <?= vg_h($cls) ?>"<?= $tipAttr ?>><?= $inner ?></span>
-      <?php endif; ?>
-    <?php endforeach; ?>
-  </div>
   <?php
-  // 색이 무슨 뜻인지 그 자리에서 말한다(문장이 아니라 점과 단어로 — vg_legend 규약).
-  vg_legend([
-      ['label' => '미준수 0%',   'tone' => 'ok'],
-      ['label' => '1–33%',      'tone' => 'med'],
-      ['label' => '34–66%',     'tone' => 'high'],
-      ['label' => '67–100%',    'tone' => 'crit'],
-      ['label' => '미점검 · 점검 결과 없음', 'tone' => 'muted'],
-  ], ['inline' => true, 'caption' => '미준수 비율']);
+  vg_table(
+      [
+          ['label' => '코드',   'width' => '7rem', 'class' => 'col-id', 'nowrap' => true],
+          ['label' => '항목명'],
+          ['label' => '분류',   'width' => '12%', 'nowrap' => true],
+          ['label' => 'FAIL',   'align' => 'right', 'width' => '5rem', 'nowrap' => true],
+          ['label' => 'PASS',   'align' => 'right', 'width' => '5rem', 'nowrap' => true],
+          ['label' => '판정 불가', 'align' => 'right', 'width' => '6rem', 'nowrap' => true,
+           'title' => '점검을 돌렸지만 판정할 수 없었던 건수(NA)'],
+          ['label' => '미준수율', 'width' => '14%',
+           'title' => 'FAIL ÷ 최신 스캔 점검 결과. 판정이 아니라 집계다.'],
+      ],
+      $covered,
+      [
+          'card'  => false,
+          'empty' => [
+              'icon'  => 'chart',
+              'title' => '이 조건에 점검하는 항목이 없습니다.',
+              'hint'  => '아래 미점검 목록에 남은 항목이 있습니다.',
+          ],
+          'cell' => [
+              // 코드·항목명 둘 다에 링크를 건다 — 누르는 면적을 코드 한 조각으로 좁혀 두지
+              //   않는다(control_mapping.php 와 같은 규약).
+              0 => static fn(array $r): string => '<a href="' . vg_h($detailHref($r)) . '"><code>'
+                  . vg_h((string) $r['control_id']) . '</code></a>',
+              1 => static fn(array $r): string => '<a class="body-link" href="' . vg_h($detailHref($r)) . '">'
+                  . vg_h((string) $r['control_name']) . '</a>',
+              2 => static fn(array $r): string => vg_h((string) ($r['category'] ?? '')),
+              // 0 은 적지 않는다 — 신호는 FAIL 하나뿐인데 모든 행이 '0' 으로 채워지면 정작
+              //   읽어야 할 값을 덮는다(control_mapping.php·cce-rules.php 와 같은 어휘).
+              3 => static function (array $r) use ($vOf): string {
+                  $v = $vOf($r);
+                  if ($v === null) { return '<span class="why">–</span>'; }
+                  return '<b>' . number_format((int) $v['fail_cnt']) . '</b>';
+              },
+              4 => static function (array $r) use ($vOf): string {
+                  $v = $vOf($r);
+                  if ($v === null || (int) $v['pass_cnt'] === 0) { return '<span class="why">–</span>'; }
+                  return number_format((int) $v['pass_cnt']);
+              },
+              5 => static function (array $r) use ($vOf): string {
+                  $v = $vOf($r);
+                  if ($v === null || (int) $v['na_cnt'] === 0) { return '<span class="why">–</span>'; }
+                  return number_format((int) $v['na_cnt']);
+              },
+              // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. 0% 라 색은 안 보인다.
+              6 => static function (array $r) use ($vOf, $policy): string {
+                  $v = $vOf($r);
+                  $cnt = $v !== null ? (int) $v['finding_cnt'] : 0;
+                  if ($cnt === 0) { return '<span class="why">점검 결과 없음</span>'; }
+                  $fail = (int) $v['fail_cnt'];
+                  $tone = vg_compliance_status($fail, (int) $v['na_cnt'] > 0, $policy['partial_max'])['tone'];
+                  return vg_meter($tone === 'ok' ? 'low' : $tone, $fail / $cnt * 100,
+                                  'FAIL ' . number_format($fail) . ' / 전체 ' . number_format($cnt) . '건')
+                       . '<span class="why">' . number_format($fail / $cnt * 100, 1) . '%</span>';
+              },
+          ],
+      ]
+  );
   ?>
+
+  <?php if ($uncovered): ?>
+  <div class="card">
+    <strong>미점검 항목</strong>
+    <span class="why"> · 대응 점검(CCE 규칙)이 매핑되지 않아 판정 근거가 없습니다</span>
+    <div class="card__body">
+      <?php /* 접혀 있어도 개수는 요약줄에 항상 남는다 — 이 숫자가 커버리지의 근거라 숨기면
+               위 지표 4칸과 말이 어긋난다. 펼치면 답할 수 있는 것(코드·항목명·분류)만 나온다. */ ?>
+      <details>
+        <summary>미점검 <?= number_format(count($uncovered)) ?>개 보기
+          <?= vg_badge(number_format(count($uncovered)), 'high') ?></summary>
+        <?php
+        vg_table(
+            [
+                ['label' => '코드',   'width' => '7rem', 'class' => 'col-id', 'nowrap' => true],
+                ['label' => '항목명'],
+                ['label' => '분류',   'width' => '14%', 'nowrap' => true],
+            ],
+            $uncovered,
+            [
+                'card' => false,
+                'cell' => [
+                    0 => static fn(array $r): string => '<code>' . vg_h((string) $r['control_id']) . '</code>',
+                    1 => static fn(array $r): string => vg_h((string) $r['control_name']),
+                    2 => static fn(array $r): string => vg_h((string) ($r['category'] ?? '')),
+                ],
+            ]
+        );
+        ?>
+      </details>
+    </div>
+  </div>
+  <?php endif; ?>
   <?php endif; ?>
 <?php endif; ?>
 <?php vg_footer();

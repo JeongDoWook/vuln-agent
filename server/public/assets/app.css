@@ -2530,56 +2530,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 .ctree__rootid { min-width: 0; flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .6rem; }
 .ctree__rootid strong { overflow-wrap: anywhere; }
 
-/* ----------------------------------------------------------------------
- * kisa-u.php · U-코드 타일 히트맵
- *   72개를 카드로 깔면 항목당 세 줄씩 차지해 1/8 페이지로 쪼개졌고, 정작 이 화면의 값인
- *   "어디가 비었나" 를 한눈에 볼 수 없었다. 한 항목 = 정사각 타일 하나로 줄여 **전 항목을
- *   한 화면에** 세운다(그래서 이 화면엔 페이지네이션이 없다).
- *   한 줄에 12개, 좁아지면 8 → 6 → 4개. 칸 수를 고정으로 적는 건 히트맵이 **격자 모양 자체로**
- *   읽히기 때문이다 — auto-fill 로 두면 폭에 따라 줄바꿈 위치가 달라져 같은 화면이 매번 다른
- *   모양이 된다.
- * ---------------------------------------------------------------------- */
-.u-heat {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: .4rem;
-  margin: 0 0 var(--sp-3);
-}
-/* 타일 = 코드(작게) + FAIL 건수(크게). 색은 미준수 비율이지만 **색만으로 말하지 않는다** —
- * 숫자가 항상 찍혀 있고 화면 아래 .legend 가 색의 뜻을 적는다. */
-.u-tile {
-  aspect-ratio: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: .1rem;
-  padding: .2rem;
-  border: 1px solid var(--line);
-  border-radius: var(--r-xs);
-  background: var(--surface-2);
-  color: var(--text);
-  text-align: center;
-  overflow: hidden;
-}
-.u-tile b { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .01em; }
-.u-tile span { font-size: var(--fs-num-sm); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-a.u-tile:hover { border-color: var(--line-2); box-shadow: var(--shadow); text-decoration: none; }
-/* 히트 단계 — 새 색을 만들지 않고 톤 4종 세트(-bg/-bd/-fg)를 그대로 쓴다. 두 테마 모두
- * 이 쌍이 대비를 보장한다(원색을 면으로 깔면 다크에서 글자가 죽는다). */
-.u-tile--h0 { background: var(--ok-bg);   border-color: var(--ok-bd);   color: var(--ok-fg); }
-.u-tile--h1 { background: var(--med-bg);  border-color: var(--med-bd);  color: var(--med-fg); }
-.u-tile--h2 { background: var(--high-bg); border-color: var(--high-bd); color: var(--high-fg); }
-.u-tile--h3 { background: var(--crit-bg); border-color: var(--crit-bd); color: var(--crit-fg); }
-/* 미점검·점검 결과 없음은 회색이다 — 가라앉히되 지우지 않는다(빈 칸이 보이는 게 이 화면의 값).
- * 점선(--gap)은 그중에서도 **대응 점검 자체가 없는** 항목, 즉 커버리지의 빈 칸이다. */
-.u-tile--none { background: var(--sunken); border-color: var(--muted-bd); color: var(--muted); }
-.u-tile--gap  { border-style: dashed; }
-
-@media (max-width: 1200px) { .u-heat { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
-@media (max-width: 760px)  { .u-heat { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
-@media (max-width: 480px)  { .u-heat { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-
 /* 로그인: 조용한 진입 화면 */
 .page--login .app { min-height: 100vh; display: grid; place-items: center; }
 .page--login .page__main { min-height: auto; width: 100%; padding: 1.25rem; }
