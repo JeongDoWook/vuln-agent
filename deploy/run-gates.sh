@@ -34,7 +34,7 @@ PROTECTED_OVERRIDES=(
   VG_GATE_ROOT VG_GATE_MANIFEST VG_GATE_DOCKER_BIN VG_GATE_CURL_BIN VG_GATE_PHP_BIN
   VG_GATE_SMOKE_SCRIPT VG_GATE_MIGRATION_TEST VG_GATE_BACKUP_TEST
   VG_GATE_SCHEMA_DOCS_TEST VG_GATE_SCHEMA_DOCS_PRECHECK_SCRIPT
-  VG_GATE_AGENT_SIGNATURE_SCRIPT
+  VG_GATE_AGENT_SIGNATURE_SCRIPT VG_GATE_AGENT_EXPORT_SCRIPT
   VG_GATE_APP_IMAGE VG_WEB_CONTAINER VG_DB_CONTAINER VG_SMOKE_BASE
 )
 
@@ -83,6 +83,8 @@ if [ "$TEST_MODE" -eq 1 ]; then
   SCHEMA_DOCS_PRECHECK=${VG_GATE_SCHEMA_DOCS_PRECHECK_SCRIPT:-}
   # 에이전트 서명 검사도 같은 이유로 선택적이다 — 주입한 fixture 만 검증한다.
   AGENT_SIGNATURE_CHECK=${VG_GATE_AGENT_SIGNATURE_SCRIPT:-}
+  # 서브셸 export 계약 검사도 같다 — 주입한 fixture 만 검증한다.
+  AGENT_EXPORT_CHECK=${VG_GATE_AGENT_EXPORT_SCRIPT:-}
   for item in \
     "manifest:$MANIFEST" "docker:$DOCKER_BIN" "curl:$CURL_BIN" "php:$PHP_BIN" \
     "smoke:$SMOKE_SCRIPT" "migration-test:$MIGRATION_TEST" \
@@ -91,6 +93,7 @@ if [ "$TEST_MODE" -eq 1 ]; then
   done
   [ -z "$SCHEMA_DOCS_PRECHECK" ] || require_test_path schema-docs-precheck "$SCHEMA_DOCS_PRECHECK"
   [ -z "$AGENT_SIGNATURE_CHECK" ] || require_test_path agent-signature "$AGENT_SIGNATURE_CHECK"
+  [ -z "$AGENT_EXPORT_CHECK" ] || require_test_path agent-export "$AGENT_EXPORT_CHECK"
 else
   for name in "${PROTECTED_OVERRIDES[@]}" VG_GATE_TEST_MODE; do
     if [ "${!name+x}" = x ]; then
@@ -108,6 +111,7 @@ else
   SCHEMA_DOCS_TEST=$ROOT/tests/schema_docs_test.sh
   SCHEMA_DOCS_PRECHECK=$ROOT/tests/schema_docs_precheck.sh
   AGENT_SIGNATURE_CHECK=$ROOT/tests/agent_signature_check.sh
+  AGENT_EXPORT_CHECK=$ROOT/tests/agent_export_contract_test.sh
 fi
 [ -r "$MANIFEST" ] || { echo "gate manifest unreadable: $MANIFEST" >&2; exit 2; }
 
@@ -240,6 +244,15 @@ check_agent_signature() {
   [ -r "$AGENT_SIGNATURE_CHECK" ] || { echo "agent signature check missing: $AGENT_SIGNATURE_CHECK"; return 1; }
   bash "$AGENT_SIGNATURE_CHECK"
 }
+# 수집 함수는 `timeout ... bash -c` 서브셸에서 돈다. 서브셸이 보는 함수는 `export -f` 로 내보낸
+# 것뿐이라 헬퍼 export 를 빠뜨리면 그 소스만 조용히 0건이 된다(#735 pip 라이선스 34.8%→6.1%,
+# #559 gem 0건). 호출부가 stderr 를 버려 눈에 안 보이고, 단위 테스트는 같은 셸에서 함수를
+# 부르므로 구조적으로 못 잡는다 — 그래서 push 단계의 정적 검사로 막는다. 서명 검사와 같은
+# 이유로 조건 없이 항상 돈다(스크립트를 읽기만 하는 0.3초 검사라 조건 분기가 이득이 없다).
+check_agent_export() {
+  [ -r "$AGENT_EXPORT_CHECK" ] || { echo "agent export contract test missing: $AGENT_EXPORT_CHECK"; return 1; }
+  bash "$AGENT_EXPORT_CHECK"
+}
 
 run_check() {
   case "$1" in
@@ -254,6 +267,7 @@ run_check() {
     schema-docs) check_schema_docs ;;
     schema-docs-precheck) check_schema_docs_precheck ;;
     agent-signature) check_agent_signature ;;
+    agent-export) check_agent_export ;;
     *) echo "unknown gate id: $1"; return 1 ;;
   esac
 }
@@ -275,7 +289,7 @@ validate_manifest() {
     case "$profile" in pre-push|central) ;; *) echo "invalid gate profile at line $line: $profile" >&2; return 1 ;; esac
     case "$required" in true|false) ;; *) echo "invalid required flag at line $line: $required" >&2; return 1 ;; esac
     case "$id" in
-      source-state|docker-engine|web-stack|web-http|smoke|schedule-unit|migration-rehearsal|backup-restore|schema-docs|schema-docs-precheck|agent-signature) ;;
+      source-state|docker-engine|web-stack|web-http|smoke|schedule-unit|migration-rehearsal|backup-restore|schema-docs|schema-docs-precheck|agent-signature|agent-export) ;;
       *) echo "unknown gate id at line $line: $id" >&2; return 1 ;;
     esac
     case "$deps" in
