@@ -12,3 +12,4 @@
 | [dashboard-index-profiling.md](dashboard-index-profiling.md) | 대시보드 1.92초의 진범(옵티마이저 인덱스 오선택)과 조치 결과 2,097→504ms | 2026-08-16 |
 | [web-perf-audit.md](web-perf-audit.md) | 전 화면 55개 응답시간. 느린 건 `vendor.php` 하나였고 인덱스 2개로 고쳤다 | 2026-08-16 |
 | [smoke-timing-profiling.md](smoke-timing-profiling.md) | 스모크 102.7초 중 45초가 `ui_lint.sh`. 고쳐서 54.7초 | 2026-08-16 |
+| [deploy-운영서버-1회조치.md](deploy-운영서버-1회조치.md) | 그 시점 이전부터 돌던 운영 서버에만 필요했던 1회 조치(`PROD_DOMAIN` 추가·보안 헤더). `deploy/README.md` 에서 옮김 | 2026-07-27 · 2026-08-08 |
