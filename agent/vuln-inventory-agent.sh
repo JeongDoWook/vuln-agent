@@ -34,7 +34,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.13"
+SCRIPT_VERSION="3.14"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
@@ -845,11 +845,18 @@ ctr_upstream_bins() {   # $1=대표pid $2=cid
   done | sort -u
 }
 
-# Optional offline SBOM import. The filename (without .json) is the target:
-#   _host.json          -> the host itself (server stores it with container_id=0)
-#   <cid|name>.json     -> that container (must match collect_containers output)
-# Anything else is dropped by the server and reported back in the ingest response
-# (sbom_dropped) -- it is never silently attached to the host.
+# 선택적 오프라인 SBOM 반입. 파일명(.json 제외)이 곧 대상이다:
+#   _host.json    -> 호스트 자신(서버가 container_id=0 으로 저장하는 예약 cid)
+#   <cid>.json    -> 그 컨테이너. cid 는 collect_containers 가 **실제로 출력한 첫 필드**여야 한다
+#                    (docker/podman 이 아는 컨테이너면 그 이름, 어느 런타임 CLI 도 모르면 cgroup 키 12자).
+# "이름으로도 되고 ID 로도 된다"가 아니다 — 서버는 그 cid 문자열 하나로만 맞춘다:
+#   server/src/ingest/store/containers.php:22 vg_ingest_ctr_ids_with_host() 가 cid => container_id
+#   지도에 예약 cid `_host` 만 더할 뿐, 이름으로 되짚는 경로가 없다. cid 가 tb_container 의
+#   자연키 축(UNIQUE(scan_id, cid))이고 이름은 유일하지 않아서다 — 같은 컨테이너 이름이
+#   호스트마다·파드마다 또 있다. 이름 매칭을 새로 붙이지 마라(어느 행을 뜻하는지 정해지지 않는다).
+# k8s(CRI) 컨테이너의 cid 는 `파드/컨테이너` 형태라 `/` 가 들어간다 → 파일명으로 못 쓴다.
+#   이 경로로는 k8s 컨테이너에 SBOM 을 붙일 수 없다(호스트·도커 컨테이너만 가능).
+# 그 밖의 파일명은 서버가 버리고 ingest 응답의 sbom_dropped 로 되돌려준다 — 조용히 호스트에 붙지 않는다.
 collect_sbom() {
   [ -d "$SBOM_DIR" ] || return 0
   local f cid format size
