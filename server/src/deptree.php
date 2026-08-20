@@ -20,18 +20,19 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/packagedep.php';   // 그래프 구조·키 형식의 정본
-require_once __DIR__ . '/view.php';         // vg_h · vg_sev_tone · vg_legend(범례 마크업의 정본)
+require_once __DIR__ . '/view.php';         // vg_h · vg_sev_tone
 
 /* ── 가로 계층 트리의 배치 상수(SVG 논리좌표, px) ──────────────────────────
  *   화면 코드에 숫자를 박지 않고 여기 한곳에서만 정한다. 값을 바꾸면 두 화면이 함께 따라온다. */
 const VG_DEPTREE_ROOTS_PER_PAGE = 10;   // 한 페이지에 그리는 루트 수(?per_page 로 바꾼다)
 const VG_DEPTREE_NODE_W  = 280;         // 노드 박스 폭
 const VG_DEPTREE_NODE_H  = 30;          // 노드 박스 높이
-const VG_DEPTREE_GAP_X   = 56;          // 열(depth) 사이 가로 간격 = 엣지 곡선이 놓이는 폭
+const VG_DEPTREE_GAP_X   = 56;          // 열(depth) 사이 가로 간격 = 엣지가 꺾여 지나는 폭
 const VG_DEPTREE_GAP_Y   = 8;           // 형제 사이 세로 간격
 const VG_DEPTREE_PAD     = 12;          // SVG 바깥 여백
 const VG_DEPTREE_CHAR_W  = 6.4;         // 12px 글자 한 칸의 근사폭 — 이름 말줄임 계산용
 const VG_DEPTREE_META_W  = 82;          // 노드 오른쪽 칸(버전/심각도 배지)의 폭
+const VG_DEPTREE_ELBOW_R = 10;          // 엣지가 꺾이는 모서리의 반지름(직각을 둥글린다)
 
 /* 깊이별 엣지 클래스 — 루트에서 멀어질수록 옅어져 흐름이 눈에 잡힌다(색이 아니라 농도).
  *   문자열로 조립하지 않고 리터럴 배열로 둔다: ui_lint.sh 의 "아무도 안 쓰는 CSS 클래스"
@@ -111,8 +112,10 @@ function vg_deptree_role(string $key, array $ctx): string
 /**
  * 가로 계층 트리 배치 — 루트 하나를 좌(부모)→우(자식) 열로 눕히고 형제는 위→아래로 쌓는다.
  *   고전적인 tidy tree: **리프를 순서대로 쌓고, 부모의 y 는 자식들 y 의 중앙**에 둔다.
- *   반환: ['nodes' => [['key','x','y','hidden'], …], 'edges' => [[x1,y1,x2,y2,깊이], …],
+ *   반환: ['nodes' => [['key','x','y','hidden','kids'], …],
+ *          'edges' => [['x1','y1','x2','ys'(자식 y 목록),'depth'], …]  ← **부모 하나가 한 묶음**,
  *          'w' => SVG 폭, 'h' => SVG 높이, 'drawn' => 그린 노드 수]
+ *   엣지를 자식마다 흩지 않고 부모 단위로 묶는 이유는 vg_deptree_edge_path() 주석에 있다.
  *   $budget 은 화면 전체가 나눠 쓰는 남은 노드 수다(참조로 깎는다) — 루트가 수십 개인
  *   자산에서 SVG 하나가 페이지를 통째로 먹지 않게 한다. 바닥나면 그 아래는 hidden 으로만 센다.
  *   $seen 은 **경로 단위** 방문 집합이다(순환 방지) — 전역으로 두면 여러 부모가 공유하는
@@ -154,10 +157,19 @@ function vg_deptree_layout(array $graph, string $root, int &$budget): array
             $cursorY += VG_DEPTREE_NODE_H + VG_DEPTREE_GAP_Y;
         }
         $x = VG_DEPTREE_PAD + $depth * (VG_DEPTREE_NODE_W + VG_DEPTREE_GAP_X);
-        $nodes[] = ['key' => $key, 'x' => $x, 'y' => $y, 'hidden' => $hidden];
-        foreach ($childY as $cy) {
-            // 마지막 칸은 이 엣지가 나가는 쪽 깊이다 — 옅기(농도)를 그리는 쪽이 여기서 읽는다.
-            $edges[] = [$x + VG_DEPTREE_NODE_W, $y, $x + VG_DEPTREE_NODE_W + VG_DEPTREE_GAP_X, $cy, $depth];
+        // kids = 이 노드에서 **실제로 그려진** 자식 수(hidden 은 뺀 것) — '+N' 글자를 엣지가
+        //   지나가는 자리에서 비켜 놓을지 판정하는 데 쓴다(vg_deptree_node_svg).
+        $nodes[] = ['key' => $key, 'x' => $x, 'y' => $y, 'hidden' => $hidden, 'kids' => count($childY)];
+        if ($childY) {
+            // 한 부모의 자식 전부를 **한 묶음**으로 넘긴다(자식마다 흩지 않는다). depth 는 이
+            //   엣지가 나가는 쪽 깊이다 — 옅기(농도)를 그리는 쪽이 여기서 읽는다.
+            $edges[] = [
+                'x1'    => $x + VG_DEPTREE_NODE_W,
+                'y1'    => $y,
+                'x2'    => $x + VG_DEPTREE_NODE_W + VG_DEPTREE_GAP_X,
+                'ys'    => $childY,
+                'depth' => $depth,
+            ];
         }
         return $y;
     };
@@ -221,16 +233,65 @@ function vg_deptree_node_svg(array $n, array $ctx): string
             . vg_h(mb_strimwidth($p['version'], 0, (int) (VG_DEPTREE_META_W / VG_DEPTREE_CHAR_W), '…')) . '</text>';
     }
     // 접힌 자식(깊이·노드 상한, 순환)이 있으면 그 수를 노드 오른쪽에 남긴다 — 조용히 자르지 않는다.
+    //   그려진 자식이 함께 있으면 그 자리로 엣지의 가로 줄기가 지나가므로 한 칸 위로 비킨다
+    //   (엘보 라우팅은 부모 y 에서 곧게 나간다 — 글자와 선이 정확히 같은 높이에 놓인다).
     if ($n['hidden'] > 0) {
-        $svg .= '<text class="deptree__more" x="' . ($x + VG_DEPTREE_NODE_W + 8) . '" y="' . $y . '">+'
+        $moreY = ((int) ($n['kids'] ?? 0)) > 0 ? round($y - 9, 1) : $y;
+        $svg .= '<text class="deptree__more" x="' . ($x + VG_DEPTREE_NODE_W + 8) . '" y="' . $moreY . '">+'
             . (int) $n['hidden'] . '</text>';
     }
     return $svg . '</a>';
 }
 
 /**
+ * 한 부모에서 자식들로 가는 엣지 **한 묶음**의 SVG path — 직교(elbow) 라우팅.
+ *
+ *   부모 오른쪽에서 수평으로 나가 두 열 사이 **가운데 세로 줄기**에 붙고, 거기서 자식마다
+ *   갈라져 다시 수평으로 자식 왼쪽에 닿는다. 꺾이는 곳은 반지름 VG_DEPTREE_ELBOW_R 로 둥글린다.
+ *
+ *   왜 곡선(3차 베지에)에서 바꿨나: 예전에는 자식이 몇이든 **부모 오른쪽 한 점**에서 모두
+ *   출발하고 전부 수평 접선으로 떠나, 그 언저리에서 선이 뭉치고 서로 겹쳐 보였다(사용자 지적).
+ *   출발점만 노드 높이 안에서 분산하는 안도 있었지만, 자식이 열 개를 넘으면 30px 안에서 다시
+ *   0.7px 간격이 되어 같은 문제가 돌아온다. 직교 라우팅은 자식 수와 무관하게 **자식마다 제
+ *   행(row)** 을 갖는다 — 형제 사이 간격이 곧 선 사이 간격이다.
+ *
+ *   겹침 판정: 형제끼리는 세로 줄기 하나를 나눠 쓰고 가로 팔은 자식 y 로 갈리므로 교차가 없다.
+ *   다른 부모의 묶음과도 안 겹친다 — tidy 배치라 한 부모의 자식들은 연속된 y 띠를 차지하고
+ *   부모 y 는 그 띠의 가운데다(띠끼리 서로 겹치지 않는다). 줄기·팔은 모두 열 사이 빈칸에만
+ *   놓이므로 노드 박스를 관통하지도 않는다.
+ *
+ *   묶음을 **path 하나**로 내는 것이 핵심이다: 각 자식의 경로가 줄기 구간을 공유해 겹쳐 그려지는데,
+ *   .deptree__edge--d* 의 opacity 는 **요소 단위로 합성**되므로 한 요소 안의 겹침은 진해지지 않는다.
+ *   자식마다 path 를 나누면 부모 쪽 줄기만 자식 수만큼 짙어져 또 다른 얼룩이 생긴다.
+ */
+function vg_deptree_edge_path(array $e): string
+{
+    $x1 = round((float) $e['x1'], 1);
+    $y1 = round((float) $e['y1'], 1);
+    $x2 = round((float) $e['x2'], 1);
+    $tx = round(($x1 + $x2) / 2, 1);   // 세로 줄기 = 두 열 사이의 가운데
+    $d  = '';
+    foreach ($e['ys'] as $cy) {
+        $y2 = round((float) $cy, 1);
+        $dy = $y2 - $y1;
+        // 부모와 같은 높이의 자식(사슬처럼 이어지는 가지)은 꺾을 것이 없다 — 곧은 가로선.
+        if (abs($dy) < 1) { $d .= 'M' . $x1 . ',' . $y1 . 'H' . $x2; continue; }
+        $dir = $dy > 0 ? 1 : -1;
+        // 꺾이는 폭·높이를 넘지 않게 반지름을 줄인다 — 짧은 구간에서 곡선이 튀지 않는다.
+        $r = round(min((float) VG_DEPTREE_ELBOW_R, ($x2 - $x1) / 2, abs($dy) / 2), 1);
+        $d .= 'M' . $x1 . ',' . $y1
+            . 'H' . round($tx - $r, 1)
+            . 'Q' . $tx . ',' . $y1 . ' ' . $tx . ',' . round($y1 + $dir * $r, 1)
+            . 'V' . round($y2 - $dir * $r, 1)
+            . 'Q' . $tx . ',' . $y2 . ' ' . round($tx + $r, 1) . ',' . $y2
+            . 'H' . $x2;
+    }
+    return $d;
+}
+
+/**
  * 트리 한 장 — 좌표는 vg_deptree_layout() 이 계산하고 여기서는 그리기만 한다(SRP).
- *   부모→자식은 3차 베지에로 잇는다(두 열의 가운데를 제어점으로 잡아 좌우로 흐르는 곡선).
+ *   부모→자식은 직교(elbow)로 잇는다 — 부모마다 path 하나다(vg_deptree_edge_path 주석 참고).
  *   엣지는 깊이가 깊을수록 옅다 — 어느 가지가 루트에서 바로 나온 것인지가 먼저 읽힌다.
  *   SVG 폭은 노드가 정하므로 늘이지 않는다 — 넘치면 .deptree 안에서만 가로로 스크롤한다.
  */
@@ -243,27 +304,10 @@ function vg_deptree_render(array $graph, string $root, int &$budget, array $ctx)
         . ' viewBox="0 0 ' . $l['w'] . ' ' . $l['h'] . '" role="img"'
         . ' aria-label="' . vg_h($p['name'] . ' 의존성 트리 · 노드 ' . $l['drawn'] . '개') . '">';
     $deepest = count(VG_DEPTREE_EDGE_CLASS) - 1;
-    foreach ($l['edges'] as [$x1, $y1, $x2, $y2, $depth]) {
-        $mid = round(($x1 + $x2) / 2, 1);
-        echo '<path class="deptree__edge ' . VG_DEPTREE_EDGE_CLASS[min((int) $depth, $deepest)]
-            . '" d="M' . $x1 . ',' . round($y1, 1) . ' C' . $mid . ',' . round($y1, 1)
-            . ' ' . $mid . ',' . round($y2, 1) . ' ' . $x2 . ',' . round($y2, 1) . '"/>';
+    foreach ($l['edges'] as $e) {
+        echo '<path class="deptree__edge ' . VG_DEPTREE_EDGE_CLASS[min((int) $e['depth'], $deepest)]
+            . '" d="' . vg_deptree_edge_path($e) . '"/>';
     }
     foreach ($l['nodes'] as $n) { echo vg_deptree_node_svg($n, $ctx); }
     echo '</svg></div>';
-}
-
-/**
- * 트리 위 한 줄 범례 — "노드 색이 무슨 뜻인가". 색을 정보로 쓰기로 한 이상 그 뜻을 밝힌다.
- *   마크업은 공용 vg_legend() 를 그대로 쓴다(새 CSS 없음). 칠하는 등급만 담는다 —
- *   범례에 없는 색(중립 박스)은 "조치 대상이 아님" 이라는 뜻이다.
- */
-function vg_deptree_legend(): void
-{
-    $labels = ['crit' => 'CRITICAL', 'high' => 'HIGH', 'med' => 'MEDIUM'];
-    $items = [];
-    foreach (VG_DEPTREE_FILL_TONES as $tone) {
-        $items[] = ['label' => $labels[$tone] ?? $tone, 'tone' => $tone];
-    }
-    vg_legend($items, ['inline' => true, 'caption' => '노드 색']);
 }

@@ -1152,11 +1152,22 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
  * 다른 SVG 차트(.chart svg)와 달리 **폭에 맞춰 늘이지 않는다**: 늘리면 노드 글자까지 줄어
  * 이름이 안 읽힌다. 폭은 노드 수가 정하고, 넘치면 .deptree 안에서만 가로로 스크롤한다
  * (<body> 가 가로로 스크롤되면 안 된다). */
+/* 트리 위 제목 줄 — 제목·통계(엣지·루트·노드 수)·조회 단위 배지가 왼쪽, 전용 화면 링크가
+ * 오른쪽. 버튼 하나 때문에 줄이 하나 더 생기지 않게 카드 자체를 한 줄로 편다(제목 줄 액션은
+ * .page-title__actions 와 같은 원칙 — 다만 여기는 페이지가 아니라 카드다).
+ * 좁은 화면에서는 wrap 으로 두 줄이 되고, 액션은 그때도 오른쪽에 남는다. */
+.deptree__head {
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: .5rem;
+}
+.deptree__headline { min-width: 0; }
 .deptree { overflow-x: auto; overflow-y: hidden; }
 .deptree__svg { display: block; }
 /* 연결선은 뒤로 물러난다 — 주인공은 노드다(차트의 눈금과 같은 원칙).
  * 색은 하나(--line-2)로 두고 **깊이만 농도로 말한다** — 루트에서 바로 나온 가지가 제일 진하다.
- * 색상을 하나 더 쓰면 노드 면의 등급 축과 경쟁한다(색은 한 화면에서 한 가지만 말해야 한다). */
+ * 색상을 하나 더 쓰면 노드 면의 등급 축과 경쟁한다(색은 한 화면에서 한 가지만 말해야 한다).
+ * 선 모양은 직교(elbow)다 — 한 부모의 자식 전부가 path 하나에 들어 있다(deptree.php 주석).
+ * opacity 를 stroke-opacity 로 바꾸면 안 된다: 요소 단위 합성이라야 줄기의 겹침이 안 짙어진다. */
 .deptree__edge { fill: none; stroke: var(--line-2); stroke-width: 1.4; }
 .deptree__edge--d0 { stroke-width: 1.9; }
 .deptree__edge--d1 { opacity: .78; }
