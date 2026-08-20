@@ -1,10 +1,10 @@
 @startuml
-' schema-docs: sha256:75518f32abc42923 generated_at=2026-08-19T01:38:30Z tables=60
+' schema-docs: sha256:4ba5c61e45adeaf7 generated_at=2026-08-20T14:30:44Z tables=61
 ' vuln-agent §5 데이터 모델 (ERD)
 ' 원본: docs/dev/architecture.md §5
 ' 테이블별 전체 컬럼·책임·정규화 현황은 docs/dev/데이터베이스.md 참고.
 '
-' 범위: 도메인 엔티티 59개 전부(= 전체 60테이블 - tb_schema_migrations).
+' 범위: 도메인 엔티티 60개 전부(= 전체 61테이블 - tb_schema_migrations).
 '      tb_schema_migrations 는 마이그레이션 러너 자신의 인프라 테이블이라 도메인 모델이 아니어서 뺐다.
 '      영역이 한눈에 안 잡히던 문제는 package 로 묶어 해결한다(수집 / CVE / 벤더·기준 카탈로그 /
 '      판정결과 / 운영 / 자산 탐색).
@@ -22,6 +22,8 @@
 '          관계 라벨이 엔티티 박스 글자 위에 겹쳐 찍힌다(좁힌 상태에서 실측 32곳). 곡선 라우팅은 잡아준다.
 '      (d) 긴 관계 라벨은 줄바꿈(\n)으로 접는다 — 라벨 폭이 열 간격을 그대로 벌린다.
 '      결과: 8452x1192 -> 2547x4124(실효 1.5px -> 4.9px).
+'      이후 tb_report_job 을 더해 2558x4669 가 됐다 — 보조선을 하나 더 붙이면 세로는 줄지만
+'      폭이 2928~3180 으로 튀어(실측 3안) 오히려 글자가 작아지므로 붙이지 않았다.
 '
 ' 명명규칙: 테이블명은 단수, 대리키 PK 는 <단수 테이블명>_id, FK 는 부모 PK 이름을 그대로 쓴다
 '          (tb_host.host_id ← tb_scan.host_id — 조인 양쪽 이름이 같다).
@@ -674,6 +676,23 @@ package "피드 운영 · 인증 · 감사" {
         ip_address : string
     }
 
+    entity tb_report_job {
+        report_job_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        external_job_id : bigint
+        ' 외부 API 가 발급한 job 번호 - 우리 PK 와 다른 값
+        status : string
+        ' 외부 어휘 원문 - PENDING PROCESSING SUCCESS FAILED
+        result : text
+        ' 결과 본문. 파일 링크면 우리 프록시가 대신 받아 내려준다
+        error_message : string
+        requested_user_id : bigint <<FK>>
+        ' 계정이 지워지면 NULL(이력은 남긴다)
+        external_created_at : datetime
+        external_finished_at : datetime
+    }
+
     entity tb_setting {
         setting_id : bigint <<PK>>
         --
@@ -784,6 +803,8 @@ tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
 tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
 tb_user |o--o{ tb_asset_grade_review : "등급 검토자"
 tb_agent_token ||--o{ tb_agent_replay_nonce : "소진된 nonce"
+tb_host ||--o{ tb_report_job : "AI 보고서 작업\n(외부 작업큐의 사본)"
+tb_user |o--o{ tb_report_job : "보고서 요청자\n(계정 삭제 시 NULL)"
 
 tb_discovery_target ||--o{ tb_discovery_run : "대역 스윕 실행 이력"
 tb_discovery_target ||--o{ tb_discovered_asset : "발견한 IP\n(대역 기준 누적)"
