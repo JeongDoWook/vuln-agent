@@ -23,16 +23,19 @@ declare(strict_types=1);
         $staleText = '옛 라이브러리를 물고 있는 프로세스가 관측되지 않았습니다.';
         $staleLabel = '해당 없음';
     } else {
+        // 해설 문장은 걷었다 — 아래 표가 어느 프로세스가 무엇을 물고 있는지 사실로 보여주고,
+        //   '조치' 칸이 재시작이라고 이미 말한다. 뱃지(재시작 필요 N건)는 그대로 둔다.
+        //   0건·미수집(위 두 갈래)에서는 문장을 남긴다 — 거기선 표가 없어 뱃지만으로는
+        //   'NA ≠ PASS' 가 전달되지 않는다.
         $staleTone = 'high';
-        $staleText = '패치는 적용됐지만 아래 프로세스가 교체 전 라이브러리를 아직 메모리에 물고 있습니다. '
-            . '조치는 업데이트가 아니라 재시작이며, 그동안 이 취약점은 억제되지 않습니다.';
+        $staleText = '';
         $staleLabel = '재시작 필요 ' . number_format($staleTotal) . '건';
     }
     ?>
     <div class="card">
       <strong>재시작 필요 (억제 취소 신호)</strong>
       <?= vg_badge($staleLabel, $staleTone) ?>
-      <span class="why"> · <?= vg_h($staleText) ?></span>
+      <?php if ($staleText !== ''): ?><span class="why"> · <?= vg_h($staleText) ?></span><?php endif; ?>
       <?php if ($staleLibs['rows']): ?>
         <div class="card__body">
         <?php
@@ -61,7 +64,6 @@ declare(strict_types=1);
         <?php if ($staleTotal > count($staleLibs['rows'])): ?>
           <span class="why">상위 <?= count($staleLibs['rows']) ?>건만 표시합니다(전체 <?= number_format($staleTotal) ?>건).</span>
         <?php endif; ?>
-        <span class="why"> · 해당 취약점은 <a href="<?= vg_h(vg_qs(['tab' => 'vuln', 'page' => null, 'q' => null])) ?>">취약점 탭의 "재시작·재부팅" 표</a>에 그대로 남아 있습니다.</span>
       <?php endif; ?>
     </div>
 
