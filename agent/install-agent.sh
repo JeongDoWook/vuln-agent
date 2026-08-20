@@ -375,6 +375,7 @@ do_poll() {
     printf '%s' "\$resp" | jq -e . >/dev/null 2>&1 || return 1
     POLL_SCHEDULE=\$(printf '%s' "\$resp" | jq -r '.poll_schedule_seconds // empty')
     DUE_CMD=\$(printf '%s' "\$resp" | jq -r '.due_command_id // empty')
+    DUE_VERIFY=\$(printf '%s' "\$resp" | jq -r '.due_command_verify_files // empty')
     POLL_CPU_QUOTA=\$(printf '%s' "\$resp" | jq -r '.cpu_quota_percent // empty')
     POLL_PACKAGING_TIMEOUT=\$(printf '%s' "\$resp" | jq -r '.packaging_timeout_seconds // empty')
     POLL_MEM_MAX=\$(printf '%s' "\$resp" | jq -r '.mem_max_mb // empty')
@@ -387,6 +388,7 @@ do_poll() {
     # 응답이 단순 flat JSON 필드뿐이라 grep -o/sed 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
     POLL_SCHEDULE=\$(printf '%s' "\$resp" | grep -o '"poll_schedule_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     DUE_CMD=\$(printf '%s' "\$resp" | grep -o '"due_command_id"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
+    DUE_VERIFY=\$(printf '%s' "\$resp" | grep -o '"due_command_verify_files"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     POLL_CPU_QUOTA=\$(printf '%s' "\$resp" | grep -o '"cpu_quota_percent"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     POLL_PACKAGING_TIMEOUT=\$(printf '%s' "\$resp" | grep -o '"packaging_timeout_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
     POLL_MEM_MAX=\$(printf '%s' "\$resp" | grep -o '"mem_max_mb"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+\$')
@@ -398,6 +400,10 @@ do_poll() {
     UPDATE_SIGNATURE=\$(printf '%s' "\$resp" | sed -n 's/.*"update_signature"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
   fi
   case "\$POLL_SCHEDULE" in ''|*[!0-9]*) return 1 ;; esac
+  # 무결성 검사 포함 여부(0/1). 구버전 서버는 이 필드를 안 주므로 빈 값 → 0 이다.
+  #   poll 마다 반드시 다시 계산된다 — 한 번 1 이 들어온 뒤 그대로 남아 다음 정기수집까지
+  #   무겁게 도는 일이 없게, "1 이 아니면 0" 으로 못 박는다.
+  case "\$DUE_VERIFY" in 1) DUE_VERIFY=1 ;; *) DUE_VERIFY=0 ;; esac
   # POLL_CPU_QUOTA/POLL_PACKAGING_TIMEOUT 는 숫자+상식적 범위(CPU 1~100, 타임아웃 30~3600)
   #   벗어나면 빈 값으로 떨군다 — run_scan 이 그대로 vuln-inventory-agent.sh 기본값(10%/120초)
   #   으로 폴백하므로 여기서 막아도 수집 자체는 안전하게 계속된다.
@@ -561,7 +567,7 @@ do_update() {
 }
 
 run_scan() {
-  local cmd_id="\$1"
+  local cmd_id="\$1" verify_files="\${2:-0}"
   # 업데이트 후 첫 실행이면, 실제 수집을 시작하기 전에 새 스크립트 자체를 먼저 점검한다 —
   #   bash -n(문법) + --help(로드·인자파싱까지 실제로 실행, 부작용 없음). 이 자기점검 결과로만
   #   롤백 여부를 정한다. 예전엔 뒤이은 수집(vuln-inventory-agent.sh 전체 실행)의 종료코드로
@@ -586,9 +592,16 @@ run_scan() {
   fi
   local args=(-o "\$LOG_DIR/last.json" --send "\$SEND_URL" --token "\$SEND_TOKEN")
   [ -n "\$cmd_id" ] && args+=(--command-id "\$cmd_id")
-  # 패키지 무결성 검증 — 설치 시 --verify-files 를 준 노드에서만 1 이다(기본 꺼짐).
-  #   구버전 agent.env 에는 이 키가 없으므로 :-0 으로 안전하게 꺼진 상태를 유지한다.
-  [ "\${VERIFY_FILES:-0}" = 1 ] && args+=(--verify-files)
+  # 패키지 무결성 검증 — 둘 중 하나라도 1 이면 붙인다(OR).
+  #   (a) VERIFY_FILES : 설치 시 --verify-files 를 준 노드 고정값(기본 꺼짐).
+  #       구버전 agent.env 에는 이 키가 없으므로 :-0 으로 안전하게 꺼진 상태를 유지한다.
+  #   (b) verify_files : 중앙이 이번 명령에 한해 켠 값(agent-poll.php 의 due_command_verify_files).
+  #       명령 단위라 다음 정기수집에는 따라붙지 않는다 — 기본 꺼짐이라는 대전제는 그대로다.
+  #   --verify-timeout 은 무결성 검증 단독 상한(기본 300초, vuln-inventory-agent.sh 와 같은 값).
+  #       CMD_TIMEOUT(20초)로는 무조건 잘리므로 붙일 때 함께 넘긴다.
+  if [ "\${VERIFY_FILES:-0}" = 1 ] || [ "\$verify_files" = 1 ]; then
+    args+=(--verify-files --verify-timeout "\${VERIFY_TIMEOUT:-300}")
+  fi
   log "수집 시작\${cmd_id:+ (명령#\$cmd_id 처리 포함)}"
   # 호스트별 속도 티어(agent-poll.php 의 cpu_quota_percent/packaging_timeout_seconds) 를
   #   env override 로 넘긴다 — vuln-inventory-agent.sh 상단이 이미 CPU_QUOTA/PACKAGING_TIMEOUT
@@ -627,7 +640,7 @@ poll_and_maybe_scan() {
   case "\$last" in ''|*[!0-9]*) last=0 ;; esac
   [ \$(( now - last )) -ge "\$POLL_SCHEDULE" ] && scheduled_due=1
   if [ "\$scheduled_due" = 1 ] || [ -n "\$DUE_CMD" ]; then
-    run_scan "\$DUE_CMD"
+    run_scan "\$DUE_CMD" "\${DUE_VERIFY:-0}"
     [ "\$scheduled_due" = 1 ] && echo "\$now" > "\$LAST_SCAN_FILE"
   fi
   return 0
