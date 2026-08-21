@@ -18,10 +18,15 @@ require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/license_summary.php';   // VG_LANG_MANAGERS, vg_license_risk_*
 vg_require_menu('catalog');
 
-// 정렬 화이트리스트(OS 탭). 사용자 입력을 SQL 에 직접 넣지 않는다.
+/* 정렬 화이트리스트(OS 탭). 사용자 입력을 SQL 에 직접 넣지 않는다.
+ * 'epss'(max_epss DESC)는 뺐다 — 최고 EPSS 열을 상세(package.php)로 내리면서 **화면에 없는
+ *   값으로 목록 차례가 바뀌는** 정렬이 됐다. 목록에 보이는 값으로만 세운다.
+ *   여기서 빠지면 옛 `?sort=epss` 주소는 화이트리스트 검증에 걸려 기본(CVE 많은순)으로
+ *   떨어진다 — 500 이 아니라 목록이 그대로 뜬다.
+ * EPSS 로 세워 보고 싶으면 CVE 목록(cves.php)의 'EPSS 높은순'을 쓴다 — 그 화면은 EPSS 를
+ *   열로 보여주므로 무엇으로 세운 차례인지가 화면에 남는다. */
 const VG_PKG_SORTS = [
     'cves'    => ['col' => 'cve_cnt',  'label' => 'CVE 많은순'],
-    'epss'    => ['col' => 'max_epss', 'label' => 'EPSS 높은순'],
     'package' => ['col' => 'package_name', 'label' => '패키지명순'],
 ];
 
@@ -294,7 +299,7 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
       ['type' => 'select', 'name' => 'eco', 'selected' => $eco, 'empty_label' => '전체 배포판',
        'options' => $ecoOptions],
       ['type' => 'select', 'name' => 'sort', 'selected' => $sort === 'cves' ? '' : $sort,
-       'empty_label' => 'CVE 많은순(기본)', 'options' => ['epss' => 'EPSS 높은순', 'package' => '패키지명순']],
+       'empty_label' => 'CVE 많은순(기본)', 'options' => ['package' => '패키지명순']],
       ['type' => 'search', 'name' => 'q', 'placeholder' => '패키지명 검색', 'value' => $q],
       ['type' => 'hidden', 'name' => 'tab', 'value' => $tab],
   ]); ?>
@@ -348,7 +353,7 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
            * 58% 만으로도 이 목록에서 가장 긴 이름(kernel-debug-devel-matched + '동일 집계'
            * 배지)이 잘리지 않는다 — 열이 다섯이던 시절엔 30% 였고 그래서 잘렸다(말줄임 7칸).
            * **max_epss 는 계속 조회한다** — 위 랭킹 막대의 색(vg_epss_tone)과 '동일 집계'
-           * 판정(same_agg)이 그 값을 쓰고, 도구줄의 'EPSS 높은순' 이 그 값으로 정렬한다. */
+           * 판정(same_agg)이 그 값을 쓴다. 정렬은 더 이상 쓰지 않는다(VG_PKG_SORTS 주석 참고). */
           ['label' => '패키지', 'width' => '58%', 'class' => 'col-id'],
           ['label' => '배포판', 'width' => '26%'],
           ['label' => 'CVE 수', 'align' => 'right', 'width' => '16%'],
