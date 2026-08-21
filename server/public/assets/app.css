@@ -143,6 +143,12 @@
   --shadow-lg: 0 24px 64px rgb(0 0 0 / .18);
 
   --ctl-h: 2.05rem;  /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
+  /* 셀렉트 공통 **폭 상한**. 셀렉트가 담는 값은 거의 전부 짧은 어휘(상/중/하, C/S/O, 등급,
+   * 상태…)인데 폼 안에서는 width:100% 라 칸 전체를 먹어, 두 글자짜리 값 옆에 빈 칸이
+   * 손가락 두 마디씩 남았다(사용자: "드롭다운 사이즈도 일괄 사이즈 관리할까?").
+   * 화면마다 폭을 따로 정하지 않고 여기 한 값을 쓴다 — 더 넓어야 하는 칸만
+   * max-width: none 으로 눕힌다(수집 제어의 속도 티어처럼 칸 폭이 이미 좁은 곳). */
+  --select-w: 16rem;
   --topbar-h: 56px;  /* .topbar 의 min-height 와 공유 — sticky 내비 top·scroll-margin 이 같이 따라간다 */
   /* 목록 화면의 sticky 필터 툴바 높이. 표의 sticky 머리글이 이 아래에 정확히 붙어야 하므로
    * 값을 고정해 두 sticky 가 서로를 가리지 않게 한다(.toolbar 의 min-height 와 공유). */
@@ -1391,6 +1397,10 @@ td details[open] summary { margin-bottom: .35rem; }
 .links a { font-size: var(--fs-sm); padding: .25rem .6rem; border: 1px solid var(--line-2); border-radius: var(--r-xs); color: var(--text-2); }
 .links a:hover { border-color: var(--accent); color: var(--accent-2); text-decoration: none; }
 
+/* 폼의 마지막 조작을 오른쪽 끝으로 — 긴 폼에서 왼쪽 구석 버튼은 훑어 내려온 시선을
+ * 되돌리게 한다(자산 등급의 '등급 확정'). td.right .actions 가 표 안에서 하던 것과 같은 정렬. */
+.actions--end { justify-content: flex-end; }
+
 /* .actions 바로 다음에 .links 가 오면(vg_sbom_links 등) 둘 다 margin 이 없어 붙어 보이고,
    .btn:hover 의 translateY(-1px) 로 호버 시 아래 줄과 겹친다 — 한 줄 띄운다. */
 .card__body > .actions + .links { margin-top: .55rem; }
@@ -1836,6 +1846,9 @@ input[type=url]:focus,
 input[type=datetime-local]:focus, input[type=date]:focus, input[type=number]:focus,
 select:focus, textarea:focus { background: var(--surface); border-color: var(--accent); }
 input[type=search], select { font-size: var(--fs-sm); }
+/* 셀렉트는 폭 상한을 공통 토큰에서 받는다(위 --select-w 주석). width:100% 는 그대로라
+ * 좁은 칸에서는 칸에 맞춰 줄고, 넓은 칸에서만 이 상한에 걸린다. */
+select { max-width: var(--select-w); }
 input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
 
 /* --- 버튼 ---------------------------------------------------------------- */
@@ -2153,7 +2166,10 @@ span.flatpickr-weekday { color: var(--muted); font-size: var(--fs-xs); }
   background-repeat: no-repeat;
   background-position: .6rem center;
 }
-.toolbar select { width: auto; }
+/* 툴바·페이저의 셀렉트는 이미 width:auto 라 **내용만큼만** 넓다 — 공통 폭 상한(--select-w)의
+   대상이 아니다(그 상한은 칸 전폭을 먹는 폼 셀렉트를 잡는 것이다). 긴 옵션 글자가 잘리지
+   않게 상한을 눕힌다. */
+.toolbar select { width: auto; max-width: none; }
 /* 기간 필터(감사로그) — 검색창처럼 늘어나면 안 된다. 내용(YYYY-MM-DD)만큼만 차지한다. */
 .toolbar input[type=date] { width: auto; flex: 0 0 auto; }
 
@@ -2170,7 +2186,7 @@ span.flatpickr-weekday { color: var(--muted); font-size: var(--fs-xs); }
 .pager a:hover { background: var(--surface-2); text-decoration: none; }
 .pager .cur { background: var(--accent); color: #fff; border-color: var(--accent); }
 .pager .muted { border: none; color: var(--muted-2); }
-.pager select { width: auto; }
+.pager select { width: auto; max-width: none; }
 
 /* --- 커넥터 편집 폼: 수집 방식 ---------------------------------------------
  * 타입을 고르면 그 커넥터가 데이터를 **어떻게** 가져오는지(REST API · 파일 다운로드 ·
@@ -3027,11 +3043,14 @@ form.card .btn--primary:active { transform: translateY(0); }
 .icon-cell .vg-ico { width: 1.5rem; height: 1.5rem; }
 
 /* --- 자산 등급의 구조화 검토 근거(host/grade.php) ---------------------------
- * 아홉 칸짜리 근거 폼은 등급을 **확정할 때만** 쓴다(대부분 비어 있다). 늘 펼쳐 두면
- * 자산 설정 탭을 이 폼이 통째로 차지해, 정작 위의 확정 등급·시스템 초안이 밀린다.
- * 접이식 본문은 폼(.setting-form)과 같은 간격으로 쌓아 접기 전후로 줄 간격이 안 바뀌게 한다. */
+ * 아홉 칸짜리 근거 폼의 **접기는 걷었다** — 접힌 폼은 채워야 하는 사람에게 못 본 폼이다.
+ * 대신 두 칸 격자(.form-grid)로 다섯 줄에 세운다. 여기 남은 <details> 는 그 위의
+ * '시스템이 본 신호의 근거' 하나뿐이다(읽을거리라 접혀 있어도 손해가 없다).
+ * 본문은 폼(.setting-form)과 같은 간격으로 쌓아 다른 줄과 간격이 안 어긋나게 한다. */
 .grade-review > summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 650; }
 .grade-review > summary:hover { color: var(--accent-2); }
+/* 접기가 사라진 자리의 제목 — 예전 <summary> 와 같은 무게로 둔다(줄 모양이 안 바뀐다). */
+.grade-review__title { margin: 0; color: var(--text-2); font-size: var(--fs-sm); font-weight: 650; }
 .grade-review__body { display: grid; gap: 1rem; margin-top: .9rem; }
 
 /* --- 모달 2열 폼의 칸 정렬(.form-grid 안의 .field) --------------------------
