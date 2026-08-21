@@ -180,10 +180,13 @@ cmd_add() {
   # 개발 도구(kit/·.claude/·CLAUDE.md 등): git 미추적이라 worktree add 가 안 가져다준다.
   #   메인 트리에 있으면 통째로 복사 — 없으면 다음 워크트리부터 이 프로젝트의 개발 방식
   #   (오케스트레이터·codelore 조회 규약·리뷰 킷) 자체가 사라진다.
+  #   대상이 이미 있으면(이 브랜치가 origin/main 에 병합되기 전이라 아직 git 추적 중인 경우 등)
+  #   먼저 지운다 — 안 지우면 `cp -r kit "$dir/kit"` 가 기존 kit/ 안에 kit/ 를 또 만든다.
   local dt_item dt_dst dt_copied=0
   for dt_item in "${DEV_TOOL_PATHS[@]}"; do
     [ -e "$MAIN_ROOT/$dt_item" ] || continue
     dt_dst="$dir/$dt_item"
+    rm -rf "$dt_dst"
     mkdir -p "$(dirname "$dt_dst")"
     if [ -d "$MAIN_ROOT/$dt_item" ]; then
       cp -r "$MAIN_ROOT/$dt_item" "$dt_dst"
