@@ -312,10 +312,16 @@ $check(substr_count($processHtml, 'class="operator-step"') === 4
     'process.html 운영자 4단계·용어 구분·외부 개발자 문서 링크');
 // 수동(문서 심사) 구역은 화면에서 내렸다 — 자동판정 근거가 제품 안에 없는 항목이라
 //   화면은 자동판정과 그 추이만 갖는다. 상수·조항 매핑은 policy.php 에 그대로 있다.
+// 구역 표식은 **두 가지 문법**으로 쓰인다 — 인라인 마크업(`<section data-compliance-zone="…">`)과
+//   vg_card() 의 attrs 배열(`'data-compliance-zone' => '…'`). 계약은 "그 표식이 화면에 실린다" 이지
+//   소스에 어떤 모양으로 적혔는가가 아니므로 둘 다 인정한다(카드 문법 통일로 후자가 생겼다).
+$complianceZone = static fn(string $name): bool =>
+    str_contains($compliancePhp, 'data-compliance-zone="' . $name . '"')
+    || str_contains($compliancePhp, "'data-compliance-zone' => '" . $name . "'");
 $check(str_contains($cvePhp, 'vg_decision_flow(') && str_contains($cceRulePhp, 'vg_decision_flow(')
-    && str_contains($compliancePhp, 'data-compliance-zone="automatic"')
-    && !str_contains($compliancePhp, 'data-compliance-zone="manual"')
-    && str_contains($compliancePhp, 'data-compliance-zone="trend"'),
+    && $complianceZone('automatic')
+    && !$complianceZone('manual')
+    && $complianceZone('trend'),
     'CVE/CCE 판단 흐름과 컴플라이언스 자동·추이 구역(수동 구역 없음)');
 
 if ($fail > 0) { printf("ui_structure_test: %d건 실패\n", $fail); exit(1); }
