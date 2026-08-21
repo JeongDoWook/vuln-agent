@@ -21,7 +21,6 @@ vg_require_menu('activity');
 $pdo = vg_pdo();
 
 $err = null; $rows = []; $total = 0; $scopes = []; $accessRows = [];
-$hourlyLabels = []; $hourlyData = [];
 
 // ── 필터: 5요소 기준(기간·사용자·접속지 IP·수행업무) + 기존 범위·자유검색 ──
 $scope    = trim((string) ($_GET['scope'] ?? ''));
@@ -58,35 +57,6 @@ try {
               WHERE is_deleted = 0
               ORDER BY last_login IS NULL, last_login DESC"
         )->fetchAll();
-    }
-
-    // 최근 24시간 시간대별 활동량 — 필터와 무관한 개요라 목록 필터를 타지 않는다.
-    // 감사로그는 이벤트마다 실제 시각(created_at)이 있어(스캔 스냅샷과 달리 보간이 필요 없다) 그대로 집계한다.
-    // admin 전용(failed_login_count 와 같은 이유)이고, 딥 오프셋 반복 요청 부하를 줄이려 1페이지에서만 돈다.
-    // 삭제된 감사행도 포함한다 — 소프트 삭제로 이 위젯이 조용히 줄어들면 증거 삭제가 감춰진다.
-    if (vg_has_role('admin') && $page === 1) {
-        $hoursWindow = 24;
-        // 라벨 슬롯(시간 단위로 절단)과 SQL 조회 시작 시각을 같은 기준(정시로 절단한 $windowStart)으로 맞춘다.
-        // NOW()-INTERVAL 처럼 분·초 단위까지 포함한 경계를 쓰면 첫 슬롯 이전 최대 59분치가 집계는 되고도
-        // 라벨에는 안 잡혀 조용히 사라진다.
-        $now = new DateTimeImmutable('now');
-        $hourFloor = $now->setTime((int) $now->format('H'), 0, 0);
-        $windowStart = $hourFloor->modify('-' . ($hoursWindow - 1) . ' hours');
-
-        $stmt = $pdo->prepare(
-            "SELECT DATE_FORMAT(created_at, '%Y-%m-%d %H:00:00') AS hr, COUNT(*) c
-               FROM tb_activity_log
-              WHERE created_at >= ?
-              GROUP BY hr"
-        );
-        $stmt->execute([$windowStart->format('Y-m-d H:i:s')]);
-        $hourlyByKey = [];
-        foreach ($stmt->fetchAll() as $r) { $hourlyByKey[(string) $r['hr']] = (int) $r['c']; }
-        for ($i = 0; $i < $hoursWindow; $i++) {
-            $slot = $windowStart->modify("+$i hours")->format('Y-m-d H:00:00');
-            $hourlyLabels[] = (new DateTimeImmutable($slot))->format('H시');
-            $hourlyData[] = $hourlyByKey[$slot] ?? 0;
-        }
     }
 
     $scopes = $pdo->query(
@@ -150,27 +120,12 @@ try {
 }
 
 vg_header('감사 로그', 'activity');
-$showHourly = $err === null && vg_has_role('admin') && $page === 1;
-if ($showHourly) { vg_chart_assets(); }
 ?>
   <?php vg_page_title('감사 로그', 'AUDIT'); ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
-  <?php if ($showHourly): ?>
-  <?php vg_card('최근 24시간 활동량', static function () use ($hourlyLabels, $hourlyData): void {
-      if (array_sum($hourlyData) > 0) {
-          vg_chart('bar', [
-              'labels' => $hourlyLabels,
-              'datasets' => [['label' => '활동', 'data' => $hourlyData]],
-          ], ['size' => 'sm', 'alt' => '최근 24시간 시간대별 활동량']);
-      } else {
-          echo '<p class="why">최근 24시간 기록 0건</p>';
-      }
-  }, ['badge' => number_format(array_sum($hourlyData)) . '건']); ?>
-  <?php endif; ?>
-
   <?php if (vg_has_role('admin')): ?>
   <?php
   /* 이 화면은 표가 둘이다(사용자별 접속 현황 · 접속기록) — 그래서 둘 다 제목을 갖는다.
