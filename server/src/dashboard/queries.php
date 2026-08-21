@@ -158,6 +158,51 @@ function vg_dash_kev_overdue(PDO $pdo): array {
 }
 
 /**
+ * 자산 지형도(vg_asset_terrain) 한 벌 — 자산별 **최신 스캔**의 High 이상·CRITICAL·KEV 건수.
+ *
+ * **한 쿼리다.** 자산마다 세면 지금은 11대라 티가 안 나도 자산이 늘수록 그대로 N+1 이 된다.
+ * 형태는 vg_dash_host_rows() 의 검증된 집계를 그대로 따른다 — 최신 스캔은 IN(서브쿼리)가
+ * 아니라 JOIN 으로 붙이고(이 파일 머리주석의 회귀 이력), LEFT JOIN 이라 탐지 0건 자산도
+ * 목록에서 사라지지 않는다(그 자산은 0 높이 블록으로 선다 — "깨끗하다"도 읽어야 할 사실이다).
+ *
+ * f.is_deleted 를 걸지 않는 것은 vg_dash_severity_totals() 와 같은 기준을 쓰기 위해서다 —
+ * 지형도 블록 높이의 합이 곧 퍼널의 'High 이상' 이어야 한다. 한쪽만 조건이 다르면 같은
+ * 화면에서 두 그림의 숫자가 갈린다.
+ *
+ * 상위 몇 대만 세울지는 여기서 자르지 않는다(vg_asset_terrain 의 'top' 이 정한다) —
+ * 접힌 자산 수와 그 High 이상 합을 그림 아래 한 줄로 적어야 해서, 조회는 전수로 받는다.
+ * 자산 수는 tb_host 행 수(운영 실측 수십 대)라 전수라도 결과가 작다.
+ *
+ * 반환: [['label'=>fqdn, 'high'=>int, 'crit'=>int, 'kev'=>int, 'href'=>자산 상세], …]
+ */
+function vg_dash_asset_terrain(PDO $pdo): array {
+    $rows = $pdo->query(
+        "SELECT h.host_id, h.fqdn,
+                COALESCE(SUM(f.severity IN ('CRITICAL','HIGH')), 0) high_n,
+                COALESCE(SUM(f.severity = 'CRITICAL'), 0)          crit_n,
+                COALESCE(SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')), 0) kev_n
+           FROM tb_scan s
+           JOIN " . vg_latest_scan_subq() . " t ON t.mid = s.scan_id
+           JOIN tb_host h ON h.host_id = s.host_id
+           LEFT JOIN tb_finding f ON f.scan_id = s.scan_id
+          WHERE h.is_deleted = 0
+          GROUP BY h.host_id, h.fqdn"
+    )->fetchAll();
+
+    $out = [];
+    foreach ($rows as $r) {
+        $out[] = [
+            'label' => (string) ($r['fqdn'] ?? ('자산 #' . (int) $r['host_id'])),
+            'high'  => (int) $r['high_n'],
+            'crit'  => (int) $r['crit_n'],
+            'kev'   => (int) $r['kev_n'],
+            'href'  => '/host.php?id=' . (int) $r['host_id'],
+        ];
+    }
+    return $out;
+}
+
+/**
  * 최근 $days 일 추세 — **자산별** 날짜별 "High 이상" 건수.
  *
  * 이월(carry-forward): 스캔은 바뀔 때만 저장되므로 그날 스캔이 없는 호스트는

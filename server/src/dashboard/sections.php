@@ -15,7 +15,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../format.php';           // vg_dash_section_head() 의 vg_h()
 require_once __DIR__ . '/../view/icons.php';       // vg_dash_section_head() 의 vg_icon()
                                                    //   ↑ 둘 다 index.php 의 우연한 로드 순서에 기대지 않는다(funnel.php 가 같은 이유로 고쳐졌다)
-require_once __DIR__ . '/sections/funnel.php';     // 좁혀지는 퍼널 4칸
+require_once __DIR__ . '/sections/terrain.php';    // 자산 지형도(아이소메트릭) — 상단 왼쪽
+require_once __DIR__ . '/sections/funnel.php';     // 처리 흐름(좁혀지는 퍼널 5단계) — 상단 오른쪽
 require_once __DIR__ . '/sections/signals.php';    // 구성 도넛 두 장(등급 · 노출·실행) — 카드도 둘이다
 require_once __DIR__ . '/sections/trend.php';      // 최근 N일 High 이상 추세 — 도넛 옆 넓은 칸
 require_once __DIR__ . '/sections/hosts.php';      // 호스트별 현황 목록 + 페이지네이션(페이저가 화면을 닫는다)
