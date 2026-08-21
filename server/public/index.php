@@ -49,13 +49,24 @@ vg_header('대시보드', 'dashboard');
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
-  <?php /* 순서가 곧 위계다 — "지금 무엇부터 손대야 하나" 에 답하는 것(퍼널 · 주요 신호)이 위,
-           배경(추세)과 전수 목록(호스트)이 아래다. */ ?>
+  <?php /* 순서가 곧 위계다 — "지금 무엇부터 손대야 하나" 에 답하는 것(퍼널 · 구성)이 위,
+           배경(추세)과 전수 목록(호스트)이 아래다.
+           **가로 전체 폭 카드를 세로로만 쌓지 않는다.** 예전엔 넷이 전부 전체 폭이라 세로
+           스크롤만 길어졌고, 도넛 둘뿐인 [주요 취약점 신호] 카드는 1920px 에서 폭의 절반이
+           빈 띠였다. 구성 도넛(내용 폭이 정해져 있다)과 추세(가로가 길수록 좋다)를
+           비대칭 2열로 묶어, 폭이 남는 자리를 세로 길이로 바꾼다 — 격자는 app.css 의
+           .dash-grid 가 갖는다(좁아지면 DOM 순서 그대로 한 열로 떨어진다). */ ?>
+  <?php vg_dash_section_head('현황 요약', 'shield'); ?>
   <?php vg_dash_render_funnel($totals, $hostCount, $kevCount, $kevOverdue, $kevSlaDays); ?>
 
-  <?php vg_dash_render_signals($totals, $runtime); ?>
-
-  <?php vg_dash_render_trend($trend, VG_TREND_DAYS); ?>
+  <?php vg_dash_section_head('분포와 추이', 'chart'); ?>
+  <div class="dash-grid">
+    <div class="dash-grid__col">
+      <?php vg_dash_render_severity($totals); ?>
+      <?php vg_dash_render_runtime($runtime); ?>
+    </div>
+    <?php vg_dash_render_trend($trend, VG_TREND_DAYS); ?>
+  </div>
 
   <?php vg_dash_render_hosts($rows, $sevByScan, $total, $perPage, $page); ?>
 <?php endif; ?>

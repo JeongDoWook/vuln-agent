@@ -1083,12 +1083,10 @@ a.donut-kpi__seg:hover { background: var(--surface-2); color: var(--text); }
  * (.donut-kpi 안의 .donut-kpi__list)이어도 같은 격자를 쓴다 — "도넛 옆에 지표" 를 화면마다
  * 다시 배치하지 않기 위한 한 벌이다. */
 .kpi-donuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: var(--sp-3); }
-/* 칸이 **둘뿐**인 줄(대시보드 [주요 취약점 신호] — KEV 칸을 걷고 도넛 둘만 남았다).
- * 1fr 로 두면 넓은 화면에서 칸 하나가 화면 절반이 되어, 도넛 옆 목록의 스와치와 숫자가
- * 손가락 두 마디만큼 벌어진다(값이 칸 오른쪽 끝에 붙는 규칙이라 그렇다).
- * 칸 폭에 상한을 두고 **남는 폭은 양쪽 여백으로 흘린다**(space-between 은 둘을 카드 양끝으로
- * 밀어 가운데가 통째로 비었다 — 실측). 셋 이상인 줄은 원래대로 1fr 이라 이 규칙이 안 걸린다. */
-.kpi-donuts--pair { grid-template-columns: repeat(auto-fit, minmax(19rem, 27rem)); justify-content: center; }
+/* .kpi-donuts--pair 는 지웠다 — 유일한 사용처였던 대시보드 [주요 취약점 신호] 카드가
+ * 도넛마다 독립 카드로 쪼개지면서(dashboard/sections/signals.php) 그 규칙을 쓰는 화면이
+ * 하나도 안 남았다. "칸이 넓어져도 도넛+목록 덩어리는 늘리지 않는다"는 판단 자체는 살아
+ * 있고, 이제 .dash-donut .donut-kpi 의 max-width 가 같은 일을 한다. */
 /* 이 격자 안의 타일 줄은 칸 하나를 채우는 내용물이다 — 바깥 줄에서 쓰던 아래 여백을 지우고,
  * 옆 도넛보다 짧으면 가운데로 모은다(위로 붙으면 도넛과 시선 높이가 어긋난다). */
 .kpi-donuts .kpi-strip { margin-bottom: 0; align-content: center; }
@@ -2878,6 +2876,69 @@ form.card .btn--primary:active { transform: translateY(0); }
   /* 2열로 접히면 화살표가 줄 끝에서 엉뚱한 곳을 가리킨다 — 방향은 배치가 대신 말한다. */
   .funnel__step + .funnel__step::before { content: none; }
 }
+
+/* --- 대시보드 위젯 격자(index.php) -----------------------------------------
+ * 사용자가 다른 제품 두 개를 들고 지목한 것 세 가지를 그대로 가져온다:
+ * **묶음마다 머리** · **위젯마다 독립 카드** · **같은 줄은 같은 높이**.
+ *
+ * 무엇이 문제였나(실측): 카드 넷이 전부 가로 전체 폭으로 세로로만 쌓였고, 그중
+ * [주요 취약점 신호] 는 담은 게 도넛 둘뿐이라 1920px 에서 카드 폭 1,643 중 821px(정확히
+ * 절반)이 빈 띠였다(1440px 에서도 365px). 원인은 폭이 아니라 **한 카드에 두 이야기**여서
+ * 카드가 자기 내용만큼의 폭을 가질 수 없었던 것이다 — 그래서 카드를 쪼갰다(signals.php).
+ *
+ * 격자는 **비대칭 2열**이다. 왼쪽은 구성 도넛(도넛 132px + 직접 라벨 목록이라 내용 폭이
+ * 정해져 있다), 오른쪽은 추세(시계열이라 가로가 길수록 읽힌다). 도넛 칸을 1fr 로 늘리면
+ * 목록의 스와치와 값이 손가락 두 마디만큼 벌어지므로(값이 칸 오른쪽 끝에 붙는 규칙이라
+ * 그렇다 — 지금은 없는 .kpi-donuts--pair 도 같은 이유로 폭에 상한을 뒀다) 폭에 상한을 둔다.
+ * 좁아지면 한 열로 떨어지고, **DOM 순서가 곧 예전의 세로 순서**다(등급 → 노출·실행 →
+ * 추세) — 격자를 걷어도 위계가 안 바뀐다. */
+.dash-head {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin: var(--sp-4) 0 var(--sp-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+/* 카드 제목(--fs-lg + strong)보다 한 단 물러난다 — 머리가 카드보다 강하면 묶음이 아니라
+ * 제목들의 나열이 된다. 아이콘도 같이 물러나 라벨과 한 덩어리로 읽히게 둔다. */
+.dash-head .vg-ico { color: var(--muted-2); }
+
+.dash-grid { display: grid; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.dash-grid > .card, .dash-grid__col > .card { margin-bottom: 0; }
+/* 도넛 두 장. 넓은 화면에서는 왼쪽 한 열에 위아래로 서고(옆이 추세다), 그만한 폭이 없으면
+ * 둘이 나란히 선다 — 한 장이 화면을 가로지르는 모양(=원래 문제)으로는 돌아가지 않는다.
+ * align-content:start 라 옆 칸이 더 길어도 도넛 카드가 세로로 늘어나지 않는다(도넛만 떠 있는
+ * 큰 빈 카드가 되지 않게). 같은 줄에 설 때의 높이는 그리드 기본(stretch)이 맞춰 준다. */
+.dash-grid__col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--sp-3);
+  align-content: start;
+}
+/* 추세 카드는 옆 칸(도넛 두 장)의 높이에 맞춰 늘어난다 — 늘어난 만큼을 **차트가 먹는다.**
+ * 안 그러면 카드 아래쪽에 빈 띠가 생겨, 방금 없앤 문제가 가로에서 세로로 자리만 옮긴다.
+ * Chart.js 는 maintainAspectRatio:false 라 부모 높이를 그대로 따른다(chart-kit.js).
+ * min-height 는 .chart-js--lg 와 같은 값이다 — 한 열로 떨어졌을 때의 높이가 안 바뀐다. */
+.dash-grid > .card { display: flex; flex-direction: column; }
+.dash-grid > .card > .card__body { display: flex; flex-direction: column; flex: 1 1 auto; }
+.dash-grid > .card > .card__body > .chart-js { flex: 1 1 auto; height: auto; min-height: 20rem; }
+/* 도넛 + 직접 라벨 목록은 **내용 폭이 정해진 덩어리**다. 카드가 그보다 넓어져도(한 열로
+ * 떨어진 좁은 화면에서 카드가 화면 폭을 다 쓸 때) 늘리지 않고 가운데로 모은다. */
+.dash-donut .donut-kpi { max-width: 26rem; margin-inline: auto; }
+
+@media (min-width: 1180px) {
+  .dash-grid { grid-template-columns: minmax(22rem, 28rem) minmax(0, 1fr); }
+  .dash-grid__col { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 칸이 칸으로 보이게 — 이 화면은 카드가 네 장 + 퍼널 타일 넷이라 --line(#e2e8f0) 한 겹으로는 흰 면과
+ * 배경(#f4f6f8)이 거의 안 갈렸다(사용자 지적: "우린 좀 붙어 있고 쭉 나열된 느낌").
+ * 토큰 값을 바꾸면 전 화면이 따라오므로 **이 화면에만** 한 단 진한 --line-2 를 쓴다
+ * (다크도 같은 비율로 한 단 위인 값이라 두 테마가 같이 따라온다). */
+.page--index .card { border-color: var(--line-2); box-shadow: var(--shadow); }
 
 /* #599 — 판단·설치 흐름. 모두 기존 색 토큰을 써 두 테마에서 같은 의미를 유지한다.
  * .action-queue 는 지웠다 — 탐지 결과의 우선순위 필터 줄이 등급 도넛과 한 카드(.card)로
