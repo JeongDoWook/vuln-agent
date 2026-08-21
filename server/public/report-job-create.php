@@ -22,6 +22,10 @@ function report_create_fail(int $code, string $message): void {
     exit;
 }
 
+// 연동이 꺼진 설치(설정에 API 주소가 없다)에서는 화면에 버튼도 없다. 그래도 직접 호출될 수
+//   있으므로 여기서 끊는다 — 인가 검증(vg_require_menu) 뒤에서, 일반화된 메시지로만.
+if (!vg_report_enabled()) { report_create_fail(404, 'AI 보고서 연동을 사용하지 않는 설치입니다.'); }
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { report_create_fail(405, '허용되지 않은 요청입니다.'); }
 if (!vg_csrf_check($_POST['csrf'] ?? null))        { report_create_fail(403, '세션이 만료되었습니다. 새로고침 후 다시 시도하세요.'); }
 

@@ -147,7 +147,8 @@ vg_header('설정', 'settings');
               $val = $cur[$key] ?? ($def_val !== null ? $def_val : '');
               if (isset($fieldErr[$key])) { $val = trim((string) ($posted[$key] ?? '')); }
               $isErr = isset($fieldErr[$key]);
-              $showDefault = $def_val !== null && $val !== $def_val;
+              // 기본값이 빈 문자열인 항목(= 연동 꺼짐이 기본)은 "기본값 " 뒤가 비어 버리므로 안 보인다.
+              $showDefault = $def_val !== null && $def_val !== '' && $val !== $def_val;
               // 허용 범위는 **라벨 옆**에 접는다 — 벗어나면 저장이 실패하는 제약이라 지울 수
               //   없지만, 그것 때문에 줄 하나를 통째로 쓸 이유도 없다. 주소 항목의 형식은
               //   placeholder 로 준다(값이 차 있을 땐 자리를 안 먹는다). 그 주소 칸만 격자의

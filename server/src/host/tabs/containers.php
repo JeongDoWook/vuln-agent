@@ -13,8 +13,8 @@ declare(strict_types=1);
      *   같은 자리에서 읽히게 한다(색만으로 말하지 않는다 — 숫자가 항상 함께 있다).
      *   카드에만 있던 값(k8s 위치·다이제스트·SBOM 해시·워크로드)은 **버리는 게 아니라**
      *   상세로 내린다 — container.php 의 히어로와 '이미지 식별' 카드가 그 값들의 정본이다.
-     *   버튼 셋(상세 열기/패키지/런타임)도 '상세 →' 하나로 줄인다. 패키지·런타임은 상세 안의
-     *   탭이라 여기서 세 갈래로 벌려 둘 이유가 없다.
+     *   버튼 셋(상세 열기/패키지/런타임)은 컨테이너 **이름 링크 하나**로 줄었다. 패키지·런타임은
+     *   상세 안의 탭이라 여기서 세 갈래로 벌려 둘 이유가 없고, 이름이 이미 그 상세로 간다.
      *   JS·차트 라이브러리는 여전히 쓰지 않는다(CSP·오프라인 배포) — 미터 폭 계산뿐이다. */
     // 런타임 상태 톤 — dead 만 위험으로 올린다(멈춘 컨테이너는 위험이 아니라 사실).
     $stateTone = ['running' => 'ok', 'restarting' => 'med', 'dead' => 'high'];
@@ -28,13 +28,6 @@ declare(strict_types=1);
     //   행마다 자기 합을 100%로 잡으면 HIGH 14뿐인 컨테이너와 HIGH 34뿐인 컨테이너가 똑같이
     //   꽉 찬 바가 되어 이 표의 목적(행끼리 비교)이 사라진다. 페이지가 바뀌어도 척도는 그대로다.
     $riskScale = vg_sev_bar_scale($sevByContainer);
-    /** 등급별 건수 칸. 0 은 지우지 않고 흐리게만 둔다 — 빈칸이면 "안 셌다"로 읽힌다. */
-    $sevCell = function (string $sev) use ($sevOf): callable {
-        return function (array $c) use ($sev, $sevOf): string {
-            $n = (int) ($sevOf($c)[$sev] ?? 0);
-            return $n > 0 ? number_format($n) : '<span class="why">0</span>';
-        };
-    };
     $href = fn(array $c): string =>
         '/container.php?id=' . (int) $hostId . '&cid=' . urlencode((string) $c['cid']);
     ?>
@@ -45,17 +38,19 @@ declare(strict_types=1);
         <?php
         vg_table(
             [
-                ['label' => '컨테이너', 'width' => '20%', 'class' => 'col-id'],
-                ['label' => '이미지', 'width' => '24%', 'class' => 'col-id'],
-                ['label' => '위험 분포', 'width' => '13%'],
-                // CRITICAL 열은 시안에 없었지만 남긴다 — 이 표에서 가장 급한 값이고,
-                //   빼면 그 건수를 볼 자리가 화면에서 사라진다(카드 범례가 갖고 있던 값이다).
-                ['label' => 'CRIT',   'align' => 'right', 'width' => '4.5rem', 'nowrap' => true],
-                ['label' => 'HIGH',   'align' => 'right', 'width' => '4.5rem', 'nowrap' => true],
-                ['label' => 'MEDIUM', 'align' => 'right', 'width' => '5rem',   'nowrap' => true],
-                ['label' => 'LOW',    'align' => 'right', 'width' => '4.5rem', 'nowrap' => true],
+                /* 9열 → 4열. 걷어낸 다섯은 **같은 사실을 두 번 말하던 열**이다.
+                 *   ★ CRIT·HIGH·MEDIUM·LOW 네 열은 바로 옆 '위험 분포' 막대와 같은 값이다.
+                 *     건수는 지우지 않고 막대 아래 뱃지로 내린다 — 대시보드 함대 표(dashboard/
+                 *     sections/hosts.php)가 이미 쓰는 한 칸짜리 관용구다(막대 + 등급별 뱃지).
+                 *     "가장 급한 값(CRITICAL)을 볼 자리가 사라진다" 는 옛 주석의 걱정은 그대로
+                 *     지켜진다 — 같은 행 같은 칸에 숫자가 그대로 선다.
+                 *   ★ '상세' 열은 첫 칸의 컨테이너 이름과 **같은 주소로 가는 두 번째 링크**였다.
+                 *     한 행에 같은 목적지 링크를 둘 두지 않는다(asset-packages.php 가 같은 이유로
+                 *     '이 자산에서 보기 →' 를 걷었다). 진입로는 이름 링크가 그대로 갖는다. */
+                ['label' => '컨테이너', 'width' => '26%', 'class' => 'col-id'],
+                ['label' => '이미지', 'width' => '32%', 'class' => 'col-id'],
+                ['label' => '위험 분포', 'width' => '26%'],
                 ['label' => '패키지',  'align' => 'right', 'width' => '5rem',   'nowrap' => true],
-                ['label' => '상세',    'width' => '5rem', 'nowrap' => true],
             ],
             $rows,
             [
@@ -103,15 +98,15 @@ declare(strict_types=1);
                     //   바는 조치 대상만 그리고 LOW 는 오른쪽 LOW 열이 갖는다. LOW 만 있는 행은
                     //   'LOW만' 로, 아예 없는 행은 아래 문구로 갈린다("빈 바 = 데이터 없음" 오독 방지).
                     2 => function (array $c) use ($sevOf, $riskScale): string {
-                        $bar = vg_sev_bar($sevOf($c), $riskScale);
-                        return $bar !== '' ? $bar : '<span class="why">판정된 취약점 없음</span>';
+                        $sev = $sevOf($c);
+                        $bar = vg_sev_bar($sev, $riskScale);
+                        // 막대가 비는 건 "취약점 0건" 뿐이다(LOW 만인 행은 vg_sev_bar 가 'LOW만'
+                        //   으로 채운다) — 그때는 뱃지도 없으므로 문구 하나로 끝낸다.
+                        return $bar !== ''
+                            ? $bar . ' ' . vg_sev_counts($sev)
+                            : '<span class="why">판정된 취약점 없음</span>';
                     },
-                    3 => $sevCell('CRITICAL'),
-                    4 => $sevCell('HIGH'),
-                    5 => $sevCell('MEDIUM'),
-                    6 => $sevCell('LOW'),
-                    7 => fn(array $c): string => number_format((int) $c['pkg_count']),
-                    8 => fn(array $c): string => '<a href="' . vg_h($href($c)) . '">상세 →</a>',
+                    3 => fn(array $c): string => number_format((int) $c['pkg_count']),
                 ],
             ]
         );

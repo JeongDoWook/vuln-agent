@@ -11,7 +11,15 @@ declare(strict_types=1);
 const VG_LICENSE_PERMISSIVE = [
     'MIT', 'MIT-0', 'Apache-2.0', 'Apache-1.1', 'BSD-2-Clause', 'BSD-3-Clause', 'BSD-4-Clause',
     'ISC', '0BSD', 'Unlicense', 'Zlib', 'BSL-1.0', 'PSF-2.0', 'X11', 'WTFPL', 'CC0-1.0', 'Python-2.0',
+    'Ruby',
 ];
+// 'Ruby' 를 permissive 로 둔 근거: 이 파일이 쓰는 copyleft 기준은 "재배포 시 소스 공개·동일 라이선스
+//   의무"인데 Ruby License 에는 그 의무가 없다 — 조항 4 가 "상용 포함 어떤 소프트웨어에든 넣어도
+//   된다"고 명시하고, 수정판 배포도 소스 공개 대신 사내 사용·바이너리 개명 같은 선택지를 준다
+//   (share-alike 강제 없음). FSF 도 GPL 호환 '비카피레프트'로 분류하고 OSI 승인 목록에도 있다.
+//   위 Python-2.0·Zlib·PSF-2.0 처럼 "MIT/BSD 계열은 아니지만 share-alike 가 없는" 항목과 같은
+//   성격이다. 실측 gem 12건이 'Ruby OR BSD-2-Clause' 로 오는 것도(BSD-2-Clause 를 고를 수 있다)
+//   Ruby 쪽이 그보다 무겁지 않다는 방증이다.
 
 // 대표적인 copyleft 라이선스 — 재배포 시 소스 공개·동일 라이선스 의무가 붙어 조직 정책 검토가 필요하다.
 const VG_LICENSE_COPYLEFT = [
@@ -49,6 +57,10 @@ const VG_LICENSE_ALIASES = [
     'python software foundation license'       => 'PSF-2.0',
     'isc license'                              => 'ISC',
     'isc license (iscl)'                       => 'ISC',
+    // 소문자 'ruby'. 목록 대조는 in_array(..., true) 라 대소문자를 구분한다(strtolower 는 이 별칭표
+    //   조회에만 쓴다). rubygems gemspec 이 소문자로 적은 실측이 있어 이 한 줄을 둔다 — 'ruby'·
+    //   'RUBY'·'Ruby' 가 전부 SPDX 식별자 'Ruby' 로 모인다.
+    'ruby'                                     => 'Ruby',
 ];
 
 // 별칭 매핑 + "GPL-3.0+" 류 '+' 접미사(≥ 이 버전) 정규화. 매칭 안 되면 원문 그대로 돌려준다

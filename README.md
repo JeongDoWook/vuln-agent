@@ -46,6 +46,21 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 웹은 <http://localhost:8000>(로컬 PHP·MySQL 설치 불필요). 비밀값·운영 HTTPS·CA 준비·백업은 [배포 가이드](deploy/README.md), 대상 서버 연결은 [에이전트 설치·운영 가이드](agent/README.md)를 보세요.
 에이전트 버전은 **3.17**이고, 게이트는 `./tests/smoke.sh <BASE>`(수집·매칭·인증·화면)와 `./tests/e2e.sh <BASE>`(Chromium)입니다.
 
+## 출품 범위
+
+클론해서 그대로 띄우면 아래 "출품작 본체"만으로 전 기능을 실행·검증할 수 있습니다. 나머지는 이 저장소를
+만드는 데 쓴 도구이거나, 우리 저장소 밖 서버가 있어야 도는 선택 기능이라 **기본적으로 꺼져 있습니다**.
+
+| 구분 | 경로 | 설명 |
+| --- | --- | --- |
+| 출품작 본체 | `server/` · `agent/` · `db/` · `deploy/` · `tests/` | 중앙 서버·에이전트·스키마·배포·검증. 심사 대상은 이것입니다 |
+| 개발 도구(출품작 아님) | `kit/` · `scripts/` · `deploy/orchestrator/` · `.claude/` | 이 저장소를 개발하는 데 쓴 파이프라인이며 제품 코드가 아닙니다 |
+| 선택적 외부 연동(기본 꺼짐) | AI 보고서 — `server/src/report_job.php` | 별도의 외부 보고서 API 가 필요하고 **그 생성기 소스는 이 저장소에 없습니다** |
+
+AI 보고서는 설정(설정 화면 → AI 보고서 → 보고서 API 주소)에 주소를 넣어야 켜지고, 비어 있으면 호스트
+상세에 카드 자체가 나오지 않습니다. 이 연동은 인증 없는 내부 API 를 전제하므로 **신뢰된 내부망 전용**입니다 —
+인터넷에 노출된 주소를 넣지 마세요. 켜지 않아도 수집·매칭·판정·리포팅 등 나머지 기능은 그대로 동작합니다.
+
 ## 문서
 
 - 명세 — [데이터베이스](docs/dev/데이터베이스.md) · [Excel 명세서](docs/specs/테이블명세서.xlsx) · [Export API](docs/dev/export-api.md)(SBOM 은 `GET /sbom.php`)
@@ -56,3 +71,5 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 [AGPL-3.0](LICENSE) 으로 배포합니다. Copyright (C) 2026 JeongDoWook.
 **네트워크로 이 소프트웨어를 이용자에게 제공하는 경우에도 그 이용자에게 소스코드를 제공해야 합니다**(AGPL 제13조). 화면 하단의 `소스코드 (AGPL-3.0)` 링크가 그 통로이고, 포크해 배포한다면 설정 화면에서 자기 저장소 주소로 바꾸세요.
 라이선스 이력 — 이 저장소는 2026-07-07 부터 MIT 로 배포되었고 2026-08-21 부터 AGPL-3.0 입니다. 전환 이전 커밋 시점의 코드는 MIT 조건으로 배포된 상태가 그대로 유지됩니다.
+
+활용한 제3자 오픈소스의 출처·라이선스는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 에 정리했다.

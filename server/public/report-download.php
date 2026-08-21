@@ -40,6 +40,9 @@ function report_download_fail(int $code, string $message): void {
     exit;
 }
 
+// 연동이 꺼진 설치에서는 받아올 곳이 없다(인가 검증 뒤, 일반화된 메시지로만 거절한다).
+if (!vg_report_enabled()) { report_download_fail(404, 'AI 보고서 연동을 사용하지 않는 설치입니다.'); }
+
 $jobId = filter_input(INPUT_GET, 'job', FILTER_VALIDATE_INT);
 if (!$jobId || $jobId < 1) { report_download_fail(422, '대상 작업을 확인할 수 없습니다.'); }
 

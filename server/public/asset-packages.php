@@ -104,7 +104,11 @@ vg_header('전체 설치 패키지', 'asset_packages');
             ['label' => '관리자', 'key' => 'manager'],
             ['label' => '소스 패키지', 'key' => 'source_pkg'],
             ['label' => '출처', 'key' => 'origin'],
-            ['label' => '수집 시각', 'key' => 'collected_at', 'nowrap' => true],
+            /* '수집 시각' 열을 걷었다 — 이 화면이 답하는 질문은 "어느 자산에 무엇이 깔려 있나" 이고
+               날짜는 그 판단에 안 쓰인다(어제 수집이든 오늘 수집이든 깔린 건 같다). 게다가 값은
+               그 호스트의 **최신 수집** 한 시점이라 같은 호스트 행들에선 늘 같은 글자였다.
+               지운 게 아니라 호스트 링크의 툴팁으로 내렸고, 회차별 정본은 그 자산 상세의
+               '수집 이력' 탭이 갖는다(advisory.php·cve.php 의 같은 열과 같은 처리). */
         ],
         $rows,
         [
@@ -130,7 +134,9 @@ vg_header('전체 설치 패키지', 'asset_packages');
                     //   자산 상세 설치 패키지 탭으로 이미 간다(한 행에 같은 목적지 링크 둘).
                     return '<strong>' . $name . '</strong>';
                 },
-                'fqdn' => fn($p) => '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages">'
+                // 걷어낸 '수집 시각' 이 여기로 온다 — 이 행이 어느 회차 수집인지는 호스트에 붙은 사실이다.
+                'fqdn' => fn($p) => '<a href="/host.php?id=' . (int)$p['host_id'] . '&amp;tab=packages"'
+                    . ' title="' . vg_h('수집 ' . (string)($p['collected_at'] ?? '')) . '">'
                     . vg_h((string)$p['fqdn']) . '</a>',
                 'version' => fn($p) => '<code>' . vg_h((string)($p['version'] ?? '')) . '</code>'
                     . (!empty($p['arch']) ? ' <span class="why">' . vg_h((string)$p['arch']) . '</span>' : ''),
@@ -143,13 +149,6 @@ vg_header('전체 설치 패키지', 'asset_packages');
                 'origin' => fn($p) => $p['origin']
                     ? vg_h((string)$p['origin'])
                     : (!empty($p['vendor']) ? vg_h((string)$p['vendor']) : '<span class="why">–</span>'),
-                /* 자산 목록(assets.php)의 '최신 수집' 과 같은 이유로 분까지만 보인다 — 예전 8열 표에서
-                 *   이 열에 돌아오는 폭은 19자를 못 담아 말줄임으로 잘렸다. 전체 값은 title 로. */
-                'collected_at' => function ($p) {
-                    $at = (string) ($p['collected_at'] ?? '');
-                    if ($at === '') { return '<span class="why">–</span>'; }
-                    return '<span class="why" title="' . vg_h($at) . '">' . vg_h(substr($at, 0, 16)) . '</span>';
-                },
             ],
         ]
     ); ?>

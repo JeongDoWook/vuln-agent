@@ -73,8 +73,11 @@ declare(strict_types=1);
       <?php
       vg_table(
           [
+              /* '위치' 열을 걷고 프로세스 칸 아랫줄로 내린다 — 탐지 결과의 노출 탭이 같은
+                 이유로 이미 쓰는 규칙이다(findings/tabs/exposure.php): 호스트 소켓에도 '호스트' 를
+                 적었더니 dev 실측 66행 중 55행에 **같은 두 글자**가 깔렸다. 빈 줄이 곧 호스트다 —
+                 컨테이너의 nginx 를 호스트의 nginx 로 착각하지 않게 컨테이너일 때만 적는다. */
               ['label' => '범위'],
-              ['label' => '위치'],
               ['label' => '프로세스', 'key' => 'proc'],
               ['label' => '포트'],
               ['label' => '실행패키지', 'key' => 'exe_pkg'],
@@ -91,11 +94,10 @@ declare(strict_types=1);
                   : '리스닝 소켓이 없습니다(외부·내부 포함).',
               'cell' => [
                   0 => fn($e) => vg_badge(vg_scope_label((string) $e['scope']), $scopeTone[$e['scope']] ?? 'muted'),
-                  1 => fn($e) => $e['ctr'] !== ''
-                        ? '<span class="why">컨테이너 ' . vg_h($e['ctr']) . '</span>'
-                        : '<span class="why">호스트</span>',
-                  3 => fn($e) => vg_h($e['proto']) . '/' . (int) $e['port'],
-                  5 => fn($e) => '<span class="why">' . vg_trunc($e['loaded_pkgs'], 60) . '</span>',
+                  'proc' => fn($e) => vg_h((string) ($e['proc'] ?? ''))
+                        . ($e['ctr'] !== '' ? '<div class="why">컨테이너 ' . vg_h((string) $e['ctr']) . '</div>' : ''),
+                  2 => fn($e) => vg_h($e['proto']) . '/' . (int) $e['port'],
+                  4 => fn($e) => '<span class="why">' . vg_trunc($e['loaded_pkgs'], 60) . '</span>',
               ],
           ]
       );
@@ -111,8 +113,8 @@ declare(strict_types=1);
       vg_table(
           [
               // 숫자 열은 우측정렬(전 화면 규약).
+              //   '위치' 는 위 표와 같은 규칙으로 프로세스 칸 아랫줄로 내렸다.
               ['label' => 'PID', 'align' => 'right', 'width' => '6rem'],
-              ['label' => '위치'],
               ['label' => '프로세스', 'key' => 'comm'],
               ['label' => '사용자'],
               ['label' => '실행 패키지', 'key' => 'exe_pkg'],
@@ -133,11 +135,10 @@ declare(strict_types=1);
                   ],
               'cell' => [
                   0 => fn($pr) => '<span class="why">' . (int) $pr['pid'] . '</span>',
-                  1 => fn($pr) => $pr['ctr'] !== ''
-                        ? '<span class="why">컨테이너 ' . vg_h($pr['ctr']) . '</span>'
-                        : '<span class="why">호스트</span>',
-                  3 => fn($pr) => '<span class="why">' . vg_h($pr['username']) . '</span>',
-                  5 => fn($pr) => '<span class="why">' . vg_trunc($pr['loaded_pkgs'], 60) . '</span>',
+                  'comm' => fn($pr) => vg_h((string) ($pr['comm'] ?? ''))
+                        . ($pr['ctr'] !== '' ? '<div class="why">컨테이너 ' . vg_h((string) $pr['ctr']) . '</div>' : ''),
+                  2 => fn($pr) => '<span class="why">' . vg_h($pr['username']) . '</span>',
+                  4 => fn($pr) => '<span class="why">' . vg_trunc($pr['loaded_pkgs'], 60) . '</span>',
               ],
           ]
       );

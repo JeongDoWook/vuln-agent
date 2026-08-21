@@ -133,16 +133,23 @@ function vg_cve_load_locations(PDO $pdo, string $cveId, int $page, int $perPage)
          JOIN " . vg_latest_scan_subq() . " latest
            ON latest.host_id = s.host_id AND latest.mid = s.scan_id
          WHERE f.cve_id = ?";
-    $stmt = $pdo->prepare("SELECT COUNT(*) $locSql");
+    /* 집계 셋을 한 쿼리로 낸다(예전엔 COUNT 쿼리를 둘 따로 돌렸다 — 같은 FROM·같은 WHERE 라
+       쪼갤 이유가 없었다). 세 값의 뜻:
+       ★ **영향 자산은 발견 건수가 아니라 호스트 수다.** COUNT(*) 를 "N대"로 찍으면
+         서버 1대인데 "4대"가 된다(패키지 2종 × CVE 2건 = 4행이었을 뿐 — 실측).
+         위험 범위를 부풀려 보여주는 셈이라, 중복 없는 호스트로 센다.
+       ★ loc_kinds — '위치'(호스트 자신 / 각 컨테이너)의 가짓수. 한 가지뿐이면 표에 열을
+         세우지 않고 제목 옆 한 줄로 올린다(vg_place_note). **페이지가 아니라 전체 기준**이라야
+         페이지를 넘길 때 열이 생겼다 사라지지 않는다. */
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*) AS n, COUNT(DISTINCT h.host_id) AS host_cnt,
+                COUNT(DISTINCT IFNULL(c.cid, '')) AS loc_kinds $locSql"
+    );
     $stmt->execute([$cveId]);
-    $locTotal = (int) $stmt->fetchColumn();
-
-    // **영향 자산은 발견 건수가 아니라 호스트 수다.** COUNT(*) 를 "N대"로 찍으면
-    //   서버 1대인데 "4대"가 된다(패키지 2종 × CVE 2건 = 4행이었을 뿐 — 실측).
-    //   위험 범위를 부풀려 보여주는 셈이라, 중복 없는 호스트로 센다.
-    $stmt = $pdo->prepare("SELECT COUNT(DISTINCT h.host_id) $locSql");
-    $stmt->execute([$cveId]);
-    $assetTotal = (int) $stmt->fetchColumn();
+    $agg = $stmt->fetch() ?: [];
+    $locTotal   = (int) ($agg['n'] ?? 0);
+    $assetTotal = (int) ($agg['host_cnt'] ?? 0);
+    $locMixed   = ((int) ($agg['loc_kinds'] ?? 0)) > 1;
 
     $offset = ($page - 1) * $perPage;
     $stmt = $pdo->prepare(
@@ -155,7 +162,8 @@ function vg_cve_load_locations(PDO $pdo, string $cveId, int $page, int $perPage)
     );
     $stmt->execute([$cveId]);
 
-    return ['total' => $locTotal, 'assetTotal' => $assetTotal, 'rows' => $stmt->fetchAll()];
+    return ['total' => $locTotal, 'assetTotal' => $assetTotal, 'locMixed' => $locMixed,
+            'rows' => $stmt->fetchAll()];
 }
 
 /**

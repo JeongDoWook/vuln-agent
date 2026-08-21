@@ -177,38 +177,47 @@ vg_hero(
   ?>
   <div class="card">
     <strong>벤더 미수정이 몰린 자산</strong>
-    <span class="why"><?= vg_nofix_badge() ?></span>
+    <?php
+    /* '위치' 열은 값이 섞였을 때만 세운다 — 전 행이 '호스트' 면 그 열의 정보량은 0인데
+       폭은 그대로 먹는다. 이 표는 페이지네이션이 없어 $nofixGroups 가 곧 전수라, 판단을
+       PHP 에서 바로 한다(advisory.php·cve.php 의 같은 열은 페이지가 있어 SQL 집계로 센다). */
+    $nofixPlaces = [];
+    foreach ($nofixGroups as $g) { $nofixPlaces[(string) ($g['container_cid'] ?? '')] = true; }
+    $nofixLocMixed = count($nofixPlaces) > 1;
+    $nofixPlaceNote = vg_place_note($nofixLocMixed, (string) array_key_first($nofixPlaces));
+    ?>
+    <span class="why"><?= vg_nofix_badge() ?><?= $nofixPlaceNote !== '' ? ' · ' . vg_h($nofixPlaceNote) : '' ?></span>
     <div class="card__body">
     <?php
+    $nofixHeaders = [['label' => '자산', 'key' => 'fqdn']];
+    // 같은 호스트의 호스트 자신·컨테이너가 나란히 오면 fqdn 만으론 구분이 안 된다.
+    if ($nofixLocMixed) { $nofixHeaders[] = ['label' => '위치', 'key' => 'place']; }
+    // 열이 조건부라 칸 콜백은 인덱스가 아니라 key 로 건다(빠지면 뒤 칸이 한 칸씩 밀린다).
+    $nofixHeaders = array_merge($nofixHeaders, [
+        ['label' => '미수정 / 전체', 'key' => 'nofix_cnt', 'align' => 'right', 'width' => '9rem'],
+        ['label' => 'KEV', 'key' => 'kev_cnt', 'align' => 'right', 'width' => '5rem'],
+        ['label' => '최고 등급', 'key' => 'severity', 'width' => '7rem'],
+        ['label' => '런타임 상태', 'key' => 'runtime_status', 'width' => '8rem'],
+    ]);
     vg_table(
-        [
-            ['label' => '자산'],
-            ['label' => '위치'],
-            ['label' => '미수정 / 전체', 'align' => 'right', 'width' => '9rem'],
-            ['label' => 'KEV', 'align' => 'right', 'width' => '5rem'],
-            ['label' => '최고 등급', 'width' => '7rem'],
-            ['label' => '런타임 상태', 'width' => '8rem'],
-        ],
+        $nofixHeaders,
         $nofixGroups,
         [
             'card' => false,
             'cell' => [
-                0 => fn($g) => !empty($g['host_id'])
+                'fqdn' => fn($g) => !empty($g['host_id'])
                     ? '<a href="/host.php?id=' . (int) $g['host_id'] . '">' . vg_h((string) $g['fqdn']) . '</a>'
                     : vg_h((string) $g['fqdn']),
-                // 같은 호스트의 호스트 자신·컨테이너가 나란히 오면 fqdn 만으론 구분이 안 된다.
-                1 => fn($g) => !empty($g['container_cid'])
-                    ? '<span class="why">컨테이너 ' . vg_h((string) $g['container_cid']) . '</span>'
-                    : '<span class="why">호스트</span>',
-                2 => fn($g) => number_format((int) $g['nofix_cnt']) . '<span class="why"> / '
+                'place' => fn($g) => vg_place_cell((string) ($g['container_cid'] ?? '')),
+                'nofix_cnt' => fn($g) => number_format((int) $g['nofix_cnt']) . '<span class="why"> / '
                     . number_format((int) $g['cve_cnt']) . '</span>',
-                3 => fn($g) => ((int) ($g['kev_cnt'] ?? 0)) > 0
+                'kev_cnt' => fn($g) => ((int) ($g['kev_cnt'] ?? 0)) > 0
                     ? vg_badge(number_format((int) $g['kev_cnt']), 'crit')
                     : '<span class="why">–</span>',
-                4 => fn($g) => !empty($g['severity'])
+                'severity' => fn($g) => !empty($g['severity'])
                     ? vg_sev_badge((string) $g['severity'])
                     : '<span class="why">–</span>',
-                5 => fn($g) => !empty($g['runtime_status'])
+                'runtime_status' => fn($g) => !empty($g['runtime_status'])
                     ? vg_status_badge((string) $g['runtime_status'])
                     : '<span class="why">–</span>',
             ],

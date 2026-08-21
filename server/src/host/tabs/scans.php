@@ -5,16 +5,20 @@ declare(strict_types=1);
       <strong>수집 이력</strong>
       <div class="card__body">
       <?php
+      /* 9열 → 6열. 이 표가 답하는 질문은 "회차마다 무엇이 얼마나 잡혔나" 이고, 나머지는 그
+       *   회차에 **딸린 부기**라 각자 열을 세울 값이 아니었다(9열이면 1440px 에서도 값이 눌린다).
+       *   ★ '수신시각' → '수집시각' 칸 아랫줄. 둘은 한 회차의 두 시점이라 나란히 읽어야 뜻이
+       *     생긴다(수집과 수신 사이가 벌어지면 그게 곧 전송 지연이다) — 떨어진 두 열보다 가깝다.
+       *   ★ '메모리'·'CPU' → '에이전트' 칸 아랫줄. 에이전트가 자기 자신을 잰 값이라 버전과 한 몸이고
+       *     (버전이 바뀌면 값이 뛴다), 회차별 추이는 바로 아래 '에이전트 리소스 사용률' 카드가
+       *     같은 회차들로 이미 그린다. **값은 행마다 그대로 다 남는다.** */
       vg_table(
           [
               ['label' => '실행', 'key' => 'scan_id'],
-              ['label' => '수집시각', 'key' => 'collected_at'],
-              ['label' => '수신시각', 'key' => 'received_at'],
+              ['label' => '수집시각', 'key' => 'collected_at', 'title' => '에이전트가 수집한 시각 · 아랫줄은 서버가 받은 시각'],
               ['label' => '패키지', 'key' => 'package_count', 'align' => 'right'],
               ['label' => '노출', 'key' => 'exposure_count', 'align' => 'right'],
-              ['label' => '메모리', 'key' => 'peak_rss_mb', 'align' => 'right'],
-              ['label' => 'CPU', 'key' => 'cpu_seconds', 'align' => 'right'],
-              ['label' => '에이전트', 'key' => 'agent_version'],
+              ['label' => '에이전트', 'key' => 'agent_version', 'title' => '에이전트 버전 · 아랫줄은 그 회차에 에이전트가 쓴 메모리 최대치와 CPU 시간'],
               ['label' => '심각도', 'key' => 'sev'],
           ],
           $rows,
@@ -29,13 +33,17 @@ declare(strict_types=1);
                       . ((int) $s['content_changed'] === 1
                           ? ' <span class="badge">변경</span>'
                           : ' <span class="why">동일</span>'),
-                  'collected_at'   => fn($s) => vg_h($s['collected_at']),
-                  'received_at'    => fn($s) => '<span class="why">' . vg_h($s['received_at']) . '</span>',
+                  'collected_at'   => fn($s) => vg_h($s['collected_at'])
+                      . '<div class="why">수신 ' . vg_h($s['received_at']) . '</div>',
                   'package_count'  => fn($s) => number_format((int) $s['package_count']),
                   'exposure_count' => fn($s) => number_format((int) $s['exposure_count']),
-                  'peak_rss_mb'    => fn($s) => vg_resource_mem($s['peak_rss_mb']),
-                  'cpu_seconds'    => fn($s) => vg_resource_cpu($s['cpu_seconds']),
-                  'agent_version'  => fn($s) => $s['agent_version'] ? '<code>' . vg_h($s['agent_version']) . '</code>' : '<span class="why">–</span>',
+                  // 버전 + 그 회차의 자기계측(메모리 최대치 · CPU 시간). 값이 없는 구버전
+                  //   에이전트는 두 헬퍼가 각자 '–' 를 낸다 — 0 으로 눕히지 않는다.
+                  'agent_version'  => fn($s) => ($s['agent_version']
+                          ? '<code>' . vg_h($s['agent_version']) . '</code>'
+                          : '<span class="why">–</span>')
+                      . '<div class="why">메모리 ' . vg_resource_mem($s['peak_rss_mb'])
+                      . ' · CPU ' . vg_resource_cpu($s['cpu_seconds']) . '</div>',
                   'sev' => fn($s) => vg_sev_counts($sevByScan[(int) $s['scan_id']] ?? []),
               ],
           ]

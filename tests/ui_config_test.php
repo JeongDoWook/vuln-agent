@@ -87,7 +87,9 @@ foreach (vg_setting_defs() as $key => $def) {
 
 // 주소 항목(type=url) — 여기서 통과한 값이 그대로 서버측 HTTP 호출의 목적지가 되므로,
 //   스킴·경로 검증이 무너지면 안 된다.
-$eq('빈 주소는 거절', vg_setting_url_error('', 255) !== null, true);
+// 빈 값은 오류가 아니라 "이 연동을 쓰지 않는다" 는 뜻이다(AI 보고서의 기본 상태) —
+//   여기서 거절하면 설정 저장 한 번에 전 항목이 함께 거절된다(c09a6a33 / PR #593).
+$eq('빈 주소는 연동 안 함(허용)', vg_setting_url_error('', 255), null);
 $eq('http 주소 허용', vg_setting_url_error('http://172.17.0.1:8000', 255), null);
 $eq('https 주소 허용', vg_setting_url_error('https://reports.example.com', 255), null);
 $eq('끝 슬래시만 있는 것은 경로 아님', vg_setting_url_error('http://10.0.0.5:8000/', 255), null);

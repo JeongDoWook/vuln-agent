@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * format/labels.php — DB 의 코드값 → 사람이 읽는 한글 어휘. 이 파일이 어휘의 **정본**이다.
- *   런타임 상태 · 조치 상태 · 노출 범위 · 무결성 플래그 · 수집 단계.
+ *   런타임 상태 · 조치 상태 · 노출 범위 · 발견 위치 · 무결성 플래그 · 수집 단계.
  *   같은 값을 두 화면에서 다르게 부르지 않게 하려고 여기 하나로 모아 뒀다 —
  *   문구를 고칠 일이 생기면 여기만 고친다.
  */
@@ -59,6 +59,27 @@ function vg_scope_label(?string $s): string {
         '-'        => '범위 미상',
     ];
     return $m[$s ?? ''] ?? (string) $s;
+}
+
+/* 발견의 '위치' — 호스트 자신인가, 그 안의 컨테이너인가(tb_finding.container_id → 컨테이너 cid).
+ *   같은 두 갈래를 advisory.php(영향 자산) · cve.php(발견 위치) · package.php(벤더 미수정이 몰린
+ *   자산) 세 표가 각자 그리고 있었다 — 문구가 갈리면 같은 값이 화면마다 달라 보인다.
+ *   빈 문자열/NULL 이 곧 "호스트 자신" 이다(container_id = 0 → LEFT JOIN 미스 → IFNULL '').  */
+function vg_place_label(?string $ctr): string {
+    return ($ctr ?? '') !== '' ? '컨테이너 ' . $ctr : '호스트';
+}
+function vg_place_cell(?string $ctr): string {
+    return '<span class="why">' . vg_h(vg_place_label($ctr)) . '</span>';
+}
+/**
+ * 위치 열을 세울지 정한다 — **값이 한 가지뿐이면 열이 아니라 제목 옆 한 줄이다.**
+ *   모든 행이 같은 값인 열의 정보량은 0인데 폭은 그대로 먹어, 정작 잘리는 식별자 열이
+ *   그 폭을 못 쓴다(8열 표가 1200px 아래에서 값을 자르던 실측 — 열을 셋 줄이자 1000px 까지 버텼다).
+ * @param bool $mixed 표 **전체**(현재 페이지가 아니라)에 위치가 두 가지 이상 있는가
+ * @return string 제목 옆에 붙일 문구('전부 호스트') 또는 ''(섞여 있어 열이 필요하다)
+ */
+function vg_place_note(bool $mixed, ?string $ctr): string {
+    return $mixed ? '' : '전부 ' . vg_place_label($ctr);
 }
 
 /* 패키지 무결성 플래그(rpm -Va / dpkg --verify 원본) → 사람이 읽는 설명.
