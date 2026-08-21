@@ -10,6 +10,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 eval "$(sed -n '/^emit_gemfile_lock() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^gemspec_license() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^emit_gemspec_name() {$/,/^}$/p' "$AGENT")"
+eval "$(sed -n '/^pip_meta_license() {$/,/^}$/p' "$AGENT")"
+eval "$(sed -n '/^collect_python_system_meta() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^collect_project_deps_installed() {$/,/^}$/p' "$AGENT")"
 SCAN_MAX_FILES=3000; SCAN_MAX_DEPTH=12
 
@@ -150,6 +152,10 @@ end
 EOF
 
 PROJECT_SCAN_ROOTS="$FIX"
+# 배포판 파이썬 패스는 기본값이 실제 `/usr/lib/python3*` 이다 — 이 테스트는 Ruby 소스만 보므로
+#   빈 디렉터리로 돌려놓아 검사를 도는 호스트에 깔린 파이썬 패키지가 결과에 섞이지 않게 한다.
+mkdir -p "$FIX/.nosys"
+PY_SYS_META_ROOTS="$FIX/.nosys"; PY_SYS_META_MAX=2000
 GOT=$(collect_project_deps_installed 3>>"$LIC")
 WANT='gem|actionpack|7.0.4
 gem|dyngem|0.3.1

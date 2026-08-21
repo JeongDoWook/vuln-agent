@@ -104,7 +104,7 @@ timing_report() {
 #   $1=tests/ 밑 파일명  $2=printf 라벨  $3=성공 메시지  $4=실패 메시지(생략 시 성공 메시지 재사용)
 #
 # 실행은 **호출 시점이 아니라 아래 prerun_phpunit() 에서 한 번에** 한다 — 예전엔 이 함수가
-#   호출될 때마다 `docker run` 을 새로 띄워서, 27개 × 기동 1.5초 ≈ 39초가 통째로 컨테이너를
+#   호출될 때마다 `docker run` 을 새로 띄워서, 34개 × 기동 1.5초 ≈ 51초가 통째로 컨테이너를
 #   띄우는 데만 쓰였다(실제 PHP 실행은 파일당 수십 ms). 한 컨테이너에서 순차로 돌리면 ~7초다.
 #   호출부와 그 위의 도메인 주석은 제자리에 두고, 이 함수만 "실행" 에서 "결과 조회" 로 바꾼다.
 run_phpunit() {
@@ -119,12 +119,13 @@ run_phpunit() {
   fi
 }
 
-# 위 27개 호출부가 참조하는 파일 목록 — **정본은 여기 하나뿐이다.**
+# 위 34개 호출부가 참조하는 파일 목록 — **정본은 여기 하나뿐이다.**
 #   호출부에 있는데 여기 없으면 위 조회가 MISSING 으로 떨어져 빨간불이 된다(누락이 눈에 띈다).
 PHPUNIT_FILES=(
   vercmp_test.php
   osv_precision_test.php
   pkgdep_rollup_test.php
+  deptree_edge_test.php
   matcher_suppress_test.php
   suppression_test.php
   ingest_parse_test.php
@@ -157,7 +158,7 @@ PHPUNIT_FILES=(
 )
 declare -A PHPUNIT_RESULT=()
 
-# 27개를 **컨테이너 한 번**으로 몰아 돌리고 파일별 PASS/FAIL 을 연관배열에 담는다.
+# 34개를 **컨테이너 한 번**으로 몰아 돌리고 파일별 PASS/FAIL 을 연관배열에 담는다.
 #   · 컨테이너 안 루프는 if 로 종료코드를 받으므로 한 파일이 fatal 을 내도 나머지가 계속 돈다.
 #   · 출력은 파이프가 아니라 임시 파일로 받는다 — 위 assert_contains 주석의 SIGPIPE(141) 함정과 같은 자리다.
 #   · 마운트 경로 계산(MSYS_NO_PATHCONV=1 · pwd -W 폴백)은 기존 방식 그대로다.
@@ -329,7 +330,7 @@ fi
 
 phase "단위테스트 선(先)실행"
 # --- 단위테스트 선(先)실행 ---------------------------------------------------
-# 아래에 흩어져 있는 run_phpunit 호출 27개가 볼 결과를 여기서 한 번에 만든다(컨테이너 1회).
+# 아래에 흩어져 있는 run_phpunit 호출 34개가 볼 결과를 여기서 한 번에 만든다(컨테이너 1회).
 # 호출부는 그대로 순서대로 결과만 조회하므로 출력 순서·라벨·메시지는 이전과 동일하다.
 prerun_phpunit
 
@@ -347,6 +348,13 @@ phase "손댈 대상(부모)별 묶음 집계 단위 테스트"
 # "이 하나를 올리면 N건" 의 N 은 운영자가 조치 순서를 정하는 근거다. 판정 캐시(패키지 단위)와
 # 건수 집계(행 단위)를 섞으면 조용히 과소집계되고, 화면만 봐선 그게 틀렸는지 알 수 없다.
 run_phpunit "pkgdep_rollup_test.php" "pkgdep_rollup" "손댈 대상(부모)별 묶음 집계 단위 테스트"
+
+phase "의존성 트리 연결선 모양 단위 테스트"
+# --- 의존성 트리 연결선 모양 단위 테스트 -------------------------------------
+# 선이 뭉쳐 보인다는 지적이 두 번 반복됐다. 두 번째 원인은 눈으로는 "좀 두껍다" 로만 보였다 —
+# 자식마다 제 경로를 그려 "부모→줄기" 토막과 둥근 모서리가 겹쳐 그려진 것이었다.
+# 사람이 못 세는 종류라 path 안의 줄기(V)·모서리(Q) 개수를 기계가 센다.
+run_phpunit "deptree_edge_test.php" "deptree_edge" "의존성 트리 연결선 모양 단위 테스트"
 
 phase "매처 억제 게이트 단위 테스트"
 # --- 매처 억제 게이트 단위 테스트 ---------------------------------------------
@@ -934,10 +942,12 @@ phase "패키지 의존성 그래프(depgraph.php)"
 # 에이전트가 보낸 SBOM/pom 엣지는 저장만 되고 읽는 화면이 없었다. "무엇이 이 패키지를
 #   끌어왔나" 가 루트 → 직접 → 전이 순으로 실제로 펼쳐지는지, 엣지가 없는 자산의 빈 상태가
 #   빈 화면이 아니라 설명으로 뜨는지를 고정한다.
-# 의존성은 이제 자산 상세의 탭이다 — 설치 패키지 탭은 전용 화면이 아니라 그 탭으로 보내고,
-#   라벨에 엣지 수를 담아 "이 자산엔 볼 게 있다"를 알린다.
+# 의존성은 이제 자산 상세의 탭이다 — 설치 패키지 탭에서 그 탭으로 갈 수 있어야 한다.
+#   단 그 진입점은 **탭 줄 하나뿐**이다: 예전엔 탭 줄 바로 아래 '의존성 엣지 N개' 버튼이
+#   같은 곳으로 또 갔다(같은 화면에 같은 목적지 둘). 버튼만 걷어냈고 탭은 그대로다.
 assert_contains "$packagebody" 'tab=depgraph' "설치 패키지 탭에서 의존성 탭으로 진입"
-assert_contains "$packagebody" '의존성 엣지 ' "설치 패키지 탭이 의존성 엣지 수를 노출"
+assert_not_contains "$packagebody" '의존성 엣지 ' "엣지 수 버튼은 없다(바로 위 '의존성' 탭과 중복)"
+assert_not_contains "$packagebody" '다른 자산과 비교' "'다른 자산과 비교' 버튼도 없다(전체 설치 패키지는 사이드바 메뉴)"
 depbody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID")
 assert_contains "$depbody" '전체 트리' "의존성 그래프 화면 표시"
 # 호스트(cid=0) 단위는 pom.xml 직접 선언 — 부모가 없어 트리 대신 목록으로 나온다.
@@ -1035,6 +1045,9 @@ assert_contains "$missctr" '최신 수집에 없습니다' "없는 컨테이너 
 #   자주 쓰지 않는 동작이 첫 화면 한 칸을 통째로 차지하고 있었다(기능·URL 은 그대로).
 hostpkgtab=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=packages")
 assert_contains "$hostpkgtab" 'sbom.php?host=' "설치 패키지 탭에 SBOM 내려받기 링크"
+# '부품표 보기' 는 목록 위 자기 줄이 아니라 '설치 패키지' 제목 줄 오른쪽(card__head-aside)에 선다 —
+#   버튼 한 줄이 표를 화면 아래로 밀던 것을 걷었다.
+assert_contains "$hostpkgtab" 'card__head-aside' "'부품표 보기' 는 제목 줄 오른쪽에 붙는다"
 assert_not_contains "$hostvuln" 'sbom.php?host=' "첫 화면엔 SBOM 카드가 없다"
 assert_contains "$ctrbody" 'cid='"$CTR_CID"'&amp;format=cyclonedx' "컨테이너 상세에 그 컨테이너 SBOM 링크"
 ctrsbom=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&cid=$CTR_CID&format=cyclonedx")
@@ -1044,6 +1057,19 @@ assert_contains "$ctrspdx" '"spdxVersion": "SPDX-2.3"' "컨테이너 SBOM(SPDX) 
 # 범위를 섞지 않는다 — 없는 컨테이너를 주면 호스트 SBOM 이 대신 나가면 안 된다(404).
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/sbom.php?host=$FQDN_WEB01&cid=nosuchctr")
 assert_eq "$code" "404" "없는 컨테이너 SBOM 은 호스트로 떨어지지 않고 404"
+
+# 부품표 화면(view=html) — 도넛 둘과 목록이 한 줄에 서고, 목록 위 검색이 생태계를 가리지 않는다.
+sbomhtml=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&view=html")
+assert_contains "$sbomhtml" 'class="sbom-cols' "도넛 2 + 목록을 한 줄에 세운다"
+assert_contains "$sbomhtml" '컴포넌트명 검색(전 생태계)' "목록 위에 컴포넌트명 검색"
+# 표준 포맷 다운로드는 이 화면에 남는다 — SBOM 전용 화면이라 여기가 제자리다(자산 상세에선 뺐다).
+assert_contains "$sbomhtml" 'CycloneDX 1.5 다운로드' "부품표 화면엔 표준 포맷 다운로드가 남는다"
+# 생태계별로 표가 갈려 있어도 검색 한 칸이 전부를 훑는다 — rpm 쪽 이름으로 찾으면 그것만 남는다.
+sbomq=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&view=html&q=openssl")
+assert_contains "$sbomq" 'openssl' "검색어에 맞는 컴포넌트는 남는다"
+assert_not_contains "$sbomq" '<strong>glibc</strong>' "검색어에 안 맞는 컴포넌트는 빠진다"
+sbomq0=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&view=html&q=nosuchcomponent")
+assert_contains "$sbomq0" '검색 조건에 맞는 컴포넌트가 없습니다' "0건이면 빈 화면이 아니라 안내"
 
 # 에이전트 진행 heartbeat — 바인딩 토큰이 자기 호스트의 pending 명령만 running으로 바꿔야 한다.
 PROGRESS_CMD=$(docker exec "$WEB_CONTAINER" php -r \

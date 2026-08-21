@@ -143,7 +143,10 @@ function vg_sev_bar_scale(array $countsList): int {
  *   **행마다 자기 합으로 잡으면 HIGH 14뿐인 행과 HIGH 34뿐인 행이 똑같이 꽉 찬 바가 되어
  *   비교가 안 된다.** 가로 랭킹 막대(vg_rank_bars)가 최댓값을 100%로 잡는 것과 같은 방식이다.
  *
- * 조치 대상이 0인 행은 빈 바 대신 'LOW만' 로 둔다 — 빈 회색 바는 "데이터 없음"으로 오독된다.
+ * 조치 대상이 0인 행은 빈 바 대신 **옅은 '–'** 를 둔다 — 빈 회색 바는 "데이터 없음"으로
+ *   오독되고, 예전에 여기 서 있던 'LOW만' 배지는 조치할 것이 없는 행마다 글자를 세워
+ *   표를 시끄럽게 했다(사용자 지적: "이런 건 필요 없어"). LOW 건수는 지우지 않는다 —
+ *   같은 칸의 등급별 뱃지(vg_sev_counts)가 숫자를 계속 갖고, 이 '–' 의 툴팁도 말한다.
  *   LOW 도 0이면 빈 문자열이라, 호출부가 '판정된 취약점 없음' 같은 자기 문구를 그대로 쓴다.
  */
 function vg_sev_bar(array $counts, int $scale = 0): string {
@@ -152,7 +155,7 @@ function vg_sev_bar(array $counts, int $scale = 0): string {
         $low = (int) ($counts['LOW'] ?? 0);
         return $low > 0
             ? '<span class="why" title="' . vg_h('LOW ' . number_format($low)
-                . '건 · 조치 대상(CRITICAL·HIGH·MEDIUM) 없음') . '">LOW만</span>'
+                . '건 · 조치 대상(CRITICAL·HIGH·MEDIUM) 없음') . '">–</span>'
             : '';
     }
 

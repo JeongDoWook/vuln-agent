@@ -94,11 +94,21 @@ function vg_host_load_severity_summary(PDO $pdo, int $sid): array {
  *   무거운 목록 조회(queries.php)와 섞지 않는 것이 이 파일의 경계다.
  */
 function vg_host_load_kpi_counts(PDO $pdo, int $sid, int $hostId): array {
-    $st = $pdo->prepare('SELECT COUNT(*) FROM tb_exposure WHERE scan_id = ?');
-    $st->execute([$sid]); $exposureCount = (int) $st->fetchColumn();
+    /* 두 줄 모두 **자기 분모를 같은 질의에서 함께** 낸다 — 히어로 오른쪽 카드의 미니 고리가
+     *   "몇 건" 이 아니라 "무엇 중 몇 건" 을 그리기 때문이다. 질의 수는 그대로고(WHERE 도
+     *   그대로라 인덱스 사용도 같다) 집계 컬럼만 하나씩 늘었다 — 분모를 따로 세면 이 화면의
+     *   값싼 COUNT 묶음이 두 개 더 길어진다. */
+    $st = $pdo->prepare("SELECT COUNT(*) AS total, SUM(scope = 'EXTERNAL') AS ext
+                           FROM tb_exposure WHERE scan_id = ?");
+    $st->execute([$sid]); $exp = $st->fetch() ?: [];
+    $exposureCount    = (int) ($exp['total'] ?? 0);
+    $exposureExternal = (int) ($exp['ext'] ?? 0);
 
-    $st = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_finding WHERE scan_id = ? AND result = 'FAIL'");
-    $st->execute([$sid]); $cceFail = (int) $st->fetchColumn();
+    $st = $pdo->prepare("SELECT COUNT(*) AS total, SUM(result = 'FAIL') AS fail
+                           FROM tb_cce_finding WHERE scan_id = ?");
+    $st->execute([$sid]); $cce = $st->fetch() ?: [];
+    $cceTotal = (int) ($cce['total'] ?? 0);
+    $cceFail  = (int) ($cce['fail'] ?? 0);
 
     $st = $pdo->prepare('SELECT COUNT(*) FROM tb_suppressed_finding WHERE scan_id = ?');
     $st->execute([$sid]); $suppressedCount = (int) $st->fetchColumn();
@@ -138,7 +148,8 @@ function vg_host_load_kpi_counts(PDO $pdo, int $sid, int $hostId): array {
     $st->execute([$sid]); $containerTotal = (int) $st->fetchColumn();
 
     return [
-        'exposureCount' => $exposureCount, 'cceFail' => $cceFail, 'suppressedCount' => $suppressedCount,
+        'exposureCount' => $exposureCount, 'exposureExternal' => $exposureExternal,
+        'cceFail' => $cceFail, 'cceTotal' => $cceTotal, 'suppressedCount' => $suppressedCount,
         'vulnTotal' => $vulnTotal, 'critHighTotal' => $critHighTotal, 'restartTotal' => $restartTotal,
         'scanTotal' => $scanTotal, 'processCount' => $processCount, 'packageTotal' => $packageTotal,
         'depEdgeTotal' => $depEdgeTotal, 'accountTotal' => $accountTotal, 'containerTotal' => $containerTotal,

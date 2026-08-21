@@ -63,13 +63,26 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
           </div>
           <details class="grade-review">
             <summary>시스템이 본 신호의 근거 (<?= count($signals) ?>건)</summary>
-            <?php /* 한 불릿이 두세 줄을 먹던 자리다 — 근거·비고는 한 줄로 줄이고 원문은 title 로
-                     남긴다(vg_trunc). 접혀 있어도 펼치면 텍스트로 읽히는 건 그대로다. */ ?>
+            <?php /* 한 줄에 **그대로 들어가는 사실 한 문장**만 세운다 — 등급 기호 + 근거(evidence).
+                     evidence 는 이미 "업무 데이터 저장소 3건(etcd 외 2건)." 처럼 라벨과 건수를
+                     제 안에 갖고 있어서 라벨을 앞에 한 번 더 붙이면 같은 말이 두 번 나온다.
+                     예전엔 거기에 해설(note)까지 이어 붙이고 60자에서 vg_trunc 로 잘랐다 —
+                     다섯 줄이 전부 '…' 로 끝나 정작 무슨 신호인지 안 읽혔다(사용자: "막 길게
+                     설명하지 마. 아주 간략하게"). 해설은 지우지 않고 줄의 툴팁으로 내린다. */ ?>
             <ul class="why mt-lg">
               <?php foreach ($signals as $sig): ?>
-                <?php $sigWhy = trim($sig['evidence'] . ' ' . $sig['note']); ?>
-                <li><?= vg_h(($sig['grade'] !== null ? $sig['grade'] . ' · ' : '검토 · ') . $sig['label']) ?>
-                  <?= $sigWhy !== '' ? '— ' . vg_trunc($sigWhy, 60) : '' ?></li>
+                <?php
+                $sigGrade = $sig['grade'] !== null ? (string) $sig['grade'] : '';
+                $sigText  = rtrim((string) ($sig['evidence'] ?: $sig['label']), '.');
+                /* 등급 신호 하나(외부 노출)는 evidence 가 이미 'O 외부노출 4개' 로 등급 기호를
+                   달고 있다(그 문장이 그대로 tb_host.grade_suggested_reason 에 저장되기 때문).
+                   앞에 기호를 한 번 더 붙이면 'O · O 외부노출 4개' 가 된다 — 겹치면 뗀다. */
+                if ($sigGrade !== '' && strncmp($sigText, $sigGrade . ' ', strlen($sigGrade) + 1) === 0) {
+                    $sigText = substr($sigText, strlen($sigGrade) + 1);
+                }
+                ?>
+                <li<?= $sig['note'] !== '' ? ' title="' . vg_h((string) $sig['note']) . '"' : '' ?>><?=
+                  vg_h(($sigGrade !== '' ? $sigGrade . ' · ' : '검토 · ') . $sigText) ?></li>
               <?php endforeach; ?>
             </ul>
           </details>
@@ -122,20 +135,16 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
               </label>
             </div>
 
-            <?php /* 확정 근거 아홉 칸은 **등급을 확정할 때만** 쓴다. 늘 펼쳐 두면 대부분 비어 있는
-                     입력이 자산 설정 탭의 첫 화면을 통째로 차지한다 — 접어 두되 지우지 않는다.
-                     이 값들은 tb_asset_grade_review 에 남는 구조화 검토 근거이고, 등급 확정은
-                     기관의 법적 처분이라 근거를 남기는 것이 이 기능의 목적이다(#550).
-                     열어 두는 조건은 위 경고 세 줄과 **같다** — 경고가 뜬 자산에서만 펼친다.
-                     채워야 하는 사람에게는 접힌 폼이 곧 못 본 폼이기 때문이다. 반대로 아직 등급을
-                     확정하지 않은 자산은 항목이 비어 있는 게 정상이라 접어 둔다(그 조건까지 열면
-                     대다수 자산에서 늘 펼쳐져 접은 의미가 없다). */ ?>
-            <details class="grade-review"<?= (!empty($review['is_stale']) || vg_asset_grade_review_overdue($review)
-                    || ($curGrade !== '' && $missingReview)) ? ' open' : '' ?>>
-              <summary>확정 근거 · 구조화 검토 정보 (9개 항목)</summary>
-              <?php /* 아홉 칸도 같은 이유로 두 칸씩 세운다 — 값이 짧은 항목이 대부분이라
-                       한 줄씩 쌓으면 펼쳤을 때만 세로로 아홉 줄이 된다. 긴 문장을 받는 두 칸
-                       (확정 근거·검토 문서 참조)만 .form-grid__full 로 한 줄을 그대로 쓴다. */ ?>
+            <?php /* 확정 근거 아홉 칸의 **접기는 걷었다**(사용자 지적) — 접힌 폼은 채워야 하는
+                     사람에게 곧 못 본 폼이라, "경고가 뜬 자산에서만 펼친다" 는 조건을 달아도
+                     나머지 자산에서는 이 아홉 칸이 있는 줄조차 모른 채 등급만 확정하게 된다.
+                     값은 하나도 안 지운다 — tb_asset_grade_review 에 남는 구조화 검토 근거이고,
+                     등급 확정은 기관의 법적 처분이라 근거를 남기는 것이 이 기능의 목적이다(#550).
+                     세로가 길어지는 문제는 접기가 아니라 **두 칸 격자**가 푼다(아래 .form-grid):
+                     값이 짧은 항목이 대부분이라 아홉 칸이 다섯 줄로 선다. 긴 문장을 받는 두 칸
+                     (확정 근거·검토 문서 참조)만 .form-grid__full 로 한 줄을 그대로 쓴다. */ ?>
+            <div class="grade-review">
+              <p class="grade-review__title">확정 근거 · 구조화 검토 정보 (9개 항목)</p>
               <div class="grade-review__body form-grid">
               <label class="field form-grid__full" for="asset-grade-reason">확정 근거
                 <input id="asset-grade-reason" type="text" name="grade_reason" maxlength="255"
@@ -179,9 +188,11 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
                 <input id="asset-next-review-date" type="date" name="next_review_date" value="<?= vg_h((string) ($review['next_review_date'] ?? '')) ?>">
               </label>
               </div>
-            </details>
+            </div>
 
-            <div class="actions">
+            <?php /* 확정 버튼은 오른쪽 끝이다 — 폼의 마지막 조작이 왼쪽 구석에 서면 아홉 칸을
+                     훑어 내려온 시선이 되돌아가야 한다(사용자 지적). */ ?>
+            <div class="actions actions--end">
               <button type="submit" class="btn btn--sm btn--primary">등급 확정</button>
             </div>
           </form>
