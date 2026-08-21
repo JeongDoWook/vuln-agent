@@ -44,7 +44,7 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 ```
 
 웹은 <http://localhost:8000>(로컬 PHP·MySQL 설치 불필요). 비밀값·운영 HTTPS·CA 준비·백업은 [배포 가이드](deploy/README.md), 대상 서버 연결은 [에이전트 설치·운영 가이드](agent/README.md)를 보세요.
-에이전트 버전은 **3.17**이고, 게이트는 `./tests/smoke.sh <BASE>`(수집·매칭·인증·화면)와 `./tests/e2e.sh <BASE>`(Chromium)입니다.
+에이전트 버전은 **3.18**이고, 게이트는 `./tests/smoke.sh <BASE>`(수집·매칭·인증·화면)와 `./tests/e2e.sh <BASE>`(Chromium)입니다.
 
 ## 출품 범위
 
@@ -68,6 +68,8 @@ AI 보고서는 설정(설정 화면 → AI 보고서 → 보고서 API 주소)�
 
 ## 라이선스
 
-[MIT License](LICENSE)
+[AGPL-3.0](LICENSE) 으로 배포합니다. Copyright (C) 2026 JeongDoWook.
+**네트워크로 이 소프트웨어를 이용자에게 제공하는 경우에도 그 이용자에게 소스코드를 제공해야 합니다**(AGPL 제13조). 화면 하단의 `소스코드 (AGPL-3.0)` 링크가 그 통로이고, 포크해 배포한다면 설정 화면에서 자기 저장소 주소로 바꾸세요.
+라이선스 이력 — 이 저장소는 2026-07-07 부터 MIT 로 배포되었고 2026-08-21 부터 AGPL-3.0 입니다. 전환 이전 커밋 시점의 코드는 MIT 조건으로 배포된 상태가 그대로 유지됩니다.
 
 활용한 제3자 오픈소스의 출처·라이선스는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 에 정리했다.
