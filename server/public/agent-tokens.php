@@ -158,14 +158,21 @@ vg_header('에이전트 키', 'agenttokens');
   <?php
   vg_table(
       [
-          ['label' => '호스트(fqdn)'],
-          ['label' => '용도'],
-          ['label' => '토큰(앞자리)', 'width' => '12rem'],
-          ['label' => '상태', 'width' => '6rem'],
-          ['label' => '유효기간', 'width' => '13rem'],
-          ['label' => '마지막 수신', 'width' => '11rem'],
-          ['label' => '발급일', 'width' => '11rem'],
-          ['label' => '', 'width' => '5rem', 'align' => 'right'],   // 폐기·삭제 버튼
+          ['label' => '호스트(fqdn)', 'key' => 'host_fqdn'],
+          ['label' => '용도', 'key' => 'label'],
+          ['label' => '토큰(앞자리)', 'key' => 'token_prefix', 'width' => '12rem'],
+          /* '상태'(폐기됨·만료됨·활성)와 '유효기간'(무기한·날짜·만료 임박·만료됨)은 **같은 두 값
+             (is_revoked, expires_at)을 두 번 그린 열**이었다 — '만료됨' 은 아예 양쪽에 같이 떴다.
+             운영 실측(tb_agent_token 26건)에서 **expires_at 이 100% NULL** 이라 '유효기간' 열은
+             전 행이 '무기한' 한 글자였다(정보량 0). 한 칸으로 합치되 값은 하나도 안 버린다:
+             폐기됨 / 만료됨(날짜) / 활성 + 만료 시각(무기한·날짜·임박)이 그대로 선다.
+             열을 지우지 않고 합친 이유는, 유효기간을 걸어 발급하는 길이 살아 있기 때문이다
+             (vg_token_expiry_select) — 그런 토큰이 생기면 이 칸이 날짜를 그대로 보여준다. */
+          ['label' => '상태 · 유효기간', 'key' => 'is_revoked', 'width' => '15rem',
+           'title' => '폐기·만료 여부와 만료 시각 — 무기한은 만료되지 않는 키입니다'],
+          ['label' => '마지막 수신', 'key' => 'last_seen_at', 'width' => '11rem'],
+          ['label' => '발급일', 'key' => 'created_at', 'width' => '11rem'],
+          ['label' => '', 'key' => 'actions', 'width' => '5rem', 'align' => 'right'],   // 폐기·삭제 버튼
       ],
       $tokens,
       [
@@ -178,32 +185,36 @@ vg_header('에이전트 키', 'agenttokens');
               'hint' => '각 대상 서버마다 호스트 전용 토큰을 발급해 설치하세요. 위에서 발급합니다.',
           ],
           'cell'  => [
-              0 => fn($t) => !empty($t['host_id'])
+              'host_fqdn' => fn($t) => !empty($t['host_id'])
                   ? '<a href="/host.php?id=' . (int) $t['host_id'] . '"><code>' . vg_h((string) $t['host_fqdn']) . '</code></a>'
                   : '<code>' . vg_h((string) $t['host_fqdn']) . '</code>',
               // 발급자를 모르는 토큰(스크립트 발급·옛 기록)은 '발급자 –' 로 채우지 않는다 —
               //   행마다 같은 자리표시가 서서 정작 아는 발급자를 못 알아보게 했다.
-              1 => function ($t) {
+              'label' => function ($t) {
                   $by = trim((string) ($t['created_by'] ?? ''));
                   return vg_h((string) $t['label'])
                       . ($by !== '' ? '<div class="why">발급자 ' . vg_h($by) . '</div>' : '');
               },
-              2 => fn($t) => '<code>' . vg_h((string) $t['token_prefix']) . '…</code>',
+              'token_prefix' => fn($t) => '<code>' . vg_h((string) $t['token_prefix']) . '…</code>',
               // 폐기 > 만료 > 활성 순으로 판정 — 만료된 토큰이 '활성' 으로 보이면 안 된다.
-              3 => fn($t) => (int) $t['is_revoked'] === 1
-                  ? vg_badge('폐기됨', 'muted')
-                  : (vg_token_is_expired($t['expires_at'] !== null ? (string) $t['expires_at'] : null)
-                      ? vg_badge('만료됨', 'danger')
-                      : vg_badge('활성', 'ok')),
-              4 => fn($t) => vg_token_expiry_badge($t['expires_at'] !== null ? (string) $t['expires_at'] : null),
-              5 => fn($t) => $t['last_seen_at']
+              //   만료는 그 자체로 "지금 못 쓴다" 라 '활성' 을 같이 세우지 않는다(합치기 전 두 열이
+              //   '활성 아님'과 '만료됨'을 각각 말하던 자리다). 나머지는 활성 뱃지 + 만료 시각.
+              'is_revoked' => function ($t) {
+                  if ((int) $t['is_revoked'] === 1) {
+                      return vg_badge('폐기됨', 'muted', '폐기된 토큰입니다 — 이 키로는 수집이 거부됩니다.');
+                  }
+                  $exp = $t['expires_at'] !== null ? (string) $t['expires_at'] : null;
+                  if (vg_token_expiry_state($exp) === 'expired') { return vg_token_expiry_badge($exp); }
+                  return vg_badge('활성', 'ok') . ' ' . vg_token_expiry_badge($exp);
+              },
+              'last_seen_at' => fn($t) => $t['last_seen_at']
                   ? '<span class="why">' . vg_h((string) $t['last_seen_at']) . '</span>'
                   : '<span class="why">미수신</span>',
-              6 => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
+              'created_at' => fn($t) => '<span class="why">' . vg_h((string) $t['created_at']) . '</span>',
               // 활성이면 [폐기], 폐기된 것이면 [삭제] — 폐기·재발급을 반복해 쌓인 죽은 행을 치운다.
               //   둘 다 색을 빼고(btn--ghost) 확인창으로 받는다 — 행마다 빨간 버튼이 반복되면
               //   목록에서 가장 강한 요소가 '되돌릴 수 없는 것' 이 된다.
-              7 => fn($t) => (int) $t['is_revoked'] === 1
+              'actions' => fn($t) => (int) $t['is_revoked'] === 1
                   ? '<form method="post" data-confirm="이 토큰을 목록에서 지울까요? 이미 폐기되어 무효인 토큰입니다.">'
                       . '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">'
                       . '<input type="hidden" name="action" value="delete">'

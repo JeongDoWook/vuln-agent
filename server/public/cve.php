@@ -33,7 +33,7 @@ vg_require_menu_any('findings', 'catalog', 'advisories');   // CVE 상세: 탐�
 
 $err = null; $cveId = ''; $cve = null; $kev = null; $affected = []; $locations = []; $vendorRows = [];
 $verMap = [];
-$locTotal = 0; $assetTotal = 0; $page = vg_page(); $perPage = vg_perpage();
+$locTotal = 0; $assetTotal = 0; $locMixed = false; $page = vg_page(); $perPage = vg_perpage();
 $vendorTotal = 0; $vPage = vg_page('vpage'); $vPerPage = vg_perpage(null, 'vper_page');
 $affectedTotal = 0; $aPage = vg_page('apage'); $aPerPage = vg_perpage(null, 'aper_page');
 
@@ -63,7 +63,7 @@ try {
         ['total' => $affectedTotal, 'rows' => $affected]
             = vg_cve_load_affected($pdo, $cveId, $aPage, $aPerPage);
 
-        ['total' => $locTotal, 'assetTotal' => $assetTotal, 'rows' => $locations]
+        ['total' => $locTotal, 'assetTotal' => $assetTotal, 'locMixed' => $locMixed, 'rows' => $locations]
             = vg_cve_load_locations($pdo, $cveId, $page, $perPage);
 
         $verMap = vg_cve_load_version_map($pdo, $cveId);
@@ -189,7 +189,7 @@ vg_cve_render_section('assetmap', [
 
 vg_cve_render_section('locations', [
     'cve' => $cve, 'locations' => $locations, 'locTotal' => $locTotal,
-    'page' => $page, 'perPage' => $perPage,
+    'locMixed' => $locMixed, 'page' => $page, 'perPage' => $perPage,
 ]);
 
 vg_cve_render_section('references', ['cve' => $cve, 'cveId' => $cveId]);

@@ -28,6 +28,10 @@ require_once __DIR__ . '/setting.php';   // vg_setting_int (미사용 판정일�
 const VG_ACCOUNT_STALE_LOGIN_DAYS = 90;   // 이 일수 이상 미로그인 = 미사용 계정(설정 없을 때의 폴백)
 const VG_ACCOUNT_SYSTEM_UID_MAX   = 999;  // 이 값 이하 UID = 시스템 계정(데몬용)
 const VG_ACCOUNT_NOBODY_UID_MIN   = 65534; // nobody/nogroup 대역도 시스템 계정으로 본다
+/* /etc/shadow 의 "최대 사용기간 없음" 센티널. useradd 기본값이라 정책을 안 건 계정은 전부 이 값이다
+   — 운영 실측 4,873행 중 값이 있는 2,691행이 **전부** 99999 였다(값 종류 1개 = 정보량 0).
+   화면에서 이 값을 그대로 적으면 '99999일 정책' 처럼 읽히므로, 실제 정책이 걸린 계정에만 적는다. */
+const VG_ACCOUNT_PW_MAX_NEVER     = 99999;
 
 /** 미사용 계정 판정 기준일. 설정이 없으면 VG_ACCOUNT_STALE_LOGIN_DAYS. */
 function vg_account_stale_login_days(): int {

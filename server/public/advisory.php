@@ -18,7 +18,7 @@ vg_require_menu('advisories');
 
 $err = null; $adv = null; $cves = []; $assets = [];
 $cveTotal = 0; $kevTotal = 0; $maxCvss = null; $sevCounts = [];
-$assetTotal = 0; $assetHostTotal = 0;
+$assetTotal = 0; $assetHostTotal = 0; $assetLocMixed = false;
 $cPage = vg_page('cpage'); $cPerPage = vg_perpage(null, 'cper_page');
 $aPage = vg_page('apage'); $aPerPage = vg_perpage(null, 'aper_page');
 
@@ -98,11 +98,18 @@ try {
                           LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id';
             $assetWhere = 'WHERE ac.advisory_id = ? AND ac.is_deleted = 0';
 
-            $ast = $pdo->prepare("SELECT COUNT(*) AS n, COUNT(DISTINCT h.host_id) AS host_cnt $assetFrom $assetWhere");
+            // loc_kinds — '위치'(호스트 자신 / 각 컨테이너)가 몇 가지나 되는가. 한 가지뿐이면
+            //   표에 열을 세우지 않고 카드 제목 옆 한 줄로 올린다(vg_place_note). **페이지가 아니라
+            //   전체 기준**이라야 페이지를 넘길 때 열이 생겼다 사라지지 않는다 — 그래서 이미 도는
+            //   집계 쿼리에 식 하나를 얹었다(새 쿼리를 추가하지 않는다).
+            $ast = $pdo->prepare("SELECT COUNT(*) AS n, COUNT(DISTINCT h.host_id) AS host_cnt,
+                                         COUNT(DISTINCT IFNULL(ctr.cid, '')) AS loc_kinds
+                                    $assetFrom $assetWhere");
             $ast->execute([$id]);
             $assetAgg = $ast->fetch() ?: [];
             $assetTotal = (int) ($assetAgg['n'] ?? 0);
             $assetHostTotal = (int) ($assetAgg['host_cnt'] ?? 0);
+            $assetLocMixed = ((int) ($assetAgg['loc_kinds'] ?? 0)) > 1;
 
             $aOffset = ($aPage - 1) * $aPerPage;
             $ast = $pdo->prepare(
@@ -233,23 +240,42 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
 <section id="assets">
   <div class="card">
     <strong>영향 자산</strong>
+    <?php
+    /* 이 카드가 답하는 질문은 "이 공지가 우리 자산 중 **어디**에 영향을 주나" 다.
+     *   ★ '수집일' 열을 걷었다 — 날짜는 그 판단에 안 쓰이는데(어제 수집이든 오늘 수집이든
+     *     조치 대상은 같다) 열 하나를 통째로 먹었다. 지운 게 아니라 **호스트 링크의 툴팁**으로
+     *     내렸고, 회차별 정본은 그 호스트 상세의 '수집 이력' 탭이 그대로 갖는다.
+     *   ★ '위치' 열은 값이 섞여 있을 때만 세운다 — 전 행이 '호스트' 인 공지가 대부분이라
+     *     그때 이 열의 정보량은 0이다(제목 옆 한 줄로 올린다 — vg_place_note).
+     *   8열 → 6열. 1200px 아래에서 잘리던 식별자 열(패키지·설치 버전)이 그 폭을 가져간다. */
+    $assetNote = '최신 수집 기준';
+    if ($assets) {
+        $placeNote = vg_place_note($assetLocMixed, (string) $assets[0]['ctr']);
+        if ($placeNote !== '') { $assetNote .= ' · ' . $placeNote; }
+    }
+    ?>
+    <span class="why"> · <?= vg_h($assetNote) ?></span>
     <div class="card__body">
     <?php
+    $assetHeaders = [['label' => '호스트', 'key' => 'fqdn']];
+    if ($assetLocMixed) {
+        // 같은 이유로 nowrap — cve.php '발견 위치' 표의 같은 열과 규칙을 맞춘다.
+        $assetHeaders[] = ['label' => '위치', 'key' => 'ctr', 'width' => '9rem', 'nowrap' => true];
+    }
+    // 열이 조건부라 칸 콜백은 **인덱스가 아니라 key** 로 건다 — 인덱스로 걸면 '위치' 열이
+    //   빠지는 순간 그 뒤 칸이 통째로 한 칸씩 밀린다.
+    $assetHeaders = array_merge($assetHeaders, [
+        ['label' => 'CVE', 'key' => 'cve_id', 'nowrap' => true],
+        // key 를 준다 — 콜백도 key 도 없던 탓에 **패키지 칸이 통째로 빈칸으로 나왔다**
+        //   (vg_table 은 둘 다 없으면 빈 문자열을 그린다). 값이 사라진 자리라 링크·서식보다
+        //   먼저 값부터 되살린다.
+        ['label' => '패키지', 'key' => 'package_name'],
+        ['label' => '설치 버전', 'key' => 'installed_version'],
+        ['label' => '등급', 'key' => 'severity', 'width' => '6rem'],
+        ['label' => '상태', 'key' => 'runtime_status', 'width' => '7rem'],
+    ]);
     vg_table(
-        [
-            ['label' => '호스트'],
-            // 같은 이유로 nowrap — cve.php '발견 위치' 표의 같은 열과 규칙을 맞춘다.
-            ['label' => '위치', 'width' => '9rem', 'nowrap' => true],
-            ['label' => 'CVE', 'nowrap' => true],
-            // key 를 준다 — 콜백도 key 도 없던 탓에 **패키지 칸이 통째로 빈칸으로 나왔다**
-            //   (vg_table 은 둘 다 없으면 빈 문자열을 그린다). 값이 사라진 자리라 링크·서식보다
-            //   먼저 값부터 되살린다.
-            ['label' => '패키지', 'key' => 'package_name'],
-            ['label' => '설치 버전'],
-            ['label' => '등급', 'width' => '6rem'],
-            ['label' => '상태', 'width' => '7rem'],
-            ['label' => '수집일', 'nowrap' => true],
-        ],
+        $assetHeaders,
         $assets,
         [
             'card' => false,
@@ -260,18 +286,18 @@ vg_header($adv ? (string) $adv['title'] : '보안 공지', 'advisories');
             ],
             'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
             'cell' => [
-                0 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h((string) $r['fqdn']) . '</a>',
-                1 => fn($r) => $r['ctr'] !== ''
-                    ? '<span class="why">컨테이너 ' . vg_h((string) $r['ctr']) . '</span>'
-                    : '<span class="why">호스트</span>',
-                2 => fn($r) => '<a href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
+                // 걷어낸 '수집일' 이 여기로 온다 — 이 행이 어느 회차 수집인지는 호스트에 붙은 사실이다.
+                'fqdn' => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id']
+                    . '" title="' . vg_h('수집 ' . (string) $r['collected_at']) . '">'
+                    . vg_h((string) $r['fqdn']) . '</a>',
+                'ctr' => fn($r) => vg_place_cell((string) $r['ctr']),
+                'cve_id' => fn($r) => '<a href="/cve.php?cve=' . urlencode((string) $r['cve_id']) . '">'
                     . vg_h((string) $r['cve_id']) . '</a>',
-                4 => fn($r) => !empty($r['installed_version'])
+                'installed_version' => fn($r) => !empty($r['installed_version'])
                     ? '<code>' . vg_h((string) $r['installed_version']) . '</code>'
                     : '<span class="why">–</span>',
-                5 => fn($r) => vg_sev_badge((string) $r['severity']),
-                6 => fn($r) => vg_status_badge($r['runtime_status']),
-                7 => fn($r) => '<span class="why">' . vg_h((string) $r['collected_at']) . '</span>',
+                'severity' => fn($r) => vg_sev_badge((string) $r['severity']),
+                'runtime_status' => fn($r) => vg_status_badge($r['runtime_status']),
             ],
         ]
     );

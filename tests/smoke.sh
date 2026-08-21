@@ -1003,7 +1003,17 @@ assert_not_contains "$ctrtab" 'Fatal error' "컨테이너 탭이 오류 없이 �
 assert_contains "$ctrtab" 'class="data-table' "컨테이너 탭이 표로 렌더"
 assert_contains "$ctrtab" 'data-label="위험 분포"' "행마다 위험 분포 칸이 있다"
 assert_contains "$ctrtab" 'class="riskbar"' "위험 분포가 세그먼트 미터로 그려짐"
-assert_contains "$ctrtab" '상세 →' "행마다 상세 링크 하나로 정리(버튼 3개 → 1개)"
+# 진입로는 컨테이너 **이름 링크 하나**다 — 별도 '상세 →' 열은 같은 주소로 가는 두 번째
+#   링크라 걷었다(한 행에 같은 목적지 링크를 둘 두지 않는다). 바로 아래 줄이 그 이름 링크를 확인한다.
+assert_not_contains "$ctrtab" '상세 →' "같은 목적지로 가는 둘째 링크('상세 →' 열)를 두지 않는다"
+# 등급별 건수(CRIT/HIGH/MEDIUM/LOW) 네 열도 걷었다 — 옆의 위험 분포 막대와 같은 값이었다.
+#   숫자는 사라지지 않고 **그 막대 옆 뱃지**로 같은 칸에 선다(대시보드 함대 표와 같은 관용구).
+assert_not_contains "$ctrtab" '>CRIT<' "등급별 건수 열이 위험 분포 칸으로 합쳐졌다"
+# 페이지 어딘가에 뱃지가 있다는 검사로는 부족하다(런타임 상태 뱃지가 이미 그걸 만족시킨다) —
+#   **그 칸 안에** 막대와 건수 뱃지가 같이 서는지를 본다.
+ctrrisk=$(grep -oE '<td data-label="위험 분포">[^<]*(<[^>]*>[^<]*)*?</td>' <<<"$ctrtab" | head -1)
+assert_contains "$ctrrisk" 'class="riskbar"' "위험 분포 칸에 막대가 있다"
+assert_contains "$ctrrisk" 'class="badge tone-' "위험 분포 칸에 등급별 건수 뱃지가 함께 선다"
 assert_contains "$ctrtab" 'container.php?id='"$WEB01_ID" "표에서 컨테이너 상세로 들어가는 링크"
 CTR_CID=$(grep -oE 'container\.php\?id='"$WEB01_ID"'&amp;cid=[A-Za-z0-9._%-]+' <<<"$ctrtab" | head -1 | sed 's/.*cid=//')
 if [ -n "$CTR_CID" ]; then ok "컨테이너 cid 확인 (=$CTR_CID)"; else no "컨테이너 표에서 cid 를 못 찾음"; CTR_CID="api"; fi
