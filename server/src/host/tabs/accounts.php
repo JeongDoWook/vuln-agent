@@ -72,7 +72,13 @@ if (!vg_can('assets')) {
               ['label' => '홈', 'key' => 'home'],
               ['label' => '마지막 로그인', 'nowrap' => true],
               ['label' => '패스워드 변경', 'nowrap' => true],
-              ['label' => '만료일', 'nowrap' => true],
+              /* '만료일' 열을 걷었다 — **운영 실측**(tb_host_account 4,873행): 98.8% 가 NULL 이고,
+                 값이 있는 58행은 **전부 `1970-01-02`** 였다. 즉 이 열이 실제로 말하는 건 날짜가
+                 아니라 "만료가 걸려 있다/아니다" 두 갈래고, 그 에폭 날짜는 사람이 읽을 날짜가
+                 아니라 shadow 의 센티널이라 그대로 두면 오히려 오독된다.
+                 두 갈래는 '구분' 칸의 뱃지가 더 정확하게 말한다(잠김·sudo 와 같은 축이다).
+                 판단에 쓰이는 자리는 이미 따로 있다 — 바로 위 '계정 컴플라이언스 판정' 카드의
+                 ACC-DORMANT(퇴직자 계정 잔존 추정)가 이 값을 조건으로 읽는다. */
           ],
           $rows,
           [
@@ -93,6 +99,13 @@ if (!vg_can('assets')) {
                       elseif ((int) $a['is_sudoer'] === 1) { $b[] = vg_badge('sudo', 'warn', 'sudo 관리자 권한 보유'); }
                       if ($a['is_locked'] === null) { $b[] = vg_badge('잠금?', 'muted', '/etc/shadow 미수집 — 판정 불가'); }
                       elseif ((int) $a['is_locked'] === 1) { $b[] = vg_badge('잠김', 'low', '패스워드 로그인 불가'); }
+                      // 걷어낸 '만료일' 열이 여기로 온다. 톤은 '잠김' 과 같다 — 둘 다 "로그인이 막힌
+                      //   상태" 라는 같은 뜻이고, 계정 관리 관점에선 위험이 아니라 안전한 쪽이다.
+                      //   원래 날짜 값은 툴팁으로 남는다(1970-01-02 처럼 이미 지난 날짜도 그대로 보인다).
+                      if (!empty($a['expire_date'])) {
+                          $b[] = vg_badge('만료됨', 'low',
+                              '계정 만료일 ' . (string) $a['expire_date'] . ' — 이 날 이후 로그인이 막힙니다');
+                      }
                       return implode(' ', $b);
                   },
                   'shell' => fn($a) => '<code class="why">' . vg_h((string) ($a['shell'] ?? '')) . '</code>',
@@ -112,12 +125,14 @@ if (!vg_can('assets')) {
                   6 => function ($a) use ($accNa) {
                       if ($a['is_locked'] === null) { return $accNa; }
                       if (empty($a['pw_last_change'])) { return '<span class="why">–</span>'; }
-                      return vg_h((string) $a['pw_last_change'])
-                          . ($a['pw_max_days'] ? ' <span class="why">/ 최대 ' . (int) $a['pw_max_days'] . '일</span>' : '');
-                  },
-                  7 => function ($a) use ($accNa) {
-                      if ($a['is_locked'] === null) { return $accNa; }
-                      return $a['expire_date'] ? vg_h((string) $a['expire_date']) : '<span class="why">없음</span>';
+                      // '/ 최대 N일' 은 **정책이 실제로 걸린 계정에만** 적는다 — 운영 실측에서 이 값이
+                      //   있는 2,691행이 전부 99999(= 제한 없음 센티널)라, 행마다 같은 글자가 서면서
+                      //   정작 '99999일 정책' 처럼 읽혔다(VG_ACCOUNT_PW_MAX_NEVER 주석 참고).
+                      $max = $a['pw_max_days'] === null ? null : (int) $a['pw_max_days'];
+                      $note = ($max !== null && $max > 0 && $max < VG_ACCOUNT_PW_MAX_NEVER)
+                          ? ' <span class="why">/ 최대 ' . $max . '일</span>'
+                          : '';
+                      return vg_h((string) $a['pw_last_change']) . $note;
                   },
               ],
           ]
