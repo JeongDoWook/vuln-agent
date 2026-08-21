@@ -51,7 +51,7 @@ if (!in_array($tab, ['vuln', 'pkg', 'trend'], true)) { $tab = 'vuln'; }
 $pkgChanges = []; $pkgTotal = 0;
 $trendRounds = []; $trendResolvedAll = [];
 $trendSummary = ['new' => 0, 'up' => 0, 'down' => 0, 'resolved' => 0];
-$trendNeedsHost = false;
+$trendNeedsHost = false; $trendFqdn = '';
 
 try {
     $pdo = vg_pdo();
@@ -185,7 +185,7 @@ vg_header('변화 추적', 'changes');
       'pdo' => $pdo, 'err' => $err, 'page' => $page, 'perPage' => $perPage,
       'changes' => $changes, 'total' => $total, 'type' => $type, 'hostId' => $hostId, 'q' => $q,
       'pkgChanges' => $pkgChanges, 'pkgTotal' => $pkgTotal,
-      'trendNeedsHost' => $trendNeedsHost, 'trendRounds' => $trendRounds,
+      'trendNeedsHost' => $trendNeedsHost, 'trendRounds' => $trendRounds, 'trendFqdn' => $trendFqdn,
       'trendResolvedAll' => $trendResolvedAll, 'trendSummary' => $trendSummary,
   ]);
   ?>

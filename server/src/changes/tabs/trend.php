@@ -2,7 +2,7 @@
 /**
  * changes/tabs/trend.php — '추이' 탭(회차별).
  *   쓰는 값(changes.php 가 $ctx 로 넘긴다):
- *     $trendNeedsHost $trendRounds $trendResolvedAll $trendSummary $page $perPage $pdo
+ *     $trendNeedsHost $trendRounds $trendResolvedAll $trendSummary $trendFqdn $page $perPage $pdo
  *
  *   ⚠ $trendNeedsHost 는 "호스트를 안 골랐다" 는 뜻이고, 그때 조회 자체를 **하지 않는다**
  *   (changes.php 의 분기). 전체 호스트 합산은 findings 자기조인급 비용이라 일부러 갈라 둔
@@ -89,7 +89,9 @@
       );
       ?>
 
-      <div class="sub">④ 이번 구간 해결된 항목</div>
+      <?php /* 이 탭은 **호스트 하나**만 본다($trendNeedsHost 분기) — 그래서 표의 '호스트' 열은
+              전 행이 같은 값이었고 그만큼 정보량이 0이었다. 열을 걷고 그 값을 이 제목 줄로 올린다. */ ?>
+      <div class="sub">④ 이번 구간 해결된 항목<?= $trendFqdn !== '' ? ' · ' . vg_h($trendFqdn) : '' ?></div>
       <?php
       $trendResolvedTotal = count($trendResolvedAll);
       $trendResolvedPaged = array_slice($trendResolvedAll, ($page - 1) * $perPage, $perPage);
@@ -102,15 +104,18 @@
       }
       vg_table(
           [
-              // 위 '취약점 변화' 표와 같은 셀 함수를 쓰므로 열 구성·폭 기준도 그대로 맞춘다.
+              // 위 '취약점 변화' 표와 같은 셀 함수를 쓰므로 폭 기준은 그대로 맞춘다.
+              //   다만 열 구성은 둘이다: 저쪽은 전체 호스트를 섞어 보지만 이 표는 한 호스트만 본다.
+              //   '수집 시각' 열도 걷었다 — 한 호스트 안에서 회차와 수집 시각은 1:1 이라 같은
+              //   사실을 두 번 말하는 열이고, 그 대응표는 바로 위 ③ 회차별 요약(회차 · 수집일시)가
+              //   같은 화면에서 이미 갖고 있다(① 차트가 x 라벨로 회차를 쓰는 것도 같은 이유다).
+              //   행마다의 정확한 시각은 회차 칸의 툴팁으로 남는다.
               ['label' => '회차', 'width' => '4rem', 'align' => 'center'],
               ['label' => '변화 · 사유', 'width' => '15%',
                'title' => '무엇이 달라졌는지와, 왜 그렇게 됐는지(패키지 변경 이력 대조 결과)'],
-              ['label' => '호스트'],
               ['label' => 'CVE', 'width' => '11.5rem', 'nowrap' => true],
               ['label' => '패키지'],
               ['label' => '등급 · 노출', 'width' => '11rem'],
-              ['label' => '수집 시각', 'width' => '9rem', 'nowrap' => true],
           ],
           $trendResolvedPaged,
           [
@@ -121,14 +126,15 @@
               ],
               'row_class' => fn($r) => vg_sev_row((string) $r['severity']),
               'cell' => [
-                  0 => fn($r) => (string) $r['round'],
+                  // 걷어낸 '수집 시각' 이 여기로 온다 — 회차가 곧 그 시점이라 한 칸에 붙는다.
+                  0 => fn($r) => ((string) ($r['when'] ?? '')) !== ''
+                      ? '<span title="' . vg_h('수집 ' . (string) $r['when']) . '">' . (int) $r['round'] . '</span>'
+                      : (string) $r['round'],
                   1 => fn($r) => vg_change_type_cell($r),
-                  2 => fn($r) => '<a href="/host.php?id=' . (int) $r['host_id'] . '">' . vg_h($r['fqdn']) . '</a>',
-                  3 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
+                  2 => fn($r) => '<a href="/cve.php?cve=' . urlencode($r['cve_id']) . '">' . vg_h($r['cve_id']) . '</a>'
                                 . ($r['in_kev'] ? ' ' . vg_badge('KEV', 'crit') : ''),
-                  4 => fn($r) => vg_change_package_cell($r),
-                  5 => fn($r) => vg_change_severity_cell($r),
-                  6 => fn($r) => vg_change_when_cell($r),
+                  3 => fn($r) => vg_change_package_cell($r),
+                  4 => fn($r) => vg_change_severity_cell($r),
               ],
           ]
       );
