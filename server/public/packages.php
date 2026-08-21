@@ -337,16 +337,21 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
   $hasFilter = $q !== '' || $eco !== '';
   vg_table(
       [
-          ['label' => '패키지', 'width' => '30%', 'class' => 'col-id'],
-          ['label' => '배포판', 'width' => '14%'],
-          ['label' => 'CVE 수', 'align' => 'right', 'width' => '9%'],
-          /* 같은 행에 막대가 둘(EPSS·조치율) 있는데 모양이 같아, 어느 막대가 무엇인지 화면에
-           * 안 적혀 있었다. 열 머리글의 짧은 범례('title')로 각 막대가 무엇의 값인지 밝히고,
-           * 칸 안에서도 막대 바로 위 글자가 그 막대를 가리키게 둔다. */
-          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '15%',
+          /* '수정 버전 · 조치율'(폭 32%)은 이 목록에서 내렸다 — 이 화면이 답하는 질문은
+           * "어느 패키지가 몇 개의 CVE 를 물고 있나" 이고, 조치 진행은 그 패키지 하나를
+           * 정하고 나서 보는 값이라 상세(package.php)가 이미 갖고 있다: 거기 지표 타일이
+           * '수정 버전 확인 N건 · N%' 와 '가장 높은 수정 버전' 을 그대로 보여준다.
+           * '수집 시각' 열을 호스트 상세로 내렸을 때와 같은 기준이다.
+           * '최고 EPSS' 는 X 를 그은 열이지만 **남긴다** — 위 도구줄의 'EPSS 높은순' 이
+           * 이 값으로 정렬하므로, 지우면 화면에 없는 값으로 목록 차례가 바뀐다.
+           * 32% 를 되찾아 패키지명에 얹는다(전에는 30% 라 kernel-debug-devel-matched 처럼
+           * 긴 이름이 '동일 집계' 배지와 함께 서면 잘렸다 — 실측 말줄임 7칸). */
+          ['label' => '패키지', 'width' => '52%', 'class' => 'col-id'],
+          ['label' => '배포판', 'width' => '18%'],
+          ['label' => 'CVE 수', 'align' => 'right', 'width' => '11%'],
+          // 막대 바로 위 글자가 그 막대의 라벨이다(열 머리글의 짧은 범례가 무엇의 값인지 밝힌다).
+          ['label' => '최고 EPSS', 'align' => 'right', 'width' => '19%',
            'title' => '이 패키지의 CVE 중 가장 높은 악용 확률 — 막대 길이가 그 값입니다'],
-          ['label' => '수정 버전 · 조치율', 'width' => '32%',
-           'title' => '수정 버전이 확인된 CVE의 비율 — 막대 길이가 조치율입니다'],
       ],
       $rows,
       [
@@ -370,8 +375,10 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
                              . vg_h((string) $r['package_name']) . '</a>'
                              . (!empty($r['same_agg'])
                                  // 라벨은 짧게 — 연속된 여러 행에 붙는 꼬리표라 길면 그 자체가 소음이 된다.
+                                 // 툴팁에서 '조치' 는 뺐다 — 조치율 열을 상세로 내려 화면에 없는 값이 됐다.
+                                 //   판정 기준(same_agg)은 그대로 fix_cnt·max_fixed 까지 본다.
                                  ? ' ' . vg_badge('동일 집계', 'muted',
-                                     '같은 소스 패키지에서 갈라진 바이너리라 CVE·EPSS·조치 수치가 앞 행과 같습니다')
+                                     '같은 소스 패키지에서 갈라진 바이너리라 CVE 수·EPSS 가 앞 행과 같습니다')
                                  : ''),
               1 => fn($r) => !empty($r['ecosystem'])
                              ? vg_h((string) $r['ecosystem'])
@@ -387,30 +394,6 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
                   $e = (float) $r['max_epss'];
                   return $txt . vg_meter(vg_epss_tone($e), $e * 100,
                       '최고 EPSS ' . number_format($e * 100, 1) . '% (악용 확률)');
-              },
-              /* 조치: max_fixed(있으면) + 조치율. 막대 바로 위 글자가 그 막대의 라벨이다.
-               *   전건 조치(100%)는 **좋은 소식**이라 막대를 그리지 않고 ok 뱃지로 끝낸다 —
-               *   예전엔 100% 도 다른 진행바와 같은 색 막대라 "다 됐다" 가 읽히지 않았다.
-               *   cve_cnt=0 은 0 나눗셈 방지 + 비율 자체가 뜻이 없어 대시로 둔다. */
-              4 => function ($r) {
-                  $cve = (int) $r['cve_cnt'];
-                  $fix = (int) $r['fix_cnt'];
-                  $head = !empty($r['max_fixed'])
-                      ? '<span class="pill">' . vg_h((string) $r['max_fixed']) . ' 이상</span> '
-                      : '';
-                  if ($cve <= 0) {
-                      return $head . '<span class="why">–</span>';
-                  }
-                  $ratio = $fix / $cve;
-                  if ($ratio >= 1.0) {
-                      return $head . vg_badge('조치 완료 ' . $fix . '/' . $cve, 'ok',
-                          '이 패키지의 CVE 전건에서 수정 버전이 확인됐습니다');
-                  }
-                  return $head
-                       . '<span class="why">조치율 ' . number_format($ratio * 100, 1) . '%'
-                       . ' (' . $fix . '/' . $cve . ')</span>'
-                       . vg_meter('med', $ratio * 100,
-                           '조치율 ' . number_format($ratio * 100, 1) . '% (수정 버전 확인 ' . $fix . '/' . $cve . ')');
               },
           ],
       ]

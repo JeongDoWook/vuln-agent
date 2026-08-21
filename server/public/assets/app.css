@@ -707,6 +707,16 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 /* 줄 자신이 아래 여백을 가지므로 칸 안의 카드는 여백을 버린다(겹치면 줄 간격이 두 배가 된다). */
 .card-row > .card { margin-bottom: 0; }
 
+/* 칸 수를 **둘로 못박는** 변형. 기본 .card-row 는 auto-fit(19rem) 이라 넓은 화면에서 3~4칸까지
+ * 늘어나는데, 표가 든 카드는 그 폭에서 값이 접혀 행이 두세 줄이 되고 세로가 되레 길어진다.
+ * 1340px 은 실측 하한이다 — 데이터 수집(연결기 4장)을 2열로 세운 뒤 폭을 낮춰 재면
+ *   1920px: 세로 683px · 최대 행 높이 57px
+ *   1440px: 786px · 72px
+ *   1300px: 817px · 102px  ← 행이 접혀 2열로 줄인 것을 도로 까먹는다
+ * 그래서 1340px 미만에서는 아예 한 열로 둔다(1열이 더 짧다). */
+.card-row--2 { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1340px) { .card-row--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* 자산 탐색(discovery.php) 대역 카드 — 표 한 줄이 아니라 카드 하나로 대역을 보여줘
  * 상태 배지·스캔 결과를 표 열보다 눈에 띄게 비교한다(폭에 맞춰 접히는 auto-fill 격자). */
 .discovery-targets {
