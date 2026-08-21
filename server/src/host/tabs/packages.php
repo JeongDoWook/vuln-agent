@@ -40,8 +40,10 @@ declare(strict_types=1);
         $integText = '패키지 원본과 다른 파일이 관측되지 않았습니다.';
     } else {
         $integTone = 'high';
-        $integText = '패키지 원본과 다른 파일 ' . number_format($integTotal) . '건이 관측되었습니다. '
-            . '운영자가 직접 바꾼 파일일 수도 있어 변조로 단정하지 않습니다.';
+        // 앞 문장("N건이 관측되었습니다")은 바로 위 배지와 같은 말이라 걷었다 — 배지가 이미 건수를
+        //   말한다. 남긴 한 문장은 이 제품의 어휘 원칙이다: 우리가 아는 건 "설치 기록과 다르다"
+        //   뿐이라, 운영자가 직접 바꾼 경우와 구분되지 않는다.
+        $integText = '운영자가 직접 바꾼 파일일 수도 있어 변조로 단정하지 않습니다.';
     }
     // 이미 무결성 포함 명령이 큐에 있으면 그 사실을 알린다 — 수 분짜리 부하를 거는 동작이라
     //   같은 자산에 두 번 걸지 않게 한다(중복 등록 자체는 서버가 막지 않는다).
@@ -77,7 +79,14 @@ declare(strict_types=1);
         <span class="why"> · <a href="#agent-control">수집 제어</a> 의 '지금 수집' 에서 '무결성 검사 포함' 을 켜면 다음 수집에 함께 돕니다.</span>
       <?php endif; ?>
       <?php if ($integrityRows): ?>
+        <?php /* 이 표가 **무엇을 검사한 결과인지**를 표 바로 위에 밝힌다. dpkg 노드는 내용(MD5)만
+                 보므로, 안 적으면 나머지 항목이 "정상"으로 읽힌다 — 실제로는 보지 않은 것이다.
+                 판정은 vg_integrity_verify_scope()(플래그 자리로 읽는다)가 하고 여기선 표기만 한다. */ ?>
+        <?php $integScope = vg_integrity_verify_scope(array_column($integrityRows, 'flags')); ?>
         <div class="card__body">
+          <?php if ($integScope['tool'] !== ''): ?>
+            <span class="why" title="<?= vg_h($integScope['title']) ?>"><?= vg_h($integScope['text']) ?></span>
+          <?php endif; ?>
         <?php
         vg_table(
             [
@@ -90,8 +99,10 @@ declare(strict_types=1);
                 'card' => false,
                 'cell' => [
                     'file_path' => fn($r) => '<code>' . vg_h((string) $r['file_path']) . '</code>',
-                    'flags' => fn($r) => vg_h(vg_integrity_flag_label((string) $r['flags']))
-                        . ' <span class="why">' . vg_h((string) $r['flags']) . '</span>',
+                    // 원문 플래그(`??5??????`)는 화면에 흘리지 않는다 — 사람이 못 읽는다.
+                    //   근거로는 필요하니 툴팁에만 남긴다(해석은 vg_integrity_flag_label 한 곳).
+                    'flags' => fn($r) => '<span title="' . vg_h('원본 플래그 ' . (string) $r['flags']) . '">'
+                        . vg_h(vg_integrity_flag_label((string) $r['flags'])) . '</span>',
                     'package_name' => fn($r) => ($r['package_name'] ?? '') !== ''
                         ? vg_h((string) $r['package_name'])
                         : '<span class="why">미상</span>',

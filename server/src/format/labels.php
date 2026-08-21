@@ -64,26 +64,99 @@ function vg_scope_label(?string $s): string {
 /* 패키지 무결성 플래그(rpm -Va / dpkg --verify 원본) → 사람이 읽는 설명.
  *   ★ 어휘는 **단정하지 않는다** — "변조됨"이 아니라 "패키지 원본과 다름(관측)"이다.
  *     운영자가 직접 바꾼 파일일 수 있고, 우리가 아는 건 "설치 기록과 다르다"는 사실뿐이다.
- *   dpkg 는 판정하지 못한 항목을 '?' 로 준다 — 알 수 없는 자리는 설명하지 않는다. */
-const VG_INTEGRITY_FLAG_LABEL = [
-    '5' => '내용 다름',
-    'S' => '크기 다름',
-    'M' => '권한 다름',
-    'U' => '소유자 다름',
-    'G' => '그룹 다름',
-    'L' => '링크 대상 다름',
-    'D' => '장치번호 다름',
-    'T' => '수정시각 다름',
-    'P' => '권한(capability) 다름',
+ *   ★ 플래그는 **자리(position)로 읽는다.** 9칸 각각이 검사 항목 하나이고, 그 자리에 항목의
+ *     글자가 서면 "다름", '.' 이면 "같음", '?' 이면 **"검사하지 않음"** 이다.
+ *     '?' 를 "같음"으로 읽으면 안 본 항목이 정상으로 둔갑한다 — 이 구분이 결과의 범위를 정한다.
+ *   ★ 원문(`??5??????`)은 화면에 흘리지 않는다. 사람이 읽을 수 있는 항목 이름으로 풀고,
+ *     원문은 툴팁에만 남긴다(디버깅 근거는 필요하되 표는 어지럽히지 않는다). */
+const VG_INTEGRITY_FLAG_SLOTS = [
+    ['S', '크기'],
+    ['M', '권한'],
+    ['5', '내용'],
+    ['D', '장치번호'],
+    ['L', '링크 대상'],
+    ['U', '소유자'],
+    ['G', '그룹'],
+    ['T', '수정시각'],
+    ['P', 'capability'],
 ];
+// 내용(MD5) 자리 — dpkg 는 여기 하나만 검사한다. 아래 검사범위 판정이 이 자리를 기준으로 쓴다.
+const VG_INTEGRITY_MD5_SLOT = 2;
 
+/* 다른 것으로 관측된 항목만 한글 이름으로 돌려준다(자리순 = 위 표 순서). */
+function vg_integrity_diff_items(string $flags): array {
+    $out = [];
+    foreach (VG_INTEGRITY_FLAG_SLOTS as $i => [$ch, $name]) {
+        if (($flags[$i] ?? '') === $ch) { $out[] = $name; }
+    }
+    return $out;
+}
+
+/* 표 한 칸에 들어갈 한 줄. 여러 항목이면 **전부** 나열한다(하나만 보여주고 자르지 않는다). */
 function vg_integrity_flag_label(string $flags): string {
     if (strcasecmp(trim($flags), 'missing') === 0) { return '파일 없음'; }
-    $out = [];
-    foreach (str_split($flags) as $ch) {
-        if (isset(VG_INTEGRITY_FLAG_LABEL[$ch])) { $out[$ch] = VG_INTEGRITY_FLAG_LABEL[$ch]; }
+    $items = vg_integrity_diff_items($flags);
+    // 해석할 글자가 하나도 없어도 "차이 없음"이라고 하지 않는다 — rpm·dpkg 는 문제가 있는
+    //   파일만 출력하므로, 이 줄이 존재한다는 것 자체가 "무언가 걸렸다"는 관측이다.
+    return $items ? implode(' · ', $items) : '차이 있음';
+}
+
+const VG_INTEGRITY_RPM_SKIPPED = ['수정시각', '소유자', '그룹'];   // rpm -Va --nomtime --nouser --nogroup
+
+/* 이 결과가 **무엇을 검사한 것인지**를 한 줄로 돌려준다.
+ *   왜 필요한가: dpkg 는 내용(MD5)만 본다. 그 사실을 안 적으면 "크기·권한·소유자는 정상"으로
+ *   읽히는데, 실제로는 **보지 않은 것**이다. 이건 친절한 설명이 아니라 결과의 범위를 정하는 사실이다.
+ *
+ *   판정 근거는 플래그 자리다(따로 저장하는 값이 없다):
+ *     · 내용 자리를 뺀 나머지가 전부 '?' → 내용만 검사(dpkg --verify).
+ *     · 다른 자리에 '?' 아닌 글자가 하나라도 있으면 rpm -Va 다.
+ *   ⚠ rpm 은 **검사에서 뺀 항목도 '.'(같음)으로 찍는다** — 2026-08-21 almalinux:9 실측:
+ *     같은 파일이 `rpm -V` 로는 `SM5..UGT.`, `rpm -V --nomtime --nouser --nogroup` 로는
+ *     `SM5......` 였다. 그래서 rpm 쪽 제외 항목은 플래그로 알 수 없고, 우리 에이전트가
+ *     쓰는 명령(agent/vuln-inventory-agent.sh 의 collect_integrity)에서 온다.
+ *
+ *   @param string[] $flagList 화면에 세운 행들의 flags 원문
+ *   @return array{tool:string,text:string,title:string} tool 이 '' 면 판정 불가(표기하지 않는다)
+ */
+function vg_integrity_verify_scope(array $flagList): array {
+    $none = ['tool' => '', 'text' => '', 'title' => ''];
+    $tool = '';
+    $seen = [];        // 실제로 "다름"으로 관측된 항목 — 그 항목은 검사한 것이 확실하다.
+    foreach ($flagList as $flags) {
+        $flags = trim((string) $flags);
+        if ($flags === '' || strcasecmp($flags, 'missing') === 0) { continue; }
+        foreach (vg_integrity_diff_items($flags) as $name) { $seen[$name] = true; }
+        foreach (array_keys(VG_INTEGRITY_FLAG_SLOTS) as $i) {
+            if ($i === VG_INTEGRITY_MD5_SLOT) { continue; }
+            if (($flags[$i] ?? '?') !== '?') { $tool = 'rpm'; }
+        }
+        if ($tool !== 'rpm' && strpos($flags, '?') !== false) { $tool = 'dpkg'; }
     }
-    return $out ? implode(' · ', $out) : '차이 있음';
+    return $tool === '' ? $none : vg_integrity_scope_text($tool, array_keys($seen));
+}
+
+/* @param string[] $seen 이번 결과에서 실제로 "다름"으로 관측된 항목 이름 */
+function vg_integrity_scope_text(string $tool, array $seen = []): array {
+    $all = array_column(VG_INTEGRITY_FLAG_SLOTS, 1);   // 검사 항목 이름은 위 표 하나가 정본이다
+    if ($tool === 'dpkg') {
+        $checked = ['내용(MD5)'];
+        $skipped = array_diff($all, ['내용']);
+        $title   = 'dpkg --verify 는 설치 시 기록한 MD5 만 대조합니다. 나머지 항목은 "같다"가 아니라 "안 봤다" 입니다.';
+    } else {
+        // 제외 항목이 실제로 "다름"으로 관측됐다면 그 항목은 검사한 것이다(옛 에이전트·다른
+        //   옵션으로 돌았을 수 있다). 관측된 사실이 우선이라 제외 목록에서 뺀다 — 안 그러면
+        //   "수정시각은 검사하지 않았다" 아래 "수정시각 다름" 행이 서는 자기모순이 된다.
+        $skipped = array_diff(VG_INTEGRITY_RPM_SKIPPED, $seen);
+        $checked = array_diff($all, $skipped);
+        $title   = 'rpm -Va --nomtime --nouser --nogroup — 수집 부하를 줄이려고 수정시각·소유자·그룹은 빼고 돌립니다.';
+    }
+    // 목록 뒤에 조사를 붙이지 않는다("capability은" 같은 말이 생긴다). 항목을 이름표로 나열한다.
+    return [
+        'tool'  => $tool,
+        'text'  => '검사한 항목: ' . implode('·', $checked)
+                   . ($skipped ? ' · 검사하지 않은 항목: ' . implode('·', $skipped) : ''),
+        'title' => $title,
+    ];
 }
 
 /* 수집 단계(tb_collection_stage.stage_code) → 한글 라벨.

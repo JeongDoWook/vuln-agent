@@ -153,6 +153,7 @@ PHPUNIT_FILES=(
   generic_api_config_test.php
   finding_evidence_test.php
   db_retry_test.php
+  integrity_flags_test.php
 )
 declare -A PHPUNIT_RESULT=()
 
@@ -554,6 +555,9 @@ phase "UI 설정·감사 마스킹 단위 테스트"
 # --- UI 설정·감사 마스킹 단위 테스트 -----------------------------------------
 run_phpunit "ui_config_test.php" "ui_config" "UI 설정 범위·감사정보 마스킹 단위 테스트"
 run_phpunit "asset_grade_review_test.php" "asset_grade_review" "자산 등급 구조화 검토 단위 테스트"
+# 무결성 플래그는 화면 어휘의 정본이다 — '?' 를 "같음"으로 읽으면 **검사하지 않은 항목이
+#   정상으로 둔갑**해 결과의 범위가 왜곡된다. 자리 해석·검사범위 판정을 여기서 고정한다.
+run_phpunit "integrity_flags_test.php" "integrity_flags" "무결성 플래그 자리 해석·검사범위 판정 단위 테스트"
 
 phase "UI 공통 구조 회귀 테스트"
 # --- UI 공통 구조 회귀 테스트 -----------------------------------------------
