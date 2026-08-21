@@ -1,0 +1,67 @@
+@startuml 사이트맵-인증api
+' vuln-agent §6 웹 화면 구성 (사이트맵 · 인증) — 인증·API·무인증 엔드포인트 계열 도메인 분리본
+' 정본은 사이트맵.puml 전체다. 이 파일은 사람이 주소창에 치지 않는, 화면이 뒤에서 부르거나
+' 에이전트·외부가 부르는 엔드포인트만 추린 것(원본의 API·Xhr 두 package) — GitHub 본문 폭
+' (약 900px)에서 전체본(4489px대)이 판독 불가라 도메인별로 나눴다. 손으로 고친다 —
+' 사이트맵.puml 을 고쳤으면 이 분리본도 같이 갱신한다(README.md 사이트맵 절 참고).
+'
+' 옅게 칠한 <<ref>> 박스는 이 도메인이 아니라 다른 분리본이 다루는 화면이다.
+' 관계선이 끊기지 않게 남겼을 뿐 상세는 그 분리본을 본다.
+
+skinparam wrapWidth 230
+skinparam nodesep 4
+skinparam ranksep 16
+skinparam shadowing false
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam rectangle<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+rectangle "/ingest.php\n수집 수신 · X-Agent-Token" as ING #238636
+rectangle "/agent-poll.php ·\n/agent-progress.php\n명령 pull\n진행/heartbeat/중단 확인" as APOLL #238636
+rectangle "/export.php «assets»\n결과 내보내기 JSON/XML\n로그인 세션" as EXP #238636
+rectangle "/sbom.php «assets»\n호스트·컨테이너별 SBOM\nCycloneDX 1.5 / SPDX 2.3\n?cid= 로 컨테이너 범위\nexport.php 와 같은 세션 인증" as SBOM #238636
+rectangle "/report-download.php\n«assets»\nAI 보고서 PDF 다운로드\n(프록시 · job id 만 받음)" as RDL #238636
+
+rectangle "/agent-command-overview.php\n/agent-command-status.php\n«assets»\n수집 명령 진행 폴링 JSON" as ACMD
+rectangle "/feed_preview.php\n«connectors»\n커넥터 설정값으로\n10건 미리보기 JSON" as FPRE
+rectangle "/agent-dl.php\n에이전트 설치 스크립트\n루트 CA 배포\n(무인증 — 비밀 없음\n화이트리스트 고정)" as ADL #9e6a03
+rectangle "/report-job-create.php\n«assets»\nAI 보고서 생성 요청\n(POST · CSRF)" as RJC
+rectangle "/report-job-status.php\n«assets»\nAI 보고서 상태 조회\n(폴링 · 완료 시 열람감사)" as RJS
+
+rectangle "/discovery.php «assets»" as DISC <<ref>>
+rectangle "/host.php\n«assets 또는 findings»" as HOST <<ref>>
+rectangle "/container.php\n«assets 또는 findings»" as CTR <<ref>>
+rectangle "/assets.php «assets»" as ASSETS <<ref>>
+rectangle "/connectors.php\n«connectors»" as CONN <<ref>>
+
+APOLL ..> ING : 같은 토큰 인증
+
+DISC   ..> ADL : 미관리 IP\n설치 안내
+ASSETS ..> ADL : 설치 안내
+ASSETS ..> ACMD : 진행률 폴링
+HOST   ..> ACMD
+HOST   ..> SBOM : 호스트 SBOM
+CTR    ..> SBOM : 컨테이너 SBOM\n(?cid=)
+HOST   ..> RJC : AI 보고서\n생성 요청
+HOST   ..> RJS : 상태 폴링
+HOST   ..> RDL : PDF 다운로드
+CONN   ..> FPRE : 저장 전\n미리보기
+
+' ── 보이지 않는 배치용 선 ──────────────────────────────────
+ING   -[hidden]down- APOLL
+APOLL -[hidden]down- EXP
+EXP   -[hidden]down- SBOM
+SBOM  -[hidden]down- RDL
+RDL   -[hidden]down- ACMD
+ACMD  -[hidden]down- FPRE
+FPRE  -[hidden]down- ADL
+ADL   -[hidden]down- RJC
+RJC   -[hidden]down- RJS
+
+@enduml

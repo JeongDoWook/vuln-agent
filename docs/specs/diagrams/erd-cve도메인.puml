@@ -1,0 +1,123 @@
+@startuml
+' 자동 생성 — 손으로 고치지 않는다. 정본은 erd.puml 이고, docs/specs/gen_table_spec.py 의
+' split_erd_domains() 가 그 package "CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)" 블록만 도메인 분리한 파생물이다.
+' 갱신: SCHEMA_DOCS_UPDATE=1 tests/schema_docs_test.sh 로 erd.puml 을 먼저 갱신 →
+'      docs/specs/diagrams 에서 ./render.sh 로 이 파일과 .svg 를 함께 재생성한다.
+' 옅게 표시된 엔티티(<<ref>>)는 이 도메인이 참조만 하는 다른 도메인 소속 테이블이다 —
+' 관계선이 끊기지 않게 PK 만 남겼다. 전체 그림은 docs/specs/diagrams/erd.svg 참고.
+
+hide circle
+skinparam shadowing false
+skinparam nodesep 12
+skinparam ranksep 22
+skinparam packageStyle rectangle
+skinparam package {
+    BackgroundColor #f6f8fa
+    BorderColor #adb5bd
+    FontColor #57606a
+}
+skinparam entity {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam entity<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+package "CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)" {
+
+    entity tb_cve {
+        cve_id : string <<PK>>
+        ' 자연키 PK — 명명규칙 예외
+        --
+        cvss : decimal
+        epss : decimal
+        epss_percentile : decimal
+        is_deleted : bool
+    }
+
+    entity tb_kev_catalog {
+        cve_id : string <<PK>>
+        ' FK-as-PK — 명명규칙 예외(대리키 없음)
+        --
+        date_added : date
+        due_date : date
+    }
+
+    entity tb_cve_affected_package {
+        cve_affected_package_id : bigint <<PK>>
+        --
+        cve_id : string
+        ecosystem : string
+        package_name : string
+        fixed_version : string
+        ' UK(cve_id, package_name, ecosystem)
+    }
+
+    entity tb_package_summary {
+        package_name : string <<PK>>
+        ecosystem : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        cve_cnt : int
+        max_epss : decimal
+        max_fixed : string
+        ' 사전집계 - packages.php 전용
+    }
+
+    entity tb_package_license_summary {
+        manager : string <<PK>>
+        name : string <<PK>>
+        license : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        risk : string
+        pkg_count : int
+        updated_at : datetime
+        ' 사전집계 - packages.php?tab=lang 전용
+    }
+
+    entity tb_advisory {
+        advisory_id : bigint <<PK>>
+        --
+        source : string
+        title : string
+        url : string <<UK>>
+        published : date
+        ' 관련 CVE 는 tb_advisory_cve 정션에만 있다(옛 cve_ids CSV 드롭)
+        is_deleted : bool
+    }
+
+    entity tb_advisory_cve {
+        advisory_cve_id : bigint <<PK>>
+        --
+        advisory_id : bigint <<FK>>
+        cve_id : string
+        ' UK(advisory_id, cve_id)
+    }
+}
+
+' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
+
+    entity tb_finding <<ref>> {
+        finding_id : bigint <<PK>>
+    }
+
+tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
+tb_cve ||..o{ tb_cve_affected_package : "영향 패키지"
+tb_cve ||..o{ tb_finding : "취약점"
+tb_cve ||..o| tb_kev_catalog : "KEV 등재"
+tb_cve ||..o{ tb_advisory_cve : "CVE → 공지 역조회"
+tb_cve_affected_package }o..|| tb_package_summary : "사전집계\n(OSV 실행 시 재생성)"
+
+tb_cve -[hidden]- tb_kev_catalog
+tb_kev_catalog -[hidden]- tb_cve_affected_package
+tb_cve_affected_package -[hidden]- tb_package_summary
+tb_package_summary -[hidden]- tb_package_license_summary
+tb_package_license_summary -[hidden]- tb_advisory
+tb_advisory -[hidden]- tb_advisory_cve
+tb_advisory_cve -[hidden]- tb_finding
+
+@enduml

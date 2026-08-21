@@ -1,0 +1,89 @@
+@startuml 사이트맵-자산
+' vuln-agent §6 웹 화면 구성 (사이트맵 · 인증) — 자산 계열 도메인 분리본
+' 정본은 사이트맵.puml 전체다. 이 파일은 그 중 호스트·컨테이너·자산 목록·자산 탐색만 추린 것 —
+' GitHub 본문 폭(약 900px)에서 전체본(4489px대)이 판독 불가라 도메인별로 나눴다.
+' 손으로 고친다 — 사이트맵.puml 을 고쳤으면 이 분리본도 같이 갱신한다(README.md 사이트맵 절 참고).
+'
+' 옅게 칠한 <<ref>> 박스는 이 도메인이 아니라 다른 분리본이 다루는 화면·엔드포인트다.
+' 관계선이 끊기지 않게 남겼을 뿐 상세는 그 분리본을 본다.
+
+skinparam wrapWidth 230
+skinparam nodesep 4
+skinparam ranksep 16
+skinparam shadowing false
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam rectangle<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+rectangle "/ 대시보드" as DASH <<ref>>
+
+rectangle "/host.php\n«assets 또는 findings»\n호스트 상세 · 탭: 취약점\n설치 패키지·컨테이너 런타임\n보안 설정(CCE)·계정\n억제·수집 이력" as HOST
+rectangle "/depgraph.php\n«assets 또는 findings»\n패키지 의존성 그래프\n역추적 · 정방향 · 트리" as DEP
+rectangle "/container.php\n«assets 또는 findings»\n컨테이너 상세 · 탭: 취약점\n설치 패키지·런타임\n이미지/다이제스트/OS\n컨테이너 SBOM" as CTR
+rectangle "/assets.php «assets»\n자산 목록" as ASSETS
+rectangle "/asset-packages.php\n«assets»\n전체 자산 설치 패키지" as APKG
+rectangle "/discovery.php «assets»\n자산 탐색(섀도우 IT)\n대역 등록\n미관리/관리중/제외 IP" as DISC
+rectangle "/segment-map.php «assets»\n세그먼트 맵\n대역별 호스트 · 게이트웨이" as SEG
+
+rectangle "/findings.php «findings»" as FIND <<ref>>
+rectangle "/finding_history.php\n«findings»" as FHIST <<ref>>
+rectangle "/control.php\n«compliance 또는 findings»" as CDET <<ref>>
+rectangle "/cce-rule.php\n«catalog·compliance·findings»" as CCED <<ref>>
+rectangle "/compliance_rule.php\n«catalog·compliance·findings»" as CRULE <<ref>>
+rectangle "/sbom.php «assets»\nSBOM 다운로드" as SBOM <<ref>>
+rectangle "/report-job-create.php\n«assets»" as RJC <<ref>>
+rectangle "/report-job-status.php\n«assets»" as RJS <<ref>>
+rectangle "/report-download.php\n«assets»" as RDL <<ref>>
+rectangle "/agent-command-*.php\n«assets»" as ACMD <<ref>>
+rectangle "/agent-dl.php\n(무인증)" as ADL <<ref>>
+
+DASH --> HOST
+
+ASSETS --> APKG : 서브탭
+ASSETS --> DISC : 서브탭
+ASSETS --> SEG  : 서브탭
+DISC ..> ADL : 미관리 IP\n설치 안내
+ASSETS ..> ADL : 설치 안내
+ASSETS ..> ACMD : 진행률 폴링
+HOST   ..> ACMD
+
+HOST --> FIND
+HOST --> FHIST
+HOST --> DEP : 의존성 엣지가\n있는 자산만
+HOST --> CTR : 컨테이너 탭의\n계층 카드
+CTR  --> DEP : 그 컨테이너의\n의존성 엣지만
+HOST ..> SBOM : 호스트 SBOM
+CTR  ..> SBOM : 컨테이너 SBOM\n(?cid=)
+HOST --> CRULE : CCE 근거 배지
+CCED --> HOST : FAIL 자산의\nCCE 탭으로
+CDET --> HOST : 해당 자산의\nCCE 탭으로
+HOST ..> RJC : AI 보고서\n생성 요청
+HOST ..> RJS : 상태 폴링
+HOST ..> RDL : PDF 다운로드
+
+' ── 보이지 않는 배치용 선 ──────────────────────────────────
+' 참조 박스(<<ref>>)가 많아 기본 배치기가 옆으로 늘어놓는다 — 한 열로 접는다.
+ASSETS -[hidden]down- APKG
+APKG   -[hidden]down- DISC
+DISC   -[hidden]down- SEG
+HOST   -[hidden]down- CTR
+CTR    -[hidden]down- DEP
+DEP    -[hidden]down- FIND
+FIND   -[hidden]down- FHIST
+FHIST  -[hidden]down- CDET
+CDET   -[hidden]down- CCED
+CCED   -[hidden]down- CRULE
+CRULE  -[hidden]down- SBOM
+SBOM   -[hidden]down- RJC
+RJC    -[hidden]down- RJS
+RJS    -[hidden]down- RDL
+RDL    -[hidden]down- ACMD
+ACMD   -[hidden]down- ADL
+
+@enduml

@@ -1,0 +1,113 @@
+@startuml
+' 자동 생성 — 손으로 고치지 않는다. 정본은 erd.puml 이고, docs/specs/gen_table_spec.py 의
+' split_erd_domains() 가 그 package "자산 탐색 — 관리 대역 스윕(섀도우 IT)" 블록만 도메인 분리한 파생물이다.
+' 갱신: SCHEMA_DOCS_UPDATE=1 tests/schema_docs_test.sh 로 erd.puml 을 먼저 갱신 →
+'      docs/specs/diagrams 에서 ./render.sh 로 이 파일과 .svg 를 함께 재생성한다.
+' 옅게 표시된 엔티티(<<ref>>)는 이 도메인이 참조만 하는 다른 도메인 소속 테이블이다 —
+' 관계선이 끊기지 않게 PK 만 남겼다. 전체 그림은 docs/specs/diagrams/erd.svg 참고.
+
+hide circle
+skinparam shadowing false
+skinparam nodesep 12
+skinparam ranksep 22
+skinparam packageStyle rectangle
+skinparam package {
+    BackgroundColor #f6f8fa
+    BorderColor #adb5bd
+    FontColor #57606a
+}
+skinparam entity {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam entity<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+package "자산 탐색 — 관리 대역 스윕(섀도우 IT)" {
+
+    entity tb_discovery_target {
+        discovery_target_id : bigint <<PK>>
+        --
+        cidr : string <<UK>>
+        ports : string
+        ' NULL = 기본 포트 세트
+        label : string
+        enabled : bool
+        created_by : bigint
+        ' tb_user.user_id - FK 없음(감사 관례)
+    }
+
+    entity tb_discovery_run {
+        discovery_run_id : bigint <<PK>>
+        --
+        discovery_target_id : bigint <<FK>>
+        status : enum
+        ' pending running done failed
+        started_at : datetime
+        finished_at : datetime
+        ip_total/ip_alive : int
+        port_checked/open_total : int
+        ' 닫힌 포트는 저장 안 함 - 집계로만
+        elapsed_seconds : decimal
+        error_text : text
+    }
+
+    entity tb_discovered_asset {
+        discovered_asset_id : bigint <<PK>>
+        --
+        discovery_target_id : bigint <<FK>>
+        ip : string
+        ' UK(discovery_target_id, ip) - 대역 기준 누적
+        hostname : string
+        ' 역DNS(PTR). NULL = 이번에 못 찾음
+        host_id : bigint <<FK>>
+        ' NULL = 섀도우 IT 후보
+        state : enum
+        ' new known ignored
+        first_seen : datetime
+        last_seen : datetime
+        last_run_id : bigint
+    }
+
+    entity tb_discovered_port {
+        discovered_port_id : bigint <<PK>>
+        --
+        discovered_asset_id : bigint <<FK>>
+        discovery_run_id : bigint <<FK>>
+        port : int
+        proto : string
+        ' UK(asset, run, port, proto)
+        service_hint : string
+        ' 포트 관례에서 유추 - 추측이다
+        banner : string
+        ' HTTP Server 헤더 또는 TLS CN
+    }
+}
+
+' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
+
+    entity tb_host <<ref>> {
+        host_id : bigint <<PK>>
+    }
+
+    entity tb_host_address <<ref>> {
+        host_address_id : bigint <<PK>>
+    }
+
+tb_discovery_target ||--o{ tb_discovery_run : "대역 스윕 실행 이력"
+tb_discovery_target ||--o{ tb_discovered_asset : "발견한 IP\n(대역 기준 누적)"
+tb_discovered_asset ||--o{ tb_discovered_port : "열린 포트만"
+tb_discovery_run ||--o{ tb_discovered_port : "그 실행에서\n열려 있던 포트"
+tb_host |o--o{ tb_discovered_asset : "IP 대조로 붙은\n기존 자산(없으면 NULL)"
+tb_host_address }o..o| tb_discovered_asset : "IP 값 대조 —\n두 파이프라인의 유일한 접점"
+
+tb_discovery_target -[hidden]- tb_discovery_run
+tb_discovery_run -[hidden]- tb_discovered_asset
+tb_discovered_asset -[hidden]- tb_discovered_port
+tb_discovered_port -[hidden]- tb_host
+tb_host -[hidden]- tb_host_address
+
+@enduml

@@ -1,0 +1,151 @@
+@startuml
+' 자동 생성 — 손으로 고치지 않는다. 정본은 erd.puml 이고, docs/specs/gen_table_spec.py 의
+' split_erd_domains() 가 그 package "피드 운영 · 인증 · 감사" 블록만 도메인 분리한 파생물이다.
+' 갱신: SCHEMA_DOCS_UPDATE=1 tests/schema_docs_test.sh 로 erd.puml 을 먼저 갱신 →
+'      docs/specs/diagrams 에서 ./render.sh 로 이 파일과 .svg 를 함께 재생성한다.
+' 옅게 표시된 엔티티(<<ref>>)는 이 도메인이 참조만 하는 다른 도메인 소속 테이블이다 —
+' 관계선이 끊기지 않게 PK 만 남겼다. 전체 그림은 docs/specs/diagrams/erd.svg 참고.
+
+hide circle
+skinparam shadowing false
+skinparam nodesep 12
+skinparam ranksep 22
+skinparam packageStyle rectangle
+skinparam package {
+    BackgroundColor #f6f8fa
+    BorderColor #adb5bd
+    FontColor #57606a
+}
+skinparam entity {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam entity<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+package "피드 운영 · 인증 · 감사" {
+
+    entity tb_feed_connector {
+        feed_connector_id : bigint <<PK>>
+        --
+        connector_type : string
+        connection_json : json
+        schedule_json : json
+        enabled : bool
+        next_run_at : datetime
+        is_deleted : bool
+    }
+
+    entity tb_feed_collection_log {
+        feed_collection_log_id : bigint <<PK>>
+        --
+        feed_connector_id : bigint <<FK>>
+        status : string
+        items_upserted : int
+    }
+
+    entity tb_user {
+        user_id : bigint <<PK>>
+        --
+        username : string <<UK>>
+        password_hash : string
+        role : string
+        is_deleted : bool
+    }
+
+    entity tb_role_permission {
+        role_permission_id : int <<PK>>
+        --
+        role : string
+        menu_code : string
+        allowed : bool
+    }
+
+    entity tb_agent_token {
+        agent_token_id : bigint <<PK>>
+        --
+        host_fqdn : string
+        token_hash : string <<UK>>
+        is_revoked : bool
+    }
+
+    entity tb_agent_replay_nonce {
+        agent_token_id : bigint <<PK>><<FK>>
+        nonce_hash : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        expires_at : datetime
+    }
+
+    entity tb_activity_log {
+        activity_log_id : bigint <<PK>>
+        --
+        user_id : bigint
+        scope : string
+        scope_id : bigint
+        activity_type : string
+        subject : string
+        ' 처리 대상 자원 - ISMS-P 5요소
+        action : string
+        ' READ CREATE UPDATE DELETE EXPORT LOGIN EXECUTE OTHER
+        data : json
+        ip_address : string
+    }
+
+    entity tb_report_job {
+        report_job_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        external_job_id : bigint
+        ' 외부 API 가 발급한 job 번호 - 우리 PK 와 다른 값
+        status : string
+        ' 외부 어휘 원문 - PENDING PROCESSING SUCCESS FAILED
+        result : text
+        ' 결과 본문. 파일 링크면 우리 프록시가 대신 받아 내려준다
+        error_message : string
+        requested_user_id : bigint <<FK>>
+        ' 계정이 지워지면 NULL(이력은 남긴다)
+        external_created_at : datetime
+        external_finished_at : datetime
+    }
+
+    entity tb_setting {
+        setting_id : bigint <<PK>>
+        --
+        setting_key : string <<UK>>
+        setting_value : string
+        description : string
+    }
+}
+
+' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
+
+    entity tb_asset_grade_review <<ref>> {
+        host_id : bigint <<PK>><<FK>>
+    }
+
+    entity tb_host <<ref>> {
+        host_id : bigint <<PK>>
+    }
+
+tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
+tb_user |o--o{ tb_asset_grade_review : "등급 검토자"
+tb_agent_token ||--o{ tb_agent_replay_nonce : "소진된 nonce"
+tb_host ||--o{ tb_report_job : "AI 보고서 작업\n(외부 작업큐의 사본)"
+tb_user |o--o{ tb_report_job : "보고서 요청자\n(계정 삭제 시 NULL)"
+
+tb_feed_connector -[hidden]- tb_feed_collection_log
+tb_feed_collection_log -[hidden]- tb_user
+tb_user -[hidden]- tb_role_permission
+tb_role_permission -[hidden]- tb_agent_token
+tb_agent_token -[hidden]- tb_agent_replay_nonce
+tb_agent_replay_nonce -[hidden]- tb_activity_log
+tb_activity_log -[hidden]- tb_report_job
+tb_report_job -[hidden]- tb_setting
+tb_setting -[hidden]- tb_asset_grade_review
+tb_asset_grade_review -[hidden]- tb_host
+
+@enduml

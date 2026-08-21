@@ -1,0 +1,185 @@
+@startuml
+' 자동 생성 — 손으로 고치지 않는다. 정본은 erd.puml 이고, docs/specs/gen_table_spec.py 의
+' split_erd_domains() 가 그 package "벤더·기준 카탈로그 — 배포판·커널·보안설정 기준" 블록만 도메인 분리한 파생물이다.
+' 갱신: SCHEMA_DOCS_UPDATE=1 tests/schema_docs_test.sh 로 erd.puml 을 먼저 갱신 →
+'      docs/specs/diagrams 에서 ./render.sh 로 이 파일과 .svg 를 함께 재생성한다.
+' 옅게 표시된 엔티티(<<ref>>)는 이 도메인이 참조만 하는 다른 도메인 소속 테이블이다 —
+' 관계선이 끊기지 않게 PK 만 남겼다. 전체 그림은 docs/specs/diagrams/erd.svg 참고.
+
+hide circle
+skinparam shadowing false
+skinparam nodesep 12
+skinparam ranksep 22
+skinparam packageStyle rectangle
+skinparam package {
+    BackgroundColor #f6f8fa
+    BorderColor #adb5bd
+    FontColor #57606a
+}
+skinparam entity {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam entity<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+package "벤더·기준 카탈로그 — 배포판·커널·보안설정 기준" {
+
+    entity tb_debian_tracker {
+        debian_tracker_id : bigint <<PK>>
+        --
+        release_codename : string
+        pkg_name : string
+        is_binary : bool
+        cve_id : string
+        fixed_version : string
+        other_versions : string
+        ' UK(release_codename, pkg_name, is_binary, cve_id)
+    }
+
+    entity tb_ubuntu_oval {
+        ubuntu_oval_id : bigint <<PK>>
+        --
+        release_codename : string
+        pkg_name : string
+        cve_id : string
+        fixed_version : string
+        ' NULL 이면 아직 수정본 없음(조치 불가)
+    }
+
+    entity tb_vendor_errata {
+        vendor_errata_id : bigint <<PK>>
+        --
+        vendor : string
+        ' redhat almalinux
+        release_major : string
+        pkg_name : string
+        cve_id : string
+        fixed_evr : string
+        advisory : string
+    }
+
+    entity tb_vendor_unfixed {
+        vendor_unfixed_id : bigint <<PK>>
+        --
+        vendor : string
+        release_major : string
+        component : string
+        ' 소스 패키지 단위
+        cve_id : string
+        fix_state : string
+        ' 영향받음 고치지않음 조사중 지원종료
+    }
+
+    entity tb_kernel_cve {
+        cve_id : string <<PK>>
+        ' FK-as-PK — 명명규칙 예외
+        --
+        introduced_version : string
+        mainline_fixed : string
+    }
+
+    entity tb_kernel_cve_fix {
+        cve_id : string <<PK>><<FK>>
+        stream : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        fixed_version : string
+    }
+
+    entity tb_compliance_rule {
+        compliance_rule_id : bigint <<PK>>
+        --
+        rule_id : string <<UK>>
+        ' SSG 룰 문자열 ID
+        title : string
+        severity : string
+        refs_json : json
+        ' CIS NIST STIG PCI-DSS 참조
+    }
+
+    entity tb_control_mapping {
+        control_mapping_id : bigint <<PK>>
+        --
+        rule_code : string
+        ' tb_cce_finding.code
+        framework : string
+        ' KISA_U ISMS_P N2SF
+        control_id : string
+        control_name : string
+        ' UK(rule_code, framework, control_id)
+    }
+
+    entity tb_control_catalog {
+        control_catalog_id : bigint <<PK>>
+        --
+        framework : string
+        ' KISA_U (지금은 이 하나)
+        control_id : string
+        ' UK(framework, control_id)
+        control_name : string
+        ' 출처로 확인 못 한 항목은 NULL
+        category : string
+        severity : string
+        sort_order : int
+    }
+
+    entity tb_control_guide {
+        control_guide_id : bigint <<PK>>
+        --
+        framework : string
+        control_id : string
+        ' UK(framework, control_id)
+        description : text
+        ' 이 통제가 무엇을 요구하는가
+    }
+
+    entity tb_cce_rule_guide {
+        cce_rule_guide_id : bigint <<PK>>
+        --
+        rule_code : string <<UK>>
+        summary : string
+        remediation : text
+        ' 조치 방법(파일·지시어 수준)
+    }
+}
+
+' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
+
+    entity tb_cce_finding <<ref>> {
+        cce_finding_id : bigint <<PK>>
+    }
+
+    entity tb_finding <<ref>> {
+        finding_id : bigint <<PK>>
+    }
+
+tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별\n조치버전"
+tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"
+tb_cce_finding }o..o{ tb_control_mapping : "기준별 통제\n(rule_code = code)"
+tb_control_mapping }o..o| tb_control_guide : "통제 설명\n(framework, control_id)"
+tb_control_mapping }o..o| tb_cce_rule_guide : "룰 조치(rule_code)"
+tb_control_catalog |o..o{ tb_control_mapping : "기준 전체(분모) ↔\n우리가 덮는 항목(분자)"
+tb_debian_tracker }o..|| tb_finding : "데비안 백포트 판정"
+tb_ubuntu_oval }o..|| tb_finding : "우분투 OVAL 판정"
+tb_vendor_errata }o..|| tb_finding : "RHEL 계열 조치 EVR"
+tb_vendor_unfixed }o..|| tb_finding : "조치 불가(no_fix)"
+tb_kernel_cve }o..|| tb_finding : "커널 CVE 판정"
+
+tb_debian_tracker -[hidden]- tb_ubuntu_oval
+tb_ubuntu_oval -[hidden]- tb_vendor_errata
+tb_vendor_errata -[hidden]- tb_vendor_unfixed
+tb_vendor_unfixed -[hidden]- tb_kernel_cve
+tb_kernel_cve -[hidden]- tb_kernel_cve_fix
+tb_kernel_cve_fix -[hidden]- tb_compliance_rule
+tb_compliance_rule -[hidden]- tb_control_mapping
+tb_control_mapping -[hidden]- tb_control_catalog
+tb_control_catalog -[hidden]- tb_control_guide
+tb_control_guide -[hidden]- tb_cce_rule_guide
+tb_cce_rule_guide -[hidden]- tb_cce_finding
+tb_cce_finding -[hidden]- tb_finding
+
+@enduml
