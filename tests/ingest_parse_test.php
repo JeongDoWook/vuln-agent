@@ -197,6 +197,43 @@ $attached = vg_ingest_attach_pkg_license(
 $eq('attach: 매칭된 라이선스 부여', $attached[0][3] ?? null, 'Apache-2.0');
 $eq('attach: 미매칭은 빈 문자열', $attached[1][3] ?? null, '');
 
+// ── attach: 버전이 어긋나도 라이선스를 잃지 않는다(이름 단위 폴백) ──────────
+//   langRows 는 `mgr|name` 으로 dedup 되지만 라이선스 스트림은 `mgr|name|version` 단위다.
+//   에이전트가 같은 패키지를 두 소스에서 다른 버전으로 내면(시스템 gemspec + 앱 Gemfile.lock 등)
+//   dedup 에서 살아남은 버전과 라이선스가 묶인 버전이 어긋나 라이선스가 조용히 미상이 됐다.
+$licMix = vg_ingest_parse_pkg_license(
+    "gem|json|2.6.3|Ruby
+"              // 설치본 gemspec — 라이선스 있음
+    . "pip|urllib3|1.26.18|MIT
+"        // venv METADATA — 라이선스 있음
+    // 같은 이름인데 버전마다 라이선스가 다른 경우 → 폴백을 포기해야 한다.
+    . "npm|dual|1.0.0|MIT
+"
+    . "npm|dual|2.0.0|Apache-2.0
+"
+    // 같은 이름·다른 버전이지만 라이선스 값은 같은 경우 → 폴백해도 안전하다.
+    . "composer|same/pkg|1.0.0|MIT
+"
+    . "composer|same/pkg|2.0.0|MIT"
+);
+$attachedMix = vg_ingest_attach_pkg_license(
+    [
+        ['gem', 'json', '2.6.3'],          // ① 버전 정확 일치
+        ['pip', 'urllib3', '2.0.7'],       // ② 버전 불일치(설치본 1.26.18 이 dedup 에서 짐) → 폴백
+        ['npm', 'dual', '3.0.0'],          // ③ 같은 이름에 서로 다른 라이선스 둘 → 붙이지 않는다
+        ['composer', 'same/pkg', '3.0.0'], // ④ 같은 이름에 같은 라이선스만 → 폴백으로 붙는다
+        ['gem', 'nowhere', '1.0.0'],       // ⑤ 라이선스 스트림에 아예 없음 → '' 유지
+    ],
+    $licMix
+);
+$eq('attach: 버전 일치는 그대로 붙는다', $attachedMix[0][3] ?? null, 'Ruby');
+$eq('attach: 버전 불일치는 이름 폴백으로 붙는다', $attachedMix[1][3] ?? null, 'MIT');
+$eq('attach: 같은 이름에 라이선스가 여럿이면 붙이지 않는다(미탐 우선)', $attachedMix[2][3] ?? null, '');
+$eq('attach: 같은 이름에 라이선스가 하나뿐이면 폴백한다', $attachedMix[3][3] ?? null, 'MIT');
+$eq('attach: 라이선스 스트림에 없으면 빈 문자열', $attachedMix[4][3] ?? null, '');
+$eq('attach: 반환 구조는 4필드 그대로', count($attachedMix[0]), 4);
+$eq('attach: 앞 3필드는 langRows 원본 그대로', array_slice($attachedMix[1], 0, 3), ['pip', 'urllib3', '2.0.7']);
+
 // ── 노출 상관 ──────────────────────────────────────────────────────────────
 $exp = vg_ingest_parse_exposures(
     "pid|proc|proto|bind|port|scope|exe_pkg|loaded_pkgs\n"
