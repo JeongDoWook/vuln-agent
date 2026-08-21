@@ -40,7 +40,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.16"
+SCRIPT_VERSION="3.17"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
@@ -1679,18 +1679,59 @@ emit_gemfile_lock() {
   ' "$1"
 }
 
-# vendored gem 의 `specifications/이름-버전[-플랫폼].gemspec` 파일명을 이름·버전으로 가른다.
-#   gemspec 본문은 루비 코드라 제대로 읽으려면 루비가 필요하다 → 파일명만 본다(KISS).
+# 설치된 gem 의 gemspec 본문에서 라이선스를 뽑는다. 출력: 한 줄(없으면 아무것도 내지 않는다).
+#   ruby:3.2-slim 의 specifications/*.gemspec 실측 형식:
+#     s.licenses = ["MIT".freeze]                          (복수 — 배열)
+#     s.licenses = ["Ruby".freeze, "BSD-2-Clause".freeze]  (복수 — 값 여럿)
+#     s.license  = "MIT".freeze                            (단수 — 문자열)
+#   · 변수명이 `s.` 라는 보장이 없다(`spec.`·`gem.`) → 앞부분에 기대지 않고 `licenses? =` 만 기준으로 잡는다.
+#   · `.freeze` 와 따옴표를 뗀다. 값이 여럿이면 " OR " 로 잇는다 — composer 분기가 같은 상황을
+#     `join(" OR ")` 로 처리하는 것과 같은 관례다(DRY). `MIT OR Apache-2.0` 같은 복합 표현식은
+#     중앙 vg_license_classify()(server/src/license_risk.php)가 괄호 벗기기·OR/AND/WITH 토큰화로
+#     이미 읽는다 → **에이전트에는 매핑표를 두지 않는다**(pip 라이선스와 같은 원칙).
+#   · 따옴표가 없는 값(변수·메서드 호출)은 값을 알 수 없으니 버린다. SPDX 식별자 모양을 벗어난
+#     값도 버린다 — 확신이 안 서면 내지 않는다(이름·버전 파싱과 같은 태도).
+#   · 남는 값이 하나도 없으면 아무것도 내지 않는다. 빈 문자열을 내면 fd 3 에 빈 라이선스가 쌓인다.
+gemspec_license() {
+  awk '
+    /(^|[^A-Za-z0-9_])licenses?[ \t]*=/ {
+      v = $0
+      sub(/^.*licenses?[ \t]*=[ \t]*/, "", v)      # `= ` 오른쪽만 남긴다
+      if (v !~ /^[["]/) next                       # 값이 배열·문자열로 시작하지 않으면 라이선스 선언이 아니다
+      gsub(/\.freeze/, "", v)
+      sub(/^\[/, "", v); sub(/\][ \t]*$/, "", v)   # 배열이면 대괄호를 벗긴다
+      n = split(v, a, ","); out = ""
+      for (i = 1; i <= n; i++) {
+        s = a[i]; gsub(/^[ \t]+|[ \t]+$/, "", s)
+        if (s !~ /"/) continue                     # 따옴표 없는 값은 리터럴이 아니다
+        gsub(/"/, "", s); gsub(/^[ \t]+|[ \t]+$/, "", s)
+        if (s ~ /^[A-Za-z0-9][A-Za-z0-9.+_ -]*$/) out = (out == "" ? s : out " OR " s)
+      }
+      if (out != "") { print out; exit }
+    }
+  ' "$1"
+}
+
+# vendored gem 의 `specifications/이름-버전[-플랫폼].gemspec` 을 읽는다.
+#   출력: stdout 으로 `gem|이름|버전`, 라이선스를 찾으면 fd 3 으로 `gem|이름|버전|라이선스`
+#   (pip·composer 라이선스와 같은 채널·같은 4필드 포맷이다).
+#   $1=파일명(basename) · $2=파일 경로(선택 — 없으면 라이선스는 보지 않는다).
+#   이름·버전은 여전히 **파일명만** 본다 — 본문은 루비 코드라 제대로 읽으려면 루비가 필요하다(KISS).
 #   왼쪽부터 조각을 훑다가 "버전처럼 생긴 첫 조각"(숫자로 시작, 점으로만 이어짐)을 버전으로 보고
 #   그 뒤는 플랫폼 접미사로 버린다. 확신이 안 서면 아무것도 내지 않는다 — 틀린 값은 없는 값보다 나쁘다.
+#   라이선스만은 본문에 한 줄로 박혀 있어 루비 없이도 읽힌다 → gemspec_license 로 뽑는다.
 emit_gemspec_name() {
-  local rest="${1%.gemspec}" name="" seg ver plat
+  local rest="${1%.gemspec}" path="${2:-}" name="" seg ver plat lic
   while [ -n "$rest" ]; do
     case "$rest" in *-*) seg="${rest%%-*}" ;; *) seg="$rest" ;; esac
     if [ -n "$name" ] && [[ "$seg" =~ ^[0-9]+(\.[0-9A-Za-z]+)*$ ]]; then
       ver="$seg"; plat="${rest#"$seg"}"; plat="${plat#-}"
       if [ -z "$plat" ] || [[ "$plat" =~ ^[0-9A-Za-z_.-]+$ ]]; then
         printf 'gem|%s|%s\n' "${name%-}" "$ver"
+        if [ -n "$path" ] && [ -r "$path" ]; then
+          lic=$(gemspec_license "$path")
+          [ -n "$lic" ] && printf 'gem|%s|%s|%s\n' "${name%-}" "$ver" "$lic" >&3
+        fi
       fi
       return 0
     fi
@@ -1824,7 +1865,8 @@ collect_project_deps_installed() {
         */METADATA|*.egg-info/PKG-INFO) name=$(sed -n 's/^Name: //p' "$f"|head -1);ver=$(sed -n 's/^Version: //p' "$f"|head -1);lic=$(pip_meta_license "$f");[ -n "$name" ]&&[ -n "$ver" ]&&{ printf 'pip|%s|%s\n' "$name" "$ver"; [ -n "$lic" ]&&printf 'pip|%s|%s|%s\n' "$name" "$ver" "$lic" >&3; };;
         */Cargo.lock) awk 'BEGIN{n=""}/^name = /{gsub(/^name = "|"$/,"",$0);n=$0}/^version = /{gsub(/^version = "|"$/,"",$0);if(n!="")print "cargo|"n"|"$0}' "$f";;
         */Gemfile.lock) emit_gemfile_lock "$f";;
-        */specifications/*.gemspec) emit_gemspec_name "$(basename "$f")";;
+        # 이름·버전은 파일명에서, 라이선스는 본문에서 읽는다 → 파일 경로도 함께 넘긴다.
+        */specifications/*.gemspec) emit_gemspec_name "$(basename "$f")" "$f";;
         */package-lock.json) have jq&&jq -r '.packages//{}|to_entries[]|select(.value.name and .value.version)|"npm|\(.value.name)|\(.value.version)"' "$f" 2>/dev/null;;
         # yarn/pnpm 을 쓰는 프로젝트엔 package-lock.json 이 아예 없다 — 이 둘이 없으면 앱 의존성이
         #   통째로 0건이 된다(npm ls -g 는 전역 설치만 보므로 대신하지 못한다).
@@ -2187,8 +2229,9 @@ export -f go_deps_from_binary collect_go_binary_deps
 #   stderr 를 2>/dev/null 로 버리는 호출부라 조용히 "그 소스만 0건"이 된다 — 테스트는
 #   같은 셸에서 함수를 부르므로 못 잡는다(#735 가 그렇게 통과하고 운영에서 pip 라이선스가 비었다).
 #   collect_project_deps_installed 가 부르는 헬퍼: pip_meta_license(라이선스) ·
-#   emit_gemfile_lock/emit_gemspec_name(gem) · emit_yarn_lock/emit_pnpm_lock(node) · emit_poetry_lock(pip).
-export -f pip_meta_license emit_gemfile_lock emit_gemspec_name emit_yarn_lock emit_pnpm_lock emit_poetry_lock
+#   emit_gemfile_lock/emit_gemspec_name/gemspec_license(gem) · emit_yarn_lock/emit_pnpm_lock(node) ·
+#   emit_poetry_lock(pip). emit_gemspec_name 이 다시 gemspec_license 를 부르므로 그것도 함께 내보낸다.
+export -f pip_meta_license emit_gemfile_lock emit_gemspec_name gemspec_license emit_yarn_lock emit_pnpm_lock emit_poetry_lock
 # 패스 하나를 "남은 예산 안에서만" VG_INV 에 덧붙인다. 한 스트림으로 이어 붙여 통째로 head -c 하면
 #   앞 패스가 큰 호스트에서 뒤 패스가 통째로 잘리므로 패스별로 자른다. head -c 가 줄 가운데를
 #   자를 수 있어(다음 패스 첫 줄과 붙어 엉뚱한 좌표가 된다) 개행도 채운다.
