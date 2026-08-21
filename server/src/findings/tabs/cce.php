@@ -8,27 +8,28 @@
 ?>
   <?php // 판정 불가(NA) 해설 배너는 걷었다 — 건수는 바로 아래 결과 카드(NA)와 범례가 갖고,
         //   그 카드를 누르면 NA 만 걸러 볼 수 있다(배너는 같은 수를 문장으로 되풀이했다). ?>
-  <div class="card">
-    <strong>판정 구성</strong>
-    <div class="card__body">
-    <?php
-    // NA 는 PASS 와 절대 같은 색을 쓰지 않는다 — 회색(판정 불가)과 초록(양호)은 다른 사실이다.
-    $cceCardTone  = ['FAIL' => 'high', 'NA' => 'muted', 'PASS' => 'low'];
-    $cceCardLabel = ['FAIL' => '위반(FAIL)', 'NA' => '판정 불가(NA)', 'PASS' => '양호(PASS)'];
-    $cceSegments = [];
-    foreach (['FAIL', 'NA', 'PASS'] as $rk) {
-        $cceSegments[] = [
-            'label'    => $cceCardLabel[$rk],
-            'value'    => (int) $cceResultCounts[$rk],
-            'tone'     => $cceCardTone[$rk],
-            'href'     => vg_qs(['res' => $res === $rk ? 'ALL' : $rk, 'page' => 1]),
-            'selected' => $res === $rk,
-        ];
-    }
-    vg_donut_kpi('판정 구성', $cceSegments, ['center_label' => '점검 전체']);
-    ?>
-    </div>
-  </div>
+  <?php
+  // NA 는 PASS 와 절대 같은 색을 쓰지 않는다 — 회색(판정 불가)과 초록(양호)은 다른 사실이다.
+  $cceCardTone  = ['FAIL' => 'high', 'NA' => 'muted', 'PASS' => 'low'];
+  $cceCardLabel = ['FAIL' => '위반(FAIL)', 'NA' => '판정 불가(NA)', 'PASS' => '양호(PASS)'];
+  $cceSegments = [];
+  foreach (['FAIL', 'NA', 'PASS'] as $rk) {
+      $cceSegments[] = [
+          'label'    => $cceCardLabel[$rk],
+          'value'    => (int) $cceResultCounts[$rk],
+          'tone'     => $cceCardTone[$rk],
+          'href'     => vg_qs(['res' => $res === $rk ? 'ALL' : $rk, 'page' => 1]),
+          'selected' => $res === $rk,
+      ];
+  }
+  /* 이 탭의 요약은 이야기가 하나다(판정 구성) — 그래서 카드도 하나다. 카드 문법은 CVE 탭과
+   *   같은 vg_card() 로 그린다(제목 자리·배지 자리가 탭마다 갈리지 않게).
+   *   도넛 하나짜리 카드가 화면 폭을 통째로 쓰면 라벨과 값이 카드 양끝으로 벌어져 한 줄로
+   *   안 읽힌다 — 폭 상한은 app.css 의 `.card__body > .donut-kpi:only-child` 가 준다. */
+  vg_card('판정 구성', static function () use ($cceSegments): void {
+      vg_donut_kpi('판정 구성', $cceSegments, ['center_label' => '점검 전체']);
+  }, ['badge' => '점검 ' . number_format(array_sum($cceResultCounts)) . '건']);
+  ?>
 
   <?php
   // 툴바 구성은 세 탭이 같다: 자산 → 등급 → (카드로 고른 필터를 hidden 으로) → 검색.

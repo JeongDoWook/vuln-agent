@@ -114,19 +114,29 @@ function vg_host_render_hero(array $ctx): void {
   ?>
 
   <?php
-  /* 이 자산의 위험을 두 조각으로 세운다 — 왼쪽·오른쪽이 **같은 어휘**(스와치·라벨·값·링크)다.
-   *   왼쪽(고리 + 목록): **등급 구성** — 부분/전체라 고리로 그릴 수 있는 유일한 값이다.
-   *   오른쪽(목록만): 등급 밖의 축(악용·노출·설정). 예전엔 여기가 네모 카드 격자(vg_kpi_strip)라
+  /* 이 자산의 위험을 **카드 두 장**으로 세운다 — 왼쪽·오른쪽이 같은 어휘(스와치·라벨·값·링크)다.
+   *   왼쪽: **등급 구성** — 부분/전체라 고리로 그릴 수 있는 유일한 값이다.
+   *   오른쪽: **등급 밖의 신호**(악용·노출·설정). 예전엔 여기가 네모 카드 격자(vg_kpi_strip)라
    *     한 줄에 어휘가 둘이었다 — 사용자가 "오른쪽 왼쪽 동일하게" 라고 지적한 그것이다. 지금은
    *     **같은 vg_donut_kpi() 를 arc=false 로** 불러 목록만 남긴다(마크업·색·링크 계약이 한 벌).
+   *
+   *   왜 카드 두 장인가 — 예전엔 둘이 **제목 없는 카드 하나** 안에 .kpi-donuts 격자로 붙어
+   *     있었다. 성격이 다른 두 이야기인데 경계가 없었고, vg_donut_kpi() 의 $title 은 SVG 의
+   *     aria-label 이라 화면에는 어느 쪽 제목도 안 그려졌다(탐지 결과 CVE 탭과 똑같은 문제).
+   *     한 카드 한 이야기 · 제목 필수 규약대로 나눈다(규약 정본은 vg_card() 주석).
+   *     칸을 반반으로 주던 .kpi-donuts 의 자리는 .card-row 가 그대로 이어받는다 —
+   *     둘 다 auto-fit 격자라 좁은 폭에서 위아래로 서는 동작도 같다.
+   *     조회는 한 줄도 안 바뀐다 — 다섯 값 모두 host.php 가 이미 세어 넘긴 것이다.
    *
    *   왜 오른쪽엔 고리를 안 그리나 — 네 값을 하나씩 실측해 정했다:
    *     · 넷은 **모집단이 서로 다르다.** KEV·외부노출은 tb_finding, 노출 소켓은 tb_exposure,
    *       설정 취약은 tb_cce_finding 이다. 한 고리에 넣으면 합이 거짓말이 된다.
    *     · 그렇다고 값마다 도넛을 하나씩 만들면 조각 하나짜리 고리가 **꽉 찬 원**(=100%)으로
    *       읽힌다(#728 이 대시보드 KEV 에서 내린 판단).
-   *     그래서 그림만 포기하고 어휘는 왼쪽에 맞춘다. 고리 자리에는 이 묶음이 무엇인지 말하는
-   *     상태 뱃지가 선다 — vg_donut_kpi 의 'none'(빈 고리를 세우지 않으려고 이미 있던 것)이다.
+   *     그래서 그림만 포기하고 어휘는 왼쪽에 맞춘다. 고리 자리에는 **왜 고리가 없는지**를
+   *     말하는 뱃지가 선다 — vg_donut_kpi 의 'none'(빈 고리를 세우지 않으려고 이미 있던 것)이다.
+   *     그 뱃지가 예전엔 '등급 밖의 신호' 라고 이름을 되풀이했는데, 이제 이름은 카드 제목이
+   *     갖는다(같은 문구를 한 카드 안에서 두 번 적지 않는다 — vg_donut_kpi 주석).
    *
    *   '외부노출 취약점' 은 지우지 않고 남긴다. 운영 실측에서 이 값이 HIGH 와 같은 수(142)라
    *     중복처럼 보이지만 **같은 집계가 아니다** — 등급이 노출 상태에서 파생될 뿐이다
@@ -136,16 +146,13 @@ function vg_host_render_hero(array $ctx): void {
    *
    *   $counts 는 히어로 톤·'최고 위험도' 뱃지도 계속 쓴다.
    *   왼쪽 고리는 조치 대상(C·H·M)만 그린다 — 이 자산 실측이 LOW 4,481 : HIGH 186 : MEDIUM 153
-   *     이라 같이 그리면 고리가 통째로 회색이었다(vg_sev_donut 주석). LOW 는 목록에 남는다.
-   *
-   *   .split(320px + 나머지) 대신 .kpi-donuts 로 **반반**을 준다: .split 은 오른쪽이 남는 폭을
-   *     전부 가져간다(1440px 실측). 반반이면 도넛과 지표가 같은 무게로 선다. */
+   *     이라 같이 그리면 고리가 통째로 회색이었다(vg_sev_donut 주석). LOW 는 목록에 남고,
+   *     고리가 안 세는 전체 건수는 카드 제목 옆 배지가 갖는다. */
+  $heroFindings = '/findings.php?scan_id=' . (int) $scan['scan_id'];
   ?>
-  <div class="card">
-    <div class="card__body">
-      <div class="kpi-donuts">
-      <?php
-      $heroFindings = '/findings.php?scan_id=' . (int) $scan['scan_id'];
+  <div class="card-row">
+  <?php
+  vg_card('등급 구성', static function () use ($counts): void {
       vg_sev_donut($counts, 132, [
           'title' => '이 자산의 등급 구성',
           'href'  => vg_qs(['tab' => 'vuln', 'page' => null, 'q' => null]),
@@ -153,9 +160,16 @@ function vg_host_render_hero(array $ctx): void {
               'href' => vg_qs(['tab' => 'vuln', 'sev' => $heroSev, 'page' => null, 'q' => null]),
           ],
       ]);
-      /* 링크는 카드 시절 그대로다 — 이 줄은 각 축의 **진입점**이기도 하다(눌러서 확인).
-       *   0건인 값도 지우지 않는다: 'KEV 0' 은 "이 자산엔 KEV 가 없다"는 사실이라 목록에 남고,
-       *   vg_donut_kpi 가 --zero 로 뒤로 물릴 뿐이다. */
+  }, [
+      'badge'      => '전체 ' . number_format(array_sum($counts)) . '건',
+      'title_attr' => '가운데 숫자는 조치 대상(CRITICAL·HIGH·MEDIUM)입니다'
+                    . ' — LOW 까지 더한 전체는 제목 옆 배지에 있습니다',
+  ]);
+
+  /* 링크는 카드 시절 그대로다 — 이 줄은 각 축의 **진입점**이기도 하다(눌러서 확인).
+   *   0건인 값도 지우지 않는다: 'KEV 0' 은 "이 자산엔 KEV 가 없다"는 사실이라 목록에 남고,
+   *   vg_donut_kpi 가 --zero 로 뒤로 물릴 뿐이다. */
+  vg_card('등급 밖의 신호', static function () use ($kevCount, $externalFindings, $exposureCount, $cceFail, $heroFindings): void {
       vg_donut_kpi('등급 밖의 신호 — 악용·노출·설정', [
           ['label' => 'KEV 악용확인', 'value' => $kevCount, 'arc' => false,
            'tone'  => $kevCount > 0 ? 'crit' : 'muted',
@@ -179,12 +193,12 @@ function vg_host_render_hero(array $ctx): void {
       ], [
           // 'size' 는 안 준다 — 고리를 하나도 안 그리므로(전부 arc=false) 쓰이지 않는다.
           //   자리 크기는 .donut--none 이 왼쪽 도넛과 같게(8.25rem) 잡는다.
-          'none' => ['label' => '등급 밖의 신호', 'tone' => 'muted',
+          'none' => ['label' => '축이 서로 다름', 'tone' => 'muted',
                      'title' => '악용(KEV)·노출·설정은 취약점 등급과 모집단이 서로 달라'
                               . ' 한 고리로 그리면 합이 뜻을 잃습니다 — 값은 오른쪽 목록에 있습니다'],
-      ]); ?>
-      </div>
-    </div>
+      ]);
+  }, ['title_attr' => '취약점 등급과 모집단이 다른 축들 — 악용(KEV) · 노출 · 보안 설정']);
+  ?>
   </div>
 <?php
 }

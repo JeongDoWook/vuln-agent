@@ -178,28 +178,35 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       'link' => $acctDetails ? '<a href="#compliance-account">호스트별 ↓</a>' : '',
   ] : $deniedRow('account');
 
-  vg_table(
-      [
-          ['label' => '통제'],
-          // 13rem 은 실측값이다 — 9rem 은 물론 12rem 에서도 가장 긴 뱃지+라벨 조합
-          //   ('판정 불가' + '위반 호스트 0.0%')이 두 줄로 접혀 그 행만 20px 높아졌다.
-          ['label' => '판정', 'width' => '13rem'],
-          ['label' => '요약'],
-          // 링크 라벨은 짧다 — 접히면 화살표가 다음 줄로 떨어져 링크로 안 보인다.
-          ['label' => '근거', 'width' => '7rem', 'nowrap' => true],
-      ],
-      $summaryRows,
-      [
-          'cell' => [
-              // 조항 번호(ISMS-P 2.10.8 / ISO 27001 A.8.8)는 통제 상세(control.php)가 갖는다 —
-              //   목록에서 통제명마다 잇던 줄은 걷었다. 여기서 고르는 축은 통제이지 조항이 아니다.
-              0 => fn($r) => '<strong>' . vg_h(VG_COMPLIANCE_CONTROLS[$r['key']]['label']) . '</strong>',
-              1 => fn($r) => $r['badge'],
-              2 => fn($r) => $r['summary'],
-              3 => fn($r) => $r['link'],
+  /* 이 표는 제목 없는 카드였다 — 이 화면에 표가 둘(통제별 판정 · 판정 추이)인데 아래 것만
+   *   제목을 갖고 있어서, 위 표가 무엇을 세는 표인지는 열 머리글을 읽어야 알 수 있었다.
+   *   카드 문법(한 카드 한 이야기 · 제목 필수)대로 제목을 세우고 통제 수를 배지로 단다.
+   *   표 자체는 한 글자도 안 바뀐다 — vg_table 의 카드 래핑만 vg_card 로 옮긴다('card' => false). */
+  vg_card('통제별 판정', static function () use ($summaryRows): void {
+      vg_table(
+          [
+              ['label' => '통제'],
+              // 13rem 은 실측값이다 — 9rem 은 물론 12rem 에서도 가장 긴 뱃지+라벨 조합
+              //   ('판정 불가' + '위반 호스트 0.0%')이 두 줄로 접혀 그 행만 20px 높아졌다.
+              ['label' => '판정', 'width' => '13rem'],
+              ['label' => '요약'],
+              // 링크 라벨은 짧다 — 접히면 화살표가 다음 줄로 떨어져 링크로 안 보인다.
+              ['label' => '근거', 'width' => '7rem', 'nowrap' => true],
           ],
-      ]
-  );
+          $summaryRows,
+          [
+              'card' => false,
+              'cell' => [
+                  // 조항 번호(ISMS-P 2.10.8 / ISO 27001 A.8.8)는 통제 상세(control.php)가 갖는다 —
+                  //   목록에서 통제명마다 잇던 줄은 걷었다. 여기서 고르는 축은 통제이지 조항이 아니다.
+                  0 => fn($r) => '<strong>' . vg_h(VG_COMPLIANCE_CONTROLS[$r['key']]['label']) . '</strong>',
+                  1 => fn($r) => $r['badge'],
+                  2 => fn($r) => $r['summary'],
+                  3 => fn($r) => $r['link'],
+              ],
+          ]
+      );
+  }, ['badge' => '통제 ' . number_format(count($summaryRows)) . '종']);
   // 판정 범례는 걷었다 — 판정 칸의 뱃지가 '준수'·'부분준수'·'미준수'·'판정 불가' 를
   //   **글자로** 달고 있어 색→이름 대응을 따로 설명할 자리가 아니었다(1차 정리에서 다른
   //   화면의 범례를 전수 제거한 것과 같은 기준). **판정 어휘 4종은 그대로다** — 뱃지·추이
@@ -217,40 +224,38 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   //   알기 어렵다는 요청 — 오래된 스냅샷은 DB 에 그대로 남는다).
   ?>
   <?php if ($acctDetails): ?>
-  <div class="card mt-lg" id="compliance-account">
-    <?php
-    // 이 블록은 이 화면에만 있다 — 전 호스트 계정 위반을 한 번에 보는 화면이 없어서
-    //   요약 줄의 "근거 →" 가 갈 곳이 없다. 표시되는 행은 미리보기 상한 이하라 펼쳐 둔다.
-    ?>
-    <strong><?= vg_h(VG_COMPLIANCE_CONTROLS['account']['label']) ?> — 호스트별 근거</strong>
-    <div class="card__body">
-      <?php
-      // 판정 불가(REVIEW·NA)·수집 대기 목록은 화면에서 걷었다. 위반이 아니라 "아직 못 봤다"인
-      //   행이라 여기서 근거로 읽히지 않고, 접힘 요약("판정 불가 25건")만 남아 화면을 어지럽혔다.
-      //   **판정이 바뀌는 것은 아니다** — 통제 줄의 뱃지는 그대로 '판정 불가'이고, 호스트별 사유는
-      //   호스트 상세의 계정 탭과 스냅샷 증적(JSON)이 계속 갖는다.
-      ?>
-      <?php $shown = array_slice($account['violations'], 0, $previewLimit); ?>
-        <?php vg_table(
-            [['label' => '호스트'], ['label' => '점검 항목'], ['label' => '결과', 'width' => '6rem'], ['label' => '근거']],
-            $shown,
-            [
-                'card' => false,
-                'cell' => [
-                    0 => fn($v) => '<a href="/host.php?id=' . (int) $v['host_id'] . '&amp;tab=account">' . vg_h($v['fqdn']) . '</a>',
-                    1 => fn($v) => vg_h($v['title']) . ' <span class="why">' . vg_h($v['code']) . '</span>',
-                    2 => fn($v) => vg_badge($v['result'], 'crit'),
-                    // 계정명 등 근거 문자열. 패스워드 해시·비밀값은 수집·저장 자체를 하지 않는다.
-                    3 => fn($v) => vg_trunc(implode(', ', $v['names']), 80),
-                ],
-            ]
-        ); ?>
-      <?php if ($account['total'] > count($shown)): ?>
-        <p class="why">상위 <?= count($shown) ?>건만 표시 · 전체 <?= number_format($account['total']) ?>건은
-          호스트 상세의 계정 탭에서 확인</p>
-      <?php endif; ?>
-    </div>
-  </div>
+  <?php
+  // 이 블록은 이 화면에만 있다 — 전 호스트 계정 위반을 한 번에 보는 화면이 없어서
+  //   요약 줄의 "근거 →" 가 갈 곳이 없다. 표시되는 행은 미리보기 상한 이하라 펼쳐 둔다.
+  // 판정 불가(REVIEW·NA)·수집 대기 목록은 화면에서 걷었다. 위반이 아니라 "아직 못 봤다"인
+  //   행이라 여기서 근거로 읽히지 않고, 접힘 요약("판정 불가 25건")만 남아 화면을 어지럽혔다.
+  //   **판정이 바뀌는 것은 아니다** — 통제 줄의 뱃지는 그대로 '판정 불가'이고, 호스트별 사유는
+  //   호스트 상세의 계정 탭과 스냅샷 증적(JSON)이 계속 갖는다.
+  $shown = array_slice($account['violations'], 0, $previewLimit);
+  vg_card(VG_COMPLIANCE_CONTROLS['account']['label'] . ' — 호스트별 근거',
+      static function () use ($shown, $account): void {
+          vg_table(
+              [['label' => '호스트'], ['label' => '점검 항목'], ['label' => '결과', 'width' => '6rem'], ['label' => '근거']],
+              $shown,
+              [
+                  'card' => false,
+                  'cell' => [
+                      0 => fn($v) => '<a href="/host.php?id=' . (int) $v['host_id'] . '&amp;tab=account">' . vg_h($v['fqdn']) . '</a>',
+                      1 => fn($v) => vg_h($v['title']) . ' <span class="why">' . vg_h($v['code']) . '</span>',
+                      2 => fn($v) => vg_badge($v['result'], 'crit'),
+                      // 계정명 등 근거 문자열. 패스워드 해시·비밀값은 수집·저장 자체를 하지 않는다.
+                      3 => fn($v) => vg_trunc(implode(', ', $v['names']), 80),
+                  ],
+              ]
+          );
+          if ($account['total'] > count($shown)) {
+              echo '<p class="why">상위 ' . count($shown) . '건만 표시 · 전체 '
+                  . number_format((int) $account['total']) . '건은 호스트 상세의 계정 탭에서 확인</p>';
+          }
+      },
+      ['class' => 'mt-lg', 'id' => 'compliance-account',
+       'badge' => '위반 ' . number_format((int) $account['total']) . '건']);
+  ?>
   <?php endif; ?>
 
   <?php
@@ -278,21 +283,18 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $showTrend = !$trend || $trendControls;
   ?>
   <?php if ($showTrend): ?>
-  <div class="card mt-lg" id="trend" data-compliance-zone="trend">
-    <strong>판정 추이</strong>
-    <?php // 제목 옆에는 값만 둔다 — 무엇을 세는 표인지는 아래 열 머리글이 말한다. ?>
-    <?php if ($trend): ?>
-    <span class="why">최근 <?= count($trend) ?>일 · 최신 <?= vg_h($trend[0]['taken_at']) ?></span>
-    <?php endif; ?>
-    <div class="card__body">
-      <?php if (!$trend): ?>
-        <?php vg_empty([
-            'icon'  => '🗓',
-            'title' => '아직 저장된 판정 스냅샷이 없습니다.',
-            'hint'  => '스케줄러가 하루 1회 자동으로 남깁니다.',
-        ]); ?>
-      <?php else: ?>
-        <?php
+  <?php
+  /* 제목 옆에는 값만 둔다 — 무엇을 세는 표인지는 아래 열 머리글이 말한다.
+   *   예전엔 이 값이 제목 뒤에 그냥 이어 붙어 제목의 일부처럼 읽혔다. 이제 vg_card 의
+   *   'aside' 자리(제목 줄 오른쪽 끝)로 간다 — 위 '통제별 판정' 카드의 배지와 같은 자리다. */
+  vg_card('판정 추이', static function () use ($trend, $trendControls): void {
+      if (!$trend) {
+          vg_empty([
+              'icon'  => '🗓',
+              'title' => '아직 저장된 판정 스냅샷이 없습니다.',
+              'hint'  => '스케줄러가 하루 1회 자동으로 남깁니다.',
+          ]);
+      } else {
         $headers = [['label' => '판정일', 'width' => '9rem']];
         $cells = [0 => fn($r) => vg_h($r['date'])];
         foreach ($trendControls as $i => $key) {
@@ -312,10 +314,16 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
         //   요청으로 완전히 제거했다). 오래된 스냅샷은 DB(tb_compliance_snapshot)에 그대로 남아
         //   감사 목적으로 조회 가능하다.
         vg_table($headers, $trend, ['cell' => $cells, 'card' => false]);
-        ?>
-      <?php endif; ?>
-    </div>
-  </div>
+      }
+  }, [
+      'class' => 'mt-lg',
+      'id'    => 'trend',
+      'attrs' => ['data-compliance-zone' => 'trend'],
+      'aside' => $trend
+          ? '<span class="why">최근 ' . count($trend) . '일 · 최신 ' . vg_h((string) $trend[0]['taken_at']) . '</span>'
+          : '',
+  ]);
+  ?>
   <?php endif; ?>
 
   <?php
