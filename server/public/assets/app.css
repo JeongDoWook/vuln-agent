@@ -2440,12 +2440,21 @@ form.card .btn--primary:active { transform: translateY(0); }
 /* 표를 담은 카드는 **스크롤 컨테이너가 아니어야** 한다 — .card 기본값(overflow-x:auto)이면
  * sticky 머리글이 뷰포트가 아니라 카드를 기준으로 잡혀 표 위에 빈 띠가 생긴다(권한 매트릭스에서
  * 겪은 그 문제). clip 은 모서리는 잘라 주면서 스크롤 컨테이너를 만들지 않는다. 목록 화면의 표는
- * table-layout:fixed + 칸 안 줄바꿈이라 애초에 가로로 넘치지 않는다(아래 규칙). */
-.page--activity .card:has(> table), .page--advisories .card:has(> table),
-.page--assets .card:has(> table), .page--changes .card:has(> table),
-.page--compliance_rules .card:has(> table), .page--cves .card:has(> table),
-.page--findings .card:has(> table), .page--packages .card:has(> table),
-.page--vendor .card:has(> table) { margin-top: .5rem; overflow-x: clip; }
+ * table-layout:fixed + 칸 안 줄바꿈이라 애초에 가로로 넘치지 않는다(아래 규칙).
+ *   `> .card__body > table` 을 같이 받는 이유: 제목이 있는 카드는 vg_card() 가 표를
+ *   **.card__body 로 한 겹 감싼다**. `> table` 만 보면 그 카드는 이 규칙에서 빠져
+ *   overflow-x:auto 인 채로 남고, 그러면 sticky 머리글이 카드를 기준으로 top(상단바+툴바
+ *   높이)만큼 내려가 **첫 데이터 행 아래에 머리글이 그려진다** — 감사 로그의 두 표(사용자별
+ *   접속 현황·접속기록)가 실제로 그랬다(실측 1600px: th top 459.5px vs 첫 행 top 427.9px). */
+.page--activity .card:has(> table, > .card__body > table),
+.page--advisories .card:has(> table, > .card__body > table),
+.page--assets .card:has(> table, > .card__body > table),
+.page--changes .card:has(> table, > .card__body > table),
+.page--compliance_rules .card:has(> table, > .card__body > table),
+.page--cves .card:has(> table, > .card__body > table),
+.page--findings .card:has(> table, > .card__body > table),
+.page--packages .card:has(> table, > .card__body > table),
+.page--vendor .card:has(> table, > .card__body > table) { margin-top: .5rem; overflow-x: clip; }
 .page--findings .cards, .page--assets .cards, .page--changes .cards { padding: .15rem 0; }
 /* 열 폭은 vg_table() 이 준 width 가 정한다. auto 레이아웃에선 '내용이 긴 칸' 이 폭을 가져가서,
  * 취약점 현황(1568px 실측)에서 한 줄짜리 '조치' 가 448px 를 먹는 동안 호스트명은 207px 안에서
