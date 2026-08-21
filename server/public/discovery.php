@@ -32,8 +32,9 @@ vg_require_menu('assets');
 const VG_DISCOVERY_STATES = ['new' => '미관리', 'known' => '관리 중', 'ignored' => '제외'];
 /* 톤(색 어휘)은 이 화면이 소유한다 — KPI 카드와 표 뱃지가 같은 값을 두 색으로 부르지 않게. */
 const VG_DISCOVERY_TONES = ['new' => 'crit', 'known' => 'ok', 'ignored' => 'muted'];
-/** 한 행에 펼치는 열린 포트 수. 넘으면 "+N" 으로 접는다 — 포트 40개짜리 행이 표를 무너뜨린다. */
-const VG_DISCOVERY_PORTS_SHOWN = 6;
+/** 한 행에 펼치는 열린 포트 수. 나머지는 개수와 툴팁으로만 말한다 — 여섯 개를 늘어놓으면
+ *   행마다 줄 수가 달라져 표가 울퉁불퉁해졌다(사용자 지적). */
+const VG_DISCOVERY_PORTS_SHOWN = 3;
 /* 정리(제외·메모) 조작 어휘 — 모달의 선택지·감사로그 문구·POST 검증이 이 하나만 본다.
  *   '제외 해제' 를 따로 두는 건 여러 건을 한 번에 걸 때 토글이 행마다 다르게 튀기 때문이다. */
 const VG_DISCOVERY_TRIAGE_OPS = ['ignore' => '제외로 표시', 'unignore' => '제외 해제', 'note' => '메모 저장'];
@@ -525,9 +526,13 @@ vg_header('자산 탐색', 'discovery');
           $sc     = $targetStateCounts[$tid] ?? array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
           $status = (string) ($t['status'] ?? '');
       ?>
+        <?php /* 탐색 포트는 대역의 설정값이라 카드에서 한 줄을 먹을 값이 아니다 — 대역 옆
+                 툴팁으로 내린다(바꾸는 자리는 '수정' 모달이 그대로 갖는다). */ ?>
+        <?php $portsTip = '탐색 포트 · ' . ($t['ports'] !== null && $t['ports'] !== ''
+            ? (string) $t['ports'] : '기본 세트'); ?>
         <div class="card discovery-target">
           <div class="discovery-target__head">
-            <code><?= vg_h((string) $t['cidr']) ?></code>
+            <code title="<?= vg_h($portsTip) ?>"><?= vg_h((string) $t['cidr']) ?></code>
             <?= (int) $t['enabled'] === 1 ? vg_badge('사용', 'ok') : vg_badge('중지', 'muted') ?>
           </div>
           <?php if ($t['label'] !== null && $t['label'] !== ''): ?>
@@ -555,28 +560,24 @@ vg_header('자산 탐색', 'discovery');
             elseif ($status === 'failed') { echo vg_badge('실패', 'crit')
                 . ' <span class="why">탐색이 실패했습니다. 서버 로그를 확인하세요.</span>'; }
             else {
-                $at = substr((string) ($t['finished_at'] ?? ''), 0, 16);
-                echo vg_badge('완료', 'ok') . ' <span class="why">' . vg_h($at)
-                    . ' · 응답 IP ' . number_format((int) $t['ip_alive']) . '/' . number_format((int) $t['ip_total'])
+                /* 카드에 남는 건 '언제 끝났나' 뿐이다 — 응답 IP·포트 시도·열린 포트·소요는
+                 *   한 카드 안에서 줄바꿈을 만들던 스캔 통계라 툴팁으로 내린다(사용자 지적). */
+                $at   = substr((string) ($t['finished_at'] ?? ''), 0, 16);
+                $stat = '응답 IP ' . number_format((int) $t['ip_alive']) . '/' . number_format((int) $t['ip_total'])
                     . ' · 포트 시도 ' . number_format((int) $t['port_checked'])
                     . ' · 열린 포트 ' . number_format((int) $t['open_total'])
-                    . ($t['elapsed_seconds'] !== null ? ' · ' . vg_h((string) $t['elapsed_seconds']) . '초' : '')
-                    . '</span>';
+                    . ($t['elapsed_seconds'] !== null ? ' · ' . (string) $t['elapsed_seconds'] . '초' : '');
+                echo vg_badge('완료', 'ok') . ' <span class="why" title="' . vg_h($stat) . '">'
+                    . vg_h($at) . '</span>';
             }
             ?>
-          </div>
-
-          <div class="why">포트 ·
-            <?= $t['ports'] !== null && $t['ports'] !== ''
-                ? '<code>' . vg_trunc((string) $t['ports'], 40) . '</code>'
-                : '기본 세트' ?>
           </div>
 
           <?php /* 실행은 카드가 아니라 제목 줄의 '대역 탐색' 이 갖는다 — 카드마다 버튼을 되살리면
                    대역 수만큼 같은 버튼이 늘어나고, 주 동작이 다시 '수정·삭제' 와 같은 무게가 된다.
                    진행 상태는 위의 뱃지(대기 중·진행 중·완료)가 그대로 말한다. */ ?>
           <?php if ($canManage): ?>
-            <div class="actions mt">
+            <div class="actions discovery-target__ops mt">
               <a class="btn btn--xs btn--ghost" href="<?= vg_h(vg_qs(['edit' => $tid])) ?>">수정</a>
               <form method="post" data-confirm="이 대역을 삭제할까요? 지금까지 발견한 자산 이력은 남습니다.">
                 <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
@@ -602,26 +603,35 @@ vg_header('자산 탐색', 'discovery');
 
   <?php
   $filtered = ($q !== '' || $state !== '' || $targetId > 0);
+  /* 이 페이지 행들의 대역. 하나뿐이면 표 제목 옆에 한 번만 적고 행에서는 뺀다 — 예전엔 같은
+   *   CIDR 이 행마다 반복돼 IP 칸의 절반이 같은 글자였다(사용자 지적). 여럿이면 행이 갖는다. */
+  $pageCidrs = array_values(array_unique(array_map(static fn(array $r): string => (string) $r['cidr'], $rows)));
+  $pageCidr  = count($pageCidrs) === 1 ? $pageCidrs[0] : null;
   /* 열은 'key' 로 찾는다 — 정리 권한이 있으면 앞에 선택 열이 붙는데, 인덱스로 맞춰 두면
    *   그때마다 칸 콜백이 한 칸씩 밀린다(자산 목록의 표도 같은 이유로 key 를 쓴다). */
   $headers = [
       ['label' => 'IP', 'key' => 'ip', 'width' => '10rem'],
       ['label' => '상태', 'key' => 'state', 'width' => '6rem'],
       ['label' => '열린 포트 · 서비스(추측)', 'key' => 'ports'],
-      ['label' => '최초 발견', 'key' => 'first_seen', 'width' => '9rem', 'nowrap' => true],
-      ['label' => '최근 발견', 'key' => 'last_seen', 'width' => '9rem', 'nowrap' => true],
+      /* 두 날짜를 나란히 두던 자리다 — 실측으로 거의 모든 행이 같은 값이라 한 칸을 통째로
+       *   같은 글자에 쓰고 있었다. 칸에는 최근만 적고 최초는 툴팁이 갖는다. */
+      ['label' => '발견', 'key' => 'seen', 'width' => '9rem', 'nowrap' => true,
+       'title' => '최근 발견 시각. 최초 발견은 값에 마우스를 올리면 보인다.'],
       ['label' => '연결된 자산', 'key' => 'host', 'width' => '14rem'],
   ];
   $cells = [
       /* IP 아래 두 번째 줄에 역DNS 호스트명을 붙인다 — **열을 늘리지 않는다**(화면 정리 국면).
        *   호스트명이 없으면 지금까지처럼 대역만 보인다(빈 자리표시를 만들지 않는다). */
-      'ip' => function ($r): string {
+      'ip' => function ($r) use ($pageCidr): string {
           $html = '<code>' . vg_h((string) $r['ip']) . '</code>';
           $hostname = trim((string) ($r['hostname'] ?? ''));
           if ($hostname !== '') {
               $html .= '<div class="why">' . vg_trunc($hostname, 28) . '</div>';
           }
-          $html .= '<div class="why">' . vg_h((string) $r['cidr']) . '</div>';
+          // 대역은 페이지 안에서 갈릴 때만 행이 적는다 — 하나뿐이면 표 제목이 이미 말했다.
+          if ($pageCidr === null) {
+              $html .= '<div class="why">' . vg_h((string) $r['cidr']) . '</div>';
+          }
           /* 메모는 사람이 "이게 무엇인가" 를 적어 둔 값이라 정체를 말하는 IP 칸에 붙인다.
            *   열을 따로 세우지 않는다 — 메모가 있는 행은 드물고, 있을 때만 한 줄 늘어난다. */
           $note = trim((string) ($r['note'] ?? ''));
@@ -639,28 +649,26 @@ vg_header('자산 탐색', 'discovery');
        *   배너(HTTP Server 헤더·TLS 인증서 CN)는 열로 늘리지 않고 있을 때만 한 줄 덧붙인다. */
       'ports' => function ($r) use ($portsByAsset): string {
           $ports = $portsByAsset[(int) $r['discovered_asset_id']] ?? [];
-          if (!$ports) { return '<span class="why">열린 포트 없음</span>'; }
+          if (!$ports) { return '<span class="why">없음</span>'; }
           $label = static fn(array $p): string => $p['port'] . '/' . $p['proto']
-              . ($p['hint'] !== '' ? ' ' . mb_strimwidth($p['hint'], 0, 20, '…') . '?' : '');
+              . ($p['hint'] !== '' ? ' ' . mb_strimwidth($p['hint'], 0, 14, '…') . '?' : '');
           $shown = array_slice($ports, 0, VG_DISCOVERY_PORTS_SHOWN);
-          $html  = '<code>' . vg_h(implode(' · ', array_map($label, $shown))) . '</code>';
-          $rest  = count($ports) - count($shown);
-          if ($rest > 0) {
-              $html .= ' <span class="why" title="' . vg_h(implode(' · ', array_map($label, $ports)))
-                  . '">+' . $rest . '</span>';
-          }
+          /* 툴팁이 전부를 갖는다 — 포트 전체와 배너(HTTP Server 헤더·TLS 인증서 CN). 배너를
+           *   목록에서 뺀 이유가 이것이다: 행마다 줄을 하나 더 만들어 표를 울퉁불퉁하게 했다. */
+          $tip = implode(' · ', array_map($label, $ports));
           $banners = [];
           foreach ($ports as $p) {
               if ($p['banner'] !== '') { $banners[] = $p['port'] . ' ' . $p['banner']; }
           }
-          if ($banners) {
-              $full = implode(' · ', $banners);
-              $html .= '<div class="why">배너 ' . vg_trunc($full, 44) . '</div>';
-          }
-          return $html;
+          if ($banners) { $tip .= ' / 배너 · ' . implode(' · ', $banners); }
+          return '<span title="' . vg_h($tip) . '"><b>' . number_format(count($ports)) . '</b>'
+              . '<span class="why">개</span> <code>'
+              . vg_h(mb_strimwidth(implode(' · ', array_map($label, $shown)), 0, 44, '…')) . '</code></span>';
       },
-      'first_seen' => fn($r) => '<span class="why">' . vg_h(substr((string) $r['first_seen'], 0, 16)) . '</span>',
-      'last_seen'  => fn($r) => '<span class="why">' . vg_h(substr((string) $r['last_seen'], 0, 16)) . '</span>',
+      'seen' => fn($r) => '<span class="why" title="'
+          . vg_h('최초 발견 ' . substr((string) $r['first_seen'], 0, 16)
+                 . ' · 최근 발견 ' . substr((string) $r['last_seen'], 0, 16)) . '">'
+          . vg_h(substr((string) $r['last_seen'], 0, 16)) . '</span>',
       /* 이 열이 이 기능의 결론 동선이다 — 모르는 자산을 찾았으면 에이전트를 깔고 취약점
        *   취약점 수집으로 넘어간다. 그래서 연결이 없을 때 막다른 칸이 아니라 설치 안내로 잇는다. */
       'host' => function ($r): string {
@@ -693,16 +701,23 @@ vg_header('자산 탐색', 'discovery');
       echo '<input type="hidden" name="csrf" value="' . vg_h($csrf) . '">';
       echo '<input type="hidden" name="action" value="asset_triage">';
   }
-  if ($canTriage && $rows): ?>
+  if ($rows): ?>
     <div class="form-bar">
-      <?php /* 선택 0개면 비활성. 개수 갱신·활성화·톤 전환은 app.js 의 위임 핸들러가 한다. */ ?>
-      <button type="button" class="btn btn--sm btn--ghost" data-modal="discoveryTriage"
-              title="선택은 지금 보고 있는 페이지 안에서만 유효하다"
-              data-bulk-open="discovered_asset_ids[]" data-bulk-label="선택 {n}개 정리" disabled>선택 0개 정리</button>
-      <noscript>
-        <?php /* 스크립트가 꺼져 있으면 모달이 안 열린다 — 대체 경로는 값이라 남긴다. */ ?>
-        <span class="why">스크립트가 꺼져 있어 제외·메모를 쓸 수 없다.</span>
-      </noscript>
+      <?php /* 표 제목 줄. 대역이 하나면 여기서 한 번만 말한다(행에서는 뺐다).
+               정리 버튼도 이 줄을 같이 쓴다 — 예전엔 비활성 버튼 하나가 한 줄을 통째로 먹었다. */ ?>
+      <span class="form-bar__cap">발견 자산<?php if ($pageCidr !== null): ?>
+        <span class="why" title="이 페이지에 뜬 발견 자산이 모두 이 대역이다 — 대역 필터와는 별개다."><?= vg_h($pageCidr) ?></span><?php endif; ?></span>
+      <?php if ($canTriage): ?>
+        <?php /* 선택 0개면 비활성. 개수 갱신·활성화·톤 전환은 app.js 의 위임 핸들러가 한다.
+                 적용 범위(이 페이지에서 고른 것만)는 모달의 '적용 범위' 가 이미 말하므로
+                 여기 title 로 겹쳐 적지 않는다 — 누를 수 없는 버튼은 툴팁도 안 뜬다. */ ?>
+        <button type="button" class="btn btn--sm btn--ghost" data-modal="discoveryTriage"
+                data-bulk-open="discovered_asset_ids[]" data-bulk-label="선택 {n}개 정리" disabled>선택 0개 정리</button>
+        <noscript>
+          <?php /* 스크립트가 꺼져 있으면 모달이 안 열린다 — 대체 경로는 값이라 남긴다. */ ?>
+          <span class="why">스크립트가 꺼져 있어 제외·메모를 쓸 수 없다.</span>
+        </noscript>
+      <?php endif; ?>
     </div>
   <?php endif; ?>
   <?php
