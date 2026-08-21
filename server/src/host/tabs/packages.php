@@ -3,7 +3,7 @@ declare(strict_types=1);
 /* 설치 패키지 탭 — 패키지 무결성(관측) + 호스트 OS 패키지 목록. */ ?>
     <?php /* SBOM 은 더 이상 자기 카드를 갖지 않는다 — '부품표 보기' 버튼 하나 때문에 카드가
              탭 맨 위를 차지했다. 이 탭이 보여주는 패키지 목록 자체를 표준 포맷으로 내보내는
-             것이라, 그 목록의 액션 줄(아래 '설치 패키지')이 제자리다.
+             것이라, 그 목록의 제목 줄(아래 '설치 패키지')이 제자리다.
              CycloneDX/SPDX 다운로드 버튼은 화면에서 내렸다(감사 제출 같은 실사용 요구가 없다).
              엔드포인트 sbom.php?format=… 는 그대로 살아 있다 — 화면만 정리한 것이다. */ ?>
     <?php vg_toolbar([
@@ -29,6 +29,7 @@ declare(strict_types=1);
         //   별도 동작이 아니라 수집 실행 안의 한 단계라, 진입점이 수집 제어 하나로 모였다).
         //   단 '미지원'(걸었는데 노드가 못 함)은 안내가 다르다 — 앵커가 아니라 노드 갱신이 답이다.
         $integTone = $verifyUnsupported ? 'med' : 'muted';
+        $integTitle = '';
         $integText = $verifyUnsupported
             ? '이 노드의 에이전트가 무결성 검사를 지원하지 않습니다 — 명령(#'
                 . (int) $verifySupport['command_id'] . ')은 수행됐지만 결과에 무결성이 없습니다. '
@@ -37,13 +38,17 @@ declare(strict_types=1);
             : '';
     } elseif ($integTotal === 0) {
         $integTone = 'ok';
-        $integText = '패키지 원본과 다른 파일이 관측되지 않았습니다.';
+        $integTitle = '';
+        $integText = '원본과 다른 파일 없음';
     } else {
         $integTone = 'high';
         // 앞 문장("N건이 관측되었습니다")은 바로 위 배지와 같은 말이라 걷었다 — 배지가 이미 건수를
-        //   말한다. 남긴 한 문장은 이 제품의 어휘 원칙이다: 우리가 아는 건 "설치 기록과 다르다"
+        //   말한다. 남긴 한 마디는 이 제품의 어휘 원칙이다: 우리가 아는 건 "설치 기록과 다르다"
         //   뿐이라, 운영자가 직접 바꾼 경우와 구분되지 않는다.
-        $integText = '운영자가 직접 바꾼 파일일 수도 있어 변조로 단정하지 않습니다.';
+        //   ★ 문장이 아니라 **말머리**로 줄인다 — 이유(왜 단정하지 않는가)는 툴팁에 둔다.
+        //     안내가 표보다 길어지면 정작 무엇을 봤는지가 묻힌다(사용자 지적).
+        $integTitle = '운영자가 직접 바꾼 파일일 수 있습니다 — 우리가 아는 것은 "설치 기록과 다르다"는 사실뿐입니다.';
+        $integText = '변조로 단정하지 않음';
     }
     // 이미 무결성 포함 명령이 큐에 있으면 그 사실을 알린다 — 수 분짜리 부하를 거는 동작이라
     //   같은 자산에 두 번 걸지 않게 한다(중복 등록 자체는 서버가 막지 않는다).
@@ -65,7 +70,7 @@ declare(strict_types=1);
         ) ?>
       <?php if ($integPartial): ?><?= vg_badge('부분 결과', 'med', '제한시간·줄수 상한으로 잘렸습니다. 0건이 "깨끗함"을 뜻하지 않습니다.') ?><?php endif; ?>
       <?php if ($integAt !== ''): ?><span class="why" title="<?= vg_h($integAt) ?>"> · <?= vg_h(substr($integAt, 0, 16)) ?> 검사</span><?php endif; ?>
-      <?php if ($integText !== ''): ?><span class="why"> · <?= vg_h($integText) ?></span><?php endif; ?>
+      <?php if ($integText !== ''): ?><span class="why"<?= $integTitle !== '' ? ' title="' . vg_h($integTitle) . '"' : '' ?>> · <?= vg_h($integText) ?></span><?php endif; ?>
       <?php if ($integPartial): ?>
         <span class="why"> · 검사가 도중에 잘렸습니다 — 아래 목록과 건수는 전수가 아닙니다.</span>
       <?php endif; ?>
@@ -81,7 +86,8 @@ declare(strict_types=1);
       <?php if ($integrityRows): ?>
         <?php /* 이 표가 **무엇을 검사한 결과인지**를 표 바로 위에 밝힌다. dpkg 노드는 내용(MD5)만
                  보므로, 안 적으면 나머지 항목이 "정상"으로 읽힌다 — 실제로는 보지 않은 것이다.
-                 판정은 vg_integrity_verify_scope()(플래그 자리로 읽는다)가 하고 여기선 표기만 한다. */ ?>
+                 판정은 vg_integrity_verify_scope()(플래그 자리로 읽는다)가 하고 여기선 표기만 한다.
+                 한 줄은 짧게(`dpkg · 내용(MD5)만 검사`), 검사·미검사 항목 전수는 그 줄의 툴팁에 있다. */ ?>
         <?php $integScope = vg_integrity_verify_scope(array_column($integrityRows, 'flags')); ?>
         <div class="card__body">
           <?php if ($integScope['tool'] !== ''): ?>
@@ -117,63 +123,55 @@ declare(strict_types=1);
       <?php endif; ?>
     </div>
 
-    <div class="card">
-      <strong>설치 패키지</strong>
-      <span class="why"> · 최신 수집 기준 호스트 운영체제 패키지 <?= number_format($packageTotal) ?>개</span>
-      <div class="actions">
-      <?php vg_sbom_view_button((string) $host['fqdn']); ?>
-      <?php if ($depEdgeTotal > 0): ?>
-        <?php /* 이제 '의존성' 탭이 있으므로 전용 화면이 아니라 그 탭으로 보낸다 — 자산 상세를
-                 벗어나지 않는다. 버튼은 늘리지 않고 **라벨에 엣지 수를 담아** "이 자산엔 볼 게
-                 있다"를 여기서 알린다(엣지가 0인 자산에는 탭도 이 버튼도 서지 않는다). */ ?>
-        <a class="btn btn--sm btn--ghost" href="<?= vg_h(vg_qs(['tab' => 'depgraph', 'page' => null, 'q' => null])) ?>"
-           title="이 자산의 패키지 의존성 트리"><?= vg_icon('chart') ?>의존성 엣지 <?= number_format($depEdgeTotal) ?>개</a>
-      <?php endif; ?>
-      <?php /* 전체 설치 패키지(asset-packages.php)는 자산을 고르지 않으면 함대 전체가 한 표에 쏟아진다 —
-               이 자산으로 필터한 링크를 주 진입점으로 둔다(화면 자체는 전역 검색용으로 남는다). */ ?>
-        <a class="btn btn--sm btn--ghost" href="/asset-packages.php?host=<?= (int) $hostId ?>" title="다른 자산과 나란히 보기(전체 설치 패키지)"><?= vg_icon('host') ?>다른 자산과 비교</a>
-      </div>
-      <div class="card__body">
-      <?php
-      vg_table(
-          [
-              ['label' => '패키지', 'key' => 'name', 'class' => 'col-id'],
-              ['label' => '설치 버전', 'key' => 'version'],
-              ['label' => '아키텍처', 'key' => 'arch'],
-              ['label' => '관리자', 'key' => 'manager'],
-              ['label' => '소스 패키지', 'key' => 'source_pkg'],
-              ['label' => '출처', 'key' => 'origin'],
-          ],
-          $rows,
-          [
-              'card' => false,
-              'empty' => $hasFilter
-                  ? [
-                      'icon' => 'search',
-                      'title' => '검색 조건에 맞는 설치 패키지가 없습니다.',
-                      'cta' => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
-                  ]
-                  : [
-                      'icon' => 'package',
-                      'title' => '수집된 운영체제 패키지가 없습니다.',
-                  ],
-              'cell' => [
-                  'name' => fn($p) => '<strong>' . vg_h((string)$p['name']) . '</strong>',
-                  'version' => fn($p) => '<code>' . vg_h((string)($p['version'] ?? '')) . '</code>',
-                  'arch' => fn($p) => $p['arch'] ? vg_h((string)$p['arch']) : '<span class="why">–</span>',
-                  'manager' => fn($p) => '<code>' . vg_h((string)$p['manager']) . '</code>',
-                  'source_pkg' => function ($p) {
-                      if (empty($p['source_pkg'])) { return '<span class="why">–</span>'; }
-                      return vg_h((string)$p['source_pkg'])
-                          . (!empty($p['source_version']) ? ' <span class="why">' . vg_h((string)$p['source_version']) . '</span>' : '');
-                  },
-                  'origin' => fn($p) => $p['origin']
-                      ? vg_h((string)$p['origin'])
-                      : (!empty($p['vendor']) ? vg_h((string)$p['vendor']) : '<span class="why">–</span>'),
-              ],
-          ]
-      );
-      ?>
-      </div>
-    </div>
+    <?php /* 제목 줄 하나로 합쳤다 — 제목·총계·'부품표 보기' 가 각각 한 줄씩 먹으면 정작 표가
+             화면 아래로 밀린다. vg_card() 의 머리(제목 왼쪽 / 보조수치·조작부 오른쪽)가 그
+             배치를 이미 갖고 있어 여기서 따로 만들지 않는다.
+             버튼 둘을 지웠다:
+               · '의존성 엣지 N개' — 같은 곳으로 가는 '의존성' 탭이 바로 위 탭 줄에 서 있다(중복).
+               · '다른 자산과 비교' — 전체 설치 패키지 화면은 사이드바 메뉴로 도달한다.
+             화면만 정리한 것이고 대상(의존성 탭·asset-packages.php)은 그대로 살아 있다. */ ?>
+    <?php vg_card('설치 패키지', static function () use ($rows, $hasFilter): void {
+        vg_table(
+            [
+                ['label' => '패키지', 'key' => 'name', 'class' => 'col-id'],
+                ['label' => '설치 버전', 'key' => 'version'],
+                ['label' => '아키텍처', 'key' => 'arch'],
+                ['label' => '관리자', 'key' => 'manager'],
+                ['label' => '소스 패키지', 'key' => 'source_pkg'],
+                ['label' => '출처', 'key' => 'origin'],
+            ],
+            $rows,
+            [
+                'card' => false,
+                'empty' => $hasFilter
+                    ? [
+                        'icon' => 'search',
+                        'title' => '검색 조건에 맞는 설치 패키지가 없습니다.',
+                        'cta' => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화'],
+                    ]
+                    : [
+                        'icon' => 'package',
+                        'title' => '수집된 운영체제 패키지가 없습니다.',
+                    ],
+                'cell' => [
+                    'name' => fn($p) => '<strong>' . vg_h((string)$p['name']) . '</strong>',
+                    'version' => fn($p) => '<code>' . vg_h((string)($p['version'] ?? '')) . '</code>',
+                    'arch' => fn($p) => $p['arch'] ? vg_h((string)$p['arch']) : '<span class="why">–</span>',
+                    'manager' => fn($p) => '<code>' . vg_h((string)$p['manager']) . '</code>',
+                    'source_pkg' => function ($p) {
+                        if (empty($p['source_pkg'])) { return '<span class="why">–</span>'; }
+                        return vg_h((string)$p['source_pkg'])
+                            . (!empty($p['source_version']) ? ' <span class="why">' . vg_h((string)$p['source_version']) . '</span>' : '');
+                    },
+                    'origin' => fn($p) => $p['origin']
+                        ? vg_h((string)$p['origin'])
+                        : (!empty($p['vendor']) ? vg_h((string)$p['vendor']) : '<span class="why">–</span>'),
+                ],
+            ]
+        );
+    }, [
+        'title_attr' => '최신 수집 기준 호스트 운영체제 패키지',
+        'aside' => vg_badge(number_format($packageTotal) . '개', 'muted', '최신 수집 기준 호스트 운영체제 패키지')
+            . vg_capture(static fn() => vg_sbom_view_button((string) $host['fqdn'])),
+    ]); ?>
     <?php vg_page_nav($total, $perPage, $page); ?>

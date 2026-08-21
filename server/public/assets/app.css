@@ -143,13 +143,20 @@
   --shadow-lg: 0 24px 64px rgb(0 0 0 / .18);
 
   --ctl-h: 2.05rem;  /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
-  /* 셀렉트 공통 **폭 상한**. 셀렉트가 담는 값은 거의 전부 짧은 어휘(상/중/하, C/S/O, 등급,
-   * 상태…)인데 폼 안에서는 width:100% 라 칸 전체를 먹어, 두 글자짜리 값 옆에 빈 칸이
-   * 손가락 두 마디씩 남았다(사용자: "드롭다운 사이즈도 일괄 사이즈 관리할까?").
-   * 화면마다 폭을 따로 정하지 않고 여기 한 값을 쓴다 — 더 넓어야 하는 칸만
-   * max-width: none 으로 눕힌다(수집 제어의 속도 티어처럼 칸 폭이 이미 좁은 곳). */
-  --select-w: 16rem;
+  /* 컨트롤 **폭** 은 --ctl-w-* 하나로 모은다(높이가 --ctl-h 하나인 것과 같은 규칙).
+   * 폼 안에서 칸마다 폭이 달라 보이던 것을 없애려는 토큰이라, 새 폼을 만들 때도 값을
+   * 직접 적지 말고 여기서 가져다 쓴다. 규칙은 세 줄이다:
+   *   · 자릿수가 정해진 값(숫자 입력)  → --ctl-w-num 고정폭. 칸이 넓어져도 안 늘어난다.
+   *   · 짧은 어휘를 담는 셀렉트         → --ctl-w-sel 상한. 두 글자 값 옆에 빈 칸이 손가락
+   *     두 마디씩 남던 것을 막는다(더 넓어야 하는 칸만 max-width:none 으로 눕힌다).
+   *   · 길이를 모르는 값(주소·이름 등) → width:100% 전폭(격자의 한 줄을 그대로 쓴다).
+   * 다른 표준 폭이 필요해지면 값을 화면에 박지 말고 --ctl-w-<쓰임> 을 여기 더한다. */
+  --ctl-w-num: 11rem;  /* 숫자 입력 공통 폭 — 네 자리(1440·2000) + 스피너 기준 */
+  --ctl-w-sel: 16rem;  /* 셀렉트 폭 상한 — 상/중/하·C/S/O 같은 짧은 어휘 기준 */
   --topbar-h: 56px;  /* .topbar 의 min-height 와 공유 — sticky 내비 top·scroll-margin 이 같이 따라간다 */
+  /* 본문 아래 저작권·소스코드 링크 줄(.page__foot)의 높이. .page__main 의 min-height 가 이만큼
+   * 줄어들어서, 푸터가 생겼다고 짧은 화면에 세로 스크롤이 새로 생기지 않는다. */
+  --foot-h: 2.4rem;
   /* 목록 화면의 sticky 필터 툴바 높이. 표의 sticky 머리글이 이 아래에 정확히 붙어야 하므로
    * 값을 고정해 두 sticky 가 서로를 가리지 않게 한다(.toolbar 의 min-height 와 공유). */
   --toolbar-h: 3.15rem;
@@ -717,6 +724,41 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
  * 것이라 서로 무관한 카드가 서는 줄에는 그대로 옳다 — 그래서 전역이 아니라 수식어로 준다. */
 .card-row--even { align-items: stretch; }
 
+/* SBOM 부품표(sbom.php?view=html) 한 줄 — 도넛 1/4 + 도넛 1/4 + 컴포넌트 목록 1/2.
+ * .card-row(균등 auto-fit)로는 못 만든다: 여기서는 칸 넓이가 서로 달라야 한다. 도넛은 값
+ * 서너 개짜리라 좁아도 읽히고, 화면의 주인공인 목록이 나머지 절반을 갖는다.
+ * 예전엔 셋이 각각 전폭으로 세로로 쌓여서 첫 컴포넌트를 보려면 두 번 스크롤해야 했다.
+ * align-items:start — 목록이 길어도 옆 도넛 카드가 따라 늘어나지 않는다. */
+.sbom-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--sp-3);
+  align-items: start;
+}
+.sbom-cols > .card { margin-bottom: 0; }
+/* 목록 칸은 카드 여러 장(생태계별)과 검색·페이저를 세로로 담는 칸이다 — 칸 자체는 카드가 아니다. */
+.sbom-cols__list { min-width: 0; }
+.sbom-cols__list > .card:last-of-type { margin-bottom: 0; }
+/* 컴포넌트가 하나도 없으면 도넛 두 장이 서지 않는다 — 목록만 남은 줄은 전폭으로 편다
+ * (안 그러면 빈 칸 둘을 남기고 목록이 오른쪽 끝에 붙는다). */
+.sbom-cols--empty { grid-template-columns: minmax(0, 1fr); }
+/* 1120px 아래로는 도넛 둘만 나란히 두고 목록을 다음 줄 전폭으로 내린다 — 절반 폭에 표 네 열이
+ * 들어가지 않는 지점이다. 더 좁아지면 셋 다 한 장씩 세로로 선다. */
+@media (max-width: 1120px) {
+  .sbom-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .sbom-cols__list { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) { .sbom-cols { grid-template-columns: minmax(0, 1fr); } }
+/* 칸 수를 **둘로 못박는** 변형. 기본 .card-row 는 auto-fit(19rem) 이라 넓은 화면에서 3~4칸까지
+ * 늘어나는데, 표가 든 카드는 그 폭에서 값이 접혀 행이 두세 줄이 되고 세로가 되레 길어진다.
+ * 1340px 은 실측 하한이다 — 데이터 수집(연결기 4장)을 2열로 세운 뒤 폭을 낮춰 재면
+ *   1920px: 세로 683px · 최대 행 높이 57px
+ *   1440px: 786px · 72px
+ *   1300px: 817px · 102px  ← 행이 접혀 2열로 줄인 것을 도로 까먹는다
+ * 그래서 1340px 미만에서는 아예 한 열로 둔다(1열이 더 짧다). */
+.card-row--2 { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1340px) { .card-row--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* 자산 탐색(discovery.php) 대역 카드 — 표 한 줄이 아니라 카드 하나로 대역을 보여줘
  * 상태 배지·스캔 결과를 표 열보다 눈에 띄게 비교한다(폭에 맞춰 접히는 auto-fill 격자). */
 .discovery-targets {
@@ -730,6 +772,9 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 .discovery-target__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .discovery-target__badges { display: flex; flex-wrap: wrap; gap: .35rem; margin: .5rem 0; }
 .discovery-target__scan { margin: .3rem 0; }
+/* 대역 카드의 부수 조작(수정·삭제) — 카드 오른쪽 끝에 모은다. 왼쪽에 두면 대역·상태와 같은
+ * 시작선에 서서 주 정보와 같은 무게로 읽힌다(주 동작인 '대역 탐색' 은 제목 줄이 갖는다). */
+.discovery-target__ops { justify-content: flex-end; }
 
 /* 카드 본문 안의 접이식 블록(<details>) — 표 셀 안의 것(td summary)과 달리 카드에서는
  * 제목처럼 보여야 한다. compliance.php 의 "수동 확인 필요"가 기본 닫힘으로 이걸 쓴다.
@@ -1846,9 +1891,9 @@ input[type=url]:focus,
 input[type=datetime-local]:focus, input[type=date]:focus, input[type=number]:focus,
 select:focus, textarea:focus { background: var(--surface); border-color: var(--accent); }
 input[type=search], select { font-size: var(--fs-sm); }
-/* 셀렉트는 폭 상한을 공통 토큰에서 받는다(위 --select-w 주석). width:100% 는 그대로라
+/* 셀렉트는 폭 상한을 공통 토큰에서 받는다(위 --ctl-w-sel 주석). width:100% 는 그대로라
  * 좁은 칸에서는 칸에 맞춰 줄고, 넓은 칸에서만 이 상한에 걸린다. */
-select { max-width: var(--select-w); }
+select { max-width: var(--ctl-w-sel); }
 input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
 
 /* --- 버튼 ---------------------------------------------------------------- */
@@ -2166,7 +2211,7 @@ span.flatpickr-weekday { color: var(--muted); font-size: var(--fs-xs); }
   background-repeat: no-repeat;
   background-position: .6rem center;
 }
-/* 툴바·페이저의 셀렉트는 이미 width:auto 라 **내용만큼만** 넓다 — 공통 폭 상한(--select-w)의
+/* 툴바·페이저의 셀렉트는 이미 width:auto 라 **내용만큼만** 넓다 — 공통 폭 상한(--ctl-w-sel)의
    대상이 아니다(그 상한은 칸 전폭을 먹는 폼 셀렉트를 잡는 것이다). 긴 옵션 글자가 잘리지
    않게 상한을 눕힌다. */
 .toolbar select { width: auto; max-width: none; }
@@ -2344,18 +2389,24 @@ form.card .btn--primary:active { transform: translateY(0); }
  *   나눈 의미가 없어진다. 좁아지면 auto-fit 이 알아서 1열로 떨어진다. */
 .setting-form--grid { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1.1rem 1.4rem; }
 .setting-form--grid .field { max-width: none; align-content: start; }
-.setting-form--grid .field input[type=number] { max-width: 11rem; }
-/* 값이 긴 항목(주소)만 격자의 한 줄을 그대로 쓴다 — 숫자 칸 폭에 넣으면 끝이 잘린다. */
+/* 숫자 입력은 **칸 폭이 아니라 자릿수**가 폭을 정한다(--ctl-w-num). max-width 였을 때는
+ *   격자 칸이 좁아지면 같이 줄어서 카드마다 입력 폭이 달라 보였다 — 폭을 못박아 없앤다.
+ *   좁은 화면에서 칸이 토큰보다 작아지는 경우만 max-width 가 되받는다. */
+.setting-form--grid .field input[type=number] { width: var(--ctl-w-num); max-width: 100%; }
+/* 값이 긴 항목(주소)만 격자의 한 줄을 그대로 쓰고 폭도 전폭이다 — 숫자 칸 폭에 넣으면 끝이 잘린다. */
 .setting-form--grid .field--wide { grid-column: 1 / -1; }
+.setting-form--grid .field--wide > input { width: 100%; }
 
 /* 그룹 카드를 좌우로도 세운다 — settings.php. 카드 다섯 개가 세로로만 쌓이면 카드마다
  *   두세 칸뿐인데도 화면 높이를 다 먹는다(카드 하나가 본문 폭의 1/4도 안 쓴다).
- *   auto-fit 이라 좁아지면 스스로 1열로 떨어지고, align-items:start 로 짧은 카드가
- *   옆의 긴 카드 높이까지 늘어나지 않게 한다(.card 는 격자 항목이라 기본이 stretch). */
+ *   auto-fit 이라 좁아지면 스스로 1열로 떨어진다.
+ *   높이는 **같은 줄끼리 맞춘다**(align-items 기본값 stretch). 예전엔 start 였는데, 항목 수가
+ *   카드마다 달라(조치 기한 3개 · 계정 정책 1개) 한 줄 안에서 카드 아래끝이 제각각으로 끊겼다
+ *   — 실측 1920px 첫 줄 222/154/133px. 카드 안의 항목은 .field 의 align-content:start 가
+ *   위에 붙여 두므로, 늘어나는 건 카드 테두리뿐이고 입력이 따라 늘어나지 않는다. */
 .setting-groups {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr));
-  align-items: start;
   gap: var(--sp-3);
 }
 .setting-groups > .card { margin-bottom: 0; }
@@ -2389,6 +2440,10 @@ form.card .btn--primary:active { transform: translateY(0); }
  *   바에 늘어놓고 목록·페이지네이션 **아래**에 뒀는데, 체크는 표에서 하고 버튼은 저 아래라
  *   그 사이를 페이저가 끊었다. 폭이 모자라면 접힌다(flex-wrap). */
 .form-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; margin-bottom: .2rem; }
+/* 표 제목이 이 줄을 이끈다 — margin-right:auto 가 남는 폭을 먹어 일괄 조작 버튼이 오른쪽 끝으로
+ * 간다. 버튼 하나만 있는 줄(선택 0개일 때 비활성 버튼 한 줄)을 만들지 않기 위한 자리다. */
+.form-bar__cap { font-weight: 700; margin-right: auto; }
+.form-bar__cap .why { font-weight: 400; margin-left: .35rem; }
 
 /* 판정 기준 정의목록 — 화면의 값이 무슨 기준으로 정해지는지 한 쌍씩. 산문을 늘리는 대신 쓴다.
  *   .kv 를 안 쓰는 이유: .kv 는 열 폭이 max-content 라 한 문장짜리 값이 카드를 넘친다. */
@@ -2429,9 +2484,21 @@ form.card .btn--primary:active { transform: translateY(0); }
  * 죽은 규칙이었다), 옆 메뉴로 옮길 때마다 본문이 좌우로 흔들렸다(사용자 지적 — users.php 는
  * 꽉 차는데 cce-rules.php 는 안 찬다). 좁게 둘 이유가 화면 성격에 있는 곳만 아래에서 예외로
  * 선언하고, 그 이유를 그 자리에 적는다. 새 화면은 아무것도 안 적으면 이 값을 받는다. */
-.page__main { width: min(100%, 1680px); min-height: calc(100vh - var(--topbar-h)); margin-inline: auto; }
+.page__main { width: min(100%, 1680px); min-height: calc(100vh - var(--topbar-h) - var(--foot-h)); margin-inline: auto; }
 .page__main > h1:first-child { margin-top: .15rem; }
 .page__main > h1:first-child + .sub { margin-top: .25rem; }
+
+/* 본문 아래 한 줄 — 저작권과 소스코드 링크(AGPL-3.0 제13조: 네트워크로 이 화면을 쓰는
+ * 사람도 소스를 받을 수 있어야 한다). 로그인 화면을 포함해 모든 페이지가 vg_footer() 로
+ * 끝나므로 이 한 규칙이 전 화면을 덮는다. 본문을 밀어내지 않게 캡션 크기로 둔다. */
+.page__foot {
+  display: flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  min-height: var(--foot-h); padding: 0 var(--sp-3);
+  border-top: 1px solid var(--line);
+  color: var(--muted); font-size: var(--fs-xs);
+}
+.page__foot a { color: var(--text-2); text-decoration: none; }
+.page__foot a:hover { color: var(--accent); text-decoration: underline; }
 
 /* 스타일가이드 — 공용 헬퍼와 토큰을 한 화면에서 비교하는 내부 페이지.
  * **본문 폭 예외**: 데이터 목록이 아니라 읽는 문서라, 1680 으로 늘리면 견본 한 줄이
@@ -2493,12 +2560,21 @@ form.card .btn--primary:active { transform: translateY(0); }
 /* 표를 담은 카드는 **스크롤 컨테이너가 아니어야** 한다 — .card 기본값(overflow-x:auto)이면
  * sticky 머리글이 뷰포트가 아니라 카드를 기준으로 잡혀 표 위에 빈 띠가 생긴다(권한 매트릭스에서
  * 겪은 그 문제). clip 은 모서리는 잘라 주면서 스크롤 컨테이너를 만들지 않는다. 목록 화면의 표는
- * table-layout:fixed + 칸 안 줄바꿈이라 애초에 가로로 넘치지 않는다(아래 규칙). */
-.page--activity .card:has(> table), .page--advisories .card:has(> table),
-.page--assets .card:has(> table), .page--changes .card:has(> table),
-.page--compliance_rules .card:has(> table), .page--cves .card:has(> table),
-.page--findings .card:has(> table), .page--packages .card:has(> table),
-.page--vendor .card:has(> table) { margin-top: .5rem; overflow-x: clip; }
+ * table-layout:fixed + 칸 안 줄바꿈이라 애초에 가로로 넘치지 않는다(아래 규칙).
+ *   `> .card__body > table` 을 같이 받는 이유: 제목이 있는 카드는 vg_card() 가 표를
+ *   **.card__body 로 한 겹 감싼다**. `> table` 만 보면 그 카드는 이 규칙에서 빠져
+ *   overflow-x:auto 인 채로 남고, 그러면 sticky 머리글이 카드를 기준으로 top(상단바+툴바
+ *   높이)만큼 내려가 **첫 데이터 행 아래에 머리글이 그려진다** — 감사 로그의 두 표(사용자별
+ *   접속 현황·접속기록)가 실제로 그랬다(실측 1600px: th top 459.5px vs 첫 행 top 427.9px). */
+.page--activity .card:has(> table, > .card__body > table),
+.page--advisories .card:has(> table, > .card__body > table),
+.page--assets .card:has(> table, > .card__body > table),
+.page--changes .card:has(> table, > .card__body > table),
+.page--compliance_rules .card:has(> table, > .card__body > table),
+.page--cves .card:has(> table, > .card__body > table),
+.page--findings .card:has(> table, > .card__body > table),
+.page--packages .card:has(> table, > .card__body > table),
+.page--vendor .card:has(> table, > .card__body > table) { margin-top: .5rem; overflow-x: clip; }
 .page--findings .cards, .page--assets .cards, .page--changes .cards { padding: .15rem 0; }
 /* 열 폭은 vg_table() 이 준 width 가 정한다. auto 레이아웃에선 '내용이 긴 칸' 이 폭을 가져가서,
  * 취약점 현황(1568px 실측)에서 한 줄짜리 '조치' 가 448px 를 먹는 동안 호스트명은 207px 안에서

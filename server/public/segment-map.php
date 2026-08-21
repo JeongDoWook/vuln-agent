@@ -443,15 +443,15 @@ vg_header('세그먼트 맵', 'segment_map');
         </div>
       <?php endforeach; ?>
       <?php
-      // 노드 색이 무슨 뜻인지 그 자리에서 말한다 — 색만으로 식별하게 두지 않는다(vg_legend 규약).
-      //   노드 안에도 숫자·상태 글자가 항상 찍혀 있어 색을 못 봐도 읽힌다.
+      /* 색이 무슨 뜻인지만 말한다 — 그림 읽는 법('… 쪽 띠 = …', '알약 숫자 = …')은 걷어냈다.
+         노드 안에 조치 대상 건수와 '미관리' 글자가 이미 찍혀 있어 그림이 스스로 말한다.
+         '미관리' 칩도 뺐다: 톤이 CRITICAL 과 같은 빨강이라 같은 색을 두 뜻으로 읽게 했다. */
       vg_legend([
           ['label' => 'CRITICAL', 'tone' => 'crit'],
           ['label' => 'HIGH',     'tone' => 'high'],
           ['label' => 'MEDIUM',   'tone' => 'med'],
-          ['label' => '조치 대상 없음', 'tone' => 'ok'],
-          ['label' => '미관리(에이전트 없음) · 점선 테두리', 'tone' => 'crit'],
-      ], ['inline' => true, 'caption' => '노드의 게이트웨이 쪽 띠 = 최고 심각도 · 알약 숫자 = 조치 대상 건수']);
+          ['label' => '없음',      'tone' => 'ok'],
+      ], ['inline' => true]);
       ?>
     <?php endif; ?>
 
