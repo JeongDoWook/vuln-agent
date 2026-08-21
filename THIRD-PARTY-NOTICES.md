@@ -80,16 +80,25 @@
 | FIRST EPSS | FIRST.org | 악용 확률 점수 | 무료 제공, 출처 표시 요청 | https://www.first.org/epss/ |
 | 데비안 보안 트래커 | Debian Project | 데비안 릴리스별 미수정 취약점 | **명시된 라이선스 없음** — security-tracker 저장소에 LICENSE·COPYING 이 없고 트래커 사이트에도 문구가 없다 | https://security-tracker.debian.org/tracker/ |
 | RHEL OVAL · Red Hat 미수정(hydra API) | Red Hat | RPM 계열 패치 판정 · 수정본 없는 취약점 상태 | **CC BY 4.0** — "The data resources linked on this page as well as their alternative representations available through the Security Data API are licensed under the Creative Commons Attribution 4.0 International License." 재배포·수정 시 Red Hat, Inc. 출처 표시 필요 | https://access.redhat.com/security/data |
-| Oracle Linux OVAL | Oracle | Oracle Linux 패치 판정 | **Oracle 사이트 이용약관 적용** — `linux.oracle.com` 푸터가 oracle.com/legal 로 연결된다. 제3조 Use of Materials: 개인·정보 목적의 **비상업적 이용만**, 변경 금지, **재배포 금지**. 아래 주의 참고 | https://www.oracle.com/legal/terms.html |
+| Oracle Linux OVAL | Oracle | Oracle Linux 패치 판정 | **Oracle 사이트 이용약관 적용** — `linux.oracle.com` 푸터가 oracle.com/legal 로 연결된다. 제3조 Use of Materials: 개인·정보 목적의 **비상업적 이용만**, 변경 금지, **재배포 금지**. 지금 저장 범위와 경계는 아래 주의 참고 | https://www.oracle.com/legal/terms.html |
 | AlmaLinux OVAL | AlmaLinux OS Foundation | AlmaLinux 패치 판정 | **명시된 라이선스 없음** — OVAL XML·wiki 문서·security 페이지 어디에도 표기가 없다 | https://security.almalinux.org/oval/ |
 | Ubuntu OVAL | Canonical | 우분투 패치 판정 | 배포 파일에는 라이선스 헤더가 없다. 원천인 Ubuntu CVE Tracker 는 Launchpad 프로젝트 메타데이터에 `"licenses": ["GNU GPL v2"]` 로 선언돼 있다 | https://launchpad.net/ubuntu-cve-tracker |
 | SCAP 보안 기준 (ComplianceAsCode/content) | ComplianceAsCode 프로젝트 | 보안 설정 점검 기준(SSG) | BSD-3-Clause | https://github.com/ComplianceAsCode/content |
 | 커널 CNA (vulns.git) | kernel.org | 리눅스 커널 CVE 레코드 | 커널 저장소와 동일(GPL-2.0) | https://git.kernel.org/pub/scm/linux/security/vulns.git/ |
 
-> **주의 — Oracle Linux OVAL** 이 표에서 유일하게 **비상업적 이용·재배포 금지**가 걸린 항목이다.
-> 현재 이 제품은 OVAL 을 내려받아 판정에만 쓰고 원본이나 그 파생물을 외부에 다시 배포하지 않지만,
-> 상업적 배포를 검토한다면 Oracle 커넥터(`server/src/feeds/rhoval.php` 의 Oracle 분기)를 빼거나
-> Oracle 과 별도 합의가 필요하다.
+> **Oracle Linux OVAL — 지금 형태는 약관 안에 있다**
+> Oracle 이용약관이 제한하는 것은 Materials 의 **비상업적 이용·변경·재배포**다. 이 제품이
+> Oracle OVAL 에서 실제로 저장하는 값은 `vendor · release_major · pkg_name · cve_id ·
+> fixed_evr · advisory(ELSA-ID) · severity` 뿐이고(`server/src/feeds/rhoval.php`), 권고 제목·
+> 설명·CVSS 는 **가져오지 않는다**(그 상세는 NVD 가 채운다). 즉 표현물을 복제하지도, 원본이나
+> 그 파생물을 외부에 다시 배포하지도 않는다. 저장소에도 Oracle 원본은 없다 —
+> `tests/fixtures/rhel-oval/oracle.oval.xml` 은 스키마만 흉내 낸 손으로 쓴 축소판이다.
+>
+> 선을 넘는 것은 다음 세 가지이고, 그중 하나라도 하게 되면 그때 Oracle 분기를 빼거나 별도
+> 합의가 필요하다: ⑴ 취약점 DB 자체를 내보내는 기능(오프라인 설치 번들·피드 덤프 등. 지금의
+> SBOM export 는 우리 스캔 결과라 해당하지 않는다) ⑵ 테스트 픽스처를 **원본 파일에서 잘라
+> 붙여** 갱신하는 것(공개 저장소이므로 그 순간 재배포가 된다) ⑶ 폐쇄망 고객에게 피드를 미리
+> 받아 동봉해 배포하는 것.
 >
 > **명시된 라이선스가 없는 항목(KISA · Debian · AlmaLinux)** 은 "확인을 안 했다"가 아니라
 > **"원 사이트에 표기 자체가 없음을 확인했다"** 는 뜻이다. 공개적으로 무상 제공되고 기계 판독을
@@ -103,3 +112,7 @@
 `server/public/assets/vendor/` 에 파일을 추가하거나, `Dockerfile` 의 `FROM`·`compose.*.yml` 의
 `image:` 를 바꾸거나, 새 피드 커넥터를 등록하면 이 문서도 같은 커밋에서 갱신한다.
 벤더링한 자산에는 `LICENSE` 와 `VERSION` 파일을 함께 넣는다(chartjs·flatpickr 가 그 형식이다).
+
+`tests/fixtures/` 의 피드 샘플은 **원본 파일에서 잘라 붙이지 않는다** — 스키마만 흉내 낸 손으로 쓴
+축소판을 유지한다. 이 저장소는 공개되므로 원본 발췌를 커밋하면 그 자체가 재배포가 되고,
+재배포를 금지하는 제공자(Oracle)가 실제로 있다.
