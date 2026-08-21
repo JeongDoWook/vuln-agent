@@ -134,6 +134,14 @@ function vg_connectors_render_list(array $connectors, string $csrf, array $logCo
             }
             if ($gi === null) { $others[] = $c; } else { $grouped[$gi][] = $c; }
         }
+        /* 역할 카드는 **두 칸으로** 세운다. 한 칸에 세로로 쌓으면 카드 4장이 1,079px 이라
+         * 1440·1920px 어디서도 한 화면에 안 들어갔다(실측). 표가 5열이라 칸이 셋 이상이면
+         * '작업' 칸의 버튼이 접혀 행 높이가 되레 늘어나므로 .card-row--2 로 칸 수를 둘로
+         * 못박는다(1340px 미만은 한 열 — CSS 가 갖는다).
+         * 실측 세로: 1,079px → 786px(1440) · 683px(1920), 말줄임 0칸.
+         * 카드 순서는 그대로다 — 그리드가 왼쪽→오른쪽, 위→아래로 채우므로
+         * '취약점 정보 / 위험 신호 / 벤더 판정 / 보안 기준' 읽는 차례가 유지된다. */
+        echo '<div class="card-row card-row--2">';
         foreach ($roleGroups as $gi => $g) {
             if (empty($grouped[$gi])) { continue; }
             echo '<div class="card"><strong>' . vg_h($g['title']) . '</strong>'
@@ -146,5 +154,6 @@ function vg_connectors_render_list(array $connectors, string $csrf, array $logCo
             vg_table($tableHeaders, $others, ['card' => false, 'cell' => $tableCells]);
             echo '</div></div>';
         }
+        echo '</div>';
     }
 }

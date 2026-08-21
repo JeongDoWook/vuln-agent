@@ -42,7 +42,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.17"
+SCRIPT_VERSION="3.18"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
@@ -59,6 +59,12 @@ PROJECT_SCAN_ROOTS="${PROJECT_SCAN_ROOTS:-/opt /srv /app /usr/local /var/lib/tom
 SCAN_MAX_FILES="${SCAN_MAX_FILES:-3000}"     # 프로젝트 의존성 스캔 파일 상한(패스별로 각각 적용)
 SCAN_MAX_DEPTH="${SCAN_MAX_DEPTH:-8}"        # 프로젝트 의존성 스캔 디렉터리 깊이 상한
 PROJECT_SCAN_TIMEOUT="${PROJECT_SCAN_TIMEOUT:-300}" # 프로젝트 의존성 스캔 전체 상한(초)
+# 배포판이 깐 파이썬 패키지(deb 의 `python3-*`, rpm 의 `python3-*`)의 메타 경로.
+#   PROJECT_SCAN_ROOTS 에 얹지 않고 **일부러 분리**한다 — 자세한 이유는 collect_python_system_meta 주석.
+#   글롭은 `for root in $PY_SYS_META_ROOTS` 에서 경로확장되고, 안 맞으면 리터럴이 남아 `[ -d ]` 로 걸린다
+#   (PROJECT_SCAN_ROOTS 의 `/var/lib/tomcat*` 과 같은 방식).
+PY_SYS_META_ROOTS="${PY_SYS_META_ROOTS:-/usr/lib/python3*/dist-packages /usr/lib/python3*/site-packages /usr/lib64/python3*/site-packages}"
+PY_SYS_META_MAX="${PY_SYS_META_MAX:-2000}"   # 이 패스 자체의 상한(메타 디렉터리 개수). 예산을 공유하지 않는다
 # 호스트 Go 바이너리 buildinfo 스캔 — 전체 strings 는 비싸다(149MB calico-node 에 1.34초).
 #   그래서 개수 상한을 따로 두고, 그 전에 값싼 선별(크기 → ELF 매직 → 앞부분 Go 표식)을 건다.
 GO_BIN_SCAN_MAX="${GO_BIN_SCAN_MAX:-40}"          # buildinfo 를 실제로 뽑을 Go 바이너리 개수 상한
@@ -1857,12 +1863,55 @@ pip_meta_license() {
   printf '%s\n' "$lic"
 }
 
+# 배포판이 깐 파이썬 패키지의 메타(`*.dist-info/METADATA` · `*.egg-info/PKG-INFO`)만 골라 읽는 좁은 패스.
+#   출력 계약은 collect_project_deps_installed 의 METADATA 분기와 **동일**하다
+#   (stdout `pip|name|version`, fd 3 `pip|name|version|라이선스`).
+#
+# 왜 필요한가 — `pip3 list`(cap langpkg pip)는 이 패키지들의 **이름·버전만** 낸다. 라이선스를 읽는
+#   쪽은 collect_project_deps_installed 인데 그건 PROJECT_SCAN_ROOTS(/opt /srv /app /usr/local …)
+#   안만 훑고, 데비안·우분투의 배포판 파이썬은 `/usr/lib/python3/dist-packages` 라 범위 밖이었다.
+#   운영 실측: `ubuntu` 호스트의 pip 패키지 130개 전부가 라이선스 0건이었다.
+#
+# 왜 PROJECT_SCAN_ROOTS 에 경로만 더하지 않았나 — 세 가지다.
+#   (a) 그 변수는 운영자가 환경변수로 덮어쓸 수 있다. 좁히는 순간 배포판 라이선스가 함께 사라진다.
+#   (b) SCAN_MAX_FILES(3000)는 **한 패스에 누적**되고 상한에 닿으면 `break 2` 로 패스가 통째로 끊긴다
+#       → 앱 의존성(/opt 등)의 예산을 나눠 쓰게 된다. 여기서 자체 상한(PY_SYS_META_MAX)을 따로 든다.
+#   (c) 애초에 기존 find 패턴은 `*/site-packages/*.dist-info/METADATA` 라 `dist-packages` 를 못 잡는다
+#       — 경로만 더해도 데비안 계열에선 한 건도 안 늘었다.
+#
+# 왜 글롭인가(`python3 -c 'import site'` 가 아니라) — 인터프리터 실행은 `have python3` 가드가
+#   필요하고, 성공해도 **그 인터프리터 하나**의 경로만 알려준다(호스트에 python 이 여럿이면 반쪽).
+#   반면 배포판별 관례는 고정돼 있어 글롭 셋으로 덮인다: 데비안·우분투 `dist-packages`,
+#   RHEL·Alpine·SUSE `site-packages`, 64비트 RPM 계열은 `/usr/lib64`. 실패 경로도 없다.
+#
+# 비용 — `-maxdepth 1 -type d` 라 루트 디렉터리 목록만 읽고 패키지 안으로는 안 들어간다.
+#   ubuntu:24.04 실측: 전체 재귀는 파일 1,741개, 이 방식은 항목 9개.
+collect_python_system_meta() {
+  local root d m name ver lic count=0
+  for root in $PY_SYS_META_ROOTS; do
+    [ -d "$root" ] || continue
+    while IFS= read -r d; do
+      count=$((count+1)); [ "$count" -le "$PY_SYS_META_MAX" ] || break 2
+      # dist-info 는 METADATA, egg-info 는 PKG-INFO — 필드 구조가 같아 먼저 있는 쪽 하나만 읽는다.
+      for m in "$d/METADATA" "$d/PKG-INFO"; do
+        [ -f "$m" ] || continue
+        name=$(sed -n 's/^Name: //p' "$m"|head -1);ver=$(sed -n 's/^Version: //p' "$m"|head -1);lic=$(pip_meta_license "$m")
+        [ -n "$name" ]&&[ -n "$ver" ]&&{ printf 'pip|%s|%s\n' "$name" "$ver"; [ -n "$lic" ]&&printf 'pip|%s|%s|%s\n' "$name" "$ver" "$lic" >&3; }
+        break
+      done
+    done < <(find "$root" -xdev -maxdepth 1 -type d \( -name '*.dist-info' -o -name '*.egg-info' \) 2>/dev/null|head -"$PY_SYS_META_MAX")
+  done
+}
+
 # 설치본에서 직접 읽는 고신뢰 소스 — METADATA/lock/jar. 출력: manager|name|version
 # 파일 수·깊이는 SCAN_MAX_FILES/SCAN_MAX_DEPTH 로 제한한다. sort 로 출력 순서를 고정해
 # 파일시스템 탐색 순서가 달라져도 같은 결과가 나오게 한다(content_hash 처닝 방지).
 collect_project_deps_installed() {
   local root f name ver lic count=0
-  for root in $PROJECT_SCAN_ROOTS; do
+  # 배포판 파이썬 패스는 예산(count)을 공유하지 않으려고 함수를 나눠 뒀지만, 출력은 여기서 합쳐
+  #   fd 3(라이선스)·`sort -u`(순서 고정) 계약을 그대로 태운다 — 호출부를 늘리지 않는다(DRY).
+  #   `break 2` 는 위쪽 for/while 만 끊으므로 프로젝트 패스가 상한에 걸려도 이 패스는 그대로 돈다.
+  { for root in $PROJECT_SCAN_ROOTS; do
     [ -d "$root" ] || continue
     while IFS= read -r f; do
       count=$((count+1)); [ "$count" -le "$SCAN_MAX_FILES" ] || break 2
@@ -1894,7 +1943,9 @@ collect_project_deps_installed() {
         *.war|*.ear) emit_nested_jars "$f";;
       esac
     done < <(find "$root" -xdev -maxdepth "$SCAN_MAX_DEPTH" -type f \( -path '*/site-packages/*.dist-info/METADATA' -o -path '*.egg-info/PKG-INFO' -o -name Cargo.lock -o -name Gemfile.lock -o -path '*/specifications/*.gemspec' -o -name package-lock.json -o -name yarn.lock -o -name pnpm-lock.yaml -o -name poetry.lock -o -name Pipfile.lock -o -path '*/composer/installed.json' -o -name '*.deps.json' -o -name '*.jar' -o -name '*.war' -o -name '*.ear' \) 2>/dev/null|head -"$SCAN_MAX_FILES")
-  done | sort -u
+  done
+  collect_python_system_meta
+  } | sort -u
 }
 
 # 선언 파일에서 읽는 보충 소스 — go.mod/requirements.txt/pom.xml.
@@ -2228,6 +2279,7 @@ have dotnet && cap langpkg nuget 'dotnet tool list -g 2>/dev/null | awk "NR>2 &&
 VG_INV="$TMP/langpkg__inventory.txt"
 VG_LIC="$TMP/langpkg__pkg_license.txt"
 export PROJECT_SCAN_ROOTS SCAN_MAX_FILES SCAN_MAX_DEPTH
+export PY_SYS_META_ROOTS PY_SYS_META_MAX
 export CMD_TIMEOUT GO_BIN_SCAN_MAX GO_BIN_MIN_SIZE GO_BIN_PROBE_BYTES
 export -f have emit_jar_meta emit_nested_jars collect_project_deps_installed collect_project_deps_declared
 export -f go_deps_from_binary collect_go_binary_deps
@@ -2239,7 +2291,9 @@ export -f go_deps_from_binary collect_go_binary_deps
 #   collect_project_deps_installed 가 부르는 헬퍼: pip_meta_license(라이선스) ·
 #   emit_gemfile_lock/emit_gemspec_name/gemspec_license(gem) · emit_yarn_lock/emit_pnpm_lock(node) ·
 #   emit_poetry_lock(pip). emit_gemspec_name 이 다시 gemspec_license 를 부르므로 그것도 함께 내보낸다.
-export -f pip_meta_license emit_gemfile_lock emit_gemspec_name gemspec_license emit_yarn_lock emit_pnpm_lock emit_poetry_lock
+#   collect_python_system_meta(배포판 파이썬 라이선스)도 같은 서브셸에서 불린다 — 빠지면
+#   dist-packages 라이선스만 조용히 0건이 된다(#735 와 같은 클래스).
+export -f pip_meta_license collect_python_system_meta emit_gemfile_lock emit_gemspec_name gemspec_license emit_yarn_lock emit_pnpm_lock emit_poetry_lock
 # 패스 하나를 "남은 예산 안에서만" VG_INV 에 덧붙인다. 한 스트림으로 이어 붙여 통째로 head -c 하면
 #   앞 패스가 큰 호스트에서 뒤 패스가 통째로 잘리므로 패스별로 자른다. head -c 가 줄 가운데를
 #   자를 수 있어(다음 패스 첫 줄과 붙어 엉뚱한 좌표가 된다) 개행도 채운다.
