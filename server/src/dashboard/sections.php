@@ -12,7 +12,24 @@ declare(strict_types=1);
  *   (섹션이 자기 숫자를 다시 세면 같은 화면 안에서 값이 갈린다).
  */
 
+require_once __DIR__ . '/../format.php';           // vg_dash_section_head() 의 vg_h()
+require_once __DIR__ . '/../view/icons.php';       // vg_dash_section_head() 의 vg_icon()
+                                                   //   ↑ 둘 다 index.php 의 우연한 로드 순서에 기대지 않는다(funnel.php 가 같은 이유로 고쳐졌다)
 require_once __DIR__ . '/sections/funnel.php';     // 좁혀지는 퍼널 4칸
-require_once __DIR__ . '/sections/signals.php';    // 주요 취약점 신호(KEV·노출·심각도 순)
-require_once __DIR__ . '/sections/trend.php';      // 최근 N일 High 이상 추세 — 배경이라 아래로
+require_once __DIR__ . '/sections/signals.php';    // 구성 도넛 두 장(등급 · 노출·실행) — 카드도 둘이다
+require_once __DIR__ . '/sections/trend.php';      // 최근 N일 High 이상 추세 — 도넛 옆 넓은 칸
 require_once __DIR__ . '/sections/hosts.php';      // 호스트별 현황 목록 + 페이지네이션(페이저가 화면을 닫는다)
+
+/**
+ * 위젯 묶음의 머리. **장식이 아니라 구분이다** — 카드가 여러 장이면 어디까지가 한 묶음인지
+ * 경계가 안 보인다(사용자 지적: "칸마다 딱 구분해서 보기 좋은데, 우린 좀 붙어 있고 쭉 나열된 느낌").
+ *
+ * 카드 제목(--fs-lg + strong)보다 한 단 물러난 라벨로 둔다 — 머리가 카드보다 강하면 묶음이
+ * 아니라 제목들의 나열이 된다. **묶음마다 달지 않는다**: 머리 하나가 세로 40px 안팎을 먹어서
+ * 넷을 달면 이 작업이 줄이려는 세로 길이를 도로 까먹는다(이 화면은 둘이다).
+ *
+ * $icon 은 icons.php 세트의 이름이다 — 여기서 새 아이콘을 만들지 않는다(모르는 이름이면 안 그린다).
+ */
+function vg_dash_section_head(string $title, string $icon = ''): void {
+    echo '<h2 class="dash-head">' . ($icon !== '' ? vg_icon($icon) : '') . vg_h($title) . '</h2>';
+}
