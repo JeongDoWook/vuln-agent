@@ -143,13 +143,13 @@ function vg_host_load_cce_tab(PDO $pdo, int $sid, int $perPage, int $offset, ?st
     }
     $st = $pdo->prepare("SELECT COUNT(*) FROM tb_cce_finding f WHERE $where");
     $st->execute($params); $total = (int) $st->fetchColumn();
-    // 점검 항목을 **검증된 룰셋(SSG)** 에 묶어 두었으므로, 그 룰의 기준 참조(CIS/NIST/STIG)를
-    //   함께 읽어 화면이 근거를 인용할 수 있게 한다. 묶이지 않은 항목은 refs 가 비어 있다.
+    /* 기준 참조(CIS/NIST/STIG)를 함께 읽던 tb_compliance_rule LEFT JOIN 은 걷었다 —
+     *   목록에서 '참조 매핑' 열이 사라지면서(tabs/cce.php) 읽어 오던 refs_json·ssg_title 을
+     *   쓰는 곳이 한 곳도 없어졌다. 그 값들의 정본 화면은 코드 링크가 여는 cce-rule.php 다.
+     *   검색(q)의 ssg_rule_id 조건은 tb_cce_finding 자기 컬럼이라 조인과 무관하게 그대로다. */
     $st = $pdo->prepare(
-        "SELECT f.code, f.ssg_rule_id, f.title, f.result, f.severity, f.evidence, f.rationale,
-                r.refs_json, r.title AS ssg_title
+        "SELECT f.code, f.ssg_rule_id, f.title, f.result, f.severity, f.evidence, f.rationale
            FROM tb_cce_finding f
-           LEFT JOIN tb_compliance_rule r ON r.rule_id = f.ssg_rule_id AND r.is_deleted = 0
           WHERE $where
           ORDER BY FIELD(f.result,'FAIL','NA','PASS'), FIELD(f.severity,'HIGH','MEDIUM','LOW'), f.code
           LIMIT $perPage OFFSET $offset"
