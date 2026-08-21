@@ -1661,6 +1661,9 @@ emit_nested_jars() {
 #     실제 릴리스와 달라 매칭에 오탐만 만든다(YAGNI).
 #   · `nokogiri (1.13.8-x86_64-linux)` 처럼 플랫폼이 붙는 경우가 있어 하이픈 뒤는 떼어낸다
 #     (Gem::Version 자체엔 하이픈이 없다 — 하이픈은 곧 플랫폼 구분자다).
+#   · **라이선스는 내지 않는다(fd 3 을 쓰지 않는다) — Gemfile.lock 에는 라이선스 필드가 없다.**
+#     그래서 이 경로로만 발견된 gem 은 DB 에서 license 가 NULL 이다. 결함이 아니라 설계다
+#     (라이선스는 emit_gemspec_name 이 설치본 gemspec 본문에서만 읽는다).
 emit_gemfile_lock() {
   awk '
     /^[A-Z]/ { ingem = ($0 == "GEM"); inspecs = 0; next }   # 최상위 섹션 경계
@@ -1692,6 +1695,9 @@ emit_gemfile_lock() {
 #   · 따옴표가 없는 값(변수·메서드 호출)은 값을 알 수 없으니 버린다. SPDX 식별자 모양을 벗어난
 #     값도 버린다 — 확신이 안 서면 내지 않는다(이름·버전 파싱과 같은 태도).
 #   · 남는 값이 하나도 없으면 아무것도 내지 않는다. 빈 문자열을 내면 fd 3 에 빈 라이선스가 쌓인다.
+#   · 옛날 gem 의 gemspec 에는 라이선스 선언 자체가 없다(rubygems 가 `licenses=` 를 권장하기 전).
+#     `log4r 1.1.10`(2012) · `little-plugger 1.1.4`(2015) 는 본문 어디에도 `license` 가 없어
+#     NULL 이 되는 게 맞다 — 이런 건 파서를 넓혀도 못 채운다. 2026-08-21 ruby:3.2-slim 실측.
 gemspec_license() {
   awk '
     /(^|[^A-Za-z0-9_])licenses?[ \t]*=/ {
