@@ -311,9 +311,6 @@ vg_alert($agentErr);
   <?php
   $noScanMeta = [vg_h(trim($host['os_id'] . ' ' . $host['os_version']))];
   if (!empty($host['last_seen_ip'])) { $noScanMeta[] = 'IP ' . vg_h($host['last_seen_ip']); }
-  // 수집 이력이 없어도 보고서 작업은 만들 수 있다 — 외부에 줄 식별자는 여기서도 보여준다.
-  $noScanUuid = vg_host_uuid_meta($host);
-  if ($noScanUuid !== null) { $noScanMeta[] = $noScanUuid; }
   $noScanMeta[] = '<a href="/">대시보드</a>';
   vg_hero(vg_h($host['fqdn']), $noScanMeta, null, 'ok', '수집 상태');
   ?>
@@ -323,6 +320,9 @@ vg_alert($agentErr);
              내리지 않는다 — tabs/manage.php 가 쓰는 것과 같은 게이트(스캔 전 신규 자산도 예외 없음). */ ?>
     <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
     <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
+    <?php // 수집 이력이 없어도 보고서 작업은 만들 수 있다 — 이 화면은 탭(자산 설정)이 없으므로
+          //   UUID 카드를 여기서 직접 그린다(#host-hero-uuid-remove).
+          vg_host_render_uuid_card($host); ?>
   <?php endif; ?>
   <div class="card"><?php vg_empty(['icon' => 'feed', 'title' => '아직 수집 이력이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
