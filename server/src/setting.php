@@ -38,6 +38,8 @@ function vg_setting_groups(): array {
                        'note'  => 'ISMS-P 2.5.1·2.5.6 — 로그인이 없는 대화형 계정을 미사용으로 판정'],
         'report'   => ['label' => 'AI 보고서',
                        'note'  => '선택적 외부 연동(기본 꺼짐) — 주소를 비우면 쓰지 않는다 · 넣을 땐 경로 없이 호스트[:포트]까지'],
+        'source'   => ['label' => '소스코드 공개',
+                       'note'  => 'AGPL-3.0 제13조 — 화면 하단에 이 주소를 링크로 노출한다'],
     ];
 }
 
@@ -114,6 +116,16 @@ function vg_setting_defs(): array {
             'label' => '진행 확인 최대 횟수', 'type' => 'int', 'min' => 1, 'max' => 2000,
             'group' => 'report', 'default_const' => 'VG_REPORT_POLL_MAX_ATTEMPTS',
             'desc'  => '이 횟수를 넘으면 확인을 멈춥니다(작업은 서버에 남아 나중에 다시 볼 수 있습니다).',
+        ],
+        // 소스코드 주소 — AGPL 제13조(네트워크로 서비스를 받는 이용자에게도 소스를 준다)를
+        //   화면에서 실효화하는 값이다. 포크해 배포하는 쪽은 자기 저장소를 가리켜야 하므로
+        //   코드 상수가 아니라 설정이어야 한다. 기본값 상수는 server/src/view/layout.php 가 갖는다.
+        //   type=link 인 이유: 저장소 주소에는 경로(/사용자/저장소)가 붙어서 type=url(경로 금지,
+        //   base URL 자리)로는 저장 자체가 안 된다.
+        'app.source_url' => [
+            'label' => '소스코드 저장소 주소', 'type' => 'link', 'min' => 1, 'max' => 255,
+            'group' => 'source', 'default_const' => 'VG_SOURCE_URL',
+            'desc'  => '화면 하단 "소스코드 (AGPL-3.0)" 링크가 가리키는 주소. 포크해 배포한다면 자기 저장소 주소로 바꾸세요.',
         ],
     ];
 }
@@ -195,11 +207,13 @@ function vg_setting_int(string $key, int $default): int {
 }
 
 /**
- * 주소 항목(type=url)의 검증. 통과하면 null, 아니면 그 입력 아래에 붙일 한글 문구.
+ * 주소 항목(type=url·link)의 검증. 통과하면 null, 아니면 그 입력 아래에 붙일 한글 문구.
  *   설정 화면이 저장 전에 부른다 — 여기서 통과한 값이 그대로 서버측 HTTP 호출의 목적지가
  *   되므로, 스킴을 http/https 로 못박고 base URL 이 아닌 것(경로·질의·조각)을 거른다.
+ *   $allowPath 는 type=link 용이다 — 저장소 주소(/사용자/저장소)처럼 경로가 있어야 하는
+ *   항목이 있다. 그때도 질의문자열·조각은 여전히 거른다(링크 자리지 API 호출 자리가 아니다).
  */
-function vg_setting_url_error(string $raw, int $maxLen): ?string {
+function vg_setting_url_error(string $raw, int $maxLen, bool $allowPath = false): ?string {
     // 빈 값은 오류가 아니라 **"이 연동을 쓰지 않는다"** 는 뜻이다(AI 보고서의 기본 상태).
     //   여기서 거절하면 저장 버튼 한 번에 전 항목이 함께 거절된다(c09a6a33 / PR #593 과 같은 사고).
     if ($raw === '') {
@@ -214,7 +228,10 @@ function vg_setting_url_error(string $raw, int $maxLen): ?string {
         || (string) $p['host'] === '') {
         return 'http:// 또는 https:// 로 시작하는 주소만 가능합니다.';
     }
-    if (trim((string) ($p['path'] ?? ''), '/') !== '' || isset($p['query']) || isset($p['fragment'])) {
+    if (isset($p['query']) || isset($p['fragment'])) {
+        return '질의문자열(?)·조각(#) 없이 주소만 입력하세요.';
+    }
+    if (!$allowPath && trim((string) ($p['path'] ?? ''), '/') !== '') {
         return '경로·질의문자열 없이 주소(호스트[:포트])까지만 입력하세요.';
     }
     return null;

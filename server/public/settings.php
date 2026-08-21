@@ -57,10 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $value = (string) $int;
                     $logged = $int;
                 } else {
-                    // 주소 항목(type=url). 여기서 거르는 값이 그대로 서버측 HTTP 호출의
-                    //   목적지가 되므로, 스킴을 http/https 로 못박고 경로·질의는 붙이지 못하게 한다
-                    //   (base URL 자리다 — 뒤에 '/jobs/' 를 우리가 붙인다).
-                    $err2 = vg_setting_url_error($raw, (int) $def['max']);
+                    // 주소 항목. type=url 은 서버측 HTTP 호출의 목적지(base URL 자리 — 뒤에
+                    //   '/jobs/' 를 우리가 붙인다)라 경로를 못 붙이게 하고, type=link 는 화면에
+                    //   거는 링크(저장소 주소)라 경로를 허용한다. 스킴은 둘 다 http/https 로 못박는다.
+                    $err2 = vg_setting_url_error($raw, (int) $def['max'], (string) ($def['type'] ?? '') === 'link');
                     if ($err2 !== null) { $fieldErr[$key] = $err2; continue; }
                     $value = rtrim($raw, '/');
                     $logged = $value;
@@ -168,7 +168,7 @@ vg_header('설정', 'settings');
               <?php else: ?>
                 <input type="url" id="<?= vg_h($id) ?>" name="setting[<?= vg_h($key) ?>]"
                        value="<?= vg_h($val) ?>" maxlength="<?= (int) $def['max'] ?>"
-                       placeholder="https://호스트[:포트]"
+                       placeholder="<?= (string) ($def['type'] ?? '') === 'link' ? 'https://호스트/사용자/저장소' : 'https://호스트[:포트]' ?>"
                        <?= $descId !== '' ? 'aria-describedby="' . vg_h($descId) . '" aria-invalid="true"' : '' ?>>
               <?php endif; ?>
               <?php if ($showDefault): ?>

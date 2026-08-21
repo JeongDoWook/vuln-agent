@@ -8,8 +8,17 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../format.php';
 require_once __DIR__ . '/../audit.php';
+require_once __DIR__ . '/../setting.php';   // vg_setting_str (푸터의 소스코드 주소)
 require_once __DIR__ . '/nav.php';
 require_once __DIR__ . '/components.php';
+
+/**
+ * 소스코드 저장소 주소의 기본값(= app.source_url 설정 행이 없을 때 쓰이는 폴백).
+ *   AGPL-3.0 제13조는 네트워크로 이 화면을 쓰는 사람에게도 소스를 제공하라고 요구한다.
+ *   푸터가 이 값을 링크로 걸고, 포크해 배포하는 쪽은 설정 화면에서 자기 저장소로 바꾼다
+ *   (setting.php 규약대로 기본값 숫자·문자열은 호출부인 여기가 갖는다).
+ */
+const VG_SOURCE_URL = 'https://github.com/JeongDoWook/vuln-agent';
 
 /** 정적 파일 URL + 캐시버스팅(mtime). 파일이 없으면 경로만 돌려준다. */
 function vg_asset(string $path): string {
@@ -113,8 +122,20 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
 }
 
 function vg_footer(): void {
+    // AGPL-3.0 제13조 실효화 — 네트워크로 이 화면을 쓰는 사람도 소스를 받을 수 있어야 한다.
+    //   로그인 화면을 포함해 모든 페이지가 vg_footer() 로 끝나므로 여기 한 곳이면 전부 덮는다.
+    //   스킴을 다시 확인하는 이유: 설정 화면은 http/https 만 저장하지만, DB 를 직접 고친
+    //   값이 javascript: 로 들어오면 그대로 링크가 된다. 어긋나면 조용히 기본값으로 돌린다.
+    $src = trim(vg_setting_str('app.source_url', VG_SOURCE_URL));
+    if (preg_match('#^https?://#i', $src) !== 1) {
+        $src = VG_SOURCE_URL;
+    }
     ?>
 </main>
+<footer class="page__foot">
+  <span>&copy; 2026 JeongDoWook</span>
+  <a href="<?= vg_h($src) ?>" target="_blank" rel="noopener noreferrer">소스코드 (AGPL-3.0)</a>
+</footer>
 </div>
 </body>
 </html>
