@@ -54,3 +54,5 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 ## 라이선스
 
 [MIT License](LICENSE)
+
+활용한 제3자 오픈소스의 출처·라이선스는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 에 정리했다.
