@@ -57,6 +57,11 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 | 개발 도구(출품작 아님) | `kit/` · `scripts/` · `deploy/orchestrator/` · `.claude/` | 이 저장소를 개발하는 데 쓴 파이프라인이며 제품 코드가 아닙니다 |
 | 선택적 외부 연동(기본 꺼짐) | AI 보고서 — `server/src/report_job.php` | 별도의 외부 보고서 API 가 필요하고 **그 생성기 소스는 이 저장소에 없습니다** |
 
+개발 도구 경로(`kit/`·`scripts/`·`deploy/orchestrator/`·`.claude/`·`.codex/`·`CLAUDE.md`·`AGENTS.md`·
+`AGENTS-review-kit.md`·`.review-kit.json`·`.review-kit-manifest.json`·`.pipeline.json`)는 `.gitignore`
+로 저장소 추적에서 빠져 있습니다 — 클론한 저장소엔 안 보이고, 유지보수자가 이 방식으로 계속 개발할
+로컬 워크트리에만 존재합니다.
+
 AI 보고서는 설정(설정 화면 → AI 보고서 → 보고서 API 주소)에 주소를 넣어야 켜지고, 비어 있으면 호스트
 상세에 카드 자체가 나오지 않습니다. 이 연동은 인증 없는 내부 API 를 전제하므로 **신뢰된 내부망 전용**입니다 —
 인터넷에 노출된 주소를 넣지 마세요. 켜지 않아도 수집·매칭·판정·리포팅 등 나머지 기능은 그대로 동작합니다.
