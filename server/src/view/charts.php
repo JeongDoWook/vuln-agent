@@ -74,6 +74,74 @@ function vg_donut_list(array $items, array $opts = []): void {
 }
 
 /**
+ * **자기 분모를 가진 미니 고리** 목록 — 값마다 한 줄, 줄마다 작은 도넛 하나.
+ *
+ *   한 고리에 못 담는 값들을 고리 어휘로 세우는 자리다. vg_donut_kpi() 는 조각들이 **한
+ *   모집단**을 나눠 가질 때만 쓸 수 있다 — 모집단이 서로 다른 값을 한 고리에 넣으면 합이
+ *   거짓말이 된다(자산 상세 '등급 밖의 신호': KEV·외부노출은 tb_finding, 소켓은 tb_exposure,
+ *   설정은 tb_cce_finding). 그렇다고 목록만 세우면 옆 카드의 도넛과 어휘도 높이도 안 맞는다.
+ *   그래서 **고리를 값 수만큼 쪼갠다** — 각 고리는 자기 분모만 그리므로 어떤 합도 주장하지 않고,
+ *   화면에는 옆 카드와 같은 원형 어휘가 선다.
+ *
+ *   $items: [['label'=>…, 'value'=>int, 'total'=>int, 'denom'=>'전체 취약점',
+ *             'tone'=>…, 'href'=>…, 'title'=>…], …]
+ *           'total' 이 0이면 고리를 안 채운다(비율을 주장할 근거가 없다 — 값은 그대로 보인다).
+ *   $opts:  'size' — 고리 지름(px, 기본 32).
+ */
+function vg_ratio_rings(array $items, array $opts = []): void {
+    $size = max(24, (int) ($opts['size'] ?? 32));
+    $r    = 15.9155;   // 둘레가 정확히 100 인 반지름 — dasharray 가 곧 퍼센트다
+
+    echo '<div class="ring-rows">';
+    foreach ($items as $it) {
+        if (!is_array($it)) { continue; }
+        $label = (string) ($it['label'] ?? '');
+        $value = max(0, (int) ($it['value'] ?? 0));
+        $total = max(0, (int) ($it['total'] ?? 0));
+        $denom = (string) ($it['denom'] ?? '');
+        $tone  = vg_donut_tone((string) ($it['tone'] ?? 'muted'));
+        $href  = (string) ($it['href'] ?? '');
+        // 분모가 값보다 작을 수는 없지만(부분/전체), 집계 시점이 어긋나도 고리가 넘치지 않게 자른다.
+        $pct   = $total > 0 ? min(100.0, $value / $total * 100) : 0.0;
+
+        // 분모 줄 — 비율은 여기가 말한다(32px 고리 안에는 숫자가 안 들어간다).
+        $ratio = $total > 0
+            ? $denom . ' ' . number_format($total) . '건의 ' . number_format($pct, 1) . '%'
+            : $denom . ' 집계 없음';
+        $title = (string) ($it['title'] ?? ($label . ' ' . number_format($value) . ' · ' . $ratio));
+
+        $tag = $href !== '' ? 'a' : 'div';
+        $cls = 'ring-row' . ($value === 0 ? ' ring-row--zero' : '');
+        echo '<' . $tag . ' class="' . $cls . '"'
+            . ($href !== '' ? ' href="' . vg_h($href) . '"' : '')
+            . ' title="' . vg_h($title) . '">';
+
+        echo '<span class="ring">'
+            . '<svg viewBox="0 0 42 42" width="' . $size . '" height="' . $size . '"'
+            . ' role="img" aria-label="' . vg_h($label . ' — ' . $ratio) . '">'
+            . '<circle class="donut__track" cx="21" cy="21" r="' . $r . '" fill="none" stroke-width="6"></circle>';
+        if ($pct > 0) {
+            // 0.6 아래로는 안 줄인다 — 1건짜리 고리가 아예 안 보이면 그림이 숫자와 어긋난다.
+            $len = max(0.6, $pct);
+            echo '<circle class="donut__arc tone-' . vg_h($tone) . '" cx="21" cy="21" r="' . $r . '"'
+                . ' fill="none" stroke-width="6" stroke-linecap="round"'
+                . ' stroke-dasharray="' . round($len, 2) . ' ' . round(100 - $len, 2) . '"'
+                . ' stroke-dashoffset="25"></circle>';
+        }
+        echo '</svg></span>';
+
+        echo '<span class="ring-row__text">'
+            . '<span class="ring-row__label">' . vg_h($label) . '</span>'
+            . '<span class="ring-row__den">' . vg_h($ratio) . '</span>'
+            . '</span>'
+            . '<b class="ring-row__val">' . number_format($value) . '</b>';
+
+        echo '</' . $tag . '>';
+    }
+    echo '</div>';
+}
+
+/**
  * 중앙 총계 도넛 KPI — 순수 SVG(차트 라이브러리를 들이지 않는다). 왼쪽 도넛 + 오른쪽 조각 목록.
  *
  *   $title    : 접근성 이름(SVG 의 aria-label). **눈에 보이는 제목은 그리지 않는다** —

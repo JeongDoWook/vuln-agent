@@ -145,11 +145,14 @@
   --ctl-h: 2.05rem;  /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
   /* 컨트롤 **폭** 은 --ctl-w-* 하나로 모은다(높이가 --ctl-h 하나인 것과 같은 규칙).
    * 폼 안에서 칸마다 폭이 달라 보이던 것을 없애려는 토큰이라, 새 폼을 만들 때도 값을
-   * 직접 적지 말고 여기서 가져다 쓴다. 규칙은 두 줄이다:
+   * 직접 적지 말고 여기서 가져다 쓴다. 규칙은 세 줄이다:
    *   · 자릿수가 정해진 값(숫자 입력)  → --ctl-w-num 고정폭. 칸이 넓어져도 안 늘어난다.
+   *   · 짧은 어휘를 담는 셀렉트         → --ctl-w-sel 상한. 두 글자 값 옆에 빈 칸이 손가락
+   *     두 마디씩 남던 것을 막는다(더 넓어야 하는 칸만 max-width:none 으로 눕힌다).
    *   · 길이를 모르는 값(주소·이름 등) → width:100% 전폭(격자의 한 줄을 그대로 쓴다).
-   * 셀렉트처럼 다른 표준 폭이 필요해지면 값을 화면에 박지 말고 --ctl-w-<쓰임> 을 여기 더한다. */
+   * 다른 표준 폭이 필요해지면 값을 화면에 박지 말고 --ctl-w-<쓰임> 을 여기 더한다. */
   --ctl-w-num: 11rem;  /* 숫자 입력 공통 폭 — 네 자리(1440·2000) + 스피너 기준 */
+  --ctl-w-sel: 16rem;  /* 셀렉트 폭 상한 — 상/중/하·C/S/O 같은 짧은 어휘 기준 */
   --topbar-h: 56px;  /* .topbar 의 min-height 와 공유 — sticky 내비 top·scroll-margin 이 같이 따라간다 */
   /* 본문 아래 저작권·소스코드 링크 줄(.page__foot)의 높이. .page__main 의 min-height 가 이만큼
    * 줄어들어서, 푸터가 생겼다고 짧은 화면에 세로 스크롤이 새로 생기지 않는다. */
@@ -716,6 +719,10 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 }
 /* 줄 자신이 아래 여백을 가지므로 칸 안의 카드는 여백을 버린다(겹치면 줄 간격이 두 배가 된다). */
 .card-row > .card { margin-bottom: 0; }
+/* 두 카드가 **한 덩어리로 읽혀야 하는 줄**(자산 상세 히어로의 등급 구성 ↔ 등급 밖의 신호)만
+ * 높이를 맞춘다. 기본값(align-items:start)은 "짧은 카드가 옆 카드만큼 늘어나지 않게" 하는
+ * 것이라 서로 무관한 카드가 서는 줄에는 그대로 옳다 — 그래서 전역이 아니라 수식어로 준다. */
+.card-row--even { align-items: stretch; }
 
 /* SBOM 부품표(sbom.php?view=html) 한 줄 — 도넛 1/4 + 도넛 1/4 + 컴포넌트 목록 1/2.
  * .card-row(균등 auto-fit)로는 못 만든다: 여기서는 칸 넓이가 서로 달라야 한다. 도넛은 값
@@ -1124,6 +1131,32 @@ a.donut-kpi__seg:hover { background: var(--surface-2); color: var(--text); }
 .donut-kpi__seg i.tone-cat5 { background: var(--cat-5); }
 .donut-kpi__seg i.tone-cat6 { background: var(--cat-6); }
 
+/* --- 자기 분모 미니 고리 목록(vg_ratio_rings) --------------------------------
+ * 한 고리에 못 담는 값들(모집단이 서로 다른 축)을 **줄마다 작은 고리 하나**로 세운다.
+ * 고리는 SVG 로 그리고 색은 도넛과 **같은 클래스**(.donut__arc.tone-*)를 재사용한다 —
+ * 새 색 규칙을 만들지 않는다(그림끼리 갈리면 두 카드가 다른 화면으로 읽힌다).
+ * 비율 숫자는 고리 안이 아니라 라벨 아래 한 줄이 갖는다(32px 안에는 숫자가 안 들어간다). */
+.ring-rows { display: grid; gap: .1rem; width: 100%; }
+.ring-row {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: .3rem .4rem; border-radius: var(--r-sm);
+  color: var(--text-2); text-decoration: none;
+}
+a.ring-row:hover { background: var(--surface-2); color: var(--text); }
+/* 0건인 줄도 지우지 않는다 — "이 자산엔 KEV 가 없다" 는 읽어야 할 사실이다. 뒤로만 물린다
+ * (.donut-kpi__seg--zero 와 같은 처리·같은 값). */
+.ring-row--zero { opacity: .55; }
+.ring { flex: none; display: inline-grid; place-items: center; line-height: 0; }
+/* 라벨/분모 두 줄이 남는 폭을 다 갖는다. min-width:0 이 없으면 긴 분모 문구가 줄을 밀어낸다. */
+.ring-row__text { display: grid; gap: .05rem; min-width: 0; flex: 1 1 auto; }
+.ring-row__label { color: var(--text); font-size: var(--fs-sm); font-weight: 650; }
+/* 분모 줄은 한 줄로 끝낸다 — 두 줄이 되면 옆 카드와 줄 높이가 어긋난다(그래서 말줄임). */
+.ring-row__den {
+  color: var(--muted); font-size: var(--fs-xs);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ring-row__val { flex: none; color: var(--text); font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+
 /* 지표 덩어리 여러 개를 한 줄에 — 대시보드 상단, 탐지 결과 첫 카드, 자산 상세 히어로.
  * 칸이 모자라면 자동으로 줄이 나뉜다(auto-fit) — 둘만 놓으면 넓은 화면에서 정확히 반반이다.
  * minmax 의 하한은 도넛(132px) + 목록이 겹치지 않는 최소 폭이다.
@@ -1408,6 +1441,10 @@ td details[open] summary { margin-bottom: .35rem; }
 .links { display: flex; flex-wrap: wrap; gap: .4rem; }
 .links a { font-size: var(--fs-sm); padding: .25rem .6rem; border: 1px solid var(--line-2); border-radius: var(--r-xs); color: var(--text-2); }
 .links a:hover { border-color: var(--accent); color: var(--accent-2); text-decoration: none; }
+
+/* 폼의 마지막 조작을 오른쪽 끝으로 — 긴 폼에서 왼쪽 구석 버튼은 훑어 내려온 시선을
+ * 되돌리게 한다(자산 등급의 '등급 확정'). td.right .actions 가 표 안에서 하던 것과 같은 정렬. */
+.actions--end { justify-content: flex-end; }
 
 /* .actions 바로 다음에 .links 가 오면(vg_sbom_links 등) 둘 다 margin 이 없어 붙어 보이고,
    .btn:hover 의 translateY(-1px) 로 호버 시 아래 줄과 겹친다 — 한 줄 띄운다. */
@@ -1854,6 +1891,9 @@ input[type=url]:focus,
 input[type=datetime-local]:focus, input[type=date]:focus, input[type=number]:focus,
 select:focus, textarea:focus { background: var(--surface); border-color: var(--accent); }
 input[type=search], select { font-size: var(--fs-sm); }
+/* 셀렉트는 폭 상한을 공통 토큰에서 받는다(위 --ctl-w-sel 주석). width:100% 는 그대로라
+ * 좁은 칸에서는 칸에 맞춰 줄고, 넓은 칸에서만 이 상한에 걸린다. */
+select { max-width: var(--ctl-w-sel); }
 input[type=checkbox] { width: auto; margin: 0; cursor: pointer; }
 
 /* --- 버튼 ---------------------------------------------------------------- */
@@ -2020,39 +2060,42 @@ td.right .actions { justify-content: flex-end; }
 .collection-item__stage { color: var(--text-2); font-weight: 650; }
 .collection-item__link { position: absolute; inset: 0; border-radius: inherit; }
 .collection-item__link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* 수집 제어 네 조작(즉시·예약·주기·티어) — 한 줄에 두 칸. 예전엕 .actions--stack 으로
-   한 조작이 한 줄을 통째로 썼는데, 입력 하나에 버튼 하나뿐이라 오른쪽 절반이 늘 비었다.
-   칸 안은 라벨이 윗줄, 그 아래가 [입력][버튼] 두 칸이다. */
+/* 수집 제어 네 조작(즉시·예약·주기·티어) — 한 줄에 두 칸, 칸 안은 **한 줄**이다:
+   [라벨][입력][버튼]. 라벨이 입력 위에 따로 한 줄을 먹던 때는 칸마다 두 줄이 됐고 그
+   두 줄이 칸 가로의 절반도 못 썼다(사용자: "좀 칸 낭비 심해 보여") — 라벨을 앞으로
+   보내면 세로는 절반이 되고 입력이 남는 가로를 그대로 받는다. */
 .agent-control__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 var(--sp-6);
-  padding: var(--sp-2) 0 var(--sp-1);
+  padding: var(--sp-1) 0;
 }
 .agent-control__grid > form.agent-control__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 4.5rem;
+  /* 라벨 칸은 고정폭이다 — 네 라벨이 전부 네 글자라 칸이 흔들릴 이유가 없고, 고정해야
+     두 칸의 입력 시작선이 세로로 맞는다(1fr 이면 칸마다 라벨 폭이 달라진다). */
+  grid-template-columns: 4.6rem minmax(0, 1fr) 4.5rem;
   align-items: center;
-  gap: var(--sp-2) var(--sp-3);
+  gap: var(--sp-2);
   margin: 0;
-  /* 두 칸 격자로 바꾼 뒤 위아래가 널널해져 카드가 필요 이상으로 높았다 — 한 칸 안이
-     [라벨]/[입력][버튼] 두 줄뿐이라 --sp-4 는 과했다(사용자 지적). */
-  padding: var(--sp-3) 0;
+  padding: var(--sp-2) 0;
   border-top: 1px solid var(--line);
 }
 /* 첫 줄의 두 칸은 카드 머리 바로 아래라 구분선을 안 그린다. */
 .agent-control__grid > form.agent-control__row:nth-child(-n+2) { border-top: none; }
-.agent-control__row label { grid-column: 1 / -1; margin: 0; min-width: 0; }
-.agent-control__row label strong { display: block; color: var(--text); font-size: var(--fs-md); }
+/* 라벨은 입력 **앞** 칸 하나만 쓴다(전역 label 의 display:block·바깥여백을 여기서 눕힌다). */
+.agent-control__label {
+  grid-column: 1; margin: 0; min-width: 0;
+  color: var(--text); font-size: var(--fs-sm); font-weight: 650;
+}
 .agent-control__row input:not([type=hidden]),
 .agent-control__row select,
 .agent-control__row .flatpickr-wrapper { width: 100%; max-width: none; }
 .agent-control__row .btn { width: 4.5rem; }
-.agent-control__row:first-child .btn { grid-column: 3; }
-/* 즉시 실행 줄의 '무결성 검사 포함' 체크박스 — 다른 줄의 입력칸이 서는 첫 칸을 그대로 쓴다.
-   label.inline 을 재사용하되(가로 정렬), 이 그리드에서는 라벨이 한 줄을 통째로 먹지 않게
-   칸을 고정하고 입력 폭 100% 규칙에서 체크박스만 뺀다. */
-.agent-control__row label.inline { grid-column: 1; margin-top: 0; }
+/* 즉시 실행 줄의 '무결성 검사 포함' 체크박스 — 다른 줄의 입력칸이 서는 가운데 칸을 그대로 쓴다.
+   label.inline 을 재사용하되(가로 정렬), 이 그리드에서는 바깥 여백을 지우고 입력 폭 100%
+   규칙에서 체크박스만 뺀다. */
+.agent-control__row label.inline { grid-column: 2; margin: 0; }
 .agent-control__row label.inline input[type=checkbox] { width: auto; }
 .agent-control__number { position: relative; }
 .agent-control__number input { padding-right: 2.5rem; }
@@ -2117,6 +2160,10 @@ span.flatpickr-weekday { color: var(--muted); font-size: var(--fs-xs); }
   .agent-control__status { display: none; }
   .agent-control__grid { grid-template-columns: 1fr; gap: 0; }
   .agent-control__grid > form.agent-control__row { grid-template-columns: 1fr auto; gap: .65rem; padding: 1rem 0; }
+  /* 좁은 화면에서는 라벨을 다시 입력 **위** 줄로 올린다 — 라벨 칸(4.6rem)을 떼고 나면 입력이
+     들어갈 가로가 안 남는다. 넓은 화면의 [라벨][입력][버튼] 한 줄과 목적은 같다(가로 낭비 제거). */
+  .agent-control__label { grid-column: 1 / -1; }
+  .agent-control__row label.inline { grid-column: 1; }
   /* 한 열에서는 두번째 칸도 윗 칸과 줄이 다르다 — 구분선을 돌려놓는다. */
   .agent-control__grid > form.agent-control__row:nth-child(2) { border-top: 1px solid var(--line); }
   .agent-control__grid > form.agent-control__row:first-child { border-top: none; }
@@ -2164,7 +2211,10 @@ span.flatpickr-weekday { color: var(--muted); font-size: var(--fs-xs); }
   background-repeat: no-repeat;
   background-position: .6rem center;
 }
-.toolbar select { width: auto; }
+/* 툴바·페이저의 셀렉트는 이미 width:auto 라 **내용만큼만** 넓다 — 공통 폭 상한(--ctl-w-sel)의
+   대상이 아니다(그 상한은 칸 전폭을 먹는 폼 셀렉트를 잡는 것이다). 긴 옵션 글자가 잘리지
+   않게 상한을 눕힌다. */
+.toolbar select { width: auto; max-width: none; }
 /* 기간 필터(감사로그) — 검색창처럼 늘어나면 안 된다. 내용(YYYY-MM-DD)만큼만 차지한다. */
 .toolbar input[type=date] { width: auto; flex: 0 0 auto; }
 
@@ -2181,7 +2231,7 @@ span.flatpickr-weekday { color: var(--muted); font-size: var(--fs-xs); }
 .pager a:hover { background: var(--surface-2); text-decoration: none; }
 .pager .cur { background: var(--accent); color: #fff; border-color: var(--accent); }
 .pager .muted { border: none; color: var(--muted-2); }
-.pager select { width: auto; }
+.pager select { width: auto; max-width: none; }
 
 /* --- 커넥터 편집 폼: 수집 방식 ---------------------------------------------
  * 타입을 고르면 그 커넥터가 데이터를 **어떻게** 가져오는지(REST API · 파일 다운로드 ·
@@ -3069,11 +3119,14 @@ form.card .btn--primary:active { transform: translateY(0); }
 .icon-cell .vg-ico { width: 1.5rem; height: 1.5rem; }
 
 /* --- 자산 등급의 구조화 검토 근거(host/grade.php) ---------------------------
- * 아홉 칸짜리 근거 폼은 등급을 **확정할 때만** 쓴다(대부분 비어 있다). 늘 펼쳐 두면
- * 자산 설정 탭을 이 폼이 통째로 차지해, 정작 위의 확정 등급·시스템 초안이 밀린다.
- * 접이식 본문은 폼(.setting-form)과 같은 간격으로 쌓아 접기 전후로 줄 간격이 안 바뀌게 한다. */
+ * 아홉 칸짜리 근거 폼의 **접기는 걷었다** — 접힌 폼은 채워야 하는 사람에게 못 본 폼이다.
+ * 대신 두 칸 격자(.form-grid)로 다섯 줄에 세운다. 여기 남은 <details> 는 그 위의
+ * '시스템이 본 신호의 근거' 하나뿐이다(읽을거리라 접혀 있어도 손해가 없다).
+ * 본문은 폼(.setting-form)과 같은 간격으로 쌓아 다른 줄과 간격이 안 어긋나게 한다. */
 .grade-review > summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 650; }
 .grade-review > summary:hover { color: var(--accent-2); }
+/* 접기가 사라진 자리의 제목 — 예전 <summary> 와 같은 무게로 둔다(줄 모양이 안 바뀐다). */
+.grade-review__title { margin: 0; color: var(--text-2); font-size: var(--fs-sm); font-weight: 650; }
 .grade-review__body { display: grid; gap: 1rem; margin-top: .9rem; }
 
 /* --- 모달 2열 폼의 칸 정렬(.form-grid 안의 .field) --------------------------
