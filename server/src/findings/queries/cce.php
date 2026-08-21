@@ -7,9 +7,9 @@ declare(strict_types=1);
  */
 
 /**
- * 보안설정(CCE) 탭 — 결과 분포 + 목록.
+ * 보안설정(CCE) 탭 — 결과 분포 + 위반의 등급 구성 + 목록.
  *   $f: q sev res page perPage
- *   반환: resultCounts total page rows
+ *   반환: resultCounts failSevCounts total page rows
  */
 function vg_findings_load_cce(PDO $pdo, array $scanIds, array $f): array {
     $q = (string) $f['q']; $sev = (string) $f['sev']; $res = (string) $f['res'];
@@ -17,14 +17,25 @@ function vg_findings_load_cce(PDO $pdo, array $scanIds, array $f): array {
 
     $in = implode(',', array_fill(0, count($scanIds), '?'));
     $cceResultCounts = ['FAIL'=>0, 'PASS'=>0, 'NA'=>0];
+    // 위반(FAIL)의 등급 구성 — 화면의 두 번째 카드가 쓴다. 등급 어휘는 cce 판정이 주는 셋뿐이다
+    //   (CRITICAL 이 없다 — findings.php 의 $sevOptions 와 같은 사실).
+    $failSevCounts = ['HIGH'=>0, 'MEDIUM'=>0, 'LOW'=>0];
 
     // 결과 분포는 필터 무관 — 대상 스캔 전체 기준(CVE 탭의 등급 KPI 와 같은 자리·같은 성격).
     //   NA 를 PASS 와 섞지 않는다: 위반 0건이 "준수" 로 읽히는 걸 이 제품은 반복해서 경계해 왔다.
     //   uq_cce(scan_id, code) 가 scan_id 선두라 IN 범위를 그대로 탄다.
-    $stmt = $pdo->prepare("SELECT result, COUNT(*) c FROM tb_cce_finding WHERE scan_id IN ($in) GROUP BY result");
+    // GROUP BY 에 severity 를 **한 칸 더** 얹어 위반의 등급 구성까지 같은 쿼리에서 낸다 —
+    //   쿼리를 새로 붙이지 않는다(훑는 행도 접근 경로도 그대로고, 결과 행만 3개 → 최대 9개다).
+    $stmt = $pdo->prepare(
+        "SELECT result, severity, COUNT(*) c FROM tb_cce_finding
+          WHERE scan_id IN ($in) GROUP BY result, severity"
+    );
     $stmt->execute($scanIds);
     foreach ($stmt->fetchAll() as $r) {
-        if (isset($cceResultCounts[$r['result']])) { $cceResultCounts[$r['result']] = (int) $r['c']; }
+        $rk = (string) $r['result'];
+        $sk = (string) $r['severity'];
+        if (isset($cceResultCounts[$rk])) { $cceResultCounts[$rk] += (int) $r['c']; }
+        if ($rk === 'FAIL' && isset($failSevCounts[$sk])) { $failSevCounts[$sk] += (int) $r['c']; }
     }
 
     $where  = "f.scan_id IN ($in)";
@@ -65,6 +76,6 @@ function vg_findings_load_cce(PDO $pdo, array $scanIds, array $f): array {
     $stmt->execute($params);
     $rows = $stmt->fetchAll();
 
-    return ['resultCounts' => $cceResultCounts,
+    return ['resultCounts' => $cceResultCounts, 'failSevCounts' => $failSevCounts,
             'total' => $total, 'page' => $page, 'rows' => $rows];
 }

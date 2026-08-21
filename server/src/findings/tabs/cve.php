@@ -58,10 +58,13 @@
    *   $runtimeCounts · $actionCounts, 전부 필터 무관하게 대상 스캔 전체에서 센 값).
    *   .card-row 는 칸이 모자라면 접힌다(auto-fit) — 좁은 화면에선 카드가 위아래로 선다.
    *   예전 한 카드 시절의 .kpi-donuts 격자가 하던 일을 이제 카드 줄이 한다.
+   *   --equal 은 세 카드의 **높이를 맞춘다**(기본 .card-row 는 짧은 카드가 위로 붙는다).
+   *   같은 자리에 같은 크기로 서야 셋이 나란히 읽힌다 — 목록 길이가 카드마다 달라(등급 4줄 ·
+   *   노출 8줄 · 조치 고리 3개) 그냥 두면 카드 아래가 제각각 비었다.
    *   data-action-queue 는 계약이다(tests/ui_structure_test.php 가 이 자리를 확인한다) —
    *   행동 큐 그 자체인 '조치 성격' 카드가 그대로 들고 간다. */
   ?>
-  <div class="card-row">
+  <div class="card-row card-row--equal">
   <?php
   /* 예전엔 등급 네 칸을 숫자 카드로 나열했다. 카드 크기·글자 크기가 전 등급에 똑같이
    *   주어져서 자릿수가 많은 등급이 무조건 커 보였다(실측: 'LOW 34,184' 가 'CRITICAL 1'
@@ -116,34 +119,44 @@
   }, ['title_attr' => '수집된 노출 상태별 구성 — 가운데 숫자는 지금 외부·로컬에서 닿거나'
                     . ' 실행 중인 것의 합입니다']);
 
-  /* 세 번째 카드 — 도넛으로 못 그리는 셋. **그림은 없어도 행 모양·스와치·링크 계약은
-   *   도넛 목록 그대로**다(vg_donut_list — 옆 카드들과 같은 어휘).
+  /* 세 번째 카드 — **셋을 한 도넛에 넣을 수 없는 셋**. 그래서 값마다 제 고리를 준다
+   *   (vg_ratio_donuts — 미니 도넛 3개, 각자 자기 분모).
    * 왜 한 도넛으로 못 묶나: 도넛은 구성비라 조각이 서로 겹치면 안 되는데 셋은 겹친다.
    *   기한 초과는 KEV 의 부분집합이고(기한 초과 ⊂ KEV), 재시작 필요는 KEV·기한 초과와 독립이라
-   *   같은 1건이 두 조각에 동시에 들어간다. 모집단도 갈린다 — 기한 초과만 High 이상 안에서
-   *   세고 나머지 둘은 전 등급이다(dev 실측: 전체 11,020 · KEV 144 · 재시작 7,329 · 기한 초과 2).
-   * 예전엔 이 사실을 목록 위 caption 의 툴팁으로 달았는데, 그 caption 이 이 덩어리의 유일한
-   *   표기라 옆 도넛 둘과 표기 규칙이 갈렸다. 이제 caption 은 **카드 제목**이 되고 그 한 문장은
-   *   제목 툴팁으로 간다 — 세 카드가 같은 자리에 같은 모양의 제목을 갖는다. */
+   *   같은 1건이 두 조각에 동시에 들어간다. 모집단도 갈린다 — 기한 초과만 High 이상 KEV 안에서
+   *   세고 나머지 둘은 전 등급이다(dev 실측: 전체 8,924 · KEV 168 · 재시작 5,933 · 기한 초과 2).
+   *   **한 고리에 넣으면 합이 거짓말이 된다.**
+   * 그럼 왜 지금 고리가 셋인가: 옆 카드 둘이 도넛인데 이 칸만 숫자 세 줄이라 어휘가 갈렸고,
+   *   목록이 카드 위쪽에 붙어 아래가 비었다(사용자 지적 — "여기도 왼쪽처럼 원형 통일"). 겹치는
+   *   값을 한 고리에 넣는 대신 **셋을 따로 그리면** 겹침·모집단 문제가 그대로 사라진다.
+   *   조각 하나짜리 고리가 100%로 읽히는 문제는 **분모를 글자로 함께 적어** 푼다
+   *   (`2 / 168 조치 기한 대상` — 이 줄은 장식이 아니라 vg_ratio_donuts 의 계약이다).
+   * 분모는 값마다 다르다: 기한 초과는 **기한을 따질 수 있는 것**(미조치 High 이상 KEV)이 분모고,
+   *   KEV·재시작은 전체 탐지가 분모다. 분모를 하나로 통일하면 그 순간 다시 거짓말이 된다.
+   * data-action-queue 는 계약이다(tests/ui_structure_test.php) — 카드가 그대로 들고 간다. */
   vg_card('조치 성격', static function () use ($actionCounts, $fx): void {
-      vg_donut_list([
+      $all = (int) ($actionCounts['total'] ?? 0);
+      vg_ratio_donuts([
           ['label' => '기한 초과', 'value' => (int) $actionCounts['overdue'], 'tone' => 'crit',
+           'base' => (int) ($actionCounts['overdue_base'] ?? 0), 'base_label' => '조치 기한 대상',
            'title' => 'KEV 중 조치 기한을 넘긴 미조치 · 기한 임박순으로 봅니다',
            'href' => vg_qs(['sev' => 'HIGH+', 'fx' => 'overdue', 'sort' => 'due', 'st' => null, 'page' => 1]),
            'selected' => $fx === 'overdue'],
           ['label' => 'KEV 등재', 'value' => (int) $actionCounts['kev'], 'tone' => 'high',
+           'base' => $all, 'base_label' => '전체 탐지',
            'title' => '실제 악용이 확인된 취약점(CISA KEV) · 등급과 무관하게 셉니다',
            'href' => vg_qs(['sev' => null, 'fx' => 'kev', 'st' => null, 'page' => 1]),
            'selected' => $fx === 'kev'],
           ['label' => '재시작 필요', 'value' => (int) $actionCounts['restart'], 'tone' => 'med',
+           'base' => $all, 'base_label' => '전체 탐지',
            'title' => '패치는 됐고 재시작·재부팅만 하면 해결되는 것',
            'href' => vg_qs(['sev' => null, 'fx' => 'restart', 'st' => null, 'page' => 1]),
            'selected' => $fx === 'restart'],
       ]);
   }, [
       'attrs'      => ['data-action-queue' => true],
-      'title_attr' => '기한 초과는 KEV 안에서만 세므로 세 값은 서로 겹칩니다'
-                    . ' — 합이 전체가 아니라 도넛(구성비)으로 그리지 않습니다',
+      'title_attr' => '셋은 서로 겹치고 모집단도 달라 한 도넛(구성비)에 넣지 않습니다'
+                    . ' — 고리마다 자기 분모가 아래에 적혀 있습니다',
   ]);
   ?>
   </div>
