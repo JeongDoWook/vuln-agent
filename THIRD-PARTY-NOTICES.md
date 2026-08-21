@@ -69,24 +69,32 @@
 취약점 판정에 쓰는 외부 데이터의 출처다. **코드가 아니라 데이터**라서 규정 제8조 ⑥(라이브러리·
 프레임워크·모델)의 직접 대상은 아니지만, 출처 명시(제8조 ⑤) 취지에 맞춰 정리해 둔다.
 목록은 `server/src/feeds.php` 의 `VG_CONNECTOR_TYPES` 카탈로그와 `server/src/feeds/*.php` 의
-기본 주소에서 뽑았다.
+기본 주소에서 뽑았고, **이용 조건은 2026-08-21 에 각 원 사이트에서 직접 확인했다.**
 
-| 피드 | 제공자 | 용도 | 이용 조건 | 출처 URL |
+| 피드 | 제공자 | 용도 | 이용 조건 (원 사이트 확인) | 출처 URL |
 |---|---|---|---|---|
 | CISA KEV | 미국 CISA | 실제 악용된 취약점 목록 | 미국 정부 저작물 — 자유 이용 | https://www.cisa.gov/known-exploited-vulnerabilities-catalog |
 | OSV.dev | Open Source Vulnerabilities | 패키지 생태계별 취약점 조회 | 스키마·도구는 Apache-2.0. 데이터는 각 원 출처의 라이선스를 따른다 | https://osv.dev/ |
 | NVD 2.0 | 미국 NIST | CVE 상세·CVSS 점수 | 미국 정부 저작물 — 자유 이용. CVE® 는 MITRE 의 등록상표 | https://nvd.nist.gov/developers |
-| KISA 보안공지 | 한국인터넷진흥원 보호나라 | 국내 보안공지·권고문 | 원 사이트 이용 조건(공공누리 표기)을 따름 — ★ | https://www.boho.or.kr/ |
+| KISA 보안공지 | 한국인터넷진흥원 보호나라 | 국내 보안공지·권고문 | **명시된 라이선스 없음** — 푸터 `Copyright(C) 2023 KISA. All rights reserved.`, 게시물에 공공누리 표기 없음. 이용안내는 "인용 시 자료 배포 기관을 명시" 만 요구 | https://www.boho.or.kr/ |
 | FIRST EPSS | FIRST.org | 악용 확률 점수 | 무료 제공, 출처 표시 요청 | https://www.first.org/epss/ |
-| 데비안 보안 트래커 | Debian Project | 데비안 릴리스별 미수정 취약점 | Debian 공개 데이터 — ★ | https://security-tracker.debian.org/tracker/ |
-| RHEL/Oracle/AlmaLinux OVAL | Red Hat · Oracle · AlmaLinux | RPM 계열 패치 판정 | 각 벤더가 공개 제공 — ★ | https://security.access.redhat.com/data/oval/v2/ |
-| Red Hat 미수정 (hydra API) | Red Hat | 수정본 없는 취약점 상태 | Red Hat 공개 보안 데이터 — ★ | https://access.redhat.com/hydra/rest/securitydata/ |
-| Ubuntu OVAL | Canonical | 우분투 패치 판정 | Canonical 공개 데이터 — ★ | https://security-metadata.canonical.com/oval/ |
+| 데비안 보안 트래커 | Debian Project | 데비안 릴리스별 미수정 취약점 | **명시된 라이선스 없음** — security-tracker 저장소에 LICENSE·COPYING 이 없고 트래커 사이트에도 문구가 없다 | https://security-tracker.debian.org/tracker/ |
+| RHEL OVAL · Red Hat 미수정(hydra API) | Red Hat | RPM 계열 패치 판정 · 수정본 없는 취약점 상태 | **CC BY 4.0** — "The data resources linked on this page as well as their alternative representations available through the Security Data API are licensed under the Creative Commons Attribution 4.0 International License." 재배포·수정 시 Red Hat, Inc. 출처 표시 필요 | https://access.redhat.com/security/data |
+| Oracle Linux OVAL | Oracle | Oracle Linux 패치 판정 | **Oracle 사이트 이용약관 적용** — `linux.oracle.com` 푸터가 oracle.com/legal 로 연결된다. 제3조 Use of Materials: 개인·정보 목적의 **비상업적 이용만**, 변경 금지, **재배포 금지**. 아래 주의 참고 | https://www.oracle.com/legal/terms.html |
+| AlmaLinux OVAL | AlmaLinux OS Foundation | AlmaLinux 패치 판정 | **명시된 라이선스 없음** — OVAL XML·wiki 문서·security 페이지 어디에도 표기가 없다 | https://security.almalinux.org/oval/ |
+| Ubuntu OVAL | Canonical | 우분투 패치 판정 | 배포 파일에는 라이선스 헤더가 없다. 원천인 Ubuntu CVE Tracker 는 Launchpad 프로젝트 메타데이터에 `"licenses": ["GNU GPL v2"]` 로 선언돼 있다 | https://launchpad.net/ubuntu-cve-tracker |
 | SCAP 보안 기준 (ComplianceAsCode/content) | ComplianceAsCode 프로젝트 | 보안 설정 점검 기준(SSG) | BSD-3-Clause | https://github.com/ComplianceAsCode/content |
 | 커널 CNA (vulns.git) | kernel.org | 리눅스 커널 CVE 레코드 | 커널 저장소와 동일(GPL-2.0) | https://git.kernel.org/pub/scm/linux/security/vulns.git/ |
 
-> ★ 표시는 "무료로 공개 제공된다"는 사실은 확인했지만 **명시적인 라이선스 식별자를 원 사이트에서
-> 재확인하지 않은** 항목이다. 출품 전에 각 사이트의 이용 조건을 한 번 더 대조하는 것을 권한다.
+> **주의 — Oracle Linux OVAL** 이 표에서 유일하게 **비상업적 이용·재배포 금지**가 걸린 항목이다.
+> 현재 이 제품은 OVAL 을 내려받아 판정에만 쓰고 원본이나 그 파생물을 외부에 다시 배포하지 않지만,
+> 상업적 배포를 검토한다면 Oracle 커넥터(`server/src/feeds/rhoval.php` 의 Oracle 분기)를 빼거나
+> Oracle 과 별도 합의가 필요하다.
+>
+> **명시된 라이선스가 없는 항목(KISA · Debian · AlmaLinux)** 은 "확인을 안 했다"가 아니라
+> **"원 사이트에 표기 자체가 없음을 확인했다"** 는 뜻이다. 공개적으로 무상 제공되고 기계 판독을
+> 전제로 배포되지만 재배포 권리는 명시돼 있지 않으므로, 이 제품도 원본을 재배포하지 않고
+> 판정 결과만 저장·표시한다.
 
 ---
 
