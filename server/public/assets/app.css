@@ -143,6 +143,13 @@
   --shadow-lg: 0 24px 64px rgb(0 0 0 / .18);
 
   --ctl-h: 2.05rem;  /* 인라인 컨트롤(작은 버튼·셀렉트) 공통 높이 */
+  /* 컨트롤 **폭** 은 --ctl-w-* 하나로 모은다(높이가 --ctl-h 하나인 것과 같은 규칙).
+   * 폼 안에서 칸마다 폭이 달라 보이던 것을 없애려는 토큰이라, 새 폼을 만들 때도 값을
+   * 직접 적지 말고 여기서 가져다 쓴다. 규칙은 두 줄이다:
+   *   · 자릿수가 정해진 값(숫자 입력)  → --ctl-w-num 고정폭. 칸이 넓어져도 안 늘어난다.
+   *   · 길이를 모르는 값(주소·이름 등) → width:100% 전폭(격자의 한 줄을 그대로 쓴다).
+   * 셀렉트처럼 다른 표준 폭이 필요해지면 값을 화면에 박지 말고 --ctl-w-<쓰임> 을 여기 더한다. */
+  --ctl-w-num: 11rem;  /* 숫자 입력 공통 폭 — 네 자리(1440·2000) + 스피너 기준 */
   --topbar-h: 56px;  /* .topbar 의 min-height 와 공유 — sticky 내비 top·scroll-margin 이 같이 따라간다 */
   /* 목록 화면의 sticky 필터 툴바 높이. 표의 sticky 머리글이 이 아래에 정확히 붙어야 하므로
    * 값을 고정해 두 sticky 가 서로를 가리지 않게 한다(.toolbar 의 min-height 와 공유). */
@@ -2291,18 +2298,24 @@ form.card .btn--primary:active { transform: translateY(0); }
  *   나눈 의미가 없어진다. 좁아지면 auto-fit 이 알아서 1열로 떨어진다. */
 .setting-form--grid { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1.1rem 1.4rem; }
 .setting-form--grid .field { max-width: none; align-content: start; }
-.setting-form--grid .field input[type=number] { max-width: 11rem; }
-/* 값이 긴 항목(주소)만 격자의 한 줄을 그대로 쓴다 — 숫자 칸 폭에 넣으면 끝이 잘린다. */
+/* 숫자 입력은 **칸 폭이 아니라 자릿수**가 폭을 정한다(--ctl-w-num). max-width 였을 때는
+ *   격자 칸이 좁아지면 같이 줄어서 카드마다 입력 폭이 달라 보였다 — 폭을 못박아 없앤다.
+ *   좁은 화면에서 칸이 토큰보다 작아지는 경우만 max-width 가 되받는다. */
+.setting-form--grid .field input[type=number] { width: var(--ctl-w-num); max-width: 100%; }
+/* 값이 긴 항목(주소)만 격자의 한 줄을 그대로 쓰고 폭도 전폭이다 — 숫자 칸 폭에 넣으면 끝이 잘린다. */
 .setting-form--grid .field--wide { grid-column: 1 / -1; }
+.setting-form--grid .field--wide > input { width: 100%; }
 
 /* 그룹 카드를 좌우로도 세운다 — settings.php. 카드 다섯 개가 세로로만 쌓이면 카드마다
  *   두세 칸뿐인데도 화면 높이를 다 먹는다(카드 하나가 본문 폭의 1/4도 안 쓴다).
- *   auto-fit 이라 좁아지면 스스로 1열로 떨어지고, align-items:start 로 짧은 카드가
- *   옆의 긴 카드 높이까지 늘어나지 않게 한다(.card 는 격자 항목이라 기본이 stretch). */
+ *   auto-fit 이라 좁아지면 스스로 1열로 떨어진다.
+ *   높이는 **같은 줄끼리 맞춘다**(align-items 기본값 stretch). 예전엔 start 였는데, 항목 수가
+ *   카드마다 달라(조치 기한 3개 · 계정 정책 1개) 한 줄 안에서 카드 아래끝이 제각각으로 끊겼다
+ *   — 실측 1920px 첫 줄 222/154/133px. 카드 안의 항목은 .field 의 align-content:start 가
+ *   위에 붙여 두므로, 늘어나는 건 카드 테두리뿐이고 입력이 따라 늘어나지 않는다. */
 .setting-groups {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr));
-  align-items: start;
   gap: var(--sp-3);
 }
 .setting-groups > .card { margin-bottom: 0; }
