@@ -55,7 +55,7 @@ $agentMsg = $agentFlash['agentMsg'] ?? null;
 $agentErr = $agentFlash['agentErr'] ?? null;
 $agentCsrf = vg_csrf_token();
 
-$err = null; $host = null; $scan = null; $scanAge = null; $pollAge = null; $approver = null; $gradeReview = [];
+$err = null; $host = null; $hostId = 0; $scan = null; $scanAge = null; $pollAge = null; $approver = null; $gradeReview = [];
 $latestAgent = '';   // 함대에서 관측된 최신 에이전트 버전('구버전' 판정 기준)
 $unsupContainers = [];   // 피드 미지원 배포판 컨테이너
 $missingStages = [];     // 최신 수집에서 수집 자체가 실패한 단계(한글 라벨)
@@ -108,8 +108,14 @@ $hasFilter = $q !== '' || $accFilter !== '';
 
 try {
     $pdo = vg_pdo();
-    $hostId = (int) ($_GET['id'] ?? 0);
-    $host = vg_host_find($pdo, $hostId);
+    /* 진입은 ?id=N(내부 링크의 순번)과 ?uuid=…(외부 노출용 식별자) 두 가지다 — 어느 쪽이
+     *   대상을 정하는지는 조회 규칙이라 identity.php 가 갖는다(인가는 이 파일에 남는다).
+     *   여기서 host_id 를 확정하면 그 아래 로직·폼·감사로그는 진입 방식을 몰라도 된다. */
+    //   $_GET 를 통째로 넘기지 않고 읽는 키를 여기서 이름 지어 준다 — 이 URL 이 어떤 쿼리를
+    //   받는지는 라우트 계약(tests/route_query_contract_test.php)이 **이 파일에서** 읽고,
+    //   조회층은 superglobal 을 모른다.
+    $host   = vg_host_resolve($pdo, ['uuid' => $_GET['uuid'] ?? null, 'id' => $_GET['id'] ?? null]);
+    $hostId = (int) ($host['host_id'] ?? 0);
     $pendingCommands = [];
 
     if ($host) {
@@ -305,6 +311,9 @@ vg_alert($agentErr);
   <?php
   $noScanMeta = [vg_h(trim($host['os_id'] . ' ' . $host['os_version']))];
   if (!empty($host['last_seen_ip'])) { $noScanMeta[] = 'IP ' . vg_h($host['last_seen_ip']); }
+  // 수집 이력이 없어도 보고서 작업은 만들 수 있다 — 외부에 줄 식별자는 여기서도 보여준다.
+  $noScanUuid = vg_host_uuid_meta($host);
+  if ($noScanUuid !== null) { $noScanMeta[] = $noScanUuid; }
   $noScanMeta[] = '<a href="/">대시보드</a>';
   vg_hero(vg_h($host['fqdn']), $noScanMeta, null, 'ok', '수집 상태');
   ?>
