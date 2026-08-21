@@ -1,5 +1,7 @@
 # vuln-agent
 
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue) ![Contest](https://img.shields.io/badge/2026%20오픈소스%20개발자대회-자유과제-informational) ![PHP](https://img.shields.io/badge/PHP-8.3-777bb4) ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1)
+
 > 설치된 취약점의 **개수**가 아니라 **지금 이 서버에서 실제로 위험한 것**을 먼저 보여주는 경량 취약점 진단 플랫폼.
 > 실행 맥락으로 판단하고, 억제한 결과도 판정 근거와 조치를 남겨 숨기지 않습니다.
 
@@ -24,12 +26,14 @@
 
 ### 핵심 기능
 
-- **판정** — 런타임 노출 7단계, 설명 가능한 오탐 억제, KEV·EPSS 우선순위 → [아키텍처 §2](docs/dev/architecture.md)
-- **인벤토리** — 호스트·컨테이너의 패키지·프로세스·노출, 계정과 패키지 무결성, **에이전트가 없는 IP**를 찾는 자산 탐색 → [화면 안내](docs/dev/화면-안내.md)
-- **자산 등급** — 업무 중요도(상·중·하)와 N2SF C/S/O 등급, 확정값과 시스템 제안값 분리 → [자산 등급](docs/dev/자산등급.md)
-- **설정 점검·컴플라이언스** — CCE를 PASS·FAIL·판정 불가로 구분, ISMS-P·ISO 27001 자동 판정, 기반시설 U-코드 72개를 분모로 둔 커버리지 → [보안설정 조치 가이드](docs/dev/보안설정-조치가이드.md)
-- **SCA·SBOM·의존성** — 8개 언어 생태계 매칭과 라이선스 분류, CycloneDX 1.5·SPDX 2.3 산출, 전이 의존성 역추적 → [Export API](docs/dev/export-api.md)
-- **운영** — 즉시·예약 수집과 진행률, 역할 권한과 호스트별 에이전트 키, 무인 자동 업데이트(Ed25519 서명 검증) → [설정 레퍼런스](docs/ui-configuration.md)
+| 기능 | 설명 | 더 보기 |
+|---|---|---|
+| 판정 | 런타임 노출 7단계, 설명 가능한 오탐 억제, KEV·EPSS 우선순위 | [아키텍처 §2](docs/dev/architecture.md) |
+| 인벤토리 | 호스트·컨테이너의 패키지·프로세스·노출, 계정과 패키지 무결성, **에이전트가 없는 IP**를 찾는 자산 탐색 | [화면 안내](docs/dev/화면-안내.md) |
+| 자산 등급 | 업무 중요도(상·중·하)와 N2SF C/S/O 등급, 확정값과 시스템 제안값 분리 | [자산 등급](docs/dev/자산등급.md) |
+| 설정 점검·컴플라이언스 | CCE를 PASS·FAIL·판정 불가로 구분, ISMS-P·ISO 27001 자동 판정, 기반시설 U-코드 72개를 분모로 둔 커버리지 | [보안설정 조치 가이드](docs/dev/보안설정-조치가이드.md) |
+| SCA·SBOM·의존성 | 8개 언어 생태계 매칭과 라이선스 분류, CycloneDX 1.5·SPDX 2.3 산출, 전이 의존성 역추적 | [Export API](docs/dev/export-api.md) |
+| 운영 | 즉시·예약 수집과 진행률, 역할 권한과 호스트별 에이전트 키, 무인 자동 업데이트(Ed25519 서명 검증) | [설정 레퍼런스](docs/ui-configuration.md) |
 
 ## 동작 방식
 
@@ -52,7 +56,7 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 만드는 데 쓴 도구이거나, 우리 저장소 밖 서버가 있어야 도는 선택 기능이라 **기본적으로 꺼져 있습니다**.
 
 | 구분 | 경로 | 설명 |
-| --- | --- | --- |
+|---|---|---|
 | 출품작 본체 | `server/` · `agent/` · `db/` · `deploy/` · `tests/` | 중앙 서버·에이전트·스키마·배포·검증. 심사 대상은 이것입니다 |
 | 개발 도구(출품작 아님) | `kit/` · `scripts/` · `deploy/orchestrator/` · `.claude/` | 이 저장소를 개발하는 데 쓴 파이프라인이며 제품 코드가 아닙니다 |
 | 선택적 외부 연동(기본 꺼짐) | AI 보고서 — `server/src/report_job.php` | 별도의 외부 보고서 API 가 필요하고 **그 생성기 소스는 이 저장소에 없습니다** |
