@@ -72,6 +72,8 @@ $reportActive = null;    // 아직 안 끝난 보고서 job — 있으면 화면
 
 $counts =['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $exposureCount = 0; $processCount = 0; $cceFail = 0; $suppressedCount = 0; $vulnTotal = 0; $scanTotal = 0;
+// 히어로 오른쪽 카드의 미니 고리가 쓰는 **분모** — 값과 같은 질의에서 함께 나온다(summary.php).
+$exposureExternal = 0; $cceTotal = 0;
 $critHighTotal = 0; $restartTotal = 0; $restartRows = []; $packageTotal = 0;
 // 위험 요약(히어로 바로 아래) — 심각도 분포와 같은 한 번의 집계에서 함께 나온다.
 $kevCount = 0; $externalFindings = 0;
@@ -145,7 +147,8 @@ try {
             = vg_host_load_severity_summary($pdo, $sid);
 
         [
-            'exposureCount' => $exposureCount, 'cceFail' => $cceFail, 'suppressedCount' => $suppressedCount,
+            'exposureCount' => $exposureCount, 'exposureExternal' => $exposureExternal,
+            'cceFail' => $cceFail, 'cceTotal' => $cceTotal, 'suppressedCount' => $suppressedCount,
             'vulnTotal' => $vulnTotal, 'critHighTotal' => $critHighTotal, 'restartTotal' => $restartTotal,
             'scanTotal' => $scanTotal, 'processCount' => $processCount, 'packageTotal' => $packageTotal,
             'depEdgeTotal' => $depEdgeTotal, 'accountTotal' => $accountTotal, 'containerTotal' => $containerTotal,
@@ -332,7 +335,8 @@ vg_alert($agentErr);
       'missingStageCodes' => $missingStageCodes,
       'missingStageItemCounts' => $missingStageItemCounts,
       'counts' => $counts, 'kevCount' => $kevCount, 'externalFindings' => $externalFindings,
-      'exposureCount' => $exposureCount, 'cceFail' => $cceFail, 'processCount' => $processCount,
+      'exposureCount' => $exposureCount, 'exposureExternal' => $exposureExternal,
+      'cceFail' => $cceFail, 'cceTotal' => $cceTotal, 'processCount' => $processCount,
       'packageTotal' => $packageTotal, 'containerTotal' => $containerTotal,
   ]); ?>
 
