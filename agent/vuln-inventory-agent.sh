@@ -42,7 +42,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.20"
+SCRIPT_VERSION="3.21"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
@@ -77,6 +77,11 @@ DO_CHANGELOG=1                        # 핵심 패키지 CVE changelog 수집 �
 DO_VERIFY=0
 VERIFY_TIMEOUT="${VERIFY_TIMEOUT:-300}"      # 무결성 검증 단독 상한(초). CMD_TIMEOUT(20초)로는 무조건 잘린다.
 VERIFY_MAX_LINES="${VERIFY_MAX_LINES:-500}"  # 전송할 위반 줄 수 상한(피크 메모리가 페이로드 크기에 비례)
+# 무결성 결과에서 통째로 버릴 경로 접두어(공백 구분). 문서·man·번역·info 는 컨테이너·최소설치
+#   이미지가 흔히 쓰는 `dpkg --path-exclude=/usr/share/doc/*` 때문에 애초에 안 깔려 있어
+#   `dpkg --verify` 가 전부 "md5 불일치"로 잡는다 — 침해가 아니라 정상인데 진짜 신호를 파묻는다
+#   (실측: 한 노드가 11,368건을 보고했고 전부 이 경로라 상한 500에 잘렸다).
+VERIFY_EXCLUDE_PREFIXES="${VERIFY_EXCLUDE_PREFIXES:-/usr/share/doc/ /usr/share/man/ /usr/share/locale/ /usr/share/info/}"
 DO_LIMIT="${AGENT_LIMIT:-1}"          # 기본 cgroup 리밋 사용(AGENT_LIMIT=0 으로만 해제)
 OUT=""
 SEND_URL="${SEND_URL:-}"             # --send : 중앙 수신 API(ingest.php) URL
@@ -2185,6 +2190,8 @@ fi
 #     이미 걸려 있어 자식인 rpm/dpkg 도 그대로 상속한다.
 #   ★ 잘렸으면 반드시 partial 로 알린다 — 중앙이 "위반 0건 = 깨끗함"으로 오독하면 안 된다.
 #   ★ `c`(설정파일) 줄은 버린다 — 관리자가 고치는 게 정상이라 전부 노이즈다.
+#   ★ 같은 이유로 `VERIFY_EXCLUDE_PREFIXES`(문서·man·번역·info) 경로도 버린다 — 설치 시
+#     문서를 안 깐 이미지(`dpkg --path-exclude`)가 흔해 전부 오탐이다.
 #   ※ GPG 서명 검증은 여기 범위가 아니다(파일 무결성만).
 collect_integrity() {
   local raw="$TMP/.integrity-raw" parsed="$TMP/.integrity-parsed" totf="$TMP/.integrity-total"
@@ -2203,7 +2210,8 @@ collect_integrity() {
   case "$rc" in 124|137) put integrity partial "1" ;; esac
 
   # 플래그/파일종류/경로 분해. 경로에 공백이 있을 수 있어 필드 분할 대신 앞에서부터 깎는다.
-  awk -v max="$VERIFY_MAX_LINES" -v totf="$totf" '
+  awk -v max="$VERIFY_MAX_LINES" -v totf="$totf" -v excl="$VERIFY_EXCLUDE_PREFIXES" '
+    BEGIN { nexcl = split(excl, exps) }   # 공백 구분 문자열 → 배열(정규식 이스케이프 문제를 피한다)
     {
       line = $0
       n = index(line, " ")
@@ -2216,6 +2224,9 @@ collect_integrity() {
       if (rest ~ /^[a-zA-Z][ \t]/) { ftype = substr(rest, 1, 1); rest = substr(rest, 2); sub(/^[ \t]+/, "", rest) }
       else                         { ftype = "" }
       if (ftype == "c") next                      # 설정파일 = 정상적인 변경, 버린다
+      # 문서·man·번역·info = 설치 시 안 깐 이미지가 흔해 전부 오탐. total 에도 남기지 않는다
+      #   (남기면 truncated 판정이 계속 틀린다).
+      for (i = 1; i <= nexcl; i++) if (index(rest, exps[i]) == 1) next
       if (substr(rest, 1, 1) != "/") next         # 경로가 아닌 잡음 줄
       gsub(/\|/, "_", flags); gsub(/\|/, "_", rest)   # 구분자 오염 방지
       total++
