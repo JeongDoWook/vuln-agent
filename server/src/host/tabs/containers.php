@@ -96,12 +96,12 @@ declare(strict_types=1);
                     // 미터 바 — 세그먼트 사이 2px 간격은 .riskbar 가 갖는다(HIGH·MEDIUM 이 맞닿으면
                     //   색각이상 기준으로 구분이 안 된다). 폭 계산(width:N%)은 vg_sev_bar() 몫이다.
                     //   바는 조치 대상만 그리고 LOW 는 오른쪽 LOW 열이 갖는다. LOW 만 있는 행은
-                    //   'LOW만' 로, 아예 없는 행은 아래 문구로 갈린다("빈 바 = 데이터 없음" 오독 방지).
+                    //   옅은 '–' 로, 아예 없는 행은 아래 문구로 갈린다("빈 바 = 데이터 없음" 오독 방지).
                     2 => function (array $c) use ($sevOf, $riskScale): string {
                         $sev = $sevOf($c);
                         $bar = vg_sev_bar($sev, $riskScale);
-                        // 막대가 비는 건 "취약점 0건" 뿐이다(LOW 만인 행은 vg_sev_bar 가 'LOW만'
-                        //   으로 채운다) — 그때는 뱃지도 없으므로 문구 하나로 끝낸다.
+                        // 막대가 비는 건 "취약점 0건" 뿐이다(LOW 만인 행은 vg_sev_bar 가 옅은
+                        //   '–' 로 채운다) — 그때는 뱃지도 없으므로 문구 하나로 끝낸다.
                         return $bar !== ''
                             ? $bar . ' ' . vg_sev_counts($sev)
                             : '<span class="why">판정된 취약점 없음</span>';
