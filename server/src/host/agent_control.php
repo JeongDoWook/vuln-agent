@@ -192,8 +192,11 @@ function vg_host_render_agent_control(
             </form>
           </div>
         <?php endif; ?>
-        <?php /* 네 조작(즉시·예약·주기·티어)은 각각 한 줄을 통째로 쓰던 것을 반반씩 두 칸으로 놓는다 —
-                 입력 하나에 버튼 하나가 전부인 줄이라 가로 공간이 절반씩 비어 있었다.
+        <?php /* 네 조작(즉시·예약·주기·티어)은 반반씩 두 칸으로 놓고, 칸 안은 **한 줄**이다 —
+                 [라벨][입력][버튼]. 예전엔 라벨이 입력 **위**에 따로 한 줄을 먹어서 칸마다
+                 두 줄이 됐고, 그 두 줄이 칸 가로의 절반도 못 쓰면서 카드만 높았다
+                 (사용자: "좀 칸 낭비 심해 보여"). 라벨을 앞으로 보내면 같은 정보가 한 줄에
+                 들어가고 입력이 남는 가로를 그대로 받는다.
                  좁은 화면(640px 이하)에서는 다시 한 열로 떨어진다. */ ?>
         <div class="agent-control__grid">
           <?php /* 확인 대화상자는 '무결성 검사 포함'을 켰을 때만 뜬다(data-confirm-if) —
@@ -211,7 +214,9 @@ function vg_host_render_agent_control(
                      무결성 검사는 별도 동작이 아니라 이 실행 안의 한 단계라 버튼을 따로 두지
                      않고 체크박스로 합쳤다(설치 패키지 탭의 단독 버튼은 그래서 없앴다).
                      기본은 꺼짐이다 — 매 수집마다 켜면 대상 서버에 무리를 준다. */ ?>
-            <label><strong>즉시 실행</strong></label>
+            <?php /* 이 줄만 라벨에 짝지을 입력이 하나로 안 정해진다(체크박스 + 버튼) —
+                     빈 for 를 단 <label> 대신 글자만 세운다(스크린리더에 거짓 연결을 안 만든다). */ ?>
+            <span class="agent-control__label">즉시 실행</span>
             <label class="inline" for="agent-verify-files">
               <input id="agent-verify-files" type="checkbox" name="verify_files" value="1">
               무결성 검사 포함
@@ -223,7 +228,7 @@ function vg_host_render_agent_control(
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label for="agent-run-at"><strong>예약 실행</strong></label>
+            <label class="agent-control__label" for="agent-run-at">예약 실행</label>
             <input id="agent-run-at" type="datetime-local" name="run_at" min="<?= date('Y-m-d\TH:i') ?>" required>
             <button class="btn btn--sm btn--ghost">등록</button>
           </form>
@@ -232,7 +237,7 @@ function vg_host_render_agent_control(
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_set_schedule">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label for="agent-schedule-minutes"><strong>수집 주기</strong></label>
+            <label class="agent-control__label" for="agent-schedule-minutes">수집 주기</label>
             <div class="agent-control__number"><input id="agent-schedule-minutes" type="number" name="schedule_minutes" min="1" value="<?= $curMinutes ?>" required><span>분</span></div>
             <button class="btn btn--sm btn--ghost">저장</button>
           </form>
@@ -241,7 +246,7 @@ function vg_host_render_agent_control(
             <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
             <input type="hidden" name="action" value="agent_set_speed_tier">
             <input type="hidden" name="id" value="<?= (int) $hostId ?>">
-            <label for="agent-speed-tier"><strong>속도 티어</strong></label>
+            <label class="agent-control__label" for="agent-speed-tier">속도 티어</label>
             <select id="agent-speed-tier" name="agent_speed_tier">
               <?php foreach ($speedTierLabels as $v => $label): ?>
                 <option value="<?= vg_h($v) ?>"<?= $curSpeedTier === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
