@@ -1,6 +1,6 @@
 # vuln-agent 에이전트 — 설치·운영 가이드
 
-> **현행 버전: 3.16** (문서 기준 2026-08-20). 실제 값은 `vuln-inventory-agent.sh` 의
+> **현행 버전: 3.17** (문서 기준 2026-08-20). 실제 값은 `vuln-inventory-agent.sh` 의
 > `SCRIPT_VERSION` 이 정본이다.
 
 > ## ⚠ 3.15 로 올라갈 때는 **노드에서 한 번 갱신 작업이 필요하다**
@@ -26,6 +26,7 @@
 
 | 버전 | 들어간 것 |
 |---|---|
+| 3.17 | 설치된 gem 의 라이선스를 gemspec 에서 읽는다 |
 | 3.16 | pip 라이선스 헬퍼가 서브셸에 export 되지 않아 라이선스가 비던 회귀 수정 — 같은 함정에 빠져 있던 gem·yarn·pnpm·poetry 헬퍼 5종도 함께 export(그동안 그 소스들도 조용히 0건이었다) |
 | 3.15 | **명령 처리 로직을 `run.sh` → 본체(`--poll-once`)로 이전** — 응답 파싱·수집 인자 조립이 자동 업데이트를 타게 됐다. `install-agent.sh --runner-only`, `agent_push.sh --with-runner` 추가 |
 | 3.14 | pip 메타(`dist-info/METADATA`·`egg-info/PKG-INFO`) 라이선스에 **PEP 639 `License-Expression` 우선 적용 + Classifier 폴백** — 실측 커버리지 4/15 → 15/15 |
