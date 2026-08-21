@@ -159,24 +159,29 @@ if ($showHourly) { vg_chart_assets(); }
   <?php vg_alert('오류 · ' . $err); ?>
 <?php else: ?>
   <?php if ($showHourly): ?>
-  <div class="card">
-    <strong>최근 24시간 활동량</strong>
-    <div class="card__body">
-      <?php if (array_sum($hourlyData) > 0): ?>
-      <?php vg_chart('bar', [
-          'labels' => $hourlyLabels,
-          'datasets' => [['label' => '활동', 'data' => $hourlyData]],
-      ], ['size' => 'sm', 'alt' => '최근 24시간 시간대별 활동량']); ?>
-      <?php else: ?>
-      <p class="why">최근 24시간 기록 0건</p>
-      <?php endif; ?>
-    </div>
-  </div>
+  <?php vg_card('최근 24시간 활동량', static function () use ($hourlyLabels, $hourlyData): void {
+      if (array_sum($hourlyData) > 0) {
+          vg_chart('bar', [
+              'labels' => $hourlyLabels,
+              'datasets' => [['label' => '활동', 'data' => $hourlyData]],
+          ], ['size' => 'sm', 'alt' => '최근 24시간 시간대별 활동량']);
+      } else {
+          echo '<p class="why">최근 24시간 기록 0건</p>';
+      }
+  }, ['badge' => number_format(array_sum($hourlyData)) . '건']); ?>
   <?php endif; ?>
 
   <?php if (vg_has_role('admin')): ?>
-  <h2>사용자별 접속 현황</h2>
   <?php
+  /* 이 화면은 표가 둘이다(사용자별 접속 현황 · 접속기록) — 그래서 둘 다 제목을 갖는다.
+   *   예전엔 제목이 **카드 밖 <h2>** 였다. 같은 저장소 안에서 어떤 카드는 제목을 안에,
+   *   어떤 카드는 밖에 두고 있었고(자산 상세 탭은 안, 여기는 밖), 그래서 카드 경계와
+   *   제목이 어긋나 보였다. 카드 문법대로 제목을 카드 안으로 들인다(규약은 vg_card 주석).
+   * 이 표는 세로로 길다(사용자 수만큼). 그래도 상위 N건으로 자르지 않는다 —
+   *   '로그인 실패'·'잠금 상태' 는 **이 표에만 있는 값**이라(users.php 에는 아이디·역할·
+   *   마지막 로그인만 있다) 잘라내면 잠긴 계정이 화면에서 사라진다. 자르려면 users.php 에
+   *   잠금 열을 먼저 세워야 한다. 대신 제목 옆 배지가 "몇 명짜리 표인지" 를 미리 알린다. */
+  vg_card('사용자별 접속 현황', static function () use ($accessRows): void {
   vg_table([
       ['label' => '아이디'],
       ['label' => '역할',        'width' => '8%'],
@@ -205,9 +210,10 @@ if ($showHourly) { vg_chart_assets(); }
                   : '<span class="badge tone-ok">정상</span>';
           },
       ],
+      'card' => false,
   ]);
+  }, ['badge' => '사용자 ' . number_format(count($accessRows)) . '명']);
   ?>
-  <h2>접속기록</h2>
   <?php endif; ?>
 
   <?php vg_toolbar([
@@ -241,6 +247,9 @@ if ($showHourly) { vg_chart_assets(); }
 
   // 컬럼 순서는 접속기록 5요소를 그대로 따른다: 접속일시 · 식별자 · 접속지 IP · 처리 대상 · 수행업무.
   // 그 뒤에 기존의 구분/내용(세부 activity_type + data)을 보조로 붙인다.
+  /* 이 화면의 주 목록이지만 제목을 단다 — 표가 둘인 화면에서는 h1('감사 로그') 하나로
+   *   어느 표가 무엇인지 못 가린다(vg_card 주석의 예외 조항 그대로다). */
+  vg_card('접속기록', static function () use ($rows, $hasFilter, $activityLabels, $actionLabels, $scopeTone): void {
   vg_table([
       ['label' => '접속일시',   'width' => '12%', 'nowrap' => true],
       ['label' => '식별자',     'width' => '10%', 'nowrap' => true],
@@ -307,7 +316,9 @@ if ($showHourly) { vg_chart_assets(); }
               return $out;
           },
       ],
+      'card' => false,
   ]);
+  }, ['badge' => '총 ' . number_format($total) . '건']);
   ?>
   <?php vg_page_nav($total, $perPage, $page); ?>
 <?php endif; ?>
