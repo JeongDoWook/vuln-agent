@@ -47,11 +47,14 @@ $eq('항목 배열(없음)',   vg_integrity_diff_items('.........'), []);
 //   내용 자리를 뺀 나머지가 전부 '?' 면 dpkg(내용만 검사)다.
 $dpkg = vg_integrity_verify_scope(['??5??????', '??5??????']);
 $eq('dpkg 판정', $dpkg['tool'], 'dpkg');
-$eq('dpkg 는 내용(MD5)만 검사', strpos($dpkg['text'], '검사한 항목: 내용(MD5)') !== false, true);
+//   화면 한 줄(text)은 짧게 — 도구와 "무엇만 봤는가" 만. 항목 전수는 툴팁(title)에 있다.
+$eq('dpkg 는 내용(MD5)만 검사', $dpkg['text'], 'dpkg · 내용(MD5)만 검사');
+$eq('dpkg 한 줄에 항목 나열 없음', strpos($dpkg['text'], '검사하지 않은 항목') === false, true);
 //   ★ 핵심: 안 본 항목을 "같음"으로 흘리지 않는다 — 무엇을 안 봤는지 이름으로 적는다.
-$eq('dpkg 미검사 항목 나열', strpos($dpkg['text'], '검사하지 않은 항목: 크기·권한') !== false, true);
+//     (짧게 줄이면서 이 사실을 지우면 안 된다 — 자리만 툴팁으로 옮겼다.)
+$eq('dpkg 미검사 항목 나열', strpos($dpkg['title'], '검사하지 않은 항목: 크기·권한') !== false, true);
 $eq('dpkg 미검사에 소유자·수정시각 포함',
-    strpos($dpkg['text'], '소유자') !== false && strpos($dpkg['text'], '수정시각') !== false, true);
+    strpos($dpkg['title'], '소유자') !== false && strpos($dpkg['title'], '수정시각') !== false, true);
 
 //   다른 자리에 '?' 아닌 글자('.' 포함)가 있으면 rpm 이다 — rpm 은 검사한 자리를 '.' 로 찍는다.
 $eq('rpm 판정',        vg_integrity_verify_scope(['S.5....T.'])['tool'], 'rpm');
@@ -60,13 +63,14 @@ $eq('rpm 판정(내용만 다름)', vg_integrity_verify_scope(['..5......'])['to
 $eq('혼재 시 rpm 우선', vg_integrity_verify_scope(['??5??????', 'S.5....T.'])['tool'], 'rpm');
 //   rpm 은 --nomtime --nouser --nogroup 로 돌리므로 그 셋은 "검사하지 않음"으로 적는다.
 $rpm = vg_integrity_verify_scope(['S.5......']);
-$eq('rpm 미검사 항목', strpos($rpm['text'], '검사하지 않은 항목: 수정시각·소유자·그룹') !== false, true);
-$eq('rpm 검사 항목',   strpos($rpm['text'], '검사한 항목: 크기·권한·내용') !== false, true);
+$eq('rpm 미검사 항목', strpos($rpm['title'], '검사하지 않은 항목: 수정시각·소유자·그룹') !== false, true);
+$eq('rpm 검사 항목',   strpos($rpm['title'], '검사한 항목: 크기·권한·내용') !== false, true);
+$eq('rpm 한 줄은 도구+요약', $rpm['text'], 'rpm · 크기·권한·내용 등 6개 항목 검사');
 //   단, 제외 항목이 실제로 "다름"으로 관측됐다면 그건 검사한 것이다 — 제외 목록에서 뺀다.
 //   (안 그러면 "수정시각은 검사하지 않았다" 밑에 "수정시각 다름" 행이 서는 자기모순이 된다.)
 $rpmT = vg_integrity_verify_scope(['S.5....T.']);
-$eq('관측된 항목은 미검사에서 뺀다', strpos($rpmT['text'], '검사하지 않은 항목: 소유자·그룹') !== false, true);
-$eq('관측된 항목은 검사한 쪽에 선다', strpos($rpmT['text'], '수정시각·capability') !== false, true);
+$eq('관측된 항목은 미검사에서 뺀다', strpos($rpmT['title'], '검사하지 않은 항목: 소유자·그룹') !== false, true);
+$eq('관측된 항목은 검사한 쪽에 선다', strpos($rpmT['title'], '수정시각·capability') !== false, true);
 
 //   판정할 근거가 없으면 아무 말도 하지 않는다("모르는 것은 모른다고 적는다").
 $eq('행 없음',   vg_integrity_verify_scope([])['tool'], '');

@@ -934,10 +934,12 @@ phase "패키지 의존성 그래프(depgraph.php)"
 # 에이전트가 보낸 SBOM/pom 엣지는 저장만 되고 읽는 화면이 없었다. "무엇이 이 패키지를
 #   끌어왔나" 가 루트 → 직접 → 전이 순으로 실제로 펼쳐지는지, 엣지가 없는 자산의 빈 상태가
 #   빈 화면이 아니라 설명으로 뜨는지를 고정한다.
-# 의존성은 이제 자산 상세의 탭이다 — 설치 패키지 탭은 전용 화면이 아니라 그 탭으로 보내고,
-#   라벨에 엣지 수를 담아 "이 자산엔 볼 게 있다"를 알린다.
+# 의존성은 이제 자산 상세의 탭이다 — 설치 패키지 탭에서 그 탭으로 갈 수 있어야 한다.
+#   단 그 진입점은 **탭 줄 하나뿐**이다: 예전엔 탭 줄 바로 아래 '의존성 엣지 N개' 버튼이
+#   같은 곳으로 또 갔다(같은 화면에 같은 목적지 둘). 버튼만 걷어냈고 탭은 그대로다.
 assert_contains "$packagebody" 'tab=depgraph' "설치 패키지 탭에서 의존성 탭으로 진입"
-assert_contains "$packagebody" '의존성 엣지 ' "설치 패키지 탭이 의존성 엣지 수를 노출"
+assert_not_contains "$packagebody" '의존성 엣지 ' "엣지 수 버튼은 없다(바로 위 '의존성' 탭과 중복)"
+assert_not_contains "$packagebody" '다른 자산과 비교' "'다른 자산과 비교' 버튼도 없다(전체 설치 패키지는 사이드바 메뉴)"
 depbody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID")
 assert_contains "$depbody" '전체 트리' "의존성 그래프 화면 표시"
 # 호스트(cid=0) 단위는 pom.xml 직접 선언 — 부모가 없어 트리 대신 목록으로 나온다.
@@ -1035,6 +1037,9 @@ assert_contains "$missctr" '최신 수집에 없습니다' "없는 컨테이너 
 #   자주 쓰지 않는 동작이 첫 화면 한 칸을 통째로 차지하고 있었다(기능·URL 은 그대로).
 hostpkgtab=$(curl_ -s -b "$JAR" "$BASE/host.php?id=$WEB01_ID&tab=packages")
 assert_contains "$hostpkgtab" 'sbom.php?host=' "설치 패키지 탭에 SBOM 내려받기 링크"
+# '부품표 보기' 는 목록 위 자기 줄이 아니라 '설치 패키지' 제목 줄 오른쪽(card__head-aside)에 선다 —
+#   버튼 한 줄이 표를 화면 아래로 밀던 것을 걷었다.
+assert_contains "$hostpkgtab" 'card__head-aside' "'부품표 보기' 는 제목 줄 오른쪽에 붙는다"
 assert_not_contains "$hostvuln" 'sbom.php?host=' "첫 화면엔 SBOM 카드가 없다"
 assert_contains "$ctrbody" 'cid='"$CTR_CID"'&amp;format=cyclonedx' "컨테이너 상세에 그 컨테이너 SBOM 링크"
 ctrsbom=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&cid=$CTR_CID&format=cyclonedx")
@@ -1044,6 +1049,19 @@ assert_contains "$ctrspdx" '"spdxVersion": "SPDX-2.3"' "컨테이너 SBOM(SPDX) 
 # 범위를 섞지 않는다 — 없는 컨테이너를 주면 호스트 SBOM 이 대신 나가면 안 된다(404).
 code=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code}' "$BASE/sbom.php?host=$FQDN_WEB01&cid=nosuchctr")
 assert_eq "$code" "404" "없는 컨테이너 SBOM 은 호스트로 떨어지지 않고 404"
+
+# 부품표 화면(view=html) — 도넛 둘과 목록이 한 줄에 서고, 목록 위 검색이 생태계를 가리지 않는다.
+sbomhtml=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&view=html")
+assert_contains "$sbomhtml" 'class="sbom-cols' "도넛 2 + 목록을 한 줄에 세운다"
+assert_contains "$sbomhtml" '컴포넌트명 검색(전 생태계)' "목록 위에 컴포넌트명 검색"
+# 표준 포맷 다운로드는 이 화면에 남는다 — SBOM 전용 화면이라 여기가 제자리다(자산 상세에선 뺐다).
+assert_contains "$sbomhtml" 'CycloneDX 1.5 다운로드' "부품표 화면엔 표준 포맷 다운로드가 남는다"
+# 생태계별로 표가 갈려 있어도 검색 한 칸이 전부를 훑는다 — rpm 쪽 이름으로 찾으면 그것만 남는다.
+sbomq=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&view=html&q=openssl")
+assert_contains "$sbomq" 'openssl' "검색어에 맞는 컴포넌트는 남는다"
+assert_not_contains "$sbomq" '<strong>glibc</strong>' "검색어에 안 맞는 컴포넌트는 빠진다"
+sbomq0=$(curl_ -s -b "$JAR" "$BASE/sbom.php?host=$FQDN_WEB01&view=html&q=nosuchcomponent")
+assert_contains "$sbomq0" '검색 조건에 맞는 컴포넌트가 없습니다' "0건이면 빈 화면이 아니라 안내"
 
 # 에이전트 진행 heartbeat — 바인딩 토큰이 자기 호스트의 pending 명령만 running으로 바꿔야 한다.
 PROGRESS_CMD=$(docker exec "$WEB_CONTAINER" php -r \
