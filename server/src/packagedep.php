@@ -17,6 +17,8 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/format.php';   // VG_TONE_SEV — 심각도 표기·정렬 순서의 정본
+require_once __DIR__ . '/vercmp.php';   // vg_ver_cmp — 수정버전 중 가장 높은 것을 고를 때만 쓴다
+require_once __DIR__ . '/db.php';       // VG_FIXED_VERSION_SUBQ — 조치 버전 서브쿼리의 정본
 
 // 한 화면이 메모리에 올리는 엣지 상한. 넘으면 잘린 사실을 화면에 표시한다.
 const VG_PKGDEP_EDGE_MAX = 20000;
@@ -100,6 +102,68 @@ function vg_pkgdep_load(PDO $pdo, int $scanId, int $containerId): array
         'loaded'    => count($edges),
         'truncated' => count($edges) >= VG_PKGDEP_EDGE_MAX,
     ];
+}
+
+/**
+ * 그 스캔·컨테이너의 취약점 행을 **한 번에** 읽는다.
+ *   노드 색칠(vg_deptree_severity)과 조치 묶음(vg_pkgdep_rollup_unit)이 같은 한 벌을 봐야
+ *   화면 안에서 "색은 칠했는데 조치 목록엔 없다" 는 어긋남이 안 생긴다 — 그래서 조회를
+ *   여기 한곳에 둔다(DRY). 조회 범위는 엣지와 같다: uq_find 좌측 접두가 (scan_id, container_id)다.
+ */
+function vg_pkgdep_unit_findings(PDO $pdo, int $scanId, int $containerId): array
+{
+    // 조치 버전은 tb_finding 의 컬럼이 아니다 — CVE×패키지의 영향 범위 표에서 온다.
+    //   서브쿼리는 화면마다 베끼지 않고 db.php 의 VG_FIXED_VERSION_SUBQ 하나를 쓴다(별칭 f 필요).
+    //   uq_cap 좌측 접두가 (cve_id, package_name)이라 행마다 점 조회 한 번이다.
+    $st = $pdo->prepare(
+        'SELECT f.package_name, f.installed_version, f.severity, ' . VG_FIXED_VERSION_SUBQ . '
+           FROM tb_finding f
+          WHERE f.scan_id = ? AND f.container_id = ? AND f.is_deleted = 0
+          LIMIT ' . VG_PKGDEP_ROLLUP_FINDING_MAX
+    );
+    $st->execute([$scanId, $containerId]);
+    return $st->fetchAll();
+}
+
+/**
+ * 취약 패키지별 **필요한 최소 버전**.
+ *   반환: ['by_label' => ['이름 버전' => '수정버전'], 'by_key' => ['노드키' => '수정버전']]
+ *   by_label 의 키는 vg_pkgdep_rollup_unit() 의 packages 항목과 **같은 형식**이라 부모별
+ *   묶음의 패키지 목록에 그대로 붙는다. by_key 는 트리 노드 하나를 집어 볼 때 쓴다 —
+ *   취약점 행의 설치버전 표기(rpm 의 epoch 등)와 그래프 노드의 버전이 글자로는 다를 수 있어
+ *   라벨로는 못 찾는 경우가 있다.
+ *
+ *   ── 우리가 아는 것과 모르는 것 ──────────────────────────────────────────────
+ *   자식의 수정버전은 피드가 준 사실이다(tb_finding.fixed_version). 반면 **그 자식을 끌어오는
+ *   부모의 버전**은 수집된 데이터에 없다 — tb_package_dependency 는 *설치된 스냅샷 한 벌*이지
+ *   업스트림의 *버전별 의존 관계표*가 아니다. 그래서 조치 문장은 "부모를 올려라 + 자식은 X
+ *   이상이어야 한다" 까지만 간다. 부모의 목표 버전은 **지어내지 않는다.**
+ *   한 패키지에 CVE 가 여럿이면 그중 **가장 높은 수정버전**이 필요조건이다(vg_ver_cmp 로 고른다 —
+ *   문자열 비교로는 1.2.10 이 1.2.9 보다 낮게 잡힌다).
+ *   비교 규칙(rpm/dpkg/semver)은 그래프 노드의 manager 로 정한다 — 취약점 행에는 그 컬럼이 없다.
+ */
+function vg_pkgdep_fix_floor(array $idx, array $findings): array
+{
+    $best = [];   // 라벨 => 수정버전
+    $keys = [];   // 라벨 => [노드키…]
+    foreach ($findings as $f) {
+        $fixed = trim((string) ($f['fixed_version'] ?? ''));
+        if ($fixed === '') { continue; }
+        $name = (string) ($f['package_name'] ?? '');
+        $ver  = (string) ($f['installed_version'] ?? '');
+        $cands = $idx['by_name_ver'][$name . '|' . $ver]
+            ?? ($idx['by_name_norm'][$name . '|' . vg_pkgdep_version_norm($ver)] ?? []);
+        if (!$cands) { continue; }   // 그래프에 없는 패키지 — 이 화면이 그리지도 않는다
+        $label = $name . ' ' . $ver;
+        $mgr   = vg_pkgdep_parts($cands[0])['manager'];
+        if (!isset($best[$label]) || vg_ver_cmp($fixed, $best[$label], $mgr) > 0) { $best[$label] = $fixed; }
+        foreach ($cands as $k) { $keys[$label][$k] = true; }
+    }
+    $byKey = [];
+    foreach ($best as $label => $fixed) {
+        foreach (array_keys($keys[$label] ?? []) as $k) { $byKey[$k] = $fixed; }
+    }
+    return ['by_label' => $best, 'by_key' => $byKey];
 }
 
 /**

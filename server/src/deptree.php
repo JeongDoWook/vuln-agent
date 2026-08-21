@@ -55,17 +55,17 @@ const VG_DEPTREE_FILL_TONES = ['crit', 'high', 'med'];
  */
 function vg_deptree_severity(PDO $pdo, int $scanId, int $containerId, array $graph): array
 {
-    $st = $pdo->prepare(
-        'SELECT package_name, installed_version, severity
-           FROM tb_finding
-          WHERE scan_id = ? AND container_id = ? AND is_deleted = 0
-          LIMIT ' . VG_PKGDEP_ROLLUP_FINDING_MAX
-    );
-    $st->execute([$scanId, $containerId]);
-    $rows = $st->fetchAll();
-    if (!$rows) { return []; }
+    $rows = vg_pkgdep_unit_findings($pdo, $scanId, $containerId);
+    return $rows ? vg_deptree_severity_map($rows, vg_pkgdep_index($graph)) : [];
+}
 
-    $idx = vg_pkgdep_index($graph);
+/**
+ * 위 함수의 순수 부분 — 취약점 행 + 이름/버전 색인 → [노드 키 => 최고 심각도].
+ *   조회와 나눠 둔 이유: 한 화면이 같은 취약점 한 벌로 **색칠과 조치 묶음을 둘 다** 만들 때
+ *   같은 쿼리를 두 번 치지 않게 하려는 것이다(depgraph.php). DB 를 안 보므로 단위테스트도 된다.
+ */
+function vg_deptree_severity_map(array $rows, array $idx): array
+{
     $out = [];
     foreach ($rows as $r) {
         $name = (string) $r['package_name'];
@@ -110,18 +110,42 @@ function vg_deptree_role(string $key, array $ctx): string
 }
 
 /**
+ * 역추적 경로 목록(vg_pkgdep_paths) → 트리에서 강조할 노드·이음 집합.
+ *   반환: ['nodes' => [노드키 => true], 'edges' => ["부모키\n자식키" => true]]
+ *
+ *   이음을 노드 집합에서 유추하지 않는 이유: 루트→A→대상, 루트→B→대상 처럼 갈래가 둘인
+ *   그래프에 A→B 엣지까지 있으면, 노드만 보고 칠할 때 **경로가 아닌 이음**이 함께 강조된다.
+ *   실제로 지나간 이음만 담는다 — 이 화면은 근거 없는 선을 긋지 않는다.
+ */
+function vg_deptree_path_marks(array $paths): array
+{
+    $m = ['nodes' => [], 'edges' => []];
+    foreach ($paths as $path) {
+        $prev = null;
+        foreach ($path as $k) {
+            $m['nodes'][$k] = true;
+            if ($prev !== null) { $m['edges'][$prev . "\n" . $k] = true; }
+            $prev = $k;
+        }
+    }
+    return $m;
+}
+
+/**
  * 가로 계층 트리 배치 — 루트 하나를 좌(부모)→우(자식) 열로 눕히고 형제는 위→아래로 쌓는다.
  *   고전적인 tidy tree: **리프를 순서대로 쌓고, 부모의 y 는 자식들 y 의 중앙**에 둔다.
  *   반환: ['nodes' => [['key','x','y','hidden','kids'], …],
- *          'edges' => [['x1','y1','x2','ys'(자식 y 목록),'depth'], …]  ← **부모 하나가 한 묶음**,
+ *          'edges' => [['x1','y1','x2','ys'(자식 y 목록),'ys_on'(그중 강조 경로),'depth'], …]
+ *                    ← **부모 하나가 한 묶음**,
  *          'w' => SVG 폭, 'h' => SVG 높이, 'drawn' => 그린 노드 수]
  *   엣지를 자식마다 흩지 않고 부모 단위로 묶는 이유는 vg_deptree_edge_path() 주석에 있다.
  *   $budget 은 화면 전체가 나눠 쓰는 남은 노드 수다(참조로 깎는다) — 루트가 수십 개인
  *   자산에서 SVG 하나가 페이지를 통째로 먹지 않게 한다. 바닥나면 그 아래는 hidden 으로만 센다.
  *   $seen 은 **경로 단위** 방문 집합이다(순환 방지) — 전역으로 두면 여러 부모가 공유하는
  *   라이브러리가 처음 만난 가지에서만 펼쳐져 다른 가지가 통째로 비어 보인다.
+ *   $onPath 는 강조할 이음의 집합("부모키\n자식키")이다(vg_deptree_path_marks). 비우면 강조가 없다.
  */
-function vg_deptree_layout(array $graph, string $root, int &$budget): array
+function vg_deptree_layout(array $graph, string $root, int &$budget, array $onPath = []): array
 {
     $nodes = [];
     $edges = [];
@@ -129,7 +153,7 @@ function vg_deptree_layout(array $graph, string $root, int &$budget): array
     $maxDepth = 0;
 
     $place = function (string $key, int $depth, array $seen) use (
-        &$place, $graph, &$nodes, &$edges, &$cursorY, &$maxDepth, &$budget
+        &$place, $graph, &$nodes, &$edges, &$cursorY, &$maxDepth, &$budget, $onPath
     ): ?float {
         if ($budget <= 0) { return null; }
         $budget--;
@@ -138,6 +162,7 @@ function vg_deptree_layout(array $graph, string $root, int &$budget): array
         $kids = vg_pkgdep_children($graph, $key);
         $seen[$key] = true;
         $childY = [];
+        $childOn = [];   // 그중 강조 경로 위에 있는 자식의 y 만(없으면 빈 배열)
         $hidden = 0;
         if ($kids && $depth >= VG_PKGDEP_DEPTH_MAX) {
             $hidden = count($kids);          // 깊이 상한 — 여기서 접는다
@@ -147,6 +172,7 @@ function vg_deptree_layout(array $graph, string $root, int &$budget): array
                 $y = $place($k, $depth + 1, $seen);
                 if ($y === null) { $hidden++; continue; }        // 노드 예산 소진
                 $childY[] = $y;
+                if (isset($onPath[$key . "\n" . $k])) { $childOn[] = $y; }
             }
         }
 
@@ -168,6 +194,7 @@ function vg_deptree_layout(array $graph, string $root, int &$budget): array
                 'y1'    => $y,
                 'x2'    => $x + VG_DEPTREE_NODE_W + VG_DEPTREE_GAP_X,
                 'ys'    => $childY,
+                'ys_on' => $childOn,
                 'depth' => $depth,
             ];
         }
@@ -190,7 +217,8 @@ function vg_deptree_layout(array $graph, string $root, int &$budget): array
  *   관리자·잘린 전체 이름처럼 칸에 안 들어가는 사실은 <title>(툴팁)로 넘긴다.
  *   좌표·크기는 SVG 속성이라 CSS 가 가질 수 없다. 색은 전부 class 로만 준다(app.css 소유).
  *
- *   $ctx: ['sev' => [키 => 심각도], 'roots' => [키 => true], 'target' => 키, 'link' => callable]
+ *   $ctx: ['sev' => [키 => 심각도], 'roots' => [키 => true], 'target' => 키, 'link' => callable,
+ *          'path' => [키 => true](강조 경로 위의 노드)]
  */
 function vg_deptree_node_svg(array $n, array $ctx): string
 {
@@ -213,10 +241,13 @@ function vg_deptree_node_svg(array $n, array $ctx): string
     $href = ($ctx['link'])([
         'mgr' => $p['manager'], 'name' => $p['name'], 'ver' => $p['version'], 'tab' => 'from',
     ]);
+    // 강조 경로(취약 하위 → 루트) 위의 노드는 테두리로 표시한다 — 지금 보는 패키지(--on)는
+    //   그 위에 다시 얹혀 이긴다(app.css 의 선언 순서가 그렇게 맞춰져 있다).
+    $onPath = isset($ctx['path'][$n['key']]) && $role !== 'target' ? ' deptree__box--path' : '';
     $svg  = '<a href="' . vg_h($href) . '" class="deptree__node">'
         . '<title>' . vg_h($p['name'] . ' ' . $p['version'] . ' · ' . $p['manager']
             . ($sev !== '' ? ' · ' . $sev : '')) . '</title>'
-        . '<rect class="deptree__box' . $fill . ($role === 'target' ? ' deptree__box--on' : '') . '"'
+        . '<rect class="deptree__box' . $fill . $onPath . ($role === 'target' ? ' deptree__box--on' : '') . '"'
         . ' x="' . $x . '" y="' . $top . '" width="' . VG_DEPTREE_NODE_W . '" height="' . VG_DEPTREE_NODE_H . '" rx="7"/>'
         . '<rect class="deptree__accent tone-' . $tone . '"'
         . ' x="' . ($x + 1.5) . '" y="' . ($top + 4) . '" width="3.5" height="' . (VG_DEPTREE_NODE_H - 8) . '" rx="2"/>'
@@ -335,12 +366,13 @@ function vg_deptree_edge_path(array $e): string
 /**
  * 트리 한 장 — 좌표는 vg_deptree_layout() 이 계산하고 여기서는 그리기만 한다(SRP).
  *   부모→자식은 직교(elbow)로 잇는다 — 부모마다 path 하나다(vg_deptree_edge_path 주석 참고).
+ *   $ctx['pathedge'] 가 있으면 그 이음만 한 겹 더 긋는다 — 취약 하위에서 루트까지의 경로 강조다.
  *   엣지는 깊이가 깊을수록 옅다 — 어느 가지가 루트에서 바로 나온 것인지가 먼저 읽힌다.
  *   SVG 폭은 노드가 정하므로 늘이지 않는다 — 넘치면 .deptree 안에서만 가로로 스크롤한다.
  */
 function vg_deptree_render(array $graph, string $root, int &$budget, array $ctx): void
 {
-    $l = vg_deptree_layout($graph, $root, $budget);
+    $l = vg_deptree_layout($graph, $root, $budget, $ctx['pathedge'] ?? []);
     $p = vg_pkgdep_parts($root);
     echo '<div class="deptree">';
     echo '<svg class="deptree__svg" width="' . $l['w'] . '" height="' . $l['h'] . '"'
@@ -350,6 +382,13 @@ function vg_deptree_render(array $graph, string $root, int &$budget, array $ctx)
     foreach ($l['edges'] as $e) {
         echo '<path class="deptree__edge ' . VG_DEPTREE_EDGE_CLASS[min((int) $e['depth'], $deepest)]
             . '" d="' . vg_deptree_edge_path($e) . '"/>';
+        // 강조 경로 위의 이음만 같은 자리에 한 겹 더 긋는다(색이 진한 클래스로).
+        //   깊이 농도 클래스를 빼는 것이 핵심 — 붙이면 깊은 가지에서 강조가 옅어져 안 보인다.
+        if (!empty($e['ys_on'])) {
+            echo '<path class="deptree__edge deptree__edge--path" d="'
+                . vg_deptree_edge_path(['x1' => $e['x1'], 'y1' => $e['y1'], 'x2' => $e['x2'], 'ys' => $e['ys_on']])
+                . '"/>';
+        }
     }
     foreach ($l['nodes'] as $n) { echo vg_deptree_node_svg($n, $ctx); }
     echo '</svg></div>';

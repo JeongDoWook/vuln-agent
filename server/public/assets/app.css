@@ -1198,6 +1198,10 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .deptree__edge--d1 { opacity: .78; }
 .deptree__edge--d2 { opacity: .58; }
 .deptree__edge--d3 { opacity: .42; }
+/* 강조 경로(취약 하위 → 루트) — 같은 자리에 한 겹 더 긋는다. 농도 클래스를 안 붙이므로
+ * 깊은 가지에서도 옅어지지 않는다. 색을 하나 더 쓰는 예외인 이유: 이건 등급 축이 아니라
+ * "지금 따라가는 길" 이라 노드 면의 등급 색과 겨루지 않는다(선 위에만 있다). */
+.deptree__edge--path { stroke: var(--accent); stroke-width: 2.4; opacity: 1; }
 .deptree__node { cursor: pointer; }
 .deptree__box { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
 /* 면(배경·테두리)은 **취약점 등급 전용 축**이다. 칠하는 건 조치 대상(CRITICAL·HIGH·MEDIUM)뿐 —
@@ -1207,6 +1211,9 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .deptree__box.tone-crit { fill: var(--crit-bg); stroke: var(--crit-bd); stroke-width: 1.6; }
 .deptree__box.tone-high { fill: var(--high-bg); stroke: var(--high-bd); stroke-width: 1.6; }
 .deptree__box.tone-med  { fill: var(--med-bg);  stroke: var(--med-bd);  stroke-width: 1.6; }
+/* 강조 경로 위의 노드 — 등급 톤보다 뒤에 두고 선택자 무게를 맞춘다(안 그러면 칠해진 노드에서 진다).
+ * 아래 --on(지금 보는 패키지)보다 앞에 둬서, 둘 다 해당하면 --on 이 이기게 한다. */
+.deptree__box.deptree__box--path { stroke: var(--accent); stroke-width: 2; }
 /* 지금 보고 있는 패키지 — 테두리로만 구분한다(왼쪽 악센트 바는 위험 등급 축이라 겹치지 않게).
  * 등급 톤보다 뒤에 두고 선택자를 같은 무게로 맞춘다 — 아니면 칠해진 노드에서 이 표시가 진다. */
 .deptree__box.deptree__box--on { stroke: var(--accent-2); stroke-width: 2; }
