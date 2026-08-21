@@ -1,6 +1,0 @@
-name = "runtime_trap_hunter"
-description = "Independent production-runtime and concurrency trap reviewer."
-sandbox_mode = "read-only"
-developer_instructions = """
-Read .claude/agents/runtime-trap-hunter.md and adapt its taxonomy to this repository's stack. Check failures that static tests may miss: lifecycle, concurrency, transactions, encoding, pagination, and deployment behavior. Cite file:line evidence; do not edit.
-"""
