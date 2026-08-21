@@ -22,11 +22,18 @@ require_once __DIR__ . '/feeds/http.php';   // vg_http_json — 타임아웃·�
  *   "기본값 N" 으로 보여주는 값이다. **숫자를 setting.php 에 다시 적지 않는다**
  *   (두 곳에 두면 폴백과 화면이 갈라진다 — c09a6a33 / PR #593).
  *
- *   기본 주소가 도커 브리지 게이트웨이인 이유: 외부 API 컨테이너는 `bridge` 네트워크에,
- *   우리 web 은 `vulnagent_vulnagent` 에 있어 서비스명(vulnagent-api)으로는 못 닿는다.
- *   운영 서버 실측(2026-08-20)에서 http://172.17.0.1:8000/health 만 200 이었다.
+ *   **주소의 기본값은 빈 문자열 = 연동 꺼짐이다.** 보고서 본문을 만드는 외부 작업큐
+ *   (FastAPI + 워커)의 소스는 이 저장소에 없다 — 클론해서 그대로 띄운 사람에게는 닿을
+ *   서버가 없으므로, 설정에 주소를 넣기 전까지 이 기능은 화면에도 나오지 않는다
+ *   (죽은 버튼을 보여주지 않는다). 주소를 넣으면 예전과 똑같이 동작한다.
+ *   운영처럼 이미 쓰고 있던 곳은 마이그레이션이 쓰던 주소를 tb_setting 에 한 번 옮겨
+ *   담았으므로 그대로 켜진 채로 남는다(db/migrations/*_report_api_default.sql).
+ *
+ *   주소를 도커 브리지 게이트웨이(http://172.17.0.1:8000)로 넣던 이유: 외부 API 컨테이너는
+ *   `bridge` 네트워크에, 우리 web 은 `vulnagent_vulnagent` 에 있어 서비스명(vulnagent-api)
+ *   으로는 못 닿는다. 운영 서버 실측(2026-08-20)에서 그 주소의 /health 만 200 이었다.
  */
-const VG_REPORT_API_BASE_URL = 'http://172.17.0.1:8000';
+const VG_REPORT_API_BASE_URL = '';
 /* 폴링 창(간격 × 최대 횟수)은 **보고서가 실제로 만들어지는 시간**에 맞춘다. AI 본문이 붙으면
    생성에 몇 분씩 걸리므로 5초 × 720회 = 60분을 기본으로 잡는다(처음엔 3초 × 60회 = 3분이었는데,
    그 시점엔 외부가 더미 응답을 5초에 돌려주고 있어서 실제 소요시간을 몰랐다).
@@ -74,10 +81,21 @@ const VG_REPORT_STATUS_FAILED = ['FAILURE', 'FAILED', 'ERROR', 'REVOKED', 'CANCE
 // ─────────────────────────────────────────────────────────────────────────
 // 설정값
 // ─────────────────────────────────────────────────────────────────────────
-/** 외부 보고서 API 의 base URL(끝 슬래시 없음). 값이 없거나 비면 상수 폴백. */
+/**
+ * 외부 보고서 API 의 base URL(끝 슬래시 없음). 설정에 값이 없으면 상수 폴백이고,
+ *   그 기본값이 빈 문자열이므로 **설정하지 않은 곳에서는 빈 문자열**이 나온다(= 연동 꺼짐).
+ */
 function vg_report_api_base(): string {
     $url = trim(vg_setting_str('report.api_base_url', VG_REPORT_API_BASE_URL));
     return rtrim($url !== '' ? $url : VG_REPORT_API_BASE_URL, '/');
+}
+
+/**
+ * 이 설치에서 AI 보고서 연동을 쓰는가 — **주소가 있으면 켜짐, 없으면 꺼짐** 그것뿐이다.
+ *   화면(카드 렌더 여부)과 프록시 엔드포인트(거절 여부)가 같은 함수 하나를 본다.
+ */
+function vg_report_enabled(): bool {
+    return vg_report_api_base() !== '';
 }
 
 /** 화면이 상태를 다시 물어보는 간격(초). */
@@ -129,9 +147,14 @@ function vg_report_state_tone(string $state): string {
  * @return array 응답 JSON(JobResponse)
  */
 function vg_report_api_call(string $method, string $path, ?array $body = null): array {
+    // 연동이 꺼져 있으면 나갈 곳이 없다. 화면·엔드포인트가 이미 막지만, 여기서도 한 번 더
+    //   끊는다 — 목적지 없는 호출이 상대경로('/jobs/')로 나가는 일은 없어야 한다.
+    if (!vg_report_enabled()) {
+        throw new RuntimeException('보고서 서비스가 설정되어 있지 않습니다.');
+    }
     $url = vg_report_api_base() . $path;
     try {
-        /* 목적지는 **관리자가 설정에 넣은 내부 인프라 주소**다(기본값이 도커 브리지
+        /* 목적지는 **관리자가 설정에 넣은 내부 인프라 주소**다(대개 도커 브리지
            게이트웨이). 피드 커넥터용 SSRF 차단대역에 정확히 걸리는 자리라, 이 호출만
            $allowInternal 로 예외를 둔다 — 대신 그 모드는 리다이렉트를 따라가지 않으므로
            요청은 설정된 그 호스트 하나로 끝난다. */
