@@ -9,6 +9,12 @@ declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 
+// 이 엔드포인트의 모든 응답이 쓰는 인코딩 플래그 — 분기마다 다르면 다음 사람이 또 한 곳만 고친다.
+//   JSON_UNESCAPED_SLASHES 가 필수다: 에이전트는 jq 가 없는 노드에서 폴백 파서로 값을 뽑는데,
+//   현장에 깔린 옛 폴백(sed)은 JSON 이스케이프를 못 푼다. 기본값이면 json_encode 가 "/" 를 "\/" 로 써서
+//   update_signature(base64)가 깨지고 서명 검증이 전 노드에서 실패한다(3.17 → 3.18 실제 사고).
+const VG_AGENT_POLL_JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+
 require __DIR__ . '/../src/config.php';
 require __DIR__ . '/../src/db.php';
 require_once __DIR__ . '/../src/agenttoken.php';  // vg_agent_token_verify (호스트 바인딩)
@@ -18,7 +24,7 @@ require_once __DIR__ . '/../src/audit.php';        // vg_log_activity (업데이
 
 function respond_fail(int $httpCode, string $msg, string $code): void {
     http_response_code($httpCode);
-    echo json_encode(['ok' => false, 'error' => $msg, 'code' => $code, 'ts' => date('c')], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => false, 'error' => $msg, 'code' => $code, 'ts' => date('c')], VG_AGENT_POLL_JSON_FLAGS);
     exit;
 }
 
@@ -84,7 +90,7 @@ if (!$host) {
         'cpu_quota_percent'          => $defaultTier['cpu_quota_percent'],
         'packaging_timeout_seconds'  => $defaultTier['packaging_timeout_seconds'],
         'mem_max_mb'                 => $defaultTier['mem_max_mb'],
-    ] + $updateFields, JSON_UNESCAPED_UNICODE);
+    ] + $updateFields, VG_AGENT_POLL_JSON_FLAGS);
     exit;
 }
 
@@ -111,4 +117,4 @@ echo json_encode([
     'cpu_quota_percent'          => $speedTier['cpu_quota_percent'],
     'packaging_timeout_seconds'  => $speedTier['packaging_timeout_seconds'],
     'mem_max_mb'                 => $speedTier['mem_max_mb'],
-] + $updateFields, JSON_UNESCAPED_UNICODE);
+] + $updateFields, VG_AGENT_POLL_JSON_FLAGS);

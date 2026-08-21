@@ -54,8 +54,13 @@ foreach (['poll', 'progress', 'ingest'] as $name) {
 }
 
 $pollConsumer = $sources['agent'];
+// 폴백(jq 없음) 경로는 필드 종류마다 모양이 다르다 — 숫자·bool 은 grep 패턴에 "필드명" 이
+//   그대로 박히고, 문자열은 vg_poll_json_str 헬퍼에 키 이름으로 넘어간다(3.20 에서 JSON
+//   이스케이프를 푸느라 sed 4줄을 헬퍼 하나로 모았다). 둘 중 어느 모양이든 "폴백도 그 필드를
+//   소비한다" 는 계약은 같다 — jq 경로(.필드)와 둘 다 있어야 통과다.
 foreach ($contract['poll']['response_fields'] as $field) {
-    $check(str_contains($pollConsumer, ".$field") && str_contains($pollConsumer, "\"$field\""),
+    $fallbackUses = str_contains($pollConsumer, "\"$field\"") || str_contains($pollConsumer, "vg_poll_json_str $field ");
+    $check(str_contains($pollConsumer, ".$field") && $fallbackUses,
         "installer no longer consumes poll field: $field");
 }
 

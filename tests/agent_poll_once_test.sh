@@ -62,7 +62,7 @@ has()      { printf '%s\n' "$1" | grep -qx -- "$2"; }
 run_contract_suite() {
   local label="$1"
   echo "-- $label --"
-  local out
+  local out sig
 
   # 1) 명령 + 무결성 켜짐 → --verify-files 가 인자에 실린다(사고 재현 방지의 핵심)
   not_due
@@ -167,6 +167,37 @@ run_contract_suite() {
   poll_once '{깨짐' >/dev/null
   [ -f "$STATE/update_report" ] && ok "$label: poll 실패 시 리포트 보존(다음에 재보고)" || bad "$label: 실패했는데 리포트를 지웠다"
   rm -f "$STATE/update_report"
+
+  # 11) 서명 base64 안의 "\/" — PHP json_encode 는 기본으로 "/" 를 "\/" 로 쓴다. 폴백 파서가
+  #     그걸 못 풀면 base64 가 깨져 서명 검증이 실패한다. jq 가 없는 노드 전부에서 자동
+  #     업데이트가 죽었던 실제 사고다(3.17 → 3.18, signature_invalid). 서버는 이제
+  #     JSON_UNESCAPED_SLASHES 로 안 escape 하지만, 구버전 서버를 만나도 노드가 견뎌야 한다.
+  not_due
+  out=$(poll_once '{"poll_schedule_seconds":3600,"update_available":true,"update_version":"9.9","update_sha256":"deadbeef","update_download_path":"agent-dl.php?f=vuln-inventory-agent.sh","update_signature":"+\/++D\/A="}')
+  sig=$(printf '%s\n' "$out" | sed -n 's/^update_signature=//p')
+  if [ "$sig" = '+/++D/A=' ]; then
+    ok "$label: 이스케이프된 서명(\\/)을 원본 base64 로 되돌린다"
+  else
+    bad "$label: 서명 이스케이프가 안 풀렸다 (sig=$sig)" "$out"
+  fi
+  case "$sig" in
+    ''|*[!A-Za-z0-9+/=]*) bad "$label: 서명에 base64 밖 문자가 남았다 (sig=$sig)" ;;
+    *)                    ok "$label: 서명이 base64 문자집합만으로 이뤄진다" ;;
+  esac
+  if printf '%s' "$sig" | base64 -d >/dev/null 2>&1; then
+    ok "$label: 서명이 실제로 base64 디코드된다"
+  else
+    bad "$label: 서명이 base64 로 디코드되지 않는다 (sig=$sig)"
+  fi
+
+  # 12) 다른 문자열 필드도 같은 병을 앓는다 — 경로에 "\/" 가 섞이면 다운로드 URL 이 깨진다.
+  not_due
+  out=$(poll_once '{"poll_schedule_seconds":3600,"update_available":true,"update_version":"9.9","update_sha256":"deadbeef","update_download_path":"sub\/agent-dl.php?f=a.sh","update_signature":"c2ln=="}')
+  if has "$out" 'update_path=sub/agent-dl.php?f=a.sh'; then
+    ok "$label: 다운로드 경로의 \\/ 도 풀린다"
+  else
+    bad "$label: 다운로드 경로 이스케이프가 안 풀렸다" "$out"
+  fi
 }
 
 echo "== A. --poll-once 지시문 계약 =="

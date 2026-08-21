@@ -410,6 +410,33 @@ else
   no "poll 지시문 계약  (자세히: bash tests/agent_poll_once_test.sh)"
 fi
 
+phase "에이전트 자동 업데이트 응답 인코딩"
+# --- agent-poll.php 응답에 JSON 이스케이프가 남지 않는가 ----------------------
+# json_encode 의 기본값은 "/" 를 "\/" 로 쓴다. 에이전트는 jq 가 없는 노드에서 폴백 파서로
+# 값을 뽑는데, 거기에 역슬래시가 섞이면 update_signature(base64)가 깨져 서명 검증이 실패한다
+# — 운영 전 노드의 자동 업데이트가 signature_invalid 로 죽었던 실제 사고다(3.17 → 3.18).
+# 응답 원문과, 그 원문을 **실제 에이전트의 폴백 파서**에 물린 결과를 둘 다 본다.
+poll_resp=$(curl_ -s -H "X-Agent-Token: $TOKEN" "$BASE/agent-poll.php?agent_version=0.1")
+assert_contains "$poll_resp" '"update_available":true' "구버전 보고 → 자동 업데이트 제안"
+case "$poll_resp" in
+  *'\/'*) no "poll 응답에 JSON 이스케이프(\\/)가 남아 있다" ;;
+  *)      ok "poll 응답에 JSON 이스케이프(\\/)가 없다" ;;
+esac
+# 에이전트 본체에서 폴백 파서만 그대로 떼어 와 돌린다(구현이 갈라지지 않게 복사하지 않는다).
+eval "$(sed -n '/^vg_poll_json_str() {/,/^}/p' "$ROOT/agent/vuln-inventory-agent.sh")"
+poll_sig=$(vg_poll_json_str update_signature "$poll_resp")
+case "$poll_sig" in
+  ''|*[!A-Za-z0-9+/=]*) no "폴백 파서가 뽑은 서명이 base64 문자집합 밖이다 (sig=$poll_sig)" ;;
+  *)                    ok "폴백 파서가 뽑은 서명이 base64 문자집합만" ;;
+esac
+if printf '%s' "$poll_sig" | base64 -d >/dev/null 2>&1; then
+  ok "폴백 파서가 뽑은 서명이 base64 로 디코드된다"
+else
+  no "폴백 파서가 뽑은 서명이 base64 로 디코드되지 않는다 (sig=$poll_sig)"
+fi
+assert_eq "$(vg_poll_json_str update_download_path "$poll_resp")" \
+          'agent-dl.php?f=vuln-inventory-agent.sh' "폴백 파서가 뽑은 다운로드 경로"
+
 phase "에이전트 패키지 출처"
 # --- 에이전트 패키지 출처 -----------------------------------------------------
 # 출처를 잘못 찍으면 중앙이 서드파티로 보고 "자동 판정 불가" 로 남긴다 — 억제도 조치 가능 여부도

@@ -1,6 +1,6 @@
 # vuln-agent 에이전트 — 설치·운영 가이드
 
-> **현행 버전: 3.18** (문서 기준 2026-08-21). 실제 값은 `vuln-inventory-agent.sh` 의
+> **현행 버전: 3.20** (문서 기준 2026-08-21). 실제 값은 `vuln-inventory-agent.sh` 의
 > `SCRIPT_VERSION` 이 정본이다.
 
 > ## ⚠ 3.15 로 올라갈 때는 **노드에서 한 번 갱신 작업이 필요하다**
@@ -26,6 +26,7 @@
 
 | 버전 | 들어간 것 |
 |---|---|
+| 3.20 | jq 없는 노드의 폴백 파서가 JSON 이스케이프(`\/`)를 풀지 않아 `update_signature`(base64)가 깨지던 회귀 수정 — 자동 업데이트가 전 노드에서 `signature_invalid` 로 죽었다. 서버(`agent-poll.php`)도 `JSON_UNESCAPED_SLASHES` 로 함께 고쳤다 |
 | 3.18 | 배포판이 깐 파이썬 패키지(`/usr/lib/python3/dist-packages` 등)의 라이선스를 전용 좁은 패스로 읽는다 — 기존 스캔 예산과 분리 |
 | 3.17 | 설치된 gem 의 라이선스를 gemspec 에서 읽는다 |
 | 3.16 | pip 라이선스 헬퍼가 서브셸에 export 되지 않아 라이선스가 비던 회귀 수정 — 같은 함정에 빠져 있던 gem·yarn·pnpm·poetry 헬퍼 5종도 함께 export(그동안 그 소스들도 조용히 0건이었다) |
