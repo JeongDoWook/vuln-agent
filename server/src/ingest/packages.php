@@ -127,13 +127,33 @@ function vg_ingest_parse_pkg_license(string $text): array
 // ── langRows(mgr,name,version) 에 라이선스 스트림을 매칭해 4번째 필드로 붙인다 ──
 //   매칭 안 되면 4번째 필드는 ''(라이선스 미상). langRows 의 앞 3필드 구조는 그대로라
 //   기존 dedup·diff 로직(vg_ingest_build_pkg_map 등)은 건드리지 않는다.
+//
+//   **버전이 어긋나도 잃지 않는다** — langRows 는 `mgr|name` 으로 dedup 되어(위 $add) 한 이름에
+//   버전이 하나만 남지만, 라이선스는 `mgr|name|version` 단위로 온다. 에이전트가 같은 패키지를
+//   두 소스에서 서로 다른 버전으로 낼 수 있어(실측: 시스템 gemspec `json 2.6.3`(라이선스 있음) +
+//   앱 `Gemfile.lock` 의 `json (2.7.1)`(라이선스 없음) / venv METADATA `urllib3 1.26.18` +
+//   다른 앱 poetry.lock 의 `urllib3 2.0.7`), 정확 일치만 보면 라이선스가 조용히 미상이 됐다.
+//   그래서 **정확 일치 우선 → 실패 시 이름 단위 폴백** 2단계로 찾는다.
+//   폴백에서 같은 이름에 서로 다른 라이선스가 잡히면 **아무것도 붙이지 않는다** — 이 저장소는
+//   라이선스 판정에서 "미탐이 과탐보다 낫다"를 원칙으로 삼는다(license_risk.php).
 function vg_ingest_attach_pkg_license(array $langRows, array $licenseRows): array
 {
-    $byKey = [];
-    foreach ($licenseRows as $r) { $byKey["{$r[0]}|{$r[1]}|{$r[2]}"] = $r[3]; }
+    $byKey  = [];
+    $byName = [];   // "mgr|name" => 라이선스 값. 값이 서로 다른 게 둘 이상이면 false(=폴백 포기)
+    foreach ($licenseRows as $r) {
+        $byKey["{$r[0]}|{$r[1]}|{$r[2]}"] = $r[3];
+        $nk = "{$r[0]}|{$r[1]}";
+        if (!array_key_exists($nk, $byName)) { $byName[$nk] = $r[3]; }
+        elseif ($byName[$nk] !== $r[3])      { $byName[$nk] = false; }
+    }
     $out = [];
     foreach ($langRows as $r) {
-        $out[] = [$r[0], $r[1], $r[2], $byKey["{$r[0]}|{$r[1]}|{$r[2]}"] ?? ''];
+        $lic = $byKey["{$r[0]}|{$r[1]}|{$r[2]}"] ?? null;
+        if ($lic === null) {
+            $cand = $byName["{$r[0]}|{$r[1]}"] ?? false;
+            $lic  = $cand === false ? '' : $cand;
+        }
+        $out[] = [$r[0], $r[1], $r[2], $lic];
     }
     return $out;
 }
