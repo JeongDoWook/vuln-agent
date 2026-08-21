@@ -37,7 +37,7 @@ function vg_setting_groups(): array {
         'account'  => ['label' => '계정 정책',
                        'note'  => 'ISMS-P 2.5.1·2.5.6 — 로그인이 없는 대화형 계정을 미사용으로 판정'],
         'report'   => ['label' => 'AI 보고서',
-                       'note'  => '보고서 작업큐 API 연동 — 주소는 경로 없이 호스트[:포트]까지'],
+                       'note'  => '선택적 외부 연동(기본 꺼짐) — 주소를 비우면 쓰지 않는다 · 넣을 땐 경로 없이 호스트[:포트]까지'],
     ];
 }
 
@@ -97,10 +97,13 @@ function vg_setting_defs(): array {
         ],
         // AI 보고서 — 외부 작업큐 API 주소와 그 상태를 화면이 되묻는 방식. 기본값 상수는
         //   server/src/report_job.php 가 갖는다(값을 여기 다시 적으면 폴백과 화면이 갈라진다).
+        //   **주소는 비워 둘 수 있다** — 비면 연동을 쓰지 않는다는 뜻이고 기본값이 그것이다
+        //   (외부 생성기는 이 저장소 밖에 있다). min 1 은 옛 정의의 잔재가 아니라 "쓸 거면
+        //   한 자 이상" 이라는 뜻이지만 url 항목의 길이 검증은 max 만 본다.
         'report.api_base_url' => [
             'label' => '보고서 API 주소', 'type' => 'url', 'min' => 1, 'max' => 255,
             'group' => 'report', 'default_const' => 'VG_REPORT_API_BASE_URL',
-            'desc'  => '보고서 작업큐 API 의 base URL(http:// 또는 https://). 경로는 붙이지 않습니다.',
+            'desc'  => '보고서 작업큐 API 의 base URL(http:// 또는 https://). 경로는 붙이지 않습니다. 비우면 AI 보고서 연동을 사용하지 않습니다(기본).',
         ],
         'report.poll_interval_seconds' => [
             'label' => '진행 확인 간격(초)', 'type' => 'int', 'min' => 1, 'max' => 60,
@@ -197,8 +200,10 @@ function vg_setting_int(string $key, int $default): int {
  *   되므로, 스킴을 http/https 로 못박고 base URL 이 아닌 것(경로·질의·조각)을 거른다.
  */
 function vg_setting_url_error(string $raw, int $maxLen): ?string {
+    // 빈 값은 오류가 아니라 **"이 연동을 쓰지 않는다"** 는 뜻이다(AI 보고서의 기본 상태).
+    //   여기서 거절하면 저장 버튼 한 번에 전 항목이 함께 거절된다(c09a6a33 / PR #593 과 같은 사고).
     if ($raw === '') {
-        return '주소를 입력하세요.';
+        return null;
     }
     if (mb_strlen($raw) > $maxLen) {
         return sprintf('%d자 이내로 입력하세요.', $maxLen);

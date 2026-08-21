@@ -12,6 +12,10 @@ declare(strict_types=1);
  *   자기 숫자를 갖지 않게 한다(매직넘버 금지). 결과 본문은 형식이 정해지지 않은 plain text 라
  *   HTML/마크다운으로 가정하지 않고 <pre> 에 그대로 넣는다(이스케이프는 vg_h / textContent).
  *
+ *   **이 카드는 연동이 켜져 있을 때만 그린다**(vg_report_enabled — 설정에 API 주소가 있을 때).
+ *   꺼져 있으면 "설정되지 않았습니다" 안내조차 남기지 않고 카드를 통째로 생략한다: 누를 수
+ *   없는 버튼이나 켤 수 없는 안내는 화면에서 죽은 자리이기 때문이다.
+ *
  *   결과가 **PDF 다운로드 링크**로 오면(외부 API 담당자 확인 2026-08-20) 본문 대신
  *   [PDF 다운로드] 로 그린다 — 카드와 이력표 양쪽 모두. 링크는 우리 프록시
  *   (report-download.php)를 가리킨다: 외부 API 는 사내 주소라 브라우저에서 못 닿는다.
@@ -29,6 +33,10 @@ require_once __DIR__ . '/../ui_config.php';   // vg_ui_detail_preview_limit — 
  */
 function vg_host_load_report_jobs(PDO $pdo, int $hostId): array {
     $empty = ['jobs' => ['rows' => [], 'total' => 0], 'active' => null];
+    // 연동이 꺼져 있으면 그릴 카드도 없다 — 읽을 이유도 없으므로 쿼리 자체를 걷는다.
+    if (!vg_report_enabled()) {
+        return $empty;
+    }
     try {
         return [
             'jobs'   => vg_report_jobs_recent($pdo, $hostId, vg_ui_detail_preview_limit()),
@@ -40,8 +48,11 @@ function vg_host_load_report_jobs(PDO $pdo, int $hostId): array {
     }
 }
 
-/** AI 보고서 카드. $csrf 는 생성 요청(POST)에 실어 보낸다. */
+/** AI 보고서 카드. $csrf 는 생성 요청(POST)에 실어 보낸다. 연동이 꺼져 있으면 그리지 않는다. */
 function vg_host_render_report(int $hostId, string $csrf, array $jobs, ?array $active): void {
+    if (!vg_report_enabled()) {
+        return;
+    }
     $rows  = $jobs['rows'] ?? [];
     $total = (int) ($jobs['total'] ?? 0);
     ?>
