@@ -107,6 +107,23 @@ vg_page_title('UI 디자인 시스템', 'SYSTEM');
 </section>
 
 <section class="styleguide-section">
+  <h2>카드</h2>
+  <?php /* 카드 문법의 전시장 — 규약 본문은 vg_card() 주석이 갖는다(여기서 되풀이하지 않는다).
+           화면마다 카드 머리를 손으로 짜던 것이 갈라짐의 원인이었으므로, 새 카드는 이 함수로 만든다. */ ?>
+  <ul class="why">
+    <li>한 카드 = 한 이야기. 성격이 다른 덩어리는 카드를 나누고 <code>.card-row</code> 로 한 줄에 세운다.</li>
+    <li>카드에는 제목이 있다. 제목을 못 붙일 덩어리는 카드가 아니다(다른 카드 안의 요소이거나 지울 것).</li>
+    <li>제목 오른쪽은 보조 수치(배지)나 조작부 자리다.</li>
+    <li>예외는 하나 — <strong>화면의 주 목록 표</strong>. 그 카드의 제목은 화면 제목(h1)·탭이 이미 갖는다.</li>
+  </ul>
+  <div class="card-row">
+    <?php vg_card('제목만', '<p class="why">가장 단순한 카드. 본문은 이야기 하나만 담는다.</p>'); ?>
+    <?php vg_card('제목 + 보조 수치', '<p class="why">배지는 그 카드가 세는 모집단의 크기를 말한다.</p>',
+        ['badge' => '전체 1,234건']); ?>
+  </div>
+</section>
+
+<section class="styleguide-section">
   <h2>KPI</h2>
   <?php // 결론 배너(vg_verdict)는 없앴다 — 화면의 결론은 KPI·뱃지 같은 값이 말한다. ?>
   <?php vg_kpi_strip([

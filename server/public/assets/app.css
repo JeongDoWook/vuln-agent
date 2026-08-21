@@ -683,6 +683,30 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 .card--accent:hover { border-color: var(--accent); }
 .card__body { margin-top: .6rem; }
 
+/* 카드 머리 — 제목(왼쪽) + 보조 수치·조작부(오른쪽). vg_card() 하나가 그린다.
+ * 예전엔 화면마다 자기 이름의 머리 줄을 따로 만들었다(.agent-control__heading ·
+ * .report-job__heading · .discovery-target__head) — 같은 모양을 세 번 적은 것이고,
+ * 그래서 어떤 카드는 제목이 카드 밖 <h2> 로 나가거나(감사 로그) 아예 없었다(탐지 결과 CVE 탭).
+ * min-width:0 은 격자 칸 안에서 제목이 줄어들 수 있게 한다 — 없으면 긴 제목이 카드를 뚫는다. */
+.card__head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-width: 0; }
+.card__head > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 오른쪽 칸은 안 줄어든다 — 배지·버튼은 잘리면 뜻을 잃는다. 줄어드는 쪽은 제목이다. */
+.card__head-aside { flex: none; display: flex; align-items: center; gap: .4rem; }
+
+/* 카드 여러 장을 한 줄에 — "한 카드 한 이야기" 로 쪼갠 뒤 가로로 세우는 자리.
+ * 칸이 모자라면 접힌다(auto-fit) — 좁은 폭에서는 한 장씩 세로로 선다.
+ * 하한 19rem 은 .kpi-donuts 와 같다: 도넛(132px) 옆에 값 목록이 겹치지 않는 최소 폭.
+ * align-items:start — 내용이 짧은 카드가 옆 카드 높이만큼 늘어나지 않게 한다. */
+.card-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: var(--sp-3);
+  align-items: start;
+  margin-bottom: var(--sp-3);
+}
+/* 줄 자신이 아래 여백을 가지므로 칸 안의 카드는 여백을 버린다(겹치면 줄 간격이 두 배가 된다). */
+.card-row > .card { margin-bottom: 0; }
+
 /* 자산 탐색(discovery.php) 대역 카드 — 표 한 줄이 아니라 카드 하나로 대역을 보여줘
  * 상태 배지·스캔 결과를 표 열보다 눈에 띄게 비교한다(폭에 맞춰 접히는 auto-fill 격자). */
 .discovery-targets {
@@ -1005,6 +1029,11 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
  * (그림 쪽 대비는 PHP 가 조각 사이에 2px 간격을 남겨서 낸다.)
  * 좁아지면 도넛 아래로 목록이 내려간다(wrap) — 목록은 잘리면 안 되는 정보다. */
 .donut-kpi { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+/* 도넛이 **하나뿐인** 카드(탐지 결과의 CCE·노출 탭) — 목록이 카드 폭을 통째로 먹으면
+ * 라벨과 값이 카드 양끝으로 벌어져 한 줄로 안 읽힌다(1440px 실측: 라벨 x=380 · 값 x=1265).
+ * 폭에 상한을 두고 남는 폭은 오른쪽으로 흘린다 — .kpi-donuts--pair 가 칸이 둘일 때 하는 것과
+ * 같은 처리다. 여럿이 나란히 선 카드 줄(.card-row)에서는 칸 폭이 이미 상한이라 안 걸린다. */
+.card__body > .donut-kpi:only-child { max-width: 34rem; }
 .donut--kpi { flex: none; }
 /* 그릴 조각이 0 일 때(심각도 도넛에서 조치 대상이 없을 때) 고리 대신 세우는 상태.
  * 빈 고리는 "고장난 화면" 으로 읽힌다. 자리는 도넛과 같게 잡아 옆 목록이 위아래로 튀지 않게 한다. */
@@ -2495,11 +2524,10 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--host .hero, .page--cve .hero, .page--user .hero { background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--info-bg) 45%, var(--surface))); }
 .page--advisory .prose, .page--cve .prose, .page--compliance_rule .prose,
 .page--control .prose { max-width: 78ch; line-height: 1.75; }
-/* 자산 상세 히어로의 위험 요약(.kpi-donuts) — 칸이 **둘뿐**이라 1fr 로 두면 넓은 화면에서
- * 칸 하나가 본문의 절반이 된다(1440px 실측 572px). 목록의 값은 칸 오른쪽 끝에 붙는 규칙이라
- * 그만큼 라벨과 숫자가 벌어져 어느 값이 어느 줄인지 눈으로 잇기 어려워진다.
- * 칸 폭에 상한을 두고 **남는 폭은 양쪽 여백으로 흘린다** — 좁아지면 auto-fit 이 세로로 접는다. */
-.page--host .kpi-donuts { grid-template-columns: repeat(auto-fit, minmax(19rem, 27rem)); justify-content: center; }
+/* 자산 상세 히어로의 위험 요약은 이제 카드 두 장(.card-row)이다 — 예전의 `.page--host
+ * .kpi-donuts` 폭 상한 규칙은 같이 걷었다. 카드가 자기 padding 안에서 목록을 담으므로
+ * "라벨과 숫자가 칸 양끝으로 벌어지는" 문제는 `.card__body > .donut-kpi:only-child` 의
+ * 폭 상한이 대신 막는다(그쪽 주석에 실측값이 있다). */
 .page--host .subtabs, .page--cve .subtabs { border: 1px solid var(--line); border-radius: var(--r-md); padding: .25rem; background: var(--surface); box-shadow: var(--shadow); }
 .page--host .subtabs a, .page--cve .subtabs a { border: 0; border-radius: var(--r-sm); margin: 0; }
 .page--host .subtabs a.on, .page--cve .subtabs a.on { background: var(--info-bg); color: var(--accent-2); }
