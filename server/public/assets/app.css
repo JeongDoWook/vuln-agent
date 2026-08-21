@@ -717,6 +717,31 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 /* 줄 자신이 아래 여백을 가지므로 칸 안의 카드는 여백을 버린다(겹치면 줄 간격이 두 배가 된다). */
 .card-row > .card { margin-bottom: 0; }
 
+/* SBOM 부품표(sbom.php?view=html) 한 줄 — 도넛 1/4 + 도넛 1/4 + 컴포넌트 목록 1/2.
+ * .card-row(균등 auto-fit)로는 못 만든다: 여기서는 칸 넓이가 서로 달라야 한다. 도넛은 값
+ * 서너 개짜리라 좁아도 읽히고, 화면의 주인공인 목록이 나머지 절반을 갖는다.
+ * 예전엔 셋이 각각 전폭으로 세로로 쌓여서 첫 컴포넌트를 보려면 두 번 스크롤해야 했다.
+ * align-items:start — 목록이 길어도 옆 도넛 카드가 따라 늘어나지 않는다. */
+.sbom-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--sp-3);
+  align-items: start;
+}
+.sbom-cols > .card { margin-bottom: 0; }
+/* 목록 칸은 카드 여러 장(생태계별)과 검색·페이저를 세로로 담는 칸이다 — 칸 자체는 카드가 아니다. */
+.sbom-cols__list { min-width: 0; }
+.sbom-cols__list > .card:last-of-type { margin-bottom: 0; }
+/* 컴포넌트가 하나도 없으면 도넛 두 장이 서지 않는다 — 목록만 남은 줄은 전폭으로 편다
+ * (안 그러면 빈 칸 둘을 남기고 목록이 오른쪽 끝에 붙는다). */
+.sbom-cols--empty { grid-template-columns: minmax(0, 1fr); }
+/* 1120px 아래로는 도넛 둘만 나란히 두고 목록을 다음 줄 전폭으로 내린다 — 절반 폭에 표 네 열이
+ * 들어가지 않는 지점이다. 더 좁아지면 셋 다 한 장씩 세로로 선다. */
+@media (max-width: 1120px) {
+  .sbom-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .sbom-cols__list { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) { .sbom-cols { grid-template-columns: minmax(0, 1fr); } }
 /* 칸 수를 **둘로 못박는** 변형. 기본 .card-row 는 auto-fit(19rem) 이라 넓은 화면에서 3~4칸까지
  * 늘어나는데, 표가 든 카드는 그 폭에서 값이 접혀 행이 두세 줄이 되고 세로가 되레 길어진다.
  * 1340px 은 실측 하한이다 — 데이터 수집(연결기 4장)을 2열로 세운 뒤 폭을 낮춰 재면

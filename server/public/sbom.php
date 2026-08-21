@@ -390,13 +390,33 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
         $riskCounts[$risk]++;
     }
 
+    // 컴포넌트명 검색 — **새 쿼리를 더하지 않는다.** 전건($packages)을 이미 손에 들고 있으므로
+    //   그 배열에 필터를 건다. 표가 생태계별로 갈려 있어(composer/dpkg/go) 표마다 눈으로 찾는
+    //   대신 한 칸으로 전 생태계를 훑는 것이 이 검색의 목적이다.
+    //   위 KPI·도넛은 그대로 **전건 기준**이다 — 분포는 "이 자산이 무엇으로 이뤄졌는가"라서
+    //   검색어에 따라 흔들리면 안 된다. 대신 아래 목록 머리에 검색 결과 수를 밝힌다.
+    $q = trim((string) ($_GET['q'] ?? ''));
+    $listed = $packages;
+    if ($q !== '') {
+        $needle = mb_strtolower($q);
+        $listed = array_values(array_filter(
+            $packages,
+            static fn($p) => mb_strpos(mb_strtolower((string) $p['name']), $needle) !== false
+        ));
+    }
+    $listTotal = count($listed);
+    // 생태계별 건수도 검색 결과 기준으로 다시 센다 — 전건 수(dpkg 811개)를 그대로 두면
+    //   세 줄만 걸린 표 위에 811 이 서서 어느 쪽이 참인지 알 수 없게 된다.
+    $byManagerListed = [];
+    foreach ($listed as $p) { $byManagerListed[(string) $p['manager']][] = $p; }
+
     // 컴포넌트 표는 페이지네이션한다 — 운영 서버는 수백~수천 건이 정상이라(dev DB 는 최대
     //   116건이라 스모크에 안 걸림) 전건을 한 화면에 뿌리면 브라우저가 무거워진다. 정렬이
     //   manager,name,version(SQL ORDER BY) 이라 슬라이스해도 관리자별 묶음이 페이지 경계에서만
     //   갈릴 뿐 뒤섞이지 않는다.
     $page    = vg_page();
     $perPage = vg_perpage();
-    $pageItems = array_slice($packages, ($page - 1) * $perPage, $perPage);
+    $pageItems = array_slice($listed, ($page - 1) * $perPage, $perPage);
     $byManagerPage = [];
     foreach ($pageItems as $p) {
         $byManagerPage[(string) $p['manager']][] = $p;
@@ -430,6 +450,10 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
       </div>
     </div>
 
+    <?php /* 도넛 둘과 목록이 각각 전폭으로 세로로 쌓이면 첫 컴포넌트를 보려고 두 번 스크롤해야
+             했다. 한 줄로 세운다 — 도넛은 값 몇 개짜리라 1/4 씩이면 충분하고, 남는 절반을
+             주인공인 목록이 갖는다(좁아지면 아래 미디어쿼리가 목록을 다음 줄로 내린다). */ ?>
+    <div class="sbom-cols<?= $total > 0 ? '' : ' sbom-cols--empty' ?>">
     <?php if ($total > 0): ?>
       <div class="card">
         <strong>생태계 분포</strong>
@@ -472,8 +496,25 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
       </div>
     <?php endif; ?>
 
+    <div class="sbom-cols__list">
+    <?php /* 생태계별로 갈린 표 위에 검색 한 칸 — 전 생태계를 한 번에 훑는다. 폼은 GET 이라
+             대상 지정 파라미터(host·cid·scan_id·view)를 숨은 칸으로 같이 실어야 이 화면으로
+             다시 돌아온다(안 실으면 다운로드 경로로 떨어진다). */ ?>
+    <?php vg_toolbar(array_merge(
+        [['type' => 'search', 'name' => 'q', 'placeholder' => '컴포넌트명 검색(전 생태계)', 'value' => $q],
+         ['type' => 'hidden', 'name' => 'host', 'value' => $fqdn],
+         ['type' => 'hidden', 'name' => 'view', 'value' => 'html']],
+        $cid !== '' ? [['type' => 'hidden', 'name' => 'cid', 'value' => $cid]] : [],
+        isset($_GET['scan_id']) ? [['type' => 'hidden', 'name' => 'scan_id', 'value' => (string) $scanNo]] : []
+    )); ?>
+    <?php if ($q !== ''): ?>
+      <p class="why"><?= vg_h($q) ?> — <?= number_format($listTotal) ?>개 / 전체 <?= number_format($total) ?>개</p>
+    <?php endif; ?>
     <?php if (!$byManagerPage): ?>
-      <?php vg_empty(['icon' => 'package', 'title' => '이 대상에서 수집된 컴포넌트가 없습니다.']); ?>
+      <?php vg_empty($q !== ''
+          ? ['icon' => 'search', 'title' => '검색 조건에 맞는 컴포넌트가 없습니다.',
+             'cta' => ['href' => vg_qs(['q' => null, 'page' => null]), 'label' => '검색 초기화']]
+          : ['icon' => 'package', 'title' => '이 대상에서 수집된 컴포넌트가 없습니다.']); ?>
     <?php else: ?>
       <?php foreach ($byManagerPage as $manager => $pkgs): ?>
         <div class="card">
@@ -481,7 +522,7 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
             <span class="ctree__icon" aria-hidden="true"><?= vg_icon('package') ?></span>
             <div class="ctree__rootid">
               <strong><?= vg_h(vg_strip_ctrl($manager !== '' ? $manager : '미상')) ?></strong>
-              <span class="why"><?= number_format(count($byManager[$manager] ?? $pkgs)) ?>개 컴포넌트</span>
+              <span class="why"><?= number_format(count($byManagerListed[$manager] ?? $pkgs)) ?>개 컴포넌트</span>
             </div>
           </div>
           <div class="card__body">
@@ -514,7 +555,9 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
         </div>
       <?php endforeach; ?>
     <?php endif; ?>
-    <?php vg_page_nav($total, $perPage, $page); ?>
+    <?php vg_page_nav($listTotal, $perPage, $page); ?>
+    </div><?php // .sbom-cols__list ?>
+    </div><?php // .sbom-cols ?>
 
     <?php vg_footer();
 }
