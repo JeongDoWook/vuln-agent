@@ -38,7 +38,7 @@
 | `/feed_preview.php` | GET, POST | connectors | type + connector catalog fields | - | JSON | connectors.js / unknown |
 | `/finding_history.php` | GET, POST | findings | cid, cve, id, page, per_page, pkg | - | HTML | findings, host / bookmark |
 | `/findings.php` | GET | findings | ctr, fst, fx, host, page, per_page, q, res, scan_id, scope, sev, sort, st, type | - | HTML | nav, dashboard / bookmark |
-| `/host.php` | GET, POST | assets or findings | acc, epage, id, page, per_page, q, tab | `tab=resources` → `tab=scans` (302); delete → `/assets.php` (303) | HTML | assets, findings / bookmark |
+| `/host.php` | GET, POST | assets or findings | acc, epage, id, page, per_page, q, tab, uuid | `tab=resources` → `tab=scans` (302); delete → `/assets.php` (303) | HTML | assets, findings / bookmark |
 | `/index.php` | GET | dashboard | page, per_page | - | HTML | nav / browser root |
 | `/ingest.php` | POST | agent token | - | - | JSON | install-agent, inventory-agent, agent_push / installed agent, CLI |
 | `/kisa-u.php` | GET | compliance | category, page, per_page, state | - | HTML | nav, control_mapping / bookmark |

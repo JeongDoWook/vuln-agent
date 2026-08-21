@@ -170,9 +170,16 @@ function vg_report_api_call(string $method, string $path, ?array $body = null): 
     return $r['json'];
 }
 
-/** 외부에 job 을 만든다. 성공하면 JobResponse. */
-function vg_report_api_create(int $hostId): array {
-    return vg_report_api_call('POST', '/jobs/', ['host_id' => $hostId]);
+/**
+ * 외부에 job 을 만든다. 성공하면 JobResponse.
+ *
+ *   payload 에 실리는 식별자는 **host_uuid 하나뿐**이다. 순번 PK(host_id)는 우리 내부의
+ *   조인 키일 뿐이라 밖에 내보내지 않는다 — 자산 수를 세게 하고, 남의 자산 번호를 찍어
+ *   보게 만든다. 둘을 같이 보내면 외부가 결국 편한 쪽(순번)을 붙잡으므로 하나만 준다.
+ *   tb_report_job 은 여전히 host_id 로 매단다(내부 관계라 바꿀 이유가 없다).
+ */
+function vg_report_api_create(string $hostUuid): array {
+    return vg_report_api_call('POST', '/jobs/', ['host_uuid' => $hostUuid]);
 }
 
 /** 외부 job 하나의 현재 상태. */

@@ -17,6 +17,22 @@ function vg_host_find(PDO $pdo, int $hostId): ?array {
     return $st->fetch() ?: null;
 }
 
+/**
+ * 외부 노출용 식별자(host_uuid)로 호스트 한 행. 없거나 형식이 아니면 null —
+ *   호출부는 `?id=` 로 못 찾은 경우와 **같은 화면**(자산 없음)을 그리면 된다.
+ *
+ *   형식 검증을 여기서 한다: 조회 자체는 prepared statement 라 어차피 안전하지만, 36자
+ *   UUID 가 아닌 값으로 매 요청 인덱스를 뒤지게 둘 이유가 없다(못 찾을 것이 확실하다).
+ */
+function vg_host_find_by_uuid(PDO $pdo, string $uuid): ?array {
+    if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $uuid) !== 1) {
+        return null;
+    }
+    $st = $pdo->prepare('SELECT * FROM tb_host WHERE host_uuid = ? AND is_deleted = 0');
+    $st->execute([$uuid]);
+    return $st->fetch() ?: null;
+}
+
 /** 등급 확정자 이름(승인 이력) — 사용자가 지워졌으면 FK 가 NULL 이라 여기 안 들어온다. */
 function vg_host_load_approver(PDO $pdo, array $host): ?string {
     if (empty($host['approved_by'])) { return null; }

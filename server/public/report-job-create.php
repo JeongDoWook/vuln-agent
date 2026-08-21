@@ -33,13 +33,23 @@ $hostId = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
 if (!$hostId || $hostId < 1) { report_create_fail(422, '대상 자산을 확인할 수 없습니다.'); }
 
 $pdo = vg_pdo();
-$st = $pdo->prepare('SELECT fqdn FROM tb_host WHERE host_id = ? AND is_deleted = 0');
+// 외부로 나가는 식별자는 host_uuid 다(순번 PK 는 안 보낸다 — vg_report_api_create 주석 참고).
+//   이미 치던 조회에 컬럼 하나를 얹어 가져온다 — 쿼리를 늘리지 않는다.
+$st = $pdo->prepare('SELECT fqdn, host_uuid FROM tb_host WHERE host_id = ? AND is_deleted = 0');
 $st->execute([$hostId]);
-$fqdn = $st->fetchColumn();
-if ($fqdn === false) { report_create_fail(404, '자산을 찾을 수 없습니다.'); }
+$hostRow = $st->fetch();
+if ($hostRow === false) { report_create_fail(404, '자산을 찾을 수 없습니다.'); }
+$fqdn     = (string) $hostRow['fqdn'];
+$hostUuid = (string) ($hostRow['host_uuid'] ?? '');
+// uuid 는 마이그레이션이 전 행을 채웠고 새 행은 DB 기본값이 채운다. 그래도 비어 있다면
+//   외부에 대상을 특정할 수 없는 요청을 보내는 셈이라 여기서 끊는다(조용한 오배정 방지).
+if ($hostUuid === '') {
+    error_log('[report_job] host_uuid 가 비어 있다: host_id=' . $hostId);
+    report_create_fail(500, '보고서 작업을 시작하지 못했습니다.');
+}
 
 try {
-    $resp = vg_report_api_create($hostId);
+    $resp = vg_report_api_create($hostUuid);
     $externalId = (int) ($resp['id'] ?? 0);
     if ($externalId < 1) {
         error_log('[report_job] 생성 응답에 id 가 없다: ' . json_encode($resp, JSON_UNESCAPED_UNICODE));

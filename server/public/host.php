@@ -108,8 +108,20 @@ $hasFilter = $q !== '' || $accFilter !== '';
 
 try {
     $pdo = vg_pdo();
-    $hostId = (int) ($_GET['id'] ?? 0);
-    $host = vg_host_find($pdo, $hostId);
+    /* 진입은 두 가지다 — 내부 링크의 순번(?id=N)과 **외부 노출용 식별자**(?uuid=…).
+     *   uuid 는 외부 보고서 API·메일처럼 바깥에서 들어오는 경로를 위한 문이고, 기존
+     *   ?id=N 은 그대로 산다(내부 링크 수십 곳을 한꺼번에 갈아끼우지 않는다).
+     *   uuid 파라미터가 있으면 그쪽이 대상을 정한다 — 형식이 틀리거나 없는 uuid 면
+     *   찾지 못한 것으로 두어 아래에서 ?id 로 못 찾았을 때와 같은 화면이 뜬다.
+     *   여기서 host_id 를 확정하면 그 아래 로직·폼·감사로그는 진입 방식을 몰라도 된다. */
+    $uuidParam = trim((string) ($_GET['uuid'] ?? ''));
+    if ($uuidParam !== '') {
+        $host   = vg_host_find_by_uuid($pdo, $uuidParam);
+        $hostId = (int) ($host['host_id'] ?? 0);
+    } else {
+        $hostId = (int) ($_GET['id'] ?? 0);
+        $host   = vg_host_find($pdo, $hostId);
+    }
     $pendingCommands = [];
 
     if ($host) {
@@ -305,6 +317,9 @@ vg_alert($agentErr);
   <?php
   $noScanMeta = [vg_h(trim($host['os_id'] . ' ' . $host['os_version']))];
   if (!empty($host['last_seen_ip'])) { $noScanMeta[] = 'IP ' . vg_h($host['last_seen_ip']); }
+  // 수집 이력이 없어도 보고서 작업은 만들 수 있다 — 외부에 줄 식별자는 여기서도 보여준다.
+  $noScanUuid = vg_host_uuid_meta($host);
+  if ($noScanUuid !== null) { $noScanMeta[] = $noScanUuid; }
   $noScanMeta[] = '<a href="/">대시보드</a>';
   vg_hero(vg_h($host['fqdn']), $noScanMeta, null, 'ok', '수집 상태');
   ?>

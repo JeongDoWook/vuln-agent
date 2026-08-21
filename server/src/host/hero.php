@@ -9,6 +9,21 @@ declare(strict_types=1);
  *   조회는 하지 않는다 — 쓰는 값은 전부 호출부가 $ctx 로 열거해 넘긴 것뿐이다
  *   (host/tabs.php 와 같은 규칙: 페이지 전역을 암묵적으로 주워 쓰지 않는다).
  */
+/**
+ * 식별부에 세우는 **외부 노출용 식별자**(host_uuid) 한 조각. 없으면 null.
+ *
+ *   사람이 외부 보고서 API 요청에 그대로 옮겨 쓰는 값이라 화면에 보이고 복사할 수 있어야
+ *   한다 — 36자를 눈으로 받아 적게 두지 않는다. 이 화면 자신도 ?uuid=… 로 열린다.
+ *   수집 이력이 없는 자산(host.php 의 미수집 분기)도 보고서 작업은 만들 수 있으므로
+ *   양쪽이 같은 조각을 쓴다.
+ */
+function vg_host_uuid_meta(array $host): ?string {
+    $uuid = (string) ($host['host_uuid'] ?? '');
+    if ($uuid === '') { return null; }
+    return 'UUID <code>' . vg_h($uuid) . '</code>'
+        . vg_capture(static function () use ($uuid) { vg_copy_btn($uuid); });
+}
+
 function vg_host_render_hero(array $ctx): void {
     extract($ctx, EXTR_SKIP);
   $meta = [
@@ -27,6 +42,9 @@ function vg_host_render_hero(array $ctx): void {
    *   진입점은 '구성 > 설치 패키지' 탭 한 곳으로 모은다. 링크 자체는 그 탭에 그대로 있다
    *   (엣지가 있는 자산에만 — 없는 자산에 걸면 빈 화면으로 보내게 된다). */
   if (!empty($host['last_seen_ip'])) { $meta[] = 'IP ' . vg_h($host['last_seen_ip']); }
+  // 외부 노출용 식별자 — "이 자산이 무엇인가"의 일부이고, 밖에 줄 때 쓰는 이름이다.
+  $uuidMeta = vg_host_uuid_meta($host);
+  if ($uuidMeta !== null) { $meta[] = $uuidMeta; }
   /* 에이전트 버전 — 자산 목록에서 내려온 값이다. 숫자만으론 그게 최신인지 알 수 없어
    *   목록이 달고 있던 '구버전' 뱃지도 같이 가져온다(신호를 옮기는 것이지 없애는 게 아니다). */
   if (!empty($scan['agent_version'])) {
