@@ -42,7 +42,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.18"
+SCRIPT_VERSION="3.20"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
@@ -163,6 +163,45 @@ vg_poll_urlencode() {
   printf '%s' "$out"
 }
 
+# 폴백(jq 없음) 전용 — flat JSON 응답에서 문자열 필드 하나를 뽑아 JSON 이스케이프를 푼다.
+#   ★ 이스케이프를 반드시 푼다: PHP json_encode 는 기본으로 "/" 를 "\/" 로 쓴다. 그대로 두면
+#     update_signature(base64)에 역슬래시가 섞여 base64 디코드가 깨지고 서명 검증이 실패한다
+#     — jq 가 없는 노드 전부에서 자동 업데이트가 죽었던 실제 사고다(3.17 → 3.18,
+#     signature_invalid). 서버(agent-poll.php)에 JSON_UNESCAPED_SLASHES 를 넣어 막았지만,
+#     구버전 서버가 남아 있어도 노드가 스스로 견뎌야 한다.
+#   푸는 것은 \/ · \" · \\ 셋뿐이다. \n·\t·\uXXXX 는 일부러 그대로 둔다 — 이 네 필드
+#   (버전·sha256·경로·서명)에 제어문자가 올 이유가 없고, 풀어 주면 서버 응답이 지시문
+#   (한 줄 = 한 지시) 출력에 줄바꿈을 심어 없는 지시를 끼워 넣을 수 있다.
+#   sed 대신 순수 bash 로 훑는다 — 값 안의 \" 를 건너뛰는 정규식은 폴백에 두기엔 너무 깨지기 쉽다.
+vg_poll_json_str() {
+  local key="$1" json="$2" rest out="" i=0 c n
+  rest="${json#*\"$key\"}"
+  [ "$rest" = "$json" ] && { printf ''; return; }   # 그 키가 응답에 없다
+  rest="${rest#*:}"
+  while :; do
+    case "${rest:0:1}" in ' '|'	') rest="${rest:1}" ;; *) break ;; esac
+  done
+  [ "${rest:0:1}" = '"' ] || { printf ''; return; } # null·숫자 등 문자열이 아니다
+  rest="${rest:1}"
+  while [ "$i" -lt "${#rest}" ]; do
+    c="${rest:i:1}"
+    case "$c" in
+      '"') break ;;                                # 닫는 따옴표
+      '\')
+        n="${rest:i+1:1}"
+        case "$n" in
+          '/'|'"'|'\') out+="$n" ;;
+          '')          out+="$c"; i=$((i+1)); continue ;;
+          *)           out+="$c$n" ;;              # \n·\uXXXX 등은 원문 그대로
+        esac
+        i=$((i+2)); continue
+        ;;
+    esac
+    out+="$c"; i=$((i+1))
+  done
+  printf '%s' "$out"
+}
+
 # 숫자 + 상식적 범위 밖이면 빈 값으로 떨군다 — 수집은 스크립트 기본값으로 안전하게 계속된다.
 vg_poll_num_in_range() {
   local v="$1" lo="$2" hi="$3"
@@ -230,7 +269,8 @@ vg_poll_once() {
     update_path=$(printf '%s' "$resp" | jq -r '.update_download_path // empty')
     update_signature=$(printf '%s' "$resp" | jq -r '.update_signature // empty')
   else
-    # 응답이 단순 flat JSON 필드뿐이라 grep -o/sed 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값이 됨).
+    # 숫자 필드는 응답이 단순 flat JSON 이라 grep -o 로 충분하다(null 은 숫자 패턴에 안 걸려 빈 값).
+    #   문자열 필드는 vg_poll_json_str 로 뽑는다 — 뽑기만 하면 JSON 이스케이프가 남아 값이 깨진다.
     poll_schedule=$(printf '%s' "$resp" | grep -o '"poll_schedule_seconds"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
     due_cmd=$(printf '%s' "$resp" | grep -o '"due_command_id"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
     due_verify=$(printf '%s' "$resp" | grep -o '"due_command_verify_files"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
@@ -239,10 +279,10 @@ vg_poll_once() {
     mem_max=$(printf '%s' "$resp" | grep -o '"mem_max_mb"[[:space:]]*:[[:space:]]*[0-9]\+' | grep -o '[0-9]\+$')
     update_available=false
     printf '%s' "$resp" | grep -q '"update_available"[[:space:]]*:[[:space:]]*true' && update_available=true
-    update_version=$(printf '%s' "$resp" | sed -n 's/.*"update_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-    update_sha256=$(printf '%s' "$resp" | sed -n 's/.*"update_sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-    update_path=$(printf '%s' "$resp" | sed -n 's/.*"update_download_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-    update_signature=$(printf '%s' "$resp" | sed -n 's/.*"update_signature"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    update_version=$(vg_poll_json_str update_version "$resp")
+    update_sha256=$(vg_poll_json_str update_sha256 "$resp")
+    update_path=$(vg_poll_json_str update_download_path "$resp")
+    update_signature=$(vg_poll_json_str update_signature "$resp")
   fi
 
   # poll_schedule 이 숫자가 아니면 응답 자체를 못 믿는다 → 이번 poll 은 실패로 끝낸다.
