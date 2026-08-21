@@ -429,6 +429,15 @@ $eq("'+' 접미사: GPL-3.0+ → copyleft", vg_license_classify('GPL-3.0+'), 'co
 $eq('괄호 표현식: (MIT OR Apache-2.0) → permissive', vg_license_classify('(MIT OR Apache-2.0)'), 'permissive');
 $eq('괄호+copyleft 혼합: (MIT OR GPL-3.0-only) → copyleft(보수적)', vg_license_classify('(MIT OR GPL-3.0-only)'), 'copyleft');
 
+// ── SPDX 'Ruby'(gem 실측 표기) ────────────────────────────────────────────
+//   에이전트 3.17 이 gemspec 라이선스를 보내면서 운영에 들어온 표기다. 정식 SPDX 식별자인데
+//   목록에 없어 unknown 으로 떨어졌다. 소문자 'ruby' 는 별칭표를 거쳐야 걸린다(목록 대조는 대소문자 구분).
+$eq('SPDX Ruby → permissive', vg_license_classify('Ruby'), 'permissive');
+$eq('소문자 ruby 도 permissive(별칭 정규화)', vg_license_classify('ruby'), 'permissive');
+$eq('Ruby OR BSD-2-Clause → permissive', vg_license_classify('Ruby OR BSD-2-Clause'), 'permissive');
+$eq('BSD-2-Clause OR Ruby → permissive', vg_license_classify('BSD-2-Clause OR Ruby'), 'permissive');
+$eq('Ruby 는 목록에 있어도 copyleft 와 섞이면 copyleft', vg_license_classify('Ruby OR GPL-2.0-only'), 'copyleft');
+
 // ── 패키지 의존성 그래프: pom.xml 최상위 <dependencies> (PR#399 재작업) ─────
 $pomOk = <<<'XML'
 <project>
