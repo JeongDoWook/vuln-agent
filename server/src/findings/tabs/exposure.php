@@ -6,27 +6,25 @@
  *     $scan $hostId $hostOptions $q $type
  */
 ?>
-  <div class="card">
-    <strong>노출 범위 구성</strong>
-    <div class="card__body">
-    <?php
-    // 톤은 host.php 의 $scopeTone 과 같은 매핑이다(같은 값이 화면마다 다른 색이 되지 않게).
-    $scopeTone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'BOUND' => 'med',
-                  'FILTERED' => 'muted', 'LOCAL' => 'muted', '-' => 'muted'];
-    $scopeSegments = [];
-    foreach ($scopeOptions as $sc) {
-        $scopeSegments[] = [
-            'label'    => vg_scope_label($sc),
-            'value'    => (int) ($scopeCounts[$sc] ?? 0),
-            'tone'     => $scopeTone[$sc] ?? 'muted',
-            'href'     => vg_qs(['scope' => $scope === $sc ? '' : $sc, 'page' => 1]),
-            'selected' => $scope === $sc,
-        ];
-    }
-    vg_donut_kpi('노출 범위 구성', $scopeSegments, ['center_label' => '노출 전체']);
-    ?>
-    </div>
-  </div>
+  <?php
+  // 톤은 host.php 의 $scopeTone 과 같은 매핑이다(같은 값이 화면마다 다른 색이 되지 않게).
+  $scopeTone = ['EXTERNAL' => 'crit', 'LAN' => 'med', 'BOUND' => 'med',
+                'FILTERED' => 'muted', 'LOCAL' => 'muted', '-' => 'muted'];
+  $scopeSegments = [];
+  foreach ($scopeOptions as $sc) {
+      $scopeSegments[] = [
+          'label'    => vg_scope_label($sc),
+          'value'    => (int) ($scopeCounts[$sc] ?? 0),
+          'tone'     => $scopeTone[$sc] ?? 'muted',
+          'href'     => vg_qs(['scope' => $scope === $sc ? '' : $sc, 'page' => 1]),
+          'selected' => $scope === $sc,
+      ];
+  }
+  /* CCE 탭과 같은 이유로 카드 하나 · vg_card() 하나다(탭마다 카드 문법이 갈리지 않게). */
+  vg_card('노출 범위 구성', static function () use ($scopeSegments): void {
+      vg_donut_kpi('노출 범위 구성', $scopeSegments, ['center_label' => '노출 전체']);
+  }, ['badge' => '노출 ' . number_format(array_sum(array_column($scopeSegments, 'value'))) . '건']);
+  ?>
 
   <?php
   $toolbar = $scan
