@@ -3,13 +3,14 @@ declare(strict_types=1);
 
 /**
  * findings/queries/exposure.php — 노출 탭의 조회 하나.
- *   범위 분포 · 목록 · 행별 CVE 건수(이 페이지에 보이는 행들만 한 번의 GROUP BY 로 — N+1 방지).
+ *   범위 분포·프로세스별 집계(한 쿼리) · 목록 · 행별 CVE 건수(이 페이지에 보이는 행들만
+ *   한 번의 GROUP BY 로 — N+1 방지).
  */
 
 /**
- * 노출 탭 — 범위 분포 + 목록 + 행별 CVE 건수.
+ * 노출 탭 — 범위 분포 + 프로세스별 집계 + 목록 + 행별 CVE 건수.
  *   $f: q scope page perPage
- *   반환: scopeCounts total page rows cveCounts
+ *   반환: scopeCounts procCounts total page rows cveCounts
  */
 function vg_findings_load_exposure(PDO $pdo, array $scanIds, array $f): array {
     $q = (string) $f['q']; $scope = (string) $f['scope'];
@@ -17,15 +18,30 @@ function vg_findings_load_exposure(PDO $pdo, array $scanIds, array $f): array {
 
     $in = implode(',', array_fill(0, count($scanIds), '?'));
     $scopeCounts = [];
+    $procCounts = [];    // 프로세스 => ['n' => 리스닝 소켓 수, 'ext' => 그중 외부에서 닿는 수]
     $expCveCounts = [];
 
     // 범위 분포 — EXTERNAL 이 몇 건인지가 이 탭의 첫 질문이다. idx_exp_scan(scan_id) 범위 집계.
     //   scope 는 NULL 을 허용하는 컬럼이라 '-'(범위 미상)로 접어 센다 — 접지 않으면 카드
     //   어디에도 없는 행이 표에만 남아 합계가 안 맞는 것처럼 보인다. 아래 필터도 같은 식이다.
-    $stmt = $pdo->prepare("SELECT COALESCE(scope, '-') sc, COUNT(*) c FROM tb_exposure WHERE scan_id IN ($in) GROUP BY sc");
+    // GROUP BY 에 proc 을 **한 칸 더** 얹어 프로세스별 집계까지 같은 쿼리에서 낸다 — 화면의
+    //   두 번째 카드('상위 프로세스')가 쓴다. 쿼리를 새로 붙이지 않는다: 훑는 행도 접근 경로도
+    //   그대로고, 결과 행만 (범위) → (범위 × 프로세스)로 늘어난다(리스닝 소켓 수가 상한).
+    $stmt = $pdo->prepare(
+        "SELECT COALESCE(scope, '-') sc, proc, COUNT(*) c
+           FROM tb_exposure WHERE scan_id IN ($in) GROUP BY sc, proc"
+    );
     $stmt->execute($scanIds);
     foreach ($stmt->fetchAll() as $r) {
-        $scopeCounts[(string) $r['sc']] = (int) $r['c'];
+        $sc = (string) $r['sc'];
+        $c  = (int) $r['c'];
+        $scopeCounts[$sc] = ($scopeCounts[$sc] ?? 0) + $c;
+        // 프로세스명을 못 읽은 소켓은 순위에서 뺀다 — 이름이 없으면 눌러서 좁혀 볼 수도 없다.
+        //   범위 분포에는 위에서 이미 더했으므로 카드 사이의 합계가 어긋나지는 않는다.
+        $proc = trim((string) ($r['proc'] ?? ''));
+        if ($proc === '') { continue; }
+        $procCounts[$proc]['n']   = ($procCounts[$proc]['n'] ?? 0) + $c;
+        $procCounts[$proc]['ext'] = ($procCounts[$proc]['ext'] ?? 0) + ($sc === 'EXTERNAL' ? $c : 0);
     }
 
     $where  = "e.scan_id IN ($in)";
@@ -93,6 +109,6 @@ function vg_findings_load_exposure(PDO $pdo, array $scanIds, array $f): array {
         }
     }
 
-    return ['scopeCounts' => $scopeCounts, 'total' => $total,
+    return ['scopeCounts' => $scopeCounts, 'procCounts' => $procCounts, 'total' => $total,
             'page' => $page, 'rows' => $rows, 'cveCounts' => $expCveCounts];
 }

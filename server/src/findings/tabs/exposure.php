@@ -1,8 +1,8 @@
 <?php
 /**
- * findings/tabs/exposure.php — 노출 탭(범위 카드 · 툴바 · 표).
+ * findings/tabs/exposure.php — 노출 탭(범위 구성·상위 프로세스 카드 · 툴바 · 표).
  *   쓰는 값(findings.php 가 $ctx 로 넘긴다):
- *     $scopeCounts $scopeOptions $scope $expCveCounts $rows $total $page $perPage
+ *     $scopeCounts $expProcCounts $scopeOptions $scope $expCveCounts $rows $total $page $perPage
  *     $scan $hostId $hostOptions $q $type
  */
 ?>
@@ -20,11 +20,46 @@
           'selected' => $scope === $sc,
       ];
   }
-  /* CCE 탭과 같은 이유로 카드 하나 · vg_card() 하나다(탭마다 카드 문법이 갈리지 않게). */
+  ?>
+  <div class="card-row card-row--equal">
+  <?php
+  /* CCE 탭과 같이 요약은 **카드 두 장**이다 — 노출 범위 구성(어디까지 닿나) · 상위 프로세스
+   *   (무엇이 그 포트를 열었나). 예전엔 도넛 하나가 화면 한 줄을 통째로 쓰고 오른쪽 절반이
+   *   비어 있었다(사용자 지적). 두 번째 카드의 값은 새 쿼리가 아니라, 범위 분포를 세던
+   *   GROUP BY 에 proc 한 칸을 더해 같이 받은 것이다(queries/exposure.php).
+   * 상위는 **구성비가 아니라 순위**라 도넛으로 그리지 않는다 — 프로세스는 종류가 많아 도넛에
+   *   넣으면 '기타' 가 고리를 통째로 먹는다(이 저장소가 반복해서 피해 온 모양). 순위는
+   *   vg_rank_bars 가 이미 그 자리를 갖고 있다(charts.php 주석). */
+  $expTotal = array_sum(array_column($scopeSegments, 'value'));
   vg_card('노출 범위 구성', static function () use ($scopeSegments): void {
       vg_donut_kpi('노출 범위 구성', $scopeSegments, ['center_label' => '노출 전체']);
-  }, ['badge' => '노출 ' . number_format(array_sum(array_column($scopeSegments, 'value'))) . '건']);
+  }, ['badge' => '노출 ' . number_format($expTotal) . '건']);
+
+  // 막대를 누르면 그 프로세스로 좁혀 본다 — 툴바 검색(q)이 e.proc 을 이미 보므로 새 필터가 아니다.
+  //   붉은 막대는 그 프로세스에 **외부에서 닿는 소켓이 하나라도 있다**는 뜻이다(색만으로 두지
+  //   않고 카드 제목 툴팁이 같은 말을 한다 — 색각·흑백 대비).
+  $procBars = [];
+  foreach ($expProcCounts as $procName => $agg) {
+      $procBars[] = [
+          'label' => (string) $procName,
+          'value' => (int) ($agg['n'] ?? 0),
+          'tone'  => ((int) ($agg['ext'] ?? 0)) > 0 ? 'crit' : 'info',
+          'href'  => vg_qs(['q' => (string) $procName, 'scope' => null, 'page' => 1]),
+      ];
+  }
+  vg_card('상위 프로세스', static function () use ($procBars): void {
+      vg_rank_bars($procBars, [
+          'unit'  => '건',
+          'empty' => ['icon' => 'port', 'title' => '프로세스 이름이 수집된 리스너가 없습니다.',
+                      'hint'  => '에이전트가 소켓의 프로세스명을 읽어야 순위가 채워집니다.'],
+      ]);
+  }, [
+      'badge'      => '프로세스 ' . number_format(count($procBars)) . '종',
+      'title_attr' => '리스닝 소켓을 많이 연 프로세스 상위 8 — 붉은 막대는 외부에서 닿는 소켓이'
+                    . ' 있는 프로세스입니다. 막대를 누르면 그 프로세스로 좁혀 봅니다',
+  ]);
   ?>
+  </div>
 
   <?php
   $toolbar = $scan

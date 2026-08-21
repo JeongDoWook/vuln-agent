@@ -1,8 +1,8 @@
 <?php
 /**
- * findings/tabs/cce.php — 보안설정(CCE) 탭(경고 · 결과 카드 · 툴바 · 표).
+ * findings/tabs/cce.php — 보안설정(CCE) 탭(판정 구성·위반 등급 구성 카드 · 툴바 · 표).
  *   쓰는 값(findings.php 가 $ctx 로 넘긴다):
- *     $cceResultCounts $rows $total $page $perPage $scan $hostId $hostOptions
+ *     $cceResultCounts $cceFailSevCounts $rows $total $page $perPage $scan $hostId $hostOptions
  *     $q $sev $res $sevOptions $type
  */
 ?>
@@ -22,14 +22,52 @@
           'selected' => $res === $rk,
       ];
   }
-  /* 이 탭의 요약은 이야기가 하나다(판정 구성) — 그래서 카드도 하나다. 카드 문법은 CVE 탭과
-   *   같은 vg_card() 로 그린다(제목 자리·배지 자리가 탭마다 갈리지 않게).
-   *   도넛 하나짜리 카드가 화면 폭을 통째로 쓰면 라벨과 값이 카드 양끝으로 벌어져 한 줄로
-   *   안 읽힌다 — 폭 상한은 app.css 의 `.card__body > .donut-kpi:only-child` 가 준다. */
+  /* 요약은 **카드 두 장**이다 — 판정 구성(무엇이 얼마나 걸렸나) · 위반 등급 구성(그중 뭐가 급한가).
+   *   예전엔 판정 구성 하나뿐이라 도넛 한 개가 화면 한 줄을 통째로 차지했고, 폭 상한
+   *   (`.card__body > .donut-kpi:only-child`)이 내용만 34rem 으로 묶어서 **카드 오른쪽 절반이
+   *   그대로 비었다**(사용자 지적). CVE 탭처럼 그 탭이 이미 가진 수치를 옆에 세워 그 자리를 채운다.
+   * 두 번째 카드의 값은 새 쿼리가 아니다 — 판정 분포를 세던 GROUP BY 에 severity 한 칸을 더해
+   *   같이 받은 것이다(queries/cce.php). 모집단은 **위반(FAIL)만**이라 첫 카드와 겹치지 않는다:
+   *   첫 카드는 점검 전체가 분모고, 두 번째는 위반이 분모다.
+   * vg_sev_donut 을 쓰지 않는 이유: 그 함수는 CVE 등급 어휘(CRITICAL 포함·LOW 는 고리에서 제외)
+   *   전용이다. CCE 판정에는 CRITICAL 이 없고 LOW 도 빼면 안 되므로 vg_donut_kpi 를 직접 부른다
+   *   (charts.php 주석의 "심각도가 아닌 도넛" 갈래와 같은 판단). */
+  ?>
+  <div class="card-row card-row--equal">
+  <?php
   vg_card('판정 구성', static function () use ($cceSegments): void {
       vg_donut_kpi('판정 구성', $cceSegments, ['center_label' => '점검 전체']);
   }, ['badge' => '점검 ' . number_format(array_sum($cceResultCounts)) . '건']);
+
+  $failTotal = array_sum($cceFailSevCounts);
+  $failSegments = [];
+  foreach ($cceFailSevCounts as $sevKey => $n) {
+      $failSegments[] = [
+          'label'    => $sevKey,
+          'value'    => (int) $n,
+          'tone'     => vg_sev_tone($sevKey),
+          // 위반 안에서 등급을 고르는 자리라 res=FAIL 을 함께 건다(res=ALL 로 보던 중에 눌러도
+          //   그림과 목록이 같은 모집단을 가리키게). 같은 등급을 다시 누르면 등급만 풀린다.
+          'href'     => vg_qs(['res' => 'FAIL', 'sev' => $sev === $sevKey ? '' : $sevKey, 'page' => 1]),
+          'selected' => $res === 'FAIL' && $sev === $sevKey,
+      ];
+  }
+  vg_card('위반 등급 구성', static function () use ($failSegments): void {
+      vg_donut_kpi('위반 등급 구성', $failSegments, [
+          'center_label' => '위반 전체',
+          // 위반 0건에 빈 고리를 세우면 "고장난 화면" 으로 읽힌다. 다만 여기서 "안전" 이라고
+          //   말하지 않는다 — 점검된 항목 기준이라는 사실은 아래 빈 상태 안내가 갖는다.
+          'none' => ['label' => '위반 없음', 'tone' => 'ok',
+                     'title' => '점검된 항목 중 위반(FAIL)이 0건이라 고리를 그리지 않습니다'
+                              . ' · 판정 불가(NA)는 왼쪽 카드에 있습니다'],
+      ]);
+  }, [
+      'badge'      => '위반 ' . number_format($failTotal) . '건',
+      'title_attr' => '분모는 점검 전체가 아니라 위반(FAIL) 전체입니다'
+                    . ' — 어느 위반부터 손대야 하는지를 봅니다',
+  ]);
   ?>
+  </div>
 
   <?php
   // 툴바 구성은 세 탭이 같다: 자산 → 등급 → (카드로 고른 필터를 hidden 으로) → 검색.

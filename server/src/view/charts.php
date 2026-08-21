@@ -284,6 +284,89 @@ function vg_donut_kpi(string $title, array $segments, array $opts = []): void {
 }
 
 /**
+ * **분모가 서로 다른 값들**의 미니 도넛 여러 개 — 한 고리에 넣으면 거짓말이 되는 값들을
+ * 그래도 도넛 어휘로 말하는 자리.
+ *
+ *   도넛은 구성비라 조각이 서로 겹치면 안 되고 모집단도 하나여야 한다. 그 조건을 못 지키는
+ *   값들이 있다 — 하나가 다른 하나의 부분집합이거나(기한 초과 ⊂ KEV), 애초에 세는 모집단이
+ *   다르거나(기한 초과는 High 이상 안에서만 센다). 그런 값을 한 고리에 넣으면 **합이
+ *   거짓말**이 되므로, 값마다 **자기 분모를 가진 고리를 따로** 그린다.
+ *
+ *   조각이 하나뿐인 고리는 그냥 두면 100%처럼 읽힌다. 그래서 이 함수는 **분모를 글자로 함께
+ *   적는 것을 계약으로** 갖는다(`5,933 / 8,924 전체 탐지`). 분모를 못 적을 값이면 이 함수를
+ *   쓰지 마라 — 그때는 그림 없이 vg_donut_list() 로 숫자만 세우는 것이 정직하다.
+ *
+ *   링크·selected·톤 어휘는 vg_donut_list()·vg_donut_kpi() 와 같다(같은 카드 줄에 서는
+ *   도넛들과 어휘가 갈리면 안 된다). 다른 것은 "값마다 제 고리를 갖는다" 하나뿐이다.
+ *   스와치(<i>)는 두지 않는다 — 고리 자체가 이미 그 색이라 옆에 네모를 또 두면 같은 말이 둘이다.
+ *
+ *   $items: [['label'=>…, 'value'=>int, 'base'=>int, 'base_label'=>…,
+ *             'tone'=>…, 'href'=>…, 'selected'=>bool, 'title'=>…], …]
+ *   $opts:  'size'(고리 지름 px, 기본 96 — 옆 카드의 큰 도넛 132 와 구분되는 보조 크기.
+ *           좁은 칸에서는 CSS 가 폭에 맞춰 줄인다 — .donut--ratio svg 의 max-width)
+ */
+function vg_ratio_donuts(array $items, array $opts = []): void {
+    $size = max(48, (int) ($opts['size'] ?? 96));
+    $r    = 15.9155;   // 둘레가 정확히 100 인 반지름 — dasharray 가 곧 퍼센트다(vg_donut_kpi 와 동일)
+
+    echo '<div class="ratio-donuts">';
+    foreach ($items as $s) {
+        if (!is_array($s)) { continue; }
+        $label = (string) ($s['label'] ?? '');
+        $value = max(0, (int) ($s['value'] ?? 0));
+        $base  = max(0, (int) ($s['base'] ?? 0));
+        $baseLabel = (string) ($s['base_label'] ?? '전체');
+        $tone  = vg_donut_tone((string) ($s['tone'] ?? 'muted'));
+        $href  = (string) ($s['href'] ?? '');
+        // 분모가 0 이면 비율이 뜻을 못 갖는다 — 고리를 그리지 않고 숫자와 분모만 남긴다.
+        //   값이 분모를 넘는 일은 없어야 하지만(부분집합이므로) 넘어와도 고리는 100%에서 멈춘다.
+        $pct   = $base > 0 ? min(100.0, $value / $base * 100) : 0.0;
+        $aria  = $label . ' ' . number_format($value) . ' · ' . $baseLabel . ' '
+               . number_format($base) . ' 중 '
+               . ($base > 0 ? number_format($pct, 1) . '%' : '비율 없음');
+        $title = (string) ($s['title'] ?? '');
+
+        $tag = $href !== '' ? 'a' : 'div';
+        $cls = 'ratio-donut' . ($value === 0 ? ' ratio-donut--zero' : '')
+             . (!empty($s['selected']) ? ' is-selected' : '');
+        echo '<' . $tag . ' class="' . vg_h($cls) . '"'
+            . ($href !== '' ? ' href="' . vg_h($href) . '"' : '')
+            . ' title="' . vg_h($title !== '' ? $title . ' · ' . $aria : $aria) . '">';
+
+        echo '<span class="donut donut--ratio">';
+        echo '<svg viewBox="0 0 42 42" width="' . $size . '" height="' . $size . '"'
+            . ' role="img" aria-label="' . vg_h($aria) . '">';
+        echo '<circle class="donut__track" cx="21" cy="21" r="' . $r . '" fill="none" stroke-width="4.5"></circle>';
+        if ($pct > 0) {
+            // 0.6 아래로는 안 줄인다(vg_donut_kpi 와 같은 하한) — 1건짜리 고리가 아예 사라지면
+            //   그림이 아래 숫자와 어긋난다.
+            $len = max(0.6, round($pct, 2));
+            echo '<circle class="donut__arc tone-' . vg_h($tone) . '" cx="21" cy="21" r="' . $r . '"'
+                . ' fill="none" stroke-width="4.5"'
+                . ' stroke-dasharray="' . $len . ' ' . round(100 - $len, 2) . '"'
+                . ' stroke-dashoffset="25"></circle>';   // 12시 방향에서 시작
+        }
+        echo '</svg>';
+        // 가운데 숫자는 **건수**다 — 옆 카드의 큰 도넛과 같은 자리에 같은 뜻이 오게 한다.
+        //   자릿수가 많으면 고리 안쪽 구멍보다 넓어지므로 한 단 내린다(.donut__mid--long 과 같은 규칙).
+        $mid = number_format($value);
+        echo '<span class="donut__mid' . (mb_strlen($mid) >= 6 ? ' donut__mid--long' : '') . '">'
+            . '<b>' . vg_h($mid) . '</b></span>';
+        echo '</span>';
+
+        echo '<span class="ratio-donut__label">' . vg_h($label) . '</span>';
+        // 분모 줄은 장식이 아니라 이 함수의 계약이다 — 없으면 조각 하나짜리 고리가 100%로 읽힌다.
+        //   그래서 **두 줄로 나눈다**: 한 줄에 붙이면 좁은 칸에서 뒤가 말줄임돼(`9,074 / 13,649 전체 …`)
+        //   분모의 이름이 사라진다 — 계약을 지키는 것이 한 줄 유지보다 중요하다(브라우저 실측).
+        echo '<span class="ratio-donut__base">'
+            . vg_h(number_format($value) . ' / ' . number_format($base)) . '</span>';
+        echo '<span class="ratio-donut__denom">' . vg_h($baseLabel) . '</span>';
+        echo '</' . $tag . '>';
+    }
+    echo '</div>';
+}
+
+/**
  * 심각도 도넛 — vg_donut_kpi() 로 그린다(도넛 구현은 이 저장소에 한 벌만 둔다).
  *   $counts: ['CRITICAL'=>3, 'HIGH'=>7, …].
  *   $opts:   'title'(aria-label, 기본 '심각도 분포') · 'href'(도넛 자체를 링크로) ·

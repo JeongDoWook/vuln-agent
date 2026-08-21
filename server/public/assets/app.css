@@ -759,6 +759,18 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 .card-row--2 { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1340px) { .card-row--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
+/* 요약 카드 줄의 **높이를 맞춘다**(탐지 결과 세 탭의 첫 줄). 기본 .card-row 는 align-items:start
+ * 라 내용이 짧은 카드가 위로 붙는데, 그게 맞는 줄도 많아서 기본은 그대로 두고 모디파이어로만 켠다.
+ * 왜 필요한가: 같은 자리에 같은 크기로 서야 셋이 나란히 읽힌다. 목록 길이가 카드마다 달라
+ * (등급 4줄 · 노출 상태 8줄 · 조치 고리 3개) 그냥 두면 카드 아래가 제각각 비어 "허전한" 칸이 된다.
+ * 늘어난 높이는 .card__body 가 받아서 내용을 세로 가운데로 모은다 — 위로 붙으면 옆 카드의
+ * 도넛과 시선 높이가 어긋난다(대시보드의 .card__body.center 가 하는 것과 같은 처방). */
+.card-row--equal { align-items: stretch; }
+.card-row--equal > .card { display: flex; flex-direction: column; }
+.card-row--equal > .card > .card__body {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+}
+
 /* 자산 탐색(discovery.php) 대역 카드 — 표 한 줄이 아니라 카드 하나로 대역을 보여줘
  * 상태 배지·스캔 결과를 표 열보다 눈에 띄게 비교한다(폭에 맞춰 접히는 auto-fill 격자). */
 .discovery-targets {
@@ -1084,7 +1096,7 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
  * (그림 쪽 대비는 PHP 가 조각 사이에 2px 간격을 남겨서 낸다.)
  * 좁아지면 도넛 아래로 목록이 내려간다(wrap) — 목록은 잘리면 안 되는 정보다. */
 .donut-kpi { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
-/* 도넛이 **하나뿐인** 카드(탐지 결과의 CCE·노출 탭) — 목록이 카드 폭을 통째로 먹으면
+/* 도넛이 **하나뿐인** 카드 — 목록이 카드 폭을 통째로 먹으면
  * 라벨과 값이 카드 양끝으로 벌어져 한 줄로 안 읽힌다(1440px 실측: 라벨 x=380 · 값 x=1265).
  * 폭에 상한을 두고 남는 폭은 오른쪽으로 흘린다 — .kpi-donuts--pair 가 칸이 둘일 때 하는 것과
  * 같은 처리다. 여럿이 나란히 선 카드 줄(.card-row)에서는 칸 폭이 이미 상한이라 안 걸린다. */
@@ -1156,6 +1168,51 @@ a.ring-row:hover { background: var(--surface-2); color: var(--text); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ring-row__val { flex: none; color: var(--text); font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+
+/* --- 분모가 서로 다른 값들의 미니 도넛(vg_ratio_donuts) -----------------------
+ * 한 고리에 넣으면 거짓말이 되는 값들 — 하나가 다른 하나의 부분집합이거나(기한 초과 ⊂ KEV)
+ * 세는 모집단이 아예 다른 값들 — 을 **값마다 제 고리**로 그린다.
+ * 조각 하나짜리 고리는 그냥 두면 100%로 읽히므로 분모를 글자로 함께 세운다(.ratio-donut__base).
+ * 그 줄은 장식이 아니라 계약이다 — 지우면 그림이 거짓말이 된다(PHP 쪽 주석과 같은 말).
+ * 스와치(<i>)는 없다: 고리 자체가 그 색이라 옆에 네모를 또 두면 같은 말이 둘이 된다. */
+.ratio-donuts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: var(--sp-2); width: 100%;
+}
+.ratio-donut {
+  display: grid; justify-items: center; align-content: start; gap: .2rem;
+  padding: .3rem .2rem; border-radius: var(--r-sm); min-width: 0;
+  color: var(--text-2); font-size: var(--fs-sm); text-decoration: none;
+}
+a.ratio-donut:hover { background: var(--surface-2); color: var(--text); }
+/* 선택 표시는 도넛 목록(.donut-kpi__seg.is-selected)과 같은 뜻·같은 색이다. 다만 세로로 쌓인
+ * 칸이라 왼쪽 띠 대신 아래 띠를 쓴다(왼쪽에 그으면 고리 옆 여백에 붙어 안 보인다). */
+.ratio-donut.is-selected { background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--accent); }
+/* 0건은 목록에 남기되 뒤로 물린다 — .donut-kpi__seg--zero 와 같은 규칙. */
+.ratio-donut--zero { opacity: .55; }
+.ratio-donut__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 분모는 두 줄이다 — 값/분모(숫자)와 그 분모의 이름. 한 줄에 붙이면 좁은 칸에서 이름 쪽이
+ * 말줄임돼(`9,074 / 13,649 전체 …`) "무엇의 분모인지" 가 사라진다(브라우저 실측). */
+.ratio-donut__base,
+.ratio-donut__denom {
+  max-width: 100%; color: var(--muted); font-size: var(--fs-xs);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ratio-donut__base { font-variant-numeric: tabular-nums; }
+.ratio-donut__denom { margin-top: -.15rem; }
+/* 보조 크기 고리(기본 96px)라 가운데 숫자도 한 단 작다 — 큰 도넛(132px)의 --fs-num 을 그대로
+ * 쓰면 고리 안쪽 구멍(약 62px)보다 넓어져 링 위로 걸친다. */
+.donut--ratio .donut__mid b { font-size: var(--fs-num-sm); }
+.donut--ratio .donut__mid--long b { font-size: var(--fs-md); }
+/* 칸이 좁아지면 고리가 칸을 뚫는 대신 줄어든다. `.donut svg` 에는 width:100% 가 없어(그건
+ * `.chart svg` 규칙이다) 기본은 PHP 가 준 픽셀 폭 그대로고, 여기서는 상한만 칸 폭으로 건다 —
+ * 셋이 나란히 서는 격자(.ratio-donuts)라 칸 폭이 화면에 따라 82px까지 좁아진다. */
+.donut--ratio svg { max-width: 100%; height: auto; }
+@media (max-width: 480px) {
+  /* 고리가 폭에 맞춰 줄면 안쪽 구멍도 같이 줄어드는데 가운데 숫자는 CSS 라 따라 줄지 않는다 —
+   * 한 단 내린다(브라우저 실측 320px: 구멍 51px 에 숫자 50px 라 링에 닿기 직전이었다). */
+  .donut--ratio .donut__mid b { font-size: var(--fs-md); }
+}
 
 /* 지표 덩어리 여러 개를 한 줄에 — 대시보드 상단, 탐지 결과 첫 카드, 자산 상세 히어로.
  * 칸이 모자라면 자동으로 줄이 나뉜다(auto-fit) — 둘만 놓으면 넓은 화면에서 정확히 반반이다.

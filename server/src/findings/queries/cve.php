@@ -62,6 +62,9 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
     $queueAgg = $stmt->fetch() ?: [];
     $actionCounts['kev'] = (int) ($queueAgg['kev'] ?? 0);
     $actionCounts['restart'] = (int) ($queueAgg['restart_cnt'] ?? 0);
+    // KEV·재시작이 몇 건 중 몇 건인지 말하려면 분모가 필요하다. 이미 이 한 쿼리가 세고 있는
+    //   COUNT(*) 를 그대로 내보낸다 — 새 쿼리를 붙이지 않는다(화면은 이 값을 '전체 탐지' 로 쓴다).
+    $actionCounts['total'] = (int) ($queueAgg['all_cnt'] ?? 0);
     $known = 0;
     foreach ($runtimeCounts as $k => $_) {
         if ($k === '미상') { continue; }
@@ -88,6 +91,9 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
         $overdueKeys[] = [(int) $candidate['host_id'], (string) $candidate['cid'],
                           (string) $candidate['cve_id'], (string) $candidate['package_name']];
     }
+    // '기한 초과' 의 분모. **전체 탐지가 아니다** — 기한을 따질 수 있는 것만 센다(High 이상 KEV
+    //   중 DONE·EXCEPTED 를 뺀 미조치분). 위 루프가 이미 고른 집합이라 다시 세지 않고 그 수를 쓴다.
+    $actionCounts['overdue_base'] = count($overdueKeys);
     $overdueSeen = vg_finding_first_seen_map($pdo, $overdueKeys, vg_finding_sla_lookback_days($policy));
     $kevDays = vg_finding_sla_days(true, 'CRITICAL', $policy);
     foreach ($overdueCandidates as $candidate) {

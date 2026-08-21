@@ -80,9 +80,12 @@ $err = null; $scan = null; $rows = []; $total = 0; $perPage = vg_perpage();
 $scanIds = []; $hostOptions = []; $hostFound = false; $hostOptionCount = 0;
 $counts = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $cceResultCounts = ['FAIL'=>0, 'PASS'=>0, 'NA'=>0];   // cce 탭 카드
+$cceFailSevCounts = ['HIGH'=>0, 'MEDIUM'=>0, 'LOW'=>0];   // cce 탭 두 번째 카드(위반의 등급 구성)
 $scopeCounts = [];                                    // exposure 탭 카드 (scope => 건수)
+$expProcCounts = [];                                  // exposure 탭 두 번째 카드 (프로세스 => [건수, 외부노출])
 $expCveCounts = [];                                   // 노출 행 → 그 실행 패키지에 걸린 CVE 건수
-$actionCounts = ['kev' => 0, 'restart' => 0, 'overdue' => 0];
+// 'total'·'overdue_base' 는 미니 도넛의 **분모**다(조회층이 이미 세는 값을 그대로 받는다).
+$actionCounts = ['kev' => 0, 'restart' => 0, 'overdue' => 0, 'total' => 0, 'overdue_base' => 0];
 // 노출 상태 도넛(cve 탭). 키·순서의 정본은 VG_RUNTIME_DONUT 이다 — 여기서 다시 나열하지 않는다.
 $runtimeCounts = array_fill_keys(array_keys(VG_RUNTIME_DONUT), 0);
 
@@ -193,7 +196,7 @@ try {
             'q' => $q, 'sev' => $sev, 'res' => $res, 'page' => $page, 'perPage' => $perPage,
         ]);
         $rows = $r['rows']; $total = $r['total']; $page = $r['page'];
-        $cceResultCounts = $r['resultCounts'];
+        $cceResultCounts = $r['resultCounts']; $cceFailSevCounts = $r['failSevCounts'];
     }
 
     if ($scanIds && $type === 'exposure') {
@@ -202,6 +205,7 @@ try {
         ]);
         $rows = $r['rows']; $total = $r['total']; $page = $r['page'];
         $scopeCounts = $r['scopeCounts']; $expCveCounts = $r['cveCounts'];
+        $expProcCounts = $r['procCounts'];
     }
 
 } catch (Throwable $e) {
@@ -282,7 +286,8 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       'unsupBy' => $unsupBy, 'counts' => $counts, 'actionCounts' => $actionCounts,
       'runtimeCounts' => $runtimeCounts,
       'notes' => $notes, 'firstSeen' => $firstSeen, 'policy' => $policy,
-      'cceResultCounts' => $cceResultCounts, 'scopeCounts' => $scopeCounts,
+      'cceResultCounts' => $cceResultCounts, 'cceFailSevCounts' => $cceFailSevCounts,
+      'scopeCounts' => $scopeCounts, 'expProcCounts' => $expProcCounts,
       'expCveCounts' => $expCveCounts,
   ]);
   ?>
