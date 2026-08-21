@@ -32,23 +32,28 @@ if (!vg_csrf_check($_POST['csrf'] ?? null))        { report_create_fail(403, '�
 $hostId = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
 if (!$hostId || $hostId < 1) { report_create_fail(422, '대상 자산을 확인할 수 없습니다.'); }
 
-$pdo = vg_pdo();
-// 외부로 나가는 식별자는 host_uuid 다(순번 PK 는 안 보낸다 — vg_report_api_create 주석 참고).
-//   이미 치던 조회에 컬럼 하나를 얹어 가져온다 — 쿼리를 늘리지 않는다.
-$st = $pdo->prepare('SELECT fqdn, host_uuid FROM tb_host WHERE host_id = ? AND is_deleted = 0');
-$st->execute([$hostId]);
-$hostRow = $st->fetch();
-if ($hostRow === false) { report_create_fail(404, '자산을 찾을 수 없습니다.'); }
-$fqdn     = (string) $hostRow['fqdn'];
-$hostUuid = (string) ($hostRow['host_uuid'] ?? '');
-// uuid 는 마이그레이션이 전 행을 채웠고 새 행은 DB 기본값이 채운다. 그래도 비어 있다면
-//   외부에 대상을 특정할 수 없는 요청을 보내는 셈이라 여기서 끊는다(조용한 오배정 방지).
-if ($hostUuid === '') {
-    error_log('[report_job] host_uuid 가 비어 있다: host_id=' . $hostId);
-    report_create_fail(500, '보고서 작업을 시작하지 못했습니다.');
-}
-
+/* 대상 조회부터 try 안이다 — 이 SELECT 는 **이 변경이 신설한 컬럼**(host_uuid)을 읽는다.
+ *   코드가 먼저 배포되고 마이그레이션이 아직 안 돈 창(CLAUDE.md 가 적어 둔 배포 순서 사고)에서는
+ *   'Unknown column' PDOException 이 뜨는데, try 밖이면 그게 미포착으로 던져져 JSON 대신
+ *   PHP 오류가 나가고 이 응답을 기다리는 화면 JS 까지 함께 깨진다. 아래 catch 가 이미
+ *   일반화된 메시지로 끊고 상세는 error_log 로만 남긴다. */
 try {
+    $pdo = vg_pdo();
+    // 외부로 나가는 식별자는 host_uuid 다(순번 PK 는 안 보낸다 — vg_report_api_create 주석 참고).
+    //   이미 치던 조회에 컬럼 하나를 얹어 가져온다 — 쿼리를 늘리지 않는다.
+    $st = $pdo->prepare('SELECT fqdn, host_uuid FROM tb_host WHERE host_id = ? AND is_deleted = 0');
+    $st->execute([$hostId]);
+    $hostRow = $st->fetch();
+    if ($hostRow === false) { report_create_fail(404, '자산을 찾을 수 없습니다.'); }
+    $fqdn     = (string) $hostRow['fqdn'];
+    $hostUuid = (string) ($hostRow['host_uuid'] ?? '');
+    // uuid 는 마이그레이션이 전 행을 채웠고 새 행은 DB 기본값이 채운다. 그래도 비어 있다면
+    //   외부에 대상을 특정할 수 없는 요청을 보내는 셈이라 여기서 끊는다(조용한 오배정 방지).
+    if ($hostUuid === '') {
+        error_log('[report_job] host_uuid 가 비어 있다: host_id=' . $hostId);
+        report_create_fail(500, '보고서 작업을 시작하지 못했습니다.');
+    }
+
     $resp = vg_report_api_create($hostUuid);
     $externalId = (int) ($resp['id'] ?? 0);
     if ($externalId < 1) {

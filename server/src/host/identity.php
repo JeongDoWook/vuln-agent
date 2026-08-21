@@ -33,6 +33,28 @@ function vg_host_find_by_uuid(PDO $pdo, string $uuid): ?array {
     return $st->fetch() ?: null;
 }
 
+/**
+ * 진입 파라미터로 대상 호스트 한 행을 정한다. 진입은 두 가지다 — 내부 링크의 순번(?id=N)과
+ *   **외부 노출용 식별자**(?uuid=…). uuid 는 외부 보고서 API·메일처럼 바깥에서 들어오는 경로를
+ *   위한 문이고, 기존 ?id=N 은 그대로 산다(내부 링크 수십 곳을 한꺼번에 갈아끼우지 않는다).
+ *
+ *   uuid 파라미터가 있으면 그쪽이 대상을 정한다 — 형식이 틀리거나 없는 uuid 면 null 이라,
+ *   호출부는 ?id 로 못 찾았을 때와 **같은 화면**(자산 없음)을 그리면 된다.
+ *
+ *   "어느 파라미터가 대상을 정하는가" 는 조회 규칙이라 여기 둔다 — 화면마다 따로 쓰면
+ *   uuid 진입을 지원하는 화면과 안 하는 화면이 갈린다. 인가(vg_can·vg_require_menu)는
+ *   여기서 판단하지 않는다(이 파일 머리 주석 참고) — 호출부가 갖는다.
+ *
+ *   $query 는 호출부가 이름 지어 넘기는 ['uuid'=>…, 'id'=>…] 다($_GET 를 그대로 받지 않는다 —
+ *   이 URL 이 무슨 쿼리를 받는지는 진입 파일에 남아야 라우트 계약이 그걸 읽는다).
+ *   값은 신뢰하지 않는다: uuid 는 vg_host_find_by_uuid 가 형식을 검증하고, id 는 int 로 떨군다.
+ */
+function vg_host_resolve(PDO $pdo, array $query): ?array {
+    $uuid = trim((string) ($query['uuid'] ?? ''));
+    if ($uuid !== '') { return vg_host_find_by_uuid($pdo, $uuid); }
+    return vg_host_find($pdo, (int) ($query['id'] ?? 0));
+}
+
 /** 등급 확정자 이름(승인 이력) — 사용자가 지워졌으면 FK 가 NULL 이라 여기 안 들어온다. */
 function vg_host_load_approver(PDO $pdo, array $host): ?string {
     if (empty($host['approved_by'])) { return null; }
