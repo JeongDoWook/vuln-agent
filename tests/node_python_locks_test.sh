@@ -16,8 +16,12 @@ eval "$(sed -n '/^emit_gemspec_name() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^emit_jar_meta() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^emit_nested_jars() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^pip_meta_license() {$/,/^}$/p' "$AGENT")"
+eval "$(sed -n '/^collect_python_system_meta() {$/,/^}$/p' "$AGENT")"
 eval "$(sed -n '/^collect_project_deps_installed() {$/,/^}$/p' "$AGENT")"
 SCAN_MAX_FILES=3000; SCAN_MAX_DEPTH=12
+# 배포판 파이썬 패스(collect_python_system_meta)는 기본값이 실제 `/usr/lib/python3*` 이다 —
+#   픽스처로 돌려놓지 않으면 검사를 도는 호스트에 깔린 패키지가 결과에 섞여 테스트가 흔들린다.
+PY_SYS_META_MAX=2000
 
 FIX=$(mktemp -d "tests/.fixtures-nplocks.XXXXXX") || exit 1
 LIC=$(mktemp "tests/.lic-nplocks.XXXXXX") || exit 1
@@ -26,7 +30,7 @@ mkdir -p "$FIX/yarn1" "$FIX/yarn2" "$FIX/pnpm" "$FIX/poetry" "$FIX/pipenv" \
          "$FIX/py/lib/python3.11/site-packages/oldpkg-1.4.2.egg-info" \
          "$FIX/py/lib/python3.11/site-packages/exprpkg-2.0.0.dist-info" \
          "$FIX/py/lib/python3.11/site-packages/bothpkg-3.1.0.dist-info" \
-         "$FIX/py/lib/python3.11/site-packages/clspkg-0.9.0.dist-info"
+         "$FIX/py/lib/python3.11/site-packages/clspkg-0.9.0.dist-info" \n         "$FIX/sysdist/distpkg-4.5.6.dist-info" \n         "$FIX/sysdist/legacysys-1.0.egg-info" \n         "$FIX/sysdist/nested/deep-9.9.9.dist-info"
 
 # 1) yarn v1(Classic) — 스코프 패키지의 다중 범위 헤더, 로컬(file:) 항목은 버려야 한다.
 cat > "$FIX/yarn1/yarn.lock" <<'EOF'
@@ -183,7 +187,32 @@ Classifier: License :: OSI Approved
 Classifier: License :: OSI Approved :: BSD License
 EOF
 
+# 10) 배포판이 깐 파이썬 패키지 — `/usr/lib/python3/dist-packages` 처럼 루트 **바로 아래**에
+#     `*.dist-info`/`*.egg-info` 가 놓인 형태. PROJECT_SCAN_ROOTS 밖이라 예전엔 통째로 안 잡혔다.
+cat > "$FIX/sysdist/distpkg-4.5.6.dist-info/METADATA" <<'EOF'
+Metadata-Version: 2.4
+Name: distpkg
+Version: 4.5.6
+License-Expression: MIT
+EOF
+cat > "$FIX/sysdist/legacysys-1.0.egg-info/PKG-INFO" <<'EOF'
+Metadata-Version: 1.1
+Name: legacysys
+Version: 1.0
+License: BSD
+EOF
+# 11) 한 칸 더 들어간 메타는 **잡히면 안 된다** — 이 패스는 `-maxdepth 1` 로 루트 목록만 읽어
+#     패키지 안까지 들어가지 않는다(ubuntu:24.04 실측 3,487개 파일 → 20개 항목). 여기가 뚫리면
+#     비용 근거가 무너진다.
+cat > "$FIX/sysdist/nested/deep-9.9.9.dist-info/METADATA" <<'EOF'
+Metadata-Version: 2.4
+Name: deep
+Version: 9.9.9
+License-Expression: MIT
+EOF
+
 PROJECT_SCAN_ROOTS="$FIX"
+PY_SYS_META_ROOTS="$FIX/sysdist"
 GOT=$(collect_project_deps_installed 3>>"$LIC")
 # Pipfile.lock 분기는 기존 package-lock.json 과 같이 `have jq` 가드가 걸려 있다 — jq 가 없는 환경에선
 #   그 두 줄만 빠지고 나머지는 그대로 검사한다(통째로 SKIP 하면 나머지 회귀를 놓친다).
@@ -196,18 +225,20 @@ npm|react-dom|18.2.0
 npm|styled-components|5.3.6
 pip|bothpkg|3.1.0
 pip|clspkg|0.9.0
+pip|distpkg|4.5.6
 pip|exprpkg|2.0.0
 pip|flask|2.2.2
 pip|jinja2|3.1.2
+pip|legacysys|1.0
 pip|oldpkg|1.4.2
 pip|requests|2.28.1
 pip|urllib3|1.26.13'
 
 rc=0
-n_want=15
+n_want=17
 if ! have jq; then
   WANT=$(printf '%s\n' "$WANT" | grep -vE '^pip\|(flask|jinja2)\|')
-  n_want=13
+  n_want=15
   echo "note node_python_locks: jq 없음 → Pipfile.lock 2건 제외하고 검사"
 fi
 
@@ -229,7 +260,7 @@ if printf '%s\n' "$GOT" | grep -qE '\^|~|>|<|npm:|workspace|file:|==|_react|\(' 
   rc=1
 fi
 # 오탐 확인 ③ 담지 않기로 한 항목이 들어오면 안 된다.
-if printf '%s\n' "$GOT" | grep -qE 'pytest|should-not-appear|my-local|myapp|mylib'; then
+if printf '%s\n' "$GOT" | grep -qE 'pytest|should-not-appear|my-local|myapp|mylib|^pip\|deep\|'; then
   echo "FAIL node_python_locks: 제외 대상이 수집됨"
   rc=1
 fi
@@ -241,7 +272,7 @@ fi
 for want in 'pip|oldpkg|1.4.2|BSD-3-Clause' \
             'pip|exprpkg|2.0.0|Apache-2.0 OR BSD-2-Clause' \
             'pip|bothpkg|3.1.0|MIT' \
-            'pip|clspkg|0.9.0|BSD License'; do
+            'pip|clspkg|0.9.0|BSD License'             'pip|distpkg|4.5.6|MIT'             'pip|legacysys|1.0|BSD'; do
   if ! grep -qxF "$want" "$LIC"; then
     echo "FAIL node_python_locks: 라이선스 fd 3 에 '$want' 없음"
     cat "$LIC"
@@ -255,5 +286,19 @@ if grep -qE '\|(UNKNOWN|OSI Approved)$' "$LIC"; then
   rc=1
 fi
 
-[ "$rc" -eq 0 ] && echo "OK  node_python_locks: ${n_want}건 일치 + 스코프/범위 유출 없음 + 라이선스 fd3(PEP 639 우선순위)"
+# 배포판 파이썬 패스가 프로젝트 패스의 예산(SCAN_MAX_FILES)을 나눠 쓰지 않는다는 확인.
+#   프로젝트 패스는 상한에 닿으면 `break 2` 로 통째로 끊기는데, 그때도 이 패스는 그대로 돌아야 한다.
+#   반대로 두 패스를 한 스캔에 합쳐 두면 여기서 dist-packages 쪽이 함께 사라진다.
+LIC2=$(mktemp "tests/.lic2-nplocks.XXXXXX") || exit 1
+trap 'rm -rf "$FIX" "$LIC" "$LIC2"' EXIT
+STARVED=$(SCAN_MAX_FILES=1 collect_project_deps_installed 3>>"$LIC2")
+for want in 'pip|distpkg|4.5.6' 'pip|legacysys|1.0'; do
+  if ! printf '%s
+' "$STARVED" | grep -qxF "$want"; then
+    echo "FAIL node_python_locks: 프로젝트 패스가 상한에 걸리자 배포판 파이썬 패스까지 끊겼다 ('$want' 없음)"
+    rc=1
+  fi
+done
+
+[ "$rc" -eq 0 ] && echo "OK  node_python_locks: ${n_want}건 일치 + 스코프/범위 유출 없음 + 라이선스 fd3(PEP 639 우선순위) + 배포판 파이썬 패스 예산 독립"
 exit "$rc"
