@@ -42,7 +42,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.21"
+SCRIPT_VERSION="3.22"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
@@ -87,6 +87,11 @@ OUT=""
 SEND_URL="${SEND_URL:-}"             # --send : 중앙 수신 API(ingest.php) URL
 SEND_TOKEN="${SEND_TOKEN:-}"         # --token: 중앙에서 이 호스트에 발급한 인증 토큰
 COMMAND_ID=""                        # --command-id: agent-poll.php 의 due_command_id (완료 처리용)
+# TOKEN_VIA_ENV: cgroup 재실행 때 "토큰을 env 로 넘겼다"는 사실만 알리는 플래그(값은 안 실린다).
+# 토큰 자체를 --token 인자로 넘기면 수집이 도는 내내 ps//proc/<pid>/cmdline 로 그 호스트의
+# 아무 사용자나 중앙 수집 토큰을 읽어간다(CWE-214). 그래서 값은 env 로만 넘기고, 이 플래그로
+# "넘겼는데 안 도착한 경우"를 재실행된 쪽에서 잡아 조용한 무인증 전송을 막는다(아래 가드).
+TOKEN_VIA_ENV=0
 POLL_ONCE=0                          # --poll-once: 수집 대신 "중앙에 한 번 물어보고 할 일을 정한다"
 STATE_DIR="${STATE_DIR:-}"           # --state-dir: run.sh 의 로그/상태 디렉터리(--poll-once 전용)
 # _RELAUNCHED: cgroup 재실행 가드. env(export) 상속에만 기대지 않는다 — 일부 호스트(Jetson 계열
@@ -113,11 +118,28 @@ while [ $# -gt 0 ]; do
     --poll-once)     POLL_ONCE=1; shift ;;
     --state-dir)     STATE_DIR="$2"; shift 2 ;;
     --relaunched)    _RELAUNCHED=1; shift ;;
+    --token-via-env) TOKEN_VIA_ENV=1; shift ;;
     -h|--help)
       grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "알 수 없는 옵션: $1" >&2; exit 1 ;;
   esac
 done
+
+# 토큰이 재실행 경계에서 유실됐는지 확인한다. 부모가 env 로 토큰을 넘겼다고 알렸는데
+# ($TOKEN_VIA_ENV=1) 여기서 SEND_TOKEN 이 비어 있으면, 이 호스트의 systemd-run --scope 가
+# 환경변수를 새 scope 로 전달하지 못한 것이다(같은 계열의 실측 사례가 _RELAUNCHED 주석에 있다).
+# 이때 조용히 무인증 전송을 시도하거나 조용히 전송을 건너뛰면 안 된다 — 예전에 재실행 때
+# --send/--token 이 유실돼 "타이머는 매시간 초록불인데 중앙엔 자산이 영영 안 올라오는" 사고가
+# 두 번 있었다. 원인이 분명한 메시지와 함께 즉시 실패한다(토큰 값은 절대 찍지 않는다).
+if [ "$TOKEN_VIA_ENV" = 1 ] && [ -z "$SEND_TOKEN" ]; then
+  cat >&2 <<'EOF'
+>> [치명] 인증 토큰이 cgroup 재실행 경계에서 유실됐습니다(SEND_TOKEN 이 비어 있음).
+   이 호스트의 systemd-run --scope 가 환경변수를 새 scope 로 전달하지 못한 경우입니다.
+   무인증으로 전송하면 중앙이 거부하고, 조용히 건너뛰면 수집이 사라진 걸 아무도 모릅니다.
+   → 우회: AGENT_LIMIT=0 으로 실행(cgroup 재실행 없이 돈다) 또는 systemd 버전 확인.
+EOF
+  exit 1
+fi
 
 if [ -n "$COMMAND_ID" ]; then
   case "$COMMAND_ID" in
@@ -505,10 +527,26 @@ if [ "$DO_LIMIT" = 1 ] && [ "$_RELAUNCHED" != 1 ] && is_root && have systemd-run
   #   재실행 때 통째로 사라져 "켰는데 아무것도 안 오는" 상태가 된다(위 사고와 같은 클래스).
   [ "$DO_VERIFY" = 1 ]         && relaunch_args+=(--verify-files --verify-timeout "$VERIFY_TIMEOUT")
   [ -n "$SEND_URL" ]           && relaunch_args+=(--send "$SEND_URL")
-  [ -n "$SEND_TOKEN" ]         && relaunch_args+=(--token "$SEND_TOKEN")
   [ -n "$COMMAND_ID" ]         && relaunch_args+=(--command-id "$COMMAND_ID")
+  # 토큰만은 인자로 넘기지 않는다 — 재실행된 프로세스는 수집이 끝날 때까지 살아 있고, 그동안
+  # `ps aux`/`/proc/<pid>/cmdline` 로 그 호스트의 아무 사용자나 중앙 수집 토큰을 읽어간다
+  # (CWE-214, 실측: 운영 노드 ubuntu). agent.env 를 600 으로 막아둔 게 이 한 줄로 무력화됐다.
+  # 전송 경로가 curl -H 대신 헤더 파일을 쓰는 것과 같은 이유다(아래 send 절 주석 참고).
+  # env 로 넘기면 /proc/<pid>/environ 에만 남고, 그건 같은 사용자와 root 만 읽는다.
+  #   - export: systemd-run 은 자기 자신을 exec 으로 대체하므로 보통은 이것으로 상속된다.
+  #   - --setenv: _RELAUNCHED 와 같은 이유로 이중화한다(export 상속이 안 되던 호스트 실측).
+  #     (systemd-run 자신의 argv 에 값이 실리지만 곧바로 exec 으로 덮이는 찰나뿐이고,
+  #      scope 는 env 를 PID1 로 보내지 않는다 — 노출 구간이 "수집 내내"에서 사라진다.)
+  #   - --token-via-env: 값이 아니라 "넘겼다"는 사실만 인자로 알린다. 재실행된 쪽에서 이게
+  #     켜졌는데 SEND_TOKEN 이 비면 조용히 넘어가지 않고 즉시 실패한다(위 가드).
+  relaunch_env=(--setenv=_RELAUNCHED=1)
+  if [ -n "$SEND_TOKEN" ]; then
+    export SEND_TOKEN
+    relaunch_env+=(--setenv=SEND_TOKEN="$SEND_TOKEN")
+    relaunch_args+=(--token-via-env)
+  fi
   exec systemd-run --scope --quiet \
-      --setenv=_RELAUNCHED=1 \
+      "${relaunch_env[@]}" \
       -p "CPUQuota=$CPU_QUOTA" -p "MemoryMax=$MEM_MAX" \
       -p CPUWeight=10 -p IOWeight=10 \
       "$0" "${relaunch_args[@]}"
