@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026 JeongDoWook · AGPL-3.0-or-later
+# 전문: 저장소의 LICENSE 또는 <https://www.gnu.org/licenses/agpl-3.0.html>
 #
 # vuln-inventory-agent.sh  (v3.9)
 # ==================================================================

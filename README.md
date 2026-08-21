@@ -53,4 +53,6 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 
 ## 라이선스
 
-[MIT License](LICENSE)
+[AGPL-3.0](LICENSE) 으로 배포합니다. Copyright (C) 2026 JeongDoWook.
+**네트워크로 이 소프트웨어를 이용자에게 제공하는 경우에도 그 이용자에게 소스코드를 제공해야 합니다**(AGPL 제13조). 화면 하단의 `소스코드 (AGPL-3.0)` 링크가 그 통로이고, 포크해 배포한다면 설정 화면에서 자기 저장소 주소로 바꾸세요.
+라이선스 이력 — 이 저장소는 2026-07-07 부터 MIT 로 배포되었고 2026-08-21 부터 AGPL-3.0 입니다. 전환 이전 커밋 시점의 코드는 MIT 조건으로 배포된 상태가 그대로 유지됩니다.
