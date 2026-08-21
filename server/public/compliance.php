@@ -76,7 +76,6 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   // 결론 배너는 걷었다 — "통제 4종 중 1종이 미준수입니다" 는 바로 아래 표가 통제마다
   //   뱃지로 이미 말하던 것을 문장으로 되풀이한 줄이었다. 권한 때문에 빠진 통제도 표의
   //   '권한 없음' 행이 그대로 말한다(일부만 센 걸 숨기지 않는다는 원칙은 그 행이 지킨다).
-  ?><section id="automatic" data-compliance-zone="automatic" aria-label="자동 판정과 조치 근거"><?php
   ?>
 
   <?php
@@ -182,6 +181,39 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
    *   제목을 갖고 있어서, 위 표가 무엇을 세는 표인지는 열 머리글을 읽어야 알 수 있었다.
    *   카드 문법(한 카드 한 이야기 · 제목 필수)대로 제목을 세우고 통제 수를 배지로 단다.
    *   표 자체는 한 글자도 안 바뀐다 — vg_table 의 카드 래핑만 vg_card 로 옮긴다('card' => false). */
+
+  // --- 판정 추이(스냅샷) ---------------------------------------------------
+  // 이 계산은 **카드를 그리기 전에** 해야 한다 — 추이 카드가 서는지($showTrend)를 알아야
+  //   위 카드와 묶을 2열 그리드를 열지 말지 정할 수 있다(카드 한 장이면 안 연다).
+  // 위 카드는 "지금"만 말한다. 심사에서 필요한 건 "그 시점엔 어땠나" 라서, 스케줄러가
+  //   하루 1건 남긴 스냅샷을 날짜별로 펼친다. 화면은 저장된 값을 읽기만 한다(재판정 안 함).
+  $trendControls = ['patch'];
+  if ($canViewAssets) { $trendControls[] = 'asset'; }   // 자산정보는 assets 권한자에게만(위 카드와 동일 게이트)
+  $trendControls[] = 'secops';
+  if ($canViewAssets) { $trendControls[] = 'account'; } // 계정 통제도 같은 게이트
+  // 기간 내내 판정이 '판정 불가' 한 종류뿐인 통제는 **열을 뺀다** — 10일 × 4열이 전부 같은
+  //   글자면 그건 추이가 아니라 벽지다. 한 번이라도 다른 판정이 있었으면 남긴다(그때의
+  //   판정 불가는 그 칸에 그대로 보인다). 어휘는 vg_compliance_status() 가 SSOT 라
+  //   문자열을 새로 박지 않고 거기서 받아 온다.
+  $naLabel = vg_compliance_status(0, true)['label'];
+  $trendControls = array_values(array_filter($trendControls, static function (string $key) use ($trend, $naLabel): bool {
+      foreach ($trend as $r) {
+          $c = $r['controls'][$key] ?? null;
+          if ($c !== null && $c['label'] !== $naLabel) { return true; }
+      }
+      return false;
+  }));
+  // 남는 열이 없으면 카드를 통째로 내린다(판정일만 남은 표는 아무것도 말하지 않는다).
+  //   스냅샷이 아예 없을 때는 "없습니다" 안내를 그대로 남긴다 — 그건 벽지가 아니라 상태다.
+  $showTrend = !$trend || $trendControls;
+  /* '통제별 판정'(4열 4행)과 '판정 추이'(4열 10행)를 **나란히** 세운다. 위아래로 쌓으면
+   *   1,022px 이라 1440·1920px 어디서도 한 화면에 안 들어갔다 — 두 칸으로 두면 702px 로
+   *   줄고 말줄임·행 접힘은 0이다(실측). 둘 다 열이 넷 이하라 절반 폭에서도 값이 안 잘린다.
+   *   추이 카드가 안 서는 상황(스냅샷이 있는데 전 기간 판정 불가뿐)에는 그리드를 만들지
+   *   않는다 — 한 장짜리 그리드는 카드 옆에 빈 칸 반쪽을 남긴다.
+   *   구역 표식(data-compliance-zone)은 감싸던 <section> 에서 카드 자신으로 옮겼다:
+   *   그리드 칸이 되는 건 카드라, 카드가 아닌 껍데기가 한 겹 끼면 칸 안에서 여백이 어긋난다. */
+  if ($showTrend) { echo '<div class="card-row card-row--2">'; }
   vg_card('통제별 판정', static function () use ($summaryRows): void {
       vg_table(
           [
@@ -206,13 +238,60 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
               ],
           ]
       );
-  }, ['badge' => '통제 ' . number_format(count($summaryRows)) . '종']);
+  }, [
+      'badge' => '통제 ' . number_format(count($summaryRows)) . '종',
+      'id'    => 'automatic',
+      'attrs' => ['data-compliance-zone' => 'automatic'],
+  ]);
   // 판정 범례는 걷었다 — 판정 칸의 뱃지가 '준수'·'부분준수'·'미준수'·'판정 불가' 를
   //   **글자로** 달고 있어 색→이름 대응을 따로 설명할 자리가 아니었다(1차 정리에서 다른
   //   화면의 범례를 전수 제거한 것과 같은 기준). **판정 어휘 4종은 그대로다** — 뱃지·추이
   //   표·스냅샷 증적이 계속 같은 말을 쓴다. 톤 SSOT 도 vg_compliance_tone_of() 그대로다.
   ?>
-  </section>
+  <?php if ($showTrend): ?>
+  <?php
+  /* 제목 옆에는 값만 둔다 — 무엇을 세는 표인지는 아래 열 머리글이 말한다.
+   *   예전엔 이 값이 제목 뒤에 그냥 이어 붙어 제목의 일부처럼 읽혔다. 이제 vg_card 의
+   *   'aside' 자리(제목 줄 오른쪽 끝)로 간다 — 위 '통제별 판정' 카드의 배지와 같은 자리다. */
+  vg_card('판정 추이', static function () use ($trend, $trendControls): void {
+      if (!$trend) {
+          vg_empty([
+              'icon'  => '🗓',
+              'title' => '아직 저장된 판정 스냅샷이 없습니다.',
+              'hint'  => '스케줄러가 하루 1회 자동으로 남깁니다.',
+          ]);
+      } else {
+        $headers = [['label' => '판정일', 'width' => '9rem']];
+        $cells = [0 => fn($r) => vg_h($r['date'])];
+        foreach ($trendControls as $i => $key) {
+            $headers[] = ['label' => VG_COMPLIANCE_CONTROLS[$key]['label']];
+            $cells[$i + 1] = static function ($r) use ($key) {
+                $c = $r['controls'][$key] ?? null;
+                if ($c === null) { return '<span class="why">기록 없음</span>'; }
+                // 판정 불가 건수 부기는 걷었다 — 칸마다 같은 문구가 반복돼 정작 판정 뱃지가
+                //   안 읽혔다. 그 날 판정이 판정 불가였다는 사실은 뱃지(tone med)가 그대로
+                //   말하고, 건수는 스냅샷 증적(unjudged_count·evidence JSON)에 남아 있다.
+                return number_format($c['count']) . '건 '
+                    . vg_badge($c['label'], vg_compliance_tone_of($c['label']));
+            };
+        }
+        // 최근 며칠만 보여준다(심사에서 먼저 보는 구간) — $trend 자체가 이미 $previewLimit 행만
+        //   불러온 것이라 여기서 다시 자를 필요가 없다(접이식 이력 표는 왜 있는지 알기 어렵다는
+        //   요청으로 완전히 제거했다). 오래된 스냅샷은 DB(tb_compliance_snapshot)에 그대로 남아
+        //   감사 목적으로 조회 가능하다.
+        vg_table($headers, $trend, ['cell' => $cells, 'card' => false]);
+      }
+  }, [
+      'id'    => 'trend',
+      'attrs' => ['data-compliance-zone' => 'trend'],
+      'aside' => $trend
+          ? '<span class="why">최근 ' . count($trend) . '일 · 최신 ' . vg_h((string) $trend[0]['taken_at']) . '</span>'
+          : '',
+  ]);
+  ?>
+  <?php // 그리드는 이 카드까지가 끝이다 — 아래 계정 근거 카드는 전폭으로 선다.
+        //   근거 칸이 80자짜리 계정명 나열이라 절반 폭에서는 값이 잘린다. ?>
+  <?php echo '</div>'; endif; ?>
 
   <?php
   // ── 미리보기 상한(이 화면 전체에 적용) ──────────────────────────────────
@@ -255,74 +334,6 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       },
       ['class' => 'mt-lg', 'id' => 'compliance-account',
        'badge' => '위반 ' . number_format((int) $account['total']) . '건']);
-  ?>
-  <?php endif; ?>
-
-  <?php
-  // --- 판정 추이(스냅샷) ---------------------------------------------------
-  // 위 카드들은 "지금"만 말한다. 심사에서 필요한 건 "그 시점엔 어땠나" 라서, 스케줄러가
-  //   하루 1건 남긴 스냅샷을 날짜별로 펼친다. 화면은 저장된 값을 읽기만 한다(재판정 안 함).
-  $trendControls = ['patch'];
-  if ($canViewAssets) { $trendControls[] = 'asset'; }   // 자산정보는 assets 권한자에게만(위 카드와 동일 게이트)
-  $trendControls[] = 'secops';
-  if ($canViewAssets) { $trendControls[] = 'account'; } // 계정 통제도 같은 게이트
-  // 기간 내내 판정이 '판정 불가' 한 종류뿐인 통제는 **열을 뺀다** — 10일 × 4열이 전부 같은
-  //   글자면 그건 추이가 아니라 벽지다. 한 번이라도 다른 판정이 있었으면 남긴다(그때의
-  //   판정 불가는 그 칸에 그대로 보인다). 어휘는 vg_compliance_status() 가 SSOT 라
-  //   문자열을 새로 박지 않고 거기서 받아 온다.
-  $naLabel = vg_compliance_status(0, true)['label'];
-  $trendControls = array_values(array_filter($trendControls, static function (string $key) use ($trend, $naLabel): bool {
-      foreach ($trend as $r) {
-          $c = $r['controls'][$key] ?? null;
-          if ($c !== null && $c['label'] !== $naLabel) { return true; }
-      }
-      return false;
-  }));
-  // 남는 열이 없으면 카드를 통째로 내린다(판정일만 남은 표는 아무것도 말하지 않는다).
-  //   스냅샷이 아예 없을 때는 "없습니다" 안내를 그대로 남긴다 — 그건 벽지가 아니라 상태다.
-  $showTrend = !$trend || $trendControls;
-  ?>
-  <?php if ($showTrend): ?>
-  <?php
-  /* 제목 옆에는 값만 둔다 — 무엇을 세는 표인지는 아래 열 머리글이 말한다.
-   *   예전엔 이 값이 제목 뒤에 그냥 이어 붙어 제목의 일부처럼 읽혔다. 이제 vg_card 의
-   *   'aside' 자리(제목 줄 오른쪽 끝)로 간다 — 위 '통제별 판정' 카드의 배지와 같은 자리다. */
-  vg_card('판정 추이', static function () use ($trend, $trendControls): void {
-      if (!$trend) {
-          vg_empty([
-              'icon'  => '🗓',
-              'title' => '아직 저장된 판정 스냅샷이 없습니다.',
-              'hint'  => '스케줄러가 하루 1회 자동으로 남깁니다.',
-          ]);
-      } else {
-        $headers = [['label' => '판정일', 'width' => '9rem']];
-        $cells = [0 => fn($r) => vg_h($r['date'])];
-        foreach ($trendControls as $i => $key) {
-            $headers[] = ['label' => VG_COMPLIANCE_CONTROLS[$key]['label']];
-            $cells[$i + 1] = static function ($r) use ($key) {
-                $c = $r['controls'][$key] ?? null;
-                if ($c === null) { return '<span class="why">기록 없음</span>'; }
-                // 판정 불가 건수 부기는 걷었다 — 칸마다 같은 문구가 반복돼 정작 판정 뱃지가
-                //   안 읽혔다. 그 날 판정이 판정 불가였다는 사실은 뱃지(tone med)가 그대로
-                //   말하고, 건수는 스냅샷 증적(unjudged_count·evidence JSON)에 남아 있다.
-                return number_format($c['count']) . '건 '
-                    . vg_badge($c['label'], vg_compliance_tone_of($c['label']));
-            };
-        }
-        // 최근 며칠만 보여준다(심사에서 먼저 보는 구간) — $trend 자체가 이미 $previewLimit 행만
-        //   불러온 것이라 여기서 다시 자를 필요가 없다(접이식 이력 표는 왜 있는지 알기 어렵다는
-        //   요청으로 완전히 제거했다). 오래된 스냅샷은 DB(tb_compliance_snapshot)에 그대로 남아
-        //   감사 목적으로 조회 가능하다.
-        vg_table($headers, $trend, ['cell' => $cells, 'card' => false]);
-      }
-  }, [
-      'class' => 'mt-lg',
-      'id'    => 'trend',
-      'attrs' => ['data-compliance-zone' => 'trend'],
-      'aside' => $trend
-          ? '<span class="why">최근 ' . count($trend) . '일 · 최신 ' . vg_h((string) $trend[0]['taken_at']) . '</span>'
-          : '',
-  ]);
   ?>
   <?php endif; ?>
 

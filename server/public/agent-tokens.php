@@ -172,7 +172,10 @@ vg_header('에이전트 키', 'agenttokens');
            'title' => '폐기·만료 여부와 만료 시각 — 무기한은 만료되지 않는 키입니다'],
           ['label' => '마지막 수신', 'key' => 'last_seen_at', 'width' => '11rem'],
           ['label' => '발급일', 'key' => 'created_at', 'width' => '11rem'],
-          ['label' => '', 'key' => 'actions', 'width' => '5rem', 'align' => 'right'],   // 폐기·삭제 버튼
+          /* 조작부만 담는 열도 이름을 갖는다 — 빈 머리글은 화면에서 열이 하나 잘려 보이고,
+             스크린리더는 이 칸을 읽을 때 딸려 읽을 열 이름이 없다(vg_table 이 th 를 그대로 비운다).
+             '관리' 는 이 저장소의 액션 열 공통 이름이다(같은 뜻은 화면마다 같은 이름). */
+          ['label' => '관리', 'key' => 'actions', 'width' => '5rem', 'align' => 'right'],   // 폐기·삭제 버튼
       ],
       $tokens,
       [

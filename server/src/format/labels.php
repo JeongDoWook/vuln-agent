@@ -172,11 +172,20 @@ function vg_integrity_scope_text(string $tool, array $seen = []): array {
         $title   = 'rpm -Va --nomtime --nouser --nogroup — 수집 부하를 줄이려고 수정시각·소유자·그룹은 빼고 돌립니다.';
     }
     // 목록 뒤에 조사를 붙이지 않는다("capability은" 같은 말이 생긴다). 항목을 이름표로 나열한다.
+    //   화면에 세우는 한 줄(text)은 **무엇으로 검사했는가**만 말한다 — 항목 전수 나열은 툴팁
+    //   (title)으로 내린다. 두 줄을 다 펴 놓으면 표보다 안내가 길어져서 정작 "내용만 봤다"는
+    //   핵심이 묻힌다(사용자 지적: "이게 뭘 말하는지 모르겠는데"). 안 본 항목을 "같음"으로
+    //   흘리지 않는다는 원칙은 그대로다 — 자리를 툴팁으로 옮겼을 뿐 사실은 안 지운다.
+    $checked = array_values($checked);
+    $short = count($checked) === 1
+        ? $checked[0] . '만 검사'
+        : implode('·', array_slice($checked, 0, 3)) . ' 등 ' . count($checked) . '개 항목 검사';
     return [
         'tool'  => $tool,
-        'text'  => '검사한 항목: ' . implode('·', $checked)
-                   . ($skipped ? ' · 검사하지 않은 항목: ' . implode('·', $skipped) : ''),
-        'title' => $title,
+        'text'  => $tool . ' · ' . $short,
+        'title' => '검사한 항목: ' . implode('·', $checked)
+                   . ($skipped ? ' · 검사하지 않은 항목: ' . implode('·', $skipped) : '')
+                   . ' — ' . $title,
     ];
 }
 

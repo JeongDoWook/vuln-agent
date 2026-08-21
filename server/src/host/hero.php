@@ -117,8 +117,9 @@ function vg_host_render_hero(array $ctx): void {
   /* 이 자산의 위험을 **카드 두 장**으로 세운다 — 왼쪽·오른쪽이 같은 어휘(스와치·라벨·값·링크)다.
    *   왼쪽: **등급 구성** — 부분/전체라 고리로 그릴 수 있는 유일한 값이다.
    *   오른쪽: **등급 밖의 신호**(악용·노출·설정). 예전엔 여기가 네모 카드 격자(vg_kpi_strip)라
-   *     한 줄에 어휘가 둘이었다 — 사용자가 "오른쪽 왼쪽 동일하게" 라고 지적한 그것이다. 지금은
-   *     **같은 vg_donut_kpi() 를 arc=false 로** 불러 목록만 남긴다(마크업·색·링크 계약이 한 벌).
+   *     한 줄에 어휘가 둘이었고, 그 다음엔 목록 네 줄이라 옆의 고리와 모양이 안 맞았다.
+   *     지금은 **줄마다 자기 분모를 가진 미니 고리**(vg_ratio_rings)라 양쪽이 같은 원형
+   *     어휘로 선다 — 아래 '왜 오른쪽도 고리인가' 참조.
    *
    *   왜 카드 두 장인가 — 예전엔 둘이 **제목 없는 카드 하나** 안에 .kpi-donuts 격자로 붙어
    *     있었다. 성격이 다른 두 이야기인데 경계가 없었고, vg_donut_kpi() 의 $title 은 SVG 의
@@ -128,15 +129,24 @@ function vg_host_render_hero(array $ctx): void {
    *     둘 다 auto-fit 격자라 좁은 폭에서 위아래로 서는 동작도 같다.
    *     조회는 한 줄도 안 바뀐다 — 다섯 값 모두 host.php 가 이미 세어 넘긴 것이다.
    *
-   *   왜 오른쪽엔 고리를 안 그리나 — 네 값을 하나씩 실측해 정했다:
-   *     · 넷은 **모집단이 서로 다르다.** KEV·외부노출은 tb_finding, 노출 소켓은 tb_exposure,
-   *       설정 취약은 tb_cce_finding 이다. 한 고리에 넣으면 합이 거짓말이 된다.
-   *     · 그렇다고 값마다 도넛을 하나씩 만들면 조각 하나짜리 고리가 **꽉 찬 원**(=100%)으로
-   *       읽힌다(#728 이 대시보드 KEV 에서 내린 판단).
-   *     그래서 그림만 포기하고 어휘는 왼쪽에 맞춘다. 고리 자리에는 **왜 고리가 없는지**를
-   *     말하는 뱃지가 선다 — vg_donut_kpi 의 'none'(빈 고리를 세우지 않으려고 이미 있던 것)이다.
-   *     그 뱃지가 예전엔 '등급 밖의 신호' 라고 이름을 되풀이했는데, 이제 이름은 카드 제목이
-   *     갖는다(같은 문구를 한 카드 안에서 두 번 적지 않는다 — vg_donut_kpi 주석).
+   *   왜 오른쪽도 고리인가 — 예전엔 여기가 **목록 네 줄 + '축이 서로 다름' 뱃지**였다.
+   *     왼쪽은 원인데 오른쪽은 네모난 배지라 어휘도 높이도 안 맞았고, 그 배지가 무슨 말인지
+   *     모르겠다는 지적이 있었다(사용자). 그렇다고 넷을 **한 고리**로 묶을 수는 없다 —
+   *     모집단이 서로 다르다(KEV·외부노출은 tb_finding, 소켓은 tb_exposure, 설정은
+   *     tb_cce_finding). 합이 거짓말이 된다는 #748 의 판단은 지금도 그대로 유효하다.
+   *
+   *     그래서 고리를 **값 수만큼 쪼갠다**(vg_ratio_rings) — 줄마다 작은 고리 하나가
+   *     **자기 분모만** 그린다. 어떤 합도 주장하지 않으므로 모집단이 달라도 거짓이 없고,
+   *     조각 하나짜리 고리가 꽉 찬 원(=100%)으로 읽히던 문제(#728)도 안 생긴다 —
+   *     분모가 실제 전체라 100%는 진짜 100%다. 비율 숫자는 고리 안이 아니라 라벨 아래
+   *     한 줄이 갖는다(32px 고리에는 숫자가 안 들어간다).
+   *
+   *   분모는 **새 질의 없이** 값과 같은 질의에서 함께 나온다(summary.php: 집계 컬럼만 하나씩
+   *     늘렸다). 네 줄의 분모는 각각 전체 취약점 · 전체 취약점 · 전체 소켓 · 전체 점검 항목이다.
+   *
+   *   '노출 소켓' 은 '외부 개방 소켓' 이 됐다 — 전체 소켓 수는 분모라 그 자체로 신호가 아니고
+   *     (이 카드는 '신호' 를 세우는 자리다), 정작 위험한 건 밖에서 닿는 쪽이다. 전체 수는
+   *     사라지지 않는다: 같은 줄의 분모 문구와 툴팁이 그대로 갖고, 런타임 탭이 정본이다.
    *
    *   '외부노출 취약점' 은 지우지 않고 남긴다. 운영 실측에서 이 값이 HIGH 와 같은 수(142)라
    *     중복처럼 보이지만 **같은 집계가 아니다** — 등급이 노출 상태에서 파생될 뿐이다
@@ -150,7 +160,9 @@ function vg_host_render_hero(array $ctx): void {
    *     고리가 안 세는 전체 건수는 카드 제목 옆 배지가 갖는다. */
   $heroFindings = '/findings.php?scan_id=' . (int) $scan['scan_id'];
   ?>
-  <div class="card-row">
+  <?php /* --even: 두 카드의 높이를 맞춘다(사용자: "옆이랑 칸 맞추고"). 기본 .card-row 는
+           align-items:start 라 내용이 짧은 쪽이 짧게 남는다 — 여기선 그게 어긋나 보인다. */ ?>
+  <div class="card-row card-row--even">
   <?php
   vg_card('등급 구성', static function () use ($counts): void {
       vg_sev_donut($counts, 132, [
@@ -167,37 +179,39 @@ function vg_host_render_hero(array $ctx): void {
   ]);
 
   /* 링크는 카드 시절 그대로다 — 이 줄은 각 축의 **진입점**이기도 하다(눌러서 확인).
-   *   0건인 값도 지우지 않는다: 'KEV 0' 은 "이 자산엔 KEV 가 없다"는 사실이라 목록에 남고,
-   *   vg_donut_kpi 가 --zero 로 뒤로 물릴 뿐이다. */
-  vg_card('등급 밖의 신호', static function () use ($kevCount, $externalFindings, $exposureCount, $cceFail, $heroFindings): void {
-      vg_donut_kpi('등급 밖의 신호 — 악용·노출·설정', [
-          ['label' => 'KEV 악용확인', 'value' => $kevCount, 'arc' => false,
-           'tone'  => $kevCount > 0 ? 'crit' : 'muted',
+   *   0건인 값도 지우지 않는다: 'KEV 0' 은 "이 자산엔 KEV 가 없다"는 사실이라 줄로 남고,
+   *   .ring-row--zero 로 뒤로 물릴 뿐이다. */
+  vg_card('등급 밖의 신호', static function () use (
+      $counts, $kevCount, $externalFindings, $exposureCount, $exposureExternal,
+      $cceFail, $cceTotal, $heroFindings
+  ): void {
+      // 두 줄의 분모 — 이 자산의 **전체 취약점**(왼쪽 고리가 제목 옆 배지로 말하는 그 수).
+      $findingTotal = (int) array_sum($counts);
+      vg_ratio_rings([
+          ['label' => 'KEV 악용확인', 'value' => $kevCount, 'total' => $findingTotal,
+           'denom' => '전체 취약점', 'tone' => $kevCount > 0 ? 'crit' : 'muted',
            'href'  => $heroFindings . '&fx=kev',
            'title' => 'KEV — 실제 악용이 확인된 취약점(CISA Known Exploited Vulnerabilities)'
                     . ' · 0건은 "안전"이 아니라 "이 자산엔 KEV 가 없다"는 뜻이다'],
-          ['label' => '외부노출 취약점', 'value' => $externalFindings, 'arc' => false,
-           'tone'  => $externalFindings > 0 ? 'high' : 'ok',
+          ['label' => '외부노출 취약점', 'value' => $externalFindings, 'total' => $findingTotal,
+           'denom' => '전체 취약점', 'tone' => $externalFindings > 0 ? 'high' : 'ok',
            'href'  => $heroFindings . '&st=EXTERNAL',
            'title' => '외부에서 닿는 서비스가 쓰는 패키지의 취약점(runtime_status=EXTERNAL)'
                     . ' · 등급이 이 상태에서 파생되므로(EXTERNAL → HIGH, KEV 면 CRITICAL)'
                     . ' KEV 가 없는 자산에서는 왼쪽 HIGH 와 같은 수가 된다'],
-          ['label' => '노출 소켓', 'value' => $exposureCount, 'arc' => false, 'tone' => 'muted',
+          ['label' => '외부 개방 소켓', 'value' => $exposureExternal, 'total' => $exposureCount,
+           'denom' => '전체 소켓', 'tone' => $exposureExternal > 0 ? 'med' : 'ok',
            'href'  => vg_qs(['tab' => 'runtime', 'page' => null, 'q' => null]),
-           'title' => '외부·로컬을 통틀어 열려 있는 소켓 수(tb_exposure)'
+           'title' => '인터넷에서 닿는 소켓 ' . number_format($exposureExternal) . '개'
+                    . ' / 열려 있는 전체 소켓 ' . number_format($exposureCount) . '개(tb_exposure)'
                     . ' · 취약점이 아니라 노출면 자체의 크기라 등급이 붙지 않는다'],
-          ['label' => '설정 취약', 'value' => (int) $cceFail, 'arc' => false,
-           'tone'  => $cceFail > 0 ? 'high' : 'ok',
+          ['label' => '설정 취약', 'value' => (int) $cceFail, 'total' => $cceTotal,
+           'denom' => '점검 항목', 'tone' => $cceFail > 0 ? 'high' : 'ok',
            'href'  => vg_qs(['tab' => 'cce', 'page' => null]),
            'title' => '보안 설정 점검에서 FAIL 로 판정된 항목(CCE) · 취약점과는 다른 축이다'],
-      ], [
-          // 'size' 는 안 준다 — 고리를 하나도 안 그리므로(전부 arc=false) 쓰이지 않는다.
-          //   자리 크기는 .donut--none 이 왼쪽 도넛과 같게(8.25rem) 잡는다.
-          'none' => ['label' => '축이 서로 다름', 'tone' => 'muted',
-                     'title' => '악용(KEV)·노출·설정은 취약점 등급과 모집단이 서로 달라'
-                              . ' 한 고리로 그리면 합이 뜻을 잃습니다 — 값은 오른쪽 목록에 있습니다'],
       ]);
-  }, ['title_attr' => '취약점 등급과 모집단이 다른 축들 — 악용(KEV) · 노출 · 보안 설정']);
+  }, ['title_attr' => '취약점 등급과 모집단이 다른 축들 — 악용(KEV) · 노출 · 보안 설정.'
+                    . ' 축마다 분모가 달라서 고리를 따로 그린다']);
   ?>
   </div>
 <?php

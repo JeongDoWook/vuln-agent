@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * vercmp.php — 배포판 패키지 버전 비교 (dpkg / rpm).
+ * vercmp.php — 배포판 패키지 버전 비교 (dpkg / rpm / apk).
  *
  * 왜 필요한가: 매칭이 "설치버전 >= 수정버전이면 이미 패치됨"을 판정하려면 배포판 규칙대로
  * 비교해야 한다. PHP version_compare 로는 불가능하다 —
@@ -162,7 +162,106 @@ function vg_lang_cmp(string $a, string $b): int
 }
 
 /**
- * 패키지 매니저에 맞는 버전 비교. $manager: 'rpm' | 'dpkg' | 'pip'|'npm'|'gem'|'composer'.
+ * Go 모듈 버전 정규화 — 앞의 'v' 와 빌드 메타데이터('+…')를 뗀다.
+ *
+ * 'v': Go 모듈 버전은 "v1.2.3" 이지만 OSV 의 조치안은 "1.2.3" 으로 온다. 그대로 비교하면 어긋난다.
+ * '+': semver 는 빌드 메타데이터를 **우선순위 비교에서 무시**한다 — 실측(golang.org/x/mod/semver
+ *      v0.17.0): Compare("v1.0.0+incompatible", "v1.0.0") == 0. 안 떼면 PHP version_compare 가
+ *      'incompatible' 을 프리릴리스처럼 읽어 -1 을 돌려주고, 설치본이 조치안보다 낮아 보여
+ *      이미 고쳐진 모듈에 오탐이 남는다. '+incompatible' 은 go.mod 없는 major≥2 모듈에 붙어
+ *      Go 바이너리 SBOM 에 흔하다.
+ */
+function vg_go_norm(string $v): string
+{
+    $v = ltrim(trim($v), 'vV');
+    $pos = strpos($v, '+');
+    return $pos === false ? $v : substr($v, 0, $pos);
+}
+
+/**
+ * apk 접미사 순위. 실측(alpine:3.19 의 `apk version -t`)한 순서는 이렇다:
+ *   _alpha < _beta < _pre < _rc < (접미사 없음) < _cvs < _svn < _git < _hg < _p
+ * 접미사 없는 정식 릴리스를 0 으로 두어 프리릴리스는 음수, 포스트릴리스는 양수가 된다.
+ * 모르는 접미사는 null — 순서를 추측하지 않는다(호출부가 dpkg 규칙으로 되돌린다).
+ */
+function vg_apk_suffix_rank(string $s): ?int
+{
+    static $rank = [
+        'alpha' => -4, 'beta' => -3, 'pre' => -2, 'rc' => -1,
+        'cvs'   =>  1, 'svn'  =>  2, 'git' =>  3, 'hg' =>  4, 'p' => 5,
+    ];
+    return $rank[$s] ?? null;
+}
+
+/**
+ * apk 버전을 조각으로 나눈다 → [숫자구간, 뒤에 붙는 문자, 접미사목록, 리비전].
+ * 형식: <숫자>{.<숫자>}[문자][_접미사[번호]]…[-r<리비전>]
+ * 규격 밖이면 null.
+ */
+function vg_apk_parse(string $v): ?array
+{
+    $v = trim($v);
+    $rev = -1;                       // 리비전 없음은 -r0 보다 이전이다(실측: `1.0` < `1.0-r0`).
+    if (preg_match('/^(.*)-r(\d+)$/', $v, $m)) { $v = $m[1]; $rev = (int) $m[2]; }
+    if (!preg_match('/^(\d+(?:\.\d+)*)([a-z]?)((?:_[a-z]+\d*)*)$/', $v, $m)) { return null; }
+
+    $sufs = [];
+    if ($m[3] !== '') {
+        preg_match_all('/_([a-z]+)(\d*)/', $m[3], $ms, PREG_SET_ORDER);
+        foreach ($ms as $s) {
+            $rank = vg_apk_suffix_rank($s[1]);
+            if ($rank === null) { return null; }
+            // 번호 없는 접미사는 번호 0 보다 이전이다(실측: `1.0_p` < `1.0_p0`).
+            $sufs[] = [$rank, $s[2] === '' ? -1 : (int) $s[2]];
+        }
+    }
+    return [array_map('intval', explode('.', $m[1])), $m[2], $sufs, $rev];
+}
+
+/**
+ * apk(알파인) 버전 비교.
+ *
+ * dpkg 규칙을 그대로 쓰면 **프리릴리스가 반대로 나온다.** dpkg 가 "정식보다 이전"으로 아는
+ * 문자는 '~' 하나뿐인데 apk 는 '_alpha'·'_beta'·'_pre'·'_rc' 를 쓴다 — vg_deb_order 에서
+ * '_' 는 그냥 기호(ord+256)라 문자열이 끝난 쪽(0)보다 커서 `1.0_rc1` > `1.0` 이 됐다.
+ * 실제 apk 는 `<` 다. 방향이 미탐 쪽이었다: 억제 게이트(matcher/decide.php)가 rc 빌드를
+ * "이미 패치됨"으로 보고 억제해 위험 집계에서 지워 버린다.
+ * 리비전(-rN)·자릿수는 dpkg 와 같으므로 그 부분의 종전 판정은 바뀌지 않는다.
+ *
+ * 한계: 0 으로 채운 소수 자리(`1.01` vs `1.1`)는 apk 가 문자열로 비교하지만 여기서는
+ * 숫자로 본다. 알파인 공식 패키지에 그런 표기가 없어 실사용 경로에 영향이 없다.
+ * 규격 밖 문자열은 dpkg 규칙으로 되돌린다 — 새 순서를 추측하는 것보다 종전 동작이 안전하다.
+ */
+function vg_apk_cmp(string $a, string $b): int
+{
+    $pa = vg_apk_parse($a);
+    $pb = vg_apk_parse($b);
+    if ($pa === null || $pb === null) { return vg_deb_cmp($a, $b); }
+    [$na, $la, $sa, $ra] = $pa;
+    [$nb, $lb, $sb, $rb] = $pb;
+
+    // 1) 숫자 구간 — 자리가 모자란 쪽이 이전(실측: `1.0` < `1.0.0`)
+    $n = max(count($na), count($nb));
+    for ($i = 0; $i < $n; $i++) {
+        $x = $na[$i] ?? -1; $y = $nb[$i] ?? -1;
+        if ($x !== $y) { return $x < $y ? -1 : 1; }
+    }
+    // 2) 뒤에 붙는 문자 한 자(실측: `1.2.3` < `1.2.3a` < `1.2.3b`)
+    if ($la !== $lb) { return $la < $lb ? -1 : 1; }
+    // 3) 접미사 — 순위 먼저, 같으면 번호. 없는 쪽은 정식 릴리스(순위 0)로 본다.
+    $n = max(count($sa), count($sb));
+    for ($i = 0; $i < $n; $i++) {
+        [$xr, $xv] = $sa[$i] ?? [0, -1];
+        [$yr, $yv] = $sb[$i] ?? [0, -1];
+        if ($xr !== $yr) { return $xr < $yr ? -1 : 1; }
+        if ($xv !== $yv) { return $xv < $yv ? -1 : 1; }
+    }
+    // 4) 리비전(-rN)
+    return $ra === $rb ? 0 : ($ra < $rb ? -1 : 1);
+}
+
+/**
+ * 패키지 매니저에 맞는 버전 비교. $manager: 'rpm' | 'dpkg' | 'apk' | 'pip'|'npm'|'gem'|'composer'.
  * 반환 -1(a<b) / 0(같음) / 1(a>b).
  */
 function vg_ver_cmp(string $a, string $b, string $manager): int
@@ -173,13 +272,15 @@ function vg_ver_cmp(string $a, string $b, string $manager): int
         case 'npm':
         case 'gem':
         case 'composer': return vg_lang_cmp($a, $b);
-        // Go 모듈 버전은 "v1.2.3" 처럼 v 가 붙는다. OSV 의 조치안은 "1.2.3" 으로 온다 —
-        // 둘을 그대로 비교하면 v 때문에 어긋난다. 앞의 v 만 떼고 semver 로 비교한다.
-        case 'go':       return vg_lang_cmp(ltrim($a, 'vV'), ltrim($b, 'vV'));
+        // Go 모듈 버전은 "v1.2.3+incompatible" 처럼 v 접두와 빌드 메타데이터가 붙는다.
+        // 둘 다 떼고 semver 로 비교한다(사유는 vg_go_norm 주석).
+        case 'go':       return vg_lang_cmp(vg_go_norm($a), vg_go_norm($b));
         // 업스트림 앱 버전(바이너리에서 뽑은 nginx 1.28.2 등) — 배포판 리비전이 없는 순수 semver.
         case 'upstream': return vg_lang_cmp($a, $b);
-        // apk(알파인)는 "1.2.3-r0" 처럼 upstream-revision 꼴이라 dpkg 규칙이 그대로 맞는다
-        // (r0 < r1, 틸드·숫자 처리도 동일). 별도 비교기를 만들 이유가 없다.
+        // apk(알파인)는 "1.2.3-r0" 꼴이라 리비전·숫자만 보면 dpkg 와 같지만 프리릴리스가 다르다 —
+        // dpkg 의 프리릴리스 표기는 '~' 하나뿐인데 apk 는 '_alpha'·'_beta'·'_pre'·'_rc' 를 쓴다.
+        // dpkg 규칙으로 보면 `1.0_rc1` 이 `1.0` 보다 최신이 돼 rc 빌드를 오억제(미탐)했다.
+        case 'apk':      return vg_apk_cmp($a, $b);
         default:         return vg_deb_cmp($a, $b);
     }
 }

@@ -26,7 +26,9 @@ function vg_dash_render_hosts(array $rows, array $sevByScan, int $total, int $pe
           ['label' => '노출', 'align' => 'right'],
           ['label' => '심각도'],
           ['label' => '수집시각', 'nowrap' => true],
-          ['label' => '', 'nowrap' => true],
+          /* 링크 한 칸짜리 열도 이름을 갖는다 — 빈 머리글은 스크린리더가 읽을 게 없고,
+             표에서도 열 하나가 잘려 보인다. 조작(버튼)이 아니라 이동이라 '바로가기' 다. */
+          ['label' => '바로가기', 'nowrap' => true],
       ],
       $rows,
       [
