@@ -27,7 +27,8 @@ require_once __DIR__ . '/package_summary.php'; // vg_rebuild_package_summary —
 //   안 올리면 입력(피드·수집물)이 그대로인 스캔은 지문도 그대로라 "결과가 같다"고 판단해
 //   **새 코드로 재계산한 결과가 영영 저장되지 않는다.** 올리면 전 스캔이 한 번씩 다시 쓰인다.
 //   2 — changelog 백포트 억제가 서드파티 저장소 패키지에도 적용된다(서드파티 가드에서 분리).
-if (!defined('VG_MATCH_FP_VERSION')) { define('VG_MATCH_FP_VERSION', 2); }
+//   3 — apk 는 dpkg 가 아닌 자기 규칙으로 비교한다(_rc 오억제 수정) + Go 는 '+incompatible' 무시.
+if (!defined('VG_MATCH_FP_VERSION')) { define('VG_MATCH_FP_VERSION', 3); }
 
 // 책임 단위로 나눈 판정 층(순수 이동 — 함수 이름·시그니처·본문 불변).
 //   순서가 의존 방향이다: classify(등급) → signals(원시 신호) → catalog(CVE) → evidence(억제 근거)
