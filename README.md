@@ -1,6 +1,6 @@
 # vuln-agent
 
-![License](https://img.shields.io/badge/license-AGPL--3.0-blue) ![Contest](https://img.shields.io/badge/2026%20오픈소스%20개발자대회-자유과제-informational) ![PHP](https://img.shields.io/badge/PHP-8.3-777bb4) ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1)
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue) ![Contest](https://img.shields.io/badge/2026_오픈소스_개발자대회-자유과제-informational) ![PHP](https://img.shields.io/badge/PHP-8.3-777bb4) ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1)
 
 > 설치된 취약점의 **개수**가 아니라 **지금 이 서버에서 실제로 위험한 것**을 먼저 보여주는 경량 취약점 진단 플랫폼.
 > 실행 맥락으로 판단하고, 억제한 결과도 판정 근거와 조치를 남겨 숨기지 않습니다.

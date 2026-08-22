@@ -23,7 +23,7 @@
 |---|---|---|---|---|
 | Chart.js | 4.5.1 | 대시보드·통계 화면의 차트 렌더 (`assets/vendor/chartjs/chart.umd.js`) | MIT ([사본](server/public/assets/vendor/chartjs/LICENSE)) | https://github.com/chartjs/Chart.js |
 | flatpickr | 4.6.13 | 예약 실행·기간 필터의 날짜 입력 (`assets/vendor/flatpickr/`) | MIT ([사본](server/public/assets/vendor/flatpickr/LICENSE)) | https://github.com/flatpickr/flatpickr |
-| spec-review-kit | commit `b706e175` (2026-08-08 이식) | 설계 게이트·코드리뷰 방법론 본체 (`kit/`, `.claude/skills/`, `scripts/`) | 저장소 저작자와 동일인의 다른 저장소 — 루트 [LICENSE](LICENSE)(AGPL-3.0)가 그대로 적용된다. 자세한 내용은 [kit/README.md](kit/README.md) | https://github.com/JeongDoWook/spec-review-kit |
+| spec-review-kit | commit `b706e175` (2026-08-08 이식) | 설계 게이트·코드리뷰 방법론 — 이 저장소를 개발하는 데 쓴 도구이며 심사 대상이 아니다(README.md "출품 범위" 표 참고) | 저장소 저작자와 동일인의 다른 저장소 — 루트 [LICENSE](LICENSE)(AGPL-3.0)가 그대로 적용된다 | https://github.com/JeongDoWook/spec-review-kit |
 
 에이전트(`agent/vuln-inventory-agent.sh`)는 대상 서버에 아무것도 설치하지 않는 순수 POSIX 셸
 스크립트이고, `scripts/` 의 Node 도구는 Node 내장 모듈만 쓴다 — 둘 다 제3자 코드를 번들하지 않는다
