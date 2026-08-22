@@ -141,6 +141,8 @@ $err = null;
 $segments = [];       // cidr => {gateway_ip, hosts: [...], discovered: [...]}
 $unmatchedHosts = [];  // 라우팅 정보가 아예 없는 호스트(에이전트가 net.routes 를 못 보냈거나 전부 가상 인터페이스)
 $totalHosts = 0;
+$arcItems = [];  // 공유 패키지 아크의 노드(vg_shared_arc)
+$arcEdges = [];  // 공유 패키지 아크의 호 — 실제로 같은 자산에 공존하는 쌍만
 
 try {
     $pdo = vg_pdo();
@@ -228,6 +230,47 @@ try {
         );
         $st->execute($scanIds);
         foreach ($st->fetchAll() as $r) { $extByScan[(int) $r['scan_id']] = (int) $r['c']; }
+    }
+
+    // 공유 패키지 아크(vg_shared_arc) — 자산별 최신 스캔의 High 이상 판정을 패키지×자산
+    //   단위로 한 쿼리에 집계한다. 여기서 이미 (host_id, package_name) 조합이 나오므로
+    //   "실제로 같은 자산에 공존하는가"(엣지 진위)를 이 결과만으로 판정할 수 있다 — 상위
+    //   종을 무조건 다 이어 놓고 공유라 부르지 않는다(정본 지시 4번).
+    $pkgHostRows = $pdo->query(
+        "SELECT t.host_id, f.package_name, f.severity, COUNT(*) AS cnt
+           FROM tb_finding f
+           JOIN " . vg_latest_scan_subq() . " t ON t.mid = f.scan_id
+          WHERE f.severity IN ('CRITICAL', 'HIGH')
+          GROUP BY t.host_id, f.package_name, f.severity"
+    )->fetchAll();
+
+    $pkgAgg = [];   // package_name => ['count'=>int, 'hosts'=>[host_id=>true], 'severity'=>worst]
+    foreach ($pkgHostRows as $r) {
+        $name = (string) $r['package_name'];
+        $pkgAgg[$name]['count'] = ($pkgAgg[$name]['count'] ?? 0) + (int) $r['cnt'];
+        $pkgAgg[$name]['hosts'][(int) $r['host_id']] = true;
+        if (($pkgAgg[$name]['severity'] ?? '') !== 'CRITICAL') {
+            $pkgAgg[$name]['severity'] = (string) $r['severity'];
+        }
+    }
+    uasort($pkgAgg, static fn(array $a, array $b): int => $b['count'] <=> $a['count']);
+    $arcTop = array_slice($pkgAgg, 0, 8, true);
+
+    $arcNames = array_keys($arcTop);
+    foreach ($arcTop as $name => $agg) {
+        $arcItems[] = [
+            'label'    => $name,
+            'count'    => $agg['count'],
+            'hosts'    => count($agg['hosts']),
+            'severity' => $agg['severity'],
+            'href'     => '/packages.php?q=' . rawurlencode($name),
+        ];
+    }
+    foreach ($arcNames as $ai => $nameA) {
+        for ($bi = $ai + 1; $bi < count($arcNames); $bi++) {
+            $shared = count(array_intersect_key($arcTop[$nameA]['hosts'], $arcTop[$arcNames[$bi]]['hosts']));
+            if ($shared > 0) { $arcEdges[] = ['a' => $ai, 'b' => $bi, 'shared' => $shared]; }
+        }
     }
 
     // 에이전트 없는 발견 자산(known 은 이미 위 호스트로 그려지므로 제외) — 대역 CIDR 로 배치.
@@ -454,6 +497,19 @@ vg_header('세그먼트 맵', 'segment_map');
       ], ['inline' => true]);
       ?>
     <?php endif; ?>
+
+    <?php
+    /* 토폴로지가 "어디에 있나" 라면 이 카드는 "무엇을 공유하나" — 역할이 안 겹친다.
+       대역별 카드가 아니라 자산 전체를 가로지르는 이야기라 대역 목록 아래 한 장으로 둔다. */
+    ?>
+    <div class="card">
+      <strong>공유 패키지</strong>
+      <span class="why"> · 최신 스캔 · High 이상 기준</span>
+      <?= vg_help('같은 자산에 함께 설치된 패키지끼리 호로 잇습니다. 노드 크기는 조치 대상 건수입니다.') ?>
+      <div class="card__body">
+        <?php vg_shared_arc($arcItems, $arcEdges, ['total_hosts' => $totalHosts]); ?>
+      </div>
+    </div>
 
     <?php if ($unmatchedHosts): ?>
       <div class="card">
