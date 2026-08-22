@@ -248,14 +248,14 @@ function vg_age_timeline(array $items, array $opts = []): void {
                . ' · ' . $yearsTxt . ' 방치 · ' . number_format($r['count']) . '대';
 
         $tag = $r['href'] !== '' ? 'a' : 'g';
-        echo '<' . $tag . ' class="age__row tone-' . $r['tone'] . '"'
+        echo '<' . $tag . ' class="age__row tone-' . vg_h($r['tone']) . '"'
             . ($r['href'] !== '' ? ' href="' . vg_h($r['href']) . '"' : '') . '>';
         echo '<title>' . vg_h($tip) . '</title>';
         if ($hasLabel) {
             echo '<text class="age__label" x="' . round($x0 - $labelGap, 1) . '" y="' . round($cy + 3.5, 1) . '">'
                 . vg_h($label) . '</text>';
         }
-        echo '<rect class="age__bar tone-' . $r['tone'] . '" x="' . round($barX, 1) . '" y="' . round($barY, 1) . '"'
+        echo '<rect class="age__bar tone-' . vg_h($r['tone']) . '" x="' . round($barX, 1) . '" y="' . round($barY, 1) . '"'
             . ' width="' . round($barW, 1) . '" height="' . round($barH, 1) . '" rx="2.5"></rect>';
         echo '<text class="age__stat" x="' . round($xEnd + $statGap, 1) . '" y="' . round($cy + 3.5, 1) . '">'
             . vg_h($yearsTxt . ' · ' . number_format($r['count']) . '대') . '</text>';
