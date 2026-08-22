@@ -155,6 +155,7 @@ PHPUNIT_FILES=(
   finding_evidence_test.php
   db_retry_test.php
   integrity_flags_test.php
+  pkgregistry_test.php
 )
 declare -A PHPUNIT_RESULT=()
 
@@ -617,6 +618,13 @@ phase "DB 재시도 단위 테스트"
 # 실행이 통째로 유실된다(운영 실측 2026-07-26). 재시도가 남의 트랜잭션까지 다시 돌리면
 # 반쪽 커밋이 되므로 "소유할 때만 재시도" 안전조건도 여기서 잠근다.
 run_phpunit "db_retry_test.php" "db_retry" "DB 접속·교착 재시도 단위 테스트"
+
+phase "레지스트리 메타데이터 커넥터 단위 테스트"
+# --- 레지스트리 메타데이터 커넥터 단위 테스트 --------------------------------
+# 부모 패키지가 설치버전보다 높은 어느 버전에서 자식을 어떤 제약으로 요구하는지 모으는
+# 커넥터(feeds/pkgregistry.php). 버전 선정이 틀리면(설치버전 이하가 섞이거나 최신순이 아니면)
+# 조치 후보가 조용히 틀어지고, pip/maven 원문 제약 파싱이 틀리면 이름과 제약이 뒤섞인다.
+run_phpunit "pkgregistry_test.php" "pkgregistry" "레지스트리 메타데이터 커넥터 단위 테스트"
 
 phase "수신 API"
 # --- 수신 API ---------------------------------------------------------------

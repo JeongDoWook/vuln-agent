@@ -226,6 +226,19 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         ' 생성컬럼 - UK(scan_id, container_id, edge_hash)
     }
 
+    entity tb_package_registry_meta {
+        package_registry_meta_id : bigint <<PK>>
+        --
+        manager : string
+        parent_name/version : string
+        child_name : string
+        child_constraint : string
+        ' 원문 그대로(파싱 안 함) - ^2.1, ~1.4, [1.2,2.0) 등
+        collected_at : datetime
+        edge_hash : binary(32)
+        ' 생성컬럼 - UK(edge_hash). scan_id 없음(스캔과 독립 - 레지스트리 사실)
+    }
+
     entity tb_host_address {
         host_address_id : bigint <<PK>>
         --
@@ -333,6 +346,7 @@ tb_user |o--o{ tb_asset_grade_review : "등급 검토자"
 tb_host ||--o{ tb_report_job : "AI 보고서 작업\n(외부 작업큐의 사본)"
 tb_host |o--o{ tb_discovered_asset : "IP 대조로 붙은\n기존 자산(없으면 NULL)"
 tb_container ||..o{ tb_package : "컨테이너 내부\n패키지(container_id)"
+tb_package_dependency }o..o{ tb_package_registry_meta : "부모(manager+name+version)\n값으로 대조 — 다음 상향 버전"
 tb_host_address }o..o| tb_discovered_asset : "IP 값 대조 —\n두 파이프라인의 유일한 접점"
 
 tb_host -[hidden]- tb_asset_grade_review
@@ -349,7 +363,8 @@ tb_exposure -[hidden]- tb_process
 tb_process -[hidden]- tb_pkg_change
 tb_pkg_change -[hidden]- tb_host_account
 tb_host_account -[hidden]- tb_package_dependency
-tb_package_dependency -[hidden]- tb_host_address
+tb_package_dependency -[hidden]- tb_package_registry_meta
+tb_package_registry_meta -[hidden]- tb_host_address
 tb_host_address -[hidden]- tb_host_route
 tb_host_route -[hidden]- tb_remediation_note
 tb_remediation_note -[hidden]- tb_finding_status
