@@ -1,0 +1,257 @@
+@startuml
+' 자동 생성 — 손으로 고치지 않는다. 정본은 erd.puml 이고, docs/specs/gen_table_spec.py 의
+' split_erd_domains() 가 그 package "판정 결과 — 우리 기여(런타임 상태·억제)" 블록만 도메인 분리한 파생물이다.
+' 갱신: SCHEMA_DOCS_UPDATE=1 tests/schema_docs_test.sh 로 erd.puml 을 먼저 갱신 →
+'      docs/specs/diagrams 에서 ./render.sh 로 이 파일과 .svg 를 함께 재생성한다.
+' 옅게 표시된 엔티티(<<ref>>)는 이 도메인이 참조만 하는 다른 도메인 소속 테이블이다 —
+' 관계선이 끊기지 않게 PK 만 남겼다. 전체 그림은 docs/specs/diagrams/erd.svg 참고.
+
+hide circle
+skinparam shadowing false
+skinparam nodesep 12
+skinparam ranksep 22
+skinparam packageStyle rectangle
+skinparam package {
+    BackgroundColor #f6f8fa
+    BorderColor #adb5bd
+    FontColor #57606a
+}
+skinparam entity {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam entity<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+package "판정 결과 — 우리 기여(런타임 상태·억제)" {
+
+    entity tb_finding {
+        finding_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        container_id : bigint
+        cve_id : string
+        package_name : string
+        severity : string
+        runtime_status : string
+        ' EXTERNAL LISTENING RUNNING LOADED INSTALLED
+        in_kev : bool
+        no_fix : bool
+        ' 벤더가 조치 불가로 확인
+    }
+
+    entity tb_finding_evidence {
+        finding_id : bigint <<PK>><<FK>>
+        ' FK-as-PK(1:1 확장) — 명명규칙 예외
+        --
+        match_source : string
+        fixed_version : string
+        source_package : string
+        process_evidence : text
+        network_evidence : text
+        evidence_json : longtext
+    }
+
+    entity tb_finding_status {
+        finding_status_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        container_ref : string
+        ' 컨테이너 이름. '' = 호스트 자신
+        cve_id : string
+        package_name : string
+        ' UK(host_id, container_ref, cve_id, package_name)
+        status : string
+        ' OPEN IN_PROGRESS DONE EXCEPTED
+        note : text
+        updated_user_id : bigint <<FK>>
+    }
+
+    entity tb_suppressed_finding {
+        suppressed_finding_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        cve_id : string
+        package_name : string
+        base_severity : string
+        suppress_reason : string
+    }
+
+    entity tb_pkg_changelog_cve {
+        pkg_changelog_cve_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        package_name : string
+        cve_id : string
+        evidence : string
+    }
+
+    entity tb_applied_errata {
+        applied_errata_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        package_name : string
+        cve_id : string
+        evidence : string
+        ' 권고가 지목한 설치 NEVRA
+    }
+
+    entity tb_debsecan {
+        debsecan_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        cve_id : string
+        package_name : string
+    }
+
+    entity tb_stale_lib {
+        stale_lib_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        comm : string
+        ' 옛 so 를 문 프로세스
+        package_name : string
+        lib_path : string
+    }
+
+    entity tb_cce_finding {
+        cce_finding_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        code : string
+        ssg_rule_id : string
+        result : string
+        ' PASS FAIL NA
+        severity : string
+    }
+
+    entity tb_remediation_note {
+        remediation_note_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        cid : string
+        ' 컨테이너 이름. '' = 호스트 자신
+        cve_id : string
+        package : string
+        ' UK(host_id, cve_id, package, cid)
+        reason : text
+        ' 사람이 쓴 미조치 사유
+        approved_by : bigint
+        approved_at : datetime
+        is_deleted : bool
+    }
+
+    entity tb_compliance_snapshot {
+        compliance_snapshot_id : bigint <<PK>>
+        --
+        snapshot_date : date <<UK>>
+        ' 판정 기준일 - 하루 1건
+        taken_at : datetime
+        is_deleted : bool
+    }
+
+    entity tb_compliance_snapshot_control {
+        compliance_snapshot_control_id : bigint <<PK>>
+        --
+        compliance_snapshot_id : bigint <<FK>>
+        control_key : string
+        ' patch asset secops
+        framework_ids : string
+        status_label : string
+        ' 준수 판정불가 부분준수 미준수
+        violation_count : int
+        unjudged_count : int
+        evidence : json
+    }
+
+' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
+
+    entity tb_host <<ref>> {
+        host_id : bigint <<PK>>
+    }
+
+    entity tb_scan <<ref>> {
+        scan_id : bigint <<PK>>
+    }
+
+    entity tb_cve <<ref>> {
+        cve_id : string <<PK>>
+    }
+
+    entity tb_compliance_rule <<ref>> {
+        compliance_rule_id : bigint <<PK>>
+    }
+
+    entity tb_control_mapping <<ref>> {
+        control_mapping_id : bigint <<PK>>
+    }
+
+    entity tb_debian_tracker <<ref>> {
+        debian_tracker_id : bigint <<PK>>
+    }
+
+    entity tb_ubuntu_oval <<ref>> {
+        ubuntu_oval_id : bigint <<PK>>
+    }
+
+    entity tb_vendor_errata <<ref>> {
+        vendor_errata_id : bigint <<PK>>
+    }
+
+    entity tb_vendor_unfixed <<ref>> {
+        vendor_unfixed_id : bigint <<PK>>
+    }
+
+    entity tb_kernel_cve <<ref>> {
+        cve_id : string <<PK>>
+    }
+}
+
+tb_host ||--o{ tb_remediation_note : "미조치 사유 메모"
+tb_host ||--o{ tb_finding_status : "조치 상태"
+tb_scan ||--o{ tb_finding : "매처 판정"
+tb_scan ||--o{ tb_suppressed_finding : "억제된 건"
+tb_scan ||--o{ tb_pkg_changelog_cve : "억제 근거②"
+tb_scan ||--o{ tb_applied_errata : "억제 근거③"
+tb_scan ||--o{ tb_debsecan : "억제 근거④"
+tb_scan ||--o{ tb_stale_lib : "억제 취소 —\n재시작 필요"
+tb_scan ||--o{ tb_cce_finding : "보안설정 점검"
+tb_finding ||--o| tb_finding_evidence : "판정 근거(1:1)"
+tb_compliance_snapshot ||--o{ tb_compliance_snapshot_control : "통제별 판정 결과"
+tb_cve ||..o{ tb_finding : "취약점"
+tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"
+tb_cce_finding }o..o{ tb_control_mapping : "기준별 통제\n(rule_code = code)"
+tb_remediation_note ||..o{ tb_finding : "자연키(host+cid+cve+package)로\n붙는 사람 메모"
+tb_finding_status ||..o{ tb_finding : "자연키(host+container+cve+package)\n조치 상태"
+tb_debian_tracker }o..|| tb_finding : "데비안 백포트 판정"
+tb_ubuntu_oval }o..|| tb_finding : "우분투 OVAL 판정"
+tb_vendor_errata }o..|| tb_finding : "RHEL 계열 조치 EVR"
+tb_vendor_unfixed }o..|| tb_finding : "조치 불가(no_fix)"
+tb_kernel_cve }o..|| tb_finding : "커널 CVE 판정"
+
+tb_finding -[hidden]- tb_finding_evidence
+tb_finding_evidence -[hidden]- tb_finding_status
+tb_finding_status -[hidden]- tb_suppressed_finding
+tb_suppressed_finding -[hidden]- tb_pkg_changelog_cve
+tb_pkg_changelog_cve -[hidden]- tb_applied_errata
+tb_applied_errata -[hidden]- tb_debsecan
+tb_debsecan -[hidden]- tb_stale_lib
+tb_stale_lib -[hidden]- tb_cce_finding
+tb_cce_finding -[hidden]- tb_remediation_note
+tb_remediation_note -[hidden]- tb_compliance_snapshot
+tb_compliance_snapshot -[hidden]- tb_compliance_snapshot_control
+tb_compliance_snapshot_control -[hidden]- tb_host
+tb_host -[hidden]- tb_scan
+tb_scan -[hidden]- tb_cve
+tb_cve -[hidden]- tb_compliance_rule
+tb_compliance_rule -[hidden]- tb_control_mapping
+tb_control_mapping -[hidden]- tb_debian_tracker
+tb_debian_tracker -[hidden]- tb_ubuntu_oval
+tb_ubuntu_oval -[hidden]- tb_vendor_errata
+tb_vendor_errata -[hidden]- tb_vendor_unfixed
+tb_vendor_unfixed -[hidden]- tb_kernel_cve
+
+@enduml

@@ -615,6 +615,149 @@ def render_xlsx(tables, sqlcom, md):
     return deterministic_xlsx(wb), missing_doc, only_doc
 
 
+# ══ 3부. ERD 도메인 분리 (GitHub 본문 폭 900px 기준 판독 불가 해소) ════════
+# erd.puml 은 6개 package 블록으로 이미 영역이 나뉘어 있다(수집/CVE/벤더/판정/운영/자산).
+# 그 package 정의를 그대로 재사용해 도메인별 .puml 을 파생시킨다 — 새 표를 어느 package 에
+# 넣을지는 사람이 정본(erd.puml)에서 이미 결정하므로, 여기는 그 결정을 따라갈 뿐이다(OCP).
+# erd.svg 처럼 별도로 svg 를 쓰지 않는다 — .puml 파생본은 render.sh(폴더의 *.puml 전수 렌더)가
+# 다음 단계에서 그대로 집어간다.
+
+DIAGRAMS_DIR = ROOT / 'docs/specs/diagrams'
+
+ERD_DOMAIN_FILES = {
+    '수집·인벤토리 — 에이전트가 보내온 원본': 'erd-수집인벤토리',
+    'CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)': 'erd-cve도메인',
+    '벤더·기준 카탈로그 — 배포판·커널·보안설정 기준': 'erd-벤더카탈로그',
+    '판정 결과 — 우리 기여(런타임 상태·억제)': 'erd-판정결과',
+    '피드 운영 · 인증 · 감사': 'erd-피드운영',
+    '자산 탐색 — 관리 대역 스윕(섀도우 IT)': 'erd-자산탐색',
+}
+
+_ERD_PACKAGE_RE = re.compile(r'^package "([^"]+)" \{\n(.*?)\n\}\n', re.M | re.S)
+_ERD_ENTITY_RE = re.compile(r'^( {4}entity (tb_\w+) \{.*?\n {4}\})', re.M | re.S)
+_ERD_RELATION_RE = re.compile(r'^(tb_\w+)\s+[|o{}.\-]+\s+(tb_\w+)\s*:')
+
+
+def parse_erd_packages(erd_text):
+    """package 이름 → {테이블명: 엔티티 전체 블록} 을 erd.puml 본문에서 그대로 뽑는다."""
+    packages = {}
+    for pm in _ERD_PACKAGE_RE.finditer(erd_text):
+        name, body = pm.group(1), pm.group(2)
+        packages[name] = {em.group(2): em.group(1) for em in _ERD_ENTITY_RE.finditer(body)}
+    return packages
+
+
+def parse_erd_relations(erd_text):
+    """관계선(FK 실선 + 애플리케이션 조인 점선)만 순서대로 뽑는다. 배치 전용 hidden 선은
+    라벨(:)이 없어 이 정규식에 애초에 안 걸린다."""
+    body = erd_text.split('@enduml')[0]
+    return [(m.group(1), m.group(2), line)
+            for line in body.split('\n')
+            for m in [_ERD_RELATION_RE.match(line)] if m]
+
+
+def entity_ref_block(entity_block):
+    """다른 도메인 소속 참조 테이블의 축약형 — 키 컬럼(-- 위)만 남기고 <<ref>> 로 옅게 표시."""
+    lines = entity_block.split('\n')
+    head = re.sub(r'^( {4}entity \w+) \{$', r'\1 <<ref>> {', lines[0])
+    out = [head]
+    for line in lines[1:]:
+        s = line.strip()
+        if s == '--':
+            break
+        if not s or s.startswith("'"):
+            continue
+        out.append(line)
+    out.append('    }')
+    return '\n'.join(out)
+
+
+ERD_SPLIT_HEADER = """@startuml
+' 자동 생성 — 손으로 고치지 않는다. 정본은 erd.puml 이고, docs/specs/gen_table_spec.py 의
+' split_erd_domains() 가 그 package "{pkg}" 블록만 도메인 분리한 파생물이다.
+' 갱신: SCHEMA_DOCS_UPDATE=1 tests/schema_docs_test.sh 로 erd.puml 을 먼저 갱신 →
+'      docs/specs/diagrams 에서 ./render.sh 로 이 파일과 .svg 를 함께 재생성한다.
+' 옅게 표시된 엔티티(<<ref>>)는 이 도메인이 참조만 하는 다른 도메인 소속 테이블이다 —
+' 관계선이 끊기지 않게 PK 만 남겼다. 전체 그림은 docs/specs/diagrams/erd.svg 참고.
+
+hide circle
+skinparam shadowing false
+skinparam nodesep 12
+skinparam ranksep 22
+skinparam packageStyle rectangle
+skinparam package {{
+    BackgroundColor #f6f8fa
+    BorderColor #adb5bd
+    FontColor #57606a
+}}
+skinparam entity {{
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}}
+skinparam entity<<ref>> {{
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}}
+
+"""
+
+
+def render_erd_domain_split(pkg_name, packages, relations):
+    native = packages[pkg_name]
+    domain_rel_lines, referenced = [], {}
+    for a, b, line in relations:
+        if a not in native and b not in native:
+            continue
+        domain_rel_lines.append(line)
+        other = b if a in native else a
+        if other in native or other in referenced:
+            continue
+        for ents in packages.values():
+            if other in ents:
+                referenced[other] = entity_ref_block(ents[other])
+                break
+
+    parts = [ERD_SPLIT_HEADER.format(pkg=pkg_name)]
+    parts.append('package "%s" {\n\n' % pkg_name)
+    parts.append('\n\n'.join(native.values()))
+    if referenced:
+        parts.append('\n\n\' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────\n\n')
+        parts.append('\n\n'.join(referenced.values()))
+    parts.append('\n}\n')
+    if domain_rel_lines:
+        parts.append('\n' + '\n'.join(domain_rel_lines) + '\n')
+
+    # 배치 전용 보조선(그려지지 않는다) — erd.puml 의 기법(주석 17~26행)과 같은 이유다.
+    # native·referenced 엔티티가 모두 같은 package 클러스터 안에 있어도, 서로 안 이어진
+    # 컴포넌트가 여러 개면 그래프 배치기가 그것들을 옆으로 늘어놓아 폭이 튄다(실측: 이
+    # 사슬 없이는 6개 분리본 중 5개가 900px 를 넘었다). 선언 순서대로 사슬로 묶어 하나의
+    # 세로 열로 강제한다 — LR 대신 기본(위→아래) 방향과 짝지어야 열이 세로로 쌓인다.
+    # (참조 테이블을 package 밖에 두면 클러스터 경계를 넘는 hidden 선은 그래프비즈가
+    # 클러스터 내부 랭크로 강제하지 못해 ref 열이 옆으로 따로 선다 — 그래서 안에 둔다.)
+    chain = list(native) + list(referenced)
+    if len(chain) > 1:
+        hidden = [f'{chain[i]} -[hidden]- {chain[i + 1]}' for i in range(len(chain) - 1)]
+        parts.append('\n' + '\n'.join(hidden) + '\n')
+
+    parts.append('\n@enduml\n')
+    return ''.join(parts)
+
+
+def split_erd_domains(erd_text):
+    """도메인별 erd-*.puml 딕셔너리(파일 stem → 내용)를 만든다."""
+    packages = parse_erd_packages(erd_text)
+    relations = parse_erd_relations(erd_text)
+    missing = [pkg for pkg in ERD_DOMAIN_FILES if pkg not in packages]
+    if missing:
+        raise RuntimeError('ERD 도메인 분리: erd.puml 에서 package 를 못 찾음 — ' + ', '.join(missing))
+    extra = [pkg for pkg in packages if pkg not in ERD_DOMAIN_FILES]
+    if extra:
+        raise RuntimeError('ERD 도메인 분리: ERD_DOMAIN_FILES 에 없는 package 발견(분리본 누락) — ' + ', '.join(extra))
+    return {stem: render_erd_domain_split(pkg, packages, relations)
+            for pkg, stem in ERD_DOMAIN_FILES.items()}
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='동일 스키마 모델로 DB 문서 산출물을 생성/검사합니다.')
     parser.add_argument('--check', action='store_true', help='추적 산출물과 비교하고 쓰지 않습니다.')
@@ -654,6 +797,8 @@ def main():
     # reviewed sources to enumerate the canonical model before emitting files.
     validate_artifacts(md_wanted, erd_wanted, svg_current, tables)
 
+    split_wanted = split_erd_domains(erd_wanted)
+
     drift = []
     if md_current.encode('utf-8') != md_wanted.encode('utf-8'):
         drift.append(str(DOC.relative_to(ROOT)))
@@ -661,6 +806,10 @@ def main():
         drift.append(str(ERD.relative_to(ROOT)))
     if not XLSX.exists() or XLSX.read_bytes() != xlsx_wanted:
         drift.append(str(XLSX.relative_to(ROOT)))
+    for stem, puml in split_wanted.items():
+        split_path = DIAGRAMS_DIR / f'{stem}.puml'
+        if not split_path.exists() or split_path.read_text(encoding='utf-8') != puml:
+            drift.append(str(split_path.relative_to(ROOT)))
 
     if args.check:
         if drift:
@@ -671,6 +820,10 @@ def main():
     DOC.write_text(md_wanted, encoding='utf-8', newline='\n')
     ERD.write_text(erd_wanted, encoding='utf-8', newline='\n')
     XLSX.write_bytes(xlsx_wanted)
+
+    for stem, puml in split_wanted.items():
+        (DIAGRAMS_DIR / f'{stem}.puml').write_text(puml, encoding='utf-8', newline='\n')
+
     print(f'저장: {XLSX.relative_to(ROOT)} ({len(tables)} 테이블)')
     if missing_doc:
         print(f'  ! 문서 요약표 누락: {missing_doc}')
