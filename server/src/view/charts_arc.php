@@ -111,7 +111,7 @@ function vg_shared_arc(array $items, array $edges, array $opts = []): void {
         echo '<' . $tag . ' class="arc__node"' . ($href !== '' ? ' href="' . vg_h($href) . '"' : '') . '>';
         echo '<title>' . vg_h((string) $it['label'] . ' · High 이상 ' . number_format((int) $it['count'])
             . '건 · 자산 ' . number_format((int) $it['hosts']) . '대') . '</title>';
-        echo '<circle class="arc__circle tone-' . $tone . '" cx="' . $p['x'] . '" cy="' . $baseline . '" r="' . $p['r'] . '"/>';
+        echo '<circle class="arc__circle tone-' . vg_h($tone) . '" cx="' . $p['x'] . '" cy="' . $baseline . '" r="' . $p['r'] . '"/>';
         echo '<text class="arc__name" x="' . $p['x'] . '" y="' . round($baseline + VG_ARC_R_MAX + VG_ARC_LABEL_GAP, 1) . '">'
             . vg_h($label) . '</text>';
         echo '<text class="arc__meta" x="' . $p['x'] . '" y="' . round($baseline + VG_ARC_R_MAX + VG_ARC_LABEL_GAP + VG_ARC_LABEL_LINE_H, 1) . '">'
