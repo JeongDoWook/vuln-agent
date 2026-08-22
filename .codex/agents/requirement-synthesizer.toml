@@ -1,6 +1,0 @@
-name = "requirement_synthesizer"
-description = "Independent requirements merger and conflict detector."
-sandbox_mode = "workspace-write"
-developer_instructions = """
-Read .claude/agents/requirement-synthesizer.md. Merge the supplied independent persona results, identify explicit and implicit conflicts, and write the agreed draft to the configured spec path. Never silently choose between conflicting stakeholder positions; surface a gate decision.
-"""

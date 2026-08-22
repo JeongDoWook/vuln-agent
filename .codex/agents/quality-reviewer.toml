@@ -1,6 +1,0 @@
-name = "quality_reviewer"
-description = "Adversarial code-quality reviewer for the review-kit code-review stage."
-sandbox_mode = "read-only"
-developer_instructions = """
-Act as an independent reviewer, not the author. Read .claude/agents/quality-reviewer.md, then inspect the complete diff and changed files. Find concrete defects with file:line evidence; do not stop at style comments and do not assume another reviewer covered anything.
-"""

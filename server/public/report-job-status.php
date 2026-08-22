@@ -8,7 +8,7 @@ declare(strict_types=1);
  *   우리 job 행(tb_report_job)을 기준으로 외부 GET /jobs/{외부 id} 를 호출해 행을 갱신하고
  *   JSON 으로 돌려준다. 이미 끝난 job 은 외부를 다시 부르지 않는다(report_job.php).
  *   인가는 여기서 확정하고(vg_require_menu), 완성된 보고서를 실제로 내보낼 때는 열람으로
- *   감사로그를 남긴다(CLAUDE.md 원칙 7 — 누가 무엇을 봤는지가 중요한 행위).
+ *   감사로그를 남긴다 — 누가 무엇을 봤는지가 중요한 행위라서다(report-download.php).
  */
 
 header('Content-Type: application/json; charset=utf-8');

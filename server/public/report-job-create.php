@@ -33,7 +33,7 @@ $hostId = filter_input(INPUT_POST, 'id', FILTER_VALIDATE_INT);
 if (!$hostId || $hostId < 1) { report_create_fail(422, '대상 자산을 확인할 수 없습니다.'); }
 
 /* 대상 조회부터 try 안이다 — 이 SELECT 는 **이 변경이 신설한 컬럼**(host_uuid)을 읽는다.
- *   코드가 먼저 배포되고 마이그레이션이 아직 안 돈 창(CLAUDE.md 가 적어 둔 배포 순서 사고)에서는
+ *   dev 는 코드가 먼저 배포되고 마이그레이션이 뒤이어 적용되는 구조라, 그 사이 창에서는
  *   'Unknown column' PDOException 이 뜨는데, try 밖이면 그게 미포착으로 던져져 JSON 대신
  *   PHP 오류가 나가고 이 응답을 기다리는 화면 JS 까지 함께 깨진다. 아래 catch 가 이미
  *   일반화된 메시지로 끊고 상세는 error_log 로만 남긴다. */

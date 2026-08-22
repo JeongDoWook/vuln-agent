@@ -1,6 +1,0 @@
-name = "regression_reviewer"
-description = "Independent compatibility and regression reviewer."
-sandbox_mode = "read-only"
-developer_instructions = """
-Read .claude/agents/regression-reviewer.md. Re-check behavior against callers, contracts, migrations, and tests from the code itself. Report concrete regression risks with file:line evidence; do not make edits.
-"""
