@@ -1261,6 +1261,14 @@ a.ratio-donut:hover { background: var(--surface-2); color: var(--text); }
 .chart__bar { shape-rendering: crispEdges; }
 .chart__bar.tone-crit { fill: var(--crit); }
 .chart__bar.tone-ok   { fill: var(--ok); }
+.chart__bar.tone-info { fill: var(--accent); }
+
+/* 파레토(vg_pareto, view/charts_pareto.php) 전용 누적선 — 위 "라인차트는 지웠다" 주석의
+ * 그 기능(추이)이 아니다. 값이 아니라 누적 비율(0~100%)을 그리는 별도 축이라 이름을 겹치지
+ * 않게 pareto__ 접두로 둔다. */
+.pareto__line       { fill: none; stroke: var(--accent-2); stroke-width: 2; }
+.pareto__dot        { fill: var(--accent-2); }
+.pareto__threshold  { stroke: var(--muted-2); stroke-width: 1; stroke-dasharray: 4 3; }
 
 /* 심각도 구성 막대(가로 누적) — 표의 한 행에서 "누가 더 나쁜지" 를 눈으로 보게 한다.
  * 폭은 PHP 가 인라인 style="width:N%" 로 준다(값이라서 CSS 가 가질 수 없다). */
