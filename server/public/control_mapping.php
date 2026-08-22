@@ -186,6 +186,7 @@ vg_header('통제 기준 매핑', 'control_mapping');
   $status = fn(array $r): array => (int) $r['finding_cnt'] === 0
       ? ['label' => '점검 결과 없음', 'tone' => 'muted']
       : vg_compliance_status((int) $r['fail_cnt'], (int) $r['na_cnt'] > 0, $policy['partial_max']);
+  $naLabel = vg_compliance_status(0, true)['label'];
   ?>
   <?php
   /* 카드 격자 → **표**. 통제가 수십 종이면 카드는 스크롤만 길어지고 "어느 통제가 더 나쁜가" 를
@@ -202,11 +203,12 @@ vg_header('통제 기준 매핑', 'control_mapping');
           // '결과' 는 세 값(FAIL·PASS·판정 불가)이 한 줄에 서야 행 높이가 안 늘어난다 —
           //   18% 로 뒀더니 '판정 불가 455' 가 접혀 행이 3줄이 됐다(실측 1440px).
           ['label' => '결과', 'width' => '23%'],
-          /* 숫자 열이지만 좌측정렬로 둔다 — 이 칸은 숫자 하나가 아니라 [게이지 막대]+[%] 한 쌍이고,
-             막대는 블록이라 칸 폭을 그대로 쓴다. 우측정렬하면(실측) 8% 짜리 막대는 칸 왼쪽 끝에,
+          /* 숫자 열이지만 좌측정렬로 둔다 — 이 칸은 숫자 하나가 아니라 [불릿 그래프]+[%] 한 쌍이고,
+             그래프는 블록이라 칸 폭을 그대로 쓴다. 우측정렬하면(실측) 8% 짜리 막대는 칸 왼쪽 끝에,
              숫자는 180px 떨어진 오른쪽 끝에 서서 둘이 한 값이라는 게 안 읽힌다. 우측정렬 규약은
-             '매핑 점검' 같은 맨숫자 칸이 지킨다. */
-          ['label' => '미준수율', 'width' => '12%',
+             '매핑 점검' 같은 맨숫자 칸이 지킨다. 목표(0%)는 세로 눈금으로, 부분준수 컷라인은
+             배경 밴드로 같이 보인다(vg_bullet — 초기 요청: 원형 게이지 대신 불릿). */
+          ['label' => '미준수율', 'width' => '13%',
            'title' => 'FAIL ÷ 최신 수집 점검 결과. 판정이 아니라 집계다.'],
       ],
       $rows,
@@ -237,14 +239,22 @@ vg_header('통제 기준 매핑', 'control_mapping');
                        . '<div class="why">전체 ' . number_format((int) $r['finding_cnt']) . '건</div>';
               },
               // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. 0% 라 색은 안 보인다.
-              5 => function (array $r) use ($status): string {
+              // 판정 자체가 판정 불가(이력 부족 등 근거 없음)면 0% 막대를 그리지 않는다 —
+              //   위반 0건이 아니라 "볼 수 없다" 이므로, 그리면 없는 준수 사실을 만들어낸다.
+              5 => function (array $r) use ($status, $policy, $naLabel): string {
                   $cnt = (int) $r['finding_cnt'];
                   if ($cnt === 0) { return '<span class="why">–</span>'; }
                   $fail = (int) $r['fail_cnt'];
-                  $tone = $status($r)['tone'];
-                  return vg_meter($tone === 'ok' ? 'low' : $tone, $fail / $cnt * 100,
-                                  'FAIL ' . number_format($fail) . ' / 전체 ' . number_format($cnt) . '건')
-                       . '<span class="why">' . number_format($fail / $cnt * 100, 1) . '%</span>';
+                  $s = $status($r);
+                  if ($s['label'] === $naLabel) {
+                      return vg_bullet('muted', 0, 0, '미준수율 · 판정 불가 — 근거 없음', ['na' => true]);
+                  }
+                  $tone = $s['tone'] === 'ok' ? 'low' : $s['tone'];
+                  $pct = $fail / $cnt * 100;
+                  return vg_bullet($tone, $pct, 0,
+                                  'FAIL ' . number_format($fail) . ' / 전체 ' . number_format($cnt) . '건',
+                                  ['bands' => vg_bullet_bands($policy['partial_max'], $cnt)])
+                       . '<span class="why">' . number_format($pct, 1) . '%</span>';
               },
           ],
       ]

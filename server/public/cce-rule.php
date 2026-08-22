@@ -187,19 +187,33 @@ $policy = vg_compliance_policy();
 $status = $judgedTotal > 0
     ? vg_compliance_status($counts['FAIL'], $counts['NA'] > 0, $policy['partial_max'])
     : ['label' => '점검 결과 없음', 'tone' => 'muted'];
+$naLabel = vg_compliance_status(0, true)['label'];
 ?>
 <div class="split">
   <div class="card">
     <strong>판정 분포</strong>
-    <div class="card__body center">
-      <?php /* 도넛 옆 목록(vg_donut_kpi 의 직접 라벨)이 곧 범례다 — 예전엔 바로 아래에
-               같은 세 줄을 손으로 한 벌 더 그렸는데, 값이 두 곳에 적히면 언젠가 갈린다. */ ?>
-      <?php vg_result_donut([
-          ['tone' => 'crit',  'label' => 'FAIL', 'n' => $counts['FAIL']],
-          ['tone' => 'ok',    'label' => 'PASS', 'n' => $counts['PASS']],
-          ['tone' => 'muted', 'label' => '판정 불가', 'n' => $counts['NA']],
-      ], 132, '이 점검의 판정 분포'); ?>
+    <div class="card__body">
+      <?php /* 도넛(구성비) 대신 불릿을 쓴다 — 이 카드가 답하는 질문은 "PASS·FAIL·판정 불가가
+               몇 대씩인가" 가 아니라 "위반율이 목표(0%) 대비 어디쯤인가" 다. 배경 밴드는
+               control_mapping.php·control.php 와 같은 컷라인(compliance.partial_max)을 쓴다 —
+               같은 계열 화면끼리 기준이 갈리지 않게. 죽은 CSS 걱정은 없다: vg_result_donut·
+               도넛 CSS 는 control.php·sbom.php 가 여전히 쓴다. */ ?>
       <?= vg_badge($status['label'], $status['tone']) ?>
+      <?php if ($judgedTotal === 0): ?>
+        <p class="why">아직 이 항목으로 점검된 자산이 없습니다.</p>
+      <?php elseif ($status['label'] === $naLabel): ?>
+        <?= vg_bullet('muted', 0, 0, '위반율 · 판정 불가 — 근거 없음', ['na' => true]) ?>
+      <?php else:
+          $failPct = $counts['FAIL'] / $judgedTotal * 100;
+      ?>
+        <?= vg_bullet($status['tone'] === 'ok' ? 'low' : $status['tone'], $failPct, 0,
+            'FAIL ' . number_format($counts['FAIL']) . ' / 전체 ' . number_format($judgedTotal) . '건',
+            ['bands' => vg_bullet_bands($policy['partial_max'], $judgedTotal)]) ?>
+        <p class="why">FAIL <?= number_format($counts['FAIL']) ?>
+          <?php if ($counts['PASS'] > 0): ?>· PASS <?= number_format($counts['PASS']) ?><?php endif; ?>
+          <?php if ($counts['NA'] > 0): ?>· 판정 불가 <?= number_format($counts['NA']) ?><?php endif; ?>
+          · 위반율 <?= number_format($failPct, 1) ?>%</p>
+      <?php endif; ?>
     </div>
   </div>
   <div class="card">

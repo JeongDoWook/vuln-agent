@@ -1505,6 +1505,40 @@ td details[open] summary { margin-bottom: .35rem; }
    meter-- 는 ui_lint 의 동적 접두사라 죽은 클래스 검사에도 안 걸리는 자리다. */
 .meter--ok   > i { background: var(--ok); }
 
+/* 불릿 그래프(Stephen Few) — vg_bullet()(view/charts_bullet.php). meter 와 달리 배경에
+   등급 밴드(양호/주의/미흡)와 목표선(세로 눈금)이 더 있어 "목표 대비 지금 어디쯤인가"를
+   한 줄로 답한다. 서버 렌더 SVG 라 폭 계산도 viewBox(0 0 100 10)의 도형 속성이 하고,
+   인라인 style 은 전혀 안 쓴다(ui_lint 검사 2번 대상 밖). */
+.bullet { min-width: 90px; }
+.bullet__svg { display: block; width: 100%; height: 16px; }
+.bullet__band { fill: var(--sunken); }
+.bullet__band--good { fill: var(--ok-bg); }
+.bullet__band--warn { fill: var(--med-bg); }
+.bullet__band--poor { fill: var(--crit-bg); }
+/* 값 막대 톤은 meter--* 와 같은 색 매핑이다(vg_meter 와 같은 어휘를 쓰는 화면들이 그대로
+   드롭인할 수 있게) — tone- 는 ui_lint 의 동적 접두사(badge.php vg_badge 주석 참고)라
+   여기서 새로 등록할 필요가 없다. */
+.bullet__bar { fill: var(--muted-2); }
+.bullet__bar.tone-crit { fill: var(--crit); }
+.bullet__bar.tone-high { fill: var(--high); }
+.bullet__bar.tone-med  { fill: var(--med); }
+.bullet__bar.tone-low  { fill: var(--low); }
+.bullet__bar.tone-ok   { fill: var(--ok); }
+.bullet__target { fill: var(--text); }
+.bullet--na { display: flex; align-items: center; min-height: 16px; }
+
+/* 조치 기한 소진 — vg_sla_burn(). 등급별로 기한 안(초록)·초과(빨강)을 한 줄에 쌓는다.
+   compliance.php 상단 전용이라 폭이 넓다(불릿보다 큰 글자·큰 트랙). */
+.sla-burn { display: flex; flex-direction: column; gap: .55rem; }
+.sla-burn__row { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
+.sla-burn__label { min-width: 5.2rem; font-weight: 600; }
+.sla-burn__bar, .sla-burn__track { flex: 1 1 220px; min-width: 160px; }
+.sla-burn__bar { display: block; height: 10px; border-radius: var(--r-xs); overflow: hidden; }
+.sla-burn__seg.tone-ok   { fill: var(--ok); }
+.sla-burn__seg.tone-crit { fill: var(--crit); }
+.sla-burn__pct { font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 5rem; text-align: right; }
+.sla-burn__na { white-space: nowrap; }
+
 /* 큰 점수 표시(사이드바 최상단) */
 .score { font-size: var(--fs-num-lg); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text); }
 .score small { font-size: var(--fs-md); font-weight: 600; color: var(--muted); }

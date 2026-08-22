@@ -289,7 +289,7 @@ vg_hero(
                     return '<code class="why">' . vg_h((string) $r['code']) . '</code>'
                          . ($title !== '' ? '<br>' . $title : '');
                 },
-                1 => function ($r) {
+                1 => function ($r) use ($policy) {
                     if ((int) $r['result_cnt'] === 0) { return vg_badge('점검 결과 없음', 'muted'); }
                     $cnt  = (int) $r['result_cnt'];
                     $fail = (int) $r['fail_cnt'];
@@ -302,10 +302,14 @@ vg_hero(
                     $why  = implode(' · ', $parts);
                     // 항목별 위반 비율 — 자산 수가 제각각이라 "FAIL 3" 만으로는 크기를 못 읽는다.
                     //   meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. 0% 라 색은 안 보인다.
+                    //   목표(0%)·부분준수 컷라인(배경 밴드)은 이 통제의 판정 컷라인과 같은
+                    //   값(compliance.partial_max)을 쓴다 — 이 칸 자체의 톤(FAIL 유무의 이분법)과
+                    //   달라도, 밴드는 이 화면 5종이 공유하는 같은 기준을 보여줄 뿐이다.
                     return vg_badge('FAIL ' . number_format($fail), $tone)
                          . ($why === '' ? '' : '<br><span class="why">' . vg_h($why) . '</span>')
-                         . vg_meter($tone === 'ok' ? 'low' : $tone, $fail / $cnt * 100,
-                                    'FAIL ' . number_format($fail) . ' / 점검 ' . number_format($cnt) . '건');
+                         . vg_bullet($tone === 'ok' ? 'low' : $tone, $fail / $cnt * 100, 0,
+                                    'FAIL ' . number_format($fail) . ' / 점검 ' . number_format($cnt) . '건',
+                                    ['bands' => vg_bullet_bands($policy['partial_max'], $cnt)]);
                 },
                 // 없는 설명·조치는 '준비 중' 으로 채우지 않는다 — 빈 칸이 '아직 없다' 를 그대로 말하고,
                 //   자리표시 문구는 실제로 적힌 설명과 같은 무게로 읽혀 훑을 때 걸린다.
