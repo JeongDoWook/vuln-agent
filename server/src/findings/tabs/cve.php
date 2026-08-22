@@ -2,7 +2,7 @@
 /**
  * findings/tabs/cve.php — CVE 탭(경고 · 등급·노출 도넛 · 조치 성격 · 툴바 · 표).
  *   쓰는 값(findings.php 가 $ctx 로 넘긴다):
- *     $unsupBy $actionCounts $runtimeCounts $counts $notes $firstSeen $policy
+ *     $unsupBy $actionCounts $runtimeCounts $riskCombo $counts $notes $firstSeen $policy
  *     $rows $total $page $perPage $scan $scanId $hostId $hostOptions
  *     $q $sev $st $fx $fst $sort $stOptions
  */
@@ -119,44 +119,37 @@
   }, ['title_attr' => '수집된 노출 상태별 구성 — 가운데 숫자는 지금 외부·로컬에서 닿거나'
                     . ' 실행 중인 것의 합입니다']);
 
-  /* 세 번째 카드 — **셋을 한 도넛에 넣을 수 없는 셋**. 그래서 값마다 제 고리를 준다
-   *   (vg_ratio_donuts — 미니 도넛 3개, 각자 자기 분모).
-   * 왜 한 도넛으로 못 묶나: 도넛은 구성비라 조각이 서로 겹치면 안 되는데 셋은 겹친다.
-   *   기한 초과는 KEV 의 부분집합이고(기한 초과 ⊂ KEV), 재시작 필요는 KEV·기한 초과와 독립이라
-   *   같은 1건이 두 조각에 동시에 들어간다. 모집단도 갈린다 — 기한 초과만 High 이상 KEV 안에서
-   *   세고 나머지 둘은 전 등급이다(dev 실측: 전체 8,924 · KEV 168 · 재시작 5,933 · 기한 초과 2).
-   *   **한 고리에 넣으면 합이 거짓말이 된다.**
-   * 그럼 왜 지금 고리가 셋인가: 옆 카드 둘이 도넛인데 이 칸만 숫자 세 줄이라 어휘가 갈렸고,
-   *   목록이 카드 위쪽에 붙어 아래가 비었다(사용자 지적 — "여기도 왼쪽처럼 원형 통일"). 겹치는
-   *   값을 한 고리에 넣는 대신 **셋을 따로 그리면** 겹침·모집단 문제가 그대로 사라진다.
-   *   조각 하나짜리 고리가 100%로 읽히는 문제는 **분모를 글자로 함께 적어** 푼다
-   *   (`2 / 168 조치 기한 대상` — 이 줄은 장식이 아니라 vg_ratio_donuts 의 계약이다).
-   * 분모는 값마다 다르다: 기한 초과는 **기한을 따질 수 있는 것**(미조치 High 이상 KEV)이 분모고,
-   *   KEV·재시작은 전체 탐지가 분모다. 분모를 하나로 통일하면 그 순간 다시 거짓말이 된다.
-   * data-action-queue 는 계약이다(tests/ui_structure_test.php) — 카드가 그대로 들고 간다. */
-  vg_card('조치 성격', static function () use ($actionCounts, $fx): void {
-      $all = (int) ($actionCounts['total'] ?? 0);
-      vg_ratio_donuts([
-          ['label' => '기한 초과', 'value' => (int) $actionCounts['overdue'], 'tone' => 'crit',
-           'base' => (int) ($actionCounts['overdue_base'] ?? 0), 'base_label' => '조치 기한 대상',
-           'title' => 'KEV 중 조치 기한을 넘긴 미조치 · 기한 임박순으로 봅니다',
-           'href' => vg_qs(['sev' => 'HIGH+', 'fx' => 'overdue', 'sort' => 'due', 'st' => null, 'page' => 1]),
-           'selected' => $fx === 'overdue'],
-          ['label' => 'KEV 등재', 'value' => (int) $actionCounts['kev'], 'tone' => 'high',
-           'base' => $all, 'base_label' => '전체 탐지',
-           'title' => '실제 악용이 확인된 취약점(CISA KEV) · 등급과 무관하게 셉니다',
-           'href' => vg_qs(['sev' => null, 'fx' => 'kev', 'st' => null, 'page' => 1]),
-           'selected' => $fx === 'kev'],
-          ['label' => '재시작 필요', 'value' => (int) $actionCounts['restart'], 'tone' => 'med',
-           'base' => $all, 'base_label' => '전체 탐지',
-           'title' => '패치는 됐고 재시작·재부팅만 하면 해결되는 것',
-           'href' => vg_qs(['sev' => null, 'fx' => 'restart', 'st' => null, 'page' => 1]),
-           'selected' => $fx === 'restart'],
+  /* 세 번째 카드 — **위험 조합**(vg_risk_combo). 노출(exposed) · 벤더 미수정(no_fix) ·
+   *   KEV(in_kev) 세 조건이 겹치는 지점을 벤 다이어그램으로 보여준다. 상용 SCA 제품(Wiz·Orca)이
+   *   'toxic combination' 이라 부르는 것과 같다 — 세 값은 이미 findings/queries/cve.php 가
+   *   한 쿼리로 갖고 있었는데, 어느 화면도 그 겹침 자체를 보여주지 않았다(실측: 최신 스캔
+   *   High 이상에서 노출∩미수정이 591건인데 KEV 뱃지가 붙는 3건은 외부에 열려 있지도 않았다 —
+   *   지금 화면이 붉게 띄우는 것과 실제로 가장 급한 것이 서로 달랐다).
+   * 예전엔 이 칸이 vg_ratio_donuts(미니 도넛 3개 — KEV·재시작·기한초과, 각자 자기 분모)였다.
+   *   그 셋(기한 초과 ⊂ KEV, 재시작은 독립)은 부분집합·독립집합이 섞여 있어 벤으로 그릴 이야기가
+   *   아니었지만, 노출·미수정·KEV 는 셋 다 서로 독립이면서 실제로 겹치는 값이라 벤이 맞는 그림이다.
+   *   재시작 필요는 이 카드에서 빠졌다 — 조치 성격이 아니라 위험 조합을 보여주는 자리로 바뀌었고,
+   *   재시작 대상은 툴바의 '조치 가능성' 필터(fx=restart)로 여전히 걸러볼 수 있다.
+   * data-action-queue 는 계약이다(tests/ui_structure_test.php) — 카드가 그대로 들고 간다.
+   *   (그 테스트가 찾는 문자열은 이 카드 안이 아니라 같은 파일의 fx 툴바 옵션이라 안 깨진다.) */
+  vg_card('조치 성격', static function () use ($riskCombo, $st, $fx): void {
+      vg_risk_combo($riskCombo, [
+          'links' => [
+              // 단독 조건 — 이미 걸린 다른 필터는 그대로 두고 이 조건만 얹거나(또는 풀거나) 한다.
+              'exposed'       => vg_qs(['st' => $st === 'EXTERNAL' ? '' : 'EXTERNAL', 'page' => 1]),
+              'no_fix'        => vg_qs(['fx' => $fx === 'nofix' ? '' : 'nofix', 'page' => 1]),
+              'kev'           => vg_qs(['fx' => $fx === 'kev' ? '' : 'kev', 'page' => 1]),
+              // 두 조건 조합 — st·fx 는 서로 다른 필터라 함께 걸 수 있다(목록 쿼리가 AND 로 합친다).
+              'exposed_nofix' => vg_qs(['st' => 'EXTERNAL', 'fx' => 'nofix', 'page' => 1]),
+              'exposed_kev'   => vg_qs(['st' => 'EXTERNAL', 'fx' => 'kev', 'page' => 1]),
+              // 미수정 ∩ KEV·셋 다는 링크가 없다 — fx 는 값을 하나만 담는 단일 선택이라
+              //   'nofix' 와 'kev' 를 동시에 못 싣는다(가능한 조합만 링크하라는 원칙).
+          ],
       ]);
   }, [
       'attrs'      => ['data-action-queue' => true],
-      'title_attr' => '셋은 서로 겹치고 모집단도 달라 한 도넛(구성비)에 넣지 않습니다'
-                    . ' — 고리마다 자기 분모가 아래에 적혀 있습니다',
+      'title_attr' => '노출·벤더 미수정·KEV 세 조건이 겹치는 지점 — 상용 SCA 제품이 말하는'
+                    . ' "위험 조합(toxic combination)" 입니다',
   ]);
   ?>
   </div>

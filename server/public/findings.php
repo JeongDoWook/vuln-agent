@@ -88,6 +88,9 @@ $expCveCounts = [];                                   // 노출 행 → 그 실�
 $actionCounts = ['kev' => 0, 'restart' => 0, 'overdue' => 0, 'total' => 0, 'overdue_base' => 0];
 // 노출 상태 도넛(cve 탭). 키·순서의 정본은 VG_RUNTIME_DONUT 이다 — 여기서 다시 나열하지 않는다.
 $runtimeCounts = array_fill_keys(array_keys(VG_RUNTIME_DONUT), 0);
+// 위험 조합(cve 탭 '조치 성격' 카드 — vg_risk_combo). 키는 findings/queries/cve.php 의 $riskCombo 와 같다.
+$riskCombo = ['total' => 0, 'exposed' => 0, 'no_fix' => 0, 'kev' => 0,
+              'exposed_nofix' => 0, 'exposed_kev' => 0, 'nofix_kev' => 0, 'all3' => 0];
 
 $q   = trim((string) ($_GET['q'] ?? ''));
 $sev = (string) ($_GET['sev'] ?? '');
@@ -186,7 +189,7 @@ try {
         ]);
         $rows = $r['rows']; $total = $r['total'];
         $counts = $r['counts']; $actionCounts = $r['actionCounts'];
-        $runtimeCounts = $r['runtimeCounts'];
+        $runtimeCounts = $r['runtimeCounts']; $riskCombo = $r['riskCombo'];
         $notes = $r['notes']; $firstSeen = $r['firstSeen']; $policy = $r['policy'];
         $ctrLabel = $r['ctrLabel'];
     }
@@ -284,7 +287,7 @@ $typeHome = $type === 'cve' ? '/findings.php' : '/findings.php?type=' . $type;
       'res' => $res, 'scope' => $scope, 'type' => $type,
       'sevOptions' => $sevOptions, 'stOptions' => $stOptions, 'scopeOptions' => $scopeOptions,
       'unsupBy' => $unsupBy, 'counts' => $counts, 'actionCounts' => $actionCounts,
-      'runtimeCounts' => $runtimeCounts,
+      'runtimeCounts' => $runtimeCounts, 'riskCombo' => $riskCombo,
       'notes' => $notes, 'firstSeen' => $firstSeen, 'policy' => $policy,
       'cceResultCounts' => $cceResultCounts, 'cceFailSevCounts' => $cceFailSevCounts,
       'scopeCounts' => $scopeCounts, 'expProcCounts' => $expProcCounts,
