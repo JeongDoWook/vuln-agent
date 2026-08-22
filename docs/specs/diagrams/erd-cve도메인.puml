@@ -97,13 +97,13 @@ package "CVE 도메인 — 검증된 피드에서 상속(스캔과 독립)" {
         cve_id : string
         ' UK(advisory_id, cve_id)
     }
-}
 
 ' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
 
     entity tb_finding <<ref>> {
         finding_id : bigint <<PK>>
     }
+}
 
 tb_advisory ||--o{ tb_advisory_cve : "공지 ↔ CVE 정션"
 tb_cve ||..o{ tb_cve_affected_package : "영향 패키지"

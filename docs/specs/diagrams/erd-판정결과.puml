@@ -166,7 +166,6 @@ package "판정 결과 — 우리 기여(런타임 상태·억제)" {
         unjudged_count : int
         evidence : json
     }
-}
 
 ' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
 
@@ -209,6 +208,7 @@ package "판정 결과 — 우리 기여(런타임 상태·억제)" {
     entity tb_kernel_cve <<ref>> {
         cve_id : string <<PK>>
     }
+}
 
 tb_host ||--o{ tb_remediation_note : "미조치 사유 메모"
 tb_host ||--o{ tb_finding_status : "조치 상태"

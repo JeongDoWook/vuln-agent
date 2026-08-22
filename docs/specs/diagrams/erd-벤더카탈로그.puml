@@ -145,7 +145,6 @@ package "벤더·기준 카탈로그 — 배포판·커널·보안설정 기준"
         remediation : text
         ' 조치 방법(파일·지시어 수준)
     }
-}
 
 ' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
 
@@ -156,6 +155,7 @@ package "벤더·기준 카탈로그 — 배포판·커널·보안설정 기준"
     entity tb_finding <<ref>> {
         finding_id : bigint <<PK>>
     }
+}
 
 tb_kernel_cve ||--o{ tb_kernel_cve_fix : "stable 시리즈별\n조치버전"
 tb_compliance_rule ||..o{ tb_cce_finding : "SSG 룰(ssg_rule_id)"

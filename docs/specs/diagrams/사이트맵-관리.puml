@@ -1,12 +1,12 @@
 @startuml 사이트맵-관리
 ' vuln-agent §6 웹 화면 구성 (사이트맵 · 인증) — 관리·설정 계열 도메인 분리본
 ' 정본은 사이트맵.puml 전체다. 이 파일은 사용자·권한·에이전트 키·감사로그·운영 설정과
-' 로그인 사용자 전원의 프로필만 추린 것 — GitHub 본문 폭(약 900px)에서 전체본(4489px대)이
+' 로그인 사용자 전원의 프로필만 추린 것 — GitHub 본문 폭(약 900px)에서 전체본(정확한 폭은 README.md 사이트맵 절 참고)이
 ' 판독 불가라 도메인별로 나눴다. 손으로 고친다 — 사이트맵.puml 을 고쳤으면 이 분리본도
 ' 같이 갱신한다(README.md 사이트맵 절 참고).
 '
-' 이 도메인은 다른 화면과 오가는 링크가 대시보드 진입 하나뿐이다(관리 화면은 사이드바에서만
-' 진입하는 독립 CRUD 화면들이라 서로 오가지 않는다).
+' 이 도메인은 다른 화면과 오가는 링크가 로그인·대시보드 진입 두 곳뿐이다(관리 화면은
+' 사이드바에서만 진입하는 독립 CRUD 화면들이라 서로 오가지 않는다).
 
 skinparam wrapWidth 230
 skinparam nodesep 4
@@ -22,6 +22,7 @@ skinparam rectangle<<ref>> {
     FontColor #8c959f
 }
 
+rectangle "/login.php\n세션 로그인 · CSRF" as LOGIN <<ref>>
 rectangle "/ 대시보드" as DASH <<ref>>
 
 rectangle "/users.php · /user.php\n«users»\n사용자 목록 · 상세\n(역할변경·비번초기화·삭제)" as USERS
@@ -32,9 +33,11 @@ rectangle "/settings.php «settings»\n운영 설정(SLA·판정 임계값)" as 
 ' 사이드바 밖 — 상단바 사용자 메뉴. 로그인 사용자 전원(메뉴 권한 없음).
 rectangle "/profile.php «로그인만»\n내 프로필\n본인 비밀번호 변경" as PROF
 
+LOGIN --> DASH : 인증 성공
 DASH --> PROF : 상단바 사용자 메뉴
 
 ' ── 보이지 않는 배치용 선 ──────────────────────────────────
+LOGIN -[hidden]down- USERS
 USERS -[hidden]down- PERM
 PERM  -[hidden]down- ATOK
 ATOK  -[hidden]down- ACT

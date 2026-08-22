@@ -249,7 +249,6 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         first_seen : datetime
         last_seen : datetime
     }
-}
 
 ' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
 
@@ -300,6 +299,7 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
     entity tb_discovered_asset <<ref>> {
         discovered_asset_id : bigint <<PK>>
     }
+}
 
 tb_host ||--o{ tb_scan : "수집 이력"
 tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"

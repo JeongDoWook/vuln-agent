@@ -85,7 +85,6 @@ package "자산 탐색 — 관리 대역 스윕(섀도우 IT)" {
         banner : string
         ' HTTP Server 헤더 또는 TLS CN
     }
-}
 
 ' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
 
@@ -96,6 +95,7 @@ package "자산 탐색 — 관리 대역 스윕(섀도우 IT)" {
     entity tb_host_address <<ref>> {
         host_address_id : bigint <<PK>>
     }
+}
 
 tb_discovery_target ||--o{ tb_discovery_run : "대역 스윕 실행 이력"
 tb_discovery_target ||--o{ tb_discovered_asset : "발견한 IP\n(대역 기준 누적)"

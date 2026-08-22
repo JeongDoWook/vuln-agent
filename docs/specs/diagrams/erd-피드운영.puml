@@ -119,7 +119,6 @@ package "피드 운영 · 인증 · 감사" {
         setting_value : string
         description : string
     }
-}
 
 ' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
 
@@ -130,6 +129,7 @@ package "피드 운영 · 인증 · 감사" {
     entity tb_host <<ref>> {
         host_id : bigint <<PK>>
     }
+}
 
 tb_feed_connector ||--o{ tb_feed_collection_log : "수집 이력"
 tb_user |o--o{ tb_asset_grade_review : "등급 검토자"

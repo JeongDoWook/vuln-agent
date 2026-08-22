@@ -721,19 +721,20 @@ def render_erd_domain_split(pkg_name, packages, relations):
     parts = [ERD_SPLIT_HEADER.format(pkg=pkg_name)]
     parts.append('package "%s" {\n\n' % pkg_name)
     parts.append('\n\n'.join(native.values()))
-    parts.append('\n}\n')
     if referenced:
-        parts.append('\n\' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────\n\n')
+        parts.append('\n\n\' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────\n\n')
         parts.append('\n\n'.join(referenced.values()))
-        parts.append('\n')
+    parts.append('\n}\n')
     if domain_rel_lines:
         parts.append('\n' + '\n'.join(domain_rel_lines) + '\n')
 
     # 배치 전용 보조선(그려지지 않는다) — erd.puml 의 기법(주석 17~26행)과 같은 이유다.
-    # 분리본은 도메인 하나짜리 package + 느슨하게 연결된 참조 테이블이라, 서로 안 이어진
+    # native·referenced 엔티티가 모두 같은 package 클러스터 안에 있어도, 서로 안 이어진
     # 컴포넌트가 여러 개면 그래프 배치기가 그것들을 옆으로 늘어놓아 폭이 튄다(실측: 이
     # 사슬 없이는 6개 분리본 중 5개가 900px 를 넘었다). 선언 순서대로 사슬로 묶어 하나의
     # 세로 열로 강제한다 — LR 대신 기본(위→아래) 방향과 짝지어야 열이 세로로 쌓인다.
+    # (참조 테이블을 package 밖에 두면 클러스터 경계를 넘는 hidden 선은 그래프비즈가
+    # 클러스터 내부 랭크로 강제하지 못해 ref 열이 옆으로 따로 선다 — 그래서 안에 둔다.)
     chain = list(native) + list(referenced)
     if len(chain) > 1:
         hidden = [f'{chain[i]} -[hidden]- {chain[i + 1]}' for i in range(len(chain) - 1)]
@@ -750,6 +751,9 @@ def split_erd_domains(erd_text):
     missing = [pkg for pkg in ERD_DOMAIN_FILES if pkg not in packages]
     if missing:
         raise RuntimeError('ERD 도메인 분리: erd.puml 에서 package 를 못 찾음 — ' + ', '.join(missing))
+    extra = [pkg for pkg in packages if pkg not in ERD_DOMAIN_FILES]
+    if extra:
+        raise RuntimeError('ERD 도메인 분리: ERD_DOMAIN_FILES 에 없는 package 발견(분리본 누락) — ' + ', '.join(extra))
     return {stem: render_erd_domain_split(pkg, packages, relations)
             for pkg, stem in ERD_DOMAIN_FILES.items()}
 
@@ -793,6 +797,8 @@ def main():
     # reviewed sources to enumerate the canonical model before emitting files.
     validate_artifacts(md_wanted, erd_wanted, svg_current, tables)
 
+    split_wanted = split_erd_domains(erd_wanted)
+
     drift = []
     if md_current.encode('utf-8') != md_wanted.encode('utf-8'):
         drift.append(str(DOC.relative_to(ROOT)))
@@ -800,6 +806,10 @@ def main():
         drift.append(str(ERD.relative_to(ROOT)))
     if not XLSX.exists() or XLSX.read_bytes() != xlsx_wanted:
         drift.append(str(XLSX.relative_to(ROOT)))
+    for stem, puml in split_wanted.items():
+        split_path = DIAGRAMS_DIR / f'{stem}.puml'
+        if not split_path.exists() or split_path.read_text(encoding='utf-8') != puml:
+            drift.append(str(split_path.relative_to(ROOT)))
 
     if args.check:
         if drift:
@@ -811,7 +821,7 @@ def main():
     ERD.write_text(erd_wanted, encoding='utf-8', newline='\n')
     XLSX.write_bytes(xlsx_wanted)
 
-    for stem, puml in split_erd_domains(erd_wanted).items():
+    for stem, puml in split_wanted.items():
         (DIAGRAMS_DIR / f'{stem}.puml').write_text(puml, encoding='utf-8', newline='\n')
 
     print(f'저장: {XLSX.relative_to(ROOT)} ({len(tables)} 테이블)')
