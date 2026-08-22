@@ -122,6 +122,7 @@ DYNAMIC_PREFIXES=(
   'sev-'          # format.php vg_sev_row()        : 'sev-' . VG_TONE_SEV[...]
   'is-'           # assets/app.js : 'collection-item is-' + command.status, classList.toggle
   'chart__lbl--'  # view/charts.php : 'chart__lbl--' . $edge (start|end)
+  'horizon__band--' # view/charts_spark.php vg_horizon() : 'horizon__band--' . ($b + 1)
 )
 
 # 정의: app.css 의 선택자에 나오는 클래스. 주석과 url(...) 은 걷어낸다 — 주석 속

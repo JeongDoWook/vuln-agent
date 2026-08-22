@@ -1,9 +1,0 @@
-[agents]
-enabled = true
-max_concurrent_threads_per_session = 8
-
-# 하위 에이전트가 도는 일이 곧 적대적 리뷰·설계 리스크 분석이다 — 저자 패스보다 약하면
-# 놓친 결함이 그대로 컷라인을 통과한다(kit/workflow/guardrails.md §5).
-# Claude 쪽 진입점은 전 관점을 opus로 돌리므로, Codex 쪽만 high로 캡을 걸면 같은 방법론이
-# 진입점에 따라 다른 탐지력을 갖게 된다. 비용보다 재작업 비용이 크다는 판단.
-default_subagent_reasoning_effort = "xhigh"

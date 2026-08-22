@@ -33,6 +33,18 @@ const VG_DEPTREE_PAD     = 12;          // SVG 바깥 여백
 const VG_DEPTREE_CHAR_W  = 6.4;         // 12px 글자 한 칸의 근사폭 — 이름 말줄임 계산용
 const VG_DEPTREE_META_W  = 82;          // 노드 오른쪽 칸(버전/심각도 배지)의 폭
 const VG_DEPTREE_ELBOW_R = 10;          // 엣지가 꺾이는 모서리의 반지름(직각을 둥글린다)
+const VG_DEPTREE_ROLE_CHAR_W = 11.0;    // 역할 표식(한글) 한 글자의 근사폭 — 라틴 문자보다 넓다
+
+/* ── 조치방안 카드의 "경로만 뽑은" 세로 그림(작은 SVG) 배치 상수 ───────────────
+ *   전체 트리(가로 계층)와는 다른 작은 그림이라 좌표계를 따로 둔다 — 다만 색·톤 어휘
+ *   (tone-crit 등)는 그대로 재사용한다(app.css 의 .deptree__accent·.deptree__pill). */
+const VG_DEPTREE_MINI_W       = 420;    // 그림 폭(px)
+const VG_DEPTREE_MINI_ROW_H   = 30;     // 노드 한 줄 높이
+const VG_DEPTREE_MINI_PAD     = 12;     // 위아래·왼쪽 여백
+const VG_DEPTREE_MINI_DOT_R   = 5;      // 노드 점 반지름
+const VG_DEPTREE_MINI_CHAR_W  = 6.4;    // 이름(라틴) 한 글자의 근사폭 — 위 VG_DEPTREE_CHAR_W 와 동일
+const VG_DEPTREE_MINI_VER_W   = 50;     // 버전 칸 폭
+const VG_DEPTREE_MINI_NOTE_W  = 140;    // 오른쪽 역할/배지 칸 폭(세로 그림이라 이름 칸을 넉넉히 준다)
 
 /* 깊이별 엣지 클래스 — 루트에서 멀어질수록 옅어져 흐름이 눈에 잡힌다(색이 아니라 농도).
  *   문자열로 조립하지 않고 리터럴 배열로 둔다: ui_lint.sh 의 "아무도 안 쓰는 CSS 클래스"
@@ -99,13 +111,18 @@ function vg_deptree_url(int $hostId, int $cid, array $over = []): string
 }
 
 /**
- * 노드의 표시 역할(루트/대상/기타). 목록 라벨과 SVG 노드가 같은 판정을 쓰게 한곳에 둔다.
- *   $ctx: ['roots' => [키 => true], 'target' => 대상 키] — 아래 렌더 함수들과 같은 배열이다.
+ * 노드의 표시 역할(루트/대상/올릴 부모/기타). 목록 라벨과 SVG 노드가 같은 판정을 쓰게 한곳에 둔다.
+ *   $ctx: ['roots' => [키 => true], 'target' => 대상 키, 'fixparents' => [키 => true](선택)]
+ *         — 아래 렌더 함수들과 같은 배열이다.
+ *   fixparents 는 vg_pkgdep_origin() 의 parents(전이일 때 실제로 올려야 할 루트 직속 조상)다 —
+ *   depgraph.php 의 조치방안 문장이 가리키는 바로 그 부모라, 트리 위에서도 같은 노드를
+ *   "올릴 부모" 로 짚어야 문장과 그림이 어긋나지 않는다.
  */
 function vg_deptree_role(string $key, array $ctx): string
 {
     if (isset($ctx['roots'][$key])) { return 'root'; }
     if ($key !== '' && $key === (string) ($ctx['target'] ?? '')) { return 'target'; }
+    if (isset($ctx['fixparents'][$key])) { return 'fixparent'; }
     return 'other';
 }
 
@@ -218,13 +235,16 @@ function vg_deptree_layout(array $graph, string $root, int &$budget, array $onPa
  *   좌표·크기는 SVG 속성이라 CSS 가 가질 수 없다. 색은 전부 class 로만 준다(app.css 소유).
  *
  *   $ctx: ['sev' => [키 => 심각도], 'roots' => [키 => true], 'target' => 키, 'link' => callable,
- *          'path' => [키 => true](강조 경로 위의 노드)]
+ *          'path' => [키 => true](강조 경로 위의 노드), 'pathedge' => [이음 => true](비어 있지
+ *          않으면 "지금 강조 중" — 경로 밖 노드를 흐리게 누르고 역할 표식을 켠다),
+ *          'fixparents' => [키 => true](올려야 할 부모, 선택)]
  */
 function vg_deptree_node_svg(array $n, array $ctx): string
 {
-    $p    = vg_pkgdep_parts((string) $n['key']);
-    $sev  = (string) ($ctx['sev'][$n['key']] ?? '');
-    $role = vg_deptree_role((string) $n['key'], $ctx);
+    $key  = (string) $n['key'];
+    $p    = vg_pkgdep_parts($key);
+    $sev  = (string) ($ctx['sev'][$key] ?? '');
+    $role = vg_deptree_role($key, $ctx);
     $tone = $sev !== '' ? vg_sev_tone($sev) : ($role === 'root' ? 'info' : 'muted');
     // 면을 칠하는 건 조치 대상 등급뿐이다(위 주석). 나머지는 지금까지처럼 중립 박스다.
     $fill = in_array($tone, VG_DEPTREE_FILL_TONES, true) ? ' tone-' . $tone : '';
@@ -233,9 +253,25 @@ function vg_deptree_node_svg(array $n, array $ctx): string
     $y   = round((float) $n['y'], 1);
     $top = round($y - VG_DEPTREE_NODE_H / 2, 1);
 
+    // 강조가 켜져 있는지(대상 패키지가 지정돼 실제 경로가 있는지)와, 이 노드가 그 위에 있는지.
+    $highlightOn = !empty($ctx['pathedge']);
+    $isPathNode  = isset($ctx['path'][$key]);
+
+    // 역할 표식(루트/올릴 부모/취약) — 강조 중인 경로 위의 세 지점에만 붙는다. 짧게 두는 이유는
+    //   이름 칸을 더 뺏지 않기 위해서다 — 전체 문장은 <title> 툴팁과 조치방안 카드가 말한다.
+    $roleTag = '';
+    if ($highlightOn && $isPathNode) {
+        if ($role === 'root') { $roleTag = '루트'; }
+        elseif ($role === 'fixparent') { $roleTag = '부모'; }
+        elseif ($role === 'target') { $roleTag = '취약'; }
+    }
+    $roleTone = $role === 'target' ? $tone : 'info';
+    $roleW    = $roleTag !== '' ? mb_strlen($roleTag) * VG_DEPTREE_ROLE_CHAR_W + 12 : 0;
+    $nameLead = 12 + ($roleTag !== '' ? $roleW + 6 : 0);   // 이름이 시작하는 왼쪽 여백(역할 칩 포함)
+
     // 오른쪽 칸: 취약점이 있으면 심각도 배지, 없으면 버전.
     $rightW = $sev !== '' ? strlen($sev) * 5.6 + 14 : VG_DEPTREE_META_W;
-    $avail  = VG_DEPTREE_NODE_W - 12 - 8 - $rightW - 10;
+    $avail  = VG_DEPTREE_NODE_W - $nameLead - 8 - $rightW - 10;
     $name   = mb_strimwidth($p['name'], 0, max(4, (int) ($avail / VG_DEPTREE_CHAR_W)), '…');
 
     $href = ($ctx['link'])([
@@ -243,15 +279,25 @@ function vg_deptree_node_svg(array $n, array $ctx): string
     ]);
     // 강조 경로(취약 하위 → 루트) 위의 노드는 테두리로 표시한다 — 지금 보는 패키지(--on)는
     //   그 위에 다시 얹혀 이긴다(app.css 의 선언 순서가 그렇게 맞춰져 있다).
-    $onPath = isset($ctx['path'][$n['key']]) && $role !== 'target' ? ' deptree__box--path' : '';
-    $svg  = '<a href="' . vg_h($href) . '" class="deptree__node">'
-        . '<title>' . vg_h($p['name'] . ' ' . $p['version'] . ' · ' . $p['manager']
-            . ($sev !== '' ? ' · ' . $sev : '')) . '</title>'
-        . '<rect class="deptree__box' . $fill . $onPath . ($role === 'target' ? ' deptree__box--on' : '') . '"'
+    $pathBoxCls = $isPathNode && $role !== 'target' ? ' deptree__box--path' : '';
+    // 강조가 켜져 있고 이 노드가 그 경로 밖이면 통째로 흐리게 누른다(면·테두리·글자 한 번에) —
+    //   "어디부터 어디까지" 가 굵기·색만이 아니라 **여백**(흐린 나머지)으로도 갈리게 한다.
+    $dimCls = $highlightOn && !$isPathNode ? ' deptree__node--dim' : '';
+    $svg  = '<a href="' . vg_h($href) . '" class="deptree__node' . $dimCls . '">'
+        . '<title>' . vg_h(($roleTag !== '' ? '[' . $roleTag . '] ' : '') . $p['name'] . ' ' . $p['version']
+            . ' · ' . $p['manager'] . ($sev !== '' ? ' · ' . $sev : '')) . '</title>'
+        . '<rect class="deptree__box' . $fill . $pathBoxCls . ($role === 'target' ? ' deptree__box--on' : '') . '"'
         . ' x="' . $x . '" y="' . $top . '" width="' . VG_DEPTREE_NODE_W . '" height="' . VG_DEPTREE_NODE_H . '" rx="7"/>'
         . '<rect class="deptree__accent tone-' . $tone . '"'
-        . ' x="' . ($x + 1.5) . '" y="' . ($top + 4) . '" width="3.5" height="' . (VG_DEPTREE_NODE_H - 8) . '" rx="2"/>'
-        . '<text class="deptree__name" x="' . ($x + 12) . '" y="' . $y . '">' . vg_h($name) . '</text>';
+        . ' x="' . ($x + 1.5) . '" y="' . ($top + 4) . '" width="3.5" height="' . (VG_DEPTREE_NODE_H - 8) . '" rx="2"/>';
+    if ($roleTag !== '') {
+        $rx = round($x + 9, 1);
+        $svg .= '<rect class="deptree__pill tone-' . $roleTone . '" x="' . $rx . '" y="' . round($y - 8, 1) . '"'
+            . ' width="' . round($roleW, 1) . '" height="16" rx="8"/>'
+            . '<text class="deptree__pilltext tone-' . $roleTone . '" x="' . round($rx + $roleW / 2, 1) . '" y="' . $y . '">'
+            . vg_h($roleTag) . '</text>';
+    }
+    $svg .= '<text class="deptree__name" x="' . ($x + $nameLead) . '" y="' . $y . '">' . vg_h($name) . '</text>';
 
     if ($sev !== '') {
         $px = round($x + VG_DEPTREE_NODE_W - 10 - $rightW, 1);
@@ -368,20 +414,27 @@ function vg_deptree_edge_path(array $e): string
  *   부모→자식은 직교(elbow)로 잇는다 — 부모마다 path 하나다(vg_deptree_edge_path 주석 참고).
  *   $ctx['pathedge'] 가 있으면 그 이음만 한 겹 더 긋는다 — 취약 하위에서 루트까지의 경로 강조다.
  *   엣지는 깊이가 깊을수록 옅다 — 어느 가지가 루트에서 바로 나온 것인지가 먼저 읽힌다.
+ *
+ *   $ctx['pathedge'] 가 **비어 있지 않으면**("지금 강조 중인 경로가 있다") 깊이 농도 대신
+ *   경로 밖 이음 전부를 한 톤(deptree__edge--dim)으로 눌러 둔다 — 깊이 0 인 가지도 강조선과
+ *   굵기를 다투지 않게. 대상 패키지가 없거나(host.php 의 '의존성' 탭) 경로가 없을 때(루트가
+ *   직접 선언한 패키지)는 pathedge 가 비어 있으므로 지금까지처럼 깊이 농도 그대로 그려진다 —
+ *   즉 이 화면은 "강조할 것이 실제로 있을 때만" 나머지를 흐리게 만든다.
  *   SVG 폭은 노드가 정하므로 늘이지 않는다 — 넘치면 .deptree 안에서만 가로로 스크롤한다.
  */
 function vg_deptree_render(array $graph, string $root, int &$budget, array $ctx): void
 {
     $l = vg_deptree_layout($graph, $root, $budget, $ctx['pathedge'] ?? []);
     $p = vg_pkgdep_parts($root);
+    $highlightOn = !empty($ctx['pathedge']);
     echo '<div class="deptree">';
     echo '<svg class="deptree__svg" width="' . $l['w'] . '" height="' . $l['h'] . '"'
         . ' viewBox="0 0 ' . $l['w'] . ' ' . $l['h'] . '" role="img"'
         . ' aria-label="' . vg_h($p['name'] . ' 의존성 트리 · 노드 ' . $l['drawn'] . '개') . '">';
     $deepest = count(VG_DEPTREE_EDGE_CLASS) - 1;
     foreach ($l['edges'] as $e) {
-        echo '<path class="deptree__edge ' . VG_DEPTREE_EDGE_CLASS[min((int) $e['depth'], $deepest)]
-            . '" d="' . vg_deptree_edge_path($e) . '"/>';
+        $baseCls = $highlightOn ? 'deptree__edge--dim' : VG_DEPTREE_EDGE_CLASS[min((int) $e['depth'], $deepest)];
+        echo '<path class="deptree__edge ' . $baseCls . '" d="' . vg_deptree_edge_path($e) . '"/>';
         // 강조 경로 위의 이음만 같은 자리에 한 겹 더 긋는다(색이 진한 클래스로).
         //   깊이 농도 클래스를 빼는 것이 핵심 — 붙이면 깊은 가지에서 강조가 옅어져 안 보인다.
         if (!empty($e['ys_on'])) {
@@ -392,4 +445,78 @@ function vg_deptree_render(array $graph, string $root, int &$budget, array $ctx)
     }
     foreach ($l['nodes'] as $n) { echo vg_deptree_node_svg($n, $ctx); }
     echo '</svg></div>';
+}
+
+/**
+ * 조치방안 카드 안의 "경로만 뽑은" 작은 세로 그림 — 전체 트리(위)와는 완전히 다른 SVG다.
+ *   $path: vg_pkgdep_paths() 가 주는 경로 하나 그대로([루트키, …, 대상키]) — 여기서 새로
+ *   계산하지 않는다. $ctx 는 vg_deptree_render() 와 같은 모양(sev·roots·target·fixparents·link)을
+ *   그대로 받아 색·역할 판정을 공유한다(DRY) — 전체 트리와 이 그림이 같은 노드를 다르게
+ *   부르는 일이 없다.
+ *
+ *   점 하나 = 노드 하나, 세로줄 하나로 잇는다. 이미 "경로만" 걸러진 목록이라 안/밖을 가를
+ *   필요가 없다 — 전부가 강조 대상이므로 흐리게 누르는 로직이 없다(vg_deptree_node_svg 와의
+ *   차이). 새 사실은 만들지 않는다: 부모의 목표 버전 같은 건 이 그림에도 없다.
+ */
+function vg_deptree_path_svg(array $path, array $ctx): void
+{
+    $n = count($path);
+    if ($n === 0) { return; }
+
+    $w  = VG_DEPTREE_MINI_W;
+    $h  = VG_DEPTREE_MINI_PAD * 2 + $n * VG_DEPTREE_MINI_ROW_H;
+    $cx = VG_DEPTREE_MINI_PAD;
+    $noteX = $w - VG_DEPTREE_MINI_PAD - VG_DEPTREE_MINI_NOTE_W;
+    $verRight = $noteX - 10;
+    $nameX = $cx + VG_DEPTREE_MINI_DOT_R + 10;
+    $nameAvail = max(4, (int) (($verRight - VG_DEPTREE_MINI_VER_W - 8 - $nameX) / VG_DEPTREE_MINI_CHAR_W));
+
+    echo '<svg class="deptree-mini__svg" width="' . $w . '" height="' . $h . '"'
+        . ' viewBox="0 0 ' . $w . ' ' . $h . '" role="img"'
+        . ' aria-label="' . vg_h('이 패키지를 끌어온 경로 · 노드 ' . $n . '개') . '">';
+
+    if ($n > 1) {
+        $cy0 = VG_DEPTREE_MINI_PAD + VG_DEPTREE_MINI_ROW_H / 2;
+        $cyN = VG_DEPTREE_MINI_PAD + ($n - 1) * VG_DEPTREE_MINI_ROW_H + VG_DEPTREE_MINI_ROW_H / 2;
+        echo '<line class="deptree-mini__stem" x1="' . $cx . '" y1="' . $cy0 . '" x2="' . $cx . '" y2="' . $cyN . '"/>';
+    }
+
+    foreach ($path as $i => $key) {
+        $key  = (string) $key;
+        $p    = vg_pkgdep_parts($key);
+        $sev  = (string) ($ctx['sev'][$key] ?? '');
+        $role = vg_deptree_role($key, $ctx);
+        $tone = $sev !== '' ? vg_sev_tone($sev) : ($role === 'root' ? 'info' : 'muted');
+        $cy   = round(VG_DEPTREE_MINI_PAD + $i * VG_DEPTREE_MINI_ROW_H + VG_DEPTREE_MINI_ROW_H / 2, 1);
+
+        $note = '';
+        if ($role === 'root') { $note = '루트'; }
+        elseif ($role === 'fixparent') { $note = '← 여기를 올린다'; }
+
+        $href = ($ctx['link'])([
+            'mgr' => $p['manager'], 'name' => $p['name'], 'ver' => $p['version'], 'tab' => 'from',
+        ]);
+        $name = mb_strimwidth($p['name'], 0, $nameAvail, '…');
+
+        echo '<a href="' . vg_h($href) . '" class="deptree-mini__node">'
+            . '<title>' . vg_h($p['name'] . ' ' . $p['version'] . ' · ' . $p['manager']
+                . ($sev !== '' ? ' · ' . $sev : '')) . '</title>'
+            . '<circle class="deptree__accent deptree-mini__dot tone-' . $tone . '" cx="' . $cx . '" cy="' . $cy
+                . '" r="' . VG_DEPTREE_MINI_DOT_R . '"/>'
+            . '<text class="deptree-mini__name" x="' . $nameX . '" y="' . $cy . '">' . vg_h($name) . '</text>'
+            . '<text class="deptree-mini__ver" x="' . $verRight . '" y="' . $cy . '">' . vg_h($p['version']) . '</text>';
+
+        if ($sev !== '') {
+            $pillW = round(strlen($sev) * 5.6 + 14, 1);
+            echo '<rect class="deptree__pill tone-' . $tone . '" x="' . $noteX . '" y="' . round($cy - 8, 1) . '"'
+                . ' width="' . $pillW . '" height="16" rx="8"/>'
+                . '<text class="deptree__pilltext tone-' . $tone . '" x="' . round($noteX + $pillW / 2, 1) . '" y="' . $cy . '">'
+                . vg_h($sev) . '</text>'
+                . '<text class="deptree-mini__note" x="' . round($noteX + $pillW + 8, 1) . '" y="' . $cy . '">취약</text>';
+        } elseif ($note !== '') {
+            echo '<text class="deptree-mini__note" x="' . $noteX . '" y="' . $cy . '">' . vg_h($note) . '</text>';
+        }
+        echo '</a>';
+    }
+    echo '</svg>';
 }

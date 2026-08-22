@@ -55,6 +55,7 @@ require_once __DIR__ . '/feeds/rhunfixed.php';
 require_once __DIR__ . '/feeds/ssg.php';
 require_once __DIR__ . '/feeds/kcve.php';
 require_once __DIR__ . '/feeds/ubuntuoval.php';
+require_once __DIR__ . '/feeds/pkgregistry.php';
 require_once __DIR__ . '/feeds/generic_api.php';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -133,6 +134,11 @@ const VG_CONNECTOR_TYPES = [
         'class' => VgUbuntuOvalConnector::class, 'label' => 'Ubuntu OVAL', 'transport' => 'file',
         'desc'  => 'OVAL XML 덤프(*.xml.bz2)를 릴리스별로 받아 푼다. 대상 릴리스는 수집된 우분투 호스트에서 자동으로 정한다.',
         'fields' => ['url'], 'url_label' => '덤프 URL 템플릿 ({C} 자리에 릴리스 코드네임이 들어간다)',
+    ],
+    'pkgregistry' => [
+        'class' => VgPkgRegistryConnector::class, 'label' => '패키지 레지스트리 메타데이터', 'transport' => 'api',
+        'desc'  => 'Packagist/npm/PyPI/Maven Central 에서 tb_package_dependency 의 부모 패키지가 설치버전보다 높은 버전에서 자식을 어떤 제약으로 요구하는지 받는다. 대상은 수집된 의존성 그래프에서 자동으로 정하므로 설정할 값이 없다.',
+        'fields' => [],
     ],
     'generic_api' => [
         'class' => VgGenericApiConnector::class, 'label' => '사용자 API', 'transport' => 'api',

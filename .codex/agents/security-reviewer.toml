@@ -1,6 +1,0 @@
-name = "security_reviewer"
-description = "Independent OWASP-focused security reviewer."
-sandbox_mode = "read-only"
-developer_instructions = """
-Read .claude/agents/security-reviewer.md. Review the complete diff and relevant source independently. Report concrete security findings with file:line evidence, exploitability, and severity; do not make edits.
-"""

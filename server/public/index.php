@@ -13,27 +13,25 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
-require_once __DIR__ . '/../src/finding_sla.php';   // 조치 기한 — 목록 화면과 같은 계산을 그대로 쓴다
 require_once __DIR__ . '/../src/dashboard/queries.php';    // vg_dash_* 조회 + VG_TREND_DAYS
 require_once __DIR__ . '/../src/dashboard/sections.php';   // vg_dash_render_* 섹션 렌더
 vg_require_menu('dashboard');
 
 $err = null; $rows = []; $totals = ['CRITICAL'=>0,'HIGH'=>0,'MEDIUM'=>0,'LOW'=>0];
 $hostCount = 0; $total = 0; $sevByScan = [];
-$kevCount = 0; $kevOverdue = 0; $runtime = [];
-$kevSlaDays = 0;   // KEV 조치 기한(일) — 퍼널 마지막 칸 라벨이 이 숫자를 그대로 말한다
+$exposedHighPlus = 0; $runtime = [];
 $trend = [];
-$terrain = [];
+$rank = [];
 $page = vg_page();
 $perPage = vg_perpage();
 try {
     $pdo = vg_pdo();
     $hostCount = vg_dash_host_count($pdo);
 
-    ['totals' => $totals, 'kev' => $kevCount, 'runtime' => $runtime] = vg_dash_severity_totals($pdo);
-    ['overdue' => $kevOverdue, 'slaDays' => $kevSlaDays] = vg_dash_kev_overdue($pdo);
+    ['totals' => $totals, 'exposedHighPlus' => $exposedHighPlus, 'runtime' => $runtime]
+        = vg_dash_severity_totals($pdo);
 
-    $terrain = vg_dash_asset_terrain($pdo);
+    $rank = vg_dash_asset_rank($pdo);
     $trend = vg_dash_trend($pdo, VG_TREND_DAYS);
 
     $total  = vg_dash_host_total($pdo);
@@ -51,10 +49,10 @@ vg_header('대시보드', 'dashboard');
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
-  <?php /* 순서가 곧 위계다 — "지금 무엇부터 손대야 하나" 에 답하는 것(지형도 · 퍼널 · 구성)이 위,
+  <?php /* 순서가 곧 위계다 — "지금 무엇부터 손대야 하나" 에 답하는 것(순위 · 워터폴 · 구성)이 위,
            배경(추세)과 전수 목록(호스트)이 아래다.
-           맨 윗줄은 **같은 축(High 이상)을 두 방향에서** 본다: 지형도가 "어느 자산에 몰려
-           있나", 퍼널이 "전체가 얼마나 좁혀지나" 다. 격자는 .dash-top 이 갖는다.
+           맨 윗줄은 **같은 축(High 이상)을 두 방향에서** 본다: 순위가 "어느 자산에 몰려
+           있나", 워터폴이 "전체가 얼마나, 왜 좁혀지나" 다. 격자는 .dash-top 이 갖는다.
            **가로 전체 폭 카드를 세로로만 쌓지 않는다.** 예전엔 넷이 전부 전체 폭이라 세로
            스크롤만 길어졌고, 도넛 둘뿐인 [주요 취약점 신호] 카드는 1920px 에서 폭의 절반이
            빈 띠였다. 구성 도넛(내용 폭이 정해져 있다)과 추세(가로가 길수록 좋다)를
@@ -62,8 +60,8 @@ vg_header('대시보드', 'dashboard');
            .dash-grid 가 갖는다(좁아지면 DOM 순서 그대로 한 열로 떨어진다). */ ?>
   <?php vg_dash_section_head('현황 요약', 'shield'); ?>
   <div class="dash-top">
-    <?php vg_dash_render_terrain($terrain, $hostCount); ?>
-    <?php vg_dash_render_funnel($totals, $hostCount, $kevCount, $kevOverdue, $kevSlaDays); ?>
+    <?php vg_dash_render_rank($rank, $hostCount); ?>
+    <?php vg_dash_render_waterfall($totals, $hostCount, $exposedHighPlus); ?>
   </div>
 
   <?php vg_dash_section_head('분포와 추이', 'chart'); ?>
