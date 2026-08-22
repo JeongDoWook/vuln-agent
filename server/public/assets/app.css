@@ -101,14 +101,6 @@
 
   --danger:    #dc3838;
 
-  /* 지형도 블록 옆면 — 윗면 원색에 이만큼 섞어 명도를 떨군다(app.css 의 .terrain__left/right).
-   * 라이트는 원색이 어두워 더 많이 섞어야 세 면이 갈리고, 다크는 원색이 밝아 덜 섞는다. */
-  --terrain-mix-l: 76%;
-  --terrain-mix-r: 58%;
-  --terrain-shade: #0b0f14;
-  /* 블록 윗면 위의 숫자 — 밑색이 늘 채도 높은 원색이라 두 테마 공통으로 어두운 잉크가 맞다. */
-  --terrain-ink:   #10151c;
-
   /* 중립 버튼(초기화·ghost) — 흰 배경 위에서 흰 글자가 될 수 없으므로 별도 토큰 */
   --btn-bg:    #e7ebf1;
   --btn-fg:    #26313f;
@@ -235,11 +227,6 @@
      다크는 같은 의도를 뒤집어 원색보다 밝게 잡는다. */
   --accent:    #3d8bff;
   --accent-2:  #7cb0ff;
-
-  /* 다크는 원색이 한 단 밝아 덜 섞는다 — 라이트 비율 그대로면 옆면이 카드 배경에 잠긴다. */
-  --terrain-mix-l: 82%;
-  --terrain-mix-r: 66%;
-  --terrain-shade: #000000;
 
   --crit:      #e5484d;
   --crit-fg:   #ff9592;
@@ -3014,127 +3001,135 @@ form.card .btn--primary:active { transform: translateY(0); }
 .dep-path li + li::before { content: "→"; margin-right: .4rem; color: var(--muted); }
 
 /* --- 대시보드 상단 두 그림(index.php) --------------------------------------
- * 왼쪽 자산 지형도(vg_asset_terrain) · 오른쪽 처리 흐름(vg_flow_funnel).
- * 같은 축(High 이상)을 두 방향에서 보는 한 줄이라 나란히 세운다 — 지형도는 "어느 자산에
- * 몰려 있나", 퍼널은 "전체가 얼마나 좁혀지나". 좁아지면 DOM 순서 그대로 한 열로 떨어진다.
- * 지형도가 더 넓은 것은 격자(4열 아이소메트릭)가 가로를 먹기 때문이다. */
+ * 왼쪽 자산 순위 막대(vg_asset_rank) · 오른쪽 처리 흐름 워터폴(vg_flow_waterfall).
+ * 같은 축(High 이상)을 두 방향에서 보는 한 줄이라 나란히 세운다 — 순위는 "어느 자산에
+ * 몰려 있나", 워터폴은 "전체가 얼마나, 왜 좁혀지나". 좁아지면 DOM 순서 그대로 한 열로
+ * 떨어진다. 왼쪽이 더 넓은 것은 최대 12행짜리 목록이라 오른쪽 워터폴(다섯 칸 고정)보다
+ * 가로를 더 쓰기 때문이다. */
 .dash-top { display: grid; gap: var(--sp-3); margin-bottom: var(--sp-3); }
 .dash-top > .card { margin-bottom: 0; }
-/* 두 그림은 높이가 크게 다르다(지형도는 격자라 세로를 먹고, 퍼널은 띠 한 줄이다).
- * 같은 줄에 서면 짧은 쪽 카드가 그리드 기본(stretch)으로 늘어나 아래가 빈 띠가 되므로,
- * 늘어난 카드 안에서 내용을 세로 가운데로 모은다 — .dash-grid 가 추세 차트를 늘려 같은
- * 문제를 푸는 것과 같은 판단이고, 여기서는 늘릴 수 있는 그림이 아니라 모으는 쪽이 맞다. */
+/* 두 그림은 높이가 다르다(순위는 행 수만큼, 워터폴은 SVG 한 장이다). 같은 줄에 서면
+ * 짧은 쪽 카드가 그리드 기본(stretch)으로 늘어나 아래가 빈 띠가 되므로, 늘어난 카드
+ * 안에서 내용을 세로 가운데로 모은다 — .dash-grid 가 추세 차트를 늘려 같은 문제를 푸는
+ * 것과 같은 판단이고, 여기서는 늘릴 수 있는 그림이 아니라 모으는 쪽이 맞다. */
 .dash-top > .card { display: flex; flex-direction: column; }
 .dash-top > .card > .card__body { display: flex; flex-direction: column; justify-content: center; flex: 1 1 auto; }
 @media (min-width: 1180px) {
   .dash-top { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
 }
 
-/* --- 자산 지형도(vg_asset_terrain) -----------------------------------------
- * 서버가 좌표를 계산해 SVG 를 통째로 뱉는다 — CSP(default-src 'self')가 인라인 <script> 를
- * 막아 클라이언트 레이아웃을 쓸 수 없다(deptree·도넛과 같은 방식).
- * 폭에 맞춰 늘어나되 **min-width 아래로는 줄이지 않는다**: 더 줄이면 블록 위 숫자와
- * 이름표까지 같이 줄어 못 읽는다(vg_rank_bars 가 아예 HTML 로 간 그 문제다). 그보다 좁은
- * 화면에서는 카드 안에서만 가로로 스크롤한다(<body> 가 가로로 스크롤되면 안 된다). */
-.terrain { overflow-x: auto; }
-.terrain svg { display: block; width: 100%; height: auto; max-height: 23rem; min-width: 30rem; }
+/* --- 자산 순위 막대(vg_asset_rank) ------------------------------------------
+ * 전신은 아이소메트릭 지형도(vg_asset_terrain)였다 — 높이로 비교하는 그림인데 운영
+ * 자산들의 값이 서로 몰려 있으면 블록 높이차가 안 보였고, 이름표가 앞 블록에 가려 잘렸다.
+ * vg_rank_bars 와 같은 이유로 SVG 가 아니라 HTML 이다 — 라벨이 주인공인 차트라 폭이
+ * 줄어도 글자는 줄지 않아야 한다. 어휘는 **따로 둔다**(.rank 는 discovery.php·
+ * packages.php·findings/tabs/exposure.php 가 이미 쓰고 있어, 겹막대·KEV 표식을 얹으려고
+ * 그 클래스를 건드리면 세 화면이 함께 흔들린다). */
+.arank { display: grid; gap: .3rem; }
+.arank__row {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) minmax(3rem, 1fr) max-content;
+  align-items: center;
+  gap: .6rem;
+  padding: .2rem .1rem;
+  border-radius: var(--r-xs);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+a.arank__row:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.arank__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arank__track { position: relative; height: 10px; border-radius: 999px; background: var(--sunken); }
+.arank__bar { position: absolute; inset: 0 auto 0 0; height: 100%; border-radius: 999px; background: var(--muted-2); }
+.arank__bar.tone-crit { background: var(--crit); }
+.arank__bar.tone-high { background: var(--high); }
+.arank__bar.tone-ok   { background: var(--ok); }
+/* 겹막대 — 그중 외부 노출. 다른 색을 쓰지 않고 **같은 톤을 눌러 어둡게** 한다(막대 안에
+ * 색이 두 개면 등급 축과 경쟁하는 두 번째 어휘가 생긴다). 실측상 대부분 막대 전체를
+ * 덮지만, 안 덮이는 자산이 생기면 그 차이가 바로 정보다("위험도는 높은데 밖에서는 안 닿는다"). */
+.arank__bar--exposed { filter: brightness(.62) saturate(1.15); z-index: 1; }
+/* KEV 원 — 막대 끝(=High 이상 값의 위치)에 앉힌다. 인라인 style 은 폭 계산만 예외라
+ * left:N% 대신 **막대와 같은 폭의 칸을 만들고 그 안에서 오른쪽으로 붙인다**(칸 끝이 곧
+ * 막대 끝이라 결과가 같다 — vg_asset_rank() PHP 주석 참조). */
+.arank__kev-wrap {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: flex-end; pointer-events: none; z-index: 2;
+}
+/* 채운 원이 아니라 **테두리 원**이다 — 지형도의 KEV 표식과 같은 이유(채우면 그 위 흰
+ * 글자가 다크에서 대비가 떨어진다). */
+.arank__kev {
+  transform: translateX(50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 15px; height: 15px; padding: 0 2px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--crit); color: var(--crit-fg);
+  font-size: 9px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+}
+.arank__value { color: var(--text); font-weight: 700; }
+@media (max-width: 700px) { .arank__row { grid-template-columns: minmax(0, 7rem) minmax(2rem, 1fr) max-content; } }
 
-/* 블록 한 채의 색은 **톤 하나**에서 나온다 — 윗면이 원색, 두 옆면은 같은 색을 어둡게 섞은
- * 것이다. 명도차를 hex 로 박지 않고 color-mix() 로 내는 이유: 라이트/다크가 서로 다른
- * 원색(--crit 은 #dc2b32 / #e5484d)을 쓰므로, 고정 hex 는 한쪽 테마에서 면이 배경에
- * 잠기거나 세 면이 한 덩어리로 읽힌다. 섞는 비율만 테마별로 한 단 손본다(다크는 원색이
- * 밝아 덜 어둡게 섞어야 옆면이 카드 배경과 갈린다). */
-.terrain__block {
-  --terrain-c: var(--muted-2);
+/* --- 처리 흐름 워터폴(vg_flow_waterfall) -------------------------------------
+ * 전신은 퍼널(vg_flow_funnel)이었다 — "좁아진다"만 말했다. 지금은 첫·마지막 칸이 기준선
+ * 에서 세우는 막대, 가운데 칸들은 앞뒤 누적값 사이에 뜬 막대다(PHP 쪽 vg_flow_waterfall()
+ * 주석 참조) — 뜬 막대의 높이가 곧 그 칸에서 빠진 양이다. 색은 칸 톤 하나에서 나온다. */
+.wfall { overflow-x: auto; }
+.wfall svg { display: block; width: 100%; height: auto; min-width: 24rem; }
+.wfall__base { stroke: var(--line); stroke-width: 1; }
+.wfall__link { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.wfall__bar {
+  --wfall-c: var(--muted-2);
 }
-.terrain__block.tone-crit {
-  --terrain-c: var(--crit);
+.wfall__bar.tone-low {
+  --wfall-c: var(--low);
 }
-.terrain__block.tone-high {
-  --terrain-c: var(--high);
+.wfall__bar.tone-med {
+  --wfall-c: var(--med);
 }
-.terrain__block.tone-med {
-  --terrain-c: var(--med);
+.wfall__bar.tone-ok {
+  --wfall-c: var(--ok);
 }
-.terrain__block.tone-low {
-  --terrain-c: var(--low);
+.wfall__bar.tone-crit {
+  --wfall-c: var(--crit);
 }
-.terrain__block.tone-ok {
-  --terrain-c: var(--ok);
-}
-/* 면끼리 맞닿는 자리에 카드 색으로 실선을 둔다 — 같은 톤의 블록이 이웃하면(다이아몬드가
- * 평면을 빈틈없이 덮는다) 경계가 없어 한 덩어리로 읽힌다. */
-.terrain__face  { stroke: var(--surface); stroke-width: 1; stroke-linejoin: round; }
-.terrain__top   { fill: var(--terrain-c); }
-.terrain__left  { fill: color-mix(in srgb, var(--terrain-c) var(--terrain-mix-l), var(--terrain-shade)); }
-.terrain__right { fill: color-mix(in srgb, var(--terrain-c) var(--terrain-mix-r), var(--terrain-shade)); }
-a.terrain__block { cursor: pointer; }
-a.terrain__block:hover .terrain__face,
-a.terrain__block:focus-visible .terrain__face { stroke: var(--accent); stroke-width: 2; }
-/* 윗면 숫자는 **고정 잉크**다 — 밑에 깔린 색이 늘 채도 높은 원색(--crit/--high/--ok)이라
- * 두 테마 모두 어두운 잉크가 가장 대비가 크다. var(--text) 로 두면 다크에서 밝은 글자가
- * 밝은 주황 윗면 위에 올라가 읽히지 않는다. */
-.terrain__val {
-  fill: var(--terrain-ink); font-size: 12px; font-weight: 700;
-  text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums;
-}
-/* 이름표는 블록 면 위로 걸칠 수밖에 없다(빈틈이 없다) — 글자 테두리로 어느 면 위에서도
- * 읽히게 한다. paint-order 를 안 주면 테두리가 글자를 덮어 뭉갠다. */
-.terrain__name {
-  fill: var(--muted); font-size: 9px; text-anchor: middle;
-  paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round;
-}
-/* KEV 표식 — 채운 원이 아니라 **테두리 원**이다. 채우면 그 위의 건수를 흰 글자로 얹어야
- * 하는데 --crit 위의 흰 글자는 다크에서 3.4:1 로 떨어진다. 면을 카드 색으로 두고 글자를
- * --crit-fg 로 쓰면 두 테마 모두 6:1 이상이고, 붉은 고리라는 인상도 그대로다. */
-.terrain__kev  { fill: var(--surface); stroke: var(--crit); stroke-width: 2; }
-.terrain__kevn {
-  fill: var(--crit-fg); font-size: 9px; font-weight: 700;
-  text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums;
-}
-
-/* --- 처리 흐름 퍼널(vg_flow_funnel) -----------------------------------------
- * 단계 띠 + 단계 사이 사다리꼴. 두께는 로그 척도라(PHP 주석 참조) 뒤 칸이 사라지지 않는다.
- * 색은 단계 톤 하나에서 나오고, 사다리꼴은 같은 색을 옅게 깔아 방향만 말한다. */
-.flow { overflow-x: auto; }
-.flow svg { display: block; width: 100%; height: auto; min-width: 26rem; }
-.flow__step {
-  --flow-c: var(--muted-2);
-}
-.flow__step.tone-muted {
-  --flow-c: var(--muted-2);
-}
-.flow__step.tone-low {
-  --flow-c: var(--low);
-}
-.flow__step.tone-med {
-  --flow-c: var(--med);
-}
-.flow__step.tone-high {
-  --flow-c: var(--high);
-}
-.flow__step.tone-crit {
-  --flow-c: var(--crit);
-}
-.flow__step.tone-ok {
-  --flow-c: var(--ok);
-}
-.flow__band { fill: var(--flow-c); }
-.flow__link { fill: var(--flow-c); opacity: .28; }
-a.flow__step { cursor: pointer; }
-a.flow__step:hover .flow__band,
-a.flow__step:focus-visible .flow__band { stroke: var(--accent); stroke-width: 2; }
-a.flow__step:hover .flow__lbl { fill: var(--text); }
-.flow__val {
-  fill: var(--text); font-size: 15px; font-weight: 700;
+.wfall__rect { fill: var(--wfall-c); }
+a.wfall__bar { cursor: pointer; }
+a.wfall__bar:hover .wfall__rect,
+a.wfall__bar:focus-visible .wfall__rect { stroke: var(--accent); stroke-width: 2; }
+a.wfall__bar:hover .wfall__lbl { fill: var(--text); }
+.wfall__val {
+  fill: var(--text); font-size: 13px; font-weight: 700;
   text-anchor: middle; font-variant-numeric: tabular-nums;
 }
-.flow__lbl { fill: var(--text-2); font-size: 11px; text-anchor: middle; }
-.flow__pct { fill: var(--muted); font-size: 9.5px; text-anchor: middle; }
-/* 마지막 칸이 "오늘 할 일" 이다 — 숫자 하나만 키워 그 자리를 말한다(띠 두께는 로그라
- * 마지막이 늘 가장 얇다). 0건이면 색을 걷는 규칙이 뒤에 와야 이긴다. */
-.flow__step--last .flow__val { font-size: 19px; fill: var(--crit-fg); }
-.flow__step--zero .flow__val { fill: var(--muted-2); }
+.wfall__lbl { fill: var(--text-2); font-size: 11px; text-anchor: middle; }
+.wfall__reason { fill: var(--muted); font-size: 9.5px; text-anchor: middle; }
+/* 마지막 칸이 "오늘 할 일" 이다 — 숫자 하나만 키워 그 자리를 말한다(옛 퍼널과 같은 규칙). */
+.wfall__bar--last .wfall__val { font-size: 19px; fill: var(--crit-fg); }
+
+/* --- 자산별 스파크라인(vg_asset_sparklines) ----------------------------------
+ * 겹치는 선 5개짜리 멀티라인(vg_multi_trend, host.php·changes.php 는 계속 쓴다) 대신
+ * 대시보드에서는 자산마다 한 줄로 쪼갠다 — 미니 추세 + 현재값 + N일 전 대비 증감.
+ * 선 색은 값의 방향을 말하지 않는다(방향은 옆의 화살표 배지 색이 말한다) — 선까지 색을
+ * 쓰면 어디를 봐야 할지 두 군데로 갈린다. */
+.spark-rows { display: grid; gap: .35rem; }
+.spark-row {
+  display: grid;
+  grid-template-columns: minmax(0, 8rem) 5.5rem max-content max-content;
+  align-items: center;
+  gap: .6rem;
+  padding: .2rem .1rem;
+  border-radius: var(--r-xs);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+a.spark-row:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.spark-row__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spark-row__svg { display: block; width: 100%; height: 26px; }
+.spark-row__line { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.spark-row__dot { fill: var(--accent); }
+.spark-row__now { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.spark-row__delta { font-variant-numeric: tabular-nums; font-weight: 600; }
+.spark-row__delta.tone-crit  { color: var(--crit-fg); }
+.spark-row__delta.tone-ok    { color: var(--ok-fg); }
+.spark-row__delta.tone-muted { color: var(--muted-fg); }
+@media (max-width: 700px) { .spark-row { grid-template-columns: minmax(0, 5rem) 4rem max-content max-content; } }
 
 /* --- 대시보드 위젯 격자(index.php) -----------------------------------------
  * 사용자가 다른 제품 두 개를 들고 지목한 것 세 가지를 그대로 가져온다:
