@@ -60,7 +60,9 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 개발 도구 경로(`kit/`·`scripts/`·`deploy/orchestrator/`·`.claude/`·`.codex/`·`CLAUDE.md`·`AGENTS.md`·
 `AGENTS-review-kit.md`·`.review-kit.json`·`.review-kit-manifest.json`·`.pipeline.json`)는 `.gitignore`
 로 저장소 추적에서 빠져 있습니다 — 클론한 저장소엔 안 보이고, 유지보수자가 이 방식으로 계속 개발할
-로컬 워크트리에만 존재합니다.
+로컬 워크트리에만 존재합니다. 이 중 `.claude/hooks/`(개발 세션 보조 가드레일)도 함께 빠지지만, 실제로
+push 를 막는 검증 게이트는 `deploy/hooks/pre-push`이며 이 경로는 `server/`·`db/`·`tests/`와 함께
+계속 추적됩니다 — 클론한 저장소에도 그대로 있고 그대로 동작합니다.
 
 AI 보고서는 설정(설정 화면 → AI 보고서 → 보고서 API 주소)에 주소를 넣어야 켜지고, 비어 있으면 호스트
 상세에 카드 자체가 나오지 않습니다. 이 연동은 인증 없는 내부 API 를 전제하므로 **신뢰된 내부망 전용**입니다 —

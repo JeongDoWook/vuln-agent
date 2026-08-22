@@ -118,7 +118,7 @@ try {
         // 미조치 사유 메모(사람의 판단) — 억제(자동 판정)와는 별개로 자연키로 붙는다.
         $note = vg_remediation_note_get($pdo, $hostId, $containerName, $cveId, $packageName);
 
-        // 인프라 민감정보(설치 패키지 이력)의 스캔별 열람 — 감사로그 대상(CLAUDE.md 원칙 7).
+        // 인프라 민감정보(설치 패키지 이력)의 스캔별 열람이므로 누가 무엇을 봤는지 감사로그로 남긴다.
         vg_log_activity(
             $pdo, 'HOST', $hostId, 'view_finding_history',
             $cveId . ' / ' . $packageName . ($containerId > 0 ? " (container #{$containerId})" : '')
