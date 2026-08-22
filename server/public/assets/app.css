@@ -1384,11 +1384,19 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .deptree__edge--d1 { opacity: .78; }
 .deptree__edge--d2 { opacity: .58; }
 .deptree__edge--d3 { opacity: .42; }
+/* 대상 패키지가 지정돼 강조할 경로가 실제로 있을 때만 쓰인다(깊이 농도 클래스 대신) —
+ * 경로 밖 이음을 깊이와 무관하게 한 톤으로 눌러, 깊이 0 인 가지가 강조선과 굵기를
+ * 다투지 않게 한다(deptree.php 의 vg_deptree_render 주석). */
+.deptree__edge--dim { stroke-width: 1; opacity: .25; }
 /* 강조 경로(취약 하위 → 루트) — 같은 자리에 한 겹 더 긋는다. 농도 클래스를 안 붙이므로
  * 깊은 가지에서도 옅어지지 않는다. 색을 하나 더 쓰는 예외인 이유: 이건 등급 축이 아니라
  * "지금 따라가는 길" 이라 노드 면의 등급 색과 겨루지 않는다(선 위에만 있다). */
 .deptree__edge--path { stroke: var(--accent); stroke-width: 2.4; opacity: 1; }
 .deptree__node { cursor: pointer; }
+/* 경로 강조 중 경로 밖 노드 — 면·테두리·글자를 한 번에 흐리게 누른다(<a> 하나가 그 전부를
+ * 감싸므로 opacity 하나로 충분하다). hover 로는 다시 살아나 가려진 이름도 확인할 수 있다. */
+.deptree__node--dim { opacity: .4; }
+.deptree__node--dim:hover { opacity: 1; }
 .deptree__box { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
 /* 면(배경·테두리)은 **취약점 등급 전용 축**이다. 칠하는 건 조치 대상(CRITICAL·HIGH·MEDIUM)뿐 —
  * LOW·무취약 노드까지 칠하면 전부 색이라 아무것도 강조되지 않는다(심각도 도넛이 LOW 를 뺀 것과
@@ -1424,11 +1432,33 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .deptree__pill.tone-high { fill: var(--high-bg); }
 .deptree__pill.tone-med  { fill: var(--med-bg); }
 .deptree__pill.tone-low  { fill: var(--low-bg); }
+/* 역할 표식(루트·올릴 부모) 알약 — 등급이 아니라 "정보" 톤이다. 대상(취약) 노드의 역할
+ * 표식은 등급 알약을 그대로 재사용한다(위 tone-crit 등) — 새 톤을 안 만든다. */
+.deptree__pill.tone-info { fill: var(--info-bg); }
 .deptree__pilltext { font-size: 9px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
 .deptree__pilltext.tone-crit { fill: var(--crit-fg); }
 .deptree__pilltext.tone-high { fill: var(--high-fg); }
 .deptree__pilltext.tone-med  { fill: var(--med-fg); }
 .deptree__pilltext.tone-low  { fill: var(--low-fg); }
+.deptree__pilltext.tone-info { fill: var(--info-fg); }
+
+/* 조치방안 카드의 "경로만 뽑은" 작은 세로 그림(vg_deptree_path_svg) — 위 가로 트리와는
+ * 완전히 다른 SVG 지만 점·알약의 톤 어휘(.deptree__accent·.deptree__pill)는 그대로
+ * 재사용한다. 이미 "경로만" 걸러진 목록이라 흐리게 누르는 클래스가 따로 없다 — 전부가
+ * 강조 대상이다. 부모가 여럿이면 그림도 여럿이라 가로로 늘어놓고 넘치면 스크롤한다. */
+.deptree-mini-group { display: flex; flex-wrap: wrap; gap: 1rem; overflow-x: auto; margin-top: .5rem; }
+.deptree-mini__svg { display: block; }
+.deptree-mini__stem { stroke: var(--accent); stroke-width: 2; }
+.deptree-mini__dot { stroke: var(--surface); stroke-width: 1.5; }
+.deptree-mini__node { cursor: pointer; }
+.deptree-mini__name { fill: var(--text); font-size: 12px; font-weight: 600; dominant-baseline: central; }
+.deptree-mini__ver {
+  fill: var(--muted); font-size: 11px; text-anchor: end;
+  dominant-baseline: central; font-variant-numeric: tabular-nums;
+}
+/* 역할 노트("루트"·"← 여기를 올린다"·"취약") — 색은 하나(--info-fg)로 두고 글자로만 구분한다.
+ * 대상(취약) 노드는 옆의 등급 알약이 이미 색을 말하므로 여기서 등급색을 또 쓰지 않는다. */
+.deptree-mini__note { fill: var(--info-fg); font-size: 10px; font-weight: 700; dominant-baseline: central; }
 
 /* --- 성형 토폴로지(세그먼트 맵) --------------------------------------------
  * segment-map.php 가 대역마다 SVG 한 장을 서버에서 그린다 — 바로 위 트리와 같은 이유로
