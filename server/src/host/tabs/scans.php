@@ -69,13 +69,14 @@ declare(strict_types=1);
       <?php endif; ?>
       <div class="card__body">
       <?php
-      /* 메모리와 CPU 를 **한 차트에** 둔다 — 둘 다 단위가 %(호스트 스펙 대비 사용률)라
-       *   같은 축에 얹어도 값이 서로 거짓말을 하지 않는다. 단위가 다른 지표였다면 이중축이
-       *   아니라 차트를 둘로 갈랐을 것이다(이중축은 눈금 두 개를 겹쳐 놓고 관계가 있는 것처럼
-       *   보이게 한다). 축은 0~100 으로 고정한다: 관측 구간으로 자동 확대하면 0.6% 도 차트
-       *   꼭대기에 붙어 실제 부하가 큰 것처럼 보인다(예전 SVG 차트가 그래서 절대 축이었다).
+      /* 메모리·CPU 둘 다 단위가 %(호스트 스펙 대비 사용률)라 같은 축에 얹어도 값이 서로
+       *   거짓말을 하지 않는다 — 여기까지는 예전 vg_multi_trend() 와 같은 판단이다.
+       *   **선 대신 호라이즌으로 그린다**: 둘 다 0~100 한 축에 겹쳐 그리면 값이 비슷하게
+       *   움직일 때 두 선이 서로 가린다(작업지시가 지적한 문제) — 계열마다 제 줄을 갖는
+       *   vg_horizon() 은 애초에 겹칠 선이 없다. 상한 100 을 그대로 준다(vg_multi_trend 의
+       *   y_max=>100 과 같은 이유 — 관측 구간으로 자동 확대하면 0.6% 도 꼭대기에 붙는다).
        * 값이 없는(구버전 에이전트) 스캔은 그 계열에서 **건너뛴다** — 0 으로 이으면 실제로
-       *   없는 급락이 된다. 선은 vg_multi_trend() 가 spanGaps 로 이어 준다. */
+       *   없는 급락이 된다(vg_horizon() 도 2점 미만인 계열은 그리지 않는다). */
       $resLabel = static fn(array $s): string => date('n/j H:i', strtotime((string) $s['collected_at']));
       $resSeries = [];
       foreach (['mem_pct' => '메모리', 'cpu_pct' => 'CPU'] as $field => $name) {
@@ -86,10 +87,9 @@ declare(strict_types=1);
           }
           if ($pts) { $resSeries[] = ['name' => $name, 'points' => $pts]; }
       }
-      vg_multi_trend($resSeries, [
-          'unit'  => '%',
-          'y_max' => 100,
-          'alt'   => '에이전트 메모리·CPU 사용률 추이',
+      vg_horizon($resSeries, [
+          'unit' => '%',
+          'max'  => 100,
           'empty' => [
               'icon'  => 'chart',
               'title' => '그래프를 그리기엔 수집 이력이 부족합니다.',

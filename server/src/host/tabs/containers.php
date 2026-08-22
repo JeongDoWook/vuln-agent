@@ -47,9 +47,13 @@ declare(strict_types=1);
                  *   ★ '상세' 열은 첫 칸의 컨테이너 이름과 **같은 주소로 가는 두 번째 링크**였다.
                  *     한 행에 같은 목적지 링크를 둘 두지 않는다(asset-packages.php 가 같은 이유로
                  *     '이 자산에서 보기 →' 를 걷었다). 진입로는 이름 링크가 그대로 갖는다. */
-                ['label' => '컨테이너', 'width' => '26%', 'class' => 'col-id'],
-                ['label' => '이미지', 'width' => '32%', 'class' => 'col-id'],
-                ['label' => '위험 분포', 'width' => '26%'],
+                ['label' => '컨테이너', 'width' => '22%', 'class' => 'col-id'],
+                ['label' => '이미지', 'width' => '28%', 'class' => 'col-id'],
+                ['label' => '위험 분포', 'width' => '20%'],
+                /* assets.php 목록과 같은 열(같은 헬퍼·같은 지표) — 좁은 화면에서 숨기는 규약도
+                 *   같다(col-trend, app.css 의 반응형 절). */
+                ['label' => '14일 추세', 'width' => '13rem', 'class' => 'col-trend',
+                 'title' => '최근 14일간 CRITICAL·HIGH(조치 대상) 건수 추세'],
                 ['label' => '패키지',  'align' => 'right', 'width' => '5rem',   'nowrap' => true],
             ],
             $rows,
@@ -106,7 +110,11 @@ declare(strict_types=1);
                             ? $bar . ' ' . vg_sev_counts($sev)
                             : '<span class="why">판정된 취약점 없음</span>';
                     },
-                    3 => fn(array $c): string => number_format((int) $c['pkg_count']),
+                    // 이력이 없는(이 창 안에 이 컨테이너가 없던) 행은 vg_sparkline() 이 옅은 '–' 로 받는다.
+                    3 => fn(array $c): string => vg_sparkline($containerTrend[(string) $c['cid']] ?? [], [
+                        'label' => 'CRITICAL·HIGH', 'unit' => '건', 'days' => VG_HOST_CONTAINER_TREND_DAYS,
+                    ]),
+                    4 => fn(array $c): string => number_format((int) $c['pkg_count']),
                 ],
             ]
         );

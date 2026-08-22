@@ -309,6 +309,97 @@ function vg_host_load_containers_tab(PDO $pdo, int $scanId, int $perPage, int $o
     return ['total' => $total, 'rows' => $st->fetchAll(), 'sevByContainer' => $sevByContainer];
 }
 
+/** 컨테이너 '14일 추세' 열이 보는 창(窓) — assets/queries.php 의 VG_ASSET_TREND_DAYS 와 같은 값이다. */
+const VG_HOST_CONTAINER_TREND_DAYS = 14;
+
+/**
+ * 컨테이너별 '14일 추세' 스파크라인 — 이 호스트의 컨테이너 탭에 뜬 $cids 만 대상으로 한다.
+ *
+ * 왜 host_id 가 아니라 cid(문자열)로 잇나: 숫자 container_id 는 **스캔마다 새로 발급**돼
+ *   같은 컨테이너라도 스캔이 바뀌면 값이 달라진다(container.php 머리주석과 같은 이유 — 조치
+ *   상태가 cid 로 붙는 것도 같은 사정). 그래서 스캔마다 (scan_id, container_id) → cid 매핑을
+ *   먼저 읽어, 같은 cid 를 스캔들 사이에서 이어 붙인다.
+ *
+ * 이 호스트의 스캔 수는 평균 6.5개(codelore 실측)라 대시보드처럼 "창 시작 전 마지막 스캔"을
+ *   따로 가져올 필요가 없다 — **이 호스트의 전체 스캔**을 한 번에 읽어도 비용이 작다(호스트
+ *   하나로 좁힌 쿼리라 자산 수와 무관). 쿼리는 호스트당 3개로 고정된다(스캔 목록 · 컨테이너
+ *   매핑 · 심각도 집계) — 컨테이너 수가 몇 개든 늘지 않는다(N+1 아님).
+ *
+ * 지표는 assets.php 목록과 같은 기준(CRITICAL+HIGH = "조치 대상")이다.
+ *
+ * 반환: cid(string) => [['d'=>'Y-m-d', 'v'=>int], …] (vg_sparkline() 의 계약 그대로).
+ */
+function vg_host_load_container_trend(PDO $pdo, int $hostId, array $cids, int $days = 14): array {
+    $cidSet = array_flip(array_map('strval', array_filter($cids, static fn($c) => $c !== '')));
+    if (!$cidSet) { return []; }
+
+    $since = date('Y-m-d', strtotime('-' . ($days - 1) . ' days'));
+
+    // 이 호스트의 스캔 전체를 오래된 순으로 — 평균 6.5개(codelore 실측)라 전수 조회가 싸다.
+    $scanSt = $pdo->prepare(
+        'SELECT scan_id, DATE(collected_at) AS d FROM tb_scan
+          WHERE host_id = ? AND is_deleted = 0 AND collected_at IS NOT NULL
+          ORDER BY scan_id ASC'
+    );
+    $scanSt->execute([$hostId]);
+    $scans = $scanSt->fetchAll();
+    if (!$scans) { return []; }
+
+    // 창 안의 스캔 + 창 시작 전 마지막 스캔 하나(이월의 출발점).
+    $scanIds = []; $dateOf = []; $beforeId = null;
+    foreach ($scans as $s) {
+        $sid = (int) $s['scan_id'];
+        $dateOf[$sid] = (string) $s['d'];
+        if ($s['d'] >= $since) { $scanIds[] = $sid; } else { $beforeId = $sid; }
+    }
+    if ($beforeId !== null) { array_unshift($scanIds, $beforeId); }
+    if (!$scanIds) { return []; }
+
+    $in = implode(',', array_fill(0, count($scanIds), '?'));
+
+    // 스캔별 container_id → cid. 이 페이지에 없는(다른 탭 필터로 걸러진) cid 는 애초에 안 받는다.
+    $ctrSt = $pdo->prepare("SELECT scan_id, container_id, cid FROM tb_container WHERE scan_id IN ($in) AND is_deleted = 0");
+    $ctrSt->execute($scanIds);
+    $byScanCid = [];   // scan_id => [cid => container_id]
+    foreach ($ctrSt->fetchAll() as $r) {
+        $cid = (string) $r['cid'];
+        if (!isset($cidSet[$cid])) { continue; }
+        $byScanCid[(int) $r['scan_id']][$cid] = (int) $r['container_id'];
+    }
+
+    // 스캔·컨테이너별 "조치 대상"(CRITICAL+HIGH) 건수.
+    $sevSt = $pdo->prepare(
+        "SELECT scan_id, container_id, COUNT(*) c FROM tb_finding
+          WHERE scan_id IN ($in) AND container_id > 0 AND severity IN ('CRITICAL','HIGH')
+          GROUP BY scan_id, container_id"
+    );
+    $sevSt->execute($scanIds);
+    $highByScanContainer = [];
+    foreach ($sevSt->fetchAll() as $r) {
+        $highByScanContainer[(int) $r['scan_id']][(int) $r['container_id']] = (int) $r['c'];
+    }
+
+    // cid 별로 "그 컨테이너가 존재했던 스캔" 목록(오래된 순) — 이월은 이 목록에서 고른다.
+    $cidScanList = [];
+    foreach ($scanIds as $sid) {
+        foreach ($byScanCid[$sid] ?? [] as $cid => $containerId) {
+            $cidScanList[$cid][] = ['d' => $dateOf[$sid], 'id' => $sid, 'cn' => $containerId];
+        }
+    }
+
+    $points = [];
+    for ($i = $days - 1; $i >= 0; $i--) {
+        $day = date('Y-m-d', strtotime("-$i days"));
+        foreach ($cidScanList as $cid => $list) {
+            $pick = null;
+            foreach ($list as $s) { if ($s['d'] <= $day) { $pick = $s; } }   // 그날까지 최신 존재
+            if ($pick === null) { continue; }   // 그 컨테이너가 아직 없던 날 — 0 이 아니다
+            $points[$cid][] = ['d' => $day, 'v' => (int) ($highByScanContainer[$pick['id']][$pick['cn']] ?? 0)];
+        }
+    }
+    return $points;
+}
+
 /**
  * 계정 탭 — 이 스캔의 계정 대장 + 파생 컴플라이언스 판정.
  *   판정은 목록 한 페이지가 아니라 **전 계정**을 봐야 한다(90일 미로그인 계정이 3페이지에 있어도
