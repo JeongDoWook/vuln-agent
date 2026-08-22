@@ -1,5 +1,5 @@
 @startuml
-' schema-docs: sha256:12ceb50e33a85e05 generated_at=2026-08-21T17:18:09Z tables=61
+' schema-docs: sha256:1120ee4a365de4a4 generated_at=2026-08-22T10:18:08Z tables=62
 ' vuln-agent §5 데이터 모델 (ERD)
 ' 원본: docs/dev/architecture.md §5
 ' 테이블별 전체 컬럼·책임·정규화 현황은 docs/dev/데이터베이스.md 참고.
@@ -244,6 +244,19 @@ package "수집·인벤토리 — 에이전트가 보내온 원본" {
         child_manager/name/version : string
         edge_hash : binary(32)
         ' 생성컬럼 - UK(scan_id, container_id, edge_hash)
+    }
+
+    entity tb_package_registry_meta {
+        package_registry_meta_id : bigint <<PK>>
+        --
+        manager : string
+        parent_name/version : string
+        child_name : string
+        child_constraint : string
+        ' 원문 그대로(파싱 안 함) - ^2.1, ~1.4, [1.2,2.0) 등
+        collected_at : datetime
+        edge_hash : binary(32)
+        ' 생성컬럼 - UK(edge_hash). scan_id 없음(스캔과 독립 - 레지스트리 사실)
     }
 
     entity tb_host_address {
@@ -827,6 +840,7 @@ tb_control_mapping }o..o| tb_cce_rule_guide : "룰 조치(rule_code)"
 tb_control_catalog |o..o{ tb_control_mapping : "기준 전체(분모) ↔\n우리가 덮는 항목(분자)"
 tb_remediation_note ||..o{ tb_finding : "자연키(host+cid+cve+package)로\n붙는 사람 메모"
 tb_finding_status ||..o{ tb_finding : "자연키(host+container+cve+package)\n조치 상태"
+tb_package_dependency }o..o{ tb_package_registry_meta : "부모(manager+name+version)\n값으로 대조 — 다음 상향 버전"
 
 tb_host_address }o..o| tb_discovered_asset : "IP 값 대조 —\n두 파이프라인의 유일한 접점"
 
@@ -874,6 +888,9 @@ tb_feed_collection_log -[hidden]- tb_setting
 '                     FK 로 묶지 않는다(원본이 지워져도 증적은 남아야 한다). 근거는 evidence JSON 에 담는다.
 ' tb_package_dependency : parent/child 는 값(manager+name+version)으로만 이어지는 자기참조라
 '                     FK 를 걸 수 없다 — 자식이 tb_package 에 없을 수도 있다(전이 의존성).
+' tb_package_registry_meta : scan_id 가 없다(스캔과 독립 — 업스트림 레지스트리의 사실이라
+'                     어느 스캔에서 봤는지와 무관). tb_package_dependency 와도 값(자연키)으로만
+'                     대조하므로 FK 를 걸지 않는다.
 ' tb_schema_migrations : 마이그레이션 러너의 인프라 테이블 — 도메인 엔티티가 아니라 이 ERD 에서 제외.
 
 @enduml
