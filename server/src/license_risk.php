@@ -4,7 +4,8 @@ declare(strict_types=1);
 /**
  * license_risk.php — SPDX 라이선스 식별자 → 위험도(permissive/copyleft/unknown) 판정.
  *   language-packages.php(목록)·language-package.php(상세, 있다면)가 공유하는 단일 헬퍼(DRY).
- *   목록은 바뀔 일이 거의 없는 알려진 SPDX 어휘라 하드코딩을 허용한다(CLAUDE.md 예외 조항).
+ *   목록은 바뀔 일이 거의 없는 알려진 SPDX 어휘라 하드코딩한다 — 범용 설정으로 감쌀 만큼
+ *   가변적이지 않다.
  */
 
 // 대표적인 permissive 라이선스 — 재배포·수정에 카피레프트 의무가 없다.

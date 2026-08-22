@@ -87,7 +87,7 @@ try {
 $filename = vg_report_download_filename((string) $fqdn, (int) $row['report_job_id'],
                                         (string) ($row['external_finished_at'] ?? $row['created_at'] ?? ''));
 
-// 누가 어느 자산의 보고서 파일을 내려받았는지가 남아야 한다(CLAUDE.md 원칙 7).
+// export 는 누가 무엇을 봤는지가 중요한 행위라, 어느 자산의 보고서 파일을 내려받았는지가 남아야 한다.
 vg_log_activity($pdo, 'HOST', (int) $row['host_id'], 'download_report_job',
     'AI 보고서 파일 다운로드: 작업 #' . (int) $row['report_job_id'] . ' (' . (string) $fqdn . ')',
     ['report_job_id' => (int) $row['report_job_id'], 'filename' => $filename, 'bytes' => strlen($pdf)],

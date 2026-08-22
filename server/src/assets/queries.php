@@ -34,6 +34,7 @@ function vg_assets_load(
     $stateCounts = ['ok' => 0, 'stale' => 0, 'offline' => 0, 'none' => 0];
     $rows = []; $total = 0; $sevByScan = [];
     $ipsByHost = [];       // host_id => [[iface, ip], ...] (대표 IP 가 맨 앞)
+    $trendByHost = [];     // host_id => [['d'=>Y-m-d,'v'=>High 이상 건수], ...] ('14일 추세' 열)
     $systemGrade = null;   // 함대 전체를 하나의 정보시스템으로 볼 때의 승계 등급
     $unconfirmed = 0;      // 아직 사람이 등급을 확정하지 않은 자산 수
 
@@ -148,6 +149,10 @@ function vg_assets_load(
          *   행마다 부르면 페이지당 25번(N+1)이 된다. */
         $ipsByHost = vg_assets_load_addresses($pdo, array_column($rows, 'host_id'));
 
+        /* '14일 추세' 스파크라인 — 이 페이지에 뜬 호스트만 대상으로 한 배치 조회다(N+1 방지,
+         *   함수 머리주석 참조). 페이지가 바뀔 때마다 그 페이지의 호스트만 다시 조회한다. */
+        $trendByHost = vg_assets_load_trend($pdo, array_column($rows, 'host_id'), VG_ASSET_TREND_DAYS);
+
         /* 함대 최신 에이전트 버전 조회는 여기서 걷어냈다 — 에이전트 버전 열이 호스트 상세로
          *   옮겨 갔고(vg_host_load_latest_agent_version() 을 그쪽에서 부른다), 목록이 안 쓰는 값을 위해
          *   전 스캔의 DISTINCT 를 매 요청 돌릴 이유가 없다. '구버전' 신호 자체는 그대로 살아 있다. */
@@ -169,10 +174,88 @@ function vg_assets_load(
     } finally {
         // 예외가 나도 **그때까지 읽은 값**을 그대로 내보낸다(위 머리주석의 이유).
         $out = compact(
-            'deptOptions', 'stateCounts', 'rows', 'total', 'sevByScan', 'ipsByHost',
+            'deptOptions', 'stateCounts', 'rows', 'total', 'sevByScan', 'ipsByHost', 'trendByHost',
             'systemGrade', 'unconfirmed'
         );
     }
+}
+
+/** '14일 추세' 열이 보는 창(窓). vg_dash_trend() 의 30일과 다른 값이라 여기서 따로 이름 붙인다
+ *   (대시보드는 "지난달보다 나아졌나", 이 열은 표 셀 안에 들어가는 미니 추세라 더 좁은 창이
+ *   더 읽힌다 — 작업지시가 못박은 값이다). */
+const VG_ASSET_TREND_DAYS = 14;
+
+/**
+ * '14일 추세' 스파크라인 조회 — **이 페이지에 뜬 호스트만** 대상으로 하는 배치 조회다.
+ *   vg_dash_trend()(dashboard/queries.php)와 같은 이월(carry-forward) 기법을 쓰지만 전 호스트가
+ *   아니라 $hostIds 로 좁힌다 — 목록이 몇 페이지로 나뉘든 이 조회의 비용은 **페이지 크기**에만
+ *   비례하고 전체 자산 수와는 무관하다(N+1 이 아니라 "페이지당 쿼리 2개"로 고정).
+ *
+ *   지표는 vg_dash_trend() 와 같은 기준(CRITICAL+HIGH = "조치 대상")이다 — 화면마다 다른 잣대로
+ *   추세를 그리면 대시보드에서 8건이던 자산이 목록에서는 다른 수로 오르내리는 것처럼 보인다.
+ *
+ *   scan_id 목록은 IN(서브쿼리)가 아니라 **PHP 가 값으로 펼쳐** 넘긴다 — 이 파일 상단 큰 함수의
+ *   $where 조립과 같은 이유(dashboard/queries.php 머리주석의 2.06초 실측과 동일 함정).
+ *
+ * 반환: host_id(int) => [['d'=>'Y-m-d', 'v'=>int], …] (오래된→최신 순, vg_sparkline() 의 계약 그대로).
+ *   그 호스트의 첫 수집 이전 날짜는 배열에 아예 없다(0 으로 채우지 않는다 — vg_dash_trend 와 동일 판단).
+ */
+function vg_assets_load_trend(PDO $pdo, array $hostIds, int $days = 14): array {
+    $ids = array_values(array_unique(array_map('intval', $hostIds)));
+    if (!$ids) { return []; }
+
+    $since = date('Y-m-d', strtotime('-' . ($days - 1) . ' days'));
+    $in = implode(',', array_fill(0, count($ids), '?'));
+
+    // 창(窓) 안의 스캔 + 각 호스트가 창 시작 전에 가진 마지막 스캔(이월의 출발점) — 둘뿐이다.
+    //   vg_dash_trend() 와 같은 UNION 구조이되 host_id 로 좁혀 이 페이지 몫만 읽는다.
+    $st = $pdo->prepare(
+        "SELECT s.scan_id AS id, s.host_id, DATE(s.collected_at) AS d
+           FROM tb_scan s
+          WHERE s.is_deleted = 0 AND s.host_id IN ($in) AND DATE(s.collected_at) >= ?
+          UNION
+         SELECT s.scan_id, s.host_id, DATE(s.collected_at)
+           FROM tb_scan s
+           JOIN (SELECT host_id, MAX(scan_id) AS mid FROM tb_scan
+                  WHERE is_deleted = 0 AND host_id IN ($in) AND DATE(collected_at) < ?
+                  GROUP BY host_id) b ON b.mid = s.scan_id"
+    );
+    $st->execute([...$ids, $since, ...$ids, $since]);
+    $trendScans = $st->fetchAll();
+
+    $byHost = [];
+    foreach ($trendScans as $s) {
+        if ($s['d'] === null) { continue; }   // collected_at 이 비면 어느 날짜에도 못 건다
+        $byHost[(int) $s['host_id']][] = ['d' => (string) $s['d'], 'id' => (int) $s['id']];
+    }
+    foreach ($byHost as &$list) { usort($list, static fn($a, $b) => $a['id'] <=> $b['id']); }
+    unset($list);
+
+    // 스캔별 "조치 대상"(CRITICAL+HIGH) 건수 — 대시보드 추세·심각도 도넛과 같은 기준.
+    $scanIds = array_values(array_unique(array_map(static fn($s) => (int) $s['id'], $trendScans)));
+    $highByScan = [];
+    if ($scanIds) {
+        $in2 = implode(',', array_fill(0, count($scanIds), '?'));
+        $st2 = $pdo->prepare(
+            "SELECT scan_id, COUNT(*) c FROM tb_finding
+              WHERE scan_id IN ($in2) AND severity IN ('CRITICAL','HIGH')
+              GROUP BY scan_id"
+        );
+        $st2->execute($scanIds);
+        foreach ($st2->fetchAll() as $r) { $highByScan[(int) $r['scan_id']] = (int) $r['c']; }
+    }
+
+    $points = [];
+    for ($i = $days - 1; $i >= 0; $i--) {
+        $day = date('Y-m-d', strtotime("-$i days"));
+        foreach ($byHost as $hid => $list) {
+            $pick = null;
+            foreach ($list as $s) { if ($s['d'] <= $day) { $pick = $s['id']; } }   // 그날까지의 최신
+            if ($pick === null) { continue; }   // 첫 수집 이전 — 아직 자료가 없다(0 이 아니다)
+            $points[$hid][] = ['d' => $day, 'v' => (int) ($highByScan[$pick] ?? 0)];
+        }
+    }
+    return $points;
 }
 
 /* 대표 IP 를 고를 때 뒤로 미는 인터페이스는 **가상 부류**다. 판단 규칙(접두사 목록과

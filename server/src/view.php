@@ -7,6 +7,7 @@ declare(strict_types=1);
  *   불러오기만 한다(호출부의 require 경로를 하나도 안 바꾸기 위함):
  *     - view/icons.php      — 인라인 SVG 아이콘 데이터(vg_icon).
  *     - view/charts.php     — 차트(SVG): 심각도 도넛·리소스 추이·가로 막대.
+ *     - view/charts_dash.php — 대시보드 전용 차트: 자산 순위 막대·처리 흐름 워터폴·스파크라인.
  *     - view/charts_aging.php — 차트(SVG): 경과일 구간 누적 막대·방치 기간 타임라인.
  *                             (동시 작업 충돌을 피하려 charts.php 와 파일을 갈랐다 — 파일
  *                             머리주석 참고. charts.php 를 require 해서 유틸을 재사용한다.)
@@ -23,6 +24,7 @@ require_once __DIR__ . '/format.php';
 require_once __DIR__ . '/ui_config.php';
 require_once __DIR__ . '/view/icons.php';
 require_once __DIR__ . '/view/charts.php';
+require_once __DIR__ . '/view/charts_dash.php';
 require_once __DIR__ . '/view/charts_aging.php';
 require_once __DIR__ . '/view/nav.php';
 require_once __DIR__ . '/view/components.php';

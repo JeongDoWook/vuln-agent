@@ -1,0 +1,382 @@
+@startuml
+' 자동 생성 — 손으로 고치지 않는다. 정본은 erd.puml 이고, docs/specs/gen_table_spec.py 의
+' split_erd_domains() 가 그 package "수집·인벤토리 — 에이전트가 보내온 원본" 블록만 도메인 분리한 파생물이다.
+' 갱신: SCHEMA_DOCS_UPDATE=1 tests/schema_docs_test.sh 로 erd.puml 을 먼저 갱신 →
+'      docs/specs/diagrams 에서 ./render.sh 로 이 파일과 .svg 를 함께 재생성한다.
+' 옅게 표시된 엔티티(<<ref>>)는 이 도메인이 참조만 하는 다른 도메인 소속 테이블이다 —
+' 관계선이 끊기지 않게 PK 만 남겼다. 전체 그림은 docs/specs/diagrams/erd.svg 참고.
+
+hide circle
+skinparam shadowing false
+skinparam nodesep 12
+skinparam ranksep 22
+skinparam packageStyle rectangle
+skinparam package {
+    BackgroundColor #f6f8fa
+    BorderColor #adb5bd
+    FontColor #57606a
+}
+skinparam entity {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam entity<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+package "수집·인벤토리 — 에이전트가 보내온 원본" {
+
+    entity tb_host {
+        host_id : bigint <<PK>>
+        --
+        fqdn : string <<UK>>
+        os_id : string
+        last_seen_ip : string
+        poll_schedule_seconds : int
+        grade_version : bigint
+        is_deleted : bool
+    }
+
+    entity tb_asset_grade_review {
+        host_id : bigint <<PK>><<FK>>
+        --
+        article9_item : enum
+        article9_reference : string
+        business_category : string
+        data_category : string
+        owning_department : string
+        external_publication_state : enum
+        review_reference : string
+        next_review_date : date
+        is_stale : bool
+        review_version : bigint
+        reviewed_by : bigint <<FK>>
+        reviewed_at : datetime
+    }
+
+    entity tb_asset_grade_suggestion_history {
+        suggestion_history_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        scan_id : bigint <<FK>>
+        suggested_grade : char
+        ' 시스템 제안 - 확정값(tb_host.grade)이 아니다
+        suggested_reason : string
+        evaluation_status : enum
+        ' SUGGESTED / NO_MATCH / NOT_EVALUATED
+        evidence_snapshot : json
+        result_fingerprint : binary <<UK>>
+        last_observed_at : datetime
+        effective_at : datetime
+        ' 생성컬럼 - 관찰시각 기준 최대 7일까지만 과거로 클램프
+    }
+
+    entity tb_package_integrity {
+        package_integrity_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        package_name : string
+        flags : string
+        ' rpm/dpkg 원본 플래그 그대로 (5=digest, M=권한, missing=없음)
+        file_path : string
+    }
+
+    entity tb_scan {
+        scan_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        collected_at : datetime
+        package_count : int
+        exposure_count : int
+        match_fingerprint : string
+        ' 판정 결과 지문 - 같으면 재작성 안 함
+        integrity_checked : bool
+        integrity_partial : bool
+        integrity_total : int
+        ' 무결성 "검사 여부·부분결과·전체건수" 는 행이 아니라 스캔 단위 사실
+        is_deleted : bool
+    }
+
+    entity tb_collection_stage {
+        scan_id : bigint <<PK>><<FK>>
+        stage_code : string <<PK>>
+        ' 복합 자연키 - 명명규칙 예외
+        --
+        status : string
+        ' MISSING 안 돌았음 / EMPTY 0건
+        item_count : int
+    }
+
+    entity tb_scan_run {
+        scan_run_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        scan_id : bigint <<FK>>
+        collected_at : datetime
+        content_changed : bool
+        elapsed_seconds : int
+        peak_rss_mb : decimal
+        cpu_seconds : decimal
+    }
+
+    entity tb_agent_command {
+        agent_command_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        run_at : datetime
+        status : string
+        progress_percent : int
+        heartbeat_at : datetime
+        cancel_requested_at : datetime
+        cancelled_at : datetime
+        is_deleted : bool
+    }
+
+    entity tb_package {
+        package_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        container_id : bigint
+        ' 호스트는 0, 컨테이너는 양수
+        manager : string
+        ' dpkg rpm apk pip npm
+        name : string
+        version : string
+        source_pkg : string
+        origin : string
+        ' 출처 - 서드파티 판정
+    }
+
+    entity tb_container {
+        container_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        cid : string
+        image : string
+        image_digest : string
+        k8s_namespace : string
+        os_id : string
+        pkg_count : int
+    }
+
+    entity tb_exposure {
+        exposure_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        proc : string
+        port : int
+        scope : string
+        ' EXTERNAL LAN BOUND FILTERED LOCAL
+        exe_pkg : string
+        loaded_pkgs : text
+    }
+
+    entity tb_process {
+        process_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        comm : string
+        exe_pkg : string
+        loaded_pkgs : text
+    }
+
+    entity tb_pkg_change {
+        pkg_change_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        scan_id : bigint <<FK>>
+        package_name : string
+        change_type : string
+        ' installed removed upgraded downgraded
+        old_version : string
+        new_version : string
+    }
+
+    entity tb_host_account {
+        host_account_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        scan_id : bigint <<FK>>
+        username : string
+        ' UK(scan_id, username)
+        uid : int
+        shell : string
+        is_locked : bool
+        ' NULL 이면 shadow 미수집
+        is_sudoer : bool
+        is_system : bool
+        pw_max_days : int
+        last_login_at : datetime
+        never_logged_in : bool
+    }
+
+    entity tb_package_dependency {
+        package_dependency_id : bigint <<PK>>
+        --
+        scan_id : bigint <<FK>>
+        container_id : bigint
+        source : string
+        ' sbom pom
+        parent_manager/name/version : string
+        ' 전부 NULL = 루트 표식·pom 직접선언
+        child_manager/name/version : string
+        edge_hash : binary(32)
+        ' 생성컬럼 - UK(scan_id, container_id, edge_hash)
+    }
+
+    entity tb_package_registry_meta {
+        package_registry_meta_id : bigint <<PK>>
+        --
+        manager : string
+        parent_name/version : string
+        child_name : string
+        child_constraint : string
+        ' 원문 그대로(파싱 안 함) - ^2.1, ~1.4, [1.2,2.0) 등
+        collected_at : datetime
+        edge_hash : binary(32)
+        ' 생성컬럼 - UK(edge_hash). scan_id 없음(스캔과 독립 - 레지스트리 사실)
+    }
+
+    entity tb_host_address {
+        host_address_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        ip : string
+        ' UK(host_id, ip) - 자산 탐색 IP 대조의 좌변
+        iface : string
+        first_seen : datetime
+        last_seen : datetime
+    }
+
+    entity tb_host_route {
+        host_route_id : bigint <<PK>>
+        --
+        host_id : bigint <<FK>>
+        cidr : string
+        ' UK(host_id, cidr) - 0.0.0.0/0 이면 기본경로 행
+        gateway_ip : string
+        ' NULL = 직결 서브넷(scope link)
+        iface : string
+        first_seen : datetime
+        last_seen : datetime
+    }
+
+' ── 다른 도메인 소속 참조 테이블(PK 만, 관계선 유지용) ──────────
+
+    entity tb_remediation_note <<ref>> {
+        remediation_note_id : bigint <<PK>>
+    }
+
+    entity tb_finding_status <<ref>> {
+        finding_status_id : bigint <<PK>>
+    }
+
+    entity tb_finding <<ref>> {
+        finding_id : bigint <<PK>>
+    }
+
+    entity tb_suppressed_finding <<ref>> {
+        suppressed_finding_id : bigint <<PK>>
+    }
+
+    entity tb_pkg_changelog_cve <<ref>> {
+        pkg_changelog_cve_id : bigint <<PK>>
+    }
+
+    entity tb_applied_errata <<ref>> {
+        applied_errata_id : bigint <<PK>>
+    }
+
+    entity tb_debsecan <<ref>> {
+        debsecan_id : bigint <<PK>>
+    }
+
+    entity tb_stale_lib <<ref>> {
+        stale_lib_id : bigint <<PK>>
+    }
+
+    entity tb_cce_finding <<ref>> {
+        cce_finding_id : bigint <<PK>>
+    }
+
+    entity tb_user <<ref>> {
+        user_id : bigint <<PK>>
+    }
+
+    entity tb_report_job <<ref>> {
+        report_job_id : bigint <<PK>>
+    }
+
+    entity tb_discovered_asset <<ref>> {
+        discovered_asset_id : bigint <<PK>>
+    }
+}
+
+tb_host ||--o{ tb_scan : "수집 이력"
+tb_host ||--o{ tb_pkg_change : "패키지 변화 이력"
+tb_host ||--o{ tb_scan_run : "실제 실행 이력"
+tb_host ||--o{ tb_agent_command : "수집 명령"
+tb_host ||--o{ tb_host_account : "계정 인벤토리"
+tb_host ||--o{ tb_host_address : "호스트 IP\n(NIC 마다 1행)"
+tb_host ||--o{ tb_host_route : "라우팅 행 —\n세그먼트 맵의 근거"
+tb_host ||--o{ tb_remediation_note : "미조치 사유 메모"
+tb_host ||--o{ tb_finding_status : "조치 상태"
+tb_host ||--o| tb_asset_grade_review : "최신 등급 검토"
+tb_host ||--o{ tb_asset_grade_suggestion_history : "등급 제안 관찰 이력"
+tb_scan ||--o{ tb_package : "설치 패키지"
+tb_scan ||--o{ tb_exposure : "노출 소켓(포트)"
+tb_scan ||--o{ tb_process : "실행 프로세스"
+tb_scan ||--o{ tb_container : "컨테이너 인벤토리"
+tb_scan ||--o{ tb_collection_stage : "수집 단계 완전성"
+tb_scan ||--o{ tb_scan_run : "동일 스냅샷\n재사용 가능"
+tb_scan ||--o{ tb_finding : "매처 판정"
+tb_scan ||--o{ tb_suppressed_finding : "억제된 건"
+tb_scan ||--o{ tb_pkg_changelog_cve : "억제 근거②"
+tb_scan ||--o{ tb_applied_errata : "억제 근거③"
+tb_scan ||--o{ tb_debsecan : "억제 근거④"
+tb_scan ||--o{ tb_stale_lib : "억제 취소 —\n재시작 필요"
+tb_scan ||--o{ tb_cce_finding : "보안설정 점검"
+tb_scan ||--o{ tb_host_account : "그 스냅샷의 계정 목록"
+tb_scan ||--o{ tb_package_dependency : "의존성 엣지\n(SBOM·pom)"
+tb_scan ||--o{ tb_package_integrity : "원본과 다른 파일"
+tb_scan ||--o{ tb_asset_grade_suggestion_history : "그 스캔의 제안 관찰"
+tb_user |o--o{ tb_asset_grade_review : "등급 검토자"
+tb_host ||--o{ tb_report_job : "AI 보고서 작업\n(외부 작업큐의 사본)"
+tb_host |o--o{ tb_discovered_asset : "IP 대조로 붙은\n기존 자산(없으면 NULL)"
+tb_container ||..o{ tb_package : "컨테이너 내부\n패키지(container_id)"
+tb_package_dependency }o..o{ tb_package_registry_meta : "부모(manager+name+version)\n값으로 대조 — 다음 상향 버전"
+tb_host_address }o..o| tb_discovered_asset : "IP 값 대조 —\n두 파이프라인의 유일한 접점"
+
+tb_host -[hidden]- tb_asset_grade_review
+tb_asset_grade_review -[hidden]- tb_asset_grade_suggestion_history
+tb_asset_grade_suggestion_history -[hidden]- tb_package_integrity
+tb_package_integrity -[hidden]- tb_scan
+tb_scan -[hidden]- tb_collection_stage
+tb_collection_stage -[hidden]- tb_scan_run
+tb_scan_run -[hidden]- tb_agent_command
+tb_agent_command -[hidden]- tb_package
+tb_package -[hidden]- tb_container
+tb_container -[hidden]- tb_exposure
+tb_exposure -[hidden]- tb_process
+tb_process -[hidden]- tb_pkg_change
+tb_pkg_change -[hidden]- tb_host_account
+tb_host_account -[hidden]- tb_package_dependency
+tb_package_dependency -[hidden]- tb_package_registry_meta
+tb_package_registry_meta -[hidden]- tb_host_address
+tb_host_address -[hidden]- tb_host_route
+tb_host_route -[hidden]- tb_remediation_note
+tb_remediation_note -[hidden]- tb_finding_status
+tb_finding_status -[hidden]- tb_finding
+tb_finding -[hidden]- tb_suppressed_finding
+tb_suppressed_finding -[hidden]- tb_pkg_changelog_cve
+tb_pkg_changelog_cve -[hidden]- tb_applied_errata
+tb_applied_errata -[hidden]- tb_debsecan
+tb_debsecan -[hidden]- tb_stale_lib
+tb_stale_lib -[hidden]- tb_cce_finding
+tb_cce_finding -[hidden]- tb_user
+tb_user -[hidden]- tb_report_job
+tb_report_job -[hidden]- tb_discovered_asset
+
+@enduml

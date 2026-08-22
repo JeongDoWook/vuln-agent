@@ -37,6 +37,21 @@ WT_ROOT="$MAIN_ROOT/wt"
 
 SECRET_FILES=(mysql_root_password mysql_password admin_password)
 
+# 개발 도구: 대회 제출 저장소에서는 .gitignore 로 추적 제외됐다(README "출품 범위" 참고) —
+#   git worktree add 는 추적 파일만 가져오므로 워크트리엔 이 경로들이 없다. secrets 와 같은
+#   이유로 메인 트리에서 직접 복사한다(디렉터리 7개 + 파일 7개).
+#   .claude 는 통째로 복사하지 않는다 — 메인 트리의 .claude/settings.local.json 에는
+#   `ssh master *`(운영 서버) 같은 개인 권한이 들어 있고, git 미추적이라 어디에도 안 지워진다.
+#   그대로 복사하면 새 워크트리마다 이 권한이 승인 없이 그대로 살아난다. 그래서 안전이
+#   확인된 하위 항목(agents·hooks·skills·settings.json, 전부 git 추적 대상)만 개별 복사하고
+#   settings.local.json(개인 권한)·scheduled_tasks.lock(런타임 락)은 목록에 아예 넣지 않는다.
+DEV_TOOL_PATHS=(
+  kit .claude/agents .claude/hooks .claude/skills .claude/settings.json
+  .codex scripts deploy/orchestrator
+  CLAUDE.md AGENTS.md AGENTS-review-kit.md
+  .review-kit.json .review-kit-manifest.json .pipeline.json
+)
+
 # --- WEB_PORT 할당 -----------------------------------------------------------
 # web+scheduler 는 이제 워크트리별로 독립된 컨테이너로 뜬다(compose_runner.sh) — 포트가
 # 겹치면 안 되므로, 메인 트리 포트(보통 8000)와 다른 워크트리에 이미 준 포트를 피해 하나 고른다.
@@ -166,6 +181,37 @@ cmd_add() {
     say "  ${YELLOW}⚠${NC} secrets/*.txt 없음 — 메인 트리에서 ${CYAN}./deploy/compose_runner.sh init${NC} 먼저"
   else
     say "  ${GREEN}✓${NC} secrets ${copied}개 복사"
+  fi
+
+  # 개발 도구(kit/·.claude/·CLAUDE.md 등): git 미추적이라 worktree add 가 안 가져다준다.
+  #   메인 트리에 있으면 개별 복사 — 없으면 다음 워크트리부터 이 프로젝트의 개발 방식
+  #   (오케스트레이터·codelore 조회 규약·리뷰 킷) 자체가 사라진다.
+  #   대상이 이 워크트리 브랜치에서 아직 git 추적 중이면(이 PR 이 origin/main 에 병합되기
+  #   전이라 dt_item 경로가 그 브랜치 소스의 일부인 경우) 복사를 건너뛴다 — git worktree add
+  #   가 이미 그 브랜치의 올바른 버전을 가져다줬으므로, 메인 트리 온디스크본으로 덮어쓰면
+  #   그 브랜치 고유의 커밋되지 않은 변경을 지우게 된다.
+  #   추적 중이 아닐 때만 먼저 지운다 — 안 지우면 `cp -r kit "$dir/kit"` 가 기존 kit/ 안에
+  #   kit/ 를 또 만든다.
+  local dt_item dt_dst dt_copied=0
+  for dt_item in "${DEV_TOOL_PATHS[@]}"; do
+    [ -e "$MAIN_ROOT/$dt_item" ] || continue
+    if git -C "$dir" ls-files --error-unmatch "$dt_item" >/dev/null 2>&1; then
+      continue
+    fi
+    dt_dst="$dir/$dt_item"
+    rm -rf "$dt_dst"
+    mkdir -p "$(dirname "$dt_dst")"
+    if [ -d "$MAIN_ROOT/$dt_item" ]; then
+      cp -r "$MAIN_ROOT/$dt_item" "$dt_dst"
+    else
+      cp "$MAIN_ROOT/$dt_item" "$dt_dst"
+    fi
+    dt_copied=$((dt_copied + 1))
+  done
+  if [ "$dt_copied" -eq 0 ]; then
+    say "  ${YELLOW}⚠${NC} 개발 도구(kit·.claude·CLAUDE.md 등) 없음 — 메인 트리 상태를 확인하세요"
+  else
+    say "  ${GREEN}✓${NC} 개발 도구 ${dt_copied}개 복사 (kit·.claude·CLAUDE.md 등, git 미추적)"
   fi
 
   # .env.dev 는 이 워크트리 전용 WEB_PORT 만 담는다(gitignore, 매번 새로 만듦) — 나머지 값

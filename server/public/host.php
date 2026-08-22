@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
+require_once __DIR__ . '/../src/view/charts_spark.php';   // vg_sparkline()·vg_horizon()
 require __DIR__ . '/../src/distro.php';   // vg_distro_unsupported — 피드 미지원 배포판 경고
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity
 require_once __DIR__ . '/../src/matcher.php';
@@ -89,6 +90,7 @@ $rows = []; $exposures = []; $sevByScan = []; $resourceScans = []; $restartRows 
 $findingStatuses = [];   // 취약점 탭 행들의 조치 상태(자연키 → 행). 없으면 미조치로 읽는다.
 $accountTotal = 0; $accountJudgments = []; $accountAllCount = 0; $depEdgeTotal = 0; $containerTotal = 0;
 $sevByContainer = [];   // [container_id => [severity => n]] — 컨테이너 카드의 심각도 분포
+$containerTrend = [];   // [cid => 스파크라인 점 목록] — 컨테이너 탭 '14일 추세' 열
 /* 의존성 탭이 쓰는 값 — **그 탭을 눌렀을 때만** 채워진다(자산 상세는 자주 열리는 화면이라
  *   다른 탭에서 엣지 조회가 함께 돌면 안 된다). 조회 단위는 (스캔 × 컨테이너) 하나다. */
 $depUnits = [];        // [container_id => ['edges'=>n,'label'=>…]] — 엣지가 있는 단위만
@@ -247,6 +249,10 @@ try {
         } elseif ($tab === 'containers') {
             ['total' => $total, 'rows' => $rows, 'sevByContainer' => $sevByContainer]
                 = vg_host_load_containers_tab($pdo, $sid, $perPage, $offset, $q);
+            // '14일 추세' 배치 조회 — 이 페이지에 뜬 컨테이너(cid)만 대상이다(N+1 방지).
+            $containerTrend = vg_host_load_container_trend(
+                $pdo, $hostId, array_column($rows, 'cid'), VG_HOST_CONTAINER_TREND_DAYS
+            );
         } elseif ($tab === 'runtime') {
             ['total' => $total, 'exposures' => $exposures, 'exposureTotal' => $exposureTotal,
              'rows' => $rows, 'ePage' => $ePage, 'stale' => $staleLibs]
@@ -311,9 +317,6 @@ vg_alert($agentErr);
   <?php
   $noScanMeta = [vg_h(trim($host['os_id'] . ' ' . $host['os_version']))];
   if (!empty($host['last_seen_ip'])) { $noScanMeta[] = 'IP ' . vg_h($host['last_seen_ip']); }
-  // 수집 이력이 없어도 보고서 작업은 만들 수 있다 — 외부에 줄 식별자는 여기서도 보여준다.
-  $noScanUuid = vg_host_uuid_meta($host);
-  if ($noScanUuid !== null) { $noScanMeta[] = $noScanUuid; }
   $noScanMeta[] = '<a href="/">대시보드</a>';
   vg_hero(vg_h($host['fqdn']), $noScanMeta, null, 'ok', '수집 상태');
   ?>
@@ -323,6 +326,9 @@ vg_alert($agentErr);
              내리지 않는다 — tabs/manage.php 가 쓰는 것과 같은 게이트(스캔 전 신규 자산도 예외 없음). */ ?>
     <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin')); ?>
     <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
+    <?php // 수집 이력이 없어도 보고서 작업은 만들 수 있다 — 이 화면은 탭(자산 설정)이 없으므로
+          //   UUID 카드를 여기서 직접 그린다(#host-hero-uuid-remove).
+          vg_host_render_uuid_card($host); ?>
   <?php endif; ?>
   <div class="card"><?php vg_empty(['icon' => 'feed', 'title' => '아직 수집 이력이 없습니다.', 'hint' => '에이전트를 --send 로 실행하면 여기에 나타납니다.']); ?></div>
 <?php else:
@@ -388,7 +394,8 @@ vg_alert($agentErr);
       'depGraph' => $depGraph, 'depSev' => $depSev,
       'findingStatuses' => $findingStatuses, 'integrityRows' => $integrityRows,
       'verifySupport' => $verifySupport,
-      'sevByContainer' => $sevByContainer, 'sevByScan' => $sevByScan, 'resourceScans' => $resourceScans,
+      'sevByContainer' => $sevByContainer, 'containerTrend' => $containerTrend,
+      'sevByScan' => $sevByScan, 'resourceScans' => $resourceScans,
       'staleLibs' => $staleLibs, 'suppLayers' => $suppLayers, 'suppEvidence' => $suppEvidence,
       'accountJudgments' => $accountJudgments, 'gradeSignals' => $gradeSignals,
       // 자산 설정 탭(수집 제어·등급·삭제)
