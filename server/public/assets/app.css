@@ -3219,6 +3219,37 @@ a.spark-row:hover { background: var(--surface-2); color: var(--text); text-decor
 .spark-row__delta.tone-muted { color: var(--muted-fg); }
 @media (max-width: 700px) { .spark-row { grid-template-columns: minmax(0, 5rem) 4rem max-content max-content; } }
 
+/* --- 경과일 구간 누적 막대(vg_aging_buckets) --------------------------------
+ * 5개 구간 × 2톤(아래 High 이상 · 위 MEDIUM). 격자·눈금은 회차별 신규·해결 막대와 같은
+ * 어휘(.chart__grid/.chart__tick)를 그대로 쓴다 — 여기서 새로 두는 건 막대 톤과 막대
+ * 위아래 글자뿐이다. */
+.agebar { overflow-x: auto; }
+.agebar svg { display: block; width: 100%; height: auto; min-width: 26rem; }
+.agebar__seg.tone-high { fill: var(--high); }
+.agebar__seg.tone-med  { fill: var(--med); }
+.agebar__total { fill: var(--text); font-size: 12px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
+.agebar__lbl   { fill: var(--text-2); font-size: 10.5px; text-anchor: middle; }
+.agebar__sub   { fill: var(--muted); font-size: 9.5px; text-anchor: middle; font-variant-numeric: tabular-nums; }
+
+/* --- 방치 기간 타임라인(vg_age_timeline, 프리스틀리 형식) --------------------
+ * 취약점/공지 하나가 막대 하나. 왼쪽=공개일, 오른쪽=오늘. **색은 등급이 아니라 방치
+ * 연수가 정한다**(10년↑ 빨강 · 5년↑ 주황 · 그 아래 노랑) — 같은 --crit/--high/--med 토큰을
+ * 재사용하지만 이 차트에서는 나이의 어휘라 심각도 도넛·지형도와 나란히 두고 섞어 읽으면
+ * 안 된다. 격자는 .chart__grid 를 그대로 쓰고, 가로축 눈금(연도)만 새로 둔다(.chart__tick
+ * 은 세로축용이라 text-anchor 가 end 다). */
+.age { overflow-x: auto; }
+.age svg { display: block; width: 100%; height: auto; min-width: 22rem; }
+.age__bar.tone-crit { fill: var(--crit); }
+.age__bar.tone-high { fill: var(--high); }
+.age__bar.tone-med  { fill: var(--med); }
+.age__tick  { fill: var(--muted); font-size: 9px; text-anchor: middle; font-variant-numeric: tabular-nums; }
+.age__label { fill: var(--text-2); font-size: 10.5px; text-anchor: end; }
+.age__stat  { fill: var(--text); font-size: 10.5px; text-anchor: start; font-variant-numeric: tabular-nums; }
+a.age__row { cursor: pointer; }
+a.age__row:hover .age__bar { stroke: var(--accent); stroke-width: 1.5; }
+a.age__row:hover .age__label,
+a.age__row:hover .age__stat { fill: var(--text); }
+
 /* --- 대시보드 위젯 격자(index.php) -----------------------------------------
  * 사용자가 다른 제품 두 개를 들고 지목한 것 세 가지를 그대로 가져온다:
  * **묶음마다 머리** · **위젯마다 독립 카드** · **같은 줄은 같은 높이**.

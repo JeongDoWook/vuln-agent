@@ -129,9 +129,59 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
+/* 경과일 구간 누적 막대 — 목록 위 한 칸(#agingcard). 검색·필터와는 무관하게 "최신 스캔
+ * 기준으로 지금 자산에 걸려 있는 CVE" 전체를 본다(목록의 $where 는 여기 안 걸린다 — 필터를
+ * 걸 때마다 분포가 바뀌면 "전체 그림" 이라는 이 카드의 목적이 흐려진다).
+ * tb_finding(훨씬 큰 표)을 최신 스캔 서브쿼리로 먼저 좁힌 뒤에만 tb_cve 와 조인한다 —
+ * dashboard/queries.php 의 검증된 자산 지형도 조인과 같은 모양(0.2초 실측 전례).
+ * 별도 try/catch — 이 카드가 실패해도 목록 자체는 그대로 뜬다. */
+$agingBuckets = []; $agingNull = 0; $agingErr = false;
+try {
+    $bucketSql = vg_aging_bucket_case('c.published');
+    // STRAIGHT_JOIN — 옵티마이저가 통계만 보고 tb_finding(가장 큰 표) 를 드라이빙 테이블로
+    //   골라 풀스캔하는 경우가 있었다(EXPLAIN 실측, PR 결과 파일 참고). tb_scan→최신 스캔
+    //   서브쿼리→tb_host→tb_finding→tb_cve 순서(작은 것부터)를 강제해 tb_finding 을
+    //   scan_id 인덱스(uq_find)로만 훑게 한다.
+    $agingStmt = vg_pdo()->query(
+        "SELECT bucket, SUM(is_high) high_n, SUM(1 - is_high) med_n
+           FROM (
+               SELECT STRAIGHT_JOIN f.cve_id, $bucketSql AS bucket,
+                      MAX(f.severity IN ('CRITICAL','HIGH')) AS is_high
+                 FROM tb_scan s
+                 JOIN " . vg_latest_scan_subq() . " t ON t.mid = s.scan_id
+                 JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
+                 JOIN tb_finding f ON f.scan_id = s.scan_id AND f.is_deleted = 0
+                      AND f.severity IN ('CRITICAL','HIGH','MEDIUM')
+                 JOIN tb_cve c ON c.cve_id = f.cve_id AND c.is_deleted = 0
+                GROUP BY f.cve_id, bucket
+           ) x
+          GROUP BY bucket"
+    );
+    foreach ($agingStmt->fetchAll() as $row) {
+        if ($row['bucket'] === null) {
+            $agingNull = (int) $row['high_n'] + (int) $row['med_n'];
+            continue;
+        }
+        $agingBuckets[(int) $row['bucket']] = ['high' => (int) $row['high_n'], 'med' => (int) $row['med_n']];
+    }
+} catch (Throwable $e) {
+    error_log('[cves] aging buckets: ' . $e->getMessage());
+    $agingErr = true;
+}
+
 vg_header('CVE', 'cves');
 ?>
   <?php vg_page_title('CVE', 'CATALOG', ['count' => $total]); ?>
+
+<?php if (!$agingErr && ($agingBuckets || $agingNull > 0)): ?>
+  <div class="card">
+    <strong>경과일 구간별 분포</strong>
+    <span class="why">최신 스캔 기준 · 자산에 걸려 있는 CVE 만 · <?= vg_h((string) date('Y-m-d')) ?> 기준</span>
+    <div class="card__body">
+      <?php vg_aging_buckets($agingBuckets, ['null_count' => $agingNull]); ?>
+    </div>
+  </div>
+<?php endif; ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
