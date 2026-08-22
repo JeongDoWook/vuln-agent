@@ -12,6 +12,7 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity — auth.php 가 이미 로드했을 수 있다
 require_once __DIR__ . '/../src/nofix.php';
+require_once __DIR__ . '/../src/view/charts_pareto.php'; // vg_pareto, VG_PARETO_TOP
 vg_require_menu('findings');
 
 $err = null;
@@ -20,6 +21,7 @@ $pageRows = [];
 $total = 0;
 $hostOptions = [];
 $truncated = false;
+$paretoItems = []; $paretoTotalValue = 0; $paretoTotalPkgs = 0;
 $q = trim((string) ($_GET['q'] ?? ''));
 $hostId = (int) ($_GET['host'] ?? 0);
 $page = vg_page();
@@ -43,6 +45,29 @@ try {
         $info = $scans[(int) $r['scan_id']] ?? ['host_id' => 0, 'fqdn' => '?'];
         $rows[$i]['host_id'] = $info['host_id'];
         $rows[$i]['fqdn'] = $info['fqdn'];
+    }
+
+    /* 파레토(무엇부터 걷어낼까) — 새 쿼리를 만들지 않는다. 이 화면은 이미 권고 대상 전 그룹을
+     *   메모리에 들고 있으므로(HAVING 이 걸러낸 소수, VG_NOFIX_MAX_GROUPS 상한) 그걸 패키지명
+     *   으로 다시 묶기만 한다. 현재 호스트·검색 필터가 걸려 있으면 파레토도 그 범위로 좁혀진다
+     *   (전체 그림이 필요하면 필터를 지우면 된다 — 목록과 같은 데이터를 보는 게 자연스럽다). */
+    $paretoAgg = [];
+    foreach ($rows as $r) {
+        $name = (string) $r['package_name'];
+        $paretoAgg[$name] = ($paretoAgg[$name] ?? 0) + (int) $r['nofix_cnt'];
+    }
+    arsort($paretoAgg);
+    $paretoTotalValue = array_sum($paretoAgg);
+    $paretoTotalPkgs  = count($paretoAgg);
+    $paretoItems = [];
+    foreach (array_slice($paretoAgg, 0, VG_PARETO_TOP, true) as $name => $cnt) {
+        $paretoItems[] = [
+            'label' => $name,
+            'value' => $cnt,
+            'href'  => '/nofix-packages.php?' . http_build_query(array_filter([
+                'q' => $name, 'host' => $hostId > 0 ? $hostId : null,
+            ])),
+        ];
     }
 
     // HAVING 이 이미 권고 대상만 남기므로 남는 행은 소수다 — 페이지 자르기는 PHP 에서 한다
@@ -83,6 +108,19 @@ vg_header('제거 권고', 'nofix_packages');
            "관측이지 EOL 확정이 아니다" 는 '조치' 열 머리글 title 로. */ ?>
   <?php if ($truncated): ?>
     <?php vg_alert('권고 대상이 ' . VG_NOFIX_MAX_GROUPS . '개를 넘어 앞쪽만 보여줍니다 — 호스트·패키지 필터로 좁혀 보세요.', 'warn'); ?>
+  <?php endif; ?>
+
+  <?php if (count($paretoItems) >= 2): ?>
+    <div class="card">
+      <strong>벤더 미수정 CVE — 무엇부터 걷어낼까</strong>
+      <div class="card__body"><?php vg_pareto($paretoItems, [
+          'total_value' => $paretoTotalValue,
+          'total_items' => $paretoTotalPkgs,
+          'unit'        => '건',
+          'item_unit'   => '개 패키지',
+          'alt'         => '벤더 미수정 집중 패키지 파레토',
+      ]); ?></div>
+    </div>
   <?php endif; ?>
 
   <?php vg_toolbar([
