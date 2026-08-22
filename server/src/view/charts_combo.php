@@ -17,13 +17,20 @@ require_once __DIR__ . '/components.php';
 
 /**
  * $counts: ['total'=>, 'exposed'=>, 'no_fix'=>, 'kev'=>,
- *           'exposed_nofix'=>, 'exposed_kev'=>, 'nofix_kev'=>, 'all3'=>]
+ *           'exposed_nofix'=>, 'exposed_kev'=>, 'nofix_kev'=>, 'all3'=>,
+ *           'only_exposed'=>, 'only_nofix'=>, 'only_kev'=>,
+ *           'exposed_nofix_only'=>, 'exposed_kev_only'=>, 'nofix_kev_only'=>]
  *          전부 findings/queries/cve.php 의 한 쿼리(SUM(a=1 AND b=1) 표현식들)에서 나온 값이다.
  *          여기서 다시 곱집합을 셈하지 않는다 — 이미 계산된 값을 어떻게 그릴지만 정한다.
+ *          raw(exposed/exposed_nofix/all3 …)는 겹침을 포함한 순수 교집합 — 헤드라인·목록이
+ *          "전체 몇 건"을 말할 때 쓴다. only_ 로 시작하거나 _only 로 끝나는 키는 **배타**
+ *          조합(벤 다이어그램의 실제 면적)이라 SVG 를 그릴 때만 쓴다. 이 둘을 섞으면 단독
+ *          칸에 겹침이 포함된 값이 찍혀 이중 계산된다 — 이 함수가 고치는 사고가 바로 그것이다.
  * $opts:  'links' => [region_key => href] — 실제로 그 조합으로 필터할 수 있는 키만 채운다.
  *         키가 없으면(또는 빈 문자열이면) 그 칸은 링크 없이 값만 보인다.
  */
 function vg_risk_combo(array $counts, array $opts = []): void {
+    // raw — 헤드라인·접근성 목록(겹침을 포함한 순수 교집합)
     $a   = max(0, (int) ($counts['exposed'] ?? 0));
     $b   = max(0, (int) ($counts['no_fix'] ?? 0));
     $c   = max(0, (int) ($counts['kev'] ?? 0));
@@ -31,6 +38,14 @@ function vg_risk_combo(array $counts, array $opts = []): void {
     $ac  = max(0, (int) ($counts['exposed_kev'] ?? 0));
     $bc  = max(0, (int) ($counts['nofix_kev'] ?? 0));
     $abc = max(0, (int) ($counts['all3'] ?? 0));
+
+    // exclusive — 벤 다이어그램 SVG 전용(단독·겹침 칸이 서로 겹치지 않는 배타값)
+    $onlyA  = max(0, (int) ($counts['only_exposed'] ?? 0));
+    $onlyB  = max(0, (int) ($counts['only_nofix'] ?? 0));
+    $onlyC  = max(0, (int) ($counts['only_kev'] ?? 0));
+    $onlyAb = max(0, (int) ($counts['exposed_nofix_only'] ?? 0));
+    $onlyAc = max(0, (int) ($counts['exposed_kev_only'] ?? 0));
+    $onlyBc = max(0, (int) ($counts['nofix_kev_only'] ?? 0));
 
     $links = (array) ($opts['links'] ?? []);
     $hrefFor = static fn(string $key): string => (string) ($links[$key] ?? '');
@@ -73,7 +88,9 @@ function vg_risk_combo(array $counts, array $opts = []): void {
         . '</' . $winTag . '>';
 
     // 벤 다이어그램 — 460px 이하에서는 app.css 가 이 블록을 숨기고 아래 목록만 남긴다.
-    echo '<div class="risk-combo__viz">' . vg_risk_combo_svg($a, $b, $c, $ab, $ac, $bc, $abc) . '</div>';
+    // 반드시 배타값(only*)을 넘긴다 — raw 교집합을 넘기면 단독 칸이 겹침을 이중 계산한다.
+    echo '<div class="risk-combo__viz">'
+        . vg_risk_combo_svg($onlyA, $onlyB, $onlyC, $onlyAb, $onlyAc, $onlyBc, $abc) . '</div>';
 
     // 접근성·좁은 화면 대체 목록 — 그림과 같은 값, 가능한 조합만 링크한다.
     $rows = [
@@ -112,12 +129,16 @@ function vg_risk_combo(array $counts, array $opts = []): void {
  * (원 지름과 중심 간 거리가 같다)이라 세 조건이 항상 대칭으로, 항상 같은 자리에 겹친다.
  * 단독 영역(오직 그 조건만)에는 이름표 + 값을, 겹치는 칸은 좁아서 값만 적는다 —
  * 어느 쪽이든 **0 이면 "0" 이라고 그대로 적는다**(비워 두면 "그림이 고장났다"로 읽힌다).
+ *
+ * 인자는 전부 **배타값**이어야 한다 — $a 는 "노출만"(미수정도 KEV 도 아님), $ab 는
+ * "노출+미수정만"(KEV 는 아님) 식이다. 겹침을 포함한 원값을 넘기면 단독 칸이 옆 겹침 칸을
+ * 이중 계산한다(호출부 vg_risk_combo 참고).
  */
 function vg_risk_combo_svg(int $a, int $b, int $c, int $ab, int $ac, int $bc, int $abc): string {
     $fmt  = static fn(int $n): string => number_format($n);
-    $aria = '노출 ' . $fmt($a) . '건 · 벤더 미수정 ' . $fmt($b) . '건 · KEV ' . $fmt($c) . '건'
-          . ' · 노출과 미수정 모두 ' . $fmt($ab) . '건 · 노출과 KEV 모두 ' . $fmt($ac) . '건'
-          . ' · 미수정과 KEV 모두 ' . $fmt($bc) . '건 · 셋 다 ' . $fmt($abc) . '건';
+    $aria = '노출만 ' . $fmt($a) . '건 · 벤더 미수정만 ' . $fmt($b) . '건 · KEV 만 ' . $fmt($c) . '건'
+          . ' · 노출과 미수정만 ' . $fmt($ab) . '건 · 노출과 KEV 만 ' . $fmt($ac) . '건'
+          . ' · 미수정과 KEV 만 ' . $fmt($bc) . '건 · 셋 다 ' . $fmt($abc) . '건';
 
     $svg  = '<svg viewBox="0 0 220 210" role="img" aria-label="' . vg_h($aria) . '">';
     $svg .= '<circle class="venn-circle tone-crit"   cx="80"  cy="78"  r="60"></circle>';

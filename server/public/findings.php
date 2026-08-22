@@ -90,7 +90,9 @@ $actionCounts = ['kev' => 0, 'restart' => 0, 'overdue' => 0, 'total' => 0, 'over
 $runtimeCounts = array_fill_keys(array_keys(VG_RUNTIME_DONUT), 0);
 // 위험 조합(cve 탭 '조치 성격' 카드 — vg_risk_combo). 키는 findings/queries/cve.php 의 $riskCombo 와 같다.
 $riskCombo = ['total' => 0, 'exposed' => 0, 'no_fix' => 0, 'kev' => 0,
-              'exposed_nofix' => 0, 'exposed_kev' => 0, 'nofix_kev' => 0, 'all3' => 0];
+              'exposed_nofix' => 0, 'exposed_kev' => 0, 'nofix_kev' => 0, 'all3' => 0,
+              'only_exposed' => 0, 'only_nofix' => 0, 'only_kev' => 0,
+              'exposed_nofix_only' => 0, 'exposed_kev_only' => 0, 'nofix_kev_only' => 0];
 
 $q   = trim((string) ($_GET['q'] ?? ''));
 $sev = (string) ($_GET['sev'] ?? '');
