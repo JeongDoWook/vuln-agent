@@ -1538,6 +1538,14 @@ td details[open] summary { margin-bottom: .35rem; }
 .sla-burn__seg.tone-crit { fill: var(--crit); }
 .sla-burn__pct { font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 5rem; text-align: right; }
 .sla-burn__na { white-space: nowrap; }
+/* 판정 불가(이력 부족) — 값이 0%인 막대(초록 가득)와 헷갈리면 안 되므로 막대 자체를 안 그리고
+   빗금 친 트랙만 남긴다. 값이 없다는 사실이 "0%로 잘 지켜졌다"로 오독되지 않게 한다. */
+.sla-burn__track--empty {
+  display: flex; align-items: center; height: 10px; padding: 0 .6rem;
+  border-radius: var(--r-xs); border: 1px dashed var(--line-2);
+  background: repeating-linear-gradient(135deg, var(--muted-bg) 0 6px, transparent 6px 12px);
+}
+.sla-burn__track--empty .why { font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* 큰 점수 표시(사이드바 최상단) */
 .score { font-size: var(--fs-num-lg); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text); }
@@ -1576,6 +1584,10 @@ td details[open] summary { margin-bottom: .35rem; }
 /* --- 표 ------------------------------------------------------------------ */
 /* 이 제품의 주인공은 표다. 행 높이를 줄여 한 화면에 더 담고, 경계·머리글을 또렷하게 세운다. */
 table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+/* assetgrade_history.php 의 최근 시스템 제안 관찰 표처럼 vg_table() 을 안 쓰는 생 <table> 을
+   감싼다 — 열이 좁은 카드 폭보다 넓어질 때 표 전체가 카드 밖으로 밀리는 대신 가로 스크롤만
+   생기게 한다. table 자체 골격(테두리·글자크기)은 위 table 태그 선택자가 이미 준다. */
+.table-wrap { overflow-x: auto; }
 th, td { text-align: left; padding: var(--cell-py) var(--cell-px); border-bottom: 1px solid var(--line); vertical-align: top; }
 /* 행 높이는 데이터 표(vg_table 이 붙이는 .data-table)에만 준다 — 카드 안 두세 줄짜리
  * 속성표까지 41px 로 벌리면 상세 화면이 헐거워진다. height 는 표에서 **최소**로 동작하므로

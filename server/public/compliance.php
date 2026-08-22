@@ -104,10 +104,12 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   //   0% 라 색이 보이지도 않지만, 존재하지 않는 클래스를 만들지는 않는다.
   //   **판정 불가는 0%로 그리지 않는다** — 위반이 0건이라도 판정 근거(이력)가 모자라면
   //   막대 대신 "판정 불가 — 근거 없음" 문구를 남긴다(패치관리 통제가 실제로 이 경우다).
-  // $what 은 **막대가 무엇의 비율인가** 를 말하는 짧은 라벨이다. 없을 때는 붉은 막대가 꽉 찬 행이
-  //   "위반율 100%" 인지 "판정 진행률" 인지 화면만 보고는 알 수 없었다(마우스를 올려야만 알았다).
-  //   title/aria-label 로 넘긴다 — vg_meter 와 같은 계약(화면에 보이는 글자가 아니라
-  //   마우스/스크린리더용, 값은 요약 칸이 이미 갖고 있어 한 행에 두 번 적지 않는다).
+  // $what 은 **막대가 무엇의 비율인가** 를 말하는 짧은 라벨이다. 화면 글자로도 남긴다 —
+  //   title/aria-label 로만 넘기면 마우스를 올리기 전엔 붉은 막대가 꽉 찬 행이 "위반율 100%"
+  //   인지 "판정 진행률" 인지 알 수 없다(터치·저시력 확대 사용자는 hover 자체가 없다).
+  //   vg_meter 의 title/aria-label 계약은 여전히 지킨다(막대 자체엔 글자를 안 그린다) —
+  //   대신 배지 옆에 <span class="why">$what $val</span> 을 따로 세워 같은 값을 화면에도 보인다.
+  //   판정 칸 열 폭(13rem, 위 표 정의)이 이미 이 길이('위반 호스트 0.0%')를 기준으로 잡혀 있다.
   $naLabel = vg_compliance_status(0, true)['label'];
   $verdictCell = static function (array $s, ?float $pct, string $why, string $what, int $denom) use ($policy, $naLabel): string {
       $badge = vg_badge($s['label'], $s['tone']);
@@ -116,8 +118,9 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
           return $badge . vg_bullet('muted', 0, 0, $what . ' · ' . $why, ['na' => true]);
       }
       $val = number_format($pct, 1) . '%';
-      return $badge . vg_bullet($s['tone'] === 'ok' ? 'low' : $s['tone'], $pct, 0,
-          $what . ' ' . $val . ' · ' . $why, ['bands' => vg_bullet_bands($policy['partial_max'], $denom)]);
+      return $badge . '<span class="why">' . vg_h($what) . ' ' . vg_h($val) . '</span>'
+          . vg_bullet($s['tone'] === 'ok' ? 'low' : $s['tone'], $pct, 0,
+              $what . ' ' . $val . ' · ' . $why, ['bands' => vg_bullet_bands($policy['partial_max'], $denom)]);
   };
   // 통제별 분모. 판정 기준이 아니라 **표시용**이다(무엇이 위반인지는 그대로다).
   $patchTargets = 0;

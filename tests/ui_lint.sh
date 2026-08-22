@@ -39,8 +39,12 @@ printf "${CYAN}== UI 정적 검사 ==${NC}\n"
 #   프로세스 기동에 쓰였다(PR #587 과 같은 함정). 측정은 docs/dev/smoke-timing-profiling.md.
 #   동치인 이유: 원래 정규식 `\.$c([^a-z0-9_-]|$)` 는 "c 가 CSS 안에서 점 뒤의 **온전한**
 #   토큰으로 나오는가" 다([a-z0-9_-] 가 이어지면 안 되므로). 아래 추출이 그 토큰 집합 자체다.
+#   범위는 $PUB 뿐 아니라 $SRC(하위 디렉터리 포함)도 본다 — 검사 2번과 같은 이유(vg_table()
+#   같은 공용 헬퍼·view/ 차트 헬퍼가 class 를 만드는 자리가 server/src 로 옮겨갔다). find+xargs
+#   로 grep 을 한 번만 불러 fork 비용은 그대로 유지한다(파일마다 grep 을 부르지 않는다).
 dead=""
-classes=$(grep -ohE 'class="[a-z0-9 _-]+"' "$PUB"/*.php \
+classes=$(find "$PUB" "$SRC" -type f -name '*.php' -print0 \
+          | xargs -0 grep -ohE 'class="[a-z0-9 _-]+"' \
           | sed 's/class="//; s/"//' | tr ' ' '\n' | grep -vE '^$' | LC_ALL=C sort -u)
 css_tokens=$(grep -ohE '\.[A-Za-z0-9_][A-Za-z0-9_-]*' "$CSS" | tr -d '.' | LC_ALL=C sort -u)
 ws_list "$(LC_ALL=C comm -23 <(printf '%s\n' "$classes") <(printf '%s\n' "$css_tokens"))"

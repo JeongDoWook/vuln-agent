@@ -99,7 +99,7 @@ if ($pageJs !== '' && is_file(__DIR__ . "/../../public/assets/js/{$pageJs}.js"))
   </header>
   <?php if (vg_can('assets')): ?>
     <?php vg_modal_open('collectionStatus', '전체 자산 수집 현황', 'modal--wide collection-status-modal'); ?>
-      <div class="collection-overview" data-collection-overview>
+      <div data-collection-overview>
         <div class="collection-overview__summary">
           <div><span>활성 작업</span><strong data-overview-active>확인 중</strong></div>
           <div><span>실행 중</span><strong data-overview-running>–</strong></div>

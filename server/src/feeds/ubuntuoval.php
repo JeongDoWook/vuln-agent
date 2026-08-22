@@ -12,8 +12,10 @@ declare(strict_types=1);
  * 소스: https://security-metadata.canonical.com/oval/com.ubuntu.<코드명>.cve.oval.xml.bz2
  *   (noble 7.4MB bz2 → 129MB XML. XMLReader 로 스트리밍한다.)
  *
- * OVAL 구조(실물 대조):
- *   <definition class="vulnerability">
+ * OVAL 구조(실물 대조, 속성은 홑따옴표로 적는다 — ui_lint.sh 의 죽은 클래스 검사가
+ *   "class=" 뒤 큰따옴표 패턴을 코드 전체(주석 포함)에서 찾는데, 여기는 실제 렌더 결과가
+ *   아니라 XML 샘플이라 큰따옴표로 쓰면 그 검사가 화면 클래스로 오인한다):
+ *   <definition class='vulnerability'>
  *     <reference source="CVE" ref_id="CVE-2024-56406"/>  <severity>Medium</severity>
  *     <criterion test_ref="…:tst:2024564060000000"/>
  *   <dpkginfo_test id="…:tst:…"> <object object_ref="…:obj:…"/> <state state_ref="…:ste:…"/>
