@@ -11,7 +11,7 @@ declare(strict_types=1);
 /**
  * CVE 탭 — 등급 KPI · 노출 상태 구성 · 행동 큐 · 목록.
  *   $f: q sev st fx fst sort ctrId page perPage (findings.php 가 검증한 값)
- *   반환: counts actionCounts runtimeCounts overdueFindingIds total rows notes firstSeen policy ctrLabel
+ *   반환: counts actionCounts runtimeCounts riskCombo overdueFindingIds total rows notes firstSeen policy ctrLabel
  */
 function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, array $f): array {
     $q = (string) $f['q']; $sev = (string) $f['sev']; $st = (string) $f['st'];
@@ -55,7 +55,18 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
                 SUM(f.runtime_status = 'RUNNING')   rt_RUNNING,
                 SUM(f.runtime_status = 'LOADED')    rt_LOADED,
                 SUM(f.runtime_status = 'FILTERED')  rt_FILTERED,
-                SUM(f.runtime_status = 'INSTALLED') rt_INSTALLED
+                SUM(f.runtime_status = 'INSTALLED') rt_INSTALLED,
+                SUM(f.no_fix = 1) no_fix,
+                SUM(f.runtime_status = 'EXTERNAL' AND f.no_fix = 1) exposed_nofix,
+                SUM(f.runtime_status = 'EXTERNAL' AND f.in_kev = 1) exposed_kev,
+                SUM(f.no_fix = 1 AND f.in_kev = 1) nofix_kev,
+                SUM(f.runtime_status = 'EXTERNAL' AND f.no_fix = 1 AND f.in_kev = 1) all3,
+                SUM(f.runtime_status = 'EXTERNAL' AND f.no_fix = 0 AND f.in_kev = 0) only_exposed,
+                SUM(COALESCE(f.runtime_status,'') <> 'EXTERNAL' AND f.no_fix = 1 AND f.in_kev = 0) only_nofix,
+                SUM(COALESCE(f.runtime_status,'') <> 'EXTERNAL' AND f.no_fix = 0 AND f.in_kev = 1) only_kev,
+                SUM(f.runtime_status = 'EXTERNAL' AND f.no_fix = 1 AND f.in_kev = 0) exposed_nofix_only,
+                SUM(f.runtime_status = 'EXTERNAL' AND f.no_fix = 0 AND f.in_kev = 1) exposed_kev_only,
+                SUM(COALESCE(f.runtime_status,'') <> 'EXTERNAL' AND f.no_fix = 1 AND f.in_kev = 1) nofix_kev_only
            FROM tb_finding f WHERE f.scan_id IN ($in) AND f.is_deleted = 0"
     );
     $stmt->execute($scanIds);
@@ -72,6 +83,32 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
         $known += $runtimeCounts[$k];
     }
     $runtimeCounts['미상'] = max(0, (int) ($queueAgg['all_cnt'] ?? 0) - $known);
+
+    // 위험 조합(vg_risk_combo) — 노출·벤더 미수정·KEV 세 조건의 교집합. 셋 다 이미 위에서
+    //   세고 있는 같은 한 쿼리에 SUM(a=1 AND b=1) 표현식만 얹는다 — 조합마다 쿼리를 새로
+    //   날리지 않는다. exposed 는 rt_EXTERNAL 과 같은 값이라(노출 축의 정의가 EXTERNAL) 다시
+    //   세지 않고 그대로 쓴다.
+    //   raw(*_nofix 등)는 겹침을 포함한 순수 교집합 — 목록·헤드라인이 "노출이면서 미수정인
+    //   전체"를 말할 때 쓴다. only_*/*_only 는 **배타** 조합(다른 조건은 걸리지 않은 칸)이라
+    //   벤 다이어그램의 단독·겹침 영역을 그릴 때만 쓴다. 이 둘을 섞으면 원래 사고(겹침을
+    //   포함한 값을 단독 칸에 그려 이중 계산)가 재발한다.
+    $riskCombo = [
+        'total'              => (int) ($queueAgg['all_cnt'] ?? 0),
+        'exposed'            => (int) ($queueAgg['rt_EXTERNAL'] ?? 0),
+        'no_fix'             => (int) ($queueAgg['no_fix'] ?? 0),
+        'kev'                => (int) ($queueAgg['kev'] ?? 0),
+        'exposed_nofix'      => (int) ($queueAgg['exposed_nofix'] ?? 0),
+        'exposed_kev'        => (int) ($queueAgg['exposed_kev'] ?? 0),
+        'nofix_kev'          => (int) ($queueAgg['nofix_kev'] ?? 0),
+        'all3'               => (int) ($queueAgg['all3'] ?? 0),
+        // 배타 7칸 — 벤 다이어그램 전용. 합은 (exposed OR no_fix OR kev) 인 건수와 같아야 한다.
+        'only_exposed'       => (int) ($queueAgg['only_exposed'] ?? 0),
+        'only_nofix'         => (int) ($queueAgg['only_nofix'] ?? 0),
+        'only_kev'           => (int) ($queueAgg['only_kev'] ?? 0),
+        'exposed_nofix_only' => (int) ($queueAgg['exposed_nofix_only'] ?? 0),
+        'exposed_kev_only'   => (int) ($queueAgg['exposed_kev_only'] ?? 0),
+        'nofix_kev_only'     => (int) ($queueAgg['nofix_kev_only'] ?? 0),
+    ];
 
     $stmt = $pdo->prepare(
         "SELECT f.finding_id, s.host_id, COALESCE(ctr.cid, '') cid, f.cve_id, f.package_name,
@@ -258,6 +295,7 @@ function vg_findings_load_cve(PDO $pdo, array $scanIds, array $targetHostIds, ar
     $firstSeen = vg_finding_first_seen_map($pdo, $slaKeys, vg_finding_sla_lookback_days($policy));
 
     return ['counts' => $counts, 'actionCounts' => $actionCounts, 'runtimeCounts' => $runtimeCounts,
+            'riskCombo' => $riskCombo,
             'overdueFindingIds' => $overdueFindingIds, 'total' => $total, 'rows' => $rows,
             'notes' => $notes, 'firstSeen' => $firstSeen, 'policy' => $policy,
             'ctrLabel' => $ctrLabel];

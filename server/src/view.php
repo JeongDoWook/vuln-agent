@@ -12,6 +12,7 @@ declare(strict_types=1);
  *                             (동시 작업 충돌을 피하려 charts.php 와 파일을 갈랐다 — 파일
  *                             머리주석 참고. charts.php 를 require 해서 유틸을 재사용한다.)
  *     - view/charts_arc.php — 차트(SVG) 추가분: 공유 패키지 아크·수집 타임라인.
+ *     - view/charts_combo.php — 위험 조합 벤 다이어그램(vg_risk_combo, 탐지 결과 CVE 탭).
  *     - view/nav.php        — 네비게이션: 사이드바·브레드크럼·활동로그 라벨.
  *     - view/components.php — 위젯: 모달·히어로·서브탭·빈상태·알림·테이블·툴바·페이지네이션.
  *                             (진입점이다 — 구현은 view/components/ 아래 7개 파일에 나뉘어 있다.)
@@ -28,6 +29,7 @@ require_once __DIR__ . '/view/charts.php';
 require_once __DIR__ . '/view/charts_dash.php';
 require_once __DIR__ . '/view/charts_aging.php';
 require_once __DIR__ . '/view/charts_arc.php';
+require_once __DIR__ . '/view/charts_combo.php';
 require_once __DIR__ . '/view/nav.php';
 require_once __DIR__ . '/view/components.php';
 require_once __DIR__ . '/view/layout.php';
