@@ -117,6 +117,32 @@ function vg_discovery_run_form(array $runnable, string $csrf): void
     <?php
 }
 
+/**
+ * 대역 하나의 마지막 탐색 상태 — 뱃지 + 한 줄 설명. 대역 카드가 있던 시절엔 카드 안 한 자리였는데
+ *   카드를 걷어낸 뒤에도 "지금 탐색이 돌고 있나"는 잃으면 안 되는 정보라(사용자 지적),
+ *   상단 상태 줄(누구나 봄)과 관리 모달의 목록(관리자가 봄) 두 곳이 이 함수를 같이 쓴다.
+ *   실패는 error_text 원문 대신 일반화된 문구만 낸다(경로·예외 노출 금지, 이 파일 인가 주석과 같은 이유).
+ */
+function vg_discovery_scan_status_html(array $t): string
+{
+    $status = (string) ($t['status'] ?? '');
+    if ($status === '') { return '<span class="why">탐색 이력 없음</span>'; }
+    if ($status === 'pending') { return vg_badge('대기 중', 'med') . ' <span class="why">집행기 대기</span>'; }
+    if ($status === 'running') {
+        return vg_badge('진행 중', 'high') . ' <span class="why">'
+            . vg_h(substr((string) ($t['started_at'] ?? ''), 0, 16)) . ' 시작</span>';
+    }
+    if ($status === 'failed') {
+        return vg_badge('실패', 'crit') . ' <span class="why">탐색이 실패했습니다. 서버 로그를 확인하세요.</span>';
+    }
+    $at   = substr((string) ($t['finished_at'] ?? ''), 0, 16);
+    $stat = '응답 IP ' . number_format((int) $t['ip_alive']) . '/' . number_format((int) $t['ip_total'])
+        . ' · 포트 시도 ' . number_format((int) $t['port_checked'])
+        . ' · 열린 포트 ' . number_format((int) $t['open_total'])
+        . ($t['elapsed_seconds'] !== null ? ' · ' . (string) $t['elapsed_seconds'] . '초' : '');
+    return vg_badge('완료', 'ok') . ' <span class="why" title="' . vg_h($stat) . '">' . vg_h($at) . '</span>';
+}
+
 $pdo = vg_pdo();
 
 /* ── POST 처리 — GET 렌더보다 먼저·헤더 출력 전이어야 한다(전부 PRG 로 끝난다). ───────── */
@@ -298,7 +324,6 @@ $perPage  = vg_perpage();
 $targets = [];
 $targetOptions = [];
 $stateCounts = array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
-$targetStateCounts = [];
 $rows = [];
 $portsByAsset = [];
 $total = 0;
@@ -324,28 +349,6 @@ try {
             (string) $t['cidr'] . ($t['label'] !== null && $t['label'] !== '' ? ' · ' . $t['label'] : '');
     }
     if ($targetId > 0 && !isset($targetOptions[(string) $targetId])) { $targetId = 0; }
-
-    /* 대역별 상태 배지 · 랭킹 차트가 쓰는 값 — 대역을 골랐으면 그 대역만, 아니면 화면에 남아
-     *   있는(is_deleted=0) 대역들로 좁힌다. 상단 KPI(307-313)와 같은 필터를 따라야 대역을
-     *   골랐을 때 KPI 는 줄고 카드·랭킹은 전체 그대로인 어긋남이 생기지 않는다. */
-    $targetIdsForCounts = $targetId > 0
-        ? [$targetId]
-        : array_map(static fn(array $t): int => (int) $t['discovery_target_id'], $targets);
-    if ($targetIdsForCounts) {
-        $tin = implode(',', array_fill(0, count($targetIdsForCounts), '?'));
-        $tsc = $pdo->prepare(
-            "SELECT discovery_target_id, state, COUNT(*) AS n FROM tb_discovered_asset
-              WHERE is_deleted = 0 AND discovery_target_id IN ($tin) GROUP BY discovery_target_id, state"
-        );
-        $tsc->execute($targetIdsForCounts);
-        foreach ($tsc->fetchAll() as $r) {
-            $tid = (int) $r['discovery_target_id'];
-            if (!isset($targetStateCounts[$tid])) { $targetStateCounts[$tid] = array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0); }
-            if (isset($targetStateCounts[$tid][(string) $r['state']])) {
-                $targetStateCounts[$tid][(string) $r['state']] = (int) $r['n'];
-            }
-        }
-    }
 
     // 상태별 건수(KPI). 대역을 고르면 idx_discovered_asset_state(discovery_target_id, state) 를 탄다.
     $where  = 'da.is_deleted = 0';
@@ -446,14 +449,15 @@ vg_header('자산 탐색', 'discovery');
   <?php /* 제목 줄이 이 화면의 액션 자리다 — '+ 대역 등록' 이 먼저 올라와 있었고(#733),
            이 화면의 **주 동작**인 '대역 탐색' 을 그 앞에 같이 올린다. 예전엔 대역 카드 안에서
            '수정·삭제' 옆에 있어 부수 동작과 같은 무게로 읽혔다(사용자 지적).
-           대역이 하나도 없으면 할 일은 등록뿐이라 그때만 등록이 강조된다.
-           인가 조건은 그대로 $canManage(대역·탐색은 admin). */ ?>
+           대역 카드를 걷어낸 뒤(카드가 자리를 먹고 흐름을 끊는다는 지적) 등록·수정·삭제는
+           전부 이 버튼 하나(대역 관리)가 여는 모달로 옮겼다 — 대역이 하나도 없어도 첫 등록은
+           같은 모달에서 한다. 인가 조건은 그대로 $canManage(대역·탐색은 admin). */ ?>
   <?php vg_page_title('자산 탐색', 'DISCOVERY', [
       'suffix_html' => vg_help('대역을 훑어 살아있는 IP 를 모읍니다. 에이전트가 대상 서버 안을 읽는 취약점 수집과는 별개입니다.'),
       'actions' => vg_capture(static function () use ($canManage, $targets, $runnableTargets, $csrf): void {
           if ($canManage && $targets) { vg_discovery_run_form($runnableTargets, $csrf); }
           if ($canManage) {
-              vg_modal_btn('discoveryTarget', '+ 대역 등록', 'btn btn--sm ' . ($targets ? 'btn--ghost' : 'btn--primary'));
+              vg_modal_btn('discoveryTarget', '대역 관리', 'btn btn--sm ' . ($targets ? 'btn--ghost' : 'btn--primary'));
           }
           vg_modal_btn('agentInstall', '에이전트 설치 안내', 'btn btn--sm btn--ghost');
       }),
@@ -479,8 +483,8 @@ vg_header('자산 탐색', 'discovery');
 
   <?php /* ── 대역 · 탐색 ─────────────────────────────────────────────────── */ ?>
   <?php
-  /* 대역을 골랐으면 카드도 그 대역만 보인다 — 상단 KPI 만 줄고 카드는 전체 그대로면
-   *   같은 화면에서 숫자가 어긋난다. */
+  /* 대역을 골랐으면 이 줄도 그 대역만 보인다 — 상단 KPI 만 줄고 카드는 전체 그대로면
+   *   같은 화면에서 숫자가 어긋난다(카드가 있던 시절부터의 규칙, 그대로 이어받는다). */
   $visibleTargets = $targetId > 0
       ? array_values(array_filter($targets, static fn(array $t): bool => (int) $t['discovery_target_id'] === $targetId))
       : $targets;
@@ -490,81 +494,22 @@ vg_header('자산 탐색', 'discovery');
     <div class="card">
       <?php vg_empty($canManage ? [
           'icon' => 'search', 'title' => '등록된 대역이 없습니다.',
-          'hint' => '훑을 대역을 등록하면 그 안의 살아있는 IP 를 모읍니다.',
+          'hint' => '위 [대역 관리] 에서 훑을 대역을 등록하면 그 안의 살아있는 IP 를 모읍니다.',
       ] : [
           'icon' => 'search', 'title' => '등록된 대역이 없습니다.',
           'hint' => '대역 등록은 관리자만 할 수 있습니다.',
       ]); ?>
     </div>
   <?php else: ?>
-    <div class="discovery-targets">
-      <?php foreach ($visibleTargets as $t):
-          $tid    = (int) $t['discovery_target_id'];
-          $sc     = $targetStateCounts[$tid] ?? array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
-          $status = (string) ($t['status'] ?? '');
-      ?>
-        <?php /* 탐색 포트는 대역의 설정값이라 카드에서 한 줄을 먹을 값이 아니다 — 대역 옆
-                 툴팁으로 내린다(바꾸는 자리는 '수정' 모달이 그대로 갖는다). */ ?>
-        <?php $portsTip = '탐색 포트 · ' . ($t['ports'] !== null && $t['ports'] !== ''
-            ? (string) $t['ports'] : '기본 세트'); ?>
-        <div class="card discovery-target">
-          <div class="discovery-target__head">
-            <code title="<?= vg_h($portsTip) ?>"><?= vg_h((string) $t['cidr']) ?></code>
-            <?= (int) $t['enabled'] === 1 ? vg_badge('사용', 'ok') : vg_badge('중지', 'muted') ?>
-          </div>
-          <?php if ($t['label'] !== null && $t['label'] !== ''): ?>
-            <div class="why"><?= vg_h((string) $t['label']) ?></div>
-          <?php endif; ?>
-
-          <?php /* 이 대역의 발견 자산을 상태별로 몇 건씩 물고 있는지 — 0건인 상태는 뺀다(자산 목록
-                   KPI 와 같은 규칙: '미관리 0' 에 강조 테두리를 붙이면 경고로 잘못 읽힌다). */ ?>
-          <div class="discovery-target__badges">
-            <?php foreach (VG_DISCOVERY_STATES as $key => $label): ?>
-              <?php if ($sc[$key] > 0): ?>
-                <?= vg_badge(number_format($sc[$key]) . ' ' . $label, VG_DISCOVERY_TONES[$key]) ?>
-              <?php endif; ?>
-            <?php endforeach; ?>
-          </div>
-
-          <?php /* 마지막 탐색 — 얼마나 걸렸는지가 운영자에게 중요하다(대역을 더 넓힐지 판단한다).
-                   실패는 **일반화된 문구**만 낸다: error_text 원문에는 대상 주소·예외 원문이 섞인다. */ ?>
-          <div class="discovery-target__scan">
-            <?php
-            if ($status === '') { echo '<span class="why">탐색 이력 없음</span>'; }
-            elseif ($status === 'pending') { echo vg_badge('대기 중', 'med') . ' <span class="why">집행기 대기</span>'; }
-            elseif ($status === 'running') { echo vg_badge('진행 중', 'high')
-                . ' <span class="why">' . vg_h(substr((string) ($t['started_at'] ?? ''), 0, 16)) . ' 시작</span>'; }
-            elseif ($status === 'failed') { echo vg_badge('실패', 'crit')
-                . ' <span class="why">탐색이 실패했습니다. 서버 로그를 확인하세요.</span>'; }
-            else {
-                /* 카드에 남는 건 '언제 끝났나' 뿐이다 — 응답 IP·포트 시도·열린 포트·소요는
-                 *   한 카드 안에서 줄바꿈을 만들던 스캔 통계라 툴팁으로 내린다(사용자 지적). */
-                $at   = substr((string) ($t['finished_at'] ?? ''), 0, 16);
-                $stat = '응답 IP ' . number_format((int) $t['ip_alive']) . '/' . number_format((int) $t['ip_total'])
-                    . ' · 포트 시도 ' . number_format((int) $t['port_checked'])
-                    . ' · 열린 포트 ' . number_format((int) $t['open_total'])
-                    . ($t['elapsed_seconds'] !== null ? ' · ' . (string) $t['elapsed_seconds'] . '초' : '');
-                echo vg_badge('완료', 'ok') . ' <span class="why" title="' . vg_h($stat) . '">'
-                    . vg_h($at) . '</span>';
-            }
-            ?>
-          </div>
-
-          <?php /* 실행은 카드가 아니라 제목 줄의 '대역 탐색' 이 갖는다 — 카드마다 버튼을 되살리면
-                   대역 수만큼 같은 버튼이 늘어나고, 주 동작이 다시 '수정·삭제' 와 같은 무게가 된다.
-                   진행 상태는 위의 뱃지(대기 중·진행 중·완료)가 그대로 말한다. */ ?>
-          <?php if ($canManage): ?>
-            <div class="actions discovery-target__ops mt">
-              <a class="btn btn--xs btn--ghost" href="<?= vg_h(vg_qs(['edit' => $tid])) ?>">수정</a>
-              <form method="post" data-confirm="이 대역을 삭제할까요? 지금까지 발견한 자산 이력은 남습니다.">
-                <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
-                <input type="hidden" name="action" value="target_delete">
-                <input type="hidden" name="discovery_target_id" value="<?= $tid ?>">
-                <button class="btn btn--xs btn--ghost">삭제</button>
-              </form>
-            </div>
-          <?php endif; ?>
-        </div>
+    <?php /* 대역 카드를 걷어낸 자리 — 등록·수정·삭제는 위 [대역 관리] 모달로 옮겼지만
+             "지금 탐색이 돌고 있나" 는 카드가 없어져도 잃으면 안 된다(사용자 지적). 관리 권한이
+             없어도 보이던 정보라 모달(관리자 전용) 안에만 두지 않고, 누구나 보는 한 줄로 남긴다. */ ?>
+    <div class="stack-sm discovery-status">
+      <?php foreach ($visibleTargets as $t): ?>
+        <span class="discovery-status__item">
+          <code><?= vg_h((string) $t['cidr']) ?></code>
+          <?= vg_discovery_scan_status_html($t) ?>
+        </span>
       <?php endforeach; ?>
     </div>
   <?php endif; ?>
@@ -740,8 +685,41 @@ vg_header('자산 탐색', 'discovery');
   ?>
 
   <?php if ($canManage): ?>
-    <?php /* 등록·수정이 같은 폼이다. 수정은 ?edit=<id> 로 열리므로($editTarget) 그때는 열린 채로 뜬다. */ ?>
-    <?php vg_modal_open('discoveryTarget', $editTarget !== null ? '대역 수정' : '대역 등록', '', $editTarget !== null); ?>
+    <?php /* 등록·수정·삭제를 한 모달로 합쳤다(대역 카드를 걷어낸 자리 — 사용자 결정).
+             목록은 항상 보이고, 그 아래 등록·수정 폼이 이어진다. 등록·수정이 같은 폼이라
+             수정은 ?edit=<id> 로 열리며($editTarget) 그때는 모달이 열린 채로 뜬다. */ ?>
+    <?php vg_modal_open('discoveryTarget', $editTarget !== null ? '대역 수정' : '대역 관리', '', $editTarget !== null); ?>
+      <?php if ($targets): ?>
+        <span class="form-bar__cap">등록된 대역</span>
+        <div class="discovery-manage-list">
+          <?php foreach ($targets as $t):
+              $tid = (int) $t['discovery_target_id'];
+              $portsTip = '탐색 포트 · ' . ($t['ports'] !== null && $t['ports'] !== ''
+                  ? (string) $t['ports'] : '기본 세트');
+          ?>
+            <div class="discovery-manage-row">
+              <div class="discovery-manage-row__info">
+                <code title="<?= vg_h($portsTip) ?>"><?= vg_h((string) $t['cidr']) ?></code>
+                <?= (int) $t['enabled'] === 1 ? vg_badge('사용', 'ok') : vg_badge('중지', 'muted') ?>
+                <?php if ($t['label'] !== null && $t['label'] !== ''): ?>
+                  <span class="why"><?= vg_h((string) $t['label']) ?></span>
+                <?php endif; ?>
+                <?= vg_discovery_scan_status_html($t) ?>
+              </div>
+              <div class="actions discovery-manage-row__ops">
+                <a class="btn btn--xs btn--ghost" href="<?= vg_h(vg_qs(['edit' => $tid])) ?>">수정</a>
+                <form method="post" data-confirm="이 대역을 삭제할까요? 지금까지 발견한 자산 이력은 남습니다.">
+                  <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
+                  <input type="hidden" name="action" value="target_delete">
+                  <input type="hidden" name="discovery_target_id" value="<?= $tid ?>">
+                  <button class="btn btn--xs btn--ghost">삭제</button>
+                </form>
+              </div>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
+      <span class="form-bar__cap mt"><?= $editTarget !== null ? '대역 수정' : '새 대역 등록' ?></span>
       <form method="post" class="setting-form" action="<?= vg_h(vg_qs(['edit' => null])) ?>">
         <input type="hidden" name="csrf" value="<?= vg_h($csrf) ?>">
         <input type="hidden" name="action" value="target_save">
