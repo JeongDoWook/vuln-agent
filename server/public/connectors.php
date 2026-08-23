@@ -61,34 +61,6 @@ $edit = vg_connectors_edit_target($connectors, isset($_GET['edit']) ? (int) $_GE
 $econn = $edit ? vg_json_col($edit['connection_json']) : [];
 $esched = $edit ? vg_json_col($edit['schedule_json']) : [];
 
-// 수집 타임라인(vg_collect_timeline) — 커넥터 마지막 실행 + 자산 마지막 수신을 한 축 위에.
-//   나이는 SQL 에서 계산한다(TIMESTAMPDIFF ... NOW()) — 앱 서버 시계와 DB 시계가 갈릴 수
-//   있어 나이 계산 자체를 PHP 에 맡기지 않는다(vg_host_load_poll_age 와 같은 이유). 각각
-//   전체 집계 한 쿼리씩이라 N+1 이 아니다.
-$collectItems = [];
-foreach ($pdo->query(
-    "SELECT feed_connector_id, name, TIMESTAMPDIFF(MINUTE, last_run_at, NOW()) AS age_min
-       FROM tb_feed_connector WHERE is_deleted = 0 ORDER BY feed_connector_id"
-)->fetchAll() as $r) {
-    $collectItems[] = [
-        'group'   => '커넥터',
-        'label'   => (string) $r['name'],
-        'age_min' => $r['age_min'] !== null ? (int) $r['age_min'] : null,
-        'href'    => '?conn=' . (int) $r['feed_connector_id'] . '#collection-history',
-    ];
-}
-foreach ($pdo->query(
-    "SELECT host_id, fqdn, TIMESTAMPDIFF(MINUTE, last_seen, NOW()) AS age_min
-       FROM tb_host WHERE is_deleted = 0 ORDER BY fqdn"
-)->fetchAll() as $r) {
-    $collectItems[] = [
-        'group'   => '자산',
-        'label'   => (string) $r['fqdn'],
-        'age_min' => $r['age_min'] !== null ? (int) $r['age_min'] : null,
-        'href'    => '/host.php?id=' . (int) $r['host_id'],
-    ];
-}
-
 vg_header('데이터 수집', 'connectors');
 ?>
   <?php // 소스 종수는 도식이 갖고 있던 값이다 — 제목의 건수 슬롯으로 옮긴다. ?>
@@ -98,19 +70,6 @@ vg_header('데이터 수집', 'connectors');
   ]); ?>
 
   <?php vg_alert($msg, 'ok'); vg_alert($err); ?>
-
-  <?php
-  /* 기존 4개 역할 카드는 그대로 둔다(편집·실행 버튼이 거기 있다) — 이 카드는 그 위에
-     한 칸 얹어 "지금 잘 돌고 있나"를 실행 시각 글자가 아니라 한눈에 보여준다. */
-  ?>
-  <div class="card">
-    <strong>수집 타임라인</strong>
-    <span class="why"> · 최근 60분</span>
-    <?= vg_help('커넥터의 마지막 실행과 자산의 마지막 수신을 같은 축 위에 놓습니다. 왼쪽 끝 붉은 화살표는 60분보다 오래됐다는 뜻입니다.') ?>
-    <div class="card__body">
-      <?php vg_collect_timeline($collectItems, ['window_min' => 60]); ?>
-    </div>
-  </div>
 
   <?php
   // 스케줄 라벨·다음 실행을 얹는다 — 상세 카드($connDetail)도 같은 행을 그대로 쓴다.

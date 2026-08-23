@@ -479,35 +479,12 @@ vg_header('자산 탐색', 'discovery');
 
   <?php /* ── 대역 · 탐색 ─────────────────────────────────────────────────── */ ?>
   <?php
-  /* 대역을 골랐으면 카드·랭킹도 그 대역만 보인다 — 상단 KPI 만 줄고 카드는 전체 그대로면
+  /* 대역을 골랐으면 카드도 그 대역만 보인다 — 상단 KPI 만 줄고 카드는 전체 그대로면
    *   같은 화면에서 숫자가 어긋난다. */
   $visibleTargets = $targetId > 0
       ? array_values(array_filter($targets, static fn(array $t): bool => (int) $t['discovery_target_id'] === $targetId))
       : $targets;
-
-  /* 대역별 발견 건수 랭킹 — 표 열로는 안 보이던 "어느 대역이 발견량 대부분을 차지하는가" 를
-   *   막대 길이로 비교한다(packages.php 의 패키지별 CVE 랭킹과 같은 패턴).
-   *   막대 하나짜리는 비교가 아니라 장식이라, 값이 있는 대역이 2곳 이상일 때만 그린다. */
-  $rankItems = [];
-  foreach ($visibleTargets as $t) {
-      $tid = (int) $t['discovery_target_id'];
-      $sc  = $targetStateCounts[$tid] ?? array_fill_keys(array_keys(VG_DISCOVERY_STATES), 0);
-      $tf  = $sc['new'] + $sc['known'] + $sc['ignored'];
-      if ($tf > 0) {
-          $rankItems[] = [
-              'label' => (string) $t['cidr'] . ($t['label'] !== null && $t['label'] !== '' ? ' · ' . (string) $t['label'] : ''),
-              'value' => $tf,
-              'tone'  => $sc['new'] > 0 ? 'crit' : 'ok',
-              'href'  => vg_qs(['target' => $tid, 'page' => null, 'edit' => null]),
-          ];
-      }
-  }
-  if (count($rankItems) >= 2): ?>
-    <div class="card">
-      <strong>대역별 발견 자산</strong>
-      <div class="card__body"><?php vg_rank_bars($rankItems, ['unit' => '건']); ?></div>
-    </div>
-  <?php endif; ?>
+  ?>
 
   <?php if (!$targets): ?>
     <div class="card">

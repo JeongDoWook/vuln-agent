@@ -165,48 +165,12 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-/* 발행일 분포(방치 기간 타임라인과 같은 형식) — 지금 화면(필터·페이지)의 공지 중 발행일
- * 상위 VG_AGE_TIMELINE_TOP 건. 이미 불러온 $rows/$assetsByAdvisory 를 그대로 쓴다 —
- * 추가 쿼리가 없다(발행일 DESC 로 이미 정렬돼 있어 앞에서 자르기만 하면 된다). */
-$agingItems = []; $agingNull = 0;
-if ($err === null) {
-    foreach ($rows as $r) {
-        if (empty($r['published'])) { $agingNull++; continue; }
-        if (count($agingItems) >= VG_AGE_TIMELINE_TOP) { continue; }
-        $aid = (int) $r['advisory_id'];
-        $agingItems[] = [
-            'label'     => (string) $r['title'],
-            'published' => (string) $r['published'],
-            'count'     => (int) ($assetsByAdvisory[$aid]['hostCount'] ?? 0),
-            'href'      => '/advisory.php?id=' . $aid,
-        ];
-    }
-}
-
 vg_header('보안 공지', 'advisories');
 ?>
   <?php // 건수는 다른 목록 화면과 같은 자리에 둔다 — 여기만 없어서 페이지네이션까지 내려가야 보였다.
         //   건수는 **지금 필터 기준**이다(예전엔 필터와 무관하게 늘 전체 2,756건이었다). ?>
   <?php /* 범위(전체/내 자산)는 바로 아래 칩이 말한다 — 부제로 한 번 더 적지 않는다. */ ?>
   <?php vg_page_title('보안 공지', 'KISA', ['count' => $total]); ?>
-
-<?php if ($err === null && $agingItems): ?>
-  <div class="card">
-    <strong>발행일 분포</strong>
-    <span class="why">발행일부터 오늘까지 — 언제 몰렸는지 한눈에 · 이 화면 기준 최근 발행순 상위 <?= count($agingItems) ?>건</span>
-    <div class="card__body">
-      <?php
-      $agingNote = $total > count($agingItems)
-          ? '지금 화면의 공지 ' . number_format($total) . '건 중 최근 발행순 상위 ' . count($agingItems) . '건만 표시했습니다.'
-          : '';
-      if ($agingNull > 0) {
-          $agingNote .= ($agingNote !== '' ? ' ' : '') . '발행일 미상 ' . number_format($agingNull) . '건은 제외했습니다.';
-      }
-      vg_age_timeline($agingItems, ['title' => '보안 공지 발행일 분포', 'note' => $agingNote]);
-      ?>
-    </div>
-  </div>
-<?php endif; ?>
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
