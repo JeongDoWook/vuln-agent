@@ -152,7 +152,7 @@ function vg_horizon(array $series, array $opts = []): void {
         $last = $vals[$n - 1];
         $xAt  = static fn(int $i): float => $n === 1 ? 0.0 : $i * ($W / ($n - 1));
 
-        $aria = vg_h($s['name']) !== '' ? $s['name'] . ' ' : '';
+        $aria = $s['name'] !== '' ? $s['name'] . ' ' : '';
         $aria .= '최근값 ' . number_format($last, $last == (int) $last ? 0 : 1) . $unit
                . ' · 색이 진할수록 값이 큽니다';
 
