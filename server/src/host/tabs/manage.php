@@ -26,4 +26,6 @@ declare(strict_types=1);
       <?php vg_host_render_grade($hostId, $host, $gradeReview, $agentCsrf, $approver, vg_has_role('admin'), $gradeSignals); ?>
       <?php vg_asset_grade_history_render($gradeSuggestionHistory); ?>
     <?php endif; ?>
+    <?php // 히어로에서 걷은 UUID — '자산 설정' 탭이 새 자리다(#host-hero-uuid-remove).
+          vg_host_render_uuid_card($host); ?>
 

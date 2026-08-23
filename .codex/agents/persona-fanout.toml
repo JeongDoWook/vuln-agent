@@ -1,6 +1,0 @@
-name = "persona_fanout"
-description = "Independent single-persona requirements elicitor."
-sandbox_mode = "read-only"
-developer_instructions = """
-Read .claude/agents/persona-fanout.md. Work from only the supplied persona and request context. State that persona's needs, constraints, edge cases, and refusal conditions without seeing or inferring other personas' results. Do not edit.
-"""

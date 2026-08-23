@@ -39,18 +39,18 @@ function vg_dash_host_count(PDO $pdo): int {
 }
 
 /**
- * KPI·퍼널 은 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
+ * KPI·워터폴 은 페이지 무관 — 전 호스트 최신 스캔의 심각도 총합.
  *
- * 퍼널의 네 칸(전체 → High 이상 → KEV → KEV 중 기한 초과)은 **같은 모집단을 좁혀 가는**
- * 수여야 의미가 있다. 그래서 KEV·외부노출도 별도 쿼리로 따로 세지 않고 이 한 번의
- * 스캔에서 함께 뽑는다 — 기준(tb_finding 행)이 하나로 고정되고, 예전에 KEV 만 자산·CVE·
- * 패키지로 묶어 세던 별도 쿼리(#354 에서 파생테이블로 최적화했던 것)도 사라진다.
+ * 워터폴의 칸(전체 → LOW 제외 → MEDIUM 제외 → 노출 안 됨 → 오늘 할 일)은 **같은 모집단을
+ * 좁혀 가는** 수여야 의미가 있다. 그래서 노출 여부도 별도 쿼리로 따로 세지 않고 이 한 번의
+ * 스캔에서 함께 뽑는다 — 기준(tb_finding 행)이 하나로 고정된다.
  * 이 값들은 findings.php 의 등급 카드와 같은 기준이라 링크를 눌렀을 때 숫자가 이어진다.
  *
- * KEV 를 **High 이상 안에서만** 세는 건 퍼널이 진짜로 포함관계여야 하기 때문이다.
- * KEV 는 등급과 독립이라 MEDIUM 에도 붙는다(실측 dev 344건) — 전 등급으로 세면 3번째 칸이
- * 2번째 칸의 부분집합이 아니게 되고, 좁혀지는 그림 자체가 거짓말이 된다. 등급이 낮은 KEV 는
- * [주요 취약점 신호] 카드가 KEV 우선 정렬로 계속 보여준다(가려지지 않는다).
+ * '노출' 을 **외부 노출(EXTERNAL)만**으로 세는 건 이 저장소에서 이미 그렇게 쓰고 있어서다
+ * (dashboard/sections/signals.php 의 "외부 노출만 →" 링크가 st=EXTERNAL 하나만 가리킨다).
+ * exposedHighPlus 를 High 이상(CRITICAL·HIGH) 안에서만 세는 건 워터폴이 진짜로 포함관계여야
+ * 하기 때문이다 — 전 등급으로 세면 그 칸이 앞 칸의 부분집합이 아니게 되고, 좁혀지는 그림
+ * 자체가 거짓말이 된다.
  *
  * 실행 상태(runtime_status) 구성도 **같은 쿼리에서** 함께 뽑는다. SUM(...) 표현식을 몇 개
  * 더 얹는 것은 이미 훑고 있는 행을 세는 것뿐이라 접근 경로(EXPLAIN)가 바뀌지 않는다 —
@@ -61,18 +61,17 @@ function vg_dash_host_count(PDO $pdo): int {
  * '상태 미상' 으로 찍혔다 — 모르는 게 아니라 **아는 값을 모른다고 적은 것**이다. 같은 도넛을
  * 탐지 결과 화면도 같은 함수로 그리게 되면서(vg_runtime_donut) 두 화면이 같은 말을 해야 한다.
  *
- * 반환: ['totals' => [등급 => n], 'kev' => n, 'runtime' => [상태 => n]]
+ * 반환: ['totals' => [등급 => n], 'exposedHighPlus' => n, 'runtime' => [상태 => n]]
  */
 function vg_dash_severity_totals(PDO $pdo): array {
     $latestJoin = vg_dash_latest_join();
     $totals = ['CRITICAL' => 0, 'HIGH' => 0, 'MEDIUM' => 0, 'LOW' => 0];
     $runtime = ['EXTERNAL' => 0, 'LAN' => 0, 'LISTENING' => 0, 'RUNNING' => 0,
                 'LOADED' => 0, 'FILTERED' => 0, 'INSTALLED' => 0];
-    $kevCount = 0;
+    $exposedHighPlus = 0;
     $allCount = 0;
     $totalsRows = $pdo->query(
         "SELECT f.severity, COUNT(*) c,
-                SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')) kev,
                 SUM(f.runtime_status = 'EXTERNAL')  rt_external,
                 SUM(f.runtime_status = 'LAN')       rt_lan,
                 SUM(f.runtime_status = 'LISTENING') rt_listening,
@@ -88,8 +87,10 @@ function vg_dash_severity_totals(PDO $pdo): array {
     )->fetchAll();
     foreach ($totalsRows as $f) {
         if (isset($totals[$f['severity']])) { $totals[$f['severity']] = (int) $f['c']; }
-        $kevCount += (int) $f['kev'];
         $allCount += (int) $f['c'];
+        if (in_array($f['severity'], ['CRITICAL', 'HIGH'], true)) {
+            $exposedHighPlus += (int) $f['rt_external'];
+        }
         $runtime['EXTERNAL']  += (int) $f['rt_external'];
         $runtime['LAN']       += (int) $f['rt_lan'];
         $runtime['LISTENING'] += (int) $f['rt_listening'];
@@ -100,86 +101,34 @@ function vg_dash_severity_totals(PDO $pdo): array {
     }
     // 남은 것은 상태를 모르는 건이다 — 0 으로 감추면 도넛의 합이 전체와 안 맞는다.
     $runtime['미상'] = max(0, $allCount - array_sum($runtime));
-    return ['totals' => $totals, 'kev' => $kevCount, 'runtime' => $runtime];
+    return ['totals' => $totals, 'exposedHighPlus' => $exposedHighPlus, 'runtime' => $runtime];
 }
 
 /**
- * 퍼널 4번 칸 — **KEV 중 조치 기한 초과**.
- *
- * 모집단은 3번 칸(High 이상 중 KEV)과 정확히 같다. 그 안에서 기한을 넘긴 것만 센다 —
- * 퍼널이 포함관계를 그리는 그림이라, 4번 칸이 3번 칸의 부분집합이 아니게 되면 형태가
- * 거짓말이 된다. 그래서 "전체 기한 초과" 가 아니라 KEV 안에서만 센다(라벨도 그렇게 적는다).
- *
- * 기한 계산은 finding_sla.php 것을 그대로 쓴다 — 대시보드가 따로 세면 목록의 남은 일수
- * 뱃지와 숫자가 어긋난다(DRY). 완료·예외 처리된 건은 세지 않는 것도 목록과 같은 규칙
- * (vg_finding_due_cell 이 그 둘을 '—' 로 둔다).
- *
- * 성능: 되짚을 대상은 최신 스캔의 KEV(High 이상)뿐이다 — 3번 칸의 값이 곧 그 상한이라
- * 전체 탐지 건수(수십만)를 훑지 않는다. 최초 발견 시각은 목록 화면과 같은 배치 조회
- * 한 번으로 받는다(N+1 없음).
- *
- * 반환: ['overdue' => n, 'slaDays' => KEV 조치 기한(일)] — 기한 일수는 퍼널 라벨이 그대로 말한다.
- */
-function vg_dash_kev_overdue(PDO $pdo): array {
-    $latestJoin = vg_dash_latest_join();
-    $policy     = vg_compliance_policy();
-    $kevSlaDays = (int) vg_finding_sla_days(true, 'CRITICAL', $policy);   // KEV 기한이 등급보다 우선한다
-    $kevOverdue = 0;
-    $kevRows = $pdo->query(
-        "SELECT s.host_id, COALESCE(ctr.cid, '') AS cid, f.cve_id, f.package_name,
-                fst.status AS fix_status
-           FROM tb_finding f
-           JOIN tb_scan s ON s.scan_id = f.scan_id
-           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
-           $latestJoin
-           LEFT JOIN tb_container ctr ON ctr.container_id = f.container_id
-           LEFT JOIN tb_finding_status fst ON fst.host_id = s.host_id
-                 AND fst.container_ref = COALESCE(ctr.cid, '')
-                 AND fst.cve_id = f.cve_id AND fst.package_name = f.package_name
-          WHERE f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH') AND f.is_deleted = 0"
-    )->fetchAll();
-    $kevKeys = [];
-    foreach ($kevRows as $r) {
-        $fixStatus = (string) ($r['fix_status'] ?? '');
-        if ($fixStatus === 'DONE' || $fixStatus === 'EXCEPTED') { continue; }
-        $kevKeys[] = [(int) $r['host_id'], (string) $r['cid'],
-                      (string) $r['cve_id'], (string) $r['package_name']];
-    }
-    if ($kevKeys) {
-        $kevFirstSeen = vg_finding_first_seen_map($pdo, $kevKeys, vg_finding_sla_lookback_days($policy));
-        foreach ($kevKeys as $k) {
-            $seen = $kevFirstSeen[vg_finding_status_key($k[0], $k[1], $k[2], $k[3])] ?? null;
-            // 최초 발견 시각을 못 찾은 건은 세지 않는다 — 모르는 것을 초과로 단정하지 않는다
-            //   (목록의 남은 일수 칸이 '–' 로 두는 것과 같은 판단).
-            if ($seen !== null && (int) $seen['days'] > $kevSlaDays) { $kevOverdue++; }
-        }
-    }
-    return ['overdue' => $kevOverdue, 'slaDays' => $kevSlaDays];
-}
-
-/**
- * 자산 지형도(vg_asset_terrain) 한 벌 — 자산별 **최신 스캔**의 High 이상·CRITICAL·KEV 건수.
+ * 자산 순위 막대(vg_asset_rank) 한 벌 — 자산별 **최신 스캔**의 High 이상·CRITICAL·외부 노출·KEV 건수.
  *
  * **한 쿼리다.** 자산마다 세면 지금은 11대라 티가 안 나도 자산이 늘수록 그대로 N+1 이 된다.
  * 형태는 vg_dash_host_rows() 의 검증된 집계를 그대로 따른다 — 최신 스캔은 IN(서브쿼리)가
  * 아니라 JOIN 으로 붙이고(이 파일 머리주석의 회귀 이력), LEFT JOIN 이라 탐지 0건 자산도
- * 목록에서 사라지지 않는다(그 자산은 0 높이 블록으로 선다 — "깨끗하다"도 읽어야 할 사실이다).
+ * 목록에서 사라지지 않는다(그 자산은 0 길이 막대로 선다 — "깨끗하다"도 읽어야 할 사실이다).
  *
  * f.is_deleted 를 걸지 않는 것은 vg_dash_severity_totals() 와 같은 기준을 쓰기 위해서다 —
- * 지형도 블록 높이의 합이 곧 퍼널의 'High 이상' 이어야 한다. 한쪽만 조건이 다르면 같은
- * 화면에서 두 그림의 숫자가 갈린다.
+ * 막대 길이의 합이 곧 워터폴의 'High 이상' 이어야 한다. 한쪽만 조건이 다르면 같은 화면에서
+ * 두 그림의 숫자가 갈린다. exposed_n 도 워터폴의 exposedHighPlus 와 같은 정의(runtime_status
+ * = 'EXTERNAL')를 쓴다 — 자산별 합이 그 전체 합과 어긋나면 안 된다.
  *
- * 상위 몇 대만 세울지는 여기서 자르지 않는다(vg_asset_terrain 의 'top' 이 정한다) —
- * 접힌 자산 수와 그 High 이상 합을 그림 아래 한 줄로 적어야 해서, 조회는 전수로 받는다.
+ * 상위 몇 대만 세울지는 여기서 자르지 않는다(vg_asset_rank 의 'top' 이 정한다) —
+ * 접힌 자산 수와 그 High 이상 합을 목록 아래 한 줄로 적어야 해서, 조회는 전수로 받는다.
  * 자산 수는 tb_host 행 수(운영 실측 수십 대)라 전수라도 결과가 작다.
  *
- * 반환: [['label'=>fqdn, 'high'=>int, 'crit'=>int, 'kev'=>int, 'href'=>자산 상세], …]
+ * 반환: [['label'=>fqdn, 'high'=>int, 'crit'=>int, 'exposed'=>int, 'kev'=>int, 'href'=>자산 상세], …]
  */
-function vg_dash_asset_terrain(PDO $pdo): array {
+function vg_dash_asset_rank(PDO $pdo): array {
     $rows = $pdo->query(
         "SELECT h.host_id, h.fqdn,
                 COALESCE(SUM(f.severity IN ('CRITICAL','HIGH')), 0) high_n,
                 COALESCE(SUM(f.severity = 'CRITICAL'), 0)          crit_n,
+                COALESCE(SUM(f.runtime_status = 'EXTERNAL' AND f.severity IN ('CRITICAL','HIGH')), 0) exposed_n,
                 COALESCE(SUM(f.in_kev = 1 AND f.severity IN ('CRITICAL','HIGH')), 0) kev_n
            FROM tb_scan s
            JOIN " . vg_latest_scan_subq() . " t ON t.mid = s.scan_id
@@ -192,11 +141,12 @@ function vg_dash_asset_terrain(PDO $pdo): array {
     $out = [];
     foreach ($rows as $r) {
         $out[] = [
-            'label' => (string) ($r['fqdn'] ?? ('자산 #' . (int) $r['host_id'])),
-            'high'  => (int) $r['high_n'],
-            'crit'  => (int) $r['crit_n'],
-            'kev'   => (int) $r['kev_n'],
-            'href'  => '/host.php?id=' . (int) $r['host_id'],
+            'label'   => (string) ($r['fqdn'] ?? ('자산 #' . (int) $r['host_id'])),
+            'high'    => (int) $r['high_n'],
+            'crit'    => (int) $r['crit_n'],
+            'exposed' => (int) $r['exposed_n'],
+            'kev'     => (int) $r['kev_n'],
+            'href'    => '/host.php?id=' . (int) $r['host_id'],
         ];
     }
     return $out;
@@ -222,9 +172,11 @@ function vg_dash_asset_terrain(PDO $pdo): array {
  * 단, scan_id 목록은 **PHP 가 값으로 펼쳐** 넘긴다 — IN (서브쿼리) 로 두면 옵티마이저가
  * tb_finding 을 먼저 훑어 같은 결과에 2.06초가 걸렸다(실측).
  *
- * 반환: [['name' => 자산 이름, 'points' => [['d' => 'Y-m-d', 'v' => High 이상 건수], …]], …]
- *   — vg_multi_trend() 의 계열 계약 그대로다. 상위 N + 기타로 접는 것은 그 함수가 한다
- *     (여기서 미리 접으면 화면마다 다른 기준으로 접힌다).
+ * 반환: [['name' => 자산 이름, 'href' => 자산 상세, 'points' => [['d' => 'Y-m-d', 'v' => High 이상 건수], …]], …]
+ *   — vg_multi_trend() 의 계열 계약에 'href' 만 얹었다(이미 조인된 host_id 를 한 칸 더
+ *     읽는 것뿐이라 새 쿼리가 필요 없다). 상위 N + 기타로 접는 것은 소비하는 화면이 한다
+ *     (여기서 미리 접으면 화면마다 다른 기준으로 접힌다) — vg_multi_trend() 는 여전히
+ *     'href' 를 무시하고 'name'·'points' 만 읽는다.
  */
 function vg_dash_trend(PDO $pdo, int $days): array {
     $since = date('Y-m-d', strtotime('-' . ($days - 1) . ' days'));
@@ -253,7 +205,7 @@ function vg_dash_trend(PDO $pdo, int $days): array {
     foreach ($trendByHost as &$list) { usort($list, fn($a, $b) => $a['id'] <=> $b['id']); }
     unset($list);
 
-    // 스캔별 High 이상 건수 — 퍼널 2번째 칸과 같은 기준(CRITICAL + HIGH).
+    // 스캔별 High 이상 건수 — 워터폴 'MEDIUM 제외' 칸과 같은 기준(CRITICAL + HIGH).
     $highByScan = [];
     $trendIds = array_values(array_unique(array_map(fn($s) => (int) $s['id'], $trendScans)));
     if ($trendIds) {
@@ -282,7 +234,8 @@ function vg_dash_trend(PDO $pdo, int $days): array {
 
     $series = [];
     foreach ($points as $hid => $pts) {
-        $series[] = ['name' => $hostName[$hid] ?? ('자산 #' . $hid), 'points' => $pts];
+        $series[] = ['name' => $hostName[$hid] ?? ('자산 #' . $hid),
+                     'href' => '/host.php?id=' . $hid, 'points' => $pts];
     }
     return $series;
 }

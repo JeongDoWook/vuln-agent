@@ -6,12 +6,14 @@ require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require __DIR__ . '/../src/distro.php';
 require_once __DIR__ . '/../src/audit.php';   // vg_log_activity — auth.php 가 이미 로드했을 수 있다
+require_once __DIR__ . '/../src/view/charts_pareto.php'; // vg_pareto, VG_PARETO_TOP
 vg_require_menu('assets');
 
 $err = null;
 $rows = [];
 $total = 0;
 $hostOptions = [];
+$paretoItems = []; $paretoTotalValue = 0; $paretoTotalPkgs = 0;
 $q = trim((string)($_GET['q'] ?? ''));
 $hostId = (int)($_GET['host'] ?? 0);
 $manager = trim((string)($_GET['manager'] ?? ''));
@@ -36,6 +38,10 @@ try {
              JOIN tb_package p ON p.scan_id=s.scan_id';
     $where = "h.is_deleted=0 AND p.is_deleted=0 AND p.container_id=0
               AND p.manager IN ('dpkg','rpm','apk')";
+    // 파레토는 목록 필터(host·manager·q) 이전의 이 기준 그대로 쓴다 — "자산 전체" 의
+    //   설치 집중도를 보여주는 고정된 그림이라, 목록을 좁혀도 파레토까지 같이 좁아지면
+    //   "전체" 라는 말이 거짓이 된다. $where 에 필터를 얹기 전에 값을 떠 둔다.
+    $paretoWhere = $where;
     $params = [];
     if ($hostId > 0) {
         $where .= ' AND h.host_id=?';
@@ -67,6 +73,28 @@ try {
     $st->execute($params);
     $rows = $st->fetchAll();
 
+    /* 파레토(상위 집중도) — 상위 N + 전체 합계·전체 종수를 윈도우 함수 한 쿼리로 뽑는다
+     *   (packages.php 의 같은 패턴). $from·$paretoWhere 는 목록 쿼리와 같은 조인·기준
+     *   (활성 호스트 최신 스캔의 OS 패키지, 컨테이너 제외)이라 새 인덱스가 필요 없다. */
+    $paretoRows = $pdo->query(
+        "SELECT p.name, COUNT(*) AS cnt,
+                SUM(COUNT(*)) OVER () AS total_cnt,
+                COUNT(*) OVER () AS total_pkgs
+           $from WHERE $paretoWhere
+          GROUP BY p.name
+          ORDER BY cnt DESC
+          LIMIT " . VG_PARETO_TOP
+    )->fetchAll();
+    foreach ($paretoRows as $r) {
+        $paretoItems[] = [
+            'label' => (string) $r['name'],
+            'value' => (int) $r['cnt'],
+            'href'  => '/asset-packages.php?q=' . urlencode((string) $r['name']),
+        ];
+        $paretoTotalValue = (int) $r['total_cnt'];
+        $paretoTotalPkgs  = (int) $r['total_pkgs'];
+    }
+
     /* 열람 감사 — 전 자산의 설치 패키지 목록은 host.php 상세와 같은 등급의 인프라 정보다.
      *   상세는 view_host 로 남는데 이 통합 조회만 빠져 있었다(원칙 7). */
     vg_log_activity($pdo, 'PAGE', null, 'view_asset_packages', '전체 설치 패키지 조회',
@@ -84,6 +112,19 @@ vg_header('전체 설치 패키지', 'asset_packages');
   <?php vg_asset_subtabs('packages'); ?>
   <?php vg_alert($err !== null ? '오류 · ' . $err : null); ?>
   <?php if ($err === null): ?>
+    <?php if (count($paretoItems) >= 2): ?>
+      <div class="card">
+        <strong>설치 패키지 — 상위 집중도</strong>
+        <div class="card__body"><?php vg_pareto($paretoItems, [
+            'total_value' => $paretoTotalValue,
+            'total_items' => $paretoTotalPkgs,
+            'unit'        => '건',
+            'item_unit'   => '종',
+            'alt'         => '설치 상위 패키지 파레토',
+        ]); ?></div>
+      </div>
+    <?php endif; ?>
+
     <?php vg_toolbar([
         ['type' => 'select', 'name' => 'host', 'selected' => $hostId > 0 ? (string)$hostId : '',
          'empty_label' => '전체 호스트', 'options' => $hostOptions],

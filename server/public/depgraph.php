@@ -126,10 +126,14 @@ $linkFor = function (array $over) use ($hostId, $cid): string {
 // $graph['roots'] 를 노드마다 in_array() 로 선형 탐색하면 O(N·R) 이 된다(목록 라벨·트리 노드
 // 양쪽에서 노드마다 최대 2회) — 해시화해서 isset() 으로 본다.
 $rootSet = $graph !== null ? array_fill_keys($graph['roots'], true) : [];
-/* 트리 렌더가 받는 한 벌 — 노드 색(심각도)·역할 판정(루트/대상)·노드 링크.
+// 조치방안 문장이 가리키는 "올릴 부모" — 전이일 때만 있다(직접이면 올릴 부모가 따로 없다).
+//   트리의 역할 표식(vg_deptree_role)이 문장과 같은 노드를 짚게 하려고 여기서 한 번만 만든다.
+$fixParents = $targetOrigin !== null && $targetOrigin['verdict'] === 'transitive'
+    ? array_fill_keys($targetOrigin['parents'], true) : [];
+/* 트리 렌더가 받는 한 벌 — 노드 색(심각도)·역할 판정(루트/대상/올릴 부모)·노드 링크.
  *   목록 라벨(vg_deptree_role)과 SVG 노드가 **같은 배열**을 보므로 판정이 갈리지 않는다. */
 $treeCtx = ['sev' => $sevOf, 'roots' => $rootSet, 'target' => $target, 'link' => $linkFor,
-            'path' => $pathMarks['nodes'], 'pathedge' => $pathMarks['edges']];
+            'path' => $pathMarks['nodes'], 'pathedge' => $pathMarks['edges'], 'fixparents' => $fixParents];
 /** 노드 키 → 라벨(이름 @ 버전 + 관리자). 경로 목록·pom 목록처럼 SVG 가 아닌 자리에서 쓴다. */
 $nodeLabel = function (string $key) use ($linkFor, $target, $treeCtx): string {
     $p = vg_pkgdep_parts($key);
@@ -230,9 +234,13 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
 
   <?php
   /* 트리 한 장은 deptree.php 가 그린다(자산 상세 '의존성' 탭과 같은 함수). 이 화면은
-   *   **어느 루트를 그릴지**와 남은 노드 예산만 정한다. */
-  $drawTree = function (string $root) use ($graph, $treeCtx, &$nodeBudget): void {
-      vg_deptree_render($graph, $root, $nodeBudget, $treeCtx);
+   *   **어느 루트를 그릴지**와 남은 노드 예산만 정한다.
+   *   $ctxOverride 는 'to' 탭(무엇을 끌어오나)에서 경로 강조를 끄는 데 쓴다 — 그 탭은
+   *   대상에서 **자식 방향**으로 내려가는 트리라 루트→대상 경로(조상 방향)의 노드가 그
+   *   트리 안에 없다. pathedge 를 그대로 넘기면 대상 노드 하나만 빼고 트리 전체가
+   *   "경로 밖"으로 흐려져 버린다 — 이 탭에는 강조할 경로 자체가 없으므로 꺼 둔다. */
+  $drawTree = function (string $root, array $ctxOverride = []) use ($graph, $treeCtx, &$nodeBudget): void {
+      vg_deptree_render($graph, $root, $nodeBudget, $ctxOverride + $treeCtx);
   };
   $nodeBudget = VG_PKGDEP_NODE_MAX;   // 이 화면 전체가 나눠 쓰는 노드 예산
   ?>
@@ -280,6 +288,23 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
           ])) ?>">무엇을 끌어오나</a></li>
       <?php endforeach; ?>
       </ul>
+      <?php
+      /* 위 문장·목록이 이미 말한 것을 그림으로 옮긴다 — 이 카드가 가리키는 경로만 뽑은
+       *   작은 세로 그림(전체 트리는 아래 '전체 트리' 카드가 그대로 맡는다). 부모가 여럿이면
+       *   경로도 여럿이라 최대 3개까지 나란히 두고, 넘는 만큼은 "외 N개"로 밝힌다(조용히
+       *   자르지 않는다) — vg_pkgdep_paths() 가 이미 구한 $targetPaths 를 그대로 쓴다. */
+      $miniPaths = array_slice($targetPaths['paths'], 0, 3);
+      $miniMore  = count($targetPaths['paths']) - count($miniPaths);
+      ?>
+      <?php if ($miniPaths): ?>
+      <div class="deptree-mini-group">
+        <?php foreach ($miniPaths as $mp): vg_deptree_path_svg($mp, $treeCtx); endforeach; ?>
+      </div>
+      <?php if ($miniMore > 0): ?>
+        <p class="why">경로 <?= number_format(count($targetPaths['paths'])) ?>개 중 3개만 그림으로 표시
+          · 외 <?= number_format($miniMore) ?>개는 위 목록에서 확인하세요.</p>
+      <?php endif; ?>
+      <?php endif; ?>
       <p class="why">올릴 부모의 버전은 제시하지 않습니다 — 설치된 스냅샷만 수집하므로
         "부모의 어느 버전이 안전한 자식을 끌어오는가" 는 이 데이터로 알 수 없습니다.
         부모의 배포처(레지스트리·릴리스 노트)에서 확인하세요.</p>
@@ -327,7 +352,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
     if (!vg_pkgdep_children($graph, $target)) {
         vg_empty(['icon' => 'package', 'title' => '이 패키지가 끌어오는 의존성이 없습니다(말단 노드).']);
     } else {
-        $drawTree($target);
+        $drawTree($target, ['path' => [], 'pathedge' => []]);
     }
     ?>
     </div>

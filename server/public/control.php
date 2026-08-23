@@ -53,7 +53,7 @@ try {
     }
 
     if ($found) {
-        // 상세 열람은 감사 대상이다(CLAUDE.md 원칙 7). 통제 ID 는 정수 PK 가 아니라 message·subject 로
+        // 누가 어떤 통제 상세를 열람했는지가 감사 대상이다. 통제 ID 는 정수 PK 가 아니라 message·subject 로
         //   남긴다 — compliance_rule.php 의 view_compliance_rule 과 같은 형태. 존재 검증(위 $found) 뒤에
         //   남긴다 — cce-rule.php 와 같은 순서(임의 ?control= 값이 그대로 감사로그에 찍히지 않게).
         $subject = $fw . '/' . $control;

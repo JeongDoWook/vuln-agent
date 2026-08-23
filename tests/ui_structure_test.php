@@ -56,6 +56,7 @@ $componentsPhp = implode("\n", array_map(
     )
 ));
 $chartsPhp = (string) file_get_contents($root . '/server/src/view/charts.php');
+$chartsSparkPhp = (string) file_get_contents($root . '/server/src/view/charts_spark.php');
 /* 자기 속을 server/src/<화면>/ 로 나눠 둔 페이지는 파일 하나가 아니다 — 조회층·탭 렌더가
  *   거기 있다. "그 화면의 소스" 는 페이지 + 그 디렉터리 전체이고, 페이지 파일만 읽으면 코드가
  *   옮겨졌을 뿐인데 계약이 깨진다(host: #621 · findings: 이번 분리).
@@ -136,11 +137,13 @@ $check(str_contains($signalHtml, '해당 없음') && str_contains($signalHtml, '
     && !str_contains($signalHtml, '출력 금지'), '판단 신호 비해당·미제공·axis 화이트리스트');
 $check(str_contains($signalHtml, '&lt;외부&gt;') && !str_contains($signalHtml, 'tone-evil'), '판단 신호 이스케이프·tone 화이트리스트');
 /* 사용률 차트는 관측 구간으로 자동 확대하면 0.6%도 꼭대기에 붙어 실제 부하가 큰 것처럼
- *   보인다 — 축을 0~100 으로 못박는 것이 이 차트의 계약이다. 추이가 Chart.js 로 옮겨간
- *   뒤로는 화면이 y_max 를 주고(scans 탭) 차트 헬퍼가 그것을 축 상한으로 꽂는다. */
+ *   보인다 — 축(호라이즌은 밴드 상한)을 0~100 으로 못박는 것이 이 차트의 계약이다.
+ *   #assets-sparkline-column 이 이 카드를 vg_multi_trend(Chart.js 선그래프, y_max)에서
+ *   vg_horizon(호라이즌 밴드, max)으로 바꿨다 — 계약은 같고 옵션 키만 그 함수 것을 따른다. */
 $scansTabPhp = (string) file_get_contents($root . '/server/src/host/tabs/scans.php');
-$check(str_contains($scansTabPhp, "'y_max' => 100") && str_contains($chartsPhp, "\$yScale['max']"),
-    '에이전트 리소스 사용률 차트 0~100% 절대 축');
+$check(preg_match("/'max'\s*=>\s*100/", $scansTabPhp) === 1
+    && str_contains($chartsSparkPhp, "\$opts['max']"),
+    '에이전트 리소스 사용률 차트 0~100% 절대 축(호라이즌)');
 // connectors.php 는 자기 속을 server/src/connectors/** 로 나눠 뒀다 — 화면의 계약은 그 묶음 전체다.
 $connectorPhp = $splitSources($public, $root, 'connectors.php', 'connectors');
 $connectorJs = (string) file_get_contents($public . '/assets/js/connectors.js');
