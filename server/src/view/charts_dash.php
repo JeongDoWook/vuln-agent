@@ -2,24 +2,24 @@
 declare(strict_types=1);
 
 /**
- * charts_dash.php — 대시보드 상단 전용 차트: 자산 순위 막대 · 처리 흐름 워터폴 · 자산별 스파크라인.
+ * charts_dash.php — 대시보드 상단 전용 차트: 자산 순위 막대 · 자산별 스파크라인.
  *
  *   왜 charts.php 가 아니라 새 파일인가: 지금 여러 워커가 동시에 charts.php 에 차트를
  *   추가하는 중이라(#779 계열 작업들) 한 파일에 몰면 충돌한다 — deptree.php·format/severity.php
  *   로 화면별 헬퍼를 갈라 둔 것과 같은 판단이다.
  *
- *   이 파일이 대체하는 것: vg_asset_terrain()(아이소메트릭 지형도)과 vg_flow_funnel()(퍼널).
- *   지형도는 운영 실측에서 실패했다 — 자산 11대의 High 이상이 55~132 로 몰려 있어 블록
- *   높이차가 거의 없었고, 이름표가 앞 블록에 가려 잘렸다. 높이로 비교하는 그림 자체가
+ *   이 파일이 대체한 것: vg_asset_terrain()(아이소메트릭 지형도) · vg_flow_funnel()(퍼널) ·
+ *   vg_flow_waterfall()(사유가 있는 워터폴, "F3(숫자 4칸)" 작업으로 걷었다 — 값 넷과 라벨뿐인
+ *   자리는 SVG 도 카드도 필요 없어 dashboard/sections/summary.php 의 vg_kpi_strip() 호출로
+ *   바뀌었다). 지형도는 운영 실측에서 실패했다 — 자산 11대의 High 이상이 55~132 로 몰려 있어
+ *   블록 높이차가 거의 없었고, 이름표가 앞 블록에 가려 잘렸다. 높이로 비교하는 그림 자체가
  *   이 데이터에 안 맞아서, 이름을 그림 밖 한 열에 세우는 **순위 막대**로 바꾼다.
  *
- *   서버 렌더 SVG(워터폴·스파크라인)와 HTML(순위 막대)을 섞어 쓰는 이유는 charts.php
- *   머리주석과 같다 — 라벨이 주인공인 차트는 HTML(폭이 줄어도 글자가 안 줄어든다),
- *   형태가 고정된 차트는 SVG(CSP 가 default-src 'self' 라 인라인 <script> 를 못 쓴다).
+ *   서버 렌더 HTML(순위 막대)인 이유는 charts.php 머리주석과 같다 — 라벨이 주인공인
+ *   차트는 HTML(폭이 줄어도 글자가 안 줄어든다).
  */
 
 require_once __DIR__ . '/../format.php';   // vg_h()
-require_once __DIR__ . '/charts.php';      // vg_donut_tone() — 대시보드 로드 순서에 우연히 기대지 않는다
 require_once __DIR__ . '/components.php';  // vg_empty()
 
 /**
@@ -118,134 +118,33 @@ function vg_asset_rank(array $assets, array $opts = []): void {
     }
 }
 
-/** 워터폴 칸 폭 · 칸 사이 간격 · 칸 높이 상한(px). */
-const VG_WFALL_STEP_W = 64;
-const VG_WFALL_GAP    = 28;
-const VG_WFALL_MAX_H  = 128;
-
-/**
- * 처리 흐름 워터폴 — 탐지 전체에서 오늘 할 일까지, 칸마다 **무엇 때문에 얼마가 빠졌는지**를
- * 사유와 함께 남긴다(vg_flow_funnel 후신 — 그건 "좁아진다"만 말했다).
- *
- *   $steps: [['label'=>…, 'value'=>int, 'tone'=>…, 'href'=>'', 'title'=>'', 'reason'=>''], …]
- *           **값은 그 칸까지의 누적 총량이다**(그 칸에서 빠진 양이 아니다) — 첫 칸이 전체,
- *           이후 칸은 앞 칸에서 하나씩 뺀 나머지다. **마지막 두 칸은 값이 같아도 된다**
- *           (한 칸이 뺀 나머지를, 다음 칸이 "그래서 남은 오늘 할 일"로 다시 말한다 — 값은
- *           같아도 하나는 "무엇을 뺐는지", 하나는 "그래서 뭐가 남았는지" 를 답하는 다른 칸이다).
- *           **첫 칸과 마지막 칸만** 0 부터 세우는 막대다. 가운데 칸들은 앞 칸 값에서 이 칸
- *           값까지 **떠 있는 막대**로 그려 얼마가 빠졌는지 높이로 보이고, 값 자리에는 그
- *           빠진 양이 `−` 를 달고 선다. 'reason' 은 그 아래 한 줄(비우면 안 그린다).
- *   $opts:  'title'(SVG 접근성 이름의 머리) · 'empty'(vg_empty 스펙)
- *
- * **세로는 로그 척도**다(log10(v+1) / log10(첫값+1)) — 42,271 대 884 를 선형으로 그리면
- *   마지막 칸이 통째로 사라진다(옛 퍼널이 두께를 로그로 그리던 것과 같은 이유).
- */
-function vg_flow_waterfall(array $steps, array $opts = []): void {
-    $items = [];
-    foreach ($steps as $s) {
-        if (!is_array($s)) { continue; }
-        $items[] = [
-            'label'  => (string) ($s['label'] ?? ''),
-            'value'  => max(0, (int) ($s['value'] ?? 0)),
-            'tone'   => vg_donut_tone((string) ($s['tone'] ?? 'muted')),
-            'href'   => (string) ($s['href'] ?? ''),
-            'title'  => (string) ($s['title'] ?? ''),
-            'reason' => (string) ($s['reason'] ?? ''),
-        ];
-    }
-    $n = count($items);
-    if ($n < 2 || $items[0]['value'] <= 0) {
-        vg_empty($opts['empty'] ?? ['icon' => 'chart', 'title' => '집계할 탐지 결과가 없습니다.',
-                                    'hint'  => '수집이 한 번이라도 끝나면 여기에 처리 흐름이 표시됩니다.']);
-        return;
-    }
-
-    $sw = VG_WFALL_STEP_W; $gap = VG_WFALL_GAP; $maxH = VG_WFALL_MAX_H;
-    $padL = 10; $padR = 10; $padT = 30; $padB = 44;
-    $W = $n * $sw + ($n - 1) * $gap + $padL + $padR;
-    $baseline = $padT + $maxH;
-    $H = $baseline + $padB;
-
-    // 0건도 칸을 남긴다(log10(0+1)=0 → 기준선 위치) — "그 칸이 비었다" 는 지워야 할 정보가
-    //   아니라 읽어야 할 사실이다(옛 퍼널·지형도와 같은 규칙).
-    $logMax = log10($items[0]['value'] + 1);
-    $yAt = static fn(int $v): float => $logMax > 0
-        ? $baseline - $maxH * (log10($v + 1) / $logMax) : $baseline;
-
-    foreach ($items as $i => &$it) {
-        $it['x'] = $padL + $i * ($sw + $gap);
-        $it['y'] = $yAt($it['value']);
-    }
-    unset($it);
-
-    // 접근성 요약 — 감소 칸은 "얼마가 왜 빠졌는지", 나머지는 누적값을 그대로 읽는다.
-    $alt = (string) ($opts['title'] ?? '처리 흐름 워터폴');
-    foreach ($items as $i => $it) {
-        $isEdge = $i === 0 || $i === $n - 1;
-        if (!$isEdge && $i > 0) {
-            $cut = $items[$i - 1]['value'] - $it['value'];
-            $alt .= ' · ' . $it['label'] . ' ' . number_format($cut) . '건 제외'
-                  . ($it['reason'] !== '' ? '(' . $it['reason'] . ')' : '');
-        } else {
-            $alt .= ' · ' . $it['label'] . ' ' . number_format($it['value']) . '건';
-        }
-    }
-
-    echo '<div class="wfall">';
-    echo '<svg viewBox="0 0 ' . $W . ' ' . $H . '" role="img" aria-label="' . vg_h($alt) . '">';
-    echo '<line class="wfall__base" x1="' . $padL . '" y1="' . round($baseline, 1)
-        . '" x2="' . ($W - $padR) . '" y2="' . round($baseline, 1) . '"></line>';
-
-    // 연결선을 막대보다 먼저 그린다 — 막대 모서리가 그 위를 덮어야 이음매가 깔끔하다.
-    for ($i = 0; $i < $n - 1; $i++) {
-        $y = round($items[$i]['y'], 1);
-        echo '<line class="wfall__link" x1="' . round($items[$i]['x'] + $sw, 1) . '" y1="' . $y
-            . '" x2="' . round($items[$i + 1]['x'], 1) . '" y2="' . $y . '"></line>';
-    }
-
-    foreach ($items as $i => $it) {
-        $isEdge = $i === 0 || $i === $n - 1;
-        $prev   = $i > 0 ? $items[$i - 1] : null;
-
-        if ($isEdge) {
-            $top = $it['y'];
-            $h   = max(1.5, $baseline - $it['y']);
-        } else {
-            $top = min($prev['y'], $it['y']);
-            $h   = max(1.5, abs($it['y'] - $prev['y']));
-        }
-        // 가운데 칸만 "빠진 양"(−)을 말한다. 첫·마지막 칸은 자기 누적값을 그대로 말한다
-        //   (마지막 칸의 값이 바로 앞 칸과 같아도 "−0" 이 아니라 그 값 자체가 맞다).
-        $cut = (!$isEdge && $prev !== null) ? $prev['value'] - $it['value'] : null;
-
-        $tag = $it['href'] !== '' ? 'a' : 'g';
-        $cls = 'wfall__bar tone-' . $it['tone'] . ($i === $n - 1 ? ' wfall__bar--last' : '');
-        $tip = $it['title'] !== '' ? $it['title']
-             : ($cut !== null
-                 ? $it['label'] . ' · ' . number_format($cut) . '건 제외' . ($it['reason'] !== '' ? '(' . $it['reason'] . ')' : '')
-                 : $it['label'] . ' ' . number_format($it['value']) . '건');
-
-        echo '<' . $tag . ' class="' . vg_h($cls) . '"'
-            . ($it['href'] !== '' ? ' href="' . vg_h($it['href']) . '"' : '') . '>';
-        echo '<title>' . vg_h($tip) . '</title>';
-        echo '<rect class="wfall__rect" x="' . round($it['x'], 1) . '" y="' . round($top, 1)
-            . '" width="' . $sw . '" height="' . round($h, 1) . '" rx="3"></rect>';
-
-        $mx     = $it['x'] + $sw / 2;
-        $valTxt = $cut !== null ? '−' . number_format($cut) : number_format($it['value']);
-        echo '<text class="wfall__val" x="' . $mx . '" y="' . round($top - 8, 1) . '">' . vg_h($valTxt) . '</text>';
-        echo '<text class="wfall__lbl" x="' . $mx . '" y="' . ($baseline + 16) . '">' . vg_h($it['label']) . '</text>';
-        if ($it['reason'] !== '') {
-            echo '<text class="wfall__reason" x="' . $mx . '" y="' . ($baseline + 29) . '">' . vg_h($it['reason']) . '</text>';
-        }
-        echo '</' . $tag . '>';
-    }
-    echo '</svg></div>';
-}
-
 /** 스파크라인 한 줄의 SVG 크기(px). */
 const VG_SPARK_W = 88;
 const VG_SPARK_H = 26;
+
+/**
+ * 자산 하나의 추세 점열에서 "지금 값 · N일 전 대비 증감" 을 뽑는다 — vg_asset_sparklines() 의
+ * 렌더 루프와 dashboard/sections/trend.php 의 "변화 있는 자산만 고르기" 가 **같은 계산**을
+ * 써야 화면에 그려진 증감과 걸러낸 기준이 어긋나지 않는다(둘이 따로 셈하면 조용히 갈린다).
+ *
+ *   $points: [['d'=>…, 'v'=>int], …] — **시간순(오래된→최신)**, 최소 1건.
+ *   비교 시점은 "정확히 N일 전"이 아니라 **가진 이력 안에서 가장 가까운 과거**다 — 수집을
+ *   막 시작한 자산은 N일치가 없어서, 있는 만큼만 비교한다(0건으로 메우지 않는다 —
+ *   vg_dash_trend() 의 이월 규칙과 같은 정직함). 비교할 과거가 아예 없으면 delta=null.
+ *   반환: ['now'=>int, 'before'=>?int, 'delta'=>?int, 'cmp_days'=>int(실제 비교에 쓴 일수)]
+ */
+function vg_trend_delta(array $points, int $compareDaysReq): array {
+    $pts   = array_values($points);
+    $count = count($pts);
+    $now   = $count > 0 ? (int) $pts[$count - 1]['v'] : 0;
+
+    $cmpDays = min(max(1, $compareDaysReq), max(0, $count - 1));
+    if ($cmpDays < 1) {
+        return ['now' => $now, 'before' => null, 'delta' => null, 'cmp_days' => 0];
+    }
+    $before = (int) $pts[$count - 1 - $cmpDays]['v'];
+    return ['now' => $now, 'before' => $before, 'delta' => $now - $before, 'cmp_days' => $cmpDays];
+}
 
 /**
  * 자산별 미니 추세 — 자산마다 한 줄에 "스파크라인 + 현재값 + N일 전 대비 증감". vg_multi_trend()
@@ -253,11 +152,10 @@ const VG_SPARK_H = 26;
  *
  *   $series: [['name'=>자산 이름, 'href'=>'', 'points'=>[['d'=>…, 'v'=>int], …]], …]
  *            points 는 **시간순(오래된→최신)** 이어야 한다 — vg_dash_trend() 의 반환 그대로.
- *   $opts:   'top'(줄 수, 기본 8) · 'unit'(값 뒤 단위) · 'compare_days'(기본 14) · 'empty'
- *
- * 비교 시점은 "정확히 N일 전"이 아니라 **가진 이력 안에서 가장 가까운 과거**다 — 수집을
- *   막 시작한 자산은 N일치가 없어서, 있는 만큼만 비교하고 그 사실을 툴팁에 남긴다(0건으로
- *   메우지 않는다 — vg_dash_trend() 의 이월 규칙과 같은 정직함).
+ *            **줄 선별(누구를 그릴지)은 호출부 몫이다** — 대시보드는 14일 전 대비 변화가
+ *            있는 자산만 이미 걸러서 넘긴다(dashboard/sections/trend.php). 이 함수는 받은
+ *            것을 그대로 그린다(top 은 안전장치일 뿐 선별 기준이 아니다).
+ *   $opts:   'top'(줄 수 상한, 기본 8) · 'unit'(값 뒤 단위) · 'compare_days'(기본 14) · 'empty'
  */
 function vg_asset_sparklines(array $series, array $opts = []): void {
     $top        = max(1, (int) ($opts['top'] ?? 8));
@@ -287,14 +185,8 @@ function vg_asset_sparklines(array $series, array $opts = []): void {
     foreach ($clean as $s) {
         $pts   = $s['points'];
         $count = count($pts);
-        $now   = (int) $pts[$count - 1]['v'];
-
-        $cmpDays = min($cmpDaysReq, $count - 1);
-        $delta   = null; $before = null;
-        if ($cmpDays >= 1) {
-            $before = (int) $pts[$count - 1 - $cmpDays]['v'];
-            $delta  = $now - $before;
-        }
+        $d     = vg_trend_delta($pts, $cmpDaysReq);
+        $now = $d['now']; $before = $d['before']; $delta = $d['delta']; $cmpDays = $d['cmp_days'];
 
         $vals = array_map(static fn($p) => (float) $p['v'], $pts);
         $minV = min($vals); $maxV = max($vals);

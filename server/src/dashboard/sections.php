@@ -14,9 +14,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../format.php';           // vg_dash_section_head() 의 vg_h()
 require_once __DIR__ . '/../view/icons.php';       // vg_dash_section_head() 의 vg_icon()
-                                                   //   ↑ 둘 다 index.php 의 우연한 로드 순서에 기대지 않는다(funnel.php 가 같은 이유로 고쳐졌다)
-require_once __DIR__ . '/sections/rank.php';       // 자산 순위 막대 — 상단 왼쪽
-require_once __DIR__ . '/sections/waterfall.php';  // 처리 흐름(사유를 남기는 워터폴 5칸) — 상단 오른쪽
+require_once __DIR__ . '/../view/components/signal.php';  // summary.php 의 vg_kpi_strip()
+                                                   //   ↑ 셋 다 index.php 의 우연한 로드 순서에 기대지 않는다(funnel.php 가 같은 이유로 고쳐졌다)
+require_once __DIR__ . '/sections/rank.php';       // 자산 순위 막대 — 상단
+require_once __DIR__ . '/sections/summary.php';    // 현황 요약 숫자 4칸(처리 흐름 워터폴 후신) — 섹션 머리 바로 아래
 require_once __DIR__ . '/sections/signals.php';    // 구성 도넛 두 장(등급 · 노출·실행) — 카드도 둘이다
 require_once __DIR__ . '/sections/trend.php';      // 최근 N일 High 이상 추세 — 도넛 옆 넓은 칸
 require_once __DIR__ . '/sections/hosts.php';      // 호스트별 현황 목록 + 페이지네이션(페이저가 화면을 닫는다)

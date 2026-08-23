@@ -49,20 +49,20 @@ vg_header('대시보드', 'dashboard');
 <?php if ($err !== null): ?>
   <?php vg_alert('DB 오류 · ' . $err); ?>
 <?php else: ?>
-  <?php /* 순서가 곧 위계다 — "지금 무엇부터 손대야 하나" 에 답하는 것(순위 · 워터폴 · 구성)이 위,
+  <?php /* 순서가 곧 위계다 — "지금 무엇부터 손대야 하나" 에 답하는 것(숫자 4칸 · 순위 · 구성)이 위,
            배경(추세)과 전수 목록(호스트)이 아래다.
-           맨 윗줄은 **같은 축(High 이상)을 두 방향에서** 본다: 순위가 "어느 자산에 몰려
-           있나", 워터폴이 "전체가 얼마나, 왜 좁혀지나" 다. 격자는 .dash-top 이 갖는다.
+           숫자 4칸(vg_dash_render_summary)은 예전엔 오른쪽 워터폴 카드였다 — 값 넷과
+           라벨뿐인 한 줄이라 카드로 세우면 옆(자산 순위, 12행)과 높이가 안 맞아 빈 카드가
+           됐다(2열 격자 .dash-top 을 걷은 이유). 대신 섹션 머리 바로 아래 요약 줄로 흡수하고,
+           순위 카드는 짝 없는 전체 폭 단독 카드로 둔다.
            **가로 전체 폭 카드를 세로로만 쌓지 않는다.** 예전엔 넷이 전부 전체 폭이라 세로
            스크롤만 길어졌고, 도넛 둘뿐인 [주요 취약점 신호] 카드는 1920px 에서 폭의 절반이
            빈 띠였다. 구성 도넛(내용 폭이 정해져 있다)과 추세(가로가 길수록 좋다)를
            비대칭 2열로 묶어, 폭이 남는 자리를 세로 길이로 바꾼다 — 격자는 app.css 의
            .dash-grid 가 갖는다(좁아지면 DOM 순서 그대로 한 열로 떨어진다). */ ?>
   <?php vg_dash_section_head('현황 요약', 'shield'); ?>
-  <div class="dash-top">
-    <?php vg_dash_render_rank($rank, $hostCount); ?>
-    <?php vg_dash_render_waterfall($totals, $hostCount, $exposedHighPlus); ?>
-  </div>
+  <?php vg_dash_render_summary($totals, $hostCount, $exposedHighPlus); ?>
+  <?php vg_dash_render_rank($rank, $hostCount); ?>
 
   <?php vg_dash_section_head('분포와 추이', 'chart'); ?>
   <div class="dash-grid">

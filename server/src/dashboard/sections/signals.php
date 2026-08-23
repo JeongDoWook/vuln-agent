@@ -19,22 +19,34 @@ declare(strict_types=1);
  *   'KEV 중 기한 초과 N'. 계산(kev)은 그 퍼널이 계속 쓴다.
  *
  *   id="signals" 는 남긴다 — 같은 화면 안에서 이 자리를 가리키던 앵커다.
+ *
+ *   등급 구성 도넛의 중앙 숫자는 바로 위 숫자 4칸(summary.php)의 '조치 대상' 과 같은
+ *   합(CRITICAL+HIGH+MEDIUM)이라 **같은 값을 두 번 보여줬다.** 4칸 쪽은 목업이 정한
+ *   레이아웃이라 그대로 두고, 여기 중앙만 "전체 중 비중(%)" 으로 바꿔 겹침을 없앤다 —
+ *   고리 자체(조각별 절대 건수)는 그대로다. 이 opts 는 vg_sev_donut() 의 기본값
+ *   ('조치 대상' 절대값)을 이 호출부만 덮어쓴다 — findings.php 등 다른 화면의 같은
+ *   도넛은 그대로 절대값을 보여준다.
  */
 
 /** 등급 구성 — 조치 대상(C·H·M)만 고리로 그리고, 조각을 누르면 그 등급만 걸러 본다. */
 function vg_dash_render_severity(array $totals): void {
+  $all        = array_sum($totals);
+  $actionable = $all - (int) $totals['LOW'];
+  $pct        = $all > 0 ? round($actionable / $all * 100) : 0;
   ?>
   <section class="card dash-donut" id="signals">
     <strong>등급 구성</strong>
-    <span class="why">자산 전체의 최신 수집 기준 · <a href="/findings.php">전체 목록 →</a></span>
+    <span class="why">최신 수집 기준 · <a href="/findings.php">전체 목록 →</a></span>
     <div class="card__body">
       <?php /* 고리는 조치 대상(C·H·M)만 그린다(vg_sev_donut 주석 참조). LOW 는 오른쪽 목록에
-               건수로 남고, 전체 건수는 위 퍼널의 '탐지된 전체' 가 갖는다.
+               건수로 남고, 전체 건수는 위 숫자 4칸의 '탐지 전체' 가 갖는다.
                조각을 누르면 그 등급만 걸러 본다(숫자와 목적지가 이어진다). */ ?>
       <?php vg_sev_donut($totals, 132, [
-          'title' => '등급 구성',
-          'href'  => '/findings.php',
-          'seg'   => fn(string $sev): array => ['href' => '/findings.php?sev=' . urlencode($sev)],
+          'title'        => '등급 구성',
+          'href'         => '/findings.php',
+          'seg'          => fn(string $sev): array => ['href' => '/findings.php?sev=' . urlencode($sev)],
+          'center'       => $pct . '%',
+          'center_label' => '전체 중 비중',
       ]); ?>
     </div>
   </section>
@@ -46,7 +58,7 @@ function vg_dash_render_runtime(array $runtime): void {
   ?>
   <section class="card dash-donut">
     <strong>노출·실행 상태</strong>
-    <span class="why">자산 전체의 최신 수집 기준 · <a href="/findings.php?st=EXTERNAL">외부 노출만 →</a></span>
+    <span class="why">최신 수집 기준 · <a href="/findings.php?st=EXTERNAL">외부 노출만 →</a></span>
     <div class="card__body">
       <?php /* 라벨·톤·고리에 그릴지는 vg_runtime_donut() 하나가 갖는다 — 탐지 결과 화면의 같은
                도넛과 **같은 함수·같은 어휘**여야 두 화면의 숫자를 이어 읽을 수 있다.

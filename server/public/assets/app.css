@@ -3166,23 +3166,13 @@ form.card .btn--primary:active { transform: translateY(0); }
 .dep-path { display: flex; flex-wrap: wrap; gap: .3rem .55rem; margin: 0; padding: 0; list-style: none; }
 .dep-path li + li::before { content: "→"; margin-right: .4rem; color: var(--muted); }
 
-/* --- 대시보드 상단 두 그림(index.php) --------------------------------------
- * 왼쪽 자산 순위 막대(vg_asset_rank) · 오른쪽 처리 흐름 워터폴(vg_flow_waterfall).
- * 같은 축(High 이상)을 두 방향에서 보는 한 줄이라 나란히 세운다 — 순위는 "어느 자산에
- * 몰려 있나", 워터폴은 "전체가 얼마나, 왜 좁혀지나". 좁아지면 DOM 순서 그대로 한 열로
- * 떨어진다. 왼쪽이 더 넓은 것은 최대 12행짜리 목록이라 오른쪽 워터폴(다섯 칸 고정)보다
- * 가로를 더 쓰기 때문이다. */
-.dash-top { display: grid; gap: var(--sp-3); margin-bottom: var(--sp-3); }
-.dash-top > .card { margin-bottom: 0; }
-/* 두 그림은 높이가 다르다(순위는 행 수만큼, 워터폴은 SVG 한 장이다). 같은 줄에 서면
- * 짧은 쪽 카드가 그리드 기본(stretch)으로 늘어나 아래가 빈 띠가 되므로, 늘어난 카드
- * 안에서 내용을 세로 가운데로 모은다 — .dash-grid 가 추세 차트를 늘려 같은 문제를 푸는
- * 것과 같은 판단이고, 여기서는 늘릴 수 있는 그림이 아니라 모으는 쪽이 맞다. */
-.dash-top > .card { display: flex; flex-direction: column; }
-.dash-top > .card > .card__body { display: flex; flex-direction: column; justify-content: center; flex: 1 1 auto; }
-@media (min-width: 1180px) {
-  .dash-top { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
-}
+/* --- 대시보드 현황 요약(index.php) ------------------------------------------
+ * 섹션 머리 바로 아래 숫자 4칸(vg_kpi_strip, summary.php) · 그 아래 자산 순위 막대
+ * (vg_asset_rank) 단독 전체 폭 카드. 예전엔 순위 옆에 처리 흐름 워터폴을 2열 격자
+ * (.dash-top)로 나란히 세웠는데, 숫자 4칸은 한 줄이라 12행짜리 순위 카드와 높이를
+ * 맞출 방법이 없었다(억지로 같은 행 높이로 늘리면 빈 카드가 된다) — 격자를 걷고 요약
+ * 줄로 흡수해 그 문제 자체를 없앴다. 숫자 4칸의 시각 규격은 .kpi-strip 정본(위 890행
+ * 대) 을 그대로 쓴다 — 이 화면만의 스타일을 새로 만들지 않는다. */
 
 /* --- 자산 순위 막대(vg_asset_rank) ------------------------------------------
  * 전신은 아이소메트릭 지형도(vg_asset_terrain)였다 — 높이로 비교하는 그림인데 운영
@@ -3231,43 +3221,6 @@ a.arank__row:hover { background: var(--surface-2); color: var(--text); text-deco
 }
 .arank__value { color: var(--text); font-weight: 700; }
 @media (max-width: 700px) { .arank__row { grid-template-columns: minmax(0, 7rem) minmax(2rem, 1fr) max-content; } }
-
-/* --- 처리 흐름 워터폴(vg_flow_waterfall) -------------------------------------
- * 전신은 퍼널(vg_flow_funnel)이었다 — "좁아진다"만 말했다. 지금은 첫·마지막 칸이 기준선
- * 에서 세우는 막대, 가운데 칸들은 앞뒤 누적값 사이에 뜬 막대다(PHP 쪽 vg_flow_waterfall()
- * 주석 참조) — 뜬 막대의 높이가 곧 그 칸에서 빠진 양이다. 색은 칸 톤 하나에서 나온다. */
-.wfall { overflow-x: auto; }
-.wfall svg { display: block; width: 100%; height: auto; min-width: 24rem; }
-.wfall__base { stroke: var(--line); stroke-width: 1; }
-.wfall__link { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 3 3; }
-.wfall__bar {
-  --wfall-c: var(--muted-2);
-}
-.wfall__bar.tone-low {
-  --wfall-c: var(--low);
-}
-.wfall__bar.tone-med {
-  --wfall-c: var(--med);
-}
-.wfall__bar.tone-ok {
-  --wfall-c: var(--ok);
-}
-.wfall__bar.tone-crit {
-  --wfall-c: var(--crit);
-}
-.wfall__rect { fill: var(--wfall-c); }
-a.wfall__bar { cursor: pointer; }
-a.wfall__bar:hover .wfall__rect,
-a.wfall__bar:focus-visible .wfall__rect { stroke: var(--accent); stroke-width: 2; }
-a.wfall__bar:hover .wfall__lbl { fill: var(--text); }
-.wfall__val {
-  fill: var(--text); font-size: 13px; font-weight: 700;
-  text-anchor: middle; font-variant-numeric: tabular-nums;
-}
-.wfall__lbl { fill: var(--text-2); font-size: 11px; text-anchor: middle; }
-.wfall__reason { fill: var(--muted); font-size: 9.5px; text-anchor: middle; }
-/* 마지막 칸이 "오늘 할 일" 이다 — 숫자 하나만 키워 그 자리를 말한다(옛 퍼널과 같은 규칙). */
-.wfall__bar--last .wfall__val { font-size: 19px; fill: var(--crit-fg); }
 
 /* --- 자산별 스파크라인(vg_asset_sparklines) ----------------------------------
  * 겹치는 선 5개짜리 멀티라인(vg_multi_trend, host.php·changes.php 는 계속 쓴다) 대신
@@ -3379,6 +3332,11 @@ a.age__row:hover .age__stat { fill: var(--text); }
 /* 도넛 + 직접 라벨 목록은 **내용 폭이 정해진 덩어리**다. 카드가 그보다 넓어져도(한 열로
  * 떨어진 좁은 화면에서 카드가 화면 폭을 다 쓸 때) 늘리지 않고 가운데로 모은다. */
 .dash-donut .donut-kpi { max-width: 26rem; margin-inline: auto; }
+/* 추세 카드 자리 — 자산 전체가 14일간 안 움직였을 때(드묾)는 카드를 세우지 않고 이 한
+ * 줄만 놓는다(dashboard/sections/trend.php). .dash-grid 의 그리드 기본(stretch)이 이
+ * 줄도 옆 도넛 열 높이만큼 늘리므로, 그 안에서 가운데로 모아 빈 카드처럼 보이지 않게 한다
+ * (.dash-top 이 짧은 카드를 세로 가운데로 모으던 것과 같은 처방). */
+.dash-trend-flat { align-self: center; text-align: center; }
 
 @media (min-width: 1180px) {
   .dash-grid { grid-template-columns: minmax(22rem, 28rem) minmax(0, 1fr); }
