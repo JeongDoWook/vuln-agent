@@ -51,7 +51,7 @@ try {
     if ($rule !== null) {
         $pdo = vg_pdo();
 
-        // 상세 열람은 감사 대상이다(CLAUDE.md 원칙 7). 코드는 정수 PK 가 아니라 message·subject
+        // 누가 어떤 규칙 상세를 열람했는지가 감사 대상이다. 코드는 정수 PK 가 아니라 message·subject
         //   로 남긴다(compliance_rule.php 의 view_compliance_rule 과 같은 형태).
         vg_log_activity($pdo, 'CCE_RULE', null, 'view_cce_rule', $code, subject: $code, action: 'READ');
         session_write_close();   // 인가·감사로그 이후 집계 전 세션락 해제(control.php 선례)

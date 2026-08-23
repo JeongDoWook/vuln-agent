@@ -19,6 +19,7 @@ const VG_ASSET_IP_TITLE_MAX = 8;
  * @param bool $canConfirm 관리자면 체크박스 열이 붙는다(인가 자체는 POST 처리부가 정한다).
  * @param bool $filtered   검색·필터가 걸린 상태인가(빈 목록 안내 문구가 갈린다).
  * @param array $ipsByHost host_id => 주소 목록(대표가 맨 앞). queries.php 가 조회 한 번으로 묶어 준다.
+ * @param array $trendByHost host_id => '14일 추세' 스파크라인 점 목록. queries.php 가 배치로 묶어 준다.
  * @param array $stateTone,$gradeTone 색 어휘 — 지금 이 표는 쓰지 않는다(범례를 걷었다).
  *        같은 값을 KPI 카드·등급 모달이 계속 쓰므로 호출부 계약은 그대로 둔다.
  */
@@ -26,6 +27,7 @@ function vg_assets_render_table(
     array $rows,
     array $sevByScan,
     array $ipsByHost,
+    array $trendByHost,
     bool $canConfirm,
     bool $filtered,
     string $stateHelp,
@@ -79,6 +81,13 @@ function vg_assets_render_table(
         ['label' => '등급', 'key' => 'grade', 'width' => '5.5rem',
          'title' => implode(' / ', VG_ASSET_GRADES)],
         ['label' => '심각도', 'key' => 'sev', 'width' => '22%'],
+        /* 스파크라인은 svg(120px 고정) + 값 + 증감이라 뱃지·IP 와 같은 고정폭 값이다(rem).
+         *   좁은 화면(표 모드가 빠듯해지는 구간)에서는 다른 열을 줄이지 않고 이 열을 통째로
+         *   숨긴다 — col-trend 는 app.css 의 반응형 절이 갖는다(열 다이어트 규약, 이 파일
+         *   위 주석의 "뺀 다섯 열" 과 같은 판단 — 값을 지우는 게 아니라 상세로 미루는 것도
+         *   아니고 그냥 좁은 화면에서 접는다, 자산 상세엔 이미 다른 형태의 추세가 있다). */
+        ['label' => '14일 추세', 'key' => 'trend', 'width' => '13rem', 'class' => 'col-trend',
+         'title' => '최근 14일간 CRITICAL·HIGH(조치 대상) 건수 추세'],
         ['label' => '최신 수집', 'key' => 'collected_at', 'width' => '14%', 'nowrap' => true],
     ]);
     // 액션 열만 % 가 아니라 rem 이다. 삭제 버튼은 폭이 늘 같은 고정 크기 조작부라 비율로 줄 이유가 없고,
@@ -167,6 +176,10 @@ function vg_assets_render_table(
                     $sevByScan[(int) $r['scan_id']] ?? [],
                     fn(string $s) => '/findings.php?host=' . (int) $r['host_id'] . '&sev=' . $s
                 ),
+                // 이력이 없는(수집 없음) 자산은 vg_sparkline() 이 스스로 옅은 '–' 로 받는다.
+                'trend' => fn($r) => vg_sparkline($trendByHost[(int) $r['host_id']] ?? [], [
+                    'label' => 'CRITICAL·HIGH', 'unit' => '건', 'days' => VG_ASSET_TREND_DAYS,
+                ]),
                 /* 12% 로는 'YYYY-MM-DD HH:MM:SS'(19자)가 안 들어가 '2026-08-11 23:2…' 로 잘려
                  *   시각을 못 읽었다. 열을 넓히는 대신 **형식을 줄인다** — 이 목록에서 필요한 건
                  *   분까지고(초 단위 판단을 여기서 하지 않는다), 전체 값은 title 로 남긴다. */

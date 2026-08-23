@@ -65,6 +65,22 @@ foreach (['/export.php', '/sbom.php'] as $route) {
     }
 }
 
+// 도메인 분리본 5개는 사이트맵.puml 을 손으로 잘라 만든 것이라 정본에 노드를 추가했는데
+// 분리본에 깜빡 안 넣는 사고를 정적으로는 못 잡는다. 완벽한 동기화 검증은 아니고(라벨
+// 문구까지는 안 본다) 완전 누락만 막는 최소 안전망이다.
+preg_match_all('/rectangle\s+"[^"]*"\s+as\s+(\w+)/', $site, $siteAliasMatches);
+$siteAliases = array_values(array_unique($siteAliasMatches[1]));
+$siteSplitAliases = [];
+foreach (glob($root . '/docs/specs/diagrams/사이트맵-*.puml') as $splitFile) {
+    preg_match_all('/rectangle\s+"[^"]*"\s+as\s+(\w+)/', file_get_contents($splitFile), $splitMatches);
+    $siteSplitAliases = array_merge($siteSplitAliases, $splitMatches[1]);
+}
+$siteSplitAliases = array_unique($siteSplitAliases);
+$missingFromSplit = array_diff($siteAliases, $siteSplitAliases);
+if ($missingFromSplit) {
+    $fail('사이트맵 분리본에서 빠진 화면 노드: ' . implode(', ', $missingFromSplit));
+}
+
 if (preg_match('/\bS3\s*-->/', $deploy)) {
     $fail('배포 구성에 정의되지 않은 S3 secret 연결이 남았습니다');
 }

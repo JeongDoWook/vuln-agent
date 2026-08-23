@@ -43,6 +43,19 @@ declare(strict_types=1);
     </div>
   <?php endif; ?>
 
+  <?php if ($cve !== null && !empty($cve['published'])): ?>
+    <div class="card">
+      <strong>방치 기간</strong>
+      <span class="why">공개일부터 오늘까지 — 길이가 곧 이 CVE 가 방치된 기간입니다.</span>
+      <div class="card__body">
+        <?php vg_age_timeline([[
+            'published' => (string) $cve['published'],
+            'count'     => $assetTotal,
+        ]], ['title' => $cveId . ' 방치 기간']); ?>
+      </div>
+    </div>
+  <?php endif; ?>
+
   <?php if ($kev): ?>
     <div class="card">
       <strong>CISA KEV</strong>

@@ -1,0 +1,63 @@
+@startuml 사이트맵-데이터카탈로그
+' vuln-agent §6 웹 화면 구성 (사이트맵 · 인증) — 데이터·카탈로그 계열 도메인 분리본
+' 정본은 사이트맵.puml 전체다. 이 파일은 외부에서 받아온 참조 카탈로그(CVE·패키지·SSG 룰)만
+' 추린 것 — GitHub 본문 폭(약 900px)에서 전체본(정확한 폭은 README.md 사이트맵 절 참고)이 판독 불가라 도메인별로 나눴다.
+' 손으로 고친다 — 사이트맵.puml 을 고쳤으면 이 분리본도 같이 갱신한다(README.md 사이트맵 절 참고).
+'
+' 옅게 칠한 <<ref>> 박스는 이 도메인이 아니라 다른 분리본이 다루는 화면이다.
+' 관계선이 끊기지 않게 남겼을 뿐 상세는 그 분리본을 본다.
+
+skinparam wrapWidth 230
+skinparam nodesep 4
+skinparam ranksep 16
+skinparam shadowing false
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam rectangle<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+rectangle "/connectors.php\n«connectors»\n수집 상태" as CONN
+rectangle "/cves.php «catalog»\nCVE · 탭(전체/KEV/EPSS 상위)" as CVES
+rectangle "/packages.php «catalog»\n/package.php\n«catalog 또는 findings»\n패키지 × 배포판 · 패키지 상세\n(탭: 언어 패키지·라이선스)" as PKG
+rectangle "/cve.php\n«findings·catalog·\nadvisories 중 하나»\nCVE 상세 · 영향패키지\n발견 위치" as CVE
+rectangle "/vendor.php «catalog»\n판정 근거 · 소스 필터" as VEND
+rectangle "/cce-rules.php\n«compliance»\nCCE · 우리가 판정하는\n39개 점검\n(코드·심각도·기준 매핑\n판정 집계)" as CCER
+rectangle "/cce-rule.php\n«catalog·compliance·\nfindings 중 하나»\nCCE 상세 · 점검/조치\n기준 3종 + FAIL 자산\n참조 근거(SSG)" as CCED
+rectangle "/compliance_rules.php\n«catalog»\nSSG 룰셋(사이드바에서 내림)" as CRULES
+rectangle "/compliance_rule.php\n«catalog·compliance·\nfindings 중 하나»\nSSG 룰 상세\n점검/조치 근거" as CRULE
+
+rectangle "/findings.php «findings»" as FIND <<ref>>
+rectangle "/nofix-packages.php\n«findings»" as NOFIX <<ref>>
+rectangle "/host.php\n«assets 또는 findings»" as HOST <<ref>>
+rectangle "/control.php\n«compliance 또는 findings»" as CDET <<ref>>
+rectangle "/feed_preview.php\n«connectors»" as FPRE <<ref>>
+
+FIND --> CVE
+PKG  --> CVE
+PKG  --> NOFIX
+HOST --> CRULE : CCE 근거 배지
+CDET --> CCED : 점검 항목 상세로
+CCED --> CDET : 기준 통제 상세로
+CCED --> HOST : FAIL 자산의\nCCE 탭으로
+CCED --> CRULE : 참조 근거(접힘)
+CRULES --> CRULE
+CCER --> CCED
+CONN ..> FPRE : 저장 전\n미리보기
+
+' ── 보이지 않는 배치용 선 ──────────────────────────────────
+' CVES · VEND 는 다른 화면과 오가는 링크가 없다(사이드바에서만 진입) — 배치용 선으로만 위치를 잡는다.
+CONN  -[hidden]down- CVES
+CVES  -[hidden]down- PKG
+PKG   -[hidden]down- CVE
+CVE   -[hidden]down- VEND
+VEND  -[hidden]down- CCER
+CCER  -[hidden]down- CCED
+CCED  -[hidden]down- CRULES
+CRULES -[hidden]down- CRULE
+
+@enduml

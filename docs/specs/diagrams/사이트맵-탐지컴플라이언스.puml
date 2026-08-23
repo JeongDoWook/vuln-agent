@@ -1,0 +1,68 @@
+@startuml 사이트맵-탐지컴플라이언스
+' vuln-agent §6 웹 화면 구성 (사이트맵 · 인증) — 탐지·컴플라이언스 계열 도메인 분리본
+' 정본은 사이트맵.puml 전체다. 이 파일은 그 중 탐지 결과·변화 추적·통제 판정만 추린 것 —
+' GitHub 본문 폭(약 900px)에서 전체본(정확한 폭은 README.md 사이트맵 절 참고)이 판독 불가라 도메인별로 나눴다.
+' 손으로 고친다 — 사이트맵.puml 을 고쳤으면 이 분리본도 같이 갱신한다(README.md 사이트맵 절 참고).
+'
+' 옅게 칠한 <<ref>> 박스는 이 도메인이 아니라 다른 분리본이 다루는 화면이다.
+' 관계선이 끊기지 않게 남겼을 뿐 상세는 그 분리본을 본다.
+
+skinparam wrapWidth 230
+skinparam nodesep 4
+skinparam ranksep 16
+skinparam shadowing false
+skinparam rectangle {
+    BackgroundColor #ffffff
+    BorderColor #6e7681
+}
+skinparam rectangle<<ref>> {
+    BackgroundColor #f6f8fa
+    BorderColor #d0d7de
+    FontColor #8c959f
+}
+
+rectangle "/findings.php «findings»\n탐지 결과 한 화면 · ?type= 탭\nCVE · 보안설정(CCE) · 노출" as FIND
+rectangle "/changes.php «findings»\n변화 추적\n신규/해결/등급변경" as CHG
+rectangle "/finding_history.php\n«findings»\n(호스트,컨테이너,CVE,패키지)\n스캔별 이력\n+ 미조치 사유·승인자 메모" as FHIST
+rectangle "/nofix-packages.php\n«findings»\n벤더 미수정 집중\n제거·대체 검토 권고" as NOFIX
+rectangle "/advisories.php ·\n/advisory.php «advisories»\n보안 공지(KISA) 목록·상세" as ADV
+rectangle "/compliance.php\n«compliance»\n컴플라이언스 매핑\n자동판정 통제 4종 요약\n+ 스냅샷 추이(접힘)" as CMAP
+rectangle "/control_mapping.php\n«compliance»\n통제 기준 매핑 · CCE 결과를\nKISA U-코드/ISMS-P/N2SF 로" as CTRL
+rectangle "/kisa-u.php «compliance»\n기반시설 U-코드\n가이드 72개가 분모\n덮는 항목이 분자" as KISAU
+rectangle "/control.php\n«compliance 또는 findings»\n통제 상세 · 기준 설명\n점검별 조치\n+ 해당 자산(호스트)" as CDET
+
+rectangle "/host.php\n«assets 또는 findings»" as HOST <<ref>>
+rectangle "/cve.php\n«findings·catalog·advisories»" as CVE <<ref>>
+rectangle "/packages.php «catalog»" as PKG <<ref>>
+rectangle "/cce-rule.php\n«catalog·compliance·findings»" as CCED <<ref>>
+
+HOST --> FIND
+HOST --> FHIST
+FIND --> CVE
+FIND --> CHG   : 서브탭
+FIND --> FHIST : 모든 행의\n"이 자산 판정"
+FIND --> NOFIX : 벤더 미수정
+PKG  --> NOFIX
+
+CCED --> CDET : 기준 통제 상세로
+CDET --> CCED : 점검 항목 상세로
+CDET --> HOST : 해당 자산의\nCCE 탭으로
+
+CMAP --> KISAU : 서브탭
+CMAP --> CTRL  : 서브탭
+CTRL ..> KISAU : ?fw=KISA_U 는\n302 로 넘긴다
+CTRL --> CMAP  : 서브탭
+CTRL --> CDET  : 통제 → 상세\n(옛 ?control= 은 302)
+
+' ── 보이지 않는 배치용 선 ──────────────────────────────────
+' ADV 는 다른 화면과 오가는 링크가 없다(사이드바에서만 진입) — 배치용 선으로만 위치를 잡는다.
+FIND  -[hidden]down- CHG
+CHG   -[hidden]down- FHIST
+FHIST -[hidden]down- NOFIX
+NOFIX -[hidden]down- ADV
+ADV   -[hidden]down- CMAP
+CMAP  -[hidden]down- CTRL
+CTRL  -[hidden]down- KISAU
+KISAU -[hidden]down- CDET
+
+@enduml
