@@ -18,7 +18,7 @@ const VG_DASH_TREND_MIN_CHANGE = 3;
 const VG_DASH_TREND_TOP = 12;
 
 /**
- * dashboard/sections/trend.php — 최근 N일 High 이상 추세 카드(**자산별 스파크라인 목록**).
+ * dashboard/sections/trend.php — 최근 N일 High 이상 추세 카드(**자산별 증감 막대 목록**).
  *   $days 는 조회층이 쓴 창(窓)과 **같은 값**을 받는다 — 라벨과 데이터가 갈리지 않게.
  *
  *   합계 한 줄이 아니라 자산별인 이유: 합계는 "전체가 나아지는 중" 만 말해서, 한 자산이
@@ -27,9 +27,13 @@ const VG_DASH_TREND_TOP = 12;
  *
  *   **한 차트에 겹쳐 그리던 멀티라인(vg_multi_trend)을 줄로 쪼갰다.** 선 5개가 한 차트
  *   안에서 서로를 가려(사용자 지적) 어느 자산이 지금 어떤 방향인지 한눈에 안 들어왔다.
- *   자산마다 한 줄(미니 추세 + 현재값 + N일 전 대비 증감)로 두면 방향은 화살표가,
- *   크기는 숫자가 바로 말한다. **vg_multi_trend() 는 지우지 않는다** — host.php·changes.php
- *   가 그대로 쓴다.
+ *   자산마다 한 줄(증감 막대 + 현재값 + N일 전 대비 증감)로 두면 방향은 막대가, 크기는
+ *   숫자가 바로 말한다. **vg_multi_trend() 는 지우지 않는다** — host.php·changes.php 가 그대로 쓴다.
+ *
+ *   **줄 안의 그림을 스파크라인(선)에서 증감 막대로 바꿨다(2026-08-23).** 선 9개가 죄다
+ *   "계단 한 번 오르고 평평"으로 같은 모양이라(사용자 지적) 실제로 다른 두 자산이 안
+ *   튀었다 — 이 카드의 질문은 "얼마나·어느 방향으로 움직였나"인데 선은 모양을 그렸다.
+ *   자세한 이유·기준선 계산은 vg_asset_delta_bars() 주석 참조.
  *
  *   **"상위 8개" 대신 "변화 있는 자산만".** 예전엔 현재값 기준 상위 8개를 무조건 그렸는데,
  *   그중 절반은 14일간 거의 안 움직였다(사용자 지적 — 세로만 8줄 먹고 절반이 정보가 아니다).
@@ -66,8 +70,8 @@ function vg_dash_render_trend(array $trend, int $days): void {
     return;
   }
 
-  // vg_asset_sparklines() 는 "지금 값" 내림차순으로 상위 top 만 그린다 — 여기서 잘려 나가는
-  // 수는 그 정렬을 다시 하지 않아도 count($shown) 과 top 의 차이로 그대로 안다.
+  // vg_asset_delta_bars() 는 "증감 절대값" 내림차순으로 상위 top 만 그린다 — 여기서 잘려
+  // 나가는 수는 그 정렬을 다시 하지 않아도 count($shown) 과 top 의 차이로 그대로 안다.
   $top          = VG_DASH_TREND_TOP;
   $trimmedCount = max(0, count($shown) - $top);
   ?>
@@ -75,7 +79,7 @@ function vg_dash_render_trend(array $trend, int $days): void {
     <strong>최근 <?= $days ?>일 자산별 추세</strong>
     <span class="why">High 이상 · 14일 전 대비</span>
     <div class="card__body">
-      <?php vg_asset_sparklines($shown, [
+      <?php vg_asset_delta_bars($shown, [
           'top'          => $top,
           'unit'         => '건',
           'compare_days' => $cmpDays,
