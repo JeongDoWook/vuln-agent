@@ -2631,16 +2631,22 @@ form.card .btn--primary:active { transform: translateY(0); }
 .setting-form--grid .field--wide { grid-column: 1 / -1; }
 .setting-form--grid .field--wide > input { width: 100%; }
 
-/* 그룹 카드를 좌우로도 세운다 — settings.php. 카드 다섯 개가 세로로만 쌓이면 카드마다
- *   두세 칸뿐인데도 화면 높이를 다 먹는다(카드 하나가 본문 폭의 1/4도 안 쓴다).
+/* 그룹 카드를 좌우로도 세운다 — settings.php. 카드 여섯 개가 세로로만 쌓이면 카드마다
+ *   한두 칸뿐인데도 화면 높이를 다 먹는다(카드 하나가 본문 폭의 1/4도 안 쓴다).
  *   auto-fit 이라 좁아지면 스스로 1열로 떨어진다.
- *   높이는 **같은 줄끼리 맞춘다**(align-items 기본값 stretch). 예전엔 start 였는데, 항목 수가
- *   카드마다 달라(조치 기한 3개 · 계정 정책 1개) 한 줄 안에서 카드 아래끝이 제각각으로 끊겼다
- *   — 실측 1920px 첫 줄 222/154/133px. 카드 안의 항목은 .field 의 align-content:start 가
- *   위에 붙여 두므로, 늘어나는 건 카드 테두리뿐이고 입력이 따라 늘어나지 않는다. */
+ *   높이는 **카드가 내용만큼만 차지한다**(align-items: start). 한때 stretch(같은 줄끼리 맞춤)
+ *   였다 — 항목 수가 카드마다 달라(조치 기한 3개·계정 정책 1개) start 에서는 한 줄 안에서
+ *   카드 아래끝이 제각각으로 끊겼다(실측 1920px 첫 줄 222/154/133px). 그런데 stretch 는 그
+ *   반대쪽 문제를 만든다 — 짧은 카드가 이웃 카드 높이만큼 억지로 늘어나 카드 **안**이 빈다
+ *   (실측 2026-08-23: 준수 판정 기준 하단 83px·계정 정책 123px·소스코드 공개 123px, 뷰포트
+ *   1800px). 두 결점의 크기가 비슷해(약 90~120px) stretch 가 진짜 개선이 아니라 빈 공간을
+ *   "줄 아래"에서 "카드 안"으로 옮긴 것뿐이었다 — 이번엔 카드 안 빈 공간을 없애는 쪽(사용자
+ *   지적)을 다시 우선한다. 카드 안의 항목은 .field 의 align-content:start 가 위에 붙여
+ *   두므로, start 로 돌려도 항목 배치 자체는 그대로다. */
 .setting-groups {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr));
+  align-items: start;
   gap: var(--sp-3);
 }
 .setting-groups > .card { margin-bottom: 0; }
@@ -2964,6 +2970,15 @@ form.card .btn--primary:active { transform: translateY(0); }
  * (.page--login)과 같은 판단으로 이 화면만 강제 높이를 뺀다: 짧으면 짧은 대로 둔다. */
 .page--segment-map .page__main { min-height: auto; }
 
+/* 사용자·권한·에이전트 키 — **본문 높이 예외**(위 세그먼트 맵과 같은 판단). 셋 다 행이
+ * 적은 관리 화면이라 뷰포트보다 내용이 짧을 때가 흔하고, 강제 높이가 그 차이만큼 하단을
+ * 빈 채로 남긴다(실측 2026-08-23, 뷰포트 1800px: users.php 121px · agent-tokens.php 121px ·
+ * permissions.php 71px — 나머지 관리 화면인 activity.php 는 행이 많아 38px 로 기준 미만이라
+ * 뺀다). 로그인·세그먼트 맵처럼 짧으면 짧은 대로 둔다 — 채우는 카드를 새로 넣지 않는다. */
+.page--users .page__main,
+.page--permissions .page__main,
+.page--agent-tokens .page__main { min-height: auto; }
+
 /* 자산 탐색 — 같은 이유의 같은 예외. 대역 카드를 걷어낸 뒤(사용자 결정) 본문은 발견 자산
  * 표 하나가 전부라, 상태·검색으로 걸러 몇 건 안 남으면(흔한 케이스 — 제외 1건처럼) 표가
  * 뷰포트보다 훨씬 짧아진다. 강제 높이를 그대로 두면 표 아래·푸터 위가 수백 px 비어
@@ -3250,16 +3265,19 @@ a.arank__row:hover { background: var(--surface-2); color: var(--text); text-deco
 .arank__value { color: var(--text); font-weight: 700; }
 @media (max-width: 700px) { .arank__row { grid-template-columns: minmax(0, 7rem) minmax(2rem, 1fr) max-content; } }
 
-/* --- 자산별 스파크라인(vg_asset_sparklines) ----------------------------------
- * 겹치는 선 5개짜리 멀티라인(vg_multi_trend, host.php·changes.php 는 계속 쓴다) 대신
- * 대시보드에서는 자산마다 한 줄로 쪼갠다 — 미니 추세 + 현재값 + N일 전 대비 증감.
- * 선 색은 값의 방향을 말하지 않는다(방향은 옆의 화살표 배지 색이 말한다) — 선까지 색을
- * 쓰면 어디를 봐야 할지 두 군데로 갈린다. */
-.spark-rows { display: grid; gap: .35rem; }
-.spark-row {
+/* --- 자산별 증감 막대(vg_asset_delta_bars) ------------------------------------
+ * 전신은 스파크라인(vg_asset_sparklines, 겹치는 선 5개짜리 멀티라인 vg_multi_trend 를
+ * 줄로 쪼갠 것)이었다 — 선 9개가 죄다 "계단 한 번 오르고 평평"으로 같은 모양이라
+ * 실제로 다른 두 자산이 안 튀었다(사용자 지적, 2026-08-23). "얼마나·어느 방향으로
+ * 움직였나"만 남기고 모양을 걷어내, 0을 세로 기준선으로 둔 막대로 바꿨다 — 늘었으면
+ * 오른쪽(빨강 tone-crit), 줄었으면 왼쪽(초록 tone-ok). 화살표 배지(옆의 증감 숫자) 와
+ * 같은 색 어휘를 막대 자체로 옮겼을 뿐이다. 기준선 위치 계산은 charts_dash.php 의
+ * vg_asset_delta_bars() 주석 참조 — 정가운데가 아니라 증가·감소 최대값 비율로 잡는다. */
+.delta-rows { display: grid; gap: .35rem; }
+.delta-row {
   display: grid;
-  /* 가운데 스파크라인 열만 1fr — 카드가 넓어지면 그 폭을 스파크라인이 먹는다. 이름·값·증감은
-   * 고정 폭이라 값·증감이 항상 행 오른쪽 끝에 붙는다(그리드 트랙 합이 행 폭을 채우므로). */
+  /* 가운데 막대 열만 1fr — 카드가 넓어지면 그 폭을 막대가 먹는다(#797 스파크라인과 같은
+   * 이유). 이름·값·증감은 고정 폭이라 값·증감이 항상 행 오른쪽 끝에 붙는다. */
   grid-template-columns: minmax(0, 8rem) minmax(5.5rem, 1fr) max-content max-content;
   align-items: center;
   gap: .6rem;
@@ -3268,19 +3286,22 @@ a.arank__row:hover { background: var(--surface-2); color: var(--text); text-deco
   color: var(--text-2);
   font-size: var(--fs-sm);
 }
-a.spark-row:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
-.spark-row__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.spark-row__svg { display: block; width: 100%; height: 26px; }
-/* vector-effect: non-scaling-stroke — svg 가 preserveAspectRatio="none" 로 가로만 늘어나므로
- * (charts_dash.php 주석 참조), 이게 없으면 선분 방향에 따라 굵기가 들쭉날쭉해진다. */
-.spark-row__line { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
-.spark-row__dot { fill: var(--accent); }
-.spark-row__now { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
-.spark-row__delta { font-variant-numeric: tabular-nums; font-weight: 600; }
-.spark-row__delta.tone-crit  { color: var(--crit-fg); }
-.spark-row__delta.tone-ok    { color: var(--ok-fg); }
-.spark-row__delta.tone-muted { color: var(--muted-fg); }
-@media (max-width: 700px) { .spark-row { grid-template-columns: minmax(0, 5rem) minmax(4rem, 1fr) max-content max-content; } }
+a.delta-row:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.delta-row__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.delta-row__svg { display: block; width: 100%; height: 16px; }
+/* 0 기준선 — 데이터와 무관하게 항상 그린다(뭘 봐야 하는지 자리부터 고정). 막대 뒤가 아니라
+ * 앞에 그려서(PHP 마크업 순서) 막대가 정확히 기준선에서 시작/끝나도 가려지지 않는다.
+ * vector-effect: non-scaling-stroke — svg 가 preserveAspectRatio="none" 로 가로만 늘어나므로
+ * (charts_dash.php 주석 참조), 이게 없으면 굵기가 카드 폭에 따라 들쭉날쭉해진다. */
+.delta-row__zero { stroke: var(--line-2); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.delta-row__bar.tone-crit { fill: var(--crit); }
+.delta-row__bar.tone-ok   { fill: var(--ok); }
+.delta-row__now { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.delta-row__delta { font-variant-numeric: tabular-nums; font-weight: 600; }
+.delta-row__delta.tone-crit  { color: var(--crit-fg); }
+.delta-row__delta.tone-ok    { color: var(--ok-fg); }
+.delta-row__delta.tone-muted { color: var(--muted-fg); }
+@media (max-width: 700px) { .delta-row { grid-template-columns: minmax(0, 5rem) minmax(4rem, 1fr) max-content max-content; } }
 
 /* --- 경과일 구간 누적 막대(vg_aging_buckets) --------------------------------
  * 5개 구간 × 2톤(아래 High 이상 · 위 MEDIUM). 격자·눈금은 회차별 신규·해결 막대와 같은
