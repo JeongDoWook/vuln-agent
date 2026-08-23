@@ -174,6 +174,15 @@ function vg_trend_delta(array $points, int $compareDaysReq): array {
  *   닿고**, 나머지는 같은 자로 잰 상대 길이로 보인다 — 어느 쪽도 뭉개지지 않는다. 한쪽 최대가
  *   0(전부 증가/전부 감소)이면 그 쪽 폭을 최소 6%만 남긴다 — 0으로 접으면 기준선이 화면
  *   끝에 붙어 "0" 이라는 개념 자체가 안 보인다.
+ *
+ *   단, 이 clamp(min $minSide, max 100-$minSide)는 한쪽이 0일 때만 도는 게 아니라 **한쪽이
+ *   아주 작기만 해도** 발동한다(예: maxDec=1·maxInc=100 이면 원래 base=0.99 가 6 으로 잘린다).
+ *   그러면 base 가 원래 위치에서 밀려나 위 등식이 깨지고 두 축척이 갈라진다 —
+ *   base/maxDec(=6.0) 이 (100-base)/maxInc(=0.94) 보다 커져, 절대값이 작은 −1 이 절대값이
+ *   더 큰 +6 보다 길게 그려지는 식으로 그림이 대소를 거꾸로 말하게 된다. 그래서 폭을 계산할 때
+ *   두 축척(base/maxDec, (100-base)/maxInc) 중 **작은 쪽을 양쪽에 함께 쓴다** — 클램프로
+ *   넓어진 쪽만 자기 폭을 다 안 쓰고 남기고(그 남는 폭이 애초에 minSide 가 확보하려던 여백),
+ *   큰 쪽 최대 막대는 여전히 자기 끝까지 닿아 "같은 축척" 불변식이 유지된다.
  */
 function vg_asset_delta_bars(array $series, array $opts = []): void {
     $top        = max(1, (int) ($opts['top'] ?? 8));
@@ -218,8 +227,15 @@ function vg_asset_delta_bars(array $series, array $opts = []): void {
         $base = max($minSide, min(100 - $minSide, $maxDec / ($maxDec + $maxInc) * 100));
     }
     // 단위당 폭(px 대신 viewBox 100 기준 %) — 위 주석의 "같은 축척" 계산.
-    $pxLeft  = $maxDec > 0 ? $base / $maxDec : 0.0;
-    $pxRight = $maxInc > 0 ? (100 - $base) / $maxInc : 0.0;
+    // 클램프가 base 를 밀어내면 base/maxDec 와 (100-base)/maxInc 가 갈라지므로, 둘 중
+    // 작은 쪽을 양쪽에 함께 써서 "같은 축척" 불변식을 유지한다.
+    if ($maxDec > 0 && $maxInc > 0) {
+        $px = min($base / $maxDec, (100 - $base) / $maxInc);
+        $pxLeft = $pxRight = $px;
+    } else {
+        $pxLeft  = $maxDec > 0 ? $base / $maxDec : 0.0;
+        $pxRight = $maxInc > 0 ? (100 - $base) / $maxInc : 0.0;
+    }
 
     echo '<div class="delta-rows">';
     foreach ($rows as $r) {
