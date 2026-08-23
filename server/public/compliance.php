@@ -191,21 +191,6 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       'link' => $acctDetails ? '<a href="#compliance-account">호스트별 ↓</a>' : '',
   ] : $deniedRow('account');
 
-  // ── 조치 기한 소진(SLA burn) — 화면 맨 위 한 칸 ──────────────────────────
-  //   등급별(KEV/CRITICAL/HIGH)로 "기한 안 vs 초과" 를 한 줄씩 쌓는다. 설정에 이미 있는
-  //   조치 기한(15/30/60일)은 있는데 어느 화면도 "지켰나/넘겼나" 를 안 보여주던 것을 채운다.
-  //   기준일은 새로 안 정한다 — vg_compliance_load_patch() 가 이미 계산한 buckets 를 그대로
-  //   그린다(최초 발견 = 스캔 수신시각 기준, finding_sla.php 와 같은 축). CVE 공개일 기준이
-  //   아니다: 배포 전부터 조치 시계가 도는 걸 막는다.
-  //   판정 불가(이력이 SLA 보다 짧아 위반 여부를 못 세는 건)는 막대에서 빼고 옆에 글자로만
-  //   남긴다 — vg_sla_burn() 의 계약(patch.php 의 "허위 안심 금지" 원칙과 동일).
-  vg_card('조치 기한 소진', static function () use ($patch): void {
-      vg_sla_burn($patch['buckets']);
-  }, [
-      'title_attr' => '등급별 조치 기한(설정값) 대비 지금 살아있는 취약점의 소진 현황',
-      'aside' => '<span class="why">최초 발견(스캔 수신) 시각 기준</span>',
-  ]);
-
   /* 이 표는 제목 없는 카드였다 — 이 화면에 표가 둘(통제별 판정 · 판정 추이)인데 아래 것만
    *   제목을 갖고 있어서, 위 표가 무엇을 세는 표인지는 열 머리글을 읽어야 알 수 있었다.
    *   카드 문법(한 카드 한 이야기 · 제목 필수)대로 제목을 세우고 통제 수를 배지로 단다.
