@@ -99,8 +99,10 @@ function vg_pareto(array $items, array $opts = []): void {
         if ($pivot === null && $pct >= $threshold * 100) { $pivot = $i; }
     }
 
-    // 논리좌표 720×280 — .chart svg 가 폭에 맞춰 늘린다(charts.php 의 change_bars 와 같은 규약).
-    $W = 720; $H = 280;
+    // 논리좌표 720×220 — .chart svg 가 폭에 맞춰 늘린다(charts.php 의 change_bars 와 같은 규약).
+    //   H 는 주인공 단(200~240px, app.css `--chart-h-hero` 주석 참고) 안의 값이다 — 예전엔 280
+    //   으로 이 화면만 혼자 컸다(#chart-size-and-captions 실측).
+    $W = 720; $H = 220;
     $padL = 42; $padR = 46; $padT = 14; $padB = 86;
     $plotW = $W - $padL - $padR;
     $plotH = $H - $padT - $padB;

@@ -219,7 +219,7 @@ vg_hero(
 <?php if ($agingItems): ?>
 <div class="card">
   <strong>방치 기간</strong>
-  <span class="why">공개일부터 오늘까지 · CVSS 높은순 상위 <?= count($agingItems) ?>건</span>
+  <span class="why">CVSS 높은순 상위 <?= count($agingItems) ?>건</span>
   <div class="card__body">
     <?php
     $agingNote = $total > count($agingItems)

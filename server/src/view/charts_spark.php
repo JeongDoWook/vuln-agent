@@ -15,6 +15,12 @@ declare(strict_types=1);
 require_once __DIR__ . '/../format.php';
 require_once __DIR__ . '/components.php';   // vg_empty() — vg_horizon() 의 빈 상태
 
+/** 스파크라인 한 줄의 기본 높이(px) — 차트 높이 3단(app.css, `.chart-js` 규칙 위 주석) 중
+ *  인라인 단(24~34px) 대표값. 줄 수에 비례해 늘어나는 차트라 카드 전체 높이는 고정하지 않고
+ *  이 "한 줄" 값만 토큰으로 잡는다. $opts['height'] 로 18~32 사이 화면마다 조절할 수 있지만
+ *  안 주면 이 값을 쓴다. */
+const VG_SPARK_ROW_H = 26;
+
 /**
  * 표 셀 스파크라인 — Tufte 의 원래 의도(표 셀 안의 미니 추세). 목록의 "14일 추세" 열이 쓴다.
  *
@@ -22,7 +28,7 @@ require_once __DIR__ . '/components.php';   // vg_empty() — vg_horizon() 의 �
  *             (호출부가 만든다 — 이 함수는 그리기만 한다, N+1 방지 배치 조회는 조회층 몫).
  *   $opts   : 'unit'(현재값·aria 뒤에 붙는 단위, 기본 '') · 'label'(aria 앞에 붙는 지표 이름) ·
  *             'days'(aria 의 "N일" — 기본 14, 조회 창과 맞춘다) ·
- *             'width'(100~130 로 자른다, 기본 120) · 'height'(18~32 로 자른다, 기본 26)
+ *             'width'(100~130 로 자른다, 기본 120) · 'height'(18~32 로 자른다, 기본 VG_SPARK_ROW_H)
  *
  * **값이 하나뿐이거나 이력이 없으면 선을 그리지 않는다** — 점 하나로는 추세를 주장할 수 없고,
  *   그렇다고 0 으로 잇는 것은 "그 전엔 취약점이 없었다"는 거짓말이 된다(vg_multi_trend 와 같은 판단).
@@ -49,7 +55,7 @@ function vg_sparkline(array $points, array $opts = []): string {
     }
 
     $w = max(100, min(130, (int) ($opts['width'] ?? 120)));
-    $h = max(18, min(32, (int) ($opts['height'] ?? 26)));
+    $h = max(18, min(32, (int) ($opts['height'] ?? VG_SPARK_ROW_H)));
     $padY = 3.0;   // 위아래 여백 — 값이 축 끝에 닿아 잘리지 않게
 
     $n     = count($pts);

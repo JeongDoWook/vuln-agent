@@ -203,7 +203,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       vg_sla_burn($patch['buckets']);
   }, [
       'title_attr' => '등급별 조치 기한(설정값) 대비 지금 살아있는 취약점의 소진 현황',
-      'aside' => '<span class="why">최초 발견(스캔 수신) 시각 기준 · KEV·CRITICAL·HIGH 만 대상</span>',
+      'aside' => '<span class="why">최초 발견(스캔 수신) 시각 기준</span>',
   ]);
 
   /* 이 표는 제목 없는 카드였다 — 이 화면에 표가 둘(통제별 판정 · 판정 추이)인데 아래 것만

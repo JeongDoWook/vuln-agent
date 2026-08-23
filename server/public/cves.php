@@ -176,7 +176,7 @@ vg_header('CVE', 'cves');
 <?php if (!$agingErr && ($agingBuckets || $agingNull > 0)): ?>
   <div class="card">
     <strong>경과일 구간별 분포</strong>
-    <span class="why">최신 스캔 기준 · 자산에 걸려 있는 CVE 만 · <?= vg_h((string) date('Y-m-d')) ?> 기준</span>
+    <span class="why">최신 스캔 · 자산 보유 CVE</span>
     <div class="card__body">
       <?php vg_aging_buckets($agingBuckets, ['null_count' => $agingNull]); ?>
     </div>
