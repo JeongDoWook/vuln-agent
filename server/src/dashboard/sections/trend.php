@@ -4,8 +4,18 @@ declare(strict_types=1);
 /** 14일 전 대비 |증감| 이 이 값 미만이면 "변화 없음" 으로 접어 그리지 않는다.
  *  스캔은 패키지 하나가 잡히거나 빠지는 정도로 하루 1~2건씩 자연스레 출렁인다 — 그
  *  잡음까지 추세로 그리면 정작 봐야 할 자산이 묻힌다. 3은 시작값이고, 운영 데이터로
- *  체감이 안 맞으면 이 상수만 조정한다(하드코딩 금지 원칙 — 값은 여기 한 곳뿐이다). */
+ *  체감이 안 맞으면 이 상수만 조정한다(하드코딩 금지 원칙 — 값은 여기 한 곳뿐이다).
+ *  **2026-08-23 운영 실측(자산 11대, 이력 있는 전부)으로 그대로 유지하기로 확정**: |증감|
+ *  분포가 1·2 대 각 1대, 나머지(5·5·9·9·10·23·30·47·262)는 전부 3 이상이었다 — 1~2 구간과
+ *  그 위 구간이 뚜렷이 갈려 있어 "14일 누적 잡음이 3을 넘어 필터가 무력화된다"는 우려의
+ *  실측 근거가 없었다. 자산이 늘거나 분포가 달라지면 이 실측을 다시 하고 값을 조정한다. */
 const VG_DASH_TREND_MIN_CHANGE = 3;
+
+/** 스파크라인 카드에 세울 자산 수 상한 — 바로 위 자산 순위 카드(rank.php)가 쓰는 12 와
+ *  맞춘다. 두 카드가 같은 화면에서 다른 상한을 쓸 이유가 없고(둘 다 옆 도넛 칼럼과 높이를
+ *  맞춰야 한다), 예전엔 이 값이 count($shown) 자신이라 상한이 상한 역할을 못 했다(자산이
+ *  늘면 카드가 그만큼 길어졌다 — 2026-08-23 리뷰 지적). */
+const VG_DASH_TREND_TOP = 12;
 
 /**
  * dashboard/sections/trend.php — 최근 N일 High 이상 추세 카드(**자산별 스파크라인 목록**).
@@ -29,6 +39,12 @@ const VG_DASH_TREND_MIN_CHANGE = 3;
  *   이력이 짧아 비교 자체가 안 되는 자산(delta=null, '신규')은 변화 판정 대상이 아니라
  *   **그대로 보여준다** — 막 수집을 시작한 자산을 "안 움직였다" 로 접으면 오히려 새 신호를
  *   숨기는 셈이다. 전부 안 움직였으면 카드 자체를 접는다(빈 카드는 자리 낭비다).
+ *
+ *   **"변화 있는 자산"이 VG_DASH_TREND_TOP(=12) 를 넘어도 상한을 둔다** — 자산 순위 카드
+ *   (rank.php)와 같은 이유다: dev DB 에 자산 53대 실측이 있어, 변화 있는 자산만 골라도
+ *   그 수가 늘면 카드가 옆 도넛 칼럼보다 훨씬 길어진다. 잘려 나간 수는 "변화 없어 안 그림"
+ *   과 다른 사실이라 별도 문구로 남긴다 — 섞으면 "얼마나 잘렸는지"와 "얼마나 조용했는지"가
+ *   구분이 안 된다.
  */
 function vg_dash_render_trend(array $trend, int $days): void {
   $cmpDays = 14;
@@ -49,18 +65,27 @@ function vg_dash_render_trend(array $trend, int $days): void {
 <?php
     return;
   }
+
+  // vg_asset_sparklines() 는 "지금 값" 내림차순으로 상위 top 만 그린다 — 여기서 잘려 나가는
+  // 수는 그 정렬을 다시 하지 않아도 count($shown) 과 top 의 차이로 그대로 안다.
+  $top          = VG_DASH_TREND_TOP;
+  $trimmedCount = max(0, count($shown) - $top);
   ?>
   <div class="card">
     <strong>최근 <?= $days ?>일 자산별 추세</strong>
     <span class="why">High 이상 · 14일 전 대비</span>
     <div class="card__body">
       <?php vg_asset_sparklines($shown, [
-          'top'          => count($shown),
+          'top'          => $top,
           'unit'         => '건',
           'compare_days' => $cmpDays,
       ]); ?>
       <?php if ($hiddenCount > 0): ?>
         <p class="why">변화 없는 자산 <?= number_format($hiddenCount) ?>대는 안 그렸습니다.</p>
+      <?php endif; ?>
+      <?php if ($trimmedCount > 0): ?>
+        <p class="why">변화는 있었지만 상위 <?= number_format($top) ?>대만 그렸습니다
+          (<?= number_format($trimmedCount) ?>대 더 있음).</p>
       <?php endif; ?>
     </div>
   </div>
