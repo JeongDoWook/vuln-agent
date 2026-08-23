@@ -2934,6 +2934,14 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--profile .page__main { max-width: 720px; }
 .page--profile .card--sm { max-width: 520px; }
 
+/* 세그먼트 맵 — **본문 높이 예외**: 공통 .page__main 은 뷰포트 높이를 강제한다(위 규칙).
+ * 이 화면은 대역 토폴로지 SVG 몇 장 + 범례가 전부라, 대역이 적거나 게이트웨이 미확인
+ * 자산이 없으면(흔한 케이스) 내용이 뷰포트보다 짧다 — 강제 높이가 그 차이만큼 하단을
+ * 빈 채로 남긴다. 예전엔 공유 패키지 아크·수집 타임라인으로 그 자리를 채웠으나(#786)
+ * 정보량이 없어 걷어냈다(#794) — 억지로 채우는 카드를 다시 넣는 대신, 로그인 화면
+ * (.page--login)과 같은 판단으로 이 화면만 강제 높이를 뺀다: 짧으면 짧은 대로 둔다. */
+.page--segment-map .page__main { min-height: auto; }
+
 /* 권한 매트릭스: 열 폭을 고정하고 역할마다 가운데 정렬된 체크박스 하나만 둔다. */
 .page--permissions .permission-form { display: grid; gap: 1rem; }
 .page--permissions .permission-form > .page-title,
