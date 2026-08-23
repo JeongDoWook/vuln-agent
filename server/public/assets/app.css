@@ -3252,7 +3252,9 @@ a.arank__row:hover { background: var(--surface-2); color: var(--text); text-deco
 .spark-rows { display: grid; gap: .35rem; }
 .spark-row {
   display: grid;
-  grid-template-columns: minmax(0, 8rem) 5.5rem max-content max-content;
+  /* 가운데 스파크라인 열만 1fr — 카드가 넓어지면 그 폭을 스파크라인이 먹는다. 이름·값·증감은
+   * 고정 폭이라 값·증감이 항상 행 오른쪽 끝에 붙는다(그리드 트랙 합이 행 폭을 채우므로). */
+  grid-template-columns: minmax(0, 8rem) minmax(5.5rem, 1fr) max-content max-content;
   align-items: center;
   gap: .6rem;
   padding: .2rem .1rem;
@@ -3263,14 +3265,16 @@ a.arank__row:hover { background: var(--surface-2); color: var(--text); text-deco
 a.spark-row:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
 .spark-row__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .spark-row__svg { display: block; width: 100%; height: 26px; }
-.spark-row__line { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+/* vector-effect: non-scaling-stroke — svg 가 preserveAspectRatio="none" 로 가로만 늘어나므로
+ * (charts_dash.php 주석 참조), 이게 없으면 선분 방향에 따라 굵기가 들쭉날쭉해진다. */
+.spark-row__line { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
 .spark-row__dot { fill: var(--accent); }
 .spark-row__now { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
 .spark-row__delta { font-variant-numeric: tabular-nums; font-weight: 600; }
 .spark-row__delta.tone-crit  { color: var(--crit-fg); }
 .spark-row__delta.tone-ok    { color: var(--ok-fg); }
 .spark-row__delta.tone-muted { color: var(--muted-fg); }
-@media (max-width: 700px) { .spark-row { grid-template-columns: minmax(0, 5rem) 4rem max-content max-content; } }
+@media (max-width: 700px) { .spark-row { grid-template-columns: minmax(0, 5rem) minmax(4rem, 1fr) max-content max-content; } }
 
 /* --- 경과일 구간 누적 막대(vg_aging_buckets) --------------------------------
  * 5개 구간 × 2톤(아래 High 이상 · 위 MEDIUM). 격자·눈금은 회차별 신규·해결 막대와 같은

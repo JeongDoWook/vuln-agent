@@ -219,7 +219,11 @@ function vg_asset_sparklines(array $series, array $opts = []): void {
         echo '<' . $tag . ' class="spark-row"' . ($s['href'] !== '' ? ' href="' . vg_h($s['href']) . '"' : '')
             . ' title="' . vg_h($title) . '">';
         echo '<span class="spark-row__label">' . vg_h($s['name']) . '</span>';
-        echo '<svg class="spark-row__svg" viewBox="0 0 ' . VG_SPARK_W . ' ' . VG_SPARK_H . '" aria-hidden="true" focusable="false">';
+        // preserveAspectRatio="none": .spark-row__svg 는 CSS 로 width:100% 지만 viewBox 는
+        //   VG_SPARK_W 고정이라, 기본값(xMidYMid meet)이면 세로(26px, CSS 높이와 1:1)에 맞춰
+        //   축소되며 좌우로 여백만 생기고 선은 늘어나지 않는다. 스파크라인은 모양보다 추세가
+        //   중요하므로 가로만 늘려 남는 폭을 그대로 쓴다 — 세로는 CSS height:26px 로 고정된다.
+        echo '<svg class="spark-row__svg" viewBox="0 0 ' . VG_SPARK_W . ' ' . VG_SPARK_H . '" preserveAspectRatio="none" aria-hidden="true" focusable="false">';
         echo '<polyline class="spark-row__line" points="' . implode(' ', $poly) . '"></polyline>';
         echo '<circle class="spark-row__dot" cx="' . $lastPoint[0] . '" cy="' . $lastPoint[1] . '" r="2.2"></circle>';
         echo '</svg>';
