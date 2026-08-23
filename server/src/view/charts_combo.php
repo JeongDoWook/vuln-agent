@@ -158,7 +158,9 @@ function vg_risk_combo_svg(int $a, int $b, int $c, int $ab, int $ac, int $bc, in
 
 // 단독 영역 — 조건 이름 한 줄 + 값 한 줄.
 function vg_venn_label(float $x, float $y, string $label, int $value): string {
-    return '<g class="venn-text">'
+    // <g> 는 두 <text> 를 한 덩어리로 묶기만 한다 — 스타일은 자식 클래스가 갖는다.
+    //   래퍼에 클래스를 달면 app.css 에 정의 없는 죽은 클래스가 된다(ui_lint 가 잡는다).
+    return '<g>'
         . '<text x="' . $x . '" y="' . $y . '" class="venn-text__label">' . vg_h($label) . '</text>'
         . '<text x="' . $x . '" y="' . ($y + 17) . '" class="venn-text__value">' . number_format($value) . '</text>'
         . '</g>';

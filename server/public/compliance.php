@@ -90,25 +90,37 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   // 요약 칸은 **건수만** 적는다. 뒤에 잇던 분모 설명("— 조치 대상 232건 중 SLA 초과분")은
   //   무엇을 셌는지 풀어 쓴 문장이라 걷었다 — 그 분모는 옆 판정 칸 게이지의 title 이 그대로
   //   갖고 있고, 더 필요하면 '근거 →' 가 가리키는 상세 화면이 답한다.
-  // 판정 칸: 뱃지 **아래에 비율 게이지**를 깐다. 게이지가 없으면 "위반 174건"이 큰 수인지
-  //   작은 수인지 읽을 방법이 없었다(분모가 화면에 없었다). 요약 칸이 아니라 판정 칸에
+  // 판정 칸: 뱃지 **아래에 불릿 그래프**를 깐다(예전엔 단순 진행바였다 — 원형 게이지 대신
+  //   Stephen Few 의 불릿을 쓰는 이유는 이 화면 5종이 공유한다: 목표선·등급 밴드·현재값이
+  //   한 줄에 들어가 여러 통제를 세로로 나란히 비교할 수 있다). 게이지가 없으면 "위반 174건"이
+  //   큰 수인지 작은 수인지 읽을 방법이 없었다(분모가 화면에 없었다). 요약 칸이 아니라 판정 칸에
   //   두는 건 두 가지 이유다 — (1) 게이지는 그 판정의 근거지 요약문의 일부가 아니고,
   //   (2) 요약 칸에 3번째 줄로 넣으면 행이 85px 이 돼 통제 목록이 첫 화면 밖으로 밀린다.
+  //   목표는 0%(위반 없음)로 고정이다 — 이 화면들의 판정은 애초에 "위반 0건 = 준수" 다
+  //   (compliance/policy.php 가 SSOT). 밴드 경계는 vg_bullet_bands() 로 부분준수 컷라인
+  //   (compliance.partial_max)을 이 행의 분모에 맞춰 백분율로 환산한 것 — 95% 같은 새 목표치를
+  //   만들지 않는다.
   //   meter 는 톤이 crit/high/med/low 뿐이다(app.css) — 'ok' 는 low 로 떨군다. 준수면 채움이
   //   0% 라 색이 보이지도 않지만, 존재하지 않는 클래스를 만들지는 않는다.
-  // $what 은 **막대가 무엇의 비율인가** 를 말하는 짧은 라벨이다. 없을 때는 붉은 막대가 꽉 찬 행이
-  //   "위반율 100%" 인지 "판정 진행률" 인지 화면만 보고는 알 수 없었다(마우스를 올려야만 알았다).
-  //   막대 바로 위에 라벨을 적는다 — packages.php 의 EPSS·조치율 게이지와 같은 규약이다
-  //   (막대 위 글자가 그 막대의 라벨).
-  //   **값은 라벨에 붙이지 않는다** — "위반율 0.0%" 와 옆 칸 "위반 0건" 은 같은 말이라 한 행에
-  //   두 번 적히던 것이었다. 건수는 요약 칸이 갖고, 비율과 분모는 지금처럼 vg_meter 의
-  //   title/aria-label 이 갖는다(막대 길이도 그 비율이다).
-  $verdictCell = static function (array $s, ?float $pct, string $why, string $what = ''): string {
+  //   **판정 불가는 0%로 그리지 않는다** — 위반이 0건이라도 판정 근거(이력)가 모자라면
+  //   막대 대신 "판정 불가 — 근거 없음" 문구를 남긴다(패치관리 통제가 실제로 이 경우다).
+  // $what 은 **막대가 무엇의 비율인가** 를 말하는 짧은 라벨이다. 화면 글자로도 남긴다 —
+  //   title/aria-label 로만 넘기면 마우스를 올리기 전엔 붉은 막대가 꽉 찬 행이 "위반율 100%"
+  //   인지 "판정 진행률" 인지 알 수 없다(터치·저시력 확대 사용자는 hover 자체가 없다).
+  //   vg_meter 의 title/aria-label 계약은 여전히 지킨다(막대 자체엔 글자를 안 그린다) —
+  //   대신 배지 옆에 <span class="why">$what $val</span> 을 따로 세워 같은 값을 화면에도 보인다.
+  //   판정 칸 열 폭(13rem, 위 표 정의)이 이미 이 길이('위반 호스트 0.0%')를 기준으로 잡혀 있다.
+  $naLabel = vg_compliance_status(0, true)['label'];
+  $verdictCell = static function (array $s, ?float $pct, string $why, string $what, int $denom) use ($policy, $naLabel): string {
       $badge = vg_badge($s['label'], $s['tone']);
       if ($pct === null) { return $badge; }
+      if ($s['label'] === $naLabel) {
+          return $badge . vg_bullet('muted', 0, 0, $what . ' · ' . $why, ['na' => true]);
+      }
       $val = number_format($pct, 1) . '%';
-      return $badge . ' <span class="why">' . vg_h($what) . '</span>'
-          . vg_meter($s['tone'] === 'ok' ? 'low' : $s['tone'], $pct, $what . ' ' . $val . ' · ' . $why);
+      return $badge . '<span class="why">' . vg_h($what) . ' ' . vg_h($val) . '</span>'
+          . vg_bullet($s['tone'] === 'ok' ? 'low' : $s['tone'], $pct, 0,
+              $what . ' ' . $val . ' · ' . $why, ['bands' => vg_bullet_bands($policy['partial_max'], $denom)]);
   };
   // 통제별 분모. 판정 기준이 아니라 **표시용**이다(무엇이 위반인지는 그대로다).
   $patchTargets = 0;
@@ -136,7 +148,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $summaryRows[] = [
       'key' => 'patch',
       'badge' => $verdictCell($sPatch, $patchTargets > 0 ? $patch['total'] / $patchTargets * 100 : null,
-          $whyPatch, '위반율'),
+          $whyPatch, '위반율', $patchTargets),
       'summary' => '위반 ' . number_format((int) $patch['total']) . '건',
       // 이 통제가 센 것 = 조치 가능한 미조치 취약점. findings 의 fx=action 이 같은 모집단이다
       //   (SLA 초과 필터는 없으므로 건수는 여기가 더 적다 — 링크 라벨을 "근거"로만 둔다).
@@ -146,7 +158,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $summaryRows[] = $canViewAssets ? [
       'key' => 'asset',
       'badge' => $verdictCell($sAsset,
-          $asset['totalHosts'] > 0 ? $asset['total'] / $asset['totalHosts'] * 100 : null, $whyAsset, '위반율'),
+          $asset['totalHosts'] > 0 ? $asset['total'] / $asset['totalHosts'] * 100 : null, $whyAsset, '위반율',
+          (int) $asset['totalHosts']),
       'summary' => '위반 ' . number_format((int) $asset['total']) . '건',
       'link' => '<a href="/assets.php">근거 →</a>',
   ] : $deniedRow('asset');
@@ -154,7 +167,8 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   $summaryRows[] = [
       'key' => 'secops',
       'badge' => $verdictCell($sSec,
-          $secconfig['checked'] > 0 ? $secconfig['total'] / $secconfig['checked'] * 100 : null, $whySec, '위반율'),
+          $secconfig['checked'] > 0 ? $secconfig['total'] / $secconfig['checked'] * 100 : null, $whySec, '위반율',
+          (int) $secconfig['checked']),
       'summary' => '위반 ' . number_format((int) $secconfig['total']) . '건',
       // 보안설정(CCE) 위반 목록 전용 탭. 기본 필터가 res=FAIL 이라 이 통제가 센 것과 같다.
       'link' => '<a href="/findings.php?type=cce">근거 →</a>',
@@ -170,12 +184,27 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
       //   비율인 줄 읽힌다.
       'badge' => $verdictCell($sAcct,
           $account['totalHosts'] > 0 ? $acctViolHosts / $account['totalHosts'] * 100 : null,
-          $whyAcct, '위반 호스트'),
+          $whyAcct, '위반 호스트', (int) $account['totalHosts']),
       'summary' => '위반 ' . number_format((int) $account['total']) . '건',
       // 전 호스트 계정 위반을 한 번에 보는 화면은 없다(호스트별로만 있다). 없는 화면을
       //   만들어 링크하지 않고, 이 통제만 아래 근거 블록에 호스트별 링크를 둔다.
       'link' => $acctDetails ? '<a href="#compliance-account">호스트별 ↓</a>' : '',
   ] : $deniedRow('account');
+
+  // ── 조치 기한 소진(SLA burn) — 화면 맨 위 한 칸 ──────────────────────────
+  //   등급별(KEV/CRITICAL/HIGH)로 "기한 안 vs 초과" 를 한 줄씩 쌓는다. 설정에 이미 있는
+  //   조치 기한(15/30/60일)은 있는데 어느 화면도 "지켰나/넘겼나" 를 안 보여주던 것을 채운다.
+  //   기준일은 새로 안 정한다 — vg_compliance_load_patch() 가 이미 계산한 buckets 를 그대로
+  //   그린다(최초 발견 = 스캔 수신시각 기준, finding_sla.php 와 같은 축). CVE 공개일 기준이
+  //   아니다: 배포 전부터 조치 시계가 도는 걸 막는다.
+  //   판정 불가(이력이 SLA 보다 짧아 위반 여부를 못 세는 건)는 막대에서 빼고 옆에 글자로만
+  //   남긴다 — vg_sla_burn() 의 계약(patch.php 의 "허위 안심 금지" 원칙과 동일).
+  vg_card('조치 기한 소진', static function () use ($patch): void {
+      vg_sla_burn($patch['buckets']);
+  }, [
+      'title_attr' => '등급별 조치 기한(설정값) 대비 지금 살아있는 취약점의 소진 현황',
+      'aside' => '<span class="why">최초 발견(스캔 수신) 시각 기준 · KEV·CRITICAL·HIGH 만 대상</span>',
+  ]);
 
   /* 이 표는 제목 없는 카드였다 — 이 화면에 표가 둘(통제별 판정 · 판정 추이)인데 아래 것만
    *   제목을 갖고 있어서, 위 표가 무엇을 세는 표인지는 열 머리글을 읽어야 알 수 있었다.
@@ -194,8 +223,7 @@ vg_header('컴플라이언스 매핑', 'compliance_mapping');
   // 기간 내내 판정이 '판정 불가' 한 종류뿐인 통제는 **열을 뺀다** — 10일 × 4열이 전부 같은
   //   글자면 그건 추이가 아니라 벽지다. 한 번이라도 다른 판정이 있었으면 남긴다(그때의
   //   판정 불가는 그 칸에 그대로 보인다). 어휘는 vg_compliance_status() 가 SSOT 라
-  //   문자열을 새로 박지 않고 거기서 받아 온다.
-  $naLabel = vg_compliance_status(0, true)['label'];
+  //   문자열을 새로 박지 않고 거기서 받아 온다. $naLabel 은 위 판정 칸 불릿에서 이미 구했다.
   $trendControls = array_values(array_filter($trendControls, static function (string $key) use ($trend, $naLabel): bool {
       foreach ($trend as $r) {
           $c = $r['controls'][$key] ?? null;

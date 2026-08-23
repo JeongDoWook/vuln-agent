@@ -198,7 +198,8 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
       . '&control=' . urlencode((string) $r['control_id']);
   $policy = vg_compliance_policy();
   // 판정 어휘는 control_mapping.php·control.php 와 같은 함수로 뽑는다(SSOT) — 0건을 준수로
-  //   찍지 않는다는 원칙이 미준수율 미터의 톤에 그대로 적용된다.
+  //   찍지 않는다는 원칙이 미준수율 불릿의 톤에 그대로 적용된다.
+  $naLabel = vg_compliance_status(0, true)['label'];
   $vOf = static fn(array $r): ?array => $verdicts[(string) $r['control_id']] ?? null;
   ?>
   <?php if (!$rows): ?>
@@ -220,7 +221,7 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
           ['label' => 'PASS',   'align' => 'right', 'width' => '5rem', 'nowrap' => true],
           ['label' => '판정 불가', 'align' => 'right', 'width' => '6rem', 'nowrap' => true,
            'title' => '점검을 돌렸지만 판정할 수 없었던 건수(NA)'],
-          ['label' => '미준수율', 'width' => '14%',
+          ['label' => '미준수율', 'width' => '15%',
            'title' => 'FAIL ÷ 최신 수집 점검 결과. 판정이 아니라 집계다.'],
       ],
       $covered,
@@ -257,15 +258,23 @@ vg_header('기반시설 U-코드 커버리지', 'control_mapping');
                   return number_format((int) $v['na_cnt']);
               },
               // meter 에는 ok 톤이 없다(app.css) → low 로 떨군다. 0% 라 색은 안 보인다.
-              6 => static function (array $r) use ($vOf, $policy): string {
+              // 판정 불가(이력 부족 등 근거 없음)는 0% 막대로 그리지 않는다 — control_mapping.php
+              //   와 같은 계약(위반 0건과 "볼 수 없다"는 다른 사실이다).
+              6 => static function (array $r) use ($vOf, $policy, $naLabel): string {
                   $v = $vOf($r);
                   $cnt = $v !== null ? (int) $v['finding_cnt'] : 0;
                   if ($cnt === 0) { return '<span class="why">점검 결과 없음</span>'; }
                   $fail = (int) $v['fail_cnt'];
-                  $tone = vg_compliance_status($fail, (int) $v['na_cnt'] > 0, $policy['partial_max'])['tone'];
-                  return vg_meter($tone === 'ok' ? 'low' : $tone, $fail / $cnt * 100,
-                                  'FAIL ' . number_format($fail) . ' / 전체 ' . number_format($cnt) . '건')
-                       . '<span class="why">' . number_format($fail / $cnt * 100, 1) . '%</span>';
+                  $s = vg_compliance_status($fail, (int) $v['na_cnt'] > 0, $policy['partial_max']);
+                  if ($s['label'] === $naLabel) {
+                      return vg_bullet('muted', 0, 0, '미준수율 · 판정 불가 — 근거 없음', ['na' => true]);
+                  }
+                  $tone = $s['tone'] === 'ok' ? 'low' : $s['tone'];
+                  $pct = $fail / $cnt * 100;
+                  return vg_bullet($tone, $pct, 0,
+                                  'FAIL ' . number_format($fail) . ' / 전체 ' . number_format($cnt) . '건',
+                                  ['bands' => vg_bullet_bands($policy['partial_max'], $cnt)])
+                       . '<span class="why">' . number_format($pct, 1) . '%</span>';
               },
           ],
       ]
