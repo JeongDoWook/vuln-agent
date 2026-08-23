@@ -15,7 +15,7 @@ declare(strict_types=1);
  *     - view/nav.php        — 네비게이션: 사이드바·브레드크럼·활동로그 라벨.
  *     - view/icons.php        — 인라인 SVG 아이콘 데이터(vg_icon).
  *     - view/charts.php       — 차트(SVG): 심각도 도넛·리소스 추이·가로 막대.
- *     - view/charts_bullet.php — 불릿 그래프·조치 기한 소진 막대(컴플라이언스 계열 전용).
+ *     - view/charts_bullet.php — 불릿 그래프(컴플라이언스 계열 전용).
  *     - view/nav.php          — 네비게이션: 사이드바·브레드크럼·활동로그 라벨.
  *     - view/components.php — 위젯: 모달·히어로·서브탭·빈상태·알림·테이블·툴바·페이지네이션.
  *                             (진입점이다 — 구현은 view/components/ 아래 7개 파일에 나뉘어 있다.)

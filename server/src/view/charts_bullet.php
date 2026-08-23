@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * charts_bullet.php — 불릿 그래프(Stephen Few) · 조치 기한 소진 막대.
+ * charts_bullet.php — 불릿 그래프(Stephen Few).
  *   charts.php 에 덧붙이지 않고 새 파일로 뗀 이유: 컴플라이언스 계열 5화면(compliance.php·
  *   control_mapping.php·control.php·kisa-u.php·cce-rule.php)에 동시에 걸치는 작업이라
  *   charts.php(1000줄대) 를 같이 건드리면 병렬로 도는 다른 워커와 매 줄이 충돌한다.
@@ -110,72 +110,4 @@ function vg_bullet_bands(int $partialMax, int $denom): array {
     $c1 = max(0.5 / $denom * 100, 4.0);
     $c2 = max(($partialMax + 0.5) / $denom * 100, $c1 + 4.0);
     return [$c1, min(96.0, $c2)];
-}
-
-/**
- * vg_sla_burn() — 등급별(KEV/CRITICAL/HIGH) 조치 기한 소진. 기한 안(초록)·초과(빨강)을
- * 한 줄에 쌓고 오른쪽에 초과율을 적는다.
- *
- * 기준일은 새로 정하지 않는다 — vg_compliance_load_patch()(server/src/compliance/patch.php)가
- * 이미 계산해 돌려주는 buckets 를 그대로 그린다. 그 계산의 "최초 발견 시각"은 finding_sla.php
- * 와 같은 축(스캔 수신시각 기준 최초 발견)이다 — 화면마다 기준이 갈리면 그게 버그다(초기
- * 요청의 지적). CVE 공개일 기준이 아니다: 우리가 언제 그 자산에서 처음 봤는지가 조치 기한의
- * 출발점이다(공개일 기준이면 배포 전부터 조치 시계가 돌게 된다).
- *
- * 판정 불가(이력이 SLA 보다 짧아 위반 여부를 셀 방법이 없는 건, patch.php 의 'unjudged')는
- * 막대에 섞지 않는다 — 0건 초과로 그리면 데이터가 모자라서 나온 결과를 조치를 잘해서 나온
- * 결과처럼 보고하게 된다(patch.php 의 "허위 안심" 원칙과 동일). 판정 가능한 건
- * (targets - unjudged)만으로 막대를 채우고, 판정 불가 건수는 옆에 글자로만 남긴다.
- *
- *   $buckets: vg_compliance_load_patch() 결과의 'buckets'(KEV/CRITICAL/HIGH 각각
- *             label/sla_days/targets/violations/unjudged 를 가진 배열) 그대로.
- */
-function vg_sla_burn(array $buckets): void {
-    echo '<div class="sla-burn">';
-    foreach ($buckets as $b) {
-        if (!is_array($b)) { continue; }
-        $targets    = (int) ($b['targets'] ?? 0);
-        $violations = (int) ($b['violations'] ?? 0);
-        $unjudged   = (int) ($b['unjudged'] ?? 0);
-        $judged     = $targets - $unjudged;
-        $label      = (string) ($b['label'] ?? '');
-        $slaDays    = (int) ($b['sla_days'] ?? 0);
-
-        echo '<div class="sla-burn__row">';
-        echo '<span class="sla-burn__label">' . vg_h($label)
-            . '<span class="why"> · ' . $slaDays . '일</span></span>';
-
-        if ($judged <= 0) {
-            // 문구는 "근거 없음" 을 앞에 둔다 — vg_bullet() 의 판정 불가 문구와 같은 이유
-            //   (compliance.php 는 통제 4종이 전부 같은 '· 판정 불가 N건' 캡션을 달던 걸 걷어낸
-            //   화면이라, tests/smoke.sh 837행이 'class="why">판정 불가' 로 시작하는 문구의
-            //   재발을 막는다).
-            $why = $targets === 0 ? '조치 대상 없음' : '근거 없음 — 판정 불가';
-            $whyTitle = $targets === 0 ? '' : ' title="' . vg_h('조치 대상 ' . number_format($targets)
-                . '건 모두 이력이 ' . $slaDays . '일보다 짧아 기한 초과 여부를 셀 수 없습니다') . '"';
-            echo '<span class="sla-burn__track sla-burn__track--empty"><span class="why"' . $whyTitle . '>'
-                . vg_h($why) . '</span></span>';
-        } else {
-            $overPct = min(100.0, $violations / $judged * 100);
-            $okPct   = 100.0 - $overPct;
-            $title = $label . ' · 기한 안 ' . number_format($judged - $violations) . '건'
-                . ' · 기한 초과 ' . number_format($violations) . '건'
-                . '(판정 가능 ' . number_format($judged) . '건 중)';
-            echo '<svg class="sla-burn__bar" viewBox="0 0 100 10" preserveAspectRatio="none" role="img"'
-                . ' aria-label="' . vg_h($title) . '">';
-            if ($okPct > 0) {
-                echo '<rect class="sla-burn__seg tone-ok" x="0" y="0" width="' . round($okPct, 2) . '" height="10"></rect>';
-            }
-            if ($overPct > 0) {
-                echo '<rect class="sla-burn__seg tone-crit" x="' . round($okPct, 2) . '" y="0" width="' . round($overPct, 2) . '" height="10"></rect>';
-            }
-            echo '</svg>';
-            echo '<b class="sla-burn__pct">' . number_format($overPct, 0) . '% 초과</b>';
-            if ($unjudged > 0) {
-                echo '<span class="why sla-burn__na">판정 불가 ' . number_format($unjudged) . '건 별도</span>';
-            }
-        }
-        echo '</div>';
-    }
-    echo '</div>';
 }
