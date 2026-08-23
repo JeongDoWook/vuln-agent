@@ -63,19 +63,6 @@ function vg_risk_combo(array $counts, array $opts = []): void {
         if ($p['value'] > $winner['value']) { $winner = $p; }
     }
 
-    // 결론 한 줄 — 문장을 코드에 박지 않고 값에서 계산한다. KEV 가 실제로 외부에도 노출돼
-    //   있는지(2026-08 실측처럼 0일 수도, 아닐 수도 있다)를 먼저 말하고, 지금 가장 급한
-    //   조합을 이어 말한다.
-    if ($c === 0) {
-        $kevPart = 'KEV 로 등재된 취약점은 없고';
-    } elseif ($ac === 0) {
-        $kevPart = 'KEV ' . number_format($c) . '건은 외부에 노출되어 있지 않고';
-    } else {
-        $kevPart = 'KEV ' . number_format($c) . '건 중 ' . number_format($ac) . '건은 외부에도 노출되어 있고';
-    }
-    $conclusion = $kevPart . ', 지금 가장 급한 조합은 ' . $winner['label'] . ' '
-                . number_format($winner['value']) . '건입니다.';
-
     echo '<div class="risk-combo">';
 
     // 헤드라인 — 가장 큰 겹침을 큰 숫자로 세운다(0 이어도 그대로 적는다 — 비어 보이지 않게).
@@ -120,7 +107,6 @@ function vg_risk_combo(array $counts, array $opts = []): void {
     }
     echo '</ul>';
 
-    echo '<p class="risk-combo__note">' . vg_h($conclusion) . '</p>';
     echo '</div>';
 }
 
@@ -140,6 +126,8 @@ function vg_risk_combo_svg(int $a, int $b, int $c, int $ab, int $ac, int $bc, in
           . ' · 노출과 미수정만 ' . $fmt($ab) . '건 · 노출과 KEV 만 ' . $fmt($ac) . '건'
           . ' · 미수정과 KEV 만 ' . $fmt($bc) . '건 · 셋 다 ' . $fmt($abc) . '건';
 
+    // 220×210 — 카드 폭 13rem 상한(.risk-combo__viz svg, app.css) 안에서 스케일되므로 실제
+    //   렌더 높이는 주인공 단(200~240px, app.css `--chart-h-hero` 주석 참고) 안에 든다.
     $svg  = '<svg viewBox="0 0 220 210" role="img" aria-label="' . vg_h($aria) . '">';
     $svg .= '<circle class="venn-circle tone-crit"   cx="80"  cy="78"  r="60"></circle>';
     $svg .= '<circle class="venn-circle tone-high"   cx="140" cy="78"  r="60"></circle>';

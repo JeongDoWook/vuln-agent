@@ -79,6 +79,7 @@ function vg_aging_buckets(array $buckets, array $opts = []): void {
 
     $niceMax = vg_nice_max($rawMax);
 
+    // 720×200 — 주인공 단(200~240px, app.css `--chart-h-hero` 주석 참고) 안의 값이라 그대로 둔다.
     $W = 720; $H = 200;
     $padL = 40; $padR = 12; $padT = 26; $padB = 40;
     $plotW = $W - $padL - $padR;
