@@ -87,8 +87,8 @@ PyPI·Maven Central 4개 행은 `pkgregistry` 커넥터 추가에 맞춰 2026-08
 | SCAP 보안 기준 (ComplianceAsCode/content) | ComplianceAsCode 프로젝트 | 보안 설정 점검 기준(SSG) | BSD-3-Clause | https://github.com/ComplianceAsCode/content |
 | 커널 CNA (vulns.git) | kernel.org | 리눅스 커널 CVE 레코드 | 커널 저장소와 동일(GPL-2.0) | https://git.kernel.org/pub/scm/linux/security/vulns.git/ |
 | Packagist (repo.packagist.org) | Packagist / Composer | Composer(PHP) 패키지 상위 버전이 자식을 어떤 제약으로 요구하는지 조회 | **명시된 라이선스 없음** — packagist.org 사이트에 API/데이터 이용약관 표기가 없다 | https://packagist.org/ |
-| npm 레지스트리 (registry.npmjs.org) | npm, Inc. | npm 패키지 상위 버전의 자식 의존성 제약 조회 | **npm Open Source Terms** — 공개 레지스트리 API 로 데이터 복제 허용, 상업적 이용 가능(런타임 광고 삽입 등 일부 금지) | https://docs.npmjs.com/policies/open-source-terms |
-| PyPI (pypi.org) | Python Software Foundation | PyPI 패키지 상위 버전의 자식 의존성(요구사항) 제약 조회 | **PyPI Terms of Use** — 업로드된 콘텐츠는 비기밀이며 PSF 가 원본 형태로 재배포 가능 | https://policies.python.org/pypi.org/Terms-of-Use/ |
+| npm 레지스트리 (registry.npmjs.org) | npm, Inc. | npm 패키지 상위 버전의 자식 의존성 제약 조회 | **npm Open Source Terms** — "공개 레지스트리 데이터를 Public API 로 복제(replicate)할 수 있다"고 명시해 이 커넥터의 조회·소비를 허용한다(런타임 광고 삽입 금지 등은 패키지 **게시자**에게 적용되는 조항이라 조회만 하는 이 이용 형태와 무관) | https://docs.npmjs.com/policies/open-source-terms |
+| PyPI (pypi.org) | Python Software Foundation | PyPI 패키지 상위 버전의 자식 의존성(요구사항) 제약 조회 | **PyPI Terms of Service** — 공개 API 조회 자체는 허용하되 "API 에 대한 남용·과도하게 잦은 요청"을 금지해 요청량 자제를 요구한다. 업로드 콘텐츠 재배포(PSF 조항)는 패키지 게시자에게 적용되는 별개 조항이다 | https://policies.python.org/pypi.org/Terms-of-Service/ |
 | Maven Central (repo1.maven.org) | Sonatype, Inc. | Maven(Java) 패키지 상위 버전 pom 의 자식 의존성 제약 조회 | **Central Repository Terms of Service** — 개별 조회·소비는 허용, 대량 다운로드/미러링과 명시적 허가 없는 상업적 이용은 금지 | https://repo1.maven.org/terms.html |
 
 > **Oracle Linux OVAL — 지금 형태는 약관 안에 있다**
@@ -115,6 +115,9 @@ PyPI·Maven Central 4개 행은 `pkgregistry` 커넥터 추가에 맞춰 2026-08
 > (스크레이핑·미러링)"와 "명시적 허가 없는 상업적 이용"을 금지한다. 이 커넥터(`feeds/pkgregistry.php`)는
 > 저장소 전체가 아니라 **수집된 의존성 그래프에 부모로 등장하는 패키지 중 설치버전보다 높은 것만**,
 > 부모 하나당 최신 N개로 상한을 둬 개별 조회한다 — 카탈로그 전체를 받거나 미러링하지 않는다.
+> N 은 연결설정 `max_versions` 로 조정할 수 있으나 코드가 강제하는 절대 상한은 **100(기본값
+> 20)** 이다(`VG_PKGREG_MAX_VERSIONS_CEILING`, `server/src/feeds/pkgregistry.php`) — 설정값을
+> 아무리 크게 넣어도 이 천장을 넘어 카탈로그 전체를 받아올 수 없다.
 > 상업적 이용 조항은 조직이 이 제품을 상업적으로 운용하기 전에 별도로 확인이 필요하다.
 
 ---

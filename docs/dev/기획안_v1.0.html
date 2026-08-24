@@ -280,7 +280,7 @@
       <div class="tbl-row head"><div class="k">구분</div><div class="old">기존 스캐너</div><div class="new">우리 에이전트</div></div>
       <div class="tbl-row"><div class="k">동작</div><div class="old">규칙대로 스캔 후 목록</div><div class="new">스스로 수집·매칭·판단해 근거와 함께 표시</div></div>
       <div class="tbl-row"><div class="k">대상 범위</div><div class="old">에이전트를 깐 자산만</div><div class="new">관리 대역을 2단계 TCP 스윕해 <strong>에이전트가 안 깔린 IP</strong> 까지 목록에 올린다</div></div>
-      <div class="tbl-row"><div class="k">데이터 소스</div><div class="old">단일/소수 DB</div><div class="new">NVD + OSV + KEV + EPSS + 국내 KISA 에 배포판·커널 벤더 피드까지 (커넥터 12종 = 고정 11종 + 사용자 정의 API)</div></div>
+      <div class="tbl-row"><div class="k">데이터 소스</div><div class="old">단일/소수 DB</div><div class="new">NVD + OSV + KEV + EPSS + 국내 KISA 에 배포판·커널 벤더 피드까지 (커넥터 13종 = 고정 12종 + 사용자 정의 API)</div></div>
       <div class="tbl-row"><div class="k">우선순위</div><div class="old">CVSS 점수 나열</div><div class="new">런타임 노출 + EPSS + KEV 맥락 추론</div></div>
       <div class="tbl-row"><div class="k">조치</div><div class="old">(일부) 업그레이드 제안</div><div class="new">조치안 표시(OSV 수정버전 기준). 전이 의존은 "직접 조치 불가 — X 가 끌어옴"으로 부모별로 묶는다</div></div>
       <div class="tbl-row"><div class="k">결과물</div><div class="old">기술적 리포트</div><div class="new">웹 대시보드(카드·차트·근거·변화추적) + Export API(JSON/XML) + SBOM(CycloneDX 1.5 / SPDX 2.3)</div></div>
@@ -344,7 +344,7 @@
       <div class="stage c-scan"><div class="name"><i></i>수집 에이전트</div>
         <div class="desc">패키지(NEVRA·소스패키지·벤더) + 런타임 노출(리스닝 포트)·실행 프로세스·changelog·보안설정·라우팅·컨테이너 내부까지 수집</div></div>
       <div class="stage c-accent"><div class="name"><i></i>매칭 (API 직접 조회)</div>
-        <div class="desc">CVE 피드(<code>NVD·OSV·KEV·EPSS·KISA</code> + 배포판·커널 벤더 소스, 커넥터 12종)와 직접 대조, <code>OSV</code> 는 배포판과 언어 생태계 8종을 자동 판별</div></div>
+        <div class="desc">CVE 피드(<code>NVD·OSV·KEV·EPSS·KISA</code> + 배포판·커널 벤더 소스, 커넥터 13종)와 직접 대조, <code>OSV</code> 는 배포판과 언어 생태계 8종을 자동 판별</div></div>
       <div class="stage c-violet"><div class="name"><i></i>판단</div>
         <div class="desc">억제 4겹 → 런타임 노출 <code>7단계</code> + <code>EPSS</code>·<code>KEV</code>로 위험 우선순위 추론</div></div>
       <div class="stage c-warn"><div class="name"><i></i>조치</div>
@@ -361,7 +361,7 @@
                                                                     │
 [에이전트 없는 IP] ◀─ 2단계 TCP 스윕 ─ <b>자산 탐색</b>(스케줄러 틱)  ─────▶│
                                                                     ▼
-                    CVE 피드 12종(NVD·OSV·KEV·EPSS·KISA·벤더)와 매칭
+                    CVE 피드 13종(NVD·OSV·KEV·EPSS·KISA·벤더)와 매칭
                     + 런타임 노출 7단계 + 억제 4겹 + EPSS/KEV 가중
                                                                     │
                                                                     ▼

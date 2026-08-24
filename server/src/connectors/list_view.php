@@ -45,7 +45,7 @@ function vg_connectors_decorate(array $connectors, int $connFilter, ?array &$con
 /** 소스 목록 — 역할 그룹 카드마다 표 하나. 등록된 게 하나도 없으면 그룹 없이 안내만. */
 function vg_connectors_render_list(array $connectors, string $csrf, array $logCountByConn): void
 {
-    // 커넥터를 역할별로 나눠 보여준다. 11종이 한 표에 평평하게 있으면 "무엇이 취약점을
+    // 커넥터를 역할별로 나눠 보여준다. 12종이 한 표에 평평하게 있으면 "무엇이 취약점을
     // 가져오고 무엇이 벤더 패치버전을 가져오는지" 가 안 보인다. 분류 기준은 docs/dev/피드소스-역할.md.
     //   타입 → 그룹 매핑은 아래 목록이 유일한 근거다(새 타입은 여기 한 줄 추가). 목록에 없는
     //   타입은 맨 아래 '기타' 로 떨어져 화면에서 사라지지 않는다.

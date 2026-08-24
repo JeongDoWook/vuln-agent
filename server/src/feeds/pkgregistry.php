@@ -35,6 +35,11 @@ require_once __DIR__ . '/../vercmp.php';   // vg_ver_cmp — 설치버전보다 
 //   max_detail 과 같은 패턴).
 const VG_PKGREG_MAX_VERSIONS = 20;
 
+// $conn['max_versions'] 로 사용자가 올릴 수 있는 절대 상한. THIRD-PARTY-NOTICES.md 의 Maven
+// Central 대량 다운로드·미러링 금지 준수 근거가 이 값에 의존한다 — 설정값이 이 천장을 넘을 수
+// 없어야 그 문서의 법적 주장이 코드로 강제된다.
+const VG_PKGREG_MAX_VERSIONS_CEILING = 100;
+
 // 레지스트리 요청 동시성 상한 — npm·PyPI 레이트리밋을 존중한다(요청 폭주 방지).
 const VG_PKGREG_CONCURRENCY = 4;
 
@@ -444,7 +449,7 @@ final class VgPkgRegistryConnector implements VgFeedConnector {
     }
 
     public function run(PDO $pdo, array $conn): array {
-        $maxVersions = (int) ($conn['max_versions'] ?? VG_PKGREG_MAX_VERSIONS);
+        $maxVersions = max(1, min((int) ($conn['max_versions'] ?? VG_PKGREG_MAX_VERSIONS), VG_PKGREG_MAX_VERSIONS_CEILING));
         $adapters    = $this->adapters($conn);
         $targets     = vg_pkgregistry_targets($pdo, array_keys($adapters));
 
