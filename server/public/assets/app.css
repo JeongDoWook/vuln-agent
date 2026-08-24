@@ -2626,15 +2626,23 @@ form.card .btn--primary:active { transform: translateY(0); }
  *   **열 우선**(왼쪽 열을 위에서 아래로 다 읽은 뒤 오른쪽 열)이 되지만, 설정 그룹은 서로
  *   독립이라 순서가 뒤섞여도 이해에 지장이 없다.
  *   column-width(고정 컬럼 수 아님)를 쓴 것은 기존 minmax(30rem,1fr) 의 반응형 감각을
- *   그대로 이으려는 것 — 좁아지면 auto-fit 처럼 스스로 1열로 떨어진다(640px 이하 세로
- *   스택 유지, PR #403). */
+ *   그대로 이으려는 것 — 좁아지면 auto-fit 처럼 스스로 1열로 떨어진다(다단 스펙 자체 동작).
+ *   다단은 컬럼별 세로 간격을 gap 이 못 채우므로 카드 자체 margin-bottom(.card 기본값,
+ *   지운 적 없다)에 기대는데, 그러면 각 컬럼의 마지막 카드도 그 margin 을 그대로 갖게 돼
+ *   목록 맨 아래에 --sp-3 만큼의 여백이 다시 생긴다 — 컨테이너에 그만큼 음수
+ *   margin-bottom 을 줘서 상쇄한다. 지금 6개 그룹은 필드 수가 비슷해 컬럼 높이가
+ *   고르지만, 한 그룹만 필드가 크게 늘면(break-inside:avoid 라 쪼갤 수 없다) 그 카드가
+ *   컬럼 하나를 통째로 결정해 옆 컬럼 아래에 다시 구멍이 생길 수 있다 — 그룹을 늘릴 땐
+ *   필드 수 편차를 확인할 것.
+ *   컬럼 밸런싱(어느 카드가 몇 번째 열로 가는지, 열 높이)은 스펙상 구현체 재량이라
+ *   브라우저마다 다를 수 있다 — 여기 실측(총높이·구멍 px)은 Chromium 기준이다. */
 .setting-groups {
   columns: 30rem;
   column-gap: var(--sp-3);
+  margin-bottom: calc(-1 * var(--sp-3));
 }
 .setting-groups > .card {
   break-inside: avoid;
-  margin-bottom: var(--sp-3);
 }
 /* 그룹 한 줄 설명은 제목 옆에 붙는다 — 줄을 새로 쓰지 않으려는 것이므로 여백만 준다. */
 .setting-groups > .card > .why { margin-left: .45rem; }
