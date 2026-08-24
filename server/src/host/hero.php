@@ -200,7 +200,7 @@ function vg_host_render_hero(array $ctx): void {
   <div class="card-row card-row--even">
   <?php
   vg_card('등급 구성', static function () use ($counts): void {
-      vg_sev_donut($counts, 132, [
+      vg_sev_donut($counts, 180, [
           'title' => '이 자산의 등급 구성',
           'href'  => vg_qs(['tab' => 'vuln', 'page' => null, 'q' => null]),
           'seg'   => fn(string $heroSev): array => [

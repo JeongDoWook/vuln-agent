@@ -32,7 +32,7 @@
    *   vg_rank_bars 가 이미 그 자리를 갖고 있다(charts.php 주석). */
   $expTotal = array_sum(array_column($scopeSegments, 'value'));
   vg_card('노출 범위 구성', static function () use ($scopeSegments): void {
-      vg_donut_kpi('노출 범위 구성', $scopeSegments, ['center_label' => '노출 전체']);
+      vg_donut_kpi('노출 범위 구성', $scopeSegments, ['center_label' => '노출 전체', 'size' => 210]);
   }, ['badge' => '노출 ' . number_format($expTotal) . '건']);
 
   // 막대를 누르면 그 프로세스로 좁혀 본다 — 툴바 검색(q)이 e.proc 을 이미 보므로 새 필터가 아니다.

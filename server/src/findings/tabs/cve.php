@@ -81,7 +81,7 @@
   $sevPicked = fn(string $k): bool => $sev === $k
       || ($sev === 'HIGH+' && ($k === 'CRITICAL' || $k === 'HIGH'));
   vg_card('등급 구성', static function () use ($counts, $sev, $sevPicked): void {
-      vg_sev_donut($counts, 132, [
+      vg_sev_donut($counts, 240, [
           'title' => '등급 구성',
           'seg'   => fn(string $sevKey, int $n): array => [
               'href'     => vg_qs(['sev' => $sev === $sevKey ? '' : $sevKey, 'page' => 1]),
@@ -107,7 +107,7 @@
    *     합산 필터로 **들어오는** 문은 대시보드 퍼널 2번 칸('High 이상')이 그대로 갖는다.
    *   · 'KEV 등재'·'기한 초과'·'재시작 필요' 는 세 번째 카드로 간다(아래 주석 참고). */
   vg_card('노출 상태 구성', static function () use ($runtimeCounts, $st): void {
-      vg_runtime_donut($runtimeCounts, 132, [
+      vg_runtime_donut($runtimeCounts, 240, [
           'title' => '노출 상태 구성',
           'seg'   => fn(string $key, int $n): array => [
               // '미상' 은 툴바의 '노출 상태' 에도 없는 값이라 걸 필터가 없다 — 링크를 주지 않는다.
