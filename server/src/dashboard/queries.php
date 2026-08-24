@@ -8,17 +8,8 @@ declare(strict_types=1);
  *   - "대응 우선순위" 쿼리를 파생테이블로 리라이트했다가 235ms → 42초가 된 운영 실측이 있다.
  *   - KEV 건수 쿼리의 GROUP BY 파생테이블을 지웠다가 33초로 회귀했다(#354) — MySQL 8 은
  *     GROUP BY 있는 파생테이블을 머지하지 않고 materialize 한다.
- *   - 추세의 scan_id 목록은 PHP 가 **값으로 펼쳐** 넘긴다. IN (서브쿼리)로 두면 옵티마이저가
- *     tb_finding 을 먼저 훑어 같은 결과에 2.06초가 걸렸다(실측).
  *   전제(옵티마이저가 올바른 인덱스를 고름)는 tb_finding STATS_SAMPLE_PAGES=200(#617)이 받친다.
  */
-
-/**
- * 추세 창(窓) — 30일. "지난달보다 나아졌나" 에 답하는 최소 구간이다.
- *   14일이었던 적이 있는데(#221 에서 제거) 그때는 등급별 누적 막대라 창이 넓어질수록
- *   막대가 뭉갰다. 지금은 선 하나(High 이상)라 30일이 오히려 읽힌다.
- */
-const VG_TREND_DAYS = 30;
 
 /**
  * 전 호스트의 "최신 스캔" 집합 — 퍼널·주요 신호·호스트 목록이 모두 이 기준을 쓴다.
@@ -150,94 +141,6 @@ function vg_dash_asset_rank(PDO $pdo): array {
         ];
     }
     return $out;
-}
-
-/**
- * 최근 $days 일 추세 — **자산별** 날짜별 "High 이상" 건수.
- *
- * 이월(carry-forward): 스캔은 바뀔 때만 저장되므로 그날 스캔이 없는 호스트는
- * **직전 스캔 값을 이어 쓴다**(0 으로 떨구면 "취약점이 사라졌다"는 거짓말).
- *
- * 자산별로 나눠 담는 것 말고는 예전(전체 합산 한 줄)과 **쿼리가 같다** — 읽는 스캔도,
- * 세는 기준도, 이월 규칙도 그대로다. 달라진 것은 이미 호스트별로 갖고 있던 중간 결과를
- * 합치지 않고 그대로 돌려준다는 것뿐이라, 새 쿼리도 새 인덱스도 필요 없다.
- * (호스트 이름은 이미 조인돼 있는 tb_host 에서 한 칸 더 읽는다 — 접근 경로가 안 바뀐다.)
- *
- * 읽는 스캔은 두 묶음뿐이다 — 창 안의 스캔 + 각 호스트가 창 시작 전에 가진 마지막 스캔
- * (이월의 출발점). 전체 스캔을 다 읽으면 이력이 쌓일수록 대시보드가 선형으로 느려진다.
- *
- * 사전집계 테이블을 새로 만들지 않았다: 기존 집계 자산(tb_package_summary·tb_scan_run)
- * 어디에도 스캔별 심각도 건수가 없고, 실측(dev: 호스트 208 · 스캔 951 · finding 42만)에서
- * 이 두 쿼리 합이 45ms 라 사전집계의 갱신 비용·정합성 부담을 살 이유가 없다(YAGNI).
- * 단, scan_id 목록은 **PHP 가 값으로 펼쳐** 넘긴다 — IN (서브쿼리) 로 두면 옵티마이저가
- * tb_finding 을 먼저 훑어 같은 결과에 2.06초가 걸렸다(실측).
- *
- * 반환: [['name' => 자산 이름, 'href' => 자산 상세, 'points' => [['d' => 'Y-m-d', 'v' => High 이상 건수], …]], …]
- *   — vg_multi_trend() 의 계열 계약에 'href' 만 얹었다(이미 조인된 host_id 를 한 칸 더
- *     읽는 것뿐이라 새 쿼리가 필요 없다). 상위 N + 기타로 접는 것은 소비하는 화면이 한다
- *     (여기서 미리 접으면 화면마다 다른 기준으로 접힌다) — vg_multi_trend() 는 여전히
- *     'href' 를 무시하고 'name'·'points' 만 읽는다.
- */
-function vg_dash_trend(PDO $pdo, int $days): array {
-    $since = date('Y-m-d', strtotime('-' . ($days - 1) . ' days'));
-    $trendScans = $pdo->query(
-        "SELECT s.scan_id AS id, s.host_id, h.fqdn, DATE(s.collected_at) AS d
-           FROM tb_scan s
-           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
-          WHERE s.is_deleted = 0 AND DATE(s.collected_at) >= '$since'
-          UNION
-         SELECT s.scan_id, s.host_id, h.fqdn, DATE(s.collected_at)
-           FROM tb_scan s
-           JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
-           JOIN (SELECT host_id, MAX(scan_id) AS mid FROM tb_scan
-                  WHERE is_deleted = 0 AND DATE(collected_at) < '$since'
-                  GROUP BY host_id) b ON b.mid = s.scan_id"
-    )->fetchAll();
-
-    // 호스트별 (날짜, 스캔id) 를 id 순으로 — 이월은 "그날 이하의 마지막 스캔" 고르기다.
-    $trendByHost = []; $hostName = [];
-    foreach ($trendScans as $s) {
-        if ($s['d'] === null) { continue; }   // collected_at 이 비어 있으면 어느 날짜에도 못 건다
-        $hid = (int) $s['host_id'];
-        $trendByHost[$hid][] = ['d' => (string) $s['d'], 'id' => (int) $s['id']];
-        $hostName[$hid] = (string) ($s['fqdn'] ?? ('자산 #' . $hid));
-    }
-    foreach ($trendByHost as &$list) { usort($list, fn($a, $b) => $a['id'] <=> $b['id']); }
-    unset($list);
-
-    // 스캔별 High 이상 건수 — 워터폴 'MEDIUM 제외' 칸과 같은 기준(CRITICAL + HIGH).
-    $highByScan = [];
-    $trendIds = array_values(array_unique(array_map(fn($s) => (int) $s['id'], $trendScans)));
-    if ($trendIds) {
-        $in = implode(',', array_fill(0, count($trendIds), '?'));
-        $st = $pdo->prepare(
-            "SELECT scan_id, COUNT(*) c FROM tb_finding
-              WHERE scan_id IN ($in) AND severity IN ('CRITICAL','HIGH')
-              GROUP BY scan_id"
-        );
-        $st->execute($trendIds);
-        foreach ($st->fetchAll() as $r) { $highByScan[(int) $r['scan_id']] = (int) $r['c']; }
-    }
-
-    $points = [];   // hostId => [['d'=>…, 'v'=>…], …]
-    for ($i = $days - 1; $i >= 0; $i--) {
-        $day = date('Y-m-d', strtotime("-$i days"));
-        foreach ($trendByHost as $hid => $list) {
-            $pick = null;
-            foreach ($list as $s) { if ($s['d'] <= $day) { $pick = $s['id']; } }   // 그날까지의 최신
-            // 첫 수집 이전의 날은 "0건" 이 아니라 "아직 자료가 없음" 이다 — 그 자산의
-            //   선을 아직 시작하지 않는다(0 으로 채우면 없던 개선처럼 보인다).
-            if ($pick === null) { continue; }
-            $points[$hid][] = ['d' => $day, 'v' => (int) ($highByScan[$pick] ?? 0)];
-        }
-    }
-
-    $series = [];
-    foreach ($points as $hid => $pts) {
-        $series[] = ['name' => $hostName[$hid] ?? ('자산 #' . $hid),
-                     'href' => '/host.php?id=' . $hid, 'points' => $pts];
-    }
-    return $series;
 }
 
 /** 목록 대상 = 최신 스캔이 있는 비삭제 호스트 수(페이지네이션 총건). */
