@@ -180,25 +180,26 @@ function vg_assets_load(
     }
 }
 
-/** '14일 추세' 열이 보는 창(窓). vg_dash_trend() 의 30일과 다른 값이라 여기서 따로 이름 붙인다
- *   (대시보드는 "지난달보다 나아졌나", 이 열은 표 셀 안에 들어가는 미니 추세라 더 좁은 창이
+/** '14일 추세' 열이 보는 창(窓). 예전 대시보드 추세 카드가 쓰던 30일과 다른 값이라 여기서
+ *   따로 이름 붙였다(그 카드는 폐지됐다 — 이 열은 표 셀 안에 들어가는 미니 추세라 더 좁은 창이
  *   더 읽힌다 — 작업지시가 못박은 값이다). */
 const VG_ASSET_TREND_DAYS = 14;
 
 /**
  * '14일 추세' 스파크라인 조회 — **이 페이지에 뜬 호스트만** 대상으로 하는 배치 조회다.
- *   vg_dash_trend()(dashboard/queries.php)와 같은 이월(carry-forward) 기법을 쓰지만 전 호스트가
+ *   예전 대시보드 추세 카드(폐지됨)와 같은 이월(carry-forward) 기법을 쓰지만 전 호스트가
  *   아니라 $hostIds 로 좁힌다 — 목록이 몇 페이지로 나뉘든 이 조회의 비용은 **페이지 크기**에만
  *   비례하고 전체 자산 수와는 무관하다(N+1 이 아니라 "페이지당 쿼리 2개"로 고정).
  *
- *   지표는 vg_dash_trend() 와 같은 기준(CRITICAL+HIGH = "조치 대상")이다 — 화면마다 다른 잣대로
- *   추세를 그리면 대시보드에서 8건이던 자산이 목록에서는 다른 수로 오르내리는 것처럼 보인다.
+ *   지표는 대시보드(자산 순위 카드)와 같은 기준(CRITICAL+HIGH = "조치 대상")이다 — 화면마다
+ *   다른 잣대로 추세를 그리면 대시보드에서 8건이던 자산이 목록에서는 다른 수로 오르내리는
+ *   것처럼 보인다.
  *
  *   scan_id 목록은 IN(서브쿼리)가 아니라 **PHP 가 값으로 펼쳐** 넘긴다 — 이 파일 상단 큰 함수의
  *   $where 조립과 같은 이유(dashboard/queries.php 머리주석의 2.06초 실측과 동일 함정).
  *
  * 반환: host_id(int) => [['d'=>'Y-m-d', 'v'=>int], …] (오래된→최신 순, vg_sparkline() 의 계약 그대로).
- *   그 호스트의 첫 수집 이전 날짜는 배열에 아예 없다(0 으로 채우지 않는다 — vg_dash_trend 와 동일 판단).
+ *   그 호스트의 첫 수집 이전 날짜는 배열에 아예 없다(0 으로 채우지 않는다 — 대시보드와 동일 판단).
  */
 function vg_assets_load_trend(PDO $pdo, array $hostIds, int $days = 14): array {
     $ids = array_values(array_unique(array_map('intval', $hostIds)));
@@ -208,7 +209,7 @@ function vg_assets_load_trend(PDO $pdo, array $hostIds, int $days = 14): array {
     $in = implode(',', array_fill(0, count($ids), '?'));
 
     // 창(窓) 안의 스캔 + 각 호스트가 창 시작 전에 가진 마지막 스캔(이월의 출발점) — 둘뿐이다.
-    //   vg_dash_trend() 와 같은 UNION 구조이되 host_id 로 좁혀 이 페이지 몫만 읽는다.
+    //   대시보드 추세 조회와 같은 UNION 구조이되 host_id 로 좁혀 이 페이지 몫만 읽는다.
     $st = $pdo->prepare(
         "SELECT s.scan_id AS id, s.host_id, DATE(s.collected_at) AS d
            FROM tb_scan s

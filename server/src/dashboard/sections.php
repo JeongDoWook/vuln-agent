@@ -19,7 +19,6 @@ require_once __DIR__ . '/../view/components/signal.php';  // summary.php 의 vg_
 require_once __DIR__ . '/sections/rank.php';       // 자산 순위 막대 — 상단
 require_once __DIR__ . '/sections/summary.php';    // 현황 요약 숫자 4칸(처리 흐름 워터폴 후신) — 섹션 머리 바로 아래
 require_once __DIR__ . '/sections/signals.php';    // 구성 도넛 두 장(등급 · 노출·실행) — 카드도 둘이다
-require_once __DIR__ . '/sections/trend.php';      // 최근 N일 High 이상 추세 — 도넛 옆 넓은 칸
 require_once __DIR__ . '/sections/hosts.php';      // 호스트별 현황 목록 + 페이지네이션(페이저가 화면을 닫는다)
 
 /**
