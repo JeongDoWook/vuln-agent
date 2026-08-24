@@ -42,7 +42,7 @@
 set -uo pipefail
 
 # ---------- 기본 설정 (환경변수로 덮어쓰기 가능) ----------
-SCRIPT_VERSION="3.22"
+SCRIPT_VERSION="3.23"
 CMD_TIMEOUT="${CMD_TIMEOUT:-20}"      # 명령 하나당 최대 실행 시간(초)
 PACKAGING_TIMEOUT="${PACKAGING_TIMEOUT:-120}" # JSON 조립 전체 상한(초)
 PROC_SCAN_TIMEOUT="${PROC_SCAN_TIMEOUT:-180}" # collect_processes /proc 순회 상한(초). 462개 프로세스 호스트 실측 744초 — 90초는 대부분 잘림, 무제한 상향은 스캔 전체 소요에 영향
@@ -1069,13 +1069,15 @@ ctr_key() {
 go_deps_from_binary() {   # $1=파일 $2=cid
   local file="$1" cid="$2"
   if have strings; then
-    timeout "$CMD_TIMEOUT" strings -a "$file" 2>/dev/null \
-      | awk -F'\t' -v c="$cid" '$1=="dep" && NF>=3 && $2 ~ /\// { print c"|go|"$2"|"$3"|" }'
+    timeout "$CMD_TIMEOUT" strings -a "$file" 2>/dev/null
   else
-    # binutils가 없는 최소 호스트는 기존 방식으로 정확도를 유지한다.
-    timeout "$CMD_TIMEOUT" grep -aoP 'dep\t[^\t\x00\n]+\t[^\t\x00\n]+' "$file" 2>/dev/null \
-      | awk -F'\t' -v c="$cid" 'NF==3 && $2 ~ /\// { print c"|go|"$2"|"$3"|" }'
-  fi
+    # binutils가 없는 최소 호스트: grep -P(PCRE)는 busybox 에 없다. 비인쇄 문자(탭 제외)를
+    # 줄바꿈으로 바꾸면 strings 와 사실상 같은 입력이 되어 아래 awk 를 그대로 재사용할 수 있다.
+    # `[:print:]` 는 busybox tr 이 POSIX 클래스로 안 읽고 글자 그대로의 집합으로 취급해
+    # 대부분의 문자를 지워버린다(실측) — 그래서 인쇄 가능 ASCII 범위를 8진 코드로 직접 준다.
+    # LC_ALL=C 는 이 명령에만 준다 — 멀티바이트 로케일이면 tr 이 바이너리 바이트를 잘못 다룬다.
+    LC_ALL=C timeout "$CMD_TIMEOUT" tr -c '\040-\176\011' '\n' < "$file" 2>/dev/null
+  fi | awk -F'\t' -v c="$cid" '$1=="dep" && NF>=3 && $2 ~ /\// { print c"|go|"$2"|"$3"|" }'
 }
 
 # ctr_go_deps : Go 바이너리에 박힌 의존 모듈 목록(buildinfo) → "cid|go|모듈|버전|"
@@ -1123,7 +1125,7 @@ ctr_upstream_bins() {   # $1=대표pid $2=cid
     [ -r "/proc/$p/root$exe" ] || continue
     case "$base" in
       nginx)
-        ver=$(timeout "$CMD_TIMEOUT" grep -aoP 'nginx/\d+\.\d+\.\d+' "/proc/$p/root$exe" 2>/dev/null \
+        ver=$(timeout "$CMD_TIMEOUT" grep -ao 'nginx/[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*' "/proc/$p/root$exe" 2>/dev/null \
               | head -1 | cut -d/ -f2)
         [ -n "$ver" ] && printf '%s|upstream|nginx|%s|\n' "$cid" "$ver"
         ;;
