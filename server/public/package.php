@@ -106,58 +106,6 @@ if ($name === '') {
     }
 }
 
-/* 방치 기간 타임라인 — 관련 CVE 중 상위 VG_AGE_TIMELINE_TOP 건(같은 정렬 기준: CVSS 높은순).
- * 페이지네이션(?page=)과 무관한 고정 상위 N 건이라 목록과 별개로 LIMIT 을 건다. 별도
- * try/catch — 이 카드가 실패해도 관련 CVE 표 자체는 그대로 뜬다. */
-$agingItems = []; $agingNull = 0;
-if ($summary !== null) {
-    try {
-        $pdo = vg_pdo();
-        $stAge = $pdo->prepare(
-            "SELECT a.cve_id, c.published
-               $from
-              WHERE $where AND c.published IS NOT NULL
-              ORDER BY c.cvss IS NULL, c.cvss DESC, a.cve_id DESC
-              LIMIT " . VG_AGE_TIMELINE_TOP
-        );
-        $stAge->execute($params);
-        $agingCves = $stAge->fetchAll();
-
-        $stAgeNull = $pdo->prepare("SELECT COUNT(*) $from WHERE $where AND c.published IS NULL");
-        $stAgeNull->execute($params);
-        $agingNull = (int) $stAgeNull->fetchColumn();
-
-        if ($agingCves) {
-            // 이 상위 N 건에 한해 최신 스캔 기준 영향 자산 수 — N+1 방지로 한 번에 조회.
-            $ids = array_column($agingCves, 'cve_id');
-            $in  = implode(',', array_fill(0, count($ids), '?'));
-            $stHosts = $pdo->prepare(
-                "SELECT f.cve_id, COUNT(DISTINCT s.host_id) n
-                   FROM tb_finding f
-                   JOIN tb_scan s ON s.scan_id = f.scan_id
-                   JOIN " . vg_latest_scan_subq() . " t ON t.host_id = s.host_id AND t.mid = s.scan_id
-                   JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
-                  WHERE f.is_deleted = 0 AND f.package_name = ? AND f.cve_id IN ($in)
-                  GROUP BY f.cve_id"
-            );
-            $stHosts->execute(array_merge([$name], $ids));
-            $hostsByCve = array_column($stHosts->fetchAll(), 'n', 'cve_id');
-
-            foreach ($agingCves as $r) {
-                $agingItems[] = [
-                    'label'     => (string) $r['cve_id'],
-                    'published' => (string) $r['published'],
-                    'count'     => (int) ($hostsByCve[$r['cve_id']] ?? 0),
-                    'href'      => '/cve.php?cve=' . urlencode((string) $r['cve_id']),
-                ];
-            }
-        }
-    } catch (Throwable $e) {
-        error_log('[package] aging timeline: ' . $e->getMessage());
-        $agingItems = []; $agingNull = 0;
-    }
-}
-
 vg_header($name !== '' ? $name : '패키지 상세', 'packages');
 
 if ($summary === null) {
@@ -215,24 +163,6 @@ vg_hero(
     </div>
   </div>
 </div>
-
-<?php if ($agingItems): ?>
-<div class="card">
-  <strong>방치 기간</strong>
-  <span class="why">CVSS 높은순 상위 <?= count($agingItems) ?>건</span>
-  <div class="card__body">
-    <?php
-    $agingNote = $total > count($agingItems)
-        ? '관련 CVE ' . number_format($total) . '건 중 CVSS 높은순 상위 ' . count($agingItems) . '건만 표시했습니다.'
-        : '';
-    if ($agingNull > 0) {
-        $agingNote .= ($agingNote !== '' ? ' ' : '') . '공개일 미상 ' . number_format($agingNull) . '건은 제외했습니다.';
-    }
-    vg_age_timeline($agingItems, ['title' => $name . ' 방치 기간', 'note' => $agingNote]);
-    ?>
-  </div>
-</div>
-<?php endif; ?>
 
 <nav class="subtabs subtabs--sticky">
   <?php if ($nofixGroups): ?><a href="#nofix">벤더 미수정 관측</a><?php endif; ?>
