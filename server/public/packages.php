@@ -16,7 +16,6 @@ declare(strict_types=1);
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/view.php';
 require_once __DIR__ . '/../src/license_summary.php';   // VG_LANG_MANAGERS, vg_license_risk_*
-require_once __DIR__ . '/../src/view/charts_pareto.php'; // vg_pareto, VG_PARETO_TOP
 vg_require_menu('catalog');
 
 /* 정렬 화이트리스트(OS 탭). 사용자 입력을 SQL 에 직접 넣지 않는다.
@@ -49,9 +48,6 @@ $perPage = vg_perpage();
 
 // ---- OS 패키지(tab=os) 상태 ----
 $rows = []; $total = 0; $ecos = [];
-// 파레토(패키지별 High 이상) 데이터 — 목록 필터(q·eco)와 무관한 전 자산 현재 스캔 기준
-//   전수 그림이다(아래 쿼리 주석 참고).
-$paretoItems = []; $paretoTotalValue = 0; $paretoTotalPkgs = 0;
 $q    = trim((string) ($_GET['q'] ?? ''));
 $eco  = trim((string) ($_GET['eco'] ?? ''));
 $sort = (string) ($_GET['sort'] ?? '');
@@ -79,42 +75,6 @@ try {
         )->fetchAll(PDO::FETCH_COLUMN);
         $ecoOptions = array_combine($ecos, $ecos) ?: [];
         if ($eco !== '' && !in_array($eco, $ecos, true)) { $eco = ''; }
-
-        /* 파레토용 집계 — tb_package_summary(OSV 매칭 대상 전체, 등급 무관)와는 다른
-         *   모집단이다. 여기는 "지금 실제로 설치돼 있고 최신 스캔에서 CRITICAL·HIGH 로
-         *   잡힌" 패키지만 센다(dashboard/queries.php 의 최신 스캔 JOIN 패턴과 동일 —
-         *   scan_id 를 IN(서브쿼리)로 걸면 2초대로 느려진다는 그 파일의 실측 경고를 따른다).
-         *   상위 N + 전체 합계·전체 종수를 윈도우 함수로 한 번에 뽑아, 그려지지 않는
-         *   나머지를 세려고 두 번째 쿼리를 만들지 않는다.
-         *   목록의 검색(q)·배포판(eco) 필터는 반영하지 않는다 — tb_finding 에 ecosystem 열이
-         *   없어 eco 로 못 거르고, "지금 뭐부터 볼까" 를 말하는 고정된 전체 그림이 목적이다. */
-        $paretoRows = $pdo->query(
-            "SELECT f.package_name, COUNT(*) AS cnt,
-                    SUM(COUNT(*)) OVER () AS total_cnt,
-                    COUNT(*) OVER () AS total_pkgs
-               FROM tb_finding f
-               JOIN tb_scan s ON s.scan_id = f.scan_id
-               JOIN tb_host h ON h.host_id = s.host_id AND h.is_deleted = 0
-               JOIN " . vg_latest_scan_subq() . " latest
-                    ON latest.host_id = s.host_id AND latest.mid = s.scan_id
-              WHERE f.severity IN ('CRITICAL','HIGH') AND f.is_deleted = 0
-              GROUP BY f.package_name
-              ORDER BY cnt DESC
-              LIMIT " . VG_PARETO_TOP
-        )->fetchAll();
-        foreach ($paretoRows as $r) {
-            // package.php 는 eco 파라미터가 없으면 매칭을 아예 시도하지 않고 "정보를 찾을 수
-            //   없습니다" 로 떨어진다(위 44~52행 주석) — tb_finding 에는 ecosystem 열이 없어
-            //   여기서 정확한 eco 를 못 만든다. 그래서 이 화면 자신의 검색 필터로 보낸다
-            //   (nofix-packages.php·asset-packages.php 파레토와 같은 자기참조 패턴).
-            $paretoItems[] = [
-                'label' => (string) $r['package_name'],
-                'value' => (int) $r['cnt'],
-                'href'  => '/packages.php?q=' . urlencode((string) $r['package_name']) . '&tab=os',
-            ];
-            $paretoTotalValue = (int) $r['total_cnt'];
-            $paretoTotalPkgs  = (int) $r['total_pkgs'];
-        }
 
         $where  = '1=1';
         $params = [];
@@ -345,28 +305,6 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
   ]); ?>
 
   <?php
-  /* "어느 패키지가 제일 많은 CVE 를 물고 있나" 를 순위 막대(vg_rank_bars)로 보여주던 카드를
-   * 파레토로 대체한다 — 순위만으로는 "1위가 몇 배인지" 는 보여도 "상위 몇 종을 손보면
-   * 전체의 절반이 정리되는지" 는 안 보인다(실측: 첫 페이지 10줄이 전부 kernel* 이고 CVE 수가
-   * 전부 3,305 로 같아 "동일 집계" 배지만 반복됐다 — 순위 자체가 정보를 안 줬다). 같은 자리에
-   * 같은 걸 두 번 보여주지 않으므로 옛 카드는 지운다.
-   * 데이터도 바뀐다 — 옛 카드는 tb_package_summary(등급 무관 총 CVE 수, $rows 재사용)를 썼지만
-   * 파레토는 "지금 실제로 위험한" High 이상만 세야 우선순위 그림이 된다. 그래서 $paretoItems 는
-   * 이 파일 위쪽에서 tb_finding 을 직접 집계한 별도 쿼리 결과다(위 주석 참고). */
-  if (count($paretoItems) >= 2): ?>
-    <div class="card">
-      <strong>패키지별 High 이상 — 상위 집중도</strong>
-      <div class="card__body"><?php vg_pareto($paretoItems, [
-          'total_value' => $paretoTotalValue,
-          'total_items' => $paretoTotalPkgs,
-          'unit'        => '건',
-          'item_unit'   => '종',
-          'alt'         => 'High 이상 상위 패키지 파레토',
-      ]); ?></div>
-    </div>
-  <?php endif; ?>
-
-  <?php
   $hasFilter = $q !== '' || $eco !== '';
   vg_table(
       [
@@ -380,8 +318,8 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
            * 그 열이 통째로 먹어(실측 805px/1,184px) 짧은 이름과 옆 칸 사이가 한 뼘 벌어진다.
            * 58% 만으로도 이 목록에서 가장 긴 이름(kernel-debug-devel-matched + '동일 집계'
            * 배지)이 잘리지 않는다 — 열이 다섯이던 시절엔 30% 였고 그래서 잘렸다(말줄임 7칸).
-           * **max_epss 는 계속 조회한다** — 위 랭킹 막대의 색(vg_epss_tone)과 '동일 집계'
-           * 판정(same_agg)이 그 값을 쓴다. 정렬은 더 이상 쓰지 않는다(VG_PKG_SORTS 주석 참고). */
+           * **max_epss 는 계속 조회한다** — 화면에 열로는 없지만 '동일 집계' 판정(same_agg)이
+           * 그 값을 쓴다. 정렬은 더 이상 쓰지 않는다(VG_PKG_SORTS 주석 참고). */
           ['label' => '패키지', 'width' => '58%', 'class' => 'col-id'],
           ['label' => '배포판', 'width' => '26%'],
           ['label' => 'CVE 수', 'align' => 'right', 'width' => '16%'],
