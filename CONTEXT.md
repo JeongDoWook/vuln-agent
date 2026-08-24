@@ -168,8 +168,8 @@ RHEL 계열·우분투·커널은 각자의 벤더 소스로 별도 판정한다
 
 ### 판정 — 매칭·억제·벤더
 
-- **피드 커넥터 12종** = 고정 11종(KEV/OSV/NVD/KISA/EPSS + debtracker·rhoval·rhunfixed·ubuntuoval·
-  kcve·ssg) + 범용 API. UI 설정·미리보기·스케줄 + 스케줄러 사이드카. 역할은 `docs/dev/피드소스-역할.md`.
+- **피드 커넥터 13종** = 고정 12종(KEV/OSV/NVD/KISA/EPSS + debtracker·rhoval·rhunfixed·ubuntuoval·
+  kcve·ssg·pkgregistry) + 범용 API. UI 설정·미리보기·스케줄 + 스케줄러 사이드카. 역할은 `docs/dev/피드소스-역할.md`.
 - **NVD 전체 데이터**(약 36만 건) — 주기 수집은 **수정일(lastMod) 기준**이다(뒤늦게 CVSS 가 붙는 CVE 를
   발행일 기준이면 영원히 놓친다). 전체 백필은 `bin/backfill_nvd.php`, API 키는 DB 에만 둔다.
 - **패키지 출처 판정** — dpkg 는 vendor 를 안 주므로 apt 라벨로 서드파티를 가린다(URL 로 보면 사내

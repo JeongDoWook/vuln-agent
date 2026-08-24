@@ -69,7 +69,8 @@
 취약점 판정에 쓰는 외부 데이터의 출처다. **코드가 아니라 데이터**라서 규정 제8조 ⑥(라이브러리·
 프레임워크·모델)의 직접 대상은 아니지만, 출처 명시(제8조 ⑤) 취지에 맞춰 정리해 둔다.
 목록은 `server/src/feeds.php` 의 `VG_CONNECTOR_TYPES` 카탈로그와 `server/src/feeds/*.php` 의
-기본 주소에서 뽑았고, **이용 조건은 2026-08-21 에 각 원 사이트에서 직접 확인했다.**
+기본 주소에서 뽑았고, **이용 조건은 2026-08-21 에 각 원 사이트에서 직접 확인했다**(Packagist·npm·
+PyPI·Maven Central 4개 행은 `pkgregistry` 커넥터 추가에 맞춰 2026-08-24 에 확인).
 
 | 피드 | 제공자 | 용도 | 이용 조건 (원 사이트 확인) | 출처 URL |
 |---|---|---|---|---|
@@ -85,6 +86,10 @@
 | Ubuntu OVAL | Canonical | 우분투 패치 판정 | 배포 파일에는 라이선스 헤더가 없다. 원천인 Ubuntu CVE Tracker 는 Launchpad 프로젝트 메타데이터에 `"licenses": ["GNU GPL v2"]` 로 선언돼 있다 | https://launchpad.net/ubuntu-cve-tracker |
 | SCAP 보안 기준 (ComplianceAsCode/content) | ComplianceAsCode 프로젝트 | 보안 설정 점검 기준(SSG) | BSD-3-Clause | https://github.com/ComplianceAsCode/content |
 | 커널 CNA (vulns.git) | kernel.org | 리눅스 커널 CVE 레코드 | 커널 저장소와 동일(GPL-2.0) | https://git.kernel.org/pub/scm/linux/security/vulns.git/ |
+| Packagist (repo.packagist.org) | Packagist / Composer | Composer(PHP) 패키지 상위 버전이 자식을 어떤 제약으로 요구하는지 조회 | **명시된 라이선스 없음** — packagist.org 사이트에 API/데이터 이용약관 표기가 없다 | https://packagist.org/ |
+| npm 레지스트리 (registry.npmjs.org) | npm, Inc. | npm 패키지 상위 버전의 자식 의존성 제약 조회 | **npm Open Source Terms** — "공개 레지스트리 데이터를 Public API 로 복제(replicate)할 수 있다"고 명시해 이 커넥터의 조회·소비를 허용한다(런타임 광고 삽입 금지 등은 패키지 **게시자**에게 적용되는 조항이라 조회만 하는 이 이용 형태와 무관) | https://docs.npmjs.com/policies/open-source-terms |
+| PyPI (pypi.org) | Python Software Foundation | PyPI 패키지 상위 버전의 자식 의존성(요구사항) 제약 조회 | **PyPI Terms of Service** — 공개 API 조회 자체는 허용하되 "API 에 대한 남용·과도하게 잦은 요청"을 금지해 요청량 자제를 요구한다. 업로드 콘텐츠 재배포(PSF 조항)는 패키지 게시자에게 적용되는 별개 조항이다 | https://policies.python.org/pypi.org/Terms-of-Service/ |
+| Maven Central (repo1.maven.org) | Sonatype, Inc. | Maven(Java) 패키지 상위 버전 pom 의 자식 의존성 제약 조회 | **Central Repository Terms of Service** — 개별 조회·소비는 허용, 대량 다운로드/미러링과 명시적 허가 없는 상업적 이용은 금지 | https://repo1.maven.org/terms.html |
 
 > **Oracle Linux OVAL — 지금 형태는 약관 안에 있다**
 > Oracle 이용약관이 제한하는 것은 Materials 의 **비상업적 이용·변경·재배포**다. 이 제품이
@@ -100,10 +105,20 @@
 > 붙여** 갱신하는 것(공개 저장소이므로 그 순간 재배포가 된다) ⑶ 폐쇄망 고객에게 피드를 미리
 > 받아 동봉해 배포하는 것.
 >
-> **명시된 라이선스가 없는 항목(KISA · Debian · AlmaLinux)** 은 "확인을 안 했다"가 아니라
-> **"원 사이트에 표기 자체가 없음을 확인했다"** 는 뜻이다. 공개적으로 무상 제공되고 기계 판독을
-> 전제로 배포되지만 재배포 권리는 명시돼 있지 않으므로, 이 제품도 원본을 재배포하지 않고
-> 판정 결과만 저장·표시한다.
+> **명시된 라이선스가 없는 항목(KISA · Debian · AlmaLinux · Packagist)** 은 "확인을 안 했다"가
+> 아니라 **"원 사이트에 표기 자체가 없음을 확인했다"** 는 뜻이다. 공개적으로 무상 제공되고
+> 기계 판독을 전제로 배포되지만 재배포 권리는 명시돼 있지 않으므로, 이 제품도 원본을 재배포하지
+> 않고 판정 결과만 저장·표시한다.
+
+> **Maven Central — 대량 다운로드·미러링 금지 조항과의 경계**
+> Central Repository Terms of Service 는 "Materials 의 전체 또는 상당 부분을 내려받는 행위
+> (스크레이핑·미러링)"와 "명시적 허가 없는 상업적 이용"을 금지한다. 이 커넥터(`feeds/pkgregistry.php`)는
+> 저장소 전체가 아니라 **수집된 의존성 그래프에 부모로 등장하는 패키지 중 설치버전보다 높은 것만**,
+> 부모 하나당 최신 N개로 상한을 둬 개별 조회한다 — 카탈로그 전체를 받거나 미러링하지 않는다.
+> N 은 연결설정 `max_versions` 로 조정할 수 있으나 코드가 강제하는 절대 상한은 **100(기본값
+> 20)** 이다(`VG_PKGREG_MAX_VERSIONS_CEILING`, `server/src/feeds/pkgregistry.php`) — 설정값을
+> 아무리 크게 넣어도 이 천장을 넘어 카탈로그 전체를 받아올 수 없다.
+> 상업적 이용 조항은 조직이 이 제품을 상업적으로 운용하기 전에 별도로 확인이 필요하다.
 
 ---
 
