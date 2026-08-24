@@ -730,7 +730,12 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
 /* 두 카드가 **한 덩어리로 읽혀야 하는 줄**(자산 상세 히어로의 등급 구성 ↔ 등급 밖의 신호)만
  * 높이를 맞춘다. 기본값(align-items:start)은 "짧은 카드가 옆 카드만큼 늘어나지 않게" 하는
  * 것이라 서로 무관한 카드가 서는 줄에는 그대로 옳다 — 그래서 전역이 아니라 수식어로 준다. */
-.card-row--even { align-items: stretch; }
+/* 이 줄만 도넛이 180px(기본 132px 보다 크다) — 기본 19rem 하한(719행)은 132px 도넛 기준이라
+ * 좁은 2단 구간(카드폭 ~290~330px)에서 도넛+범례가 못 들어가 줄바꿈되고, 그 카드만 커져 옆의
+ * '등급 밖의 신호' 카드가 다시 빈다(실측 900px 폭에서 128px). 이 클래스는 host/hero.php 만 쓰므로
+ * (다른 화면 영향 없음) 하한을 180px 도넛이 범례와 나란히 서는 폭(23rem)으로 올려, 그 구간을
+ * 아예 1열로 건너뛰게 한다. */
+.card-row--even { align-items: stretch; grid-template-columns: repeat(auto-fit, minmax(23rem, 1fr)); }
 
 /* SBOM 부품표(sbom.php?view=html) 한 줄 — 도넛 1/4 + 도넛 1/4 + 컴포넌트 목록 1/2.
  * .card-row(균등 auto-fit)로는 못 만든다: 여기서는 칸 넓이가 서로 달라야 한다. 도넛은 값
