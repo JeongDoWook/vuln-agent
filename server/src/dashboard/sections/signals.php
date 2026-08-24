@@ -56,7 +56,7 @@ function vg_dash_render_severity(array $totals): void {
 /** 노출·실행 상태 구성 — "깔려만 있는가" 와 "밖에서 닿는가" 는 같은 1건이 아니다. */
 function vg_dash_render_runtime(array $runtime): void {
   ?>
-  <section class="card dash-donut">
+  <section class="card dash-donut dash-donut--runtime">
     <strong>노출·실행 상태</strong>
     <span class="why">최신 수집 기준 · <a href="/findings.php?st=EXTERNAL">외부 노출만 →</a></span>
     <div class="card__body">
