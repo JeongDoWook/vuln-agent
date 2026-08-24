@@ -1093,6 +1093,16 @@ main:has(.subtabs--sticky) section[id] { scroll-margin-top: calc(var(--topbar-h)
 /* .donut-wrap·.donut-foot 은 지웠다 — 도넛을 감싸던 유일한 화면(대시보드의 등급별 분포)이
  * 없어져서 쓰는 곳이 하나도 남지 않았다. 쓰는 곳이 없어진 규칙은 남기지 않는다. */
 
+/* .split 의 stat-grid 카드 — align-items:stretch(위 .split 규칙)로 옆 카드(판정 분포)
+ * 만큼 카드 자체는 늘어나지만, .card__body 는 일반 블록 자식이라 늘어난 높이를 카드
+ * 밑에 빈 공간으로 남긴다(align-content 만으로는 .card__body 자기 상자가 안 늘어나
+ * 효과가 없다 — 실측 cce-rule.php 71px · control.php 190px). 도넛 카드가 이미 쓰는
+ * 패턴(.card 를 세로 flex 로, 안쪽을 flex:1 로 늘려 그 안에서 정렬)을 그대로 적용한다.
+ * .split 안에서만 좁혀 다른 화면의 stat-grid(cve.php 핵심 지표 등, 늘어날 일이 없다)는
+ * 그대로 둔다. */
+.split .card:has(> .card__body.stat-grid) { display: flex; flex-direction: column; }
+.split .card__body.stat-grid { flex: 1; align-content: center; }
+
 /* 도넛 옆 범례 */
 .legend { display: grid; gap: .3rem; font-size: var(--fs-sm); margin-top: .9rem; }
 .legend div { display: flex; align-items: center; gap: .5rem; }
@@ -2889,6 +2899,15 @@ form.card .btn--primary:active { transform: translateY(0); }
 .page--host .hero, .page--cve .hero, .page--user .hero { background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--info-bg) 45%, var(--surface))); }
 .page--advisory .prose, .page--cve .prose, .page--compliance_rule .prose,
 .page--control .prose { max-width: 78ch; line-height: 1.75; }
+/* 서술 하나만 담은 카드 — 위 .prose 는 가독성 때문에 78ch 로 좁아지는데 카드 박스 자체는
+ * 안 좁혀져 오른쪽이 통째로 빈다(실측: cve.php 요약, advisory.php 본문, compliance_rule.php
+ * 판정 근거). .prose 가 카드(또는 그 .card__body)의 유일한 내용일 때만 카드 폭을 그 상한에
+ * 맞춘다 — .kv 목록이 섞인 카드(CISA KEV)는 :only-child 로 자연히 빠지고, :not(:has(.kv))
+ * 로 한 번 더 막는다(그 카드는 폭을 그대로 써야 한다). */
+.card:has(> .prose):not(:has(.kv)),
+.card:has(> .card__body > .prose:only-child):not(:has(.kv)) {
+  max-width: calc(78ch + 2 * var(--sp-4) + 2px); /* 패딩 2×.sp-4 + 테두리 2px, .prose 의 78ch 와 짝 */
+}
 /* 자산 상세 히어로의 위험 요약은 이제 카드 두 장(.card-row)이다 — 예전의 `.page--host
  * .kpi-donuts` 폭 상한 규칙은 같이 걷었다. 카드가 자기 padding 안에서 목록을 담으므로
  * "라벨과 숫자가 칸 양끝으로 벌어지는" 문제는 `.card__body > .donut-kpi:only-child` 의
@@ -3262,25 +3281,6 @@ a.arank__row:hover { background: var(--surface-2); color: var(--text); text-deco
 }
 .arank__value { color: var(--text); font-weight: 700; }
 @media (max-width: 700px) { .arank__row { grid-template-columns: minmax(0, 7rem) minmax(2rem, 1fr) max-content; } }
-
-/* --- 방치 기간 타임라인(vg_age_timeline, 프리스틀리 형식) --------------------
- * 취약점/공지 하나가 막대 하나. 왼쪽=공개일, 오른쪽=오늘. **색은 등급이 아니라 방치
- * 연수가 정한다**(10년↑ 빨강 · 5년↑ 주황 · 그 아래 노랑) — 같은 --crit/--high/--med 토큰을
- * 재사용하지만 이 차트에서는 나이의 어휘라 심각도 도넛·지형도와 나란히 두고 섞어 읽으면
- * 안 된다. 격자는 .chart__grid 를 그대로 쓰고, 가로축 눈금(연도)만 새로 둔다(.chart__tick
- * 은 세로축용이라 text-anchor 가 end 다). */
-.age { overflow-x: auto; }
-.age svg { display: block; width: 100%; height: auto; min-width: 22rem; }
-.age__bar.tone-crit { fill: var(--crit); }
-.age__bar.tone-high { fill: var(--high); }
-.age__bar.tone-med  { fill: var(--med); }
-.age__tick  { fill: var(--muted); font-size: 9px; text-anchor: middle; font-variant-numeric: tabular-nums; }
-.age__label { fill: var(--text-2); font-size: 10.5px; text-anchor: end; }
-.age__stat  { fill: var(--text); font-size: 10.5px; text-anchor: start; font-variant-numeric: tabular-nums; }
-a.age__row { cursor: pointer; }
-a.age__row:hover .age__bar { stroke: var(--accent); stroke-width: 1.5; }
-a.age__row:hover .age__label,
-a.age__row:hover .age__stat { fill: var(--text); }
 
 /* --- 대시보드 위젯 격자(index.php) -----------------------------------------
  * 사용자가 다른 제품 두 개를 들고 지목한 것 세 가지를 그대로 가져온다:

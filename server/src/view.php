@@ -8,9 +8,6 @@ declare(strict_types=1);
  *     - view/icons.php      — 인라인 SVG 아이콘 데이터(vg_icon).
  *     - view/charts.php     — 차트(SVG): 심각도 도넛·리소스 추이·가로 막대.
  *     - view/charts_dash.php — 대시보드 전용 차트: 자산 순위 막대·처리 흐름 워터폴·스파크라인.
- *     - view/charts_aging.php — 차트(SVG): 방치 기간 타임라인.
- *                             (동시 작업 충돌을 피하려 charts.php 와 파일을 갈랐다 — 파일
- *                             머리주석 참고. charts.php 를 require 해서 유틸을 재사용한다.)
  *     - view/charts_combo.php — 위험 조합 벤 다이어그램(vg_risk_combo, 탐지 결과 CVE 탭).
  *     - view/nav.php        — 네비게이션: 사이드바·브레드크럼·활동로그 라벨.
  *     - view/icons.php        — 인라인 SVG 아이콘 데이터(vg_icon).
@@ -30,7 +27,6 @@ require_once __DIR__ . '/ui_config.php';
 require_once __DIR__ . '/view/icons.php';
 require_once __DIR__ . '/view/charts.php';
 require_once __DIR__ . '/view/charts_dash.php';
-require_once __DIR__ . '/view/charts_aging.php';
 require_once __DIR__ . '/view/charts_combo.php';
 require_once __DIR__ . '/view/charts_bullet.php';
 require_once __DIR__ . '/view/nav.php';
