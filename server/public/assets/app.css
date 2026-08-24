@@ -1270,9 +1270,8 @@ a.risk-combo__row-inner:hover { background: var(--surface-2); color: var(--text)
  *     같은 단 안에서 더 얇아도 된다.
  *   · --chart-h-aux    (120~160px) 카드 안에서 주제 그림을 보조하는 작은 그림 — .chart-js--sm.
  *   · --chart-h-hero   (200~240px) 그 카드의 주제 그림, 카드에 하나만 — .chart-js--md,
- *     파레토(view/charts_pareto.php, 720×220 — 예전엔 280 으로 혼자 컸다) · 경과일 구간별
- *     분포(view/charts_aging.php, 720×200) · 위험 조합 벤 다이어그램(view/charts_combo.php,
- *     220×210, 카드 폭 13rem 상한 안에서 스케일).
+ *     파레토(view/charts_pareto.php, 720×220 — 예전엔 280 으로 혼자 컸다) · 위험 조합
+ *     벤 다이어그램(view/charts_combo.php, 220×210, 카드 폭 13rem 상한 안에서 스케일).
  * CSS 변수는 **높이가 진짜 CSS 속성인 차트**(Chart.js 캔버스)에만 쓴다. 위 SVG viewBox 차트는
  * PHP 가 좌표를 직접 계산해 그리므로(W 가 720 등으로 고정이라 카드 폭에서 거의 그대로 픽셀
  * 높이가 된다) CSS 변수를 못 읽는다 — 대신 그 $H 를 이 범위 안에서 고르고 주석으로 여기를
@@ -3282,18 +3281,6 @@ a.delta-row:hover { background: var(--surface-2); color: var(--text); text-decor
 .delta-row__delta.tone-ok    { color: var(--ok-fg); }
 .delta-row__delta.tone-muted { color: var(--muted-fg); }
 @media (max-width: 700px) { .delta-row { grid-template-columns: minmax(0, 5rem) minmax(4rem, 1fr) max-content max-content; } }
-
-/* --- 경과일 구간 누적 막대(vg_aging_buckets) --------------------------------
- * 5개 구간 × 2톤(아래 High 이상 · 위 MEDIUM). 격자·눈금은 회차별 신규·해결 막대와 같은
- * 어휘(.chart__grid/.chart__tick)를 그대로 쓴다 — 여기서 새로 두는 건 막대 톤과 막대
- * 위아래 글자뿐이다. */
-.agebar { overflow-x: auto; }
-.agebar svg { display: block; width: 100%; height: auto; min-width: 26rem; }
-.agebar__seg.tone-high { fill: var(--high); }
-.agebar__seg.tone-med  { fill: var(--med); }
-.agebar__total { fill: var(--text); font-size: 12px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
-.agebar__lbl   { fill: var(--text-2); font-size: 10.5px; text-anchor: middle; }
-.agebar__sub   { fill: var(--muted); font-size: 9.5px; text-anchor: middle; font-variant-numeric: tabular-nums; }
 
 /* --- 방치 기간 타임라인(vg_age_timeline, 프리스틀리 형식) --------------------
  * 취약점/공지 하나가 막대 하나. 왼쪽=공개일, 오른쪽=오늘. **색은 등급이 아니라 방치
