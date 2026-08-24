@@ -336,7 +336,8 @@ $findings = null;
 try {
     $findings = vg_match_scan($pdo, $scanId);
 } catch (Throwable $e) {
-    $findings = ['error' => $e->getMessage()];
+    error_log('[ingest] 취약점 매칭 실패: ' . $e->getMessage());
+    $findings = ['error' => '취약점 매칭에 실패했습니다.'];
 }
 
 // 보안설정 점검(CCE) — 이미 수신한 security/users 섹션으로 판정. 실패해도 수집은 성공.
@@ -344,7 +345,8 @@ $cce = null;
 try {
     $cce = vg_evaluate_cce($pdo, $scanId, $data);
 } catch (Throwable $e) {
-    $cce = ['error' => $e->getMessage()];
+    error_log('[ingest] 보안설정 판정 실패: ' . $e->getMessage());
+    $cce = ['error' => '보안설정 판정에 실패했습니다.'];
 }
 
 // 계정 인벤토리(ISMS-P 2.5.x / N2SF AC 계정관리) — 스캔 내용이 같아 스냅샷을 재사용해도
