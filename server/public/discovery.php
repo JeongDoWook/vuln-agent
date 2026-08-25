@@ -534,7 +534,7 @@ vg_header('자산 탐색', 'discovery');
   $headers = [
       ['label' => 'IP', 'key' => 'ip', 'width' => '10rem'],
       ['label' => '상태', 'key' => 'state', 'width' => '6rem'],
-      ['label' => '열린 포트 · 서비스(추측)', 'key' => 'ports'],
+      ['label' => '열린 포트', 'key' => 'ports'],
       /* 두 날짜를 나란히 두던 자리다 — 실측으로 거의 모든 행이 같은 값이라 한 칸을 통째로
        *   같은 글자에 쓰고 있었다. 칸에는 최근만 적고 최초는 툴팁이 갖는다. */
       ['label' => '발견', 'key' => 'seen', 'width' => '9rem', 'nowrap' => true,
@@ -566,26 +566,34 @@ vg_header('자산 탐색', 'discovery');
           VG_DISCOVERY_STATES[(string) $r['state']] ?? (string) $r['state'],
           VG_DISCOVERY_TONES[(string) $r['state']] ?? 'muted'
       ),
-      /* 포트 옆의 서비스는 **포트 번호 관례에서 유추한 추측**이다(22 가 항상 SSH 는 아니다).
-       *   그래서 '?' 를 붙이고 열 제목에도 그 사실을 적는다 — 단정형으로 쓰면 사람이 확인을 건너뛴다.
-       *   배너(HTTP Server 헤더·TLS 인증서 CN)는 열로 늘리지 않고 있을 때만 한 줄 덧붙인다. */
+      /* service_hint(포트 번호 관례로 유추한 추측 — 22 가 항상 SSH 는 아니다)는 셀에서 뺐다
+       *   (사용자 지적: "추측이라 너무 별로야"). 대신 배너(HTTP Server 헤더·TLS 인증서 CN)는
+       *   실측값이라, 있는 첫 포트 하나만 짧게 잘라 한 줄 덧붙인다 — 여러 줄이면 표가
+       *   울퉁불퉁해지므로 딱 한 줄만. service_hint 자체는 DB·매핑에 그대로 남겨 툴팁에 쓴다. */
       'ports' => function ($r) use ($portsByAsset): string {
           $ports = $portsByAsset[(int) $r['discovered_asset_id']] ?? [];
           if (!$ports) { return '<span class="why">없음</span>'; }
           $label = static fn(array $p): string => $p['port'] . '/' . $p['proto']
               . ($p['hint'] !== '' ? ' ' . mb_strimwidth($p['hint'], 0, 14, '…') . '?' : '');
           $shown = array_slice($ports, 0, VG_DISCOVERY_PORTS_SHOWN);
-          /* 툴팁이 전부를 갖는다 — 포트 전체와 배너(HTTP Server 헤더·TLS 인증서 CN). 배너를
-           *   목록에서 뺀 이유가 이것이다: 행마다 줄을 하나 더 만들어 표를 울퉁불퉁하게 했다. */
+          /* 툴팁이 전부를 갖는다 — 포트 전체(추측 힌트 포함)와 배너(HTTP Server 헤더·TLS 인증서 CN). */
           $tip = implode(' · ', array_map($label, $ports));
           $banners = [];
           foreach ($ports as $p) {
               if ($p['banner'] !== '') { $banners[] = $p['port'] . ' ' . $p['banner']; }
           }
           if ($banners) { $tip .= ' / 배너 · ' . implode(' · ', $banners); }
-          return '<span title="' . vg_h($tip) . '"><b>' . number_format(count($ports)) . '</b>'
+          $plain = static fn(array $p): string => $p['port'] . '/' . $p['proto'];
+          $html = '<span title="' . vg_h($tip) . '"><b>' . number_format(count($ports)) . '</b>'
               . '<span class="why">개</span> <code>'
-              . vg_h(mb_strimwidth(implode(' · ', array_map($label, $shown)), 0, 44, '…')) . '</code></span>';
+              . vg_h(mb_strimwidth(implode(' · ', array_map($plain, $shown)), 0, 44, '…')) . '</code></span>';
+          foreach ($ports as $p) {
+              if ($p['banner'] !== '') {
+                  $html .= '<div class="why">' . vg_h(mb_strimwidth($p['banner'], 0, 18, '…')) . '</div>';
+                  break;
+              }
+          }
+          return $html;
       },
       'seen' => fn($r) => '<span class="why" title="'
           . vg_h('최초 발견 ' . substr((string) $r['first_seen'], 0, 16)
