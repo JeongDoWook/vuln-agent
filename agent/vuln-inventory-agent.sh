@@ -873,6 +873,7 @@ fw_port_allowed() {
   return 1
 }
 
+# ---------- 런타임 노출 · 패키지 출처 수집 함수 ----------
 # collect_exposure : 런타임 노출 상관 데이터 수집 (차별점 ①)
 #   "취약 라이브러리 → 로드한 프로세스 → 외부 포트" 사슬을 잇는 원천 데이터.
 #   리스닝 소켓의 PID만 대상 + lib→패키지 조회 캐시 → 가볍다.
@@ -939,11 +940,6 @@ collect_exposure() {
   done
 }
 
-# collect_processes : 실행 중인 "모든" 프로세스 + 소속 패키지 + 로드한 라이브러리 패키지
-#   리스닝 소켓이 없어도(포트 미개방) 실행 중이면 잡는다 →
-#   "설치만 vs 실행중 vs 사용중(라이브러리 로드)"을 정밀 구분하기 위한 원천 데이터.
-#   .so 를 로드한 프로세스만(=실제 사용자 프로그램, 커널스레드 제외). 조회 결과 캐시 → 가볍다.
-#   출력: pid|comm|user|exe_pkg|loaded_pkgs(,)
 # collect_pkg_origins : 패키지 출처(Origin 라벨) — 서드파티 저장소 패키지를 가려낸다.
 #   rpm 은 VENDOR 를 주는데 dpkg 는 안 준다. 이게 없으면 중앙이 서드파티(PPA·Docker·NodeSource)
 #   패키지를 배포판 기준(debsecan/errata)으로 "이미 수정됨" 처리해 **진짜 취약점을 숨긴다**(미탐).
@@ -1038,6 +1034,7 @@ collect_pkg_origins() {
   rm -f "$origins_raw"
 }
 
+# ---------- 컨테이너(도커/containerd) 이미지 · SBOM · 런타임 노출 수집 함수 ----------
 # collect_containers : 컨테이너 **내부** 패키지 인벤토리
 #   컨테이너 프로세스는 다른 mount namespace 라 호스트 스캔에서 제외해 왔다(그게 맞다 —
 #   오버레이 경로를 dpkg -S 로 훑으면 멈춘다). 그래서 컨테이너 안 패키지는 통째로 미탐이었다.
@@ -1556,6 +1553,7 @@ ctr_exposure() {   # $1=cid $2=대표pid $3=pidns $4=pkgs파일
   done
 }
 
+# ---------- 프로세스 인벤토리 · 재시작 필요 판정 함수 ----------
 # collect_processes : 실행 중인 "모든" 프로세스 + 소속 패키지 + 로드한 라이브러리 패키지
 #   collect_stale(재시작 필요 판정)이 필요로 하는 "이 pid 가 물고 있는 삭제된 .so" 도
 #   **같은 /proc 순회 한 번**에서 같이 뽑아 "$TMP/.stale-scan.txt" 에 적어 둔다 — 예전엔
