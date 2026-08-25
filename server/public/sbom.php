@@ -456,9 +456,16 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
 
     <?php /* 도넛 둘과 목록이 각각 전폭으로 세로로 쌓이면 첫 컴포넌트를 보려고 두 번 스크롤해야
              했다. 한 줄로 세운다 — 도넛은 값 몇 개짜리라 1/4 씩이면 충분하고, 남는 절반을
-             주인공인 목록이 갖는다(좁아지면 아래 미디어쿼리가 목록을 다음 줄로 내린다). */ ?>
-    <div class="sbom-cols<?= $total > 0 ? '' : ' sbom-cols--empty' ?>">
+             주인공인 목록이 갖는다(좁아지면 아래 미디어쿼리가 목록을 다음 줄로 내린다).
+             .sbom-cols 는 flex(row) — 왼쪽(.sbom-cols__left, 도넛+리스크카드)과 오른쪽
+             (.sbom-cols__list)이 서로 다른 flex 아이템이라 행 트랙을 공유하지 않는다. 목록이
+             1,574개짜리(158페이지)로 아무리 길어도 왼쪽 도넛 카드의 높이엔 영향을 주지
+             않는다 — 예전엔 둘이 같은 CSS Grid 행 트랙에 있어서 목록 높이가 도넛 행 전체를
+             끌고 다녔다(도넛 아래 목록 높이만큼의 빈 공간, PR #813 으로도 못 고침 — 그 PR은
+             "카드가 어디 앉는가"만 고쳤지 행 트랙 공유 자체는 그대로였다). */ ?>
+    <div class="sbom-cols">
     <?php if ($total > 0): ?>
+      <div class="sbom-cols__left">
       <div class="card">
         <strong>생태계 분포</strong>
         <div class="card__body">
@@ -499,13 +506,12 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
         </div>
       </div>
 
-      <?php /* 도넛 둘은 값이 몇 개짜리라 짧고, 그 아래로 목록 카드 높이만큼 빈 칸이 남는다
-               (행 높이가 가장 큰 셀 기준이라 — 파일 머리주석). 같은 칸(그리드 1·2번째 컬럼)에
-               실데이터 카드 두 장을 형제로 더해 도넛 바로 아래를 채운다 — 칸은
-               .card--riskpkgs-<risk> 클래스로 app.css 에서 grid-column·grid-row 를 둘 다
-               명시해 못박는다(auto-placement 에 맡기지 않는다 — DOM 순서에 따라 목록 칸을
-               가로챌 수 있어서다, app.css 주석 참고). 0건이면 카드 자체를 그리지 않는다
-               (이 프로젝트의 관례 — depgraph.php 의 '조치방안 없음' 류와 같다). */ ?>
+      <?php /* 도넛 둘은 값이 몇 개짜리라 짧고, 그 아래로 실데이터 카드 두 장을 .sbom-cols__left
+               안에 형제로 더해 도넛 바로 아래를 채운다 — .sbom-cols__left 는 자체 2열 grid라
+               도넛 2장(row1) 다음에 이 카드들이 auto-placement 로 row2 에 자연히 앉는다(옆
+               .sbom-cols__list 는 다른 flex 아이템이라 이 grid 에 안 낀다 — 목록 칸을 가로챌
+               일 자체가 구조적으로 없다). 0건이면 카드 자체를 그리지 않는다(이 프로젝트의
+               관례 — depgraph.php 의 '조치방안 없음' 류와 같다). */ ?>
       <?php // 카드 제목은 도넛과 같은 vg_license_risk_label() 로 만든다 — 위험도 한글 라벨을
             //   여기서 다시 문자열로 적으면 도넛·이 카드 두 곳에 같은 말이 흩어진다. ?>
       <?php foreach (['unknown', 'copyleft'] as $riskKey): if (!$riskPkgs[$riskKey]) { continue; } ?>
@@ -539,6 +545,7 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
         </div>
       </div>
       <?php endforeach; ?>
+      </div><?php // .sbom-cols__left ?>
     <?php endif; ?>
 
     <div class="sbom-cols__list">
