@@ -157,6 +157,9 @@ $check(!str_contains($navPhp, "'취약점' =>") && !str_contains($navPhp, "'보�
     '업무 화면은 라벨 없는 최상위 묶음으로 통합');
 $check(!str_contains($navPhp, "'계정' =>") && !str_contains($navPhp, "'연동' =>"), '잘게 나뉜 관리 그룹 제거');
 $check(str_contains($navPhp, 'function vg_compliance_subtabs('), '컴플라이언스 서브탭 정의는 nav.php 한 곳');
+$check(str_contains($navPhp, "'changes'  => '변화 추적'")
+    && str_contains($navPhp, "'changes'  => '/changes.php'"),
+    '변화 추적은 탐지 결과 서브탭에서 발견 가능');
 /* 메뉴코드 정본(vg_menus) ↔ 사이드바 'perm' ↔ 화면 가드(vg_require_menu[_any]) 대조.
    셋이 어긋나면 "사이드바에 보이는데 눌러보면 403" 링크가 생긴다. auth.php 는 include 만 해도
    세션을 열고 DB 를 잡으므로 실행하지 않고 소스만 읽는다(이 테스트는 서버 없이 돈다). */

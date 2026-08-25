@@ -154,15 +154,15 @@ function vg_nav_sections(): array {
  *   '탐지 결과' 하나만 있고 변화·제거 권고는 이 줄로만 들어오므로, 세 화면이 글자 그대로
  *   같은 줄을 그려야 사용자가 위치를 잃지 않는다. 내비게이션 정의가 사는 nav.php 에 둔다.
  */
-/*   '변화'(changes.php)는 2026-08-20 이 줄에서 내렸다 — 사용자가 "필요성을 못 느끼겠다" 고
- *   지목한 탭이다. **강등이지 삭제가 아니다**(#562 의 통제 기준 매핑 전례): 파일·쿼리·인가
- *   게이트·감사로그는 그대로고 /changes.php 는 URL 로 계속 열린다. CVE 상세·자산 상세에서
- *   맥락을 달고 가는 개별 이력 링크도 그대로 둔다. */
+/* 변화 추적은 신규·등급 변동·해결과 패키지 변경을 한 화면에서 잇는 업무 화면이다.
+ *   2026-08-20 탭에서 강등했지만 URL 직접 접근만 남아 사용자가 기능을 발견할 수 없었으므로,
+ *   탐지 결과 흐름 안에서 다시 찾을 수 있게 복원한다. */
 function vg_findings_subtab_labels(): array {
     return [
         'cve'      => '취약점(CVE)',
         'cce'      => '보안설정(CCE)',
         'exposure' => '노출',
+        'changes'  => '변화 추적',
         'nofix'    => '제거 권고',
     ];
 }
@@ -182,6 +182,7 @@ function vg_findings_subtabs(string $active, array $overrides = []): void {
         'cve'      => '/findings.php',
         'cce'      => '/findings.php?type=cce',
         'exposure' => '/findings.php?type=exposure',
+        'changes'  => '/changes.php',
         'nofix'    => '/nofix-packages.php',
     ];
     $tabs = [];
