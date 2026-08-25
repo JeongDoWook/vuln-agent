@@ -363,6 +363,20 @@ try {
     $accounts = ['error' => '계정 인벤토리를 저장하지 못했습니다.'];
 }
 
+// 자산 등급 **초안 제안** 갱신 — 확정값(grade)은 건드리지 않는다("판정은 사람이, 초안은 시스템이").
+//   위의 CCE 판정·계정 인벤토리까지 전부 저장된 뒤에 계산해야 등급 제안의 보조(review) 신호
+//   (암호화·로그 통제 FAIL 건수, 계정 수)가 최신 상태를 본다 — 더 일찍(vg_ingest_store 안, CCE
+//   평가 전) 계산하면 첫 수집과 재전송(replay)이 서로 다른 근거를 만들어 이력 유일키가 깨졌다
+//   (server/src/ingest_store.php 참고). 실패해도 수집 자체는 성공으로 응답한다.
+try {
+    $pdo->beginTransaction();
+    vg_asset_grade_observe($pdo, $hostId, $scanId, $collectedAt, $collectionStages);
+    $pdo->commit();
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) { $pdo->rollBack(); }
+    error_log('[ingest] 자산 등급 제안 실패: ' . $e->getMessage());
+}
+
 echo json_encode([
     'ok'        => true,
     'host_id'   => $hostId,
