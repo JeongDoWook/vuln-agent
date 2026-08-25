@@ -22,7 +22,6 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
     $curCrit  = (string) ($host['criticality'] ?? '');
     $sugGrade = $host['grade_suggested'] ?? null;
     $sugReason = (string) ($host['grade_suggested_reason'] ?? '');
-    $missingReview = vg_asset_grade_review_missing($review);
     ?>
     <section class="card mt-lg" aria-labelledby="asset-grade-title">
       <strong id="asset-grade-title">자산 등급</strong>
@@ -90,19 +89,6 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
           <p class="why mt-lg">이전 관찰로 만든 초안 — 이번 수집의 근거 신호는 없음.</p>
         <?php endif; ?>
 
-        <?php /* '정보공개법 제9조 …' 해설 한 줄은 걷었다 — 아래 확정 폼의 '정보공개법 제9조 해당 호'
-                 셀렉트가 그 관계를 이미 자리로 보여준다(근거 항목의 하나일 뿐이라는 것). */ ?>
-        <?php if ($canEdit && !empty($review['is_stale'])): ?>
-          <p class="why">⚠ 일괄 등급 변경 뒤 구조화 검토 정보가 재확인되지 않았습니다.</p>
-        <?php elseif ($canEdit && vg_asset_grade_review_overdue($review)): ?>
-          <p class="why">⚠ 다음 검토일이 지났습니다.</p>
-        <?php elseif ($canEdit && $curGrade !== '' && $missingReview): ?>
-          <p class="why">⚠ 검토 정보 누락: <?= vg_h(implode(', ', $missingReview)) ?></p>
-        <?php endif; ?>
-        <?php /* 여덟 항목을 읽기 전용 정의목록으로 한 번 더 보여주던 자리였다 — 바로 아래 폼의
-                 입력칸이 **같은 값을 같은 순서로** 이미 담고 있고(둘 다 관리자에게만 보였다),
-                 대부분 비어 있어 '–' 여덟 줄이 화면만 먹었다. 값은 아래 폼에서 읽고 고친다. */ ?>
-
         <?php if ($canEdit): ?>
           <form class="setting-form mt-lg" method="post"
                 data-confirm="이 자산의 등급을 확정할까요? 확정자와 시각이 감사로그에 기록됩니다.">
@@ -135,60 +121,12 @@ function vg_host_render_grade(int $hostId, array $host, array $review, string $c
               </label>
             </div>
 
-            <?php /* 확정 근거 아홉 칸의 **접기는 걷었다**(사용자 지적) — 접힌 폼은 채워야 하는
-                     사람에게 곧 못 본 폼이라, "경고가 뜬 자산에서만 펼친다" 는 조건을 달아도
-                     나머지 자산에서는 이 아홉 칸이 있는 줄조차 모른 채 등급만 확정하게 된다.
-                     값은 하나도 안 지운다 — tb_asset_grade_review 에 남는 구조화 검토 근거이고,
-                     등급 확정은 기관의 법적 처분이라 근거를 남기는 것이 이 기능의 목적이다(#550).
-                     세로가 길어지는 문제는 접기가 아니라 **두 칸 격자**가 푼다(아래 .form-grid):
-                     값이 짧은 항목이 대부분이라 아홉 칸이 다섯 줄로 선다. 긴 문장을 받는 두 칸
-                     (확정 근거·검토 문서 참조)만 .form-grid__full 로 한 줄을 그대로 쓴다. */ ?>
-            <div class="grade-review">
-              <p class="grade-review__title">확정 근거 · 구조화 검토 정보 (9개 항목)</p>
-              <div class="grade-review__body form-grid">
-              <label class="field form-grid__full" for="asset-grade-reason">확정 근거
-                <input id="asset-grade-reason" type="text" name="grade_reason" maxlength="255"
-                       placeholder="예: 「정보공개법」 제9조 제6호 해당 업무정보 보유"
-                       value="<?= vg_h((string) ($host['grade_reason'] ?? '')) ?>">
-              </label>
-
-              <label class="field" for="asset-article9-item">정보공개법 제9조 해당 호
-                <select id="asset-article9-item" name="article9_item">
-                  <option value="">미지정</option>
-                  <?php foreach (VG_ASSET_REVIEW_ARTICLE9_ITEMS as $v => $label): ?>
-                    <option value="<?= vg_h((string) $v) ?>"<?= ($review['article9_item'] ?? null) === (string) $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </label>
-              <label class="field" for="asset-article9-reference">조문·판단 참조
-                <input id="asset-article9-reference" name="article9_reference" maxlength="255" value="<?= vg_h((string) ($review['article9_reference'] ?? '')) ?>">
-              </label>
-              <label class="field" for="asset-business-category">업무 유형
-                <input id="asset-business-category" name="business_category" maxlength="100" value="<?= vg_h((string) ($review['business_category'] ?? '')) ?>">
-              </label>
-              <label class="field" for="asset-data-category">데이터 유형
-                <input id="asset-data-category" name="data_category" maxlength="100" value="<?= vg_h((string) ($review['data_category'] ?? '')) ?>">
-              </label>
-              <label class="field" for="asset-owning-department">소유 부서
-                <input id="asset-owning-department" name="owning_department" maxlength="120" value="<?= vg_h((string) ($review['owning_department'] ?? '')) ?>">
-              </label>
-              <label class="field" for="asset-publication-state">외부 공개 상태
-                <select id="asset-publication-state" name="external_publication_state">
-                  <option value="">미지정</option>
-                  <?php foreach (VG_ASSET_REVIEW_PUBLICATION_STATES as $v => $label): ?>
-                    <option value="<?= vg_h($v) ?>"<?= ($review['external_publication_state'] ?? null) === $v ? ' selected' : '' ?>><?= vg_h($label) ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </label>
-              <label class="field form-grid__full" for="asset-review-reference">검토 문서·티켓 참조
-                <input id="asset-review-reference" name="review_reference" maxlength="255" placeholder="예: SEC-1234, 보안검토 회의록 2026-03" value="<?= vg_h((string) ($review['review_reference'] ?? '')) ?>">
-                <span class="why">문서 내용이 아니라 식별자나 위치만 남깁니다.</span>
-              </label>
-              <label class="field" for="asset-next-review-date">다음 검토일
-                <input id="asset-next-review-date" type="date" name="next_review_date" value="<?= vg_h((string) ($review['next_review_date'] ?? '')) ?>">
-              </label>
-              </div>
-            </div>
+            <?php /* 확정 근거 아홉 칸(확정 근거·정보공개법 제9조 관련 구조화 검토 정보)은
+                     이 화면에서 완전히 걷어냈다(사용자 확인) — 값은 tb_asset_grade_review·
+                     tb_host.grade_reason 에 남아 있고 스키마도 그대로다, 이 폼만 안 보여준다.
+                     제출 처리(agent_control.php host_set_grade)는 이 필드들이 $_POST 에
+                     없을 때 기존 저장값을 그대로 유지하도록 처리돼 있다 — 등급만 바꿔도
+                     예전 근거가 null 로 지워지지 않는다. */ ?>
 
             <?php /* 확정 버튼은 오른쪽 끝이다 — 폼의 마지막 조작이 왼쪽 구석에 서면 아홉 칸을
                      훑어 내려온 시선이 되돌아가야 한다(사용자 지적). */ ?>

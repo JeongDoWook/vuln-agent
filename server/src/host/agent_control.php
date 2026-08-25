@@ -75,13 +75,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 검토 정보까지 같은 트랜잭션으로 묶는다. 일괄 확정은 호스트별 검토 정보에 손대지 않는다.
                 //   이 폼은 중요도를 늘 함께 보내므로 빈 값이면 "미지정으로 지움"이 맞다(null 이 아니다).
                 $newGrade = (string) ($_POST['grade'] ?? '');
+                // 확정 근거·구조화 검토 정보 9개 입력칸은 화면(host/grade.php)에서 걷어냈다 —
+                //   이 폼은 더는 grade_reason/article9_item 등을 보내지 않는다. 안 보내진 필드를
+                //   빈 값으로 덮으면 등급·중요도만 바꿔도 기존에 저장된 근거가 매번 null 로
+                //   지워진다 — $_POST 에 없는 필드는 기존 저장값을 그대로 채워 넣는다.
+                $reviewInput = $_POST;
+                if (!array_key_exists('grade_reason', $reviewInput)) {
+                    $st = $pdo->prepare('SELECT grade_reason FROM tb_host WHERE host_id = ?');
+                    $st->execute([$postHostId]);
+                    $existingReason = $st->fetchColumn();
+                    $reviewInput['grade_reason'] = $existingReason !== false ? (string) $existingReason : '';
+                }
+                if (!array_key_exists('article9_item', $reviewInput)) {
+                    $reviewInput += vg_asset_grade_review_load($pdo, $postHostId);
+                }
                 vg_asset_grade_review_confirm(
                     $pdo,
                     $postHostId,
                     $newGrade,
                     (string) ($_POST['criticality'] ?? ''),
-                    (string) ($_POST['grade_reason'] ?? ''),
-                    $_POST,
+                    (string) $reviewInput['grade_reason'],
+                    $reviewInput,
                     $me['id'] ?? null
                 );
                 $agentMsg = $newGrade === ''
