@@ -22,8 +22,9 @@ curl_i() { curl --max-time 30 "$@"; }
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; YELLOW='\033[0;33m'; NC='\033[0m'
 pass=0; fail=0
+FAILMARKER_FILE="$(mktemp)"
 ok() { printf "  ${GREEN}✓${NC} %s\n" "$1"; pass=$((pass+1)); }
-no() { printf "FAILMARKER|%s\n" "$1" >&2; printf "  ${RED}✗${NC} %s\n" "$1"; fail=$((fail+1)); }
+no() { echo "$1" >> "$FAILMARKER_FILE"; printf "  ${RED}✗${NC} %s\n" "$1"; fail=$((fail+1)); }
 assert_eq() { if [ "$1" = "$2" ]; then ok "$3"; else no "$3  (기대=$2, 실제=$1)"; fi; }
 # 통과도 실패도 아닌 세 번째 상태 — **환경이 없어서 못 돈** 검사. 통과로 세면 거짓 초록불이고,
 # 실패로 세면 회귀도 아닌 것에 빨간불이 켜져 스모크를 못 믿게 된다. 그래서 눈에는 보이되
@@ -1351,4 +1352,10 @@ timing_report
 printf "\n${CYAN}== 결과: ${GREEN}%d 통과${NC}, ${RED}%d 실패${NC}" "$pass" "$fail"
 [ "$skip" -gt 0 ] && printf ", ${YELLOW}%d 건너뜀${NC}" "$skip"
 printf " ${CYAN}==${NC}\n"
+if [ -s "$FAILMARKER_FILE" ]; then
+  printf "### FAILMARKER DUMP (진단용) ###\n"
+  cat "$FAILMARKER_FILE"
+  printf "### FAILMARKER DUMP END ###\n"
+fi
+rm -f "$FAILMARKER_FILE"
 [ "$fail" -eq 0 ]
