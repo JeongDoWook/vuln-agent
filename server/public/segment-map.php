@@ -52,18 +52,23 @@ function vg_segment_ip_in_cidr(string $ip, string $cidr): bool
 /* ── 성형(star) 토폴로지의 배치 상수(SVG 논리좌표, px) ──────────────────────
  *   화면 코드에 숫자를 박지 않고 여기 한곳에서만 정한다(depgraph.php 의 VG_DEPTREE_* 와 같은 규약).
  *   값을 바꾸면 대역 그림 전체가 따라온다. */
-const VG_SEGMAP_NODE_W    = 250;   // 자산 노드 박스 폭
-const VG_SEGMAP_NODE_H    = 30;    // 자산 노드 박스 높이
-const VG_SEGMAP_HUB_W     = 168;   // 게이트웨이(허브) 박스 폭
-const VG_SEGMAP_HUB_H     = 52;    // 게이트웨이 박스 높이 — IP 와 대역을 두 줄로 담는다
-const VG_SEGMAP_ARC_GAP   = 44;    // 허브 가장자리와 호(arc) 사이 최소 간격 = 엣지 곡선이 놓이는 폭
-const VG_SEGMAP_ARC_BULGE = 64;    // 호가 허브 높이에서 가장 부푸는 폭(반지름 차이의 상한)
+const VG_SEGMAP_NODE_W    = 310;   // 자산 노드 박스 폭
+const VG_SEGMAP_NODE_H    = 38;    // 자산 노드 박스 높이
+const VG_SEGMAP_HUB_W     = 210;   // 게이트웨이(허브) 박스 폭
+const VG_SEGMAP_HUB_H     = 65;    // 게이트웨이 박스 높이 — IP 와 대역을 두 줄로 담는다
+const VG_SEGMAP_ARC_GAP   = 55;    // 허브 가장자리와 호(arc) 사이 최소 간격 = 엣지 곡선이 놓이는 폭
+const VG_SEGMAP_ARC_BULGE = 80;    // 호가 허브 높이에서 가장 부푸는 폭(반지름 차이의 상한)
 const VG_SEGMAP_ARC_RATIO = 0.35;  // 부풂 = 날개 높이의 이 비율(상한은 위 값) — 노드가 적으면 호를 덜 편다
-const VG_SEGMAP_GAP_Y     = 8;     // 자산 노드 사이 세로 간격
-const VG_SEGMAP_PAD       = 12;    // SVG 바깥 여백
-const VG_SEGMAP_CHAR_W    = 6.4;   // 12px 글자 한 칸의 근사폭 — 이름 말줄임 계산용
-const VG_SEGMAP_META_W    = 46;    // 노드 바깥쪽 칸(수치·상태 글자)의 폭
+const VG_SEGMAP_GAP_Y     = 10;    // 자산 노드 사이 세로 간격
+const VG_SEGMAP_PAD       = 15;    // SVG 바깥 여백
+const VG_SEGMAP_CHAR_W    = 8.0;   // 15px 글자 한 칸의 근사폭 — 이름 말줄임 계산용
+const VG_SEGMAP_META_W    = 58;    // 노드 바깥쪽 칸(수치·상태 글자)의 폭
 const VG_SEGMAP_NODES_MAX = 40;    // 대역 하나에 그리는 노드 상한(넘치면 숫자로 밝힌다)
+const VG_SEGMAP_NODE_PAD  = 15;    // 노드 안쪽 좌우 패딩 — 이름 삽입 여백
+const VG_SEGMAP_NODE_GAP  = 10;    // 이름 칸과 바깥쪽(수치·메타) 칸 사이 간격
+const VG_SEGMAP_OUT_PAD   = 13;    // 바깥쪽 칸(알약·메타)이 노드 테두리에서 떨어지는 여백
+const VG_SEGMAP_PILL_H    = 20;    // 알약(조치 대상 건수) 높이
+const VG_SEGMAP_PILL_CHAR_W = 9.0; // 알약 글자(.segmap__pilltext, 12px) 한 칸의 근사폭
 
 /**
  * 한쪽 날개의 부풂(허브와 같은 높이의 노드가 허브에서 얼마나 더 멀어지는가).
@@ -82,10 +87,10 @@ function vg_segmap_arc_bulge(int $sideCount): float
  *   예전엔 허브를 왼쪽에 두고 자산을 오른쪽 한 열로 쌓았는데, 노드가 전부 같은 x 라 그림이
  *   "선이 붙은 세로 목록"이었고 카드 가로폭의 절반 이상이 빈 채로 남았다(운영 실측).
  *   허브를 가운데 두고 절반씩 좌우로 보내면 **폭을 실제로 쓰면서 높이가 반으로** 준다
- *   (자산 14대: 526×532 → 892×278).
+ *   (자산 14대: 526×532 → 1071×356, NODE_W=310/NODE_H=38 기준).
  *
- *   ★ 왜 "각도 균등"이 아니라 "세로 균등 + 호"인가: 노드는 250×30 짜리 **가로로 긴 직사각형**이다.
- *     원둘레에 같은 각도로 놓으면 12시·6시 쪽에서는 박스들이 가로로 겹치고(250px 을 벌려야 한다),
+ *   ★ 왜 "각도 균등"이 아니라 "세로 균등 + 호"인가: 노드는 310×38 짜리 **가로로 긴 직사각형**이다.
+ *     원둘레에 같은 각도로 놓으면 12시·6시 쪽에서는 박스들이 가로로 겹치고(310px 을 벌려야 한다),
  *     3시·9시 쪽에서만 세로로 안 겹친다 — 같은 각도 간격으로는 두 조건을 동시에 못 맞춘다.
  *     그래서 세로 간격을 노드 높이로 고정해(겹침이 **구조적으로** 불가능) 각도는 그 결과로 나오게
  *     두고, x 만 타원 호로 밀어 부채꼴 모양을 만든다. 노드가 40개(상한)여도 이 성질은 그대로다.
@@ -301,16 +306,17 @@ vg_header('세그먼트 맵', 'segment_map');
           $flip = ($pos['side'] ?? 'r') === 'l';   // 왼쪽 날개 = 좌우 반전
 
           // 바깥쪽 칸: 관리 중이면 조치 대상 건수 알약, 미관리면 상태 글자.
+          //   VG_SEGMAP_PILL_CHAR_W 는 알약 글자(.segmap__pilltext, 12px)의 근사 폭이다.
           $outW = $it['value'] !== null
-              ? max(26.0, strlen($it['value']) * 7.2 + 16)
+              ? max(33.0, strlen($it['value']) * VG_SEGMAP_PILL_CHAR_W + 20)
               : (float) VG_SEGMAP_META_W;
-          $avail = VG_SEGMAP_NODE_W - 12 - 8 - $outW - 10;
+          $avail = VG_SEGMAP_NODE_W - VG_SEGMAP_NODE_PAD - VG_SEGMAP_NODE_GAP - $outW - VG_SEGMAP_OUT_PAD;
           $name  = mb_strimwidth($it['label'], 0, max(4, (int) ($avail / VG_SEGMAP_CHAR_W)), '…');
 
           // 허브를 보는 변에서 안쪽으로 잰 좌표들.
-          $accentX = $flip ? $x + VG_SEGMAP_NODE_W - 5 : $x + 1.5;
-          $nameX   = $flip ? $x + VG_SEGMAP_NODE_W - 12 : $x + 12;
-          $outX    = $flip ? $x + 10 : round($x + VG_SEGMAP_NODE_W - 10 - $outW, 1);
+          $accentX = $flip ? $x + VG_SEGMAP_NODE_W - 6 : $x + 2;
+          $nameX   = $flip ? $x + VG_SEGMAP_NODE_W - VG_SEGMAP_NODE_PAD : $x + VG_SEGMAP_NODE_PAD;
+          $outX    = $flip ? $x + VG_SEGMAP_OUT_PAD : round($x + VG_SEGMAP_NODE_W - VG_SEGMAP_OUT_PAD - $outW, 1);
 
           $svg = '<a href="' . vg_h($it['href']) . '" class="segmap__node">'
               . '<title>' . vg_h($it['title']) . '</title>'
@@ -318,18 +324,19 @@ vg_header('세그먼트 맵', 'segment_map');
               . '<rect class="segmap__box' . ($it['managed'] ? '' : ' segmap__box--gap') . '"'
               . ' x="' . $x . '" y="' . $top . '" width="' . VG_SEGMAP_NODE_W . '" height="' . VG_SEGMAP_NODE_H . '" rx="7"/>'
               . '<rect class="segmap__accent tone-' . vg_h($it['tone']) . '"'
-              . ' x="' . $accentX . '" y="' . ($top + 4) . '" width="3.5" height="' . (VG_SEGMAP_NODE_H - 8) . '" rx="2"/>'
+              . ' x="' . $accentX . '" y="' . ($top + 5) . '" width="4.4" height="' . (VG_SEGMAP_NODE_H - 10) . '" rx="2.5"/>'
               . '<text class="segmap__name' . ($flip ? ' segmap__name--flip' : '') . '"'
               . ' x="' . $nameX . '" y="' . $y . '">' . vg_h($name) . '</text>';
 
           if ($it['value'] !== null) {
               $svg .= '<rect class="segmap__pill tone-' . vg_h($it['tone']) . '" x="' . $outX . '"'
-                  . ' y="' . round($y - 8, 1) . '" width="' . round($outW, 1) . '" height="16" rx="8"/>'
+                  . ' y="' . round($y - VG_SEGMAP_PILL_H / 2, 1) . '" width="' . round($outW, 1)
+                  . '" height="' . VG_SEGMAP_PILL_H . '" rx="' . (VG_SEGMAP_PILL_H / 2) . '"/>'
                   . '<text class="segmap__pilltext tone-' . vg_h($it['tone']) . '"'
                   . ' x="' . round($outX + $outW / 2, 1) . '" y="' . $y . '">' . vg_h($it['value']) . '</text>';
           } else {
               $svg .= '<text class="segmap__meta' . ($flip ? ' segmap__meta--flip' : '') . '"'
-                  . ' x="' . ($flip ? $x + 10 : $x + VG_SEGMAP_NODE_W - 10) . '" y="' . $y . '">'
+                  . ' x="' . ($flip ? $x + VG_SEGMAP_OUT_PAD : $x + VG_SEGMAP_NODE_W - VG_SEGMAP_OUT_PAD) . '" y="' . $y . '">'
                   . vg_h($it['meta']) . '</text>';
           }
           return $svg . '</a>';
@@ -427,9 +434,9 @@ vg_header('세그먼트 맵', 'segment_map');
                 echo '<rect class="segmap__hub' . ($seg['gateway_ip'] === null ? ' segmap__hub--gap' : '') . '"'
                     . ' x="' . $hubL . '" y="' . $hubTop . '" width="' . VG_SEGMAP_HUB_W . '"'
                     . ' height="' . VG_SEGMAP_HUB_H . '" rx="9"/>';
-                echo '<text class="segmap__hubip" x="' . $hubCx . '" y="' . round($hy - 8, 1) . '">'
+                echo '<text class="segmap__hubip" x="' . $hubCx . '" y="' . round($hy - 10, 1) . '">'
                     . vg_h($seg['gateway_ip'] ?? '게이트웨이 미확인') . '</text>';
-                echo '<text class="segmap__hubcidr" x="' . $hubCx . '" y="' . round($hy + 11, 1) . '">'
+                echo '<text class="segmap__hubcidr" x="' . $hubCx . '" y="' . round($hy + 14, 1) . '">'
                     . vg_h($cidr) . '</text>';
 
                 foreach ($l['nodes'] as $i => $pos) { echo $svgNode($pos, $items[$i]); }

@@ -1576,11 +1576,11 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 /* 게이트웨이를 못 찾은 대역 — 없는 것을 있는 것처럼 그리지 않는다(점선 + 무채색). */
 .segmap__hub--gap { stroke: var(--muted-2); stroke-dasharray: 4 3; }
 .segmap__hubip {
-  fill: var(--text); font-size: 13px; font-weight: 700;
+  fill: var(--text); font-size: 16px; font-weight: 700;
   text-anchor: middle; dominant-baseline: central;
 }
 .segmap__hubcidr {
-  fill: var(--muted); font-size: 11px; text-anchor: middle;
+  fill: var(--muted); font-size: 14px; text-anchor: middle;
   dominant-baseline: central; font-variant-numeric: tabular-nums;
 }
 /* 왼쪽 세로 악센트 바 = 이 자산의 최고 심각도(뱃지·도넛·의존성 트리와 같은 톤 어휘). */
@@ -1591,13 +1591,20 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .segmap__accent.tone-low   { fill: var(--low); }
 .segmap__accent.tone-ok    { fill: var(--ok); }
 .segmap__accent.tone-muted { fill: var(--line-2); }
-.segmap__name { fill: var(--text); font-size: 12px; dominant-baseline: central; }
+/* ★ font-size 를 바꾸면 segment-map.php 의 VG_SEGMAP_CHAR_W(≈ 이 font-size × 0.533, 지금
+ * 15px → 8.0)도 같이 맞춰야 한다 — mb_strimwidth() 로 이름을 말줄임할 때 쓰는 글자 한 칸의
+ * 근사폭이라, 여기 font-size 만 바꾸면 실제 글자 폭과 계산이 어긋나 이름이 알약을 뚫고
+ * 나간다. ui_lint.sh 는 이 불일치를 못 잡는다(죽은 클래스·인라인 style 만 본다). */
+.segmap__name { fill: var(--text); font-size: 15px; dominant-baseline: central; }
 /* 왼쪽 날개의 노드는 좌우가 뒤집혀 있다 — 이름이 허브 쪽(박스 오른쪽 변)에서 시작하므로
  * 정렬도 뒤집는다. 안 뒤집으면 말줄임된 이름이 허브 쪽 빈칸으로 흘러 보인다. */
 .segmap__name--flip { text-anchor: end; }
-/* 바깥쪽 칸의 글자(미관리 등 상태) — 알약이 없는 노드가 쓴다. */
+/* 바깥쪽 칸의 글자(미관리 등 상태) — 알약이 없는 노드가 쓴다.
+ * ★ font-size 를 바꾸면 segment-map.php 의 VG_SEGMAP_META_W(≈ 이 font-size × 4.14, 지금
+ * 14px → 58)도 같이 맞춰야 한다 — 이 칸은 글자 수 계산이 아니라 최장 라벨("미관리" 등) 기준
+ * 고정폭이라, 폰트만 커지면 글자 수 계산 없이도 그대로 잘린다. */
 .segmap__meta {
-  fill: var(--muted); font-size: 11px; text-anchor: end; dominant-baseline: central;
+  fill: var(--muted); font-size: 14px; text-anchor: end; dominant-baseline: central;
 }
 .segmap__meta--flip { text-anchor: start; }
 /* 알약 = 조치 대상 건수. 원색을 면으로 깔지 않고 톤 4종 세트(-bg/-fg)를 쓴다 — 다크에서
@@ -1608,8 +1615,11 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .segmap__pill.tone-med  { fill: var(--med-bg); }
 .segmap__pill.tone-low  { fill: var(--low-bg); }
 .segmap__pill.tone-ok   { fill: var(--ok-bg); }
+/* ★ font-size 를 바꾸면 segment-map.php 의 VG_SEGMAP_PILL_CHAR_W(≈ 이 font-size × 0.75, 지금
+ * 12px → 9.0)도 같이 맞춰야 한다 — 알약 폭(outW = strlen(value) × PILL_CHAR_W + 20) 계산이
+ * 이 계수를 쓴다, 안 맞추면 조치 대상 건수 숫자가 알약 밖으로 넘친다. */
 .segmap__pilltext {
-  font-size: 10px; font-weight: 700; text-anchor: middle;
+  font-size: 12px; font-weight: 700; text-anchor: middle;
   dominant-baseline: central; font-variant-numeric: tabular-nums;
 }
 .segmap__pilltext.tone-crit { fill: var(--crit-fg); }
