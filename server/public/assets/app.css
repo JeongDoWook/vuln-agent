@@ -749,12 +749,19 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
   align-items: start;
 }
 .sbom-cols > .card { margin-bottom: 0; }
-/* 목록 칸은 카드 여러 장(생태계별)과 검색·페이저를 세로로 담는 칸이다 — 칸 자체는 카드가 아니다. */
-.sbom-cols__list { min-width: 0; }
+/* 목록 칸은 카드 여러 장(생태계별)과 검색·페이저를 세로로 담는 칸이다 — 칸 자체는 카드가 아니다.
+ * grid-column 을 3번째로 못박는다 — 안 박으면 도넛 아래 실데이터 카드(auto-placement)가 먼저
+ * 3번째 칸을 차지해 버려서 이 목록이 되레 다음 행 1번째(좁은 1fr)로 밀려난다(실측). 명시한
+ * 칸은 auto 배치보다 먼저 자리를 잡으므로(CSS 그리드 배치 순서), 이 목록은 항상 3번째 칸에
+ * 남고 실데이터 카드는 그 아래 남은 1·2번째 칸으로 자연스럽게 떨어진다. */
+.sbom-cols__list { min-width: 0; grid-column: 3; }
 .sbom-cols__list > .card:last-of-type { margin-bottom: 0; }
 /* 컴포넌트가 하나도 없으면 도넛 두 장이 서지 않는다 — 목록만 남은 줄은 전폭으로 편다
  * (안 그러면 빈 칸 둘을 남기고 목록이 오른쪽 끝에 붙는다). */
 .sbom-cols--empty { grid-template-columns: minmax(0, 1fr); }
+/* 위에서 못박은 grid-column:3 은 칸이 3개일 때만 유효하다 — 빈 상태(컬럼 1개)에서 그대로 두면
+ * 존재하지 않는 3번째 칸을 암시적으로 만들어 목록이 옆으로 새 버린다. */
+.sbom-cols--empty .sbom-cols__list { grid-column: 1; }
 /* 1120px 아래로는 도넛 둘만 나란히 두고 목록을 다음 줄 전폭으로 내린다 — 절반 폭에 표 네 열이
  * 들어가지 않는 지점이다. 더 좁아지면 셋 다 한 장씩 세로로 선다. */
 @media (max-width: 1120px) {
@@ -762,6 +769,14 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
   .sbom-cols__list { grid-column: 1 / -1; }
 }
 @media (max-width: 700px) { .sbom-cols { grid-template-columns: minmax(0, 1fr); } }
+/* 도넛 아래 실데이터 카드(라이선스 미상/카피레프트) 목록 — 도넛과 같은 좁은 칸(1fr)에 서므로
+ * 표(vg_table) 대신 이름 한 줄 + 버전·생태계 한 줄로 세로로 쌓는다. */
+.sbom-riskpkgs { display: flex; flex-direction: column; gap: .35rem; }
+.sbom-riskpkgs__name {
+  display: block; font-weight: 600; color: var(--text); text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+a.sbom-riskpkgs__name:hover { text-decoration: underline; }
 /* 칸 수를 **둘로 못박는** 변형. 기본 .card-row 는 auto-fit(19rem) 이라 넓은 화면에서 3~4칸까지
  * 늘어나는데, 표가 든 카드는 그 폭에서 값이 접혀 행이 두세 줄이 되고 세로가 되레 길어진다.
  * 1340px 은 실측 하한이다 — 데이터 수집(연결기 4장)을 2열로 세운 뒤 폭을 낮춰 재면
