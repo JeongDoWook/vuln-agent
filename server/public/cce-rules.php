@@ -112,11 +112,11 @@ try {
         ));
     }
 
-    // 위반이 많은 항목이 먼저, 그다음 심각도, 그다음 코드 — 매번 같은 순서가 나오게 고정한다.
+    // PASS(준수) 많은 항목이 먼저, 그다음 심각도, 그다음 코드 — 매번 같은 순서가 나오게 고정한다.
     $sevRank = ['HIGH' => 0, 'MEDIUM' => 1, 'LOW' => 2];
     usort($rules, function (array $a, array $b) use ($sevRank): int {
-        return [$b['fail_cnt'], $sevRank[$a['severity']] ?? 9, $a['code']]
-           <=> [$a['fail_cnt'], $sevRank[$b['severity']] ?? 9, $b['code']];
+        return [$b['pass_cnt'], $sevRank[$a['severity']] ?? 9, $a['code']]
+           <=> [$a['pass_cnt'], $sevRank[$b['severity']] ?? 9, $b['code']];
     });
 
     $total = count($rules);
