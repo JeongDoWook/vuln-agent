@@ -250,11 +250,10 @@ $check(str_contains($assetsPhp, "['label' => 'IP'")
     '자산 목록 IP 열은 조회 한 번으로 묶은 대표 IP 를 쓴다');
 $check(str_contains($hostPhpSrc, "'IP ' . vg_h(\$host['last_seen_ip'])")
     && str_contains($hostPhpSrc, "\$meta[] = '에이전트 <code>'")
-    && str_contains($hostPhpSrc, "vg_badge('구버전', 'med'")
-    // 소유 부서는 '자산 설정' 탭의 등급 검토 폼이 갖는다. 읽기 전용 정의목록(<dt>소유 부서</dt>)은
-    //   같은 값을 바로 아래 입력칸이 이미 보여주고 있어 걷었다 — 값을 들고 있는 입력을 확인한다.
-    && str_contains($hostPhpSrc, 'name="owning_department"'),
-    '옮긴 값이 호스트 상세에 남아 있음(IP·OS·에이전트 구버전 신호·소유 부서)');
+    && str_contains($hostPhpSrc, "vg_badge('구버전', 'med'"),
+    // 소유 부서 입력칸(owning_department)은 등급 확정 폼의 구조화 검토 정보 9개 항목과
+    //   함께 화면에서 완전히 걷어냈다(host-grade-simplify) — DB 값·목록 열은 그대로다.
+    '옮긴 값이 호스트 상세에 남아 있음(IP·OS·에이전트 구버전 신호)');
 $check(str_contains($ingestPhp, "vg_request_header('X-Real-IP')") && str_contains($caddyfile, 'header_up X-Real-IP {remote_host}'),
     'Caddy 원본 IP 전달과 ingest 저장 연계');
 $check(str_contains($agentSh, 'CPU_QUOTA="${CPU_QUOTA:-10%}"') && str_contains($agentSh, 'DO_LIMIT="${AGENT_LIMIT:-1}"'),
