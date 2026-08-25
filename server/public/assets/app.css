@@ -756,17 +756,23 @@ h2 { font-size: var(--fs-lg); letter-spacing: -.02em; margin: var(--sp-5) 0 var(
  * 아이템이다. 도넛 2장이 row1 을 채우면 리스크카드는 auto-placement 로 자연히 row2 에
  * 앉는다(DOM 순서: 도넛1, 도넛2, unknown, copyleft) — 옆의 .sbom-cols__list 는 이 grid 안에
  * 아예 없으므로 목록 칸을 가로챌 여지가 구조적으로 없다(예전 grid-column/grid-row 못박기가
- * 필요 없어졌다). flex:1 — 목록(flex:2)과 1:2 비율로 예전 1fr+1fr : 2fr 폭을 그대로 유지한다. */
+ * 필요 없어졌다). flex:2 — 목록(flex:2)과 1:1 비율. 옛 3열 grid 는 도넛 2열이 각 1fr, 목록이
+ * 2fr 이라 왼쪽 두 칸의 합은 전체 폭의 절반이었다 — flex:1 로 두면 왼쪽이 전체 폭의 1/3로
+ * 줄어 도넛 카드 내부 폭이 .donut-kpi 줄바꿈 임계(약 288px)보다 좁아지고, 1680px 이하 대부분의
+ * 실사용 폭에서 범례가 아래로 접힌다(PR #809 회귀 재발, 2026-08-25 리뷰로 발견). align-items:
+ * start — 미상/카피레프트 리스크카드는 내용 길이가 서로 달라, stretch(기본값)면 짧은 쪽이 긴
+ * 쪽 높이만큼 억지로 늘어나 빈 공간이 생긴다(#810-A 와 같은 유형). */
 .sbom-cols__left {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
   gap: var(--sp-3);
-  flex: 1;
+  flex: 2;
   min-width: 0;
 }
 .sbom-cols__left > .card { margin-bottom: 0; }
 /* 목록 칸은 카드 여러 장(생태계별)과 검색·페이저를 세로로 담는 칸이다 — 칸 자체는 카드가 아니다.
- * flex:2 — 왼쪽(flex:1)의 두 배 폭, 예전 grid 의 2fr 비율과 동일하다. */
+ * flex:2 — 왼쪽(flex:2)과 1:1, 옛 grid 의 (1fr+1fr) : 2fr 폭 비율과 동일하다. */
 .sbom-cols__list { min-width: 0; flex: 2; }
 .sbom-cols__list > .card:last-of-type { margin-bottom: 0; }
 /* 1120px 아래로는 도넛 둘만 나란히 두고 목록을 다음 줄 전폭으로 내린다 — 절반 폭에 표 네 열이

@@ -515,7 +515,7 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
       <?php // 카드 제목은 도넛과 같은 vg_license_risk_label() 로 만든다 — 위험도 한글 라벨을
             //   여기서 다시 문자열로 적으면 도넛·이 카드 두 곳에 같은 말이 흩어진다. ?>
       <?php foreach (['unknown', 'copyleft'] as $riskKey): if (!$riskPkgs[$riskKey]) { continue; } ?>
-      <div class="card card--riskpkgs card--riskpkgs-<?= $riskKey ?>">
+      <div class="card card--riskpkgs">
         <strong><?= vg_h(vg_license_risk_label($riskKey)) ?> 라이선스 컴포넌트</strong>
         <span class="why"><?= number_format(count($riskPkgs[$riskKey])) ?>개</span>
         <div class="card__body">
