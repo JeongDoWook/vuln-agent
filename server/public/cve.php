@@ -92,6 +92,8 @@ $tone    = $sevUp !== null ? vg_sev_tone($sevUp) : 'muted';
 $due = $kev['due_date'] ?? null;
 $dLeft = null; $overdue = false;
 if ($due) {
+    // diff() 는 오늘→기한 방향으로 계산한다 — 기한이 이미 지났으면 방향이 뒤집혀 invert 가 서고,
+    //   포맷 %r 이 그 부호(-)를 붙여준다. 그래서 dLeft 가 음수면 곧 초과(overdue)라는 뜻이다.
     $dLeft   = (int) (new DateTimeImmutable('today'))->diff(new DateTimeImmutable((string) $due))->format('%r%a');
     $overdue = $dLeft < 0;
 }

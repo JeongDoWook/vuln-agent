@@ -6,6 +6,9 @@ require __DIR__ . '/../src/auth.php';
 vg_require_menu('assets');   // 수집 제어 현황: 자산관리와 같은 인가 범위(host.php POST 와 동일)
 
 $pdo = vg_pdo();
+// 호스트별로 "지금 볼 만한" 명령 1건만 남긴다: 진행 중(pending/running)이거나, 끝난 지
+//   1시간 이내(done/failed)인 것만 후보로 삼고, NOT EXISTS 로 같은 호스트에서 더 최신인
+//   후보가 있으면 그 이전 행을 제외한다(호스트당 latest-row 안티조인).
 $sql = <<<'SQL'
 SELECT c.agent_command_id,c.host_id,c.status,c.progress_percent,c.progress_stage,c.progress_message,
        c.run_at,c.created_at,c.started_at,c.heartbeat_at,c.executed_at,

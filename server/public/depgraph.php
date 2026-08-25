@@ -239,6 +239,9 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
    *   대상에서 **자식 방향**으로 내려가는 트리라 루트→대상 경로(조상 방향)의 노드가 그
    *   트리 안에 없다. pathedge 를 그대로 넘기면 대상 노드 하나만 빼고 트리 전체가
    *   "경로 밖"으로 흐려져 버린다 — 이 탭에는 강조할 경로 자체가 없으므로 꺼 둔다. */
+  // use(&$nodeBudget) 로 참조부터 잡고 초기값은 한 줄 아래서 넣는다 — PHP 는 참조 캡처 시점에
+  //   변수가 없어도 그 자리를 먼저 만들어 두므로 이 순서로도 안전하다. $drawTree 호출은
+  //   전부 $nodeBudget 대입 뒤에 일어나므로(아래 루프들) 클로저는 항상 최신 잔여 예산을 본다.
   $drawTree = function (string $root, array $ctxOverride = []) use ($graph, $treeCtx, &$nodeBudget): void {
       vg_deptree_render($graph, $root, $nodeBudget, $ctxOverride + $treeCtx);
   };
