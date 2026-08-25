@@ -1541,11 +1541,11 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 /* 게이트웨이를 못 찾은 대역 — 없는 것을 있는 것처럼 그리지 않는다(점선 + 무채색). */
 .segmap__hub--gap { stroke: var(--muted-2); stroke-dasharray: 4 3; }
 .segmap__hubip {
-  fill: var(--text); font-size: 13px; font-weight: 700;
+  fill: var(--text); font-size: 16px; font-weight: 700;
   text-anchor: middle; dominant-baseline: central;
 }
 .segmap__hubcidr {
-  fill: var(--muted); font-size: 11px; text-anchor: middle;
+  fill: var(--muted); font-size: 14px; text-anchor: middle;
   dominant-baseline: central; font-variant-numeric: tabular-nums;
 }
 /* 왼쪽 세로 악센트 바 = 이 자산의 최고 심각도(뱃지·도넛·의존성 트리와 같은 톤 어휘). */
@@ -1556,13 +1556,13 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .segmap__accent.tone-low   { fill: var(--low); }
 .segmap__accent.tone-ok    { fill: var(--ok); }
 .segmap__accent.tone-muted { fill: var(--line-2); }
-.segmap__name { fill: var(--text); font-size: 12px; dominant-baseline: central; }
+.segmap__name { fill: var(--text); font-size: 15px; dominant-baseline: central; }
 /* 왼쪽 날개의 노드는 좌우가 뒤집혀 있다 — 이름이 허브 쪽(박스 오른쪽 변)에서 시작하므로
  * 정렬도 뒤집는다. 안 뒤집으면 말줄임된 이름이 허브 쪽 빈칸으로 흘러 보인다. */
 .segmap__name--flip { text-anchor: end; }
 /* 바깥쪽 칸의 글자(미관리 등 상태) — 알약이 없는 노드가 쓴다. */
 .segmap__meta {
-  fill: var(--muted); font-size: 11px; text-anchor: end; dominant-baseline: central;
+  fill: var(--muted); font-size: 14px; text-anchor: end; dominant-baseline: central;
 }
 .segmap__meta--flip { text-anchor: start; }
 /* 알약 = 조치 대상 건수. 원색을 면으로 깔지 않고 톤 4종 세트(-bg/-fg)를 쓴다 — 다크에서
@@ -1574,7 +1574,7 @@ a.rank__row:hover { background: var(--surface-2); color: var(--text); text-decor
 .segmap__pill.tone-low  { fill: var(--low-bg); }
 .segmap__pill.tone-ok   { fill: var(--ok-bg); }
 .segmap__pilltext {
-  font-size: 10px; font-weight: 700; text-anchor: middle;
+  font-size: 12px; font-weight: 700; text-anchor: middle;
   dominant-baseline: central; font-variant-numeric: tabular-nums;
 }
 .segmap__pilltext.tone-crit { fill: var(--crit-fg); }
