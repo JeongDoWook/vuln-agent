@@ -41,6 +41,10 @@ const VG_PKG_TABS = [
 
 $tab = (string) ($_GET['tab'] ?? 'os');
 if (!isset(VG_PKG_TABS[$tab])) { $tab = 'os'; }
+// 데이터 로딩·뷰 렌더 분기가 서로 다른 탭을 "기본"으로 가정하면(각자 다른 방향으로 반전)
+//   3번째 탭이 추가되는 순간 한쪽만 조용히 어긋난다(#476 항목1) — 판정은 이 한 곳에서만 하고
+//   나머지는 전부 이 불린을 참조한다.
+$isOsTab = ($tab === array_key_first(VG_PKG_TABS));
 
 $err = null;
 $page = vg_page();
@@ -66,7 +70,7 @@ if (!isset($riskOptions[$risk])) { $risk = ''; }
 try {
     $pdo = vg_pdo();
 
-    if ($tab === 'os') {
+    if ($isOsTab) {
         // 배포판 목록·개수·정렬은 사전집계 요약(tb_package_summary)에서 읽는다. 원본
         //   tb_cve_affected_package(92만 행)를 매 로드 재집계하던 걸(운영 ~8초) OSV 실행 때 한 번
         //   요약해 둔 것(vg_rebuild_package_summary). 40K행이라 즉답이다.
@@ -198,12 +202,12 @@ try {
     $err = '처리 중 오류가 발생했습니다.';
 }
 
-vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'packages');
+vg_header($isOsTab ? '패키지' : '언어 패키지 · 라이선스', 'packages');
 ?>
-  <?php if ($tab === 'lang'): ?>
-    <?php vg_page_title('언어 패키지 · 라이선스', 'SCA', ['count' => $langTotal, 'count_label' => '건']); ?>
-  <?php else: ?>
+  <?php if ($isOsTab): ?>
     <?php vg_page_title('패키지', 'PACKAGES', ['count' => $total, 'count_label' => '종']); ?>
+  <?php else: ?>
+    <?php vg_page_title('언어 패키지 · 라이선스', 'SCA', ['count' => $langTotal, 'count_label' => '건']); ?>
   <?php endif; ?>
 
   <?php
@@ -221,7 +225,7 @@ vg_header($tab === 'lang' ? '언어 패키지 · 라이선스' : '패키지', 'p
 
 <?php if ($err !== null): ?>
   <?php vg_alert('오류 · ' . $err); ?>
-<?php elseif ($tab === 'lang'): ?>
+<?php elseif (!$isOsTab): ?>
 
   <div class="cards">
     <?php foreach (['copyleft', 'permissive', 'unknown'] as $rk): ?>

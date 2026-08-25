@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * license_risk.php — SPDX 라이선스 식별자 → 위험도(permissive/copyleft/unknown) 판정.
- *   language-packages.php(목록)·language-package.php(상세, 있다면)가 공유하는 단일 헬퍼(DRY).
+ *   packages.php의 언어 패키지 탭(?tab=lang)·sbom.php(SBOM 시각화 보기)가 공유하는 단일 헬퍼(DRY).
  *   목록은 바뀔 일이 거의 없는 알려진 SPDX 어휘라 하드코딩한다 — 범용 설정으로 감쌀 만큼
  *   가변적이지 않다.
  */

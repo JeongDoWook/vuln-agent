@@ -918,8 +918,13 @@ phase "패키지 화면 서브탭(os/lang)"
 # --- 패키지 화면 서브탭(os/lang) ---------------------------------------------
 #   language-packages.php 는 packages.php 의 언어 탭으로 흡수됐다 — 옛 링크는 쿼리스트링을
 #   유지한 채 302 리다이렉트돼야 하고, 잘못된 tab 값은 조용히 OS 탭으로 떨어져야 한다.
+#   packages.php 와 동일하게 인가가 걸려 있다(#476 항목3) — 미인증은 login.php 로,
+#   인증된 요청만 packages.php?tab=lang 로 리다이렉트된다.
 printf "\n[패키지 서브탭]\n"
-langredirect=$(curl_ -s -o /dev/null -w '%{http_code} %{redirect_url}' "$BASE/language-packages.php?q=test")
+anonlangredirect=$(curl_ -s -o /dev/null -w '%{http_code} %{redirect_url}' "$BASE/language-packages.php?q=test")
+assert_contains "$anonlangredirect" '302' "미인증 옛 언어 패키지 화면 → 302 리다이렉트"
+assert_contains "$anonlangredirect" 'login.php' "미인증 요청은 로그인 화면으로(패키지 화면으로 새지 않음)"
+langredirect=$(curl_ -s -b "$JAR" -o /dev/null -w '%{http_code} %{redirect_url}' "$BASE/language-packages.php?q=test")
 assert_contains "$langredirect" '302' "옛 언어 패키지 화면 → 302 리다이렉트"
 assert_contains "$langredirect" 'tab=lang' "리다이렉트가 언어 탭으로 이동"
 assert_contains "$langredirect" 'q=test' "리다이렉트가 기존 쿼리스트링(q) 유지"
