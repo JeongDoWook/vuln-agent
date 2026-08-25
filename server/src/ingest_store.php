@@ -220,12 +220,16 @@ function vg_ingest_store(PDO $pdo, array $host, array $parsed): array
     // 수집 결과가 같아 기존 스냅샷을 재사용하더라도 실행 사실과 실행별 자원값은 항상 남긴다.
     vg_ingest_store_scan_run($pdo, $hostId, $scanId, $collectedAt, $unchanged, $pkgCount, $expCount, $meta);
 
-    // 자산 등급 **초안 제안** 갱신 — 확정값(grade)은 건드리지 않는다("판정은 사람이, 초안은 시스템이").
-    //   노출·프로세스가 이미 이 트랜잭션에 들어와 있으므로 여기서 계산해야 최신 데이터를 본다.
-    //   동일 스냅샷 재전송(unchanged)이어도 기존 scan_id 의 행을 그대로 읽으므로 결과는 같다.
-    vg_asset_grade_observe($pdo, $hostId, $scanId, $collectedAt, $collectionStages);
-
     $pdo->commit();
+
+    // 자산 등급 **초안 제안** 관찰은 여기서 하지 않는다 — CCE 평가(vg_evaluate_cce)와 계정
+    //   인벤토리(vg_ingest_accounts)가 이 함수 밖(ingest.php, 이 트랜잭션 커밋 후)에서 도는데,
+    //   등급 제안의 보조(review) 신호가 그 두 테이블(tb_cce_finding·tb_host_account)을 읽는다.
+    //   여기서 계산하면 "최초 수집"엔 그 데이터가 아직 없어 근거(reason)에 안 잡히고, 같은
+    //   스캔을 그대로 재전송(replay)했을 때는 이미 채워져 있어 근거가 달라진다 — 유일키
+    //   (host_id,scan_id,result_fingerprint) 로 replay 를 걸러야 하는데 그 fingerprint 가
+    //   그때그때 달라져 이력이 계속 늘어났다(실측: 첫 수집 직후 즉시 재전송 시 100% 재현).
+    //   호출은 ingest.php 가 CCE·계정까지 전부 저장한 뒤 한다 — server/public/ingest.php 참고.
 
     return [
         'host_id'   => $hostId,
