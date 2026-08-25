@@ -196,7 +196,7 @@ function vg_connectors_render_form(?array $edit, array $econn, array $esched, st
       <?php endif; ?>
       <pre id="vgPrev" class="out" hidden></pre>
       <?php vg_modal_foot($edit ? '저장' : '추가', ['extra' =>
-          // "API 미리보기" 였는데 13종 중 절반은 API 가 아니다(정적 파일·gz/bz2 덤프·RSS).
+          // "API 미리보기" 였는데 코드 지원 12종 중 절반은 API 가 아니다(정적 파일·gz/bz2 덤프·RSS).
           // 주작업(저장)은 아니지만 저장 전에 눌러 보라고 권하는 버튼이라, ghost 보다 분명한 btn--secondary.
           '<button type="button" id="vgPrevBtn" class="btn btn--secondary" data-loading="조회 중…" data-feed-preview>미리보기 (10건)</button>']); ?>
     </form>
