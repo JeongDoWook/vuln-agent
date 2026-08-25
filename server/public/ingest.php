@@ -5,7 +5,8 @@ declare(strict_types=1);
  * ingest.php — 수집 에이전트가 보낸 JSON 을 받아 중앙 DB 에 저장한다.
  *   인증 : 호스트 바인딩 토큰 (헤더 X-Agent-Token 또는 Authorization: Bearer)
  *   본문 : vuln-inventory-agent.sh (jq 모드) 가 만든 JSON
- *   저장 : hosts → scans → packages / exposures  (하나의 트랜잭션)
+ *   저장 : hosts → scans → packages / containers / exposures / 의존그래프 / 근거(changelog·errata·
+ *          debsecan) / 무결성 등 전 스트림을 vg_ingest_store() 가 하나의 트랜잭션으로 묶는다
  */
 
 header('Content-Type: application/json; charset=utf-8');
@@ -172,7 +173,8 @@ $ctr = $data['containers'] ?? [];
 $ctrRows     = vg_ingest_parse_container_list((string) ($ctr['list'] ?? ''));
 $ctrPkgRows  = vg_ingest_parse_container_packages((string) ($ctr['packages'] ?? ''));
 $ctrProcRows = vg_ingest_parse_container_processes((string) ($ctr['processes'] ?? ''));
-$ctrExpRows  = vg_ingest_parse_container_exposures((string) ($ctr['exposure'] ?? ''));$sbom = vg_ingest_parse_sbom((string) ($ctr['sbom'] ?? ''));
+$ctrExpRows  = vg_ingest_parse_container_exposures((string) ($ctr['exposure'] ?? ''));
+$sbom = vg_ingest_parse_sbom((string) ($ctr['sbom'] ?? ''));
 $ctrPkgRows = array_merge($ctrPkgRows, $sbom['packages']);
 foreach ($sbom['meta'] as $cid => $sm) {
     if (isset($ctrRows[$cid])) { $ctrRows[$cid][13]=$sm[0]; $ctrRows[$cid][14]=$sm[1]; }
