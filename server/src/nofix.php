@@ -25,7 +25,8 @@ require_once __DIR__ . '/distro.php';   // vg_osv_ecosystem / vg_eco_matches —
  *   min_cnt   : no_fix 가 이 건수 이상일 때만 "몰려 있다" 고 본다(1~2건은 그냥 개별 CVE 다).
  *   min_ratio : 그 패키지 CVE 중 no_fix 비율. 낮으면 아직 패치로 줄일 여지가 있다는 뜻이라
  *               "제거" 권고가 과하다.
- * ※ 설정 이관 예정(tb_setting) — 지금은 다른 워커가 그 테이블을 만드는 중이라 상수로 둔다.
+ * ※ tb_setting(20260808110238_setting.sql)은 그 뒤 만들어져 compliance.php 의 SLA 값 등은
+ *   옮겨졌지만, 이 값은 아직 상수로 남아 있다 — 이관은 별도 결정 사항.
  */
 const VG_NOFIX_ADVICE = ['min_cnt' => 10, 'min_ratio' => 0.8];
 
