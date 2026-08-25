@@ -1,6 +1,6 @@
 # vuln-agent 아키텍처
 
-> **현행 기준: 2026-08-24**(`main` ef5db37) · 에이전트 3.23 · 피드 커넥터 13종 ·
+> **현행 기준: 2026-08-24**(`main` ef5db37) · 에이전트 3.23 · 피드 커넥터 11종 가동(+ pkgregistry 미시드, 코드는 12종 지원) ·
 > CCE 39항목 · 기반시설 U-코드 72항목 · 도메인 테이블 61개.
 > 이 기준일까지 무엇이 들어왔는지(단계별 현황)는 [`CONTEXT.md`](../../CONTEXT.md).
 
@@ -337,10 +337,11 @@ SBOM 과 pom.xml 에서 부모→자식 엣지를 뽑아 `tb_package_dependency`
 claude-pipeline 의 Connector/CollectionLog 패턴을 참고 — UI 에서 소스를 설정·스케줄하면 스케줄러가
 주기적으로 당겨와 매처가 재계산한다. 커넥터 = `{type, connection(url·key·ecosystem 등 타입별), schedule, enabled}`. 타입 카탈로그의
 SSOT 는 `VG_CONNECTOR_TYPES`(`server/src/feeds.php`) **하나**이고, 그 한 줄이 구현·폼 `<select>`·
-저장 검증·수집 방식 표시·노출 필드를 전부 정한다(OCP). 13종은 기준정보·우선순위(`kev`·`osv`·`nvd`·
-`kisa`·`epss`) / 벤더·업스트림 판정(`debtracker`·`rhoval`·`rhunfixed`·`kcve`·`ubuntuoval`) /
-설정 룰셋(`ssg`) / 패키지 레지스트리 메타데이터(`pkgregistry`) / 범용(`generic_api`)이고, 역할별
-차이는 [`피드소스-역할.md`](피드소스-역할.md).
+저장 검증·수집 방식 표시·노출 필드를 전부 정한다(OCP). 코드가 지원하는 타입은 13종(고정 12+범용1)
+— 기준정보·우선순위(`kev`·`osv`·`nvd`·`kisa`·`epss`) / 벤더·업스트림 판정(`debtracker`·`rhoval`·
+`rhunfixed`·`kcve`·`ubuntuoval`) / 설정 룰셋(`ssg`) / 패키지 레지스트리 메타데이터(`pkgregistry`) /
+범용(`generic_api`)이지만, 그중 `pkgregistry`는 어떤 환경에도 인스턴스가 시드돼 있지 않아 실제
+가동은 11종 + 범용이다. 역할별 차이는 [`피드소스-역할.md`](피드소스-역할.md).
 
 | 항목 | 내용 |
 |---|---|
