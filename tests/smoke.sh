@@ -325,8 +325,15 @@ phase "UI 정적 검사"
 # 서버를 치기 전에 먼저 돈다(죽은 CSS 클래스·인라인 style·조용히 잘리는 목록).
 # 여기서 걸리면 화면은 200 을 주면서도 스타일이 안 입혀지거나 데이터가 잘려 나간다 —
 # curl 로는 절대 안 잡히는 종류라 정적으로 본다.
-if ! "$ROOT/tests/ui_lint.sh"; then
-  fail=$((fail+1))
+# `bash` 로 감싸 호출한다 — git 인덱스의 ui_lint.sh 는 실행 비트가 없어(100644), 로컬처럼
+# 디스크에 우연히 +x 가 붙어 있지 않은 **깨끗한 checkout**(CI)에서는 셔뱅 직접 실행이
+# "Permission denied" 로 죽는다. 이 if 는 그 실패를 no() 없이 fail 만 올려 완전히
+# 무증상으로 삼켰었다 — 실제로 CI 스모크가 이 이유로 조용히 실패했다(원인 규명에 상당한
+# 시간이 걸렸다). 이제 실패하면 no() 로 사유를 남긴다.
+if bash "$ROOT/tests/ui_lint.sh"; then
+  :
+else
+  no "UI 정적 검사 실패 (tests/ui_lint.sh — 위 상세 출력 참고)"
 fi
 
 phase "단위테스트 선(先)실행"
