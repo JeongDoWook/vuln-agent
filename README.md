@@ -1,6 +1,6 @@
 # vuln-agent
 
-![License](https://img.shields.io/badge/license-AGPL--3.0-blue) ![Contest](https://img.shields.io/badge/2026_오픈소스_개발자대회-자유과제-informational) ![PHP](https://img.shields.io/badge/PHP-8.3-777bb4) ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1)
+[![CI](https://github.com/JeongDoWook/vuln-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/JeongDoWook/vuln-agent/actions/workflows/ci.yml) ![License](https://img.shields.io/badge/license-AGPL--3.0-blue) ![Contest](https://img.shields.io/badge/2026_오픈소스_개발자대회-자유과제-informational) ![PHP](https://img.shields.io/badge/PHP-8.3-777bb4) ![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1)
 
 > 설치된 취약점의 **개수**가 아니라 **지금 이 서버에서 실제로 위험한 것**을 먼저 보여주는 경량 취약점 진단 플랫폼.
 > 실행 맥락으로 판단하고, 억제한 결과도 판정 근거와 조치를 남겨 숨기지 않습니다.
@@ -83,6 +83,7 @@ AI 보고서는 설정(설정 화면 → AI 보고서 → 보고서 API 주소)�
 
 - 명세 — [데이터베이스](docs/dev/데이터베이스.md) · [Excel 명세서](docs/specs/테이블명세서.xlsx) · [Export API](docs/dev/export-api.md)(SBOM 은 `GET /sbom.php`)
 - 규칙 — [CONTEXT.md](CONTEXT.md) · [CLAUDE.md](CLAUDE.md) · [지난 작업의 실측 기록](docs/dev/archive/)
+- 기여 — [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## 라이선스
 
