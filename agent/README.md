@@ -1,6 +1,6 @@
 # vuln-agent 에이전트 — 설치·운영 가이드
 
-> **현행 버전: 3.22** (문서 기준 2026-08-22). 실제 값은 `vuln-inventory-agent.sh` 의
+> **현행 버전: 3.23** (문서 기준 2026-08-25). 실제 값은 `vuln-inventory-agent.sh` 의
 > `SCRIPT_VERSION` 이 정본이다.
 
 > ## ⚠ 3.15 로 올라갈 때는 **노드에서 한 번 갱신 작업이 필요하다**
@@ -26,6 +26,7 @@
 
 | 버전 | 들어간 것 |
 |---|---|
+| 3.23 | busybox 등 `grep -P`(PCRE) 가 없는 최소 호스트에서 Go 바이너리 의존 폴백이 `grep -aoP` 로 실패한 채 조용히 0건이 되던 미탐(2>/dev/null 에 삼켜짐) 수정 — `tr`+`awk` 로 대체. nginx 업스트림 버전 추출의 `\d`(PCRE 전용)도 POSIX 패턴(`[0-9][0-9]*`)으로 교체 |
 | 3.22 | cgroup 재실행 때 수집 토큰을 `--token` 인자 대신 env(`--setenv` + export)로 넘긴다 — 재실행된 프로세스가 수집 내내 살아 있어 `ps aux`/`/proc/<pid>/cmdline` 로 그 호스트의 아무 사용자나 중앙 수집 토큰을 읽어가던 문제(CWE-214). 재실행 경계에서 토큰이 유실되면 조용히 무인증 전송하지 않고 즉시 실패한다 |
 | 3.21 | 무결성 검사에서 문서·man·번역·info 경로를 제외(`VERIFY_EXCLUDE_PREFIXES`) — 문서를 안 깐 이미지에서 오탐 1만여 건이 진짜 신호를 파묻던 문제 |
 | 3.20 | jq 없는 노드의 폴백 파서가 JSON 이스케이프(`\/`)를 풀지 않아 `update_signature`(base64)가 깨지던 회귀 수정 — 자동 업데이트가 전 노드에서 `signature_invalid` 로 죽었다. 서버(`agent-poll.php`)도 `JSON_UNESCAPED_SLASHES` 로 함께 고쳤다 |

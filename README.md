@@ -40,6 +40,7 @@
 수집 → 연결 → 검증 → 조치의 네 단계는 맨 위 흐름도에 있습니다. 그림이 말하지 않는 것만 적으면 —
 에이전트는 systemd 상시 서비스로 10초마다 명령을 확인하고([리소스 프로파일](docs/dev/에이전트-리소스-프로파일.md)),
 전송은 **아웃바운드 HTTPS 한 방향**입니다. 예외는 하나, 에이전트가 없는 IP는 중앙이 직접 스윕합니다.
+목업이 아니라 라즈베리파이·오렌지파이·x86 서버 등 실사용 장비 11대에 상시 설치해 검증하고 있습니다.
 
 ## 빠르게 실행해 보기
 
@@ -48,7 +49,7 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 ```
 
 웹은 <http://localhost:8000>(로컬 PHP·MySQL 설치 불필요). 비밀값·운영 HTTPS·CA 준비·백업은 [배포 가이드](deploy/README.md), 대상 서버 연결은 [에이전트 설치·운영 가이드](agent/README.md)를 보세요.
-에이전트 버전은 **3.22**이고, 게이트는 `./tests/smoke.sh <BASE>`(수집·매칭·인증·화면)와 `./tests/e2e.sh <BASE>`(Chromium)입니다.
+에이전트 버전은 **3.23**이고, 게이트는 `./tests/smoke.sh <BASE>`(수집·매칭·인증·화면)와 `./tests/e2e.sh <BASE>`(Chromium)입니다.
 
 ## 출품 범위
 
