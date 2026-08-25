@@ -97,7 +97,7 @@ function vg_deptree_severity_map(array $rows, array $idx): array
 /**
  * 의존성 그래프 화면(depgraph.php)으로 가는 링크.
  *   자산 상세의 '의존성' 탭도 노드 링크는 이 화면으로 보낸다 — 탭은 호스트 단위 전체 트리만
- *   보여주고, 대상 패키지 역추적("무엇이 끌어왔나")·다른 조회 단위는 그 화면이 맡는다.
+ *   보여주고, 대상 패키지 역추적("상위 의존성")·다른 조회 단위는 그 화면이 맡는다.
  */
 function vg_deptree_url(int $hostId, int $cid, array $over = []): string
 {
@@ -473,7 +473,7 @@ function vg_deptree_path_svg(array $path, array $ctx): void
 
     echo '<svg class="deptree-mini__svg" width="' . $w . '" height="' . $h . '"'
         . ' viewBox="0 0 ' . $w . ' ' . $h . '" role="img"'
-        . ' aria-label="' . vg_h('이 패키지를 끌어온 경로 · 노드 ' . $n . '개') . '">';
+        . ' aria-label="' . vg_h('상위 의존성 경로 · 노드 ' . $n . '개') . '">';
 
     if ($n > 1) {
         $cy0 = VG_DEPTREE_MINI_PAD + VG_DEPTREE_MINI_ROW_H / 2;

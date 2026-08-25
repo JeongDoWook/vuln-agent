@@ -1009,9 +1009,9 @@ assert_contains "$ctrdep" 'deptree__edge--d0' "엣지 농도가 깊이별로 갈
 # 픽스처의 의존성 트리에는 매칭되는 취약점이 없어 배지가 안 나오므로, 항상 있는 쪽을 고정한다.
 assert_contains "$ctrdep" '<title>myco-utf8 0.9.1 · npm</title>' "노드마다 이름·버전·관리자 툴팁(등급이 있으면 여기 함께 실린다)"
 assert_not_contains "$ctrdep" '노드 색' "트리 위 범례 블록은 걷어냈다"
-# 역추적 — 전이 의존에서 루트까지의 경로가 나와야 "무엇이 끌어왔나" 에 답이 된다.
+# 역추적 — 전이 의존에서 루트까지의 경로가 나와야 "상위 의존성" 에 답이 된다.
 frombody=$(curl_ -s -b "$JAR" "$BASE/depgraph.php?id=$WEB01_ID&cid=$DEP_CID&mgr=npm&name=myco-utf8&ver=0.9.1&tab=from")
-assert_contains "$frombody" '이 패키지를 끌어온 경로' "역추적 탭 표시"
+assert_contains "$frombody" '상위 의존성 경로' "역추적 탭 표시"
 assert_contains "$frombody" 'myco-parser' "역추적 경로에 중간 부모 포함"
 assert_contains "$frombody" 'myco-web' "역추적 경로가 루트까지 도달"
 # 그래프에 없는 패키지를 지정하면 조용히 빈 화면이 아니라 이유를 밝혀야 한다.

@@ -96,7 +96,7 @@ try {
                 if (isset($graph['nodes'][$key])) { $target = $key; } else { $targetMissing = true; }
             }
             if ($target !== '') {
-                // 역추적은 여기서 한 번만 한다 — '무엇이 끌어왔나' 목록·경로 강조·조치 문장이
+                // 역추적은 여기서 한 번만 한다 — '상위 의존성' 목록·경로 강조·조치 문장이
                 //   같은 결과를 나눠 쓴다(따로 부르면 상한에 걸린 경로가 화면마다 달라진다).
                 $targetPaths  = vg_pkgdep_paths($graph, $target);
                 $pathMarks    = vg_deptree_path_marks($targetPaths['paths']);
@@ -225,8 +225,8 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   </div>
   <?php
   vg_subtabs([
-      'from' => ['label' => '무엇이 끌어왔나', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'from'])],
-      'to'   => ['label' => '무엇을 끌어오나', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'to'])],
+      'from' => ['label' => '상위 의존성', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'from'])],
+      'to'   => ['label' => '하위 의존성', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'to'])],
       'tree' => ['label' => '전체 트리', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'tree'])],
   ], $tab);
   ?>
@@ -235,7 +235,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   <?php
   /* 트리 한 장은 deptree.php 가 그린다(자산 상세 '의존성' 탭과 같은 함수). 이 화면은
    *   **어느 루트를 그릴지**와 남은 노드 예산만 정한다.
-   *   $ctxOverride 는 'to' 탭(무엇을 끌어오나)에서 경로 강조를 끄는 데 쓴다 — 그 탭은
+   *   $ctxOverride 는 'to' 탭(하위 의존성)에서 경로 강조를 끄는 데 쓴다 — 그 탭은
    *   대상에서 **자식 방향**으로 내려가는 트리라 루트→대상 경로(조상 방향)의 노드가 그
    *   트리 안에 없다. pathedge 를 그대로 넘기면 대상 노드 하나만 빼고 트리 전체가
    *   "경로 밖"으로 흐려져 버린다 — 이 탭에는 강조할 경로 자체가 없으므로 꺼 둔다. */
@@ -248,7 +248,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   <?php if ($tab === 'from'): ?>
   <?php
   /* ── 조치방안(이 패키지 하나) ────────────────────────────────────────────────
-   *   "무엇이 끌어왔나" 다음에 실무자가 바로 묻는 것은 "그래서 뭘 올리나" 다. 트리는
+   *   "상위 의존성" 다음에 실무자가 바로 묻는 것은 "그래서 뭘 올리나" 다. 트리는
    *   구조만 보여줄 뿐 그 답을 안 한다 — 여기서 한 문장으로 답한다.
    *   **말할 수 있는 것과 없는 것을 가른다**: 자식이 몇 버전이어야 하는지는 피드가 준
    *   사실(fixed_version)이라 말하고, **부모를 몇으로 올려야 하는지는 말하지 않는다** —
@@ -285,7 +285,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
         <li><?= $nodeLabel($pk) ?>
           <a class="pill" href="<?= vg_h($linkFor([
               'mgr' => $pp['manager'], 'name' => $pp['name'], 'ver' => $pp['version'], 'tab' => 'to',
-          ])) ?>">무엇을 끌어오나</a></li>
+          ])) ?>">하위 의존성</a></li>
       <?php endforeach; ?>
       </ul>
       <?php
@@ -319,7 +319,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   </div>
   <?php endif; ?>
   <div class="card">
-    <strong>이 패키지를 끌어온 경로</strong>
+    <strong>상위 의존성 경로</strong>
     <div class="card__body">
     <?php
     $r = $targetPaths;   // 위에서 한 번 구한 것을 그대로 쓴다
@@ -335,7 +335,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
         echo '<ol class="dep-paths">';
         foreach ($r['paths'] as $path) {
             echo '<li><ol class="dep-path">';
-            foreach ($path as $node) { echo '<li>' . $nodeLabel($node) . '</li>'; }
+            foreach ($path as $node) { echo '<li><span class="dep-path__chip">' . $nodeLabel($node) . '</span></li>'; }
             echo '</ol></li>';
         }
         echo '</ol>';
@@ -346,11 +346,11 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
 
   <?php elseif ($tab === 'to'): ?>
   <div class="card">
-    <strong>이 패키지가 끌어오는 의존성</strong>
+    <strong>하위 의존성</strong>
     <div class="card__body">
     <?php
     if (!vg_pkgdep_children($graph, $target)) {
-        vg_empty(['icon' => 'package', 'title' => '이 패키지가 끌어오는 의존성이 없습니다(말단 노드).']);
+        vg_empty(['icon' => 'package', 'title' => '이 패키지의 하위 의존성이 없습니다(말단 노드).']);
     } else {
         $drawTree($target, ['path' => [], 'pathedge' => []]);
     }
@@ -382,7 +382,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
                   return '<strong>' . vg_h($t['name']) . '</strong> <span class="why">' . vg_h($t['version']) . '</span>'
                       . ' <a class="pill" href="' . vg_h($linkFor([
                           'mgr' => $t['manager'], 'name' => $t['name'], 'ver' => $t['version'], 'tab' => 'to',
-                      ])) . '">무엇을 끌어오나</a>';
+                      ])) . '">하위 의존성</a>';
               },
               'severity' => fn($p) => vg_sev_badge((string) $p['severity']),
               2 => fn($p) => '<strong>' . number_format((int) $p['count']) . '</strong>건',

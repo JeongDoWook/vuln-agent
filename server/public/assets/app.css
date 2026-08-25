@@ -3224,7 +3224,18 @@ form.card .btn--primary:active { transform: translateY(0); }
 .dep-paths > li { padding: .35rem 0; border-top: 1px solid var(--line); }
 .dep-paths > li:first-child { border-top: 0; }
 .dep-path { display: flex; flex-wrap: wrap; gap: .3rem .55rem; margin: 0; padding: 0; list-style: none; }
+.dep-path li { display: flex; align-items: center; }
 .dep-path li + li::before { content: "→"; margin-right: .4rem; color: var(--muted); }
+/* 경로 노드 하나를 칩으로 감싼다 — 기존 토큰만 재사용(.pill 은 강조색이라 여기선 중립 표면을 쓴다). */
+.dep-path__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .2rem .65rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
 
 /* --- 대시보드 현황 요약(index.php) ------------------------------------------
  * 섹션 머리 바로 아래 숫자 4칸(vg_kpi_strip, summary.php) · 그 아래 자산 순위 막대
