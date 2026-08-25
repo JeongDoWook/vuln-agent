@@ -44,10 +44,11 @@ const VG_SPDX_REL_REVERSE = ['DEPENDENCY_OF', 'RUNTIME_DEPENDENCY_OF'];
 
 // ── 패키지 의존성 그래프 그룹/이름/버전 문자셋 검증 ─────────────────────────
 //   PR#399 리뷰: 문자셋 검증 없이 저장하면 저장형 XSS 사전조건이 된다. vg_h() 출력 이스케이프는
-//   유지하되 저장 단계에서부터 거른다 — 첫 글자는 영숫자만 허용(특수문자로 시작하는 값 배제).
+//   유지하되 저장 단계에서부터 거른다 — 첫 글자는 영숫자 또는 npm 스코프 패키지(@babel/core 등)의
+//   선행 `@` 만 허용한다(이슈 #481). 그 외 문자 제한은 그대로 — 특수문자로 시작하는 값은 계속 배제한다.
 function vg_pkg_ident_valid(string $s): bool
 {
-    return $s !== '' && strlen($s) <= 255 && preg_match('/^[A-Za-z0-9][A-Za-z0-9._\-\/:+@]*$/', $s) === 1;
+    return $s !== '' && strlen($s) <= 255 && preg_match('/^[A-Za-z0-9@][A-Za-z0-9._\-\/:+@]*$/', $s) === 1;
 }
 
 /** Parse externally supplied CycloneDX/SPDX SBOM lines: cid|format|base64(json). */

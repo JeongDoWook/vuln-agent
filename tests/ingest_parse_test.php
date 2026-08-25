@@ -777,10 +777,10 @@ $spdxCycle = json_encode(['spdxVersion' => 'SPDX-2.3',
 $sdCycle = vg_ingest_parse_sbom('ctr-spdx-cycle|spdx|' . base64_encode($spdxCycle));
 $eq('SPDX deps: 순환 참조는 양방향 2건(중복 표기는 dedup)', count($sdCycle['deps']), 2);
 
-// npm 스코프 패키지(@scope/pkg) — 이름을 **잘라먹지 않는다**. 지금은 양쪽 경로 모두
-//   vg_pkg_ident_valid('@…') 에서 걸려 엣지가 통째로 버려진다(미해결 이슈 #481, 이번 스코프 밖).
-//   여기서 못박는 것은 "SPDX 가 CycloneDX 와 **같게** 동작하고, 잘린 이름이 저장되지 않는다" 다 —
-//   #481 을 고치면 두 경로가 함께 바뀌므로 이 비교는 그때도 유효하다.
+// npm 스코프 패키지(@scope/pkg, @babel/core 등) — 이름을 **잘라먹지 않고 엣지를 남긴다**(#481).
+//   vg_pkg_ident_valid() 가 선행 `@` 를 허용해야 SPDX·CycloneDX 두 경로 모두 이 엣지를 저장한다.
+//   여기서 못박는 것: "SPDX 가 CycloneDX 와 **같게** 동작한다" + "엣지가 드롭되지 않는다" +
+//   "잘린 이름(scope/pkg 등)으로 저장되지 않는다".
 $scopedCdx = json_encode(['bomFormat' => 'CycloneDX',
     'metadata' => ['component' => ['name' => 'my-app', 'version' => '1.0.0', 'bom-ref' => 'root-ref', 'purl' => 'pkg:npm/my-app@1.0.0']],
     'components' => [['name' => 'pkg', 'version' => '1.0.0', 'bom-ref' => 's-ref', 'purl' => 'pkg:npm/%40scope/pkg@1.0.0']],
@@ -801,6 +801,21 @@ $scopedS = vg_ingest_parse_sbom('ctr-scope-s|spdx|' . base64_encode($scopedSpdx)
 $eq('SPDX 스코프 이름: CycloneDX 경로와 같은 엣지를 낸다', $stripCid($scopedS['deps']), $stripCid($scopedC['deps']));
 $mangled = array_values(array_filter($scopedS['deps'], static fn($d) => in_array($d[5], ['pkg', 'scope/pkg'], true)));
 $eq('SPDX 스코프 이름: 잘린 이름(pkg·scope/pkg)으로 저장하지 않는다', count($mangled), 0);
+// deps 에는 루트 표식행(parent=null, child=my-app) + 실제 엣지(my-app→@scope/pkg) 2건이 있다.
+$scopedEdge = array_values(array_filter($scopedC['deps'], static fn($d) => $d[1] !== null));
+$eq('npm 스코프 패키지: 엣지가 드롭되지 않는다(CycloneDX)', count($scopedEdge), 1);
+$eq('npm 스코프 패키지: 자식 이름이 @scope/pkg 그대로 저장된다', $scopedEdge[0][5], '@scope/pkg');
+
+// @babel/core 처럼 실무에서 흔한 스코프 이름도 vg_pkg_ident_valid() 를 통과해야 한다.
+$babelCdx = json_encode(['bomFormat' => 'CycloneDX',
+    'metadata' => ['component' => ['name' => 'my-app', 'version' => '1.0.0', 'bom-ref' => 'root-ref', 'purl' => 'pkg:npm/my-app@1.0.0']],
+    'components' => [['name' => '@babel/core', 'version' => '7.24.0', 'bom-ref' => 'b-ref', 'purl' => 'pkg:npm/%40babel/core@7.24.0']],
+    'dependencies' => [['ref' => 'root-ref', 'dependsOn' => ['b-ref']]],
+]);
+$babelC = vg_ingest_parse_sbom('ctr-babel|cyclonedx|' . base64_encode($babelCdx));
+$babelEdge = array_values(array_filter($babelC['deps'], static fn($d) => $d[1] !== null));
+$eq('npm 스코프 패키지: @babel/core 엣지가 드롭되지 않는다', count($babelEdge), 1);
+$eq('npm 스코프 패키지: @babel/core 이름이 그대로 저장된다', $babelEdge[0][5], '@babel/core');
 
 // ── 호스트 IPv4 (net.interfaces) ───────────────────────────────────────────
 //   정규식 파싱은 조용히 틀리기 쉽고, 틀리면 기존 자산이 전부 "섀도우 IT" 로 뜬다.

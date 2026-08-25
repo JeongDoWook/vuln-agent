@@ -110,6 +110,19 @@ function vg_toolbar(array $fields): void {
     $resetOverrides = ['page' => null];
     $hasValue = false;
 
+    // "select 먼저 → search 마지막" 레이아웃 규칙(PR #478)을 호출부 11곳의 배열 순서에 맡기지
+    //   않고 여기서 강제한다 — 안 그러면 새 화면을 추가할 때 또 뒤집힐 수 있다(#476 항목6).
+    //   PHP 8 의 usort() 는 안정 정렬이라 같은 우선순위끼리는 호출부가 준 순서를 그대로 지킨다
+    //   (activity.php 의 date→select 순서 같은 기존 배치가 깨지지 않는다). hidden 은 화면에
+    //   안 보이므로 순서가 레이아웃에 영향 없다.
+    $typeOrder = ['select' => 0, 'date' => 0, 'hidden' => 1, 'search' => 2];
+    $fields = array_values($fields);
+    usort($fields, static function (array $a, array $b) use ($typeOrder): int {
+        $pa = $typeOrder[$a['type'] ?? 'search'] ?? 2;
+        $pb = $typeOrder[$b['type'] ?? 'search'] ?? 2;
+        return $pa <=> $pb;
+    });
+
     echo '<form class="toolbar" method="get">';
 
     $perPage = vg_perpage();

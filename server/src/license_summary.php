@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * license_summary.php — language-packages.php 용 사전집계(tb_package_license_summary)를
+ * license_summary.php — packages.php의 언어 패키지 탭(?tab=lang)용 사전집계(tb_package_license_summary)를
  *   재구성한다. package_summary.php(tb_package_summary)와 같은 패턴: 매 로드마다 tb_package를
  *   재집계하지 않고 이 요약 테이블만 읽게 한다. OSV 커넥터 실행 직후에만 호출된다.
  *   tb_package 는 스캔마다 누적되는 원본이라, 여기 무인덱스 필터/KPI 를 직접 걸면
@@ -29,7 +29,7 @@ if (!function_exists('vg_rebuild_license_summary')) {
             // package_summary.php 와 같은 패턴: 벌크 INSERT...SELECT 로 만들고, risk 는 자연어
             // 판정(vg_license_classify, PHP 순수함수)이 필요해 distinct license 값만 순회 UPDATE
             // 한다 — 예전엔 GROUP BY 결과 행마다 PHP 루프로 단건 INSERT 를 돌려 웹 요청 경로에서
-            // 느렸다. tb_host.is_deleted=0 도 걸어야 한다 — 화면 목록(language-packages.php)엔
+            // 느렸다. tb_host.is_deleted=0 도 걸어야 한다 — 화면 목록(packages.php의 언어 패키지 탭)엔
             // 있는데 여기 없으면 삭제된 호스트의 패키지가 KPI 집계에 섞여 들어간다.
             $mgrPlaceholders = implode(',', array_fill(0, count(VG_LANG_MANAGERS), '?'));
             $pdo->prepare(
