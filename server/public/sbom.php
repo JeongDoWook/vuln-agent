@@ -501,15 +501,16 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
 
       <?php /* 도넛 둘은 값이 몇 개짜리라 짧고, 그 아래로 목록 카드 높이만큼 빈 칸이 남는다
                (행 높이가 가장 큰 셀 기준이라 — 파일 머리주석). 같은 칸(그리드 1·2번째 컬럼)에
-               실데이터 카드 두 장을 형제로 더해 그리드 auto-placement 가 도넛 바로 아래 칸을
-               채우게 한다 — grid-row 를 명시하지 않는다. 0건이면 카드 자체를 그리지 않는다
+               실데이터 카드 두 장을 형제로 더해 도넛 바로 아래를 채운다 — 칸은
+               .card--riskpkgs-<risk> 클래스로 app.css 에서 grid-column·grid-row 를 둘 다
+               명시해 못박는다(auto-placement 에 맡기지 않는다 — DOM 순서에 따라 목록 칸을
+               가로챌 수 있어서다, app.css 주석 참고). 0건이면 카드 자체를 그리지 않는다
                (이 프로젝트의 관례 — depgraph.php 의 '조치방안 없음' 류와 같다). */ ?>
-      <?php foreach ([
-          ['unknown',  '라이선스 미상 컴포넌트'],
-          ['copyleft', '카피레프트 라이선스 컴포넌트'],
-      ] as [$riskKey, $cardTitle]): if (!$riskPkgs[$riskKey]) { continue; } ?>
-      <div class="card">
-        <strong><?= vg_h($cardTitle) ?></strong>
+      <?php // 카드 제목은 도넛과 같은 vg_license_risk_label() 로 만든다 — 위험도 한글 라벨을
+            //   여기서 다시 문자열로 적으면 도넛·이 카드 두 곳에 같은 말이 흩어진다. ?>
+      <?php foreach (['unknown', 'copyleft'] as $riskKey): if (!$riskPkgs[$riskKey]) { continue; } ?>
+      <div class="card card--riskpkgs card--riskpkgs-<?= $riskKey ?>">
+        <strong><?= vg_h(vg_license_risk_label($riskKey)) ?> 라이선스 컴포넌트</strong>
         <span class="why"><?= number_format(count($riskPkgs[$riskKey])) ?>개</span>
         <div class="card__body">
           <?php
