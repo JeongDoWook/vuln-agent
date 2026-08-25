@@ -384,10 +384,14 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
     ksort($byManager);
 
     // 라이선스 위험도 집계(packages.php 의 언어 탭과 같은 순수함수 — 별도 사전집계 없이 즉산). 전건 기준.
+    //   $riskPkgs 는 도넛 아래 실데이터 카드(라이선스 미상/카피레프트)가 그대로 쓴다 — 같은 판정을
+    //   두 번 돌리지 않는다(permissive 는 그 카드가 없어 모으지 않는다).
     $riskCounts = ['permissive' => 0, 'copyleft' => 0, 'unknown' => 0];
+    $riskPkgs   = ['copyleft' => [], 'unknown' => []];
     foreach ($packages as $p) {
         $risk = vg_license_classify($p['license'] ?? null);
         $riskCounts[$risk]++;
+        if (isset($riskPkgs[$risk])) { $riskPkgs[$risk][] = $p; }
     }
 
     // 컴포넌트명 검색 — **새 쿼리를 더하지 않는다.** 전건($packages)을 이미 손에 들고 있으므로
@@ -494,6 +498,47 @@ function vg_sbom_render_html(array $subject, array $packages, string $fqdn, stri
           ?>
         </div>
       </div>
+
+      <?php /* 도넛 둘은 값이 몇 개짜리라 짧고, 그 아래로 목록 카드 높이만큼 빈 칸이 남는다
+               (행 높이가 가장 큰 셀 기준이라 — 파일 머리주석). 같은 칸(그리드 1·2번째 컬럼)에
+               실데이터 카드 두 장을 형제로 더해 도넛 바로 아래를 채운다 — 칸은
+               .card--riskpkgs-<risk> 클래스로 app.css 에서 grid-column·grid-row 를 둘 다
+               명시해 못박는다(auto-placement 에 맡기지 않는다 — DOM 순서에 따라 목록 칸을
+               가로챌 수 있어서다, app.css 주석 참고). 0건이면 카드 자체를 그리지 않는다
+               (이 프로젝트의 관례 — depgraph.php 의 '조치방안 없음' 류와 같다). */ ?>
+      <?php // 카드 제목은 도넛과 같은 vg_license_risk_label() 로 만든다 — 위험도 한글 라벨을
+            //   여기서 다시 문자열로 적으면 도넛·이 카드 두 곳에 같은 말이 흩어진다. ?>
+      <?php foreach (['unknown', 'copyleft'] as $riskKey): if (!$riskPkgs[$riskKey]) { continue; } ?>
+      <div class="card card--riskpkgs card--riskpkgs-<?= $riskKey ?>">
+        <strong><?= vg_h(vg_license_risk_label($riskKey)) ?> 라이선스 컴포넌트</strong>
+        <span class="why"><?= number_format(count($riskPkgs[$riskKey])) ?>개</span>
+        <div class="card__body">
+          <?php
+          $riskShown = array_slice($riskPkgs[$riskKey], 0, vg_ui_detail_preview_limit());
+          $riskMore  = count($riskPkgs[$riskKey]) - count($riskShown);
+          ?>
+          <ul class="sbom-riskpkgs">
+            <?php foreach ($riskShown as $rp): ?>
+            <li>
+              <?php // 옆 목록(.sbom-cols__list)의 검색 필터를 이 컴포넌트명으로 건다 — 새 쿼리
+                    //   없이 이미 로드된 q= 파라미터 계약을 그대로 쓴다(페이지는 1로 되돌린다). ?>
+              <a class="sbom-riskpkgs__name"
+                 href="<?= vg_h(vg_qs(['q' => trim((string) $rp['name']), 'page' => null])) ?>">
+                <?= vg_h(vg_strip_ctrl((string) $rp['name'])) ?>
+              </a>
+              <span class="why">
+                <?= vg_h((string) ($rp['version'] ?? '') !== '' ? (string) $rp['version'] : '–') ?>
+                · <?= vg_h(vg_strip_ctrl((string) $rp['manager'] !== '' ? (string) $rp['manager'] : '미상')) ?>
+              </span>
+            </li>
+            <?php endforeach; ?>
+          </ul>
+          <?php if ($riskMore > 0): ?>
+            <p class="why">외 <?= number_format($riskMore) ?>개</p>
+          <?php endif; ?>
+        </div>
+      </div>
+      <?php endforeach; ?>
     <?php endif; ?>
 
     <div class="sbom-cols__list">
