@@ -59,7 +59,7 @@ declare(strict_types=1);
             return '<span class="why"' . $title . '>' . vg_h($brief) . '</span>';
         },
         // 재시작/재부팅이 필요하면 조치는 "업그레이드"가 아니다(이미 패치돼 있다).
-        //   전이 의존성이면 "이 버전으로 올려라"도 틀린다 — 부모가 끌어오는 것이라 혼자 못 바꾼다.
+        //   전이 의존성이면 "이 버전으로 올려라"도 틀린다 — 상위 의존성이 가져오는 것이라 혼자 못 바꾼다.
         'fix' => function ($f) use ($depOrigins, $hostId) {
             if (!empty($f['needs_restart'])) {
                 return '<span class="pill">' . (vg_is_kernel_code_pkg((string) ($f['package_name'] ?? '')) ? '재부팅' : '프로세스 재시작') . '</span>';
@@ -92,7 +92,7 @@ declare(strict_types=1);
         } elseif ($depOrigin !== null) {
             // 전이 의존성 — 이 패키지만 갈아끼우면 부모가 깨진다. 부모를 올리는 것이 조치다.
             $action = '직접 조치 불가 — ' . vg_host_dep_parent_label($depOrigin)
-                    . '. 이 패키지만 바꾸면 부모가 깨집니다. 부모를 올려 안전한 자식을 끌어오게 하세요.';
+                    . '. 이 패키지만 바꾸면 부모가 깨집니다. 상위 의존성을 올려 안전한 버전을 갖게 하세요.';
         } elseif (!empty($f['fixed_version'])) {
             $action = (string) ($f['installed_version'] ?? '') . ' → ' . (string) $f['fixed_version'] . ' 이상으로 업데이트';
         } else {
@@ -161,8 +161,8 @@ declare(strict_types=1);
   ?>
     <?php
     /* ── 손댈 대상(부모)별 묶음 — "이 하나를 올리면 N건" ────────────────────────
-     *   행 단위로만 보면 "그래서 뭐부터 올리지?" 에 답이 안 나온다. 같은 부모가 여러
-     *   취약점을 끌어오는 건 흔해서, 그 묶음을 먼저 보여주는 것이 조치 순서를 바꾼다.
+     *   행 단위로만 보면 "그래서 뭐부터 올리지?" 에 답이 안 나온다. 같은 상위 의존성이 여러
+     *   취약점을 함께 갖는 건 흔해서, 그 묶음을 먼저 보여주는 것이 조치 순서를 바꾼다.
      *   집계는 **스캔 전체** 기준이라 페이지를 넘겨도 값이 변하지 않는다.
      *   전이 취약점이 없으면 이 요약 자체를 그리지 않는다 — 빈 카드는 잡음이다. */
     if ($depOrigins['parents']):
@@ -172,7 +172,7 @@ declare(strict_types=1);
             ['label' => '먼저 올릴 대상'],
             ['label' => '최고 등급', 'key' => 'severity'],
             ['label' => '해결 건수', 'align' => 'right', 'nowrap' => true],
-            ['label' => '끌어오는 취약 패키지'],
+            ['label' => '하위 취약 패키지'],
         ];
         $rollupOpts = [
             'card'      => false,
@@ -197,7 +197,7 @@ declare(strict_types=1);
         <?php if (count($rollupAll) > count($rollupTop)): ?>
           · <?= number_format(count($rollupAll)) ?>개 중 상위 <?= count($rollupTop) ?>개
         <?php endif; ?>
-        · 올릴 버전은 제시하지 않는다(부모의 다른 버전이 무엇을 끌어오는지 수집된 정보로 알 수 없다)
+        · 올릴 버전은 제시하지 않는다(부모의 다른 버전이 어떤 하위 의존성을 갖는지 수집된 정보로 알 수 없다)
       </span>
       <div class="card__body">
       <?php vg_table($rollupHeaders, $rollupTop, $rollupOpts); ?>

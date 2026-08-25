@@ -9,7 +9,7 @@ declare(strict_types=1);
  *   요구하는가"를 받아 tb_package_registry_meta 로 저장한다.
  *
  *   왜 필요한가: tb_package_dependency 는 *설치된 스냅샷 한 벌*이라 "부모의 어느 버전이 안전한
- *   자식을 끌어오는가"를 모른다(server/src/packagedep.php 의 "버전은 제안하지 않는다" 제약과
+ *   하위 의존성을 갖는가"를 모른다(server/src/packagedep.php 의 "버전은 제안하지 않는다" 제약과
  *   같은 이유 — 그 표는 조회 전용이라 여기서 건드리지 않는다). 계산(semver 범위 해석·최소
  *   상향 버전 산출)과 화면 반영은 이 작업 스코프 밖이다 — 여기는 원문 제약 문자열을 그대로
  *   모으기만 한다.

@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-/* 의존성 탭 — "이 자산에 깔린 것이 무엇을 끌어왔나"를 가로 계층 트리로 보여준다.
+/* 의존성 탭 — 이 자산에 깔린 것의 상위/하위 의존성을 가로 계층 트리로 보여준다.
  *
  *   그림(배치·SVG)은 src/deptree.php 가 소유한다 — 전용 화면 depgraph.php 와 **같은 함수**를
  *   부른다. 이 파일이 정하는 것은 그 화면과 갈리는 부분뿐이다: 조회 단위 안내, 루트 페이지,
@@ -22,7 +22,7 @@ declare(strict_types=1);
     </div>
   </div>
 <?php else:
-  /* 노드 링크는 전용 화면으로 보낸다 — 탭은 이 자산의 전체 트리만 맡고, "무엇이 끌어왔나"
+  /* 노드 링크는 전용 화면으로 보낸다 — 탭은 이 자산의 전체 트리만 맡고, "상위 의존성"
    *   역추적은 거기서 이어진다(탭에 그 갈래까지 넣으면 자산 상세가 두 화면이 된다). */
   $depLink = function (array $over) use ($hostId, $depUnit): string {
       return vg_deptree_url((int) $hostId, (int) $depUnit, $over);

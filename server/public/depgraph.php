@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * depgraph.php — 패키지 의존성 그래프(무엇이 이 패키지를 끌어왔나). 로그인 필요.
+ * depgraph.php — 패키지 의존성 그래프(이 패키지의 상위/하위 의존성 추적). 로그인 필요.
  *   ?id=<host_id>            자산의 최신 수집 기준
  *   &cid=<container_id>      0=호스트 자신, 양수=그 컨테이너 (엣지가 있는 단위만 선택지에 뜬다)
  *   &mgr=&name=&ver=         대상 패키지를 지정하면 역추적/정방향 탭이 열린다
@@ -11,7 +11,7 @@ declare(strict_types=1);
  * ── 이 화면이 답하는 것 ──────────────────────────────────────────────────
  *   에이전트가 보내온 SBOM(CycloneDX dependencies)·pom.xml 직접선언 엣지는 지금까지
  *   저장만 되고 읽는 화면이 없었다. 취약한 라이브러리가 나왔을 때 실무에서 먼저 묻는 건
- *   "이건 왜 깔려 있나(누가 끌어왔나)" 인데, 설치 패키지 목록으로는 답이 안 나온다.
+ *   "이건 왜 깔려 있나(상위 의존성이 무엇인가)" 인데, 설치 패키지 목록으로는 답이 안 나온다.
  *
  *   조회 단위가 (스캔 × 컨테이너)인 이유: tb_package_dependency 의 유니크 키
  *   uk_pkg_dep_edge 좌측 접두가 (scan_id, container_id)라 이 둘로 좁혀야 인덱스를 탄다.
@@ -285,7 +285,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
         <li><?= $nodeLabel($pk) ?>
           <a class="pill" href="<?= vg_h($linkFor([
               'mgr' => $pp['manager'], 'name' => $pp['name'], 'ver' => $pp['version'], 'tab' => 'to',
-          ])) ?>">하위 의존성</a></li>
+          ])) ?>">이 부모의 하위 의존성</a></li>
       <?php endforeach; ?>
       </ul>
       <?php
@@ -306,7 +306,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
       <?php endif; ?>
       <?php endif; ?>
       <p class="why">올릴 부모의 버전은 제시하지 않습니다 — 설치된 스냅샷만 수집하므로
-        "부모의 어느 버전이 안전한 자식을 끌어오는가" 는 이 데이터로 알 수 없습니다.
+        "부모의 어느 버전이 안전한 하위 의존성을 갖는가" 는 이 데이터로 알 수 없습니다.
         부모의 배포처(레지스트리·릴리스 노트)에서 확인하세요.</p>
     <?php elseif ($tNeed !== ''): ?>
       <p><span class="pill">직접 조치</span>
@@ -330,7 +330,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
         ]);
     }
     if (count($r['paths']) === 1 && count($r['paths'][0]) === 1) {
-        vg_empty(['icon' => '□', 'title' => '이 패키지를 끌어온 부모가 없습니다.']);
+        vg_empty(['icon' => '□', 'title' => '상위 의존성이 없습니다.']);
     } else {
         echo '<ol class="dep-paths">';
         foreach ($r['paths'] as $path) {
@@ -371,7 +371,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
           ['label' => '먼저 올릴 대상'],
           ['label' => '최고 등급', 'key' => 'severity'],
           ['label' => '해결 건수', 'align' => 'right', 'nowrap' => true],
-          ['label' => '끌어오는 취약 패키지 · 필요한 최소 버전'],
+          ['label' => '하위 취약 패키지 · 필요한 최소 버전'],
       ];
       $fixOpts = [
           'card'      => false,
@@ -382,7 +382,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
                   return '<strong>' . vg_h($t['name']) . '</strong> <span class="why">' . vg_h($t['version']) . '</span>'
                       . ' <a class="pill" href="' . vg_h($linkFor([
                           'mgr' => $t['manager'], 'name' => $t['name'], 'ver' => $t['version'], 'tab' => 'to',
-                      ])) . '">하위 의존성</a>';
+                      ])) . '">이 패키지의 하위 의존성</a>';
               },
               'severity' => fn($p) => vg_sev_badge((string) $p['severity']),
               2 => fn($p) => '<strong>' . number_format((int) $p['count']) . '</strong>건',
@@ -407,7 +407,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
       <?php if (count($fixTargets) > count($fixTop)): ?>
         <?= number_format(count($fixTargets)) ?>개 중 상위 <?= count($fixTop) ?>개 ·
       <?php endif; ?>
-      취약한 하위 의존성은 그것만 갈아끼울 수 없습니다 — 끌어온 부모를 올려야 합니다
+      취약한 하위 의존성은 그것만 갈아끼울 수 없습니다 — 상위 의존성을 올려야 합니다
     </span>
     <?php if ($fixTruncated): ?>
       <span class="why"><?= vg_badge('경로·취약점이 상한에서 잘려 대상이 더 있을 수 있음', 'warn') ?></span>
@@ -415,8 +415,8 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
     <?php vg_table($fixHeaders, $fixTop, $fixOpts); ?>
     <div class="card__body">
       <p class="why"><strong>올릴 부모의 버전은 제시하지 않습니다.</strong> 수집하는 것은 자산에
-        <em>설치된 스냅샷</em>(이 부모가 지금 무엇을 끌어오는가)이지 업스트림의
-        <em>버전별 의존 관계표</em>(부모의 몇 버전이 무엇을 끌어오는가)가 아닙니다 —
+        <em>설치된 스냅샷</em>(이 부모의 하위 의존성이 지금 무엇인가)이지 업스트림의
+        <em>버전별 의존 관계표</em>(부모의 몇 버전이 어떤 하위 의존성을 갖는가)가 아닙니다 —
         근거 없는 버전은 지어내지 않습니다. 오른쪽 칸의 "→ N 이상" 은 <em>자식</em>이 만족해야 할
         조건이며 피드가 준 수정 버전입니다.</p>
     </div>
