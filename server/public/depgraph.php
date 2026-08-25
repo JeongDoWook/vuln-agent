@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * depgraph.php — 패키지 의존성 그래프(무엇이 이 패키지를 끌어왔나). 로그인 필요.
+ * depgraph.php — 패키지 의존성 그래프(이 패키지의 상위/하위 의존성 추적). 로그인 필요.
  *   ?id=<host_id>            자산의 최신 수집 기준
  *   &cid=<container_id>      0=호스트 자신, 양수=그 컨테이너 (엣지가 있는 단위만 선택지에 뜬다)
  *   &mgr=&name=&ver=         대상 패키지를 지정하면 역추적/정방향 탭이 열린다
@@ -11,7 +11,7 @@ declare(strict_types=1);
  * ── 이 화면이 답하는 것 ──────────────────────────────────────────────────
  *   에이전트가 보내온 SBOM(CycloneDX dependencies)·pom.xml 직접선언 엣지는 지금까지
  *   저장만 되고 읽는 화면이 없었다. 취약한 라이브러리가 나왔을 때 실무에서 먼저 묻는 건
- *   "이건 왜 깔려 있나(누가 끌어왔나)" 인데, 설치 패키지 목록으로는 답이 안 나온다.
+ *   "이건 왜 깔려 있나(상위 의존성이 무엇인가)" 인데, 설치 패키지 목록으로는 답이 안 나온다.
  *
  *   조회 단위가 (스캔 × 컨테이너)인 이유: tb_package_dependency 의 유니크 키
  *   uk_pkg_dep_edge 좌측 접두가 (scan_id, container_id)라 이 둘로 좁혀야 인덱스를 탄다.
@@ -96,7 +96,7 @@ try {
                 if (isset($graph['nodes'][$key])) { $target = $key; } else { $targetMissing = true; }
             }
             if ($target !== '') {
-                // 역추적은 여기서 한 번만 한다 — '무엇이 끌어왔나' 목록·경로 강조·조치 문장이
+                // 역추적은 여기서 한 번만 한다 — '상위 의존성' 목록·경로 강조·조치 문장이
                 //   같은 결과를 나눠 쓴다(따로 부르면 상한에 걸린 경로가 화면마다 달라진다).
                 $targetPaths  = vg_pkgdep_paths($graph, $target);
                 $pathMarks    = vg_deptree_path_marks($targetPaths['paths']);
@@ -225,8 +225,8 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   </div>
   <?php
   vg_subtabs([
-      'from' => ['label' => '무엇이 끌어왔나', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'from'])],
-      'to'   => ['label' => '무엇을 끌어오나', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'to'])],
+      'from' => ['label' => '상위 의존성', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'from'])],
+      'to'   => ['label' => '하위 의존성', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'to'])],
       'tree' => ['label' => '전체 트리', 'href' => $linkFor(['mgr' => $mgr, 'name' => $pkg, 'ver' => $ver, 'tab' => 'tree'])],
   ], $tab);
   ?>
@@ -235,7 +235,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   <?php
   /* 트리 한 장은 deptree.php 가 그린다(자산 상세 '의존성' 탭과 같은 함수). 이 화면은
    *   **어느 루트를 그릴지**와 남은 노드 예산만 정한다.
-   *   $ctxOverride 는 'to' 탭(무엇을 끌어오나)에서 경로 강조를 끄는 데 쓴다 — 그 탭은
+   *   $ctxOverride 는 'to' 탭(하위 의존성)에서 경로 강조를 끄는 데 쓴다 — 그 탭은
    *   대상에서 **자식 방향**으로 내려가는 트리라 루트→대상 경로(조상 방향)의 노드가 그
    *   트리 안에 없다. pathedge 를 그대로 넘기면 대상 노드 하나만 빼고 트리 전체가
    *   "경로 밖"으로 흐려져 버린다 — 이 탭에는 강조할 경로 자체가 없으므로 꺼 둔다. */
@@ -248,7 +248,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   <?php if ($tab === 'from'): ?>
   <?php
   /* ── 조치방안(이 패키지 하나) ────────────────────────────────────────────────
-   *   "무엇이 끌어왔나" 다음에 실무자가 바로 묻는 것은 "그래서 뭘 올리나" 다. 트리는
+   *   "상위 의존성" 다음에 실무자가 바로 묻는 것은 "그래서 뭘 올리나" 다. 트리는
    *   구조만 보여줄 뿐 그 답을 안 한다 — 여기서 한 문장으로 답한다.
    *   **말할 수 있는 것과 없는 것을 가른다**: 자식이 몇 버전이어야 하는지는 피드가 준
    *   사실(fixed_version)이라 말하고, **부모를 몇으로 올려야 하는지는 말하지 않는다** —
@@ -285,7 +285,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
         <li><?= $nodeLabel($pk) ?>
           <a class="pill" href="<?= vg_h($linkFor([
               'mgr' => $pp['manager'], 'name' => $pp['name'], 'ver' => $pp['version'], 'tab' => 'to',
-          ])) ?>">무엇을 끌어오나</a></li>
+          ])) ?>">이 부모의 하위 의존성</a></li>
       <?php endforeach; ?>
       </ul>
       <?php
@@ -306,7 +306,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
       <?php endif; ?>
       <?php endif; ?>
       <p class="why">올릴 부모의 버전은 제시하지 않습니다 — 설치된 스냅샷만 수집하므로
-        "부모의 어느 버전이 안전한 자식을 끌어오는가" 는 이 데이터로 알 수 없습니다.
+        "부모의 어느 버전이 안전한 하위 의존성을 갖는가" 는 이 데이터로 알 수 없습니다.
         부모의 배포처(레지스트리·릴리스 노트)에서 확인하세요.</p>
     <?php elseif ($tNeed !== ''): ?>
       <p><span class="pill">직접 조치</span>
@@ -319,7 +319,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
   </div>
   <?php endif; ?>
   <div class="card">
-    <strong>이 패키지를 끌어온 경로</strong>
+    <strong>상위 의존성 경로</strong>
     <div class="card__body">
     <?php
     $r = $targetPaths;   // 위에서 한 번 구한 것을 그대로 쓴다
@@ -330,12 +330,12 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
         ]);
     }
     if (count($r['paths']) === 1 && count($r['paths'][0]) === 1) {
-        vg_empty(['icon' => '□', 'title' => '이 패키지를 끌어온 부모가 없습니다.']);
+        vg_empty(['icon' => '□', 'title' => '상위 의존성이 없습니다.']);
     } else {
         echo '<ol class="dep-paths">';
         foreach ($r['paths'] as $path) {
             echo '<li><ol class="dep-path">';
-            foreach ($path as $node) { echo '<li>' . $nodeLabel($node) . '</li>'; }
+            foreach ($path as $node) { echo '<li><span class="dep-path__chip">' . $nodeLabel($node) . '</span></li>'; }
             echo '</ol></li>';
         }
         echo '</ol>';
@@ -346,11 +346,11 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
 
   <?php elseif ($tab === 'to'): ?>
   <div class="card">
-    <strong>이 패키지가 끌어오는 의존성</strong>
+    <strong>하위 의존성</strong>
     <div class="card__body">
     <?php
     if (!vg_pkgdep_children($graph, $target)) {
-        vg_empty(['icon' => 'package', 'title' => '이 패키지가 끌어오는 의존성이 없습니다(말단 노드).']);
+        vg_empty(['icon' => 'package', 'title' => '이 패키지의 하위 의존성이 없습니다(말단 노드).']);
     } else {
         $drawTree($target, ['path' => [], 'pathedge' => []]);
     }
@@ -371,7 +371,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
           ['label' => '먼저 올릴 대상'],
           ['label' => '최고 등급', 'key' => 'severity'],
           ['label' => '해결 건수', 'align' => 'right', 'nowrap' => true],
-          ['label' => '끌어오는 취약 패키지 · 필요한 최소 버전'],
+          ['label' => '하위 취약 패키지 · 필요한 최소 버전'],
       ];
       $fixOpts = [
           'card'      => false,
@@ -382,7 +382,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
                   return '<strong>' . vg_h($t['name']) . '</strong> <span class="why">' . vg_h($t['version']) . '</span>'
                       . ' <a class="pill" href="' . vg_h($linkFor([
                           'mgr' => $t['manager'], 'name' => $t['name'], 'ver' => $t['version'], 'tab' => 'to',
-                      ])) . '">무엇을 끌어오나</a>';
+                      ])) . '">이 패키지의 하위 의존성</a>';
               },
               'severity' => fn($p) => vg_sev_badge((string) $p['severity']),
               2 => fn($p) => '<strong>' . number_format((int) $p['count']) . '</strong>건',
@@ -407,7 +407,7 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
       <?php if (count($fixTargets) > count($fixTop)): ?>
         <?= number_format(count($fixTargets)) ?>개 중 상위 <?= count($fixTop) ?>개 ·
       <?php endif; ?>
-      취약한 하위 의존성은 그것만 갈아끼울 수 없습니다 — 끌어온 부모를 올려야 합니다
+      취약한 하위 의존성은 그것만 갈아끼울 수 없습니다 — 상위 의존성을 올려야 합니다
     </span>
     <?php if ($fixTruncated): ?>
       <span class="why"><?= vg_badge('경로·취약점이 상한에서 잘려 대상이 더 있을 수 있음', 'warn') ?></span>
@@ -415,8 +415,8 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
     <?php vg_table($fixHeaders, $fixTop, $fixOpts); ?>
     <div class="card__body">
       <p class="why"><strong>올릴 부모의 버전은 제시하지 않습니다.</strong> 수집하는 것은 자산에
-        <em>설치된 스냅샷</em>(이 부모가 지금 무엇을 끌어오는가)이지 업스트림의
-        <em>버전별 의존 관계표</em>(부모의 몇 버전이 무엇을 끌어오는가)가 아닙니다 —
+        <em>설치된 스냅샷</em>(이 부모의 하위 의존성이 지금 무엇인가)이지 업스트림의
+        <em>버전별 의존 관계표</em>(부모의 몇 버전이 어떤 하위 의존성을 갖는가)가 아닙니다 —
         근거 없는 버전은 지어내지 않습니다. 오른쪽 칸의 "→ N 이상" 은 <em>자식</em>이 만족해야 할
         조건이며 피드가 준 수정 버전입니다.</p>
     </div>

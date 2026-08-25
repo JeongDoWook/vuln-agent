@@ -26,13 +26,13 @@ const VG_PKGDEP_EDGE_MAX = 20000;
 const VG_PKGDEP_DEPTH_MAX = 6;
 // 한 화면에 그리는 노드 상한. 폭이 넓은 그래프가 한 페이지를 통째로 먹지 않게.
 const VG_PKGDEP_NODE_MAX = 400;
-// 역추적("무엇이 끌어왔나")에서 보여주는 경로 개수 상한.
+// 역추적("상위 의존성")에서 보여주는 경로 개수 상한.
 const VG_PKGDEP_PATH_MAX = 20;
 // 부모별 묶음 집계가 읽는 취약점 행 상한. 넘으면 잘린 사실을 화면에 밝힌다(조용한 절단 금지).
 const VG_PKGDEP_ROLLUP_FINDING_MAX = 20000;
 // 화면에 보여주는 손댈 대상(부모) 개수 상한.
 const VG_PKGDEP_ROLLUP_TOP = 5;
-// 부모 하나가 끌어오는 취약 패키지를 몇 개까지 이름으로 보여줄지.
+// 부모 하나의 하위 취약 패키지를 몇 개까지 이름으로 보여줄지.
 const VG_PKGDEP_ROLLUP_PKG_TOP = 4;
 
 /** 노드 키 — manager|name|version. 세 값 모두 적재 전 vg_pkg_ident_valid() 로 검증돼 '|' 가 없다. */
@@ -134,8 +134,8 @@ function vg_pkgdep_unit_findings(PDO $pdo, int $scanId, int $containerId): array
  *   라벨로는 못 찾는 경우가 있다.
  *
  *   ── 우리가 아는 것과 모르는 것 ──────────────────────────────────────────────
- *   자식의 수정버전은 피드가 준 사실이다(tb_finding.fixed_version). 반면 **그 자식을 끌어오는
- *   부모의 버전**은 수집된 데이터에 없다 — tb_package_dependency 는 *설치된 스냅샷 한 벌*이지
+ *   자식의 수정버전은 피드가 준 사실이다(tb_finding.fixed_version). 반면 **그 하위 의존성을 가진
+ *   상위 의존성의 버전**은 수집된 데이터에 없다 — tb_package_dependency 는 *설치된 스냅샷 한 벌*이지
  *   업스트림의 *버전별 의존 관계표*가 아니다. 그래서 조치 문장은 "부모를 올려라 + 자식은 X
  *   이상이어야 한다" 까지만 간다. 부모의 목표 버전은 **지어내지 않는다.**
  *   한 패키지에 CVE 가 여럿이면 그중 **가장 높은 수정버전**이 필요조건이다(vg_ver_cmp 로 고른다 —
@@ -338,7 +338,7 @@ function vg_pkgdep_sev_rank(string $sev): int
  *   (scan_id, container_id)라 이 단위 조회만 인덱스를 탄다 — 그래서 전 호스트 통합
  *   목록(findings.php)에는 붙이지 않는다.
  *
- *   **버전은 제안하지 않는다.** 설치되지 않은 부모 버전이 무엇을 끌어오는지 우리는 모른다.
+ *   **버전은 제안하지 않는다.** 설치되지 않은 부모 버전의 하위 의존성이 무엇인지 우리는 모른다.
  *   여기서 내는 사실은 "이 부모를 올리면 N건이 함께 해결된다"까지다.
  */
 function vg_pkgdep_scan_rollup(PDO $pdo, int $scanId): array
@@ -476,7 +476,7 @@ function vg_pkgdep_parents(array $g, string $key): array
 }
 
 /**
- * "무엇이 이 패키지를 끌어왔나" — 대상에서 부모 방향으로 거슬러 올라가 루트까지의 경로들.
+ * "상위 의존성 경로" — 대상에서 부모 방향으로 거슬러 올라가 루트까지의 경로들.
  *   반환: ['paths' => [[루트키, …, 대상키], …], 'truncated' => 경로/깊이 상한에 걸렸나]
  *
  *   같은 노드를 두 번 밟지 않게 경로 단위로 방문 집합을 들고 다닌다 — 의존성 그래프는

@@ -371,7 +371,7 @@ function vg_sbom_spdx(array $scan, array $subject, array $packages, string $uuid
  *   새로 집계하지 않는다. 의존 엣지는 이 화면도 다루지 않는다(sbom.php 머리주석 — 대부분 비어
  *   있어 반쪽짜리 그래프가 된다). 대신 **패키지 관리자(생태계)** 를 뿌리로 묶어 카드/트리로
  *   나눈다 — "이 자산에 뭐가 얼마나 있나" 를 flat JSON 한 덩어리보다 먼저 보여준다.
- *   진짜 의존성 그래프(누가 누구를 끌어왔나)는 host.php 의 depgraph.php 링크가 이미 담당한다.
+ *   진짜 의존성 그래프(상위/하위 의존성 추적)는 host.php 의 depgraph.php 링크가 이미 담당한다.
  */
 function vg_sbom_render_html(array $subject, array $packages, string $fqdn, string $cid, int $scanNo, string $collectedAt = ''): void {
     $total = count($packages);

@@ -54,16 +54,16 @@ function vg_host_dep_key(array $f): string {
     );
 }
 
-/** 손댈 대상(부모) 라벨 — "이름 버전 이 끌어옴 [외 N개]". 이스케이프 전의 평문이다. */
+/** 손댈 대상(부모) 라벨 — "상위 의존성 이름 버전 [외 N개]". 이스케이프 전의 평문이다. */
 function vg_host_dep_parent_label(array $o): string {
     $p = vg_pkgdep_parts((string) $o['parents'][0]);
     $more = count($o['parents']) - 1;
-    return $p['name'] . ' ' . $p['version'] . ' 이 끌어옴' . ($more > 0 ? ' 외 ' . $more . '개' : '');
+    return '상위 의존성 ' . $p['name'] . ' ' . $p['version'] . ($more > 0 ? ' 외 ' . $more . '개' : '');
 }
 
 /**
  * 전이 의존성일 때의 조치 셀 — "직접 조치 불가" + 손댈 대상 + 의존성 경로 링크.
- *   **버전은 제안하지 않는다.** 설치되지 않은 부모 버전이 무엇을 끌어오는지 우리는 모른다
+ *   **버전은 제안하지 않는다.** 설치되지 않은 부모 버전의 하위 의존성이 무엇인지 우리는 모른다
  *   (그걸 알려면 업스트림 버전별 의존성 DB 가 필요하다). 틀린 조치 제안은 없는 것보다 나쁘다.
  */
 function vg_host_dep_origin_cell(array $o, int $hostId): string {
@@ -78,8 +78,8 @@ function vg_host_dep_origin_cell(array $o, int $hostId): string {
 
 /**
  * 손댈 대상(부모) 요약 표의 한 행 → 이름·버전 + 의존성 그래프 링크.
- *   링크는 "무엇을 끌어오나"(tab=to) 로 건다 — 이 부모를 올리면 무엇이 함께 바뀌는지가
- *   여기서 궁금한 것이다(행 단위 셀의 링크는 반대로 "무엇이 끌어왔나"였다).
+ *   링크는 "하위 의존성"(tab=to) 으로 건다 — 이 부모를 올리면 무엇이 함께 바뀌는지가
+ *   여기서 궁금한 것이다(행 단위 셀의 링크는 반대로 "상위 의존성"이었다).
  */
 function vg_host_dep_rollup_target(array $p, int $hostId): string {
     $t = vg_pkgdep_parts((string) $p['key']);
