@@ -3264,29 +3264,6 @@ form.card .btn--primary:active { transform: translateY(0); }
 .dep-tree li { padding: .18rem 0; line-height: 1.5; }
 .dep-tree summary { cursor: pointer; }
 .dep-tree summary::marker { color: var(--muted); }
-/* 경로 목록: 루트 → … → 대상 을 한 줄로 잇는다. 화살표는 CSS 가 그린다(마크업엔 없다). */
-.dep-paths { margin: 0; padding-left: 1.2rem; }
-.dep-paths > li { padding: .35rem 0; border-top: 1px solid var(--line); }
-.dep-paths > li:first-child { border-top: 0; }
-.dep-path { display: flex; flex-wrap: wrap; gap: .3rem .55rem; margin: 0; padding: 0; list-style: none; }
-.dep-path li { display: flex; align-items: center; }
-.dep-path li + li::before { content: "→"; margin-right: .4rem; color: var(--muted); }
-/* 경로 노드 하나를 칩으로 감싼다 — 기존 토큰만 재사용(.pill 은 강조색이라 여기선 중립 표면을 쓴다).
- *   .badge.tone-muted 도 같은 중립 칩이지만 재사용하지 않는다 — .badge 는 `white-space: nowrap`
- *   가 기본이라(위 1893행) 뱃지 한 단어엔 맞아도, 이 칩은 이름+버전+manager+등급 뱃지까지 얹혀
- *   길어질 수 있어 줄바꿈이 필요하다. */
-.dep-path__chip {
-  display: inline-flex;
-  flex-wrap: wrap;
-  min-width: 0;
-  align-items: center;
-  gap: .35rem;
-  padding: .2rem .65rem;
-  border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-}
-
 /* --- 대시보드 현황 요약(index.php) ------------------------------------------
  * 섹션 머리 바로 아래 숫자 4칸(vg_kpi_strip, summary.php) · 그 아래 자산 순위 막대
  * (vg_asset_rank) 단독 전체 폭 카드. 예전엔 순위 옆에 처리 흐름 워터폴을 2열 격자

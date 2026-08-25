@@ -332,13 +332,17 @@ vg_hero(vg_h((string) $host['fqdn']), $meta, null, 'ok', '');
     if (count($r['paths']) === 1 && count($r['paths'][0]) === 1) {
         vg_empty(['icon' => '□', 'title' => '상위 의존성이 없습니다.']);
     } else {
-        echo '<ol class="dep-paths">';
-        foreach ($r['paths'] as $path) {
-            echo '<li><ol class="dep-path">';
-            foreach ($path as $node) { echo '<li><span class="dep-path__chip">' . $nodeLabel($node) . '</span></li>'; }
-            echo '</ol></li>';
-        }
-        echo '</ol>';
+        /* 하위 의존성/전체 트리 탭과 같은 가로 계층 트리 렌더러를 그대로 쓰되, 방향만
+         *   뒤집는다 — children/parents 를 맞바꾼 그래프를 대상 패키지를 뿌리 삼아 넘기면
+         *   대상(왼쪽)에서 조상(부모→조부모→…→루트, 오른쪽)으로 뻗어나가는 그림이 된다.
+         *   좌표 계산·SVG·색상·배지 코드(vg_deptree_render 이하)는 전혀 손대지 않는다. */
+        $ancestorGraph = ['nodes' => $graph['nodes'], 'children' => $graph['parents'],
+                           'parents' => $graph['children'], 'roots' => $graph['roots'], 'pom' => $graph['pom']];
+        // 경로 강조는 [루트, …, 대상] 순서라 그대로 쓰면 이음 방향이 뒤집힌 트리와 반대가
+        //   된다 — 각 경로를 [대상, …, 루트] 로 뒤집어서 다시 계산한다.
+        $ancPathMarks = vg_deptree_path_marks(array_map('array_reverse', $r['paths']));
+        vg_deptree_render($ancestorGraph, $target, $nodeBudget,
+            ['path' => $ancPathMarks['nodes'], 'pathedge' => $ancPathMarks['edges']] + $treeCtx);
     }
     ?>
     </div>
