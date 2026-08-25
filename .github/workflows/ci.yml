@@ -1,0 +1,152 @@
+name: CI
+
+# =============================================================================
+# vuln-agent · GitHub Actions CI
+# =============================================================================
+# 목적: 이 저장소를 클론한 누구나(비밀값 등록 없이) 돌릴 수 있는 검증 파이프라인.
+# CI 는 로컬 개발 워크플로우(워크트리·오케스트레이터·kit/)를 참조하지 않는다 —
+# 그 경로들은 .gitignore 로 저장소 밖에 있으므로(README "출품 범위" 절) 여기서 쓰면
+# 클론한 사람의 CI 가 애초에 돌지 않는다. 대신 deploy/hooks/pre-push · deploy/README.md ·
+# tests/smoke.sh 가 이미 하는 검증을 그대로 옮겨 적는다(스크립트를 source 하지 않는다 —
+# pre-push 는 git 훅 stdin/환경을 전제로 하는 로컬 형식이라 CI 인자·환경과 다르다).
+#
+# 두 잡으로 나눈다:
+#   static — php -l / bash -n / UI 정적 검사 / vercmp 단위 테스트 / 에이전트 서명 검증 /
+#            신규 마이그레이션 파일명 규칙. 전부 라이브 DB 가 필요 없다. 항상 돈다.
+#   smoke  — docker compose 로 실제 dev 스택(db+web+scheduler)을 띄우고 tests/smoke.sh 를
+#            돌린다. secrets/*.txt 는 deploy/compose_runner.sh init 이 그 자리에서 강한
+#            랜덤값으로 만든다(운영 비밀값이 아니다) — 그래서 시크릿을 등록하지 않고도 뜬다.
+#            static 이 실패하면 건너뛴다(무거운 잡을 낭비하지 않는다).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 같은 브랜치에 연속으로 push 되면 이전 실행은 취소한다(러너 낭비 방지).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: 정적 검증 (lint · 서명 · 마이그레이션 파일명)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 마이그레이션 파일명 검사가 origin/main 과 비교해야 한다.
+
+      # 호스트(개발자 PC)의 PHP 는 7.2 라 8.x 문법(예: 화살표 함수)을 오탐한다 — 그래서
+      # CLAUDE.md 는 로컬에서 컨테이너로 lint 하라고 적어 두었다. Actions 러너는 매번
+      # 새로 세팅하므로 8.3 을 그냥 깔면 된다(호스트 버전 문제 자체가 없다).
+      - name: PHP 8.3 설치
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+
+      - name: PHP 구문 검사 (server/·agent/ 전체 .php)
+        run: |
+          set -euo pipefail
+          find server agent -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      # `bash -n a.sh b.sh` 처럼 한 줄에 여러 파일을 주면 bash 는 첫 파일만 검사하고
+      # 나머지는 그 스크립트의 위치 인자($1…)로 삼는다 — 두 번째 파일은 조용히 안 걸린다.
+      # 그래서 파일마다 따로 호출한다.
+      - name: 쉘 스크립트 구문 검사 (bash -n)
+        run: |
+          set -euo pipefail
+          for f in agent/vuln-inventory-agent.sh agent/install-agent.sh; do
+            bash -n "$f"
+            echo "✓ $f"
+          done
+
+      # 서버 없이 도는 정적 검사(죽은 CSS 클래스·인라인 style·정의 안 된 CSS 변수·페이저
+      # 없이 잘리는 목록). tests/smoke.sh 가 앞단에서 인자 없이 부르는 것과 동일하다.
+      - name: UI 정적 검사 (tests/ui_lint.sh)
+        run: bash tests/ui_lint.sh
+
+      # 버전 비교는 매처 오탐의 1순위라 스모크 맨 앞에서도 도는 단위 테스트다. 여기서도
+      # 8.3 이 이미 깔려 있으므로 로컬처럼 별도 컨테이너가 필요 없다.
+      - name: vercmp 단위 테스트
+        run: php tests/vercmp_test.php
+
+      # agent/*.sh 를 고치고 재서명(.sig)을 빠뜨리면 노드가 자동 업데이트를 받고도 서명
+      # 검증에 실패해 무한 재시도하는 실제 장애가 두 번 났다(#735·#738). openssl 만 있으면
+      # 되는 0.1초짜리 검사라 CI 에도 그대로 넣는다.
+      - name: 에이전트 서명 검증
+        run: bash tests/agent_signature_check.sh
+
+      # deploy/hooks/pre-push 가 로컬에서 하는 검사를 그대로 옮긴 것 — 새 마이그레이션
+      # 파일명이 연번(0001…)이 아니라 14자리 타임스탬프(YYYYMMDDHHMMSS_이름.sql)인지 본다.
+      # 연번은 "다음 번호가 뭔지"를 동시에 작업하는 브랜치들이 각자 origin/main 을 보고
+      # 정하다 실제로 두 번 충돌했다(0003·0014). origin/main 에 이미 있는 파일(옛 연번
+      # 포함)은 대상에서 뺀다 — 새로 추가된 파일만 본다.
+      - name: 신규 마이그레이션 파일명 검사
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          fail=0
+          shopt -s nullglob
+          for f in db/migrations/*.sql; do
+            if git cat-file -e "origin/main:$f" 2>/dev/null; then
+              continue
+            fi
+            base="$(basename "$f")"
+            if [[ "$base" =~ ^[0-9]{14}_.+\.sql$ ]]; then
+              echo "✓ $f"
+            else
+              echo "::error file=$f::마이그레이션 파일명이 YYYYMMDDHHMMSS_이름.sql 형식이 아닙니다(연번 금지 — 동시 브랜치가 같은 번호를 집어 충돌한 이력이 있습니다). 예: db/migrations/\$(date +%Y%m%d%H%M%S)_이름.sql"
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+  smoke:
+    name: 동적 검증 (docker compose 스택 + tests/smoke.sh)
+    needs: static
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      # secrets/*.txt(mysql_root_password·mysql_password·admin_password)는 여기서
+      # openssl 로 갓 생성되는 이 실행 한정 랜덤값이다 — 저장소나 GitHub Actions Secrets
+      # 어디에도 미리 등록해 둘 필요가 없다(deploy/secrets/README.md). "가짜 비밀값을
+      # 하드코딩"하는 것과 다르다: 값 자체가 매 실행 새로 만들어지고 아무 데도 재사용되지
+      # 않는다. .env.dev 도 템플릿(비밀값 없음)에서 그대로 복사된다.
+      - name: 스택 초기화 (.env.dev · secrets 랜덤 생성)
+        run: |
+          cd deploy
+          ./compose_runner.sh init
+
+      # 이 러너는 워크트리(wt/<이름>)가 아니라 평범한 체크아웃이라 compose_runner.sh 는
+      # "메인 트리" 취급한다 — README "빠르게 실행해 보기"와 같은 db+web+scheduler 전부
+      # 기동. vuln-agent-app:dev 이미지가 없으므로 docker compose 가 첫 실행에서 자동으로
+      # 빌드한다(--build 를 따로 붙이지 않는다 — 이 저장소 관례상 --build 는 Dockerfile 을
+      # 바꾼 브랜치에서만 쓴다. 이미지가 아예 없는 이번 같은 경우엔 compose 가 알아서 굽는다).
+      - name: dev 스택 기동 (db+web+scheduler)
+        run: |
+          cd deploy
+          ./compose_runner.sh dev up -d
+
+      # tests/smoke.sh 는 sample-scan*.json 고정 픽스처와 로컬 스택만 쓴다 — 실제 KEV·OSV·
+      # NVD 같은 외부 피드로 나가지 않으므로 네트워크 시크릿(API 키 등) 없이 그대로 돈다.
+      - name: 스모크 테스트 (tests/smoke.sh)
+        run: ./tests/smoke.sh http://localhost:8000
+
+      - name: 실패 시 컨테이너 로그
+        if: failure()
+        run: |
+          cd deploy
+          ./compose_runner.sh dev ps
+          ./compose_runner.sh dev logs --no-color --tail=300
+
+      - name: 스택 정리
+        if: always()
+        run: |
+          cd deploy
+          ./compose_runner.sh dev down
