@@ -35,6 +35,8 @@ const VG_DISCOVERY_TONES = ['new' => 'crit', 'known' => 'ok', 'ignored' => 'mute
 /** 한 행에 펼치는 열린 포트 수. 나머지는 개수와 툴팁으로만 말한다 — 여섯 개를 늘어놓으면
  *   행마다 줄 수가 달라져 표가 울퉁불퉁해졌다(사용자 지적). */
 const VG_DISCOVERY_PORTS_SHOWN = 3;
+/** 배너 한 줄 표시 폭(문자 수). 넘으면 vg_trunc() 가 자르고 title 에 전체 원문을 남긴다. */
+const VG_DISCOVERY_BANNER_WIDTH = 18;
 /* 정리(제외·메모) 조작 어휘 — 모달의 선택지·감사로그 문구·POST 검증이 이 하나만 본다.
  *   '제외 해제' 를 따로 두는 건 여러 건을 한 번에 걸 때 토글이 행마다 다르게 튀기 때문이다. */
 const VG_DISCOVERY_TRIAGE_OPS = ['ignore' => '제외로 표시', 'unignore' => '제외 해제', 'note' => '메모 저장'];
@@ -574,24 +576,29 @@ vg_header('자산 탐색', 'discovery');
           $ports = $portsByAsset[(int) $r['discovered_asset_id']] ?? [];
           if (!$ports) { return '<span class="why">없음</span>'; }
           $label = static fn(array $p): string => $p['port'] . '/' . $p['proto']
-              . ($p['hint'] !== '' ? ' ' . mb_strimwidth($p['hint'], 0, 14, '…') . '?' : '');
+              . ($p['hint'] !== '' ? ' ' . mb_strimwidth($p['hint'], 0, 14, '…') . '(추측)' : '');
           $shown = array_slice($ports, 0, VG_DISCOVERY_PORTS_SHOWN);
-          /* 툴팁이 전부를 갖는다 — 포트 전체(추측 힌트 포함)와 배너(HTTP Server 헤더·TLS 인증서 CN). */
+          /* 툴팁이 전부를 갖는다 — 포트 전체(추측 힌트 포함)와 배너(HTTP Server 헤더·TLS 인증서 CN).
+           *   배너는 대상(침해됐을 수도 있는 장비)이 스스로 밝힌 값이라 vg_strip_ctrl() 로 bidi
+           *   스푸핑 문자(U+202E 등)를 한 번 더 거른다 — vg_h 는 HTML 인젝션만 막고 표시 순서는
+           *   못 막는다. 같은 순회에서 셀에 보여줄 첫 배너도 같이 골라 두 번 도는 걸 피한다. */
           $tip = implode(' · ', array_map($label, $ports));
-          $banners = [];
+          $tipBanners = [];
+          $firstBanner = null;
           foreach ($ports as $p) {
-              if ($p['banner'] !== '') { $banners[] = $p['port'] . ' ' . $p['banner']; }
+              if ($p['banner'] === '') { continue; }
+              $clean = vg_strip_ctrl($p['banner']);
+              $tipBanners[] = $p['port'] . ' ' . $clean;
+              if ($firstBanner === null) { $firstBanner = ['port' => $p['port'], 'text' => $clean]; }
           }
-          if ($banners) { $tip .= ' / 배너 · ' . implode(' · ', $banners); }
+          if ($tipBanners) { $tip .= ' / 배너(대상이 스스로 밝힌 값) · ' . implode(' · ', $tipBanners); }
           $plain = static fn(array $p): string => $p['port'] . '/' . $p['proto'];
           $html = '<span title="' . vg_h($tip) . '"><b>' . number_format(count($ports)) . '</b>'
               . '<span class="why">개</span> <code>'
               . vg_h(mb_strimwidth(implode(' · ', array_map($plain, $shown)), 0, 44, '…')) . '</code></span>';
-          foreach ($ports as $p) {
-              if ($p['banner'] !== '') {
-                  $html .= '<div class="why">' . vg_h(mb_strimwidth($p['banner'], 0, 18, '…')) . '</div>';
-                  break;
-              }
+          if ($firstBanner !== null) {
+              $html .= '<div class="why" title="배너 · 대상이 스스로 밝힌 값">' . $firstBanner['port'] . ' · '
+                  . vg_trunc($firstBanner['text'], VG_DISCOVERY_BANNER_WIDTH) . '</div>';
           }
           return $html;
       },

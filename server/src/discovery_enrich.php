@@ -312,10 +312,12 @@ function vg_discovery_banner_kind(int $port): ?string
     return null;
 }
 
-/** 배너 문자열 정리 — 제어문자를 빼고 컬럼 길이(255)에 맞춘다. */
+/** 배너 문자열 정리 — 제어문자·bidi 오버라이드(U+202E 등)를 빼고 컬럼 길이(255)에 맞춘다.
+ *   /u 플래그로 유니코드 단위 매칭한다 — 바이트 모드([[:cntrl:]])는 U+202E 계열을 못 거른다
+ *   (표시 시점의 vg_strip_ctrl() 과 같은 범위를 쓴다, server/src/format/text.php). */
 function vg_discovery_clean_banner(string $s): string
 {
-    $s = preg_replace('/[[:cntrl:]]+/', ' ', $s) ?? '';
+    $s = preg_replace('/[\x00-\x1F\x7F\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]+/u', ' ', $s) ?? '';
     return mb_substr(trim($s), 0, 255);
 }
 
