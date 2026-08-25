@@ -172,7 +172,8 @@ $ctr = $data['containers'] ?? [];
 $ctrRows     = vg_ingest_parse_container_list((string) ($ctr['list'] ?? ''));
 $ctrPkgRows  = vg_ingest_parse_container_packages((string) ($ctr['packages'] ?? ''));
 $ctrProcRows = vg_ingest_parse_container_processes((string) ($ctr['processes'] ?? ''));
-$ctrExpRows  = vg_ingest_parse_container_exposures((string) ($ctr['exposure'] ?? ''));$sbom = vg_ingest_parse_sbom((string) ($ctr['sbom'] ?? ''));
+$ctrExpRows  = vg_ingest_parse_container_exposures((string) ($ctr['exposure'] ?? ''));
+$sbom = vg_ingest_parse_sbom((string) ($ctr['sbom'] ?? ''));
 $ctrPkgRows = array_merge($ctrPkgRows, $sbom['packages']);
 foreach ($sbom['meta'] as $cid => $sm) {
     if (isset($ctrRows[$cid])) { $ctrRows[$cid][13]=$sm[0]; $ctrRows[$cid][14]=$sm[1]; }
@@ -247,8 +248,10 @@ try {
             'sys'          => $sys,
             'raw'          => $raw,
             'collected_at' => $collectedAt,
-            // 외부 요청은 Caddy가 자신이 직접 본 원격 주소를 X-Real-IP로 덮어쓴다.
-            // 개발/loopback 직결은 헤더가 없으므로 REMOTE_ADDR로 폴백한다.
+            // 우선순위: (1) 에이전트가 스스로 보고한 primary_ip(사설 IP도 유효 — NAT 뒤 자산 식별에 필요)
+            //   → (2) 외부 요청이면 Caddy 가 직접 본 원격 주소를 실은 X-Real-IP
+            //   → (3) 개발/loopback 직결처럼 헤더가 없는 경우의 REMOTE_ADDR.
+            // primary_ip 가 loopback(127.0.0.1/::1)이면 에이전트가 자기 주소를 못 읽은 것으로 보고 버린다.
             'remote_ip'    => (($reportedIp = filter_var(trim((string) ($meta['primary_ip'] ?? '')), FILTER_VALIDATE_IP))
                 && $reportedIp !== '127.0.0.1' && $reportedIp !== '::1')
                 ? $reportedIp
