@@ -76,8 +76,7 @@ function vg_cce_check_file_perms(array $sec): array {
             $perms[$f[3]] = ['mode' => $f[0], 'user' => $f[1], 'group' => $f[2]];
         }
     }
-    // [경로, 코드, 제목, 최대 허용 모드, 위험도] — 모드는 "이 값 이하"여야 통과
-    //   [경로, 코드, 제목, 최대 허용 모드(8진수 문자열), 위험도]
+    // [경로, 코드, 제목, 최대 허용 모드(8진수 문자열), 위험도] — 모드는 "이 값 이하"여야 통과
     $fileRules = [
         ['/etc/passwd',   'CCE-FILE-PASSWD',   '/etc/passwd 소유자·권한 (U-07)',   '644', 'MEDIUM'],
         ['/etc/shadow',   'CCE-FILE-SHADOW',   '/etc/shadow 소유자·권한 (U-08)',   '400', 'HIGH'],
