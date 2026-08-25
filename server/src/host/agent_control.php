@@ -86,9 +86,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $existingReason = $st->fetchColumn();
                     $reviewInput['grade_reason'] = $existingReason !== false ? (string) $existingReason : '';
                 }
-                if (!array_key_exists('article9_item', $reviewInput)) {
-                    $reviewInput += vg_asset_grade_review_load($pdo, $postHostId);
-                }
+                // article9_item 이 폼에 없다 = 9개 검토 입력칸이 애초에 없는 화면(host/grade.php)이
+                //   보낸 요청이다 — 이번엔 아무도 그 값을 다시 안 봤으니 재검증·재저장 대상이
+                //   아니다(preserveOnly). vg_asset_grade_review_confirm() 이 그 값을 건드리지
+                //   않으므로 여기서 DB 값을 미리 불러 병합할 필요도 없다.
+                $preserveReview = !array_key_exists('article9_item', $reviewInput);
                 vg_asset_grade_review_confirm(
                     $pdo,
                     $postHostId,
@@ -96,7 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     (string) ($_POST['criticality'] ?? ''),
                     (string) $reviewInput['grade_reason'],
                     $reviewInput,
-                    $me['id'] ?? null
+                    $me['id'] ?? null,
+                    $preserveReview
                 );
                 $agentMsg = $newGrade === ''
                     ? '자산 등급 확정을 해제했습니다.'
