@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * feeds/upsert.php — 수집 결과를 tb_cve / tb_kev_catalog / tb_cve_affected_package 로
  *   넣는 공용 write 프리미티브 + CVE-ID 형식검증. 여러 커넥터가 공유한다(KISA 공지 전용
- *   upsert 는 feeds/kisa.php 가 따로 갖는다).
+ *   upsert 는 ../advisory.php 가 따로 갖는다).
  */
 
 /**

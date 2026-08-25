@@ -17,6 +17,12 @@ declare(strict_types=1);
  *     feeds/epss.php   — VgEpssConnector + vg_epss_fetch
  *     feeds/debtracker.php — VgDebtrackerConnector + 데비안 보안 트래커(백포트 오탐 억제 근거)
  *     feeds/kcve.php   — VgKcveConnector + 리눅스 커널 CNA(kernel.org — 커널 판정의 정본)
+ *     feeds/rhoval.php — VgRhovalConnector + RHEL 계열 벤더 OVAL(Red Hat·AlmaLinux·Oracle Linux)
+ *     feeds/rhunfixed.php — VgRhunfixedConnector + Red Hat 미수정 CVE(OVAL 이 못 담는 조치 불가)
+ *     feeds/ssg.php    — VgSsgConnector + SCAP Security Guide 룰셋(CIS/NIST/STIG 참조 매핑)
+ *     feeds/ubuntuoval.php — VgUbuntuOvalConnector + 우분투 보안 OVAL
+ *     feeds/pkgregistry.php — VgPkgRegistryConnector + 패키지 레지스트리 메타데이터(Packagist/npm/PyPI/Maven)
+ *     feeds/generic_api.php — VgGenericApiConnector + 화면에서 등록하는 범용 API 커넥터
  *
  *   새 피드 추가: feeds/<type>.php 에 VgFeedConnector 구현 + 여기 require 한 줄 +
  *   VG_CONNECTOR_TYPES 에 한 줄. 그 한 줄이 구현·폼 <select>·저장 검증·수집 방식 표시·

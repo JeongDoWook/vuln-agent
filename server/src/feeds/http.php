@@ -5,7 +5,7 @@ declare(strict_types=1);
  * feeds/http.php — 피드 커넥터 공용 HTTP 계층.
  *   SSRF 방어(호스트 resolve → 사설·루프백·링크로컬·예약 대역 차단) + curl 요청 래퍼
  *   (리다이렉트 홉마다 재검사, JSON/raw, maxBytes 스트리밍 중단) + 커넥터 URL 선택.
- *   모든 커넥터(kev/osv/nvd/kisa/epss)가 이 파일만 통해 외부로 나간다.
+ *   모든 커넥터가 이 파일만 통해 외부로 나간다.
  */
 
 // 모든 curl 요청의 연결 타임아웃(초). vg_http_json/vg_http_get_many/vg_http_raw 3곳이 공유.
