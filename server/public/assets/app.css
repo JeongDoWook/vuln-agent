@@ -888,6 +888,10 @@ a.sbom-riskpkgs__name:hover { text-decoration: underline; }
 .card__body > details > summary > .badge { margin-left: auto; }
 .card__body > details[open] > summary { border-bottom: 1px solid var(--line); }
 .card__body > details > :not(summary) { padding: var(--sp-3); }
+/* 위 규칙이 목록의 padding 을 통째로 지정해 list-style-position:outside 기본 마커가
+ *   들어갈 공간을 못 찾고 패딩 박스 밖(카드 왼쪽 경계 밖)으로 삐져나온다 — 마커를 콘텐츠
+ *   흐름 안으로 넣어 절대 못 나가게 한다(자산 등급 카드의 "시스템이 본 신호" 목록에서 실측). */
+.card__body > details > ul { list-style-position: inside; }
 
 /* 여백 유틸 — PHP 에 style="margin-top:…" 을 쓰지 않기 위한 최소한의 유틸.
  * 색·레이아웃은 CSS 가 소유한다는 규칙을 지키되, 클래스를 남발하지 않도록 둘만 둔다. */
@@ -3433,16 +3437,11 @@ a.arank__row:hover { background: var(--surface-2); color: var(--text); text-deco
 .icon-cell { display: flex; flex-direction: column; align-items: center; gap: .35rem; padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text-2); font-size: var(--fs-xs); }
 .icon-cell .vg-ico { width: 1.5rem; height: 1.5rem; }
 
-/* --- 자산 등급의 구조화 검토 근거(host/grade.php) ---------------------------
- * 아홉 칸짜리 근거 폼의 **접기는 걷었다** — 접힌 폼은 채워야 하는 사람에게 못 본 폼이다.
- * 대신 두 칸 격자(.form-grid)로 다섯 줄에 세운다. 여기 남은 <details> 는 그 위의
- * '시스템이 본 신호의 근거' 하나뿐이다(읽을거리라 접혀 있어도 손해가 없다).
- * 본문은 폼(.setting-form)과 같은 간격으로 쌓아 다른 줄과 간격이 안 어긋나게 한다. */
+/* --- 자산 등급 카드(host/grade.php) --------------------------------------
+ * 아홉 칸짜리 확정 근거 폼은 완전히 걷었다 — 이 셀렉터가 남기는 <details> 는
+ * '시스템이 본 신호의 근거' 하나뿐이다(읽을거리라 접혀 있어도 손해가 없다). */
 .grade-review > summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); font-weight: 650; }
 .grade-review > summary:hover { color: var(--accent-2); }
-/* 접기가 사라진 자리의 제목 — 예전 <summary> 와 같은 무게로 둔다(줄 모양이 안 바뀐다). */
-.grade-review__title { margin: 0; color: var(--text-2); font-size: var(--fs-sm); font-weight: 650; }
-.grade-review__body { display: grid; gap: 1rem; margin-top: .9rem; }
 
 /* --- 모달 2열 폼의 칸 정렬(.form-grid 안의 .field) --------------------------
  * 두 칸 중 하나에만 도움말(.why)이 붙으면 그 칸만 세로로 길어지는 게 아니라, **반대쪽 칸의

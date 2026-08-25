@@ -167,7 +167,18 @@ function vg_asset_grade_review_save(
     ], $userId, subject: $subject, action: 'UPDATE', strict: true);
 }
 
-/** 등급과 구조화 검토 정보를 검증 후 한 트랜잭션으로 확정한다. */
+/**
+ * 등급과 구조화 검토 정보를 검증 후 한 트랜잭션으로 확정한다.
+ *
+ * @param bool $preserveOnly true면 $input 의 9개 검토 필드는 이번에 사람이 입력한 값이
+ *   아니라 폼에 입력칸이 없어 DB의 기존값을 그대로 승계하는 것이다(host/grade.php 는 이
+ *   9개 칸을 걷어냈다). 이 경우 validate() 로 다시 검증하지 않는다 — 재검토일 같은
+ *   "오늘 이후" 제약을 이미 지난 기존값에 다시 들이대면 재검토일이 지난 자산은 등급을
+ *   영원히 못 바꾸게 된다. save() 도 호출하지 않는다 — 9개 항목을 아무도 다시 보지
+ *   않았는데 reviewed_by/reviewed_at/is_stale 이 지금 시각으로 갱신되면 안 된다.
+ *   등급 확정 해제($grade === '')는 사람이 명시적으로 고른 조작이라 $preserveOnly 와
+ *   무관하게 그대로 삭제한다.
+ */
 function vg_asset_grade_review_confirm(
     PDO $pdo,
     int $hostId,
@@ -175,10 +186,11 @@ function vg_asset_grade_review_confirm(
     ?string $criticality,
     string $reason,
     array $input,
-    ?int $userId
+    ?int $userId,
+    bool $preserveOnly = false
 ): string {
     $isClear = $grade === '';
-    $review = $isClear ? [] : vg_asset_grade_review_validate($input);
+    $review = ($isClear || $preserveOnly) ? [] : vg_asset_grade_review_validate($input);
     $versionRaw = array_key_exists('review_version', $input)
         ? vg_asset_grade_review_input_string($input, 'review_version') : '0';
     if (!ctype_digit($versionRaw) || strlen($versionRaw) > 20) {
@@ -221,7 +233,7 @@ function vg_asset_grade_review_confirm(
                 'previous_completed_fields' => count($clearedFields),
                 'cleared_fields' => $clearedFields,
             ], $userId, subject: $fqdn, action: 'DELETE', strict: true);
-        } else {
+        } elseif (!$preserveOnly) {
             vg_asset_grade_review_save($pdo, $hostId, $review, $expectedVersion, $userId, $fqdn);
         }
         if ($ownsTransaction) { $pdo->commit(); }

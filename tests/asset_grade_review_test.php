@@ -153,7 +153,8 @@ $confirmPos = strpos((string) $hostSource, 'vg_asset_grade_review_confirm(');
 $ok($guardPos !== false && $confirmPos !== false && $guardPos < $confirmPos
     && str_contains(substr((string) $hostSource, $guardPos, $confirmPos - $guardPos), "throw new RuntimeException('자산 등급을 확정할 권한이 없습니다.')"),
     '단일 확정은 명시적 관리자 거부 뒤에만 실행');
-$ok(str_contains((string) $hostSource, '=== (string) $v'), '저장된 숫자 제9조 호를 strict 비교 전에 문자열화');
+// 제9조 호 select(strict 비교 포함)는 확정 근거 9개 항목과 함께 화면에서 걷어냈다
+//   (host-grade-simplify) — 검증 대상 코드가 없어졌으므로 이 회귀 가드도 함께 뺀다.
 $ok(!str_contains((string) $assetsSource, 'vg_asset_grade_review_confirm('), '일괄 확정은 호스트별 구조화 정보 미복제');
 $ok(str_contains((string) $assetsSource, '기존 정보는 재검토 필요 상태'), '일괄 확정 뒤 기존 검토의 stale 한계 표시');
 
