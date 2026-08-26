@@ -9,8 +9,8 @@
 
 **여기 적힌 것은 저장소에 실제로 들어 있거나 실행·빌드·검증에 실제로 쓰이는 것뿐이다.**
 목록은 `server/public/assets/vendor/` 전수 확인, 각 `Dockerfile` 의 `FROM`,
-`deploy/compose.*.yml` 의 `image:`, `server/src/feeds/` 의 커넥터 카탈로그(`VG_CONNECTOR_TYPES`)를
-직접 읽어 작성했다.
+`deploy/compose.*.yml` 의 `image:`, `server/src/feeds/` 의 커넥터 카탈로그(`VG_CONNECTOR_TYPES`),
+`ai-report/requirements.txt` 를 직접 읽어 작성했다.
 
 ---
 
@@ -119,6 +119,59 @@ PyPI·Maven Central 4개 행은 `pkgregistry` 커넥터 추가에 맞춰 2026-08
 > 20)** 이다(`VG_PKGREG_MAX_VERSIONS_CEILING`, `server/src/feeds/pkgregistry.php`) — 설정값을
 > 아무리 크게 넣어도 이 천장을 넘어 카탈로그 전체를 받아올 수 없다.
 > 상업적 이용 조항은 조직이 이 제품을 상업적으로 운용하기 전에 별도로 확인이 필요하다.
+
+---
+
+## 5. ai-report/ 의존성 (Python)
+
+`ai-report/`(FastAPI+Celery+LangGraph 기반 AI 보고서 생성기)가 쓰는 Python 패키지다.
+`ai-report/requirements.txt` 는 버전을 고정하지 않으므로, 아래 "버전"은 **2026-08-26 에
+PyPI 에서 확인한 최신 배포판** 기준이다. 용도는 `ai-report/README.md` 의 "구성요소"·
+"프로젝트 구조" 절을 참고해 정리했다.
+
+| 이름 | 버전 | 용도 | 라이선스 | 출처 URL |
+|---|---|---|---|---|
+| fastapi | 0.141.1 (미고정) | REST API 서버 프레임워크 — 작업 생성/조회/PDF 다운로드 API | MIT | https://pypi.org/project/fastapi/ |
+| uvicorn | 0.52.4 (미고정) | ASGI 서버 — FastAPI 구동 | BSD-3-Clause | https://pypi.org/project/uvicorn/ |
+| celery | 5.6.3 (미고정) | 백그라운드 파이프라인 실행(RabbitMQ 브로커) | BSD-3-Clause | https://pypi.org/project/celery/ |
+| pydantic-settings | 2.15.0 (미고정) | 환경변수 기반 설정 관리 | MIT | https://pypi.org/project/pydantic-settings/ |
+| sqlalchemy | 2.0.52 (미고정) | ORM — Postgres 작업(Job) 상태 모델, MySQL 조회 엔진 | MIT | https://pypi.org/project/SQLAlchemy/ |
+| asyncpg | 0.31.0 (미고정) | 비동기 PostgreSQL 드라이버(SQLAlchemy 비동기 엔진) | Apache-2.0 | https://pypi.org/project/asyncpg/ |
+| psycopg2-binary | 2.9.12 (미고정) | 동기 PostgreSQL 드라이버(SQLAlchemy 동기 엔진, `create_table.py`) | **LGPL-3.0-or-later, OpenSSL 링크 예외 포함** — 아래 주석 참고 | https://pypi.org/project/psycopg2-binary/ |
+| python-dotenv | 1.2.3 (미고정) | `.env` 환경변수 로드 | BSD-3-Clause | https://pypi.org/project/python-dotenv/ |
+| langgraph | 1.2.11 (미고정) | 5단계 분석 파이프라인 조립(그래프 실행) | MIT | https://pypi.org/project/langgraph/ |
+| langchain | 1.3.17 (미고정) | LLM 체인/프롬프트 공통 프레임워크 | MIT | https://pypi.org/project/langchain/ |
+| langchain-openai | 1.6.0 (미고정) | OpenAI 호환 API(로컬 llama.cpp 등) LLM 클라이언트 | MIT | https://pypi.org/project/langchain-openai/ |
+| langchain-qdrant | 1.1.0 (미고정) | Qdrant 벡터DB 연동(RAG 검색) | MIT | https://pypi.org/project/langchain-qdrant/ |
+| langchain-ollama | 1.1.0 (미고정) | Ollama 호환 LLM 클라이언트 | MIT | https://pypi.org/project/langchain-ollama/ |
+| qdrant-client | 1.19.0 (미고정) | Qdrant 벡터DB 클라이언트(CTI 문서 검색) | Apache-2.0 | https://pypi.org/project/qdrant-client/ |
+| transformers | 5.15.1 (미고정) | 임베딩 모델 로딩(bge-m3 등, RAG 벡터DB 구축용) | Apache-2.0 | https://pypi.org/project/transformers/ |
+| sentence-transformers | 6.0.0 (미고정) | 문장 임베딩 생성(bge-m3, RAG 벡터DB 구축용) | Apache-2.0 | https://pypi.org/project/sentence-transformers/ |
+| pypdf | 6.16.2 (미고정) | PDF 텍스트 추출(CTI 보고서 벡터DB 구축용) | BSD-3-Clause | https://pypi.org/project/pypdf/ |
+| weasyprint | 69.0 (미고정) | HTML → PDF 최종 보고서 렌더링 | BSD-3-Clause | https://pypi.org/project/weasyprint/ |
+| jinja2 | 3.1.6 (미고정) | 보고서 HTML 템플릿 렌더링 | BSD-3-Clause | https://pypi.org/project/jinja2/ |
+| pytest | 9.1.1 (미고정) | 단위 테스트 프레임워크 | MIT | https://pypi.org/project/pytest/ |
+
+> **psycopg2-binary(LGPL-3.0-or-later)와 AGPL-3.0 — 충돌하지 않음.** psycopg2 원문 라이선스
+> (`LICENSE` 파일)는 "LGPL v3 이상, 단 OpenSSL 라이브러리와 링크해 배포하는 것을 허용하는
+> 특별 예외 포함"이다. 이 저장소는 psycopg2 를 **수정 없이 PyPI 배포판 그대로** 라이브러리로
+> 사용할 뿐이라 LGPL 이 요구하는 조건(2차적저작물 아닌 한 별도 소스 공개 의무 없음)에 걸리지
+> 않고, 위쪽(호출하는 쪽) 코드에 카피레프트가 전파되지도 않는다. 나머지 19개 패키지는 모두
+> MIT·BSD-3-Clause·Apache-2.0(관대한 라이선스)이라 검토할 쟁점이 없다. **GPL/AGPL 계열
+> 강한 카피레프트 패키지는 없다** — AGPL-3.0(루트 `LICENSE`)과의 충돌 없음.
+
+### AI 모델
+
+코드가 아니라 모델 가중치이지만, 대회 운영규정 제8조⑥("활용한 모든 오픈소스 라이브러리·
+프레임워크·**모델**은 출처와 라이선스를 명확히 공개")의 직접 대상이라 여기 포함한다.
+전부 파인튜닝 없이 그대로(외부 모델 그대로 활용 유형) 로컬 GPU 서버에서 구동하며, 상세는
+`ai-report/README.md` "사용 모델·라이선스" 절 참고.
+
+| 모델(개발사) | 라이선스 | 용도 | 출처 URL |
+|---|---|---|---|
+| Qwen3.8-27B-Uncensored-Cyber-GGUF (philbert440, Qwen/Qwen3.8-27B 기반) | Apache License 2.0 | 사이버보안 위험분석 콘텐츠 생성(영어) | https://huggingface.co/philbert440/Qwen3.8-27B-Uncensored-Cyber-GGUF |
+| TranslateGemma-27B-IT (Google) | Gemma 이용약관 (https://ai.google.dev/gemma/terms) | 영어 → 한국어 번역 | https://huggingface.co/google/translategemma-27b-it |
+| BGE-M3 (BAAI) | MIT License | RAG 임베딩(위협 인텔리전스 벡터 검색) | https://huggingface.co/BAAI/bge-m3 |
 
 ---
 
