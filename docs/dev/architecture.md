@@ -19,6 +19,8 @@
 | 에이전트 설치·운용·수집 항목 | [`agent/README.md`](../../agent/README.md) |
 | 피드 소스별 역할 | [`피드소스-역할.md`](피드소스-역할.md) |
 | 설정 항목 레퍼런스 | [`docs/ui-configuration.md`](../ui-configuration.md) |
+| 판정 정확도 핵심 로직 3축(버전 비교·매칭·서명 검증) | [`핵심로직-해설.md`](핵심로직-해설.md) |
+| public route 별 인증·query·응답 계약 | [`runtime-contract-inventory.md`](runtime-contract-inventory.md) |
 
 **절 목차**(서브섹션은 각 절 안에) — [1 시스템 개요](#1-시스템-개요-데이터-흐름) ·
 [2 매처 판정 로직](#2-매처-판정-로직--실제로-위험한가) ·

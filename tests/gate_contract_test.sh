@@ -71,6 +71,13 @@ TSV
 printf 'tracked\n' > "$FIXTURE/tracked.txt"
 chmod +x "$FIXTURE/bin/docker" "$FIXTURE/bin/curl" "$FIXTURE/bin/php" "$FIXTURE/pass.sh"
 
+# pre-push 훅에서(즉 이 스크립트가 실제 push 도중 smoke.sh 를 거쳐 호출될 때) git 이 하위
+# 프로세스에 GIT_DIR/GIT_WORK_TREE 를 물려줄 수 있다 — 물려받으면 아래 `git -C "$FIXTURE"`
+# 호출이 fixture 가 아니라 **실제 저장소**를 대상으로 add/commit 해서 진짜 HEAD 를 fixture
+# 스냅샷으로 덮어써 버린다(실제로 겪음: 2026-08-26, submission-hygiene-audit). fixture git 은
+# 완전히 새 저장소여야 하므로 물려받을 수 있는 GIT_* 환경변수를 전부 지우고 시작한다.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES
+
 git -C "$FIXTURE" init -q
 git -C "$FIXTURE" config user.name gate-contract
 git -C "$FIXTURE" config user.email gate-contract@example.invalid
