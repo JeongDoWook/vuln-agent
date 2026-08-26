@@ -103,17 +103,38 @@ dev(메인 트리 / 워크트리)·prod 가 각각 어떤 compose 레이어를 �
 판독 불가라, 아래 6장의 영역별 그림으로 나눠 싣는다. 옅게 칠한 표는 그 묶음이 아니라 다른 묶음이
 다루는 테이블이다 — 관계선이 끊기지 않게 PK 만 남겼다.
 
-[![수집·인벤토리](erd-수집인벤토리.svg)](erd-수집인벤토리.svg)
-
-[![CVE 도메인](erd-cve도메인.svg)](erd-cve도메인.svg)
-
-[![벤더·기준 카탈로그](erd-벤더카탈로그.svg)](erd-벤더카탈로그.svg)
-
-[![판정 결과](erd-판정결과.svg)](erd-판정결과.svg)
-
-[![피드 운영 · 인증 · 감사](erd-피드운영.svg)](erd-피드운영.svg)
-
-[![자산 탐색](erd-자산탐색.svg)](erd-자산탐색.svg)
+<table>
+<tr>
+<td align="center" width="50%">
+<a href="erd-수집인벤토리.svg"><img src="erd-수집인벤토리.svg" width="430" alt="수집·인벤토리"></a><br>
+<sub>수집·인벤토리</sub>
+</td>
+<td align="center" width="50%">
+<a href="erd-cve도메인.svg"><img src="erd-cve도메인.svg" width="430" alt="CVE 도메인"></a><br>
+<sub>CVE 도메인</sub>
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="erd-벤더카탈로그.svg"><img src="erd-벤더카탈로그.svg" width="430" alt="벤더·기준 카탈로그"></a><br>
+<sub>벤더·기준 카탈로그</sub>
+</td>
+<td align="center">
+<a href="erd-판정결과.svg"><img src="erd-판정결과.svg" width="430" alt="판정 결과"></a><br>
+<sub>판정 결과</sub>
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="erd-피드운영.svg"><img src="erd-피드운영.svg" width="430" alt="피드 운영 · 인증 · 감사"></a><br>
+<sub>피드 운영 · 인증 · 감사</sub>
+</td>
+<td align="center">
+<a href="erd-자산탐색.svg"><img src="erd-자산탐색.svg" width="430" alt="자산 탐색"></a><br>
+<sub>자산 탐색</sub>
+</td>
+</tr>
+</table>
 
 ▶ [전체 ERD 펼쳐보기](erd.svg) — 61테이블 전체를 한 그림으로(뷰포트 2558px, 문서 본문에선 글자가 작다).
 
@@ -130,15 +151,34 @@ dev(메인 트리 / 워크트리)·prod 가 각각 어떤 compose 레이어를 �
 화면이다 — 관계선이 끊기지 않게 남겼다. `사이트맵.puml` 은 (ERD 와 달리) 손으로 쓰고 `render.sh` 로
 뽑는 산출물이라, 분리본도 같은 방식으로 손으로 고치고 같이 다시 뽑는다.
 
-[![자산](사이트맵-자산.svg)](사이트맵-자산.svg)
-
-[![탐지·컴플라이언스](사이트맵-탐지컴플라이언스.svg)](사이트맵-탐지컴플라이언스.svg)
-
-[![데이터·카탈로그](사이트맵-데이터카탈로그.svg)](사이트맵-데이터카탈로그.svg)
-
-[![관리](사이트맵-관리.svg)](사이트맵-관리.svg)
-
-[![인증 · API · 무인증 엔드포인트](사이트맵-인증api.svg)](사이트맵-인증api.svg)
+<table>
+<tr>
+<td align="center" width="50%">
+<a href="사이트맵-자산.svg"><img src="사이트맵-자산.svg" width="430" alt="자산"></a><br>
+<sub>자산</sub>
+</td>
+<td align="center" width="50%">
+<a href="사이트맵-탐지컴플라이언스.svg"><img src="사이트맵-탐지컴플라이언스.svg" width="430" alt="탐지·컴플라이언스"></a><br>
+<sub>탐지·컴플라이언스</sub>
+</td>
+</tr>
+<tr>
+<td align="center">
+<a href="사이트맵-데이터카탈로그.svg"><img src="사이트맵-데이터카탈로그.svg" width="430" alt="데이터·카탈로그"></a><br>
+<sub>데이터·카탈로그</sub>
+</td>
+<td align="center">
+<a href="사이트맵-관리.svg"><img src="사이트맵-관리.svg" width="430" alt="관리"></a><br>
+<sub>관리</sub>
+</td>
+</tr>
+<tr>
+<td align="center" colspan="2">
+<a href="사이트맵-인증api.svg"><img src="사이트맵-인증api.svg" width="430" alt="인증 · API · 무인증 엔드포인트"></a><br>
+<sub>인증 · API · 무인증 엔드포인트</sub>
+</td>
+</tr>
+</table>
 
 ▶ [전체 사이트맵 펼쳐보기](사이트맵.svg) — 전체 화면 구성을 한 그림으로(뷰포트 1671px, 문서 본문에선 글자가 작다).
 
