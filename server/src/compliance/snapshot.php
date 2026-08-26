@@ -38,8 +38,8 @@ function vg_compliance_evidence(array $items, int $total): array {
 }
 
 /**
- * 오늘(또는 지정일) 스냅샷이 이미 있는지. 스케줄러가 1분마다 도는데 매번 무거운 집계를
- *   다시 돌릴 이유가 없다 — 하루 1회만 실제로 판정하게 하는 게이트.
+ * 오늘(또는 지정일) 스냅샷이 이미 있는지. 스케줄러는 이전 실행 종료 후 60초 뒤마다 도는데
+ *   매번 무거운 집계를 다시 돌릴 이유가 없다 — 하루 1회만 실제로 판정하게 하는 게이트.
  */
 function vg_compliance_snapshot_exists(PDO $pdo, ?string $date = null): bool {
     $st = $pdo->prepare('SELECT 1 FROM tb_compliance_snapshot WHERE snapshot_date = ? AND is_deleted = 0');

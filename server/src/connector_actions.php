@@ -145,8 +145,9 @@ function vg_connector_handle_post(PDO $pdo, array $post): array {
                     }
                     vg_rebuild_package_summary($pdo);
                     // 라이선스 요약은 여기서 돌리지 않는다 — DELETE→INSERT...SELECT 벌크라도
-                    // 웹 요청(동기 실행) 안에서 매번 도는 건 불필요하다. scheduler.php 가 1분마다
-                    // 무조건 재빌드하므로 최대 1분 지연으로 최신화된다(OSV 게이트 밖, license_summary.php 참고).
+                    // 웹 요청(동기 실행) 안에서 매번 도는 건 불필요하다. scheduler.php 가 이전 실행
+                    // 종료 후 60초 뒤마다 무조건 재빌드하므로 그 지연 안에 최신화된다(OSV 게이트 밖,
+                    // license_summary.php 참고).
                 }
             } elseif (!empty($r['ok'])) {
                 // 조용히 건너뛰지 않는다 — 왜 재매칭이 안 돌았는지 화면에 드러나야 한다.

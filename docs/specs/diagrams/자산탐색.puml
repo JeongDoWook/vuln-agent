@@ -29,7 +29,7 @@ database "tb_discovery_target\ncidr <<UK>> · enabled\nports(NULL=기본 세트)
 rectangle "'대역 탐색' — 화면은\npending 행만 만든다\n(수백 소켓을 수십 초 드는 작업이라\n웹 요청에서 돌리지 않는다)" as ENQ
 database "tb_discovery_run\nstatus: pending → running\n→ done/failed" as RUN
 
-rectangle "scheduler 사이드카 · 매 1분 틱\n① 30분 넘게 running 인 run 회수\n② pending 집행(한 틱 1건 · 45초 예산)\n남은 것은 다음 틱이 집는다" as TICK #a371f7
+rectangle "scheduler 사이드카 · 60초 뒤 재실행 틱\n① 30분 넘게 running 인 run 회수\n② pending 집행(한 틱 1건 · 45초 예산)\n남은 것은 다음 틱이 집는다" as TICK #a371f7
 rectangle "bin/discover.php\n사람이 직접 부르는 같은 함수\n(--pending / <대역 id>)" as CLI
 
 rectangle "1단계 — 대역 전체 × 탐침 6포트\n22 · 80 · 443 · 3389 · 445 · 8080\nopen 이든 closed 든 응답하면 '살아있음'" as ST1 #9e6a03
