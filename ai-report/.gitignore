@@ -1,0 +1,17 @@
+# 실제 접속 정보(DB 비밀번호, 내부 IP 등)가 들어있음 — 절대 커밋 금지. .env.example 참고.
+.env
+
+# 파이썬
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# 생성된 보고서(PDF) — 실행 결과물이지 소스코드가 아님
+reports/*.pdf
+
+# 에디터/IDE
+.vscode/
+.idea/
