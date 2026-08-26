@@ -122,8 +122,8 @@ def run_report_qa(
             f'렌더링된 그룹 수(정상+검토+충돌)={total_groups_rendered}'
         )
 
-    # 9b) CTI 배경자료(cti_snippets)가 하나도 없는데 위협 행위자/APT 이름을 언급했는지
-    #     (RAG로 실제로 뭔가 찾은 게 없으면 그 그룹 설명에 위협 행위자 귀속이 나올 근거가 없다)
+    # 9) CTI 배경자료(cti_snippets)가 하나도 없는데 위협 행위자/APT 이름을 언급했는지
+    #    (RAG로 실제로 뭔가 찾은 게 없으면 그 그룹 설명에 위협 행위자 귀속이 나올 근거가 없다)
     for g in remediation_groups:
         if g.get('cti_snippets'):
             continue
@@ -136,7 +136,7 @@ def run_report_qa(
                 )
                 break
 
-    # 9c) 번역 누락/실패로 영어 원문이 그대로 남은 AI 텍스트가 있는지(app/agent/translate.py의
+    # 10) 번역 누락/실패로 영어 원문이 그대로 남은 AI 텍스트가 있는지(app/agent/translate.py의
     #     영어 폴백이 조용히 보고서까지 올라오는 것을 막는 최종 안전망).
     text_fields_to_check: list[tuple[str, str]] = [
         ('총평(executive_summary)', narrative.get('executive_summary') or ''),
@@ -154,7 +154,7 @@ def run_report_qa(
         if ratio is not None and ratio < _MIN_HANGUL_RATIO:
             issues.append(f'번역 누락 의심(한글 비율 {ratio:.0%}): {field_label}')
 
-    # 9) finding 수 vs 고유 CVE 수 혼동(같은 값이면 의심 — 3천여 finding에 CVE도 똑같이 3천이면 이상)
+    # 11) finding 수 vs 고유 CVE 수 혼동(같은 값이면 의심 — 3천여 finding에 CVE도 똑같이 3천이면 이상)
     if (
         stats.get('total_findings')
         and stats.get('unique_cve_count')

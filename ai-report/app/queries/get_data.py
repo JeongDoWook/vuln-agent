@@ -21,6 +21,8 @@ ORDER BY collected_at DESC
 LIMIT 1
 '''
 
+# LIMIT 2: 현재 스캔 + 직전 스캔을 함께 가져와 두 시점의 차이(신규/해소된 finding)를
+# 계산하는 데 쓴다(app/services/data_processing_services.py의 get_previous_scan_delta).
 tb_scan_recent = '''
 SELECT scan_id, host_id, collected_at, package_count, exposure_count
 FROM tb_scan

@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 # max_tokens를 넉넉히 주지 않으면 답변 본문이 나오기 전에 잘린다.
 # 이 모델에는 영어로 위험 분석 콘텐츠를 작성하게 하고(사이버보안 전문 모델), 결과를
 # translate_llm(translategemma)으로 한국어 번역한다.
-oepnai_api_llm = ChatOpenAI(
+openai_api_llm = ChatOpenAI(
     model=settings.model_name,
     api_key=settings.llm_api_key,
     base_url=settings.llm_base_url,

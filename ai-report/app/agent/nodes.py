@@ -14,7 +14,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
 
-from app.agent.llm_api import oepnai_api_llm, translate_llm
+from app.agent.llm_api import openai_api_llm, translate_llm
 from app.agent.llm_json import call_llm_json
 from app.agent.prompts import (
     GROUP_ANALYSIS_SYSTEM_PROMPT,
@@ -193,7 +193,7 @@ def analyze_risks(state: VulnagentState) -> dict:
     for batch in _batched(remediation_groups, GROUP_BATCH_SIZE):
         try:
             result = call_llm_json(
-                llm=oepnai_api_llm,
+                llm=openai_api_llm,
                 system_prompt=GROUP_ANALYSIS_SYSTEM_PROMPT,
                 user_prompt=build_group_analysis_user_prompt(batch),
                 schema=GroupNarrativeList,
@@ -262,7 +262,7 @@ def analyze_risks(state: VulnagentState) -> dict:
 def synthesize_narrative(state: VulnagentState) -> dict:
     """보고서 전체의 총평/권고/결론을 LLM으로 작성(영어)하고 번역한다(4단계)."""
     narrative_en = call_llm_json(
-        llm=oepnai_api_llm,
+        llm=openai_api_llm,
         system_prompt=REPORT_SYNTHESIS_SYSTEM_PROMPT,
         user_prompt=build_report_synthesis_user_prompt(
             host=state['host'],
