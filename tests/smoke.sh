@@ -563,6 +563,16 @@ else
   no "Node/Python 보조 lock 파서 회귀"
 fi
 
+phase "gate_contract"
+printf "\n[gate_contract]\n"
+# deploy/run-gates.sh 자체(의존성 전파·필수/비필수 구분·프로필 분기)의 계약 테스트.
+# 스모크 목록에 빠져 있던 걸 발견해 여기에 묶는다(2026-08-26, submission-hygiene-audit).
+if bash "$ROOT/tests/gate_contract_test.sh"; then
+  ok "run-gates.sh 게이트 의존성·필수여부·프로필 분기 계약"
+else
+  no "게이트 계약 회귀  (자세히: bash tests/gate_contract_test.sh)"
+fi
+
 phase "debtracker 단위 테스트"
 # --- debtracker 단위 테스트 ---------------------------------------------------
 # 데비안 보안 트래커 파서·판정(백포트 억제 근거). 느슨하면 오탐이 남고, 빡빡하면 진짜 취약점을
