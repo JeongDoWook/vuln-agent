@@ -23,7 +23,7 @@
 
 | 클라이언트 | 용도 | 엔드포인트 | max_tokens | temperature |
 |---|---|---|---|---|
-| `oepnai_api_llm` | 그룹 분석 + 총평 합성 (영어 생성) | `LLM_BASE_URL` (8080, thinking 모델) | 8192 | 0.2 |
+| `openai_api_llm` | 그룹 분석 + 총평 합성 (영어 생성) | `LLM_BASE_URL` (8080, thinking 모델) | 8192 | 0.2 |
 | `translate_llm` | 영→한 번역 | `TRANSLATE_LLM_BASE_URL` (8081, translategemma) | 4096 | 0.1 |
 
 > 8080 모델은 답변 전에 `reasoning_content`를 길게 생성하는 thinking 모델이라 `max_tokens`를
