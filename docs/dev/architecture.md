@@ -56,7 +56,8 @@ Nexpose·Nessus 의 Discovery / Vulnerability 분리와 같은 구도다.
   OS 추정·UDP 스캔·재시도·MAC 수집은 하지 않는다.
 - **한 프로세스로 끝낸다**: `STREAM_CLIENT_ASYNC_CONNECT` + `stream_select()` 로 수백 소켓을
   한꺼번에 들어 소켓 회수 지점을 한 곳에 둔다.
-- **웹은 스캔을 직접 돌리지 않는다.** 화면은 `pending` 행만 만들고 집행은 **스케줄러 틱**(1분)이나
+- **웹은 스캔을 직접 돌리지 않는다.** 화면은 `pending` 행만 만들고 집행은 **스케줄러 틱**(이전 실행
+  종료 후 60초 뒤 재실행)이나
   `server/bin/discover.php --pending` 이 `vg_discovery_run_pending()` 한 함수로 한다 — 수백 소켓을
   수십 초 드는 작업이라 웹 요청에서 돌리면 요청이 그만큼 묶인다. 한 틱의 집행량엔 상한이 있어
   (기본 1건·45초) 수집 틱을 굶기지 않는다. 예전엔 집행하는 곳이 아예 없어 "대역 탐색"이 영원히

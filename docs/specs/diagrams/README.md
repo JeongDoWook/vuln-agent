@@ -41,7 +41,7 @@
 
 ## 피드 커넥터
 
-scheduler 사이드카가 매 1분 due 커넥터를 조회해 외부 소스를 긁고 `tb_cve` 계열에 upsert 한 뒤 매처를
+scheduler 사이드카가 이전 실행 종료 후 60초 뒤마다 due 커넥터를 조회해 외부 소스를 긁고 `tb_cve` 계열에 upsert 한 뒤 매처를
 재계산시키는 경로다. `connectors.php` 의 설정·지금 실행·미리보기가 어디로 붙는지도 같이 있다.
 소스별 역할은 [`피드소스-역할.md`](../../dev/피드소스-역할.md), 수집 구조는
 [`architecture.md` §3](../../dev/architecture.md#3-cve-피드-커넥터-외부-소스-수집).

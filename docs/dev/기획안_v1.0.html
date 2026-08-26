@@ -376,7 +376,7 @@
       <div><h2>최적화</h2><div class="sub">서버에 무리 안 가고, 대규모에서도 안 터지게</div></div>
     </div>
     <div class="res">
-      <div class="res-item"><div class="rn">피드 스케줄러 사이드카</div><div class="rd">CVE 피드를 중앙이 로컬 DB(<code>tb_cve</code> 등)로 당겨와 보관. 매칭은 로컬끼리 → 빠르고, <strong>대상 서버 에이전트는 CVE 소스에 직접 접속할 필요 없음</strong>. 스케줄러가 1분마다 due 커넥터만 실행하고 수집 후 전체 스캔을 재매칭한다.</div></div>
+      <div class="res-item"><div class="rn">피드 스케줄러 사이드카</div><div class="rd">CVE 피드를 중앙이 로컬 DB(<code>tb_cve</code> 등)로 당겨와 보관. 매칭은 로컬끼리 → 빠르고, <strong>대상 서버 에이전트는 CVE 소스에 직접 접속할 필요 없음</strong>. 스케줄러가 이전 실행 종료 후 60초 뒤 due 커넥터만 실행하고 수집 후 전체 스캔을 재매칭한다.</div></div>
       <div class="res-item"><div class="rn">백포트 억제 2단계</div><div class="rd">OSV 버전필터로 먼저 걸러내고, 그걸 통과한 소수 건만 changelog 대조(가장 무거운 단계)로 넘긴다 → 불필요한 changelog 파싱을 줄인다. 수집 단계에서 <code>--no-changelog</code>로도 끌 수 있다.</div></div>
       <div class="res-item"><div class="rn">무중단 배포</div><div class="rd">운영은 <code>../server</code>를 읽기전용 마운트. PHP 만 바뀌면 <code>git pull</code> 한 줄로 반영(opcache 가 2초 내 갱신), Dockerfile·compose·caddy 변경 시에만 재빌드.</div></div>
       <div class="res-item"><div class="rn">스키마 마이그레이션 자동화</div><div class="rd"><code>db/migrations/YYYYMMDDHHMMSS_*.sql</code> 중 미적용분만 사전순 자동 적용 → 스키마 변경이 파일 하나 추가로 끝난다. 파일명이 타임스탬프인 건 동시에 도는 브랜치가 같은 연번을 집어 실제로 충돌했기 때문이다.</div></div>

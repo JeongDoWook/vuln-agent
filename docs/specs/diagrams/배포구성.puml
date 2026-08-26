@@ -28,7 +28,7 @@ package "compose 레이어" as Files {
     rectangle "compose.dev.yml\n(web+scheduler 소스마운트\n웹 평문:${WEB_PORT})" as FD
     rectangle "compose.dev-db.yml\n(db·DB포트노출\n메인 트리 전용)" as FDB
     rectangle "compose.dev-net.yml\n(외부 공유 네트워크\nvulnagent-dev-net)" as FN
-    rectangle "compose.prod.yml\n(이미지코드·DB비노출\nmy.cnf·caddy)" as FP
+    rectangle "compose.prod.yml\n(소스 ro 마운트·DB 포트 노출(3306)\nmy.cnf·caddy)" as FP
 }
 
 package "Docker Secrets (txt)" as Secrets {
@@ -41,7 +41,7 @@ package "실행 컨테이너 (prod)" as Stack {
     rectangle "caddy · tls internal(자체서명)\n443→호스트 ${WEB_PORT:-8080}\n보안 응답 헤더(CSP·nosniff·X-Frame-Options)\nHSTS 는 붙이지 않음(자체서명 확정)" as CADDY #8250df
     rectangle "web · php:8.3-apache\n내부 80만(외부 비노출)" as WC #238636
     rectangle "scheduler · php-cli\n(피드 주기 실행)" as SCH #a371f7
-    database "db · mysql:8.0\n내부망만" as DC #1f6feb
+    database "db · mysql:8.0\n내부망 + 3306 호스트 노출\n(점프호스트 SSH 터널 전용,\n외부는 방화벽 차단)" as DC #1f6feb
 }
 
 R1 --> F0

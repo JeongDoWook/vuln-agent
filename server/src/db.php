@@ -42,7 +42,7 @@ if (!function_exists('vg_db_is_retryable_connect')) {
 
 // PDO 싱글턴. 예외 모드 + 진짜 prepared statement.
 //   접속은 짧게 재시도한다 — compose 의 `depends_on: condition: service_healthy` 는 **최초 기동에만**
-//   걸려서 운영 중 DB 재시작을 못 막는다. 스케줄러는 1분마다 새 프로세스라 결국 회복하지만
+//   걸려서 운영 중 DB 재시작을 못 막는다. 스케줄러는 60초 뒤마다 새 프로세스로 재실행되니 결국 회복하지만
 //   그 사이 실행이 통째로 유실됐다(운영 실측 2026-07-26).
 if (!function_exists('vg_pdo')) {
     function vg_pdo(): PDO {

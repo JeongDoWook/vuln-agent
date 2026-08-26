@@ -22,7 +22,7 @@ package "웹 (admin)" as UI {
 }
 
 package "scheduler 사이드카" as Sched {
-    rectangle "매 1분\ndue 커넥터 조회" as TICK
+    rectangle "이전 실행 종료 후\n60초 뒤 due 커넥터 조회" as TICK
 }
 
 package "외부 소스" as Sources {
@@ -40,7 +40,7 @@ database "tb_cve · tb_kev_catalog\ntb_cve_affected_package\ntb_advisory" as CVE
 rectangle "매처 재계산" as MAT #a371f7
 
 CFG --> DBc : 저장
-TICK --> DBc : enabled &\nnext_run<=now
+TICK --> DBc : enabled &\nschedule_json+last_run_at 로\ndue 계산(vg_schedule_due)
 
 TICK --> KEV
 TICK --> OSV
@@ -61,6 +61,6 @@ GAPI --> CVE : upsert
 CVE --> MAT
 TICK --> MAT : 실행 후
 CFG --> MAT : 지금 실행
-CFG ..> KEV : 미리보기 10건\nfeed_preview.php
+CFG ..> KEV : 미리보기 10건(선택한 타입 대상,\n그림은 KEV 로 예시)\nfeed_preview.php
 
 @enduml

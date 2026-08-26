@@ -48,7 +48,7 @@ note bottom of VOCAB
 end note
 
 rectangle "/compliance.php — '지금'\n통제 4종 요약 + 호스트별 근거" as SCR #db6d28
-rectangle "scheduler 사이드카 · 매 1분 틱\n오늘 스냅샷이 없을 때만 판정한다" as TICK #a371f7
+rectangle "scheduler 사이드카 · 60초 뒤 재실행 틱\n오늘 스냅샷이 없을 때만 판정한다" as TICK #a371f7
 database "tb_compliance_snapshot (하루 1건)\n└ tb_compliance_snapshot_control\n   control_key · status_label\n   violation_count · unjudged_count\n   evidence(JSON)" as SNAP #238636
 note bottom of SNAP
   FK 로 원본 행에 매달지 않는다 —
@@ -72,8 +72,6 @@ C --> P3
 A --> P4
 
 POL --> P1
-POL --> P2
-POL --> P4
 POL --> VOCAB : 컷라인
 
 P1 --> VOCAB
