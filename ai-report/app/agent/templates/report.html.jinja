@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>{{ host.hostname }} 취약점 분석 보고서</title>
+<style>
+  @page {
+    size: A4;
+    margin: 22mm 18mm 20mm 18mm;
+    @top-right {
+      content: "{{ host.hostname }} · scan_id {{ scan.scan_id }}";
+      font-family: 'Noto Sans CJK KR', 'Noto Sans KR', sans-serif;
+      font-size: 8pt;
+      color: #999;
+    }
+    @bottom-center {
+      content: counter(page) " / " counter(pages) " · scan_id " "{{ scan.scan_id }}";
+      font-family: 'Noto Sans CJK KR', 'Noto Sans KR', sans-serif;
+      font-size: 9pt;
+      color: #888;
+    }
+  }
+  @page cover {
+    @top-right { content: none; }
+    @bottom-center { content: none; }
+  }
+  @page landscape-appendix {
+    size: A4 landscape;
+    margin: 16mm;
+    @top-right {
+      content: "{{ host.hostname }} · scan_id {{ scan.scan_id }}";
+      font-family: 'Noto Sans CJK KR', 'Noto Sans KR', sans-serif;
+      font-size: 8pt;
+      color: #999;
+    }
+    @bottom-center {
+      content: counter(page) " / " counter(pages) " · scan_id " "{{ scan.scan_id }}";
+      font-family: 'Noto Sans CJK KR', 'Noto Sans KR', sans-serif;
+      font-size: 9pt;
+      color: #888;
+    }
+  }
+  .appendix { page: landscape-appendix; }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans CJK KR', 'Noto Sans KR', sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.6;
+    color: #222;
+  }
+
+  h1, h2, h3 { color: #142850; font-weight: 700; }
+  h1 { font-size: 22pt; margin-bottom: 4pt; }
+  h2 {
+    font-size: 14pt;
+    margin-top: 20pt;
+    padding-bottom: 4pt;
+    border-bottom: 2px solid #142850;
+  }
+  h3 { font-size: 11.5pt; margin-bottom: 4pt; }
+
+  .cover { page: cover; page-break-after: always; }
+  .cover .subtitle { font-size: 13pt; color: #555; margin-top: 6pt; }
+  .cover .meta { margin-top: 14pt; font-size: 10pt; color: #444; }
+  .cover .meta div { margin-bottom: 3pt; }
+
+  .kpi-grid { display: flex; flex-wrap: wrap; gap: 7pt; margin-top: 16pt; }
+  .kpi-card {
+    flex: 1 1 28%; min-width: 100pt;
+    border: 1px solid #d8dde3; border-radius: 6pt; padding: 8pt 10pt; background: #f8f9fb;
+  }
+  .kpi-card .label { font-size: 8pt; color: #666; margin-bottom: 3pt; }
+  .kpi-card .value { font-size: 15pt; font-weight: 700; color: #142850; }
+  .kpi-card .value.level-CRITICAL { color: #b91c1c; }
+  .kpi-card .value.level-HIGH { color: #c2540d; }
+  .kpi-card .value.level-MEDIUM { color: #b7791f; }
+  .kpi-card .value.level-LOW { color: #2f6f4f; }
+  .kpi-card .sub { font-size: 7.5pt; color: #888; margin-top: 2pt; }
+  .provisional-note {
+    margin-top: 10pt; font-size: 8.5pt; color: #92400e; background: #fff6e5;
+    border: 1px solid #f0c36d; border-radius: 4pt; padding: 6pt 9pt;
+  }
+
+  .ai-legend { display: flex; align-items: center; gap: 6pt; font-size: 8.5pt; color: #555; margin-top: 12pt; }
+  .ai-legend .swatch { display: inline-block; width: 10pt; height: 10pt; border-radius: 2pt; background: #7c3aed; }
+
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0; }
+  th, td { border: 1px solid #d8dde3; padding: 5pt 7pt; font-size: 9.5pt; text-align: left; vertical-align: top; }
+  th { background: #eef1f6; color: #142850; }
+  .compact th, .compact td { font-size: 8.5pt; padding: 3pt 5pt; }
+  .compact tr { page-break-inside: avoid; }
+  .compact td:nth-child(2) { white-space: normal; word-break: keep-all; min-width: 70pt; }
+  .appendix table { font-size: 9pt; }
+  .appendix th, .appendix td { padding: 4pt 6pt; }
+
+  .warning-box {
+    background: #fff6e5; border: 1px solid #f0c36d; border-radius: 4px;
+    padding: 8pt 12pt; margin: 10pt 0; font-size: 9.5pt;
+  }
+
+  /* AI(LLM)가 작성한 문장: 인쇄 대비를 위해 본문은 진회색, 보라색은 배지·테두리에만 사용 */
+  .ai-box {
+    background: #f7f7f9; border-left: 4px solid #7c3aed;
+    padding: 10pt 14pt; margin: 10pt 0; color: #333;
+  }
+  .ai-text { color: #333; }
+  .ai-badge {
+    display: inline-block; padding: 1pt 7pt; border-radius: 3pt;
+    background: #ede4fd; color: #6d28d9; font-size: 8pt; font-weight: 700;
+    letter-spacing: 0.2pt; margin-bottom: 5pt;
+  }
+
+  .bar-row { display: flex; align-items: center; margin: 3pt 0; font-size: 9pt; }
+  .bar-label { width: 105pt; flex-shrink: 0; }
+  .bar-track { flex-grow: 1; background: #e8ecf1; border-radius: 3px; height: 11pt; margin: 0 8pt; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; }
+  .bar-count { width: 38pt; text-align: right; flex-shrink: 0; }
+  .bar-fill.HIGH, .bar-fill.CRITICAL, .bar-fill.P0 { background: #d64545; }
+  .bar-fill.MEDIUM, .bar-fill.P1 { background: #e8a33d; }
+  .bar-fill.LOW, .bar-fill.P2 { background: #8aa4c8; }
+  .bar-fill.P3 { background: #c3cad3; }
+  .bar-fill.REVIEW { background: #8b8b9c; }
+  .bar-fill.EXTERNAL { background: #d64545; }
+  .bar-fill.LOCAL { background: #e8a33d; }
+  .bar-fill.FILTERED, .bar-fill.BOUND, .bar-fill.NONE { background: #8aa4c8; }
+  .bar-fill.POTENTIALLY_REACHABLE { background: #d64545; }
+  .bar-fill.INSTALLED_ONLY { background: #8aa4c8; }
+  .bar-fill.UNKNOWN { background: #c3cad3; }
+
+  .group-card {
+    border: 1px solid #d8dde3; border-radius: 4px; padding: 10pt 14pt; margin: 10pt 0;
+    page-break-inside: avoid;
+  }
+  .group-card-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4pt; }
+  .group-card-head .pkg { font-size: 12pt; font-weight: 700; color: #142850; }
+  .badge-row { display: flex; gap: 4pt; flex-wrap: wrap; }
+  .tier-badge, .action-badge {
+    display: inline-block; padding: 2pt 8pt; border-radius: 10pt; font-size: 8.5pt; font-weight: 700; color: #fff;
+  }
+  .tier-P0 { background: #d64545; }
+  .tier-P1 { background: #e8a33d; }
+  .tier-P2 { background: #6c8ebf; }
+  .tier-P3 { background: #9aa4af; }
+  .tier-REVIEW { background: #8b8b9c; }
+  .action-badge { background: #e5e7eb; color: #374151; }
+
+  .group-meta { color: #666; font-size: 9pt; margin: 3pt 0 6pt 0; }
+  .group-card dl { margin: 6pt 0 0 0; }
+  .group-card dt { font-weight: 700; color: #444; margin-top: 5pt; }
+  .group-card dd { margin: 1pt 0 0 0; }
+  .group-card .cve-table { margin-top: 6pt; }
+  .group-card .cve-table th, .group-card .cve-table td { font-size: 8.5pt; padding: 3pt 5pt; }
+
+  .conflict-card {
+    border: 1px solid #f0b0b0; border-left: 4px solid #b91c1c; border-radius: 4pt;
+    padding: 8pt 12pt; margin: 8pt 0; background: #fff8f8; font-size: 9pt;
+    page-break-inside: avoid;
+  }
+  .conflict-card .title { font-weight: 700; color: #991b1b; }
+  .conflict-card .codes { font-size: 8pt; color: #7f1d1d; margin-top: 3pt; }
+
+  .score-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  footer.note { margin-top: 24pt; font-size: 8.5pt; color: #888; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <h1>{{ host.hostname }} 취약점 분석 보고서</h1>
+  <div class="subtitle">Vulnerability Risk Assessment Report</div>
+  <div class="meta">
+    <div>대상 호스트: {{ host.hostname }} ({{ host.os_id }} {{ host.os_version }})</div>
+    <div>스캔 기준 시각: {{ generated_at }} (scan_id {{ scan.scan_id }})</div>
+    <div>보고서 생성: AI 취약점 분석 에이전트 (자동 생성, Job #{{ job_id }}) · 산정 버전 {{ stats.scoring_version }}</div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="label">위험등급 (자체 산정{% if stats.provisional %}·잠정{% endif %})</div>
+      <div class="value level-{{ stats.risk_level }}">{{ stats.risk_level }}</div>
+      <div class="sub">종합점수 {{ stats.overall_score }}/100 (threat {{ stats.threat_score }}·env {{ stats.environment_score }}·impact {{ stats.impact_score }})</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">수집 완전성</div>
+      <div class="value">{{ stats.collection_completeness }}%</div>
+      <div class="sub">필수 5단계 완료율</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">종합 분석 신뢰도</div>
+      <div class="value">{{ stats.analysis_confidence }}%</div>
+      <div class="sub">매칭 {{ stats.matching_confidence }}%·도달판정 {{ stats.reachability_confidence }}%</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">P0 긴급조치</div>
+      {% set p0 = stats.tier_distribution.get('P0', 0) %}
+      <div class="value {{ 'level-CRITICAL' if p0 > 0 else '' }}">{{ p0 }}건</div>
+      <div class="sub">{{ '24시간 이내 권장' if p0 > 0 else '해당 없음' }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">P1/P2/P3/검토</div>
+      <div class="value" style="font-size:12pt;">{{ stats.tier_distribution.get('P1',0) }} / {{ stats.tier_distribution.get('P2',0) }} / {{ stats.tier_distribution.get('P3',0) }} / {{ stats.tier_distribution.get('REVIEW',0) }}</div>
+      <div class="sub">전체 {{ stats.total_findings }}건 분류 결과</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">잠재적 외부 도달 위험</div>
+      <div class="value">{{ stats.reachability_distribution.get('POTENTIALLY_REACHABLE', 0) }}건</div>
+      <div class="sub">고유 CVE {{ stats.unique_cve_count }}건 / 패키지 {{ stats.unique_package_count }}건</div>
+    </div>
+    {% if previous_scan_delta %}
+    <div class="kpi-card">
+      <div class="label">직전 스캔 대비</div>
+      <div class="value">{{ '%+d' | format(previous_scan_delta.total_finding_delta) }}</div>
+      <div class="sub">신규 {{ previous_scan_delta.new_finding_count }} · 해결 {{ previous_scan_delta.resolved_finding_count }}</div>
+    </div>
+    {% endif %}
+    <div class="kpi-card">
+      <div class="label">자산 중요도</div>
+      <div class="value" style="font-size:12pt;">{{ host.criticality or '미평가' }}</div>
+      <div class="sub">{{ '위험점수 잠정치의 원인' if stats.provisional else '확정됨' }}</div>
+    </div>
+  </div>
+
+  {% if stats.provisional %}
+  <div class="provisional-note">자산 중요도가 확정되지 않아 현재 위험점수는 잠정값이며, 중요도 확정 후 변경될 수 있습니다.</div>
+  {% endif %}
+
+  <div class="ai-legend"><span class="swatch"></span> 보라색 배지가 붙은 문장은 AI가 데이터를 분석해 직접 작성했으며,
+    본문 글자는 인쇄 가독성을 위해 진회색으로 표시합니다. 나머지는 결정론적 규칙 계산 또는 원본 데이터입니다.</div>
+</section>
+
+<h2>1. 호스트 개요</h2>
+<table>
+  <tr><th style="width:30%">호스트명</th><td>{{ host.hostname }}</td></tr>
+  <tr><th>OS</th><td>{{ host.os_id }} {{ host.os_version }}</td></tr>
+  <tr><th>커널</th><td>
+    실행중: {{ scan.running_kernel }}
+    {% if scan.kernel_latest and scan.kernel_latest != scan.running_kernel %}
+      / 최신: {{ scan.kernel_latest }}
+      {% if scan.kernel_reboot_needed %}<strong style="color:#d64545"> (재부팅 필요)</strong>{% endif %}
+    {% endif %}
+  </td></tr>
+  <tr><th>자산 중요도</th><td>{{ host.criticality or '미평가(잠정 점수 적용)' }}</td></tr>
+  <tr><th>시스템 제안 정보등급</th><td>{{ host.grade_suggested }} (사람 미확정) — {{ host.grade_suggested_reason }}
+    <div style="color:#888; font-size:8.5pt;">※ 이 정보등급은 보안 위험등급이 아닙니다. 위험등급은 표지의 KPI 카드를 참고하십시오.</div>
+  </td></tr>
+  <tr><th>설치 패키지 수</th><td>{{ scan.package_count }}</td></tr>
+  <tr><th>외부 노출 수</th><td>{{ scan.exposure_count }}</td></tr>
+  <tr><th>컨테이너 수</th><td>{{ stats.container_count }}</td></tr>
+</table>
+
+<h2>2. 분석 범위 및 데이터 품질</h2>
+<p>
+  전체 {{ stats.total_findings }}건의 finding 인스턴스(고유 CVE {{ stats.unique_cve_count }}건, 고유 패키지
+  {{ stats.unique_package_count }}건)를 결정론적 규칙으로 전부 분류했고, 그 중 {{ stats.analyzed_findings }}건을
+  {{ stats.total_group_count }}개의 조치 그룹으로 묶었습니다({{ stats.analyzed_group_count }}개 AI 서술 완료,
+  {{ stats.review_required_count }}개 LLM 응답 검증 실패, {{ conflict_groups | length }}개 데이터 검증 충돌).
+</p>
+<table class="score-table">
+  <tr><th style="width:34%">수집 완전성</th><td class="num">{{ stats.collection_completeness }}%</td></tr>
+  <tr><th>CVE·패키지·버전 매칭 신뢰도</th><td class="num">{{ stats.matching_confidence }}%</td></tr>
+  <tr><th>노출·로드 근거 완전성 <span style="color:#888; font-size:8pt;">(舊 "도달가능성 판정 신뢰도")</span></th><td class="num">{{ stats.reachability_confidence }}%</td></tr>
+  <tr><th>종합 분석 신뢰도</th><td class="num">{{ stats.analysis_confidence }}% <span style="color:#888; font-size:8pt;">(산정버전 {{ stats.scoring_version }})</span></td></tr>
+</table>
+<div class="warning-box" style="background:#eef4fb; border-color:#a9c6e8;">
+  위 "노출·로드 근거 완전성"은 <strong>악용 확정 수준이 아닙니다</strong> — loaded/exposed 데이터가 얼마나
+  갖춰져 있는지를 뜻합니다. 실제 악용 여부와 관련된 값은 다음과 같이 항상 낮거나 0입니다.
+  <table class="compact" style="margin-top:6pt;">
+    <tr><th>지표</th><th>결과</th></tr>
+    <tr><td>프로세스·노출 연관 판정(로드+노출 확인)</td><td>{{ stats.reachability_confidence }}%</td></tr>
+    <tr><td>취약 기능 활성 확인</td><td>{{ stats.vulnerable_feature_confirmed_count }}건 (이 파이프라인은 수집하지 않음)</td></tr>
+    <tr><td>공격 입력 경로 확인</td><td>{{ stats.attacker_input_path_confirmed_count }}건 (이 파이프라인은 수집하지 않음)</td></tr>
+    <tr><td>확정 도달(CONFIRMED_REACHABLE) 항목</td><td>{{ stats.confirmed_reachable_count }}건</td></tr>
+  </table>
+</div>
+<ul>
+  <li>도달가능성 판정 방식: loaded(라이브러리 로드 확인)와 exposed(외부/로컬 노출 확인)가 모두 참일 때만
+    "잠재적으로 도달 가능(POTENTIALLY_REACHABLE)"으로 분류합니다. 관련 수집단계가 불완전하면 UNKNOWN으로,
+    취약 기능 활성/공격 입력 도달까지 확인된 경우에만 CONFIRMED_REACHABLE이 될 수 있으나 현재 파이프라인은
+    그 근거를 수집하지 않으므로 이번 보고서에서는 부여되지 않습니다.</li>
+  <li>벤더 미수정(no_fix) 판정은 각 finding의 rationale에 인용된 배포판 보안 트래커 근거를 그대로 따릅니다.</li>
+  <li>no_fix와 조치버전이 동시에 존재하거나, CVE 근거가 누락되었거나, 컨테이너 OS와 조치버전 형식이 다른
+    {{ conflict_groups | length }}개 그룹은 정상 조치 그룹에서 제외되어 "8. 데이터 충돌 및 검토 필요" 섹션으로 분리되었습니다.</li>
+  {% if stats.feed_oldest %}<li>취약점 근거 피드 갱신 시각 범위: {{ stats.feed_oldest }} ~ {{ stats.feed_newest }}</li>{% endif %}
+</ul>
+{% if stats.coverage_warnings %}
+<div class="warning-box">
+  일부 데이터 수집 단계가 완료되지 않았습니다 — 아래 취약점 목록이 실제 환경을 완전히 반영하지 못할 수 있습니다.
+  <ul>{% for w in stats.coverage_warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<h2>3. 종합 위험도 총평</h2>
+<p style="font-size:9.5pt; color:#555;">
+  결정론적 집계: 전체 <strong>{{ stats.total_findings }}개의 finding 인스턴스</strong>(고유 CVE
+  <strong>{{ stats.unique_cve_count }}개</strong>) 중 <strong>{{ stats.analyzed_findings }}개</strong>를
+  선별해 <strong>{{ stats.total_group_count }}개</strong>의 조치·검토 그룹으로 구성했습니다. 나머지는
+  설치 상태 또는 낮은 우선순위(P3)로 분류되어 통계로만 요약됩니다.
+</p>
+<div class="ai-box"><span class="ai-badge">🤖 AI 생성</span><br><span class="ai-text">{{ narrative.executive_summary }}</span></div>
+
+<h2>4. 취약점 통계</h2>
+<h3>우선순위 분포 (전체 {{ stats.total_findings }}건, 결정론적 계산)</h3>
+{% set total = stats.total_findings if stats.total_findings else 1 %}
+{% for tier in ['P0', 'P1', 'P2', 'P3', 'REVIEW'] %}
+  {% set cnt = stats.tier_distribution.get(tier, 0) %}
+  {% if cnt > 0 %}
+  <div class="bar-row">
+    <div class="bar-label">{{ tier }}</div>
+    <div class="bar-track"><div class="bar-fill {{ tier }}" style="width: {{ (cnt / total * 100) | round(1) }}%"></div></div>
+    <div class="bar-count">{{ cnt }}</div>
+  </div>
+  {% endif %}
+{% endfor %}
+
+<h3>도달가능성 분포</h3>
+{% for status in ['POTENTIALLY_REACHABLE', 'INSTALLED_ONLY', 'UNKNOWN'] %}
+  {% set cnt = stats.reachability_distribution.get(status, 0) %}
+  {% if cnt > 0 %}
+  <div class="bar-row">
+    <div class="bar-label">{{ status }}</div>
+    <div class="bar-track"><div class="bar-fill {{ status }}" style="width: {{ (cnt / total * 100) | round(1) }}%"></div></div>
+    <div class="bar-count">{{ cnt }}</div>
+  </div>
+  {% endif %}
+{% endfor %}
+
+<h3>위험점수 구성요소 및 등급 구간</h3>
+<table class="score-table">
+  <tr><th>threat_score(위협)</th><td class="num">{{ stats.threat_score }}</td><th>가중치</th><td class="num">40%</td></tr>
+  <tr><th>environment_score(환경 도달성)</th><td class="num">{{ stats.environment_score }}</td><th>가중치</th><td class="num">35%</td></tr>
+  <tr><th>impact_score(자산 영향{% if stats.provisional %}·잠정{% endif %})</th><td class="num">{{ stats.impact_score }}</td><th>가중치</th><td class="num">25%</td></tr>
+  <tr><th>overall_score</th><td class="num"><strong>{{ stats.overall_score }}</strong></td><th>risk_level</th><td><strong>{{ stats.risk_level }}</strong></td></tr>
+</table>
+<table class="compact">
+  <tr><th>구성요소</th><th>산출 근거</th></tr>
+  <tr>
+    <td>threat_score = {{ stats.threat_score }}</td>
+    <td>심각도 HIGH/CRITICAL인 신호(finding) {{ stats.threat_signal_count }}건 기준 — KEV 등재
+      {{ stats.threat_kev_count }}건, 랜섬웨어 악용 확인 {{ stats.threat_ransomware_count }}건,
+      평균 CVSS {{ stats.threat_avg_cvss }}, 평균 EPSS {{ stats.threat_avg_epss }}</td>
+  </tr>
+  <tr>
+    <td>environment_score = {{ stats.environment_score }}</td>
+    <td>위 신호 {{ stats.threat_signal_count }}건 중 잠재적 도달 가능 {{ stats.environment_potentially_reachable_count }}건,
+      설치만 확인 {{ stats.environment_installed_only_count }}건의 가중평균</td>
+  </tr>
+  <tr>
+    <td>impact_score = {{ stats.impact_score }}</td>
+    <td>{{ stats.impact_policy_note }}</td>
+  </tr>
+</table>
+<table class="compact">
+  <tr><th>등급</th><th>기준(overall_score 이상)</th></tr>
+  {% for level, threshold in stats.risk_level_thresholds.items() %}
+  <tr><td>{{ level }}</td><td>{{ threshold }}</td></tr>
+  {% endfor %}
+</table>
+
+<h3>우선순위(P0~P3/REVIEW) 판정 기준</h3>
+<table class="compact">
+  <tr><th>등급</th><th>판정 기준</th></tr>
+  {% for tier, criteria in tier_criteria %}
+  <tr><td><span class="tier-badge tier-{{ tier }}">{{ tier }}</span></td><td>{{ criteria }}</td></tr>
+  {% endfor %}
+</table>
+
+<h3>기타</h3>
+<table>
+  <tr><th>벤더 미수정(패치 없음)</th><td>{{ stats.no_fix_count }}건</td></tr>
+  <tr><th>현재 stale library 발견(재시작 필요 확정)</th><td>{{ stats.restart_required_group_count }}개 그룹</td></tr>
+  <tr><th>패치·완화 후 재시작 검토 필요 그룹</th><td>{{ stats.restart_check_group_count }}개 그룹
+    <span style="color:#888; font-size:8pt;">※ "확정 0건"은 "패치해도 재시작이 필요 없다"는 뜻이 아닙니다.
+    로드된 공유 라이브러리를 패치하면 재시작이 필요할 수 있으므로 그룹별 안내를 따르십시오.</span></td></tr>
+  <tr><th>호스트 재부팅 필요(커널)</th><td>{{ '예' if scan.kernel_reboot_needed else '아니오' }}</td></tr>
+  <tr><th>취약점 발견 상위 패키지</th><td>
+    {% for name, cnt in stats.top_packages[:8] %}{{ name }}({{ cnt }}){% if not loop.last %}, {% endif %}{% endfor %}
+  </td></tr>
+</table>
+
+{% if previous_scan_delta %}
+<h2>5. 이전 스캔 대비 변화</h2>
+<table>
+  <tr><th style="width:30%">비교 대상 스캔</th><td>scan_id {{ previous_scan_delta.previous_scan_id }} ({{ previous_scan_delta.previous_collected_at }})</td></tr>
+  <tr><th>신규 발견</th><td>{{ previous_scan_delta.new_finding_count }}건 (CVE·패키지·위치 조합 기준)</td></tr>
+  <tr><th>해결됨</th><td>{{ previous_scan_delta.resolved_finding_count }}건</td></tr>
+  <tr><th>외부 노출 변화</th><td>{{ '%+d' | format(previous_scan_delta.exposure_count_delta) }}</td></tr>
+</table>
+{% if previous_scan_delta.package_changes %}
+<h3>이번 스캔에서 감지된 패키지 변경</h3>
+<table class="compact">
+  <tr><th>패키지</th><th>변경 유형</th><th>이전 버전</th><th>변경 후 버전</th></tr>
+  {% for c in previous_scan_delta.package_changes[:20] %}
+  <tr><td>{{ c.package_name }}</td><td>{{ c.change_type }}</td><td>{{ c.old_version or '-' }}</td><td>{{ c.new_version or '-' }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endif %}
+
+<h2>6. 주요 조치 그룹 상세 (상위 {{ detail_groups | length }}개, 우선순위순)</h2>
+<p>같은 컨테이너·같은 패키지 계열에 걸린 CVE는 하나의 조치 단위로 묶었습니다. 나머지 그룹은 다음 절의 요약 표를, 전체 CVE는 부록을 참고하세요.</p>
+{% if detail_groups %}
+  {% for g in detail_groups %}
+  <div class="group-card">
+    <div class="group-card-head">
+      <span class="pkg">{{ g.package_name }} · {{ g.container_label }}</span>
+      <div class="badge-row">
+        <span class="tier-badge tier-{{ g.tier }}">{{ g.tier }} · {{ g.due }}</span>
+        <span class="action-badge">{{ g.action_type_label }}</span>
+      </div>
+    </div>
+    <div class="group-meta">
+      {% if g.container_os %}{{ g.container_os }} ({{ g.container_manager }}) · {% endif %}
+      설치버전: {{ g.installed_versions | join(', ') or '정보 없음' }}
+      {% if g.fixed_versions %} · 조치버전: {{ g.fixed_versions | join(', ') }}{% endif %}
+      {% if g.no_fix %} · <strong style="color:#c2540d;">벤더 미수정</strong>{% endif %}
+      · 도달가능성: {{ g.reachability_label }}
+      · CVE {{ g.cve_count }}건
+    </div>
+    <div class="group-meta" style="font-style:italic;">판정 근거: {{ g.tier_reason }}</div>
+    <span class="ai-badge">🤖 AI 분석</span>
+    <dl>
+      <dt>위험 설명</dt><dd class="ai-text">{{ g.risk_summary }}</dd>
+      <dt>예상 영향</dt><dd class="ai-text">{{ g.impact }}</dd>
+      <dt>조치 권고</dt><dd class="ai-text">{{ g.recommended_action }}</dd>
+      <dt>재시작·재배포</dt><dd>{{ g.restart_note }}</dd>
+      <dt>검증 방법</dt><dd>{{ g.verification_method }}</dd>
+      {% if g.cti_snippets %}
+      <dt>참고 위협 인텔리전스</dt>
+      <dd style="font-size:8.5pt; color:#666;">
+        {% for s in g.cti_snippets %}{{ s.source }}(유사도 {{ s.score }}){% if not loop.last %}, {% endif %}{% endfor %}
+        — AI가 실제로 인용했는지는 위 서술을 참고하십시오. 이 문서들은 이 CVE의 악용 증거가 아니라 배경 위협 인텔리전스입니다.
+      </dd>
+      {% endif %}
+    </dl>
+    <table class="cve-table">
+      <tr><th>CVE</th><th>Severity</th><th>CVSS</th><th>EPSS</th><th>EPSS 백분위</th><th>KEV</th><th>도달가능성</th><th>조치버전</th></tr>
+      {% for c in g.cve_refs %}
+      <tr>
+        <td>{{ c.cve_id }}</td><td>{{ c.severity }}</td><td>{{ c.cvss }}</td>
+        <td>{{ (c.epss * 100) | round(2) if c.epss is not none else '-' }}%</td>
+        <td>{{ (c.epss_percentile * 100) | round(0) | int if c.epss_percentile is not none else '-' }}{{ '%' if c.epss_percentile is not none }}</td>
+        <td>{{ '예' if c.is_kev else '미등재' }}</td>
+        <td>{{ g.reachability_label if c.exploitability_status == g.reachability else c.exploitability_status }}</td>
+        <td>{{ c.fixed_version or '없음' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endfor %}
+{% else %}
+  <p>심층 분석 대상으로 선정된 조치 그룹이 없습니다.</p>
+{% endif %}
+
+{% if summary_groups %}
+<h2>7. 나머지 조치 그룹 요약</h2>
+<p>위험점수 상위 {{ detail_groups | length }}개 그룹만 상세 카드로 표시했습니다. 아래는 나머지 {{ summary_groups | length }}개의 요약입니다(전체 CVE는 부록 참고).</p>
+<table class="compact">
+  <tr><th>패키지</th><th>대상</th><th>우선순위</th><th>조치유형</th><th>도달가능성</th><th>CVE 수</th></tr>
+  {% for g in summary_groups %}
+  <tr>
+    <td>{{ g.package_name }}</td><td>{{ g.container_label }}</td>
+    <td>{{ g.tier }}</td><td>{{ g.action_type_label }}</td>
+    <td>{{ g.reachability_label }}</td><td>{{ g.cve_count }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2>8. 데이터 충돌 및 검토 필요</h2>
+<p>아래 항목은 확신할 수 없는 상태이므로 정상 조치 그룹에 포함하지 않았습니다. 담당자의 직접 검토가 필요합니다.</p>
+{% if conflict_groups %}
+<h3>데이터 검증 충돌 ({{ conflict_groups | length }}건)</h3>
+{% for g in conflict_groups %}
+<div class="conflict-card">
+  <div class="title">{{ g.package_name }} · {{ g.container_label }} (CVE {{ g.cve_count }}건)</div>
+  <div>{{ g.conflict_labels | join('; ') }}</div>
+  <div style="margin-top:3pt;">입력값: no_fix={{ g.no_fix }} · fixed_versions={{ g.fixed_versions | join(', ') or '없음' }}
+    · 근거: {{ g.representative_rationale or '정보 없음' }}</div>
+  <div style="margin-top:3pt;"><strong>권장 처리:</strong> {{ g.conflict_resolutions | join(' / ') }}</div>
+  <div class="codes">conflict_codes: {{ g.conflict_codes | join(', ') }} · validation_status: {{ g.validation_status }}
+    · 현재 영향: 위험점수·조치 대상에서 보류됨</div>
+</div>
+{% endfor %}
+{% endif %}
+{% if review_groups %}
+<h3>AI 응답 검증 실패 ({{ review_groups | length }}건)</h3>
+<p style="font-size:9pt; color:#666;">LLM 응답의 배치 정합성(index)을 확인할 수 없어 자동 서술을 생략했습니다.</p>
+{% for g in review_groups %}
+<div class="conflict-card">{{ g.package_name }} · {{ g.container_label }} — CVE {{ g.cve_count }}건 (원래 우선순위 추정: {{ g.tier }})</div>
+{% endfor %}
+{% endif %}
+{% if not conflict_groups and not review_groups %}
+<p>검토가 필요한 항목이 없습니다.</p>
+{% endif %}
+
+<h2>9. 보안 설정 점검 (CCE)</h2>
+<p>
+  전체 {{ stats.cce_total }}건 — PASS {{ stats.cce_pass_count }} · FAIL {{ stats.cce_fail_items | length }} ·
+  해당없음(NOT_APPLICABLE) {{ stats.cce_not_applicable_items | length }} · 근거부족(UNKNOWN) {{ stats.cce_unknown_items | length }} ·
+  검토필요(REVIEW) {{ stats.cce_review_items | length }}
+</p>
+{% if stats.cce_fail_items %}
+<h3>FAIL</h3>
+{% for c in stats.cce_fail_items %}
+<div>[{{ c.severity }}] {{ c.title }} ({{ c.code }}) — {{ c.rationale }}</div>
+{% endfor %}
+{% endif %}
+{% if stats.cce_unknown_items %}
+<h3>UNKNOWN — 근거 부족(FAIL/NOT_APPLICABLE로 집계하지 않음)</h3>
+{% for c in stats.cce_unknown_items %}<div>{{ c.title }} ({{ c.code }}) — {{ c.rationale }}</div>{% endfor %}
+{% endif %}
+{% if stats.cce_review_items %}
+<h3>REVIEW — 정책·업무 요건 확인 필요</h3>
+{% for c in stats.cce_review_items %}<div>{{ c.title }} ({{ c.code }}) — {{ c.rationale }}</div>{% endfor %}
+{% endif %}
+{% if stats.cce_not_applicable_items %}
+<h3>NOT_APPLICABLE — 환경상 해당 없음</h3>
+{% for c in stats.cce_not_applicable_items %}<div>{{ c.title }} ({{ c.code }}) — {{ c.rationale }}</div>{% endfor %}
+{% endif %}
+
+<h2>10. 종합 권고 사항</h2>
+<div class="ai-box"><span class="ai-badge">🤖 AI 생성</span><br><span class="ai-text">{{ narrative.overall_recommendation }}</span></div>
+
+<h2>11. 결론</h2>
+<div class="ai-box"><span class="ai-badge">🤖 AI 생성</span><br><span class="ai-text">{{ narrative.conclusion }}</span></div>
+
+<footer class="note">
+  본 보고서는 수집 에이전트가 MySQL에 저장한 스캔 데이터를 바탕으로 AI 에이전트가 자동 생성했습니다.
+  위험점수·우선순위·도달가능성·조치유형은 결정론적 규칙(산정버전 {{ stats.scoring_version }})으로 계산되며,
+  위험 설명·조치 권고 문장만 AI가 작성합니다. 일부 판단은 데이터 수집 완전성 및 LLM 분석의 한계에 따라
+  실제 환경과 다를 수 있으므로, 중요한 조치 전에는 보안 담당자의 검토를 권장합니다.
+</footer>
+
+<div class="appendix" style="page-break-before: always;">
+<h2>부록: 전체 CVE 및 조치 그룹 목록</h2>
+<p>본문에서 요약된 항목을 포함한 전체 {{ all_groups | length }}개 정상 조치 그룹의 CVE 상세입니다.</p>
+<table class="compact">
+  <tr><th>패키지</th><th>대상</th><th>우선순위</th><th>CVE</th><th>Severity</th><th>CVSS</th><th>도달가능성</th><th>조치버전</th></tr>
+  {% for g in all_groups %}
+    {% for c in g.cve_refs %}
+    <tr>
+      <td>{{ g.package_name }}</td><td>{{ g.container_label }}</td><td>{{ g.tier }}</td>
+      <td>{{ c.cve_id }}</td><td>{{ c.severity }}</td><td>{{ c.cvss }}</td>
+      <td>{{ c.exploitability_status }}</td><td>{{ c.fixed_version or '없음' }}</td>
+    </tr>
+    {% endfor %}
+  {% endfor %}
+</table>
+</div>
+
+</body>
+</html>
