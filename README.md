@@ -73,7 +73,7 @@ LLM 서술을 얹는 구조**입니다. LangGraph 5단계 파이프라인(`ai-re
 cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose_runner.sh dev up -d
 ```
 
-웹은 <http://localhost:8000>(로컬 PHP·MySQL 설치 불필요). 비밀값·운영 HTTPS·CA 준비·백업은 [배포 가이드](deploy/README.md), 대상 서버 연결은 [에이전트 설치·운영 가이드](agent/README.md)를 보세요.
+웹은 <http://localhost:8000>(로컬 PHP·MySQL 설치 불필요). 비밀값·운영 HTTPS·CA 준비·백업, 대상 서버 연결은 위 표를 보세요.
 에이전트 버전은 **3.23**이고, 게이트는 `./tests/smoke.sh <BASE>`(수집·매칭·인증·화면)와 `./tests/e2e.sh <BASE>`(Chromium)입니다.
 
 ## 출품 범위
@@ -96,7 +96,6 @@ cd deploy && ./compose_runner.sh init && ./compose_runner.sh doctor && ./compose
 ## 문서
 
 - 명세 — [데이터베이스](docs/dev/데이터베이스.md) · [Excel 명세서](docs/specs/테이블명세서.xlsx) · [Export API](docs/dev/export-api.md)(SBOM 은 `GET /sbom.php`)
-- 규칙 — [CONTEXT.md](CONTEXT.md) · [CLAUDE.md](CLAUDE.md) · [지난 작업의 실측 기록](docs/dev/archive/)
 - 기여 — [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## 라이선스
