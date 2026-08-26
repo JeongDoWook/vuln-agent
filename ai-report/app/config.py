@@ -29,9 +29,10 @@ class Settings(BaseSettings):
     reports_dir: str = 'reports'
 
 
+# 프로세스 생애주기 동안 .env 를 한 번만 읽도록 캐시한다(FastAPI/Celery 양쪽에서 재사용).
 @lru_cache
-def get_param() -> Settings:
+def get_settings() -> Settings:
     return Settings()
 
 
-settings = get_param()
+settings = get_settings()

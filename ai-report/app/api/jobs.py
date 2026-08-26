@@ -12,6 +12,18 @@ from app.workers.tasks import process_job
 router = APIRouter()
 
 
+async def _get_job_or_404(job_id: int, db: AsyncSession) -> Job:
+    job = await db.get(Job, job_id)
+
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='Job not found',
+        )
+
+    return job
+
+
 @router.post('/', response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 async def create_job(request: JobCreate, db: AsyncSession=Depends(get_db)):
     job = Job(host_uuid=request.host_uuid)
@@ -27,26 +39,12 @@ async def create_job(request: JobCreate, db: AsyncSession=Depends(get_db)):
 
 @router.get('/{job_id}', response_model=JobResponse)
 async def get_job(job_id: int, db: AsyncSession=Depends(get_db)):
-    job = await db.get(Job, job_id)
-
-    if job is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail='Job not found',
-        )
-
-    return job
+    return await _get_job_or_404(job_id, db)
 
 
 @router.get('/{job_id}/report')
 async def get_job_report(job_id: int, db: AsyncSession=Depends(get_db)):
-    job = await db.get(Job, job_id)
-
-    if job is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail='Job not found',
-        )
+    job = await _get_job_or_404(job_id, db)
 
     if job.status != 'SUCCESS' or not job.result:
         raise HTTPException(
