@@ -41,6 +41,17 @@ FastAPI(POST /jobs) --생성-→ Postgres(jobs 테이블, 상태 추적)
 | bge-m3 (8082) + Qdrant | CTI 문서 임베딩 검색(RAG) | `EMBEDDING_BASE_URL`, `QDRANT_URL` |
 | WeasyPrint + Jinja2 | HTML → PDF 렌더링(한글 폰트 지원) | `app/agent/templates/report.html.jinja` |
 
+## 사용 모델·라이선스
+
+3개 모두 파인튜닝 없이 그대로 활용(외부 모델 그대로 활용 유형)하며, 전부 로컬 GPU 서버에서
+직접 구동합니다(외부 상용 API 호출 아님).
+
+| 모델(개발사) | 라이선스 | 용도 | HuggingFace |
+|---|---|---|---|
+| Qwen3.8-27B-Uncensored-Cyber-GGUF (philbert440, Qwen/Qwen3.8-27B 기반) | Apache License 2.0 | 사이버보안 위험분석 콘텐츠 생성(영어) | https://huggingface.co/philbert440/Qwen3.8-27B-Uncensored-Cyber-GGUF |
+| TranslateGemma-27B-IT (Google) | Gemma 이용약관 (https://ai.google.dev/gemma/terms) | 영어 → 한국어 번역 | https://huggingface.co/google/translategemma-27b-it |
+| BGE-M3 (BAAI) | MIT License | RAG 임베딩(위협 인텔리전스 벡터 검색) | https://huggingface.co/BAAI/bge-m3 |
+
 ## 분석 파이프라인 (LangGraph 5단계)
 
 `app/agent/nodes.py`, `app/agent/graph.py` 참고.
