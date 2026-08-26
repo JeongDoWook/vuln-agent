@@ -49,7 +49,8 @@
 ## 한 번만 설치하면 된다 (systemd 가 있으면 상시 데몬으로 알아서 돈다)
 
 - 설치기는 **`run.sh` 를 systemd 상시 서비스**(`Type=simple`, `Restart=on-failure`)로 등록해
-  `enable --now` 한다. `run.sh` 는 10초마다 중앙 `agent-poll.php` 를 GET 으로 poll 하는 데몬이고,
+  `enable --now` 한다. `run.sh` 는 poll 처리(수집이 걸리면 그 수집까지) 종료 후 10초 뒤 중앙
+  `agent-poll.php` 를 GET 으로 재poll 하는 데몬이고,
   **리스닝 포트를 열지 않는 아웃바운드 전용**이라 중앙이 노드로 들어오는 경로는 없다.
 - poll 응답의 `poll_schedule_seconds`(정기수집 주기, 초기값은 설치 때 `--schedule`)가 지났으면
   수집·전송한다. 중앙 웹에서 주기를 바꾸면 **다음 poll 에 바로 반영**된다(SSH 재설치 불필요).
@@ -448,7 +449,7 @@ sudo bash install-agent.sh --uninstall [--prefix 설치경로]
 | `--verify-files` | 패키지 무결성 검증(`rpm -Va` / `dpkg --verify`) — **기본 꺼짐**. 아래 설명 |
 | `--verify-timeout N` | 무결성 검증 단독 상한 초(기본 300). `--timeout`(20초)로는 무조건 잘린다 |
 | `--command-id ID` | 중앙의 즉시/예약 명령 실행임을 표시(페이로드 최상위 `command_id`). `--poll-once` 가 붙인다 |
-| `--poll-once --state-dir DIR` | **수집하지 않는다.** `agent-poll.php` 를 한 번 GET 해 "이번에 무엇을 할지"를 정하고, `run.sh` 가 읽을 지시문(`키=값` 줄들)을 stdout 으로 낸다. `SEND_URL`·`SEND_TOKEN` 은 env(`agent.env`)에서 읽으므로 토큰이 인자·출력에 남지 않는다. 데몬 루프가 10초마다 이걸 부른다 |
+| `--poll-once --state-dir DIR` | **수집하지 않는다.** `agent-poll.php` 를 한 번 GET 해 "이번에 무엇을 할지"를 정하고, `run.sh` 가 읽을 지시문(`키=값` 줄들)을 stdout 으로 낸다. `SEND_URL`·`SEND_TOKEN` 은 env(`agent.env`)에서 읽으므로 토큰이 인자·출력에 남지 않는다. 데몬 루프가 처리 종료 후 10초 뒤마다 이걸 부른다 |
 
 ### `--verify-files` — 패키지 무결성 검증 (기본 꺼짐)
 
